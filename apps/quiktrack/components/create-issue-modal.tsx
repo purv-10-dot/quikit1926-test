@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
+import { useSession } from "next-auth/react";
 import {
   X,
   Minus,
@@ -100,6 +101,8 @@ export function CreateIssueModal({
   initialProjectId?: string;
 }) {
   const router = useRouter();
+  const { data: session } = useSession();
+  const currentUserId = session?.user?.id ?? null;
   const [projects, setProjects] = useState<Project[]>([]);
   const [projectId, setProjectId] = useState<string>("");
   const [statuses, setStatuses] = useState<Status[]>([]);
@@ -380,8 +383,9 @@ export function CreateIssueModal({
                 type="button"
                 className="text-xs text-blue-600 hover:underline"
                 onClick={() => {
-                  const me = members[0];
-                  if (me) setAssigneeId(me.userId);
+                  if (currentUserId && members.some((m) => m.userId === currentUserId)) {
+                    setAssigneeId(currentUserId);
+                  }
                 }}
               >
                 Assign to me

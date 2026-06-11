@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import { useSession } from "next-auth/react";
 import {
   X,
   ExternalLink,
@@ -260,6 +261,8 @@ export function EditIssueModal({
   // Project-scoped perms decide which fields are editable and whether the
   // subtask composer is rendered at all. Server enforces; this just hides
   // controls the user can't actually use.
+  const { data: session } = useSession();
+  const currentUserId = session?.user?.id ?? null;
   const perms = useMyProjectPermissions(projectId);
   const canUpdateIssue = perms.loading || perms.has("Issue", "update");
   const canCreateIssue = perms.loading || perms.has("Issue", "create");
@@ -1221,15 +1224,12 @@ export function EditIssueModal({
                           void patch({ assigneeId: id || undefined });
                         }}
                       />
-                      {!assignee && (
+                      {!assignee && currentUserId && members.some((m) => m.userId === currentUserId) && (
                         <button
                           type="button"
                           onClick={() => {
-                            const me = members[0];
-                            if (me) {
-                              setAssigneeId(me.userId);
-                              void patch({ assigneeId: me.userId });
-                            }
+                            setAssigneeId(currentUserId);
+                            void patch({ assigneeId: currentUserId });
                           }}
                           className="block text-xs text-blue-600 hover:underline mt-1"
                         >
