@@ -67,6 +67,15 @@ const GROUP_BY_LABEL: Record<GroupBy, string> = {
   "user-issue": "User → Work item",
 };
 
+// Fixed pixel widths for the frozen left-rail columns. They must be exact (not
+// min/max) so the cumulative `left` offsets line up the sticky columns.
+const FZ_NAME_W = 260;
+const FZ_KEY_W = 90;
+const FZ_LOGGED_W = 80;
+// Soft edge shadow on the rightmost frozen column so scrolling content reads as
+// sliding underneath the pinned rail.
+const FZ_SHADOW = "shadow-[2px_0_4px_-1px_rgba(0,0,0,0.08)]";
+
 // Raw decimal — used by CSV/XLS/PDF exports so spreadsheet formulas can still sum.
 function formatDecimal(hours: number): string {
   if (!Number.isFinite(hours) || hours <= 0) return "";
@@ -410,6 +419,10 @@ export function TimesheetView({
 
   const showKeyColumn = groupBy === "issue" || groupBy === "user-issue";
   const fixedColumnCount = showKeyColumn ? 3 : 2;
+  // Cascade-freeze: the left rail (User/Work item, Key, Logged) is pinned with
+  // fixed widths + cumulative left offsets so day columns scroll underneath.
+  const loggedLeft = FZ_NAME_W + (showKeyColumn ? FZ_KEY_W : 0);
+  const railWidth = loggedLeft; // width of the merged "Total" label cell
 
   return (
     <div className="px-6 py-4">
@@ -504,15 +517,24 @@ export function TimesheetView({
         <table className="min-w-full text-[11px]">
           <thead className="bg-white border-b border-gray-200">
             <tr>
-              <th className="px-3 py-2 text-left font-medium text-gray-600 sticky left-0 bg-white z-10 min-w-[260px]">
+              <th
+                className="px-3 py-2 text-left font-medium text-gray-600 sticky left-0 bg-white z-30"
+                style={{ width: FZ_NAME_W, minWidth: FZ_NAME_W }}
+              >
                 {ROW_HEADER[groupBy]}
               </th>
               {showKeyColumn && (
-                <th className="px-3 py-2 text-left font-medium text-gray-600 sticky bg-white z-10 min-w-[80px]">
+                <th
+                  className="px-3 py-2 text-left font-medium text-gray-600 sticky bg-white z-30"
+                  style={{ left: FZ_NAME_W, width: FZ_KEY_W, minWidth: FZ_KEY_W }}
+                >
                   Key
                 </th>
               )}
-              <th className="px-3 py-2 text-right font-medium text-gray-600 sticky bg-white z-10 min-w-[70px]">
+              <th
+                className={`px-3 py-2 text-right font-medium text-gray-600 sticky bg-white z-30 ${FZ_SHADOW}`}
+                style={{ left: loggedLeft, width: FZ_LOGGED_W, minWidth: FZ_LOGGED_W }}
+              >
                 Logged
               </th>
               {range.days.map((d) => (
@@ -582,9 +604,10 @@ export function TimesheetView({
               return (
                 <tr key={row.id} className="border-b border-gray-100 hover:bg-gray-50/70">
                   <td
-                    className={`px-3 py-2 text-gray-900 sticky left-0 bg-white z-10 truncate max-w-[360px] ${
+                    className={`px-3 py-2 text-gray-900 sticky left-0 bg-white z-20 truncate ${
                       isChild ? "pl-10" : ""
                     }`}
+                    style={{ width: FZ_NAME_W, minWidth: FZ_NAME_W, maxWidth: FZ_NAME_W }}
                   >
                     {isParent && groupBy === "user-issue" ? (
                       <button
@@ -612,11 +635,17 @@ export function TimesheetView({
                     )}
                   </td>
                   {showKeyColumn && (
-                    <td className="px-3 py-1.5 text-blue-600 sticky bg-white z-10 font-medium">
+                    <td
+                      className="px-3 py-1.5 text-blue-600 sticky bg-white z-20 font-medium truncate"
+                      style={{ left: FZ_NAME_W, width: FZ_KEY_W, minWidth: FZ_KEY_W, maxWidth: FZ_KEY_W }}
+                    >
                       {isChild ? row.secondary : !isParent ? row.secondary : ""}
                     </td>
                   )}
-                  <td className="px-3 py-1.5 text-right font-semibold text-gray-900 sticky bg-white z-10">
+                  <td
+                    className={`px-3 py-1.5 text-right font-semibold text-gray-900 sticky bg-white z-20 ${FZ_SHADOW}`}
+                    style={{ left: loggedLeft, width: FZ_LOGGED_W, minWidth: FZ_LOGGED_W }}
+                  >
                     {formatDisplay(totalsByRow[row.id] ?? 0)}
                   </td>
                   {range.days.map((d) => {
@@ -661,11 +690,15 @@ export function TimesheetView({
               <tr className="bg-gray-50 border-t-2 border-gray-200">
                 <td
                   colSpan={showKeyColumn ? 2 : 1}
-                  className="px-3 py-2 sticky left-0 bg-gray-50 z-10 font-semibold text-gray-700 text-[11px]"
+                  className="px-3 py-2 sticky left-0 bg-gray-50 z-20 font-semibold text-gray-700 text-[11px]"
+                  style={{ width: railWidth, minWidth: railWidth }}
                 >
                   Total
                 </td>
-                <td className="px-3 py-2 text-right font-bold text-gray-900 sticky bg-gray-50 z-10">
+                <td
+                  className={`px-3 py-2 text-right font-bold text-gray-900 sticky bg-gray-50 z-20 ${FZ_SHADOW}`}
+                  style={{ left: loggedLeft, width: FZ_LOGGED_W, minWidth: FZ_LOGGED_W }}
+                >
                   {formatDisplay(grandTotal)}
                 </td>
                 {range.days.map((d) => (
