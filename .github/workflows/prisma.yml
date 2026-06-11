@@ -22,9 +22,25 @@ jobs:
         with:
           node-version: 20
 
+      # 🔐 1️⃣ Authenticate to Google Cloud
+      - name: Authenticate to Google Cloud
+        uses: google-github-actions/auth@v2
+        with:
+          credentials_json: ${{ secrets.GCP_SA_KEY }}
+
+      # 🚀 2️⃣ Start Cloud SQL Auth Proxy
+      - name: Start Cloud SQL Auth Proxy
+        run: |
+          curl -o cloud-sql-proxy https://storage.googleapis.com/cloud-sql-connectors/cloud-sql-proxy/v2.11.4/cloud-sql-proxy.linux.amd64
+          chmod +x cloud-sql-proxy
+          ./cloud-sql-proxy red-seeker-477810-i0:asia-south1:quikit-db \
+            --port 5432 &
+          sleep 5
+
       - name: Install dependencies (monorepo)
         run: npm ci
 
+      # 🧱 3️⃣ Prisma migration (NO CHANGE)
       - name: Prisma migrate deploy (PROD)
         run: |
           npx prisma migrate deploy \
@@ -39,4 +55,3 @@ jobs:
             --schema=packages/database/prisma/schema.prisma
         env:
           DATABASE_URL: ${{ secrets.PROD_DATABASE_URL }}
-          DATABASE_URL_DIRECT: ${{ secrets.PROD_DATABASE_URL }}
