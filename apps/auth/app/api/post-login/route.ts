@@ -49,7 +49,7 @@ const DEFAULT_ALLOWED_ORIGINS = [
   "https://scale.quikit.ai",
   "https://orgadmin.quikit.ai",
   "https://track.quikit.ai",
-  "https://quikcrm.quikit.ai",
+  "https://qcrm.quikit.ai",
   "https://social.quikit.ai",
   "https://quikinfra.quikit.ai",
 ];
