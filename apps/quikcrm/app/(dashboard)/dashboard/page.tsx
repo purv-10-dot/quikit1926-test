@@ -12,5 +12,5 @@ export default async function DashboardPage() {
   const allowed = await hasPermission(session, "dashboard", "view");
   if (!allowed) redirect("/");
 
-  return <DashboardClient />;
+  return <DashboardClient userRole={session.role} />;
 }

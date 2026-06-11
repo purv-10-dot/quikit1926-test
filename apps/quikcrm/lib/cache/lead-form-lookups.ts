@@ -43,19 +43,18 @@ export function fetchCustomFieldDefs(): Promise<LeadFieldDefinition[]> {
 
 export function fetchOwners(): Promise<OwnerOption[]> {
   if (!cache.owners) {
-    cache.owners = fetch("/api/settings/users", { credentials: "include" })
+    // Uses /api/leads/assignable-users which returns only users the caller is
+    // permitted to assign as lead owner (role-filtered — see lead-assignment.ts).
+    cache.owners = fetch("/api/leads/assignable-users", { credentials: "include" })
       .then((r) => (r.ok ? r.json() : null))
       .then((j) => {
-        if (!j) return [];
-        const list: OwnerOption[] = Array.isArray(j?.items)
-          ? j.items.map(
-              (u: { id: string; firstName?: string; lastName?: string; email?: string }) => ({
-                id: u.id,
-                name:
-                  [u.firstName, u.lastName].filter(Boolean).join(" ") || u.email || u.id,
-                email: u.email ?? "",
-              }),
-            )
+        if (!j?.success) return [];
+        const list: OwnerOption[] = Array.isArray(j?.data)
+          ? j.data.map((u: { id: string; name?: string; email?: string }) => ({
+              id: u.id,
+              name: u.name || u.email || u.id,
+              email: u.email ?? "",
+            }))
           : [];
         return list;
       })

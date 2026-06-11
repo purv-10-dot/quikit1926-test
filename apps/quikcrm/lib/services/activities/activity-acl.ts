@@ -1,8 +1,7 @@
-// Activity ACL — port of the Contacts pattern. Restricted users only see
-// activities whose related Lead/Opp/Contact/Account is in their account
-// scope. Per the plan: "Strict" (rows out-of-scope are excluded entirely;
-// owning the activity does NOT grant access if the related record is out
-// of scope).
+// Activity ACL — restricted users see activities whose related
+// Lead/Opp/Contact/Account is in their account scope, PLUS any activity
+// they own (ownerId = user.userId). Ownership always grants visibility
+// regardless of account scope so a user can always see what they logged.
 import { prisma } from "@/lib/db/prisma";
 import { getScope } from "@/lib/auth/account-acl";
 import type { SessionUser } from "@/types/permission";
@@ -26,11 +25,9 @@ export async function buildActivityAclWhere(
   const orgId = user.orgId;
   const allowed = scope.allowedAccountIds;
 
-  // No allowed accounts → the user can see only orphaned rows that they
-  // own. Empty case keeps things simple: return a where that matches
-  // nothing (`id: { in: [] }` would also work but is more obscure).
+  // No allowed accounts → only show activities the user owns.
   if (allowed.length === 0) {
-    return { id: { in: [] as string[] } };
+    return { ownerId: user.userId };
   }
 
   const [leads, opps, contacts] = await Promise.all([
@@ -54,6 +51,7 @@ export async function buildActivityAclWhere(
 
   return {
     OR: [
+      { ownerId: user.userId },
       { relatedOrphanedAt: { not: null } },
       { relatedKind: { in: ["Account", "account"] }, relatedObjectId: { in: allowed } },
       { relatedKind: { in: ["Lead", "lead"] }, relatedObjectId: { in: leadIds } },

@@ -5,7 +5,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { DashboardToolbar } from "./dashboard-toolbar";
 import { DashboardHero } from "./dashboard-hero";
-import { ExecutiveKpiGrid } from "./executive-kpi-grid";
+import { RoleKpiGrid } from "./role-kpi-grid";
 import { MyWorkToday } from "./my-work-today";
 import { RecentWinsWidget } from "./recent-wins-widget";
 import { ActivityMixChart } from "./activity-mix-chart";
@@ -74,30 +74,34 @@ function rangeLabel(preset: RangePreset, value: RangeValue): string {
   }
 }
 
-function labelForPrior(preset: RangePreset, value: RangeValue): string {
-  switch (preset) {
-    case "today":
-      return "today";
-    case "7d":
-      return "prior 7d";
-    case "30d":
-      return "prior 30d";
-    case "month":
-      return "prior month";
-    case "quarter":
-      return "prior quarter";
-    default: {
-      const fromShort = value.fromIso.slice(5);
-      const toShort = value.toIso.slice(5);
-      return `prior ${fromShort}–${toShort}`;
-    }
-  }
-}
 
-export function DashboardClient() {
+export function DashboardClient({ userRole }: { userRole: string }) {
   const router = useRouter();
   const searchParams = useSearchParams();
   const queryClient = useQueryClient();
+
+  // ── Role-based section visibility ─────────────────────────────────────────
+  // Marketing: no Revenue, Opportunities, Quotes, Sales Activities
+  // Finance:   no Lead Activities, Sales Tasks, Campaign Metrics
+  const isMarketing = userRole === "MarketingUser";
+  const isFinance = userRole === "FinanceUser";
+  const isSales = !isMarketing && !isFinance; // Admin, SalesManager, SalesUser
+
+  // Hero shows pipeline/revenue → not relevant for Marketing
+  // Finance sees revenue/pipeline in their own RoleKpiGrid cards
+  const showHero = isSales;
+  // MyWorkToday shows tasks/follow-ups → not relevant for Marketing or Finance
+  const showMyWork = isSales;
+  // RecentWins shows won deal revenue → Finance sees it; Marketing does not
+  const showRecentWins = !isMarketing;
+  // AtRisk shows stuck opps, overdue tasks → sales-only
+  const showAtRisk = isSales;
+  // Lead charts (LeadsByStageBar + FunnelChart) → not relevant for Finance
+  const showLeadCharts = !isFinance;
+  // Activity charts → sales-only (Marketing does not see sales activities; Finance does not see lead activities)
+  const showActivityCharts = isSales;
+  // Opps chart → Finance sees it; Marketing does not (no Opportunities for Marketing)
+  const showOppsChart = !isMarketing;
 
   const tz = useMemo(() => clientTz(), []);
   useEffect(() => {
@@ -154,7 +158,6 @@ export function DashboardClient() {
     void queryClient.invalidateQueries({ queryKey: ["dashboard"] });
   }, [queryClient]);
 
-  const priorLabel = labelForPrior(preset, range);
   const rangeDescription = rangeLabel(preset, range);
   const ownerLabel = ownerIdQ === "me" ? "My records" : ownerIdQ ? "Filtered owner" : null;
 
@@ -185,7 +188,7 @@ export function DashboardClient() {
         </div>
       ) : null}
 
-      {!loading && data ? (
+      {showHero && !loading && data ? (
         <DashboardHero
           rangeDescription={rangeDescription}
           ownerLabel={ownerLabel}
@@ -197,89 +200,107 @@ export function DashboardClient() {
         />
       ) : null}
 
+      {/* Role-specific KPI grid — counts match module counts via same ACL */}
       <div className="mb-6">
-        <ExecutiveKpiGrid
-          summary={data}
-          loading={loading}
-          labelForPrior={priorLabel}
-          rangeDescription={rangeDescription}
+        <RoleKpiGrid
+          userRole={userRole}
           onNavigate={(path) => router.push(path)}
         />
       </div>
 
-      <div className="mb-6 grid gap-4 xl:grid-cols-3">
-        <div className="xl:col-span-2">
-          {loading || !data ? (
-            <div className="crm-card h-48 animate-pulse bg-crm-panel" />
-          ) : (
-            <MyWorkToday
-              tasksDueToday={data.executive.tasksDueToday}
-              followUpsDueToday={data.executive.followUpsDueToday}
-              tasks={data.executive.tasksDueTodayItems}
-              followUps={data.executive.followUpItems}
-            />
-          )}
+      {showMyWork ? (
+        <div className="mb-6 grid gap-4 xl:grid-cols-3">
+          <div className="xl:col-span-2">
+            {loading || !data ? (
+              <div className="crm-card h-48 animate-pulse bg-crm-panel" />
+            ) : (
+              <MyWorkToday
+                tasksDueToday={data.executive.tasksDueToday}
+                followUpsDueToday={data.executive.followUpsDueToday}
+                tasks={data.executive.tasksDueTodayItems}
+                followUps={data.executive.followUpItems}
+              />
+            )}
+          </div>
+          {showRecentWins ? (
+            <div>
+              {loading || !data ? (
+                <div className="crm-card h-48 animate-pulse bg-crm-panel" />
+              ) : (
+                <RecentWinsWidget wins={data.executive.recentWins} rangeDescription={rangeDescription} />
+              )}
+            </div>
+          ) : null}
         </div>
-        <div>
+      ) : showRecentWins ? (
+        <div className="mb-6">
           {loading || !data ? (
-            <div className="crm-card h-48 animate-pulse bg-crm-panel" />
+            <div className="crm-card h-24 animate-pulse bg-crm-panel" />
           ) : (
             <RecentWinsWidget wins={data.executive.recentWins} rangeDescription={rangeDescription} />
           )}
         </div>
-      </div>
+      ) : null}
 
-      <section className="mb-6">
-        <h2 className="mb-3 text-sm font-semibold text-crm-text">Needs attention</h2>
-        <AtRiskWidget qs={qs} ownerId={ownerIdQ || null} />
-      </section>
+      {showAtRisk ? (
+        <section className="mb-6">
+          <h2 className="mb-3 text-sm font-semibold text-crm-text">Needs attention</h2>
+          <AtRiskWidget qs={qs} ownerId={ownerIdQ || null} />
+        </section>
+      ) : null}
 
-      <div className="mb-6 grid gap-4 lg:grid-cols-2">
-        {loading || !data ? (
-          <>
-            <ChartCardSkeleton title="Leads by stage" />
-            <ChartCardSkeleton title="Lead funnel" height={300} />
-          </>
-        ) : (
-          <>
-            <LeadsByStageBar data={data.leadsByStage} drill={drillCtx} />
-            <FunnelChart qs={qs} drill={drillCtx} />
-          </>
-        )}
-      </div>
+      {showLeadCharts ? (
+        <div className="mb-6 grid gap-4 lg:grid-cols-2">
+          {loading || !data ? (
+            <>
+              <ChartCardSkeleton title="Leads by stage" />
+              <ChartCardSkeleton title="Lead funnel" height={300} />
+            </>
+          ) : (
+            <>
+              <LeadsByStageBar data={data.leadsByStage} drill={drillCtx} />
+              <FunnelChart qs={qs} drill={drillCtx} />
+            </>
+          )}
+        </div>
+      ) : null}
 
-      <div className="mb-6 grid gap-4 lg:grid-cols-2">
-        {loading || !data ? (
-          <>
-            <ChartCardSkeleton title="Activity mix" height={220} />
-            <ChartCardSkeleton title="Activities per day" height={260} />
-          </>
-        ) : (
-          <>
-            <ActivityMixChart mix={data.executive.activityMix} rangeDescription={rangeDescription} />
-            <ActivitiesLine
-              data={data.activitiesLast7Days}
-              ownerId={ownerIdQ || null}
-              rangeDescription={rangeDescription}
-            />
-          </>
-        )}
-      </div>
+      {showActivityCharts ? (
+        <div className="mb-6 grid gap-4 lg:grid-cols-2">
+          {loading || !data ? (
+            <>
+              <ChartCardSkeleton title="Activity mix" height={220} />
+              <ChartCardSkeleton title="Activities per day" height={260} />
+            </>
+          ) : (
+            <>
+              <ActivityMixChart mix={data.executive.activityMix} rangeDescription={rangeDescription} />
+              <ActivitiesLine
+                data={data.activitiesLast7Days}
+                ownerId={ownerIdQ || null}
+                rangeDescription={rangeDescription}
+              />
+            </>
+          )}
+        </div>
+      ) : null}
 
-      <div className="mb-6 grid gap-4 lg:grid-cols-2">
-        {loading || !data ? (
-          <ChartCardSkeleton title="Open deals by stage" height={260} />
-        ) : (
-          <OppsByStageBar data={data.opportunitiesByStage} drill={drillCtx} />
-        )}
-        {data?.teamDashboard ? (
-          <TeamPerformanceBlock team={data.teamDashboard} rangeLabel={rangeDescription} />
-        ) : (
-          <div className="crm-card flex items-center justify-center p-8 text-sm text-crm-muted">
-            Team metrics appear for managers with direct reports.
-          </div>
-        )}
-      </div>
+      {showOppsChart ? (
+        <div className="mb-6 grid gap-4 lg:grid-cols-2">
+          {loading || !data ? (
+            <ChartCardSkeleton title="Open deals by stage" height={260} />
+          ) : (
+            <OppsByStageBar data={data.opportunitiesByStage} drill={drillCtx} />
+          )}
+          {isSales && data?.teamDashboard ? (
+            <TeamPerformanceBlock team={data.teamDashboard} rangeLabel={rangeDescription} />
+          ) : isSales ? (
+            <div className="crm-card flex items-center justify-center p-8 text-sm text-crm-muted">
+              Team metrics appear for managers with direct reports.
+            </div>
+          ) : null}
+        </div>
+      ) : null}
 
       <PinnedReportsBand />
     </div>

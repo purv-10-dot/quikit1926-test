@@ -806,18 +806,15 @@ export function LeadForm({
       }
       if (initial?.id) {
         toast.success("Lead updated");
-      } else {
-        toast.rich(
-          "Lead Created Successfully",
-          "The lead has been added and is now available in your pipeline.",
-        );
       }
       if (draftScope) discardLeadFormDraft(draftScope);
       if (onSaved) {
         onSaved({ id: json.id ?? initial?.id });
       } else {
-        router.push(`/leads/${json.id ?? initial?.id}`);
-        router.refresh();
+        const destination = initial?.id
+          ? `/leads/${initial.id}`
+          : `/leads/${json.id}?created=1`;
+        router.push(destination);
       }
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Save failed");

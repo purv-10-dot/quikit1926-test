@@ -36,6 +36,11 @@ function mapRole(membershipRole: string | undefined): string {
   ) {
     return "Administrator";
   }
+  // TeamManager sits above SalesManager in the hierarchy:
+  //   Administrator > TeamManager > SalesManager > SalesUser
+  // Maps from platform-level role strings that represent regional/team directors.
+  if (r === "team_manager" || r === "teammanager" || r === "team manager" || r === "regional_director")
+    return "TeamManager";
   if (r === "manager" || r === "sales_manager" || r === "salesmanager") return "SalesManager";
   if (r === "marketing" || r === "marketing_user" || r === "marketinguser") return "MarketingUser";
   if (r === "finance" || r === "finance_user" || r === "financeuser") return "FinanceUser";

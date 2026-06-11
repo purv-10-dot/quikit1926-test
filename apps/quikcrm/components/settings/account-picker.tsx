@@ -29,12 +29,16 @@ export function AccountPicker({
   useEffect(() => {
     let cancel = false;
     setLoading(true);
-    const url = debounced ? `/api/accounts?q=${encodeURIComponent(debounced)}` : "/api/accounts";
+    const url = debounced
+      ? `/api/accounts/picker?q=${encodeURIComponent(debounced)}`
+      : "/api/accounts/picker";
     fetch(url, { credentials: "include" })
       .then((r) => r.json())
       .then((j) => {
         if (cancel) return;
-        const items: AccountOption[] = Array.isArray(j?.items) ? j.items.map((a: { id: string; name: string }) => ({ id: a.id, name: a.name })) : [];
+        const items: AccountOption[] = Array.isArray(j?.data?.items)
+          ? j.data.items.map((a: { id: string; name: string }) => ({ id: a.id, name: a.name }))
+          : [];
         setOptions(items);
         // remember names for currently-selected ids that aren't in this page's options
         setSelectedNames((prev) => {

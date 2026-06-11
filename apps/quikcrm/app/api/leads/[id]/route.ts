@@ -11,6 +11,7 @@ import { recordLeadChange } from "@/lib/services/leads/change-log";
 import { listLeadFields } from "@/lib/services/fields/repo";
 import { validateDynamicFields } from "@/lib/services/fields/validate";
 import { updateCrmLead } from "@/lib/services/leads/create-record";
+import { assertCanAssignLeadTo } from "@/lib/services/leads/lead-assignment";
 import {
   shouldUseAutoLeadScore,
   syncLeadScoreAfterChange,
@@ -65,6 +66,16 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
     }
     const data = await filterRestrictedLeadFields(user, parsed.data);
     if (data.accountId) await assertAccountAccess(user, data.accountId);
+
+    // Validate owner reassignment when ownerId is explicitly included and is
+    // being changed to a different, non-null user.
+    if (
+      data.ownerId !== undefined &&
+      data.ownerId !== null &&
+      data.ownerId !== existing.ownerId
+    ) {
+      await assertCanAssignLeadTo(user, data.ownerId);
+    }
 
     // Merge dynamicFields: existing values + incoming patch (incoming wins). Validate against defs.
     let mergedDyn: Record<string, unknown> | undefined;

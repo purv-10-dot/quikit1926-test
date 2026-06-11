@@ -11,8 +11,12 @@ export async function GET() {
   try {
     const user = await requireApiUser();
     if (isResponse(user)) return user;
-    await requirePermission(user, "settings", "view");
-    const items = await listTeams(user.orgId);
+    // Admins see all teams; non-admins see only teams they manage or belong to.
+    // Do NOT gate on requirePermission("settings","view") — that silently returns
+    // an empty list for TeamManagers/SalesManagers who have no "settings" permission
+    // but legitimately need to view their own teams.
+    const isAdmin = user.role === "Administrator";
+    const items = await listTeams(user.orgId, isAdmin ? undefined : user.userId);
     return NextResponse.json({ items });
   } catch (e) {
     if (e instanceof SettingsConflictError) return NextResponse.json({ error: e.message }, { status: e.statusCode });

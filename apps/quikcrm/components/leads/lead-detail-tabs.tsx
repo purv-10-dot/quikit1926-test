@@ -55,6 +55,25 @@ interface LeadInput {
   accountId?: string | null;
   account?: { id: string; name: string } | null;
   dynamicFields?: Record<string, unknown> | null;
+  // Contact information
+  firstName?: string | null;
+  lastName?: string | null;
+  secondaryEmail?: string | null;
+  contactLinkedinUrl?: string | null;
+  // Company information
+  industry?: string | null;
+  website?: string | null;
+  linkedinUrl?: string | null;
+  annualRevenueDisplay?: string | null;
+  leadType?: string | null;
+  // Address
+  addressLine1?: string | null;
+  addressLine2?: string | null;
+  cityName?: string | null;
+  stateName?: string | null;
+  postalCode?: string | null;
+  lat?: number | null;
+  long?: number | null;
 }
 
 interface Props {

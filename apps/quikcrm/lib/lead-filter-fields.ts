@@ -36,6 +36,7 @@ export const LEAD_FILTER_FIELDS: FilterFieldDef[] = [
   { field: "stage", label: "Stage", type: "select", options: STAGE_OPTIONS },
   { field: "status", label: "Status", type: "select", options: STATUS_OPTIONS },
   { field: "score", label: "Score", type: "number" },
+  { field: "ownerId", label: "Owner ID", type: "text" },
   { field: "ownerName", label: "Owner", type: "text" },
   { field: "country", label: "Country", type: "text" },
   { field: "addressLine1", label: "Street address", type: "text" },
