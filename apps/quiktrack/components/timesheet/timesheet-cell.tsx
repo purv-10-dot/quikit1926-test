@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { isToday, isWeekend, parseDurationToHours } from "@/lib/utils/timesheetPeriod";
+import { formatHours, isToday, isWeekend, parseDurationToHours } from "@/lib/utils/timesheetPeriod";
 
 interface CellData { hours: number; entryIds: string[] }
 interface Props {
@@ -12,9 +12,9 @@ interface Props {
   onOpenLog?: (anchor?: { top: number; left: number; width: number; height: number }) => void;
 }
 
-function formatDecimal(h: number): string {
+function formatCell(h: number): string {
   if (!Number.isFinite(h) || h <= 0) return "";
-  return h.toFixed(2).replace(/\.?0+$/, "");
+  return formatHours(h);
 }
 
 export function TimesheetCell({ cell, editable, date, onChanged, onOpenLog }: Props) {
@@ -61,7 +61,7 @@ export function TimesheetCell({ cell, editable, date, onChanged, onOpenLog }: Pr
           weekend ? "bg-gray-50/60" : ""
         } ${today ? "bg-rose-50/40" : ""} ${onOpenLog ? "cursor-pointer hover:bg-blue-50" : ""}`}
       >
-        {cell ? formatDecimal(cell.hours) : ""}
+        {cell ? formatCell(cell.hours) : ""}
       </td>
     );
   }
@@ -80,7 +80,7 @@ export function TimesheetCell({ cell, editable, date, onChanged, onOpenLog }: Pr
           onOpenLog(rectFrom(e));
           return;
         }
-        setDraft(cell ? formatDecimal(cell.hours) : "");
+        setDraft(cell ? formatCell(cell.hours) : "");
         setEditing(true);
       }}
       className={`px-1.5 py-1.5 text-center cursor-text hover:bg-blue-50 border-l border-gray-100 ${
@@ -101,7 +101,7 @@ export function TimesheetCell({ cell, editable, date, onChanged, onOpenLog }: Pr
           className="w-full max-w-[44px] mx-auto h-6 px-1 text-[11px] text-center border border-blue-500 rounded focus:outline-none"
         />
       ) : cell ? (
-        <span className="text-gray-900">{formatDecimal(cell.hours)}</span>
+        <span className="text-gray-900">{formatCell(cell.hours)}</span>
       ) : (
         <span className="text-gray-300"></span>
       )}

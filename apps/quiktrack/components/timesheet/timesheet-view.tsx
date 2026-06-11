@@ -1,6 +1,6 @@
 "use client";
 
-import { type ReactNode, useCallback, useEffect, useMemo, useState } from "react";
+import { type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useSession } from "next-auth/react";
 import {
   ChevronLeft,
@@ -67,10 +67,17 @@ const GROUP_BY_LABEL: Record<GroupBy, string> = {
   "user-issue": "User → Work item",
 };
 
+// Raw decimal — used by CSV/XLS/PDF exports so spreadsheet formulas can still sum.
 function formatDecimal(hours: number): string {
   if (!Number.isFinite(hours) || hours <= 0) return "";
   const fixed = hours.toFixed(2);
   return fixed.replace(/\.?0+$/, "");
+}
+
+// On-screen display — "Xh Ym", matching the header total. Empty when zero.
+function formatDisplay(hours: number): string {
+  if (!Number.isFinite(hours) || hours <= 0) return "";
+  return formatHours(hours);
 }
 
 function formatDayHeader(d: Date): string {
@@ -222,9 +229,26 @@ export function TimesheetView({
     return s;
   }, [grid, totalsByRow, groupBy]);
 
-  const capacity = useMemo(
+  // Per-person capacity for the period = working days × 8h.
+  const perPersonCapacity = useMemo(
     () => range.days.filter((d) => !isWeekend(d)).length * 8,
     [range.days],
+  );
+
+  // Distinct users represented in the current grid, so the capacity bar reflects
+  // the whole team rather than a single person. In issue/project grouping there
+  // are no per-user rows, so fall back to the active user filter (or org headcount).
+  const userCount = useMemo(() => {
+    if (!grid) return 0;
+    if (groupBy === "user") return grid.rows.length;
+    if (groupBy === "user-issue") return grid.rows.filter((r) => !r.parentId).length;
+    if (userFilter.length > 0) return userFilter.length;
+    return userOptions.length;
+  }, [grid, groupBy, userFilter, userOptions]);
+
+  const capacity = useMemo(
+    () => perPersonCapacity * Math.max(userCount, 1),
+    [perPersonCapacity, userCount],
   );
 
   const openLogFor = useCallback(
@@ -413,7 +437,7 @@ export function TimesheetView({
               <ChevronRight className="h-4 w-4" />
             </button>
           </div>
-          <GroupByPills value={groupBy} onChange={setGroupBy} />
+          <GroupByDropdown value={groupBy} onChange={setGroupBy} />
           <span className="h-6 w-px bg-gray-200" aria-hidden />
           <MultiSelectFilter
             icon={<Filter className="h-3.5 w-3.5 text-gray-500" />}
@@ -547,6 +571,9 @@ export function TimesheetView({
                   row.parentId === currentUserId);
               const issueClickable =
                 groupBy === "issue" || (groupBy === "user-issue" && isChild);
+              // Parent (aggregate) user rows in the hierarchical view are just
+              // collapsible headers — their cells shouldn't open the log modal.
+              const aggregateRow = groupBy === "user-issue" && isParent;
               const issueLabel = row.secondary
                 ? `${row.secondary} · ${row.label}`
                 : row.label;
@@ -590,7 +617,7 @@ export function TimesheetView({
                     </td>
                   )}
                   <td className="px-3 py-1.5 text-right font-semibold text-gray-900 sticky bg-white z-10">
-                    {formatDecimal(totalsByRow[row.id] ?? 0)}
+                    {formatDisplay(totalsByRow[row.id] ?? 0)}
                   </td>
                   {range.days.map((d) => {
                     const k = dateKey(d);
@@ -623,7 +650,7 @@ export function TimesheetView({
                         editable={editable}
                         date={d}
                         onChanged={refresh}
-                        onOpenLog={onOpenLog}
+                        onOpenLog={aggregateRow ? undefined : onOpenLog}
                       />
                     );
                   })}
@@ -639,7 +666,7 @@ export function TimesheetView({
                   Total
                 </td>
                 <td className="px-3 py-2 text-right font-bold text-gray-900 sticky bg-gray-50 z-10">
-                  {formatDecimal(grandTotal)}
+                  {formatDisplay(grandTotal)}
                 </td>
                 {range.days.map((d) => (
                   <td
@@ -648,7 +675,7 @@ export function TimesheetView({
                       isToday(d) ? "bg-rose-50 text-rose-700" : "text-gray-800"
                     } ${isWeekend(d) ? "bg-gray-100/60 text-gray-500" : ""}`}
                   >
-                    {formatDecimal(totalsByDate[dateKey(d)] ?? 0)}
+                    {formatDisplay(totalsByDate[dateKey(d)] ?? 0)}
                   </td>
                 ))}
               </tr>
@@ -848,66 +875,111 @@ function MultiSelectFilter({
   );
 }
 
-function GroupByPills({
+// Grouping dimensions offered in the dropdown. User + Work Item combine into a
+// two-level hierarchy; Project is single-dimension (the grid can't nest it).
+const GROUP_DIMENSIONS: { key: "user" | "issue" | "project"; label: string }[] = [
+  { key: "user", label: "User" },
+  { key: "issue", label: "Work Item" },
+  { key: "project", label: "Project" },
+];
+
+function groupByToKeys(value: GroupBy): Set<string> {
+  if (value === "user-issue") return new Set(["user", "issue"]);
+  return new Set([value]);
+}
+
+function keysToGroupBy(keys: Set<string>): GroupBy {
+  if (keys.has("project")) return "project";
+  if (keys.has("user") && keys.has("issue")) return "user-issue";
+  if (keys.has("issue")) return "issue";
+  return "user";
+}
+
+function GroupByDropdown({
   value,
   onChange,
 }: {
   value: GroupBy;
   onChange: (g: GroupBy) => void;
 }) {
-  // Two pills act as the two levels of grouping; tapping pill 1 swaps to
-  // single-level mode and pill 2 toggles into hierarchical user→issue.
-  const primary: "user" | "project" | "issue" =
-    value === "user-issue" ? "user" : (value as "user" | "project" | "issue");
-  const isHierarchical = value === "user-issue";
+  const [open, setOpen] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+  const selected = groupByToKeys(value);
 
-  const [open1, setOpen1] = useState(false);
+  useEffect(() => {
+    if (!open) return;
+    const onDoc = (e: MouseEvent) => {
+      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
+    };
+    document.addEventListener("mousedown", onDoc);
+    return () => document.removeEventListener("mousedown", onDoc);
+  }, [open]);
+
+  function toggle(key: "user" | "issue" | "project") {
+    const next = new Set(selected);
+    if (key === "project") {
+      // Project is exclusive — selecting it clears the others.
+      if (next.has("project")) return; // keep at least one dimension
+      next.clear();
+      next.add("project");
+    } else {
+      next.delete("project");
+      if (next.has(key)) {
+        if (next.size === 1) return; // don't allow an empty grouping
+        next.delete(key);
+      } else {
+        next.add(key);
+      }
+    }
+    onChange(keysToGroupBy(next));
+  }
 
   return (
-    <div className="flex items-center gap-2">
+    <div ref={ref} className="flex items-center gap-2">
       <span className="text-xs text-gray-500">Group By</span>
       <div className="relative">
         <button
           type="button"
-          onClick={() => setOpen1((v) => !v)}
-          className="inline-flex items-center gap-1 h-9 px-3 text-xs font-medium text-gray-700 border border-gray-300 rounded hover:bg-gray-50"
+          onClick={() => setOpen((v) => !v)}
+          className={`inline-flex items-center gap-1.5 h-9 px-3 text-xs font-medium border rounded ${
+            open
+              ? "border-blue-500 text-gray-800"
+              : "border-gray-300 text-gray-700 hover:bg-gray-50"
+          }`}
         >
-          <span className="text-gray-400">1.</span> {primary === "user" ? "User" : primary === "project" ? "Project" : "Work Item"}
+          {GROUP_BY_LABEL[value]}
           <ChevronDown className="h-3 w-3 text-gray-500" />
         </button>
-        {open1 && (
-          <div className="absolute left-0 top-full mt-1 w-36 bg-white border border-gray-200 rounded-md shadow-lg z-30 py-1">
-            {(["user", "issue"] as const).map((g) => (
-              <button
-                key={g}
-                type="button"
-                onClick={() => {
-                  onChange(g === "user" && isHierarchical ? "user-issue" : g);
-                  setOpen1(false);
-                }}
-                className={`w-full px-3 py-1.5 text-xs text-left hover:bg-gray-50 ${
-                  g === primary ? "text-blue-700 bg-blue-50 font-medium" : "text-gray-700"
-                }`}
-              >
-                {g === "user" ? "User" : "Work Item"}
-              </button>
-            ))}
+        {open && (
+          <div className="absolute left-0 top-full mt-1 w-48 bg-white border border-gray-200 rounded-md shadow-lg z-30 py-1">
+            {GROUP_DIMENSIONS.map((d) => {
+              const checked = selected.has(d.key);
+              return (
+                <button
+                  key={d.key}
+                  type="button"
+                  onClick={() => toggle(d.key)}
+                  className="w-full flex items-center gap-2 px-3 py-1.5 text-xs text-left hover:bg-gray-50"
+                >
+                  <span
+                    className={`inline-flex items-center justify-center h-3.5 w-3.5 rounded border ${
+                      checked ? "bg-blue-600 border-blue-600" : "border-gray-300"
+                    }`}
+                  >
+                    {checked && <CheckSquare className="h-3 w-3 text-white" />}
+                  </span>
+                  <span className={checked ? "text-gray-900 font-medium" : "text-gray-700"}>
+                    {d.label}
+                  </span>
+                </button>
+              );
+            })}
+            <div className="border-t border-gray-100 mt-1 pt-1 px-3 py-1.5 text-[10px] text-gray-400 leading-snug">
+              Combine User + Work Item for a hierarchy. Project groups on its own.
+            </div>
           </div>
         )}
       </div>
-      <button
-        type="button"
-        onClick={() =>
-          onChange(isHierarchical ? primary : primary === "user" ? "user-issue" : "user-issue")
-        }
-        className={`inline-flex items-center gap-1 h-9 px-3 text-xs font-medium border rounded ${
-          isHierarchical
-            ? "border-blue-300 bg-blue-50 text-blue-700"
-            : "border-gray-300 text-gray-700 hover:bg-gray-50"
-        }`}
-      >
-        <span className="text-gray-400">2.</span> Work Item
-      </button>
     </div>
   );
 }
@@ -920,7 +992,7 @@ function PeriodSwitcher({
   onChange: (p: Period) => void;
 }) {
   const [open, setOpen] = useState(false);
-  const LABEL: Record<Period, string> = { week: "Week", month: "Days", quarter: "Quarter" };
+  const LABEL: Record<Period, string> = { week: "Week", month: "Month", quarter: "Quarter" };
   return (
     <div className="relative">
       <button

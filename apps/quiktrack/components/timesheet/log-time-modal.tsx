@@ -1,9 +1,10 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { X, ChevronDown } from "lucide-react";
+import { X } from "lucide-react";
 import { parseDurationToHours, formatHours } from "@/lib/utils/timesheetPeriod";
 import { WorkItemPicker } from "./work-item-picker";
+import { ProjectPicker } from "./project-picker";
 
 interface ProjectOption {
   id: string;
@@ -163,26 +164,20 @@ export function LogTimeModal({
         <div className="space-y-3">
           {!lockedProjectId && (
             <Field label="Project">
-              <Select
+              <ProjectPicker
+                projects={projects}
                 value={projectId}
                 onChange={(v) => {
                   setProjectId(v);
                   setIssueId("");
                 }}
-              >
-                <option value="">— Pick a project —</option>
-                {projects.map((p) => (
-                  <option key={p.id} value={p.id}>
-                    {p.name}
-                  </option>
-                ))}
-              </Select>
+              />
             </Field>
           )}
 
           <Field label="Work item">
             {lockedIssueId ? (
-              <div className="w-full h-9 px-3 inline-flex items-center text-sm text-gray-800 border border-gray-200 rounded bg-gray-50">
+              <div className="w-full min-h-9 px-3 py-2 flex items-start text-sm leading-snug text-gray-800 border border-gray-200 rounded bg-gray-50 break-words">
                 {lockedIssueLabel ?? lockedIssueId}
               </div>
             ) : (
@@ -264,32 +259,6 @@ function Field({ label, children }: { label: string; children: React.ReactNode }
       <span className="text-xs font-semibold text-gray-700 block mb-1">{label}</span>
       {children}
     </label>
-  );
-}
-
-function Select({
-  value,
-  onChange,
-  disabled,
-  children,
-}: {
-  value: string;
-  onChange: (v: string) => void;
-  disabled?: boolean;
-  children: React.ReactNode;
-}) {
-  return (
-    <div className="relative">
-      <select
-        value={value}
-        onChange={(e) => onChange(e.target.value)}
-        disabled={disabled}
-        className="w-full h-9 pl-3 pr-8 text-sm border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 appearance-none bg-white disabled:bg-gray-50 disabled:text-gray-400"
-      >
-        {children}
-      </select>
-      <ChevronDown className="absolute right-2 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-gray-500 pointer-events-none" />
-    </div>
   );
 }
 
