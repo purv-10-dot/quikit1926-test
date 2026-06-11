@@ -210,6 +210,7 @@ const TABS: { id: TabId; label: string; icon: React.ReactNode }[] = [
 
 function ProfileTab({ user, onSaved }: { user: UserProfile; onSaved: (u: UserProfile) => void }) {
   const [name, setName] = useState(user.name ?? "");
+  const [timezone, setTimezone] = useState(user.timezone ?? "UTC");
   const [bg, setBg] = useState(user.backgroundImage ?? DEFAULT_BG);
   const [avatarPreview, setAvatarPreview] = useState<string | null>(user.avatar ?? null);
   const [avatarFile, setAvatarFile] = useState<File | null>(null);
@@ -245,7 +246,7 @@ function ProfileTab({ user, onSaved }: { user: UserProfile; onSaved: (u: UserPro
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         credentials: "include",
-        body: JSON.stringify({ name, backgroundImage: bg, avatar: avatarUrl }),
+        body: JSON.stringify({ name, timezone, backgroundImage: bg, avatar: avatarUrl }),
       });
       const d2 = unwrap(await r2.json());
       if (!r2.ok) { setError(d2.error ?? "Save failed"); return; }
@@ -338,6 +339,25 @@ function ProfileTab({ user, onSaved }: { user: UserProfile; onSaved: (u: UserPro
             />
             <p style={{ color: "rgba(255,255,255,0.35)", fontSize: 11, marginTop: 5 }}>
               Email cannot be changed. Contact support if needed.
+            </p>
+          </div>
+          <div>
+            <label style={labelStyle}>Timezone</label>
+            <div style={{ position: "relative" }}>
+              <select
+                value={timezone}
+                onChange={(e) => setTimezone(e.target.value)}
+                style={{ ...inputStyle, paddingRight: 36, appearance: "none" }}
+              >
+                {SUPPORTED_TIMEZONES.map((tz) => (
+                  <option key={tz.value} value={tz.value} style={{ background: "#1a2a1a" }}>
+                    {tz.label}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <p style={{ color: "rgba(255,255,255,0.35)", fontSize: 11, marginTop: 5 }}>
+              Scheduled-post times you pick are saved and shown in this timezone.
             </p>
           </div>
         </div>
