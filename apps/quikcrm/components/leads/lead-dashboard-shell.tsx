@@ -1,8 +1,8 @@
 "use client";
 
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { ChevronLeft, Pencil, Command } from "lucide-react";
 import { LeadsTabBar } from "@/components/leads/leads-tab-bar";
 import { LeadSummaryCard } from "@/components/leads/lead-summary-card";
@@ -128,8 +128,22 @@ export function LeadDashboardShell(props: LeadDashboardShellProps) {
   } = props;
 
   const router = useRouter();
+  const searchParams = useSearchParams();
   const toast = useToast();
   const [lead, setLead] = useState(initialLead);
+
+  useEffect(() => {
+    if (searchParams.get("created") === "1") {
+      toast.rich(
+        "Lead Created Successfully",
+        "The lead has been added and is now available in your pipeline.",
+      );
+      const url = new URL(window.location.href);
+      url.searchParams.delete("created");
+      router.replace(url.pathname + url.search, { scroll: false });
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
   const [activeTab, setActiveTab] = useState<TabKey>("overview");
   const [editOpen, setEditOpen] = useState(false);
   const [cmdOpen, setCmdOpen] = useState(false);
@@ -492,6 +506,21 @@ export function LeadDashboardShell(props: LeadDashboardShellProps) {
               accountId: lead.accountId,
               account: lead.account,
               dynamicFields: lead.dynamicFields ?? null,
+              firstName: lead.firstName,
+              lastName: lead.lastName,
+              secondaryEmail: lead.secondaryEmail,
+              contactLinkedinUrl: lead.contactLinkedinUrl,
+              industry: lead.industry,
+              website: lead.website,
+              linkedinUrl: lead.linkedinUrl,
+              annualRevenueDisplay: lead.annualRevenueDisplay,
+              addressLine1: lead.addressLine1,
+              addressLine2: lead.addressLine2,
+              cityName: lead.cityName,
+              stateName: lead.stateName,
+              postalCode: lead.postalCode,
+              lat: lead.lat,
+              long: lead.long,
             }}
             activeTab={activeTab}
             onTabChange={setActiveTab}

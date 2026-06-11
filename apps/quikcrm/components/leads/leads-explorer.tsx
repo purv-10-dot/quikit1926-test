@@ -466,8 +466,8 @@ export function LeadsExplorer() {
     let f = filter;
     f = withQuickFilter(f, LEAD_QUICK_SEARCH_FIELD, debouncedSearch, "contains");
     f = withQuickFilter(f, "stage", stage, "eq");
-    if (mineOnly && user?.firstName) {
-      f = withQuickFilter(f, "ownerName", `${user.firstName} ${user.lastName}`.trim(), "eq");
+    if (mineOnly && user?.id) {
+      f = withQuickFilter(f, "ownerId", user.id, "eq");
     } else {
       f = withQuickFilter(f, "ownerName", ownerId, "eq");
     }

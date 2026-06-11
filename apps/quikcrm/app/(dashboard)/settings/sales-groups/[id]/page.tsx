@@ -1,6 +1,6 @@
 "use client";
 
-import { use, useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import { ChevronLeft, X, UserPlus, Building2 } from "lucide-react";
 import { Card, CardBody, CardHeader, CardTitle } from "@/components/ui/card";
@@ -24,8 +24,8 @@ interface UserRow {
   email: string;
 }
 
-export default function SalesGroupDetailPage({ params }: { params: Promise<{ id: string }> }) {
-  const { id } = use(params);
+export default function SalesGroupDetailPage({ params }: { params: { id: string } }) {
+  const { id } = params;
   const toast = useToast();
   const [group, setGroup] = useState<GroupDetail | null>(null);
   const [users, setUsers] = useState<UserRow[]>([]);

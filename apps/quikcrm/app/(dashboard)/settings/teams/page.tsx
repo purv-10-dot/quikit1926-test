@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
+import Link from "next/link";
 import { Plus, Trash2, Pencil } from "lucide-react";
 import { Card, CardBody } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -14,6 +15,7 @@ interface Team {
   id: string;
   name: string;
   managerId: string | null;
+  _count: { managers: number; members: number; groups: number };
 }
 
 interface UserOption {
@@ -43,11 +45,10 @@ export default function TeamsPage() {
       setLoading(false);
     }
   }, []);
+
   useEffect(() => {
     refresh();
   }, [refresh]);
-
-  const userById = new Map(users.map((u) => [u.id, `${u.firstName} ${u.lastName}`]));
 
   async function deleteTeam(t: Team) {
     if (!confirm(`Delete team "${t.name}"?`)) return;
@@ -66,12 +67,15 @@ export default function TeamsPage() {
       <div className="mb-4 flex items-center justify-between">
         <div>
           <h1 className="text-xl font-semibold text-crm-text">Teams</h1>
-          <p className="text-sm text-crm-muted">{items.length} team(s)</p>
+          <p className="text-sm text-crm-muted">
+            {items.length} team{items.length !== 1 ? "s" : ""} — click a team to manage members and groups
+          </p>
         </div>
         <Button onClick={() => setCreating(true)}>
           <Plus size={14} /> New team
         </Button>
       </div>
+
       <Card>
         <CardBody className="p-0">
           {loading ? (
@@ -81,22 +85,30 @@ export default function TeamsPage() {
               <THead>
                 <TR>
                   <TH>Name</TH>
-                  <TH>Manager</TH>
+                  <TH className="text-right">Managers</TH>
+                  <TH className="text-right">Members</TH>
+                  <TH className="text-right">Groups</TH>
                   <TH className="text-right">Actions</TH>
                 </TR>
               </THead>
               <TBody>
                 {items.length === 0 ? (
                   <TR>
-                    <TD colSpan={3} className="py-8 text-center text-crm-muted">
-                      No teams yet.
+                    <TD colSpan={5} className="py-8 text-center text-crm-muted">
+                      No teams yet. Create one to get started.
                     </TD>
                   </TR>
                 ) : (
                   items.map((t) => (
                     <TR key={t.id}>
-                      <TD className="font-medium">{t.name}</TD>
-                      <TD>{t.managerId ? userById.get(t.managerId) || t.managerId : "—"}</TD>
+                      <TD className="font-medium">
+                        <Link href={`/settings/teams/${t.id}`} className="crm-link">
+                          {t.name}
+                        </Link>
+                      </TD>
+                      <TD className="text-right">{t._count?.managers ?? 0}</TD>
+                      <TD className="text-right">{t._count?.members ?? 0}</TD>
+                      <TD className="text-right">{t._count?.groups ?? 0}</TD>
                       <TD className="text-right">
                         <button
                           onClick={() => setEditing(t)}
@@ -195,7 +207,7 @@ function TeamEditorModal({
           <Input value={name} onChange={(e) => setName(e.target.value)} autoFocus />
         </label>
         <label className="block">
-          <span className="mb-1 block font-medium">Manager</span>
+          <span className="mb-1 block font-medium">Primary Manager</span>
           <Select value={managerId} onChange={(e) => setManagerId(e.target.value)}>
             <option value="">— Unassigned —</option>
             {users.map((u) => (

@@ -30,6 +30,7 @@ import {
   inferLeadCreationChannel,
   isLeadCreationChannel,
 } from "@/lib/services/leads/log-lead-system-activities";
+import { assertCanAssignLeadTo } from "@/lib/services/leads/lead-assignment";
 import {
   LEAD_CSV_SELECT,
   leadCsvColumns,
@@ -147,6 +148,12 @@ export async function POST(req: NextRequest) {
     const data = await filterRestrictedLeadFields(user, parsed.data);
     if (data.accountId) await assertAccountAccess(user, data.accountId);
 
+    // Validate owner assignment: only assign when caller explicitly sets a
+    // different owner — self-assign is always permitted and already the default.
+    if (data.ownerId != null && data.ownerId !== user.userId) {
+      await assertCanAssignLeadTo(user, data.ownerId);
+    }
+
     // Duplicate-identity check (email + mobile/phone). Mirrors legacy Mongo unique constraints.
     const dup = await findDuplicateLead({
       orgId: user.orgId,
@@ -205,7 +212,13 @@ export async function POST(req: NextRequest) {
     // (no Prisma `owner`/`account` relation declared on CrmLead — cross-schema
     // FK to public.User isn't wired). Use the Unchecked input form which
     // accepts the scalar columns directly.
-    const { ownerId, accountId, originChannel: _stripOriginChannel, ...rest } = data;
+    const { ownerId: rawOwnerId, ownerName: rawOwnerName, accountId, originChannel: _stripOriginChannel, ...rest } = data;
+    // All roles default to self when no owner is supplied on CREATE.
+    // The ownership-validation guard that prevents SalesUsers from clearing
+    // ownership operates on PATCH, not here — on creation, every role should
+    // always produce an owned lead rather than an ownerless one.
+    const effectiveOwnerId = rawOwnerId ?? user.userId;
+    const effectiveOwnerName = rawOwnerId == null ? (user.name ?? rawOwnerName) : rawOwnerName;
     // filterRestrictedLeadFields returns Partial<T> so rest is "all optional"
     // structurally; cast through to the Unchecked input shape since Zod has
     // already validated the required fields on parsed.data.
@@ -219,7 +232,8 @@ export async function POST(req: NextRequest) {
       dynamicFields:
         Object.keys(dyn).length > 0 ? (dyn as Prisma.InputJsonValue) : undefined,
       orgId: user.orgId,
-      ...(ownerId ? { ownerId } : {}),
+      ...(effectiveOwnerId != null ? { ownerId: effectiveOwnerId } : {}),
+      ...(effectiveOwnerName !== undefined ? { ownerName: effectiveOwnerName } : {}),
       ...(accountId ? { accountId } : {}),
       ...(!useAutoScore && parsed.data.score !== undefined ? { score: parsed.data.score } : {}),
     } as Prisma.CrmLeadUncheckedCreateInput;

@@ -110,7 +110,7 @@ async function fetchUserView(
     email: m.user.email,
     phone: null,
     role: m.role,
-    status: m.status,
+    status: m.status === "active" ? "Active" : "Inactive",
     emailSignature: null,
     createdAt: m.createdAt,
     updatedAt: m.updatedAt,
@@ -132,20 +132,36 @@ export async function listUsers(opts: {
   page: number;
   pageSize: number;
 }) {
-  // Build a Membership where filter; join the User for free-text search.
+  // Resolve QuikCRM app ID first — used for both the visibility filter and
+  // the downstream role lookup. Calling it here avoids a second round-trip later.
+  const appId = await getQuikCrmAppId();
+
+  // Build OrgMember where clause.
   const where: Record<string, unknown> = { orgId: opts.orgId };
   if (opts.status) {
     where.status = opts.status.toLowerCase() === "active" ? "active" : "inactive";
   }
   if (opts.role) where.role = opts.role;
+
+  // Build the nested user condition.
+  // • appId known  → restrict to users who have been granted QuikCRM app access
+  //   (UserAppAccess row with appId + orgId). This is what separates CRM users
+  //   from users of other apps (QuikScale, admin, etc.) in the same org.
+  // • q provided   → free-text match across email / firstName / lastName.
+  // Both conditions are AND-ed implicitly by Prisma when combined in one object.
+  const userWhere: Record<string, unknown> = {};
+  if (appId) {
+    userWhere.appAccess = { some: { appId, orgId: opts.orgId } };
+  }
   if (opts.q) {
-    where.user = {
-      OR: [
-        { email: { contains: opts.q, mode: "insensitive" } },
-        { firstName: { contains: opts.q, mode: "insensitive" } },
-        { lastName: { contains: opts.q, mode: "insensitive" } },
-      ],
-    };
+    userWhere.OR = [
+      { email: { contains: opts.q, mode: "insensitive" } },
+      { firstName: { contains: opts.q, mode: "insensitive" } },
+      { lastName: { contains: opts.q, mode: "insensitive" } },
+    ];
+  }
+  if (Object.keys(userWhere).length > 0) {
+    where.user = userWhere;
   }
 
   const [memberships, total] = await Promise.all([
@@ -162,7 +178,7 @@ export async function listUsers(opts: {
   ]);
 
   const userIds = memberships.map((m) => m.userId);
-  const appId = await getQuikCrmAppId();
+  // appId already resolved above — reused here, no extra DB call.
   const [tpl, roles, acl] = await Promise.all([
     prisma.crmUserPermissionTemplate.findMany({
       where: { userId: { in: userIds } },
@@ -206,7 +222,7 @@ export async function listUsers(opts: {
     email: m.user.email,
     phone: null,
     role: m.role,
-    status: m.status,
+    status: m.status === "active" ? "Active" : "Inactive",
     emailSignature: null,
     createdAt: m.createdAt,
     updatedAt: m.updatedAt,
@@ -476,7 +492,7 @@ export async function updateUser(opts: {
       if (patch.role && patch.role !== before.role && before.role === ADMIN_ROLE) {
         throw new SettingsConflictError("You cannot change your own Administrator role");
       }
-      if (patch.status && patch.status === "Inactive" && before.status === "active") {
+      if (patch.status && patch.status === "Inactive" && before.status === "Active") {
         throw new SettingsConflictError("You cannot disable your own account");
       }
     }
