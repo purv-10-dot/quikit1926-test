@@ -46,32 +46,31 @@ jobs:
           node << 'EOF'
           const { execSync } = require("child_process");
           const schemaPath = "packages/database/prisma/schema.prisma";
+          let output = "";
           try {
             console.log("Checking database migration status...");
-            const stdout = execSync("npx prisma migrate status --schema=" + schemaPath).toString();
-            console.log(stdout);
-            console.log("All migrations are healthy.");
+            output = execSync("npx prisma migrate status --schema=" + schemaPath).toString();
           } catch (error) {
-            const output = (error.stdout || "").toString() + (error.stderr || "").toString() + error.toString();
-            console.log("Migration status output:", output);
-            
-            const match = output.match(/The [`'"]?([0-9a-zA-Z_-]+)[`'"]? migration started at.*failed/i)
-                       || output.match(/migration ([0-9a-zA-Z_-]+) .*failed/i);
-                       
-            if (match && match[1]) {
-              const failedMigration = match[1];
-              console.log("Detected failed migration:", failedMigration);
-              console.log("Attempting to auto-resolve it as applied...");
-              try {
-                execSync("npx prisma migrate resolve --applied " + failedMigration + " --schema=" + schemaPath, { stdio: "inherit" });
-                console.log("Successfully resolved migration:", failedMigration);
-              } catch (resolveError) {
-                console.error("Failed to run resolve command:", resolveError.message);
-                process.exit(1);
-              }
-            } else {
-              console.log("No failed migrations identified to resolve.");
+            output = (error.stdout || "").toString() + (error.stderr || "").toString() + error.toString();
+          }
+          console.log("Migration status output:\n", output);
+          
+          const match = output.match(/The [`'"]?([0-9a-zA-Z_-]+)[`'"]? migration started at.*failed/i)
+                     || output.match(/migration ([0-9a-zA-Z_-]+) .*failed/i);
+                     
+          if (match && match[1]) {
+            const failedMigration = match[1];
+            console.log("Detected failed migration:", failedMigration);
+            console.log("Attempting to auto-resolve it as applied...");
+            try {
+              execSync("npx prisma migrate resolve --applied " + failedMigration + " --schema=" + schemaPath, { stdio: "inherit" });
+              console.log("Successfully resolved migration:", failedMigration);
+            } catch (resolveError) {
+              console.error("Failed to run resolve command:", resolveError.message);
+              process.exit(1);
             }
+          } else {
+            console.log("No failed migrations identified to resolve.");
           }
           EOF
         env:
