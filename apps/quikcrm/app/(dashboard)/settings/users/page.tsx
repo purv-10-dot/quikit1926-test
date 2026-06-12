@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Plus, Power, KeyRound, Trash2, Pencil, Check, UserPlus, X } from "lucide-react";
+import { Plus, Power, KeyRound, Trash2, Pencil, Check, UserPlus, X, Search } from "lucide-react";
 import Link from "next/link";
 import { Card, CardBody } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -27,6 +27,7 @@ const ROLES = ["Administrator", "SalesManager", "SalesUser", "MarketingUser", "F
 export default function UsersPage() {
   const toast = useToast();
   const [items, setItems] = useState<UserRow[]>([]);
+  const [search, setSearch] = useState("");
   const [loading, setLoading] = useState(true);
   const [createOpen, setCreateOpen] = useState(false);
   const [tempPasswordModal, setTempPasswordModal] = useState<{ user: UserRow; password: string } | null>(null);
@@ -80,6 +81,15 @@ export default function UsersPage() {
     setTempPasswordModal({ user: u, password: j.tempPassword });
   }
 
+  const q = search.trim().toLowerCase();
+  const filtered = q
+    ? items.filter(
+        (u) =>
+          `${u.firstName} ${u.lastName}`.toLowerCase().includes(q) ||
+          u.email.toLowerCase().includes(q),
+      )
+    : items;
+
   return (
     <div className="space-y-5">
       <div className="flex items-center justify-between">
@@ -92,8 +102,19 @@ export default function UsersPage() {
         </Button>
       </div>
 
-      <div className="rounded-lg border border-crm-border bg-slate-50/70 px-3 py-2 text-sm text-crm-muted">
-        {items.length} user(s)
+      <div className="flex items-center gap-3">
+        <div className="relative flex-1 max-w-sm">
+          <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-crm-muted pointer-events-none" />
+          <Input
+            placeholder="Search by name or email…"
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            className="pl-8"
+          />
+        </div>
+        <div className="rounded-lg border border-crm-border bg-slate-50/70 px-3 py-2 text-sm text-crm-muted whitespace-nowrap">
+          {q ? `${filtered.length} of ${items.length}` : items.length} user(s)
+        </div>
       </div>
 
       <Card>
@@ -113,7 +134,13 @@ export default function UsersPage() {
                 </TR>
               </THead>
               <TBody>
-                {items.map((u) => (
+                {filtered.length === 0 ? (
+                  <TR>
+                    <TD colSpan={6} className="py-8 text-center text-sm text-crm-muted">
+                      No users match &ldquo;{search}&rdquo;
+                    </TD>
+                  </TR>
+                ) : filtered.map((u) => (
                   <TR key={u.id}>
                     <TD className="font-medium">
                       <Link href={`/settings/users/${u.id}`} className="crm-link">
@@ -343,137 +370,192 @@ function CreateUserModal({
     }
   }
 
+  // Escape key + body scroll lock while drawer is open
+  useEffect(() => {
+    if (!open) return;
+    const prev = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") { resetForm(); onClose(); }
+    };
+    document.addEventListener("keydown", onKey);
+    return () => {
+      document.body.style.overflow = prev;
+      document.removeEventListener("keydown", onKey);
+    };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open]);
+
+  const handleClose = () => { resetForm(); onClose(); };
   const isSelectionLocked = mode === "grant" || mode === "duplicate";
 
   return (
-    <Modal open={open} onClose={() => { resetForm(); onClose(); }} title="New user">
-      <div className="grid grid-cols-2 gap-3 text-sm">
-        <Field label="First name *">
-          <Input
-            value={first}
-            onChange={(e) => setFirst(e.target.value)}
-            disabled={isSelectionLocked}
-            autoFocus
-          />
-        </Field>
-        <Field label="Last name *">
-          <Input
-            value={last}
-            onChange={(e) => setLast(e.target.value)}
-            disabled={isSelectionLocked}
-          />
-        </Field>
+    <>
+      {/* Backdrop */}
+      <div
+        aria-hidden="true"
+        onClick={handleClose}
+        className={
+          "fixed inset-0 z-40 bg-slate-900/40 backdrop-blur-sm transition-opacity duration-300 " +
+          (open ? "opacity-100" : "pointer-events-none opacity-0")
+        }
+      />
 
-        <Field label="Email *" full>
-          <div className="relative">
-            {isSelectionLocked ? (
-              <div className="flex items-center gap-2 rounded-md border border-crm-border bg-crm-panel px-3 py-2">
-                <span className="flex-1 truncate text-sm text-crm-text">{email}</span>
-                <button
-                  type="button"
-                  onClick={clearSelection}
-                  className="shrink-0 rounded p-0.5 text-crm-muted hover:bg-crm-border hover:text-crm-text"
-                  title="Change email"
-                >
-                  <X size={13} />
-                </button>
-              </div>
-            ) : (
-              <>
-                <Input
-                  type="email"
-                  value={email}
-                  onChange={(e) => handleEmailChange(e.target.value)}
-                  onBlur={() => setTimeout(() => setShowSuggestions(false), 150)}
-                  autoComplete="off"
-                />
-                {showSuggestions && suggestions.length > 0 && (
-                  <div className="absolute left-0 right-0 top-full z-50 mt-1 overflow-hidden rounded-lg border border-crm-border bg-white shadow-lg">
-                    {suggestions.map((s) => (
-                      <button
-                        key={s.userId}
-                        type="button"
-                        onMouseDown={() => pickSuggestion(s)}
-                        className="flex w-full items-center justify-between px-3 py-2 text-left text-sm hover:bg-crm-panel"
-                      >
-                        <span>
-                          <span className="font-medium text-crm-text">
-                            {s.firstName} {s.lastName}
-                          </span>
-                          <span className="ml-2 text-crm-muted">{s.email}</span>
-                        </span>
-                        {s.hasQuikCrmAccess ? (
-                          <span className="ml-2 flex shrink-0 items-center gap-1 rounded-full bg-emerald-100 px-2 py-0.5 text-xs text-emerald-700">
-                            <Check size={10} /> In CRM
-                          </span>
-                        ) : (
-                          <span className="ml-2 shrink-0 rounded-full bg-amber-100 px-2 py-0.5 text-xs text-amber-700">
-                            Grant access
-                          </span>
-                        )}
-                      </button>
-                    ))}
+      {/* Drawer panel */}
+      <div
+        role="dialog"
+        aria-modal="true"
+        aria-label="New user"
+        className={
+          "fixed inset-y-0 right-0 z-50 flex w-full flex-col bg-white shadow-2xl transition-transform duration-300 ease-out sm:max-w-[480px] " +
+          (open ? "translate-x-0" : "translate-x-full")
+        }
+      >
+        {/* Header */}
+        <div className="flex shrink-0 items-center justify-between border-b border-crm-border px-6 py-4">
+          <h2 className="text-base font-semibold text-crm-text">New user</h2>
+          <button
+            type="button"
+            onClick={handleClose}
+            className="flex h-8 w-8 items-center justify-center rounded-lg text-crm-muted transition hover:bg-crm-panel hover:text-crm-text focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-crm-blue-glow"
+            aria-label="Close"
+          >
+            <X size={16} />
+          </button>
+        </div>
+
+        {/* Scrollable body */}
+        <div className="flex-1 overflow-y-auto px-6 py-5">
+          <div className="grid grid-cols-2 gap-3 text-sm">
+            <Field label="First name *">
+              <Input
+                value={first}
+                onChange={(e) => setFirst(e.target.value)}
+                disabled={isSelectionLocked}
+                autoFocus={open}
+              />
+            </Field>
+            <Field label="Last name *">
+              <Input
+                value={last}
+                onChange={(e) => setLast(e.target.value)}
+                disabled={isSelectionLocked}
+              />
+            </Field>
+
+            <Field label="Email *" full>
+              <div className="relative">
+                {isSelectionLocked ? (
+                  <div className="flex items-center gap-2 rounded-md border border-crm-border bg-crm-panel px-3 py-2">
+                    <span className="flex-1 truncate text-sm text-crm-text">{email}</span>
+                    <button
+                      type="button"
+                      onClick={clearSelection}
+                      className="shrink-0 rounded p-0.5 text-crm-muted hover:bg-crm-border hover:text-crm-text"
+                      title="Change email"
+                    >
+                      <X size={13} />
+                    </button>
                   </div>
+                ) : (
+                  <>
+                    <Input
+                      type="email"
+                      value={email}
+                      onChange={(e) => handleEmailChange(e.target.value)}
+                      onBlur={() => setTimeout(() => setShowSuggestions(false), 150)}
+                      autoComplete="off"
+                    />
+                    {showSuggestions && suggestions.length > 0 && (
+                      <div className="absolute left-0 right-0 top-full z-50 mt-1 overflow-hidden rounded-lg border border-crm-border bg-white shadow-lg">
+                        {suggestions.map((s) => (
+                          <button
+                            key={s.userId}
+                            type="button"
+                            onMouseDown={() => pickSuggestion(s)}
+                            className="flex w-full items-center justify-between px-3 py-2 text-left text-sm hover:bg-crm-panel"
+                          >
+                            <span>
+                              <span className="font-medium text-crm-text">
+                                {s.firstName} {s.lastName}
+                              </span>
+                              <span className="ml-2 text-crm-muted">{s.email}</span>
+                            </span>
+                            {s.hasQuikCrmAccess ? (
+                              <span className="ml-2 flex shrink-0 items-center gap-1 rounded-full bg-emerald-100 px-2 py-0.5 text-xs text-emerald-700">
+                                <Check size={10} /> In CRM
+                              </span>
+                            ) : (
+                              <span className="ml-2 shrink-0 rounded-full bg-amber-100 px-2 py-0.5 text-xs text-amber-700">
+                                Grant access
+                              </span>
+                            )}
+                          </button>
+                        ))}
+                      </div>
+                    )}
+                  </>
                 )}
-              </>
+              </div>
+            </Field>
+
+            {/* CRM Role — shown in "new" and "grant"; hidden when already in CRM */}
+            {mode !== "duplicate" && (
+              <Field label="CRM Role" full>
+                <Select value={role} onChange={(e) => setRole(e.target.value)}>
+                  {ROLES.map((r) => (
+                    <option key={r} value={r}>
+                      {r}
+                    </option>
+                  ))}
+                </Select>
+              </Field>
+            )}
+
+            {/* Sign-in method — only for brand-new users */}
+            {mode === "new" && (
+              <Field label="Sign-in method" full>
+                <Select
+                  value={invitationMethod}
+                  onChange={(e) => setInvitationMethod(e.target.value as "native" | "sso")}
+                >
+                  <option value="native">Email & password (QuikIT login)</option>
+                  <option value="sso">Google / Microsoft SSO</option>
+                </Select>
+              </Field>
             )}
           </div>
-        </Field>
 
-        {/* CRM Role — shown in "new" and "grant"; hidden when already in CRM */}
-        {mode !== "duplicate" && (
-          <Field label="CRM Role" full>
-            <Select value={role} onChange={(e) => setRole(e.target.value)}>
-              {ROLES.map((r) => (
-                <option key={r} value={r}>
-                  {r}
-                </option>
-              ))}
-            </Select>
-          </Field>
-        )}
+          {/* Status banners */}
+          {mode === "new" && (
+            <div className="mt-4 flex items-center gap-2 rounded-lg bg-blue-50 px-3 py-2 text-xs text-blue-700">
+              <UserPlus size={13} />
+              New user will be invited — a QuikIT account will be created and CRM access granted.
+            </div>
+          )}
+          {mode === "grant" && (
+            <div className="mt-4 rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-700">
+              Existing org member — QuikCRM access will be granted without re-creating the account.
+            </div>
+          )}
+          {mode === "duplicate" && (
+            <div className="mt-4 rounded-lg bg-red-50 px-3 py-2 text-xs text-red-700">
+              This user already has QuikCRM access and cannot be invited again.
+            </div>
+          )}
+        </div>
 
-        {/* Sign-in method — only for brand-new users */}
-        {mode === "new" && (
-          <Field label="Sign-in method" full>
-            <Select
-              value={invitationMethod}
-              onChange={(e) => setInvitationMethod(e.target.value as "native" | "sso")}
-            >
-              <option value="native">Email & password (QuikIT login)</option>
-              <option value="sso">Google / Microsoft SSO</option>
-            </Select>
-          </Field>
-        )}
+        {/* Sticky footer */}
+        <div className="flex shrink-0 items-center justify-end gap-2 border-t border-crm-border px-6 py-4">
+          <Button variant="secondary" onClick={handleClose}>
+            Cancel
+          </Button>
+          <Button onClick={submit} disabled={saving || mode === "duplicate"}>
+            {saving ? "Saving…" : mode === "grant" ? "Grant access" : "Create & Invite"}
+          </Button>
+        </div>
       </div>
-
-      {/* Status banners */}
-      {mode === "new" && (
-        <div className="mt-3 flex items-center gap-2 rounded-lg bg-blue-50 px-3 py-2 text-xs text-blue-700">
-          <UserPlus size={13} />
-          New user will be invited — a QuikIT account will be created and CRM access granted.
-        </div>
-      )}
-      {mode === "grant" && (
-        <div className="mt-3 rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-700">
-          Existing org member — QuikCRM access will be granted without re-creating the account.
-        </div>
-      )}
-      {mode === "duplicate" && (
-        <div className="mt-3 rounded-lg bg-red-50 px-3 py-2 text-xs text-red-700">
-          This user already has QuikCRM access and cannot be invited again.
-        </div>
-      )}
-
-      <div className="mt-4 flex justify-end gap-2">
-        <Button variant="secondary" onClick={() => { resetForm(); onClose(); }}>
-          Cancel
-        </Button>
-        <Button onClick={submit} disabled={saving || mode === "duplicate"}>
-          {saving ? "Saving…" : mode === "grant" ? "Grant access" : "Create & Invite"}
-        </Button>
-      </div>
-    </Modal>
+    </>
   );
 }
 

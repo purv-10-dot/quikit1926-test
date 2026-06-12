@@ -14,7 +14,6 @@ import {
   Megaphone,
   BarChart3,
   Gauge,
-  Settings,
   Package,
   Tags,
   FileText,
@@ -85,7 +84,6 @@ const NAV_TOP: NavItem[] = [
 
 const NAV_BOTTOM: NavItem[] = [
   { href: "/marketing/campaigns", label: "Campaigns", icon: Megaphone },
-  { href: "/settings/profile", label: "Settings", icon: Settings },
 ];
 
 function isNavItemActive(pathname: string, href: string): boolean {

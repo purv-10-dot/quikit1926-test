@@ -15,6 +15,8 @@ import { NextResponse } from "next/server";
 import { redirect } from "next/navigation";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
+import { prisma } from "@/lib/db/prisma";
+import { getQuikCrmAppId } from "@/lib/api/quikcrm-app";
 import type { SessionUser } from "@/types/permission";
 
 /**
@@ -38,23 +40,54 @@ function mapRole(membershipRole: string | undefined): string {
   }
   // TeamManager sits above SalesManager in the hierarchy:
   //   Administrator > TeamManager > SalesManager > SalesUser
-  // Maps from platform-level role strings that represent regional/team directors.
-  if (r === "team_manager" || r === "teammanager" || r === "team manager" || r === "regional_director")
-    return "TeamManager";
-  if (r === "manager" || r === "sales_manager" || r === "salesmanager") return "SalesManager";
-  if (r === "marketing" || r === "marketing_user" || r === "marketinguser") return "MarketingUser";
-  if (r === "finance" || r === "finance_user" || r === "financeuser") return "FinanceUser";
-  // member / user / anything else → SalesUser (the broad CRM default).
+  // Handles both underscore (OrgMember.role) and hyphen (AppRole.name) variants.
+  if (
+    r === "team_manager" || r === "team-manager" ||
+    r === "teammanager" || r === "team manager" ||
+    r === "regional_director"
+  ) return "TeamManager";
+  // AppRole.name uses "sales-manager"; OrgMember.role uses "sales_manager" / "manager".
+  if (r === "manager" || r === "sales_manager" || r === "salesmanager" || r === "sales-manager")
+    return "SalesManager";
+  // AppRole.name uses "marketing-user"; OrgMember.role uses "marketing_user" / "marketing".
+  if (r === "marketing" || r === "marketing_user" || r === "marketinguser" || r === "marketing-user")
+    return "MarketingUser";
+  // AppRole.name uses "finance-user"; OrgMember.role uses "finance_user" / "finance".
+  if (r === "finance" || r === "finance_user" || r === "financeuser" || r === "finance-user")
+    return "FinanceUser";
+  // member / user / "sales-user" / anything else → SalesUser (the broad CRM default).
   return "SalesUser";
 }
 
 async function readSession(): Promise<SessionUser | null> {
   const s = await getServerSession(authOptions);
   if (!s?.user?.id || !s.user.orgId) return null;
+
+  // s.user.membershipRole comes from OrgMember.role (org-wide).
+  // An org admin can grant a higher app-specific role via UserAppAccess.role
+  // (e.g. Admin Portal → QuikCRM → "admin") while OrgMember.role stays "member".
+  // We read UserAppAccess.role for this app and use it when it is set to
+  // something other than the default "member" — overriding the org-level role.
+  let effectiveRole = s.user.membershipRole;
+  try {
+    const appId = await getQuikCrmAppId();
+    if (appId) {
+      const access = await prisma.userAppAccess.findFirst({
+        where: { userId: s.user.id, orgId: s.user.orgId, appId },
+        select: { role: true },
+      });
+      if (access?.role && access.role !== "member") {
+        effectiveRole = access.role;
+      }
+    }
+  } catch {
+    // DB lookup failed — fall back to OrgMember.role from session
+  }
+
   return {
     userId: s.user.id,
     orgId: s.user.orgId,
-    role: mapRole(s.user.membershipRole),
+    role: mapRole(effectiveRole),
     email: s.user.email ?? "",
     name: s.user.name ?? "",
   };
