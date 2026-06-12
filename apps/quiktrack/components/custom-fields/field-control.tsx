@@ -5,6 +5,7 @@ import { X, AlertCircle } from "lucide-react";
 import type { CustomFieldDTO } from "@/lib/services/customFields";
 import type { FieldValue } from "@/lib/customFields/registry";
 import { validateFieldValue } from "@/lib/validation/customField";
+import { BoardFilterSelect } from "@/app/(dashboard)/spaces/[id]/board/_components/board-filter-select";
 
 export interface MemberOption {
   id: string;
@@ -126,41 +127,43 @@ export function FieldControl({ field, value, onChange, members = [], disabled, a
         />
       );
 
-    case "DROPDOWN_SINGLE":
+    case "DROPDOWN_SINGLE": {
+      const ph = field.placeholder || "— Select —";
+      if (disabled) {
+        const sel = activeOptions.find((o) => o.value === value);
+        return <div className={`${INPUT} bg-gray-50 text-gray-400 flex items-center`}>{sel?.label ?? ph}</div>;
+      }
       return (
-        <select
+        <BoardFilterSelect
           value={(value as string) ?? ""}
-          onChange={(e) => onChange(e.target.value || null)}
-          disabled={disabled}
-          autoFocus={autoFocus}
-          className={`${INPUT} bg-white`}
-        >
-          <option value="">{field.placeholder || "— Select —"}</option>
-          {activeOptions.map((o) => (
-            <option key={o.id} value={o.value}>
-              {o.label}
-            </option>
-          ))}
-        </select>
+          onChange={(v) => onChange(v || null)}
+          searchable
+          placeholder={ph}
+          options={[{ value: "", label: ph }, ...activeOptions.map((o) => ({ value: o.value, label: o.label }))]}
+        />
       );
+    }
 
-    case "USER_PICKER":
+    case "USER_PICKER": {
+      const unassigned = field.placeholder || "— Unassigned —";
+      // BoardFilterSelect has no disabled state, so render a read-only box when
+      // the field is locked (e.g. no edit permission).
+      if (disabled) {
+        const sel = members.find((m) => m.id === value);
+        return (
+          <div className={`${INPUT} bg-gray-50 text-gray-400 flex items-center`}>{sel?.label ?? unassigned}</div>
+        );
+      }
       return (
-        <select
+        <BoardFilterSelect
           value={(value as string) ?? ""}
-          onChange={(e) => onChange(e.target.value || null)}
-          disabled={disabled}
-          autoFocus={autoFocus}
-          className={`${INPUT} bg-white`}
-        >
-          <option value="">{field.placeholder || "— Unassigned —"}</option>
-          {members.map((m) => (
-            <option key={m.id} value={m.id}>
-              {m.label}
-            </option>
-          ))}
-        </select>
+          onChange={(v) => onChange(v || null)}
+          searchable
+          placeholder={unassigned}
+          options={[{ value: "", label: unassigned }, ...members.map((m) => ({ value: m.id, label: m.label }))]}
+        />
       );
+    }
 
     case "DROPDOWN_MULTI":
       return (

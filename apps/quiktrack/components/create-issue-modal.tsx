@@ -111,7 +111,9 @@ export function CreateIssueModal({
   const { data: session } = useSession();
   const currentUserId = session?.user?.id ?? null;
   const [projects, setProjects] = useState<Project[]>([]);
-  const [projectId, setProjectId] = useState<string>("");
+  // Seed from initialProjectId so the custom-fields / statuses / members fetches
+  // can start immediately instead of waiting for the projects list to load.
+  const [projectId, setProjectId] = useState<string>(initialProjectId ?? "");
   const [statuses, setStatuses] = useState<Status[]>([]);
   const [members, setMembers] = useState<Member[]>([]);
   const [sprints, setSprints] = useState<Sprint[]>([]);

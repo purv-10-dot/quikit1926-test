@@ -58,6 +58,7 @@
     "react": "^18.2.0",
     "react-dom": "^18.2.0",
     "sanitize-html": "^2.17.4",
+    "recharts": "^2.15.4",
     "tippy.js": "^6.3.7",
     "zod": "^3.22.4"
   },

@@ -224,6 +224,7 @@ model Org {
   QtTimesheetEntry        QtTimesheetEntry[]
   QtUserActivity          QtUserActivity[]
   QtUserViewPref          QtUserViewPref[]
+  QtReportView            QtReportView[]
   UserAppRole             QtUserAppRole[]
   UserPermissionExtra     QtUserPermissionExtra[]
   qsAppRoles              QsAppRole[]
@@ -6191,6 +6192,26 @@ model QtUserViewPref {
 
   @@unique([userId, projectId, viewKey])
   @@index([orgId])
+  @@schema("app_quiktrack")
+}
+
+/// Saved filter+chart presets for the executive reports page. Each row is
+/// one preset owned by a single user (private to that user). `filtersJson`
+/// is the opaque blob the UI persists — shape is owned by the client; the
+/// server only validates that it is an object.
+model QtReportView {
+  id          String   @id @default(cuid())
+  orgId       String
+  userId      String
+  kind        String   @default("executive")
+  name        String
+  filtersJson Json
+  isPinned    Boolean  @default(false)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  Org         Org      @relation(fields: [orgId], references: [id], onDelete: Cascade)
+
+  @@index([orgId, userId, kind])
   @@schema("app_quiktrack")
 }
 

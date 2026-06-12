@@ -4,7 +4,6 @@ import { useEffect, useMemo, useState } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { X } from "lucide-react";
 import {
-  FIELD_TYPE_OPTIONS,
   fieldConfig,
   generateFieldKey,
   type FieldType,
@@ -12,6 +11,7 @@ import {
 } from "@/lib/customFields/registry";
 import type { CustomFieldDTO } from "@/lib/services/customFields";
 import { FieldControl } from "./field-control";
+import { FieldTypePicker } from "./field-type-picker";
 import { OptionsEditor, type OptionDraft } from "./options-editor";
 
 interface Props {
@@ -146,18 +146,11 @@ export function FieldFormDrawer({ open, onClose, apiBase, queryKey, field }: Pro
 
         <div className="flex-1 overflow-y-auto px-5 py-4 space-y-4">
           <Field label="Field type" required>
-            <select
+            <FieldTypePicker
               value={form.type}
               disabled={isEdit}
-              onChange={(e) => setForm((f) => ({ ...f, type: e.target.value as FieldType, options: [], defaultValue: null }))}
-              className="w-full h-9 px-3 text-sm border border-gray-300 rounded bg-white focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:bg-gray-50 disabled:text-gray-500"
-            >
-              {FIELD_TYPE_OPTIONS.map((o) => (
-                <option key={o.value} value={o.value}>
-                  {o.label}
-                </option>
-              ))}
-            </select>
+              onChange={(t) => setForm((f) => ({ ...f, type: t, options: [], defaultValue: null }))}
+            />
             {isEdit && <p className="mt-1 text-[11px] text-gray-400">Type can&apos;t be changed after creation.</p>}
           </Field>
 

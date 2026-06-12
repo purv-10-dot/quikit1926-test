@@ -368,6 +368,13 @@ export function Sidebar() {
                   indent
                 />
               )}
+              <NavRow
+                href="/reports/executive"
+                icon={BarChart3}
+                label="Executive Report"
+                active={isActive("/reports/executive")}
+                indent
+              />
             </div>
           )}
           {/* TODO: coming soon — Operations / Customers / Customer experiences.
