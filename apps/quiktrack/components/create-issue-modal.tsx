@@ -26,6 +26,13 @@ import { RichTextEditor } from "@/components/rich-text-editor-lazy";
 import { uploadProjectImage } from "@/lib/upload-image";
 import { BoardFilterSelect } from "@/app/(dashboard)/spaces/[id]/board/_components/board-filter-select";
 import { SpaceIcon } from "@/components/space-icon";
+import { useApiData } from "@/lib/hooks/useApiData";
+import { CustomFieldsSection, defaultValuesFor } from "@/components/custom-fields/custom-fields-section";
+import { validateFieldValue } from "@/lib/validation/customField";
+import type { CustomFieldDTO } from "@/lib/services/customFields";
+import type { FieldValue } from "@/lib/customFields/registry";
+
+const NO_FIELDS: CustomFieldDTO[] = [];
 
 type IssueType = "TASK" | "BUG" | "STORY" | "EPIC";
 type Priority = "HIGHEST" | "HIGH" | "MEDIUM" | "LOW" | "LOWEST";
@@ -127,6 +134,23 @@ export function CreateIssueModal({
   const [titleError, setTitleError] = useState(false);
   const [createAnother, setCreateAnother] = useState(false);
   const [minimized, setMinimized] = useState(false);
+  const [showCfErrors, setShowCfErrors] = useState(false);
+
+  // Active custom fields (global + space) for the chosen project, with the
+  // values the user enters. Seeded from each field's default when they load.
+  const { data: cfData } = useApiData<CustomFieldDTO[]>(
+    ["quiktrack", "issue-fields", projectId],
+    projectId ? `/api/projects/${projectId}/issue-fields` : null,
+  );
+  const customFields = cfData ?? NO_FIELDS;
+  const [customValues, setCustomValues] = useState<Record<string, FieldValue>>({});
+  useEffect(() => {
+    if (cfData) setCustomValues(defaultValuesFor(cfData));
+  }, [cfData]);
+  const memberOptions = useMemo(
+    () => members.map((m) => ({ id: m.userId, label: memberLabel(m) })),
+    [members],
+  );
 
   // Fetch projects when modal opens.
   useEffect(() => {
@@ -164,6 +188,7 @@ export function CreateIssueModal({
     setDueDate("");
     setStartDate("");
     setError(null);
+    setShowCfErrors(false);
   }, [open]);
 
   // Fetch project-scoped data when project changes.
@@ -206,6 +231,16 @@ export function CreateIssueModal({
       setTitleError(true);
       return;
     }
+    // Over-limit summary is blocked here; the live message under the Summary
+    // field (not the bottom error box, which is off-screen) tells the user why.
+    if (title.trim().length > 255) return;
+    // Validate custom fields up front so invalid values surface as the inline
+    // per-field messages — not the aggregated server error in the bottom box.
+    if (cfData && customFields.some((f) => !validateFieldValue(f, customValues[f.id] ?? null).ok)) {
+      setShowCfErrors(true);
+      return;
+    }
+    setShowCfErrors(false);
     setSubmitting(true);
     try {
       const body: Record<string, unknown> = {
@@ -225,6 +260,9 @@ export function CreateIssueModal({
         const n = parseInt(storyPoints, 10);
         if (!Number.isNaN(n)) body.storyPoints = n;
       }
+      // Send custom field values once the field set has loaded — this enables
+      // server-side required-field enforcement for the full create form.
+      if (cfData) body.customFields = customValues;
       const res = await fetch("/api/issues", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -349,11 +387,11 @@ export function CreateIssueModal({
               onChange={(e) => {
                 setTitle(e.target.value);
                 if (titleError && e.target.value.trim()) setTitleError(false);
+                if (error) setError(null);
               }}
-              maxLength={255}
               autoFocus
               className={`w-full h-9 px-3 text-sm border rounded focus:outline-none focus:ring-2 ${
-                titleError
+                titleError || title.trim().length > 255
                   ? "border-red-500 ring-1 ring-red-500 focus:ring-red-500"
                   : "border-blue-500 focus:ring-blue-500"
               }`}
@@ -362,6 +400,12 @@ export function CreateIssueModal({
               <p className="mt-1 inline-flex items-center gap-1 text-xs text-red-600">
                 <AlertCircle className="h-3.5 w-3.5" />
                 Summary is required
+              </p>
+            )}
+            {title.trim().length > 255 && (
+              <p className="mt-1 inline-flex items-center gap-1 text-xs text-red-600">
+                <AlertCircle className="h-3.5 w-3.5 shrink-0" />
+                Summary must be 255 characters or less (currently {title.trim().length}).
               </p>
             )}
           </Field>
@@ -467,6 +511,18 @@ export function CreateIssueModal({
                 className="w-full h-9 px-3 text-sm border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
               />
             </Field>
+          )}
+
+          {customFields.length > 0 && (
+            <div className="pt-1 border-t border-gray-100">
+              <CustomFieldsSection
+                fields={customFields}
+                values={customValues}
+                onChange={(id, v) => setCustomValues((prev) => ({ ...prev, [id]: v }))}
+                members={memberOptions}
+                forceShowErrors={showCfErrors}
+              />
+            </div>
           )}
 
           {error && (

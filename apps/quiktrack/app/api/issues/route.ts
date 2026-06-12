@@ -8,6 +8,9 @@ import { recalcParentRollup } from "@/lib/services/subtaskRollup";
 import { userCanInProject, forbidden, hasAdminAccess } from "@/lib/api/permissions";
 import { notifyMentions } from "@/lib/services/mentions";
 import { emailIssueAssigned } from "@/lib/email/sendEmail";
+import { validateIssueValues, writeIssueValues } from "@/lib/services/customFieldValues";
+import type { FieldValue } from "@/lib/customFields/registry";
+import { customFiltersToWhere, parseCustomFilters } from "@/lib/customFields/filterQuery";
 
 async function userIsProjectMember(
   userId: string,
@@ -58,6 +61,9 @@ export const GET = withOrgAuth(async ({ orgId, userId }, req) => {
   const filterAssigneeId = url.searchParams.get("assigneeId");
   const filterPriority = url.searchParams.get("priority");
   const search = url.searchParams.get("search")?.trim();
+  // Custom field filters: JSON array of { fieldId, type, op, value, value2 }.
+  const customFilters = parseCustomFilters(url.searchParams.get("customFilters"));
+  const customFilterWhere = customFiltersToWhere(customFilters);
 
   // Two pagination modes share this route:
   //   - cursor mode (board/backlog): `cursor` + `limit`
@@ -147,6 +153,7 @@ export const GET = withOrgAuth(async ({ orgId, userId }, req) => {
           ],
         }
       : {}),
+    ...(customFilterWhere.length ? { AND: customFilterWhere } : {}),
   };
 
   // Build pagination args separately — inlining a ternary spread confuses TS
@@ -359,6 +366,22 @@ export const POST = withOrgAuth(async ({ orgId, userId }, req) => {
     return forbidden();
   }
 
+  // Custom field values: the full create form sends `customFields` (enforcing
+  // required fields). Quick/inline creators omit it and bypass enforcement —
+  // values can be filled later on the issue.
+  const customFields = parsed.data.customFields as Record<string, FieldValue> | undefined;
+  if (customFields) {
+    const valid = await validateIssueValues({
+      orgId,
+      projectId: project.id,
+      values: customFields,
+      enforceRequired: true,
+    });
+    if (!valid.ok) {
+      return NextResponse.json({ success: false, error: valid.errors.join(", ") }, { status: 400 });
+    }
+  }
+
   const issue = await db.$transaction(async (tx) => {
     const statusId =
       parsed.data.statusId ?? (await getDefaultStatusId(tx, project.id));
@@ -391,6 +414,17 @@ export const POST = withOrgAuth(async ({ orgId, userId }, req) => {
       },
     });
   });
+
+  // Persist custom field values (pre-validated above).
+  if (customFields) {
+    await writeIssueValues({
+      orgId,
+      issueId: issue.id,
+      projectId: project.id,
+      actorId: userId,
+      values: customFields,
+    });
+  }
 
   // Roll up ETA + dates onto the parent when this is a subtask.
   if (issue.type === "SUBTASK" && issue.parentId) {

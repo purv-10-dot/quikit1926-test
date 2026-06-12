@@ -1,7 +1,10 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useSession } from "next-auth/react";
+import { CustomFieldsSection } from "@/components/custom-fields/custom-fields-section";
+import type { CustomFieldDTO } from "@/lib/services/customFields";
+import type { FieldValue } from "@/lib/customFields/registry";
 import {
   X,
   ExternalLink,
@@ -93,6 +96,8 @@ interface IssueFull {
   createdAt?: string;
   updatedAt?: string;
   timeLogs?: { id: string; hours: number }[];
+  customFields?: CustomFieldDTO[];
+  customFieldValues?: Record<string, FieldValue>;
 }
 
 /**
@@ -289,6 +294,12 @@ export function EditIssueModal({
   const [storyPoints, setStoryPoints] = useState("");
   const [eta, setEta] = useState("");
   const [etaError, setEtaError] = useState<string | null>(null);
+  const [customFields, setCustomFields] = useState<CustomFieldDTO[]>([]);
+  const [customValues, setCustomValues] = useState<Record<string, FieldValue>>({});
+  const memberOptions = useMemo(
+    () => members.map((m) => ({ id: m.userId, label: memberLabel(m) })),
+    [members],
+  );
 
   const [statusOpen, setStatusOpen] = useState(false);
   const statusRef = useRef<HTMLDivElement>(null);
@@ -527,6 +538,8 @@ export function EditIssueModal({
           setDueDate(toDateInput(d.dueDate));
           setStoryPoints(d.storyPoints == null ? "" : String(d.storyPoints));
           setEta(formatEtaHours(d.eta));
+          setCustomFields(d.customFields ?? []);
+          setCustomValues(d.customFieldValues ?? {});
         }
         setStatuses(s?.success ? s.data : []);
         const mData = m?.success ? m.data?.members ?? m.data : [];
@@ -570,6 +583,34 @@ export function EditIssueModal({
     } catch {
       // ignore
     }
+  }
+
+  // Custom field inline edit — debounced so typing doesn't fire a PATCH per
+  // keystroke. Uses its own request (not `patch`) so the partial values map
+  // never gets merged onto `issue` (which holds the field *definitions*).
+  const cfTimers = useRef<Record<string, ReturnType<typeof setTimeout>>>({});
+  function commitCustomField(id: string, value: FieldValue) {
+    setCustomValues((prev) => ({ ...prev, [id]: value }));
+    const issueId = issue?.id;
+    if (!issueId) return;
+    clearTimeout(cfTimers.current[id]);
+    cfTimers.current[id] = setTimeout(() => {
+      void fetch(`/api/issues/${issueId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ customFields: { [id]: value } }),
+      })
+        .then((r) => r.json())
+        .then((res) => {
+          if (res?.success) {
+            window.dispatchEvent(
+              new CustomEvent("quiktrack:issue-updated", { detail: { projectId, issueId } }),
+            );
+            onSaved?.();
+          }
+        })
+        .catch(() => undefined);
+    }, 500);
   }
 
   if (!open) return null;
@@ -1450,6 +1491,22 @@ export function EditIssueModal({
                   </div>
                 )}
               </div>
+
+              {customFields.length > 0 && (
+                <div className="mt-5 border-t border-gray-200 pt-4">
+                  <h3 className="text-xs font-semibold text-gray-900 uppercase tracking-wide mb-3">
+                    Custom fields
+                  </h3>
+                  <CustomFieldsSection
+                    variant="detail"
+                    fields={customFields}
+                    values={customValues}
+                    onChange={commitCustomField}
+                    members={memberOptions}
+                    disabled={!canUpdateIssue}
+                  />
+                </div>
+              )}
 
               </fieldset>
 

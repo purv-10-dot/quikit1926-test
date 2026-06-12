@@ -38,6 +38,7 @@ import {
   Check,
   X,
   GitBranch,
+  AlertCircle,
   AlertTriangle,
   Trash2,
   ArrowRightLeft,
@@ -204,6 +205,7 @@ function InlineCreatorInner({
   const [assigneeId, setAssigneeId] = useState<string | null>(null);
   const [title, setTitle] = useState("");
   const [submitting, setSubmitting] = useState(false);
+  const [error, setError] = useState<string | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
   const typeMenuRef = useRef<HTMLDivElement>(null);
   const dateRef = useRef<HTMLDivElement>(null);
@@ -233,7 +235,12 @@ function InlineCreatorInner({
       setOpen(false);
       return;
     }
+    if (t.length > 255) {
+      setError(`Summary must be 255 characters or less (currently ${t.length}).`);
+      return;
+    }
     setSubmitting(true);
+    setError(null);
     try {
       const res = await fetch("/api/issues", {
         method: "POST",
@@ -248,16 +255,22 @@ function InlineCreatorInner({
           dueDate: dueDate ? new Date(dueDate).toISOString() : undefined,
         }),
       }).then((r) => r.json());
-      if (res?.success) {
-        window.dispatchEvent(
-          new CustomEvent("quiktrack:issue-created", {
-            detail: { id: res.data?.id, key: res.data?.key },
-          }),
-        );
+      // Surface the API error and keep the composer open so the user can fix
+      // their input (e.g. a summary over the 255-char limit) instead of having
+      // the row silently reset.
+      if (!res?.success) {
+        setError(res?.error || "Failed to create work item");
+        return;
       }
+      window.dispatchEvent(
+        new CustomEvent("quiktrack:issue-created", {
+          detail: { id: res.data?.id, key: res.data?.key },
+        }),
+      );
       setTitle("");
       setDueDate("");
       setAssigneeId(null);
+      setError(null);
       setOpen(false);
       onCreated();
     } finally {
@@ -281,7 +294,8 @@ function InlineCreatorInner({
   const selectedMember = assigneeId ? members.find((m) => m.userId === assigneeId) : null;
 
   return (
-    <div className="flex items-center h-9 mx-3 my-2 px-1.5 border border-blue-500 rounded-md bg-white">
+    <div className="mx-3 my-2">
+    <div className={`flex items-center h-9 px-1.5 border rounded-md bg-white ${error ? "border-red-500" : "border-blue-500"}`}>
       <div className="relative" ref={typeMenuRef}>
         <button
           type="button"
@@ -317,11 +331,15 @@ function InlineCreatorInner({
       <input
         ref={inputRef}
         value={title}
-        onChange={(e) => setTitle(e.target.value)}
+        onChange={(e) => {
+          setTitle(e.target.value);
+          if (error) setError(null);
+        }}
         onKeyDown={(e) => {
           if (e.key === "Enter") submit();
           if (e.key === "Escape") {
             setTitle("");
+            setError(null);
             setOpen(false);
           }
         }}
@@ -432,6 +450,13 @@ function InlineCreatorInner({
         Create
         <span className="text-[10px] text-gray-500">↵</span>
       </button>
+    </div>
+      {error && (
+        <p className="mt-1 inline-flex items-center gap-1 text-xs text-red-600">
+          <AlertCircle className="h-3.5 w-3.5 shrink-0" />
+          {error}
+        </p>
+      )}
     </div>
   );
 }
