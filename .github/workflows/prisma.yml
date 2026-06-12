@@ -67,6 +67,7 @@ jobs:
                 console.log("Successfully resolved migration:", failedMigration);
               } catch (resolveError) {
                 console.error("Failed to run resolve command:", resolveError.message);
+                process.exit(1);
               }
             } else {
               console.log("No failed migrations identified to resolve.");
