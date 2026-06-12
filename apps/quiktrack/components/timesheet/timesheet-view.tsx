@@ -1,6 +1,7 @@
 "use client";
 
 import { type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { useSession } from "next-auth/react";
 import {
   ChevronLeft,
@@ -623,15 +624,15 @@ export function TimesheetView({
                         <span className="inline-flex items-center justify-center h-6 w-6 rounded-full bg-blue-600 text-white text-[10px] font-semibold">
                           {(row.label || "U").trim().charAt(0).toUpperCase()}
                         </span>
-                        <span className="font-medium text-sm">{row.label}</span>
+                        <ClippedLabel text={row.label} className="font-medium text-sm" />
                       </button>
                     ) : isChild ? (
-                      <span className="inline-flex items-center gap-2">
+                      <span className="flex items-center gap-2 min-w-0">
                         <CheckSquare className="h-3.5 w-3.5 text-blue-500 shrink-0" />
-                        <span className="text-gray-800 text-sm truncate">{row.label}</span>
+                        <ClippedLabel text={row.label} className="text-gray-800 text-sm" />
                       </span>
                     ) : (
-                      <span>{row.label}</span>
+                      <ClippedLabel text={row.label} />
                     )}
                   </td>
                   {showKeyColumn && (
@@ -848,7 +849,7 @@ function MultiSelectFilter({
       {open && (
         <>
           <div className="fixed inset-0 z-20" onClick={() => setOpen(false)} aria-hidden />
-          <div className="absolute left-0 top-full mt-1 w-60 bg-white border border-gray-200 rounded-md shadow-lg z-30 py-1">
+          <div className="absolute left-0 top-full mt-1 w-60 bg-white border border-gray-200 rounded-md shadow-lg z-50 py-1">
             <div className="px-2 pb-1.5 pt-1">
               <div className="relative">
                 <Search className="absolute left-2 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-gray-400" />
@@ -984,7 +985,7 @@ function GroupByDropdown({
           <ChevronDown className="h-3 w-3 text-gray-500" />
         </button>
         {open && (
-          <div className="absolute left-0 top-full mt-1 w-48 bg-white border border-gray-200 rounded-md shadow-lg z-30 py-1">
+          <div className="absolute left-0 top-full mt-1 w-48 bg-white border border-gray-200 rounded-md shadow-lg z-50 py-1">
             {GROUP_DIMENSIONS.map((d) => {
               const checked = selected.has(d.key);
               return (
@@ -1037,7 +1038,7 @@ function PeriodSwitcher({
         <ChevronDown className="h-3.5 w-3.5 text-gray-500" />
       </button>
       {open && (
-        <div className="absolute right-0 top-full mt-1 w-32 bg-white border border-gray-200 rounded-md shadow-lg z-30 py-1">
+        <div className="absolute right-0 top-full mt-1 w-32 bg-white border border-gray-200 rounded-md shadow-lg z-50 py-1">
           {(["week", "month", "quarter"] as Period[]).map((p) => (
             <button
               key={p}
@@ -1080,7 +1081,7 @@ function MoreMenu({
         <MoreHorizontal className="h-4 w-4" />
       </button>
       {open && (
-        <div className="absolute right-0 top-full mt-1 w-56 bg-white border border-gray-200 rounded-md shadow-lg z-30 py-1">
+        <div className="absolute right-0 top-full mt-1 w-56 bg-white border border-gray-200 rounded-md shadow-lg z-50 py-1">
           <ExportRow
             badge="PDF"
             badgeClass="bg-red-100 text-red-700"
@@ -1138,5 +1139,49 @@ function ExportRow({
       </span>
       <span className="text-gray-700">{label}</span>
     </button>
+  );
+}
+
+/**
+ * Truncated label with a dark tooltip that appears only when the text is
+ * actually clipped — same pattern as the backlog work-item title. Clip state is
+ * recomputed on each hover so it tracks resize/zoom.
+ */
+function ClippedLabel({ text, className = "" }: { text: string; className?: string }) {
+  const ref = useRef<HTMLSpanElement>(null);
+  // Tooltip is portaled to <body> with fixed coords so it isn't clipped by the
+  // cell's `overflow:hidden` or painted under the next sticky row.
+  const [tip, setTip] = useState<{ top: number; left: number } | null>(null);
+
+  function onEnter() {
+    const el = ref.current;
+    if (el && el.scrollWidth > el.clientWidth) {
+      const r = el.getBoundingClientRect();
+      setTip({ top: r.bottom + 4, left: r.left });
+    }
+  }
+
+  return (
+    <span
+      className="block min-w-0 flex-1"
+      onMouseEnter={onEnter}
+      onMouseLeave={() => setTip(null)}
+    >
+      <span ref={ref} className={`block truncate ${className}`}>
+        {text}
+      </span>
+      {tip &&
+        typeof document !== "undefined" &&
+        createPortal(
+          <span
+            role="tooltip"
+            style={{ position: "fixed", top: tip.top, left: tip.left, zIndex: 1100 }}
+            className="pointer-events-none max-w-md whitespace-normal break-words rounded-md bg-gray-900 px-2.5 py-1.5 text-xs font-normal normal-case text-white shadow-lg"
+          >
+            {text}
+          </span>,
+          document.body,
+        )}
+    </span>
   );
 }
