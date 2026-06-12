@@ -120,7 +120,8 @@ async function deployApp(app) {
 
   let uploaded = 0;
   const queue = [...manifest];
-  await Promise.all(Array.from({ length: 3 }, async () => {
+  const UPLOAD_CONCURRENCY = Number(process.env.UPLOAD_CONCURRENCY || 3);
+  await Promise.all(Array.from({ length: UPLOAD_CONCURRENCY }, async () => {
     while (queue.length) {
       const m = queue.shift();
       if (!m) break;
