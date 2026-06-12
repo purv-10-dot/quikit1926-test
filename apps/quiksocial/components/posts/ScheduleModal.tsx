@@ -3,6 +3,8 @@
 import { unwrap } from "@/lib/utils/api-fetch";
 import { useState, useEffect } from "react";
 import { X, ChevronLeft, ChevronRight, AlertCircle, ArrowLeft, Zap } from "lucide-react";
+import { toZonedTime } from "date-fns-tz";
+import { toUTC } from "@/lib/utils/timezone";
 
 const PLATFORM_LIST = [
   { id: "instagram", label: "Instagram", color: "#E1306C" },
@@ -28,16 +30,27 @@ function buildTimeSlots(): string[] {
 
 const TIME_SLOTS = buildTimeSlots();
 
-function parseSlotToDate(dateStr: string, slot: string): Date {
+// F2: emit a TZ-NAIVE local wall-clock string ("YYYY-MM-DDTHH:mm:00") —
+// the exact time the user picked on their clock, with NO timezone baked
+// in. The server interprets it in the user's profile timezone and stores
+// UTC. (The old parseSlotToDate built a browser-LOCAL Date, which is how
+// a user's 5:30 PM could land as a different instant when the browser tz
+// differed from their real tz.)
+function slotToNaive(dateStr: string, slot: string): string {
   const [time, ampm] = slot.split(" ");
   const [hStr, mStr] = time.split(":");
   let hours = parseInt(hStr, 10);
   const minutes = parseInt(mStr, 10);
   if (ampm === "PM" && hours !== 12) hours += 12;
   if (ampm === "AM" && hours === 12) hours = 0;
-  const d = new Date(dateStr + "T00:00:00");
-  d.setHours(hours, minutes, 0, 0);
-  return d;
+  return `${dateStr}T${String(hours).padStart(2, "0")}:${String(minutes).padStart(2, "0")}:00`;
+}
+
+// Absolute UTC instant for a chosen slot, interpreting the naive
+// wall-clock in `tz` — used ONLY for the "is this time in the past"
+// validation so the check is correct regardless of the browser tz.
+function slotToUtc(dateStr: string, slot: string, tz: string): Date {
+  return toUTC(slotToNaive(dateStr, slot), tz);
 }
 
 interface ScheduleModalProps {
@@ -56,10 +69,17 @@ interface ScheduleModalProps {
   // rendered greyed-out / non-interactive — the user only picks a time.
   // Default false keeps every existing caller's date editable.
   lockDate?: boolean;
+  // User's IANA timezone (profile tz). The picker displays, validates,
+  // and emits times in THIS zone so what the user sees == what the server
+  // stores. Defaults to "UTC" when unset (matches the server default).
+  userTimezone?: string;
   onClose: () => void;
   // Returns null on success (the parent will navigate away), or an error
   // string on failure so the modal can render it without unmounting.
-  onSave: (scheduledFor: Date | null, platform: string) => Promise<string | null>;
+  // F2: `scheduledFor` is a TZ-NAIVE local wall-clock string
+  // ("YYYY-MM-DDTHH:mm:00"), NOT a Date — the server converts it to UTC
+  // using the user's profile timezone. null = Save-to-Library.
+  onSave: (scheduledFor: string | null, platform: string) => Promise<string | null>;
   saving: boolean;
   // Admin-only "Post Now" override. When provided, a Zap-icon button
   // appears beside Save/Schedule and invokes this directly. Returns null
@@ -77,7 +97,8 @@ interface ScheduleModalProps {
   //                          parent can persist it as requestedPublishTime
   //                          and submit the post for review.
   mode?: "schedule" | "suggest";
-  onSuggestTime?: (when: Date, platform: string) => Promise<string | null>;
+  // F2: `when` is a TZ-naive local wall-clock string (see onSave).
+  onSuggestTime?: (when: string, platform: string) => Promise<string | null>;
   suggesting?: boolean;
 }
 
@@ -85,7 +106,13 @@ interface ScheduleModalProps {
 // representation so callers can pre-fill via initialScheduledFor without
 // knowing the modal's slot vocabulary. Minute is rounded to the nearest
 // 15-minute slot so it matches one of TIME_SLOTS exactly.
-function _splitDate(d: Date): { dateStr: string; slot: string } {
+// Prefill (reschedule): split a stored UTC instant into the modal's
+// (YYYY-MM-DD, "h:mm AM/PM") representation IN THE USER'S timezone, so
+// the picker shows the same wall-clock the post is actually scheduled
+// for. toZonedTime returns a Date whose LOCAL fields are the wall-clock
+// in `tz`, so the getXxx() reads below yield the zoned components.
+function _splitDate(utc: Date, tz: string): { dateStr: string; slot: string } {
+  const d = toZonedTime(utc, tz);
   const dateStr = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
   const minutes = d.getMinutes();
   const roundedMin = [0, 15, 30, 45].reduce(
@@ -114,12 +141,15 @@ export default function ScheduleModal({
   mode = "schedule",
   onSuggestTime,
   suggesting = false,
+  userTimezone,
 }: ScheduleModalProps) {
   const isSuggestMode = mode === "suggest";
+  const tz = userTimezone || "UTC";
   const today = new Date();
   // Pre-fill from initialScheduledFor if provided; falls back to "today"
-  // and an empty selection for the create-flow caller.
-  const _initial = initialScheduledFor ? _splitDate(new Date(initialScheduledFor)) : null;
+  // and an empty selection for the create-flow caller. Split in the
+  // user's tz so the prefilled wall-clock matches the scheduled time.
+  const _initial = initialScheduledFor ? _splitDate(new Date(initialScheduledFor), tz) : null;
   const _initialDateObj = initialScheduledFor ? new Date(initialScheduledFor) : null;
   const [viewYear, setViewYear] = useState(_initialDateObj ? _initialDateObj.getFullYear() : today.getFullYear());
   const [viewMonth, setViewMonth] = useState(_initialDateObj ? _initialDateObj.getMonth() : today.getMonth());
@@ -171,7 +201,9 @@ export default function ScheduleModal({
   const minScheduleTime = new Date(Date.now() + 5 * 60 * 1000);
   const slotIsPast = (slot: string): boolean => {
     if (!selectedDate || selectedDate !== todayStr) return false;
-    return parseSlotToDate(selectedDate, slot) < minScheduleTime;
+    // Compare the chosen wall-clock (interpreted in the user's tz) as a
+    // UTC instant against now+5min — correct regardless of browser tz.
+    return slotToUtc(selectedDate, slot, tz) < minScheduleTime;
   };
 
   const handlePrevMonth = () => {
@@ -195,7 +227,7 @@ export default function ScheduleModal({
     if (
       str === todayStr &&
       selectedSlot &&
-      parseSlotToDate(str, selectedSlot) < minScheduleTime
+      slotToUtc(str, selectedSlot, tz) < minScheduleTime
     ) {
       setSelectedSlot(null);
     }
@@ -220,7 +252,7 @@ export default function ScheduleModal({
     // Platform is now optional. If nothing is connected we still let the
     // post save (the cron will mark it failed at publish time, which is
     // recoverable, vs. blocking the user here on a UAT box without OAuth).
-    const scheduledFor = parseSlotToDate(selectedDate, selectedSlot);
+    const scheduledFor = slotToNaive(selectedDate, selectedSlot);
     const errMsg = await onSave(scheduledFor, selectedPlatform);
     if (errMsg) setError(errMsg);
   };
@@ -239,7 +271,7 @@ export default function ScheduleModal({
       setError("Please select a date and time.");
       return;
     }
-    const when = parseSlotToDate(selectedDate, selectedSlot);
+    const when = slotToNaive(selectedDate, selectedSlot);
     const errMsg = await onSuggestTime(when, selectedPlatform);
     if (errMsg) setError(errMsg);
   };

@@ -112,6 +112,25 @@ const ICON_FALLBACKS: Record<string, string> = {
 };
 const DEFAULT_ICON = "📦";
 
+/**
+ * Brand logos by slug — parity with @quikit/ui's AppSwitcher (BRAND_ICONS).
+ * These override the API-provided `iconUrl`, which is a launcher-origin
+ * relative path (e.g. "/app-icons/quikscale.png") that only resolves on the
+ * launcher's origin — hosted inside QuikSocial it 404s, showing a broken
+ * image. QuikSocial ships these SVGs in its own public/app-icons, so a
+ * slug-relative path resolves on this origin too. Falls through to the
+ * emoji fallback when neither a brand icon nor a usable iconUrl exists.
+ */
+const BRAND_ICONS: Record<string, string> = {
+  quikit: "/app-icons/quikit.svg",
+  admin: "/app-icons/admin.svg",
+  quikinfra: "/app-icons/quikinfra.svg",
+  quikscale: "/app-icons/quikscale.svg",
+  quiktrack: "/app-icons/quiktrack.svg",
+  quiksocial: "/app-icons/quiksocial.svg",
+  quikcrm: "/app-icons/quikcrm.svg",
+};
+
 /* ─── Component ─────────────────────────────────────────────────────────── */
 
 interface QuikitAppSwitcherProps {
@@ -334,15 +353,36 @@ export function QuikitAppSwitcher({
                 {apps.map((app) => {
                   const isCurrent = app.id === currentApp?.id;
                   const fallbackEmoji = ICON_FALLBACKS[app.slug] ?? DEFAULT_ICON;
+                  // Prefer the slug-relative brand SVG (resolves on this
+                  // origin) over the launcher-relative API iconUrl that 404s.
+                  const iconSrc = BRAND_ICONS[app.slug] ?? app.iconUrl;
                   return (
                     <AppTile
                       key={app.id}
                       app={app}
+                      iconSrc={iconSrc}
                       fallbackEmoji={fallbackEmoji}
                       isCurrent={isCurrent}
                       onClick={() => {
                         setOpen(false);
-                        window.location.href = app.baseUrl;
+                        // Parity with @quikit/ui's AppSwitcher: route the launch
+                        // through the auth host's post-login bridge so the user
+                        // lands on the target already signed in. Direct nav to
+                        // app.baseUrl hits the target with no cookie (cookies
+                        // don't cross hosts/ports), bouncing through
+                        // launcher → /login. The bridge reads the existing
+                        // auth-host session, mints a short-lived handoff JWT,
+                        // and redirects to the target's /auth-handoff, which
+                        // plants a host-scoped cookie before /dashboard.
+                        const target = `${app.baseUrl.replace(/\/+$/, "")}/dashboard`;
+                        if (isCurrent) {
+                          window.location.href = target;
+                          return;
+                        }
+                        const authBase = (
+                          process.env.NEXT_PUBLIC_AUTH_URL || "http://localhost:3001"
+                        ).replace(/\/+$/, "");
+                        window.location.href = `${authBase}/api/post-login?callbackUrl=${encodeURIComponent(target)}`;
                       }}
                     />
                   );
@@ -389,11 +429,13 @@ export function QuikitAppSwitcher({
 
 function AppTile({
   app,
+  iconSrc,
   fallbackEmoji,
   isCurrent,
   onClick,
 }: {
   app: AppInfo;
+  iconSrc: string | null;
   fallbackEmoji: string;
   isCurrent: boolean;
   onClick: () => void;
@@ -449,12 +491,12 @@ function AppTile({
           flexShrink: 0,
         }}
       >
-        {app.iconUrl ? (
+        {iconSrc ? (
           // eslint-disable-next-line @next/next/no-img-element
           <img
-            src={app.iconUrl}
-            alt=""
-            style={{ width: "100%", height: "100%", objectFit: "cover" }}
+            src={iconSrc}
+            alt={app.name}
+            style={{ width: "100%", height: "100%", objectFit: "contain" }}
           />
         ) : (
           <span style={{ fontSize: 18, lineHeight: 1 }}>{fallbackEmoji}</span>
