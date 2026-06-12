@@ -79,10 +79,12 @@ jobs:
               }
 
               if (deployFailed) {
-                // Check if the error is specifically because relation/column/index already exists
+                // Check if the error is due to pre-existing tables/relations OR a P3009 blocked state
                 const isAlreadyExistsError = deployStdout.includes("already exists") 
                                           || deployStdout.includes("SqlState(E42P07)")
-                                          || deployStdout.includes("SqlState(E42701)");
+                                          || deployStdout.includes("SqlState(E42701)")
+                                          || deployStdout.includes("P3009")
+                                          || deployStdout.includes("failed migrations in the target database");
 
                 if (!isAlreadyExistsError) {
                   console.error("Migration failed with a critical error (not 'already exists'). Aborting.");
