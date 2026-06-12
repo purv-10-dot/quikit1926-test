@@ -1,15 +1,18 @@
 import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { withOrgAuthForModule } from "@/lib/api/withOrgAuth";
+import { quikScaleMemberWhere } from "@/lib/api/permissions";
 const withOrgAuth = withOrgAuthForModule("analytics.scorecard");
 
 export const GET = withOrgAuth(async ({ orgId }) => {
-    const [kpis, priorities, wwwItems, teams, members] = await Promise.all([
+    // Member count is scoped to QuikScale members only (see /api/org/users).
+    const memberWhere = await quikScaleMemberWhere(orgId);
+    const [kpis, priorities, wwwItems, teams, memberCount] = await Promise.all([
       db.kPI.findMany({ where: { orgId }, include: { weeklyValues: true } }),
       db.priority.findMany({ where: { orgId }, include: { weeklyStatuses: true } }),
       db.wWWItem.findMany({ where: { orgId } }),
       db.qsTeam.findMany({ where: { orgId } }),
-      db.orgMember.findMany({ where: { orgId }, include: { user: true } }),
+      memberWhere ? db.orgMember.count({ where: memberWhere }) : Promise.resolve(0),
     ]);
     // Legacy team-meeting attendance was part of this scorecard. The new
     // Client Meetings module tracks meeting-level stats per-client, not
@@ -54,7 +57,7 @@ export const GET = withOrgAuth(async ({ orgId }) => {
         meetings: { total: meetings.length, attendanceRate },
         www: { total: wwwItems.length, open: openWWW, overdue: overdueWWW },
         teams: teams.length,
-        members: members.length,
+        members: memberCount,
       }
     });
   });

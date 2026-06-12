@@ -1,6 +1,6 @@
 "use client";
 
-import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { useQuery, useMutation, useQueryClient, keepPreviousData } from "@tanstack/react-query";
 import * as kpiService from "@/lib/services/kpiService";
 import { CreateKPIInput, UpdateKPIInput, WeeklyValueInput, KPINoteInput, KPIListParams } from "@/lib/schemas/kpiSchema";
 
@@ -23,19 +23,20 @@ export function useKPIs(params: Partial<KPIListParams> = {}) {
     queryKey: kpiKeys.list(params),
     queryFn: () => kpiService.getKPIs(params),
     staleTime: 1000 * 60 * 5, // 5 minutes
+    // Keep the current page visible while the next page/sort/search loads —
+    // no spinner flash on pagination.
+    placeholderData: keepPreviousData,
   });
 }
 
-// List Team KPIs — convenience wrapper that forces kpiLevel="team". Default
-// pageSize is 100 to match kpiListParamsSchema cap (security row-cap). Team
-// KPI sets per tenant per quarter are typically < 50 so this is safe
-// truncation in practice. If a tenant ever exceeds 100 team KPIs, switch
-// to paginated fetch or a dedicated /api/kpi/all endpoint.
+// List Team KPIs — convenience wrapper that forces kpiLevel="team". The Team
+// KPI page now drives DB-level pagination (page/pageSize), so the caller
+// supplies the page size; default 10 to match the other list pages.
 export function useTeamKPIs(params: Partial<KPIListParams> = {}) {
   return useKPIs({
     ...params,
     kpiLevel: "team",
-    pageSize: params.pageSize ?? 100,
+    pageSize: params.pageSize ?? 10,
   });
 }
 
@@ -260,6 +261,8 @@ export function useMarkAuditRead() {
     onSuccess: () => {
       // Re-sync from the server once the mark is persisted.
       queryClient.invalidateQueries({ queryKey: ["audit", "unread"] });
+      // Also refresh the page-level batched counts (UnreadCountsProvider).
+      queryClient.invalidateQueries({ queryKey: ["audit-unread-counts"] });
     },
     // On failure we keep the optimistic 0 (no rollback) — the badge re-appears
     // on the next natural refetch (window focus). Matches UC-1.17.

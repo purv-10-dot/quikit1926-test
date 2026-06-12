@@ -48,6 +48,10 @@ export function useEntityMarkRead(entityType: string) {
     onMutate: (entityId: string) => {
       qc.setQueryData(auditKeys.unread(entityType, entityId), 0);
     },
+    onSuccess: () => {
+      // Refresh the page-level batched counts (UnreadCountsProvider).
+      void qc.invalidateQueries({ queryKey: ["audit-unread-counts"] });
+    },
   });
 }
 

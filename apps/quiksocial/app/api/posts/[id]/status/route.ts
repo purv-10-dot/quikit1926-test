@@ -17,6 +17,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { withOrgAuth } from "@/lib/api/withOrgAuth";
 import { db } from "@/lib/db";
+import { getUserTimezone, resolveScheduledForUtc } from "@/lib/utils/timezone";
 import { getWorkspaceRole } from "@/lib/auth/rbac";
 import { PostStatus } from "@/types/post-status";
 
@@ -43,7 +44,7 @@ const patchStatusSchema = z.object({
 });
 
 export const PATCH = withOrgAuth<{ id: string }>(
-  async ({ orgId, userId }, req: NextRequest, { params }) => {
+  async ({ orgId, userId, session }, req: NextRequest, { params }) => {
     const json = await req.json().catch(() => null);
     const parsed = patchStatusSchema.safeParse(json);
     if (!parsed.success) {
@@ -124,7 +125,11 @@ export const PATCH = withOrgAuth<{ id: string }>(
     };
 
     if (body.scheduledFor !== undefined) {
-      data.scheduledFor = body.scheduledFor ? new Date(body.scheduledFor) : null;
+      // F2: tz-naive local wall-clock → UTC in the user's profile timezone.
+      data.scheduledFor = resolveScheduledForUtc(
+        body.scheduledFor,
+        getUserTimezone(session),
+      );
     }
 
     // Platform is chosen at SCHEDULING time: persist the user's pick from

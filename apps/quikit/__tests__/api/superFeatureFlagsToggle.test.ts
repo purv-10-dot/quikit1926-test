@@ -174,4 +174,41 @@ describe("POST /api/super/feature-flags/[appSlug]/toggle", () => {
       expect.objectContaining({ action: "feature_flag_enabled" }),
     );
   });
+
+  it("enables a default-off module (cash) by upserting an enabled:true override", async () => {
+    setSession(SUPER_ADMIN);
+    mockDb.app.findUnique.mockResolvedValue({ id: "app-1" } as never);
+    mockDb.org.findUnique.mockResolvedValue({ id: "t-1", name: "Acme" } as never);
+    mockDb.appModuleFlag.upsert.mockResolvedValue({} as never);
+
+    const res = await POST(
+      postReq({ orgId: "t-1", moduleKey: "cash", enabled: true }),
+      PARAMS,
+    );
+    expect(res.status).toBe(200);
+    // Default-off modules invert the convention: the row exists to ENABLE.
+    expect(mockDb.appModuleFlag.upsert).toHaveBeenCalledTimes(1);
+    expect(mockDb.appModuleFlag.upsert).toHaveBeenCalledWith(
+      expect.objectContaining({
+        create: expect.objectContaining({ moduleKey: "cash", enabled: true }),
+        update: expect.objectContaining({ enabled: true }),
+      }),
+    );
+    expect(mockDb.appModuleFlag.deleteMany).not.toHaveBeenCalled();
+  });
+
+  it("disables a default-off module (survey) by deleting its override row", async () => {
+    setSession(SUPER_ADMIN);
+    mockDb.app.findUnique.mockResolvedValue({ id: "app-1" } as never);
+    mockDb.org.findUnique.mockResolvedValue({ id: "t-1", name: "Acme" } as never);
+    mockDb.appModuleFlag.deleteMany.mockResolvedValue({ count: 1 } as never);
+
+    const res = await POST(
+      postReq({ orgId: "t-1", moduleKey: "survey", enabled: false }),
+      PARAMS,
+    );
+    expect(res.status).toBe(200);
+    expect(mockDb.appModuleFlag.deleteMany).toHaveBeenCalledTimes(1);
+    expect(mockDb.appModuleFlag.upsert).not.toHaveBeenCalled();
+  });
 });

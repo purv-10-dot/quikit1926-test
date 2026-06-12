@@ -52,6 +52,7 @@ export default defineConfig({
       "@quikit/shared/email": path.resolve(__dirname, "../../packages/shared/lib/email"),
       "@quikit/shared/env": path.resolve(__dirname, "../../packages/shared/lib/env"),
       "@quikit/shared/constants": path.resolve(__dirname, "../../packages/shared/lib/constants"),
+      "@quikit/shared/temp-password": path.resolve(__dirname, "../../packages/shared/lib/temp-password"),
       "@quikit/shared/types": path.resolve(__dirname, "../../packages/shared/types"),
       "@quikit/shared": path.resolve(__dirname, "../../packages/shared"),
     },

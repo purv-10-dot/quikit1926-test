@@ -2,6 +2,7 @@
 
 import { Clock } from "lucide-react";
 import { useUnreadCount } from "@/lib/hooks/useKPI";
+import { useHasUnreadCountsProvider, useUnreadCountFromContext } from "./UnreadCountsProvider";
 
 /**
  * "History logs" trigger with a per-user unread badge (AC-1.1/1.2/1.3).
@@ -23,7 +24,12 @@ export function HistoryButton({
   label?: string;
   className?: string;
 }) {
-  const { data: unread = 0 } = useUnreadCount(entityId, !disabled);
+  // Prefer the page-level batched provider (one request for all rows). Only
+  // fall back to a per-entity fetch when no provider is mounted.
+  const hasProvider = useHasUnreadCountsProvider();
+  const ctxCount = useUnreadCountFromContext(entityId);
+  const { data: singleCount = 0 } = useUnreadCount(entityId, !disabled && !hasProvider);
+  const unread = hasProvider ? (ctxCount ?? 0) : singleCount;
   const badge = unread > 99 ? "99+" : String(unread);
 
   return (

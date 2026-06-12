@@ -1,8 +1,9 @@
 "use client";
 
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useMemo } from "react";
 import { useCreateKPI, useUpdateKPI } from "@/lib/hooks/useKPI";
 import { useUsers } from "@/lib/hooks/useUsers";
+import { useInfiniteUsers } from "@/lib/hooks/useInfiniteUsers";
 import { useTeams } from "@/lib/hooks/useTeams";
 import { useCanEditKPI } from "@/lib/hooks/useCanEditKPI";
 import { humanizeApiError } from "@/lib/utils/humanizeError";
@@ -110,10 +111,29 @@ export function KPIModal({ mode, kpi, scope, teamId, defaultYear, defaultQuarter
     };
   });
 
-  // In team scope, filter users to members of the selected team
-  const { data: allUsers = [] } = useUsers();
+  // Team scope: owners are members of the selected team (bounded list) — keep
+  // load-all. Individual scope: owner is picked from ALL org users, so use a
+  // DB-level infinite picker (25/page + server search) instead of loading the
+  // whole org. The single-owner picker (non-team) consumes `infiniteOwners`;
+  // the team multi-select + contribution rows consume the bounded `teamMembers`.
   const { data: teamMembers = [] } = useUsers(isTeamScope ? (form.teamId || undefined) : undefined);
-  const users = isTeamScope ? teamMembers : allUsers;
+  const [ownerSearch, setOwnerSearch] = useState("");
+  const infiniteOwners = useInfiniteUsers(undefined, ownerSearch);
+  const users = isTeamScope ? teamMembers : infiniteOwners.users;
+  // Seed the current owner so the (edit-mode, disabled) picker shows their name
+  // even when they're not in the first loaded page.
+  const ownerSeed = useMemo(
+    () =>
+      kpi?.owner_user
+        ? [{
+            id: kpi.owner_user.id,
+            firstName: kpi.owner_user.firstName,
+            lastName: kpi.owner_user.lastName,
+            email: (kpi.owner_user as { email?: string }).email ?? "",
+          }]
+        : [],
+    [kpi?.owner_user],
+  );
   const { data: teams = [] } = useTeams();
   const currentTeam = teams.find(t => t.id === form.teamId);
   const [errors, setErrors] = useState<Record<string, string>>({});
@@ -818,7 +838,19 @@ export function KPIModal({ mode, kpi, scope, teamId, defaultYear, defaultQuarter
                 <label className="block text-xs font-medium text-gray-600 mb-1">
                   Owner <span className="text-red-500">*</span>
                 </label>
-                <UserPicker value={form.owner} onChange={v => set("owner", v)} users={users} error={!!errors.owner} disabled={mode === "edit"} />
+                <UserPicker
+                  value={form.owner}
+                  onChange={v => set("owner", v)}
+                  users={users}
+                  selectedUsers={ownerSeed}
+                  onSearchChange={setOwnerSearch}
+                  onLoadMore={infiniteOwners.fetchNextPage}
+                  hasMore={infiniteOwners.hasNextPage}
+                  loadingMore={infiniteOwners.isFetchingNextPage}
+                  loading={infiniteOwners.isLoading}
+                  error={!!errors.owner}
+                  disabled={mode === "edit"}
+                />
                 {errors.owner && <p className="text-[10px] text-red-500 mt-0.5">{errors.owner}</p>}
               </div>
             )}

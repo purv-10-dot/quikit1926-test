@@ -3,8 +3,8 @@
 import { useState, useEffect, useRef, useMemo, useCallback } from "react";
 import { useSearchParams } from "next/navigation";
 import { useSession } from "next-auth/react";
-import { useUsers } from "@/lib/hooks/useUsers";
 import { cn } from "@/lib/utils";
+import { OPSPOwnerNamesProvider } from "./components/pickers";
 import { FInput } from "./components/RichEditor";
 import { Card } from "./components/Card";
 import { populateCatCache } from "./components/category";
@@ -43,6 +43,7 @@ export default function OPSPPage() {
     form, setForm,
     saveState, loading,
     fiscalYearStart,
+    ownerNames,
     planStartYear, planEndYear, planStartQuarter,
     reviewedQuarters, refreshReviewedQuarters,
     showSetupWizard,
@@ -64,7 +65,17 @@ export default function OPSPPage() {
   const [previewOpen, setPreviewOpen] = useState(urlPreview);
   const [showYearPicker, setShowYearPicker] = useState(false);
   const yearRef = useRef<HTMLDivElement>(null);
-  const { data: allUsers = [] } = useUsers();
+  // Owner-name source for the document/export — synthesized from the OPSP
+  // payload's `ownerNames` (only the owners actually referenced), so we no
+  // longer bulk-load every org user. The OwnerSelect dropdowns themselves are
+  // now infinite (25/page) and read names from OPSPOwnerNamesProvider below.
+  const ownerUsers = useMemo(
+    () => Object.entries(ownerNames).map(([id, name]) => {
+      const parts = name.trim().split(/\s+/);
+      return { id, firstName: parts[0] ?? name, lastName: parts.slice(1).join(" ") };
+    }),
+    [ownerNames],
+  );
 
   // Tenant name + signed-in user name — surfaced in OPSP preview blue bands
   // (Page 1 "Organization:" + Page 2 "Your Name:"). Tenant fetched once on
@@ -427,6 +438,7 @@ export default function OPSPPage() {
   }
 
   return (
+    <OPSPOwnerNamesProvider value={ownerNames}>
     <div className="min-h-screen bg-gray-50">
       {/* ── Sticky Header ── */}
       <div className="sticky top-0 z-30 bg-white border-b border-gray-200 px-6 py-3 flex items-center justify-between">
@@ -662,7 +674,7 @@ export default function OPSPPage() {
         open={previewOpen}
         onClose={() => setPreviewOpen(false)}
         form={form}
-        users={allUsers}
+        users={ownerUsers}
         tenantName={tenantName}
         currentUserName={currentUserName}
       />
@@ -888,5 +900,6 @@ export default function OPSPPage() {
         }
       />
     </div>
+    </OPSPOwnerNamesProvider>
   );
 }

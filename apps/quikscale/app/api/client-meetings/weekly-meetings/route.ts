@@ -5,6 +5,7 @@ import { withOrgAuthForModule } from "@/lib/api/withOrgAuth";
 import { createWeeklyMeetingSchema } from "@/lib/schemas/clientMeetingsSchema";
 import { audit, requestContext } from "@/lib/audit";
 import { parseSort, type SortDirection } from "@/lib/api/parseSort";
+import { parsePagination, paginatedResponse } from "@/lib/api/pagination";
 
 const withOrgAuth = withOrgAuthForModule("clientMeetings.weeklyMeeting");
 
@@ -59,23 +60,39 @@ export const GET = withOrgAuth(async ({ orgId }, request) => {
     }
     where.meetingDate = range;
   }
+  const search = (url.searchParams.get("search") ?? "").trim();
+  const status = url.searchParams.get("status") || undefined;
+  if (status) where.callStatus = status;
+  if (search) {
+    where.OR = [
+      { client: { name: { contains: search, mode: "insensitive" } } },
+      { notesKPDashboard: { contains: search, mode: "insensitive" } },
+      { otherNotes: { contains: search, mode: "insensitive" } },
+    ];
+  }
 
   const { orderBy } = parseSort(request, WEEKLY_SORT_WHITELIST, mapWeeklySort);
-  const rows = await db.clientWeeklyMeeting.findMany({
-    where,
-    orderBy,
-    include: {
-      client: { select: { id: true, name: true } },
-      absentMembers: true,
-      dashboardNAMembers: true,
-      absentTeamMembers: {
-        include: { member: { select: { id: true, name: true } } },
+  const { page, limit, skip, take } = parsePagination(request);
+  const [rows, total] = await Promise.all([
+    db.clientWeeklyMeeting.findMany({
+      where,
+      orderBy,
+      skip,
+      take,
+      include: {
+        client: { select: { id: true, name: true } },
+        absentMembers: true,
+        dashboardNAMembers: true,
+        absentTeamMembers: {
+          include: { member: { select: { id: true, name: true } } },
+        },
+        dashboardNATeamMembers: {
+          include: { member: { select: { id: true, name: true } } },
+        },
       },
-      dashboardNATeamMembers: {
-        include: { member: { select: { id: true, name: true } } },
-      },
-    },
-  });
+    }),
+    db.clientWeeklyMeeting.count({ where }),
+  ]);
 
   // Resolve createdBy / updatedBy → name + initials for the table's audit columns.
   const actorIds = [...new Set(rows.flatMap((r) => [r.createdBy, r.updatedBy].filter(Boolean) as string[]))];
@@ -89,9 +106,7 @@ export const GET = withOrgAuth(async ({ orgId }, request) => {
     actorMap[u.id] = { name, initials };
   }
 
-  return NextResponse.json({
-    success: true,
-    data: rows.map((r) => ({
+  const data = rows.map((r) => ({
       id: r.id,
       clientId: r.clientId,
       clientName: r.client.name,
@@ -136,8 +151,9 @@ export const GET = withOrgAuth(async ({ orgId }, request) => {
       updatedBy: r.updatedBy,
       updatedByName: r.updatedBy ? (actorMap[r.updatedBy]?.name ?? null) : null,
       updatedByInitials: r.updatedBy ? (actorMap[r.updatedBy]?.initials ?? null) : null,
-    })),
-  });
+    }));
+
+  return NextResponse.json(paginatedResponse(data, total, page, limit));
 });
 
 /** POST — create weekly meeting with absence + dashboardNA links + per-member scores. */

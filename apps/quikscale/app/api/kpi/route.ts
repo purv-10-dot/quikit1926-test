@@ -52,7 +52,15 @@ export const GET = auth.view(async ({ orgId, userId }, req) => {
   //     always returned zero rows.
   //   - When kpiLevel is not specified (rare on list pages), apply both
   //     conditions as an OR so neither scope is hidden.
-  if (validated.teamId) {
+  // Team KPI multi-select: `teamIds=a,b,c` filters team KPIs to those teams.
+  // Non-admins have their team scope re-applied below (visibility), so this
+  // filter only widens/narrows within what they're already allowed to see.
+  const teamIdsParam = searchParams.get("teamIds");
+  const teamIdList = teamIdsParam ? teamIdsParam.split(",").filter(Boolean) : [];
+
+  if (validated.kpiLevel === "team" && teamIdList.length > 0) {
+    where.teamId = teamIdList.length === 1 ? teamIdList[0] : { in: teamIdList };
+  } else if (validated.teamId) {
     if (validated.kpiLevel === "individual") {
       const members = await db.orgMember.findMany({
         where: { orgId, teamId: validated.teamId, status: "active" },
@@ -153,9 +161,14 @@ export const GET = auth.view(async ({ orgId, userId }, req) => {
   const primary: Record<string, unknown> =
     validated.sortBy === "owner"
       ? { owner_user: { firstName: dir } }
-      : { [validated.sortBy]: dir };
+      : validated.sortBy === "team"
+        ? { team: { name: dir } }
+        : { [validated.sortBy]: dir };
   const orderBy: Array<Record<string, unknown>> = [primary];
   if (validated.sortBy === "owner") orderBy.push({ owner_user: { lastName: dir } });
+  // Team KPI groups rows by team in the UI — secondary sort by KPI name keeps
+  // each team's rows ordered and the grouping deterministic across pages.
+  if (validated.sortBy === "team") orderBy.push({ name: "asc" });
   if (validated.sortBy !== "createdAt") orderBy.push({ createdAt: "desc" });
 
   const total = await db.kPI.count({ where });

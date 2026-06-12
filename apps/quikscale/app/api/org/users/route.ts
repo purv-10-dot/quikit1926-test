@@ -89,12 +89,40 @@ export const GET = auth.view(async ({ orgId }, req) => {
     return NextResponse.json(paginatedResponse([], 0, page, limit));
   }
 
+  // DB-level filters / search / sort (replaces the page's old client-side work).
+  const sp = req.nextUrl.searchParams;
+  const search = (sp.get("search") ?? "").trim();
+  const roleFilter = (sp.get("role") ?? "").trim();
+  const statusFilter = (sp.get("status") ?? "").trim();
+
+  const SORTABLE = new Set(["name", "email", "lastSignInAt", "joinedAt"]);
+  const sortByRaw = sp.get("sortBy") ?? "";
+  const sortOrder = sp.get("sortOrder") === "desc" ? "desc" : "asc";
+  const sortBy = SORTABLE.has(sortByRaw) ? sortByRaw : "name";
+  const orderBy: Record<string, unknown>[] =
+    sortBy === "email"        ? [{ user: { email: sortOrder } }]
+    : sortBy === "lastSignInAt" ? [{ user: { lastSignInAt: sortOrder } }]
+    : sortBy === "joinedAt"    ? [{ createdAt: sortOrder }]
+    : [{ user: { firstName: sortOrder } }, { user: { lastName: sortOrder } }];
+  orderBy.push({ id: "desc" }); // stable tie-breaker so pages never overlap
+
   const where = {
     orgId,
+    ...(roleFilter ? { role: roleFilter } : {}),
+    ...(statusFilter ? { status: statusFilter } : {}),
     user: {
       appRoles: {
         some: { orgId, role: { appId } },
       },
+      ...(search
+        ? {
+            OR: [
+              { firstName: { contains: search, mode: "insensitive" as const } },
+              { lastName: { contains: search, mode: "insensitive" as const } },
+              { email: { contains: search, mode: "insensitive" as const } },
+            ],
+          }
+        : {}),
     },
   };
 
@@ -109,7 +137,7 @@ export const GET = auth.view(async ({ orgId }, req) => {
           },
         },
       },
-      orderBy: { createdAt: "asc" },
+      orderBy: orderBy as any,
       skip,
       take,
     }),

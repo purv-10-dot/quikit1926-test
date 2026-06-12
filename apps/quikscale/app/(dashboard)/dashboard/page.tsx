@@ -11,7 +11,9 @@ import { useMyPermissions } from "@/lib/hooks/useMyPermissions";
 import { useDisabledModules } from "@/lib/hooks/useFeatureFlagsForApp";
 import { useTeams } from "@/lib/hooks/useTeams";
 import { useUsers } from "@/lib/hooks/useUsers";
+import { useInfiniteUsers } from "@/lib/hooks/useInfiniteUsers";
 import { HistoryButton } from "@/components/audit/HistoryButton";
+import { UnreadCountsProvider } from "@/components/audit/UnreadCountsProvider";
 import { ChangeHistoryPanel } from "@/app/(dashboard)/kpi/components/ChangeHistoryPanel";
 import { useSessionState } from "@/lib/hooks/useSessionState";
 import { STATUS_DOT, ITEM_STATUS_ORDER, statusLabel as getStatusLabel, type ItemStatus } from "@/lib/constants/status";
@@ -1065,19 +1067,23 @@ export default function DashboardPage() {
     }
   }, [activeTab, teamTabTeamId, teamTabOwnerId, userId, setFilterTeam, setFilterOwner]);
 
-  // Active scope team — only the Team tab uses a team filter now (My Dashboard
-  // is hard-locked to the current user, no team filter).
-  const selectedTeamId = activeTab === "team" ? (teamTabTeamId || undefined) : undefined;
+  // Team-scope member set — ONLY the selected team's members (a bounded list),
+  // used to filter individual KPIs/Priorities/WWW by `owner ∈ team`. Gated so
+  // we never bulk-load the whole org just to build a Set that's unused unless a
+  // team is actually selected (teamScopeUserIds is null without one).
+  const { data: teamMembersForScope = [] } = useUsers(teamTabTeamId || undefined, { enabled: !!teamTabTeamId });
+  const teamUserIds = useMemo(() => new Set(teamMembersForScope.map(u => u.id)), [teamMembersForScope]);
 
-  // Owner picker + team-scope member set — the full member list for the selected
-  // team (up to the API's 1000-row cap), the SAME source the KPI / Priority / WWW
-  // pickers use (`useUsers`). A full list means the Owner picker can always render
-  // the selected owner's name — even one seeded from another page that isn't on a
-  // paginated slice — and client-side search still finds anyone. When a team is
-  // selected the API filters to actual OrgMember.teamId membership.
-  const { data: users = [] } = useUsers(selectedTeamId);
-  // Set of user IDs belonging to the selected team (all org members when no team selected)
-  const teamUserIds = useMemo(() => new Set(users.map(u => u.id)), [users]);
+  // Owner picker — DB-level infinite (25/page) + server search, scoped to the
+  // selected team when one is picked. No full org load.
+  const [ownerSearch, setOwnerSearch] = useState("");
+  const {
+    users: ownerOptions,
+    isLoading: ownersLoading,
+    hasNextPage: ownersHasMore,
+    isFetchingNextPage: ownersLoadingMore,
+    fetchNextPage: fetchMoreOwners,
+  } = useInfiniteUsers(teamTabTeamId || undefined, ownerSearch);
 
   // Multi-select WWW status filter. Defaults to every status EXCEPT
   // "completed" — keeps the dashboard focused on actionable work; users can
@@ -1320,7 +1326,12 @@ export default function DashboardPage() {
                         setTeamTabOwnerId(v);
                         setShowFilter(false);
                       }}
-                      options={users.map(userToFilterOption)}
+                      options={ownerOptions.map(userToFilterOption)}
+                      onSearchChange={setOwnerSearch}
+                      onLoadMore={fetchMoreOwners}
+                      hasMore={ownersHasMore}
+                      loadingMore={ownersLoadingMore}
+                      loading={ownersLoading}
                       allLabel="All Users"
                     />
                   </div>
@@ -1388,7 +1399,11 @@ export default function DashboardPage() {
                       <div className="h-1.5 bg-gray-100 rounded w-full" />
                     </div>
                   ))
-                : kpis.map(k => <KPICard key={k.id} kpi={k} currentWeek={currentWeek} />)
+                : (
+                  <UnreadCountsProvider entityType="KPI" ids={kpis.map(k => k.id)}>
+                    {kpis.map(k => <KPICard key={k.id} kpi={k} currentWeek={currentWeek} />)}
+                  </UnreadCountsProvider>
+                )
               }
             </div>
           </KPIOverviewContainer>

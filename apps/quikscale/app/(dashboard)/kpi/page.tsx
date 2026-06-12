@@ -6,7 +6,7 @@ import { useKPIs, useDeleteKPI, useBulkRestoreKPI } from "@/lib/hooks/useKPI";
 import { notify } from "@/lib/utils/notify";
 import { useTableSort, useDebouncedTableSearch } from "@/lib/store";
 import { TableSkeleton } from "@/components/ui/Skeleton";
-import { useUsers } from "@/lib/hooks/useUsers";
+import { useInfiniteUsers } from "@/lib/hooks/useInfiniteUsers";
 import { KPIListParams } from "@/lib/schemas/kpiSchema";
 import {
   getFiscalYear, getFiscalQuarter, fiscalYearLabel,
@@ -25,6 +25,7 @@ import { useTablePrefs } from "@/lib/hooks/useTablePreferences";
 import { ModuleMoreActions, TrashBanner } from "@/components/table/ModuleMoreActions";
 import { runExport } from "@/lib/export/xlsx";
 import { getKPIs } from "@/lib/services/kpiService";
+import { UnreadCountsProvider } from "@/components/audit/UnreadCountsProvider";
 import { Target } from "lucide-react";
 
 const FISCAL_YEAR = getFiscalYear();
@@ -102,8 +103,16 @@ export default function IndividualKPIPage() {
       .catch((err) => console.error("[kpi] Failed to load teams:", err));
   }, []);
 
-  // Users for owner dropdown — filtered by team when one is selected
-  const { data: users = [] } = useUsers(filterTeam || undefined);
+  // Users for owner dropdown — DB-level infinite (25/page) + server search,
+  // filtered by team when one is selected. No full-list load.
+  const [ownerSearch, setOwnerSearch] = useState("");
+  const {
+    users,
+    isLoading: ownersLoading,
+    hasNextPage: ownersHasMore,
+    isFetchingNextPage: ownersLoadingMore,
+    fetchNextPage: fetchMoreOwners,
+  } = useInfiniteUsers(filterTeam || undefined, ownerSearch);
 
   // Year picker — DB-scoped from QuarterSetting via shared hook
   const { years: fyYears, configured: fyConfigured } = useFiscalYears();
@@ -365,6 +374,11 @@ export default function IndividualKPIPage() {
                     value={filterOwner}
                     onChange={(v) => { setFilterOwner(v); ctx.setFilterOwner(v); }}
                     options={users.map(userToFilterOption)}
+                    onSearchChange={setOwnerSearch}
+                    onLoadMore={fetchMoreOwners}
+                    hasMore={ownersHasMore}
+                    loadingMore={ownersLoadingMore}
+                    loading={ownersLoading}
                     allLabel="All owners"
                   />
                 </div>
@@ -428,6 +442,7 @@ export default function IndividualKPIPage() {
             />
           </div>
         ) : (
+          <UnreadCountsProvider entityType="KPI" ids={kpis.map((k: { id: string }) => k.id)}>
           <KPITable
             kpis={kpis}
             total={total}
@@ -449,6 +464,7 @@ export default function IndividualKPIPage() {
             canDelete={canDelete}
             canUpdate={canUpdate}
           />
+          </UnreadCountsProvider>
         )}
       </div>
 

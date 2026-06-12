@@ -7,6 +7,7 @@ import { toErrorMessage } from "@/lib/api/errors";
 import { writeAuditLog } from "@/lib/api/auditLog";
 import { audit, requestContext } from "@/lib/audit";
 import { parseSort, type SortDirection } from "@/lib/api/parseSort";
+import { parsePagination, paginatedResponse } from "@/lib/api/pagination";
 
 // RBAC v2: Client Master is now per-action gated, mirroring KPI / WWW. The
 // previous `requireAdmin()` gate on POST/PUT/DELETE/restore is removed —
@@ -39,12 +40,36 @@ function mapClientSort(key: string, dir: SortDirection): Prisma.ClientOrderByWit
  *     Falls back to the historical `createdAt asc` when omitted/invalid.
  */
 export const GET = auth.view(async ({ orgId }, request) => {
-  const includeDeleted = new URL(request.url).searchParams.get("includeDeleted") === "true";
+  const sp = new URL(request.url).searchParams;
+  const includeDeleted = sp.get("includeDeleted") === "true";
+  const search = (sp.get("search") ?? "").trim();
+  const statusFilter = sp.get("status") || undefined; // "active" | "inactive"
+  const clientId = sp.get("clientId") || undefined;
   const { sortBy, sortOrder, orderBy } = parseSort(request, CLIENT_SORT_WHITELIST, mapClientSort);
-  const rows = await db.client.findMany({
-    where: { orgId, deletedAt: includeDeleted ? { not: null } : null },
-    orderBy,
-    include: {
+  const { page, limit, skip, take } = parsePagination(request);
+
+  const where: Prisma.ClientWhereInput = {
+    orgId,
+    deletedAt: includeDeleted ? { not: null } : null,
+    ...(clientId ? { id: clientId } : {}),
+    ...(statusFilter ? { isActive: statusFilter === "active" } : {}),
+    ...(search
+      ? {
+          OR: [
+            { name: { contains: search, mode: "insensitive" } },
+            { description: { contains: search, mode: "insensitive" } },
+          ],
+        }
+      : {}),
+  };
+
+  const [rows, total] = await Promise.all([
+    db.client.findMany({
+      where,
+      orderBy,
+      skip,
+      take,
+      include: {
       // Pull `member.deletedAt` so we can drop soft-deleted members from the
       // roster below. A deleted ClientMember leaves its ClientTeamMember link
       // behind, and this include previously had no deletedAt filter — so the
@@ -52,17 +77,18 @@ export const GET = auth.view(async ({ orgId }, request) => {
       // only lists active members) can't render, producing the "grid shows 9 /
       // edit form shows 5" mismatch. The dashboard + export routes already
       // filter on `member.deletedAt`; this brings the list endpoint in line.
-      teamMembers: { include: { member: { select: { id: true, name: true, email: true, deletedAt: true } } } },
-      _count: { select: { memberships: { where: { deletedAt: null } } } },
-    },
-  });
+        teamMembers: { include: { member: { select: { id: true, name: true, email: true, deletedAt: true } } } },
+        _count: { select: { memberships: { where: { deletedAt: null } } } },
+      },
+    }),
+    db.client.count({ where }),
+  ]);
 
-  // Case-insensitive name sort. Postgres orders text by collation (byte order),
-  // so `ORDER BY name` groups all uppercase before all lowercase ("E" < "a").
-  // Prisma's `orderBy` can't express case-insensitivity (`mode: "insensitive"`
-  // is filter-only), so re-sort the `name` column in JS. Safe here because the
-  // endpoint returns the full org list (no pagination) and `displayId` is
-  // assigned from this order below.
+  // Case-insensitive name ordering: Postgres `ORDER BY name` is byte-order
+  // (uppercase before lowercase) and Prisma's `orderBy` can't express LOWER().
+  // We re-sort the fetched rows in JS. Under multi-page pagination this refines
+  // ordering within the current page; the page boundary itself follows the DB
+  // collation. (For the common small client lists this is effectively exact.)
   if (sortBy === "name") {
     const dir = sortOrder === "desc" ? -1 : 1;
     rows.sort((a, b) => dir * a.name.localeCompare(b.name, undefined, { sensitivity: "base" }));
@@ -81,11 +107,9 @@ export const GET = auth.view(async ({ orgId }, request) => {
     };
   }
 
-  return NextResponse.json({
-    success: true,
-    data: rows.map((r, i) => ({
+  const data = rows.map((r, i) => ({
       id: r.id,
-      displayId: i + 1,
+      displayId: skip + i + 1,
       name: r.name,
       description: r.description,
       isActive: r.isActive,
@@ -103,8 +127,9 @@ export const GET = auth.view(async ({ orgId }, request) => {
       updatedBy: r.updatedBy,
       updatedByName: r.updatedBy ? actorMap[r.updatedBy]?.name ?? "—" : null,
       updatedByInitials: r.updatedBy ? actorMap[r.updatedBy]?.initials ?? "??" : null,
-    })),
-  });
+    }));
+
+  return NextResponse.json(paginatedResponse(data, total, page, limit));
 });
 
 /**

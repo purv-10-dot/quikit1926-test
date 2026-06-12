@@ -162,6 +162,7 @@ export const kpiListParamsSchema = z.object({
       "progressPercent",
       "healthStatus",
       "owner",
+      "team",
       "measurementUnit",
       "target",
       "quarterlyGoal",

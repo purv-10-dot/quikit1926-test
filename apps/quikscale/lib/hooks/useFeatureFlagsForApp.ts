@@ -33,6 +33,16 @@ const EMPTY = new Set<string>();
 let _cached: Set<string> | null = null;
 let _inflight: Promise<Set<string>> | null = null;
 
+// Whether we've already kicked off a background revalidation this page load.
+// One revalidation per full load is enough — subsequent mounts read the
+// (now-fresh) module cache and subscribe for updates.
+let _revalidatedThisLoad = false;
+
+// Live consumers. When a background revalidation returns fresh data we push
+// it to every mounted hook, not just the one that triggered the fetch —
+// otherwise a second consumer (e.g. mobile drawer) keeps the stale set.
+const _subscribers = new Set<(s: Set<string>) => void>();
+
 // localStorage backing — survives page reloads.
 const STORAGE_KEY = "ff:me:quikscale:v1";
 const LOCAL_TTL_MS = 5 * 60 * 1000; // 5 minutes; matches server Redis TTL.
@@ -71,20 +81,25 @@ function writeLocal(set: Set<string>): void {
   }
 }
 
-async function fetchDisabled(): Promise<Set<string>> {
-  if (_cached) return _cached;
+async function fetchDisabled(force = false): Promise<Set<string>> {
+  // `force` bypasses the in-memory cache so a background revalidation actually
+  // hits the network even when we already seeded state from a (possibly stale)
+  // module/localStorage entry.
+  if (!force && _cached) return _cached;
   if (_inflight) return _inflight;
   _inflight = (async () => {
     try {
       const r = await fetch("/api/feature-flags/me", { credentials: "include" });
-      if (!r.ok) return EMPTY;
+      if (!r.ok) return _cached ?? EMPTY;
       const j = await r.json();
       const set = new Set<string>(j?.data?.disabledKeys ?? []);
       _cached = set;
       writeLocal(set);
+      // Push the fresh set to every mounted consumer.
+      for (const notify of _subscribers) notify(set);
       return set;
     } catch {
-      return EMPTY;
+      return _cached ?? EMPTY;
     } finally {
       _inflight = null;
     }
@@ -95,41 +110,45 @@ async function fetchDisabled(): Promise<Set<string>> {
 /**
  * Returns the disabled-module set for quikscale (for the current user's tenant).
  *
- * Seeding order on first mount:
- *   1. Module cache if already populated — instant, no fetch.
- *   2. localStorage if fresh (< LOCAL_TTL_MS) — instant, no fetch.
- *   3. Fetch + populate both caches.
+ * SSR-safe: the FIRST render returns EMPTY on both the server (no `window`)
+ * and the client, so the server HTML and the hydrating client tree match.
+ * Reading the module/localStorage cache synchronously here would diverge from
+ * the server's all-enabled render and trip a hydration mismatch in the sidebar.
+ *
+ * After mount the effect hydrates from cache (instant) and revalidates:
+ *   1. Module cache if populated, else fresh localStorage entry — instant.
+ *   2. Background revalidation against /api/feature-flags/me, once per load.
  */
 export function useDisabledModules(): Set<string> {
-  // SSR-safe seeding. The server has no localStorage, so it always renders
-  // with EMPTY (nothing disabled); the first client render MUST match that
-  // HTML or React throws a hydration mismatch (the nav sections differ). So
-  // we start from EMPTY and seed from the module/localStorage cache in the
-  // effect below — reading localStorage in the useState initializer is what
-  // diverged the first client render from the server. The seed runs right
-  // after mount, so the only cost is a one-frame flash before disabled
-  // modules drop out of the sidebar.
+  // Start EMPTY to match the server render. Hydration happens in the effect.
   const [set, setSet] = useState<Set<string>>(EMPTY);
 
   useEffect(() => {
-    // Seed order: in-memory module cache (a previous mount this page-load) →
-    // fresh localStorage (< LOCAL_TTL_MS) → network fetch.
-    if (_cached) {
-      setSet(_cached);
-      if (_cached !== EMPTY) return; // authoritative in-session — skip fetch
-    } else {
-      const fromLocal = readLocal();
-      if (fromLocal) {
-        _cached = fromLocal; // hydrate module cache
-        setSet(fromLocal);
-        return; // readLocal() already enforced the TTL — skip fetch
-      }
+    // Subscribe so a background revalidation triggered by any mounted consumer
+    // updates this one too.
+    _subscribers.add(setSet);
+
+    // Hydrate from the module/localStorage cache now that we're past hydration
+    // (client-only — safe to read `window`). Avoids a network round-trip when
+    // we already have a recent set.
+    const seeded = _cached ?? readLocal();
+    if (seeded) {
+      _cached = seeded; // hydrate module cache
+      setSet(seeded);
     }
-    let cancelled = false;
-    fetchDisabled().then((d) => {
-      if (!cancelled) setSet(d);
-    });
-    return () => { cancelled = true; };
+
+    // True stale-while-revalidate: the seeded cache can be up to LOCAL_TTL_MS
+    // stale AND is never invalidated when a super admin toggles a module from
+    // the (different-origin) admin app. So always revalidate against the server
+    // once per page load and adopt the fresh set. Without this, a module the
+    // super admin just disabled keeps rendering in the sidebar until the
+    // client cache naturally expires.
+    if (!_revalidatedThisLoad) {
+      _revalidatedThisLoad = true;
+      void fetchDisabled(true);
+    }
+
+    return () => { _subscribers.delete(setSet); };
   }, []);
   return set;
 }
@@ -138,6 +157,8 @@ export function useDisabledModules(): Set<string> {
 export function _resetDisabledModulesCache(): void {
   _cached = null;
   _inflight = null;
+  _revalidatedThisLoad = false;
+  _subscribers.clear();
   if (typeof window !== "undefined") {
     try { window.localStorage.removeItem(STORAGE_KEY); } catch { /* ignore */ }
   }

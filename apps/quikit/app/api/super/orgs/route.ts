@@ -6,6 +6,7 @@ import { createOrgSchema } from "@/lib/schemas/superAdminSchemas";
 import { logAudit } from "@/lib/auditLog";
 import { sendOnboardingInvitationEmail } from "@/lib/email";
 import { provisionAppRolesForOrg } from "@/lib/provisionAppRoles";
+import { seedDefaultDisabledModuleFlags } from "@/lib/seedDefaultModuleFlags";
 import { parsePaginationParams, paginationToSkipTake, buildPaginationResponse } from "@quikit/shared/pagination";
 import {
   INVITE_METHOD,
@@ -171,6 +172,20 @@ export const POST = withSuperAdminAuth(async ({ userId }, request: NextRequest) 
           })),
           skipDuplicates: true,
         });
+
+        // Persist each assigned app's "off by default" modules (e.g. QuikScale
+        // Survey + Cash) as explicit per-org AppModuleFlag rows, so the disabled
+        // state is stored organization-wise from initial setup. A super admin
+        // can enable them later from App Feature Flags. No-op for apps without
+        // any defaultDisabled modules.
+        for (const a of appsToProvision) {
+          await seedDefaultDisabledModuleFlags(tx, {
+            orgId: org.id,
+            appId: a.id,
+            appSlug: a.slug,
+            actorId: userId,
+          });
+        }
       }
 
       if (!admin) {

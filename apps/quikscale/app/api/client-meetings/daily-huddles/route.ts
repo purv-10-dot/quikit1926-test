@@ -6,6 +6,7 @@ import { createDailyHuddleSchema } from "@/lib/schemas/clientMeetingsSchema";
 import { writeAuditLog } from "@/lib/api/auditLog";
 import { audit, requestContext } from "@/lib/audit";
 import { parseSort, type SortDirection } from "@/lib/api/parseSort";
+import { parsePagination, paginatedResponse } from "@/lib/api/pagination";
 
 const withOrgAuth = withOrgAuthForModule("clientMeetings.dailyHuddle");
 
@@ -45,25 +46,42 @@ export const GET = withOrgAuth(async ({ orgId }, request) => {
   const to             = url.searchParams.get("to");
   const includeDeleted = url.searchParams.get("includeDeleted") === "true";
 
+  const search = (url.searchParams.get("search") ?? "").trim();
+  const status = url.searchParams.get("status") || undefined;
+
   const where: Record<string, unknown> = { orgId, deletedAt: includeDeleted ? { not: null } : null };
   if (clientId) where.clientId = clientId;
+  if (status) where.callStatus = status;
   if (from || to) {
     const r: Record<string, Date> = {};
     if (from) r.gte = new Date(from);
     if (to) { const d = new Date(to); d.setUTCHours(23, 59, 59, 999); r.lte = d; }
     where.meetingDate = r;
   }
+  if (search) {
+    where.OR = [
+      { client: { name: { contains: search, mode: "insensitive" } } },
+      { notesKPDashboard: { contains: search, mode: "insensitive" } },
+      { otherNotes: { contains: search, mode: "insensitive" } },
+    ];
+  }
 
   const { orderBy } = parseSort(request, HUDDLE_SORT_WHITELIST, mapHuddleSort);
-  const rows = await db.clientDailyHuddle.findMany({
-    where,
-    orderBy,
-    include: {
-      client: { select: { id: true, name: true } },
-      absentMembers: true,
-      absentTeamMembers: { include: { member: { select: { id: true, name: true } } } },
-    },
-  });
+  const { page, limit, skip, take } = parsePagination(request);
+  const [rows, total] = await Promise.all([
+    db.clientDailyHuddle.findMany({
+      where,
+      orderBy,
+      skip,
+      take,
+      include: {
+        client: { select: { id: true, name: true } },
+        absentMembers: true,
+        absentTeamMembers: { include: { member: { select: { id: true, name: true } } } },
+      },
+    }),
+    db.clientDailyHuddle.count({ where }),
+  ]);
 
   // Resolve actor names/initials.
   const actorIds = [...new Set(rows.flatMap(r => [r.createdBy, r.updatedBy].filter(Boolean) as string[]))];
@@ -76,11 +94,9 @@ export const GET = withOrgAuth(async ({ orgId }, request) => {
     initials: `${u.firstName[0] ?? ""}${u.lastName[0] ?? ""}`.toUpperCase() || "??",
   };
 
-  return NextResponse.json({
-    success: true,
-    data: rows.map((r, i) => ({
+  const data = rows.map((r, i) => ({
       id: r.id,
-      displayId: i + 1,
+      displayId: skip + i + 1,
       clientId: r.clientId,
       clientName: r.client.name,
       meetingDate: r.meetingDate.toISOString(),
@@ -106,8 +122,9 @@ export const GET = withOrgAuth(async ({ orgId }, request) => {
       updatedBy: r.updatedBy,
       updatedByName: r.updatedBy ? actorMap[r.updatedBy]?.name ?? "—" : null,
       updatedByInitials: r.updatedBy ? actorMap[r.updatedBy]?.initials ?? "??" : null,
-    })),
-  });
+    }));
+
+  return NextResponse.json(paginatedResponse(data, total, page, limit));
 });
 
 /** POST — create a daily huddle. Any active tenant member may call. */

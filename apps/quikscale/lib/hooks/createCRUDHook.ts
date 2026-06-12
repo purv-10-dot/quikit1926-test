@@ -35,8 +35,21 @@ import {
   useQuery,
   useMutation,
   useQueryClient,
+  keepPreviousData,
   type UseQueryOptions,
 } from "@tanstack/react-query";
+
+/** Standard pagination meta returned by `paginatedResponse` on the server. */
+export interface ListMeta {
+  page: number;
+  limit: number;
+  total: number;
+  totalPages: number;
+}
+export interface PaginatedList<Item> {
+  data: Item[];
+  meta: ListMeta;
+}
 
 export interface CRUDHookConfig<Filters> {
   /** Key prefix + base path segment (e.g. "www", "priority", "kpi") */
@@ -80,6 +93,20 @@ export function createCRUDHook<Item, Filters>(
   async function fetchList(filters: Filters): Promise<Item[]> {
     const res = await fetch(listUrl(filters));
     return unwrap<Item[]>(res, `Failed to fetch ${resource}s`);
+  }
+
+  // Paginated variant — reads BOTH `data` and `meta` from the standard
+  // `paginatedResponse` envelope. Used by list pages that drive DB-level
+  // pagination/search/sort. Falls back to a single-page meta if the route
+  // (older shape) returns only `data`.
+  const DEFAULT_META: ListMeta = { page: 1, limit: 0, total: 0, totalPages: 1 };
+  async function fetchListPaginated(filters: Filters): Promise<PaginatedList<Item>> {
+    const res = await fetch(listUrl(filters));
+    const json = await res.json();
+    if (!json.success) throw new Error(json.error || `Failed to fetch ${resource}s`);
+    const data = (json.data ?? []) as Item[];
+    const meta: ListMeta = json.meta ?? { ...DEFAULT_META, total: data.length, limit: data.length };
+    return { data, meta };
   }
 
   async function createItem(body: Partial<Item>): Promise<Item> {
@@ -132,6 +159,24 @@ export function createCRUDHook<Item, Filters>(
       queryKey: keys.list(filters),
       queryFn: () => fetchList(filters),
       staleTime,
+      ...options,
+    });
+  }
+
+  /**
+   * DB-level paginated list. Returns `{ data, meta }` and keeps the previous
+   * page's data visible while the next page loads (no spinner flash on
+   * page/sort/search changes).
+   */
+  function useListPaginated(
+    filters: Filters,
+    options?: Omit<UseQueryOptions<PaginatedList<Item>, Error>, "queryKey" | "queryFn">
+  ) {
+    return useQuery({
+      queryKey: [...keys.list(filters), "paginated"] as const,
+      queryFn: () => fetchListPaginated(filters),
+      staleTime,
+      placeholderData: keepPreviousData,
       ...options,
     });
   }
@@ -206,5 +251,5 @@ export function createCRUDHook<Item, Filters>(
     });
   }
 
-  return { keys, useList, useCreate, useUpdate, useDelete, useRestore, useBulkRestore };
+  return { keys, useList, useListPaginated, useCreate, useUpdate, useDelete, useRestore, useBulkRestore };
 }

@@ -2,7 +2,7 @@
 
 import { useState, useRef, useEffect, useCallback } from "react";
 import { useCreatePriority } from "@/lib/hooks/usePriority";
-import { useUsers } from "@/lib/hooks/useUsers";
+import { useInfiniteUsers } from "@/lib/hooks/useInfiniteUsers";
 import { useQueryClient } from "@tanstack/react-query";
 import { fiscalYearLabel, ALL_QUARTERS, getFiscalYear, getWeekDateRange } from "@/lib/utils/fiscal";
 import { useTeams, type Team } from "@/lib/hooks/useTeams";
@@ -167,7 +167,17 @@ export function PriorityModal({ defaultYear, defaultQuarter, onClose, onSuccess 
   //   - No team → fetch all tenant users so the Owner picker is never empty.
   // When user changes team, we clear `form.owner` if they're not in the
   // new team's member list (handled in handleTeamChange).
-  const { data: users = [] } = useUsers(form.teamId || undefined);
+  // Owner picker — DB-level infinite (25/page) + server search, team-aware.
+  // This modal is create-only (owner starts empty), so no selected-owner seed
+  // is needed; the picked owner is always in the loaded set.
+  const [ownerSearch, setOwnerSearch] = useState("");
+  const {
+    users,
+    isLoading: ownersLoading,
+    hasNextPage: ownersHasMore,
+    isFetchingNextPage: ownersLoadingMore,
+    fetchNextPage: fetchMoreOwners,
+  } = useInfiniteUsers(form.teamId || undefined, ownerSearch);
   const { data: teams = [] } = useTeams();
   const createPriority = useCreatePriority();
 
@@ -304,7 +314,17 @@ export function PriorityModal({ defaultYear, defaultQuarter, onClose, onSuccess 
               <label className="block text-xs font-medium text-gray-600 mb-1">
                 Owner <span className="text-red-500">*</span>
               </label>
-              <UserPicker value={form.owner} onChange={v => set("owner", v)} users={users} error={!!errors.owner} />
+              <UserPicker
+                value={form.owner}
+                onChange={v => set("owner", v)}
+                users={users}
+                onSearchChange={setOwnerSearch}
+                onLoadMore={fetchMoreOwners}
+                hasMore={ownersHasMore}
+                loadingMore={ownersLoadingMore}
+                loading={ownersLoading}
+                error={!!errors.owner}
+              />
               {errors.owner && <p className="text-[10px] text-red-500 mt-0.5">{errors.owner}</p>}
             </div>
           </div>

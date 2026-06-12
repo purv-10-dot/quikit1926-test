@@ -116,7 +116,7 @@ export default function ScrollStage() {
       <div className="scroll-scrub" aria-hidden="true" />
       <div className="dashboard-pin">
         <figure className="dashboard-figure">
-          <img src="/marketing/Empty%20Dashboard%20.png" alt="QuikConstruction ERP dashboard showing real-time materials, money, and project progress" />
+          <img src="/marketing/Empty%20Dashboard%20.png" alt="QuikInfra ERP dashboard showing real-time materials, money, and project progress" />
           <div className="dashboard-frame" aria-hidden="true" />
         </figure>
       </div>

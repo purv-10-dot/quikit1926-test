@@ -16,6 +16,13 @@ export interface PriorityFilters {
   quarter: string;
   sort?: string | null;
   includeDeleted?: boolean;
+  // DB-level pagination + search + filters.
+  page?: number;
+  limit?: number;
+  search?: string;
+  owner?: string;
+  teamId?: string;
+  status?: string;
 }
 
 function buildListUrl(filters: PriorityFilters): string {
@@ -29,6 +36,12 @@ function buildListUrl(filters: PriorityFilters): string {
     if (sortOrder) params.set("sortOrder", sortOrder);
   }
   if (filters.includeDeleted) params.set("includeDeleted", "true");
+  if (filters.page) params.set("page", String(filters.page));
+  if (filters.limit) params.set("limit", String(filters.limit));
+  if (filters.search) params.set("search", filters.search);
+  if (filters.owner) params.set("owner", filters.owner);
+  if (filters.teamId) params.set("teamId", filters.teamId);
+  if (filters.status) params.set("status", filters.status);
   return `/api/priority?${params.toString()}`;
 }
 
@@ -41,6 +54,11 @@ const priority = createCRUDHook<PriorityRow, PriorityFilters>({
 // `usePriorities(year, quarter, sort?)` so call sites don't need to change.
 export function usePriorities(year: number, quarter: string, sort?: string | null, includeDeleted?: boolean) {
   return priority.useList({ year, quarter, sort, includeDeleted });
+}
+
+/** DB-level paginated list — returns `{ data, meta }`, keeps previous page. */
+export function usePrioritiesPaginated(filters: PriorityFilters) {
+  return priority.useListPaginated(filters);
 }
 
 export const useCreatePriority = priority.useCreate;

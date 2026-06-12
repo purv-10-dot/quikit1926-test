@@ -21,16 +21,29 @@ export const GET = auth.view(async ({ orgId, userId }, req) => {
   const sortOrder = (searchParams.get("sortOrder") || "asc") as "asc" | "desc";
   const { page, limit, skip, take } = parsePagination(req);
 
+  const whoFilter = searchParams.get("who") || undefined;
+  const teamFilter = searchParams.get("teamId") || undefined;
+
   const includeDeleted = searchParams.get("includeDeleted") === "true";
   const where: Record<string, unknown> = { orgId };
   where.deletedAt = includeDeleted ? { not: null } : null;
   if (status) where.status = status;
 
   // Row-level visibility: admins see all WWW items, non-admins see only
-  // items where they are the `who` (assigned person).
+  // items where they are the `who` (assigned person). An explicit who/team
+  // filter can only NARROW within that scope.
   const wwwAdminBypass = await isOrgAdmin(userId, orgId);
   if (!wwwAdminBypass) {
     where.who = userId;
+  } else if (whoFilter) {
+    where.who = whoFilter; // explicit assignee filter takes precedence over team
+  } else if (teamFilter) {
+    const members = await db.orgMember.findMany({
+      where: { orgId, teamId: teamFilter, status: "active" },
+      select: { userId: true },
+    });
+    const memberIds = members.map((m) => m.userId);
+    where.who = memberIds.length > 0 ? { in: memberIds } : "__no_team_members__";
   }
 
   if (search) {
@@ -57,7 +70,9 @@ export const GET = auth.view(async ({ orgId, userId }, req) => {
     notes: { notes: sortOrder },
     createdAt: { createdAt: sortOrder },
   };
-  const orderBy = sortMap[sortBy] || { createdAt: sortOrder };
+  // Stable `id` tie-breaker so equal-sort rows keep a deterministic order
+  // across pages.
+  const orderBy = [sortMap[sortBy] || { createdAt: sortOrder }, { id: "desc" }];
 
   const [items, total] = await Promise.all([
     db.wWWItem.findMany({

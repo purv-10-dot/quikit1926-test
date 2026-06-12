@@ -31,7 +31,7 @@ import { TrashBanner } from "@quikit/ui";
 import { UserAuditCell, DateAuditCell } from "@/components/table/AuditCells";
 import { FormErrorBanner } from "@/components/forms/FormErrorBanner";
 import { useTablePrefs } from "@/lib/hooks/useTablePreferences";
-import { useTableSort } from "@/lib/store";
+import { useTableSort, useDebouncedTableSearch } from "@/lib/store";
 import { useColumnResize } from "@/lib/hooks/useColumnResize";
 import { useStickyOffsets } from "@/lib/hooks/useStickyOffsets";
 import { HorizontalScroller } from "@/components/ui/HorizontalScroller";
@@ -314,9 +314,13 @@ function pickerPlaceholder(clientId: string, count: number): string {
 export default function WeeklyMeetingPage() {
   const { canCreate, canUpdate, canDelete } = useResourcePermissions("WeeklyMeeting");
   const [rows, setRows] = useState<MeetingRow[]>([]);
+  const [total, setTotal] = useState(0);
   const [clients, setClients] = useState<ClientOpt[]>([]);
   const [clientDetail, setClientDetail] = useState<ClientDetail | null>(null);
   const [filterClientId, setFilterClientId] = useState("");
+  // Pagination — default 10 rows, options 10/20/30/50.
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(10);
   const [exportOpen, setExportOpen] = useState(false);
   const [loading, setLoading] = useState(true);
   const [editing, setEditing] = useState<{
@@ -331,8 +335,8 @@ export default function WeeklyMeetingPage() {
   // each Time input that's empty while its YES radio is set.
   const [timeFieldErrors, setTimeFieldErrors] = useState<Set<string>>(new Set());
 
-  // Search + selection (KPI-style chrome).
-  const [searchQuery, setSearchQuery] = useState("");
+  // Search + selection (KPI-style chrome). Search runs server-side (debounced).
+  const [searchInput, setSearchQuery, searchQuery] = useDebouncedTableSearch("weeklyMeeting");
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   // Trash view — when true, the list endpoint returns only soft-deleted rows
   // and per-row / bulk actions switch from Delete to Restore.
@@ -501,31 +505,38 @@ export default function WeeklyMeetingPage() {
     return isFrozen(k) ? "sticky z-[10] bg-white" : "";
   }
 
+  // Meetings list — DB-level pagination + search + client filter + sort.
   const refresh = useCallback(async () => {
     setLoading(true);
     try {
-      const qsParts: string[] = [];
-      if (filterClientId) qsParts.push(`clientId=${filterClientId}`);
-      if (viewTrash) qsParts.push("includeDeleted=true");
-      if (sortBy) qsParts.push(`sortBy=${sortBy}`);
-      if (sortBy && sortOrder) qsParts.push(`sortOrder=${sortOrder}`);
-      const qs = qsParts.length ? `?${qsParts.join("&")}` : "";
-      const [m, c] = await Promise.all([
-        fetch(`/api/client-meetings/weekly-meetings${qs}`).then((r) =>
-          r.json()
-        ),
-        fetch("/api/client-meetings/clients").then((r) => r.json()),
-      ]);
-      if (m.success) setRows(m.data);
-      if (c.success) setClients(c.data);
+      const params = new URLSearchParams();
+      params.set("page", String(page));
+      params.set("limit", String(pageSize));
+      if (filterClientId) params.set("clientId", filterClientId);
+      if (viewTrash) params.set("includeDeleted", "true");
+      if (sortBy) params.set("sortBy", sortBy);
+      if (sortBy && sortOrder) params.set("sortOrder", sortOrder);
+      if (searchQuery.trim()) params.set("search", searchQuery.trim());
+      const m = await fetch(`/api/client-meetings/weekly-meetings?${params.toString()}`).then((r) => r.json());
+      if (m.success) {
+        setRows(m.data);
+        setTotal(m.meta?.total ?? m.data.length);
+      }
     } finally {
       setLoading(false);
     }
-  }, [filterClientId, viewTrash, sortBy, sortOrder]);
+  }, [page, pageSize, filterClientId, viewTrash, sortBy, sortOrder, searchQuery]);
 
   useEffect(() => {
     refresh();
   }, [refresh]);
+
+  // One-time: client options for the filter dropdown.
+  useEffect(() => {
+    void fetch("/api/client-meetings/clients?limit=1000")
+      .then((r) => r.json())
+      .then((c) => { if (c.success) setClients(c.data); });
+  }, []);
 
   async function loadClientDetail(clientId: string) {
     if (!clientId) {
@@ -1053,25 +1064,16 @@ export default function WeeklyMeetingPage() {
   const allAbsent =
     (clientDetail?.members.length ?? 0) > 0 && activeMembers.length === 0;
 
-  // Filter rows by search query (client name or status, case-insensitive).
-  const visibleRows = rows.filter((r) => {
-    if (!searchQuery.trim()) return true;
-    const q = searchQuery.toLowerCase();
-    return (
-      r.clientName.toLowerCase().includes(q) ||
-      statusLabel(r.callStatus, r.callStatusOther).toLowerCase().includes(q)
-    );
-  });
+  // Search + client filter run server-side; `rows` IS the current page.
+  const visibleRows = rows;
   const visibleIds = visibleRows.map((r) => r.id);
   const allVisibleSelected =
     visibleIds.length > 0 && visibleIds.every((id) => selectedIds.has(id));
 
-  // Pagination — default 10 rows, options 10/20/30/50
-  const [page, setPage] = useState(1);
-  const [pageSize, setPageSize] = useState(10);
-  useEffect(() => { setPage(1); }, [searchQuery, pageSize]);
-  const pagedMeetings = visibleRows.slice((page - 1) * pageSize, page * pageSize);
-  const totalMeetingPages = Math.max(1, Math.ceil(visibleRows.length / pageSize));
+  // Reset to page 1 whenever a filter/search changes the result set.
+  useEffect(() => { setPage(1); }, [searchQuery, filterClientId, viewTrash, pageSize]);
+  const pagedMeetings = visibleRows;
+  const totalMeetingPages = Math.max(1, Math.ceil(total / pageSize));
 
   return (
     <div className="flex flex-col h-full">
@@ -1111,7 +1113,7 @@ export default function WeeklyMeetingPage() {
             <input
               type="text"
               placeholder="Search..."
-              value={searchQuery}
+              value={searchInput}
               onChange={(e) => setSearchQuery(e.target.value)}
               className="pl-8 pr-3 py-1.5 text-xs border border-gray-200 rounded-md focus:outline-none focus:ring-1 focus:ring-accent-400 w-44"
             />
@@ -1140,7 +1142,7 @@ export default function WeeklyMeetingPage() {
             onHiddenColsChange={setHiddenCols}
             isTrashActive={viewTrash}
             onToggleTrash={setViewTrash}
-            rowCounts={{ page: rows.length, filtered: rows.length, all: rows.length }}
+            rowCounts={{ page: rows.length, filtered: total, all: total }}
             onExport={async () => {}}
             defaultExportColumnKeys={[]}
             onExportClick={() => setExportOpen(true)}
@@ -1153,7 +1155,7 @@ export default function WeeklyMeetingPage() {
       <div className="flex-1 flex flex-col overflow-hidden p-1 min-h-0">
         {viewTrash && (
           <div className="mb-3">
-            <TrashBanner count={rows.length} onExit={() => setViewTrash(false)} />
+            <TrashBanner count={total} onExit={() => setViewTrash(false)} />
           </div>
         )}
         {loading ? (
@@ -1420,14 +1422,14 @@ export default function WeeklyMeetingPage() {
               </tbody>
             </table>
             </HorizontalScroller>
-            {visibleRows.length > 0 && (
+            {total > 0 && (
               <Pagination
                 page={page}
                 totalPages={totalMeetingPages}
-                total={visibleRows.length}
+                total={total}
                 limit={pageSize}
                 onPageChange={setPage}
-                onPageSizeChange={setPageSize}
+                onPageSizeChange={(size) => { setPageSize(size); setPage(1); }}
               />
             )}
           </div>

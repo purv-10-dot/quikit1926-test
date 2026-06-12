@@ -48,26 +48,66 @@ export const GET = auth.view(async ({ orgId, userId }, req) => {
   const sortOrder = (searchParams.get("sortOrder") || "asc") as "asc" | "desc";
   const { page, limit, skip, take } = parsePagination(req);
 
+  // DB-level filters (previously applied client-side on the page).
+  const search = (searchParams.get("search") || "").trim();
+  const ownerFilter = searchParams.get("owner") || undefined;
+  const teamFilter = searchParams.get("teamId") || undefined;
+  const statusFilter = searchParams.get("status") || undefined;
+
   const includeDeleted = searchParams.get("includeDeleted") === "true";
   const where: Record<string, unknown> = { orgId };
   where.deletedAt = includeDeleted ? { not: null } : null;
   if (year) where.year = year;
   if (quarter) where.quarter = quarter;
+  if (statusFilter) where.overallStatus = statusFilter;
 
   // Row-level visibility: admins see all priorities, non-admins see only
-  // priorities they own.
-  if (!(await isOrgAdmin(userId, orgId))) {
+  // priorities they own. An explicit owner/team filter can only NARROW within
+  // that scope — a non-admin is always pinned to their own rows.
+  const admin = await isOrgAdmin(userId, orgId);
+  if (!admin) {
     where.owner = userId;
+  } else if (ownerFilter) {
+    where.owner = ownerFilter; // owner filter takes precedence over team
+  } else if (teamFilter) {
+    const members = await db.orgMember.findMany({
+      where: { orgId, teamId: teamFilter, status: "active" },
+      select: { userId: true },
+    });
+    const memberIds = members.map((m) => m.userId);
+    where.owner = memberIds.length > 0 ? { in: memberIds } : "__no_team_members__";
   }
 
-  // Allowed sort fields
-  const sortMap: Record<string, Record<string, "asc" | "desc">> = {
-    team: { team: { name: sortOrder } as any },
+  // Search by priority name OR owner name (resolve matching users → owner IN).
+  if (search) {
+    const matchedUsers = await db.user.findMany({
+      where: {
+        OR: [
+          { firstName: { contains: search, mode: "insensitive" } },
+          { lastName: { contains: search, mode: "insensitive" } },
+        ],
+      },
+      select: { id: true },
+    });
+    const matchedIds = matchedUsers.map((u) => u.id);
+    where.OR = [
+      { name: { contains: search, mode: "insensitive" } },
+      ...(matchedIds.length ? [{ owner: { in: matchedIds } }] : []),
+    ];
+  }
+
+  // Allowed sort fields + stable `id` tie-breaker so pages never overlap.
+  const sortMap: Record<string, Record<string, unknown>> = {
+    team: { team: { name: sortOrder } },
     priorityName: { name: sortOrder },
-    owner: { owner_user: { firstName: sortOrder } as any },
+    owner: { owner_user: { firstName: sortOrder } },
+    startWeek: { startWeek: sortOrder },
+    endWeek: { endWeek: sortOrder },
+    overallStatus: { overallStatus: sortOrder },
     createdAt: { createdAt: sortOrder },
+    updatedAt: { updatedAt: sortOrder },
   };
-  const orderBy = sortMap[sortBy] || { createdAt: sortOrder };
+  const orderBy = [sortMap[sortBy] || { createdAt: sortOrder }, { id: "desc" }];
 
   const [priorities, total] = await Promise.all([
     db.priority.findMany({

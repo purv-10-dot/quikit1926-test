@@ -1,13 +1,30 @@
 import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
+import { parsePagination, paginatedResponse } from "@/lib/api/pagination";
 import { withOrgAuthForModule } from "@/lib/api/withOrgAuth";
+import { quikScaleMemberWhere } from "@/lib/api/permissions";
 const withOrgAuth = withOrgAuthForModule("analytics.teams");
 
-export const GET = withOrgAuth(async ({ orgId }) => {
+export const GET = withOrgAuth(async ({ orgId }, request) => {
+    const { page, limit, skip, take } = parsePagination(request);
+    const search = (request.nextUrl.searchParams.get("search") ?? "").trim();
+
+    // Scope team-member aggregation to QuikScale members only — see
+    // /api/org/users for the same rule. Fail safe to empty when the app
+    // isn't registered yet.
+    const memberWhere = await quikScaleMemberWhere(orgId);
+    if (!memberWhere) {
+      return NextResponse.json(paginatedResponse([], 0, page, limit));
+    }
+
     const teams = await db.qsTeam.findMany({
-      where: { orgId },
+      where: {
+        orgId,
+        ...(search ? { name: { contains: search, mode: "insensitive" as const } } : {}),
+      },
       include: {
         members: {
+          where: { user: memberWhere.user },
           include: {
             user: {
               include: {
@@ -58,5 +75,9 @@ export const GET = withOrgAuth(async ({ orgId }) => {
 
     teamData.sort((a, b) => (b.overallScore || 0) - (a.overallScore || 0));
 
-    return NextResponse.json({ success: true, data: teamData });
+    // `overallScore` is computed in JS, so sort first then slice the page.
+    const total = teamData.length;
+    const pageSlice = teamData.slice(skip, skip + take);
+
+    return NextResponse.json(paginatedResponse(pageSlice, total, page, limit));
   });

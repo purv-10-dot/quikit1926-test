@@ -103,6 +103,9 @@ export interface OPSPFormHandle {
   saveState: SaveState;
   loading: boolean;
   fiscalYearStart: number;
+  /** Resolved owner-id → "First Last" for the loaded OPSP (from the GET payload). */
+  ownerNames: Record<string, string>;
+  setOwnerNames: React.Dispatch<React.SetStateAction<Record<string, string>>>;
   planStartYear: number | null;
   planEndYear: number | null;
   planStartQuarter: string | null;
@@ -152,6 +155,9 @@ export function useOPSPForm(options: UseOPSPFormOptions = {}): OPSPFormHandle {
   const [loading, setLoading] = useState(true);
   // Tenant's fiscal year start month (1 = Jan, 4 = Apr, etc.). Defaults to Jan until loaded.
   const [fiscalYearStart, setFiscalYearStart] = useState<number>(1);
+  // Resolved owner-id → "First Last" map for the loaded OPSP (from the GET
+  // payload). Lets owner names render WITHOUT bulk-loading every org user.
+  const [ownerNames, setOwnerNames] = useState<Record<string, string>>({});
   const [showSetupWizard, setShowSetupWizard] = useState(false);
   // OPSP plan year range (from setup wizard config)
   const [planStartYear, setPlanStartYear] = useState<number | null>(null);
@@ -207,6 +213,7 @@ export function useOPSPForm(options: UseOPSPFormOptions = {}): OPSPFormHandle {
       } else {
         const json = await res.json();
         if (typeof json.fiscalYearStart === "number") setFiscalYearStart(json.fiscalYearStart);
+        setOwnerNames(json.ownerNames ?? {});
         if (json.data) {
           skipNextSave.current = true;
           skipNextTargetsCascade.current = true;
@@ -245,7 +252,12 @@ export function useOPSPForm(options: UseOPSPFormOptions = {}): OPSPFormHandle {
 
         // 2. Delegate to loadForPeriod so direct URL → Q2/Q3/Q4 also triggers CF.
         await loadForPeriod(form.year, form.quarter);
-      } catch {}
+      } catch {
+        // A network failure on the config fetch must still end the loading
+        // state — otherwise the form hangs on a spinner instead of falling
+        // back to the empty default scaffold.
+        setLoading(false);
+      }
       isFirstLoad.current = false;
     })();
   // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -372,6 +384,7 @@ export function useOPSPForm(options: UseOPSPFormOptions = {}): OPSPFormHandle {
       try {
         const res = await fetch(`/api/opsp?year=${data.year}&quarter=${data.quarter}`);
         const json = await res.json();
+        setOwnerNames(json.ownerNames ?? {});
         if (json.data) {
           skipNextSave.current = true;
           const normalized = normalizeLoadedOPSP(json.data);
@@ -388,6 +401,8 @@ export function useOPSPForm(options: UseOPSPFormOptions = {}): OPSPFormHandle {
     saveState,
     loading,
     fiscalYearStart,
+    ownerNames,
+    setOwnerNames,
     planStartYear,
     planEndYear,
     planStartQuarter,

@@ -16,7 +16,35 @@ const withOrgAuth = withOrgAuthForModule("kpi");
 export const GET = withOrgAuth(async ({ orgId, userId }, req: NextRequest) => {
   const sp = req.nextUrl.searchParams;
   const entityId = sp.get("entityId");
+  const entityIdsParam = sp.get("entityIds");
   const entityType = sp.get("entityType") ?? sp.get("moduleKey") ?? "KPI";
+
+  // Batch mode: `?entityType=KPI&entityIds=a,b,c` → `{ counts: { id: n } }`.
+  // One GROUP BY query for the whole visible page instead of one request per
+  // row (kills the per-row N+1 the list tables previously fired).
+  if (entityIdsParam !== null) {
+    const ids = entityIdsParam.split(",").map((s) => s.trim()).filter(Boolean);
+    const counts: Record<string, number> = {};
+    for (const id of ids) counts[id] = 0;
+    if (ids.length > 0) {
+      const rows = await db.$queryRaw<{ entityId: string; unread: number }[]>`
+        SELECT e."entityId" AS "entityId", COUNT(*)::int AS unread
+        FROM app_quikscale."AuditEvent" e
+        LEFT JOIN app_quikscale."AuditEventRead" r
+          ON r."userId" = ${userId}
+         AND r."entityType" = e."entityType"
+         AND r."entityId" = e."entityId"
+        WHERE e."orgId" = ${orgId}
+          AND e."entityType" = ${entityType}
+          AND e."entityId" = ANY(${ids})
+          AND e."actorUserId" <> ${userId}
+          AND (r."lastReadAt" IS NULL OR e."createdAt" > r."lastReadAt")
+        GROUP BY e."entityId"
+      `;
+      for (const row of rows) counts[row.entityId] = Number(row.unread);
+    }
+    return NextResponse.json({ success: true, data: { counts } });
+  }
 
   if (entityId) {
     // Per-entity: read marker + a single indexed COUNT.

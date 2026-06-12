@@ -1,6 +1,7 @@
-import type { NextAuthOptions } from "next-auth";
+import type { NextAuthOptions, Session, User } from "next-auth";
 import { createOAuthClientOptions, createAuthOptions } from "@quikit/auth";
 import "@quikit/auth/types";
+import { db } from "@/lib/db";
 import { applyPendingInvitesForEmail } from "@/lib/auth/apply-invites";
 
 /**
@@ -33,6 +34,50 @@ const baseOptions: NextAuthOptions =
 
 export const authOptions: NextAuthOptions = {
   ...baseOptions,
+  callbacks: {
+    ...baseOptions.callbacks,
+    /**
+     * Surface the user's profile timezone on the session so
+     * getUserTimezone(session) (lib/utils/timezone.ts) resolves to the real
+     * IANA zone — this is what makes the ported F2 scheduling feature live
+     * instead of always degrading to "UTC".
+     *
+     * QuikSocial is an OIDC client: session.user is built from token claims
+     * and the base session callback never touches the DB. We call the base
+     * callback first (preserving id/orgId/membership/etc.), then layer on a
+     * LIVE auth.User lookup by the user's own id. Reading live on every
+     * session resolve means a profile timezone change takes effect without a
+     * re-login. The lookup is the user's own row (id-keyed, not org-scoped) —
+     * same precedent as /api/user/profile, so it doesn't violate the
+     * orgId-filter rule.
+     */
+    async session(args) {
+      // Two next-auth typing facts shape the assertions below (neither is
+      // `as any`, and packages/** stays untouched):
+      //  1. next-auth v4 types the session-callback param's Session more
+      //     loosely than the exported Session getServerSession returns (no
+      //     user.id). We assert to the exported Session, which
+      //     @quikit/auth/types augments with user.id.
+      //  2. @quikit/auth/types pins Session["user"] to a concrete shape that a
+      //     local augmentation can't extend, so timezone is added to the
+      //     next-auth `User` interface (types/next-auth.d.ts) and written
+      //     through `as User`. getUserTimezone(session) reads it at runtime.
+      // Call the base callback first to preserve id/orgId/membership/etc.; the
+      // LIVE db.user lookup means a profile timezone change applies without a
+      // re-login. The lookup is the user's own row (id-keyed, not org-scoped)
+      // — same precedent as /api/user/profile, so no orgId-filter violation.
+      const session = ((await baseOptions.callbacks?.session?.(args)) ??
+        args.session) as Session;
+      (session.user as User).timezone =
+        (
+          await db.user.findUnique({
+            where: { id: session.user.id },
+            select: { timezone: true },
+          })
+        )?.timezone ?? undefined;
+      return session;
+    },
+  },
   events: {
     ...baseOptions.events,
     async signIn(message) {

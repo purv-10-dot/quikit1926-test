@@ -13,6 +13,12 @@ vi.mock("@/lib/email", () => ({
   sendOrgSuspendedEmail: vi.fn().mockResolvedValue(undefined),
 }));
 
+// Fire-and-forget per-app role provisioning — stub so no real fetch fires.
+vi.mock("@/lib/provisionAppRoles", () => ({
+  provisionAppRolesForOrg: vi.fn().mockResolvedValue(undefined),
+  provisionAppRoles: vi.fn().mockResolvedValue(undefined),
+}));
+
 import { GET, POST } from "@/app/api/super/orgs/route";
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -169,5 +175,38 @@ describe("POST /api/super/orgs", () => {
     const body = await bodyOf(res);
     expect(body.success).toBe(true);
     expect(body.data.org.id).toBe("t-new");
+  });
+
+  it("seeds Survey + Cash as disabled when QuikScale is assigned to a new org", async () => {
+    setSession(SUPER_ADMIN);
+    mockDb.org.findUnique.mockResolvedValue(null as never);
+    mockDb.$transaction.mockImplementation(
+      (async (cb: (tx: typeof mockDb) => unknown) => cb(mockDb)) as never,
+    );
+    mockDb.app.findMany.mockResolvedValue([
+      { id: "app-qs", name: "QuikScale", slug: "quikscale", baseUrl: null },
+    ] as never);
+    mockDb.org.create.mockResolvedValue({
+      id: "t-new", name: "NewOrg", slug: "new-org", plan: "startup", status: "active", createdAt: new Date(),
+    } as never);
+
+    const res = await POST(
+      makeRequest("http://localhost:3006/api/super/orgs", {
+        method: "POST",
+        body: JSON.stringify({ name: "NewOrg", slug: "new-org", appIds: ["app-qs"] }),
+      }),
+    );
+
+    expect(res.status).toBe(201);
+    // QuikScale's default-off modules persisted as enabled:false rows for the org.
+    expect(mockDb.appModuleFlag.createMany).toHaveBeenCalledTimes(1);
+    const arg = mockDb.appModuleFlag.createMany.mock.calls[0][0] as {
+      data: { orgId: string; appId: string; moduleKey: string; enabled: boolean }[];
+      skipDuplicates?: boolean;
+    };
+    expect(arg.skipDuplicates).toBe(true);
+    const seeded = Object.fromEntries(arg.data.map((r) => [r.moduleKey, r]));
+    expect(seeded.survey).toMatchObject({ orgId: "t-new", appId: "app-qs", enabled: false });
+    expect(seeded.cash).toMatchObject({ orgId: "t-new", appId: "app-qs", enabled: false });
   });
 });

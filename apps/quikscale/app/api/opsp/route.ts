@@ -76,6 +76,45 @@ function rowsHaveAnyContent(json: unknown, fields: readonly string[]): boolean {
   });
 }
 
+/**
+ * Walk an OPSP record's JSON columns and collect every `owner` id referenced
+ * (rocks[].owner, and any other owner-bearing rows). Field-agnostic so it can't
+ * miss a surface. The set is tiny (the handful of owners actually assigned).
+ */
+function collectOwnerIds(obj: unknown, acc: Set<string>): void {
+  if (Array.isArray(obj)) {
+    for (const x of obj) collectOwnerIds(x, acc);
+    return;
+  }
+  if (obj && typeof obj === "object") {
+    for (const [k, v] of Object.entries(obj)) {
+      if (k === "owner" && typeof v === "string" && v) acc.add(v);
+      else collectOwnerIds(v, acc);
+    }
+  }
+}
+
+/**
+ * Resolve the owner ids present in `data` → "First Last" map. Returned
+ * alongside the OPSP payload so the page can render owner names (picker
+ * triggers, the OPSP document, the export) WITHOUT bulk-loading every org
+ * user just for name resolution.
+ */
+async function resolveOwnerNames(orgId: string, data: unknown): Promise<Record<string, string>> {
+  const ids = new Set<string>();
+  collectOwnerIds(data, ids);
+  if (ids.size === 0) return {};
+  // Owner ids already come from THIS org's OPSP record, so resolve by id.
+  void orgId;
+  const users = await db.user.findMany({
+    where: { id: { in: [...ids] } },
+    select: { id: true, firstName: true, lastName: true },
+  });
+  const map: Record<string, string> = {};
+  for (const u of users) map[u.id] = `${u.firstName} ${u.lastName}`.trim();
+  return map;
+}
+
 function looksLikeStubDraft(data: {
   status: string;
   coreValues: string | null;
@@ -135,6 +174,7 @@ export const GET = auth.view(async ({ orgId, userId }, req) => {
     return NextResponse.json({
       success: true,
       data,
+      ownerNames: await resolveOwnerNames(orgId, data),
       fiscalYearStart,
     });
   }
@@ -181,6 +221,9 @@ export const GET = auth.view(async ({ orgId, userId }, req) => {
       return NextResponse.json({
         success: true,
         data: inheritedData,
+        // Inherited payload clears all quarterly owner-bearing rows, so no
+        // owners to resolve — but keep the field shape consistent.
+        ownerNames: {},
         inherited: {
           fromYear: prior.year,
           fromQuarter: prior.quarter,
@@ -197,6 +240,7 @@ export const GET = auth.view(async ({ orgId, userId }, req) => {
   return NextResponse.json({
     success: true,
     data: null,
+    ownerNames: {},
     fiscalYearStart,
   });
 });

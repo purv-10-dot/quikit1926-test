@@ -15,7 +15,10 @@ import { TeamSection } from "./components/TeamSection";
 import { KPIModal } from "../components/KPIModal";
 import { ALL_STATIC_COLS, COL_LABELS } from "../hooks/useTableColumns";
 import { ALL_WEEKS } from "@/lib/utils/fiscal";
-import { AddButton, FiscalPeriodPicker, type FiscalQuarter, type ExportSelection } from "@quikit/ui";
+import { AddButton, FiscalPeriodPicker, Pagination, DEFAULT_PAGE_SIZE, type FiscalQuarter, type ExportSelection } from "@quikit/ui";
+import { useDebouncedTableSearch } from "@/lib/store";
+import { UnreadCountsProvider } from "@/components/audit/UnreadCountsProvider";
+import { Search } from "lucide-react";
 import { useResourcePermissions } from "@/lib/hooks/useResourcePermissions";
 import { useFiscalYears } from "@/lib/hooks/useFiscalYears";
 import { useTablePrefs } from "@/lib/hooks/useTablePreferences";
@@ -116,15 +119,32 @@ export default function TeamsKPIPage() {
   // View Trash toggle — when true list fetches ONLY soft-deleted team KPIs
   const [viewTrash, setViewTrash] = useState(false);
 
+  // DB-level pagination + search. Rows come back ordered by team-name → KPI
+  // name (server `sortBy: team`), so a page's rows are contiguous by team and
+  // group cleanly. Search + team multi-select also run server-side.
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(DEFAULT_PAGE_SIZE);
+  const [searchInput, setSearchInput, search] = useDebouncedTableSearch("kpiTeams");
+
   const { data: teams = [], isLoading: teamsLoading } = useTeams();
   const { data: kpiData, isLoading: kpisLoading, refetch } = useTeamKPIs({
     year,
     quarter,
-    ...({ includeDeleted: viewTrash } as any),
+    page,
+    pageSize,
+    search: search.trim() || undefined,
+    sortBy: "team",
+    sortOrder: "asc",
+    ...({ teamIds: filterTeamIds.join(","), includeDeleted: viewTrash } as any),
   });
   const kpis = useMemo(() => (kpiData?.data ?? []) as KPIRow[], [kpiData?.data]);
+  const total = kpiData?.total ?? 0;
+  const totalPages = Math.max(1, Math.ceil(total / pageSize));
 
-  // Group KPIs by teamId client-side for rendering
+  // Reset to page 1 whenever a filter/search/period changes the result set.
+  useEffect(() => { setPage(1); }, [year, quarter, search, viewTrash, pageSize, filterTeamIds]);
+
+  // Group the current page's KPIs by teamId for rendering.
   const kpisByTeam = useMemo(() => {
     const map: Record<string, KPIRow[]> = {};
     for (const k of kpis) {
@@ -135,18 +155,19 @@ export default function TeamsKPIPage() {
     return map;
   }, [kpis]);
 
-  // Sort: teams with KPIs first (by name), then teams without KPIs (by name).
-  // Multi-select team filter: empty array means show all; otherwise only selected teams.
-  const sortedTeams = useMemo(() => {
-    const filterSet = new Set(filterTeamIds);
-    const filtered = filterSet.size > 0 ? teams.filter(t => filterSet.has(t.id)) : teams;
-    return [...filtered].sort((a, b) => {
-      const aHas = (kpisByTeam[a.id]?.length ?? 0) > 0;
-      const bHas = (kpisByTeam[b.id]?.length ?? 0) > 0;
-      if (aHas !== bHas) return aHas ? -1 : 1;
-      return a.name.localeCompare(b.name);
-    });
-  }, [teams, kpisByTeam, filterTeamIds]);
+  // Teams that have rows on THIS page, in server (team-name) order. With
+  // server-side row pagination we only render the teams present on the page.
+  const teamsOnPage = useMemo(() => {
+    const seen = new Set<string>();
+    const ordered: typeof teams = [];
+    for (const k of kpis) {
+      if (!k.teamId || seen.has(k.teamId)) continue;
+      seen.add(k.teamId);
+      const t = teams.find((tt) => tt.id === k.teamId);
+      if (t) ordered.push(t);
+    }
+    return ordered;
+  }, [kpis, teams]);
 
   const selectedFilterTeams = teams.filter(t => filterTeamIds.includes(t.id));
 
@@ -174,7 +195,7 @@ export default function TeamsKPIPage() {
         <div className="flex items-center gap-3">
           <h1 className="text-base font-semibold text-gray-800 whitespace-nowrap">Team KPI</h1>
           <span className="text-xs bg-gray-100 text-gray-600 px-2 py-0.5 rounded-full font-medium">
-            {kpis.length} {kpis.length === 1 ? "item" : "items"}
+            {total} {total === 1 ? "item" : "items"}
           </span>
           {fiscalWeek !== null && (
             <span className="text-xs bg-accent-50 text-accent-600 border border-accent-100 px-2 py-0.5 rounded-full font-medium whitespace-nowrap">
@@ -184,6 +205,16 @@ export default function TeamsKPIPage() {
         </div>
 
         <div className="flex items-center gap-2">
+          {/* Search — DB-level (name + owner), debounced via the shared store. */}
+          <div className="relative">
+            <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-gray-400" />
+            <input
+              value={searchInput}
+              onChange={(e) => setSearchInput(e.target.value)}
+              placeholder="Search KPIs…"
+              className="pl-8 pr-3 py-1.5 text-xs border border-gray-200 rounded-md bg-white focus:outline-none focus:ring-1 focus:ring-accent-400 w-44"
+            />
+          </div>
           {/* Bulk delete — page-level, union of every team section's selected KPIs */}
           {canDelete && unionSelectedIds.size > 0 && (
             <button
@@ -382,19 +413,20 @@ export default function TeamsKPIPage() {
       </div>
 
 
-      {/* Body — one TeamSection per team */}
+      {/* Body — one TeamSection per team present on the current page */}
       <div className="flex-1 overflow-y-auto px-6 py-5 space-y-4 min-h-0">
         {isLoading ? (
           <TableSkeleton rows={4} cols={4} />
-        ) : sortedTeams.length === 0 ? (
+        ) : teamsOnPage.length === 0 ? (
           <div className="flex flex-col items-center justify-center h-full text-gray-400 gap-3">
             <svg className="h-10 w-10 text-gray-200" fill="none" viewBox="0 0 24 24" stroke="currentColor">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z" />
             </svg>
-            <p className="text-sm">No teams found. Create a team in Org Setup first.</p>
+            <p className="text-sm">{search || filterTeamIds.length ? "No team KPIs match your filters." : "No teams found. Create a team in Org Setup first."}</p>
           </div>
         ) : (
-          sortedTeams.map(team => (
+          <UnreadCountsProvider entityType="KPI" ids={kpis.map((k) => k.id)}>
+          {teamsOnPage.map((team) => (
             <TeamSection
               key={team.id}
               team={team}
@@ -409,9 +441,20 @@ export default function TeamsKPIPage() {
               canDelete={canDelete}
               canUpdate={canUpdate}
             />
-          ))
+          ))}
+          </UnreadCountsProvider>
         )}
       </div>
+
+      {/* DB-level pagination footer (rows grouped by team within each page) */}
+      <Pagination
+        page={page}
+        totalPages={totalPages}
+        total={total}
+        limit={pageSize}
+        onPageChange={setPage}
+        onPageSizeChange={(size) => { setPageSize(size); setPage(1); }}
+      />
 
       {/* Add KPI modal — scope="team", no pre-selected teamId so user picks the team inside the modal */}
       {/* (JSX continues below) */}

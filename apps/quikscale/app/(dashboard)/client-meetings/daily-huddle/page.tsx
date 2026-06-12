@@ -25,7 +25,7 @@ import { ModuleMoreActions, TrashBanner } from "@/components/table/ModuleMoreAct
 import { FormErrorBanner } from "@/components/forms/FormErrorBanner";
 import { useResourcePermissions } from "@/lib/hooks/useResourcePermissions";
 import { useTablePrefs } from "@/lib/hooks/useTablePreferences";
-import { useTableSort } from "@/lib/store";
+import { useTableSort, useDebouncedTableSearch } from "@/lib/store";
 import { useColumnResize } from "@/lib/hooks/useColumnResize";
 import { useStickyOffsets } from "@/lib/hooks/useStickyOffsets";
 import { HeaderCell } from "@/components/table/HeaderCell";
@@ -130,12 +130,17 @@ export default function DailyHuddlePage() {
   const currentWeek = useCurrentWeek(year, quarter);
 
   const [rows, setRows] = useState<HuddleRow[]>([]);
+  const [total, setTotal] = useState(0);
   const [clients, setClients] = useState<ClientOpt[]>([]);
   const [members, setMembers] = useState<MemberOpt[]>([]);
   const [loading, setLoading] = useState(true);
   const [selected, setSelected] = useState<Set<string>>(new Set());
-  const [search, setSearch] = useState("");
+  const [searchInput, setSearchInput, search] = useDebouncedTableSearch("dailyHuddle");
   const [viewTrash, setViewTrash] = useState(false);
+
+  // Pagination — default 10 rows, options 10/20/30/50.
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(10);
   // New From / To / Client export modal — replaces the legacy column
   // selection ExportModal that ModuleMoreActions opens by default.
   const [exportOpen, setExportOpen] = useState(false);
@@ -256,27 +261,39 @@ export default function DailyHuddlePage() {
   // Change History now opens the shared standalone drawer (not a Log tab here).
   const [logHuddle, setLogHuddle] = useState<HuddleRow | null>(null);
 
+  // Huddles list — DB-level pagination + search + client/status filters + sort.
   const refresh = useCallback(async () => {
     setLoading(true);
     try {
-      const qsParts: string[] = [];
-      if (filterClientId) qsParts.push(`clientId=${filterClientId}`);
-      if (viewTrash) qsParts.push("includeDeleted=true");
-      if (sortBy) qsParts.push(`sortBy=${sortBy}`);
-      if (sortBy && sortOrder) qsParts.push(`sortOrder=${sortOrder}`);
-      const qs = qsParts.length ? `?${qsParts.join("&")}` : "";
-      const [h, c, m] = await Promise.all([
-        fetch(`/api/client-meetings/daily-huddles${qs}`).then(r => r.json()),
-        fetch("/api/client-meetings/clients").then(r => r.json()),
-        fetch("/api/client-meetings/members").then(r => r.json()),
-      ]);
-      if (h.success) setRows(h.data);
-      if (c.success) setClients(c.data);
-      if (m.success) setMembers(m.data);
+      const params = new URLSearchParams();
+      params.set("page", String(page));
+      params.set("limit", String(pageSize));
+      if (filterClientId) params.set("clientId", filterClientId);
+      if (filterStatus) params.set("status", filterStatus);
+      if (viewTrash) params.set("includeDeleted", "true");
+      if (sortBy) params.set("sortBy", sortBy);
+      if (sortBy && sortOrder) params.set("sortOrder", sortOrder);
+      if (search.trim()) params.set("search", search.trim());
+      const h = await fetch(`/api/client-meetings/daily-huddles?${params.toString()}`).then(r => r.json());
+      if (h.success) {
+        setRows(h.data);
+        setTotal(h.meta?.total ?? h.data.length);
+      }
     } finally { setLoading(false); }
-  }, [filterClientId, viewTrash, sortBy, sortOrder]);
+  }, [page, pageSize, filterClientId, filterStatus, viewTrash, sortBy, sortOrder, search]);
 
   useEffect(() => { refresh(); }, [refresh]);
+
+  // One-time: client + member option lists (dropdowns + absent picker).
+  useEffect(() => {
+    void Promise.all([
+      fetch("/api/client-meetings/clients?limit=1000").then(r => r.json()),
+      fetch("/api/client-meetings/members?limit=1000").then(r => r.json()),
+    ]).then(([c, m]) => {
+      if (c.success) setClients(c.data);
+      if (m.success) setMembers(m.data);
+    });
+  }, []);
 
   useEffect(() => {
     function onClick(e: MouseEvent) {
@@ -286,28 +303,13 @@ export default function DailyHuddlePage() {
     return () => document.removeEventListener("mousedown", onClick);
   }, []);
 
-  const filtered = useMemo(() => {
-    return rows.filter(r => {
-      if (filterStatus && r.callStatus !== filterStatus) return false;
-      if (search.trim()) {
-        const q = search.trim().toLowerCase();
-        if (!r.clientName.toLowerCase().includes(q)
-            && !(r.notesKPDashboard ?? "").toLowerCase().includes(q)
-            && !(r.otherNotes ?? "").toLowerCase().includes(q)) return false;
-      }
-      return true;
-    });
-  }, [rows, search, filterStatus]);
-
+  // Search + client + status filters run server-side; `rows` IS the page.
   const activeFilterCount = (filterClientId ? 1 : 0) + (filterStatus ? 1 : 0);
   const clientOptions = useMemo(() => clients.map(c => ({ value: c.id, label: c.name })), [clients]);
 
-  // Pagination — default 10 rows, options 10/20/30/50
-  const [page, setPage] = useState(1);
-  const [pageSize, setPageSize] = useState(10);
   useEffect(() => { setPage(1); }, [search, filterClientId, filterStatus, viewTrash, pageSize]);
-  const pagedHuddles = filtered.slice((page - 1) * pageSize, page * pageSize);
-  const totalHuddlePages = Math.max(1, Math.ceil(filtered.length / pageSize));
+  const pagedHuddles = rows;
+  const totalHuddlePages = Math.max(1, Math.ceil(total / pageSize));
 
   // Members eligible to be marked absent — scoped to the SELECTED client's
   // roster (the ClientTeamMember join returned by the clients API), NOT the
@@ -333,8 +335,8 @@ export default function DailyHuddlePage() {
   }, [editing?.form.clientId, editing?.form.absentClientMemberIds, clients, members]);
 
   function toggleAll() {
-    if (selected.size === filtered.length && filtered.length > 0) setSelected(new Set());
-    else setSelected(new Set(filtered.map(r => r.id)));
+    if (selected.size === rows.length && rows.length > 0) setSelected(new Set());
+    else setSelected(new Set(rows.map(r => r.id)));
   }
   function toggleOne(id: string) {
     setSelected(prev => { const n = new Set(prev); n.has(id) ? n.delete(id) : n.add(id); return n; });
@@ -504,10 +506,18 @@ export default function DailyHuddlePage() {
         },
       }));
     await runExport<HuddleRow>({
-      selection: sel, columns, pageRows: filtered,
-      fetchFiltered: async () => filtered,
+      selection: sel, columns, pageRows: rows,
+      fetchFiltered: async () => {
+        const params = new URLSearchParams({ limit: "1000" });
+        if (filterClientId) params.set("clientId", filterClientId);
+        if (filterStatus) params.set("status", filterStatus);
+        if (viewTrash) params.set("includeDeleted", "true");
+        if (search.trim()) params.set("search", search.trim());
+        const r = await fetch(`/api/client-meetings/daily-huddles?${params.toString()}`).then(r => r.json());
+        return r.success ? (r.data as HuddleRow[]) : [];
+      },
       fetchAll: async () => {
-        const r = await fetch("/api/client-meetings/daily-huddles").then(r => r.json());
+        const r = await fetch("/api/client-meetings/daily-huddles?limit=1000").then(r => r.json());
         return r.success ? (r.data as HuddleRow[]) : [];
       },
       filename: `DailyHuddle${viewTrash ? "-Trash" : ""}`,
@@ -522,7 +532,7 @@ export default function DailyHuddlePage() {
       <div className="flex items-center justify-between px-6 py-3 border-b border-gray-200 bg-white flex-shrink-0">
         <div className="flex items-center gap-3">
           <h1 className="text-base font-semibold text-gray-800 whitespace-nowrap">Daily Huddle</h1>
-          <span className="text-xs bg-gray-100 text-gray-600 px-2 py-0.5 rounded-full font-medium">{filtered.length} items</span>
+          <span className="text-xs bg-gray-100 text-gray-600 px-2 py-0.5 rounded-full font-medium">{total} items</span>
           {currentWeek !== null && (
             <span className="text-xs bg-accent-50 text-accent-600 border border-accent-100 px-2 py-0.5 rounded-full font-medium whitespace-nowrap">
               {quarter} · Week {currentWeek}
@@ -546,7 +556,7 @@ export default function DailyHuddlePage() {
 
           <div className="relative">
             <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-gray-400" />
-            <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search..."
+            <input value={searchInput} onChange={e => setSearchInput(e.target.value)} placeholder="Search..."
               className="pl-8 pr-3 py-1.5 text-xs border border-gray-200 rounded-md focus:outline-none focus:ring-1 focus:ring-accent-400 w-44" />
           </div>
 
@@ -586,7 +596,7 @@ export default function DailyHuddlePage() {
             onHiddenColsChange={setHiddenCols}
             isTrashActive={viewTrash}
             onToggleTrash={setViewTrash}
-            rowCounts={{ page: filtered.length, filtered: filtered.length, all: rows.length }}
+            rowCounts={{ page: rows.length, filtered: total, all: total }}
             onExport={handleExport}
             defaultExportColumnKeys={visibleColKeys}
             // Override: open the From / To / Client modal instead of the
@@ -602,14 +612,14 @@ export default function DailyHuddlePage() {
 
       {viewTrash && (
         <div className="px-6 py-2 flex-shrink-0">
-          <TrashBanner count={filtered.length} onExit={() => setViewTrash(false)} />
+          <TrashBanner count={total} onExit={() => setViewTrash(false)} />
         </div>
       )}
 
       <div className="flex-1 overflow-hidden min-h-0">
         {loading ? (
           <div className="flex items-center justify-center h-full text-xs text-gray-400">Loading…</div>
-        ) : filtered.length === 0 ? (
+        ) : rows.length === 0 ? (
           <div className="flex items-center justify-center h-full">
             <EmptyState
               icon={Calendar}
@@ -643,7 +653,7 @@ export default function DailyHuddlePage() {
                         }
                       }}
                     >
-                      <input type="checkbox" checked={selected.size === filtered.length && filtered.length > 0} onChange={toggleAll} disabled={!canDelete}
+                      <input type="checkbox" checked={selected.size === rows.length && rows.length > 0} onChange={toggleAll} disabled={!canDelete}
                         className={`rounded border-gray-300 text-blue-600 ${canDelete ? "cursor-pointer" : "opacity-40 cursor-not-allowed"}`} />
                     </label>
                   </th>
@@ -795,14 +805,14 @@ export default function DailyHuddlePage() {
               </tbody>
             </table>
             </HorizontalScroller>
-            {filtered.length > 0 && (
+            {total > 0 && (
               <Pagination
                 page={page}
                 totalPages={totalHuddlePages}
-                total={filtered.length}
+                total={total}
                 limit={pageSize}
                 onPageChange={setPage}
-                onPageSizeChange={setPageSize}
+                onPageSizeChange={(size) => { setPageSize(size); setPage(1); }}
               />
             )}
           </div>
