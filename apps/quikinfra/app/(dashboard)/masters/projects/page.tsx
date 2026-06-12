@@ -44,7 +44,12 @@ const columns: MasterColumnDef<ProjectRow>[] = [
       row.projectValue ? `₹ ${Number(row.projectValue).toLocaleString("en-IN")}` : "—",
   },
   { key: "startDate", label: "Start Date" },
-  { key: "status", label: "Status", type: "status" },
+  {
+    key: "status",
+    label: "Status",
+    type: "status",
+    options: ["active", "draft", "on_hold", "completed", "cancelled", "inactive"],
+  },
 ];
 
 // Field definitions for the Import drawer. Order = mapping-screen order.

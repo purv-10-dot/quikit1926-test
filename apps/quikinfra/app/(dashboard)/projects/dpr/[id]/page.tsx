@@ -34,6 +34,7 @@ import {
 import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { WorkflowConfirmDialog } from "@/components/WorkflowConfirmDialog";
 import { useDPR, useDeleteDPR } from "@/hooks/use-projects";
+import { useItems, useUOMs, useContractors } from "@/hooks/use-masters";
 import { usePermissions } from "@/hooks/use-permissions";
 import { useWorkflowConfirm } from "@/hooks/use-workflow-confirm";
 import { DPRWeatherMetrics } from "@/components/DPRWeatherMetrics";
@@ -138,6 +139,39 @@ export default function DPRDetailPage() {
   const workItems: any[] = useMemo(
     () => (Array.isArray(dpr?.workItems) ? dpr.workItems : []),
     [dpr],
+  );
+  const materials: any[] = useMemo(
+    () => (Array.isArray(dpr?.materials) ? dpr.materials : []),
+    [dpr],
+  );
+  const manpower: any[] = useMemo(
+    () => (Array.isArray(dpr?.manpower) ? dpr.manpower : []),
+    [dpr],
+  );
+  const machinery: any[] = useMemo(
+    () => (Array.isArray(dpr?.machinery) ? dpr.machinery : []),
+    [dpr],
+  );
+  const staff: any[] = useMemo(
+    () => (Array.isArray(dpr?.staff) ? dpr.staff : []),
+    [dpr],
+  );
+
+  // Master-data lookups to render ids as readable names on the detail page.
+  const { data: itemsResult } = useItems();
+  const { data: uomsResult } = useUOMs();
+  const { data: contractorsResult } = useContractors();
+  const itemNameById = useMemo(
+    () => new Map((itemsResult?.data ?? []).map((i: any) => [i.id, i.name])),
+    [itemsResult],
+  );
+  const uomCodeById = useMemo(
+    () => new Map((uomsResult?.data ?? []).map((u: any) => [u.id, u.code])),
+    [uomsResult],
+  );
+  const contractorNameById = useMemo(
+    () => new Map((contractorsResult?.data ?? []).map((c: any) => [c.id, c.name])),
+    [contractorsResult],
   );
 
   // ApprovalTimeline expects { step, action, actionBy, actionAt, comments }.
@@ -398,6 +432,224 @@ export default function DPRDetailPage() {
                           </td>
                           <td className="px-4 py-3 text-gray-700 text-xs">
                             {it.remarks ?? "—"}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </div>
+
+            {/* ── Materials Consumed ────────────────────────────── */}
+            <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
+              <div className="px-6 py-4 border-b border-gray-100 flex items-center justify-between">
+                <h2 className="text-sm font-semibold text-gray-900">
+                  Materials Consumed
+                </h2>
+                <span className="inline-flex items-center gap-1 text-[10px] font-semibold uppercase tracking-wider text-gray-500 bg-gray-50 border border-gray-200 px-2 py-0.5 rounded-full">
+                  {materials.length} item{materials.length === 1 ? "" : "s"}
+                </span>
+              </div>
+              {materials.length === 0 ? (
+                <p className="px-6 py-8 text-center text-sm text-gray-500">
+                  No materials recorded.
+                </p>
+              ) : (
+                <div className="overflow-x-auto">
+                  <table className="min-w-full text-sm">
+                    <thead className="bg-gray-50 text-[10px] uppercase text-gray-500 tracking-wider border-b border-gray-200">
+                      <tr>
+                        <th className="px-4 py-3 text-left font-bold w-10">#</th>
+                        <th className="px-4 py-3 text-left font-bold">Material</th>
+                        <th className="px-4 py-3 text-left font-bold">Unit</th>
+                        <th className="px-4 py-3 text-right font-bold">Consumed Qty</th>
+                        <th className="px-4 py-3 text-left font-bold">Remarks</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-gray-100">
+                      {materials.map((m: any, idx: number) => (
+                        <tr key={idx} className="hover:bg-orange-50/20 transition-colors">
+                          <td className="px-4 py-3 text-xs font-mono text-gray-400 tabular-nums">
+                            {String(idx + 1).padStart(2, "0")}
+                          </td>
+                          <td className="px-4 py-3 text-gray-900">
+                            {itemNameById.get(m.itemId) ?? m.itemId ?? "—"}
+                          </td>
+                          <td className="px-4 py-3 text-gray-600 uppercase">
+                            {uomCodeById.get(m.uomId) ?? "—"}
+                          </td>
+                          <td className="px-4 py-3 text-right tabular-nums text-gray-900">
+                            {fmtQty(m.consumedQty)}
+                          </td>
+                          <td className="px-4 py-3 text-gray-700 text-xs">
+                            {m.remarks ?? "—"}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </div>
+
+            {/* ── Manpower Deployed ─────────────────────────────── */}
+            <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
+              <div className="px-6 py-4 border-b border-gray-100 flex items-center justify-between">
+                <h2 className="text-sm font-semibold text-gray-900">
+                  Manpower Deployed
+                </h2>
+                <span className="inline-flex items-center gap-1 text-[10px] font-semibold uppercase tracking-wider text-gray-500 bg-gray-50 border border-gray-200 px-2 py-0.5 rounded-full">
+                  {manpower.length} entr{manpower.length === 1 ? "y" : "ies"}
+                </span>
+              </div>
+              {manpower.length === 0 ? (
+                <p className="px-6 py-8 text-center text-sm text-gray-500">
+                  No manpower recorded.
+                </p>
+              ) : (
+                <div className="overflow-x-auto">
+                  <table className="min-w-full text-sm">
+                    <thead className="bg-gray-50 text-[10px] uppercase text-gray-500 tracking-wider border-b border-gray-200">
+                      <tr>
+                        <th className="px-4 py-3 text-left font-bold w-10">#</th>
+                        <th className="px-4 py-3 text-left font-bold">Contractor</th>
+                        <th className="px-4 py-3 text-left font-bold">Category</th>
+                        <th className="px-4 py-3 text-left font-bold">Skill</th>
+                        <th className="px-4 py-3 text-right font-bold">Count</th>
+                        <th className="px-4 py-3 text-right font-bold">Hours</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-gray-100">
+                      {manpower.map((mp: any, idx: number) => (
+                        <tr key={idx} className="hover:bg-orange-50/20 transition-colors">
+                          <td className="px-4 py-3 text-xs font-mono text-gray-400 tabular-nums">
+                            {String(idx + 1).padStart(2, "0")}
+                          </td>
+                          <td className="px-4 py-3 text-gray-900">
+                            {contractorNameById.get(mp.contractorId) ?? "Self / —"}
+                          </td>
+                          <td className="px-4 py-3 text-gray-900">
+                            {mp.category ?? "—"}
+                          </td>
+                          <td className="px-4 py-3 text-gray-700">
+                            {mp.skillType ?? "—"}
+                          </td>
+                          <td className="px-4 py-3 text-right tabular-nums text-gray-900">
+                            {mp.count ?? 0}
+                          </td>
+                          <td className="px-4 py-3 text-right tabular-nums text-gray-900">
+                            {fmtQty(mp.hoursWorked)}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </div>
+
+            {/* ── Staff ─────────────────────────────────────────── */}
+            <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
+              <div className="px-6 py-4 border-b border-gray-100 flex items-center justify-between">
+                <h2 className="text-sm font-semibold text-gray-900">Staff</h2>
+                <span className="inline-flex items-center gap-1 text-[10px] font-semibold uppercase tracking-wider text-gray-500 bg-gray-50 border border-gray-200 px-2 py-0.5 rounded-full">
+                  {staff.length} member{staff.length === 1 ? "" : "s"}
+                </span>
+              </div>
+              {staff.length === 0 ? (
+                <p className="px-6 py-8 text-center text-sm text-gray-500">
+                  No staff recorded.
+                </p>
+              ) : (
+                <div className="overflow-x-auto">
+                  <table className="min-w-full text-sm">
+                    <thead className="bg-gray-50 text-[10px] uppercase text-gray-500 tracking-wider border-b border-gray-200">
+                      <tr>
+                        <th className="px-4 py-3 text-left font-bold w-10">#</th>
+                        <th className="px-4 py-3 text-left font-bold">Name</th>
+                        <th className="px-4 py-3 text-left font-bold">Designation</th>
+                        <th className="px-4 py-3 text-left font-bold">Attendance</th>
+                        <th className="px-4 py-3 text-left font-bold">Reason</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-gray-100">
+                      {staff.map((s: any, idx: number) => (
+                        <tr key={idx} className="hover:bg-orange-50/20 transition-colors">
+                          <td className="px-4 py-3 text-xs font-mono text-gray-400 tabular-nums">
+                            {String(idx + 1).padStart(2, "0")}
+                          </td>
+                          <td className="px-4 py-3 text-gray-900">{s.name ?? "—"}</td>
+                          <td className="px-4 py-3 text-gray-700">{s.designation || "—"}</td>
+                          <td className="px-4 py-3">
+                            <span
+                              className={`inline-block text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded ${
+                                s.present
+                                  ? "bg-green-50 text-green-700 border border-green-200"
+                                  : "bg-red-50 text-red-700 border border-red-200"
+                              }`}
+                            >
+                              {s.present ? "Present" : "Absent"}
+                            </span>
+                          </td>
+                          <td className="px-4 py-3 text-gray-700 text-xs">
+                            {s.present ? "—" : s.reason || "—"}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </div>
+
+            {/* ── Machinery Deployed ────────────────────────────── */}
+            <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
+              <div className="px-6 py-4 border-b border-gray-100 flex items-center justify-between">
+                <h2 className="text-sm font-semibold text-gray-900">
+                  Machinery Deployed
+                </h2>
+                <span className="inline-flex items-center gap-1 text-[10px] font-semibold uppercase tracking-wider text-gray-500 bg-gray-50 border border-gray-200 px-2 py-0.5 rounded-full">
+                  {machinery.length} entr{machinery.length === 1 ? "y" : "ies"}
+                </span>
+              </div>
+              {machinery.length === 0 ? (
+                <p className="px-6 py-8 text-center text-sm text-gray-500">
+                  No machinery recorded.
+                </p>
+              ) : (
+                <div className="overflow-x-auto">
+                  <table className="min-w-full text-sm">
+                    <thead className="bg-gray-50 text-[10px] uppercase text-gray-500 tracking-wider border-b border-gray-200">
+                      <tr>
+                        <th className="px-4 py-3 text-left font-bold w-10">#</th>
+                        <th className="px-4 py-3 text-left font-bold">Machinery / Equipment</th>
+                        <th className="px-4 py-3 text-left font-bold">Condition</th>
+                        <th className="px-4 py-3 text-right font-bold">Required</th>
+                        <th className="px-4 py-3 text-right font-bold">Actual</th>
+                        <th className="px-4 py-3 text-left font-bold">Remarks</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-gray-100">
+                      {machinery.map((mc: any, idx: number) => (
+                        <tr key={idx} className="hover:bg-orange-50/20 transition-colors">
+                          <td className="px-4 py-3 text-xs font-mono text-gray-400 tabular-nums">
+                            {String(idx + 1).padStart(2, "0")}
+                          </td>
+                          <td className="px-4 py-3 text-gray-900">
+                            {mc.description ?? "—"}
+                          </td>
+                          <td className="px-4 py-3 text-gray-700">
+                            {mc.condition ?? "—"}
+                          </td>
+                          <td className="px-4 py-3 text-right tabular-nums text-gray-900">
+                            {mc.requiredQty ?? 0}
+                          </td>
+                          <td className="px-4 py-3 text-right tabular-nums text-gray-900">
+                            {mc.actualQty ?? 0}
+                          </td>
+                          <td className="px-4 py-3 text-gray-700 text-xs">
+                            {mc.remarks ?? "—"}
                           </td>
                         </tr>
                       ))}

@@ -834,15 +834,18 @@ function SortPanel<T extends Record<string, unknown>>({
           <div key={i} className="flex items-center gap-2">
             <span className="text-xs text-slate-400 w-12 text-right">{i === 0 ? 'By' : 'Then'}</span>
             <select value={s.key} onChange={e => onChange(sorts.map((x, j) => j === i ? { ...x, key: e.target.value } : x))}
-              className="flex-1 rounded-lg border px-2 py-1.5 text-sm focus:outline-none">
+              className="flex-1 min-w-0 rounded-lg border px-2 py-1.5 text-sm focus:outline-none">
               {sortable.map(c => <option key={c.key} value={c.key}>{c.label}</option>)}
             </select>
             <select value={s.dir} onChange={e => onChange(sorts.map((x, j) => j === i ? { ...x, dir: e.target.value as 'asc' | 'desc' } : x))}
-              className="rounded-lg border px-2 py-1.5 text-sm focus:outline-none">
+              className="shrink-0 rounded-lg border px-2 py-1.5 text-sm focus:outline-none">
               <option value="asc">A → Z ↑</option>
               <option value="desc">Z → A ↓</option>
             </select>
-            <button onClick={() => onChange(sorts.filter((_, j) => j !== i))} className="text-slate-400 hover:text-red-500 shrink-0">×</button>
+            <button onClick={() => onChange(sorts.filter((_, j) => j !== i))} aria-label="Remove sort"
+              className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-slate-400 hover:bg-slate-100 hover:text-red-500">
+              <XIcon className="h-4 w-4" />
+            </button>
           </div>
         ))}
       </div>
@@ -1205,7 +1208,7 @@ export function DataTable<T extends Record<string, unknown>>({
               <ArrowUpDown className="h-4 w-4 shrink-0" />
               Sort {sorts.length > 0 && <span className="text-xs opacity-70">({sorts.length})</span>}
             </button>
-            <ToolbarDropdownPortal open={showSort} anchorRef={sortRef} panelRef={sortPanelRef} width={288} align="right">
+            <ToolbarDropdownPortal open={showSort} anchorRef={sortRef} panelRef={sortPanelRef} width={340} align="right">
               <SortPanel<T> columns={columns} sorts={sorts} onChange={setSorts} onClose={() => setShowSort(false)} />
             </ToolbarDropdownPortal>
           </div>

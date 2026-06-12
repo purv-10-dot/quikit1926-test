@@ -92,6 +92,7 @@ export default function WorkCategoriesPage() {
   return (
     <>
       <MasterListPage title="Work Categories" entityName="Work Category" permissionUrl="/masters/work-categories" columns={columns}
+        showStatusTabs
         data={result?.data ?? []} total={result?.total ?? 0} isLoading={isLoading}
         canImport canExport
         historyEntityType="work_category"

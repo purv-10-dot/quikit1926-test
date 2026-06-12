@@ -278,6 +278,10 @@ export default function UsersPage() {
   const router = useRouter();
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
+  // The email the record had when the Edit drawer opened. Used to detect an
+  // actual email change so we only validate + send `email` when it differs —
+  // legacy rows with a malformed email stay editable for their other fields.
+  const [originalEmail, setOriginalEmail] = useState("");
   // userIds whose resend request is currently in flight. Used to drop
   // fat-finger double-clicks during the round-trip; the server-side
   // token-expiry check is the authoritative guard.
@@ -427,6 +431,7 @@ export default function UsersPage() {
   const closeDrawer = () => {
     setDrawerOpen(false);
     setEditingId(null);
+    setOriginalEmail("");
     setForm(emptyForm);
     setEmailSuggestions([]);
     setEmailDropOpen(false);
@@ -438,11 +443,15 @@ export default function UsersPage() {
     if (!form.firstName.trim()) { toast.error("First Name is required"); return; }
     if (!form.lastName.trim())  { toast.error("Last Name is required");  return; }
     if (!form.email) { toast.error("Email is required"); return; }
-    // Reject malformed emails (e.g. trailing text / spaces like
-    // "x@gmail.comprofile im"). Only enforced on create — in edit the email
-    // field is disabled/unchanged, so we don't trap an admin who's fixing
-    // other fields on a record whose email was saved before this check.
-    if (!editingId && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(form.email.trim())) {
+    // An email is "changed" on edit when it differs (case-insensitively)
+    // from what the record had when the drawer opened. On create it's
+    // always considered changed. We only validate the format when it
+    // changed, so an admin fixing other fields on a legacy record whose
+    // email predates this check isn't trapped.
+    const emailChanged =
+      !editingId ||
+      form.email.trim().toLowerCase() !== originalEmail.trim().toLowerCase();
+    if (emailChanged && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(form.email.trim())) {
       toast.error("Enter a valid email address");
       return;
     }
@@ -464,6 +473,12 @@ export default function UsersPage() {
     // permissionMatrix is sent as-is when set; the server's matrix → revoke
     // bridge (matrixV2Bridge) translates it into CnUserPermissionExtra rows.
     const { password: _p, retypePassword: _rp, ...payload } = form;
+    // Only send `email` when it actually changed on edit — keeps the server
+    // from re-validating (and potentially rejecting) an unchanged legacy
+    // email, and avoids a no-op write to auth.User.
+    if (editingId && !emailChanged) {
+      delete (payload as Partial<typeof payload>).email;
+    }
 
     try {
       if (editingId) {
@@ -542,6 +557,7 @@ export default function UsersPage() {
 
   const handleEdit = (item: any) => {
     setEditingId(item.id);
+    setOriginalEmail(item.email ?? "");
     // Modules are shown as ticked when EITHER explicitly assigned on the
     // user record OR granted through a row in the permission matrix. The
     // server keeps these in sync on save, but deriving again here means
@@ -796,6 +812,7 @@ export default function UsersPage() {
         onAdd={() => {
           setForm(emptyForm);
           setEditingId(null);
+          setOriginalEmail("");
           setDrawerOpen(true);
         }}
         onEdit={handleEdit}
@@ -869,7 +886,7 @@ export default function UsersPage() {
                   }}
                   type="email"
                   placeholder="john@company.com"
-                  disabled={!!editingId || !!form.linkExistingUserId}
+                  disabled={!!form.linkExistingUserId}
                   onFocus={() => {
                     if (!editingId && emailSuggestions.length > 0)
                       setEmailDropOpen(true);

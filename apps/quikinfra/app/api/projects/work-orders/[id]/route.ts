@@ -14,6 +14,7 @@ function enrichWO(row: any, project?: any, contractor?: any): any {
     boqItemId: l.boqItemId ?? "",
     description: l.description ?? "",
     uomId: l.uomId ?? "",
+    uomCode: l.uomId ?? "",
     quantity: l.quantity?.toString?.() ?? "0",
     rate: l.negotiatedRate?.toString?.() ?? "0",
     amount: l.amount?.toString?.() ?? "0",
@@ -29,7 +30,7 @@ function enrichWO(row: any, project?: any, contractor?: any): any {
     title: row.title ?? "",
     description: row.description ?? "",
     type: "Work Order",
-    workType: "Without Material",
+    workType: row.workType ?? null,
     plannedStart: row.startDate?.toISOString?.().slice(0, 10) ?? null,
     plannedEnd: row.endDate?.toISOString?.().slice(0, 10) ?? null,
     retentionPct: 0,
@@ -177,13 +178,14 @@ async function handleUpdate(req: NextRequest, id: string) {
   const guard = requireOwnership(existing, ctx, "work order");
   if (guard) return guard;
 
-  // Build update payload from supported fields only. Unsupported
-  // demo-only fields (workType, retentionPct, etc.) are silently dropped.
+  // Build update payload from supported fields only. (Remaining demo-only
+  // fields like retentionPct/tdsPct are still display-only and dropped.)
   const data: Record<string, unknown> = {};
   if (safe.title !== undefined) data.title = safe.title;
   if (safe.description !== undefined) data.description = safe.description;
   if (safe.contractorId !== undefined) data.contractorId = safe.contractorId;
   if (safe.workCategoryId !== undefined) data.workCategoryId = safe.workCategoryId;
+  if (safe.workType !== undefined) data.workType = safe.workType ?? null;
   if (safe.plannedStart !== undefined && safe.plannedStart !== null) {
     data.startDate = new Date(safe.plannedStart);
   }

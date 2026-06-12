@@ -159,6 +159,9 @@ export const POST = auth.create<{ projectId: string }>(
       if (!item.display_name) {
         return badRequest("Description / name is required");
       }
+      if (typeof item.tender_qty === "number" && item.tender_qty < 0) {
+        return badRequest("Tender quantity cannot be negative");
+      }
 
       const inserted = await boqService.addManualItem(
         ctx,

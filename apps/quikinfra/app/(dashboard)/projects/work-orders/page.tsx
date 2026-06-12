@@ -559,7 +559,7 @@ function WorkOrderRow({
             {row.type ?? "Work Order"}
           </span>
           <span className="inline-block text-[9px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded bg-slate-50 text-slate-600 border border-slate-200">
-            {row.workType?.split(" ").slice(0, 2).join(" ") ?? "Without Material"}
+            {row.workType ? row.workType.split(" ").slice(0, 2).join(" ") : "—"}
           </span>
         </div>
       </td>

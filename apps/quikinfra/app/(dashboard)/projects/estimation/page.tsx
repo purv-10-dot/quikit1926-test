@@ -2,15 +2,14 @@
 
 import { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
-import { Calculator, Check, Filter, Pencil, Send, Trash2, X as XIcon } from "lucide-react";
+import { Calculator, Check, Pencil, Send, Trash2, X as XIcon } from "lucide-react";
 import { useQueryClient } from "@tanstack/react-query";
-import { PageHeader, PageContainer, StatusChip } from "@/components/PageShell";
+import { PageHeader, PageContainer, StatusChip, KPICard } from "@/components/PageShell";
 import { DataTable, type ColDef } from "@/components/DataTable";
 import { useEstimations, useUpdateEstimation } from "@/hooks/use-projects";
 import { useProjects } from "@/hooks/use-masters";
 import { usePermissions } from "@/hooks/use-permissions";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
-import { SelectInput } from "@/components/FormDrawer";
 import { toast } from "@/lib/toast";
 import dynamic from "next/dynamic";
 const EstimationDrawer = dynamic(
@@ -26,8 +25,6 @@ const MENU_KEY = "pm.estimation";
 
 export default function EstimationPage() {
   const router = useRouter();
-  // Project is a FILTER now, not a gate. Default empty = all projects.
-  const [projectFilter, setProjectFilter] = useState("");
   // Drawer is for the CREATE flow only — Edit routes to the detail
   // page at /projects/estimation/[id]. Keeping the drawer here avoids
   // a second modal layout for quick new-row creation.
@@ -49,7 +46,7 @@ export default function EstimationPage() {
   const [workflowError, setWorkflowError] = useState<string | null>(null);
 
   const { data: projects } = useProjects();
-  const { data: result, isLoading } = useEstimations(projectFilter || null);
+  const { data: result, isLoading } = useEstimations(null);
   const updateMutation = useUpdateEstimation();
   const qc = useQueryClient();
   const data = useMemo(() => result?.data ?? [], [result]);
@@ -409,36 +406,16 @@ export default function EstimationPage() {
         ]}
       />
 
-      {/* Filter strip — project is now optional */}
-      <div className="px-6 py-3 border-b border-gray-200 bg-white flex items-center gap-3">
-        <div className="flex items-center gap-2 text-xs text-gray-500">
-          <Filter className="w-3.5 h-3.5" />
-          Project filter:
-        </div>
-        <div className="min-w-[240px]">
-          <SelectInput
-            value={projectFilter}
-            onChange={setProjectFilter}
-            placeholder="All projects"
-            options={visibleProjects.map((p: any) => ({ value: p.id, label: p.name }))}
+      <PageContainer>
+        <div className="mb-6 w-full max-w-[240px]">
+          <KPICard
+            title="Material Estimations"
+            value={isLoading ? "—" : visibleData.length}
+            subtitle="Total estimations"
+            icon={<Calculator className="w-5 h-5" />}
+            color="info"
           />
         </div>
-        {projectFilter && (
-          <button
-            type="button"
-            onClick={() => setProjectFilter("")}
-            className="text-xs text-gray-500 hover:text-gray-700 underline"
-          >
-            Clear
-          </button>
-        )}
-        <span className="ml-auto text-xs text-gray-500">
-          {!isLoading &&
-            `${visibleData.length} estimation${visibleData.length === 1 ? "" : "s"}`}
-        </span>
-      </div>
-
-      <PageContainer>
         <DataTable
           id="projects-estimation"
           columns={columns}
@@ -457,7 +434,6 @@ export default function EstimationPage() {
       <EstimationDrawer
         open={drawerOpen}
         onClose={closeDrawer}
-        defaultProjectId={projectFilter || undefined}
         projects={visibleProjects}
         editData={editRow}
       />

@@ -128,6 +128,7 @@ export default function UOMPage() {
   return (
     <>
       <MasterListPage title="Units of Measurement" entityName="UOM" permissionUrl="/masters/uom" columns={columns}
+        showStatusTabs
         data={result?.data ?? []} total={result?.data?.length ?? 0} isLoading={isLoading}
         canImport canExport
         historyEntityType="uom"

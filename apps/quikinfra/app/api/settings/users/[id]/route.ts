@@ -106,6 +106,31 @@ interface UpdateAuthCtx { orgId: string; userId: string }
 async function handleUpdate(req: NextRequest, id: string, ctx: UpdateAuthCtx) {
   const body = await req.json();
 
+  // Email edit: normalise (trim + lower-case, matching the create flow),
+  // validate the format, and reject collisions with another account before
+  // touching any row. `id` is the auth.User id, so a clash whose id equals
+  // `id` is just the user's own unchanged email — allowed. The client only
+  // sends `email` when it actually changed, so legacy rows with a malformed
+  // email aren't blocked when the admin edits other fields.
+  let emailToUpdate: string | undefined;
+  if (body.email !== undefined) {
+    const normalisedEmail = String(body.email).trim().toLowerCase();
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(normalisedEmail)) {
+      return NextResponse.json({ error: "Invalid email address" }, { status: 400 });
+    }
+    const clash = await (dbCentral as any).user.findUnique({
+      where: { email: normalisedEmail },
+      select: { id: true },
+    });
+    if (clash && clash.id !== id) {
+      return NextResponse.json(
+        { error: `A user with email "${normalisedEmail}" already exists` },
+        { status: 409 },
+      );
+    }
+    emailToUpdate = normalisedEmail;
+  }
+
   // If the role is being changed, validate against the org's CnAppRole
   // catalog. Accepts both the legacy uppercase enum ("ADMIN") and the
   // new lowercase role names ("admin", "ho_user", "purchase_manager", …).
@@ -221,6 +246,7 @@ async function handleUpdate(req: NextRequest, id: string, ctx: UpdateAuthCtx) {
   const updated = await updateUserCentral(ctx.orgId, id, {
     firstName,
     lastName,
+    email: emailToUpdate,
     mobile: body.mobile,
     department: body.department,
     mobileAccessEnabled: body.mobileAccessEnabled,

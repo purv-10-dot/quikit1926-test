@@ -145,7 +145,14 @@ export function NumberInput({
   value, onChange, placeholder, min, max, step, disabled, invalid,
 }: { value: string | number; onChange: (v: string) => void; placeholder?: string; min?: number; max?: number; step?: string; disabled?: boolean; invalid?: boolean }) {
   return (
-    <input type="number" value={value} onChange={(e) => onChange(e.target.value)}
+    <input type="number" value={value}
+      // Native number inputs still accept e / E / + / - (exponent + sign) —
+      // that's how letters leak into amount fields. Block those keys, and
+      // strip anything non-numeric that arrives via paste / autofill.
+      onKeyDown={(e) => {
+        if (["e", "E", "+", "-"].includes(e.key)) e.preventDefault();
+      }}
+      onChange={(e) => onChange(e.target.value.replace(/[^0-9.]/g, ""))}
       placeholder={placeholder} min={min} max={max} step={step} disabled={disabled}
       className={`${BASE_INPUT} ${invalid ? INPUT_ERR : INPUT_OK}`} />
   );

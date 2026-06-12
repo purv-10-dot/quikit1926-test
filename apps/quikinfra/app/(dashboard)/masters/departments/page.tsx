@@ -101,6 +101,7 @@ export default function DepartmentsPage() {
   return (
     <>
       <MasterListPage title="Departments" entityName="Department" permissionUrl="/masters/departments" columns={columns}
+        showStatusTabs
         data={result?.data ?? []} total={result?.total ?? 0} isLoading={isLoading}
         canImport canExport
         historyEntityType="department"

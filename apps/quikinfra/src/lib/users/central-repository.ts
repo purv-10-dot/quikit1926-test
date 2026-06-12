@@ -415,6 +415,10 @@ export async function softDeleteUserCentral(
 export interface UpdateUserCentralPatch {
   firstName?: string;
   lastName?: string;
+  // Already normalised (trimmed + lower-cased) and uniqueness-checked by
+  // the caller. Email is the join key for the v2 reconciliation, so the
+  // route validates it before this runs.
+  email?: string;
   mobile?: string | null;
   department?: string | null;
   mobileAccessEnabled?: boolean;
@@ -467,13 +471,20 @@ export async function updateUserCentral(
     });
   }
 
-  // Update auth.User if firstName/lastName are touched.
-  if (patch.firstName !== undefined || patch.lastName !== undefined) {
+  // Update auth.User if firstName/lastName/email are touched. `username`
+  // is derived from the email local-part on read, so updating email here
+  // is enough — no separate username column to keep in sync.
+  if (
+    patch.firstName !== undefined ||
+    patch.lastName !== undefined ||
+    patch.email !== undefined
+  ) {
     await (dbCentral as any).user.update({
       where: { id: authUserId },
       data: {
         ...(patch.firstName !== undefined ? { firstName: patch.firstName } : {}),
         ...(patch.lastName !== undefined ? { lastName: patch.lastName } : {}),
+        ...(patch.email !== undefined ? { email: patch.email } : {}),
       },
     });
   }

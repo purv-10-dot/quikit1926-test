@@ -110,6 +110,7 @@ export default function TDSPage() {
   return (
     <>
       <MasterListPage title="TDS Codes" entityName="TDS Code" permissionUrl="/masters/tds" columns={columns}
+        showStatusTabs
         data={result?.data ?? []} total={result?.total ?? 0} isLoading={isLoading}
         canImport canExport
         historyEntityType="tds_code"

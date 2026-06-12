@@ -7,6 +7,7 @@ import { err as envelopeErr } from "@/lib/http/envelope";
 import { parsePagination } from "@/lib/http/pagination";
 import { parseStoredWeatherDetail } from "@/lib/weather/dpr-weather";
 import { canActOnCurrentStep } from "@/lib/approvals/workflow-rbac";
+import { persistDprImages } from "@/lib/dpr/dpr-images";
 
 /**
  * DPR (Daily Progress Report) — list + create.
@@ -265,6 +266,19 @@ export async function POST(req: NextRequest) {
     const materials: any[] = Array.isArray(body.materials) ? body.materials : [];
     const manpower: any[] = Array.isArray(body.manpower) ? body.manpower : [];
     const machinery: any[] = Array.isArray(body.machinery) ? body.machinery : [];
+    const staff: any[] = Array.isArray(body.staff) ? body.staff : [];
+
+    // Upload any new work-item photos to S3 first (outside the DB write) and
+    // collect the per-item object keys, aligned to `workItems` order.
+    const workItemImageKeys: string[][] = await Promise.all(
+      workItems.map((w: any) =>
+        persistDprImages(
+          ctx,
+          Array.isArray(w.images) ? w.images : [],
+          Array.isArray(w.imageKeys) ? w.imageKeys : [],
+        ),
+      ),
+    );
 
     const created = await (db as any).cnDailyProgressReport.create({
       data: tenantCreate(ctx, {
@@ -278,7 +292,7 @@ export async function POST(req: NextRequest) {
         consumptionLocationId: body.consumptionLocationId ?? null,
         status: requestedStatus,
         workItems: {
-          create: workItems.map((w: any) => ({
+          create: workItems.map((w: any, i: number) => ({
             boqItemId: String(w.boqItemId ?? w.boqNo ?? ""),
             woId: w.woId ?? null,
             description: String(w.description ?? ""),
@@ -286,6 +300,7 @@ export async function POST(req: NextRequest) {
             cumulativeQty: String(Number(w.cumulativeQty ?? w.todayQty ?? w.qty ?? 0)),
             uomId: String(w.uomId ?? ""),
             remarks: w.remarks ?? null,
+            images: workItemImageKeys[i] ?? [],
           })),
         },
         labourEntries: {
@@ -299,12 +314,10 @@ export async function POST(req: NextRequest) {
         },
         machineryEntries: {
           create: machinery.map((m: any) => ({
-            machineryId: String(m.machineryId ?? m.id ?? ""),
-            hoursWorked: String(Number(m.hoursWorked ?? m.hours ?? 0)),
-            fuelConsumed: m.fuelConsumed !== undefined && m.fuelConsumed !== null
-              ? String(Number(m.fuelConsumed))
-              : null,
-            operatorName: m.operatorName ?? null,
+            description: String(m.description ?? ""),
+            condition: m.condition ?? null,
+            requiredQty: Number(m.requiredQty ?? 0),
+            actualQty: Number(m.actualQty ?? 0),
             remarks: m.remarks ?? null,
           })),
         },
@@ -316,6 +329,14 @@ export async function POST(req: NextRequest) {
             remarks: m.remarks ?? null,
           })),
         },
+        staffEntries: {
+          create: staff.map((s: any) => ({
+            name: String(s.name ?? ""),
+            designation: s.designation ?? null,
+            present: s.present !== undefined ? !!s.present : true,
+            reason: s.reason ?? null,
+          })),
+        },
       }),
       include: {
         project: { select: { id: true, name: true, code: true } },
@@ -323,6 +344,7 @@ export async function POST(req: NextRequest) {
         labourEntries: true,
         machineryEntries: true,
         materialEntries: true,
+        staffEntries: true,
       },
     });
 

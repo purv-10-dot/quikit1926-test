@@ -6,6 +6,7 @@ import { requireOwnership } from "@/lib/auth/ownership";
 import { resolveUserNames } from "@/lib/users/resolve-names";
 import { parseStoredWeatherDetail } from "@/lib/weather/dpr-weather";
 import { canActOnCurrentStep } from "@/lib/approvals/workflow-rbac";
+import { persistDprImages, signDprImageKeys } from "@/lib/dpr/dpr-images";
 
 /**
  * DPR — per-row endpoints.
@@ -26,28 +27,59 @@ async function enrichDPR(row: any, project?: any): Promise<any> {
         .filter((v) => typeof v === "string" && v.length > 0),
     ),
   );
-  let boqNoById = new Map<string, string>();
+  // Pull boqNo + unit + scope from the BOQ item. The DPR work item only
+  // persists boqItemId/qtys, so Unit and Total Target are resolved here at
+  // read time (same join the boqNo display already relied on).
+  let boqInfoById = new Map<string, { boqNo: string; unit: string; scopeQty: number }>();
   if (boqItemIds.length) {
     const boqRows = await (db as any).cnBOQItemV2.findMany({
       where: { id: { in: boqItemIds }, orgId: row.orgId },
-      select: { id: true, boqNo: true },
+      select: { id: true, boqNo: true, unit: true, scopeQty: true },
     });
-    boqNoById = new Map<string, string>(
-      boqRows.map((r: any) => [r.id, r.boqNo]),
+    boqInfoById = new Map(
+      boqRows.map((r: any) => [
+        r.id,
+        {
+          boqNo: r.boqNo ?? "",
+          unit: r.unit ?? "",
+          scopeQty: Number(r.scopeQty ?? 0),
+        },
+      ]),
     );
   }
 
-  const workItems = (row.workItems ?? []).map((w: any) => ({
-    id: w.id,
-    boqItemId: w.boqItemId ?? "",
-    boqNo: boqNoById.get(w.boqItemId) ?? "",
-    woId: w.woId ?? null,
-    description: w.description ?? "",
-    todayQty: w.todayQty?.toString?.() ?? "0",
-    cumulativeQty: w.cumulativeQty?.toString?.() ?? "0",
-    uomId: w.uomId ?? "",
-    remarks: w.remarks ?? "",
-  }));
+  const workItems = await Promise.all(
+    ((row.workItems ?? []) as any[]).map(async (w: any) => {
+      const keys = Array.isArray(w.images) ? w.images : [];
+      const boq = boqInfoById.get(w.boqItemId) ?? { boqNo: "", unit: "", scopeQty: 0 };
+      const todayNum = Number(w.todayQty ?? 0);
+      const cumulativeNum = Number(w.cumulativeQty ?? 0);
+      // Not stored on the work item — derived so the edit form can show
+      // Prev Qty and % Completed: prev = cumulative-before-today.
+      const prevQty = Math.max(0, cumulativeNum - todayNum);
+      return {
+        id: w.id,
+        boqItemId: w.boqItemId ?? "",
+        boqNo: boq.boqNo,
+        // BOQ-derived so the form's Unit / Total Target / % Completed render.
+        unit: boq.unit,
+        totalTarget: boq.scopeQty,
+        prevQty,
+        woId: w.woId ?? null,
+        // Form's Contractor/WO selector binds to `workOrderId`, not `woId`.
+        workOrderId: w.woId ?? null,
+        description: w.description ?? "",
+        todayQty: w.todayQty?.toString?.() ?? "0",
+        cumulativeQty: w.cumulativeQty?.toString?.() ?? "0",
+        uomId: w.uomId ?? "",
+        remarks: w.remarks ?? "",
+        // Stored S3 keys + aligned signed URLs for display. The edit form
+        // sends `imageKeys` back so existing photos aren't re-uploaded.
+        imageKeys: keys,
+        images: await signDprImageKeys(keys),
+      };
+    }),
+  );
   const labour = (row.labourEntries ?? []).map((l: any) => ({
     id: l.id,
     category: l.category ?? "",
@@ -58,10 +90,10 @@ async function enrichDPR(row: any, project?: any): Promise<any> {
   }));
   const machinery = (row.machineryEntries ?? []).map((m: any) => ({
     id: m.id,
-    machineryId: m.machineryId ?? "",
-    hoursWorked: m.hoursWorked?.toString?.() ?? "0",
-    fuelConsumed: m.fuelConsumed?.toString?.() ?? null,
-    operatorName: m.operatorName ?? null,
+    description: m.description ?? "",
+    condition: m.condition ?? null,
+    requiredQty: m.requiredQty ?? 0,
+    actualQty: m.actualQty ?? 0,
     remarks: m.remarks ?? null,
   }));
   const materials = (row.materialEntries ?? []).map((m: any) => ({
@@ -70,6 +102,13 @@ async function enrichDPR(row: any, project?: any): Promise<any> {
     consumedQty: m.consumedQty?.toString?.() ?? "0",
     uomId: m.uomId ?? "",
     remarks: m.remarks ?? null,
+  }));
+  const staff = (row.staffEntries ?? []).map((s: any) => ({
+    id: s.id,
+    name: s.name ?? "",
+    designation: s.designation ?? "",
+    present: s.present ?? true,
+    reason: s.reason ?? "",
   }));
 
   return {
@@ -87,7 +126,7 @@ async function enrichDPR(row: any, project?: any): Promise<any> {
     workItems,
     materials,
     manpower: labour,
-    staff: [],
+    staff,
     machinery,
     workItemCount: workItems.length,
     materialCount: materials.length,
@@ -115,6 +154,7 @@ export async function GET(_req: NextRequest, ctx: { params: { id: string } }) {
       labourEntries: true,
       machineryEntries: true,
       materialEntries: true,
+      staffEntries: true,
     },
   });
   if (!row || row.status === "inactive") {
@@ -263,6 +303,21 @@ export async function PUT(req: NextRequest, ctx: { params: { id: string } }) {
     const hasMaterials = Array.isArray(body.materials);
     const hasManpower = Array.isArray(body.manpower);
     const hasMachinery = Array.isArray(body.machinery);
+    const hasStaff = Array.isArray(body.staff);
+
+    // Upload any new work-item photos to S3 BEFORE the DB transaction (keep
+    // slow object-store calls out of the txn). Existing photos keep their key.
+    const workItemImageKeys: string[][] = hasWorkItems
+      ? await Promise.all(
+          (body.workItems ?? body.items).map((w: any) =>
+            persistDprImages(
+              auth,
+              Array.isArray(w.images) ? w.images : [],
+              Array.isArray(w.imageKeys) ? w.imageKeys : [],
+            ),
+          ),
+        )
+      : [];
 
     await db.$transaction(async (tx: any) => {
       await tx.cnDailyProgressReport.update({
@@ -275,7 +330,7 @@ export async function PUT(req: NextRequest, ctx: { params: { id: string } }) {
         const items = body.workItems ?? body.items;
         if (items.length > 0) {
           await tx.cnDPRWorkItem.createMany({
-            data: items.map((w: any) => ({
+            data: items.map((w: any, i: number) => ({
               dprId: ctx.params.id,
               boqItemId: String(w.boqItemId ?? w.boqNo ?? ""),
               woId: w.woId ?? null,
@@ -284,6 +339,7 @@ export async function PUT(req: NextRequest, ctx: { params: { id: string } }) {
               cumulativeQty: String(Number(w.cumulativeQty ?? w.todayQty ?? w.qty ?? 0)),
               uomId: String(w.uomId ?? ""),
               remarks: w.remarks ?? null,
+              images: workItemImageKeys[i] ?? [],
             })),
           });
         }
@@ -326,14 +382,26 @@ export async function PUT(req: NextRequest, ctx: { params: { id: string } }) {
           await tx.cnDPRMachineryEntry.createMany({
             data: body.machinery.map((m: any) => ({
               dprId: ctx.params.id,
-              machineryId: String(m.machineryId ?? m.id ?? ""),
-              hoursWorked: String(Number(m.hoursWorked ?? m.hours ?? 0)),
-              fuelConsumed:
-                m.fuelConsumed !== undefined && m.fuelConsumed !== null
-                  ? String(Number(m.fuelConsumed))
-                  : null,
-              operatorName: m.operatorName ?? null,
+              description: String(m.description ?? ""),
+              condition: m.condition ?? null,
+              requiredQty: Number(m.requiredQty ?? 0),
+              actualQty: Number(m.actualQty ?? 0),
               remarks: m.remarks ?? null,
+            })),
+          });
+        }
+      }
+
+      if (hasStaff) {
+        await tx.cnDPRStaff.deleteMany({ where: { dprId: ctx.params.id } });
+        if (body.staff.length > 0) {
+          await tx.cnDPRStaff.createMany({
+            data: body.staff.map((s: any) => ({
+              dprId: ctx.params.id,
+              name: String(s.name ?? ""),
+              designation: s.designation ?? null,
+              present: s.present !== undefined ? !!s.present : true,
+              reason: s.reason ?? null,
             })),
           });
         }
@@ -348,6 +416,7 @@ export async function PUT(req: NextRequest, ctx: { params: { id: string } }) {
         labourEntries: true,
         machineryEntries: true,
         materialEntries: true,
+        staffEntries: true,
       },
     });
     return NextResponse.json(await enrichDPR(updated, updated?.project));
@@ -389,6 +458,7 @@ export async function DELETE(_req: NextRequest, ctx: { params: { id: string } })
       labourEntries: true,
       machineryEntries: true,
       materialEntries: true,
+      staffEntries: true,
     },
   });
   return NextResponse.json(await enrichDPR(refreshed, refreshed?.project));

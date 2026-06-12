@@ -10,6 +10,7 @@ export interface CostCenterRecord {
   code: string;
   name: string;
   projectId: string | null;
+  projectName: string | null;
   status: string;
   createdAt: string;
   updatedAt: string;
@@ -24,6 +25,7 @@ function toRecord(row: any): CostCenterRecord {
     code: row.code,
     name: row.name,
     projectId: row.projectId ?? null,
+    projectName: row.project?.name ?? null,
     status: row.status,
     createdAt: row.createdAt?.toISOString?.() ?? "",
     updatedAt: row.updatedAt?.toISOString?.() ?? "",
@@ -67,6 +69,7 @@ function buildCostCentersWhere(
 export async function listCostCenters(opts: ListOptions): Promise<CostCenterRecord[]> {
   const rows = await (db as any).cnCostCenter.findMany({
     where: buildCostCentersWhere(opts),
+    include: { project: { select: { id: true, name: true } } },
     orderBy: { createdAt: "desc" },
     ...(typeof opts.take === "number" ? { take: opts.take } : {}),
     ...(typeof opts.skip === "number" ? { skip: opts.skip } : {}),

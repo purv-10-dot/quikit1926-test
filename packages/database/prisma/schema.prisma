@@ -2342,10 +2342,13 @@ model CnCostCenter {
   createdBy String
   updatedBy String
 
+  project   CnProject? @relation(fields: [projectId], references: [id])
+
   // --- grafted: cross-schema relations (Org/User) ---
   org       Org       @relation(fields: [orgId], references: [id], onDelete: Cascade)
   @@unique([orgId, code])
   @@index([orgId])
+  @@index([projectId])
   @@map("Cost_centers")
   @@schema("app_quikinfra")
 }
@@ -2515,6 +2518,9 @@ model CnProject {
 
   client           CnCustomer?             @relation(fields: [clientId], references: [id])
   locations        CnLocation[]
+  costCenters      CnCostCenter[]
+  machinery        CnMachinery[]
+  assets           CnAsset[]
   boqItems         CnBOQItem[]
   purchaseReqs     CnPurchaseRequisition[]
   indents          CnPurchaseIndent[]
@@ -2568,10 +2574,13 @@ model CnMachinery {
 
   dieselLogs CnDieselLog[]
 
+  project        CnProject?    @relation(fields: [projectId], references: [id])
+
   // --- grafted: cross-schema relations (Org/User) ---
   org            Org           @relation(fields: [orgId], references: [id], onDelete: Cascade)
   @@unique([orgId, code])
   @@index([orgId])
+  @@index([projectId])
   @@map("Machinery")
   @@schema("app_quikinfra")
 }
@@ -2595,6 +2604,8 @@ model CnAsset {
   updatedAt       DateTime  @updatedAt
   createdBy       String
   updatedBy       String
+
+  project       CnProject? @relation(fields: [projectId], references: [id])
 
   // --- grafted: cross-schema relations (Org/User) ---
   org           Org       @relation(fields: [orgId], references: [id], onDelete: Cascade)
@@ -3501,6 +3512,7 @@ model CnWorkOrder {
   projectId        String
   contractorId     String
   workCategoryId   String?
+  workType         String?
   title            String
   description      String?
   startDate        DateTime
@@ -4087,6 +4099,7 @@ model CnDailyProgressReport {
   labourEntries    CnDPRLabourEntry[]
   machineryEntries CnDPRMachineryEntry[]
   materialEntries  CnDPRMaterialEntry[]
+  staffEntries     CnDPRStaff[]
 
   @@unique([orgId, dprNumber])
   @@index([orgId])
@@ -4140,6 +4153,7 @@ model CnDPRWorkItem {
   cumulativeQty Decimal @db.Decimal(18, 4)
   uomId         String
   remarks       String?
+  images        String[] @default([])
 
   dpr CnDailyProgressReport @relation(fields: [dprId], references: [id], onDelete: Cascade)
 
@@ -4163,13 +4177,13 @@ model CnDPRLabourEntry {
   @@schema("app_quikinfra")
 }
 model CnDPRMachineryEntry {
-  id           String   @id @default(cuid())
-  dprId        String
-  machineryId  String
-  hoursWorked  Decimal  @db.Decimal(5, 2)
-  fuelConsumed Decimal? @db.Decimal(18, 4)
-  operatorName String?
-  remarks      String?
+  id          String  @id @default(cuid())
+  dprId       String
+  description String
+  condition   String?
+  requiredQty Int     @default(0)
+  actualQty   Int     @default(0)
+  remarks     String?
 
   dpr CnDailyProgressReport @relation(fields: [dprId], references: [id], onDelete: Cascade)
 
@@ -4194,6 +4208,20 @@ model CnDPRMaterialEntry {
 
   @@index([dprId])
   @@map("Dpr_material_entries")
+  @@schema("app_quikinfra")
+}
+model CnDPRStaff {
+  id          String  @id @default(cuid())
+  dprId       String
+  name        String
+  designation String?
+  present     Boolean @default(true)
+  reason      String?
+
+  dpr CnDailyProgressReport @relation(fields: [dprId], references: [id], onDelete: Cascade)
+
+  @@index([dprId])
+  @@map("Dpr_staff_entries")
   @@schema("app_quikinfra")
 }
 model CnRunningAccountBill {
