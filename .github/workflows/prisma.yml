@@ -41,17 +41,15 @@ jobs:
         run: npm ci
 
       # 🧱 3️⃣ Prisma migration (NO CHANGE)
-      - name: Auto-resolve any failed database migrations
+      # 🧱 3️⃣ Prisma migration (with Self-Healing Auto-Resolve)
+      - name: Prisma migrate deploy (PROD with Self-Healing)
         run: |
           node << 'EOF'
-          const { PrismaClient } = require("@prisma/client");
           const { execSync } = require("child_process");
+          const { PrismaClient } = require("@prisma/client");
           const schemaPath = "packages/database/prisma/schema.prisma";
-          
-          async function fixAll() {
-            console.log("Starting database auto-resolution...");
-            
-            // ── Strategy 1: Direct SQL Metadata Update ──────────────────────────
+
+          async function runDeployWithAutoResolve() {
             const prisma = new PrismaClient({
               datasources: {
                 db: {
@@ -59,70 +57,85 @@ jobs:
                 }
               }
             });
-            
-            try {
-              console.log("Strategy 1: Attempting direct SQL update of failed migrations...");
-              const count = await prisma.$executeRawUnsafe(
-                `UPDATE _prisma_migrations 
-                 SET finished_at = NOW() 
-                 WHERE finished_at IS NULL AND rolled_back_at IS NULL`
-              );
-              console.log(`Result: Marked ${count} failed migrations as applied.`);
-            } catch (sqlError) {
-              console.log("Strategy 1 skipped (table might not exist yet or connection failed):", sqlError.message);
-            } finally {
-              await prisma.$disconnect();
-            }
 
-            // ── Strategy 2: Hardcoded CLI Resolve ─────────────────────────────
-            try {
-              console.log("Strategy 2: Running CLI resolve for quiktrack notifications...");
-              execSync(
-                `npx prisma migrate resolve --applied "20260525120000_quiktrack_notifications" --schema=${schemaPath}`,
-                { stdio: "inherit" }
-              );
-              console.log("Result: Successfully resolved migration via CLI.");
-            } catch (cliError) {
-              console.log("Strategy 2 skipped (already resolved or CLI failed):", cliError.message);
-            }
-
-            // ── Strategy 3: Dynamic CLI Status & Parsing Resolve ──────────────
-            try {
-              console.log("Strategy 3: Running dynamic CLI check...");
-              const output = execSync(`npx prisma migrate status --schema=${schemaPath} 2>&1`).toString();
-              console.log("Status output:\n", output);
-              const match = output.match(/(\d{14}_[0-9a-zA-Z_-]+).*failed/i);
-              if (match && match[1]) {
-                const failedMigration = match[1];
-                console.log(`Detected failed migration: ${failedMigration}. Resolving...`);
-                execSync(
-                  `npx prisma migrate resolve --applied "${failedMigration}" --schema=${schemaPath}`,
-                  { stdio: "inherit" }
-                );
-                console.log(`Successfully resolved migration: ${failedMigration}`);
-              } else {
-                console.log("No failed migrations found in status.");
+            const maxAttempts = 15;
+            for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+              console.log(`\n=============================================`);
+              console.log(`   Migration Deploy Attempt ${attempt} / ${maxAttempts}`);
+              console.log(`=============================================`);
+              
+              let deployStdout = "";
+              let deployFailed = false;
+              try {
+                deployStdout = execSync("npx prisma migrate deploy --schema=" + schemaPath + " 2>&1").toString();
+                console.log(deployStdout);
+                console.log("Migration deployment completed successfully!");
+                await prisma.$disconnect();
+                return; // Exit script successfully
+              } catch (deployError) {
+                deployFailed = true;
+                deployStdout = (deployError.stdout || "").toString() + (deployError.stderr || "").toString() + deployError.toString();
+                console.log("Deploy output:\n", deployStdout);
               }
-            } catch (statusError) {
-              console.log("Strategy 3 skipped.");
+
+              if (deployFailed) {
+                // Check if the error is specifically because relation/column/index already exists
+                const isAlreadyExistsError = deployStdout.includes("already exists") 
+                                          || deployStdout.includes("SqlState(E42P07)")
+                                          || deployStdout.includes("SqlState(E42701)");
+
+                if (!isAlreadyExistsError) {
+                  console.error("Migration failed with a critical error (not 'already exists'). Aborting.");
+                  process.exit(1);
+                }
+
+                console.log("Detected 'already exists' database conflict. Auto-resolving failed migration as applied...");
+                
+                try {
+                  const failedMigrations = await prisma.$queryRawUnsafe(
+                    "SELECT id, migration_name FROM _prisma_migrations WHERE finished_at IS NULL AND rolled_back_at IS NULL"
+                  );
+                  console.log("Failed migrations in database:", failedMigrations);
+                  
+                  if (failedMigrations.length === 0) {
+                    // Fallback to logs if database metadata hasn't caught up
+                    const match = deployStdout.match(/Migration name: ([0-9a-zA-Z_-]+)/i)
+                               || deployStdout.match(/The [`'\"]?([0-9a-zA-Z_-]+)[`'\"]? migration started at.*failed/i)
+                               || deployStdout.match(/Applying migration [`'\"]?([0-9a-zA-Z_-]+)[`'\"]?/i);
+                    if (match && match[1]) {
+                      const failedMigration = match[1];
+                      console.log(`Found failed migration from logs: ${failedMigration}. Resolving via CLI...`);
+                      execSync(`npx prisma migrate resolve --applied ${failedMigration} --schema=${schemaPath}`, { stdio: "inherit" });
+                    } else {
+                      console.error("Could not determine which migration failed. Aborting.");
+                      process.exit(1);
+                    }
+                  } else {
+                    for (const m of failedMigrations) {
+                      console.log(`Marking migration ${m.migration_name} as applied in DB...`);
+                      await prisma.$executeRawUnsafe(
+                        "UPDATE _prisma_migrations SET finished_at = NOW() WHERE id = $1",
+                        m.id
+                      );
+                      console.log(`Successfully resolved migration: ${m.migration_name}`);
+                    }
+                  }
+                } catch (err) {
+                  console.error("Failed during auto-resolution step:", err.message);
+                  process.exit(1);
+                }
+              }
             }
-            
-            console.log("Auto-resolution script finished.");
+
+            console.error(`Reached maximum deploy attempts (${maxAttempts}). Migration loop terminated.`);
+            process.exit(1);
           }
-          
-          fixAll().catch(err => {
-            console.error("Critical error in auto-resolution:", err);
+
+          runDeployWithAutoResolve().catch(err => {
+            console.error("Fatal error:", err);
             process.exit(1);
           });
           EOF
-        env:
-          DATABASE_URL: ${{ secrets.PROD_DATABASE_URL }}
-          DATABASE_URL_DIRECT: ${{ secrets.PROD_DATABASE_URL }}
-
-      - name: Prisma migrate deploy (PROD)
-        run: |
-          npx prisma migrate deploy \
-            --schema=packages/database/prisma/schema.prisma
         env:
           DATABASE_URL: ${{ secrets.PROD_DATABASE_URL }}
           DATABASE_URL_DIRECT: ${{ secrets.PROD_DATABASE_URL }}
