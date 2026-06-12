@@ -47,6 +47,7 @@ export const LEGACY_KEY_MAP: Readonly<Record<string, LegacyMapping>> = {
   "wbs.read":     { resource: "construction.wbs",     action: "view"   },
   "wbs.write":    { resource: "construction.wbs",     action: "edit"   },
   "finance.view": { resource: "construction.finance", action: "view"   },
+  "rab.read":     { resource: "construction.rab",     action: "view"   },
   "rab.approve":  { resource: "construction.rab",     action: "approve"},
 };
 

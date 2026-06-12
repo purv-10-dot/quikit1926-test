@@ -1,48 +1,73 @@
+import { requireProjectsFinanceAction } from "@/lib/auth/requireProjectsFinanceAction";
+import { findCnUserById } from "@/lib/users/lookup";
 import { NextRequest, NextResponse } from "next/server";
+import { db } from "@/lib/db";
+import { hasMatrixAction } from "@/lib/auth/context";
+import { err as envelopeErr } from "@/lib/http/envelope";
+import { canActOnStep } from "@/lib/approvals/workflow-rbac";
 import { boqService, BOQError } from "@/lib/boq";
-import { withOrgAuthForResource } from "@/lib/api/withOrgAuth";
-import { getTenantContext } from "@/lib/auth/context";
-import { idempotencyGuard } from "@/lib/workflow/idempotency";
-import { assertTransition, TransitionError } from "@/lib/workflow/transitions";
 import { recordAudit } from "@/lib/workflow/audit";
+import { idempotencyGuard } from "@/lib/workflow/idempotency";
 import { rateLimit, LIMITS } from "@/lib/workflow/rate-limit";
 import { logger } from "@/lib/observability/logger";
-import { db } from "@/lib/db";
-
-const auth = withOrgAuthForResource("construction.rab");
 
 /**
- * RAB Approval — flips status to `approved` and applies billed qty to
- * BOQ leaves per spec §12 item #15.
+ * POST /api/projects/rab/:id/approve  (RA Bill Phase 5)
  *
- * Hardening:
- *   - `rab.approve` permission gate
- *   - Idempotency-Key guard
- *   - One Prisma transaction wraps:
- *       (a) RAB status transition (draft/submitted → approved)
- *       (b) all line billings via BOQ billing ledger (with caps)
- *       (c) audit log
- *   - RAB billed qty ≤ cumulative approved done qty (sub+self), unless
- *     explicit override flag is set on the line.
+ * Workflow-driven approval for RA Bills. Mirrors the DPR/WO approve
+ * step-walk, plus the billing-ledger posting on the final approve step:
  *
- * RAB itself is now Postgres-backed (was globalThis.__qcRABs).
- * `cn_rab_lines` rows are the source of truth for billed-per-BOQ-item
- * detail; the BOQ billing service expects a `boqNo` string, so we
- * resolve each `boqItemId` against `cn_boq_items_v2.boqNo` inside the
- * transaction.
+ *   pending_approval ──approve (intermediate)──> pending_approval (next step)
+ *   pending_approval ──approve (last step)─────> approved + billedQty posted
+ *   pending_approval ──reject─────────────────> rejected
+ *   pending_approval ──return─────────────────> draft (approvalId cleared)
+ *
+ * Body: { action: "approve" | "reject" | "return", comments? }
+ *
+ * The ledger posting (`billedQty += currentQty` per line) happens ONLY on
+ * final approval, inside the same transaction as the status change and
+ * audit, and is wrapped in an idempotencyGuard so a retried request never
+ * double-posts. The BOQ billing ledger also clamps each line to its
+ * un-billed balance, so double-billing is impossible even on replay.
  */
-export const POST = auth.approve<{ id: string }>(async (
-  _authCtx,
+
+type Action = "approve" | "reject" | "return";
+
+export async function POST(
   req: NextRequest,
-  { params },
-) => {
-  const ctx = await getTenantContext();
-  if (!ctx) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  { params }: { params: { id: string } },
+) {
+  const ctxOrResp = await requireProjectsFinanceAction("construction.rab", "approve");
+  if (ctxOrResp instanceof NextResponse) return ctxOrResp;
+  const ctx = ctxOrResp;
+
+  if (!hasMatrixAction(ctx, "pm.dpr", "edit")) {
+    return envelopeErr("FORBIDDEN", `Action "edit" not allowed for pm.dpr`, 403);
+  }
 
   const limited = await rateLimit({ ...LIMITS.APPROVAL, req, identifier: ctx.userId });
   if (limited.blocked) {
     logger.warn({ msg: "rate_limited", route: "rab.approve", userId: ctx.userId });
     return limited.response!;
+  }
+
+  let body: any = {};
+  try {
+    body = await req.json();
+  } catch {
+    /* empty body ok */
+  }
+  const action = (body.action ?? "approve") as Action;
+  const comments = String(body.comments ?? "").trim();
+
+  if (!["approve", "reject", "return"].includes(action)) {
+    return NextResponse.json({ error: `Unknown action: ${action}` }, { status: 400 });
+  }
+  if ((action === "reject" || action === "return") && !comments) {
+    return NextResponse.json(
+      { error: `Comments are required for ${action} actions` },
+      { status: 400 },
+    );
   }
 
   const guard = await idempotencyGuard(req, ctx, "rab.approve");
@@ -54,102 +79,228 @@ export const POST = auth.approve<{ id: string }>(async (
       where: { id: params.id, orgId: ctx.orgId },
       select: {
         id: true,
+        rabNumber: true,
         status: true,
+        approvalId: true,
         projectId: true,
         lines: {
-          select: {
-            id: true,
-            boqItemId: true,
-            currentQty: true,
-          },
+          select: { id: true, boqItemId: true, currentQty: true },
         },
       },
     });
     if (!rab) {
-      const body = { error: "RAB not found", code: "RAB_NOT_FOUND" };
-      await guard.commit(404, body);
-      return NextResponse.json(body, { status: 404 });
+      const b = { error: "RAB not found", code: "RAB_NOT_FOUND" };
+      await guard.commit(404, b);
+      return NextResponse.json(b, { status: 404 });
+    }
+    if (!rab.approvalId) {
+      const b = {
+        error:
+          "This RAB was not submitted through a workflow — no approval instance exists.",
+      };
+      await guard.commit(400, b);
+      return NextResponse.json(b, { status: 400 });
     }
 
-    try {
-      assertTransition("rab", rab.status ?? "draft", "approved");
-    } catch (e: any) {
-      if (e instanceof TransitionError) {
-        const body = { error: e.message, code: e.code };
-        await guard.commit(400, body);
-        return NextResponse.json(body, { status: 400 });
+    const instance = await (db as any).cnApprovalInstance.findFirst({
+      where: { id: rab.approvalId, orgId: ctx.orgId },
+    });
+    if (!instance) {
+      const b = { error: "Approval instance not found" };
+      await guard.commit(404, b);
+      return NextResponse.json(b, { status: 404 });
+    }
+    if (instance.status !== "pending_approval") {
+      const b = {
+        error: `Approval already ${instance.status} — no further actions allowed.`,
+      };
+      await guard.commit(409, b);
+      return NextResponse.json(b, { status: 409 });
+    }
+
+    const currentStep = await (db as any).cnApprovalWorkflowStep.findFirst({
+      where: { workflowId: instance.workflowId, stepOrder: instance.currentStepOrder },
+    });
+    if (!currentStep) {
+      const b = {
+        error: `Workflow step ${instance.currentStepOrder} is missing — the workflow may have been edited while this RAB was mid-flight.`,
+      };
+      await guard.commit(500, b);
+      return NextResponse.json(b, { status: 500 });
+    }
+
+    if (
+      !canActOnStep(
+        { userId: ctx.userId, roleKey: ctx.roleKey, projectIds: ctx.projectIds },
+        {
+          approverUserId: currentStep.approverUserId,
+          approverRoleId: currentStep.approverRoleId,
+        },
+        rab.projectId ?? null,
+      )
+    ) {
+      let expected = "an authorized approver";
+      if (currentStep.approverUserId) {
+        const pinned = await findCnUserById(currentStep.approverUserId);
+        expected = pinned?.fullName
+          ? `${pinned.fullName} (pinned approver)`
+          : "the pinned approver for this step";
+      } else if (currentStep.approverRoleId) {
+        expected =
+          `a user with role "${currentStep.approverRoleId}"` +
+          (rab.projectId ? ` assigned to this project` : "");
       }
-      throw e;
+      const b = {
+        error: `You are not authorized to ${action} this RAB at step ${instance.currentStepOrder}. Expected: ${expected}.`,
+      };
+      await guard.commit(403, b);
+      return NextResponse.json(b, { status: 403 });
     }
 
-    // Pre-resolve `boqItemId → boqNo` once outside the transaction so the
-    // billing loop doesn't issue a `findUnique` per line while holding
-    // transaction locks. Mirrors the pattern in dpr/[id]/approve.
-    const boqItemIds = (rab.lines ?? [])
-      .map((l: any) => l.boqItemId)
-      .filter(Boolean);
+    const nextStep = await (db as any).cnApprovalWorkflowStep.findFirst({
+      where: {
+        workflowId: instance.workflowId,
+        stepOrder: { gt: instance.currentStepOrder },
+      },
+      orderBy: { stepOrder: "asc" },
+    });
+    const isFinalApprove = action === "approve" && !nextStep;
+
+    // Pre-resolve boqItemId → boqNo once (the billing service keys on boqNo),
+    // only when we're about to post on final approve.
     const boqNoById = new Map<string, string>();
-    if (boqItemIds.length) {
-      const boqRows = await (db as any).cnBOQItemV2.findMany({
-        where: { id: { in: boqItemIds }, orgId: ctx.orgId, projectId: rab.projectId },
-        select: { id: true, boqNo: true },
-      });
-      for (const r of boqRows as any[]) boqNoById.set(r.id, r.boqNo);
+    if (isFinalApprove) {
+      const boqItemIds = (rab.lines ?? [])
+        .map((l: any) => l.boqItemId)
+        .filter(Boolean);
+      if (boqItemIds.length) {
+        const boqRows = await (db as any).cnBOQItemV2.findMany({
+          where: { id: { in: boqItemIds }, orgId: ctx.orgId, projectId: rab.projectId },
+          select: { id: true, boqNo: true },
+        });
+        for (const r of boqRows as any[]) boqNoById.set(r.id, r.boqNo);
+      }
     }
 
+    let rabStatusUpdate: Record<string, unknown> | null = null;
+    let finalStatus: string = String(rab.status ?? "");
     const updates: Array<{ boqNo: string; qty: number }> = [];
 
-    const updatedRab = await db.$transaction(async (tx: any) => {
-      // Apply BOQ billing for each line. The form doesn't yet capture
-      // per-BOQ-item billing detail, so most production RABs will iterate
-      // zero lines until that flow lands.
-      for (const line of rab.lines ?? []) {
-        const qty = Number(line.currentQty?.toString() ?? "0");
-        if (qty <= 0) continue;
-
-        const boqNo = boqNoById.get(line.boqItemId);
-        if (!boqNo) continue;
-
-        await boqService.applyRABBillingTxn(tx, ctx, rab.projectId, boqNo, qty, {
-          rabId: rab.id,
-          rabLineId: line.id,
-        });
-
-        updates.push({ boqNo, qty });
-      }
-
-      const updated = await tx.cnRunningAccountBill.update({
-        where: { id: rab.id },
+    await db.$transaction(async (tx: any) => {
+      await tx.cnApprovalHistory.create({
         data: {
-          status: "approved",
-          updatedBy: ctx.userId,
+          instanceId: instance.id,
+          stepOrder: instance.currentStepOrder,
+          action,
+          actionById: ctx.userId,
+          comments: comments || null,
         },
       });
 
-      await recordAudit(tx, ctx, {
-        entityType: "rab",
-        entityId: rab.id,
-        action: "approve",
-        changes: {
-          from: rab.status,
-          to: "approved",
-          linesBilled: updates.length,
-        },
-      });
+      if (action === "approve") {
+        if (!nextStep) {
+          // Final step → flip to approved AND post billedQty per line, in
+          // this same transaction. The billing ledger clamps to the
+          // un-billed balance, so a replay (or overlapping bill) can never
+          // over-post.
+          await tx.cnApprovalInstance.update({
+            where: { id: instance.id },
+            data: { status: "approved", completedAt: new Date() },
+          });
 
-      return updated;
+          for (const line of rab.lines ?? []) {
+            const qty = Number(line.currentQty?.toString() ?? "0");
+            if (qty <= 0) continue;
+            const boqNo = boqNoById.get(line.boqItemId);
+            if (!boqNo) continue;
+
+            await boqService.applyRABBillingTxn(tx, ctx, rab.projectId, boqNo, qty, {
+              rabId: rab.id,
+              rabLineId: line.id,
+            });
+            updates.push({ boqNo, qty });
+          }
+
+          await recordAudit(tx, ctx, {
+            entityType: "rab",
+            entityId: rab.id,
+            action: "approve",
+            changes: {
+              from: rab.status,
+              to: "approved",
+              linesBilled: updates.length,
+              comments: comments || undefined,
+            },
+          });
+
+          rabStatusUpdate = { status: "approved", updatedBy: ctx.userId };
+          finalStatus = "approved";
+        } else {
+          // Intermediate approve — advance to the next step, RAB stays
+          // submitted, no ledger change.
+          await tx.cnApprovalInstance.update({
+            where: { id: instance.id },
+            data: { currentStepOrder: nextStep.stepOrder },
+          });
+        }
+      } else if (action === "reject") {
+        await tx.cnApprovalInstance.update({
+          where: { id: instance.id },
+          data: { status: "rejected", completedAt: new Date() },
+        });
+        await recordAudit(tx, ctx, {
+          entityType: "rab",
+          entityId: rab.id,
+          action: "reject",
+          changes: { from: rab.status, to: "rejected", comments },
+        });
+        rabStatusUpdate = { status: "rejected", updatedBy: ctx.userId };
+        finalStatus = "rejected";
+      } else {
+        // "return" — back to draft for the raiser to edit; clearing
+        // approvalId means the next submit creates a fresh instance.
+        await tx.cnApprovalInstance.update({
+          where: { id: instance.id },
+          data: { status: "returned", completedAt: new Date() },
+        });
+        await recordAudit(tx, ctx, {
+          entityType: "rab",
+          entityId: rab.id,
+          action: "return",
+          changes: { from: rab.status, to: "draft", comments },
+        });
+        rabStatusUpdate = { status: "draft", approvalId: null, updatedBy: ctx.userId };
+        finalStatus = "draft";
+      }
+    });
+
+    if (rabStatusUpdate) {
+      await (db as any).cnRunningAccountBill.update({
+        where: { id: rab.id },
+        data: rabStatusUpdate,
+      });
+    }
+
+    const refreshedInstance = await (db as any).cnApprovalInstance.findUnique({
+      where: { id: instance.id },
+    });
+    const totalSteps = await (db as any).cnApprovalWorkflowStep.count({
+      where: { workflowId: instance.workflowId },
     });
 
     const responseBody = {
-      success: true,
+      ok: true,
+      action,
       rab: {
-        id: updatedRab.id,
-        rabNumber: updatedRab.rabNumber,
-        status: updatedRab.status,
-        currentBillAmount: updatedRab.currentBillAmount.toString(),
-        cumulativeAmount: updatedRab.cumulativeAmount.toString(),
-        netPayable: updatedRab.netPayable.toString(),
-        updatedAt: updatedRab.updatedAt.toISOString(),
+        id: rab.id,
+        rabNumber: rab.rabNumber,
+        status: finalStatus,
+      },
+      approval: {
+        id: refreshedInstance.id,
+        status: refreshedInstance.status,
+        currentStepOrder: refreshedInstance.currentStepOrder,
+        totalSteps,
       },
       boqUpdatesApplied: updates.length,
       updates,
@@ -158,9 +309,9 @@ export const POST = auth.approve<{ id: string }>(async (
     return NextResponse.json(responseBody);
   } catch (err: any) {
     if (err instanceof BOQError) {
-      const body = { error: err.message, code: err.code };
-      await guard.commit(err.httpStatus, body);
-      return NextResponse.json(body, { status: err.httpStatus });
+      const b = { error: err.message, code: err.code };
+      await guard.commit(err.httpStatus, b);
+      return NextResponse.json(b, { status: err.httpStatus });
     }
     logger.error({ msg: "rab_approve_failed", rabId: params.id, err });
     return NextResponse.json(
@@ -168,4 +319,4 @@ export const POST = auth.approve<{ id: string }>(async (
       { status: 500 },
     );
   }
-});
+}

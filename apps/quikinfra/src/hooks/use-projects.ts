@@ -292,3 +292,65 @@ export function useCreateRAB() {
     meta: entityMeta("create", "RAB"),
   });
 }
+
+export function useSubmitRAB() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) => mutateApi(`/api/projects/rab/${id}/submit`, "POST"),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["rabs"] }),
+    meta: entityMeta("submit", "RAB"),
+  });
+}
+
+export function useApproveRAB() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, action, comments }: { id: string; action: "approve" | "reject" | "return"; comments?: string }) =>
+      mutateApi(`/api/projects/rab/${id}/approve`, "POST", { action, comments }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["rabs"] }),
+    meta: entityMeta("update", "RAB"),
+  });
+}
+
+/**
+ * Pull clamped proposed lines from approved DPRs for a period (Phase 2),
+ * or the cumulative billable balance from the BOQ (Phase 1). Imperative —
+ * the form calls this on the "Pull" button, not on every render.
+ */
+export async function pullRABLines(
+  source: "dpr" | "boq",
+  params: { projectId: string; from?: string; to?: string },
+): Promise<{
+  lines: any[];
+  sources?: any[];
+  cappedLines?: number;
+  noDprs?: boolean;
+}> {
+  if (source === "dpr") {
+    const qs = new URLSearchParams({
+      projectId: params.projectId,
+      from: params.from ?? "",
+      to: params.to ?? "",
+    });
+    const res = await fetchApi<{ lines: any[]; sources: any[]; cappedLines: number; noDprs: boolean }>(
+      `/api/projects/rab/from-dpr?${qs.toString()}`,
+    );
+    return res;
+  }
+  const qs = new URLSearchParams({ projectId: params.projectId });
+  const res = await fetchApi<{ data: any[] }>(`/api/projects/rab/billable?${qs.toString()}`);
+  // Normalise BOQ rows to the same shape the form's line table expects.
+  const lines = (res.data ?? []).map((r: any) => ({
+    boqItemId: r.boqItemId,
+    boqNo: r.boqNo,
+    description: r.description,
+    unit: r.unit,
+    uomId: "",
+    rate: r.rate,
+    billableQty: r.billableQty,
+    billQty: r.billableQty,
+    amount: r.billableAmount,
+    capped: false,
+  }));
+  return { lines, sources: [], cappedLines: 0, noDprs: false };
+}

@@ -4231,16 +4231,42 @@ model CnRunningAccountBill {
   projectId          String
   contractorId       String
   woId               String
+  billType           String   @default("ra_bill") // ra_bill | final_bill | deviation_bill
   billPeriodFrom     DateTime
   billPeriodTo       DateTime
   previousBillAmount Decimal  @db.Decimal(18, 2)
   currentBillAmount  Decimal  @db.Decimal(18, 2)
   cumulativeAmount   Decimal  @db.Decimal(18, 2)
+  grossBillAmount    Decimal  @default(0) @db.Decimal(18, 2)
+
+  // Retention
   retentionPercent   Decimal? @db.Decimal(5, 2)
   retentionAmount    Decimal? @db.Decimal(18, 2)
+
+  // Tax — GST is ADDED to the bill; TDS is a deduction. Both filled by
+  // computeRABill(). Rates are percentages; amounts are money.
+  tdsRate  Decimal? @db.Decimal(5, 2)
+  tdsAmount Decimal? @db.Decimal(18, 2)
+  cgstRate Decimal? @db.Decimal(5, 2)
+  cgstAmount Decimal? @db.Decimal(18, 2)
+  sgstRate Decimal? @db.Decimal(5, 2)
+  sgstAmount Decimal? @db.Decimal(18, 2)
+  igstRate Decimal? @db.Decimal(5, 2)
+  igstAmount Decimal? @db.Decimal(18, 2)
+
+  // Other statutory / contractual deductions (all excluded from the GST add-on).
+  mobilisationRecovery Decimal? @db.Decimal(18, 2)
+  liquidatedDamages    Decimal? @db.Decimal(18, 2)
+  labourCess           Decimal? @db.Decimal(18, 2)
+  otherDeductions      Decimal? @db.Decimal(18, 2)
+
+  // Legacy single-lump deduction column — retained for existing rows; new
+  // bills break the total out into the granular fields above.
   deductions         Decimal? @db.Decimal(18, 2)
   netPayable         Decimal  @db.Decimal(18, 2)
+
   status             String   @default("draft")
+  paymentStatus      String   @default("unpaid") // unpaid | partial | paid
   approvalId         String?
   createdAt          DateTime @default(now())
   updatedAt          DateTime @updatedAt

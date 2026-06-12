@@ -4,8 +4,12 @@ import { db } from "@/lib/db";
 import { hasMatrixAction } from "@/lib/auth/context";
 import { err as envelopeErr } from "@/lib/http/envelope";
 import { generateDocNumber } from "@/lib/db/doc-number";
-import { BOQError } from "@/lib/boq";
+import { BOQError, boqService } from "@/lib/boq";
+import { computeRABill } from "@/lib/rab/compute";
 import { parsePagination } from "@/lib/http/pagination";
+
+const round2 = (n: number): number => Number(n.toFixed(2));
+const round4 = (n: number): number => Number(n.toFixed(4));
 
 /**
  * RAB (Running Account Bill) — list + create.
@@ -160,28 +164,136 @@ export async function POST(req: NextRequest) {
       woId = wo.id;
     }
 
-    // ── Compute previous / cumulative / net amounts ────────────────
-    // Prior approved RABs against the same WO contribute to the running
-    // total. Stays correct even when previous RABs span different
-    // billing periods.
+    // ── Build + validate bill lines (authoritative, server-side) ───
+    // The clamp never trusts client-sent balances: executed, billed and
+    // rate all come from the BOQ leaves; woLineId comes from the work
+    // order. A line over its un-billed balance is rejected. No ledger is
+    // touched here — billedQty only moves on final approval (Phase 5).
+    const rawLines = Array.isArray(body.lines) ? body.lines : [];
+    const lineCreates: Array<Record<string, unknown>> = [];
+    let gross = 0;
+
+    if (rawLines.length) {
+      const leaves = await boqService.getLeafItems(ctx, body.projectId);
+      const leafById = new Map(leaves.map((l) => [l.id, l] as const));
+
+      const woLines = await (db as any).cnWorkOrderLine.findMany({
+        where: { woId },
+        select: { id: true, boqItemId: true, uomId: true },
+      });
+      const woLineByItem = new Map<string, any>(
+        (woLines as any[]).map((w) => [w.boqItemId, w]),
+      );
+
+      const errors: string[] = [];
+      for (const l of rawLines) {
+        const boqItemId = String(l.boqItemId ?? "");
+        const leaf = leafById.get(boqItemId);
+        if (!leaf) {
+          errors.push(`BOQ item ${boqItemId || "(missing)"} not found in this project.`);
+          continue;
+        }
+        // woLine may be absent — the executed work can be self-work or a BOQ
+        // item outside the WO scope. woLineId is a plain string column (not a
+        // FK), so we leave it empty in that case rather than blocking the bill.
+        const woLine = woLineByItem.get(boqItemId);
+
+        const executed = round4(leaf.done_qty ?? 0);
+        const billed = round4(leaf.billed_qty ?? 0);
+        const remaining = round4(executed - billed);
+        const currentQty = round4(Number(l.currentQty ?? l.billQty ?? 0));
+        if (currentQty <= 0) continue; // skip empty lines
+        if (currentQty > remaining) {
+          errors.push(
+            `${leaf.boq_no}: qty ${currentQty} exceeds billable balance ${remaining}.`,
+          );
+          continue;
+        }
+
+        const rate = Number(leaf.rate ?? 0);
+        const previousQty = billed;
+        const cumulativeQty = round4(previousQty + currentQty);
+        const totalQty = executed;
+        const currentAmount = round2(currentQty * rate);
+        const previousAmount = round2(previousQty * rate);
+        const cumulativeAmount = round2(cumulativeQty * rate);
+        gross = round2(gross + currentAmount);
+
+        lineCreates.push({
+          boqItemId,
+          woLineId: woLine?.id ?? "",
+          description: String(
+            l.description ?? leaf.display_name ?? leaf.description ?? "",
+          ),
+          uomId: String(l.uomId ?? woLine?.uomId ?? leaf.unit ?? ""),
+          totalQty,
+          previousQty,
+          currentQty,
+          cumulativeQty,
+          rate,
+          previousAmount,
+          currentAmount,
+          cumulativeAmount,
+        });
+      }
+
+      if (errors.length) {
+        return NextResponse.json(
+          { error: "Some lines could not be billed", details: errors },
+          { status: 400 },
+        );
+      }
+      if (!lineCreates.length) {
+        return NextResponse.json(
+          { error: "No billable lines — every line was zero or fully billed." },
+          { status: 400 },
+        );
+      }
+    } else {
+      // Legacy header-only path (current simple drawer): gross is the typed
+      // current bill amount; no per-BOQ lines are persisted.
+      gross = round2(Number(body.currentBillAmount ?? 0));
+    }
+
+    // ── Deduction / GST waterfall — the one shared money path ──────
+    const computed = computeRABill({
+      gross,
+      retentionPercent: body.retentionPercent,
+      tdsRate: body.tdsRate,
+      cgstRate: body.cgstRate,
+      sgstRate: body.sgstRate,
+      igstRate: body.igstRate,
+      mobilisationRecovery: body.mobilisationRecovery,
+      liquidatedDamages: body.liquidatedDamages,
+      labourCess: body.labourCess,
+      otherDeductions: body.otherDeductions,
+    });
+
+    if (computed.gross <= 0) {
+      return NextResponse.json(
+        { error: "Bill amount must be greater than zero." },
+        { status: 400 },
+      );
+    }
+
+    // Prior approved RABs against the same WO form the running total.
+    // Computed live (not cached) so concurrency stays correct.
     const priorAgg = await (db as any).cnRunningAccountBill.aggregate({
-      where: {
-        orgId: ctx.orgId,
-        woId,
-        status: "approved",
-      },
+      where: { orgId: ctx.orgId, woId, status: "approved" },
       _sum: { currentBillAmount: true },
     });
-    const previousBillAmount = Number(
-      priorAgg._sum.currentBillAmount?.toString() ?? "0",
+    const previousBillAmount = round2(
+      Number(priorAgg._sum.currentBillAmount?.toString() ?? "0"),
     );
-    const currentBillAmount = Number(body.currentBillAmount ?? 0);
-    const cumulativeAmount = previousBillAmount + currentBillAmount;
-    // No retention/deductions form fields yet — net = current.
-    const netPayable = currentBillAmount;
+    const currentBillAmount = computed.gross;
+    const cumulativeAmount = round2(previousBillAmount + currentBillAmount);
+
+    const allowedBillTypes = ["ra_bill", "final_bill", "deviation_bill"];
+    const billType = allowedBillTypes.includes(body.billType)
+      ? body.billType
+      : "ra_bill";
 
     const rabNumber = await generateDocNumber("rab", ctx.orgId);
-    const requestedStatus = body.status === "submitted" ? "submitted" : "draft";
 
     const created = await (db as any).cnRunningAccountBill.create({
       data: {
@@ -190,19 +302,39 @@ export async function POST(req: NextRequest) {
         projectId: body.projectId,
         contractorId: body.contractorId,
         woId: woId!,
+        billType,
         billPeriodFrom: new Date(body.billPeriodFrom),
         billPeriodTo: new Date(body.billPeriodTo),
         previousBillAmount,
         currentBillAmount,
         cumulativeAmount,
-        netPayable,
-        status: requestedStatus,
+        grossBillAmount: computed.gross,
+        retentionPercent: computed.retentionPercent,
+        retentionAmount: computed.retentionAmount,
+        tdsRate: computed.tdsRate,
+        tdsAmount: computed.tdsAmount,
+        cgstRate: computed.cgstRate,
+        cgstAmount: computed.cgstAmount,
+        sgstRate: computed.sgstRate,
+        sgstAmount: computed.sgstAmount,
+        igstRate: computed.igstRate,
+        igstAmount: computed.igstAmount,
+        mobilisationRecovery: computed.mobilisationRecovery,
+        liquidatedDamages: computed.liquidatedDamages,
+        labourCess: computed.labourCess,
+        otherDeductions: computed.otherDeductions,
+        netPayable: computed.netPayable,
+        // Phase 4 creates a DRAFT only — submit is a separate transition.
+        status: "draft",
+        paymentStatus: "unpaid",
         createdBy: ctx.userId,
         updatedBy: ctx.userId,
+        ...(lineCreates.length ? { lines: { create: lineCreates } } : {}),
       },
       include: {
         project: { select: { name: true } },
         contractor: { select: { name: true } },
+        _count: { select: { lines: true } },
       },
     });
 
@@ -215,12 +347,20 @@ export async function POST(req: NextRequest) {
         contractorId: created.contractorId,
         contractorName: created.contractor?.name ?? "",
         woId: created.woId,
+        billType: created.billType,
         billPeriodFrom: created.billPeriodFrom.toISOString().slice(0, 10),
         billPeriodTo: created.billPeriodTo.toISOString().slice(0, 10),
         previousBillAmount: created.previousBillAmount.toString(),
         currentBillAmount: created.currentBillAmount.toString(),
         cumulativeAmount: created.cumulativeAmount.toString(),
+        grossBillAmount: created.grossBillAmount.toString(),
+        retentionAmount: created.retentionAmount?.toString() ?? "0",
+        tdsAmount: created.tdsAmount?.toString() ?? "0",
+        cgstAmount: created.cgstAmount?.toString() ?? "0",
+        sgstAmount: created.sgstAmount?.toString() ?? "0",
+        igstAmount: created.igstAmount?.toString() ?? "0",
         netPayable: created.netPayable.toString(),
+        lineCount: created._count?.lines ?? lineCreates.length,
         status: created.status,
         createdAt: created.createdAt.toISOString(),
         updatedAt: created.updatedAt.toISOString(),

@@ -21,6 +21,7 @@ import {
   ShieldCheck, Workflow, Globe, Boxes, MapPin,
   CreditCard, Calculator, FileSpreadsheet,
   ChevronRight, Menu, X, Search,
+  PanelLeftClose, PanelLeftOpen,
   LogOut, Users, MessageSquare,
   AlertTriangle, Wallet, Wrench, ClipboardCheck, ListTree,
 } from "lucide-react";
@@ -126,12 +127,16 @@ const CONSTRUCTION_NAV: NavItem[] = [
     iconComponent: Database,
     moduleKey: "masters",
     children: [
+      // Customers is a lookup consumed by Projects (project → client), so it
+      // lists before Projects — define the customer before the project that references it.
+      { label: "Customers",         href: "/masters/customers",    iconComponent: Building2,    requiredPermission: "masters.read" },
       { label: "Projects",          href: "/masters/projects",     iconComponent: FolderKanban, requiredPermission: "masters.read" },
-      { label: "Items / Materials", href: "/masters/items",        iconComponent: Package,      requiredPermission: "masters.read" },
+      // Item Groups is a lookup consumed by Items / Materials (item → group),
+      // so it lists first — define the group before the items that reference it.
       { label: "Item Groups",       href: "/masters/item-groups",  iconComponent: Boxes,        requiredPermission: "masters.read" },
+      { label: "Items / Materials", href: "/masters/items",        iconComponent: Package,      requiredPermission: "masters.read" },
       { label: "Vendors",           href: "/masters/vendors",      iconComponent: Truck,        requiredPermission: "masters.read" },
       { label: "Contractors",       href: "/masters/contractors",  iconComponent: HardHat,      requiredPermission: "masters.read" },
-      { label: "Customers",         href: "/masters/customers",    iconComponent: Building2,    requiredPermission: "masters.read" },
       { label: "Locations / Sites", href: "/masters/locations",    iconComponent: MapPin,       requiredPermission: "masters.read" },
       { label: "Machinery",         href: "/masters/machinery",    iconComponent: Hammer,       requiredPermission: "masters.read" },
       { label: "Assets / Tools",    href: "/masters/assets",       iconComponent: Wrench,       requiredPermission: "masters.read" },
@@ -206,6 +211,7 @@ const CONSTRUCTION_NAV: NavItem[] = [
     iconComponent: CreditCard,
     moduleKey: "finance",
     children: [
+      { label: "RA Bills (Sub-Contractor)", href: "/finance/ra-bills", iconComponent: FileSpreadsheet, requiredPermission: "rab.read" },
       { label: "Vendor Payments", href: "/finance/vendor-payments", iconComponent: CreditCard,  requiredPermission: "finance.view" },
       { label: "Client Billing",  href: "/finance/client-billing",  iconComponent: Receipt,     requiredPermission: "finance.view" },
       { label: "Petty Cash",      href: "/finance/petty-cash",      iconComponent: Wallet,      requiredPermission: "finance.view" },
@@ -536,6 +542,21 @@ export function QuikInfraShell({ children }: { children: ReactNode }) {
   const { can, hasModule, canViewMenu, isLoading: permsLoading, roleKey, userType } = usePermissions();
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+
+  // Restore the user's last expand/collapse choice. Default stays expanded
+  // (set above) so first paint matches SSR and avoids a hydration mismatch;
+  // the saved preference is applied after mount.
+  useEffect(() => {
+    const saved = window.localStorage.getItem("quikinfra:sidebarOpen");
+    if (saved !== null) setSidebarOpen(saved === "1");
+  }, []);
+
+  const toggleSidebar = () =>
+    setSidebarOpen((prev) => {
+      const next = !prev;
+      window.localStorage.setItem("quikinfra:sidebarOpen", next ? "1" : "0");
+      return next;
+    });
   const [navSearch, setNavSearch] = useState("");
   const [focusNavSearch, setFocusNavSearch] = useState(false);
   const navSearchRef = useRef<HTMLInputElement>(null);
@@ -598,15 +619,7 @@ export function QuikInfraShell({ children }: { children: ReactNode }) {
   const expandedSidebarInner = (
     <div className="flex flex-col h-full">
       <div className="flex items-center gap-2 border-b border-gray-100 px-3 py-4 sm:px-4 sm:py-5">
-        <button
-          type="button"
-          onClick={() => {
-            setSidebarOpen(false);
-            setMobileMenuOpen(false);
-          }}
-          className="flex min-w-0 flex-1 items-center gap-3 rounded-2xl py-1 pl-0.5 pr-2 text-left transition-colors hover:bg-slate-50"
-          aria-label="Collapse sidebar"
-        >
+        <div className="flex min-w-0 flex-1 items-center gap-3 py-1 pl-0.5 pr-2">
           <img
             src="/app-icons/quikinfra.svg"
             alt="QuikInfra"
@@ -616,6 +629,17 @@ export function QuikInfraShell({ children }: { children: ReactNode }) {
             <h1 className="truncate text-sm font-bold tracking-tight text-slate-900">Quik Infra</h1>
             <p className="truncate text-xs text-gray-500">Construction ERP</p>
           </div>
+        </div>
+        {/* Collapse toggle — desktop only. Mobile uses the X below to close
+            the overlay drawer instead of collapsing to a rail. */}
+        <button
+          type="button"
+          onClick={toggleSidebar}
+          className="hidden shrink-0 rounded-xl p-2 text-slate-500 transition-colors hover:bg-slate-100 hover:text-slate-800 lg:flex"
+          aria-label="Collapse sidebar"
+          title="Collapse sidebar"
+        >
+          <PanelLeftClose className="h-5 w-5" />
         </button>
         <button
           type="button"
@@ -685,19 +709,28 @@ export function QuikInfraShell({ children }: { children: ReactNode }) {
 
   const collapsedRailInner = (
     <div className="flex h-full min-h-0 flex-col items-center px-1 py-3">
+      <div
+        className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg shadow-[0_4px_14px_rgba(249,115,22,0.35)]"
+        aria-hidden
+      >
+        <img src="/app-icons/quikinfra.svg" alt="QuikInfra" className="h-8 w-8 rounded-lg" />
+      </div>
+      {/* Dedicated expand toggle — mirrors the collapse button in the
+          expanded header so the rail is obviously expandable. */}
       <button
         type="button"
-        onClick={() => setSidebarOpen(true)}
-        className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl shadow-[0_4px_14px_rgba(249,115,22,0.35)]"
+        onClick={toggleSidebar}
+        className="mt-2 flex h-10 w-10 shrink-0 items-center justify-center rounded-xl text-gray-500 transition-colors hover:bg-slate-100 hover:text-slate-800"
         aria-label="Expand sidebar"
         title="Expand sidebar"
       >
-        <img src="/app-icons/quikinfra.svg" alt="QuikInfra" className="h-11 w-11 rounded-xl" />
+        <PanelLeftOpen className="h-5 w-5" />
       </button>
       <button
         type="button"
         onClick={() => {
           setSidebarOpen(true);
+          window.localStorage.setItem("quikinfra:sidebarOpen", "1");
           setFocusNavSearch(true);
         }}
         className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl text-gray-500 transition-colors hover:bg-slate-100 hover:text-slate-800"

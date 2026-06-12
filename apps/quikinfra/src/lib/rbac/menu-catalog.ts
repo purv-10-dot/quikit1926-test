@@ -41,6 +41,7 @@ export const MENU_MODULES = [
   "STORE",
   "PROJECT MGMT",
   "QUALITY & SAFETY",
+  "FINANCE",
   "SYSTEM",
 ] as const;
 
@@ -117,6 +118,13 @@ export const MENU_CATALOG: MenuItem[] = [
   { key: "quality.home",      label: "Inspection/Checklist", url: "/quality",              module: "QUALITY & SAFETY", supports: allFour },
   { key: "safety.incidents",  label: "Incidents",            url: "/safety/incidents",     module: "QUALITY & SAFETY", supports: allFour },
   { key: "safety.toolbox",    label: "Toolbox Talks",        url: "/safety/toolbox-talks", module: "QUALITY & SAFETY", supports: allFour },
+
+  // ─── FINANCE ─────────────────────────────────────────────────────
+  // Mirrors CONSTRUCTION_NAV → FINANCE group. Only the RA Bills page is
+  // functional today; the other finance links are placeholders, so only
+  // this row is listed (matching the "don't grant pages users can't use"
+  // convention above).
+  { key: "finance.rab", label: "RA Bills (Sub-Contractor)", url: "/finance/ra-bills", module: "FINANCE", supports: allFour },
 
   // ─── SYSTEM ─────────────────────────────────────────────────────
   // SYSTEM items are NOT in ASSIGNABLE_MODULES — they can't be granted
@@ -197,6 +205,7 @@ export const MODULE_KEY_TO_MENU_MODULE: Record<string, MenuModule> = {
   store: "STORE",
   project_mgmt: "PROJECT MGMT",
   quality_safety: "QUALITY & SAFETY",
+  finance: "FINANCE",
 };
 
 /**

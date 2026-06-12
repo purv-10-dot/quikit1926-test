@@ -20,6 +20,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
+import { useQueryClient } from "@tanstack/react-query";
 import Link from "next/link";
 import {
   ArrowLeft,
@@ -173,6 +174,7 @@ interface DPRFormProps {
 export function DPRForm({ editData, embedded = false, onSaved }: DPRFormProps = {}) {
   const isEdit = !!editData?.id;
   const router = useRouter();
+  const qc = useQueryClient();
   const { data: projectsResult } = useProjects();
   const { data: itemsResult } = useItems();
   const { data: itemGroupsResult } = useItemGroups();
@@ -589,6 +591,15 @@ export function DPRForm({ editData, embedded = false, onSaved }: DPRFormProps = 
       if (!res.ok) throw new Error(json.error ?? `HTTP ${res.status}`);
 
       const savedId = json?.id ?? editData?.id;
+
+      // Invalidate the React Query caches so the detail + edit views refetch
+      // the saved record instead of serving the stale pre-edit snapshot.
+      // router.refresh() only re-runs server components — it does NOT touch
+      // the client query cache that useDPR / the edit page read from, so
+      // without this an edited value looks like it "didn't update".
+      if (savedId) qc.invalidateQueries({ queryKey: ["dpr", savedId] });
+      qc.invalidateQueries({ queryKey: ["dprs"] });
+
       if (embedded) {
         // Drawer host handles refresh + close. Submit-then-page-redirect
         // doesn't apply here — the user can re-enter the row from the
