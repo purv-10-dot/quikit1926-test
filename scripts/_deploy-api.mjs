@@ -21,6 +21,7 @@ const APP_PROJECTS = {
   quikvc:     "prj_eZEAmetQjPnLcSUQf7FoZIOvUCem",
   quiksocial: "prj_LCmE4d6aZ2Gnnz8tv8M9BcLPhDbh",
   quikinfra:  "prj_WASKGWNyD3lSvrjaBX54cigRy3Xw",
+  quikcrm:    "prj_uVjy9agPOR7zRkEyfiDFeEJ4reLE",
 };
 const ALL_APPS = Object.keys(APP_PROJECTS);
 
@@ -70,14 +71,25 @@ function walkFiles(dir, currentApp, out = []) {
   return out;
 }
 
+async function fetchT(url, opts, ms) {
+  // fetch with a hard timeout — a stalled connection aborts instead of hanging forever.
+  const ctrl = new AbortController();
+  const t = setTimeout(() => ctrl.abort(), ms);
+  try {
+    return await fetch(url, { ...opts, signal: ctrl.signal });
+  } finally {
+    clearTimeout(t);
+  }
+}
+
 async function uploadFile(buffer, sha) {
-  for (let attempt = 0; attempt < 6; attempt++) {
+  for (let attempt = 0; attempt < 8; attempt++) {
     try {
-      const res = await fetch(`https://api.vercel.com/v2/files?teamId=${TEAM}`, {
+      const res = await fetchT(`https://api.vercel.com/v2/files?teamId=${TEAM}`, {
         method: "POST",
         headers: { Authorization: `Bearer ${TOKEN}`, "Content-Length": String(buffer.length), "x-vercel-digest": sha },
         body: buffer,
-      });
+      }, 30000);
       if (res.ok) return true;
       const txt = await res.text();
       if (res.status === 409 || /already exists/i.test(txt)) return true;
@@ -121,11 +133,11 @@ async function deployApp(app) {
 
   const bySha = new Map(manifest.map((m) => [m.sha, m]));
   async function postDeploy() {
-    const r = await fetch(`https://api.vercel.com/v13/deployments?teamId=${TEAM}&forceNew=1&skipAutoDetectionConfirmation=1`, {
+    const r = await fetchT(`https://api.vercel.com/v13/deployments?teamId=${TEAM}&forceNew=1&skipAutoDetectionConfirmation=1`, {
       method: "POST",
       headers: { Authorization: `Bearer ${TOKEN}`, "Content-Type": "application/json" },
       body: JSON.stringify({ name: app, project: projectId, target: "production", files: manifest.map(({ file, sha, size }) => ({ file, sha, size })), version: 2 }),
-    });
+    }, 30000);
     return { ok: r.ok, body: await r.json() };
   }
 
@@ -148,7 +160,8 @@ async function deployApp(app) {
   const start = Date.now();
   for (let i = 0; i < 80; i++) {
     await new Promise((r) => setTimeout(r, 5000));
-    const r = await fetch(`https://api.vercel.com/v13/deployments/${j.id}?teamId=${TEAM}`, { headers: { Authorization: `Bearer ${TOKEN}` } });
+    const r = await fetchT(`https://api.vercel.com/v13/deployments/${j.id}?teamId=${TEAM}`, { headers: { Authorization: `Bearer ${TOKEN}` } }, 20000).catch(() => null);
+    if (!r) continue;
     const jj = await r.json();
     const state = jj.readyState || jj.state;
     if (state === "READY") { console.log(`  ✅ READY in ${Math.round((Date.now() - start) / 1000)}s`); return jj; }
