@@ -55,9 +55,8 @@ jobs:
           }
           console.log("Migration status output:\n", output);
           
-          const match = output.match(/The [`'"]?([0-9a-zA-Z_-]+)[`'"]? migration started at.*failed/i)
-                     || output.match(/migration ([0-9a-zA-Z_-]+) .*failed/i);
-                     
+          const match = output.match(/(\d{14}_[0-9a-zA-Z_-]+).*failed/i);
+                       
           if (match && match[1]) {
             const failedMigration = match[1];
             console.log("Detected failed migration:", failedMigration);
