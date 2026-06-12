@@ -43,12 +43,11 @@ jobs:
       # 🧱 3️⃣ Prisma migration (NO CHANGE)
       - name: Auto-resolve any failed database migrations
         run: |
-          node -e '
+          node << 'EOF'
           const { execSync } = require("child_process");
           const schemaPath = "packages/database/prisma/schema.prisma";
           try {
             console.log("Checking database migration status...");
-            // Run status command
             const stdout = execSync("npx prisma migrate status --schema=" + schemaPath).toString();
             console.log(stdout);
             console.log("All migrations are healthy.");
@@ -56,8 +55,7 @@ jobs:
             const output = (error.stdout || "").toString() + (error.stderr || "").toString() + error.toString();
             console.log("Migration status output:", output);
             
-            // Regex to find failed migration name from the status message
-            const match = output.match(/The [`'\"]?([0-9a-zA-Z_-]+)[`'\"]? migration started at.*failed/i) 
+            const match = output.match(/The [`'"]?([0-9a-zA-Z_-]+)[`'"]? migration started at.*failed/i)
                        || output.match(/migration ([0-9a-zA-Z_-]+) .*failed/i);
                        
             if (match && match[1]) {
@@ -74,7 +72,7 @@ jobs:
               console.log("No failed migrations identified to resolve.");
             }
           }
-          '
+          EOF
         env:
           DATABASE_URL: ${{ secrets.PROD_DATABASE_URL }}
           DATABASE_URL_DIRECT: ${{ secrets.PROD_DATABASE_URL }}
