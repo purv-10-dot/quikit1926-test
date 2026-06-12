@@ -46,6 +46,12 @@ export const PUT = auth.edit<{ projectId: string; itemId: string }>(
       if (body.quantity !== undefined || body.tenderQty !== undefined) {
         const raw = body.quantity ?? body.tenderQty;
         patch.tender_qty = raw === "" || raw === null ? null : Number(raw);
+        if (typeof patch.tender_qty === "number" && patch.tender_qty < 0) {
+          return NextResponse.json(
+            { error: "Tender quantity cannot be negative" },
+            { status: 400 },
+          );
+        }
       }
       if (body.contractRate !== undefined || body.rate !== undefined) {
         const raw = body.contractRate ?? body.rate;

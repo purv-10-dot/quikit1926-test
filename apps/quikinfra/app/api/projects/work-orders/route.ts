@@ -27,7 +27,7 @@ function enrichWO(row: any, project?: any, contractor?: any): any {
     boqItemId: l.boqItemId ?? "",
     description: l.description ?? "",
     uomId: l.uomId ?? "",
-    uomCode: l.uomCode ?? "",
+    uomCode: l.uomId ?? "",
     quantity: l.quantity?.toString?.() ?? "0",
     rate: l.negotiatedRate?.toString?.() ?? "0",
     amount: l.amount?.toString?.() ?? "0",
@@ -43,7 +43,7 @@ function enrichWO(row: any, project?: any, contractor?: any): any {
     title: row.title ?? "",
     description: row.description ?? "",
     type: row.type ?? "Work Order",
-    workType: row.workType ?? "Without Material",
+    workType: row.workType ?? null,
     plannedStart: row.startDate?.toISOString?.().slice(0, 10) ?? null,
     plannedEnd: row.endDate?.toISOString?.().slice(0, 10) ?? null,
     retentionPct: 0,
@@ -99,6 +99,23 @@ export async function GET(req: NextRequest) {
 
   let data = rows.map((r: any) => enrichWO(r, r.project, r.contractor));
 
+  // Per-WO progress: quantity recorded against the WO through APPROVED DPRs
+  // (CnDPRWorkItem.woId) over the WO's total scoped qty (sum of its line
+  // quantities). Mirrors the BOQ progress that DPR approval posts, attributed
+  // back to the work order so the Gantt bar fills as site work is reported.
+  const woIds = rows.map((r: any) => r.id);
+  const doneByWoId = new Map<string, number>();
+  if (woIds.length) {
+    const dprItems = await (db as any).cnDPRWorkItem.findMany({
+      where: { woId: { in: woIds }, dpr: { orgId: ctx.orgId, status: "approved" } },
+      select: { woId: true, todayQty: true },
+    });
+    for (const it of dprItems) {
+      if (!it.woId) continue;
+      doneByWoId.set(it.woId, (doneByWoId.get(it.woId) ?? 0) + Number(it.todayQty ?? 0));
+    }
+  }
+
   // Per-row Approve/Reject visibility — driven by the workflow's current
   // step, not the caller's role. Batch-load pending instances + their
   // workflow.steps in one round-trip and decorate each row with
@@ -125,8 +142,16 @@ export async function GET(req: NextRequest) {
   };
   data = data.map((row: any) => {
     const instance = row.approvalId ? instanceById.get(row.approvalId) : null;
+    const scopeQty = (row.lines ?? []).reduce(
+      (sum: number, l: any) => sum + Number(l.quantity ?? 0),
+      0,
+    );
+    const doneQty = doneByWoId.get(row.id) ?? 0;
+    const progressPct =
+      scopeQty > 0 ? Math.min(100, Math.round((doneQty / scopeQty) * 100)) : 0;
     return {
       ...row,
+      progressPct,
       canActOnCurrentStep: instance
         ? canActOnCurrentStep(actor, instance, row.projectId ?? null)
         : false,
@@ -231,6 +256,7 @@ export async function POST(req: NextRequest) {
         contractorId: contractor.id,
         title: body.title ?? `Work Order ${woNumber}`,
         description: body.description ?? null,
+        workType: body.workType ?? null,
         startDate,
         endDate,
         totalAmount: String(totalAmount),
@@ -240,7 +266,7 @@ export async function POST(req: NextRequest) {
             boqItemId: String(it.boqNo ?? it.boqItemId ?? ""),
             description: String(it.description ?? ""),
             quantity: String(Number(it.quantity) || 0),
-            uomId: String(it.uomId ?? ""),
+            uomId: String(it.uomCode ?? it.uomId ?? ""),
             negotiatedRate: String(Number(it.rate) || 0),
             amount: String(Number(it.amount) || 0),
           })),

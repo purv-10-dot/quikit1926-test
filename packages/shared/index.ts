@@ -11,6 +11,8 @@ export {
   ancestorsOf,
   isModuleEnabled,
   getAppConfig,
+  globallyDisabledModules,
+  computeDisabledModules,
   visibleModules,
   findModuleByPath,
   type ModuleDef,

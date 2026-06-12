@@ -73,6 +73,10 @@ export function WbsEditTaskModal({
   const predecessorOptions = allTasks
     .filter((t) => t.id !== task.id)
     .map((t) => ({ value: t.id, label: `${t.wbsCode} - ${t.name}` }));
+  // Tasks still selectable as a predecessor — excludes ones already chosen.
+  const availablePredecessors = predecessorOptions.filter(
+    (o) => !predecessors.includes(o.value),
+  );
 
   const canSave =
     name.trim().length > 0 &&
@@ -207,29 +211,69 @@ export function WbsEditTaskModal({
                 <div className="col-span-2">
                   <Field
                     label="Predecessors (Dependencies)"
-                    hint="Hold Ctrl/Cmd to select multiple."
+                    hint="Tasks that must finish before this one can start."
                   >
-                    <select
-                      multiple
-                      value={predecessors}
-                      onChange={(e) =>
-                        setPredecessors(
-                          Array.from(e.target.selectedOptions).map(
-                            (o) => o.value,
-                          ),
-                        )
-                      }
-                      className="w-full min-h-[100px] px-2.5 py-1.5 text-sm border border-slate-300 rounded-md bg-white focus:outline-none focus:ring-2 focus:ring-orange-200 focus:border-orange-400"
-                    >
-                      {predecessorOptions.length === 0 && (
-                        <option disabled>No other tasks available</option>
-                      )}
-                      {predecessorOptions.map((o) => (
-                        <option key={o.value} value={o.value}>
-                          {o.label}
-                        </option>
-                      ))}
-                    </select>
+                    {/* Selected predecessors only — a task with none (e.g. the
+                        root) shows nothing. Pick from the Add control to attach
+                        one; remove with the × on each chip. */}
+                    {predecessors.length > 0 ? (
+                      <div className="flex flex-wrap gap-1.5 mb-2">
+                        {predecessors.map((pid) => {
+                          const opt = predecessorOptions.find(
+                            (o) => o.value === pid,
+                          );
+                          return (
+                            <span
+                              key={pid}
+                              className="inline-flex items-center gap-1.5 px-2 py-1 rounded-md bg-orange-50 text-orange-700 text-xs font-medium border border-orange-200"
+                            >
+                              {opt?.label ?? pid}
+                              <button
+                                type="button"
+                                aria-label="Remove predecessor"
+                                onClick={() =>
+                                  setPredecessors(
+                                    predecessors.filter((x) => x !== pid),
+                                  )
+                                }
+                                className="text-orange-400 hover:text-orange-700 leading-none text-sm"
+                              >
+                                ×
+                              </button>
+                            </span>
+                          );
+                        })}
+                      </div>
+                    ) : (
+                      <p className="text-xs text-slate-400 italic mb-2">
+                        No dependencies — this task has no predecessors.
+                      </p>
+                    )}
+                    {availablePredecessors.length > 0 ? (
+                      <select
+                        value=""
+                        onChange={(e) => {
+                          const v = e.target.value;
+                          if (v && !predecessors.includes(v)) {
+                            setPredecessors([...predecessors, v]);
+                          }
+                        }}
+                        className="w-full h-9 px-2.5 text-sm border border-slate-300 rounded-md bg-white focus:outline-none focus:ring-2 focus:ring-orange-200 focus:border-orange-400"
+                      >
+                        <option value="">+ Add a predecessor…</option>
+                        {availablePredecessors.map((o) => (
+                          <option key={o.value} value={o.value}>
+                            {o.label}
+                          </option>
+                        ))}
+                      </select>
+                    ) : (
+                      <p className="text-xs text-slate-400">
+                        {predecessorOptions.length === 0
+                          ? "No other tasks available."
+                          : "All available tasks have been added."}
+                      </p>
+                    )}
                   </Field>
                 </div>
               </div>

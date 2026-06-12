@@ -16,6 +16,26 @@ Feature branch: `feature/quiksocial-v2-port` (off `quiksocial-latest`)
 | Batch 7 — deps + .env.example + final cleanup | ✅ done | (current) |
 | Final verify (typecheck + lint + test) | ✅ done | (current) |
 
+## PR status (2026-06-10)
+
+**PR #22** — base `common_setup16`, head `feature/quiksocial-v2-port` — is **OPEN and
+awaiting Pravin's review/merge**. Net diff scoped to `apps/quiksocial/` only (no
+`packages/`, no other app, no IdP). It carries the full QuikSocial port (this status
+note rides along as a follow-on docs commit):
+
+- `872f7709` — campaign persistence: server-side `/api/internal/posts` (ports standalone `9050a01`).
+- `2ad9677b` — merge `common_setup16` + migration recovery (resolved the renamed
+  `quiktrack_task_groups` ↔ `grouped_kanban` drift, then deployed the 5 pending
+  migrations incl. `quiksocial_rbac_v2` + `social_account_ig_business_account_id`).
+- `d3195266` — PR2 UI/scheduling deltas (calcTotalPosts off-by-one, Step-3 list height,
+  F2 timezone capture + conversion).
+- `64073ffd` — F2 timezone activation (live `User.timezone` lookup on the session).
+- `f5e4caeb` — fold cutover env-coupling note into `HANDOFF_CHECKLIST.md`.
+
+Port is **complete on the QuikSocial side**. Remaining: Pravin's review + merge
+(`common_setup16` → … → `main`) and the QuikIT-team handoff items in
+`HANDOFF_CHECKLIST.md`.
+
 ## Typecheck status (after Batch 1)
 
 **Expected schema-cascade failures only** — no new Batch 1 errors. All errors are in code Batches 2/3/7 will rewrite or delete:

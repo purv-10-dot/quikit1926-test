@@ -14,6 +14,7 @@ export interface MachineryRecord {
   model: string | null;
   registrationNo: string | null;
   projectId: string | null;
+  projectName: string | null;
   locationId: string | null;
   fuelType: string | null;
   capacity: string | null;
@@ -35,6 +36,7 @@ function toRecord(row: any): MachineryRecord {
     model: row.model ?? null,
     registrationNo: row.registrationNo ?? null,
     projectId: row.projectId ?? null,
+    projectName: row.project?.name ?? null,
     locationId: row.locationId ?? null,
     fuelType: row.fuelType ?? null,
     capacity: row.capacity ?? null,
@@ -89,6 +91,7 @@ function buildMachineryWhere(
 export async function listMachinery(opts: ListOptions): Promise<MachineryRecord[]> {
   const rows = await (db as any).cnMachinery.findMany({
     where: buildMachineryWhere(opts),
+    include: { project: { select: { id: true, name: true } } },
     orderBy: { createdAt: "desc" },
     ...(typeof opts.take === "number" ? { take: opts.take } : {}),
     ...(typeof opts.skip === "number" ? { skip: opts.skip } : {}),

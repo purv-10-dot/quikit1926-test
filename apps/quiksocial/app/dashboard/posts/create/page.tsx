@@ -656,7 +656,7 @@ export default function CreatePostPage() {
   // Returns null on success (caller will be unmounted by router.push), or
   // an error string on failure so the modal can render it inline.
   const handleSave = async (
-    scheduledFor: Date | null,
+    scheduledFor: string | null,
     platform: string,
   ): Promise<string | null> => {
     setSaving(true);
@@ -677,7 +677,10 @@ export default function CreatePostPage() {
           content: caption,
           platform,
           imageUrl: data.imageUrl,
-          scheduledFor: scheduledFor?.toISOString() ?? null,
+          // F2: tz-naive local wall-clock string; server converts to UTC
+          // in the user's profile tz. (No .toISOString() — that would bake
+          // in the browser tz.)
+          scheduledFor: scheduledFor ?? null,
           // The API derives status from scheduledFor; we send it explicitly
           // for "Save to Library" so future API consumers can rely on it too.
           status: scheduledFor ? undefined : "draft",
@@ -776,7 +779,7 @@ export default function CreatePostPage() {
   // single-purpose and the admin-confirmed scheduledFor field is never
   // populated by a non-admin caller.
   const handleSuggestTimeSubmit = async (
-    when: Date,
+    when: string,
     platform: string,
   ): Promise<string | null> => {
     setSubmittingForReview(true);
@@ -813,7 +816,9 @@ export default function CreatePostPage() {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         credentials: "include",
-        body: JSON.stringify({ requestedPublishTime: when.toISOString() }),
+        // F2: tz-naive local wall-clock string; server converts to UTC in
+        // the user's profile tz.
+        body: JSON.stringify({ requestedPublishTime: when }),
       });
       const submitData = unwrap(await submitRes.json().catch(() => ({})));
       if (!submitRes.ok) {
@@ -1331,6 +1336,7 @@ export default function CreatePostPage() {
           onClose={() => setShowSchedule(false)}
           onSave={handleSave}
           saving={saving}
+          userTimezone={(session?.user as { timezone?: string } | undefined)?.timezone}
           isAdmin={isAdmin}
           mode={isAdmin ? "schedule" : "suggest"}
           // Admin-only "Post Now" — the modal renders a Zap-icon button

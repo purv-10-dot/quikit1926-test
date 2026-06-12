@@ -317,7 +317,10 @@ function GanttBoard({
             );
             const left = offsetDays * dayWidth;
             const width = Math.max(dayWidth * 0.6, dur * dayWidth - 2);
-            const progress = Math.max(0, Math.min(100, Number(wo.progress ?? 0)));
+            const progress = Math.max(
+              0,
+              Math.min(100, Number(wo.progressPct ?? wo.progress ?? 0)),
+            );
 
             const status = String(wo.status ?? "").toLowerCase();
             const statusTheme = {

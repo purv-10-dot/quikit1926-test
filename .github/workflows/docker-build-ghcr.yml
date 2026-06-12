@@ -77,6 +77,12 @@ jobs:
               - 'package.json'
               - 'package-lock.json'
               - 'turbo.json'
+            quikcrm:
+              - 'apps/quikcrm/**'
+              - 'packages/**'
+              - 'package.json'
+              - 'package-lock.json'
+              - 'turbo.json'
       - name: Generate Matrix Output
         id: set-matrix
         run: |
@@ -156,4 +162,5 @@ jobs:
             NEXT_PUBLIC_ADMIN_URL=https://orgadmin.quikit.ai
             NEXT_PUBLIC_LOGIN_URL=https://authn.quikit.ai/login
             NEXT_PUBLIC_QUIKINFRA_URL=https://infra.quikit.ai
+            NEXT_PUBLIC_QUIKCRM_URL=https://qcrm.quikit.ai
             NEXTAUTH_URL=https://authn.quikit.ai

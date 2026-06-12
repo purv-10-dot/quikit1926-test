@@ -2,7 +2,26 @@
 
 import { unwrap } from "@/lib/utils/api-fetch";
 import { signOut, useSession } from "next-auth/react";
+import { globalSignOut } from "@quikit/ui";
 import { useActiveBrandId } from "@/hooks/useActiveBrandId";
+
+/**
+ * Platform Single-Logout. A bare signOut() only clears QuikSocial's own
+ * host cookie and bounces to /login, which auto-fires signIn("quikit") and
+ * silently re-authenticates the user from the still-valid launcher/auth
+ * cookies — so "Sign out" wouldn't actually sign the user out. globalSignOut
+ * wipes local/session storage and runs the 3-host SLO chain
+ * (auth → launcher → landing), matching quikscale/quiktrack/quikinfra.
+ */
+function platformSignOut(): Promise<void> {
+  return globalSignOut({
+    authUrl: process.env.NEXT_PUBLIC_AUTH_URL,
+    quikitUrl: process.env.NEXT_PUBLIC_QUIKIT_URL,
+    localSignOut: () => signOut({ redirect: false }),
+    postLogoutRedirect:
+      (typeof window !== "undefined" ? window.location.origin : "") + "/",
+  });
+}
 import Link from "next/link";
 import { usePathname, useSearchParams } from "next/navigation";
 import { useState, useEffect, useRef, type ReactNode } from "react";
@@ -279,7 +298,7 @@ export default function DashboardLayout({
         const res = await fetch("/api/user/profile", { credentials: "include" });
         if (!res.ok) {
           if (res.status === 401 || res.status === 404) {
-            signOut({ callbackUrl: "/login" });
+            void platformSignOut();
           }
           setProfileAvatar(null);
           return;
@@ -290,6 +309,27 @@ export default function DashboardLayout({
         else if (data.theme === "light") setThemeDark(false);
         if (data.backgroundImageName) {
           setBgSrc(`/images/${data.backgroundImageName}`);
+        }
+        // F2 capture: when the user has no profile timezone yet (raw null
+        // from the GET — the session masks it to "UTC"), auto-detect the
+        // browser's IANA zone and persist it to User.timezone. Fire-and-
+        // forget; the new value lands on the next session resolution (the
+        // session callback re-reads User). The settings selector overrides
+        // it. Writes only to the existing User.timezone column.
+        if (!data.timezone) {
+          try {
+            const detected = Intl.DateTimeFormat().resolvedOptions().timeZone;
+            if (detected) {
+              void fetch("/api/user/profile", {
+                method: "PATCH",
+                headers: { "Content-Type": "application/json" },
+                credentials: "include",
+                body: JSON.stringify({ timezone: detected }),
+              });
+            }
+          } catch {
+            // Intl unavailable / blocked — leave tz unset (defaults to UTC).
+          }
         }
       } catch {
         setProfileAvatar(null);
@@ -1571,7 +1611,7 @@ export default function DashboardLayout({
                   type="button"
                   onClick={() => {
                     setUserMenuOpen(false);
-                    signOut({ callbackUrl: "/login" });
+                    void platformSignOut();
                   }}
                   style={{
                     width: "100%",

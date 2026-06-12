@@ -626,6 +626,9 @@ function BOQItemEditModal({
     if (startDate && endDate && endDate < startDate) {
       return setError("End Date cannot be earlier than Start Date");
     }
+    if (quantity.trim() !== "" && parseFloat(quantity) < 0) {
+      return setError("Tender Quantity cannot be negative");
+    }
 
     setSaving(true);
     try {
@@ -733,6 +736,7 @@ function BOQItemEditModal({
               <input
                 type="number"
                 step="0.01"
+                min="0"
                 value={quantity}
                 onChange={(e) => setQuantity(e.target.value)}
                 className="w-full text-sm px-3 py-2 border border-gray-300 rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-indigo-500 text-right tabular-nums"

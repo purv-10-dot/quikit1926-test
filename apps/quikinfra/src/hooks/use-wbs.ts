@@ -2,6 +2,8 @@
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
+import { entityMeta } from "@/lib/toast";
+
 async function fetchApi<T>(url: string): Promise<T> {
   const res = await fetch(url);
   if (!res.ok) throw new Error(await res.text());
@@ -58,6 +60,7 @@ export function useCreateWbsTask(projectId: string) {
   return useMutation({
     mutationFn: (data: Partial<WbsTask>) => mutateApi(`/api/projects/${projectId}/wbs/tasks`, "POST", data),
     onSuccess: () => qc.invalidateQueries({ queryKey: ["wbsTasks", projectId] }),
+    meta: entityMeta("create", "Task"),
   });
 }
 
@@ -67,6 +70,7 @@ export function useUpdateWbsTask(projectId: string) {
     mutationFn: ({ id, ...data }: Partial<WbsTask> & { id: string }) =>
       mutateApi(`/api/projects/${projectId}/wbs/tasks/${id}`, "PATCH", data),
     onSuccess: () => qc.invalidateQueries({ queryKey: ["wbsTasks", projectId] }),
+    meta: entityMeta("update", "Task"),
   });
 }
 
@@ -75,6 +79,7 @@ export function useDeleteWbsTask(projectId: string) {
   return useMutation({
     mutationFn: (id: string) => mutateApi(`/api/projects/${projectId}/wbs/tasks/${id}`, "DELETE"),
     onSuccess: () => qc.invalidateQueries({ queryKey: ["wbsTasks", projectId] }),
+    meta: entityMeta("delete", "Task"),
   });
 }
 

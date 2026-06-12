@@ -124,7 +124,7 @@ export default function TourCTA({ className = "btn btn-solid" }: { className?: s
             <div className="tour-player-head">
               <div className="tour-player-headtext">
                 <h3 className="tour-player-title">Product Tour</h3>
-                <p className="tour-player-sub">A 2-minute walkthrough of QuikConstruction ERP.</p>
+                <p className="tour-player-sub">A 2-minute walkthrough of QuikInfra ERP.</p>
               </div>
               <button type="button" className="tour-player-close" aria-label="Close video" onClick={closePlayer}>
                 <svg width="18" height="18" viewBox="0 0 24 24" fill="none" aria-hidden="true">

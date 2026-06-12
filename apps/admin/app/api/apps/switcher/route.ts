@@ -57,6 +57,7 @@ export const GET = withAdminAuth(async ({ orgId }) => {
     quikvc: process.env.QUIKVC_URL,
     quikinfra: process.env.QUIKINFRA_URL,
     quiksocial: process.env.QUIKSOCIAL_URL,
+    quikcrm: process.env.QUIKCRM_URL,
   };
   const isDev = process.env.NODE_ENV !== "production";
   const devLocalhostFallbacks: Record<string, string> = {
@@ -68,6 +69,7 @@ export const GET = withAdminAuth(async ({ orgId }) => {
     quikvc: "http://localhost:3005",
     quikinfra: "http://localhost:3006",
     quiksocial: "http://localhost:3007",
+    quikcrm: "http://localhost:3008",
   };
   function resolveBaseUrl(slug: string, dbBaseUrl: string | null | undefined): string {
     const fromEnv = envBaseUrls[slug];

@@ -28,7 +28,7 @@ export async function GET(request: NextRequest) {
       revoked: false,
       expiresAt: { gt: new Date() },
     },
-    select: { userId: true, orgId: true, scopes: true },
+    select: { userId: true, orgId: true, scopes: true, sessionId: true },
   });
 
   if (!tokenRecord) {
@@ -75,5 +75,11 @@ export async function GET(request: NextRequest) {
     picture: user.avatar,
     tenant_id: tokenRecord.orgId,
     role: membership?.role ?? "member",
+    // Shared Redis session id minted by the central IdP. Consumer apps copy
+    // this onto their NextAuth JWE (via the provider `profile()` callback) so
+    // `verifyJWT` / the jwt soft-revoke can invalidate them from the shared
+    // session store. Without it here, the OAuth profile carries no sessionId
+    // and the Redis EXISTS check silently no-ops (TTL expiry never logs out).
+    sessionId: tokenRecord.sessionId ?? undefined,
   });
 }

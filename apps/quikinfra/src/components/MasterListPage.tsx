@@ -149,6 +149,15 @@ export function MasterListPage<T extends { id: string; status?: string }>({
     [data, statusView, showStatusTabs],
   );
 
+  // Export always reflects the live master list — soft-deleted (inactive)
+  // rows never belong in an export file, even when the user is currently
+  // viewing the Inactive / All tab. Independent of `visibleData` so the
+  // on-screen view and the export can diverge intentionally.
+  const exportableData = useMemo(
+    () => data.filter((r) => (r as any)?.status !== "inactive"),
+    [data],
+  );
+
   const requestDelete = useCallback((row: T) => setDeleteTarget(row), []);
   const cancelDelete = () => {
     if (deletingInFlight) return; // prevent race: user can't cancel mid-flight
@@ -171,6 +180,25 @@ export function MasterListPage<T extends { id: string; status?: string }>({
     { label: title },
   ];
 
+  // Status filter options auto-adapt per module: always offer the
+  // universal active / inactive, plus any other status that actually
+  // occurs in this module's data (e.g. "blacklisted" for vendors). This
+  // avoids surfacing workflow statuses (draft, pending_approval, approved,
+  // rejected) that master records never use.
+  const statusOptions = useCallback(
+    (col: MasterColumnDef<T>): string[] => {
+      const base = ["active", "inactive"];
+      const extras = new Set<string>();
+      for (const row of data) {
+        const v = col.getValue ? col.getValue(row) : (row as Record<string, unknown>)[col.key];
+        const s = v == null ? "" : String(v).trim();
+        if (s && !base.includes(s)) extras.add(s);
+      }
+      return [...base, ...Array.from(extras).sort()];
+    },
+    [data],
+  );
+
   // Convert MasterColumnDef → DataTable ColDef
   const dtColumns = useMemo<ColDef<T>[]>(() => {
     return columns.map(col => ({
@@ -182,13 +210,11 @@ export function MasterListPage<T extends { id: string; status?: string }>({
       searchable: true,
       hideable: true,
       freezable: true,
-      options: col.type === "status"
-        ? ["active", "inactive", "blacklisted", "draft", "pending_approval", "approved", "rejected"]
-        : col.options,
+      options: col.type === "status" ? (col.options ?? statusOptions(col)) : col.options,
       render: col.render ? (row: T) => col.render!(row) : undefined,
       getValue: col.getValue ? (row: T) => col.getValue!(row) as string : undefined,
     }));
-  }, [columns]);
+  }, [columns, statusOptions]);
 
   // Add Edit + Delete action column.
   // Note: the Delete button opens MasterListPage's internal confirm modal
@@ -279,7 +305,7 @@ export function MasterListPage<T extends { id: string; status?: string }>({
               </SecondaryButton>
             )}
             {canExport && (
-              <SecondaryButton onClick={onExport ?? (() => exportCSV(visibleData, entityName.toLowerCase().replace(/\s+/g, "-")))}>
+              <SecondaryButton onClick={onExport ?? (() => exportCSV(exportableData, entityName.toLowerCase().replace(/\s+/g, "-")))}>
                 <Download className="w-4 h-4" /> Export
               </SecondaryButton>
             )}

@@ -250,6 +250,7 @@ export default function GSTPage() {
   return (
     <>
       <MasterListPage title="GST Codes" entityName="GST Code" permissionUrl="/masters/gst" columns={columns}
+        showStatusTabs
         data={result?.data ?? []} total={result?.total ?? 0} isLoading={isLoading}
         canImport canExport
         historyEntityType="gst_code"

@@ -11,6 +11,7 @@ export interface AssetRecord {
   name: string;
   category: string | null;
   projectId: string | null;
+  projectName: string | null;
   condition: string | null;
   currentLocation: string | null;
   purchaseDate: string | null;
@@ -39,6 +40,7 @@ function toRecord(row: any): AssetRecord {
     name: row.name,
     category: row.category ?? null,
     projectId: row.projectId ?? null,
+    projectName: row.project?.name ?? null,
     condition: row.condition ?? null,
     currentLocation: row.currentLocation ?? null,
     purchaseDate: row.purchaseDate ? row.purchaseDate.toISOString() : null,
@@ -106,6 +108,7 @@ function buildAssetsWhere(
 export async function listAssets(opts: ListOptions): Promise<AssetRecord[]> {
   const rows = await (db as any).cnAsset.findMany({
     where: buildAssetsWhere(opts),
+    include: { project: { select: { id: true, name: true } } },
     orderBy: { createdAt: "desc" },
     ...(typeof opts.take === "number" ? { take: opts.take } : {}),
     ...(typeof opts.skip === "number" ? { skip: opts.skip } : {}),

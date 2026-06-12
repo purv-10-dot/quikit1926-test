@@ -4,6 +4,8 @@ import {
   ancestorsOf,
   isModuleEnabled,
   getAppConfig,
+  globallyDisabledModules,
+  computeDisabledModules,
   visibleModules,
   findModuleByPath,
 } from "../lib/moduleRegistry";
@@ -150,5 +152,74 @@ describe("registry sanity", () => {
       const unique = new Set(keys);
       expect(unique.size).toBe(keys.length);
     }
+  });
+
+  it("only top-level modules carry a section; children inherit", () => {
+    for (const app of MODULE_REGISTRY) {
+      for (const m of app.modules) {
+        if (m.parentKey) {
+          expect(m.section, `child ${m.key} should not set section`).toBeUndefined();
+        }
+      }
+    }
+  });
+});
+
+describe("quikscale module list (sidebar parity)", () => {
+  const keys = new Set(getAppConfig("quikscale")!.modules.map((m) => m.key));
+
+  it("includes the Strategy/People/Cash modules shown in the sidebar", () => {
+    for (const k of ["habits", "swt", "face", "pace", "survey", "cash"]) {
+      expect(keys.has(k), `missing module ${k}`).toBe(true);
+    }
+  });
+
+  it("does not include the retired people.goals child", () => {
+    expect(keys.has("people.goals")).toBe(false);
+  });
+
+  it("tags top-level modules with a known pillar section", () => {
+    const pillars = new Set(["Execution", "Strategy", "People", "Cash"]);
+    for (const m of getAppConfig("quikscale")!.modules) {
+      if (!m.parentKey && m.section) {
+        expect(pillars.has(m.section), `unknown section ${m.section} on ${m.key}`).toBe(true);
+      }
+    }
+  });
+
+  it("flags Survey and Cash as default-off (defaultDisabled)", () => {
+    const globally = globallyDisabledModules("quikscale");
+    expect(globally.has("survey")).toBe(true);
+    expect(globally.has("cash")).toBe(true);
+    expect(globally.has("kpi")).toBe(false);
+    const mods = getAppConfig("quikscale")!.modules;
+    expect(mods.find((m) => m.key === "survey")?.defaultDisabled).toBe(true);
+    expect(mods.find((m) => m.key === "cash")?.defaultDisabled).toBe(true);
+  });
+
+  it("globallyDisabledModules returns empty for unknown apps", () => {
+    expect(globallyDisabledModules("nope").size).toBe(0);
+  });
+});
+
+describe("computeDisabledModules (default-off + overrides)", () => {
+  it("disables default-off modules for an org with no flag rows (new org)", () => {
+    const d = computeDisabledModules("quikscale", []);
+    expect(d.has("survey")).toBe(true);
+    expect(d.has("cash")).toBe(true);
+    expect(d.has("kpi")).toBe(false);
+    expect(d.has("priority")).toBe(false);
+  });
+
+  it("lets an explicit enabled:true row override a default-off module", () => {
+    const d = computeDisabledModules("quikscale", [{ moduleKey: "cash", enabled: true }]);
+    expect(d.has("cash")).toBe(false); // enabled for this tenant
+    expect(d.has("survey")).toBe(true); // still off (no override)
+  });
+
+  it("disables a default-on module when a row says enabled:false", () => {
+    const d = computeDisabledModules("quikscale", [{ moduleKey: "priority", enabled: false }]);
+    expect(d.has("priority")).toBe(true);
+    expect(d.has("cash")).toBe(true); // default-off unaffected
   });
 });

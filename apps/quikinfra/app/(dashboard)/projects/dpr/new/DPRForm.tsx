@@ -20,6 +20,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
+import { useQueryClient } from "@tanstack/react-query";
 import Link from "next/link";
 import {
   ArrowLeft,
@@ -70,9 +71,12 @@ interface WorkItem {
   todayQty: string;
   location: string;
   remarks: string;
-  /** Site photos for this activity. Stored as base64 data URLs in state
-   *  so the form can preview without an upload round-trip. */
+  /** Site photos for this activity. New photos are base64 data URLs; photos
+   *  already saved to S3 arrive as signed view URLs. */
   images: string[];
+  /** Parallel to `images`: the stored S3 key for each existing photo, or ""
+   *  for a newly-added (not-yet-uploaded) base64 photo. */
+  imageKeys: string[];
 }
 
 interface MaterialRow {
@@ -117,6 +121,7 @@ const newWorkItem = (): WorkItem => ({
   location: "",
   remarks: "",
   images: [],
+  imageKeys: [],
 });
 
 const newMaterial = (): MaterialRow => ({
@@ -169,6 +174,7 @@ interface DPRFormProps {
 export function DPRForm({ editData, embedded = false, onSaved }: DPRFormProps = {}) {
   const isEdit = !!editData?.id;
   const router = useRouter();
+  const qc = useQueryClient();
   const { data: projectsResult } = useProjects();
   const { data: itemsResult } = useItems();
   const { data: itemGroupsResult } = useItemGroups();
@@ -320,6 +326,7 @@ export function DPRForm({ editData, embedded = false, onSaved }: DPRFormProps = 
       location: w.location ?? "",
       remarks: w.remarks ?? "",
       images: Array.isArray(w.images) ? w.images : [],
+      imageKeys: Array.isArray(w.imageKeys) ? w.imageKeys : [],
     }))
   );
   const [boqModalOpen, setBoqModalOpen] = useState(false);
@@ -393,6 +400,7 @@ export function DPRForm({ editData, embedded = false, onSaved }: DPRFormProps = 
         location: "",
         remarks: "",
         images: [],
+        imageKeys: [],
       },
     ]);
   };
@@ -415,13 +423,23 @@ export function DPRForm({ editData, embedded = false, onSaved }: DPRFormProps = 
     }
     if (dataUrls.length === 0) return;
     setWorkItems((prev) =>
-      prev.map((r, i) => (i === idx ? { ...r, images: [...r.images, ...dataUrls] } : r))
+      prev.map((r, i) =>
+        i === idx
+          ? { ...r, images: [...r.images, ...dataUrls], imageKeys: [...r.imageKeys, ...dataUrls.map(() => "")] }
+          : r,
+      )
     );
   };
   const removeWorkItemImage = (idx: number, imgIdx: number) =>
     setWorkItems((prev) =>
       prev.map((r, i) =>
-        i === idx ? { ...r, images: r.images.filter((_, j) => j !== imgIdx) } : r
+        i === idx
+          ? {
+              ...r,
+              images: r.images.filter((_, j) => j !== imgIdx),
+              imageKeys: r.imageKeys.filter((_, j) => j !== imgIdx),
+            }
+          : r
       )
     );
   const removeWorkItem = (idx: number) =>
@@ -509,6 +527,7 @@ export function DPRForm({ editData, embedded = false, onSaved }: DPRFormProps = 
             location: w.location,
             remarks: w.remarks,
             images: w.images,
+            imageKeys: w.imageKeys,
           };
         }),
         materials: materials
@@ -572,6 +591,15 @@ export function DPRForm({ editData, embedded = false, onSaved }: DPRFormProps = 
       if (!res.ok) throw new Error(json.error ?? `HTTP ${res.status}`);
 
       const savedId = json?.id ?? editData?.id;
+
+      // Invalidate the React Query caches so the detail + edit views refetch
+      // the saved record instead of serving the stale pre-edit snapshot.
+      // router.refresh() only re-runs server components — it does NOT touch
+      // the client query cache that useDPR / the edit page read from, so
+      // without this an edited value looks like it "didn't update".
+      if (savedId) qc.invalidateQueries({ queryKey: ["dpr", savedId] });
+      qc.invalidateQueries({ queryKey: ["dprs"] });
+
       if (embedded) {
         // Drawer host handles refresh + close. Submit-then-page-redirect
         // doesn't apply here — the user can re-enter the row from the

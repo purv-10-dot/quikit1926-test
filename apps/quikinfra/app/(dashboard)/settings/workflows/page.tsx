@@ -26,6 +26,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import {
   Pencil, Plus, CheckCircle2, CircleDashed, Layers, ChevronDown,
   ShoppingCart, FolderKanban, Warehouse, Search, X, ArrowRight, Workflow,
+  CreditCard,
 } from "lucide-react";
 import Link from "next/link";
 import { PageHeader, PageContainer } from "@/components/PageShell";
@@ -90,6 +91,17 @@ const MODULE_GROUPS: ModuleGroup[] = [
       { type: "gate_pass", label: "Gate Pass" },
       { type: "transfer", label: "Stock Transfer" },
       { type: "asset", label: "Asset Management" },
+    ],
+  },
+  {
+    key: "finance",
+    label: "Finance",
+    description: "RA Bills (Sub-Contractor)",
+    iconComponent: CreditCard,
+    entities: [
+      // entityType "rab" must match the RA Bill submit/approve routes
+      // (submitForApproval({ entityType: "rab" })).
+      { type: "rab", label: "RA Bills (Sub-Contractor)" },
     ],
   },
 ];
