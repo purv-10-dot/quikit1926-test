@@ -21,6 +21,8 @@ import {
   Sliders,
   List as ListIcon,
   BarChart3,
+  TrendingUp,
+  Gauge,
 } from "lucide-react";
 import { ComingSoonRow } from "./coming-soon-row";
 import { FiltersSection } from "./filters-section";
@@ -293,7 +295,7 @@ export function Sidebar() {
           {canSee("dashboards") && (
           <NavRow
             href="/dashboards"
-            icon={LayoutDashboard}
+            icon={Gauge}
             label="Dashboards"
             expandable
             expanded={dashboardsOpen}
@@ -321,7 +323,7 @@ export function Sidebar() {
               </div> */}
               <NavRow
                 href="/dashboards/default"
-                icon={LayoutDashboard}
+                icon={Gauge}
                 label="Default dashboard"
                 indent
               />
@@ -362,7 +364,7 @@ export function Sidebar() {
               {perms.isAdmin && (
                 <NavRow
                   href="/reports/resource"
-                  icon={BarChart3}
+                  icon={Users}
                   label="Resource Report"
                   active={isActive("/reports/resource")}
                   indent
@@ -370,7 +372,7 @@ export function Sidebar() {
               )}
               <NavRow
                 href="/reports/executive"
-                icon={BarChart3}
+                icon={TrendingUp}
                 label="Executive Report"
                 active={isActive("/reports/executive")}
                 indent

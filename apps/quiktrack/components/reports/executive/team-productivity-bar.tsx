@@ -1,6 +1,6 @@
 "use client";
 
-import { Info, ArrowUp, ArrowDown } from "lucide-react";
+import { Info } from "lucide-react";
 import { productivityTone } from "@/lib/reports/productivity";
 import type { ExecutiveReportData, TeamProductivityRow } from "./types";
 
@@ -23,18 +23,9 @@ export function TeamProductivityBar({ data, onSelect }: Props) {
 
   return (
     <div className="rounded-2xl border border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-900 p-4 shadow-sm h-full flex flex-col">
-      <div className="flex items-start justify-between gap-2">
-        <div className="flex items-center gap-1.5">
-          <h3 className="text-sm font-semibold text-gray-900 dark:text-gray-100">Productivity by Department</h3>
-          <Info className="h-3.5 w-3.5 text-gray-400" />
-        </div>
-        <button
-          type="button"
-          className="text-xs text-violet-600 dark:text-violet-400 hover:underline"
-          onClick={() => rows[0] && onSelect?.(rows[0])}
-        >
-          View All
-        </button>
+      <div className="flex items-center gap-1.5">
+        <h3 className="text-sm font-semibold text-gray-900 dark:text-gray-100">Productivity by Department</h3>
+        <Info className="h-3.5 w-3.5 text-gray-400" />
       </div>
 
       {rows.length === 0 ? (
@@ -64,7 +55,6 @@ export function TeamProductivityBar({ data, onSelect }: Props) {
                   <div className="w-10 text-right text-xs font-semibold tabular-nums text-gray-900 dark:text-gray-100">
                     {row.productivity}%
                   </div>
-                  <DeltaPill delta={row.delta} />
                 </div>
               </button>
             </li>
@@ -78,23 +68,6 @@ export function TeamProductivityBar({ data, onSelect }: Props) {
         <span>100%</span>
       </div>
     </div>
-  );
-}
-
-function DeltaPill({ delta }: { delta: number | null }) {
-  if (delta === null) {
-    return <span className="w-12 text-right text-[10px] text-gray-400">—</span>;
-  }
-  const good = delta >= 0;
-  return (
-    <span
-      className={`w-12 inline-flex items-center justify-end gap-0.5 text-[11px] font-medium tabular-nums ${
-        good ? "text-emerald-600 dark:text-emerald-400" : "text-red-600 dark:text-red-400"
-      }`}
-    >
-      {good ? <ArrowUp className="h-3 w-3" /> : <ArrowDown className="h-3 w-3" />}
-      {Math.abs(delta)}%
-    </span>
   );
 }
 

@@ -63,6 +63,12 @@ html.dark .bg-slate-200        { background-color: #334155 !important; }
 html.dark .bg-slate-300        { background-color: #475569 !important; }
 html.dark .bg-slate-400        { background-color: #475569 !important; }
 
+/* Executive Report: flatten the page + sticky toolbar onto the same surface as
+   the cards (#1e293b) so the dark view is one consistent gray, instead of a
+   near-black page (#0f172a) showing behind dark-gray panels. Equal specificity
+   to the `.bg-gray-50` remap above but declared later, so it wins. */
+html.dark .exec-surface        { background-color: #1e293b !important; }
+
 html.dark .text-slate-400      { color: #64748b !important; }
 html.dark .text-slate-500      { color: #94a3b8 !important; }
 html.dark .text-slate-600      { color: #94a3b8 !important; }

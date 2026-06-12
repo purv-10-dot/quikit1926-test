@@ -70,7 +70,7 @@ export function ExecutiveToolbar({
   }
 
   return (
-    <div className="sticky top-0 z-20 -mx-6 px-6 py-3 bg-gray-50/95 dark:bg-gray-950/95 backdrop-blur border-b border-gray-200 dark:border-gray-800">
+    <div className="sticky top-0 z-20 -mx-6 px-6 py-3 bg-gray-50/95 exec-surface backdrop-blur border-b border-gray-200 dark:border-gray-800">
       <div className="rounded-xl border border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-900 shadow-sm">
         <div className="flex flex-wrap items-center gap-2 p-3">
           <RangePicker filters={filters} onChange={patch} rangeLabel={rangeLabel} />
@@ -83,6 +83,7 @@ export function ExecutiveToolbar({
             value={filters.teamIds[0] ?? ""}
             onChange={(id) => patch({ teamIds: id ? [id] : [] })}
             options={teamOptions.map((t) => ({ value: t.id, label: t.label }))}
+            searchable
             minWidth={160}
           />
 
@@ -92,6 +93,7 @@ export function ExecutiveToolbar({
             value={filters.projectIds[0] ?? ""}
             onChange={(id) => patch({ projectIds: id ? [id] : [] })}
             options={projectOptions.map((p) => ({ value: p.id, label: p.name }))}
+            searchable
             minWidth={140}
           />
 
@@ -101,6 +103,7 @@ export function ExecutiveToolbar({
             value={filters.sprintIds[0] ?? ""}
             onChange={(id) => patch({ sprintIds: id ? [id] : [] })}
             options={sprintOptions.map((s) => ({ value: s.id, label: s.label }))}
+            searchable
             minWidth={140}
           />
 
@@ -110,6 +113,7 @@ export function ExecutiveToolbar({
             value={filters.assigneeIds[0] ?? ""}
             onChange={(id) => patch({ assigneeIds: id ? [id] : [] })}
             options={memberOptions.map((m) => ({ value: m.id, label: m.label }))}
+            searchable
             minWidth={140}
           />
 

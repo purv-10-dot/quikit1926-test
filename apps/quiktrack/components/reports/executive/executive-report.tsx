@@ -154,7 +154,7 @@ export function ExecutiveReport() {
   const isInitialLoad = report.isLoading && !data;
 
   return (
-    <div className="p-6 space-y-5 min-h-screen bg-gray-50 dark:bg-gray-950">
+    <div className="p-6 space-y-5 min-h-screen bg-gray-50 exec-surface">
       <header className="flex items-end justify-between gap-4 flex-wrap">
         <div className="space-y-1">
           <h1 className="text-2xl font-bold tracking-tight text-gray-900 dark:text-gray-100">
@@ -241,7 +241,7 @@ export function ExecutiveReport() {
             </div>
           </div>
 
-          <TopEmployeesTable data={data} />
+          <TopEmployeesTable data={data} queryParams={queryParams} />
         </div>
       ) : null}
 

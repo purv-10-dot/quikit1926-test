@@ -1,15 +1,96 @@
 "use client";
 
-import { Info, ArrowUp, ArrowDown } from "lucide-react";
+import { useEffect, useRef, useState } from "react";
+import { Info, ArrowUp, ArrowDown, Loader2 } from "lucide-react";
 import type { EmployeeRow, ExecutiveReportData } from "./types";
 
 interface Props {
   data: ExecutiveReportData;
+  /** Current report filter query string, forwarded to the paginated endpoint. */
+  queryParams?: string;
   onSelect?: (row: EmployeeRow) => void;
 }
 
-export function TopEmployeesTable({ data, onSelect }: Props) {
-  const rows = data.employees;
+const COLLAPSED = 5;
+const PAGE = 20;
+
+export function TopEmployeesTable({ data, queryParams = "", onSelect }: Props) {
+  const top = data.employees;
+  const [expanded, setExpanded] = useState(false);
+  const [rows, setRows] = useState<EmployeeRow[]>([]);
+  const [total, setTotal] = useState<number | null>(null);
+  const [hasMore, setHasMore] = useState(false);
+  const [loading, setLoading] = useState(false);
+  const scrollRef = useRef<HTMLDivElement>(null);
+  const sentinelRef = useRef<HTMLDivElement>(null);
+  const loadingRef = useRef(false);
+
+  // Collapse (and reset the fetched page) whenever the filters change.
+  useEffect(() => {
+    setExpanded(false);
+    setRows([]);
+    setTotal(null);
+    setHasMore(false);
+  }, [queryParams]);
+
+  // First page when expanding (rows fetched lazily from the server, not the
+  // main report payload, so we never ship the whole list at once).
+  useEffect(() => {
+    if (!expanded) return;
+    let cancelled = false;
+    loadingRef.current = true;
+    setLoading(true);
+    fetch(`/api/reports/executive/employees?${queryParams}&offset=0&limit=${PAGE}`)
+      .then((r) => r.json())
+      .then((j) => {
+        if (cancelled || !j?.success) return;
+        setRows(j.data.rows as EmployeeRow[]);
+        setTotal(j.data.total as number);
+        setHasMore(Boolean(j.data.hasMore));
+      })
+      .catch(() => {})
+      .finally(() => {
+        if (!cancelled) setLoading(false);
+        loadingRef.current = false;
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [expanded, queryParams]);
+
+  // Append the next page as the sentinel scrolls into view.
+  useEffect(() => {
+    if (!expanded || !hasMore) return;
+    const sentinel = sentinelRef.current;
+    if (!sentinel) return;
+    const io = new IntersectionObserver(
+      (entries) => {
+        if (!entries[0]?.isIntersecting || loadingRef.current) return;
+        loadingRef.current = true;
+        setLoading(true);
+        fetch(`/api/reports/executive/employees?${queryParams}&offset=${rows.length}&limit=${PAGE}`)
+          .then((r) => r.json())
+          .then((j) => {
+            if (!j?.success) return;
+            setRows((prev) => [...prev, ...(j.data.rows as EmployeeRow[])]);
+            setHasMore(Boolean(j.data.hasMore));
+          })
+          .catch(() => {})
+          .finally(() => {
+            setLoading(false);
+            loadingRef.current = false;
+          });
+      },
+      { root: scrollRef.current, rootMargin: "0px 0px 160px 0px" },
+    );
+    io.observe(sentinel);
+    return () => io.disconnect();
+  }, [expanded, hasMore, rows.length, queryParams]);
+
+  // Collapsed → top-N from the report payload. Expanded → fetched rows (falling
+  // back to the payload's top list until the first page lands).
+  const shown = expanded ? (rows.length > 0 ? rows : top) : top.slice(0, COLLAPSED);
+  const showToggle = expanded || top.length > COLLAPSED;
 
   return (
     <div className="rounded-2xl border border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-900 p-4 shadow-sm">
@@ -18,20 +99,29 @@ export function TopEmployeesTable({ data, onSelect }: Props) {
           <h3 className="text-sm font-semibold text-gray-900 dark:text-gray-100">Top Employees by Productivity</h3>
           <Info className="h-3.5 w-3.5 text-gray-400" />
         </div>
-        <button type="button" className="text-xs text-violet-600 dark:text-violet-400 hover:underline">
-          View All
-        </button>
+        {showToggle && (
+          <button
+            type="button"
+            onClick={() => setExpanded((v) => !v)}
+            className="text-xs text-violet-600 dark:text-violet-400 hover:underline"
+          >
+            {expanded ? "Show less" : "View All"}
+          </button>
+        )}
       </div>
 
-      {rows.length === 0 ? (
+      {top.length === 0 ? (
         <div className="py-10 text-center text-sm text-gray-500 dark:text-gray-400">
           No employees with completed tasks in this period.
         </div>
       ) : (
-        <div className="mt-3 overflow-x-auto">
+        <div
+          ref={scrollRef}
+          className={`mt-3 overflow-x-auto ${expanded ? "max-h-[420px] overflow-y-auto" : ""}`}
+        >
           <table className="w-full text-sm">
             <thead>
-              <tr className="text-[11px] uppercase tracking-wider text-gray-500 dark:text-gray-400 border-b border-gray-100 dark:border-gray-800">
+              <tr className="text-[11px] uppercase tracking-wider text-gray-500 dark:text-gray-400 border-b border-gray-100 dark:border-gray-800 [&>th]:sticky [&>th]:top-0 [&>th]:bg-white dark:[&>th]:bg-slate-800 [&>th]:z-10">
                 <th className="text-left py-2 font-medium">Employee</th>
                 <th className="text-left py-2 font-medium">Department</th>
                 <th className="text-left py-2 font-medium">Productivity</th>
@@ -41,7 +131,7 @@ export function TopEmployeesTable({ data, onSelect }: Props) {
               </tr>
             </thead>
             <tbody>
-              {rows.map((row) => (
+              {shown.map((row) => (
                 <tr
                   key={row.userId}
                   className="border-b border-gray-50 dark:border-gray-800 hover:bg-gray-50 dark:hover:bg-gray-800/40 cursor-pointer"
@@ -69,6 +159,20 @@ export function TopEmployeesTable({ data, onSelect }: Props) {
               ))}
             </tbody>
           </table>
+          {expanded && (
+            <>
+              {hasMore && <div ref={sentinelRef} className="h-2" aria-hidden />}
+              <div className="py-2 text-center text-[11px] text-gray-400 dark:text-gray-500">
+                {loading ? (
+                  <span className="inline-flex items-center gap-1.5">
+                    <Loader2 className="h-3.5 w-3.5 animate-spin" /> Loading…
+                  </span>
+                ) : total !== null ? (
+                  `Showing ${shown.length} of ${total}`
+                ) : null}
+              </div>
+            </>
+          )}
         </div>
       )}
     </div>

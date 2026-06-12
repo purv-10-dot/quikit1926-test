@@ -68,18 +68,20 @@ export function WorkloadScatter({ data }: Props) {
       </div>
 
       <div className="mt-3 h-[260px] flex-1 relative">
-        {/* Quadrant labels — pinned to the chart's data area, not the card. */}
-        <div className="pointer-events-none absolute inset-x-3 top-3 bottom-10 grid grid-cols-2 grid-rows-2 text-[9px] z-10 font-medium leading-tight">
-          <div className="text-blue-500/80 dark:text-blue-400/70 px-1">
+        {/* Quadrant labels — centered inside each quadrant (watermark style)
+            and behind the points, so they never collide with the axis ticks
+            in the corners. The x=100 / y=50 reference lines split the plot. */}
+        <div className="pointer-events-none absolute left-14 right-5 top-6 bottom-10 grid grid-cols-2 grid-rows-2 text-[9px] z-0 font-medium leading-tight text-center">
+          <div className="flex items-center justify-center text-blue-500/45 dark:text-blue-400/40">
             High Productivity<br />Low Workload
           </div>
-          <div className="text-right text-amber-500/80 dark:text-amber-400/70 px-1">
+          <div className="flex items-center justify-center text-amber-500/45 dark:text-amber-400/40">
             High Productivity<br />High Workload
           </div>
-          <div className="self-end text-blue-500/60 dark:text-blue-400/50 px-1">
+          <div className="flex items-center justify-center text-blue-500/35 dark:text-blue-400/30">
             Low Productivity<br />Low Workload
           </div>
-          <div className="self-end text-right text-red-500/80 dark:text-red-400/70 px-1">
+          <div className="flex items-center justify-center text-red-500/45 dark:text-red-400/40">
             Low Productivity<br />High Workload
           </div>
         </div>
@@ -105,6 +107,7 @@ export function WorkloadScatter({ data }: Props) {
               type="number"
               dataKey="productivity"
               name="Productivity"
+              width={40}
               tick={{ fill: "currentColor", fontSize: 10 }}
               className="text-gray-500 dark:text-gray-400"
               tickFormatter={(v: number) => `${v}%`}
