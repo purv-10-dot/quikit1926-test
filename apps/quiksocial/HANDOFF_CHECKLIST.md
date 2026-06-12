@@ -149,6 +149,45 @@ Production secrets must be entered through Vercel's project → Settings → Env
 - [ ] On the Python side, set `QS_INTERNAL_TOKEN` to the SAME value as the Vercel env. Set `NEXTJS_BASE_URL` (or whatever Python's env var is called) to `https://social.quikit.ai` so callbacks to `/api/internal/*` reach the new host.
 - [ ] If Railway has a CORS allowlist, add `https://social.quikit.ai`.
 
+### Campaign persistence — cutover env coupling (Railway worker → monorepo)
+
+The campaign-persistence fix (`9050a01`, landed here as PR1 commit `872f7709`) makes
+the **Railway Python/Celery worker the system of record** for campaign posts: the
+worker persists each post server-side via `POST ${APP_URL}/api/internal/posts` (header
+`X-QS-Internal-Token: $QS_INTERNAL_TOKEN`) rather than the browser persisting them. That
+creates a hard env coupling which only bites **at cutover** — when the Railway worker is
+repointed from the standalone NextJS to the live monorepo host (GKE/monorepo go-live).
+
+**Currently SAFE — nothing to do yet.** Prod/UAT Railway still points `APP_URL` at the
+**standalone** NextJS, which already has the route (from `9050a01` on standalone main).
+The monorepo's `app/api/internal/posts/route.ts` + the browser-`persistPost` removal only
+*prepare* the monorepo; merging them here does **not** touch the running Railway
+environment. The two stay independent until someone repoints `APP_URL`.
+
+**At cutover (repointing the Railway worker at the monorepo), do these together** — miss
+any one and incremental campaign-post persistence breaks **silently** (posts never reach
+the Content Hub, or duplicate):
+- [ ] **Route is live on the monorepo:** `apps/quiksocial/app/api/internal/posts/route.ts`
+      is present and deployed on the live monorepo host (this PR merged + deployed).
+- [ ] **Repoint `APP_URL`** (the worker's NextJS base-URL env) at the LIVE monorepo
+      QuikSocial host (e.g. `https://social.quikit.ai`), NOT the legacy standalone/Vercel URL.
+- [ ] **`QS_INTERNAL_TOKEN` matches on BOTH sides** — the Railway worker env AND the
+      monorepo NextJS env must hold the SAME value (the `QS_INTERNAL_TOKEN` env item above).
+      The route guard fails closed: missing/mismatched token → 401 → silent persistence failure.
+- [ ] **Browser `persistPost` removal is live** (PR1's page edit) so the browser isn't also
+      persisting — the worker uses deterministic ids `cmp_<campaignId>_<postNumber>` while the
+      old browser path used random ids; if both fire, rows duplicate.
+- [ ] **Network reachability:** Railway → monorepo host over HTTPS.
+- [ ] **Smoke test after cutover:** run one campaign on the monorepo; confirm posts appear in
+      the Content Hub (Postgres), no duplicates, and a mid-campaign disconnect loses nothing.
+
+**Failure signature:** campaign runs, worker logs success, images land in Cloudinary, but
+posts **don't appear in the Content Hub** (or appear **duplicated**). If you see this right
+after a cutover, check `APP_URL` and `QS_INTERNAL_TOKEN` first.
+
+> Folded in from the former `CUTOVER_persistence-fix-env-coupling.md` (now deleted) — read
+> this section before repointing Railway at the monorepo / going live on the monorepo.
+
 ### Auth / RBAC setup
 The monorepo's auth is **OIDC against the QuikIT IdP**. Roles are:
 - **Super admin** (`User.isSuperAdmin = true` in `quikit.User`) — platform-level; sees everything.

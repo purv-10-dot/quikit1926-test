@@ -697,6 +697,10 @@ function PostDetailModal({
   const [showRejectModal, setShowRejectModal] = useState(false);
   const [actionLoading, setActionLoading] = useState<string | null>(null);
   const [error, setError] = useState("");
+  // F2 display: render all stored UTC times in the user's profile tz so
+  // they match the wall-clock the post was scheduled for (default UTC).
+  const { data: _session } = useSession();
+  const tz = (_session?.user as { timezone?: string } | undefined)?.timezone || "UTC";
 
   // ── Edit mode ──────────────────────────────────────────────────────
   // Toggled from the Edit button on Draft / Approved / Failed action rows.
@@ -1042,6 +1046,7 @@ function PostDetailModal({
       hour: "numeric",
       minute: "2-digit",
       hour12: true,
+      timeZone: tz,
     });
   const fmtDateOnly = (d: string | Date) =>
     new Date(d).toLocaleString("en-US", {
@@ -1051,6 +1056,7 @@ function PostDetailModal({
       hour: "numeric",
       minute: "2-digit",
       hour12: true,
+      timeZone: tz,
     });
 
   // ── Action-row builder — status-specific button layout for the modal.
@@ -1942,6 +1948,9 @@ function PostCard({
   const [showRejectModal, setShowRejectModal] = useState(false);
   const [actionLoading, setActionLoading] = useState<string | null>(null);
   const [hovered, setHovered] = useState(false);
+  // F2 display: requested-publish time shown in the user's profile tz.
+  const { data: _session } = useSession();
+  const tz = (_session?.user as { timezone?: string } | undefined)?.timezone || "UTC";
 
   // Quick PATCHes that don't need ScheduleModal — Unschedule (scheduled →
   // approved, scheduledFor cleared) and Retry (failed → scheduled, keep
@@ -2235,6 +2244,7 @@ function PostCard({
                   month: "short",
                   hour: "2-digit",
                   minute: "2-digit",
+                  timeZone: tz,
                 })}
               </span>
             </div>
@@ -2970,23 +2980,25 @@ export default function ContentHubPage() {
   // null on success (modal will close), error string on failure. The
   // platform argument from the modal is informational here — the post
   // already has a platform from creation, so we don't update it.
-  const handleSuggestTimeSend = async (when: Date, _platform: string): Promise<string | null> => {
+  const handleSuggestTimeSend = async (when: string, _platform: string): Promise<string | null> => {
     if (!scheduleTarget) return "No post selected";
     const post = scheduleTarget.post;
     setScheduleSuggesting(true);
     try {
+      // F2: `when` is a tz-naive local wall-clock string; the server
+      // converts it to UTC in the user's profile tz. Don't .toISOString()
+      // (that would bake in the browser tz).
       const res = await fetch(`/api/posts/${post._id}/submit-review`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         credentials: "include",
-        body: JSON.stringify({ requestedPublishTime: when.toISOString() }),
+        body: JSON.stringify({ requestedPublishTime: when }),
       });
       const data = unwrap(await res.json().catch(() => ({})));
       if (!res.ok) return data.error ?? "Failed to submit for review";
-      updatePostInList(post._id, {
-        status: "review",
-        requestedPublishTime: when.toISOString(),
-      });
+      // Authoritative requestedPublishTime (UTC) comes back on data.post;
+      // optimistic update flips status only.
+      updatePostInList(post._id, { status: "review" });
       handlePostUpdate(data.post);
       setScheduleTarget(null);
       // Also close the detail modal if it was open on this post — the
@@ -3006,7 +3018,7 @@ export default function ContentHubPage() {
   // posts that already exist). Returns null on success, error string on
   // failure (the modal renders it inline without unmounting).
   const handleScheduleSave = async (
-    scheduledFor: Date | null,
+    scheduledFor: string | null,
     platform: string
   ): Promise<string | null> => {
     if (!scheduleTarget) return "No post selected";
@@ -3018,7 +3030,11 @@ export default function ContentHubPage() {
     const { post, mode } = scheduleTarget;
     setScheduleSaving(true);
     try {
-      const iso = scheduledFor.toISOString();
+      // F2: `scheduledFor` is a tz-naive local wall-clock string; the
+      // server converts it to UTC in the user's profile tz. Don't
+      // .toISOString() (that bakes in the browser tz). The authoritative
+      // UTC value comes back on the response → handlePostUpdate.
+      const naive = scheduledFor;
       // Platform is chosen here at scheduling — forward the user's pick so
       // the status route persists it onto the post (it was being discarded
       // before). Only send when the modal supplied one.
@@ -3036,7 +3052,7 @@ export default function ContentHubPage() {
           method: "PATCH",
           headers: { "Content-Type": "application/json" },
           credentials: "include",
-          body: JSON.stringify({ status: "review", scheduledFor: iso, ...platformField }),
+          body: JSON.stringify({ status: "review", scheduledFor: naive, ...platformField }),
         });
         if (!r1.ok) {
           const d = unwrap(await r1.json().catch(() => ({})));
@@ -3049,7 +3065,7 @@ export default function ContentHubPage() {
         const d2 = unwrap(await r2.json().catch(() => ({})));
         if (!r2.ok) return d2.error ?? "Failed to approve";
         if (d2.requiresReschedule) return "Selected time has already passed.";
-        updatePostInList(post._id, { status: "scheduled", scheduledFor: iso, ...platformField });
+        updatePostInList(post._id, { status: "scheduled", ...platformField });
         handlePostUpdate(d2.post);
       } else {
         // schedule + reschedule: single PATCH /status with the new time.
@@ -3057,11 +3073,11 @@ export default function ContentHubPage() {
           method: "PATCH",
           headers: { "Content-Type": "application/json" },
           credentials: "include",
-          body: JSON.stringify({ status: "scheduled", scheduledFor: iso, ...platformField }),
+          body: JSON.stringify({ status: "scheduled", scheduledFor: naive, ...platformField }),
         });
         const data = unwrap(await res.json().catch(() => ({})));
         if (!res.ok) return data.error ?? "Failed to schedule";
-        updatePostInList(post._id, { status: "scheduled", scheduledFor: iso, ...platformField });
+        updatePostInList(post._id, { status: "scheduled", ...platformField });
         handlePostUpdate(data.post);
       }
 
@@ -3316,6 +3332,7 @@ export default function ContentHubPage() {
           onClose={() => setScheduleTarget(null)}
           onSave={handleScheduleSave}
           saving={scheduleSaving}
+          userTimezone={(session?.user as { timezone?: string } | undefined)?.timezone}
           isAdmin={isAdmin}
           onPublishNow={
             scheduleTarget.mode === "suggest-time-send"
