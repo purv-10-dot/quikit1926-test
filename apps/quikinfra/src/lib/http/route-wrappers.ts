@@ -30,6 +30,7 @@ import { toHttpResponse } from "./errors";
 import { mapPrismaError } from "./prisma-errors";
 import { parsePagination, type PaginationParams } from "./pagination";
 import type { MatrixAction } from "@/lib/rbac/menu-catalog";
+import { recordHttpMetrics } from "@/lib/observability/metrics";
 
 // ─── Shared error / unauth handling ──────────────────────────────────
 
@@ -41,16 +42,30 @@ function unauthorized(): NextResponse {
  * Run `fn` and translate any thrown Prisma / DomainError / unknown error
  * to the canonical envelope. Pass `entityLabel` so the duplicate /
  * FK-violation messages name the right thing.
+ *
+ * Also records Prometheus HTTP metrics (duration + count) for every wrapped
+ * request, using `entityLabel` as the low-cardinality `route` label. Metric
+ * recording is best-effort and never affects the response.
  */
 async function safeRun(
   fn: () => Promise<NextResponse>,
   entityLabel: string,
+  method = "GET",
 ): Promise<NextResponse> {
+  const start = performance.now();
+  let res: NextResponse;
   try {
-    return await fn();
+    res = await fn();
   } catch (e: unknown) {
-    return toHttpResponse(mapPrismaError(e, entityLabel));
+    res = toHttpResponse(mapPrismaError(e, entityLabel));
   }
+  recordHttpMetrics({
+    method,
+    route: entityLabel,
+    statusCode: res.status,
+    durationSeconds: (performance.now() - start) / 1000,
+  });
+  return res;
 }
 
 // ─── List route wrapper ──────────────────────────────────────────────
@@ -124,7 +139,7 @@ export async function withListRoute<T>(
     // `paginateDb` produces. Routes that want the canonical envelope
     // can return `ok(result)` from the handler directly.
     return NextResponse.json(result);
-  }, opts.entityLabel);
+  }, opts.entityLabel, req.method);
 }
 
 // ─── Mutation route wrapper ──────────────────────────────────────────
@@ -233,5 +248,5 @@ export async function withMutationRoute<TBody = any, TResult = any>(
     // Same rationale as withListRoute: pass through as JSON so existing
     // clients continue to read `record.id` instead of `response.data.id`.
     return NextResponse.json(result, { status: opts.successStatus ?? 200 });
-  }, opts.entityLabel);
+  }, opts.entityLabel, req.method);
 }
