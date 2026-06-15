@@ -23,6 +23,8 @@ import {
   BarChart3,
   TrendingUp,
   Gauge,
+  ClipboardList,
+  PieChart,
 } from "lucide-react";
 import { ComingSoonRow } from "./coming-soon-row";
 import { FiltersSection } from "./filters-section";
@@ -323,7 +325,7 @@ export function Sidebar() {
               </div> */}
               <NavRow
                 href="/dashboards/default"
-                icon={Gauge}
+                icon={PieChart}
                 label="Default dashboard"
                 indent
               />
@@ -356,7 +358,7 @@ export function Sidebar() {
             <div className="pr-2 space-y-1.5 mb-1">
               <NavRow
                 href="/reports"
-                icon={BarChart3}
+                icon={ClipboardList}
                 label="Project Report"
                 active={pathname === "/reports"}
                 indent
