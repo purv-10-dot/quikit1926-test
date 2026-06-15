@@ -1045,7 +1045,10 @@ export default function OrgUsersPage() {
   const queryClient = useQueryClient();
 
   const [roleFilter, setRoleFilter] = useState("");
-  const [statusFilter, setStatusFilter] = useState("active");
+  // Default to "" (All statuses) so the Users list mirrors the full member set
+  // (active + inactive) — same 89-member universe as Analytics → Individual.
+  // "active" is now an opt-in narrowing filter, not the default.
+  const [statusFilter, setStatusFilter] = useState("");
   // Role + status filters run at the DB level via fetchParams; memoised so the
   // hook only refetches when a filter value actually changes.
   const usersFetchParams = useMemo(() => {
@@ -1195,11 +1198,12 @@ export default function OrgUsersPage() {
     }
   }
 
-  // `crud.total` is the server-side count for the current filter set. When the
-  // status filter is "active" this is exactly the active-member count.
+  // `crud.total` is the server-side count for the current filter set. With no
+  // status filter (the default) this is the full member count (active +
+  // inactive). Picking Active/Inactive narrows it.
   const totalForFilter = crud.total;
   const filterCount =
-    (roleFilter ? 1 : 0) + (statusFilter !== "active" ? 1 : 0);
+    (roleFilter ? 1 : 0) + (statusFilter ? 1 : 0);
 
   // Server-side pagination — the API already returns the requested page.
   const pagedUsers = filtered;
@@ -1241,7 +1245,7 @@ export default function OrgUsersPage() {
           <div>
             <h1 className="text-sm font-bold text-gray-900">Users</h1>
             <p className="text-xs text-gray-400">
-              {totalForFilter}{statusFilter === "active" ? " active" : ""} member{totalForFilter !== 1 ? "s" : ""}
+              {totalForFilter}{statusFilter === "active" ? " active" : statusFilter === "inactive" ? " inactive" : ""} member{totalForFilter !== 1 ? "s" : ""}
             </p>
           </div>
         </div>
