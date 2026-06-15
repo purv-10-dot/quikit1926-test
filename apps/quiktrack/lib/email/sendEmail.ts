@@ -429,7 +429,10 @@ export async function emailProjectInvite(args: {
   projectName: string;
   invitedBy: string | null;
 }): Promise<void> {
-  const link = `${appUrl()}/spaces/${args.projectId}/board`;
+  // The recipient is already an org member — they just need to log in to
+  // QuikTrack, so we point at the app's login URL rather than a project deep
+  // link (the project name is still shown in the email body for context).
+  const link = `${appUrl()}/login`;
   const html = shell({
     headerSubtitle: "Project invitation",
     headerTitle: "Project",
@@ -441,7 +444,7 @@ export async function emailProjectInvite(args: {
       ["Project", esc(args.projectName)],
       ...(args.invitedBy ? ([["Invited by", esc(args.invitedBy)]] as Array<[string, string]>) : []),
     ],
-    ctaLabel: "Open project",
+    ctaLabel: "Log in to QuikTrack",
     ctaHref: link,
   });
   await sendEmail({

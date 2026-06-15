@@ -2,11 +2,12 @@
 
 import { useEffect, useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { Plus, Shield, Trash2 } from "lucide-react";
+import { Plus, Shield, ShieldCheck, Trash2 } from "lucide-react";
 import { PermissionMatrix } from "./permission-matrix";
 import { FieldPermissionMatrix } from "./field-permission-matrix";
 import { NavigationPanel } from "./navigation-panel";
 import { AddRoleModal } from "./add-role-modal";
+import { roleDisplayName } from "./role-name";
 
 interface AppRole {
   id: string;
@@ -93,7 +94,7 @@ export function RoleManagementTab() {
               >
                 <span className="inline-flex items-center gap-2 truncate">
                   <Shield className="h-3.5 w-3.5 text-indigo-500 flex-shrink-0 dark:text-indigo-300" />
-                  <span className="truncate">{r.name}</span>
+                  <span className="truncate">{roleDisplayName(r.name)}</span>
                   {r.isDefault && (
                     <span className="text-[9px] uppercase tracking-wider bg-gray-100 text-gray-600 px-1.5 py-0.5 rounded dark:bg-gray-700 dark:text-gray-300">
                       Default
@@ -106,7 +107,7 @@ export function RoleManagementTab() {
                     tabIndex={0}
                     onClick={(e) => {
                       e.stopPropagation();
-                      if (confirm(`Delete role "${r.name}"?`)) del.mutate(r.id);
+                      if (confirm(`Delete role "${roleDisplayName(r.name)}"?`)) del.mutate(r.id);
                     }}
                     className="opacity-0 group-hover:opacity-100 text-gray-400 hover:text-red-500 dark:text-gray-500 dark:hover:text-red-400"
                   >
@@ -124,7 +125,7 @@ export function RoleManagementTab() {
           <div className="px-8 py-6 space-y-4">
             <div className="flex items-center gap-2 flex-wrap">
               <h3 className="text-base font-semibold text-gray-900 dark:text-gray-100">
-                Permissions — {selectedRole.name}
+                Permissions — {roleDisplayName(selectedRole.name)}
               </h3>
               <Shield className="h-4 w-4 text-indigo-500 dark:text-indigo-300" />
               <span className="text-[10px] font-semibold tracking-wider uppercase bg-indigo-100 text-indigo-700 px-2 py-0.5 rounded dark:bg-indigo-500/15 dark:text-indigo-300 dark:ring-1 dark:ring-indigo-400/30">
@@ -132,6 +133,22 @@ export function RoleManagementTab() {
               </span>
             </div>
 
+            {selectedRole.isSystem && selectedRole.name === "admin" ? (
+              <div className="flex flex-col items-center justify-center text-center rounded-xl border border-indigo-100 bg-gradient-to-b from-indigo-50 to-white px-8 py-12 dark:border-indigo-400/20 dark:from-indigo-500/10 dark:to-gray-950">
+                <div className="flex h-14 w-14 items-center justify-center rounded-full bg-indigo-100 dark:bg-indigo-500/20">
+                  <ShieldCheck className="h-7 w-7 text-indigo-600 dark:text-indigo-300" />
+                </div>
+                <h4 className="mt-4 text-lg font-semibold text-gray-900 dark:text-gray-100">
+                  Full access to everything
+                </h4>
+                <p className="mt-2 max-w-md text-sm text-gray-600 dark:text-gray-400">
+                  The <span className="font-medium text-gray-800 dark:text-gray-200">Admin</span> role
+                  can view and edit every field, entity, and navigation item across all spaces. There&apos;s
+                  nothing to configure here — its permissions can&apos;t be restricted.
+                </p>
+              </div>
+            ) : (
+            <>
             <nav className="flex gap-6 border-b border-gray-200 dark:border-gray-700">
               {(
                 [
@@ -182,6 +199,8 @@ export function RoleManagementTab() {
               <PermissionMatrix roleId={selectedRole.id} />
             ) : (
               <NavigationPanel roleId={selectedRole.id} />
+            )}
+            </>
             )}
           </div>
         ) : (

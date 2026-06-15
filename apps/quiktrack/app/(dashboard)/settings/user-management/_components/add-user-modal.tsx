@@ -3,7 +3,8 @@
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Check, ChevronDown, Search, X } from "lucide-react";
+import { Check, ChevronDown, Search, ShieldCheck, X } from "lucide-react";
+import { roleDisplayName } from "./role-name";
 import {
   Input,
   RightPanel,
@@ -18,6 +19,7 @@ interface AppRole {
   id: string;
   name: string;
   isDefault: boolean;
+  isSystem?: boolean;
 }
 
 interface SearchResult {
@@ -247,6 +249,18 @@ function AddUserDrawer({ onClose }: { onClose: () => void }) {
   const roles = rolesQ.data ?? [];
   const hits = searchQ.data ?? [];
 
+  // Admins have full access to every project, so the project picker is
+  // meaningless for them — hide it and clear any prior selection so we never
+  // send stale project assignments in the payload.
+  const selectedRole = roles.find((r) => r.id === appRoleId) ?? null;
+  const isAdminSelected = !!selectedRole && selectedRole.isSystem === true && selectedRole.name === "admin";
+  useEffect(() => {
+    if (isAdminSelected) {
+      setProjectIds([]);
+      setProjectRoles({});
+    }
+  }, [isAdminSelected]);
+
   return (
     <RightPanel
       open
@@ -436,44 +450,56 @@ function AddUserDrawer({ onClose }: { onClose: () => void }) {
             { value: "", label: "Use org default" },
             ...roles.map((r) => ({
               value: r.id,
-              label: r.name,
+              label: roleDisplayName(r.name),
               badge: r.isDefault ? "default" : undefined,
             })),
           ]}
         />
       </div>
 
-      <ProjectsPicker
-        selected={projectIds}
-        onChange={(ids) => {
-          setProjectIds(ids);
-          // Drop role choices for projects that were just unchecked so we
-          // don't leak stale roleIds into the payload.
-          setProjectRoles((prev) => {
-            const next: Record<string, string> = {};
-            for (const id of ids) if (prev[id]) next[id] = prev[id];
-            return next;
-          });
-        }}
-        label="Add to projects"
-        placeholder="None — assign later"
-      />
+      {isAdminSelected ? (
+        <div className="flex items-start gap-2.5 rounded-md border border-indigo-100 bg-indigo-50/60 px-3.5 py-3 text-sm text-indigo-900 dark:border-indigo-400/20 dark:bg-indigo-500/10 dark:text-indigo-200">
+          <ShieldCheck className="mt-0.5 h-4 w-4 shrink-0 text-indigo-500 dark:text-indigo-300" />
+          <span>
+            Admins automatically have access to <span className="font-medium">all projects</span>.
+            There&apos;s no need to assign projects here.
+          </span>
+        </div>
+      ) : (
+        <>
+          <ProjectsPicker
+            selected={projectIds}
+            onChange={(ids) => {
+              setProjectIds(ids);
+              // Drop role choices for projects that were just unchecked so we
+              // don't leak stale roleIds into the payload.
+              setProjectRoles((prev) => {
+                const next: Record<string, string> = {};
+                for (const id of ids) if (prev[id]) next[id] = prev[id];
+                return next;
+              });
+            }}
+            label="Add to projects"
+            placeholder="None — assign later"
+          />
 
-      {projectIds.length > 0 && (
-        <ProjectRolesPicker
-          projectIds={projectIds}
-          value={projectRoles}
-          onChange={setProjectRoles}
-        />
+          {projectIds.length > 0 && (
+            <ProjectRolesPicker
+              projectIds={projectIds}
+              value={projectRoles}
+              onChange={setProjectRoles}
+            />
+          )}
+
+          <p className="-mt-2 text-[11px] text-gray-400 dark:text-gray-500">
+            Each project uses its own role catalogue. Leave a row on{" "}
+            <span className="font-medium dark:text-gray-300">Default</span> and the project&apos;s
+            default role applies. Per-role permissions can be tuned later from
+            the project&apos;s User Management page
+            after invite.
+          </p>
+        </>
       )}
-
-      <p className="-mt-2 text-[11px] text-gray-400 dark:text-gray-500">
-        Each project uses its own role catalogue. Leave a row on{" "}
-        <span className="font-medium dark:text-gray-300">Default</span> and the project&apos;s
-        default role applies. Per-role permissions can be tuned later from
-        the project&apos;s User Management page
-        after invite.
-      </p>
 
       {error && <p className="text-sm text-red-600 dark:text-red-400">{error}</p>}
     </RightPanel>
@@ -606,7 +632,7 @@ function ProjectRoleRow({
             { value: "", label: "Use project default" },
             ...roles.map((r) => ({
               value: r.id,
-              label: r.name,
+              label: roleDisplayName(r.name),
               badge: r.isDefault ? "default" : undefined,
             })),
           ]}
