@@ -16,7 +16,6 @@ import {
 } from "@/components/global-search-popover";
 import { SettingsPopover } from "@/components/shell/settings-popover";
 import { AppSwitcherVertical } from "@/components/shell/app-switcher-vertical";
-import { useMyPermissions } from "@/lib/hooks/useMyPermissions";
 
 interface HeaderProps {
   onToggleSidebar?: () => void;
@@ -27,7 +26,6 @@ interface HeaderProps {
 
 export function Header({ onToggleSidebar, sidebarOpen = true }: HeaderProps) {
   const { data: session } = useSession();
-  const perms = useMyPermissions();
   const params = useParams();
   const pathname = usePathname() ?? "";
   const currentProjectId = typeof params?.id === "string" ? params.id : undefined;
@@ -122,7 +120,7 @@ export function Header({ onToggleSidebar, sidebarOpen = true }: HeaderProps) {
         <div className="flex-1 flex items-center gap-3 px-3">
           <div className="flex-1 max-w-2xl mx-auto flex items-center gap-2">
             {!hideSearchAndCreate && <GlobalSearchPopover ref={searchRef} />}
-            {!hideSearchAndCreate && (perms.loading || perms.has("Issue", "create")) && (
+            {!hideSearchAndCreate && (
               <button
                 type="button"
                 data-tour="create"
