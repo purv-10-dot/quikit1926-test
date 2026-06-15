@@ -45,6 +45,7 @@ interface WorkLogRow {
   entryDate: string;
   hours: number;
   description: string | null;
+  user: User | null;
 }
 
 const REACTION_SHORTCUTS: { emoji: string; label: string }[] = [
@@ -527,10 +528,12 @@ function WorkLogView({
               className="h-7 w-7 rounded-full flex items-center justify-center text-white text-[11px] font-semibold shrink-0"
               style={{ background: userColor(r.userId) }}
             >
-              {(r.userId.charAt(0) || "?").toUpperCase()}
+              {userInitials(r.user)}
             </span>
             <div className="min-w-0 flex-1">
               <div className="text-xs text-gray-900">
+                <span className="font-medium">{userName(r.user)}</span>
+                <span className="text-gray-500"> logged </span>
                 <span className="font-medium">{formatHours(r.hours)}</span>
                 <span className="text-gray-500"> on {new Date(r.entryDate).toLocaleDateString()}</span>
               </div>
