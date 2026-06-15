@@ -26,16 +26,26 @@ interface Props {
   /** Force the validation message to show even if the field hasn't been
    *  touched yet (e.g. the user hit "Create" with an invalid value). */
   forceShowError?: boolean;
+  /** "inline" drops the box border so the control blends into the issue
+   *  Details panel (border appears on hover/focus, like the built-in rows).
+   *  Default "boxed" keeps the bordered look used by the create form. */
+  inline?: boolean;
 }
 
-const INPUT =
+const INPUT_BOXED =
   "w-full h-9 px-3 text-sm border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 disabled:bg-gray-50 disabled:text-gray-400";
+const INPUT_INLINE =
+  "w-full px-2 -mx-2 py-1 text-sm bg-transparent border border-transparent rounded hover:bg-gray-50 focus:bg-white focus:outline-none focus:border-blue-500 disabled:text-gray-400 disabled:hover:bg-transparent";
 
 /**
  * Renders the value input for any custom field type. Used in the admin
  * default-value editor and on issue create/edit forms. Controlled component.
  */
-export function FieldControl({ field, value, onChange, members = [], disabled, autoFocus, validate, forceShowError }: Props) {
+export function FieldControl({ field, value, onChange, members = [], disabled, autoFocus, validate, forceShowError, inline }: Props) {
+  const INPUT = inline ? INPUT_INLINE : INPUT_BOXED;
+  const TEXTAREA = inline
+    ? "w-full px-2 -mx-2 py-1 text-sm bg-transparent border border-transparent rounded hover:bg-gray-50 focus:bg-white focus:outline-none focus:border-blue-500 resize-y disabled:text-gray-400 disabled:hover:bg-transparent"
+    : "w-full px-3 py-2 text-sm border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 resize-y disabled:bg-gray-50";
   const activeOptions = field.options.filter((o) => o.isActive);
   const [touched, setTouched] = useState(false);
   const result = validate && (touched || forceShowError) ? validateFieldValue(field, value) : null;
@@ -71,7 +81,7 @@ export function FieldControl({ field, value, onChange, members = [], disabled, a
           autoFocus={autoFocus}
           rows={3}
           maxLength={50_000}
-          className="w-full px-3 py-2 text-sm border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 resize-y disabled:bg-gray-50"
+          className={TEXTAREA}
         />
       );
 
@@ -138,6 +148,7 @@ export function FieldControl({ field, value, onChange, members = [], disabled, a
           value={(value as string) ?? ""}
           onChange={(v) => onChange(v || null)}
           searchable
+          inline={inline}
           placeholder={ph}
           options={[{ value: "", label: ph }, ...activeOptions.map((o) => ({ value: o.value, label: o.label }))]}
         />
@@ -159,6 +170,7 @@ export function FieldControl({ field, value, onChange, members = [], disabled, a
           value={(value as string) ?? ""}
           onChange={(v) => onChange(v || null)}
           searchable
+          inline={inline}
           placeholder={unassigned}
           options={[{ value: "", label: unassigned }, ...members.map((m) => ({ value: m.id, label: m.label }))]}
         />

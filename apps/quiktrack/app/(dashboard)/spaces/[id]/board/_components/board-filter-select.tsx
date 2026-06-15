@@ -17,6 +17,7 @@ export function BoardFilterSelect({
   placeholder = "Any",
   searchable = false,
   rightLabel,
+  inline = false,
 }: {
   label?: string;
   value: string;
@@ -25,6 +26,9 @@ export function BoardFilterSelect({
   placeholder?: string;
   searchable?: boolean;
   rightLabel?: React.ReactNode;
+  /** Borderless trigger that blends into the issue Details panel (border
+   *  appears on hover / when open). Default keeps the boxed filter look. */
+  inline?: boolean;
 }) {
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState("");
@@ -150,7 +154,7 @@ export function BoardFilterSelect({
       : null;
 
   return (
-    <div className="mb-2 text-xs">
+    <div className={inline ? "text-xs" : "mb-2 text-xs"}>
       {(label || rightLabel) && (
         <div className="mb-1 flex items-center justify-between">
           {label ? (
@@ -166,7 +170,9 @@ export function BoardFilterSelect({
         className={`relative w-full h-8 pl-2.5 pr-8 inline-flex items-center justify-between text-left border rounded text-sm transition-colors cursor-pointer ${
           open
             ? "border-accent-400 bg-white ring-1 ring-accent-300 dark:bg-gray-800 dark:border-accent-400/50 dark:ring-accent-400/40"
-            : "border-gray-200 bg-white hover:bg-gray-50 dark:bg-gray-800/60 dark:border-gray-700 dark:hover:bg-gray-700/60"
+            : inline
+              ? "border-transparent bg-transparent hover:bg-gray-50 dark:border-transparent dark:hover:bg-gray-700/60"
+              : "border-gray-200 bg-white hover:bg-gray-50 dark:bg-gray-800/60 dark:border-gray-700 dark:hover:bg-gray-700/60"
         }`}
       >
         <span

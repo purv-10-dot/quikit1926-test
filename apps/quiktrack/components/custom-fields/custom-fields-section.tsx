@@ -34,10 +34,23 @@ export function CustomFieldsSection({
   if (fields.length === 0) return null;
 
   return (
-    <div className={variant === "form" ? "space-y-3" : "space-y-2.5"}>
+    <div className="space-y-3">
       {fields.map((field) => (
-        <div key={field.id} className={variant === "detail" ? "grid grid-cols-[120px_1fr] items-start gap-2" : ""}>
-          <label className={`block text-xs font-semibold text-gray-700 ${variant === "form" ? "mb-1" : "pt-2"}`}>
+        <div
+          key={field.id}
+          className={
+            variant === "detail"
+              ? "grid grid-cols-[160px_1fr] items-center gap-3 text-sm py-0.5"
+              : ""
+          }
+        >
+          <label
+            className={`block ${
+              variant === "form"
+                ? "text-xs font-semibold text-gray-700 mb-1"
+                : "text-sm text-gray-500 whitespace-nowrap"
+            }`}
+          >
             <span className="inline-flex items-center gap-1.5">
               {field.name}
               {field.isRequired && <span className="text-red-500">*</span>}
@@ -52,6 +65,7 @@ export function CustomFieldsSection({
               disabled={disabled}
               validate
               forceShowError={forceShowErrors}
+              inline={variant === "detail"}
             />
             {field.helpText && <p className="mt-1 text-[11px] text-gray-400">{field.helpText}</p>}
           </div>

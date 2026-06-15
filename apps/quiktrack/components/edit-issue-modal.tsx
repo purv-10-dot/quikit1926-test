@@ -1488,25 +1488,20 @@ export function EditIssueModal({
                         );
                       })()}
                     </DetailRow>
+
+                    {customFields.length > 0 && (
+                      <CustomFieldsSection
+                        variant="detail"
+                        fields={customFields}
+                        values={customValues}
+                        onChange={commitCustomField}
+                        members={memberOptions}
+                        disabled={!canUpdateIssue}
+                      />
+                    )}
                   </div>
                 )}
               </div>
-
-              {customFields.length > 0 && (
-                <div className="mt-5 border-t border-gray-200 pt-4">
-                  <h3 className="text-xs font-semibold text-gray-900 uppercase tracking-wide mb-3">
-                    Custom fields
-                  </h3>
-                  <CustomFieldsSection
-                    variant="detail"
-                    fields={customFields}
-                    values={customValues}
-                    onChange={commitCustomField}
-                    members={memberOptions}
-                    disabled={!canUpdateIssue}
-                  />
-                </div>
-              )}
 
               </fieldset>
 
