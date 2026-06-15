@@ -28,6 +28,7 @@ import {
   type TimelineChange,
 } from "@/lib/audit/timeline";
 import type { AuditFilterBucket } from "@/lib/audit/actions";
+import { fmt } from "@/lib/utils/kpiHelpers";
 
 /**
  * Generic, entity-driven Change History drawer.
@@ -701,27 +702,45 @@ function WeeklyBody({ snap, kind }: { snap: Record<string, unknown>; kind: "nume
     );
   }
 
-  const value = snap.value as number | null;
-  const prior = snap.priorWeekValue as number | null;
-  const delta = typeof value === "number" && typeof prior === "number" ? value - prior : null;
+  // Numeric KPI weekly update — rendered as a single-row table (Week · Target ·
+  // Old → New · Δ · Note) to mirror the Bulk card's layout. `weeklyTarget` is
+  // emitted by the weekly routes; older events without it show "—".
+  const oldVal = (snap.previousValue ?? null) as number | null;
+  const newVal = (snap.value ?? null) as number | null;
+  const target = snap.weeklyTarget as number | null | undefined;
+  const hasValue = oldVal != null || newVal != null;
+  const delta = (typeof newVal === "number" ? newVal : 0) - (typeof oldVal === "number" ? oldVal : 0);
   return (
     <div>
       <p className="text-[11px] font-semibold uppercase tracking-wide text-gray-400">
         Weekly update · Week {String(snap.weekNumber ?? "?")}
       </p>
-      <div className="mt-1 flex items-end gap-6">
-        <div>
-          <p className="text-[10px] uppercase text-gray-400">Value entered</p>
-          <p className="text-2xl font-bold text-gray-900">{value ?? "—"}</p>
-        </div>
-        <div>
-          <p className="text-[10px] uppercase text-gray-400">Δ from prior</p>
-          <p className={`text-sm font-semibold ${delta != null && delta >= 0 ? "text-green-600" : "text-red-600"}`}>
-            {delta == null ? "—" : delta >= 0 ? `+${delta}` : `${delta}`}
-          </p>
-        </div>
-      </div>
-      {snap.notes ? <p className="mt-1 text-sm text-gray-600">Notes {String(snap.notes)}</p> : null}
+      <table className="mt-2 w-full text-sm">
+        <thead>
+          <tr className="text-left text-[10px] uppercase text-gray-400">
+            <th className="py-1">Week</th>
+            <th>Target</th>
+            <th>Old → New</th>
+            <th>Δ</th>
+            <th>Note</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr className="border-t border-gray-50">
+            <td className="py-1 font-medium">{String(snap.weekNumber ?? "")}</td>
+            <td>{target != null ? fmt(target, 2) : "—"}</td>
+            <td>
+              <span className="text-gray-400 line-through">{formatValue(oldVal)}</span>
+              {" → "}
+              <span className="font-medium text-gray-900">{formatValue(newVal)}</span>
+            </td>
+            <td className={delta >= 0 ? "text-green-600" : "text-red-600"}>
+              {hasValue ? (delta >= 0 ? `+${delta}` : `${delta}`) : "—"}
+            </td>
+            <td className="text-gray-500">{snap.notes ? String(snap.notes) : "—"}</td>
+          </tr>
+        </tbody>
+      </table>
     </div>
   );
 }
@@ -788,7 +807,8 @@ function BulkBody({
         <table className="mt-2 w-full text-sm">
           <thead>
             <tr className="text-left text-[10px] uppercase text-gray-400">
-              <th className="py-1">#</th>
+              <th className="py-1">Week</th>
+              <th>Target</th>
               <th>Old → New</th>
               <th>Δ</th>
               <th>Note</th>
@@ -799,9 +819,11 @@ function BulkBody({
               const o = (r.oldValue as number) ?? 0;
               const n = (r.newValue as number) ?? 0;
               const d = n - o;
+              const target = r.target as number | null | undefined;
               return (
                 <tr key={i} className="border-t border-gray-50">
                   <td className="py-1 font-medium">{String(r.weekNumber ?? "")}</td>
+                  <td>{target != null ? fmt(target, 2) : "—"}</td>
                   <td>
                     <span className="text-gray-400 line-through">{formatValue(r.oldValue)}</span>
                     {" → "}

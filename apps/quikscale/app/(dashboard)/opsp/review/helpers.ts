@@ -6,6 +6,15 @@
 import { CURRENCIES } from "@/lib/utils/currency";
 
 /**
+ * Whether the OPSP Review secondary table shows the owner ("Who") column.
+ * Quarterly Rocks and yearly Key Initiatives carry a per-row owner; the 3–5yr
+ * Key Thrusts are capability rows with no per-row owner, so Who is hidden there.
+ */
+export function showOpspReviewOwnerColumn(horizon: string): boolean {
+  return horizon !== "3to5year";
+}
+
+/**
  * Map an achieved percentage (achieved / projected × 100) to a Tailwind
  * background class. Thresholds match the existing OPSP Review KPI
  * traffic-lights (≥120 blue, ≥100 green, ≥80 yellow, <80 red).

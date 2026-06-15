@@ -6,6 +6,7 @@ import { withOrgAuthForModule } from "@/lib/api/withOrgAuth";
 const withOrgAuth = withOrgAuthForModule("kpi");
 import { getPastWeekFlags, getCurrentFiscalWeekFromDB } from "@/lib/utils/featureFlags";
 import { audit, requestContext } from "@/lib/audit";
+import { weeklyTargetForWeek } from "@/lib/utils/kpiHelpers";
 
 function calcHealthStatus(progress: number, status: string): string {
   if (status === "completed") return "complete";
@@ -118,6 +119,7 @@ export const POST = withOrgAuth<{ id: string }>(async ({ orgId, userId }, req: N
       orgId: true, qtdGoal: true, target: true, status: true,
       quarter: true, year: true, teamId: true,
       kpiLevel: true, owner: true, ownerIds: true, parentKPIId: true,
+      weeklyTargets: true,
     },
   });
   if (!kpi) return NextResponse.json({ success: false, error: "KPI not found" }, { status: 404 });
@@ -259,28 +261,90 @@ export const POST = withOrgAuth<{ id: string }>(async ({ orgId, userId }, req: N
     },
   });
 
-  // ── Centralized audit (dual-write) ── one BULK_UPDATE event for the batch,
-  // with a change row per value-changed week and the full per-row detail in
-  // the snapshot (weeks, owners, old→new, notes) for the Bulk Edit card.
+  // ── Centralized audit (dual-write) ──
+  // Classify by how many DISTINCT weeks changed in this single save:
+  //   • ≥ 3 weeks → one BULK_UPDATE event (purple "Bulk weekly update" card)
+  //   • < 3 weeks → one WEEKLY_UPDATE event PER changed (week, owner) row, so a
+  //     1- or 2-week save renders as amber "Weekly update · Week N" card(s)
+  //     instead of a misleading Bulk card. The WEEKLY snapshot mirrors the
+  //     single-week route exactly so both produce identical cards.
+  const WEEKLY_BULK_THRESHOLD = 3;
   if (applied > 0) {
     const sortedWeeks = [...new Set(appliedChanges.map((c) => c.weekNumber))].sort(
       (a, b) => a - b,
     );
-    await audit.log({
-      entityType: "KPI",
-      entityId: params.id,
-      action: "BULK_UPDATE",
-      actor: { userId, orgId, teamId: kpi.teamId },
-      changes: appliedChanges
-        .filter((c) => c.oldValue !== c.newValue)
-        .map((c) => ({
-          fieldName: `week_${c.weekNumber}`,
-          oldValue: c.oldValue,
-          newValue: c.newValue,
-        })),
-      snapshot: { applied, failed, weeks: sortedWeeks, rows: appliedChanges },
-      ...requestContext(req),
-    });
+
+    if (sortedWeeks.length >= WEEKLY_BULK_THRESHOLD) {
+      await audit.log({
+        entityType: "KPI",
+        entityId: params.id,
+        action: "BULK_UPDATE",
+        actor: { userId, orgId, teamId: kpi.teamId },
+        changes: appliedChanges
+          .filter((c) => c.oldValue !== c.newValue)
+          .map((c) => ({
+            fieldName: `week_${c.weekNumber}`,
+            oldValue: c.oldValue,
+            newValue: c.newValue,
+          })),
+        snapshot: {
+          applied,
+          failed,
+          weeks: sortedWeeks,
+          // Per-row target (explicit weeklyTargets[week] ?? flat qtdGoal/13) so
+          // the Bulk card shows the same Target column as the Weekly card.
+          rows: appliedChanges.map((c) => ({
+            ...c,
+            target: weeklyTargetForWeek(
+              { weeklyTargets: kpi.weeklyTargets as Record<string, number> | null, qtdGoal: kpi.qtdGoal, target: kpi.target },
+              c.weekNumber,
+            ),
+          })),
+        },
+        ...requestContext(req),
+      });
+    } else {
+      // Fetch the prior-week value for each changed row (for the card's
+      // "Δ from prior" display), mirroring the single-week route. One query
+      // for the at-most-two prior weeks across the touched owners.
+      const priorWeeks = [...new Set(appliedChanges.map((c) => c.weekNumber - 1))];
+      const priorUserIds = [...new Set(appliedChanges.map((c) => c.userId))];
+      const priorRows = await db.kPIWeeklyValue.findMany({
+        where: { kpiId: params.id, weekNumber: { in: priorWeeks }, userId: { in: priorUserIds } },
+        select: { userId: true, weekNumber: true, value: true },
+      });
+      const priorMap = new Map<string, number | null>(
+        priorRows.map((r) => [`${r.userId ?? ""}:${r.weekNumber}`, r.value ?? null]),
+      );
+
+      for (const c of appliedChanges) {
+        await audit.log({
+          entityType: "KPI",
+          entityId: params.id,
+          action: "WEEKLY_UPDATE",
+          actor: { userId, orgId, teamId: kpi.teamId },
+          changes:
+            c.oldValue !== c.newValue
+              ? [{ fieldName: `week_${c.weekNumber}`, oldValue: c.oldValue, newValue: c.newValue }]
+              : [],
+          snapshot: {
+            weekNumber: c.weekNumber,
+            value: c.newValue,
+            notes: c.note,
+            userId: c.userId,
+            previousValue: c.oldValue,
+            priorWeekValue: priorMap.get(`${c.userId}:${c.weekNumber - 1}`) ?? null,
+            // Per-week target as shown in the Updates tab: explicit
+            // weeklyTargets[week] when configured, else the flat qtdGoal/13.
+            weeklyTarget: weeklyTargetForWeek(
+              { weeklyTargets: kpi.weeklyTargets as Record<string, number> | null, qtdGoal: kpi.qtdGoal, target: kpi.target },
+              c.weekNumber,
+            ),
+          },
+          ...requestContext(req),
+        });
+      }
+    }
   }
 
   return NextResponse.json({

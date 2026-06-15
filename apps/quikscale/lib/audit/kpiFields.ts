@@ -33,7 +33,7 @@ export const KPI_AUDIT_EXCLUDE = [
 
 /** Human-readable labels for KPI fields shown in the Change History timeline. */
 export const KPI_FIELD_LABELS: Record<string, string> = {
-  name: "Name",
+  name: "KPI Name",
   description: "Description",
   kpiLevel: "KPI Level",
   owner: "Owner",

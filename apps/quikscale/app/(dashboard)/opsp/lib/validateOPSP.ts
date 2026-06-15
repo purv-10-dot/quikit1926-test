@@ -130,6 +130,26 @@ function checkBreakdown(
   return errors;
 }
 
+/**
+ * Rocks (Quarterly Priorities) are mandatory: an OPSP can't be finalized with
+ * zero filled rocks. Emits a single section-level error when no row has a
+ * description. Per-row owner enforcement is handled separately by `checkOwners`,
+ * so a filled-but-ownerless rock still blocks finalize via that rule (no
+ * double-flagging here).
+ */
+function checkRocksPresent(
+  rows: Array<{ desc: string; owner: string }>,
+): ValidationError[] {
+  const anyFilled = rows.some((r) => r.desc.trim() !== "");
+  return anyFilled
+    ? []
+    : [{
+        section: "Rocks",
+        row: 1,
+        message: "Rocks are mandatory — add at least one Quarterly Priority and assign an owner before finalizing.",
+      }];
+}
+
 function checkOwners(
   section: string,
   rows: Array<{ desc: string; owner: string }>,
@@ -205,6 +225,7 @@ export function validateOPSP(form: FormData): ValidationError[] {
     // Key Thrusts + Key Initiatives no longer require an owner — the column
     // was removed from the UI per spec, so checking them would block Finalize
     // for data that has no UI to fill the field.
+    ...checkRocksPresent(form.rocks),
     ...checkOwners("Rocks", form.rocks),
   ];
 }

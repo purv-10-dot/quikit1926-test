@@ -18,20 +18,10 @@ import {
   allPermissionPairs,
   LEGACY_RESOURCE_BACKFILL,
 } from "@/lib/api/permissionsRegistry";
+import { MEMBER_DEFAULT_GRANTS } from "@/lib/api/memberDefaults";
 
-/**
- * Member role's curated default grants. Used by both `seedMemberAppRole`
- * (on fresh orgs) and `backfillMemberPermissions` (to top up existing
- * Member rows when defaults expand). One place to evolve the spec.
- */
-const MEMBER_DEFAULT_GRANTS: Array<{ resource: string; action: string }> = [
-  // Dashboard view so the sidebar landing is reachable.
-  { resource: "Dashboard", action: "view" },
-  // Full CRUDV on the day-to-day work surfaces.
-  ...["KPI", "TeamKPI", "Priority", "WWW"].flatMap((resource) =>
-    (["view", "create", "update", "delete"] as const).map((action) => ({ resource, action })),
-  ),
-];
+// Re-exported for callers/tests that imported it from here historically.
+export { MEMBER_DEFAULT_GRANTS };
 
 /**
  * (resource, action) pairs that exist in the registry but are intentionally

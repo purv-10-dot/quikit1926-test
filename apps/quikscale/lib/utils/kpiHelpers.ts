@@ -89,6 +89,25 @@ export function getProgressBadgeColors(
  * @param fallbackTarget Legacy `target` field as fallback
  * @param reverse True for reverse KPIs (lower is better)
  */
+/**
+ * The target for a single week, matching what the Updates tab renders:
+ * the explicit `weeklyTargets[week]` if the KPI has one configured, otherwise
+ * the flat `(qtdGoal ?? target) / 13` distribution. Mirrors LogModal's
+ * per-row target so audit cards and the editor agree.
+ */
+export function weeklyTargetForWeek(
+  kpi: {
+    weeklyTargets?: Record<string, number> | null;
+    qtdGoal?: number | null;
+    target?: number | null;
+  },
+  week: number,
+): number {
+  const explicit = kpi.weeklyTargets?.[String(week)];
+  if (explicit != null) return explicit;
+  return (kpi.qtdGoal ?? kpi.target ?? 0) / 13;
+}
+
 export function weekCellColors(
   val: number | null | undefined,
   qtdGoal: number | null | undefined,

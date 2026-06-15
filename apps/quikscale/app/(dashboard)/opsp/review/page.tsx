@@ -8,7 +8,7 @@ import {
   fiscalYearLabel,
   QUARTER_STARTS,
 } from "@/lib/utils/fiscal";
-import { achievedPctColor, formatReviewValue } from "./helpers";
+import { achievedPctColor, formatReviewValue, showOpspReviewOwnerColumn } from "./helpers";
 import { CATEGORY_TYPE_LABELS, type CategoryType } from "@/lib/utils/breakdownCalc";
 import { CriticalReviewSection } from "./CriticalReviewSection";
 
@@ -1114,9 +1114,23 @@ export default function OPSPReviewPage() {
       ),
     },
     {
+      // Owner ("Who") — resolved server-side into `ownerName`. Hidden for the
+      // 3–5yr (Key Thrusts) horizon by the filter below, matching the Create page.
+      key: "who",
+      label: "Who",
+      width: 160,
+      align: "left",
+      render: (row) => (
+        <span className={cn("truncate block text-gray-700", !row.ownerName && "text-gray-400")}>
+          {row.ownerName || "—"}
+        </span>
+      ),
+    },
+    {
       key: "desc",
       label: "Description",
       width: 280,
+      align: "left",
       render: (row) => (
         <span className="text-gray-800 truncate block">{row.desc}</span>
       ),
@@ -1151,7 +1165,7 @@ export default function OPSPReviewPage() {
     ];
     // 3-5yr (Key Thrusts) — owner column intentionally hidden per spec; the
     // capability rows on this horizon don't carry per-row ownership.
-    return horizon === "3to5year" ? cols.filter((c) => c.key !== "who") : cols;
+    return showOpspReviewOwnerColumn(horizon) ? cols : cols.filter((c) => c.key !== "who");
   }, [secondarySel, secondaryIdxs, horizon, openSecondaryModal]);
 
   /* ═══════════════════════════════════════════════

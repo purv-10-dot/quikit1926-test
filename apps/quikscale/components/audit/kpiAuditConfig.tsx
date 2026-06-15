@@ -64,7 +64,7 @@ function KpiCreateCard({
   const colorCoding = kpi.reverseColor ? "Reversed (lower is better)" : "Standard";
 
   const fields: [string, unknown][] = [
-    ["Name", kpi.name],
+    ["KPI Name", kpi.name],
     ["Owner", ownerDisplay],
     ["Measurement Unit", kpi.measurementUnit],
     ["Target", kpi.target],

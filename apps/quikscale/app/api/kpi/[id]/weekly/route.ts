@@ -5,6 +5,7 @@ import { withOrgAuthForModule } from "@/lib/api/withOrgAuth";
 const withOrgAuth = withOrgAuthForModule("kpi");
 import { getPastWeekFlags, getCurrentFiscalWeekFromDB } from "@/lib/utils/featureFlags";
 import { audit, requestContext } from "@/lib/audit";
+import { weeklyTargetForWeek } from "@/lib/utils/kpiHelpers";
 
 
 function calcHealthStatus(progress: number, status: string): string {
@@ -128,6 +129,7 @@ export const POST = withOrgAuth<{ id: string }>(async ({ orgId, userId }, req, {
       orgId: true, qtdGoal: true, target: true, status: true,
       quarter: true, year: true, teamId: true,
       kpiLevel: true, owner: true, ownerIds: true, parentKPIId: true,
+      weeklyTargets: true,
     },
   });
   if (!kpi) return NextResponse.json({ success: false, error: "KPI not found" }, { status: 404 });
@@ -277,6 +279,12 @@ export const POST = withOrgAuth<{ id: string }>(async ({ orgId, userId }, req, {
       userId: targetUserId,
       previousValue,
       priorWeekValue,
+      // Per-week target as shown in the Updates tab: explicit weeklyTargets[week]
+      // when configured, else the flat qtdGoal/13 distribution.
+      weeklyTarget: weeklyTargetForWeek(
+        { weeklyTargets: kpi.weeklyTargets as Record<string, number> | null, qtdGoal: kpi.qtdGoal, target: kpi.target },
+        validated.weekNumber,
+      ),
     },
     ...requestContext(req),
   });
