@@ -28,6 +28,17 @@ export const ITEM_STATUS_ORDER: ItemStatus[] = [
   "completed",
 ];
 
+/**
+ * Status assigned to a freshly-created Priority.
+ *
+ * MUST be a canonical `ItemStatus` so the edit drawer's status `<select>`
+ * (built from `STATUS_SELECT_OPTIONS`) can render it. A previous stray
+ * `"not-started"` literal sat outside `ITEM_STATUS_ORDER`, so the controlled
+ * select matched no option and silently fell back to its first option,
+ * displaying every new Priority as "Not Applicable".
+ */
+export const PRIORITY_DEFAULT_STATUS: ItemStatus = "not-yet-started";
+
 /** Badge-style colors (light bg, dark text) — for inline badges & list items */
 export const STATUS_META: Record<ItemStatus, { label: string; bg: string; text: string; border: string }> = {
   "not-applicable":  { label: "Not Applicable",  bg: "bg-gray-100",   text: "text-gray-500",  border: "border-gray-200"  },

@@ -145,6 +145,19 @@ export default function IndividualKPIPage() {
   const kpis = data?.data ?? [];
   const total = data?.total ?? kpis.length;
 
+  // When an owner filter is restored from context (or the owner sits beyond the
+  // loaded 25-user page), the id won't be in the FilterPicker's `options`, so
+  // the trigger would fall back to "All owners". Resolve the owner's name from
+  // the loaded KPI rows (the list is owner-scoped when filtered) and feed it as
+  // the picker's `selectedOption` so the applied owner's name is shown.
+  const selectedOwnerOption = useMemo(() => {
+    if (!filterOwner || users.some((u) => u.id === filterOwner)) return undefined;
+    const ou = kpis.find((k) => k.owner === filterOwner)?.owner_user;
+    return ou
+      ? userToFilterOption({ id: filterOwner, firstName: ou.firstName, lastName: ou.lastName, email: "" })
+      : undefined;
+  }, [filterOwner, users, kpis]);
+
   // Bulk delete
   const deleteKPI = useDeleteKPI();
   const bulkRestoreKPI = useBulkRestoreKPI();
@@ -374,6 +387,7 @@ export default function IndividualKPIPage() {
                     value={filterOwner}
                     onChange={(v) => { setFilterOwner(v); ctx.setFilterOwner(v); }}
                     options={users.map(userToFilterOption)}
+                    selectedOption={selectedOwnerOption}
                     onSearchChange={setOwnerSearch}
                     onLoadMore={fetchMoreOwners}
                     hasMore={ownersHasMore}

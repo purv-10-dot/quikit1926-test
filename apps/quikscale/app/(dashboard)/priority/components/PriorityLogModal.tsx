@@ -6,7 +6,7 @@ import { useUsers } from "@/lib/hooks/useUsers";
 import { useTeams } from "@/lib/hooks/useTeams";
 import type { PriorityRow } from "@/lib/types/priority";
 import { fiscalYearLabel, ALL_QUARTERS, getFiscalYear, weekDateLabel, getWeekDateRange } from "@/lib/utils/fiscal";
-import { STATUS_META, STATUS_PILL_OPTIONS, STATUS_SELECT_OPTIONS } from "@/lib/constants/status";
+import { STATUS_META, STATUS_PILL_OPTIONS } from "@/lib/constants/status";
 import { UserPicker } from "@quikit/ui";
 import { useCurrentWeek, useWeekLabels } from "@/lib/hooks/useCurrentWeek";
 import { usePastWeekFlags } from "@/lib/hooks/useFeatureFlags";
@@ -30,8 +30,6 @@ interface Props {
 
 const CURRENT_YEAR = getFiscalYear();
 const WEEK_OPTIONS = Array.from({ length: 13 }, (_, i) => i + 1);
-
-const OVERALL_STATUS_OPTIONS = STATUS_SELECT_OPTIONS;
 
 export function PriorityLogModal({ priority, onClose, onSuccess, logsOnly = false, canUpdate = true }: Props) {
   // logsOnly mode forces the weekly-log view and locks everything read-only,
@@ -63,7 +61,6 @@ export function PriorityLogModal({ priority, onClose, onSuccess, logsOnly = fals
     year: String(priority.year),
     startWeek: String(priority.startWeek ?? 1),
     endWeek: String(priority.endWeek ?? 13),
-    overallStatus: priority.overallStatus,
   });
 
   // DB-scoped fiscal years via shared hook
@@ -129,7 +126,6 @@ export function PriorityLogModal({ priority, onClose, onSuccess, logsOnly = fals
         description: form.description || undefined,
         startWeek: parseInt(form.startWeek),
         endWeek: parseInt(form.endWeek),
-        overallStatus: form.overallStatus,
         notes: tab === "notes" ? notes : undefined,
       } as any);
       onSuccess();
@@ -299,7 +295,7 @@ export function PriorityLogModal({ priority, onClose, onSuccess, logsOnly = fals
               {/* Row 3: Quarter (read-only) */}
               <div>
                 <label className="block text-xs font-medium text-gray-600 mb-1">Quarter</label>
-                <div className="grid grid-cols-2 gap-2 max-w-[50%]">
+                <div className="grid grid-cols-2 gap-4">
                   <select value={form.year} disabled
                     className="px-3 py-2 text-xs border border-gray-200 rounded-lg bg-gray-50 text-gray-500 cursor-not-allowed">
                     {yearOptions.map(y => <option key={y} value={y}>{fiscalYearLabel(y)}</option>)}
@@ -332,15 +328,6 @@ export function PriorityLogModal({ priority, onClose, onSuccess, logsOnly = fals
                   </select>
                   {errors.endWeek && <p className="text-[10px] text-red-500 mt-0.5">{errors.endWeek}</p>}
                 </div>
-              </div>
-
-              {/* Overall Status */}
-              <div>
-                <label className="block text-xs font-medium text-gray-600 mb-1">Overall Status</label>
-                <select value={form.overallStatus} onChange={e => setField("overallStatus", e.target.value)}
-                  className="w-full px-3 py-2 text-xs border border-gray-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-accent-400 bg-white">
-                  {OVERALL_STATUS_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
-                </select>
               </div>
 
               {/* Description */}

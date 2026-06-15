@@ -13,6 +13,7 @@ import { useFiscalYears } from "@/lib/hooks/useFiscalYears";
 import { useQuarterStartDates } from "@/lib/hooks/useQuarterStartDates";
 import { humanizeApiError } from "@/lib/utils/humanizeError";
 import { notify } from "@/lib/utils/notify";
+import { PRIORITY_DEFAULT_STATUS } from "@/lib/constants/status";
 
 interface Props {
   defaultYear?: number;
@@ -238,7 +239,7 @@ export function PriorityModal({ defaultYear, defaultQuarter, onClose, onSuccess 
         year: parseInt(form.year),
         startWeek: parseInt(form.startWeek),
         endWeek: parseInt(form.endWeek),
-        overallStatus: "not-started",
+        overallStatus: PRIORITY_DEFAULT_STATUS,
       } as any);
       notify.saved("Priority", "created");
       onSuccess();

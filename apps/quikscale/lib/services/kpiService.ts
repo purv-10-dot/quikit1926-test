@@ -23,6 +23,8 @@ export interface KPIResponse {
   name: string;
   description?: string;
   owner: string;
+  /** Enriched by the GET handler so list rows can render the owner's name. */
+  owner_user?: { id: string; firstName: string; lastName: string } | null;
   teamId?: string;
   parentKPIId?: string;
   quarter: string;
