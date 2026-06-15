@@ -111,20 +111,30 @@ export function AddPeopleModal({
   // Current project members — used to mark people already in this space in the
   // typeahead (disabled, "already in" badge) and to block re-adding them by
   // typed email.
+  // IMPORTANT: this query shares its cache entry with the space views
+  // (backlog / board / timeline / …) which use the SAME key and store the
+  // full member objects. Returning a reduced shape here would overwrite their
+  // data on the next refetch (e.g. our own onSuccess invalidation), blanking
+  // out the member avatars until a reload. So we return the same full shape
+  // and derive the id / email sets we need below.
   const membersQ = useQuery({
     queryKey: ["quiktrack", "project-members", projectId],
     queryFn: async () => {
       const r = await fetch(`/api/projects/${projectId}/members`);
       const j = await r.json();
-      return ((j.data?.members as Array<{ userId: string; user: { email: string } | null }>) ?? []).map(
-        (m) => ({ userId: m.userId, email: (m.user?.email ?? "").toLowerCase() }),
-      );
+      const payload = j.data as
+        | { members?: Array<{ userId: string; user: { email: string | null } | null }> }
+        | Array<{ userId: string; user: { email: string | null } | null }>
+        | null;
+      return Array.isArray(payload) ? payload : payload?.members ?? [];
     },
   });
 
   const projectMemberIds = new Set((membersQ.data ?? []).map((m) => m.userId));
   const projectMemberEmails = new Set(
-    (membersQ.data ?? []).map((m) => m.email).filter(Boolean),
+    (membersQ.data ?? [])
+      .map((m) => (m.user?.email ?? "").toLowerCase())
+      .filter(Boolean),
   );
   // Resolve a typed email back to a known org user (so we link/route them
   // correctly instead of treating them as a brand-new invite).
