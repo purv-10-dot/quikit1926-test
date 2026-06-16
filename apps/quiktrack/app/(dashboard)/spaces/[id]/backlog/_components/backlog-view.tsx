@@ -1158,6 +1158,7 @@ function IssueRow({
   onDeleted,
   isSelected,
   onToggleSelect,
+  canDelete,
 }: {
   issue: Issue;
   statuses: Status[];
@@ -1172,6 +1173,7 @@ function IssueRow({
   onDeleted: () => void;
   isSelected: boolean;
   onToggleSelect: (next: boolean) => void;
+  canDelete: boolean;
 }) {
   const meta = TYPE_META[issue.type];
   const [titleEditing, setTitleEditing] = useState(false);
@@ -1679,13 +1681,15 @@ function IssueRow({
             >
               Open
             </button>
-            <button
-              type="button"
-              onClick={openConfirm}
-              className="block w-full text-left px-3 py-1.5 text-sm text-red-600 hover:bg-red-50"
-            >
-              Delete
-            </button>
+            {canDelete && (
+              <button
+                type="button"
+                onClick={openConfirm}
+                className="block w-full text-left px-3 py-1.5 text-sm text-red-600 hover:bg-red-50"
+              >
+                Delete
+              </button>
+            )}
           </div>
         )}
       </div>
@@ -1932,6 +1936,11 @@ function SectionBody({
   density: BacklogViewSettings["density"];
 }) {
   const sentinelRef = useRef<HTMLDivElement>(null);
+  // Delete is permission-gated — hide the row's Delete action for users whose
+  // role doesn't grant Issue:delete (the API enforces it too). Cached hook, so
+  // this shares the single /api/me/... fetch with the other consumers.
+  const perms = useMyProjectPermissions(projectId);
+  const canDelete = perms.loading || perms.has("Issue", "delete");
 
   const loadMore = useCallback(
     async (initial = false) => {
@@ -2038,6 +2047,7 @@ function SectionBody({
           density={density}
           onDragStart={onDragStart}
           onOpen={onOpenIssue}
+          canDelete={canDelete}
           isSelected={selectedIds.has(i.id)}
           onToggleSelect={(next) => onToggleSelect(i.id, next)}
           onPatched={(patch) => {
@@ -3033,15 +3043,17 @@ export function BacklogView({ projectId }: { projectId: string }) {
                 </div>
               )}
             </div>
-            <button
-              type="button"
-              onClick={handleBulkDelete}
-              disabled={bulkBusy}
-              className="inline-flex items-center gap-1.5 rounded border border-red-200 bg-white px-3 py-1 text-xs text-red-600 hover:bg-red-50 disabled:opacity-60"
-            >
-              <Trash2 className="h-3.5 w-3.5" />
-              {bulkBusy ? "Working…" : "Delete"}
-            </button>
+            {(perms.loading || perms.has("Issue", "delete")) && (
+              <button
+                type="button"
+                onClick={handleBulkDelete}
+                disabled={bulkBusy}
+                className="inline-flex items-center gap-1.5 rounded border border-red-200 bg-white px-3 py-1 text-xs text-red-600 hover:bg-red-50 disabled:opacity-60"
+              >
+                <Trash2 className="h-3.5 w-3.5" />
+                {bulkBusy ? "Working…" : "Delete"}
+              </button>
+            )}
           </div>
         </div>
         );
