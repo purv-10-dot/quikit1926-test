@@ -70,6 +70,8 @@ export const GET = withOrgAuth(async ({ orgId, userId }, req) => {
       .split(",")
       .map((s) => s.trim())
       .filter(Boolean);
+    // Single PM / Project-Admin user filter (see /api/reports/role-users).
+    const roleUserId = url.searchParams.get("roleUserId") || "";
     const page = Math.max(1, parseInt(url.searchParams.get("page") ?? "1", 10) || 1);
     const pageSize = Math.min(100, Math.max(1, parseInt(url.searchParams.get("pageSize") ?? "15", 10) || 15));
     const sortBy = (url.searchParams.get("sortBy") ?? "name") as SortKey;
@@ -112,6 +114,9 @@ export const GET = withOrgAuth(async ({ orgId, userId }, req) => {
     if (filterUserIds.length > 0) {
       const set = new Set(filterUserIds);
       userIds = userIds.filter((id) => set.has(id));
+    }
+    if (roleUserId) {
+      userIds = userIds.filter((id) => id === roleUserId);
     }
 
     const members = userIds.length

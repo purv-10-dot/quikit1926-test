@@ -1,8 +1,9 @@
 "use client";
 
-import { Calendar, CalendarRange } from "lucide-react";
+import { Calendar, CalendarRange, UserCog } from "lucide-react";
 import { toDateInput, type Granularity } from "./resource-report-bits";
 import { ResourcePeoplePicker } from "./resource-people-picker";
+import { FilterDropdown } from "./filter-dropdown";
 
 interface OrgUser {
   userId: string;
@@ -20,6 +21,9 @@ export function ResourceToolbar({
   users,
   selectedUserIds,
   onSelectedUserIdsChange,
+  roleUserId,
+  onRoleUserIdChange,
+  roleUserOptions,
 }: {
   granularity: Granularity;
   onGranularityChange: (g: Granularity) => void;
@@ -29,6 +33,9 @@ export function ResourceToolbar({
   users: OrgUser[];
   selectedUserIds: string[];
   onSelectedUserIdsChange: (ids: string[]) => void;
+  roleUserId: string;
+  onRoleUserIdChange: (v: string) => void;
+  roleUserOptions: { value: string; label: string }[];
 }) {
   return (
     <div className="rounded-xl border border-gray-200 bg-white px-4 py-3 flex items-center justify-between gap-4 flex-wrap shadow-sm">
@@ -67,6 +74,15 @@ export function ResourceToolbar({
             className="pl-8 pr-2 h-8 text-sm rounded-lg border border-gray-200 bg-white text-gray-700 focus:outline-none focus:ring-2 focus:ring-blue-100 focus:border-blue-300"
           />
         </div>
+        <FilterDropdown
+          label="PM / Project Admin"
+          icon={UserCog}
+          value={roleUserId}
+          onChange={onRoleUserIdChange}
+          options={roleUserOptions}
+          searchable
+          minWidth={190}
+        />
         <ResourcePeoplePicker
           users={users}
           selectedUserIds={selectedUserIds}
