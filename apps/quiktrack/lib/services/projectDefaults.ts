@@ -1,6 +1,6 @@
 import { db } from "@/lib/db";
 import type { Prisma } from "@prisma/client";
-import { allPermissionPairs } from "@/lib/api/permissionsRegistry";
+import { allPermissionPairs, SPACE_ADMIN_ROLE_NAME } from "@/lib/api/permissionsRegistry";
 
 export const DEFAULT_STATUSES = [
   { name: "To Do", color: "#94a3b8", category: "BACKLOG", orderIndex: 0 },
@@ -18,18 +18,26 @@ export const DEFAULT_ISSUE_TYPES = [
 ];
 
 /**
- * Five starter project roles seeded on every new project. Admins can rename,
+ * Three starter project roles seeded on every new project. Admins can rename,
  * delete, or add roles per project from the User Management UI.
  *
- * Canonical grant matrices for PM / Developer / QA / Viewer are defined
- * relative to PROJECT_SHELL_VIEW — the minimum "can see the project shell"
- * set that every Layer-2 role needs (project metadata, every tab, board,
- * docs, reports, sprints/issues/comments/timesheets at view-level).
+ *   - Space Admin → full control (every valid grant). Auto-assigned to creator.
+ *   - Contributor → builds and ships: create/edit issues, comments, timesheets,
+ *                   docs, sprints. Can delete only their OWN issues/timesheets
+ *                   (enforced in the route layer, not via a flat delete grant).
+ *                   Default role for new project members.
+ *   - Viewer      → read-only.
+ *
+ * Canonical grant matrices are defined relative to PROJECT_SHELL_VIEW — the
+ * minimum "can see the project shell" set that every Layer-2 role needs
+ * (project metadata, every tab, board, docs, reports,
+ * sprints/issues/comments/timesheets at view-level).
  */
 const PROJECT_SHELL_VIEW: Array<{ resource: string; action: string }> = [
   { resource: "Project", action: "view" },
   { resource: "ProjectMember", action: "view" },
   { resource: "Board", action: "view" },
+  { resource: "GroupedKanban", action: "view" },
   { resource: "ProjectSummary", action: "view" },
   { resource: "ProjectTimeline", action: "view" },
   { resource: "ProjectBacklog", action: "view" },
@@ -37,51 +45,25 @@ const PROJECT_SHELL_VIEW: Array<{ resource: string; action: string }> = [
   { resource: "ProjectTaskTable", action: "view" },
   { resource: "Doc", action: "view" },
   { resource: "Report", action: "view" },
-  { resource: "Sprint", action: "view" },
-  { resource: "Issue", action: "view" },
-  { resource: "IssueComment", action: "view" },
   { resource: "Timesheet", action: "view" },
+  // Note: Issue / Sprint / IssueComment have no `view` grant — their visibility
+  // is membership-based, not gated by a permission (see permissionsRegistry).
 ];
 
-const DEVELOPER_GRANTS: Array<{ resource: string; action: string }> = [
+// Contributor = the former Developer + QA merged. Union of their grants is the
+// Developer set (QA was a subset minus Sprint:update). No flat Issue/Timesheet
+// delete grant — "delete own" is enforced by ownership checks in the routes.
+const CONTRIBUTOR_GRANTS: Array<{ resource: string; action: string }> = [
   ...PROJECT_SHELL_VIEW,
   { resource: "Issue", action: "create" },
   { resource: "Issue", action: "update" },
   { resource: "IssueComment", action: "create" },
-  { resource: "IssueComment", action: "update" },
   { resource: "Sprint", action: "update" },
-  { resource: "Board", action: "update" },
   { resource: "Doc", action: "create" },
   { resource: "Doc", action: "update" },
   { resource: "Timesheet", action: "create" },
-  { resource: "Timesheet", action: "update" },
-];
-
-const QA_GRANTS: Array<{ resource: string; action: string }> = [
-  ...PROJECT_SHELL_VIEW,
-  { resource: "Issue", action: "create" },
-  { resource: "Issue", action: "update" },
-  { resource: "IssueComment", action: "create" },
-  { resource: "IssueComment", action: "update" },
-  { resource: "Board", action: "update" },
-  { resource: "Doc", action: "create" },
-  { resource: "Doc", action: "update" },
-  { resource: "Timesheet", action: "create" },
-  { resource: "Timesheet", action: "update" },
-];
-
-const PM_GRANTS: Array<{ resource: string; action: string }> = [
-  ...DEVELOPER_GRANTS,
-  { resource: "Project", action: "update" },
-  { resource: "ProjectMember", action: "create" },
-  { resource: "ProjectMember", action: "update" },
-  { resource: "ProjectMember", action: "delete" },
-  { resource: "Sprint", action: "create" },
-  { resource: "Sprint", action: "delete" },
-  { resource: "Issue", action: "delete" },
-  { resource: "IssueComment", action: "delete" },
-  { resource: "Doc", action: "delete" },
-  { resource: "Timesheet", action: "delete" },
+  // No IssueComment/Timesheet update grant — those edits are author/owner-only
+  // (ownership checks in the routes), not permission grants.
 ];
 
 const VIEWER_GRANTS: Array<{ resource: string; action: string }> = [
@@ -90,8 +72,9 @@ const VIEWER_GRANTS: Array<{ resource: string; action: string }> = [
 
 /* ───────────────────── Field-level seed per role ───────────────────── */
 // Rows are added only where a role's field deviates from the default
-// (editable). Project Admin / PM stay editable across the board — no rows
-// needed. Developer / QA get readonly locks on fields they shouldn't change.
+// (editable). Space Admin stays editable across the board — no rows needed.
+// Contributor gets readonly locks on fields it shouldn't change (the lighter
+// former-Developer set).
 
 type FieldRow = {
   entity: string;
@@ -99,27 +82,11 @@ type FieldRow = {
   level: "hidden" | "readonly" | "editable" | "required";
 };
 
-const DEVELOPER_FIELD_PERMS: FieldRow[] = [
+const CONTRIBUTOR_FIELD_PERMS: FieldRow[] = [
   { entity: "Issue", field: "type", level: "readonly" },
   { entity: "Issue", field: "priority", level: "readonly" },
   { entity: "Issue", field: "reporter", level: "readonly" },
   { entity: "Issue", field: "dueDate", level: "readonly" },
-  { entity: "Issue", field: "parent", level: "readonly" },
-  { entity: "Issue", field: "sprint", level: "readonly" },
-  { entity: "Timesheet", field: "billable", level: "readonly" },
-];
-
-const QA_FIELD_PERMS: FieldRow[] = [
-  { entity: "Issue", field: "title", level: "readonly" },
-  { entity: "Issue", field: "description", level: "readonly" },
-  { entity: "Issue", field: "type", level: "readonly" },
-  { entity: "Issue", field: "priority", level: "readonly" },
-  { entity: "Issue", field: "assignee", level: "readonly" },
-  { entity: "Issue", field: "reporter", level: "readonly" },
-  { entity: "Issue", field: "dueDate", level: "readonly" },
-  { entity: "Issue", field: "startDate", level: "readonly" },
-  { entity: "Issue", field: "storyPoints", level: "readonly" },
-  { entity: "Issue", field: "originalEstimate", level: "readonly" },
   { entity: "Issue", field: "parent", level: "readonly" },
   { entity: "Issue", field: "sprint", level: "readonly" },
   { entity: "Timesheet", field: "billable", level: "readonly" },
@@ -128,10 +95,8 @@ const QA_FIELD_PERMS: FieldRow[] = [
 const VIEWER_FIELD_PERMS: FieldRow[] = [];
 
 export const STARTER_FIELD_PERMS: Record<string, FieldRow[]> = {
-  "Project Admin": [],
-  PM: [],
-  Developer: DEVELOPER_FIELD_PERMS,
-  QA: QA_FIELD_PERMS,
+  "Space Admin": [],
+  Contributor: CONTRIBUTOR_FIELD_PERMS,
   Viewer: VIEWER_FIELD_PERMS,
 };
 
@@ -144,28 +109,17 @@ interface StarterRole {
 
 export const STARTER_PROJECT_ROLES: StarterRole[] = [
   {
-    name: "Project Admin",
-    description: "Full control of this project. Auto-assigned to the creator.",
+    name: SPACE_ADMIN_ROLE_NAME,
+    description: "Full control of this space. Auto-assigned to the creator.",
     isDefault: false,
     grants: [], // populated below — every valid pair
   },
   {
-    name: "Developer",
-    description: "Builds and ships issues. Default role for new project members.",
+    name: "Contributor",
+    description:
+      "Builds and ships issues. Can delete their own issues and timesheets. Default role for new space members.",
     isDefault: true,
-    grants: DEVELOPER_GRANTS,
-  },
-  {
-    name: "QA",
-    description: "Tests issues and files comments. Limited write access.",
-    isDefault: false,
-    grants: QA_GRANTS,
-  },
-  {
-    name: "PM",
-    description: "Plans sprints and manages project membership.",
-    isDefault: false,
-    grants: PM_GRANTS,
+    grants: CONTRIBUTOR_GRANTS,
   },
   {
     name: "Viewer",
@@ -190,7 +144,7 @@ export async function seedProjectDefaults(
     skipDuplicates: true,
   });
 
-  // Seed the 5 starter project roles + their grants. Idempotent: if a role
+  // Seed the 3 starter project roles + their grants. Idempotent: if a role
   // with the same name already exists for this project, skip both the role
   // create AND the grants fill (don't clobber admin edits).
   const adminAllPairs = allPermissionPairs();
@@ -213,7 +167,7 @@ export async function seedProjectDefaults(
       select: { id: true },
     });
 
-    const grants = tmpl.name === "Project Admin" ? adminAllPairs : tmpl.grants;
+    const grants = tmpl.name === SPACE_ADMIN_ROLE_NAME ? adminAllPairs : tmpl.grants;
     if (grants.length > 0) {
       await tx.qtProjectRolePermission.createMany({
         data: grants.map((g) => ({
@@ -245,7 +199,7 @@ export async function seedProjectDefaults(
 export async function getStarterProjectRoleId(
   tx: Prisma.TransactionClient,
   projectId: string,
-  roleName: "Project Admin" | "Developer" | "QA" | "PM" | "Viewer",
+  roleName: "Space Admin" | "Contributor" | "Viewer",
 ): Promise<string | null> {
   const r = await tx.qtProjectRole.findUnique({
     where: { projectId_name: { projectId, name: roleName } },

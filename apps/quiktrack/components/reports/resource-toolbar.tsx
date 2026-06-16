@@ -75,7 +75,7 @@ export function ResourceToolbar({
           />
         </div>
         <FilterDropdown
-          label="PM / Project Admin"
+          label="Space Admin"
           icon={UserCog}
           value={roleUserId}
           onChange={onRoleUserIdChange}

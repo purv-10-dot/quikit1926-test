@@ -93,7 +93,7 @@ export const GET = withOrgAuth(async ({ orgId, userId }, req) => {
   }
 
   // "Department" in this report is sourced from QtProjectRole names (e.g.
-  // Developer, PM, QA, Viewer, Project Admin). Each project has its own copy
+  // Space Admin, Contributor, Viewer). Each project has its own copy
   // of these roles; we group by role NAME so the same label across projects
   // collapses to one dropdown entry. The filter param is still called
   // `teamIds` for stability and carries the role-name slugs.

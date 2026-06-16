@@ -5,7 +5,6 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Plus, Shield, ShieldCheck, Trash2 } from "lucide-react";
 import { PermissionMatrix } from "./permission-matrix";
 import { FieldPermissionMatrix } from "./field-permission-matrix";
-import { NavigationPanel } from "./navigation-panel";
 import { AddRoleModal } from "./add-role-modal";
 import { roleDisplayName } from "./role-name";
 
@@ -21,7 +20,7 @@ interface AppRole {
 export function RoleManagementTab() {
   const qc = useQueryClient();
   const [selectedRoleId, setSelectedRoleId] = useState<string | null>(null);
-  const [subTab, setSubTab] = useState<"fields" | "entities" | "navigation">("fields");
+  const [subTab, setSubTab] = useState<"fields" | "entities">("fields");
   const [addOpen, setAddOpen] = useState(false);
 
   const rolesQ = useQuery({
@@ -154,7 +153,6 @@ export function RoleManagementTab() {
                 [
                   { k: "fields" as const, label: "Fields" },
                   { k: "entities" as const, label: "Entities" },
-                  { k: "navigation" as const, label: "Navigation" },
                 ]
               ).map(({ k, label }) => (
                 <button
@@ -183,22 +181,19 @@ export function RoleManagementTab() {
                     <span className="font-semibold">Editable</span>, or{" "}
                     <span className="font-semibold">Required</span>. Fields you don&apos;t customise behave as Editable.
                   </>
-                ) : subTab === "entities" ? (
+                ) : (
                   <>
                     Tick an action to grant it. <span className="font-semibold">Module-level</span> ticks select all leaves under that module.
+                    A <span className="font-semibold">view</span> grant also shows that item in the sidebar.
                   </>
-                ) : (
-                  <>Toggle which sidebar items this role can see.</>
                 )}
               </span>
             </div>
 
             {subTab === "fields" ? (
               <FieldPermissionMatrix roleId={selectedRole.id} />
-            ) : subTab === "entities" ? (
-              <PermissionMatrix roleId={selectedRole.id} />
             ) : (
-              <NavigationPanel roleId={selectedRole.id} />
+              <PermissionMatrix roleId={selectedRole.id} />
             )}
             </>
             )}

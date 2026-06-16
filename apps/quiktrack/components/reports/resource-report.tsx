@@ -105,7 +105,7 @@ export function ResourceReport() {
     },
   });
 
-  // Users holding a Project Admin / PM role — options for the role filter.
+  // Users holding a Space Admin role — options for the role filter.
   const roleUsersQ = useQuery({
     queryKey: ["quiktrack", "reports-role-users"],
     queryFn: async (): Promise<{ id: string; name: string }[]> => {

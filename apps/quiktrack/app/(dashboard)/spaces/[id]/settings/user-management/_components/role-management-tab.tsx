@@ -2,12 +2,12 @@
 
 import { useEffect, useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { Plus, Shield, Trash2 } from "lucide-react";
+import { Plus, Shield, ShieldCheck, Trash2 } from "lucide-react";
 import { ProjectPermissionMatrix } from "./permission-matrix";
-import { ProjectNavigationPanel } from "./navigation-panel";
 import { AddRoleModal } from "./add-role-modal";
 import { FieldPermissionMatrix } from "@/app/(dashboard)/settings/user-management/_components/field-permission-matrix";
 import { useMyProjectPermissions } from "@/lib/hooks/useMyProjectPermissions";
+import { SPACE_ADMIN_ROLE_NAME } from "@/lib/api/permissionsRegistry";
 
 interface ProjectRole {
   id: string;
@@ -20,7 +20,7 @@ interface ProjectRole {
 export function ProjectRoleManagementTab({ projectId }: { projectId: string }) {
   const qc = useQueryClient();
   const [selectedRoleId, setSelectedRoleId] = useState<string | null>(null);
-  const [subTab, setSubTab] = useState<"fields" | "entities" | "navigation">("fields");
+  const [subTab, setSubTab] = useState<"fields" | "entities">("fields");
   const [addOpen, setAddOpen] = useState(false);
   const projectPerms = useMyProjectPermissions(projectId);
   // Only app-wide admins (tenant admin / super admin) can edit project roles.
@@ -148,12 +148,28 @@ export function ProjectRoleManagementTab({ projectId }: { projectId: string }) {
               <span className="text-xs text-gray-500">· {projectName}</span>
             </div>
 
+            {selectedRole.name === SPACE_ADMIN_ROLE_NAME ? (
+              <div className="flex flex-col items-center justify-center text-center rounded-xl border border-emerald-100 bg-gradient-to-b from-emerald-50 to-white px-8 py-12">
+                <div className="flex h-14 w-14 items-center justify-center rounded-full bg-emerald-100">
+                  <ShieldCheck className="h-7 w-7 text-emerald-600" />
+                </div>
+                <h4 className="mt-4 text-lg font-semibold text-gray-900">
+                  Full access within this space
+                </h4>
+                <p className="mt-2 max-w-md text-sm text-gray-600">
+                  The <span className="font-medium text-gray-800">Space Admin</span> role has full
+                  control of <span className="font-medium text-gray-800">{projectName}</span> — every
+                  field and entity, just like an app admin but scoped to this space. There&apos;s
+                  nothing to configure here; its permissions can&apos;t be restricted.
+                </p>
+              </div>
+            ) : (
+            <>
             <nav className="flex gap-6 border-b border-gray-200">
               {(
                 [
                   { k: "fields" as const, label: "Fields" },
                   { k: "entities" as const, label: "Entities" },
-                  { k: "navigation" as const, label: "Navigation" },
                 ]
               ).map(({ k, label }) => (
                 <button
@@ -174,9 +190,10 @@ export function ProjectRoleManagementTab({ projectId }: { projectId: string }) {
             <div className="bg-gray-900 text-white rounded-md px-4 py-2.5 flex items-start gap-2 text-xs">
               <span className="font-semibold">ⓘ</span>
               <span>
-                Project roles apply only inside <span className="font-semibold">this project</span>.
-                A user&apos;s effective access is the union of their app-wide role grants and the
-                grants of whichever project role they hold here.
+                Project roles apply only inside <span className="font-semibold">this project</span>, and
+                they <span className="font-semibold">override</span> a user&apos;s app-wide role here — what you
+                set below is exactly what members holding this role can do in this space (app admins always
+                have full access).
               </span>
             </div>
 
@@ -197,12 +214,12 @@ export function ProjectRoleManagementTab({ projectId }: { projectId: string }) {
                   endpoint={`/api/projects/${projectId}/roles/${selectedRole.id}/field-permissions`}
                   queryKey={["quiktrack", "project-role-field-perms", projectId, selectedRole.id]}
                 />
-              ) : subTab === "entities" ? (
-                <ProjectPermissionMatrix projectId={projectId} roleId={selectedRole.id} />
               ) : (
-                <ProjectNavigationPanel projectId={projectId} roleId={selectedRole.id} />
+                <ProjectPermissionMatrix projectId={projectId} roleId={selectedRole.id} />
               )}
             </fieldset>
+            </>
+            )}
           </div>
         ) : (
           <div className="flex items-center justify-center h-full text-sm text-gray-500">

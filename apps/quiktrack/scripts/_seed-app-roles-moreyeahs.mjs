@@ -34,10 +34,10 @@ await c.query(
 // Grant all (resource, action) pairs to admin. We bulk-insert with a static list
 // covering the resources defined in lib/api/permissionsRegistry.ts.
 const RESOURCES = [
-  "Project", "ProjectMember", "Board", "ProjectSummary", "ProjectTimeline",
-  "ProjectBacklog", "ProjectList", "ProjectTaskTable", "Doc", "Report",
-  "Sprint", "Issue", "IssueComment", "Timesheet", "Notification",
-  "Filter", "Team", "Dashboard", "User", "Role", "Settings",
+  "Project", "ProjectMember", "Board", "GroupedKanban", "ProjectSummary",
+  "ProjectTimeline", "ProjectBacklog", "ProjectList", "ProjectTaskTable",
+  "Doc", "Report", "Sprint", "Issue", "IssueComment", "Timesheet",
+  "Notification", "Filter", "Team", "Dashboard", "User", "Role", "Settings",
 ];
 const ACTIONS = ["view", "create", "update", "delete"];
 
@@ -51,7 +51,8 @@ for (const r of RESOURCES) {
   }
 }
 
-// Member: view everywhere + update on Issue/Comment/Timesheet/Sprint.
+// Member: view everywhere + update on Issue/Sprint. Comment + timesheet edits
+// are author/owner-only (ownership checks, not grants), so they're not seeded.
 for (const r of RESOURCES) {
   await c.query(
     `INSERT INTO "app_quiktrack"."RolePermission" (id, "roleId", resource, action)
@@ -59,7 +60,7 @@ for (const r of RESOURCES) {
     [cuid(), memberId, r],
   );
 }
-for (const r of ["Issue", "IssueComment", "Timesheet", "Sprint"]) {
+for (const r of ["Issue", "Sprint"]) {
   await c.query(
     `INSERT INTO "app_quiktrack"."RolePermission" (id, "roleId", resource, action)
      VALUES ($1, $2, $3, 'update') ON CONFLICT DO NOTHING`,

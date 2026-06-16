@@ -15,14 +15,13 @@ import {
  * a single user, change their role.
  */
 
-const pairSchema = z
-  .object({
-    resource: z.string().refine(isResource, "Unknown resource"),
-    action: z.string().refine(isAction, "Unknown action"),
-  })
-  .refine((g) => isValidPermissionPair(g.resource, g.action), {
-    message: "(resource, action) pair is not valid for this leaf",
-  });
+// Accept any {resource, action} strings; invalid/stale pairs are filtered in
+// the handler rather than rejecting the whole save (a Save then heals data left
+// behind when a leaf's actions were trimmed).
+const pairSchema = z.object({
+  resource: z.string(),
+  action: z.string(),
+});
 
 const putBodySchema = z.object({
   extras: z.array(pairSchema),
@@ -143,6 +142,9 @@ export async function PUT(req: NextRequest, { params }: { params: { id: string }
     const desired = parsed.data.extras.filter((p) => {
       const k = `${p.resource}:${p.action}`;
       if (seen.has(k)) return false;
+      // Drop unknown / stale pairs instead of failing the whole save.
+      if (!isResource(p.resource) || !isAction(p.action)) return false;
+      if (!isValidPermissionPair(p.resource, p.action)) return false;
       seen.add(k);
       return true;
     });

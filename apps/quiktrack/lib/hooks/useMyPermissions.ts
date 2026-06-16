@@ -8,7 +8,7 @@
  * components sharing this hook produce one network call.
  */
 import { useQuery } from "@tanstack/react-query";
-console.log("useMyPermissions");
+
 interface MyPermissionsResponse {
   success: boolean;
   data: {

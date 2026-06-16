@@ -182,15 +182,15 @@ export async function loadProjectAccess(
 }
 
 /**
- * Permission gate for write operations on task groups (create/rename/recolor/
- * delete/reorder/move-task). Tenant admins and project admins/members may
- * write; VIEWER may not.
+ * Write gate for task-group operations (create/rename/recolor/delete/reorder/
+ * move-task). Group management is open to any project member — the caller has
+ * already verified membership via `loadProjectAccess` (non-members get 404), so
+ * there is no additional permission to check.
  */
 export async function canWriteGroups(
-  access: LoadedProjectAccess,
-  userId: string,
-  orgId: string,
+  _access: LoadedProjectAccess,
+  _userId: string,
+  _orgId: string,
 ): Promise<boolean> {
-  if (access.isTenantAdmin) return true;
-  return userCanInProject(userId, orgId, access.projectId, "Board", "update");
+  return true;
 }

@@ -194,6 +194,24 @@ function AddUserDrawer({ onClose }: { onClose: () => void }) {
     }
   }
 
+  const roles = rolesQ.data ?? [];
+  const hits = searchQ.data ?? [];
+
+  // Admins have full access to every project, so the project picker is
+  // meaningless for them — hide it and clear any prior selection so we never
+  // send stale project assignments in the payload. This effect MUST stay above
+  // the early `createdTempPassword` return below: the success view would
+  // otherwise skip it and React throws "rendered fewer hooks than expected".
+  const selectedRole = roles.find((r) => r.id === appRoleId) ?? null;
+  const isAdminSelected =
+    !!selectedRole && selectedRole.isSystem === true && selectedRole.name === "admin";
+  useEffect(() => {
+    if (isAdminSelected) {
+      setProjectIds([]);
+      setProjectRoles({});
+    }
+  }, [isAdminSelected]);
+
   // ── Success view — one-time plaintext temp-password reveal ──
   if (createdTempPassword) {
     return (
@@ -245,21 +263,6 @@ function AddUserDrawer({ onClose }: { onClose: () => void }) {
       invitationMethod === "sso" ||
       password.length === 0 ||
       password.length >= 8);
-
-  const roles = rolesQ.data ?? [];
-  const hits = searchQ.data ?? [];
-
-  // Admins have full access to every project, so the project picker is
-  // meaningless for them — hide it and clear any prior selection so we never
-  // send stale project assignments in the payload.
-  const selectedRole = roles.find((r) => r.id === appRoleId) ?? null;
-  const isAdminSelected = !!selectedRole && selectedRole.isSystem === true && selectedRole.name === "admin";
-  useEffect(() => {
-    if (isAdminSelected) {
-      setProjectIds([]);
-      setProjectRoles({});
-    }
-  }, [isAdminSelected]);
 
   return (
     <RightPanel

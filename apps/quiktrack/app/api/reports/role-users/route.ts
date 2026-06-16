@@ -4,12 +4,15 @@ import { withOrgAuth } from "@/lib/api/withOrgAuth";
 import { hasAdminAccess } from "@/lib/api/permissions";
 
 /**
- * Users who hold a "Project Admin" or "PM" project role across the projects the
- * caller can access. Powers the role-scoped user filter on the Reports pages
+ * Users who hold a "Space Admin" project role across the projects the caller
+ * can access. Powers the role-scoped user filter on the Reports pages
  * (Project / Resource / Executive). Project roles are per-project, so the same
  * person may hold the role in several projects — we return each user once.
+ *
+ * Legacy names ("Project Admin" / "PM") are kept in the match list so spaces
+ * not yet migrated to the merged role still surface their managers.
  */
-const ROLE_NAMES = ["Project Admin", "PM"];
+const ROLE_NAMES = ["Space Admin", "Project Admin", "PM"];
 
 export const GET = withOrgAuth(async ({ orgId, userId }, _req) => {
   // Admins see all org projects; everyone else only their memberships.

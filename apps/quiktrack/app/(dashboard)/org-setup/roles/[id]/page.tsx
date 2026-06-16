@@ -3,7 +3,6 @@
 import { use } from "react";
 import { Card } from "@quikit/ui";
 import { RolePermissionMatrix } from "./_components/role-permission-matrix";
-import { RoleNavigationPanel } from "./_components/role-navigation-panel";
 import { RoleMembersPanel } from "./_components/role-members-panel";
 
 export default function RoleEditorPage({
@@ -23,10 +22,6 @@ export default function RoleEditorPage({
       <Card className="p-4">
         <h2 className="text-base font-semibold mb-2">Permissions</h2>
         <RolePermissionMatrix roleId={roleId} />
-      </Card>
-      <Card className="p-4">
-        <h2 className="text-base font-semibold mb-2">Navigation</h2>
-        <RoleNavigationPanel roleId={roleId} />
       </Card>
       <Card className="p-4">
         <h2 className="text-base font-semibold mb-2">Members</h2>

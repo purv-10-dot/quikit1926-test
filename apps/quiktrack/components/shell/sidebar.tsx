@@ -302,11 +302,6 @@ export function Sidebar() {
             expandable
             expanded={dashboardsOpen}
             onToggle={() => setDashboardsOpen((v) => !v)}
-            trailing={
-              <Plus
-                className="h-3.5 w-3.5 text-gray-400 hover:text-gray-700"
-              />
-            }
           />
           )}
           {canSee("dashboards") && dashboardsOpen && (

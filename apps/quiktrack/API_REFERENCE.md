@@ -190,7 +190,7 @@ List projects visible to caller.
 | Body | `{ projectKey, name, description?, projectType?, icon?, color?, startDate?, endDate?, leadUserId? }` |
 | Response | `{ success: true, data: project }` (201) |
 | Errors | `409` if `projectKey` duplicate. |
-| Side effects | Seeds 5 default statuses, 4 issue types, 5 starter project roles, default task group. |
+| Side effects | Seeds 5 default statuses, 4 issue types, 3 starter project roles, default task group. |
 
 ## 5.3 `GET /api/projects/[id]`
 | Auth | `withProjectAccess` |

@@ -359,7 +359,14 @@ export const DELETE = withOrgAuth<{ id: string }>(
       : "cascade";
     const issue = await db.qtIssue.findFirst({
       where: { id: params.id, orgId: orgId, isDeleted: false },
-      select: { id: true, projectId: true, type: true, parentId: true },
+      select: {
+        id: true,
+        projectId: true,
+        type: true,
+        parentId: true,
+        reporterId: true,
+        createdBy: true,
+      },
     });
     if (!issue) {
       return NextResponse.json({ success: false, error: "Not found" }, { status: 404 });
@@ -373,7 +380,19 @@ export const DELETE = withOrgAuth<{ id: string }>(
       if (!member) {
         return NextResponse.json({ success: false, error: "Forbidden" }, { status: 403 });
       }
-      if (!(await userCanInProject(userId, orgId, issue.projectId, "Issue", "delete"))) {
+      // A full Issue:delete grant (Space Admin / custom roles) deletes any
+      // issue in the space. Without it, Contributors may delete only issues
+      // they own — i.e. ones they reported or created.
+      const canDeleteAny = await userCanInProject(
+        userId,
+        orgId,
+        issue.projectId,
+        "Issue",
+        "delete",
+      );
+      const ownsIssue =
+        issue.reporterId === userId || issue.createdBy === userId;
+      if (!canDeleteAny && !ownsIssue) {
         return forbidden();
       }
     }
