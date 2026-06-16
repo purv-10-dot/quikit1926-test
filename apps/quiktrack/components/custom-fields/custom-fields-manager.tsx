@@ -73,11 +73,7 @@ export function CustomFieldsManager({ scope, projectId }: Props) {
           <h1 className="text-xl font-semibold text-gray-900">
             {scope === "global" ? "Global fields" : "Fields"}
           </h1>
-          <p className="text-sm text-gray-500 mt-0.5">
-            {scope === "global"
-              ? "Custom fields that appear on issues across every space."
-              : "Custom fields for this space. Global fields are managed at the org level and shown read-only here."}
-          </p>
+         
         </div>
         <button
           type="button"
