@@ -65,6 +65,27 @@ export const GET = withOrgAuth(async ({ orgId, userId }, req) => {
   const customFilters = parseCustomFilters(url.searchParams.get("customFilters"));
   const customFilterWhere = customFiltersToWhere(customFilters);
 
+  // assigneeId supports four shapes, mirroring sprintId:
+  //   "null"            → unassigned only
+  //   "id"              → single assignee
+  //   "id1,id2,id3"     → IN-list (multi-assignee filter)
+  //   "null,id1,id2"    → unassigned OR any of the listed assignees
+  // The clause is nested inside the top-level AND (below) rather than spread
+  // directly, so its OR (mixed unassigned + ids case) can't collide with the
+  // search OR.
+  const assigneeClause: Prisma.QtIssueWhereInput | null = (() => {
+    if (!filterAssigneeId) return null;
+    const parts = filterAssigneeId.split(",").map((s) => s.trim()).filter(Boolean);
+    if (parts.length === 0) return null;
+    const wantsUnassigned = parts.includes("null");
+    const ids = parts.filter((p) => p !== "null");
+    if (wantsUnassigned && ids.length)
+      return { OR: [{ assigneeId: null }, { assigneeId: { in: ids } }] };
+    if (wantsUnassigned) return { assigneeId: null };
+    if (ids.length === 1) return { assigneeId: ids[0] };
+    return { assigneeId: { in: ids } };
+  })();
+
   // Two pagination modes share this route:
   //   - cursor mode (board/backlog): `cursor` + `limit`
   //   - offset mode (list view):     `page` + `pageSize`
@@ -138,11 +159,6 @@ export const GET = withOrgAuth(async ({ orgId, userId }, req) => {
       : filterEpicId
         ? { epicId: filterEpicId }
         : {}),
-    ...(filterAssigneeId === "null"
-      ? { assigneeId: null }
-      : filterAssigneeId
-        ? { assigneeId: filterAssigneeId }
-        : {}),
     ...(filterPriority ? { priority: filterPriority } : {}),
     ...(search
       ? {
@@ -153,7 +169,9 @@ export const GET = withOrgAuth(async ({ orgId, userId }, req) => {
           ],
         }
       : {}),
-    ...(customFilterWhere.length ? { AND: customFilterWhere } : {}),
+    ...(customFilterWhere.length || assigneeClause
+      ? { AND: [...customFilterWhere, ...(assigneeClause ? [assigneeClause] : [])] }
+      : {}),
   };
 
   // Build pagination args separately — inlining a ternary spread confuses TS

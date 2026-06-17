@@ -9,6 +9,7 @@ import type { MentionItem } from "@/components/editor/mention";
 import { SkeletonList } from "@/components/skeleton";
 import { useApiData } from "@/lib/hooks/useApiData";
 import { useMyProjectPermissions } from "@/lib/hooks/useMyProjectPermissions";
+import { parseClockToHours, formatHoursAsClock } from "@/lib/utils/timesheetPeriod";
 
 type Tab = "all" | "comments" | "history" | "worklog";
 
@@ -87,33 +88,6 @@ function relativeTime(iso: string): string {
   if (day === 1) return "yesterday";
   if (day < 30) return `${day} day${day === 1 ? "" : "s"} ago`;
   return new Date(iso).toLocaleDateString();
-}
-
-/**
- * Parses Jira-style "2w 4d 6h 45m" duration strings into hours.
- * Returns null when the string contains nothing parseable.
- *
- * Defaults: 1w = 5 working days, 1d = 8 hours.
- */
-export function parseDurationToHours(
-  input: string,
-  opts: { hoursPerDay?: number; daysPerWeek?: number } = {},
-): number | null {
-  const hoursPerDay = opts.hoursPerDay ?? 8;
-  const daysPerWeek = opts.daysPerWeek ?? 5;
-  let total = 0;
-  let matched = false;
-  // Match each unit token (case-insensitive). Unknown units are ignored.
-  for (const m of input.matchAll(/(\d+(?:\.\d+)?)\s*([wdhm])/gi)) {
-    matched = true;
-    const value = Number(m[1]);
-    const unit = m[2]!.toLowerCase();
-    if (unit === "w") total += value * daysPerWeek * hoursPerDay;
-    else if (unit === "d") total += value * hoursPerDay;
-    else if (unit === "h") total += value;
-    else if (unit === "m") total += value / 60;
-  }
-  return matched ? total : null;
 }
 
 function formatHours(hours: number): string {
@@ -559,16 +533,18 @@ function LogTimeModal({
   onClose: () => void;
   onLogged: () => void;
 }) {
-  const [spent, setSpent] = useState("");
+  // Clock-style HH:MM fields. "Time spent" defaults to a real "00:00" value;
+  // "Time remaining" is optional so it starts empty.
+  const [spent, setSpent] = useState("00:00");
   const [remaining, setRemaining] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   async function save() {
     setError(null);
-    const hours = parseDurationToHours(spent);
+    const hours = parseClockToHours(spent);
     if (hours === null || hours <= 0) {
-      setError("Enter a valid duration (e.g. 2w 4d 6h 45m)");
+      setError("Enter a valid time (e.g. 01:30, or 1.5 for 1h 30m)");
       return;
     }
     setSubmitting(true);
@@ -615,8 +591,17 @@ function LogTimeModal({
               autoFocus
               value={spent}
               onChange={(e) => setSpent(e.target.value)}
-              placeholder="2w 4d 6h 45m"
-              className="w-full h-9 px-3 text-sm border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+              onFocus={(e) => e.currentTarget.select()}
+              onBlur={() => {
+                // Snap to HH:MM on blur: "1" → "01:00", "1.5" → "01:30".
+                // Unparseable input falls back to "00:00".
+                const h = parseClockToHours(spent);
+                setSpent(h !== null && h > 0 ? formatHoursAsClock(h) : "00:00");
+              }}
+              inputMode="decimal"
+              className={`w-full h-9 px-3 text-sm tabular-nums tracking-wide border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 ${
+                spent === "00:00" ? "text-gray-400" : "text-gray-900"
+              }`}
             />
           </label>
           <label className="block">
@@ -627,18 +612,21 @@ function LogTimeModal({
             <input
               value={remaining}
               onChange={(e) => setRemaining(e.target.value)}
+              onFocus={(e) => e.currentTarget.select()}
+              onBlur={() => {
+                // Optional: leave blank when empty, otherwise normalize to HH:MM.
+                const h = parseClockToHours(remaining);
+                setRemaining(h !== null && h > 0 ? formatHoursAsClock(h) : "");
+              }}
+              inputMode="decimal"
               placeholder="optional"
-              className="w-full h-9 px-3 text-sm border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+              className="w-full h-9 px-3 text-sm tabular-nums tracking-wide text-gray-900 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
             />
           </label>
         </div>
-        <ul className="mt-3 text-xs text-gray-600 space-y-0.5 pl-1">
-          <li>Use the format: 2w 4d 6h 45m</li>
-          <li className="ml-3">w = weeks</li>
-          <li className="ml-3">d = days</li>
-          <li className="ml-3">h = hours</li>
-          <li className="ml-3">m = minutes</li>
-        </ul>
+        <p className="mt-3 text-xs text-gray-600 pl-1">
+          Format HH:MM. Type 1 for 01:00, 1.5 for 01:30, or enter 01:30 directly.
+        </p>
         {error && <div className="mt-2 text-xs text-red-600">{error}</div>}
         <div className="mt-4 flex items-center justify-end gap-2">
           <button
@@ -651,7 +639,7 @@ function LogTimeModal({
           <button
             type="button"
             onClick={() => void save()}
-            disabled={submitting || !spent.trim()}
+            disabled={submitting || (parseClockToHours(spent) ?? 0) <= 0}
             className="h-8 px-3 text-sm font-medium text-white bg-blue-600 rounded hover:bg-blue-700 disabled:bg-gray-200 disabled:text-gray-500"
           >
             Save

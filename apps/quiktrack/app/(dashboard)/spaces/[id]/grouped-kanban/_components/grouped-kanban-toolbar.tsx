@@ -9,6 +9,7 @@ import type {
 } from "../_types";
 import { GROUP_BY_OPTIONS, type GroupByMode } from "../_lib/field-grouping";
 import { FilterSelect, type FilterSelectOption } from "./toolbar/filter-select";
+import { FilterMultiSelect } from "./toolbar/filter-multi-select";
 
 interface ToolbarProps {
   filters: GroupedBoardFilters;
@@ -74,7 +75,6 @@ export function GroupedKanbanToolbar({
 
   const assigneeOptions = useMemo<FilterSelectOption[]>(() => {
     const base: FilterSelectOption[] = [
-      { value: "", label: "Any assignee", muted: true },
       { value: "null", label: "Unassigned", muted: true },
     ];
     const memberOpts = members
@@ -137,11 +137,13 @@ export function GroupedKanbanToolbar({
         width={240}
       />
 
-      <FilterSelect
-        value={filters.assigneeId}
-        onChange={(v) => patch({ assigneeId: v })}
+      <FilterMultiSelect
+        values={filters.assigneeId ? filters.assigneeId.split(",").filter(Boolean) : []}
+        onChange={(vals) => patch({ assigneeId: vals.join(",") })}
         options={assigneeOptions}
         placeholder="Any assignee"
+        summaryNoun="people"
+        searchable
         width={220}
       />
 

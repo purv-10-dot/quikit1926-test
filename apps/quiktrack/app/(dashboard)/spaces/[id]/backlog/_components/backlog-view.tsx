@@ -20,6 +20,7 @@ import {
   FilterSelect,
   type FilterSelectOption,
 } from "../../grouped-kanban/_components/toolbar/filter-select";
+import { FilterMultiSelect } from "../../grouped-kanban/_components/toolbar/filter-multi-select";
 import {
   Search,
   Filter,
@@ -2172,7 +2173,10 @@ export function BacklogView({ projectId }: { projectId: string }) {
   // the API so we don't fire a request per keystroke.
   const [appliedSearch, setAppliedSearch] = useState("");
   const [filterStatusId, setFilterStatusId] = useState("");
-  const [filterAssigneeId, setFilterAssigneeId] = useState("");
+  // Multi-select assignee filter. Empty = Any. The special value "null" means
+  // Unassigned and may be combined with real assignee ids. Serialized to a
+  // comma-separated `assigneeId` query param the issues API expands to an IN/OR.
+  const [filterAssigneeIds, setFilterAssigneeIds] = useState<string[]>([]);
   const [filterType, setFilterType] = useState("");
   const [filterPriority, setFilterPriority] = useState("");
   const [filterOpen, setFilterOpen] = useState(false);
@@ -2227,11 +2231,13 @@ export function BacklogView({ projectId }: { projectId: string }) {
     () => ({
       search: appliedSearch,
       statusId: filterStatusId,
-      assigneeId: filterAssigneeId,
+      // Joined here so SectionBody keeps its simple `assigneeId: string` shape;
+      // the API splits it back into an IN/OR clause.
+      assigneeId: filterAssigneeIds.join(","),
       type: filterType,
       priority: filterPriority,
     }),
-    [appliedSearch, filterStatusId, filterAssigneeId, filterType, filterPriority],
+    [appliedSearch, filterStatusId, filterAssigneeIds, filterType, filterPriority],
   );
 
   // Header-checkbox state for a section: returns the all/some flags + a toggle
@@ -2267,7 +2273,7 @@ export function BacklogView({ projectId }: { projectId: string }) {
   // limit=1 to keep the payload tiny — only the `total` field matters here.
   useEffect(() => {
     const hasActive =
-      Boolean(appliedSearch || filterStatusId || filterAssigneeId || filterType || filterPriority);
+      Boolean(appliedSearch || filterStatusId || filterAssigneeIds.length || filterType || filterPriority);
     if (!hasActive) {
       setFilteredCounts({});
       return;
@@ -2287,7 +2293,7 @@ export function BacklogView({ projectId }: { projectId: string }) {
         });
         if (appliedSearch) params.set("search", appliedSearch);
         if (filterStatusId) params.set("statusId", filterStatusId);
-        if (filterAssigneeId) params.set("assigneeId", filterAssigneeId);
+        if (filterAssigneeIds.length) params.set("assigneeId", filterAssigneeIds.join(","));
         if (filterType) params.set("type", filterType);
         if (filterPriority) params.set("priority", filterPriority);
         return fetch(`/api/issues?${params.toString()}`)
@@ -2302,7 +2308,7 @@ export function BacklogView({ projectId }: { projectId: string }) {
       setFilteredCounts(next);
     });
     return () => { cancelled = true; };
-  }, [projectId, sprints, appliedSearch, filterStatusId, filterAssigneeId, filterType, filterPriority]);
+  }, [projectId, sprints, appliedSearch, filterStatusId, filterAssigneeIds, filterType, filterPriority]);
 
   useEffect(() => {
     if (!moreMenuOpen) return;
@@ -2729,15 +2735,17 @@ export function BacklogView({ projectId }: { projectId: string }) {
             />
           </div>
           {/* Project member avatars — click to filter Assignee. The dashed
-              placeholder filters to Unassigned. Selection is single — clicking
-              an already-active avatar clears the filter. */}
+              placeholder filters to Unassigned. Selection is multi — clicking
+              an already-active avatar removes it from the filter. */}
           {(() => {
             const visibleMembers = members
               .filter((m): m is Member & { user: NonNullable<Member["user"]> } => Boolean(m.user))
               .slice(0, 5);
             const overflow = Math.max(0, members.filter((m) => m.user).length - visibleMembers.length);
             const toggleAssignee = (id: string) => {
-              setFilterAssigneeId((cur) => (cur === id ? "" : id));
+              setFilterAssigneeIds((cur) =>
+                cur.includes(id) ? cur.filter((x) => x !== id) : [...cur, id],
+              );
             };
             return (
               <div className="flex items-center -space-x-1.5">
@@ -2746,7 +2754,7 @@ export function BacklogView({ projectId }: { projectId: string }) {
                   onClick={() => toggleAssignee("null")}
                   title="Unassigned"
                   className={`h-7 w-7 rounded-full bg-gray-100 ring-2 ring-white flex items-center justify-center transition ${
-                    filterAssigneeId === "null"
+                    filterAssigneeIds.includes("null")
                       ? "outline outline-2 outline-blue-500 z-10"
                       : "hover:bg-gray-200"
                   }`}
@@ -2758,7 +2766,7 @@ export function BacklogView({ projectId }: { projectId: string }) {
                   const name = [u.firstName, u.lastName].filter(Boolean).join(" ").trim() || u.email;
                   const initials = (u.firstName?.[0] ?? u.email[0] ?? "?").toUpperCase()
                     + (u.lastName?.[0] ?? "").toUpperCase();
-                  const active = filterAssigneeId === u.id;
+                  const active = filterAssigneeIds.includes(u.id);
                   return (
                     <button
                       key={u.id}
@@ -2792,7 +2800,7 @@ export function BacklogView({ projectId }: { projectId: string }) {
           {(() => {
             const activeCount =
               (filterStatusId ? 1 : 0) +
-              (filterAssigneeId ? 1 : 0) +
+              (filterAssigneeIds.length ? 1 : 0) +
               (filterType ? 1 : 0) +
               (filterPriority ? 1 : 0);
             return (
@@ -2825,27 +2833,34 @@ export function BacklogView({ projectId }: { projectId: string }) {
                         ...statuses.map((s) => ({ value: s.id, label: s.name })),
                       ]}
                     />
-                    <FilterRow
-                      label="Assignee"
-                      value={filterAssigneeId}
-                      onChange={setFilterAssigneeId}
-                      options={[
-                        { value: "", label: "Any", muted: true },
-                        ...members
-                          .filter(
-                            (m): m is Member & { user: NonNullable<Member["user"]> } =>
-                              Boolean(m.user),
-                          )
-                          .map((m) => ({
-                            value: m.user.id,
-                            label:
-                              [m.user.firstName, m.user.lastName]
-                                .filter(Boolean)
-                                .join(" ")
-                                .trim() || m.user.email,
-                          })),
-                      ]}
-                    />
+                    <div className="mb-2 block text-xs">
+                      <span className="mb-1 block font-medium text-gray-600">Assignee</span>
+                      <FilterMultiSelect
+                        values={filterAssigneeIds}
+                        onChange={setFilterAssigneeIds}
+                        placeholder="Any"
+                        summaryNoun="people"
+                        searchable
+                        expand
+                        width={248}
+                        options={[
+                          { value: "null", label: "Unassigned", muted: true },
+                          ...members
+                            .filter(
+                              (m): m is Member & { user: NonNullable<Member["user"]> } =>
+                                Boolean(m.user),
+                            )
+                            .map((m) => ({
+                              value: m.user.id,
+                              label:
+                                [m.user.firstName, m.user.lastName]
+                                  .filter(Boolean)
+                                  .join(" ")
+                                  .trim() || m.user.email,
+                            })),
+                        ]}
+                      />
+                    </div>
                     <FilterRow
                       label="Type"
                       value={filterType}
@@ -2875,7 +2890,7 @@ export function BacklogView({ projectId }: { projectId: string }) {
                         type="button"
                         onClick={() => {
                           setFilterStatusId("");
-                          setFilterAssigneeId("");
+                          setFilterAssigneeIds([]);
                           setFilterType("");
                           setFilterPriority("");
                         }}
@@ -2889,12 +2904,12 @@ export function BacklogView({ projectId }: { projectId: string }) {
               </div>
             );
           })()}
-          {(filterStatusId || filterAssigneeId || filterType || filterPriority || appliedSearch) && (
+          {(filterStatusId || filterAssigneeIds.length || filterType || filterPriority || appliedSearch) && (
             <button
               type="button"
               onClick={() => {
                 setFilterStatusId("");
-                setFilterAssigneeId("");
+                setFilterAssigneeIds([]);
                 setFilterType("");
                 setFilterPriority("");
                 setSearch("");

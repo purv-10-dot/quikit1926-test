@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { X } from "lucide-react";
-import { parseDurationToHours, formatHours } from "@/lib/utils/timesheetPeriod";
+import { parseClockToHours, formatHoursAsClock } from "@/lib/utils/timesheetPeriod";
 import { WorkItemPicker } from "./work-item-picker";
 import { ProjectPicker } from "./project-picker";
 
@@ -40,7 +40,9 @@ export function LogTimeModal({
   const [issues, setIssues] = useState<IssueOption[]>([]);
   const [issueId, setIssueId] = useState(lockedIssueId ?? "");
   const [date, setDate] = useState(() => toDateInput(lockedDate ?? new Date()));
-  const [duration, setDuration] = useState("");
+  // Clock-style time-spent field. Defaults to a real "00:00" value (not just a
+  // placeholder) and always normalizes back to HH:MM on blur.
+  const [duration, setDuration] = useState("00:00");
   const [description, setDescription] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
@@ -60,7 +62,7 @@ export function LogTimeModal({
         setProjectId(e.projectId);
         setIssueId(e.issueId);
         setDate(toDateInput(new Date(e.entryDate)));
-        setDuration(formatHours(e.hours));
+        setDuration(formatHoursAsClock(e.hours));
         setDescription(e.description ?? "");
       })
       .catch(() => undefined);
@@ -115,9 +117,9 @@ export function LogTimeModal({
       setError("Pick a work item to log time against.");
       return;
     }
-    const hours = parseDurationToHours(duration);
+    const hours = parseClockToHours(duration);
     if (hours === null || hours <= 0) {
-      setError("Enter a valid duration (e.g. 2h 30m).");
+      setError("Enter a valid time (e.g. 01:30, or 1.5 for 1h 30m).");
       return;
     }
     setSubmitting(true);
@@ -208,13 +210,23 @@ export function LogTimeModal({
                 autoFocus
                 value={duration}
                 onChange={(e) => setDuration(e.target.value)}
-                placeholder="e.g. 2h 30m"
-                className="w-full h-9 px-3 text-sm border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                onFocus={(e) => e.currentTarget.select()}
+                onBlur={() => {
+                  // Snap to HH:MM on blur: "1" → "01:00", "1.5" → "01:30",
+                  // "1:30" → "01:30". Anything unparseable falls back to
+                  // "00:00" so the field always shows a valid clock value.
+                  const h = parseClockToHours(duration);
+                  setDuration(h !== null && h > 0 ? formatHoursAsClock(h) : "00:00");
+                }}
+                inputMode="decimal"
+                className={`w-full h-9 px-3 text-sm tabular-nums tracking-wide border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 ${
+                  duration === "00:00" ? "text-gray-400" : "text-gray-900"
+                }`}
               />
             </Field>
           </div>
           <p className="text-[11px] text-gray-500">
-            Format: 2w 4d 6h 45m. w = weeks, d = days, h = hours, m = minutes.
+            Format HH:MM. Type 1 for 01:00, 1.5 for 01:30, or enter 01:30 directly.
           </p>
 
           <Field label="Description">
@@ -242,7 +254,7 @@ export function LogTimeModal({
           <button
             type="button"
             onClick={() => void save()}
-            disabled={submitting || !duration.trim() || !issueId}
+            disabled={submitting || (parseClockToHours(duration) ?? 0) <= 0 || !issueId}
             className="h-8 px-3 text-sm font-medium text-white bg-blue-600 rounded hover:bg-blue-700 disabled:bg-gray-200 disabled:text-gray-500"
           >
             {isEdit ? "Update" : "Save"}

@@ -42,6 +42,7 @@ import { IssueActivity } from "@/components/issue-activity";
 import { IssueAttachments } from "@/components/issue-attachments";
 import { AlertCircle } from "lucide-react";
 import { useMyProjectPermissions } from "@/lib/hooks/useMyProjectPermissions";
+import { formatHoursAsClock } from "@/lib/utils/timesheetPeriod";
 
 type IssueType = "TASK" | "BUG" | "STORY" | "EPIC" | "SUBTASK";
 type Priority = "HIGHEST" | "HIGH" | "MEDIUM" | "LOW" | "LOWEST";
@@ -109,8 +110,12 @@ interface IssueFull {
 function parseEtaHours(raw: string): number | null {
   const s = raw.trim().toLowerCase();
   if (!s) return null;
+  // Clock HH:MM / H:MM → hours + minutes ("01:30" → 1.5).
+  const clock = /^(\d{1,3}):([0-5]?\d)$/.exec(s);
+  if (clock) return Number(clock[1]) + Number(clock[2]) / 60;
   // Bare number → hours.
   if (/^\d+(\.\d+)?$/.test(s)) return parseFloat(s);
+  // Legacy Jira-style tokens still accepted (1d, 2h 30m, 1w …).
   const re = /(\d+(?:\.\d+)?)\s*(w|d|h|m)/g;
   let total = 0;
   let matched = false;
@@ -128,15 +133,10 @@ function parseEtaHours(raw: string): number | null {
   return matched ? total : null;
 }
 
-/** Format hours back into the Jira-style "1h 30m" string. */
+/** Format hours into the clock-style "HH:MM" string ("" when unset). */
 function formatEtaHours(h: number | null | undefined): string {
   if (h == null || h <= 0) return "";
-  const totalMinutes = Math.round(h * 60);
-  const hh = Math.floor(totalMinutes / 60);
-  const mm = totalMinutes % 60;
-  if (hh && mm) return `${hh}h ${mm}m`;
-  if (hh) return `${hh}h`;
-  return `${mm}m`;
+  return formatHoursAsClock(h);
 }
 
 const TYPE_META: Record<IssueType, { Icon: React.ElementType; label: string; color: string }> = {
@@ -1425,7 +1425,7 @@ export function EditIssueModal({
                             const hours = parseEtaHours(raw);
                             if (hours == null) {
                               setEtaError(
-                                "Use formats like 30m, 2h, 1h 30m, 1d, 1w, or a plain number for hours.",
+                                "Use HH:MM (e.g. 01:30), a number of hours (1.5), or tokens like 1d 2h.",
                               );
                               return;
                             }
@@ -1439,7 +1439,7 @@ export function EditIssueModal({
                             setEta(formatEtaHours(rounded));
                             void patch({ eta: rounded });
                           }}
-                          placeholder="e.g. 2h 30m"
+                          placeholder="00:00"
                           className={`w-28 text-sm bg-transparent focus:outline-none border rounded px-1 ${
                             etaError
                               ? "border-red-500 ring-1 ring-red-500"
@@ -1975,7 +1975,7 @@ function SubtaskEtaCell({
               setEditing(false);
             }
           }}
-          placeholder="2h 30m"
+          placeholder="00:00"
           className={`w-20 h-6 text-xs text-gray-700 bg-transparent rounded px-1 border focus:outline-none ${
             error ? "border-red-500 ring-1 ring-red-500" : "border-blue-500"
           }`}

@@ -16,6 +16,7 @@ import type { BoardStatus, EpicLite } from "./board-meta";
 import { BoardColumn } from "./board-column";
 import { AddColumnTile } from "./add-column-tile";
 import { BoardFilterSelect, type BoardFilterOption } from "./board-filter-select";
+import { BoardFilterMultiSelect } from "./board-filter-multi-select";
 import { useQueryClient } from "@tanstack/react-query";
 import { useApiData } from "@/lib/hooks/useApiData";
 import { useMembersChanged } from "@/lib/hooks/useMembersChanged";
@@ -394,7 +395,16 @@ function Toolbar({
     .filter((m): m is BoardMember & { user: NonNullable<BoardMember["user"]> } => Boolean(m.user))
     .slice(0, 5);
   const overflow = Math.max(0, members.filter((m) => m.user).length - visibleMembers.length);
-  const toggleAssignee = (id: string) => setFilterAssigneeId(filterAssigneeId === id ? "" : id);
+  // Assignee filter is multi-select, stored as a comma-joined id list ("null"
+  // means Unassigned). Toggling adds/removes a single id from that list.
+  const selectedAssignees = filterAssigneeId ? filterAssigneeId.split(",").filter(Boolean) : [];
+  const toggleAssignee = (id: string) =>
+    setFilterAssigneeId(
+      (selectedAssignees.includes(id)
+        ? selectedAssignees.filter((x) => x !== id)
+        : [...selectedAssignees, id]
+      ).join(","),
+    );
 
   const activeCount =
     (filterAssigneeId ? 1 : 0) +
@@ -422,7 +432,7 @@ function Toolbar({
             onClick={() => toggleAssignee("null")}
             title="Unassigned"
             className={`h-7 w-7 rounded-full bg-gray-100 ring-2 ring-white flex items-center justify-center transition ${
-              filterAssigneeId === "null" ? "outline outline-2 outline-blue-500 z-10" : "hover:bg-gray-200"
+              selectedAssignees.includes("null") ? "outline outline-2 outline-blue-500 z-10" : "hover:bg-gray-200"
             }`}
           >
             <UserIcon className="h-3 w-3 text-gray-500" />
@@ -433,7 +443,7 @@ function Toolbar({
             const initials =
               (u.firstName?.[0] ?? u.email[0] ?? "?").toUpperCase() +
               (u.lastName?.[0] ?? "").toUpperCase();
-            const active = filterAssigneeId === u.id;
+            const active = selectedAssignees.includes(u.id);
             return (
               <button
                 key={u.id}
@@ -483,13 +493,14 @@ function Toolbar({
           </button>
           {filterOpen && (
             <div className="absolute left-0 top-full z-30 mt-1 w-72 rounded border border-gray-200 bg-white p-3 shadow-lg">
-              <BoardFilterSelect
+              <BoardFilterMultiSelect
                 label="Assignee"
                 value={filterAssigneeId}
                 onChange={setFilterAssigneeId}
+                summaryNoun="people"
+                searchable
                 options={(() => {
                   const opts: BoardFilterOption[] = [
-                    { value: "", label: "Any" },
                     { value: "null", label: "Unassigned" },
                   ];
                   members
