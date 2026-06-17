@@ -30,7 +30,7 @@ import { DeleteWorklogConfirm } from "./delete-worklog-confirm";
 import { SplitWorklogModal } from "./split-worklog-modal";
 import { TimesheetCell } from "./timesheet-cell";
 
-type GroupBy = "user" | "project" | "issue" | "user-issue";
+type GroupBy = "user" | "project" | "issue" | "user-issue" | "epic-issue";
 
 interface RowMeta {
   id: string;
@@ -59,6 +59,7 @@ const ROW_HEADER: Record<GroupBy, string> = {
   project: "Project",
   issue: "Work item",
   "user-issue": "User / Work item",
+  "epic-issue": "Epic / Work item",
 };
 
 const GROUP_BY_LABEL: Record<GroupBy, string> = {
@@ -66,7 +67,14 @@ const GROUP_BY_LABEL: Record<GroupBy, string> = {
   project: "Project",
   issue: "Work item",
   "user-issue": "User → Work item",
+  "epic-issue": "Epic → Work item",
 };
+
+// Two-level hierarchy modes: a parent dimension over a Work-item leaf. Several
+// render/total branches treat these identically (parent header + child rows).
+function isHierarchyMode(g: GroupBy): boolean {
+  return g === "user-issue" || g === "epic-issue";
+}
 
 // Fixed pixel widths for the frozen left-rail columns. They must be exact (not
 // min/max) so the cumulative `left` offsets line up the sticky columns.
@@ -205,12 +213,12 @@ export function TimesheetView({
     };
   }, [projectId]);
 
-  // Totals — in user-issue mode, skip child rows so parent + child don't double-count.
+  // Totals — in a hierarchy mode, skip child rows so parent + child don't double-count.
   const totalsByDate = useMemo(() => {
     const t: Record<string, number> = {};
     if (!grid) return t;
     for (const rowId of Object.keys(grid.cells)) {
-      if (groupBy === "user-issue" && rowId.includes("::")) continue;
+      if (isHierarchyMode(groupBy) && rowId.includes("::")) continue;
       for (const k of Object.keys(grid.cells[rowId]!)) {
         t[k] = (t[k] ?? 0) + (grid.cells[rowId]![k]!.hours ?? 0);
       }
@@ -233,7 +241,7 @@ export function TimesheetView({
     if (!grid) return 0;
     let s = 0;
     for (const rowId of Object.keys(totalsByRow)) {
-      if (groupBy === "user-issue" && rowId.includes("::")) continue;
+      if (isHierarchyMode(groupBy) && rowId.includes("::")) continue;
       s += totalsByRow[rowId] ?? 0;
     }
     return s;
@@ -418,7 +426,7 @@ export function TimesheetView({
     [grid, collapsed],
   );
 
-  const showKeyColumn = groupBy === "issue" || groupBy === "user-issue";
+  const showKeyColumn = groupBy === "issue" || isHierarchyMode(groupBy);
   const fixedColumnCount = showKeyColumn ? 3 : 2;
   // Cascade-freeze: the left rail (User/Work item, Key, Logged) is pinned with
   // fixed widths + cumulative left offsets so day columns scroll underneath.
@@ -451,7 +459,11 @@ export function TimesheetView({
               <ChevronRight className="h-4 w-4" />
             </button>
           </div>
-          <GroupByDropdown value={groupBy} onChange={setGroupBy} />
+          <GroupByDropdown
+            value={groupBy}
+            onChange={setGroupBy}
+            hideProject={Boolean(projectId)}
+          />
           <span className="h-6 w-px bg-gray-200" aria-hidden />
           <MultiSelectFilter
             icon={<Filter className="h-3.5 w-3.5 text-gray-500" />}
@@ -582,9 +594,9 @@ export function TimesheetView({
             {visibleRows.map((row) => {
               const isChild = Boolean(row.parentId);
               const isParent =
-                !isChild && (groupBy === "user-issue" || groupBy === "user");
+                !isChild && (isHierarchyMode(groupBy) || groupBy === "user");
               const issueIdForRow =
-                groupBy === "user-issue" && isChild
+                isHierarchyMode(groupBy) && isChild
                   ? row.id.split("::")[1] ?? row.id
                   : row.id;
               const editable =
@@ -593,10 +605,10 @@ export function TimesheetView({
                   isChild &&
                   row.parentId === currentUserId);
               const issueClickable =
-                groupBy === "issue" || (groupBy === "user-issue" && isChild);
-              // Parent (aggregate) user rows in the hierarchical view are just
-              // collapsible headers — their cells shouldn't open the log modal.
-              const aggregateRow = groupBy === "user-issue" && isParent;
+                groupBy === "issue" || (isHierarchyMode(groupBy) && isChild);
+              // Parent (aggregate) rows in a hierarchy view are just collapsible
+              // headers — their cells shouldn't open the log modal.
+              const aggregateRow = isHierarchyMode(groupBy) && isParent;
               const issueLabel = row.secondary
                 ? `${row.secondary} · ${row.label}`
                 : row.label;
@@ -610,7 +622,7 @@ export function TimesheetView({
                     }`}
                     style={{ width: FZ_NAME_W, minWidth: FZ_NAME_W, maxWidth: FZ_NAME_W }}
                   >
-                    {isParent && groupBy === "user-issue" ? (
+                    {isParent && isHierarchyMode(groupBy) ? (
                       <button
                         type="button"
                         onClick={() => toggleCollapse(row.id)}
@@ -621,9 +633,11 @@ export function TimesheetView({
                             isParentCollapsed ? "-rotate-90" : ""
                           }`}
                         />
-                        <span className="inline-flex items-center justify-center h-6 w-6 rounded-full bg-blue-600 text-white text-[10px] font-semibold">
-                          {(row.label || "U").trim().charAt(0).toUpperCase()}
-                        </span>
+                        {groupBy === "user-issue" && (
+                          <span className="inline-flex items-center justify-center h-6 w-6 rounded-full bg-blue-600 text-white text-[10px] font-semibold">
+                            {(row.label || "U").trim().charAt(0).toUpperCase()}
+                          </span>
+                        )}
                         <ClippedLabel text={row.label} className="font-medium text-sm" />
                       </button>
                     ) : isChild ? (
@@ -909,32 +923,31 @@ function MultiSelectFilter({
   );
 }
 
-// Grouping dimensions offered in the dropdown. User + Work Item combine into a
-// two-level hierarchy; Project is single-dimension (the grid can't nest it).
-const GROUP_DIMENSIONS: { key: "user" | "issue" | "project"; label: string }[] = [
+// Grouping dimensions offered in the dropdown. Work item is the always-on leaf;
+// User or Epic can sit above it as a two-level hierarchy. Project is exclusive
+// (single-dimension) and only offered in the global timesheet.
+const GROUP_DIMENSIONS: { key: "user" | "epic" | "issue" | "project"; label: string }[] = [
   { key: "user", label: "User" },
-  { key: "issue", label: "Work Item" },
+  { key: "epic", label: "Epic" },
+  { key: "issue", label: "Work item" },
   { key: "project", label: "Project" },
 ];
 
 function groupByToKeys(value: GroupBy): Set<string> {
   if (value === "user-issue") return new Set(["user", "issue"]);
+  if (value === "epic-issue") return new Set(["epic", "issue"]);
   return new Set([value]);
-}
-
-function keysToGroupBy(keys: Set<string>): GroupBy {
-  if (keys.has("project")) return "project";
-  if (keys.has("user") && keys.has("issue")) return "user-issue";
-  if (keys.has("issue")) return "issue";
-  return "user";
 }
 
 function GroupByDropdown({
   value,
   onChange,
+  hideProject = false,
 }: {
   value: GroupBy;
   onChange: (g: GroupBy) => void;
+  /** Space-scoped view: grouping by Project inside one project is meaningless. */
+  hideProject?: boolean;
 }) {
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
@@ -949,24 +962,19 @@ function GroupByDropdown({
     return () => document.removeEventListener("mousedown", onDoc);
   }, [open]);
 
-  function toggle(key: "user" | "issue" | "project") {
-    const next = new Set(selected);
-    if (key === "project") {
-      // Project is exclusive — selecting it clears the others.
-      if (next.has("project")) return; // keep at least one dimension
-      next.clear();
-      next.add("project");
-    } else {
-      next.delete("project");
-      if (next.has(key)) {
-        if (next.size === 1) return; // don't allow an empty grouping
-        next.delete(key);
-      } else {
-        next.add(key);
-      }
-    }
-    onChange(keysToGroupBy(next));
+  // Work item is always the leaf. User / Epic are mutually-exclusive parents
+  // over it; Project is its own exclusive grouping.
+  function toggle(key: "user" | "epic" | "issue" | "project") {
+    if (key === "project") return onChange("project");
+    if (key === "issue") return onChange("issue"); // collapse to work-item-only
+    if (key === "user") return onChange(value === "user-issue" ? "issue" : "user-issue");
+    if (key === "epic") return onChange(value === "epic-issue" ? "issue" : "epic-issue");
   }
+
+  // Work item is the implicit always-on leaf — no need to show it as a row.
+  const dims = GROUP_DIMENSIONS.filter(
+    (d) => d.key !== "issue" && !(hideProject && d.key === "project"),
+  );
 
   return (
     <div ref={ref} className="flex items-center gap-2">
@@ -985,8 +993,8 @@ function GroupByDropdown({
           <ChevronDown className="h-3 w-3 text-gray-500" />
         </button>
         {open && (
-          <div className="absolute left-0 top-full mt-1 w-48 bg-white border border-gray-200 rounded-md shadow-lg z-50 py-1">
-            {GROUP_DIMENSIONS.map((d) => {
+          <div className="absolute left-0 top-full mt-1 w-52 bg-white border border-gray-200 rounded-md shadow-lg z-50 py-1">
+            {dims.map((d) => {
               const checked = selected.has(d.key);
               return (
                 <button
@@ -1009,7 +1017,8 @@ function GroupByDropdown({
               );
             })}
             <div className="border-t border-gray-100 mt-1 pt-1 px-3 py-1.5 text-[10px] text-gray-400 leading-snug">
-              Combine User + Work Item for a hierarchy. Project groups on its own.
+              Work item is always shown. Add User or Epic for a hierarchy.
+              {!hideProject && " Project groups on its own."}
             </div>
           </div>
         )}

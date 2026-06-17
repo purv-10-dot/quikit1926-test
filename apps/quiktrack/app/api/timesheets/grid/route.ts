@@ -3,7 +3,10 @@ import { db } from "@/lib/db";
 import { withOrgAuth } from "@/lib/api/withOrgAuth";
 import { hasAdminAccess } from "@/lib/api/permissions";
 
-type GroupBy = "user" | "project" | "issue" | "user-issue";
+type GroupBy = "user" | "project" | "issue" | "user-issue" | "epic-issue";
+
+// Synthetic parent id for work items that don't belong to any epic.
+const NO_EPIC = "__noepic__";
 
 function dateKey(d: Date): string {
   const y = d.getFullYear();
@@ -82,11 +85,26 @@ export const GET = withOrgAuth(async ({ orgId, userId }, req) => {
     },
   });
 
+  // Epic grouping needs each work item's parent epic. Resolve it up-front so the
+  // bump loop can map issueId → epicId (null → the "No epic" bucket).
+  let epicByIssue = new Map<string, string | null>();
+  if (groupBy === "epic-issue") {
+    const entryIssueIds = Array.from(new Set(entries.map((e) => e.issueId)));
+    const issuesForEpic = entryIssueIds.length
+      ? await db.qtIssue.findMany({
+          where: { id: { in: entryIssueIds }, orgId },
+          select: { id: true, epicId: true },
+        })
+      : [];
+    epicByIssue = new Map(issuesForEpic.map((i) => [i.id, i.epicId]));
+  }
+
   type Cell = { hours: number; entryIds: string[] };
   const cells: Record<string, Record<string, Cell>> = {};
   const userIds = new Set<string>();
   const issueIds = new Set<string>();
   const projectIds = new Set<string>();
+  const epicIds = new Set<string>();
 
   function bumpCell(rowId: string, key: string, hours: number, entryId: string) {
     cells[rowId] ??= {};
@@ -102,6 +120,12 @@ export const GET = withOrgAuth(async ({ orgId, userId }, req) => {
       issueIds.add(e.issueId);
       bumpCell(e.userId, key, e.hours || 0, e.id);
       bumpCell(`${e.userId}::${e.issueId}`, key, e.hours || 0, e.id);
+    } else if (groupBy === "epic-issue") {
+      const epicId = epicByIssue.get(e.issueId) ?? NO_EPIC;
+      epicIds.add(epicId);
+      issueIds.add(e.issueId);
+      bumpCell(epicId, key, e.hours || 0, e.id);
+      bumpCell(`${epicId}::${e.issueId}`, key, e.hours || 0, e.id);
     } else {
       const rowId =
         groupBy === "project" ? e.projectId :
@@ -186,6 +210,62 @@ export const GET = withOrgAuth(async ({ orgId, userId }, req) => {
           label: i.title || "Untitled",
           secondary: i.key,
           parentId: u.id,
+          kind: "issue",
+          meta: { type: i.type },
+        });
+      }
+    }
+  } else if (groupBy === "epic-issue") {
+    const realEpicIds = [...epicIds].filter((id) => id !== NO_EPIC);
+    const [epics, issues] = await Promise.all([
+      realEpicIds.length
+        ? db.qtIssue.findMany({
+            where: { id: { in: realEpicIds }, orgId },
+            select: { id: true, key: true, title: true, type: true },
+          })
+        : Promise.resolve([]),
+      db.qtIssue.findMany({
+        where: { id: { in: Array.from(issueIds) }, orgId },
+        select: { id: true, key: true, title: true, type: true },
+      }),
+    ]);
+    const epicById = new Map(epics.map((e) => [e.id, e] as const));
+    const issueById = new Map(issues.map((i) => [i.id, i] as const));
+    const childPairs = new Set<string>();
+    for (const rowId of Object.keys(cells)) if (rowId.includes("::")) childPairs.add(rowId);
+
+    // Real epics first (alphabetical), the "No epic" bucket last.
+    const epicOrder = [...epicIds].sort((a, b) => {
+      if (a === NO_EPIC) return 1;
+      if (b === NO_EPIC) return -1;
+      const at = epicById.get(a)?.title ?? "";
+      const bt = epicById.get(b)?.title ?? "";
+      return at.localeCompare(bt);
+    });
+
+    for (const eid of epicOrder) {
+      const epic = eid === NO_EPIC ? null : epicById.get(eid);
+      rows.push({
+        id: eid,
+        label: epic ? epic.title || "Untitled" : "No epic",
+        secondary: epic?.key ?? null,
+        parentId: null,
+        kind: "issue",
+        meta: epic ? { type: epic.type } : undefined,
+      });
+      const childIssueIds = [...childPairs]
+        .filter((p) => p.startsWith(`${eid}::`))
+        .map((p) => p.slice(eid.length + 2));
+      const children = childIssueIds
+        .map((iid) => issueById.get(iid))
+        .filter((i): i is NonNullable<typeof i> => Boolean(i))
+        .sort((a, b) => (a.title || "").localeCompare(b.title || ""));
+      for (const i of children) {
+        rows.push({
+          id: `${eid}::${i.id}`,
+          label: i.title || "Untitled",
+          secondary: i.key,
+          parentId: eid,
           kind: "issue",
           meta: { type: i.type },
         });
