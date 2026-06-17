@@ -83,11 +83,17 @@ jobs:
               - 'package.json'
               - 'package-lock.json'
               - 'turbo.json'
+            quikhrms:
+              - 'apps/quikhrms/**'
+              - 'packages/**'
+              - 'package.json'
+              - 'package-lock.json'
+              - 'turbo.json'
       - name: Generate Matrix Output
         id: set-matrix
         run: |
           if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
-            echo 'apps=["quikit", "auth", "admin", "quikscale", "quiktrack"]' >> "$GITHUB_OUTPUT"
+            echo 'apps=["quikit", "auth", "admin", "quikscale", "quiktrack", "quikhrms", "quikinfra", "quikcrm"]' >> "$GITHUB_OUTPUT"
             echo "run_build=true" >> "$GITHUB_OUTPUT"
           else
             CHANGES='${{ steps.filter.outputs.changes }}'
@@ -159,6 +165,7 @@ jobs:
             NEXT_PUBLIC_AUTH_URL=https://authn.quikit.ai
             NEXT_PUBLIC_QUIKIT_URL=https://apps.quikit.ai
             NEXT_PUBLIC_QUIKSCALE_URL=https://scale.quikit.ai
+            NEXT_PUBLIC_QUIKHRMS_URL=https://people.quikit.ai
             NEXT_PUBLIC_ADMIN_URL=https://orgadmin.quikit.ai
             NEXT_PUBLIC_LOGIN_URL=https://authn.quikit.ai/login
             NEXT_PUBLIC_QUIKINFRA_URL=https://infra.quikit.ai

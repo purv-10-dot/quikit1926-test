@@ -16,7 +16,7 @@
 #   docker build -f apps/quikhrms/Dockerfile -t quikhrms:latest \
 #     --build-arg NEXT_PUBLIC_QUIKIT_URL=https://apps.quikit.ai \
 #     --build-arg NEXT_PUBLIC_AUTH_URL=https://authn.quikit.ai \
-#     --build-arg NEXT_PUBLIC_QUIKHRMS_URL=https://hrms.quikit.ai \
+#     --build-arg NEXT_PUBLIC_QUIKHRMS_URL=https://people.quikit.ai \
 #     --build-arg NEXT_PUBLIC_APP_URL=https://apps.quikit.ai .
 #
 # Run (inject secrets at runtime — never bake them into the image):
