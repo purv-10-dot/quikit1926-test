@@ -1866,8 +1866,20 @@ function emptySection(): SectionState {
  * IntersectionObserver-based "load more" sentinel. Fires `onIntersect` when the
  * sentinel scrolls into view. Used both at the bottom of each expanded section
  * (more issues) and at the bottom of the page (more sprints).
+ *
+ * `options.root` scopes the observer to a nested scroll container (each
+ * accordion is its own `overflow-y-auto` box) instead of the viewport; pass a
+ * ref to that container. `options.enabled` is REQUIRED whenever the sentinel is
+ * rendered conditionally: the observe effect re-runs when `enabled` flips, so
+ * the observer attaches on the render where the sentinel first enters the DOM.
+ * Without it the effect runs once at mount (sentinel absent → `ref.current`
+ * null → bail) and never re-attaches, so load-more silently never fires.
  */
-function useOnScreen(ref: React.RefObject<HTMLElement>, onIntersect: () => void) {
+function useOnScreen(
+  ref: React.RefObject<HTMLElement>,
+  onIntersect: () => void,
+  options?: { root?: React.RefObject<HTMLElement | null>; enabled?: boolean },
+) {
   // Pin the latest callback in a ref so the observer effect can be dep-free.
   // Without this, every parent render gives `onIntersect` a new identity →
   // the effect tears down + re-creates the observer → if the sentinel is
@@ -1878,18 +1890,21 @@ function useOnScreen(ref: React.RefObject<HTMLElement>, onIntersect: () => void)
   useEffect(() => {
     cbRef.current = onIntersect;
   }, [onIntersect]);
+  const enabled = options?.enabled ?? true;
+  const rootRef = options?.root;
   useEffect(() => {
+    if (!enabled) return;
     const el = ref.current;
     if (!el) return;
     const obs = new IntersectionObserver(
       (entries) => {
         for (const e of entries) if (e.isIntersecting) cbRef.current();
       },
-      { rootMargin: "200px" },
+      { root: rootRef?.current ?? null, rootMargin: "200px" },
     );
     obs.observe(el);
     return () => obs.disconnect();
-  }, [ref]);
+  }, [ref, rootRef, enabled]);
 }
 
 function SectionBody({
@@ -1938,6 +1953,10 @@ function SectionBody({
   density: BacklogViewSettings["density"];
 }) {
   const sentinelRef = useRef<HTMLDivElement>(null);
+  // Scroll container for this expanded section — the accordion has its own
+  // bounded-height scrollbar, so the load-more observer must watch this box
+  // (not the viewport) to fire as the user scrolls inside the accordion.
+  const scrollRef = useRef<HTMLDivElement>(null);
   // Delete is permission-gated — hide the row's Delete action for users whose
   // role doesn't grant Issue:delete (the API enforces it too). Cached hook, so
   // this shares the single /api/me/... fetch with the other consumers.
@@ -2003,12 +2022,19 @@ function SectionBody({
     setState((s) => ({ ...s, loaded: false, loading: false, issues: [], cursor: null, hasMore: true }));
   }, [filters.search, filters.statusId, filters.assigneeId, filters.type, filters.priority]);
 
-  // IntersectionObserver — load more when the sentinel scrolls into view.
-  useOnScreen(sentinelRef, () => {
-    if (state.expanded && state.loaded && state.hasMore && !state.loading) {
-      loadMore(false);
-    }
-  });
+  // IntersectionObserver — load more when the sentinel scrolls into view of the
+  // accordion's own scroll container. `enabled` re-attaches the observer on the
+  // render where the sentinel first mounts (after the first page loads); without
+  // it the observer would bind at mount when the sentinel doesn't exist yet.
+  useOnScreen(
+    sentinelRef,
+    () => {
+      if (state.expanded && state.loaded && state.hasMore && !state.loading) {
+        loadMore(false);
+      }
+    },
+    { root: scrollRef, enabled: state.expanded && state.loaded && state.hasMore },
+  );
 
   if (!state.expanded) return null;
 
@@ -2025,6 +2051,10 @@ function SectionBody({
         if (id) onDropIssue(id);
       }}
     >
+      {/* Scrollable rows. The InlineCreator below is intentionally OUTSIDE this
+          box so "+ Create" stays pinned at the bottom of the accordion while the
+          issue list scrolls. */}
+      <div ref={scrollRef} className="max-h-[60vh] overflow-y-auto">
       {state.loaded === false && state.loading && (
         <div className="px-3 py-3 space-y-2">
           {Array.from({ length: 3 }).map((_, i) => (
@@ -2081,14 +2111,17 @@ function SectionBody({
           {state.loading ? "Loading more…" : ""}
         </div>
       )}
-      <InlineCreator
-        projectId={projectId}
-        defaultStatusId={defaultStatusId}
-        sprintId={sprintId}
-        members={members}
-        currentUserId={currentUserId}
-        onCreated={onCreated}
-      />
+      </div>
+      <div className="border-t border-gray-100">
+        <InlineCreator
+          projectId={projectId}
+          defaultStatusId={defaultStatusId}
+          sprintId={sprintId}
+          members={members}
+          currentUserId={currentUserId}
+          onCreated={onCreated}
+        />
+      </div>
     </div>
   );
 }
