@@ -262,6 +262,34 @@ export function useMoveDoc(projectId: string) {
   });
 }
 
+/** Soft-delete a doc (file). Gated server-side by Doc:delete. Optimistically
+ *  removes it from every cached list and decrements its folder's count. */
+export function useDeleteDoc(projectId: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (doc: DocSummary) => {
+      const j = await fetch(`/api/docs/${doc.id}`, { method: "DELETE" }).then((r) => r.json());
+      if (!j?.success) throw new Error(j?.error ?? "Couldn't delete page.");
+      return j.data;
+    },
+    onMutate: async (doc) => {
+      await qc.cancelQueries({ queryKey: listPrefix(projectId) });
+      await qc.cancelQueries({ queryKey: foldersKey(projectId) });
+      const snaps = qc
+        .getQueriesData<DocsInfinite>({ queryKey: listPrefix(projectId) })
+        .map(([key, data]) => [key, data] as const);
+      const snapFolders = qc.getQueryData<FolderSummary[]>(foldersKey(projectId));
+      for (const [key] of snaps) qc.setQueryData<DocsInfinite>(key, removeDoc(doc.id));
+      if (doc.folderId) qc.setQueryData(foldersKey(projectId), bumpCount(doc.folderId, -1));
+      return { snaps, snapFolders };
+    },
+    onError: (_e, _v, ctx) => {
+      if (ctx?.snaps) for (const [key, data] of ctx.snaps) qc.setQueryData(key, data);
+      if (ctx?.snapFolders) qc.setQueryData(foldersKey(projectId), ctx.snapFolders);
+    },
+  });
+}
+
 // Note: doc creation lives in the draft editor (doc-editor.tsx), which POSTs on
 // first save and invalidates the relevant list — so picking a template never
 // leaves an empty doc behind. There's intentionally no create mutation here.

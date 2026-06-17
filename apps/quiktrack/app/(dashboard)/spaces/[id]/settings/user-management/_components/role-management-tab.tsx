@@ -8,6 +8,7 @@ import { AddRoleModal } from "./add-role-modal";
 import { FieldPermissionMatrix } from "@/app/(dashboard)/settings/user-management/_components/field-permission-matrix";
 import { useMyProjectPermissions } from "@/lib/hooks/useMyProjectPermissions";
 import { SPACE_ADMIN_ROLE_NAME } from "@/lib/api/permissionsRegistry";
+import { confirmDialog } from "@/lib/ui/confirm";
 
 interface ProjectRole {
   id: string;
@@ -119,9 +120,15 @@ export function ProjectRoleManagementTab({ projectId }: { projectId: string }) {
                   <span
                     role="button"
                     tabIndex={0}
-                    onClick={(e) => {
+                    onClick={async (e) => {
                       e.stopPropagation();
-                      if (confirm(`Delete role "${r.name}"?`)) del.mutate(r.id);
+                      const ok = await confirmDialog({
+                        title: "Delete role",
+                        message: `Delete role "${r.name}"?`,
+                        confirmText: "Delete",
+                        danger: true,
+                      });
+                      if (ok) del.mutate(r.id);
                     }}
                     className="opacity-0 group-hover:opacity-100 text-gray-400 hover:text-red-500"
                   >

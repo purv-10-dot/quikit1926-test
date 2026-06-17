@@ -29,7 +29,7 @@ export const GET = withOrgAuth<{ id: string }>(async ({ orgId, userId }, req, { 
     // tenant admin (org owner/admin) OR QuikTrack app-admin.
     const isAdmin = await hasAdminAccess(userId, orgId);
     if (!isAdmin && targetUserId !== userId) {
-      return NextResponse.json({ success: false, error: "Forbidden" }, { status: 403 });
+      return NextResponse.json({ success: false, error: "You don't have access to this." }, { status: 403 });
     }
     // Resolve display info. Prefer OrgMember (gives us the canonical name
     // for the active org), but fall back to auth.User directly so users

@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { showToast } from "@/lib/ui/toast";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Button, Checkbox } from "@quikit/ui";
 
@@ -57,8 +58,9 @@ export function RoleMembersPanel({ roleId }: { roleId: string }) {
       qc.invalidateQueries({ queryKey: ["quiktrack", "role-members", roleId] });
       qc.invalidateQueries({ queryKey: ["quiktrack", "org-users"] });
       if (data?.skippedUserIds?.length > 0) {
-        alert(
+        showToast(
           `${data.skippedUserIds.length} user(s) skipped — they don't have QuikTrack access yet.`,
+          "info",
         );
       }
     },

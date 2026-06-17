@@ -59,7 +59,7 @@ export const GET = withOrgAuth(async ({ orgId, userId }, req) => {
   try {
     // Admin-tier gate: tenant admin (org owner/admin) OR QuikTrack app-admin.
     if (!(await hasAdminAccess(userId, orgId))) {
-      return NextResponse.json({ success: false, error: "Forbidden" }, { status: 403 });
+      return NextResponse.json({ success: false, error: "You don't have access to this." }, { status: 403 });
     }
 
     const url = new URL(req.url);

@@ -179,7 +179,7 @@ export const POST = withProjectAccess<{ id: string }>(
       { status: 201 },
     );
   },
-  { paramKey: "id" },
+  { paramKey: "id", requirePermission: { resource: "Doc", action: "create" } },
 );
 
 // Convenience: surface the template list for the picker without a separate

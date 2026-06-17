@@ -8,7 +8,7 @@ import { deleteOrArchiveField, getField, updateField } from "@/lib/services/cust
 
 async function requireAdmin(userId: string, orgId: string): Promise<NextResponse | null> {
   if (!(await hasAdminAccess(userId, orgId))) {
-    return NextResponse.json({ success: false, error: "Forbidden" }, { status: 403 });
+    return NextResponse.json({ success: false, error: "You don't have access to this." }, { status: 403 });
   }
   return null;
 }

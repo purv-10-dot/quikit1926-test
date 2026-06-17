@@ -15,6 +15,7 @@ import { RichTextEditor } from "@/components/rich-text-editor-lazy";
 import { getTemplate } from "./templates-meta";
 import { applyDocEditToCache } from "./use-docs";
 import { ShareDialog } from "./share-dialog";
+import { useMyProjectPermissions } from "@/lib/hooks/useMyProjectPermissions";
 
 interface DocFull {
   id: string;
@@ -57,6 +58,12 @@ export function DocEditor({
 }) {
   const router = useRouter();
   const qc = useQueryClient();
+  // Editing a doc needs Doc:update; a brand-new draft needs Doc:create. Without
+  // it the editor is read-only (the server PATCH/POST would 403 anyway).
+  const perms = useMyProjectPermissions(projectId);
+  const canEdit = perms.loading || perms.has("Doc", docId ? "update" : "create");
+  const canEditRef = useRef(canEdit);
+  canEditRef.current = canEdit;
   const [doc, setDoc] = useState<DocFull | null>(null);
   const [author, setAuthor] = useState<UserLite | null>(null);
   const [title, setTitle] = useState("");
@@ -150,13 +157,14 @@ export function DocEditor({
   }, [projectId]);
 
   function scheduleSave() {
+    if (!canEditRef.current) return; // read-only: never persist
     dirtyRef.current = true;
     if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
     saveTimerRef.current = setTimeout(() => void save(), SAVE_DEBOUNCE_MS);
   }
 
   async function save() {
-    if (!dirtyRef.current || !doc) return;
+    if (!dirtyRef.current || !doc || !canEditRef.current) return;
     // A create is already running — keep the dirty flag so edits flush via
     // PATCH once it finishes; don't start a second create.
     if (!docIdRef.current && creatingRef.current) return;
@@ -261,7 +269,7 @@ export function DocEditor({
           </span>
           <div className="flex items-center gap-1.5">
             <span className="text-[11px] text-gray-500 mr-1">
-              {saving ? "Saving…" : "All changes saved"}
+              {!canEdit ? "View only" : saving ? "Saving…" : "All changes saved"}
             </span>
             <div className="relative">
               <button
@@ -317,6 +325,7 @@ export function DocEditor({
           ) : (
             <RichTextEditor
               chromeless
+              disabled={!canEdit}
               value={content}
               mentions={mentions}
               onChange={(html) => {
@@ -329,6 +338,7 @@ export function DocEditor({
                 <div className="px-10 pt-6 pb-4">
                   <input
                     value={title}
+                    readOnly={!canEdit}
                     onChange={(e) => {
                       setTitle(e.target.value);
                       scheduleSave();

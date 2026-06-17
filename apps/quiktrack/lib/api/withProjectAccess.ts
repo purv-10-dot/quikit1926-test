@@ -117,13 +117,13 @@ export function withProjectAccess<Params extends Record<string, string>>(
             action,
           ))
         ) {
-          return NextResponse.json({ success: false, error: "Forbidden" }, { status: 403 });
+          return NextResponse.json({ success: false, error: "You don't have access to this." }, { status: 403 });
         }
       }
 
       // Legacy enum gate (deprecated) — for routes not yet migrated.
       if (options.requireRoles && (!projectRole || !options.requireRoles.includes(projectRole))) {
-        return NextResponse.json({ success: false, error: "Forbidden" }, { status: 403 });
+        return NextResponse.json({ success: false, error: "You don't have access to this." }, { status: 403 });
       }
     }
 

@@ -24,7 +24,7 @@ export async function GET(req: NextRequest, { params }: { params: { token: strin
     return NextResponse.json({ success: false, error: "Not found" }, { status: 404 });
   }
   if (!keyBelongsToTenant(key, doc.orgId)) {
-    return NextResponse.json({ success: false, error: "Forbidden" }, { status: 403 });
+    return NextResponse.json({ success: false, error: "You don't have access to this." }, { status: 403 });
   }
 
   try {

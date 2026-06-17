@@ -20,6 +20,8 @@ export function PaginatedDocList({
   fetchNextPage,
   onDownload,
   onDragStart,
+  canDelete,
+  onDelete,
   emptyText,
 }: {
   projectId: string;
@@ -31,6 +33,8 @@ export function PaginatedDocList({
   fetchNextPage: () => void;
   onDownload?: (doc: DocSummary) => void;
   onDragStart?: (doc: DocSummary) => void;
+  canDelete?: boolean;
+  onDelete?: (doc: DocSummary) => void;
   emptyText: string;
 }) {
   const sentinelRef = useRef<HTMLDivElement | null>(null);
@@ -65,6 +69,8 @@ export function PaginatedDocList({
           doc={d}
           onDownload={onDownload}
           onDragStart={onDragStart}
+          canDelete={canDelete}
+          onDelete={onDelete}
         />
       ))}
 

@@ -1,7 +1,7 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { Pencil, Download, FileText } from "lucide-react";
+import { Pencil, Download, FileText, Trash2 } from "lucide-react";
 import { Avatar } from "@quikit/ui";
 import type { DocSummary } from "./use-docs";
 
@@ -41,11 +41,16 @@ export function DocRow({
   doc,
   onDownload,
   onDragStart,
+  canDelete,
+  onDelete,
 }: {
   projectId: string;
   doc: DocSummary;
   onDownload?: (doc: DocSummary) => void;
   onDragStart?: (doc: DocSummary) => void;
+  /** When true, show a delete action (gated by Doc:delete). */
+  canDelete?: boolean;
+  onDelete?: (doc: DocSummary) => void;
 }) {
   const router = useRouter();
   const ownerName =
@@ -121,6 +126,20 @@ export function DocRow({
         >
           <Download className="w-3.5 h-3.5 text-gray-600" />
         </button>
+        {canDelete && onDelete && (
+          <button
+            type="button"
+            onClick={(e) => {
+              e.stopPropagation();
+              onDelete(doc);
+            }}
+            className="p-1.5 rounded hover:bg-red-100 transition-colors"
+            aria-label="Delete page"
+            title="Delete page"
+          >
+            <Trash2 className="w-3.5 h-3.5 text-red-500" />
+          </button>
+        )}
       </div>
     </div>
   );

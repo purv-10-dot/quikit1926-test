@@ -2,6 +2,8 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
+import { showToast } from "@/lib/ui/toast";
+import { confirmDialog } from "@/lib/ui/confirm";
 import { EditIssueModal } from "@/components/edit-issue-modal";
 import { useMyProjectPermissions } from "@/lib/hooks/useMyProjectPermissions";
 import { useQueryClient } from "@tanstack/react-query";
@@ -1233,7 +1235,7 @@ function IssueRow({
         setMenuOpen(false);
         onDeleted();
       } else {
-        alert(res?.error || "Failed to delete");
+        showToast(res?.error || "Failed to delete", "error");
       }
     } finally {
       setDeleting(false);
@@ -2531,7 +2533,13 @@ export function BacklogView({ projectId }: { projectId: string }) {
   async function handleBulkDelete() {
     if (selectedIds.size === 0 || bulkBusy) return;
     const n = selectedIds.size;
-    if (!window.confirm(`Delete ${n} work item${n === 1 ? "" : "s"}? This is reversible from trash.`)) return;
+    const ok = await confirmDialog({
+      title: "Delete work items",
+      message: `Delete ${n} work item${n === 1 ? "" : "s"}? This is reversible from trash.`,
+      confirmText: "Delete",
+      danger: true,
+    });
+    if (!ok) return;
     setBulkBusy(true);
     try {
       const res = await fetch("/api/issues/bulk-delete", {
@@ -2540,7 +2548,7 @@ export function BacklogView({ projectId }: { projectId: string }) {
         body: JSON.stringify({ projectId, ids: Array.from(selectedIds) }),
       }).then((r) => r.json() as Promise<{ success: boolean; error?: string }>);
       if (!res.success) {
-        window.alert(res.error ?? "Delete failed");
+        showToast(res.error ?? "Delete failed", "error");
         return;
       }
       setSelectedIds(new Set());
@@ -2570,7 +2578,7 @@ export function BacklogView({ projectId }: { projectId: string }) {
         ),
       );
       const failed = results.filter((r) => !r.success).length;
-      if (failed > 0) window.alert(`${failed} item${failed === 1 ? "" : "s"} failed to move.`);
+      if (failed > 0) showToast(`${failed} item${failed === 1 ? "" : "s"} failed to move.`, "error");
       setSelectedIds(new Set());
       await refreshAllSections();
     } finally {

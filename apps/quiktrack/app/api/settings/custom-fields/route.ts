@@ -8,7 +8,7 @@ import { createField, listFields } from "@/lib/services/customFields";
 
 export const GET = withOrgAuth(async ({ userId, orgId }, req) => {
   if (!(await hasAdminAccess(userId, orgId))) {
-    return NextResponse.json({ success: false, error: "Forbidden" }, { status: 403 });
+    return NextResponse.json({ success: false, error: "You don't have access to this." }, { status: 403 });
   }
   const includeArchived = new URL(req.url).searchParams.get("includeArchived") === "true";
   const data = await listFields({ orgId, scope: "global", includeArchived });
@@ -17,7 +17,7 @@ export const GET = withOrgAuth(async ({ userId, orgId }, req) => {
 
 export const POST = withOrgAuth(async ({ userId, orgId }, req) => {
   if (!(await hasAdminAccess(userId, orgId))) {
-    return NextResponse.json({ success: false, error: "Forbidden" }, { status: 403 });
+    return NextResponse.json({ success: false, error: "You don't have access to this." }, { status: 403 });
   }
   const body = await req.json().catch(() => null);
   const parsed = createCustomFieldSchema.safeParse(body);

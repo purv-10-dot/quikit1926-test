@@ -20,7 +20,7 @@ export const GET = withOrgAuth<{ id: string }>(async ({ orgId, userId }, _req, {
     },
   });
   if (!entry) return NextResponse.json({ success: false, error: "Not found" }, { status: 404 });
-  if (entry.userId !== userId) return NextResponse.json({ success: false, error: "Forbidden" }, { status: 403 });
+  if (entry.userId !== userId) return NextResponse.json({ success: false, error: "You don't have access to this." }, { status: 403 });
   return NextResponse.json({ success: true, data: entry });
 });
 
@@ -30,7 +30,7 @@ export const PATCH = withOrgAuth<{ id: string }>(async ({ orgId, userId }, req, 
     select: { id: true, userId: true },
   });
   if (!entry) return NextResponse.json({ success: false, error: "Not found" }, { status: 404 });
-  if (entry.userId !== userId) return NextResponse.json({ success: false, error: "Forbidden" }, { status: 403 });
+  if (entry.userId !== userId) return NextResponse.json({ success: false, error: "You don't have access to this." }, { status: 403 });
 
   const parsed = updateSchema.safeParse(await req.json());
   if (!parsed.success) {
@@ -80,7 +80,7 @@ export const DELETE = withOrgAuth<{ id: string }>(async ({ orgId, userId }, _req
     select: { id: true, userId: true },
   });
   if (!entry) return NextResponse.json({ success: false, error: "Not found" }, { status: 404 });
-  if (entry.userId !== userId) return NextResponse.json({ success: false, error: "Forbidden" }, { status: 403 });
+  if (entry.userId !== userId) return NextResponse.json({ success: false, error: "You don't have access to this." }, { status: 403 });
   await db.qtTimesheetEntry.update({
     where: { id: entry.id }, data: { isDeleted: true, updatedBy: userId },
   });

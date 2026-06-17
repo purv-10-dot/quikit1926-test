@@ -93,7 +93,7 @@ export const POST = withOrgAuth(async ({ orgId, userId }, req) => {
     select: { id: true },
   });
   if (!project) {
-    return NextResponse.json({ success: false, error: "Forbidden" }, { status: 404 });
+    return NextResponse.json({ success: false, error: "You don't have access to this." }, { status: 404 });
   }
 
   // ON CONFLICT requires a UNIQUE index — present at (userId, projectId, kind, ref).

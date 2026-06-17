@@ -37,7 +37,7 @@ export const POST = withOrgAuth<{ id: string }>(
       return NextResponse.json({ success: false, error: "Not found" }, { status: 404 });
     }
     if (!(await canDoc(userId, orgId, doc.projectId, "update"))) {
-      return NextResponse.json({ success: false, error: "Forbidden" }, { status: 403 });
+      return NextResponse.json({ success: false, error: "You don't have access to this." }, { status: 403 });
     }
     const parsed = postSchema.safeParse(await req.json().catch(() => ({})));
     if (!parsed.success) {
@@ -84,7 +84,7 @@ export const DELETE = withOrgAuth<{ id: string }>(
       return NextResponse.json({ success: false, error: "Not found" }, { status: 404 });
     }
     if (!(await canDoc(userId, orgId, doc.projectId, "update"))) {
-      return NextResponse.json({ success: false, error: "Forbidden" }, { status: 403 });
+      return NextResponse.json({ success: false, error: "You don't have access to this." }, { status: 403 });
     }
     await db.$executeRaw`
       UPDATE app_quiktrack."QtDoc"

@@ -270,7 +270,7 @@ export async function loadMyPermissions(
 }
 
 export function forbidden(
-  message = "You do not have permission to perform this action",
+  message = "You don't have access to this.",
 ) {
   return NextResponse.json({ success: false, error: message }, { status: 403 });
 }

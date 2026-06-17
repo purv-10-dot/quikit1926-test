@@ -35,6 +35,7 @@ import { CreateIssueModal } from "@/components/create-issue-modal";
 import { useQueryClient } from "@tanstack/react-query";
 import { useApiData } from "@/lib/hooks/useApiData";
 import { useMembersChanged } from "@/lib/hooks/useMembersChanged";
+import { confirmDialog } from "@/lib/ui/confirm";
 
 export function GroupedKanbanView({ projectId }: { projectId: string }) {
   const [searchInput, setSearchInput] = useState("");
@@ -224,14 +225,14 @@ export function GroupedKanbanView({ projectId }: { projectId: string }) {
                 else toggleCollapse.mutate({ id, isCollapsed });
               }}
               onAddTask={() => setCreateTaskOpen(true)}
-              onDeleteGroup={(id) => {
-                if (
-                  window.confirm(
-                    "Delete this group? Its tasks will move to the Ungrouped bucket.",
-                  )
-                ) {
-                  deleteGroup.mutate(id);
-                }
+              onDeleteGroup={async (id) => {
+                const ok = await confirmDialog({
+                  title: "Delete group",
+                  message: "Delete this group? Its tasks will move to the Ungrouped bucket.",
+                  confirmText: "Delete",
+                  danger: true,
+                });
+                if (ok) deleteGroup.mutate(id);
               }}
               onOpenTask={setOpenTaskId}
               onTaskContextMenu={onTaskContextMenu}

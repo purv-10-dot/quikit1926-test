@@ -1,6 +1,7 @@
 "use client";
 
 import { useEditor, EditorContent, Editor } from "@tiptap/react";
+import { showToast } from "@/lib/ui/toast";
 import StarterKit from "@tiptap/starter-kit";
 import Placeholder from "@tiptap/extension-placeholder";
 import LinkExt from "@tiptap/extension-link";
@@ -237,7 +238,7 @@ export function RichTextEditor({
             if (node) editor.view.dispatch(editor.state.tr.delete(pos, pos + node.nodeSize));
           }
           console.error("[rich-text-editor] image upload failed:", err);
-          alert(err instanceof Error ? err.message : "Image upload failed");
+          showToast(err instanceof Error ? err.message : "Image upload failed", "error");
         } finally {
           URL.revokeObjectURL(localUrl);
           setImageUploading(false);

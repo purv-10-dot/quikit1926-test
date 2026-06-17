@@ -15,10 +15,14 @@ import {
   useCreateFolder,
   useRenameFolder,
   useDeleteFolder,
+  useDeleteDoc,
   useMoveDoc,
   type DocSummary,
   type FolderSummary,
 } from "./use-docs";
+import { useMyProjectPermissions } from "@/lib/hooks/useMyProjectPermissions";
+import { showToast } from "@/lib/ui/toast";
+import { confirmDialog } from "@/lib/ui/confirm";
 
 /**
  * Pages tab top-level. All data lives in the TanStack Query cache (see
@@ -46,9 +50,26 @@ export function DocsView({ projectId }: { projectId: string }) {
   const createFolderM = useCreateFolder(projectId);
   const renameFolderM = useRenameFolder(projectId);
   const deleteFolderM = useDeleteFolder(projectId);
+  const deleteDocM = useDeleteDoc(projectId);
   const moveDocM = useMoveDoc(projectId);
 
+  // Doc permission gates (loading → optimistic-allow, like the other views).
+  const perms = useMyProjectPermissions(projectId);
+  const canCreate = perms.loading || perms.has("Doc", "create");
+  const canDelete = perms.loading || perms.has("Doc", "delete");
+
   const fail = (e: unknown) => setError(e instanceof Error ? e.message : "Something went wrong.");
+
+  async function deleteDoc(doc: DocSummary) {
+    const ok = await confirmDialog({
+      title: "Delete page",
+      message: `Delete "${doc.title}"? This can't be undone.`,
+      confirmText: "Delete",
+      danger: true,
+    });
+    if (!ok) return;
+    deleteDocM.mutate(doc, { onError: fail });
+  }
 
   // Open the draft editor seeded with the template — the doc is NOT created
   // until the user edits/saves it there (see doc-editor save()).
@@ -102,14 +123,20 @@ export function DocsView({ projectId }: { projectId: string }) {
     renameFolderM.mutate({ folderId, name }, { onError: fail });
   }
 
-  function deleteFolder(folder: FolderSummary) {
+  async function deleteFolder(folder: FolderSummary) {
     const msg =
       folder.docCount > 0
         ? `Delete "${folder.name}"? Its ${folder.docCount} ${
             folder.docCount === 1 ? "doc" : "docs"
           } will move back to All docs.`
         : `Delete "${folder.name}"?`;
-    if (!window.confirm(msg)) return;
+    const ok = await confirmDialog({
+      title: "Delete folder",
+      message: msg,
+      confirmText: "Delete",
+      danger: true,
+    });
+    if (!ok) return;
     deleteFolderM.mutate(folder, { onError: fail });
   }
 
@@ -206,7 +233,7 @@ export function DocsView({ projectId }: { projectId: string }) {
                   <X className="w-4 h-4 text-gray-500" />
                 </button>
               </div>
-            ) : (
+            ) : canCreate ? (
               <button
                 type="button"
                 onClick={() => setAddingFolder(true)}
@@ -215,33 +242,37 @@ export function DocsView({ projectId }: { projectId: string }) {
                 <FolderPlus className="w-3.5 h-3.5 text-gray-600" />
                 Add folder
               </button>
-            )}
+            ) : null}
 
             {/* Upload an existing document (.docx/.md/.html/.txt/.pdf) as a new doc */}
-            <input
-              ref={uploadInputRef}
-              type="file"
-              accept=".docx,.md,.markdown,.html,.htm,.txt,.pdf"
-              className="hidden"
-              onChange={(e) => {
-                const f = e.target.files?.[0];
-                e.target.value = ""; // allow re-uploading the same file
-                if (f) void uploadDoc(f);
-              }}
-            />
-            <button
-              type="button"
-              disabled={uploading}
-              onClick={() => uploadInputRef.current?.click()}
-              className="inline-flex items-center gap-1.5 h-8 px-3 text-xs font-medium text-gray-700 border border-gray-300 rounded hover:bg-gray-50 disabled:opacity-50"
-            >
-              {uploading ? (
-                <Loader2 className="w-3.5 h-3.5 animate-spin text-gray-600" />
-              ) : (
-                <Upload className="w-3.5 h-3.5 text-gray-600" />
-              )}
-              {uploading ? "Uploading…" : "Upload"}
-            </button>
+            {canCreate && (
+              <>
+                <input
+                  ref={uploadInputRef}
+                  type="file"
+                  accept=".docx,.md,.markdown,.html,.htm,.txt,.pdf"
+                  className="hidden"
+                  onChange={(e) => {
+                    const f = e.target.files?.[0];
+                    e.target.value = ""; // allow re-uploading the same file
+                    if (f) void uploadDoc(f);
+                  }}
+                />
+                <button
+                  type="button"
+                  disabled={uploading}
+                  onClick={() => uploadInputRef.current?.click()}
+                  className="inline-flex items-center gap-1.5 h-8 px-3 text-xs font-medium text-gray-700 border border-gray-300 rounded hover:bg-gray-50 disabled:opacity-50"
+                >
+                  {uploading ? (
+                    <Loader2 className="w-3.5 h-3.5 animate-spin text-gray-600" />
+                  ) : (
+                    <Upload className="w-3.5 h-3.5 text-gray-600" />
+                  )}
+                  {uploading ? "Uploading…" : "Upload"}
+                </button>
+              </>
+            )}
 
             <FormatToggle value={downloadFormat} onChange={setDownloadFormat} />
           </div>
@@ -279,6 +310,9 @@ export function DocsView({ projectId }: { projectId: string }) {
                     onDelete={deleteFolder}
                     onDownload={downloadDoc}
                     onDropDoc={moveDoc}
+                    canCreateDoc={canCreate}
+                    canDeleteDoc={canDelete}
+                    onDeleteDoc={deleteDoc}
                   />
                 ))}
               </div>
@@ -308,6 +342,8 @@ export function DocsView({ projectId }: { projectId: string }) {
                 isFetchingNextPage={rootQ.isFetchingNextPage}
                 fetchNextPage={() => rootQ.fetchNextPage()}
                 onDownload={downloadDoc}
+                canDelete={canDelete}
+                onDelete={deleteDoc}
                 emptyText={
                   folders.length > 0
                     ? "Drop a doc here to move it out of a folder."
@@ -319,7 +355,9 @@ export function DocsView({ projectId }: { projectId: string }) {
         )}
       </main>
 
-      <DocsTemplatesSidebar onCreate={(key) => createFromTemplate(key)} />
+      {canCreate && (
+        <DocsTemplatesSidebar onCreate={(key) => createFromTemplate(key)} />
+      )}
     </div>
   );
 }
@@ -418,7 +456,7 @@ function buildPrintHtml(title: string, body: string): string {
 function printAsPdf(title: string, body: string) {
   const win = window.open("", "_blank", "width=900,height=1200");
   if (!win) {
-    alert("Pop-ups blocked. Allow pop-ups to download as PDF.");
+    showToast("Pop-ups blocked. Allow pop-ups to download as PDF.", "error");
     return;
   }
   win.document.write(buildPrintHtml(title, body));

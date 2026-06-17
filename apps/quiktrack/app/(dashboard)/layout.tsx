@@ -7,6 +7,8 @@ import { Header } from "@/components/shell/header";
 import { KanTour } from "@/components/tour/kan-tour";
 import { SessionGuard } from "@/components/session-guard";
 import { IssueCreatedToast } from "@/components/issue-created-toast";
+import { ToastHost } from "@/components/toast-host";
+import { ConfirmHost } from "@/components/confirm-host";
 import { NoAccessGate } from "@/components/shell/no-access-gate";
 import { ThemeSync } from "@/components/shell/theme-sync";
 import { ImpersonationBanner } from "@quikit/ui";
@@ -56,6 +58,8 @@ export default function DashboardLayout({
             <main className="flex-1 overflow-y-auto bg-white">{children}</main>
           </div>
           <IssueCreatedToast />
+          <ToastHost />
+          <ConfirmHost />
           <KanTour />
         </div>
       </NoAccessGate>

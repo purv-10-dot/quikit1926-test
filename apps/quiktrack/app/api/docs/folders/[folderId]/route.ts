@@ -39,7 +39,7 @@ export const PATCH = withOrgAuth<{ folderId: string }>(
       return NextResponse.json({ success: false, error: "Not found" }, { status: 404 });
     }
     if (!(await canDoc(userId, orgId, folder.projectId, "update"))) {
-      return NextResponse.json({ success: false, error: "Forbidden" }, { status: 403 });
+      return NextResponse.json({ success: false, error: "You don't have access to this." }, { status: 403 });
     }
     const parsed = patchSchema.safeParse(await req.json());
     if (!parsed.success) {
@@ -67,7 +67,7 @@ export const DELETE = withOrgAuth<{ folderId: string }>(
       return NextResponse.json({ success: false, error: "Not found" }, { status: 404 });
     }
     if (!(await canDoc(userId, orgId, folder.projectId, "delete"))) {
-      return NextResponse.json({ success: false, error: "Forbidden" }, { status: 403 });
+      return NextResponse.json({ success: false, error: "You don't have access to this." }, { status: 403 });
     }
     // Orphan the folder's docs back to root (non-destructive), then soft-delete
     // the folder — in one transaction so a doc never points at a dead folder.

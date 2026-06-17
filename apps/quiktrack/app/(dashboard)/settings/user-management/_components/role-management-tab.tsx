@@ -7,6 +7,7 @@ import { PermissionMatrix } from "./permission-matrix";
 import { FieldPermissionMatrix } from "./field-permission-matrix";
 import { AddRoleModal } from "./add-role-modal";
 import { roleDisplayName } from "./role-name";
+import { confirmDialog } from "@/lib/ui/confirm";
 
 interface AppRole {
   id: string;
@@ -104,9 +105,15 @@ export function RoleManagementTab() {
                   <span
                     role="button"
                     tabIndex={0}
-                    onClick={(e) => {
+                    onClick={async (e) => {
                       e.stopPropagation();
-                      if (confirm(`Delete role "${roleDisplayName(r.name)}"?`)) del.mutate(r.id);
+                      const ok = await confirmDialog({
+                        title: "Delete role",
+                        message: `Delete role "${roleDisplayName(r.name)}"?`,
+                        confirmText: "Delete",
+                        danger: true,
+                      });
+                      if (ok) del.mutate(r.id);
                     }}
                     className="opacity-0 group-hover:opacity-100 text-gray-400 hover:text-red-500 dark:text-gray-500 dark:hover:text-red-400"
                   >

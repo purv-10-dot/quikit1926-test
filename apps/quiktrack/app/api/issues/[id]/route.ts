@@ -118,7 +118,7 @@ export const PATCH = withOrgAuth<{ id: string }>(
         select: { id: true },
       });
       if (!member) {
-        return NextResponse.json({ success: false, error: "Forbidden" }, { status: 403 });
+        return NextResponse.json({ success: false, error: "You don't have access to this." }, { status: 403 });
       }
       if (!(await userCanInProject(userId, orgId, issue.projectId, "Issue", "update"))) {
         return forbidden();
@@ -378,7 +378,7 @@ export const DELETE = withOrgAuth<{ id: string }>(
         select: { id: true },
       });
       if (!member) {
-        return NextResponse.json({ success: false, error: "Forbidden" }, { status: 403 });
+        return NextResponse.json({ success: false, error: "You don't have access to this." }, { status: 403 });
       }
       // A full Issue:delete grant (Space Admin / custom roles) deletes any
       // issue in the space. Without it, Contributors may delete only issues

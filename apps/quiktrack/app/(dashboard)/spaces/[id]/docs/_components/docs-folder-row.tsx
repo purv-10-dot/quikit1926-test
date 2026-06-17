@@ -32,6 +32,9 @@ export function DocsFolderRow({
   onDownload,
   onDropDoc,
   onDragStartDoc,
+  canCreateDoc = true,
+  canDeleteDoc,
+  onDeleteDoc,
 }: {
   projectId: string;
   folder: FolderSummary;
@@ -42,6 +45,11 @@ export function DocsFolderRow({
   onDownload?: (doc: DocSummary) => void;
   onDropDoc: (docId: string, toScope: string) => void;
   onDragStartDoc?: (doc: DocSummary) => void;
+  /** Hide the in-folder "new doc" (+) action when the role lacks Doc:create. */
+  canCreateDoc?: boolean;
+  /** Show per-doc delete in the folder's list (gated by Doc:delete). */
+  canDeleteDoc?: boolean;
+  onDeleteDoc?: (doc: DocSummary) => void;
 }) {
   const [open, setOpen] = useState(false);
   const [renaming, setRenaming] = useState(false);
@@ -146,28 +154,30 @@ export function DocsFolderRow({
               {folder.docCount} {folder.docCount === 1 ? "doc" : "docs"}
             </span>
             <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity shrink-0">
-              <div className="relative">
-                <button
-                  type="button"
-                  disabled={busy}
-                  onClick={() => setMenuOpen((v) => !v)}
-                  className="p-1.5 rounded hover:bg-gray-200 transition-colors disabled:opacity-50"
-                  aria-label="New doc in folder"
-                  title="New doc in this folder"
-                >
-                  <Plus className="w-3.5 h-3.5 text-gray-600" />
-                </button>
-                {menuOpen && (
-                  <TemplateMenu
-                    onPick={(key) => {
-                      setMenuOpen(false);
-                      setOpen(true);
-                      onCreateDoc(folder.id, key);
-                    }}
-                    onClose={() => setMenuOpen(false)}
-                  />
-                )}
-              </div>
+              {canCreateDoc && (
+                <div className="relative">
+                  <button
+                    type="button"
+                    disabled={busy}
+                    onClick={() => setMenuOpen((v) => !v)}
+                    className="p-1.5 rounded hover:bg-gray-200 transition-colors disabled:opacity-50"
+                    aria-label="New doc in folder"
+                    title="New doc in this folder"
+                  >
+                    <Plus className="w-3.5 h-3.5 text-gray-600" />
+                  </button>
+                  {menuOpen && (
+                    <TemplateMenu
+                      onPick={(key) => {
+                        setMenuOpen(false);
+                        setOpen(true);
+                        onCreateDoc(folder.id, key);
+                      }}
+                      onClose={() => setMenuOpen(false)}
+                    />
+                  )}
+                </div>
+              )}
               <button
                 type="button"
                 onClick={() => {
@@ -205,6 +215,8 @@ export function DocsFolderRow({
             fetchNextPage={() => list.fetchNextPage()}
             onDownload={onDownload}
             onDragStart={onDragStartDoc}
+            canDelete={canDeleteDoc}
+            onDelete={onDeleteDoc}
             emptyText="No docs in this folder yet."
           />
         </div>
