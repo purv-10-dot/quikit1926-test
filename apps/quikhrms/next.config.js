@@ -4,11 +4,16 @@ const path = require("path");
 const nextConfig = {
   // Standalone build → lean Docker runner (.next/standalone/apps/quikhrms/server.js).
   output: "standalone",
-  // Hide the floating Next.js dev-tools indicator (the circular "N" badge) — it
-  // overlaps the sidebar's Notifications/theme controls in the bottom-left.
-  devIndicators: false,
-  // Monorepo: trace files from the repo root so root node_modules get bundled.
-  outputFileTracingRoot: path.resolve(__dirname, "../.."),
+  // Transpile the shared workspace packages (same list as the other product
+  // apps) so Next compiles their TypeScript instead of treating them as
+  // pre-built node_modules — required for the pruned Docker build.
+  transpilePackages: [
+    "@quikit/ui",
+    "@quikit/auth",
+    "@quikit/shared",
+    "@quikit/database",
+    "@quikit/redis",
+  ],
   // Lint runs separately (`npm run lint` / turbo lint), not as a build gate —
   // and eslint-config-next doesn't resolve in the pruned Docker image.
   eslint: { ignoreDuringBuilds: true },
@@ -18,20 +23,14 @@ const nextConfig = {
   // packages/database) emit a false "no exported member 'PrismaClient'" error.
   // HRMS's own types are still validated by `npm run typecheck` in dev/CI.
   typescript: { ignoreBuildErrors: true },
-  // NOTE: the embedded BullMQ worker (instrumentation.ts → lib/queue/embedded-worker)
-  // is intentionally NOT enabled via experimental.instrumentationHook. Next's
-  // instrumentation compiler webpack-bundles the worker's deep imports
-  // (lib/prisma → packages/database TS source, plus bullmq/nodemailer/xlsx/pdf-lib)
-  // and fails to parse the workspace TypeScript. Run the worker as its own
-  // process instead: `npm run worker:dev` (tsx — no webpack). See worker/index.ts.
   basePath: process.env.NEXT_PUBLIC_BASE_PATH || "",
   assetPrefix: process.env.NEXT_PUBLIC_BASE_PATH || undefined,
-  allowedDevOrigins: [
-    "quikconstructionuat.quikit.ai",
-    "*.quikit.ai",
-  ],
-  turbopack: {
-    root: path.resolve(__dirname, "../.."),
+  experimental: {
+    // Monorepo: trace files from the repo root so workspace deps (@quikit/*)
+    // are bundled into .next/standalone. In Next 14 this is an EXPERIMENTAL
+    // option — at the top level it is silently ignored (the bug the other apps
+    // already avoid by nesting it here).
+    outputFileTracingRoot: path.join(__dirname, "../.."),
   },
   // Force ONE lucide-react across the server + client bundles. The monorepo
   // hoists lucide 0.294 (the version the other apps pin) to the repo root,

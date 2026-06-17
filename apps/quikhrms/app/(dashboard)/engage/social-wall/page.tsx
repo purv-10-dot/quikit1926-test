@@ -4,8 +4,8 @@ import type { LucideIcon } from "lucide-react";
 import { useQuery } from "@tanstack/react-query";
 import { useApiClient } from "@/lib/hooks/use-api";
 import { Sparkles, Megaphone, Trophy, Users, MessageSquare } from "lucide-react";
-import { ShoutoutComposer } from "../../_home/shoutout-composer";
-import { SocialFeed } from "../../_home/social-feed";
+import { ShoutoutComposer } from "../../dashboard/_home/shoutout-composer";
+import { SocialFeed } from "../../dashboard/_home/social-feed";
 
 interface PostItem {
   id: string;
