@@ -168,6 +168,38 @@ export const PERMISSION_TREE: PermissionModule[] = [
   },
 ];
 
+/* ───────────────────────── Scope split ───────────────────────── */
+
+/**
+ * Resources that only make sense at the APP-WIDE level — global sidebar
+ * destinations / global pages with no project context. They appear on the
+ * app-wide role matrix but NOT the per-space project matrix: a project role
+ * governs what a user can do *inside a space*, and there's no single project
+ * to scope a global feature to (one sidebar, many project roles). The override
+ * model already gives project roles authority over everything in-space.
+ */
+export const APP_WIDE_ONLY_RESOURCES: ReadonlySet<string> = new Set([
+  "Home",
+  "Dashboard",
+  "Report",
+]);
+
+export function isAppWideOnly(resource: string): boolean {
+  return APP_WIDE_ONLY_RESOURCES.has(resource);
+}
+
+/**
+ * PERMISSION_TREE filtered to project-scoped resources — what the per-space
+ * project role matrix renders. App-wide-only leaves are dropped, and any module
+ * left empty (Home / Dashboards / Reports) disappears entirely.
+ */
+export const PROJECT_PERMISSION_TREE: PermissionModule[] = PERMISSION_TREE
+  .map((mod) => ({
+    ...mod,
+    leaves: mod.leaves?.filter((l) => !isAppWideOnly(l.resource)),
+  }))
+  .filter((mod) => (mod.leaves?.length ?? 0) > 0 || (mod.subModules?.length ?? 0) > 0);
+
 /* ───────────────────────── Navigation registry ───────────────────────── */
 
 /**

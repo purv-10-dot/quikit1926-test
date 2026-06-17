@@ -7,6 +7,7 @@ import {
   isAction,
   isResource,
   isValidPermissionPair,
+  isAppWideOnly,
 } from "@/lib/api/permissionsRegistry";
 
 // Accept any {resource, action} strings here; invalid/stale pairs are filtered
@@ -76,6 +77,8 @@ export const PUT = withProjectAccess<{ id: string; roleId: string }>(async (
     // Drop unknown / stale pairs instead of failing the whole save.
     if (!isResource(p.resource) || !isAction(p.action)) return false;
     if (!isValidPermissionPair(p.resource, p.action)) return false;
+    // App-wide-only resources (Home/Dashboards/Reports) aren't project-scoped.
+    if (isAppWideOnly(p.resource)) return false;
     seen.add(k);
     return true;
   });

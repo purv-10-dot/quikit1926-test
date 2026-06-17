@@ -5,7 +5,7 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { ChevronDown, ChevronRight } from "lucide-react";
 import { Button } from "@quikit/ui";
 import {
-  PERMISSION_TREE,
+  PROJECT_PERMISSION_TREE,
   isValidPermissionPair,
   walkLeaves,
   type Action,
@@ -127,7 +127,7 @@ export function ProjectPermissionMatrix({
           </tr>
         </thead>
         <tbody>
-          {PERMISSION_TREE.map((mod) => (
+          {PROJECT_PERMISSION_TREE.map((mod) => (
             <ModuleRow
               key={mod.key}
               mod={mod}

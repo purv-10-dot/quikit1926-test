@@ -44,10 +44,11 @@ const PROJECT_SHELL_VIEW: Array<{ resource: string; action: string }> = [
   { resource: "ProjectList", action: "view" },
   { resource: "ProjectTaskTable", action: "view" },
   { resource: "Doc", action: "view" },
-  { resource: "Report", action: "view" },
   { resource: "Timesheet", action: "view" },
   // Note: Issue / Sprint / IssueComment have no `view` grant — their visibility
   // is membership-based, not gated by a permission (see permissionsRegistry).
+  // Report / Home / Dashboards are app-wide-only — governed by the app-wide
+  // role, not seeded into project roles.
 ];
 
 // Contributor = the former Developer + QA merged. Union of their grants is the
