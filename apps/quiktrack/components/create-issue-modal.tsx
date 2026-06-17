@@ -441,10 +441,10 @@ export function CreateIssueModal({
             <BoardFilterSelect
               value={assigneeId}
               onChange={setAssigneeId}
-              placeholder="Automatic"
+              placeholder="Unassigned"
               searchable
               options={[
-                { value: "", label: "Automatic" },
+                { value: "", label: "Unassigned" },
                 ...members.map((m) => ({ value: m.userId, label: memberLabel(m) })),
               ]}
             />
