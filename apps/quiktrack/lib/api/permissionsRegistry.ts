@@ -30,6 +30,13 @@ export type Action = (typeof ACTIONS)[number];
  */
 export const SPACE_ADMIN_ROLE_NAME = "Space Admin";
 
+/**
+ * Name of the seeded "Space Creator" app-wide role — a Member who can also
+ * create their own spaces (becoming Space Admin in each one). Lives here so
+ * both server and client can reference it without server-only imports.
+ */
+export const SPACE_CREATOR_ROLE_NAME = "Space Creator";
+
 /* ───────────────────────── Tree types ───────────────────────── */
 
 export interface PermissionLeaf {

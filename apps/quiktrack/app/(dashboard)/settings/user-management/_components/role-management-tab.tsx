@@ -8,6 +8,7 @@ import { FieldPermissionMatrix } from "./field-permission-matrix";
 import { AddRoleModal } from "./add-role-modal";
 import { roleDisplayName } from "./role-name";
 import { confirmDialog } from "@/lib/ui/confirm";
+import { SPACE_CREATOR_ROLE_NAME } from "@/lib/api/permissionsRegistry";
 
 interface AppRole {
   id: string;
@@ -151,6 +152,22 @@ export function RoleManagementTab() {
                   The <span className="font-medium text-gray-800 dark:text-gray-200">Admin</span> role
                   can view and edit every field, entity, and navigation item across all spaces. There&apos;s
                   nothing to configure here — its permissions can&apos;t be restricted.
+                </p>
+              </div>
+            ) : selectedRole.name === SPACE_CREATOR_ROLE_NAME ? (
+              <div className="flex flex-col items-center justify-center text-center rounded-xl border border-blue-100 bg-gradient-to-b from-blue-50 to-white px-8 py-12 dark:border-blue-400/20 dark:from-blue-500/10 dark:to-gray-950">
+                <div className="flex h-14 w-14 items-center justify-center rounded-full bg-blue-100 dark:bg-blue-500/20">
+                  <ShieldCheck className="h-7 w-7 text-blue-600 dark:text-blue-300" />
+                </div>
+                <h4 className="mt-4 text-lg font-semibold text-gray-900 dark:text-gray-100">
+                  Can create their own spaces
+                </h4>
+                <p className="mt-2 max-w-md text-sm text-gray-600 dark:text-gray-400">
+                  The <span className="font-medium text-gray-800 dark:text-gray-200">Space Creator</span> role
+                  has standard member access <span className="font-medium">plus</span> the ability to create
+                  spaces. In any space they create they become its <span className="font-medium text-gray-800 dark:text-gray-200">Space Admin</span> (full control of that space).
+                  They see only spaces they belong to and have no org-wide admin powers. This is a preset role —
+                  there&apos;s nothing to configure here.
                 </p>
               </div>
             ) : (

@@ -24,7 +24,7 @@ const NAV: {
   perm?: { resource: string; action: string };
 }[] = [
   { key: "details", label: "Details", href: (id) => `/spaces/${id}/settings` },
-  { key: "user-management", label: "User Management", href: (id) => `/spaces/${id}/settings/user-management`, perm: { resource: "ProjectMember", action: "view" } },
+  { key: "user-management", label: "Roles & Permissions", href: (id) => `/spaces/${id}/settings/user-management`, perm: { resource: "ProjectMember", action: "view" } },
   { key: "fields", label: "Fields", href: (id) => `/spaces/${id}/settings/fields`, perm: { resource: "ProjectMember", action: "update" } },
   // TODO: the following nav entries are coming soon — their pages are stubs.
   // Restore once their corresponding settings UIs are implemented.

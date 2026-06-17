@@ -498,7 +498,7 @@ function AddUserDrawer({ onClose }: { onClose: () => void }) {
             Each project uses its own role catalogue. Leave a row on{" "}
             <span className="font-medium dark:text-gray-300">Default</span> and the project&apos;s
             default role applies. Per-role permissions can be tuned later from
-            the project&apos;s User Management page
+            the project&apos;s Roles &amp; Permissions page
             after invite.
           </p>
         </>

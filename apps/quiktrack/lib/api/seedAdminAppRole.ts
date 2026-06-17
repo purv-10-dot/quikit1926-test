@@ -16,6 +16,7 @@ import {
   walkLeaves,
   LEGACY_RESOURCE_BACKFILL,
   LEGACY_NAV_TO_VIEW,
+  SPACE_CREATOR_ROLE_NAME,
 } from "@/lib/api/permissionsRegistry";
 import { getQuikTrackAppId } from "@/lib/api/permissions";
 
@@ -156,14 +157,14 @@ export async function seedUserAppRole(orgId: string): Promise<string> {
  *  Renamable by admins in the Roles UI — the seeder re-finds it by `isDefault`
  *  is N/A here, so a rename means the seeder would re-create it; if you rename,
  *  update this constant too (or set `isSystem: true` to lock the name). */
-export const SPACE_CREATOR_ROLE_NAME = "Space Creator";
+export { SPACE_CREATOR_ROLE_NAME };
 
 /**
  * "Space Creator" role: a Member who can ALSO create their own spaces.
  *
- * Grants = the default Member baseline (view everywhere; edit on
- * Issue / Comment / Timesheet / Sprint) PLUS `Project:create`. That single
- * extra grant is the whole point of the role.
+ * Grants = the default Member baseline (view everywhere; edit on Issue /
+ * Sprint) PLUS `Project:create`. That single extra grant is the whole point
+ * of the role.
  *
  * Visibility is unchanged from Member: the /api/projects list stays
  * membership-filtered for non-admins, so a Space Creator sees only the spaces
