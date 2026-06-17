@@ -22,8 +22,8 @@ import { NextResponse } from "next/server";
 import type { NextAuthOptions } from "next-auth";
 import { getServerSession } from "next-auth";
 import { db } from "@quikit/database";
-import { isModuleEnabled } from "@quikit/shared/moduleRegistry";
-import { getOrSet } from "./cache";
+import { isModuleEnabled, globallyDisabledModules, computeDisabledModules } from "@quikit/shared/moduleRegistry";
+import { getOrSet, invalidate } from "./cache";
 
 /**
  * React.cache() is only available in React 18 Canary / React 19 (which Next.js
@@ -45,6 +45,9 @@ const cache: <T extends (...args: never[]) => unknown>(fn: T) => T =
  */
 export const getDisabledModules = cache(
   async (orgId: string, appSlug: string): Promise<Set<string>> => {
+    // `defaultDisabled` modules (e.g. Cash, Survey) are off for every org —
+    // including brand-new ones — unless a per-tenant row explicitly enables
+    // them. `computeDisabledModules` reconciles those defaults with the rows.
     try {
       // Disabled modules rarely change (admin toggles them in Settings →
       // Configurations). 30s TTL keeps the FF gate fast without making a
@@ -57,24 +60,41 @@ export const getDisabledModules = cache(
             where: { slug: appSlug },
             select: { id: true },
           });
-          if (!app) return [];
+          if (!app) return Array.from(globallyDisabledModules(appSlug));
           const rows = await db.appModuleFlag.findMany({
-            where: { orgId, appId: app.id, enabled: false },
-            select: { moduleKey: true },
+            where: { orgId, appId: app.id },
+            select: { moduleKey: true, enabled: true },
           });
-          if (!Array.isArray(rows)) return [];
-          return rows.map((r) => r.moduleKey);
+          return Array.from(
+            computeDisabledModules(appSlug, Array.isArray(rows) ? rows : []),
+          );
         },
       );
       return new Set(arr);
     } catch {
-      // Fail-open: if the gate query itself errors, don't block the app —
-      // log and treat as all-enabled. A broken gate shouldn't take down the
-      // entire module.
-      return new Set();
+      // Fail-open: if the gate query itself errors, don't block the app — treat
+      // per-tenant flags as unknown. Registry default-off modules stay off even
+      // on a DB glitch (no override known).
+      return new Set(globallyDisabledModules(appSlug));
     }
   },
 );
+
+/**
+ * Drop the cached disabled-module set for one (orgId, appSlug). Call from the
+ * super-admin feature-flag toggle route after writing an AppModuleFlag so the
+ * change propagates to every process within seconds (the cache's pub/sub
+ * channel clears peer in-memory copies) instead of waiting out the 30s TTL.
+ *
+ * The key string is derived here so it can never drift from the one
+ * `getDisabledModules` reads/writes above.
+ */
+export async function invalidateDisabledModules(
+  orgId: string,
+  appSlug: string,
+): Promise<void> {
+  await invalidate(`disabledModules:${orgId}:${appSlug}`);
+}
 
 /**
  * Server-component gate. Call from a `layout.tsx` at the top of the module's

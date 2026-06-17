@@ -529,9 +529,11 @@ export function createAuthOptions(config: AuthConfig): NextAuthOptions {
           "https://scale.quikit.ai",
           "https://orgadmin.quikit.ai",
           "https://track.quikit.ai",
-          "https://quikcrm.quikit.ai",
+          "https://crm.quikit.ai",
           "https://social.quikit.ai",
           "https://quikinfra.quikit.ai",
+          "https://quikhrms.vercel.app",
+          "https://people.quikit.ai",
         ];
         const fromEnv = (process.env.AUTH_ALLOWED_RETURN_ORIGINS ?? "")
           .split(",")

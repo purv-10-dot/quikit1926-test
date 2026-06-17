@@ -16,6 +16,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { withOrgAuth } from "@/lib/api/withOrgAuth";
 import { db } from "@/lib/db";
+import { getUserTimezone, resolveScheduledForUtc } from "@/lib/utils/timezone";
 import { getWorkspaceRole } from "@/lib/auth/rbac";
 
 type AnyRow = Record<string, unknown>;
@@ -122,7 +123,7 @@ export const GET = withOrgAuth(async ({ orgId, userId }, req: NextRequest) => {
 // POST /api/posts — create a post
 // Members create as draft. Admins + scheduledFor → scheduled (auto-stamps approvedAt).
 // ---------------------------------------------------------------------------
-export const POST = withOrgAuth(async ({ orgId, userId }, req: NextRequest) => {
+export const POST = withOrgAuth(async ({ orgId, userId, session }, req: NextRequest) => {
   const json = await req.json().catch(() => null);
   const parsed = createPostSchema.safeParse(json);
   if (!parsed.success) {
@@ -145,7 +146,13 @@ export const POST = withOrgAuth(async ({ orgId, userId }, req: NextRequest) => {
   }
   const isAdmin = role === "admin" || role === "approver";
 
-  const requestedSchedule = body.scheduledFor ? new Date(body.scheduledFor) : null;
+  // F2: scheduledFor arrives as a tz-naive local wall-clock string; convert
+  // it to UTC in the user's profile timezone (default UTC). The cron's
+  // UTC-to-UTC compare is unaffected.
+  const requestedSchedule = resolveScheduledForUtc(
+    body.scheduledFor,
+    getUserTimezone(session),
+  );
 
   let status = "draft";
   let persistedScheduledFor: Date | null = null;

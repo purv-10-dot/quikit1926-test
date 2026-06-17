@@ -18,12 +18,12 @@
  *    (now - OVERDUE_GRACE_MS) flips to `overdue`. Per CLAUDE.md, overdue
  *    posts do NOT auto-publish — admin must reschedule or Post Now.
  *
- * Org scope: cron runs against DEFAULT_ORG_ID (single-org). Multi-org
- * cron is deferred — when implemented it will iterate over all active
- * orgs (or run one queue per org).
- *
- * Org scoping: every Prisma query and raw SQL statement filters by `orgId`
- * (the canonical multi-tenant key across the QuikIT monorepo).
+ * Org scope: the cron sweeps ALL orgs in one tick. The FOR UPDATE SKIP
+ * LOCKED claim and the overdue sweep carry no orgId predicate; each
+ * claimed row's own `orgId` flows downstream to publishPost (and the
+ * SocialAccount back-link), so every post publishes with ITS org's
+ * credentials only — no cross-org leakage, no per-org loop needed.
+ * Mirrors the production-proven standalone (per-row key, single sweep).
  */
 
 import { NextRequest, NextResponse } from "next/server";
@@ -31,19 +31,6 @@ import { Prisma } from "@prisma/client";
 import { db } from "@/lib/db";
 import { PostStatus } from "@/types/post-status";
 import { publishPost } from "@/lib/meta/dispatch";
-
-/**
- * Resolve the org-id the cron operates against.
- *
- * QuikIT migration: single-org cron until per-org scheduling lands.
- * Reads DEFAULT_ORG_ID first (canonical name), falls back to
- * DEFAULT_TENANT_ID for backwards compatibility with quiksocial-v2 dev
- * env files that haven't been renamed yet.
- */
-const DEFAULT_ORG_ID =
-  process.env.DEFAULT_ORG_ID ||
-  process.env.DEFAULT_TENANT_ID ||
-  "org_quiksocial_default";
 
 /** How long a lock is considered valid before it becomes stale and re-claimable. */
 const LOCK_TTL_MS = 5 * 60 * 1000; // 5 minutes
@@ -63,11 +50,12 @@ interface ClaimedPostRow {
   platformPostIds: Record<string, string> | null;
 }
 
-async function markOverduePosts(orgId: string, now: Date): Promise<number> {
+// All-orgs sweep: no orgId predicate — "still scheduled past the grace
+// window" is org-agnostic; each row keeps its own orgId.
+async function markOverduePosts(now: Date): Promise<number> {
   const overdueCutoff = new Date(now.getTime() - OVERDUE_GRACE_MS);
   const result = await db.post.updateMany({
     where: {
-      orgId,
       status: PostStatus.Scheduled,
       scheduledFor: { lt: overdueCutoff },
     },
@@ -80,18 +68,17 @@ async function markOverduePosts(orgId: string, now: Date): Promise<number> {
  * Claim the next publishable post atomically via Postgres
  * `SELECT FOR UPDATE SKIP LOCKED`. Two workers cannot pick the same row.
  */
-async function claimNextPost(
-  orgId: string,
-  now: Date,
-): Promise<ClaimedPostRow | null> {
+async function claimNextPost(now: Date): Promise<ClaimedPostRow | null> {
   const staleLockCutoff = new Date(now.getTime() - LOCK_TTL_MS);
 
+  // All-orgs claim: no orgId predicate. FOR UPDATE SKIP LOCKED still
+  // guarantees two workers never grab the same row; the claimed row's own
+  // orgId (in RETURNING) flows downstream so dispatch stays org-scoped.
   const rows = await db.$queryRaw<ClaimedPostRow[]>(Prisma.sql`
     WITH next AS (
       SELECT id
       FROM "app_quiksocial"."Post"
-      WHERE "orgId" = ${orgId}
-        AND status = 'scheduled'
+      WHERE status = 'scheduled'
         AND "scheduledFor" <= ${now}
         AND ("lockedAt" IS NULL OR "lockedAt" < ${staleLockCutoff})
       ORDER BY "scheduledFor" ASC
@@ -137,7 +124,6 @@ export async function GET(req: NextRequest) {
     );
   }
 
-  const orgId = DEFAULT_ORG_ID;
   const now = new Date();
   const results = {
     overdueMarked: 0,
@@ -158,7 +144,7 @@ export async function GET(req: NextRequest) {
 
     let post: ClaimedPostRow | null = null;
     try {
-      post = await claimNextPost(orgId, now);
+      post = await claimNextPost(now);
     } catch (err) {
       console.error("[cron/publish-scheduled] Failed to claim post:", err);
       break;
@@ -182,6 +168,40 @@ export async function GET(req: NextRequest) {
           ...(post.platformPostIds ?? {}),
           [dispatch.platform]: dispatch.mediaId,
         };
+
+        // Best-effort: link the SocialAccount that published this post so the
+        // auto-reply monitor (monitor-batch filters posts by socialAccountId)
+        // can find it. Scoped to the post's OWN org. Only link when exactly
+        // one active account matches — never guess. A lookup failure must NOT
+        // fail the publish (the post DID publish).
+        let resolvedSocialAccountId: string | null = null;
+        if (post.brandId) {
+          try {
+            const candidates = await db.socialAccount.findMany({
+              where: {
+                orgId: post.orgId,
+                brandId: post.brandId,
+                platform: dispatch.platform,
+                isActive: true,
+              },
+              select: { id: true },
+              take: 2, // only need to distinguish 1 from >1
+            });
+            if (candidates.length === 1) {
+              resolvedSocialAccountId = candidates[0].id;
+            } else if (candidates.length > 1) {
+              console.warn(
+                `[cron/publish-scheduled] Post ${post.id}: ${candidates.length} active ${dispatch.platform} accounts for brand ${post.brandId} — leaving socialAccountId null`,
+              );
+            }
+          } catch (lookupErr) {
+            console.warn(
+              `[cron/publish-scheduled] Post ${post.id}: SocialAccount lookup failed`,
+              lookupErr,
+            );
+          }
+        }
+
         await db.post.update({
           where: { id: post.id },
           data: {
@@ -192,6 +212,11 @@ export async function GET(req: NextRequest) {
             platformPostIds,
             failedReason: null,
             lockedAt: null,
+            // Spread-only-when-resolved — never wipe an existing link on a
+            // re-publish where the lookup fails or returns 0 candidates.
+            ...(resolvedSocialAccountId
+              ? { socialAccountId: resolvedSocialAccountId }
+              : {}),
           },
         });
 
@@ -243,7 +268,7 @@ export async function GET(req: NextRequest) {
 
   // --- Step 2: Overdue sweep ---
   try {
-    results.overdueMarked = await markOverduePosts(orgId, now);
+    results.overdueMarked = await markOverduePosts(now);
     if (results.overdueMarked > 0) {
       console.log(
         `[cron/publish-scheduled] Marked ${results.overdueMarked} post(s) as overdue`,

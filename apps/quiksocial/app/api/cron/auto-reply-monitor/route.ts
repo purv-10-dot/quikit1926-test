@@ -5,26 +5,21 @@
  * `Authorization: Bearer ${CRON_SECRET}`. Matches the auth pattern from
  * /api/cron/publish-scheduled.
  *
- * Iterates every active facebook/instagram SocialAccount in the default
- * org and asks the Python AI service to enqueue a monitor task for it.
- * One Celery task per (orgId, socialAccountId) per tick.
+ * Iterates every active facebook/instagram SocialAccount across ALL orgs
+ * and asks the Python AI service to enqueue a monitor task for each. One
+ * Celery task per (orgId, socialAccountId) per tick; the orgId comes from
+ * each SocialAccount row itself, so the responder stays org-correct.
  *
  * If the Python service is down or one enqueue fails, the loop continues
  * with the next account. Tick reports total enqueued and any failures.
  *
- * Org scope: single-org via DEFAULT_ORG_ID (DEFAULT_TENANT_ID accepted as
- * fallback for env files that haven't been renamed yet). Multi-org cron
- * lands later, same as publish-scheduled.
+ * Org scope: all orgs in one sweep (per-row orgId on SocialAccount drives
+ * the enqueue). Mirrors the production-proven standalone.
  */
 
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { enqueueAutoReplyMonitor } from "@/lib/auto-reply/ai-service-client";
-
-const DEFAULT_ORG_ID =
-  process.env.DEFAULT_ORG_ID ||
-  process.env.DEFAULT_TENANT_ID ||
-  "org_quiksocial_default";
 
 export async function GET(req: NextRequest) {
   const authHeader = req.headers.get("authorization");
@@ -44,16 +39,15 @@ export async function GET(req: NextRequest) {
     );
   }
 
-  const orgId = DEFAULT_ORG_ID;
-
-  // Only platforms the responder/graph client supports in Phase 1.
+  // All-orgs sweep: scan every active fb/ig account; each account's own
+  // orgId drives the enqueue so the responder stays org-correct. Only
+  // platforms the responder/graph client supports in Phase 1.
   const accounts = await db.socialAccount.findMany({
     where: {
-      orgId,
       isActive: true,
       platform: { in: ["facebook", "instagram"] },
     },
-    select: { id: true },
+    select: { id: true, orgId: true },
   });
 
   const results = {
@@ -64,7 +58,7 @@ export async function GET(req: NextRequest) {
   };
 
   for (const account of accounts) {
-    const out = await enqueueAutoReplyMonitor(orgId, account.id);
+    const out = await enqueueAutoReplyMonitor(account.orgId, account.id);
     if (out.ok) {
       results.enqueued++;
     } else {

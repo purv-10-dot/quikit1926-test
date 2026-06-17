@@ -14,6 +14,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { withOrgAuth } from "@/lib/api/withOrgAuth";
 import { db } from "@/lib/db";
+import { getUserTimezone, resolveScheduledForUtc } from "@/lib/utils/timezone";
 import { getWorkspaceRole } from "@/lib/auth/rbac";
 import { PostStatus } from "@/types/post-status";
 
@@ -30,7 +31,7 @@ const submitReviewSchema = z.object({
 });
 
 export const PATCH = withOrgAuth<{ id: string }>(
-  async ({ orgId, userId }, req: NextRequest, { params }) => {
+  async ({ orgId, userId, session }, req: NextRequest, { params }) => {
     const json = await req.json().catch(() => ({}));
     const body = submitReviewSchema.parse(json ?? {});
 
@@ -90,8 +91,12 @@ export const PATCH = withOrgAuth<{ id: string }>(
       if (body.requestedPublishTime === null || body.requestedPublishTime === "") {
         data.requestedPublishTime = null;
       } else {
-        const t = new Date(body.requestedPublishTime);
-        if (isNaN(t.getTime())) {
+        // F2: tz-naive local wall-clock → UTC in the user's profile timezone.
+        const t = resolveScheduledForUtc(
+          body.requestedPublishTime,
+          getUserTimezone(session),
+        );
+        if (!t) {
           return NextResponse.json(
             {
               success: false,

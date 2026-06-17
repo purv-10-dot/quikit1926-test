@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 import { db } from "@/lib/db";
 import { withSuperAdminAuth } from "@/lib/withSuperAdminAuth";
-import { getAppConfig } from "@quikit/shared/moduleRegistry";
+import { getAppConfig, computeDisabledModules } from "@quikit/shared/moduleRegistry";
 
 /**
  * GET /api/super/feature-flags/[appSlug]?orgId=X
@@ -44,9 +44,12 @@ export const GET = withSuperAdminAuth<{ appSlug: string }>(async (auth, request:
       );
     }
 
+    // Fetch ALL rows (not just enabled:false) so `computeDisabledModules` can
+    // apply the registry's default-off modules and let an explicit enabled:true
+    // row override them — keeping this view identical to the runtime gate.
     const rows = await db.appModuleFlag.findMany({
-      where: { orgId, appId: app.id, enabled: false },
-      select: { moduleKey: true },
+      where: { orgId, appId: app.id },
+      select: { moduleKey: true, enabled: true },
     });
 
     return NextResponse.json({
@@ -54,7 +57,7 @@ export const GET = withSuperAdminAuth<{ appSlug: string }>(async (auth, request:
       data: {
         appSlug,
         orgId,
-        disabledKeys: rows.map((r) => r.moduleKey),
+        disabledKeys: Array.from(computeDisabledModules(appSlug, rows)),
       },
     });
   } catch (error: unknown) {

@@ -13,7 +13,22 @@ playwright-report
 test-results
 .playwright-cache
 .DS_Store
+
+# ── Vercel (CLI link, build output, deploy artifacts) ───────────────────────
+# Local project link + build output. The bare `.vercel` pattern matches the
+# dir at any depth, so the repo-root AND every apps/<app>/.vercel are ignored.
 .vercel
+.vercel/
+**/.vercel/
+.vercel/output
+# Legacy Vercel CLI dir
+.now
+.now/
+# Deploy logs produced by scripts/_deploy-api.mjs & friends (artifacts, not source).
+deploy-*.log
+# NOTE: vercel.json and .vercelignore are intentionally NOT ignored — they are
+# committed deploy configuration (build commands, crons, upload excludes).
+
 apps/quikscale.zip
 apps/quikinfra/uploads/*
 packages/database/.env.tmp

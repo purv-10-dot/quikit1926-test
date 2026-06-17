@@ -1,0 +1,614 @@
+"use client";
+
+import { Fragment, useEffect, useMemo, useState } from "react";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { useApiClient } from "@/lib/hooks/use-api";
+import { useDialog } from "@/components/hrms/dialog";
+import { useToast } from "@/components/hrms/toast";
+import { Modal } from "@/components/hrms/modal";
+import { Plus, Shield, ShieldCheck, Trash2, Pencil } from "lucide-react";
+import {
+  PERMISSION_TREE,
+  NAV_TREE,
+  ACTIONS,
+  type Action,
+} from "@/lib/rbac/permissions-tree";
+
+/**
+ * Roles & Permissions page — quikscale v2 layout.
+ *
+ *   Roles (left panel)        Permissions — {roleName}     (right panel)
+ *   ─────────────────         ───────────────────────────────
+ *   admin           DEFAULT   [Entities] [Navigation]
+ *   hr_admin
+ *   …                          Module       VIEW CREATE UPDATE DELETE
+ *                              Dashboard    [ ]  —      —      —
+ *                              KPI          [✓]  [✓]    [✓]    [✓]   …
+ *
+ * Save commits Entities + Navigation in one click.
+ */
+
+interface RoleItem {
+  id: string;
+  name: string;
+  code: string;
+  description: string | null;
+  isSystem: boolean;
+  isDefault: boolean;
+  permissions: { code: string }[]; // server returns PermissionDef[] (back-compat)
+  employeeCount: number;
+}
+
+export default function RolesPage() {
+  const api = useApiClient();
+  const qc = useQueryClient();
+  const dialog = useDialog();
+  const toast = useToast();
+
+  const [selectedRoleId, setSelectedRoleId] = useState<string | null>(null);
+  const [tab, setTab] = useState<"entities" | "navigation">("entities");
+  const [showCreate, setShowCreate] = useState(false);
+  const [editingRole, setEditingRole] = useState<RoleItem | null>(null);
+  const [draftPerms, setDraftPerms] = useState<Set<string>>(new Set());
+  const [draftNav, setDraftNav] = useState<Set<string>>(new Set());
+
+  const { data: rolesResp } = useQuery({
+    queryKey: ["roles"],
+    queryFn: () => api.get<RoleItem[]>("/api/v1/hrms/settings/roles"),
+  });
+  const roles = rolesResp?.data ?? [];
+
+  const active = roles.find((r) => r.id === selectedRoleId) ?? roles[0] ?? null;
+  useEffect(() => {
+    if (active && !selectedRoleId) setSelectedRoleId(active.id);
+  }, [active, selectedRoleId]);
+
+  const { data: navResp } = useQuery({
+    queryKey: ["role-nav", active?.id],
+    queryFn: () => api.get<{ navKeys: string[] }>(`/api/v1/hrms/settings/roles/${active!.id}/navigation`),
+    enabled: !!active,
+  });
+
+  // Sync draft state when active role changes.
+  useEffect(() => {
+    if (!active) {
+      setDraftPerms(new Set());
+      return;
+    }
+    setDraftPerms(new Set(active.permissions.map((p) => p.code)));
+  }, [active?.id, active?.permissions]);
+
+  useEffect(() => {
+    setDraftNav(new Set(navResp?.data?.navKeys ?? []));
+  }, [navResp?.data?.navKeys, active?.id]);
+
+  // ── Mutations ────────────────────────────────────────────
+  const savePermsMut = useMutation({
+    mutationFn: (codes: string[]) =>
+      api.put(`/api/v1/hrms/settings/roles/${active!.id}/permissions`, { permissions: codes }),
+  });
+  const saveNavMut = useMutation({
+    mutationFn: (navKeys: string[]) =>
+      api.put(`/api/v1/hrms/settings/roles/${active!.id}/navigation`, { navKeys }),
+  });
+  const createRoleMut = useMutation({
+    mutationFn: (body: { name: string; description: string; isDefault: boolean }) =>
+      api.post<RoleItem>("/api/v1/hrms/settings/roles", body),
+    onSuccess: (r) => {
+      qc.invalidateQueries({ queryKey: ["roles"] }); qc.invalidateQueries({ queryKey: ["settings", "roles"] }); qc.invalidateQueries({ queryKey: ["users-permissions"] });
+      setSelectedRoleId(r.data.id);
+      setShowCreate(false);
+    },
+  });
+  const updateRoleMut = useMutation({
+    mutationFn: ({ id, body }: { id: string; body: { name: string; description: string; isDefault: boolean } }) =>
+      api.patch(`/api/v1/hrms/settings/roles/${id}`, body),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["roles"] }); qc.invalidateQueries({ queryKey: ["settings", "roles"] }); qc.invalidateQueries({ queryKey: ["users-permissions"] });
+      setEditingRole(null);
+    },
+  });
+  const deleteRoleMut = useMutation({
+    mutationFn: (id: string) => api.delete(`/api/v1/hrms/settings/roles/${id}`),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["roles"] });
+      qc.invalidateQueries({ queryKey: ["settings", "roles"] });
+      qc.invalidateQueries({ queryKey: ["users-permissions"] });
+    },
+  });
+
+  const savedPerms = useMemo(
+    () => new Set(active?.permissions.map((p) => p.code) ?? []),
+    [active?.permissions],
+  );
+  const savedNav = useMemo(() => new Set(navResp?.data?.navKeys ?? []), [navResp?.data?.navKeys]);
+
+  const isDirty = useMemo(() => {
+    if (!active) return false;
+    if (savedPerms.size !== draftPerms.size) return true;
+    for (const c of savedPerms) if (!draftPerms.has(c)) return true;
+    if (savedNav.size !== draftNav.size) return true;
+    for (const n of savedNav) if (!draftNav.has(n)) return true;
+    return false;
+  }, [savedPerms, draftPerms, savedNav, draftNav, active]);
+
+  async function saveAll() {
+    if (!active) return;
+    try {
+      await Promise.all([
+        savePermsMut.mutateAsync(Array.from(draftPerms)),
+        saveNavMut.mutateAsync(Array.from(draftNav)),
+      ]);
+      await qc.invalidateQueries({ queryKey: ["roles"] }); qc.invalidateQueries({ queryKey: ["settings", "roles"] }); qc.invalidateQueries({ queryKey: ["users-permissions"] });
+      await qc.invalidateQueries({ queryKey: ["role-nav", active.id] });
+      toast.success("Role saved");
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Save failed");
+    }
+  }
+
+  const togglePerm = (code: string) => {
+    const next = new Set(draftPerms);
+    if (next.has(code)) next.delete(code);
+    else next.add(code);
+    setDraftPerms(next);
+  };
+
+  const toggleNav = (key: string) => {
+    const next = new Set(draftNav);
+    if (next.has(key)) next.delete(key);
+    else next.add(key);
+    setDraftNav(next);
+  };
+
+  return (
+    <div className="flex h-[calc(100vh-6rem)] bg-white">
+      {/* ── Left: Roles list ────────────────────────────── */}
+      <aside className="w-[260px] border-r border-gray-200 flex flex-col">
+        <div className="flex items-center justify-between px-4 py-3 border-b border-gray-200">
+          <h2 className="text-sm font-semibold text-gray-900">Roles</h2>
+          <button
+            onClick={() => setShowCreate(true)}
+            className="w-7 h-7 rounded-full bg-[#3b82f6] text-white flex items-center justify-center hover:bg-[#2563eb]"
+            title="New role"
+          >
+            <Plus size={16} />
+          </button>
+        </div>
+        <ul className="flex-1 overflow-y-auto py-1">
+          {roles.map((r) => (
+            <li key={r.id}>
+              <button
+                onClick={() => setSelectedRoleId(r.id)}
+                className={`w-full text-left px-4 py-2 flex items-center gap-2 text-sm hover:bg-gray-50 ${
+                  r.id === active?.id ? "bg-[#fff8e1] border-l-2 border-amber-500" : ""
+                }`}
+              >
+                {r.isSystem ? (
+                  <ShieldCheck size={14} className="text-amber-500" />
+                ) : (
+                  <Shield size={14} className="text-gray-400" />
+                )}
+                <span className="flex-1 truncate">{r.name}</span>
+                {r.isDefault && (
+                  <span className="text-[10px] px-1.5 py-0.5 bg-blue-50 text-blue-600 rounded uppercase">Default</span>
+                )}
+              </button>
+            </li>
+          ))}
+          {roles.length === 0 && (
+            <li className="px-4 py-8 text-sm text-gray-400 text-center">No roles yet</li>
+          )}
+        </ul>
+      </aside>
+
+      {/* ── Right: Permissions matrix ──────────────────────── */}
+      <main className="flex-1 overflow-y-auto">
+        {!active ? (
+          <div className="p-12 text-center text-gray-500">Select a role to manage permissions</div>
+        ) : (
+          <>
+            {/* Header */}
+            <div className="px-6 py-4 border-b border-gray-200 flex items-center gap-3">
+              <h1 className="text-lg font-semibold text-gray-900">
+                Permissions — {active.name}
+              </h1>
+              {active.isSystem ? (
+                <ShieldCheck size={16} className="text-amber-500" />
+              ) : (
+                <Shield size={16} className="text-gray-400" />
+              )}
+              <div className="ml-auto flex items-center gap-2">
+                {!active.isSystem && (
+                  <>
+                    <button
+                      onClick={() => setEditingRole(active)}
+                      className="group relative px-4 py-2 text-sm font-semibold text-amber-700 bg-amber-50 border border-amber-200 rounded-lg shadow-sm hover:bg-amber-100 hover:border-amber-300 hover:shadow-md hover:-translate-y-0.5 active:translate-y-0 active:shadow-sm transition-all duration-200 flex items-center gap-2 focus:outline-none focus:ring-2 focus:ring-amber-400 focus:ring-offset-2"
+                    >
+                      <Pencil size={14} className="group-hover:rotate-12 transition-transform duration-200" />
+                      Edit
+                    </button>
+                    <button
+                      onClick={async () => {
+                        const ok = await dialog.confirm({
+                          title: "Delete role?",
+                          description: `Delete "${active.name}"? Employees on this role lose access.`,
+                          confirmLabel: "Delete",
+                          variant: "danger",
+                        });
+                        if (!ok) return;
+                        try {
+                          await deleteRoleMut.mutateAsync(active.id);
+                          setSelectedRoleId(null);
+                          toast.success("Role deleted");
+                        } catch (e) {
+                          toast.error(e instanceof Error ? e.message : "Delete failed");
+                        }
+                      }}
+                      className="group relative px-4 py-2 text-sm font-semibold text-white bg-gradient-to-b from-red-500 to-red-600 border border-red-600 rounded-lg shadow-sm hover:from-red-600 hover:to-red-700 hover:shadow-md hover:-translate-y-0.5 active:translate-y-0 active:shadow-sm transition-all duration-200 flex items-center gap-2 focus:outline-none focus:ring-2 focus:ring-red-400 focus:ring-offset-2"
+                    >
+                      <Trash2 size={14} className="group-hover:scale-110 transition-transform duration-200" />
+                      Delete
+                    </button>
+                  </>
+                )}
+                <button
+                  onClick={saveAll}
+                  disabled={!isDirty || savePermsMut.isPending || saveNavMut.isPending}
+                  className="group relative px-6 py-2 text-sm font-semibold text-white bg-gradient-to-b from-[#3b82f6] to-[#1d4ed8] border border-blue-700 rounded-lg shadow-md hover:from-[#2563eb] hover:to-[#1e40af] hover:shadow-lg hover:-translate-y-0.5 active:translate-y-0 active:shadow-sm transition-all duration-200 disabled:bg-gradient-to-b disabled:from-gray-200 disabled:to-gray-300 disabled:text-gray-500 disabled:border-gray-300 disabled:shadow-none disabled:hover:translate-y-0 disabled:cursor-not-allowed focus:outline-none focus:ring-2 focus:ring-blue-400 focus:ring-offset-2 flex items-center gap-2 min-w-[90px] justify-center"
+                >
+                  {savePermsMut.isPending || saveNavMut.isPending ? (
+                    <>
+                      <span className="inline-block w-3.5 h-3.5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                      Saving
+                    </>
+                  ) : (
+                    <>
+                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" className="group-hover:scale-110 transition-transform duration-200">
+                        <polyline points="20 6 9 17 4 12" />
+                      </svg>
+                      Save
+                    </>
+                  )}
+                </button>
+              </div>
+            </div>
+
+            {/* Sub-tabs */}
+            <div className="px-6 border-b border-gray-200">
+              <div className="flex gap-1">
+                <TabBtn label="Entities" active={tab === "entities"} onClick={() => setTab("entities")} />
+                <TabBtn label="Navigation" active={tab === "navigation"} onClick={() => setTab("navigation")} />
+              </div>
+            </div>
+
+            {/* Info banner */}
+            <div className="mx-6 mt-4 px-4 py-2 bg-[#16243A] text-white text-xs rounded-md flex items-start gap-2">
+              <span className="text-amber-300">ℹ</span>
+              <span>
+                Tick an action to grant it. <b>Module-level</b> ticks select all leaves under that module.
+                Clicking the entity name toggles the whole row. Save commits both <b>Entities</b> and <b>Navigation</b> in one go.
+              </span>
+            </div>
+
+            {/* Tab body */}
+            <div className="p-6">
+              {tab === "entities" ? (
+                <EntityMatrix
+                  draft={draftPerms}
+                  saved={savedPerms}
+                  onToggle={togglePerm}
+                  onModuleToggle={(codes, allOn) => {
+                    const next = new Set(draftPerms);
+                    if (allOn) for (const c of codes) next.delete(c);
+                    else for (const c of codes) next.add(c);
+                    setDraftPerms(next);
+                  }}
+                  onRowToggle={(codes, allOn) => {
+                    const next = new Set(draftPerms);
+                    if (allOn) for (const c of codes) next.delete(c);
+                    else for (const c of codes) next.add(c);
+                    setDraftPerms(next);
+                  }}
+                />
+              ) : (
+                <NavMatrix draft={draftNav} onToggle={toggleNav} />
+              )}
+            </div>
+          </>
+        )}
+      </main>
+
+      {showCreate && (
+        <CreateRoleModal
+          onClose={() => setShowCreate(false)}
+          onSubmit={(body) => createRoleMut.mutate(body)}
+          pending={createRoleMut.isPending}
+        />
+      )}
+      {editingRole && (
+        <EditRoleModal
+          role={editingRole}
+          onClose={() => setEditingRole(null)}
+          onSubmit={(body) => updateRoleMut.mutate({ id: editingRole.id, body })}
+          pending={updateRoleMut.isPending}
+        />
+      )}
+    </div>
+  );
+}
+
+// ── Sub-components ────────────────────────────────────────────────
+
+function TabBtn({ label, active, onClick }: { label: string; active: boolean; onClick: () => void }) {
+  return (
+    <button
+      onClick={onClick}
+      className={`px-4 py-2 text-sm font-medium border-b-2 -mb-px ${
+        active ? "border-[#3b82f6] text-[#3b82f6]" : "border-transparent text-gray-500 hover:text-gray-700"
+      }`}
+    >
+      {label}
+    </button>
+  );
+}
+
+interface EntityMatrixProps {
+  draft: Set<string>;
+  saved: Set<string>;
+  onToggle: (code: string) => void;
+  onModuleToggle: (codes: string[], allOn: boolean) => void;
+  onRowToggle: (codes: string[], allOn: boolean) => void;
+}
+
+function EntityMatrix({ draft, onToggle, onModuleToggle, onRowToggle }: EntityMatrixProps) {
+  return (
+    <div className="border border-gray-200 rounded-md overflow-hidden">
+      <table className="w-full text-sm">
+        <thead>
+          <tr className="bg-gray-50 border-b border-gray-200">
+            <th className="text-left px-4 py-2 font-semibold text-gray-700 w-1/2">ENTITY</th>
+            {ACTIONS.map((a) => (
+              <th key={a} className="text-center px-4 py-2 font-semibold text-gray-700 uppercase text-xs">
+                {a}
+              </th>
+            ))}
+          </tr>
+        </thead>
+        <tbody>
+          {PERMISSION_TREE.map((mod) => {
+            const allCodes = mod.leaves.flatMap((leaf) =>
+              ACTIONS.map((a) => leaf.actions[a].code).filter((c): c is string => Boolean(c)),
+            );
+            const grantedCount = allCodes.filter((c) => draft.has(c)).length;
+            const modAllOn = grantedCount === allCodes.length && allCodes.length > 0;
+
+            return (
+              <Fragment key={mod.key}>
+                {/* Module header */}
+                <tr className="bg-gray-50/50 border-t border-gray-200">
+                  <td className="px-4 py-2">
+                    <button
+                      onClick={() => onModuleToggle(allCodes, modAllOn)}
+                      className="font-semibold text-gray-800 hover:underline flex items-center gap-2"
+                    >
+                      {mod.label}
+                      <span className="text-[10px] font-normal px-1.5 py-0.5 bg-blue-50 text-blue-600 rounded">
+                        {grantedCount}/{allCodes.length}
+                      </span>
+                    </button>
+                  </td>
+                  {ACTIONS.map((a) => {
+                    const codes = mod.leaves
+                      .map((leaf) => leaf.actions[a].code)
+                      .filter((c): c is string => Boolean(c));
+                    const granted = codes.filter((c) => draft.has(c)).length;
+                    const allOn = granted === codes.length && codes.length > 0;
+                    return (
+                      <td key={a} className="text-center px-4 py-2">
+                        {codes.length === 0 ? (
+                          <span className="text-gray-300">—</span>
+                        ) : (
+                          <input
+                            type="checkbox"
+                            checked={allOn}
+                            onChange={() => onRowToggle(codes, allOn)}
+                            className="w-4 h-4 accent-[#3b82f6] cursor-pointer"
+                          />
+                        )}
+                      </td>
+                    );
+                  })}
+                </tr>
+                {/* Leaves */}
+                {mod.leaves.map((leaf) => {
+                  const rowCodes = ACTIONS.map((a) => leaf.actions[a].code).filter((c): c is string => Boolean(c));
+                  const rowGranted = rowCodes.filter((c) => draft.has(c)).length;
+                  const rowAllOn = rowGranted === rowCodes.length && rowCodes.length > 0;
+                  return (
+                    <tr key={leaf.resource} className="border-t border-gray-100 hover:bg-gray-50/40">
+                      <td className="px-4 py-2 pl-10 text-gray-600">
+                        <button
+                          onClick={() => onRowToggle(rowCodes, rowAllOn)}
+                          className="text-left hover:underline"
+                        >
+                          └ {leaf.label}
+                        </button>
+                      </td>
+                      {ACTIONS.map((a) => {
+                        const code = leaf.actions[a].code;
+                        if (!code) {
+                          return (
+                            <td key={a} className="text-center px-4 py-2 text-gray-300">
+                              —
+                            </td>
+                          );
+                        }
+                        const on = draft.has(code);
+                        return (
+                          <td key={a} className="text-center px-4 py-2">
+                            <input
+                              type="checkbox"
+                              checked={on}
+                              onChange={() => onToggle(code)}
+                              className="w-4 h-4 accent-[#3b82f6] cursor-pointer"
+                            />
+                          </td>
+                        );
+                      })}
+                    </tr>
+                  );
+                })}
+              </Fragment>
+            );
+          })}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+function NavMatrix({ draft, onToggle }: { draft: Set<string>; onToggle: (k: string) => void }) {
+  return (
+    <div className="space-y-4">
+      {NAV_TREE.map((group) => (
+        <div key={group.key} className="border border-gray-200 rounded-md">
+          <div className="px-4 py-2 bg-gray-50 border-b border-gray-200 text-xs font-semibold text-gray-700 uppercase">
+            {group.label}
+          </div>
+          <div className="p-4 grid grid-cols-2 md:grid-cols-3 gap-3">
+            {group.items.map((item) => (
+              <label key={item.key} className="flex items-center gap-2 text-sm cursor-pointer hover:bg-gray-50 px-2 py-1 rounded">
+                <input
+                  type="checkbox"
+                  checked={draft.has(item.key)}
+                  onChange={() => onToggle(item.key)}
+                  className="w-4 h-4 accent-[#3b82f6]"
+                />
+                <span>{item.label}</span>
+              </label>
+            ))}
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+// ── Modals ────────────────────────────────────────────────────────
+
+function CreateRoleModal({
+  onClose,
+  onSubmit,
+  pending,
+}: {
+  onClose: () => void;
+  onSubmit: (body: { name: string; description: string; isDefault: boolean }) => void;
+  pending: boolean;
+}) {
+  const [form, setForm] = useState({ name: "", description: "", isDefault: false });
+  return (
+    <Modal open onClose={onClose} title="New role" size="md">
+      <form
+        onSubmit={(e) => { e.preventDefault(); onSubmit(form); }}
+        className="space-y-4"
+      >
+        <div>
+          <label className="block text-sm font-medium text-gray-700 mb-1">Name *</label>
+          <input
+            required
+            placeholder="custom_role"
+            value={form.name}
+            onChange={(e) => setForm({ ...form, name: e.target.value })}
+            className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-[#3b82f6]"
+          />
+          <p className="text-xs text-gray-400 mt-1">Lowercase, alphanumeric + underscore. Used as identity (can't change later).</p>
+        </div>
+        <div>
+          <label className="block text-sm font-medium text-gray-700 mb-1">Description</label>
+          <input
+            value={form.description}
+            onChange={(e) => setForm({ ...form, description: e.target.value })}
+            className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-[#3b82f6]"
+          />
+        </div>
+        <label className="flex items-start gap-2 cursor-pointer p-3 bg-amber-50 border border-amber-200 rounded-lg hover:bg-amber-100 transition">
+          <input
+            type="checkbox"
+            checked={form.isDefault}
+            onChange={(e) => setForm({ ...form, isDefault: e.target.checked })}
+            className="mt-0.5 w-4 h-4 accent-amber-500"
+          />
+          <div>
+            <div className="text-sm font-medium text-gray-800">Set as default role for new employees</div>
+            <div className="text-xs text-gray-600 mt-0.5">Auto-assigned when admin creates an employee without picking a role. Replaces current default.</div>
+          </div>
+        </label>
+        <div className="flex justify-end gap-2 pt-2">
+          <button type="button" onClick={onClose} className="px-4 py-2 border border-gray-200 rounded-lg text-sm">Cancel</button>
+          <button type="submit" disabled={pending} className="px-4 py-2 bg-[#16243A] text-white rounded-lg text-sm font-medium hover:bg-[#2563eb] disabled:opacity-50">
+            {pending ? "Creating..." : "Create"}
+          </button>
+        </div>
+      </form>
+    </Modal>
+  );
+}
+
+function EditRoleModal({
+  role,
+  onClose,
+  onSubmit,
+  pending,
+}: {
+  role: RoleItem;
+  onClose: () => void;
+  onSubmit: (body: { name: string; description: string; isDefault: boolean }) => void;
+  pending: boolean;
+}) {
+  const [form, setForm] = useState({
+    name: role.name,
+    description: role.description ?? "",
+    isDefault: role.isDefault,
+  });
+  return (
+    <Modal open onClose={onClose} title={`Edit ${role.name}`} size="md">
+      <form
+        onSubmit={(e) => { e.preventDefault(); onSubmit(form); }}
+        className="space-y-4"
+      >
+        <div>
+          <label className="block text-sm font-medium text-gray-700 mb-1">Name</label>
+          <input
+            value={form.name}
+            onChange={(e) => setForm({ ...form, name: e.target.value })}
+            className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm"
+          />
+        </div>
+        <div>
+          <label className="block text-sm font-medium text-gray-700 mb-1">Description</label>
+          <input
+            value={form.description}
+            onChange={(e) => setForm({ ...form, description: e.target.value })}
+            className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm"
+          />
+        </div>
+        <label className="flex items-center gap-2 text-sm">
+          <input
+            type="checkbox"
+            checked={form.isDefault}
+            onChange={(e) => setForm({ ...form, isDefault: e.target.checked })}
+            className="w-4 h-4 accent-[#3b82f6]"
+          />
+          <span>Default role for new employees</span>
+        </label>
+        <div className="flex justify-end gap-2 pt-2">
+          <button type="button" onClick={onClose} className="px-4 py-2 border border-gray-200 rounded-lg text-sm">Cancel</button>
+          <button type="submit" disabled={pending} className="px-4 py-2 bg-[#16243A] text-white rounded-lg text-sm font-medium hover:bg-[#2563eb] disabled:opacity-50">
+            {pending ? "Saving..." : "Save"}
+          </button>
+        </div>
+      </form>
+    </Modal>
+  );
+}

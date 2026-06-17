@@ -571,12 +571,19 @@ export default function CatalogDiscoveryStep({
         </button>
       </div>
 
-      {/* Category list */}
+      {/* Category list — bounded with internal scroll (BUG_01). A large
+          scrape used to grow this list unbounded (overflow:hidden, no
+          maxHeight), pushing the page and breaking the sticky bar's
+          alignment. Cap the height and scroll inside; the rounded border
+          still clips via overflowX hidden. */}
       <div
         style={{
           borderRadius: 14,
           border: "1px solid rgba(255,255,255,0.10)",
-          overflow: "hidden",
+          overflowY: "auto",
+          overflowX: "hidden",
+          maxHeight: "calc(100dvh - 340px)",
+          minHeight: 120,
           background: "rgba(33,33,33,0.14)",
         }}
       >
@@ -638,7 +645,9 @@ export default function CatalogDiscoveryStep({
         <div
           style={{
             position: "sticky",
-            bottom: -40,
+            // BUG_01: was -40 (pushed 40px below the viewport, never pinned
+            // cleanly). Pin to the bottom with a small inset.
+            bottom: 8,
             marginTop: 8,
             display: "flex",
             justifyContent: "center",
@@ -659,7 +668,9 @@ export default function CatalogDiscoveryStep({
               WebkitBackdropFilter: "blur(20px)",
               boxShadow: "0 8px 32px rgba(0,0,0,0.35)",
               pointerEvents: "auto",
-              maxWidth: 640,
+              // BUG_01: dropped maxWidth:640 — it made the bar 40px narrower
+              // than the 680 column + list above, reading as misaligned.
+              // Now fills the column width like the list.
               width: "100%",
               justifyContent: "space-between",
             }}

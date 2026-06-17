@@ -1,0 +1,57 @@
+import { NextRequest } from "next/server";
+import { prisma } from "@/lib/prisma";
+import { withAuth } from "@/lib/with-auth";
+import { successResponse, notFound, internalError } from "@/lib/api-response";
+import { seedDefaultOnboardingTasks } from "@/lib/utils/default-onboarding-tasks";
+
+export const GET = withAuth(async (_req: NextRequest, { orgId, userId }, params) => {
+  try {
+    let instance = await prisma.onboardingInstance.findFirst({
+      where: { orgId, employeeId: params.employeeId, deletedAt: null },
+      include: {
+        tasks: { orderBy: [{ sortOrder: "asc" }, { createdAt: "asc" }] },
+        template: { select: { id: true, name: true } },
+      },
+    });
+
+    // Auto-create an empty onboarding instance if employee exists but record missing.
+    if (!instance) {
+      const emp = await prisma.employee.findFirst({
+        where: { id: params.employeeId, orgId, deletedAt: null },
+        select: { id: true },
+      });
+      if (!emp) return notFound("Employee not found");
+
+      const startDate = new Date();
+      const created = await prisma.onboardingInstance.create({
+        data: {
+          orgId,
+          employeeId: emp.id,
+          startDate,
+          status: "NotStarted",
+          createdBy: userId,
+          updatedBy: userId,
+        },
+      });
+      await seedDefaultOnboardingTasks(prisma, orgId, created.id, startDate);
+
+      instance = await prisma.onboardingInstance.findFirst({
+        where: { id: created.id },
+        include: {
+          tasks: { orderBy: [{ sortOrder: "asc" }, { createdAt: "asc" }] },
+          template: { select: { id: true, name: true } },
+        },
+      });
+    }
+    if (!instance) return notFound("Onboarding not found");
+
+    const total = instance.tasks.length;
+    const completed = instance.tasks.filter((t) => t.status === "TaskCompleted" || t.status === "TaskSkipped").length;
+    const progress = total > 0 ? Math.round((completed / total) * 100) : 0;
+
+    return successResponse({ ...instance, progress, totalTasks: total, completedTasks: completed });
+  } catch (error) {
+    console.error("GET /onboarding/[employeeId] error:", error);
+    return internalError();
+  }
+});

@@ -163,22 +163,24 @@ function calcTotalPosts(
   if (!startDate || !endDate) return 0;
   const start = new Date(startDate);
   const end = new Date(endDate);
-  const days = Math.max(
-    0,
-    Math.ceil((end.getTime() - start.getTime()) / 86_400_000)
-  );
-  switch (frequency) {
-    case "daily":
-      return days;
-    case "alternate":
-      return Math.floor(days / 2);
-    case "weekly":
-      return Math.floor(days / 7);
-    case "monthly":
-      return Math.ceil(days / 30);
-    default:
-      return Math.floor(days / 7);
-  }
+  const spanMs = end.getTime() - start.getTime();
+  if (spanMs < 0) return 0;
+  // Inclusive day span — both endpoints count. 3 Jun → 5 Jun = 3 days
+  // (BUG_09: the old `ceil(diff)` produced 2, dropping the end day).
+  const days = Math.floor(spanMs / 86_400_000) + 1;
+  // Posts = number of posting slots spaced `step` days apart that fall
+  // within the inclusive span: floor((days - 1) / step) + 1. Reduces to
+  // `days` for daily, and (unlike the old floor(days/step)) never yields
+  // 0 for a short weekly/alternate range — the start day always posts.
+  const step =
+    frequency === "daily"
+      ? 1
+      : frequency === "alternate"
+        ? 2
+        : frequency === "monthly"
+          ? 30
+          : 7; // weekly + default
+  return Math.floor((days - 1) / step) + 1;
 }
 
 function statusColor(status: Campaign["status"]): string {
@@ -1681,37 +1683,16 @@ export default function CampaignsPage() {
   // ── Save a finished image_done event as a Post linked to the campaign.
   // Best-effort — if the API rejects we log and continue, so a failure on
   // one post doesn't abort the whole campaign run.
-  const persistPost = useCallback(
-    async (campaign: Campaign, event: any) => {
-      // eslint-disable-next-line no-console
-      console.log('[persistPost] called', campaign._id, event.post_number, event.image_url);
-      try {
-        await fetch("/api/posts", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          credentials: "include",
-          body: JSON.stringify({
-            brandId: campaign.brandId ?? brandId,
-            campaignId: campaign._id,
-            content: (event.caption || "").trim() || `Post ${event.post_number}`,
-            platform: event.platform ?? "instagram",
-            imageUrl: event.image_url ?? null,
-            // Mirror the campaign concept onto every campaign post so
-            // the Content Hub's PostDetailModal Prompt section has
-            // something to show. Per-post variants don't have their
-            // own prompt — the campaign concept is the closest field.
-            prompt:
-              (campaign as any).describeConcept ??
-              (campaign as any).description ??
-              null,
-          }),
-        });
-      } catch (err) {
-        console.error("[campaign] persistPost failed", err);
-      }
-    },
-    [brandId]
-  );
+  // NOTE: campaign-post persistence moved server-side. The Celery worker is
+  // now the system of record — it writes each generated post to the DB via
+  // POST /api/internal/posts (idempotent, org derived from the Campaign
+  // row) as the post is produced, so persistence survives this tab closing,
+  // logout, sleep, or a network drop. The old browser-side persistPost (a
+  // session-protected POST /api/posts on every image_done) was removed: it
+  // silently lost every post generated after a disconnect. Removing it also
+  // prevents duplicate rows (browser random ids vs worker deterministic ids
+  // would not dedup), which is why the worker change and this removal MUST
+  // ship together.
 
   // ── Open a WebSocket for a campaign run and wire up event handlers.
   // Mirrors the pattern used in apps/web/src/app/dashboard/posts/create/page.tsx
@@ -1846,9 +1827,11 @@ export default function CampaignsPage() {
             },
           }));
         } else if (event.step === "image_done") {
-          // Save this post to MongoDB linked to the campaign, then update the
-          // progress card so the user sees count + message.
-          await persistPost(campaign, event);
+          // Persistence is now server-side: the Celery worker writes each post
+          // to the DB (POST /api/internal/posts) as it generates, so it no
+          // longer depends on this tab staying open. Here we only advance the
+          // progress card; the post itself appears via the DB-backed reads
+          // (fetchCampaigns / Content Hub).
           const sequence = typeof event.sequence === "number" ? event.sequence : 0;
           const total = typeof event.total === "number" ? event.total : campaign.totalPosts;
           setGenStates((prev) => ({
@@ -1908,7 +1891,7 @@ export default function CampaignsPage() {
         });
       };
     },
-    [fetchCampaigns, persistPost, startPolling, stopPolling]
+    [fetchCampaigns, startPolling, stopPolling]
   );
 
   const handleRetry = useCallback(
