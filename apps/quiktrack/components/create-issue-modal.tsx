@@ -153,6 +153,20 @@ export function CreateIssueModal({
     () => members.map((m) => ({ id: m.userId, label: memberLabel(m) })),
     [members],
   );
+  // People list for @-mentions in the description editor.
+  const memberMentions = useMemo(
+    () =>
+      members
+        .filter((m) => m.user)
+        .map((m) => ({
+          id: m.userId,
+          name:
+            [m.user!.firstName, m.user!.lastName].filter(Boolean).join(" ").trim() ||
+            m.user!.email,
+          email: m.user!.email,
+        })),
+    [members],
+  );
 
   // Fetch projects when modal opens.
   useEffect(() => {
@@ -417,6 +431,7 @@ export function CreateIssueModal({
             <RichTextEditor
               value={description}
               onChange={setDescription}
+              mentions={memberMentions}
               uploadImage={(file) => uploadProjectImage(projectId, file)}
             />
           </Field>
