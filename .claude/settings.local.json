@@ -7,8 +7,7 @@
       "Bash(npx tsx *)",
       "Bash(DATABASE_URL=postgresql://postgres:sa%40123@localhost:5432/quikit_dev node -e ' *)",
       "Bash(npm run *)",
-      "Bash(DATABASE_URL='postgresql://postgres:sa%40123@localhost:5432/quikit_dev' npx tsx prisma/seed-moreyeahs.ts)",
-      "PowerShell(npm run test -- __tests__/api/purchaseOrders.test.ts __tests__/api/purchaseOrders.id.test.ts __tests__/api/purchaseRfqs.test.ts __tests__/api/purchaseRfqs.id.test.ts __tests__/api/purchaseGrn.test.ts __tests__/api/purchaseGrn.id.test.ts 2>&1)"
+      "Bash(DATABASE_URL='postgresql://postgres:sa%40123@localhost:5432/quikit_dev' npx tsx prisma/seed-moreyeahs.ts)"
     ],
     "additionalDirectories": [
       "c:\\wwwwwwwwww\\Authmergewithmainbranch\\QuikIT\\apps\\auth\\app\\api\\auth\\me"
