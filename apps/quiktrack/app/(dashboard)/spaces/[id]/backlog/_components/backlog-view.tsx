@@ -2,8 +2,12 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
+import { showToast } from "@/lib/ui/toast";
+import { confirmDialog } from "@/lib/ui/confirm";
 import { EditIssueModal } from "@/components/edit-issue-modal";
 import { useMyProjectPermissions } from "@/lib/hooks/useMyProjectPermissions";
+import { useQueryClient } from "@tanstack/react-query";
+import { useApiData } from "@/lib/hooks/useApiData";
 import { useMembersChanged } from "@/lib/hooks/useMembersChanged";
 import { useBacklogViewSettings } from "@/lib/hooks/useBacklogViewSettings";
 import { EpicPanel } from "./epic-panel";
@@ -16,6 +20,7 @@ import {
   FilterSelect,
   type FilterSelectOption,
 } from "../../grouped-kanban/_components/toolbar/filter-select";
+import { FilterMultiSelect } from "../../grouped-kanban/_components/toolbar/filter-multi-select";
 import {
   Search,
   Filter,
@@ -36,6 +41,7 @@ import {
   Check,
   X,
   GitBranch,
+  AlertCircle,
   AlertTriangle,
   Trash2,
   ArrowRightLeft,
@@ -202,6 +208,7 @@ function InlineCreatorInner({
   const [assigneeId, setAssigneeId] = useState<string | null>(null);
   const [title, setTitle] = useState("");
   const [submitting, setSubmitting] = useState(false);
+  const [error, setError] = useState<string | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
   const typeMenuRef = useRef<HTMLDivElement>(null);
   const dateRef = useRef<HTMLDivElement>(null);
@@ -231,7 +238,12 @@ function InlineCreatorInner({
       setOpen(false);
       return;
     }
+    if (t.length > 255) {
+      setError(`Summary must be 255 characters or less (currently ${t.length}).`);
+      return;
+    }
     setSubmitting(true);
+    setError(null);
     try {
       const res = await fetch("/api/issues", {
         method: "POST",
@@ -246,16 +258,22 @@ function InlineCreatorInner({
           dueDate: dueDate ? new Date(dueDate).toISOString() : undefined,
         }),
       }).then((r) => r.json());
-      if (res?.success) {
-        window.dispatchEvent(
-          new CustomEvent("quiktrack:issue-created", {
-            detail: { id: res.data?.id, key: res.data?.key },
-          }),
-        );
+      // Surface the API error and keep the composer open so the user can fix
+      // their input (e.g. a summary over the 255-char limit) instead of having
+      // the row silently reset.
+      if (!res?.success) {
+        setError(res?.error || "Failed to create work item");
+        return;
       }
+      window.dispatchEvent(
+        new CustomEvent("quiktrack:issue-created", {
+          detail: { id: res.data?.id, key: res.data?.key },
+        }),
+      );
       setTitle("");
       setDueDate("");
       setAssigneeId(null);
+      setError(null);
       setOpen(false);
       onCreated();
     } finally {
@@ -279,7 +297,8 @@ function InlineCreatorInner({
   const selectedMember = assigneeId ? members.find((m) => m.userId === assigneeId) : null;
 
   return (
-    <div className="flex items-center h-9 mx-3 my-2 px-1.5 border border-blue-500 rounded-md bg-white">
+    <div className="mx-3 my-2">
+    <div className={`flex items-center h-9 px-1.5 border rounded-md bg-white ${error ? "border-red-500" : "border-blue-500"}`}>
       <div className="relative" ref={typeMenuRef}>
         <button
           type="button"
@@ -292,7 +311,7 @@ function InlineCreatorInner({
         </button>
         {typeMenuOpen && (
           <div className="absolute left-0 top-full mt-1 w-44 bg-white border border-gray-200 rounded-md shadow-lg z-30 py-1">
-            {(["BUG", "STORY", "TASK", "EPIC"] as IssueType[]).map((k) => {
+            {(["BUG", "STORY", "TASK"] as IssueType[]).map((k) => {
               const m = TYPE_META[k];
               return (
                 <button
@@ -315,11 +334,15 @@ function InlineCreatorInner({
       <input
         ref={inputRef}
         value={title}
-        onChange={(e) => setTitle(e.target.value)}
+        onChange={(e) => {
+          setTitle(e.target.value);
+          if (error) setError(null);
+        }}
         onKeyDown={(e) => {
           if (e.key === "Enter") submit();
           if (e.key === "Escape") {
             setTitle("");
+            setError(null);
             setOpen(false);
           }
         }}
@@ -430,6 +453,13 @@ function InlineCreatorInner({
         Create
         <span className="text-[10px] text-gray-500">↵</span>
       </button>
+    </div>
+      {error && (
+        <p className="mt-1 inline-flex items-center gap-1 text-xs text-red-600">
+          <AlertCircle className="h-3.5 w-3.5 shrink-0" />
+          {error}
+        </p>
+      )}
     </div>
   );
 }
@@ -1122,6 +1152,7 @@ function IssueRow({
   statuses,
   epics,
   members,
+  currentUserId,
   fields = DEFAULT_VIEW_SETTINGS.fields,
   density = DEFAULT_VIEW_SETTINGS.density,
   onDragStart,
@@ -1130,11 +1161,13 @@ function IssueRow({
   onDeleted,
   isSelected,
   onToggleSelect,
+  canDelete,
 }: {
   issue: Issue;
   statuses: Status[];
   epics: EpicLite[];
   members: Member[];
+  currentUserId: string | null;
   fields?: BacklogViewSettings["fields"];
   density?: BacklogViewSettings["density"];
   onDragStart?: (e: React.DragEvent, issueId: string) => void;
@@ -1143,6 +1176,7 @@ function IssueRow({
   onDeleted: () => void;
   isSelected: boolean;
   onToggleSelect: (next: boolean) => void;
+  canDelete: boolean;
 }) {
   const meta = TYPE_META[issue.type];
   const [titleEditing, setTitleEditing] = useState(false);
@@ -1155,6 +1189,9 @@ function IssueRow({
   const [epicOpen, setEpicOpen] = useState(false);
   const [epicSearch, setEpicSearch] = useState("");
   const epicRef = useRef<HTMLDivElement>(null);
+  const [assigneeOpen, setAssigneeOpen] = useState(false);
+  const [assigneeSearch, setAssigneeSearch] = useState("");
+  const assigneeRef = useRef<HTMLDivElement>(null);
   const [menuOpen, setMenuOpen] = useState(false);
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [deleting, setDeleting] = useState(false);
@@ -1199,7 +1236,7 @@ function IssueRow({
         setMenuOpen(false);
         onDeleted();
       } else {
-        alert(res?.error || "Failed to delete");
+        showToast(res?.error || "Failed to delete", "error");
       }
     } finally {
       setDeleting(false);
@@ -1230,6 +1267,22 @@ function IssueRow({
       document.removeEventListener("keydown", onKey);
     };
   }, [epicOpen]);
+
+  useEffect(() => {
+    if (!assigneeOpen) return;
+    function onClick(e: MouseEvent) {
+      if (assigneeRef.current && !assigneeRef.current.contains(e.target as Node)) {
+        setAssigneeOpen(false);
+      }
+    }
+    function onKey(e: KeyboardEvent) { if (e.key === "Escape") setAssigneeOpen(false); }
+    document.addEventListener("mousedown", onClick);
+    document.addEventListener("keydown", onKey);
+    return () => {
+      document.removeEventListener("mousedown", onClick);
+      document.removeEventListener("keydown", onKey);
+    };
+  }, [assigneeOpen]);
 
   async function patch(body: Record<string, unknown>) {
     try {
@@ -1503,35 +1556,111 @@ function IssueRow({
           ? members.find((m) => m.user?.id === issue.assigneeId) ?? null
           : null;
         const u = assigneeMember?.user ?? null;
-        if (!u) {
-          return (
-            <span
-              className="h-6 w-6 rounded-full bg-gray-100 border border-dashed border-gray-300 inline-flex items-center justify-center text-gray-400 shrink-0"
-              title="Unassigned"
+        const name = u
+          ? [u.firstName, u.lastName].filter(Boolean).join(" ").trim() || u.email
+          : "Unassigned";
+        const q = assigneeSearch.trim().toLowerCase();
+        const filtered = q
+          ? members.filter(
+              (m) =>
+                memberName(m).toLowerCase().includes(q) ||
+                (m.user?.email ?? "").toLowerCase().includes(q),
+            )
+          : members;
+        return (
+          <div className="relative shrink-0" ref={assigneeRef}>
+            <button
+              type="button"
+              onClick={() => {
+                setAssigneeSearch("");
+                setAssigneeOpen((v) => !v);
+              }}
+              className="rounded-full hover:ring-2 hover:ring-gray-200"
+              aria-label="Assignee"
+              title={name}
             >
-              <UserIcon className="h-3 w-3" />
-            </span>
-          );
-        }
-        const name = [u.firstName, u.lastName].filter(Boolean).join(" ").trim() || u.email;
-        const initials =
-          (u.firstName?.[0] ?? u.email[0] ?? "?").toUpperCase() +
-          (u.lastName?.[0] ?? "").toUpperCase();
-        return u.avatar ? (
-          <img
-            src={u.avatar}
-            alt=""
-            title={name}
-            className="h-6 w-6 rounded-full object-cover shrink-0"
-          />
-        ) : (
-          <span
-            className="h-6 w-6 rounded-full text-white text-[10px] font-semibold inline-flex items-center justify-center shrink-0"
-            style={{ background: memberColor(u.id) }}
-            title={name}
-          >
-            {initials}
-          </span>
+              {u ? (
+                u.avatar ? (
+                  <img src={u.avatar} alt="" className="h-6 w-6 rounded-full object-cover" />
+                ) : (
+                  <span
+                    className="h-6 w-6 rounded-full text-white text-[10px] font-semibold inline-flex items-center justify-center"
+                    style={{ background: memberColor(u.id) }}
+                  >
+                    {(u.firstName?.[0] ?? u.email[0] ?? "?").toUpperCase() +
+                      (u.lastName?.[0] ?? "").toUpperCase()}
+                  </span>
+                )
+              ) : (
+                <span className="h-6 w-6 rounded-full bg-gray-100 border border-dashed border-gray-300 inline-flex items-center justify-center text-gray-400">
+                  <UserIcon className="h-3 w-3" />
+                </span>
+              )}
+            </button>
+            {assigneeOpen && (
+              <div className="absolute right-0 top-full mt-1 w-[260px] bg-white border border-gray-200 rounded-md shadow-lg z-30 py-1">
+                <div className="px-2 pb-1.5 pt-1">
+                  <input
+                    autoFocus
+                    value={assigneeSearch}
+                    onChange={(e) => setAssigneeSearch(e.target.value)}
+                    placeholder="Search members"
+                    className="w-full h-7 px-2 text-xs border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-blue-500"
+                  />
+                </div>
+                <div className="max-h-60 overflow-y-auto">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (issue.assigneeId) void patch({ assigneeId: null });
+                      setAssigneeOpen(false);
+                    }}
+                    className="w-full flex items-center gap-2 px-3 py-2 text-xs text-gray-700 hover:bg-gray-50 text-left"
+                  >
+                    <span className="h-6 w-6 rounded-full bg-gray-100 flex items-center justify-center shrink-0">
+                      <UserIcon className="h-3 w-3 text-gray-500" />
+                    </span>
+                    Unassigned
+                  </button>
+                  {filtered.length === 0 && (
+                    <div className="px-3 py-2 text-[11px] text-gray-400">No members found</div>
+                  )}
+                  {filtered.map((m) => {
+                    const isMe = m.userId === currentUserId;
+                    const active = m.userId === issue.assigneeId;
+                    return (
+                      <button
+                        key={m.userId}
+                        type="button"
+                        onClick={() => {
+                          if (!active) void patch({ assigneeId: m.userId });
+                          setAssigneeOpen(false);
+                        }}
+                        className={`w-full flex items-center gap-2 px-3 py-2 text-xs hover:bg-gray-50 text-left ${
+                          active ? "bg-blue-50" : ""
+                        }`}
+                      >
+                        <span
+                          className="h-6 w-6 rounded-full text-white text-[10px] font-semibold flex items-center justify-center shrink-0"
+                          style={{ background: memberColor(m.userId) }}
+                        >
+                          {memberInitials(m)}
+                        </span>
+                        <span className="flex-1 min-w-0">
+                          <span className="font-medium text-gray-900">{memberName(m)}</span>
+                          {isMe && <span className="text-gray-500"> (Assign to me)</span>}
+                          {m.user?.email && (
+                            <div className="text-[11px] text-gray-500 truncate">{m.user.email}</div>
+                          )}
+                        </span>
+                        {active && <Check className="h-3.5 w-3.5 text-blue-600 shrink-0" />}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+          </div>
         );
       })()}
       <div className="relative shrink-0" ref={menuRef}>
@@ -1555,13 +1684,15 @@ function IssueRow({
             >
               Open
             </button>
-            <button
-              type="button"
-              onClick={openConfirm}
-              className="block w-full text-left px-3 py-1.5 text-sm text-red-600 hover:bg-red-50"
-            >
-              Delete
-            </button>
+            {canDelete && (
+              <button
+                type="button"
+                onClick={openConfirm}
+                className="block w-full text-left px-3 py-1.5 text-sm text-red-600 hover:bg-red-50"
+              >
+                Delete
+              </button>
+            )}
           </div>
         )}
       </div>
@@ -1736,8 +1867,20 @@ function emptySection(): SectionState {
  * IntersectionObserver-based "load more" sentinel. Fires `onIntersect` when the
  * sentinel scrolls into view. Used both at the bottom of each expanded section
  * (more issues) and at the bottom of the page (more sprints).
+ *
+ * `options.root` scopes the observer to a nested scroll container (each
+ * accordion is its own `overflow-y-auto` box) instead of the viewport; pass a
+ * ref to that container. `options.enabled` is REQUIRED whenever the sentinel is
+ * rendered conditionally: the observe effect re-runs when `enabled` flips, so
+ * the observer attaches on the render where the sentinel first enters the DOM.
+ * Without it the effect runs once at mount (sentinel absent → `ref.current`
+ * null → bail) and never re-attaches, so load-more silently never fires.
  */
-function useOnScreen(ref: React.RefObject<HTMLElement>, onIntersect: () => void) {
+function useOnScreen(
+  ref: React.RefObject<HTMLElement>,
+  onIntersect: () => void,
+  options?: { root?: React.RefObject<HTMLElement | null>; enabled?: boolean },
+) {
   // Pin the latest callback in a ref so the observer effect can be dep-free.
   // Without this, every parent render gives `onIntersect` a new identity →
   // the effect tears down + re-creates the observer → if the sentinel is
@@ -1748,18 +1891,21 @@ function useOnScreen(ref: React.RefObject<HTMLElement>, onIntersect: () => void)
   useEffect(() => {
     cbRef.current = onIntersect;
   }, [onIntersect]);
+  const enabled = options?.enabled ?? true;
+  const rootRef = options?.root;
   useEffect(() => {
+    if (!enabled) return;
     const el = ref.current;
     if (!el) return;
     const obs = new IntersectionObserver(
       (entries) => {
         for (const e of entries) if (e.isIntersecting) cbRef.current();
       },
-      { rootMargin: "200px" },
+      { root: rootRef?.current ?? null, rootMargin: "200px" },
     );
     obs.observe(el);
     return () => obs.disconnect();
-  }, [ref]);
+  }, [ref, rootRef, enabled]);
 }
 
 function SectionBody({
@@ -1808,6 +1954,15 @@ function SectionBody({
   density: BacklogViewSettings["density"];
 }) {
   const sentinelRef = useRef<HTMLDivElement>(null);
+  // Scroll container for this expanded section — the accordion has its own
+  // bounded-height scrollbar, so the load-more observer must watch this box
+  // (not the viewport) to fire as the user scrolls inside the accordion.
+  const scrollRef = useRef<HTMLDivElement>(null);
+  // Delete is permission-gated — hide the row's Delete action for users whose
+  // role doesn't grant Issue:delete (the API enforces it too). Cached hook, so
+  // this shares the single /api/me/... fetch with the other consumers.
+  const perms = useMyProjectPermissions(projectId);
+  const canDelete = perms.loading || perms.has("Issue", "delete");
 
   const loadMore = useCallback(
     async (initial = false) => {
@@ -1868,12 +2023,19 @@ function SectionBody({
     setState((s) => ({ ...s, loaded: false, loading: false, issues: [], cursor: null, hasMore: true }));
   }, [filters.search, filters.statusId, filters.assigneeId, filters.type, filters.priority]);
 
-  // IntersectionObserver — load more when the sentinel scrolls into view.
-  useOnScreen(sentinelRef, () => {
-    if (state.expanded && state.loaded && state.hasMore && !state.loading) {
-      loadMore(false);
-    }
-  });
+  // IntersectionObserver — load more when the sentinel scrolls into view of the
+  // accordion's own scroll container. `enabled` re-attaches the observer on the
+  // render where the sentinel first mounts (after the first page loads); without
+  // it the observer would bind at mount when the sentinel doesn't exist yet.
+  useOnScreen(
+    sentinelRef,
+    () => {
+      if (state.expanded && state.loaded && state.hasMore && !state.loading) {
+        loadMore(false);
+      }
+    },
+    { root: scrollRef, enabled: state.expanded && state.loaded && state.hasMore },
+  );
 
   if (!state.expanded) return null;
 
@@ -1890,6 +2052,10 @@ function SectionBody({
         if (id) onDropIssue(id);
       }}
     >
+      {/* Scrollable rows. The InlineCreator below is intentionally OUTSIDE this
+          box so "+ Create" stays pinned at the bottom of the accordion while the
+          issue list scrolls. */}
+      <div ref={scrollRef} className="max-h-[60vh] overflow-y-auto">
       {state.loaded === false && state.loading && (
         <div className="px-3 py-3 space-y-2">
           {Array.from({ length: 3 }).map((_, i) => (
@@ -1909,10 +2075,12 @@ function SectionBody({
           statuses={Array.from(statusesById.values())}
           epics={epics}
           members={members}
+          currentUserId={currentUserId}
           fields={fields}
           density={density}
           onDragStart={onDragStart}
           onOpen={onOpenIssue}
+          canDelete={canDelete}
           isSelected={selectedIds.has(i.id)}
           onToggleSelect={(next) => onToggleSelect(i.id, next)}
           onPatched={(patch) => {
@@ -1944,14 +2112,17 @@ function SectionBody({
           {state.loading ? "Loading more…" : ""}
         </div>
       )}
-      <InlineCreator
-        projectId={projectId}
-        defaultStatusId={defaultStatusId}
-        sprintId={sprintId}
-        members={members}
-        currentUserId={currentUserId}
-        onCreated={onCreated}
-      />
+      </div>
+      <div className="border-t border-gray-100">
+        <InlineCreator
+          projectId={projectId}
+          defaultStatusId={defaultStatusId}
+          sprintId={sprintId}
+          members={members}
+          currentUserId={currentUserId}
+          onCreated={onCreated}
+        />
+      </div>
     </div>
   );
 }
@@ -1959,10 +2130,26 @@ function SectionBody({
 export function BacklogView({ projectId }: { projectId: string }) {
   const perms = useMyProjectPermissions(projectId);
   const canCreateSprint = perms.loading || perms.has("Sprint", "create");
+  const queryClient = useQueryClient();
   const [search, setSearch] = useState("");
-  const [statuses, setStatuses] = useState<Status[]>([]);
+  // Project statuses + members are cached/shared via React Query under the same
+  // keys the issue views use, so navigating between backlog and a work item
+  // doesn't refetch them (and the dev StrictMode double-fetch collapses to one).
+  const { data: statuses = [] } = useApiData<Status[]>(
+    ["quiktrack", "project-statuses", projectId],
+    `/api/projects/${projectId}/statuses`,
+  );
+  const { data: members = [] } = useApiData<Member[]>(
+    ["quiktrack", "project-members", projectId],
+    `/api/projects/${projectId}/members`,
+    {
+      select: (d) => {
+        const payload = d as { members?: Member[] } | Member[] | null;
+        return Array.isArray(payload) ? payload : payload?.members ?? [];
+      },
+    },
+  );
   const [epics, setEpics] = useState<EpicLite[]>([]);
-  const [members, setMembers] = useState<Member[]>([]);
   const [currentUserId, setCurrentUserId] = useState<string | null>(null);
   const [sprints, setSprints] = useState<Sprint[]>([]);
   const [sprintCursor, setSprintCursor] = useState<string | null>(null);
@@ -1986,7 +2173,10 @@ export function BacklogView({ projectId }: { projectId: string }) {
   // the API so we don't fire a request per keystroke.
   const [appliedSearch, setAppliedSearch] = useState("");
   const [filterStatusId, setFilterStatusId] = useState("");
-  const [filterAssigneeId, setFilterAssigneeId] = useState("");
+  // Multi-select assignee filter. Empty = Any. The special value "null" means
+  // Unassigned and may be combined with real assignee ids. Serialized to a
+  // comma-separated `assigneeId` query param the issues API expands to an IN/OR.
+  const [filterAssigneeIds, setFilterAssigneeIds] = useState<string[]>([]);
   const [filterType, setFilterType] = useState("");
   const [filterPriority, setFilterPriority] = useState("");
   const [filterOpen, setFilterOpen] = useState(false);
@@ -2041,11 +2231,13 @@ export function BacklogView({ projectId }: { projectId: string }) {
     () => ({
       search: appliedSearch,
       statusId: filterStatusId,
-      assigneeId: filterAssigneeId,
+      // Joined here so SectionBody keeps its simple `assigneeId: string` shape;
+      // the API splits it back into an IN/OR clause.
+      assigneeId: filterAssigneeIds.join(","),
       type: filterType,
       priority: filterPriority,
     }),
-    [appliedSearch, filterStatusId, filterAssigneeId, filterType, filterPriority],
+    [appliedSearch, filterStatusId, filterAssigneeIds, filterType, filterPriority],
   );
 
   // Header-checkbox state for a section: returns the all/some flags + a toggle
@@ -2081,7 +2273,7 @@ export function BacklogView({ projectId }: { projectId: string }) {
   // limit=1 to keep the payload tiny — only the `total` field matters here.
   useEffect(() => {
     const hasActive =
-      Boolean(appliedSearch || filterStatusId || filterAssigneeId || filterType || filterPriority);
+      Boolean(appliedSearch || filterStatusId || filterAssigneeIds.length || filterType || filterPriority);
     if (!hasActive) {
       setFilteredCounts({});
       return;
@@ -2101,7 +2293,7 @@ export function BacklogView({ projectId }: { projectId: string }) {
         });
         if (appliedSearch) params.set("search", appliedSearch);
         if (filterStatusId) params.set("statusId", filterStatusId);
-        if (filterAssigneeId) params.set("assigneeId", filterAssigneeId);
+        if (filterAssigneeIds.length) params.set("assigneeId", filterAssigneeIds.join(","));
         if (filterType) params.set("type", filterType);
         if (filterPriority) params.set("priority", filterPriority);
         return fetch(`/api/issues?${params.toString()}`)
@@ -2116,7 +2308,7 @@ export function BacklogView({ projectId }: { projectId: string }) {
       setFilteredCounts(next);
     });
     return () => { cancelled = true; };
-  }, [projectId, sprints, appliedSearch, filterStatusId, filterAssigneeId, filterType, filterPriority]);
+  }, [projectId, sprints, appliedSearch, filterStatusId, filterAssigneeIds, filterType, filterPriority]);
 
   useEffect(() => {
     if (!moreMenuOpen) return;
@@ -2292,26 +2484,17 @@ export function BacklogView({ projectId }: { projectId: string }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [projectId, sectionStates]);
 
-  // Boot — fetch project-level data + first page of sprints.
+  // Boot — fetch session + first page of sprints + epics. (Statuses and
+  // members are loaded via React Query above, so they're not in this batch.)
   useEffect(() => {
     let alive = true;
     (async () => {
-      const [statusesRes, membersRes, sessionRes, sprintsRes, epicsRes] = await Promise.all([
-        fetch(`/api/projects/${projectId}/statuses`).then((r) => r.json()),
-        fetch(`/api/projects/${projectId}/members`).then((r) => r.json()),
+      const [sessionRes, sprintsRes, epicsRes] = await Promise.all([
         fetch(`/api/session`).then((r) => r.json()).catch(() => null),
         fetch(`/api/sprints?projectId=${projectId}&limit=${SPRINT_PAGE}`).then((r) => r.json()),
         fetch(`/api/issues?projectId=${projectId}&type=EPIC&limit=200`).then((r) => r.json()),
       ]);
       if (!alive) return;
-      setStatuses(statusesRes?.success ? statusesRes.data : []);
-      setMembers(
-        membersRes?.success
-          ? Array.isArray(membersRes.data)
-            ? membersRes.data
-            : (membersRes.data?.members ?? [])
-          : [],
-      );
       if (sessionRes?.user?.id) setCurrentUserId(sessionRes.user.id);
       if (sprintsRes?.success) {
         setSprints(sprintsRes.data ?? []);
@@ -2328,17 +2511,12 @@ export function BacklogView({ projectId }: { projectId: string }) {
     };
   }, [projectId]);
 
-  // Refetch members when membership changes via the Add-people modal.
+  // Refetch members when membership changes via the Add-people modal —
+  // invalidate the shared query so every view picks up the new list.
   useMembersChanged(projectId, () => {
-    fetch(`/api/projects/${projectId}/members`)
-      .then((r) => r.json())
-      .then((res) => {
-        if (!res?.success) return;
-        setMembers(
-          Array.isArray(res.data) ? res.data : (res.data?.members ?? []),
-        );
-      })
-      .catch(() => undefined);
+    void queryClient.invalidateQueries({
+      queryKey: ["quiktrack", "project-members", projectId],
+    });
   });
 
   const loadMoreSprints = useCallback(async () => {
@@ -2394,7 +2572,13 @@ export function BacklogView({ projectId }: { projectId: string }) {
   async function handleBulkDelete() {
     if (selectedIds.size === 0 || bulkBusy) return;
     const n = selectedIds.size;
-    if (!window.confirm(`Delete ${n} work item${n === 1 ? "" : "s"}? This is reversible from trash.`)) return;
+    const ok = await confirmDialog({
+      title: "Delete work items",
+      message: `Delete ${n} work item${n === 1 ? "" : "s"}? This is reversible from trash.`,
+      confirmText: "Delete",
+      danger: true,
+    });
+    if (!ok) return;
     setBulkBusy(true);
     try {
       const res = await fetch("/api/issues/bulk-delete", {
@@ -2403,7 +2587,7 @@ export function BacklogView({ projectId }: { projectId: string }) {
         body: JSON.stringify({ projectId, ids: Array.from(selectedIds) }),
       }).then((r) => r.json() as Promise<{ success: boolean; error?: string }>);
       if (!res.success) {
-        window.alert(res.error ?? "Delete failed");
+        showToast(res.error ?? "Delete failed", "error");
         return;
       }
       setSelectedIds(new Set());
@@ -2433,7 +2617,7 @@ export function BacklogView({ projectId }: { projectId: string }) {
         ),
       );
       const failed = results.filter((r) => !r.success).length;
-      if (failed > 0) window.alert(`${failed} item${failed === 1 ? "" : "s"} failed to move.`);
+      if (failed > 0) showToast(`${failed} item${failed === 1 ? "" : "s"} failed to move.`, "error");
       setSelectedIds(new Set());
       await refreshAllSections();
     } finally {
@@ -2551,15 +2735,17 @@ export function BacklogView({ projectId }: { projectId: string }) {
             />
           </div>
           {/* Project member avatars — click to filter Assignee. The dashed
-              placeholder filters to Unassigned. Selection is single — clicking
-              an already-active avatar clears the filter. */}
+              placeholder filters to Unassigned. Selection is multi — clicking
+              an already-active avatar removes it from the filter. */}
           {(() => {
             const visibleMembers = members
               .filter((m): m is Member & { user: NonNullable<Member["user"]> } => Boolean(m.user))
               .slice(0, 5);
             const overflow = Math.max(0, members.filter((m) => m.user).length - visibleMembers.length);
             const toggleAssignee = (id: string) => {
-              setFilterAssigneeId((cur) => (cur === id ? "" : id));
+              setFilterAssigneeIds((cur) =>
+                cur.includes(id) ? cur.filter((x) => x !== id) : [...cur, id],
+              );
             };
             return (
               <div className="flex items-center -space-x-1.5">
@@ -2568,7 +2754,7 @@ export function BacklogView({ projectId }: { projectId: string }) {
                   onClick={() => toggleAssignee("null")}
                   title="Unassigned"
                   className={`h-7 w-7 rounded-full bg-gray-100 ring-2 ring-white flex items-center justify-center transition ${
-                    filterAssigneeId === "null"
+                    filterAssigneeIds.includes("null")
                       ? "outline outline-2 outline-blue-500 z-10"
                       : "hover:bg-gray-200"
                   }`}
@@ -2580,7 +2766,7 @@ export function BacklogView({ projectId }: { projectId: string }) {
                   const name = [u.firstName, u.lastName].filter(Boolean).join(" ").trim() || u.email;
                   const initials = (u.firstName?.[0] ?? u.email[0] ?? "?").toUpperCase()
                     + (u.lastName?.[0] ?? "").toUpperCase();
-                  const active = filterAssigneeId === u.id;
+                  const active = filterAssigneeIds.includes(u.id);
                   return (
                     <button
                       key={u.id}
@@ -2614,7 +2800,7 @@ export function BacklogView({ projectId }: { projectId: string }) {
           {(() => {
             const activeCount =
               (filterStatusId ? 1 : 0) +
-              (filterAssigneeId ? 1 : 0) +
+              (filterAssigneeIds.length ? 1 : 0) +
               (filterType ? 1 : 0) +
               (filterPriority ? 1 : 0);
             return (
@@ -2647,27 +2833,34 @@ export function BacklogView({ projectId }: { projectId: string }) {
                         ...statuses.map((s) => ({ value: s.id, label: s.name })),
                       ]}
                     />
-                    <FilterRow
-                      label="Assignee"
-                      value={filterAssigneeId}
-                      onChange={setFilterAssigneeId}
-                      options={[
-                        { value: "", label: "Any", muted: true },
-                        ...members
-                          .filter(
-                            (m): m is Member & { user: NonNullable<Member["user"]> } =>
-                              Boolean(m.user),
-                          )
-                          .map((m) => ({
-                            value: m.user.id,
-                            label:
-                              [m.user.firstName, m.user.lastName]
-                                .filter(Boolean)
-                                .join(" ")
-                                .trim() || m.user.email,
-                          })),
-                      ]}
-                    />
+                    <div className="mb-2 block text-xs">
+                      <span className="mb-1 block font-medium text-gray-600">Assignee</span>
+                      <FilterMultiSelect
+                        values={filterAssigneeIds}
+                        onChange={setFilterAssigneeIds}
+                        placeholder="Any"
+                        summaryNoun="people"
+                        searchable
+                        expand
+                        width={248}
+                        options={[
+                          { value: "null", label: "Unassigned", muted: true },
+                          ...members
+                            .filter(
+                              (m): m is Member & { user: NonNullable<Member["user"]> } =>
+                                Boolean(m.user),
+                            )
+                            .map((m) => ({
+                              value: m.user.id,
+                              label:
+                                [m.user.firstName, m.user.lastName]
+                                  .filter(Boolean)
+                                  .join(" ")
+                                  .trim() || m.user.email,
+                            })),
+                        ]}
+                      />
+                    </div>
                     <FilterRow
                       label="Type"
                       value={filterType}
@@ -2697,7 +2890,7 @@ export function BacklogView({ projectId }: { projectId: string }) {
                         type="button"
                         onClick={() => {
                           setFilterStatusId("");
-                          setFilterAssigneeId("");
+                          setFilterAssigneeIds([]);
                           setFilterType("");
                           setFilterPriority("");
                         }}
@@ -2711,12 +2904,12 @@ export function BacklogView({ projectId }: { projectId: string }) {
               </div>
             );
           })()}
-          {(filterStatusId || filterAssigneeId || filterType || filterPriority || appliedSearch) && (
+          {(filterStatusId || filterAssigneeIds.length || filterType || filterPriority || appliedSearch) && (
             <button
               type="button"
               onClick={() => {
                 setFilterStatusId("");
-                setFilterAssigneeId("");
+                setFilterAssigneeIds([]);
                 setFilterType("");
                 setFilterPriority("");
                 setSearch("");
@@ -2906,15 +3099,17 @@ export function BacklogView({ projectId }: { projectId: string }) {
                 </div>
               )}
             </div>
-            <button
-              type="button"
-              onClick={handleBulkDelete}
-              disabled={bulkBusy}
-              className="inline-flex items-center gap-1.5 rounded border border-red-200 bg-white px-3 py-1 text-xs text-red-600 hover:bg-red-50 disabled:opacity-60"
-            >
-              <Trash2 className="h-3.5 w-3.5" />
-              {bulkBusy ? "Working…" : "Delete"}
-            </button>
+            {(perms.loading || perms.has("Issue", "delete")) && (
+              <button
+                type="button"
+                onClick={handleBulkDelete}
+                disabled={bulkBusy}
+                className="inline-flex items-center gap-1.5 rounded border border-red-200 bg-white px-3 py-1 text-xs text-red-600 hover:bg-red-50 disabled:opacity-60"
+              >
+                <Trash2 className="h-3.5 w-3.5" />
+                {bulkBusy ? "Working…" : "Delete"}
+              </button>
+            )}
           </div>
         </div>
         );

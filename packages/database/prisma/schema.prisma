@@ -218,9 +218,13 @@ model Org {
   qtIssues                QtIssue[]
   qtProjects              QtProject[]
   qtTeams                 QtTeam[]
+  qtCustomFields          QtCustomField[]
+  qtIssueFieldValues      QtIssueFieldValue[]
+  qtCustomFieldAudits     QtCustomFieldAudit[]
   QtTimesheetEntry        QtTimesheetEntry[]
   QtUserActivity          QtUserActivity[]
   QtUserViewPref          QtUserViewPref[]
+  QtReportView            QtReportView[]
   UserAppRole             QtUserAppRole[]
   UserPermissionExtra     QtUserPermissionExtra[]
   qsAppRoles              QsAppRole[]
@@ -2036,7 +2040,8 @@ model CnCompany {
   finYears CnFinancialYear[]
 
   // --- grafted: cross-schema relations (Org/User) ---
-  org       Org               @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  org Org @relation(fields: [orgId], references: [id], onDelete: Cascade)
+
   @@index([orgId])
   @@index([gstin])
   @@map("Companies")
@@ -2084,7 +2089,8 @@ model CnVendor {
   goodReturns CnGoodReturn[]
 
   // --- grafted: cross-schema relations (Org/User) ---
-  org              Org                  @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  org Org @relation(fields: [orgId], references: [id], onDelete: Cascade)
+
   @@unique([orgId, code])
   @@index([orgId])
   @@index([gstin])
@@ -2123,7 +2129,8 @@ model CnCustomer {
   projects CnProject[]
 
   // --- grafted: cross-schema relations (Org/User) ---
-  org           Org               @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  org Org @relation(fields: [orgId], references: [id], onDelete: Cascade)
+
   @@unique([orgId, code])
   @@index([orgId])
   @@map("Customers")
@@ -2161,7 +2168,8 @@ model CnContractor {
   rabs       CnRunningAccountBill[]
 
   // --- grafted: cross-schema relations (Org/User) ---
-  org            Org           @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  org Org @relation(fields: [orgId], references: [id], onDelete: Cascade)
+
   @@unique([orgId, code])
   @@index([orgId])
   @@map("Contractors")
@@ -2190,7 +2198,8 @@ model CnUOM {
   internalReturnLines CnInternalReturnLine[]
 
   // --- grafted: cross-schema relations (Org/User) ---
-  org                 Org                         @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  org Org @relation(fields: [orgId], references: [id], onDelete: Cascade)
+
   @@unique([orgId, code])
   @@index([orgId])
   @@map("Uoms")
@@ -2217,7 +2226,8 @@ model CnItemGroup {
   locations CnLocation[]
 
   // --- grafted: cross-schema relations (Org/User) ---
-  org       Org           @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  org Org @relation(fields: [orgId], references: [id], onDelete: Cascade)
+
   @@index([orgId])
   @@index([parentId])
   @@map("Item_groups")
@@ -2247,8 +2257,8 @@ model CnItem {
   createdBy     String
   updatedBy     String
 
-  group       CnItemGroup     @relation(fields: [groupId], references: [id])
-  uom         CnUOM           @relation(fields: [uomId], references: [id])
+  group               CnItemGroup                 @relation(fields: [groupId], references: [id])
+  uom                 CnUOM                       @relation(fields: [uomId], references: [id])
   stockLedger         CnStockLedger[]
   grnLines            CnGRNLine[]
   materialIssueLines  CnMaterialIssueLine[]
@@ -2257,7 +2267,8 @@ model CnItem {
   internalReturnLines CnInternalReturnLine[]
 
   // --- grafted: cross-schema relations (Org/User) ---
-  org                 Org                         @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  org Org @relation(fields: [orgId], references: [id], onDelete: Cascade)
+
   @@unique([orgId, code])
   @@index([orgId])
   @@index([groupId])
@@ -2284,7 +2295,8 @@ model CnBank {
   company CnCompany @relation(fields: [companyId], references: [id])
 
   // --- grafted: cross-schema relations (Org/User) ---
-  org         Org       @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  org Org @relation(fields: [orgId], references: [id], onDelete: Cascade)
+
   @@index([orgId])
   @@map("Banks")
   @@schema("app_quikinfra")
@@ -2304,7 +2316,8 @@ model CnDepartment {
   updatedBy  String
 
   // --- grafted: cross-schema relations (Org/User) ---
-  org        Org          @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  org Org @relation(fields: [orgId], references: [id], onDelete: Cascade)
+
   @@unique([orgId, code])
   @@index([orgId])
   @@map("Departments")
@@ -2324,7 +2337,8 @@ model CnWorkCategory {
   updatedBy   String
 
   // --- grafted: cross-schema relations (Org/User) ---
-  org         Org           @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  org Org @relation(fields: [orgId], references: [id], onDelete: Cascade)
+
   @@index([orgId])
   @@map("Work_categories")
   @@schema("app_quikinfra")
@@ -2343,7 +2357,8 @@ model CnCostCenter {
   updatedBy String
 
   // --- grafted: cross-schema relations (Org/User) ---
-  org       Org       @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  org Org @relation(fields: [orgId], references: [id], onDelete: Cascade)
+
   @@unique([orgId, code])
   @@index([orgId])
   @@map("Cost_centers")
@@ -2373,19 +2388,20 @@ model CnLocation {
   createdBy       String
   updatedBy       String
 
-  project     CnProject?      @relation(fields: [projectId], references: [id])
-  itemGroup   CnItemGroup?    @relation(fields: [itemGroupId], references: [id])
-  stockLedger    CnStockLedger[]
-  grns           CnGoodsReceiptNote[]
-  materialIssues CnMaterialIssue[]
-  transfersFrom   CnStockTransfer[]        @relation("StockTransferFrom")
-  transfersTo     CnStockTransfer[]        @relation("StockTransferTo")
+  project         CnProject?              @relation(fields: [projectId], references: [id])
+  itemGroup       CnItemGroup?            @relation(fields: [itemGroupId], references: [id])
+  stockLedger     CnStockLedger[]
+  grns            CnGoodsReceiptNote[]
+  materialIssues  CnMaterialIssue[]
+  transfersFrom   CnStockTransfer[]       @relation("StockTransferFrom")
+  transfersTo     CnStockTransfer[]       @relation("StockTransferTo")
   reconciliations CnStockReconciliation[]
   internalReturns CnInternalReturn[]
   dieselLogs      CnDieselLog[]
 
   // --- grafted: cross-schema relations (Org/User) ---
-  org                  Org                     @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  org Org @relation(fields: [orgId], references: [id], onDelete: Cascade)
+
   @@unique([orgId, code])
   @@index([orgId])
   @@index([projectId])
@@ -2416,7 +2432,8 @@ model CnGSTCode {
   updatedBy     String
 
   // --- grafted: cross-schema relations (Org/User) ---
-  org         Org       @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  org Org @relation(fields: [orgId], references: [id], onDelete: Cascade)
+
   @@unique([orgId, code])
   @@index([orgId])
   @@map("Gst_codes")
@@ -2437,7 +2454,8 @@ model CnTDSCode {
   updatedBy       String
 
   // --- grafted: cross-schema relations (Org/User) ---
-  org             Org       @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  org Org @relation(fields: [orgId], references: [id], onDelete: Cascade)
+
   @@index([orgId])
   @@map("Tds_codes")
   @@schema("app_quikinfra")
@@ -2457,7 +2475,8 @@ model CnTermsCondition {
   updatedBy    String
 
   // --- grafted: cross-schema relations (Org/User) ---
-  org          Org       @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  org Org @relation(fields: [orgId], references: [id], onDelete: Cascade)
+
   @@index([orgId])
   @@map("Terms_conditions")
   @@schema("app_quikinfra")
@@ -2480,7 +2499,8 @@ model CnFinancialYear {
   company CnCompany @relation(fields: [companyId], references: [id])
 
   // --- grafted: cross-schema relations (Org/User) ---
-  org       Org       @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  org Org @relation(fields: [orgId], references: [id], onDelete: Cascade)
+
   @@index([orgId])
   @@map("Financial_years")
   @@schema("app_quikinfra")
@@ -2540,7 +2560,8 @@ model CnProject {
   documents        CnProjectDocument[]
 
   // --- grafted: cross-schema relations (Org/User) ---
-  org                  Org                     @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  org Org @relation(fields: [orgId], references: [id], onDelete: Cascade)
+
   @@unique([orgId, code])
   @@index([orgId])
   @@map("Projects")
@@ -2569,7 +2590,8 @@ model CnMachinery {
   dieselLogs CnDieselLog[]
 
   // --- grafted: cross-schema relations (Org/User) ---
-  org            Org           @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  org Org @relation(fields: [orgId], references: [id], onDelete: Cascade)
+
   @@unique([orgId, code])
   @@index([orgId])
   @@map("Machinery")
@@ -2597,7 +2619,8 @@ model CnAsset {
   updatedBy       String
 
   // --- grafted: cross-schema relations (Org/User) ---
-  org           Org       @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  org Org @relation(fields: [orgId], references: [id], onDelete: Cascade)
+
   @@unique([orgId, assetCode])
   @@index([orgId])
   @@index([projectId])
@@ -2631,7 +2654,8 @@ model CnPurchaseRequisition {
   lines   CnPurchaseRequisitionLine[]
 
   // --- grafted: cross-schema relations (Org/User) ---
-  org           Org                         @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  org Org @relation(fields: [orgId], references: [id], onDelete: Cascade)
+
   @@unique([orgId, prNumber])
   @@index([orgId])
   @@index([projectId])
@@ -2733,7 +2757,8 @@ model CnPurchaseOrder {
   grns    CnGoodsReceiptNote[]
 
   // --- grafted: cross-schema relations (Org/User) ---
-  org                Org                    @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  org Org @relation(fields: [orgId], references: [id], onDelete: Cascade)
+
   @@unique([orgId, poNumber])
   @@index([orgId])
   @@index([projectId])
@@ -2833,7 +2858,8 @@ model CnGoodsReceiptNote {
   lines    CnGRNLine[]
 
   // --- grafted: cross-schema relations (Org/User) ---
-  org                 Org              @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  org Org @relation(fields: [orgId], references: [id], onDelete: Cascade)
+
   @@unique([orgId, grnNumber])
   @@index([orgId])
   @@index([poId])
@@ -2898,7 +2924,8 @@ model CnStockLedger {
   item     CnItem     @relation(fields: [itemId], references: [id])
 
   // --- grafted: cross-schema relations (Org/User) ---
-  org                  Org        @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  org Org @relation(fields: [orgId], references: [id], onDelete: Cascade)
+
   @@index([orgId])
   @@index([projectId, locationId, itemId])
   @@index([itemId])
@@ -2969,7 +2996,8 @@ model CnMaterialIssue {
   internalReturns CnInternalReturn[]
 
   // --- grafted: cross-schema relations (Org/User) ---
-  org             Org                   @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  org Org @relation(fields: [orgId], references: [id], onDelete: Cascade)
+
   @@unique([orgId, issueNumber])
   @@index([orgId])
   @@index([projectId])
@@ -3024,7 +3052,8 @@ model CnPurchaseIndent {
   lines   CnPurchaseIndentLine[]
 
   // --- grafted: cross-schema relations (Org/User) ---
-  org           Org                    @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  org Org @relation(fields: [orgId], references: [id], onDelete: Cascade)
+
   @@unique([orgId, indentNumber])
   @@index([orgId])
   @@index([projectId])
@@ -3117,7 +3146,8 @@ model CnGatePass {
   lines   CnGatePassLine[]
 
   // --- grafted: cross-schema relations (Org/User) ---
-  org             Org        @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  org Org @relation(fields: [orgId], references: [id], onDelete: Cascade)
+
   @@unique([orgId, gatePassNumber])
   @@index([orgId])
   @@index([projectId])
@@ -3180,7 +3210,8 @@ model CnGoodReturn {
   lines   CnGoodReturnLine[]
 
   // --- grafted: cross-schema relations (Org/User) ---
-  org          Org                @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  org Org @relation(fields: [orgId], references: [id], onDelete: Cascade)
+
   @@unique([orgId, returnNumber])
   @@index([orgId])
   @@index([projectId])
@@ -3227,7 +3258,8 @@ model CnInternalReturn {
   lines    CnInternalReturnLine[]
 
   // --- grafted: cross-schema relations (Org/User) ---
-  org          Org                    @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  org Org @relation(fields: [orgId], references: [id], onDelete: Cascade)
+
   @@unique([orgId, returnNumber])
   @@index([orgId])
   @@map("Internal_returns")
@@ -3308,13 +3340,14 @@ model CnStockTransfer {
   createdBy              String
   updatedBy              String
 
-  fromProject  CnProject?           @relation(fields: [fromProjectId], references: [id])
-  fromLocation CnLocation?          @relation("StockTransferFrom", fields: [fromLocationId], references: [id])
-  toLocation   CnLocation?          @relation("StockTransferTo", fields: [toLocationId], references: [id])
+  fromProject  CnProject?            @relation(fields: [fromProjectId], references: [id])
+  fromLocation CnLocation?           @relation("StockTransferFrom", fields: [fromLocationId], references: [id])
+  toLocation   CnLocation?           @relation("StockTransferTo", fields: [toLocationId], references: [id])
   lines        CnStockTransferLine[]
 
   // --- grafted: cross-schema relations (Org/User) ---
-  org            Org                   @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  org Org @relation(fields: [orgId], references: [id], onDelete: Cascade)
+
   @@unique([orgId, transferNumber])
   @@index([orgId])
   @@index([sourceProjectId])
@@ -3365,7 +3398,8 @@ model CnStockReconciliation {
   lines    CnStockReconciliationLine[]
 
   // --- grafted: cross-schema relations (Org/User) ---
-  org                  Org                         @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  org Org @relation(fields: [orgId], references: [id], onDelete: Cascade)
+
   @@unique([orgId, reconciliationNumber])
   @@index([orgId])
   // Composite indexes â€” match `ORDER BY reconciliationDate DESC` in
@@ -3419,7 +3453,8 @@ model CnDieselLog {
   location  CnLocation  @relation(fields: [locationId], references: [id])
 
   // --- grafted: cross-schema relations (Org/User) ---
-  org            Org          @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  org Org @relation(fields: [orgId], references: [id], onDelete: Cascade)
+
   @@index([orgId])
   @@index([projectId])
   @@index([machineryId])
@@ -3484,7 +3519,8 @@ model CnHindrance {
   project CnProject @relation(fields: [projectId], references: [id])
 
   // --- grafted: cross-schema relations (Org/User) ---
-  org           Org       @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  org Org @relation(fields: [orgId], references: [id], onDelete: Cascade)
+
   @@unique([orgId, hindranceNo])
   @@index([orgId])
   @@index([projectId])
@@ -3520,7 +3556,8 @@ model CnWorkOrder {
   rabs       CnRunningAccountBill[]
 
   // --- grafted: cross-schema relations (Org/User) ---
-  org              Org               @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  org Org @relation(fields: [orgId], references: [id], onDelete: Cascade)
+
   @@unique([orgId, woNumber])
   @@index([orgId])
   @@index([projectId])
@@ -3573,12 +3610,6 @@ model CnRABLine {
   @@schema("app_quikinfra")
 }
 
-
-
-
-
-
-
 model CnApprovalRule {
   id         String    @id @default(cuid())
   orgId      String
@@ -3624,14 +3655,14 @@ model CnApprovalRequest {
 }
 
 model CnQCInspection {
-  id               String              @id @default(cuid())
+  id               String    @id @default(cuid())
   orgId            String
   inspectionNumber String
   grnId            String?
   projectId        String?
   inspectorId      String
   inspectionDate   DateTime
-  decision         String              @default("pending")
+  decision         String    @default("pending")
   remarks          String?
   // Combined inspection + checklist record fields (QuikInfra /quality page).
   // The /quality workflow captures the inspection and its checklist in one
@@ -3640,16 +3671,16 @@ model CnQCInspection {
   boqItem          String?
   checklistName    String?
   category         String?
-  result           String?             // Pass | Fail | Conditional
-  status           String?             @default("Active")
+  result           String? // Pass | Fail | Conditional
+  status           String?   @default("Active")
   inspectorName    String?
-  items            Json?               // [{ item, acceptanceCriteria }]
-  createdAt        DateTime            @default(now())
-  updatedAt        DateTime            @updatedAt
+  items            Json? // [{ item, acceptanceCriteria }]
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
   createdBy        String
   updatedBy        String?
   deletedAt        DateTime?
-  org              Org                 @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  org              Org       @relation(fields: [orgId], references: [id], onDelete: Cascade)
 
   @@unique([orgId, inspectionNumber])
   @@index([orgId])
@@ -3659,27 +3690,26 @@ model CnQCInspection {
   @@schema("app_quikinfra")
 }
 
-
 model CnSafetyIncident {
-  id             String     @id @default(cuid())
+  id             String    @id @default(cuid())
   orgId          String
   projectId      String?
   incidentNumber String
   incidentDate   DateTime
   category       String
-  severity       String     @default("low")
+  severity       String    @default("low")
   title          String
   description    String?
   reportedBy     String
-  status         String     @default("open")
+  status         String    @default("open")
   resolvedAt     DateTime?
   resolvedBy     String?
-  createdAt      DateTime   @default(now())
-  updatedAt      DateTime   @updatedAt
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
   createdBy      String
   updatedBy      String?
   deletedAt      DateTime?
-  org            Org        @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  org            Org       @relation(fields: [orgId], references: [id], onDelete: Cascade)
 
   @@unique([orgId, incidentNumber])
   @@index([orgId])
@@ -3689,7 +3719,7 @@ model CnSafetyIncident {
 }
 
 model CnSafetyChecklist {
-  id            String     @id @default(cuid())
+  id            String    @id @default(cuid())
   orgId         String
   projectId     String?
   templateName  String
@@ -3697,14 +3727,14 @@ model CnSafetyChecklist {
   completedBy   String
   /// JSON: [{ item: string, ok: bool, remarks?: string }]
   items         Json
-  overallStatus String     @default("pass")
+  overallStatus String    @default("pass")
   remarks       String?
-  createdAt     DateTime   @default(now())
-  updatedAt     DateTime   @updatedAt
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
   createdBy     String
   updatedBy     String?
   deletedAt     DateTime?
-  org           Org        @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  org           Org       @relation(fields: [orgId], references: [id], onDelete: Cascade)
 
   @@index([orgId])
   @@index([checklistDate])
@@ -3733,7 +3763,6 @@ model CnDocument {
   @@schema("app_quikinfra")
 }
 
-
 /// Audit log. Free-form old/new JSON snapshots, indexed for per-entity
 /// history lookup. NOT wrapped around every endpoint in this pass — helper
 /// `logAudit()` is opt-in. Future work to wire it broadly.
@@ -3749,7 +3778,8 @@ model CnAuditLog {
   ipAddress  String?
 
   // --- grafted: cross-schema relations (Org/User) ---
-  org        Org      @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  org Org @relation(fields: [orgId], references: [id], onDelete: Cascade)
+
   @@index([orgId])
   @@index([entityType, entityId])
   @@index([userId])
@@ -3916,6 +3946,7 @@ model CnUserProjectAccess {
   @@map("User_project_access")
   @@schema("app_quikinfra")
 }
+
 model CnRfq {
   id                 String    @id @default(cuid())
   orgId              String
@@ -3957,6 +3988,7 @@ model CnRfq {
   @@map("Rfqs")
   @@schema("app_quikinfra")
 }
+
 model CnRfqLine {
   id                 String  @id @default(cuid())
   rfqId              String
@@ -3972,6 +4004,7 @@ model CnRfqLine {
   @@map("Rfq_lines")
   @@schema("app_quikinfra")
 }
+
 model CnRfqVendor {
   id              String    @id @default(cuid())
   rfqId           String
@@ -4005,6 +4038,7 @@ model CnRfqVendor {
   @@map("Rfq_vendors")
   @@schema("app_quikinfra")
 }
+
 model CnGatePassLine {
   id         String  @id @default(cuid())
   gatePassId String
@@ -4019,6 +4053,7 @@ model CnGatePassLine {
   @@map("Gate_pass_lines")
   @@schema("app_quikinfra")
 }
+
 model CnMaterialEstimation {
   id              String    @id @default(cuid())
   orgId           String
@@ -4060,27 +4095,28 @@ model CnMaterialEstimation {
   @@map("Material_estimations")
   @@schema("app_quikinfra")
 }
+
 model CnDailyProgressReport {
-  id               String   @id @default(cuid())
-  orgId            String
-  dprNumber        String
-  projectId        String
-  reportDate       DateTime
-  submittedById    String
-  weatherCondition String?
+  id                    String   @id @default(cuid())
+  orgId                 String
+  dprNumber             String
+  projectId             String
+  reportDate            DateTime
+  submittedById         String
+  weatherCondition      String?
   /// Open-Meteo daily snapshot at save time (max/min Â°C, precip mm, wind km/h, WMO code).
-  weatherDetail    Json?
-  remarks          String?
+  weatherDetail         Json?
+  remarks               String?
   /// Single source location that material consumption is deducted from
   /// when the DPR is approved. Nullable in draft; required at approve
   /// time only when the DPR has material entries.
   consumptionLocationId String?
-  status           String   @default("draft")
-  approvalId       String?
-  createdAt        DateTime @default(now())
-  updatedAt        DateTime @updatedAt
-  createdBy        String
-  updatedBy        String
+  status                String   @default("draft")
+  approvalId            String?
+  createdAt             DateTime @default(now())
+  updatedAt             DateTime @updatedAt
+  createdBy             String
+  updatedBy             String
 
   project          CnProject             @relation(fields: [projectId], references: [id])
   workItems        CnDPRWorkItem[]
@@ -4100,6 +4136,7 @@ model CnDailyProgressReport {
   @@map("Daily_progress_reports")
   @@schema("app_quikinfra")
 }
+
 model CnProjectDocument {
   id               String    @id @default(cuid())
   orgId            String
@@ -4130,6 +4167,7 @@ model CnProjectDocument {
   @@map("Project_documents")
   @@schema("app_quikinfra")
 }
+
 model CnDPRWorkItem {
   id            String  @id @default(cuid())
   dprId         String
@@ -4147,6 +4185,7 @@ model CnDPRWorkItem {
   @@map("Dpr_work_items")
   @@schema("app_quikinfra")
 }
+
 model CnDPRLabourEntry {
   id           String  @id @default(cuid())
   dprId        String
@@ -4162,6 +4201,7 @@ model CnDPRLabourEntry {
   @@map("Dpr_labour_entries")
   @@schema("app_quikinfra")
 }
+
 model CnDPRMachineryEntry {
   id           String   @id @default(cuid())
   dprId        String
@@ -4177,6 +4217,7 @@ model CnDPRMachineryEntry {
   @@map("Dpr_machinery_entries")
   @@schema("app_quikinfra")
 }
+
 model CnDPRMaterialEntry {
   id          String  @id @default(cuid())
   dprId       String
@@ -4196,6 +4237,7 @@ model CnDPRMaterialEntry {
   @@map("Dpr_material_entries")
   @@schema("app_quikinfra")
 }
+
 model CnRunningAccountBill {
   id                 String   @id @default(cuid())
   orgId              String
@@ -4237,6 +4279,7 @@ model CnRunningAccountBill {
   @@map("Running_account_bills")
   @@schema("app_quikinfra")
 }
+
 model CnWBSTask {
   id        String @id @default(cuid())
   orgId     String
@@ -4270,6 +4313,7 @@ model CnWBSTask {
   @@map("Wbs_tasks")
   @@schema("app_quikinfra")
 }
+
 model CnWBSDependency {
   id        String @id @default(cuid())
   orgId     String
@@ -4291,6 +4335,7 @@ model CnWBSDependency {
   @@map("Wbs_dependencies")
   @@schema("app_quikinfra")
 }
+
 model CnApprovalWorkflow {
   id         String   @id @default(cuid())
   orgId      String
@@ -4316,6 +4361,7 @@ model CnApprovalWorkflow {
   @@map("Approval_workflows")
   @@schema("app_quikinfra")
 }
+
 model CnApprovalWorkflowStep {
   id                   String   @id @default(cuid())
   workflowId           String
@@ -4344,6 +4390,7 @@ model CnApprovalWorkflowStep {
   @@map("Approval_workflow_steps")
   @@schema("app_quikinfra")
 }
+
 model CnApprovalInstance {
   id               String    @id @default(cuid())
   orgId            String
@@ -4372,6 +4419,7 @@ model CnApprovalInstance {
   @@map("Approval_instances")
   @@schema("app_quikinfra")
 }
+
 model CnApprovalHistory {
   id         String   @id @default(cuid())
   instanceId String
@@ -4387,6 +4435,7 @@ model CnApprovalHistory {
   @@map("Approval_history")
   @@schema("app_quikinfra")
 }
+
 model CnBOQItemV2 {
   id        String @id @default(cuid())
   orgId     String
@@ -4451,6 +4500,7 @@ model CnBOQItemV2 {
   @@map("Boq_items_v2")
   @@schema("app_quikinfra")
 }
+
 model CnBOQImportBatch {
   id             String   @id @default(cuid())
   orgId          String
@@ -4473,6 +4523,7 @@ model CnBOQImportBatch {
   @@map("Boq_import_batches")
   @@schema("app_quikinfra")
 }
+
 model CnBOQLockState {
   projectId String    @id
   orgId     String
@@ -4488,6 +4539,7 @@ model CnBOQLockState {
   @@map("Boq_lock_state")
   @@schema("app_quikinfra")
 }
+
 model CnStockBalance {
   orgId      String
   projectId  String
@@ -4505,6 +4557,7 @@ model CnStockBalance {
   @@map("Stock_balances")
   @@schema("app_quikinfra")
 }
+
 model CnBOQProgressLedger {
   id             String   @id @default(cuid())
   orgId          String
@@ -4530,6 +4583,7 @@ model CnBOQProgressLedger {
   @@map("Boq_progress_ledger")
   @@schema("app_quikinfra")
 }
+
 model CnBOQBillingLedger {
   id             String   @id @default(cuid())
   orgId          String
@@ -4554,6 +4608,7 @@ model CnBOQBillingLedger {
   @@map("Boq_billing_ledger")
   @@schema("app_quikinfra")
 }
+
 model CnIdempotencyKey {
   key          String   @id
   orgId        String
@@ -4570,6 +4625,7 @@ model CnIdempotencyKey {
   @@map("Idempotency_keys")
   @@schema("app_quikinfra")
 }
+
 model CnFileObject {
   id    String @id @default(cuid())
   orgId String
@@ -5484,6 +5540,7 @@ model QtProject {
   sprints          QtSprint[]
   projectRoles     QtProjectRole[]
   projectUserRoles QtProjectUserRole[]
+  customFields     QtCustomField[]
 
   @@unique([orgId, projectKey])
   @@index([orgId, status])
@@ -5824,15 +5881,15 @@ model QtIssueType {
 }
 
 model QtIssue {
-  id               String             @id @default(cuid())
+  id               String              @id @default(cuid())
   orgId            String
   projectId        String
   key              String
   title            String
   description      String?
-  type             String             @default("TASK")
+  type             String              @default("TASK")
   statusId         String
-  priority         String             @default("MEDIUM")
+  priority         String              @default("MEDIUM")
   parentId         String?
   epicId           String?
   sprintId         String?
@@ -5842,33 +5899,34 @@ model QtIssue {
   dueDate          DateTime?
   eta              Float?
   storyPoints      Int?
-  orderInColumn    Int                @default(0)
+  orderInColumn    Int                 @default(0)
   /// Grouped Kanban — visual business band. INDEPENDENT of statusId.
   /// Dragging across groups must NOT change status, and changing status
   /// must NOT change groupId. Null = tasks render under the default
   /// "Ungrouped" row but still carry no group assignment.
   groupId          String?
-  orderInGroup     Int                @default(0)
-  isDeleted        Boolean            @default(false)
-  createdAt        DateTime           @default(now())
-  updatedAt        DateTime           @updatedAt
+  orderInGroup     Int                 @default(0)
+  isDeleted        Boolean             @default(false)
+  createdAt        DateTime            @default(now())
+  updatedAt        DateTime            @updatedAt
   createdBy        String?
   updatedBy        String?
-  epic             QtIssue?           @relation("IssueEpic", fields: [epicId], references: [id])
-  epicChildren     QtIssue[]          @relation("IssueEpic")
-  org              Org                @relation(fields: [orgId], references: [id], onDelete: Cascade)
-  parent           QtIssue?           @relation("IssueParent", fields: [parentId], references: [id])
-  children         QtIssue[]          @relation("IssueParent")
-  project          QtProject          @relation(fields: [projectId], references: [id], onDelete: Cascade)
-  sprint           QtSprint?          @relation(fields: [sprintId], references: [id])
-  status           QtIssueStatus      @relation(fields: [statusId], references: [id])
-  group            QtTaskGroup?       @relation(fields: [groupId], references: [id], onDelete: SetNull)
+  epic             QtIssue?            @relation("IssueEpic", fields: [epicId], references: [id])
+  epicChildren     QtIssue[]           @relation("IssueEpic")
+  org              Org                 @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  parent           QtIssue?            @relation("IssueParent", fields: [parentId], references: [id])
+  children         QtIssue[]           @relation("IssueParent")
+  project          QtProject           @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  sprint           QtSprint?           @relation(fields: [sprintId], references: [id])
+  status           QtIssueStatus       @relation(fields: [statusId], references: [id])
+  group            QtTaskGroup?        @relation(fields: [groupId], references: [id], onDelete: SetNull)
   comments         QtIssueComment[]
   history          QtIssueHistory[]
-  outgoingLinks    QtIssueLink[]      @relation("IssueLinkSource")
-  incomingLinks    QtIssueLink[]      @relation("IssueLinkTarget")
+  outgoingLinks    QtIssueLink[]       @relation("IssueLinkSource")
+  incomingLinks    QtIssueLink[]       @relation("IssueLinkTarget")
   timesheetEntries QtTimesheetEntry[]
   attachments      QtIssueAttachment[]
+  fieldValues      QtIssueFieldValue[]
 
   @@unique([projectId, key])
   @@index([orgId])
@@ -5935,22 +5993,22 @@ model QtIssueComment {
 }
 
 model QtIssueAttachment {
-  id                String   @id @default(cuid())
-  orgId             String
-  projectId         String
-  issueId           String
-  fileName          String
-  mimeType          String
-  sizeBytes         Int
-  s3Key             String
+  id                 String   @id @default(cuid())
+  orgId              String
+  projectId          String
+  issueId            String
+  fileName           String
+  mimeType           String
+  sizeBytes          Int
+  s3Key              String
   /// Source attachment id when imported (e.g. Jira attachment.id).
   /// Combined with issueId it gives a natural idempotency key so re-running
   /// an import doesn't duplicate rows.
-  sourceSystem      String?
+  sourceSystem       String?
   sourceAttachmentId String?
-  uploadedBy        String?
-  createdAt         DateTime @default(now())
-  issue             QtIssue  @relation(fields: [issueId], references: [id], onDelete: Cascade)
+  uploadedBy         String?
+  createdAt          DateTime @default(now())
+  issue              QtIssue  @relation(fields: [issueId], references: [id], onDelete: Cascade)
 
   @@unique([issueId, sourceSystem, sourceAttachmentId])
   @@index([orgId])
@@ -6023,6 +6081,11 @@ model QtDoc {
   title       String
   content     String
   templateKey String?
+  folderId    String?
+  sortOrder   Int       @default(0)
+  // Public share: short base62 code (null = not shared); mode is "view" | "edit".
+  shareToken  String?   @unique
+  shareMode   String?
   createdBy   String?
   updatedBy   String?
   isDeleted   Boolean   @default(false)
@@ -6033,6 +6096,27 @@ model QtDoc {
 
   @@index([orgId])
   @@index([projectId, isDeleted, updatedAt])
+  @@schema("app_quiktrack")
+}
+
+// Single-level folders for grouping QtDoc rows within a project. Docs with a
+// null folderId live at the root ("uncategorized"). No Prisma relation block —
+// the Docs API is raw-SQL only (the local Prisma client is flaky for these
+// models on Windows), so the column + indexes are all that's needed.
+model QtDocFolder {
+  id        String   @id @default(cuid())
+  orgId     String
+  projectId String
+  name      String
+  sortOrder Int      @default(0)
+  createdBy String?
+  updatedBy String?
+  isDeleted Boolean  @default(false)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([orgId])
+  @@index([projectId, isDeleted, sortOrder])
   @@schema("app_quiktrack")
 }
 
@@ -6101,13 +6185,33 @@ model QtUserViewPref {
   viewKey       String
   hiddenColumns String[] @default([])
   columnOrder   String[] @default([])
-  settings      Json?    // structured per-view settings blob (e.g. backlog View settings: epic panel, empty sprints, density, field toggles)
+  settings      Json? // structured per-view settings blob (e.g. backlog View settings: epic panel, empty sprints, density, field toggles)
   createdAt     DateTime @default(now())
   updatedAt     DateTime @updatedAt
   Org           Org      @relation(fields: [orgId], references: [id], onDelete: Cascade)
 
   @@unique([userId, projectId, viewKey])
   @@index([orgId])
+  @@schema("app_quiktrack")
+}
+
+/// Saved filter+chart presets for the executive reports page. Each row is
+/// one preset owned by a single user (private to that user). `filtersJson`
+/// is the opaque blob the UI persists — shape is owned by the client; the
+/// server only validates that it is an object.
+model QtReportView {
+  id          String   @id @default(cuid())
+  orgId       String
+  userId      String
+  kind        String   @default("executive")
+  name        String
+  filtersJson Json
+  isPinned    Boolean  @default(false)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  Org         Org      @relation(fields: [orgId], references: [id], onDelete: Cascade)
+
+  @@index([orgId, userId, kind])
   @@schema("app_quiktrack")
 }
 
@@ -6528,13 +6632,13 @@ model Offering {
 // --- Product / Service models removed (replaced by unified Offering above).
 
 model SocialAccount {
-  id               String            @id @default(cuid())
-  orgId            String
-  brandId          String?
-  userId           String
-  platform         String
-  accountId        String
-  pageId           String?
+  id                  String            @id @default(cuid())
+  orgId               String
+  brandId             String?
+  userId              String
+  platform            String
+  accountId           String
+  pageId              String?
   // Instagram Business Account ID. Required for IG publishing (Graph
   // API's POST /{id}/media expects this, NOT the Facebook Page ID).
   // Always null for non-Instagram rows. May be null on legacy IG rows
@@ -6543,22 +6647,22 @@ model SocialAccount {
   // or run scripts/backfill-ig-business-account.ts to backfill the
   // whole table at once.
   igBusinessAccountId String?
-  accountName      String
-  profilePicture   String?
-  accessToken      String
-  refreshToken     String?
-  expiresAt        DateTime?
-  isActive         Boolean           @default(true)
-  autoReplyEnabled Boolean           @default(true)
-  createdAt        DateTime          @default(now())
-  updatedAt        DateTime          @updatedAt
-  createdBy        String?
-  updatedBy        String?
-  posts            Post[]
-  brand            Brand?            @relation(fields: [brandId], references: [id])
-  autoReplyRules   AutoReplyRule[]
-  autoReplyLogs    AutoReplyLog[]
-  autoReplyCursors AutoReplyCursor[]
+  accountName         String
+  profilePicture      String?
+  accessToken         String
+  refreshToken        String?
+  expiresAt           DateTime?
+  isActive            Boolean           @default(true)
+  autoReplyEnabled    Boolean           @default(true)
+  createdAt           DateTime          @default(now())
+  updatedAt           DateTime          @updatedAt
+  createdBy           String?
+  updatedBy           String?
+  posts               Post[]
+  brand               Brand?            @relation(fields: [brandId], references: [id])
+  autoReplyRules      AutoReplyRule[]
+  autoReplyLogs       AutoReplyLog[]
+  autoReplyCursors    AutoReplyCursor[]
 
   @@unique([orgId, userId, platform, accountId])
   @@index([orgId])
@@ -6830,6 +6934,103 @@ enum ClientMeetingStatus {
   @@schema("app_quikscale")
 }
 
+// ============================================================================
+// Custom Fields (a.k.a. Customer Fields) — see FRD "Customer Fields" v2.
+// Two-tier scope: scope="global" (org-wide, projectId NULL) or scope="space"
+// (one project). Values live in QtIssueFieldValue with typed columns so the
+// backlog filter can index by value (NFR-02). Name/key uniqueness within a
+// scope is enforced in the service layer (case-insensitive — FRD §5.1).
+// ============================================================================
+
+model QtCustomField {
+  id           String                @id @default(cuid())
+  orgId        String
+  scope        String                @default("space") // "global" | "space"
+  projectId    String? // NULL when scope = "global"
+  name         String
+  key          String // immutable, generated from name (e.g. "customer_tier")
+  type         String // SHORT_TEXT | LONG_TEXT | NUMBER | DATE | DROPDOWN_SINGLE | DROPDOWN_MULTI | CHECKBOX | URL | USER_PICKER | LABELS
+  description  String?
+  status       String                @default("active") // "active" | "archived"
+  isRequired   Boolean               @default(false)
+  defaultValue Json? // type-dependent default (string | number | bool | string[])
+  placeholder  String?
+  helpText     String?
+  position     Int                   @default(0)
+  isDeleted    Boolean               @default(false)
+  createdAt    DateTime              @default(now())
+  updatedAt    DateTime              @updatedAt
+  createdBy    String?
+  updatedBy    String?
+  org          Org                   @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  project      QtProject?            @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  options      QtCustomFieldOption[]
+  values       QtIssueFieldValue[]
+  audits       QtCustomFieldAudit[]
+
+  @@unique([projectId, key])
+  @@index([orgId, scope, status])
+  @@index([projectId, status])
+  @@schema("app_quiktrack")
+}
+
+model QtCustomFieldOption {
+  id        String        @id @default(cuid())
+  fieldId   String
+  label     String
+  value     String // stored value (slug); kept stable across label renames
+  position  Int           @default(0)
+  isActive  Boolean       @default(true)
+  createdAt DateTime      @default(now())
+  field     QtCustomField @relation(fields: [fieldId], references: [id], onDelete: Cascade)
+
+  @@index([fieldId, isActive])
+  @@schema("app_quiktrack")
+}
+
+model QtIssueFieldValue {
+  id           String        @id @default(cuid())
+  orgId        String
+  issueId      String
+  fieldId      String
+  valueText    String? // SHORT_TEXT, LONG_TEXT, URL, DROPDOWN_SINGLE, USER_PICKER
+  valueNumber  Float? // NUMBER
+  valueDate    DateTime? // DATE
+  valueBoolean Boolean? // CHECKBOX
+  valueJson    Json? // DROPDOWN_MULTI, LABELS (string[])
+  createdAt    DateTime      @default(now())
+  updatedAt    DateTime      @updatedAt
+  createdBy    String?
+  updatedBy    String?
+  org          Org           @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  issue        QtIssue       @relation(fields: [issueId], references: [id], onDelete: Cascade)
+  field        QtCustomField @relation(fields: [fieldId], references: [id], onDelete: Cascade)
+
+  @@unique([issueId, fieldId])
+  @@index([fieldId, valueText])
+  @@index([fieldId, valueNumber])
+  @@index([fieldId, valueDate])
+  @@index([fieldId, valueBoolean])
+  @@index([orgId])
+  @@schema("app_quiktrack")
+}
+
+model QtCustomFieldAudit {
+  id         String         @id @default(cuid())
+  orgId      String
+  fieldId    String?
+  action     String // created | updated | archived | restored | deleted
+  actorId    String?
+  oldValue   Json?
+  newValue   Json?
+  occurredAt DateTime       @default(now())
+  org        Org            @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  field      QtCustomField? @relation(fields: [fieldId], references: [id], onDelete: SetNull)
+
+  @@index([orgId, occurredAt])
+  @@index([fieldId])
+  @@schema("app_quiktrack")
+}
 
 // ===== app_quikcrm models + enums (restored from commit 32931530; tenantId->orgId) =====
 enum CrmOpportunityStage {

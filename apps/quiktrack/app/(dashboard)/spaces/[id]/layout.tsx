@@ -21,7 +21,7 @@ const ROUTE_GATES: Record<string, { resource: string; action: string }> = {
   list: { resource: "ProjectList", action: "view" },
   "task-table": { resource: "ProjectTaskTable", action: "view" },
   board: { resource: "Board", action: "view" },
-  "grouped-kanban": { resource: "Board", action: "view" },
+  "grouped-kanban": { resource: "GroupedKanban", action: "view" },
   timesheet: { resource: "Timesheet", action: "view" },
   docs: { resource: "Doc", action: "view" },
 };

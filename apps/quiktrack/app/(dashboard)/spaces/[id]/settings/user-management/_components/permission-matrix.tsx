@@ -5,7 +5,8 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { ChevronDown, ChevronRight } from "lucide-react";
 import { Button } from "@quikit/ui";
 import {
-  PERMISSION_TREE,
+  PROJECT_PERMISSION_TREE,
+  isValidPermissionPair,
   walkLeaves,
   type Action,
   type PermissionLeaf,
@@ -42,7 +43,17 @@ export function ProjectPermissionMatrix({
 
   useEffect(() => {
     if (q.data) {
-      setGranted(new Set(q.data.permissions.map((p) => `${p.resource}:${p.action}`)));
+      // Drop stale (resource, action) pairs that no longer exist in the
+      // registry (e.g. grants seeded before a leaf's actions were trimmed).
+      // Otherwise they'd ride along in the PUT and trip the server's
+      // "(resource, action) pair is not valid for this leaf" validator.
+      setGranted(
+        new Set(
+          q.data.permissions
+            .filter((p) => isValidPermissionPair(p.resource, p.action))
+            .map((p) => `${p.resource}:${p.action}`),
+        ),
+      );
     }
   }, [q.data]);
 
@@ -116,7 +127,7 @@ export function ProjectPermissionMatrix({
           </tr>
         </thead>
         <tbody>
-          {PERMISSION_TREE.map((mod) => (
+          {PROJECT_PERMISSION_TREE.map((mod) => (
             <ModuleRow
               key={mod.key}
               mod={mod}

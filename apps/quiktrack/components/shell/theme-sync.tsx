@@ -4,7 +4,9 @@
  * Reads the signed-in user's persisted `themeMode` from
  * `/api/settings/company` once on mount and pushes it into next-themes.
  *
- * Lives next to <ThemeApplier /> in the dashboard layout. The
+ * Mounted in the dashboard layout. (Accent color is not synced here —
+ * QuikTrack pins a fixed blue brand accent via `--accent-*` in globals.css
+ * and does not mount the shared ThemeApplier.) The
  * next-themes provider already handles class injection on <html> and
  * cross-tab sync via localStorage; this component closes the loop by
  * making the DB the source of truth on first load.

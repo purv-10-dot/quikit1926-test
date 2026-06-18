@@ -24,13 +24,13 @@ const NAV: {
   perm?: { resource: string; action: string };
 }[] = [
   { key: "details", label: "Details", href: (id) => `/spaces/${id}/settings` },
-  { key: "user-management", label: "User Management", href: (id) => `/spaces/${id}/settings/user-management`, perm: { resource: "ProjectMember", action: "view" } },
+  { key: "user-management", label: "Roles & Permissions", href: (id) => `/spaces/${id}/settings/user-management`, perm: { resource: "ProjectMember", action: "view" } },
+  { key: "fields", label: "Fields", href: (id) => `/spaces/${id}/settings/fields`, perm: { resource: "ProjectMember", action: "update" } },
   // TODO: the following nav entries are coming soon — their pages are stubs.
   // Restore once their corresponding settings UIs are implemented.
   // { key: "access", label: "Access", href: (id) => `/spaces/${id}/settings/access` },
   // { key: "types", label: "Types and workflows", href: (id) => `/spaces/${id}/settings/types` },
   // { key: "hierarchies", label: "Hierarchies", href: (id) => `/spaces/${id}/settings/hierarchies`, tag: "TRY" },
-  // { key: "fields", label: "Fields", href: (id) => `/spaces/${id}/settings/fields` },
   // { key: "notifications", label: "Notifications", href: (id) => `/spaces/${id}/settings/notifications` },
   // { key: "features", label: "Features", href: (id) => `/spaces/${id}/settings/features` },
   // { key: "automation", label: "Automation", href: (id) => `/spaces/${id}/settings/automation` },

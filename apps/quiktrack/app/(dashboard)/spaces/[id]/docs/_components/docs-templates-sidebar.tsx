@@ -13,8 +13,8 @@ interface SidebarTemplate {
 const POPULAR: SidebarTemplate[] = [
   {
     key: "blank",
-    title: "Blank page",
-    description: "Start a page from scratch.",
+    title: "Blank doc",
+    description: "Start a doc from scratch.",
     Icon: FileText,
     iconColor: "text-blue-600",
   },
@@ -62,7 +62,7 @@ export function DocsTemplatesSidebar({
 }) {
   return (
     <aside className="w-80 border-l border-gray-200 bg-gray-50 px-4 py-4 overflow-y-auto shrink-0">
-      <h2 className="text-sm font-semibold text-gray-900 mb-1">Create a page</h2>
+      <h2 className="text-sm font-semibold text-gray-900 mb-1">Create a doc</h2>
       <p className="text-xs text-gray-500 uppercase tracking-wider mb-4">
         POPULAR TEMPLATES
       </p>

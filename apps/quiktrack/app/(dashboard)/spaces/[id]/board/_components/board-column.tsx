@@ -5,10 +5,7 @@ import type { BoardIssue, BoardStatus, EpicLite } from "./board-meta";
 import { STATUS_ICON, STATUS_ICON_CLASS } from "./board-meta";
 import { TaskCard } from "./task-card";
 import { ColumnMenu } from "./column-menu";
-import {
-  ColumnInlineCreate,
-  type ColumnInlineCreateMember,
-} from "./column-inline-create";
+import type { ColumnInlineCreateMember } from "./column-inline-create";
 
 const PAGE_SIZE = 25;
 
@@ -45,7 +42,6 @@ export function BoardColumn({
   statusesById,
   filters,
   members,
-  availableSprints,
   onOpen,
   onColumnRenamed,
   onColumnDeleted,
@@ -231,14 +227,6 @@ export function BoardColumn({
           </div>
         )}
       </div>
-
-      <ColumnInlineCreate
-        projectId={projectId}
-        statusId={status.id}
-        members={members}
-        availableSprints={availableSprints}
-        onOpenIssue={onOpen}
-      />
     </div>
   );
 }

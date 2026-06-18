@@ -286,10 +286,7 @@ export function SummaryView({ projectId }: { projectId: string }) {
         <div className="border border-gray-200 rounded-lg p-5 bg-white flex flex-col">
           <h3 className="text-sm font-semibold text-gray-900">Priority breakdown</h3>
           <p className="mt-1 text-xs text-gray-600">
-            Get a holistic view of how work is being prioritized.{" "}
-            <a className="text-blue-600 hover:underline" href="#">
-              How to manage priorities for projects
-            </a>
+            Get a holistic view of how work is being prioritized.
           </p>
           <div className="mt-6 flex-1 flex flex-col">
             <div className="flex-1 flex items-end gap-4 px-2 min-h-[140px]">
@@ -338,9 +335,7 @@ export function SummaryView({ projectId }: { projectId: string }) {
           <h3 className="text-sm font-semibold text-gray-900">Types of work</h3>
           <p className="mt-1 text-xs text-gray-600">
             Create some work items to view a breakdown of total work by work type.{" "}
-            <a className="text-blue-600 hover:underline" href="#">
-              What are work types?
-            </a>
+          
           </p>
           <div className="mt-5">
             <div className="grid grid-cols-[120px_1fr] text-[11px] text-gray-500 mb-2">

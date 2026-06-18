@@ -1,7 +1,8 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { ChevronDown, ChevronRight, Zap } from "lucide-react";
+import { useApiData } from "@/lib/hooks/useApiData";
 import type { IssuePageData } from "./types";
 import {
   AssigneeField,
@@ -32,39 +33,26 @@ function statusPillClass(category?: string) {
  */
 export function IssueDetailsPanel({
   issue,
+  members,
   onPatch,
 }: {
   issue: IssuePageData;
+  // Members are fetched once by the parent (IssueFullView) and passed down so
+  // the panel doesn't fire a duplicate /api/projects/[id]/members request.
+  members: Member[];
   onPatch: (data: Record<string, unknown>) => Promise<void>;
 }) {
-  const [members, setMembers] = useState<Member[]>([]);
-  const [statuses, setStatuses] = useState<{ id: string; name: string; category: string }[]>([]);
-  const [sprints, setSprints] = useState<{ id: string; name: string }[]>([]);
+  // Project-scoped lookups — cached & shared via React Query so the status
+  // dropdown and sprint picker don't refetch on every panel mount.
+  const { data: statuses = [] } = useApiData<{ id: string; name: string; category: string }[]>(
+    ["quiktrack", "project-statuses", issue.projectId],
+    `/api/projects/${issue.projectId}/statuses`,
+  );
+  const { data: sprints = [] } = useApiData<{ id: string; name: string }[]>(
+    ["quiktrack", "project-sprints", issue.projectId],
+    `/api/sprints?projectId=${issue.projectId}`,
+  );
   const [statusOpen, setStatusOpen] = useState(false);
-
-  useEffect(() => {
-    void fetch(`/api/projects/${issue.projectId}/members`)
-      .then((r) => r.json())
-      .then((j) => {
-        if (j?.success) {
-          const list = Array.isArray(j.data?.members) ? j.data.members : j.data ?? [];
-          setMembers(list);
-        }
-      })
-      .catch(() => undefined);
-    void fetch(`/api/projects/${issue.projectId}/statuses`)
-      .then((r) => r.json())
-      .then((j) => {
-        if (j?.success) setStatuses(j.data ?? []);
-      })
-      .catch(() => undefined);
-    void fetch(`/api/sprints?projectId=${issue.projectId}`)
-      .then((r) => r.json())
-      .then((j) => {
-        if (j?.success) setSprints(j.data ?? []);
-      })
-      .catch(() => undefined);
-  }, [issue.projectId]);
 
   const reporter = members.find((m) => m.userId === issue.reporterId);
 

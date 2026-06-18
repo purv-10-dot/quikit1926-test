@@ -3,6 +3,7 @@
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { Check, ChevronDown, Shield } from "lucide-react";
+import { roleDisplayName } from "./role-name";
 
 interface RoleOption {
   id: string;
@@ -77,7 +78,7 @@ export function RolePill({
     };
   }, [open]);
 
-  const label = currentRoleName ?? "—";
+  const label = currentRoleName ? roleDisplayName(currentRoleName) : "—";
   const isAdmin = (currentRoleName ?? "").toLowerCase() === "admin";
 
   const baseStyle = isAdmin
@@ -133,7 +134,7 @@ export function RolePill({
                       }`}
                     />
                     <span className="flex-1 min-w-0 truncate font-medium">
-                      {r.name}
+                      {roleDisplayName(r.name)}
                     </span>
                     {r.isSystem && (
                       <span className="text-[9px] uppercase tracking-wider text-amber-700 bg-amber-50 px-1.5 py-0.5 rounded">

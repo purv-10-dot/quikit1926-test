@@ -19,6 +19,7 @@ interface AccessSummary {
   isAdmin: boolean;
   hasProjects: boolean;
   projectCount: number;
+  canCreateProject: boolean;
   orgName: string | null;
   roleName: string | null;
   adminEmails: string[];
@@ -52,7 +53,12 @@ export function NoAccessGate({ children }: { children: React.ReactNode }) {
   }
 
   const data = accessQ.data;
-  if (data.isAdmin || data.hasProjects) return <>{children}</>;
+  // Pass through admins, anyone already in a project, AND anyone who can create
+  // a space (e.g. the Space Creator role) — the latter would otherwise be
+  // walled off before reaching the "Create space" flow.
+  if (data.isAdmin || data.hasProjects || data.canCreateProject) {
+    return <>{children}</>;
+  }
 
   return (
     <NoAccessScreen
