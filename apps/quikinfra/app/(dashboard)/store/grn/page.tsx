@@ -14,7 +14,7 @@ import { Eye, Send } from "lucide-react";
 import { PageHeader, PageContainer, StatusChip, TabBar } from "@/components/PageShell";
 import { DataTable, type ColDef } from "@/components/DataTable";
 import { useGRNs, usePurchaseOrders, useSubmitGRN } from "@/hooks/use-purchase";
-import { QuickCreateDrawer } from "@/components/QuickCreateDrawer";
+import { QuickCreateDrawer, type QuickCreateConfig } from "@/components/QuickCreateDrawer";
 import { useProjects, useItems, useLocations, useVendors } from "@/hooks/use-masters";
 import { useMenuActions } from "@/hooks/use-permissions";
 import { useQueryClient } from "@tanstack/react-query";
@@ -31,6 +31,20 @@ const STATUS_TABS: TabSpec[] = [
   { key: "partially_accepted", label: "Partial" },
   { key: "rejected", label: "Rejected" },
 ];
+
+type GrnVendorNode = { id: string; companyName?: string; name?: string };
+type GrnPoLine = {
+  itemId?: string; itemName?: string; uomCode?: string;
+  poQty?: number | string; quantity?: number | string; receivedQty?: number | string;
+};
+type GrnPo = {
+  id?: string; poNumber: string; status?: string; projectId?: string;
+  vendorId?: string; vendorName?: string; lines?: GrnPoLine[];
+};
+interface GrnRow {
+  id: string; grnNumber?: string; status?: string; lineCount?: number;
+  [key: string]: unknown;
+}
 
 export default function GRNPage() {
   const router = useRouter();
@@ -63,35 +77,36 @@ export default function GRNPage() {
   // PO's vendorId even if the PO-list response's inlined vendorName
   // is empty (can happen when the PO was created before the Prisma
   // migration's vendor-join was in place).
-  const vendorById = new Map<string, any>();
-  for (const v of vendorsData?.data ?? []) vendorById.set(v.id, v);
+  const vendorById = new Map<string, GrnVendorNode>();
+  for (const v of (vendorsData?.data ?? []) as unknown as GrnVendorNode[]) vendorById.set(v.id, v);
 
-  const projectOptions = (projectsData?.data ?? []).map((p: any) => ({ value: p.id, label: p.name }));
-  const itemOptions = (itemsData?.data ?? []).map((i: any) => ({ value: i.id, label: i.name }));
-  const locationOptions = (locationsData?.data ?? []).map((l: any) => ({ value: l.id, label: l.name }));
+  const projectOptions = (projectsData?.data ?? []).map((p) => ({ value: p.id, label: p.name }));
+  const itemOptions = (itemsData?.data ?? []).map((i) => ({ value: i.id, label: i.name }));
+  const locationOptions = (locationsData?.data ?? []).map((l) => ({ value: l.id, label: l.name }));
   // Only offer POs that are approved/sent/partially-received — draft
   // POs can't yet receive goods, and fully-received ones don't make
   // sense to GRN-against a second time.
   const { data: posData } = usePurchaseOrders({ status: "all" });
-  const allPOs: any[] = posData?.data ?? [];
+  const allPOs = (posData?.data ?? []) as unknown as GrnPo[];
   const poOptions = allPOs
     .filter((p) =>
-      ["approved", "sent", "partially_received"].includes(p.status),
+      ["approved", "sent", "partially_received"].includes(p.status ?? ""),
     )
     .map((p) => ({
       value: p.poNumber,
       label: p.poNumber,
     }));
-  const poByNumber = new Map<string, any>();
+  const poByNumber = new Map<string, GrnPo>();
   for (const p of allPOs) poByNumber.set(p.poNumber, p);
 
-  const config = {
+  const config: QuickCreateConfig = {
     title: "Record GRN",
     subtitle: "Receive and inspect goods against a purchase order",
     apiEndpoint: "/api/purchase/grn",
-    onSuccess: (created: any) => {
+    onSuccess: (created: unknown) => {
       qc.invalidateQueries({ queryKey: ["grns"] });
-      const newId = created?.id ?? created?.data?.id;
+      const c = created as { id?: string; data?: { id?: string } } | null;
+      const newId = c?.id ?? c?.data?.id;
       if (newId) router.push(`/store/grn/${newId}`);
     },
     // Shared field list — see `buildGrnFields` for the canonical
@@ -124,8 +139,8 @@ export default function GRNPage() {
             masterVendor?.name ||
             "";
           if (vendorName) fields.vendorName = vendorName;
-          const lines = (po.lines ?? []).map((l: any) => ({
-            itemId: l.itemId,
+          const lines = (po.lines ?? []).map((l) => ({
+            itemId: l.itemId ?? "",
             itemName: l.itemName ?? "",
             uomCode: l.uomCode ?? "",
             poQty: String(l.poQty ?? l.quantity ?? "0"),
@@ -162,7 +177,7 @@ export default function GRNPage() {
           label: "Material",
           type: "custom" as const,
           width: "wide" as const,
-          render: (line: Record<string, any>) => (
+          render: (line) => (
             <div className="text-sm text-gray-900 leading-tight">
               <div className="font-medium truncate">
                 {line.itemName || "\u2014"}
@@ -189,7 +204,7 @@ export default function GRNPage() {
           key: "uomCode",
           label: "UOM",
           type: "custom" as const,
-          render: (line: Record<string, any>) => (
+          render: (line) => (
             <div className="text-xs text-gray-700 uppercase">
               {line.uomCode || "\u2014"}
             </div>
@@ -199,7 +214,7 @@ export default function GRNPage() {
           key: "poQty",
           label: "PO Qty",
           type: "custom" as const,
-          render: (line: Record<string, any>) => (
+          render: (line) => (
             <div className="text-sm text-gray-800 tabular-nums">
               {line.poQty != null
                 ? Number(line.poQty).toLocaleString("en-IN")
@@ -211,7 +226,7 @@ export default function GRNPage() {
           key: "prevRcvd",
           label: "Prev. Rcvd",
           type: "custom" as const,
-          render: (line: Record<string, any>) => (
+          render: (line) => (
             <div className="text-sm text-gray-500 tabular-nums">
               {line.prevRcvd != null
                 ? Number(line.prevRcvd).toLocaleString("en-IN")
@@ -223,7 +238,7 @@ export default function GRNPage() {
           key: "pending",
           label: "Pending",
           type: "custom" as const,
-          render: (line: Record<string, any>) => {
+          render: (line) => {
             const poQty = parseFloat(String(line.poQty ?? "0")) || 0;
             const prev = parseFloat(String(line.prevRcvd ?? "0")) || 0;
             const pending = Math.max(poQty - prev, 0);
@@ -250,7 +265,7 @@ export default function GRNPage() {
           key: "acceptedQty",
           label: "Accepted",
           type: "custom" as const,
-          render: (line: Record<string, any>) => {
+          render: (line) => {
             const received = parseFloat(String(line.receivedQty ?? "0")) || 0;
             const rejected = parseFloat(String(line.rejectedQty ?? "0")) || 0;
             const accepted = Math.max(received - rejected, 0);
@@ -293,7 +308,7 @@ export default function GRNPage() {
     },
   };
 
-  const columns: ColDef<any>[] = [
+  const columns: ColDef<GrnRow>[] = [
     {
       key: "grnNumber", label: "GRN No", sortable: true, searchable: true,
       render: (row) => (
@@ -364,15 +379,13 @@ export default function GRNPage() {
         <DataTable
           id="store-grn"
           columns={columns}
-          data={data}
+          data={data as unknown as GrnRow[]}
           onAdd={canAdd ? () => setDrawerOpen(true) : undefined}
           addLabel="Record GRN"
-          defaultSort="grnDate"
-          defaultSortDir="desc"
           historyEntityType="grn"
         />
       </PageContainer>
-      <QuickCreateDrawer open={drawerOpen} onClose={() => setDrawerOpen(false)} config={config as any} />
+      <QuickCreateDrawer open={drawerOpen} onClose={() => setDrawerOpen(false)} config={config} />
     </>
   );
 }

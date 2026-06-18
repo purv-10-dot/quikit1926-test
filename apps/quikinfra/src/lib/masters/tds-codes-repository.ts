@@ -3,6 +3,7 @@
  */
 
 import { db } from "@/lib/db";
+import { Prisma } from "@quikit/database";
 
 export interface TDSCodeRecord {
   id: string;
@@ -20,11 +21,10 @@ export interface TDSCodeRecord {
 
 function toStr(v: unknown): string {
   if (v === null || v === undefined) return "";
-  if (typeof (v as any)?.toString === "function") return (v as any).toString();
   return String(v);
 }
 
-function toRecord(row: any): TDSCodeRecord {
+function toRecord(row: Prisma.CnTDSCodeGetPayload<Record<string, never>>): TDSCodeRecord {
   return {
     id: row.id,
     orgId: row.orgId,
@@ -70,7 +70,7 @@ function buildTDSCodesWhere(
 }
 
 export async function listTDSCodes(opts: ListTDSOptions): Promise<TDSCodeRecord[]> {
-  const rows = await (db as any).cnTDSCode.findMany({
+  const rows = await db.cnTDSCode.findMany({
     where: buildTDSCodesWhere(opts),
     orderBy: { createdAt: "desc" },
     ...(typeof opts.take === "number" ? { take: opts.take } : {}),
@@ -82,14 +82,14 @@ export async function listTDSCodes(opts: ListTDSOptions): Promise<TDSCodeRecord[
 export async function countTDSCodes(
   opts: Pick<ListTDSOptions, "orgId" | "search">,
 ): Promise<number> {
-  return (db as any).cnTDSCode.count({ where: buildTDSCodesWhere(opts) });
+  return db.cnTDSCode.count({ where: buildTDSCodesWhere(opts) });
 }
 
 export async function findTDSCodeById(
   orgId: string,
   id: string,
 ): Promise<TDSCodeRecord | null> {
-  const row = await (db as any).cnTDSCode.findFirst({ where: { id, orgId } });
+  const row = await db.cnTDSCode.findFirst({ where: { id, orgId } });
   return row ? toRecord(row) : null;
 }
 
@@ -113,7 +113,7 @@ export async function createTDSCode(input: CreateTDSInput): Promise<TDSCodeRecor
   const rate = numOrNull(input.rate);
   if (rate === null) throw new Error("Rate must be a number");
 
-  const row = await (db as any).cnTDSCode.create({
+  const row = await db.cnTDSCode.create({
     data: {
       orgId: input.orgId,
       section: String(input.section).trim(),
@@ -138,7 +138,7 @@ export async function updateTDSCode(
   id: string,
   patch: UpdateTDSInput,
 ): Promise<TDSCodeRecord | null> {
-  const existing = await (db as any).cnTDSCode.findFirst({
+  const existing = await db.cnTDSCode.findFirst({
     where: { id, orgId },
     select: { id: true },
   });
@@ -155,7 +155,7 @@ export async function updateTDSCode(
   if (patch.thresholdAmount !== undefined) data.thresholdAmount = numOrNull(patch.thresholdAmount);
   if (patch.status !== undefined) data.status = patch.status;
 
-  const row = await (db as any).cnTDSCode.update({ where: { id }, data });
+  const row = await db.cnTDSCode.update({ where: { id }, data });
   return toRecord(row);
 }
 
@@ -164,7 +164,7 @@ export async function deleteTDSCode(
   id: string,
   updatedBy: string,
 ): Promise<boolean> {
-  const res = await (db as any).cnTDSCode.updateMany({
+  const res = await db.cnTDSCode.updateMany({
     where: { id, orgId },
     data: { status: "inactive", updatedBy },
   });

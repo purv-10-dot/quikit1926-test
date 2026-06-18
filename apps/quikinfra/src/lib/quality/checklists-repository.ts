@@ -4,6 +4,7 @@
  */
 
 import { db } from "@/lib/db";
+import { Prisma } from "@quikit/database";
 
 export interface ChecklistRecord {
   id: string;
@@ -16,7 +17,7 @@ export interface ChecklistRecord {
   itemsCount: number;
 }
 
-function toRecord(row: any): ChecklistRecord {
+function toRecord(row: Prisma.CnSafetyChecklistGetPayload<Record<string, never>>): ChecklistRecord {
   const items = Array.isArray(row.items) ? row.items : [];
   return {
     id: row.id,
@@ -53,7 +54,7 @@ function buildWhere(
 export async function listChecklists(
   opts: ListChecklistsOptions,
 ): Promise<ChecklistRecord[]> {
-  const rows = await (db as any).cnSafetyChecklist.findMany({
+  const rows = await db.cnSafetyChecklist.findMany({
     where: buildWhere(opts),
     orderBy: { checklistDate: "desc" },
     ...(typeof opts.take === "number" ? { take: opts.take } : {}),
@@ -65,7 +66,7 @@ export async function listChecklists(
 export async function countChecklists(
   opts: Pick<ListChecklistsOptions, "orgId" | "search" | "projectIds">,
 ): Promise<number> {
-  return (db as any).cnSafetyChecklist.count({ where: buildWhere(opts) });
+  return db.cnSafetyChecklist.count({ where: buildWhere(opts) });
 }
 
 export interface CreateChecklistInput {
@@ -83,14 +84,14 @@ export interface CreateChecklistInput {
 export async function createChecklist(
   input: CreateChecklistInput,
 ): Promise<ChecklistRecord> {
-  const row = await (db as any).cnSafetyChecklist.create({
+  const row = await db.cnSafetyChecklist.create({
     data: {
       orgId: input.orgId,
       templateName: input.templateName,
       projectId: input.projectId ?? null,
       checklistDate: input.checklistDate,
       completedBy: input.completedBy,
-      items: input.items ?? [],
+      items: (input.items ?? []) as Prisma.InputJsonValue,
       overallStatus: input.overallStatus ?? "pass",
       remarks: input.remarks ?? null,
       createdBy: input.createdBy,

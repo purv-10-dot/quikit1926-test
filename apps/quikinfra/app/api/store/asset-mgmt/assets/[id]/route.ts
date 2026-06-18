@@ -12,7 +12,7 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
     return envelopeErr("FORBIDDEN", `Action "edit" not allowed for store.asset_mgmt`, 403);
   }
   const assets = getAssets();
-  const idx = assets.findIndex((a: any) => a.id === params.id);
+  const idx = assets.findIndex((a) => a.id === params.id);
   if (idx < 0) return NextResponse.json({ error: "Asset not found" }, { status: 404 });
   const body = await req.json().catch(() => ({}));
   const next = { ...assets[idx], ...body, id: assets[idx].id, updatedAt: new Date().toISOString() };
@@ -28,11 +28,11 @@ export async function DELETE(_req: NextRequest, { params }: { params: { id: stri
     return envelopeErr("FORBIDDEN", `Action "delete" not allowed for store.asset_mgmt`, 403);
   }
   const assets = getAssets();
-  const idx = assets.findIndex((a: any) => a.id === params.id);
+  const idx = assets.findIndex((a) => a.id === params.id);
   if (idx < 0) return NextResponse.json({ error: "Asset not found" }, { status: 404 });
   // Block delete if the asset is currently issued out and not returned.
   const inUse = getIssuances().some(
-    (i: any) => i.assetId === params.id && i.status === "issued",
+    (i) => i.assetId === params.id && i.status === "issued",
   );
   if (inUse) {
     return NextResponse.json(

@@ -1,3 +1,4 @@
+import type { Prisma } from "@prisma/client";
 import { requireProjectsFinanceAction } from "@/lib/auth/requireProjectsFinanceAction";
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
@@ -10,7 +11,9 @@ function formatDateOnly(d: Date | null | undefined): string {
 }
 
 
-function serialize(row: any) {
+function serialize(
+  row: Prisma.CnHindranceGetPayload<{ include: { project: { select: { name: true } } } }>,
+) {
   return {
     id: row.id,
     hindranceNo: row.hindranceNo,
@@ -37,12 +40,12 @@ export async function GET(req: NextRequest) {
   const { searchParams } = new URL(req.url);
   const search = searchParams.get("search")?.toLowerCase() ?? "";
 
-  const where: any = { orgId: ctx.orgId };
+  const where: Prisma.CnHindranceWhereInput = { orgId: ctx.orgId };
   if (ctx.projectIds !== undefined) {
     where.projectId = { in: ctx.projectIds };
   }
 
-  const rows = await (db as any).cnHindrance.findMany({
+  const rows = await db.cnHindrance.findMany({
     where,
     include: { project: { select: { name: true } } },
     orderBy: [{ dateFrom: "desc" }, { createdAt: "desc" }],
@@ -51,7 +54,7 @@ export async function GET(req: NextRequest) {
   let data = rows.map(serialize);
   if (search) {
     data = data.filter(
-      (r: any) =>
+      (r) =>
         r.hindranceNo.toLowerCase().includes(search) ||
         r.category.toLowerCase().includes(search) ||
         r.description.toLowerCase().includes(search),
@@ -85,12 +88,12 @@ export async function POST(req: NextRequest) {
   }
 
   const year = new Date(body.dateFrom).getFullYear() || new Date().getFullYear();
-  const seq = await (db as any).cnHindrance.count({
+  const seq = await db.cnHindrance.count({
     where: { orgId: ctx.orgId },
   });
   const hindranceNo = `HIND-${year}-${String(seq + 1).padStart(3, "0")}`;
 
-  const created = await (db as any).cnHindrance.create({
+  const created = await db.cnHindrance.create({
     data: {
       orgId: ctx.orgId,
       hindranceNo,

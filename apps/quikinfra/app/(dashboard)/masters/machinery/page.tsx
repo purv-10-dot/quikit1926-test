@@ -1,10 +1,11 @@
 "use client";
 
+import { toErrorMessage } from "@/lib/api/errors";
 import { useState } from "react";
 import { Hammer } from "lucide-react";
 import { MasterListPage, type MasterColumnDef } from "@/components/MasterListPage";
-import { useMachinery, useCreateMachinery, useUpdateMachinery, useProjects } from "@/hooks/use-masters";
-import { FormDrawer, FormSection, FormRow, Field, TextInput, SelectInput } from "@/components/FormDrawer";
+import { useMachinery, useCreateMachinery, useUpdateMachinery, useProjects, useDeleteMachinery } from "@/hooks/use-masters";
+import { FormDrawer, FormSection, FormRow, Field, TextInput, SelectInput, InactiveStatusNotice } from "@/components/FormDrawer";
 import dynamic from "next/dynamic";
 import type { ImportFieldDef } from "@/components/ImportDataDrawer";
 const ImportDataDrawer = dynamic(
@@ -60,17 +61,18 @@ export default function MachineryPage() {
   const { data: projectsResult } = useProjects();
   const createMutation = useCreateMachinery();
   const updateMutation = useUpdateMachinery();
+  const deleteMutation = useDeleteMachinery();
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [importOpen, setImportOpen] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [form, setForm] = useState(emptyForm);
   const [errors, setErrors] = useState<Record<string, string>>({});
-  const set = (key: string, val: any) => {
+  const set = <K extends keyof typeof emptyForm>(key: K, val: (typeof emptyForm)[K]) => {
     setForm(prev => ({ ...prev, [key]: val }));
     if (errors[key]) setErrors(prev => { const next = { ...prev }; delete next[key]; return next; });
   };
   const projects = projectsResult?.data ?? [];
-  const projectOptions = projects.map((p: any) => ({ value: p.id, label: p.name }));
+  const projectOptions = projects.map((p) => ({ value: p.id, label: p.name }));
 
   const handleImportRow = async (row: Record<string, string>) => {
     if (!row.name?.trim()) return { ok: false as const, error: "Machine name is required" };
@@ -78,7 +80,7 @@ export default function MachineryPage() {
     let projectId = "";
     const projInput = row.projectName?.trim();
     if (projInput) {
-      const match = projects.find((p: any) =>
+      const match = projects.find((p) =>
         p.name?.toLowerCase() === projInput.toLowerCase() ||
         p.code?.toLowerCase() === projInput.toLowerCase() ||
         p.id === projInput,
@@ -99,8 +101,8 @@ export default function MachineryPage() {
         status: "active",
       });
       return { ok: true as const };
-    } catch (err: any) {
-      return { ok: false as const, error: err?.message ?? "Create failed" };
+    } catch (err: unknown) {
+      return { ok: false as const, error: toErrorMessage(err, "Create failed") };
     }
   };
 
@@ -116,8 +118,8 @@ export default function MachineryPage() {
     } catch { /* error toast handled globally */ }
   };
 
-  const handleDelete = async (item: any) => {
-    await updateMutation.mutateAsync({ id: item.id, status: "inactive" });
+  const handleDelete = async (item: { id: string }) => {
+    await deleteMutation.mutateAsync(item.id);
   };
 
   const isSaving = createMutation.isPending || updateMutation.isPending;
@@ -125,13 +127,13 @@ export default function MachineryPage() {
   return (
     <>
       <MasterListPage title="Machinery & Equipment" entityName="Machine" permissionUrl="/masters/machinery" columns={columns}
-        data={result?.data ?? []} total={result?.total ?? 0} isLoading={isLoading}
+        data={(result?.data ?? []) as Row[]} total={result?.total ?? 0} isLoading={isLoading}
         canImport
         onImport={() => setImportOpen(true)}
         onAdd={() => { setForm(emptyForm); setErrors({}); setEditingId(null); setDrawerOpen(true); }}
-        onEdit={(item: any) => { setForm({ ...emptyForm, ...item }); setErrors({}); setEditingId(item.id); setDrawerOpen(true); }}
+        onEdit={(item) => { setForm({ ...emptyForm, ...item } as typeof emptyForm); setErrors({}); setEditingId(item.id); setDrawerOpen(true); }}
         onDelete={handleDelete}
-        deleteConfirmMessage={(item: any) => (
+        deleteConfirmMessage={(item) => (
           <>
             Delete machine{" "}
             <span className="font-semibold text-gray-900">“{item.name}”</span>?
@@ -173,6 +175,7 @@ export default function MachineryPage() {
           </FormRow>
           <Field label="Status">
             <SelectInput value={form.status} onChange={v => set("status", v)} options={STATUS_OPTIONS} />
+            {form.status === "inactive" && <InactiveStatusNotice entityName="Machine" />}
           </Field>
         </FormSection>
       </FormDrawer>

@@ -3,18 +3,6 @@ import { z } from "zod";
 // Phase 2 continuation — 12 additional master types.
 // Pattern note: "simple" masters (code+name+status) share the same zod/ui shape.
 
-export const bankCreateSchema = z.object({
-  companyId: z.string().min(1, "Company is required"),
-  bankName: z.string().min(1).max(200),
-  branchName: z.string().optional().nullable(),
-  accountNo: z.string().min(1).max(50),
-  ifscCode: z.string().min(11, "IFSC must be 11 chars").max(11),
-  accountType: z.enum(["current", "savings"]).default("current"),
-  status: z.enum(["active", "inactive"]).default("active"),
-});
-export type BankCreateInput = z.infer<typeof bankCreateSchema>;
-export const bankUpdateSchema = bankCreateSchema.partial();
-
 export const departmentCreateSchema = z.object({
   code: z.string().min(1).max(50),
   name: z.string().min(1).max(100),

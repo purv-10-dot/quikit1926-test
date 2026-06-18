@@ -29,11 +29,17 @@ export async function GET(req: NextRequest) {
     req,
     { entityLabel: "item" },
     async ({ ctx, searchParams, pagination }) => {
+      // `status=all` / `status=inactive` (sent by the master list to power
+      // its "Show inactive" toggle) opts into soft-deleted rows. Every other
+      // caller omits status and gets active-only.
+      const statusParam = (searchParams.get("status") ?? "").toLowerCase();
+      const includeInactive = statusParam === "all" || statusParam === "inactive";
       const baseOpts = {
         orgId: ctx.orgId,
         createdBy: ctx.userId,
         search: searchParams.get("search") ?? "",
         groupId: searchParams.get("groupId") || undefined,
+        includeInactive,
       };
       const result = await paginateDb(
         pagination,
@@ -82,6 +88,8 @@ export async function POST(req: NextRequest) {
       },
     },
     async ({ ctx, body }) => {
+      const toDecStr = (v: string | number | undefined): string | undefined =>
+        v == null ? undefined : String(v);
       return createItem({
         orgId: ctx.orgId,
         createdBy: ctx.userId,
@@ -94,10 +102,10 @@ export async function POST(req: NextRequest) {
         uomIds: Array.isArray(body.uomIds) ? body.uomIds : undefined,
         specifications: body.specifications,
         hsnCode: body.hsnCode,
-        gstRate: body.gstRate as any,
-        standardRate: body.standardRate as any,
-        minStockLevel: body.minStockLevel as any,
-        reorderLevel: body.reorderLevel as any,
+        gstRate: toDecStr(body.gstRate),
+        standardRate: toDecStr(body.standardRate),
+        minStockLevel: toDecStr(body.minStockLevel),
+        reorderLevel: toDecStr(body.reorderLevel),
         status: body.status,
       });
     },

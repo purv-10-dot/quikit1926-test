@@ -9,6 +9,24 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { fetchJson, mutateJson } from "@/lib/react-query/fetch-json";
 import { refreshListQueries } from "@/lib/react-query/list-cache";
 import { entityMeta } from "@/lib/toast";
+import type { DepartmentRecord } from "@/lib/masters/departments-repository";
+import type { ProjectRecord } from "@/lib/masters/projects-repository";
+import type { UOMRecord } from "@/lib/masters/uoms-repository";
+import type { ItemRecord } from "@/lib/masters/items-repository";
+import type { VendorRecord } from "@/lib/masters/vendors-repository";
+import type { LocationRecord } from "@/lib/masters/locations-repository";
+import type { ContractorRecord } from "@/lib/masters/contractors-repository";
+import type { CustomerRecord } from "@/lib/masters/customers-repository";
+import type { ItemGroupRecord } from "@/lib/masters/item-groups-repository";
+import type { GSTCodeRecord } from "@/lib/masters/gst-codes-repository";
+import type { TDSCodeRecord } from "@/lib/masters/tds-codes-repository";
+import type { WorkCategoryRecord } from "@/lib/masters/work-categories-repository";
+import type { CostCenterRecord } from "@/lib/masters/cost-centers-repository";
+import type { MachineryRecord } from "@/lib/masters/machinery-repository";
+import type { CompanyRecord } from "@/lib/masters/companies-repository";
+import type { FinancialYearRecord } from "@/lib/masters/financial-years-repository";
+import type { TermsConditionRecord } from "@/lib/masters/terms-repository";
+import type { AssetRecord } from "@/lib/masters/assets-repository";
 
 const fetchApi = fetchJson;
 const mutateApi = mutateJson;
@@ -24,7 +42,7 @@ export function useProjects(params?: { search?: string; status?: string }) {
 
   return useQuery({
     queryKey: ["projects", query],
-    queryFn: () => fetchApi<{ data: any[]; total: number }>(`/api/masters/projects${query ? `?${query}` : ""}`),
+    queryFn: () => fetchApi<{ data: ProjectRecord[]; total: number }>(`/api/masters/projects${query ? `?${query}` : ""}`),
   });
 }
 
@@ -38,7 +56,7 @@ export function useAssets(params?: { search?: string }) {
   return useQuery({
     queryKey: ["assets", query],
     queryFn: () =>
-      fetchApi<{ data: any[]; total: number }>(
+      fetchApi<{ data: AssetRecord[]; total: number }>(
         `/api/masters/assets${query ? `?${query}` : ""}`,
       ),
   });
@@ -47,7 +65,7 @@ export function useAssets(params?: { search?: string }) {
 export function useProject(id: string | null) {
   return useQuery({
     queryKey: ["project", id],
-    queryFn: () => fetchApi<any>(`/api/masters/projects/${id}`),
+    queryFn: () => fetchApi<ProjectRecord>(`/api/masters/projects/${id}`),
     enabled: !!id,
   });
 }
@@ -55,7 +73,7 @@ export function useProject(id: string | null) {
 export function useCreateProject() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (data: any) => mutateApi("/api/masters/projects", "POST", data),
+    mutationFn: (data: unknown) => mutateApi("/api/masters/projects", "POST", data),
     onSuccess: async () => {
       await refreshListQueries(qc, "projects");
       await qc.invalidateQueries({ queryKey: ["dashboard"] });
@@ -67,7 +85,7 @@ export function useCreateProject() {
 export function useUpdateProject() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: ({ id, ...data }: any) => mutateApi(`/api/masters/projects/${id}`, "PUT", data),
+    mutationFn: ({ id, ...data }: { id: string } & Record<string, unknown>) => mutateApi(`/api/masters/projects/${id}`, "PUT", data),
     onSuccess: async (data, { id }) => {
       await refreshListQueries(qc, "projects", { updatedRow: data, id });
       await qc.invalidateQueries({ queryKey: ["project"] });
@@ -77,19 +95,32 @@ export function useUpdateProject() {
   });
 }
 
+export function useDeleteProject() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) => mutateApi(`/api/masters/projects/${id}`, "DELETE"),
+    onSuccess: async (_data, id) => {
+      await refreshListQueries(qc, "projects", { removedId: id });
+      await qc.invalidateQueries({ queryKey: ["project"] });
+      await qc.invalidateQueries({ queryKey: ["dashboard"] });
+    },
+    meta: entityMeta("delete", "Project"),
+  });
+}
+
 // ─── UOM ────────────────────────────────────────────────────────────
 
 export function useUOMs() {
   return useQuery({
     queryKey: ["uoms"],
-    queryFn: () => fetchApi<{ data: any[] }>("/api/masters/uom"),
+    queryFn: () => fetchApi<{ data: UOMRecord[] }>("/api/masters/uom"),
   });
 }
 
 export function useCreateUOM() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (data: any) => mutateApi("/api/masters/uom", "POST", data),
+    mutationFn: (data: unknown) => mutateApi("/api/masters/uom", "POST", data),
     onSuccess: async () => { await refreshListQueries(qc, "uoms"); },
     meta: entityMeta("create", "UOM"),
   });
@@ -106,14 +137,14 @@ export function useItems(params?: { search?: string; groupId?: string; status?: 
 
   return useQuery({
     queryKey: ["items", query],
-    queryFn: () => fetchApi<{ data: any[]; total: number }>(`/api/masters/items${query ? `?${query}` : ""}`),
+    queryFn: () => fetchApi<{ data: ItemRecord[]; total: number }>(`/api/masters/items${query ? `?${query}` : ""}`),
   });
 }
 
 export function useCreateItem() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (data: any) => mutateApi("/api/masters/items", "POST", data),
+    mutationFn: (data: unknown) => mutateApi("/api/masters/items", "POST", data),
     onSuccess: async () => { await refreshListQueries(qc, "items"); },
     meta: entityMeta("create", "Item"),
   });
@@ -129,14 +160,14 @@ export function useVendors(params?: { search?: string; status?: string }) {
 
   return useQuery({
     queryKey: ["vendors", query],
-    queryFn: () => fetchApi<{ data: any[]; total: number }>(`/api/masters/vendors${query ? `?${query}` : ""}`),
+    queryFn: () => fetchApi<{ data: VendorRecord[]; total: number }>(`/api/masters/vendors${query ? `?${query}` : ""}`),
   });
 }
 
 export function useCreateVendor() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (data: any) => mutateApi("/api/masters/vendors", "POST", data),
+    mutationFn: (data: unknown) => mutateApi("/api/masters/vendors", "POST", data),
     onSuccess: async () => { await refreshListQueries(qc, "vendors"); },
     meta: entityMeta("create", "Vendor"),
   });
@@ -152,14 +183,14 @@ export function useLocations(params?: { projectId?: string; type?: string }) {
 
   return useQuery({
     queryKey: ["locations", query],
-    queryFn: () => fetchApi<{ data: any[] }>(`/api/masters/locations${query ? `?${query}` : ""}`),
+    queryFn: () => fetchApi<{ data: LocationRecord[] }>(`/api/masters/locations${query ? `?${query}` : ""}`),
   });
 }
 
 export function useCreateLocation() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (data: any) => mutateApi("/api/masters/locations", "POST", data),
+    mutationFn: (data: unknown) => mutateApi("/api/masters/locations", "POST", data),
     onSuccess: async () => { await refreshListQueries(qc, "locations"); },
     meta: entityMeta("create", "Location"),
   });
@@ -174,14 +205,14 @@ export function useContractors(params?: { search?: string }) {
 
   return useQuery({
     queryKey: ["contractors", query],
-    queryFn: () => fetchApi<{ data: any[] }>(`/api/masters/contractors${query ? `?${query}` : ""}`),
+    queryFn: () => fetchApi<{ data: ContractorRecord[] }>(`/api/masters/contractors${query ? `?${query}` : ""}`),
   });
 }
 
 export function useCreateContractor() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (data: any) => mutateApi("/api/masters/contractors", "POST", data),
+    mutationFn: (data: unknown) => mutateApi("/api/masters/contractors", "POST", data),
     onSuccess: async () => { await refreshListQueries(qc, "contractors"); },
     meta: entityMeta("create", "Contractor"),
   });
@@ -197,14 +228,14 @@ export function useCustomers(params?: { search?: string; status?: string }) {
 
   return useQuery({
     queryKey: ["customers", query],
-    queryFn: () => fetchApi<{ data: any[]; total: number }>(`/api/masters/customers${query ? `?${query}` : ""}`),
+    queryFn: () => fetchApi<{ data: CustomerRecord[]; total: number }>(`/api/masters/customers${query ? `?${query}` : ""}`),
   });
 }
 
 export function useCreateCustomer() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (data: any) => mutateApi("/api/masters/customers", "POST", data),
+    mutationFn: (data: unknown) => mutateApi("/api/masters/customers", "POST", data),
     onSuccess: async () => { await refreshListQueries(qc, "customers"); },
     meta: entityMeta("create", "Customer"),
   });
@@ -219,14 +250,14 @@ export function useItemGroups(params?: { search?: string }) {
 
   return useQuery({
     queryKey: ["item-groups", query],
-    queryFn: () => fetchApi<{ data: any[]; total: number }>(`/api/masters/item-groups${query ? `?${query}` : ""}`),
+    queryFn: () => fetchApi<{ data: ItemGroupRecord[]; total: number }>(`/api/masters/item-groups${query ? `?${query}` : ""}`),
   });
 }
 
 export function useCreateItemGroup() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (data: any) => mutateApi("/api/masters/item-groups", "POST", data),
+    mutationFn: (data: unknown) => mutateApi("/api/masters/item-groups", "POST", data),
     onSuccess: async () => { await refreshListQueries(qc, "item-groups"); },
     meta: entityMeta("create", "Item group"),
   });
@@ -241,14 +272,14 @@ export function useGSTCodes(params?: { search?: string }) {
 
   return useQuery({
     queryKey: ["gst-codes", query],
-    queryFn: () => fetchApi<{ data: any[]; total: number }>(`/api/masters/gst${query ? `?${query}` : ""}`),
+    queryFn: () => fetchApi<{ data: GSTCodeRecord[]; total: number }>(`/api/masters/gst${query ? `?${query}` : ""}`),
   });
 }
 
 export function useCreateGSTCode() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (data: any) => mutateApi("/api/masters/gst", "POST", data),
+    mutationFn: (data: unknown) => mutateApi("/api/masters/gst", "POST", data),
     onSuccess: async () => { await refreshListQueries(qc, "gst-codes"); },
     meta: entityMeta("create", "GST code"),
   });
@@ -263,38 +294,16 @@ export function useTDSCodes(params?: { search?: string }) {
 
   return useQuery({
     queryKey: ["tds-codes", query],
-    queryFn: () => fetchApi<{ data: any[]; total: number }>(`/api/masters/tds${query ? `?${query}` : ""}`),
+    queryFn: () => fetchApi<{ data: TDSCodeRecord[]; total: number }>(`/api/masters/tds${query ? `?${query}` : ""}`),
   });
 }
 
 export function useCreateTDSCode() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (data: any) => mutateApi("/api/masters/tds", "POST", data),
+    mutationFn: (data: unknown) => mutateApi("/api/masters/tds", "POST", data),
     onSuccess: async () => { await refreshListQueries(qc, "tds-codes"); },
     meta: entityMeta("create", "TDS code"),
-  });
-}
-
-// ─── Banks ─────────────────────────────────────────────────────────
-
-export function useBanks(params?: { search?: string }) {
-  const qs = new URLSearchParams();
-  if (params?.search) qs.set("search", params.search);
-  const query = qs.toString();
-
-  return useQuery({
-    queryKey: ["banks", query],
-    queryFn: () => fetchApi<{ data: any[]; total: number }>(`/api/masters/banks${query ? `?${query}` : ""}`),
-  });
-}
-
-export function useCreateBank() {
-  const qc = useQueryClient();
-  return useMutation({
-    mutationFn: (data: any) => mutateApi("/api/masters/banks", "POST", data),
-    onSuccess: async () => { await refreshListQueries(qc, "banks"); },
-    meta: entityMeta("create", "Bank"),
   });
 }
 
@@ -307,14 +316,14 @@ export function useDepartments(params?: { search?: string }) {
 
   return useQuery({
     queryKey: ["departments", query],
-    queryFn: () => fetchApi<{ data: any[]; total: number }>(`/api/masters/departments${query ? `?${query}` : ""}`),
+    queryFn: () => fetchApi<{ data: DepartmentRecord[]; total: number }>(`/api/masters/departments${query ? `?${query}` : ""}`),
   });
 }
 
 export function useCreateDepartment() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (data: any) => mutateApi("/api/masters/departments", "POST", data),
+    mutationFn: (data: unknown) => mutateApi("/api/masters/departments", "POST", data),
     onSuccess: async () => { await refreshListQueries(qc, "departments"); },
     meta: entityMeta("create", "Department"),
   });
@@ -329,14 +338,14 @@ export function useWorkCategories(params?: { search?: string }) {
 
   return useQuery({
     queryKey: ["work-categories", query],
-    queryFn: () => fetchApi<{ data: any[]; total: number }>(`/api/masters/work-categories${query ? `?${query}` : ""}`),
+    queryFn: () => fetchApi<{ data: WorkCategoryRecord[]; total: number }>(`/api/masters/work-categories${query ? `?${query}` : ""}`),
   });
 }
 
 export function useCreateWorkCategory() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (data: any) => mutateApi("/api/masters/work-categories", "POST", data),
+    mutationFn: (data: unknown) => mutateApi("/api/masters/work-categories", "POST", data),
     onSuccess: async () => { await refreshListQueries(qc, "work-categories"); },
     meta: entityMeta("create", "Work category"),
   });
@@ -352,14 +361,14 @@ export function useCostCenters(params?: { search?: string; projectId?: string })
 
   return useQuery({
     queryKey: ["cost-centers", query],
-    queryFn: () => fetchApi<{ data: any[]; total: number }>(`/api/masters/cost-centers${query ? `?${query}` : ""}`),
+    queryFn: () => fetchApi<{ data: CostCenterRecord[]; total: number }>(`/api/masters/cost-centers${query ? `?${query}` : ""}`),
   });
 }
 
 export function useCreateCostCenter() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (data: any) => mutateApi("/api/masters/cost-centers", "POST", data),
+    mutationFn: (data: unknown) => mutateApi("/api/masters/cost-centers", "POST", data),
     onSuccess: async () => { await refreshListQueries(qc, "cost-centers"); },
     meta: entityMeta("create", "Cost center"),
   });
@@ -375,14 +384,14 @@ export function useMachinery(params?: { search?: string; projectId?: string }) {
 
   return useQuery({
     queryKey: ["machinery", query],
-    queryFn: () => fetchApi<{ data: any[]; total: number }>(`/api/masters/machinery${query ? `?${query}` : ""}`),
+    queryFn: () => fetchApi<{ data: MachineryRecord[]; total: number }>(`/api/masters/machinery${query ? `?${query}` : ""}`),
   });
 }
 
 export function useCreateMachinery() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (data: any) => mutateApi("/api/masters/machinery", "POST", data),
+    mutationFn: (data: unknown) => mutateApi("/api/masters/machinery", "POST", data),
     onSuccess: async () => { await refreshListQueries(qc, "machinery"); },
     meta: entityMeta("create", "Machinery"),
   });
@@ -397,14 +406,14 @@ export function useCompanies(params?: { search?: string }) {
 
   return useQuery({
     queryKey: ["companies", query],
-    queryFn: () => fetchApi<{ data: any[]; total: number }>(`/api/masters/companies${query ? `?${query}` : ""}`),
+    queryFn: () => fetchApi<{ data: CompanyRecord[]; total: number }>(`/api/masters/companies${query ? `?${query}` : ""}`),
   });
 }
 
 export function useCreateCompany() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (data: any) => mutateApi("/api/masters/companies", "POST", data),
+    mutationFn: (data: unknown) => mutateApi("/api/masters/companies", "POST", data),
     onSuccess: async () => { await refreshListQueries(qc, "companies"); },
     meta: entityMeta("create", "Company"),
   });
@@ -419,14 +428,14 @@ export function useFinancialYears(params?: { search?: string }) {
 
   return useQuery({
     queryKey: ["financial-years", query],
-    queryFn: () => fetchApi<{ data: any[]; total: number }>(`/api/masters/financial-years${query ? `?${query}` : ""}`),
+    queryFn: () => fetchApi<{ data: FinancialYearRecord[]; total: number }>(`/api/masters/financial-years${query ? `?${query}` : ""}`),
   });
 }
 
 export function useCreateFinancialYear() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (data: any) => mutateApi("/api/masters/financial-years", "POST", data),
+    mutationFn: (data: unknown) => mutateApi("/api/masters/financial-years", "POST", data),
     onSuccess: async () => { await refreshListQueries(qc, "financial-years"); },
     meta: entityMeta("create", "Financial year"),
   });
@@ -442,14 +451,14 @@ export function useTermsConditions(params?: { search?: string; applicableTo?: st
 
   return useQuery({
     queryKey: ["terms-conditions", query],
-    queryFn: () => fetchApi<{ data: any[]; total: number }>(`/api/masters/terms${query ? `?${query}` : ""}`),
+    queryFn: () => fetchApi<{ data: TermsConditionRecord[]; total: number }>(`/api/masters/terms${query ? `?${query}` : ""}`),
   });
 }
 
 export function useCreateTermsCondition() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (data: any) => mutateApi("/api/masters/terms", "POST", data),
+    mutationFn: (data: unknown) => mutateApi("/api/masters/terms", "POST", data),
     onSuccess: async () => { await refreshListQueries(qc, "terms-conditions"); },
     meta: entityMeta("create", "Terms & conditions"),
   });
@@ -471,7 +480,7 @@ function makeUpdateHook(endpoint: string, queryKey: string, entity: string) {
   return function useUpdate() {
     const qc = useQueryClient();
     return useMutation({
-      mutationFn: ({ id, ...data }: any) =>
+      mutationFn: ({ id, ...data }: { id: string } & Record<string, unknown>) =>
         mutateApi(`${endpoint}/${id}`, "PUT", data),
       onSuccess: async (data, { id }) => {
         await refreshListQueries(qc, queryKey, { updatedRow: data, id });
@@ -529,10 +538,6 @@ export const useDeleteGSTCode = makeDeleteHook("/api/masters/gst", "gst-codes", 
 // TDS Codes
 export const useUpdateTDSCode = makeUpdateHook("/api/masters/tds", "tds-codes", "TDS code");
 export const useDeleteTDSCode = makeDeleteHook("/api/masters/tds", "tds-codes", "TDS code");
-
-// Banks
-export const useUpdateBank = makeUpdateHook("/api/masters/banks", "banks", "Bank");
-export const useDeleteBank = makeDeleteHook("/api/masters/banks", "banks", "Bank");
 
 // Departments
 export const useUpdateDepartment = makeUpdateHook("/api/masters/departments", "departments", "Department");

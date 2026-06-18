@@ -103,13 +103,75 @@ export interface UpdateMaterialIssueInput {
 }
 
 function genId(): string {
-  if (typeof (globalThis as any).crypto?.randomUUID === "function") {
-    return (globalThis as any).crypto.randomUUID();
+  const cryptoObj = (globalThis as { crypto?: { randomUUID?: () => string } })
+    .crypto;
+  if (typeof cryptoObj?.randomUUID === "function") {
+    return cryptoObj.randomUUID();
   }
   return `mi_${Date.now()}_${Math.random().toString(36).slice(2, 10)}`;
 }
 
-function mapRow(row: any): any {
+/** A money/quantity value as it arrives from Prisma (Decimal) or raw SQL. */
+type Numericish = Prisma.Decimal | number | string | null | undefined;
+
+/** Raw `SELECT *` row from `Material_issues` (+ optional joined display fields). */
+interface MaterialIssueRow {
+  id: string;
+  orgId: string;
+  issueNumber: string;
+  projectId: string;
+  projectName?: string | null;
+  locationId?: string | null;
+  locationName?: string | null;
+  issuedToId?: string | null;
+  issuedToName?: string | null;
+  issuedById?: string | null;
+  issueDate?: Date | string | null;
+  issueType?: string | null;
+  contractorId?: string | null;
+  contractorName?: string | null;
+  teamDepartment?: string | null;
+  issuedBy?: string | null;
+  receivedBy?: string | null;
+  prId?: string | null;
+  prNumber?: string | null;
+  prReference?: string | null;
+  woReference?: string | null;
+  vehicleNo?: string | null;
+  gatePassNo?: string | null;
+  driverName?: string | null;
+  driverMobileNo?: string | null;
+  challanNo?: string | null;
+  transactionAmount?: Numericish;
+  intercityTransfer?: boolean | null;
+  ewayBillNo?: string | null;
+  securityGuard?: string | null;
+  materialCondition?: string | null;
+  weighbridgeReading?: string | null;
+  photoAttachment?: string | null;
+  purpose?: string | null;
+  remarks?: string | null;
+  lineCount?: number | null;
+  materials?: unknown;
+  status?: string | null;
+  approvalId?: string | null;
+  rejectionReason?: string | null;
+  returnReason?: string | null;
+  submittedAt?: Date | null;
+  submittedBy?: string | null;
+  approvedAt?: Date | null;
+  approvedBy?: string | null;
+  rejectedAt?: Date | null;
+  rejectedBy?: string | null;
+  returnedAt?: Date | null;
+  returnedBy?: string | null;
+  createdAt?: Date | null;
+  updatedAt?: Date | null;
+  createdBy?: string | null;
+  updatedBy?: string | null;
+}
+
+function mapRow(row: MaterialIssueRow | null) {
   if (!row) return null;
   return {
     id: row.id,
@@ -170,8 +232,8 @@ function mapRow(row: any): any {
     returnedBy: row.returnedBy ?? null,
     createdAt: row.createdAt?.toISOString?.() ?? row.createdAt ?? null,
     updatedAt: row.updatedAt?.toISOString?.() ?? row.updatedAt ?? null,
-    createdBy: row.createdBy ?? null,
-    updatedBy: row.updatedBy ?? null,
+    createdBy: row.createdBy ?? "",
+    updatedBy: row.updatedBy ?? "",
   };
 }
 
@@ -218,6 +280,8 @@ function buildMaterialIssuesWhere(
   return Prisma.sql` WHERE ${Prisma.join(conds, " AND ")}`;
 }
 
+export type MaterialIssue = NonNullable<ReturnType<typeof mapRow>>;
+
 export async function listMaterialIssues(
   orgId: string,
   opts: ListMaterialIssuesOptions = {},
@@ -259,7 +323,7 @@ export async function listMaterialIssues(
     ORDER BY "issueDate" DESC NULLS LAST, "createdAt" DESC
     ${limitClause}${offsetClause}
   `;
-  const rows: any[] = await (db as any).$queryRaw(query);
+  const rows = await db.$queryRaw<MaterialIssueRow[]>(query);
   return rows.map(mapRow);
 }
 
@@ -275,15 +339,15 @@ export async function countMaterialIssues(
   const query = Prisma.sql`
     SELECT COUNT(*)::bigint AS c FROM app_quikinfra."Material_issues"${where}
   `;
-  const rows: Array<{ c: bigint }> = await (db as any).$queryRaw(query);
+  const rows: Array<{ c: bigint }> = await db.$queryRaw(query);
   return Number(rows[0]?.c ?? 0);
 }
 
 export async function findMaterialIssueById(
   orgId: string,
   id: string,
-): Promise<any | null> {
-  const rows: any[] = await (db as any).$queryRaw`
+): Promise<MaterialIssue | null> {
+  const rows = await db.$queryRaw<MaterialIssueRow[]>`
     SELECT
       id, "orgId", "issueNumber",
       "projectId", "projectName", "locationId", "locationName",
@@ -308,14 +372,14 @@ export async function findMaterialIssueById(
 
 export async function createMaterialIssue(
   input: CreateMaterialIssueInput,
-): Promise<any> {
+): Promise<MaterialIssue | null> {
   const id = genId();
   const lines = Array.isArray(input.lines) ? input.lines : [];
   const materialsJson = JSON.stringify(lines);
   const lineCount = lines.length;
   const now = new Date();
 
-  await (db as any).$executeRaw`
+  await db.$executeRaw`
     INSERT INTO app_quikinfra."Material_issues" (
       id, "orgId", "issueNumber",
       "projectId", "projectName", "locationId", "locationName",
@@ -365,7 +429,7 @@ export async function createMaterialIssue(
 export async function updateMaterialIssue(
   id: string,
   input: UpdateMaterialIssueInput,
-): Promise<any | null> {
+): Promise<MaterialIssue | null> {
   const existing = await findMaterialIssueById(input.orgId, id);
   if (!existing) return null;
   const linesChanged = Array.isArray(input.lines);
@@ -403,7 +467,7 @@ export async function updateMaterialIssue(
     status: input.status ?? existing.status,
   };
 
-  await (db as any).$executeRaw`
+  await db.$executeRaw`
     UPDATE app_quikinfra."Material_issues"
     SET
       "projectName"       = ${next.projectName},
@@ -460,7 +524,7 @@ export async function patchMaterialIssueStatus(
     returnedBy?: string | null;
     updatedBy: string;
   },
-): Promise<any | null> {
+): Promise<MaterialIssue | null> {
   const existing = await findMaterialIssueById(orgId, id);
   if (!existing) return null;
 
@@ -512,7 +576,7 @@ export async function patchMaterialIssueStatus(
       patch.returnedBy !== undefined ? patch.returnedBy : existing.returnedBy,
   };
 
-  await (db as any).$executeRaw`
+  await db.$executeRaw`
     UPDATE app_quikinfra."Material_issues"
     SET
       status            = ${next.status},
@@ -538,7 +602,7 @@ export async function deleteMaterialIssue(
   orgId: string,
   id: string,
 ): Promise<boolean> {
-  const res: any = await (db as any).$executeRaw`
+  const res = await db.$executeRaw`
     DELETE FROM app_quikinfra."Material_issues"
     WHERE "orgId" = ${orgId} AND id = ${id}
   `;
@@ -551,7 +615,7 @@ export async function countMaterialIssuesForDate(
   orgId: string,
   dateYYYYMMDD: string,
 ): Promise<number> {
-  const rows: any[] = await (db as any).$queryRaw`
+  const rows = await db.$queryRaw<{ c: number }[]>`
     SELECT COUNT(*)::int AS c
     FROM app_quikinfra."Material_issues"
     WHERE "orgId" = ${orgId}

@@ -1,6 +1,7 @@
 import { requireStoreAction } from "@/lib/auth/requireStoreAction";
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
+import type { Prisma } from "@prisma/client";
 
 
 /**
@@ -42,7 +43,7 @@ export async function GET(req: NextRequest) {
   // Exact (project, location, item) lookup — fast path via the
   // composite primary key.
   if (projectId && locationId) {
-    const row: any = await (db as any).cnStockBalance.findUnique({
+    const row = await db.cnStockBalance.findUnique({
       where: {
         projectId_locationId_itemId: { projectId, locationId, itemId },
       },
@@ -59,10 +60,10 @@ export async function GET(req: NextRequest) {
   // Aggregate — either tenant-wide (itemId only) or project-wide
   // (itemId + projectId). Sum quantity, compute a quantity-weighted
   // average rate so the caller can still surface something useful.
-  const where: any = { orgId: ctx.orgId, itemId };
+  const where: Prisma.CnStockBalanceWhereInput = { orgId: ctx.orgId, itemId };
   if (projectId) where.projectId = projectId;
 
-  const rows: any[] = await (db as any).cnStockBalance.findMany({
+  const rows = await db.cnStockBalance.findMany({
     where,
     select: { quantity: true, avgRate: true },
   });

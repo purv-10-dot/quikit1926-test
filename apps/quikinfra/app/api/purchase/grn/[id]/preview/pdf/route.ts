@@ -30,7 +30,7 @@ export async function GET(
     );
   }
 
-  const items: GrnPdfLine[] = lines.map((l: any) => {
+  const items: GrnPdfLine[] = lines.map((l) => {
     const desc = l.itemName || l.itemCode || l.itemId || "—";
     return {
       description: desc,

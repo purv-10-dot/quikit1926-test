@@ -9,6 +9,8 @@
  * the context via `requireAuth()` / `requirePermission()` from @/lib/auth.
  */
 
+import { toErrorMessage, getErrorCode } from "@/lib/api/errors";
+import { Prisma } from "@quikit/database";
 import type {
   BOQItem,
   BOQItemComputed,
@@ -29,6 +31,7 @@ import { postBillingEntry, BillingLedgerError } from "./billing-ledger";
 import {
   runImportPipeline,
   type ImportMode,
+  type ImportIssue,
   type NormalizedBoqRow,
   type PipelineResult,
   type RawSheet,
@@ -46,14 +49,14 @@ async function ensureCnProjectExists(
   _orgId: string,
   _createdBy: string,
 ): Promise<void> {
-  await (db as any).cnProject.findUnique({ where: { id: projectId } }).catch(() => null);
+  await db.cnProject.findUnique({ where: { id: projectId } }).catch(() => null);
 }
 
 export class BOQError extends Error {
   code: string;
   httpStatus: number;
-  details?: any;
-  constructor(code: string, message: string, httpStatus = 400, details?: any) {
+  details?: unknown;
+  constructor(code: string, message: string, httpStatus = 400, details?: unknown) {
     super(message);
     this.code = code;
     this.httpStatus = httpStatus;
@@ -180,9 +183,9 @@ export class BOQService {
     await this.repo.updateImportBatch(ctx, batch.id, {
       status: errors.length > 0 ? "failed" : "preview_ready",
       row_count: result.nodes.length,
-      error_detail: errors.length > 0 ? (errors as any) : null,
+      error_detail: errors.length > 0 ? errors : null,
       parsed_nodes: result.nodes,
-    } as any);
+    });
 
     return preview;
   }
@@ -217,7 +220,7 @@ export class BOQService {
         400
       );
 
-    const parsedNodes = (batch as any).parsedNodes as ParsedBOQNode[] | undefined;
+    const parsedNodes = batch.parsedNodes;
     if (!parsedNodes || parsedNodes.length === 0) {
       throw new BOQError("BATCH_EMPTY", "No parsed nodes available on this batch", 400);
     }
@@ -291,7 +294,7 @@ export class BOQService {
     if (errors.length > 0) {
       await this.repo.updateImportBatch(ctx, batch.id, {
         status: "failed",
-        error_detail: errors as any,
+        error_detail: errors,
       });
       return { preview };
     }
@@ -394,7 +397,7 @@ export class BOQService {
       await this.repo.updateImportBatch(ctx, batch.id, {
         status: "failed",
         row_count: pipeline.rows.length,
-        error_detail: pipeline.errors as any,
+        error_detail: pipeline.errors,
       });
       return { pipeline, inserted: [], batchId: batch.id };
     }
@@ -457,8 +460,8 @@ export class BOQService {
   ): Promise<{
     inserted: BOQItem[];
     batchId: string;
-    errors: any[];
-    warnings: any[];
+    errors: ImportIssue[];
+    warnings: ImportIssue[];
   }> {
     if (await this.repo.isLocked(ctx, projectId)) {
       throw new BOQError(
@@ -513,7 +516,7 @@ export class BOQService {
       await this.repo.updateImportBatch(ctx, batch.id, {
         status: "failed",
         row_count: val.rows.length,
-        error_detail: errors as any,
+        error_detail: errors,
       });
       return { inserted: [], batchId: batch.id, errors, warnings };
     }
@@ -695,8 +698,8 @@ export class BOQService {
     opts?: { dprId?: string; dprLineId?: string; overrideFlag?: boolean; overrideReason?: string }
   ): Promise<void> {
     try {
-      await db.$transaction(async (tx:any) => {
-        await postProgressEntry(tx as any, ctx, {
+      await db.$transaction(async (tx) => {
+        await postProgressEntry(tx, ctx, {
           projectId,
           boqNo,
           qty,
@@ -708,13 +711,13 @@ export class BOQService {
           overrideReason: opts?.overrideReason,
         });
       });
-    } catch (err: any) {
+    } catch (err: unknown) {
       if (err instanceof ProgressLedgerError) {
         throw new BOQError(err.code, err.message, err.httpStatus);
       }
       throw new BOQError(
         "DPR_UPDATE_FAILED",
-        err.message ?? "Failed to update BOQ from DPR",
+        toErrorMessage(err, "Failed to update BOQ from DPR"),
         400
       );
     }
@@ -726,7 +729,7 @@ export class BOQService {
    * unit. Use this from DPR submit/approve route handlers.
    */
   async applyDPRProgressTxn(
-    tx: any,
+    tx: Prisma.TransactionClient,
     ctx: TenantContext,
     projectId: string,
     boqNo: string,
@@ -746,7 +749,7 @@ export class BOQService {
         overrideFlag: opts?.overrideFlag,
         overrideReason: opts?.overrideReason,
       });
-    } catch (err: any) {
+    } catch (err: unknown) {
       if (err instanceof ProgressLedgerError) {
         throw new BOQError(err.code, err.message, err.httpStatus);
       }
@@ -759,7 +762,7 @@ export class BOQService {
    * ledger entry (direction=-1). Guarded against underflow.
    */
   async reverseDPRProgressTxn(
-    tx: any,
+    tx: Prisma.TransactionClient,
     ctx: TenantContext,
     projectId: string,
     boqNo: string,
@@ -777,7 +780,7 @@ export class BOQService {
         dprId: opts?.dprId,
         dprLineId: opts?.dprLineId,
       });
-    } catch (err: any) {
+    } catch (err: unknown) {
       if (err instanceof ProgressLedgerError) {
         throw new BOQError(err.code, err.message, err.httpStatus);
       }
@@ -797,8 +800,8 @@ export class BOQService {
     opts?: { rabId?: string; rabLineId?: string; overrideFlag?: boolean; overrideReason?: string }
   ): Promise<void> {
     try {
-      await db.$transaction(async (tx:any) => {
-        await postBillingEntry(tx as any, ctx, {
+      await db.$transaction(async (tx) => {
+        await postBillingEntry(tx, ctx, {
           projectId,
           boqNo,
           qty,
@@ -809,13 +812,13 @@ export class BOQService {
           overrideReason: opts?.overrideReason,
         });
       });
-    } catch (err: any) {
+    } catch (err: unknown) {
       if (err instanceof BillingLedgerError) {
         throw new BOQError(err.code, err.message, err.httpStatus);
       }
       throw new BOQError(
         "RAB_UPDATE_FAILED",
-        err.message ?? "Failed to update BOQ from RAB",
+        toErrorMessage(err, "Failed to update BOQ from RAB"),
         400
       );
     }
@@ -823,7 +826,7 @@ export class BOQService {
 
   /** Transactional variant for batched RAB approval. */
   async applyRABBillingTxn(
-    tx: any,
+    tx: Prisma.TransactionClient,
     ctx: TenantContext,
     projectId: string,
     boqNo: string,
@@ -841,7 +844,7 @@ export class BOQService {
         overrideFlag: opts?.overrideFlag,
         overrideReason: opts?.overrideReason,
       });
-    } catch (err: any) {
+    } catch (err: unknown) {
       if (err instanceof BillingLedgerError) {
         throw new BOQError(err.code, err.message, err.httpStatus);
       }

@@ -37,20 +37,20 @@ export async function GET(req: NextRequest) {
   // workflow.steps in one round-trip, then compute canActOnCurrentStep
   // for each. Rows with no approvalId get false (nothing to act on).
   const approvalIds = data
-    .map((r: any) => r.approvalId)
-    .filter((id: any): id is string => typeof id === "string" && id.length > 0);
+    .map((r) => r.approvalId)
+    .filter((id: unknown): id is string => typeof id === "string" && id.length > 0);
 
   const instances =
     approvalIds.length === 0
       ? []
-      : await (db as any).cnApprovalInstance.findMany({
+      : await db.cnApprovalInstance.findMany({
           where: { id: { in: approvalIds }, orgId: ctx.orgId },
           include: {
             workflow: { include: { steps: { orderBy: { stepOrder: "asc" } } } },
           },
         });
-  const instanceById = new Map<string, any>(
-    instances.map((i: any) => [i.id, i]),
+  const instanceById = new Map(
+    instances.map((i): [string, (typeof instances)[number]] => [i.id, i]),
   );
 
   const actor = {
@@ -58,7 +58,7 @@ export async function GET(req: NextRequest) {
     roleKey: ctx.roleKey,
     projectIds: ctx.projectIds,
   };
-  const decorated = data.map((row: any) => {
+  const decorated = data.map((row) => {
     const instance = row.approvalId ? instanceById.get(row.approvalId) : null;
     return {
       ...row,

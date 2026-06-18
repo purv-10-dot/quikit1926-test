@@ -141,7 +141,6 @@ model Org {
   cnApprovalRules         CnApprovalRule[]
   cnAssets                CnAsset[]
   cnAuditLogs             CnAuditLog[]
-  cnBanks                 CnBank[]
   cnCompanies             CnCompany[]
   cnContractors           CnContractor[]
   cnCostCenters           CnCostCenter[]
@@ -2036,7 +2035,6 @@ model CnCompany {
   createdBy   String
   updatedBy   String
 
-  banks    CnBank[]
   finYears CnFinancialYear[]
 
   // --- grafted: cross-schema relations (Org/User) ---
@@ -2277,31 +2275,6 @@ model CnItem {
   @@schema("app_quikinfra")
 }
 
-model CnBank {
-  id          String   @id @default(cuid())
-  orgId       String
-  bankName    String
-  branchName  String?
-  accountNo   String
-  ifscCode    String
-  accountType String // current | savings
-  companyId   String
-  status      String   @default("active")
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
-  createdBy   String
-  updatedBy   String
-
-  company CnCompany @relation(fields: [companyId], references: [id])
-
-  // --- grafted: cross-schema relations (Org/User) ---
-  org Org @relation(fields: [orgId], references: [id], onDelete: Cascade)
-
-  @@index([orgId])
-  @@map("Banks")
-  @@schema("app_quikinfra")
-}
-
 model CnDepartment {
   id         String   @id @default(cuid())
   orgId      String
@@ -2356,11 +2329,14 @@ model CnCostCenter {
   createdBy String
   updatedBy String
 
+  project   CnProject? @relation(fields: [projectId], references: [id])
+
   // --- grafted: cross-schema relations (Org/User) ---
   org Org @relation(fields: [orgId], references: [id], onDelete: Cascade)
 
   @@unique([orgId, code])
   @@index([orgId])
+  @@index([projectId])
   @@map("Cost_centers")
   @@schema("app_quikinfra")
 }
@@ -2535,6 +2511,9 @@ model CnProject {
 
   client           CnCustomer?             @relation(fields: [clientId], references: [id])
   locations        CnLocation[]
+  costCenters      CnCostCenter[]
+  machinery        CnMachinery[]
+  assets           CnAsset[]
   boqItems         CnBOQItem[]
   purchaseReqs     CnPurchaseRequisition[]
   indents          CnPurchaseIndent[]
@@ -2589,11 +2568,14 @@ model CnMachinery {
 
   dieselLogs CnDieselLog[]
 
+  project        CnProject?    @relation(fields: [projectId], references: [id])
+
   // --- grafted: cross-schema relations (Org/User) ---
   org Org @relation(fields: [orgId], references: [id], onDelete: Cascade)
 
   @@unique([orgId, code])
   @@index([orgId])
+  @@index([projectId])
   @@map("Machinery")
   @@schema("app_quikinfra")
 }
@@ -2617,6 +2599,8 @@ model CnAsset {
   updatedAt       DateTime  @updatedAt
   createdBy       String
   updatedBy       String
+
+  project       CnProject? @relation(fields: [projectId], references: [id])
 
   // --- grafted: cross-schema relations (Org/User) ---
   org Org @relation(fields: [orgId], references: [id], onDelete: Cascade)
@@ -3537,6 +3521,7 @@ model CnWorkOrder {
   projectId        String
   contractorId     String
   workCategoryId   String?
+  workType         String?
   title            String
   description      String?
   startDate        DateTime
@@ -4123,6 +4108,7 @@ model CnDailyProgressReport {
   labourEntries    CnDPRLabourEntry[]
   machineryEntries CnDPRMachineryEntry[]
   materialEntries  CnDPRMaterialEntry[]
+  staffEntries     CnDPRStaff[]
 
   @@unique([orgId, dprNumber])
   @@index([orgId])
@@ -4178,6 +4164,7 @@ model CnDPRWorkItem {
   cumulativeQty Decimal @db.Decimal(18, 4)
   uomId         String
   remarks       String?
+  images        String[] @default([])
 
   dpr CnDailyProgressReport @relation(fields: [dprId], references: [id], onDelete: Cascade)
 
@@ -4195,6 +4182,19 @@ model CnDPRLabourEntry {
   hoursWorked  Decimal @db.Decimal(5, 2)
   contractorId String?
 
+  // Wide trade-grid columns (Daily Progress Report manpower section).
+  // One row per contractor; values are man-days/man-hours per trade.
+  workingArea  String?
+  messan       Decimal? @db.Decimal(18, 4)
+  maleHelper   Decimal? @db.Decimal(18, 4)
+  femaleHelper Decimal? @db.Decimal(18, 4)
+  carpenter    Decimal? @db.Decimal(18, 4)
+  fitter       Decimal? @db.Decimal(18, 4)
+  painter      Decimal? @db.Decimal(18, 4)
+  plumber      Decimal? @db.Decimal(18, 4)
+  electrician  Decimal? @db.Decimal(18, 4)
+  operator     Decimal? @db.Decimal(18, 4)
+
   dpr CnDailyProgressReport @relation(fields: [dprId], references: [id], onDelete: Cascade)
 
   @@index([dprId])
@@ -4203,13 +4203,13 @@ model CnDPRLabourEntry {
 }
 
 model CnDPRMachineryEntry {
-  id           String   @id @default(cuid())
-  dprId        String
-  machineryId  String
-  hoursWorked  Decimal  @db.Decimal(5, 2)
-  fuelConsumed Decimal? @db.Decimal(18, 4)
-  operatorName String?
-  remarks      String?
+  id          String  @id @default(cuid())
+  dprId       String
+  description String
+  condition   String?
+  requiredQty Int     @default(0)
+  actualQty   Int     @default(0)
+  remarks     String?
 
   dpr CnDailyProgressReport @relation(fields: [dprId], references: [id], onDelete: Cascade)
 
@@ -4237,7 +4237,20 @@ model CnDPRMaterialEntry {
   @@map("Dpr_material_entries")
   @@schema("app_quikinfra")
 }
+model CnDPRStaff {
+  id          String  @id @default(cuid())
+  dprId       String
+  name        String
+  designation String?
+  present     Boolean @default(true)
+  reason      String?
 
+  dpr CnDailyProgressReport @relation(fields: [dprId], references: [id], onDelete: Cascade)
+
+  @@index([dprId])
+  @@map("Dpr_staff_entries")
+  @@schema("app_quikinfra")
+}
 model CnRunningAccountBill {
   id                 String   @id @default(cuid())
   orgId              String
@@ -4245,16 +4258,42 @@ model CnRunningAccountBill {
   projectId          String
   contractorId       String
   woId               String
+  billType           String   @default("ra_bill") // ra_bill | final_bill | deviation_bill
   billPeriodFrom     DateTime
   billPeriodTo       DateTime
   previousBillAmount Decimal  @db.Decimal(18, 2)
   currentBillAmount  Decimal  @db.Decimal(18, 2)
   cumulativeAmount   Decimal  @db.Decimal(18, 2)
+  grossBillAmount    Decimal  @default(0) @db.Decimal(18, 2)
+
+  // Retention
   retentionPercent   Decimal? @db.Decimal(5, 2)
   retentionAmount    Decimal? @db.Decimal(18, 2)
+
+  // Tax — GST is ADDED to the bill; TDS is a deduction. Both filled by
+  // computeRABill(). Rates are percentages; amounts are money.
+  tdsRate  Decimal? @db.Decimal(5, 2)
+  tdsAmount Decimal? @db.Decimal(18, 2)
+  cgstRate Decimal? @db.Decimal(5, 2)
+  cgstAmount Decimal? @db.Decimal(18, 2)
+  sgstRate Decimal? @db.Decimal(5, 2)
+  sgstAmount Decimal? @db.Decimal(18, 2)
+  igstRate Decimal? @db.Decimal(5, 2)
+  igstAmount Decimal? @db.Decimal(18, 2)
+
+  // Other statutory / contractual deductions (all excluded from the GST add-on).
+  mobilisationRecovery Decimal? @db.Decimal(18, 2)
+  liquidatedDamages    Decimal? @db.Decimal(18, 2)
+  labourCess           Decimal? @db.Decimal(18, 2)
+  otherDeductions      Decimal? @db.Decimal(18, 2)
+
+  // Legacy single-lump deduction column — retained for existing rows; new
+  // bills break the total out into the granular fields above.
   deductions         Decimal? @db.Decimal(18, 2)
   netPayable         Decimal  @db.Decimal(18, 2)
+
   status             String   @default("draft")
+  paymentStatus      String   @default("unpaid") // unpaid | partial | paid
   approvalId         String?
   createdAt          DateTime @default(now())
   updatedAt          DateTime @updatedAt

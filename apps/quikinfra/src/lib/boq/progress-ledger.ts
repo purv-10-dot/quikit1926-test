@@ -24,6 +24,7 @@
  *   });
  */
 
+import type { Prisma } from "@quikit/database";
 import type { TenantContext } from "@/lib/auth/context";
 import { recordAudit } from "@/lib/workflow/audit";
 
@@ -58,7 +59,7 @@ export interface ProgressPosting {
  * back if any subsequent step fails.
  */
 export async function postProgressEntry(
-  tx: any,
+  tx: Prisma.TransactionClient,
   ctx: TenantContext,
   p: ProgressPosting
 ): Promise<{ ledgerId: string; cumulativeDoneQty: number }> {

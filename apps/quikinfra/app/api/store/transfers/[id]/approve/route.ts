@@ -36,7 +36,7 @@ export async function POST(
     return envelopeErr("FORBIDDEN", `Action "edit" not allowed for store.transfer`, 403);
   }
 
-  let body: any = {};
+  let body: { action?: string; comments?: string } = {};
   try {
     body = await req.json();
   } catch {
@@ -56,7 +56,8 @@ export async function POST(
   // Build the entity-status patch lazily — applied post-tx via the
   // repository helper, since stock-transfer's update path uses raw
   // SQL and can't enroll in the approval-instance transaction.
-  let stStatusUpdate: Record<string, unknown> | null = null;
+  type StTransferPatch = Parameters<typeof patchStockTransferStatus>[2];
+  let stStatusUpdate: Omit<StTransferPatch, "updatedBy"> | null = null;
 
   const outcome = await actOnApproval({
     ctx,
@@ -101,7 +102,7 @@ export async function POST(
 
   if (stStatusUpdate) {
     await patchStockTransferStatus(ctx.orgId, st.id, {
-      ...(stStatusUpdate as any),
+      ...(stStatusUpdate as StTransferPatch),
       updatedBy: ctx.userId,
     });
   }

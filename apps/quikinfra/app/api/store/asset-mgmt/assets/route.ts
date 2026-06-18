@@ -10,14 +10,14 @@ export async function GET(req: NextRequest) {
   const { searchParams } = new URL(req.url);
   const search = (searchParams.get("search") ?? "").trim().toLowerCase();
   const categories = getCategories();
-  const catNameById = new Map(categories.map((c: any) => [c.id, c.name]));
-  let data = getAssets().map((a: any) => ({
+  const catNameById = new Map(categories.map((c) => [c.id, c.name]));
+  let data = getAssets().map((a) => ({
     ...a,
     categoryName: catNameById.get(a.categoryId) ?? "—",
   }));
   if (search) {
     data = data.filter(
-      (a: any) =>
+      (a) =>
         String(a.assetCode ?? "").toLowerCase().includes(search) ||
         String(a.name ?? "").toLowerCase().includes(search),
     );
@@ -49,7 +49,7 @@ export async function POST(req: NextRequest) {
   }
 
   const assets = getAssets();
-  if (assets.some((a: any) => a.assetCode.toLowerCase() === assetCode.toLowerCase())) {
+  if (assets.some((a) => a.assetCode.toLowerCase() === assetCode.toLowerCase())) {
     return NextResponse.json({ error: "An asset with this code already exists" }, { status: 409 });
   }
 

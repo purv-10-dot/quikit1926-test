@@ -70,7 +70,7 @@ async function findUsersByRoleName(
   opts: { projectId?: string } = {},
 ): Promise<ApproverUser[]> {
   // Get every UserAppRole row for this (orgId, roleName).
-  const userAppRoles = (await (dbCentral as any).cnUserAppRole.findMany({
+  const userAppRoles = (await dbCentral.cnUserAppRole.findMany({
     where: {
       orgId,
       role: { name: roleName },
@@ -103,7 +103,7 @@ async function findUsersByRoleName(
   // Site-admin lookup is project-scoped: only those with project access
   // to the requester's project qualify.
   if (opts.projectId && candidateIds.length > 0) {
-    const access = (await (dbCentral as any).cnUserProjectAccess.findMany({
+    const access = (await dbCentral.cnUserProjectAccess.findMany({
       where: {
         orgId,
         userId: { in: candidateIds },
@@ -118,7 +118,7 @@ async function findUsersByRoleName(
   // Filter to only ACTIVE OrgMembers — inactive accounts can't approve.
   const memberships = candidateIds.length === 0
     ? []
-    : (await (dbCentral as any).orgMember.findMany({
+    : (await dbCentral.orgMember.findMany({
         where: {
           orgId,
           userId: { in: candidateIds },
@@ -131,7 +131,7 @@ async function findUsersByRoleName(
   // Hydrate profile data (department, mobile) from User_profiles.
   const profiles = candidateIds.length === 0
     ? []
-    : (await (dbCentral as any).cnUserProfile.findMany({
+    : (await dbCentral.cnUserProfile.findMany({
         where: { orgId, userId: { in: candidateIds } },
         select: {
           userId: true,

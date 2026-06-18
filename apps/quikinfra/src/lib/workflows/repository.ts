@@ -9,6 +9,7 @@
  *   - cn_approval_workflow_steps (lines: stepOrder, role, thresholds)
  */
 
+import { Prisma } from "@quikit/database";
 import { db } from "@/lib/db";
 
 export interface WorkflowStepInput {
@@ -54,8 +55,8 @@ export interface ListWorkflowsOptions {
 
 // Shape returned to the frontend. Matches what the existing in-memory
 // store produced so the UI doesn't need to change.
-function enrichWorkflow(row: any): any {
-  const steps = (row.steps ?? []).map((s: any) => ({
+function enrichWorkflow(row: Prisma.CnApprovalWorkflowGetPayload<{ include: { steps: true } }>) {
+  const steps = (row.steps ?? []).map((s) => ({
     id: s.id,
     stepOrder: s.stepOrder,
     approverRole: s.approverRoleId ?? null,
@@ -95,7 +96,7 @@ export async function listWorkflows(opts: ListWorkflowsOptions): Promise<any[]> 
     where.projectId = opts.projectId;
   }
 
-  const rows = await (db as any).cnApprovalWorkflow.findMany({
+  const rows = await db.cnApprovalWorkflow.findMany({
     where,
     include: { steps: { orderBy: { stepOrder: "asc" } } },
     orderBy: { createdAt: "desc" },
@@ -107,7 +108,7 @@ export async function findWorkflowById(
   orgId: string,
   id: string,
 ): Promise<any | null> {
-  const row = await (db as any).cnApprovalWorkflow.findFirst({
+  const row = await db.cnApprovalWorkflow.findFirst({
     where: { id, orgId },
     include: { steps: { orderBy: { stepOrder: "asc" } } },
   });
@@ -116,8 +117,10 @@ export async function findWorkflowById(
 
 // ─── Mutations ──────────────────────────────────────────────────────
 
-export async function createWorkflow(input: CreateWorkflowInput): Promise<any> {
-  const row = await (db as any).cnApprovalWorkflow.create({
+export async function createWorkflow(
+  input: CreateWorkflowInput,
+): Promise<ReturnType<typeof enrichWorkflow>> {
+  const row = await db.cnApprovalWorkflow.create({
     data: {
       orgId: input.orgId,
       projectId: input.projectId ?? null,
@@ -178,7 +181,7 @@ export async function updateWorkflow(
   patch: UpdateWorkflowInput,
 ): Promise<any | null> {
   // Verify the row exists (and is org-scoped) before we touch steps.
-  const existing = await (db as any).cnApprovalWorkflow.findFirst({
+  const existing = await db.cnApprovalWorkflow.findFirst({
     where: { id, orgId },
     select: { id: true },
   });
@@ -192,7 +195,7 @@ export async function updateWorkflow(
 
   // Replace-all steps strategy. Wrapped in a transaction so partial
   // failures don't leave the workflow in a half-edited state.
-  await (db as any).$transaction(async (tx: any) => {
+  await db.$transaction(async (tx) => {
     await tx.cnApprovalWorkflow.update({
       where: { id },
       data: headerData,
@@ -247,19 +250,19 @@ export async function deleteWorkflow(
   orgId: string,
   id: string,
 ): Promise<DeleteWorkflowResult> {
-  const existing = await (db as any).cnApprovalWorkflow.findFirst({
+  const existing = await db.cnApprovalWorkflow.findFirst({
     where: { id, orgId },
     select: { id: true },
   });
   if (!existing) return { status: "not_found" };
 
-  const instanceCount = await (db as any).cnApprovalInstance.count({
+  const instanceCount = await db.cnApprovalInstance.count({
     where: { workflowId: id, orgId },
   });
   if (instanceCount > 0) {
     return { status: "in_use", instanceCount };
   }
 
-  await (db as any).cnApprovalWorkflow.delete({ where: { id } });
+  await db.cnApprovalWorkflow.delete({ where: { id } });
   return { status: "deleted" };
 }

@@ -6,7 +6,7 @@ import { withOrgAuthForModule } from "@/lib/api/withOrgAuth";
 const withOrgAuth = withOrgAuthForModule("projects");
 
 export const GET = withOrgAuth<{ id: string }>(async ({ orgId }, _req, { params }) => {
-  const rab = await (db as any).cnRunningAccountBill.findFirst({
+  const rab = await db.cnRunningAccountBill.findFirst({
     where: { id: params.id, orgId },
     include: {
       project: { select: { id: true, name: true, code: true } },
@@ -20,7 +20,7 @@ export const GET = withOrgAuth<{ id: string }>(async ({ orgId }, _req, { params 
 }, { permission: { resource: "construction.rab", action: "view" } });
 
 export const DELETE = withOrgAuth<{ id: string }>(async ({ orgId }, _req, { params }) => {
-  const rab = await (db as any).cnRunningAccountBill.findFirst({
+  const rab = await db.cnRunningAccountBill.findFirst({
     where: { id: params.id, orgId },
     select: { id: true, status: true },
   });
@@ -30,6 +30,6 @@ export const DELETE = withOrgAuth<{ id: string }>(async ({ orgId }, _req, { para
   }
   // Running_account_bills has no soft-delete column; lines cascade via the
   // CnRABLine relation. Only draft/unapproved RABs reach here.
-  await (db as any).cnRunningAccountBill.delete({ where: { id: params.id } });
+  await db.cnRunningAccountBill.delete({ where: { id: params.id } });
   return NextResponse.json({ success: true });
 }, { permission: { resource: "construction.rab", action: "delete" } });

@@ -34,7 +34,7 @@ export async function POST(
     );
   }
 
-  const recon = await (db as any).cnStockReconciliation.findFirst({
+  const recon = await db.cnStockReconciliation.findFirst({
     where: { id: params.id, orgId: ctx.orgId },
   });
   if (!recon) {
@@ -81,7 +81,7 @@ export async function POST(
     throw err;
   }
 
-  await (db as any).cnStockReconciliation.update({
+  await db.cnStockReconciliation.update({
     where: { id: recon.id },
     data: {
       status: autoApproved ? "approved" : "pending_approval",

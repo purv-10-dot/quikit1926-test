@@ -4,6 +4,12 @@ import { db } from "@/lib/db";
 
 import { resolveUserNames } from "@/lib/users/resolve-names";
 import { canActOnCurrentStep } from "@/lib/approvals/workflow-rbac";
+import {
+  APPROVAL_INSTANCE_INCLUDE,
+  buildApprovalDto,
+  type ApprovalDto,
+  type ApprovalInstanceFull,
+} from "@/lib/approvals/approval-dto";
 
 /**
  * GET /api/store/reconciliations/:id
@@ -14,6 +20,17 @@ import { canActOnCurrentStep } from "@/lib/approvals/workflow-rbac";
  * resolved server-side so the detail page renders human names instead
  * of cuids.
  */
+/** A reconciliation line as stored in the JSON `lines` column. */
+interface ReconLine {
+  id?: string | null;
+  itemId?: string | null;
+  uomId?: string | null;
+  systemQty?: number | string | null;
+  physicalQty?: number | string | null;
+  varianceQty?: number | string | null;
+  reason?: string | null;
+}
+
 export async function GET(
   _req: NextRequest,
   { params }: { params: { id: string } },
@@ -21,7 +38,7 @@ export async function GET(
   const ctxOrResp = await requireStoreAction("construction.reconciliation", "view");
   if (ctxOrResp instanceof NextResponse) return ctxOrResp;
   const ctx = ctxOrResp;
-  const row = await (db as any).cnStockReconciliation.findFirst({
+  const row = await db.cnStockReconciliation.findFirst({
     where: { id: params.id, orgId: ctx.orgId },
     include: {
       project: { select: { id: true, name: true, code: true } },
@@ -48,63 +65,60 @@ export async function GET(
   // Batch-fetch line dependencies — item + uom — in two queries.
   const itemIds = Array.from(
     new Set(
-      (row.lines as any[])
+      (row.lines as unknown as ReconLine[])
         .map((l) => l.itemId)
         .filter((v): v is string => typeof v === "string" && v.length > 0),
     ),
   );
   const uomIds = Array.from(
     new Set(
-      (row.lines as any[])
+      (row.lines as unknown as ReconLine[])
         .map((l) => l.uomId)
         .filter((v): v is string => typeof v === "string" && v.length > 0),
     ),
   );
   const [itemsRaw, uomsRaw, locationRow] = await Promise.all([
     itemIds.length
-      ? (db as any).cnItem.findMany({
+      ? db.cnItem.findMany({
           where: { id: { in: itemIds } },
           select: { id: true, code: true, name: true },
         })
       : Promise.resolve([]),
     uomIds.length
-      ? (db as any).cnUOM.findMany({
+      ? db.cnUOM.findMany({
           where: { id: { in: uomIds } },
           select: { id: true, code: true },
         })
       : Promise.resolve([]),
     row.locationId
-      ? (db as any).cnLocation.findFirst({
+      ? db.cnLocation.findFirst({
           where: { id: row.locationId },
           select: { id: true, name: true },
         })
       : Promise.resolve(null),
   ]);
-  const itemById = new Map<string, any>(itemsRaw.map((i: any) => [i.id, i]));
-  const uomById = new Map<string, any>(uomsRaw.map((u: any) => [u.id, u]));
+  const itemById = new Map(itemsRaw.map((i): [string, (typeof itemsRaw)[number]] => [i.id, i]));
+  const uomById = new Map(uomsRaw.map((u): [string, (typeof uomsRaw)[number]] => [u.id, u]));
 
   // Load the approval instance (if any) + workflow + history. Same
   // fan-out the other detail routes do so the shared ApprovalTimeline
   // component renders without an adapter on the client.
-  let approval: any = null;
+  let approval: ApprovalDto | null = null;
+  let instance: ApprovalInstanceFull | null = null;
   let approvalUserIds: string[] = [];
   if (row.approvalId) {
-    const instance = await (db as any).cnApprovalInstance.findFirst({
+    instance = await db.cnApprovalInstance.findFirst({
       where: { id: row.approvalId, orgId: ctx.orgId },
-      include: {
-        history: { orderBy: { actionAt: "asc" } },
-        workflow: { include: { steps: { orderBy: { stepOrder: "asc" } } } },
-      },
+      include: APPROVAL_INSTANCE_INCLUDE,
     });
     if (instance) {
       approvalUserIds = [
         instance.requestedById,
-        ...instance.history.map((h: any) => h.actionById),
+        ...instance.history.map((h) => h.actionById),
         ...(instance.workflow.steps
-          .map((s: any) => s.approverUserId)
+          .map((s) => s.approverUserId)
           .filter(Boolean) as string[]),
       ];
-      approval = { _instance: instance };
     }
   }
 
@@ -117,8 +131,7 @@ export async function GET(
   ].filter(Boolean) as string[];
   const nameById = await resolveUserNames(userIds);
 
-  if (approval) {
-    const instance = approval._instance;
+  if (instance) {
     const callerCanActOnCurrentStep = canActOnCurrentStep(
       {
         userId: ctx.userId,
@@ -128,41 +141,12 @@ export async function GET(
       instance,
       row.projectId ?? null,
     );
-    approval = {
-      id: instance.id,
-      status: instance.status,
-      currentStepOrder: instance.currentStepOrder,
-      canActOnCurrentStep: callerCanActOnCurrentStep,
-      completedAt: instance.completedAt?.toISOString?.() ?? null,
-      requestedAt: instance.requestedAt.toISOString(),
-      requestedById: instance.requestedById,
-      requestedByName: nameById.get(instance.requestedById) ?? "User",
-      workflow: {
-        id: instance.workflow.id,
-        name: instance.workflow.name,
-        steps: instance.workflow.steps.map((s: any) => ({
-          stepOrder: s.stepOrder,
-          approverRoleId: s.approverRoleId,
-          approverUserId: s.approverUserId,
-          approverUserName: s.approverUserId
-            ? (nameById.get(s.approverUserId) ?? null)
-            : null,
-        })),
-      },
-      history: instance.history.map((h: any) => ({
-        stepOrder: h.stepOrder,
-        action: h.action,
-        actionById: h.actionById,
-        actionByName: nameById.get(h.actionById) ?? "User",
-        actionAt: h.actionAt.toISOString(),
-        comments: h.comments,
-      })),
-    };
+    approval = buildApprovalDto(instance, nameById, callerCanActOnCurrentStep);
   }
 
-  const lines = (row.lines as any[]).map((l, idx) => {
-    const item = itemById.get(l.itemId);
-    const uom = uomById.get(l.uomId);
+  const lines = (row.lines as unknown as ReconLine[]).map((l, idx) => {
+    const item = itemById.get(l.itemId ?? "");
+    const uom = uomById.get(l.uomId ?? "");
     const systemQty = Number(l.systemQty?.toString?.() ?? l.systemQty ?? 0);
     const physicalQty = Number(l.physicalQty?.toString?.() ?? l.physicalQty ?? 0);
     const varianceQty = Number(

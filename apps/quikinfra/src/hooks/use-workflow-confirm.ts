@@ -11,6 +11,7 @@
  * fire the action. Rendering of the ConfirmDialog stays with the
  * caller so titles / tone / phrasing remain entity-specific.
  */
+import { toErrorMessage, getErrorCode } from "@/lib/api/errors";
 import { useState } from "react";
 import { useQueryClient, type QueryKey } from "@tanstack/react-query";
 import { toast } from "@/lib/toast";
@@ -75,8 +76,8 @@ export function useWorkflowConfirm(config: WorkflowConfirmConfig) {
       );
       setAction(null);
       setRejectReason("");
-    } catch (err: any) {
-      const message = err?.message ?? "Action failed";
+    } catch (err: unknown) {
+      const message = toErrorMessage(err, "Action failed");
       setError(message);
       toast.error(message);
     } finally {

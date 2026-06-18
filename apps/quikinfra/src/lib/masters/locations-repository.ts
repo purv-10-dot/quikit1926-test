@@ -7,6 +7,7 @@
  */
 
 import { db } from "@/lib/db";
+import { Prisma } from "@quikit/database";
 
 export interface LocationRecord {
   id: string;
@@ -32,7 +33,14 @@ export interface LocationRecord {
   updatedBy: string;
 }
 
-function toRecord(row: any): LocationRecord {
+function toRecord(
+  row: Prisma.CnLocationGetPayload<{
+    include: {
+      itemGroup: { select: { id: true; name: true } };
+      project: { select: { id: true; name: true } };
+    };
+  }>,
+): LocationRecord {
   const rawQty = row.itemQtyByItemId;
   const qty: Record<string, string> | null =
     rawQty && typeof rawQty === "object" && !Array.isArray(rawQty)
@@ -113,7 +121,7 @@ function buildLocationsWhere(
 }
 
 export async function listLocations(opts: ListOptions): Promise<LocationRecord[]> {
-  const rows = await (db as any).cnLocation.findMany({
+  const rows = await db.cnLocation.findMany({
     where: buildLocationsWhere(opts),
     include: {
       itemGroup: { select: { id: true, name: true } },
@@ -129,11 +137,11 @@ export async function listLocations(opts: ListOptions): Promise<LocationRecord[]
 export async function countLocations(
   opts: Pick<ListOptions, "orgId" | "search" | "projectId">,
 ): Promise<number> {
-  return (db as any).cnLocation.count({ where: buildLocationsWhere(opts) });
+  return db.cnLocation.count({ where: buildLocationsWhere(opts) });
 }
 
 export async function findLocationById(orgId: string, id: string): Promise<LocationRecord | null> {
-  const row = await (db as any).cnLocation.findFirst({
+  const row = await db.cnLocation.findFirst({
     where: { id, orgId },
     include: {
       itemGroup: { select: { id: true, name: true } },
@@ -164,12 +172,12 @@ export interface CreateLocationInput {
 export async function createLocation(input: CreateLocationInput): Promise<LocationRecord> {
   let code = (input.code ?? "").trim();
   if (!code) {
-    const count = await (db as any).cnLocation.count({
+    const count = await db.cnLocation.count({
       where: { orgId: input.orgId },
     });
     code = autoCode(count + 1);
   }
-  const row = await (db as any).cnLocation.create({
+  const row = await db.cnLocation.create({
     data: {
       orgId: input.orgId,
       code,
@@ -185,8 +193,8 @@ export async function createLocation(input: CreateLocationInput): Promise<Locati
       itemIds: Array.isArray(input.itemIds) ? input.itemIds.filter(Boolean) : [],
       itemQtyByItemId:
         input.itemQtyByItemId && typeof input.itemQtyByItemId === "object"
-          ? input.itemQtyByItemId
-          : null,
+          ? (input.itemQtyByItemId as Prisma.InputJsonValue)
+          : Prisma.JsonNull,
       status: input.status ?? "active",
       createdBy: input.createdBy,
       updatedBy: input.createdBy,
@@ -209,7 +217,7 @@ export async function updateLocation(
   id: string,
   patch: UpdateLocationInput,
 ): Promise<LocationRecord | null> {
-  const existing = await (db as any).cnLocation.findFirst({
+  const existing = await db.cnLocation.findFirst({
     where: { id, orgId },
     select: { id: true },
   });
@@ -237,7 +245,7 @@ export async function updateLocation(
   }
   if (patch.status !== undefined) data.status = patch.status;
 
-  const row = await (db as any).cnLocation.update({
+  const row = await db.cnLocation.update({
     where: { id },
     data,
     include: {
@@ -253,7 +261,7 @@ export async function deleteLocation(
   id: string,
   updatedBy: string,
 ): Promise<boolean> {
-  const res = await (db as any).cnLocation.updateMany({
+  const res = await db.cnLocation.updateMany({
     where: { id, orgId },
     data: { status: "inactive", updatedBy },
   });

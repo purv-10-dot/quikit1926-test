@@ -1,3 +1,4 @@
+import { toErrorMessage, getErrorCode } from "@/lib/api/errors";
 import { NextRequest, NextResponse } from "next/server";
 import { requireMastersAction } from "@/lib/auth/requireMastersAction";
 import { hasMatrixAction } from "@/lib/auth/context";
@@ -81,10 +82,10 @@ export async function POST(req: NextRequest) {
       status: body.status ?? "active",
     });
     return NextResponse.json(record, { status: 201 });
-  } catch (err: any) {
+  } catch (err: unknown) {
     console.error("[terms.create] failed:", err);
     return NextResponse.json(
-      { error: err?.message ?? "Failed to create T&C template" },
+      { error: toErrorMessage(err, "Failed to create T&C template") },
       { status: 500 },
     );
   }

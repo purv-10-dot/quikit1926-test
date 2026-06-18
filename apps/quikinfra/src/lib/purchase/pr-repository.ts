@@ -13,7 +13,9 @@
  * app keeps working until `npx prisma generate` / the ALTER TABLE runs.
  */
 
+import { toErrorMessage, getErrorCode , getErrorMeta} from "@/lib/api/errors";
 import { db } from "@/lib/db";
+import { Prisma } from "@quikit/database";
 
 // ─── Types ──────────────────────────────────────────────────────────
 
@@ -93,7 +95,7 @@ function warnOnceMissing(field: string) {
     `[pr-repository] Prisma field \`${field}\` missing — run \`npx prisma generate\` and the matching ALTER TABLE. Saving other fields only.`,
   );
 }
-function stripFieldDeep(obj: any, field: string): any {
+function stripFieldDeep(obj: unknown, field: string): unknown {
   if (obj === null || obj === undefined) return obj;
   if (Array.isArray(obj)) return obj.map((x) => stripFieldDeep(x, field));
   // Only recurse into PLAIN objects. Dates, Decimals, Buffers and every
@@ -110,26 +112,26 @@ function stripFieldDeep(obj: any, field: string): any {
   }
   return obj;
 }
-async function withSchemaDriftRetry<T>(
-  buildPayload: () => Record<string, unknown>,
-  run: (payload: any) => Promise<T>,
+async function withSchemaDriftRetry<T, P extends Record<string, unknown>>(
+  buildPayload: () => P,
+  run: (payload: P) => Promise<T>,
 ): Promise<T> {
   let payload = buildPayload();
   for (let i = 0; i < 10; i++) {
     try {
       return await run(payload);
-    } catch (err: any) {
-      const msg = String(err?.message ?? "");
+    } catch (err: unknown) {
+      const msg = toErrorMessage(err, "");
       let bad: string | null = null;
       if (msg.includes("Unknown argument")) bad = extractUnknownArgument(msg);
-      else if (err?.code === "P2022") bad = String(err?.meta?.column ?? "") || null;
+      else if (getErrorCode(err) === "P2022") bad = String(getErrorMeta(err)?.column ?? "") || null;
       if (!bad) throw err;
       // P2022 returns `table.column`; strip the prefix so the
       // STRIPPABLE_* sets (bare field names) can match.
       const bareBad = bad.includes(".") ? bad.split(".").pop()! : bad;
       if (!STRIPPABLE_PR_FIELDS.has(bareBad) && !STRIPPABLE_LINE_FIELDS.has(bareBad)) throw err;
       warnOnceMissing(bareBad);
-      payload = stripFieldDeep(payload, bareBad);
+      payload = stripFieldDeep(payload, bareBad) as P;
     }
   }
   return await run(payload);
@@ -143,12 +145,70 @@ async function withSchemaDriftRetry<T>(
  * live in Prisma only with cuid ids — demo-store's resolveItem can't
  * find them, so enrichPR needs this Prisma-first pathway.
  */
-async function loadPrLineLookups(rows: any[], orgId: string): Promise<{
-  itemById: Map<string, any>;
-  uomById: Map<string, any>;
-  projectById: Map<string, any>;
-  workCategoryById: Map<string, any>;
-  locationById: Map<string, any>;
+/** A money/quantity value as it arrives from Prisma (Decimal) or raw SQL. */
+type Numericish = Prisma.Decimal | number | string | null | undefined;
+
+interface ItemLookup {
+  code?: string | null;
+  name?: string | null;
+  standardRate?: Numericish;
+}
+interface UomLookup {
+  code?: string | null;
+  name?: string | null;
+}
+interface ProjectLookup {
+  code?: string | null;
+  name?: string | null;
+}
+interface WorkCategoryLookup {
+  name?: string | null;
+}
+interface LocationLookup {
+  name?: string | null;
+}
+interface PrLineRow {
+  id: string;
+  itemId: string;
+  uomId: string;
+  quantity?: Numericish;
+  estimatedRate?: Numericish;
+  estimatedAmount?: Numericish;
+  specification?: string | null;
+  priority?: string | null;
+  currentStock?: Numericish;
+  stockCheckStatus?: string | null;
+  remarks?: string | null;
+}
+interface PrRow {
+  id: string;
+  orgId: string;
+  prNumber: string;
+  projectId?: string | null;
+  workCategoryId?: string | null;
+  deliveryLocationId?: string | null;
+  lines?: PrLineRow[] | null;
+  requestDate?: Date | null;
+  requiredDate?: Date | null;
+  purpose?: string | null;
+  isUrgent?: boolean | null;
+  urgencyJustification?: string | null;
+  stockCheckSummary?: string | null;
+  estimatedTotal?: Numericish;
+  status: string;
+  approvalId?: string | null;
+  createdAt?: Date | null;
+  updatedAt?: Date | null;
+  createdBy?: string | null;
+  updatedBy?: string | null;
+}
+
+async function loadPrLineLookups(rows: PrRow[], orgId: string): Promise<{
+  itemById: Map<string, ItemLookup>;
+  uomById: Map<string, UomLookup>;
+  projectById: Map<string, ProjectLookup>;
+  workCategoryById: Map<string, WorkCategoryLookup>;
+  locationById: Map<string, LocationLookup>;
 }> {
   const itemIds = new Set<string>();
   const uomIds = new Set<string>();
@@ -166,13 +226,13 @@ async function loadPrLineLookups(rows: any[], orgId: string): Promise<{
   }
   const [items, uoms, projects, workCategories, locations] = await Promise.all([
     itemIds.size
-      ? (db as any).cnItem.findMany({
+      ? db.cnItem.findMany({
           where: { orgId, id: { in: Array.from(itemIds) } },
           select: { id: true, code: true, name: true, standardRate: true },
         })
       : Promise.resolve([]),
     uomIds.size
-      ? (db as any).cnUOM.findMany({
+      ? db.cnUOM.findMany({
           where: { orgId, id: { in: Array.from(uomIds) } },
           select: { id: true, code: true, name: true },
         })
@@ -181,41 +241,41 @@ async function loadPrLineLookups(rows: any[], orgId: string): Promise<{
     // every DB-only project, leaving projectName/projectCode blank in
     // the PR list. Batch-fetch them here so enrichPR can join.
     projectIds.size
-      ? (db as any).cnProject.findMany({
+      ? db.cnProject.findMany({
           where: { orgId, id: { in: Array.from(projectIds) } },
           select: { id: true, code: true, name: true },
         })
       : Promise.resolve([]),
     workCategoryIds.size
-      ? (db as any).cnWorkCategory.findMany({
+      ? db.cnWorkCategory.findMany({
           where: { orgId, id: { in: Array.from(workCategoryIds) } },
           select: { id: true, name: true },
         })
       : Promise.resolve([]),
     locationIds.size
-      ? (db as any).cnLocation.findMany({
+      ? db.cnLocation.findMany({
           where: { orgId, id: { in: Array.from(locationIds) } },
           select: { id: true, name: true },
         })
       : Promise.resolve([]),
   ]);
   return {
-    itemById: new Map<string, any>(items.map((i: any) => [i.id, i])),
-    uomById: new Map<string, any>(uoms.map((u: any) => [u.id, u])),
-    projectById: new Map<string, any>(projects.map((p: any) => [p.id, p])),
-    workCategoryById: new Map<string, any>(workCategories.map((w: any) => [w.id, w])),
-    locationById: new Map<string, any>(locations.map((l: any) => [l.id, l])),
+    itemById: new Map<string, ItemLookup>(items.map((i) => [i.id, i])),
+    uomById: new Map<string, UomLookup>(uoms.map((u) => [u.id, u])),
+    projectById: new Map<string, ProjectLookup>(projects.map((p) => [p.id, p])),
+    workCategoryById: new Map<string, WorkCategoryLookup>(workCategories.map((w) => [w.id, w])),
+    locationById: new Map<string, LocationLookup>(locations.map((l) => [l.id, l])),
   };
 }
 
 function enrichPR(
-  row: any,
-  itemById: Map<string, any> = new Map(),
-  uomById: Map<string, any> = new Map(),
-  projectById: Map<string, any> = new Map(),
-  workCategoryById: Map<string, any> = new Map(),
-  locationById: Map<string, any> = new Map(),
-): any {
+  row: PrRow,
+  itemById: Map<string, ItemLookup> = new Map(),
+  uomById: Map<string, UomLookup> = new Map(),
+  projectById: Map<string, ProjectLookup> = new Map(),
+  workCategoryById: Map<string, WorkCategoryLookup> = new Map(),
+  locationById: Map<string, LocationLookup> = new Map(),
+) {
   const project = row.projectId
     ? projectById.get(row.projectId) ?? null
     : null;
@@ -226,7 +286,7 @@ function enrichPR(
     ? locationById.get(row.deliveryLocationId) ?? null
     : null;
 
-  const lines = (row.lines ?? []).map((l: any) => {
+  const lines = (row.lines ?? []).map((l) => {
     const item = itemById.get(l.itemId) ?? null;
     const uom = uomById.get(l.uomId) ?? null;
 
@@ -293,7 +353,7 @@ function enrichPR(
       const stored = parseFloat(String(row.estimatedTotal ?? "")) || 0;
       if (stored > 0) return String(stored);
       const derived = lines.reduce(
-        (sum: number, l: any) => sum + (parseFloat(l.estimatedAmount) || 0),
+        (sum, l) => sum + (parseFloat(l.estimatedAmount) || 0),
         0,
       );
       return derived > 0 ? String(derived) : "0";
@@ -308,6 +368,9 @@ function enrichPR(
     lines,
   };
 }
+
+/** The enriched, client-facing PR shape returned by every public read/write. */
+export type EnrichedPR = ReturnType<typeof enrichPR>;
 
 // ─── Doc-number generator ───────────────────────────────────────────
 //
@@ -334,7 +397,7 @@ export async function nextPrNumber(
   fy: string = "26",
 ): Promise<string> {
   const prefix = `PR-${projectCode}-${fy}-`;
-  const rows: Array<{ prNumber: string }> = await (db as any).cnPurchaseRequisition.findMany({
+  const rows: Array<{ prNumber: string }> = await db.cnPurchaseRequisition.findMany({
     where: {
       orgId,
       prNumber: { startsWith: prefix },
@@ -358,16 +421,16 @@ export async function withPrNumberRetry<T>(
   task: (prNumber: string) => Promise<T>,
   maxAttempts: number = 5,
 ): Promise<T> {
-  let lastErr: any = null;
+  let lastErr: unknown = null;
   for (let i = 0; i < maxAttempts; i++) {
     const prNumber = await generate();
     try {
       return await task(prNumber);
-    } catch (err: any) {
+    } catch (err: unknown) {
       const isPrNumberConflict =
-        err?.code === "P2002" &&
-        Array.isArray(err?.meta?.target) &&
-        err.meta.target.includes("prNumber");
+        getErrorCode(err) === "P2002" &&
+        Array.isArray(getErrorMeta(err)?.target) &&
+        (getErrorMeta(err)?.target as unknown[]).includes("prNumber");
       if (!isPrNumberConflict) throw err;
       lastErr = err;
     }
@@ -384,7 +447,7 @@ export async function listPRs(opts: ListPRsOptions): Promise<any[]> {
   if (projectId) where.projectId = projectId;
   if (status && status !== "all") where.status = status;
 
-  const rows = await (db as any).cnPurchaseRequisition.findMany({
+  const rows = await db.cnPurchaseRequisition.findMany({
     where,
     include: { lines: true },
     orderBy: { createdAt: "desc" },
@@ -392,12 +455,12 @@ export async function listPRs(opts: ListPRsOptions): Promise<any[]> {
     ...(typeof opts.skip === "number" ? { skip: opts.skip } : {}),
   });
   const { itemById, uomById, projectById, workCategoryById, locationById } = await loadPrLineLookups(rows, orgId);
-  const enriched = rows.map((r: any) => enrichPR(r, itemById, uomById, projectById, workCategoryById, locationById));
+  const enriched = rows.map((r) => enrichPR(r, itemById, uomById, projectById, workCategoryById, locationById));
 
   if (!search) return enriched;
   const q = search.toLowerCase();
   return enriched.filter(
-    (pr: any) =>
+    (pr) =>
       (pr.prNumber ?? "").toLowerCase().includes(q) ||
       (pr.projectName ?? "").toLowerCase().includes(q) ||
       (pr.purpose ?? "").toLowerCase().includes(q),
@@ -405,7 +468,7 @@ export async function listPRs(opts: ListPRsOptions): Promise<any[]> {
 }
 
 export async function findPRById(orgId: string, id: string): Promise<any | null> {
-  const row = await (db as any).cnPurchaseRequisition.findFirst({
+  const row = await db.cnPurchaseRequisition.findFirst({
     where: { id, orgId },
     include: { lines: true },
   });
@@ -424,10 +487,12 @@ export async function findPRById(orgId: string, id: string): Promise<any | null>
  * without changing call sites.
  */
 async function ensureProjectExists(projectId: string, orgId: string, _createdBy: string): Promise<void> {
-  await (db as any).cnProject.findFirst({ where: { id: projectId, orgId } }).catch(() => null);
+  await db.cnProject.findFirst({ where: { id: projectId, orgId } }).catch(() => null);
 }
 
-export async function createPR(input: CreatePRInput): Promise<any> {
+export async function createPR(
+  input: CreatePRInput,
+): Promise<ReturnType<typeof enrichPR>> {
   await ensureProjectExists(input.projectId, input.orgId, input.createdBy);
 
   const row = await withSchemaDriftRetry(
@@ -473,7 +538,7 @@ export async function createPR(input: CreatePRInput): Promise<any> {
       },
     }),
     (payload) =>
-      (db as any).cnPurchaseRequisition.create({
+      db.cnPurchaseRequisition.create({
         data: payload,
         include: { lines: true },
       }),
@@ -497,13 +562,13 @@ export async function updatePR(
         return data;
       },
       (payload) =>
-        (db as any).cnPurchaseRequisition.update({
+        db.cnPurchaseRequisition.update({
           where: { id },
           data: payload,
         }),
     );
-  } catch (err: any) {
-    if (err?.code === "P2025") return null;
+  } catch (err: unknown) {
+    if (getErrorCode(err) === "P2025") return null;
     throw err;
   }
   return findPRById(orgId, id);
@@ -511,7 +576,7 @@ export async function updatePR(
 
 export async function deletePR(orgId: string, id: string): Promise<boolean> {
   try {
-    await (db as any).cnPurchaseRequisition.deleteMany({
+    await db.cnPurchaseRequisition.deleteMany({
       where: { id, orgId },
     });
     return true;

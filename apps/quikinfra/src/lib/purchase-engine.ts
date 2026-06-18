@@ -26,16 +26,60 @@
 // `item` is expected to carry `hsnCode` and (optionally) `gstRate` —
 // the calling route should merge `cnItem` master data into each line
 // before calling. `company` is an optional fallback for `project.state`.
+interface GstItem {
+  hsnCode?: string | null;
+  igstRate?: number | string | null;
+  gstRate?: number | string | null;
+  isRcm?: boolean | string | null;
+}
+interface GstVendor {
+  state?: string | null;
+  gstType?: string | null;
+  gstRegistrationType?: string | null;
+}
+interface GstParty {
+  state?: string | null;
+}
+interface MRLineInput {
+  itemId?: string | null;
+  itemCode?: string | null;
+  itemName?: string | null;
+  uomId?: string | null;
+  uomCode?: string | null;
+  qtyRequired?: number | string | null;
+  quantity?: number | string | null;
+  estimatedRate?: number | string | null;
+  woRef?: string | null;
+  boqItemRef?: string | null;
+  priority?: string | null;
+  specification?: string | null;
+}
+export interface POLineInput extends GstItem {
+  lineId?: string | null;
+  indentLineId?: string | null;
+  itemId?: string | null;
+  itemCode?: string | null;
+  itemName?: string | null;
+  uomCode?: string | null;
+  uomId?: string | null;
+  poQty?: number | string | null;
+  qtyRequested?: number | string | null;
+  quantity?: number | string | null;
+  unitRate?: number | string | null;
+  estimatedRate?: number | string | null;
+  deliveryLocationId?: string | null;
+}
+
 export function computeGST(
-  item: any,
-  vendor: any,
-  project: any,
-  company: any = null,
+  item: GstItem,
+  vendor: GstVendor,
+  project: GstParty | null,
+  company: GstParty | null = null,
 ) {
   const hsnCode = item?.hsnCode ?? "";
-  const igstRate = parseFloat(
+  const igstRate = parseFloat(String(
     item?.igstRate ?? item?.gstRate ?? "0",
-  );
+  ));
   const cgstRate = igstRate / 2;
   const sgstRate = igstRate / 2;
 
@@ -63,9 +107,9 @@ export function computeGST(
 
 // ─── MR Line Builder ────────────────────────────────────────────────
 
-export function buildMRLines(lines: any[], _projectId: string) {
-  return lines.map((line: any, i: number) => {
-    const qtyRequired = parseFloat(line.qtyRequired ?? line.quantity ?? "0");
+export function buildMRLines(lines: MRLineInput[], _projectId: string) {
+  return lines.map((line, i) => {
+    const qtyRequired = parseFloat(String(line.qtyRequired ?? line.quantity ?? "0"));
 
     // Stock check is no longer derived from demo-store. The repository
     // re-hydrates `cnItem.currentStock` on read, and the requisitions
@@ -86,7 +130,7 @@ export function buildMRLines(lines: any[], _projectId: string) {
 
     return {
       lineId: `mrl-${Date.now()}-${i}`,
-      itemId: line.itemId,
+      itemId: line.itemId ?? "",
       itemCode: line.itemCode ?? "",
       itemName: line.itemName ?? "",
       itemDescription: line.itemName ?? "",
@@ -116,16 +160,16 @@ export function buildMRLines(lines: any[], _projectId: string) {
 // optional — used by `computeGST` as a fallback for `project.state`
 // when the project row has no state set.
 export function buildPOLines(
-  indentLines: any[],
-  vendor: any,
-  project: any,
-  company: any = null,
+  indentLines: POLineInput[],
+  vendor: GstVendor,
+  project: GstParty | null,
+  company: GstParty | null = null,
 ) {
-  return indentLines.map((line: any, i: number) => {
-    const qty = parseFloat(
+  return indentLines.map((line, i) => {
+    const qty = parseFloat(String(
       line.poQty ?? line.qtyRequested ?? line.quantity ?? "0",
-    );
-    const rate = parseFloat(line.unitRate ?? line.estimatedRate ?? "0");
+    ));
+    const rate = parseFloat(String(line.unitRate ?? line.estimatedRate ?? "0"));
     const gst = computeGST(line, vendor, project, company);
     const lineValueExGST = qty * rate;
     const igstAmount = (lineValueExGST * gst.igstRate) / 100;

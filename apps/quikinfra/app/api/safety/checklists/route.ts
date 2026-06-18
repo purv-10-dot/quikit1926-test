@@ -18,7 +18,6 @@ export const GET = withOrgAuth(async ({ orgId }, req) => {
   const includeDeleted = req.nextUrl.searchParams.get("includeDeleted") === "true";
   const list = await db.cnSafetyChecklist.findMany({
     where: { orgId, deletedAt: includeDeleted ? { not: null } : null },
-    include: { project: { select: { id: true, name: true, code: true } } },
     orderBy: { checklistDate: "desc" },
   });
   return NextResponse.json({ success: true, data: list });

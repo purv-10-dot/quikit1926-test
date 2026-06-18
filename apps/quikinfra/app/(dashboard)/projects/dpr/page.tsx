@@ -51,6 +51,17 @@ import { DPRDrawer } from "./new/DPRDrawer";
 
 const MENU_KEY = "pm.dpr";
 
+interface DprRow {
+  id: string;
+  status?: string;
+  workHalted?: boolean;
+  dprNumber?: string;
+  projectName?: string;
+  reportDate?: string;
+  canActOnCurrentStep?: boolean;
+  workItemCount?: number;
+}
+
 const STATUS_COLORS: Record<string, string> = {
   draft:       "bg-slate-50 text-slate-600 border-slate-200",
   submitted:   "bg-amber-50 text-amber-700 border-amber-200",
@@ -71,7 +82,7 @@ export default function DPRPage() {
     const now = new Date();
     return new Date(now.getFullYear(), now.getMonth(), 1);
   });
-  const [deleteTarget, setDeleteTarget] = useState<any | null>(null);
+  const [deleteTarget, setDeleteTarget] = useState<DprRow | null>(null);
   const [deleting, setDeleting] = useState(false);
   // Right-side "Add" drawer — replaces full-page navigation to
   // /projects/dpr/new for the New DPR action. Edit still uses the
@@ -81,7 +92,7 @@ export default function DPRPage() {
   // local state so the dialog can render its label/number; the action
   // lifecycle (open/close/run/error) is owned by useWorkflowConfirm so
   // the surface mirrors Work Orders & Material Estimation 1:1.
-  const [workflowRow, setWorkflowRow] = useState<any | null>(null);
+  const [workflowRow, setWorkflowRow] = useState<DprRow | null>(null);
 
   const { data: result, isLoading } = useDPRs({ search });
   const deleteMutation = useDeleteDPR();
@@ -95,10 +106,10 @@ export default function DPRPage() {
   // Approve/Reject visibility is decided PER ROW by the workflow's
   // current step (server-computed in the list API as
   // `row.canActOnCurrentStep`).
-  const canApproveRow = (row: any): boolean =>
+  const canApproveRow = (row: DprRow): boolean =>
     isSuper || row?.canActOnCurrentStep === true;
 
-  const rows: any[] = useMemo(() => result?.data ?? [], [result]);
+  const rows: DprRow[] = useMemo(() => (result?.data ?? []) as unknown as DprRow[], [result]);
 
   const { totalDPRs, approved, pending, halted } = useMemo(() => {
     const approved = rows.filter((r) => r.status === "approved").length;
@@ -120,7 +131,7 @@ export default function DPRPage() {
 
   const openWorkflow = (
     kind: "submit" | "approve" | "reject",
-    row: any,
+    row: DprRow,
   ) => {
     setWorkflowRow(row);
     workflow.open(kind);
@@ -412,17 +423,17 @@ function DPRCalendar({
   onOpen,
   onAddOnDate,
 }: {
-  rows: any[];
+  rows: DprRow[];
   isLoading: boolean;
   month: Date;
   onMonthChange: (d: Date) => void;
-  onOpen: (row: any) => void;
+  onOpen: (row: DprRow) => void;
   onAddOnDate: (date: Date) => void;
 }) {
   // Bucket DPR rows by their reportDate (local YYYY-MM-DD). Cheap to
   // recompute on every render — usually < 200 rows in view at once.
   const byDate = useMemo(() => {
-    const map = new Map<string, any[]>();
+    const map = new Map<string, DprRow[]>();
     for (const r of rows) {
       if (!r.reportDate) continue;
       const key = ymd(new Date(r.reportDate));
@@ -729,7 +740,7 @@ function DPRRow({
   onApprove,
   onReject,
 }: {
-  row: any;
+  row: DprRow;
   canEdit: boolean;
   canDelete: boolean;
   canSubmit: boolean;

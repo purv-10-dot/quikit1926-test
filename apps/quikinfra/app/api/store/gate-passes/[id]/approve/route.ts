@@ -36,7 +36,7 @@ export async function POST(
     return envelopeErr("FORBIDDEN", `Action "edit" not allowed for store.gate_pass`, 403);
   }
 
-  let body: any = {};
+  let body: { action?: string; comments?: string } = {};
   try {
     body = await req.json();
   } catch {
@@ -98,7 +98,7 @@ export async function POST(
 
   if (gpStatusUpdate) {
     await patchGatePassStatus(ctx.orgId, gatePass.id, {
-      ...(gpStatusUpdate as any),
+      ...(gpStatusUpdate as Parameters<typeof patchGatePassStatus>[2]),
       updatedBy: ctx.userId,
     });
   }

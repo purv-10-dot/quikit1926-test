@@ -23,7 +23,6 @@ import { withOrgAuthForModule } from "@/lib/api/withOrgAuth";
  */
 
 type PrismaModelName =
-  | "cnBank"
   | "cnDepartment"
   | "cnWorkCategory"
   | "cnCostCenter"

@@ -265,7 +265,7 @@ function RegisterAssetDrawer({
   const categories = (catData?.data ?? []).filter((c) => c.active);
 
   const create = useMutation({
-    mutationFn: (body: any) => jsend(`/api/store/asset-mgmt/assets`, "POST", body),
+    mutationFn: (body: Record<string, unknown>) => jsend(`/api/store/asset-mgmt/assets`, "POST", body),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["asset-mgmt", "assets"] });
       onClose();
@@ -489,7 +489,7 @@ function AddCategoryDrawer({
   }, [open]);
 
   const create = useMutation({
-    mutationFn: (body: any) => jsend(`/api/store/asset-mgmt/categories`, "POST", body),
+    mutationFn: (body: Record<string, unknown>) => jsend(`/api/store/asset-mgmt/categories`, "POST", body),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["asset-mgmt", "categories"] });
       onClose();
@@ -683,7 +683,7 @@ function IssueAssetDrawer({
   const assets = (assetData?.data ?? []).filter((a) => !issuedSet.has(a.id));
 
   const create = useMutation({
-    mutationFn: (body: any) => jsend(`/api/store/asset-mgmt/issuances`, "POST", body),
+    mutationFn: (body: Record<string, unknown>) => jsend(`/api/store/asset-mgmt/issuances`, "POST", body),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["asset-mgmt", "issuances"] });
       onClose();

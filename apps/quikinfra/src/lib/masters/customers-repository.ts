@@ -4,6 +4,7 @@
  */
 
 import { db } from "@/lib/db";
+import { Prisma } from "@quikit/database";
 
 export interface CustomerRecord {
   id: string;
@@ -36,11 +37,10 @@ export interface CustomerRecord {
 
 function toStr(v: unknown): string {
   if (v === null || v === undefined) return "";
-  if (typeof (v as any)?.toString === "function") return (v as any).toString();
   return String(v);
 }
 
-function toRecord(row: any): CustomerRecord {
+function toRecord(row: Prisma.CnCustomerGetPayload<Record<string, never>>): CustomerRecord {
   return {
     id: row.id,
     orgId: row.orgId,
@@ -117,7 +117,7 @@ function buildCustomersWhere(
 }
 
 export async function listCustomers(opts: ListOptions): Promise<CustomerRecord[]> {
-  const rows = await (db as any).cnCustomer.findMany({
+  const rows = await db.cnCustomer.findMany({
     where: buildCustomersWhere(opts),
     orderBy: { createdAt: "desc" },
     ...(typeof opts.take === "number" ? { take: opts.take } : {}),
@@ -129,11 +129,11 @@ export async function listCustomers(opts: ListOptions): Promise<CustomerRecord[]
 export async function countCustomers(
   opts: Pick<ListOptions, "orgId" | "search">,
 ): Promise<number> {
-  return (db as any).cnCustomer.count({ where: buildCustomersWhere(opts) });
+  return db.cnCustomer.count({ where: buildCustomersWhere(opts) });
 }
 
 export async function findCustomerById(orgId: string, id: string): Promise<CustomerRecord | null> {
-  const row = await (db as any).cnCustomer.findFirst({ where: { id, orgId } });
+  const row = await db.cnCustomer.findFirst({ where: { id, orgId } });
   return row ? toRecord(row) : null;
 }
 
@@ -165,12 +165,12 @@ export interface CreateCustomerInput {
 export async function createCustomer(input: CreateCustomerInput): Promise<CustomerRecord> {
   let code = (input.code ?? "").trim();
   if (!code) {
-    const count = await (db as any).cnCustomer.count({
+    const count = await db.cnCustomer.count({
       where: { orgId: input.orgId },
     });
     code = autoCode(count + 1);
   }
-  const row = await (db as any).cnCustomer.create({
+  const row = await db.cnCustomer.create({
     data: {
       orgId: input.orgId,
       code,
@@ -210,7 +210,7 @@ export async function updateCustomer(
   id: string,
   patch: UpdateCustomerInput,
 ): Promise<CustomerRecord | null> {
-  const existing = await (db as any).cnCustomer.findFirst({
+  const existing = await db.cnCustomer.findFirst({
     where: { id, orgId },
     select: { id: true },
   });
@@ -240,7 +240,7 @@ export async function updateCustomer(
   if (patch.creditLimit !== undefined) data.creditLimit = numOrNull(patch.creditLimit);
   if (patch.status !== undefined) data.status = patch.status;
 
-  const row = await (db as any).cnCustomer.update({ where: { id }, data });
+  const row = await db.cnCustomer.update({ where: { id }, data });
   return toRecord(row);
 }
 
@@ -249,7 +249,7 @@ export async function deleteCustomer(
   id: string,
   updatedBy: string,
 ): Promise<boolean> {
-  const res = await (db as any).cnCustomer.updateMany({
+  const res = await db.cnCustomer.updateMany({
     where: { id, orgId },
     data: { status: "inactive", updatedBy },
   });

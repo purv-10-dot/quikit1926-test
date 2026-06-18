@@ -72,7 +72,7 @@ export function BOQCascadingPicker({
       map.set(key, list);
     }
     map.forEach((list) => {
-      list.sort((a: any, b: any) => (a.sort_order ?? 0) - (b.sort_order ?? 0));
+      list.sort((a, b) => ((a as { sort_order?: number }).sort_order ?? 0) - ((b as { sort_order?: number }).sort_order ?? 0));
     });
     return map;
   }, [items]);

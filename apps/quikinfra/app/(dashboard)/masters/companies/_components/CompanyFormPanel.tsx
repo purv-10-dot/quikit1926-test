@@ -11,6 +11,7 @@ import {
   FormRow,
   FormSection,
 } from "@quikit/ui";
+import { InactiveStatusNotice } from "@/components/FormDrawer";
 import type { CompanyCreateInput } from "@/lib/schemas/masters";
 
 export interface CompanyInitial extends Partial<CompanyCreateInput> {
@@ -213,6 +214,7 @@ export function CompanyFormPanel({ open, onClose, initial, onSaved }: Props) {
               onChange={(e) => update("status", e.target.value as "active" | "inactive")}
               options={STATUS_OPTIONS}
             />
+            {(form.status ?? "active") === "inactive" && <InactiveStatusNotice entityName="Company" />}
           </Field>
         </FormSection>
       </div>

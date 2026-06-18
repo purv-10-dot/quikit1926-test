@@ -80,7 +80,7 @@ export async function GET() {
   const nextMonth = new Date(monthStart);
   nextMonth.setMonth(monthStart.getMonth() + 1);
 
-  const prisma = db as any;
+  const prisma = db;
 
   const [
     activeProjects,
@@ -208,12 +208,12 @@ export async function GET() {
   // Low-stock roll-up: sum per-item quantity across the user's visible
   // projects, then compare against the item master's `minStockLevel`.
   const totalsByItem = new Map<string, number>();
-  for (const r of balances as Array<{ itemId: string; quantity: any }>) {
+  for (const r of balances) {
     const q = Number(r.quantity ?? 0);
     totalsByItem.set(r.itemId, (totalsByItem.get(r.itemId) ?? 0) + q);
   }
   let lowStockItems = 0;
-  for (const it of items as Array<{ id: string; minStockLevel: any }>) {
+  for (const it of items) {
     const min = Number(it.minStockLevel ?? 0);
     if (min <= 0) continue;
     if ((totalsByItem.get(it.id) ?? 0) < min) lowStockItems++;
@@ -230,7 +230,7 @@ export async function GET() {
     pendingDPRApproval,
   };
 
-  const prs = (recentPRsRaw as any[]).map((pr) => ({
+  const prs = recentPRsRaw.map((pr) => ({
     id: pr.id,
     number: pr.prNumber,
     project: pr.project?.name ?? "",
@@ -239,7 +239,7 @@ export async function GET() {
     status: pr.status,
   }));
 
-  const pos = (recentPOsRaw as any[]).map((po) => ({
+  const pos = recentPOsRaw.map((po) => ({
     id: po.id,
     number: po.poNumber,
     vendor: po.vendor?.name ?? "",
@@ -253,7 +253,7 @@ export async function GET() {
     status: "active" as const,
     ...(scoped ? { id: { in: projectIds! } } : {}),
   };
-  const projectsTop = await (db as any).cnProject.findMany({
+  const projectsTop = await db.cnProject.findMany({
     where: projectWhere,
     orderBy: { updatedAt: "desc" },
     take: 3,
@@ -263,7 +263,7 @@ export async function GET() {
   let projectProgress: ProjectProgressRow[] = [];
   if (projectsTop.length > 0) {
     const ids = projectsTop.map((p: { id: string }) => p.id);
-    const aggs = await (db as any).cnBOQItem.groupBy({
+    const aggs = await db.cnBOQItem.groupBy({
       by: ["projectId"],
       where: {
         ...tenantScope,
@@ -275,7 +275,7 @@ export async function GET() {
       _sum: { contractAmount: true, executedAmount: true },
     });
     const aggByProject = new Map(
-      (aggs as any[]).map((a) => [
+      aggs.map((a) => [
         a.projectId,
         {
           avgProg: Number(a._avg?.progressPercent ?? 0),

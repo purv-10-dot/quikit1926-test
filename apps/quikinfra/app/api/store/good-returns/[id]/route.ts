@@ -10,6 +10,11 @@ import {
   findGoodReturnById,
   updateGoodReturn,
 } from "@/lib/store/good-return-repository";
+import {
+  APPROVAL_INSTANCE_INCLUDE,
+  buildApprovalDto,
+  type ApprovalDto,
+} from "@/lib/approvals/approval-dto";
 
 /**
  * Single Good Return record — backed by Postgres via the good-return
@@ -39,55 +44,24 @@ export async function GET(
     }
   }
 
-  let approval: any = null;
+  let approval: ApprovalDto | null = null;
   if (row.approvalId) {
-    const instance = await (db as any).cnApprovalInstance.findFirst({
+    const instance = await db.cnApprovalInstance.findFirst({
       where: { id: row.approvalId, orgId: ctx.orgId },
-      include: {
-        history: { orderBy: { actionAt: "asc" } },
-        workflow: { include: { steps: { orderBy: { stepOrder: "asc" } } } },
-      },
+      include: APPROVAL_INSTANCE_INCLUDE,
     });
     if (instance) {
       const userIds = Array.from(
         new Set<string>([
           instance.requestedById,
-          ...instance.history.map((h: any) => h.actionById),
+          ...instance.history.map((h) => h.actionById),
           ...(instance.workflow.steps
-            .map((s: any) => s.approverUserId)
+            .map((s) => s.approverUserId)
             .filter(Boolean) as string[]),
         ]),
       );
       const nameById = await resolveUserNames(userIds);
-      approval = {
-        id: instance.id,
-        status: instance.status,
-        currentStepOrder: instance.currentStepOrder,
-        completedAt: instance.completedAt?.toISOString?.() ?? null,
-        requestedAt: instance.requestedAt.toISOString(),
-        requestedById: instance.requestedById,
-        requestedByName: nameById.get(instance.requestedById) ?? "User",
-        workflow: {
-          id: instance.workflow.id,
-          name: instance.workflow.name,
-          steps: instance.workflow.steps.map((s: any) => ({
-            stepOrder: s.stepOrder,
-            approverRoleId: s.approverRoleId,
-            approverUserId: s.approverUserId,
-            approverUserName: s.approverUserId
-              ? (nameById.get(s.approverUserId) ?? null)
-              : null,
-          })),
-        },
-        history: instance.history.map((h: any) => ({
-          stepOrder: h.stepOrder,
-          action: h.action,
-          actionById: h.actionById,
-          actionByName: nameById.get(h.actionById) ?? "User",
-          actionAt: h.actionAt.toISOString(),
-          comments: h.comments,
-        })),
-      };
+      approval = buildApprovalDto(instance, nameById);
     }
   }
 
@@ -96,7 +70,7 @@ export async function GET(
   // the raw cuid. Same pattern PR / PO / RFQ / Gate Pass detail routes
   // use. The cuid regex guard skips any non-cuid values stored as plain
   // strings on legacy rows.
-  const auditIds = [row.createdBy, row.updatedBy, (row as any).approvedBy]
+  const auditIds = [row.createdBy, row.updatedBy, row.approvedBy]
     .filter(
       (v): v is string =>
         typeof v === "string" && v.length > 0 && /^c[a-z0-9]{20,}$/i.test(v),
@@ -110,8 +84,8 @@ export async function GET(
     approval,
     createdByName: auditNames.get(row.createdBy) ?? row.createdBy,
     updatedByName: auditNames.get(row.updatedBy) ?? row.updatedBy,
-    approvedByName: (row as any).approvedBy
-      ? (auditNames.get((row as any).approvedBy) ?? (row as any).approvedBy)
+    approvedByName: row.approvedBy
+      ? (auditNames.get(row.approvedBy) ?? row.approvedBy)
       : null,
   });
 }

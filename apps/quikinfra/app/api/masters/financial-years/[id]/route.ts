@@ -1,3 +1,4 @@
+import { toErrorMessage, getErrorCode } from "@/lib/api/errors";
 import { NextRequest, NextResponse } from "next/server";
 import { requireMastersAction } from "@/lib/auth/requireMastersAction";
 import { getTenantContext } from "@/lib/auth/context";
@@ -38,14 +39,14 @@ async function handleUpdate(req: NextRequest, id: string) {
     });
     if (!next) return NextResponse.json({ error: "Financial year not found" }, { status: 404 });
     return NextResponse.json(next);
-  } catch (err: any) {
-    if (err?.code === "P2002") {
+  } catch (err: unknown) {
+    if (getErrorCode(err) === "P2002") {
       return NextResponse.json(
         { error: "A financial year with this label already exists" },
         { status: 409 },
       );
     }
-    if (err?.code === "P2003") {
+    if (getErrorCode(err) === "P2003") {
       return NextResponse.json(
         { error: "The selected company does not exist" },
         { status: 400 },
@@ -53,7 +54,7 @@ async function handleUpdate(req: NextRequest, id: string) {
     }
     console.error("[financial-years.update] failed:", err);
     return NextResponse.json(
-      { error: err?.message ?? "Failed to update financial year" },
+      { error: toErrorMessage(err, "Failed to update financial year") },
       { status: 500 },
     );
   }

@@ -10,6 +10,7 @@
  * just deep-link back to here).
  */
 
+import { toErrorMessage } from "@/lib/api/errors";
 import React, { useMemo, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { useQueryClient } from "@tanstack/react-query";
@@ -33,9 +34,16 @@ import {
 import { ApprovalActionBar } from "@/components/ApprovalActionBar";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { useGoodReturn } from "@/hooks/use-store";
-import { usePermissions } from "@/hooks/use-permissions";
+import { usePermissions, type MeResponse } from "@/hooks/use-permissions";
 import { USER_TYPE_CATALOG } from "@/lib/rbac/user-types";
 import { canActOnStep } from "@/lib/approvals/workflow-rbac";
+
+import type {
+  ApprovalStep,
+  ApprovalHistoryEntry,
+  ApprovalInfo,
+} from "@/lib/approvals/approval-info";
+import type { ReturnLine, GoodReturnDetail } from "@/lib/store/good-return-detail";
 
 const REASON_LABEL: Record<string, string> = {
   damaged: "Damaged",
@@ -52,12 +60,12 @@ function roleLabel(key: string | null | undefined): string {
   return USER_TYPE_CATALOG.find((t) => t.key === key)?.label ?? key;
 }
 
-function GRStatusChip({ gr }: { gr: any }) {
+function GRStatusChip({ gr }: { gr: GoodReturnDetail }) {
   const approval = gr?.approval;
   const status = String(gr?.status ?? "draft").toLowerCase();
   if (approval && approval.status === "pending_approval") {
     const step = approval.workflow?.steps?.find(
-      (s: any) => s.stepOrder === approval.currentStepOrder,
+      (s: ApprovalStep) => s.stepOrder === approval.currentStepOrder,
     );
     const approver = step
       ? step.approverUserName
@@ -94,20 +102,26 @@ function GRStatusChip({ gr }: { gr: any }) {
   return <StatusChip status={gr?.status ?? "draft"} />;
 }
 
-function priorActionByMe(me: any, gr: any): any | null {
+function priorActionByMe(
+  me: MeResponse | null | undefined,
+  gr: GoodReturnDetail | null | undefined,
+): ApprovalHistoryEntry | null {
   if (!me || !gr?.approval?.history) return null;
   return (
     [...gr.approval.history]
       .reverse()
-      .find((h: any) => h.actionById === me.userId) ?? null
+      .find((h) => h.actionById === me.userId) ?? null
   );
 }
 
-function canActOnCurrentStep(me: any, gr: any): boolean {
+function canActOnCurrentStep(
+  me: MeResponse | null | undefined,
+  gr: GoodReturnDetail | null | undefined,
+): boolean {
   if (!me || !gr?.approval) return false;
   if (gr.approval.status !== "pending_approval") return false;
   const step = gr.approval.workflow?.steps?.find(
-    (s: any) => s.stepOrder === gr.approval.currentStepOrder,
+    (s: ApprovalStep) => s.stepOrder === gr.approval?.currentStepOrder,
   );
   if (!step) return false;
   return canActOnStep(
@@ -127,22 +141,22 @@ function canActOnCurrentStep(me: any, gr: any): boolean {
   );
 }
 
-function fmtQty(v: any, unit?: string | null) {
+function fmtQty(v: unknown, unit?: string | null) {
   if (v === null || v === undefined || v === "") return "—";
   const n = Number(v);
   if (!Number.isFinite(n)) return "—";
   return `${n.toLocaleString("en-IN", { maximumFractionDigits: 4 })}${unit ? ` ${unit}` : ""}`;
 }
-function fmtInr(v: any) {
+function fmtInr(v: unknown) {
   if (v === null || v === undefined || v === "") return "—";
   const n = Number(v);
   if (!Number.isFinite(n)) return "—";
   return `₹ ${n.toLocaleString("en-IN", { maximumFractionDigits: 2 })}`;
 }
-function fmtDate(v: any): string {
+function fmtDate(v: unknown): string {
   if (!v) return "—";
   try {
-    const d = new Date(v);
+    const d = new Date(v as string | number | Date);
     if (Number.isNaN(d.getTime())) return String(v);
     return d.toLocaleDateString("en-IN", {
       day: "2-digit",
@@ -153,10 +167,10 @@ function fmtDate(v: any): string {
     return String(v);
   }
 }
-function fmtDateTime(v: any): string {
+function fmtDateTime(v: unknown): string {
   if (!v) return "—";
   try {
-    const d = new Date(v);
+    const d = new Date(v as string | number | Date);
     if (Number.isNaN(d.getTime())) return String(v);
     return d.toLocaleString("en-IN", {
       day: "2-digit",
@@ -204,8 +218,8 @@ export default function GoodReturnDetailPage() {
       qc.invalidateQueries({ queryKey: ["good-return", id] });
       qc.invalidateQueries({ queryKey: ["good-returns"] });
       setSubmitConfirmOpen(false);
-    } catch (err: any) {
-      setSubmitError(err?.message ?? "Failed to submit for approval");
+    } catch (err: unknown) {
+      setSubmitError(toErrorMessage(err, "Failed to submit for approval"));
     } finally {
       setSubmitPending(false);
     }
@@ -225,14 +239,14 @@ export default function GoodReturnDetailPage() {
       qc.invalidateQueries({ queryKey: ["good-return", id] });
       qc.invalidateQueries({ queryKey: ["good-returns"] });
       setDispatchConfirmOpen(false);
-    } catch (err: any) {
-      setDispatchError(err?.message ?? "Failed to dispatch return");
+    } catch (err: unknown) {
+      setDispatchError(toErrorMessage(err, "Failed to dispatch return"));
     } finally {
       setDispatchPending(false);
     }
   };
 
-  const lines: any[] = useMemo(
+  const lines: ReturnLine[] = useMemo(
     () => (Array.isArray(gr?.lines) ? gr.lines : []),
     [gr],
   );
@@ -273,12 +287,12 @@ export default function GoodReturnDetailPage() {
   const isApproved = status === "approved";
 
   const approvalEntries =
-    gr.approval?.history?.map((h: any) => ({
+    gr.approval?.history?.map((h: ApprovalHistoryEntry) => ({
       step: h.stepOrder,
       action: h.action,
       actionBy: h.actionByName ?? "User",
       actionAt: h.actionAt ? new Date(h.actionAt).toLocaleString() : "",
-      comments: h.comments,
+      comments: h.comments ?? undefined,
     })) ?? [];
 
   const myPriorAction = priorActionByMe(me, gr);
@@ -343,7 +357,7 @@ export default function GoodReturnDetailPage() {
                 <ApprovalActionBar
                   entityType="goodReturn"
                   entityId={id}
-                  currentStatus={gr.status}
+                  currentStatus={gr.status ?? undefined}
                   requiredPermission="store.good_return.approve"
                   actionEndpoint={`/api/store/good-returns/${id}/approve`}
                   invalidateKeys={[
@@ -372,7 +386,7 @@ export default function GoodReturnDetailPage() {
                     {gr.returnNumber ?? "—"}
                   </div>
                   <div className="mt-0.5 text-[11px] text-gray-500">
-                    {REASON_LABEL[gr.reason] ?? gr.reason ?? "—"}
+                    {REASON_LABEL[gr.reason ?? ""] ?? gr.reason ?? "—"}
                   </div>
                 </div>
               </div>
@@ -473,7 +487,7 @@ export default function GoodReturnDetailPage() {
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-gray-100">
-                      {lines.map((l: any, idx: number) => {
+                      {lines.map((l: ReturnLine, idx: number) => {
                         const q = Number(l.returnQty ?? l.quantity ?? 0);
                         const r = Number(l.unitRate ?? l.rate ?? 0);
                         const amt = Number.isFinite(q * r) ? q * r : 0;

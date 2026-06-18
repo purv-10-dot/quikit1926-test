@@ -6,6 +6,11 @@ import { requireOwnership } from "@/lib/auth/ownership";
 import { findRfqById, softDeleteRfq } from "@/lib/purchase/rfq-repository";
 import { resolveUserNames } from "@/lib/users/resolve-names";
 import { db } from "@/lib/db";
+import {
+  APPROVAL_INSTANCE_INCLUDE,
+  buildApprovalDto,
+  type ApprovalDto,
+} from "@/lib/approvals/approval-dto";
 
 /**
  * RFQ per-row endpoints — Postgres-backed.
@@ -31,56 +36,24 @@ export async function GET(
 
   // Same fan-out PR and Indent use — inline the approval instance
   // + history + workflow steps for the detail page timeline.
-  let approval: any = null;
+  let approval: ApprovalDto | null = null;
   if (row.approvalId) {
-    const instance = await (db as any).cnApprovalInstance.findFirst({
+    const instance = await db.cnApprovalInstance.findFirst({
       where: { id: row.approvalId, orgId: ctx.orgId },
-      include: {
-        history: { orderBy: { actionAt: "asc" } },
-        workflow: { include: { steps: { orderBy: { stepOrder: "asc" } } } },
-      },
+      include: APPROVAL_INSTANCE_INCLUDE,
     });
     if (instance) {
       const userIds = Array.from(
         new Set<string>([
           instance.requestedById,
-          ...instance.history.map((h: any) => h.actionById),
+          ...instance.history.map((h) => h.actionById),
           ...(instance.workflow.steps
-            .map((s: any) => s.approverUserId)
+            .map((s) => s.approverUserId)
             .filter(Boolean) as string[]),
         ]),
       );
       const nameById = await resolveUserNames(userIds);
-
-      approval = {
-        id: instance.id,
-        status: instance.status,
-        currentStepOrder: instance.currentStepOrder,
-        completedAt: instance.completedAt?.toISOString?.() ?? null,
-        requestedAt: instance.requestedAt.toISOString(),
-        requestedById: instance.requestedById,
-        requestedByName: nameById.get(instance.requestedById) ?? "User",
-        workflow: {
-          id: instance.workflow.id,
-          name: instance.workflow.name,
-          steps: instance.workflow.steps.map((s: any) => ({
-            stepOrder: s.stepOrder,
-            approverRoleId: s.approverRoleId,
-            approverUserId: s.approverUserId,
-            approverUserName: s.approverUserId
-              ? (nameById.get(s.approverUserId) ?? null)
-              : null,
-          })),
-        },
-        history: instance.history.map((h: any) => ({
-          stepOrder: h.stepOrder,
-          action: h.action,
-          actionById: h.actionById,
-          actionByName: nameById.get(h.actionById) ?? "User",
-          actionAt: h.actionAt.toISOString(),
-          comments: h.comments,
-        })),
-      };
+      approval = buildApprovalDto(instance, nameById);
     }
   }
 

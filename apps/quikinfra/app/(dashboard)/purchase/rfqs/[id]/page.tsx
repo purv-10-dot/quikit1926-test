@@ -9,7 +9,8 @@
  *     which itself chains up through the Indent to its source PR.
  */
 
-import { useMemo, useState } from "react";
+import { toErrorMessage } from "@/lib/api/errors";
+import { useMemo, useState, type ReactNode } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { Send, FileText, Mail, Phone, Building2, Eye } from "lucide-react";
 import { WhatsAppLink } from "@/components/WhatsAppLink";
@@ -18,9 +19,26 @@ import {
   PrimaryButton, PageSkeleton, ApprovalTimeline,
 } from "@/components/PageShell";
 import { ApprovalActionBar } from "@/components/ApprovalActionBar";
-import { usePermissions } from "@/hooks/use-permissions";
+import { usePermissions, type MeResponse } from "@/hooks/use-permissions";
 import { canActOnStep } from "@/lib/approvals/workflow-rbac";
 import { USER_TYPE_CATALOG } from "@/lib/rbac/user-types";
+
+import type {
+  ApprovalStep,
+  ApprovalHistoryEntry,
+  ApprovalInfo,
+} from "@/lib/approvals/approval-info";
+import type { RfqLine, RfqVendor, RfqDetail } from "@/lib/purchase/rfq-detail";
+
+/** Matches PageShell's ApprovalTimeline entry shape. */
+interface TimelineEntry {
+  step: number;
+  action: string;
+  actionBy: string;
+  actionAt: string;
+  comments?: string;
+  title?: string;
+}
 import dynamic from "next/dynamic";
 import type { SourceDocType } from "@/components/SourceDocPeekModal";
 const RfqSubmitPreviewModal = dynamic(
@@ -33,7 +51,7 @@ const SourceDocPeekModal = dynamic(
 );
 import { useRFQ, useSubmitRFQ, useIndent } from "@/hooks/use-approvals";
 
-function lineQty(line: any): number {
+function lineQty(line: RfqLine): number {
   const raw = line?.quantity ?? line?.qtyRequested ?? 0;
   return parseFloat(String(raw)) || 0;
 }
@@ -51,23 +69,26 @@ function roleLabel(key: string | null | undefined): string {
  * was tightened to SUPER_ADMIN only (ADMINs without an explicit step
  * assignment now 403 on the approve endpoint).
  */
-function canActOnCurrentStep(me: any, rfq: any): boolean {
+function canActOnCurrentStep(
+  me: MeResponse | null | undefined,
+  rfq: RfqDetail | null | undefined,
+): boolean {
   if (!me || !rfq?.approval) return false;
   if (rfq.approval.status !== "pending_approval") return false;
   const step = rfq.approval.workflow?.steps?.find(
-    (s: any) => s.stepOrder === rfq.approval.currentStepOrder,
+    (s: ApprovalStep) => s.stepOrder === rfq.approval?.currentStepOrder,
   );
   if (!step) return false;
   return canActOnStep(
     {
       userId: me.userId,
       roleKey: me.roleKey,
-      projectIds: me.projectIds,
+      projectIds: me.projectIds ?? undefined,
     },
     {
-      approverUserId: step.approverUserId,
+      approverUserId: step.approverUserId ?? null,
       approverUserIds: Array.isArray(step.approverUserIds) ? step.approverUserIds : null,
-      approverRoleId: step.approverRoleId,
+      approverRoleId: step.approverRoleId ?? null,
     },
     rfq.projectId ?? null,
   );
@@ -86,10 +107,10 @@ export default function RFQDetailPage() {
   const [submitConfirmOpen, setSubmitConfirmOpen] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
 
-  const lines: any[] = useMemo(() => rfq?.lines ?? [], [rfq]);
-  const vendors: any[] = useMemo(() => rfq?.vendors ?? [], [rfq]);
+  const lines: RfqLine[] = useMemo(() => rfq?.lines ?? [], [rfq]);
+  const vendors: RfqVendor[] = useMemo(() => rfq?.vendors ?? [], [rfq]);
   const totalQty = useMemo(
-    () => lines.reduce((sum: number, l: any) => sum + lineQty(l), 0),
+    () => lines.reduce((sum: number, l: RfqLine) => sum + lineQty(l), 0),
     [lines]
   );
 
@@ -97,7 +118,7 @@ export default function RFQDetailPage() {
   // resolve them to material names so the vendor card reads naturally.
   // An empty selection is the "send all items" default — match that
   // convention from the create drawer.
-  const itemsForVendor = (v: any): string[] => {
+  const itemsForVendor = (v: RfqVendor): string[] => {
     const ids: string[] = Array.isArray(v.assignedItemIds) ? v.assignedItemIds : [];
     if (ids.length === 0) return lines.map((l) => l.itemName || l.itemId || "—");
     return ids
@@ -137,9 +158,9 @@ export default function RFQDetailPage() {
           : {}),
       });
       setSubmitConfirmOpen(false);
-    } catch (err: any) {
+    } catch (err: unknown) {
       // Keep the dialog open so the user can read the failure reason.
-      setSubmitError(err?.message ?? "Failed to submit RFQ");
+      setSubmitError(toErrorMessage(err, "Failed to submit RFQ"));
     }
   };
 
@@ -156,7 +177,7 @@ export default function RFQDetailPage() {
         onBack={() => router.push("/purchase/rfqs")}
         actions={
           <div className="flex items-center gap-2">
-            <StatusChip status={rfq.status} />
+            <StatusChip status={rfq.status ?? ""} />
             {rfq.status === "draft" && (
               <PrimaryButton onClick={handleSubmit} disabled={submitMutation.isPending}>
                 <Send className="w-4 h-4" /> Submit for Approval
@@ -165,7 +186,7 @@ export default function RFQDetailPage() {
             <ApprovalActionBar
               entityType="rfq"
               entityId={id}
-              currentStatus={rfq.status}
+              currentStatus={rfq.status ?? undefined}
               requiredPermission="purchase.po.approve_l1"
               actionEndpoint={`/api/purchase/rfqs/${id}/approve`}
               invalidateKeys={[["rfqs"], ["rfq", id]]}
@@ -201,7 +222,7 @@ export default function RFQDetailPage() {
                   }
                 />
                 <InfoField label="Items" value={`${lines.length} items`} />
-                <InfoField label="Status" value={<StatusChip status={rfq.status} />} />
+                <InfoField label="Status" value={<StatusChip status={rfq.status ?? ""} />} />
                 <InfoField
                   label="Total Qty"
                   value={totalQty.toLocaleString("en-IN")}
@@ -234,7 +255,7 @@ export default function RFQDetailPage() {
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-gray-50">
-                      {lines.map((line: any, i: number) => {
+                      {lines.map((line: RfqLine, i: number) => {
                         const qty = lineQty(line);
                         return (
                           <tr key={line.lineId ?? line.id ?? i}>
@@ -273,7 +294,7 @@ export default function RFQDetailPage() {
                 </div>
               ) : (
                 <ul className="divide-y divide-gray-100">
-                  {vendors.map((v: any, i: number) => {
+                  {vendors.map((v: RfqVendor, i: number) => {
                     const items = itemsForVendor(v);
                     const sendAll =
                       !Array.isArray(v.assignedItemIds) ||
@@ -424,20 +445,21 @@ export default function RFQDetailPage() {
                 </p>
               ) : (
                 (() => {
-                  const entries: any[] = [
+                  const approval = rfq.approval!;
+                  const entries: TimelineEntry[] = [
                     {
                       step: 0,
                       action: "request",
                       title: "Requested",
-                      actionBy: rfq.approval.requestedByName || "Requester",
-                      actionAt: new Date(rfq.approval.requestedAt).toLocaleString(),
+                      actionBy: approval.requestedByName || "Requester",
+                      actionAt: new Date(approval.requestedAt ?? "").toLocaleString(),
                     },
                   ];
 
-                  rfq.approval.workflow.steps.forEach((s: any) => {
-                    const acted = [...rfq.approval.history]
+                  (approval.workflow?.steps ?? []).forEach((s: ApprovalStep) => {
+                    const acted = [...(approval.history ?? [])]
                       .reverse()
-                      .find((h: any) => h.stepOrder === s.stepOrder);
+                      .find((h) => h.stepOrder === s.stepOrder);
                     const approverLabel = s.approverUserName
                       ? `${s.approverUserName} (${roleLabel(s.approverRoleId)})`
                       : roleLabel(s.approverRoleId);
@@ -447,15 +469,15 @@ export default function RFQDetailPage() {
                         step: s.stepOrder,
                         action: acted.action,
                         actionBy: acted.actionByName || approverLabel,
-                        actionAt: new Date(acted.actionAt).toLocaleString(),
+                        actionAt: new Date(acted.actionAt ?? "").toLocaleString(),
                         comments: acted.comments || undefined,
                       });
                       return;
                     }
 
                     const isCurrent =
-                      rfq.approval.status === "pending_approval" &&
-                      rfq.approval.currentStepOrder === s.stepOrder;
+                      approval.status === "pending_approval" &&
+                      approval.currentStepOrder === s.stepOrder;
                     entries.push({
                       step: s.stepOrder,
                       action: isCurrent ? "current" : "upcoming",
@@ -532,7 +554,7 @@ function InfoField({
   highlight,
 }: {
   label: string;
-  value: any;
+  value: ReactNode;
   highlight?: boolean;
 }) {
   return (

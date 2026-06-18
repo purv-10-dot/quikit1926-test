@@ -113,8 +113,8 @@ export async function GET(req: NextRequest) {
       listPRs({ orgId: ctx.orgId, projectIds })
         .then((prs) =>
           prs
-            .filter((r: any) => matches(r.status))
-            .map((r: any) => ({
+            .filter((r) => matches(r.status))
+            .map((r) => ({
               id: r.id,
               entityType: "mr",
               title: r.mrNumber ?? r.prNumber ?? `MR ${r.id}`,
@@ -143,8 +143,8 @@ export async function GET(req: NextRequest) {
       listIndents({ orgId: ctx.orgId, projectIds })
         .then((indents) =>
           indents
-            .filter((i: any) => matches(i.status))
-            .map((i: any) => ({
+            .filter((i) => matches(i.status))
+            .map((i) => ({
               id: i.id,
               entityType: "indent",
               title: i.indentNumber ?? `Indent ${i.id}`,
@@ -171,8 +171,8 @@ export async function GET(req: NextRequest) {
       listPOs({ orgId: ctx.orgId, projectIds })
         .then((pos) =>
           pos
-            .filter((p: any) => matches(p.status))
-            .map((p: any) => ({
+            .filter((p) => matches(p.status))
+            .map((p) => ({
               id: p.id,
               entityType: "po",
               title: p.poNumber ?? `PO ${p.id}`,
@@ -197,8 +197,8 @@ export async function GET(req: NextRequest) {
       listGRNs({ orgId: ctx.orgId, projectIds })
         .then((grns) =>
           grns
-            .filter((g0: any) => matches(g0.status))
-            .map((g0: any) => ({
+            .filter((g0) => matches(g0.status))
+            .map((g0) => ({
               id: g0.id,
               entityType: "grn",
               title: g0.grnNumber ?? `GRN ${g0.id}`,
@@ -222,8 +222,8 @@ export async function GET(req: NextRequest) {
       listMaterialIssues(ctx.orgId, { allowedProjectIds: projectIds ?? null })
         .then((issues) =>
           issues
-            .filter((it: any) => matches(it.status))
-            .map((it: any) => ({
+            .filter((it) => matches(it.status))
+            .map((it) => ({
               id: it.id,
               entityType: "issue",
               title: it.issueNumber ?? `Issue ${it.id}`,
@@ -246,8 +246,8 @@ export async function GET(req: NextRequest) {
       listStockTransfers(ctx.orgId, { allowedProjectIds: projectIds ?? null })
         .then((transfers) =>
           transfers
-            .filter((t: any) => matches(t.status))
-            .map((t: any) => ({
+            .filter((t) => matches(t.status))
+            .map((t) => ({
               id: t.id,
               entityType: "transfer",
               title: t.transferNumber ?? `Transfer ${t.id}`,
@@ -267,7 +267,7 @@ export async function GET(req: NextRequest) {
   // ── Stock Reconciliations ───────────────────────────────────
   if (hasPermission(ctx, "store.recon.approve")) {
     tasks.push(
-      (db as any).cnStockReconciliation
+      db.cnStockReconciliation
         .findMany({
           where: {
             orgId: ctx.orgId,
@@ -275,7 +275,7 @@ export async function GET(req: NextRequest) {
           },
           orderBy: { createdAt: "desc" },
         })
-        .then((recons: any[]) =>
+        .then((recons) =>
           recons
             .filter((r) => matches(r.status))
             .map((r) => ({
@@ -302,7 +302,7 @@ export async function GET(req: NextRequest) {
   // ── DPRs ────────────────────────────────────────────────────
   if (hasPermission(ctx, "dpr.approve")) {
     tasks.push(
-      (db as any).cnDailyProgressReport
+      db.cnDailyProgressReport
         .findMany({
           where: {
             orgId: ctx.orgId,
@@ -311,7 +311,7 @@ export async function GET(req: NextRequest) {
           orderBy: { createdAt: "desc" },
           include: { project: { select: { name: true } } },
         })
-        .then((dprs: any[]) =>
+        .then((dprs) =>
           dprs
             .filter((d) => matches(d.status))
             .map((d) => {
@@ -341,7 +341,7 @@ export async function GET(req: NextRequest) {
   // ── RABs ────────────────────────────────────────────────────
   if (hasPermission(ctx, "rab.approve")) {
     tasks.push(
-      (db as any).cnRunningAccountBill
+      db.cnRunningAccountBill
         .findMany({
           where: {
             orgId: ctx.orgId,
@@ -353,7 +353,7 @@ export async function GET(req: NextRequest) {
             contractor: { select: { name: true } },
           },
         })
-        .then((rabs: any[]) =>
+        .then((rabs) =>
           rabs
             .filter((rab) => matches(rab.status))
             .map((rab) => ({
@@ -397,7 +397,7 @@ export async function GET(req: NextRequest) {
   // the source of truth on click.
   if (items.length > 0) {
     try {
-      const instances: any[] = await (db as any).cnApprovalInstance.findMany({
+      const instances = await db.cnApprovalInstance.findMany({
         where: {
           orgId: ctx.orgId,
           status: "pending_approval",
@@ -428,7 +428,7 @@ export async function GET(req: NextRequest) {
 
       // Lookup map keyed by `${entityType}::${entityId}` for O(1) reads
       // while iterating items.
-      const byKey = new Map<string, any>();
+      const byKey = new Map<string, (typeof instances)[number]>();
       for (const inst of instances) {
         byKey.set(`${inst.entityType}::${inst.entityId}`, inst);
       }
@@ -443,7 +443,7 @@ export async function GET(req: NextRequest) {
           continue;
         }
         const step = inst.workflow?.steps?.find(
-          (s: any) => s.stepOrder === inst.currentStepOrder,
+          (s) => s.stepOrder === inst.currentStepOrder,
         );
         if (!step) {
           it.canAct = true;

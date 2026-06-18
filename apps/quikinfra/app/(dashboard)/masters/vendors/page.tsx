@@ -1,5 +1,6 @@
 "use client";
 
+import { toErrorMessage } from "@/lib/api/errors";
 import { useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Truck } from "lucide-react";
@@ -10,10 +11,10 @@ const ImportDataDrawer = dynamic(
   () => import("@/components/ImportDataDrawer").then((m) => m.ImportDataDrawer),
   { ssr: false },
 );
-import { useVendors, useCreateVendor, useUpdateVendor, useItemGroups } from "@/hooks/use-masters";
+import { useVendors, useCreateVendor, useUpdateVendor, useItemGroups, useDeleteVendor } from "@/hooks/use-masters";
 import {
   FormDrawer, FormSection, FormRow, Field,
-  TextInput, NumberInput, SelectInput, TextAreaInput, CheckboxInput, DateInput,
+  TextInput, NumberInput, SelectInput, TextAreaInput, CheckboxInput, DateInput, InactiveStatusNotice,
 } from "@/components/FormDrawer";
 import {
   validateForm, type ValidationRules, validateEmail, validateMobile,
@@ -28,6 +29,23 @@ interface VendorRow {
   id: string; code: string; name: string; companyName?: string; gstin?: string;
   contactPerson?: string; phone?: string; city?: string; state?: string;
   vendorType?: string; category?: string; status: string;
+}
+
+/** Full vendor record consumed by Edit — superset of the list row, with the
+ *  bank / payment alias fields the detail API also returns. */
+interface VendorEditRow {
+  id: string;
+  name?: string; companyName?: string; contactPerson?: string;
+  vendorType?: string; category?: string; phone?: string; email?: string;
+  paymentTermsDays?: number | string; paymentTerms?: string;
+  gstType?: string; gstin?: string; pan?: string;
+  msmeStatus?: string; msmeNumber?: string;
+  bankName?: string; branchName?: string;
+  bankAccountNo?: string; accountNumber?: string;
+  bankIfsc?: string; ifscCode?: string; accountType?: string;
+  address?: string; city?: string; state?: string; pincode?: string;
+  blacklistReason?: string; blacklistedUntil?: string | null;
+  status?: string;
 }
 
 const columns: MasterColumnDef<VendorRow>[] = [
@@ -66,7 +84,8 @@ const GST_TYPES = [
 ];
 
 const emptyForm = {
-  name: "", vendorType: "Supplier", category: "", mobile: "", email: "", creditPeriod: "30",
+  name: "", companyName: "", contactPerson: "",
+  vendorType: "Supplier", category: "", mobile: "", email: "", creditPeriod: "30",
   gstType: "Regular", gstin: "", pan: "", msmeStatus: "Unregistered", msmeNumber: "",
   bankName: "", branchName: "", accountNumber: "", ifscCode: "", accountType: "current",
   address: "", city: "", state: "", pincode: "", paymentTerms: "Net 30",
@@ -167,6 +186,7 @@ export default function VendorsPage() {
   const gstVerifyEnabled = wb?.gstVerifyEnabled === true;
   const createMutation = useCreateVendor();
   const updateMutation = useUpdateVendor();
+  const deleteMutation = useDeleteVendor();
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [importOpen, setImportOpen] = useState(false);
   const [editId, setEditId] = useState<string | null>(null);
@@ -213,12 +233,15 @@ export default function VendorsPage() {
         status: "active",
       });
       return { ok: true as const };
-    } catch (err: any) {
-      return { ok: false as const, error: err?.message ?? "Failed to create vendor" };
+    } catch (err: unknown) {
+      return { ok: false as const, error: toErrorMessage(err, "Failed to create vendor") };
     }
   };
 
-  const set = (key: string, val: any) => {
+  const set = <K extends keyof typeof emptyForm>(
+    key: K,
+    val: (typeof emptyForm)[K],
+  ) => {
     setForm(prev => ({ ...prev, [key]: val }));
     if (errors[key]) setErrors(prev => { const next = { ...prev }; delete next[key]; return next; });
   };
@@ -233,7 +256,7 @@ export default function VendorsPage() {
     if (form.isBlacklisted && !String(form.blacklistReason || "").trim()) {
       errs.blacklistReason = "Blacklist reason is required";
     }
-    if (form.isBlacklisted && !String((form as any).blacklistedUntil || "").trim()) {
+    if (form.isBlacklisted && !String(form.blacklistedUntil || "").trim()) {
       errs.blacklistedUntil = "Blacklisted until date is required";
     }
     if (gstVerifyEnabled) {
@@ -256,8 +279,8 @@ export default function VendorsPage() {
     } catch { /* error toast handled globally */ }
   };
 
-  const handleDelete = async (item: any) => {
-    await updateMutation.mutateAsync({ id: item.id, status: "inactive" });
+  const handleDelete = async (item: { id: string }) => {
+    await deleteMutation.mutateAsync(item.id);
   };
 
   const isSaving = createMutation.isPending || updateMutation.isPending;
@@ -273,7 +296,7 @@ export default function VendorsPage() {
     ];
   }, [itemGroupCategoryOptions, form.category]);
 
-  const handleEdit = (item: any) => {
+  const handleEdit = (item: VendorEditRow) => {
     setEditId(item.id);
     setForm({
       name: item.name ?? "",
@@ -291,6 +314,8 @@ export default function VendorsPage() {
       address: item.address ?? "", city: item.city ?? "",
       state: item.state ?? "", pincode: item.pincode ?? "",
       paymentTerms: item.paymentTerms ?? "Net 30",
+      companyName: item.companyName ?? "",
+      contactPerson: item.contactPerson ?? "",
       isBlacklisted: item.status === "blacklisted",
       blacklistReason: item.blacklistReason ?? "", status: item.status ?? "active",
       blacklistedUntil: item.blacklistedUntil ? String(item.blacklistedUntil).slice(0, 10) : "",
@@ -299,11 +324,11 @@ export default function VendorsPage() {
   };
 
   const allRows = result?.data ?? [];
-  const visibleRows = allRows.filter((r: any) => r?.status !== "inactive");
-  const blacklistedCount = visibleRows.filter((r: any) => r?.status === "blacklisted").length;
+  const visibleRows = allRows.filter((r) => r?.status !== "inactive");
+  const blacklistedCount = visibleRows.filter((r) => r?.status === "blacklisted").length;
   const filteredRows =
     statusFilter === "blacklisted"
-      ? visibleRows.filter((r: any) => r?.status === "blacklisted")
+      ? visibleRows.filter((r) => r?.status === "blacklisted")
       : visibleRows;
 
   return (
@@ -344,10 +369,10 @@ export default function VendorsPage() {
           </div>
         }
         onAdd={() => { setForm(emptyForm); setErrors({}); setEditId(null); setDrawerOpen(true); }}
-        onEdit={(item: any) => { setErrors({}); handleEdit(item); }}
+        onEdit={(item) => { setErrors({}); handleEdit(item); }}
         onDelete={handleDelete}
         onImport={() => setImportOpen(true)}
-        deleteConfirmMessage={(item: any) => (
+        deleteConfirmMessage={(item) => (
           <>
             Delete vendor{" "}
             <span className="font-semibold text-gray-900">“{item.name}”</span>?
@@ -372,7 +397,7 @@ export default function VendorsPage() {
               <TextInput value={form.name} onChange={v => set("name", v)} placeholder="Contact person / proprietor name" invalid={!!errors.name} />
             </Field>
             <Field label="Company / Firm Name" hint="Registered business name">
-              <TextInput value={(form as any).companyName ?? ""} onChange={v => set("companyName", v)} placeholder="e.g. Tata Steel Ltd" />
+              <TextInput value={form.companyName ?? ""} onChange={v => set("companyName", v)} placeholder="e.g. Tata Steel Ltd" />
             </Field>
           </FormRow>
           <FormRow>
@@ -394,7 +419,7 @@ export default function VendorsPage() {
           </FormRow>
           <FormRow>
             <Field label="Contact Person">
-              <TextInput value={(form as any).contactPerson ?? ""} onChange={v => set("contactPerson", v)} placeholder="Primary contact" />
+              <TextInput value={form.contactPerson ?? ""} onChange={v => set("contactPerson", v)} placeholder="Primary contact" />
             </Field>
             <div />
           </FormRow>
@@ -525,6 +550,7 @@ export default function VendorsPage() {
                 { value: "inactive", label: "Inactive" },
               ]}
             />
+          {form.status === "inactive" && <InactiveStatusNotice entityName="Vendor" />}
           </Field>
           {editId && (
             <>
@@ -541,11 +567,11 @@ export default function VendorsPage() {
               />
               {form.isBlacklisted && (
                 <>
-                  <Field label="Blacklisted Until" required error={(errors as any).blacklistedUntil} hint="Vendor will be treated as blacklisted until this date">
+                  <Field label="Blacklisted Until" required error={errors.blacklistedUntil} hint="Vendor will be treated as blacklisted until this date">
                     <DateInput
-                      value={(form as any).blacklistedUntil}
+                      value={form.blacklistedUntil}
                       onChange={(v) => set("blacklistedUntil", v)}
-                      invalid={!!(errors as any).blacklistedUntil}
+                      invalid={!!errors.blacklistedUntil}
                     />
                   </Field>
                   <Field label="Blacklist Reason" required error={errors.blacklistReason}>

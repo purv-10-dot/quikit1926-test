@@ -25,11 +25,17 @@
  * `onCreatedInTxn` undefined and run the patch after the helper returns.
  */
 
+import type { Prisma } from "@quikit/database";
 import { db } from "@/lib/db";
 import {
   isSkippableByRaiser,
   userTypeFromRoleKey,
 } from "@/lib/approvals/workflow-rbac";
+
+type WorkflowWithSteps = Prisma.CnApprovalWorkflowGetPayload<{
+  include: { steps: true };
+}>;
+type WorkflowStep = WorkflowWithSteps["steps"][number];
 
 export interface SubmitForApprovalInput {
   ctx: {
@@ -71,7 +77,7 @@ export interface SubmitForApprovalInput {
    * far — the caller can branch entity-status off `autoApproved`.
    */
   onCreatedInTxn?: (
-    tx: any,
+    tx: Prisma.TransactionClient,
     args: { instanceId: string; autoApproved: boolean },
   ) => Promise<void>;
 }
@@ -121,11 +127,11 @@ export async function submitForApproval(
     ? input.entityType
     : [input.entityType as string];
 
-  let workflow: any = null;
+  let workflow: WorkflowWithSteps | null = null;
   let entityType = candidateTypes[0];
   if (input.projectId != null) {
     for (const t of candidateTypes) {
-      const found = await (db as any).cnApprovalWorkflow.findFirst({
+      const found = await db.cnApprovalWorkflow.findFirst({
         where: {
           orgId: ctx.orgId,
           entityType: t,
@@ -155,8 +161,8 @@ export async function submitForApproval(
   // Walk the steps from the front; everything the raiser fills is
   // auto-skipped. The first step the raiser does NOT fill becomes
   // the live step.
-  const skipped: any[] = [];
-  let startStep: any = null;
+  const skipped: WorkflowStep[] = [];
+  let startStep: WorkflowStep | null = null;
   for (const s of workflow.steps) {
     if (isSkippableByRaiser(s, raiser)) {
       skipped.push(s);
@@ -166,7 +172,7 @@ export async function submitForApproval(
     }
   }
 
-  return await db.$transaction(async (tx: any) => {
+  return await db.$transaction(async (tx) => {
     if (!startStep) {
       // Every step is filled by the raiser. The instance jumps to the
       // chosen auto-approved status (or, for DPR, to pending_approval
@@ -198,7 +204,7 @@ export async function submitForApproval(
 
       if (stepsToRecord.length > 0) {
         await tx.cnApprovalHistory.createMany({
-          data: stepsToRecord.map((s: any) => ({
+          data: stepsToRecord.map((s) => ({
             instanceId: created.id,
             stepOrder: s.stepOrder,
             action: "approve",
@@ -216,7 +222,7 @@ export async function submitForApproval(
       return { instanceId: created.id, autoApproved };
     }
 
-    // Normal path — first non-self step is live, any skipped prefix is
+    // Normal path — first non-self step is live; a skipped prefix is
     // recorded as auto-approved history.
     const created = await tx.cnApprovalInstance.create({
       data: {
@@ -233,7 +239,7 @@ export async function submitForApproval(
 
     if (skipped.length > 0) {
       await tx.cnApprovalHistory.createMany({
-        data: skipped.map((s: any) => ({
+        data: skipped.map((s) => ({
           instanceId: created.id,
           stepOrder: s.stepOrder,
           action: "approve",

@@ -1,5 +1,6 @@
 "use client";
 
+import { toErrorMessage } from "@/lib/api/errors";
 import { useState, useMemo, useEffect, useRef } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import {
@@ -21,6 +22,42 @@ import { useProjects } from "@/hooks/use-masters";
 import { getCurrentFY } from "@/lib/validators";
 import { toast } from "@/lib/toast";
 
+interface BoqNode {
+  id?: string;
+  boqNo: string;
+  parentBoqNo?: string | null;
+  isGroup?: boolean;
+  description?: string;
+  displayName?: string;
+  category?: string;
+  uomCode?: string;
+  unit?: string;
+  quantity?: number | string | null;
+  tenderQty?: number | string | null;
+  contractRate?: number | string | null;
+  rate?: number | string | null;
+  scopeQty?: number | string | null;
+  subDoneQty?: number | string | null;
+  selfDoneQty?: number | string | null;
+  billedQty?: number | string | null;
+  startDate?: string | null;
+  endDate?: string | null;
+}
+
+interface BoqSummary {
+  contractValue?: number;
+  executedValue?: number;
+  progressPercent?: number;
+  groupCount?: number;
+  leafCount?: number;
+}
+
+interface BoqLockState {
+  isLocked: boolean;
+  lockedBy?: string | null;
+  lockedAt?: string | null;
+}
+
 export default function BOQPage() {
   const qc = useQueryClient();
   const [selectedProject, setSelectedProject] = useState("");
@@ -31,8 +68,8 @@ export default function BOQPage() {
   const [importDrawerOpen, setImportDrawerOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
   const [viewMode, setViewMode] = useState<"tree" | "list">("tree");
-  const [editTarget, setEditTarget] = useState<any | null>(null);
-  const [deleteTarget, setDeleteTarget] = useState<any | null>(null);
+  const [editTarget, setEditTarget] = useState<BoqNode | null>(null);
+  const [deleteTarget, setDeleteTarget] = useState<BoqNode | null>(null);
   const [deleting, setDeleting] = useState(false);
 
   const { data: projectsData } = useProjects();
@@ -55,12 +92,12 @@ export default function BOQPage() {
     isFetchingNextPage,
   } = useBOQInfinite(selectedProject || null, { pageSize: 100 });
 
-  const allItems: any[] = useMemo(
-    () => (boqResult?.pages ?? []).flatMap((p) => p.data ?? []),
+  const allItems: BoqNode[] = useMemo(
+    () => (boqResult?.pages ?? []).flatMap((p) => p.data ?? []) as unknown as BoqNode[],
     [boqResult],
   );
-  const summary: any = boqResult?.pages?.[0]?.summary ?? {};
-  const lockState: any =
+  const summary: BoqSummary = boqResult?.pages?.[0]?.summary ?? {};
+  const lockState: BoqLockState =
     boqResult?.pages?.[0]?.lockState ?? { isLocked: false };
 
   // IntersectionObserver loads the next page when the sentinel <div> at
@@ -118,8 +155,8 @@ export default function BOQPage() {
       invalidateBOQ();
       setDeleteTarget(null);
       toast.success("BOQ item deleted");
-    } catch (err: any) {
-      toast.error(err.message ?? "Failed to delete BOQ item");
+    } catch (err: unknown) {
+      toast.error(toErrorMessage(err, "Failed to delete BOQ item"));
     } finally {
       setDeleting(false);
     }
@@ -145,24 +182,24 @@ export default function BOQPage() {
   // Filter by category + search
   const items = useMemo(() => {
     let filtered = allItems;
-    if (categoryFilter !== "all") filtered = filtered.filter((i: any) => (i.category ?? "").toLowerCase() === categoryFilter.toLowerCase());
+    if (categoryFilter !== "all") filtered = filtered.filter((i) => (i.category ?? "").toLowerCase() === categoryFilter.toLowerCase());
     if (searchQuery) {
       const q = searchQuery.toLowerCase();
-      filtered = filtered.filter((i: any) => (i.description ?? "").toLowerCase().includes(q) || (i.boqNo ?? "").toLowerCase().includes(q));
+      filtered = filtered.filter((i) => (i.description ?? "").toLowerCase().includes(q) || (i.boqNo ?? "").toLowerCase().includes(q));
     }
     return filtered;
   }, [allItems, categoryFilter, searchQuery]);
 
   // Build tree
   const tree = useMemo(() => {
-    const byParent: Record<string, any[]> = {};
+    const byParent: Record<string, BoqNode[]> = {};
     for (const item of items) {
       const pKey = item.parentBoqNo ?? "__root__";
       if (!byParent[pKey]) byParent[pKey] = [];
       byParent[pKey].push(item);
     }
-    const allNos = new Set(items.map((i: any) => i.boqNo));
-    const roots = items.filter((i: any) => !i.parentBoqNo || !allNos.has(i.parentBoqNo));
+    const allNos = new Set(items.map((i) => i.boqNo));
+    const roots = items.filter((i) => !i.parentBoqNo || !allNos.has(i.parentBoqNo));
     return { roots, byParent };
   }, [items]);
 
@@ -171,7 +208,7 @@ export default function BOQPage() {
   };
   const toggleExpandAll = () => {
     if (expandAll) { setExpandedGroups(new Set()); setExpandAll(false); }
-    else { setExpandedGroups(new Set(items.filter((i: any) => i.isGroup).map((i: any) => i.boqNo))); setExpandAll(true); }
+    else { setExpandedGroups(new Set(items.filter((i) => i.isGroup).map((i) => i.boqNo))); setExpandAll(true); }
   };
 
   const categoryTabs = useMemo(() => {
@@ -220,15 +257,15 @@ export default function BOQPage() {
   };
 
   // Compute values for a node
-  function nodeValues(node: any) {
-    const tender = parseFloat(node.quantity) || 0;
-    const rate = parseFloat(node.contractRate) || 0;
-    const scope = parseFloat(node.scopeQty) || 0;
-    const subCo = parseFloat(node.subDoneQty) || 0;
-    const self = parseFloat(node.selfDoneQty) || 0;
+  function nodeValues(node: BoqNode) {
+    const tender = parseFloat(String(node.quantity ?? "")) || 0;
+    const rate = parseFloat(String(node.contractRate ?? "")) || 0;
+    const scope = parseFloat(String(node.scopeQty ?? "")) || 0;
+    const subCo = parseFloat(String(node.subDoneQty ?? "")) || 0;
+    const self = parseFloat(String(node.selfDoneQty ?? "")) || 0;
     const totalDone = subCo + self;
     const balance = tender - totalDone;
-    const billed = parseFloat(node.billedQty) || 0;
+    const billed = parseFloat(String(node.billedQty ?? "")) || 0;
     const estimated = tender * rate;
     const billedAmt = billed * rate;
     const balanceAmt = (tender - totalDone) * rate;
@@ -239,7 +276,7 @@ export default function BOQPage() {
   const INR = (v: number) => v !== 0 ? v.toLocaleString("en-IN") : "0";
   const NUM = (v: number) => v !== 0 ? v.toLocaleString("en-IN") : "0";
 
-  function renderRows(nodes: any[], depth: number = 0): React.ReactNode[] {
+  function renderRows(nodes: BoqNode[], depth: number = 0): React.ReactNode[] {
     const result: React.ReactNode[] = [];
     for (const node of nodes) {
       const children = tree.byParent[node.boqNo] ?? [];
@@ -375,7 +412,7 @@ export default function BOQPage() {
                 value={selectedProject}
                 onChange={(v) => { setSelectedProject(v); setExpandedGroups(new Set()); setExpandAll(false); }}
                 placeholder="Select Project..."
-                options={(projectsData?.data ?? []).map((p: any) => ({
+                options={(projectsData?.data ?? []).map((p) => ({
                   value: p.id,
                   label: `${p.code} — ${p.name}`,
                 }))}
@@ -446,7 +483,7 @@ export default function BOQPage() {
                 <Lock className="w-4 h-4 text-amber-600" />
                 <span className="font-semibold">BOQ Locked</span>
                 <span className="text-amber-700">— Tender Qty and Rate are read-only. Contact Super Admin to unlock for revisions.</span>
-                {lockState.lockedBy && <span className="ml-auto text-[10px] text-amber-600">Locked by {lockState.lockedBy} on {new Date(lockState.lockedAt).toLocaleDateString()}</span>}
+                {lockState.lockedBy && <span className="ml-auto text-[10px] text-amber-600">Locked by {lockState.lockedBy} on {new Date(lockState.lockedAt ?? "").toLocaleDateString()}</span>}
               </div>
             )}
             {/* Summary strip */}
@@ -572,7 +609,7 @@ function BOQItemEditModal({
   onSaved,
 }: {
   open: boolean;
-  item: any | null;
+  item: BoqNode | null;
   projectId: string;
   onClose: () => void;
   onSaved: () => void;
@@ -626,6 +663,9 @@ function BOQItemEditModal({
     if (startDate && endDate && endDate < startDate) {
       return setError("End Date cannot be earlier than Start Date");
     }
+    if (quantity.trim() !== "" && parseFloat(quantity) < 0) {
+      return setError("Tender Quantity cannot be negative");
+    }
 
     setSaving(true);
     try {
@@ -647,8 +687,8 @@ function BOQItemEditModal({
         throw new Error(err.error ?? "Failed to update BOQ item");
       }
       onSaved();
-    } catch (err: any) {
-      setError(err.message ?? "Failed to update BOQ item");
+    } catch (err: unknown) {
+      setError(toErrorMessage(err, "Failed to update BOQ item"));
     } finally {
       setSaving(false);
     }
@@ -733,6 +773,7 @@ function BOQItemEditModal({
               <input
                 type="number"
                 step="0.01"
+                min="0"
                 value={quantity}
                 onChange={(e) => setQuantity(e.target.value)}
                 className="w-full text-sm px-3 py-2 border border-gray-300 rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-indigo-500 text-right tabular-nums"

@@ -1,16 +1,16 @@
 "use client";
 
+import { toErrorMessage } from "@/lib/api/errors";
 import { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
-import { Calculator, Check, Filter, Pencil, Send, Trash2, X as XIcon } from "lucide-react";
+import { Calculator, Check, Pencil, Send, Trash2, X as XIcon } from "lucide-react";
 import { useQueryClient } from "@tanstack/react-query";
-import { PageHeader, PageContainer, StatusChip } from "@/components/PageShell";
+import { PageHeader, PageContainer, StatusChip, KPICard } from "@/components/PageShell";
 import { DataTable, type ColDef } from "@/components/DataTable";
 import { useEstimations, useUpdateEstimation } from "@/hooks/use-projects";
 import { useProjects } from "@/hooks/use-masters";
 import { usePermissions } from "@/hooks/use-permissions";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
-import { SelectInput } from "@/components/FormDrawer";
 import { toast } from "@/lib/toast";
 import dynamic from "next/dynamic";
 const EstimationDrawer = dynamic(
@@ -24,10 +24,15 @@ const EstimationDrawer = dynamic(
 // the matrix via `isSuper`.
 const MENU_KEY = "pm.estimation";
 
+interface EstimationRow {
+  id: string; boqNo?: string; boqDescription?: string; boqUnit?: string;
+  boqQuantity?: number | string; materialCount?: number; materials?: unknown[];
+  totalCost?: number | string; status?: string; canActOnCurrentStep?: boolean;
+  [key: string]: unknown;
+}
+
 export default function EstimationPage() {
   const router = useRouter();
-  // Project is a FILTER now, not a gate. Default empty = all projects.
-  const [projectFilter, setProjectFilter] = useState("");
   // Drawer is for the CREATE flow only — Edit routes to the detail
   // page at /projects/estimation/[id]. Keeping the drawer here avoids
   // a second modal layout for quick new-row creation.
@@ -39,7 +44,7 @@ export default function EstimationPage() {
   // so the UX matches the rest of the app (backdrop, tone colouring,
   // inline loading state, and a proper textarea for rejection reasons).
   const [workflowAction, setWorkflowAction] = useState<
-    { kind: "submit" | "approve" | "reject"; row: any } | null
+    { kind: "submit" | "approve" | "reject"; row: EstimationRow } | null
   >(null);
   const [rejectReason, setRejectReason] = useState("");
   const [workflowPending, setWorkflowPending] = useState(false);
@@ -49,7 +54,7 @@ export default function EstimationPage() {
   const [workflowError, setWorkflowError] = useState<string | null>(null);
 
   const { data: projects } = useProjects();
-  const { data: result, isLoading } = useEstimations(projectFilter || null);
+  const { data: result, isLoading } = useEstimations(null);
   const updateMutation = useUpdateEstimation();
   const qc = useQueryClient();
   const data = useMemo(() => result?.data ?? [], [result]);
@@ -70,13 +75,13 @@ export default function EstimationPage() {
   // though they couldn't actually open estimations for those projects.
   const visibleProjects = useMemo(() => {
     const all = (projects?.data ?? []).filter(
-      (p: any) => p?.status !== "inactive",
+      (p) => p?.status !== "inactive",
     );
     const allowed = me?.projectIds ?? null;
     if (allowed === null) return all;
     if (allowed.length === 0) return [];
     const allow = new Set(allowed);
-    return all.filter((p: any) => allow.has(p.id));
+    return all.filter((p) => allow.has(p.id));
   }, [projects?.data, me?.projectIds]);
   const matrixRow = permissionMatrix?.[MENU_KEY];
   const canAdd = isSuper || !matrixRow || matrixRow.add !== false;
@@ -90,7 +95,7 @@ export default function EstimationPage() {
   // `row.canActOnCurrentStep`). The role-based fallback is gone —
   // it caused approvers further down the chain (and raisers whose
   // step auto-skipped) to see buttons they couldn't actually use.
-  const canApproveRow = (row: any): boolean =>
+  const canApproveRow = (row: EstimationRow): boolean =>
     isSuper || row?.canActOnCurrentStep === true;
   // Additional sanity check: the user must have the PROJECT MGMT module
   // assigned at all. Use the short module key ("project_mgmt") the user
@@ -105,7 +110,7 @@ export default function EstimationPage() {
   // which reuses `updateMutation` so the list auto-refreshes (React
   // Query invalidates on success) and the chip flips colour without
   // a page reload.
-  const openWorkflow = (kind: "submit" | "approve" | "reject", row: any) => {
+  const openWorkflow = (kind: "submit" | "approve" | "reject", row: EstimationRow) => {
     setRejectReason("");
     setWorkflowError(null);
     setWorkflowAction({ kind, row });
@@ -157,8 +162,8 @@ export default function EstimationPage() {
       );
       setWorkflowAction(null);
       setRejectReason("");
-    } catch (err: any) {
-      setWorkflowError(err?.message ?? "Action failed");
+    } catch (err: unknown) {
+      setWorkflowError(toErrorMessage(err, "Action failed"));
     } finally {
       setWorkflowPending(false);
     }
@@ -167,7 +172,7 @@ export default function EstimationPage() {
   // Hide soft-deleted rows. "Show deleted" toggle could be added
   // later — same pattern as MasterListPage.
   const visibleData = useMemo(
-    () => data.filter((r: any) => r.status !== "inactive"),
+    () => data.filter((r) => r.status !== "inactive"),
     [data]
   );
 
@@ -178,7 +183,7 @@ export default function EstimationPage() {
   // Edit now routes to the detail page so the form has a full-page
   // surface and workflow actions don't have to stack modals. The
   // status chip and the Edit icon in the Actions column both use this.
-  const openDetail = (row: any) => {
+  const openDetail = (row: EstimationRow) => {
     router.push(`/projects/estimation/${row.id}`);
   };
   const closeDrawer = () => {
@@ -203,7 +208,7 @@ export default function EstimationPage() {
     }
   };
 
-  const columns: ColDef<any>[] = [
+  const columns: ColDef<EstimationRow>[] = [
     {
       key: "boqNo",
       label: "BOQ No",
@@ -409,40 +414,20 @@ export default function EstimationPage() {
         ]}
       />
 
-      {/* Filter strip — project is now optional */}
-      <div className="px-6 py-3 border-b border-gray-200 bg-white flex items-center gap-3">
-        <div className="flex items-center gap-2 text-xs text-gray-500">
-          <Filter className="w-3.5 h-3.5" />
-          Project filter:
-        </div>
-        <div className="min-w-[240px]">
-          <SelectInput
-            value={projectFilter}
-            onChange={setProjectFilter}
-            placeholder="All projects"
-            options={visibleProjects.map((p: any) => ({ value: p.id, label: p.name }))}
+      <PageContainer>
+        <div className="mb-6 w-full max-w-[240px]">
+          <KPICard
+            title="Material Estimations"
+            value={isLoading ? "—" : visibleData.length}
+            subtitle="Total estimations"
+            icon={<Calculator className="w-5 h-5" />}
+            color="info"
           />
         </div>
-        {projectFilter && (
-          <button
-            type="button"
-            onClick={() => setProjectFilter("")}
-            className="text-xs text-gray-500 hover:text-gray-700 underline"
-          >
-            Clear
-          </button>
-        )}
-        <span className="ml-auto text-xs text-gray-500">
-          {!isLoading &&
-            `${visibleData.length} estimation${visibleData.length === 1 ? "" : "s"}`}
-        </span>
-      </div>
-
-      <PageContainer>
         <DataTable
           id="projects-estimation"
           columns={columns}
-          data={visibleData}
+          data={visibleData as unknown as EstimationRow[]}
           loading={isLoading}
           // RBAC: `onAdd` is only wired when the user's matrix grants
           // the "add" action on `pm.estimation`. Passing `undefined`
@@ -450,14 +435,13 @@ export default function EstimationPage() {
           onAdd={canAdd && hasEstimationModule ? openCreate : undefined}
           addLabel="New Material Estimation"
           historyEntityType="material_estimations,material_estimation,estimation"
-          getHistoryEntityId={(row: any) => String(row.id ?? "")}
+          getHistoryEntityId={(row) => String(row.id ?? "")}
         />
       </PageContainer>
 
       <EstimationDrawer
         open={drawerOpen}
         onClose={closeDrawer}
-        defaultProjectId={projectFilter || undefined}
         projects={visibleProjects}
         editData={editRow}
       />

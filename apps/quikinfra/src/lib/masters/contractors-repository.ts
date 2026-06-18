@@ -3,6 +3,7 @@
  */
 
 import { db } from "@/lib/db";
+import { Prisma } from "@quikit/database";
 
 export interface ContractorRecord {
   id: string;
@@ -32,7 +33,7 @@ export interface ContractorRecord {
   updatedBy: string;
 }
 
-function toRecord(row: any): ContractorRecord {
+function toRecord(row: Prisma.CnContractorGetPayload<Record<string, never>>): ContractorRecord {
   return {
     id: row.id,
     orgId: row.orgId,
@@ -95,7 +96,7 @@ function buildContractorsWhere(
 export async function listContractors(
   opts: ListContractorsOptions,
 ): Promise<ContractorRecord[]> {
-  const rows = await (db as any).cnContractor.findMany({
+  const rows = await db.cnContractor.findMany({
     where: buildContractorsWhere(opts),
     orderBy: { createdAt: "desc" },
     ...(typeof opts.take === "number" ? { take: opts.take } : {}),
@@ -107,14 +108,14 @@ export async function listContractors(
 export async function countContractors(
   opts: Pick<ListContractorsOptions, "orgId" | "search">,
 ): Promise<number> {
-  return (db as any).cnContractor.count({ where: buildContractorsWhere(opts) });
+  return db.cnContractor.count({ where: buildContractorsWhere(opts) });
 }
 
 export async function findContractorById(
   orgId: string,
   id: string,
 ): Promise<ContractorRecord | null> {
-  const row = await (db as any).cnContractor.findFirst({
+  const row = await db.cnContractor.findFirst({
     where: { id, orgId },
   });
   return row ? toRecord(row) : null;
@@ -159,13 +160,13 @@ export async function createContractor(
 ): Promise<ContractorRecord> {
   let code = (input.code ?? "").trim();
   if (!code) {
-    const existingCount = await (db as any).cnContractor.count({
+    const existingCount = await db.cnContractor.count({
       where: { orgId: input.orgId },
     });
     code = autoCode(existingCount);
   }
 
-  const row = await (db as any).cnContractor.create({
+  const row = await db.cnContractor.create({
     data: {
       orgId: input.orgId,
       code,
@@ -204,7 +205,7 @@ export async function updateContractor(
   id: string,
   patch: UpdateContractorInput,
 ): Promise<ContractorRecord | null> {
-  const existing = await (db as any).cnContractor.findFirst({
+  const existing = await db.cnContractor.findFirst({
     where: { id, orgId },
     select: { id: true },
   });
@@ -234,7 +235,7 @@ export async function updateContractor(
     data.ifscCode = patch.ifscCode ? String(patch.ifscCode).toUpperCase() : null;
   }
 
-  const row = await (db as any).cnContractor.update({
+  const row = await db.cnContractor.update({
     where: { id },
     data,
   });
@@ -246,7 +247,7 @@ export async function deleteContractor(
   id: string,
   updatedBy: string,
 ): Promise<boolean> {
-  const res = await (db as any).cnContractor.updateMany({
+  const res = await db.cnContractor.updateMany({
     where: { id, orgId },
     data: { status: "inactive", updatedBy },
   });

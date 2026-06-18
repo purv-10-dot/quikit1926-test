@@ -10,7 +10,9 @@
  * fallback for legacy ids (same pattern as the indent repository).
  */
 
+import { toErrorMessage, getErrorCode } from "@/lib/api/errors";
 import { db } from "@/lib/db";
+import { Prisma } from "@quikit/database";
 import { findVendorsByIds } from "@/lib/masters/vendors-repository";
 
 // ─── Types ─────────────────────────────────────────────────────────
@@ -70,7 +72,7 @@ async function resolveUomId(
   createdBy: string,
 ): Promise<string | null> {
   if (input.uomId) {
-    const row = await (db as any).cnUOM.findFirst({
+    const row = await db.cnUOM.findFirst({
       where: { id: input.uomId, orgId },
       select: { id: true },
     });
@@ -78,12 +80,12 @@ async function resolveUomId(
   }
   const code = String(input.uomCode ?? "").trim().toUpperCase();
   if (!code) return null;
-  const existing = await (db as any).cnUOM.findFirst({
+  const existing = await db.cnUOM.findFirst({
     where: { orgId, code },
     select: { id: true },
   });
   if (existing) return existing.id;
-  const created = await (db as any).cnUOM.create({
+  const created = await db.cnUOM.create({
     data: {
       orgId,
       code,
@@ -98,14 +100,80 @@ async function resolveUomId(
 
 // ─── Enrichment ────────────────────────────────────────────────────
 
+/** A money/quantity value as it arrives from Prisma (Decimal) or raw SQL. */
+type Numericish = Prisma.Decimal | number | string | null | undefined;
+
+interface ItemLookup {
+  code?: string | null;
+  name?: string | null;
+  standardRate?: Numericish;
+}
+interface UomLookup {
+  code?: string | null;
+  name?: string | null;
+}
+interface VendorLookup {
+  companyName?: string | null;
+  name?: string | null;
+  email?: string | null;
+  phone?: string | null;
+}
+interface ProjectLookup {
+  name?: string | null;
+  code?: string | null;
+}
+interface RfqLineRow {
+  id: string;
+  itemId: string;
+  uomId?: string | null;
+  quantity?: Numericish;
+  specification?: string | null;
+  sourceIndentLineId?: string | null;
+}
+interface RfqVendorRow {
+  id: string;
+  vendorId: string;
+  vendorName?: string | null;
+  email?: string | null;
+  assignedItemIds?: unknown;
+  quotedRates?: unknown;
+  sentAt?: Date | null;
+  respondedAt?: Date | null;
+  quoteRemarks?: string | null;
+  quotedAt?: Date | null;
+}
+interface RfqRow {
+  id: string;
+  orgId: string;
+  rfqNumber: string;
+  projectId?: string | null;
+  lines?: RfqLineRow[] | null;
+  vendors?: RfqVendorRow[] | null;
+  sourceIndentId?: string | null;
+  sourceIndentNumber?: string | null;
+  rfqDate?: Date | string | null;
+  dueDate?: Date | string | null;
+  purpose?: string | null;
+  contactPerson?: string | null;
+  contactMobile?: string | null;
+  address?: string | null;
+  termsTemplateId?: string | null;
+  status: string;
+  approvalId?: string | null;
+  createdAt?: Date | null;
+  updatedAt?: Date | null;
+  createdBy?: string | null;
+  updatedBy?: string | null;
+}
+
 async function loadLookups(
   orgId: string,
-  rows: any[],
+  rows: RfqRow[],
 ): Promise<{
-  itemById: Map<string, any>;
-  uomById: Map<string, any>;
-  vendorById: Map<string, any>;
-  projectById: Map<string, any>;
+  itemById: Map<string, ItemLookup>;
+  uomById: Map<string, UomLookup>;
+  vendorById: Map<string, VendorLookup>;
+  projectById: Map<string, ProjectLookup>;
 }> {
   const itemIds = new Set<string>();
   const uomIds = new Set<string>();
@@ -123,13 +191,13 @@ async function loadLookups(
   }
   const [items, uoms, vendorMap, projects] = await Promise.all([
     itemIds.size
-      ? (db as any).cnItem.findMany({
+      ? db.cnItem.findMany({
           where: { id: { in: Array.from(itemIds) } },
           select: { id: true, code: true, name: true, standardRate: true },
         })
       : Promise.resolve([]),
     uomIds.size
-      ? (db as any).cnUOM.findMany({
+      ? db.cnUOM.findMany({
           where: { id: { in: Array.from(uomIds) } },
           select: { id: true, code: true, name: true },
         })
@@ -141,25 +209,25 @@ async function loadLookups(
     // every DB-only project, leaving projectName/projectCode blank in
     // RFQ lists.
     projectIds.size
-      ? (db as any).cnProject.findMany({
+      ? db.cnProject.findMany({
           where: { id: { in: Array.from(projectIds) } },
           select: { id: true, code: true, name: true },
         })
       : Promise.resolve([]),
   ]);
   return {
-    itemById: new Map<string, any>(items.map((i: any) => [i.id, i])),
-    uomById: new Map<string, any>(uoms.map((u: any) => [u.id, u])),
-    vendorById: vendorMap as Map<string, any>,
-    projectById: new Map<string, any>(projects.map((p: any) => [p.id, p])),
+    itemById: new Map<string, ItemLookup>(items.map((i) => [i.id, i])),
+    uomById: new Map<string, UomLookup>(uoms.map((u) => [u.id, u])),
+    vendorById: vendorMap as Map<string, VendorLookup>,
+    projectById: new Map<string, ProjectLookup>(projects.map((p) => [p.id, p])),
   };
 }
 
 function enrichLine(
-  line: any,
-  itemById: Map<string, any>,
-  uomById: Map<string, any>,
-): any {
+  line: RfqLineRow,
+  itemById: Map<string, ItemLookup>,
+  uomById: Map<string, UomLookup>,
+) {
   const item = itemById.get(line.itemId);
   const uom = line.uomId ? uomById.get(line.uomId) : null;
   const qty = line.quantity?.toString?.() ?? String(line.quantity ?? "0");
@@ -181,15 +249,15 @@ function enrichLine(
 }
 
 function enrichVendor(
-  v: any,
-  vendorById: Map<string, any>,
-): any {
+  v: RfqVendorRow,
+  vendorById: Map<string, VendorLookup>,
+) {
   const master = vendorById.get(v.vendorId);
   // `assignedItemIds` is stored as Json in Postgres — Prisma returns
   // it as the underlying array. Guard against unexpected shapes so
   // the list page never crashes on legacy rows.
   const assignedItemIds: string[] = Array.isArray(v.assignedItemIds)
-    ? v.assignedItemIds.filter((x: any) => typeof x === "string")
+    ? v.assignedItemIds.filter((x): x is string => typeof x === "string")
     : [];
   // `quotedRates` is `[{ lineId, rate, remarks? }]` per the Add Quote
   // modal contract. We pass it through verbatim — readers cope with
@@ -197,7 +265,8 @@ function enrichVendor(
   const quotedRates: Array<{ lineId: string; rate: string; remarks?: string }> =
     Array.isArray(v.quotedRates)
       ? v.quotedRates.filter(
-          (q: any) => q && typeof q.lineId === "string",
+          (q): q is { lineId: string; rate: string; remarks?: string } =>
+            !!q && typeof (q as { lineId?: unknown }).lineId === "string",
         )
       : [];
   return {
@@ -217,17 +286,17 @@ function enrichVendor(
 }
 
 function enrichRfq(
-  row: any,
-  itemById: Map<string, any>,
-  uomById: Map<string, any>,
-  vendorById: Map<string, any>,
-  projectById: Map<string, any> = new Map(),
-): any {
+  row: RfqRow,
+  itemById: Map<string, ItemLookup>,
+  uomById: Map<string, UomLookup>,
+  vendorById: Map<string, VendorLookup>,
+  projectById: Map<string, ProjectLookup> = new Map(),
+) {
   const project = row.projectId
     ? projectById.get(row.projectId) ?? null
     : null;
-  const lines = (row.lines ?? []).map((l: any) => enrichLine(l, itemById, uomById));
-  const vendors = (row.vendors ?? []).map((v: any) => enrichVendor(v, vendorById));
+  const lines = (row.lines ?? []).map((l) => enrichLine(l, itemById, uomById));
+  const vendors = (row.vendors ?? []).map((v) => enrichVendor(v, vendorById));
   return {
     id: row.id,
     orgId: row.orgId,
@@ -255,13 +324,16 @@ function enrichRfq(
     lineCount: lines.length,
     lines,
     vendors,
-    vendorIds: vendors.map((v: any) => v.vendorId),
+    vendorIds: vendors.map((v) => v.vendorId),
     createdAt: row.createdAt?.toISOString?.() ?? null,
     updatedAt: row.updatedAt?.toISOString?.() ?? null,
-    createdBy: row.createdBy,
-    updatedBy: row.updatedBy,
+    createdBy: row.createdBy ?? "",
+    updatedBy: row.updatedBy ?? "",
   };
 }
+
+/** The enriched, client-facing RFQ shape returned by every public read/write. */
+export type EnrichedRfq = ReturnType<typeof enrichRfq>;
 
 /**
  * Backfill the vendor rows' quote fields (`quotedRates`, `quoteRemarks`,
@@ -275,7 +347,9 @@ function enrichRfq(
  * SELECT (`address`, `termsTemplateId`). Same short-circuit pattern as
  * the vendor helper below.
  */
-async function augmentRfqsWithDriftFields(rfqRows: any[]): Promise<void> {
+async function augmentRfqsWithDriftFields(
+  rfqRows: Array<{ id: string; address?: unknown; termsTemplateId?: unknown }>,
+): Promise<void> {
   if (rfqRows.length === 0) return;
   if ("address" in rfqRows[0]) return; // already present → client is fresh
 
@@ -286,7 +360,7 @@ async function augmentRfqsWithDriftFields(rfqRows: any[]): Promise<void> {
       id: string;
       address: string | null;
       termsTemplateId: string | null;
-    }> = await (db as any).$queryRaw`
+    }> = await db.$queryRaw`
       SELECT id, "address", "termsTemplateId"
       FROM app_quikinfra."Rfqs"
       WHERE id = ANY(${ids})
@@ -298,15 +372,24 @@ async function augmentRfqsWithDriftFields(rfqRows: any[]): Promise<void> {
       r.address = hit.address;
       r.termsTemplateId = hit.termsTemplateId;
     }
-  } catch (err: any) {
+  } catch (err: unknown) {
     console.warn(
       "[rfq-repository] augmentRfqsWithDriftFields raw SQL failed:",
-      err?.message ?? err,
+      toErrorMessage(err),
     );
   }
 }
 
-async function augmentVendorsWithQuoteFields(rfqRows: any[]): Promise<void> {
+async function augmentVendorsWithQuoteFields(
+  rfqRows: Array<{
+    vendors?: Array<{
+      id: string;
+      quotedRates?: unknown;
+      quoteRemarks?: unknown;
+      quotedAt?: unknown;
+    }>;
+  }>,
+): Promise<void> {
   const vendorIds: string[] = [];
   for (const r of rfqRows) {
     for (const v of r?.vendors ?? []) {
@@ -324,10 +407,10 @@ async function augmentVendorsWithQuoteFields(rfqRows: any[]): Promise<void> {
   try {
     const rows: Array<{
       id: string;
-      quotedRates: any;
+      quotedRates: unknown;
       quoteRemarks: string | null;
       quotedAt: Date | null;
-    }> = await (db as any).$queryRaw`
+    }> = await db.$queryRaw`
       SELECT id, "quotedRates", "quoteRemarks", "quotedAt"
       FROM app_quikinfra."Rfq_vendors"
       WHERE id = ANY(${vendorIds})
@@ -342,20 +425,20 @@ async function augmentVendorsWithQuoteFields(rfqRows: any[]): Promise<void> {
         v.quotedAt = hit.quotedAt;
       }
     }
-  } catch (err: any) {
+  } catch (err: unknown) {
     // Never block the list — log and leave the new fields undefined.
     // The UI treats missing `quotedRates` as "pending", which is the
     // correct fallback when the DB query itself fails for any reason.
     console.warn(
       "[rfq-repository] augmentVendorsWithQuoteFields raw SQL failed:",
-      err?.message ?? err,
+      toErrorMessage(err),
     );
   }
 }
 
 // ─── Queries ───────────────────────────────────────────────────────
 
-export async function listRfqs(opts: ListRfqsOptions): Promise<any[]> {
+export async function listRfqs(opts: ListRfqsOptions): Promise<EnrichedRfq[]> {
   const where: Record<string, unknown> = { orgId: opts.orgId };
   if (opts.status && opts.status !== "all") where.status = opts.status;
   if (opts.projectId) where.projectId = opts.projectId;
@@ -376,7 +459,7 @@ export async function listRfqs(opts: ListRfqsOptions): Promise<any[]> {
     ];
   }
 
-  const rows = await (db as any).cnRfq.findMany({
+  const rows = await db.cnRfq.findMany({
     where,
     include: { lines: true, vendors: true },
     orderBy: { rfqDate: "desc" },
@@ -386,14 +469,14 @@ export async function listRfqs(opts: ListRfqsOptions): Promise<any[]> {
   await augmentRfqsWithDriftFields(rows);
   await augmentVendorsWithQuoteFields(rows);
   const { itemById, uomById, vendorById, projectById } = await loadLookups(opts.orgId, rows);
-  return rows.map((r: any) => enrichRfq(r, itemById, uomById, vendorById, projectById));
+  return rows.map((r) => enrichRfq(r, itemById, uomById, vendorById, projectById));
 }
 
 export async function findRfqById(
   orgId: string,
   id: string,
-): Promise<any | null> {
-  const row = await (db as any).cnRfq.findFirst({
+): Promise<EnrichedRfq | null> {
+  const row = await db.cnRfq.findFirst({
     where: { id, orgId },
     include: { lines: true, vendors: true },
   });
@@ -406,7 +489,7 @@ export async function findRfqById(
 
 // ─── Mutations ─────────────────────────────────────────────────────
 
-export async function createRfq(input: CreateRfqInput): Promise<any> {
+export async function createRfq(input: CreateRfqInput): Promise<EnrichedRfq> {
   // Resolve uomId per line BEFORE the txn so UOM create-on-miss
   // doesn't inflate the main transaction.
   const resolvedLines: Array<RfqLineInput & { uomIdResolved: string | null }> = [];
@@ -460,15 +543,15 @@ export async function createRfq(input: CreateRfqInput): Promise<any> {
     },
   });
 
-  let row: any;
+  let row: RfqRow;
   let needsRawBackfill = false;
   try {
-    row = await (db as any).cnRfq.create({
+    row = await db.cnRfq.create({
       data: buildData(true),
       include: { lines: true, vendors: true },
     });
-  } catch (err: any) {
-    const msg = String(err?.message ?? "");
+  } catch (err: unknown) {
+    const msg = toErrorMessage(err, "");
     if (
       msg.includes("Unknown argument `termsTemplateId`") ||
       msg.includes("Unknown argument `address`")
@@ -478,7 +561,7 @@ export async function createRfq(input: CreateRfqInput): Promise<any> {
           "`npx prisma generate` to restore the typed path. Saving " +
           "core fields now and back-filling via raw SQL.",
       );
-      row = await (db as any).cnRfq.create({
+      row = await db.cnRfq.create({
         data: buildData(false),
         include: { lines: true, vendors: true },
       });
@@ -492,7 +575,7 @@ export async function createRfq(input: CreateRfqInput): Promise<any> {
   // persist in Postgres. The columns exist in the DB (confirmed by
   // `prisma db push`), Prisma just doesn't know about them yet.
   if (needsRawBackfill) {
-    await (db as any).$executeRaw`
+    await db.$executeRaw`
       UPDATE app_quikinfra."Rfqs"
       SET "termsTemplateId" = ${input.termsTemplateId ?? null},
           "address"         = ${input.address ?? null}
@@ -514,13 +597,13 @@ export async function updateRfqStatus(
   status: string,
   updatedBy: string,
   extras?: { approvalId?: string | null },
-): Promise<any | null> {
-  const existing = await (db as any).cnRfq.findFirst({
+): Promise<EnrichedRfq | null> {
+  const existing = await db.cnRfq.findFirst({
     where: { id, orgId },
     select: { id: true },
   });
   if (!existing) return null;
-  await (db as any).cnRfq.update({
+  await db.cnRfq.update({
     where: { id },
     data: {
       status,
@@ -550,8 +633,8 @@ export interface SaveQuoteInput {
  */
 export async function saveVendorQuote(
   input: SaveQuoteInput,
-): Promise<any | null> {
-  const vendorRow = await (db as any).cnRfqVendor.findFirst({
+): Promise<EnrichedRfq | null> {
+  const vendorRow = await db.cnRfqVendor.findFirst({
     where: { id: input.vendorRowId, rfqId: input.rfqId },
     select: { id: true },
   });
@@ -574,7 +657,7 @@ export async function saveVendorQuote(
   // generate` is re-run), fall through to raw SQL against the same
   // columns so saves keep working.
   try {
-    await (db as any).cnRfqVendor.update({
+    await db.cnRfqVendor.update({
       where: { id: input.vendorRowId },
       data: {
         quotedRates: cleanRates,
@@ -583,8 +666,8 @@ export async function saveVendorQuote(
         respondedAt: ts,
       },
     });
-  } catch (err: any) {
-    const msg = String(err?.message ?? "");
+  } catch (err: unknown) {
+    const msg = toErrorMessage(err, "");
     if (
       msg.includes("Unknown argument") ||
       msg.includes("quotedRates") ||
@@ -595,7 +678,7 @@ export async function saveVendorQuote(
         "[rfq.saveVendorQuote] Prisma client missing quote fields — " +
           "using raw SQL. Run `npx prisma generate` to restore typed path.",
       );
-      await (db as any).$executeRaw`
+      await db.$executeRaw`
         UPDATE app_quikinfra."Rfq_vendors"
         SET "quotedRates"  = ${JSON.stringify(cleanRates)}::jsonb,
             "quoteRemarks" = ${input.remarks ?? null},
@@ -610,16 +693,16 @@ export async function saveVendorQuote(
 
   // Status bump: only when every vendor on the RFQ has quoted at
   // least one rate. Same schema-drift dance as above.
-  let all: Array<{ quotedRates: any }> = [];
+  let all: Array<{ quotedRates: unknown }> = [];
   try {
-    all = await (db as any).cnRfqVendor.findMany({
+    all = await db.cnRfqVendor.findMany({
       where: { rfqId: input.rfqId },
       select: { quotedRates: true },
     });
-  } catch (err: any) {
-    const msg = String(err?.message ?? "");
+  } catch (err: unknown) {
+    const msg = toErrorMessage(err, "");
     if (msg.includes("Unknown argument") || msg.includes("quotedRates")) {
-      all = await (db as any).$queryRaw`
+      all = await db.$queryRaw`
         SELECT "quotedRates" FROM app_quikinfra."Rfq_vendors" WHERE "rfqId" = ${input.rfqId}
       `;
     } else {
@@ -629,10 +712,10 @@ export async function saveVendorQuote(
   const allQuoted =
     all.length > 0 &&
     all.every(
-      (v: any) => Array.isArray(v.quotedRates) && v.quotedRates.length > 0,
+      (v) => Array.isArray(v.quotedRates) && v.quotedRates.length > 0,
     );
   if (allQuoted) {
-    await (db as any).cnRfq.update({
+    await db.cnRfq.update({
       where: { id: input.rfqId },
       data: { status: "quoted", updatedBy: input.updatedBy },
     });
@@ -646,7 +729,7 @@ export async function softDeleteRfq(
   id: string,
   updatedBy: string,
 ): Promise<boolean> {
-  const res = await (db as any).cnRfq.updateMany({
+  const res = await db.cnRfq.updateMany({
     where: { id, orgId },
     data: { status: "inactive", updatedBy },
   });

@@ -8,6 +8,8 @@ import {
   listStockTransfers,
   countStockTransfers,
   countStockTransfersForDate,
+  type StockTransferLine,
+  type StockTransferAssetLine,
 } from "@/lib/store/stock-transfer-repository";
 import { parsePagination, paginateDb } from "@/lib/http/pagination";
 import { canActOnCurrentStep } from "@/lib/approvals/workflow-rbac";
@@ -55,21 +57,21 @@ export async function GET(req: NextRequest) {
   // Per-row Approve/Reject visibility — driven by the workflow's current
   // step, not the caller's role. Batch-load every pending instance + its
   // workflow.steps in one round-trip and decorate each row.
-  const rows: any[] = Array.isArray((result as any)?.data) ? (result as any).data : [];
+  const rows = Array.isArray(result.data) ? result.data : [];
   const approvalIds = rows
     .map((r) => r.approvalId)
     .filter((id): id is string => typeof id === "string" && id.length > 0);
   const instances =
     approvalIds.length === 0
       ? []
-      : await (db as any).cnApprovalInstance.findMany({
+      : await db.cnApprovalInstance.findMany({
           where: { id: { in: approvalIds }, orgId: ctx.orgId },
           include: {
             workflow: { include: { steps: { orderBy: { stepOrder: "asc" } } } },
           },
         });
-  const instanceById = new Map<string, any>(
-    instances.map((i: any) => [i.id, i]),
+  const instanceById = new Map(
+    instances.map((i): [string, (typeof instances)[number]] => [i.id, i]),
   );
   const actor = {
     userId: ctx.userId,
@@ -125,7 +127,7 @@ export async function POST(req: NextRequest) {
   // Denormalise project + location names so the list grid renders them
   // directly. The form only sends IDs; resolving here means older
   // clients don't need to know how to pass them along.
-  const sourceProject: any = await (db as any).cnProject.findFirst({
+  const sourceProject = await db.cnProject.findFirst({
     where: {
       id: body.sourceProjectId,
       orgId: ctx.orgId,
@@ -141,7 +143,7 @@ export async function POST(req: NextRequest) {
 
   let destinationProjectName: string | null = null;
   if (body.destinationProjectId) {
-    const destProject: any = await (db as any).cnProject.findFirst({
+    const destProject = await db.cnProject.findFirst({
       where: {
         id: body.destinationProjectId,
         orgId: ctx.orgId,
@@ -151,11 +153,11 @@ export async function POST(req: NextRequest) {
     destinationProjectName = destProject?.name ?? null;
   }
 
-  const fromLoc: any = await (db as any).cnLocation.findFirst({
+  const fromLoc = await db.cnLocation.findFirst({
     where: { id: body.fromLocationId, orgId: ctx.orgId },
     select: { id: true, name: true, state: true, city: true },
   });
-  const toLoc: any = await (db as any).cnLocation.findFirst({
+  const toLoc = await db.cnLocation.findFirst({
     where: { id: body.toLocationId, orgId: ctx.orgId },
     select: { id: true, name: true, state: true, city: true },
   });
@@ -171,8 +173,8 @@ export async function POST(req: NextRequest) {
   const transferNumber =
     body.transferNumber ?? `ST-${compactDate}-${seq}`;
 
-  const lines: any[] = Array.isArray(body.lines) ? body.lines : [];
-  const assetLines: any[] = Array.isArray(body.assetLines) ? body.assetLines : [];
+  const lines: StockTransferLine[] = Array.isArray(body.lines) ? body.lines : [];
+  const assetLines: StockTransferAssetLine[] = Array.isArray(body.assetLines) ? body.assetLines : [];
 
   const record = await createStockTransfer({
     orgId: ctx.orgId,

@@ -37,8 +37,8 @@ function isPrismaError(err: unknown): err is PrismaLikeError {
     !!err &&
     typeof err === "object" &&
     "code" in err &&
-    typeof (err as any).code === "string" &&
-    (err as any).code.startsWith("P")
+    typeof (err as { code: unknown }).code === "string" &&
+    (err as { code: string }).code.startsWith("P")
   );
 }
 

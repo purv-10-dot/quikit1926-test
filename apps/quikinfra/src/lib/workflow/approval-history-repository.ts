@@ -28,20 +28,20 @@ export interface ApprovalHistoryRecord {
 export async function listHistoryForInstance(
   instanceId: string,
 ): Promise<ApprovalHistoryRecord[]> {
-  const rows = await (db as any).cnApprovalHistory.findMany({
+  const rows = await db.cnApprovalHistory.findMany({
     where: { instanceId },
     orderBy: { actionAt: "asc" },
   });
 
   if (rows.length === 0) return [];
 
-  const userIds = Array.from(new Set(rows.map((r: any) => r.actionById))) as string[];
+  const userIds = Array.from(new Set(rows.map((r) => r.actionById))) as string[];
   const users = await findCnUsersByIds(userIds);
   const nameById = new Map<string, string>(
     users.map((u) => [u.id, u.fullName]),
   );
 
-  return rows.map((r: any) => ({
+  return rows.map((r) => ({
     id: r.id,
     instanceId: r.instanceId,
     stepOrder: r.stepOrder,

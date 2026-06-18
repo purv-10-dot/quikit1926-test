@@ -9,6 +9,14 @@ import { useProjects, useMachinery } from "@/hooks/use-masters";
 import { useMenuActions } from "@/hooks/use-permissions";
 import { useQueryClient } from "@tanstack/react-query";
 
+interface DieselLogRow {
+  id: string; logDate?: string; machineryName?: string; projectName?: string;
+  openingReading?: number | string; closingReading?: number | string;
+  quantityIssued?: number | string; unitRate?: number | string;
+  totalCost?: number | string; operatorName?: string;
+  [key: string]: unknown;
+}
+
 export default function DieselLogPage() {
   const qc = useQueryClient();
   const [drawerOpen, setDrawerOpen] = useState(false);
@@ -20,19 +28,19 @@ export default function DieselLogPage() {
   const { data: projectsData } = useProjects();
   const { data: machineryData } = useMachinery();
 
-  const projects = (projectsData?.data ?? []) as any[];
-  const projectOptions = projects.map((p: any) => ({ value: p.id, label: p.name }));
+  const projects = (projectsData?.data ?? []) as { id: string; name?: string; city?: string }[];
+  const projectOptions = projects.map((p) => ({ value: p.id, label: p.name ?? "" }));
   const projectById = useMemo(() => {
-    const m = new Map<string, any>();
+    const m = new Map<string, { id: string; name?: string; city?: string }>();
     for (const p of projects) {
       if (p?.id) m.set(p.id, p);
     }
     return m;
   }, [projects]);
-  const machineryOptions = (machineryData?.data ?? []).map((m: any) => ({ value: m.id, label: m.name }));
+  const machineryOptions = (machineryData?.data ?? []).map((m) => ({ value: m.id, label: m.name }));
   const machineryById = useMemo(() => {
-    const m = new Map<string, any>();
-    for (const row of machineryData?.data ?? []) {
+    const m = new Map<string, { id: string; name?: string; fuelType?: string }>();
+    for (const row of (machineryData?.data ?? []) as { id: string; name?: string; fuelType?: string }[]) {
       if (row?.id) m.set(row.id, row);
     }
     return m;
@@ -145,7 +153,7 @@ export default function DieselLogPage() {
     ],
   };
 
-  const columns: ColDef<any>[] = [
+  const columns: ColDef<DieselLogRow>[] = [
     { key: "logDate", label: "Date", type: "date", sortable: true },
     { key: "machineryName", label: "Machine", sortable: true, searchable: true },
     { key: "projectName", label: "Project", sortable: true, searchable: true },
@@ -174,11 +182,9 @@ export default function DieselLogPage() {
         <DataTable
           id="store-diesel-log"
           columns={columns}
-          data={data}
+          data={data as DieselLogRow[]}
           onAdd={canAdd ? () => setDrawerOpen(true) : undefined}
           addLabel="Log Entry"
-          defaultSort="logDate"
-          defaultSortDir="desc"
         />
       </PageContainer>
       <QuickCreateDrawer open={drawerOpen} onClose={() => setDrawerOpen(false)} config={config} />

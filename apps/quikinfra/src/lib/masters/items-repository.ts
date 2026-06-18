@@ -3,6 +3,7 @@
  */
 
 import { db } from "@/lib/db";
+import { Prisma } from "@quikit/database";
 
 export interface ItemRecord {
   id: string;
@@ -35,7 +36,7 @@ export interface ItemRecord {
   updatedBy: string;
 }
 
-function toRecord(row: any, uomLookup?: Map<string, string>): ItemRecord {
+function toRecord(row: Prisma.CnItemGetPayload<Record<string, never>> & { group?: { name: string } | null; uom?: { code: string } | null }, uomLookup?: Map<string, string>): ItemRecord {
   const groupName: string = row.group?.name ?? "";
   const uomCode: string = row.uom?.code ?? "";
   const description: string | null = row.description ?? null;
@@ -81,11 +82,11 @@ async function buildUomLookup(
 ): Promise<Map<string, string>> {
   const wanted = Array.from(new Set(Array.from(ids).filter(Boolean)));
   if (wanted.length === 0) return new Map();
-  const rows = await (db as any).cnUOM.findMany({
+  const rows = await db.cnUOM.findMany({
     where: { orgId, id: { in: wanted } },
     select: { id: true, code: true },
   });
-  return new Map(rows.map((r: any) => [r.id, r.code as string]));
+  return new Map(rows.map((r) => [r.id, r.code as string]));
 }
 
 // ─── Auto-code helpers ─────────────────────────────────────────────
@@ -101,7 +102,7 @@ function makeItemInitials(name: string): string {
   return initials || "ITM";
 }
 
-async function nextItemCodeSeq(tx: any, orgId: string): Promise<number> {
+async function nextItemCodeSeq(tx: Prisma.TransactionClient, orgId: string): Promise<number> {
   const rows = await tx.cnItem.findMany({
     where: { orgId },
     select: { code: true },
@@ -119,7 +120,7 @@ async function nextItemCodeSeq(tx: any, orgId: string): Promise<number> {
 // ─── FK find-or-create helpers ─────────────────────────────────────
 
 async function ensureItemGroup(
-  tx: any,
+  tx: Prisma.TransactionClient,
   orgId: string,
   name: string,
   createdBy: string,
@@ -144,7 +145,7 @@ async function ensureItemGroup(
 }
 
 async function ensureDefaultItemGroup(
-  tx: any,
+  tx: Prisma.TransactionClient,
   orgId: string,
   createdBy: string,
 ): Promise<string> {
@@ -153,7 +154,7 @@ async function ensureDefaultItemGroup(
 }
 
 async function ensureUOM(
-  tx: any,
+  tx: Prisma.TransactionClient,
   orgId: string,
   code: string,
   createdBy: string,
@@ -197,7 +198,11 @@ function buildItemsWhere(
   const q = (opts.search ?? "").trim();
   return {
     orgId: opts.orgId,
-    ...(opts.includeInactive ? {} : { status: { not: "deleted" } }),
+    // Soft-deleted items get status "inactive" (see deleteItem). Hide both
+    // "inactive" and "deleted" by default so pickers across modules (PR / BOQ
+    // / GRN / estimation) never surface a deleted item. The master list opts
+    // in with includeInactive to power its "Show inactive" toggle.
+    ...(opts.includeInactive ? {} : { status: { notIn: ["inactive", "deleted"] } }),
     ...(opts.groupId ? { groupId: opts.groupId } : {}),
     ...(q
       ? {
@@ -211,7 +216,7 @@ function buildItemsWhere(
 }
 
 export async function listItems(opts: ListItemsOptions): Promise<ItemRecord[]> {
-  const rows = await (db as any).cnItem.findMany({
+  const rows = await db.cnItem.findMany({
     where: buildItemsWhere(opts),
     include: {
       group: { select: { id: true, name: true } },
@@ -222,25 +227,25 @@ export async function listItems(opts: ListItemsOptions): Promise<ItemRecord[]> {
     ...(typeof opts.skip === "number" ? { skip: opts.skip } : {}),
   });
 
-  const allIds = rows.flatMap((r: any) => {
+  const allIds = rows.flatMap((r) => {
     const arr = Array.isArray(r.uomIds) && r.uomIds.length ? r.uomIds : [r.uomId];
     return arr.filter(Boolean);
   });
   const lookup = await buildUomLookup(opts.orgId, allIds);
-  return rows.map((r: any) => toRecord(r, lookup));
+  return rows.map((r) => toRecord(r, lookup));
 }
 
 export async function countItems(
   opts: Pick<ListItemsOptions, "orgId" | "search" | "includeInactive">,
 ): Promise<number> {
-  return (db as any).cnItem.count({ where: buildItemsWhere(opts) });
+  return db.cnItem.count({ where: buildItemsWhere(opts) });
 }
 
 export async function findItemById(
   orgId: string,
   id: string,
 ): Promise<ItemRecord | null> {
-  const row = await (db as any).cnItem.findFirst({
+  const row = await db.cnItem.findFirst({
     where: { id, orgId },
     include: {
       group: { select: { id: true, name: true } },
@@ -275,7 +280,7 @@ export interface CreateItemInput {
 }
 
 export async function createItem(input: CreateItemInput): Promise<ItemRecord> {
-  const record = await (db as any).$transaction(async (tx: any) => {
+  const record = await db.$transaction(async (tx) => {
     const category = (input.category ?? input.groupName ?? "").trim();
     const groupId = await ensureDefaultItemGroup(tx, input.orgId, input.createdBy);
 
@@ -295,7 +300,7 @@ export async function createItem(input: CreateItemInput): Promise<ItemRecord> {
         },
         select: { id: true },
       });
-      const seen = new Set(verified.map((u: any) => u.id));
+      const seen = new Set(verified.map((u) => u.id));
       for (const id of requestedIds) {
         if (seen.has(id) && !validIds.includes(id)) validIds.push(id);
       }
@@ -378,13 +383,13 @@ export async function updateItem(
   id: string,
   patch: UpdateItemInput,
 ): Promise<ItemRecord | null> {
-  const existing = await (db as any).cnItem.findFirst({
+  const existing = await db.cnItem.findFirst({
     where: { id, orgId },
     select: { id: true },
   });
   if (!existing) return null;
 
-  const row = await (db as any).$transaction(async (tx: any) => {
+  const row = await db.$transaction(async (tx) => {
     const data: Record<string, unknown> = { updatedBy: patch.updatedBy };
 
     if (patch.code !== undefined) data.code = patch.code;
@@ -419,7 +424,7 @@ export async function updateItem(
         where: { id: { in: requestedIds }, orgId },
         select: { id: true },
       });
-      const seen = new Set(verified.map((u: any) => u.id));
+      const seen = new Set(verified.map((u) => u.id));
       const validIds: string[] = [];
       for (const v of requestedIds) {
         if (seen.has(v) && !validIds.includes(v)) validIds.push(v);
@@ -452,7 +457,7 @@ export async function deleteItem(
   id: string,
   updatedBy: string,
 ): Promise<boolean> {
-  const res = await (db as any).cnItem.updateMany({
+  const res = await db.cnItem.updateMany({
     where: { id, orgId },
     data: { status: "inactive", updatedBy },
   });

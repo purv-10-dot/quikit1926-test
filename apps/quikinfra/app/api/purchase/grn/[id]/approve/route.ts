@@ -1,3 +1,4 @@
+import { toErrorMessage, getErrorCode } from "@/lib/api/errors";
 import { requirePurchaseAction } from "@/lib/auth/requirePurchaseAction";
 import { findCnUserById } from "@/lib/users/lookup";
 import { NextRequest, NextResponse } from "next/server";
@@ -52,7 +53,7 @@ export async function POST(
   if (guard.cached) return guard.cachedResponse!;
   if (guard.conflict) return guard.conflictResponse!;
 
-  let body: any = {};
+  let body: { action?: string; comments?: string } = {};
   try {
     body = await req.json();
   } catch {
@@ -77,7 +78,7 @@ export async function POST(
 
   try {
     // ─── Load GRN ─────────────────────────────────────────────────────
-    const grn = await (db as any).cnGoodsReceiptNote.findFirst({
+    const grn = await db.cnGoodsReceiptNote.findFirst({
       where: {
         orgId: ctx.orgId,
         OR: [{ id: params.id }, { grnNumber: params.id }],
@@ -100,7 +101,7 @@ export async function POST(
       return NextResponse.json(errBody, { status: 400 });
     }
 
-    const instance = await (db as any).cnApprovalInstance.findFirst({
+    const instance = await db.cnApprovalInstance.findFirst({
       where: { id: grn.approvalId, orgId: ctx.orgId },
     });
     if (!instance) {
@@ -121,7 +122,7 @@ export async function POST(
     }
 
     // ─── Workflow-step authorization ─────────────────────────────────
-    const currentStep = await (db as any).cnApprovalWorkflowStep.findFirst({
+    const currentStep = await db.cnApprovalWorkflowStep.findFirst({
       where: {
         workflowId: instance.workflowId,
         stepOrder: instance.currentStepOrder,
@@ -141,11 +142,11 @@ export async function POST(
         { userId: ctx.userId, roleKey: ctx.roleKey, projectIds: ctx.projectIds },
         {
           approverUserId: currentStep.approverUserId,
-          approverUserIds: Array.isArray((currentStep as any).approverUserIds)
-            ? (currentStep as any).approverUserIds
+          approverUserIds: Array.isArray(currentStep.approverUserIds)
+            ? currentStep.approverUserIds
             : null,
           approverRoleId: currentStep.approverRoleId,
-        } as any,
+        },
         grn.projectId ?? null,
       )
     ) {
@@ -168,7 +169,7 @@ export async function POST(
       return NextResponse.json(errBody, { status: 403 });
     }
 
-    const nextStep = await (db as any).cnApprovalWorkflowStep.findFirst({
+    const nextStep = await db.cnApprovalWorkflowStep.findFirst({
       where: {
         workflowId: instance.workflowId,
         stepOrder: { gt: instance.currentStepOrder },
@@ -183,7 +184,7 @@ export async function POST(
     if (isFinalApprove) {
       try {
         assertTransition("grn", grn.status ?? "draft", GRNStatus.APPROVED);
-      } catch (e: any) {
+      } catch (e: unknown) {
         if (e instanceof TransitionError) {
           const errBody = { error: e.message, code: e.code };
           await guard.commit(400, errBody);
@@ -194,7 +195,7 @@ export async function POST(
     }
 
     // ─── Stock payload (only used on final approve) ───────────────────
-    const lines = (grn.lines ?? []).map((l: any) => ({
+    const lines = (grn.lines ?? []).map((l) => ({
       itemId: l.itemId,
       uomId: l.uomId,
       acceptedQty: Number(l.acceptedQty?.toString?.() ?? l.acceptedQty ?? 0),
@@ -204,7 +205,7 @@ export async function POST(
     let postings: Array<{ ledgerId: string; itemId: string; balanceAfter: number }> = [];
     let finalGrnStatus = grn.status;
 
-    await db.$transaction(async (tx: any) => {
+    await db.$transaction(async (tx) => {
       await tx.cnApprovalHistory.create({
         data: {
           instanceId: instance.id,
@@ -296,10 +297,13 @@ export async function POST(
       }
     });
 
-    const refreshedInstance = await (db as any).cnApprovalInstance.findUnique({
+    const refreshedInstance = await db.cnApprovalInstance.findUnique({
       where: { id: instance.id },
     });
-    const totalSteps = await (db as any).cnApprovalWorkflowStep.count({
+    if (!refreshedInstance) {
+      return NextResponse.json({ error: "Approval instance not found" }, { status: 404 });
+    }
+    const totalSteps = await db.cnApprovalWorkflowStep.count({
       where: { workflowId: instance.workflowId },
     });
 
@@ -322,7 +326,7 @@ export async function POST(
     };
     await guard.commit(200, responseBody);
     return NextResponse.json(responseBody);
-  } catch (err: any) {
+  } catch (err: unknown) {
     if (err instanceof StockError) {
       const errBody = { error: err.message, code: err.code };
       await guard.commit(err.httpStatus, errBody);
@@ -330,7 +334,7 @@ export async function POST(
     }
     // 5xx — do NOT commit guard, allow retry
     return NextResponse.json(
-      { error: err.message ?? "Internal error" },
+      { error: toErrorMessage(err, "Internal error") },
       { status: 500 },
     );
   }
