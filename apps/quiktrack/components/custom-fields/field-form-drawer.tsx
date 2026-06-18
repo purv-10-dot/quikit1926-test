@@ -125,6 +125,11 @@ export function FieldFormDrawer({ open, onClose, apiBase, queryKey, field }: Pro
     },
     onSuccess: () => {
       void qc.invalidateQueries({ queryKey });
+      // Also refresh the issue create/edit forms, which read the active field
+      // set under a different key ("issue-fields"). Without this a newly created
+      // or edited field only shows up after a manual page refresh. Global fields
+      // affect every project, so invalidate the whole prefix.
+      void qc.invalidateQueries({ queryKey: ["quiktrack", "issue-fields"] });
       onClose();
     },
     onError: (e: unknown) => setError(e instanceof Error ? e.message : "Failed to save field"),

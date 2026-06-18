@@ -39,6 +39,8 @@ export function EpicPanel({
   onOpenEpic,
   onCreated,
   onClose,
+  selectedEpicId = null,
+  onSelectEpic,
 }: {
   projectId: string;
   defaultStatusId?: string;
@@ -46,11 +48,14 @@ export function EpicPanel({
   /** Notify the parent so its epic-linker list refreshes too. */
   onCreated: () => void;
   onClose: () => void;
+  /** Epic currently used to filter the backlog (null = no epic filter). */
+  selectedEpicId?: string | null;
+  /** Select an epic to filter the backlog by it; pass null to clear. */
+  onSelectEpic?: (id: string | null) => void;
 }) {
   const [epics, setEpics] = useState<EpicLite[]>([]);
   const [loaded, setLoaded] = useState(false);
   const [hasMore, setHasMore] = useState(true);
-  const [expanded, setExpanded] = useState<Set<string>>(new Set());
   const [creating, setCreating] = useState(false);
   const [title, setTitle] = useState("");
   const [submitting, setSubmitting] = useState(false);
@@ -145,13 +150,10 @@ export function EpicPanel({
     return () => window.removeEventListener("quiktrack:issue-updated", reload);
   }, [loadMore, loadProgress]);
 
-  function toggle(id: string) {
-    setExpanded((prev) => {
-      const next = new Set(prev);
-      if (next.has(id)) next.delete(id);
-      else next.add(id);
-      return next;
-    });
+  // Clicking an epic selects it as the backlog filter (and expands its
+  // details). Clicking the selected epic again clears the filter.
+  function selectEpic(id: string) {
+    onSelectEpic?.(selectedEpicId === id ? null : id);
   }
 
   async function createEpic() {
@@ -192,17 +194,20 @@ export function EpicPanel({
 
       <div className="max-h-[60vh] overflow-y-auto py-1">
         {epics.map((e) => {
-          const isOpen = expanded.has(e.id);
+          const isOpen = selectedEpicId === e.id;
           return (
             <div key={e.id} className="border-t border-gray-50 first:border-t-0">
               <button
                 type="button"
-                onClick={() => toggle(e.id)}
-                className="flex w-full items-center gap-1.5 px-2 py-2 text-left hover:bg-gray-50"
+                onClick={() => selectEpic(e.id)}
+                title={isOpen ? "Clear epic filter" : "Filter backlog by this epic"}
+                className={`flex w-full items-center gap-1.5 px-2 py-2 text-left ${
+                  isOpen ? "bg-blue-50" : "hover:bg-gray-50"
+                }`}
               >
-                {isOpen ? <ChevronDown className="h-3.5 w-3.5 text-gray-400" /> : <ChevronRight className="h-3.5 w-3.5 text-gray-400" />}
+                {isOpen ? <ChevronDown className="h-3.5 w-3.5 text-blue-500" /> : <ChevronRight className="h-3.5 w-3.5 text-gray-400" />}
                 <span className="h-3 w-3 shrink-0 rounded-sm bg-purple-500" />
-                <span className="truncate text-sm text-gray-800">{e.title}</span>
+                <span className={`truncate text-sm ${isOpen ? "font-medium text-blue-700" : "text-gray-800"}`}>{e.title}</span>
               </button>
               {/* Progress bar (Done / In progress / To do) — mirrors Summary,
                   with a styled hover tooltip showing the per-status breakdown. */}
@@ -241,6 +246,16 @@ export function EpicPanel({
               })()}
               {isOpen && (
                 <div className="px-3 pb-3 pl-8 text-xs">
+                  <div className="mb-2 flex items-center justify-between gap-2 text-[11px] text-blue-700">
+                    <span>Filtering backlog by this epic</span>
+                    <button
+                      type="button"
+                      onClick={() => onSelectEpic?.(null)}
+                      className="rounded px-1.5 py-0.5 font-medium hover:bg-blue-100"
+                    >
+                      Clear
+                    </button>
+                  </div>
                   <p className="text-gray-500">Start date</p>
                   <p className="mb-2 text-amber-700">{fmtDate(e.startDate)}</p>
                   <p className="text-gray-500">Due date</p>

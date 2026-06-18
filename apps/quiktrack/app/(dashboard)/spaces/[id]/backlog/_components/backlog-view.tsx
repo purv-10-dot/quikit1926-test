@@ -124,7 +124,11 @@ function StatusBadge({ status }: { status?: Status }) {
 }
 
 function CountBadges({ counts }: { counts?: Sprint["counts"] }) {
-  const c = counts ?? { todo: 0, inProgress: 0, done: 0 };
+  // No counts → render nothing. The status breakdown is only meaningful for the
+  // unfiltered sprint set; callers pass `undefined` when a filter is active (the
+  // header already shows the filtered total) or when no breakdown exists.
+  if (!counts) return null;
+  const c = counts;
   return (
     <div className="flex items-center gap-1">
       <span className="h-5 min-w-[22px] inline-flex items-center justify-center px-1.5 text-[11px] rounded bg-gray-200 text-gray-700 font-medium">
@@ -1944,6 +1948,7 @@ function SectionBody({
     assigneeId: string;
     type: string;
     priority: string;
+    epicId: string;
   };
   fields: BacklogViewSettings["fields"];
   density: BacklogViewSettings["density"];
@@ -1975,6 +1980,7 @@ function SectionBody({
       if (filters.assigneeId) params.set("assigneeId", filters.assigneeId);
       if (filters.type) params.set("type", filters.type);
       if (filters.priority) params.set("priority", filters.priority);
+      if (filters.epicId) params.set("epicId", filters.epicId);
       if (!initial && state.cursor) params.set("cursor", state.cursor);
       try {
         const res = await fetch(`/api/issues?${params.toString()}`).then((r) => r.json());
@@ -2000,7 +2006,7 @@ function SectionBody({
         setState((s) => ({ ...s, loading: false }));
       }
     },
-    [projectId, sprintId, state.cursor, state.hasMore, state.loading, setState, filters.search, filters.statusId, filters.assigneeId, filters.type, filters.priority],
+    [projectId, sprintId, state.cursor, state.hasMore, state.loading, setState, filters.search, filters.statusId, filters.assigneeId, filters.type, filters.priority, filters.epicId],
   );
 
   // First-time load when expanded.
@@ -2016,7 +2022,7 @@ function SectionBody({
   useEffect(() => {
     if (!state.expanded) return;
     setState((s) => ({ ...s, loaded: false, loading: false, issues: [], cursor: null, hasMore: true }));
-  }, [filters.search, filters.statusId, filters.assigneeId, filters.type, filters.priority]);
+  }, [filters.search, filters.statusId, filters.assigneeId, filters.type, filters.priority, filters.epicId]);
 
   // IntersectionObserver — load more when the sentinel scrolls into view of the
   // accordion's own scroll container. `enabled` re-attaches the observer on the
@@ -2174,12 +2180,19 @@ export function BacklogView({ projectId }: { projectId: string }) {
   const [filterAssigneeIds, setFilterAssigneeIds] = useState<string[]>([]);
   const [filterType, setFilterType] = useState("");
   const [filterPriority, setFilterPriority] = useState("");
+  // Epic filter — set by selecting an epic in the left EpicPanel. Empty = none.
+  const [filterEpicId, setFilterEpicId] = useState("");
   const [filterOpen, setFilterOpen] = useState(false);
   const [moreMenuOpen, setMoreMenuOpen] = useState(false);
   // Filtered total per section, keyed identically to `sectionStates`. Only
   // populated when at least one filter is active; otherwise the header falls
   // back to the unfiltered sprint counts from /api/sprints.
   const [filteredCounts, setFilteredCounts] = useState<Record<string, number>>({});
+  // Filtered To Do / In Progress / Done breakdown per section, so the header
+  // count badges stay accurate (and visible) while a filter is active.
+  const [filteredBadges, setFilteredBadges] = useState<
+    Record<string, { todo: number; inProgress: number; done: number }>
+  >({});
   const filterBtnRef = useRef<HTMLDivElement>(null);
   const moveBtnRef = useRef<HTMLDivElement>(null);
   const moreMenuRef = useRef<HTMLDivElement>(null);
@@ -2231,8 +2244,16 @@ export function BacklogView({ projectId }: { projectId: string }) {
       assigneeId: filterAssigneeIds.join(","),
       type: filterType,
       priority: filterPriority,
+      epicId: filterEpicId,
     }),
-    [appliedSearch, filterStatusId, filterAssigneeIds, filterType, filterPriority],
+    [appliedSearch, filterStatusId, filterAssigneeIds, filterType, filterPriority, filterEpicId],
+  );
+
+  // Any filter active? The per-sprint status breakdown (CountBadges) reflects the
+  // UNfiltered sprint, so it must be hidden while filtering — otherwise it
+  // contradicts the filtered "(N work items)" header count.
+  const filtersActive = Boolean(
+    appliedSearch || filterStatusId || filterAssigneeIds.length || filterType || filterPriority || filterEpicId,
   );
 
   // Header-checkbox state for a section: returns the all/some flags + a toggle
@@ -2268,9 +2289,10 @@ export function BacklogView({ projectId }: { projectId: string }) {
   // limit=1 to keep the payload tiny — only the `total` field matters here.
   useEffect(() => {
     const hasActive =
-      Boolean(appliedSearch || filterStatusId || filterAssigneeIds.length || filterType || filterPriority);
+      Boolean(appliedSearch || filterStatusId || filterAssigneeIds.length || filterType || filterPriority || filterEpicId);
     if (!hasActive) {
       setFilteredCounts({});
+      setFilteredBadges({});
       return;
     }
     let cancelled = false;
@@ -2285,25 +2307,36 @@ export function BacklogView({ projectId }: { projectId: string }) {
           sprintId: sprintId ?? "null",
           excludeType: "EPIC,SUBTASK",
           limit: "1",
+          statusCounts: "1", // also returns the filtered To Do/In Progress/Done split
         });
         if (appliedSearch) params.set("search", appliedSearch);
         if (filterStatusId) params.set("statusId", filterStatusId);
         if (filterAssigneeIds.length) params.set("assigneeId", filterAssigneeIds.join(","));
         if (filterType) params.set("type", filterType);
         if (filterPriority) params.set("priority", filterPriority);
+        if (filterEpicId) params.set("epicId", filterEpicId);
         return fetch(`/api/issues?${params.toString()}`)
           .then((r) => r.json())
-          .then((res) => ({ key, total: typeof res?.total === "number" ? res.total : 0 }))
-          .catch(() => ({ key, total: 0 }));
+          .then((res) => ({
+            key,
+            total: typeof res?.total === "number" ? res.total : 0,
+            counts: res?.statusCounts as { todo: number; inProgress: number; done: number } | undefined,
+          }))
+          .catch(() => ({ key, total: 0, counts: undefined }));
       }),
     ).then((rows) => {
       if (cancelled) return;
       const next: Record<string, number> = {};
-      for (const r of rows) next[r.key] = r.total;
+      const badges: Record<string, { todo: number; inProgress: number; done: number }> = {};
+      for (const r of rows) {
+        next[r.key] = r.total;
+        if (r.counts) badges[r.key] = r.counts;
+      }
       setFilteredCounts(next);
+      setFilteredBadges(badges);
     });
     return () => { cancelled = true; };
-  }, [projectId, sprints, appliedSearch, filterStatusId, filterAssigneeIds, filterType, filterPriority]);
+  }, [projectId, sprints, appliedSearch, filterStatusId, filterAssigneeIds, filterType, filterPriority, filterEpicId]);
 
   useEffect(() => {
     if (!moreMenuOpen) return;
@@ -3007,7 +3040,13 @@ export function BacklogView({ projectId }: { projectId: string }) {
             defaultStatusId={defaultTodoStatusId}
             onOpenEpic={(id) => setEditingIssueId(id)}
             onCreated={reloadEpics}
-            onClose={() => updateSettings({ epicPanel: false })}
+            onClose={() => {
+              // Don't leave a hidden epic filter active when the panel closes.
+              setFilterEpicId("");
+              updateSettings({ epicPanel: false });
+            }}
+            selectedEpicId={filterEpicId || null}
+            onSelectEpic={(id) => setFilterEpicId(id ?? "")}
           />
         )}
         <div className="min-w-0 flex-1">
@@ -3138,7 +3177,7 @@ export function BacklogView({ projectId }: { projectId: string }) {
               }
               title={sprint.name}
               rightLabel={`(${headerCount} work item${headerCount === 1 ? "" : "s"})`}
-              counts={sprint.counts}
+              counts={filtersActive ? filteredBadges[key] : sprint.counts}
               allChecked={sel.all}
               someChecked={sel.some}
               onToggleAll={sel.toggle}
@@ -3292,7 +3331,7 @@ export function BacklogView({ projectId }: { projectId: string }) {
                 : backlogState.total ?? 0;
             return `(${count} work item${count === 1 ? "" : "s"})`;
           })()}
-          counts={undefined}
+          counts={filtersActive ? filteredBadges.backlog : undefined}
           allChecked={backlogSel.all}
           someChecked={backlogSel.some}
           onToggleAll={backlogSel.toggle}

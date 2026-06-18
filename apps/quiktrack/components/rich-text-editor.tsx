@@ -137,6 +137,8 @@ export function RichTextEditor({
         autolink: true,
         HTMLAttributes: {
           class: "text-blue-600 underline cursor-pointer hover:text-blue-800",
+          target: "_blank",
+          rel: "noopener noreferrer",
         },
       }),
       ImageExt.configure({
@@ -169,7 +171,13 @@ export function RichTextEditor({
     }
   }, [editor, value]);
 
-  // Image preview on click.
+  // Image preview + link navigation on click.
+  //
+  // TipTap's built-in link clickHandler bails when the editor is read-only
+  // (`if (!view.editable) return false`), so links never open in the doc
+  // *viewer*; and we keep `openOnClick: false` so it doesn't hijack the caret
+  // while editing. This DOM-level handler covers both: a left-click on a link
+  // opens it in a new tab regardless of editable state.
   useEffect(() => {
     if (!editor) return;
     const dom = editor.view.dom;
@@ -178,6 +186,13 @@ export function RichTextEditor({
       if (t.tagName === "IMG" && t.classList.contains("image-element")) {
         e.preventDefault();
         setMediaViewer({ show: true, type: "image", src: (t as HTMLImageElement).src });
+        return;
+      }
+      const anchor = t.closest("a");
+      const href = anchor?.getAttribute("href");
+      if (e.button === 0 && anchor && href) {
+        e.preventDefault();
+        window.open(href, "_blank", "noopener,noreferrer");
       }
     }
     dom.addEventListener("click", onClick);
