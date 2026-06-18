@@ -70,7 +70,15 @@ export function PopoverPanel({
     function onKey(e: KeyboardEvent) {
       if (e.key === "Escape") onClose();
     }
-    function onScrollOrResize() {
+    function onScrollOrResize(e?: Event) {
+      // Scrolling *inside* the panel (e.g. a long member list) must not close
+      // it. The scroll listener is in capture mode so it also receives scroll
+      // events from descendants — ignore those; only close when the page or
+      // anchor scrolls, since the fixed panel would otherwise detach from it.
+      if (e?.type === "scroll") {
+        const panel = document.getElementById("qt-popover-panel-active");
+        if (panel && e.target instanceof Node && panel.contains(e.target)) return;
+      }
       onClose();
     }
     document.addEventListener("mousedown", onDown);

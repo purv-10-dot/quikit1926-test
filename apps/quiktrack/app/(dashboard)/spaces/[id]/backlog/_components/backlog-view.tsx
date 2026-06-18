@@ -21,6 +21,7 @@ import {
   type FilterSelectOption,
 } from "../../grouped-kanban/_components/toolbar/filter-select";
 import { FilterMultiSelect } from "../../grouped-kanban/_components/toolbar/filter-multi-select";
+import { PopoverPanel } from "../../grouped-kanban/_components/cells/popover-panel";
 import {
   Search,
   Filter,
@@ -1191,7 +1192,7 @@ function IssueRow({
   const epicRef = useRef<HTMLDivElement>(null);
   const [assigneeOpen, setAssigneeOpen] = useState(false);
   const [assigneeSearch, setAssigneeSearch] = useState("");
-  const assigneeRef = useRef<HTMLDivElement>(null);
+  const assigneeRef = useRef<HTMLButtonElement>(null);
   const [menuOpen, setMenuOpen] = useState(false);
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [deleting, setDeleting] = useState(false);
@@ -1268,21 +1269,8 @@ function IssueRow({
     };
   }, [epicOpen]);
 
-  useEffect(() => {
-    if (!assigneeOpen) return;
-    function onClick(e: MouseEvent) {
-      if (assigneeRef.current && !assigneeRef.current.contains(e.target as Node)) {
-        setAssigneeOpen(false);
-      }
-    }
-    function onKey(e: KeyboardEvent) { if (e.key === "Escape") setAssigneeOpen(false); }
-    document.addEventListener("mousedown", onClick);
-    document.addEventListener("keydown", onKey);
-    return () => {
-      document.removeEventListener("mousedown", onClick);
-      document.removeEventListener("keydown", onKey);
-    };
-  }, [assigneeOpen]);
+  // Click-outside + Escape are handled by PopoverPanel (which also portals the
+  // menu to document.body so it can't be clipped by the scroll container).
 
   async function patch(body: Record<string, unknown>) {
     try {
@@ -1568,14 +1556,15 @@ function IssueRow({
             )
           : members;
         return (
-          <div className="relative shrink-0" ref={assigneeRef}>
+          <>
             <button
+              ref={assigneeRef}
               type="button"
               onClick={() => {
                 setAssigneeSearch("");
                 setAssigneeOpen((v) => !v);
               }}
-              className="rounded-full hover:ring-2 hover:ring-gray-200"
+              className="shrink-0 rounded-full hover:ring-2 hover:ring-gray-200"
               aria-label="Assignee"
               title={name}
             >
@@ -1597,70 +1586,76 @@ function IssueRow({
                 </span>
               )}
             </button>
-            {assigneeOpen && (
-              <div className="absolute right-0 top-full mt-1 w-[260px] bg-white border border-gray-200 rounded-md shadow-lg z-30 py-1">
-                <div className="px-2 pb-1.5 pt-1">
-                  <input
-                    autoFocus
-                    value={assigneeSearch}
-                    onChange={(e) => setAssigneeSearch(e.target.value)}
-                    placeholder="Search members"
-                    className="w-full h-7 px-2 text-xs border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-blue-500"
-                  />
-                </div>
-                <div className="max-h-60 overflow-y-auto">
-                  <button
-                    type="button"
-                    onClick={() => {
-                      if (issue.assigneeId) void patch({ assigneeId: null });
-                      setAssigneeOpen(false);
-                    }}
-                    className="w-full flex items-center gap-2 px-3 py-2 text-xs text-gray-700 hover:bg-gray-50 text-left"
-                  >
-                    <span className="h-6 w-6 rounded-full bg-gray-100 flex items-center justify-center shrink-0">
-                      <UserIcon className="h-3 w-3 text-gray-500" />
-                    </span>
-                    Unassigned
-                  </button>
-                  {filtered.length === 0 && (
-                    <div className="px-3 py-2 text-[11px] text-gray-400">No members found</div>
-                  )}
-                  {filtered.map((m) => {
-                    const isMe = m.userId === currentUserId;
-                    const active = m.userId === issue.assigneeId;
-                    return (
-                      <button
-                        key={m.userId}
-                        type="button"
-                        onClick={() => {
-                          if (!active) void patch({ assigneeId: m.userId });
-                          setAssigneeOpen(false);
-                        }}
-                        className={`w-full flex items-center gap-2 px-3 py-2 text-xs hover:bg-gray-50 text-left ${
-                          active ? "bg-blue-50" : ""
-                        }`}
-                      >
-                        <span
-                          className="h-6 w-6 rounded-full text-white text-[10px] font-semibold flex items-center justify-center shrink-0"
-                          style={{ background: memberColor(m.userId) }}
-                        >
-                          {memberInitials(m)}
-                        </span>
-                        <span className="flex-1 min-w-0">
-                          <span className="font-medium text-gray-900">{memberName(m)}</span>
-                          {isMe && <span className="text-gray-500"> (Assign to me)</span>}
-                          {m.user?.email && (
-                            <div className="text-[11px] text-gray-500 truncate">{m.user.email}</div>
-                          )}
-                        </span>
-                        {active && <Check className="h-3.5 w-3.5 text-blue-600 shrink-0" />}
-                      </button>
-                    );
-                  })}
-                </div>
+            <PopoverPanel
+              anchorRef={assigneeRef}
+              open={assigneeOpen}
+              onClose={() => setAssigneeOpen(false)}
+              align="right"
+              width={260}
+              placement="auto"
+              estimatedHeight={300}
+            >
+              <div className="px-2 pb-1.5 pt-1">
+                <input
+                  autoFocus
+                  value={assigneeSearch}
+                  onChange={(e) => setAssigneeSearch(e.target.value)}
+                  placeholder="Search members"
+                  className="w-full h-7 px-2 text-xs border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-blue-500"
+                />
               </div>
-            )}
-          </div>
+              <div className="max-h-60 overflow-y-auto">
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (issue.assigneeId) void patch({ assigneeId: null });
+                    setAssigneeOpen(false);
+                  }}
+                  className="w-full flex items-center gap-2 px-3 py-2 text-xs text-gray-700 hover:bg-gray-50 text-left"
+                >
+                  <span className="h-6 w-6 rounded-full bg-gray-100 flex items-center justify-center shrink-0">
+                    <UserIcon className="h-3 w-3 text-gray-500" />
+                  </span>
+                  Unassigned
+                </button>
+                {filtered.length === 0 && (
+                  <div className="px-3 py-2 text-[11px] text-gray-400">No members found</div>
+                )}
+                {filtered.map((m) => {
+                  const isMe = m.userId === currentUserId;
+                  const active = m.userId === issue.assigneeId;
+                  return (
+                    <button
+                      key={m.userId}
+                      type="button"
+                      onClick={() => {
+                        if (!active) void patch({ assigneeId: m.userId });
+                        setAssigneeOpen(false);
+                      }}
+                      className={`w-full flex items-center gap-2 px-3 py-2 text-xs hover:bg-gray-50 text-left ${
+                        active ? "bg-blue-50" : ""
+                      }`}
+                    >
+                      <span
+                        className="h-6 w-6 rounded-full text-white text-[10px] font-semibold flex items-center justify-center shrink-0"
+                        style={{ background: memberColor(m.userId) }}
+                      >
+                        {memberInitials(m)}
+                      </span>
+                      <span className="flex-1 min-w-0">
+                        <span className="font-medium text-gray-900">{memberName(m)}</span>
+                        {isMe && <span className="text-gray-500"> (Assign to me)</span>}
+                        {m.user?.email && (
+                          <div className="text-[11px] text-gray-500 truncate">{m.user.email}</div>
+                        )}
+                      </span>
+                      {active && <Check className="h-3.5 w-3.5 text-blue-600 shrink-0" />}
+                    </button>
+                  );
+                })}
+              </div>
+            </PopoverPanel>
+          </>
         );
       })()}
       <div className="relative shrink-0" ref={menuRef}>
