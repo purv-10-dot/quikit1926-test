@@ -27,7 +27,7 @@ export const DELETE = withOrgAuth<{ id: string; linkId: string }>(
       select: { id: true },
     });
     if (!access && !(await hasAdminAccess(userId, orgId))) {
-      return NextResponse.json({ success: false, error: "Forbidden" }, { status: 403 });
+      return NextResponse.json({ success: false, error: "You don't have access to this." }, { status: 403 });
     }
     await db.qtIssueLink.delete({ where: { id: link.id } });
     void recordIssueEvent({

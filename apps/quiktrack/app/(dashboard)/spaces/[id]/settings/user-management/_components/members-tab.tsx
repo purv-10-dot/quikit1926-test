@@ -37,7 +37,7 @@ export function MembersTab({ projectId }: { projectId: string }) {
   const qc = useQueryClient();
   const perms = useMyProjectPermissions(projectId);
   // Granular gates per action. Page-level guard only required `:view`, so a
-  // Developer/QA can read the member list — but mutations get disabled
+  // Contributor can read the member list — but mutations get disabled
   // unless they hold the matching perm.
   const canAdd = perms.loading || perms.has("ProjectMember", "create");
   // Only app-wide admins (tenant admin / super admin) can change a member's

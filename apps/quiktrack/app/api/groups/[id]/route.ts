@@ -20,7 +20,7 @@ export const PATCH = withOrgAuth<{ id: string }>(
     const access = await loadProjectAccess(orgId, userId, group.projectId);
     if (!access || !(await canWriteGroups(access, userId, orgId))) {
       return NextResponse.json(
-        { success: false, error: "Forbidden" },
+        { success: false, error: "You don't have access to this." },
         { status: 403 },
       );
     }
@@ -82,7 +82,7 @@ export const DELETE = withOrgAuth<{ id: string }>(
     const access = await loadProjectAccess(orgId, userId, group.projectId);
     if (!access || !(await canWriteGroups(access, userId, orgId))) {
       return NextResponse.json(
-        { success: false, error: "Forbidden" },
+        { success: false, error: "You don't have access to this." },
         { status: 403 },
       );
     }

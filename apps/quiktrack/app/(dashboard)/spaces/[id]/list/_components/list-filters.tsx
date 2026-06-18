@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import { Filter, X } from "lucide-react";
 import { TYPE_META, PRIORITY_META, type ListFilters, type IssueType, type Priority, type IssueStatus, type UserLite, userLabel } from "./list-types";
 import { BoardFilterSelect } from "../../board/_components/board-filter-select";
+import { BoardFilterMultiSelect } from "../../board/_components/board-filter-multi-select";
 
 interface Props {
   filters: ListFilters;
@@ -82,12 +83,14 @@ export function ListFilterButton({ filters, onChange, statuses, members }: Props
               ...ALL_PRIORITIES.map((p) => ({ value: p, label: PRIORITY_META[p].label })),
             ]}
           />
-          <BoardFilterSelect
+          <BoardFilterMultiSelect
             label="Assignee"
             value={filters.assigneeId}
             onChange={(v) => onChange({ ...filters, assigneeId: v })}
+            summaryNoun="people"
+            searchable
             options={[
-              { value: "", label: "Any" },
+              { value: "null", label: "Unassigned" },
               ...members
                 .filter((m): m is typeof m & { user: UserLite } => Boolean(m.user))
                 .map((m) => ({ value: m.user.id, label: userLabel(m.user) })),

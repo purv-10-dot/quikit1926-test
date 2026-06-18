@@ -90,9 +90,9 @@ const SECTIONS: PopoverSection[] = [
       {
         key: "work-items",
         label: "Work items",
-        description: "Configure work types, workflows, screens, fields, and more",
+        description: "Configure custom fields for work items across all spaces",
         icon: ListChecks,
-        disabled: true,
+        href: "/settings/work-items/fields",
       },
       {
         key: "marketplace",

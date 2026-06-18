@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
+import { useQueryClient } from "@tanstack/react-query";
 import {
   Plus,
   ChevronDown,
@@ -13,6 +14,7 @@ import {
   ListTree,
   CornerDownLeft,
 } from "lucide-react";
+import { useApiData } from "@/lib/hooks/useApiData";
 import { CreateIssueModal } from "@/components/create-issue-modal";
 
 type LinkType = "RELATES_TO";
@@ -98,24 +100,21 @@ export function LinkedWorkItems({
   projectId: string;
   onOpenIssue?: (id: string) => void;
 }) {
-  const [links, setLinks] = useState<LinkRow[]>([]);
-  const [loaded, setLoaded] = useState(false);
+  const queryClient = useQueryClient();
+  const linksKey = ["quiktrack", "issue-links", issueId];
+  const { data: links = [], isLoading } = useApiData<LinkRow[]>(
+    linksKey,
+    `/api/issues/${issueId}/links`,
+  );
+  const refreshLinks = useCallback(
+    () => queryClient.invalidateQueries({ queryKey: ["quiktrack", "issue-links", issueId] }),
+    [queryClient, issueId],
+  );
+
   const [creatorOpen, setCreatorOpen] = useState(false);
   const [createModalOpen, setCreateModalOpen] = useState(false);
   const [pendingLinkType, setPendingLinkType] = useState<LinkType>("RELATES_TO");
   const [open, setOpen] = useState(true);
-
-  const refresh = useCallback(async () => {
-    const res = await fetch(`/api/issues/${issueId}/links`).then((r) => r.json());
-    if (res?.success) {
-      setLinks(res.data ?? []);
-    }
-    setLoaded(true);
-  }, [issueId]);
-
-  useEffect(() => {
-    void refresh();
-  }, [refresh]);
 
   // While the "Create linked work item" modal is open, intercept the global
   // issue-created event and auto-link the new issue to this one. We only
@@ -133,7 +132,7 @@ export function LinkedWorkItems({
       })
         .then((r) => r.json())
         .then((res) => {
-          if (res?.success) setLinks((arr) => [...arr, res.data]);
+          if (res?.success) void refreshLinks();
         })
         .catch(() => undefined)
         .finally(() => {
@@ -143,14 +142,14 @@ export function LinkedWorkItems({
     }
     window.addEventListener("quiktrack:issue-created", onCreated);
     return () => window.removeEventListener("quiktrack:issue-created", onCreated);
-  }, [createModalOpen, issueId, pendingLinkType]);
+  }, [createModalOpen, issueId, pendingLinkType, refreshLinks]);
 
   async function unlink(linkId: string) {
     const res = await fetch(`/api/issues/${issueId}/links/${linkId}`, {
       method: "DELETE",
     }).then((r) => r.json());
     if (res?.success) {
-      setLinks((arr) => arr.filter((l) => l.id !== linkId));
+      void refreshLinks();
     }
   }
 
@@ -161,7 +160,7 @@ export function LinkedWorkItems({
       body: JSON.stringify({ targetIssueId: target.id, type }),
     }).then((r) => r.json());
     if (res?.success) {
-      setLinks((arr) => [...arr, res.data]);
+      void refreshLinks();
       pushRecent(target);
       setCreatorOpen(false);
     }
@@ -226,7 +225,7 @@ export function LinkedWorkItems({
             />
           )}
 
-          {loaded && links.length === 0 && !creatorOpen && (
+          {!isLoading && links.length === 0 && !creatorOpen && (
             <p className="text-xs text-gray-400">No linked work items yet.</p>
           )}
 

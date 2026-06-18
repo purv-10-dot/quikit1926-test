@@ -5,6 +5,31 @@
    in @quikit/ui, not here. */
 
 /* ============================================================================
+   FIXED BLUE BRAND ACCENT (Jira-style)
+   QuikTrack is intentionally NOT per-user themeable: its brand is a fixed
+   blue, matching the `blue-*` utilities used throughout the app. We pin the
+   `--accent-*` variables to Tailwind's blue palette here so `accent-600`
+   renders the same blue as `bg-blue-600`. The shared `ThemeApplier` (which
+   would otherwise overwrite these at runtime with the signed-in user's saved
+   accentColor — shared across all Quikit apps) is deliberately NOT mounted in
+   this app. Setting these in :root also means the brand blue is correct on the
+   very first paint, with no theme flash.
+   ============================================================================ */
+:root {
+  --accent-color: #2563eb;
+  --accent-50: #eff6ff;
+  --accent-100: #dbeafe;
+  --accent-200: #bfdbfe;
+  --accent-300: #93c5fd;
+  --accent-400: #60a5fa;
+  --accent-500: #3b82f6;
+  --accent-600: #2563eb;
+  --accent-700: #1d4ed8;
+  --accent-800: #1e40af;
+  --accent-900: #1e3a8a;
+}
+
+/* ============================================================================
    GLOBAL DARK-MODE OVERRIDES
    The app shell uses ~2300 hardcoded `bg-white / bg-gray-*` / `text-gray-*`
    utility classes. Rewriting each with `dark:` variants would be a 158-file
@@ -37,6 +62,12 @@ html.dark .bg-slate-100        { background-color: #1e293b !important; }
 html.dark .bg-slate-200        { background-color: #334155 !important; }
 html.dark .bg-slate-300        { background-color: #475569 !important; }
 html.dark .bg-slate-400        { background-color: #475569 !important; }
+
+/* Executive Report: flatten the page + sticky toolbar onto the same surface as
+   the cards (#1e293b) so the dark view is one consistent gray, instead of a
+   near-black page (#0f172a) showing behind dark-gray panels. Equal specificity
+   to the `.bg-gray-50` remap above but declared later, so it wins. */
+html.dark .exec-surface        { background-color: #1e293b !important; }
 
 html.dark .text-slate-400      { color: #64748b !important; }
 html.dark .text-slate-500      { color: #94a3b8 !important; }

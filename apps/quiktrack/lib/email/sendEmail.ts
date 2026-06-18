@@ -27,19 +27,61 @@ function envOrNull(key: string): string | null {
   return v && v.trim().length > 0 ? v : null;
 }
 
+/**
+ * Race a TCP connect against every candidate IP and resolve with the first
+ * one that actually accepts a connection (the rest are aborted). Returns null
+ * if none answer within `timeoutMs`. Used to avoid pinning a dead SMTP IP.
+ */
+function firstReachableIp(ips: string[], port: number, timeoutMs = 4000): Promise<string | null> {
+  if (ips.length === 0) return Promise.resolve(null);
+  return new Promise((resolve) => {
+    let pending = ips.length;
+    let settled = false;
+    const sockets: net.Socket[] = [];
+    const finish = (ip: string | null) => {
+      if (settled) return;
+      settled = true;
+      for (const s of sockets) s.destroy();
+      resolve(ip);
+    };
+    for (const ip of ips) {
+      const sock = net.createConnection({ host: ip, port, timeout: timeoutMs });
+      sockets.push(sock);
+      sock.on("connect", () => finish(ip));
+      const fail = () => {
+        sock.destroy();
+        if (--pending === 0) finish(null);
+      };
+      sock.on("timeout", fail);
+      sock.on("error", fail);
+    }
+  });
+}
+
 async function buildTransport(host: string, port: number, user: string, pass: string): Promise<Transporter> {
   // Office 365 quirk: nodemailer's default DNS resolution can land on an IPv6
   // address that makes Microsoft reject AUTH with the same `535 5.7.139` it
-  // uses for bad credentials. Resolving to IPv4 manually + setting the
-  // hostname as the TLS `servername` (SNI) sidesteps the bug. Mirrors the
-  // pattern in the working PMS service.
+  // uses for bad credentials. We resolve to IPv4 manually + set the hostname
+  // as the TLS `servername` (SNI) to sidestep that.
+  //
+  // BUT `smtp.office365.com` round-robins a pool of A records and, on many
+  // networks, only some of them are reachable — the others TCP-time out. The
+  // old code pinned `ipv4List[0]`, so roughly half of transport builds landed
+  // on a dead IP and every send failed with `ETIMEDOUT (CONN)`. Instead, probe
+  // the candidates in parallel and pin the first that actually connects; if
+  // none answer, fall back to the hostname and let the OS resolver choose.
   let resolvedHost = host;
   if (host && !net.isIP(host)) {
     try {
       const ipv4List = await dns.resolve4(host);
-      if (ipv4List?.length) {
-        resolvedHost = ipv4List[0];
-        console.log(`[email] resolved SMTP host ${host} -> ${resolvedHost} (IPv4)`);
+      const reachable = await firstReachableIp(ipv4List, port);
+      if (reachable) {
+        resolvedHost = reachable;
+        console.log(`[email] resolved SMTP host ${host} -> ${resolvedHost} (reachable IPv4 of ${ipv4List.length})`);
+      } else {
+        console.warn(
+          `[email] no resolved IPv4 for ${host} accepted :${port}; using hostname (OS resolver will choose)`,
+        );
       }
     } catch (e) {
       console.warn(
@@ -92,7 +134,11 @@ async function getTransport(): Promise<Transporter | null> {
   const user = envOrNull("SMTP_USER");
   const pass = envOrNull("SMTP_PASS");
 
-  console.log(`[email] SMTP env: host=${host}, port=${portStr}, user=${user}, pass=${pass}`);
+  // Never log the password itself — only whether it's present and its length,
+  // which is enough to spot env-loading problems without leaking the secret.
+  console.log(
+    `[email] SMTP env: host=${host}, port=${portStr}, user=${user}, pass=${pass ? `set(len ${pass.length})` : "MISSING"}`,
+  );
   if (!host || !portStr || !user || !pass) return null;
   const port = Number(portStr);
   if (!Number.isFinite(port)) return null;
@@ -383,7 +429,10 @@ export async function emailProjectInvite(args: {
   projectName: string;
   invitedBy: string | null;
 }): Promise<void> {
-  const link = `${appUrl()}/spaces/${args.projectId}/board`;
+  // The recipient is already an org member — they just need to log in to
+  // QuikTrack, so we point at the app's login URL rather than a project deep
+  // link (the project name is still shown in the email body for context).
+  const link = `${appUrl()}/login`;
   const html = shell({
     headerSubtitle: "Project invitation",
     headerTitle: "Project",
@@ -395,7 +444,7 @@ export async function emailProjectInvite(args: {
       ["Project", esc(args.projectName)],
       ...(args.invitedBy ? ([["Invited by", esc(args.invitedBy)]] as Array<[string, string]>) : []),
     ],
-    ctaLabel: "Open project",
+    ctaLabel: "Log in to QuikTrack",
     ctaHref: link,
   });
   await sendEmail({

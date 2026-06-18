@@ -1,6 +1,5 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
 import {
   Zap,
   CheckSquare,
@@ -8,6 +7,8 @@ import {
   BookOpen,
   ListTree,
 } from "lucide-react";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useApiData } from "@/lib/hooks/useApiData";
 import { LinkedWorkItems } from "@/components/linked-work-items";
 import { IssueActivity } from "@/components/issue-activity";
 import { IssueAttachments } from "@/components/issue-attachments";
@@ -47,40 +48,65 @@ export function IssueFullView({
   projectId: string;
   issueId: string;
 }) {
-  const [issue, setIssue] = useState<IssuePageData | null>(null);
-  const [projectName, setProjectName] = useState<string>("Project");
-  const [members, setMembers] = useState<Member[]>([]);
-  const [loading, setLoading] = useState(true);
+  const queryClient = useQueryClient();
 
-  const refresh = useCallback(async () => {
-    const res = await fetch(`/api/issues/${issueId}`).then((r) => r.json());
-    if (res?.success) setIssue(res.data);
-    setLoading(false);
-  }, [issueId]);
-
-  useEffect(() => {
-    void refresh();
-  }, [refresh]);
+  // Issue detail drives the view. We fetch the aggregate `/full` endpoint and,
+  // inside the queryFn, seed the sibling caches (links / comments / history /
+  // attachments) that the child panels read. Because the panels only mount
+  // after this query resolves (the skeleton gate below), their `useApiData`
+  // hooks hit warm cache instead of each firing their own request — so opening
+  // a work item is one round-trip, not ~six. `refetchIssue` re-runs after a
+  // PATCH, re-seeding everything so denorms (epic/parent/status) stay fresh.
+  const {
+    data: issue = null,
+    isLoading,
+    refetch: refetchIssue,
+  } = useQuery<IssuePageData>({
+    queryKey: ["quiktrack", "issue", issueId],
+    staleTime: 60_000,
+    queryFn: async () => {
+      const res = await fetch(`/api/issues/${issueId}/full`);
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const json = (await res.json()) as {
+        success: boolean;
+        error?: string;
+        data?: {
+          issue: IssuePageData;
+          links: unknown[];
+          comments: unknown[];
+          history: unknown[];
+          attachments: unknown[];
+        };
+      };
+      if (!json.success || !json.data) throw new Error(json.error ?? "Request failed");
+      const { issue, links, comments, history, attachments } = json.data;
+      queryClient.setQueryData(["quiktrack", "issue-links", issueId], links);
+      queryClient.setQueryData(["quiktrack", "issue-comments", issueId], comments);
+      queryClient.setQueryData(["quiktrack", "issue-history", issueId], history);
+      queryClient.setQueryData(["quiktrack", "issue-attachments", issueId], attachments);
+      return issue;
+    },
+  });
 
   // Project name for the breadcrumb pill.
-  useEffect(() => {
-    void fetch(`/api/projects/${projectId}`)
-      .then((r) => r.json())
-      .then((j) => {
-        if (j?.success && j.data?.name) setProjectName(j.data.name);
-      })
-      .catch(() => undefined);
-  }, [projectId]);
+  const { data: projectName = "Project" } = useApiData<string>(
+    ["quiktrack", "project-name", projectId],
+    `/api/projects/${projectId}`,
+    { select: (d) => (d as { name?: string } | null)?.name ?? "Project" },
+  );
 
-  // Project members — feed the @-mention list in the comment editor.
-  useEffect(() => {
-    void fetch(`/api/projects/${projectId}/members`)
-      .then((r) => r.json())
-      .then((j) => {
-        if (j?.success) setMembers((j.data?.members ?? j.data ?? []) as Member[]);
-      })
-      .catch(() => undefined);
-  }, [projectId]);
+  // Project members — feed the @-mention list and the details panel (passed
+  // down so the panel doesn't refetch the same list).
+  const { data: members = [] } = useApiData<Member[]>(
+    ["quiktrack", "project-members", projectId],
+    `/api/projects/${projectId}/members`,
+    {
+      select: (d) => {
+        const payload = d as { members?: Member[] } | Member[] | null;
+        return Array.isArray(payload) ? payload : payload?.members ?? [];
+      },
+    },
+  );
 
   async function patch(data: Record<string, unknown>) {
     const res = await fetch(`/api/issues/${issueId}`, {
@@ -89,9 +115,7 @@ export function IssueFullView({
       body: JSON.stringify(data),
     }).then((r) => r.json());
     if (res?.success) {
-      // Refetch so denorms (epic/parent/status object) reflect the new ids
-      // — a local merge on `{ epicId }` would leave `issue.epic` stale.
-      void refresh();
+      void refetchIssue();
       window.dispatchEvent(
         new CustomEvent("quiktrack:issue-updated", {
           detail: { projectId, issueId },
@@ -100,7 +124,7 @@ export function IssueFullView({
     }
   }
 
-  if (loading || !issue) {
+  if (isLoading || !issue) {
     return <IssueViewSkeleton />;
   }
 
@@ -145,7 +169,7 @@ export function IssueFullView({
       {/* Right rail — sticks to the top of the scrolling viewport so it stays
           visible while the long left column scrolls. */}
       <div className="sticky top-0 self-start max-h-[calc(100vh-2rem)] overflow-y-auto pt-6">
-        <IssueDetailsPanel issue={issue} onPatch={patch} />
+        <IssueDetailsPanel issue={issue} members={members} onPatch={patch} />
       </div>
     </div>
   );

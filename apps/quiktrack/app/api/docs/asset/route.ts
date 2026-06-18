@@ -21,7 +21,7 @@ export const GET = withOrgAuth(async (ctx, req) => {
     return NextResponse.json({ success: false, error: "key required" }, { status: 400 });
   }
   if (!keyBelongsToTenant(key, ctx.orgId)) {
-    return NextResponse.json({ success: false, error: "Forbidden" }, { status: 403 });
+    return NextResponse.json({ success: false, error: "You don't have access to this." }, { status: 403 });
   }
 
   try {

@@ -31,6 +31,11 @@ interface GroupHeaderProps {
   onDelete?: () => void;
   draggable?: boolean;
   onDragStart?: (e: React.DragEvent) => void;
+  /**
+   * Derived (field-grouped) header: the name is a field value, not a user group,
+   * so renaming, recoloring and deleting are all disabled. Collapse still works.
+   */
+  virtual?: boolean;
 }
 
 export function GroupHeader({
@@ -42,6 +47,7 @@ export function GroupHeader({
   onDelete,
   draggable,
   onDragStart,
+  virtual = false,
 }: GroupHeaderProps) {
   const [editingName, setEditingName] = useState(false);
   const [nameDraft, setNameDraft] = useState(group.name);
@@ -95,7 +101,14 @@ export function GroupHeader({
           <GripVertical className="h-3.5 w-3.5" />
         </span>
       )}
-      {editingName ? (
+      {virtual ? (
+        <span
+          style={{ color: validColor }}
+          className="text-lg font-bold tracking-tight"
+        >
+          {group.name}
+        </span>
+      ) : editingName ? (
         <input
           autoFocus
           value={nameDraft}
@@ -146,6 +159,7 @@ export function GroupHeader({
         </span>
       )}
 
+      {!virtual && (
       <div
         className="ml-auto relative"
         onClick={(e) => e.stopPropagation()}
@@ -243,6 +257,7 @@ export function GroupHeader({
           </div>
         </PopoverPanel>
       </div>
+      )}
     </div>
   );
 }

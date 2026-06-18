@@ -350,7 +350,7 @@ Modern work-management for product, engineering, and operations teams. Built aro
 ## 🔐 Permissions & Roles
 
 - **Organization roles** — Platform-wide admin and member tiers with clear privilege separation.
-- **Project-level roles** — Custom roles (Project Admin, PM, Developer, QA, Viewer) — each project can have its own setup.
+- **Project-level roles** — Custom roles (Space Admin, Contributor, Viewer) — each project can have its own setup.
 - **Resource-action permission grants** — Per-resource, per-action (view / create / update / delete) for fine-grained control.
 - **Field-level access** — Lock individual issue fields to readonly or hidden by role — perfect for QA-only or contractor flows.
 - **Navigation gating** — Show or hide entire UI sections based on role.
@@ -419,7 +419,7 @@ End-to-end user journeys organized by **persona** and by **workflow**. Use this 
 1. **Ashwin** creates the QuikIT organization and invites Priya as an admin via email.
 2. **Priya** accepts the invite, sets her password, and lands on the launcher.
 3. **Priya** opens QuikTrack and creates a new project space called **"Customer Web Portal"** (key `WEB`).
-4. The project auto-seeds **5 starter roles** (Project Admin, PM, Developer, QA, Viewer), **5 statuses** (Backlog → Done), and **4 issue types** (Story, Task, Bug, Epic).
+4. The project auto-seeds **3 starter roles** (Space Admin, Contributor, Viewer), **5 statuses** (Backlog → Done), and **4 issue types** (Story, Task, Bug, Epic).
 5. **Priya** invites 6 teammates from the team picker — assigns Arjun and 2 others as Developers, Kavya as QA, Rohan as Viewer.
 6. **Priya** customizes the workflow — adds a **"Blocked"** status to the In Progress category.
 7. **Priya** sets project notifications: email on status change to Done.
@@ -2072,7 +2072,7 @@ QA matrix covering every working feature, sub-action, field, edge case, security
 
 ## 17.4 Project Role Create / Edit / Delete
 - **Best:** Same as org but scoped to project.
-- **Worst:** "Project Admin" starter role can't be deleted if last admin.
+- **Worst:** "Space Admin" starter role can't be deleted if last admin.
 
 ## 17.5 Permission Grants
 - For every (resource × action), test allow + deny:

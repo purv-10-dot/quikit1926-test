@@ -18,6 +18,9 @@ export const createIssueSchema = z.object({
   dueDate: z.string().datetime().optional(),
   eta: z.number().min(0).max(10_000).optional(),
   storyPoints: z.number().int().min(0).max(1000).optional(),
+  // Custom field values keyed by fieldId. Validated server-side against the
+  // field definitions (see customFieldValues.ts) — shape is type-dependent.
+  customFields: z.record(z.unknown()).optional(),
 });
 
 export const updateIssueSchema = createIssueSchema
@@ -28,6 +31,7 @@ export const updateIssueSchema = createIssueSchema
     sprintId: z.string().min(1).nullable().optional(),
     // Nullable so an issue can be unassigned from the details panel / subtask grid.
     assigneeId: z.string().min(1).nullable().optional(),
+    customFields: z.record(z.unknown()).optional(),
   });
 
 export const moveIssueSchema = z.object({

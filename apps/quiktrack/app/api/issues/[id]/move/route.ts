@@ -26,7 +26,7 @@ export const PATCH = withOrgAuth<{ id: string }>(
       !(await hasAdminAccess(userId, orgId)) &&
       !(await userCanInProject(userId, orgId, issue.projectId, "Issue", "update"))
     ) {
-      return NextResponse.json({ success: false, error: "Forbidden" }, { status: 403 });
+      return NextResponse.json({ success: false, error: "You don't have access to this." }, { status: 403 });
     }
     const parsed = moveIssueSchema.safeParse(await req.json());
     if (!parsed.success) {

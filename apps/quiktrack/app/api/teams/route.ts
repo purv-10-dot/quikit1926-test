@@ -22,7 +22,7 @@ export const GET = withOrgAuth(async ({ orgId }) => {
 
 export const POST = withOrgAuth(async ({ orgId, userId }, req) => {
   if (!(await hasAdminAccess(userId, orgId))) {
-    return NextResponse.json({ success: false, error: "Forbidden" }, { status: 403 });
+    return NextResponse.json({ success: false, error: "You don't have access to this." }, { status: 403 });
   }
   const parsed = createSchema.safeParse(await req.json());
   if (!parsed.success) {

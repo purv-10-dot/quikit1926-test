@@ -320,6 +320,16 @@ export const GlobalSearchPopover = forwardRef<GlobalSearchPopoverHandle>(
     // When searching, the live projects list takes over below.
     const recentProjects = useMemo(() => allProjects.slice(0, 6), [allProjects]);
 
+    // True when any right-rail filter is engaged. Combined with `appliedQuery`
+    // it tells the header whether the list is a real search result set (show
+    // the total count) or just the default recent-activity view.
+    const hasActiveFilters =
+      filterProjectIds.size > 0 ||
+      filterAssigneeIds.size > 0 ||
+      filterReporterMe ||
+      updatedRange !== "any" ||
+      Object.values(statusCats).some(Boolean);
+
     function openIssue(issueId: string, projectId?: string) {
       setOpen(false);
       // Prefer the full-page view when we know the project; otherwise fall
@@ -351,14 +361,20 @@ export const GlobalSearchPopover = forwardRef<GlobalSearchPopoverHandle>(
           <div className="absolute left-0 top-full mt-1.5 w-[820px] max-w-[calc(100vw-2rem)] bg-white border border-gray-200 rounded-lg shadow-[0_10px_40px_rgba(15,23,42,0.18)] z-[60] grid grid-cols-[1fr_280px] max-h-[72vh] overflow-hidden">
             {/* Left — work items list (filters from the right rail apply
                 live; project list shows only when matching). */}
-            <div className="overflow-y-auto flex flex-col">
+            <div className="overflow-y-auto flex flex-col min-h-0 max-h-[72vh]">
               <div className="sticky top-0 bg-white px-4 pt-3.5 pb-2 flex items-center gap-2 border-b border-gray-100 z-10">
                 <span className="text-[11px] font-semibold uppercase tracking-[0.06em] text-gray-500">
-                  Work items
+                  {appliedQuery || hasActiveFilters ? "Work items" : "Recent"}
                 </span>
-                <span className="inline-flex items-center justify-center min-w-[20px] h-[18px] px-1.5 text-[10px] font-semibold text-gray-600 bg-gray-100 rounded-full">
-                  {totalIssues}
-                </span>
+                {/* The count is the total matching the query/filters — only
+                    meaningful when something is being searched. Without a
+                    query the list is just recent activity, so the total would
+                    be misleading next to a short list. */}
+                {(appliedQuery || hasActiveFilters) && (
+                  <span className="inline-flex items-center justify-center min-w-[20px] h-[18px] px-1.5 text-[10px] font-semibold text-gray-600 bg-gray-100 rounded-full">
+                    {totalIssues}
+                  </span>
+                )}
                 {loading && (
                   <span className="text-[11px] text-gray-400 ml-auto">Searching…</span>
                 )}
@@ -465,7 +481,7 @@ export const GlobalSearchPopover = forwardRef<GlobalSearchPopoverHandle>(
             </div>
 
             {/* Right — filters */}
-            <div className="overflow-y-auto py-3 px-4 text-xs bg-gray-50/40 border-l border-gray-100">
+            <div className="overflow-y-auto min-h-0 max-h-[72vh] py-3 px-4 text-xs bg-gray-50/40 border-l border-gray-100">
               <FilterSection title="Last updated">
                 <div className="flex flex-wrap gap-1.5">
                   {UPDATED_RANGES.map((r) => (

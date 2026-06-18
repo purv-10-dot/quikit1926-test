@@ -16,7 +16,7 @@ export const POST = withOrgAuth<{ id: string }>(
     }
     if (!(await canWriteGroups(access, userId, orgId))) {
       return NextResponse.json(
-        { success: false, error: "Forbidden" },
+        { success: false, error: "You don't have access to this." },
         { status: 403 },
       );
     }

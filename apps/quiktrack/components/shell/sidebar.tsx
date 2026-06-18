@@ -21,6 +21,10 @@ import {
   Sliders,
   List as ListIcon,
   BarChart3,
+  TrendingUp,
+  Gauge,
+  ClipboardList,
+  PieChart,
 } from "lucide-react";
 import { ComingSoonRow } from "./coming-soon-row";
 import { FiltersSection } from "./filters-section";
@@ -293,16 +297,11 @@ export function Sidebar() {
           {canSee("dashboards") && (
           <NavRow
             href="/dashboards"
-            icon={LayoutDashboard}
+            icon={Gauge}
             label="Dashboards"
             expandable
             expanded={dashboardsOpen}
             onToggle={() => setDashboardsOpen((v) => !v)}
-            trailing={
-              <Plus
-                className="h-3.5 w-3.5 text-gray-400 hover:text-gray-700"
-              />
-            }
           />
           )}
           {canSee("dashboards") && dashboardsOpen && (
@@ -321,7 +320,7 @@ export function Sidebar() {
               </div> */}
               <NavRow
                 href="/dashboards/default"
-                icon={LayoutDashboard}
+                icon={PieChart}
                 label="Default dashboard"
                 indent
               />
@@ -354,7 +353,7 @@ export function Sidebar() {
             <div className="pr-2 space-y-1.5 mb-1">
               <NavRow
                 href="/reports"
-                icon={BarChart3}
+                icon={ClipboardList}
                 label="Project Report"
                 active={pathname === "/reports"}
                 indent
@@ -362,12 +361,19 @@ export function Sidebar() {
               {perms.isAdmin && (
                 <NavRow
                   href="/reports/resource"
-                  icon={BarChart3}
+                  icon={Users}
                   label="Resource Report"
                   active={isActive("/reports/resource")}
                   indent
                 />
               )}
+              <NavRow
+                href="/reports/executive"
+                icon={TrendingUp}
+                label="Executive Report"
+                active={isActive("/reports/executive")}
+                indent
+              />
             </div>
           )}
           {/* TODO: coming soon — Operations / Customers / Customer experiences.

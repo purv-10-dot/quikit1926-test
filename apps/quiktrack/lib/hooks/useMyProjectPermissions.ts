@@ -1,9 +1,12 @@
 "use client";
 
 /**
- * Client-side project-scoped permission gate. Returns Layer 1 ∪ Layer 2 for
- * the given projectId, so UI components inside `/spaces/[id]/*` can gate
- * mutation buttons exactly the way the server's `userCanInProject` would.
+ * Client-side project-scoped permission gate. Mirrors the server's
+ * `userCanInProject`: the project (custom) role OVERRIDES the app-wide role, so
+ * the endpoint already returns the fully-resolved effective set (project-role
+ * grants when the user holds a project role here, else the app-wide fallback).
+ * We therefore use that set directly — we do NOT union it back with the global
+ * app-wide perms, or an un-granted project permission would wrongly re-appear.
  *
  * Pairs with the app-wide `useMyPermissions()` — use this one when you're
  * rendering inside a project's UI, the global hook everywhere else.
@@ -51,8 +54,7 @@ export function useMyProjectPermissions(
   const set = new Set(data ?? []);
   return {
     isAdmin: false,
-    has: (resource, action) =>
-      set.has(`${resource}:${action}`) || global.has(resource, action),
+    has: (resource, action) => set.has(`${resource}:${action}`),
     loading: isLoading || global.loading,
   };
 }

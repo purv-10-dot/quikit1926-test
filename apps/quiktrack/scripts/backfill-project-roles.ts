@@ -45,7 +45,7 @@ async function main() {
         console.log(`    + created role ${tmpl.name}`);
       }
 
-      const grants = tmpl.name === "Project Admin" ? adminAllPairs : tmpl.grants;
+      const grants = tmpl.name === "Space Admin" ? adminAllPairs : tmpl.grants;
       if (grants.length > 0) {
         await db.qtProjectRolePermission.createMany({
           data: grants.map((g) => ({

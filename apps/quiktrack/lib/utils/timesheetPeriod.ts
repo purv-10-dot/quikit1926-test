@@ -91,6 +91,41 @@ export function formatHours(hours: number): string {
   return `${m}m`;
 }
 
+/**
+ * Clock-style display for the Log time field: hours → "HH:MM".
+ *   1   → "01:00"
+ *   1.5 → "01:30"
+ *   0   → "00:00"
+ * Hours past two digits are not truncated (e.g. 120 → "120:00").
+ */
+export function formatHoursAsClock(hours: number): string {
+  if (!Number.isFinite(hours) || hours <= 0) return "00:00";
+  const totalMin = Math.round(hours * 60);
+  const h = Math.floor(totalMin / 60);
+  const m = totalMin - h * 60;
+  return `${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}`;
+}
+
+/**
+ * Parses the Log time field's clock-style input into decimal hours. Accepts:
+ *   "HH:MM" / "H:MM" → hours + minutes ("01:30" → 1.5, "1:30" → 1.5)
+ *   decimal hours    → fractional hours ("1.5" → 1.5)
+ *   bare integer     → whole hours ("1" → 1)
+ * Returns null when the string is empty or unparseable.
+ */
+export function parseClockToHours(input: string): number | null {
+  const s = input.trim();
+  if (!s) return null;
+  const clock = /^(\d{1,3}):([0-5]?\d)$/.exec(s);
+  if (clock) {
+    return Number(clock[1]) + Number(clock[2]) / 60;
+  }
+  if (/^\d+(?:\.\d+)?$/.test(s)) {
+    return Number(s);
+  }
+  return null;
+}
+
 /** Same parser as the issue-activity log-time modal. */
 export function parseDurationToHours(input: string): number | null {
   let total = 0;
