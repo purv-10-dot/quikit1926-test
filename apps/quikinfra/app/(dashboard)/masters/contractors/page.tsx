@@ -1,12 +1,13 @@
 "use client";
 
+import { toErrorMessage } from "@/lib/api/errors";
 import { useState } from "react";
 import { HardHat } from "lucide-react";
 import { MasterListPage, type MasterColumnDef } from "@/components/MasterListPage";
-import { useContractors, useCreateContractor, useUpdateContractor } from "@/hooks/use-masters";
+import { useContractors, useCreateContractor, useUpdateContractor, useDeleteContractor } from "@/hooks/use-masters";
 import {
   FormDrawer, FormSection, FormRow, Field,
-  TextInput, SelectInput,
+  TextInput, SelectInput, InactiveStatusNotice,
 } from "@/components/FormDrawer";
 import dynamic from "next/dynamic";
 import type { ImportFieldDef } from "@/components/ImportDataDrawer";
@@ -56,6 +57,17 @@ const STATUS_OPTIONS = [
 interface ContractorRow {
   id: string; code: string; name: string; gstin?: string; contactPerson?: string;
   phone?: string; specialization?: string; licenseNo?: string; status: string;
+}
+
+/** Full contractor record consumed by Edit — superset of the list row. */
+interface ContractorEditRow {
+  id: string;
+  name?: string; legalName?: string; contactPerson?: string;
+  phone?: string; email?: string; gstin?: string; pan?: string;
+  licenseNo?: string; specialization?: string;
+  address?: string; city?: string; state?: string;
+  bankName?: string; branchName?: string; accountNo?: string;
+  ifscCode?: string; accountType?: string; status?: string;
 }
 
 const columns: MasterColumnDef<ContractorRow>[] = [
@@ -108,6 +120,7 @@ export default function ContractorsPage() {
   const { data: result, isLoading } = useContractors();
   const createMutation = useCreateContractor();
   const updateMutation = useUpdateContractor();
+  const deleteMutation = useDeleteContractor();
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [importOpen, setImportOpen] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
@@ -139,12 +152,12 @@ export default function ContractorsPage() {
         status: "active",
       });
       return { ok: true as const };
-    } catch (err: any) {
-      return { ok: false as const, error: err?.message ?? "Create failed" };
+    } catch (err: unknown) {
+      return { ok: false as const, error: toErrorMessage(err, "Create failed") };
     }
   };
 
-  const set = (key: string, val: any) => {
+  const set = <K extends keyof typeof emptyForm>(key: K, val: (typeof emptyForm)[K]) => {
     setForm(prev => ({ ...prev, [key]: val }));
     if (errors[key]) setErrors(prev => { const next = { ...prev }; delete next[key]; return next; });
   };
@@ -161,8 +174,8 @@ export default function ContractorsPage() {
     } catch { /* error toast handled globally */ }
   };
 
-  const handleDelete = async (item: any) => {
-    await updateMutation.mutateAsync({ id: item.id, status: "inactive" });
+  const handleDelete = async (item: { id: string }) => {
+    await deleteMutation.mutateAsync(item.id);
   };
 
   const isSaving = createMutation.isPending || updateMutation.isPending;
@@ -174,7 +187,7 @@ export default function ContractorsPage() {
         entityName="Contractor"
         permissionUrl="/masters/contractors"
         columns={columns}
-        data={result?.data ?? []}
+        data={(result?.data ?? []) as ContractorRow[]}
         total={result?.data?.length ?? 0}
         isLoading={isLoading}
         historyEntityType="contractor"
@@ -182,7 +195,7 @@ export default function ContractorsPage() {
         onImport={() => setImportOpen(true)}
         onAdd={() => { setForm(emptyForm); setErrors({}); setEditingId(null); setDrawerOpen(true); }}
         onDelete={handleDelete}
-        deleteConfirmMessage={(item: any) => (
+        deleteConfirmMessage={(item) => (
           <>
             Delete contractor{" "}
             <span className="font-semibold text-gray-900">“{item.name}”</span>?
@@ -191,7 +204,7 @@ export default function ContractorsPage() {
             “Show deleted” view.
           </>
         )}
-        onEdit={(item: any) => {
+        onEdit={(item: ContractorEditRow) => {
           setEditingId(item.id);
           setErrors({});
           setForm({
@@ -324,6 +337,7 @@ export default function ContractorsPage() {
         <FormSection title="Status">
           <Field label="Status">
             <SelectInput value={form.status} onChange={v => set("status", v)} options={STATUS_OPTIONS} />
+            {form.status === "inactive" && <InactiveStatusNotice entityName="Contractor" />}
           </Field>
         </FormSection>
       </FormDrawer>

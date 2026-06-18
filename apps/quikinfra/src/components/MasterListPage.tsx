@@ -6,6 +6,7 @@
  * column toggle, group-by, and audit columns.
  */
 
+import { toErrorMessage, getErrorCode } from "@/lib/api/errors";
 import { useCallback, useMemo, useState, type ReactNode } from "react";
 import { Plus, Download, Upload, Trash2, Pencil, RotateCcw } from "lucide-react";
 import { PageHeader, PageContainer, PrimaryButton, SecondaryButton, EmptyState } from "./PageShell";
@@ -95,6 +96,36 @@ export interface MasterListPageProps<T extends { id: string; status?: string }> 
   permissionUrl?: string;
 }
 
+// ─── Status badge ───────────────────────────────────────────────────
+// Default renderer for `type: "status"` columns. Semantic (not themeable)
+// colors — active = green, inactive = grey, blacklisted = red, anything
+// else = amber. Raw value stays lowercase for sort/filter; only the label
+// is title-cased ("active" → "Active").
+const STATUS_BADGE_STYLES: Record<string, { pill: string; dot: string }> = {
+  active: { pill: "bg-emerald-50 text-emerald-700 ring-emerald-200", dot: "bg-emerald-500" },
+  inactive: { pill: "bg-slate-100 text-slate-500 ring-slate-200", dot: "bg-slate-400" },
+  blacklisted: { pill: "bg-rose-50 text-rose-700 ring-rose-200", dot: "bg-rose-500" },
+};
+const DEFAULT_STATUS_STYLE = { pill: "bg-amber-50 text-amber-700 ring-amber-200", dot: "bg-amber-500" };
+
+function titleCase(s: string): string {
+  return s.replace(/[_-]+/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
+}
+
+function StatusBadge({ value }: { value: string }) {
+  const key = value.trim().toLowerCase();
+  if (!key) return <span className="text-slate-400">—</span>;
+  const { pill, dot } = STATUS_BADGE_STYLES[key] ?? DEFAULT_STATUS_STYLE;
+  return (
+    <span
+      className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-0.5 text-xs font-medium ring-1 ring-inset ${pill}`}
+    >
+      <span className={`w-1.5 h-1.5 rounded-full ${dot}`} />
+      {titleCase(value)}
+    </span>
+  );
+}
+
 // ─── Component ──────────────────────────────────────────────────────
 
 export function MasterListPage<T extends { id: string; status?: string }>({
@@ -132,19 +163,19 @@ export function MasterListPage<T extends { id: string; status?: string }>({
     "active",
   );
   const inactiveCount = useMemo(
-    () => data.filter((r) => (r as any)?.status === "inactive").length,
+    () => data.filter((r) => (r as { status?: string })?.status === "inactive").length,
     [data],
   );
   const visibleData = useMemo(
     () => {
       if (!showStatusTabs) {
-        return data.filter((r) => (r as any)?.status !== "inactive");
+        return data.filter((r) => (r as { status?: string })?.status !== "inactive");
       }
       if (statusView === "all") return data;
       if (statusView === "inactive") {
-        return data.filter((r) => (r as any)?.status === "inactive");
+        return data.filter((r) => (r as { status?: string })?.status === "inactive");
       }
-      return data.filter((r) => (r as any)?.status !== "inactive");
+      return data.filter((r) => (r as { status?: string })?.status !== "inactive");
     },
     [data, statusView, showStatusTabs],
   );
@@ -154,7 +185,7 @@ export function MasterListPage<T extends { id: string; status?: string }>({
   // viewing the Inactive / All tab. Independent of `visibleData` so the
   // on-screen view and the export can diverge intentionally.
   const exportableData = useMemo(
-    () => data.filter((r) => (r as any)?.status !== "inactive"),
+    () => data.filter((r) => (r as { status?: string })?.status !== "inactive"),
     [data],
   );
 
@@ -169,8 +200,8 @@ export function MasterListPage<T extends { id: string; status?: string }>({
     try {
       await effectiveOnDelete(deleteTarget);
       setDeleteTarget(null);
-    } catch (err: any) {
-      toast.error(err?.message ?? "Failed to delete");
+    } catch (err: unknown) {
+      toast.error(toErrorMessage(err, "Failed to delete"));
     } finally {
       setDeletingInFlight(false);
     }
@@ -204,14 +235,20 @@ export function MasterListPage<T extends { id: string; status?: string }>({
     return columns.map(col => ({
       key: col.key,
       label: col.label,
-      type: col.type === "status" ? "select" as const : (col.type as any) ?? "text",
+      type: col.type === "status" ? ("select" as const) : (col.type ?? "text"),
       width: col.width,
       sortable: col.sortable ?? true,
       searchable: true,
       hideable: true,
       freezable: true,
       options: col.type === "status" ? (col.options ?? statusOptions(col)) : col.options,
-      render: col.render ? (row: T) => col.render!(row) : undefined,
+      render: col.render
+        ? (row: T) => col.render!(row)
+        : col.type === "status"
+          ? (row: T) => (
+              <StatusBadge value={String((row as Record<string, unknown>)[col.key] ?? "")} />
+            )
+          : undefined,
       getValue: col.getValue ? (row: T) => col.getValue!(row) as string : undefined,
     }));
   }, [columns, statusOptions]);
@@ -238,7 +275,7 @@ export function MasterListPage<T extends { id: string; status?: string }>({
           // Restore prefers `onRestore` (direct status flip, no drawer)
           // when provided, falling back to `onEdit` so forms that still
           // expose a Status field keep working.
-          const isInactive = (row as any)?.status === "inactive";
+          const isInactive = (row as { status?: string })?.status === "inactive";
           const showEdit = !!effectiveOnEdit && !isInactive;
           const showRestore = (!!effectiveOnRestore || !!effectiveOnEdit) && isInactive;
           const showDelete = !!effectiveOnDelete && !isInactive;

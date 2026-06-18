@@ -3,6 +3,7 @@
  */
 
 import { db } from "@/lib/db";
+import { Prisma } from "@quikit/database";
 
 export interface WorkCategoryRecord {
   id: string;
@@ -17,7 +18,7 @@ export interface WorkCategoryRecord {
   updatedBy: string;
 }
 
-function toRecord(row: any): WorkCategoryRecord {
+function toRecord(row: Prisma.CnWorkCategoryGetPayload<Record<string, never>>): WorkCategoryRecord {
   return {
     id: row.id,
     orgId: row.orgId,
@@ -61,7 +62,7 @@ function buildWorkCategoriesWhere(
 export async function listWorkCategories(
   opts: ListWorkCategoriesOptions,
 ): Promise<WorkCategoryRecord[]> {
-  const rows = await (db as any).cnWorkCategory.findMany({
+  const rows = await db.cnWorkCategory.findMany({
     where: buildWorkCategoriesWhere(opts),
     orderBy: [{ sortOrder: "asc" }, { name: "asc" }],
     ...(typeof opts.take === "number" ? { take: opts.take } : {}),
@@ -73,7 +74,7 @@ export async function listWorkCategories(
 export async function countWorkCategories(
   opts: Pick<ListWorkCategoriesOptions, "orgId" | "search">,
 ): Promise<number> {
-  return (db as any).cnWorkCategory.count({
+  return db.cnWorkCategory.count({
     where: buildWorkCategoriesWhere(opts),
   });
 }
@@ -82,7 +83,7 @@ export async function findWorkCategoryById(
   orgId: string,
   id: string,
 ): Promise<WorkCategoryRecord | null> {
-  const row = await (db as any).cnWorkCategory.findFirst({ where: { id, orgId } });
+  const row = await db.cnWorkCategory.findFirst({ where: { id, orgId } });
   return row ? toRecord(row) : null;
 }
 
@@ -109,7 +110,7 @@ function toIntOrNull(v: unknown): number | null {
 export async function createWorkCategory(
   input: CreateWorkCategoryInput,
 ): Promise<WorkCategoryRecord> {
-  const row = await (db as any).cnWorkCategory.create({
+  const row = await db.cnWorkCategory.create({
     data: {
       orgId: input.orgId,
       name: String(input.name).trim(),
@@ -133,7 +134,7 @@ export async function updateWorkCategory(
   id: string,
   patch: UpdateWorkCategoryInput,
 ): Promise<WorkCategoryRecord | null> {
-  const existing = await (db as any).cnWorkCategory.findFirst({
+  const existing = await db.cnWorkCategory.findFirst({
     where: { id, orgId },
     select: { id: true },
   });
@@ -145,7 +146,7 @@ export async function updateWorkCategory(
   if (patch.sortOrder !== undefined) data.sortOrder = toIntOrNull(patch.sortOrder);
   if (patch.status !== undefined) data.status = patch.status;
 
-  const row = await (db as any).cnWorkCategory.update({ where: { id }, data });
+  const row = await db.cnWorkCategory.update({ where: { id }, data });
   return toRecord(row);
 }
 
@@ -154,7 +155,7 @@ export async function deleteWorkCategory(
   id: string,
   updatedBy: string,
 ): Promise<boolean> {
-  const res = await (db as any).cnWorkCategory.updateMany({
+  const res = await db.cnWorkCategory.updateMany({
     where: { id, orgId },
     data: { status: "inactive", updatedBy },
   });

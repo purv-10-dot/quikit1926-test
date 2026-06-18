@@ -23,6 +23,7 @@
  * accidentally fire a workflow transition on unsaved changes.
  */
 
+import { toErrorMessage } from "@/lib/api/errors";
 import { useEffect, useMemo, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { useQueryClient } from "@tanstack/react-query";
@@ -45,7 +46,7 @@ import {
 } from "@/components/PageShell";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { SelectInput } from "@/components/FormDrawer";
-import { GroupedMaterialSelect } from "@/components/GroupedMaterialSelect";
+import { GroupedMaterialSelect, type GroupedMaterialSelectItem } from "@/components/GroupedMaterialSelect";
 import {
   useEstimation,
   useUpdateEstimation,
@@ -54,6 +55,9 @@ import { useItems, useItemGroups } from "@/hooks/use-masters";
 import { usePermissions } from "@/hooks/use-permissions";
 
 const MENU_KEY = "pm.estimation";
+
+import type { ApprovalHistoryEntry } from "@/lib/approvals/approval-info";
+import type { EstimationMaterial, EstimationDetail } from "@/lib/projects/estimation-detail";
 
 /**
  * Shared template for every element in the PageHeader actions row.
@@ -126,13 +130,13 @@ const newLine = (): MaterialLine => ({
   standardRate: "",
 });
 
-function fmtQty(v: any, unit?: string | null) {
+function fmtQty(v: unknown, unit?: string | null) {
   if (v === null || v === undefined || v === "") return "—";
   const n = Number(v);
   if (!Number.isFinite(n)) return "—";
   return `${n.toLocaleString("en-IN", { maximumFractionDigits: 4 })}${unit ? ` ${unit}` : ""}`;
 }
-function fmtInr(v: any) {
+function fmtInr(v: unknown) {
   if (v === null || v === undefined || v === "") return "—";
   const n = Number(v);
   if (!Number.isFinite(n)) return "—";
@@ -170,7 +174,7 @@ export default function EstimationDetailPage() {
   // by the caller's role. Falls back to false until the approval payload
   // arrives so we don't flash buttons during initial load.
   const canApprove =
-    isSuper || (estimation as any)?.approval?.canActOnCurrentStep === true;
+    isSuper || estimation?.approval?.canActOnCurrentStep === true;
 
   const [workflowAction, setWorkflowAction] = useState<
     "submit" | "approve" | "reject" | null
@@ -192,7 +196,9 @@ export default function EstimationDetailPage() {
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
 
-  const items = (itemsData?.data ?? []) as any[];
+  const items = (itemsData?.data ?? []) as unknown as Array<
+    GroupedMaterialSelectItem & { standardRate?: number | string | null }
+  >;
   const itemGroups = itemGroupsData?.data ?? [];
 
   const status = String(estimation?.status ?? "draft").toLowerCase();
@@ -210,7 +216,7 @@ export default function EstimationDetailPage() {
     setPhase(estimation.phase ?? "");
     setEditStatus(estimation.status ?? "Draft");
     const seeded: MaterialLine[] = (Array.isArray(estimation.materials) ? estimation.materials : []).map(
-      (m: any) => ({
+      (m: EstimationMaterial) => ({
         itemId: m.itemId ?? "",
         itemName: m.itemName ?? "",
         uomCode: m.uomCode ?? "",
@@ -230,7 +236,7 @@ export default function EstimationDetailPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isEditing, estimation?.id]);
 
-  const materials: any[] = useMemo(
+  const materials: EstimationMaterial[] = useMemo(
     () => (Array.isArray(estimation?.materials) ? estimation.materials : []),
     [estimation],
   );
@@ -311,11 +317,11 @@ export default function EstimationDetailPage() {
       setWorkflowAction(null);
       setRejectReason("");
       setWorkflowError(null);
-    } catch (err: any) {
+    } catch (err: unknown) {
       // Keep the modal open so the user can read the failure reason
       // (e.g. "No active Material Estimation workflow is configured")
       // without bouncing through a native browser alert.
-      setWorkflowError(err?.message ?? "Action failed");
+      setWorkflowError(toErrorMessage(err, "Action failed"));
     } finally {
       setWorkflowPending(false);
     }
@@ -396,8 +402,8 @@ export default function EstimationDetailPage() {
       qc.invalidateQueries({ queryKey: ["estimation", id] });
       qc.invalidateQueries({ queryKey: ["estimations"] });
       setIsEditing(false);
-    } catch (err: any) {
-      setSaveError(err?.message ?? "Save failed");
+    } catch (err: unknown) {
+      setSaveError(toErrorMessage(err, "Save failed"));
     } finally {
       setSaving(false);
     }
@@ -407,12 +413,12 @@ export default function EstimationDetailPage() {
   // map the API's history rows to that shape. Also format the timestamp
   // via toLocaleString so the panel doesn't render the raw ISO string.
   const approvalEntries =
-    estimation.approval?.history?.map((h: any) => ({
+    estimation.approval?.history?.map((h: ApprovalHistoryEntry) => ({
       step: h.stepOrder ?? 0,
       action: h.action,
       actionBy: h.actionByName ?? "User",
       actionAt: h.actionAt ? new Date(h.actionAt).toLocaleString() : "",
-      comments: h.comments,
+      comments: h.comments ?? undefined,
     })) ?? [];
 
   return (
@@ -729,7 +735,7 @@ export default function EstimationDetailPage() {
                         </tr>
                       </thead>
                       <tbody className="divide-y divide-gray-100">
-                        {materials.map((m: any, idx: number) => (
+                        {materials.map((m: EstimationMaterial, idx: number) => (
                           <tr key={m.itemId ?? idx} className="hover:bg-indigo-50/20 transition-colors">
                             <td className="px-4 py-3 text-xs font-mono text-gray-400 tabular-nums">
                               {String(idx + 1).padStart(2, "0")}
@@ -823,7 +829,7 @@ export default function EstimationDetailPage() {
                               value={l.itemId}
                               onChange={(v) => updateLine(idx, "itemId", v)}
                               items={items}
-                              groups={itemGroups.map((g: any) => ({
+                              groups={itemGroups.map((g) => ({
                                 id: g.id,
                                 name: g.name,
                                 status: g.status,

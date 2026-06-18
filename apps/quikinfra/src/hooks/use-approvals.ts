@@ -6,6 +6,11 @@
 
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { entityMeta } from "@/lib/toast";
+import type { EnrichedIndent } from "@/lib/purchase/indent-repository";
+import type { EnrichedRfq } from "@/lib/purchase/rfq-repository";
+import type { CentralUserRecord } from "@/lib/users/central-repository";
+import type { IndentDetail } from "@/lib/purchase/indent-detail";
+import type { RfqDetail } from "@/lib/purchase/rfq-detail";
 
 async function fetchApi<T>(url: string): Promise<T> {
   const res = await fetch(url);
@@ -35,14 +40,14 @@ export function usePendingApprovals(params?: { entityType?: string; projectId?: 
 
   return useQuery({
     queryKey: ["pending-approvals", query],
-    queryFn: () => fetchApi<{ data: any[]; total: number }>(`/api/approvals/pending${query ? `?${query}` : ""}`),
+    queryFn: () => fetchApi<{ data: unknown[]; total: number }>(`/api/approvals/pending${query ? `?${query}` : ""}`),
   });
 }
 
 export function useApprovalHistory(instanceId: string | null) {
   return useQuery({
     queryKey: ["approval-history", instanceId],
-    queryFn: () => fetchApi<{ data: any[] }>(`/api/approvals/${instanceId}/history`),
+    queryFn: () => fetchApi<{ data: unknown[] }>(`/api/approvals/${instanceId}/history`),
     enabled: !!instanceId,
   });
 }
@@ -75,14 +80,14 @@ export function useIndents(params?: { status?: string; projectId?: string; searc
 
   return useQuery({
     queryKey: ["indents", query],
-    queryFn: () => fetchApi<{ data: any[]; total: number }>(`/api/purchase/indents${query ? `?${query}` : ""}`),
+    queryFn: () => fetchApi<{ data: EnrichedIndent[]; total: number }>(`/api/purchase/indents${query ? `?${query}` : ""}`),
   });
 }
 
 export function useCreateIndent() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (data: any) => mutateApi("/api/purchase/indents", "POST", data),
+    mutationFn: (data: unknown) => mutateApi("/api/purchase/indents", "POST", data),
     onSuccess: () => qc.invalidateQueries({ queryKey: ["indents"] }),
     meta: entityMeta("create", "Indent"),
   });
@@ -91,7 +96,7 @@ export function useCreateIndent() {
 export function useIndent(id: string | null) {
   return useQuery({
     queryKey: ["indent", id],
-    queryFn: () => fetchApi<any>(`/api/purchase/indents/${id}`),
+    queryFn: () => fetchApi<IndentDetail>(`/api/purchase/indents/${id}`),
     enabled: !!id,
   });
 }
@@ -130,14 +135,14 @@ export function useRFQs(params?: { status?: string; projectId?: string; search?:
 
   return useQuery({
     queryKey: ["rfqs", query],
-    queryFn: () => fetchApi<{ data: any[]; total: number }>(`/api/purchase/rfqs${query ? `?${query}` : ""}`),
+    queryFn: () => fetchApi<{ data: EnrichedRfq[]; total: number }>(`/api/purchase/rfqs${query ? `?${query}` : ""}`),
   });
 }
 
 export function useCreateRFQ() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (data: any) => mutateApi("/api/purchase/rfqs", "POST", data),
+    mutationFn: (data: unknown) => mutateApi("/api/purchase/rfqs", "POST", data),
     onSuccess: () => qc.invalidateQueries({ queryKey: ["rfqs"] }),
     meta: entityMeta("create", "RFQ"),
   });
@@ -146,7 +151,7 @@ export function useCreateRFQ() {
 export function useRFQ(id: string | null) {
   return useQuery({
     queryKey: ["rfq", id],
-    queryFn: () => fetchApi<any>(`/api/purchase/rfqs/${id}`),
+    queryFn: () => fetchApi<RfqDetail>(`/api/purchase/rfqs/${id}`),
     enabled: !!id,
   });
 }
@@ -201,7 +206,7 @@ export function useUsers(params?: { search?: string; role?: string }) {
 
   return useQuery({
     queryKey: ["users", query],
-    queryFn: () => fetchApi<{ data: any[]; total: number }>(`/api/settings/users${query ? `?${query}` : ""}`),
+    queryFn: () => fetchApi<{ data: CentralUserRecord[]; total: number }>(`/api/settings/users${query ? `?${query}` : ""}`),
   });
 }
 
@@ -224,14 +229,14 @@ export function useWorkflows(params?: {
 
   return useQuery({
     queryKey: ["workflows", query],
-    queryFn: () => fetchApi<{ data: any[]; total: number }>(`/api/settings/workflows${query ? `?${query}` : ""}`),
+    queryFn: () => fetchApi<{ data: unknown[]; total: number }>(`/api/settings/workflows${query ? `?${query}` : ""}`),
   });
 }
 
 export function useCreateWorkflow() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (data: any) => mutateApi("/api/settings/workflows", "POST", data),
+    mutationFn: (data: unknown) => mutateApi("/api/settings/workflows", "POST", data),
     onSuccess: () => qc.invalidateQueries({ queryKey: ["workflows"] }),
     meta: entityMeta("create", "Workflow"),
   });

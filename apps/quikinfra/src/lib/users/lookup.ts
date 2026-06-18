@@ -1,7 +1,7 @@
 /**
  * User-lookup helpers (Step H).
  *
- * Replaces the legacy `(db as any).cnUser.findUnique/findMany({...,
+ * Replaces the legacy `cnUser.findUnique/findMany({...,
  * select: { fullName, email, ... } })` pattern that's scattered across
  * approval/workflow/store routes. Sources from `auth.User` instead and
  * composes `fullName` from `firstName + lastName`.
@@ -32,12 +32,12 @@ function compose(u: {
 }
 
 /**
- * Drop-in for `(db as any).cnUser.findUnique({ where: { id }, select: {
+ * Drop-in for `cnUser.findUnique({ where: { id }, select: {
  * id, email, fullName } })`. Returns null when the central auth user
  * doesn't exist.
  */
 export async function findCnUserById(userId: string): Promise<CnUserShape | null> {
-  const u = await (dbCentral as any).user.findUnique({
+  const u = await dbCentral.user.findUnique({
     where: { id: userId },
     select: { id: true, email: true, firstName: true, lastName: true },
   });
@@ -45,12 +45,12 @@ export async function findCnUserById(userId: string): Promise<CnUserShape | null
 }
 
 /**
- * Drop-in for `(db as any).cnUser.findMany({ where: { id: { in } } })`.
+ * Drop-in for `cnUser.findMany({ where: { id: { in } } })`.
  * Returns an array preserving the order of the input ids when possible.
  */
 export async function findCnUsersByIds(ids: string[]): Promise<CnUserShape[]> {
   if (ids.length === 0) return [];
-  const users = await (dbCentral as any).user.findMany({
+  const users = await dbCentral.user.findMany({
     where: { id: { in: ids } },
     select: { id: true, email: true, firstName: true, lastName: true },
   });
@@ -63,7 +63,7 @@ export async function findCnUsersByIds(ids: string[]): Promise<CnUserShape[]> {
 }
 
 /**
- * Drop-in for `(db as any).cnUser.findMany({ where: { ..., status }, ... })`.
+ * Drop-in for `cnUser.findMany({ where: { ..., status }, ... })`.
  * Looks up org members through quikit.OrgMember + auth.User. Used by the
  * approver-chain expansion when a workflow step targets a ROLE rather
  * than a specific user — we need to enumerate everyone in that role.
@@ -76,7 +76,7 @@ export async function findCnUsersByRoleKey(
   // Look up the v2 role row for this org, then find every user assigned
   // to it. roleKey matches CnAppRole.name (lowercase: admin / ho_user /
   // site_admin / user).
-  const roles = await (dbCentral as any).cnAppRole.findMany({
+  const roles = await dbCentral.cnAppRole.findMany({
     where: { orgId, name: roleKey },
     select: {
       id: true,
@@ -115,7 +115,7 @@ export async function findCnUsersByRoleKey(
 
   if (opts.onlyActive) {
     // Filter to active OrgMembers only.
-    const memberships = await (dbCentral as any).orgMember.findMany({
+    const memberships = await dbCentral.orgMember.findMany({
       where: {
         orgId,
         userId: { in: Array.from(userIds) },

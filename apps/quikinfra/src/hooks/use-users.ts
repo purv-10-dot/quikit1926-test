@@ -11,6 +11,7 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { fetchJson, mutateJson } from "@/lib/react-query/fetch-json";
 import { refreshListQueries } from "@/lib/react-query/list-cache";
 import { entityMeta } from "@/lib/toast";
+import type { CentralUserRecord } from "@/lib/users/central-repository";
 
 const BASE = "/api/settings/users";
 const KEY = "settings-users";
@@ -25,7 +26,7 @@ export function useUsers(params?: { search?: string }) {
   return useQuery({
     queryKey: [KEY, query],
     queryFn: () =>
-      fetchApi<{ data: any[]; total: number }>(`${BASE}${query ? `?${query}` : ""}`),
+      fetchApi<{ data: CentralUserRecord[]; total: number }>(`${BASE}${query ? `?${query}` : ""}`),
   });
 }
 
@@ -61,7 +62,7 @@ export function useRoles() {
 export function useCreateUser() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (data: any) => mutateApi(BASE, "POST", data),
+    mutationFn: (data: unknown) => mutateApi(BASE, "POST", data),
     onSuccess: async () => { await refreshListQueries(qc, KEY); },
     meta: entityMeta("create", "User"),
   });
@@ -70,7 +71,7 @@ export function useCreateUser() {
 export function useUpdateUser() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: ({ id, ...data }: any) => mutateApi(`${BASE}/${id}`, "PUT", data),
+    mutationFn: ({ id, ...data }: { id: string } & Record<string, unknown>) => mutateApi(`${BASE}/${id}`, "PUT", data),
     onSuccess: async (data, { id }) => {
       await refreshListQueries(qc, KEY, { updatedRow: data, id });
     },

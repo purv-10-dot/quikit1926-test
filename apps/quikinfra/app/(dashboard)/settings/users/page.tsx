@@ -12,6 +12,7 @@
  *   type's scope requirements.
  */
 
+import { toErrorMessage } from "@/lib/api/errors";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import {
@@ -32,7 +33,7 @@ import {
   getDescriptorByRoleName,
   formatRoleLabel,
 } from "@/lib/rbac/user-types";
-import { mergeModulesWithMatrix } from "@/lib/rbac/menu-catalog";
+import { mergeModulesWithMatrix, type PermissionMatrix } from "@/lib/rbac/menu-catalog";
 import { toast } from "@/lib/toast";
 
 interface UserRow {
@@ -54,6 +55,9 @@ interface UserRow {
   acceptedAt?: string | null;
   inviteTokenExpires?: string | null;
   lastLoginAt?: string | null;
+  roleKey?: string;
+  permissionMatrix?: PermissionMatrix | null;
+  hasSettingsAccess?: boolean;
 }
 
 /* ─── Email-typeahead hit (existing org member) ─── */
@@ -292,8 +296,8 @@ export default function UsersPage() {
   // capture it before dismissing. Replaces the native `alert()` that
   // used to carry this payload.
   const [inviteResult, setInviteResult] = useState<InviteResult | null>(null);
-  const set = (key: keyof typeof emptyForm, val: any) =>
-    setForm((prev) => ({ ...prev, [key]: val }));
+  const set = (key: keyof typeof emptyForm, val: string | string[] | boolean | null) =>
+    setForm((prev) => ({ ...prev, [key]: val }) as typeof emptyForm);
 
   // ── Email typeahead (link existing org member) ──────────────────────
   // When the admin types an email in CREATE mode, debounce a search against
@@ -391,10 +395,10 @@ export default function UsersPage() {
   // Hide soft-deleted projects from the site-assignment picker so a user
   // can't be assigned to a project that no longer exists on the list page.
   const projects = (projectsResult?.data ?? []).filter(
-    (p: any) => p?.status !== "inactive",
+    (p) => p?.status !== "inactive",
   );
   const departments = deptsResult?.data ?? [];
-  const deptOptions = departments.map((d: any) => ({
+  const deptOptions = departments.map((d) => ({
     value: d.name,
     label: d.name,
   }));
@@ -484,7 +488,11 @@ export default function UsersPage() {
       if (editingId) {
         await updateMutation.mutateAsync({ id: editingId, ...payload });
       } else {
-        const res: any = await createMutation.mutateAsync(payload);
+        const res = (await createMutation.mutateAsync(payload)) as {
+          invite?: { url?: string; mail?: { sent?: boolean; error?: string } };
+          email?: string;
+          fullName?: string;
+        };
         const inviteUrl = res?.invite?.url;
         const mailSent = !!res?.invite?.mail?.sent;
         const mailError = res?.invite?.mail?.error;
@@ -493,7 +501,7 @@ export default function UsersPage() {
           // dismiss without hitting the Copy button. Non-fatal if blocked.
           try { await navigator.clipboard.writeText(inviteUrl); } catch { /* ignore */ }
           setInviteResult({
-            email: res.email,
+            email: res.email ?? "",
             fullName: res.fullName,
             url: inviteUrl,
             mailSent,
@@ -506,15 +514,15 @@ export default function UsersPage() {
     } catch { /* error toast handled globally */ }
   };
 
-  const handleDelete = async (item: any) => {
+  const handleDelete = async (item: UserRow) => {
     await updateMutation.mutateAsync({ id: item.id, status: "inactive" });
   };
 
-  const handleRestore = async (item: any) => {
+  const handleRestore = async (item: UserRow) => {
     await updateMutation.mutateAsync({ id: item.id, status: "active" });
   };
 
-  const handleResendInvite = async (item: any) => {
+  const handleResendInvite = async (item: UserRow) => {
     if (resendingIds.has(item.id)) return;
     setResendingIds((prev) => {
       const next = new Set(prev);
@@ -544,8 +552,8 @@ export default function UsersPage() {
           mode: "resend",
         });
       }
-    } catch (err: any) {
-      toast.error(err.message ?? "Failed to resend invite");
+    } catch (err: unknown) {
+      toast.error(toErrorMessage(err, "Failed to resend invite"));
     } finally {
       setResendingIds((prev) => {
         const next = new Set(prev);
@@ -555,7 +563,7 @@ export default function UsersPage() {
     }
   };
 
-  const handleEdit = (item: any) => {
+  const handleEdit = (item: UserRow) => {
     setEditingId(item.id);
     setOriginalEmail(item.email ?? "");
     // Modules are shown as ticked when EITHER explicitly assigned on the
@@ -638,7 +646,7 @@ export default function UsersPage() {
         render: (row) => {
           // Prefer the lowercase `roleKey` from the API (matches CnAppRole.name).
           // Fall back to the legacy uppercase `userType` for older payloads.
-          const roleName = ((row as any).roleKey ?? row.userType ?? "").toString();
+          const roleName = (row.roleKey ?? row.userType ?? "").toString();
           const upperKey = roleName.toUpperCase().replace(/-/g, "_");
           const color =
             USER_TYPE_COLORS[upperKey] ?? "bg-gray-50 text-gray-700 border-gray-200";
@@ -657,7 +665,7 @@ export default function UsersPage() {
         label: "Sites",
         width: "80px",
         render: (row) => {
-          const roleName = ((row as any).roleKey ?? row.userType ?? "").toString();
+          const roleName = (row.roleKey ?? row.userType ?? "").toString();
           const d = getDescriptorByRoleName(roleName);
           if (d.crossSite) return <span className="text-[10px] text-gray-500">All sites</span>;
           const n = row.projectsAssigned?.length ?? 0;
@@ -804,7 +812,7 @@ export default function UsersPage() {
         title="User Management"
         entityName="User"
         columns={columns}
-        data={result?.data ?? []}
+        data={(result?.data ?? []) as UserRow[]}
         total={result?.total ?? 0}
         isLoading={isLoading}
         showStatusTabs
@@ -818,7 +826,7 @@ export default function UsersPage() {
         onEdit={handleEdit}
         onDelete={handleDelete}
         onRestore={handleRestore}
-        deleteConfirmMessage={(item: any) => {
+        deleteConfirmMessage={(item) => {
           const display =
             item.firstName || item.lastName
               ? [item.firstName, item.lastName].filter(Boolean).join(" ")
@@ -1180,7 +1188,7 @@ export default function UsersPage() {
                     No projects found. Create projects under Masters → Projects first.
                   </div>
                 )}
-                {projects.map((p: any) => {
+                {projects.map((p) => {
                   const checked = form.projectsAssigned.includes(p.id);
                   return (
                     <label

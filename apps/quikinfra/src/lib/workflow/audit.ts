@@ -10,6 +10,7 @@
  * atomic unit.
  */
 
+import type { Prisma } from "@quikit/database";
 import type { TenantContext } from "@/lib/auth/context";
 
 export interface AuditEntry {
@@ -25,7 +26,7 @@ export interface AuditEntry {
  * `db.$transaction(async (tx) => ...)`) so the log is in the same txn.
  */
 export async function recordAudit(
-  tx: any,
+  tx: Prisma.TransactionClient,
   ctx: TenantContext,
   entry: AuditEntry
 ): Promise<void> {
@@ -36,7 +37,7 @@ export async function recordAudit(
       entityId: entry.entityId,
       action: entry.action,
       userId: ctx.userId,
-      changes: entry.changes ?? undefined,
+      changes: entry.changes ? (entry.changes as Prisma.InputJsonValue) : undefined,
       ipAddress: entry.ipAddress ?? null,
     },
   });
@@ -66,7 +67,7 @@ export interface ApprovalAction {
 }
 
 export async function recordApprovalAction(
-  tx: any,
+  tx: Prisma.TransactionClient,
   ctx: TenantContext,
   action: ApprovalAction
 ): Promise<void> {

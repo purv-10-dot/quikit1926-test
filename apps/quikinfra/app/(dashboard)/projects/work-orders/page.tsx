@@ -17,6 +17,7 @@
  * bar + %, and a Draft/Approved/Closed status pill.
  */
 
+import { toErrorMessage } from "@/lib/api/errors";
 import { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useQueryClient } from "@tanstack/react-query";
@@ -61,6 +62,15 @@ const STATUS_COLORS: Record<string, string> = {
   inactive:         "bg-rose-50 text-rose-600 border-rose-200",
 };
 
+interface WorkOrderRow {
+  id: string; woNumber?: string; type?: string; workType?: string;
+  contractorName?: string; projectName?: string; status?: string;
+  plannedStart?: string; plannedEnd?: string; createdAt?: string;
+  progressPct?: number | string; totalAmount?: number | string;
+  canActOnCurrentStep?: boolean;
+  [key: string]: unknown;
+}
+
 export default function WorkOrdersPage() {
   const router = useRouter();
   const qc = useQueryClient();
@@ -76,7 +86,7 @@ export default function WorkOrdersPage() {
   // Workflow confirmation — Submit / Approve / Reject route through a
   // shared ConfirmDialog so the UX matches Material Estimation + PR.
   const [workflowAction, setWorkflowAction] = useState<
-    { kind: "submit" | "approve" | "reject"; row: any } | null
+    { kind: "submit" | "approve" | "reject"; row: WorkOrderRow } | null
   >(null);
   const [rejectReason, setRejectReason] = useState("");
   const [workflowPending, setWorkflowPending] = useState(false);
@@ -98,12 +108,12 @@ export default function WorkOrdersPage() {
   // Approve/Reject visibility is decided PER ROW by the workflow's
   // current step (server-computed in the list API as
   // `row.canActOnCurrentStep`).
-  const canApproveRow = (row: any): boolean =>
+  const canApproveRow = (row: WorkOrderRow): boolean =>
     isSuper || row?.canActOnCurrentStep === true;
 
   const openWorkflow = (
     kind: "submit" | "approve" | "reject",
-    row: any,
+    row: WorkOrderRow,
   ) => {
     setRejectReason("");
     setWorkflowError(null);
@@ -148,17 +158,17 @@ export default function WorkOrdersPage() {
       setWorkflowAction(null);
       setRejectReason("");
       setWorkflowError(null);
-    } catch (err: any) {
+    } catch (err: unknown) {
       // Keep the modal open so the user can read the failure reason
       // (e.g. "No active Work Order workflow is configured") without
       // bouncing through a native browser alert.
-      setWorkflowError(err?.message ?? "Action failed");
+      setWorkflowError(toErrorMessage(err, "Action failed"));
     } finally {
       setWorkflowPending(false);
     }
   };
 
-  const allRows: any[] = useMemo(() => result?.data ?? [], [result]);
+  const allRows = useMemo(() => (result?.data ?? []) as unknown as WorkOrderRow[], [result]);
   const rows = useMemo(
     () => allRows.filter((r) => r.status !== "inactive"),
     [allRows]
@@ -502,7 +512,7 @@ function WorkOrderRow({
   onApprove,
   onReject,
 }: {
-  row: any;
+  row: WorkOrderRow;
   canEdit: boolean;
   canDelete: boolean;
   canSubmit: boolean;

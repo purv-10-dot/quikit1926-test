@@ -11,7 +11,7 @@
  *   - site_admin     → curated site-ops subset
  *   - user           → minimal (also: isDefault for new invitees)
  *
- * Also performs first-time userType → role migration: any CnUser with a
+ * Also performs first-time userType → role migration — every CnUser with a
  * legacy userType (SUPER_ADMIN / ADMIN / HO_USER / SITE_ADMIN / USER)
  * gets a CnUserAppRole row pointing at the matching v2 role.
  *
@@ -279,13 +279,13 @@ export async function ensureUserOnRole(
   roleId: string,
   assignedBy?: string,
 ): Promise<void> {
-  const existing = await (db as any).cnUserAppRole.findFirst({
+  const existing = await db.cnUserAppRole.findFirst({
     where: { userId, orgId, roleId },
     select: { id: true },
   });
   if (existing) return;
   try {
-    await (db as any).cnUserAppRole.create({
+    await db.cnUserAppRole.create({
       data: { userId, orgId, roleId, assignedBy: assignedBy ?? null },
     });
   } catch (err) {

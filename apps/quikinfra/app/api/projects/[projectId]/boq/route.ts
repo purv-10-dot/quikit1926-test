@@ -166,8 +166,7 @@ export const POST = auth.create<{ projectId: string }>(
       const inserted = await boqService.addManualItem(
         ctx,
         params.projectId,
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        item as any,
+        item as Parameters<typeof boqService.addManualItem>[2],
       );
       return NextResponse.json(inserted, { status: 201 });
     } catch (err) {

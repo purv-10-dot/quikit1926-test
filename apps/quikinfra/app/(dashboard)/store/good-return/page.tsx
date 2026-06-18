@@ -1,5 +1,6 @@
 "use client";
 
+import { toErrorMessage } from "@/lib/api/errors";
 import { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import {
@@ -10,8 +11,8 @@ import { DataTable, type ColDef } from "@/components/DataTable";
 import { WorkflowConfirmDialog } from "@/components/WorkflowConfirmDialog";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { useGoodReturns } from "@/hooks/use-store";
-import { QuickCreateDrawer } from "@/components/QuickCreateDrawer";
-import { GroupedMaterialSelect } from "@/components/GroupedMaterialSelect";
+import { QuickCreateDrawer, type QuickCreateConfig } from "@/components/QuickCreateDrawer";
+import { GroupedMaterialSelect, type GroupedMaterialSelectItem } from "@/components/GroupedMaterialSelect";
 import { useProjects, useLocations, useVendors, useItems, useItemGroups, useUOMs } from "@/hooks/use-masters";
 import { usePermissions, useMenuActions } from "@/hooks/use-permissions";
 import { useQueryClient } from "@tanstack/react-query";
@@ -38,6 +39,11 @@ const RETURN_REASON_OPTIONS = [
   { value: "other", label: "Other" },
 ];
 
+interface GoodReturnRow {
+  id: string; returnNumber?: string; reason?: string; status?: string;
+  [key: string]: unknown;
+}
+
 export default function GoodReturnPage() {
   const qc = useQueryClient();
   const router = useRouter();
@@ -49,11 +55,11 @@ export default function GoodReturnPage() {
   // WorkflowConfirmDialog; Dispatch opens the simpler ConfirmDialog
   // below since it's a single-action transition.
   const [workflowAction, setWorkflowAction] = useState<
-    { kind: "submit" | "approve" | "reject"; row: any } | null
+    { kind: "submit" | "approve" | "reject"; row: GoodReturnRow } | null
   >(null);
   const [rejectReason, setRejectReason] = useState("");
   const [workflowPending, setWorkflowPending] = useState(false);
-  const [dispatchTarget, setDispatchTarget] = useState<any | null>(null);
+  const [dispatchTarget, setDispatchTarget] = useState<GoodReturnRow | null>(null);
   const [dispatchPending, setDispatchPending] = useState(false);
 
   const { permissionMatrix, isSuper, hasRole } = usePermissions();
@@ -65,7 +71,7 @@ export default function GoodReturnPage() {
 
   const openWorkflow = (
     kind: "submit" | "approve" | "reject",
-    row: any,
+    row: GoodReturnRow,
   ) => {
     setRejectReason("");
     setWorkflowAction({ kind, row });
@@ -109,8 +115,8 @@ export default function GoodReturnPage() {
       );
       setWorkflowAction(null);
       setRejectReason("");
-    } catch (err: any) {
-      toast.error(err?.message ?? "Action failed");
+    } catch (err: unknown) {
+      toast.error(toErrorMessage(err, "Action failed"));
     } finally {
       setWorkflowPending(false);
     }
@@ -130,8 +136,8 @@ export default function GoodReturnPage() {
       qc.invalidateQueries({ queryKey: ["good-returns"] });
       setDispatchTarget(null);
       toast.success("Good return dispatched");
-    } catch (err: any) {
-      toast.error(err?.message ?? "Dispatch failed");
+    } catch (err: unknown) {
+      toast.error(toErrorMessage(err, "Dispatch failed"));
     } finally {
       setDispatchPending(false);
     }
@@ -149,26 +155,26 @@ export default function GoodReturnPage() {
   const { data: itemGroupsData } = useItemGroups();
   const { data: uomsData } = useUOMs();
 
-  const projectOptions = (projectsData?.data ?? []).map((p: any) => ({ value: p.id, label: p.name }));
-  const locationOptions = (locationsData?.data ?? []).map((l: any) => ({ value: l.id, label: l.name }));
+  const projectOptions = (projectsData?.data ?? []).map((p) => ({ value: p.id, label: p.name }));
+  const locationOptions = (locationsData?.data ?? []).map((l) => ({ value: l.id, label: l.name }));
   const vendorOptions = (vendorsData?.data ?? [])
-    .filter((v: any) => !v.isBlacklisted && v.status !== "blacklisted")
-    .map((v: any) => ({
+    .filter((v) => !(v as { isBlacklisted?: boolean }).isBlacklisted && v.status !== "blacklisted")
+    .map((v) => ({
       value: v.id,
       label: v.companyName || v.name || v.id,
     }));
-  const items = (itemsData?.data ?? []) as any[];
+  const items = (itemsData?.data ?? []) as unknown as GroupedMaterialSelectItem[];
   const itemGroups = itemGroupsData?.data ?? [];
-  const itemById = new Map<string, any>();
+  const itemById = new Map<string, GroupedMaterialSelectItem>();
   for (const i of items) itemById.set(i.id, i);
-  const uomOptions = (uomsData?.data ?? []).map((u: any) => ({
+  const uomOptions = (uomsData?.data ?? []).map((u) => ({
     value: u.code,
     label: u.code,
   }));
 
   const todayIso = new Date().toISOString().slice(0, 10);
 
-  const config = {
+  const config: QuickCreateConfig = {
     title: "New Good Return",
     subtitle: "Return rejected or damaged materials to vendor",
     apiEndpoint: "/api/store/good-returns",
@@ -228,8 +234,8 @@ export default function GoodReturnPage() {
     lineItems: {
       label: "Return Items",
       addLabel: "Add Item",
-      validateBeforeSubmit: (gridLines: Record<string, any>[]) => {
-        const rowHasContent = (l: Record<string, any>) =>
+      validateBeforeSubmit: (gridLines) => {
+        const rowHasContent = (l: Record<string, unknown>) =>
           Object.values(l).some(
             (v) => v !== undefined && v !== null && String(v).trim() !== "",
           );
@@ -253,7 +259,7 @@ export default function GoodReturnPage() {
           label: "Material",
           type: "custom" as const,
           width: "wide",
-          render: (line: Record<string, any>, update: (patch: Record<string, unknown>) => void) => (
+          render: (line, update: (patch: Record<string, unknown>) => void) => (
             <GroupedMaterialSelect
               value={line.itemId ?? ""}
               onChange={(v) => {
@@ -269,7 +275,7 @@ export default function GoodReturnPage() {
                 });
               }}
               items={items}
-              groups={itemGroups.map((g: any) => ({
+              groups={itemGroups.map((g) => ({
                 id: g.id,
                 name: g.name,
                 status: g.status,
@@ -290,7 +296,7 @@ export default function GoodReturnPage() {
     },
   };
 
-  const columns: ColDef<any>[] = [
+  const columns: ColDef<GoodReturnRow>[] = [
     { key: "returnNumber", label: "Return No", sortable: true, searchable: true },
     { key: "projectName", label: "Project", sortable: true, searchable: true },
     { key: "vendorName", label: "Vendor", sortable: true, searchable: true },
@@ -399,11 +405,9 @@ export default function GoodReturnPage() {
         <DataTable
           id="store-good-return"
           columns={columns}
-          data={data}
+          data={data as unknown as GoodReturnRow[]}
           onAdd={canAdd ? () => setDrawerOpen(true) : undefined}
           addLabel="New Return"
-          defaultSort="returnDate"
-          defaultSortDir="desc"
           historyEntityType="good_return"
         />
       </PageContainer>

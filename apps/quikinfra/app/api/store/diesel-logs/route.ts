@@ -1,3 +1,4 @@
+import { toErrorMessage, getErrorCode } from "@/lib/api/errors";
 import { requireStoreAction } from "@/lib/auth/requireStoreAction";
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
@@ -28,7 +29,27 @@ import { parsePagination } from "@/lib/http/pagination";
  *          totalCost is derived server-side as quantityIssued * unitRate.
  */
 
-function enrichRow(row: any): any {
+function enrichRow(row: {
+  id: string;
+  orgId: string;
+  projectId: string;
+  project?: { name?: string | null } | null;
+  locationId?: string | null;
+  machineryId: string;
+  machinery?: { name?: string | null; code?: string | null } | null;
+  logDate?: Date | null;
+  openingReading?: unknown;
+  closingReading?: unknown;
+  quantityIssued?: unknown;
+  unitRate?: unknown;
+  totalCost?: unknown;
+  operatorName?: string | null;
+  remarks?: string | null;
+  createdAt?: Date | null;
+  updatedAt?: Date | null;
+  createdBy?: string | null;
+  updatedBy?: string | null;
+}) {
   return {
     id: row.id,
     orgId: row.orgId,
@@ -84,7 +105,7 @@ export async function GET(req: NextRequest) {
 
   const p = parsePagination(req);
   const [rows, total] = await Promise.all([
-    (db as any).cnDieselLog.findMany({
+    db.cnDieselLog.findMany({
       where,
       include: {
         project: { select: { id: true, name: true } },
@@ -93,7 +114,7 @@ export async function GET(req: NextRequest) {
       orderBy: [{ logDate: "desc" }, { createdAt: "desc" }],
       ...(p.paginated ? { take: p.take, skip: p.skip } : {}),
     }),
-    (db as any).cnDieselLog.count({ where }),
+    db.cnDieselLog.count({ where }),
   ]);
 
   const data = rows.map(enrichRow);
@@ -122,7 +143,18 @@ export async function POST(req: NextRequest) {
     );
   }
 
-  let body: any;
+  let body: {
+    projectId?: string;
+    machineryId?: string;
+    logDate?: string;
+    locationId?: string;
+    operatorName?: string;
+    openingReading?: number | string | null;
+    closingReading?: number | string | null;
+    quantityIssued?: number | string | null;
+    unitRate?: number | string | null;
+    remarks?: string | null;
+  };
   try {
     body = await req.json();
   } catch {
@@ -157,11 +189,11 @@ export async function POST(req: NextRequest) {
 
   // Verify project + machinery belong to the caller's tenant.
   const [project, machinery] = await Promise.all([
-    (db as any).cnProject.findFirst({
+    db.cnProject.findFirst({
       where: { id: body.projectId, orgId: ctx.orgId },
       select: { id: true },
     }),
-    (db as any).cnMachinery.findFirst({
+    db.cnMachinery.findFirst({
       where: { id: body.machineryId, orgId: ctx.orgId },
       select: { id: true },
     }),
@@ -195,7 +227,7 @@ export async function POST(req: NextRequest) {
   const totalCost = quantityIssued * unitRate;
 
   try {
-    const created = await (db as any).cnDieselLog.create({
+    const created = await db.cnDieselLog.create({
       data: {
         orgId: ctx.orgId,
         projectId: body.projectId,
@@ -218,8 +250,8 @@ export async function POST(req: NextRequest) {
       },
     });
     return NextResponse.json(enrichRow(created), { status: 201 });
-  } catch (err: any) {
-    if (err?.code === "P2003") {
+  } catch (err: unknown) {
+    if (getErrorCode(err) === "P2003") {
       return NextResponse.json(
         { error: "Referenced project or machinery does not exist." },
         { status: 400 },
@@ -227,7 +259,7 @@ export async function POST(req: NextRequest) {
     }
     console.error("[diesel-log.create] failed:", err);
     return NextResponse.json(
-      { error: err?.message ?? "Failed to create diesel log" },
+      { error: toErrorMessage(err, "Failed to create diesel log") },
       { status: 500 },
     );
   }

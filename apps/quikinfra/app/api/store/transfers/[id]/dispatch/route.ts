@@ -29,7 +29,7 @@ export async function POST(
     return envelopeErr("FORBIDDEN", `Action "edit" not allowed for store.transfer`, 403);
   }
 
-  let body: any = {};
+  let body: { dispatchedAt?: string } = {};
   try {
     body = await req.json();
   } catch {

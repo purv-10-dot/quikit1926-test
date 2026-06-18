@@ -19,6 +19,7 @@
  * than partial appends.
  */
 
+import { toErrorMessage } from "@/lib/api/errors";
 import { useState, useRef, useCallback, useMemo } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import {
@@ -453,7 +454,11 @@ function flattenSelfFill(
 const NO_IMPORT_PERMISSION_MSG =
   "You don't have permission to import the BOQ. Please contact your administrator.";
 
-function boqUploadError(res: Response, json: any, fallback: string): string {
+function boqUploadError(
+  res: Response,
+  json: { error?: string; message?: string } | null | undefined,
+  fallback: string,
+): string {
   if (res.status === 403) return NO_IMPORT_PERMISSION_MSG;
   return json?.error ?? json?.message ?? fallback;
 }
@@ -574,8 +579,8 @@ export function BOQImportDrawer({ open, onClose, projectId }: Props) {
       }
       setUniFieldToCol(seeded);
       setStage("mapping");
-    } catch (e: any) {
-      setError(e?.message ?? "Network error");
+    } catch (e: unknown) {
+      setError(toErrorMessage(e, "Network error"));
       setStage("pick");
     }
   };
@@ -694,8 +699,8 @@ export function BOQImportDrawer({ open, onClose, projectId }: Props) {
       const data = (json.data ?? json) as PreviewData;
       setPreview(data);
       setStage("preview");
-    } catch (e: any) {
-      setError(e?.message ?? "Network error during preview");
+    } catch (e: unknown) {
+      setError(toErrorMessage(e, "Network error during preview"));
       setStage("mapping");
     }
   };
@@ -852,8 +857,8 @@ export function BOQImportDrawer({ open, onClose, projectId }: Props) {
       const data = (json.data ?? json) as PreviewData;
       setPreview(data);
       setStage("preview");
-    } catch (e: any) {
-      setError(e?.message ?? "Network error");
+    } catch (e: unknown) {
+      setError(toErrorMessage(e, "Network error"));
       setStage("pick");
     }
   };
@@ -968,8 +973,8 @@ export function BOQImportDrawer({ open, onClose, projectId }: Props) {
         warnings: (json.warnings?.length ?? 0) as number,
       });
       setStage("done");
-    } catch (e: any) {
-      setError(e?.message ?? "Network error during import");
+    } catch (e: unknown) {
+      setError(toErrorMessage(e, "Network error during import"));
       setStage(mode === "SELF_FILL" ? "pick" : "preview");
     }
   };

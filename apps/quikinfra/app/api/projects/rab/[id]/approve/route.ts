@@ -1,3 +1,4 @@
+import { toErrorMessage, getErrorCode } from "@/lib/api/errors";
 import { requireProjectsFinanceAction } from "@/lib/auth/requireProjectsFinanceAction";
 import { findCnUserById } from "@/lib/users/lookup";
 import { NextRequest, NextResponse } from "next/server";
@@ -51,7 +52,7 @@ export async function POST(
     return limited.response!;
   }
 
-  let body: any = {};
+  let body: { action?: string; comments?: string } = {};
   try {
     body = await req.json();
   } catch {
@@ -75,7 +76,7 @@ export async function POST(
   if (guard.conflict) return guard.conflictResponse!;
 
   try {
-    const rab = await (db as any).cnRunningAccountBill.findFirst({
+    const rab = await db.cnRunningAccountBill.findFirst({
       where: { id: params.id, orgId: ctx.orgId },
       select: {
         id: true,
@@ -102,7 +103,7 @@ export async function POST(
       return NextResponse.json(b, { status: 400 });
     }
 
-    const instance = await (db as any).cnApprovalInstance.findFirst({
+    const instance = await db.cnApprovalInstance.findFirst({
       where: { id: rab.approvalId, orgId: ctx.orgId },
     });
     if (!instance) {
@@ -118,7 +119,7 @@ export async function POST(
       return NextResponse.json(b, { status: 409 });
     }
 
-    const currentStep = await (db as any).cnApprovalWorkflowStep.findFirst({
+    const currentStep = await db.cnApprovalWorkflowStep.findFirst({
       where: { workflowId: instance.workflowId, stepOrder: instance.currentStepOrder },
     });
     if (!currentStep) {
@@ -157,7 +158,7 @@ export async function POST(
       return NextResponse.json(b, { status: 403 });
     }
 
-    const nextStep = await (db as any).cnApprovalWorkflowStep.findFirst({
+    const nextStep = await db.cnApprovalWorkflowStep.findFirst({
       where: {
         workflowId: instance.workflowId,
         stepOrder: { gt: instance.currentStepOrder },
@@ -171,14 +172,14 @@ export async function POST(
     const boqNoById = new Map<string, string>();
     if (isFinalApprove) {
       const boqItemIds = (rab.lines ?? [])
-        .map((l: any) => l.boqItemId)
+        .map((l) => l.boqItemId)
         .filter(Boolean);
       if (boqItemIds.length) {
-        const boqRows = await (db as any).cnBOQItemV2.findMany({
+        const boqRows = await db.cnBOQItemV2.findMany({
           where: { id: { in: boqItemIds }, orgId: ctx.orgId, projectId: rab.projectId },
           select: { id: true, boqNo: true },
         });
-        for (const r of boqRows as any[]) boqNoById.set(r.id, r.boqNo);
+        for (const r of boqRows) boqNoById.set(r.id, r.boqNo);
       }
     }
 
@@ -186,7 +187,7 @@ export async function POST(
     let finalStatus: string = String(rab.status ?? "");
     const updates: Array<{ boqNo: string; qty: number }> = [];
 
-    await db.$transaction(async (tx: any) => {
+    await db.$transaction(async (tx) => {
       await tx.cnApprovalHistory.create({
         data: {
           instanceId: instance.id,
@@ -275,16 +276,19 @@ export async function POST(
     });
 
     if (rabStatusUpdate) {
-      await (db as any).cnRunningAccountBill.update({
+      await db.cnRunningAccountBill.update({
         where: { id: rab.id },
         data: rabStatusUpdate,
       });
     }
 
-    const refreshedInstance = await (db as any).cnApprovalInstance.findUnique({
+    const refreshedInstance = await db.cnApprovalInstance.findUnique({
       where: { id: instance.id },
     });
-    const totalSteps = await (db as any).cnApprovalWorkflowStep.count({
+    if (!refreshedInstance) {
+      return NextResponse.json({ error: "Approval instance not found" }, { status: 404 });
+    }
+    const totalSteps = await db.cnApprovalWorkflowStep.count({
       where: { workflowId: instance.workflowId },
     });
 
@@ -307,7 +311,7 @@ export async function POST(
     };
     await guard.commit(200, responseBody);
     return NextResponse.json(responseBody);
-  } catch (err: any) {
+  } catch (err: unknown) {
     if (err instanceof BOQError) {
       const b = { error: err.message, code: err.code };
       await guard.commit(err.httpStatus, b);
@@ -315,7 +319,7 @@ export async function POST(
     }
     logger.error({ msg: "rab_approve_failed", rabId: params.id, err });
     return NextResponse.json(
-      { error: err?.message ?? "Failed to approve RAB" },
+      { error: toErrorMessage(err) ?? "Failed to approve RAB" },
       { status: 500 },
     );
   }

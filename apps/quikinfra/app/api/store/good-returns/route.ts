@@ -7,6 +7,7 @@ import {
   createGoodReturn,
   listGoodReturns,
   countGoodReturnsForDate,
+  type GoodReturnLine,
 } from "@/lib/store/good-return-repository";
 
 /**
@@ -68,7 +69,7 @@ export async function POST(req: NextRequest) {
 
   // Denormalise project + vendor + location names — the list grid
   // reads these columns directly so it doesn't need a join.
-  const project: any = await (db as any).cnProject.findFirst({
+  const project = await db.cnProject.findFirst({
     where: { id: body.projectId, orgId: ctx.orgId},
     select: { id: true, name: true },
   });
@@ -78,7 +79,7 @@ export async function POST(req: NextRequest) {
       { status: 404 },
     );
   }
-  const vendor: any = await (db as any).cnVendor.findFirst({
+  const vendor = await db.cnVendor.findFirst({
     where: { id: body.vendorId, orgId: ctx.orgId},
     select: { id: true, companyName: true, name: true },
   });
@@ -90,7 +91,7 @@ export async function POST(req: NextRequest) {
   }
   let locationName: string | null = body.locationName ?? null;
   if (body.locationId && !locationName) {
-    const loc: any = await (db as any).cnLocation.findFirst({
+    const loc = await db.cnLocation.findFirst({
       where: { id: body.locationId, orgId: ctx.orgId},
       select: { id: true, name: true },
     });
@@ -107,7 +108,7 @@ export async function POST(req: NextRequest) {
   const seq = String(todaysCount + 1).padStart(4, "0");
   const returnNumber = body.returnNumber ?? `GR-${compactDate}-${seq}`;
 
-  const lines: any[] = Array.isArray(body.lines) ? body.lines : [];
+  const lines: GoodReturnLine[] = Array.isArray(body.lines) ? body.lines : [];
 
   const record = await createGoodReturn({
     orgId: ctx.orgId,

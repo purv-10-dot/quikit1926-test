@@ -15,6 +15,7 @@
  *      callers should wrap creates in `withDocNumberRetry`.
  */
 
+import { toErrorMessage, getErrorCode , getErrorMeta} from "@/lib/api/errors";
 import { db } from "@/lib/db";
 
 const PREFIXES: Record<string, { model: string; field: string; prefix: string }> = {
@@ -43,7 +44,7 @@ export async function generateDocNumber(
   const year = new Date().getFullYear();
   const prefix = `${config.prefix}-${year}-`;
 
-  const count = await (db as any)[config.model].count({
+  const count = await (db as unknown as Record<string, { count: (args: unknown) => Promise<number> }>)[config.model].count({
     where: {
       orgId,
       [config.field]: { startsWith: prefix },
@@ -97,7 +98,7 @@ export async function nextProjectScopedDocNumber(opts: {
   if (!config) throw new Error(`Unknown project-scoped doc type: ${opts.type}`);
   const fy = opts.fy ?? "26";
   const prefix = `${config.prefix}-${opts.projectCode}-${fy}-`;
-  const rows: Array<Record<string, string>> = await (db as any)[config.model].findMany({
+  const rows: Array<Record<string, string>> = await (db as unknown as Record<string, { findMany: (args: unknown) => Promise<Array<Record<string, string>>> }>)[config.model].findMany({
     where: {
       orgId: opts.orgId,
       [config.field]: { startsWith: prefix },
@@ -123,16 +124,16 @@ export async function withDocNumberRetry<T>(
   fieldName: string,
   maxAttempts: number = 5,
 ): Promise<T> {
-  let lastErr: any = null;
+  let lastErr: unknown = null;
   for (let i = 0; i < maxAttempts; i++) {
     const docNumber = await generate();
     try {
       return await task(docNumber);
-    } catch (err: any) {
+    } catch (err: unknown) {
       const isConflict =
-        err?.code === "P2002" &&
-        Array.isArray(err?.meta?.target) &&
-        err.meta.target.includes(fieldName);
+        getErrorCode(err) === "P2002" &&
+        Array.isArray(getErrorMeta(err)?.target) &&
+        (getErrorMeta(err)?.target as unknown[]).includes(fieldName);
       if (!isConflict) throw err;
       lastErr = err;
     }

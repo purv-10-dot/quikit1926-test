@@ -1,3 +1,4 @@
+import { toErrorMessage, getErrorCode } from "@/lib/api/errors";
 import { NextRequest, NextResponse } from "next/server";
 import { requireMastersAction } from "@/lib/auth/requireMastersAction";
 import { hasMatrixAction } from "@/lib/auth/context";
@@ -60,10 +61,10 @@ export async function POST(req: NextRequest) {
       status: body.status ?? "active",
     });
     return NextResponse.json(record, { status: 201 });
-  } catch (err: any) {
+  } catch (err: unknown) {
     console.error("[tds.create] failed:", err);
     return NextResponse.json(
-      { error: err?.message ?? "Failed to create TDS code" },
+      { error: toErrorMessage(err, "Failed to create TDS code") },
       { status: 500 },
     );
   }

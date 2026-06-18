@@ -1,3 +1,4 @@
+import { toErrorMessage, getErrorCode } from "@/lib/api/errors";
 import { NextRequest, NextResponse } from "next/server";
 import { requireMastersAction } from "@/lib/auth/requireMastersAction";
 
@@ -53,14 +54,14 @@ export async function POST(req: NextRequest) {
       status: body.status ?? "active",
     });
     return NextResponse.json(record, { status: 201 });
-  } catch (err: any) {
-    if (err?.code === "P2002") {
+  } catch (err: unknown) {
+    if (getErrorCode(err) === "P2002") {
       return NextResponse.json(
         { error: "A financial year with this label already exists" },
         { status: 409 },
       );
     }
-    if (err?.code === "P2003") {
+    if (getErrorCode(err) === "P2003") {
       return NextResponse.json(
         { error: "The selected company does not exist" },
         { status: 400 },
@@ -68,7 +69,7 @@ export async function POST(req: NextRequest) {
     }
     console.error("[financial-years.create] failed:", err);
     return NextResponse.json(
-      { error: err?.message ?? "Failed to create financial year" },
+      { error: toErrorMessage(err, "Failed to create financial year") },
       { status: 500 },
     );
   }

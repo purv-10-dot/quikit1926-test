@@ -23,7 +23,7 @@ import { DataTable, type ColDef } from "@/components/DataTable";
 import { usePurchaseOrders, useSubmitPO } from "@/hooks/use-purchase";
 import { useRFQs, useIndents } from "@/hooks/use-approvals";
 import { useMenuActions } from "@/hooks/use-permissions";
-import { QuickCreateDrawer } from "@/components/QuickCreateDrawer";
+import { QuickCreateDrawer, type QuickCreateConfig } from "@/components/QuickCreateDrawer";
 import { SelectInput } from "@/components/FormDrawer";
 import dynamic from "next/dynamic";
 import type { SourceDocType } from "@/components/SourceDocPeekModal";
@@ -51,6 +51,68 @@ const STATUS_TABS: TabSpec[] = [
   { key: "fully_received", label: "Received" },
   { key: "closed", label: "Closed" },
 ];
+
+interface TermRow {
+  id: string;
+  status?: string;
+  applicableTo?: string;
+  title?: string;
+  body?: string;
+  isDefault?: boolean;
+}
+
+/** Indent / RFQ source line consumed by the autofill onChange handlers. */
+interface SourceLine {
+  id?: string;
+  lineId?: string;
+  itemId?: string | null;
+  itemCode?: string | null;
+  itemName?: string | null;
+  uomCode?: string | null;
+  quantity?: number | string | null;
+  qtyRequested?: number | string | null;
+  qtyOpen?: number | string | null;
+  standardRate?: number | string | null;
+  unitRate?: number | string | null;
+  gstRate?: number | string | null;
+  sourceIndentLineId?: string | null;
+}
+
+interface RfqVendorLike {
+  vendorId?: string;
+  quotedRates?: Array<{ lineId?: string; rate?: string | number }>;
+}
+
+interface RfqLike {
+  vendors?: RfqVendorLike[];
+}
+
+/** Source-doc lookups consumed by the autofill onChange handlers. */
+interface OrderIndentNode {
+  id?: string; projectId?: string; requiredDate?: string; lines?: SourceLine[];
+}
+interface OrderRfqNode {
+  id?: string; projectId?: string; rfqNumber?: string; dueDate?: string;
+  sourceIndentId?: string; lines?: SourceLine[]; vendors?: RfqVendorLike[];
+}
+
+interface PoRow {
+  [key: string]: unknown;
+  id: string;
+  poNumber?: string;
+  isUrgentLocal?: boolean;
+  sourceRfqNumber?: string;
+  sourceRfqId?: string;
+  sourceIndentNumber?: string;
+  sourceIndentId?: string;
+  vendorName?: string;
+  projectName?: string;
+  poDate?: string;
+  deliveryDate?: string;
+  isOverdue?: boolean;
+  totalAmount?: number | string;
+  status?: string;
+}
 
 export default function PurchaseOrdersPage() {
   const router = useRouter();
@@ -97,7 +159,7 @@ export default function PurchaseOrdersPage() {
   // so they're still the obvious default.
   const { data: termsData } = useTermsConditions();
   const termsOptions = useMemo(() => {
-    const rows: any[] = termsData?.data ?? [];
+    const rows: TermRow[] = termsData?.data ?? [];
     const applicableWeight: Record<string, number> = {
       po: 0,
       general: 1,
@@ -108,19 +170,19 @@ export default function PurchaseOrdersPage() {
       .filter((r) => r.status === "active")
       .sort(
         (a, b) =>
-          (applicableWeight[a.applicableTo] ?? 9) -
-          (applicableWeight[b.applicableTo] ?? 9),
+          (applicableWeight[a.applicableTo ?? ""] ?? 9) -
+          (applicableWeight[b.applicableTo ?? ""] ?? 9),
       )
       .map((r) => ({
         value: r.id,
         label:
           r.applicableTo && r.applicableTo !== "po"
             ? `${r.title} (${String(r.applicableTo).toUpperCase()})`
-            : r.title,
+            : r.title ?? "",
       }));
   }, [termsData]);
   const defaultPoTermsId = useMemo(() => {
-    const rows: any[] = termsData?.data ?? [];
+    const rows: TermRow[] = termsData?.data ?? [];
     // Prefer a PO-tagged default, then any general default, then any
     // default of another type so a single reusable template still
     // auto-selects on drawer open.
@@ -139,7 +201,7 @@ export default function PurchaseOrdersPage() {
     );
   }, [termsData]);
   const termsById = useMemo(() => {
-    const rows: any[] = termsData?.data ?? [];
+    const rows: TermRow[] = termsData?.data ?? [];
     const m = new Map<string, { title: string; body: string }>();
     for (const r of rows) {
       if (r?.id) m.set(r.id, { title: r.title ?? "", body: r.body ?? "" });
@@ -155,7 +217,7 @@ export default function PurchaseOrdersPage() {
   const { data: rfqsResult } = useRFQs({ status: "all", search: "" });
   const readyRfqs = useMemo(
     () =>
-      (rfqsResult?.data ?? []).filter((r: any) =>
+      (rfqsResult?.data ?? []).filter((r) =>
         [
           "approved",
           "sent",
@@ -173,13 +235,13 @@ export default function PurchaseOrdersPage() {
   const { data: indentsResult } = useIndents({ status: "all", search: "" });
   const approvedIndents = useMemo(
     () =>
-      (indentsResult?.data ?? []).filter((i: any) =>
+      (indentsResult?.data ?? []).filter((i) =>
         ["approved", "l3_approved", "partially_ordered"].includes(i.status),
       ),
     [indentsResult],
   );
 
-  const projectOptions = (projectsData?.data ?? []).map((p: any) => ({
+  const projectOptions = (projectsData?.data ?? []).map((p) => ({
     value: p.id,
     label: p.name,
   }));
@@ -188,18 +250,18 @@ export default function PurchaseOrdersPage() {
   // `companyName` as "missing" and falls through to the contact name
   // — matters for vendors created without a registered company.
   const vendorOptions = (vendorsData?.data ?? [])
-    .filter((v: any) => !v.isBlacklisted && v.status !== "blacklisted")
-    .map((v: any) => ({
+    .filter((v) => !(v as { isBlacklisted?: boolean }).isBlacklisted && v.status !== "blacklisted")
+    .map((v) => ({
       value: v.id,
       label: v.companyName || v.name || v.id,
     }));
-  const itemOptions = (itemsData?.data ?? []).map((i: any) => ({
+  const itemOptions = (itemsData?.data ?? []).map((i) => ({
     value: i.id,
     label: i.name,
   }));
   const sourceRfqOptions = useMemo(
     () =>
-      readyRfqs.map((rfq: any) => ({
+      readyRfqs.map((rfq) => ({
         value: rfq.id,
         label: rfq.rfqNumber,
       })),
@@ -207,13 +269,13 @@ export default function PurchaseOrdersPage() {
   );
   const sourceIndentOptions = useMemo(
     () =>
-      approvedIndents.map((ind: any) => ({
+      approvedIndents.map((ind) => ({
         value: ind.id,
         label: ind.indentNumber,
       })),
     [approvedIndents],
   );
-  const locationOptions = (locationsData?.data ?? []).map((l: any) => ({
+  const locationOptions = (locationsData?.data ?? []).map((l) => ({
     value: l.id,
     label: l.name ?? l.code ?? l.id,
   }));
@@ -226,44 +288,48 @@ export default function PurchaseOrdersPage() {
   // indent has rolled into `fully_ordered` / `closed` after the RFQ
   // was raised. The picker options still filter to approved only.
   const indentById = useMemo(() => {
-    const m = new Map<string, any>();
-    for (const i of indentsResult?.data ?? []) m.set(i.id, i);
+    const m = new Map<string, OrderIndentNode>();
+    for (const i of (indentsResult?.data ?? []) as unknown as OrderIndentNode[]) {
+      if (i.id) m.set(i.id, i);
+    }
     return m;
   }, [indentsResult]);
   const rfqById = useMemo(() => {
-    const m = new Map<string, any>();
-    for (const r of readyRfqs) m.set(r.id, r);
+    const m = new Map<string, OrderRfqNode>();
+    for (const r of readyRfqs as unknown as OrderRfqNode[]) {
+      if (r.id) m.set(r.id, r);
+    }
     return m;
   }, [readyRfqs]);
   const allItems = itemsData?.data ?? [];
   const itemGroups = useMemo(() => {
     const raw = itemGroupsData?.data ?? [];
     return raw.filter(
-      (g: any) => (g?.status ?? "active").toLowerCase() !== "inactive",
+      (g) => (g?.status ?? "active").toLowerCase() !== "inactive",
     );
   }, [itemGroupsData]);
   // Indexed lookup so the Assign-items picker can pull item-master
   // metadata (name / uom) for each PO line in O(1).
   const itemById = useMemo(() => {
-    const m = new Map<string, any>();
-    for (const i of allItems) m.set(i.id, i);
+    const m = new Map<string, { id: string; name?: string; code?: string; uomCode?: string; standardRate?: number | string | null; gstRate?: number | string | null }>();
+    for (const i of allItems as unknown as { id: string; name?: string; code?: string; uomCode?: string; standardRate?: number | string | null; gstRate?: number | string | null }[]) m.set(i.id, i);
     return m;
   }, [allItems]);
   const allVendors = vendorsData?.data ?? [];
   const vendorById = useMemo(() => {
-    const m = new Map<string, any>();
-    for (const v of allVendors) m.set(v.id, v);
+    const m = new Map<string, { id: string; companyName?: string; name?: string; email?: string }>();
+    for (const v of allVendors as unknown as { id: string; companyName?: string; name?: string; email?: string }[]) m.set(v.id, v);
     return m;
   }, [allVendors]);
 
   // Resolve a line's item by code/name/id so a rename of the items
   // master doesn't break old indents/RFQs we're inheriting from.
-  const resolveItemId = (l: any): string => {
+  const resolveItemId = (l: SourceLine | null | undefined): string => {
     if (!l) return "";
     const match =
-      (l.itemCode && allItems.find((it: any) => it.code === l.itemCode)) ||
-      (l.itemName && allItems.find((it: any) => it.name === l.itemName)) ||
-      (l.itemId && allItems.find((it: any) => it.id === l.itemId)) ||
+      (l.itemCode && allItems.find((it) => it.code === l.itemCode)) ||
+      (l.itemName && allItems.find((it) => it.name === l.itemName)) ||
+      (l.itemId && allItems.find((it) => it.id === l.itemId)) ||
       null;
     return match?.id ?? l.itemId ?? "";
   };
@@ -273,11 +339,11 @@ export default function PurchaseOrdersPage() {
   // multiple quoted, leave vendor blank for the buyer to pick (the
   // Compare modal is the right tool for that decision). Per-line
   // rates fall back to the vendor's quote on that line.
-  const pickRfqVendorAndRates = (rfq: any): {
+  const pickRfqVendorAndRates = (rfq: RfqLike): {
     vendorId: string | null;
     rateByLineKey: Map<string, string>;
   } => {
-    const vendors: any[] = rfq?.vendors ?? [];
+    const vendors: RfqVendorLike[] = rfq?.vendors ?? [];
     const quoted = vendors.filter(
       (v) => Array.isArray(v.quotedRates) && v.quotedRates.length > 0,
     );
@@ -291,7 +357,7 @@ export default function PurchaseOrdersPage() {
     return { vendorId: chosen?.vendorId ?? null, rateByLineKey };
   };
 
-  const config = {
+  const config: QuickCreateConfig = {
     title: "New Purchase Order",
     subtitle:
       "Standard POs trace back to an Indent / RFQ. Tick Urgent Local to raise one directly for an emergency site need.",
@@ -362,8 +428,8 @@ export default function PurchaseOrdersPage() {
           const fields: Record<string, string> = {};
           if (indent.projectId) fields.projectId = indent.projectId;
           if (indent.requiredDate) fields.deliveryDate = indent.requiredDate;
-          const lines: Record<string, any>[] = (indent.lines ?? []).map(
-            (l: any) => {
+          const lines = (indent.lines ?? []).map(
+            (l: SourceLine) => {
               const itemId = resolveItemId(l);
               const master = itemById.get(itemId);
               const openQty = String(
@@ -412,10 +478,10 @@ export default function PurchaseOrdersPage() {
         options: (fd: Record<string, string>): Array<{ value: string; label: string }> => {
           const scoped = fd.sourceIndentId
             ? readyRfqs.filter(
-                (r: any) => r.sourceIndentId === fd.sourceIndentId,
+                (r) => r.sourceIndentId === fd.sourceIndentId,
               )
             : readyRfqs;
-          return scoped.map((r: any) => ({
+          return scoped.map((r) => ({
             value: String(r.id),
             label: String(r.rfqNumber ?? ""),
           }));
@@ -438,7 +504,7 @@ export default function PurchaseOrdersPage() {
           if (rfq.sourceIndentId) fields.sourceIndentId = rfq.sourceIndentId;
           // Auto-fill the Vendor section with the single quoting
           // vendor (or leave blank when ambiguous).
-          const secondaryLines: Record<string, any>[] = vendorId
+          const secondaryLines = vendorId
             ? [
                 {
                   vendorId,
@@ -480,8 +546,8 @@ export default function PurchaseOrdersPage() {
               }
             }
           }
-          const lines: Record<string, any>[] = (rfq.lines ?? []).map(
-            (l: any, i: number) => {
+          const lines = (rfq.lines ?? []).map(
+            (l: SourceLine, i: number) => {
               const lineKey = String(l.id ?? l.lineId ?? `row-${i}`);
               const quotedRate = rateByLineKey.get(lineKey);
               const itemId = resolveItemId(l);
@@ -635,8 +701,8 @@ export default function PurchaseOrdersPage() {
           type: "custom" as const,
           width: "wide" as const,
           render: (
-            line: Record<string, any>,
-            update: (patch: Record<string, any>) => void,
+            line,
+            update: (patch: Record<string, unknown>) => void,
           ) => (
             <WhitebooksVendorSelect
               line={line}
@@ -665,15 +731,15 @@ export default function PurchaseOrdersPage() {
           type: "custom" as const,
           width: "wide" as const,
           render: (
-            line: Record<string, any>,
-            update: (patch: Record<string, any>) => void,
-            { primaryLines }: { primaryLines: Record<string, any>[] },
+            line,
+            update: (patch: Record<string, unknown>) => void,
+            { primaryLines },
           ) => {
             const selected: string[] = Array.isArray(line.assignedItemIds)
               ? line.assignedItemIds
               : [];
             const pickerItems: ItemPickerItem[] = primaryLines
-              .map((pl: any, idx: number) => {
+              .map((pl, idx: number) => {
                 if (!pl.itemId) return null;
                 const master = itemById.get(pl.itemId);
                 return {
@@ -769,7 +835,7 @@ export default function PurchaseOrdersPage() {
       // autofill. Mirrors the server's `INDENT_QTY_EXCEEDED` rule
       // so the user sees the failure inline instead of round-
       // tripping to the API and getting a 400.
-      validateBeforeSubmit: (rows: Record<string, any>[]) => {
+      validateBeforeSubmit: (rows) => {
         const offending: string[] = [];
         rows.forEach((r, idx) => {
           const qty = parseFloat(String(r.poQty ?? "0")) || 0;
@@ -788,8 +854,8 @@ export default function PurchaseOrdersPage() {
       // serialisation in the drawer still picks up the line keys,
       // but the default inline grid is bypassed.
       rowRender: (
-        line: Record<string, any>,
-        update: (patch: Record<string, any>) => void,
+        line,
+        update: (patch: Record<string, unknown>) => void,
       ) => {
         const qty = parseFloat(String(line.poQty ?? "0")) || 0;
         const rate = parseFloat(String(line.unitRate ?? "0")) || 0;
@@ -819,7 +885,7 @@ export default function PurchaseOrdersPage() {
                     value={line.itemId ?? ""}
                     onChange={(v) => {
                       const item = v ? itemById.get(v) : null;
-                      const patch: Record<string, any> = { itemId: v };
+                      const patch: Record<string, unknown> = { itemId: v };
                       if (item) {
                         if (item.uomCode) patch.uomCode = String(item.uomCode);
                         if (item.gstRate != null) patch.gstRate = String(item.gstRate);
@@ -832,7 +898,7 @@ export default function PurchaseOrdersPage() {
                       update(patch);
                     }}
                     items={allItems}
-                    groups={itemGroups.map((g: any) => ({ id: g.id, name: g.name, status: g.status }))}
+                    groups={itemGroups.map((g) => ({ id: g.id, name: g.name, status: g.status }))}
                     placeholder="Select material…"
                     size="md"
                   />
@@ -1010,9 +1076,9 @@ export default function PurchaseOrdersPage() {
             if (!value) return;
             const item = itemById.get(value);
             if (!item) return;
-            const patch: Record<string, any> = {};
+            const patch: Record<string, unknown> = {};
             if (item.uomCode) patch.uomCode = String(item.uomCode);
-            if (item.gstRate != null && !Number.isNaN(parseFloat(item.gstRate)))
+            if (item.gstRate != null && !Number.isNaN(parseFloat(String(item.gstRate))))
               patch.gstRate = String(item.gstRate);
             if (item.standardRate != null) patch.unitRate = String(item.standardRate);
             return patch;
@@ -1029,7 +1095,7 @@ export default function PurchaseOrdersPage() {
           key: "uomCode",
           label: "UOM",
           type: "custom" as const,
-          render: (line: Record<string, any>) => (
+          render: (line) => (
             <div className="h-[28px] flex items-center justify-center text-[11px] font-medium uppercase text-gray-600 bg-white border border-gray-200 rounded">
               {line.uomCode || "—"}
             </div>
@@ -1044,8 +1110,8 @@ export default function PurchaseOrdersPage() {
           label: "Qty",
           type: "custom" as const,
           render: (
-            line: Record<string, any>,
-            update: (patch: Record<string, any>) => void,
+            line,
+            update: (patch: Record<string, unknown>) => void,
           ) => {
             const max = line.maxQty ? parseFloat(String(line.maxQty)) : NaN;
             return (
@@ -1079,7 +1145,7 @@ export default function PurchaseOrdersPage() {
           key: "_amount",
           label: "Amount (₹)",
           type: "custom" as const,
-          render: (line: Record<string, any>) => {
+          render: (line) => {
             const qty = parseFloat(String(line.poQty ?? "0")) || 0;
             const rate = parseFloat(String(line.unitRate ?? "0")) || 0;
             const amount = qty * rate;
@@ -1101,7 +1167,7 @@ export default function PurchaseOrdersPage() {
           key: "_net",
           label: "Net (₹)",
           type: "custom" as const,
-          render: (line: Record<string, any>) => {
+          render: (line) => {
             const qty = parseFloat(String(line.poQty ?? "0")) || 0;
             const rate = parseFloat(String(line.unitRate ?? "0")) || 0;
             const gst = parseFloat(String(line.gstRate ?? "0")) || 0;
@@ -1119,11 +1185,7 @@ export default function PurchaseOrdersPage() {
       // Freight Charges + Discount inputs directly into formData so
       // the POST handler can read `body.freightCharges` / `discount`
       // without extra plumbing.
-      footer: (ctx: {
-        lines: Record<string, any>[];
-        formData: Record<string, string>;
-        setFormData: (patch: Record<string, string>) => void;
-      }) => {
+      footer: (ctx) => {
         // Line-level aggregates: gross = qty*rate (pre-discount),
         // subtotal = gross − per-line discount (the number the
         // printed PO calls "NET" in its breakdown), tax applies to
@@ -1254,7 +1316,7 @@ export default function PurchaseOrdersPage() {
     },
   };
 
-  const columns: ColDef<any>[] = [
+  const columns: ColDef<PoRow>[] = [
     {
       // Single-line PO cell. Date moved to its own column; chained
       // source ref lives in the Source column. URGENT pill stays
@@ -1293,7 +1355,7 @@ export default function PurchaseOrdersPage() {
               type="button"
               onClick={(e) => {
                 e.stopPropagation();
-                setPeekTarget({ type: "rfq", id: row.sourceRfqId });
+                setPeekTarget({ type: "rfq", id: row.sourceRfqId ?? "" });
               }}
               className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-indigo-50 text-indigo-700 text-[11px] font-medium hover:bg-indigo-100 transition-colors"
               title="View RFQ details"
@@ -1308,7 +1370,7 @@ export default function PurchaseOrdersPage() {
               type="button"
               onClick={(e) => {
                 e.stopPropagation();
-                setPeekTarget({ type: "indent", id: row.sourceIndentId });
+                setPeekTarget({ type: "indent", id: row.sourceIndentId ?? "" });
               }}
               className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-slate-100 text-slate-600 text-[11px] font-medium hover:bg-slate-200 transition-colors"
               title="View Indent details"
@@ -1438,11 +1500,9 @@ export default function PurchaseOrdersPage() {
         <DataTable
           id="purchase-orders"
           columns={columns}
-          data={data}
+          data={data as PoRow[]}
           onAdd={canAdd ? () => setDrawerOpen(true) : undefined}
           addLabel="New PO"
-          defaultSort="poDate"
-          defaultSortDir="desc"
           historyEntityType="po"
         />
       </PageContainer>

@@ -55,9 +55,6 @@ export type MenuModule = (typeof MENU_MODULES)[number];
 export const MENU_CATALOG: MenuItem[] = [
   // ─── ORGANIZATION ────────────────────────────────────────────────
   // Mirror order/contents of CONSTRUCTION_NAV → ORGANIZATION group.
-  // Banks (/masters/banks) was previously listed here but is NOT in the
-  // sidebar, which made the matrix grant a permission users couldn't
-  // navigate to. Drop it from the matrix until/unless the sidebar adds it.
   { key: "org.company",       label: "Companies",          url: "/masters/companies",        module: "ORGANIZATION", supports: allFour },
   { key: "org.department",    label: "Departments",        url: "/masters/departments",      module: "ORGANIZATION", supports: allFour },
   { key: "org.gst",           label: "GST Codes",          url: "/masters/gst",              module: "ORGANIZATION", supports: allFour },

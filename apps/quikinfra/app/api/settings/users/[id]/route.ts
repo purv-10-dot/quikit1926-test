@@ -56,12 +56,12 @@ export const GET = auth.manage<{ id: string }>(async (authCtx, _req, { params })
   let derivedMatrix: Record<string, Partial<Record<string, boolean>>> | null =
     row.permissionMatrix ?? null;
   try {
-    const authUser = await (dbCentral as any).user.findUnique({
+    const authUser = await dbCentral.user.findUnique({
       where: { email: row.email },
       select: { id: true, lastSignInAt: true },
     });
     if (authUser) {
-      const revokes = (await (dbCentral as any).cnUserPermissionExtra.findMany({
+      const revokes = (await dbCentral.cnUserPermissionExtra.findMany({
         where: { userId: authUser.id, orgId: authCtx.orgId, revoke: true },
         select: { resource: true, action: true },
       })) as Array<{ resource: string; action: string }>;
@@ -76,7 +76,7 @@ export const GET = auth.manage<{ id: string }>(async (authCtx, _req, { params })
         ? (authUser.lastSignInAt as Date).toISOString()
         : derivedLastLoginAt;
 
-      const orgMember = await (dbCentral as any).orgMember.findUnique({
+      const orgMember = await dbCentral.orgMember.findUnique({
         where: {
           orgId_userId: { orgId: authCtx.orgId, userId: authUser.id },
         },
@@ -118,7 +118,7 @@ async function handleUpdate(req: NextRequest, id: string, ctx: UpdateAuthCtx) {
     if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(normalisedEmail)) {
       return NextResponse.json({ error: "Invalid email address" }, { status: 400 });
     }
-    const clash = await (dbCentral as any).user.findUnique({
+    const clash = await dbCentral.user.findUnique({
       where: { email: normalisedEmail },
       select: { id: true },
     });
@@ -142,7 +142,7 @@ async function handleUpdate(req: NextRequest, id: string, ctx: UpdateAuthCtx) {
       lower === "super_admin" || lower === "company_admin" ? "admin" : lower;
     const appId = await getQuikInfraAppId();
     const role = appId
-      ? await (dbCentral as any).cnAppRole.findFirst({
+      ? await dbCentral.cnAppRole.findFirst({
           where: { orgId: ctx.orgId, appId, name: normalised },
           select: { id: true, name: true },
         })
@@ -284,7 +284,7 @@ async function handleUpdate(req: NextRequest, id: string, ctx: UpdateAuthCtx) {
     Array.isArray(body.projectsAssigned)
   ) {
     try {
-      const authUser = await (dbCentral as any).user.findUnique({
+      const authUser = await dbCentral.user.findUnique({
         where: { email: updated.email },
         select: { id: true },
       });
@@ -304,10 +304,10 @@ async function handleUpdate(req: NextRequest, id: string, ctx: UpdateAuthCtx) {
     try {
       const appId = await getQuikInfraAppId();
       if (appId) {
-        await (dbCentral as any).cnUserAppRole.deleteMany({
+        await dbCentral.cnUserAppRole.deleteMany({
           where: { userId: authUserId, orgId: ctx.orgId, role: { appId } },
         });
-        await (dbCentral as any).cnUserAppRole.create({
+        await dbCentral.cnUserAppRole.create({
           data: {
             userId: authUserId,
             orgId: ctx.orgId,
@@ -379,7 +379,7 @@ async function handleUpdate(req: NextRequest, id: string, ctx: UpdateAuthCtx) {
       );
       // Upsert revoke=true for cells the admin set to `false`.
       for (const p of toAdd) {
-        await (dbCentral as any).cnUserPermissionExtra.upsert({
+        await dbCentral.cnUserPermissionExtra.upsert({
           where: {
             orgId_userId_resource_action: {
               orgId: ctx.orgId,
@@ -401,7 +401,7 @@ async function handleUpdate(req: NextRequest, id: string, ctx: UpdateAuthCtx) {
       }
       // Clear revoke=true rows for cells the admin set to `true` (or absent).
       if (toClear.length > 0) {
-        await (dbCentral as any).cnUserPermissionExtra.deleteMany({
+        await dbCentral.cnUserPermissionExtra.deleteMany({
           where: {
             orgId: ctx.orgId,
             userId: authUserId,

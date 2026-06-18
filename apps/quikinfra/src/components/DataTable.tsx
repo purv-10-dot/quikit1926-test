@@ -4,8 +4,8 @@ import { useState, useMemo, useEffect, useLayoutEffect, useRef } from 'react';
 import { createPortal } from 'react-dom';
 import {
   Check, X as XIcon, RotateCcw, Undo2, Clock, History, FilePlus, FileEdit,
-  Send, AlertCircle, Hourglass, MoreHorizontal, Search, Filter, ArrowUpDown,
-  LayoutGrid, Columns, ChevronDown,
+  Send, AlertCircle, Hourglass, MoreHorizontal, Search, Filter,
+  LayoutGrid, Columns, ChevronDown, ChevronUp, ChevronsUpDown,
 } from 'lucide-react';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -580,7 +580,7 @@ function ToolbarDropdownPortal({
 // ─── Quick Filter Panel ───────────────────────────────────────────────────────
 
 function QuickFilterPanel<T extends Record<string, unknown>>({
-  columns, data, activeFilters, onToggle, onClear, filtered, onSwitchAdvanced,
+  columns, data, activeFilters, onToggle, onClear, filtered, onSwitchAdvanced, sorts, onChangeSorts,
 }: {
   columns: ColDef<T>[];
   data: T[];
@@ -589,6 +589,8 @@ function QuickFilterPanel<T extends Record<string, unknown>>({
   onClear: () => void;
   filtered: T[];
   onSwitchAdvanced: () => void;
+  sorts: SortCond[];
+  onChangeSorts: (s: SortCond[]) => void;
 }) {
   const selectCols = columns.filter(c => c.type === 'select' || c.options);
 
@@ -630,7 +632,6 @@ function QuickFilterPanel<T extends Record<string, unknown>>({
         </div>
         <div className="flex shrink-0 items-center gap-2">
           <button onClick={onClear} className="text-xs text-slate-500 hover:text-slate-700 px-2 py-1 hover:bg-slate-100 rounded-lg">Clear all</button>
-          <button className="text-xs border px-3 py-1.5 rounded-xl text-slate-600 hover:bg-slate-50">Save as new view</button>
         </div>
       </div>
 
@@ -676,6 +677,12 @@ function QuickFilterPanel<T extends Record<string, unknown>>({
         </div>
       </div>
 
+      {/* Sort */}
+      <div className="border-t px-5 py-4">
+        <div className="text-xs font-semibold text-slate-400 uppercase tracking-wide mb-3">Sort</div>
+        <SortControls<T> columns={columns} sorts={sorts} onChange={onChangeSorts} />
+      </div>
+
       {/* Footer */}
       <div className="border-t px-5 py-3 flex items-center justify-between">
         <button onClick={onSwitchAdvanced} className="text-xs text-orange-600 hover:text-orange-700 font-semibold hover:underline">
@@ -689,7 +696,7 @@ function QuickFilterPanel<T extends Record<string, unknown>>({
 // ─── Advanced Filter Panel ────────────────────────────────────────────────────
 
 function AdvancedFilterPanel<T extends Record<string, unknown>>({
-  columns, conditions, data, filtered, onChangeConditions, onClear, onSwitchQuick,
+  columns, conditions, data, filtered, onChangeConditions, onClear, onSwitchQuick, sorts, onChangeSorts,
 }: {
   columns: ColDef<T>[];
   conditions: FilterCond[];
@@ -698,6 +705,8 @@ function AdvancedFilterPanel<T extends Record<string, unknown>>({
   onChangeConditions: (c: FilterCond[]) => void;
   onClear: () => void;
   onSwitchQuick: () => void;
+  sorts: SortCond[];
+  onChangeSorts: (s: SortCond[]) => void;
 }) {
   const uid = () => Math.random().toString(36).slice(2, 8);
   const searchable = columns.filter(c => c.searchable !== false);
@@ -732,7 +741,6 @@ function AdvancedFilterPanel<T extends Record<string, unknown>>({
         </div>
         <div className="flex shrink-0 items-center gap-2">
           <button onClick={onClear} className="text-xs text-slate-500 hover:text-slate-700 px-2 py-1 hover:bg-slate-100 rounded-lg">Clear all</button>
-          <button className="text-xs border px-3 py-1.5 rounded-xl text-slate-600 hover:bg-slate-50">Save as new view</button>
         </div>
       </div>
 
@@ -806,6 +814,12 @@ function AdvancedFilterPanel<T extends Record<string, unknown>>({
         </button>
       </div>
 
+      {/* Sort */}
+      <div className="border-t px-5 py-4">
+        <div className="text-xs font-semibold text-slate-400 uppercase tracking-wide mb-3">Sort</div>
+        <SortControls<T> columns={columns} sorts={sorts} onChange={onChangeSorts} />
+      </div>
+
       {/* Footer */}
       <div className="border-t px-5 py-3">
         <button onClick={onSwitchQuick} className="text-xs text-orange-600 hover:text-orange-700 font-semibold hover:underline">
@@ -816,19 +830,16 @@ function AdvancedFilterPanel<T extends Record<string, unknown>>({
   );
 }
 
-// ─── Sort Panel ───────────────────────────────────────────────────────────────
+// ─── Sort Controls ────────────────────────────────────────────────────────────
+// Wrapper-less sort UI. Embedded inside the Filter dropdown (the standalone
+// toolbar Sort button was retired in favour of a single Filter popover).
 
-function SortPanel<T extends Record<string, unknown>>({
-  columns, sorts, onChange, onClose,
-}: { columns: ColDef<T>[]; sorts: SortCond[]; onChange: (s: SortCond[]) => void; onClose: () => void }) {
-  const uid = () => Math.random().toString(36).slice(2, 8);
+function SortControls<T extends Record<string, unknown>>({
+  columns, sorts, onChange,
+}: { columns: ColDef<T>[]; sorts: SortCond[]; onChange: (s: SortCond[]) => void }) {
   const sortable = columns.filter(c => c.sortable !== false);
   return (
-    <div className="w-full rounded-2xl border border-slate-200 bg-white shadow-2xl p-4">
-      <div className="flex items-center justify-between mb-3">
-        <span className="font-semibold text-sm">Sort</span>
-        <button onClick={onClose} className="text-slate-400 hover:text-slate-600">×</button>
-      </div>
+    <div>
       <div className="space-y-2">
         {sorts.map((s, i) => (
           <div key={i} className="flex items-center gap-2">
@@ -939,7 +950,6 @@ export function DataTable<T extends Record<string, unknown>>({
   const [globalQ, setGlobalQ] = useState('');
   const [filterMode, setFilterMode] = useState<'quick' | 'advanced'>('quick');
   const [showFilter, setShowFilter] = useState(false);
-  const [showSort, setShowSort] = useState(false);
   const [showGroupBy, setShowGroupBy] = useState(false);
   const [showColPanel, setShowColPanel] = useState(false);
   const [quickFilters, setQuickFilters] = useState<Record<string, string[]>>({});
@@ -954,8 +964,6 @@ export function DataTable<T extends Record<string, unknown>>({
 
   const filterRef = useRef<HTMLDivElement>(null);
   const filterPanelRef = useRef<HTMLDivElement>(null);
-  const sortRef = useRef<HTMLDivElement>(null);
-  const sortPanelRef = useRef<HTMLDivElement>(null);
   const groupRef = useRef<HTMLDivElement>(null);
   const groupPanelRef = useRef<HTMLDivElement>(null);
   const colRef = useRef<HTMLDivElement>(null);
@@ -977,7 +985,6 @@ export function DataTable<T extends Record<string, unknown>>({
     const h = (e: MouseEvent) => {
       const target = e.target as Node;
       if (filterRef.current && !filterRef.current.contains(target) && !filterPanelRef.current?.contains(target)) setShowFilter(false);
-      if (sortRef.current && !sortRef.current.contains(target) && !sortPanelRef.current?.contains(target)) setShowSort(false);
       if (groupRef.current && !groupRef.current.contains(target) && !groupPanelRef.current?.contains(target)) setShowGroupBy(false);
       if (colRef.current && !colRef.current.contains(target) && !colPanelRef.current?.contains(target)) setShowColPanel(false);
     };
@@ -1115,8 +1122,8 @@ export function DataTable<T extends Record<string, unknown>>({
           <td key={col.key}
             className={
               col.key === '__history'
-                ? 'w-12 min-w-[48px] max-w-[48px] bg-inherit px-1.5 py-3.5 align-middle text-center text-sm text-slate-700 group-hover:bg-orange-50/60'
-                : `px-4 py-3.5 text-sm text-slate-700 ${frozen ? 'sticky z-10 bg-white group-hover:bg-orange-50/60 shadow-[2px_0_4px_-2px_rgba(0,0,0,0.06)]' : ''}`
+                ? 'w-12 min-w-[48px] max-w-[48px] bg-inherit px-1.5 py-3 align-middle text-center text-sm text-slate-700 group-hover:bg-orange-50/60'
+                : `px-4 py-3 text-sm text-slate-700 ${frozen ? 'sticky z-10 bg-white group-hover:bg-orange-50/60 shadow-[2px_0_4px_-2px_rgba(0,0,0,0.06)]' : ''}`
             }
             style={col.key === '__history' ? undefined : { left: frozen ? left : undefined }}>
             {col.render ? col.render(row, i) : String((row as Record<string, unknown>)[col.key] ?? '')}
@@ -1141,7 +1148,7 @@ export function DataTable<T extends Record<string, unknown>>({
         />
       )}
 
-      <div className="space-y-2">
+      <div className="space-y-4">
         {/* ── Toolbar ── */}
         <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
           <div className="relative min-w-0 w-full max-w-md">
@@ -1183,6 +1190,7 @@ export function DataTable<T extends Record<string, unknown>>({
                 columns={columns} data={data} activeFilters={quickFilters} filtered={filtered}
                 onToggle={toggleQF} onClear={clearFilters}
                 onSwitchAdvanced={() => setFilterMode('advanced')}
+                sorts={sorts} onChangeSorts={setSorts}
               />
             </ToolbarDropdownPortal>
             <ToolbarDropdownPortal open={showFilter && filterMode === 'advanced'} anchorRef={filterRef} panelRef={filterPanelRef} width={580} align="right">
@@ -1191,28 +1199,12 @@ export function DataTable<T extends Record<string, unknown>>({
                 onChangeConditions={c => { setAdvancedConds(c); setPage(1); }}
                 onClear={clearFilters}
                 onSwitchQuick={() => setFilterMode('quick')}
+                sorts={sorts} onChangeSorts={setSorts}
               />
             </ToolbarDropdownPortal>
           </div>
 
-          <div className="relative" ref={sortRef}>
-            <button
-              type="button"
-              onClick={() => setShowSort((s) => !s)}
-              className={`flex items-center gap-1.5 rounded-xl border px-3 py-2 text-sm font-medium transition-colors ${
-                sorts.length > 0
-                  ? "border-orange-300 bg-orange-50 text-orange-700"
-                  : "border-slate-200 text-slate-600 hover:border-orange-200 hover:bg-orange-50/60 hover:text-orange-700"
-              }`}
-            >
-              <ArrowUpDown className="h-4 w-4 shrink-0" />
-              Sort {sorts.length > 0 && <span className="text-xs opacity-70">({sorts.length})</span>}
-            </button>
-            <ToolbarDropdownPortal open={showSort} anchorRef={sortRef} panelRef={sortPanelRef} width={340} align="right">
-              <SortPanel<T> columns={columns} sorts={sorts} onChange={setSorts} onClose={() => setShowSort(false)} />
-            </ToolbarDropdownPortal>
-          </div>
-
+          {/* Group by — temporarily hidden (logic retained below)
           <div className="relative" ref={groupRef}>
             <button
               type="button"
@@ -1233,6 +1225,7 @@ export function DataTable<T extends Record<string, unknown>>({
               <GroupByPanel<T> columns={columns} groupBy={groupBy} onChange={k => { setGroupBy(k); setShowGroupBy(false); }} onClose={() => setShowGroupBy(false)} />
             </ToolbarDropdownPortal>
           </div>
+          */}
 
           <div className="relative" ref={colRef}>
             <button
@@ -1291,7 +1284,7 @@ export function DataTable<T extends Record<string, unknown>>({
 
         {/* ── Table ── */}
         <div
-          className={`rounded-2xl ring-1 ring-slate-200 bg-white shadow-[0_4px_24px_-12px_rgba(15,23,42,0.12)] ${fitToContent ? 'overflow-x-auto' : 'overflow-auto'}`}
+          className={`min-h-[200px] rounded-2xl ring-1 ring-slate-200 bg-white shadow-[0_4px_24px_-12px_rgba(15,23,42,0.12)] ${fitToContent ? 'overflow-x-auto' : 'overflow-auto'}`}
           style={fitToContent ? undefined : { maxHeight: '65vh' }}
         >
           <table className="min-w-full text-sm border-separate border-spacing-0">
@@ -1314,7 +1307,9 @@ export function DataTable<T extends Record<string, unknown>>({
                         }} className={`flex items-center gap-1.5 transition-colors group ${isSorted ? 'text-orange-700' : 'hover:text-orange-700'}`}>
                           {col.label}
                           <span className={`inline-flex items-center justify-center w-4 h-4 rounded transition-all ${isSorted ? 'opacity-100 text-orange-600 bg-orange-100' : 'opacity-30 group-hover:opacity-70 text-slate-400'}`}>
-                            {isSorted ? (isSorted.dir === 'asc' ? '▲' : '▼') : '⇅'}
+                            {isSorted
+                              ? (isSorted.dir === 'asc' ? <ChevronUp className="h-3 w-3" strokeWidth={2.5} /> : <ChevronDown className="h-3 w-3" strokeWidth={2.5} />)
+                              : <ChevronsUpDown className="h-3 w-3" strokeWidth={2} />}
                           </span>
                         </button>
                       ) : col.label}

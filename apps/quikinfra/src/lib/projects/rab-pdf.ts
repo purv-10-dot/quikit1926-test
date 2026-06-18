@@ -1,10 +1,13 @@
 /**
  * RA Bill PDF generator.
  *
- * Mirrors `work-order-pdf.ts` — clones the Aakar letterhead and draws the
- * RA Bill body: contractor + bill info blocks, billed-quantity table
- * (current qty / rate / amount), a deduction-waterfall summary
- * (gross → +GST → −deductions → net payable), and Terms & Conditions.
+ * Clones the Aakar letterhead and draws the RA Bill body:
+ *   • centred title + bill no / date / status,
+ *   • two info boxes (Contractor / Sub-Contractor + the issuing company),
+ *   • a section bar naming the project,
+ *   • the billed-quantity table (cum. qty / rate / current amt / cumulative),
+ *   • a right-aligned deduction-waterfall summary box, and
+ *   • Terms & Conditions + Notes.
  */
 
 import fs from "fs/promises";
@@ -22,8 +25,10 @@ const A4: [number, number] = [595.28, 841.89];
 const PAGE_MARGIN = 40;
 
 const BRAND_ORANGE = rgb(0.95, 0.4, 0.15);
+const SECTION_BG = rgb(1, 0.95, 0.9);
 const GRID = rgb(0.55, 0.55, 0.55);
 const BLACK = rgb(0, 0, 0);
+const WHITE = rgb(1, 1, 1);
 const SOFT_BG = rgb(0.96, 0.96, 0.96);
 
 export interface RABillPdfLine {
@@ -31,8 +36,10 @@ export interface RABillPdfLine {
   description: string;
   uom: string;
   quantity: number;
+  cumulativeQty: number;
   rate: number;
   amount: number;
+  cumulativeAmount: number;
 }
 
 export interface RABillPdfInput {
@@ -54,13 +61,21 @@ export interface RABillPdfInput {
     email?: string | null;
     contactPerson?: string | null;
   };
+  /** The tenant company that issues the bill (right-hand info box). */
+  issuer?: {
+    name?: string | null;
+    gstin?: string | null;
+    address?: string | null;
+  };
   items: RABillPdfLine[];
   amounts: {
     gross: number;
     cgstAmount: number;
     sgstAmount: number;
     igstAmount: number;
+    retentionPercent: number;
     retentionAmount: number;
+    tdsRate: number;
     tdsAmount: number;
     mobilisationRecovery: number;
     liquidatedDamages: number;
@@ -70,7 +85,12 @@ export interface RABillPdfInput {
     previousBillAmount: number;
     cumulativeAmount: number;
   };
+  /** Body of the selected T&C template (null → built-in default). */
   termsBody?: string | null;
+  /** Title of the selected T&C template, appended to the heading. */
+  termsTitle?: string | null;
+  /** When true, the Terms & Conditions section is omitted entirely. */
+  hideTerms?: boolean;
 }
 
 interface Ctx {
@@ -143,11 +163,18 @@ function fmtDate(raw: string | null | undefined): string {
 }
 
 function fmtINR(n: number): string {
-  return n.toLocaleString("en-IN", { maximumFractionDigits: 2 });
+  return n.toLocaleString("en-IN", {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  });
 }
 
 function fmtQty(n: number): string {
-  return n.toLocaleString("en-IN", { maximumFractionDigits: 4 });
+  return n.toLocaleString("en-IN", { maximumFractionDigits: 2 });
+}
+
+function fmtPct(n: number): string {
+  return Number(n || 0).toLocaleString("en-IN", { maximumFractionDigits: 2 });
 }
 
 const BILL_TYPE_LABEL: Record<string, string> = {
@@ -156,107 +183,154 @@ const BILL_TYPE_LABEL: Record<string, string> = {
   deviation_bill: "Deviation Bill",
 };
 
-function drawInfoBlocks(ctx: Ctx, input: RABillPdfInput) {
+// ─── Title + bill meta (top-right) ─────────────────────────────────────
+
+function drawTitleAndMeta(ctx: Ctx, input: RABillPdfInput) {
+  const { page, font, bold, width } = ctx;
+  const titleText =
+    BILL_TYPE_LABEL[input.rab.billType ?? ""] ?? "Running Account Bill";
+  const titleSize = 14;
+  const titleWidth = bold.widthOfTextAtSize(titleText, titleSize);
+  drawText(page, titleText, (width - titleWidth) / 2, ctx.y, bold, titleSize, BRAND_ORANGE);
+
+  const right = width - PAGE_MARGIN;
+  const meta: Array<[string, string]> = [
+    ["Bill No: ", input.rab.rabNumber || "—"],
+    ["Bill Date: ", fmtDate(input.rab.rabDate) || "—"],
+    ["Status: ", (input.rab.status || "draft").toUpperCase()],
+  ];
+  let my = ctx.y - 20;
+  for (const [label, value] of meta) {
+    const text = label + value;
+    const w = font.widthOfTextAtSize(text, 9);
+    drawText(page, text, right - w, my, font, 9);
+    my -= 12;
+  }
+  ctx.y = Math.min(ctx.y - 24, my) - 8;
+}
+
+// ─── Two info boxes ────────────────────────────────────────────────────
+
+function drawInfoBoxes(ctx: Ctx, input: RABillPdfInput) {
   const { page, font, bold, width } = ctx;
   const left = PAGE_MARGIN;
   const right = width - PAGE_MARGIN;
-  const midGap = 10;
-  const colWidth = (right - left - midGap) / 2;
-  const rightColX = left + colWidth + midGap;
-  const labelColW = 90;
-  const valueW = colWidth - labelColW - 8;
-  const minRowH = 15;
+  const gap = 12;
+  const colW = (right - left - gap) / 2;
+  const rightX = left + colW + gap;
+  const headerH = 16;
+  const labelW = 82;
+  const valueW = colW - labelW - 8;
   const lineH = 10;
+  const minRowH = 14;
 
   const period =
     input.rab.periodFrom || input.rab.periodTo
-      ? `${fmtDate(input.rab.periodFrom) || "—"} to ${fmtDate(input.rab.periodTo) || "—"}`
+      ? `${fmtDate(input.rab.periodFrom) || "—"} – ${fmtDate(input.rab.periodTo) || "—"}`
       : "—";
 
-  const contractorRows: Array<[string, string]> = [
-    ["Contractor", input.contractor.name || "—"],
-    ["GSTIN", input.contractor.gstin || "—"],
-    ["Address", input.contractor.address || "—"],
-    ["Contact Person", input.contractor.contactPerson || "—"],
-    ["Phone", input.contractor.phone || "—"],
-    ["Email", input.contractor.email || "—"],
-  ];
-  const billRows: Array<[string, string]> = [
-    ["RAB No.", input.rab.rabNumber],
-    ["Bill Date", fmtDate(input.rab.rabDate) || "—"],
-    ["Bill Type", BILL_TYPE_LABEL[input.rab.billType ?? ""] ?? "Running Account Bill"],
+  const leftTitle = "Contractor / Sub-Contractor";
+  const leftRows: Array<[string, string]> = [
+    ["Name", input.contractor.name || "—"],
     ["Project", input.rab.projectName || "—"],
-    ["Work Order", input.rab.woNumber || "—"],
-    ["Bill Period", period],
-    ["Status", (input.rab.status || "draft").toUpperCase()],
+    ["Bill Type", BILL_TYPE_LABEL[input.rab.billType ?? ""] ?? "Running Account Bill"],
+    ["Period", period],
+  ];
+
+  const rightTitle = input.issuer?.name || "Issued By";
+  const rightRows: Array<[string, string]> = [
+    ["GSTIN", input.issuer?.gstin || "—"],
+    ["Address", input.issuer?.address || "—"],
+    ["Cumulative Billed", fmtINR(input.amounts.cumulativeAmount)],
+    ["Previous Bill", fmtINR(input.amounts.previousBillAmount)],
   ];
 
   const prep = (rows: Array<[string, string]>) =>
     rows.map(([label, value]) => {
-      const labelWrapped = wrap(label, bold, 8, labelColW - 8);
-      const valueWrapped = wrap(value, font, 8, valueW);
-      const maxLines = Math.max(labelWrapped.length, valueWrapped.length);
-      const h = Math.max(minRowH, maxLines * lineH + 4);
-      return { labelLines: labelWrapped, wrapped: valueWrapped, h };
+      const wrapped = wrap(value, font, 8, valueW);
+      const h = Math.max(minRowH, wrapped.length * lineH + 4);
+      return { label, wrapped, h };
     });
-  const contractor = prep(contractorRows);
-  const bill = prep(billRows);
-  const blockH = Math.max(
-    contractor.reduce((s, r) => s + r.h, 0),
-    bill.reduce((s, r) => s + r.h, 0),
+  const leftPrepped = prep(leftRows);
+  const rightPrepped = prep(rightRows);
+  const bodyH = Math.max(
+    leftPrepped.reduce((s, r) => s + r.h, 0),
+    rightPrepped.reduce((s, r) => s + r.h, 0),
   );
+
   const topY = ctx.y;
 
-  page.drawRectangle({
-    x: left, y: topY - blockH, width: colWidth, height: blockH,
-    borderColor: GRID, borderWidth: 0.6,
-  });
-  page.drawRectangle({
-    x: rightColX, y: topY - blockH, width: colWidth, height: blockH,
-    borderColor: GRID, borderWidth: 0.6,
-  });
-
-  const drawCol = (
+  const drawBox = (
     x: number,
-    rows: Array<{ labelLines: string[]; wrapped: string[]; h: number }>,
+    title: string,
+    rows: Array<{ label: string; wrapped: string[]; h: number }>,
   ) => {
-    let cursor = topY;
+    // Header band.
+    page.drawRectangle({
+      x, y: topY - headerH, width: colW, height: headerH, color: BRAND_ORANGE,
+    });
+    drawText(page, title, x + 6, topY - headerH + 5, bold, 9, WHITE);
+    // Body outline.
+    page.drawRectangle({
+      x, y: topY - headerH - bodyH, width: colW, height: bodyH,
+      borderColor: GRID, borderWidth: 0.6,
+    });
+    let cursor = topY - headerH;
     for (let i = 0; i < rows.length; i++) {
       const r = rows[i];
       if (i > 0) {
         page.drawLine({
-          start: { x, y: cursor }, end: { x: x + colWidth, y: cursor },
+          start: { x, y: cursor }, end: { x: x + colW, y: cursor },
           thickness: 0.3, color: GRID,
         });
       }
       page.drawLine({
-        start: { x: x + labelColW, y: cursor },
-        end: { x: x + labelColW, y: cursor - r.h },
+        start: { x: x + labelW, y: cursor },
+        end: { x: x + labelW, y: cursor - r.h },
         thickness: 0.3, color: GRID,
       });
-      const topTextY = cursor - 10;
-      for (let li = 0; li < r.labelLines.length; li++) {
-        drawText(page, r.labelLines[li], x + 4, topTextY - li * lineH, bold, 8);
-      }
+      const textY = cursor - 10;
+      drawText(page, r.label, x + 4, textY, bold, 8);
       for (let li = 0; li < r.wrapped.length; li++) {
-        drawText(page, r.wrapped[li], x + labelColW + 4, topTextY - li * lineH, font, 8);
+        drawText(page, r.wrapped[li], x + labelW + 4, textY - li * lineH, font, 8);
       }
       cursor -= r.h;
     }
   };
-  drawCol(left, contractor);
-  drawCol(rightColX, bill);
-  ctx.y = topY - blockH - 12;
+
+  drawBox(left, leftTitle, leftPrepped);
+  drawBox(rightX, rightTitle, rightPrepped);
+  ctx.y = topY - headerH - bodyH - 16;
 }
 
+// ─── Section bar ───────────────────────────────────────────────────────
+
+function drawSectionBar(ctx: Ctx, input: RABillPdfInput) {
+  const { page, bold, width } = ctx;
+  const left = PAGE_MARGIN;
+  const right = width - PAGE_MARGIN;
+  const h = 18;
+  const billLabel =
+    (BILL_TYPE_LABEL[input.rab.billType ?? ""] ?? "Running Account Bill").toUpperCase();
+  const project = (input.rab.projectName || "").toUpperCase();
+  const title = project ? `${billLabel} — ${project}` : billLabel;
+  const topY = ctx.y;
+  page.drawRectangle({
+    x: left, y: topY - h, width: right - left, height: h, color: SECTION_BG,
+  });
+  const lines = wrap(title, bold, 9, right - left - 12);
+  drawText(page, lines[0] ?? title, left + 6, topY - h + 5, bold, 9, BRAND_ORANGE);
+  ctx.y = topY - h - 10;
+}
+
+// ─── Billed-quantity table ─────────────────────────────────────────────
+
 const COLS = [
-  { key: "sno", label: "S.NO.", width: 32, align: "center" as const },
-  { key: "code", label: "BOQ NO.", width: 75, align: "left" as const },
-  { key: "desc", label: "DESCRIPTION", width: 175, align: "left" as const },
-  { key: "uom", label: "UOM", width: 42, align: "center" as const },
-  { key: "qty", label: "QTY", width: 55, align: "right" as const },
-  { key: "rate", label: "RATE", width: 55, align: "right" as const },
-  { key: "amt", label: "AMOUNT", width: 80, align: "right" as const },
+  { key: "desc", label: "Description", width: 195, align: "left" as const },
+  { key: "cumQty", label: "Cum. Qty", width: 70, align: "right" as const },
+  { key: "rate", label: "Rate", width: 75, align: "right" as const },
+  { key: "curAmt", label: "Current Amt", width: 85, align: "right" as const },
+  { key: "cumAmt", label: "Cumulative", width: 90, align: "right" as const },
 ];
 
 function colX(start: number, idx: number): number {
@@ -284,24 +358,22 @@ function drawTableHeader(ctx: Ctx, startX: number) {
   COLS.forEach((c, i) => {
     const x = colX(startX, i);
     const tx = alignedX(c.label, x, c.width, bold, 9, c.align);
-    drawText(page, c.label, tx, topY - h + 5, bold, 9, rgb(1, 1, 1));
+    drawText(page, c.label, tx, topY - h + 5, bold, 9, WHITE);
     if (i > 0) {
       page.drawLine({
         start: { x, y: topY }, end: { x, y: topY - h },
-        thickness: 0.4, color: rgb(1, 1, 1),
+        thickness: 0.4, color: WHITE,
       });
     }
   });
   ctx.y = topY - h;
 }
 
-function drawTableRow(ctx: Ctx, startX: number, index: number, line: RABillPdfLine) {
+function drawTableRow(ctx: Ctx, startX: number, line: RABillPdfLine) {
   const { page, font } = ctx;
   const totalW = COLS.reduce((s, c) => s + c.width, 0);
-  const descLines = wrap(line.description || "—", font, 9, COLS[2].width - 10);
-  const codeLines = wrap(line.itemCode || "—", font, 9, COLS[1].width - 10);
-  const maxLines = Math.max(descLines.length, codeLines.length);
-  const h = Math.max(18, maxLines * 11 + 6);
+  const descLines = wrap(line.description || "—", font, 9, COLS[0].width - 10);
+  const h = Math.max(18, descLines.length * 11 + 6);
   const topY = ctx.y;
 
   page.drawRectangle({
@@ -316,51 +388,53 @@ function drawTableRow(ctx: Ctx, startX: number, index: number, line: RABillPdfLi
     });
   }
   const baseY = topY - 12;
-  const sno = String(index);
-  drawText(page, sno, alignedX(sno, colX(startX, 0), COLS[0].width, font, 9, "center"), baseY, font, 9);
-  for (let i = 0; i < codeLines.length; i++) {
-    drawText(page, codeLines[i], colX(startX, 1) + 5, topY - 12 - i * 11, font, 9);
-  }
   for (let i = 0; i < descLines.length; i++) {
-    drawText(page, descLines[i], colX(startX, 2) + 5, topY - 12 - i * 11, font, 9);
+    drawText(page, descLines[i], colX(startX, 0) + 5, topY - 12 - i * 11, font, 9);
   }
-  const uomT = (line.uom || "—").toUpperCase();
-  drawText(page, uomT, alignedX(uomT, colX(startX, 3), COLS[3].width, font, 9, "center"), baseY, font, 9);
-  const qtyT = fmtQty(line.quantity);
-  drawText(page, qtyT, alignedX(qtyT, colX(startX, 4), COLS[4].width, font, 9, "right"), baseY, font, 9);
-  const rateT = fmtINR(line.rate);
-  drawText(page, rateT, alignedX(rateT, colX(startX, 5), COLS[5].width, font, 9, "right"), baseY, font, 9);
-  const amtT = fmtINR(line.amount);
-  drawText(page, amtT, alignedX(amtT, colX(startX, 6), COLS[6].width, font, 9, "right"), baseY, font, 9);
+  const cells: Array<[number, string]> = [
+    [1, fmtQty(line.cumulativeQty)],
+    [2, fmtINR(line.rate)],
+    [3, fmtINR(line.amount)],
+    [4, fmtINR(line.cumulativeAmount)],
+  ];
+  for (const [idx, text] of cells) {
+    drawText(page, text, alignedX(text, colX(startX, idx), COLS[idx].width, font, 9, "right"), baseY, font, 9);
+  }
   ctx.y = topY - h;
 }
 
-function drawSummary(ctx: Ctx, startX: number, a: RABillPdfInput["amounts"]) {
-  const { page, font, bold } = ctx;
-  const totalW = COLS.reduce((s, c) => s + c.width, 0);
-  const valueW = COLS[6].width;
-  const valueX = startX + totalW - valueW;
-  const labelX = startX;
-  const labelW = totalW - valueW;
+// ─── Deduction-waterfall summary (right-aligned box) ───────────────────
 
+function drawSummary(ctx: Ctx, a: RABillPdfInput["amounts"]) {
+  const { page, font, bold, width } = ctx;
+  const boxW = 250;
+  const right = width - PAGE_MARGIN;
+  const startX = right - boxW;
+  const valueW = 110;
+  const valueX = startX + boxW - valueW;
+  const labelW = boxW - valueW;
+
+  const gstTotal = a.cgstAmount + a.sgstAmount + a.igstAmount;
   const rows: Array<[string, number, boolean]> = [
     ["Gross Bill Amount", a.gross, true],
   ];
-  if (a.cgstAmount) rows.push(["Add: CGST", a.cgstAmount, false]);
-  if (a.sgstAmount) rows.push(["Add: SGST", a.sgstAmount, false]);
-  if (a.igstAmount) rows.push(["Add: IGST", a.igstAmount, false]);
-  if (a.retentionAmount) rows.push(["Less: Retention", -a.retentionAmount, false]);
-  if (a.tdsAmount) rows.push(["Less: TDS", -a.tdsAmount, false]);
-  if (a.mobilisationRecovery) rows.push(["Less: Mobilisation Recovery", -a.mobilisationRecovery, false]);
-  if (a.liquidatedDamages) rows.push(["Less: Liquidated Damages", -a.liquidatedDamages, false]);
+  if (a.retentionAmount)
+    rows.push([`Less: Retention (${fmtPct(a.retentionPercent)}%)`, -a.retentionAmount, false]);
+  if (a.tdsAmount)
+    rows.push([`Less: TDS (${fmtPct(a.tdsRate)}%)`, -a.tdsAmount, false]);
+  if (a.mobilisationRecovery)
+    rows.push(["Less: Mobilisation Recovery", -a.mobilisationRecovery, false]);
+  if (a.liquidatedDamages)
+    rows.push(["Less: Liquidated Damages", -a.liquidatedDamages, false]);
   if (a.labourCess) rows.push(["Less: Labour Cess", -a.labourCess, false]);
   if (a.otherDeductions) rows.push(["Less: Other Deductions", -a.otherDeductions, false]);
+  if (gstTotal) rows.push(["Add: GST", gstTotal, false]);
 
   const rowH = 16;
   for (const [label, value, strong] of rows) {
     const topY = ctx.y;
     page.drawRectangle({
-      x: labelX, y: topY - rowH, width: totalW, height: rowH,
+      x: startX, y: topY - rowH, width: boxW, height: rowH,
       borderColor: GRID, borderWidth: 0.3,
     });
     page.drawLine({
@@ -368,8 +442,8 @@ function drawSummary(ctx: Ctx, startX: number, a: RABillPdfInput["amounts"]) {
       thickness: 0.3, color: GRID,
     });
     const f = strong ? bold : font;
-    drawText(page, label, alignedX(label, labelX, labelW, f, 9, "right") - 5, topY - rowH + 5, f, 9);
-    const valT = (value < 0 ? "(" : "") + fmtINR(Math.abs(value)) + (value < 0 ? ")" : "");
+    drawText(page, label, alignedX(label, startX, labelW, f, 9, "right") - 5, topY - rowH + 5, f, 9);
+    const valT = fmtINR(Math.abs(value));
     drawText(page, valT, alignedX(valT, valueX, valueW, f, 9, "right"), topY - rowH + 5, f, 9);
     ctx.y = topY - rowH;
   }
@@ -378,19 +452,21 @@ function drawSummary(ctx: Ctx, startX: number, a: RABillPdfInput["amounts"]) {
   const topY = ctx.y;
   const netH = 20;
   page.drawRectangle({
-    x: labelX, y: topY - netH, width: totalW, height: netH,
+    x: startX, y: topY - netH, width: boxW, height: netH,
     borderColor: GRID, borderWidth: 0.5, color: SOFT_BG,
   });
   page.drawLine({
     start: { x: valueX, y: topY }, end: { x: valueX, y: topY - netH },
     thickness: 0.3, color: GRID,
   });
-  const netLabel = "NET PAYABLE";
-  drawText(page, netLabel, alignedX(netLabel, labelX, labelW, bold, 10, "right") - 5, topY - netH + 6, bold, 10);
+  const netLabel = "Net Payable";
+  drawText(page, netLabel, alignedX(netLabel, startX, labelW, bold, 10, "right") - 5, topY - netH + 6, bold, 10);
   const netT = fmtINR(a.netPayable);
   drawText(page, netT, alignedX(netT, valueX, valueW, bold, 10, "right"), topY - netH + 6, bold, 10, BRAND_ORANGE);
   ctx.y = topY - netH;
 }
+
+// ─── Terms & Notes ─────────────────────────────────────────────────────
 
 const DEFAULT_TERMS = [
   "1. This running account bill certifies work executed and measured up to the period stated above.",
@@ -400,22 +476,46 @@ const DEFAULT_TERMS = [
   "5. Payment shall be released subject to certification by the Engineer-in-Charge.",
 ];
 
-function parseTermsBody(body: string | null | undefined): string[] {
+const DEFAULT_NOTES = [
+  "This is a system-generated Running Account Bill.",
+  "Deductions are applied as per the contract terms.",
+];
+
+function parseLines(body: string | null | undefined, fallback: string[]): string[] {
   const raw = String(body ?? "").trim();
-  if (!raw) return DEFAULT_TERMS;
+  if (!raw) return fallback;
   const lines = raw.split(/\r?\n/).map((l) => l.trim()).filter(Boolean);
-  return lines.length > 0 ? lines : DEFAULT_TERMS;
+  return lines.length > 0 ? lines : fallback;
 }
 
-function drawTerms(ctx: Ctx, termsBody: string | null | undefined) {
+function drawTerms(ctx: Ctx, input: RABillPdfInput) {
   const { page, bold, font, width } = ctx;
   const left = PAGE_MARGIN;
   const right = width - PAGE_MARGIN;
-  const terms = parseTermsBody(termsBody);
+  const terms = parseLines(input.termsBody, DEFAULT_TERMS);
+  const heading = input.termsTitle
+    ? `TERMS & CONDITIONS — ${input.termsTitle} :-`
+    : "TERMS & CONDITIONS :-";
   const topY = ctx.y - 20;
-  drawText(page, "TERMS & CONDITIONS :-", left, topY, bold, 9, BRAND_ORANGE);
+  drawText(page, heading, left, topY, bold, 9, BRAND_ORANGE);
   let cursor = topY - 14;
   for (const t of terms) {
+    for (const w of wrap(t, font, 9, right - left - 10)) {
+      drawText(page, w, left + 4, cursor, font, 9);
+      cursor -= 12;
+    }
+  }
+  ctx.y = cursor;
+}
+
+function drawNotes(ctx: Ctx) {
+  const { page, bold, font, width } = ctx;
+  const left = PAGE_MARGIN;
+  const right = width - PAGE_MARGIN;
+  const topY = ctx.y - 18;
+  drawText(page, "NOTES :-", left, topY, bold, 9, BRAND_ORANGE);
+  let cursor = topY - 14;
+  for (const t of DEFAULT_NOTES) {
     for (const w of wrap(t, font, 9, right - left - 10)) {
       drawText(page, w, left + 4, cursor, font, 9);
       cursor -= 12;
@@ -452,29 +552,31 @@ export async function generateRABillPdf(input: RABillPdfInput): Promise<Buffer> 
   const font = await doc.embedFont(StandardFonts.Helvetica);
   const bold = await doc.embedFont(StandardFonts.HelveticaBold);
 
-  const titleText =
-    BILL_TYPE_LABEL[input.rab.billType ?? ""] ?? "Running Account Bill";
-  const titleSize = 11;
-  const titleWidth = bold.widthOfTextAtSize(titleText, titleSize);
-  drawText(page, titleText, (width - titleWidth) / 2, height - 250, bold, titleSize);
+  const ctx: Ctx = { doc, page, font, bold, width, height, y: height - 250 };
 
-  const ctx: Ctx = { doc, page, font, bold, width, height, y: height - 265 };
-
-  drawInfoBlocks(ctx, input);
+  drawTitleAndMeta(ctx, input);
+  drawInfoBoxes(ctx, input);
+  drawSectionBar(ctx, input);
 
   const tableStartX = PAGE_MARGIN;
   drawTableHeader(ctx, tableStartX);
   for (let i = 0; i < input.items.length; i++) {
     await ensureSpace(ctx, 40, template);
     if (ctx.y === ctx.height - 260) drawTableHeader(ctx, tableStartX);
-    drawTableRow(ctx, tableStartX, i + 1, input.items[i]);
+    drawTableRow(ctx, tableStartX, input.items[i]);
   }
 
-  await ensureSpace(ctx, 160, template);
-  drawSummary(ctx, tableStartX, input.amounts);
+  await ensureSpace(ctx, 180, template);
+  ctx.y -= 8;
+  drawSummary(ctx, input.amounts);
 
-  await ensureSpace(ctx, 120, template);
-  drawTerms(ctx, input.termsBody);
+  if (!input.hideTerms) {
+    await ensureSpace(ctx, 120, template);
+    drawTerms(ctx, input);
+  }
+
+  await ensureSpace(ctx, 80, template);
+  drawNotes(ctx);
 
   const bytes = await doc.save();
   return Buffer.from(bytes);

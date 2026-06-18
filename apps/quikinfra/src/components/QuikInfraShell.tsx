@@ -24,6 +24,7 @@ import {
   PanelLeftClose, PanelLeftOpen,
   LogOut, Users, MessageSquare,
   AlertTriangle, Wallet, Wrench, ClipboardCheck, ListTree,
+  type LucideIcon,
 } from "lucide-react";
 
 // Sidebar chip labels for the PDF-spec user types. Mirrors the labels
@@ -72,7 +73,7 @@ function formatRoleNameFromDB(roleKey: string | null | undefined): string | null
 interface NavItem {
   label: string;
   href?: string;
-  iconComponent?: any;
+  iconComponent?: LucideIcon;
   isSection?: boolean;
   children?: NavItem[];
   /**

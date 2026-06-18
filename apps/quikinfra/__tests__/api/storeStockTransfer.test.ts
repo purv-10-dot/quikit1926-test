@@ -232,7 +232,10 @@ describe("DELETE /api/store/stock-transfer/[id]", () => {
 
 // ═══════════════════════════════════════════════
 // POST /api/store/stock-transfer/[id]/post  (gate: construction.transfer.approve)
-// Posts both legs (transfer_out + transfer_in) atomically → status received.
+// Routes BOTH legs (transfer_out + transfer_in) through the stock ledger
+// service: each leg appends a CnStockLedger row AND keeps CnStockBalance in
+// sync. The source-balance guard lives in the service. Legs move at the
+// source's moving-average rate so the destination's avgRate isn't diluted.
 // ═══════════════════════════════════════════════
 
 describe("POST /api/store/stock-transfer/[id]/post", () => {
@@ -275,30 +278,52 @@ describe("POST /api/store/stock-transfer/[id]/post", () => {
     expect((await POST_POST(buildReq("POST"), params)).status).toBe(409);
   });
 
-  it("returns 400 when source stock is insufficient", async () => {
+  it("returns 400 when the source balance is insufficient — and writes nothing", async () => {
     setContext(makeAdminCtx());
     db.cnStockTransfer.findFirst.mockResolvedValue(trFull());
-    db.cnStockLedger.aggregate.mockResolvedValue({ _sum: { qtyIn: 1, qtyOut: 0 } });
+    db.$transaction.mockImplementation(async (cb: any) => cb(db));
+    // Source has only 1 on hand → sending 5 must be rejected by the guard.
+    db.cnStockBalance.findUnique.mockResolvedValue({ quantity: 1, avgRate: 10 });
     const res = await POST_POST(buildReq("POST"), params);
     expect(res.status).toBe(400);
-    expect((await res.json()).error).toMatch(/insufficient stock at source/i);
+    expect((await res.json()).error).toMatch(/insufficient stock/i);
+    // Guard fires on the OUT leg before any write — nothing committed.
+    expect(db.cnStockLedger.create).not.toHaveBeenCalled();
+    expect(db.cnStockBalance.upsert).not.toHaveBeenCalled();
+    expect(db.cnStockTransfer.update).not.toHaveBeenCalled();
   });
 
-  it("posts both legs and flips the transfer to received", async () => {
+  it("posts both legs: 2 ledger rows + decrements source AND increments dest balance (the drift fix)", async () => {
     setContext(makeAdminCtx());
     db.cnStockTransfer.findFirst.mockResolvedValue(trFull());
-    db.cnStockLedger.aggregate.mockResolvedValue({ _sum: { qtyIn: 100, qtyOut: 0 } });
     db.$transaction.mockImplementation(async (cb: any) => cb(db));
-    db.cnStockLedger.create.mockResolvedValue({});
+    // Both locations read 100 on hand at avg rate 10 (mock isn't keyed by args).
+    db.cnStockBalance.findUnique.mockResolvedValue({ quantity: 100, avgRate: 10 });
+    db.cnStockLedger.create.mockResolvedValue({ id: "led" });
+    db.cnStockBalance.upsert.mockResolvedValue({});
     db.cnStockTransfer.update.mockResolvedValue({ id: "st1", status: "received" });
+
     const res = await POST_POST(buildReq("POST"), params);
     expect(res.status).toBe(200);
     const body = await res.json();
     expect(body.success).toBe(true);
     expect(body.data.status).toBe("received");
+
     // Two ledger rows: transfer_out at source + transfer_in at destination.
     const types = db.cnStockLedger.create.mock.calls.map((c: any) => c[0].data.transactionType);
     expect(types).toContain("transfer_out");
     expect(types).toContain("transfer_in");
+
+    // Value conserved: the IN leg moves at the source's avgRate (10), not 0 —
+    // so the destination's moving-average rate isn't diluted.
+    const inLeg = db.cnStockLedger.create.mock.calls.find(
+      (c: any) => c[0].data.transactionType === "transfer_in",
+    )[0].data;
+    expect(Number(inLeg.unitRate)).toBe(10);
+
+    // THE FIX: both balance rows updated in the same txn — source 100−5=95,
+    // dest 100+5=105. Previously the route wrote only the ledger.
+    const qtys = db.cnStockBalance.upsert.mock.calls.map((c: any) => Number(c[0].update.quantity));
+    expect(qtys).toEqual([95, 105]);
   });
 });

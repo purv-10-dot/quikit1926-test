@@ -1,3 +1,4 @@
+import { toErrorMessage, getErrorCode } from "@/lib/api/errors";
 import { requirePurchaseAction } from "@/lib/auth/requirePurchaseAction";
 import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
@@ -36,7 +37,7 @@ export async function POST(
     return envelopeErr("FORBIDDEN", `Action "edit" not allowed for purchase.po`, 403);
   }
 
-  let body: any = {};
+  let body: { reason?: string } = {};
   try {
     body = await req.json();
   } catch {
@@ -60,7 +61,7 @@ export async function POST(
     );
   }
 
-  const po = await (db as any).cnPurchaseOrder.findFirst({
+  const po = await db.cnPurchaseOrder.findFirst({
     where: { id: params.id, orgId: ctx.orgId },
     select: { id: true, status: true, poNumber: true },
   });
@@ -89,7 +90,7 @@ export async function POST(
   // can't be regenerated while the dev server holds the engine .dll
   // open on Windows. Raw SQL skips the validation layer and writes
   // straight to the columns Postgres already knows about.
-  await (db as any).$executeRawUnsafe(
+  await db.$executeRawUnsafe(
     `UPDATE app_quikinfra."Purchase_orders"
        SET status        = $1,
            "closedAt"    = $2,
@@ -128,11 +129,11 @@ export async function POST(
         reason,
       );
     }
-  } catch (err: any) {
+  } catch (err: unknown) {
     mailResult = {
       sent: false,
       email: null,
-      error: err?.message ?? String(err),
+      error: toErrorMessage(err),
     };
   }
   if (!mailResult.sent && (mailResult.error || mailResult.skippedReason)) {

@@ -5,7 +5,6 @@ import { NextRequest } from "next/server";
 import { GET } from "@/app/api/store/reconciliations/[id]/route";
 import { POST as SUBMIT } from "@/app/api/store/reconciliations/[id]/submit/route";
 import { POST as APPROVE } from "@/app/api/store/reconciliations/[id]/approve/route";
-import { POST as LEGACY_APPROVE } from "@/app/api/store/reconciliation/[id]/approve/route";
 
 const db = mockDb as any;
 const ID = "r1";
@@ -199,42 +198,3 @@ describe("POST /api/store/reconciliations/[id]/approve", () => {
   });
 });
 
-// ═══════════════════════════════════════════════
-// POST /api/store/reconciliation/[id]/approve  (legacy handleApprovalAction)
-// ═══════════════════════════════════════════════
-
-describe("POST /api/store/reconciliation/[id]/approve (legacy)", () => {
-  it("returns 401 when unauthenticated", async () => {
-    expect((await LEGACY_APPROVE(req("POST", { action: "approve" }), params)).status).toBe(401);
-  });
-
-  it("returns 403 when the user lacks construction.reconciliation.approve", async () => {
-    setContext(makeUserCtx([]));
-    expect((await LEGACY_APPROVE(req("POST", { action: "approve" }), params)).status).toBe(403);
-  });
-
-  it("returns 400 on an unknown action", async () => {
-    setContext(makeAdminCtx());
-    const res = await LEGACY_APPROVE(req("POST", { action: "frobnicate" }), params);
-    expect(res.status).toBe(400);
-  });
-
-  it("returns 404 when the reconciliation does not exist", async () => {
-    setContext(makeAdminCtx());
-    db.cnStockReconciliation.findFirst.mockResolvedValue(null);
-    expect((await LEGACY_APPROVE(req("POST", { action: "approve" }), params)).status).toBe(404);
-  });
-
-  it("approves a draft reconciliation and flips status to approved", async () => {
-    setContext(makeAdminCtx());
-    db.cnStockReconciliation.findFirst.mockResolvedValue(reconRow({ status: "draft" }));
-    db.$transaction.mockImplementation(async (cb: any) => cb(db));
-    db.cnStockReconciliation.update.mockResolvedValue(
-      reconRow({ status: "approved", approvedById: TEST_USER }),
-    );
-    const res = await LEGACY_APPROVE(req("POST", { action: "approve" }), params);
-    expect(res.status).toBe(200);
-    const body = await res.json();
-    expect(body.ok).toBe(true);
-  });
-});

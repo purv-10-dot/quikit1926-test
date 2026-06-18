@@ -74,10 +74,19 @@ export class StockAvailabilityService {
    * Check stock for multiple MR lines.
    * Returns enriched lines with stock snapshot persisted for audit.
    */
-  checkMRLines(lines: any[], projectId: string): Array<any & { stockSnapshot: StockCheckResult }> {
+  checkMRLines<
+    T extends {
+      itemId?: string | null;
+      qtyRequired?: number | string | null;
+      quantity?: number | string | null;
+    },
+  >(
+    lines: T[],
+    projectId: string,
+  ): Array<T & { stockSnapshot: StockCheckResult }> {
     return lines.map(line => {
-      const qty = parseFloat(line.qtyRequired ?? line.quantity ?? "0");
-      const snapshot = this.checkItemStock(line.itemId, projectId, qty);
+      const qty = parseFloat(String(line.qtyRequired ?? line.quantity ?? "0"));
+      const snapshot = this.checkItemStock(line.itemId ?? "", projectId, qty);
       return {
         ...line,
         currentStock: String(snapshot.availableQty),

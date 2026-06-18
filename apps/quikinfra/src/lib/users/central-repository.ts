@@ -197,7 +197,7 @@ export async function listUsersCentral(
       },
     ];
   }
-  const memberships = await (dbCentral as any).orgMember.findMany({
+  const memberships = await dbCentral.orgMember.findMany({
     where,
     include: {
       user: {
@@ -236,7 +236,7 @@ export async function listUsersCentral(
 
   // Parallel batched fetches for profile + role.
   const [profiles, userAppRoles] = await Promise.all([
-    (dbCentral as any).cnUserProfile.findMany({
+    dbCentral.cnUserProfile.findMany({
       where: { orgId, userId: { in: userIds } },
       select: {
         userId: true,
@@ -254,7 +254,7 @@ export async function listUsersCentral(
       mobile: string | null;
       mobileAccessEnabled: boolean;
     }>>,
-    (dbCentral as any).cnUserAppRole.findMany({
+    dbCentral.cnUserAppRole.findMany({
       where: { orgId, userId: { in: userIds } },
       select: {
         userId: true,
@@ -305,7 +305,7 @@ export async function findUserByIdCentral(
   orgId: string,
   authUserId: string,
 ): Promise<CentralUserRecord | null> {
-  const membership = await (dbCentral as any).orgMember.findUnique({
+  const membership = await dbCentral.orgMember.findUnique({
     where: { orgId_userId: { orgId, userId: authUserId } },
     include: {
       user: {
@@ -342,7 +342,7 @@ export async function findUserByIdCentral(
   if (!membership) return null;
 
   const [profile, userAppRole] = await Promise.all([
-    (dbCentral as any).cnUserProfile.findUnique({
+    dbCentral.cnUserProfile.findUnique({
       where: { orgId_userId: { orgId, userId: authUserId } },
       select: {
         firstName: true,
@@ -358,7 +358,7 @@ export async function findUserByIdCentral(
       mobile: string | null;
       mobileAccessEnabled: boolean;
     } | null>,
-    (dbCentral as any).cnUserAppRole.findFirst({
+    dbCentral.cnUserAppRole.findFirst({
       where: { orgId, userId: authUserId },
       select: { role: { select: { name: true } } },
     }) as Promise<{ role: { name: string } | null } | null>,
@@ -397,7 +397,7 @@ export async function softDeleteUserCentral(
   authUserId: string,
 ): Promise<boolean> {
   try {
-    await (dbCentral as any).orgMember.update({
+    await dbCentral.orgMember.update({
       where: { orgId_userId: { orgId, userId: authUserId } },
       data: { status: "inactive" },
     });
@@ -433,7 +433,7 @@ export async function updateUserCentral(
   authUserId: string,
   patch: UpdateUserCentralPatch,
 ): Promise<CentralUserRecord | null> {
-  const existing = await (dbCentral as any).orgMember.findUnique({
+  const existing = await dbCentral.orgMember.findUnique({
     where: { orgId_userId: { orgId, userId: authUserId } },
     select: { id: true },
   });
@@ -448,7 +448,7 @@ export async function updateUserCentral(
     patch.department !== undefined ||
     patch.mobileAccessEnabled !== undefined
   ) {
-    await (dbCentral as any).cnUserProfile.upsert({
+    await dbCentral.cnUserProfile.upsert({
       where: { orgId_userId: { orgId, userId: authUserId } },
       update: {
         ...(patch.firstName !== undefined ? { firstName: patch.firstName } : {}),
@@ -479,7 +479,7 @@ export async function updateUserCentral(
     patch.lastName !== undefined ||
     patch.email !== undefined
   ) {
-    await (dbCentral as any).user.update({
+    await dbCentral.user.update({
       where: { id: authUserId },
       data: {
         ...(patch.firstName !== undefined ? { firstName: patch.firstName } : {}),
@@ -491,7 +491,7 @@ export async function updateUserCentral(
 
   // Update OrgMember.status for the soft-delete / activate flow.
   if (patch.status !== undefined) {
-    await (dbCentral as any).orgMember.update({
+    await dbCentral.orgMember.update({
       where: { orgId_userId: { orgId, userId: authUserId } },
       data: { status: patch.status },
     });

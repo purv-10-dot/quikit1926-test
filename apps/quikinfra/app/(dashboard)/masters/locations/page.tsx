@@ -1,12 +1,13 @@
 "use client";
 
+import { toErrorMessage } from "@/lib/api/errors";
 import { useMemo, useState } from "react";
 import { MapPin } from "lucide-react";
 import { MasterListPage, type MasterColumnDef } from "@/components/MasterListPage";
-import { useLocations, useCreateLocation, useUpdateLocation, useProjects, useItems, useItemGroups } from "@/hooks/use-masters";
+import { useLocations, useCreateLocation, useUpdateLocation, useProjects, useItems, useItemGroups, useDeleteLocation } from "@/hooks/use-masters";
 import {
   FormDrawer, FormSection, FormRow, Field,
-  TextInput, SelectInput, NumberInput,
+  TextInput, SelectInput, NumberInput, InactiveStatusNotice,
 } from "@/components/FormDrawer";
 import { GroupedMaterialMultiSelect } from "@/components/GroupedMaterialSelect";
 import dynamic from "next/dynamic";
@@ -46,6 +47,16 @@ interface LocationRow {
   itemQtyByItemId?: Record<string, string> | null;
 }
 
+/** Full location record consumed by Edit — superset of the list row. */
+interface LocationEditRow {
+  id: string;
+  name?: string; type?: string; projectId?: string;
+  address?: string; city?: string; state?: string; inCharge?: string;
+  capacity?: number | string | null; status?: string;
+  itemIds?: string[];
+  itemQtyByItemId?: unknown;
+}
+
 const TYPE_LABELS: Record<string, string> = { site: "Site", warehouse: "Warehouse", head_office: "Head Office", yard: "Yard" };
 
 const LOCATION_TYPES = [
@@ -83,30 +94,31 @@ export default function LocationsPage() {
   const { data: projectsResult } = useProjects();
   const createMutation = useCreateLocation();
   const updateMutation = useUpdateLocation();
+  const deleteMutation = useDeleteLocation();
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [importOpen, setImportOpen] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [form, setForm] = useState(emptyForm);
   const [errors, setErrors] = useState<Record<string, string>>({});
 
-  const set = (key: string, val: any) => {
+  const set = <K extends keyof typeof emptyForm>(key: K, val: (typeof emptyForm)[K]) => {
     setForm(prev => ({ ...prev, [key]: val }));
     if (errors[key]) setErrors(prev => { const next = { ...prev }; delete next[key]; return next; });
   };
   const projects = projectsResult?.data ?? [];
-  const projectOptions = projects.map((p: any) => ({ value: p.id, label: p.name }));
+  const projectOptions = projects.map((p) => ({ value: p.id, label: p.name }));
 
   const { data: itemsResult } = useItems();
   const { data: itemGroupsResult } = useItemGroups();
   const items = itemsResult?.data ?? [];
-  const itemById = new Map(items.map((it: any) => [it.id, it]));
+  const itemById = new Map(items.map((it) => [it.id, it]));
   const itemGroups = useMemo(() => {
     const raw = itemGroupsResult?.data ?? [];
-    return raw.filter((g: any) => (g?.status ?? "active").toLowerCase() !== "inactive");
+    return raw.filter((g) => (g?.status ?? "active").toLowerCase() !== "inactive");
   }, [itemGroupsResult?.data]);
   const groupedMaterialItems = useMemo(
     () =>
-      (itemsResult?.data ?? []).map((it: any) => ({
+      (itemsResult?.data ?? []).map((it) => ({
         id: it.id,
         name: it.name,
         code: it.code,
@@ -135,7 +147,7 @@ export default function LocationsPage() {
         if (ids.length === 0) return "—";
         const names = ids
           .map((id) => itemById.get(id))
-          .map((it: any) => (it?.code ? `${it.code}` : it?.name))
+          .map((it) => (it?.code ? `${it.code}` : it?.name))
           .filter(Boolean) as string[];
         if (names.length === 0) return `${ids.length} item${ids.length === 1 ? "" : "s"}`;
         const shown = names.slice(0, 2);
@@ -179,7 +191,7 @@ export default function LocationsPage() {
     if (!row.city?.trim()) return { ok: false as const, error: "City is required" };
     const projInput = row.projectName?.trim();
     if (!projInput) return { ok: false as const, error: "Project is required" };
-    const project = projects.find((p: any) =>
+    const project = projects.find((p) =>
       p.name?.toLowerCase() === projInput.toLowerCase() ||
       p.code?.toLowerCase() === projInput.toLowerCase() ||
       p.id === projInput,
@@ -198,12 +210,12 @@ export default function LocationsPage() {
         status: "active",
       });
       return { ok: true as const };
-    } catch (err: any) {
-      return { ok: false as const, error: err?.message ?? "Create failed" };
+    } catch (err: unknown) {
+      return { ok: false as const, error: toErrorMessage(err, "Create failed") };
     }
   };
 
-  const loadFormFromRow = (item: any) => {
+  const loadFormFromRow = (item: LocationEditRow) => {
     const rawQty = item?.itemQtyByItemId;
     const qty: Record<string, string> =
       rawQty && typeof rawQty === "object" && !Array.isArray(rawQty)
@@ -223,7 +235,6 @@ export default function LocationsPage() {
     }
     setForm({
       ...emptyForm,
-      ...item,
       name: item.name ?? "",
       type: item.type ?? "site",
       projectId: item.projectId ?? "",
@@ -257,8 +268,8 @@ export default function LocationsPage() {
     } catch { /* error toast handled globally */ }
   };
 
-  const handleDelete = async (item: any) => {
-    await updateMutation.mutateAsync({ id: item.id, status: "inactive" });
+  const handleDelete = async (item: { id: string }) => {
+    await deleteMutation.mutateAsync(item.id);
   };
 
   const isSaving = createMutation.isPending || updateMutation.isPending;
@@ -266,16 +277,16 @@ export default function LocationsPage() {
   return (
     <>
       <MasterListPage title="Locations / Sites / Warehouses" entityName="Location" permissionUrl="/masters/locations" columns={columns}
-        data={result?.data ?? []} total={result?.data?.length ?? 0} isLoading={isLoading}
+        data={(result?.data ?? []) as LocationRow[]} total={result?.data?.length ?? 0} isLoading={isLoading}
         canImport
         onImport={() => setImportOpen(true)}
         onAdd={() => { setForm(emptyForm); setErrors({}); setEditingId(null); setDrawerOpen(true); }}
-        onEdit={(item: any) => {
+        onEdit={(item) => {
           loadFormFromRow(item);
           setDrawerOpen(true);
         }}
         onDelete={handleDelete}
-        deleteConfirmMessage={(item: any) => (
+        deleteConfirmMessage={(item) => (
           <>
             Delete location{" "}
             <span className="font-semibold text-gray-900">“{item.name}”</span>?
@@ -377,7 +388,7 @@ export default function LocationsPage() {
           {form.itemIds.length > 0 ? (
             <div className="mt-2 space-y-2">
               {form.itemIds.map((id) => {
-                const it: any = itemById.get(id);
+                const it = itemById.get(id) as { code?: string; name?: string; uomCode?: string; uomCodes?: string[] } | undefined;
                 const uom = it?.uomCode || (Array.isArray(it?.uomCodes) ? it.uomCodes[0] : "") || "—";
                 const label = it?.code ? `${it.code} — ${it.name}` : (it?.name ?? id);
                 return (
@@ -407,6 +418,7 @@ export default function LocationsPage() {
           ) : null}
           <Field label="Status">
             <SelectInput value={form.status} onChange={v => set("status", v)} options={STATUS_OPTIONS} />
+            {form.status === "inactive" && <InactiveStatusNotice entityName="Location" />}
           </Field>
         </FormSection>
       </FormDrawer>

@@ -64,6 +64,29 @@ describe("GET /api/masters/items — withListRoute", () => {
     expect(body.data[0].name).toBe("Cement Bag");
     expect(db.cnItem.findMany.mock.calls[0][0].where.orgId).toBe(TEST_TENANT);
   });
+
+  it("excludes soft-deleted (inactive) items by default", async () => {
+    setContext(makeAdminCtx());
+    db.cnItem.findMany.mockResolvedValue([]);
+    db.cnItem.count.mockResolvedValue(0);
+    db.cnUOM.findMany.mockResolvedValue([]);
+    await GET(buildGET());
+    // Default list must hide both inactive (soft-delete) and deleted rows so
+    // deleted items never leak into pickers across PR / BOQ / GRN / estimation.
+    expect(db.cnItem.findMany.mock.calls[0][0].where.status).toEqual({
+      notIn: ["inactive", "deleted"],
+    });
+  });
+
+  it("includes inactive items when status=all (master list toggle)", async () => {
+    setContext(makeAdminCtx());
+    db.cnItem.findMany.mockResolvedValue([]);
+    db.cnItem.count.mockResolvedValue(0);
+    db.cnUOM.findMany.mockResolvedValue([]);
+    await GET(buildGET("status=all"));
+    // status=all opts into soft-deleted rows — no status filter at all.
+    expect(db.cnItem.findMany.mock.calls[0][0].where.status).toBeUndefined();
+  });
 });
 
 describe("POST /api/masters/items — withMutationRoute", () => {

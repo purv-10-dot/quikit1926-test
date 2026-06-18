@@ -227,28 +227,64 @@ describe("POST /api/store/stock-reconciliation/[id]/post", () => {
     expect(res.status).toBe(409);
   });
 
-  it("posts adjustment ledger rows and flips status to posted", async () => {
-    setContext(makeAdminCtx());
-    db.cnStockReconciliation.findFirst.mockResolvedValue({
+  function recFull(varianceQty: number) {
+    return {
       id: ID,
       status: "draft",
       projectId: "proj1",
       locationId: "loc1",
       reconciliationNumber: "REC-9001",
       reconciliationDate: new Date("2026-01-15"),
-      lines: [
-        { itemId: "i1", varianceQty: 5, uomId: "u1" }, // surplus → qtyIn
-      ],
-    });
+      lines: [{ itemId: "i1", varianceQty, uomId: "u1" }],
+    };
+  }
+
+  it("surplus (+5): qtyIn ledger row AND balance 50 → 55 (the drift fix)", async () => {
+    setContext(makeAdminCtx());
+    db.cnStockReconciliation.findFirst.mockResolvedValue(recFull(5));
     db.$transaction.mockImplementation(async (cb: any) => cb(db));
+    db.cnStockBalance.findUnique.mockResolvedValue({ quantity: 50, avgRate: 10 });
     db.cnStockLedger.create.mockResolvedValue({ id: "led1" });
+    db.cnStockBalance.upsert.mockResolvedValue({});
     db.cnStockReconciliation.update.mockResolvedValue({ id: ID, status: "posted" });
 
     const res = await POST_LEDGER(postReq(VALID_BODY), idParams as any);
     expect(res.status).toBe(200);
-    const body = await res.json();
-    expect(body.success).toBe(true);
-    expect(body.data.status).toBe("posted");
-    expect(db.cnStockLedger.create).toHaveBeenCalled();
+    expect((await res.json()).data.status).toBe("posted");
+
+    const ledgerData = db.cnStockLedger.create.mock.calls[0][0].data;
+    expect(ledgerData.transactionType).toBe("reconciliation_adj");
+    expect(Number(ledgerData.qtyIn)).toBe(5);
+    expect(Number(ledgerData.qtyOut)).toBe(0);
+    expect(Number(db.cnStockBalance.upsert.mock.calls[0][0].update.quantity)).toBe(55);
+  });
+
+  it("shortage (−3): qtyOut ledger row AND balance 50 → 47", async () => {
+    setContext(makeAdminCtx());
+    db.cnStockReconciliation.findFirst.mockResolvedValue(recFull(-3));
+    db.$transaction.mockImplementation(async (cb: any) => cb(db));
+    db.cnStockBalance.findUnique.mockResolvedValue({ quantity: 50, avgRate: 10 });
+    db.cnStockLedger.create.mockResolvedValue({ id: "led1" });
+    db.cnStockBalance.upsert.mockResolvedValue({});
+    db.cnStockReconciliation.update.mockResolvedValue({ id: ID, status: "posted" });
+
+    const res = await POST_LEDGER(postReq(VALID_BODY), idParams as any);
+    expect(res.status).toBe(200);
+
+    const ledgerData = db.cnStockLedger.create.mock.calls[0][0].data;
+    expect(Number(ledgerData.qtyOut)).toBe(3);
+    expect(Number(ledgerData.qtyIn)).toBe(0);
+    expect(Number(db.cnStockBalance.upsert.mock.calls[0][0].update.quantity)).toBe(47);
+  });
+
+  it("returns 400 when a shortage exceeds the balance — and writes nothing", async () => {
+    setContext(makeAdminCtx());
+    db.cnStockReconciliation.findFirst.mockResolvedValue(recFull(-100));
+    db.$transaction.mockImplementation(async (cb: any) => cb(db));
+    db.cnStockBalance.findUnique.mockResolvedValue({ quantity: 50, avgRate: 10 });
+    const res = await POST_LEDGER(postReq(VALID_BODY), idParams as any);
+    expect(res.status).toBe(400);
+    expect((await res.json()).error).toMatch(/shortage exceeds/i);
+    expect(db.cnStockReconciliation.update).not.toHaveBeenCalled();
   });
 });

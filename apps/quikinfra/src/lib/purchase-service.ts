@@ -63,7 +63,57 @@ export function validateMRDates(mrDate: string, requiredByDate: string): { isUrg
 
 // ─── Indent Validation (P0 Fix #9) ─────────────────────────────────
 
-export function validateIndentCreation(body: any): void {
+/** Untrusted request body for the purchase create/validate flows. */
+interface PurchaseRequestBody {
+  sourceMrId?: string | null;
+  directIndentReason?: string | null;
+  sourceIndentId?: string | null;
+  sourcePoId?: string | null;
+  poId?: string | null;
+  isUrgentLocal?: boolean | string | null;
+  challanNo?: string | null;
+  challanDate?: string | null;
+  challanAttachment?: string | null;
+  challanAttachmentId?: string | null;
+  lines?: PurchaseLineInput[] | null;
+}
+interface PurchaseLineInput {
+  indentLineId?: string | null;
+  itemId?: string | null;
+  poQty?: number | string | null;
+  qtyPending?: number | string | null;
+  quantity?: number | string | null;
+}
+interface GrnLineInput {
+  lineId?: string | null;
+  poLineId?: string | null;
+  itemId?: string | null;
+  qtyReceived?: number | string | null;
+  qtyRejected?: number | string | null;
+}
+interface AmendmentLine {
+  lineId?: string | null;
+  itemId?: string | null;
+  poQty?: number | string | null;
+  revisedQty?: number | string | null;
+  revisedRate?: number | string | null;
+}
+interface AmendmentInput {
+  vendorId?: string | null;
+  lines?: AmendmentLine[] | null;
+}
+interface OriginalPOLine {
+  lineId?: string | null;
+  itemId?: string | null;
+  qtyReceived?: number | string | null;
+  unitRate?: number | string | null;
+}
+interface OriginalPOInput {
+  vendorId?: string | null;
+  lines?: OriginalPOLine[] | null;
+}
+
+export function validateIndentCreation(body: PurchaseRequestBody): void {
   if (!body.sourceMrId && !body.directIndentReason?.trim()) {
     throw new PurchaseValidationError(
       ERR.DIRECT_INDENT_REASON_REQUIRED,
@@ -88,7 +138,7 @@ export interface VendorForPO {
 
 const INDENT_APPROVED_STATUSES = new Set(["l3_approved", "approved", "l3approved"]);
 
-export function validatePOCreation(body: any, indent: IndentForPO | null, vendor: VendorForPO | null): void {
+export function validatePOCreation(body: PurchaseRequestBody, indent: IndentForPO | null, vendor: VendorForPO | null): void {
   const isUrgentLocal =
     body.isUrgentLocal === true || body.isUrgentLocal === "true";
 
@@ -131,7 +181,7 @@ export function validatePOCreation(body: any, indent: IndentForPO | null, vendor
     for (const poLine of body.lines) {
       const indentLine = indent.lines.find(il => il.lineId === poLine.indentLineId || il.itemId === poLine.itemId);
       if (indentLine) {
-        const poQty = parseFloat(poLine.poQty ?? poLine.quantity ?? "0");
+        const poQty = parseFloat(String(poLine.poQty ?? poLine.quantity ?? "0"));
         if (poQty > indentLine.qtyOpen) {
           throw new PurchaseValidationError(
             ERR.INDENT_QTY_EXCEEDED,
@@ -212,7 +262,7 @@ const GRN_ELIGIBLE_PO_STATUSES = new Set([
   "partially_received",
 ]);
 
-export function validateGRNCreation(body: any, po: POForGRN | null): void {
+export function validateGRNCreation(body: PurchaseRequestBody, po: POForGRN | null): void {
   // P0 Fix #4: PO required
   if (!body.poId && !body.sourcePoId) {
     throw new PurchaseValidationError(ERR.SOURCE_PO_REQUIRED, "GRN requires a source PO reference.");
@@ -234,13 +284,13 @@ export function validateGRNCreation(body: any, po: POForGRN | null): void {
   }
 }
 
-export function validateGRNLines(grnLines: any[], poLines: POForGRN["lines"]): void {
+export function validateGRNLines(grnLines: GrnLineInput[], poLines: POForGRN["lines"]): void {
   for (const grnLine of grnLines) {
     const poLine = poLines.find(pl => pl.lineId === grnLine.poLineId || pl.itemId === grnLine.itemId);
     if (!poLine) continue;
 
-    const qtyReceived = parseFloat(grnLine.qtyReceived ?? "0");
-    const qtyRejected = parseFloat(grnLine.qtyRejected ?? "0");
+    const qtyReceived = parseFloat(String(grnLine.qtyReceived ?? "0"));
+    const qtyRejected = parseFloat(String(grnLine.qtyRejected ?? "0"));
 
     if (qtyReceived < 0) throw new PurchaseValidationError(ERR.OVER_RECEIPT_NOT_ALLOWED, `Received qty cannot be negative for item ${grnLine.itemId}`);
     if (qtyRejected < 0) throw new PurchaseValidationError(ERR.INVALID_REJECTION_QTY, `Rejected qty cannot be negative for item ${grnLine.itemId}`);
@@ -258,7 +308,7 @@ export function validateGRNLines(grnLines: any[], poLines: POForGRN["lines"]): v
   }
 }
 
-export function validateGRNChallan(body: any): void {
+export function validateGRNChallan(body: PurchaseRequestBody): void {
   // P0 Fix #11: Challan mandatory before submit
   if (!body.challanNo?.trim()) {
     throw new PurchaseValidationError(ERR.MISSING_REQUIRED_ATTACHMENT, "Challan number is mandatory for GRN submission.");
@@ -276,9 +326,9 @@ export function validateGRNChallan(body: any): void {
 // ─── PO Amendment Validation (P0 Fix #10) ───────────────────────────
 
 export function validatePOAmendment(
-  amendment: any,
-  originalPO: any,
-  existingGRNs: any[]
+  amendment: AmendmentInput,
+  originalPO: OriginalPOInput,
+  existingGRNs: unknown[]
 ): void {
   const hasGRNs = existingGRNs.length > 0;
 
@@ -293,11 +343,11 @@ export function validatePOAmendment(
   // Cannot reduce line qty below already received
   if (amendment.lines) {
     for (const amdLine of amendment.lines) {
-      const origLine = originalPO.lines?.find((l: any) => l.lineId === amdLine.lineId || l.itemId === amdLine.itemId);
+      const origLine = originalPO.lines?.find((l) => l.lineId === amdLine.lineId || l.itemId === amdLine.itemId);
       if (!origLine) continue;
 
-      const newQty = parseFloat(amdLine.revisedQty ?? amdLine.poQty ?? "0");
-      const received = parseFloat(origLine.qtyReceived ?? "0");
+      const newQty = parseFloat(String(amdLine.revisedQty ?? amdLine.poQty ?? "0"));
+      const received = parseFloat(String(origLine.qtyReceived ?? "0"));
 
       if (newQty < received) {
         throw new PurchaseValidationError(
@@ -307,7 +357,7 @@ export function validatePOAmendment(
       }
 
       // Rate change after partial receipt — block in P0
-      if (received > 0 && amdLine.revisedRate && parseFloat(amdLine.revisedRate) !== parseFloat(origLine.unitRate ?? "0")) {
+      if (received > 0 && amdLine.revisedRate && parseFloat(String(amdLine.revisedRate)) !== parseFloat(String(origLine.unitRate ?? "0"))) {
         throw new PurchaseValidationError(
           ERR.PO_AMENDMENT_CONFLICT,
           `Cannot change rate for item ${amdLine.itemId} after partial receipt (${received} units already received). Rate changes on partially received lines require a debit/credit note (Phase 2).`

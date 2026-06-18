@@ -1,5 +1,6 @@
 "use client";
 
+import { toErrorMessage } from "@/lib/api/errors";
 import { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Calculator, Check, Pencil, Send, Trash2, X as XIcon } from "lucide-react";
@@ -23,6 +24,13 @@ const EstimationDrawer = dynamic(
 // the matrix via `isSuper`.
 const MENU_KEY = "pm.estimation";
 
+interface EstimationRow {
+  id: string; boqNo?: string; boqDescription?: string; boqUnit?: string;
+  boqQuantity?: number | string; materialCount?: number; materials?: unknown[];
+  totalCost?: number | string; status?: string; canActOnCurrentStep?: boolean;
+  [key: string]: unknown;
+}
+
 export default function EstimationPage() {
   const router = useRouter();
   // Drawer is for the CREATE flow only — Edit routes to the detail
@@ -36,7 +44,7 @@ export default function EstimationPage() {
   // so the UX matches the rest of the app (backdrop, tone colouring,
   // inline loading state, and a proper textarea for rejection reasons).
   const [workflowAction, setWorkflowAction] = useState<
-    { kind: "submit" | "approve" | "reject"; row: any } | null
+    { kind: "submit" | "approve" | "reject"; row: EstimationRow } | null
   >(null);
   const [rejectReason, setRejectReason] = useState("");
   const [workflowPending, setWorkflowPending] = useState(false);
@@ -67,13 +75,13 @@ export default function EstimationPage() {
   // though they couldn't actually open estimations for those projects.
   const visibleProjects = useMemo(() => {
     const all = (projects?.data ?? []).filter(
-      (p: any) => p?.status !== "inactive",
+      (p) => p?.status !== "inactive",
     );
     const allowed = me?.projectIds ?? null;
     if (allowed === null) return all;
     if (allowed.length === 0) return [];
     const allow = new Set(allowed);
-    return all.filter((p: any) => allow.has(p.id));
+    return all.filter((p) => allow.has(p.id));
   }, [projects?.data, me?.projectIds]);
   const matrixRow = permissionMatrix?.[MENU_KEY];
   const canAdd = isSuper || !matrixRow || matrixRow.add !== false;
@@ -87,7 +95,7 @@ export default function EstimationPage() {
   // `row.canActOnCurrentStep`). The role-based fallback is gone —
   // it caused approvers further down the chain (and raisers whose
   // step auto-skipped) to see buttons they couldn't actually use.
-  const canApproveRow = (row: any): boolean =>
+  const canApproveRow = (row: EstimationRow): boolean =>
     isSuper || row?.canActOnCurrentStep === true;
   // Additional sanity check: the user must have the PROJECT MGMT module
   // assigned at all. Use the short module key ("project_mgmt") the user
@@ -102,7 +110,7 @@ export default function EstimationPage() {
   // which reuses `updateMutation` so the list auto-refreshes (React
   // Query invalidates on success) and the chip flips colour without
   // a page reload.
-  const openWorkflow = (kind: "submit" | "approve" | "reject", row: any) => {
+  const openWorkflow = (kind: "submit" | "approve" | "reject", row: EstimationRow) => {
     setRejectReason("");
     setWorkflowError(null);
     setWorkflowAction({ kind, row });
@@ -154,8 +162,8 @@ export default function EstimationPage() {
       );
       setWorkflowAction(null);
       setRejectReason("");
-    } catch (err: any) {
-      setWorkflowError(err?.message ?? "Action failed");
+    } catch (err: unknown) {
+      setWorkflowError(toErrorMessage(err, "Action failed"));
     } finally {
       setWorkflowPending(false);
     }
@@ -164,7 +172,7 @@ export default function EstimationPage() {
   // Hide soft-deleted rows. "Show deleted" toggle could be added
   // later — same pattern as MasterListPage.
   const visibleData = useMemo(
-    () => data.filter((r: any) => r.status !== "inactive"),
+    () => data.filter((r) => r.status !== "inactive"),
     [data]
   );
 
@@ -175,7 +183,7 @@ export default function EstimationPage() {
   // Edit now routes to the detail page so the form has a full-page
   // surface and workflow actions don't have to stack modals. The
   // status chip and the Edit icon in the Actions column both use this.
-  const openDetail = (row: any) => {
+  const openDetail = (row: EstimationRow) => {
     router.push(`/projects/estimation/${row.id}`);
   };
   const closeDrawer = () => {
@@ -200,7 +208,7 @@ export default function EstimationPage() {
     }
   };
 
-  const columns: ColDef<any>[] = [
+  const columns: ColDef<EstimationRow>[] = [
     {
       key: "boqNo",
       label: "BOQ No",
@@ -419,7 +427,7 @@ export default function EstimationPage() {
         <DataTable
           id="projects-estimation"
           columns={columns}
-          data={visibleData}
+          data={visibleData as unknown as EstimationRow[]}
           loading={isLoading}
           // RBAC: `onAdd` is only wired when the user's matrix grants
           // the "add" action on `pm.estimation`. Passing `undefined`
@@ -427,7 +435,7 @@ export default function EstimationPage() {
           onAdd={canAdd && hasEstimationModule ? openCreate : undefined}
           addLabel="New Material Estimation"
           historyEntityType="material_estimations,material_estimation,estimation"
-          getHistoryEntityId={(row: any) => String(row.id ?? "")}
+          getHistoryEntityId={(row) => String(row.id ?? "")}
         />
       </PageContainer>
 

@@ -1,3 +1,4 @@
+import { toErrorMessage } from "@/lib/api/errors";
 import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { logger } from "@/lib/observability/logger";
@@ -27,13 +28,13 @@ export async function GET() {
   // ── Database reachable ────────────────────────────────────────
   const dbStart = Date.now();
   try {
-    await (db as any).$queryRawUnsafe("SELECT 1");
+    await db.$queryRawUnsafe("SELECT 1");
     checks.database = { ok: true, durationMs: Date.now() - dbStart };
-  } catch (err: any) {
+  } catch (err: unknown) {
     overallOk = false;
     checks.database = {
       ok: false,
-      detail: err?.message?.split("\n")[0] ?? "unknown",
+      detail: toErrorMessage(err, "unknown").split("\n")[0],
       durationMs: Date.now() - dbStart,
     };
   }
@@ -45,7 +46,7 @@ export async function GET() {
       // Confirm the migration ran by counting tables in our schema.
       // The app has no Role table (RBAC is in-code via src/lib/rbac);
       // a populated schema is the right "migration applied" signal.
-      const rows = (await (db as any).$queryRawUnsafe(
+      const rows = (await db.$queryRawUnsafe(
         "SELECT COUNT(*)::bigint as count FROM information_schema.tables WHERE table_schema = 'app_quikinfra'"
       )) as Array<{ count: bigint }>;
       const count = Number(rows?.[0]?.count ?? 0);
@@ -59,11 +60,11 @@ export async function GET() {
       } else {
         checks.schema = { ok: true, detail: `${count} tables`, durationMs: Date.now() - schemaStart };
       }
-    } catch (err: any) {
+    } catch (err: unknown) {
       overallOk = false;
       checks.schema = {
         ok: false,
-        detail: err?.message?.split("\n")[0] ?? "unknown",
+        detail: toErrorMessage(err, "unknown").split("\n")[0],
         durationMs: Date.now() - schemaStart,
       };
     }

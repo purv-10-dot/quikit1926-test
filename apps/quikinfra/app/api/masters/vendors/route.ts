@@ -1,3 +1,4 @@
+import { toErrorMessage, getErrorCode } from "@/lib/api/errors";
 import { NextRequest, NextResponse } from "next/server";
 import { hasMatrixAction } from "@/lib/auth/context";
 import { err as envelopeErr } from "@/lib/http/envelope";
@@ -146,8 +147,8 @@ export async function POST(req: NextRequest) {
       status: body.isBlacklisted ? "blacklisted" : (body.status ?? "active"),
     });
     return NextResponse.json(record, { status: 201 });
-  } catch (err: any) {
-    if (err?.code === "P2002") {
+  } catch (err: unknown) {
+    if (getErrorCode(err) === "P2002") {
       return NextResponse.json(
         { error: `A vendor with this code already exists` },
         { status: 409 },
@@ -155,7 +156,7 @@ export async function POST(req: NextRequest) {
     }
     console.error("[vendors.create] failed:", err);
     return NextResponse.json(
-      { error: err?.message ?? "Failed to create vendor" },
+      { error: toErrorMessage(err, "Failed to create vendor") },
       { status: 500 },
     );
   }

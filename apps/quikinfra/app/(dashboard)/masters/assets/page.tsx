@@ -9,6 +9,13 @@ import { useProjects, useLocations } from "@/hooks/use-masters";
 import { useMenuActions } from "@/hooks/use-permissions";
 import { validateCode, validateMinLength, validateNonNegativeNumber, validateDateISO } from "@/lib/validators";
 
+interface AssetRow {
+  id: string; assetCode?: string; name?: string; category?: string;
+  projectName?: string; condition?: string; purchaseDate?: string;
+  purchaseValue?: number | string; currentLocation?: string; status?: string;
+  [key: string]: unknown;
+}
+
 export default function AssetsPage() {
   const qc = useQueryClient();
   const [drawerOpen, setDrawerOpen] = useState(false);
@@ -23,14 +30,14 @@ export default function AssetsPage() {
 
   const data = result?.data ?? [];
   const projects = projectsData?.data ?? [];
-  const projectOptions = projects.map((p: any) => ({ value: p.id, label: p.name }));
+  const projectOptions = projects.map((p) => ({ value: p.id, label: p.name }));
   const projectCityById = new Map(
-    projects.map((p: any) => [String(p.id), String(p.city ?? "").trim()]),
+    projects.map((p) => [String(p.id), String(p.city ?? "").trim()]),
   );
   const rawLocations = locData?.data ?? [];
-  const locationOptions = rawLocations.map((l: any) => ({ value: l.id, label: l.name }));
+  const locationOptions = rawLocations.map((l) => ({ value: l.id, label: l.name }));
 
-  const columns: ColDef<any>[] = [
+  const columns: ColDef<AssetRow>[] = [
     { key: "assetCode", label: "Asset Code", sortable: true, searchable: true },
     { key: "name", label: "Name", sortable: true, searchable: true },
     { key: "category", label: "Category", type: "select", sortable: true,
@@ -79,7 +86,7 @@ export default function AssetsPage() {
           const currentLocName = String(formData.currentLocation ?? "").trim();
           if (!value || !currentLocName) return;
           const stillValid = rawLocations.some(
-            (l: any) =>
+            (l) =>
               (String(l.projectId ?? "") === value || !String(l.projectId ?? "").trim()) &&
               String(l.name ?? "").trim() === currentLocName,
           );
@@ -114,10 +121,10 @@ export default function AssetsPage() {
             // Mirror Locations scoping semantics used elsewhere:
             // project locations + global locations (no projectId).
             .filter(
-              (l: any) =>
+              (l) =>
                 String(l.projectId ?? "") === pid || !String(l.projectId ?? "").trim(),
             )
-            .map((l: any) => ({
+            .map((l) => ({
               value: String(l.name ?? "").trim(),
               label: `${l.name}${citySuffix}`,
             }));
@@ -137,7 +144,7 @@ export default function AssetsPage() {
       <PageHeader title="Assets / Tool Register" subtitle="Track assets, tools, and equipment across projects"
         breadcrumbs={[{ label: "Masters", href: "/masters" }, { label: "Assets" }]} />
       <PageContainer>
-        <DataTable id="master-assets" columns={columns} data={data}
+        <DataTable id="master-assets" columns={columns} data={data as AssetRow[]}
           onAdd={canAdd ? () => setDrawerOpen(true) : undefined} addLabel="Register Asset" />
       </PageContainer>
       <QuickCreateDrawer open={drawerOpen} onClose={() => setDrawerOpen(false)} config={config} />

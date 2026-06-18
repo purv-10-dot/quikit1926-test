@@ -42,6 +42,19 @@ import { parseStoredWeatherDetail } from "@/lib/weather/dpr-weather";
 
 const MENU_KEY = "pm.dpr";
 
+import type {
+  ApprovalStep,
+  ApprovalHistoryEntry,
+} from "@/lib/approvals/approval-info";
+import type {
+  WorkItemRow,
+  MaterialRow,
+  ManpowerRow,
+  StaffRow,
+  MachineryRow,
+  DprDetail,
+} from "@/lib/projects/dpr-detail";
+
 const fmtDate = (iso?: string | null) => {
   if (!iso) return "—";
   const d = new Date(iso);
@@ -54,7 +67,7 @@ const fmtDate = (iso?: string | null) => {
       });
 };
 
-const fmtQty = (v: any, unit?: string | null) => {
+const fmtQty = (v: unknown, unit?: string | null) => {
   if (v === null || v === undefined || v === "") return "—";
   const n = Number(v);
   if (!Number.isFinite(n)) return "—";
@@ -104,7 +117,7 @@ export default function DPRDetailPage() {
   // (server-computed in the DPR GET as `approval.canActOnCurrentStep`),
   // not the caller's role.
   const canApprove =
-    isSuper || (dpr as any)?.approval?.canActOnCurrentStep === true;
+    isSuper || dpr?.approval?.canActOnCurrentStep === true;
 
   const [deleteConfirm, setDeleteConfirm] = useState(false);
   const [deleting, setDeleting] = useState(false);
@@ -136,23 +149,23 @@ export default function DPRDetailPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [dpr, searchParams, id]);
 
-  const workItems: any[] = useMemo(
+  const workItems: WorkItemRow[] = useMemo(
     () => (Array.isArray(dpr?.workItems) ? dpr.workItems : []),
     [dpr],
   );
-  const materials: any[] = useMemo(
+  const materials: MaterialRow[] = useMemo(
     () => (Array.isArray(dpr?.materials) ? dpr.materials : []),
     [dpr],
   );
-  const manpower: any[] = useMemo(
+  const manpower: ManpowerRow[] = useMemo(
     () => (Array.isArray(dpr?.manpower) ? dpr.manpower : []),
     [dpr],
   );
-  const machinery: any[] = useMemo(
+  const machinery: MachineryRow[] = useMemo(
     () => (Array.isArray(dpr?.machinery) ? dpr.machinery : []),
     [dpr],
   );
-  const staff: any[] = useMemo(
+  const staff: StaffRow[] = useMemo(
     () => (Array.isArray(dpr?.staff) ? dpr.staff : []),
     [dpr],
   );
@@ -162,26 +175,26 @@ export default function DPRDetailPage() {
   const { data: uomsResult } = useUOMs();
   const { data: contractorsResult } = useContractors();
   const itemNameById = useMemo(
-    () => new Map((itemsResult?.data ?? []).map((i: any) => [i.id, i.name])),
+    () => new Map((itemsResult?.data ?? []).map((i) => [i.id, i.name])),
     [itemsResult],
   );
   const uomCodeById = useMemo(
-    () => new Map((uomsResult?.data ?? []).map((u: any) => [u.id, u.code])),
+    () => new Map((uomsResult?.data ?? []).map((u) => [u.id, u.code])),
     [uomsResult],
   );
   const contractorNameById = useMemo(
-    () => new Map((contractorsResult?.data ?? []).map((c: any) => [c.id, c.name])),
+    () => new Map((contractorsResult?.data ?? []).map((c) => [c.id, c.name])),
     [contractorsResult],
   );
 
   // ApprovalTimeline expects { step, action, actionBy, actionAt, comments }.
   const approvalEntries =
-    dpr?.approval?.history?.map((h: any) => ({
+    dpr?.approval?.history?.map((h: ApprovalHistoryEntry) => ({
       step: h.stepOrder ?? 0,
       action: h.action,
       actionBy: h.actionByName ?? "User",
       actionAt: h.actionAt ? new Date(h.actionAt).toLocaleString() : "",
-      comments: h.comments,
+      comments: h.comments ?? undefined,
     })) ?? [];
 
   if (isLoading) return <PageSkeleton />;
@@ -413,7 +426,7 @@ export default function DPRDetailPage() {
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-gray-100">
-                      {workItems.map((it: any, idx: number) => (
+                      {workItems.map((it: WorkItemRow, idx: number) => (
                         <tr key={idx} className="hover:bg-orange-50/20 transition-colors">
                           <td className="px-4 py-3 text-xs font-mono text-gray-400 tabular-nums">
                             {String(idx + 1).padStart(2, "0")}
@@ -468,16 +481,16 @@ export default function DPRDetailPage() {
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-gray-100">
-                      {materials.map((m: any, idx: number) => (
+                      {materials.map((m: MaterialRow, idx: number) => (
                         <tr key={idx} className="hover:bg-orange-50/20 transition-colors">
                           <td className="px-4 py-3 text-xs font-mono text-gray-400 tabular-nums">
                             {String(idx + 1).padStart(2, "0")}
                           </td>
                           <td className="px-4 py-3 text-gray-900">
-                            {itemNameById.get(m.itemId) ?? m.itemId ?? "—"}
+                            {itemNameById.get(m.itemId ?? "") ?? m.itemId ?? "—"}
                           </td>
                           <td className="px-4 py-3 text-gray-600 uppercase">
-                            {uomCodeById.get(m.uomId) ?? "—"}
+                            {uomCodeById.get(m.uomId ?? "") ?? "—"}
                           </td>
                           <td className="px-4 py-3 text-right tabular-nums text-gray-900">
                             {fmtQty(m.consumedQty)}
@@ -521,13 +534,13 @@ export default function DPRDetailPage() {
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-gray-100">
-                      {manpower.map((mp: any, idx: number) => (
+                      {manpower.map((mp: ManpowerRow, idx: number) => (
                         <tr key={idx} className="hover:bg-orange-50/20 transition-colors">
                           <td className="px-4 py-3 text-xs font-mono text-gray-400 tabular-nums">
                             {String(idx + 1).padStart(2, "0")}
                           </td>
                           <td className="px-4 py-3 text-gray-900">
-                            {contractorNameById.get(mp.contractorId) ?? "Self / —"}
+                            {contractorNameById.get(mp.contractorId ?? "") ?? "Self / —"}
                           </td>
                           <td className="px-4 py-3 text-gray-900">
                             {mp.category ?? "—"}
@@ -574,7 +587,7 @@ export default function DPRDetailPage() {
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-gray-100">
-                      {staff.map((s: any, idx: number) => (
+                      {staff.map((s: StaffRow, idx: number) => (
                         <tr key={idx} className="hover:bg-orange-50/20 transition-colors">
                           <td className="px-4 py-3 text-xs font-mono text-gray-400 tabular-nums">
                             {String(idx + 1).padStart(2, "0")}
@@ -631,7 +644,7 @@ export default function DPRDetailPage() {
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-gray-100">
-                      {machinery.map((mc: any, idx: number) => (
+                      {machinery.map((mc: MachineryRow, idx: number) => (
                         <tr key={idx} className="hover:bg-orange-50/20 transition-colors">
                           <td className="px-4 py-3 text-xs font-mono text-gray-400 tabular-nums">
                             {String(idx + 1).padStart(2, "0")}
@@ -696,9 +709,9 @@ export default function DPRDetailPage() {
                     Workflow steps
                   </div>
                   <ol className="space-y-1.5 text-xs">
-                    {dpr.approval.workflow.steps.map((s: any) => {
+                    {(dpr.approval?.workflow?.steps ?? []).map((s: ApprovalStep) => {
                       const isCurrent =
-                        s.stepOrder === dpr.approval.currentStepOrder;
+                        s.stepOrder === dpr.approval?.currentStepOrder;
                       return (
                         <li
                           key={s.stepOrder}

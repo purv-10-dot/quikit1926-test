@@ -1,3 +1,5 @@
+import type { Prisma } from "@prisma/client";
+import { toErrorMessage, getErrorCode } from "@/lib/api/errors";
 import { db } from "@/lib/db";
 import type { TenantContext } from "@/lib/auth/context";
 
@@ -30,7 +32,7 @@ function toISODate(d: Date): string {
 }
 
 async function assertProjectAccess(ctx: TenantContext, projectId: string) {
-  const project = await (db as any).cnProject.findFirst({
+  const project = await db.cnProject.findFirst({
     where: { id: projectId, orgId: ctx.orgId },
     select: { id: true },
   });
@@ -41,7 +43,7 @@ export async function listWbsTasks(ctx: TenantContext, projectId: string): Promi
   await assertProjectAccess(ctx, projectId);
 
   const [tasks, deps] = await Promise.all([
-    (db as any).cnWBSTask.findMany({
+    db.cnWBSTask.findMany({
       where: { orgId: ctx.orgId, projectId },
       orderBy: [{ wbsCode: "asc" }, { createdAt: "asc" }],
       select: {
@@ -55,7 +57,7 @@ export async function listWbsTasks(ctx: TenantContext, projectId: string): Promi
         progress: true,
       },
     }),
-    (db as any).cnWBSDependency.findMany({
+    db.cnWBSDependency.findMany({
       where: { orgId: ctx.orgId, projectId },
       select: { fromTaskId: true, toTaskId: true },
     }),
@@ -68,14 +70,14 @@ export async function listWbsTasks(ctx: TenantContext, projectId: string): Promi
     predMap.set(d.toTaskId, arr);
   }
 
-  return tasks.map((t: any) => ({
+  return tasks.map((t) => ({
     id: t.id,
     parentId: t.parentId ?? null,
     wbsCode: t.wbsCode,
     name: t.name,
     startDate: toISODate(t.startDate),
     endDate: toISODate(t.endDate),
-    status: t.status,
+    status: t.status as WbsStatus,
     progress: t.progress,
     predecessors: predMap.get(t.id) ?? [],
   }));
@@ -108,7 +110,7 @@ async function nextFreeWbsCode(
   // The unique key is project-wide (orgId, projectId, wbsCode) — NOT
   // per-parent — so a candidate code must be free across the WHOLE project,
   // not just among same-parent siblings. Pull every code once and probe.
-  const all = (await (db as any).cnWBSTask.findMany({
+  const all = (await db.cnWBSTask.findMany({
     where: { orgId, projectId },
     select: { wbsCode: true, parentId: true },
   })) as Array<{ wbsCode: string; parentId: string | null }>;
@@ -129,7 +131,7 @@ async function nextFreeWbsCode(
 
   let prefix = "";
   if (parentId !== null) {
-    const parent = (await (db as any).cnWBSTask.findFirst({
+    const parent = (await db.cnWBSTask.findFirst({
       where: { orgId, projectId, id: parentId },
       select: { wbsCode: true },
     })) as { wbsCode: string } | null;
@@ -156,7 +158,7 @@ async function assertStartsAfterPredecessors(
   predecessorIds: string[],
 ): Promise<void> {
   if (!predecessorIds.length) return;
-  const preds = (await (db as any).cnWBSTask.findMany({
+  const preds = (await db.cnWBSTask.findMany({
     where: { orgId, projectId, id: { in: predecessorIds } },
     select: { wbsCode: true, name: true, endDate: true },
   })) as Array<{ wbsCode: string; name: string; endDate: Date | null }>;
@@ -190,7 +192,7 @@ async function assertNoDependencyCycle(
   if (predecessorIds.includes(taskId)) {
     throw new WbsError("VALIDATION", "A task can't depend on itself.", 400);
   }
-  const deps = (await (db as any).cnWBSDependency.findMany({
+  const deps = (await db.cnWBSDependency.findMany({
     where: { orgId, projectId },
     select: { fromTaskId: true, toTaskId: true },
   })) as Array<{ fromTaskId: string; toTaskId: string }>;
@@ -291,15 +293,15 @@ export async function createWbsTask(
         name: string;
         startDate: Date;
         endDate: Date;
-        status: WbsStatus;
+        status: string;
         progress: number;
       }
     | null = null;
   for (let attempt = 0; attempt < MAX_ATTEMPTS; attempt++) {
     try {
       created = await db.$transaction(async (tx) => {
-        const task = await (tx as any).cnWBSTask.create({
-          data: dataPayload,
+        const task = await tx.cnWBSTask.create({
+          data: dataPayload as Prisma.CnWBSTaskUncheckedCreateInput,
           select: {
             id: true,
             parentId: true,
@@ -312,7 +314,7 @@ export async function createWbsTask(
           },
         });
         if (predecessors.length > 0) {
-          await (tx as any).cnWBSDependency.createMany({
+          await tx.cnWBSDependency.createMany({
             data: predecessors.map((fromTaskId) => ({
               orgId: ctx.orgId,
               projectId,
@@ -326,8 +328,8 @@ export async function createWbsTask(
         return task;
       });
       break; // success
-    } catch (err: any) {
-      if (err?.code === "P2002") {
+    } catch (err: unknown) {
+      if (getErrorCode(err) === "P2002") {
         dataPayload.wbsCode = await nextFreeWbsCode(
           ctx.orgId,
           projectId,
@@ -354,7 +356,7 @@ export async function createWbsTask(
     name: created.name,
     startDate: toISODate(created.startDate),
     endDate: toISODate(created.endDate),
-    status: created.status,
+    status: created.status as WbsStatus,
     progress: created.progress,
     predecessors,
   };
@@ -399,7 +401,7 @@ export async function updateWbsTask(
   // End must not precede start (same-day allowed). Compare effective values so
   // editing just one of the two dates is still validated against the other.
   if (patch.startDate !== undefined || patch.endDate !== undefined) {
-    const cur = (await (db as any).cnWBSTask.findFirst({
+    const cur = (await db.cnWBSTask.findFirst({
       where: { orgId: ctx.orgId, projectId, id: taskId },
       select: { startDate: true, endDate: true },
     })) as { startDate: Date; endDate: Date } | null;
@@ -423,7 +425,7 @@ export async function updateWbsTask(
   // Finish-to-start dependency rule — re-check whenever the start date or the
   // predecessor set changes, using the effective (patched-or-existing) values.
   if (patch.startDate !== undefined || patch.predecessors !== undefined) {
-    const current = (await (db as any).cnWBSTask.findFirst({
+    const current = (await db.cnWBSTask.findFirst({
       where: { orgId: ctx.orgId, projectId, id: taskId },
       select: { startDate: true },
     })) as { startDate: Date } | null;
@@ -431,7 +433,7 @@ export async function updateWbsTask(
       patch.startDate !== undefined ? new Date(patch.startDate) : current?.startDate ?? null;
     const effPredecessors =
       predecessors ??
-      (((await (db as any).cnWBSDependency.findMany({
+      (((await db.cnWBSDependency.findMany({
         where: { orgId: ctx.orgId, projectId, toTaskId: taskId },
         select: { fromTaskId: true },
       })) as Array<{ fromTaskId: string }>).map((r) => r.fromTaskId));
@@ -443,7 +445,7 @@ export async function updateWbsTask(
   const updated = await db.$transaction(async (tx) => {
     let task;
     try {
-      task = await (tx as any).cnWBSTask.update({
+      task = await tx.cnWBSTask.update({
         where: { id: taskId },
         data,
         select: {
@@ -459,8 +461,8 @@ export async function updateWbsTask(
           projectId: true,
         },
       });
-    } catch (err: any) {
-      if (err?.code === "P2002") {
+    } catch (err: unknown) {
+      if (getErrorCode(err) === "P2002") {
         throw new WbsError(
           "DUPLICATE_WBS_CODE",
           `A task with code "${patch.wbsCode}" already exists in this project. Pick a different code.`,
@@ -475,11 +477,11 @@ export async function updateWbsTask(
     }
 
     if (predecessors !== undefined) {
-      await (tx as any).cnWBSDependency.deleteMany({
+      await tx.cnWBSDependency.deleteMany({
         where: { orgId: ctx.orgId, projectId, toTaskId: taskId },
       });
       if (predecessors.length > 0) {
-        await (tx as any).cnWBSDependency.createMany({
+        await tx.cnWBSDependency.createMany({
           data: predecessors.map((fromTaskId) => ({
             orgId: ctx.orgId,
             projectId,
@@ -498,10 +500,10 @@ export async function updateWbsTask(
   // For response, re-load predecessors if caller didn't send them.
   const preds =
     predecessors ??
-    (await (db as any).cnWBSDependency.findMany({
+    (await db.cnWBSDependency.findMany({
       where: { orgId: ctx.orgId, projectId, toTaskId: taskId },
       select: { fromTaskId: true },
-    })).map((r: any) => r.fromTaskId);
+    })).map((r) => r.fromTaskId);
 
   return {
     id: updated.id,
@@ -510,7 +512,7 @@ export async function updateWbsTask(
     name: updated.name,
     startDate: toISODate(updated.startDate),
     endDate: toISODate(updated.endDate),
-    status: updated.status,
+    status: updated.status as WbsStatus,
     progress: updated.progress,
     predecessors: preds,
   };
@@ -520,7 +522,7 @@ export async function deleteWbsTask(ctx: TenantContext, projectId: string, taskI
   await assertProjectAccess(ctx, projectId);
 
   // Fetch all tasks once, compute descendants in memory, then delete in a txn.
-  const all = await (db as any).cnWBSTask.findMany({
+  const all = await db.cnWBSTask.findMany({
     where: { orgId: ctx.orgId, projectId },
     select: { id: true, parentId: true },
   });
@@ -549,7 +551,7 @@ export async function deleteWbsTask(ctx: TenantContext, projectId: string, taskI
   // Block deletion when the task (or a descendant being removed with it) is
   // still a predecessor of a SURVIVING task — those dependents would be left
   // dangling. Refuse and name them so the user can act.
-  const blockingDeps = (await (db as any).cnWBSDependency.findMany({
+  const blockingDeps = (await db.cnWBSDependency.findMany({
     where: {
       orgId: ctx.orgId,
       projectId,
@@ -560,7 +562,7 @@ export async function deleteWbsTask(ctx: TenantContext, projectId: string, taskI
   })) as Array<{ toTaskId: string }>;
   if (blockingDeps.length > 0) {
     const dependentIds = Array.from(new Set(blockingDeps.map((d) => d.toTaskId)));
-    const dependents = (await (db as any).cnWBSTask.findMany({
+    const dependents = (await db.cnWBSTask.findMany({
       where: { orgId: ctx.orgId, projectId, id: { in: dependentIds } },
       select: { wbsCode: true, name: true },
     })) as Array<{ wbsCode: string; name: string }>;
@@ -576,14 +578,14 @@ export async function deleteWbsTask(ctx: TenantContext, projectId: string, taskI
   }
 
   await db.$transaction(async (tx) => {
-    await (tx as any).cnWBSDependency.deleteMany({
+    await tx.cnWBSDependency.deleteMany({
       where: {
         orgId: ctx.orgId,
         projectId,
         OR: [{ fromTaskId: { in: ids } }, { toTaskId: { in: ids } }],
       },
     });
-    await (tx as any).cnWBSTask.deleteMany({
+    await tx.cnWBSTask.deleteMany({
       where: { orgId: ctx.orgId, projectId, id: { in: ids } },
     });
   });

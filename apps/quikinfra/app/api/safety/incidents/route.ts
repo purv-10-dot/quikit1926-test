@@ -2,7 +2,16 @@ import { NextRequest, NextResponse } from "next/server";
 import { getTenantContext, hasMatrixAction } from "@/lib/auth/context";
 import { err as envelopeErr } from "@/lib/http/envelope";
 
-const data: any[] = [];
+interface IncidentRecord {
+  id: string;
+  incidentNo: string;
+  projectId: string;
+  description: string;
+  type: string;
+  [key: string]: unknown;
+}
+
+const data: IncidentRecord[] = [];
 
 export async function GET(req: NextRequest) {
   const { searchParams } = new URL(req.url);
@@ -10,14 +19,14 @@ export async function GET(req: NextRequest) {
 
   const ctx = await getTenantContext();
 
-  let filtered: any[] = data;
+  let filtered: IncidentRecord[] = data;
 
   // Per-user project scoping — applied BEFORE the optional ?projectId
   // query filter so a user can never use the query string to see a project
   // they're not assigned to.
   if (ctx?.projectIds !== undefined) {
     const allowed = new Set(ctx.projectIds);
-    filtered = filtered.filter((row: any) => allowed.has(row.projectId));
+    filtered = filtered.filter((row) => allowed.has(row.projectId));
   }
 
   if (search) filtered = filtered.filter(r => r.incidentNo.toLowerCase().includes(search) || r.description.toLowerCase().includes(search) || r.type.toLowerCase().includes(search));

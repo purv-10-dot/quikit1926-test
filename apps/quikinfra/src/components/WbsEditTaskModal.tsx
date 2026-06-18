@@ -1,5 +1,6 @@
 "use client";
 
+import { toErrorMessage, getErrorCode } from "@/lib/api/errors";
 import { useEffect, useState } from "react";
 import { Loader2, Pencil, Save, X } from "lucide-react";
 import {
@@ -102,8 +103,8 @@ export function WbsEditTaskModal({
       });
       onSaved?.();
       onClose();
-    } catch (e: any) {
-      setError(e?.message ?? "Failed to save task");
+    } catch (e: unknown) {
+      setError(toErrorMessage(e, "Failed to save task"));
     }
   };
 

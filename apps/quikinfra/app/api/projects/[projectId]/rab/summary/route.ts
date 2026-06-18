@@ -26,28 +26,28 @@ export async function GET(
   const where = { orgId: ctx.orgId, projectId: params.projectId };
 
   const [byStatus, approvedAgg, allAgg] = await Promise.all([
-    (db as any).cnRunningAccountBill.groupBy({
+    db.cnRunningAccountBill.groupBy({
       by: ["status"],
       where,
       _count: { _all: true },
     }),
-    (db as any).cnRunningAccountBill.aggregate({
+    db.cnRunningAccountBill.aggregate({
       where: { ...where, status: "approved" },
       _sum: { currentBillAmount: true, netPayable: true, retentionAmount: true },
       _count: { _all: true },
     }),
-    (db as any).cnRunningAccountBill.aggregate({
+    db.cnRunningAccountBill.aggregate({
       where,
       _count: { _all: true },
     }),
   ]);
 
   const statusCounts: Record<string, number> = {};
-  for (const r of byStatus as any[]) {
+  for (const r of byStatus) {
     statusCounts[r.status ?? "unknown"] = r._count?._all ?? 0;
   }
 
-  const numOr = (v: any) => Number(v?.toString() ?? "0");
+  const numOr = (v: unknown) => Number((v as { toString?: () => string })?.toString?.() ?? "0");
 
   return NextResponse.json({
     data: {

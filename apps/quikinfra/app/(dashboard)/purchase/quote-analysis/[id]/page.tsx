@@ -26,19 +26,35 @@ import { ArrowLeft, Building2, CheckCircle2 } from "lucide-react";
 import { PageContainer, PageSkeleton } from "@/components/PageShell";
 import { useRFQ } from "@/hooks/use-approvals";
 
-function qtyOf(l: any): number {
+interface RfqLine {
+  id?: string;
+  lineId?: string;
+  quantity?: number | string | null;
+  itemName?: string | null;
+  itemId?: string | null;
+  uomCode?: string | null;
+}
+
+interface RfqVendor {
+  id: string;
+  vendorId?: string;
+  vendorName?: string | null;
+  quotedRates?: Array<{ lineId?: string; rate?: string | number }>;
+}
+
+function qtyOf(l: RfqLine): number {
   const n = parseFloat(String(l?.quantity ?? 0));
   return Number.isFinite(n) ? n : 0;
 }
 
-function rateFor(v: any, key: string): number | null {
-  const hit = (v?.quotedRates ?? []).find((q: any) => q?.lineId === key);
+function rateFor(v: RfqVendor, key: string): number | null {
+  const hit = (v?.quotedRates ?? []).find((q) => q?.lineId === key);
   if (!hit) return null;
   const n = parseFloat(String(hit.rate));
   return Number.isFinite(n) && n > 0 ? n : null;
 }
 
-function lineKeyFor(line: any, fallbackIdx: number): string {
+function lineKeyFor(line: RfqLine, fallbackIdx: number): string {
   return String(line?.id ?? line?.lineId ?? `row-${fallbackIdx}`);
 }
 
@@ -62,13 +78,13 @@ export default function ComparativeStatementDetailPage() {
   const [offeredQty, setOfferedQty] = useState<Record<string, Record<string, string>>>({});
 
   const { quotedVendors, lineRows, vendorTotals, vendorLowestId } = useMemo(() => {
-    const vendors: any[] = Array.isArray(rfq?.vendors) ? rfq.vendors : [];
-    const lines: any[] = Array.isArray(rfq?.lines) ? rfq.lines : [];
+    const vendors: RfqVendor[] = Array.isArray(rfq?.vendors) ? (rfq.vendors as RfqVendor[]) : [];
+    const lines: RfqLine[] = Array.isArray(rfq?.lines) ? rfq.lines : [];
     const quotedVendors = vendors.filter(
       (v) => Array.isArray(v.quotedRates) && v.quotedRates.length > 0,
     );
 
-    const lineRows = lines.map((line: any, i: number) => {
+    const lineRows = lines.map((line: RfqLine, i: number) => {
       const key = lineKeyFor(line, i);
       const qty = qtyOf(line);
       const quotes = quotedVendors.map((v) => {
@@ -203,7 +219,7 @@ export default function ComparativeStatementDetailPage() {
           </p>
         ) : (
           <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-4 gap-3">
-            {quotedVendors.map((v: any) => {
+            {quotedVendors.map((v) => {
               const total = vendorTotals.get(v.id) ?? 0;
               const isLowest = v.id === vendorLowestId;
               const isShortlisted = vendorShortlistId === v.id;
@@ -262,7 +278,7 @@ export default function ComparativeStatementDetailPage() {
                   </p>
                 )}
                 {row.quotes.map((q) => {
-                  const v = quotedVendors.find((x: any) => x.id === q.vendorId);
+                  const v = quotedVendors.find((x) => x.id === q.vendorId);
                   if (!v || q.rate == null || q.amount == null) return null;
                   const isLowest = q.amount === row.lowestAmount;
                   const selected = isLineSelected(row.key, v.id);

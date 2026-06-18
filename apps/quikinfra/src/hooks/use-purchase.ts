@@ -8,6 +8,12 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { fetchJson, mutateJson } from "@/lib/react-query/fetch-json";
 import { refreshListQueries } from "@/lib/react-query/list-cache";
 import { entityMeta } from "@/lib/toast";
+import type { EnrichedPR } from "@/lib/purchase/pr-repository";
+import type { EnrichedPO } from "@/lib/purchase/po-repository";
+import type { EnrichedGRN } from "@/lib/purchase/grn-repository";
+import type { PrDetail } from "@/lib/purchase/pr-detail";
+import type { PoDetail } from "@/lib/purchase/po-detail";
+import type { GrnDetail } from "@/lib/purchase/grn-detail";
 
 const fetchApi = fetchJson;
 const mutateApi = mutateJson;
@@ -23,14 +29,14 @@ export function usePurchaseRequisitions(params?: { status?: string; projectId?: 
 
   return useQuery({
     queryKey: ["purchase-requisitions", query],
-    queryFn: () => fetchApi<{ data: any[]; total: number }>(`/api/purchase/requisitions${query ? `?${query}` : ""}`),
+    queryFn: () => fetchApi<{ data: EnrichedPR[]; total: number }>(`/api/purchase/requisitions${query ? `?${query}` : ""}`),
   });
 }
 
 export function usePurchaseRequisition(id: string | null) {
   return useQuery({
     queryKey: ["purchase-requisition", id],
-    queryFn: () => fetchApi<any>(`/api/purchase/requisitions/${id}`),
+    queryFn: () => fetchApi<PrDetail>(`/api/purchase/requisitions/${id}`),
     enabled: !!id,
   });
 }
@@ -38,7 +44,7 @@ export function usePurchaseRequisition(id: string | null) {
 export function useCreatePR() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (data: any) => mutateApi("/api/purchase/requisitions", "POST", data),
+    mutationFn: (data: unknown) => mutateApi("/api/purchase/requisitions", "POST", data),
     onSuccess: async () => { await refreshListQueries(qc, "purchase-requisitions"); },
     meta: entityMeta("create", "Purchase requisition"),
   });
@@ -68,14 +74,14 @@ export function usePurchaseOrders(params?: { status?: string; projectId?: string
 
   return useQuery({
     queryKey: ["purchase-orders", query],
-    queryFn: () => fetchApi<{ data: any[]; total: number }>(`/api/purchase/orders${query ? `?${query}` : ""}`),
+    queryFn: () => fetchApi<{ data: EnrichedPO[]; total: number }>(`/api/purchase/orders${query ? `?${query}` : ""}`),
   });
 }
 
 export function usePurchaseOrder(id: string | null) {
   return useQuery({
     queryKey: ["purchase-order", id],
-    queryFn: () => fetchApi<any>(`/api/purchase/orders/${id}`),
+    queryFn: () => fetchApi<PoDetail>(`/api/purchase/orders/${id}`),
     enabled: !!id,
   });
 }
@@ -83,7 +89,7 @@ export function usePurchaseOrder(id: string | null) {
 export function useCreatePO() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (data: any) => mutateApi("/api/purchase/orders", "POST", data),
+    mutationFn: (data: unknown) => mutateApi("/api/purchase/orders", "POST", data),
     onSuccess: async () => { await refreshListQueries(qc, "purchase-orders"); },
     meta: entityMeta("create", "Purchase order"),
   });
@@ -124,7 +130,7 @@ export function useGRNs(params?: { status?: string; projectId?: string; search?:
 
   return useQuery({
     queryKey: ["grns", query],
-    queryFn: () => fetchApi<{ data: any[]; total: number }>(`/api/purchase/grn${query ? `?${query}` : ""}`),
+    queryFn: () => fetchApi<{ data: EnrichedGRN[]; total: number }>(`/api/purchase/grn${query ? `?${query}` : ""}`),
   });
 }
 
@@ -144,7 +150,7 @@ export function useSubmitGRN() {
 export function useGRN(id: string | null) {
   return useQuery({
     queryKey: ["grn", id],
-    queryFn: () => fetchApi<any>(`/api/purchase/grn/${id}`),
+    queryFn: () => fetchApi<GrnDetail>(`/api/purchase/grn/${id}`),
     enabled: !!id,
   });
 }
@@ -152,7 +158,7 @@ export function useGRN(id: string | null) {
 export function useCreateGRN() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (data: any) => mutateApi("/api/purchase/grn", "POST", data),
+    mutationFn: (data: unknown) => mutateApi("/api/purchase/grn", "POST", data),
     onSuccess: async () => {
       await refreshListQueries(qc, "grns");
       await refreshListQueries(qc, "purchase-orders");

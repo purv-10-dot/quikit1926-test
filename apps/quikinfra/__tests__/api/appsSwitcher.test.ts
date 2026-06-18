@@ -17,7 +17,7 @@ function setSession(value: unknown) {
 vi.mock("next-auth", () => ({
   getServerSession: vi.fn(async () => _session.value),
 }));
-vi.mock("@/lib/auth/next-auth-options", () => ({ authOptions: {} }));
+vi.mock("@/lib/auth", () => ({ authOptions: {} }));
 
 const db = mockDb as any;
 

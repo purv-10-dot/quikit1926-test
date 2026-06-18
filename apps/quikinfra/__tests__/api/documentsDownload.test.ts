@@ -3,10 +3,10 @@ import { mockDb, resetMockDb } from "../helpers/mockDb";
 import { TEST_TENANT, TEST_USER } from "../setup";
 import { NextRequest, NextResponse } from "next/server";
 
-// documents/[id]/download/route streams the stored file. It gates via
-// withOrgAuthForModule("documents") and reads bytes through `readUpload`
-// from @/lib/storage. Mock both: the auth wrapper (passthrough) and storage
-// so no real filesystem/S3 IO happens.
+// documents/[id]/download/route redirects to a presigned S3 URL. It gates
+// via withOrgAuthForModule("documents") and resolves the URL through
+// `getDownloadUrl` from @/lib/storage. Mock both: the auth wrapper
+// (passthrough) and storage so no real S3 IO happens.
 const _auth: { ctx: { orgId: string; userId: string } | null } = { ctx: null };
 function setAuth(ctx: { orgId: string; userId: string } | null) {
   _auth.ctx = ctx;
@@ -40,10 +40,10 @@ vi.mock("@/lib/api/withOrgAuth", () => {
   };
 });
 
-const readUpload = vi.fn();
+const getDownloadUrl = vi.fn();
 vi.mock("@/lib/storage", () => ({
   saveUpload: vi.fn(),
-  readUpload: (...args: any[]) => readUpload(...args),
+  getDownloadUrl: (...args: any[]) => getDownloadUrl(...args),
   deleteUpload: vi.fn(),
 }));
 
@@ -60,7 +60,7 @@ function req(): NextRequest {
 beforeEach(() => {
   resetMockDb();
   setAuth(null);
-  readUpload.mockReset();
+  getDownloadUrl.mockReset();
 });
 
 describe("GET /api/documents/[id]/download", () => {
@@ -79,21 +79,20 @@ describe("GET /api/documents/[id]/download", () => {
     });
   });
 
-  it("streams the file with content headers on success", async () => {
+  it("redirects to the presigned download URL on success", async () => {
     setAuth({ orgId: TEST_TENANT, userId: TEST_USER });
     db.cnDocument.findFirst.mockResolvedValue({
       id: ID,
       orgId: TEST_TENANT,
-      storagePath: "org/abc.pdf",
+      storagePath: "documents/org/abc.pdf",
       fileName: "plan.pdf",
       mimeType: "application/pdf",
       sizeBytes: 5,
     });
-    readUpload.mockResolvedValue(Buffer.from("hello"));
+    getDownloadUrl.mockResolvedValue("https://s3.example/signed/plan.pdf?sig=abc");
     const res = await GET(req(), params);
-    expect(res.status).toBe(200);
-    expect(res.headers.get("content-type")).toBe("application/pdf");
-    expect(res.headers.get("content-disposition")).toContain("plan.pdf");
-    expect(readUpload).toHaveBeenCalledWith("org/abc.pdf");
+    expect(res.status).toBe(307);
+    expect(res.headers.get("location")).toBe("https://s3.example/signed/plan.pdf?sig=abc");
+    expect(getDownloadUrl).toHaveBeenCalledWith("documents/org/abc.pdf", "plan.pdf");
   });
 });

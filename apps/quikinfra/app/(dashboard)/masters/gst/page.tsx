@@ -1,10 +1,11 @@
 "use client";
 
+import { toErrorMessage } from "@/lib/api/errors";
 import { useEffect, useMemo, useState } from "react";
 import { Receipt } from "lucide-react";
 import { MasterListPage, type MasterColumnDef } from "@/components/MasterListPage";
-import { useGSTCodes, useCreateGSTCode, useUpdateGSTCode, useItemGroups, useWorkCategories } from "@/hooks/use-masters";
-import { FormDrawer, FormSection, FormRow, Field, TextInput, NumberInput, SelectInput, DateInput, CheckboxInput } from "@/components/FormDrawer";
+import { useGSTCodes, useCreateGSTCode, useUpdateGSTCode, useItemGroups, useWorkCategories, useDeleteGSTCode } from "@/hooks/use-masters";
+import { FormDrawer, FormSection, FormRow, Field, TextInput, NumberInput, SelectInput, DateInput, CheckboxInput, InactiveStatusNotice } from "@/components/FormDrawer";
 import dynamic from "next/dynamic";
 import type { ImportFieldDef } from "@/components/ImportDataDrawer";
 const ImportDataDrawer = dynamic(
@@ -13,14 +14,16 @@ const ImportDataDrawer = dynamic(
 );
 import { validateForm, type ValidationRules, validateHSN, validatePercentage, validateDateISO, validateDateRange, validateMinLength } from "@/lib/validators";
 
-function buildItemGroupById(groups: any[]): Map<string, any> {
-  const m = new Map<string, any>();
+type ItemGroupNode = { id: string; parentId?: string | null; name?: string };
+
+function buildItemGroupById(groups: ItemGroupNode[]): Map<string, ItemGroupNode> {
+  const m = new Map<string, ItemGroupNode>();
   for (const g of groups) m.set(g.id, g);
   return m;
 }
 
 /** Walk `parentId` chain so HSN GST rows attach to the L0 group (one HSN per parent category). */
-function rootItemGroupId(groupId: string, byId: Map<string, any>): string {
+function rootItemGroupId(groupId: string, byId: Map<string, ItemGroupNode>): string {
   let cur = groupId;
   for (let i = 0; i < 32; i++) {
     const row = byId.get(cur);
@@ -94,6 +97,7 @@ export default function GSTPage() {
   const { data: workCategoriesResult } = useWorkCategories();
   const createMutation = useCreateGSTCode();
   const updateMutation = useUpdateGSTCode();
+  const deleteMutation = useDeleteGSTCode();
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [importOpen, setImportOpen] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
@@ -122,8 +126,8 @@ export default function GSTPage() {
         status: "active",
       });
       return { ok: true as const };
-    } catch (err: any) {
-      return { ok: false as const, error: err?.message ?? "Create failed" };
+    } catch (err: unknown) {
+      return { ok: false as const, error: toErrorMessage(err, "Create failed") };
     }
   };
 
@@ -134,12 +138,12 @@ export default function GSTPage() {
   const itemGroupOptions = useMemo(() => {
     return itemGroups
       .filter(
-        (g: any) =>
+        (g) =>
           g.status !== "inactive" &&
           g.status !== "deleted" &&
           !g.parentId,
       )
-      .map((g: any) => ({
+      .map((g) => ({
         value: g.id,
         label: String(g.name),
       }))
@@ -152,9 +156,9 @@ export default function GSTPage() {
     const rows = workCategoriesResult?.data ?? [];
     return rows
       .filter(
-        (c: any) => c.status !== "inactive" && c.status !== "deleted",
+        (c) => c.status !== "inactive" && c.status !== "deleted",
       )
-      .map((c: any) => ({
+      .map((c) => ({
         value: c.id,
         label: c.name,
       }));
@@ -189,7 +193,7 @@ export default function GSTPage() {
       ? "Tag this code to a Work Category (Masters › Work Categories)"
       : `Top-level item groups only (${itemGroupOptions.length} parents — L1/L2 children use the same HSN as the parent). Clear the search box to see the full list.`;
 
-  const set = (key: string, val: any) => {
+  const set = <K extends keyof typeof emptyForm>(key: K, val: (typeof emptyForm)[K]) => {
     setForm(prev => ({ ...prev, [key]: val }));
     if (errors[key]) setErrors(prev => { const next = { ...prev }; delete next[key]; return next; });
   };
@@ -217,16 +221,16 @@ export default function GSTPage() {
         const root = byId.get(rootId);
         if (root) {
           resolvedGroupId = rootId;
-          resolvedGroupName = root.name;
+          resolvedGroupName = root.name ?? "";
         }
       }
       const pickedCategory =
         !isOther && form.codeType === "SAC"
           ? (workCategoriesResult?.data ?? []).find(
-              (c: any) => c.id === form.itemGroupId,
+              (c) => c.id === form.itemGroupId,
             )
           : !isOther
-          ? itemGroups.find((g: any) => g.id === resolvedGroupId)
+          ? itemGroups.find((g) => g.id === resolvedGroupId)
           : null;
 
       const payload = {
@@ -241,8 +245,8 @@ export default function GSTPage() {
     } catch { /* error toast handled globally */ }
   };
 
-  const handleDelete = async (item: any) => {
-    await updateMutation.mutateAsync({ id: item.id, status: "inactive" });
+  const handleDelete = async (item: { id: string }) => {
+    await deleteMutation.mutateAsync(item.id);
   };
 
   const isSaving = createMutation.isPending || updateMutation.isPending;
@@ -251,12 +255,12 @@ export default function GSTPage() {
     <>
       <MasterListPage title="GST Codes" entityName="GST Code" permissionUrl="/masters/gst" columns={columns}
         showStatusTabs
-        data={result?.data ?? []} total={result?.total ?? 0} isLoading={isLoading}
+        data={(result?.data ?? []) as Row[]} total={result?.total ?? 0} isLoading={isLoading}
         canImport canExport
         historyEntityType="gst_code"
         onImport={() => setImportOpen(true)}
         onAdd={() => { setForm(emptyForm); setErrors({}); setEditingId(null); setDrawerOpen(true); }}
-        onEdit={(item: any) => {
+        onEdit={(item) => {
           const next = { ...emptyForm, ...item };
           if (!next.itemGroupId && String(next.itemGroupName ?? "").toLowerCase() === "other") {
             next.itemGroupId = OTHER_CATEGORY_VALUE;
@@ -271,7 +275,7 @@ export default function GSTPage() {
             const root = byId.get(rootId);
             if (root) {
               next.itemGroupId = rootId;
-              next.itemGroupName = root.name;
+              next.itemGroupName = root.name ?? "";
             }
           }
           setForm(next);
@@ -280,7 +284,7 @@ export default function GSTPage() {
           setDrawerOpen(true);
         }}
         onDelete={handleDelete}
-        deleteConfirmMessage={(item: any) => (
+        deleteConfirmMessage={(item) => (
           <>
             Delete GST code{" "}
             <span className="font-semibold text-gray-900">“{item.code}”</span>
@@ -372,6 +376,7 @@ export default function GSTPage() {
           </FormRow>
           <Field label="Status">
             <SelectInput value={form.status} onChange={v => set("status", v)} options={STATUS_OPTIONS} />
+            {form.status === "inactive" && <InactiveStatusNotice entityName="GST Code" />}
           </Field>
         </FormSection>
       </FormDrawer>

@@ -1,5 +1,6 @@
 "use client";
 
+import { toErrorMessage } from "@/lib/api/errors";
 import { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import {
@@ -10,8 +11,8 @@ import { DataTable, type ColDef } from "@/components/DataTable";
 import { WorkflowConfirmDialog } from "@/components/WorkflowConfirmDialog";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { useStockTransfers } from "@/hooks/use-store";
-import { QuickCreateDrawer } from "@/components/QuickCreateDrawer";
-import { GroupedMaterialSelect } from "@/components/GroupedMaterialSelect";
+import { QuickCreateDrawer, type QuickCreateConfig } from "@/components/QuickCreateDrawer";
+import { GroupedMaterialSelect, type GroupedMaterialSelectItem } from "@/components/GroupedMaterialSelect";
 import { useProjects, useItems, useItemGroups, useLocations, useUOMs, useAssets } from "@/hooks/use-masters";
 import { usePermissions, useMenuActions } from "@/hooks/use-permissions";
 import { useQueryClient } from "@tanstack/react-query";
@@ -57,6 +58,19 @@ const DISPATCH_CONDITION_OPTIONS = [
   { value: "as_is", label: "As-Is" },
 ];
 
+interface TransferRow {
+  id: string; transferNumber?: string; status?: string; lineCount?: number;
+  canActOnCurrentStep?: boolean;
+  [key: string]: unknown;
+}
+type TransferItemNode = GroupedMaterialSelectItem & {
+  currentStock?: number | string | null;
+  stockOnHand?: number | string | null;
+  minStockLevel?: number | string | null;
+};
+type AssetNode = { id: string; assetCode?: string; name?: string; category?: string };
+type LocationNode = { id: string; name?: string; state?: string; city?: string };
+
 export default function StockTransferPage() {
   const qc = useQueryClient();
   const router = useRouter();
@@ -68,13 +82,13 @@ export default function StockTransferPage() {
   // WorkflowConfirmDialog; Dispatch + Receive use the simpler
   // ConfirmDialog since both are single-action transitions.
   const [workflowAction, setWorkflowAction] = useState<
-    { kind: "submit" | "approve" | "reject"; row: any } | null
+    { kind: "submit" | "approve" | "reject"; row: TransferRow } | null
   >(null);
   const [rejectReason, setRejectReason] = useState("");
   const [workflowPending, setWorkflowPending] = useState(false);
-  const [dispatchTarget, setDispatchTarget] = useState<any | null>(null);
+  const [dispatchTarget, setDispatchTarget] = useState<TransferRow | null>(null);
   const [dispatchPending, setDispatchPending] = useState(false);
-  const [receiveTarget, setReceiveTarget] = useState<any | null>(null);
+  const [receiveTarget, setReceiveTarget] = useState<TransferRow | null>(null);
   const [receivePending, setReceivePending] = useState(false);
 
   const { permissionMatrix, isSuper } = usePermissions();
@@ -84,12 +98,12 @@ export default function StockTransferPage() {
   // Approve/Reject visibility is decided PER ROW by the workflow's
   // current step (server-computed in the list API as
   // `row.canActOnCurrentStep`).
-  const canApproveRow = (row: any): boolean =>
+  const canApproveRow = (row: TransferRow): boolean =>
     isSuper || row?.canActOnCurrentStep === true;
 
   const openWorkflow = (
     kind: "submit" | "approve" | "reject",
-    row: any,
+    row: TransferRow,
   ) => {
     setRejectReason("");
     setWorkflowAction({ kind, row });
@@ -133,8 +147,8 @@ export default function StockTransferPage() {
       );
       setWorkflowAction(null);
       setRejectReason("");
-    } catch (err: any) {
-      toast.error(err?.message ?? "Action failed");
+    } catch (err: unknown) {
+      toast.error(toErrorMessage(err, "Action failed"));
     } finally {
       setWorkflowPending(false);
     }
@@ -157,8 +171,8 @@ export default function StockTransferPage() {
       qc.invalidateQueries({ queryKey: ["stock-transfers"] });
       setDispatchTarget(null);
       toast.success("Transfer dispatched");
-    } catch (err: any) {
-      toast.error(err?.message ?? "Dispatch failed");
+    } catch (err: unknown) {
+      toast.error(toErrorMessage(err, "Dispatch failed"));
     } finally {
       setDispatchPending(false);
     }
@@ -182,8 +196,8 @@ export default function StockTransferPage() {
       qc.invalidateQueries({ queryKey: ["stock-register"] });
       setReceiveTarget(null);
       toast.success("Transfer received");
-    } catch (err: any) {
-      toast.error(err?.message ?? "Receive failed");
+    } catch (err: unknown) {
+      toast.error(toErrorMessage(err, "Receive failed"));
     } finally {
       setReceivePending(false);
     }
@@ -201,31 +215,31 @@ export default function StockTransferPage() {
   const { data: uomsData } = useUOMs();
   const { data: assetsData } = useAssets();
 
-  const projects = (projectsData?.data ?? []) as any[];
-  const projectOptions = projects.map((p: any) => ({ value: p.id, label: p.name }));
+  const projects = (projectsData?.data ?? []) as { id: string; name?: string }[];
+  const projectOptions = projects.map((p) => ({ value: p.id, label: p.name ?? "" }));
 
   // Items + UOM lookups for the per-line grid. `itemById` lets the
   // onChange resolver fill UOM and Available Stock from the item
   // master without a second pick.
-  const items = (itemsData?.data ?? []) as any[];
+  const items = (itemsData?.data ?? []) as unknown as TransferItemNode[];
   const itemGroups = itemGroupsData?.data ?? [];
   const itemById = useMemo(() => {
-    const m = new Map<string, any>();
+    const m = new Map<string, TransferItemNode>();
     for (const i of items) m.set(i.id, i);
     return m;
   }, [items]);
-  const uomOptions = (uomsData?.data ?? []).map((u: any) => ({
+  const uomOptions = (uomsData?.data ?? []).map((u) => ({
     value: u.code,
     label: u.code,
   }));
 
-  const assets = (assetsData?.data ?? []) as any[];
-  const assetOptions = assets.map((a: any) => ({
+  const assets = (assetsData?.data ?? []) as unknown as AssetNode[];
+  const assetOptions = assets.map((a) => ({
     value: a.id,
     label: `${a.assetCode} — ${a.name}`,
   }));
   const assetById = useMemo(() => {
-    const m = new Map<string, any>();
+    const m = new Map<string, AssetNode>();
     for (const a of assets) m.set(a.id, a);
     return m;
   }, [assets]);
@@ -236,7 +250,7 @@ export default function StockTransferPage() {
   // consistent across the app — not limited to states where a location
   // master record already exists. The Location select then filters the
   // locations master by the picked state + city.
-  const locations = (locationsData?.data ?? []) as any[];
+  const locations = (locationsData?.data ?? []) as unknown as LocationNode[];
   const stateOptions = useMemo(
     () => INDIAN_STATES.map((s) => ({ value: s.name, label: s.name })),
     [],
@@ -247,17 +261,17 @@ export default function StockTransferPage() {
 
   const locationOptionsFor = (state: string, city: string) => {
     return locations
-      .filter((l: any) => {
+      .filter((l) => {
         if (state && l.state !== state) return false;
         if (city && l.city !== city) return false;
         return true;
       })
-      .map((l: any) => ({ value: l.id, label: l.name }));
+      .map((l) => ({ value: l.id, label: l.name ?? "" }));
   };
 
   const todayIso = new Date().toISOString().slice(0, 10);
 
-  const config = {
+  const config: QuickCreateConfig = {
     title: "New Stock Transfer",
     subtitle: "Transfer materials between projects, sites, and warehouses",
     apiEndpoint: "/api/store/transfers",
@@ -478,7 +492,7 @@ export default function StockTransferPage() {
       // strips fully-empty rows before posting, so we have to enforce
       // the rule here rather than relying on field-level `required`
       // (which only runs against header fields).
-      validateBeforeSubmit: (lines: Array<Record<string, any>>) => {
+      validateBeforeSubmit: (lines) => {
         const hasMaterial = lines.some(
           (l) => typeof l?.itemId === "string" && l.itemId.trim().length > 0,
         );
@@ -503,7 +517,7 @@ export default function StockTransferPage() {
           type: "custom" as const,
           width: "wide",
           required: true,
-          render: (line: Record<string, any>, update: (patch: Record<string, unknown>) => void) => (
+          render: (line, update: (patch: Record<string, unknown>) => void) => (
             <GroupedMaterialSelect
               value={line.itemId ?? ""}
               onChange={(v) => {
@@ -532,7 +546,7 @@ export default function StockTransferPage() {
                 });
               }}
               items={items}
-              groups={itemGroups.map((g: any) => ({
+              groups={itemGroups.map((g) => ({
                 id: g.id,
                 name: g.name,
                 status: g.status,
@@ -628,7 +642,7 @@ export default function StockTransferPage() {
     },
   };
 
-  const columns: ColDef<any>[] = [
+  const columns: ColDef<TransferRow>[] = [
     { key: "transferNumber", label: "Transfer No", sortable: true, searchable: true },
     { key: "fromLocationName", label: "From", sortable: true, searchable: true },
     { key: "toLocationName", label: "To", sortable: true, searchable: true },
@@ -757,11 +771,9 @@ export default function StockTransferPage() {
         <DataTable
           id="store-transfer"
           columns={columns}
-          data={data}
+          data={data as unknown as TransferRow[]}
           onAdd={canAdd ? () => setDrawerOpen(true) : undefined}
           addLabel="New Transfer"
-          defaultSort="transferDate"
-          defaultSortDir="desc"
           historyEntityType="transfer"
         />
       </PageContainer>

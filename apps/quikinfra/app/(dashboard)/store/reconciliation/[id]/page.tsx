@@ -9,6 +9,7 @@
  * when they are, drop in the same ApprovalTimeline block PR / MI use.
  */
 
+import { toErrorMessage } from "@/lib/api/errors";
 import { useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { useQueryClient } from "@tanstack/react-query";
@@ -35,7 +36,23 @@ function roleLabel(key: string | null | undefined): string {
   return USER_TYPE_CATALOG.find((t) => t.key === key)?.label ?? key;
 }
 
-function fmtQty(v: any, unit?: string | null) {
+import type {
+  ApprovalStep,
+  ApprovalHistoryEntry,
+} from "@/lib/approvals/approval-info";
+import type { ReconLine, ReconciliationDetail } from "@/lib/store/stock-reconciliation-detail";
+
+/** Matches PageShell's ApprovalTimeline entry shape. */
+interface TimelineEntry {
+  step: number;
+  action: string;
+  actionBy: string;
+  actionAt: string;
+  comments?: string;
+  title?: string;
+}
+
+function fmtQty(v: unknown, unit?: string | null) {
   if (v === null || v === undefined || v === "") return "—";
   const n = Number(v);
   if (!Number.isFinite(n)) return "—";
@@ -44,10 +61,10 @@ function fmtQty(v: any, unit?: string | null) {
   }`;
 }
 
-function fmtDate(v: any): string {
+function fmtDate(v: unknown): string {
   if (!v) return "—";
   try {
-    const d = new Date(v);
+    const d = new Date(v as string | number | Date);
     if (Number.isNaN(d.getTime())) return String(v);
     return d.toLocaleDateString("en-IN", {
       day: "2-digit",
@@ -59,10 +76,10 @@ function fmtDate(v: any): string {
   }
 }
 
-function fmtDateTime(v: any): string {
+function fmtDateTime(v: unknown): string {
   if (!v) return "—";
   try {
-    const d = new Date(v);
+    const d = new Date(v as string | number | Date);
     if (Number.isNaN(d.getTime())) return String(v);
     return d.toLocaleString("en-IN", {
       day: "2-digit",
@@ -122,8 +139,8 @@ export default function ReconciliationDetailPage() {
       qc.invalidateQueries({ queryKey: ["stock-reconciliations"] });
       setWorkflowAction(null);
       setRejectReason("");
-    } catch (err: any) {
-      setWorkflowError(err?.message ?? "Action failed");
+    } catch (err: unknown) {
+      setWorkflowError(toErrorMessage(err, "Action failed"));
     }
   };
 
@@ -149,19 +166,19 @@ export default function ReconciliationDetailPage() {
     );
   }
 
-  const lines: any[] = Array.isArray(recon.lines) ? recon.lines : [];
+  const lines: ReconLine[] = Array.isArray(recon.lines) ? recon.lines : [];
   const status = String(recon.status ?? "draft").toLowerCase();
   const isDraft = status === "draft";
   const isPending = status === "pending_approval";
   const canApprove =
-    isSuper || (recon as any)?.approval?.canActOnCurrentStep === true;
+    isSuper || recon?.approval?.canActOnCurrentStep === true;
 
   // Map approval history into the shape the shared ApprovalTimeline
   // component expects: `step`, `actionBy`, `actionAt` as a formatted
   // string. Matching the field names is what other detail pages were
   // missing earlier — keep this in sync if those change.
   const approvalEntries =
-    recon.approval?.history?.map((h: any) => ({
+    recon.approval?.history?.map((h: ApprovalHistoryEntry) => ({
       step: h.stepOrder,
       action: h.action,
       actionBy: h.actionByName ?? "User",
@@ -361,22 +378,23 @@ export default function ReconciliationDetailPage() {
                 </p>
               ) : (
                 (() => {
-                  const entries: any[] = [
+                  const approval = recon.approval!;
+                  const entries: TimelineEntry[] = [
                     {
                       step: 0,
                       action: "request",
                       title: "Requested",
-                      actionBy: recon.approval.requestedByName || "Requester",
+                      actionBy: approval.requestedByName || "Requester",
                       actionAt: new Date(
-                        recon.approval.requestedAt,
+                        approval.requestedAt ?? "",
                       ).toLocaleString(),
                     },
                   ];
 
-                  recon.approval.workflow.steps.forEach((s: any) => {
-                    const acted = [...recon.approval.history]
+                  (approval.workflow?.steps ?? []).forEach((s: ApprovalStep) => {
+                    const acted = [...(approval.history ?? [])]
                       .reverse()
-                      .find((h: any) => h.stepOrder === s.stepOrder);
+                      .find((h) => h.stepOrder === s.stepOrder);
                     const approverLabel = s.approverUserName
                       ? `${s.approverUserName} (${roleLabel(s.approverRoleId)})`
                       : roleLabel(s.approverRoleId);
@@ -386,15 +404,15 @@ export default function ReconciliationDetailPage() {
                         step: s.stepOrder,
                         action: acted.action,
                         actionBy: acted.actionByName || approverLabel,
-                        actionAt: new Date(acted.actionAt).toLocaleString(),
+                        actionAt: new Date(acted.actionAt ?? "").toLocaleString(),
                         comments: acted.comments || undefined,
                       });
                       return;
                     }
 
                     const isCurrent =
-                      recon.approval.status === "pending_approval" &&
-                      recon.approval.currentStepOrder === s.stepOrder;
+                      approval.status === "pending_approval" &&
+                      approval.currentStepOrder === s.stepOrder;
                     entries.push({
                       step: s.stepOrder,
                       action: isCurrent ? "current" : "upcoming",

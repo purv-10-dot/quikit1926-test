@@ -18,7 +18,14 @@ export async function getAuthContext(): Promise<AuthContext | null> {
   const session = await getServerSession();
   if (!session?.user) return null;
 
-  const user = session.user as any;
+  const user = session.user as unknown as {
+    id?: string;
+    tenantId?: string;
+    organizationId?: string;
+    role?: string;
+    email?: string | null;
+    projectIds?: string[];
+  };
   return {
     userId: user.id ?? "system",
     tenantId: user.tenantId ?? "default",
@@ -64,7 +71,7 @@ export function scopedWhere(ctx: AuthContext, extra?: Record<string, unknown>) {
  * Inject tenant scope + audit fields into create payload.
  */
 export function scopedCreate(ctx: AuthContext, data: Record<string, unknown>) {
-  const { tenantId, orgId, ...rest } = data as any;
+  const { tenantId, orgId, ...rest } = data;
   return {
     ...rest,
     tenantId: ctx.tenantId,

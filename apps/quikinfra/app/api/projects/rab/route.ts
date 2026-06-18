@@ -1,6 +1,8 @@
+import { toErrorMessage, getErrorCode } from "@/lib/api/errors";
 import { requireProjectsFinanceAction } from "@/lib/auth/requireProjectsFinanceAction";
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
+import { Prisma } from "@quikit/database";
 import { hasMatrixAction } from "@/lib/auth/context";
 import { err as envelopeErr } from "@/lib/http/envelope";
 import { generateDocNumber } from "@/lib/db/doc-number";
@@ -57,7 +59,7 @@ export async function GET(req: NextRequest) {
   }
 
   const p = parsePagination(req);
-  const rows = await (db as any).cnRunningAccountBill.findMany({
+  const rows = await db.cnRunningAccountBill.findMany({
     where,
     orderBy: { createdAt: "desc" },
     include: {
@@ -67,7 +69,7 @@ export async function GET(req: NextRequest) {
     ...(p.paginated ? { take: p.take, skip: p.skip } : {}),
   });
 
-  const data = rows.map((r: any) => ({
+  const data = rows.map((r) => ({
     id: r.id,
     rabNumber: r.rabNumber,
     projectId: r.projectId,
@@ -127,7 +129,7 @@ export async function POST(req: NextRequest) {
     if (body.woId) {
       woId = String(body.woId);
     } else if (body.woRef) {
-      const wo = await (db as any).cnWorkOrder.findFirst({
+      const wo = await db.cnWorkOrder.findFirst({
         where: {
           orgId: ctx.orgId,
           woNumber: String(body.woRef).trim(),
@@ -143,7 +145,7 @@ export async function POST(req: NextRequest) {
       }
       woId = wo.id;
     } else {
-      const wo = await (db as any).cnWorkOrder.findFirst({
+      const wo = await db.cnWorkOrder.findFirst({
         where: {
           orgId: ctx.orgId,
           projectId: body.projectId,
@@ -170,19 +172,19 @@ export async function POST(req: NextRequest) {
     // order. A line over its un-billed balance is rejected. No ledger is
     // touched here — billedQty only moves on final approval (Phase 5).
     const rawLines = Array.isArray(body.lines) ? body.lines : [];
-    const lineCreates: Array<Record<string, unknown>> = [];
+    const lineCreates: Prisma.CnRABLineCreateWithoutRabInput[] = [];
     let gross = 0;
 
     if (rawLines.length) {
       const leaves = await boqService.getLeafItems(ctx, body.projectId);
       const leafById = new Map(leaves.map((l) => [l.id, l] as const));
 
-      const woLines = await (db as any).cnWorkOrderLine.findMany({
+      const woLines = await db.cnWorkOrderLine.findMany({
         where: { woId },
         select: { id: true, boqItemId: true, uomId: true },
       });
-      const woLineByItem = new Map<string, any>(
-        (woLines as any[]).map((w) => [w.boqItemId, w]),
+      const woLineByItem = new Map(
+        woLines.map((w): [string, (typeof woLines)[number]] => [w.boqItemId, w]),
       );
 
       const errors: string[] = [];
@@ -278,7 +280,7 @@ export async function POST(req: NextRequest) {
 
     // Prior approved RABs against the same WO form the running total.
     // Computed live (not cached) so concurrency stays correct.
-    const priorAgg = await (db as any).cnRunningAccountBill.aggregate({
+    const priorAgg = await db.cnRunningAccountBill.aggregate({
       where: { orgId: ctx.orgId, woId, status: "approved" },
       _sum: { currentBillAmount: true },
     });
@@ -295,7 +297,7 @@ export async function POST(req: NextRequest) {
 
     const rabNumber = await generateDocNumber("rab", ctx.orgId);
 
-    const created = await (db as any).cnRunningAccountBill.create({
+    const created = await db.cnRunningAccountBill.create({
       data: {
         orgId: ctx.orgId,
         rabNumber,
@@ -367,20 +369,20 @@ export async function POST(req: NextRequest) {
       },
       { status: 201 },
     );
-  } catch (err: any) {
+  } catch (err: unknown) {
     if (err instanceof BOQError) {
       return NextResponse.json(
         { error: err.message, code: err.code },
         { status: err.httpStatus },
       );
     }
-    if (err?.code === "P2002") {
+    if (getErrorCode(err) === "P2002") {
       return NextResponse.json(
         { error: "A RAB with this number already exists." },
         { status: 409 },
       );
     }
-    if (err?.code === "P2003") {
+    if (getErrorCode(err) === "P2003") {
       return NextResponse.json(
         { error: "Referenced project / contractor / work order does not exist." },
         { status: 400 },
@@ -388,7 +390,7 @@ export async function POST(req: NextRequest) {
     }
     console.error("[rab.create] failed:", err);
     return NextResponse.json(
-      { error: err?.message ?? "Failed to create RAB" },
+      { error: toErrorMessage(err) ?? "Failed to create RAB" },
       { status: 500 },
     );
   }

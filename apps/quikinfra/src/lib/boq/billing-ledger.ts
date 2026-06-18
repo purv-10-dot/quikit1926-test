@@ -12,6 +12,7 @@
  *   - Direction: +1 for bill, -1 for reverse.
  */
 
+import type { Prisma } from "@quikit/database";
 import type { TenantContext } from "@/lib/auth/context";
 import { recordAudit } from "@/lib/workflow/audit";
 
@@ -38,7 +39,7 @@ export interface BillingPosting {
 }
 
 export async function postBillingEntry(
-  tx: any,
+  tx: Prisma.TransactionClient,
   ctx: TenantContext,
   p: BillingPosting
 ): Promise<{ ledgerId: string; cumulativeBilledQty: number }> {

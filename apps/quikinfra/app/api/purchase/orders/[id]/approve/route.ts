@@ -1,3 +1,4 @@
+import { toErrorMessage, getErrorCode } from "@/lib/api/errors";
 import { findCnUserById } from "@/lib/users/lookup";
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
@@ -42,7 +43,7 @@ export async function POST(
     return envelopeErr("FORBIDDEN", `Action "edit" not allowed for purchase.po`, 403);
   }
 
-  let body: any = {};
+  let body: { action?: string; comments?: string } = {};
   try {
     body = await req.json();
   } catch {
@@ -70,7 +71,7 @@ export async function POST(
     );
   }
 
-  const instance = await (db as any).cnApprovalInstance.findFirst({
+  const instance = await db.cnApprovalInstance.findFirst({
     where: { id: po.approvalId, orgId: ctx.orgId },
   });
   if (!instance) {
@@ -83,7 +84,7 @@ export async function POST(
     );
   }
 
-  const currentStep = await (db as any).cnApprovalWorkflowStep.findFirst({
+  const currentStep = await db.cnApprovalWorkflowStep.findFirst({
     where: {
       workflowId: instance.workflowId,
       stepOrder: instance.currentStepOrder,
@@ -103,11 +104,11 @@ export async function POST(
       { userId: ctx.userId, roleKey: ctx.roleKey, projectIds: ctx.projectIds },
       {
         approverUserId: currentStep.approverUserId,
-        approverUserIds: Array.isArray((currentStep as any).approverUserIds)
-          ? (currentStep as any).approverUserIds
+        approverUserIds: Array.isArray(currentStep.approverUserIds)
+          ? currentStep.approverUserIds
           : null,
         approverRoleId: currentStep.approverRoleId,
-      } as any,
+      },
       po.projectId ?? null,
     )
   ) {
@@ -130,7 +131,7 @@ export async function POST(
     );
   }
 
-  const nextStep = await (db as any).cnApprovalWorkflowStep.findFirst({
+  const nextStep = await db.cnApprovalWorkflowStep.findFirst({
     where: {
       workflowId: instance.workflowId,
       stepOrder: { gt: instance.currentStepOrder },
@@ -141,7 +142,7 @@ export async function POST(
   let finalPOStatus: string | null = null;
   let isFinalApprove = false;
 
-  await db.$transaction(async (tx: any) => {
+  await db.$transaction(async (tx) => {
     await tx.cnApprovalHistory.create({
       data: {
         instanceId: instance.id,
@@ -198,37 +199,42 @@ export async function POST(
   let mailResult: Awaited<ReturnType<typeof sendPoEmailToVendor>> | null = null;
   if (isFinalApprove) {
     const updated = await findPOById(ctx.orgId, po.id);
-    try {
-      mailResult = await sendPoEmailToVendor(ctx.orgId, updated, {
-        emailHtmlBody: null,
-      });
-      console.log(
-        `[po:approve] mail to vendor for ${updated.poNumber}: ` +
-          `sent=${mailResult.sent} email=${mailResult.email ?? "(none)"}${
-            mailResult.skippedReason ? ` skipped="${mailResult.skippedReason}"` : ""
-          }${mailResult.error ? ` error="${mailResult.error}"` : ""}`,
-      );
-    } catch (e: any) {
-      console.warn(
-        `[po:approve] mailer threw for ${updated.poNumber}:`,
-        e?.message ?? e,
-      );
-    }
+    if (updated) {
+      try {
+        mailResult = await sendPoEmailToVendor(ctx.orgId, updated, {
+          emailHtmlBody: null,
+        });
+        console.log(
+          `[po:approve] mail to vendor for ${updated.poNumber}: ` +
+            `sent=${mailResult.sent} email=${mailResult.email ?? "(none)"}${
+              mailResult.skippedReason ? ` skipped="${mailResult.skippedReason}"` : ""
+            }${mailResult.error ? ` error="${mailResult.error}"` : ""}`,
+        );
+      } catch (e: unknown) {
+        console.warn(
+          `[po:approve] mailer threw for ${updated.poNumber}:`,
+          toErrorMessage(e),
+        );
+      }
 
-    if (mailResult?.sent) {
-      await (db as any).cnPurchaseOrder.update({
-        where: { id: po.id },
-        data: { status: "sent", updatedBy: ctx.userId },
-      });
-      finalPOStatus = "sent";
+      if (mailResult?.sent) {
+        await db.cnPurchaseOrder.update({
+          where: { id: po.id },
+          data: { status: "sent", updatedBy: ctx.userId },
+        });
+        finalPOStatus = "sent";
+      }
     }
   }
 
   const refreshed = await findPOById(ctx.orgId, po.id);
-  const refreshedInstance = await (db as any).cnApprovalInstance.findUnique({
+  const refreshedInstance = await db.cnApprovalInstance.findUnique({
     where: { id: instance.id },
   });
-  const totalSteps = await (db as any).cnApprovalWorkflowStep.count({
+  if (!refreshedInstance) {
+    return NextResponse.json({ error: "Approval instance not found" }, { status: 404 });
+  }
+  const totalSteps = await db.cnApprovalWorkflowStep.count({
     where: { workflowId: instance.workflowId },
   });
   return NextResponse.json({

@@ -28,12 +28,20 @@ export interface ImportIssue {
 }
 
 /**
+ * A single spreadsheet cell value as SheetJS emits it in `header: 1` mode —
+ * a string, number, boolean, Date (when `cellDates` is on), or null/blank.
+ * Never an object, so the adapters can read cells through the `cell-utils`
+ * helpers without an untyped escape hatch.
+ */
+export type SheetCell = string | number | boolean | Date | null;
+
+/**
  * Raw cell grid for a single workbook tab — what comes out of XLSX.utils
  * .sheet_to_json with `header: 1`. Adapter input.
  */
 export interface RawSheet {
   sheetName: string;
-  rows: any[][];           // each row = array of cell values, may have nulls
+  rows: SheetCell[][];     // each row = array of cell values, may have nulls
 }
 
 /**

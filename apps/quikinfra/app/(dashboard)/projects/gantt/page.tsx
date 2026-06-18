@@ -18,6 +18,14 @@ const MONTH_SHORT = [
 const ROW_H = 52;
 type Scale = "day" | "week" | "month";
 
+interface GanttWO {
+  id?: string; woNumber?: string; title?: string; contractorName?: string;
+  status?: string; progress?: number | string; progressPct?: number | string;
+  plannedStart?: string; plannedEnd?: string; startDate?: string; endDate?: string;
+  [key: string]: unknown;
+}
+type GanttWOEnriched = GanttWO & { _start: Date; _end: Date };
+
 function startOfDay(d: Date): Date {
   const out = new Date(d);
   out.setHours(0, 0, 0, 0);
@@ -34,7 +42,7 @@ export default function GanttPage() {
     projectId: selectedProject || undefined,
     status: "all",
   });
-  const workOrders: any[] = result?.data ?? [];
+  const workOrders = (result?.data ?? []) as unknown as GanttWO[];
 
   // Keep only WOs that actually have a valid date pair — otherwise the
   // time-axis math can't place them. Sort by start date so the rows read
@@ -54,8 +62,8 @@ export default function GanttPage() {
           ? null
           : { ...wo, _start: s, _end: e };
       })
-      .filter(Boolean)
-      .sort((a: any, b: any) => a._start.getTime() - b._start.getTime());
+      .filter((x): x is GanttWOEnriched => x !== null)
+      .sort((a, b) => a._start.getTime() - b._start.getTime());
   }, [workOrders]);
 
   return (
@@ -74,7 +82,7 @@ export default function GanttPage() {
             value={selectedProject}
             onChange={setSelectedProject}
             placeholder="Select Project..."
-            options={(projects?.data ?? []).map((p: any) => ({ value: p.id, label: p.name }))}
+            options={(projects?.data ?? []).map((p) => ({ value: p.id, label: p.name }))}
           />
         </div>
         {selectedProject && visibleWOs.length > 0 && (
@@ -163,7 +171,7 @@ function GanttBoard({
   workOrders,
   scale,
 }: {
-  workOrders: any[];
+  workOrders: GanttWOEnriched[];
   scale: Scale;
 }) {
   // Domain = earliest start to latest end, padded both sides for breathing

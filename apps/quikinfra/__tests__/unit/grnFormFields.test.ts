@@ -1,7 +1,7 @@
 import { describe, it, expect } from "vitest";
 import { buildGrnFields } from "@/lib/grn-form-fields";
 
-const poRefField = { key: "poId", label: "PO Reference", type: "select" };
+const poRefField = { key: "poId", label: "PO Reference", type: "select" as const };
 
 function build(extra: Record<string, unknown> = {}) {
   return buildGrnFields({

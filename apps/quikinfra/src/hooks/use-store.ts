@@ -4,6 +4,15 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { fetchJson, mutateJson } from "@/lib/react-query/fetch-json";
 import { refreshListQueries } from "@/lib/react-query/list-cache";
 import { entityMeta } from "@/lib/toast";
+import type { MaterialIssue } from "@/lib/store/material-issue-repository";
+import type { GatePass } from "@/lib/store/gate-pass-repository";
+import type { GoodReturn } from "@/lib/store/good-return-repository";
+import type { StockTransfer } from "@/lib/store/stock-transfer-repository";
+import type { GatePassDetail } from "@/lib/store/gate-pass-detail";
+import type { GoodReturnDetail } from "@/lib/store/good-return-detail";
+import type { StockTransferDetail } from "@/lib/store/stock-transfer-detail";
+import type { IssueDetail } from "@/lib/store/material-issue-detail";
+import type { ReconciliationDetail } from "@/lib/store/stock-reconciliation-detail";
 
 const fetchApi = fetchJson;
 const mutateApi = mutateJson;
@@ -18,7 +27,11 @@ export function useStockRegister(params?: { projectId?: string; locationId?: str
 
   return useQuery({
     queryKey: ["stock-register", query],
-    queryFn: () => fetchApi<{ data: any[]; total: number; summary: any }>(`/api/store/stock-register${query ? `?${query}` : ""}`),
+    queryFn: () => fetchApi<{
+      data: unknown[];
+      total: number;
+      summary: { totalItems?: number; totalValue?: number; onOrderValue?: number; lowStockCount?: number };
+    }>(`/api/store/stock-register${query ? `?${query}` : ""}`),
   });
 }
 
@@ -29,14 +42,14 @@ export function useMaterialIssues(params?: { status?: string }) {
 
   return useQuery({
     queryKey: ["material-issues", query],
-    queryFn: () => fetchApi<{ data: any[] }>(`/api/store/issues${query ? `?${query}` : ""}`),
+    queryFn: () => fetchApi<{ data: MaterialIssue[] }>(`/api/store/issues${query ? `?${query}` : ""}`),
   });
 }
 
 export function useCreateMaterialIssue() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (data: any) => mutateApi("/api/store/issues", "POST", data),
+    mutationFn: (data: unknown) => mutateApi("/api/store/issues", "POST", data),
     onSuccess: async () => {
       await refreshListQueries(qc, "material-issues");
       await refreshListQueries(qc, "stock-register");
@@ -53,7 +66,7 @@ export function useCreateMaterialIssue() {
 export function useMaterialIssue(id: string | null | undefined) {
   return useQuery({
     queryKey: ["material-issue", id],
-    queryFn: () => fetchApi<any>(`/api/store/issues/${id}`),
+    queryFn: () => fetchApi<IssueDetail>(`/api/store/issues/${id}`),
     enabled: !!id,
   });
 }
@@ -61,9 +74,9 @@ export function useMaterialIssue(id: string | null | undefined) {
 export function useUpdateMaterialIssue() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: ({ id, ...data }: any) =>
+    mutationFn: ({ id, ...data }: { id: string } & Record<string, unknown>) =>
       mutateApi(`/api/store/issues/${id}`, "PATCH", data),
-    onSuccess: async (data, variables: any) => {
+    onSuccess: async (data, variables) => {
       await refreshListQueries(qc, "material-issues", {
         updatedRow: data,
         id: variables?.id,
@@ -85,14 +98,14 @@ export function useGatePasses(params?: { status?: string; type?: string; project
 
   return useQuery({
     queryKey: ["gate-passes", query],
-    queryFn: () => fetchApi<{ data: any[]; total: number }>(`/api/store/gate-passes${query ? `?${query}` : ""}`),
+    queryFn: () => fetchApi<{ data: GatePass[]; total: number }>(`/api/store/gate-passes${query ? `?${query}` : ""}`),
   });
 }
 
 export function useCreateGatePass() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (data: any) => mutateApi("/api/store/gate-passes", "POST", data),
+    mutationFn: (data: unknown) => mutateApi("/api/store/gate-passes", "POST", data),
     onSuccess: async () => { await refreshListQueries(qc, "gate-passes"); },
     meta: entityMeta("create", "Gate pass"),
   });
@@ -106,7 +119,7 @@ export function useCreateGatePass() {
 export function useGatePass(id: string | null | undefined) {
   return useQuery({
     queryKey: ["gate-pass", id],
-    queryFn: () => fetchApi<any>(`/api/store/gate-passes/${id}`),
+    queryFn: () => fetchApi<GatePassDetail>(`/api/store/gate-passes/${id}`),
     enabled: !!id,
   });
 }
@@ -121,14 +134,14 @@ export function useGoodReturns(params?: { status?: string; projectId?: string })
 
   return useQuery({
     queryKey: ["good-returns", query],
-    queryFn: () => fetchApi<{ data: any[]; total: number }>(`/api/store/good-returns${query ? `?${query}` : ""}`),
+    queryFn: () => fetchApi<{ data: GoodReturn[]; total: number }>(`/api/store/good-returns${query ? `?${query}` : ""}`),
   });
 }
 
 export function useCreateGoodReturn() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (data: any) => mutateApi("/api/store/good-returns", "POST", data),
+    mutationFn: (data: unknown) => mutateApi("/api/store/good-returns", "POST", data),
     onSuccess: async () => {
       await refreshListQueries(qc, "good-returns");
       await refreshListQueries(qc, "stock-register");
@@ -145,7 +158,7 @@ export function useCreateGoodReturn() {
 export function useGoodReturn(id: string | null | undefined) {
   return useQuery({
     queryKey: ["good-return", id],
-    queryFn: () => fetchApi<any>(`/api/store/good-returns/${id}`),
+    queryFn: () => fetchApi<GoodReturnDetail>(`/api/store/good-returns/${id}`),
     enabled: !!id,
   });
 }
@@ -160,14 +173,14 @@ export function useStockTransfers(params?: { status?: string; projectId?: string
 
   return useQuery({
     queryKey: ["stock-transfers", query],
-    queryFn: () => fetchApi<{ data: any[]; total: number }>(`/api/store/transfers${query ? `?${query}` : ""}`),
+    queryFn: () => fetchApi<{ data: StockTransfer[]; total: number }>(`/api/store/transfers${query ? `?${query}` : ""}`),
   });
 }
 
 export function useCreateStockTransfer() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (data: any) => mutateApi("/api/store/transfers", "POST", data),
+    mutationFn: (data: unknown) => mutateApi("/api/store/transfers", "POST", data),
     onSuccess: async () => {
       await refreshListQueries(qc, "stock-transfers");
       await refreshListQueries(qc, "stock-register");
@@ -184,7 +197,7 @@ export function useCreateStockTransfer() {
 export function useStockTransfer(id: string | null | undefined) {
   return useQuery({
     queryKey: ["stock-transfer", id],
-    queryFn: () => fetchApi<any>(`/api/store/transfers/${id}`),
+    queryFn: () => fetchApi<StockTransferDetail>(`/api/store/transfers/${id}`),
     enabled: !!id,
   });
 }
@@ -199,14 +212,14 @@ export function useStockReconciliations(params?: { status?: string; projectId?: 
 
   return useQuery({
     queryKey: ["stock-reconciliations", query],
-    queryFn: () => fetchApi<{ data: any[]; total: number }>(`/api/store/reconciliations${query ? `?${query}` : ""}`),
+    queryFn: () => fetchApi<{ data: unknown[]; total: number }>(`/api/store/reconciliations${query ? `?${query}` : ""}`),
   });
 }
 
 export function useStockReconciliation(id: string | null | undefined) {
   return useQuery({
     queryKey: ["stock-reconciliation", id],
-    queryFn: () => fetchApi<any>(`/api/store/reconciliations/${id}`),
+    queryFn: () => fetchApi<ReconciliationDetail>(`/api/store/reconciliations/${id}`),
     enabled: !!id,
   });
 }
@@ -247,7 +260,7 @@ export function useApproveStockReconciliation() {
 export function useCreateStockReconciliation() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (data: any) => mutateApi("/api/store/reconciliations", "POST", data),
+    mutationFn: (data: unknown) => mutateApi("/api/store/reconciliations", "POST", data),
     onSuccess: async () => {
       await refreshListQueries(qc, "stock-reconciliations");
       await refreshListQueries(qc, "stock-register");
@@ -268,14 +281,14 @@ export function useDieselLogs(params?: { projectId?: string; machineryId?: strin
 
   return useQuery({
     queryKey: ["diesel-logs", query],
-    queryFn: () => fetchApi<{ data: any[]; total: number }>(`/api/store/diesel-logs${query ? `?${query}` : ""}`),
+    queryFn: () => fetchApi<{ data: unknown[]; total: number }>(`/api/store/diesel-logs${query ? `?${query}` : ""}`),
   });
 }
 
 export function useCreateDieselLog() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (data: any) => mutateApi("/api/store/diesel-logs", "POST", data),
+    mutationFn: (data: unknown) => mutateApi("/api/store/diesel-logs", "POST", data),
     onSuccess: async () => { await refreshListQueries(qc, "diesel-logs"); },
     meta: entityMeta("create", "Diesel log"),
   });

@@ -84,7 +84,7 @@ export async function aggregateFromDpr(
   to: Date,
 ): Promise<FromDprResult> {
   // 1. Approved DPRs in the period, with their work items.
-  const dprs = await (db as any).cnDailyProgressReport.findMany({
+  const dprs = await db.cnDailyProgressReport.findMany({
     where: {
       orgId: ctx.orgId,
       projectId,
@@ -113,7 +113,7 @@ export async function aggregateFromDpr(
 
   // 2. Aggregate todayQty by BOQ item + track which DPRs contributed.
   const byItem = new Map<string, ItemAgg>();
-  for (const dpr of dprs as any[]) {
+  for (const dpr of dprs) {
     for (const wi of dpr.workItems ?? []) {
       const qty = Number(wi.todayQty?.toString() ?? "0");
       if (qty <= 0) continue;
@@ -179,7 +179,7 @@ export async function aggregateFromDpr(
   }
 
   // Only list DPRs that actually contributed a proposed (non-zero) line.
-  const sources: RABDprSource[] = (dprs as any[])
+  const sources: RABDprSource[] = dprs
     .filter((d) => contributingDprIds.has(d.id))
     .map((d) => ({
       id: d.id,

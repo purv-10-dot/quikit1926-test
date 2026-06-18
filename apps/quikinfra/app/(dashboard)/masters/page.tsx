@@ -8,7 +8,7 @@ import { useRouter } from "next/navigation";
 import { useQuery } from "@tanstack/react-query";
 import {
   FolderKanban, Package, Boxes, Truck, HardHat, Building2,
-  MapPin, Calculator, Receipt, CreditCard, Landmark,
+  MapPin, Calculator, Receipt, CreditCard,
   Users, ListTodo, BarChart3, Hammer, Globe, CalendarCheck, FileText,
   ArrowUpRight,
 } from "lucide-react";
@@ -25,7 +25,6 @@ const MASTERS = [
   { key: "uom",            label: "UOM",               href: "/masters/uom",              icon: Calculator },
   { key: "gst",            label: "GST Codes",         href: "/masters/gst",              icon: Receipt },
   { key: "tds",            label: "TDS Codes",         href: "/masters/tds",              icon: CreditCard },
-  { key: "banks",          label: "Banks",             href: "/masters/banks",            icon: Landmark },
   { key: "departments",    label: "Departments",       href: "/masters/departments",      icon: Users },
   { key: "workCategories", label: "Work Categories",   href: "/masters/work-categories",  icon: ListTodo },
   { key: "costCenters",    label: "Cost Centers",      href: "/masters/cost-centers",     icon: BarChart3 },

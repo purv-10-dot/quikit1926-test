@@ -26,6 +26,7 @@
  *                        defaults to `${cwd}/.data/outbox`
  */
 
+import { toErrorMessage, getErrorCode } from "@/lib/api/errors";
 import * as fs from "fs";
 import * as path from "path";
 import nodemailer, { type Transporter } from "nodemailer";
@@ -342,9 +343,9 @@ const fileOutboxTransport: Mailer = {
       }
 
       return { success: true, messageId, outboxPath: filePath };
-    } catch (e: any) {
+    } catch (e: unknown) {
       console.warn(`[mailer] file-outbox write failed:`, e);
-      return { success: false, messageId, error: e?.message ?? "unknown" };
+      return { success: false, messageId, error: toErrorMessage(e, "unknown") };
     }
   },
 };
@@ -417,16 +418,17 @@ const smtpTransport: Mailer = {
         })),
       });
       return { success: true, messageId: info.messageId ?? randomMessageId() };
-    } catch (e: any) {
+    } catch (e: unknown) {
       // Log EVERY property nodemailer attaches to the error — M365 /
       // Gmail / Zoho all encode the real reason in one of `code`,
       // `command`, `response`, or `responseCode`.
+      const smtp = e as { code?: string; command?: string; response?: string; responseCode?: number };
       console.warn(`[mailer:smtp] send failed to ${to} subject="${input.subject}":`, {
-        code: e?.code,
-        command: e?.command,
-        response: e?.response,
-        responseCode: e?.responseCode,
-        message: e?.message,
+        code: smtp.code,
+        command: smtp.command,
+        response: smtp.response,
+        responseCode: smtp.responseCode,
+        message: toErrorMessage(e),
       });
 
       // Dead-letter: write the rendered email to the outbox so the
@@ -444,7 +446,7 @@ const smtpTransport: Mailer = {
         success: false,
         messageId: randomMessageId(),
         error:
-          `${e?.code ? e.code + ": " : ""}${e?.response ?? e?.message ?? "SMTP send failed"}`,
+          `${smtp.code ? smtp.code + ": " : ""}${smtp.response ?? toErrorMessage(e, "SMTP send failed")}`,
         outboxPath: deadLetterPath,
       };
     }

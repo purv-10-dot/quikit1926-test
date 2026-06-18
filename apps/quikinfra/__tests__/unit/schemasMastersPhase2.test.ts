@@ -1,6 +1,5 @@
 import { describe, it, expect } from "vitest";
 import {
-  bankCreateSchema,
   departmentCreateSchema,
   locationCreateSchema,
   gstCodeCreateSchema,
@@ -11,21 +10,6 @@ import {
   machineryCreateSchema,
   assetCreateSchema,
 } from "@/lib/schemas/masters-phase2";
-
-describe("bankCreateSchema", () => {
-  const valid = { companyId: "c1", bankName: "SBI", accountNo: "12345", ifscCode: "SBIN0001234" };
-  it("parses valid + defaults accountType to current", () => {
-    const r = bankCreateSchema.parse(valid);
-    expect(r.accountType).toBe("current");
-    expect(r.status).toBe("active");
-  });
-  it("requires ifscCode of exactly 11 chars", () => {
-    expect(bankCreateSchema.safeParse({ ...valid, ifscCode: "SBIN001" }).success).toBe(false);
-  });
-  it("requires companyId", () => {
-    expect(bankCreateSchema.safeParse({ ...valid, companyId: "" }).success).toBe(false);
-  });
-});
 
 describe("departmentCreateSchema", () => {
   it("requires code+name", () => {

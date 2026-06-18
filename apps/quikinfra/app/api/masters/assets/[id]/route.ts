@@ -1,3 +1,4 @@
+import { toErrorMessage, getErrorCode } from "@/lib/api/errors";
 import { NextRequest, NextResponse } from "next/server";
 import { requireMastersAction } from "@/lib/auth/requireMastersAction";
 import { hasMatrixAction } from "@/lib/auth/context";
@@ -34,12 +35,12 @@ async function handleUpdate(req: NextRequest, id: string) {
     const next = await updateAsset(ctx.orgId, id, { ...safe, updatedBy: ctx.userId });
     if (!next) return NextResponse.json({ error: "Asset not found" }, { status: 404 });
     return NextResponse.json(next);
-  } catch (err: any) {
-    if (err?.code === "P2002") {
+  } catch (err: unknown) {
+    if (getErrorCode(err) === "P2002") {
       return NextResponse.json({ error: "An asset with this code already exists" }, { status: 409 });
     }
     console.error("[assets.update] failed:", err);
-    return NextResponse.json({ error: err?.message ?? "Failed to update asset" }, { status: 500 });
+    return NextResponse.json({ error: toErrorMessage(err, "Failed to update asset") }, { status: 500 });
   }
 }
 

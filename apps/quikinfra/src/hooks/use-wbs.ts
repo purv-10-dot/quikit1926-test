@@ -10,15 +10,17 @@ async function fetchApi<T>(url: string): Promise<T> {
   return res.json();
 }
 
-function extractErrorMessage(payload: any, fallback: string): string {
+function extractErrorMessage(payload: unknown, fallback: string): string {
   if (!payload) return fallback;
   if (typeof payload === "string") return payload;
-  if (typeof payload.error === "string") return payload.error;
-  if (payload.error && typeof payload.error === "object") {
-    if (typeof payload.error.message === "string") return payload.error.message;
-    if (typeof payload.error.code === "string") return payload.error.code;
+  const p = payload as { error?: unknown; message?: unknown };
+  if (typeof p.error === "string") return p.error;
+  if (p.error && typeof p.error === "object") {
+    const e = p.error as { message?: unknown; code?: unknown };
+    if (typeof e.message === "string") return e.message;
+    if (typeof e.code === "string") return e.code;
   }
-  if (typeof payload.message === "string") return payload.message;
+  if (typeof p.message === "string") return p.message;
   return fallback;
 }
 

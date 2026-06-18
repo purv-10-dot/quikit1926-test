@@ -17,7 +17,7 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
     return envelopeErr("FORBIDDEN", `Action "edit" not allowed for store.asset_mgmt`, 403);
   }
   const issuances = getIssuances();
-  const idx = issuances.findIndex((i: any) => i.id === params.id);
+  const idx = issuances.findIndex((i) => i.id === params.id);
   if (idx < 0) return NextResponse.json({ error: "Issuance not found" }, { status: 404 });
   const body = await req.json().catch(() => ({}));
   const prev = issuances[idx];
@@ -49,7 +49,7 @@ export async function DELETE(_req: NextRequest, { params }: { params: { id: stri
     return envelopeErr("FORBIDDEN", `Action "delete" not allowed for store.asset_mgmt`, 403);
   }
   const issuances = getIssuances();
-  const idx = issuances.findIndex((i: any) => i.id === params.id);
+  const idx = issuances.findIndex((i) => i.id === params.id);
   if (idx < 0) return NextResponse.json({ error: "Issuance not found" }, { status: 404 });
   issuances.splice(idx, 1);
   return NextResponse.json({ success: true });

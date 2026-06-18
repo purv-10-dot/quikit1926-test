@@ -9,7 +9,7 @@ const db = mockDb as any;
 const MODELS = [
   "cnProject", "cnItem", "cnItemGroup", "cnVendor", "cnContractor",
   "cnCustomer", "cnLocation", "cnUOM", "cnGSTCode", "cnTDSCode",
-  "cnBank", "cnDepartment", "cnWorkCategory", "cnCostCenter",
+  "cnDepartment", "cnWorkCategory", "cnCostCenter",
   "cnMachinery", "cnCompany", "cnFinancialYear", "cnTermsCondition",
 ];
 

@@ -28,7 +28,7 @@ export async function POST(
     return envelopeErr("FORBIDDEN", `Action "edit" not allowed for store.good_return`, 403);
   }
 
-  let body: any = {};
+  let body: { dispatchedAt?: string; remarks?: string; vehicleNo?: string } = {};
   try {
     body = await req.json();
   } catch {

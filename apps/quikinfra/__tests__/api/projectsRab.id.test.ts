@@ -105,6 +105,9 @@ beforeEach(() => {
   db.cnBOQItemV2.findMany.mockResolvedValue([]);
   db.cnUOM.findMany.mockResolvedValue([]);
   db.user.findMany.mockResolvedValue([]);
+  // PDF preview route resolves the issuing company + terms master.
+  db.cnCompany.findFirst.mockResolvedValue(null);
+  db.cnTermsCondition.findFirst.mockResolvedValue(null);
 });
 
 // ═══════════════════════════════════════════════

@@ -17,8 +17,8 @@
  * the Default tab and only override the modules that need different
  * routing per project.
  *
- * Tabs are decorated with a small "n" badge when a project has any
- * overrides — at-a-glance signal of which projects diverge from Default
+ * Tabs are decorated with a small "n" badge when a project carries one
+ * or more overrides — at-a-glance signal of which projects diverge from Default
  * without having to click into each tab.
  */
 
@@ -136,15 +136,29 @@ interface DrawerState {
   replaceIds?: string[];
 }
 
+interface WorkflowStep {
+  stepOrder?: number | string;
+  approverRole?: string; approverRoleId?: string;
+  approverUserIds?: string[]; approverUserId?: string;
+}
+interface WorkflowRow {
+  id: string; name?: string; isActive?: boolean;
+  projectId?: string | null; entityType?: string;
+  steps?: WorkflowStep[];
+}
+interface ProjectLite {
+  id: string; code?: string; name?: string; siteName?: string;
+}
+
 export default function WorkflowsPage() {
   // Fetch every workflow in one shot — page is small enough that
   // client-side bucketing by scope is simpler than a query per tab and
   // we get instant tab-switch with no spinner.
   const { data: result, isLoading: workflowsLoading } = useWorkflows();
-  const workflows: any[] = result?.data ?? [];
+  const workflows = (result?.data ?? []) as unknown as WorkflowRow[];
 
   const { data: projectsResult, isLoading: projectsLoading } = useProjects({ status: "active" });
-  const projects: any[] = projectsResult?.data ?? [];
+  const projects = (projectsResult?.data ?? []) as unknown as ProjectLite[];
 
   const isPageLoading = workflowsLoading || projectsLoading;
 
@@ -201,7 +215,7 @@ export default function WorkflowsPage() {
   // the runtime resolver no longer falls back to them. Key shape:
   //   "<projectId>::<entityType>"
   const workflowByScopeAndEntity = useMemo(() => {
-    const map = new Map<string, any>();
+    const map = new Map<string, WorkflowRow>();
     for (const wf of workflows) {
       if (!wf.projectId) continue;
       map.set(`${wf.projectId}::${wf.entityType}`, wf);
@@ -276,7 +290,7 @@ export default function WorkflowsPage() {
         // Hydrate the approver pool — prefer the new array column, fall
         // back to the legacy single id so workflows saved before the
         // multi-approver migration still round-trip into the drawer.
-        steps: (existing?.steps ?? []).map((s: any) => {
+        steps: (existing?.steps ?? []).map((s) => {
           const ids: string[] = Array.isArray(s.approverUserIds) && s.approverUserIds.length
             ? s.approverUserIds
             : s.approverUserId
@@ -604,7 +618,7 @@ function ProjectScopeDropdown({
 }: {
   scope: Scope;
   onChange: (next: Scope) => void;
-  projects: any[];
+  projects: ProjectLite[];
   overrideCountByProject: Map<string, number>;
   /**
    * When true, drops the trigger's own `bg-white rounded-xl border`
@@ -646,7 +660,7 @@ function ProjectScopeDropdown({
 
   const enriched = useMemo(
     () =>
-      projects.map((p: any) => ({
+      projects.map((p) => ({
         id: p.id as string,
         label: (p.siteName ?? p.name ?? p.code ?? p.id) as string,
         code: (p.code ?? "") as string,

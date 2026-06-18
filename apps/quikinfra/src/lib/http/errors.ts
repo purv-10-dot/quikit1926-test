@@ -65,7 +65,7 @@ export class DomainError extends Error {
 export function isDomainError(err: unknown): err is DomainError {
   if (err instanceof DomainError) return true;
   if (!err || typeof err !== "object") return false;
-  const e = err as any;
+  const e = err as { code?: unknown; httpStatus?: unknown; message?: unknown };
   return typeof e.code === "string" && typeof e.httpStatus === "number" && typeof e.message === "string";
 }
 

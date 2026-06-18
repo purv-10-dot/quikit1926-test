@@ -1,5 +1,6 @@
 "use client";
 
+import { toErrorMessage } from "@/lib/api/errors";
 import { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Eye, Send } from "lucide-react";
@@ -25,6 +26,12 @@ const STATUS_TABS: TabSpec[] = [
   { key: "approved_indent_required", label: "Indent Required" },
   { key: "closed", label: "Closed" },
 ];
+
+interface PrRow {
+  id: string; prNumber?: string; status?: string; createdBy?: string;
+  estimatedTotal?: number | string; lineCount?: number;
+  [key: string]: unknown;
+}
 
 export default function PurchaseRequisitionsPage() {
   const router = useRouter();
@@ -56,13 +63,13 @@ export default function PurchaseRequisitionsPage() {
     try {
       await submitMutation.mutateAsync(submitTarget.id);
       setSubmitTarget(null);
-    } catch (err: any) {
+    } catch (err: unknown) {
       // Keep the dialog open so the user can read the failure reason.
-      setSubmitError(err?.message ?? "Failed to submit PR");
+      setSubmitError(toErrorMessage(err, "Failed to submit PR"));
     }
   };
 
-  const columns: ColDef<any>[] = [
+  const columns: ColDef<PrRow>[] = [
     {
       key: "prNumber", label: "PR Number", sortable: true, searchable: true,
       render: (row) => (
@@ -122,11 +129,9 @@ export default function PurchaseRequisitionsPage() {
         <DataTable
           id="purchase-requisitions"
           columns={columns}
-          data={data}
+          data={data as unknown as PrRow[]}
           onAdd={canAdd ? () => setDrawerOpen(true) : undefined}
           addLabel="New PR"
-          defaultSort="requestDate"
-          defaultSortDir="desc"
           historyEntityType="mr,purchase_requisitions"
           emptyTitle="No purchase requisitions yet"
           emptyHint="Raise a PR to request materials needed for site operations. Once submitted, it will flow through the approval workflow."

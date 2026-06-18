@@ -35,7 +35,7 @@ export async function POST(
     return envelopeErr("FORBIDDEN", `Action "edit" not allowed for pm.dpr`, 403);
   }
 
-  const rab = await (db as any).cnRunningAccountBill.findFirst({
+  const rab = await db.cnRunningAccountBill.findFirst({
     where: { id: params.id, orgId: ctx.orgId },
     select: {
       id: true,
@@ -89,7 +89,7 @@ export async function POST(
     throw err;
   }
 
-  const updated = await (db as any).cnRunningAccountBill.update({
+  const updated = await db.cnRunningAccountBill.update({
     where: { id: rab.id },
     data: {
       status: "submitted",

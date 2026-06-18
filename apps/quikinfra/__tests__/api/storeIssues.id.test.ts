@@ -5,7 +5,6 @@ import { NextRequest } from "next/server";
 import { GET, PUT, DELETE } from "@/app/api/store/issues/[id]/route";
 import { POST as SUBMIT } from "@/app/api/store/issues/[id]/submit/route";
 import { POST as APPROVE } from "@/app/api/store/issues/[id]/approve/route";
-import { POST as LEGACY_APPROVE } from "@/app/api/store/issue/[id]/approve/route";
 
 const db = mockDb as any;
 const ID = "mi1";
@@ -231,62 +230,92 @@ describe("POST /api/store/issues/[id]/approve", () => {
     expect((await res.json()).error).toMatch(/not submitted through a workflow/i);
   });
 
-  it("approves the final step and flips the issue to approved", async () => {
+  // Shared setup for a single-step (final) approval of a pending issue with one
+  // line of 5 KG. `over` lets each test tweak the stock-on-hand / uom mocks.
+  function setupFinalApprove(over: {
+    materials?: unknown[];
+    locationId?: string | null;
+    uoms?: Array<{ id: string; code: string }>;
+    balance?: { quantity: number; avgRate: number } | null;
+    nextStep?: unknown;
+  } = {}) {
     setContext(makeAdminCtx({ roleKey: "super_admin" }));
-    db.$queryRaw.mockResolvedValue([miRow({ approvalId: "inst1", status: "pending_approval" })]);
+    db.$queryRaw.mockResolvedValue([
+      miRow({
+        approvalId: "inst1",
+        status: "pending_approval",
+        locationId: over.locationId === undefined ? "loc1" : over.locationId,
+        materials:
+          over.materials ?? [{ itemId: "i1", uomCode: "KG", quantity: 5, unitRate: 10 }],
+      }),
+    ]);
     db.cnApprovalInstance.findFirst.mockResolvedValue({
-      id: "inst1",
-      orgId: TEST_TENANT,
-      workflowId: "wf1",
-      status: "pending_approval",
-      currentStepOrder: 1,
+      id: "inst1", orgId: TEST_TENANT, workflowId: "wf1", status: "pending_approval", currentStepOrder: 1,
     });
     db.cnApprovalWorkflowStep.findFirst
-      .mockResolvedValueOnce({ stepOrder: 1, approverUserId: null, approverRoleId: "SITE_ADMIN" }) // current step
-      .mockResolvedValueOnce(null); // no next step → final
+      .mockResolvedValueOnce({ stepOrder: 1, approverUserId: null, approverRoleId: "SITE_ADMIN" })
+      .mockResolvedValueOnce(over.nextStep ?? null); // null → final step
+    db.cnUOM.findMany.mockResolvedValue(over.uoms ?? [{ id: "uom_kg", code: "KG" }]);
+    db.cnStockBalance.findUnique.mockResolvedValue(
+      over.balance === undefined ? { quantity: 100, avgRate: 10 } : over.balance,
+    );
+    db.cnStockLedger.create.mockResolvedValue({ id: "led1" });
+    db.cnStockBalance.upsert.mockResolvedValue({});
     db.$transaction.mockImplementation(async (cb: any) => cb(db));
-    db.cnApprovalInstance.findUnique.mockResolvedValue({
-      id: "inst1",
-      status: "approved",
-      currentStepOrder: 1,
-    });
+    db.cnApprovalInstance.findUnique.mockResolvedValue({ id: "inst1", status: "approved", currentStepOrder: 1 });
     db.cnApprovalWorkflowStep.count.mockResolvedValue(1);
+  }
+
+  it("final approval deducts stock: writes a ledger row AND decrements the balance (the fix)", async () => {
+    setupFinalApprove();
     const res = await APPROVE(req("POST", { action: "approve" }), params);
     expect(res.status).toBe(200);
     const body = await res.json();
-    expect(body.ok).toBe(true);
-    expect(body.action).toBe("approve");
     expect(body.approval.status).toBe("approved");
-  });
-});
 
-// ═══════════════════════════════════════════════
-// POST /api/store/issue/[id]/approve  (LEGACY — handleApprovalAction + stock outward)
-// gate: construction.issue.approve + matrix store.issue:edit
-// ═══════════════════════════════════════════════
-
-describe("POST /api/store/issue/[id]/approve (legacy)", () => {
-  it("returns 401 when unauthenticated", async () => {
-    expect((await LEGACY_APPROVE(req("POST", { action: "approve" }), params)).status).toBe(401);
+    // (1) outward ledger row, with the uomCode "KG" resolved to its uomId.
+    const ledgerData = db.cnStockLedger.create.mock.calls[0][0].data;
+    expect(ledgerData.transactionType).toBe("issue");
+    expect(Number(ledgerData.qtyOut)).toBe(5);
+    expect(ledgerData.uomId).toBe("uom_kg");
+    // (2) THE FIX: balance cache decremented in the same txn (100 − 5 = 95).
+    expect(Number(db.cnStockBalance.upsert.mock.calls[0][0].update.quantity)).toBe(95);
   });
 
-  it("returns 403 when the user lacks construction.issue.approve", async () => {
-    setContext(makeUserCtx([]));
-    expect((await LEGACY_APPROVE(req("POST", { action: "approve" }), params)).status).toBe(403);
-  });
-
-  it("returns 404 when the issue does not exist (Prisma-model lookup)", async () => {
-    setContext(makeAdminCtx());
-    db.cnMaterialIssue.findFirst.mockResolvedValue(null);
-    const res = await LEGACY_APPROVE(req("POST", { action: "approve" }), params);
-    expect(res.status).toBe(404);
-  });
-
-  it("returns 400 when reject is missing comments", async () => {
-    setContext(makeAdminCtx());
-    const res = await LEGACY_APPROVE(req("POST", { action: "reject" }), params);
+  it("rejects final approval when stock is insufficient — rolls back, no status change", async () => {
+    setupFinalApprove({ balance: { quantity: 2, avgRate: 10 } }); // only 2 on hand, issuing 5
+    const res = await APPROVE(req("POST", { action: "approve" }), params);
     expect(res.status).toBe(400);
-    const body = await res.json();
-    expect(body.error?.message ?? body.error).toBeDefined();
+    expect((await res.json()).error).toMatch(/insufficient stock/i);
+    expect(db.$executeRaw).not.toHaveBeenCalled(); // patchMaterialIssueStatus never ran
+  });
+
+  it("rejects final approval when a unit code is unknown — posts nothing", async () => {
+    setupFinalApprove({
+      materials: [{ itemId: "i1", uomCode: "ZZ", quantity: 5, unitRate: 10 }],
+      uoms: [], // "ZZ" resolves to nothing
+    });
+    const res = await APPROVE(req("POST", { action: "approve" }), params);
+    expect(res.status).toBe(400);
+    expect((await res.json()).error).toMatch(/unrecognized unit code/i);
+    expect(db.cnStockLedger.create).not.toHaveBeenCalled();
+  });
+
+  it("rejects final approval when no store location is assigned", async () => {
+    setupFinalApprove({ locationId: null });
+    const res = await APPROVE(req("POST", { action: "approve" }), params);
+    expect(res.status).toBe(400);
+    expect((await res.json()).error).toMatch(/no store location/i);
+  });
+
+  it("intermediate approval advances the step WITHOUT deducting stock", async () => {
+    setupFinalApprove({ nextStep: { stepOrder: 2, approverUserId: null, approverRoleId: "PM" } });
+    db.cnApprovalInstance.findUnique.mockResolvedValue({ id: "inst1", status: "pending_approval", currentStepOrder: 2 });
+    db.cnApprovalWorkflowStep.count.mockResolvedValue(2);
+    const res = await APPROVE(req("POST", { action: "approve" }), params);
+    expect(res.status).toBe(200);
+    // Not the final step → stock must NOT move yet.
+    expect(db.cnStockLedger.create).not.toHaveBeenCalled();
+    expect(db.cnStockBalance.upsert).not.toHaveBeenCalled();
   });
 });

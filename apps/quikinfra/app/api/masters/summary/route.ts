@@ -23,7 +23,6 @@ const MASTER_MODELS: Record<string, string> = {
   uom: "cnUOM",
   gst: "cnGSTCode",
   tds: "cnTDSCode",
-  banks: "cnBank",
   departments: "cnDepartment",
   workCategories: "cnWorkCategory",
   costCenters: "cnCostCenter",
@@ -33,14 +32,41 @@ const MASTER_MODELS: Record<string, string> = {
   terms: "cnTermsCondition",
 };
 
+type MasterCountWhere = { orgId: string; status?: { not: string } };
+
+/**
+ * Model-name → typed count thunk. Calls the real Prisma delegate so the
+ * model name and the `status` filter are compiler-checked — no string
+ * indexing of `db`, no casts. (All 18 masters carry a `status` column.)
+ */
+const COUNT_FINDERS: Record<string, (where: MasterCountWhere) => Promise<number>> = {
+  cnProject: (where) => db.cnProject.count({ where }),
+  cnItem: (where) => db.cnItem.count({ where }),
+  cnItemGroup: (where) => db.cnItemGroup.count({ where }),
+  cnVendor: (where) => db.cnVendor.count({ where }),
+  cnContractor: (where) => db.cnContractor.count({ where }),
+  cnCustomer: (where) => db.cnCustomer.count({ where }),
+  cnLocation: (where) => db.cnLocation.count({ where }),
+  cnUOM: (where) => db.cnUOM.count({ where }),
+  cnGSTCode: (where) => db.cnGSTCode.count({ where }),
+  cnTDSCode: (where) => db.cnTDSCode.count({ where }),
+  cnDepartment: (where) => db.cnDepartment.count({ where }),
+  cnWorkCategory: (where) => db.cnWorkCategory.count({ where }),
+  cnCostCenter: (where) => db.cnCostCenter.count({ where }),
+  cnMachinery: (where) => db.cnMachinery.count({ where }),
+  cnCompany: (where) => db.cnCompany.count({ where }),
+  cnFinancialYear: (where) => db.cnFinancialYear.count({ where }),
+  cnTermsCondition: (where) => db.cnTermsCondition.count({ where }),
+};
+
 async function countMaster(model: string, orgId: string): Promise<number> {
-  const m = (db as any)[model];
-  if (!m?.count) return 0;
+  const finder = COUNT_FINDERS[model];
+  if (!finder) return 0;
   try {
-    return await m.count({ where: { orgId, status: { not: "inactive" } } });
+    return await finder({ orgId, status: { not: "inactive" } });
   } catch {
     try {
-      return await m.count({ where: { orgId } });
+      return await finder({ orgId });
     } catch {
       return 0;
     }

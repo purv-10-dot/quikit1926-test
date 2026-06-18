@@ -15,7 +15,8 @@
  * used to prefill the auto-generated Material Issue request.
  */
 
-import { useMemo, useState } from "react";
+import { toErrorMessage } from "@/lib/api/errors";
+import { useMemo, useState, type ReactNode } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { Send, CheckCircle2, AlertTriangle, Warehouse } from "lucide-react";
 import {
@@ -27,9 +28,26 @@ import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { SelectInput } from "@/components/FormDrawer";
 import { usePurchaseRequisition, useSubmitPR } from "@/hooks/use-purchase";
 import { useLocations } from "@/hooks/use-masters";
-import { usePermissions } from "@/hooks/use-permissions";
+import { usePermissions, type MeResponse } from "@/hooks/use-permissions";
 import { USER_TYPE_CATALOG } from "@/lib/rbac/user-types";
 import { canActOnStep } from "@/lib/approvals/workflow-rbac";
+
+import type {
+  ApprovalStep,
+  ApprovalHistoryEntry,
+  ApprovalInfo,
+} from "@/lib/approvals/approval-info";
+import type { PrLine, PrDetail } from "@/lib/purchase/pr-detail";
+
+/** Matches PageShell's ApprovalTimeline entry shape. */
+interface TimelineEntry {
+  step: number;
+  action: string;
+  actionBy: string;
+  actionAt: string;
+  comments?: string;
+  title?: string;
+}
 
 /** Human-readable label for a userType key stored in workflow steps. */
 function roleLabel(key: string | null | undefined): string {
@@ -45,13 +63,13 @@ function roleLabel(key: string | null | undefined): string {
  * Rejected (red) when the flow ends, or the shared StatusChip for
  * draft / returned.
  */
-function PRStatusChip({ pr }: { pr: any }) {
+function PRStatusChip({ pr }: { pr: PrDetail }) {
   const approval = pr?.approval;
   const status = pr?.status;
 
   if (approval && approval.status === "pending_approval") {
     const step = approval.workflow?.steps?.find(
-      (s: any) => s.stepOrder === approval.currentStepOrder,
+      (s: ApprovalStep) => s.stepOrder === approval.currentStepOrder,
     );
     const approver = step
       ? step.approverUserName
@@ -85,7 +103,7 @@ function PRStatusChip({ pr }: { pr: any }) {
     );
   }
 
-  return <StatusChip status={status} />;
+  return <StatusChip status={status ?? ""} />;
 }
 
 /**
@@ -93,12 +111,15 @@ function PRStatusChip({ pr }: { pr: any }) {
  * used to render a "You already approved at step N" indicator in place
  * of the live action buttons for users who've moved past their step.
  */
-function priorActionByMe(me: any, pr: any): any | null {
+function priorActionByMe(
+  me: MeResponse | null | undefined,
+  pr: PrDetail | null | undefined,
+): ApprovalHistoryEntry | null {
   if (!me || !pr?.approval?.history) return null;
   return (
     [...pr.approval.history]
       .reverse()
-      .find((h: any) => h.actionById === me.userId) ?? null
+      .find((h) => h.actionById === me.userId) ?? null
   );
 }
 
@@ -107,11 +128,14 @@ function priorActionByMe(me: any, pr: any): any | null {
  * step. Mirrors the server-side canActOnStep exactly so the UI hides
  * the action bar unless the viewer is actually allowed to act.
  */
-function canActOnCurrentStep(me: any, pr: any): boolean {
+function canActOnCurrentStep(
+  me: MeResponse | null | undefined,
+  pr: PrDetail | null | undefined,
+): boolean {
   if (!me || !pr?.approval) return false;
   if (pr.approval.status !== "pending_approval") return false;
   const step = pr.approval.workflow?.steps?.find(
-    (s: any) => s.stepOrder === pr.approval.currentStepOrder,
+    (s: ApprovalStep) => s.stepOrder === pr.approval?.currentStepOrder,
   );
   if (!step) return false;
   return canActOnStep(
@@ -132,7 +156,7 @@ function canActOnCurrentStep(me: any, pr: any): boolean {
 }
 
 // Pull a quantity out of a line regardless of which writer produced it.
-function lineQty(line: any): number {
+function lineQty(line: PrLine): number {
   const raw =
     line?.quantity ??
     line?.qtyRequired ??
@@ -141,11 +165,11 @@ function lineQty(line: any): number {
     0;
   return parseFloat(String(raw)) || 0;
 }
-function lineRate(line: any): number {
+function lineRate(line: PrLine): number {
   const raw = line?.estimatedRate ?? line?.unitRate ?? line?.rate ?? 0;
   return parseFloat(String(raw)) || 0;
 }
-function lineAmount(line: any): number {
+function lineAmount(line: PrLine): number {
   const raw = line?.estimatedAmount ?? line?.amount ?? line?.totalAmount;
   if (raw !== undefined && raw !== null && String(raw).trim() !== "") {
     return parseFloat(String(raw)) || 0;
@@ -170,12 +194,12 @@ export default function PRDetailPage() {
   const [submitConfirmOpen, setSubmitConfirmOpen] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
 
-  const lines: any[] = useMemo(() => pr?.lines ?? [], [pr]);
+  const lines: PrLine[] = useMemo(() => pr?.lines ?? [], [pr]);
   const estimatedTotal = useMemo(() => {
     if (lines.length > 0) {
-      return lines.reduce((sum: number, l: any) => sum + lineAmount(l), 0);
+      return lines.reduce((sum: number, l: PrLine) => sum + lineAmount(l), 0);
     }
-    return parseFloat(pr?.estimatedTotal ?? "0") || 0;
+    return parseFloat(String(pr?.estimatedTotal ?? "0")) || 0;
   }, [lines, pr?.estimatedTotal]);
 
   // Per-project location list — only needed when approver must pick a
@@ -228,9 +252,9 @@ export default function PRDetailPage() {
     try {
       await submitMutation.mutateAsync(id);
       setSubmitConfirmOpen(false);
-    } catch (err: any) {
+    } catch (err: unknown) {
       // Keep the modal open so the user can read the failure reason.
-      setSubmitError(err?.message ?? "Failed to submit PR");
+      setSubmitError(toErrorMessage(err, "Failed to submit PR"));
     }
   };
 
@@ -286,7 +310,7 @@ export default function PRDetailPage() {
                 <ApprovalActionBar
                   entityType="mr"
                   entityId={id}
-                  currentStatus={pr.status}
+                  currentStatus={pr.status ?? undefined}
                   requiredPermission="purchase.mr.approve"
                   actionEndpoint={`/api/purchase/requisitions/${id}/approve`}
                   invalidateKeys={[
@@ -372,7 +396,7 @@ export default function PRDetailPage() {
                       </tr>
                     </thead>
                     <tbody>
-                      {lines.map((line: any, i: number) => {
+                      {lines.map((line: PrLine, i: number) => {
                         const qty = lineQty(line);
                         const rate = lineRate(line);
                         const amt = lineAmount(line);
@@ -522,7 +546,7 @@ export default function PRDetailPage() {
                         value={sourceLocationId}
                         onChange={setSourceLocationId}
                         placeholder="Select location…"
-                        options={locations.map((l: any) => ({ value: l.id, label: l.name }))}
+                        options={locations.map((l) => ({ value: l.id, label: l.name }))}
                       />
                       <p className="text-[10px] text-slate-500 mt-1.5">
                         Material Issue will be auto-created from this store on
@@ -548,14 +572,15 @@ export default function PRDetailPage() {
                 </p>
               ) : (
                 (() => {
+                  const approval = pr.approval!;
                   // First row: who submitted the PR.
-                  const entries: any[] = [
+                  const entries: TimelineEntry[] = [
                     {
                       step: 0,
                       action: "request",
                       title: "Requested",
-                      actionBy: pr.approval.requestedByName || "Requester",
-                      actionAt: new Date(pr.approval.requestedAt).toLocaleString(),
+                      actionBy: approval.requestedByName || "Requester",
+                      actionAt: new Date(approval.requestedAt ?? "").toLocaleString(),
                     },
                   ];
 
@@ -563,10 +588,10 @@ export default function PRDetailPage() {
                   // matching history row if the step is already completed,
                   // else render it as the current "Next up" pending row or
                   // an "Upcoming" row that comes later in the chain.
-                  pr.approval.workflow.steps.forEach((s: any) => {
-                    const acted = [...pr.approval.history]
+                  (approval.workflow?.steps ?? []).forEach((s: ApprovalStep) => {
+                    const acted = [...(approval.history ?? [])]
                       .reverse()
-                      .find((h: any) => h.stepOrder === s.stepOrder);
+                      .find((h) => h.stepOrder === s.stepOrder);
                     const approverLabel = s.approverUserName
                       ? `${s.approverUserName} (${roleLabel(s.approverRoleId)})`
                       : roleLabel(s.approverRoleId);
@@ -576,15 +601,15 @@ export default function PRDetailPage() {
                         step: s.stepOrder,
                         action: acted.action, // approve | reject | return
                         actionBy: acted.actionByName || approverLabel,
-                        actionAt: new Date(acted.actionAt).toLocaleString(),
+                        actionAt: new Date(acted.actionAt ?? "").toLocaleString(),
                         comments: acted.comments || undefined,
                       });
                       return;
                     }
 
                     const isCurrent =
-                      pr.approval.status === "pending_approval" &&
-                      pr.approval.currentStepOrder === s.stepOrder;
+                      approval.status === "pending_approval" &&
+                      approval.currentStepOrder === s.stepOrder;
                     entries.push({
                       step: s.stepOrder,
                       action: isCurrent ? "current" : "upcoming",
@@ -661,7 +686,7 @@ function InfoField({
   highlight,
 }: {
   label: string;
-  value: any;
+  value: ReactNode;
   highlight?: boolean;
 }) {
   return (

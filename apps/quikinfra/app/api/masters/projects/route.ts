@@ -1,3 +1,4 @@
+import { toErrorMessage, getErrorCode } from "@/lib/api/errors";
 import { NextRequest, NextResponse } from "next/server";
 import { requireMastersAction } from "@/lib/auth/requireMastersAction";
 import { hasMatrixAction, getTenantContext } from "@/lib/auth/context";
@@ -93,20 +94,20 @@ export async function POST(req: NextRequest) {
       status: body.status ?? "active",
     });
     return NextResponse.json(record, { status: 201 });
-  } catch (err: any) {
-    if (err?.code === "P2002") {
+  } catch (err: unknown) {
+    if (getErrorCode(err) === "P2002") {
       return NextResponse.json(
         { error: `Project code "${body.code}" is already in use. Choose a different code.` },
         { status: 409 },
       );
     }
-    if (err?.code === "P2003") {
+    if (getErrorCode(err) === "P2003") {
       return NextResponse.json(
         { error: "Referenced company or customer does not exist" },
         { status: 400 },
       );
     }
     console.error("[projects.create] failed:", err);
-    return NextResponse.json({ error: err?.message ?? "Failed to create project" }, { status: 500 });
+    return NextResponse.json({ error: toErrorMessage(err, "Failed to create project") }, { status: 500 });
   }
 }

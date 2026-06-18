@@ -42,7 +42,13 @@ export const PATCH = auth.manage<{ id: string }>(async (
     ? body.lines
     : undefined;
 
-  const steps = rawSteps?.map((l: any) => ({
+  const steps = rawSteps?.map((l: {
+    stepOrder?: number | string | null;
+    approverRole?: string | null;
+    approverUserId?: string | null;
+    approverUserIds?: unknown;
+    amountThresholdMin?: number | string | null;
+  }) => ({
     stepOrder: Number(l.stepOrder) || 1,
     approverRole: l.approverRole ?? null,
     approverUserId: l.approverUserId ?? null,

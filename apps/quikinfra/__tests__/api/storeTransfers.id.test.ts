@@ -7,7 +7,6 @@ import { POST as SUBMIT } from "@/app/api/store/transfers/[id]/submit/route";
 import { POST as APPROVE } from "@/app/api/store/transfers/[id]/approve/route";
 import { POST as DISPATCH } from "@/app/api/store/transfers/[id]/dispatch/route";
 import { POST as RECEIVE } from "@/app/api/store/transfers/[id]/receive/route";
-import { POST as LEGACY_APPROVE } from "@/app/api/store/transfer/[id]/approve/route";
 
 const db = mockDb as any;
 const ID = "st1";
@@ -254,21 +253,6 @@ describe("POST /api/store/transfers/[id]/approve", () => {
     expect(body.ok).toBe(true);
     expect(body.action).toBe("approve");
     expect(body.approval.status).toBe("approved");
-  });
-});
-
-// ═══════════════════════════════════════════════
-// POST /api/store/transfer/[id]/approve  (LEGACY singular alias — re-exports plural)
-// ═══════════════════════════════════════════════
-
-describe("POST /api/store/transfer/[id]/approve (legacy alias)", () => {
-  it("returns 401 when unauthenticated", async () => {
-    expect((await LEGACY_APPROVE(req("POST", { action: "approve" }), params)).status).toBe(401);
-  });
-
-  it("returns 403 when the user lacks construction.transfer.approve", async () => {
-    setContext(makeUserCtx([]));
-    expect((await LEGACY_APPROVE(req("POST", { action: "approve" }), params)).status).toBe(403);
   });
 });
 

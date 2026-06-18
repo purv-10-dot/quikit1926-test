@@ -6,6 +6,7 @@ import { err as envelopeErr } from "@/lib/http/envelope";
 import {
   createEstimation,
   listEstimations,
+  type EstimationMaterialLine,
 } from "@/lib/projects/estimation-repository";
 
 /**
@@ -46,7 +47,16 @@ export async function POST(
     return envelopeErr("FORBIDDEN", `Action "add" not allowed for pm.estimation`, 403);
   }
 
-  let body: any;
+  let body: {
+    boqItemId?: string;
+    boqNo?: string;
+    boqDescription?: string | null;
+    boqQuantity?: number | string | null;
+    boqUnit?: string | null;
+    phase?: string;
+    status?: string;
+    materials?: EstimationMaterialLine[];
+  };
   try {
     body = await req.json();
   } catch {
@@ -55,7 +65,7 @@ export async function POST(
 
   // Resolve the project so we can denormalise its name onto the row
   // — keeps CSV exports + list rendering readable without a join.
-  const project: any = await (db as any).cnProject.findFirst({
+  const project = await db.cnProject.findFirst({
     where: {
       id: params.projectId,
       orgId: ctx.orgId,
@@ -76,7 +86,7 @@ export async function POST(
     );
   }
 
-  const materials: any[] = Array.isArray(body.materials) ? body.materials : [];
+  const materials = Array.isArray(body.materials) ? body.materials : [];
   if (materials.length === 0) {
     return NextResponse.json(
       { error: "At least one material line is required" },

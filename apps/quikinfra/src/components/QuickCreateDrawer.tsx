@@ -8,6 +8,7 @@
  * Each entity type has its own field config. The drawer renders dynamically.
  */
 
+import { toErrorMessage, getErrorCode } from "@/lib/api/errors";
 import { useState, useEffect, type ReactNode } from "react";
 import { X, Plus, Trash2, Loader2, FileText } from "lucide-react";
 import { PrimaryButton, SecondaryButton } from "./PageShell";
@@ -25,7 +26,18 @@ import { toast } from "@/lib/toast";
 
 type OptionList = Array<{ value: string; label: string }>;
 
-interface FieldDef {
+/**
+ * Default line-row shape for configs that don't declare a concrete line
+ * interface. A line cell can hold a string (the common case), a `string[]`
+ * (multi-pickers like RFQ per-vendor item assignment), or a number — so the
+ * value type is intentionally `any` here. Configs that want real per-cell
+ * type-checking pass their own line interface as `QuickCreateConfig<MyLine>`,
+ * which threads through every `render` / `onChange` / `validateBeforeSubmit`
+ * callback below with no casts. This alias is the single intentional `any`.
+ */
+type DynamicLine = Record<string, any>;
+
+export interface FieldDef<TLine = DynamicLine, TSec = DynamicLine> {
   key: string;
   label: string;
   type:
@@ -101,11 +113,11 @@ interface FieldDef {
     | Record<string, string>
     | {
         fields?: Record<string, string>;
-        lines?: Record<string, string>[];
+        lines?: Array<Partial<TLine>>;
         /** Replace the secondaryLineItems grid (e.g. PO's single
             Vendor row) when a source-doc selection should pre-fill
             it. Same wholesale-replace semantics as `lines`. */
-        secondaryLines?: Record<string, any>[];
+        secondaryLines?: Array<Partial<TSec>>;
       }
     | void;
   /** HTML maxLength. */
@@ -133,13 +145,16 @@ interface FieldDef {
   ) => ReactNode;
 }
 
-interface LineFieldDef {
+interface LineFieldDef<TLine = DynamicLine> {
   key: string;
   label: string;
   type: "text" | "number" | "select" | "custom";
   placeholder?: string;
   options?: Array<{ value: string; label: string }>;
   width?: string;
+  /** Marks the cell as required. Surfaced in the column header; line-level
+   *  enforcement is done by the config's `validateBeforeSubmit`. */
+  required?: boolean;
   /** Same as the header-field flag — turn `type: "select"` into a
    *  searchable combobox. Use on long picker lists (Items, etc.). */
   searchable?: boolean;
@@ -151,8 +166,8 @@ interface LineFieldDef {
    */
   onChange?: (
     value: string,
-    line: Record<string, any>,
-  ) => Record<string, any> | void;
+    line: TLine,
+  ) => Partial<TLine> | void;
   /**
    * Custom cell renderer for `type: "custom"`. Use when the field
    * doesn't fit a select/input — e.g. a button that opens a picker
@@ -163,34 +178,36 @@ interface LineFieldDef {
    *     can, for instance, enumerate which items to show in a picker.
    */
   render?: (
-    line: Record<string, any>,
-    update: (patch: Record<string, any>) => void,
-    ctx: { primaryLines: Record<string, any>[] },
+    line: TLine,
+    update: (patch: Partial<TLine>) => void,
+    ctx: { primaryLines: TLine[] },
   ) => ReactNode;
 }
 
-interface QuickCreateConfig {
+export interface QuickCreateConfig<TLine = DynamicLine, TSec = DynamicLine> {
   title: string;
   subtitle?: string;
   apiEndpoint: string;
-  fields: FieldDef[];
+  fields: FieldDef<TLine, TSec>[];
   /**
    * Seed the primary line-items grid with pre-populated rows when the
    * drawer opens. Used by the "Create GRN from PO" flow where the PO's
    * material lines are already known and should flow straight into the
    * GRN form without the user having to pick materials one by one.
    */
-  initialLines?: Record<string, any>[];
+  initialLines?: TLine[];
   lineItems?: {
     label: string;
-    fields: LineFieldDef[];
+    fields: LineFieldDef<TLine>[];
+    /** Add-row button label. Defaults to "Add Line". */
+    addLabel?: string;
     /** Optional pre-submit validator — runs AFTER the header-field
         validators and BEFORE the POST. Returns `null` when the
         lines are valid, or a user-facing error string that's shown
         as the drawer-level error banner. Used by PO Items to catch
         `poQty > maxQty` before it hits the server. */
     validateBeforeSubmit?: (
-      lines: Record<string, any>[],
+      lines: TLine[],
     ) => string | null;
     /** Override the per-row grid column count (default 4). Used by
         PO Items to fit 8 columns (Material / Location / UOM / Qty /
@@ -211,8 +228,8 @@ interface QuickCreateConfig {
         Qty/UOM/Rate/Amount on row 2, Specification on row 3) that
         can't be expressed with the default inline grid. */
     rowRender?: (
-      line: Record<string, any>,
-      update: (patch: Record<string, any>) => void,
+      line: TLine,
+      update: (patch: Partial<TLine>) => void,
       ctx: {
         index: number;
         total: number;
@@ -231,7 +248,7 @@ interface QuickCreateConfig {
         wire inline inputs (e.g. freight / discount) directly into
         formData. */
     footer?: (ctx: {
-      lines: Record<string, any>[];
+      lines: TLine[];
       formData: Record<string, string>;
       setFormData: (patch: Record<string, string>) => void;
     }) => ReactNode;
@@ -244,7 +261,7 @@ interface QuickCreateConfig {
    */
   secondaryLineItems?: {
     label: string;
-    fields: LineFieldDef[];
+    fields: LineFieldDef<TSec>[];
     /** Payload key. Defaults to "secondaryLines". */
     key?: string;
     /** Add-row button label. Defaults to "Add Line". */
@@ -264,7 +281,7 @@ interface QuickCreateConfig {
    */
   tertiaryLineItems?: {
     label: string;
-    fields: LineFieldDef[];
+    fields: LineFieldDef<DynamicLine>[];
     /** Payload key. Defaults to "tertiaryLines". */
     key?: string;
     /** Add-row button label. Defaults to "Add Line". */
@@ -273,30 +290,29 @@ interface QuickCreateConfig {
   /** Called after a successful save. Receives the parsed JSON response
       so callers can read the newly-created entity (e.g. to route to a
       detail page via its id). */
-  onSuccess?: (result: any) => void;
+  onSuccess?: (result: unknown) => void;
 }
 
 // ─── Component ──────────────────────────────────────────────────────
 
-export function QuickCreateDrawer({
+export function QuickCreateDrawer<TLine = DynamicLine, TSec = DynamicLine>({
   open,
   onClose,
   config,
 }: {
   open: boolean;
   onClose: () => void;
-  config: QuickCreateConfig;
+  config: QuickCreateConfig<TLine, TSec>;
 }) {
   const [formData, setFormData] = useState<Record<string, string>>({});
-  // Row values use `any` so custom cells can stash non-string data
-  // (e.g. `assignedItemIds: string[]` on an RFQ vendor row).
-  const [lines, setLines] = useState<Record<string, any>[]>([{}]);
-  const [secondaryLines, setSecondaryLines] = useState<
-    Record<string, any>[]
-  >([{}]);
-  const [tertiaryLines, setTertiaryLines] = useState<
-    Record<string, any>[]
-  >([{}]);
+  // Internally the engine treats every row as a dynamic bag (a config can
+  // stash non-string cells like `assignedItemIds: string[]`). The config's
+  // own callbacks are typed via the `TLine`/`TSec` generics; at the few
+  // invocation points the engine asserts the dynamic row matches the
+  // config-declared shape with `as TLine` / `as TSec`.
+  const [lines, setLines] = useState<DynamicLine[]>([{}]);
+  const [secondaryLines, setSecondaryLines] = useState<DynamicLine[]>([{}]);
+  const [tertiaryLines, setTertiaryLines] = useState<DynamicLine[]>([{}]);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
@@ -326,7 +342,7 @@ export function QuickCreateDrawer({
       setFormData(defaults);
       setLines(
         Array.isArray(config.initialLines) && config.initialLines.length > 0
-          ? config.initialLines.map((l) => ({ ...l }))
+          ? config.initialLines.map((l) => ({ ...l })) as DynamicLine[]
           : [{}],
       );
       setSecondaryLines([{}]);
@@ -382,7 +398,7 @@ export function QuickCreateDrawer({
         [field.key]: { uploading: false, meta: nextMeta },
       }));
       set(field.key, nextMeta.map((m) => m.url).join(","));
-    } catch (err: any) {
+    } catch (err: unknown) {
       setFileUploads((prev) => ({
         ...prev,
         [field.key]: {
@@ -392,7 +408,7 @@ export function QuickCreateDrawer({
       }));
       setFieldErrors((prev) => ({
         ...prev,
-        [field.key]: err?.message ?? "Upload failed",
+        [field.key]: toErrorMessage(err, "Upload failed"),
       }));
     }
   };
@@ -418,8 +434,8 @@ export function QuickCreateDrawer({
    * onChange hook, merge any patch back into the same row.
    */
   const makeLinePatcher =
-    (setter: typeof setLines) =>
-    (idx: number, lf: LineFieldDef, value: string) => {
+    <T,>(setter: typeof setLines) =>
+    (idx: number, lf: LineFieldDef<T>, value: string) => {
       setter(prev => {
         const updated = [...prev];
         const nextLine: Record<string, string> = {
@@ -427,16 +443,16 @@ export function QuickCreateDrawer({
           [lf.key]: value,
         };
         if (lf.onChange) {
-          const patch = lf.onChange(value, nextLine);
+          const patch = lf.onChange(value, nextLine as T);
           if (patch && Object.keys(patch).length) Object.assign(nextLine, patch);
         }
         updated[idx] = nextLine;
         return updated;
       });
     };
-  const patchLineCell = makeLinePatcher(setLines);
-  const patchSecondaryLineCell = makeLinePatcher(setSecondaryLines);
-  const patchTertiaryLineCell = makeLinePatcher(setTertiaryLines);
+  const patchLineCell = makeLinePatcher<TLine>(setLines);
+  const patchSecondaryLineCell = makeLinePatcher<TSec>(setSecondaryLines);
+  const patchTertiaryLineCell = makeLinePatcher<DynamicLine>(setTertiaryLines);
 
   const handleSubmit = async () => {
     setError("");
@@ -478,7 +494,7 @@ export function QuickCreateDrawer({
     // the form open with a visible banner error, so the user sees
     // what's wrong instead of hitting the server round-trip.
     if (config.lineItems?.validateBeforeSubmit) {
-      const lineErr = config.lineItems.validateBeforeSubmit(lines);
+      const lineErr = config.lineItems.validateBeforeSubmit(lines as unknown as TLine[]);
       if (lineErr) {
         setError(lineErr);
         return;
@@ -492,10 +508,11 @@ export function QuickCreateDrawer({
 
     setSaving(true);
     try {
-      const payload: any = { ...formData };
+      const payload: Record<string, unknown> = { ...formData };
       if (config.lineItems) {
-        payload.lines = lines.filter(l => Object.values(l).some(v => v));
-        payload.lineCount = payload.lines.length;
+        const filteredLines = lines.filter(l => Object.values(l).some(v => v));
+        payload.lines = filteredLines;
+        payload.lineCount = filteredLines.length;
       }
       if (config.secondaryLineItems) {
         const key = config.secondaryLineItems.key ?? "secondaryLines";
@@ -530,9 +547,9 @@ export function QuickCreateDrawer({
 
       config.onSuccess?.(result);
       onClose();
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error("[QuickCreateDrawer] Error:", err);
-      setError(err.message ?? "Failed to save. Please try again.");
+      setError(toErrorMessage(err, "Failed to save. Please try again."));
     } finally {
       setSaving(false);
     }
@@ -647,14 +664,19 @@ export function QuickCreateDrawer({
                       "fields" in result ||
                       "lines" in result ||
                       "secondaryLines" in result;
+                    const structured = result as {
+                      fields?: Record<string, string>;
+                      lines?: Record<string, unknown>[];
+                      secondaryLines?: Record<string, unknown>[];
+                    };
                     const fieldPatch: Record<string, string> = isStructured
-                      ? ((result as any).fields ?? {})
+                      ? (structured.fields ?? {})
                       : (result as Record<string, string>);
                     const linePatch = isStructured
-                      ? (result as any).lines
+                      ? structured.lines
                       : undefined;
                     const secondaryPatch = isStructured
-                      ? (result as any).secondaryLines
+                      ? structured.secondaryLines
                       : undefined;
 
                     if (Object.keys(fieldPatch).length) {
@@ -848,7 +870,7 @@ export function QuickCreateDrawer({
                           } else {
                             onChangeValue(urls);
                           }
-                        } catch (err: any) {
+                        } catch (err: unknown) {
                           setFileUploads((prev) => ({
                             ...prev,
                             [field.key]: {
@@ -858,7 +880,7 @@ export function QuickCreateDrawer({
                           }));
                           setFieldErrors((prev) => ({
                             ...prev,
-                            [field.key]: err?.message ?? "Upload failed",
+                            [field.key]: toErrorMessage(err, "Upload failed"),
                           }));
                         }
                       };
@@ -1004,8 +1026,8 @@ export function QuickCreateDrawer({
                         onChange={e => onChangeValue(e.target.value)}
                         placeholder={field.placeholder}
                         maxLength={field.maxLength}
-                        min={resolvedMin as any}
-                        max={resolvedMax as any}
+                        min={resolvedMin as string | number | undefined}
+                        max={resolvedMax as string | number | undefined}
                         step={field.step}
                         disabled={isDisabled}
                         className={`${baseCls} ${stateCls} ${disabledCls}`}
@@ -1081,11 +1103,11 @@ export function QuickCreateDrawer({
                         </span>
                         <div className="flex-1 min-w-0">
                           {config.lineItems.rowRender(
-                            line,
+                            line as TLine,
                             (patch) =>
                               setLines((prev) => {
                                 const next = [...prev];
-                                next[i] = { ...(next[i] ?? {}), ...patch };
+                                next[i] = { ...(next[i] ?? {}), ...patch } as DynamicLine;
                                 return next;
                               }),
                             {
@@ -1131,14 +1153,14 @@ export function QuickCreateDrawer({
                         <div key={lf.key} className={lf.width === "wide" ? "col-span-2" : ""}>
                           {lf.type === "custom" && lf.render ? (
                             lf.render(
-                              line,
+                              line as TLine,
                               (patch) =>
                                 setLines((prev) => {
                                   const next = [...prev];
-                                  next[i] = { ...(next[i] ?? {}), ...patch };
+                                  next[i] = { ...(next[i] ?? {}), ...patch } as DynamicLine;
                                   return next;
                                 }),
-                              { primaryLines: lines },
+                              { primaryLines: lines as unknown as TLine[] },
                             )
                           ) : lf.type === "select" && lf.searchable ? (
                             <SearchableSelect
@@ -1178,7 +1200,7 @@ export function QuickCreateDrawer({
                 );
               })}
               {config.lineItems.footer?.({
-                lines,
+                lines: lines as unknown as TLine[],
                 formData,
                 setFormData: (patch) => setFormData((prev) => ({ ...prev, ...patch })),
               })}
@@ -1222,14 +1244,14 @@ export function QuickCreateDrawer({
                         >
                           {lf.type === "custom" && lf.render ? (
                             lf.render(
-                              line,
+                              line as TSec,
                               (patch) =>
                                 setSecondaryLines((prev) => {
                                   const next = [...prev];
-                                  next[i] = { ...(next[i] ?? {}), ...patch };
+                                  next[i] = { ...(next[i] ?? {}), ...patch } as DynamicLine;
                                   return next;
                                 }),
-                              { primaryLines: lines },
+                              { primaryLines: lines as unknown as TSec[] },
                             )
                           ) : lf.type === "select" && lf.searchable ? (
                             <SearchableSelect

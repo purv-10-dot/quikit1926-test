@@ -21,6 +21,7 @@
  *   />
  */
 
+import { toErrorMessage, getErrorCode } from "@/lib/api/errors";
 import { useEffect, useState } from "react";
 import { createPortal } from "react-dom";
 import { useQueryClient } from "@tanstack/react-query";
@@ -55,7 +56,7 @@ interface Props {
    * approver-picked `sourceLocationId` so the MI draft the approve route
    * auto-creates is already scoped to a warehouse.
    */
-  extraBody?: () => Record<string, any>;
+  extraBody?: () => Record<string, unknown>;
   /**
    * When true, the Approve button is disabled (reject/return still work).
    * Use this to gate approval on required UI state the caller owns —
@@ -198,7 +199,7 @@ export function ApprovalActionBar(props: Props) {
 
       // Success — invalidate + close modal + show banner
       for (const key of invalidateKeys) {
-        qc.invalidateQueries({ queryKey: key as any });
+        qc.invalidateQueries({ queryKey: key });
       }
       setLastOk(action);
       setPendingAction(null);
@@ -211,8 +212,8 @@ export function ApprovalActionBar(props: Props) {
             : "Returned for revision",
       );
       onSuccess?.(action);
-    } catch (err: any) {
-      const message = err?.message ?? "Network error";
+    } catch (err: unknown) {
+      const message = toErrorMessage(err, "Network error");
       setError(message);
       toast.error(message);
     } finally {

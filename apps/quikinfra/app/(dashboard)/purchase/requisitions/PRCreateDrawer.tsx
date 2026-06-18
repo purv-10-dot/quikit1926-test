@@ -1,5 +1,6 @@
 "use client";
 
+import { toErrorMessage } from "@/lib/api/errors";
 import { useState, useEffect, useMemo } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { X, Plus, Trash2, AlertTriangle, FileText, CheckCircle2, Circle } from "lucide-react";
@@ -22,6 +23,18 @@ interface PRLine {
   specification: string;
   priority: string;
   availableStock: string;
+}
+
+interface PrEstMaterial {
+  itemId?: string; itemName?: string; uomCode?: string;
+  estimatedCost?: number | string; totalQty?: number | string; qtyPerUnit?: number | string;
+}
+interface PrEstimation {
+  id?: string; status?: string; boqItemId?: string; boqNo?: string;
+  materials?: PrEstMaterial[];
+}
+interface PrExisting {
+  lines?: Array<{ itemId?: string }>;
 }
 
 const newLine = (): PRLine => ({
@@ -115,23 +128,23 @@ export function PRCreateDrawer({ open, onClose }: { open: boolean; onClose: () =
   const allProjects = projectsData?.data ?? [];
   const allowedProjectIds = me?.projectIds ?? null;
   const projects = useMemo(() => {
-    const active = allProjects.filter((p: any) => p?.status !== "inactive");
+    const active = allProjects.filter((p) => p?.status !== "inactive");
     if (!allowedProjectIds || allowedProjectIds.length === 0) return active;
     const allow = new Set(allowedProjectIds);
-    return active.filter((p: any) => allow.has(p.id));
+    return active.filter((p) => allow.has(p.id));
   }, [allProjects, allowedProjectIds]);
   const items = useMemo(() => itemsData?.data ?? [], [itemsData]);
   const itemGroups = useMemo(() => {
     const raw = itemGroupsData?.data ?? [];
-    return raw.filter((g: any) => (g?.status ?? "active").toLowerCase() !== "inactive");
+    return raw.filter((g) => (g?.status ?? "active").toLowerCase() !== "inactive");
   }, [itemGroupsData]);
   const uoms = uomData?.data ?? [];
   const locations = locData?.data ?? [];
   const workCategories = wcData?.data ?? [];
   // Only approved estimations are eligible to drive a PR.
-  const estimations: any[] = useMemo(
-    () => (estimationsData?.data ?? []).filter(
-      (e: any) => (e?.status ?? "").toLowerCase() === "approved",
+  const estimations: PrEstimation[] = useMemo(
+    () => ((estimationsData?.data ?? []) as unknown as PrEstimation[]).filter(
+      (e) => (e?.status ?? "").toLowerCase() === "approved",
     ),
     [estimationsData],
   );
@@ -140,16 +153,21 @@ export function PRCreateDrawer({ open, onClose }: { open: boolean; onClose: () =
   // The BOQ endpoint may return either snake_case (`boq_no`) or camelCase
   // (`boqNo`) depending on the layer — coerce both.
   const boqRows: BoqRow[] = useMemo(() => {
-    const raw: any[] = boqData?.items ?? boqData?.data ?? [];
-    return raw.map((r: any) => ({
-      id: r.id,
-      boq_no: r.boq_no ?? r.boqNo,
+    const raw = boqData?.items ?? boqData?.data ?? [];
+    return raw.map((r) => ({
+      id: r.id ?? "",
+      boq_no: r.boq_no ?? r.boqNo ?? "",
       parent_boq_no: r.parent_boq_no ?? r.parentBoqNo ?? null,
       depth: r.depth ?? 0,
       is_group: r.is_group ?? r.isGroup ?? false,
       display_name: r.display_name ?? r.displayName ?? r.description ?? "",
       unit: r.unit ?? r.uomCode ?? null,
-      tender_qty: r.tender_qty ?? r.tenderQty ?? null,
+      tender_qty:
+        r.tender_qty != null
+          ? Number(r.tender_qty)
+          : r.tenderQty != null
+          ? Number(r.tenderQty)
+          : null,
       category: r.category,
     }));
   }, [boqData]);
@@ -158,7 +176,7 @@ export function PRCreateDrawer({ open, onClose }: { open: boolean; onClose: () =
   // mark each estimation material as Raised vs Not Raised.
   const raisedItemIds = useMemo(() => {
     const set = new Set<string>();
-    const prs: any[] = existingPRsData?.data ?? [];
+    const prs: PrExisting[] = (existingPRsData?.data ?? []) as unknown as PrExisting[];
     for (const pr of prs) {
       for (const ln of pr.lines ?? []) {
         if (ln?.itemId) set.add(ln.itemId);
@@ -173,7 +191,7 @@ export function PRCreateDrawer({ open, onClose }: { open: boolean; onClose: () =
   const visibleEstimations = useMemo(() => {
     if (!selectedBoq) return [];
     return estimations.filter(
-      (e: any) =>
+      (e) =>
         e.boqItemId === selectedBoq.id ||
         e.boqNo === selectedBoq.boq_no,
     );
@@ -186,7 +204,7 @@ export function PRCreateDrawer({ open, onClose }: { open: boolean; onClose: () =
     if (!selectedBoq) return [];
     const all = estimationsData?.data ?? [];
     return all.filter(
-      (e: any) =>
+      (e) =>
         (e.boqItemId === selectedBoq.id || e.boqNo === selectedBoq.boq_no) &&
         (e?.status ?? "").toLowerCase() !== "approved",
     );
@@ -244,7 +262,7 @@ export function PRCreateDrawer({ open, onClose }: { open: boolean; onClose: () =
       const row = updated[idx];
       if (!row) return prev;
 
-      (row as any)[field] = value;
+      (row as unknown as Record<string, string>)[field] = value;
 
       // ── Dependent resets when the MATERIAL changes ───────────────
       if (field === "itemId") {
@@ -258,7 +276,7 @@ export function PRCreateDrawer({ open, onClose }: { open: boolean; onClose: () =
 
         // Then, if a new item was chosen, backfill from the master.
         if (value) {
-          const item = items.find((i: any) => i.id === value);
+          const item = items.find((i) => i.id === value);
           if (item) {
             row.itemName = item.name ?? "";
             row.uomId = item.uomId ?? "";
@@ -402,8 +420,8 @@ export function PRCreateDrawer({ open, onClose }: { open: boolean; onClose: () =
         })),
       });
       onClose();
-    } catch (err: any) {
-      setError(err.message ?? "Failed to create PR. Please try again.");
+    } catch (err: unknown) {
+      setError(toErrorMessage(err, "Failed to create PR. Please try again."));
     } finally {
       setSaving(false);
     }
@@ -438,7 +456,7 @@ export function PRCreateDrawer({ open, onClose }: { open: boolean; onClose: () =
                   onChange={setProjectId}
                   disabled={projects.length === 0}
                   placeholder={projects.length === 0 ? "No projects assigned — ask admin" : "Select project..."}
-                  options={projects.map((p: any) => ({ value: p.id, label: `${p.code} — ${p.name}` }))}
+                  options={projects.map((p) => ({ value: p.id, label: `${p.code} — ${p.name}` }))}
                 />
                 {allowedProjectIds && allowedProjectIds.length > 0 && projects.length < allProjects.length && (
                   <p className="text-[11px] text-gray-400 mt-1">
@@ -476,7 +494,7 @@ export function PRCreateDrawer({ open, onClose }: { open: boolean; onClose: () =
                   value={workCategoryId}
                   onChange={setWorkCategoryId}
                   placeholder="Optional"
-                  options={workCategories.map((w: any) => ({ value: w.id, label: w.name }))}
+                  options={workCategories.map((w) => ({ value: w.id, label: w.name }))}
                 />
               </div>
               <div>
@@ -489,7 +507,7 @@ export function PRCreateDrawer({ open, onClose }: { open: boolean; onClose: () =
                       ? "No locations for this project — ask admin to add one"
                       : "Select location"
                   }
-                  options={locations.map((l: any) => ({ value: l.id, label: l.name }))}
+                  options={locations.map((l) => ({ value: l.id, label: l.name }))}
                 />
                 {projectId && locations.length === 0 && (
                   <p className="text-[11px] text-amber-600 mt-1">
@@ -564,7 +582,7 @@ export function PRCreateDrawer({ open, onClose }: { open: boolean; onClose: () =
                   const statuses = Array.from(
                     new Set(
                       pendingEstimationsForBoq
-                        .map((e: any) => String(e?.status ?? "draft").toLowerCase())
+                        .map((e) => String(e?.status ?? "draft").toLowerCase())
                         .filter(Boolean),
                     ),
                   );
@@ -598,10 +616,10 @@ export function PRCreateDrawer({ open, onClose }: { open: boolean; onClose: () =
                 </span>
               </div>
               <div className="divide-y divide-gray-100">
-                {visibleEstimations.map((est: any) => {
-                  const mats: any[] = Array.isArray(est.materials) ? est.materials : [];
+                {visibleEstimations.map((est) => {
+                  const mats: PrEstMaterial[] = Array.isArray(est.materials) ? est.materials : [];
                   const totalCost = mats.reduce(
-                    (sum, m) => sum + (parseFloat(m.estimatedCost ?? "0") || 0),
+                    (sum, m) => sum + (parseFloat(String(m.estimatedCost ?? "0")) || 0),
                     0,
                   );
                   return (
@@ -632,8 +650,8 @@ export function PRCreateDrawer({ open, onClose }: { open: boolean; onClose: () =
                               </tr>
                             </thead>
                             <tbody className="divide-y divide-gray-50">
-                              {mats.map((m: any, mi: number) => {
-                                const total = parseFloat(m.estimatedCost ?? "0") || 0;
+                              {mats.map((m, mi: number) => {
+                                const total = parseFloat(String(m.estimatedCost ?? "0")) || 0;
                                 const isRaised = m.itemId && raisedItemIds.has(m.itemId);
                                 const budget = m.itemId ? budgetByItem.get(m.itemId) : null;
                                 const estimated = budget?.estimated ?? Number(m.totalQty ?? m.qtyPerUnit ?? 0);
@@ -788,7 +806,7 @@ export function PRCreateDrawer({ open, onClose }: { open: boolean; onClose: () =
                               value={line.itemId}
                               onChange={(v) => updateLine(i, "itemId", v)}
                               items={items}
-                              groups={itemGroups.map((g: any) => ({ id: g.id, name: g.name, status: g.status }))}
+                              groups={itemGroups.map((g) => ({ id: g.id, name: g.name, status: g.status }))}
                               placeholder="Pick group → material…"
                             />
                           </div>
@@ -835,7 +853,7 @@ export function PRCreateDrawer({ open, onClose }: { open: boolean; onClose: () =
                               value={line.uomId}
                               onChange={(v) => updateLine(i, "uomId", v)}
                               placeholder="—"
-                              options={uoms.map((u: any) => ({ value: u.id, label: u.code }))}
+                              options={uoms.map((u) => ({ value: u.id, label: u.code }))}
                             />
                           </div>
                           <div>

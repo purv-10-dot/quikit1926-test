@@ -43,7 +43,7 @@ export async function POST(
     );
   }
 
-  let body: any = {};
+  let body: { action?: string; comments?: string } = {};
   try {
     body = await req.json();
   } catch {
@@ -52,7 +52,7 @@ export async function POST(
   const action = (body.action ?? "approve") as "approve" | "reject" | "return";
   const comments = String(body.comments ?? "").trim();
 
-  const recon = await (db as any).cnStockReconciliation.findFirst({
+  const recon = await db.cnStockReconciliation.findFirst({
     where: { id: params.id, orgId: ctx.orgId },
   });
   if (!recon) {
@@ -102,7 +102,7 @@ export async function POST(
 
   const finalPatch = reconStatusPatch as Record<string, unknown> | null;
   if (finalPatch) {
-    await (db as any).cnStockReconciliation.update({
+    await db.cnStockReconciliation.update({
       where: { id: recon.id },
       data: {
         ...finalPatch,

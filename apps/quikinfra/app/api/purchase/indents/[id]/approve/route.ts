@@ -33,7 +33,7 @@ export async function POST(
     return envelopeErr("FORBIDDEN", `Action "edit" not allowed for purchase.indent`, 403);
   }
 
-  let body: any = {};
+  let body: { action?: string; comments?: string } = {};
   try {
     body = await req.json();
   } catch {

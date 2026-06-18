@@ -1,10 +1,11 @@
 "use client";
 
+import { toErrorMessage } from "@/lib/api/errors";
 import { useState } from "react";
 import { CalendarCheck } from "lucide-react";
 import { MasterListPage, type MasterColumnDef } from "@/components/MasterListPage";
-import { useFinancialYears, useCreateFinancialYear, useUpdateFinancialYear } from "@/hooks/use-masters";
-import { FormDrawer, FormSection, FormRow, Field, TextInput, DateInput, CheckboxInput, SelectInput } from "@/components/FormDrawer";
+import { useFinancialYears, useCreateFinancialYear, useUpdateFinancialYear, useDeleteFinancialYear } from "@/hooks/use-masters";
+import { FormDrawer, FormSection, FormRow, Field, TextInput, DateInput, CheckboxInput, SelectInput, InactiveStatusNotice } from "@/components/FormDrawer";
 import dynamic from "next/dynamic";
 import type { ImportFieldDef } from "@/components/ImportDataDrawer";
 const ImportDataDrawer = dynamic(
@@ -54,6 +55,7 @@ export default function FinancialYearsPage() {
   const { data: result, isLoading } = useFinancialYears();
   const createMutation = useCreateFinancialYear();
   const updateMutation = useUpdateFinancialYear();
+  const deleteMutation = useDeleteFinancialYear();
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [importOpen, setImportOpen] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
@@ -73,12 +75,12 @@ export default function FinancialYearsPage() {
         status: "active",
       });
       return { ok: true as const };
-    } catch (err: any) {
-      return { ok: false as const, error: err?.message ?? "Create failed" };
+    } catch (err: unknown) {
+      return { ok: false as const, error: toErrorMessage(err, "Create failed") };
     }
   };
 
-  const set = (key: string, val: any) => {
+  const set = <K extends keyof typeof emptyForm>(key: K, val: (typeof emptyForm)[K]) => {
     setForm(prev => ({ ...prev, [key]: val }));
     if (errors[key]) setErrors(prev => { const next = { ...prev }; delete next[key]; return next; });
   };
@@ -99,8 +101,8 @@ export default function FinancialYearsPage() {
     } catch { /* error toast handled globally */ }
   };
 
-  const handleDelete = async (item: any) => {
-    await updateMutation.mutateAsync({ id: item.id, status: "inactive" });
+  const handleDelete = async (item: { id: string }) => {
+    await deleteMutation.mutateAsync(item.id);
   };
 
   const isSaving = createMutation.isPending || updateMutation.isPending;
@@ -112,9 +114,9 @@ export default function FinancialYearsPage() {
         canImport canExport
         onImport={() => setImportOpen(true)}
         onAdd={() => { setForm(emptyForm); setErrors({}); setEditingId(null); setDrawerOpen(true); }}
-        onEdit={(item: any) => { setForm({ ...emptyForm, ...item }); setErrors({}); setEditingId(item.id); setDrawerOpen(true); }}
+        onEdit={(item) => { setForm({ ...emptyForm, ...item } as typeof emptyForm); setErrors({}); setEditingId(item.id); setDrawerOpen(true); }}
         onDelete={handleDelete}
-        deleteConfirmMessage={(item: any) => (
+        deleteConfirmMessage={(item) => (
           <>
             Delete financial year{" "}
             <span className="font-semibold text-gray-900">“{item.label}”</span>?
@@ -156,6 +158,7 @@ export default function FinancialYearsPage() {
           <CheckboxInput checked={form.isCurrent} onChange={v => set("isCurrent", v)} label="This is the current active financial year" />
           <Field label="Status">
             <SelectInput value={form.status} onChange={v => set("status", v)} options={STATUS_OPTIONS} />
+            {form.status === "inactive" && <InactiveStatusNotice entityName="Financial Year" />}
           </Field>
         </FormSection>
       </FormDrawer>

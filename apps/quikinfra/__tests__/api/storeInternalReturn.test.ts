@@ -258,7 +258,7 @@ describe("POST /api/store/internal-return/[id]/post", () => {
     expect((await POST_LEDGER(postReq(), idParams as any)).status).toBe(409);
   });
 
-  it("posts return_internal ledger rows and flips status to posted", async () => {
+  it("posts return_internal: appends a ledger row AND increments the balance cache (the drift fix)", async () => {
     setContext(makeAdminCtx());
     db.cnInternalReturn.findFirst.mockResolvedValue({
       id: ID,
@@ -270,7 +270,10 @@ describe("POST /api/store/internal-return/[id]/post", () => {
       lines: [{ itemId: "i1", returnedQty: 2, uomId: "u1" }],
     });
     db.$transaction.mockImplementation(async (cb: any) => cb(db));
+    // 50 on hand at avg rate 10 — the return re-enters at this rate.
+    db.cnStockBalance.findUnique.mockResolvedValue({ quantity: 50, avgRate: 10 });
     db.cnStockLedger.create.mockResolvedValue({ id: "led1" });
+    db.cnStockBalance.upsert.mockResolvedValue({});
     db.cnInternalReturn.update.mockResolvedValue({ id: ID, status: "posted" });
 
     const res = await POST_LEDGER(postReq(), idParams as any);
@@ -278,6 +281,16 @@ describe("POST /api/store/internal-return/[id]/post", () => {
     const body = await res.json();
     expect(body.success).toBe(true);
     expect(body.data.status).toBe("posted");
-    expect(db.cnStockLedger.create).toHaveBeenCalled();
+
+    // (1) Inward ledger row: return_internal, qtyIn from the line, at location rate.
+    const ledgerData = db.cnStockLedger.create.mock.calls[0][0].data;
+    expect(ledgerData.transactionType).toBe("return_internal");
+    expect(Number(ledgerData.qtyIn)).toBe(2);
+    expect(Number(ledgerData.unitRate)).toBe(10); // value-neutral, not 0
+
+    // (2) THE FIX: balance cache incremented in the same txn (50 + 2 = 52).
+    expect(db.cnStockBalance.upsert).toHaveBeenCalledTimes(1);
+    const upsertArg = db.cnStockBalance.upsert.mock.calls[0][0];
+    expect(Number(upsertArg.update.quantity)).toBe(52);
   });
 });

@@ -1,5 +1,6 @@
 "use client";
 
+import { toErrorMessage } from "@/lib/api/errors";
 import { useEffect, useMemo, useState } from "react";
 import { Download, CalendarDays, AlertTriangle } from "lucide-react";
 import {
@@ -30,6 +31,7 @@ interface LineRow {
   billQty: string;
   amount: string;
   capped: boolean;
+  selected: boolean;
 }
 
 interface DprSource {
@@ -48,7 +50,7 @@ export function GenerateRABillForm({
   onCreated: () => void;
 }) {
   const { data: projectsData } = useProjects();
-  const projectOptions = (projectsData?.data ?? []).map((p: any) => ({
+  const projectOptions = (projectsData?.data ?? []).map((p) => ({
     value: p.id,
     label: p.name,
   }));
@@ -90,7 +92,9 @@ export function GenerateRABillForm({
 
   // WOs for the selected project → contractor list + WO reference cascade.
   const { data: woData } = useWorkOrders(projectId ? { projectId } : undefined);
-  const wos: any[] = projectId ? woData?.data ?? [] : [];
+  const wos = (projectId ? woData?.data ?? [] : []) as unknown as Array<{
+    id?: string; woNumber?: string; contractorId?: string; contractorName?: string;
+  }>;
 
   const contractorOptions = useMemo(() => {
     const seen = new Map<string, string>();
@@ -136,9 +140,9 @@ export function GenerateRABillForm({
     setPulling(true);
     try {
       const res = await pullRABLines(source, { projectId, from, to });
-      const rows: LineRow[] = (res.lines ?? []).map((l: any) => ({
-        boqItemId: l.boqItemId,
-        boqNo: l.boqNo,
+      const rows: LineRow[] = (res.lines ?? []).map((l) => ({
+        boqItemId: l.boqItemId ?? "",
+        boqNo: l.boqNo ?? "",
         description: l.description ?? "",
         unit: l.unit ?? "",
         uomId: l.uomId ?? "",
@@ -147,9 +151,10 @@ export function GenerateRABillForm({
         billQty: String(l.billQty ?? l.billableQty ?? "0"),
         amount: String(l.amount ?? "0"),
         capped: !!l.capped,
+        selected: true,
       }));
       setLines(rows);
-      setSources(res.sources ?? []);
+      setSources((res.sources ?? []) as DprSource[]);
       setCappedLines(res.cappedLines ?? 0);
       if (rows.length === 0) {
         setPullMsg(
@@ -158,20 +163,54 @@ export function GenerateRABillForm({
             : "No billable balance — all reported progress is already billed.",
         );
       }
-    } catch (e: any) {
-      setPullMsg(e?.message ?? "Failed to pull lines.");
+    } catch (e: unknown) {
+      setPullMsg(toErrorMessage(e, "Failed to pull lines."));
     } finally {
       setPulling(false);
     }
   }
 
+  // Toggle a single line in/out of the bill.
+  function toggleLine(boqItemId: string, checked: boolean) {
+    setLines((prev) =>
+      prev.map((l) => (l.boqItemId === boqItemId ? { ...l, selected: checked } : l)),
+    );
+  }
+
+  // Select / deselect every pulled line at once.
+  function toggleAll(checked: boolean) {
+    setLines((prev) => prev.map((l) => ({ ...l, selected: checked })));
+  }
+
+  // Edit a line's bill quantity. Clamped to the un-billed billable balance so
+  // the same work can never be billed twice; amount re-derives from qty × rate.
+  function updateBillQty(boqItemId: string, raw: string) {
+    setLines((prev) =>
+      prev.map((l) => {
+        if (l.boqItemId !== boqItemId) return l;
+        if (raw === "") return { ...l, billQty: "", amount: "0" };
+        const billable = Number(l.billableQty) || 0;
+        let q = Number(raw) || 0;
+        if (q < 0) q = 0;
+        if (q > billable) q = billable;
+        const amount = q * (Number(l.rate) || 0);
+        return { ...l, billQty: String(q), amount: String(amount) };
+      }),
+    );
+  }
+
+  const allSelected = lines.length > 0 && lines.every((l) => l.selected);
+
   // Live deduction waterfall — client-side reuse of the server function.
+  // Only selected lines with a positive bill qty contribute.
   const computed = useMemo(() => {
     const cgstRate = interState ? 0 : Number(gstRate) / 2;
     const sgstRate = interState ? 0 : Number(gstRate) / 2;
     const igstRate = interState ? Number(gstRate) : 0;
     return computeRABill({
-      lines: lines.map((l) => ({ currentAmount: l.amount })),
+      lines: lines
+        .filter((l) => l.selected && Number(l.billQty) > 0)
+        .map((l) => ({ currentAmount: l.amount })),
       retentionPercent,
       tdsRate,
       cgstRate,
@@ -180,7 +219,9 @@ export function GenerateRABillForm({
     });
   }, [lines, retentionPercent, tdsRate, gstRate, interState]);
 
-  const billableLineCount = lines.filter((l) => Number(l.billQty) > 0).length;
+  const billableLineCount = lines.filter(
+    (l) => l.selected && Number(l.billQty) > 0,
+  ).length;
 
   const canGenerate =
     !!projectId &&
@@ -208,7 +249,7 @@ export function GenerateRABillForm({
       sgstRate,
       igstRate,
       lines: lines
-        .filter((l) => Number(l.billQty) > 0)
+        .filter((l) => l.selected && Number(l.billQty) > 0)
         .map((l) => ({
           boqItemId: l.boqItemId,
           currentQty: Number(l.billQty),
@@ -333,8 +374,16 @@ export function GenerateRABillForm({
             <table className="w-full text-sm">
               <thead>
                 <tr className="bg-orange-50 text-left text-[11px] uppercase tracking-wide text-gray-600">
-                  <th className="px-3 py-2.5 font-semibold">BOQ No</th>
-                  <th className="px-3 py-2.5 font-semibold">Description</th>
+                  <th className="px-3 py-2.5">
+                    <input
+                      type="checkbox"
+                      checked={allSelected}
+                      onChange={(e) => toggleAll(e.target.checked)}
+                      className="h-4 w-4 rounded border-gray-300 text-orange-600 focus:ring-orange-500"
+                      aria-label="Select all lines"
+                    />
+                  </th>
+                  <th className="px-3 py-2.5 font-semibold">BOQ / Item</th>
                   <th className="px-3 py-2.5 text-right font-semibold">Billable</th>
                   <th className="px-3 py-2.5 text-right font-semibold">Bill Qty</th>
                   <th className="px-3 py-2.5 text-right font-semibold">Rate</th>
@@ -343,25 +392,46 @@ export function GenerateRABillForm({
               </thead>
               <tbody>
                 {lines.map((l) => (
-                  <tr key={l.boqItemId} className="border-t border-gray-100 transition-colors hover:bg-gray-50/70">
+                  <tr
+                    key={l.boqItemId}
+                    className={`border-t border-gray-100 transition-colors hover:bg-gray-50/70 ${l.selected ? "" : "opacity-50"}`}
+                  >
                     <td className="px-3 py-2.5 align-top">
-                      <span className="font-semibold text-gray-900">{l.boqNo}</span>
-                      {l.capped && (
-                        <span className="ml-1.5 rounded bg-amber-100 px-1.5 py-0.5 text-[10px] font-medium text-amber-700">
-                          capped
-                        </span>
-                      )}
+                      <input
+                        type="checkbox"
+                        checked={l.selected}
+                        onChange={(e) => toggleLine(l.boqItemId, e.target.checked)}
+                        className="mt-0.5 h-4 w-4 rounded border-gray-300 text-orange-600 focus:ring-orange-500"
+                        aria-label={`Include ${l.boqNo}`}
+                      />
                     </td>
-                    <td className="px-3 py-2.5 align-top text-gray-600">
-                      <span className="line-clamp-2">{l.description}</span>
+                    <td className="px-3 py-2.5 align-top">
+                      <div className="flex items-center gap-1.5">
+                        <span className="font-semibold text-gray-900">{l.boqNo}</span>
+                        {l.capped && (
+                          <span className="rounded bg-amber-100 px-1.5 py-0.5 text-[10px] font-medium text-amber-700">
+                            capped
+                          </span>
+                        )}
+                      </div>
+                      <span className="line-clamp-2 text-gray-600">{l.description}</span>
                     </td>
                     <td className="px-3 py-2.5 text-right align-top tabular-nums text-gray-500">
                       {l.billableQty} {l.unit}
                     </td>
-                    <td className="px-3 py-2.5 text-right align-top">
-                      <span className="inline-block rounded-md bg-gray-100 px-2 py-1 font-semibold tabular-nums text-gray-900">
-                        {l.billQty} {l.unit}
-                      </span>
+                    <td className="px-3 py-2.5 align-top">
+                      <div className="flex items-center justify-end gap-1.5">
+                        <div className="w-24">
+                          <NumberInput
+                            value={l.billQty}
+                            onChange={(v) => updateBillQty(l.boqItemId, v)}
+                            min={0}
+                            max={Number(l.billableQty) || undefined}
+                            disabled={!l.selected}
+                          />
+                        </div>
+                        <span className="text-xs text-gray-400">{l.unit}</span>
+                      </div>
                     </td>
                     <td className="px-3 py-2.5 text-right align-top tabular-nums text-gray-700">
                       {inr(Number(l.rate))}
@@ -384,7 +454,7 @@ export function GenerateRABillForm({
               </tfoot>
             </table>
             <p className="border-t border-gray-100 bg-white px-3 py-2 text-[11px] text-gray-400">
-              Bill quantity is fixed to the clamped billable balance — it can never exceed work that's executed but not yet billed.
+              Tick the lines to bill and adjust each bill quantity — it's capped to the un-billed balance so work executed but not yet billed is never billed twice.
             </p>
           </div>
         )}

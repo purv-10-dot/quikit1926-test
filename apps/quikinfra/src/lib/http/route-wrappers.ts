@@ -192,7 +192,7 @@ export interface MutationRouteOptions<TBody = any> {
  *       successStatus: 201,
  *       parseBody: (raw) => {
  *         if (!raw || typeof raw !== "object") throw new DomainError("INVALID_BODY", "JSON body required", 400);
- *         const r = raw as any;
+ *         const r = raw as { name?: string };
  *         if (!r.name) throw new DomainError("VALIDATION", "Company name is required", 400);
  *         return r;
  *       },

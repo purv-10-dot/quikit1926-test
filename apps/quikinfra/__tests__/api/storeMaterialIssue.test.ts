@@ -250,11 +250,23 @@ describe("DELETE /api/store/material-issue/[id]", () => {
 
 // ═══════════════════════════════════════════════
 // POST /api/store/material-issue/[id]/post  (gate: construction.issue.approve)
-// DRAFT → POSTED, writes negative stock ledger rows.
+// DRAFT → POSTED. Routes through the stock ledger service, which appends a
+// CnStockLedger row AND keeps the CnStockBalance cache in sync (one txn).
+// The negative-balance guard reads the balance cache, not a ledger sum.
 // ═══════════════════════════════════════════════
 
 describe("POST /api/store/material-issue/[id]/post", () => {
   const params = { params: { id: "mi1" } };
+
+  const DRAFT_MI = {
+    id: "mi1",
+    status: "draft",
+    projectId: "p1",
+    locationId: "l1",
+    issueNumber: "MI-001",
+    issueDate: new Date(),
+    lines: [{ itemId: "i1", issuedQty: 5, uomId: "uom1", unitRate: 10, amount: 50 }],
+  };
 
   it("returns 401 when unauthenticated", async () => {
     expect((await POST_POST(buildReq("POST"), params)).status).toBe(401);
@@ -277,45 +289,49 @@ describe("POST /api/store/material-issue/[id]/post", () => {
     expect((await POST_POST(buildReq("POST"), params)).status).toBe(409);
   });
 
-  it("returns 400 when stock is insufficient", async () => {
+  it("returns 400 when the balance cache is insufficient — and writes nothing", async () => {
     setContext(makeAdminCtx());
-    db.cnMaterialIssue.findFirst.mockResolvedValue({
-      id: "mi1",
-      status: "draft",
-      projectId: "p1",
-      locationId: "l1",
-      issueNumber: "MI-001",
-      issueDate: new Date(),
-      lines: [{ itemId: "i1", issuedQty: 5, uomId: "uom1", unitRate: 10, amount: 50 }],
-    });
-    db.cnStockLedger.aggregate.mockResolvedValue({ _sum: { qtyIn: 2, qtyOut: 0 } });
+    db.cnMaterialIssue.findFirst.mockResolvedValue(DRAFT_MI);
+    db.$transaction.mockImplementation(async (cb: any) => cb(db));
+    // Balance cache shows only 2 on hand → deducting 5 must be rejected.
+    db.cnStockBalance.findUnique.mockResolvedValue({ quantity: 2, avgRate: 10 });
     const res = await POST_POST(buildReq("POST"), params);
     expect(res.status).toBe(400);
     expect((await res.json()).error).toMatch(/insufficient stock/i);
+    // Guard fires before any write: neither table is touched, status not flipped.
+    expect(db.cnStockLedger.create).not.toHaveBeenCalled();
+    expect(db.cnStockBalance.upsert).not.toHaveBeenCalled();
+    expect(db.cnMaterialIssue.update).not.toHaveBeenCalled();
   });
 
-  it("posts the issue and writes negative stock ledger rows", async () => {
+  it("posts the issue: appends a ledger row AND decrements the balance cache (the drift fix)", async () => {
     setContext(makeAdminCtx());
-    db.cnMaterialIssue.findFirst.mockResolvedValue({
-      id: "mi1",
-      status: "draft",
-      projectId: "p1",
-      locationId: "l1",
-      issueNumber: "MI-001",
-      issueDate: new Date(),
-      lines: [{ itemId: "i1", issuedQty: 5, uomId: "uom1", unitRate: 10, amount: 50 }],
-    });
-    db.cnStockLedger.aggregate.mockResolvedValue({ _sum: { qtyIn: 100, qtyOut: 0 } });
+    db.cnMaterialIssue.findFirst.mockResolvedValue(DRAFT_MI);
     db.$transaction.mockImplementation(async (cb: any) => cb(db));
-    db.cnStockLedger.create.mockResolvedValue({});
+    // 100 on hand at avg rate 10.
+    db.cnStockBalance.findUnique.mockResolvedValue({ quantity: 100, avgRate: 10 });
+    db.cnStockLedger.create.mockResolvedValue({ id: "led1" });
+    db.cnStockBalance.upsert.mockResolvedValue({});
     db.cnMaterialIssue.update.mockResolvedValue({ id: "mi1", status: "posted" });
+
     const res = await POST_POST(buildReq("POST"), params);
     expect(res.status).toBe(200);
     const body = await res.json();
     expect(body.success).toBe(true);
     expect(body.data.status).toBe("posted");
-    // Negative-stock ledger row created with qtyOut from the line.
-    expect(db.cnStockLedger.create.mock.calls[0][0].data.transactionType).toBe("issue");
-    expect(db.cnStockLedger.create.mock.calls[0][0].data.orgId).toBe(TEST_TENANT);
+
+    // (1) Ledger row: outward "issue" qty, org-scoped.
+    const ledgerData = db.cnStockLedger.create.mock.calls[0][0].data;
+    expect(ledgerData.transactionType).toBe("issue");
+    expect(ledgerData.orgId).toBe(TEST_TENANT);
+    expect(Number(ledgerData.qtyOut)).toBe(5);
+
+    // (2) THE FIX: balance cache decremented in the SAME txn (100 − 5 = 95).
+    // Before this change the route wrote only the ledger and left the cache
+    // stale, so the Stock Balance screen over-reported stock.
+    expect(db.cnStockBalance.upsert).toHaveBeenCalledTimes(1);
+    const upsertArg = db.cnStockBalance.upsert.mock.calls[0][0];
+    expect(Number(upsertArg.update.quantity)).toBe(95);
+    expect(Number(upsertArg.create.quantity)).toBe(95);
   });
 });

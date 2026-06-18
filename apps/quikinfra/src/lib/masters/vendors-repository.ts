@@ -15,7 +15,9 @@
  * and the save retried — keeps the app functional until the push.
  */
 
+import { toErrorMessage, getErrorCode , getErrorMeta} from "@/lib/api/errors";
 import { db } from "@/lib/db";
+import { Prisma } from "@quikit/database";
 
 export interface VendorRecord {
   id: string;
@@ -54,7 +56,7 @@ export interface VendorRecord {
   updatedBy: string;
 }
 
-function toRecord(row: any): VendorRecord {
+function toRecord(row: Prisma.CnVendorGetPayload<Record<string, never>>): VendorRecord {
   return {
     id: row.id,
     orgId: row.orgId,
@@ -124,7 +126,7 @@ function extractUnknownArgument(message: string): string | null {
   const m = message.match(/Unknown argument `([^`]+)`/);
   return m?.[1] ?? null;
 }
-function stripFieldDeep(obj: any, field: string): any {
+function stripFieldDeep(obj: unknown, field: string): unknown {
   if (obj === null || obj === undefined) return obj;
   if (Array.isArray(obj)) return obj.map((x) => stripFieldDeep(x, field));
   if (typeof obj === "object" && Object.getPrototypeOf(obj) === Object.prototype) {
@@ -137,24 +139,24 @@ function stripFieldDeep(obj: any, field: string): any {
   }
   return obj;
 }
-async function withSchemaDriftRetry<T>(
-  buildPayload: () => Record<string, unknown>,
-  run: (payload: any) => Promise<T>,
+async function withSchemaDriftRetry<T, P extends Record<string, unknown>>(
+  buildPayload: () => P,
+  run: (payload: P) => Promise<T>,
 ): Promise<T> {
   let payload = buildPayload();
   for (let i = 0; i < 10; i++) {
     try {
       return await run(payload);
-    } catch (err: any) {
-      const msg = String(err?.message ?? "");
+    } catch (err: unknown) {
+      const msg = toErrorMessage(err, "");
       let bad: string | null = null;
       if (msg.includes("Unknown argument")) bad = extractUnknownArgument(msg);
-      else if (err?.code === "P2022") bad = String(err?.meta?.column ?? "") || null;
+      else if (getErrorCode(err) === "P2022") bad = String(getErrorMeta(err)?.column ?? "") || null;
       if (!bad) throw err;
       const bareBad = bad.includes(".") ? bad.split(".").pop()! : bad;
       if (!STRIPPABLE_FIELDS.has(bareBad)) throw err;
       warnOnceMissing(bareBad);
-      payload = stripFieldDeep(payload, bareBad);
+      payload = stripFieldDeep(payload, bareBad) as P;
     }
   }
   return await run(payload);
@@ -192,7 +194,7 @@ function buildVendorsWhere(
 }
 
 export async function listVendors(opts: ListVendorsOptions): Promise<VendorRecord[]> {
-  const rows = await (db as any).cnVendor.findMany({
+  const rows = await db.cnVendor.findMany({
     where: buildVendorsWhere(opts),
     orderBy: { createdAt: "desc" },
     ...(typeof opts.take === "number" ? { take: opts.take } : {}),
@@ -204,14 +206,14 @@ export async function listVendors(opts: ListVendorsOptions): Promise<VendorRecor
 export async function countVendors(
   opts: Pick<ListVendorsOptions, "orgId" | "search">,
 ): Promise<number> {
-  return (db as any).cnVendor.count({ where: buildVendorsWhere(opts) });
+  return db.cnVendor.count({ where: buildVendorsWhere(opts) });
 }
 
 export async function findVendorById(
   orgId: string,
   id: string,
 ): Promise<VendorRecord | null> {
-  const row = await (db as any).cnVendor.findFirst({
+  const row = await db.cnVendor.findFirst({
     where: { id, orgId },
   });
   return row ? toRecord(row) : null;
@@ -228,7 +230,7 @@ export async function isVendorBlacklisted(
   vendorId: string,
 ): Promise<boolean> {
   if (!vendorId) return false;
-  const row = await (db as any).cnVendor.findFirst({
+  const row = await db.cnVendor.findFirst({
     where: { id: vendorId, orgId },
     select: { status: true },
   });
@@ -242,7 +244,7 @@ export async function findVendorsByIds(
 ): Promise<Map<string, VendorRecord>> {
   const unique = Array.from(new Set(ids.filter(Boolean)));
   if (unique.length === 0) return new Map();
-  const rows = await (db as any).cnVendor.findMany({
+  const rows = await db.cnVendor.findMany({
     where: { orgId, id: { in: unique } },
   });
   const map = new Map<string, VendorRecord>();
@@ -288,7 +290,7 @@ function autoCode(existingCount: number): string {
 export async function createVendor(input: CreateVendorInput): Promise<VendorRecord> {
   let code = (input.code ?? "").trim();
   if (!code) {
-    const existingCount = await (db as any).cnVendor.count({
+    const existingCount = await db.cnVendor.count({
       where: { orgId: input.orgId },
     });
     code = autoCode(existingCount);
@@ -331,7 +333,7 @@ export async function createVendor(input: CreateVendorInput): Promise<VendorReco
       createdBy: input.createdBy,
       updatedBy: input.createdBy,
     }),
-    (data) => (db as any).cnVendor.create({ data }),
+    (data) => db.cnVendor.create({ data }),
   );
   return toRecord(row);
 }
@@ -346,7 +348,7 @@ export async function updateVendor(
   id: string,
   patch: UpdateVendorInput,
 ): Promise<VendorRecord | null> {
-  const existing = await (db as any).cnVendor.findFirst({
+  const existing = await db.cnVendor.findFirst({
     where: { id, orgId },
     select: { id: true },
   });
@@ -377,7 +379,7 @@ export async function updateVendor(
       }
       return data;
     },
-    (data) => (db as any).cnVendor.update({ where: { id }, data }),
+    (data) => db.cnVendor.update({ where: { id }, data }),
   );
   return toRecord(row);
 }
@@ -387,7 +389,7 @@ export async function deleteVendor(
   id: string,
   updatedBy: string,
 ): Promise<boolean> {
-  const res = await (db as any).cnVendor.updateMany({
+  const res = await db.cnVendor.updateMany({
     where: { id, orgId },
     data: { status: "inactive", updatedBy },
   });

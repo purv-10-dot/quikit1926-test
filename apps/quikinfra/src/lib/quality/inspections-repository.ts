@@ -8,6 +8,7 @@
  */
 
 import { db } from "@/lib/db";
+import { Prisma } from "@quikit/database";
 
 export interface InspectionRecord {
   id: string;
@@ -26,7 +27,7 @@ export interface InspectionRecord {
   items: unknown[];
 }
 
-function toRecord(row: any): InspectionRecord {
+function toRecord(row: Prisma.CnQCInspectionGetPayload<Record<string, never>>): InspectionRecord {
   return {
     id: row.id,
     inspectionNo: row.inspectionNumber,
@@ -94,7 +95,7 @@ function buildWhere(
 export async function listInspections(
   opts: ListInspectionsOptions,
 ): Promise<InspectionRecord[]> {
-  const rows = await (db as any).cnQCInspection.findMany({
+  const rows = await db.cnQCInspection.findMany({
     where: buildWhere(opts),
     orderBy: { inspectionDate: "desc" },
     ...(typeof opts.take === "number" ? { take: opts.take } : {}),
@@ -106,14 +107,14 @@ export async function listInspections(
 export async function countInspections(
   opts: Pick<ListInspectionsOptions, "orgId" | "search" | "projectId" | "projectIds">,
 ): Promise<number> {
-  return (db as any).cnQCInspection.count({ where: buildWhere(opts) });
+  return db.cnQCInspection.count({ where: buildWhere(opts) });
 }
 
 export async function findInspectionById(
   orgId: string,
   id: string,
 ): Promise<InspectionRecord | null> {
-  const row = await (db as any).cnQCInspection.findFirst({
+  const row = await db.cnQCInspection.findFirst({
     where: { id, orgId, deletedAt: null },
   });
   return row ? toRecord(row) : null;
@@ -126,7 +127,7 @@ export async function findInspectionById(
  */
 async function nextInspectionNumber(orgId: string, year: number): Promise<string> {
   const prefix = `QI-${year}-`;
-  const count = await (db as any).cnQCInspection.count({
+  const count = await db.cnQCInspection.count({
     where: { orgId, inspectionNumber: { startsWith: prefix } },
   });
   return `${prefix}${String(count + 1).padStart(3, "0")}`;
@@ -153,7 +154,7 @@ export async function createInspection(
 ): Promise<InspectionRecord> {
   const year = input.inspectionDate.getUTCFullYear();
   const inspectionNumber = await nextInspectionNumber(input.orgId, year);
-  const row = await (db as any).cnQCInspection.create({
+  const row = await db.cnQCInspection.create({
     data: {
       orgId: input.orgId,
       inspectionNumber,
@@ -168,7 +169,7 @@ export async function createInspection(
       category: input.category ?? null,
       status: input.status ?? "Active",
       remarks: input.remarks ?? null,
-      items: input.items ?? [],
+      items: (input.items ?? []) as Prisma.InputJsonValue,
       createdBy: input.createdBy,
       updatedBy: input.createdBy,
     },
@@ -193,7 +194,7 @@ export async function updateInspection(
   id: string,
   patch: UpdateInspectionInput,
 ): Promise<InspectionRecord | null> {
-  const existing = await (db as any).cnQCInspection.findFirst({
+  const existing = await db.cnQCInspection.findFirst({
     where: { id, orgId, deletedAt: null },
     select: { id: true },
   });
@@ -212,7 +213,7 @@ export async function updateInspection(
     data.decision = resultToDecision(patch.result);
   }
 
-  const row = await (db as any).cnQCInspection.update({ where: { id }, data });
+  const row = await db.cnQCInspection.update({ where: { id }, data });
   return toRecord(row);
 }
 
@@ -221,7 +222,7 @@ export async function softDeleteInspection(
   id: string,
   updatedBy: string,
 ): Promise<boolean> {
-  const res = await (db as any).cnQCInspection.updateMany({
+  const res = await db.cnQCInspection.updateMany({
     where: { id, orgId, deletedAt: null },
     data: { deletedAt: new Date(), updatedBy },
   });

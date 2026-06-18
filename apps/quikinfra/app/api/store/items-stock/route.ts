@@ -24,7 +24,7 @@ async function loadStockForItems(
 ): Promise<Record<string, number>> {
   if (itemIds.length === 0) return {};
 
-  const rows = await (db as any).cnStockBalance.groupBy({
+  const rows = await db.cnStockBalance.groupBy({
     by: ["itemId"],
     where: { orgId, itemId: { in: itemIds } },
     _sum: { quantity: true },
@@ -39,7 +39,7 @@ async function loadStockForItems(
   // `itemQtyByItemId` as an opening snapshot so the UI doesn't show all zeros.
   const missing = itemIds.filter((id) => data[id] === undefined);
   if (missing.length > 0) {
-    const locRows: any[] = await (db as any).cnLocation.findMany({
+    const locRows = await db.cnLocation.findMany({
       where: { orgId, itemIds: { hasSome: missing } },
       select: { itemIds: true, itemQtyByItemId: true },
     });
@@ -53,7 +53,7 @@ async function loadStockForItems(
       const ids: string[] = Array.isArray(loc?.itemIds) ? loc.itemIds : [];
       for (const id of ids) {
         if (!missing.includes(id)) continue;
-        const raw = (map as any)[id];
+        const raw = (map as Record<string, unknown>)[id];
         const n = raw === null || raw === undefined || String(raw).trim() === "" ? NaN : Number(raw);
         if (Number.isFinite(n)) addQty(id, n);
       }
@@ -85,7 +85,7 @@ export async function POST(req: NextRequest) {
   if (ctxOrResp instanceof NextResponse) return ctxOrResp;
   const ctx = ctxOrResp;
 
-  let body: any = {};
+  let body: { itemIds?: unknown } = {};
   try {
     body = await req.json();
   } catch {

@@ -9,6 +9,7 @@ import {
   patchMaterialIssueStatus,
 } from "@/lib/store/material-issue-repository";
 import { canActOnStep } from "@/lib/approvals/workflow-rbac";
+import { postMaterialIssueOutward, StockError } from "@/lib/stock/ledger-service";
 
 /**
  * POST /api/store/issues/:id/approve
@@ -41,7 +42,7 @@ export async function POST(
     return envelopeErr("FORBIDDEN", `Action "edit" not allowed for store.issue`, 403);
   }
 
-  let body: any = {};
+  let body: { action?: string; comments?: string } = {};
   try {
     body = await req.json();
   } catch {
@@ -80,7 +81,7 @@ export async function POST(
     );
   }
 
-  const instance = await (db as any).cnApprovalInstance.findFirst({
+  const instance = await db.cnApprovalInstance.findFirst({
     where: { id: issue.approvalId, orgId: ctx.orgId },
   });
   if (!instance) {
@@ -98,7 +99,7 @@ export async function POST(
     );
   }
 
-  const currentStep = await (db as any).cnApprovalWorkflowStep.findFirst({
+  const currentStep = await db.cnApprovalWorkflowStep.findFirst({
     where: {
       workflowId: instance.workflowId,
       stepOrder: instance.currentStepOrder,
@@ -142,7 +143,7 @@ export async function POST(
     );
   }
 
-  const nextStep = await (db as any).cnApprovalWorkflowStep.findFirst({
+  const nextStep = await db.cnApprovalWorkflowStep.findFirst({
     where: {
       workflowId: instance.workflowId,
       stepOrder: { gt: instance.currentStepOrder },
@@ -150,9 +151,66 @@ export async function POST(
     orderBy: { stepOrder: "asc" },
   });
 
+  // Final approval is the event that deducts stock. The /store/issue module
+  // stores lines as JSON carrying only a uom *code* (no uomId), so resolve each
+  // code to its uom id before posting — the stock ledger requires the id. Build
+  // and validate the posting input up front; reject with 400 (before touching
+  // the workflow) rather than write a wrong/zero-uom ledger row.
+  const isFinalApprove = action === "approve" && !nextStep;
+  let postingLines: Array<{ itemId: string; uomId: string; issuedQty: number; unitRate: number }> = [];
+  if (isFinalApprove) {
+    const rawLines = Array.isArray(issue.lines) ? (issue.lines as Array<Record<string, unknown>>) : [];
+    if (!issue.locationId) {
+      return NextResponse.json(
+        { error: "Cannot approve issue: no store location assigned. Edit the issue and pick a location first." },
+        { status: 400 },
+      );
+    }
+    if (rawLines.length === 0) {
+      return NextResponse.json({ error: "Cannot approve issue: no line items." }, { status: 400 });
+    }
+    const codes = Array.from(
+      new Set(rawLines.map((l) => String(l.uomCode ?? "").trim()).filter(Boolean)),
+    );
+    const uoms = codes.length
+      ? await db.cnUOM.findMany({
+          where: { orgId: ctx.orgId, code: { in: codes } },
+          select: { id: true, code: true },
+        })
+      : [];
+    const uomIdByCode = new Map(uoms.map((u) => [u.code, u.id]));
+    const unresolved = new Set<string>();
+    let missingItem = false;
+    postingLines = rawLines.map((l) => {
+      const itemId = String(l.itemId ?? "");
+      if (!itemId) missingItem = true;
+      const code = String(l.uomCode ?? "").trim();
+      const uomId = uomIdByCode.get(code);
+      if (!uomId) unresolved.add(code || "(blank)");
+      return {
+        itemId,
+        uomId: uomId ?? "",
+        issuedQty: Number(l.quantity ?? l.issueQty ?? l.qty ?? 0),
+        unitRate: Number(l.unitRate ?? 0),
+      };
+    });
+    if (missingItem) {
+      return NextResponse.json({ error: "Cannot approve issue: a line is missing its item." }, { status: 400 });
+    }
+    if (unresolved.size) {
+      return NextResponse.json(
+        {
+          error: `Cannot approve issue: unrecognized unit code(s) ${Array.from(unresolved).join(", ")}. Fix the issue lines and resubmit.`,
+        },
+        { status: 400 },
+      );
+    }
+  }
+
   let issueStatusUpdate: Record<string, unknown> | null = null;
 
-  await db.$transaction(async (tx: any) => {
+  try {
+  await db.$transaction(async (tx) => {
     await tx.cnApprovalHistory.create({
       data: {
         instanceId: instance.id,
@@ -168,6 +226,17 @@ export async function POST(
         await tx.cnApprovalInstance.update({
           where: { id: instance.id },
           data: { status: "approved", completedAt: new Date() },
+        });
+        // Final approval deducts stock: appends CnStockLedger rows AND syncs
+        // CnStockBalance in this same txn. A StockError (e.g. insufficient
+        // stock) rolls back the approval too, so status never advances past a
+        // failed posting.
+        await postMaterialIssueOutward(tx, ctx, {
+          id: issue.id,
+          issueNumber: issue.issueNumber,
+          projectId: issue.projectId,
+          locationId: issue.locationId as string,
+          lines: postingLines,
         });
         issueStatusUpdate = {
           status: "approved",
@@ -208,19 +277,28 @@ export async function POST(
       };
     }
   });
+  } catch (err: unknown) {
+    if (err instanceof StockError) {
+      return NextResponse.json({ error: err.message, code: err.code }, { status: err.httpStatus });
+    }
+    throw err;
+  }
 
   if (issueStatusUpdate) {
     await patchMaterialIssueStatus(ctx.orgId, issue.id, {
-      ...(issueStatusUpdate as any),
+      ...(issueStatusUpdate as Parameters<typeof patchMaterialIssueStatus>[2]),
       updatedBy: ctx.userId,
     });
   }
 
   const refreshed = await findMaterialIssueById(ctx.orgId, issue.id);
-  const refreshedInstance = await (db as any).cnApprovalInstance.findUnique({
+  const refreshedInstance = await db.cnApprovalInstance.findUnique({
     where: { id: instance.id },
   });
-  const totalSteps = await (db as any).cnApprovalWorkflowStep.count({
+  if (!refreshedInstance) {
+    return NextResponse.json({ error: "Approval instance not found" }, { status: 404 });
+  }
+  const totalSteps = await db.cnApprovalWorkflowStep.count({
     where: { workflowId: instance.workflowId },
   });
   return NextResponse.json({

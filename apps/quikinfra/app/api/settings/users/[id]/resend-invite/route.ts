@@ -40,7 +40,7 @@ export const POST = auth.manage<{ id: string }>(async (
   // Step E: params.id is now auth.User.id (the list/detail endpoints
   // return that as the id). Direct central-table lookup — no cn_users
   // intermediate.
-  const authUser = await (dbCentral as any).user.findUnique({
+  const authUser = await dbCentral.user.findUnique({
     where: { id: params.id },
     select: {
       id: true,
@@ -55,7 +55,7 @@ export const POST = auth.manage<{ id: string }>(async (
 
   // Acceptance check via OrgMember (central source). cn_users.acceptedAt
   // is vestigial — the launcher's accept route writes to OrgMember only.
-  const orgMember = await (dbCentral as any).orgMember.findUnique({
+  const orgMember = await dbCentral.orgMember.findUnique({
     where: {
       orgId_userId: { orgId: ctx.orgId, userId: authUser.id },
     },
@@ -80,7 +80,7 @@ export const POST = auth.manage<{ id: string }>(async (
   const centralInvitationToken = randomUUID();
   const expiresAt = new Date(Date.now() + INVITATION_TTL_MS);
   try {
-    await (dbCentral as any).orgMember.update({
+    await dbCentral.orgMember.update({
       where: {
         orgId_userId: { orgId: ctx.orgId, userId: authUser.id },
       },
@@ -117,16 +117,16 @@ export const POST = auth.manage<{ id: string }>(async (
   try {
     const appId = await getQuikInfraAppId();
     const [orgRow, inviterRow, appRow] = await Promise.all([
-      (dbCentral as any).org.findUnique({
+      dbCentral.org.findUnique({
         where: { id: ctx.orgId },
         select: { name: true, brandColor: true },
       }),
-      (dbCentral as any).user.findUnique({
+      dbCentral.user.findUnique({
         where: { id: ctx.userId },
         select: { firstName: true, lastName: true },
       }),
       appId
-        ? (dbCentral as any).app.findUnique({
+        ? dbCentral.app.findUnique({
             where: { id: appId },
             select: { name: true },
           })
@@ -143,7 +143,7 @@ export const POST = auth.manage<{ id: string }>(async (
     // Pull the user's v2 role to label the salutation chip ("ADMIN" /
     // "HO_USER" / etc.). Falls back to "User" when no role assignment
     // exists yet (e.g. invitee never logged in).
-    const userAppRole = await (dbCentral as any).cnUserAppRole.findFirst({
+    const userAppRole = await dbCentral.cnUserAppRole.findFirst({
       where: { orgId: ctx.orgId, userId: authUser.id },
       select: { role: { select: { name: true } } },
     });

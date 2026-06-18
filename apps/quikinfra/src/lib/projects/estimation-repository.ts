@@ -16,6 +16,7 @@
  */
 
 import { db } from "@/lib/db";
+import { Prisma } from "@quikit/database";
 
 export interface EstimationMaterialLine {
   itemId: string;
@@ -59,14 +60,53 @@ export interface UpdateEstimationInput {
 function genId(): string {
   // `cuid()` isn't available (no package); random UUID is unique enough
   // for a synthetic PK and sorts consistently.
-  if (typeof (globalThis as any).crypto?.randomUUID === "function") {
-    return (globalThis as any).crypto.randomUUID();
+  const cryptoObj = (globalThis as { crypto?: { randomUUID?: () => string } })
+    .crypto;
+  if (typeof cryptoObj?.randomUUID === "function") {
+    return cryptoObj.randomUUID();
   }
   // Fallback — vanishingly rare on modern Node.
   return `est_${Date.now()}_${Math.random().toString(36).slice(2, 10)}`;
 }
 
-function toNum(v: any): number {
+/** A money/quantity value as it arrives from Prisma (Decimal) or raw SQL. */
+type Numericish = Prisma.Decimal | number | string | null | undefined;
+
+/** Raw row from `Material_estimations` (column list selected in listEstimations). */
+interface EstimationRow {
+  id: string;
+  orgId: string;
+  projectId: string;
+  projectName?: string | null;
+  boqItemId: string;
+  boqNo?: string | null;
+  boqDescription?: string | null;
+  boqQuantity?: Numericish;
+  boqUnit?: string | null;
+  phase?: string | null;
+  status?: string | null;
+  totalQty?: Numericish;
+  totalCost?: Numericish;
+  materialCount?: number | null;
+  materials?: unknown;
+  approvalId?: string | null;
+  rejectionReason?: string | null;
+  returnReason?: string | null;
+  submittedAt?: Date | null;
+  submittedBy?: string | null;
+  approvedAt?: Date | null;
+  approvedBy?: string | null;
+  rejectedAt?: Date | null;
+  rejectedBy?: string | null;
+  returnedAt?: Date | null;
+  returnedBy?: string | null;
+  createdAt?: Date | null;
+  updatedAt?: Date | null;
+  createdBy?: string | null;
+  updatedBy?: string | null;
+}
+
+function toNum(v: unknown): number {
   if (v === null || v === undefined || v === "") return 0;
   const n = Number(v);
   return Number.isFinite(n) ? n : 0;
@@ -93,7 +133,7 @@ function rollup(materials: EstimationMaterialLine[]): {
 // Shape the raw DB row into the object the UI has been consuming from
 // the demo-store. Decimals come back as strings from pg; coerce them to
 // numbers for easy rendering.
-function mapRow(row: any): any {
+function mapRow(row: EstimationRow | null) {
   if (!row) return null;
   return {
     id: row.id,
@@ -124,10 +164,12 @@ function mapRow(row: any): any {
     returnedBy: row.returnedBy ?? null,
     createdAt: row.createdAt ? row.createdAt.toISOString?.() ?? String(row.createdAt) : null,
     updatedAt: row.updatedAt ? row.updatedAt.toISOString?.() ?? String(row.updatedAt) : null,
-    createdBy: row.createdBy ?? null,
-    updatedBy: row.updatedBy ?? null,
+    createdBy: row.createdBy ?? "",
+    updatedBy: row.updatedBy ?? "",
   };
 }
+
+export type Estimation = NonNullable<ReturnType<typeof mapRow>>;
 
 export async function listEstimations(
   orgId: string,
@@ -136,7 +178,7 @@ export async function listEstimations(
     allowedProjectIds?: string[] | null;
     search?: string | null;
   } = {},
-): Promise<any[]> {
+): Promise<Estimation[]> {
   const projectId = opts.projectId ?? null;
   const search = (opts.search ?? "").trim().toLowerCase();
   const allowed = opts.allowedProjectIds ?? null;
@@ -149,8 +191,8 @@ export async function listEstimations(
   // allowed-project-id list is enforced in JS after fetch to sidestep
   // Prisma's array-parameter quirks with `ANY($n::text[])`; the
   // dataset is small per tenant so this is cheap.
-  const rows: any[] = projectId
-    ? await (db as any).$queryRaw`
+  const rows: EstimationRow[] = projectId
+    ? await db.$queryRaw<EstimationRow[]>`
         SELECT
           id, "orgId", "projectId", "projectName",
           "boqItemId", "boqNo", "boqDescription", "boqQuantity", "boqUnit",
@@ -163,7 +205,7 @@ export async function listEstimations(
         WHERE "orgId" = ${orgId} AND "projectId" = ${projectId}
         ORDER BY "createdAt" DESC
       `
-    : await (db as any).$queryRaw`
+    : await db.$queryRaw<EstimationRow[]>`
         SELECT
           id, "orgId", "projectId", "projectName",
           "boqItemId", "boqNo", "boqDescription", "boqQuantity", "boqUnit",
@@ -177,13 +219,15 @@ export async function listEstimations(
         ORDER BY "createdAt" DESC
       `;
 
-  let mapped = rows.map(mapRow);
+  let mapped = rows
+    .map(mapRow)
+    .filter((r): r is NonNullable<typeof r> => r !== null);
   if (allowed !== null) {
     const set = new Set(allowed);
-    mapped = mapped.filter((r: any) => set.has(r.projectId));
+    mapped = mapped.filter((r) => set.has(r.projectId));
   }
   if (search) {
-    mapped = mapped.filter((r: any) =>
+    mapped = mapped.filter((r) =>
       [r.boqNo, r.boqDescription, r.phase, r.projectName].some(
         (v) => typeof v === "string" && v.toLowerCase().includes(search),
       ),
@@ -195,8 +239,8 @@ export async function listEstimations(
 export async function findEstimationById(
   orgId: string,
   id: string,
-): Promise<any | null> {
-  const rows: any[] = await (db as any).$queryRaw`
+): Promise<Estimation | null> {
+  const rows = await db.$queryRaw<EstimationRow[]>`
     SELECT
       id, "orgId", "projectId", "projectName",
       "boqItemId", "boqNo", "boqDescription", "boqQuantity", "boqUnit",
@@ -214,13 +258,13 @@ export async function findEstimationById(
 
 export async function createEstimation(
   input: CreateEstimationInput,
-): Promise<any> {
+): Promise<Estimation | null> {
   const id = genId();
   const { totalQty, totalCost, materialCount } = rollup(input.materials);
   const materialsJson = JSON.stringify(input.materials ?? []);
   const now = new Date();
 
-  await (db as any).$executeRaw`
+  await db.$executeRaw`
     INSERT INTO app_quikinfra."Material_estimations" (
       id, "orgId", "projectId", "projectName",
       "boqItemId", "boqNo", "boqDescription", "boqQuantity", "boqUnit",
@@ -249,7 +293,7 @@ export async function createEstimation(
 export async function updateEstimation(
   id: string,
   input: UpdateEstimationInput,
-): Promise<any | null> {
+): Promise<Estimation | null> {
   const existing = await findEstimationById(input.orgId, id);
   if (!existing) return null;
 
@@ -268,7 +312,7 @@ export async function updateEstimation(
 
   const now = new Date();
 
-  await (db as any).$executeRaw`
+  await db.$executeRaw`
     UPDATE app_quikinfra."Material_estimations"
     SET
       "projectName"    = ${next.projectName ?? null},
@@ -290,10 +334,10 @@ export async function updateEstimation(
   return findEstimationById(input.orgId, id);
 }
 
-function stripUndefined<T extends Record<string, any>>(o: T): Partial<T> {
-  const out: any = {};
-  for (const k in o) if (o[k] !== undefined) out[k] = o[k];
-  return out;
+function stripUndefined<T extends object>(o: T): Partial<T> {
+  return Object.fromEntries(
+    Object.entries(o).filter(([, v]) => v !== undefined),
+  ) as Partial<T>;
 }
 
 // Raw status patch — used by submit/approve routes that only need to
@@ -318,7 +362,7 @@ export async function patchEstimationStatus(
     returnedBy?: string | null;
     updatedBy: string;
   },
-): Promise<any | null> {
+): Promise<Estimation | null> {
   const existing = await findEstimationById(orgId, id);
   if (!existing) return null;
 
@@ -369,7 +413,7 @@ export async function patchEstimationStatus(
       patch.returnedBy !== undefined ? patch.returnedBy : existing.returnedBy,
   };
 
-  await (db as any).$executeRaw`
+  await db.$executeRaw`
     UPDATE app_quikinfra."Material_estimations"
     SET
       status            = ${next.status},
@@ -396,7 +440,7 @@ export async function deleteEstimation(
   orgId: string,
   id: string,
 ): Promise<boolean> {
-  const res: any = await (db as any).$executeRaw`
+  const res = await db.$executeRaw`
     DELETE FROM app_quikinfra."Material_estimations"
     WHERE "orgId" = ${orgId} AND id = ${id}
   `;

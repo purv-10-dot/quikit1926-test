@@ -1,15 +1,23 @@
 import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { withOrgAuthForModule } from "@/lib/api/withOrgAuth";
+import { postReconciliationAdjustment, StockError } from "@/lib/stock/ledger-service";
+import type { TenantContext } from "@/lib/auth/context";
 
 const withOrgAuth = withOrgAuthForModule("store");
 
 /**
- * Reconciliation post: writes adjustment rows.
- *   adjustmentQty > 0 → extra found → qtyIn row
- *   adjustmentQty < 0 → shortage    → qtyOut row (absolute value)
- *   adjustmentQty = 0 → skip (no ledger row needed)
- * transactionType = "reconciliation_adj".
+ * Reconciliation post: writes signed adjustment rows through the stock ledger
+ * service.
+ *   varianceQty > 0 → surplus found → qtyIn row
+ *   varianceQty < 0 → shortage      → qtyOut row (absolute value)
+ *   varianceQty = 0 → skip (no ledger row needed)
+ *
+ * `postReconciliationAdjustment` appends each CnStockLedger row AND keeps the
+ * CnStockBalance cache in sync. Shortages that exceed the current balance are
+ * rejected by the service guard (allowNegative defaults to false), so the
+ * ledger and the balance can never disagree. This route must never write the
+ * ledger directly. transactionType = "reconciliation_adj".
  */
 export const POST = withOrgAuth<{ id: string }>(async ({ orgId, userId }, _req, { params }) => {
   const rec = await db.cnStockReconciliation.findFirst({
@@ -19,48 +27,24 @@ export const POST = withOrgAuth<{ id: string }>(async ({ orgId, userId }, _req, 
   if (!rec) return NextResponse.json({ success: false, error: "Not found" }, { status: 404 });
   if (rec.status === "posted") return NextResponse.json({ success: false, error: "Already posted" }, { status: 409 });
 
-  // For shortages, also validate we have that much to remove
-  const insufficient: Array<{ itemId: string; available: number; requested: number }> = [];
-  for (const line of rec.lines) {
-    const adj = Number(line.varianceQty);
-    if (adj < 0) {
-      const agg = await db.cnStockLedger.aggregate({
-        where: { orgId, projectId: rec.projectId, locationId: rec.locationId, itemId: line.itemId },
-        _sum: { qtyIn: true, qtyOut: true },
-      });
-      const available = Number(agg._sum?.qtyIn ?? 0) - Number(agg._sum?.qtyOut ?? 0);
-      if (available < Math.abs(adj)) {
-        insufficient.push({ itemId: line.itemId, available, requested: Math.abs(adj) });
-      }
-    }
-  }
-  if (insufficient.length) {
-    return NextResponse.json({ success: false, error: "Shortage exceeds available stock", details: insufficient }, { status: 400 });
-  }
-
+  // The stock service takes a TenantContext but only reads orgId/userId.
+  const ctx = { orgId, userId } as TenantContext;
   const postedAt = new Date();
+
   try {
     await db.$transaction(async (tx) => {
       for (const line of rec.lines) {
-        const adj = Number(line.varianceQty);
-        if (adj === 0) continue;
-        await tx.cnStockLedger.create({
-          data: {
-            orgId,
-            projectId: rec.projectId,
-            locationId: rec.locationId,
-            itemId: line.itemId,
-            transactionType: "reconciliation_adj",
-            transactionRefId: rec.id,
-            transactionRefNumber: rec.reconciliationNumber,
-            transactionDate: rec.reconciliationDate,
-            qtyIn: adj > 0 ? adj : 0,
-            qtyOut: adj < 0 ? Math.abs(adj) : 0,
-            unitRate: 0,
-            amount: 0,
-            uomId: line.uomId,
-            createdBy: userId,
-          },
+        // Signed delta; the service writes the correct in/out leg and guards
+        // shortages against the current balance.
+        await postReconciliationAdjustment(tx, ctx, {
+          projectId: rec.projectId,
+          locationId: rec.locationId,
+          itemId: line.itemId,
+          uomId: line.uomId,
+          signedQty: Number(line.varianceQty),
+          refId: rec.id,
+          refNumber: rec.reconciliationNumber,
+          txDate: rec.reconciliationDate,
         });
       }
       await tx.cnStockReconciliation.update({
@@ -69,6 +53,12 @@ export const POST = withOrgAuth<{ id: string }>(async ({ orgId, userId }, _req, 
       });
     });
   } catch (err: unknown) {
+    if (err instanceof StockError) {
+      return NextResponse.json(
+        { success: false, error: err.message, code: err.code },
+        { status: err.httpStatus },
+      );
+    }
     const msg = err instanceof Error ? err.message : "Posting failed";
     return NextResponse.json({ success: false, error: `Transaction failed: ${msg}` }, { status: 500 });
   }
