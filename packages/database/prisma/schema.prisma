@@ -4144,6 +4144,19 @@ model CnDPRLabourEntry {
   hoursWorked  Decimal @db.Decimal(5, 2)
   contractorId String?
 
+  // Wide trade-grid columns (Daily Progress Report manpower section).
+  // One row per contractor; values are man-days/man-hours per trade.
+  workingArea  String?
+  messan       Decimal? @db.Decimal(18, 4)
+  maleHelper   Decimal? @db.Decimal(18, 4)
+  femaleHelper Decimal? @db.Decimal(18, 4)
+  carpenter    Decimal? @db.Decimal(18, 4)
+  fitter       Decimal? @db.Decimal(18, 4)
+  painter      Decimal? @db.Decimal(18, 4)
+  plumber      Decimal? @db.Decimal(18, 4)
+  electrician  Decimal? @db.Decimal(18, 4)
+  operator     Decimal? @db.Decimal(18, 4)
+
   dpr CnDailyProgressReport @relation(fields: [dprId], references: [id], onDelete: Cascade)
 
   @@index([dprId])
