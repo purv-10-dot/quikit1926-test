@@ -141,7 +141,6 @@ model Org {
   cnApprovalRules         CnApprovalRule[]
   cnAssets                CnAsset[]
   cnAuditLogs             CnAuditLog[]
-  cnBanks                 CnBank[]
   cnCompanies             CnCompany[]
   cnContractors           CnContractor[]
   cnCostCenters           CnCostCenter[]
@@ -2032,7 +2031,6 @@ model CnCompany {
   createdBy   String
   updatedBy   String
 
-  banks    CnBank[]
   finYears CnFinancialYear[]
 
   // --- grafted: cross-schema relations (Org/User) ---
@@ -2263,30 +2261,6 @@ model CnItem {
   @@index([groupId])
   @@index([orgId, status, createdAt(sort: Desc)])
   @@map("Items")
-  @@schema("app_quikinfra")
-}
-
-model CnBank {
-  id          String   @id @default(cuid())
-  orgId       String
-  bankName    String
-  branchName  String?
-  accountNo   String
-  ifscCode    String
-  accountType String // current | savings
-  companyId   String
-  status      String   @default("active")
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
-  createdBy   String
-  updatedBy   String
-
-  company CnCompany @relation(fields: [companyId], references: [id])
-
-  // --- grafted: cross-schema relations (Org/User) ---
-  org         Org       @relation(fields: [orgId], references: [id], onDelete: Cascade)
-  @@index([orgId])
-  @@map("Banks")
   @@schema("app_quikinfra")
 }
 
