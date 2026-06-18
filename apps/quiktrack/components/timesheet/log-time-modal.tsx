@@ -1,9 +1,10 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { X, ChevronDown } from "lucide-react";
-import { parseDurationToHours, formatHours } from "@/lib/utils/timesheetPeriod";
+import { X } from "lucide-react";
+import { parseClockToHours, formatHoursAsClock } from "@/lib/utils/timesheetPeriod";
 import { WorkItemPicker } from "./work-item-picker";
+import { ProjectPicker } from "./project-picker";
 
 interface ProjectOption {
   id: string;
@@ -39,7 +40,9 @@ export function LogTimeModal({
   const [issues, setIssues] = useState<IssueOption[]>([]);
   const [issueId, setIssueId] = useState(lockedIssueId ?? "");
   const [date, setDate] = useState(() => toDateInput(lockedDate ?? new Date()));
-  const [duration, setDuration] = useState("");
+  // Clock-style time-spent field. Defaults to a real "00:00" value (not just a
+  // placeholder) and always normalizes back to HH:MM on blur.
+  const [duration, setDuration] = useState("00:00");
   const [description, setDescription] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
@@ -59,7 +62,7 @@ export function LogTimeModal({
         setProjectId(e.projectId);
         setIssueId(e.issueId);
         setDate(toDateInput(new Date(e.entryDate)));
-        setDuration(formatHours(e.hours));
+        setDuration(formatHoursAsClock(e.hours));
         setDescription(e.description ?? "");
       })
       .catch(() => undefined);
@@ -114,9 +117,9 @@ export function LogTimeModal({
       setError("Pick a work item to log time against.");
       return;
     }
-    const hours = parseDurationToHours(duration);
+    const hours = parseClockToHours(duration);
     if (hours === null || hours <= 0) {
-      setError("Enter a valid duration (e.g. 2h 30m).");
+      setError("Enter a valid time (e.g. 01:30, or 1.5 for 1h 30m).");
       return;
     }
     setSubmitting(true);
@@ -163,26 +166,20 @@ export function LogTimeModal({
         <div className="space-y-3">
           {!lockedProjectId && (
             <Field label="Project">
-              <Select
+              <ProjectPicker
+                projects={projects}
                 value={projectId}
                 onChange={(v) => {
                   setProjectId(v);
                   setIssueId("");
                 }}
-              >
-                <option value="">— Pick a project —</option>
-                {projects.map((p) => (
-                  <option key={p.id} value={p.id}>
-                    {p.name}
-                  </option>
-                ))}
-              </Select>
+              />
             </Field>
           )}
 
           <Field label="Work item">
             {lockedIssueId ? (
-              <div className="w-full h-9 px-3 inline-flex items-center text-sm text-gray-800 border border-gray-200 rounded bg-gray-50">
+              <div className="w-full min-h-9 px-3 py-2 flex items-start text-sm leading-snug text-gray-800 border border-gray-200 rounded bg-gray-50 break-words">
                 {lockedIssueLabel ?? lockedIssueId}
               </div>
             ) : (
@@ -213,13 +210,23 @@ export function LogTimeModal({
                 autoFocus
                 value={duration}
                 onChange={(e) => setDuration(e.target.value)}
-                placeholder="e.g. 2h 30m"
-                className="w-full h-9 px-3 text-sm border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                onFocus={(e) => e.currentTarget.select()}
+                onBlur={() => {
+                  // Snap to HH:MM on blur: "1" → "01:00", "1.5" → "01:30",
+                  // "1:30" → "01:30". Anything unparseable falls back to
+                  // "00:00" so the field always shows a valid clock value.
+                  const h = parseClockToHours(duration);
+                  setDuration(h !== null && h > 0 ? formatHoursAsClock(h) : "00:00");
+                }}
+                inputMode="decimal"
+                className={`w-full h-9 px-3 text-sm tabular-nums tracking-wide border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 ${
+                  duration === "00:00" ? "text-gray-400" : "text-gray-900"
+                }`}
               />
             </Field>
           </div>
           <p className="text-[11px] text-gray-500">
-            Format: 2w 4d 6h 45m. w = weeks, d = days, h = hours, m = minutes.
+            Format HH:MM. Type 1 for 01:00, 1.5 for 01:30, or enter 01:30 directly.
           </p>
 
           <Field label="Description">
@@ -247,7 +254,7 @@ export function LogTimeModal({
           <button
             type="button"
             onClick={() => void save()}
-            disabled={submitting || !duration.trim() || !issueId}
+            disabled={submitting || (parseClockToHours(duration) ?? 0) <= 0 || !issueId}
             className="h-8 px-3 text-sm font-medium text-white bg-blue-600 rounded hover:bg-blue-700 disabled:bg-gray-200 disabled:text-gray-500"
           >
             {isEdit ? "Update" : "Save"}
@@ -264,32 +271,6 @@ function Field({ label, children }: { label: string; children: React.ReactNode }
       <span className="text-xs font-semibold text-gray-700 block mb-1">{label}</span>
       {children}
     </label>
-  );
-}
-
-function Select({
-  value,
-  onChange,
-  disabled,
-  children,
-}: {
-  value: string;
-  onChange: (v: string) => void;
-  disabled?: boolean;
-  children: React.ReactNode;
-}) {
-  return (
-    <div className="relative">
-      <select
-        value={value}
-        onChange={(e) => onChange(e.target.value)}
-        disabled={disabled}
-        className="w-full h-9 pl-3 pr-8 text-sm border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 appearance-none bg-white disabled:bg-gray-50 disabled:text-gray-400"
-      >
-        {children}
-      </select>
-      <ChevronDown className="absolute right-2 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-gray-500 pointer-events-none" />
-    </div>
   );
 }
 

@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { useState } from "react";
+import { confirmDialog } from "@/lib/ui/confirm";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { ShieldCheck } from "lucide-react";
 import {
@@ -102,8 +103,14 @@ export default function RolesPage() {
                       <Button
                         variant="ghost"
                         size="sm"
-                        onClick={() => {
-                          if (confirm(`Delete role "${r.name}"?`)) del.mutate(r.id);
+                        onClick={async () => {
+                          const ok = await confirmDialog({
+                            title: "Delete role",
+                            message: `Delete role "${r.name}"?`,
+                            confirmText: "Delete",
+                            danger: true,
+                          });
+                          if (ok) del.mutate(r.id);
                         }}
                       >
                         Delete

@@ -106,8 +106,9 @@ Production secrets must be entered through Vercel's project → Settings → Env
 - [ ] `INTERNAL_SECRET` — shared cross-app token. Same value across every QuikIT app.
 
 **Cron + default org:**
-- [ ] `CRON_SECRET` — bearer token for `/api/cron/publish-scheduled` and `/api/cron/auto-reply-monitor`. Set the same value in `vercel.json` cron config.
-- [ ] `DEFAULT_ORG_ID` — the `quikit.Org.id` cron runs against during the single-org migration window. Must exist in the live DB; provision a real `Org` row first.
+- [ ] `CRON_SECRET` — bearer token for `/api/cron/publish-scheduled` and `/api/cron/auto-reply-monitor`. Use the **same value** on the app and every caller: `vercel.json` cron config, or (on GKE) BOTH the k8s CronJob env AND the web Deployment's Secret. A mismatch 401s; an unset value on the web side 500s.
+- [ ] `DISABLE_INPROCESS_CRON` — set to `"true"` on the GKE **web** Deployment so the in-process scheduler (`instrumentation.ts`) stays off and only the k8s CronJobs drive cron. Leave **unset** locally/UAT (default-on keeps the in-process timer; any value other than `"true"` = enabled).
+- [ ] `DEFAULT_ORG_ID` — the `quikit.Org.id` used by single-org fallback paths (invite-accept, OAuth integration callback, campaign notify-complete). **No longer used by cron** — the cron routes now sweep all orgs. Must still exist in the live DB; provision a real `Org` row first.
 
 **Python AI service (Railway):**
 - [ ] `AI_SERVICE_URL` — base URL of the FastAPI service (e.g. `https://quiksocial-v2-production.up.railway.app`).

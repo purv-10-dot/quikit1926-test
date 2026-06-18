@@ -49,9 +49,11 @@ const DEFAULT_ALLOWED_ORIGINS = [
   "https://scale.quikit.ai",
   "https://orgadmin.quikit.ai",
   "https://track.quikit.ai",
-  "https://qcrm.quikit.ai",
+  "https://crm.quikit.ai",
   "https://social.quikit.ai",
   "https://quikinfra.quikit.ai",
+  "https://quikhrms.vercel.app",
+  "https://people.quikit.ai",
 ];
 
 function allowedOrigins(): Set<string> {

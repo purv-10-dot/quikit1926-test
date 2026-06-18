@@ -7,16 +7,17 @@ import {
   isAction,
   isResource,
   isValidPermissionPair,
+  isAppWideOnly,
 } from "@/lib/api/permissionsRegistry";
 
-const grantSchema = z
-  .object({
-    resource: z.string().refine(isResource, "Unknown resource"),
-    action: z.string().refine(isAction, "Unknown action"),
-  })
-  .refine((g) => isValidPermissionPair(g.resource, g.action), {
-    message: "(resource, action) pair is not valid for this leaf",
-  });
+// Accept any {resource, action} strings here; invalid/stale pairs are filtered
+// out in the handler (see below) rather than rejecting the whole save. This
+// mirrors the org-roles route and means a Save heals data left behind when a
+// leaf's actions were trimmed.
+const grantSchema = z.object({
+  resource: z.string(),
+  action: z.string(),
+});
 
 const putBodySchema = z.object({ permissions: z.array(grantSchema) });
 
@@ -73,6 +74,11 @@ export const PUT = withProjectAccess<{ id: string; roleId: string }>(async (
   const desired = parsed.data.permissions.filter((p) => {
     const k = `${p.resource}:${p.action}`;
     if (seen.has(k)) return false;
+    // Drop unknown / stale pairs instead of failing the whole save.
+    if (!isResource(p.resource) || !isAction(p.action)) return false;
+    if (!isValidPermissionPair(p.resource, p.action)) return false;
+    // App-wide-only resources (Home/Dashboards/Reports) aren't project-scoped.
+    if (isAppWideOnly(p.resource)) return false;
     seen.add(k);
     return true;
   });

@@ -1,0 +1,417 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<title>QuikIT HRMS — User Guide</title>
+<style>
+  @page { size: A4; margin: 18mm 16mm; }
+  * { box-sizing: border-box; }
+  body {
+    font-family: -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    color: #1f2937;
+    line-height: 1.55;
+    max-width: 780px;
+    margin: 0 auto;
+    padding: 40px 32px;
+    font-size: 13px;
+  }
+  h1 { color: #1e40af; font-size: 32px; margin: 0 0 4px; }
+  h2 { color: #1e40af; font-size: 22px; border-bottom: 2px solid #dbeafe; padding-bottom: 6px; margin-top: 40px; page-break-after: avoid; }
+  h3 { color: #1e3a8a; font-size: 16px; margin-top: 24px; page-break-after: avoid; }
+  h4 { color: #374151; font-size: 14px; margin-top: 14px; }
+  .cover { text-align: center; padding: 80px 20px; border-bottom: 3px solid #1e40af; margin-bottom: 40px; }
+  .cover h1 { font-size: 48px; }
+  .cover .subtitle { color: #6b7280; font-size: 18px; margin-top: 8px; }
+  .cover .meta { margin-top: 40px; font-size: 12px; color: #9ca3af; }
+  .badge { display: inline-block; padding: 2px 8px; border-radius: 4px; font-size: 11px; font-weight: 600; margin-right: 4px; }
+  .badge-blue { background: #dbeafe; color: #1e40af; }
+  .badge-green { background: #d1fae5; color: #065f46; }
+  .badge-yellow { background: #fef3c7; color: #92400e; }
+  .badge-purple { background: #ede9fe; color: #6b21a8; }
+  table { width: 100%; border-collapse: collapse; margin: 12px 0; font-size: 12px; page-break-inside: avoid; }
+  th { background: #f3f4f6; text-align: left; padding: 6px 10px; border: 1px solid #e5e7eb; font-weight: 600; }
+  td { padding: 6px 10px; border: 1px solid #e5e7eb; vertical-align: top; }
+  code { background: #f3f4f6; padding: 2px 6px; border-radius: 4px; font-family: "SF Mono", Consolas, monospace; font-size: 12px; color: #be185d; }
+  pre { background: #f9fafb; border: 1px solid #e5e7eb; padding: 10px 14px; border-radius: 6px; font-size: 11px; overflow-x: auto; }
+  ul { margin: 6px 0; padding-left: 22px; }
+  ol { margin: 6px 0; padding-left: 22px; }
+  li { margin: 3px 0; }
+  .callout { border-left: 4px solid #3b82f6; background: #eff6ff; padding: 10px 14px; border-radius: 0 6px 6px 0; margin: 12px 0; font-size: 12px; }
+  .callout.warn { border-color: #f59e0b; background: #fffbeb; }
+  .callout.tip { border-color: #10b981; background: #ecfdf5; }
+  .toc { background: #f9fafb; padding: 18px 22px; border-radius: 8px; border: 1px solid #e5e7eb; }
+  .toc ol { margin: 0; }
+  .toc a { color: #1e40af; text-decoration: none; }
+  .step { margin: 10px 0 10px 0; padding: 10px 14px; background: #f9fafb; border-radius: 6px; border-left: 3px solid #3b82f6; }
+  .step-num { display: inline-block; width: 22px; height: 22px; background: #3b82f6; color: #fff; border-radius: 50%; text-align: center; line-height: 22px; font-size: 11px; font-weight: 700; margin-right: 8px; }
+  .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin: 12px 0; }
+  .card { background: #f9fafb; border: 1px solid #e5e7eb; padding: 12px 14px; border-radius: 6px; }
+  .card h4 { margin: 0 0 6px; color: #1e40af; }
+  .page-break { page-break-before: always; }
+  .role-table td:first-child { font-weight: 600; color: #1e40af; white-space: nowrap; }
+  .print-hide { display: none; }
+  @media screen {
+    .print-hide { display: block; position: fixed; bottom: 20px; right: 20px; background: #3b82f6; color: white; padding: 12px 20px; border-radius: 8px; font-size: 14px; font-weight: 600; box-shadow: 0 4px 12px rgba(0,0,0,0.2); cursor: pointer; z-index: 100; }
+  }
+  @media print {
+    .cover { page-break-after: always; }
+  }
+</style>
+</head>
+<body>
+
+<button class="print-hide" onclick="window.print()">📄 Save as PDF</button>
+
+<div class="cover">
+  <h1>QuikIT HRMS</h1>
+  <div class="subtitle">Complete User Guide</div>
+  <div class="meta">Version 1.0 · April 2026<br/>Confidential — QuikIT Technologies</div>
+</div>
+
+<h2 id="intro">1. What is QuikIT HRMS?</h2>
+<p>
+QuikIT HRMS is a Human Resources Management System. It helps a company manage its people — hiring, onboarding, attendance, leaves, payroll, performance, documents, assets, and more. Everything in one place. Built for HR teams, managers, and employees.
+</p>
+<div class="callout tip">
+<b>In simple words:</b> QuikIT HRMS = digital HR office. No paperwork. Click, fill, submit.
+</div>
+
+<h3>Who uses it?</h3>
+<table class="role-table">
+  <tr><td>HR Manager</td><td>Adds employees, runs payroll, approves leaves, tracks compliance</td></tr>
+  <tr><td>Employee</td><td>Checks in, applies leave, views payslip, updates profile</td></tr>
+  <tr><td>Manager</td><td>Approves team leaves, reviews performance, assigns tasks</td></tr>
+  <tr><td>CEO / Founder</td><td>Views org analytics, headcount, attrition</td></tr>
+  <tr><td>IT / Admin</td><td>Configures settings, manages roles, checks audit logs</td></tr>
+</table>
+
+<h3>How to log in</h3>
+<div class="step"><span class="step-num">1</span> Open the QuikIT HRMS URL in a browser (Chrome, Firefox, Safari, Edge)</div>
+<div class="step"><span class="step-num">2</span> Click "My Space" in top blue bar — that is your personal workspace</div>
+<div class="step"><span class="step-num">3</span> Left sidebar shows all modules. Click any module to open it.</div>
+
+<h2 id="layout">2. Layout Overview</h2>
+<div class="grid">
+  <div class="card">
+    <h4>Top Blue Bar</h4>
+    Switch between <b>My Space</b> (self), <b>Team</b> (reportees), <b>Organization</b> (everyone).
+  </div>
+  <div class="card">
+    <h4>Left Sidebar</h4>
+    All modules listed: People, Leave Tracker, Time Tracker, Payroll, Recruit, etc.
+  </div>
+  <div class="card">
+    <h4>Content Area</h4>
+    Main working area. Tabs, tables, forms, charts show here.
+  </div>
+  <div class="card">
+    <h4>Sticky Sidebar</h4>
+    Sidebar stays fixed when scrolling — always visible for quick navigation.
+  </div>
+</div>
+
+<div class="page-break"></div>
+
+<h2 id="modules">3. All Modules</h2>
+
+<h3>3.1 Dashboard (Home)</h3>
+<p><b>What it shows:</b> Profile card, live check-in timer, reportees, work schedule, upcoming holidays, analytics snapshot.</p>
+<p><b>Use for:</b> daily quick glance, check-in/out, see team status.</p>
+
+<h3>3.2 People</h3>
+<span class="badge badge-blue">HR</span> <span class="badge badge-green">Managers</span>
+<ul>
+  <li><b>Employee Directory</b> — full employee list, search, filter</li>
+  <li><b>Org Chart</b> — visual reporting hierarchy</li>
+  <li><b>Bulk Import</b> — upload CSV to add many employees at once</li>
+  <li><b>Employment History</b> — promotions, transfers, salary changes</li>
+</ul>
+<div class="callout">
+<b>How to add an employee:</b> Click <b>People → Employee Directory → Add New</b>. Fill name, email, department, dept, joining date. Save.
+</div>
+
+<h3>3.3 Onboarding</h3>
+<span class="badge badge-blue">HR</span>
+<ul>
+  <li><b>Candidate Table</b> — list of new hires in pre-boarding</li>
+  <li><b>Add Candidate</b> — big form: personal + address + professional + education + experience</li>
+  <li><b>Templates</b> — reusable onboarding checklists</li>
+  <li><b>Task Tracker</b> — per-candidate task list (upload docs, sign offer, provision laptop)</li>
+  <li><b>Complete Onboarding</b> — button that activates employee + sends welcome notification</li>
+</ul>
+
+<h3>3.4 Offboarding</h3>
+<ul>
+  <li><b>Initiate Offboarding</b> — mark employee exit (resignation/termination)</li>
+  <li><b>Clearance</b> — IT, HR, Finance, Admin clearance tasks</li>
+  <li><b>Exit Interview</b> — feedback form</li>
+  <li><b>FnF Settlement</b> — auto-calculate final salary + gratuity + deductions</li>
+</ul>
+
+<h3>3.5 Leave Tracker</h3>
+<span class="badge badge-blue">Everyone</span>
+<ul>
+  <li><b>My Data</b> → Leave Summary (available/booked cards), Leave Balance, Leave Requests, Shift</li>
+  <li><b>Team</b> → Team leaves dashboard, approvals</li>
+  <li><b>Holidays</b> → all company holidays for year</li>
+</ul>
+<div class="step"><span class="step-num">1</span> Click <b>Apply Leave</b> → pick leave type, dates, reason → Submit</div>
+<div class="step"><span class="step-num">2</span> Manager approves/rejects → status updates in Leave Requests tab</div>
+<div class="step"><span class="step-num">3</span> Balance auto-deducts once approved</div>
+
+<h3>3.6 Time Tracker</h3>
+<ul>
+  <li><b>Time Logs</b> — log daily work time, list or calendar view</li>
+  <li><b>Timesheets</b> — weekly/monthly submissions for approval</li>
+  <li><b>Jobs</b> — work items under a project</li>
+  <li><b>Projects</b> — billable/non-billable project buckets</li>
+  <li><b>Job Schedule</b> — assign work hours per day, publish to team</li>
+</ul>
+<div class="callout tip">
+<b>Live Timer:</b> Click green Play button → timer starts. Click red Pause → time log auto-created.
+</div>
+
+<h3>3.7 Attendance</h3>
+<ul>
+  <li><b>Attendance Summary</b> — weekly grid (Mon-Sun) with Present/Absent/Weekend/Holiday labels + total hours</li>
+  <li><b>Shift</b> — weekly/monthly shift calendar + assign shifts</li>
+  <li>Live check-in/out with running timer</li>
+</ul>
+
+<h3>3.8 Payroll</h3>
+<span class="badge badge-blue">Finance / HR</span>
+<ul>
+  <li><b>Run Payroll</b> — process monthly salary (PF, ESI, PT, TDS auto-calculated)</li>
+  <li><b>Payslips</b> — employee salary slips (PDF downloadable)</li>
+  <li><b>Salary Structure</b> — Basic, HRA, Special, deductions config</li>
+  <li><b>Loans & Advances</b> — personal loans, salary advances</li>
+  <li><b>Reimbursements</b> — expense claim processing</li>
+</ul>
+
+<h3>3.9 Performance</h3>
+<ul>
+  <li><b>Goals</b> — OKR/KPI tracking per employee</li>
+  <li><b>Reviews</b> — appraisal cycles (quarterly/annual)</li>
+  <li><b>Feedback</b> — peer feedback, kudos</li>
+  <li><b>1-on-1s</b> — manager-employee meeting notes</li>
+  <li><b>PIP</b> — Performance Improvement Plan workflow</li>
+</ul>
+
+<div class="page-break"></div>
+
+<h3>3.10 Recruit (ATS)</h3>
+<ul>
+  <li><b>Requisitions</b> — open job postings with headcount</li>
+  <li><b>Candidates</b> — resume pool</li>
+  <li><b>Pipeline</b> — Kanban board (Applied → Screening → Interview → Offer → Hired)</li>
+  <li><b>Interviews</b> — schedule + feedback</li>
+  <li><b>Offers</b> — offer letter generation, negotiation tracking</li>
+</ul>
+
+<h3>3.11 Documents</h3>
+<ul>
+  <li><b>Library</b> — offer letters, policies, certificates, ID proofs</li>
+  <li><b>Templates</b> — reusable with <code>{{placeholder}}</code> auto-fill</li>
+  <li><b>My Vault</b> — employee self-service document folder</li>
+  <li><b>E-Sign</b> — electronic signature requests (Internal / DocuSign / AdobeSign)</li>
+</ul>
+
+<h3>3.12 Assets</h3>
+<ul>
+  <li><b>Inventory</b> — laptops, phones, ID cards, furniture</li>
+  <li><b>Assign / Return</b> — atomic flow (flips status Available → Assigned → Returned)</li>
+  <li><b>My Assets</b> — employee self-service</li>
+  <li><b>Overdue</b> — alerts for overdue returns</li>
+</ul>
+
+<h3>3.13 Expenses</h3>
+<ul>
+  <li><b>Claims</b> — submit expense with receipt + category</li>
+  <li><b>Policies</b> — per-category caps (per-txn, monthly, yearly)</li>
+  <li><b>Multi-level Approval</b> — Manager → Finance → Paid</li>
+  <li><b>Reports</b> — by category, month, department</li>
+</ul>
+
+<h3>3.14 Compliance</h3>
+<ul>
+  <li><b>Statutory Config</b> — PF/ESI/PT/TDS/LWF/Gratuity rates</li>
+  <li><b>Employee Statutory Info</b> — PAN, UAN, Aadhaar, exemptions</li>
+  <li><b>Tax Declarations</b> — Section 80C/80D/HRA declarations (Old/New regime)</li>
+  <li><b>PF/ESI Reports</b> — monthly return CSV export</li>
+</ul>
+
+<h3>3.15 Engage</h3>
+<ul>
+  <li><b>Social Wall</b> — company feed</li>
+  <li><b>Announcements</b> — targeted broadcasts</li>
+  <li><b>Surveys</b> — pulse + engagement surveys</li>
+  <li><b>Recognition</b> — peer-to-peer kudos and badges</li>
+</ul>
+
+<h3>3.16 Analytics</h3>
+<ul>
+  <li><b>Overview</b> — headcount, pending items, active workflows</li>
+  <li><b>Headcount</b> — by department, employment type, location</li>
+  <li><b>Attrition</b> — monthly trend, tenure buckets, attrition rate %</li>
+</ul>
+
+<h3>3.17 Notifications</h3>
+<p>In-app inbox. Read/unread toggles, email + push support, templated events (leave approved, payslip ready, etc).</p>
+
+<h3>3.18 Reports</h3>
+<ul>
+  <li><b>Query Builder</b> — drag-drop report generator</li>
+  <li><b>Generated Reports</b> — list of past runs (CSV/XLSX/PDF/JSON)</li>
+  <li><b>Scheduled</b> — cron-based recurring reports (sent via email)</li>
+</ul>
+
+<h3>3.19 Dashboards</h3>
+<p>Custom dashboards. Drag widgets (metric, bar, line, pie, table, list, calendar). Default dashboard per role.</p>
+
+<h3>3.20 Audit Log</h3>
+<ul>
+  <li>Every create/update/delete tracked</li>
+  <li>Filter by actor, entity, action, date range</li>
+  <li>CSV export for compliance</li>
+</ul>
+
+<h3>3.21 Settings</h3>
+<ul>
+  <li><b>Company</b> — name, logo, timezone, currency, fiscal year, work hours</li>
+  <li><b>Holiday Calendar</b> — year-wise holiday list</li>
+  <li><b>Approval Chains</b> — multi-level workflows per module</li>
+  <li><b>Notification Preferences</b> — channel opt-in/opt-out per event</li>
+  <li><b>Custom Fields</b> — tenant-specific fields for Employee, Asset, etc.</li>
+  <li><b>Workflows</b> — event-triggered automation</li>
+</ul>
+
+<h3>3.22 AI Copilot</h3>
+<ul>
+  <li><b>HR Chat</b> — ask in plain English ("What's my leave balance?")</li>
+  <li><b>Resume Screening</b> — AI scores candidates against JD</li>
+  <li><b>Performance Insight</b> — goal completion analysis</li>
+  <li><b>Anomaly Detection</b> — flag unusual attendance/expense patterns</li>
+  <li><b>Smart Suggestions</b> — hiring + compensation recommendations</li>
+</ul>
+
+<h3>3.23 Delegations</h3>
+<p>Delegate approval authority to someone for a date range (Leave / Expense / Timesheet). Useful when going on vacation.</p>
+
+<h3>3.24 E-Sign + Candidate Portal</h3>
+<ul>
+  <li><b>E-Sign</b>: send document to multiple signers, track status</li>
+  <li><b>Candidate Portal</b>: public link where candidates see their application + offer status</li>
+</ul>
+
+<div class="page-break"></div>
+
+<h2 id="workflows">4. Common Workflows</h2>
+
+<h3>🎯 New hire end-to-end</h3>
+<ol>
+  <li>Recruit → Create Requisition → post job</li>
+  <li>Candidate applies → Pipeline moves to Interview</li>
+  <li>Interview completed → scorecard filled</li>
+  <li>Offer sent → candidate accepts</li>
+  <li>Onboarding → Add Candidate (big form)</li>
+  <li>Template tasks auto-created (ID proof, laptop, orientation)</li>
+  <li>Tasks completed → <b>Complete Onboarding</b> button → employee becomes Active</li>
+</ol>
+
+<h3>🏖️ Apply & approve leave</h3>
+<ol>
+  <li>Employee: Leave Tracker → Apply Leave → fill form → submit</li>
+  <li>Manager: Team Leaves → Pending Approvals → Approve/Reject</li>
+  <li>Employee sees updated status + balance</li>
+</ol>
+
+<h3>💰 Run monthly payroll</h3>
+<ol>
+  <li>Payroll → Run Payroll → select month → Process</li>
+  <li>System auto-computes Basic + HRA + deductions (PF, PT, TDS)</li>
+  <li>Review → Approve → Lock → Generate Payslips → Pay</li>
+  <li>Employees see payslip in Payroll → Payslips</li>
+</ol>
+
+<h3>📄 Generate offer letter from template</h3>
+<ol>
+  <li>Documents → Templates → New Template (with <code>{{firstName}}</code>, <code>{{ctc}}</code>, etc.)</li>
+  <li>Click "Generate" → fill placeholder values → document created</li>
+  <li>Send via E-Sign for signatures</li>
+</ol>
+
+<h3>💻 Asset assignment</h3>
+<ol>
+  <li>Assets → Add Asset (laptop, serial, brand, price)</li>
+  <li>Open asset → Assign → pick employee + expected return date</li>
+  <li>Later: Return → set condition → auto-flip to Available / InRepair / Lost</li>
+</ol>
+
+<h3>💸 Expense reimbursement</h3>
+<ol>
+  <li>Expenses → New Claim → select policy → fill amount + receipt URL</li>
+  <li>Submit → flows through approval chain (Manager → Finance)</li>
+  <li>Mark Paid → reflected in payslip as reimbursement</li>
+</ol>
+
+<h2 id="tips">5. Quick Tips</h2>
+<div class="callout tip">
+<b>Keyboard:</b> Use <code>Ctrl+F</code> to search within tables.
+</div>
+<div class="callout tip">
+<b>Filters:</b> Most tables have filter icons (funnel). Click to open filter drawer.
+</div>
+<div class="callout tip">
+<b>3-dot menu:</b> Export / Import / PDF / Print available on most pages.
+</div>
+<div class="callout warn">
+<b>Drafts:</b> Always save as draft first if unsure. Submit later.
+</div>
+<div class="callout warn">
+<b>Approvals:</b> Once approved, many actions cannot be undone. Review before clicking.
+</div>
+
+<h2 id="faq">6. FAQ</h2>
+
+<h4>Q: Forgot to check in?</h4>
+<p>Go to Attendance → Attendance Summary → click past day → Regularization request.</p>
+
+<h4>Q: Payslip shows wrong amount?</h4>
+<p>Contact HR. Payroll is locked after processing. Corrections happen via Supplementary payroll run.</p>
+
+<h4>Q: How do I delegate leaves while on vacation?</h4>
+<p>Delegations → New Delegation → pick delegatee + date range + select "Leave" module.</p>
+
+<h4>Q: Where do I see my expense refund?</h4>
+<p>Expenses → My Claims → check status. Once "Paid", appears in next payslip as reimbursement.</p>
+
+<h4>Q: Can employees edit their own profile?</h4>
+<p>Yes. People → Employee Directory → click own name. Some fields (salary, department) locked to HR.</p>
+
+<h4>Q: How do I bulk-add employees?</h4>
+<p>People → Bulk Import → upload CSV with columns: firstName, lastName, workEmail, departmentCode, jobTitle, dateOfJoining. Dry-run first to validate.</p>
+
+<h4>Q: AI Chatbot says strange things?</h4>
+<p>AI Copilot is backed by QuikIT AI service. Responses depend on model. Verify sensitive info with HR before acting.</p>
+
+<h2 id="support">7. Support</h2>
+<table>
+  <tr><th>Issue type</th><th>Contact</th></tr>
+  <tr><td>Login / password</td><td>IT Admin</td></tr>
+  <tr><td>Leaves, attendance</td><td>HR Manager</td></tr>
+  <tr><td>Payroll, salary</td><td>Finance / Payroll Admin</td></tr>
+  <tr><td>Bug / technical</td><td>Raise ticket at IT support</td></tr>
+</table>
+
+<div class="callout tip" style="margin-top: 40px; text-align: center;">
+<b>That's it.</b> You now know everything you need. Jump in and start using QuikIT HRMS.
+</div>
+
+<hr style="margin: 60px 0 20px; border: none; border-top: 1px solid #e5e7eb;" />
+<p style="text-align: center; font-size: 11px; color: #9ca3af;">
+QuikIT HRMS · Version 1.0 · April 2026 · Confidential<br/>
+© QuikIT Technologies. All rights reserved.
+</p>
+
+</body>
+</html>

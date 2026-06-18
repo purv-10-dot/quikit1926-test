@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { withOrgAuth } from "@/lib/api/withOrgAuth";
-import { getQuikTrackAppId, isAdminRole } from "@/lib/api/permissions";
+import { getQuikTrackAppId, isAdminRole, userCan } from "@/lib/api/permissions";
 
 // GET /api/me/access
 // Powers the dashboard's NoAccessGate. Returns enough context to render
@@ -11,7 +11,7 @@ import { getQuikTrackAppId, isAdminRole } from "@/lib/api/permissions";
 //   - orgName + roleName (display chip)
 //   - adminEmails (up to 3) — so the user can "request access" via mailto
 export const GET = withOrgAuth(async ({ orgId, userId }) => {
-  const [membership, org, appId, projectCount] = await Promise.all([
+  const [membership, org, appId, projectCount, canCreateProject] = await Promise.all([
     db.orgMember.findFirst({
       where: { userId, orgId, status: "active" },
       select: { role: true },
@@ -25,6 +25,10 @@ export const GET = withOrgAuth(async ({ orgId, userId }) => {
         project: { orgId, isDeleted: false },
       },
     }),
+    // Space Creators (and anyone else granted Project:create) must clear the
+    // NoAccessGate even with zero memberships — otherwise they're walled off
+    // before they can create their first space.
+    userCan(userId, orgId, "Project", "create"),
   ]);
 
   const isOrgAdmin =
@@ -65,6 +69,7 @@ export const GET = withOrgAuth(async ({ orgId, userId }) => {
       isAdmin: isOrgAdmin || isAppAdmin,
       hasProjects: projectCount > 0,
       projectCount,
+      canCreateProject,
       orgName: org?.name ?? null,
       roleName,
       adminEmails,

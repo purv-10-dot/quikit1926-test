@@ -9,7 +9,8 @@ import {
   ListTree,
   Zap,
 } from "lucide-react";
-import { RichTextEditor } from "@/components/rich-text-editor";
+import { RichTextEditor } from "@/components/rich-text-editor-lazy";
+import { uploadProjectImage } from "@/lib/upload-image";
 import type { MentionItem } from "@/components/editor/mention";
 import { SubtaskGrid } from "./subtask-grid";
 import { AddEpicButton } from "./add-epic-button";
@@ -145,6 +146,7 @@ export function IssueHeaderSections({
                   onChange={setDescDraft}
                   placeholder="Add a description..."
                   mentions={mentions ?? []}
+                  uploadImage={(file) => uploadProjectImage(projectId, file)}
                 />
                 <div className="mt-2 flex items-center justify-end gap-2">
                   <button

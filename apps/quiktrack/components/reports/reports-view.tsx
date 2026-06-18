@@ -23,10 +23,7 @@ import {
   monthLabel,
   ProjectRowSkeleton,
   ProjectTaskRow,
-  type ProjectRef,
-  type StatusRef,
   type Task,
-  type UserRef,
 } from "./project-report-bits";
 
 interface Summary { total: number; pending: number; closed: number; estHours: number; actualHours: number; }
@@ -62,6 +59,7 @@ export function ReportsView() {
       return j.data as {
         tasks: Task[];
         summary: Summary;
+        facets: { statuses: { name: string }[]; assignees: { id: string; name: string }[] };
         page: number;
         pageSize: number;
         total: number;
@@ -85,21 +83,32 @@ export function ReportsView() {
   const isInitialLoading = query.isLoading && !query.data;
   const isRefetching = query.isFetching && !!query.data;
 
-  const projectOptions = useMemo(() => {
-    const m = new Map<string, ProjectRef>();
-    for (const t of tasks) if (t.project) m.set(t.project.id, t.project);
-    return Array.from(m.values()).sort((a, b) => a.name.localeCompare(b.name));
-  }, [tasks]);
-  const statusOptions = useMemo(() => {
-    const m = new Map<string, StatusRef>();
-    for (const t of tasks) if (t.status) m.set(t.status.name, t.status);
-    return Array.from(m.values()).sort((a, b) => a.name.localeCompare(b.name));
-  }, [tasks]);
-  const assigneeOptions = useMemo(() => {
-    const m = new Map<string, UserRef>();
-    for (const t of tasks) if (t.assignee) m.set(t.assignee.id, t.assignee);
-    return Array.from(m.values()).sort((a, b) => a.name.localeCompare(b.name));
-  }, [tasks]);
+  // All projects the user can access — fetched independently of the current
+  // page of task rows. Deriving this from `tasks` only showed projects present
+  // on the loaded page, so the list grew as you paginated. /api/projects with
+  // pageSize=0 returns every accessible project (admins: all; members: theirs).
+  const projectsQuery = useQuery({
+    queryKey: ["reports.projects"],
+    queryFn: async ({ signal }) => {
+      const res = await fetch("/api/projects?pageSize=0&sort=name&order=asc", { signal });
+      const j = await res.json();
+      if (!j?.success) throw new Error(j?.error ?? "Failed");
+      return (j.data as { id: string; name: string }[]) ?? [];
+    },
+    staleTime: 5 * 60 * 1000,
+  });
+  const projectOptions = useMemo(
+    () =>
+      (projectsQuery.data ?? [])
+        .map((p) => ({ id: p.id, name: p.name }))
+        .sort((a, b) => a.name.localeCompare(b.name)),
+    [projectsQuery.data],
+  );
+  // Status / assignee options come from the server-computed facets (the full
+  // accessible dataset for the period), not the current page of `tasks` — so
+  // the dropdowns list every option regardless of which page is loaded.
+  const statusOptions = query.data?.facets?.statuses ?? [];
+  const assigneeOptions = query.data?.facets?.assignees ?? [];
 
   useEffect(() => {
     setPage(1);

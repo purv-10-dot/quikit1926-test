@@ -19,8 +19,8 @@ export interface DocTemplate {
 export const DOC_TEMPLATES: DocTemplate[] = [
   {
     key: "blank",
-    name: "Blank page",
-    description: "Start a page from scratch.",
+    name: "Blank doc",
+    description: "Start a doc from scratch.",
     icon: "📄",
     category: "general",
     body: "<p></p>",

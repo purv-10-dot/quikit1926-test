@@ -50,7 +50,15 @@ export const GET = withOrgAuth(async ({ orgId, userId }, req) => {
     if (projectId && !projectIds.includes(projectId)) {
       return NextResponse.json({
         success: true,
-        data: { tasks: [], summary: empty(), page: 1, pageSize: 10, total: 0, totalPages: 1 },
+        data: {
+          tasks: [],
+          summary: empty(),
+          facets: { statuses: [], assignees: [] },
+          page: 1,
+          pageSize: 10,
+          total: 0,
+          totalPages: 1,
+        },
       });
     }
   }
@@ -89,6 +97,20 @@ export const GET = withOrgAuth(async ({ orgId, userId }, req) => {
     ...(startDateRange ? { startDate: startDateRange } : {}),
   };
 
+  // Scope for the filter dropdowns ("facets"). Intentionally independent of
+  // the page AND of the project / status / assignee selections, so the Status
+  // and Assignee dropdowns always list every option in the accessible dataset
+  // for the period — not just the values present on the current page. Bounded
+  // by the same project access + month/createdAt window as the report itself.
+  const facetWhere = {
+    orgId,
+    isDeleted: false,
+    ...(projectIds ? { projectId: { in: projectIds } } : {}),
+    ...(from || to
+      ? { createdAt: { ...(from ? { gte: from } : {}), ...(to ? { lt: to } : {}) } }
+      : {}),
+  };
+
   const page = Math.max(1, Number(url.searchParams.get("page") ?? 1));
   const pageSize = Math.min(100, Math.max(5, Number(url.searchParams.get("pageSize") ?? 10)));
 
@@ -96,38 +118,43 @@ export const GET = withOrgAuth(async ({ orgId, userId }, req) => {
   // count is a relation filter on category=DONE so we avoid pulling status
   // ids client-side. Actual-time aggregate uses a relation filter on the
   // timesheet table so we don't need to materialize the full issue id list.
-  const [total, closedCount, etaAgg, actualTotalAgg, tasks] = await Promise.all([
-    db.qtIssue.count({ where }),
-    db.qtIssue.count({ where: { ...where, status: { category: "DONE" } } }),
-    db.qtIssue.aggregate({ where, _sum: { eta: true } }),
-    db.qtTimesheetEntry.aggregate({
-      where: {
-        orgId,
-        isDeleted: false,
-        issue: where,
-      },
-      _sum: { hours: true },
-    }),
-    db.qtIssue.findMany({
-      where,
-      orderBy: [{ createdAt: "desc" }],
-      skip: (page - 1) * pageSize,
-      take: pageSize,
-      select: {
-        id: true,
-        key: true,
-        title: true,
-        type: true,
-        assigneeId: true,
-        projectId: true,
-        statusId: true,
-        startDate: true,
-        dueDate: true,
-        eta: true,
-        createdAt: true,
-      },
-    }),
-  ]);
+  const [total, closedCount, etaAgg, actualTotalAgg, tasks, statusGroups, assigneeGroups] =
+    await Promise.all([
+      db.qtIssue.count({ where }),
+      db.qtIssue.count({ where: { ...where, status: { category: "DONE" } } }),
+      db.qtIssue.aggregate({ where, _sum: { eta: true } }),
+      db.qtTimesheetEntry.aggregate({
+        where: {
+          orgId,
+          isDeleted: false,
+          issue: where,
+        },
+        _sum: { hours: true },
+      }),
+      db.qtIssue.findMany({
+        where,
+        orderBy: [{ createdAt: "desc" }],
+        skip: (page - 1) * pageSize,
+        take: pageSize,
+        select: {
+          id: true,
+          key: true,
+          title: true,
+          type: true,
+          assigneeId: true,
+          projectId: true,
+          statusId: true,
+          startDate: true,
+          dueDate: true,
+          eta: true,
+          createdAt: true,
+        },
+      }),
+      // Facet sources — distinct status / assignee ids across the whole scope.
+      // (null buckets are dropped below via filter(Boolean).)
+      db.qtIssue.groupBy({ by: ["statusId"], where: facetWhere }),
+      db.qtIssue.groupBy({ by: ["assigneeId"], where: facetWhere }),
+    ]);
   const pendingCount = total - closedCount;
 
   // Hydrate references in one batch.
@@ -135,7 +162,10 @@ export const GET = withOrgAuth(async ({ orgId, userId }, req) => {
   const statusIds = Array.from(new Set(tasks.map((t) => t.statusId).filter(Boolean) as string[]));
   const userIds = Array.from(new Set(tasks.map((t) => t.assigneeId).filter(Boolean) as string[]));
 
-  const [projects, statuses, users, actuals] = await Promise.all([
+  const facetStatusIds = statusGroups.map((g) => g.statusId).filter(Boolean) as string[];
+  const facetAssigneeIds = assigneeGroups.map((g) => g.assigneeId).filter(Boolean) as string[];
+
+  const [projects, statuses, users, actuals, facetStatuses, facetUsers] = await Promise.all([
     db.qtProject.findMany({
       where: { id: { in: projIds }, orgId },
       select: { id: true, name: true, projectKey: true, color: true, icon: true },
@@ -156,6 +186,18 @@ export const GET = withOrgAuth(async ({ orgId, userId }, req) => {
           _sum: { hours: true },
         })
       : Promise.resolve([] as { issueId: string; _sum: { hours: number | null } }[]),
+    facetStatusIds.length
+      ? db.qtIssueStatus.findMany({
+          where: { id: { in: facetStatusIds } },
+          select: { name: true },
+        })
+      : Promise.resolve([] as { name: string }[]),
+    facetAssigneeIds.length
+      ? db.user.findMany({
+          where: { id: { in: facetAssigneeIds } },
+          select: { id: true, firstName: true, lastName: true, email: true },
+        })
+      : Promise.resolve([] as { id: string; firstName: string | null; lastName: string | null; email: string }[]),
   ]);
 
   const projectById = new Map(projects.map((p) => [p.id, p] as const));
@@ -198,11 +240,23 @@ export const GET = withOrgAuth(async ({ orgId, userId }, req) => {
     actualHours: actualTotalAgg?._sum.hours ?? 0,
   };
 
+  // Status names are duplicated per project, so dedupe by name for the filter.
+  const statusFacet = Array.from(new Set(facetStatuses.map((s) => s.name)))
+    .sort((a, b) => a.localeCompare(b))
+    .map((name) => ({ name }));
+  const assigneeFacet = facetUsers
+    .map((u) => ({
+      id: u.id,
+      name: `${u.firstName ?? ""} ${u.lastName ?? ""}`.trim() || u.email,
+    }))
+    .sort((a, b) => a.name.localeCompare(b.name));
+
   return NextResponse.json({
     success: true,
     data: {
       tasks: shaped,
       summary,
+      facets: { statuses: statusFacet, assignees: assigneeFacet },
       page,
       pageSize,
       total,

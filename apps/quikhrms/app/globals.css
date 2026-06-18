@@ -1,0 +1,524 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  /* HiBob-inspired palette */
+  --background: #faf4ef;
+  --foreground: #1b1a1f;
+  --muted-foreground: #6b7280;
+  --sidebar-bg: #1e3a8a;
+  --sidebar-bg-hover: #1e40af;
+  --sidebar-active: #3b82f6;
+  --sidebar-text: #dbeafe;
+  --sidebar-text-muted: #93c5fd;
+  --accent: #16243A;
+  --accent-hover: #1E3354;
+  --card-bg: #ffffff;
+  --card-border: rgba(15, 23, 42, 0.06);
+  --input-bg: #ffffff;
+  --input-text: #111827;
+  --border: #f0e4d8;
+}
+
+.dark {
+  --background: #0b1220;
+  --foreground: #e5e7eb;
+  --muted-foreground: #94a3b8;
+  --sidebar-bg: #0f172a;
+  --sidebar-bg-hover: #1e293b;
+  --sidebar-active: #2563eb;
+  --sidebar-text: #cbd5e1;
+  --sidebar-text-muted: #64748b;
+  --accent: #3b82f6;
+  --accent-hover: #2563eb;
+  --card-bg: #111a2c;
+  --card-border: rgba(255, 255, 255, 0.08);
+  --input-bg: #0f172a;
+  --input-text: #e5e7eb;
+  --border: #1f2a40;
+}
+
+.dark .surface-card {
+  background: var(--card-bg);
+  border-color: var(--card-border);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.35);
+}
+.dark input,
+.dark textarea,
+.dark select {
+  background-color: var(--input-bg);
+  color: var(--input-text);
+  border-color: var(--border);
+}
+.dark :where(form) :where(input):not([type="checkbox"]):not([type="radio"]):not([type="color"]):not([type="range"]):not([type="file"]):not([type="submit"]):not([type="button"]):not([type="reset"]):not([type="image"]),
+.dark :where(form) :where(textarea),
+.dark :where(form) :where(select) {
+  background: var(--input-bg);
+  color: var(--input-text);
+  border-color: var(--border);
+}
+.dark :where(form) :where(label) { color: #cbd5e1; }
+.dark input::placeholder,
+.dark textarea::placeholder { color: #64748b; }
+.dark select option {
+  background-color: #0f172a;
+  color: #e5e7eb;
+}
+.dark .btn-secondary {
+  background: #111a2c;
+  color: #e5e7eb;
+  border-color: var(--border);
+}
+.dark .btn-secondary:hover:not(:disabled) { background: #1f2a40; border-color: #334155; }
+.dark .btn-ghost { color: #cbd5e1; }
+.dark .btn-ghost:hover:not(:disabled) { background: rgba(255, 255, 255, 0.06); color: #f1f5f9; }
+.dark .shimmer {
+  background: linear-gradient(
+    90deg,
+    rgba(30, 41, 59, 0.6) 0%,
+    rgba(51, 65, 85, 0.85) 20%,
+    rgba(71, 85, 105, 1) 40%,
+    rgba(51, 65, 85, 0.85) 60%,
+    rgba(30, 41, 59, 0.6) 100%
+  );
+  background-size: 200% 100%;
+}
+
+/* ──────────────────────────────────────────────────────────────
+   DARK MODE — global chrome remap.
+   The app is built with light Tailwind utilities (bg-white, text-gray-*,
+   border-gray-*) and almost no per-component `dark:` variants. Rather than
+   editing every file, we remap the NEUTRAL surface/text/border utilities here
+   so the whole UI reads correctly in dark mode. Semantic accent colors
+   (red/green/blue/amber/emerald/cyan/purple/orange/indigo badges) are left
+   untouched — tinted badges stay readable on dark surfaces.
+   ────────────────────────────────────────────────────────────── */
+.dark { color-scheme: dark; }
+
+/* Surfaces */
+.dark .bg-white { background-color: #111a2c; }
+.dark .bg-gray-50,
+.dark .bg-slate-50,
+.dark .bg-neutral-50,
+.dark .bg-zinc-50 { background-color: #0e1626; }
+.dark .bg-gray-100,
+.dark .bg-slate-100,
+.dark .bg-neutral-100,
+.dark .bg-zinc-100 { background-color: #1b2740; }
+.dark .bg-gray-200,
+.dark .bg-slate-200 { background-color: #243049; }
+
+/* Hover surfaces */
+.dark .hover\:bg-white:hover { background-color: #16233b; }
+.dark .hover\:bg-gray-50:hover,
+.dark .hover\:bg-slate-50:hover,
+.dark .hover\:bg-gray-100:hover,
+.dark .hover\:bg-slate-100:hover { background-color: #1b2740; }
+
+/* Text — neutral ramp */
+.dark .text-black,
+.dark .text-gray-900, .dark .text-slate-900, .dark .text-neutral-900, .dark .text-zinc-900,
+.dark .text-gray-800, .dark .text-slate-800 { color: #e5e7eb; }
+.dark .text-gray-700, .dark .text-slate-700, .dark .text-neutral-700 { color: #cbd5e1; }
+.dark .text-gray-600, .dark .text-slate-600, .dark .text-neutral-600 { color: #aab6c8; }
+.dark .text-gray-500, .dark .text-slate-500, .dark .text-neutral-500 { color: #94a3b8; }
+.dark .text-gray-400, .dark .text-slate-400, .dark .text-neutral-400 { color: #6b7a90; }
+
+/* Borders + dividers */
+.dark .border-gray-100, .dark .border-gray-200, .dark .border-gray-300,
+.dark .border-slate-100, .dark .border-slate-200, .dark .border-slate-300,
+.dark .border-neutral-100, .dark .border-neutral-200 { border-color: #243049; }
+.dark .divide-gray-100 > :not([hidden]) ~ :not([hidden]),
+.dark .divide-gray-200 > :not([hidden]) ~ :not([hidden]),
+.dark .divide-slate-100 > :not([hidden]) ~ :not([hidden]),
+.dark .divide-slate-200 > :not([hidden]) ~ :not([hidden]) { border-color: #243049; }
+
+/* Rings (focus / outline borders) */
+.dark .ring-gray-200, .dark .ring-slate-200 { --tw-ring-color: #243049; }
+
+/* Placeholders everywhere */
+.dark .placeholder\:text-gray-400::placeholder { color: #6b7a90; }
+
+/* Hover text — neutral "darken on hover" must LIGHTEN in dark mode, otherwise
+   the text turns dark-on-dark and disappears on hover. */
+.dark .hover\:text-black:hover,
+.dark .hover\:text-gray-900:hover, .dark .hover\:text-gray-800:hover, .dark .hover\:text-gray-700:hover,
+.dark .hover\:text-slate-900:hover, .dark .hover\:text-slate-800:hover, .dark .hover\:text-slate-700:hover { color: #f1f5f9; }
+.dark .hover\:text-gray-600:hover, .dark .hover\:text-gray-500:hover,
+.dark .hover\:text-slate-600:hover, .dark .hover\:text-slate-500:hover { color: #cbd5e1; }
+
+/* group-hover text — same fix for cards/rows that darken a child label on hover. */
+.dark .group:hover .group-hover\:text-gray-900,
+.dark .group:hover .group-hover\:text-gray-800,
+.dark .group:hover .group-hover\:text-gray-700,
+.dark .group:hover .group-hover\:text-slate-900,
+.dark .group:hover .group-hover\:text-slate-800 { color: #f1f5f9; }
+
+/* Brand navy (#16243A / #1E3354) is a dark accent used for text/icons on light
+   surfaces — invisible on dark. Remap it (and its hover/group-hover forms) to a
+   light brand tone so headings, icons and hover labels stay readable. */
+.dark .text-\[\#16243A\], .dark .text-\[\#16243a\],
+.dark .text-\[\#1E3354\], .dark .text-\[\#1e3354\] { color: #93c5fd; }
+.dark .hover\:text-\[\#16243A\]:hover, .dark .hover\:text-\[\#1E3354\]:hover { color: #bfdbfe; }
+.dark .group:hover .group-hover\:text-\[\#16243A\],
+.dark .group:hover .group-hover\:text-\[\#1E3354\] { color: #bfdbfe; }
+
+/* Hover borders that darken on light → lighten on dark. */
+.dark .hover\:border-gray-300:hover, .dark .hover\:border-gray-400:hover,
+.dark .hover\:border-slate-300:hover, .dark .hover\:border-slate-400:hover { border-color: #334155; }
+
+body {
+  background: var(--background);
+  color: var(--foreground);
+  font-family: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", Arial, sans-serif;
+}
+
+/* HiBob-style display heading — Fraunces serif */
+.hibob-display,
+.font-serif-display {
+  font-family: var(--font-fraunces), "Fraunces", Georgia, "Times New Roman", serif;
+  font-weight: 700;
+  letter-spacing: -0.015em;
+  font-variation-settings: "opsz" 144;
+}
+
+/* ── Pill button system (HiBob-style) ──────────────── */
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  font-weight: 600;
+  font-size: 13px;
+  line-height: 1;
+  border-radius: 9999px;
+  padding: 0.625rem 1.25rem;
+  transition: background-color 150ms ease, color 150ms ease, box-shadow 150ms ease, transform 80ms ease;
+  border: 1px solid transparent;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.btn:disabled { opacity: 0.55; cursor: not-allowed; }
+.btn:active:not(:disabled) { transform: translateY(0.5px); }
+
+.btn-primary {
+  background: var(--accent);
+  color: #ffffff;
+  box-shadow: 0 1px 2px rgba(59, 130, 246, 0.25);
+}
+.btn-primary:hover:not(:disabled) { background: var(--accent-hover); }
+
+.btn-secondary {
+  background: #ffffff;
+  color: #1e293b;
+  border-color: #e2e8f0;
+}
+.btn-secondary:hover:not(:disabled) { background: #f8fafc; border-color: #cbd5e1; }
+
+.btn-ghost {
+  background: transparent;
+  color: #475569;
+}
+.btn-ghost:hover:not(:disabled) { background: rgba(0, 0, 0, 0.04); color: #0f172a; }
+
+.btn-danger {
+  background: #dc2626;
+  color: #ffffff;
+}
+.btn-danger:hover:not(:disabled) { background: #b91c1c; }
+
+.btn-sm { padding: 0.4rem 0.85rem; font-size: 12px; }
+.btn-lg { padding: 0.85rem 1.6rem; font-size: 14px; }
+.btn-icon { padding: 0.55rem; }
+
+/* Surface card */
+.surface-card {
+  background: #ffffff;
+  border-radius: 16px;
+  border: 1px solid rgba(15, 23, 42, 0.06);
+  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.04);
+}
+
+/* Accent chip */
+.hibob-chip {
+  background: var(--accent);
+  color: #fff;
+  border-radius: 9999px;
+  padding: 2px 10px;
+  font-weight: 600;
+  font-size: 11px;
+}
+
+/* Bob-style logo mark */
+.hibob-logo {
+  background: var(--accent);
+  color: #fff;
+  width: 40px;
+  height: 40px;
+  border-radius: 10px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: 800;
+  font-size: 16px;
+  letter-spacing: -0.02em;
+}
+
+/* Form field visibility — readable placeholders + option text across app */
+input,
+textarea,
+select {
+  color: #111827;
+  background-color: #ffffff;
+}
+
+/* ── Default form-field look (zero specificity via :where) ──
+   Catches un-classed inputs/textareas/selects so every form gets
+   the canonical bob style automatically. Tailwind class utilities
+   beat these defaults whenever a component opts out. */
+:where(form) :where(input):not([type="checkbox"]):not([type="radio"]):not([type="color"]):not([type="range"]):not([type="file"]):not([type="submit"]):not([type="button"]):not([type="reset"]):not([type="image"]),
+:where(form) :where(textarea),
+:where(form) :where(select) {
+  width: 100%;
+  border: 1px solid var(--border);
+  border-radius: 0.5rem;
+  padding: 0.5rem 0.75rem;
+  font-size: 0.875rem;
+  line-height: 1.25rem;
+  background: #ffffff;
+  color: #111827;
+  outline: none;
+  transition: border-color 150ms ease, box-shadow 150ms ease;
+}
+:where(form) :where(input):not([type="checkbox"]):not([type="radio"]):not([type="color"]):not([type="range"]):not([type="file"]):not([type="submit"]):not([type="button"]):not([type="reset"]):not([type="image"]):focus,
+:where(form) :where(textarea):focus,
+:where(form) :where(select):focus {
+  border-color: #16243A;
+  box-shadow: 0 0 0 1px #16243A;
+}
+:where(form) :where(textarea) { min-height: 80px; resize: vertical; }
+:where(form) :where(input[type="checkbox"]) {
+  width: 1rem;
+  height: 1rem;
+  border-radius: 0.25rem;
+  accent-color: #16243A;
+}
+:where(form) :where(label) {
+  display: block;
+  font-size: 0.875rem;
+  font-weight: 600;
+  color: #1f2937;
+  margin-bottom: 0.375rem;
+}
+:where(form) :where(label):has(> input[type="checkbox"]),
+:where(form) :where(label):has(> input[type="radio"]) {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-weight: 500;
+  margin-bottom: 0;
+}
+
+input::placeholder,
+textarea::placeholder {
+  color: #9ca3af;
+  opacity: 1;
+}
+
+select {
+  color: #111827;
+}
+
+select option {
+  color: #111827;
+  background-color: #ffffff;
+  padding: 6px 10px;
+}
+
+select option:disabled {
+  color: #9ca3af;
+}
+
+select option:checked,
+select option:hover {
+  background-color: #dbeafe;
+  color: #1e40af;
+}
+
+/* ── Shimmer / Skeleton loaders ─────────────────────── */
+@keyframes shimmer-sweep {
+  0%   { background-position: -200% 0; }
+  100% { background-position: 200% 0; }
+}
+
+.shimmer {
+  position: relative;
+  overflow: hidden;
+  background: linear-gradient(
+    90deg,
+    rgba(229, 231, 235, 0.6) 0%,
+    rgba(243, 244, 246, 0.85) 20%,
+    rgba(249, 250, 251, 1) 40%,
+    rgba(243, 244, 246, 0.85) 60%,
+    rgba(229, 231, 235, 0.6) 100%
+  );
+  background-size: 200% 100%;
+  animation: shimmer-sweep 1.6s cubic-bezier(0.4, 0, 0.2, 1) infinite;
+}
+
+/* Tinted variant — subtle blue like brand */
+.shimmer-brand {
+  background: linear-gradient(
+    90deg,
+    rgba(219, 234, 254, 0.55) 0%,
+    rgba(239, 246, 255, 0.9) 20%,
+    rgba(255, 255, 255, 1) 40%,
+    rgba(239, 246, 255, 0.9) 60%,
+    rgba(219, 234, 254, 0.55) 100%
+  );
+  background-size: 200% 100%;
+  animation: shimmer-sweep 1.8s cubic-bezier(0.4, 0, 0.2, 1) infinite;
+}
+
+/* Fade-in when content replaces the skeleton */
+@keyframes content-fade-in {
+  from { opacity: 0; transform: translateY(4px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+.fade-in-content { animation: content-fade-in 280ms ease-out; }
+
+/* Fade-out for skeleton -> content crossfade */
+@keyframes content-fade-out {
+  from { opacity: 1; transform: translateY(0); }
+  to   { opacity: 0; transform: translateY(-4px); }
+}
+.fade-out-content { animation: content-fade-out 180ms ease-in forwards; }
+
+/* ── Modal enter / exit ───────────────────────────────── */
+@keyframes modal-backdrop-in {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
+@keyframes modal-backdrop-out {
+  from { opacity: 1; }
+  to   { opacity: 0; }
+}
+@keyframes modal-panel-in {
+  from { opacity: 0; transform: translateY(8px) scale(0.97); }
+  to   { opacity: 1; transform: translateY(0) scale(1); }
+}
+@keyframes modal-panel-out {
+  from { opacity: 1; transform: translateY(0) scale(1); }
+  to   { opacity: 0; transform: translateY(6px) scale(0.97); }
+}
+.modal-backdrop-in { animation: modal-backdrop-in 180ms ease-out forwards; }
+.modal-backdrop-out { animation: modal-backdrop-out 160ms ease-in forwards; }
+.modal-panel-in { animation: modal-panel-in 220ms cubic-bezier(0.16, 1, 0.3, 1) forwards; }
+.modal-panel-out { animation: modal-panel-out 160ms ease-in forwards; }
+
+/* ── Toast slide ──────────────────────────────────────── */
+@keyframes toast-slide-in {
+  from { opacity: 0; transform: translateX(110%); }
+  to   { opacity: 1; transform: translateX(0); }
+}
+@keyframes toast-slide-out {
+  from { opacity: 1; transform: translateX(0); }
+  to   { opacity: 0; transform: translateX(110%); }
+}
+.toast-slide-in { animation: toast-slide-in 220ms cubic-bezier(0.16, 1, 0.3, 1) forwards; }
+.toast-slide-out { animation: toast-slide-out 180ms ease-in forwards; }
+
+/* ── List row stagger ─────────────────────────────────── */
+@keyframes row-stagger-in {
+  from { opacity: 0; transform: translateY(6px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+.row-stagger {
+  opacity: 0;
+  animation: row-stagger-in 240ms ease-out forwards;
+  animation-delay: calc(var(--i, 0) * 30ms);
+}
+
+/* ── Card hover lift ──────────────────────────────────── */
+.card-hover-lift {
+  transition: transform 200ms cubic-bezier(0.16, 1, 0.3, 1),
+              box-shadow 200ms ease-out;
+  will-change: transform;
+}
+.card-hover-lift:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 10px 24px -8px rgba(15, 23, 42, 0.18),
+              0 4px 8px -4px rgba(15, 23, 42, 0.08);
+}
+.card-hover-lift:active {
+  transform: translateY(0);
+}
+
+/* ── Badge pulse ──────────────────────────────────────── */
+@keyframes badge-pulse-amber {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(245, 158, 11, 0.45); }
+  50%      { box-shadow: 0 0 0 5px rgba(245, 158, 11, 0); }
+}
+@keyframes badge-pulse-emerald {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(16, 185, 129, 0.45); }
+  50%      { box-shadow: 0 0 0 5px rgba(16, 185, 129, 0); }
+}
+@keyframes badge-pulse-red {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.45); }
+  50%      { box-shadow: 0 0 0 5px rgba(239, 68, 68, 0); }
+}
+.badge-pulse-amber   { animation: badge-pulse-amber   2s ease-in-out infinite; }
+.badge-pulse-emerald { animation: badge-pulse-emerald 2.4s ease-in-out infinite; }
+.badge-pulse-red     { animation: badge-pulse-red     1.8s ease-in-out infinite; }
+
+/* ── Tab underline slide ──────────────────────────────── */
+.tab-underline {
+  position: relative;
+  transition: color 180ms ease-out;
+}
+.tab-underline::after {
+  content: "";
+  position: absolute;
+  left: 50%;
+  bottom: -1px;
+  width: 0;
+  height: 2px;
+  background: currentColor;
+  border-radius: 1px;
+  transition: width 220ms cubic-bezier(0.16, 1, 0.3, 1),
+              left 220ms cubic-bezier(0.16, 1, 0.3, 1);
+  pointer-events: none;
+}
+.tab-underline.is-active::after,
+.tab-underline[data-active="true"]::after {
+  left: 0;
+  width: 100%;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .modal-backdrop-in, .modal-backdrop-out,
+  .modal-panel-in, .modal-panel-out,
+  .toast-slide-in, .toast-slide-out,
+  .fade-in-content, .fade-out-content,
+  .row-stagger,
+  .badge-pulse-amber, .badge-pulse-emerald, .badge-pulse-red {
+    animation-duration: 0.01ms !important;
+    animation-delay: 0ms !important;
+  }
+  .card-hover-lift, .tab-underline, .tab-underline::after {
+    transition-duration: 0.01ms !important;
+  }
+}
+
+/* Dropdown arrow space */
+select:not([multiple]) {
+  background-image: url("data:image/svg+xml;charset=UTF-8,%3csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%236b7280' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3e%3cpolyline points='6 9 12 15 18 9'%3e%3c/polyline%3e%3c/svg%3e");
+  background-repeat: no-repeat;
+  background-position: right 0.65rem center;
+  background-size: 12px;
+  padding-right: 2rem;
+  appearance: none;
+  -webkit-appearance: none;
+  -moz-appearance: none;
+}

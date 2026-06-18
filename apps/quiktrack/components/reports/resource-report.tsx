@@ -65,6 +65,7 @@ export function ResourceReport() {
   const [granularity, setGranularity] = useState<Granularity>("month");
   const [anchorDate, setAnchorDate] = useState(() => new Date());
   const [selectedUserIds, setSelectedUserIds] = useState<string[]>([]);
+  const [roleUserId, setRoleUserId] = useState("");
   const [drawerUser, setDrawerUser] = useState<{ id: string; label: string } | null>(null);
   const [sortBy, setSortBy] = useState<SortKey>("name");
   const [sortDir, setSortDir] = useState<SortDir>("asc");
@@ -104,8 +105,20 @@ export function ResourceReport() {
     },
   });
 
+  // Users holding a Space Admin role — options for the role filter.
+  const roleUsersQ = useQuery({
+    queryKey: ["quiktrack", "reports-role-users"],
+    queryFn: async (): Promise<{ id: string; name: string }[]> => {
+      const r = await fetch("/api/reports/role-users");
+      const j = await r.json();
+      if (!j.success) throw new Error(j.error || "Failed");
+      return j.data;
+    },
+    staleTime: 5 * 60 * 1000,
+  });
+
   const reportQ = useInfiniteQuery({
-    queryKey: ["quiktrack", "resource-report", range.from, range.to, selectedUserIds.join(","), sortBy, sortDir],
+    queryKey: ["quiktrack", "resource-report", range.from, range.to, selectedUserIds.join(","), roleUserId, sortBy, sortDir],
     initialPageParam: 1,
     queryFn: async ({ pageParam }): Promise<ReportPage> => {
       const params = new URLSearchParams({
@@ -117,6 +130,7 @@ export function ResourceReport() {
         sortDir,
       });
       if (selectedUserIds.length > 0) params.set("userIds", selectedUserIds.join(","));
+      if (roleUserId) params.set("roleUserId", roleUserId);
       const r = await fetch(`/api/reports/resource?${params.toString()}`);
       const j = await r.json();
       if (!j.success) throw new Error(j.error || "Failed to load");
@@ -171,6 +185,9 @@ export function ResourceReport() {
         users={usersQ.data ?? []}
         selectedUserIds={selectedUserIds}
         onSelectedUserIdsChange={setSelectedUserIds}
+        roleUserId={roleUserId}
+        onRoleUserIdChange={setRoleUserId}
+        roleUserOptions={(roleUsersQ.data ?? []).map((u) => ({ value: u.id, label: u.name }))}
       />
 
       <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-6 gap-3">

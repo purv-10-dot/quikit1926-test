@@ -29,6 +29,7 @@ import {
   isAction,
   isNavKey,
   isResource,
+  SPACE_ADMIN_ROLE_NAME,
   type Action,
   type Resource,
 } from "@/lib/api/permissionsRegistry";
@@ -269,7 +270,7 @@ export async function loadMyPermissions(
 }
 
 export function forbidden(
-  message = "You do not have permission to perform this action",
+  message = "You don't have access to this.",
 ) {
   return NextResponse.json({ success: false, error: message }, { status: 403 });
 }
@@ -279,14 +280,19 @@ export { getQuikTrackAppId };
 /* ───────────────────────── Project-scoped checks ───────────────────────── */
 
 /**
- * Project-scoped permission check. Combines:
- *   1. App-wide grants (QtAppRole) — works across every project.
- *   2. App-wide per-user extras (QtUserPermissionExtra).
- *   3. Project-scoped grants (QtProjectRole) — only valid inside this project.
+ * Project-scoped permission check. The project (custom) role is AUTHORITATIVE
+ * inside its space and OVERRIDES the app-wide (global) role. Resolution order:
  *
- * A `true` from any layer is sufficient. No explicit DENY layer today (the
- * Jira doc's scheme rules with DENY effect is a future enhancement; for now
- * absence = denied).
+ *   1. App-admin → always allowed (highest priority; a restrictive project
+ *      role can never lock an admin out).
+ *   2. User holds a project role in THIS space → that role's grants (plus the
+ *      user's per-user extras) are the WHOLE story. The app-wide role is NOT
+ *      consulted — so un-granting a permission at the project level genuinely
+ *      denies it, even when the app-wide role grants it.
+ *   3. User has NO project role here → fall back to the app-wide grant.
+ *
+ * No explicit DENY layer today; within the authoritative project role, absence
+ * of a grant = denied.
  */
 export async function userCanInProject(
   userId: string,
@@ -295,21 +301,37 @@ export async function userCanInProject(
   resource: Resource,
   action: Action,
 ): Promise<boolean> {
-  if (await userCan(userId, orgId, resource, action)) return true;
+  if (!isResource(resource) || !isAction(action)) return false;
 
-  // Project-scoped grants — Layer 2. Resolve via:
-  //   QtProjectUserRole(userId, projectId) → projectRoleId
-  //     → QtProjectRolePermission(projectRoleId, resource, action)
-  const hit = await db.qtProjectRolePermission.findFirst({
-    where: {
-      resource,
-      action,
-      projectRole: {
-        projectId,
-        members: { some: { userId } },
-      },
-    },
-    select: { id: true },
+  // 1. App-admins bypass everything. (Previously this was covered implicitly by
+  //    the app-wide grant check, which ran first. Now that the project role can
+  //    override the app-wide role, admins must be short-circuited explicitly.)
+  if (await hasAdminAccess(userId, orgId)) return true;
+
+  // 2. The project role assigned to this user in this space (≤1 — unique on
+  //    [projectId, userId]) is authoritative when present.
+  const assignment = await db.qtProjectUserRole.findUnique({
+    where: { projectId_userId: { projectId, userId } },
+    select: { projectRoleId: true, projectRole: { select: { name: true } } },
   });
-  return !!hit;
+
+  if (assignment) {
+    // Space Admin = full access within its space (locked, like an app admin
+    // scoped to this project). Covers every resource, incl. ones added later.
+    if (assignment.projectRole.name === SPACE_ADMIN_ROLE_NAME) return true;
+    const hit = await db.qtProjectRolePermission.findFirst({
+      where: { projectRoleId: assignment.projectRoleId, resource, action },
+      select: { id: true },
+    });
+    if (hit) return true;
+    // Per-user extras still apply as an additive override for a single user.
+    const extraHit = await db.qtUserPermissionExtra.findFirst({
+      where: { userId, orgId, resource, action },
+      select: { id: true },
+    });
+    return !!extraHit;
+  }
+
+  // 3. No project role in this space → fall back to the app-wide grant.
+  return userCan(userId, orgId, resource, action);
 }

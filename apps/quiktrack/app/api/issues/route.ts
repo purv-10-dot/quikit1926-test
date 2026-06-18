@@ -7,6 +7,10 @@ import { getDefaultStatusId } from "@/lib/services/projectDefaults";
 import { recalcParentRollup } from "@/lib/services/subtaskRollup";
 import { userCanInProject, forbidden, hasAdminAccess } from "@/lib/api/permissions";
 import { notifyMentions } from "@/lib/services/mentions";
+import { emailIssueAssigned } from "@/lib/email/sendEmail";
+import { validateIssueValues, writeIssueValues } from "@/lib/services/customFieldValues";
+import type { FieldValue } from "@/lib/customFields/registry";
+import { customFiltersToWhere, parseCustomFilters } from "@/lib/customFields/filterQuery";
 
 async function userIsProjectMember(
   userId: string,
@@ -57,6 +61,30 @@ export const GET = withOrgAuth(async ({ orgId, userId }, req) => {
   const filterAssigneeId = url.searchParams.get("assigneeId");
   const filterPriority = url.searchParams.get("priority");
   const search = url.searchParams.get("search")?.trim();
+  // Custom field filters: JSON array of { fieldId, type, op, value, value2 }.
+  const customFilters = parseCustomFilters(url.searchParams.get("customFilters"));
+  const customFilterWhere = customFiltersToWhere(customFilters);
+
+  // assigneeId supports four shapes, mirroring sprintId:
+  //   "null"            → unassigned only
+  //   "id"              → single assignee
+  //   "id1,id2,id3"     → IN-list (multi-assignee filter)
+  //   "null,id1,id2"    → unassigned OR any of the listed assignees
+  // The clause is nested inside the top-level AND (below) rather than spread
+  // directly, so its OR (mixed unassigned + ids case) can't collide with the
+  // search OR.
+  const assigneeClause: Prisma.QtIssueWhereInput | null = (() => {
+    if (!filterAssigneeId) return null;
+    const parts = filterAssigneeId.split(",").map((s) => s.trim()).filter(Boolean);
+    if (parts.length === 0) return null;
+    const wantsUnassigned = parts.includes("null");
+    const ids = parts.filter((p) => p !== "null");
+    if (wantsUnassigned && ids.length)
+      return { OR: [{ assigneeId: null }, { assigneeId: { in: ids } }] };
+    if (wantsUnassigned) return { assigneeId: null };
+    if (ids.length === 1) return { assigneeId: ids[0] };
+    return { assigneeId: { in: ids } };
+  })();
 
   // Two pagination modes share this route:
   //   - cursor mode (board/backlog): `cursor` + `limit`
@@ -131,11 +159,6 @@ export const GET = withOrgAuth(async ({ orgId, userId }, req) => {
       : filterEpicId
         ? { epicId: filterEpicId }
         : {}),
-    ...(filterAssigneeId === "null"
-      ? { assigneeId: null }
-      : filterAssigneeId
-        ? { assigneeId: filterAssigneeId }
-        : {}),
     ...(filterPriority ? { priority: filterPriority } : {}),
     ...(search
       ? {
@@ -145,6 +168,9 @@ export const GET = withOrgAuth(async ({ orgId, userId }, req) => {
             { key: { contains: search, mode: "insensitive" as const } },
           ],
         }
+      : {}),
+    ...(customFilterWhere.length || assigneeClause
+      ? { AND: [...customFilterWhere, ...(assigneeClause ? [assigneeClause] : [])] }
       : {}),
   };
 
@@ -346,7 +372,7 @@ export const POST = withOrgAuth(async ({ orgId, userId }, req) => {
   }
   const project = await db.qtProject.findFirst({
     where: { id: parsed.data.projectId, orgId: orgId, isDeleted: false },
-    select: { id: true, projectKey: true },
+    select: { id: true, projectKey: true, name: true },
   });
   if (!project) {
     return NextResponse.json({ success: false, error: "Project not found" }, { status: 404 });
@@ -356,6 +382,22 @@ export const POST = withOrgAuth(async ({ orgId, userId }, req) => {
   }
   if (!(await userCanInProject(userId, orgId, project.id, "Issue", "create"))) {
     return forbidden();
+  }
+
+  // Custom field values: the full create form sends `customFields` (enforcing
+  // required fields). Quick/inline creators omit it and bypass enforcement —
+  // values can be filled later on the issue.
+  const customFields = parsed.data.customFields as Record<string, FieldValue> | undefined;
+  if (customFields) {
+    const valid = await validateIssueValues({
+      orgId,
+      projectId: project.id,
+      values: customFields,
+      enforceRequired: true,
+    });
+    if (!valid.ok) {
+      return NextResponse.json({ success: false, error: valid.errors.join(", ") }, { status: 400 });
+    }
   }
 
   const issue = await db.$transaction(async (tx) => {
@@ -391,6 +433,17 @@ export const POST = withOrgAuth(async ({ orgId, userId }, req) => {
     });
   });
 
+  // Persist custom field values (pre-validated above).
+  if (customFields) {
+    await writeIssueValues({
+      orgId,
+      issueId: issue.id,
+      projectId: project.id,
+      actorId: userId,
+      values: customFields,
+    });
+  }
+
   // Roll up ETA + dates onto the parent when this is a subtask.
   if (issue.type === "SUBTASK" && issue.parentId) {
     void recalcParentRollup(issue.parentId, orgId);
@@ -405,6 +458,50 @@ export const POST = withOrgAuth(async ({ orgId, userId }, req) => {
       context: "description",
       html: issue.description,
     });
+  }
+
+  // Email the assignee when a task is created already assigned to someone
+  // other than its creator. Reassignment of an existing issue is handled by
+  // the PATCH route's notifyOnUpdate; creation was the missing path (so tasks
+  // created with an assignee from the header modal / backlog inline creator
+  // never notified). Self-assignment is skipped — no point emailing yourself
+  // about a task you just created. Fire-and-forget so a mail hiccup can't fail
+  // the create.
+  const assigneeId = issue.assigneeId;
+  if (assigneeId && assigneeId !== userId) {
+    void (async () => {
+      try {
+        const [assignee, actor] = await Promise.all([
+          db.user.findUnique({
+            where: { id: assigneeId },
+            select: { email: true, firstName: true, lastName: true },
+          }),
+          db.user.findUnique({
+            where: { id: userId },
+            select: { email: true, firstName: true, lastName: true },
+          }),
+        ]);
+        if (assignee?.email) {
+          await emailIssueAssigned({
+            to: assignee.email,
+            assigneeName:
+              [assignee.firstName, assignee.lastName].filter(Boolean).join(" ").trim() || null,
+            issue: {
+              id: issue.id,
+              key: issue.key,
+              title: issue.title,
+              projectId: issue.projectId,
+              projectName: project.name ?? null,
+            },
+            reassignedBy: actor
+              ? [actor.firstName, actor.lastName].filter(Boolean).join(" ").trim() || actor.email
+              : null,
+          });
+        }
+      } catch (e) {
+        console.error("[email] assignee-on-create failed:", e instanceof Error ? e.message : e);
+      }
+    })();
   }
 
   return NextResponse.json({ success: true, data: issue }, { status: 201 });

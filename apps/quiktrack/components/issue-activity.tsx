@@ -1,11 +1,15 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useState } from "react";
+import { useQueryClient } from "@tanstack/react-query";
 import { ArrowDownNarrowWide, X, ChevronDown, ChevronRight } from "lucide-react";
-import { RichTextEditor } from "@/components/rich-text-editor";
+import { RichTextEditor } from "@/components/rich-text-editor-lazy";
+import { uploadProjectImage } from "@/lib/upload-image";
 import type { MentionItem } from "@/components/editor/mention";
 import { SkeletonList } from "@/components/skeleton";
+import { useApiData } from "@/lib/hooks/useApiData";
 import { useMyProjectPermissions } from "@/lib/hooks/useMyProjectPermissions";
+import { parseClockToHours, formatHoursAsClock } from "@/lib/utils/timesheetPeriod";
 
 type Tab = "all" | "comments" | "history" | "worklog";
 
@@ -42,6 +46,7 @@ interface WorkLogRow {
   entryDate: string;
   hours: number;
   description: string | null;
+  user: User | null;
 }
 
 const REACTION_SHORTCUTS: { emoji: string; label: string }[] = [
@@ -85,33 +90,6 @@ function relativeTime(iso: string): string {
   return new Date(iso).toLocaleDateString();
 }
 
-/**
- * Parses Jira-style "2w 4d 6h 45m" duration strings into hours.
- * Returns null when the string contains nothing parseable.
- *
- * Defaults: 1w = 5 working days, 1d = 8 hours.
- */
-export function parseDurationToHours(
-  input: string,
-  opts: { hoursPerDay?: number; daysPerWeek?: number } = {},
-): number | null {
-  const hoursPerDay = opts.hoursPerDay ?? 8;
-  const daysPerWeek = opts.daysPerWeek ?? 5;
-  let total = 0;
-  let matched = false;
-  // Match each unit token (case-insensitive). Unknown units are ignored.
-  for (const m of input.matchAll(/(\d+(?:\.\d+)?)\s*([wdhm])/gi)) {
-    matched = true;
-    const value = Number(m[1]);
-    const unit = m[2]!.toLowerCase();
-    if (unit === "w") total += value * daysPerWeek * hoursPerDay;
-    else if (unit === "d") total += value * hoursPerDay;
-    else if (unit === "h") total += value;
-    else if (unit === "m") total += value / 60;
-  }
-  return matched ? total : null;
-}
-
 function formatHours(hours: number): string {
   if (!Number.isFinite(hours) || hours <= 0) return "0m";
   const minutes = Math.round(hours * 60);
@@ -144,42 +122,38 @@ export function IssueActivity({
   /** People list for `@`-mentions in the comment editor. */
   mentions?: MentionItem[];
 }) {
+  const queryClient = useQueryClient();
   const perms = useMyProjectPermissions(projectId);
   const canComment = perms.loading || perms.has("IssueComment", "create");
   const [tab, setTab] = useState<Tab>("all");
   const [open, setOpen] = useState(true);
-  const [comments, setComments] = useState<Comment[] | null>(null);
-  const [history, setHistory] = useState<HistoryRow[] | null>(null);
-  const [worklogs, setWorklogs] = useState<WorkLogRow[] | null>(initialWorkLogs ?? null);
   const [logOpen, setLogOpen] = useState(false);
   const [sortDesc, setSortDesc] = useState(false);
 
-  const refreshComments = useCallback(async () => {
-    const res = await fetch(`/api/issues/${issueId}/comments`).then((r) => r.json());
-    if (res?.success) setComments(res.data ?? []);
-    else setComments([]);
-  }, [issueId]);
+  // Each feed is lazy-loaded on first view via React Query's `enabled` flag
+  // (url=null keeps the query idle until its tab is shown). Cached + deduped,
+  // so the dev StrictMode double-fetch collapses to one request.
+  const wantComments = tab === "all" || tab === "comments";
+  const wantHistory = tab === "all" || tab === "history";
+  const wantWorklog = tab === "all" || tab === "worklog";
 
-  const refreshHistory = useCallback(async () => {
-    const res = await fetch(`/api/issues/${issueId}/history`).then((r) => r.json());
-    if (res?.success) setHistory(res.data ?? []);
-    else setHistory([]);
-  }, [issueId]);
+  const commentsKey = ["quiktrack", "issue-comments", issueId];
+  const worklogsKey = ["quiktrack", "issue-worklogs", issueId];
 
-  const refreshWorklogs = useCallback(async () => {
-    const res = await fetch(`/api/timesheets?issueId=${encodeURIComponent(issueId)}`).then((r) =>
-      r.json(),
-    );
-    if (res?.success) setWorklogs(res.data ?? []);
-    else setWorklogs([]);
-  }, [issueId]);
-
-  // Lazy-load each feed on first view.
-  useEffect(() => {
-    if ((tab === "all" || tab === "comments") && comments === null) void refreshComments();
-    if ((tab === "all" || tab === "history") && history === null) void refreshHistory();
-    if ((tab === "all" || tab === "worklog") && worklogs === null) void refreshWorklogs();
-  }, [tab, comments, history, worklogs, refreshComments, refreshHistory, refreshWorklogs]);
+  const { data: comments = null } = useApiData<Comment[]>(
+    commentsKey,
+    wantComments ? `/api/issues/${issueId}/comments` : null,
+  );
+  const { data: history = null } = useApiData<HistoryRow[]>(
+    ["quiktrack", "issue-history", issueId],
+    wantHistory ? `/api/issues/${issueId}/history` : null,
+  );
+  const { data: worklogsData } = useApiData<WorkLogRow[]>(
+    worklogsKey,
+    wantWorklog ? `/api/timesheets?issueId=${encodeURIComponent(issueId)}` : null,
+  );
+  // Seed from the parent's already-loaded logs until the query resolves.
+  const worklogs = worklogsData ?? initialWorkLogs ?? null;
 
   return (
     <div>
@@ -240,7 +214,9 @@ export function IssueActivity({
           comments={comments}
           sortDesc={sortDesc}
           showComposer={canComment && tab === "comments"}
-          onPosted={(c) => setComments((arr) => [...(arr ?? []), c])}
+          onPosted={(c) =>
+            queryClient.setQueryData<Comment[]>(commentsKey, (old) => [...(old ?? []), c])
+          }
           mentions={mentions}
         />
       )}
@@ -263,7 +239,7 @@ export function IssueActivity({
           onClose={() => setLogOpen(false)}
           onLogged={() => {
             setLogOpen(false);
-            void refreshWorklogs();
+            void queryClient.invalidateQueries({ queryKey: worklogsKey });
           }}
         />
       )}
@@ -334,6 +310,7 @@ function CommentsView({
               chromeless
               placeholder="Add a comment..."
               mentions={mentions ?? []}
+              uploadImage={(file) => uploadProjectImage(projectId, file)}
             />
             <div className="flex items-center justify-end gap-2">
               <button
@@ -525,10 +502,12 @@ function WorkLogView({
               className="h-7 w-7 rounded-full flex items-center justify-center text-white text-[11px] font-semibold shrink-0"
               style={{ background: userColor(r.userId) }}
             >
-              {(r.userId.charAt(0) || "?").toUpperCase()}
+              {userInitials(r.user)}
             </span>
             <div className="min-w-0 flex-1">
               <div className="text-xs text-gray-900">
+                <span className="font-medium">{userName(r.user)}</span>
+                <span className="text-gray-500"> logged </span>
                 <span className="font-medium">{formatHours(r.hours)}</span>
                 <span className="text-gray-500"> on {new Date(r.entryDate).toLocaleDateString()}</span>
               </div>
@@ -554,16 +533,18 @@ function LogTimeModal({
   onClose: () => void;
   onLogged: () => void;
 }) {
-  const [spent, setSpent] = useState("");
+  // Clock-style HH:MM fields. "Time spent" defaults to a real "00:00" value;
+  // "Time remaining" is optional so it starts empty.
+  const [spent, setSpent] = useState("00:00");
   const [remaining, setRemaining] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   async function save() {
     setError(null);
-    const hours = parseDurationToHours(spent);
+    const hours = parseClockToHours(spent);
     if (hours === null || hours <= 0) {
-      setError("Enter a valid duration (e.g. 2w 4d 6h 45m)");
+      setError("Enter a valid time (e.g. 01:30, or 1.5 for 1h 30m)");
       return;
     }
     setSubmitting(true);
@@ -610,8 +591,17 @@ function LogTimeModal({
               autoFocus
               value={spent}
               onChange={(e) => setSpent(e.target.value)}
-              placeholder="2w 4d 6h 45m"
-              className="w-full h-9 px-3 text-sm border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+              onFocus={(e) => e.currentTarget.select()}
+              onBlur={() => {
+                // Snap to HH:MM on blur: "1" → "01:00", "1.5" → "01:30".
+                // Unparseable input falls back to "00:00".
+                const h = parseClockToHours(spent);
+                setSpent(h !== null && h > 0 ? formatHoursAsClock(h) : "00:00");
+              }}
+              inputMode="decimal"
+              className={`w-full h-9 px-3 text-sm tabular-nums tracking-wide border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 ${
+                spent === "00:00" ? "text-gray-400" : "text-gray-900"
+              }`}
             />
           </label>
           <label className="block">
@@ -622,18 +612,21 @@ function LogTimeModal({
             <input
               value={remaining}
               onChange={(e) => setRemaining(e.target.value)}
+              onFocus={(e) => e.currentTarget.select()}
+              onBlur={() => {
+                // Optional: leave blank when empty, otherwise normalize to HH:MM.
+                const h = parseClockToHours(remaining);
+                setRemaining(h !== null && h > 0 ? formatHoursAsClock(h) : "");
+              }}
+              inputMode="decimal"
               placeholder="optional"
-              className="w-full h-9 px-3 text-sm border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+              className="w-full h-9 px-3 text-sm tabular-nums tracking-wide text-gray-900 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
             />
           </label>
         </div>
-        <ul className="mt-3 text-xs text-gray-600 space-y-0.5 pl-1">
-          <li>Use the format: 2w 4d 6h 45m</li>
-          <li className="ml-3">w = weeks</li>
-          <li className="ml-3">d = days</li>
-          <li className="ml-3">h = hours</li>
-          <li className="ml-3">m = minutes</li>
-        </ul>
+        <p className="mt-3 text-xs text-gray-600 pl-1">
+          Format HH:MM. Type 1 for 01:00, 1.5 for 01:30, or enter 01:30 directly.
+        </p>
         {error && <div className="mt-2 text-xs text-red-600">{error}</div>}
         <div className="mt-4 flex items-center justify-end gap-2">
           <button
@@ -646,7 +639,7 @@ function LogTimeModal({
           <button
             type="button"
             onClick={() => void save()}
-            disabled={submitting || !spent.trim()}
+            disabled={submitting || (parseClockToHours(spent) ?? 0) <= 0}
             className="h-8 px-3 text-sm font-medium text-white bg-blue-600 rounded hover:bg-blue-700 disabled:bg-gray-200 disabled:text-gray-500"
           >
             Save
