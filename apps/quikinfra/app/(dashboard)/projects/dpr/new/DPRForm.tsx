@@ -90,13 +90,32 @@ interface MaterialRow {
 
 interface ManpowerRow {
   contractorId: string;
-  /** One contractor can be deployed across several work categories — stored
-   *  as a comma-joined string in the DB (CnDPRLabourEntry.category). */
-  categories: string[];
-  skillType: string;
-  count: string;
-  hoursWorked: string;
+  /** Free-text location within the site this crew worked. */
+  workingArea: string;
+  /** Per-trade head/effort counts (man-days/man-hours) entered as a wide grid. */
+  messan: string;
+  maleHelper: string;
+  femaleHelper: string;
+  carpenter: string;
+  fitter: string;
+  painter: string;
+  plumber: string;
+  electrician: string;
+  operator: string;
 }
+
+/** The fixed trade columns rendered in the manpower grid, in order. */
+const MANPOWER_TRADES = [
+  { key: "messan", label: "Messan" },
+  { key: "maleHelper", label: "Male H." },
+  { key: "femaleHelper", label: "Female H." },
+  { key: "carpenter", label: "Carp." },
+  { key: "fitter", label: "Fitter" },
+  { key: "painter", label: "Painter" },
+  { key: "plumber", label: "Plumber" },
+  { key: "electrician", label: "Elec." },
+  { key: "operator", label: "Operator" },
+] as const;
 
 interface StaffRow {
   name: string;
@@ -137,10 +156,16 @@ const newMaterial = (): MaterialRow => ({
 
 const newManpower = (): ManpowerRow => ({
   contractorId: "",
-  categories: [],
-  skillType: "",
-  count: "0",
-  hoursWorked: "0",
+  workingArea: "",
+  messan: "0",
+  maleHelper: "0",
+  femaleHelper: "0",
+  carpenter: "0",
+  fitter: "0",
+  painter: "0",
+  plumber: "0",
+  electrician: "0",
+  operator: "0",
 });
 
 const newStaff = (): StaffRow => ({
@@ -180,11 +205,16 @@ interface DprEditMaterial {
 }
 interface DprEditManpower {
   contractorId?: string;
-  categories?: string[];
-  category?: string;
-  skillType?: string;
-  count?: number | string;
-  hoursWorked?: number | string;
+  workingArea?: string;
+  messan?: number | string;
+  maleHelper?: number | string;
+  femaleHelper?: number | string;
+  carpenter?: number | string;
+  fitter?: number | string;
+  painter?: number | string;
+  plumber?: number | string;
+  electrician?: number | string;
+  operator?: number | string;
 }
 interface DprEditStaff {
   name?: string;
@@ -421,17 +451,16 @@ export function DPRForm({ editData, embedded = false, onSaved }: DPRFormProps = 
   const [manpower, setManpower] = useState<ManpowerRow[]>(() =>
     (editData?.manpower ?? []).map((m) => ({
       contractorId: m.contractorId ?? "",
-      categories: Array.isArray(m.categories)
-        ? m.categories
-        : m.category
-        ? String(m.category)
-            .split(",")
-            .map((s: string) => s.trim())
-            .filter(Boolean)
-        : [],
-      skillType: m.skillType ?? "",
-      count: String(m.count ?? "0"),
-      hoursWorked: String(m.hoursWorked ?? "0"),
+      workingArea: m.workingArea ?? "",
+      messan: String(m.messan ?? "0"),
+      maleHelper: String(m.maleHelper ?? "0"),
+      femaleHelper: String(m.femaleHelper ?? "0"),
+      carpenter: String(m.carpenter ?? "0"),
+      fitter: String(m.fitter ?? "0"),
+      painter: String(m.painter ?? "0"),
+      plumber: String(m.plumber ?? "0"),
+      electrician: String(m.electrician ?? "0"),
+      operator: String(m.operator ?? "0"),
     }))
   );
   const [staff, setStaff] = useState<StaffRow[]>(() =>
@@ -653,15 +682,11 @@ export function DPRForm({ editData, embedded = false, onSaved }: DPRFormProps = 
   const addManpower = () => setManpower((p) => [...p, newManpower()]);
   const updateManpower = (
     idx: number,
-    field: Exclude<keyof ManpowerRow, "categories">,
+    field: keyof ManpowerRow,
     value: string
   ) =>
     setManpower((prev) =>
       prev.map((row, i) => (i === idx ? { ...row, [field]: value } : row))
-    );
-  const setManpowerCategories = (idx: number, categories: string[]) =>
-    setManpower((prev) =>
-      prev.map((row, i) => (i === idx ? { ...row, categories } : row))
     );
   const removeManpower = (idx: number) =>
     setManpower((prev) => prev.filter((_, i) => i !== idx));
@@ -742,14 +767,24 @@ export function DPRForm({ editData, embedded = false, onSaved }: DPRFormProps = 
             remarks: m.remarks || null,
           })),
         manpower: manpower
-          .filter((m) => m.categories.length > 0 || m.contractorId)
+          .filter(
+            (m) =>
+              m.contractorId ||
+              m.workingArea.trim() ||
+              MANPOWER_TRADES.some((t) => (parseFloat(m[t.key]) || 0) !== 0)
+          )
           .map((m) => ({
             contractorId: m.contractorId || null,
-            category: m.categories.join(", "),
-            categories: m.categories,
-            skillType: m.skillType,
-            count: parseInt(m.count) || 0,
-            hoursWorked: parseFloat(m.hoursWorked) || 0,
+            workingArea: m.workingArea || null,
+            messan: parseFloat(m.messan) || 0,
+            maleHelper: parseFloat(m.maleHelper) || 0,
+            femaleHelper: parseFloat(m.femaleHelper) || 0,
+            carpenter: parseFloat(m.carpenter) || 0,
+            fitter: parseFloat(m.fitter) || 0,
+            painter: parseFloat(m.painter) || 0,
+            plumber: parseFloat(m.plumber) || 0,
+            electrician: parseFloat(m.electrician) || 0,
+            operator: parseFloat(m.operator) || 0,
           })),
         staff: staff
           .filter((s) => s.name)
@@ -1544,19 +1579,27 @@ export function DPRForm({ editData, embedded = false, onSaved }: DPRFormProps = 
                 />
               ) : (
                 <div className="border border-gray-200 rounded-xl overflow-x-auto">
-                  <table className="w-full text-xs min-w-[760px]">
+                  <table className="w-full text-xs min-w-[1240px]">
                     <thead className="bg-gray-50 border-b border-gray-200 text-[10px] uppercase font-bold text-gray-500">
                       <tr>
                         <th className="px-2 py-2 text-left w-[200px]">Contractor</th>
-                        <th className="px-2 py-2 text-left min-w-[160px]">Category</th>
-                        <th className="px-2 py-2 text-left min-w-[140px]">Skill Type</th>
-                        <th className="px-2 py-2 text-right w-[100px]">Count</th>
-                        <th className="px-2 py-2 text-right w-[110px]">Hours</th>
+                        <th className="px-2 py-2 text-left min-w-[160px]">Working Area</th>
+                        {MANPOWER_TRADES.map((t) => (
+                          <th key={t.key} className="px-2 py-2 text-right w-[88px]">
+                            {t.label}
+                          </th>
+                        ))}
+                        <th className="px-2 py-2 text-right w-[88px]">Total</th>
                         <th className="w-[40px]"></th>
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-gray-100">
-                      {manpower.map((m, idx) => (
+                      {manpower.map((m, idx) => {
+                        const rowTotal = MANPOWER_TRADES.reduce(
+                          (sum, t) => sum + (parseFloat(m[t.key]) || 0),
+                          0
+                        );
+                        return (
                         <tr key={idx}>
                           <td className="px-2 py-1.5">
                             <SelectInput
@@ -1567,32 +1610,33 @@ export function DPRForm({ editData, embedded = false, onSaved }: DPRFormProps = 
                             />
                           </td>
                           <td className="px-2 py-1.5">
-                            <CategoryTagsInput
-                              value={m.categories}
-                              onChange={(cats) =>
-                                setManpowerCategories(idx, cats)
-                              }
-                            />
-                          </td>
-                          <td className="px-2 py-1.5">
                             <input
-                              value={m.skillType}
+                              value={m.workingArea}
                               onChange={(e) =>
-                                updateManpower(idx, "skillType", e.target.value)
+                                updateManpower(idx, "workingArea", e.target.value)
                               }
-                              placeholder="e.g. Skilled"
+                              placeholder="Area"
                               className="w-full text-xs px-2 py-1 border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-orange-300 focus:border-orange-400"
                             />
                           </td>
-                          <NumCell value={m.count} onChange={(v) => updateManpower(idx, "count", v)} />
-                          <NumCell value={m.hoursWorked} onChange={(v) => updateManpower(idx, "hoursWorked", v)} />
+                          {MANPOWER_TRADES.map((t) => (
+                            <NumCell
+                              key={t.key}
+                              value={m[t.key]}
+                              onChange={(v) => updateManpower(idx, t.key, v)}
+                            />
+                          ))}
+                          <td className="px-2 py-1.5 text-right font-semibold text-orange-600 tabular-nums">
+                            {Number.isInteger(rowTotal) ? rowTotal : rowTotal.toFixed(2)}
+                          </td>
                           <td className="px-2 py-1.5 text-right">
                             <button onClick={() => removeManpower(idx)} className="text-gray-400 hover:text-red-600">
                               <Trash2 className="w-3.5 h-3.5" />
                             </button>
                           </td>
                         </tr>
-                      ))}
+                        );
+                      })}
                     </tbody>
                   </table>
                 </div>
@@ -2264,72 +2308,5 @@ function NumCell({
         placeholder="0"
       />
     </td>
-  );
-}
-
-/**
- * Free-text multi-category input for a manpower row. The user types a
- * category and presses Enter (or comma) to commit it as a chip; one
- * contractor can therefore be deployed across several categories. The
- * parent joins the array with ", " for the single `category` DB column.
- */
-function CategoryTagsInput({
-  value,
-  onChange,
-}: {
-  value: string[];
-  onChange: (categories: string[]) => void;
-}) {
-  const [draft, setDraft] = useState("");
-
-  const commit = (raw: string) => {
-    const next = raw.trim();
-    if (!next) return;
-    // Dedupe case-insensitively but keep the user's original casing.
-    if (value.some((c) => c.toLowerCase() === next.toLowerCase())) {
-      setDraft("");
-      return;
-    }
-    onChange([...value, next]);
-    setDraft("");
-  };
-
-  const removeAt = (i: number) =>
-    onChange(value.filter((_, j) => j !== i));
-
-  return (
-    <div className="w-full flex flex-wrap items-center gap-1 px-1.5 py-1 border border-gray-300 rounded focus-within:ring-1 focus-within:ring-orange-300 focus-within:border-orange-400 bg-white">
-      {value.map((cat, i) => (
-        <span
-          key={`${cat}-${i}`}
-          className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-orange-50 text-orange-700 border border-orange-200 text-[11px] font-medium"
-        >
-          {cat}
-          <button
-            type="button"
-            onClick={() => removeAt(i)}
-            className="text-orange-400 hover:text-orange-700"
-            aria-label={`Remove ${cat}`}
-          >
-            <X className="w-3 h-3" />
-          </button>
-        </span>
-      ))}
-      <input
-        value={draft}
-        onChange={(e) => setDraft(e.target.value)}
-        onKeyDown={(e) => {
-          if (e.key === "Enter" || e.key === ",") {
-            e.preventDefault();
-            commit(draft);
-          } else if (e.key === "Backspace" && !draft && value.length > 0) {
-            removeAt(value.length - 1);
-          }
-        }}
-        onBlur={() => commit(draft)}
-        placeholder={value.length === 0 ? "e.g. Mason ↵" : "Add…"}
-        className="flex-1 min-w-[60px] text-xs px-1 py-0.5 outline-none bg-transparent"
-      />
-    </div>
   );
 }

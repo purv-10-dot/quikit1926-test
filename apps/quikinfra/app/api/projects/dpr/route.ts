@@ -26,6 +26,14 @@ import { persistDprImages } from "@/lib/dpr/dpr-images";
 
 type Numericish = Prisma.Decimal | number | string | null | undefined;
 
+/** Coerce a request value to a Decimal-safe string, or null when blank/absent.
+ *  Used by the DPR manpower trade-grid columns (messan, helpers, trades). */
+function toDecimalOrNull(v: number | string | null | undefined): string | null {
+  if (v === null || v === undefined || v === "") return null;
+  const n = Number(v);
+  return Number.isFinite(n) ? String(n) : null;
+}
+
 interface DprWorkItemRow {
   id: string;
   boqItemId?: string | null;
@@ -43,6 +51,16 @@ interface DprLabourRow {
   count?: number | null;
   hoursWorked?: Numericish;
   contractorId?: string | null;
+  workingArea?: string | null;
+  messan?: Numericish;
+  maleHelper?: Numericish;
+  femaleHelper?: Numericish;
+  carpenter?: Numericish;
+  fitter?: Numericish;
+  painter?: Numericish;
+  plumber?: Numericish;
+  electrician?: Numericish;
+  operator?: Numericish;
 }
 interface DprMachineryRow {
   id: string;
@@ -110,6 +128,16 @@ interface DprBodyManpower {
   hoursWorked?: number | string;
   hours?: number | string;
   contractorId?: string | null;
+  workingArea?: string | null;
+  messan?: number | string | null;
+  maleHelper?: number | string | null;
+  femaleHelper?: number | string | null;
+  carpenter?: number | string | null;
+  fitter?: number | string | null;
+  painter?: number | string | null;
+  plumber?: number | string | null;
+  electrician?: number | string | null;
+  operator?: number | string | null;
 }
 interface DprBodyMachinery {
   description?: string;
@@ -174,6 +202,16 @@ function enrichDPR(
     count: l.count ?? 0,
     hoursWorked: l.hoursWorked?.toString?.() ?? "0",
     contractorId: l.contractorId ?? null,
+    workingArea: l.workingArea ?? "",
+    messan: l.messan?.toString?.() ?? "0",
+    maleHelper: l.maleHelper?.toString?.() ?? "0",
+    femaleHelper: l.femaleHelper?.toString?.() ?? "0",
+    carpenter: l.carpenter?.toString?.() ?? "0",
+    fitter: l.fitter?.toString?.() ?? "0",
+    painter: l.painter?.toString?.() ?? "0",
+    plumber: l.plumber?.toString?.() ?? "0",
+    electrician: l.electrician?.toString?.() ?? "0",
+    operator: l.operator?.toString?.() ?? "0",
   }));
   const machinery = (row.machineryEntries ?? []).map((m: DprMachineryRow) => ({
     id: m.id,
@@ -437,6 +475,16 @@ export async function POST(req: NextRequest) {
             count: Number(l.count ?? l.headcount ?? 0),
             hoursWorked: String(Number(l.hoursWorked ?? l.hours ?? 0)),
             contractorId: l.contractorId ?? null,
+            workingArea: l.workingArea ?? null,
+            messan: toDecimalOrNull(l.messan),
+            maleHelper: toDecimalOrNull(l.maleHelper),
+            femaleHelper: toDecimalOrNull(l.femaleHelper),
+            carpenter: toDecimalOrNull(l.carpenter),
+            fitter: toDecimalOrNull(l.fitter),
+            painter: toDecimalOrNull(l.painter),
+            plumber: toDecimalOrNull(l.plumber),
+            electrician: toDecimalOrNull(l.electrician),
+            operator: toDecimalOrNull(l.operator),
           })),
         },
         machineryEntries: {

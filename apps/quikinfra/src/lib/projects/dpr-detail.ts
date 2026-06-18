@@ -23,6 +23,16 @@ export interface ManpowerRow {
   skillType?: string | null;
   count?: number | null;
   hoursWorked?: number | string | null;
+  workingArea?: string | null;
+  messan?: number | string | null;
+  maleHelper?: number | string | null;
+  femaleHelper?: number | string | null;
+  carpenter?: number | string | null;
+  fitter?: number | string | null;
+  painter?: number | string | null;
+  plumber?: number | string | null;
+  electrician?: number | string | null;
+  operator?: number | string | null;
 }
 
 export interface StaffRow {

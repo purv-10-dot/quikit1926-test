@@ -527,14 +527,33 @@ export default function DPRDetailPage() {
                       <tr>
                         <th className="px-4 py-3 text-left font-bold w-10">#</th>
                         <th className="px-4 py-3 text-left font-bold">Contractor</th>
-                        <th className="px-4 py-3 text-left font-bold">Category</th>
-                        <th className="px-4 py-3 text-left font-bold">Skill</th>
-                        <th className="px-4 py-3 text-right font-bold">Count</th>
-                        <th className="px-4 py-3 text-right font-bold">Hours</th>
+                        <th className="px-4 py-3 text-left font-bold">Working Area</th>
+                        <th className="px-4 py-3 text-right font-bold">Messan</th>
+                        <th className="px-4 py-3 text-right font-bold">Male H.</th>
+                        <th className="px-4 py-3 text-right font-bold">Female H.</th>
+                        <th className="px-4 py-3 text-right font-bold">Carp.</th>
+                        <th className="px-4 py-3 text-right font-bold">Fitter</th>
+                        <th className="px-4 py-3 text-right font-bold">Painter</th>
+                        <th className="px-4 py-3 text-right font-bold">Plumber</th>
+                        <th className="px-4 py-3 text-right font-bold">Elec.</th>
+                        <th className="px-4 py-3 text-right font-bold">Operator</th>
+                        <th className="px-4 py-3 text-right font-bold">Total</th>
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-gray-100">
-                      {manpower.map((mp: ManpowerRow, idx: number) => (
+                      {manpower.map((mp: ManpowerRow, idx: number) => {
+                        const rowTotal = [
+                          mp.messan,
+                          mp.maleHelper,
+                          mp.femaleHelper,
+                          mp.carpenter,
+                          mp.fitter,
+                          mp.painter,
+                          mp.plumber,
+                          mp.electrician,
+                          mp.operator,
+                        ].reduce<number>((sum, v) => sum + (Number(v) || 0), 0);
+                        return (
                         <tr key={idx} className="hover:bg-orange-50/20 transition-colors">
                           <td className="px-4 py-3 text-xs font-mono text-gray-400 tabular-nums">
                             {String(idx + 1).padStart(2, "0")}
@@ -543,19 +562,41 @@ export default function DPRDetailPage() {
                             {contractorNameById.get(mp.contractorId ?? "") ?? "Self / —"}
                           </td>
                           <td className="px-4 py-3 text-gray-900">
-                            {mp.category ?? "—"}
-                          </td>
-                          <td className="px-4 py-3 text-gray-700">
-                            {mp.skillType ?? "—"}
+                            {mp.workingArea ? mp.workingArea : "—"}
                           </td>
                           <td className="px-4 py-3 text-right tabular-nums text-gray-900">
-                            {mp.count ?? 0}
+                            {fmtQty(mp.messan)}
                           </td>
                           <td className="px-4 py-3 text-right tabular-nums text-gray-900">
-                            {fmtQty(mp.hoursWorked)}
+                            {fmtQty(mp.maleHelper)}
+                          </td>
+                          <td className="px-4 py-3 text-right tabular-nums text-gray-900">
+                            {fmtQty(mp.femaleHelper)}
+                          </td>
+                          <td className="px-4 py-3 text-right tabular-nums text-gray-900">
+                            {fmtQty(mp.carpenter)}
+                          </td>
+                          <td className="px-4 py-3 text-right tabular-nums text-gray-900">
+                            {fmtQty(mp.fitter)}
+                          </td>
+                          <td className="px-4 py-3 text-right tabular-nums text-gray-900">
+                            {fmtQty(mp.painter)}
+                          </td>
+                          <td className="px-4 py-3 text-right tabular-nums text-gray-900">
+                            {fmtQty(mp.plumber)}
+                          </td>
+                          <td className="px-4 py-3 text-right tabular-nums text-gray-900">
+                            {fmtQty(mp.electrician)}
+                          </td>
+                          <td className="px-4 py-3 text-right tabular-nums text-gray-900">
+                            {fmtQty(mp.operator)}
+                          </td>
+                          <td className="px-4 py-3 text-right tabular-nums font-semibold text-orange-600">
+                            {Number.isInteger(rowTotal) ? rowTotal : rowTotal.toFixed(2)}
                           </td>
                         </tr>
-                      ))}
+                        );
+                      })}
                     </tbody>
                   </table>
                 </div>
