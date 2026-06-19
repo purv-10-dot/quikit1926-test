@@ -197,11 +197,14 @@ export function DetailsForm({ projectId }: { projectId: string }) {
           </label>
           <input
             value={projectKey}
-            onChange={(e) => setProjectKey(e.target.value.toUpperCase())}
-            maxLength={10}
-            pattern="[A-Z][A-Z0-9]{1,9}"
-            className="w-full h-9 px-3 text-sm border border-gray-300 rounded uppercase focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+            readOnly
+            disabled
+            aria-readonly="true"
+            className="w-full h-9 px-3 text-sm border border-gray-200 rounded uppercase bg-gray-50 text-gray-500 cursor-not-allowed focus:outline-none"
           />
+          <p className="mt-1 text-[11px] text-gray-500">
+            The space key can&apos;t be changed — it&apos;s used in every work-item ID (e.g. {projectKey || "KEY"}-123).
+          </p>
         </div>
 
         <div>

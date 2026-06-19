@@ -18,6 +18,7 @@ const ROUTE_GATES: Record<string, { resource: string; action: string }> = {
   summary: { resource: "ProjectSummary", action: "view" },
   timeline: { resource: "ProjectTimeline", action: "view" },
   backlog: { resource: "ProjectBacklog", action: "view" },
+  epics: { resource: "ProjectBacklog", action: "view" },
   list: { resource: "ProjectList", action: "view" },
   "task-table": { resource: "ProjectTaskTable", action: "view" },
   board: { resource: "Board", action: "view" },

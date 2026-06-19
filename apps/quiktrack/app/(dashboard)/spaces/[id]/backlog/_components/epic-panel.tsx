@@ -230,7 +230,7 @@ export function EpicPanel({
                       <div className="h-full bg-green-500" style={{ width: `${donePct}%` }} />
                       <div className="h-full bg-blue-500" style={{ width: `${inProgPct}%` }} />
                     </div>
-                    <div className="pointer-events-none absolute left-0 top-full z-50 mt-1 hidden whitespace-nowrap rounded-md bg-gray-900 px-2.5 py-1.5 text-xs text-white shadow-lg group-hover/bar:block">
+                    <div className="pointer-events-none absolute left-0 bottom-full z-50 mb-1 hidden whitespace-nowrap rounded-md bg-gray-900 px-2.5 py-1.5 text-xs text-white shadow-lg group-hover/bar:block">
                       {total > 0 ? (
                         rows.map((r) => (
                           <div key={r.label}>

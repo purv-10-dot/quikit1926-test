@@ -47,6 +47,7 @@ const TABS: Array<{
   { label: "Summary", path: "summary", icon: Globe, perm: { resource: "ProjectSummary", action: "view" } },
   { label: "Timeline", path: "timeline", icon: CalendarIcon, perm: { resource: "ProjectTimeline", action: "view" } },
   { label: "Backlog", path: "backlog", icon: ListIcon, perm: { resource: "ProjectBacklog", action: "view" } },
+  { label: "Epics", path: "epics", icon: Zap, perm: { resource: "ProjectBacklog", action: "view" } },
   { label: "Board", path: "board", icon: Columns, perm: { resource: "Board", action: "view" } },
   { label: "Grouped Kanban", path: "grouped-kanban", icon: LayoutGrid, perm: { resource: "Board", action: "view" } },
   { label: "List", path: "list", icon: ListChecks, perm: { resource: "ProjectList", action: "view" } },

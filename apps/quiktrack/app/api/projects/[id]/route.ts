@@ -31,14 +31,19 @@ export const PATCH = withProjectAccess<{ id: string }>(
     }
 
     try {
+      // The space key is immutable — it's embedded in every work-item ID, so
+      // changing it would orphan existing references. Strip any incoming
+      // projectKey so it can never be updated, even via a crafted request.
+      // eslint-disable-next-line @typescript-eslint/no-unused-vars
+      const { projectKey: _immutableKey, ...updatable } = parsed.data;
       // withProjectAccess has already verified this user can edit this
       // project in this org, so the unique-id where is safe to use directly.
       const project = await db.qtProject.update({
         where: { id: projectId },
         data: {
-          ...parsed.data,
-          startDate: parsed.data.startDate ? new Date(parsed.data.startDate) : undefined,
-          endDate: parsed.data.endDate ? new Date(parsed.data.endDate) : undefined,
+          ...updatable,
+          startDate: updatable.startDate ? new Date(updatable.startDate) : undefined,
+          endDate: updatable.endDate ? new Date(updatable.endDate) : undefined,
           updatedBy: userId,
         },
       });
