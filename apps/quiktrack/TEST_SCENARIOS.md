@@ -653,7 +653,7 @@ QA matrix covering every working feature, sub-action, field, edge case, security
 
 ## 17.4 Project Role Create / Edit / Delete
 - **Best:** Same as org but scoped to project.
-- **Worst:** "Project Admin" starter role can't be deleted if last admin.
+- **Worst:** "Space Admin" starter role can't be deleted if last admin.
 
 ## 17.5 Permission Grants
 - For every (resource × action), test allow + deny:

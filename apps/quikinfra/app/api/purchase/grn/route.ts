@@ -1,3 +1,4 @@
+import { toErrorMessage, getErrorCode } from "@/lib/api/errors";
 import { requirePurchaseAction } from "@/lib/auth/requirePurchaseAction";
 import { NextRequest, NextResponse } from "next/server";
 import { nextProjectScopedDocNumber } from "@/lib/db/doc-number";
@@ -54,6 +55,39 @@ export async function GET(req: NextRequest) {
   return NextResponse.json({ data, total: data.length });
 }
 
+/** Loose view of a source-PO line — the route reads several legacy
+ *  field-name aliases (poQty/quantity/orderedQty, qtyReceived/receivedQty)
+ *  that the enriched PO line exposes under one canonical name. Numerics
+ *  are string-shaped (that's how the enrichers serialise them) so the
+ *  `?? "0"` fallbacks stay parseFloat-friendly. */
+interface GrnPoLineLike {
+  lineId?: string | null;
+  id?: string | null;
+  itemId?: string | null;
+  poQty?: string | null;
+  quantity?: string | null;
+  orderedQty?: string | null;
+  qtyReceived?: string | null;
+  receivedQty?: string | null;
+  qtyPending?: string | null;
+  unitRate?: string | null;
+}
+/** Loose view of a posted GRN line from the request body. */
+interface GrnLineInput {
+  poLineId?: string | null;
+  itemId?: string | null;
+  qtyReceived?: string | number | null;
+  receivedQty?: string | number | null;
+  qtyRejected?: string | number | null;
+  rejectedQty?: string | number | null;
+  uomCode?: string | null;
+  unitRate?: string | number | null;
+  batchNo?: string | null;
+  condition?: string | null;
+  testCertRef?: string | null;
+  remarks?: string | null;
+}
+
 export async function POST(req: NextRequest) {
   try {
     const ctx = await getTenantContext();
@@ -90,7 +124,7 @@ export async function POST(req: NextRequest) {
     if (poIdOrNumber && !body.sourcePoId) {
       body.sourcePoId = poIdOrNumber;
     }
-    let po: any = null;
+    let po: Awaited<ReturnType<typeof findPOById>> = null;
     if (poIdOrNumber) {
       // Try by id first
       try {
@@ -101,7 +135,7 @@ export async function POST(req: NextRequest) {
       // By poNumber
       if (!po) {
         try {
-          const row = await (db as any).cnPurchaseOrder.findFirst({
+          const row = await db.cnPurchaseOrder.findFirst({
             where: { orgId: ctx.orgId, poNumber: String(poIdOrNumber) },
             select: { id: true },
           });
@@ -117,7 +151,7 @@ export async function POST(req: NextRequest) {
       ? {
           id: po.id,
           status: po.status,
-          lines: (po.lines ?? []).map((l: any) => {
+          lines: ((po.lines ?? []) as GrnPoLineLike[]).map((l) => {
             const poQty = parseFloat(
               l.poQty ?? l.quantity ?? l.orderedQty ?? "0",
             );
@@ -125,12 +159,12 @@ export async function POST(req: NextRequest) {
               l.qtyReceived ?? l.receivedQty ?? "0",
             );
             const qtyPending =
-              l.qtyPending !== undefined
+              l.qtyPending != null
                 ? parseFloat(l.qtyPending)
                 : poQty - qtyReceived;
             return {
               lineId: l.lineId ?? l.id ?? "",
-              itemId: l.itemId,
+              itemId: l.itemId ?? "",
               poQty,
               qtyReceived,
               qtyPending,
@@ -144,8 +178,9 @@ export async function POST(req: NextRequest) {
     validateGRNChallan(body);
 
     // Build GRN lines — HARD over-receipt check afterwards.
-    const grnLines = (body.lines ?? po!.lines ?? []).map(
-      (line: any, i: number) => {
+    const grnLines = (
+      (body.lines ?? po!.lines ?? []) as GrnLineInput[]
+    ).map((line, i: number) => {
         const poLine =
           poForGRN!.lines.find(
             (pl) =>
@@ -160,7 +195,7 @@ export async function POST(req: NextRequest) {
         // `Math.max` — which Prisma's Decimal column then rejects
         // with "invalid digit found in string". This extra guard
         // keeps the payload numeric under every input shape.
-        const toNum = (raw: any): number => {
+        const toNum = (raw: unknown): number => {
           const n = parseFloat(String(raw ?? "").trim());
           return Number.isFinite(n) ? n : 0;
         };
@@ -175,8 +210,7 @@ export async function POST(req: NextRequest) {
           unitRate: String(
             line.unitRate ??
               (po!.lines ?? []).find(
-                (pl: any) =>
-                  pl.itemId === (poLine?.itemId ?? line.itemId),
+                (pl) => pl.itemId === (poLine?.itemId ?? line.itemId),
               )?.unitRate ??
               "0",
           ),
@@ -193,7 +227,7 @@ export async function POST(req: NextRequest) {
     );
 
     validateGRNLines(
-      grnLines.map((l: any) => ({
+      grnLines.map((l) => ({
         itemId: l.itemId,
         poLineId: l.poLineId,
         qtyReceived: l.qtyReceived,
@@ -301,9 +335,9 @@ export async function POST(req: NextRequest) {
       weighbridgeSlipNo: body.weighbridgeSlipNo ?? null,
       remarks: body.remarks ?? body.qualityRemarks ?? null,
       status: "draft",
-      lines: grnLines.map((l: any) => ({
+      lines: grnLines.map((l) => ({
         poLineId: l.poLineId,
-        itemId: l.itemId,
+        itemId: l.itemId ?? "",
         uomCode: l.uomCode,
         unitRate: l.unitRate,
         receivedQty: l.qtyReceived,
@@ -317,14 +351,14 @@ export async function POST(req: NextRequest) {
     });
 
     return NextResponse.json(record, { status: 201 });
-  } catch (err: any) {
+  } catch (err: unknown) {
     if (err instanceof PurchaseValidationError) {
       return NextResponse.json(
         { error: err.message, code: err.code },
         { status: 400 },
       );
     }
-    if (err?.code === "P2002") {
+    if (getErrorCode(err) === "P2002") {
       return NextResponse.json(
         { error: "A GRN with this number already exists" },
         { status: 409 },
@@ -332,7 +366,7 @@ export async function POST(req: NextRequest) {
     }
     console.error("[grn.create] failed:", err);
     return NextResponse.json(
-      { error: err.message ?? "Internal error" },
+      { error: toErrorMessage(err, "Internal error") },
       { status: 500 },
     );
   }

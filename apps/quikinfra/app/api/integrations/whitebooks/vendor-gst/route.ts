@@ -36,7 +36,7 @@ export async function POST(req: NextRequest) {
 
   let vendor: { id: string; gstin: string | null } | null = null;
   try {
-    vendor = await (db as any).cnVendor.findFirst({
+    vendor = await db.cnVendor.findFirst({
       where: { id: vendorId, orgId: ctx.orgId },
       select: { id: true, gstin: true },
     });

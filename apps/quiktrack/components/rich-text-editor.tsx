@@ -1,6 +1,7 @@
 "use client";
 
 import { useEditor, EditorContent, Editor } from "@tiptap/react";
+import { showToast } from "@/lib/ui/toast";
 import StarterKit from "@tiptap/starter-kit";
 import Placeholder from "@tiptap/extension-placeholder";
 import LinkExt from "@tiptap/extension-link";
@@ -59,7 +60,7 @@ import {
 } from "lucide-react";
 import { useEffect, useCallback, useState, useRef } from "react";
 
-interface Props {
+export interface RichTextEditorProps {
   value: string;
   onChange: (html: string) => void;
   placeholder?: string;
@@ -94,7 +95,7 @@ export function RichTextEditor({
   slotBetween,
   uploadImage,
   mentions,
-}: Props) {
+}: RichTextEditorProps) {
   // Keep the latest people list in a ref so the (init-once) editor's mention
   // popup always sees current members, even though they load asynchronously.
   const mentionsRef = useRef<MentionItem[]>(mentions ?? []);
@@ -187,16 +188,59 @@ export function RichTextEditor({
     async (file: File) => {
       if (!editor) return;
       if (uploadImage) {
+        // Optimistic preview: insert the image from a local blob URL so it
+        // shows at the cursor INSTANTLY (no network wait), then swap to the
+        // uploaded URL in the background. Without this the user stares at a
+        // blank gap while the upload + first proxy fetch complete and can't
+        // tell whether an image is there at all.
+        const localUrl = URL.createObjectURL(file);
+        editor.chain().focus().setImage({ src: localUrl }).run();
         setImageUploading(true);
+
+        // Find the placeholder node we just inserted (by its blob src).
+        const findImagePos = (src: string): number | null => {
+          let pos: number | null = null;
+          editor.state.doc.descendants((node, p) => {
+            if (pos !== null) return false;
+            if (node.type.name === "image" && node.attrs.src === src) {
+              pos = p;
+              return false;
+            }
+            return true;
+          });
+          return pos;
+        };
+
         try {
           const url = await uploadImage(file);
-          if (url) editor.chain().focus().setImage({ src: url }).run();
+          // Preload the stored (proxied) URL into the browser cache BEFORE
+          // swapping, so the swap paints instantly instead of flashing blank
+          // while the proxy signs its first S3 GET.
+          await new Promise<void>((resolve) => {
+            const probe = new window.Image();
+            probe.onload = () => resolve();
+            probe.onerror = () => resolve();
+            probe.src = url;
+          });
+          const pos = findImagePos(localUrl);
+          if (pos !== null) {
+            const node = editor.state.doc.nodeAt(pos);
+            editor.view.dispatch(
+              editor.state.tr.setNodeMarkup(pos, undefined, { ...node?.attrs, src: url }),
+            );
+          }
         } catch (err) {
-          // Surface the failure but don't crash the editor; fall back to
-          // embedding the bytes inline so the user doesn't lose the image.
+          // Remove the placeholder so we never leave a dead blob URL (or, as
+          // before, a multi-MB base64 blob) behind, then tell the user.
+          const pos = findImagePos(localUrl);
+          if (pos !== null) {
+            const node = editor.state.doc.nodeAt(pos);
+            if (node) editor.view.dispatch(editor.state.tr.delete(pos, pos + node.nodeSize));
+          }
           console.error("[rich-text-editor] image upload failed:", err);
-          alert(err instanceof Error ? err.message : "Image upload failed");
+          showToast(err instanceof Error ? err.message : "Image upload failed", "error");
         } finally {
+          URL.revokeObjectURL(localUrl);
           setImageUploading(false);
         }
         return;

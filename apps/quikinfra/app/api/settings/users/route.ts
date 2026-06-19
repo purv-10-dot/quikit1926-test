@@ -97,11 +97,11 @@ export const GET = auth.manage(async (authCtx, req: NextRequest) => {
   if (userIds.length > 0) {
     try {
       const [revokes, accessRows] = await Promise.all([
-        (dbCentral as any).cnUserPermissionExtra.findMany({
+        dbCentral.cnUserPermissionExtra.findMany({
           where: { orgId: authCtx.orgId, userId: { in: userIds }, revoke: true },
           select: { userId: true, resource: true, action: true },
         }) as Promise<Array<{ userId: string; resource: string; action: string }>>,
-        (dbCentral as any).cnUserProjectAccess.findMany({
+        dbCentral.cnUserProjectAccess.findMany({
           where: { orgId: authCtx.orgId, userId: { in: userIds } },
           select: { userId: true, projectId: true },
         }) as Promise<Array<{ userId: string; projectId: string }>>,
@@ -201,7 +201,7 @@ export const POST = auth.manage(async (authCtx, req: NextRequest) => {
   // It closes the gap where a brand-new org's FIRST invite could 400 with
   // "Unknown role" if /api/me/permissions hadn't lazily seeded yet.
   await seedDefaultRoles(ctx.orgId);
-  const selectedRole = await (dbCentral as any).cnAppRole.findFirst({
+  const selectedRole = await dbCentral.cnAppRole.findFirst({
     where: { orgId: ctx.orgId, appId: appIdForRole, name: roleName },
     select: { id: true, name: true, description: true },
   });
@@ -241,7 +241,7 @@ export const POST = auth.manage(async (authCtx, req: NextRequest) => {
   // write to it. When LINKING, membership is *required* (we're granting app
   // access to someone already in the org); when creating fresh, an existing
   // membership is a 409 conflict.
-  const existingAuthUser = await (dbCentral as any).user.findUnique({
+  const existingAuthUser = await dbCentral.user.findUnique({
     where: linkExistingUserId ? { id: linkExistingUserId } : { email },
     select: { id: true, email: true },
   });
@@ -249,7 +249,7 @@ export const POST = auth.manage(async (authCtx, req: NextRequest) => {
     if (!existingAuthUser) {
       return NextResponse.json({ error: "User not found" }, { status: 404 });
     }
-    const member = await (dbCentral as any).orgMember.findUnique({
+    const member = await dbCentral.orgMember.findUnique({
       where: { orgId_userId: { orgId: ctx.orgId, userId: existingAuthUser.id } },
       select: { id: true },
     });
@@ -260,7 +260,7 @@ export const POST = auth.manage(async (authCtx, req: NextRequest) => {
       );
     }
   } else if (existingAuthUser) {
-    const existingMembership = await (dbCentral as any).orgMember.findUnique({
+    const existingMembership = await dbCentral.orgMember.findUnique({
       where: { orgId_userId: { orgId: ctx.orgId, userId: existingAuthUser.id } },
       select: { id: true },
     });
@@ -340,7 +340,7 @@ export const POST = auth.manage(async (authCtx, req: NextRequest) => {
       // 1) auth.User upsert by email — use the firstName/lastName from the
       //    form directly (no fullName splitting needed since the UI now
       //    collects them separately).
-      const upsertedUser = await (dbCentral as any).user.upsert({
+      const upsertedUser = await dbCentral.user.upsert({
         where: { email },
         update: {},
         create: {
@@ -359,7 +359,7 @@ export const POST = auth.manage(async (authCtx, req: NextRequest) => {
 
       // 2) quikit.OrgMember upsert — fresh invitationToken on each invite
       centralInvitationToken = randomUUID();
-      await (dbCentral as any).orgMember.upsert({
+      await dbCentral.orgMember.upsert({
         where: { orgId_userId: { orgId: ctx.orgId, userId: centralUserId } },
         update: {
           invitationToken: centralInvitationToken,
@@ -384,12 +384,12 @@ export const POST = auth.manage(async (authCtx, req: NextRequest) => {
     // 3) quikit.UserAppAccess — grant launchability of QuikInfra
     const appId = await getQuikInfraAppId();
     if (appId) {
-      const existingAccess = await (dbCentral as any).userAppAccess.findFirst({
+      const existingAccess = await dbCentral.userAppAccess.findFirst({
         where: { userId: centralUserId, orgId: ctx.orgId, appId },
         select: { id: true },
       });
       if (!existingAccess) {
-        await (dbCentral as any).userAppAccess.create({
+        await dbCentral.userAppAccess.create({
           data: {
             userId: centralUserId!,
             orgId: ctx.orgId,
@@ -405,7 +405,7 @@ export const POST = auth.manage(async (authCtx, req: NextRequest) => {
     //    Dual-write alongside cn_users so the soon-to-be-migrated read
     //    paths (and any new code) can stop reading cn_users.fullName /
     //    .department / .mobile.
-    await (dbCentral as any).cnUserProfile.upsert({
+    await dbCentral.cnUserProfile.upsert({
       where: { orgId_userId: { orgId: ctx.orgId, userId: centralUserId! } },
       update: {
         firstName,
@@ -462,13 +462,13 @@ export const POST = auth.manage(async (authCtx, req: NextRequest) => {
         // Find the invitee's central auth.User row by email (may be
         // null if they've never signed in to QuikIT before — that's
         // fine, the auto-assign in context.ts handles first-login).
-        const authUser = await (dbCentral as any).user.findUnique({
+        const authUser = await dbCentral.user.findUnique({
           where: { email },
           select: { id: true },
         });
 
         if (v2Role && authUser) {
-          await (dbCentral as any).cnUserAppRole.upsert({
+          await dbCentral.cnUserAppRole.upsert({
             where: {
               userId_orgId_roleId: {
                 userId: authUser.id,
@@ -500,7 +500,7 @@ export const POST = auth.manage(async (authCtx, req: NextRequest) => {
               { resource: "construction.workflows", action: "manage" },
             ];
             for (const p of SETTINGS_PERMS) {
-              await (dbCentral as any).cnUserPermissionExtra.upsert({
+              await dbCentral.cnUserPermissionExtra.upsert({
                 where: {
                   orgId_userId_resource_action: {
                     orgId: ctx.orgId,
@@ -573,16 +573,16 @@ export const POST = auth.manage(async (authCtx, req: NextRequest) => {
     try {
       const appId = await getQuikInfraAppId();
       const [orgRow, inviterRow, appRow] = await Promise.all([
-        (dbCentral as any).org.findUnique({
+        dbCentral.org.findUnique({
           where: { id: ctx.orgId },
           select: { name: true, brandColor: true },
         }),
-        (dbCentral as any).user.findUnique({
+        dbCentral.user.findUnique({
           where: { id: ctx.userId },
           select: { firstName: true, lastName: true },
         }),
         appId
-          ? (dbCentral as any).app.findUnique({
+          ? dbCentral.app.findUnique({
               where: { id: appId },
               select: { name: true },
             })

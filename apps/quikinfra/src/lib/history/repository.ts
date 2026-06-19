@@ -151,6 +151,49 @@ interface MasterAuditRow {
   updatedBy: string;
 }
 
+const AUDIT_SELECT = {
+  createdAt: true,
+  updatedAt: true,
+  createdBy: true,
+  updatedBy: true,
+} as const;
+
+/**
+ * Model-name → typed finder. Each thunk calls the real Prisma delegate, so
+ * the model name and the audit-field select are compiler-checked — no
+ * string-indexing of `db`, no casts. Keyed by the same model-name strings
+ * MASTER_MODEL_MAP resolves aliases to.
+ */
+const MODEL_FINDERS: Record<
+  string,
+  (where: { id: string; orgId: string }) => Promise<MasterAuditRow | null>
+> = {
+  cnCompany: (where) => db.cnCompany.findFirst({ where, select: AUDIT_SELECT }),
+  cnDepartment: (where) => db.cnDepartment.findFirst({ where, select: AUDIT_SELECT }),
+  cnGSTCode: (where) => db.cnGSTCode.findFirst({ where, select: AUDIT_SELECT }),
+  cnTDSCode: (where) => db.cnTDSCode.findFirst({ where, select: AUDIT_SELECT }),
+  cnUOM: (where) => db.cnUOM.findFirst({ where, select: AUDIT_SELECT }),
+  cnWorkCategory: (where) => db.cnWorkCategory.findFirst({ where, select: AUDIT_SELECT }),
+  cnTermsCondition: (where) => db.cnTermsCondition.findFirst({ where, select: AUDIT_SELECT }),
+  cnItem: (where) => db.cnItem.findFirst({ where, select: AUDIT_SELECT }),
+  cnItemGroup: (where) => db.cnItemGroup.findFirst({ where, select: AUDIT_SELECT }),
+  cnVendor: (where) => db.cnVendor.findFirst({ where, select: AUDIT_SELECT }),
+  cnContractor: (where) => db.cnContractor.findFirst({ where, select: AUDIT_SELECT }),
+  cnCustomer: (where) => db.cnCustomer.findFirst({ where, select: AUDIT_SELECT }),
+  cnProject: (where) => db.cnProject.findFirst({ where, select: AUDIT_SELECT }),
+  cnPurchaseRequisition: (where) => db.cnPurchaseRequisition.findFirst({ where, select: AUDIT_SELECT }),
+  cnPurchaseIndent: (where) => db.cnPurchaseIndent.findFirst({ where, select: AUDIT_SELECT }),
+  cnRfq: (where) => db.cnRfq.findFirst({ where, select: AUDIT_SELECT }),
+  cnPurchaseOrder: (where) => db.cnPurchaseOrder.findFirst({ where, select: AUDIT_SELECT }),
+  cnMaterialEstimation: (where) => db.cnMaterialEstimation.findFirst({ where, select: AUDIT_SELECT }),
+  cnGoodsReceiptNote: (where) => db.cnGoodsReceiptNote.findFirst({ where, select: AUDIT_SELECT }),
+  cnMaterialIssue: (where) => db.cnMaterialIssue.findFirst({ where, select: AUDIT_SELECT }),
+  cnStockTransfer: (where) => db.cnStockTransfer.findFirst({ where, select: AUDIT_SELECT }),
+  cnStockReconciliation: (where) => db.cnStockReconciliation.findFirst({ where, select: AUDIT_SELECT }),
+  cnGoodReturn: (where) => db.cnGoodReturn.findFirst({ where, select: AUDIT_SELECT }),
+  cnGatePass: (where) => db.cnGatePass.findFirst({ where, select: AUDIT_SELECT }),
+};
+
 async function loadMasterAuditRow(
   orgId: string,
   types: string[],
@@ -159,16 +202,13 @@ async function loadMasterAuditRow(
   for (const t of types) {
     const modelName = MASTER_MODEL_MAP[t];
     if (!modelName) continue;
-    const client = (db as any)[modelName];
-    if (!client?.findFirst) continue;
+    const finder = MODEL_FINDERS[modelName];
+    if (!finder) continue;
     try {
-      const row = await client.findFirst({
-        where: { id: entityId, orgId },
-        select: { createdAt: true, updatedAt: true, createdBy: true, updatedBy: true },
-      });
-      if (row) return row as MasterAuditRow;
+      const row = await finder({ id: entityId, orgId });
+      if (row) return row;
     } catch {
-      // Mismatched fields for this model — skip and try the next type.
+      // Query failed for this model — skip and try the next type.
     }
   }
   return null;
@@ -210,7 +250,7 @@ export async function listHistoryForEntity(
   // Pull the workflow steps inline so we can synthesize "pending"
   // events for not-yet-acted approvers when the instance is still in
   // flight (multi-level workflows).
-  const instances = await (db as any).cnApprovalInstance.findMany({
+  const instances = await db.cnApprovalInstance.findMany({
     where: { orgId, entityType: { in: types }, entityId },
     include: {
       history: true,
@@ -219,7 +259,7 @@ export async function listHistoryForEntity(
     orderBy: { requestedAt: "asc" },
   });
 
-  const audits = await (db as any).cnAuditLog.findMany({
+  const audits = await db.cnAuditLog.findMany({
     where: { orgId, entityType: { in: types }, entityId },
     orderBy: { timestamp: "asc" },
   });

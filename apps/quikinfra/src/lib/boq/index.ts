@@ -23,6 +23,7 @@ export type {
   PipelineOptions,
   ImportIssue,
   RawSheet,
+  SheetCell,
   DetectionResult,
   DetectedSheet,
 } from "./import";

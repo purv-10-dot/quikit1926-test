@@ -10,6 +10,7 @@
  * response or just log them.
  */
 
+import { toErrorMessage, getErrorCode } from "@/lib/api/errors";
 import { db } from "@/lib/db";
 import { findVendorsByIds } from "@/lib/masters/vendors-repository";
 import { sendMail } from "@/lib/email/mailer";
@@ -52,10 +53,37 @@ export interface RfqPreviewPayload {
  * — see the drawer in `app/(dashboard)/purchase/rfqs/page.tsx`. An empty
  * array means "send all materials to this vendor".
  */
+interface RfqEmailLine {
+  itemId?: string | null;
+  itemName?: string | null;
+  uomCode?: string | null;
+  qtyRequested?: number | string | null;
+  quantity?: number | string | null;
+  specification?: string | null;
+}
+interface RfqEmailVendor {
+  vendorId: string;
+  vendorName?: string | null;
+  email?: string | null;
+  assignedItemIds?: string[] | null;
+}
+interface RfqEmailInput {
+  rfqNumber?: string | null;
+  rfqDate?: string | null;
+  dueDate?: string | null;
+  projectName?: string | null;
+  purpose?: string | null;
+  contactPerson?: string | null;
+  contactMobile?: string | null;
+  termsTemplateId?: string | null;
+  lines?: RfqEmailLine[] | null;
+  vendors?: RfqEmailVendor[] | null;
+}
+
 function resolveLinesForVendor(
   assignedItemIds: string[] | null | undefined,
-  allLines: any[],
-): any[] {
+  allLines: RfqEmailLine[],
+): RfqEmailLine[] {
   if (!Array.isArray(assignedItemIds) || assignedItemIds.length === 0) {
     return allLines;
   }
@@ -68,7 +96,7 @@ function resolveLinesForVendor(
   return allLines.filter((_, idx) => indices.has(idx));
 }
 
-function linesToPdfRows(lines: any[]): RfqPdfLine[] {
+function linesToPdfRows(lines: RfqEmailLine[]): RfqPdfLine[] {
   return lines.map((l) => ({
     description: [l.itemName, l.specification]
       .filter((x) => x && String(x).trim())
@@ -103,7 +131,7 @@ function formatDate(raw: string | null | undefined): string {
   return `${day} ${MONTHS_SHORT[monthIdx]} ${year}`;
 }
 
-function emailBodyHtml(rfq: any, vendorName: string): string {
+function emailBodyHtml(rfq: RfqEmailInput, vendorName: string): string {
   const contact = rfq.contactPerson || "";
   const mobile = rfq.contactMobile || "";
   return `
@@ -143,7 +171,7 @@ function emailBodyHtml(rfq: any, vendorName: string): string {
  */
 async function findTermsBodyById(orgId: string, id: string): Promise<string | null> {
   try {
-    const row = await (db as any).cnTermsCondition.findFirst({
+    const row = await db.cnTermsCondition.findFirst({
       where: { id, orgId },
       select: { body: true },
     });
@@ -173,7 +201,7 @@ async function resolveRfqTerms(orgId: string): Promise<string | null> {
     { ...base, applicableTo: "general" },
   ];
   for (const where of tiers) {
-    const row = await (db as any).cnTermsCondition.findFirst({
+    const row = await db.cnTermsCondition.findFirst({
       where,
       orderBy: { updatedAt: "desc" },
       select: { body: true },
@@ -192,7 +220,7 @@ function escapeHtml(s: string): string {
     .replace(/'/g, "&#39;");
 }
 
-function subjectFor(rfq: any): string {
+function subjectFor(rfq: RfqEmailInput): string {
   return `Request for Quotation — ${rfq.rfqNumber ?? ""}${
     rfq.projectName ? ` (${rfq.projectName})` : ""
   }`;
@@ -206,10 +234,10 @@ function subjectFor(rfq: any): string {
  */
 export async function buildRfqPreview(
   orgId: string,
-  rfq: any,
+  rfq: RfqEmailInput,
 ): Promise<RfqPreviewPayload> {
-  const vendors: any[] = Array.isArray(rfq?.vendors) ? rfq.vendors : [];
-  const allLines: any[] = Array.isArray(rfq?.lines) ? rfq.lines : [];
+  const vendors: RfqEmailVendor[] = Array.isArray(rfq?.vendors) ? rfq.vendors : [];
+  const allLines: RfqEmailLine[] = Array.isArray(rfq?.lines) ? rfq.lines : [];
 
   const vendorIds = vendors
     .map((v) => v.vendorId)
@@ -268,10 +296,10 @@ export async function buildRfqPreview(
  */
 export async function buildRfqPreviewPdfForVendor(
   orgId: string,
-  rfq: any,
+  rfq: RfqEmailInput,
   vendorId: string,
 ): Promise<Buffer | null> {
-  const vendors: any[] = Array.isArray(rfq?.vendors) ? rfq.vendors : [];
+  const vendors: RfqEmailVendor[] = Array.isArray(rfq?.vendors) ? rfq.vendors : [];
   const v = vendors.find((x) => String(x.vendorId) === String(vendorId));
   if (!v) return null;
 
@@ -283,7 +311,7 @@ export async function buildRfqPreviewPdfForVendor(
     : null;
   const termsBody = pickedBody ?? (await resolveRfqTerms(orgId));
 
-  const allLines: any[] = Array.isArray(rfq?.lines) ? rfq.lines : [];
+  const allLines: RfqEmailLine[] = Array.isArray(rfq?.lines) ? rfq.lines : [];
   const picked = resolveLinesForVendor(v.assignedItemIds, allLines);
   if (picked.length === 0) return null;
 
@@ -330,11 +358,11 @@ export interface SendRfqEmailsOptions {
 
 export async function sendRfqEmailsToVendors(
   orgId: string,
-  rfq: any,
+  rfq: RfqEmailInput,
   options?: SendRfqEmailsOptions,
 ): Promise<SendRfqEmailsResult> {
   const result: SendRfqEmailsResult = { sent: [], skipped: [], failed: [] };
-  const vendors: any[] = Array.isArray(rfq?.vendors) ? rfq.vendors : [];
+  const vendors: RfqEmailVendor[] = Array.isArray(rfq?.vendors) ? rfq.vendors : [];
   if (vendors.length === 0) return result;
 
   // Master lookup in one shot so every vendor email has full
@@ -358,7 +386,7 @@ export async function sendRfqEmailsToVendors(
     : null;
   const termsBody = pickedBody ?? (await resolveRfqTerms(orgId));
 
-  const allLines: any[] = Array.isArray(rfq.lines) ? rfq.lines : [];
+  const allLines: RfqEmailLine[] = Array.isArray(rfq.lines) ? rfq.lines : [];
 
   for (const v of vendors) {
     const master = v.vendorId ? vendorMasters.get(v.vendorId) : null;
@@ -442,11 +470,11 @@ export async function sendRfqEmailsToVendors(
           error: res.error ?? "send failed",
         });
       }
-    } catch (e: any) {
+    } catch (e: unknown) {
       result.failed.push({
         vendorId: v.vendorId ?? "(unknown)",
         email,
-        error: e?.message ?? String(e),
+        error: toErrorMessage(e),
       });
     }
   }

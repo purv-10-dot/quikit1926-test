@@ -15,6 +15,7 @@
  */
 
 import { db } from "@/lib/db";
+import { Prisma } from "@quikit/database";
 
 export interface CompanyRecord {
   id: string;
@@ -45,7 +46,7 @@ export interface CompanyRecord {
   updatedBy: string;
 }
 
-function toRecord(row: any): CompanyRecord {
+function toRecord(row: Prisma.CnCompanyGetPayload<Record<string, never>>): CompanyRecord {
   return {
     id: row.id,
     orgId: row.orgId,
@@ -104,7 +105,7 @@ function buildCompaniesWhere(opts: Pick<ListCompaniesOptions, "orgId" | "search"
 }
 
 export async function listCompanies(opts: ListCompaniesOptions): Promise<CompanyRecord[]> {
-  const rows = await (db as any).cnCompany.findMany({
+  const rows = await db.cnCompany.findMany({
     where: buildCompaniesWhere(opts),
     orderBy: { createdAt: "desc" },
     ...(typeof opts.take === "number" ? { take: opts.take } : {}),
@@ -114,11 +115,11 @@ export async function listCompanies(opts: ListCompaniesOptions): Promise<Company
 }
 
 export async function countCompanies(opts: Pick<ListCompaniesOptions, "orgId" | "search">): Promise<number> {
-  return (db as any).cnCompany.count({ where: buildCompaniesWhere(opts) });
+  return db.cnCompany.count({ where: buildCompaniesWhere(opts) });
 }
 
 export async function findCompanyById(orgId: string, id: string): Promise<CompanyRecord | null> {
-  const row = await (db as any).cnCompany.findFirst({ where: { id, orgId } });
+  const row = await db.cnCompany.findFirst({ where: { id, orgId } });
   return row ? toRecord(row) : null;
 }
 
@@ -157,7 +158,7 @@ function sOrNull(v: unknown): string | null {
 }
 
 export async function createCompany(input: CreateCompanyInput): Promise<CompanyRecord> {
-  const row = await (db as any).cnCompany.create({
+  const row = await db.cnCompany.create({
     data: {
       orgId: input.orgId,
       name: s(input.name),
@@ -197,7 +198,7 @@ export async function updateCompany(
   id: string,
   patch: UpdateCompanyInput,
 ): Promise<CompanyRecord | null> {
-  const existing = await (db as any).cnCompany.findFirst({
+  const existing = await db.cnCompany.findFirst({
     where: { id, orgId },
     select: { id: true },
   });
@@ -231,7 +232,7 @@ export async function updateCompany(
   }
   if (patch.status !== undefined) data.status = patch.status;
 
-  const row = await (db as any).cnCompany.update({ where: { id }, data });
+  const row = await db.cnCompany.update({ where: { id }, data });
   return toRecord(row);
 }
 
@@ -240,7 +241,7 @@ export async function deleteCompany(
   id: string,
   updatedBy: string,
 ): Promise<boolean> {
-  const res = await (db as any).cnCompany.updateMany({
+  const res = await db.cnCompany.updateMany({
     where: { id, orgId },
     data: { status: "inactive", updatedBy },
   });

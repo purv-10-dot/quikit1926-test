@@ -104,7 +104,7 @@ export interface UpdateStockTransferInput {
 let didEnsureAssetsCol = false;
 async function ensureAssetsColumn() {
   if (didEnsureAssetsCol) return;
-  await (db as any).$executeRaw`
+  await db.$executeRaw`
     ALTER TABLE app_quikinfra."Stock_transfers"
     ADD COLUMN IF NOT EXISTS assets jsonb NULL;
   `;
@@ -112,20 +112,82 @@ async function ensureAssetsColumn() {
 }
 
 function genId(): string {
-  if (typeof (globalThis as any).crypto?.randomUUID === "function") {
-    return (globalThis as any).crypto.randomUUID();
+  const cryptoObj = (globalThis as { crypto?: { randomUUID?: () => string } })
+    .crypto;
+  if (typeof cryptoObj?.randomUUID === "function") {
+    return cryptoObj.randomUUID();
   }
   return `st_${Date.now()}_${Math.random().toString(36).slice(2, 10)}`;
 }
 
-function toIsoDate(v: any): string | null {
+/** A money/quantity value as it arrives from Prisma (Decimal) or raw SQL. */
+type Numericish = Prisma.Decimal | number | string | null | undefined;
+
+/** Raw `SELECT *` row from `Stock_transfers` (+ optional joined display fields). */
+interface StockTransferRow {
+  id: string;
+  orgId: string;
+  transferNumber: string;
+  transferType?: string | null;
+  transferReason?: string | null;
+  transferDate?: Date | string | null;
+  sourceProjectId?: string | null;
+  fromProjectId?: string | null;
+  sourceProjectName?: string | null;
+  destinationProjectId?: string | null;
+  toProjectId?: string | null;
+  destinationProjectName?: string | null;
+  fromLocationId?: string | null;
+  fromLocationName?: string | null;
+  fromState?: string | null;
+  fromCity?: string | null;
+  toLocationId?: string | null;
+  toLocationName?: string | null;
+  toState?: string | null;
+  toCity?: string | null;
+  vehicleNo?: string | null;
+  dispatchDateTime?: Date | null;
+  estTransitDays?: number | null;
+  transactionAmount?: Numericish;
+  interstateTransfer?: boolean | null;
+  chargeableTransfer?: boolean | null;
+  ewayBillNo?: string | null;
+  remarks?: string | null;
+  lineCount?: number | null;
+  materials?: unknown;
+  assets?: unknown;
+  status?: string | null;
+  approvalId?: string | null;
+  rejectionReason?: string | null;
+  returnReason?: string | null;
+  submittedAt?: Date | null;
+  submittedBy?: string | null;
+  approvedAt?: Date | null;
+  approvedBy?: string | null;
+  rejectedAt?: Date | null;
+  rejectedBy?: string | null;
+  returnedAt?: Date | null;
+  returnedBy?: string | null;
+  dispatchedAt?: Date | null;
+  dispatchedBy?: string | null;
+  receivedAt?: Date | null;
+  receivedBy?: string | null;
+  receivedDate?: Date | null;
+  initiatedById?: string | null;
+  createdAt?: Date | null;
+  updatedAt?: Date | null;
+  createdBy?: string | null;
+  updatedBy?: string | null;
+}
+
+function toIsoDate(v: Date | string | null | undefined): string | null {
   if (!v) return null;
   if (typeof v === "string") return v.slice(0, 10);
   if (v?.toISOString) return v.toISOString().slice(0, 10);
   return null;
 }
 
-function mapRow(row: any): any {
+function mapRow(row: StockTransferRow | null) {
   if (!row) return null;
   return {
     id: row.id,
@@ -180,12 +242,12 @@ function mapRow(row: any): any {
     initiatedById: row.initiatedById ?? null,
     createdAt: row.createdAt?.toISOString?.() ?? row.createdAt ?? null,
     updatedAt: row.updatedAt?.toISOString?.() ?? row.updatedAt ?? null,
-    createdBy: row.createdBy ?? null,
-    updatedBy: row.updatedBy ?? null,
+    createdBy: row.createdBy ?? "",
+    updatedBy: row.updatedBy ?? "",
   };
 }
 
-function toDecOrNull(v: any): number | null {
+function toDecOrNull(v: unknown): number | null {
   if (v === null || v === undefined || v === "") return null;
   const n = Number(v);
   return Number.isFinite(n) ? n : null;
@@ -236,6 +298,8 @@ function buildStockTransfersWhere(
   return Prisma.sql` WHERE ${Prisma.join(conds, " AND ")}`;
 }
 
+export type StockTransfer = NonNullable<ReturnType<typeof mapRow>>;
+
 export async function listStockTransfers(
   orgId: string,
   opts: ListStockTransfersOptions = {},
@@ -264,7 +328,7 @@ export async function listStockTransfers(
     ORDER BY "transferDate" DESC NULLS LAST, "createdAt" DESC
     ${limitClause}${offsetClause}
   `;
-  const rows: any[] = await (db as any).$queryRaw(sql);
+  const rows = await db.$queryRaw<StockTransferRow[]>(sql);
   return rows.map(mapRow);
 }
 
@@ -278,16 +342,16 @@ export async function countStockTransfers(
   const where = buildStockTransfersWhere(orgId, opts);
   // Same composition trick as listStockTransfers — see comment there.
   const sql = Prisma.sql`SELECT COUNT(*)::bigint AS c FROM app_quikinfra."Stock_transfers"${where}`;
-  const rows: Array<{ c: bigint }> = await (db as any).$queryRaw(sql);
+  const rows: Array<{ c: bigint }> = await db.$queryRaw(sql);
   return Number(rows[0]?.c ?? 0);
 }
 
 export async function findStockTransferById(
   orgId: string,
   id: string,
-): Promise<any | null> {
+): Promise<StockTransfer | null> {
   await ensureAssetsColumn();
-  const rows: any[] = await (db as any).$queryRaw`
+  const rows = await db.$queryRaw<StockTransferRow[]>`
     SELECT *
     FROM app_quikinfra."Stock_transfers"
     WHERE "orgId" = ${orgId} AND id = ${id}
@@ -298,7 +362,7 @@ export async function findStockTransferById(
 
 export async function createStockTransfer(
   input: CreateStockTransferInput,
-): Promise<any> {
+): Promise<StockTransfer | null> {
   await ensureAssetsColumn();
   const id = genId();
   const lines = Array.isArray(input.lines) ? input.lines : [];
@@ -308,7 +372,7 @@ export async function createStockTransfer(
   const lineCount = lines.length;
   const now = new Date();
 
-  await (db as any).$executeRaw`
+  await db.$executeRaw`
     INSERT INTO app_quikinfra."Stock_transfers" (
       id, "orgId", "transferNumber",
       "transferType", "transferReason", "transferDate",
@@ -348,7 +412,7 @@ export async function createStockTransfer(
 export async function updateStockTransfer(
   id: string,
   input: UpdateStockTransferInput,
-): Promise<any | null> {
+): Promise<StockTransfer | null> {
   await ensureAssetsColumn();
   const existing = await findStockTransferById(input.orgId, id);
   if (!existing) return null;
@@ -392,7 +456,7 @@ export async function updateStockTransfer(
     status: input.status ?? existing.status,
   };
 
-  await (db as any).$executeRaw`
+  await db.$executeRaw`
     UPDATE app_quikinfra."Stock_transfers"
     SET
       "transferType"           = ${next.transferType},
@@ -449,14 +513,14 @@ export async function patchStockTransferStatus(
     receivedDate?: Date | null;
     updatedBy: string;
   },
-): Promise<any | null> {
+): Promise<StockTransfer | null> {
   await ensureAssetsColumn();
   const existing = await findStockTransferById(orgId, id);
   if (!existing) return null;
 
   const pick = <T>(v: T | undefined, fallback: T): T =>
     v !== undefined ? v : fallback;
-  const dateOrNull = (v: string | null): Date | null =>
+  const dateOrNull = (v: string | Date | null): Date | null =>
     v ? new Date(v) : null;
 
   const next = {
@@ -480,7 +544,7 @@ export async function patchStockTransferStatus(
       pick(patch.receivedDate, dateOrNull(existing.receivedDate)),
   };
 
-  await (db as any).$executeRaw`
+  await db.$executeRaw`
     UPDATE app_quikinfra."Stock_transfers"
     SET
       status             = ${next.status},
@@ -511,7 +575,7 @@ export async function deleteStockTransfer(
   orgId: string,
   id: string,
 ): Promise<boolean> {
-  const res: any = await (db as any).$executeRaw`
+  const res = await db.$executeRaw`
     DELETE FROM app_quikinfra."Stock_transfers"
     WHERE "orgId" = ${orgId} AND id = ${id}
   `;
@@ -523,7 +587,7 @@ export async function countStockTransfersForDate(
   orgId: string,
   dateYYYYMMDD: string,
 ): Promise<number> {
-  const rows: any[] = await (db as any).$queryRaw`
+  const rows = await db.$queryRaw<{ c: number }[]>`
     SELECT COUNT(*)::int AS c
     FROM app_quikinfra."Stock_transfers"
     WHERE "orgId" = ${orgId}

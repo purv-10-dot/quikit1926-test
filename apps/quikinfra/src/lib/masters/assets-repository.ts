@@ -3,6 +3,7 @@
  */
 
 import { db } from "@/lib/db";
+import { Prisma } from "@quikit/database";
 
 export interface AssetRecord {
   id: string;
@@ -11,6 +12,7 @@ export interface AssetRecord {
   name: string;
   category: string | null;
   projectId: string | null;
+  projectName: string | null;
   condition: string | null;
   currentLocation: string | null;
   purchaseDate: string | null;
@@ -27,11 +29,10 @@ export interface AssetRecord {
 
 function toStr(v: unknown): string {
   if (v === null || v === undefined) return "";
-  if (typeof (v as any)?.toString === "function") return (v as any).toString();
   return String(v);
 }
 
-function toRecord(row: any): AssetRecord {
+function toRecord(row: Prisma.CnAssetGetPayload<Record<string, never>> & { project?: { id: string; name: string } | null }): AssetRecord {
   return {
     id: row.id,
     orgId: row.orgId,
@@ -39,6 +40,7 @@ function toRecord(row: any): AssetRecord {
     name: row.name,
     category: row.category ?? null,
     projectId: row.projectId ?? null,
+    projectName: row.project?.name ?? null,
     condition: row.condition ?? null,
     currentLocation: row.currentLocation ?? null,
     purchaseDate: row.purchaseDate ? row.purchaseDate.toISOString() : null,
@@ -104,8 +106,9 @@ function buildAssetsWhere(
 }
 
 export async function listAssets(opts: ListOptions): Promise<AssetRecord[]> {
-  const rows = await (db as any).cnAsset.findMany({
+  const rows = await db.cnAsset.findMany({
     where: buildAssetsWhere(opts),
+    include: { project: { select: { id: true, name: true } } },
     orderBy: { createdAt: "desc" },
     ...(typeof opts.take === "number" ? { take: opts.take } : {}),
     ...(typeof opts.skip === "number" ? { skip: opts.skip } : {}),
@@ -116,11 +119,11 @@ export async function listAssets(opts: ListOptions): Promise<AssetRecord[]> {
 export async function countAssets(
   opts: Pick<ListOptions, "orgId" | "search">,
 ): Promise<number> {
-  return (db as any).cnAsset.count({ where: buildAssetsWhere(opts) });
+  return db.cnAsset.count({ where: buildAssetsWhere(opts) });
 }
 
 export async function findAssetById(orgId: string, id: string): Promise<AssetRecord | null> {
-  const row = await (db as any).cnAsset.findFirst({ where: { id, orgId } });
+  const row = await db.cnAsset.findFirst({ where: { id, orgId } });
   return row ? toRecord(row) : null;
 }
 
@@ -142,7 +145,7 @@ export interface CreateAssetInput {
 }
 
 export async function createAsset(input: CreateAssetInput): Promise<AssetRecord> {
-  const row = await (db as any).cnAsset.create({
+  const row = await db.cnAsset.create({
     data: {
       orgId: input.orgId,
       assetCode: String(input.assetCode).trim().toUpperCase(),
@@ -174,7 +177,7 @@ export async function updateAsset(
   id: string,
   patch: UpdateAssetInput,
 ): Promise<AssetRecord | null> {
-  const existing = await (db as any).cnAsset.findFirst({
+  const existing = await db.cnAsset.findFirst({
     where: { id, orgId },
     select: { id: true },
   });
@@ -194,7 +197,7 @@ export async function updateAsset(
   if (patch.reorderLevel !== undefined) data.reorderLevel = numOrNull(patch.reorderLevel);
   if (patch.status !== undefined) data.status = patch.status;
 
-  const row = await (db as any).cnAsset.update({ where: { id }, data });
+  const row = await db.cnAsset.update({ where: { id }, data });
   return toRecord(row);
 }
 
@@ -203,7 +206,7 @@ export async function deleteAsset(
   id: string,
   updatedBy: string,
 ): Promise<boolean> {
-  const res = await (db as any).cnAsset.updateMany({
+  const res = await db.cnAsset.updateMany({
     where: { id, orgId },
     data: { status: "Disposed", updatedBy },
   });

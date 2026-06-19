@@ -16,6 +16,7 @@ import type {
   ParsedBOQNode,
 } from "./types";
 import { db } from "@/lib/db";
+import { Prisma } from "@quikit/database";
 import type { TenantContext } from "@/lib/auth/context";
 
 // ─── Mappers ────────────────────────────────────────────────────────
@@ -27,7 +28,7 @@ function dec(v: unknown): number | null {
   return typeof v === "number" ? v : Number(v.toString());
 }
 
-function toBOQItem(row: any): BOQItem {
+function toBOQItem(row: Prisma.CnBOQItemV2GetPayload<Record<string, never>>): BOQItem {
   return {
     id: row.id,
     project_id: row.projectId,
@@ -65,13 +66,13 @@ function toBOQItem(row: any): BOQItem {
   };
 }
 
-function toBOQBatch(row: any): BOQImportBatch {
+function toBOQBatch(row: Prisma.CnBOQImportBatchGetPayload<Record<string, never>>): BOQImportBatch {
   return {
     id: row.id,
     project_id: row.projectId,
     uploaded_by: row.uploadedBy,
     uploaded_by_name: row.uploadedByName ?? undefined,
-    status: row.status,
+    status: row.status as BOQImportBatch["status"],
     error_detail: row.errorDetail ?? undefined,
     file_name: row.fileName ?? undefined,
     row_count: row.rowCount ?? 0,
@@ -80,7 +81,7 @@ function toBOQBatch(row: any): BOQImportBatch {
   };
 }
 
-function toBOQLockState(row: any, projectId: string): BOQLockState {
+function toBOQLockState(row: Prisma.CnBOQLockStateGetPayload<Record<string, never>> | null, projectId: string): BOQLockState {
   if (!row) {
     return {
       project_id: projectId,
@@ -106,7 +107,7 @@ export class BOQRepository {
   // ─── Query ───────────────────────────────────────────────────────
 
   async listByProject(ctx: TenantContext, projectId: string): Promise<BOQItem[]> {
-    const rows = await (db as any).cnBOQItemV2.findMany({
+    const rows = await db.cnBOQItemV2.findMany({
       where: { orgId: ctx.orgId, projectId, deletedAt: null },
       orderBy: [{ category: "asc" }, { sortOrder: "asc" }],
     });
@@ -117,7 +118,7 @@ export class BOQRepository {
     ctx: TenantContext,
     projectId: string
   ): Promise<BOQItem[]> {
-    const rows = await (db as any).cnBOQItemV2.findMany({
+    const rows = await db.cnBOQItemV2.findMany({
       where: {
         orgId: ctx.orgId,
         projectId,
@@ -135,7 +136,7 @@ export class BOQRepository {
     category: string,
     boqNo: string
   ): Promise<BOQItem | null> {
-    const row = await (db as any).cnBOQItemV2.findFirst({
+    const row = await db.cnBOQItemV2.findFirst({
       where: {
         orgId: ctx.orgId,
         projectId,
@@ -151,7 +152,7 @@ export class BOQRepository {
     ctx: TenantContext,
     projectId: string
   ): Promise<string[]> {
-    const rows: Array<{ category: string }> = await (db as any).cnBOQItemV2.findMany({
+    const rows: Array<{ category: string }> = await db.cnBOQItemV2.findMany({
       where: { orgId: ctx.orgId, projectId, deletedAt: null },
       select: { category: true },
       distinct: ["category"],
@@ -176,7 +177,7 @@ export class BOQRepository {
     // create. `createManyAndReturn` is one statement (atomic on its own,
     // so partial failures still can't leave orphan rows) and returns the
     // created rows so the response mapping below is unchanged.
-    const inserted = await (db as any).cnBOQItemV2.createManyAndReturn({
+    const inserted = await db.cnBOQItemV2.createManyAndReturn({
       data: parsedNodes.map((n) => ({
         orgId: ctx.orgId,
         projectId,
@@ -206,14 +207,14 @@ export class BOQRepository {
       })),
     });
 
-    return (inserted as any[]).map(toBOQItem);
+    return inserted.map(toBOQItem);
   }
 
   // ─── Replace ─────────────────────────────────────────────────────
 
   /** Wipe all BOQ items for a project (used on lock-free re-import). */
   async replaceForProject(ctx: TenantContext, projectId: string): Promise<void> {
-    await (db as any).cnBOQItemV2.deleteMany({
+    await db.cnBOQItemV2.deleteMany({
       where: { orgId: ctx.orgId, projectId },
     });
   }
@@ -226,7 +227,7 @@ export class BOQRepository {
     projectId: string,
     itemId: string
   ): Promise<BOQItem | null> {
-    const row = await (db as any).cnBOQItemV2.findFirst({
+    const row = await db.cnBOQItemV2.findFirst({
       where: { id: itemId, orgId: ctx.orgId, projectId, deletedAt: null },
     });
     return row ? toBOQItem(row) : null;
@@ -253,7 +254,7 @@ export class BOQRepository {
       endDate?: string | null;
     }
   ): Promise<BOQItem | null> {
-    const current = await (db as any).cnBOQItemV2.findFirst({
+    const current = await db.cnBOQItemV2.findFirst({
       where: { id: itemId, orgId: ctx.orgId, projectId, deletedAt: null },
     });
     if (!current) return null;
@@ -263,7 +264,7 @@ export class BOQRepository {
     const nextRate =
       patch.rate !== undefined ? patch.rate : Number(current.rate ?? 0);
 
-    const data: any = { updatedBy: ctx.userId };
+    const data: Record<string, unknown> = { updatedBy: ctx.userId };
     if (patch.displayName !== undefined) data.displayName = patch.displayName;
     if (patch.description !== undefined) data.description = patch.description;
     if (patch.unit !== undefined) data.unit = patch.unit;
@@ -280,7 +281,7 @@ export class BOQRepository {
     data.estimateAmt = (nextTender ?? 0) * (nextRate ?? 0);
     data.isNegative = (nextTender ?? 0) < 0;
 
-    const updated = await (db as any).cnBOQItemV2.update({
+    const updated = await db.cnBOQItemV2.update({
       where: { id: itemId },
       data,
     });
@@ -298,7 +299,7 @@ export class BOQRepository {
     projectId: string,
     itemId: string
   ): Promise<boolean> {
-    const res = await (db as any).cnBOQItemV2.updateMany({
+    const res = await db.cnBOQItemV2.updateMany({
       where: {
         id: itemId,
         orgId: ctx.orgId,
@@ -326,7 +327,7 @@ export class BOQRepository {
     // BOQ refs should be unique within project+category, but since the caller
     // only gives us project+boq_no we locate by (project, boq_no) and reject
     // groups.
-    const row = await (db as any).cnBOQItemV2.findFirst({
+    const row = await db.cnBOQItemV2.findFirst({
       where: { orgId: ctx.orgId, projectId, boqNo, deletedAt: null },
     });
     if (!row)
@@ -338,7 +339,7 @@ export class BOQRepository {
       };
 
     const field = workType === "sub_contractor" ? "subDoneQty" : "selfDoneQty";
-    const updated = await (db as any).cnBOQItemV2.update({
+    const updated = await db.cnBOQItemV2.update({
       where: { id: row.id },
       data: {
         [field]: { increment: qty },
@@ -355,7 +356,7 @@ export class BOQRepository {
     qty: number,
     workType: "sub_contractor" | "self"
   ): Promise<{ success: boolean; error?: string }> {
-    const row = await (db as any).cnBOQItemV2.findFirst({
+    const row = await db.cnBOQItemV2.findFirst({
       where: { orgId: ctx.orgId, projectId, boqNo, deletedAt: null },
     });
     if (!row) return { success: false, error: `BOQ item ${boqNo} not found` };
@@ -365,7 +366,7 @@ export class BOQRepository {
     const current = Number(row[field]?.toString() ?? 0);
     const next = Math.max(0, current - qty);
 
-    await (db as any).cnBOQItemV2.update({
+    await db.cnBOQItemV2.update({
       where: { id: row.id },
       data: { [field]: next, updatedBy: ctx.userId },
     });
@@ -378,13 +379,13 @@ export class BOQRepository {
     boqNo: string,
     qty: number
   ): Promise<{ success: boolean; error?: string }> {
-    const row = await (db as any).cnBOQItemV2.findFirst({
+    const row = await db.cnBOQItemV2.findFirst({
       where: { orgId: ctx.orgId, projectId, boqNo, deletedAt: null },
     });
     if (!row) return { success: false, error: `BOQ item ${boqNo} not found` };
     if (row.isGroup) return { success: false, error: `Cannot bill group row` };
 
-    await (db as any).cnBOQItemV2.update({
+    await db.cnBOQItemV2.update({
       where: { id: row.id },
       data: { billedQty: { increment: qty }, updatedBy: ctx.userId },
     });
@@ -397,13 +398,13 @@ export class BOQRepository {
     boqNo: string,
     scopeQty: number
   ): Promise<{ success: boolean; error?: string }> {
-    const row = await (db as any).cnBOQItemV2.findFirst({
+    const row = await db.cnBOQItemV2.findFirst({
       where: { orgId: ctx.orgId, projectId, boqNo, deletedAt: null },
     });
     if (!row) return { success: false, error: `BOQ item ${boqNo} not found` };
     if (row.isGroup) return { success: false, error: `Cannot set scope on group row` };
 
-    await (db as any).cnBOQItemV2.update({
+    await db.cnBOQItemV2.update({
       where: { id: row.id },
       data: { scopeQty, updatedBy: ctx.userId },
     });
@@ -419,7 +420,7 @@ export class BOQRepository {
     fileName?: string,
     parsedNodes?: ParsedBOQNode[]
   ): Promise<BOQImportBatch> {
-    const row = await (db as any).cnBOQImportBatch.create({
+    const row = await db.cnBOQImportBatch.create({
       data: {
         orgId: ctx.orgId,
         projectId,
@@ -427,7 +428,9 @@ export class BOQRepository {
         uploadedByName: ctx.userName,
         fileName: fileName ?? null,
         status: "processing",
-        parsedNodes: parsedNodes ? (parsedNodes as any) : undefined,
+        parsedNodes: parsedNodes
+          ? (parsedNodes as unknown as Prisma.InputJsonValue)
+          : undefined,
       },
     });
     return toBOQBatch(row);
@@ -438,14 +441,14 @@ export class BOQRepository {
     batchId: string,
     updates: Partial<BOQImportBatch> & { parsed_nodes?: ParsedBOQNode[] }
   ): Promise<BOQImportBatch | null> {
-    const data: any = {};
+    const data: Record<string, unknown> = {};
     if (updates.status !== undefined) data.status = updates.status;
     if (updates.row_count !== undefined) data.rowCount = updates.row_count;
     if (updates.error_detail !== undefined) data.errorDetail = updates.error_detail;
     if (updates.file_name !== undefined) data.fileName = updates.file_name;
-    if (updates.parsed_nodes !== undefined) data.parsedNodes = updates.parsed_nodes as any;
+    if (updates.parsed_nodes !== undefined) data.parsedNodes = updates.parsed_nodes;
 
-    const row = await (db as any).cnBOQImportBatch.update({
+    const row = await db.cnBOQImportBatch.update({
       where: { id: batchId },
       data,
     });
@@ -456,20 +459,20 @@ export class BOQRepository {
     ctx: TenantContext,
     batchId: string
   ): Promise<(BOQImportBatch & { parsedNodes?: ParsedBOQNode[] }) | null> {
-    const row = await (db as any).cnBOQImportBatch.findFirst({
+    const row = await db.cnBOQImportBatch.findFirst({
       where: { id: batchId, orgId: ctx.orgId },
     });
     if (!row) return null;
     return {
       ...toBOQBatch(row),
-      parsedNodes: (row.parsedNodes as ParsedBOQNode[] | undefined) ?? undefined,
+      parsedNodes: (row.parsedNodes as unknown as ParsedBOQNode[] | undefined) ?? undefined,
     };
   }
 
   // ─── Lock State ──────────────────────────────────────────────────
 
   async getLockState(ctx: TenantContext, projectId: string): Promise<BOQLockState> {
-    const row = await (db as any).cnBOQLockState.findUnique({
+    const row = await db.cnBOQLockState.findUnique({
       where: { projectId },
     });
     if (row && row.orgId !== ctx.orgId) {
@@ -484,7 +487,7 @@ export class BOQRepository {
     projectId: string,
     lockedBy: string
   ): Promise<BOQLockState> {
-    const row = await (db as any).cnBOQLockState.upsert({
+    const row = await db.cnBOQLockState.upsert({
       where: { projectId },
       create: {
         projectId,
@@ -508,7 +511,7 @@ export class BOQRepository {
     projectId: string,
     _unlockedBy: string
   ): Promise<BOQLockState> {
-    const row = await (db as any).cnBOQLockState.upsert({
+    const row = await db.cnBOQLockState.upsert({
       where: { projectId },
       create: {
         projectId,

@@ -10,6 +10,7 @@
  * back to here).
  */
 
+import { toErrorMessage } from "@/lib/api/errors";
 import React, { useMemo, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { useQueryClient } from "@tanstack/react-query";
@@ -35,9 +36,16 @@ import {
 import { ApprovalActionBar } from "@/components/ApprovalActionBar";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { useGatePass } from "@/hooks/use-store";
-import { usePermissions } from "@/hooks/use-permissions";
+import { usePermissions, type MeResponse } from "@/hooks/use-permissions";
 import { USER_TYPE_CATALOG } from "@/lib/rbac/user-types";
 import { canActOnStep } from "@/lib/approvals/workflow-rbac";
+
+import type {
+  ApprovalStep,
+  ApprovalHistoryEntry,
+  ApprovalInfo,
+} from "@/lib/approvals/approval-info";
+import type { GatePassLine, GatePassDetail } from "@/lib/store/gate-pass-detail";
 
 const REFERENCE_LABEL: Record<string, string> = {
   grn: "GRN",
@@ -54,12 +62,12 @@ function roleLabel(key: string | null | undefined): string {
   return USER_TYPE_CATALOG.find((t) => t.key === key)?.label ?? key;
 }
 
-function GatePassStatusChip({ gp }: { gp: any }) {
+function GatePassStatusChip({ gp }: { gp: GatePassDetail }) {
   const approval = gp?.approval;
   const status = String(gp?.status ?? "draft").toLowerCase();
   if (approval && approval.status === "pending_approval") {
     const step = approval.workflow?.steps?.find(
-      (s: any) => s.stepOrder === approval.currentStepOrder,
+      (s: ApprovalStep) => s.stepOrder === approval.currentStepOrder,
     );
     const approver = step
       ? step.approverUserName
@@ -89,12 +97,15 @@ function GatePassStatusChip({ gp }: { gp: any }) {
   return <StatusChip status={gp?.status ?? "draft"} />;
 }
 
-function priorActionByMe(me: any, gp: any): any | null {
+function priorActionByMe(
+  me: MeResponse | null | undefined,
+  gp: GatePassDetail | null | undefined,
+): ApprovalHistoryEntry | null {
   if (!me || !gp?.approval?.history) return null;
   return (
     [...gp.approval.history]
       .reverse()
-      .find((h: any) => h.actionById === me.userId) ?? null
+      .find((h) => h.actionById === me.userId) ?? null
   );
 }
 
@@ -108,23 +119,29 @@ function priorActionByMe(me: any, gp: any): any | null {
  * is empty (e.g. all steps auto-skipped because the raiser was the
  * approver and the API didn't write history rows for the skips).
  */
-function wasFinalApprover(me: any, gp: any): boolean {
+function wasFinalApprover(
+  me: MeResponse | null | undefined,
+  gp: GatePassDetail | null | undefined,
+): boolean {
   if (!me?.userId || !gp) return false;
   if (gp.approval?.status !== "approved") return false;
   const history = Array.isArray(gp.approval?.history) ? gp.approval.history : [];
   const lastApprove = [...history]
     .reverse()
-    .find((h: any) => h.action === "approve");
+    .find((h) => h.action === "approve");
   if (lastApprove?.actionById) return lastApprove.actionById === me.userId;
   if (gp.approvedBy) return gp.approvedBy === me.userId;
   return false;
 }
 
-function canActOnCurrentStep(me: any, gp: any): boolean {
+function canActOnCurrentStep(
+  me: MeResponse | null | undefined,
+  gp: GatePassDetail | null | undefined,
+): boolean {
   if (!me || !gp?.approval) return false;
   if (gp.approval.status !== "pending_approval") return false;
   const step = gp.approval.workflow?.steps?.find(
-    (s: any) => s.stepOrder === gp.approval.currentStepOrder,
+    (s: ApprovalStep) => s.stepOrder === gp.approval?.currentStepOrder,
   );
   if (!step) return false;
   return canActOnStep(
@@ -144,22 +161,22 @@ function canActOnCurrentStep(me: any, gp: any): boolean {
   );
 }
 
-function fmtQty(v: any, unit?: string | null) {
+function fmtQty(v: unknown, unit?: string | null) {
   if (v === null || v === undefined || v === "") return "—";
   const n = Number(v);
   if (!Number.isFinite(n)) return "—";
   return `${n.toLocaleString("en-IN", { maximumFractionDigits: 4 })}${unit ? ` ${unit}` : ""}`;
 }
-function fmtInr(v: any) {
+function fmtInr(v: unknown) {
   if (v === null || v === undefined || v === "") return "—";
   const n = Number(v);
   if (!Number.isFinite(n)) return "—";
   return `₹ ${n.toLocaleString("en-IN", { maximumFractionDigits: 2 })}`;
 }
-function fmtDate(v: any): string {
+function fmtDate(v: unknown): string {
   if (!v) return "—";
   try {
-    const d = new Date(v);
+    const d = new Date(v as string | number | Date);
     if (Number.isNaN(d.getTime())) return String(v);
     return d.toLocaleDateString("en-IN", {
       day: "2-digit",
@@ -170,10 +187,10 @@ function fmtDate(v: any): string {
     return String(v);
   }
 }
-function fmtDateTime(v: any): string {
+function fmtDateTime(v: unknown): string {
   if (!v) return "—";
   try {
-    const d = new Date(v);
+    const d = new Date(v as string | number | Date);
     if (Number.isNaN(d.getTime())) return String(v);
     return d.toLocaleString("en-IN", {
       day: "2-digit",
@@ -246,8 +263,8 @@ export default function GatePassDetailPage() {
       qc.invalidateQueries({ queryKey: ["gate-pass", id] });
       qc.invalidateQueries({ queryKey: ["gate-passes"] });
       setSubmitConfirmOpen(false);
-    } catch (err: any) {
-      setSubmitError(err?.message ?? "Failed to submit for approval");
+    } catch (err: unknown) {
+      setSubmitError(toErrorMessage(err, "Failed to submit for approval"));
     } finally {
       setSubmitPending(false);
     }
@@ -267,14 +284,14 @@ export default function GatePassDetailPage() {
       qc.invalidateQueries({ queryKey: ["gate-pass", id] });
       qc.invalidateQueries({ queryKey: ["gate-passes"] });
       setCloseConfirmOpen(false);
-    } catch (err: any) {
-      setCloseError(err?.message ?? "Failed to close gate pass");
+    } catch (err: unknown) {
+      setCloseError(toErrorMessage(err, "Failed to close gate pass"));
     } finally {
       setClosePending(false);
     }
   };
 
-  const lines: any[] = useMemo(
+  const lines: GatePassLine[] = useMemo(
     () => (Array.isArray(gp?.lines) ? gp.lines : []),
     [gp],
   );
@@ -312,12 +329,12 @@ export default function GatePassDetailPage() {
   const isApproved = status === "approved" || status === "issued";
 
   const approvalEntries =
-    gp.approval?.history?.map((h: any) => ({
+    gp.approval?.history?.map((h: ApprovalHistoryEntry) => ({
       step: h.stepOrder,
       action: h.action,
       actionBy: h.actionByName ?? "User",
       actionAt: h.actionAt ? new Date(h.actionAt).toLocaleString() : "",
-      comments: h.comments,
+      comments: h.comments ?? undefined,
     })) ?? [];
 
   const myPriorAction = priorActionByMe(me, gp);
@@ -382,7 +399,7 @@ export default function GatePassDetailPage() {
                 <ApprovalActionBar
                   entityType="gatePass"
                   entityId={id}
-                  currentStatus={gp.status}
+                  currentStatus={gp.status ?? undefined}
                   requiredPermission="store.gate_pass.approve"
                   actionEndpoint={`/api/store/gate-passes/${id}/approve`}
                   invalidateKeys={[
@@ -417,7 +434,7 @@ export default function GatePassDetailPage() {
                     {gp.gatePassNumber ?? "—"}
                   </div>
                   <div className="mt-0.5">
-                    <TypeBadge type={gp.type} />
+                    <TypeBadge type={gp.type ?? ""} />
                   </div>
                 </div>
               </div>
@@ -431,7 +448,7 @@ export default function GatePassDetailPage() {
                 </Stat>
 
                 <Stat label="Reference Type">
-                  {REFERENCE_LABEL[gp.referenceType] ?? "—"}
+                  {REFERENCE_LABEL[gp.referenceType ?? ""] ?? "—"}
                 </Stat>
                 <Stat label="Reference No." mono>
                   {gp.referenceNo || "—"}
@@ -545,7 +562,7 @@ export default function GatePassDetailPage() {
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-gray-100">
-                      {lines.map((l: any, idx: number) => (
+                      {lines.map((l: GatePassLine, idx: number) => (
                         <tr
                           key={l.id ?? l.itemId ?? idx}
                           className="hover:bg-indigo-50/20 transition-colors"

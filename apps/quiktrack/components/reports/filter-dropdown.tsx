@@ -101,9 +101,9 @@ export function FilterDropdown({
       </button>
 
       {open && (
-        <div className="absolute z-30 mt-1 left-0 right-0 bg-white border border-gray-200 rounded-md shadow-lg py-1 max-h-72 overflow-y-auto">
+        <div className="absolute z-30 mt-1 left-0 right-0 bg-white border border-gray-200 rounded-md shadow-lg max-h-72 flex flex-col overflow-hidden">
           {searchable && (
-            <div className="px-2 pt-1 pb-1.5 sticky top-0 bg-white">
+            <div className="px-2 py-2 border-b border-gray-100 shrink-0">
               <div className="relative">
                 <Search className="absolute left-2 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-gray-400" />
                 <input
@@ -117,29 +117,31 @@ export function FilterDropdown({
               </div>
             </div>
           )}
-          {filtered.length === 0 ? (
-            <div className="px-3 py-2 text-xs text-gray-400">No options</div>
-          ) : (
-            filtered.map((o) => {
-              const active = o.value === value;
-              return (
-                <button
-                  key={o.value}
-                  type="button"
-                  onClick={() => {
-                    onChange(o.value);
-                    setOpen(false);
-                  }}
-                  className={`w-full flex items-center justify-between px-3 py-1.5 text-sm text-left hover:bg-gray-50 ${
-                    active ? "bg-blue-50 text-blue-700 font-medium" : "text-gray-800"
-                  }`}
-                >
-                  <span className="truncate">{o.label}</span>
-                  {active && <Check className="h-3.5 w-3.5 text-blue-600 shrink-0 ml-2" />}
-                </button>
-              );
-            })
-          )}
+          <div className="overflow-y-auto py-1">
+            {filtered.length === 0 ? (
+              <div className="px-3 py-2 text-xs text-gray-400">No options</div>
+            ) : (
+              filtered.map((o) => {
+                const active = o.value === value;
+                return (
+                  <button
+                    key={o.value}
+                    type="button"
+                    onClick={() => {
+                      onChange(o.value);
+                      setOpen(false);
+                    }}
+                    className={`w-full flex items-center justify-between px-3 py-1.5 text-sm text-left hover:bg-gray-50 ${
+                      active ? "bg-blue-50 text-blue-700 font-medium" : "text-gray-800"
+                    }`}
+                  >
+                    <span className="truncate">{o.label}</span>
+                    {active && <Check className="h-3.5 w-3.5 text-blue-600 shrink-0 ml-2" />}
+                  </button>
+                );
+              })
+            )}
+          </div>
         </div>
       )}
     </div>

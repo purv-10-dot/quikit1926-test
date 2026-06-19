@@ -1,0 +1,237 @@
+import { NextRequest } from "next/server";
+import { prisma } from "@/lib/prisma";
+import { withAuth } from "@/lib/with-auth";
+import { successResponse, validationError, conflict, notFound, internalError } from "@/lib/api-response";
+import { createAuditLog } from "@/lib/utils/audit";
+import { fireWorkflow } from "@/lib/workflows/executor";
+import { resolveEmployeeId } from "@/lib/resolve-employee";
+import { queueEmail } from "@/lib/services/mailer";
+import { buildResignationNoticeEmail } from "@/lib/email-templates/resignation-notice";
+
+/**
+ * POST /api/v1/hrms/offboarding/resign
+ * Self-service resignation. Employee submits own resignation. HR acknowledges later.
+ * Body:
+ *   reason?: string       — free-text (defaults to "Resignation")
+ *   lastWorkingDate?: string (YYYY-MM-DD) — optional override; default = today + notice period
+ *   notes?: string        — additional comments
+ */
+export const POST = withAuth(async (req: NextRequest, { orgId, userId }) => {
+  try {
+    const employeeId = await resolveEmployeeId(orgId, userId);
+    if (!employeeId) return notFound("Employee record not found for current user");
+
+    const employee = await prisma.employee.findFirst({
+      where: { id: employeeId, orgId, deletedAt: null },
+      select: {
+        id: true, firstName: true, lastName: true, status: true, noticePeriodDays: true,
+        employeeCode: true, jobTitle: true, reportingManagerId: true,
+        department: { select: { name: true } },
+      },
+    });
+    if (!employee) return notFound("Employee record not found");
+
+    if (["Relieved", "OnNotice"].includes(employee.status)) {
+      return conflict("You are already on notice or relieved. Contact HR to update your existing resignation.");
+    }
+
+    const existing = await prisma.offboardingInstance.findFirst({
+      where: { orgId, employeeId, deletedAt: null },
+    });
+    if (existing) return conflict("A resignation is already on record. Contact HR for changes.");
+
+    const body = await req.json().catch(() => ({}));
+    const reason = body.reason ? String(body.reason).trim() : null;
+    const userNotes = body.notes ? String(body.notes).trim() : null;
+
+    const resignationDate = new Date();
+    const noticeDays = Math.max(0, employee.noticePeriodDays ?? 0);
+    const defaultLwd = new Date(resignationDate);
+    defaultLwd.setDate(defaultLwd.getDate() + noticeDays);
+
+    let lastWorkingDate = defaultLwd;
+    if (body.lastWorkingDate) {
+      const parsed = new Date(body.lastWorkingDate);
+      if (Number.isNaN(parsed.getTime())) return validationError("Invalid lastWorkingDate");
+      if (parsed.getTime() < resignationDate.getTime()) {
+        return validationError("Last working date cannot be in the past");
+      }
+      lastWorkingDate = parsed;
+    }
+
+    const combinedNotes = [
+      reason ? `Reason: ${reason}` : null,
+      userNotes ? `Notes: ${userNotes}` : null,
+      `Submitted by employee via self-service.`,
+    ].filter(Boolean).join("\n");
+
+    const instance = await prisma.offboardingInstance.create({
+      data: {
+        orgId,
+        employeeId,
+        resignationDate,
+        lastWorkingDate,
+        reason: "Resignation",
+        status: "Initiated",
+        notes: combinedNotes,
+        createdBy: userId,
+        updatedBy: userId,
+      },
+    });
+
+    await prisma.employee.update({
+      where: { id: employeeId },
+      data: { status: "OnNotice", lastWorkingDate, updatedBy: userId },
+    }).catch(() => null);
+
+    await createAuditLog({
+      orgId, userId, action: "Create", entityType: "OffboardingInstance", entityId: instance.id,
+      changes: { action: "SelfResignation", reason, lastWorkingDate: lastWorkingDate.toISOString() },
+    });
+
+    void fireWorkflow({
+      orgId,
+      event: "offboarding.resign.submitted",
+      payload: {
+        employeeId,
+        instanceId: instance.id,
+        resignationDate: resignationDate.toISOString(),
+        lastWorkingDate: lastWorkingDate.toISOString(),
+        reason: reason ?? "Resignation",
+      },
+    });
+
+    // Walk up reporting chain → notify each manager
+    const chain: { id: string; firstName: string; lastName: string; workEmail: string | null }[] = [];
+    let cursorId: string | null = employee.reportingManagerId;
+    const seen = new Set<string>([employee.id]);
+    let safety = 12;
+    while (cursorId && safety-- > 0 && !seen.has(cursorId)) {
+      seen.add(cursorId);
+      const mgr = await prisma.employee.findFirst({
+        where: { id: cursorId, orgId, deletedAt: null },
+        select: { id: true, firstName: true, lastName: true, workEmail: true, reportingManagerId: true },
+      });
+      if (!mgr) break;
+      chain.push({ id: mgr.id, firstName: mgr.firstName, lastName: mgr.lastName, workEmail: mgr.workEmail });
+      cursorId = mgr.reportingManagerId;
+    }
+
+    const company = await prisma.companySettings.findUnique({ where: { orgId }, select: { companyName: true } });
+    const companyName = company?.companyName ?? "Our Company";
+    const employeeName = `${employee.firstName} ${employee.lastName}`.trim();
+    const lwdStr = lastWorkingDate.toLocaleDateString("en-IN", { day: "2-digit", month: "long", year: "numeric" });
+    const resignStr = resignationDate.toLocaleDateString("en-IN", { day: "2-digit", month: "long", year: "numeric" });
+
+    const mailStatus: { to: string; sent: boolean; error?: string }[] = [];
+    void Promise.all(chain.map(async (mgr, idx) => {
+      if (!mgr.workEmail) {
+        mailStatus.push({ to: `${mgr.firstName} ${mgr.lastName}`, sent: false, error: "workEmail missing" });
+        return;
+      }
+      const tpl = buildResignationNoticeEmail({
+        recipientName: `${mgr.firstName} ${mgr.lastName}`.trim(),
+        recipientRole: idx === 0 ? "direct_manager" : "skip_level",
+        employeeName,
+        employeeCode: employee.employeeCode,
+        jobTitle: employee.jobTitle,
+        department: employee.department?.name ?? null,
+        resignationDate: resignStr,
+        lastWorkingDate: lwdStr,
+        noticePeriodDays: noticeDays,
+        reason,
+        notes: userNotes,
+        companyName,
+      });
+      // sent = queued; the email worker handles delivery + retries.
+      await queueEmail(orgId, { to: mgr.workEmail, subject: tpl.subject, html: tpl.html, kind: "offboarding.resignation-notice" });
+      mailStatus.push({ to: mgr.workEmail, sent: true });
+    })).catch((e) => console.error("resignation hierarchy mail failed:", e));
+
+    return successResponse({
+      instance,
+      employee: { id: employee.id, name: employeeName },
+      noticePeriodDays: noticeDays,
+      notifiedManagers: chain.map((c) => ({ id: c.id, name: `${c.firstName} ${c.lastName}`, email: c.workEmail })),
+    }, undefined, 201);
+  } catch (error) {
+    console.error("POST /offboarding/resign error:", error);
+    return internalError();
+  }
+});
+
+/**
+ * GET /api/v1/hrms/offboarding/resign
+ * Current user's active resignation instance (null if none).
+ */
+export const GET = withAuth(async (_req: NextRequest, { orgId, userId }) => {
+  try {
+    const employeeId = await resolveEmployeeId(orgId, userId);
+    if (!employeeId) return successResponse(null);
+
+    const instance = await prisma.offboardingInstance.findFirst({
+      where: { orgId, employeeId, deletedAt: null },
+      include: {
+        tasks: { orderBy: { sortOrder: "asc" } },
+      },
+    });
+
+    const employee = await prisma.employee.findFirst({
+      where: { id: employeeId, orgId, deletedAt: null },
+      select: { noticePeriodDays: true, status: true },
+    });
+
+    return successResponse({
+      instance,
+      noticePeriodDays: employee?.noticePeriodDays ?? 0,
+      status: employee?.status ?? null,
+    });
+  } catch (error) {
+    console.error("GET /offboarding/resign error:", error);
+    return internalError();
+  }
+});
+
+/**
+ * DELETE /api/v1/hrms/offboarding/resign
+ * Withdraw resignation (only if still in Initiated status).
+ */
+export const DELETE = withAuth(async (_req: NextRequest, { orgId, userId }) => {
+  try {
+    const employeeId = await resolveEmployeeId(orgId, userId);
+    if (!employeeId) return notFound("Employee record not found for current user");
+
+    const existing = await prisma.offboardingInstance.findFirst({
+      where: { orgId, employeeId, deletedAt: null },
+    });
+    if (!existing) return notFound("No active resignation to withdraw");
+    if (existing.status !== "Initiated") {
+      return conflict(`Cannot withdraw — status is already "${existing.status}". Contact HR.`);
+    }
+
+    await prisma.offboardingInstance.update({
+      where: { id: existing.id },
+      data: { deletedAt: new Date(), updatedBy: userId },
+    });
+
+    await prisma.employee.update({
+      where: { id: employeeId },
+      data: { status: "Active", lastWorkingDate: null, updatedBy: userId },
+    }).catch(() => null);
+
+    await createAuditLog({
+      orgId, userId, action: "Delete", entityType: "OffboardingInstance", entityId: existing.id,
+      changes: { action: "SelfResignationWithdrawn" },
+    });
+
+    void fireWorkflow({
+      orgId, event: "offboarding.resign.withdrawn",
+      payload: { employeeId, instanceId: existing.id },
+    });
+
+    return successResponse({ withdrawn: true });
+  } catch (error) {
+    console.error("DELETE /offboarding/resign error:", error);
+    return internalError();
+  }
+});

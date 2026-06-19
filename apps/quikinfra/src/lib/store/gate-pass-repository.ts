@@ -16,6 +16,7 @@
  */
 
 import { db } from "@/lib/db";
+import { Prisma } from "@quikit/database";
 
 export interface GatePassLine {
   itemId?: string | null;
@@ -89,20 +90,79 @@ export interface UpdateGatePassInput {
 }
 
 function genId(): string {
-  if (typeof (globalThis as any).crypto?.randomUUID === "function") {
-    return (globalThis as any).crypto.randomUUID();
+  const cryptoObj = (globalThis as { crypto?: { randomUUID?: () => string } })
+    .crypto;
+  if (typeof cryptoObj?.randomUUID === "function") {
+    return cryptoObj.randomUUID();
   }
   return `gp_${Date.now()}_${Math.random().toString(36).slice(2, 10)}`;
 }
 
-function toIsoDate(v: any): string | null {
+/** A money/quantity value as it arrives from Prisma (Decimal) or raw SQL. */
+type Numericish = Prisma.Decimal | number | string | null | undefined;
+
+/** Raw `SELECT *` row from `Gate_passes` (+ optional joined display fields). */
+interface GatePassRow {
+  id: string;
+  orgId: string;
+  gatePassNumber: string;
+  type?: string | null;
+  projectId?: string | null;
+  projectName?: string | null;
+  locationId?: string | null;
+  locationName?: string | null;
+  gatePassDate?: Date | string | null;
+  expectedReturnDate?: Date | string | null;
+  actualReturnDate?: Date | string | null;
+  referenceType?: string | null;
+  referenceNo?: string | null;
+  referenceId?: string | null;
+  referenceNumber?: string | null;
+  vehicleNo?: string | null;
+  driverName?: string | null;
+  driverMobileNo?: string | null;
+  driverPhone?: string | null;
+  challanNo?: string | null;
+  transactionAmount?: Numericish;
+  intercityTransfer?: boolean | null;
+  ewayBillNo?: string | null;
+  securityGuard?: string | null;
+  materialCondition?: string | null;
+  weighbridgeReading?: string | null;
+  vehiclePhoto?: string | null;
+  purpose?: string | null;
+  remarks?: string | null;
+  lineCount?: number | null;
+  materials?: unknown;
+  authorizedById?: string | null;
+  status?: string | null;
+  approvalId?: string | null;
+  rejectionReason?: string | null;
+  returnReason?: string | null;
+  submittedAt?: Date | null;
+  submittedBy?: string | null;
+  approvedAt?: Date | null;
+  approvedBy?: string | null;
+  rejectedAt?: Date | null;
+  rejectedBy?: string | null;
+  returnedAt?: Date | null;
+  returnedBy?: string | null;
+  closedAt?: Date | null;
+  closedBy?: string | null;
+  createdAt?: Date | null;
+  updatedAt?: Date | null;
+  createdBy?: string | null;
+  updatedBy?: string | null;
+}
+
+function toIsoDate(v: Date | string | null | undefined): string | null {
   if (!v) return null;
   if (typeof v === "string") return v.slice(0, 10);
   if (v?.toISOString) return v.toISOString().slice(0, 10);
   return null;
 }
 
-function mapRow(row: any): any {
+function mapRow(row: GatePassRow | null) {
   if (!row) return null;
   return {
     id: row.id,
@@ -156,10 +216,13 @@ function mapRow(row: any): any {
     closedBy: row.closedBy ?? null,
     createdAt: row.createdAt?.toISOString?.() ?? row.createdAt ?? null,
     updatedAt: row.updatedAt?.toISOString?.() ?? row.updatedAt ?? null,
-    createdBy: row.createdBy ?? null,
-    updatedBy: row.updatedBy ?? null,
+    createdBy: row.createdBy ?? "",
+    updatedBy: row.updatedBy ?? "",
   };
 }
+
+/** The mapped, client-facing gate-pass shape returned by every public read/write. */
+export type GatePass = NonNullable<ReturnType<typeof mapRow>>;
 
 export async function listGatePasses(
   orgId: string,
@@ -170,51 +233,53 @@ export async function listGatePasses(
     search?: string | null;
     allowedProjectIds?: string[] | null;
   } = {},
-): Promise<any[]> {
+): Promise<GatePass[]> {
   const allowed = opts.allowedProjectIds ?? null;
   if (allowed !== null && allowed.length === 0) return [];
 
-  const rows: any[] = await (db as any).$queryRaw`
+  const rows = await db.$queryRaw<GatePassRow[]>`
     SELECT *
     FROM app_quikinfra."Gate_passes"
     WHERE "orgId" = ${orgId}
     ORDER BY "gatePassDate" DESC NULLS LAST, "createdAt" DESC
   `;
-  let mapped = rows.map(mapRow);
+  let mapped = rows
+    .map(mapRow)
+    .filter((r): r is NonNullable<typeof r> => r !== null);
 
   if (allowed !== null) {
     const set = new Set(allowed);
     // Allow rows with no projectId (rare; gate-house may tag nothing)
     // through so gate-house staff still see them.
     mapped = mapped.filter(
-      (r: any) => !r.projectId || set.has(r.projectId),
+      (r) => !r.projectId || set.has(r.projectId),
     );
   }
   if (opts.status && opts.status !== "all") {
     if (opts.status === "issued") {
-      mapped = mapped.filter((g: any) =>
+      mapped = mapped.filter((g) =>
         ["draft", "pending_approval", "approved", "issued"].includes(
           String(g.status ?? "").toLowerCase(),
         ),
       );
     } else {
       mapped = mapped.filter(
-        (g: any) =>
+        (g) =>
           String(g.status ?? "").toLowerCase() === opts.status,
       );
     }
   }
   if (opts.type && opts.type !== "all") {
     mapped = mapped.filter(
-      (g: any) => String(g.type ?? "").toLowerCase() === opts.type,
+      (g) => String(g.type ?? "").toLowerCase() === opts.type,
     );
   }
   if (opts.projectId) {
-    mapped = mapped.filter((g: any) => g.projectId === opts.projectId);
+    mapped = mapped.filter((g) => g.projectId === opts.projectId);
   }
   if (opts.search) {
     const q = opts.search.toLowerCase();
-    mapped = mapped.filter((g: any) =>
+    mapped = mapped.filter((g) =>
       [g.gatePassNumber, g.projectName, g.vehicleNo, g.referenceNo].some(
         (v) => typeof v === "string" && v.toLowerCase().includes(q),
       ),
@@ -226,8 +291,8 @@ export async function listGatePasses(
 export async function findGatePassById(
   orgId: string,
   id: string,
-): Promise<any | null> {
-  const rows: any[] = await (db as any).$queryRaw`
+): Promise<GatePass | null> {
+  const rows = await db.$queryRaw<GatePassRow[]>`
     SELECT *
     FROM app_quikinfra."Gate_passes"
     WHERE "orgId" = ${orgId} AND id = ${id}
@@ -238,14 +303,14 @@ export async function findGatePassById(
 
 export async function createGatePass(
   input: CreateGatePassInput,
-): Promise<any> {
+): Promise<GatePass | null> {
   const id = genId();
   const lines = Array.isArray(input.lines) ? input.lines : [];
   const materialsJson = JSON.stringify(lines);
   const lineCount = lines.length;
   const now = new Date();
 
-  await (db as any).$executeRaw`
+  await db.$executeRaw`
     INSERT INTO app_quikinfra."Gate_passes" (
       id, "orgId", "gatePassNumber", type,
       "projectId", "projectName", "locationId", "locationName",
@@ -290,7 +355,7 @@ export async function createGatePass(
 export async function updateGatePass(
   id: string,
   input: UpdateGatePassInput,
-): Promise<any | null> {
+): Promise<GatePass | null> {
   const existing = await findGatePassById(input.orgId, id);
   if (!existing) return null;
   const linesChanged = Array.isArray(input.lines);
@@ -329,7 +394,7 @@ export async function updateGatePass(
     status: input.status ?? existing.status,
   };
 
-  await (db as any).$executeRaw`
+  await db.$executeRaw`
     UPDATE app_quikinfra."Gate_passes"
     SET
       type                 = ${next.type},
@@ -389,7 +454,7 @@ export async function patchGatePassStatus(
     actualReturnDate?: Date | null;
     updatedBy: string;
   },
-): Promise<any | null> {
+): Promise<GatePass | null> {
   const existing = await findGatePassById(orgId, id);
   if (!existing) return null;
 
@@ -452,7 +517,7 @@ export async function patchGatePassStatus(
           : null,
   };
 
-  await (db as any).$executeRaw`
+  await db.$executeRaw`
     UPDATE app_quikinfra."Gate_passes"
     SET
       status             = ${next.status},
@@ -481,7 +546,7 @@ export async function deleteGatePass(
   orgId: string,
   id: string,
 ): Promise<boolean> {
-  const res: any = await (db as any).$executeRaw`
+  const res = await db.$executeRaw`
     DELETE FROM app_quikinfra."Gate_passes"
     WHERE "orgId" = ${orgId} AND id = ${id}
   `;
@@ -498,7 +563,7 @@ export async function nextGatePassSequence(
 ): Promise<number> {
   const typesForDirection =
     direction === "IN" ? ["inward"] : ["outward", "returnable", "non_returnable"];
-  const rows: any[] = await (db as any).$queryRaw`
+  const rows = await db.$queryRaw<{ c: number }[]>`
     SELECT COUNT(*)::int AS c
     FROM app_quikinfra."Gate_passes"
     WHERE "orgId" = ${orgId}

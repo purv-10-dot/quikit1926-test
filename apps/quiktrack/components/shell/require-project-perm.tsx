@@ -6,8 +6,8 @@
  * Layer 2). Tenant admins always pass.
  *
  * Use to wrap pages under `/spaces/[id]/*` that only certain project roles
- * should reach — e.g. per-project User Management is only for PM /
- * Project Admin / tenant admin.
+ * should reach — e.g. per-project User Management is only for Space Admin /
+ * tenant admin.
  */
 import { useEffect } from "react";
 import { useRouter } from "next/navigation";

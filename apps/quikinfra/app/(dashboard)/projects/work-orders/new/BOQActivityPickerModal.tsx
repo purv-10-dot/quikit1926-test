@@ -16,6 +16,7 @@
 import { useEffect, useState } from "react";
 import { X, Plus, Loader2, AlertTriangle } from "lucide-react";
 import { BOQCascadingPicker, type BoqRow } from "@/components/BOQCascadingPicker";
+import type { BoqTreeRow } from "@/lib/boq/tree-row";
 import { useBOQ } from "@/hooks/use-projects";
 import { PrimaryButton, SecondaryButton } from "@/components/PageShell";
 
@@ -56,10 +57,10 @@ export function BOQActivityPickerModal({
   if (!open) return null;
 
   // Flatten the raw BOQ response into the BoqRow shape the picker expects
-  const rawItems: any[] = (boqData as any)?.items ?? (boqData as any)?.data ?? [];
+  const rawItems = boqData?.items ?? boqData?.data ?? [];
   const items: BoqRow[] = rawItems.map((r) => ({
-    id: r.id,
-    boq_no: r.boq_no ?? r.boqNo,
+    id: r.id ?? "",
+    boq_no: r.boq_no ?? r.boqNo ?? "",
     parent_boq_no: r.parent_boq_no ?? r.parentBoqNo ?? null,
     depth: r.depth ?? 0,
     is_group: r.is_group ?? r.isGroup ?? false,
@@ -73,7 +74,7 @@ export function BOQActivityPickerModal({
         : null,
     category: r.category,
     // keep the raw row so we can read done_qty/balance_qty for the details card
-    ...(({ done_qty, balance_qty, sort_order, sortOrder }: any) => ({
+    ...(({ done_qty, balance_qty, sort_order, sortOrder }: BoqTreeRow) => ({
       done_qty,
       balance_qty,
       sort_order: sort_order ?? sortOrder ?? 0,
@@ -90,7 +91,12 @@ export function BOQActivityPickerModal({
     ? Number(leafRaw.balance_qty ?? scopeQty - doneQty)
     : 0;
 
-  const duplicate = selectedLeaf && alreadyAddedIds?.has(selectedLeaf.id);
+  // Saved WO lines store the boqNo in place of the item UUID, so match on
+  // either the id or the boqNo to catch duplicates in both create and edit.
+  const duplicate =
+    !!selectedLeaf &&
+    (alreadyAddedIds?.has(selectedLeaf.id) ||
+      (!!selectedLeaf.boq_no && alreadyAddedIds?.has(selectedLeaf.boq_no)));
 
   const handleAdd = () => {
     if (!selectedLeaf) {

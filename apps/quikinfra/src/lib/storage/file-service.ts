@@ -27,6 +27,7 @@
  *   // → { fileId, uploadUrl: {method, url, headers, expiresIn}, objectKey }
  */
 
+import { Prisma } from "@quikit/database";
 import crypto from "crypto";
 import { db } from "@/lib/db";
 import type { TenantContext } from "@/lib/auth/context";
@@ -141,7 +142,7 @@ class FileService {
 
     // Persist metadata as "pending_upload". If the browser never confirms,
     // a janitor can reap these rows (see §Remaining TODOs in the report).
-    const row = await (db as any).cnFileObject.create({
+    const row = await db.cnFileObject.create({
       data: {
         orgId: ctx.orgId,
         companyId: p.companyId ?? null,
@@ -184,7 +185,7 @@ class FileService {
     fileId: string,
     opts?: { checksum?: string }
   ): Promise<FileMetadata> {
-    const row = await (db as any).cnFileObject.findFirst({
+    const row = await db.cnFileObject.findFirst({
       where: { id: fileId, orgId: ctx.orgId },
     });
     if (!row) throw new FileError("FILE_NOT_FOUND", "File metadata not found", 404);
@@ -212,7 +213,7 @@ class FileService {
     ) {
       // Size mismatch → drop the object + metadata row so nothing leaks
       await driver.deleteObject(row.storageKey).catch(() => {});
-      await (db as any).cnFileObject.delete({ where: { id: fileId } });
+      await db.cnFileObject.delete({ where: { id: fileId } });
       throw new FileError(
         "SIZE_MISMATCH",
         `Reported ${row.sizeBytes} bytes, actual ${head.contentLength}. Upload rejected.`,
@@ -221,7 +222,7 @@ class FileService {
     }
 
     const updated = await db.$transaction(async (tx) => {
-      const r = await (tx as any).cnFileObject.update({
+      const r = await tx.cnFileObject.update({
         where: { id: fileId },
         data: {
           status: "active",
@@ -250,7 +251,7 @@ class FileService {
     ctx: TenantContext,
     fileId: string
   ): Promise<{ url: string; expiresIn: number; fileName: string; mimeType: string | null }> {
-    const row = await (db as any).cnFileObject.findFirst({
+    const row = await db.cnFileObject.findFirst({
       where: { id: fileId, orgId: ctx.orgId, status: "active" },
     });
     if (!row) throw new FileError("FILE_NOT_FOUND", "File not found", 404);
@@ -278,14 +279,14 @@ class FileService {
     fileId: string,
     opts?: { hardDelete?: boolean; reason?: string }
   ): Promise<void> {
-    const row = await (db as any).cnFileObject.findFirst({
+    const row = await db.cnFileObject.findFirst({
       where: { id: fileId, orgId: ctx.orgId },
     });
     if (!row) throw new FileError("FILE_NOT_FOUND", "File not found", 404);
     if (row.status === "deleted") return;
 
     await db.$transaction(async (tx) => {
-      await (tx as any).cnFileObject.update({
+      await tx.cnFileObject.update({
         where: { id: fileId },
         data: {
           status: "deleted",
@@ -320,7 +321,7 @@ class FileService {
     entityType: AttachmentEntityType,
     entityId: string
   ): Promise<FileMetadata[]> {
-    const rows = await (db as any).cnFileObject.findMany({
+    const rows = await db.cnFileObject.findMany({
       where: {
         orgId: ctx.orgId,
         entityType,
@@ -333,7 +334,7 @@ class FileService {
   }
 }
 
-function toFileMetadata(row: any): FileMetadata {
+function toFileMetadata(row: Prisma.CnFileObjectGetPayload<Record<string, never>>): FileMetadata {
   return {
     id: row.id,
     entityType: row.entityType,

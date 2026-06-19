@@ -2,11 +2,13 @@
 
 import { useEffect, useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { Plus, Shield, Trash2 } from "lucide-react";
+import { Plus, Shield, ShieldCheck, Trash2 } from "lucide-react";
 import { PermissionMatrix } from "./permission-matrix";
 import { FieldPermissionMatrix } from "./field-permission-matrix";
-import { NavigationPanel } from "./navigation-panel";
 import { AddRoleModal } from "./add-role-modal";
+import { roleDisplayName } from "./role-name";
+import { confirmDialog } from "@/lib/ui/confirm";
+import { SPACE_CREATOR_ROLE_NAME } from "@/lib/api/permissionsRegistry";
 
 interface AppRole {
   id: string;
@@ -20,7 +22,7 @@ interface AppRole {
 export function RoleManagementTab() {
   const qc = useQueryClient();
   const [selectedRoleId, setSelectedRoleId] = useState<string | null>(null);
-  const [subTab, setSubTab] = useState<"fields" | "entities" | "navigation">("fields");
+  const [subTab, setSubTab] = useState<"fields" | "entities">("fields");
   const [addOpen, setAddOpen] = useState(false);
 
   const rolesQ = useQuery({
@@ -93,7 +95,7 @@ export function RoleManagementTab() {
               >
                 <span className="inline-flex items-center gap-2 truncate">
                   <Shield className="h-3.5 w-3.5 text-indigo-500 flex-shrink-0 dark:text-indigo-300" />
-                  <span className="truncate">{r.name}</span>
+                  <span className="truncate">{roleDisplayName(r.name)}</span>
                   {r.isDefault && (
                     <span className="text-[9px] uppercase tracking-wider bg-gray-100 text-gray-600 px-1.5 py-0.5 rounded dark:bg-gray-700 dark:text-gray-300">
                       Default
@@ -104,9 +106,15 @@ export function RoleManagementTab() {
                   <span
                     role="button"
                     tabIndex={0}
-                    onClick={(e) => {
+                    onClick={async (e) => {
                       e.stopPropagation();
-                      if (confirm(`Delete role "${r.name}"?`)) del.mutate(r.id);
+                      const ok = await confirmDialog({
+                        title: "Delete role",
+                        message: `Delete role "${roleDisplayName(r.name)}"?`,
+                        confirmText: "Delete",
+                        danger: true,
+                      });
+                      if (ok) del.mutate(r.id);
                     }}
                     className="opacity-0 group-hover:opacity-100 text-gray-400 hover:text-red-500 dark:text-gray-500 dark:hover:text-red-400"
                   >
@@ -124,7 +132,7 @@ export function RoleManagementTab() {
           <div className="px-8 py-6 space-y-4">
             <div className="flex items-center gap-2 flex-wrap">
               <h3 className="text-base font-semibold text-gray-900 dark:text-gray-100">
-                Permissions — {selectedRole.name}
+                Permissions — {roleDisplayName(selectedRole.name)}
               </h3>
               <Shield className="h-4 w-4 text-indigo-500 dark:text-indigo-300" />
               <span className="text-[10px] font-semibold tracking-wider uppercase bg-indigo-100 text-indigo-700 px-2 py-0.5 rounded dark:bg-indigo-500/15 dark:text-indigo-300 dark:ring-1 dark:ring-indigo-400/30">
@@ -132,12 +140,43 @@ export function RoleManagementTab() {
               </span>
             </div>
 
+            {selectedRole.isSystem && selectedRole.name === "admin" ? (
+              <div className="flex flex-col items-center justify-center text-center rounded-xl border border-indigo-100 bg-gradient-to-b from-indigo-50 to-white px-8 py-12 dark:border-indigo-400/20 dark:from-indigo-500/10 dark:to-gray-950">
+                <div className="flex h-14 w-14 items-center justify-center rounded-full bg-indigo-100 dark:bg-indigo-500/20">
+                  <ShieldCheck className="h-7 w-7 text-indigo-600 dark:text-indigo-300" />
+                </div>
+                <h4 className="mt-4 text-lg font-semibold text-gray-900 dark:text-gray-100">
+                  Full access to everything
+                </h4>
+                <p className="mt-2 max-w-md text-sm text-gray-600 dark:text-gray-400">
+                  The <span className="font-medium text-gray-800 dark:text-gray-200">Admin</span> role
+                  can view and edit every field, entity, and navigation item across all spaces. There&apos;s
+                  nothing to configure here — its permissions can&apos;t be restricted.
+                </p>
+              </div>
+            ) : selectedRole.name === SPACE_CREATOR_ROLE_NAME ? (
+              <div className="flex flex-col items-center justify-center text-center rounded-xl border border-blue-100 bg-gradient-to-b from-blue-50 to-white px-8 py-12 dark:border-blue-400/20 dark:from-blue-500/10 dark:to-gray-950">
+                <div className="flex h-14 w-14 items-center justify-center rounded-full bg-blue-100 dark:bg-blue-500/20">
+                  <ShieldCheck className="h-7 w-7 text-blue-600 dark:text-blue-300" />
+                </div>
+                <h4 className="mt-4 text-lg font-semibold text-gray-900 dark:text-gray-100">
+                  Can create their own spaces
+                </h4>
+                <p className="mt-2 max-w-md text-sm text-gray-600 dark:text-gray-400">
+                  The <span className="font-medium text-gray-800 dark:text-gray-200">Space Creator</span> role
+                  has standard member access <span className="font-medium">plus</span> the ability to create
+                  spaces. In any space they create they become its <span className="font-medium text-gray-800 dark:text-gray-200">Space Admin</span> (full control of that space).
+                  They see only spaces they belong to and have no org-wide admin powers. This is a preset role —
+                  there&apos;s nothing to configure here.
+                </p>
+              </div>
+            ) : (
+            <>
             <nav className="flex gap-6 border-b border-gray-200 dark:border-gray-700">
               {(
                 [
                   { k: "fields" as const, label: "Fields" },
                   { k: "entities" as const, label: "Entities" },
-                  { k: "navigation" as const, label: "Navigation" },
                 ]
               ).map(({ k, label }) => (
                 <button
@@ -166,22 +205,21 @@ export function RoleManagementTab() {
                     <span className="font-semibold">Editable</span>, or{" "}
                     <span className="font-semibold">Required</span>. Fields you don&apos;t customise behave as Editable.
                   </>
-                ) : subTab === "entities" ? (
+                ) : (
                   <>
                     Tick an action to grant it. <span className="font-semibold">Module-level</span> ticks select all leaves under that module.
+                    A <span className="font-semibold">view</span> grant also shows that item in the sidebar.
                   </>
-                ) : (
-                  <>Toggle which sidebar items this role can see.</>
                 )}
               </span>
             </div>
 
             {subTab === "fields" ? (
               <FieldPermissionMatrix roleId={selectedRole.id} />
-            ) : subTab === "entities" ? (
-              <PermissionMatrix roleId={selectedRole.id} />
             ) : (
-              <NavigationPanel roleId={selectedRole.id} />
+              <PermissionMatrix roleId={selectedRole.id} />
+            )}
+            </>
             )}
           </div>
         ) : (

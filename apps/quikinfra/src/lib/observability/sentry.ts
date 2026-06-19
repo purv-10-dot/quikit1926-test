@@ -16,10 +16,24 @@
  *   3. Restart the app
  */
 
-let initialized = false;
-let sdk: any = null;
+// Minimal shape of the @sentry/nextjs surface we actually call. The real
+// package isn't a dependency, so we hand-declare the handful of methods
+// used rather than leaving the loaded module as `any`.
+interface SentryScope {
+  setExtra(key: string, value: unknown): void;
+}
+interface SentrySdk {
+  init(options: Record<string, unknown>): void;
+  withScope(callback: (scope: SentryScope) => void): void;
+  captureException(err: unknown): void;
+  captureMessage(message: string, level?: string): void;
+  setUser(user: Record<string, unknown>): void;
+}
 
-function tryLoad(): any {
+let initialized = false;
+let sdk: SentrySdk | false | null = null;
+
+function tryLoad(): SentrySdk | false {
   if (sdk !== null) return sdk;
   if (!process.env.SENTRY_DSN) {
     sdk = false;
@@ -27,8 +41,8 @@ function tryLoad(): any {
   }
   try {
     // Hidden from webpack's static analyzer — same trick as s3-driver.ts
-    const dynRequire = new Function("m", "return require(m)") as (m: string) => any;
-    sdk = dynRequire("@sentry/nextjs");
+    const dynRequire = new Function("m", "return require(m)") as (m: string) => unknown;
+    sdk = dynRequire("@sentry/nextjs") as SentrySdk;
     return sdk;
   } catch {
     // Not installed — stay in no-op mode
@@ -71,7 +85,7 @@ export function captureException(err: unknown, context?: Record<string, unknown>
   if (!s) return;
   try {
     if (context) {
-      s.withScope((scope: any) => {
+      s.withScope((scope: SentryScope) => {
         for (const [k, v] of Object.entries(context)) scope.setExtra(k, v);
         s.captureException(err);
       });

@@ -2,15 +2,15 @@
  * Purchase Module — Standardized Error Types
  *
  * All purchase API errors return:
- * { error: string, code: string, details?: any }
+ * { error: string, code: string, details?: unknown }
  */
 
 export class PurchaseError extends Error {
   code: string;
   httpStatus: number;
-  details?: any;
+  details?: unknown;
 
-  constructor(code: string, message: string, httpStatus = 400, details?: any) {
+  constructor(code: string, message: string, httpStatus = 400, details?: unknown) {
     super(message);
     this.code = code;
     this.httpStatus = httpStatus;

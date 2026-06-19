@@ -1,3 +1,4 @@
+import { toErrorMessage, getErrorCode } from "@/lib/api/errors";
 import { requirePurchaseAction } from "@/lib/auth/requirePurchaseAction";
 import { NextRequest, NextResponse } from "next/server";
 import { buildMRLines } from "@/lib/purchase-engine";
@@ -91,7 +92,7 @@ export async function POST(req: NextRequest) {
     try {
       const dateCheck = validateMRDates(mrDateStr, body.requiredDate);
       if (dateCheck.isUrgent) isUrgent = true;
-    } catch (err: any) {
+    } catch (err: unknown) {
       if (err instanceof PurchaseValidationError) {
         return NextResponse.json({ error: err.message, code: err.code }, { status: 400 });
       }
@@ -101,7 +102,7 @@ export async function POST(req: NextRequest) {
   const budgetCheck = await validatePrLinesAgainstBudget(
     ctx.orgId,
     body.projectId,
-    (body.lines ?? []).map((l: any) => ({
+    (body.lines ?? []).map((l: { itemId?: string | null; quantity?: number | string | null }) => ({
       itemId: l.itemId,
       quantity: l.quantity,
     })),
@@ -118,16 +119,18 @@ export async function POST(req: NextRequest) {
     );
   }
 
-  const allAvailable = lines.every((l: any) => l.stockCheckStatus === "AVAILABLE");
+  const allAvailable = lines.every(
+    (l) => String(l.stockCheckStatus) === "AVAILABLE",
+  );
   const anyInsufficient = lines.some(
-    (l: any) => l.stockCheckStatus === "INSUFFICIENT" || l.stockCheckStatus === "PARTIAL",
+    (l) => l.stockCheckStatus === "INSUFFICIENT" || l.stockCheckStatus === "PARTIAL",
   );
   const stockCheckSummary = allAvailable
     ? "ALL_AVAILABLE"
     : anyInsufficient ? "PROCUREMENT_NEEDED" : "MIXED";
 
   const estimatedTotal = lines.reduce(
-    (sum: number, l: any) => sum + (parseFloat(l.estimatedAmount) || 0),
+    (sum: number, l) => sum + (parseFloat(l.estimatedAmount) || 0),
     0,
   );
 
@@ -155,10 +158,10 @@ export async function POST(req: NextRequest) {
         }),
     );
     return NextResponse.json(record, { status: 201 });
-  } catch (err: any) {
+  } catch (err: unknown) {
     console.error("[PR.create] failed:", err);
     return NextResponse.json(
-      { error: err?.message ?? "Failed to create PR" },
+      { error: toErrorMessage(err) ?? "Failed to create PR" },
       { status: 500 },
     );
   }

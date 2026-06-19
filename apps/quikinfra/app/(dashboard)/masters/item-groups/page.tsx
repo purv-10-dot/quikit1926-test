@@ -1,10 +1,11 @@
 "use client";
 
+import { toErrorMessage } from "@/lib/api/errors";
 import { useCallback, useMemo, useState } from "react";
 import { Boxes } from "lucide-react";
 import { MasterListPage, type MasterColumnDef } from "@/components/MasterListPage";
-import { useItemGroups, useCreateItemGroup, useUpdateItemGroup, useWorkCategories } from "@/hooks/use-masters";
-import { FormDrawer, FormSection, FormRow, Field, TextInput, NumberInput, SelectInput } from "@/components/FormDrawer";
+import { useItemGroups, useCreateItemGroup, useUpdateItemGroup, useWorkCategories, useDeleteItemGroup } from "@/hooks/use-masters";
+import { FormDrawer, FormSection, FormRow, Field, TextInput, NumberInput, SelectInput, InactiveStatusNotice } from "@/components/FormDrawer";
 import dynamic from "next/dynamic";
 import type { ImportFieldDef } from "@/components/ImportDataDrawer";
 const ImportDataDrawer = dynamic(
@@ -53,19 +54,20 @@ export default function ItemGroupsPage() {
   const { data: wcResult } = useWorkCategories();
   const createMutation = useCreateItemGroup();
   const updateMutation = useUpdateItemGroup();
+  const deleteMutation = useDeleteItemGroup();
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [importOpen, setImportOpen] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [form, setForm] = useState(emptyForm);
   const [errors, setErrors] = useState<Record<string, string>>({});
-  const set = (key: string, val: any) => {
+  const set = <K extends keyof typeof emptyForm>(key: K, val: (typeof emptyForm)[K]) => {
     setForm(prev => ({ ...prev, [key]: val }));
     if (errors[key]) setErrors(prev => { const next = { ...prev }; delete next[key]; return next; });
   };
 
-  const allGroups = useMemo(() => (result?.data ?? []) as any[], [result]);
+  const allGroups = useMemo(() => (result?.data ?? []) as Row[], [result]);
   const workCategories = wcResult?.data ?? [];
-  const wcOptions = workCategories.map((w: any) => ({ value: w.id, label: w.name }));
+  const wcOptions = workCategories.map((w) => ({ value: w.id, label: w.name }));
 
   const handleImportRow = async (row: Record<string, string>) => {
     if (!row.name?.trim()) return { ok: false as const, error: "Group name is required" };
@@ -74,7 +76,7 @@ export default function ItemGroupsPage() {
     let depth = 0;
     const parentInput = row.parentName?.trim();
     if (parentInput) {
-      const parent = allGroups.find((g: any) =>
+      const parent = allGroups.find((g) =>
         g.name?.toLowerCase() === parentInput.toLowerCase() || g.id === parentInput,
       );
       if (!parent) return { ok: false as const, error: `Parent group "${parentInput}" not found` };
@@ -85,7 +87,7 @@ export default function ItemGroupsPage() {
     let workCategoryId = "";
     const wcInput = row.workCategoryName?.trim();
     if (wcInput) {
-      const wc = workCategories.find((w: any) =>
+      const wc = workCategories.find((w) =>
         w.name?.toLowerCase() === wcInput.toLowerCase() || w.id === wcInput,
       );
       if (!wc) return { ok: false as const, error: `Work category "${wcInput}" not found` };
@@ -102,8 +104,8 @@ export default function ItemGroupsPage() {
         status: "active",
       });
       return { ok: true as const };
-    } catch (err: any) {
-      return { ok: false as const, error: err?.message ?? "Create failed" };
+    } catch (err: unknown) {
+      return { ok: false as const, error: toErrorMessage(err, "Create failed") };
     }
   };
 
@@ -111,7 +113,7 @@ export default function ItemGroupsPage() {
   // only when the underlying query data changes, so the columns config
   // stays stable across form keystrokes.
   const groupById = useMemo(() => {
-    const map: Record<string, any> = {};
+    const map: Record<string, Row> = {};
     for (const g of allGroups) map[g.id] = g;
     return map;
   }, [allGroups]);
@@ -148,8 +150,8 @@ export default function ItemGroupsPage() {
   const parentOptions = useMemo(() => {
     const forbidden = collectForbiddenIds(editingId);
     return allGroups
-      .filter((g: any) => (g.depth ?? 0) < 2 && !forbidden.has(g.id) && g.status !== "inactive")
-      .map((g: any) => ({
+      .filter((g) => (g.depth ?? 0) < 2 && !forbidden.has(g.id) && g.status !== "inactive")
+      .map((g) => ({
         value: g.id,
         label: `${"— ".repeat(g.depth ?? 0)}${g.name}`,
       }));
@@ -219,8 +221,8 @@ export default function ItemGroupsPage() {
     } catch { /* error toast handled globally */ }
   };
 
-  const handleDelete = async (item: any) => {
-    await updateMutation.mutateAsync({ id: item.id, status: "inactive" });
+  const handleDelete = async (item: { id: string }) => {
+    await deleteMutation.mutateAsync(item.id);
   };
 
   const isSaving = createMutation.isPending || updateMutation.isPending;
@@ -233,9 +235,9 @@ export default function ItemGroupsPage() {
         historyEntityType="item_group"
         onImport={() => setImportOpen(true)}
         onAdd={() => { setForm(emptyForm); setErrors({}); setEditingId(null); setDrawerOpen(true); }}
-        onEdit={(item: any) => { setForm({ ...emptyForm, ...item }); setErrors({}); setEditingId(item.id); setDrawerOpen(true); }}
+        onEdit={(item) => { setForm({ ...emptyForm, ...item } as typeof emptyForm); setErrors({}); setEditingId(item.id); setDrawerOpen(true); }}
         onDelete={handleDelete}
-        deleteConfirmMessage={(item: any) => (
+        deleteConfirmMessage={(item) => (
           <>
             Delete item group{" "}
             <span className="font-semibold text-gray-900">“{item.name}”</span>?
@@ -279,6 +281,7 @@ export default function ItemGroupsPage() {
           </FormRow>
           <Field label="Status">
             <SelectInput value={form.status} onChange={v => set("status", v)} options={STATUS_OPTIONS} />
+            {form.status === "inactive" && <InactiveStatusNotice entityName="Item Group" />}
           </Field>
         </FormSection>
       </FormDrawer>

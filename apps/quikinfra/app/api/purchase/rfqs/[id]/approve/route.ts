@@ -1,3 +1,4 @@
+import { toErrorMessage, getErrorCode } from "@/lib/api/errors";
 import { requirePurchaseAction } from "@/lib/auth/requirePurchaseAction";
 import { findCnUserById } from "@/lib/users/lookup";
 import { NextRequest, NextResponse } from "next/server";
@@ -42,7 +43,7 @@ export async function POST(
     return envelopeErr("FORBIDDEN", `Action "edit" not allowed for purchase.rfq`, 403);
   }
 
-  let body: any = {};
+  let body: { action?: string; comments?: string } = {};
   try {
     body = await req.json();
   } catch {
@@ -70,7 +71,7 @@ export async function POST(
     );
   }
 
-  const instance = await (db as any).cnApprovalInstance.findFirst({
+  const instance = await db.cnApprovalInstance.findFirst({
     where: { id: rfq.approvalId, orgId: ctx.orgId },
   });
   if (!instance) {
@@ -83,7 +84,7 @@ export async function POST(
     );
   }
 
-  const currentStep = await (db as any).cnApprovalWorkflowStep.findFirst({
+  const currentStep = await db.cnApprovalWorkflowStep.findFirst({
     where: {
       workflowId: instance.workflowId,
       stepOrder: instance.currentStepOrder,
@@ -103,11 +104,11 @@ export async function POST(
       { userId: ctx.userId, roleKey: ctx.roleKey, projectIds: ctx.projectIds },
       {
         approverUserId: currentStep.approverUserId,
-        approverUserIds: Array.isArray((currentStep as any).approverUserIds)
-          ? (currentStep as any).approverUserIds
+        approverUserIds: Array.isArray(currentStep.approverUserIds)
+          ? currentStep.approverUserIds
           : null,
         approverRoleId: currentStep.approverRoleId,
-      } as any,
+      },
       rfq.projectId ?? null,
     )
   ) {
@@ -132,7 +133,7 @@ export async function POST(
 
   // Find the next step by ascending stepOrder so approvals follow the
   // admin's actual numbering, even if it's non-contiguous.
-  const nextStep = await (db as any).cnApprovalWorkflowStep.findFirst({
+  const nextStep = await db.cnApprovalWorkflowStep.findFirst({
     where: {
       workflowId: instance.workflowId,
       stepOrder: { gt: instance.currentStepOrder },
@@ -143,7 +144,7 @@ export async function POST(
   let finalRfqStatus: string | null = null;
   let isFinalApprove = false;
 
-  await db.$transaction(async (tx: any) => {
+  await db.$transaction(async (tx) => {
     await tx.cnApprovalHistory.create({
       data: {
         instanceId: instance.id,
@@ -204,42 +205,47 @@ export async function POST(
     null;
   if (isFinalApprove) {
     const updated = await findRfqById(ctx.orgId, rfq.id);
-    try {
-      // Default per-vendor template — the raiser's cover-text override
-      // captured on submit isn't persisted today (no schema column),
-      // so the final approver's fan-out always uses the default.
-      emailResult = await sendRfqEmailsToVendors(ctx.orgId, updated, {
-        emailHtmlBodies: null,
-      });
-      console.log(
-        `[rfq:approve] mail fan-out for ${updated.rfqNumber}: ` +
-          `sent=${emailResult.sent.length} ` +
-          `skipped=${emailResult.skipped.length} ` +
-          `failed=${emailResult.failed.length}`,
-      );
-    } catch (e: any) {
-      console.warn(
-        `[rfq:approve] mail fan-out threw for ${updated.rfqNumber}:`,
-        e?.message ?? e,
-      );
-    }
+    if (updated) {
+      try {
+        // Default per-vendor template — the raiser's cover-text override
+        // captured on submit isn't persisted today (no schema column),
+        // so the final approver's fan-out always uses the default.
+        emailResult = await sendRfqEmailsToVendors(ctx.orgId, updated, {
+          emailHtmlBodies: null,
+        });
+        console.log(
+          `[rfq:approve] mail fan-out for ${updated.rfqNumber}: ` +
+            `sent=${emailResult.sent.length} ` +
+            `skipped=${emailResult.skipped.length} ` +
+            `failed=${emailResult.failed.length}`,
+        );
+      } catch (e: unknown) {
+        console.warn(
+          `[rfq:approve] mail fan-out threw for ${updated.rfqNumber}:`,
+          toErrorMessage(e),
+        );
+      }
 
-    // Once at least one mail has left, advance approved → sent so the
-    // status chip reflects reality. Also clear the staged cover bodies.
-    if (emailResult && emailResult.sent.length > 0) {
-      await (db as any).cnRfq.update({
-        where: { id: rfq.id },
-        data: { status: "sent", updatedBy: ctx.userId },
-      });
-      finalRfqStatus = "sent";
+      // Once at least one mail has left, advance approved → sent so the
+      // status chip reflects reality. Also clear the staged cover bodies.
+      if (emailResult && emailResult.sent.length > 0) {
+        await db.cnRfq.update({
+          where: { id: rfq.id },
+          data: { status: "sent", updatedBy: ctx.userId },
+        });
+        finalRfqStatus = "sent";
+      }
     }
   }
 
   const refreshed = await findRfqById(ctx.orgId, rfq.id);
-  const refreshedInstance = await (db as any).cnApprovalInstance.findUnique({
+  const refreshedInstance = await db.cnApprovalInstance.findUnique({
     where: { id: instance.id },
   });
-  const totalSteps = await (db as any).cnApprovalWorkflowStep.count({
+  if (!refreshedInstance) {
+    return NextResponse.json({ error: "Approval instance not found" }, { status: 404 });
+  }
+  const totalSteps = await db.cnApprovalWorkflowStep.count({
     where: { workflowId: instance.workflowId },
   });
   return NextResponse.json({

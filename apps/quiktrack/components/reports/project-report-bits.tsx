@@ -1,6 +1,7 @@
 "use client";
 
 import type React from "react";
+import { SpaceIcon } from "@/components/space-icon";
 import { avatarTint, initials } from "./resource-report-bits";
 
 export interface ProjectRef {
@@ -87,14 +88,15 @@ export function ProjectTaskRow({
       </td>
       <td className="px-4 py-2.5">
         <div className="inline-flex items-center gap-2 text-gray-700 text-xs">
-          {task.project?.icon ? (
-            <span className="text-base leading-none">{task.project.icon}</span>
-          ) : (
-            <span
-              className="inline-block h-2 w-2 rounded-full shrink-0"
-              style={{ background: task.project?.color ?? "#94a3b8" }}
+          {task.project ? (
+            <SpaceIcon
+              icon={task.project.icon}
+              name={task.project.name}
+              color={task.project.color}
+              size={18}
+              radius={5}
             />
-          )}
+          ) : null}
           <span className="truncate max-w-[160px]">{task.project?.name ?? "—"}</span>
         </div>
       </td>

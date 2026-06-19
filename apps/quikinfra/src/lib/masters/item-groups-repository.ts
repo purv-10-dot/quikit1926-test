@@ -4,6 +4,7 @@
  */
 
 import { db } from "@/lib/db";
+import { Prisma } from "@quikit/database";
 
 export interface ItemGroupRecord {
   id: string;
@@ -20,7 +21,7 @@ export interface ItemGroupRecord {
   updatedBy: string;
 }
 
-function toRecord(row: any): ItemGroupRecord {
+function toRecord(row: Prisma.CnItemGroupGetPayload<Record<string, never>>): ItemGroupRecord {
   return {
     id: row.id,
     orgId: row.orgId,
@@ -50,7 +51,7 @@ function toIntOrZero(v: unknown): number {
 
 async function resolveDepth(orgId: string, parentId: string | null): Promise<number> {
   if (!parentId) return 0;
-  const parent = await (db as any).cnItemGroup.findFirst({
+  const parent = await db.cnItemGroup.findFirst({
     where: { id: parentId, orgId },
     select: { depth: true },
   });
@@ -77,7 +78,7 @@ function buildItemGroupsWhere(
 }
 
 export async function listItemGroups(opts: ListOptions): Promise<ItemGroupRecord[]> {
-  const rows = await (db as any).cnItemGroup.findMany({
+  const rows = await db.cnItemGroup.findMany({
     where: buildItemGroupsWhere(opts),
     orderBy: [{ depth: "asc" }, { sortOrder: "asc" }, { name: "asc" }],
     ...(typeof opts.take === "number" ? { take: opts.take } : {}),
@@ -89,11 +90,11 @@ export async function listItemGroups(opts: ListOptions): Promise<ItemGroupRecord
 export async function countItemGroups(
   opts: Pick<ListOptions, "orgId" | "search">,
 ): Promise<number> {
-  return (db as any).cnItemGroup.count({ where: buildItemGroupsWhere(opts) });
+  return db.cnItemGroup.count({ where: buildItemGroupsWhere(opts) });
 }
 
 export async function findItemGroupById(orgId: string, id: string): Promise<ItemGroupRecord | null> {
-  const row = await (db as any).cnItemGroup.findFirst({ where: { id, orgId } });
+  const row = await db.cnItemGroup.findFirst({ where: { id, orgId } });
   return row ? toRecord(row) : null;
 }
 
@@ -110,7 +111,7 @@ export interface CreateItemGroupInput {
 export async function createItemGroup(input: CreateItemGroupInput): Promise<ItemGroupRecord> {
   const parentId = sOrNull(input.parentId);
   const depth = await resolveDepth(input.orgId, parentId);
-  const row = await (db as any).cnItemGroup.create({
+  const row = await db.cnItemGroup.create({
     data: {
       orgId: input.orgId,
       name: String(input.name).trim(),
@@ -136,7 +137,7 @@ export async function updateItemGroup(
   id: string,
   patch: UpdateItemGroupInput,
 ): Promise<ItemGroupRecord | null> {
-  const existing = await (db as any).cnItemGroup.findFirst({
+  const existing = await db.cnItemGroup.findFirst({
     where: { id, orgId },
     select: { id: true, parentId: true },
   });
@@ -154,7 +155,7 @@ export async function updateItemGroup(
     data.depth = await resolveDepth(orgId, newParentId);
   }
 
-  const row = await (db as any).cnItemGroup.update({ where: { id }, data });
+  const row = await db.cnItemGroup.update({ where: { id }, data });
   return toRecord(row);
 }
 
@@ -163,7 +164,7 @@ export async function deleteItemGroup(
   id: string,
   updatedBy: string,
 ): Promise<boolean> {
-  const res = await (db as any).cnItemGroup.updateMany({
+  const res = await db.cnItemGroup.updateMany({
     where: { id, orgId },
     data: { status: "inactive", updatedBy },
   });

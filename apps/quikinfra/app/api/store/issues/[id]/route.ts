@@ -11,6 +11,12 @@ import {
   updateMaterialIssue,
 } from "@/lib/store/material-issue-repository";
 import { canActOnCurrentStep } from "@/lib/approvals/workflow-rbac";
+import {
+  APPROVAL_INSTANCE_INCLUDE,
+  buildApprovalDto,
+  type ApprovalDto,
+  type ApprovalInstanceFull,
+} from "@/lib/approvals/approval-dto";
 
 /**
  * Single Material Issue record — used by the detail page + edit flow.
@@ -56,24 +62,21 @@ export async function GET(
     row.submittedBy,
   ].filter((v): v is string => typeof v === "string" && v.length > 0);
 
-  let approval: any = null;
-  let instance: any = null;
+  let approval: ApprovalDto | null = null;
+  let instance: ApprovalInstanceFull | null = null;
   if (row.approvalId) {
-    instance = await (db as any).cnApprovalInstance.findFirst({
+    instance = await db.cnApprovalInstance.findFirst({
       where: { id: row.approvalId, orgId: ctx.orgId },
-      include: {
-        history: { orderBy: { actionAt: "asc" } },
-        workflow: { include: { steps: { orderBy: { stepOrder: "asc" } } } },
-      },
+      include: APPROVAL_INSTANCE_INCLUDE,
     });
   }
 
   const approvalUserIds = instance
     ? [
         instance.requestedById,
-        ...instance.history.map((h: any) => h.actionById),
+        ...instance.history.map((h) => h.actionById),
         ...(instance.workflow.steps
-          .map((s: any) => s.approverUserId)
+          .map((s) => s.approverUserId)
           .filter(Boolean) as string[]),
       ]
     : [];
@@ -93,36 +96,7 @@ export async function GET(
       instance,
       row.projectId ?? null,
     );
-    approval = {
-      id: instance.id,
-      status: instance.status,
-      currentStepOrder: instance.currentStepOrder,
-      canActOnCurrentStep: callerCanActOnCurrentStep,
-      completedAt: instance.completedAt?.toISOString?.() ?? null,
-      requestedAt: instance.requestedAt.toISOString(),
-      requestedById: instance.requestedById,
-      requestedByName: nameById.get(instance.requestedById) ?? "User",
-      workflow: {
-        id: instance.workflow.id,
-        name: instance.workflow.name,
-        steps: instance.workflow.steps.map((s: any) => ({
-          stepOrder: s.stepOrder,
-          approverRoleId: s.approverRoleId,
-          approverUserId: s.approverUserId,
-          approverUserName: s.approverUserId
-            ? (nameById.get(s.approverUserId) ?? null)
-            : null,
-        })),
-      },
-      history: instance.history.map((h: any) => ({
-        stepOrder: h.stepOrder,
-        action: h.action,
-        actionById: h.actionById,
-        actionByName: nameById.get(h.actionById) ?? "User",
-        actionAt: h.actionAt.toISOString(),
-        comments: h.comments,
-      })),
-    };
+    approval = buildApprovalDto(instance, nameById, callerCanActOnCurrentStep);
   }
 
   // Surface resolved display names alongside the raw ids so the Audit

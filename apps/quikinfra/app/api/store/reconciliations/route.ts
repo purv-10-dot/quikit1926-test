@@ -1,3 +1,4 @@
+import { toErrorMessage, getErrorCode } from "@/lib/api/errors";
 import { requireStoreAction } from "@/lib/auth/requireStoreAction";
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
@@ -49,7 +50,7 @@ export async function GET(req: NextRequest) {
   }
 
   const p = parsePagination(req);
-  const rows = await (db as any).cnStockReconciliation.findMany({
+  const rows = await db.cnStockReconciliation.findMany({
     where,
     orderBy: { reconciliationDate: "desc" },
     select: {
@@ -73,19 +74,19 @@ export async function GET(req: NextRequest) {
   // the location label without joining cn_locations on every row.
   const locationIds = Array.from(
     new Set(
-      rows.map((r: any) => r.locationId).filter((v: any): v is string => !!v),
+      rows.map((r) => r.locationId).filter((v: unknown): v is string => !!v),
     ),
   ) as string[];
   const locById = new Map<string, string>();
   if (locationIds.length) {
-    const locs = await (db as any).cnLocation.findMany({
+    const locs = await db.cnLocation.findMany({
       where: { id: { in: locationIds } },
       select: { id: true, name: true },
     });
     for (const l of locs) locById.set(l.id, l.name);
   }
 
-  const data = rows.map((r: any) => ({
+  const data = rows.map((r) => ({
     id: r.id,
     reconciliationNumber: r.reconciliationNumber,
     projectId: r.projectId,
@@ -136,19 +137,28 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    const inputLines: any[] = Array.isArray(body.lines) ? body.lines : [];
+    type ReconInputLine = {
+      itemId?: string | null;
+      systemQty?: number | string | null;
+      physicalQty?: number | string | null;
+      varianceReason?: string | null;
+      reason?: string | null;
+    };
+    const inputLines: ReconInputLine[] = Array.isArray(body.lines)
+      ? body.lines
+      : [];
 
     // Batch-resolve every itemId → uomId so we don't hit Prisma per-line.
     const itemIds = Array.from(
       new Set(
         inputLines
-          .map((l: any) => l?.itemId)
-          .filter((v: any): v is string => typeof v === "string" && v.length > 0),
+          .map((l) => l?.itemId)
+          .filter((v: unknown): v is string => typeof v === "string" && v.length > 0),
       ),
     );
     const uomByItemId = new Map<string, string>();
     if (itemIds.length) {
-      const items = await (db as any).cnItem.findMany({
+      const items = await db.cnItem.findMany({
         where: { id: { in: itemIds } },
         select: { id: true, uomId: true },
       });
@@ -161,8 +171,8 @@ export async function POST(req: NextRequest) {
     );
 
     const linesData = inputLines
-      .filter((l: any) => l?.itemId)
-      .map((l: any) => {
+      .filter((l): l is ReconInputLine & { itemId: string } => Boolean(l?.itemId))
+      .map((l) => {
         const systemQty = Number(l.systemQty ?? 0);
         const physicalQty = Number(l.physicalQty ?? 0);
         return {
@@ -174,9 +184,9 @@ export async function POST(req: NextRequest) {
           reason: l.varianceReason ?? l.reason ?? null,
         };
       })
-      .filter((l: any) => l.uomId); // drop lines whose item lookup failed
+      .filter((l) => l.uomId); // drop lines whose item lookup failed
 
-    const created = await (db as any).cnStockReconciliation.create({
+    const created = await db.cnStockReconciliation.create({
       data: {
         orgId: ctx.orgId,
         reconciliationNumber,
@@ -210,14 +220,14 @@ export async function POST(req: NextRequest) {
       },
       { status: 201 },
     );
-  } catch (err: any) {
-    if (err?.code === "P2002") {
+  } catch (err: unknown) {
+    if (getErrorCode(err) === "P2002") {
       return NextResponse.json(
         { error: "A reconciliation with this number already exists." },
         { status: 409 },
       );
     }
-    if (err?.code === "P2003") {
+    if (getErrorCode(err) === "P2003") {
       return NextResponse.json(
         { error: "Referenced project, location, or item does not exist." },
         { status: 400 },
@@ -225,7 +235,7 @@ export async function POST(req: NextRequest) {
     }
     console.error("[reconciliation.create] failed:", err);
     return NextResponse.json(
-      { error: err?.message ?? "Failed to create reconciliation" },
+      { error: toErrorMessage(err, "Failed to create reconciliation") },
       { status: 500 },
     );
   }

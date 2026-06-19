@@ -21,7 +21,7 @@ export class PurchaseDashboardService {
    *  (MR/Indent/PO/GRN/etc.) create instance rows here on submit, so this
    *  is the single source of truth for the queue. */
   async getPendingApprovals(ctx?: TenantContext | null) {
-    const approvals = await (db as any).cnApprovalInstance.findMany({
+    const approvals = await db.cnApprovalInstance.findMany({
       where: { ...tenantWhere(ctx), status: "pending_approval" },
       orderBy: { requestedAt: "desc" },
     });
@@ -39,12 +39,12 @@ export class PurchaseDashboardService {
     return {
       total: approvals.length,
       byType: {
-        mr: approvals.filter((a: any) => a.entityType === "purchase_requisitions").length,
-        indent: approvals.filter((a: any) => a.entityType === "purchase_indents").length,
-        po: approvals.filter((a: any) => a.entityType === "purchase_order").length,
-        grn: approvals.filter((a: any) => a.entityType === "grn").length,
+        mr: approvals.filter((a) => a.entityType === "purchase_requisitions").length,
+        indent: approvals.filter((a) => a.entityType === "purchase_indents").length,
+        po: approvals.filter((a) => a.entityType === "purchase_order").length,
+        grn: approvals.filter((a) => a.entityType === "grn").length,
       },
-      aging: approvals.map((a: any) => ({
+      aging: approvals.map((a) => ({
         id: a.id,
         type: a.entityType,
         number: a.entityNumber,
@@ -62,13 +62,13 @@ export class PurchaseDashboardService {
     endOfDay.setDate(endOfDay.getDate() + 1);
 
     const [grouped, total, todayMRs] = await Promise.all([
-      (db as any).cnPurchaseRequisition.groupBy({
+      db.cnPurchaseRequisition.groupBy({
         by: ["status"],
         where,
         _count: { _all: true },
       }),
-      (db as any).cnPurchaseRequisition.count({ where }),
-      (db as any).cnPurchaseRequisition.count({
+      db.cnPurchaseRequisition.count({ where }),
+      db.cnPurchaseRequisition.count({
         where: { ...where, requestDate: { gte: startOfDay, lt: endOfDay } },
       }),
     ]);
@@ -97,12 +97,12 @@ export class PurchaseDashboardService {
     startOfNextMonth.setMonth(startOfNextMonth.getMonth() + 1);
 
     const [grouped, totalThisMonth] = await Promise.all([
-      (db as any).cnPurchaseIndent.groupBy({
+      db.cnPurchaseIndent.groupBy({
         by: ["status"],
         where,
         _count: { _all: true },
       }),
-      (db as any).cnPurchaseIndent.count({
+      db.cnPurchaseIndent.count({
         where: { ...where, indentDate: { gte: startOfMonth, lt: startOfNextMonth } },
       }),
     ]);
@@ -127,15 +127,15 @@ export class PurchaseDashboardService {
 
   /** Widget 4: POs due for delivery — with aging bands */
   async getPODeliveryTracking(ctx?: TenantContext | null) {
-    const allPos = await (db as any).cnPurchaseOrder.findMany({
+    const allPos = await db.cnPurchaseOrder.findMany({
       where: tenantWhere(ctx),
     });
-    const pos = allPos.filter((po: any) =>
-      [POStatus.APPROVED, POStatus.DISPATCHED, POStatus.PARTIALLY_RECEIVED].includes(po.status),
+    const pos = allPos.filter((po) =>
+      ([POStatus.APPROVED, POStatus.DISPATCHED, POStatus.PARTIALLY_RECEIVED] as string[]).includes(po.status),
     );
 
     const now = new Date();
-    const daysDiff = (dateStr: any) => {
+    const daysDiff = (dateStr: Date | string | null | undefined) => {
       if (!dateStr) return null;
       const t = typeof dateStr === "string" ? new Date(dateStr).getTime() : dateStr.getTime?.();
       if (!t || Number.isNaN(t)) return null;
@@ -143,12 +143,12 @@ export class PurchaseDashboardService {
     };
 
     return {
-      overdue: pos.filter((po: any) => { const d = daysDiff(po.deliveryDate); return d !== null && d < 0; }).length,
-      today: pos.filter((po: any) => { const d = daysDiff(po.deliveryDate); return d === 0; }).length,
-      next7Days: pos.filter((po: any) => { const d = daysDiff(po.deliveryDate); return d !== null && d > 0 && d <= 7; }).length,
-      next14Days: pos.filter((po: any) => { const d = daysDiff(po.deliveryDate); return d !== null && d > 7 && d <= 14; }).length,
+      overdue: pos.filter((po) => { const d = daysDiff(po.deliveryDate); return d !== null && d < 0; }).length,
+      today: pos.filter((po) => { const d = daysDiff(po.deliveryDate); return d === 0; }).length,
+      next7Days: pos.filter((po) => { const d = daysDiff(po.deliveryDate); return d !== null && d > 0 && d <= 7; }).length,
+      next14Days: pos.filter((po) => { const d = daysDiff(po.deliveryDate); return d !== null && d > 7 && d <= 14; }).length,
       total: pos.length,
-      totalValue: pos.reduce((s: number, po: any) => s + (parseFloat(po.totalAmount?.toString?.() ?? po.poTotalIncGst?.toString?.() ?? "0")), 0),
+      totalValue: pos.reduce((s: number, po) => s + (parseFloat(po.totalAmount?.toString?.() ?? "0")), 0),
     };
   }
 
@@ -156,20 +156,20 @@ export class PurchaseDashboardService {
   async getPOCommitmentVsBudget(ctx?: TenantContext | null) {
     const where = tenantWhere(ctx);
     const [projects, pos, grns] = await Promise.all([
-      (db as any).cnProject.findMany({ where }),
-      (db as any).cnPurchaseOrder.findMany({ where }),
-      (db as any).cnGoodsReceiptNote.findMany({ where, include: { lines: true } }),
+      db.cnProject.findMany({ where }),
+      db.cnPurchaseOrder.findMany({ where }),
+      db.cnGoodsReceiptNote.findMany({ where, include: { lines: true } }),
     ]);
 
-    return projects.map((proj: any) => {
-      const projectPOs = pos.filter((po: any) => po.projectId === proj.id && po.status !== POStatus.CANCELLED);
-      const projectGRNs = grns.filter((g: any) => g.projectId === proj.id && g.status === GRNStatus.APPROVED);
+    return projects.map((proj) => {
+      const projectPOs = pos.filter((po) => po.projectId === proj.id && po.status !== POStatus.CANCELLED);
+      const projectGRNs = grns.filter((g) => g.projectId === proj.id && g.status === GRNStatus.APPROVED);
 
       const budget = parseFloat(proj.projectValue?.toString?.() ?? proj.budget?.toString?.() ?? "0");
-      const poCommitted = projectPOs.reduce((s: number, po: any) => s + parseFloat(po.totalAmount?.toString?.() ?? po.poTotalIncGst?.toString?.() ?? "0"), 0);
+      const poCommitted = projectPOs.reduce((s: number, po) => s + parseFloat(po.totalAmount?.toString?.() ?? "0"), 0);
       const grnReceived = projectGRNs.reduce(
-        (s: number, g: any) =>
-          s + (g.lines ?? []).reduce((ls: number, l: any) => ls + parseFloat(l.amount?.toString?.() ?? "0"), 0),
+        (s: number, g) =>
+          s + (g.lines ?? []).reduce((ls: number, l) => ls + parseFloat(l.amount?.toString?.() ?? "0"), 0),
         0,
       );
 
@@ -191,8 +191,8 @@ export class PurchaseDashboardService {
       status: { in: [GRNStatus.DRAFT, GRNStatus.PENDING_APPROVAL] },
     };
     const [count, lineAgg] = await Promise.all([
-      (db as any).cnGoodsReceiptNote.count({ where: grnWhere }),
-      (db as any).cnGRNLine.aggregate({
+      db.cnGoodsReceiptNote.count({ where: grnWhere }),
+      db.cnGRNLine.aggregate({
         where: { grn: grnWhere },
         _sum: { amount: true },
       }),
@@ -207,18 +207,18 @@ export class PurchaseDashboardService {
   async getVendorPerformance(ctx?: TenantContext | null) {
     const where = tenantWhere(ctx);
     const [allPos, allGrns] = await Promise.all([
-      (db as any).cnPurchaseOrder.findMany({ where, include: { lines: true } }),
-      (db as any).cnGoodsReceiptNote.findMany({ where, include: { lines: true } }),
+      db.cnPurchaseOrder.findMany({ where, include: { lines: true, vendor: true } }),
+      db.cnGoodsReceiptNote.findMany({ where, include: { lines: true, po: true } }),
     ]);
-    const pos = allPos.filter((po: any) => po.status !== POStatus.DRAFT && po.status !== POStatus.CANCELLED);
-    const grns = allGrns.filter((g: any) => g.status === GRNStatus.APPROVED);
+    const pos = allPos.filter((po) => po.status !== POStatus.DRAFT && po.status !== POStatus.CANCELLED);
+    const grns = allGrns.filter((g) => g.status === GRNStatus.APPROVED);
 
     // Group by vendor
     const vendorMap = new Map<string, { name: string; totalPOs: number; totalValue: number; onTime: number; late: number; totalAccepted: number; totalRejected: number }>();
 
     for (const po of pos) {
       const vid = po.vendorId ?? "";
-      if (!vendorMap.has(vid)) vendorMap.set(vid, { name: po.vendorName ?? "", totalPOs: 0, totalValue: 0, onTime: 0, late: 0, totalAccepted: 0, totalRejected: 0 });
+      if (!vendorMap.has(vid)) vendorMap.set(vid, { name: po.vendor?.name ?? "", totalPOs: 0, totalValue: 0, onTime: 0, late: 0, totalAccepted: 0, totalRejected: 0 });
       const v = vendorMap.get(vid)!;
       v.totalPOs++;
       v.totalValue += parseFloat(po.totalAmount?.toString?.() ?? "0");
@@ -228,10 +228,11 @@ export class PurchaseDashboardService {
       const vid = grn.vendorId ?? "";
       const v = vendorMap.get(vid);
       if (!v) continue;
-      if (grn.isLateDelivery) v.late++; else v.onTime++;
+      const isLate = grn.po?.deliveryDate ? new Date(grn.grnDate) > new Date(grn.po.deliveryDate) : false;
+      if (isLate) v.late++; else v.onTime++;
       for (const line of (grn.lines ?? [])) {
-        v.totalAccepted += parseFloat(line.acceptedQty?.toString?.() ?? line.qtyAccepted?.toString?.() ?? "0");
-        v.totalRejected += parseFloat(line.rejectedQty?.toString?.() ?? line.qtyRejected?.toString?.() ?? "0");
+        v.totalAccepted += parseFloat(line.acceptedQty?.toString?.() ?? "0");
+        v.totalRejected += parseFloat(line.rejectedQty?.toString?.() ?? "0");
       }
     }
 
@@ -246,28 +247,28 @@ export class PurchaseDashboardService {
 
   /** Widget 8: Material received this month — top items */
   async getMaterialReceivedThisMonth(ctx?: TenantContext | null) {
-    const all = await (db as any).cnGoodsReceiptNote.findMany({
+    const all = await db.cnGoodsReceiptNote.findMany({
       where: tenantWhere(ctx),
-      include: { lines: true },
+      include: { lines: { include: { item: true } } },
     });
-    const grns = all.filter((g: any) => g.status === GRNStatus.APPROVED);
+    const grns = all.filter((g) => g.status === GRNStatus.APPROVED);
     const thisMonth = new Date().toISOString().slice(0, 7);
-    const dateOf = (g: any) => {
+    const dateOf = (g: { grnDate?: Date | string | null }) => {
       const d = g.grnDate;
       if (!d) return "";
       if (typeof d === "string") return d;
       try { return new Date(d).toISOString(); } catch { return ""; }
     };
-    const monthGRNs = grns.filter((g: any) => dateOf(g).startsWith(thisMonth));
+    const monthGRNs = grns.filter((g) => dateOf(g).startsWith(thisMonth));
 
     const itemMap = new Map<string, { name: string; totalQty: number; totalValue: number }>();
     for (const grn of monthGRNs) {
       for (const line of (grn.lines ?? [])) {
         const key = line.itemId ?? "";
-        if (!itemMap.has(key)) itemMap.set(key, { name: line.itemName ?? "", totalQty: 0, totalValue: 0 });
+        if (!itemMap.has(key)) itemMap.set(key, { name: line.item?.name ?? "", totalQty: 0, totalValue: 0 });
         const entry = itemMap.get(key)!;
-        entry.totalQty += parseFloat(line.acceptedQty?.toString?.() ?? line.qtyAccepted?.toString?.() ?? "0");
-        entry.totalValue += parseFloat(line.lineValueExGST?.toString?.() ?? "0");
+        entry.totalQty += parseFloat(line.acceptedQty?.toString?.() ?? "0");
+        entry.totalValue += parseFloat(line.amount?.toString?.() ?? "0");
       }
     }
 

@@ -11,6 +11,7 @@
  * approvals inbox, history viewer, and dashboard counters.
  */
 
+import { Prisma } from "@quikit/database";
 import { db } from "@/lib/db";
 
 export interface ApprovalInstanceRecord {
@@ -27,7 +28,7 @@ export interface ApprovalInstanceRecord {
   completedAt: string | null;
 }
 
-function toRecord(row: any): ApprovalInstanceRecord {
+function toRecord(row: Prisma.CnApprovalInstanceGetPayload<Record<string, never>>): ApprovalInstanceRecord {
   return {
     id: row.id,
     orgId: row.orgId,
@@ -47,7 +48,7 @@ export async function findInstanceById(
   orgId: string,
   id: string,
 ): Promise<ApprovalInstanceRecord | null> {
-  const row = await (db as any).cnApprovalInstance.findFirst({
+  const row = await db.cnApprovalInstance.findFirst({
     where: { id, orgId },
   });
   return row ? toRecord(row) : null;
@@ -61,7 +62,7 @@ export interface ListPendingOptions {
 export async function listPendingInstances(
   opts: ListPendingOptions,
 ): Promise<ApprovalInstanceRecord[]> {
-  const rows = await (db as any).cnApprovalInstance.findMany({
+  const rows = await db.cnApprovalInstance.findMany({
     where: {
       orgId: opts.orgId,
       status: "pending_approval",
@@ -77,7 +78,7 @@ export async function listPendingInstances(
 export async function countPendingInstances(opts: {
   orgId: string;
 }): Promise<number> {
-  return (db as any).cnApprovalInstance.count({
+  return db.cnApprovalInstance.count({
     where: {
       orgId: opts.orgId,
       status: "pending_approval",

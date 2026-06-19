@@ -1,0 +1,78 @@
+import { z } from "zod";
+
+// ─── Department ─────────────────────────────────────────
+
+export const createDepartmentSchema = z.object({
+  name: z.string().min(1, "Name required"),
+  code: z.string().min(1, "Code required"),
+  parentDepartmentId: z.string().optional(),
+  headId: z.string().optional(),
+  description: z.string().optional(),
+  status: z.enum(["Active", "Inactive"]).default("Active"),
+});
+
+export const updateDepartmentSchema = createDepartmentSchema.partial();
+
+export type CreateDepartmentInput = z.infer<typeof createDepartmentSchema>;
+export type UpdateDepartmentInput = z.infer<typeof updateDepartmentSchema>;
+
+// ─── Team ───────────────────────────────────────────────
+
+export const createTeamSchema = z.object({
+  name: z.string().min(1, "Name required"),
+  departmentId: z.string().min(1, "Department required"),
+  leadId: z.string().optional(),
+  description: z.string().optional(),
+});
+
+export const updateTeamSchema = createTeamSchema.partial();
+
+export type CreateTeamInput = z.infer<typeof createTeamSchema>;
+export type UpdateTeamInput = z.infer<typeof updateTeamSchema>;
+
+// ─── Designation ────────────────────────────────────────
+
+export const createDesignationSchema = z.object({
+  title: z.string().min(1, "Title required"),
+  level: z.number().int().default(0),
+  departmentId: z.string().optional(),
+});
+
+export const updateDesignationSchema = createDesignationSchema.partial();
+
+export type CreateDesignationInput = z.infer<typeof createDesignationSchema>;
+export type UpdateDesignationInput = z.infer<typeof updateDesignationSchema>;
+
+// ─── Grade ──────────────────────────────────────────────
+
+export const createGradeSchema = z.object({
+  name: z.string().min(1, "Name required"),
+  level: z.number().int().default(0),
+  minSalary: z.number().optional(),
+  maxSalary: z.number().optional(),
+});
+
+export const updateGradeSchema = createGradeSchema.partial();
+
+export type CreateGradeInput = z.infer<typeof createGradeSchema>;
+export type UpdateGradeInput = z.infer<typeof updateGradeSchema>;
+
+// ─── Office Location ────────────────────────────────────
+
+export const createOfficeLocationSchema = z.object({
+  name: z.string().min(1, "Name required"),
+  address: z.string().optional(),
+  city: z.string().optional(),
+  state: z.string().optional(),
+  country: z.string().optional(),
+  zipCode: z.string().optional(),
+  timezone: z.string().optional(),
+  latitude: z.number().optional(),
+  longitude: z.number().optional(),
+  isHeadquarter: z.boolean().default(false),
+});
+
+export const updateOfficeLocationSchema = createOfficeLocationSchema.partial();
+
+export type CreateOfficeLocationInput = z.infer<typeof createOfficeLocationSchema>;
+export type UpdateOfficeLocationInput = z.infer<typeof updateOfficeLocationSchema>;

@@ -10,7 +10,7 @@
  */
 
 import { useMemo, useState } from "react";
-import { Plus, Pencil, Trash2, Eye, ChevronDown } from "lucide-react";
+import { Plus, Pencil, Trash2, Eye, ChevronDown, type LucideIcon } from "lucide-react";
 import {
   MENU_CATALOG,
   MATRIX_ACTIONS,
@@ -21,7 +21,7 @@ import {
   type MenuItem,
 } from "@/lib/rbac/menu-catalog";
 
-const ACTION_META: Record<MatrixAction, { icon: any; label: string }> = {
+const ACTION_META: Record<MatrixAction, { icon: LucideIcon; label: string }> = {
   add: { icon: Plus, label: "Add" },
   edit: { icon: Pencil, label: "Edit" },
   delete: { icon: Trash2, label: "Delete" },
@@ -158,7 +158,7 @@ function ModuleGroup({
   const none = rowsGranted === 0;
   const partial = !allOn && !none;
 
-  // Accordion state — default to expanded if the group has any grants
+  // Accordion state — default to expanded if the group has one or more grants
   // so admins immediately see what they've already configured. Modules
   // with zero grants start collapsed to reduce visual noise. The user
   // can toggle either direction freely after that.

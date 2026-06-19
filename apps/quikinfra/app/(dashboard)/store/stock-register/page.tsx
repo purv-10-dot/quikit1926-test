@@ -8,6 +8,13 @@ import {
 import { DataTable, type ColDef } from "@/components/DataTable";
 import { useStockRegister } from "@/hooks/use-store";
 
+interface StockRegisterRow {
+  id?: string; balance?: number | string; isLowStock?: boolean;
+  minStockLevel?: number | string; onOrderQty?: number | string;
+  onOrderValue?: number | string; stockValue?: number | string;
+  [key: string]: unknown;
+}
+
 export default function StockRegisterPage() {
   const [projectFilter, setProjectFilter] = useState("");
   const [locationFilter, setLocationFilter] = useState("");
@@ -28,7 +35,7 @@ export default function StockRegisterPage() {
     lowStockCount: 0,
   };
 
-  const columns: ColDef<any>[] = [
+  const columns: ColDef<StockRegisterRow>[] = [
     { key: "itemCode", label: "Code", sortable: true, searchable: true },
     { key: "itemName", label: "Item Name", sortable: true, searchable: true },
     { key: "groupName", label: "Group", sortable: true },
@@ -46,7 +53,7 @@ export default function StockRegisterPage() {
       // POs for this item). Lets the user see what's expected before
       // any GRN posts.
       render: (row) =>
-        row.onOrderQty > 0 ? (
+        Number(row.onOrderQty) > 0 ? (
           <span className="text-orange-700 font-semibold">{row.onOrderQty}</span>
         ) : (
           <span className="text-slate-300">0</span>
@@ -58,7 +65,7 @@ export default function StockRegisterPage() {
       type: "number",
       sortable: true,
       render: (row) =>
-        row.onOrderValue > 0
+        Number(row.onOrderValue) > 0
           ? `₹ ${Number(row.onOrderValue).toLocaleString("en-IN", { minimumFractionDigits: 2 })}`
           : <span className="text-slate-300">₹ 0.00</span>,
     },
@@ -97,15 +104,15 @@ export default function StockRegisterPage() {
             alerts → danger. */}
         <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
           <KPICard title="Total Items" value={summary.totalItems} icon={<BarChart3 className="w-5 h-5" />} color="brand" />
-          <KPICard title="Total Stock Value" subtitle="Received stock" value={`₹ ${summary.totalValue.toLocaleString("en-IN", { minimumFractionDigits: 2 })}`} icon={<BarChart3 className="w-5 h-5" />} color="success" />
-          <KPICard title="On Order Value" subtitle="Open POs, not yet received" value={`₹ ${summary.onOrderValue.toLocaleString("en-IN", { minimumFractionDigits: 2 })}`} icon={<ShoppingCart className="w-5 h-5" />} color="warn" />
+          <KPICard title="Total Stock Value" subtitle="Received stock" value={`₹ ${(summary.totalValue ?? 0).toLocaleString("en-IN", { minimumFractionDigits: 2 })}`} icon={<BarChart3 className="w-5 h-5" />} color="success" />
+          <KPICard title="On Order Value" subtitle="Open POs, not yet received" value={`₹ ${(summary.onOrderValue ?? 0).toLocaleString("en-IN", { minimumFractionDigits: 2 })}`} icon={<ShoppingCart className="w-5 h-5" />} color="warn" />
           <KPICard title="Low Stock Alerts" value={summary.lowStockCount} icon={<AlertTriangle className="w-5 h-5" />} color="danger" />
         </div>
 
         <DataTable
           id="stock-register"
           columns={columns}
-          data={stockData}
+          data={stockData as unknown as StockRegisterRow[]}
         />
       </PageContainer>
     </>

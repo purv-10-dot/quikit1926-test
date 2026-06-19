@@ -47,15 +47,18 @@ import { useWorkflowConfirm } from "@/hooks/use-workflow-confirm";
 
 const MENU_KEY = "pm.work_orders";
 
+import type { ApprovalHistoryEntry } from "@/lib/approvals/approval-info";
+import type { BoqScopeItem, WorkOrderDetail } from "@/lib/projects/work-order-detail";
+
 // ── Formatting helpers ─────────────────────────────────────────────
-const fmtInr = (v: any) => {
+const fmtInr = (v: unknown) => {
   if (v === null || v === undefined || v === "") return "—";
   const n = Number(v);
   return Number.isFinite(n)
     ? `₹ ${n.toLocaleString("en-IN", { maximumFractionDigits: 2 })}`
     : "—";
 };
-const fmtQty = (v: any, unit?: string | null) => {
+const fmtQty = (v: unknown, unit?: string | null) => {
   if (v === null || v === undefined || v === "") return "—";
   const n = Number(v);
   if (!Number.isFinite(n)) return "—";
@@ -72,7 +75,7 @@ const fmtDate = (iso?: string | null) => {
         year: "numeric",
       });
 };
-const fmtPct = (v: any) =>
+const fmtPct = (v: number | string | null | undefined) =>
   v === null || v === undefined || v === "" ? "0%" : `${v}%`;
 
 // ── Header pill design tokens ──────────────────────────────────────
@@ -123,7 +126,7 @@ export default function WorkOrderDetailPage() {
   // (server-computed in the WO GET as `approval.canActOnCurrentStep`),
   // not the caller's role.
   const canApprove =
-    isSuper || (wo as any)?.approval?.canActOnCurrentStep === true;
+    isSuper || wo?.approval?.canActOnCurrentStep === true;
 
   const [deleteConfirm, setDeleteConfirm] = useState(false);
   const [deleting, setDeleting] = useState(false);
@@ -134,7 +137,7 @@ export default function WorkOrderDetailPage() {
     invalidateKeys: [["work-order", id], ["work-orders"]],
   });
 
-  const boqItems: any[] = useMemo(
+  const boqItems: BoqScopeItem[] = useMemo(
     () => (Array.isArray(wo?.boqItems) ? wo.boqItems : []),
     [wo],
   );
@@ -143,12 +146,12 @@ export default function WorkOrderDetailPage() {
   // map the API's history rows to that shape and pre-format the
   // timestamp so the panel doesn't render the raw ISO string.
   const approvalEntries =
-    wo?.approval?.history?.map((h: any) => ({
+    wo?.approval?.history?.map((h: ApprovalHistoryEntry) => ({
       step: h.stepOrder ?? 0,
       action: h.action,
       actionBy: h.actionByName ?? "User",
       actionAt: h.actionAt ? new Date(h.actionAt).toLocaleString() : "",
-      comments: h.comments,
+      comments: h.comments ?? undefined,
     })) ?? [];
 
   if (isLoading) return <PageSkeleton />;
@@ -486,7 +489,7 @@ export default function WorkOrderDetailPage() {
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-gray-100">
-                      {boqItems.map((it: any, idx: number) => (
+                      {boqItems.map((it: BoqScopeItem, idx: number) => (
                         <tr key={idx} className="hover:bg-indigo-50/20 transition-colors">
                           <td className="px-4 py-3 text-xs font-mono text-gray-400 tabular-nums">
                             {String(idx + 1).padStart(2, "0")}

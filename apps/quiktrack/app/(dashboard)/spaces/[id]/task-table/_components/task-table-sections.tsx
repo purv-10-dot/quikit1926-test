@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useState } from "react";
+import { showToast } from "@/lib/ui/toast";
 import { Folder } from "lucide-react";
 import { useInfiniteIssues } from "@/lib/hooks/useInfiniteIssues";
 import { DeleteTaskModal } from "@/components/delete-task-modal";
@@ -63,7 +64,7 @@ function patchIssueAndReload(id: string, patch: Record<string, unknown>, reload:
       reload();
     })
     .catch((e) => {
-      if (typeof window !== "undefined") window.alert(e instanceof Error ? e.message : "Save failed");
+      showToast(e instanceof Error ? e.message : "Save failed", "error");
     });
 }
 

@@ -1,3 +1,4 @@
+import { toErrorMessage, getErrorCode } from "@/lib/api/errors";
 import { NextRequest, NextResponse } from "next/server";
 import { requireMastersAction } from "@/lib/auth/requireMastersAction";
 import { getTenantContext, hasMatrixAction } from "@/lib/auth/context";
@@ -42,10 +43,10 @@ async function handleUpdate(req: NextRequest, id: string) {
     });
     if (!next) return NextResponse.json({ error: "Company not found" }, { status: 404 });
     return NextResponse.json(next);
-  } catch (err: any) {
+  } catch (err: unknown) {
     console.error("[companies.update] failed:", err);
     return NextResponse.json(
-      { error: err?.message ?? "Failed to update company" },
+      { error: toErrorMessage(err, "Failed to update company") },
       { status: 500 },
     );
   }

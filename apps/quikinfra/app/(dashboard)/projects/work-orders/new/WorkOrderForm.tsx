@@ -20,6 +20,7 @@
  * selector is locked (projectId is stable once items are on the WO).
  */
 
+import { toErrorMessage } from "@/lib/api/errors";
 import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
@@ -47,9 +48,24 @@ interface ScopeLine {
   rate: string;
 }
 
+interface WoBoqItem {
+  boqItemId?: string; boqNo?: string; description?: string;
+  uomCode?: string; quantity?: number | string; rate?: number | string;
+}
+interface WorkOrderEditData {
+  id?: string; woNumber?: string; projectId?: string; type?: string;
+  contractorId?: string; contractorName?: string; workType?: string; title?: string;
+  plannedStart?: string; plannedEnd?: string; boqItems?: WoBoqItem[];
+}
+/** Row handed back by BOQActivityPickerModal's onPick. */
+interface WoBoqPickRow {
+  id?: string; boq_no?: string; display_name?: string; unit?: string | null;
+  balanceQty?: number | string; scopeQty?: number | string;
+}
+
 interface Props {
   /** When present, switches to edit mode and pre-fills every field. */
-  editData?: any | null;
+  editData?: WorkOrderEditData | null;
   /** When true, hides the sticky page header strip (back button + Save)
    *  so the form can render cleanly inside a side drawer that supplies
    *  its own header/footer chrome. After a successful save, `onSaved`
@@ -70,7 +86,7 @@ export function WorkOrderForm({ editData, embedded = false, onSaved }: Props) {
 
   const projects = projectsResult?.data ?? [];
   const contractors = contractorsResult?.data ?? [];
-  const uoms = (uomsResult?.data ?? []) as any[];
+  const uoms = (uomsResult?.data ?? []) as Array<{ code?: string }>;
 
   // Basic Information state
   const [projectId, setProjectId] = useState("");
@@ -98,9 +114,9 @@ export function WorkOrderForm({ editData, embedded = false, onSaved }: Props) {
     setWorkName(editData.title ?? "");
     setPlannedStart(editData.plannedStart ? String(editData.plannedStart).slice(0, 10) : "");
     setPlannedEnd(editData.plannedEnd ? String(editData.plannedEnd).slice(0, 10) : "");
-    const rawScope: any[] = Array.isArray(editData.boqItems) ? editData.boqItems : [];
+    const rawScope: WoBoqItem[] = Array.isArray(editData.boqItems) ? editData.boqItems : [];
     setScope(
-      rawScope.map((s: any) => ({
+      rawScope.map((s) => ({
         boqItemId: s.boqItemId ?? "",
         boqNo: s.boqNo ?? "",
         description: s.description ?? "",
@@ -121,18 +137,30 @@ export function WorkOrderForm({ editData, embedded = false, onSaved }: Props) {
     [scope]
   );
 
+  // Keyed by BOTH the BOQ item UUID and the BOQ number. Saved WO lines
+  // persist the boqNo in place of the UUID, so on reload (edit mode) the
+  // scope rows only carry the boqNo — matching on either value keeps the
+  // duplicate guard working across create and edit.
   const alreadyAddedIds = useMemo(
-    () => new Set(scope.map((s) => s.boqItemId)),
+    () =>
+      new Set(scope.flatMap((s) => [s.boqItemId, s.boqNo].filter(Boolean))),
     [scope]
   );
 
-  const addBoqItem = (row: any) => {
+  const addBoqItem = (row: WoBoqPickRow) => {
+    const itemId = row.id ?? "";
+    const boqNo = row.boq_no ?? "";
+    // Defensive guard: the picker already blocks duplicates, but never
+    // append a row whose item id / boqNo is already on the scope.
+    if (alreadyAddedIds.has(itemId) || (boqNo && alreadyAddedIds.has(boqNo))) {
+      return;
+    }
     setScope((prev) => [
       ...prev,
       {
-        boqItemId: row.id,
-        boqNo: row.boq_no,
-        description: row.display_name,
+        boqItemId: itemId,
+        boqNo,
+        description: row.display_name ?? "",
         uomCode: row.unit ?? "",
         quantity: String(row.balanceQty ?? row.scopeQty ?? ""),
         rate: "",
@@ -162,7 +190,7 @@ export function WorkOrderForm({ editData, embedded = false, onSaved }: Props) {
 
     setSaving(true);
     try {
-      const contractor = contractors.find((c: any) => c.id === contractorId);
+      const contractor = contractors.find((c) => c.id === contractorId);
       const boqItems = scope.map((s) => {
         const qty = parseFloat(s.quantity) || 0;
         const rate = parseFloat(s.rate) || 0;
@@ -177,7 +205,7 @@ export function WorkOrderForm({ editData, embedded = false, onSaved }: Props) {
         };
       });
 
-      const project = projects.find((p: any) => p.id === projectId);
+      const project = projects.find((p) => p.id === projectId);
       const fallbackTitle = `${woType} for ${project?.name ?? ""}`.trim();
       const payload = {
         projectId,
@@ -216,8 +244,8 @@ export function WorkOrderForm({ editData, embedded = false, onSaved }: Props) {
         router.push("/projects/work-orders");
         router.refresh();
       }
-    } catch (e: any) {
-      setError(e?.message ?? "Failed to save work order");
+    } catch (e: unknown) {
+      setError(toErrorMessage(e, "Failed to save work order"));
     } finally {
       setSaving(false);
     }
@@ -304,7 +332,7 @@ export function WorkOrderForm({ editData, embedded = false, onSaved }: Props) {
                 onChange={setProjectId}
                 disabled={isEdit && scope.length > 0}
                 placeholder="Select project…"
-                options={projects.map((p: any) => ({ value: p.id, label: p.name }))}
+                options={projects.map((p) => ({ value: p.id, label: p.name }))}
               />
               {isEdit && scope.length > 0 && (
                 <p className="mt-1 text-[10px] text-gray-400">
@@ -328,7 +356,7 @@ export function WorkOrderForm({ editData, embedded = false, onSaved }: Props) {
                 value={contractorId}
                 onChange={setContractorId}
                 placeholder="Select Contractor…"
-                options={contractors.map((c: any) => ({ value: c.id, label: c.name }))}
+                options={contractors.map((c) => ({ value: c.id, label: c.name }))}
               />
             </Field>
             <Field label="WORK TYPE">
@@ -455,10 +483,10 @@ export function WorkOrderForm({ editData, embedded = false, onSaved }: Props) {
                             onChange={(v) => updateScopeLine(idx, "uomCode", v)}
                             placeholder="—"
                             options={(() => {
-                              const opts = uoms.map((u: any) => ({ value: u.code, label: u.code }));
+                              const opts = uoms.map((u) => ({ value: u.code ?? "", label: u.code ?? "" }));
                               if (
                                 line.uomCode &&
-                                !uoms.find((u: any) => u.code === line.uomCode)
+                                !uoms.find((u) => u.code === line.uomCode)
                               ) {
                                 opts.push({ value: line.uomCode, label: line.uomCode });
                               }

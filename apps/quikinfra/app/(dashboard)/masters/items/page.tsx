@@ -1,5 +1,6 @@
 "use client";
 
+import { toErrorMessage } from "@/lib/api/errors";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { MapPin, Package, X } from "lucide-react";
 import { MasterListPage, type MasterColumnDef } from "@/components/MasterListPage";
@@ -10,11 +11,11 @@ const ImportDataDrawer = dynamic(
   () => import("@/components/ImportDataDrawer").then((m) => m.ImportDataDrawer),
   { ssr: false },
 );
-import { useItems, useCreateItem, useUpdateItem, useUOMs, useGSTCodes, useItemGroups } from "@/hooks/use-masters";
+import { useItems, useCreateItem, useUpdateItem, useUOMs, useGSTCodes, useItemGroups, useDeleteItem } from "@/hooks/use-masters";
 import {
   FormDrawer, FormSection, FormRow, Field,
   TextInput, NumberInput, SelectInput, TextAreaInput, CheckboxInput,
-  MultiSelectInput,
+  MultiSelectInput, InactiveStatusNotice,
 } from "@/components/FormDrawer";
 import {
   validateForm, type ValidationRules,
@@ -45,8 +46,25 @@ const ITEM_TYPE_OPTIONS = [
 
 interface ItemRow {
   id: string; code: string; name: string; itemType?: string; groupName?: string; category?: string;
-  uomCode?: string; uomCodes?: string[];
-  hsnCode?: string; gstRate?: string; standardRate?: string; minStockLevel?: string; status: string;
+  uomCode?: string; uomCodes?: string[]; uomIds?: string[]; uomId?: string;
+  hsnCode?: string; gstRate?: string; standardRate?: string; minStockLevel?: string;
+  reorderLevel?: string; specifications?: string; status: string;
+}
+
+interface ItemGroupRow {
+  id: string;
+  name?: string;
+  status?: string;
+  parentId?: string | null;
+}
+
+interface GstRow {
+  code?: string;
+  status?: string;
+  itemGroupName?: string;
+  itemGroupId?: string;
+  rate?: string | number;
+  igstRate?: string | number;
 }
 
 function StockPinCell({
@@ -90,8 +108,8 @@ function StockPinCell({
       const json = await res.json();
       if (!res.ok) throw new Error(json?.error ?? "Failed to load stock");
       setData({ total: Number(json.total ?? 0), locations: Array.isArray(json.locations) ? json.locations : [] });
-    } catch (e: any) {
-      setError(e?.message ?? "Failed to load stock");
+    } catch (e: unknown) {
+      setError(toErrorMessage(e, "Failed to load stock"));
       setData(null);
     } finally {
       setLoading(false);
@@ -174,13 +192,13 @@ const emptyForm: ItemForm = {
   reorderLevel: "0", status: "active",
 };
 
-function buildItemGroupById(groups: any[]): Map<string, any> {
-  const m = new Map<string, any>();
+function buildItemGroupById(groups: ItemGroupRow[]): Map<string, ItemGroupRow> {
+  const m = new Map<string, ItemGroupRow>();
   for (const g of groups) m.set(g.id, g);
   return m;
 }
 
-function rootItemGroupId(groupId: string, byId: Map<string, any>): string {
+function rootItemGroupId(groupId: string, byId: Map<string, ItemGroupRow>): string {
   let cur = groupId;
   for (let i = 0; i < 32; i++) {
     const row = byId.get(cur);
@@ -193,8 +211,8 @@ function rootItemGroupId(groupId: string, byId: Map<string, any>): string {
 
 function findGstForItemCategory(
   categoryLabel: string,
-  gstRows: any[],
-  itemGroups: any[],
+  gstRows: GstRow[],
+  itemGroups: ItemGroupRow[],
 ): { code: string; rate: string } | null {
   const c = String(categoryLabel ?? "").trim();
   if (!c) return null;
@@ -275,12 +293,16 @@ const IMPORT_FIELDS: ImportFieldDef[] = [
 ];
 
 export default function ItemsPage() {
-  const { data: result, isLoading } = useItems();
+  // Request all statuses (incl. soft-deleted "inactive") so MasterListPage's
+  // "Show inactive" toggle and inactive-count have rows to work with. Other
+  // consumers of useItems() omit status and get active-only from the API.
+  const { data: result, isLoading } = useItems({ status: "all" });
   const { data: uomResult } = useUOMs();
   const { data: gstResult } = useGSTCodes();
   const { data: itemGroupsResult } = useItemGroups();
   const createMutation = useCreateItem();
   const updateMutation = useUpdateItem();
+  const deleteMutation = useDeleteItem();
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [importOpen, setImportOpen] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
@@ -314,13 +336,8 @@ export default function ItemsPage() {
         <StockPinCell
           itemId={row.id}
           currentStock={(() => {
-            const v: any = (stockByItemId as any)[row.id];
-            const n =
-              typeof v === "number"
-                ? v
-                : typeof v === "string"
-                ? Number(v)
-                : 0;
+            const v = stockByItemId[row.id];
+            const n = typeof v === "number" ? v : 0;
             return Number.isFinite(n) ? n : 0;
           })()}
         />
@@ -334,7 +351,7 @@ export default function ItemsPage() {
   ]), [stockByItemId]);
 
   useEffect(() => {
-    const ids = (items ?? []).map((i: any) => i.id).filter(Boolean);
+    const ids = (items ?? []).map((i) => i.id).filter(Boolean);
     if (ids.length === 0) return;
     let cancelled = false;
     (async () => {
@@ -372,7 +389,7 @@ export default function ItemsPage() {
     const rows = result?.data ?? [];
     const fromItems = Array.isArray(rows)
       ? rows
-          .map((r: any) => String(r?.category ?? "").trim())
+          .map((r) => String(r?.category ?? "").trim())
           .filter(Boolean)
       : [];
     const groups = (itemGroupsResult?.data ?? [])
@@ -408,7 +425,7 @@ export default function ItemsPage() {
     for (const piece of cellPieces) {
       const target = piece.toLowerCase();
       const match = (uomResult?.data ?? []).find(
-        (u: any) =>
+        (u) =>
           String(u.code ?? "").toLowerCase() === target ||
           String(u.name ?? "").toLowerCase() === target,
       );
@@ -443,17 +460,17 @@ export default function ItemsPage() {
         status: "active",
       });
       return { ok: true as const };
-    } catch (err: any) {
-      return { ok: false as const, error: err?.message ?? "Failed to create item" };
+    } catch (err: unknown) {
+      return { ok: false as const, error: toErrorMessage(err, "Failed to create item") };
     }
   };
 
-  const set = (key: string, val: any) => {
-    setForm(prev => ({ ...prev, [key]: val }));
+  const set = (key: string, val: string | string[]) => {
+    setForm(prev => ({ ...prev, [key]: val }) as ItemForm);
     if (errors[key]) setErrors(prev => { const next = { ...prev }; delete next[key]; return next; });
   };
 
-  const uomOptions = (uomResult?.data ?? []).map((u: any) => ({ value: u.id, label: `${u.code} — ${u.name}` }));
+  const uomOptions = (uomResult?.data ?? []).map((u) => ({ value: u.id, label: `${u.code} — ${u.name}` }));
 
   const normalizeCategory = (v: string) => v.trim().toLowerCase();
 
@@ -469,14 +486,14 @@ export default function ItemsPage() {
 
   const handleHSNChange = (hsn: string) => {
     set("hsnCode", hsn);
-    const gstMatch = (gstResult?.data ?? []).find((g: any) => g.code === hsn);
+    const gstMatch = (gstResult?.data ?? []).find((g) => g.code === hsn);
     if (gstMatch) set("gstRate", String(gstMatch.rate ?? gstMatch.igstRate ?? ""));
   };
 
   const onCategoryChange = (v: string) => {
     const mapped = findGstForItemCategory(
       v,
-      gstResult?.data ?? [],
+      (gstResult?.data ?? []) as GstRow[],
       itemGroupsResult?.data ?? [],
     );
     setForm((prev) => ({
@@ -495,7 +512,7 @@ export default function ItemsPage() {
     });
   };
 
-  const loadFormFromRow = (item: any) => {
+  const loadFormFromRow = (item: ItemRow) => {
     const uomIds: string[] = Array.isArray(item.uomIds) && item.uomIds.length
       ? item.uomIds
       : (item.uomId ? [item.uomId] : []);
@@ -519,8 +536,8 @@ export default function ItemsPage() {
 
   const closeDrawer = () => { setDrawerOpen(false); setEditingId(null); setForm(emptyForm); setErrors({}); };
 
-  const handleDelete = async (item: any) => {
-    await updateMutation.mutateAsync({ id: item.id, status: "inactive" });
+  const handleDelete = async (item: ItemRow) => {
+    await deleteMutation.mutateAsync(item.id);
   };
 
   const handleSubmit = async () => {
@@ -529,7 +546,7 @@ export default function ItemsPage() {
     // Denormalize UOM selection: keep full array under `uomIds`, and also
     // write the first pick into `uomId`/`uomCode` for backward compat with
     // readers/columns that still expect a single UOM string.
-    const primaryUom = (uomResult?.data ?? []).find((u: any) => u.id === form.uomIds[0]);
+    const primaryUom = (uomResult?.data ?? []).find((u) => u.id === form.uomIds[0]);
     const payload = {
       ...form,
       uomId: form.uomIds[0] ?? "",
@@ -554,18 +571,18 @@ export default function ItemsPage() {
         entityName="Item"
         permissionUrl="/masters/items"
         columns={columns}
-        data={result?.data ?? []}
+        data={(result?.data ?? []) as ItemRow[]}
         total={result?.total ?? 0}
         isLoading={isLoading}
         historyEntityType="item"
         onAdd={() => { setForm(emptyForm); setErrors({}); setEditingId(null); setDrawerOpen(true); }}
-        onEdit={(item: any) => {
+        onEdit={(item) => {
           loadFormFromRow(item);
           setDrawerOpen(true);
         }}
         onDelete={handleDelete}
         onImport={() => setImportOpen(true)}
-        deleteConfirmMessage={(item: any) => (
+        deleteConfirmMessage={(item) => (
           <>
             Delete item{" "}
             <span className="font-semibold text-gray-900">“{item.name}”</span>
@@ -656,6 +673,7 @@ export default function ItemsPage() {
         <FormSection title="Status">
           <Field label="Status">
             <SelectInput value={form.status} onChange={v => set("status", v)} options={STATUS_OPTIONS} />
+            {form.status === "inactive" && <InactiveStatusNotice entityName="Item" />}
           </Field>
         </FormSection>
       </FormDrawer>

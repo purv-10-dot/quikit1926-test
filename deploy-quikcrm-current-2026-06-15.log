@@ -1,0 +1,29 @@
+
+=== quikcrm ===
+  walked 1345 files
+  total: 74.7 MB
+    uploaded 100/1345
+    uploaded 200/1345
+    uploaded 300/1345
+    uploaded 400/1345
+    uploaded 500/1345
+    uploaded 600/1345
+    uploaded 700/1345
+    uploaded 800/1345
+    uploaded 900/1345
+    uploaded 1000/1345
+    uploaded 1100/1345
+    uploaded 1200/1345
+    uploaded 1300/1345
+  uploaded 1345/1345
+  id: dpl_EfWRqWZdddpgXZjGK2TSCm5TZKCm
+  url: https://quikcrm-gqcv9w584-pravin-sharmas-projects-cb2dd481.vercel.app
+    [BUILDING] 7s
+    [BUILDING] 37s
+    [BUILDING] 65s
+    [BUILDING] 90s
+    [BUILDING] 119s
+    [BUILDING] 147s
+  ❌ ERROR: Command "npx turbo run build --filter=quikcrm" exited with 1
+
+All done.

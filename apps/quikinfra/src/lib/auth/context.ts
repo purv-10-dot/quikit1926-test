@@ -89,7 +89,7 @@ export type AuthResult = TenantContext | NextResponse;
  */
 export const getTenantContext = cache(async (): Promise<TenantContext | null> => {
   try {
-    const authOptionsMod = await import("./next-auth-options");
+    const authOptionsMod = await import("@/lib/auth");
     const session = await getServerSession(authOptionsMod.authOptions);
     if (!session?.user) {
       return null;
@@ -150,7 +150,17 @@ export const getTenantContext = cache(async (): Promise<TenantContext | null> =>
         // best-effort — seeding must never block context resolution
       }
       // Query the v2 RBAC tables — single round-trip with includes.
-      let assignment = await (dbCentral as any).cnUserAppRole.findFirst({
+      // Only `.role` is read downstream, so the narrow shape below is all
+      // we need — both the Prisma payload and the synthetic auto-assign
+      // object satisfy it.
+      type RoleWithPerms = {
+        id: string;
+        name: string;
+        isSystem: boolean;
+        rolePermissions: Array<{ resource: string; action: string }>;
+      };
+      let assignment: { role: RoleWithPerms } | null =
+        await dbCentral.cnUserAppRole.findFirst({
         where: { userId, orgId, role: { appId } },
         include: {
           role: {
@@ -189,7 +199,7 @@ export const getTenantContext = cache(async (): Promise<TenantContext | null> =>
           ? { orgId, appId, isSystem: true, name: "admin" }
           : { orgId, appId, isDefault: true };
 
-        let defaultRole = await (dbCentral as any).cnAppRole.findFirst({
+        let defaultRole = await dbCentral.cnAppRole.findFirst({
           where: targetRoleQuery,
           select: {
             id: true,
@@ -203,7 +213,7 @@ export const getTenantContext = cache(async (): Promise<TenantContext | null> =>
         // run for this org yet), fall back to whatever isDefault role exists.
         // Better to land them on a real role than bounce to 401.
         if (!defaultRole) {
-          defaultRole = await (dbCentral as any).cnAppRole.findFirst({
+          defaultRole = await dbCentral.cnAppRole.findFirst({
             where: { orgId, appId, isDefault: true },
             select: {
               id: true,
@@ -215,7 +225,7 @@ export const getTenantContext = cache(async (): Promise<TenantContext | null> =>
         }
         if (defaultRole) {
           try {
-            await (dbCentral as any).cnUserAppRole.upsert({
+            await dbCentral.cnUserAppRole.upsert({
               where: {
                 userId_orgId_roleId: {
                   userId,
@@ -231,9 +241,7 @@ export const getTenantContext = cache(async (): Promise<TenantContext | null> =>
                 assignedBy: "auto-default",
               },
             });
-            assignment = {
-              role: defaultRole,
-            } as typeof assignment;
+            assignment = { role: defaultRole };
             logger.info({
               msg: "tenant_context_auto_assigned_default_role",
               userId,
@@ -253,7 +261,7 @@ export const getTenantContext = cache(async (): Promise<TenantContext | null> =>
                 (err as { code?: string }).code === "P2002");
 
             if (isUniqueViolation) {
-              const refetched = await (dbCentral as any).cnUserAppRole.findFirst({
+              const refetched = await dbCentral.cnUserAppRole.findFirst({
                 where: { userId, orgId, role: { appId } },
                 include: {
                   role: {
@@ -305,7 +313,7 @@ export const getTenantContext = cache(async (): Promise<TenantContext | null> =>
         resource: string;
         action: string;
         revoke: boolean;
-      }> = await (dbCentral as any).cnUserPermissionExtra.findMany({
+      }> = await dbCentral.cnUserPermissionExtra.findMany({
         where: { userId, orgId },
         select: { resource: true, action: true, revoke: true },
       });
@@ -457,7 +465,7 @@ export const getTenantContext = cache(async (): Promise<TenantContext | null> =>
     // independent of the project-scope decision above.
     if (!isAdminRole) {
       try {
-        const revokes = (await (dbCentral as any).cnUserPermissionExtra.findMany({
+        const revokes = (await dbCentral.cnUserPermissionExtra.findMany({
           where: { userId, orgId, revoke: true },
           select: { resource: true, action: true },
         })) as Array<{ resource: string; action: string }>;
@@ -697,7 +705,7 @@ export function tenantCreate<T extends Record<string, unknown>>(
     createdBy: _ignored2,
     updatedBy: _ignored3,
     ...rest
-  } = data as any;
+  } = data;
   return {
     ...(rest as T),
     orgId: ctx.orgId,
@@ -713,7 +721,7 @@ export function tenantUpdate<T extends Record<string, unknown>>(
   ctx: TenantContext,
   data: T
 ): T & { updatedBy: string } {
-  const { orgId: _ignored1, createdBy: _ignored2, ...rest } = data as any;
+  const { orgId: _ignored1, createdBy: _ignored2, ...rest } = data;
   return {
     ...(rest as T),
     updatedBy: ctx.userId,

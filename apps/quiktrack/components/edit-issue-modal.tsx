@@ -1,6 +1,10 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { useSession } from "next-auth/react";
+import { CustomFieldsSection } from "@/components/custom-fields/custom-fields-section";
+import type { CustomFieldDTO } from "@/lib/services/customFields";
+import type { FieldValue } from "@/lib/customFields/registry";
 import {
   X,
   ExternalLink,
@@ -28,14 +32,17 @@ import {
   LayoutGrid,
   AlertTriangle,
   Trash2,
+  Check,
 } from "lucide-react";
-import { RichTextEditor } from "@/components/rich-text-editor";
+import { RichTextEditor } from "@/components/rich-text-editor-lazy";
+import { uploadProjectImage } from "@/lib/upload-image";
 import { DeleteTaskModal } from "@/components/delete-task-modal";
 import { LinkedWorkItems } from "@/components/linked-work-items";
 import { IssueActivity } from "@/components/issue-activity";
 import { IssueAttachments } from "@/components/issue-attachments";
 import { AlertCircle } from "lucide-react";
 import { useMyProjectPermissions } from "@/lib/hooks/useMyProjectPermissions";
+import { formatHoursAsClock } from "@/lib/utils/timesheetPeriod";
 
 type IssueType = "TASK" | "BUG" | "STORY" | "EPIC" | "SUBTASK";
 type Priority = "HIGHEST" | "HIGH" | "MEDIUM" | "LOW" | "LOWEST";
@@ -90,6 +97,8 @@ interface IssueFull {
   createdAt?: string;
   updatedAt?: string;
   timeLogs?: { id: string; hours: number }[];
+  customFields?: CustomFieldDTO[];
+  customFieldValues?: Record<string, FieldValue>;
 }
 
 /**
@@ -101,8 +110,12 @@ interface IssueFull {
 function parseEtaHours(raw: string): number | null {
   const s = raw.trim().toLowerCase();
   if (!s) return null;
+  // Clock HH:MM / H:MM → hours + minutes ("01:30" → 1.5).
+  const clock = /^(\d{1,3}):([0-5]?\d)$/.exec(s);
+  if (clock) return Number(clock[1]) + Number(clock[2]) / 60;
   // Bare number → hours.
   if (/^\d+(\.\d+)?$/.test(s)) return parseFloat(s);
+  // Legacy Jira-style tokens still accepted (1d, 2h 30m, 1w …).
   const re = /(\d+(?:\.\d+)?)\s*(w|d|h|m)/g;
   let total = 0;
   let matched = false;
@@ -120,15 +133,10 @@ function parseEtaHours(raw: string): number | null {
   return matched ? total : null;
 }
 
-/** Format hours back into the Jira-style "1h 30m" string. */
+/** Format hours into the clock-style "HH:MM" string ("" when unset). */
 function formatEtaHours(h: number | null | undefined): string {
   if (h == null || h <= 0) return "";
-  const totalMinutes = Math.round(h * 60);
-  const hh = Math.floor(totalMinutes / 60);
-  const mm = totalMinutes % 60;
-  if (hh && mm) return `${hh}h ${mm}m`;
-  if (hh) return `${hh}h`;
-  return `${mm}m`;
+  return formatHoursAsClock(h);
 }
 
 const TYPE_META: Record<IssueType, { Icon: React.ElementType; label: string; color: string }> = {
@@ -142,6 +150,13 @@ const TYPE_META: Record<IssueType, { Icon: React.ElementType; label: string; col
 function typeMeta(t: string | undefined) {
   return TYPE_META[(t as IssueType) ?? "TASK"] ?? TYPE_META.TASK;
 }
+
+// The "flat" work types the breadcrumb switcher offers. EPIC and SUBTASK are
+// deliberately excluded — they carry hierarchy (epics contain children,
+// subtasks need a parent), so converting to/from them from a quick menu would
+// orphan children or break the tree. The switcher only appears when the issue
+// is already one of these.
+const WORK_TYPE_OPTIONS: IssueType[] = ["TASK", "STORY", "BUG"];
 
 const PRIORITY_META: Record<Priority, { label: string; color: string; Icon: React.ElementType }> = {
   HIGHEST: { label: "Highest", color: "text-red-600", Icon: ChevronsUp },
@@ -230,14 +245,29 @@ export function EditIssueModal({
   onSaved?: () => void;
 }) {
   const [currentIssueId, setCurrentIssueId] = useState<string | null>(issueId);
-  // Reset internal pointer whenever the parent opens a new issue.
-  useEffect(() => {
-    if (issueId) setCurrentIssueId(issueId);
-  }, [issueId]);
+  // Reset internal pointer whenever the parent opens a new issue. We adjust
+  // state DURING render (the React derived-state pattern) rather than in an
+  // effect so `currentIssueId` is correct on the very first render with the
+  // new prop. The old effect-based sync lagged one render, which let the
+  // subtask loader fire against the previous issue id and paint its result
+  // into the new issue's drawer.
+  const [syncedIssueId, setSyncedIssueId] = useState<string | null>(issueId);
+  if (issueId && issueId !== syncedIssueId) {
+    setSyncedIssueId(issueId);
+    setCurrentIssueId(issueId);
+  }
+  // Holds the latest issue id so async loaders can detect that the drawer has
+  // navigated away mid-flight and discard their (now stale) response. A plain
+  // closure capture can't do this — it would compare the captured value to
+  // itself — so we read through a ref kept current on every render.
+  const currentIssueIdRef = useRef<string | null>(currentIssueId);
+  currentIssueIdRef.current = currentIssueId;
 
   // Project-scoped perms decide which fields are editable and whether the
   // subtask composer is rendered at all. Server enforces; this just hides
   // controls the user can't actually use.
+  const { data: session } = useSession();
+  const currentUserId = session?.user?.id ?? null;
   const perms = useMyProjectPermissions(projectId);
   const canUpdateIssue = perms.loading || perms.has("Issue", "update");
   const canCreateIssue = perms.loading || perms.has("Issue", "create");
@@ -264,6 +294,12 @@ export function EditIssueModal({
   const [storyPoints, setStoryPoints] = useState("");
   const [eta, setEta] = useState("");
   const [etaError, setEtaError] = useState<string | null>(null);
+  const [customFields, setCustomFields] = useState<CustomFieldDTO[]>([]);
+  const [customValues, setCustomValues] = useState<Record<string, FieldValue>>({});
+  const memberOptions = useMemo(
+    () => members.map((m) => ({ id: m.userId, label: memberLabel(m) })),
+    [members],
+  );
 
   const [statusOpen, setStatusOpen] = useState(false);
   const statusRef = useRef<HTMLDivElement>(null);
@@ -287,6 +323,19 @@ export function EditIssueModal({
     void patch({ epicId: id || undefined });
     setEpicMenuOpen(false);
   }
+
+  // Inline work-type switcher on the breadcrumb key chip.
+  const [typeMenuOpen, setTypeMenuOpen] = useState(false);
+  const typeMenuRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    function onClick(e: MouseEvent) {
+      if (typeMenuOpen && typeMenuRef.current && !typeMenuRef.current.contains(e.target as Node)) {
+        setTypeMenuOpen(false);
+      }
+    }
+    document.addEventListener("mousedown", onClick);
+    return () => document.removeEventListener("mousedown", onClick);
+  }, [typeMenuOpen]);
 
   const [loading, setLoading] = useState(false);
   const [detailsOpen, setDetailsOpen] = useState(true);
@@ -317,18 +366,24 @@ export function EditIssueModal({
   const SUBTASK_PAGE = 20;
   async function loadSubtasks(initial: boolean) {
     if (!currentIssueId) return;
-    if (subtaskLoading) return;
-    if (!initial && !subtaskHasMore) return;
+    // A paginated follow-up bails if one is already in flight or there's no
+    // next page. The initial (reset) load must NOT bail on subtaskLoading —
+    // otherwise switching issues while a previous fetch is in flight drops the
+    // new issue's load and the stale fetch overwrites the cleared list.
+    if (!initial && (subtaskLoading || !subtaskHasMore)) return;
+    const reqParent = currentIssueId;
     setSubtaskLoading(true);
     try {
       const params = new URLSearchParams({
         projectId,
-        parentId: currentIssueId,
+        parentId: reqParent,
         type: "SUBTASK",
         limit: String(SUBTASK_PAGE),
       });
       if (!initial && subtaskCursor) params.set("cursor", subtaskCursor);
       const res = await fetch(`/api/issues?${params.toString()}`).then((r) => r.json());
+      // Discard a response whose issue we've already navigated away from.
+      if (reqParent !== currentIssueIdRef.current) return;
       if (res?.success) {
         const rows: SubtaskRow[] = (res.data ?? []).map((d: SubtaskRow) => d);
         setSubtasks((prev) => (initial ? rows : [...prev, ...rows]));
@@ -483,6 +538,8 @@ export function EditIssueModal({
           setDueDate(toDateInput(d.dueDate));
           setStoryPoints(d.storyPoints == null ? "" : String(d.storyPoints));
           setEta(formatEtaHours(d.eta));
+          setCustomFields(d.customFields ?? []);
+          setCustomValues(d.customFieldValues ?? {});
         }
         setStatuses(s?.success ? s.data : []);
         const mData = m?.success ? m.data?.members ?? m.data : [];
@@ -526,6 +583,34 @@ export function EditIssueModal({
     } catch {
       // ignore
     }
+  }
+
+  // Custom field inline edit — debounced so typing doesn't fire a PATCH per
+  // keystroke. Uses its own request (not `patch`) so the partial values map
+  // never gets merged onto `issue` (which holds the field *definitions*).
+  const cfTimers = useRef<Record<string, ReturnType<typeof setTimeout>>>({});
+  function commitCustomField(id: string, value: FieldValue) {
+    setCustomValues((prev) => ({ ...prev, [id]: value }));
+    const issueId = issue?.id;
+    if (!issueId) return;
+    clearTimeout(cfTimers.current[id]);
+    cfTimers.current[id] = setTimeout(() => {
+      void fetch(`/api/issues/${issueId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ customFields: { [id]: value } }),
+      })
+        .then((r) => r.json())
+        .then((res) => {
+          if (res?.success) {
+            window.dispatchEvent(
+              new CustomEvent("quiktrack:issue-updated", { detail: { projectId, issueId } }),
+            );
+            onSaved?.();
+          }
+        })
+        .catch(() => undefined);
+    }, 500);
   }
 
   if (!open) return null;
@@ -720,13 +805,59 @@ export function EditIssueModal({
                     </div>
                   )}
                   {issue.type !== "EPIC" && <span className="text-gray-400 mx-1">/</span>}
-                  <span className="inline-flex items-center gap-1">
-                    {(() => {
-                      const T = typeMeta(issue.type);
-                      return <T.Icon className={`h-3 w-3 ${T.color}`} />;
-                    })()}
-                    {issue.key}
-                  </span>
+                  {WORK_TYPE_OPTIONS.includes(issue.type as IssueType) ? (
+                    <div className="relative" ref={typeMenuRef}>
+                      <button
+                        type="button"
+                        onClick={() => setTypeMenuOpen((v) => !v)}
+                        className="inline-flex items-center gap-1 h-6 px-1.5 -mx-1 rounded hover:bg-gray-100"
+                        title="Change work type"
+                      >
+                        {(() => {
+                          const T = typeMeta(issue.type);
+                          return <T.Icon className={`h-3 w-3 ${T.color}`} />;
+                        })()}
+                        {issue.key}
+                        <ChevronDown className="h-3 w-3 text-gray-400" />
+                      </button>
+                      {typeMenuOpen && (
+                        <div className="absolute left-0 top-full mt-1 w-44 bg-white border border-gray-200 rounded-md shadow-lg z-50 py-1">
+                          <div className="px-3 py-1.5 text-[11px] font-semibold text-gray-500">
+                            Change work type
+                          </div>
+                          {WORK_TYPE_OPTIONS.map((t) => {
+                            const T = typeMeta(t);
+                            const active = t === issue.type;
+                            return (
+                              <button
+                                key={t}
+                                type="button"
+                                onClick={() => {
+                                  setTypeMenuOpen(false);
+                                  if (t !== issue.type) void patch({ type: t });
+                                }}
+                                className={`flex items-center gap-2 w-full px-3 py-1.5 text-sm text-left hover:bg-gray-50 ${
+                                  active ? "text-blue-700 font-medium" : "text-gray-700"
+                                }`}
+                              >
+                                <T.Icon className={`h-3.5 w-3.5 ${T.color}`} />
+                                {T.label}
+                                {active && <Check className="h-3.5 w-3.5 ml-auto text-blue-600" />}
+                              </button>
+                            );
+                          })}
+                        </div>
+                      )}
+                    </div>
+                  ) : (
+                    <span className="inline-flex items-center gap-1">
+                      {(() => {
+                        const T = typeMeta(issue.type);
+                        return <T.Icon className={`h-3 w-3 ${T.color}`} />;
+                      })()}
+                      {issue.key}
+                    </span>
+                  )}
                 </div>
                 {/* <div className="inline-flex items-center gap-1 text-gray-500">
                   <button className="p-1 hover:bg-gray-100 rounded" aria-label="Lock">
@@ -857,7 +988,12 @@ export function EditIssueModal({
                 <h3 className="text-sm font-semibold text-gray-900 mb-1">Description</h3>
                 {descEditing ? (
                   <div>
-                    <RichTextEditor value={description} onChange={setDescription} mentions={memberMentions} />
+                    <RichTextEditor
+                      value={description}
+                      onChange={setDescription}
+                      mentions={memberMentions}
+                      uploadImage={(file) => uploadProjectImage(projectId, file)}
+                    />
                     <div className="mt-2 flex items-center gap-2">
                       <button
                         type="button"
@@ -1056,8 +1192,8 @@ export function EditIssueModal({
                                 type="button"
                                 className="inline-flex items-center gap-1 text-xs text-blue-600 hover:underline"
                               >
-                                <Search className="h-3 w-3" />
-                                Choose existing
+                              
+                               
                               </button>
                               <button
                                 type="button"
@@ -1129,15 +1265,12 @@ export function EditIssueModal({
                           void patch({ assigneeId: id || undefined });
                         }}
                       />
-                      {!assignee && (
+                      {!assignee && currentUserId && members.some((m) => m.userId === currentUserId) && (
                         <button
                           type="button"
                           onClick={() => {
-                            const me = members[0];
-                            if (me) {
-                              setAssigneeId(me.userId);
-                              void patch({ assigneeId: me.userId });
-                            }
+                            setAssigneeId(currentUserId);
+                            void patch({ assigneeId: currentUserId });
                           }}
                           className="block text-xs text-blue-600 hover:underline mt-1"
                         >
@@ -1292,7 +1425,7 @@ export function EditIssueModal({
                             const hours = parseEtaHours(raw);
                             if (hours == null) {
                               setEtaError(
-                                "Use formats like 30m, 2h, 1h 30m, 1d, 1w, or a plain number for hours.",
+                                "Use HH:MM (e.g. 01:30), a number of hours (1.5), or tokens like 1d 2h.",
                               );
                               return;
                             }
@@ -1306,7 +1439,7 @@ export function EditIssueModal({
                             setEta(formatEtaHours(rounded));
                             void patch({ eta: rounded });
                           }}
-                          placeholder="e.g. 2h 30m"
+                          placeholder="00:00"
                           className={`w-28 text-sm bg-transparent focus:outline-none border rounded px-1 ${
                             etaError
                               ? "border-red-500 ring-1 ring-red-500"
@@ -1355,6 +1488,17 @@ export function EditIssueModal({
                         );
                       })()}
                     </DetailRow>
+
+                    {customFields.length > 0 && (
+                      <CustomFieldsSection
+                        variant="detail"
+                        fields={customFields}
+                        values={customValues}
+                        onChange={commitCustomField}
+                        members={memberOptions}
+                        disabled={!canUpdateIssue}
+                      />
+                    )}
                   </div>
                 )}
               </div>
@@ -1831,7 +1975,7 @@ function SubtaskEtaCell({
               setEditing(false);
             }
           }}
-          placeholder="2h 30m"
+          placeholder="00:00"
           className={`w-20 h-6 text-xs text-gray-700 bg-transparent rounded px-1 border focus:outline-none ${
             error ? "border-red-500 ring-1 ring-red-500" : "border-blue-500"
           }`}

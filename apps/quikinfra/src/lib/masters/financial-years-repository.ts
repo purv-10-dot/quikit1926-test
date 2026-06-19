@@ -3,6 +3,7 @@
  */
 
 import { db } from "@/lib/db";
+import { Prisma } from "@quikit/database";
 
 export interface FinancialYearRecord {
   id: string;
@@ -20,7 +21,7 @@ export interface FinancialYearRecord {
   updatedBy: string;
 }
 
-function toRecord(row: any): FinancialYearRecord {
+function toRecord(row: Prisma.CnFinancialYearGetPayload<{ include: { company: true } }>): FinancialYearRecord {
   return {
     id: row.id,
     orgId: row.orgId,
@@ -43,7 +44,7 @@ async function resolveCompanyId(
   provided?: string | null,
 ): Promise<string> {
   if (provided && String(provided).trim()) return String(provided).trim();
-  const company = await (db as any).cnCompany.findFirst({
+  const company = await db.cnCompany.findFirst({
     where: { orgId, status: "active" },
     select: { id: true },
     orderBy: { createdAt: "asc" },
@@ -75,7 +76,7 @@ function buildFinancialYearsWhere(
 export async function listFinancialYears(
   opts: ListFinancialYearsOptions,
 ): Promise<FinancialYearRecord[]> {
-  const rows = await (db as any).cnFinancialYear.findMany({
+  const rows = await db.cnFinancialYear.findMany({
     where: buildFinancialYearsWhere(opts),
     include: { company: true },
     orderBy: { startDate: "desc" },
@@ -88,7 +89,7 @@ export async function listFinancialYears(
 export async function countFinancialYears(
   opts: Pick<ListFinancialYearsOptions, "orgId" | "search">,
 ): Promise<number> {
-  return (db as any).cnFinancialYear.count({
+  return db.cnFinancialYear.count({
     where: buildFinancialYearsWhere(opts),
   });
 }
@@ -97,7 +98,7 @@ export async function findFinancialYearById(
   orgId: string,
   id: string,
 ): Promise<FinancialYearRecord | null> {
-  const row = await (db as any).cnFinancialYear.findFirst({
+  const row = await db.cnFinancialYear.findFirst({
     where: { id, orgId },
     include: { company: true },
   });
@@ -121,13 +122,13 @@ export async function createFinancialYear(
   const companyId = await resolveCompanyId(input.orgId, input.companyId);
 
   if (input.isCurrent) {
-    await (db as any).cnFinancialYear.updateMany({
+    await db.cnFinancialYear.updateMany({
       where: { orgId: input.orgId, isCurrent: true },
       data: { isCurrent: false, updatedBy: input.createdBy },
     });
   }
 
-  const row = await (db as any).cnFinancialYear.create({
+  const row = await db.cnFinancialYear.create({
     data: {
       orgId: input.orgId,
       companyId,
@@ -154,14 +155,14 @@ export async function updateFinancialYear(
   id: string,
   patch: UpdateFinancialYearInput,
 ): Promise<FinancialYearRecord | null> {
-  const existing = await (db as any).cnFinancialYear.findFirst({
+  const existing = await db.cnFinancialYear.findFirst({
     where: { id, orgId },
     select: { id: true },
   });
   if (!existing) return null;
 
   if (patch.isCurrent === true) {
-    await (db as any).cnFinancialYear.updateMany({
+    await db.cnFinancialYear.updateMany({
       where: {
         orgId,
         isCurrent: true,
@@ -179,7 +180,7 @@ export async function updateFinancialYear(
   if (patch.isCurrent !== undefined) data.isCurrent = !!patch.isCurrent;
   if (patch.status !== undefined) data.status = patch.status;
 
-  const row = await (db as any).cnFinancialYear.update({
+  const row = await db.cnFinancialYear.update({
     where: { id },
     data,
     include: { company: true },
@@ -192,7 +193,7 @@ export async function deleteFinancialYear(
   id: string,
   updatedBy: string,
 ): Promise<boolean> {
-  const res = await (db as any).cnFinancialYear.updateMany({
+  const res = await db.cnFinancialYear.updateMany({
     where: { id, orgId },
     data: { status: "inactive", updatedBy },
   });

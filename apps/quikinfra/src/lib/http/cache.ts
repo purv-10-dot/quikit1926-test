@@ -45,7 +45,7 @@ export function cachedJson(
   tier: MasterCacheTier = "short",
   init?: { status?: number; headers?: HeadersInit },
 ): NextResponse {
-  const res = NextResponse.json(body as any, init);
+  const res = NextResponse.json(body, init);
   res.headers.set("Cache-Control", POLICIES[tier]);
   // Explicit Vary so two users on the same browser don't share cache —
   // every authenticated request carries the session cookie, so varying
@@ -59,7 +59,7 @@ export function noStoreJson(
   body: unknown,
   init?: { status?: number; headers?: HeadersInit },
 ): NextResponse {
-  const res = NextResponse.json(body as any, init);
+  const res = NextResponse.json(body, init);
   res.headers.set("Cache-Control", "no-store");
   return res;
 }

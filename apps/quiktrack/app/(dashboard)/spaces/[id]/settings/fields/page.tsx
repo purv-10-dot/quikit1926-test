@@ -1,8 +1,23 @@
-export default function Page() {
+"use client";
+
+import { use } from "react";
+import { RequireProjectPerm } from "@/components/shell/require-project-perm";
+import { CustomFieldsManager } from "@/components/custom-fields/custom-fields-manager";
+
+export default function SpaceFieldsPage({
+  params,
+}: {
+  params: Promise<{ id: string }> | { id: string };
+}) {
+  const resolved =
+    typeof (params as Promise<{ id: string }>).then === "function"
+      ? use(params as Promise<{ id: string }>)
+      : (params as { id: string });
+  const projectId = resolved.id;
+
   return (
-    <div className="px-10 py-7">
-      <h1 className="text-2xl font-semibold text-gray-900 mb-2">Fields</h1>
-      <p className="text-sm text-gray-500">Coming soon.</p>
-    </div>
+    <RequireProjectPerm projectId={projectId} resource="ProjectMember" action="update">
+      <CustomFieldsManager scope="space" projectId={projectId} />
+    </RequireProjectPerm>
   );
 }

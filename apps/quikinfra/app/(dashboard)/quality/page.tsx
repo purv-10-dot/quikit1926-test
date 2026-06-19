@@ -9,6 +9,11 @@ import { QuickCreateDrawer } from "@/components/QuickCreateDrawer";
 import { useProjects } from "@/hooks/use-masters";
 import { useMenuActions } from "@/hooks/use-permissions";
 
+interface InspectionRow {
+  id?: string; result?: string; category?: string; projectId?: string; projectName?: string;
+  [key: string]: unknown;
+}
+
 export default function QualityPage() {
   const [drawerOpen, setDrawerOpen] = useState(false);
   const { canAdd } = useMenuActions("/quality");
@@ -27,13 +32,13 @@ export default function QualityPage() {
   const projects = projectsData?.data ?? [];
 
   const checklists = chkResult?.data ?? [];
-  const inspections = inspResult?.data ?? [];
-  const pendingInspections = inspections.filter((i: any) => i.result === "Conditional").length;
-  const passed = inspections.filter((i: any) => i.result === "Pass").length;
-  const failed = inspections.filter((i: any) => i.result === "Fail").length;
+  const inspections = (inspResult?.data ?? []) as InspectionRow[];
+  const pendingInspections = inspections.filter((i) => i.result === "Conditional").length;
+  const passed = inspections.filter((i) => i.result === "Pass").length;
+  const failed = inspections.filter((i) => i.result === "Fail").length;
 
   const projectOptions = useMemo(
-    () => projects.map((p: any) => ({ value: p.id, label: `${p.code ?? p.id} — ${p.name ?? ""}`.trim() })),
+    () => projects.map((p) => ({ value: p.id, label: `${p.code ?? p.id} — ${p.name ?? ""}`.trim() })),
     [projects],
   );
 
@@ -81,7 +86,7 @@ export default function QualityPage() {
     return map;
   }, [projects]);
 
-  const columns: ColDef<any>[] = useMemo(() => {
+  const columns: ColDef<InspectionRow>[] = useMemo(() => {
     const resultColor = (r: string) => {
       if (r === "Pass") return "bg-green-50 text-green-700";
       if (r === "Fail") return "bg-red-50 text-red-700";
@@ -94,7 +99,7 @@ export default function QualityPage() {
         label: "Project",
         sortable: true,
         searchable: true,
-        render: (row) => projectNameById.get(row.projectId) ?? row.projectName ?? "—",
+        render: (row) => projectNameById.get(row.projectId ?? "") ?? row.projectName ?? "—",
       },
       { key: "boqItem", label: "BOQ Item", sortable: true, searchable: true },
       { key: "checklistName", label: "Checklist Name", sortable: true, searchable: true },
@@ -117,7 +122,7 @@ export default function QualityPage() {
         options: ["Pass", "Fail", "Conditional"],
         sortable: true,
         render: (row) => (
-          <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-semibold ${resultColor(row.result)}`}>{row.result}</span>
+          <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-semibold ${resultColor(row.result ?? "")}`}>{row.result}</span>
         ),
       },
       { key: "remarks", label: "Remarks", searchable: true },
@@ -149,8 +154,6 @@ export default function QualityPage() {
             data={inspections}
             onAdd={canAdd ? () => setDrawerOpen(true) : undefined}
             addLabel="New Inspection/Checklist"
-            defaultSort="date"
-            defaultSortDir="desc"
           />
         </div>
       </PageContainer>

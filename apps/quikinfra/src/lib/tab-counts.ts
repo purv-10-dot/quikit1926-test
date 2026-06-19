@@ -19,10 +19,10 @@
  * match on the row's `status` field against the tab's `key`.
  */
 
-export interface TabSpec {
+export interface TabSpec<T = unknown> {
   key: string;
   label: string;
-  matches?: (row: any) => boolean;
+  matches?: (row: T) => boolean;
 }
 
 export interface TabWithCount {
@@ -34,8 +34,9 @@ export interface TabWithCount {
 const ALL_KEY = "all";
 
 function defaultMatcher(tabKey: string) {
-  return (row: any) =>
-    String(row?.status ?? "").toLowerCase() === tabKey.toLowerCase();
+  return (row: unknown) =>
+    String((row as { status?: unknown })?.status ?? "").toLowerCase() ===
+    tabKey.toLowerCase();
 }
 
 /**
@@ -43,8 +44,8 @@ function defaultMatcher(tabKey: string) {
  * entry. The "all" tab gets the total row count; every other tab is
  * counted via its `matches` predicate (or the default status matcher).
  */
-export function buildTabCounts(
-  rows: any[] | undefined,
+export function buildTabCounts<T>(
+  rows: T[] | undefined,
   tabs: TabSpec[],
 ): TabWithCount[] {
   const data = rows ?? [];

@@ -5,6 +5,7 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Button, Checkbox } from "@quikit/ui";
 import {
   PERMISSION_TREE,
+  isValidPermissionPair,
   walkLeaves,
   type PermissionLeaf,
 } from "@/lib/api/permissionsRegistry";
@@ -30,7 +31,15 @@ export function RolePermissionMatrix({ roleId }: { roleId: string }) {
 
   useEffect(() => {
     if (q.data) {
-      setGranted(new Set(q.data.permissions.map((p) => `${p.resource}:${p.action}`)));
+      // Drop stale (resource, action) pairs no longer in the registry so they
+      // don't ride along in the PUT and trip the server's validity check.
+      setGranted(
+        new Set(
+          q.data.permissions
+            .filter((p) => isValidPermissionPair(p.resource, p.action))
+            .map((p) => `${p.resource}:${p.action}`),
+        ),
+      );
     }
   }, [q.data]);
 

@@ -22,7 +22,7 @@ export const PATCH = withOrgAuth<{ id: string; commentId: string }>(
       return NextResponse.json({ success: false, error: "Not found" }, { status: 404 });
     }
     if (comment.userId !== userId) {
-      return NextResponse.json({ success: false, error: "Forbidden" }, { status: 403 });
+      return NextResponse.json({ success: false, error: "You don't have access to this." }, { status: 403 });
     }
     const parsed = updateCommentSchema.safeParse(await req.json());
     if (!parsed.success) {
@@ -55,7 +55,7 @@ export const DELETE = withOrgAuth<{ id: string; commentId: string }>(
       return NextResponse.json({ success: false, error: "Not found" }, { status: 404 });
     }
     if (comment.userId !== userId) {
-      return NextResponse.json({ success: false, error: "Forbidden" }, { status: 403 });
+      return NextResponse.json({ success: false, error: "You don't have access to this." }, { status: 403 });
     }
     await db.qtIssueComment.update({
       where: { id: comment.id },

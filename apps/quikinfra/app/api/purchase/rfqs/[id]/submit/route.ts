@@ -1,3 +1,4 @@
+import { toErrorMessage, getErrorCode } from "@/lib/api/errors";
 import { requirePurchaseAction } from "@/lib/auth/requirePurchaseAction";
 import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
@@ -112,6 +113,12 @@ export async function POST(
   }
 
   let updated = await findRfqById(ctx.orgId, rfq.id);
+  if (!updated) {
+    return NextResponse.json(
+      { error: "RFQ not found after submit." },
+      { status: 500 },
+    );
+  }
 
   // Fan out the RFQ PDF to vendors ONLY when the workflow auto-approved
   // (no multi-step approval was required). For multi-step workflows the
@@ -130,10 +137,10 @@ export async function POST(
           `skipped=${emailResult.skipped.length} ` +
           `failed=${emailResult.failed.length}`,
       );
-    } catch (e: any) {
+    } catch (e: unknown) {
       console.warn(
         `[rfq:submit] mail fan-out threw for ${updated.rfqNumber}:`,
-        e?.message ?? e,
+        toErrorMessage(e),
       );
     }
 
@@ -146,11 +153,12 @@ export async function POST(
       emailResult.sent.length > 0 &&
       updated.status === "approved"
     ) {
-      await (db as any).cnRfq.update({
+      await db.cnRfq.update({
         where: { id: rfq.id },
         data: { status: "sent", updatedBy: ctx.userId },
       });
-      updated = await findRfqById(ctx.orgId, rfq.id);
+      const refetched = await findRfqById(ctx.orgId, rfq.id);
+      if (refetched) updated = refetched;
     }
   }
 

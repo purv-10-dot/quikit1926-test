@@ -1,3 +1,4 @@
+import { toErrorMessage, getErrorCode } from "@/lib/api/errors";
 import { NextRequest, NextResponse } from "next/server";
 import { requireMastersAction } from "@/lib/auth/requireMastersAction";
 import { getTenantContext, hasMatrixAction } from "@/lib/auth/context";
@@ -42,8 +43,8 @@ async function handleUpdate(req: NextRequest, id: string) {
     });
     if (!next) return NextResponse.json({ error: "UOM not found" }, { status: 404 });
     return NextResponse.json(next);
-  } catch (err: any) {
-    if (err?.code === "P2002") {
+  } catch (err: unknown) {
+    if (getErrorCode(err) === "P2002") {
       return NextResponse.json(
         { error: "A UOM with this code already exists" },
         { status: 409 },
@@ -51,7 +52,7 @@ async function handleUpdate(req: NextRequest, id: string) {
     }
     console.error("[uom.update] failed:", err);
     return NextResponse.json(
-      { error: err?.message ?? "Failed to update UOM" },
+      { error: toErrorMessage(err, "Failed to update UOM") },
       { status: 500 },
     );
   }

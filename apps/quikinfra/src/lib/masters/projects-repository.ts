@@ -3,6 +3,7 @@
  */
 
 import { db } from "@/lib/db";
+import { Prisma } from "@quikit/database";
 
 export interface ProjectRecord {
   id: string;
@@ -42,7 +43,7 @@ function isoDate(d: Date | null | undefined): string {
   }
 }
 
-function toRecord(row: any): ProjectRecord {
+function toRecord(row: Prisma.CnProjectGetPayload<{ include: { client: true } }>): ProjectRecord {
   return {
     id: row.id,
     orgId: row.orgId,
@@ -124,7 +125,7 @@ function buildProjectsWhere(
 export async function listProjects(
   opts: ListProjectsOptions,
 ): Promise<ProjectRecord[]> {
-  const rows = await (db as any).cnProject.findMany({
+  const rows = await db.cnProject.findMany({
     where: buildProjectsWhere(opts),
     include: { client: true },
     orderBy: { createdAt: "desc" },
@@ -140,14 +141,14 @@ export async function countProjects(
     "orgId" | "search" | "includeInactive" | "projectIds"
   >,
 ): Promise<number> {
-  return (db as any).cnProject.count({ where: buildProjectsWhere(opts) });
+  return db.cnProject.count({ where: buildProjectsWhere(opts) });
 }
 
 export async function findProjectById(
   orgId: string,
   id: string,
 ): Promise<ProjectRecord | null> {
-  const row = await (db as any).cnProject.findFirst({
+  const row = await db.cnProject.findFirst({
     where: { id, orgId },
     include: { client: true },
   });
@@ -181,7 +182,7 @@ export interface CreateProjectInput {
 export async function createProject(
   input: CreateProjectInput,
 ): Promise<ProjectRecord> {
-  const row = await (db as any).cnProject.create({
+  const row = await db.cnProject.create({
     data: {
       orgId: input.orgId,
       code: input.code.trim().toUpperCase(),
@@ -230,7 +231,7 @@ export async function updateProject(
   id: string,
   patch: UpdateProjectInput,
 ): Promise<ProjectRecord | null> {
-  const existing = await (db as any).cnProject.findFirst({
+  const existing = await db.cnProject.findFirst({
     where: { id, orgId },
     select: { id: true },
   });
@@ -274,7 +275,7 @@ export async function updateProject(
     data.projectManagerId = patch.projectManagerId || null;
   if (patch.status !== undefined) data.status = patch.status;
 
-  const row = await (db as any).cnProject.update({
+  const row = await db.cnProject.update({
     where: { id },
     data,
     include: { client: true },
@@ -287,7 +288,7 @@ export async function deleteProject(
   id: string,
   updatedBy: string,
 ): Promise<boolean> {
-  const res = await (db as any).cnProject.updateMany({
+  const res = await db.cnProject.updateMany({
     where: { id, orgId },
     data: { status: "inactive", updatedBy },
   });

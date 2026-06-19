@@ -12,6 +12,7 @@ import {
   FormRow,
   FormSection,
 } from "@quikit/ui";
+import { InactiveStatusNotice } from "@/components/FormDrawer";
 import type { VendorCreateInput } from "@/lib/schemas/masters";
 
 export interface VendorInitial extends Partial<VendorCreateInput> {
@@ -253,6 +254,7 @@ export function VendorFormPanel({ open, onClose, initial, onSaved }: Props) {
                 onChange={(e) => update("status", e.target.value as "active" | "inactive" | "blacklisted")}
                 options={STATUS_OPTIONS}
               />
+              {(form.status ?? "active") === "inactive" && <InactiveStatusNotice entityName="Vendor" />}
             </Field>
           </FormRow>
         </FormSection>

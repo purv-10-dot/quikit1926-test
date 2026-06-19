@@ -12,27 +12,65 @@
  * `cn_assets` Prisma master.
  */
 
-const g = globalThis as any;
+export interface AssetRecord {
+  id: string;
+  assetCode: string;
+  name: string;
+  categoryId: string;
+  model?: string | null;
+  purchaseDate?: string | null;
+  cost?: number | null;
+  status: string;
+  requiresApproval?: boolean;
+  createdAt: string;
+  updatedAt: string;
+}
+export interface AssetCategory {
+  id: string;
+  name: string;
+  parentId?: string | null;
+  active: boolean;
+  createdAt: string;
+  updatedAt: string;
+}
+export interface AssetIssuance {
+  id: string;
+  issuanceNumber: string;
+  assetId: string;
+  issuedTo?: string | null;
+  issueDate?: string | null;
+  expectedReturn?: string | null;
+  returnable?: boolean;
+  notes?: string | null;
+  status: string;
+  returnedAt?: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+interface AssetMgmtStore {
+  assets: AssetRecord[];
+  categories: AssetCategory[];
+  issuances: AssetIssuance[];
+  nextSeq: number;
+}
+
+const g = globalThis as unknown as { __qcAssetMgmt?: AssetMgmtStore };
 
 if (!g.__qcAssetMgmt) {
   g.__qcAssetMgmt = {
-    assets: [] as any[],
-    categories: [] as any[],
-    issuances: [] as any[],
+    assets: [],
+    categories: [],
+    issuances: [],
     nextSeq: 1,
   };
 }
 
-const m = g.__qcAssetMgmt as {
-  assets: any[];
-  categories: any[];
-  issuances: any[];
-  nextSeq: number;
-};
+const m = g.__qcAssetMgmt;
 
-export function getAssets(): any[] { return m.assets; }
-export function getCategories(): any[] { return m.categories; }
-export function getIssuances(): any[] { return m.issuances; }
+export function getAssets(): AssetRecord[] { return m.assets; }
+export function getCategories(): AssetCategory[] { return m.categories; }
+export function getIssuances(): AssetIssuance[] { return m.issuances; }
 
 export function nextId(prefix: string): string {
   return `${prefix}-${Date.now().toString(36)}-${m.nextSeq++}`;

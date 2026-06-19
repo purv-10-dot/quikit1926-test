@@ -1,10 +1,11 @@
+import { toErrorMessage, getErrorCode } from "@/lib/api/errors";
 import { NextRequest, NextResponse } from "next/server";
 import * as XLSX from "xlsx";
 import { withOrgAuthForResource } from "@/lib/api/withOrgAuth";
 import { getTenantContext } from "@/lib/auth/context";
 import { ok, err } from "@/lib/http/envelope";
 import { logger } from "@/lib/observability/logger";
-import { boqService, type ImportMode, type RawSheet } from "@/lib/boq";
+import { boqService, type ImportMode, type RawSheet, type SheetCell } from "@/lib/boq";
 
 const auth = withOrgAuthForResource("construction.boq");
 
@@ -66,7 +67,9 @@ export const POST = auth.importOrEdit<{ projectId: string }>(async (
 
   // Universal mode expects a JSON-stringified mapping in the `universalMapping`
   // form field: { bySheet: { [sheetName]: { headerRowIndex, colMap } } }
-  let universalMapping: any = undefined;
+  let universalMapping: Parameters<
+    typeof boqService.previewDualImport
+  >[4] = undefined;
   if (selectedMode === "UNIVERSAL") {
     const raw = formData.get("universalMapping");
     if (typeof raw !== "string" || !raw.trim()) {
@@ -89,7 +92,7 @@ export const POST = auth.importOrEdit<{ projectId: string }>(async (
   try {
     const buffer = Buffer.from(await file.arrayBuffer());
     workbook = XLSX.read(buffer, { type: "buffer", cellDates: false });
-  } catch (e: any) {
+  } catch (e: unknown) {
     logger.error({ msg: "boq_upload_parse_failed", err: e, fileName: file.name });
     return err(
       "PARSE_FAILED",
@@ -101,11 +104,11 @@ export const POST = auth.importOrEdit<{ projectId: string }>(async (
   // Convert to RawSheet[] — adapters handle header detection themselves.
   const rawSheets: RawSheet[] = workbook.SheetNames.map((sheetName) => {
     const sheet = workbook.Sheets[sheetName];
-    const rows: any[][] = XLSX.utils.sheet_to_json(sheet, {
+    const rows = XLSX.utils.sheet_to_json(sheet, {
       header: 1,
       defval: null,
       blankrows: false,
-    });
+    }) as SheetCell[][];
     return { sheetName, rows };
   });
 
@@ -123,12 +126,12 @@ export const POST = auth.importOrEdit<{ projectId: string }>(async (
       selectedMode,
       universalMapping,
     );
-  } catch (e: any) {
-    if (e?.code === "BOQ_LOCKED") {
-      return err("BOQ_LOCKED", e.message, 403);
+  } catch (e: unknown) {
+    if (getErrorCode(e) === "BOQ_LOCKED") {
+      return err("BOQ_LOCKED", toErrorMessage(e), 403);
     }
     logger.error({ msg: "boq_preview_pipeline_failed", err: e, fileName: file.name });
-    return err("PIPELINE_FAILED", e?.message ?? "Pipeline failed", 500);
+    return err("PIPELINE_FAILED", toErrorMessage(e) ?? "Pipeline failed", 500);
   }
 
   logger.info({

@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import dynamic from "next/dynamic";
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
   Search,
@@ -11,12 +12,22 @@ import {
   User as UserIcon,
   X,
 } from "lucide-react";
-import { EditIssueModal } from "@/components/edit-issue-modal";
 import type { BoardStatus, EpicLite } from "./board-meta";
 import { BoardColumn } from "./board-column";
 import { AddColumnTile } from "./add-column-tile";
 import { BoardFilterSelect, type BoardFilterOption } from "./board-filter-select";
+import { BoardFilterMultiSelect } from "./board-filter-multi-select";
+import { useQueryClient } from "@tanstack/react-query";
+import { useApiData } from "@/lib/hooks/useApiData";
 import { useMembersChanged } from "@/lib/hooks/useMembersChanged";
+
+// The edit-issue modal pulls in the full rich-text editor (~17 tiptap packages).
+// It only renders when a card is opened, so load it on demand to keep it out of
+// the board's initial bundle.
+const EditIssueModal = dynamic(
+  () => import("@/components/edit-issue-modal").then((m) => m.EditIssueModal),
+  { ssr: false },
+);
 
 interface BoardMember {
   userId: string;
@@ -47,13 +58,26 @@ function memberColor(seed: string): string {
 }
 
 export function BoardView({ projectId }: { projectId: string }) {
+  const queryClient = useQueryClient();
   const [statuses, setStatuses] = useState<BoardStatus[]>([]);
   const [activeSprintId, setActiveSprintId] = useState<string | null>(null);
   const [allSprints, setAllSprints] = useState<{ id: string; name: string; status: string }[]>([]);
   const [bootLoading, setBootLoading] = useState(true);
   const [openIssueId, setOpenIssueId] = useState<string | null>(null);
   const [epicsById, setEpicsById] = useState<Record<string, EpicLite>>({});
-  const [members, setMembers] = useState<BoardMember[]>([]);
+  // Shared with the backlog + work-item views via the same query key, so the
+  // avatar stack is cached across navigation and the dev StrictMode double-fetch
+  // collapses to one request. (Statuses stay local — the board edits them.)
+  const { data: members = [] } = useApiData<BoardMember[]>(
+    ["quiktrack", "project-members", projectId],
+    `/api/projects/${projectId}/members`,
+    {
+      select: (d) => {
+        const payload = d as { members?: BoardMember[] } | BoardMember[] | null;
+        return Array.isArray(payload) ? payload : payload?.members ?? [];
+      },
+    },
+  );
 
   // Search input + debounced applied search the API actually uses.
   const [searchInput, setSearchInput] = useState("");
@@ -74,22 +98,13 @@ export function BoardView({ projectId }: { projectId: string }) {
   useEffect(() => {
     let alive = true;
     (async () => {
-      const [statusesRes, sprintsRes, epicsRes, membersRes] = await Promise.all([
+      const [statusesRes, sprintsRes, epicsRes] = await Promise.all([
         fetch(`/api/projects/${projectId}/statuses`).then((r) => r.json()),
         fetch(`/api/sprints?projectId=${projectId}`).then((r) => r.json()),
         fetch(`/api/issues?projectId=${projectId}&type=EPIC&limit=200`).then((r) => r.json()),
-        fetch(`/api/projects/${projectId}/members`).then((r) => r.json()).catch(() => null),
       ]);
       if (!alive) return;
       if (statusesRes?.success) setStatuses(statusesRes.data || []);
-      if (membersRes?.success) {
-        const list = Array.isArray(membersRes.data?.members)
-          ? membersRes.data.members
-          : Array.isArray(membersRes.data)
-            ? membersRes.data
-            : [];
-        setMembers(list);
-      }
       const sprintList: Array<{ id: string; name: string; status: string }> =
         sprintsRes?.success ? sprintsRes.data ?? [] : [];
       setAllSprints(sprintList);
@@ -113,21 +128,13 @@ export function BoardView({ projectId }: { projectId: string }) {
     };
   }, [projectId]);
 
-  // Refetch members when someone is added/removed via the Add-people modal,
-  // so the avatar stack updates without a page reload.
+  // Refetch members when someone is added/removed via the Add-people modal —
+  // invalidate the shared query so the avatar stack (and every other view)
+  // updates without a page reload.
   useMembersChanged(projectId, () => {
-    fetch(`/api/projects/${projectId}/members`)
-      .then((r) => r.json())
-      .then((res) => {
-        if (!res?.success) return;
-        const list = Array.isArray(res.data?.members)
-          ? res.data.members
-          : Array.isArray(res.data)
-            ? res.data
-            : [];
-        setMembers(list);
-      })
-      .catch(() => undefined);
+    void queryClient.invalidateQueries({
+      queryKey: ["quiktrack", "project-members", projectId],
+    });
   });
 
   // Refresh whenever an issue is created or updated elsewhere — each column
@@ -388,7 +395,16 @@ function Toolbar({
     .filter((m): m is BoardMember & { user: NonNullable<BoardMember["user"]> } => Boolean(m.user))
     .slice(0, 5);
   const overflow = Math.max(0, members.filter((m) => m.user).length - visibleMembers.length);
-  const toggleAssignee = (id: string) => setFilterAssigneeId(filterAssigneeId === id ? "" : id);
+  // Assignee filter is multi-select, stored as a comma-joined id list ("null"
+  // means Unassigned). Toggling adds/removes a single id from that list.
+  const selectedAssignees = filterAssigneeId ? filterAssigneeId.split(",").filter(Boolean) : [];
+  const toggleAssignee = (id: string) =>
+    setFilterAssigneeId(
+      (selectedAssignees.includes(id)
+        ? selectedAssignees.filter((x) => x !== id)
+        : [...selectedAssignees, id]
+      ).join(","),
+    );
 
   const activeCount =
     (filterAssigneeId ? 1 : 0) +
@@ -416,7 +432,7 @@ function Toolbar({
             onClick={() => toggleAssignee("null")}
             title="Unassigned"
             className={`h-7 w-7 rounded-full bg-gray-100 ring-2 ring-white flex items-center justify-center transition ${
-              filterAssigneeId === "null" ? "outline outline-2 outline-blue-500 z-10" : "hover:bg-gray-200"
+              selectedAssignees.includes("null") ? "outline outline-2 outline-blue-500 z-10" : "hover:bg-gray-200"
             }`}
           >
             <UserIcon className="h-3 w-3 text-gray-500" />
@@ -427,7 +443,7 @@ function Toolbar({
             const initials =
               (u.firstName?.[0] ?? u.email[0] ?? "?").toUpperCase() +
               (u.lastName?.[0] ?? "").toUpperCase();
-            const active = filterAssigneeId === u.id;
+            const active = selectedAssignees.includes(u.id);
             return (
               <button
                 key={u.id}
@@ -477,13 +493,14 @@ function Toolbar({
           </button>
           {filterOpen && (
             <div className="absolute left-0 top-full z-30 mt-1 w-72 rounded border border-gray-200 bg-white p-3 shadow-lg">
-              <BoardFilterSelect
+              <BoardFilterMultiSelect
                 label="Assignee"
                 value={filterAssigneeId}
                 onChange={setFilterAssigneeId}
+                summaryNoun="people"
+                searchable
                 options={(() => {
                   const opts: BoardFilterOption[] = [
-                    { value: "", label: "Any" },
                     { value: "null", label: "Unassigned" },
                   ];
                   members

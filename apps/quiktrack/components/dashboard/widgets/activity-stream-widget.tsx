@@ -30,12 +30,29 @@ function timeLabel(ts: number): string {
   return `${dayLabel(ts)} at ${d.toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" })}`;
 }
 
+const PAGE = 20;
+const MAX_ACTIVITY = 100; // /api/activity caps `limit` at 100.
+
 export function ActivityStreamWidget({ refreshKey = 0 }: { refreshKey?: number }) {
   const [rows, setRows] = useState<HistoryEntry[] | null>(null);
+  const [limit, setLimit] = useState(PAGE);
+  const [loadingMore, setLoadingMore] = useState(false);
+
+  // A fresh refresh resets paging back to the first page.
+  useEffect(() => {
+    setLimit(PAGE);
+  }, [refreshKey]);
 
   useEffect(() => {
-    void fetchActivity(20).then((r) => setRows(r));
-  }, [refreshKey]);
+    void fetchActivity(limit).then((r) => {
+      setRows(r);
+      setLoadingMore(false);
+    });
+  }, [refreshKey, limit]);
+
+  // The API returns the top N most recent rows with no explicit cursor, so we
+  // infer "more available" from a full page that hasn't hit the server cap.
+  const hasMore = rows !== null && rows.length >= limit && limit < MAX_ACTIVITY;
 
   const groups = useMemo(() => {
     if (!rows) return [] as { day: string; items: HistoryEntry[] }[];
@@ -133,14 +150,21 @@ export function ActivityStreamWidget({ refreshKey = 0 }: { refreshKey?: number }
               </ul>
             </div>
           ))}
-          <div className="px-4 py-3 border-t border-gray-100">
-            <button
-              type="button"
-              className="w-full h-8 text-xs text-gray-700 border border-gray-300 rounded hover:bg-gray-50"
-            >
-              Show more...
-            </button>
-          </div>
+          {hasMore && (
+            <div className="px-4 py-3 border-t border-gray-100">
+              <button
+                type="button"
+                onClick={() => {
+                  setLoadingMore(true);
+                  setLimit((l) => Math.min(MAX_ACTIVITY, l + PAGE));
+                }}
+                disabled={loadingMore}
+                className="w-full h-8 text-xs text-gray-700 border border-gray-300 rounded hover:bg-gray-50 disabled:opacity-60"
+              >
+                {loadingMore ? "Loading…" : "Show more..."}
+              </button>
+            </div>
+          )}
         </div>
       )}
       <div className="px-4 py-2 border-t border-gray-100 text-[11px] text-gray-500 inline-flex items-center gap-1">

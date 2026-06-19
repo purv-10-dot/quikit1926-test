@@ -10,6 +10,12 @@ import {
   updateEstimation,
 } from "@/lib/projects/estimation-repository";
 import { canActOnCurrentStep } from "@/lib/approvals/workflow-rbac";
+import {
+  APPROVAL_INSTANCE_INCLUDE,
+  buildApprovalDto,
+  type ApprovalDto,
+  type ApprovalInstanceFull,
+} from "@/lib/approvals/approval-dto";
 
 /**
  * Single-item estimation route — used by the grid's Edit and Delete
@@ -41,15 +47,12 @@ export async function GET(
   // Fan out to the approval instance (if any) so the detail view can
   // render a real timeline — same shape as the PR detail route so the
   // shared ApprovalTimeline component renders without adapter code.
-  let approval: any = null;
-  let instance: any = null;
+  let approval: ApprovalDto | null = null;
+  let instance: ApprovalInstanceFull | null = null;
   if (row.approvalId) {
-    instance = await (db as any).cnApprovalInstance.findFirst({
+    instance = await db.cnApprovalInstance.findFirst({
       where: { id: row.approvalId, orgId: ctx.orgId },
-      include: {
-        history: { orderBy: { actionAt: "asc" } },
-        workflow: { include: { steps: { orderBy: { stepOrder: "asc" } } } },
-      },
+      include: APPROVAL_INSTANCE_INCLUDE,
     });
   }
 
@@ -59,7 +62,7 @@ export async function GET(
   const userIdsToResolve = new Set<string>();
   if (row.createdBy) userIdsToResolve.add(row.createdBy);
   if (row.updatedBy) userIdsToResolve.add(row.updatedBy);
-  if ((row as any).approvedBy) userIdsToResolve.add((row as any).approvedBy);
+  if (row.approvedBy) userIdsToResolve.add(row.approvedBy);
   if (instance) {
     if (instance.requestedById) userIdsToResolve.add(instance.requestedById);
     for (const h of instance.history) {
@@ -82,42 +85,13 @@ export async function GET(
       row.projectId ?? null,
     );
 
-    approval = {
-      id: instance.id,
-      status: instance.status,
-      currentStepOrder: instance.currentStepOrder,
-      canActOnCurrentStep: callerCanActOnCurrentStep,
-      completedAt: instance.completedAt?.toISOString?.() ?? null,
-      requestedAt: instance.requestedAt.toISOString(),
-      requestedById: instance.requestedById,
-      requestedByName: nameById.get(instance.requestedById) ?? "User",
-      workflow: {
-        id: instance.workflow.id,
-        name: instance.workflow.name,
-        steps: instance.workflow.steps.map((s: any) => ({
-          stepOrder: s.stepOrder,
-          approverRoleId: s.approverRoleId,
-          approverUserId: s.approverUserId,
-          approverUserName: s.approverUserId
-            ? (nameById.get(s.approverUserId) ?? null)
-            : null,
-        })),
-      },
-      history: instance.history.map((h: any) => ({
-        stepOrder: h.stepOrder,
-        action: h.action,
-        actionById: h.actionById,
-        actionByName: nameById.get(h.actionById) ?? "User",
-        actionAt: h.actionAt.toISOString(),
-        comments: h.comments,
-      })),
-    };
+    approval = buildApprovalDto(instance, nameById, callerCanActOnCurrentStep);
   }
 
   const createdByName = row.createdBy ? nameById.get(row.createdBy) : null;
   const updatedByName = row.updatedBy ? nameById.get(row.updatedBy) : null;
-  const approvedByName = (row as any).approvedBy
-    ? nameById.get((row as any).approvedBy) ?? (row as any).approvedBy
+  const approvedByName = row.approvedBy
+    ? nameById.get(row.approvedBy) ?? row.approvedBy
     : null;
 
   return NextResponse.json({

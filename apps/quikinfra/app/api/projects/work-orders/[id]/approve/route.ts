@@ -31,7 +31,7 @@ export async function POST(
     return envelopeErr("FORBIDDEN", `Action "edit" not allowed for pm.work_order`, 403);
   }
 
-  let body: any = {};
+  let body: { action?: string; comments?: string } = {};
   try {
     body = await req.json();
   } catch {
@@ -40,7 +40,7 @@ export async function POST(
   const action = (body.action ?? "approve") as "approve" | "reject" | "return";
   const comments = String(body.comments ?? "").trim();
 
-  const wo = await (db as any).cnWorkOrder.findFirst({
+  const wo = await db.cnWorkOrder.findFirst({
     where: { id: params.id, orgId: ctx.orgId},
   });
   if (!wo) {
@@ -86,13 +86,13 @@ export async function POST(
   }
 
   if (woStatusUpdate) {
-    await (db as any).cnWorkOrder.update({
+    await db.cnWorkOrder.update({
       where: { id: wo.id },
       data: woStatusUpdate,
     });
   }
 
-  const refreshed = await (db as any).cnWorkOrder.findFirst({
+  const refreshed = await db.cnWorkOrder.findFirst({
     where: { id: wo.id, orgId: ctx.orgId},
   });
   return NextResponse.json({

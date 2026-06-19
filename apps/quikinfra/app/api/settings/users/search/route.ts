@@ -32,7 +32,7 @@ export const GET = auth.manage(
 
     const appId = await getQuikInfraAppId();
 
-    const members = (await (dbCentral as any).orgMember.findMany({
+    const members = (await dbCentral.orgMember.findMany({
       where: {
         orgId,
         user: { email: { contains: q, mode: "insensitive" } },

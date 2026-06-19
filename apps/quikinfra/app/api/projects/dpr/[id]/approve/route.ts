@@ -37,7 +37,7 @@ export async function POST(
     return envelopeErr("FORBIDDEN", `Action "edit" not allowed for pm.dpr`, 403);
   }
 
-  let body: any = {};
+  let body: { action?: string; comments?: string } = {};
   try {
     body = await req.json();
   } catch {
@@ -59,7 +59,7 @@ export async function POST(
     );
   }
 
-  const dpr = await (db as any).cnDailyProgressReport.findFirst({
+  const dpr = await db.cnDailyProgressReport.findFirst({
     where: { id: params.id, orgId: ctx.orgId},
     select: {
       id: true,
@@ -99,7 +99,7 @@ export async function POST(
     );
   }
 
-  const instance = await (db as any).cnApprovalInstance.findFirst({
+  const instance = await db.cnApprovalInstance.findFirst({
     where: { id: dpr.approvalId, orgId: ctx.orgId},
   });
   if (!instance) {
@@ -117,7 +117,7 @@ export async function POST(
     );
   }
 
-  const currentStep = await (db as any).cnApprovalWorkflowStep.findFirst({
+  const currentStep = await db.cnApprovalWorkflowStep.findFirst({
     where: {
       workflowId: instance.workflowId,
       stepOrder: instance.currentStepOrder,
@@ -161,7 +161,7 @@ export async function POST(
     );
   }
 
-  const nextStep = await (db as any).cnApprovalWorkflowStep.findFirst({
+  const nextStep = await db.cnApprovalWorkflowStep.findFirst({
     where: {
       workflowId: instance.workflowId,
       stepOrder: { gt: instance.currentStepOrder },
@@ -176,12 +176,7 @@ export async function POST(
   // Material consumption is deducted from a single location on final
   // approve. Block early if there are materials but no location to
   // deduct them from — better than failing mid-transaction.
-  const materialEntries = (dpr.materialEntries ?? []) as Array<{
-    id: string;
-    itemId: string;
-    uomId: string;
-    consumedQty: any;
-  }>;
+  const materialEntries = dpr.materialEntries ?? [];
   if (isFinalApprove && materialEntries.length > 0 && !dpr.consumptionLocationId) {
     return NextResponse.json(
       {
@@ -196,10 +191,10 @@ export async function POST(
   let boqNoById = new Map<string, string>();
   if (isFinalApprove) {
     const boqItemIds = (dpr.workItems ?? [])
-      .map((l: any) => l.boqItemId)
+      .map((l) => l.boqItemId)
       .filter(Boolean);
     if (boqItemIds.length) {
-      const boqRows = await (db as any).cnBOQItemV2.findMany({
+      const boqRows = await db.cnBOQItemV2.findMany({
         where: {
           id: { in: boqItemIds },
           orgId: ctx.orgId,
@@ -208,7 +203,7 @@ export async function POST(
         select: { id: true, boqNo: true },
       });
       boqNoById = new Map<string, string>(
-        boqRows.map((r: any) => [r.id, r.boqNo]),
+        boqRows.map((r) => [r.id, r.boqNo]),
       );
     }
   }
@@ -218,7 +213,7 @@ export async function POST(
   let materialsConsumed = 0;
 
   try {
-    await db.$transaction(async (tx: any) => {
+    await db.$transaction(async (tx) => {
       await tx.cnApprovalHistory.create({
         data: {
           instanceId: instance.id,
@@ -344,7 +339,7 @@ export async function POST(
         };
       }
     });
-  } catch (err: any) {
+  } catch (err: unknown) {
     if (err instanceof BOQError) {
       return NextResponse.json(
         { error: err.message, code: err.code },
@@ -361,19 +356,22 @@ export async function POST(
   }
 
   if (dprStatusUpdate) {
-    await (db as any).cnDailyProgressReport.update({
+    await db.cnDailyProgressReport.update({
       where: { id: dpr.id },
       data: dprStatusUpdate,
     });
   }
 
-  const refreshed = await (db as any).cnDailyProgressReport.findFirst({
+  const refreshed = await db.cnDailyProgressReport.findFirst({
     where: { id: dpr.id, orgId: ctx.orgId},
   });
-  const refreshedInstance = await (db as any).cnApprovalInstance.findUnique({
+  const refreshedInstance = await db.cnApprovalInstance.findUnique({
     where: { id: instance.id },
   });
-  const totalSteps = await (db as any).cnApprovalWorkflowStep.count({
+  if (!refreshedInstance) {
+    return NextResponse.json({ error: "Approval instance not found" }, { status: 404 });
+  }
+  const totalSteps = await db.cnApprovalWorkflowStep.count({
     where: { workflowId: instance.workflowId },
   });
 

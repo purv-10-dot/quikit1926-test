@@ -1,3 +1,4 @@
+import { toErrorMessage, getErrorCode } from "@/lib/api/errors";
 import { requirePurchaseAction } from "@/lib/auth/requirePurchaseAction";
 import { NextResponse } from "next/server";
 import { hasMatrixAction } from "@/lib/auth/context";
@@ -106,6 +107,12 @@ export async function POST(
   }
 
   let updated = await findPOById(ctx.orgId, po.id);
+  if (!updated) {
+    return NextResponse.json(
+      { error: "Purchase order not found after submit." },
+      { status: 500 },
+    );
+  }
 
   // Fire the PO email to the vendor ONLY when the workflow auto-approved
   // (no multi-step approval required). For multi-step workflows the
@@ -123,10 +130,10 @@ export async function POST(
             mailResult.skippedReason ? ` skipped="${mailResult.skippedReason}"` : ""
           }${mailResult.error ? ` error="${mailResult.error}"` : ""}`,
       );
-    } catch (e: any) {
+    } catch (e: unknown) {
       console.warn(
         `[po:submit] mailer threw for ${updated.poNumber}:`,
-        e?.message ?? e,
+        toErrorMessage(e),
       );
     }
 

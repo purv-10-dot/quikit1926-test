@@ -9,6 +9,11 @@ import { useMenuActions } from "@/hooks/use-permissions";
 
 const PROJECT_OPTIONS: { value: string; label: string }[] = [];
 
+interface ToolboxTalkRow {
+  id?: string; photoAttached?: boolean;
+  [key: string]: unknown;
+}
+
 export default function ToolboxTalksPage() {
   const qc = useQueryClient();
   const [drawerOpen, setDrawerOpen] = useState(false);
@@ -36,7 +41,7 @@ export default function ToolboxTalksPage() {
     ],
   };
 
-  const columns: ColDef<any>[] = [
+  const columns: ColDef<ToolboxTalkRow>[] = [
     { key: "date", label: "Date", type: "date", sortable: true },
     { key: "projectName", label: "Project", sortable: true, searchable: true },
     { key: "topic", label: "Topic", sortable: true, searchable: true },
@@ -63,11 +68,9 @@ export default function ToolboxTalksPage() {
         <DataTable
           id="safety-toolbox-talks"
           columns={columns}
-          data={data}
+          data={data as unknown as ToolboxTalkRow[]}
           onAdd={canAdd ? () => setDrawerOpen(true) : undefined}
           addLabel="Record Talk"
-          defaultSort="date"
-          defaultSortDir="desc"
         />
       </PageContainer>
       <QuickCreateDrawer open={drawerOpen} onClose={() => setDrawerOpen(false)} config={config} />

@@ -9,7 +9,7 @@
 import { useState, useEffect } from "react";
 import {
   FormDrawer, FormSection, FormRow, Field,
-  TextInput, NumberInput, SelectInput, TextAreaInput, DateInput,
+  TextInput, NumberInput, SelectInput, TextAreaInput, DateInput, InactiveStatusNotice,
 } from "@/components/FormDrawer";
 import { OpenCageAddressAutocomplete } from "@/components/OpenCageAddressAutocomplete";
 import { toast } from "@/lib/toast";
@@ -38,7 +38,16 @@ const PROJECT_STATUSES = [
   { value: "inactive", label: "Inactive (deleted)" },
 ];
 
-interface Props { open: boolean; onClose: () => void; editData?: any; }
+interface ProjectEditData {
+  id?: string; code?: string; name?: string; description?: string;
+  projectType?: string; clientId?: string; address?: string; city?: string;
+  state?: string; pincode?: string; siteGstin?: string;
+  startDate?: string; expectedEndDate?: string; actualEndDate?: string;
+  projectValue?: number | string | null; budget?: number | string | null;
+  purchaseLimit?: number | string | null; status?: string;
+}
+
+interface Props { open: boolean; onClose: () => void; editData?: ProjectEditData; }
 
 const emptyForm = {
   code: "", name: "", description: "", projectType: "Building",
@@ -76,7 +85,7 @@ export function ProjectFormDrawer({ open, onClose, editData }: Props) {
   const updateMutation = useUpdateProject();
   const { data: customersData } = useCustomers();
 
-  const set = (key: string, val: any) => {
+  const set = <K extends keyof typeof emptyForm>(key: K, val: (typeof emptyForm)[K]) => {
     setForm(prev => ({ ...prev, [key]: val }));
     if (errors[key]) setErrors(prev => { const next = { ...prev }; delete next[key]; return next; });
   };
@@ -86,7 +95,8 @@ export function ProjectFormDrawer({ open, onClose, editData }: Props) {
       if (editData?.id) {
         setForm({
           ...emptyForm,
-          ...editData,
+          code: editData.code ?? "",
+          name: editData.name ?? "",
           clientId: editData.clientId ?? "",
           description: editData.description ?? "",
           projectType: editData.projectType ?? "Building",
@@ -112,7 +122,7 @@ export function ProjectFormDrawer({ open, onClose, editData }: Props) {
     }
   }, [open, editData?.id, editData]);
 
-  const customerOptions = (customersData?.data ?? []).map((c: any) => ({ value: c.id, label: c.name }));
+  const customerOptions = (customersData?.data ?? []).map((c) => ({ value: c.id, label: c.name }));
 
   const handleSubmit = async () => {
     const errs = validateForm(form, rules);
@@ -159,6 +169,7 @@ export function ProjectFormDrawer({ open, onClose, editData }: Props) {
           </Field>
           <Field label="Status">
             <SelectInput value={form.status} onChange={v => set("status", v)} options={PROJECT_STATUSES} />
+            {form.status === "inactive" && <InactiveStatusNotice entityName="Project" />}
           </Field>
         </FormRow>
         <Field label="Description">

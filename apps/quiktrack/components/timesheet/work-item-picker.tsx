@@ -1,6 +1,6 @@
 "use client";
 import { useEffect, useRef, useState } from "react";
-import { ChevronDown, Check, CheckSquare, Bug, Bookmark, Zap, ListChecks, Plus } from "lucide-react";
+import { ChevronDown, Check, CheckSquare, Bug, Bookmark, Zap, ListChecks, Plus, Search } from "lucide-react";
 
 interface IssueOption { id: string; key: string; title: string; type: string }
 interface Props {
@@ -39,6 +39,7 @@ export function WorkItemPicker({
   const [createError, setCreateError] = useState<string | null>(null);
   const ref = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
+  const searchRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     if (!open) return;
@@ -60,6 +61,11 @@ export function WorkItemPicker({
   useEffect(() => {
     if (createMode) inputRef.current?.focus();
   }, [createMode]);
+
+  // Focus the search box when the dropdown opens (and we're not creating).
+  useEffect(() => {
+    if (open && !createMode) searchRef.current?.focus();
+  }, [open, createMode]);
 
   const canCreate = Boolean(projectId && onCreated);
 
@@ -93,8 +99,14 @@ export function WorkItemPicker({
     }
   }
 
-  // The top input is a title field, not a filter — always show the full list.
-  const filtered = issues;
+  // `query` doubles as the list filter and, when creating, the new task title.
+  const q = query.trim().toLowerCase();
+  const filtered = q
+    ? issues.filter(
+        (i) =>
+          i.key.toLowerCase().includes(q) || i.title.toLowerCase().includes(q),
+      )
+    : issues;
 
   const selected = issues.find((i) => i.id === value);
   const meta = (t: string) => TYPE_ICON[t] ?? TYPE_ICON.TASK!;
@@ -125,6 +137,21 @@ export function WorkItemPicker({
 
       {open && !disabled && (
         <div className="absolute z-30 mt-1 left-0 right-0 bg-white border border-gray-200 rounded-md shadow-lg py-1">
+          {!createMode && (
+            <div className="px-2 pb-1.5 pt-1">
+              <div className="relative">
+                <Search className="absolute left-2 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-gray-400" />
+                <input
+                  ref={searchRef}
+                  value={query}
+                  onChange={(e) => setQuery(e.target.value)}
+                  onKeyDown={(e) => { if (e.key === "Escape") setOpen(false); }}
+                  placeholder="Search work items…"
+                  className="w-full h-8 pl-7 pr-2 text-sm border border-gray-200 rounded focus:outline-none focus:ring-1 focus:ring-blue-400"
+                />
+              </div>
+            </div>
+          )}
           <div className="max-h-64 overflow-y-auto py-1">
             {filtered.length === 0 && !canCreate ? (
               <div className="px-3 py-2 text-xs text-gray-400">No work items match.</div>

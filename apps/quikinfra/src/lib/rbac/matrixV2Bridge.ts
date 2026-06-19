@@ -71,6 +71,8 @@ export const MENU_TO_RESOURCE: Readonly<Record<string, string>> = {
   "quality.home":     "construction.quality_safety",
   "safety.incidents": "construction.quality_safety",
   "safety.toolbox":   "construction.quality_safety",
+  // Finance
+  "finance.rab":      "construction.rab",
   // System
   "system.approvals": "construction.workflows",
   "system.reports":   "construction.dashboard",

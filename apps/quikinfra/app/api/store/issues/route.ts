@@ -8,6 +8,7 @@ import {
   listMaterialIssues,
   countMaterialIssues,
   countMaterialIssuesForDate,
+  type MIMaterialLine,
 } from "@/lib/store/material-issue-repository";
 import { parsePagination, paginateDb } from "@/lib/http/pagination";
 import { canActOnCurrentStep } from "@/lib/approvals/workflow-rbac";
@@ -57,21 +58,21 @@ export async function GET(req: NextRequest) {
   // Per-row Approve/Reject visibility — driven by the workflow's current
   // step, not the caller's role. Batch-load every pending instance + its
   // workflow.steps in one round-trip and decorate each row.
-  const rows: any[] = Array.isArray((result as any)?.data) ? (result as any).data : [];
+  const rows = Array.isArray(result.data) ? result.data : [];
   const approvalIds = rows
     .map((r) => r.approvalId)
     .filter((id): id is string => typeof id === "string" && id.length > 0);
   const instances =
     approvalIds.length === 0
       ? []
-      : await (db as any).cnApprovalInstance.findMany({
+      : await db.cnApprovalInstance.findMany({
           where: { id: { in: approvalIds }, orgId: ctx.orgId },
           include: {
             workflow: { include: { steps: { orderBy: { stepOrder: "asc" } } } },
           },
         });
-  const instanceById = new Map<string, any>(
-    instances.map((i: any) => [i.id, i]),
+  const instanceById = new Map(
+    instances.map((i): [string, (typeof instances)[number]] => [i.id, i]),
   );
   const actor = {
     userId: ctx.userId,
@@ -109,7 +110,7 @@ export async function POST(req: NextRequest) {
 
   // Resolve the project so we can denormalise name onto the row — keeps
   // the list column readable without a join.
-  const project: any = await (db as any).cnProject.findFirst({
+  const project = await db.cnProject.findFirst({
     where: {
       id: body.projectId,
       orgId: ctx.orgId,
@@ -128,7 +129,7 @@ export async function POST(req: NextRequest) {
   let contractorName: string | null =
     body.contractorName ?? null;
   if (body.contractorId && !contractorName) {
-    const c: any = await (db as any).cnContractor.findFirst({
+    const c = await db.cnContractor.findFirst({
       where: {
         id: body.contractorId,
         orgId: ctx.orgId,
@@ -159,7 +160,7 @@ export async function POST(req: NextRequest) {
     body.receivedBy ||
     "";
 
-  const lines: any[] = Array.isArray(body.lines) ? body.lines : [];
+  const lines: MIMaterialLine[] = Array.isArray(body.lines) ? body.lines : [];
 
   const record = await createMaterialIssue({
     orgId: ctx.orgId,

@@ -64,7 +64,9 @@ export async function POST(
       // purposes — whoever is sending the goods authorises the move.
       // Schema carries both `sourceProjectId` and legacy `fromProjectId`.
       projectId:
-        (st as any).sourceProjectId ?? (st as any).fromProjectId ?? null,
+        st.sourceProjectId ??
+        (st as { fromProjectId?: string | null }).fromProjectId ??
+        null,
       entityId: st.id,
       entityNumber: st.transferNumber ?? st.id,
     }));

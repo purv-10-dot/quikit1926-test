@@ -1,0 +1,16 @@
+{
+  "crons": [
+    {
+      "path": "/api/cron/payroll-auto-create",
+      "schedule": "0 2 * * *"
+    },
+    {
+      "path": "/api/cron/tickets-auto-close",
+      "schedule": "0 3 * * *"
+    },
+    {
+      "path": "/api/cron/tickets-sla-breach",
+      "schedule": "0 * * * *"
+    }
+  ]
+}

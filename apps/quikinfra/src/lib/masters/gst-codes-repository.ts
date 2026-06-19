@@ -3,6 +3,7 @@
  */
 
 import { db } from "@/lib/db";
+import { Prisma } from "@quikit/database";
 
 export interface GSTCodeRecord {
   id: string;
@@ -28,11 +29,10 @@ export interface GSTCodeRecord {
 
 function toStr(v: unknown): string {
   if (v === null || v === undefined) return "";
-  if (typeof (v as any)?.toString === "function") return (v as any).toString();
   return String(v);
 }
 
-function toRecord(row: any): GSTCodeRecord {
+function toRecord(row: Prisma.CnGSTCodeGetPayload<Record<string, never>>): GSTCodeRecord {
   return {
     id: row.id,
     orgId: row.orgId,
@@ -84,7 +84,7 @@ function buildGSTCodesWhere(
 }
 
 export async function listGSTCodes(opts: ListGSTOptions): Promise<GSTCodeRecord[]> {
-  const rows = await (db as any).cnGSTCode.findMany({
+  const rows = await db.cnGSTCode.findMany({
     where: buildGSTCodesWhere(opts),
     orderBy: { createdAt: "desc" },
     ...(typeof opts.take === "number" ? { take: opts.take } : {}),
@@ -96,14 +96,14 @@ export async function listGSTCodes(opts: ListGSTOptions): Promise<GSTCodeRecord[
 export async function countGSTCodes(
   opts: Pick<ListGSTOptions, "orgId" | "search">,
 ): Promise<number> {
-  return (db as any).cnGSTCode.count({ where: buildGSTCodesWhere(opts) });
+  return db.cnGSTCode.count({ where: buildGSTCodesWhere(opts) });
 }
 
 export async function findGSTCodeById(
   orgId: string,
   id: string,
 ): Promise<GSTCodeRecord | null> {
-  const row = await (db as any).cnGSTCode.findFirst({ where: { id, orgId } });
+  const row = await db.cnGSTCode.findFirst({ where: { id, orgId } });
   return row ? toRecord(row) : null;
 }
 
@@ -143,7 +143,7 @@ export async function createGSTCode(input: CreateGSTInput): Promise<GSTCodeRecor
   const igst = numOrZero(input.igstRate);
   if (igst < 0) throw new Error("IGST rate must be non-negative");
 
-  const row = await (db as any).cnGSTCode.create({
+  const row = await db.cnGSTCode.create({
     data: {
       orgId: input.orgId,
       code: String(input.code).trim(),
@@ -176,7 +176,7 @@ export async function updateGSTCode(
   id: string,
   patch: UpdateGSTInput,
 ): Promise<GSTCodeRecord | null> {
-  const existing = await (db as any).cnGSTCode.findFirst({
+  const existing = await db.cnGSTCode.findFirst({
     where: { id, orgId },
     select: { id: true },
   });
@@ -200,7 +200,7 @@ export async function updateGSTCode(
   if (patch.itemGroupName !== undefined) data.itemGroupName = sOrNull(patch.itemGroupName);
   if (patch.status !== undefined) data.status = patch.status;
 
-  const row = await (db as any).cnGSTCode.update({ where: { id }, data });
+  const row = await db.cnGSTCode.update({ where: { id }, data });
   return toRecord(row);
 }
 
@@ -209,7 +209,7 @@ export async function deleteGSTCode(
   id: string,
   updatedBy: string,
 ): Promise<boolean> {
-  const res = await (db as any).cnGSTCode.updateMany({
+  const res = await db.cnGSTCode.updateMany({
     where: { id, orgId },
     data: { status: "inactive", updatedBy },
   });

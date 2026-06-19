@@ -44,7 +44,7 @@ export const GET = withOrgAuth<{ id: string }>(
 export const POST = withOrgAuth<{ id: string }>(
   async ({ orgId, userId }, req, { params }) => {
     if (!(await hasAdminAccess(userId, orgId))) {
-      return NextResponse.json({ success: false, error: "Forbidden" }, { status: 403 });
+      return NextResponse.json({ success: false, error: "You don't have access to this." }, { status: 403 });
     }
     const team = await loadTeam(orgId, params.id);
     if (!team) {

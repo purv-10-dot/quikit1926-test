@@ -1,10 +1,11 @@
 "use client";
 
+import { toErrorMessage } from "@/lib/api/errors";
 import { useState } from "react";
 import { CreditCard } from "lucide-react";
 import { MasterListPage, type MasterColumnDef } from "@/components/MasterListPage";
-import { useTDSCodes, useCreateTDSCode, useUpdateTDSCode } from "@/hooks/use-masters";
-import { FormDrawer, FormSection, FormRow, Field, TextInput, NumberInput, SelectInput } from "@/components/FormDrawer";
+import { useTDSCodes, useCreateTDSCode, useUpdateTDSCode, useDeleteTDSCode } from "@/hooks/use-masters";
+import { FormDrawer, FormSection, FormRow, Field, TextInput, NumberInput, SelectInput, InactiveStatusNotice } from "@/components/FormDrawer";
 import dynamic from "next/dynamic";
 import type { ImportFieldDef } from "@/components/ImportDataDrawer";
 const ImportDataDrawer = dynamic(
@@ -60,6 +61,7 @@ export default function TDSPage() {
   const { data: result, isLoading } = useTDSCodes();
   const createMutation = useCreateTDSCode();
   const updateMutation = useUpdateTDSCode();
+  const deleteMutation = useDeleteTDSCode();
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [importOpen, setImportOpen] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
@@ -79,12 +81,12 @@ export default function TDSPage() {
         status: "active",
       });
       return { ok: true as const };
-    } catch (err: any) {
-      return { ok: false as const, error: err?.message ?? "Create failed" };
+    } catch (err: unknown) {
+      return { ok: false as const, error: toErrorMessage(err, "Create failed") };
     }
   };
 
-  const set = (key: string, val: any) => {
+  const set = <K extends keyof typeof emptyForm>(key: K, val: (typeof emptyForm)[K]) => {
     setForm(prev => ({ ...prev, [key]: val }));
     if (errors[key]) setErrors(prev => { const next = { ...prev }; delete next[key]; return next; });
   };
@@ -101,8 +103,8 @@ export default function TDSPage() {
     } catch { /* error toast handled globally */ }
   };
 
-  const handleDelete = async (item: any) => {
-    await updateMutation.mutateAsync({ id: item.id, status: "inactive" });
+  const handleDelete = async (item: { id: string }) => {
+    await deleteMutation.mutateAsync(item.id);
   };
 
   const isSaving = createMutation.isPending || updateMutation.isPending;
@@ -110,14 +112,15 @@ export default function TDSPage() {
   return (
     <>
       <MasterListPage title="TDS Codes" entityName="TDS Code" permissionUrl="/masters/tds" columns={columns}
-        data={result?.data ?? []} total={result?.total ?? 0} isLoading={isLoading}
+        showStatusTabs
+        data={(result?.data ?? []) as Row[]} total={result?.total ?? 0} isLoading={isLoading}
         canImport canExport
         historyEntityType="tds_code"
         onImport={() => setImportOpen(true)}
         onAdd={() => { setForm(emptyForm); setErrors({}); setEditingId(null); setDrawerOpen(true); }}
-        onEdit={(item: any) => { setForm({ ...emptyForm, ...item }); setErrors({}); setEditingId(item.id); setDrawerOpen(true); }}
+        onEdit={(item) => { setForm({ ...emptyForm, ...item } as typeof emptyForm); setErrors({}); setEditingId(item.id); setDrawerOpen(true); }}
         onDelete={handleDelete}
-        deleteConfirmMessage={(item: any) => (
+        deleteConfirmMessage={(item) => (
           <>
             Delete TDS code{" "}
             <span className="font-semibold text-gray-900">“{item.section}”</span>
@@ -150,6 +153,7 @@ export default function TDSPage() {
           </Field>
           <Field label="Status">
             <SelectInput value={form.status} onChange={v => set("status", v)} options={STATUS_OPTIONS} />
+            {form.status === "inactive" && <InactiveStatusNotice entityName="TDS Code" />}
           </Field>
         </FormSection>
       </FormDrawer>

@@ -24,7 +24,7 @@ export default function UserManagementPage() {
                   : "border-transparent text-gray-500 hover:text-gray-700"
               }`}
             >
-              {k === "users" ? "Users" : "User Management"}
+              {k === "users" ? "Users" : "Roles & Permissions"}
             </button>
           ))}
         </nav>

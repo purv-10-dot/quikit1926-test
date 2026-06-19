@@ -11,6 +11,11 @@ import {
   updateStockTransfer,
 } from "@/lib/store/stock-transfer-repository";
 import { canActOnCurrentStep } from "@/lib/approvals/workflow-rbac";
+import {
+  APPROVAL_INSTANCE_INCLUDE,
+  buildApprovalDto,
+  type ApprovalDto,
+} from "@/lib/approvals/approval-dto";
 
 /**
  * Single Stock Transfer record — backed by Postgres via the
@@ -48,58 +53,27 @@ export async function GET(
   const auditNames = await resolveUserNames([
     row.createdBy,
     row.updatedBy,
-    (row as any).approvedBy,
+    row.approvedBy,
   ]);
   const createdByName = row.createdBy ? auditNames.get(row.createdBy) ?? null : null;
   const updatedByName = row.updatedBy ? auditNames.get(row.updatedBy) ?? null : null;
-  const approvedByName = (row as any).approvedBy
-    ? auditNames.get((row as any).approvedBy) ?? (row as any).approvedBy
+  const approvedByName = row.approvedBy
+    ? auditNames.get(row.approvedBy) ?? row.approvedBy
     : null;
 
-  let approval: any = null;
+  let approval: ApprovalDto | null = null;
   if (row.approvalId) {
-    const instance = await (db as any).cnApprovalInstance.findFirst({
+    const instance = await db.cnApprovalInstance.findFirst({
       where: { id: row.approvalId, orgId: ctx.orgId },
-      select: {
-        id: true,
-        status: true,
-        currentStepOrder: true,
-        completedAt: true,
-        requestedAt: true,
-        requestedById: true,
-        history: {
-          orderBy: { actionAt: "asc" },
-          select: {
-            stepOrder: true,
-            action: true,
-            actionById: true,
-            actionAt: true,
-            comments: true,
-          },
-        },
-        workflow: {
-          select: {
-            id: true,
-            name: true,
-            steps: {
-              orderBy: { stepOrder: "asc" },
-              select: {
-                stepOrder: true,
-                approverRoleId: true,
-                approverUserId: true,
-              },
-            },
-          },
-        },
-      },
+      include: APPROVAL_INSTANCE_INCLUDE,
     });
     if (instance) {
       const userIds = Array.from(
         new Set<string>([
           instance.requestedById,
-          ...instance.history.map((h: any) => h.actionById),
+          ...instance.history.map((h) => h.actionById),
           ...(instance.workflow.steps
-            .map((s: any) => s.approverUserId)
+            .map((s) => s.approverUserId)
             .filter(Boolean) as string[]),
         ]),
       );
@@ -113,36 +87,7 @@ export async function GET(
         instance,
         row.sourceProjectId ?? null,
       );
-      approval = {
-        id: instance.id,
-        status: instance.status,
-        currentStepOrder: instance.currentStepOrder,
-        canActOnCurrentStep: callerCanActOnCurrentStep,
-        completedAt: instance.completedAt?.toISOString?.() ?? null,
-        requestedAt: instance.requestedAt.toISOString(),
-        requestedById: instance.requestedById,
-        requestedByName: nameById.get(instance.requestedById) ?? "User",
-        workflow: {
-          id: instance.workflow.id,
-          name: instance.workflow.name,
-          steps: instance.workflow.steps.map((s: any) => ({
-            stepOrder: s.stepOrder,
-            approverRoleId: s.approverRoleId,
-            approverUserId: s.approverUserId,
-            approverUserName: s.approverUserId
-              ? (nameById.get(s.approverUserId) ?? null)
-              : null,
-          })),
-        },
-        history: instance.history.map((h: any) => ({
-          stepOrder: h.stepOrder,
-          action: h.action,
-          actionById: h.actionById,
-          actionByName: nameById.get(h.actionById) ?? "User",
-          actionAt: h.actionAt.toISOString(),
-          comments: h.comments,
-        })),
-      };
+      approval = buildApprovalDto(instance, nameById, callerCanActOnCurrentStep);
     }
   }
 

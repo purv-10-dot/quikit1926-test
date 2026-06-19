@@ -1,6 +1,7 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { useSession } from "next-auth/react";
 import {
   ChevronLeft,
@@ -10,6 +11,9 @@ import {
   Menu,
   MoreHorizontal,
   CheckSquare,
+  Filter,
+  Search,
+  X,
 } from "lucide-react";
 import {
   type Period,
@@ -26,7 +30,7 @@ import { DeleteWorklogConfirm } from "./delete-worklog-confirm";
 import { SplitWorklogModal } from "./split-worklog-modal";
 import { TimesheetCell } from "./timesheet-cell";
 
-type GroupBy = "user" | "project" | "issue" | "user-issue";
+type GroupBy = "user" | "project" | "issue" | "user-issue" | "epic-issue";
 
 interface RowMeta {
   id: string;
@@ -45,11 +49,17 @@ interface GridResponse {
   cells: Record<string, Record<string, Cell>>;
 }
 
+interface FilterOption {
+  id: string;
+  label: string;
+}
+
 const ROW_HEADER: Record<GroupBy, string> = {
   user: "User",
   project: "Project",
   issue: "Work item",
   "user-issue": "User / Work item",
+  "epic-issue": "Epic / Work item",
 };
 
 const GROUP_BY_LABEL: Record<GroupBy, string> = {
@@ -57,12 +67,35 @@ const GROUP_BY_LABEL: Record<GroupBy, string> = {
   project: "Project",
   issue: "Work item",
   "user-issue": "User → Work item",
+  "epic-issue": "Epic → Work item",
 };
 
+// Two-level hierarchy modes: a parent dimension over a Work-item leaf. Several
+// render/total branches treat these identically (parent header + child rows).
+function isHierarchyMode(g: GroupBy): boolean {
+  return g === "user-issue" || g === "epic-issue";
+}
+
+// Fixed pixel widths for the frozen left-rail columns. They must be exact (not
+// min/max) so the cumulative `left` offsets line up the sticky columns.
+const FZ_NAME_W = 260;
+const FZ_KEY_W = 90;
+const FZ_LOGGED_W = 80;
+// Soft edge shadow on the rightmost frozen column so scrolling content reads as
+// sliding underneath the pinned rail.
+const FZ_SHADOW = "shadow-[2px_0_4px_-1px_rgba(0,0,0,0.08)]";
+
+// Raw decimal — used by CSV/XLS/PDF exports so spreadsheet formulas can still sum.
 function formatDecimal(hours: number): string {
   if (!Number.isFinite(hours) || hours <= 0) return "";
   const fixed = hours.toFixed(2);
   return fixed.replace(/\.?0+$/, "");
+}
+
+// On-screen display — "Xh Ym", matching the header total. Empty when zero.
+function formatDisplay(hours: number): string {
+  if (!Number.isFinite(hours) || hours <= 0) return "";
+  return formatHours(hours);
 }
 
 function formatDayHeader(d: Date): string {
@@ -101,6 +134,12 @@ export function TimesheetView({
   const [loading, setLoading] = useState(false);
   const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
 
+  // Filters — applied server-side so the grid totals stay consistent.
+  const [userFilter, setUserFilter] = useState<string[]>([]);
+  const [projectFilter, setProjectFilter] = useState<string[]>([]);
+  const [userOptions, setUserOptions] = useState<FilterOption[]>([]);
+  const [projectOptions, setProjectOptions] = useState<FilterOption[]>([]);
+
   const [logOpen, setLogOpen] = useState(false);
   const [logDate, setLogDate] = useState<Date | undefined>(undefined);
   const [logIssueId, setLogIssueId] = useState<string | undefined>(undefined);
@@ -128,24 +167,58 @@ export function TimesheetView({
         groupBy,
       });
       if (projectId) params.set("projectId", projectId);
+      if (userFilter.length > 0) params.set("userIds", userFilter.join(","));
+      if (!projectId && projectFilter.length > 0)
+        params.set("projectIds", projectFilter.join(","));
       const res = await fetch(`/api/timesheets/grid?${params.toString()}`).then((r) => r.json());
       if (res?.success) setGrid(res.data);
       else setGrid({ rows: [], cells: {} });
     } finally {
       setLoading(false);
     }
-  }, [range.from, range.to, groupBy, projectId]);
+  }, [range.from, range.to, groupBy, projectId, userFilter, projectFilter]);
 
   useEffect(() => {
     void refresh();
   }, [refresh]);
 
-  // Totals — in user-issue mode, skip child rows so parent + child don't double-count.
+  // Load filter option lists once. Projects are skipped in the space-scoped
+  // view (it's already locked to a single project).
+  useEffect(() => {
+    let cancelled = false;
+    void (async () => {
+      const [users, projects] = await Promise.all([
+        fetch("/api/org/users").then((r) => r.json()).catch(() => null),
+        projectId
+          ? Promise.resolve(null)
+          : fetch("/api/projects").then((r) => r.json()).catch(() => null),
+      ]);
+      if (cancelled) return;
+      if (users?.success && Array.isArray(users.data)) {
+        setUserOptions(
+          users.data.map((u: { userId: string; firstName?: string; lastName?: string; email: string }) => ({
+            id: u.userId,
+            label: `${u.firstName ?? ""} ${u.lastName ?? ""}`.trim() || u.email,
+          })),
+        );
+      }
+      if (projects?.success && Array.isArray(projects.data)) {
+        setProjectOptions(
+          projects.data.map((p: { id: string; name: string }) => ({ id: p.id, label: p.name })),
+        );
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [projectId]);
+
+  // Totals — in a hierarchy mode, skip child rows so parent + child don't double-count.
   const totalsByDate = useMemo(() => {
     const t: Record<string, number> = {};
     if (!grid) return t;
     for (const rowId of Object.keys(grid.cells)) {
-      if (groupBy === "user-issue" && rowId.includes("::")) continue;
+      if (isHierarchyMode(groupBy) && rowId.includes("::")) continue;
       for (const k of Object.keys(grid.cells[rowId]!)) {
         t[k] = (t[k] ?? 0) + (grid.cells[rowId]![k]!.hours ?? 0);
       }
@@ -168,15 +241,32 @@ export function TimesheetView({
     if (!grid) return 0;
     let s = 0;
     for (const rowId of Object.keys(totalsByRow)) {
-      if (groupBy === "user-issue" && rowId.includes("::")) continue;
+      if (isHierarchyMode(groupBy) && rowId.includes("::")) continue;
       s += totalsByRow[rowId] ?? 0;
     }
     return s;
   }, [grid, totalsByRow, groupBy]);
 
-  const capacity = useMemo(
+  // Per-person capacity for the period = working days × 8h.
+  const perPersonCapacity = useMemo(
     () => range.days.filter((d) => !isWeekend(d)).length * 8,
     [range.days],
+  );
+
+  // Distinct users represented in the current grid, so the capacity bar reflects
+  // the whole team rather than a single person. In issue/project grouping there
+  // are no per-user rows, so fall back to the active user filter (or org headcount).
+  const userCount = useMemo(() => {
+    if (!grid) return 0;
+    if (groupBy === "user") return grid.rows.length;
+    if (groupBy === "user-issue") return grid.rows.filter((r) => !r.parentId).length;
+    if (userFilter.length > 0) return userFilter.length;
+    return userOptions.length;
+  }, [grid, groupBy, userFilter, userOptions]);
+
+  const capacity = useMemo(
+    () => perPersonCapacity * Math.max(userCount, 1),
+    [perPersonCapacity, userCount],
   );
 
   const openLogFor = useCallback(
@@ -336,8 +426,12 @@ export function TimesheetView({
     [grid, collapsed],
   );
 
-  const showKeyColumn = groupBy === "issue" || groupBy === "user-issue";
+  const showKeyColumn = groupBy === "issue" || isHierarchyMode(groupBy);
   const fixedColumnCount = showKeyColumn ? 3 : 2;
+  // Cascade-freeze: the left rail (User/Work item, Key, Logged) is pinned with
+  // fixed widths + cumulative left offsets so day columns scroll underneath.
+  const loggedLeft = FZ_NAME_W + (showKeyColumn ? FZ_KEY_W : 0);
+  const railWidth = loggedLeft; // width of the merged "Total" label cell
 
   return (
     <div className="px-6 py-4">
@@ -365,7 +459,42 @@ export function TimesheetView({
               <ChevronRight className="h-4 w-4" />
             </button>
           </div>
-          <GroupByPills value={groupBy} onChange={setGroupBy} />
+          <GroupByDropdown
+            value={groupBy}
+            onChange={setGroupBy}
+            hideProject={Boolean(projectId)}
+          />
+          <span className="h-6 w-px bg-gray-200" aria-hidden />
+          <MultiSelectFilter
+            icon={<Filter className="h-3.5 w-3.5 text-gray-500" />}
+            label="User"
+            options={userOptions}
+            selected={userFilter}
+            onChange={setUserFilter}
+            emptyHint="No users available"
+          />
+          {!projectId && (
+            <MultiSelectFilter
+              label="Project"
+              options={projectOptions}
+              selected={projectFilter}
+              onChange={setProjectFilter}
+              emptyHint="No projects available"
+            />
+          )}
+          {(userFilter.length > 0 || projectFilter.length > 0) && (
+            <button
+              type="button"
+              onClick={() => {
+                setUserFilter([]);
+                setProjectFilter([]);
+              }}
+              className="inline-flex items-center gap-1 h-9 px-2 text-xs font-medium text-gray-500 hover:text-gray-700"
+            >
+              <X className="h-3.5 w-3.5" />
+              Clear
+            </button>
+          )}
         </div>
 
         <div className="flex items-center gap-2">
@@ -401,15 +530,24 @@ export function TimesheetView({
         <table className="min-w-full text-[11px]">
           <thead className="bg-white border-b border-gray-200">
             <tr>
-              <th className="px-3 py-2 text-left font-medium text-gray-600 sticky left-0 bg-white z-10 min-w-[260px]">
+              <th
+                className="px-3 py-2 text-left font-medium text-gray-600 sticky left-0 bg-white z-30"
+                style={{ width: FZ_NAME_W, minWidth: FZ_NAME_W }}
+              >
                 {ROW_HEADER[groupBy]}
               </th>
               {showKeyColumn && (
-                <th className="px-3 py-2 text-left font-medium text-gray-600 sticky bg-white z-10 min-w-[80px]">
+                <th
+                  className="px-3 py-2 text-left font-medium text-gray-600 sticky bg-white z-30"
+                  style={{ left: FZ_NAME_W, width: FZ_KEY_W, minWidth: FZ_KEY_W }}
+                >
                   Key
                 </th>
               )}
-              <th className="px-3 py-2 text-right font-medium text-gray-600 sticky bg-white z-10 min-w-[70px]">
+              <th
+                className={`px-3 py-2 text-right font-medium text-gray-600 sticky bg-white z-30 ${FZ_SHADOW}`}
+                style={{ left: loggedLeft, width: FZ_LOGGED_W, minWidth: FZ_LOGGED_W }}
+              >
                 Logged
               </th>
               {range.days.map((d) => (
@@ -456,9 +594,9 @@ export function TimesheetView({
             {visibleRows.map((row) => {
               const isChild = Boolean(row.parentId);
               const isParent =
-                !isChild && (groupBy === "user-issue" || groupBy === "user");
+                !isChild && (isHierarchyMode(groupBy) || groupBy === "user");
               const issueIdForRow =
-                groupBy === "user-issue" && isChild
+                isHierarchyMode(groupBy) && isChild
                   ? row.id.split("::")[1] ?? row.id
                   : row.id;
               const editable =
@@ -467,7 +605,10 @@ export function TimesheetView({
                   isChild &&
                   row.parentId === currentUserId);
               const issueClickable =
-                groupBy === "issue" || (groupBy === "user-issue" && isChild);
+                groupBy === "issue" || (isHierarchyMode(groupBy) && isChild);
+              // Parent (aggregate) rows in a hierarchy view are just collapsible
+              // headers — their cells shouldn't open the log modal.
+              const aggregateRow = isHierarchyMode(groupBy) && isParent;
               const issueLabel = row.secondary
                 ? `${row.secondary} · ${row.label}`
                 : row.label;
@@ -476,11 +617,12 @@ export function TimesheetView({
               return (
                 <tr key={row.id} className="border-b border-gray-100 hover:bg-gray-50/70">
                   <td
-                    className={`px-3 py-2 text-gray-900 sticky left-0 bg-white z-10 truncate max-w-[360px] ${
+                    className={`px-3 py-2 text-gray-900 sticky left-0 bg-white z-20 truncate ${
                       isChild ? "pl-10" : ""
                     }`}
+                    style={{ width: FZ_NAME_W, minWidth: FZ_NAME_W, maxWidth: FZ_NAME_W }}
                   >
-                    {isParent && groupBy === "user-issue" ? (
+                    {isParent && isHierarchyMode(groupBy) ? (
                       <button
                         type="button"
                         onClick={() => toggleCollapse(row.id)}
@@ -491,27 +633,35 @@ export function TimesheetView({
                             isParentCollapsed ? "-rotate-90" : ""
                           }`}
                         />
-                        <span className="inline-flex items-center justify-center h-6 w-6 rounded-full bg-blue-600 text-white text-[10px] font-semibold">
-                          {(row.label || "U").trim().charAt(0).toUpperCase()}
-                        </span>
-                        <span className="font-medium text-sm">{row.label}</span>
+                        {groupBy === "user-issue" && (
+                          <span className="inline-flex items-center justify-center h-6 w-6 rounded-full bg-blue-600 text-white text-[10px] font-semibold">
+                            {(row.label || "U").trim().charAt(0).toUpperCase()}
+                          </span>
+                        )}
+                        <ClippedLabel text={row.label} className="font-medium text-sm" />
                       </button>
                     ) : isChild ? (
-                      <span className="inline-flex items-center gap-2">
+                      <span className="flex items-center gap-2 min-w-0">
                         <CheckSquare className="h-3.5 w-3.5 text-blue-500 shrink-0" />
-                        <span className="text-gray-800 text-sm truncate">{row.label}</span>
+                        <ClippedLabel text={row.label} className="text-gray-800 text-sm" />
                       </span>
                     ) : (
-                      <span>{row.label}</span>
+                      <ClippedLabel text={row.label} />
                     )}
                   </td>
                   {showKeyColumn && (
-                    <td className="px-3 py-1.5 text-blue-600 sticky bg-white z-10 font-medium">
+                    <td
+                      className="px-3 py-1.5 text-blue-600 sticky bg-white z-20 font-medium truncate"
+                      style={{ left: FZ_NAME_W, width: FZ_KEY_W, minWidth: FZ_KEY_W, maxWidth: FZ_KEY_W }}
+                    >
                       {isChild ? row.secondary : !isParent ? row.secondary : ""}
                     </td>
                   )}
-                  <td className="px-3 py-1.5 text-right font-semibold text-gray-900 sticky bg-white z-10">
-                    {formatDecimal(totalsByRow[row.id] ?? 0)}
+                  <td
+                    className={`px-3 py-1.5 text-right font-semibold text-gray-900 sticky bg-white z-20 ${FZ_SHADOW}`}
+                    style={{ left: loggedLeft, width: FZ_LOGGED_W, minWidth: FZ_LOGGED_W }}
+                  >
+                    {formatDisplay(totalsByRow[row.id] ?? 0)}
                   </td>
                   {range.days.map((d) => {
                     const k = dateKey(d);
@@ -544,7 +694,7 @@ export function TimesheetView({
                         editable={editable}
                         date={d}
                         onChanged={refresh}
-                        onOpenLog={onOpenLog}
+                        onOpenLog={aggregateRow ? undefined : onOpenLog}
                       />
                     );
                   })}
@@ -555,12 +705,16 @@ export function TimesheetView({
               <tr className="bg-gray-50 border-t-2 border-gray-200">
                 <td
                   colSpan={showKeyColumn ? 2 : 1}
-                  className="px-3 py-2 sticky left-0 bg-gray-50 z-10 font-semibold text-gray-700 text-[11px]"
+                  className="px-3 py-2 sticky left-0 bg-gray-50 z-20 font-semibold text-gray-700 text-[11px]"
+                  style={{ width: railWidth, minWidth: railWidth }}
                 >
                   Total
                 </td>
-                <td className="px-3 py-2 text-right font-bold text-gray-900 sticky bg-gray-50 z-10">
-                  {formatDecimal(grandTotal)}
+                <td
+                  className={`px-3 py-2 text-right font-bold text-gray-900 sticky bg-gray-50 z-20 ${FZ_SHADOW}`}
+                  style={{ left: loggedLeft, width: FZ_LOGGED_W, minWidth: FZ_LOGGED_W }}
+                >
+                  {formatDisplay(grandTotal)}
                 </td>
                 {range.days.map((d) => (
                   <td
@@ -569,7 +723,7 @@ export function TimesheetView({
                       isToday(d) ? "bg-rose-50 text-rose-700" : "text-gray-800"
                     } ${isWeekend(d) ? "bg-gray-100/60 text-gray-500" : ""}`}
                   >
-                    {formatDecimal(totalsByDate[dateKey(d)] ?? 0)}
+                    {formatDisplay(totalsByDate[dateKey(d)] ?? 0)}
                   </td>
                 ))}
               </tr>
@@ -656,66 +810,219 @@ export function TimesheetView({
   );
 }
 
-function GroupByPills({
-  value,
+function MultiSelectFilter({
+  label,
+  options,
+  selected,
   onChange,
+  icon,
+  emptyHint,
 }: {
-  value: GroupBy;
-  onChange: (g: GroupBy) => void;
+  label: string;
+  options: FilterOption[];
+  selected: string[];
+  onChange: (next: string[]) => void;
+  icon?: ReactNode;
+  emptyHint?: string;
 }) {
-  // Two pills act as the two levels of grouping; tapping pill 1 swaps to
-  // single-level mode and pill 2 toggles into hierarchical user→issue.
-  const primary: "user" | "project" | "issue" =
-    value === "user-issue" ? "user" : (value as "user" | "project" | "issue");
-  const isHierarchical = value === "user-issue";
+  const [open, setOpen] = useState(false);
+  const [query, setQuery] = useState("");
 
-  const [open1, setOpen1] = useState(false);
+  const filtered = useMemo(() => {
+    const q = query.trim().toLowerCase();
+    if (!q) return options;
+    return options.filter((o) => o.label.toLowerCase().includes(q));
+  }, [options, query]);
+
+  function toggle(id: string) {
+    onChange(selected.includes(id) ? selected.filter((x) => x !== id) : [...selected, id]);
+  }
+
+  const count = selected.length;
 
   return (
-    <div className="flex items-center gap-2">
-      <span className="text-xs text-gray-500">Group By</span>
-      <div className="relative">
-        <button
-          type="button"
-          onClick={() => setOpen1((v) => !v)}
-          className="inline-flex items-center gap-1 h-9 px-3 text-xs font-medium text-gray-700 border border-gray-300 rounded hover:bg-gray-50"
-        >
-          <span className="text-gray-400">1.</span> {primary === "user" ? "User" : primary === "project" ? "Project" : "Work Item"}
-          <ChevronDown className="h-3 w-3 text-gray-500" />
-        </button>
-        {open1 && (
-          <div className="absolute left-0 top-full mt-1 w-36 bg-white border border-gray-200 rounded-md shadow-lg z-30 py-1">
-            {(["user", "issue"] as const).map((g) => (
-              <button
-                key={g}
-                type="button"
-                onClick={() => {
-                  onChange(g === "user" && isHierarchical ? "user-issue" : g);
-                  setOpen1(false);
-                }}
-                className={`w-full px-3 py-1.5 text-xs text-left hover:bg-gray-50 ${
-                  g === primary ? "text-blue-700 bg-blue-50 font-medium" : "text-gray-700"
-                }`}
-              >
-                {g === "user" ? "User" : "Work Item"}
-              </button>
-            ))}
-          </div>
-        )}
-      </div>
+    <div className="relative">
       <button
         type="button"
-        onClick={() =>
-          onChange(isHierarchical ? primary : primary === "user" ? "user-issue" : "user-issue")
-        }
-        className={`inline-flex items-center gap-1 h-9 px-3 text-xs font-medium border rounded ${
-          isHierarchical
+        onClick={() => setOpen((v) => !v)}
+        className={`inline-flex items-center gap-1.5 h-9 px-3 text-xs font-medium border rounded ${
+          count > 0
             ? "border-blue-300 bg-blue-50 text-blue-700"
             : "border-gray-300 text-gray-700 hover:bg-gray-50"
         }`}
       >
-        <span className="text-gray-400">2.</span> Work Item
+        {icon}
+        {label}
+        {count > 0 && (
+          <span className="inline-flex items-center justify-center min-w-[16px] h-4 px-1 rounded-full bg-blue-600 text-white text-[10px] font-semibold">
+            {count}
+          </span>
+        )}
+        <ChevronDown className="h-3 w-3 text-gray-500" />
       </button>
+      {open && (
+        <>
+          <div className="fixed inset-0 z-20" onClick={() => setOpen(false)} aria-hidden />
+          <div className="absolute left-0 top-full mt-1 w-60 bg-white border border-gray-200 rounded-md shadow-lg z-50 py-1">
+            <div className="px-2 pb-1.5 pt-1">
+              <div className="relative">
+                <Search className="absolute left-2 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-gray-400" />
+                <input
+                  type="text"
+                  autoFocus
+                  value={query}
+                  onChange={(e) => setQuery(e.target.value)}
+                  placeholder={`Search ${label.toLowerCase()}…`}
+                  className="w-full h-7 pl-7 pr-2 text-xs border border-gray-200 rounded focus:outline-none focus:ring-1 focus:ring-blue-400"
+                />
+              </div>
+            </div>
+            <div className="max-h-56 overflow-y-auto">
+              {filtered.length === 0 ? (
+                <div className="px-3 py-2 text-xs text-gray-400">
+                  {options.length === 0 ? emptyHint ?? "No options" : "No matches"}
+                </div>
+              ) : (
+                filtered.map((o) => {
+                  const checked = selected.includes(o.id);
+                  return (
+                    <button
+                      key={o.id}
+                      type="button"
+                      onClick={() => toggle(o.id)}
+                      className="w-full flex items-center gap-2 px-3 py-1.5 text-xs text-left hover:bg-gray-50"
+                    >
+                      <span
+                        className={`inline-flex items-center justify-center h-3.5 w-3.5 rounded border ${
+                          checked ? "bg-blue-600 border-blue-600" : "border-gray-300"
+                        }`}
+                      >
+                        {checked && <CheckSquare className="h-3 w-3 text-white" />}
+                      </span>
+                      <span className="text-gray-700 truncate">{o.label}</span>
+                    </button>
+                  );
+                })
+              )}
+            </div>
+            {count > 0 && (
+              <div className="border-t border-gray-100 mt-1 pt-1">
+                <button
+                  type="button"
+                  onClick={() => onChange([])}
+                  className="w-full px-3 py-1.5 text-xs text-left text-gray-500 hover:bg-gray-50"
+                >
+                  Clear selection
+                </button>
+              </div>
+            )}
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
+
+// Grouping dimensions offered in the dropdown. Work item is the always-on leaf;
+// User or Epic can sit above it as a two-level hierarchy. Project is exclusive
+// (single-dimension) and only offered in the global timesheet.
+const GROUP_DIMENSIONS: { key: "user" | "epic" | "issue" | "project"; label: string }[] = [
+  { key: "user", label: "User" },
+  { key: "epic", label: "Epic" },
+  { key: "issue", label: "Work item" },
+  { key: "project", label: "Project" },
+];
+
+function groupByToKeys(value: GroupBy): Set<string> {
+  if (value === "user-issue") return new Set(["user", "issue"]);
+  if (value === "epic-issue") return new Set(["epic", "issue"]);
+  return new Set([value]);
+}
+
+function GroupByDropdown({
+  value,
+  onChange,
+  hideProject = false,
+}: {
+  value: GroupBy;
+  onChange: (g: GroupBy) => void;
+  /** Space-scoped view: grouping by Project inside one project is meaningless. */
+  hideProject?: boolean;
+}) {
+  const [open, setOpen] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+  const selected = groupByToKeys(value);
+
+  useEffect(() => {
+    if (!open) return;
+    const onDoc = (e: MouseEvent) => {
+      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
+    };
+    document.addEventListener("mousedown", onDoc);
+    return () => document.removeEventListener("mousedown", onDoc);
+  }, [open]);
+
+  // Work item is always the leaf. User / Epic are mutually-exclusive parents
+  // over it; Project is its own exclusive grouping.
+  function toggle(key: "user" | "epic" | "issue" | "project") {
+    if (key === "project") return onChange("project");
+    if (key === "issue") return onChange("issue"); // collapse to work-item-only
+    if (key === "user") return onChange(value === "user-issue" ? "issue" : "user-issue");
+    if (key === "epic") return onChange(value === "epic-issue" ? "issue" : "epic-issue");
+  }
+
+  // Work item is the implicit always-on leaf — no need to show it as a row.
+  const dims = GROUP_DIMENSIONS.filter(
+    (d) => d.key !== "issue" && !(hideProject && d.key === "project"),
+  );
+
+  return (
+    <div ref={ref} className="flex items-center gap-2">
+      <span className="text-xs text-gray-500">Group By</span>
+      <div className="relative">
+        <button
+          type="button"
+          onClick={() => setOpen((v) => !v)}
+          className={`inline-flex items-center gap-1.5 h-9 px-3 text-xs font-medium border rounded ${
+            open
+              ? "border-blue-500 text-gray-800"
+              : "border-gray-300 text-gray-700 hover:bg-gray-50"
+          }`}
+        >
+          {GROUP_BY_LABEL[value]}
+          <ChevronDown className="h-3 w-3 text-gray-500" />
+        </button>
+        {open && (
+          <div className="absolute left-0 top-full mt-1 w-52 bg-white border border-gray-200 rounded-md shadow-lg z-50 py-1">
+            {dims.map((d) => {
+              const checked = selected.has(d.key);
+              return (
+                <button
+                  key={d.key}
+                  type="button"
+                  onClick={() => toggle(d.key)}
+                  className="w-full flex items-center gap-2 px-3 py-1.5 text-xs text-left hover:bg-gray-50"
+                >
+                  <span
+                    className={`inline-flex items-center justify-center h-3.5 w-3.5 rounded border ${
+                      checked ? "bg-blue-600 border-blue-600" : "border-gray-300"
+                    }`}
+                  >
+                    {checked && <CheckSquare className="h-3 w-3 text-white" />}
+                  </span>
+                  <span className={checked ? "text-gray-900 font-medium" : "text-gray-700"}>
+                    {d.label}
+                  </span>
+                </button>
+              );
+            })}
+            <div className="border-t border-gray-100 mt-1 pt-1 px-3 py-1.5 text-[10px] text-gray-400 leading-snug">
+              Work item is always shown. Add User or Epic for a hierarchy.
+              {!hideProject && " Project groups on its own."}
+            </div>
+          </div>
+        )}
+      </div>
     </div>
   );
 }
@@ -728,7 +1035,7 @@ function PeriodSwitcher({
   onChange: (p: Period) => void;
 }) {
   const [open, setOpen] = useState(false);
-  const LABEL: Record<Period, string> = { week: "Week", month: "Days", quarter: "Quarter" };
+  const LABEL: Record<Period, string> = { week: "Week", month: "Month", quarter: "Quarter" };
   return (
     <div className="relative">
       <button
@@ -740,7 +1047,7 @@ function PeriodSwitcher({
         <ChevronDown className="h-3.5 w-3.5 text-gray-500" />
       </button>
       {open && (
-        <div className="absolute right-0 top-full mt-1 w-32 bg-white border border-gray-200 rounded-md shadow-lg z-30 py-1">
+        <div className="absolute right-0 top-full mt-1 w-32 bg-white border border-gray-200 rounded-md shadow-lg z-50 py-1">
           {(["week", "month", "quarter"] as Period[]).map((p) => (
             <button
               key={p}
@@ -783,7 +1090,7 @@ function MoreMenu({
         <MoreHorizontal className="h-4 w-4" />
       </button>
       {open && (
-        <div className="absolute right-0 top-full mt-1 w-56 bg-white border border-gray-200 rounded-md shadow-lg z-30 py-1">
+        <div className="absolute right-0 top-full mt-1 w-56 bg-white border border-gray-200 rounded-md shadow-lg z-50 py-1">
           <ExportRow
             badge="PDF"
             badgeClass="bg-red-100 text-red-700"
@@ -841,5 +1148,49 @@ function ExportRow({
       </span>
       <span className="text-gray-700">{label}</span>
     </button>
+  );
+}
+
+/**
+ * Truncated label with a dark tooltip that appears only when the text is
+ * actually clipped — same pattern as the backlog work-item title. Clip state is
+ * recomputed on each hover so it tracks resize/zoom.
+ */
+function ClippedLabel({ text, className = "" }: { text: string; className?: string }) {
+  const ref = useRef<HTMLSpanElement>(null);
+  // Tooltip is portaled to <body> with fixed coords so it isn't clipped by the
+  // cell's `overflow:hidden` or painted under the next sticky row.
+  const [tip, setTip] = useState<{ top: number; left: number } | null>(null);
+
+  function onEnter() {
+    const el = ref.current;
+    if (el && el.scrollWidth > el.clientWidth) {
+      const r = el.getBoundingClientRect();
+      setTip({ top: r.bottom + 4, left: r.left });
+    }
+  }
+
+  return (
+    <span
+      className="block min-w-0 flex-1"
+      onMouseEnter={onEnter}
+      onMouseLeave={() => setTip(null)}
+    >
+      <span ref={ref} className={`block truncate ${className}`}>
+        {text}
+      </span>
+      {tip &&
+        typeof document !== "undefined" &&
+        createPortal(
+          <span
+            role="tooltip"
+            style={{ position: "fixed", top: tip.top, left: tip.left, zIndex: 1100 }}
+            className="pointer-events-none max-w-md whitespace-normal break-words rounded-md bg-gray-900 px-2.5 py-1.5 text-xs font-normal normal-case text-white shadow-lg"
+          >
+            {text}
+          </span>,
+          document.body,
+        )}
+    </span>
   );
 }

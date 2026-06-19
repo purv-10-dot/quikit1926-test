@@ -44,6 +44,7 @@
  * as the status flip.
  */
 
+import { toErrorMessage } from "@/lib/api/errors";
 import { NextRequest, NextResponse } from "next/server";
 import { requirePermission, type TenantContext } from "@/lib/auth/context";
 import { db } from "@/lib/db";
@@ -61,7 +62,7 @@ export interface TransitionsMap {
   return?: string[];
 }
 
-export interface HandleApprovalOptions {
+export interface HandleApprovalOptions<E = unknown> {
   /** Prisma client model name on `db`, e.g. "cnPurchaseOrder", "cnRfq",
    *  "cnMaterialIssue", "cnStockReconciliation". */
   prismaModel: string;
@@ -84,7 +85,7 @@ export interface HandleApprovalOptions {
    * Throw a `{ code, httpStatus, message }` object to control the
    * client-facing error.
    */
-  onApproved?: (entity: any, tx: any, ctx: TenantContext) => Promise<void>;
+  onApproved?: (entity: E, tx: Prisma.TransactionClient, ctx: TenantContext) => Promise<void>;
   /** Status to set when action is "approve". Default: "approved". */
   nextStatusOnApprove?: (currentStatus: string) => string;
   /** Status on reject. Default: "rejected". */
@@ -107,7 +108,7 @@ const FIELDS_BY_MODEL: Record<string, Set<string>> = (() => {
     for (const model of Prisma.dmmf.datamodel.models) {
       // Convert "CnPurchaseOrder" → "cnPurchaseOrder" (Prisma client property)
       const key = model.name.charAt(0).toLowerCase() + model.name.slice(1);
-      map[key] = new Set((model.fields ?? []).map((f: any) => String(f.name)));
+      map[key] = new Set((model.fields ?? []).map((f) => String(f.name)));
     }
   } catch {
     // dmmf unavailable — degrade to empty so every conditional update is skipped
@@ -130,9 +131,9 @@ function pickExistingFields(
 
 // ─── Main handler ──────────────────────────────────────────────────────
 
-export async function handleApprovalAction(
+export async function handleApprovalAction<E = unknown>(
   req: NextRequest,
-  opts: HandleApprovalOptions,
+  opts: HandleApprovalOptions<E>,
 ): Promise<NextResponse> {
   // ─── Permission gate ──────────────────────────────────────────────
   const ctxOrResponse = await requirePermission(opts.requiredPermission);
@@ -151,7 +152,7 @@ export async function handleApprovalAction(
   }
 
   // ─── Parse body ───────────────────────────────────────────────────
-  let body: any = {};
+  let body: Record<string, unknown> = {};
   try {
     body = await req.json();
   } catch {
@@ -172,7 +173,7 @@ export async function handleApprovalAction(
   }
 
   // ─── Locate entity ────────────────────────────────────────────────
-  const model = (db as any)[opts.prismaModel];
+  const model = (db as unknown as Record<string, { findFirst: (args: unknown) => Promise<{ id: string; status?: string | null; approvedBy?: string | null; approvedAt?: Date | null } | null> } | undefined>)[opts.prismaModel];
   if (!model) {
     logger.error({ msg: "approval_unknown_model", prismaModel: opts.prismaModel });
     return err("INTERNAL", `Unknown Prisma model: ${opts.prismaModel}`, 500);
@@ -258,13 +259,14 @@ export async function handleApprovalAction(
   };
 
   // ─── Run side effect + status flip in a single transaction ───────
-  let updatedEntity: any;
+  let updatedEntity: { id: string; status?: string | null };
   try {
-    updatedEntity = await db.$transaction(async (tx: any) => {
+    updatedEntity = await db.$transaction(async (tx) => {
       if (action === "approve" && opts.onApproved) {
-        await opts.onApproved(entity, tx, ctx);
+        await opts.onApproved(entity as E, tx, ctx);
       }
-      const updated = await tx[opts.prismaModel].update({
+      const txModel = (tx as unknown as Record<string, { update: (args: unknown) => Promise<{ id: string; status?: string | null }> }>)[opts.prismaModel];
+      const updated = await txModel.update({
         where: { id: entity.id },
         data: updateData,
       });
@@ -280,7 +282,7 @@ export async function handleApprovalAction(
       });
       return updated;
     });
-  } catch (e: any) {
+  } catch (e: unknown) {
     logger.error({
       msg: "approval_failed",
       entityType: opts.entityType,
@@ -289,10 +291,11 @@ export async function handleApprovalAction(
       err: e,
     });
     // Map typed domain errors to HTTP; unknown errors become 500
-    if (e?.code && e?.httpStatus) {
-      return err(e.code, e.message ?? "Approval failed", e.httpStatus);
+    const domainErr = e as { code?: string; httpStatus?: number };
+    if (domainErr.code && domainErr.httpStatus) {
+      return err(domainErr.code, toErrorMessage(e, "Approval failed"), domainErr.httpStatus);
     }
-    return err("APPROVAL_FAILED", e?.message ?? "Approval failed", 500);
+    return err("APPROVAL_FAILED", toErrorMessage(e, "Approval failed"), 500);
   }
 
   logger.info({

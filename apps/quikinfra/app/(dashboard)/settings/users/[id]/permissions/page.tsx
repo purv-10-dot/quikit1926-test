@@ -31,6 +31,7 @@ import {
   AlertCircle,
   UserCircle2,
   Lock,
+  type LucideIcon,
 } from "lucide-react";
 import {
   PageHeader,
@@ -57,7 +58,7 @@ import { getUserTypeDescriptor } from "@/lib/rbac/user-types";
  * "view" stays calm while the destructive "delete" is red — admins
  * scanning the table pick out the high-risk column without reading.
  */
-const ACTION_META: Record<MatrixAction, { icon: any; tone: string; label: string }> = {
+const ACTION_META: Record<MatrixAction, { icon: LucideIcon; tone: string; label: string }> = {
   add: { icon: Plus, tone: "text-emerald-600", label: "Add" },
   edit: { icon: Pencil, tone: "text-amber-600", label: "Edit" },
   delete: { icon: Trash2, tone: "text-rose-600", label: "Delete" },

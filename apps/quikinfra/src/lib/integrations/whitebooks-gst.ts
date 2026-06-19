@@ -156,10 +156,10 @@ export async function lookupGstStatusOnWhitebooks(
       cache: "no-store",
       signal: AbortSignal.timeout(20_000),
     });
-  } catch (e: any) {
+  } catch (e: unknown) {
     logger.warn({
       msg: "whitebooks_gst_fetch_failed",
-      code: e?.name ?? "fetch_error",
+      code: (e as { name?: string })?.name ?? "fetch_error",
     });
     return {
       ok: false,
@@ -168,7 +168,7 @@ export async function lookupGstStatusOnWhitebooks(
     };
   }
 
-  let json: any;
+  let json: Record<string, unknown>;
   try {
     json = await res.json();
   } catch {

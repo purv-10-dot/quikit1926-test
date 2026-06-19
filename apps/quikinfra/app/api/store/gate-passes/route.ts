@@ -7,6 +7,7 @@ import {
   createGatePass,
   listGatePasses,
   nextGatePassSequence,
+  type GatePassLine,
 } from "@/lib/store/gate-pass-repository";
 
 /**
@@ -65,7 +66,7 @@ export async function POST(req: NextRequest) {
   // gate-house entries that aren't tied to a specific project.
   let projectName: string | null = body.projectName ?? null;
   if (body.projectId && !projectName) {
-    const p: any = await (db as any).cnProject.findFirst({
+    const p = await db.cnProject.findFirst({
       where: {
         id: body.projectId,
         orgId: ctx.orgId,
@@ -86,7 +87,7 @@ export async function POST(req: NextRequest) {
   const gatePassNumber =
     body.gatePassNumber ?? `GP-${direction}-${yy}-${seq}`;
 
-  const lines: any[] = Array.isArray(body.lines) ? body.lines : [];
+  const lines: GatePassLine[] = Array.isArray(body.lines) ? body.lines : [];
 
   const record = await createGatePass({
     orgId: ctx.orgId,

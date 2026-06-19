@@ -27,9 +27,18 @@ const factoryMiddleware = createMiddleware({
   // No local org picker — no-org users are sent to the launcher /apps
   // via centralSelectOrgUrl (cross-domain handoff). `/` is public so the
   // marketing landing renders without auth.
-  publicRoutes: ["/", "/login", "/invitations", "/auth-handoff"],
+  // `/share` = public shared-doc links (no login). Safe as a prefix: no other
+  // route starts with `/share`.
+  publicRoutes: ["/", "/login", "/invitations", "/auth-handoff", "/share"],
   centralLoginUrl: AUTH_URL ? `${AUTH_URL}/login` : undefined,
   centralSelectOrgUrl: QUIKIT_URL ? `${QUIKIT_URL}/apps` : undefined,
+  // Remote session validation hits the central auth service (/api/verify-token)
+  // on EVERY protected navigation — uncached, ~50-100ms per page load against a
+  // second dev server. In local dev that round-trip dominates navigation
+  // latency, and the JWT callback's Redis soft-revocation already covers token
+  // invalidation. So enforce the remote check in production only; dev still has
+  // the cryptographic JWT check + Redis revocation path.
+  enforceRemoteSessionValidation: process.env.NODE_ENV === "production",
 });
 
 export async function middleware(request: NextRequest) {

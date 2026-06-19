@@ -1,64 +1,147 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import { FileText, Link as LinkIcon } from "lucide-react";
-import { DocsList } from "./docs-list";
+import { useQueryClient } from "@tanstack/react-query";
+import { FolderPlus, Check, X, Upload, Loader2 } from "lucide-react";
+import { DOC_DRAG_TYPE, DocsTableHeader } from "./docs-list";
+import { DocsFolderRow } from "./docs-folder-row";
+import { PaginatedDocList } from "./docs-paginated-list";
 import { DocsTemplatesSidebar } from "./docs-templates-sidebar";
-
-interface DocSummary {
-  id: string;
-  title: string;
-  templateKey: string | null;
-  createdBy: string | null;
-  createdAt: string;
-  updatedAt: string;
-}
-
-const PAGE_LIMIT = 10;
+import {
+  ROOT,
+  useDocFolders,
+  useDocList,
+  useCreateFolder,
+  useRenameFolder,
+  useDeleteFolder,
+  useDeleteDoc,
+  useMoveDoc,
+  type DocSummary,
+  type FolderSummary,
+} from "./use-docs";
+import { useMyProjectPermissions } from "@/lib/hooks/useMyProjectPermissions";
+import { showToast } from "@/lib/ui/toast";
+import { confirmDialog } from "@/lib/ui/confirm";
 
 /**
- * Pages tab top-level. Two-column layout matching the reference Pages.jsx:
- * left = title + scrollable list of pages, right = persistent "Create a page"
- * sidebar with the popular templates. Clicking any template card creates a
- * new doc seeded with that template and routes into the editor.
+ * Pages tab top-level. All data lives in the TanStack Query cache (see
+ * use-docs.ts) — lists are cached across navigation and every create / rename /
+ * delete / move writes the cache optimistically before syncing to the backend,
+ * so there are no redundant API calls. Left column = folder tree (each folder
+ * lazily loads + paginates its docs); right = the templates sidebar.
  */
 export function DocsView({ projectId }: { projectId: string }) {
   const router = useRouter();
-  const [docs, setDocs] = useState<DocSummary[] | null>(null);
+  const qc = useQueryClient();
   const [downloadFormat, setDownloadFormat] = useState<"pdf" | "word">("pdf");
-  const [creating, setCreating] = useState(false);
+  const [addingFolder, setAddingFolder] = useState(false);
+  const [folderDraft, setFolderDraft] = useState("");
+  const [rootDragOver, setRootDragOver] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [uploading, setUploading] = useState(false);
+  const uploadInputRef = useRef<HTMLInputElement | null>(null);
 
-  useEffect(() => {
-    let alive = true;
-    fetch(`/api/projects/${projectId}/docs?limit=${PAGE_LIMIT}`)
-      .then((r) => r.json())
-      .then((j) => {
-        if (!alive) return;
-        if (j?.success) setDocs(j.data ?? []);
-        else setDocs([]);
-      })
-      .catch(() => alive && setDocs([]));
-    return () => {
-      alive = false;
-    };
-  }, [projectId]);
+  const foldersQ = useDocFolders(projectId);
+  const folders = foldersQ.data ?? [];
+  const rootQ = useDocList(projectId, ROOT, true);
+  const rootDocs = rootQ.data?.pages.flatMap((p) => p.data) ?? [];
 
-  async function createFromTemplate(templateKey: string) {
-    if (creating) return;
-    setCreating(true);
+  const createFolderM = useCreateFolder(projectId);
+  const renameFolderM = useRenameFolder(projectId);
+  const deleteFolderM = useDeleteFolder(projectId);
+  const deleteDocM = useDeleteDoc(projectId);
+  const moveDocM = useMoveDoc(projectId);
+
+  // Doc permission gates (loading → optimistic-allow, like the other views).
+  const perms = useMyProjectPermissions(projectId);
+  const canCreate = perms.loading || perms.has("Doc", "create");
+  const canDelete = perms.loading || perms.has("Doc", "delete");
+
+  const fail = (e: unknown) => setError(e instanceof Error ? e.message : "Something went wrong.");
+
+  async function deleteDoc(doc: DocSummary) {
+    const ok = await confirmDialog({
+      title: "Delete page",
+      message: `Delete "${doc.title}"? This can't be undone.`,
+      confirmText: "Delete",
+      danger: true,
+    });
+    if (!ok) return;
+    deleteDocM.mutate(doc, { onError: fail });
+  }
+
+  // Open the draft editor seeded with the template — the doc is NOT created
+  // until the user edits/saves it there (see doc-editor save()).
+  function createFromTemplate(templateKey: string, folderId?: string) {
+    const params = new URLSearchParams({ template: templateKey });
+    if (folderId) params.set("folder", folderId);
+    router.push(`/spaces/${projectId}/docs/new?${params.toString()}`);
+  }
+
+  async function uploadDoc(file: File) {
+    setUploading(true);
+    setError(null);
     try {
-      const res = await fetch(`/api/projects/${projectId}/docs`, {
+      const fd = new FormData();
+      fd.append("file", file);
+      const res = await fetch(`/api/projects/${projectId}/docs/import`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ templateKey }),
+        body: fd,
       }).then((r) => r.json());
       if (res?.success) {
+        // Refresh the root list + folder counts, then open the imported doc.
+        qc.invalidateQueries({ queryKey: ["qt-docs", "list", projectId, ROOT] });
+        qc.invalidateQueries({ queryKey: ["qt-docs", "folders", projectId] });
         router.push(`/spaces/${projectId}/docs/${res.data.id}`);
+      } else {
+        setError(res?.error ?? "Couldn't import that file.");
       }
+    } catch {
+      setError("Couldn't import that file.");
     } finally {
-      setCreating(false);
+      setUploading(false);
     }
+  }
+
+  function createFolder() {
+    const name = folderDraft.trim();
+    if (!name) {
+      setAddingFolder(false);
+      return;
+    }
+    createFolderM.mutate(name, {
+      onSuccess: () => {
+        setFolderDraft("");
+        setAddingFolder(false);
+      },
+      onError: fail,
+    });
+  }
+
+  function renameFolder(folderId: string, name: string) {
+    renameFolderM.mutate({ folderId, name }, { onError: fail });
+  }
+
+  async function deleteFolder(folder: FolderSummary) {
+    const msg =
+      folder.docCount > 0
+        ? `Delete "${folder.name}"? Its ${folder.docCount} ${
+            folder.docCount === 1 ? "doc" : "docs"
+          } will move back to All docs.`
+        : `Delete "${folder.name}"?`;
+    const ok = await confirmDialog({
+      title: "Delete folder",
+      message: msg,
+      confirmText: "Delete",
+      danger: true,
+    });
+    if (!ok) return;
+    deleteFolderM.mutate(folder, { onError: fail });
+  }
+
+  function moveDoc(docId: string, toScope: string) {
+    moveDocM.mutate({ docId, toScope }, { onError: fail });
   }
 
   function downloadDoc(doc: DocSummary) {
@@ -66,7 +149,7 @@ export function DocsView({ projectId }: { projectId: string }) {
       .then((r) => r.json())
       .then((j) => {
         if (!j?.success) return;
-        const safeName = doc.title.replace(/[^\w-]+/g, "_") || "page";
+        const safeName = doc.title.replace(/[^\w-]+/g, "_") || "doc";
         if (downloadFormat === "word") {
           downloadAsWord(safeName, doc.title, j.data.content);
         } else {
@@ -75,41 +158,206 @@ export function DocsView({ projectId }: { projectId: string }) {
       });
   }
 
+  // Root drop zone — dropping a doc here moves it out of any folder.
+  function rootDragOverHandler(e: React.DragEvent) {
+    if (!e.dataTransfer.types.includes(DOC_DRAG_TYPE)) return;
+    e.preventDefault();
+    e.dataTransfer.dropEffect = "move";
+    setRootDragOver(true);
+  }
+  function rootDropHandler(e: React.DragEvent) {
+    const docId = e.dataTransfer.getData(DOC_DRAG_TYPE);
+    setRootDragOver(false);
+    if (!docId) return;
+    e.preventDefault();
+    moveDoc(docId, ROOT);
+  }
+
+  const booting = foldersQ.isLoading || rootQ.isLoading;
+  const isEmpty =
+    foldersQ.isSuccess &&
+    folders.length === 0 &&
+    rootQ.isSuccess &&
+    rootDocs.length === 0;
+
   return (
     <div className="h-full flex overflow-hidden bg-white">
+      {/* Centered upload overlay — clear feedback while the file converts. */}
+      {uploading && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/30">
+          <div className="flex flex-col items-center gap-3 rounded-xl bg-white px-10 py-8 shadow-2xl">
+            <Loader2 className="w-9 h-9 animate-spin text-blue-600" />
+            <p className="text-sm font-medium text-gray-800">Uploading &amp; converting…</p>
+            <p className="text-xs text-gray-500">This can take a moment for large files.</p>
+          </div>
+        </div>
+      )}
+
       <main className="flex-1 overflow-y-auto px-6 py-4">
         <div className="flex items-center justify-between mb-6">
-          <h1 className="text-2xl font-bold text-gray-900">Pages</h1>
+          <h1 className="text-2xl font-bold text-gray-900">Docs</h1>
           <div className="flex items-center gap-3">
+            {addingFolder ? (
+              <div className="flex items-center gap-1">
+                <input
+                  autoFocus
+                  value={folderDraft}
+                  onChange={(e) => setFolderDraft(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") createFolder();
+                    if (e.key === "Escape") {
+                      setFolderDraft("");
+                      setAddingFolder(false);
+                    }
+                  }}
+                  placeholder="Folder name"
+                  className="h-8 px-2 text-sm border border-gray-300 rounded focus:outline-none focus:border-blue-500"
+                />
+                <button
+                  type="button"
+                  onClick={createFolder}
+                  className="p-1.5 rounded hover:bg-gray-100"
+                  aria-label="Create folder"
+                >
+                  <Check className="w-4 h-4 text-green-600" />
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setFolderDraft("");
+                    setAddingFolder(false);
+                  }}
+                  className="p-1.5 rounded hover:bg-gray-100"
+                  aria-label="Cancel"
+                >
+                  <X className="w-4 h-4 text-gray-500" />
+                </button>
+              </div>
+            ) : canCreate ? (
+              <button
+                type="button"
+                onClick={() => setAddingFolder(true)}
+                className="inline-flex items-center gap-1.5 h-8 px-3 text-xs font-medium text-gray-700 border border-gray-300 rounded hover:bg-gray-50"
+              >
+                <FolderPlus className="w-3.5 h-3.5 text-gray-600" />
+                Add folder
+              </button>
+            ) : null}
+
+            {/* Upload an existing document (.docx/.md/.html/.txt/.pdf) as a new doc */}
+            {canCreate && (
+              <>
+                <input
+                  ref={uploadInputRef}
+                  type="file"
+                  accept=".docx,.md,.markdown,.html,.htm,.txt,.pdf"
+                  className="hidden"
+                  onChange={(e) => {
+                    const f = e.target.files?.[0];
+                    e.target.value = ""; // allow re-uploading the same file
+                    if (f) void uploadDoc(f);
+                  }}
+                />
+                <button
+                  type="button"
+                  disabled={uploading}
+                  onClick={() => uploadInputRef.current?.click()}
+                  className="inline-flex items-center gap-1.5 h-8 px-3 text-xs font-medium text-gray-700 border border-gray-300 rounded hover:bg-gray-50 disabled:opacity-50"
+                >
+                  {uploading ? (
+                    <Loader2 className="w-3.5 h-3.5 animate-spin text-gray-600" />
+                  ) : (
+                    <Upload className="w-3.5 h-3.5 text-gray-600" />
+                  )}
+                  {uploading ? "Uploading…" : "Upload"}
+                </button>
+              </>
+            )}
+
             <FormatToggle value={downloadFormat} onChange={setDownloadFormat} />
-            {/* <div className="flex items-center gap-1.5 text-sm text-gray-700">
-              <FileText className="w-3.5 h-3.5 text-gray-600" />
-              Pages
-            </div>
-            <button
-              type="button"
-              className="inline-flex items-center gap-1.5 h-8 px-3 text-xs text-gray-700 border border-gray-300 rounded hover:bg-gray-50"
-            >
-              <LinkIcon className="w-3.5 h-3.5 text-gray-600" />
-              Change connection
-            </button> */}
           </div>
         </div>
 
-        {docs === null ? (
+        {error && (
+          <div className="mb-4 flex items-center justify-between gap-3 rounded border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
+            <span>{error}</span>
+            <button type="button" onClick={() => setError(null)} aria-label="Dismiss">
+              <X className="w-4 h-4" />
+            </button>
+          </div>
+        )}
+
+        {booting ? (
           <ListSkeleton />
-        ) : docs.length === 0 ? (
+        ) : isEmpty ? (
           <div className="py-8 text-center">
             <p className="text-sm text-gray-500">
-              No pages yet — pick a template on the right to get started.
+              No docs yet — add a folder, or pick a template on the right to get started.
             </p>
           </div>
         ) : (
-          <DocsList projectId={projectId} docs={docs} onDownload={downloadDoc} />
+          <div className="space-y-4">
+            {/* Folders */}
+            {folders.length > 0 && (
+              <div className="space-y-2">
+                {folders.map((f) => (
+                  <DocsFolderRow
+                    key={f.id}
+                    projectId={projectId}
+                    folder={f}
+                    onCreateDoc={(folderId, key) => createFromTemplate(key, folderId)}
+                    onRename={renameFolder}
+                    onDelete={deleteFolder}
+                    onDownload={downloadDoc}
+                    onDropDoc={moveDoc}
+                    canCreateDoc={canCreate}
+                    canDeleteDoc={canDelete}
+                    onDeleteDoc={deleteDoc}
+                  />
+                ))}
+              </div>
+            )}
+
+            {/* Root / uncategorized docs — also the drop zone for "move out". */}
+            <div
+              onDragOver={rootDragOverHandler}
+              onDragLeave={() => setRootDragOver(false)}
+              onDrop={rootDropHandler}
+              className={`rounded-md border transition-colors ${
+                rootDragOver ? "border-blue-400 bg-blue-50" : "border-gray-200 bg-white"
+              }`}
+            >
+              {folders.length > 0 && (
+                <p className="text-xs font-medium uppercase tracking-wider text-gray-400 px-3 pt-3 pb-1">
+                  All docs
+                </p>
+              )}
+              <DocsTableHeader />
+              <PaginatedDocList
+                projectId={projectId}
+                docs={rootDocs}
+                loaded={rootQ.isSuccess}
+                loading={rootQ.isLoading}
+                hasNextPage={!!rootQ.hasNextPage}
+                isFetchingNextPage={rootQ.isFetchingNextPage}
+                fetchNextPage={() => rootQ.fetchNextPage()}
+                onDownload={downloadDoc}
+                canDelete={canDelete}
+                onDelete={deleteDoc}
+                emptyText={
+                  folders.length > 0
+                    ? "Drop a doc here to move it out of a folder."
+                    : "No docs yet."
+                }
+              />
+            </div>
+          </div>
         )}
       </main>
 
-      <DocsTemplatesSidebar busy={creating} onCreate={createFromTemplate} />
+      {canCreate && (
+        <DocsTemplatesSidebar onCreate={(key) => createFromTemplate(key)} />
+      )}
     </div>
   );
 }
@@ -208,7 +456,7 @@ function buildPrintHtml(title: string, body: string): string {
 function printAsPdf(title: string, body: string) {
   const win = window.open("", "_blank", "width=900,height=1200");
   if (!win) {
-    alert("Pop-ups blocked. Allow pop-ups to download as PDF.");
+    showToast("Pop-ups blocked. Allow pop-ups to download as PDF.", "error");
     return;
   }
   win.document.write(buildPrintHtml(title, body));

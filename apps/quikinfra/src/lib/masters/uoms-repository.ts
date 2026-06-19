@@ -3,6 +3,7 @@
  */
 
 import { db } from "@/lib/db";
+import { Prisma } from "@quikit/database";
 
 export interface UOMRecord {
   id: string;
@@ -19,7 +20,7 @@ export interface UOMRecord {
   updatedBy: string;
 }
 
-function toRecord(row: any): UOMRecord {
+function toRecord(row: Prisma.CnUOMGetPayload<Record<string, never>>): UOMRecord {
   return {
     id: row.id,
     orgId: row.orgId,
@@ -64,7 +65,7 @@ function buildUOMsWhere(
 }
 
 export async function listUOMs(opts: ListUOMsOptions): Promise<UOMRecord[]> {
-  const rows = await (db as any).cnUOM.findMany({
+  const rows = await db.cnUOM.findMany({
     where: buildUOMsWhere(opts),
     orderBy: { code: "asc" },
     ...(typeof opts.take === "number" ? { take: opts.take } : {}),
@@ -76,11 +77,11 @@ export async function listUOMs(opts: ListUOMsOptions): Promise<UOMRecord[]> {
 export async function countUOMs(
   opts: Pick<ListUOMsOptions, "orgId" | "search">,
 ): Promise<number> {
-  return (db as any).cnUOM.count({ where: buildUOMsWhere(opts) });
+  return db.cnUOM.count({ where: buildUOMsWhere(opts) });
 }
 
 export async function findUOMById(orgId: string, id: string): Promise<UOMRecord | null> {
-  const row = await (db as any).cnUOM.findFirst({ where: { id, orgId } });
+  const row = await db.cnUOM.findFirst({ where: { id, orgId } });
   return row ? toRecord(row) : null;
 }
 
@@ -102,7 +103,7 @@ function toInt(v: unknown, fallback: number): number {
 }
 
 export async function createUOM(input: CreateUOMInput): Promise<UOMRecord> {
-  const row = await (db as any).cnUOM.create({
+  const row = await db.cnUOM.create({
     data: {
       orgId: input.orgId,
       code: String(input.code).trim().toUpperCase(),
@@ -128,7 +129,7 @@ export async function updateUOM(
   id: string,
   patch: UpdateUOMInput,
 ): Promise<UOMRecord | null> {
-  const existing = await (db as any).cnUOM.findFirst({
+  const existing = await db.cnUOM.findFirst({
     where: { id, orgId },
     select: { id: true },
   });
@@ -142,7 +143,7 @@ export async function updateUOM(
   if (patch.isBase !== undefined) data.isBase = !!patch.isBase;
   if (patch.status !== undefined) data.status = patch.status;
 
-  const row = await (db as any).cnUOM.update({ where: { id }, data });
+  const row = await db.cnUOM.update({ where: { id }, data });
   return toRecord(row);
 }
 
@@ -151,7 +152,7 @@ export async function deleteUOM(
   id: string,
   updatedBy: string,
 ): Promise<boolean> {
-  const res = await (db as any).cnUOM.updateMany({
+  const res = await db.cnUOM.updateMany({
     where: { id, orgId },
     data: { status: "inactive", updatedBy },
   });

@@ -24,7 +24,7 @@ export const PATCH = withOrgAuth<{ id: string }>(
       return NextResponse.json({ success: false, error: "Not found" }, { status: 404 });
     }
     if (!(await userCanEdit(userId, orgId, sprint.projectId))) {
-      return NextResponse.json({ success: false, error: "Forbidden" }, { status: 403 });
+      return NextResponse.json({ success: false, error: "You don't have access to this." }, { status: 403 });
     }
     const parsed = updateSprintSchema.safeParse(await req.json());
     if (!parsed.success) {
@@ -57,7 +57,7 @@ export const DELETE = withOrgAuth<{ id: string }>(
       return NextResponse.json({ success: false, error: "Not found" }, { status: 404 });
     }
     if (!(await userCanEdit(userId, orgId, sprint.projectId))) {
-      return NextResponse.json({ success: false, error: "Forbidden" }, { status: 403 });
+      return NextResponse.json({ success: false, error: "You don't have access to this." }, { status: 403 });
     }
     if (sprint.status === "ACTIVE") {
       return NextResponse.json(

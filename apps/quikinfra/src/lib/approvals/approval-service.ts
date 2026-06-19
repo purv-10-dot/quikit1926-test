@@ -41,6 +41,7 @@
  * callback so the approval service remains entity-agnostic.
  */
 
+import { Prisma } from "@quikit/database";
 import { db } from "@/lib/db";
 import type { TenantContext } from "@/lib/auth/context";
 import { recordAudit, recordApprovalAction, ApprovalActionError } from "@/lib/workflow/audit";
@@ -111,7 +112,7 @@ export interface ApprovalRequest {
    * no side effects applied.
    */
   onFinalApproval?: (
-    tx: any,
+    tx: Prisma.TransactionClient,
     instance: { id: string; entityType: string; entityId: string; entityNumber: string }
   ) => Promise<void>;
   /**
@@ -120,12 +121,15 @@ export interface ApprovalRequest {
    * to no-op. Use for: sending notifications to the next approver, etc.
    */
   onIntermediateApproval?: (
-    tx: any,
+    tx: Prisma.TransactionClient,
     instance: { id: string; entityType: string; entityId: string; entityNumber: string },
     nextStepOrder: number
   ) => Promise<void>;
   /** Called on reject/return/reverse — runs inside the txn. */
-  onReject?: (tx: any, instance: any) => Promise<void>;
+  onReject?: (
+    tx: Prisma.TransactionClient,
+    instance: { id: string; entityType: string; entityId: string; entityNumber: string },
+  ) => Promise<void>;
 }
 
 export interface ApprovalResult {
@@ -162,7 +166,7 @@ class ApprovalService {
       // guarantees for single-row race conditions: two concurrent tx's
       // will serialize on the history-row insert's unique constraint and
       // the later one will re-read the row and see the new status.
-      const instance = await (tx as any).cnApprovalInstance.findFirst({
+      const instance = await tx.cnApprovalInstance.findFirst({
         where: { id: instanceId, orgId: ctx.orgId },
       });
 
@@ -173,7 +177,7 @@ class ApprovalService {
       // ─── Status gate ─────────────────────────────────────────
       if (instance.status !== "pending_approval") {
         // Fetch the last history row so we can return who did it
-        const last = await (tx as any).cnApprovalHistory.findFirst({
+        const last = await tx.cnApprovalHistory.findFirst({
           where: { instanceId },
           orderBy: { actionAt: "desc" },
         });
@@ -196,7 +200,7 @@ class ApprovalService {
       // The pinned user / role lives on cn_approval_workflow_step. We
       // load it and delegate to canActOnStep — the same gate every
       // entity-specific approve route uses.
-      const stepRow = await (tx as any).cnApprovalWorkflowStep.findFirst({
+      const stepRow = await tx.cnApprovalWorkflowStep.findFirst({
         where: { workflowId: instance.workflowId, stepOrder: currentStep },
       });
       if (!stepRow) {
@@ -234,7 +238,7 @@ class ApprovalService {
       }
 
       // ─── Double-action guard (same step, same user can't re-act) ──
-      const priorSameStep = await (tx as any).cnApprovalHistory.findFirst({
+      const priorSameStep = await tx.cnApprovalHistory.findFirst({
         where: { instanceId, stepOrder: currentStep, actionById: ctx.userId },
       });
       if (priorSameStep) {
@@ -266,7 +270,7 @@ class ApprovalService {
 
       if (action === "approve") {
         // Count configured steps for this workflow
-        const totalSteps = await (tx as any).cnApprovalWorkflowStep.count({
+        const totalSteps = await tx.cnApprovalWorkflowStep.count({
           where: { workflowId: instance.workflowId },
         });
         if (currentStep >= totalSteps) {
@@ -290,7 +294,7 @@ class ApprovalService {
       }
 
       // ─── Persist status change on the instance ───────────────
-      await (tx as any).cnApprovalInstance.update({
+      await tx.cnApprovalInstance.update({
         where: { id: instanceId },
         data: {
           status: newStatus,
@@ -334,7 +338,12 @@ class ApprovalService {
           newStep
         );
       } else if ((action === "reject" || action === "return" || action === "reverse") && req.onReject) {
-        await req.onReject(tx, instance);
+        await req.onReject(tx, {
+          id: instance.id,
+          entityType: instance.entityType,
+          entityId: instance.entityId,
+          entityNumber: instance.entityNumber,
+        });
       }
 
       return {
@@ -352,7 +361,7 @@ class ApprovalService {
   /**
    * Translate approval errors to HTTP responses. Use from route handlers.
    */
-  errorToHttp(err: unknown): { status: number; body: any } | null {
+  errorToHttp(err: unknown): { status: number; body: unknown } | null {
     if (err instanceof ApprovalConflictError) {
       return { status: err.httpStatus, body: { error: err.message, code: err.code, details: err.details } };
     }

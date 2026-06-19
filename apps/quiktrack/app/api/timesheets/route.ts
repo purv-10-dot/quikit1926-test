@@ -48,7 +48,25 @@ export const GET = withOrgAuth(async ({ orgId, userId }, req) => {
     orderBy: { entryDate: "desc" },
     take: 500,
   });
-  return NextResponse.json({ success: true, data: entries });
+  // QtTimesheetEntry has no direct User relation, so batch-resolve the loggers
+  // and attach a `user` object (mirrors the issue history feed). The UI uses
+  // this to render proper initials/name instead of the raw userId.
+  const userIds = Array.from(new Set(entries.map((e) => e.userId)));
+  const users = userIds.length
+    ? await db.user.findMany({
+        where: { id: { in: userIds } },
+        select: {
+          id: true,
+          firstName: true,
+          lastName: true,
+          email: true,
+          avatar: true,
+        },
+      })
+    : [];
+  const userById = new Map(users.map((u) => [u.id, u] as const));
+  const data = entries.map((e) => ({ ...e, user: userById.get(e.userId) ?? null }));
+  return NextResponse.json({ success: true, data });
 });
 
 export const POST = withOrgAuth(async ({ orgId, userId }, req) => {

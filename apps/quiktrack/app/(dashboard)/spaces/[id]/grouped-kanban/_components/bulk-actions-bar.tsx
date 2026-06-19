@@ -10,6 +10,7 @@ import type {
   SprintLite,
 } from "../_types";
 import { PopoverPanel } from "./cells/popover-panel";
+import { confirmDialog } from "@/lib/ui/confirm";
 
 interface BulkActionsBarProps {
   allTasks: GroupedBoardTask[];
@@ -42,13 +43,14 @@ export function BulkActionsBar({
   const selectedTasks = allTasks.filter((t) => selectedIds.has(t.id));
   const count = selectedTasks.length;
 
-  function handleDelete() {
-    if (
-      !window.confirm(
-        `Delete ${count} task${count === 1 ? "" : "s"}? This can't be undone.`,
-      )
-    )
-      return;
+  async function handleDelete() {
+    const ok = await confirmDialog({
+      title: "Delete tasks",
+      message: `Delete ${count} task${count === 1 ? "" : "s"}? This can't be undone.`,
+      confirmText: "Delete",
+      danger: true,
+    });
+    if (!ok) return;
     onDelete(selectedTasks.map((t) => t.id));
   }
 

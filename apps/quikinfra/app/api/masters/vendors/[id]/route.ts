@@ -1,3 +1,4 @@
+import { toErrorMessage, getErrorCode } from "@/lib/api/errors";
 import { NextRequest, NextResponse } from "next/server";
 import { getTenantContext, hasMatrixAction } from "@/lib/auth/context";
 import { err as envelopeErr } from "@/lib/http/envelope";
@@ -133,8 +134,8 @@ async function handleUpdate(req: NextRequest, id: string) {
     });
     if (!next) return NextResponse.json({ error: "Vendor not found" }, { status: 404 });
     return NextResponse.json(next);
-  } catch (err: any) {
-    if (err?.code === "P2002") {
+  } catch (err: unknown) {
+    if (getErrorCode(err) === "P2002") {
       return NextResponse.json(
         { error: "A vendor with this code already exists" },
         { status: 409 },
@@ -142,7 +143,7 @@ async function handleUpdate(req: NextRequest, id: string) {
     }
     console.error("[vendors.update] failed:", err);
     return NextResponse.json(
-      { error: err?.message ?? "Failed to update vendor" },
+      { error: toErrorMessage(err, "Failed to update vendor") },
       { status: 500 },
     );
   }

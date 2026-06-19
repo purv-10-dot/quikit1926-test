@@ -74,7 +74,7 @@ function serializeErr(err: unknown): unknown {
       stack: err.stack,
     };
     for (const k of Object.keys(err)) {
-      out[k] = (err as any)[k];
+      out[k] = (err as unknown as Record<string, unknown>)[k];
     }
     return out;
   }

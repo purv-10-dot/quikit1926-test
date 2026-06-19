@@ -1,3 +1,4 @@
+import { toErrorMessage, getErrorCode } from "@/lib/api/errors";
 import { NextRequest, NextResponse } from "next/server";
 import { withOrgAuthForResource } from "@/lib/api/withOrgAuth";
 import { listWorkflows, createWorkflow } from "@/lib/workflows/repository";
@@ -45,7 +46,13 @@ export const POST = auth.manage(async (authCtx, req: NextRequest) => {
 
   // Line items from QuickCreateDrawer arrive under `lines` — map to steps.
   const steps = Array.isArray(body.lines)
-    ? body.lines.map((l: any) => ({
+    ? body.lines.map((l: {
+        stepOrder?: number | string | null;
+        approverRole?: string | null;
+        approverUserId?: string | null;
+        approverUserIds?: unknown;
+        amountThresholdMin?: number | string | null;
+      }) => ({
         stepOrder: Number(l.stepOrder) || 1,
         approverRole: l.approverRole ?? null,
         approverUserId: l.approverUserId ?? null,
@@ -83,10 +90,10 @@ export const POST = auth.manage(async (authCtx, req: NextRequest) => {
       createdBy: authCtx.userId,
     });
     return NextResponse.json(record, { status: 201 });
-  } catch (err: any) {
+  } catch (err: unknown) {
     console.error("[workflows.create] failed:", err);
     return NextResponse.json(
-      { error: err?.message ?? "Failed to create workflow" },
+      { error: toErrorMessage(err, "Failed to create workflow") },
       { status: 500 },
     );
   }

@@ -94,6 +94,46 @@ describe("GET /api/issues", () => {
     expect(args?.where?.parentId).toBe("parent_1");
     expect(args?.where?.type).toBe("SUBTASK");
   });
+
+  // assigneeId accepts a comma list so the multi-select people filter (board,
+  // backlog, list, grouped kanban) can scope to several assignees at once.
+  async function whereForAssignee(assigneeId: string) {
+    setSession({ id: USER, orgId: TENANT, role: "member" });
+    mockDb.qtProject.findFirst.mockResolvedValue({ id: PROJECT } as never);
+    mockDb.qtProjectMember.findFirst.mockResolvedValue({ id: "m" } as never);
+    mockDb.orgMember.findFirst.mockResolvedValue({ role: "member" } as never);
+    mockDb.qtIssue.findMany.mockResolvedValue([] as never);
+    mockDb.qtIssue.count.mockResolvedValue(0 as never);
+
+    const res = await GET(
+      listReq(`projectId=${PROJECT}&assigneeId=${encodeURIComponent(assigneeId)}`),
+      ROUTE_CTX,
+    );
+    expect(res.status).toBe(200);
+    return mockDb.qtIssue.findMany.mock.calls[0]?.[0]?.where;
+  }
+
+  it("translates a single assigneeId into an equality match", async () => {
+    const where = await whereForAssignee("u1");
+    expect(where?.AND).toEqual([{ assigneeId: "u1" }]);
+  });
+
+  it("translates a comma-separated assigneeId list into an IN filter", async () => {
+    const where = await whereForAssignee("u1,u2,u3");
+    expect(where?.AND).toEqual([{ assigneeId: { in: ["u1", "u2", "u3"] } }]);
+  });
+
+  it("translates assigneeId=null into an unassigned match", async () => {
+    const where = await whereForAssignee("null");
+    expect(where?.AND).toEqual([{ assigneeId: null }]);
+  });
+
+  it("translates a mixed null + ids list into an OR (unassigned or listed)", async () => {
+    const where = await whereForAssignee("null,u1,u2");
+    expect(where?.AND).toEqual([
+      { OR: [{ assigneeId: null }, { assigneeId: { in: ["u1", "u2"] } }] },
+    ]);
+  });
 });
 
 describe("POST /api/issues", () => {

@@ -6,8 +6,8 @@ import { err as envelopeErr } from "@/lib/http/envelope";
 
 export async function GET() {
   const assets = getAssets();
-  const assetById = new Map(assets.map((a: any) => [a.id, a]));
-  const data = getIssuances().map((i: any) => {
+  const assetById = new Map(assets.map((a) => [a.id, a]));
+  const data = getIssuances().map((i) => {
     const asset = assetById.get(i.assetId);
     return {
       ...i,
@@ -33,13 +33,13 @@ export async function POST(req: NextRequest) {
   if (!issuedTo) return NextResponse.json({ error: "Issued To is required" }, { status: 400 });
   if (!issueDate) return NextResponse.json({ error: "Issue date is required" }, { status: 400 });
 
-  const asset = getAssets().find((a: any) => a.id === assetId);
+  const asset = getAssets().find((a) => a.id === assetId);
   if (!asset) return NextResponse.json({ error: "Asset not found" }, { status: 404 });
 
   const issuances = getIssuances();
   // Block if the same asset is already out (non-returned).
   const alreadyOut = issuances.find(
-    (i: any) => i.assetId === assetId && i.status === "issued",
+    (i) => i.assetId === assetId && i.status === "issued",
   );
   if (alreadyOut) {
     return NextResponse.json(

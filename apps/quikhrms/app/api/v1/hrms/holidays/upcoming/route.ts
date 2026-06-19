@@ -1,0 +1,56 @@
+import { NextRequest } from "next/server";
+import { prisma } from "@/lib/prisma";
+import { withAuth } from "@/lib/with-auth";
+import { successResponse, internalError } from "@/lib/api-response";
+
+/**
+ * GET /api/v1/hrms/holidays/upcoming — dashboard widget feed.
+ * Sources the single flat `CompanyHoliday` table.
+ */
+export const GET = withAuth(async (req: NextRequest, { orgId }) => {
+  try {
+    const url = new URL(req.url);
+    const limit = Number(url.searchParams.get("limit") ?? 10);
+    const monthStr = url.searchParams.get("month");
+    const yearStr = url.searchParams.get("year");
+
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const yearEnd = new Date(today.getFullYear() + 1, today.getMonth(), today.getDate());
+
+    const upcomingRows = await prisma.companyHoliday.findMany({
+      where: { orgId, deletedAt: null, date: { gte: today, lte: yearEnd } },
+      orderBy: { date: "asc" },
+      take: 20,
+      select: { id: true, name: true, date: true, type: true, isOptional: true },
+    });
+    const upcoming = upcomingRows
+      .map((h) => ({
+        id: h.id,
+        name: h.name,
+        date: h.date,
+        type: String(h.type),
+        isFloater: h.isOptional,
+        calendar: null as { id: string; name: string } | null,
+      }))
+      .slice(0, 20);
+
+    let monthHolidays: { id: string; name: string; date: Date }[] = [];
+    if (monthStr && yearStr) {
+      const m = Number(monthStr);
+      const y = Number(yearStr);
+      const start = new Date(y, m, 1);
+      const end = new Date(y, m + 1, 0, 23, 59, 59);
+      monthHolidays = await prisma.companyHoliday.findMany({
+        where: { orgId, deletedAt: null, date: { gte: start, lte: end } },
+        orderBy: { date: "asc" },
+        select: { id: true, name: true, date: true },
+      });
+    }
+
+    return successResponse({ upcoming: upcoming.slice(0, limit), monthHolidays });
+  } catch (e) {
+    console.error("GET /holidays/upcoming error:", e);
+    return internalError();
+  }
+});

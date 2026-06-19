@@ -7,10 +7,25 @@ import { updateIssueSchema } from "@/lib/validation/issue";
 import { emailIssueAssigned, emailIssueStatusChanged } from "@/lib/email/sendEmail";
 import {
   recordIssueChanges,
+  recordIssueEvent,
   selectIssueHistorySnapshot,
 } from "@/lib/services/issueHistory";
 import { recalcParentRollup } from "@/lib/services/subtaskRollup";
 import { notifyMentions } from "@/lib/services/mentions";
+import {
+  getActiveFieldsForProject,
+  getValuesForIssue,
+  validateIssueValues,
+  writeIssueValues,
+} from "@/lib/services/customFieldValues";
+import type { FieldValue } from "@/lib/customFields/registry";
+
+/** Render a custom field value as a short string for the activity feed. */
+function renderCfValue(v: FieldValue): string | null {
+  if (v === null || v === undefined || v === "") return null;
+  if (Array.isArray(v)) return v.length ? v.join(", ") : null;
+  return String(v);
+}
 
 async function loadIssueForTenant(orgId: string, issueId: string) {
   return db.qtIssue.findFirst({
@@ -64,7 +79,16 @@ export const GET = withOrgAuth<{ id: string }>(
         description: true,
       },
     });
-    return NextResponse.json({ success: true, data: { ...issue, subtasks, timeLogs } });
+    // Active custom fields for this issue's scope + the issue's stored values,
+    // embedded so the detail panel renders in one round-trip (NFR-01).
+    const [customFields, customFieldValues] = await Promise.all([
+      getActiveFieldsForProject(orgId, issue.projectId),
+      getValuesForIssue(orgId, issue.id),
+    ]);
+    return NextResponse.json({
+      success: true,
+      data: { ...issue, subtasks, timeLogs, customFields, customFieldValues },
+    });
   },
 );
 
@@ -94,7 +118,7 @@ export const PATCH = withOrgAuth<{ id: string }>(
         select: { id: true },
       });
       if (!member) {
-        return NextResponse.json({ success: false, error: "Forbidden" }, { status: 403 });
+        return NextResponse.json({ success: false, error: "You don't have access to this." }, { status: 403 });
       }
       if (!(await userCanInProject(userId, orgId, issue.projectId, "Issue", "update"))) {
         return forbidden();
@@ -107,6 +131,24 @@ export const PATCH = withOrgAuth<{ id: string }>(
         { status: 400 },
       );
     }
+    // Custom field values travel under `customFields` (not real QtIssue
+    // columns) — pull them out before the column update and validate up-front
+    // so a bad value can't half-apply.
+    const { customFields, ...issueFields } = parsed.data as typeof parsed.data & {
+      customFields?: Record<string, FieldValue>;
+    };
+    if (customFields) {
+      const valid = await validateIssueValues({
+        orgId,
+        projectId: issue.projectId,
+        issueId: issue.id,
+        values: customFields,
+      });
+      if (!valid.ok) {
+        return NextResponse.json({ success: false, error: valid.errors.join(", ") }, { status: 400 });
+      }
+    }
+
     // Field-level guard — strip any keys the user can't write (hidden /
     // readonly). Tenant admin bypass is handled inside the helper.
     const { allowed, rejected } = await filterUpdatePayload(
@@ -114,7 +156,7 @@ export const PATCH = withOrgAuth<{ id: string }>(
       orgId,
       issue.projectId,
       "Issue",
-      parsed.data as Record<string, unknown>,
+      issueFields as Record<string, unknown>,
     );
     if (rejected.length > 0 && Object.keys(allowed).length === 0) {
       return forbidden(
@@ -145,6 +187,30 @@ export const PATCH = withOrgAuth<{ id: string }>(
       before: issue,
       after: updated,
     });
+
+    // Persist custom field values (pre-validated) + log each change to the feed.
+    if (customFields) {
+      const res = await writeIssueValues({
+        orgId,
+        issueId: issue.id,
+        projectId: issue.projectId,
+        actorId: userId,
+        values: customFields,
+      });
+      if (res.ok) {
+        for (const c of res.changes) {
+          void recordIssueEvent({
+            orgId,
+            projectId: issue.projectId,
+            issueId: issue.id,
+            userId,
+            field: c.fieldName,
+            oldValue: renderCfValue(c.oldValue),
+            newValue: renderCfValue(c.newValue),
+          });
+        }
+      }
+    }
 
     // Email anyone newly @-mentioned in the description (diff vs the previous
     // description so edits don't re-notify existing mentions).
@@ -293,7 +359,14 @@ export const DELETE = withOrgAuth<{ id: string }>(
       : "cascade";
     const issue = await db.qtIssue.findFirst({
       where: { id: params.id, orgId: orgId, isDeleted: false },
-      select: { id: true, projectId: true, type: true, parentId: true },
+      select: {
+        id: true,
+        projectId: true,
+        type: true,
+        parentId: true,
+        reporterId: true,
+        createdBy: true,
+      },
     });
     if (!issue) {
       return NextResponse.json({ success: false, error: "Not found" }, { status: 404 });
@@ -305,9 +378,21 @@ export const DELETE = withOrgAuth<{ id: string }>(
         select: { id: true },
       });
       if (!member) {
-        return NextResponse.json({ success: false, error: "Forbidden" }, { status: 403 });
+        return NextResponse.json({ success: false, error: "You don't have access to this." }, { status: 403 });
       }
-      if (!(await userCanInProject(userId, orgId, issue.projectId, "Issue", "delete"))) {
+      // A full Issue:delete grant (Space Admin / custom roles) deletes any
+      // issue in the space. Without it, Contributors may delete only issues
+      // they own — i.e. ones they reported or created.
+      const canDeleteAny = await userCanInProject(
+        userId,
+        orgId,
+        issue.projectId,
+        "Issue",
+        "delete",
+      );
+      const ownsIssue =
+        issue.reporterId === userId || issue.createdBy === userId;
+      if (!canDeleteAny && !ownsIssue) {
         return forbidden();
       }
     }

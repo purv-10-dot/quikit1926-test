@@ -141,9 +141,9 @@ export const POST = withOrgAuth(async ({ orgId, userId }, req) => {
       },
     });
     await seedProjectDefaults(tx, p.id, orgId, userId);
-    // Assign the creator the seeded "Project Admin" project role so Layer 2
+    // Assign the creator the seeded "Space Admin" project role so Layer 2
     // grants are populated alongside Layer 3 membership.
-    const adminRoleId = await getStarterProjectRoleId(tx, p.id, "Project Admin");
+    const adminRoleId = await getStarterProjectRoleId(tx, p.id, "Space Admin");
     if (adminRoleId) {
       await tx.qtProjectUserRole.create({
         data: {

@@ -113,7 +113,7 @@ Modern work-management for product, engineering, and operations teams. Built aro
 ## 🔐 Permissions & Roles
 
 - **Organization roles** — Platform-wide admin and member tiers with clear privilege separation.
-- **Project-level roles** — Custom roles (Project Admin, PM, Developer, QA, Viewer) — each project can have its own setup.
+- **Project-level roles** — Custom roles (Space Admin, Contributor, Viewer) — each project can have its own setup.
 - **Resource-action permission grants** — Per-resource, per-action (view / create / update / delete) for fine-grained control.
 - **Field-level access** — Lock individual issue fields to readonly or hidden by role — perfect for QA-only or contractor flows.
 - **Navigation gating** — Show or hide entire UI sections based on role.

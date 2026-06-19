@@ -1,5 +1,6 @@
 "use client";
 
+import { toErrorMessage } from "@/lib/api/errors";
 import { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import {
@@ -11,8 +12,8 @@ import { DataTable, type ColDef } from "@/components/DataTable";
 import { WorkflowConfirmDialog } from "@/components/WorkflowConfirmDialog";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { useGatePasses } from "@/hooks/use-store";
-import { QuickCreateDrawer } from "@/components/QuickCreateDrawer";
-import { GroupedMaterialSelect } from "@/components/GroupedMaterialSelect";
+import { QuickCreateDrawer, type QuickCreateConfig } from "@/components/QuickCreateDrawer";
+import { GroupedMaterialSelect, type GroupedMaterialSelectItem } from "@/components/GroupedMaterialSelect";
 import {
   useProjects,
   useLocations,
@@ -110,6 +111,13 @@ function TypePill({ type }: { type: string }) {
   );
 }
 
+interface GatePassRow {
+  id: string; gatePassNumber?: string; gatePassDate?: string; type?: string;
+  referenceNo?: string; referenceType?: string; vehicleNo?: string;
+  driverName?: string; status?: string; expectedReturnDate?: string;
+  [key: string]: unknown;
+}
+
 export default function GatePassPage() {
   const qc = useQueryClient();
   const router = useRouter();
@@ -121,11 +129,11 @@ export default function GatePassPage() {
   // Reject open the WorkflowConfirmDialog; Quick Close opens the
   // simpler ConfirmDialog below.
   const [workflowAction, setWorkflowAction] = useState<
-    { kind: "submit" | "approve" | "reject"; row: any } | null
+    { kind: "submit" | "approve" | "reject"; row: GatePassRow } | null
   >(null);
   const [rejectReason, setRejectReason] = useState("");
   const [workflowPending, setWorkflowPending] = useState(false);
-  const [closeTarget, setCloseTarget] = useState<any | null>(null);
+  const [closeTarget, setCloseTarget] = useState<GatePassRow | null>(null);
   const [closePending, setClosePending] = useState(false);
 
   const { permissionMatrix, isSuper, hasRole } = usePermissions();
@@ -137,7 +145,7 @@ export default function GatePassPage() {
 
   const openWorkflow = (
     kind: "submit" | "approve" | "reject",
-    row: any,
+    row: GatePassRow,
   ) => {
     setRejectReason("");
     setWorkflowAction({ kind, row });
@@ -181,8 +189,8 @@ export default function GatePassPage() {
       );
       setWorkflowAction(null);
       setRejectReason("");
-    } catch (err: any) {
-      toast.error(err?.message ?? "Action failed");
+    } catch (err: unknown) {
+      toast.error(toErrorMessage(err, "Action failed"));
     } finally {
       setWorkflowPending(false);
     }
@@ -202,8 +210,8 @@ export default function GatePassPage() {
       qc.invalidateQueries({ queryKey: ["gate-passes"] });
       setCloseTarget(null);
       toast.success("Gate pass closed");
-    } catch (err: any) {
-      toast.error(err?.message ?? "Close failed");
+    } catch (err: unknown) {
+      toast.error(toErrorMessage(err, "Close failed"));
     } finally {
       setClosePending(false);
     }
@@ -220,24 +228,24 @@ export default function GatePassPage() {
   const { data: itemGroupsData } = useItemGroups();
   const { data: uomsData } = useUOMs();
 
-  const projectOptions = (projectsData?.data ?? []).map((p: any) => ({ value: p.id, label: p.name }));
-  const locationOptions = (locationsData?.data ?? []).map((l: any) => ({ value: l.id, label: l.name }));
+  const projectOptions = (projectsData?.data ?? []).map((p) => ({ value: p.id, label: p.name }));
+  const locationOptions = (locationsData?.data ?? []).map((l) => ({ value: l.id, label: l.name }));
 
-  const items = (itemsData?.data ?? []) as any[];
+  const items = (itemsData?.data ?? []) as unknown as GroupedMaterialSelectItem[];
   const itemGroups = itemGroupsData?.data ?? [];
   const itemById = useMemo(() => {
-    const m = new Map<string, any>();
+    const m = new Map<string, GroupedMaterialSelectItem>();
     for (const i of items) m.set(i.id, i);
     return m;
   }, [items]);
-  const uomOptions = (uomsData?.data ?? []).map((u: any) => ({
+  const uomOptions = (uomsData?.data ?? []).map((u) => ({
     value: u.code,
     label: u.code,
   }));
 
   const todayIso = new Date().toISOString().slice(0, 10);
 
-  const config = {
+  const config: QuickCreateConfig = {
     title: "New Gate Pass",
     subtitle: "Track inward and outward movement of materials",
     apiEndpoint: "/api/store/gate-passes",
@@ -450,8 +458,8 @@ export default function GatePassPage() {
       // movements without a material payload are meaningless audit-wise
       // (security can't verify what left/entered the site). Each filled
       // line must have a material picked, a UOM, and a positive quantity.
-      validateBeforeSubmit: (gridLines: Record<string, any>[]) => {
-        const rowHasContent = (l: Record<string, any>) =>
+      validateBeforeSubmit: (gridLines) => {
+        const rowHasContent = (l: Record<string, unknown>) =>
           Object.entries(l).some(([_, v]) => {
             return v !== undefined && v !== null && String(v).trim() !== "";
           });
@@ -480,7 +488,7 @@ export default function GatePassPage() {
           label: "Material",
           type: "custom" as const,
           width: "wide",
-          render: (line: Record<string, any>, update: (patch: Record<string, unknown>) => void) => (
+          render: (line, update: (patch: Record<string, unknown>) => void) => (
             <GroupedMaterialSelect
               value={line.itemId ?? ""}
               onChange={(v) => {
@@ -500,7 +508,7 @@ export default function GatePassPage() {
                 });
               }}
               items={items}
-              groups={itemGroups.map((g: any) => ({
+              groups={itemGroups.map((g) => ({
                 id: g.id,
                 name: g.name,
                 status: g.status,
@@ -535,14 +543,14 @@ export default function GatePassPage() {
     },
   };
 
-  const isOverdue = (row: any) => {
+  const isOverdue = (row: GatePassRow) => {
     if (!row?.expectedReturnDate) return false;
     const status = String(row.status ?? "").toLowerCase();
     if (status === "closed" || status === "returned") return false;
     return row.expectedReturnDate < todayIso;
   };
 
-  const columns: ColDef<any>[] = [
+  const columns: ColDef<GatePassRow>[] = [
     {
       key: "gatePassNumber",
       label: "Gate Pass No",
@@ -581,7 +589,7 @@ export default function GatePassPage() {
       type: "select",
       options: ["inward", "outward", "returnable", "non_returnable"],
       sortable: true,
-      render: (row) => <TypePill type={row.type} />,
+      render: (row) => <TypePill type={row.type ?? ""} />,
     },
     {
       key: "referenceNo",
@@ -599,7 +607,7 @@ export default function GatePassPage() {
       //   4. neither             → em dash
       render: (row) => {
         const ref = row.referenceNo;
-        const refLabel = REFERENCE_LABEL[row.referenceType];
+        const refLabel = REFERENCE_LABEL[row.referenceType ?? ""];
         if (ref && refLabel) {
           return (
             <div className="leading-tight">
@@ -774,11 +782,9 @@ export default function GatePassPage() {
         <DataTable
           id="store-gate-pass"
           columns={columns}
-          data={data}
+          data={data as unknown as GatePassRow[]}
           onAdd={canAdd ? () => setDrawerOpen(true) : undefined}
           addLabel="New Gate Pass"
-          defaultSort="gatePassDate"
-          defaultSortDir="desc"
           historyEntityType="gate_pass"
         />
       </PageContainer>

@@ -2,7 +2,7 @@
 import { z } from "zod";
 import { db } from "@/lib/db";
 import { withOrgAuth } from "@/lib/api/withOrgAuth";
-import { hasAdminAccess } from "@/lib/api/permissions";
+import { hasAdminAccess, userCanInProject, forbidden } from "@/lib/api/permissions";
 
 const bodySchema = z.object({
   projectId: z.string().min(1),
@@ -39,6 +39,11 @@ export const POST = withOrgAuth(async ({ orgId, userId }, req) => {
     });
     if (!member) {
       return NextResponse.json({ success: false, error: "Project not found" }, { status: 404 });
+    }
+    // Same gate as single delete (DELETE /api/issues/[id]) — membership alone
+    // is not enough; the role must grant Issue:delete in this project.
+    if (!(await userCanInProject(userId, orgId, project.id, "Issue", "delete"))) {
+      return forbidden();
     }
   }
 

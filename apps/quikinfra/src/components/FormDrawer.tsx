@@ -7,7 +7,7 @@
 
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { createPortal } from "react-dom";
-import { Check, ChevronDown, Search, X } from "lucide-react";
+import { AlertTriangle, Check, ChevronDown, Search, X } from "lucide-react";
 import { PrimaryButton, SecondaryButton } from "./PageShell";
 
 interface FormDrawerProps {
@@ -130,6 +130,25 @@ export function Field({ label, required, error, children, span, hint }: FieldPro
   );
 }
 
+/**
+ * InactiveStatusNotice — amber inline hint shown directly under a Status
+ * field when the selected status is "inactive". Reminds the user that the
+ * record is soft-deleted / hidden from selection lists and how to bring it
+ * back. Render conditionally on `status === "inactive"` next to the Status
+ * SelectInput across every master form so the cue is consistent everywhere.
+ */
+export function InactiveStatusNotice({ entityName = "record" }: { entityName?: string }) {
+  return (
+    <p className="mt-1.5 flex items-start gap-1.5 rounded-md border border-amber-200 bg-amber-50 px-2.5 py-1.5 text-xs text-amber-700">
+      <AlertTriangle className="mt-0.5 w-3.5 h-3.5 shrink-0" />
+      <span>
+        This {entityName.toLowerCase()} is inactive and hidden from selection lists.
+        Set status to <span className="font-medium">“Active”</span> to make it usable.
+      </span>
+    </p>
+  );
+}
+
 export function TextInput({
   value, onChange, placeholder, type = "text", disabled, className, invalid, ...props
 }: Omit<React.InputHTMLAttributes<HTMLInputElement>, 'onChange'> & { value: string; onChange: (v: string) => void; invalid?: boolean }) {
@@ -145,7 +164,14 @@ export function NumberInput({
   value, onChange, placeholder, min, max, step, disabled, invalid,
 }: { value: string | number; onChange: (v: string) => void; placeholder?: string; min?: number; max?: number; step?: string; disabled?: boolean; invalid?: boolean }) {
   return (
-    <input type="number" value={value} onChange={(e) => onChange(e.target.value)}
+    <input type="number" value={value}
+      // Native number inputs still accept e / E / + / - (exponent + sign) —
+      // that's how letters leak into amount fields. Block those keys, and
+      // strip anything non-numeric that arrives via paste / autofill.
+      onKeyDown={(e) => {
+        if (["e", "E", "+", "-"].includes(e.key)) e.preventDefault();
+      }}
+      onChange={(e) => onChange(e.target.value.replace(/[^0-9.]/g, ""))}
       placeholder={placeholder} min={min} max={max} step={step} disabled={disabled}
       className={`${BASE_INPUT} ${invalid ? INPUT_ERR : INPUT_OK}`} />
   );
@@ -555,11 +581,34 @@ export function MultiSelectInput({
   // panel as SelectInput. Each pick appends to the values array and keeps
   // the field reset to "" so it can prompt for the next addition.
   const [open, setOpen] = useState(false);
+  const [mounted, setMounted] = useState(false);
   const wrapRef = useRef<HTMLDivElement | null>(null);
+  const triggerBoxRef = useRef<HTMLDivElement | null>(null);
+  const panelRef = useRef<HTMLDivElement | null>(null);
+  // Portal panel position — `position: fixed` so the dropdown escapes the
+  // drawer body's `overflow-y-auto` (which otherwise clips it), mirroring
+  // SelectInput. Recomputed on open and on scroll/resize so it tracks the
+  // trigger, and flips above when there's not enough room below.
+  const [panelStyle, setPanelStyle] = useState<{
+    top: number;
+    left: number;
+    width: number;
+    maxHeight: number;
+    placement: "below" | "above";
+  } | null>(null);
+
+  // createPortal needs a real DOM target — defer until mounted client-side.
+  useEffect(() => {
+    setMounted(true);
+  }, []);
+
   useEffect(() => {
     if (!open) return;
     const onDocDown = (e: MouseEvent) => {
-      if (!wrapRef.current?.contains(e.target as Node)) setOpen(false);
+      const target = e.target as Node;
+      if (wrapRef.current?.contains(target)) return;
+      if (panelRef.current?.contains(target)) return;
+      setOpen(false);
     };
     const onKey = (e: KeyboardEvent) => {
       if (e.key === "Escape") setOpen(false);
@@ -572,21 +621,127 @@ export function MultiSelectInput({
     };
   }, [open]);
 
+  useLayoutEffect(() => {
+    if (!open) {
+      setPanelStyle(null);
+      return;
+    }
+    const compute = () => {
+      const el = triggerBoxRef.current;
+      if (!el) return;
+      const rect = el.getBoundingClientRect();
+      const vh = window.innerHeight;
+      const margin = 8;
+      const desired = 280;
+      const spaceBelow = vh - rect.bottom - margin;
+      const spaceAbove = rect.top - margin;
+      const placeAbove = spaceBelow < Math.min(desired, 200) && spaceAbove > spaceBelow;
+      const maxHeight = Math.max(160, Math.min(desired, placeAbove ? spaceAbove : spaceBelow));
+      setPanelStyle({
+        top: placeAbove ? rect.top - 4 : rect.bottom + 4,
+        left: rect.left,
+        width: rect.width,
+        maxHeight,
+        placement: placeAbove ? "above" : "below",
+      });
+    };
+    compute();
+    window.addEventListener("scroll", compute, true);
+    window.addEventListener("resize", compute);
+    return () => {
+      window.removeEventListener("scroll", compute, true);
+      window.removeEventListener("resize", compute);
+    };
+  }, [open]);
+
   const toggle = (v: string) => {
     if (values.includes(v)) remove(v);
     else add(v);
   };
 
+  // With no chips, show the placeholder. Once chips render, the selection
+  // is already visible, so the inline trigger drops to a quiet "Add more…"
+  // hint — and disappears entirely when every option is picked.
   const triggerLabel =
     values.length === 0
       ? (placeholder ?? "Select…")
-      : `${values.length} selected — pick more or remove`;
+      : remaining.length > 0
+        ? "Add more…"
+        : "";
 
   const triggerDisabled = disabled || options.length === 0;
 
+  const panelNode =
+    open && mounted && panelStyle && options.length > 0
+      ? createPortal(
+          <div
+            ref={panelRef}
+            role="listbox"
+            aria-multiselectable="true"
+            style={{
+              position: "fixed",
+              top: panelStyle.placement === "above" ? undefined : panelStyle.top,
+              bottom:
+                panelStyle.placement === "above"
+                  ? window.innerHeight - panelStyle.top
+                  : undefined,
+              left: panelStyle.left,
+              width: panelStyle.width,
+              maxHeight: panelStyle.maxHeight,
+            }}
+            className="z-[1000] overflow-auto rounded-lg border border-gray-200 bg-white shadow-lg ring-1 ring-black/5 py-1"
+          >
+            {(groupedDropdown ?? remaining.map((o) => ({ kind: "option" as const, o }))).length === 0 ? (
+              <div className="px-3 py-2 text-xs text-gray-400">All options selected</div>
+            ) : (
+              (groupedDropdown ?? remaining.map((o) => ({ kind: "option" as const, o }))).map((row) => {
+                if (row.kind === "header") {
+                  return (
+                    <div
+                      key={row.key}
+                      className="px-3 py-1.5 text-[10px] font-semibold uppercase tracking-wide text-gray-500 bg-gray-50 border-b border-gray-100"
+                      role="presentation"
+                    >
+                      {row.title}
+                    </div>
+                  );
+                }
+                const o = row.o;
+                const selected = values.includes(o.value);
+                return (
+                  <button
+                    type="button"
+                    key={o.value}
+                    role="option"
+                    aria-selected={selected}
+                    onClick={() => toggle(o.value)}
+                    className={`w-full flex items-center gap-2 px-3 py-1.5 text-sm transition-colors ${
+                      selected
+                        ? "bg-orange-50 text-orange-800 hover:bg-orange-100"
+                        : "text-gray-700 hover:bg-gray-100"
+                    }`}
+                  >
+                    <span
+                      className={`inline-flex items-center justify-center w-4 h-4 rounded border shrink-0 ${
+                        selected ? "bg-orange-600 border-orange-600 text-white" : "border-gray-300 bg-white"
+                      }`}
+                      aria-hidden="true"
+                    >
+                      {selected && <Check className="w-3 h-3" />}
+                    </span>
+                    <span className="flex-1 text-left">{o.label}</span>
+                  </button>
+                );
+              })
+            )}
+          </div>,
+          document.body,
+        )
+      : null;
+
   return (
     <div ref={wrapRef} className="relative">
-      <div className={`${BASE_INPUT} ${invalid ? INPUT_ERR : INPUT_OK} flex flex-wrap items-center gap-1.5 min-h-[38px] py-1.5 pr-8`}>
+      <div ref={triggerBoxRef} className={`${BASE_INPUT} ${invalid ? INPUT_ERR : INPUT_OK} flex flex-wrap items-center gap-1.5 min-h-[38px] py-1.5 pr-8`}>
         {values.map((v) => (
           <span key={v} className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-orange-50 text-orange-700 text-xs font-medium border border-orange-200">
             {labelOf(v)}
@@ -608,9 +763,7 @@ export function MultiSelectInput({
           onClick={() => !triggerDisabled && setOpen((o) => !o)}
           aria-haspopup="listbox"
           aria-expanded={open}
-          className={`flex-1 min-w-[120px] text-left text-sm bg-transparent focus:outline-none ${
-            values.length === 0 && remaining.length > 0 ? "text-gray-400" : "text-gray-600"
-          } disabled:text-gray-400`}
+          className={`flex-1 min-w-[80px] text-left text-sm bg-transparent focus:outline-none text-gray-400 disabled:text-gray-400`}
         >
           {triggerLabel}
         </button>
@@ -618,54 +771,7 @@ export function MultiSelectInput({
           className={`absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400 transition-transform ${open ? "rotate-180" : ""}`}
         />
       </div>
-
-      {open && options.length > 0 && (
-        <div
-          role="listbox"
-          aria-multiselectable="true"
-          className="absolute z-50 left-0 right-0 mt-1 max-h-60 overflow-auto rounded-lg border border-gray-200 bg-white shadow-lg ring-1 ring-black/5 py-1"
-        >
-          {(groupedDropdown ?? remaining.map((o) => ({ kind: "option" as const, o }))).map((row) => {
-            if (row.kind === "header") {
-              return (
-                <div
-                  key={row.key}
-                  className="px-3 py-1.5 text-[10px] font-semibold uppercase tracking-wide text-gray-500 bg-gray-50 border-b border-gray-100"
-                  role="presentation"
-                >
-                  {row.title}
-                </div>
-              );
-            }
-            const o = row.o;
-            const selected = values.includes(o.value);
-            return (
-              <button
-                type="button"
-                key={o.value}
-                role="option"
-                aria-selected={selected}
-                onClick={() => toggle(o.value)}
-                className={`w-full flex items-center gap-2 px-3 py-1.5 text-sm transition-colors ${
-                  selected
-                    ? "bg-orange-50 text-orange-800 hover:bg-orange-100"
-                    : "text-gray-700 hover:bg-gray-100"
-                }`}
-              >
-                <span
-                  className={`inline-flex items-center justify-center w-4 h-4 rounded border shrink-0 ${
-                    selected ? "bg-orange-600 border-orange-600 text-white" : "border-gray-300 bg-white"
-                  }`}
-                  aria-hidden="true"
-                >
-                  {selected && <Check className="w-3 h-3" />}
-                </span>
-                <span className="flex-1 text-left">{o.label}</span>
-              </button>
-            );
-          })}
-        </div>
-      )}
+      {panelNode}
     </div>
   );
 }

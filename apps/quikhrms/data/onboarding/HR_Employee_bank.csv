@@ -1,0 +1,37 @@
+Emp ID,Employee Name,Bank Name,Branch Name,Account Number,Account Holder Name,IFSC Code,Account Type
+1001,Nilesh Yadav,HDFC Bank LTD,Shehnai Branch,50100013830070,Nilesh Yadav,HDFC0001772,Savings
+1002,Harsh Patidar,Indus Bank,Indore,158602552644,Harsh Patidar,INDB0000011,Savings
+1003,Purnesh Yadav,Bank Of Baroda,Khargone,29790100030922,Purnesh Kumar Yadav,BARB0KHARGO,Savings
+1004,Rahul Sen,Indus Bank,Indore,157974225694,Rahul Sen,INDB0000011,Savings
+1005,Amresh Kumar Sinha,Indus Bank,Indore,159770441050,Amresh Kumar Sinha,INDB0000011,Savings
+1006,Amay Jain,Indus Bank,Indore,156261807011,Amay Jain,INDB0000011,Savings
+1007,Nikhil Rewasiya,Indus Bank,Indore,159691330813,Nikhil Rewasiya,INDB0000011,Savings
+1008,Abhinay Kumar,Indus Bank,Indore,159103491036,Abhinay Kumar,INDB0000011,Savings
+1009,Ajay Mahnot,Indus Bank,Indore,159579381908,Ajay Mahnot,INDB0000011,Savings
+1010,Aashay Jain,Indus Bank,Indore,157693031033,Aashay Jain,INDB0000011,Savings
+1111,Mayank Sharma,Indus Bank,Indore,151401121999,Mayank Sharma,INDB0000011,Savings
+1112,Harshit Vaidya,Indus Bank,Indore,159201074584,Harshit Vaidya,INDB0000011,Savings
+1113,Sohan Patel,Indus Bank,Indore,100286450732,Sohan Patel,INDB0000011,Savings
+1114,Nilesh Dhole,Indus Bank,Indore,100286450107,Nilesh Dhole,INDB0000011,Savings
+1115,Pawan Verma,Indus Bank,Indore,158962482304,Pawan Verma,INDB0000011,Savings
+1116,Akhilesh Birla,Union Bank,Indore,326302010087543,Akhilesh Birla,UBIN0549746,Savings
+1117,Shanu Choudhary,Indus Bank,Indore,159643846282,Shanu Choudhary,INDB0000011,Savings
+1118,Bhanupratap Singh Kachhawa,Fino,Indore,20378148569,Bhanupratap Singh Kachhawa,FINO0009001,Savings
+1119,Gopal Chouhan,Indus Bank,Indore,100286450701,Gopal Chouhan,INDB0000011,Savings
+1120,Mukesh Yadav,Indus Bank,Indore,100286450718,Mukesh Yadav,INDB0000011,Savings
+1121,Shreyash Shukla,Indus Bank,Indore,100286450725,Shreyash Shukla,INDB0000011,Savings
+1122,Surya Kant Rai,SBI,Bhopal,53008782906,Suryakant Rai,SBIN0030390,Savings
+1123,Ram Krishan Malviya,SBI,Itarsi,63037561965,Ram Krishan Malviya,SBIN0000389,Savings
+1124,Sanjay Malviya,CBI,Seoni Malva,3227029250,Sanjay Malviya,CBIN0283381,Savings
+1125,Rahul Vishwakarma,Bank of Baroda,Bhopal,21710100023125,Rahul Vishwakarma,BARB0KOTRAS,Savings
+1126,Budhram Patel,SBI,Budhni,43116004700,Budhram Patel,SBIN0010819,Savings
+1127,Shankar Nath Chauhan,HDFC,Noida Sector 16,50100490386311,Shankarnath Chauhan,HDFC0001351,Savings
+1128,Trilok Sharma,Indus Bank,Indore,100286450893,Trilok Sharma,INDB0000011,Savings
+1129,Pushpesh Dubey,Indus Bank,Indore,100286450824,Pushpesh Dubey,INDB0000011,Savings
+1130,Chetan Patel,Indus Bank,Indore,100286450572,Chetan Patel,INDB0000011,Savings
+1131,Anand Yadav,IndusInd Bank,Indore,100286450619,Anand Yadav,INDB0000011,Savings
+1132,Vishwajeet Singh,Yes Bank,Lucknow,1991900007829,Vishwajeet Singh,YESB0000018,Savings
+1133,Rajkumar Rao,IndusInd Bank,Indore,100286450565,Rajkumar Rao,INDB0000011,Savings
+1134,Sorav Gour,IndusInd Bank,Indore,100286450589,Sorav Gour,INDB0000011,Savings
+1135,Jitendra Singh Rajput,Central Bank of India,Lalitpur,5200152541,Jitendra Singh,CBIN0283297,Savings
+1136,Gautam Dangi,Canara Bank,Vidisha,77552210024117,Gautam Dangi,CNRB0002346,Savings

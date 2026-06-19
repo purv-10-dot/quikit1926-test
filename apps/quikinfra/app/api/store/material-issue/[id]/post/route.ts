@@ -2,15 +2,21 @@ import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { withOrgAuthForModule } from "@/lib/api/withOrgAuth";
 import { logAudit } from "@/lib/audit";
+import { postMaterialIssueOutward, StockError } from "@/lib/stock/ledger-service";
+import type { TenantContext } from "@/lib/auth/context";
 
 const withOrgAuth = withOrgAuthForModule("store");
 
 /**
  * POST /api/store/material-issue/[id]/post
  *
- * DRAFT → POSTED. Writes negative stock (qtyOut) rows to CnStockLedger in a
- * single transaction. Validates running balance per item+location before
- * issuing to prevent negative stock.
+ * DRAFT → POSTED. Deducts stock by routing every line through the stock
+ * ledger service (`postMaterialIssueOutward`), which — inside one
+ * transaction — appends the CnStockLedger rows AND keeps the CnStockBalance
+ * cache (quantity + moving-average rate) in sync. The negative-balance guard
+ * lives in the service, so the ledger and the balance cache can never
+ * disagree. This route must never write CnStockLedger / CnStockBalance
+ * directly.
  */
 export const POST = withOrgAuth<{ id: string }>(async ({ orgId, userId }, _req, { params }) => {
   const issue = await db.cnMaterialIssue.findFirst({
@@ -31,65 +37,40 @@ export const POST = withOrgAuth<{ id: string }>(async ({ orgId, userId }, _req, 
     return NextResponse.json({ success: false, error: "Issue has no location; cannot post" }, { status: 400 });
   }
   const locationId = issue.locationId;
-
-  // Pre-check: current balance per item at this location (projectId + locationId + itemId)
-  const insufficient: Array<{ itemId: string; available: number; requested: number }> = [];
-  for (const line of issue.lines) {
-    const agg = await db.cnStockLedger.aggregate({
-      where: {
-        orgId,
-        projectId: issue.projectId,
-        locationId,
-        itemId: line.itemId,
-      },
-      _sum: { qtyIn: true, qtyOut: true },
-    });
-    const available = Number(agg._sum?.qtyIn ?? 0) - Number(agg._sum?.qtyOut ?? 0);
-    if (available < Number(line.issuedQty)) {
-      insufficient.push({ itemId: line.itemId, available, requested: Number(line.issuedQty) });
-    }
-  }
-  if (insufficient.length > 0) {
-    return NextResponse.json(
-      {
-        success: false,
-        error: "Insufficient stock",
-        details: insufficient,
-      },
-      { status: 400 },
-    );
-  }
-
   const postedAt = new Date();
+
+  // The stock service takes a TenantContext but only reads orgId/userId.
+  const ctx = { orgId, userId } as TenantContext;
 
   try {
     await db.$transaction(async (tx) => {
-      for (const line of issue.lines) {
-        await tx.cnStockLedger.create({
-          data: {
-            orgId,
-            projectId: issue.projectId,
-            locationId,
-            itemId: line.itemId,
-            transactionType: "issue",
-            transactionRefId: issue.id,
-            transactionRefNumber: issue.issueNumber,
-            transactionDate: issue.issueDate,
-            qtyIn: 0,
-            qtyOut: line.issuedQty,
-            unitRate: line.unitRate,
-            amount: line.amount,
-            uomId: line.uomId,
-            createdBy: userId,
-          },
-        });
-      }
+      // Appends ledger rows + upserts the balance cache atomically. Throws
+      // StockError (INSUFFICIENT_STOCK) if any line would drive a balance
+      // negative — that rolls back the whole posting and the status flip.
+      await postMaterialIssueOutward(tx, ctx, {
+        id: issue.id,
+        issueNumber: issue.issueNumber,
+        projectId: issue.projectId,
+        locationId,
+        lines: issue.lines.map((l) => ({
+          itemId: l.itemId,
+          uomId: l.uomId,
+          issuedQty: Number(l.issuedQty),
+          unitRate: Number(l.unitRate),
+        })),
+      });
       await tx.cnMaterialIssue.update({
         where: { id: issue.id },
         data: { status: "posted", updatedBy: userId },
       });
     });
   } catch (err: unknown) {
+    if (err instanceof StockError) {
+      return NextResponse.json(
+        { success: false, error: err.message, code: err.code },
+        { status: err.httpStatus },
+      );
+    }
     const msg = err instanceof Error ? err.message : "Posting failed";
     return NextResponse.json({ success: false, error: `Transaction failed: ${msg}` }, { status: 500 });
   }

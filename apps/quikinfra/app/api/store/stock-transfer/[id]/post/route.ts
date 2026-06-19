@@ -1,18 +1,24 @@
 import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { withOrgAuthForModule } from "@/lib/api/withOrgAuth";
+import { postLedgerEntry, LEDGER_TX_TYPES, StockError } from "@/lib/stock/ledger-service";
+import type { TenantContext } from "@/lib/auth/context";
 
 const withOrgAuth = withOrgAuthForModule("store");
 
 /**
  * POST /api/store/stock-transfer/[id]/post
  *
- * Posts BOTH legs of the transfer atomically:
- *   - transfer_out at fromLocation (qtyOut)
- *   - transfer_in at toLocation   (qtyIn)
+ * Posts BOTH legs of the transfer atomically through the stock ledger service:
+ *   - transfer_out at the source     (qtyOut)
+ *   - transfer_in  at the destination (qtyIn)
  *
- * Only valid if source has sufficient stock. Both ledger rows share the same
- * transactionRefId so reconciliation reports can pair them.
+ * Each line moves at the SOURCE's current moving-average rate, so total
+ * inventory value is conserved across the transfer (the destination's avgRate
+ * isn't diluted). `postLedgerEntry` appends each CnStockLedger row AND keeps
+ * the CnStockBalance cache in sync — the source-balance guard lives in the
+ * service, so a transfer that would drive the source negative rolls back both
+ * legs and the status flip. This route must never write the ledger directly.
  */
 export const POST = withOrgAuth<{ id: string }>(async ({ orgId, userId }, _req, { params }) => {
   const tr = await db.cnStockTransfer.findFirst({
@@ -29,63 +35,54 @@ export const POST = withOrgAuth<{ id: string }>(async ({ orgId, userId }, _req, 
   const toProjectId = tr.toProjectId;
   const toLocationId = tr.toLocationId;
 
-  // Source-balance pre-check
-  const insufficient: Array<{ itemId: string; available: number; requested: number }> = [];
-  for (const line of tr.lines) {
-    const agg = await db.cnStockLedger.aggregate({
-      where: { orgId, projectId: fromProjectId, locationId: fromLocationId, itemId: line.itemId },
-      _sum: { qtyIn: true, qtyOut: true },
-    });
-    const available = Number(agg._sum?.qtyIn ?? 0) - Number(agg._sum?.qtyOut ?? 0);
-    if (available < Number(line.sentQty)) {
-      insufficient.push({ itemId: line.itemId, available, requested: Number(line.sentQty) });
-    }
-  }
-  if (insufficient.length) {
-    return NextResponse.json({ success: false, error: "Insufficient stock at source", details: insufficient }, { status: 400 });
-  }
-
+  // The stock service takes a TenantContext but only reads orgId/userId.
+  const ctx = { orgId, userId } as TenantContext;
   const postedAt = new Date();
+
   try {
     await db.$transaction(async (tx) => {
       for (const line of tr.lines) {
-        // OUT at source
-        await tx.cnStockLedger.create({
-          data: {
-            orgId,
-            projectId: fromProjectId,
-            locationId: fromLocationId,
-            itemId: line.itemId,
-            transactionType: "transfer_out",
-            transactionRefId: tr.id,
-            transactionRefNumber: tr.transferNumber,
-            transactionDate: tr.transferDate,
-            qtyIn: 0,
-            qtyOut: line.sentQty,
-            unitRate: 0,
-            amount: 0,
-            uomId: line.uomId,
-            createdBy: userId,
+        const qty = Number(line.sentQty);
+        if (qty <= 0) continue;
+
+        // Move at the source location's current moving-average cost so the
+        // destination's avgRate stays meaningful (not diluted to 0).
+        const bal = await tx.cnStockBalance.findUnique({
+          where: {
+            projectId_locationId_itemId: {
+              projectId: fromProjectId,
+              locationId: fromLocationId,
+              itemId: line.itemId,
+            },
           },
         });
-        // IN at destination (same refId so they pair up)
-        await tx.cnStockLedger.create({
-          data: {
-            orgId,
-            projectId: toProjectId,
-            locationId: toLocationId,
-            itemId: line.itemId,
-            transactionType: "transfer_in",
-            transactionRefId: tr.id,
-            transactionRefNumber: tr.transferNumber,
-            transactionDate: tr.transferDate,
-            qtyIn: line.sentQty,
-            qtyOut: 0,
-            unitRate: 0,
-            amount: 0,
-            uomId: line.uomId,
-            createdBy: userId,
-          },
+        const unitRate = bal ? Number(bal.avgRate.toString()) : 0;
+
+        // OUT at source — guard rejects if it would go negative.
+        await postLedgerEntry(tx, ctx, {
+          projectId: fromProjectId,
+          locationId: fromLocationId,
+          itemId: line.itemId,
+          uomId: line.uomId,
+          qty,
+          unitRate,
+          txType: LEDGER_TX_TYPES.TRANSFER_OUT,
+          refId: tr.id,
+          refNumber: tr.transferNumber,
+          txDate: tr.transferDate,
+        });
+        // IN at destination — same refId pairs the legs; same rate conserves value.
+        await postLedgerEntry(tx, ctx, {
+          projectId: toProjectId,
+          locationId: toLocationId,
+          itemId: line.itemId,
+          uomId: line.uomId,
+          qty,
+          unitRate,
+          txType: LEDGER_TX_TYPES.TRANSFER_IN,
+          refId: tr.id,
+          refNumber: tr.transferNumber,
+          txDate: tr.transferDate,
         });
       }
       await tx.cnStockTransfer.update({
@@ -94,6 +91,12 @@ export const POST = withOrgAuth<{ id: string }>(async ({ orgId, userId }, _req, 
       });
     });
   } catch (err: unknown) {
+    if (err instanceof StockError) {
+      return NextResponse.json(
+        { success: false, error: err.message, code: err.code },
+        { status: err.httpStatus },
+      );
+    }
     const msg = err instanceof Error ? err.message : "Posting failed";
     return NextResponse.json({ success: false, error: `Transaction failed: ${msg}` }, { status: 500 });
   }

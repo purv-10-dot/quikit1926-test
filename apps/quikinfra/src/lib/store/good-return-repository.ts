@@ -3,6 +3,7 @@
  */
 
 import { db } from "@/lib/db";
+import { Prisma } from "@quikit/database";
 
 export interface GoodReturnLine {
   itemId?: string | null;
@@ -67,20 +68,73 @@ export interface UpdateGoodReturnInput {
 }
 
 function genId(): string {
-  if (typeof (globalThis as any).crypto?.randomUUID === "function") {
-    return (globalThis as any).crypto.randomUUID();
+  const cryptoObj = (globalThis as { crypto?: { randomUUID?: () => string } })
+    .crypto;
+  if (typeof cryptoObj?.randomUUID === "function") {
+    return cryptoObj.randomUUID();
   }
   return `gr_${Date.now()}_${Math.random().toString(36).slice(2, 10)}`;
 }
 
-function toIsoDate(v: any): string | null {
+/** A money/quantity value as it arrives from Prisma (Decimal) or raw SQL. */
+type Numericish = Prisma.Decimal | number | string | null | undefined;
+
+/** Raw `SELECT *` row from `Good_returns` (+ optional joined display fields). */
+interface GoodReturnRow {
+  id: string;
+  orgId: string;
+  returnNumber: string;
+  projectId?: string | null;
+  projectName?: string | null;
+  locationId?: string | null;
+  locationName?: string | null;
+  vendorId?: string | null;
+  vendorName?: string | null;
+  grnId?: string | null;
+  grnNumber?: string | null;
+  returnDate?: Date | string | null;
+  reason?: string | null;
+  remarks?: string | null;
+  vehicleNo?: string | null;
+  driverName?: string | null;
+  driverMobileNo?: string | null;
+  challanNo?: string | null;
+  transactionAmount?: Numericish;
+  intercityTransfer?: boolean | null;
+  ewayBillNo?: string | null;
+  photoAttachment?: string | null;
+  lineCount?: number | null;
+  materials?: unknown;
+  status?: string | null;
+  approvalId?: string | null;
+  rejectionReason?: string | null;
+  returnReason?: string | null;
+  submittedAt?: Date | null;
+  submittedBy?: string | null;
+  approvedAt?: Date | null;
+  approvedBy?: string | null;
+  rejectedAt?: Date | null;
+  rejectedBy?: string | null;
+  returnedAt?: Date | null;
+  returnedBy?: string | null;
+  dispatchedAt?: Date | null;
+  dispatchedBy?: string | null;
+  dispatchVehicleNo?: string | null;
+  dispatchRemarks?: string | null;
+  createdAt?: Date | null;
+  updatedAt?: Date | null;
+  createdBy?: string | null;
+  updatedBy?: string | null;
+}
+
+function toIsoDate(v: Date | string | null | undefined): string | null {
   if (!v) return null;
   if (typeof v === "string") return v.slice(0, 10);
   if (v?.toISOString) return v.toISOString().slice(0, 10);
   return null;
 }
 
-function mapRow(row: any): any {
+function mapRow(row: GoodReturnRow | null) {
   if (!row) return null;
   return {
     id: row.id,
@@ -125,10 +179,12 @@ function mapRow(row: any): any {
     dispatchRemarks: row.dispatchRemarks ?? null,
     createdAt: row.createdAt?.toISOString?.() ?? row.createdAt ?? null,
     updatedAt: row.updatedAt?.toISOString?.() ?? row.updatedAt ?? null,
-    createdBy: row.createdBy ?? null,
-    updatedBy: row.updatedBy ?? null,
+    createdBy: row.createdBy ?? "",
+    updatedBy: row.updatedBy ?? "",
   };
 }
+
+export type GoodReturn = NonNullable<ReturnType<typeof mapRow>>;
 
 export async function listGoodReturns(
   orgId: string,
@@ -138,35 +194,37 @@ export async function listGoodReturns(
     search?: string | null;
     allowedProjectIds?: string[] | null;
   } = {},
-): Promise<any[]> {
+): Promise<GoodReturn[]> {
   const allowed = opts.allowedProjectIds ?? null;
   if (allowed !== null && allowed.length === 0) return [];
 
-  const rows: any[] = await (db as any).$queryRaw`
+  const rows = await db.$queryRaw<GoodReturnRow[]>`
     SELECT *
     FROM app_quikinfra."Good_returns"
     WHERE "orgId" = ${orgId}
     ORDER BY "returnDate" DESC NULLS LAST, "createdAt" DESC
   `;
-  let mapped = rows.map(mapRow);
+  let mapped = rows
+    .map(mapRow)
+    .filter((r): r is NonNullable<typeof r> => r !== null);
 
   if (allowed !== null) {
     const set = new Set(allowed);
     mapped = mapped.filter(
-      (r: any) => !r.projectId || set.has(r.projectId),
+      (r) => !r.projectId || set.has(r.projectId),
     );
   }
   if (opts.status && opts.status !== "all") {
     mapped = mapped.filter(
-      (r: any) => String(r.status ?? "").toLowerCase() === opts.status,
+      (r) => String(r.status ?? "").toLowerCase() === opts.status,
     );
   }
   if (opts.projectId) {
-    mapped = mapped.filter((r: any) => r.projectId === opts.projectId);
+    mapped = mapped.filter((r) => r.projectId === opts.projectId);
   }
   if (opts.search) {
     const q = opts.search.toLowerCase();
-    mapped = mapped.filter((r: any) =>
+    mapped = mapped.filter((r) =>
       [r.returnNumber, r.projectName, r.vendorName, r.reason].some(
         (v) => typeof v === "string" && v.toLowerCase().includes(q),
       ),
@@ -178,8 +236,8 @@ export async function listGoodReturns(
 export async function findGoodReturnById(
   orgId: string,
   id: string,
-): Promise<any | null> {
-  const rows: any[] = await (db as any).$queryRaw`
+): Promise<GoodReturn | null> {
+  const rows = await db.$queryRaw<GoodReturnRow[]>`
     SELECT *
     FROM app_quikinfra."Good_returns"
     WHERE "orgId" = ${orgId} AND id = ${id}
@@ -190,20 +248,20 @@ export async function findGoodReturnById(
 
 export async function createGoodReturn(
   input: CreateGoodReturnInput,
-): Promise<any> {
+): Promise<GoodReturn | null> {
   const id = genId();
   const lines = Array.isArray(input.lines) ? input.lines : [];
   const materialsJson = JSON.stringify(lines);
   const lineCount = lines.length;
   const now = new Date();
 
-  const toDecOrNull = (v: any): number | null => {
+  const toDecOrNull = (v: unknown): number | null => {
     if (v === null || v === undefined || v === "") return null;
     const n = Number(v);
     return Number.isFinite(n) ? n : null;
   };
 
-  await (db as any).$executeRaw`
+  await db.$executeRaw`
     INSERT INTO app_quikinfra."Good_returns" (
       id, "orgId", "returnNumber",
       "projectId", "projectName", "locationId", "locationName",
@@ -237,14 +295,14 @@ export async function createGoodReturn(
 export async function updateGoodReturn(
   id: string,
   input: UpdateGoodReturnInput,
-): Promise<any | null> {
+): Promise<GoodReturn | null> {
   const existing = await findGoodReturnById(input.orgId, id);
   if (!existing) return null;
   const linesChanged = Array.isArray(input.lines);
   const lines = linesChanged ? input.lines ?? [] : existing.lines;
   const lineCount = linesChanged ? lines.length : existing.lineCount ?? 0;
 
-  const toDecOrNull = (v: any): number | null => {
+  const toDecOrNull = (v: unknown): number | null => {
     if (v === null || v === undefined || v === "") return null;
     const n = Number(v);
     return Number.isFinite(n) ? n : null;
@@ -276,7 +334,7 @@ export async function updateGoodReturn(
     status: input.status ?? existing.status,
   };
 
-  await (db as any).$executeRaw`
+  await db.$executeRaw`
     UPDATE app_quikinfra."Good_returns"
     SET
       "projectName"       = ${next.projectName},
@@ -328,13 +386,13 @@ export async function patchGoodReturnStatus(
     dispatchRemarks?: string | null;
     updatedBy: string;
   },
-): Promise<any | null> {
+): Promise<GoodReturn | null> {
   const existing = await findGoodReturnById(orgId, id);
   if (!existing) return null;
 
   const pick = <T>(v: T | undefined, fallback: T): T =>
     v !== undefined ? v : fallback;
-  const dateOrNull = (v: string | null): Date | null =>
+  const dateOrNull = (v: string | Date | null): Date | null =>
     v ? new Date(v) : null;
 
   const next = {
@@ -359,7 +417,7 @@ export async function patchGoodReturnStatus(
     dispatchRemarks: pick(patch.dispatchRemarks, existing.dispatchRemarks),
   };
 
-  await (db as any).$executeRaw`
+  await db.$executeRaw`
     UPDATE app_quikinfra."Good_returns"
     SET
       status              = ${next.status},
@@ -389,7 +447,7 @@ export async function deleteGoodReturn(
   orgId: string,
   id: string,
 ): Promise<boolean> {
-  const res: any = await (db as any).$executeRaw`
+  const res = await db.$executeRaw`
     DELETE FROM app_quikinfra."Good_returns"
     WHERE "orgId" = ${orgId} AND id = ${id}
   `;
@@ -402,7 +460,7 @@ export async function countGoodReturnsForDate(
   orgId: string,
   dateYYYYMMDD: string,
 ): Promise<number> {
-  const rows: any[] = await (db as any).$queryRaw`
+  const rows = await db.$queryRaw<{ c: number }[]>`
     SELECT COUNT(*)::int AS c
     FROM app_quikinfra."Good_returns"
     WHERE "orgId" = ${orgId}

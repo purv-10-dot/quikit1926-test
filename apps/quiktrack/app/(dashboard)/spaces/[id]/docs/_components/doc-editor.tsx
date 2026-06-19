@@ -2,14 +2,20 @@
 
 import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
+import { useQueryClient } from "@tanstack/react-query";
 import {
   MoreHorizontal,
   Info,
   Video,
   Maximize2,
   Minimize2,
+  Share2,
 } from "lucide-react";
-import { RichTextEditor } from "@/components/rich-text-editor";
+import { RichTextEditor } from "@/components/rich-text-editor-lazy";
+import { getTemplate } from "./templates-meta";
+import { applyDocEditToCache } from "./use-docs";
+import { ShareDialog } from "./share-dialog";
+import { useMyProjectPermissions } from "@/lib/hooks/useMyProjectPermissions";
 
 interface DocFull {
   id: string;
@@ -17,6 +23,8 @@ interface DocFull {
   content: string;
   projectId: string;
   createdBy: string | null;
+  shareToken?: string | null;
+  shareMode?: string | null;
 }
 
 interface UserLite {
@@ -34,8 +42,28 @@ const SAVE_DEBOUNCE_MS = 800;
  * the rich-text editor body, and a floating insert-dock at the bottom that
  * lets the user drop in templates and structural elements.
  */
-export function DocEditor({ projectId, docId }: { projectId: string; docId: string }) {
+export function DocEditor({
+  projectId,
+  docId,
+  draftTemplateKey,
+  draftFolderId,
+}: {
+  projectId: string;
+  /** Present when editing an existing doc. Omitted in draft mode. */
+  docId?: string;
+  /** Draft mode: open the editor seeded with this template and create the doc
+   *  only on first save — so opening a template never leaves an empty doc. */
+  draftTemplateKey?: string;
+  draftFolderId?: string | null;
+}) {
   const router = useRouter();
+  const qc = useQueryClient();
+  // Editing a doc needs Doc:update; a brand-new draft needs Doc:create. Without
+  // it the editor is read-only (the server PATCH/POST would 403 anyway).
+  const perms = useMyProjectPermissions(projectId);
+  const canEdit = perms.loading || perms.has("Doc", docId ? "update" : "create");
+  const canEditRef = useRef(canEdit);
+  canEditRef.current = canEdit;
   const [doc, setDoc] = useState<DocFull | null>(null);
   const [author, setAuthor] = useState<UserLite | null>(null);
   const [title, setTitle] = useState("");
@@ -43,7 +71,16 @@ export function DocEditor({ projectId, docId }: { projectId: string; docId: stri
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [maximized, setMaximized] = useState(false);
+  const [shareToken, setShareToken] = useState<string | null>(null);
+  const [shareMode, setShareMode] = useState<"view" | "edit" | null>(null);
+  const [shareOpen, setShareOpen] = useState(false);
   const dirtyRef = useRef(false);
+  // The doc id, which only exists after a draft is first saved. Mutations read
+  // this ref so the create→update switch survives the debounced save closure.
+  const docIdRef = useRef<string | undefined>(docId);
+  // Guards against a second debounced save starting another create while the
+  // first POST is still in flight (which would duplicate the doc).
+  const creatingRef = useRef(false);
   const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   // Refs that always reflect the latest title/content. Without these, the
   // save() closure scheduled by `setTimeout` reads the values from the
@@ -58,6 +95,24 @@ export function DocEditor({ projectId, docId }: { projectId: string; docId: stri
   useEffect(() => {
     let alive = true;
     setLoading(true);
+
+    // Draft mode: seed the editor from the chosen template in memory — NO doc
+    // row is created until the user actually edits (see save()).
+    if (!docId) {
+      const tpl = getTemplate(draftTemplateKey) ?? getTemplate("blank");
+      setDoc({ id: "", title: tpl?.name ?? "", content: tpl?.body ?? "<p></p>", projectId, createdBy: null });
+      setTitle(tpl?.name ?? "");
+      setContent(tpl?.body ?? "<p></p>");
+      fetch(`/api/session`)
+        .then((r) => r.json())
+        .then((s) => alive && s?.user && setAuthor(s.user as UserLite))
+        .catch(() => undefined)
+        .finally(() => alive && setLoading(false));
+      return () => {
+        alive = false;
+      };
+    }
+
     Promise.all([
       fetch(`/api/docs/${docId}`).then((r) => r.json()),
       fetch(`/api/session`).then((r) => r.json()).catch(() => null),
@@ -69,6 +124,8 @@ export function DocEditor({ projectId, docId }: { projectId: string; docId: stri
           setDoc(x);
           setTitle(x.title);
           setContent(x.content || "<p></p>");
+          setShareToken(x.shareToken ?? null);
+          setShareMode((x.shareMode as "view" | "edit" | null) ?? null);
         }
         if (s?.user) setAuthor(s.user as UserLite);
       })
@@ -76,7 +133,7 @@ export function DocEditor({ projectId, docId }: { projectId: string; docId: stri
     return () => {
       alive = false;
     };
-  }, [docId]);
+  }, [docId, draftTemplateKey, projectId]);
 
   // People list for @-mentions in the doc editor.
   const [mentions, setMentions] = useState<{ id: string; name: string; email?: string }[]>([]);
@@ -100,24 +157,66 @@ export function DocEditor({ projectId, docId }: { projectId: string; docId: stri
   }, [projectId]);
 
   function scheduleSave() {
+    if (!canEditRef.current) return; // read-only: never persist
     dirtyRef.current = true;
     if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
     saveTimerRef.current = setTimeout(() => void save(), SAVE_DEBOUNCE_MS);
   }
 
   async function save() {
-    if (!dirtyRef.current || !doc) return;
+    if (!dirtyRef.current || !doc || !canEditRef.current) return;
+    // A create is already running — keep the dirty flag so edits flush via
+    // PATCH once it finishes; don't start a second create.
+    if (!docIdRef.current && creatingRef.current) return;
     dirtyRef.current = false;
     setSaving(true);
     try {
-      await fetch(`/api/docs/${docId}`, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          title: titleRef.current.trim() || "Untitled page",
-          content: contentRef.current,
-        }),
-      });
+      const nextTitle = titleRef.current.trim() || "Untitled doc";
+      if (!docIdRef.current) {
+        // First save of a draft → create the doc now with the edited content.
+        creatingRef.current = true;
+        try {
+          const res = await fetch(`/api/projects/${projectId}/docs`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              templateKey: draftTemplateKey ?? "blank",
+              folderId: draftFolderId ?? null,
+              title: nextTitle,
+              content: contentRef.current,
+            }),
+          }).then((r) => r.json());
+          if (res?.success) {
+            docIdRef.current = res.data.id;
+            // Reflect the real doc URL without remounting the editor.
+            window.history.replaceState(null, "", `/spaces/${projectId}/docs/${res.data.id}`);
+            // Mark the relevant lists stale so the new doc shows when the user
+            // returns to the Docs tab (one refresh, not per-keystroke).
+            qc.invalidateQueries({
+              queryKey: ["qt-docs", "list", projectId, draftFolderId ?? "root"],
+            });
+            qc.invalidateQueries({ queryKey: ["qt-docs", "folders", projectId] });
+          } else {
+            dirtyRef.current = true; // create failed — allow a retry
+          }
+        } finally {
+          creatingRef.current = false;
+        }
+        // Flush any edits typed while the create was in flight.
+        if (docIdRef.current && dirtyRef.current) scheduleSave();
+      } else {
+        await fetch(`/api/docs/${docIdRef.current}`, {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ title: nextTitle, content: contentRef.current }),
+        });
+        // Reflect the edit in the Docs list cache immediately so going back
+        // shows the new title/date without a 60s staleTime wait or refetch.
+        applyDocEditToCache(qc, projectId, docIdRef.current, {
+          title: nextTitle,
+          updatedAt: new Date().toISOString(),
+        });
+      }
     } finally {
       setSaving(false);
     }
@@ -170,16 +269,32 @@ export function DocEditor({ projectId, docId }: { projectId: string; docId: stri
           </span>
           <div className="flex items-center gap-1.5">
             <span className="text-[11px] text-gray-500 mr-1">
-              {saving ? "Saving…" : "All changes saved"}
+              {!canEdit ? "View only" : saving ? "Saving…" : "All changes saved"}
             </span>
-            {/* <button
-              type="button"
-              onClick={() => void save()}
-              className="h-8 px-3 text-xs font-medium text-gray-500 bg-gray-100 rounded cursor-default"
-              disabled
-            >
-              Publish
-            </button> */}
+            <div className="relative">
+              <button
+                type="button"
+                onClick={() => setShareOpen((v) => !v)}
+                disabled={!docIdRef.current}
+                title={docIdRef.current ? "Share" : "Save the doc first to share it"}
+                className="h-8 px-3 inline-flex items-center gap-1.5 text-xs font-medium text-white bg-blue-600 hover:bg-blue-700 rounded disabled:opacity-50"
+              >
+                <Share2 className="h-3.5 w-3.5" />
+                Share
+              </button>
+              {shareOpen && docIdRef.current && (
+                <ShareDialog
+                  docId={docIdRef.current}
+                  token={shareToken}
+                  mode={shareMode}
+                  onChange={(t, m) => {
+                    setShareToken(t);
+                    setShareMode(m);
+                  }}
+                  onClose={() => setShareOpen(false)}
+                />
+              )}
+            </div>
             <button
               type="button"
               onClick={close}
@@ -210,6 +325,7 @@ export function DocEditor({ projectId, docId }: { projectId: string; docId: stri
           ) : (
             <RichTextEditor
               chromeless
+              disabled={!canEdit}
               value={content}
               mentions={mentions}
               onChange={(html) => {
@@ -217,17 +333,18 @@ export function DocEditor({ projectId, docId }: { projectId: string; docId: stri
                 scheduleSave();
               }}
               uploadImage={uploadImageToS3}
-              placeholder="Did you know you can add all kinds of cool things to this page, like a table of contents, date, or roadmap. Type / to open a list."
+              placeholder="Did you know you can add all kinds of cool things to this doc, like a table of contents, date, or roadmap. Type / to open a list."
               slotBetween={
                 <div className="px-10 pt-6 pb-4">
                   <input
                     value={title}
+                    readOnly={!canEdit}
                     onChange={(e) => {
                       setTitle(e.target.value);
                       scheduleSave();
                     }}
                     onBlur={save}
-                    placeholder="Give this page a title"
+                    placeholder="Give this doc a title"
                     className="w-full text-3xl font-bold text-gray-900 bg-transparent focus:outline-none placeholder:text-gray-300"
                   />
                   <ByLine user={author} />
