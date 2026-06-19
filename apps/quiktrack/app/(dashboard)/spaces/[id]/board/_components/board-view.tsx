@@ -61,6 +61,9 @@ export function BoardView({ projectId }: { projectId: string }) {
   const queryClient = useQueryClient();
   const [statuses, setStatuses] = useState<BoardStatus[]>([]);
   const [activeSprintId, setActiveSprintId] = useState<string | null>(null);
+  // Functional spaces have no sprints — the board is a Kanban "Activity Board"
+  // showing every task by status. We branch on the space's templateKey.
+  const [isFunctional, setIsFunctional] = useState(false);
   const [allSprints, setAllSprints] = useState<{ id: string; name: string; status: string }[]>([]);
   const [bootLoading, setBootLoading] = useState(true);
   const [openIssueId, setOpenIssueId] = useState<string | null>(null);
@@ -98,13 +101,16 @@ export function BoardView({ projectId }: { projectId: string }) {
   useEffect(() => {
     let alive = true;
     (async () => {
-      const [statusesRes, sprintsRes, epicsRes] = await Promise.all([
+      const [statusesRes, sprintsRes, epicsRes, projectRes] = await Promise.all([
         fetch(`/api/projects/${projectId}/statuses`).then((r) => r.json()),
         fetch(`/api/sprints?projectId=${projectId}`).then((r) => r.json()),
         fetch(`/api/issues?projectId=${projectId}&type=EPIC&limit=200`).then((r) => r.json()),
+        fetch(`/api/projects/${projectId}`).then((r) => r.json()),
       ]);
       if (!alive) return;
       if (statusesRes?.success) setStatuses(statusesRes.data || []);
+      const functional = projectRes?.success && projectRes.data?.templateKey === "functional";
+      setIsFunctional(functional);
       const sprintList: Array<{ id: string; name: string; status: string }> =
         sprintsRes?.success ? sprintsRes.data ?? [] : [];
       setAllSprints(sprintList);
@@ -282,15 +288,18 @@ export function BoardView({ projectId }: { projectId: string }) {
             </div>
           ))}
 
+        {/* Functional spaces (Kanban) always show populated columns fed by
+            every task (sprintId={null} → no sprint filter). Scrum spaces only
+            populate columns once a sprint is ACTIVE. */}
         {!bootLoading &&
-          activeSprintId &&
+          (isFunctional || activeSprintId) &&
           visibleStatuses.map((s) => (
             <BoardColumn
               key={`${s.id}-${refreshKey}`}
               status={s}
               allStatuses={visibleStatuses}
               projectId={projectId}
-              sprintId={activeSprintId}
+              sprintId={isFunctional ? null : activeSprintId}
               epicsById={epicsById}
               statusesById={statusesById}
               filters={filters}
@@ -311,10 +320,12 @@ export function BoardView({ projectId }: { projectId: string }) {
             />
           ))}
 
-        {/* No active sprint — render the column shells empty, and put the
-            "Get started in the backlog" CTA inside the first column so the
-            board structure stays visible (matches Jira's behaviour). */}
+        {/* Scrum, no active sprint — render the column shells empty, and put
+            the "Get started in the backlog" CTA inside the first column so the
+            board structure stays visible (matches Jira's behaviour). Functional
+            spaces never hit this branch. */}
         {!bootLoading &&
+          !isFunctional &&
           !activeSprintId &&
           visibleStatuses.map((s, idx) => (
             <EmptyColumn

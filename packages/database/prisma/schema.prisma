@@ -5556,6 +5556,13 @@ model QtProject {
   name             String
   description      String?
   projectType      String              @default("software")
+  /// Which template the space was created from. Drives runtime behavior:
+  ///   "scrum"      → sprints + sprint-gated board (default; all existing spaces)
+  ///   "functional" → no sprints; Kanban-style "Activity Board" (all tasks);
+  ///                   renamable backlog (see backlogName).
+  templateKey      String              @default("scrum")
+  /// Custom backlog heading. Honored only for functional spaces; null → "Backlog".
+  backlogName      String?
   icon             String?
   color            String?             @default("#2563eb")
   status           String              @default("active")

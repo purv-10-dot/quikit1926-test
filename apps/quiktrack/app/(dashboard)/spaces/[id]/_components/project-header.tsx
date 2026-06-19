@@ -62,6 +62,7 @@ interface Project {
   projectKey: string;
   icon?: string | null;
   color?: string | null;
+  templateKey?: string | null;
 }
 
 export function ProjectHeader({ projectId }: { projectId: string }) {
@@ -272,7 +273,11 @@ export function ProjectHeader({ projectId }: { projectId: string }) {
               }`}
             >
               <t.icon className="h-3.5 w-3.5" />
-              {t.label}
+              {/* Functional spaces have no sprints — their board is the
+                  "Activity Board". The route stays /board; only the label changes. */}
+              {t.path === "board" && project?.templateKey === "functional"
+                ? "Activity Board"
+                : t.label}
             </Link>
           );
         })}

@@ -2152,6 +2152,12 @@ export function BacklogView({ projectId }: { projectId: string }) {
   );
   const [epics, setEpics] = useState<EpicLite[]>([]);
   const [currentUserId, setCurrentUserId] = useState<string | null>(null);
+  // Functional spaces have no sprints — the backlog is a flat list with a
+  // renamable heading (backlogName). Scrum spaces keep sprint sections.
+  const [isFunctional, setIsFunctional] = useState(false);
+  const [backlogName, setBacklogName] = useState<string | null>(null);
+  const [renamingBacklog, setRenamingBacklog] = useState(false);
+  const [backlogNameDraft, setBacklogNameDraft] = useState("");
   const [sprints, setSprints] = useState<Sprint[]>([]);
   const [sprintCursor, setSprintCursor] = useState<string | null>(null);
   const [sprintsHasMore, setSprintsHasMore] = useState(true);
@@ -2517,13 +2523,18 @@ export function BacklogView({ projectId }: { projectId: string }) {
   useEffect(() => {
     let alive = true;
     (async () => {
-      const [sessionRes, sprintsRes, epicsRes] = await Promise.all([
+      const [sessionRes, sprintsRes, epicsRes, projectRes] = await Promise.all([
         fetch(`/api/session`).then((r) => r.json()).catch(() => null),
         fetch(`/api/sprints?projectId=${projectId}&limit=${SPRINT_PAGE}`).then((r) => r.json()),
         fetch(`/api/issues?projectId=${projectId}&type=EPIC&limit=200`).then((r) => r.json()),
+        fetch(`/api/projects/${projectId}`).then((r) => r.json()).catch(() => null),
       ]);
       if (!alive) return;
       if (sessionRes?.user?.id) setCurrentUserId(sessionRes.user.id);
+      if (projectRes?.success && projectRes.data) {
+        setIsFunctional(projectRes.data.templateKey === "functional");
+        setBacklogName(projectRes.data.backlogName ?? null);
+      }
       if (sprintsRes?.success) {
         setSprints(sprintsRes.data ?? []);
         setSprintCursor(sprintsRes.nextCursor ?? null);
@@ -2724,6 +2735,35 @@ export function BacklogView({ projectId }: { projectId: string }) {
       setSprints(res.data ?? []);
       setSprintCursor(res.nextCursor ?? null);
       setSprintsHasMore(!!res.nextCursor);
+    }
+  }
+
+  // Displayed backlog heading. Functional spaces may rename it; null/empty
+  // falls back to the default "Backlog".
+  const backlogLabel = backlogName?.trim() ? backlogName.trim() : "Backlog";
+
+  function beginRenameBacklog() {
+    setBacklogNameDraft(backlogLabel);
+    setRenamingBacklog(true);
+  }
+
+  async function saveBacklogName() {
+    const next = backlogNameDraft.trim();
+    setRenamingBacklog(false);
+    // No change (or reset to default) — persist null when cleared/equal to default.
+    const persisted = next && next !== "Backlog" ? next : null;
+    if ((backlogName ?? null) === persisted) return;
+    const prev = backlogName ?? null;
+    setBacklogName(persisted); // optimistic
+    try {
+      const res = await fetch(`/api/projects/${projectId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ backlogName: persisted }),
+      }).then((r) => r.json());
+      if (!res?.success) setBacklogName(prev); // revert on failure
+    } catch {
+      setBacklogName(prev);
     }
   }
 
@@ -3149,8 +3189,8 @@ export function BacklogView({ projectId }: { projectId: string }) {
         );
       })()}
 
-      {/* Sprints */}
-      {displayedSprints.map((sprint) => {
+      {/* Sprints — hidden entirely for functional spaces (no sprint concept). */}
+      {!isFunctional && displayedSprints.map((sprint) => {
         const key = `sprint:${sprint.id}`;
         const state = sectionStates[key] ?? emptySection();
         const sprintCountsSum =
@@ -3304,8 +3344,8 @@ export function BacklogView({ projectId }: { projectId: string }) {
         );
       })}
 
-      {/* Sprint pagination sentinel */}
-      {sprintsHasMore && (
+      {/* Sprint pagination sentinel — not rendered for functional spaces. */}
+      {!isFunctional && sprintsHasMore && (
         <div ref={sprintSentinelRef} className="py-2 text-center text-[11px] text-gray-400">
           {sprintsLoading ? "Loading more sprints…" : ""}
         </div>
@@ -3322,7 +3362,43 @@ export function BacklogView({ projectId }: { projectId: string }) {
           onToggle={() =>
             updateSection("backlog", (s) => ({ ...s, expanded: !s.expanded }))
           }
-          title="Backlog"
+          title={
+            isFunctional ? (
+              renamingBacklog ? (
+                <input
+                  autoFocus
+                  value={backlogNameDraft}
+                  onChange={(e) => setBacklogNameDraft(e.target.value)}
+                  onBlur={() => void saveBacklogName()}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") {
+                      e.preventDefault();
+                      void saveBacklogName();
+                    } else if (e.key === "Escape") {
+                      setRenamingBacklog(false);
+                    }
+                  }}
+                  maxLength={120}
+                  className="h-6 px-1 text-sm font-semibold text-gray-900 border border-blue-400 rounded focus:outline-none focus:ring-1 focus:ring-blue-400"
+                />
+              ) : (
+                <span className="inline-flex items-center gap-1.5">
+                  {backlogLabel}
+                  <button
+                    type="button"
+                    onClick={beginRenameBacklog}
+                    className="p-0.5 rounded hover:bg-gray-200 text-gray-400 hover:text-gray-600"
+                    title="Rename backlog"
+                    aria-label="Rename backlog"
+                  >
+                    <Pencil className="h-3 w-3" />
+                  </button>
+                </span>
+              )
+            ) : (
+              "Backlog"
+            )
+          }
           rightLabel={(() => {
             const count = backlogState.loaded
               ? backlogState.total
@@ -3336,7 +3412,8 @@ export function BacklogView({ projectId }: { projectId: string }) {
           someChecked={backlogSel.some}
           onToggleAll={backlogSel.toggle}
           trailing={
-            canCreateSprint ? (
+            // Functional spaces have no sprints — no "Create sprint" affordance.
+            !isFunctional && canCreateSprint ? (
               <button
                 type="button"
                 onClick={createSprint}

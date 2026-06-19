@@ -12,6 +12,7 @@ import {
 
 type TemplateKey =
   | "scrum"
+  | "functional"
   | "general-service-management"
   | "development-requests"
   | "kanban"
@@ -35,6 +36,14 @@ const TEMPLATES: Template[] = [
     description: "Plan, track, and execute work using sprints and a backlog.",
     badge: { label: "LAST CREATED", tone: "blue" },
     Illustration: ScrumIllustration,
+    enabled: true,
+    product: "QuikTrack",
+  },
+  {
+    key: "functional",
+    title: "Functional",
+    description: "Manage work on a backlog and an activity board — no sprints.",
+    Illustration: KanbanIllustration,
     enabled: true,
     product: "QuikTrack",
   },

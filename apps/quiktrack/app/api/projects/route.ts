@@ -123,6 +123,7 @@ export const POST = withOrgAuth(async ({ orgId, userId }, req) => {
         name: parsed.data.name,
         description: parsed.data.description,
         projectType: parsed.data.projectType ?? "software",
+        templateKey: parsed.data.templateKey ?? "scrum",
         icon: parsed.data.icon,
         color: parsed.data.color ?? "#2563eb",
         startDate: parsed.data.startDate ? new Date(parsed.data.startDate) : null,
