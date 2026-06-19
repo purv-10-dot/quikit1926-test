@@ -9,6 +9,7 @@
  * is PR → Indent → RFQ → PO.
  */
 
+import { toErrorMessage } from "@/lib/api/errors";
 import { useCallback, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Eye, Send, CheckCircle2, GitCompare } from "lucide-react";
@@ -17,7 +18,7 @@ import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { DataTable, type ColDef } from "@/components/DataTable";
 import { useRFQs, useIndents, useSubmitRFQ } from "@/hooks/use-approvals";
 import { useMenuActions } from "@/hooks/use-permissions";
-import { QuickCreateDrawer } from "@/components/QuickCreateDrawer";
+import { QuickCreateDrawer, type QuickCreateConfig } from "@/components/QuickCreateDrawer";
 import dynamic from "next/dynamic";
 import type { SourceDocType } from "@/components/SourceDocPeekModal";
 import type { ItemPickerItem } from "@/components/ItemPickerModal";
@@ -55,6 +56,75 @@ const STATUS_TABS: TabSpec[] = [
   { key: "closed", label: "Closed" },
 ];
 
+interface RfqVendor {
+  id: string;
+  vendorId?: string;
+  vendorName: string;
+  email?: string;
+  quotedRates?: Array<{ lineId: string; rate: string; remarks?: string }>;
+}
+
+interface RfqLine {
+  id?: string;
+  lineId?: string;
+  itemId?: string;
+  itemName?: string;
+  itemCode?: string;
+  quantity?: number | string;
+  uomCode?: string;
+}
+
+interface RfqRow {
+  [key: string]: unknown;
+  id: string;
+  rfqNumber?: string;
+  sourceIndentNumber?: string;
+  sourceIndentId?: string;
+  projectName?: string;
+  dueDate?: string;
+  lineCount?: number;
+  status?: string;
+  vendors?: RfqVendor[];
+  lines?: RfqLine[];
+}
+
+interface TermRow {
+  id: string;
+  status?: string;
+  applicableTo?: string;
+  title?: string;
+  body?: string;
+  isDefault?: boolean;
+}
+
+interface ProjectRow {
+  id: string;
+  name?: string;
+  address?: string;
+  city?: string;
+  state?: string;
+  pincode?: string;
+}
+
+interface ItemRow {
+  id: string;
+  name?: string;
+  code?: string;
+  uomCode?: string;
+  groupId?: string;
+  groupName?: string;
+}
+
+interface IndentLine {
+  itemId?: string;
+  itemCode?: string;
+  itemName?: string;
+  qtyRequested?: number | string;
+  indentedQty?: number | string;
+  quantity?: number | string;
+  uomCode?: string;
+}
+
 export default function RFQsPage() {
   const router = useRouter();
   const qc = useQueryClient();
@@ -63,7 +133,7 @@ export default function RFQsPage() {
   const [peekTarget, setPeekTarget] = useState<{ type: SourceDocType; id: string } | null>(null);
   // RFQ awaiting submit confirmation — drives the ConfirmDialog (replaces
   // the native window.confirm). `null` when the dialog is closed.
-  const [submitTarget, setSubmitTarget] = useState<any | null>(null);
+  const [submitTarget, setSubmitTarget] = useState<RfqRow | null>(null);
   const [submitError, setSubmitError] = useState<string | null>(null);
   const { canAdd } = useMenuActions("/purchase/rfqs");
 
@@ -86,8 +156,8 @@ export default function RFQsPage() {
   const [addQuoteCtx, setAddQuoteCtx] = useState<{
     rfqId: string;
     rfqNumber: string;
-    vendors: any[];
-    lines: any[];
+    vendors: RfqVendor[];
+    lines: RfqLine[];
     initialVendorRowId?: string;
   } | null>(null);
 
@@ -99,8 +169,8 @@ export default function RFQsPage() {
     rfqId: string;
     rfqNumber: string;
     projectName: string;
-    vendors: any[];
-    lines: any[];
+    vendors: RfqVendor[];
+    lines: RfqLine[];
   } | null>(null);
 
   const { data: result } = useRFQs({ status: "all", search: "" });
@@ -118,9 +188,9 @@ export default function RFQsPage() {
     try {
       await submitMutation.mutateAsync(submitTarget.id);
       setSubmitTarget(null);
-    } catch (err: any) {
+    } catch (err: unknown) {
       // Keep the dialog open so the user can read the failure reason.
-      setSubmitError(err?.message ?? "Failed to submit RFQ");
+      setSubmitError(toErrorMessage(err, "Failed to submit RFQ"));
     }
   };
 
@@ -132,17 +202,17 @@ export default function RFQsPage() {
   // that the company marks reusable across document types.
   const { data: termsData } = useTermsConditions();
   const termsOptions = useMemo(() => {
-    const rows: any[] = termsData?.data ?? [];
+    const rows: TermRow[] = termsData?.data ?? [];
     return rows
       .filter(
         (r) =>
           r.status === "active" &&
           (r.applicableTo === "rfq" || r.applicableTo === "general"),
       )
-      .map((r) => ({ value: r.id, label: r.title }));
+      .map((r) => ({ value: r.id, label: r.title ?? "" }));
   }, [termsData]);
   const defaultTermsId = useMemo(() => {
-    const rows: any[] = termsData?.data ?? [];
+    const rows: TermRow[] = termsData?.data ?? [];
     const def = rows.find(
       (r) => r.status === "active" && r.applicableTo === "rfq" && r.isDefault,
     );
@@ -151,7 +221,7 @@ export default function RFQsPage() {
   // Lookup map from id → body so the dropdown preview can render the
   // actual T&C text when the raiser picks a template.
   const termsById = useMemo(() => {
-    const rows: any[] = termsData?.data ?? [];
+    const rows: TermRow[] = termsData?.data ?? [];
     const m = new Map<string, { title: string; body: string }>();
     for (const r of rows) {
       if (r?.id) m.set(r.id, { title: r.title ?? "", body: r.body ?? "" });
@@ -164,25 +234,25 @@ export default function RFQsPage() {
   const { data: indentsResult } = useIndents({ status: "all", search: "" });
   const approvedIndents = useMemo(
     () =>
-      (indentsResult?.data ?? []).filter((i: any) =>
+      (indentsResult?.data ?? []).filter((i) =>
         ["approved", "l3_approved", "partially_ordered"].includes(i.status)
       ),
     [indentsResult]
   );
 
   const allProjects = projectsData?.data ?? [];
-  const projectOptions = allProjects.map((p: any) => ({
+  const projectOptions = allProjects.map((p) => ({
     value: p.id,
     label: p.name,
   }));
   // Indexed lookup so the Project picker's onChange can pull the
   // project's canonical address for pre-fill on the RFQ form.
   const projectById = useMemo(() => {
-    const map = new Map<string, any>();
+    const map = new Map<string, ProjectRow>();
     for (const p of allProjects) map.set(p.id, p);
     return map;
   }, [allProjects]);
-  const projectAddress = (p: any): string =>
+  const projectAddress = (p: ProjectRow): string =>
     [p?.address, p?.city, p?.state, p?.pincode]
       .filter((x) => x && String(x).trim())
       .join(", ");
@@ -190,31 +260,31 @@ export default function RFQsPage() {
   const itemGroups = useMemo(() => {
     const raw = itemGroupsData?.data ?? [];
     return raw.filter(
-      (g: any) => (g?.status ?? "active").toLowerCase() !== "inactive",
+      (g) => (g?.status ?? "active").toLowerCase() !== "inactive",
     );
   }, [itemGroupsData]);
-  const itemOptions = allItems.map((i: any) => ({
+  const itemOptions = allItems.map((i) => ({
     value: i.id,
     label: i.name,
   }));
   // Indexed lookup so the Material picker onChange can pull UOM off
   // the item master in O(1), mirroring the Indent form.
   const itemById = useMemo(() => {
-    const map = new Map<string, any>();
+    const map = new Map<string, ItemRow>();
     for (const i of allItems) map.set(i.id, i);
     return map;
   }, [allItems]);
 
   const resolveItemMatch = useCallback(
-    (l: any) =>
-      (l.itemCode && allItems.find((it: any) => it.code === l.itemCode)) ||
-      (l.itemName && allItems.find((it: any) => it.name === l.itemName)) ||
-      (l.itemId && allItems.find((it: any) => it.id === l.itemId)) ||
+    (l: IndentLine) =>
+      (l.itemCode && allItems.find((it) => it.code === l.itemCode)) ||
+      (l.itemName && allItems.find((it) => it.name === l.itemName)) ||
+      (l.itemId && allItems.find((it) => it.id === l.itemId)) ||
       null,
     [allItems],
   );
 
-  const prefillGroupIdForMatch = (match: any | null) => {
+  const prefillGroupIdForMatch = (match: ItemRow | null | undefined) => {
     const gid = String(match?.groupId ?? "").trim();
     const gname = String(match?.groupName ?? "").trim();
     if (!gid || !gname) return GROUPED_MATERIAL_OTHERS_GROUP_ID;
@@ -223,28 +293,28 @@ export default function RFQsPage() {
 
   const allVendors = vendorsData?.data ?? [];
   const vendorOptions = allVendors
-    .filter((v: any) => !v.isBlacklisted && v.status !== "blacklisted")
-    .map((v: any) => ({
+    .filter((v) => !(v as { isBlacklisted?: boolean }).isBlacklisted && v.status !== "blacklisted")
+    .map((v) => ({
       value: v.id,
       label: v.companyName || v.name || v.id,
     }));
   // Indexed lookup so the Vendor picker's onChange can pull the email
   // off the vendor master row.
   const vendorById = useMemo(() => {
-    const map = new Map<string, any>();
+    const map = new Map<string, { id: string; companyName?: string; name?: string }>();
     for (const v of allVendors) map.set(v.id, v);
     return map;
   }, [allVendors]);
   const sourceIndentOptions = useMemo(
     () =>
-      approvedIndents.map((ind: any) => ({
+      approvedIndents.map((ind) => ({
         value: ind.id,
         label: ind.indentNumber,
       })),
     [approvedIndents]
   );
 
-  const config = {
+  const config: QuickCreateConfig = {
     title: "New RFQ",
     subtitle: "Request for Quotation from vendors",
     apiEndpoint: "/api/purchase/rfqs",
@@ -268,7 +338,7 @@ export default function RFQsPage() {
         // picker still supports group → material browsing.
         onChange: (value: string) => {
           if (!value) return;
-          const indent = approvedIndents.find((i: any) => i.id === value);
+          const indent = approvedIndents.find((i) => i.id === value);
           if (!indent) return;
           const fields: Record<string, string> = {};
           if (indent.projectId) fields.projectId = indent.projectId;
@@ -276,7 +346,7 @@ export default function RFQsPage() {
           // Resolve each indent line to a current item id by code/name
           // so a rename of the items master doesn't break old indents.
           const lines: Record<string, string>[] = (indent.lines ?? []).map(
-            (l: any) => {
+            (l: IndentLine) => {
               const match = resolveItemMatch(l);
               return {
                 itemId: match?.id ?? "",
@@ -415,8 +485,8 @@ export default function RFQsPage() {
           type: "custom" as const,
           width: "wide" as const,
           render: (
-            line: Record<string, any>,
-            update: (patch: Record<string, any>) => void,
+            line,
+            update: (patch: Record<string, unknown>) => void,
           ) => (
             <WhitebooksVendorSelect
               line={line}
@@ -442,9 +512,9 @@ export default function RFQsPage() {
           type: "custom" as const,
           width: "wide" as const,
           render: (
-            line: Record<string, any>,
-            update: (patch: Record<string, any>) => void,
-            { primaryLines }: { primaryLines: Record<string, any>[] },
+            line,
+            update: (patch: Record<string, unknown>) => void,
+            { primaryLines },
           ) => {
             const selected: string[] = Array.isArray(line.assignedItemIds)
               ? line.assignedItemIds
@@ -457,7 +527,7 @@ export default function RFQsPage() {
             // different quantities — keying by itemId would make both
             // checkboxes share state and toggle in lockstep.
             const pickerItems: ItemPickerItem[] = primaryLines
-              .map((pl: any, idx: number) => {
+              .map((pl, idx: number) => {
                 if (!pl.itemId) return null;
                 const master = itemById.get(pl.itemId);
                 return {
@@ -525,8 +595,8 @@ export default function RFQsPage() {
     },
     lineItems: {
       label: "Material Lines (auto-filled from source Indent if left empty)",
-      validateBeforeSubmit: (gridLines: Record<string, any>[]) => {
-        const rowHasContent = (l: Record<string, any>) =>
+      validateBeforeSubmit: (gridLines) => {
+        const rowHasContent = (l: Record<string, unknown>) =>
           Object.entries(l).some(([k, v]) => {
             if (k === "prefillGroupId") return false; // UI-only hint
             return v !== undefined && v !== null && String(v).trim() !== "";
@@ -549,7 +619,7 @@ export default function RFQsPage() {
           label: "Material",
           type: "custom" as const,
           width: "wide",
-          render: (line: Record<string, any>, update: (patch: Record<string, any>) => void) => (
+          render: (line, update: (patch: Record<string, unknown>) => void) => (
             <GroupedMaterialSelect
               value={line.itemId ?? ""}
               onChange={(v) => {
@@ -563,7 +633,7 @@ export default function RFQsPage() {
                 update(patch);
               }}
               items={allItems}
-              groups={itemGroups.map((g: any) => ({ id: g.id, name: g.name, status: g.status }))}
+              groups={itemGroups.map((g) => ({ id: g.id, name: g.name, status: g.status }))}
               initialGroupId={line.prefillGroupId ?? null}
               placeholder="Select material…"
               size="sm"
@@ -586,7 +656,7 @@ export default function RFQsPage() {
     },
   };
 
-  const columns: ColDef<any>[] = [
+  const columns: ColDef<RfqRow>[] = [
     {
       key: "rfqNumber",
       label: "RFQ No",
@@ -612,7 +682,7 @@ export default function RFQsPage() {
             type="button"
             onClick={(e) => {
               e.stopPropagation();
-              setPeekTarget({ type: "indent", id: row.sourceIndentId });
+              setPeekTarget({ type: "indent", id: row.sourceIndentId ?? "" });
             }}
             className="font-mono text-xs text-indigo-600 hover:text-indigo-800 underline"
             title="View Indent details"
@@ -642,7 +712,7 @@ export default function RFQsPage() {
       label: "Vendors",
       width: "240px",
       render: (row) => {
-        const vendors: any[] = Array.isArray(row.vendors) ? row.vendors : [];
+        const vendors: RfqVendor[] = Array.isArray(row.vendors) ? row.vendors : [];
         if (vendors.length === 0) {
           return <span className="text-[11px] text-gray-400 italic">—</span>;
         }
@@ -776,7 +846,7 @@ export default function RFQsPage() {
       label: "Actions",
       width: "210px",
       render: (row) => {
-        const rowVendors: any[] = Array.isArray(row.vendors) ? row.vendors : [];
+        const rowVendors: RfqVendor[] = Array.isArray(row.vendors) ? row.vendors : [];
         const anyQuoted = rowVendors.some(
           (v) => Array.isArray(v.quotedRates) && v.quotedRates.length > 0,
         );
@@ -846,11 +916,9 @@ export default function RFQsPage() {
         <DataTable
           id="purchase-rfqs"
           columns={columns}
-          data={data}
+          data={data as RfqRow[]}
           onAdd={canAdd ? () => setDrawerOpen(true) : undefined}
           addLabel="New RFQ"
-          defaultSort="dueDate"
-          defaultSortDir="desc"
           historyEntityType="rfq"
         />
       </PageContainer>

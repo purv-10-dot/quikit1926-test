@@ -1,3 +1,4 @@
+import { toErrorMessage, getErrorCode } from "@/lib/api/errors";
 import { NextRequest, NextResponse } from "next/server";
 import { requireMastersAction } from "@/lib/auth/requireMastersAction";
 import { hasMatrixAction } from "@/lib/auth/context";
@@ -34,9 +35,9 @@ async function handleUpdate(req: NextRequest, id: string) {
     const next = await updateItemGroup(ctx.orgId, id, { ...safe, updatedBy: ctx.userId });
     if (!next) return NextResponse.json({ error: "Item group not found" }, { status: 404 });
     return NextResponse.json(next);
-  } catch (err: any) {
+  } catch (err: unknown) {
     console.error("[item-groups.update] failed:", err);
-    return NextResponse.json({ error: err?.message ?? "Failed to update item group" }, { status: 500 });
+    return NextResponse.json({ error: toErrorMessage(err, "Failed to update item group") }, { status: 500 });
   }
 }
 

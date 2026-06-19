@@ -10,6 +10,7 @@
  * icons just deep-link back here).
  */
 
+import { toErrorMessage } from "@/lib/api/errors";
 import React, { useMemo, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { useQueryClient } from "@tanstack/react-query";
@@ -35,9 +36,34 @@ import { ApprovalActionBar } from "@/components/ApprovalActionBar";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { useStockTransfer } from "@/hooks/use-store";
 import { useItems, useAssets } from "@/hooks/use-masters";
-import { usePermissions } from "@/hooks/use-permissions";
+import { usePermissions, type MeResponse } from "@/hooks/use-permissions";
 import { USER_TYPE_CATALOG } from "@/lib/rbac/user-types";
 import { canActOnStep } from "@/lib/approvals/workflow-rbac";
+
+import type {
+  ApprovalStep,
+  ApprovalHistoryEntry,
+  ApprovalInfo,
+} from "@/lib/approvals/approval-info";
+import type {
+  TransferLine,
+  AssetLine,
+  StockTransferDetail,
+} from "@/lib/store/stock-transfer-detail";
+
+interface ItemMaster {
+  id: string;
+  name?: string;
+  code?: string;
+  uomCode?: string;
+}
+
+interface AssetMaster {
+  id: string;
+  name?: string;
+  assetCode?: string;
+  category?: string;
+}
 
 const TRANSFER_TYPE_LABEL: Record<string, string> = {
   intra_site: "Intra-Site (Same Project)",
@@ -61,12 +87,12 @@ function roleLabel(key: string | null | undefined): string {
   return USER_TYPE_CATALOG.find((t) => t.key === key)?.label ?? key;
 }
 
-function STStatusChip({ st }: { st: any }) {
+function STStatusChip({ st }: { st: StockTransferDetail }) {
   const approval = st?.approval;
   const status = String(st?.status ?? "draft").toLowerCase();
   if (approval && approval.status === "pending_approval") {
     const step = approval.workflow?.steps?.find(
-      (s: any) => s.stepOrder === approval.currentStepOrder,
+      (s: ApprovalStep) => s.stepOrder === approval.currentStepOrder,
     );
     const approver = step
       ? step.approverUserName
@@ -120,32 +146,41 @@ function STStatusChip({ st }: { st: any }) {
  * history is empty (every step auto-skipped because the raiser was
  * also the approver).
  */
-function wasFinalApprover(me: any, st: any): boolean {
+function wasFinalApprover(
+  me: MeResponse | null | undefined,
+  st: StockTransferDetail | null | undefined,
+): boolean {
   if (!me?.userId || !st) return false;
   if (st.approval?.status !== "approved") return false;
   const history = Array.isArray(st.approval?.history) ? st.approval.history : [];
   const lastApprove = [...history]
     .reverse()
-    .find((h: any) => h.action === "approve");
+    .find((h) => h.action === "approve");
   if (lastApprove?.actionById) return lastApprove.actionById === me.userId;
   if (st.approvedBy) return st.approvedBy === me.userId;
   return false;
 }
 
-function priorActionByMe(me: any, st: any): any | null {
+function priorActionByMe(
+  me: MeResponse | null | undefined,
+  st: StockTransferDetail | null | undefined,
+): ApprovalHistoryEntry | null {
   if (!me || !st?.approval?.history) return null;
   return (
     [...st.approval.history]
       .reverse()
-      .find((h: any) => h.actionById === me.userId) ?? null
+      .find((h) => h.actionById === me.userId) ?? null
   );
 }
 
-function canActOnCurrentStep(me: any, st: any): boolean {
+function canActOnCurrentStep(
+  me: MeResponse | null | undefined,
+  st: StockTransferDetail | null | undefined,
+): boolean {
   if (!me || !st?.approval) return false;
   if (st.approval.status !== "pending_approval") return false;
   const step = st.approval.workflow?.steps?.find(
-    (s: any) => s.stepOrder === st.approval.currentStepOrder,
+    (s: ApprovalStep) => s.stepOrder === st.approval?.currentStepOrder,
   );
   if (!step) return false;
   return canActOnStep(
@@ -165,22 +200,22 @@ function canActOnCurrentStep(me: any, st: any): boolean {
   );
 }
 
-function fmtQty(v: any, unit?: string | null) {
+function fmtQty(v: unknown, unit?: string | null) {
   if (v === null || v === undefined || v === "") return "—";
   const n = Number(v);
   if (!Number.isFinite(n)) return "—";
   return `${n.toLocaleString("en-IN", { maximumFractionDigits: 4 })}${unit ? ` ${unit}` : ""}`;
 }
-function fmtInr(v: any) {
+function fmtInr(v: unknown) {
   if (v === null || v === undefined || v === "") return "—";
   const n = Number(v);
   if (!Number.isFinite(n)) return "—";
   return `₹ ${n.toLocaleString("en-IN", { maximumFractionDigits: 2 })}`;
 }
-function fmtDate(v: any): string {
+function fmtDate(v: unknown): string {
   if (!v) return "—";
   try {
-    const d = new Date(v);
+    const d = new Date(v as string | number | Date);
     if (Number.isNaN(d.getTime())) return String(v);
     return d.toLocaleDateString("en-IN", {
       day: "2-digit",
@@ -191,10 +226,10 @@ function fmtDate(v: any): string {
     return String(v);
   }
 }
-function fmtDateTime(v: any): string {
+function fmtDateTime(v: unknown): string {
   if (!v) return "—";
   try {
-    const d = new Date(v);
+    const d = new Date(v as string | number | Date);
     if (Number.isNaN(d.getTime())) return String(v);
     return d.toLocaleString("en-IN", {
       day: "2-digit",
@@ -221,14 +256,14 @@ export default function StockTransferDetailPage() {
   // wasn't denormalised at save-time (older records) still render the
   // real material name / code / uom instead of "—".
   const itemById = useMemo(() => {
-    const m = new Map<string, any>();
-    for (const i of (itemsData?.data ?? []) as any[]) m.set(i.id, i);
+    const m = new Map<string, ItemMaster>();
+    for (const i of (itemsData?.data ?? []) as ItemMaster[]) m.set(i.id, i);
     return m;
   }, [itemsData]);
 
   const assetById = useMemo(() => {
-    const m = new Map<string, any>();
-    for (const a of (assetsData?.data ?? []) as any[]) m.set(a.id, a);
+    const m = new Map<string, AssetMaster>();
+    for (const a of (assetsData?.data ?? []) as AssetMaster[]) m.set(a.id, a);
     return m;
   }, [assetsData]);
 
@@ -262,8 +297,8 @@ export default function StockTransferDetailPage() {
       qc.invalidateQueries({ queryKey: ["stock-transfer", id] });
       qc.invalidateQueries({ queryKey: ["stock-transfers"] });
       setSubmitConfirmOpen(false);
-    } catch (err: any) {
-      setSubmitError(err?.message ?? "Failed to submit for approval");
+    } catch (err: unknown) {
+      setSubmitError(toErrorMessage(err, "Failed to submit for approval"));
     } finally {
       setSubmitPending(false);
     }
@@ -283,8 +318,8 @@ export default function StockTransferDetailPage() {
       qc.invalidateQueries({ queryKey: ["stock-transfer", id] });
       qc.invalidateQueries({ queryKey: ["stock-transfers"] });
       setDispatchConfirmOpen(false);
-    } catch (err: any) {
-      setDispatchError(err?.message ?? "Failed to dispatch transfer");
+    } catch (err: unknown) {
+      setDispatchError(toErrorMessage(err, "Failed to dispatch transfer"));
     } finally {
       setDispatchPending(false);
     }
@@ -305,19 +340,19 @@ export default function StockTransferDetailPage() {
       qc.invalidateQueries({ queryKey: ["stock-transfers"] });
       qc.invalidateQueries({ queryKey: ["stock-register"] });
       setReceiveConfirmOpen(false);
-    } catch (err: any) {
-      setReceiveError(err?.message ?? "Failed to receive transfer");
+    } catch (err: unknown) {
+      setReceiveError(toErrorMessage(err, "Failed to receive transfer"));
     } finally {
       setReceivePending(false);
     }
   };
 
-  const lines: any[] = useMemo(
+  const lines: TransferLine[] = useMemo(
     () => (Array.isArray(st?.lines) ? st.lines : []),
     [st],
   );
 
-  const assetLines: any[] = useMemo(
+  const assetLines: AssetLine[] = useMemo(
     () => (Array.isArray(st?.assetLines) ? st.assetLines : []),
     [st],
   );
@@ -358,12 +393,12 @@ export default function StockTransferDetailPage() {
   const canReceive = ["dispatched", "in_transit"].includes(status);
 
   const approvalEntries =
-    st.approval?.history?.map((h: any) => ({
+    st.approval?.history?.map((h: ApprovalHistoryEntry) => ({
       step: h.stepOrder,
       action: h.action,
       actionBy: h.actionByName ?? "User",
       actionAt: h.actionAt ? new Date(h.actionAt).toLocaleString() : "",
-      comments: h.comments,
+      comments: h.comments ?? undefined,
     })) ?? [];
 
   const myPriorAction = priorActionByMe(me, st);
@@ -439,7 +474,7 @@ export default function StockTransferDetailPage() {
                 <ApprovalActionBar
                   entityType="stockTransfer"
                   entityId={id}
-                  currentStatus={st.status}
+                  currentStatus={st.status ?? undefined}
                   requiredPermission="store.transfer.approve"
                   actionEndpoint={`/api/store/transfers/${id}/approve`}
                   invalidateKeys={[
@@ -468,7 +503,7 @@ export default function StockTransferDetailPage() {
                     {st.transferNumber ?? "—"}
                   </div>
                   <div className="mt-0.5 text-[11px] text-gray-500">
-                    {TRANSFER_TYPE_LABEL[st.transferType] ??
+                    {TRANSFER_TYPE_LABEL[st.transferType ?? ""] ??
                       st.transferType ??
                       "—"}
                     {st.transferReason && (
@@ -620,7 +655,7 @@ export default function StockTransferDetailPage() {
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-gray-100">
-                      {lines.map((l: any, idx: number) => {
+                      {lines.map((l: TransferLine, idx: number) => {
                         // Fallback chain: prefer values stored on the
                         // line, otherwise look up the item master. Keeps
                         // older records (saved before itemName was
@@ -728,7 +763,7 @@ export default function StockTransferDetailPage() {
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-gray-100">
-                      {assetLines.map((l: any, idx: number) => {
+                      {assetLines.map((l: AssetLine, idx: number) => {
                         const masterAsset = l.assetId ? assetById.get(l.assetId) : null;
                         const assetName = l.assetName ?? masterAsset?.name ?? "—";
                         const assetCode = l.assetCode ?? masterAsset?.assetCode ?? "";

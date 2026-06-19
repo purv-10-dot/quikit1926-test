@@ -27,7 +27,7 @@ export async function POST(
     return envelopeErr("FORBIDDEN", `Action "edit" not allowed for pm.work_order`, 403);
   }
 
-  const wo = await (db as any).cnWorkOrder.findFirst({
+  const wo = await db.cnWorkOrder.findFirst({
     where: { id: params.id, orgId: ctx.orgId },
     select: {
       id: true,
@@ -78,7 +78,7 @@ export async function POST(
     throw err;
   }
 
-  const updated = await (db as any).cnWorkOrder.update({
+  const updated = await db.cnWorkOrder.update({
     where: { id: wo.id },
     data: {
       status: autoApproved ? "approved" : "pending_approval",

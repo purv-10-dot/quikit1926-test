@@ -29,7 +29,7 @@ export async function POST(
     return envelopeErr("FORBIDDEN", `Action "edit" not allowed for store.gate_pass`, 403);
   }
 
-  let body: any = {};
+  let body: { actualReturnDate?: string } = {};
   try {
     body = await req.json();
   } catch {

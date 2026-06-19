@@ -1,6 +1,7 @@
 import { requireStoreAction } from "@/lib/auth/requireStoreAction";
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
+import type { Prisma } from "@prisma/client";
 
 
 /**
@@ -28,15 +29,15 @@ export async function GET(req: NextRequest) {
 
   // 1) Candidate locations from the Locations master (so the user always sees
   //    their known sites/warehouses for this item, even when stock is 0).
-  const masterLocations: any[] = await (db as any).cnLocation.findMany({
+  const masterLocations = await db.cnLocation.findMany({
     where: { orgId: ctx.orgId, itemIds: { has: itemId } },
     select: { id: true, code: true, name: true, type: true, projectId: true, itemQtyByItemId: true },
   });
 
   // 2) Quantity from stock balances (authoritative available stock)
-  const where: any = { orgId: ctx.orgId, itemId };
+  const where: Prisma.CnStockBalanceWhereInput = { orgId: ctx.orgId, itemId };
   if (projectId) where.projectId = projectId;
-  const balanceRows: any[] = await (db as any).cnStockBalance.findMany({
+  const balanceRows = await db.cnStockBalance.findMany({
     where,
     select: { locationId: true, projectId: true, quantity: true },
   });
@@ -56,9 +57,9 @@ export async function GET(req: NextRequest) {
     ]),
   );
 
-  const locRows: any[] =
+  const locRows =
     locationIds.length > 0
-      ? await (db as any).cnLocation.findMany({
+      ? await db.cnLocation.findMany({
           where: { orgId: ctx.orgId, id: { in: locationIds } },
           select: { id: true, code: true, name: true, type: true, projectId: true },
         })
@@ -76,7 +77,7 @@ export async function GET(req: NextRequest) {
         const master = masterLocations.find((l) => l.id === locationId);
         const map = master?.itemQtyByItemId;
         if (map && typeof map === "object" && !Array.isArray(map)) {
-          const raw = (map as any)[itemId];
+          const raw = (map as Record<string, unknown>)[itemId];
           const n = raw === null || raw === undefined || String(raw).trim() === "" ? NaN : Number(raw);
           if (Number.isFinite(n)) quantity = n;
         }

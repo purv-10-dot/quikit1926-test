@@ -15,6 +15,7 @@
  *     closing — ideal when multiple quote emails come in together.
  */
 
+import { toErrorMessage, getErrorCode } from "@/lib/api/errors";
 import {
   useCallback,
   useEffect,
@@ -208,8 +209,8 @@ export function AddQuoteModal({
         } else {
           onClose();
         }
-      } catch (e: any) {
-        setError(e?.message ?? "Failed to save quote");
+      } catch (e: unknown) {
+        setError(toErrorMessage(e, "Failed to save quote"));
       } finally {
         setSaving(false);
       }

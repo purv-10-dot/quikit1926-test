@@ -5,37 +5,51 @@
  */
 
 import { useRouter } from "next/navigation";
+import { useQuery } from "@tanstack/react-query";
 import {
   FolderKanban, Package, Boxes, Truck, HardHat, Building2,
-  MapPin, Calculator, Receipt, CreditCard, Landmark,
+  MapPin, Calculator, Receipt, CreditCard,
   Users, ListTodo, BarChart3, Hammer, Globe, CalendarCheck, FileText,
   ArrowUpRight,
 } from "lucide-react";
 import { PageHeader, PageContainer } from "@/components/PageShell";
 
 const MASTERS = [
-  { label: "Projects",          href: "/masters/projects",         icon: FolderKanban,  count: 0 },
-  { label: "Items / Materials", href: "/masters/items",            icon: Package,       count: 0 },
-  { label: "Item Groups",       href: "/masters/item-groups",      icon: Boxes,         count: 0 },
-  { label: "Vendors",           href: "/masters/vendors",          icon: Truck,         count: 0 },
-  { label: "Contractors",       href: "/masters/contractors",      icon: HardHat,       count: 0 },
-  { label: "Customers",         href: "/masters/customers",        icon: Building2,     count: 0 },
-  { label: "Locations / Sites", href: "/masters/locations",        icon: MapPin,        count: 0 },
-  { label: "UOM",               href: "/masters/uom",              icon: Calculator,    count: 0 },
-  { label: "GST Codes",         href: "/masters/gst",              icon: Receipt,       count: 0 },
-  { label: "TDS Codes",         href: "/masters/tds",              icon: CreditCard,    count: 0 },
-  { label: "Banks",             href: "/masters/banks",            icon: Landmark,      count: 0 },
-  { label: "Departments",       href: "/masters/departments",      icon: Users,         count: 0 },
-  { label: "Work Categories",   href: "/masters/work-categories",  icon: ListTodo,      count: 0 },
-  { label: "Cost Centers",      href: "/masters/cost-centers",     icon: BarChart3,     count: 0 },
-  { label: "Machinery",         href: "/masters/machinery",        icon: Hammer,        count: 0 },
-  { label: "Companies",         href: "/masters/companies",        icon: Globe,         count: 0 },
-  { label: "Financial Years",   href: "/masters/financial-years",  icon: CalendarCheck, count: 0 },
-  { label: "Terms & Conditions",href: "/masters/terms",            icon: FileText,      count: 0 },
+  { key: "projects",       label: "Projects",          href: "/masters/projects",         icon: FolderKanban },
+  { key: "items",          label: "Items / Materials", href: "/masters/items",            icon: Package },
+  { key: "itemGroups",     label: "Item Groups",       href: "/masters/item-groups",      icon: Boxes },
+  { key: "vendors",        label: "Vendors",           href: "/masters/vendors",          icon: Truck },
+  { key: "contractors",    label: "Contractors",       href: "/masters/contractors",      icon: HardHat },
+  { key: "customers",      label: "Customers",         href: "/masters/customers",        icon: Building2 },
+  { key: "locations",      label: "Locations / Sites", href: "/masters/locations",        icon: MapPin },
+  { key: "uom",            label: "UOM",               href: "/masters/uom",              icon: Calculator },
+  { key: "gst",            label: "GST Codes",         href: "/masters/gst",              icon: Receipt },
+  { key: "tds",            label: "TDS Codes",         href: "/masters/tds",              icon: CreditCard },
+  { key: "departments",    label: "Departments",       href: "/masters/departments",      icon: Users },
+  { key: "workCategories", label: "Work Categories",   href: "/masters/work-categories",  icon: ListTodo },
+  { key: "costCenters",    label: "Cost Centers",      href: "/masters/cost-centers",     icon: BarChart3 },
+  { key: "machinery",      label: "Machinery",         href: "/masters/machinery",        icon: Hammer },
+  { key: "companies",      label: "Companies",         href: "/masters/companies",        icon: Globe },
+  { key: "financialYears", label: "Financial Years",   href: "/masters/financial-years",  icon: CalendarCheck },
+  { key: "terms",          label: "Terms & Conditions",href: "/masters/terms",            icon: FileText },
 ];
 
 export default function MastersIndexPage() {
   const router = useRouter();
+
+  // Live record counts per master. Refetches on mount so the cards reflect
+  // data created since the page was last opened.
+  const { data: summary, isLoading } = useQuery<{ data: Record<string, number> }>({
+    queryKey: ["masters-summary"],
+    queryFn: async () => {
+      const res = await fetch("/api/masters/summary", { cache: "no-store" });
+      if (!res.ok) throw new Error("Failed to load master counts");
+      return res.json();
+    },
+    refetchOnMount: "always",
+    staleTime: 0,
+  });
+  const counts = summary?.data ?? {};
 
   return (
     <>
@@ -64,7 +78,9 @@ export default function MastersIndexPage() {
               </div>
               <div>
                 <p className="text-sm font-semibold text-slate-900">{m.label}</p>
-                <p className="text-xs text-slate-500 mt-0.5">{m.count} records</p>
+                <p className="text-xs text-slate-500 mt-0.5">
+                  {isLoading ? "…" : (counts[m.key] ?? 0)} records
+                </p>
               </div>
             </button>
           ))}

@@ -1,3 +1,4 @@
+import { toErrorMessage, getErrorCode } from "@/lib/api/errors";
 import { NextRequest, NextResponse } from "next/server";
 import { requireMastersAction } from "@/lib/auth/requireMastersAction";
 import { hasMatrixAction } from "@/lib/auth/context";
@@ -54,8 +55,8 @@ export async function POST(req: NextRequest) {
       status: body.status ?? "active",
     });
     return NextResponse.json(record, { status: 201 });
-  } catch (err: any) {
-    if (err?.code === "P2002") {
+  } catch (err: unknown) {
+    if (getErrorCode(err) === "P2002") {
       return NextResponse.json(
         { error: "A UOM with this code already exists" },
         { status: 409 },
@@ -63,7 +64,7 @@ export async function POST(req: NextRequest) {
     }
     console.error("[uom.create] failed:", err);
     return NextResponse.json(
-      { error: err?.message ?? "Failed to create UOM" },
+      { error: toErrorMessage(err, "Failed to create UOM") },
       { status: 500 },
     );
   }

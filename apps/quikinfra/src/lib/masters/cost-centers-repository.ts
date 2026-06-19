@@ -3,6 +3,7 @@
  */
 
 import { db } from "@/lib/db";
+import { Prisma } from "@quikit/database";
 
 export interface CostCenterRecord {
   id: string;
@@ -10,6 +11,7 @@ export interface CostCenterRecord {
   code: string;
   name: string;
   projectId: string | null;
+  projectName: string | null;
   status: string;
   createdAt: string;
   updatedAt: string;
@@ -17,13 +19,14 @@ export interface CostCenterRecord {
   updatedBy: string;
 }
 
-function toRecord(row: any): CostCenterRecord {
+function toRecord(row: Prisma.CnCostCenterGetPayload<Record<string, never>> & { project?: { id: string; name: string } | null }): CostCenterRecord {
   return {
     id: row.id,
     orgId: row.orgId,
     code: row.code,
     name: row.name,
     projectId: row.projectId ?? null,
+    projectName: row.project?.name ?? null,
     status: row.status,
     createdAt: row.createdAt?.toISOString?.() ?? "",
     updatedAt: row.updatedAt?.toISOString?.() ?? "",
@@ -65,8 +68,9 @@ function buildCostCentersWhere(
 }
 
 export async function listCostCenters(opts: ListOptions): Promise<CostCenterRecord[]> {
-  const rows = await (db as any).cnCostCenter.findMany({
+  const rows = await db.cnCostCenter.findMany({
     where: buildCostCentersWhere(opts),
+    include: { project: { select: { id: true, name: true } } },
     orderBy: { createdAt: "desc" },
     ...(typeof opts.take === "number" ? { take: opts.take } : {}),
     ...(typeof opts.skip === "number" ? { skip: opts.skip } : {}),
@@ -77,11 +81,11 @@ export async function listCostCenters(opts: ListOptions): Promise<CostCenterReco
 export async function countCostCenters(
   opts: Pick<ListOptions, "orgId" | "search">,
 ): Promise<number> {
-  return (db as any).cnCostCenter.count({ where: buildCostCentersWhere(opts) });
+  return db.cnCostCenter.count({ where: buildCostCentersWhere(opts) });
 }
 
 export async function findCostCenterById(orgId: string, id: string): Promise<CostCenterRecord | null> {
-  const row = await (db as any).cnCostCenter.findFirst({ where: { id, orgId } });
+  const row = await db.cnCostCenter.findFirst({ where: { id, orgId } });
   return row ? toRecord(row) : null;
 }
 
@@ -95,7 +99,7 @@ export interface CreateCostCenterInput {
 }
 
 export async function createCostCenter(input: CreateCostCenterInput): Promise<CostCenterRecord> {
-  const row = await (db as any).cnCostCenter.create({
+  const row = await db.cnCostCenter.create({
     data: {
       orgId: input.orgId,
       code: String(input.code).trim(),
@@ -119,7 +123,7 @@ export async function updateCostCenter(
   id: string,
   patch: UpdateCostCenterInput,
 ): Promise<CostCenterRecord | null> {
-  const existing = await (db as any).cnCostCenter.findFirst({
+  const existing = await db.cnCostCenter.findFirst({
     where: { id, orgId },
     select: { id: true },
   });
@@ -131,7 +135,7 @@ export async function updateCostCenter(
   if (patch.projectId !== undefined) data.projectId = sOrNull(patch.projectId);
   if (patch.status !== undefined) data.status = patch.status;
 
-  const row = await (db as any).cnCostCenter.update({ where: { id }, data });
+  const row = await db.cnCostCenter.update({ where: { id }, data });
   return toRecord(row);
 }
 
@@ -140,7 +144,7 @@ export async function deleteCostCenter(
   id: string,
   updatedBy: string,
 ): Promise<boolean> {
-  const res = await (db as any).cnCostCenter.updateMany({
+  const res = await db.cnCostCenter.updateMany({
     where: { id, orgId },
     data: { status: "inactive", updatedBy },
   });

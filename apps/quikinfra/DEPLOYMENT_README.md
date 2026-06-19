@@ -160,8 +160,7 @@ comments. They are validated at boot through
   - `NEXTAUTH_SECRET` missing or under 16 chars
   - `DATABASE_URL` missing or not a URL
   - `AUTH_DEMO_MODE` is anything other than `"false"`
-  - `STORAGE_DRIVER=local` (not allowed in production)
-  - `STORAGE_DRIVER=s3` or `r2` without the corresponding credentials
+  - AWS S3 credentials missing (region / access key / secret / bucket)
 
 **Required in production:**
 ```
@@ -172,9 +171,11 @@ NEXTAUTH_SECRET=<32-byte-random>
 NEXTAUTH_URL=https://app.example.com
 AUTH_DEMO_MODE=false
 DATABASE_URL=postgresql://...
-STORAGE_DRIVER=s3|r2
 STORAGE_BUCKET=...
-# + driver-specific creds (STORAGE_S3_* or STORAGE_R2_*)
+# AWS S3 creds — STORAGE_S3_* (or the shared AWS_* aliases):
+#   STORAGE_S3_REGION / AWS_REGION
+#   STORAGE_S3_ACCESS_KEY_ID / AWS_ACCESS_KEY_ID
+#   STORAGE_S3_SECRET_ACCESS_KEY / AWS_SECRET_ACCESS_KEY
 ```
 
 **Strongly recommended in production:**
@@ -555,7 +556,7 @@ boot.
 - [ ] **[blocker]** `AUTH_DEMO_MODE=false` in the deploy env
 - [ ] **[blocker]** `NEXTAUTH_SECRET` set to a ≥32-byte random value (not the dev default)
 - [ ] **[blocker]** `DATABASE_URL` points to the production DB (not staging, not dev)
-- [ ] **[blocker]** `STORAGE_DRIVER=s3` or `r2` with valid credentials
+- [ ] **[blocker]** AWS S3 credentials + `STORAGE_BUCKET` set (`STORAGE_S3_*` or `AWS_*`)
 - [ ] `APP_RELEASE` set to the git SHA or semver tag (shows up in logs + Sentry)
 - [ ] `SENTRY_DSN` set (if using Sentry)
 - [ ] `.env.production` is NOT in git

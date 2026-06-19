@@ -3,6 +3,7 @@
  */
 
 import { db } from "@/lib/db";
+import { Prisma } from "@quikit/database";
 
 export interface TermsConditionRecord {
   id: string;
@@ -18,7 +19,7 @@ export interface TermsConditionRecord {
   updatedBy: string;
 }
 
-function toRecord(row: any): TermsConditionRecord {
+function toRecord(row: Prisma.CnTermsConditionGetPayload<Record<string, never>>): TermsConditionRecord {
   return {
     id: row.id,
     orgId: row.orgId,
@@ -69,7 +70,7 @@ function buildTermsWhere(
 export async function listTermsConditions(
   opts: ListTermsOptions,
 ): Promise<TermsConditionRecord[]> {
-  const rows = await (db as any).cnTermsCondition.findMany({
+  const rows = await db.cnTermsCondition.findMany({
     where: buildTermsWhere(opts),
     orderBy: { createdAt: "desc" },
     ...(typeof opts.take === "number" ? { take: opts.take } : {}),
@@ -84,14 +85,14 @@ export async function countTermsConditions(
     "orgId" | "search" | "applicableTo" | "includeInactive"
   >,
 ): Promise<number> {
-  return (db as any).cnTermsCondition.count({ where: buildTermsWhere(opts) });
+  return db.cnTermsCondition.count({ where: buildTermsWhere(opts) });
 }
 
 export async function findTermsConditionById(
   orgId: string,
   id: string,
 ): Promise<TermsConditionRecord | null> {
-  const row = await (db as any).cnTermsCondition.findFirst({
+  const row = await db.cnTermsCondition.findFirst({
     where: { id, orgId },
   });
   return row ? toRecord(row) : null;
@@ -110,7 +111,7 @@ export interface CreateTermsConditionInput {
 export async function createTermsCondition(
   input: CreateTermsConditionInput,
 ): Promise<TermsConditionRecord> {
-  const row = await (db as any).cnTermsCondition.create({
+  const row = await db.cnTermsCondition.create({
     data: {
       orgId: input.orgId,
       title: input.title.trim(),
@@ -135,7 +136,7 @@ export async function updateTermsCondition(
   id: string,
   patch: UpdateTermsConditionInput,
 ): Promise<TermsConditionRecord | null> {
-  const existing = await (db as any).cnTermsCondition.findFirst({
+  const existing = await db.cnTermsCondition.findFirst({
     where: { id, orgId },
     select: { id: true },
   });
@@ -148,7 +149,7 @@ export async function updateTermsCondition(
   if (patch.isDefault !== undefined) data.isDefault = patch.isDefault;
   if (patch.status !== undefined) data.status = patch.status;
 
-  const row = await (db as any).cnTermsCondition.update({
+  const row = await db.cnTermsCondition.update({
     where: { id },
     data,
   });
@@ -160,7 +161,7 @@ export async function deleteTermsCondition(
   id: string,
   updatedBy: string,
 ): Promise<boolean> {
-  const res = await (db as any).cnTermsCondition.updateMany({
+  const res = await db.cnTermsCondition.updateMany({
     where: { id, orgId },
     data: { status: "inactive", updatedBy },
   });

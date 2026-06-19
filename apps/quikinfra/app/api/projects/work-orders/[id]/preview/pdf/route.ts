@@ -25,7 +25,7 @@ export async function GET(
   if (ctxOrResp instanceof NextResponse) return ctxOrResp;
   const ctx = ctxOrResp;
 
-  const wo = await (db as any).cnWorkOrder.findFirst({
+  const wo = await db.cnWorkOrder.findFirst({
     where: { id: params.id, orgId: ctx.orgId },
     include: {
       lines: true,
@@ -47,7 +47,7 @@ export async function GET(
     return NextResponse.json({ error: "Work order not found" }, { status: 404 });
   }
 
-  const lines: any[] = Array.isArray(wo.lines) ? wo.lines : [];
+  const lines = Array.isArray(wo.lines) ? wo.lines : [];
   if (lines.length === 0) {
     return NextResponse.json(
       { error: "Work order has no scope items to preview" },
@@ -56,10 +56,10 @@ export async function GET(
   }
 
   const uomIds = Array.from(
-    new Set(lines.map((l: any) => l.uomId).filter(Boolean)),
+    new Set(lines.map((l) => l.uomId).filter(Boolean)),
   ) as string[];
   const uoms = uomIds.length
-    ? await (db as any).cnUOM.findMany({
+    ? await db.cnUOM.findMany({
         where: { id: { in: uomIds } },
         select: { id: true, code: true },
       })
@@ -68,10 +68,12 @@ export async function GET(
   for (const u of uoms) uomById.set(u.id, u.code);
 
   let termsBody: string | null = null;
-  if ((wo as any).termsConditionId) {
+  const woTermsConditionId = (wo as { termsConditionId?: string | null })
+    .termsConditionId;
+  if (woTermsConditionId) {
     try {
-      const row = await (db as any).cnTermsCondition.findFirst({
-        where: { id: (wo as any).termsConditionId, orgId: ctx.orgId },
+      const row = await db.cnTermsCondition.findFirst({
+        where: { id: woTermsConditionId, orgId: ctx.orgId },
         select: { body: true },
       });
       termsBody = row?.body ?? null;
@@ -80,7 +82,7 @@ export async function GET(
     }
   }
 
-  const items: WorkOrderPdfLine[] = lines.map((l: any) => {
+  const items: WorkOrderPdfLine[] = lines.map((l) => {
     const qty = parseFloat(String(l.quantity ?? "0")) || 0;
     const rate = parseFloat(String(l.negotiatedRate ?? "0")) || 0;
     const amount = parseFloat(String(l.amount ?? "0")) || qty * rate;
@@ -104,7 +106,7 @@ export async function GET(
       woDate: wo.createdAt?.toISOString?.().slice(0, 10) ?? null,
       projectName: wo.project?.name ?? null,
       title: wo.title ?? null,
-      type: wo.type ?? "Work Order",
+      type: "Work Order",
       workType: wo.workType ?? null,
       plannedStart: wo.startDate?.toISOString?.().slice(0, 10) ?? null,
       plannedEnd: wo.endDate?.toISOString?.().slice(0, 10) ?? null,

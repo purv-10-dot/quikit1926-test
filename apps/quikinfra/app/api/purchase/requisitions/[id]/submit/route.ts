@@ -87,7 +87,7 @@ export async function POST(_req: Request, { params }: { params: { id: string } }
     if (err instanceof NoActiveWorkflowError) {
       let projectName: string | null = null;
       if (err.projectId) {
-        const project = await (db as any).cnProject.findFirst({
+        const project = await db.cnProject.findFirst({
           where: { id: err.projectId, orgId: ctx.orgId },
           select: { name: true, code: true },
         });

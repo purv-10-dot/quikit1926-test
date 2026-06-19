@@ -29,7 +29,7 @@ export async function POST(
     return envelopeErr("FORBIDDEN", `Action "edit" not allowed for store.transfer`, 403);
   }
 
-  let body: any = {};
+  let body: { receivedDate?: string } = {};
   try {
     body = await req.json();
   } catch {
@@ -62,11 +62,11 @@ export async function POST(
   const destLocationLabel = st.toLocationName ?? null;
   const assetIds = Array.isArray(st.assetLines)
     ? st.assetLines
-        .map((l: any) => String(l.assetId ?? "").trim())
+        .map((l) => String(l.assetId ?? "").trim())
         .filter(Boolean)
     : [];
   if (assetIds.length > 0) {
-    await (db as any).cnAsset.updateMany({
+    await db.cnAsset.updateMany({
       where: { orgId: ctx.orgId, id: { in: assetIds } },
       data: {
         projectId: destProjectId,

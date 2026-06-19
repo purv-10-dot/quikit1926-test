@@ -1,3 +1,4 @@
+import { toErrorMessage, getErrorCode } from "@/lib/api/errors";
 import { NextRequest, NextResponse } from "next/server";
 import { requireMastersAction } from "@/lib/auth/requireMastersAction";
 import { hasMatrixAction } from "@/lib/auth/context";
@@ -35,12 +36,12 @@ async function handleUpdate(req: NextRequest, id: string) {
     const next = await updateLocation(ctx.orgId, id, { ...safe, updatedBy: ctx.userId });
     if (!next) return NextResponse.json({ error: "Location not found" }, { status: 404 });
     return NextResponse.json(next);
-  } catch (err: any) {
-    if (err?.code === "P2002") {
+  } catch (err: unknown) {
+    if (getErrorCode(err) === "P2002") {
       return NextResponse.json({ error: "A location with this code already exists" }, { status: 409 });
     }
     console.error("[locations.update] failed:", err);
-    return NextResponse.json({ error: err?.message ?? "Failed to update location" }, { status: 500 });
+    return NextResponse.json({ error: toErrorMessage(err, "Failed to update location") }, { status: 500 });
   }
 }
 

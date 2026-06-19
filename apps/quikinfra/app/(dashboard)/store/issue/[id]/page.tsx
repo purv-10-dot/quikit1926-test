@@ -9,6 +9,7 @@
  * actions row — same pattern as PR/Estimation so the UX is uniform.
  */
 
+import { toErrorMessage } from "@/lib/api/errors";
 import { useMemo, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { useQueryClient } from "@tanstack/react-query";
@@ -31,9 +32,16 @@ import {
 import { ApprovalActionBar } from "@/components/ApprovalActionBar";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { useMaterialIssue } from "@/hooks/use-store";
-import { usePermissions } from "@/hooks/use-permissions";
+import { usePermissions, type MeResponse } from "@/hooks/use-permissions";
 import { USER_TYPE_CATALOG } from "@/lib/rbac/user-types";
 import { canActOnStep } from "@/lib/approvals/workflow-rbac";
+
+import type {
+  ApprovalStep,
+  ApprovalHistoryEntry,
+  ApprovalInfo,
+} from "@/lib/approvals/approval-info";
+import type { IssueLine, IssueDetail } from "@/lib/store/material-issue-detail";
 
 function roleLabel(key: string | null | undefined): string {
   if (!key) return "Any approver";
@@ -42,12 +50,12 @@ function roleLabel(key: string | null | undefined): string {
 
 /** The header chip — while the issue is mid-flow, call out who it's
     waiting on so the requester doesn't have to open the timeline. */
-function IssueStatusChip({ issue }: { issue: any }) {
+function IssueStatusChip({ issue }: { issue: IssueDetail }) {
   const approval = issue?.approval;
   const status = String(issue?.status ?? "draft").toLowerCase();
   if (approval && approval.status === "pending_approval") {
     const step = approval.workflow?.steps?.find(
-      (s: any) => s.stepOrder === approval.currentStepOrder,
+      (s: ApprovalStep) => s.stepOrder === approval.currentStepOrder,
     );
     const approver = step
       ? step.approverUserName
@@ -80,23 +88,29 @@ function IssueStatusChip({ issue }: { issue: any }) {
 /** History-row lookup used to render the "You approved at Step N" pill
     in the header for approvers who've already acted — mirrors the PR
     detail page behaviour. */
-function priorActionByMe(me: any, issue: any): any | null {
+function priorActionByMe(
+  me: MeResponse | null | undefined,
+  issue: IssueDetail | null | undefined,
+): ApprovalHistoryEntry | null {
   if (!me || !issue?.approval?.history) return null;
   return (
     [...issue.approval.history]
       .reverse()
-      .find((h: any) => h.actionById === me.userId) ?? null
+      .find((h) => h.actionById === me.userId) ?? null
   );
 }
 
 /** True when the signed-in user is the expected actor for the issue's
     current workflow step — thin wrapper around the shared workflow-rbac
     helper so the UI gate matches the server exactly. */
-function canActOnCurrentStep(me: any, issue: any): boolean {
+function canActOnCurrentStep(
+  me: MeResponse | null | undefined,
+  issue: IssueDetail | null | undefined,
+): boolean {
   if (!me || !issue?.approval) return false;
   if (issue.approval.status !== "pending_approval") return false;
   const step = issue.approval.workflow?.steps?.find(
-    (s: any) => s.stepOrder === issue.approval.currentStepOrder,
+    (s: ApprovalStep) => s.stepOrder === issue.approval?.currentStepOrder,
   );
   if (!step) return false;
   return canActOnStep(
@@ -116,22 +130,22 @@ function canActOnCurrentStep(me: any, issue: any): boolean {
   );
 }
 
-function fmtQty(v: any, unit?: string | null) {
+function fmtQty(v: unknown, unit?: string | null) {
   if (v === null || v === undefined || v === "") return "—";
   const n = Number(v);
   if (!Number.isFinite(n)) return "—";
   return `${n.toLocaleString("en-IN", { maximumFractionDigits: 4 })}${unit ? ` ${unit}` : ""}`;
 }
-function fmtInr(v: any) {
+function fmtInr(v: unknown) {
   if (v === null || v === undefined || v === "") return "—";
   const n = Number(v);
   if (!Number.isFinite(n)) return "—";
   return `₹ ${n.toLocaleString("en-IN", { maximumFractionDigits: 2 })}`;
 }
-function fmtDate(v: any): string {
+function fmtDate(v: unknown): string {
   if (!v) return "—";
   try {
-    const d = new Date(v);
+    const d = new Date(v as string | number | Date);
     if (Number.isNaN(d.getTime())) return String(v);
     return d.toLocaleDateString("en-IN", {
       day: "2-digit",
@@ -142,10 +156,10 @@ function fmtDate(v: any): string {
     return String(v);
   }
 }
-function fmtDateTime(v: any): string {
+function fmtDateTime(v: unknown): string {
   if (!v) return "—";
   try {
-    const d = new Date(v);
+    const d = new Date(v as string | number | Date);
     if (Number.isNaN(d.getTime())) return String(v);
     return d.toLocaleString("en-IN", {
       day: "2-digit",
@@ -192,14 +206,14 @@ export default function MaterialIssueDetailPage() {
       qc.invalidateQueries({ queryKey: ["material-issue", id] });
       qc.invalidateQueries({ queryKey: ["material-issues"] });
       setSubmitConfirmOpen(false);
-    } catch (err: any) {
-      setSubmitError(err?.message ?? "Failed to submit for approval");
+    } catch (err: unknown) {
+      setSubmitError(toErrorMessage(err, "Failed to submit for approval"));
     } finally {
       setSubmitPending(false);
     }
   };
 
-  const lines: any[] = useMemo(
+  const lines: IssueLine[] = useMemo(
     () => (Array.isArray(issue?.lines) ? issue.lines : []),
     [issue],
   );
@@ -252,7 +266,7 @@ export default function MaterialIssueDetailPage() {
   // these wrong rendered "Step undefined" / raw user cuids in the
   // timeline.
   const approvalEntries =
-    issue.approval?.history?.map((h: any) => ({
+    issue.approval?.history?.map((h: ApprovalHistoryEntry) => ({
       step: h.stepOrder,
       action: h.action,
       actionBy: h.actionByName ?? "User",
@@ -323,7 +337,7 @@ export default function MaterialIssueDetailPage() {
                 <ApprovalActionBar
                   entityType="materialIssue"
                   entityId={id}
-                  currentStatus={issue.status}
+                  currentStatus={issue.status ?? undefined}
                   requiredPermission="store.issue.approve"
                   actionEndpoint={`/api/store/issues/${id}/approve`}
                   invalidateKeys={[
@@ -487,7 +501,7 @@ export default function MaterialIssueDetailPage() {
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-gray-100">
-                    {lines.map((l: any, idx: number) => (
+                    {lines.map((l: IssueLine, idx: number) => (
                       <tr
                         key={l.id ?? l.itemId ?? idx}
                         className="hover:bg-indigo-50/20 transition-colors"

@@ -3,6 +3,7 @@
  */
 
 import { db } from "@/lib/db";
+import { Prisma } from "@quikit/database";
 
 export interface MachineryRecord {
   id: string;
@@ -14,6 +15,7 @@ export interface MachineryRecord {
   model: string | null;
   registrationNo: string | null;
   projectId: string | null;
+  projectName: string | null;
   locationId: string | null;
   fuelType: string | null;
   capacity: string | null;
@@ -24,7 +26,7 @@ export interface MachineryRecord {
   updatedBy: string;
 }
 
-function toRecord(row: any): MachineryRecord {
+function toRecord(row: Prisma.CnMachineryGetPayload<Record<string, never>> & { project?: { id: string; name: string } | null }): MachineryRecord {
   return {
     id: row.id,
     orgId: row.orgId,
@@ -35,6 +37,7 @@ function toRecord(row: any): MachineryRecord {
     model: row.model ?? null,
     registrationNo: row.registrationNo ?? null,
     projectId: row.projectId ?? null,
+    projectName: row.project?.name ?? null,
     locationId: row.locationId ?? null,
     fuelType: row.fuelType ?? null,
     capacity: row.capacity ?? null,
@@ -87,8 +90,9 @@ function buildMachineryWhere(
 }
 
 export async function listMachinery(opts: ListOptions): Promise<MachineryRecord[]> {
-  const rows = await (db as any).cnMachinery.findMany({
+  const rows = await db.cnMachinery.findMany({
     where: buildMachineryWhere(opts),
+    include: { project: { select: { id: true, name: true } } },
     orderBy: { createdAt: "desc" },
     ...(typeof opts.take === "number" ? { take: opts.take } : {}),
     ...(typeof opts.skip === "number" ? { skip: opts.skip } : {}),
@@ -99,11 +103,11 @@ export async function listMachinery(opts: ListOptions): Promise<MachineryRecord[
 export async function countMachinery(
   opts: Pick<ListOptions, "orgId" | "search">,
 ): Promise<number> {
-  return (db as any).cnMachinery.count({ where: buildMachineryWhere(opts) });
+  return db.cnMachinery.count({ where: buildMachineryWhere(opts) });
 }
 
 export async function findMachineryById(orgId: string, id: string): Promise<MachineryRecord | null> {
-  const row = await (db as any).cnMachinery.findFirst({ where: { id, orgId } });
+  const row = await db.cnMachinery.findFirst({ where: { id, orgId } });
   return row ? toRecord(row) : null;
 }
 
@@ -126,12 +130,12 @@ export interface CreateMachineryInput {
 export async function createMachinery(input: CreateMachineryInput): Promise<MachineryRecord> {
   let code = (input.code ?? "").trim();
   if (!code) {
-    const count = await (db as any).cnMachinery.count({
+    const count = await db.cnMachinery.count({
       where: { orgId: input.orgId },
     });
     code = autoCode(input.type, count + 1);
   }
-  const row = await (db as any).cnMachinery.create({
+  const row = await db.cnMachinery.create({
     data: {
       orgId: input.orgId,
       code,
@@ -162,7 +166,7 @@ export async function updateMachinery(
   id: string,
   patch: UpdateMachineryInput,
 ): Promise<MachineryRecord | null> {
-  const existing = await (db as any).cnMachinery.findFirst({
+  const existing = await db.cnMachinery.findFirst({
     where: { id, orgId },
     select: { id: true },
   });
@@ -185,7 +189,7 @@ export async function updateMachinery(
   if (patch.capacity !== undefined) data.capacity = sOrNull(patch.capacity);
   if (patch.status !== undefined) data.status = patch.status;
 
-  const row = await (db as any).cnMachinery.update({ where: { id }, data });
+  const row = await db.cnMachinery.update({ where: { id }, data });
   return toRecord(row);
 }
 
@@ -194,7 +198,7 @@ export async function deleteMachinery(
   id: string,
   updatedBy: string,
 ): Promise<boolean> {
-  const res = await (db as any).cnMachinery.updateMany({
+  const res = await db.cnMachinery.updateMany({
     where: { id, orgId },
     data: { status: "inactive", updatedBy },
   });

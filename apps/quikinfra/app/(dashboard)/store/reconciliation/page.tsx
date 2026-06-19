@@ -6,8 +6,8 @@ import { Eye } from "lucide-react";
 import { PageHeader, PageContainer, StatusChip, TabBar } from "@/components/PageShell";
 import { DataTable, type ColDef } from "@/components/DataTable";
 import { useStockReconciliations } from "@/hooks/use-store";
-import { QuickCreateDrawer } from "@/components/QuickCreateDrawer";
-import { GroupedMaterialSelect } from "@/components/GroupedMaterialSelect";
+import { QuickCreateDrawer, type QuickCreateConfig } from "@/components/QuickCreateDrawer";
+import { GroupedMaterialSelect, type GroupedMaterialSelectItem } from "@/components/GroupedMaterialSelect";
 import { useProjects, useLocations, useItems, useItemGroups } from "@/hooks/use-masters";
 import { useMenuActions } from "@/hooks/use-permissions";
 import { useQueryClient } from "@tanstack/react-query";
@@ -19,6 +19,13 @@ const TABS: TabSpec[] = [
   { key: "pending_approval", label: "Pending" },
   { key: "approved", label: "Approved" },
 ];
+
+interface ReconRow {
+  id: string; reconciliationNumber?: string; projectName?: string;
+  locationName?: string; reconciliationDate?: string; conductedByName?: string;
+  status?: string;
+  [key: string]: unknown;
+}
 
 export default function StockReconciliationPage() {
   const qc = useQueryClient();
@@ -37,12 +44,12 @@ export default function StockReconciliationPage() {
   const { data: itemsData } = useItems();
   const { data: itemGroupsData } = useItemGroups();
 
-  const projectOptions = (projectsData?.data ?? []).map((p: any) => ({ value: p.id, label: p.name }));
-  const locationOptions = (locationsData?.data ?? []).map((l: any) => ({ value: l.id, label: l.name }));
-  const items = (itemsData?.data ?? []) as any[];
+  const projectOptions = (projectsData?.data ?? []).map((p) => ({ value: p.id, label: p.name }));
+  const locationOptions = (locationsData?.data ?? []).map((l) => ({ value: l.id, label: l.name }));
+  const items = (itemsData?.data ?? []) as unknown as GroupedMaterialSelectItem[];
   const itemGroups = itemGroupsData?.data ?? [];
 
-  const config = {
+  const config: QuickCreateConfig = {
     title: "New Stock Reconciliation",
     subtitle: "Compare physical stock with system records",
     apiEndpoint: "/api/store/reconciliations",
@@ -61,12 +68,12 @@ export default function StockReconciliationPage() {
           label: "Material",
           type: "custom" as const,
           width: "wide",
-          render: (line: Record<string, any>, update: (patch: Record<string, unknown>) => void) => (
+          render: (line, update: (patch: Record<string, unknown>) => void) => (
             <GroupedMaterialSelect
               value={line.itemId ?? ""}
               onChange={(v) => update({ itemId: v })}
               items={items}
-              groups={itemGroups.map((g: any) => ({
+              groups={itemGroups.map((g) => ({
                 id: g.id,
                 name: g.name,
                 status: g.status,
@@ -85,7 +92,7 @@ export default function StockReconciliationPage() {
     },
   };
 
-  const columns: ColDef<any>[] = [
+  const columns: ColDef<ReconRow>[] = [
     { key: "reconciliationNumber", label: "Recon No", sortable: true, searchable: true },
     { key: "projectName", label: "Project", sortable: true, searchable: true },
     { key: "locationName", label: "Location", sortable: true, searchable: true },
@@ -136,11 +143,9 @@ export default function StockReconciliationPage() {
         <DataTable
           id="store-reconciliation"
           columns={columns}
-          data={data}
+          data={data as ReconRow[]}
           onAdd={canAdd ? () => setDrawerOpen(true) : undefined}
           addLabel="New Reconciliation"
-          defaultSort="reconciliationDate"
-          defaultSortDir="desc"
           historyEntityType="recon"
         />
       </PageContainer>

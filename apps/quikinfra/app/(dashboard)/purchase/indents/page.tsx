@@ -13,6 +13,7 @@
  * group → material pick.
  */
 
+import { toErrorMessage } from "@/lib/api/errors";
 import { useCallback, useMemo, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
@@ -24,7 +25,7 @@ import { DataTable, type ColDef } from "@/components/DataTable";
 import { useIndents, useSubmitIndent } from "@/hooks/use-approvals";
 import { usePurchaseRequisitions } from "@/hooks/use-purchase";
 import { useMenuActions } from "@/hooks/use-permissions";
-import { QuickCreateDrawer } from "@/components/QuickCreateDrawer";
+import { QuickCreateDrawer, type QuickCreateConfig } from "@/components/QuickCreateDrawer";
 import dynamic from "next/dynamic";
 import type { SourceDocType } from "@/components/SourceDocPeekModal";
 const SourceDocPeekModal = dynamic(
@@ -44,6 +45,23 @@ const STATUS_TABS: TabSpec[] = [
   { key: "partially_ordered", label: "Partially Ordered" },
   { key: "fully_ordered", label: "Fully Ordered" },
 ];
+
+/** A PR line as carried by the source-PR payload (dual field names). */
+interface PrSourceLine {
+  itemId?: string; itemCode?: string; itemName?: string;
+  quantity?: number | string; qtyRequired?: number | string; qtyRequested?: number | string;
+  uomCode?: string; uom?: string;
+  estimatedRate?: number | string; rate?: number | string; unitRate?: number | string;
+}
+type IndentItemNode = {
+  id: string; code?: string; name?: string; groupId?: string; groupName?: string;
+  uomCode?: string; standardRate?: number | string | null;
+};
+interface IndentRow {
+  id: string; indentNumber?: string; status?: string; lineCount?: number;
+  sourceMrId?: string; sourceMrNumber?: string;
+  [key: string]: unknown;
+}
 
 export default function IndentsPage() {
   const router = useRouter();
@@ -72,9 +90,9 @@ export default function IndentsPage() {
     try {
       await submitMutation.mutateAsync(submitTarget.id);
       setSubmitTarget(null);
-    } catch (err: any) {
+    } catch (err: unknown) {
       // Keep the dialog open so the user can read the failure reason.
-      setSubmitError(err?.message ?? "Failed to submit Indent");
+      setSubmitError(toErrorMessage(err, "Failed to submit Indent"));
     }
   };
 
@@ -89,25 +107,25 @@ export default function IndentsPage() {
   });
   const approvedPrs = useMemo(() => approvedPrResult?.data ?? [], [approvedPrResult]);
 
-  const projectOptions = (projectsData?.data ?? []).map((p: any) => ({
+  const projectOptions = (projectsData?.data ?? []).map((p) => ({
     value: p.id,
     label: p.name,
   }));
-  const allItems = itemsData?.data ?? [];
+  const allItems = (itemsData?.data ?? []) as unknown as IndentItemNode[];
   const itemGroups = useMemo(() => {
     const raw = itemGroupsData?.data ?? [];
-    return raw.filter((g: any) => (g?.status ?? "active").toLowerCase() !== "inactive");
+    return raw.filter((g) => (g?.status ?? "active").toLowerCase() !== "inactive");
   }, [itemGroupsData]);
   // Indexed lookup so the Material picker's onChange can pull UOM +
   // standard rate off the master in O(1) when a material is selected.
   const itemById = useMemo(() => {
-    const map = new Map<string, any>();
+    const map = new Map<string, IndentItemNode>();
     for (const i of allItems) map.set(i.id, i);
     return map;
   }, [allItems]);
   const sourcePrOptions = useMemo(
     () =>
-      approvedPrs.map((pr: any) => ({
+      approvedPrs.map((pr) => ({
         value: pr.id,
         label: pr.prNumber ?? pr.mrNumber ?? pr.id,
       })),
@@ -115,15 +133,25 @@ export default function IndentsPage() {
   );
 
   const resolveItemMatch = useCallback(
-    (l: any) =>
-      (l.itemCode && allItems.find((i: any) => i.code === l.itemCode)) ||
-      (l.itemName && allItems.find((i: any) => i.name === l.itemName)) ||
-      (l.itemId && allItems.find((i: any) => i.id === l.itemId)) ||
-      null,
+    (l: PrSourceLine): IndentItemNode | null => {
+      if (l.itemCode) {
+        const m = allItems.find((i) => i.code === l.itemCode);
+        if (m) return m;
+      }
+      if (l.itemName) {
+        const m = allItems.find((i) => i.name === l.itemName);
+        if (m) return m;
+      }
+      if (l.itemId) {
+        const m = allItems.find((i) => i.id === l.itemId);
+        if (m) return m;
+      }
+      return null;
+    },
     [allItems],
   );
 
-  const groupBucketId = (match: any | null) => {
+  const groupBucketId = (match: IndentItemNode | null) => {
     if (!match) return "__ungrouped__";
     const gid = String(match.groupId ?? "").trim();
     const gname = String(match.groupName ?? "").trim();
@@ -132,9 +160,9 @@ export default function IndentsPage() {
   };
 
   const buildIndentLinesFromPr = useCallback(
-    (pr: any) => {
-      const rawLines: any[] = Array.isArray(pr?.lines) ? pr.lines : [];
-      return rawLines.map((l: any) => {
+    (pr: { lines?: PrSourceLine[] } | null | undefined) => {
+      const rawLines: PrSourceLine[] = Array.isArray(pr?.lines) ? pr.lines : [];
+      return rawLines.map((l) => {
         const match = resolveItemMatch(l);
         const bid = groupBucketId(match);
         const prefillGroupId =
@@ -163,7 +191,7 @@ export default function IndentsPage() {
     [resolveItemMatch],
   );
 
-  const config = {
+  const config: QuickCreateConfig = {
     title: "New Purchase Indent",
     subtitle: "Consolidate material requirements for ordering",
     apiEndpoint: "/api/purchase/indents",
@@ -185,7 +213,7 @@ export default function IndentsPage() {
         // its group name and the user picks group → material.
         onChange: (value: string) => {
           if (!value) return;
-          const pr = approvedPrs.find((p: any) => p.id === value);
+          const pr = approvedPrs.find((p) => p.id === value);
           if (!pr) return;
           const fields: Record<string, string> = {};
           if (pr.projectId) fields.projectId = pr.projectId;
@@ -225,8 +253,8 @@ export default function IndentsPage() {
       // line — the previous default of 4 forced Est. Rate to wrap.
       showHeader: true,
       gridCols: 5,
-      validateBeforeSubmit: (gridLines: Record<string, any>[]) => {
-        const rowHasContent = (l: Record<string, any>) =>
+      validateBeforeSubmit: (gridLines) => {
+        const rowHasContent = (l: Record<string, unknown>) =>
           Object.entries(l).some(([k, v]) => {
             if (k === "prefillGroupId") return false; // UI-only hint
             return v !== undefined && v !== null && String(v).trim() !== "";
@@ -249,7 +277,7 @@ export default function IndentsPage() {
           label: "Material",
           type: "custom" as const,
           width: "wide",
-          render: (line: Record<string, any>, update: (patch: Record<string, any>) => void) => (
+          render: (line, update: (patch: Record<string, unknown>) => void) => (
             <GroupedMaterialSelect
               value={line.itemId ?? ""}
               onChange={(v) => {
@@ -270,7 +298,7 @@ export default function IndentsPage() {
                 update(patch);
               }}
               items={allItems}
-              groups={itemGroups.map((g: any) => ({ id: g.id, name: g.name, status: g.status }))}
+              groups={itemGroups.map((g) => ({ id: g.id, name: g.name, status: g.status }))}
               initialGroupId={line.prefillGroupId ?? null}
               placeholder="Select material…"
               size="sm"
@@ -299,7 +327,7 @@ export default function IndentsPage() {
     },
   };
 
-  const columns: ColDef<any>[] = [
+  const columns: ColDef<IndentRow>[] = [
     {
       key: "indentNumber",
       label: "Indent No",
@@ -325,7 +353,7 @@ export default function IndentsPage() {
             type="button"
             onClick={(e) => {
               e.stopPropagation();
-              setPeekTarget({ type: "pr", id: row.sourceMrId });
+              setPeekTarget({ type: "pr", id: row.sourceMrId ?? "" });
             }}
             className="font-mono text-xs text-indigo-600 hover:text-indigo-800 underline"
             title="View PR details"
@@ -423,7 +451,7 @@ export default function IndentsPage() {
         <DataTable
           id="purchase-indents"
           columns={columns}
-          data={data}
+          data={data as unknown as IndentRow[]}
           onAdd={canAdd ? () => {
             if (approvedPrs.length === 0) {
               toast.warning(
@@ -434,8 +462,6 @@ export default function IndentsPage() {
             setDrawerOpen(true);
           } : undefined}
           addLabel="New Indent"
-          defaultSort="requiredDate"
-          defaultSortDir="desc"
           historyEntityType="indent,purchase_indents"
         />
       </PageContainer>

@@ -22,7 +22,13 @@ export async function resolveContext(): Promise<SecurityContext | null> {
   const session = await getServerSession();
   if (!session?.user) return null;
 
-  const user = session.user as any;
+  const user = session.user as unknown as {
+    id: string;
+    tenantId: string;
+    organizationId: string;
+    role?: string;
+    projectIds?: string[];
+  };
   return {
     userId: user.id,
     tenantId: user.tenantId,
@@ -66,7 +72,7 @@ export function assertScopedPayload(
   ctx: SecurityContext,
   payload: Record<string, unknown>
 ): Record<string, unknown> {
-  const { tenantId, orgId, organizationId, ...rest } = payload as any;
+  const { tenantId, orgId, organizationId, ...rest } = payload;
   return {
     ...rest,
     tenantId: ctx.tenantId,

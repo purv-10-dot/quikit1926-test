@@ -6,6 +6,7 @@ import { ok, err } from "@/lib/http/envelope";
 import { logger } from "@/lib/observability/logger";
 import { detectColumnsForSheet } from "@/lib/boq/import/universal-adapter";
 import type { DetectedSheetColumns } from "@/lib/boq/import/universal-adapter";
+import type { SheetCell } from "@/lib/boq/import/types";
 
 const auth = withOrgAuthForResource("construction.boq");
 
@@ -52,7 +53,7 @@ export const POST = auth.importOrEdit<{ projectId: string }>(async (
   try {
     const buffer = Buffer.from(await file.arrayBuffer());
     workbook = XLSX.read(buffer, { type: "buffer", cellDates: false });
-  } catch (e: any) {
+  } catch (e: unknown) {
     logger.error({ msg: "boq_detect_columns_parse_failed", err: e, fileName: file.name });
     return err(
       "PARSE_FAILED",
@@ -63,11 +64,11 @@ export const POST = auth.importOrEdit<{ projectId: string }>(async (
 
   const sheets: DetectedSheetColumns[] = workbook.SheetNames.map((sheetName) => {
     const sheet = workbook.Sheets[sheetName];
-    const rows: any[][] = XLSX.utils.sheet_to_json(sheet, {
+    const rows = XLSX.utils.sheet_to_json(sheet, {
       header: 1,
       defval: null,
       blankrows: false,
-    });
+    }) as SheetCell[][];
     return detectColumnsForSheet({ sheetName, rows });
   });
 

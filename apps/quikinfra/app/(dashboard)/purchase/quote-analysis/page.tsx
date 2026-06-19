@@ -63,6 +63,13 @@ function fmtDate(s: string | null | undefined): string {
   return `${dd}/${mm}/${yyyy}`;
 }
 
+interface QuoteRfqRow {
+  id: string; rfqNumber?: string; projectName?: string; status?: string;
+  rfqDate?: string; dueDate?: string;
+  vendors?: Array<{ quotedRates?: unknown[] }>;
+  [key: string]: unknown;
+}
+
 export default function ComparativeStatementPage() {
   const router = useRouter();
   const [search, setSearch] = useState("");
@@ -70,8 +77,8 @@ export default function ComparativeStatementPage() {
   const { data: result } = useRFQs({ status: "all", search: "" });
 
   const rows = useMemo(() => {
-    const all: any[] = (result?.data ?? []).filter(
-      (r: any) => (r.vendors ?? []).length > 0,
+    const all = ((result?.data ?? []) as unknown as QuoteRfqRow[]).filter(
+      (r) => (r.vendors ?? []).length > 0,
     );
     const q = search.trim().toLowerCase();
     if (!q) return all;
@@ -133,10 +140,10 @@ export default function ComparativeStatementPage() {
                 rows.map((r) => {
                   const vendors = Array.isArray(r.vendors) ? r.vendors : [];
                   const quoted = vendors.filter(
-                    (v: any) =>
+                    (v) =>
                       Array.isArray(v.quotedRates) && v.quotedRates.length > 0,
                   ).length;
-                  const lbl = statusLabel(r.status);
+                  const lbl = statusLabel(r.status ?? "");
                   return (
                     <tr key={r.id} className="hover:bg-gray-50/50">
                       <td className="px-5 py-3.5">

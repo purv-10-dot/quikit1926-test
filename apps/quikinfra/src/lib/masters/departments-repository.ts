@@ -3,6 +3,7 @@
  */
 
 import { db } from "@/lib/db";
+import { Prisma } from "@quikit/database";
 
 export interface DepartmentRecord {
   id: string;
@@ -18,7 +19,7 @@ export interface DepartmentRecord {
   updatedBy: string;
 }
 
-function toRecord(row: any): DepartmentRecord {
+function toRecord(row: Prisma.CnDepartmentGetPayload<Record<string, never>>): DepartmentRecord {
   return {
     id: row.id,
     orgId: row.orgId,
@@ -62,7 +63,7 @@ function buildDepartmentsWhere(
 }
 
 export async function listDepartments(opts: ListDepartmentsOptions): Promise<DepartmentRecord[]> {
-  const rows = await (db as any).cnDepartment.findMany({
+  const rows = await db.cnDepartment.findMany({
     where: buildDepartmentsWhere(opts),
     orderBy: { createdAt: "desc" },
     ...(typeof opts.take === "number" ? { take: opts.take } : {}),
@@ -74,11 +75,11 @@ export async function listDepartments(opts: ListDepartmentsOptions): Promise<Dep
 export async function countDepartments(
   opts: Pick<ListDepartmentsOptions, "orgId" | "search">,
 ): Promise<number> {
-  return (db as any).cnDepartment.count({ where: buildDepartmentsWhere(opts) });
+  return db.cnDepartment.count({ where: buildDepartmentsWhere(opts) });
 }
 
 export async function findDepartmentById(orgId: string, id: string): Promise<DepartmentRecord | null> {
-  const row = await (db as any).cnDepartment.findFirst({ where: { id, orgId } });
+  const row = await db.cnDepartment.findFirst({ where: { id, orgId } });
   return row ? toRecord(row) : null;
 }
 
@@ -99,7 +100,7 @@ function sOrNull(v: unknown): string | null {
 }
 
 export async function createDepartment(input: CreateDepartmentInput): Promise<DepartmentRecord> {
-  const row = await (db as any).cnDepartment.create({
+  const row = await db.cnDepartment.create({
     data: {
       orgId: input.orgId,
       code: String(input.code).trim(),
@@ -124,7 +125,7 @@ export async function updateDepartment(
   id: string,
   patch: UpdateDepartmentInput,
 ): Promise<DepartmentRecord | null> {
-  const existing = await (db as any).cnDepartment.findFirst({
+  const existing = await db.cnDepartment.findFirst({
     where: { id, orgId },
     select: { id: true },
   });
@@ -137,7 +138,7 @@ export async function updateDepartment(
   if (patch.headUserId !== undefined) data.headUserId = sOrNull(patch.headUserId);
   if (patch.status !== undefined) data.status = patch.status;
 
-  const row = await (db as any).cnDepartment.update({ where: { id }, data });
+  const row = await db.cnDepartment.update({ where: { id }, data });
   return toRecord(row);
 }
 
@@ -146,7 +147,7 @@ export async function deleteDepartment(
   id: string,
   updatedBy: string,
 ): Promise<boolean> {
-  const res = await (db as any).cnDepartment.updateMany({
+  const res = await db.cnDepartment.updateMany({
     where: { id, orgId },
     data: { status: "inactive", updatedBy },
   });

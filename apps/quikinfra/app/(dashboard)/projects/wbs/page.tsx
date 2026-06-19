@@ -91,7 +91,7 @@ function nextWbsCode(tasks: WbsTask[], parentId: string | null): string {
 
 export default function WbsPlanningPage() {
   const { data: projects } = useProjects();
-  const projectOptions = (projects?.data ?? []).map((p: any) => ({ value: p.id, label: p.name }));
+  const projectOptions = (projects?.data ?? []).map((p) => ({ value: p.id, label: p.name }));
 
   const [selectedProject, setSelectedProject] = useState("");
   const [view, setView] = useState<"grid" | "gantt">("gantt");

@@ -41,7 +41,7 @@ export async function POST(
     return envelopeErr("FORBIDDEN", `Action "edit" not allowed for store.good_return`, 403);
   }
 
-  let body: any = {};
+  let body: { action?: string; comments?: string } = {};
   try {
     body = await req.json();
   } catch {
@@ -80,7 +80,7 @@ export async function POST(
     );
   }
 
-  const instance = await (db as any).cnApprovalInstance.findFirst({
+  const instance = await db.cnApprovalInstance.findFirst({
     where: { id: gr.approvalId, orgId: ctx.orgId },
   });
   if (!instance) {
@@ -98,7 +98,7 @@ export async function POST(
     );
   }
 
-  const currentStep = await (db as any).cnApprovalWorkflowStep.findFirst({
+  const currentStep = await db.cnApprovalWorkflowStep.findFirst({
     where: {
       workflowId: instance.workflowId,
       stepOrder: instance.currentStepOrder,
@@ -142,7 +142,7 @@ export async function POST(
     );
   }
 
-  const nextStep = await (db as any).cnApprovalWorkflowStep.findFirst({
+  const nextStep = await db.cnApprovalWorkflowStep.findFirst({
     where: {
       workflowId: instance.workflowId,
       stepOrder: { gt: instance.currentStepOrder },
@@ -152,7 +152,7 @@ export async function POST(
 
   let grStatusUpdate: Record<string, unknown> | null = null;
 
-  await db.$transaction(async (tx: any) => {
+  await db.$transaction(async (tx) => {
     await tx.cnApprovalHistory.create({
       data: {
         instanceId: instance.id,
@@ -208,16 +208,19 @@ export async function POST(
 
   if (grStatusUpdate) {
     await patchGoodReturnStatus(ctx.orgId, gr.id, {
-      ...(grStatusUpdate as any),
+      ...(grStatusUpdate as Parameters<typeof patchGoodReturnStatus>[2]),
       updatedBy: ctx.userId,
     });
   }
 
   const refreshed = await findGoodReturnById(ctx.orgId, gr.id);
-  const refreshedInstance = await (db as any).cnApprovalInstance.findUnique({
+  const refreshedInstance = await db.cnApprovalInstance.findUnique({
     where: { id: instance.id },
   });
-  const totalSteps = await (db as any).cnApprovalWorkflowStep.count({
+  if (!refreshedInstance) {
+    return NextResponse.json({ error: "Approval instance not found" }, { status: 404 });
+  }
+  const totalSteps = await db.cnApprovalWorkflowStep.count({
     where: { workflowId: instance.workflowId },
   });
   return NextResponse.json({

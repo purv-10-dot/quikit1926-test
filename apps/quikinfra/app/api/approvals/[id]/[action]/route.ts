@@ -1,3 +1,4 @@
+import { toErrorMessage, getErrorCode } from "@/lib/api/errors";
 import { NextRequest, NextResponse } from "next/server";
 import { requireAuth } from "@/lib/auth/context";
 import {
@@ -50,7 +51,7 @@ export async function POST(
     );
   }
 
-  let body: any = {};
+  let body: { comments?: string } = {};
   try {
     body = await req.json();
   } catch {
@@ -66,12 +67,12 @@ export async function POST(
       comments: comments || undefined,
     });
     return NextResponse.json(result);
-  } catch (e: any) {
+  } catch (e: unknown) {
     const http = approvalService.errorToHttp(e);
     if (http) return NextResponse.json(http.body, { status: http.status });
     console.error("[approvals.action] failed:", e);
     return NextResponse.json(
-      { error: e?.message ?? "Approval action failed" },
+      { error: toErrorMessage(e, "Approval action failed") },
       { status: 500 },
     );
   }

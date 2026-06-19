@@ -263,17 +263,6 @@ export interface TDSCode extends TenantScoped, AuditFields {
   status: EntityStatus;
 }
 
-export interface Bank extends TenantScoped, AuditFields {
-  id: string;
-  bankName: string;
-  branchName?: string;
-  accountNo: string;
-  ifscCode: string;
-  accountType: "current" | "savings";
-  companyId: string;
-  status: EntityStatus;
-}
-
 export interface Department extends TenantScoped, AuditFields {
   id: string;
   name: string;

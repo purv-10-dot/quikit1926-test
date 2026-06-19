@@ -66,19 +66,24 @@ const TYPE_META: Record<
 
 // Read the doc's identifier robustly — demo-store records occasionally
 // use alternate field names (e.g. `mrNumber` vs `prNumber`).
-function pickNumber(doc: any, fields: string[]): string {
+function pickNumber(
+  doc: Record<string, unknown> | null | undefined,
+  fields: string[],
+): string {
   for (const f of fields) {
     if (doc?.[f]) return String(doc[f]);
   }
-  return doc?.id ?? "—";
+  return doc?.id != null ? String(doc.id) : "—";
 }
 
 // Resolve qty/uom/name from a line regardless of which writer produced
 // it. Lines flow through PR → Indent → RFQ → PO, each layer adds
 // aliases, so a defensive read keeps the peek modal useful no matter
 // where in the chain we land.
-function readLine(line: any) {
-  const name = line.itemName ?? line.itemDescription ?? line.itemId ?? "—";
+function readLine(line: Record<string, unknown>) {
+  const name = String(
+    line.itemName ?? line.itemDescription ?? line.itemId ?? "—",
+  );
   const qtyRaw =
     line.quantity ??
     line.qtyRequired ??
@@ -87,7 +92,7 @@ function readLine(line: any) {
     line.poQty ??
     0;
   const qty = parseFloat(String(qtyRaw)) || 0;
-  const uom = line.uomCode ?? line.uom ?? "—";
+  const uom = String(line.uomCode ?? line.uom ?? "—");
   return { name, qty, uom };
 }
 
@@ -108,17 +113,23 @@ export function SourceDocPeekModal({ open, initial, onClose }: Props) {
       if (!initial || !meta) return Promise.resolve(null);
       return fetch(meta.endpoint(initial.id)).then(async (r) => {
         if (!r.ok) throw new Error(await r.text());
-        return r.json();
+        return r.json() as Promise<Record<string, unknown>>;
       });
     },
     enabled: !!initial && open,
   });
 
+  // Coerce a dynamic doc field (typed `unknown`) to a display string.
+  const str = (v: unknown): string | undefined =>
+    v == null ? undefined : String(v);
+
   const lines = useMemo(() => {
-    const raw: any[] = doc?.lines ?? [];
+    const raw: Record<string, unknown>[] = Array.isArray(doc?.lines)
+      ? (doc.lines as Record<string, unknown>[])
+      : [];
     if (!search) return raw;
     const q = search.toLowerCase();
-    return raw.filter((l: any) => {
+    return raw.filter((l) => {
       const { name } = readLine(l);
       return name.toLowerCase().includes(q);
     });
@@ -175,19 +186,19 @@ export function SourceDocPeekModal({ open, initial, onClose }: Props) {
                 <Field
                   label="Date"
                   value={
-                    doc.requestDate ??
-                    doc.indentDate ??
-                    doc.rfqDate ??
-                    doc.poDate ??
-                    doc.createdAt?.slice(0, 10) ??
+                    str(doc.requestDate) ??
+                    str(doc.indentDate) ??
+                    str(doc.rfqDate) ??
+                    str(doc.poDate) ??
+                    str(doc.createdAt)?.slice(0, 10) ??
                     "—"
                   }
                 />
                 <Field
                   label="Status"
-                  value={<StatusChip status={doc.status ?? "—"} />}
+                  value={<StatusChip status={str(doc.status) ?? "—"} />}
                 />
-                <Field label="Project" value={doc.projectName ?? "—"} />
+                <Field label="Project" value={str(doc.projectName) ?? "—"} />
               </div>
 
               {/* Items table */}
@@ -231,10 +242,10 @@ export function SourceDocPeekModal({ open, initial, onClose }: Props) {
                           </td>
                         </tr>
                       ) : (
-                        lines.map((line: any, i: number) => {
+                        lines.map((line, i: number) => {
                           const { name, qty, uom } = readLine(line);
                           return (
-                            <tr key={line.lineId ?? line.id ?? i}>
+                            <tr key={String(line.lineId ?? line.id ?? i)}>
                               <td className="px-4 py-2.5 text-sm text-gray-900">
                                 {name}
                               </td>
@@ -271,7 +282,7 @@ export function SourceDocPeekModal({ open, initial, onClose }: Props) {
   );
 }
 
-function Field({ label, value }: { label: string; value: any }) {
+function Field({ label, value }: { label: string; value: React.ReactNode }) {
   return (
     <div>
       <p className="text-[10px] font-medium text-gray-500 uppercase tracking-wider">

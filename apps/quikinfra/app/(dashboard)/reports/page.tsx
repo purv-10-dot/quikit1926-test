@@ -32,7 +32,7 @@ export default function ReportsPage() {
   // one so the user is never stuck reporting against a stale year.
   const { data: fyData } = useFinancialYears();
   const fyOptions = useMemo<FYOption[]>(() => {
-    const fromStore: FYOption[] = (fyData?.data ?? []).map((f: any) => ({
+    const fromStore: FYOption[] = (fyData?.data ?? []).map((f) => ({
       id: f.id,
       label: f.label,
       startDate: f.startDate,
@@ -275,7 +275,7 @@ function ReportViewer({ type, fy, onBack }: { type: ReportType; fy: FYOption; on
   // Client-side FY filter as a defence-in-depth fallback. Reports with a
   // `dateField` get filtered against the selected FY range; reports without
   // one (stock state, vendor master) are passthrough.
-  const allRows: any[] = useMemo(() => data?.data ?? [], [data]);
+  const allRows = useMemo(() => (data?.data ?? []) as Record<string, unknown>[], [data]);
   const rows = useMemo(() => {
     if (!config.dateField) return allRows;
     const start = fy.startDate;
@@ -293,7 +293,7 @@ function ReportViewer({ type, fy, onBack }: { type: ReportType; fy: FYOption; on
   const totalsValueColumn =
     currencyCols.length > 0 ? currencyCols[currencyCols.length - 1].key : undefined;
   const totalAmount = totalsValueColumn
-    ? rows.reduce((sum: number, r: any) => sum + (Number(r?.[totalsValueColumn]) || 0), 0)
+    ? rows.reduce((sum: number, r) => sum + (Number(r?.[totalsValueColumn]) || 0), 0)
     : 0;
 
   return (
@@ -345,14 +345,14 @@ function ReportViewer({ type, fy, onBack }: { type: ReportType; fy: FYOption; on
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-50">
-                {rows.map((row: any, i: number) => (
-                  <tr key={row.id ?? i} className="hover:bg-gray-50/50">
+                {rows.map((row, i: number) => (
+                  <tr key={String(row.id ?? i)} className="hover:bg-gray-50/50">
                     {config.columns.map(col => (
                       <td key={col.key} className="px-4 py-3 text-sm text-gray-700">
                         {col.format === "currency" ? (
                           <span className="font-medium">₹ {Number(row[col.key] ?? 0).toLocaleString("en-IN")}</span>
                         ) : col.format === "status" ? (
-                          <StatusChip status={row[col.key] ?? ""} />
+                          <StatusChip status={String(row[col.key] ?? "")} />
                         ) : (
                           String(row[col.key] ?? "—")
                         )}

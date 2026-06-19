@@ -67,7 +67,7 @@ interface Bucket {
 
 type Store = Map<string, Bucket>;
 
-const g = globalThis as any;
+const g = globalThis as { __qcRateLimitStore?: Store };
 if (!g.__qcRateLimitStore) g.__qcRateLimitStore = new Map();
 const store: Store = g.__qcRateLimitStore;
 

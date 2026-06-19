@@ -36,7 +36,7 @@ export async function POST(
     return envelopeErr("FORBIDDEN", `Action "edit" not allowed for pm.dpr`, 403);
   }
 
-  const dpr = await (db as any).cnDailyProgressReport.findFirst({
+  const dpr = await db.cnDailyProgressReport.findFirst({
     where: { id: params.id, orgId: ctx.orgId },
     select: {
       id: true,
@@ -88,7 +88,7 @@ export async function POST(
     throw err;
   }
 
-  const updated = await (db as any).cnDailyProgressReport.update({
+  const updated = await db.cnDailyProgressReport.update({
     where: { id: dpr.id },
     data: {
       status: "submitted",

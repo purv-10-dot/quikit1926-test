@@ -9,7 +9,8 @@
  * Approval button is shown on drafts.
  */
 
-import { useMemo, useState } from "react";
+import { toErrorMessage } from "@/lib/api/errors";
+import { useMemo, useState, type ReactNode } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { Send, FileText } from "lucide-react";
 import {
@@ -24,9 +25,26 @@ const SourceDocPeekModal = dynamic(
   { ssr: false },
 );
 import { useIndent, useSubmitIndent } from "@/hooks/use-approvals";
-import { usePermissions } from "@/hooks/use-permissions";
+import { usePermissions, type MeResponse } from "@/hooks/use-permissions";
 import { USER_TYPE_CATALOG } from "@/lib/rbac/user-types";
 import { canActOnStep } from "@/lib/approvals/workflow-rbac";
+
+import type {
+  ApprovalStep,
+  ApprovalHistoryEntry,
+  ApprovalInfo,
+} from "@/lib/approvals/approval-info";
+import type { IndentLine, IndentDetail } from "@/lib/purchase/indent-detail";
+
+/** Matches PageShell's ApprovalTimeline entry shape. */
+interface TimelineEntry {
+  step: number;
+  action: string;
+  actionBy: string;
+  actionAt: string;
+  comments?: string;
+  title?: string;
+}
 
 /** Human-readable label for a userType key stored in workflow steps. */
 function roleLabel(key: string | null | undefined): string {
@@ -39,11 +57,14 @@ function roleLabel(key: string | null | undefined): string {
  * Thin wrapper around the shared RBAC helper — keeps the UI aligned
  * with the server so hidden buttons == 403s.
  */
-function canActOnCurrentStep(me: any, indent: any): boolean {
+function canActOnCurrentStep(
+  me: MeResponse | null | undefined,
+  indent: IndentDetail | null | undefined,
+): boolean {
   if (!me || !indent?.approval) return false;
   if (indent.approval.status !== "pending_approval") return false;
   const step = indent.approval.workflow?.steps?.find(
-    (s: any) => s.stepOrder === indent.approval.currentStepOrder,
+    (s: ApprovalStep) => s.stepOrder === indent.approval?.currentStepOrder,
   );
   if (!step) return false;
   return canActOnStep(
@@ -63,15 +84,15 @@ function canActOnCurrentStep(me: any, indent: any): boolean {
   );
 }
 
-function lineQty(line: any): number {
+function lineQty(line: IndentLine): number {
   const raw = line?.qtyRequested ?? line?.quantity ?? line?.qtyOpen ?? 0;
   return parseFloat(String(raw)) || 0;
 }
-function lineRate(line: any): number {
+function lineRate(line: IndentLine): number {
   const raw = line?.estimatedRate ?? line?.unitRate ?? 0;
   return parseFloat(String(raw)) || 0;
 }
-function lineAmount(line: any): number {
+function lineAmount(line: IndentLine): number {
   const raw = line?.estimatedAmount ?? line?.amount;
   if (raw !== undefined && raw !== null && String(raw).trim() !== "") {
     return parseFloat(String(raw)) || 0;
@@ -89,12 +110,12 @@ export default function IndentDetailPage() {
   const [submitConfirmOpen, setSubmitConfirmOpen] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
 
-  const lines: any[] = useMemo(() => indent?.lines ?? [], [indent]);
+  const lines: IndentLine[] = useMemo(() => indent?.lines ?? [], [indent]);
   const estimatedTotal = useMemo(() => {
     if (lines.length > 0) {
-      return lines.reduce((sum: number, l: any) => sum + lineAmount(l), 0);
+      return lines.reduce((sum: number, l: IndentLine) => sum + lineAmount(l), 0);
     }
-    return parseFloat(indent?.estimatedTotal ?? "0") || 0;
+    return parseFloat(String(indent?.estimatedTotal ?? "0")) || 0;
   }, [lines, indent?.estimatedTotal]);
 
   if (isLoading) return <PageSkeleton />;
@@ -115,9 +136,9 @@ export default function IndentDetailPage() {
     try {
       await submitMutation.mutateAsync(id);
       setSubmitConfirmOpen(false);
-    } catch (err: any) {
+    } catch (err: unknown) {
       // Keep the dialog open so the user can read the reason.
-      setSubmitError(err?.message ?? "Failed to submit indent");
+      setSubmitError(toErrorMessage(err, "Failed to submit indent"));
     }
   };
 
@@ -141,7 +162,7 @@ export default function IndentDetailPage() {
         onBack={() => router.push("/purchase/indents")}
         actions={
           <div className="flex items-center gap-2">
-            <StatusChip status={indent.status} />
+            <StatusChip status={indent.status ?? ""} />
             {indent.status === "draft" && (
               <PrimaryButton onClick={handleSubmit} disabled={submitMutation.isPending}>
                 <Send className="w-4 h-4" /> Submit for Approval
@@ -150,7 +171,7 @@ export default function IndentDetailPage() {
             <ApprovalActionBar
               entityType="indent"
               entityId={id}
-              currentStatus={indent.status}
+              currentStatus={indent.status ?? undefined}
               requiredPermission="purchase.indent.approve_l1"
               actionEndpoint={`/api/purchase/indents/${id}/approve`}
               invalidateKeys={[["indents"], ["indent", id]]}
@@ -195,7 +216,7 @@ export default function IndentDetailPage() {
                 <InfoField label="Indent Date" value={indent.indentDate} />
                 <InfoField label="Required By" value={indent.requiredDate ?? indent.requestedByDate ?? "—"} />
                 <InfoField label="Urgent" value={indent.isUrgent ? "Yes" : "No"} />
-                <InfoField label="Status" value={<StatusChip status={indent.status} />} />
+                <InfoField label="Status" value={<StatusChip status={indent.status ?? ""} />} />
                 <InfoField
                   label="Estimated Total"
                   value={`₹ ${estimatedTotal.toLocaleString("en-IN", { minimumFractionDigits: 2 })}`}
@@ -230,7 +251,7 @@ export default function IndentDetailPage() {
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-gray-50">
-                      {lines.map((line: any, i: number) => {
+                      {lines.map((line: IndentLine, i: number) => {
                         const qty = lineQty(line);
                         const rate = lineRate(line);
                         const amt = lineAmount(line);
@@ -333,20 +354,21 @@ export default function IndentDetailPage() {
                   // workflow step, stamping completed rows from history
                   // and marking the live step as "Next". Mirrors the PR
                   // detail timeline exactly.
-                  const entries: any[] = [
+                  const approval = indent.approval!;
+                  const entries: TimelineEntry[] = [
                     {
                       step: 0,
                       action: "request",
                       title: "Requested",
-                      actionBy: indent.approval.requestedByName || "Requester",
-                      actionAt: new Date(indent.approval.requestedAt).toLocaleString(),
+                      actionBy: approval.requestedByName || "Requester",
+                      actionAt: new Date(approval.requestedAt ?? "").toLocaleString(),
                     },
                   ];
 
-                  indent.approval.workflow.steps.forEach((s: any) => {
-                    const acted = [...indent.approval.history]
+                  (approval.workflow?.steps ?? []).forEach((s: ApprovalStep) => {
+                    const acted = [...(approval.history ?? [])]
                       .reverse()
-                      .find((h: any) => h.stepOrder === s.stepOrder);
+                      .find((h) => h.stepOrder === s.stepOrder);
                     const approverLabel = s.approverUserName
                       ? `${s.approverUserName} (${roleLabel(s.approverRoleId)})`
                       : roleLabel(s.approverRoleId);
@@ -356,15 +378,15 @@ export default function IndentDetailPage() {
                         step: s.stepOrder,
                         action: acted.action, // approve | reject | return
                         actionBy: acted.actionByName || approverLabel,
-                        actionAt: new Date(acted.actionAt).toLocaleString(),
+                        actionAt: new Date(acted.actionAt ?? "").toLocaleString(),
                         comments: acted.comments || undefined,
                       });
                       return;
                     }
 
                     const isCurrent =
-                      indent.approval.status === "pending_approval" &&
-                      indent.approval.currentStepOrder === s.stepOrder;
+                      approval.status === "pending_approval" &&
+                      approval.currentStepOrder === s.stepOrder;
                     entries.push({
                       step: s.stepOrder,
                       action: isCurrent ? "current" : "upcoming",
@@ -450,7 +472,7 @@ function InfoField({
   highlight,
 }: {
   label: string;
-  value: any;
+  value: ReactNode;
   highlight?: boolean;
 }) {
   return (

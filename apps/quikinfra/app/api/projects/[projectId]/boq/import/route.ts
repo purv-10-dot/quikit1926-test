@@ -1,3 +1,4 @@
+import { toErrorMessage, getErrorCode } from "@/lib/api/errors";
 import { NextRequest, NextResponse } from "next/server";
 import {
   boqService,
@@ -127,10 +128,12 @@ export const POST = auth.importOrEdit<{ projectId: string }>(async (
 
     // ─── Mode B: Raw sheets (server runs the full pipeline) ───────────────
     if (body.sheets && Array.isArray(body.sheets)) {
-      const rawSheets: RawSheet[] = body.sheets.map((s: any) => ({
-        sheetName: s.sheetName ?? s.name ?? "",
-        rows: (s.rows ?? []) as any[][],
-      }));
+      const rawSheets: RawSheet[] = body.sheets.map(
+        (s: { sheetName?: string; name?: string; rows?: unknown }) => ({
+          sheetName: s.sheetName ?? s.name ?? "",
+          rows: (s.rows ?? []) as unknown[][],
+        }),
+      );
 
       const result = await boqService.runDualImport(
         ctx,
@@ -202,7 +205,9 @@ export const POST = auth.importOrEdit<{ projectId: string }>(async (
         await boqRepository.replaceForProject(ctx, params.projectId);
       }
 
-      const inserted: any[] = [];
+      const inserted: Awaited<
+        ReturnType<typeof boqService.addManualItem>
+      >[] = [];
       let sortOrder = 0;
       for (const raw of body.items) {
         const isGroup = raw.is_group ?? raw.isGroup ?? false;
@@ -251,7 +256,7 @@ export const POST = auth.importOrEdit<{ projectId: string }>(async (
     }
 
     return badRequest("Request must include 'rows' (preview round-trip), 'sheets' (raw grids), or 'items' (legacy)");
-  } catch (err: any) {
+  } catch (err: unknown) {
     if (err instanceof BOQError) {
       return NextResponse.json(
         { error: err.message, code: err.code },
@@ -259,7 +264,7 @@ export const POST = auth.importOrEdit<{ projectId: string }>(async (
       );
     }
     return NextResponse.json(
-      { error: err.message ?? "Internal error" },
+      { error: toErrorMessage(err, "Internal error") },
       { status: 500 }
     );
   }

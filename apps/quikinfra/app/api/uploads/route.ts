@@ -1,8 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
-import { writeFile, mkdir } from "node:fs/promises";
 import path from "node:path";
 import crypto from "node:crypto";
 import { getTenantContext } from "@/lib/auth/context";
+import { getStorageDriver } from "@/lib/storage";
 import {
   ALLOWED_MIME_TYPES,
   PROJECT_DOCUMENT_MAX_FILE_SIZE_BYTES,
@@ -12,15 +12,25 @@ import {
  * Generic file-upload endpoint.
  *
  * Accepts a `multipart/form-data` POST with one or more `files` parts
- * (the field MUST be named `files`). Persists each blob under
- * `public/uploads/<tenant>/<yyyy-mm>/<random>.<ext>` and returns the
- * public URL for each one. The URL is what callers store on their
+ * (the field MUST be named `files`). Pushes each blob to S3 (the only
+ * storage backend — see src/lib/storage) under the object key
+ * `uploads/<tenant>/<yyyy-mm>/<random>.<ext>` and returns a stable
+ * viewer URL for each one. The URL is what callers store on their
  * record (e.g. `cn_material_issue.photoAttachment` is a `String?`
  * column today, so we serialise as a comma-separated list).
  *
+ * Why a viewer URL and not the object key or a presigned URL directly:
+ * S3 objects aren't public, and presigned URLs expire (5 min default),
+ * so neither can be persisted on the record. We store
+ * `/api/uploads/view/<key>` and let that route mint a fresh presigned
+ * URL on every access (see app/api/uploads/view/[...key]/route.ts).
+ * The blob is streamed through the lambda once on upload, so the same
+ * 4.5 MB Vercel request-body ceiling that applied to the old
+ * local-disk path still applies here — fine for phone snapshots / PDFs.
+ *
  * Type / size limits are kept conservative — this endpoint is shared
- * by Material Issue, Good Return, and Gate Pass photo uploads, and
- * none of those need anything bigger than a phone snapshot or a PDF.
+ * by Material Issue, Good Return, Gate Pass, and GRN challan uploads,
+ * and none of those need anything bigger than a phone snapshot or a PDF.
  */
 
 const ALLOWED_TYPES = new Set([
@@ -35,7 +45,6 @@ const ALLOWED_TYPES = new Set([
   "application/pdf",
 ]);
 const DEFAULT_MAX_BYTES = 10 * 1024 * 1024; // 10 MB — photos / GRN attachments
-const PUBLIC_ROOT = path.join(process.cwd(), "public");
 const UPLOAD_SUBDIR = "uploads";
 
 const PROJECT_DOCUMENT_EXTENSIONS = new Set([
@@ -130,8 +139,7 @@ export async function POST(req: NextRequest) {
     today.getMonth() + 1,
   ).padStart(2, "0")}`;
   const tenantSeg = sanitizeSegment(ctx.orgId);
-  const targetDir = path.join(PUBLIC_ROOT, UPLOAD_SUBDIR, tenantSeg, yearMonth);
-  await mkdir(targetDir, { recursive: true });
+  const driver = getStorageDriver();
 
   const uploaded: Array<{
     url: string;
@@ -180,10 +188,15 @@ export async function POST(req: NextRequest) {
     const storedExt = path.extname(entry.name) || mimeExt(declaredType);
     const fileName = `${crypto.randomBytes(12).toString("hex")}${storedExt}`;
     const buf = Buffer.from(await entry.arrayBuffer());
-    await writeFile(path.join(targetDir, fileName), buf);
+    const objectKey = `${UPLOAD_SUBDIR}/${tenantSeg}/${yearMonth}/${fileName}`;
+    await driver.putObject({
+      key: objectKey,
+      body: buf,
+      contentType: declaredType || "application/octet-stream",
+    });
 
     uploaded.push({
-      url: `/${UPLOAD_SUBDIR}/${tenantSeg}/${yearMonth}/${fileName}`,
+      url: `/api/uploads/view/${objectKey}`,
       name: entry.name,
       size: entry.size,
       type: declaredType,

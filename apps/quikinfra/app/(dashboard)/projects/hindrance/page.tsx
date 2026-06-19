@@ -35,6 +35,12 @@ function computeDaysLost(from: string, to: string): string {
   return String(Math.max(0, days));
 }
 
+interface HindranceRow {
+  id: string; projectId?: string; projectName?: string; status?: string;
+  category?: string; dateTo?: string;
+  [key: string]: unknown;
+}
+
 export default function HindrancePage() {
   const qc = useQueryClient();
   const [activeTab, setActiveTab] = useState("all");
@@ -47,16 +53,16 @@ export default function HindrancePage() {
   });
 
   const { data: projectsData } = useProjects();
-  const projectOptions = (projectsData?.data ?? []).map((p: any) => ({ value: p.id, label: p.name }));
+  const projectOptions = (projectsData?.data ?? []).map((p) => ({ value: p.id, label: p.name }));
   const projectNameById = new Map<string, string>(
-    (projectsData?.data ?? []).map((p: any) => [p.id, p.name]),
+    (projectsData?.data ?? []).map((p) => [p.id, p.name]),
   );
 
-  const allData = (result?.data ?? []).map((r: any) => ({
+  const allData = ((result?.data ?? []) as unknown as HindranceRow[]).map((r) => ({
     ...r,
     projectName: r.projectName ?? (r.projectId ? projectNameById.get(r.projectId) ?? "" : ""),
   }));
-  const data = activeTab === "all" ? allData : allData.filter((r: any) => r.status === activeTab);
+  const data = activeTab === "all" ? allData : allData.filter((r) => r.status === activeTab);
 
   const config = {
     title: "Report Hindrance",
@@ -97,7 +103,7 @@ export default function HindrancePage() {
     ],
   };
 
-  const columns: ColDef<any>[] = [
+  const columns: ColDef<HindranceRow>[] = [
     { key: "hindranceNo", label: "Hindrance No", sortable: true, searchable: true },
     { key: "projectName", label: "Project", sortable: true, searchable: true },
     { key: "dateFrom", label: "Date From", type: "date", sortable: true },
@@ -135,8 +141,6 @@ export default function HindrancePage() {
           data={data}
           onAdd={canAdd ? () => setDrawerOpen(true) : undefined}
           addLabel="Report Hindrance"
-          defaultSort="dateFrom"
-          defaultSortDir="desc"
         />
       </PageContainer>
       <QuickCreateDrawer open={drawerOpen} onClose={() => setDrawerOpen(false)} config={config} />

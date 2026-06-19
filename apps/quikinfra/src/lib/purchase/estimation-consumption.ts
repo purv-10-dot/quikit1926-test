@@ -26,6 +26,14 @@ export interface BudgetRow {
   remaining: number;
 }
 
+/** One element of the `materials` JSON array on a CnMaterialEstimation row. */
+interface EstimationMaterial {
+  itemId?: string;
+  itemName?: string;
+  uomCode?: string;
+  totalQty?: unknown;
+}
+
 export interface BudgetLookupOptions {
   /** When set, only estimations for this BOQ leaf are counted. */
   boqItemId?: string | null;
@@ -33,7 +41,7 @@ export interface BudgetLookupOptions {
   ignorePrId?: string | null;
 }
 
-function toNum(v: any): number {
+function toNum(v: unknown): number {
   if (v === null || v === undefined || v === "") return 0;
   const n = Number(v);
   return Number.isFinite(n) ? n : 0;
@@ -56,14 +64,16 @@ export async function getProjectMaterialBudget(
 
   const estimations = await listEstimations(orgId, { projectId });
   const approved = estimations.filter(
-    (e: any) =>
+    (e) =>
       String(e?.status ?? "").toLowerCase() === "approved" &&
       (!boqItemId || e.boqItemId === boqItemId || e.boqNo === boqItemId),
   );
 
   const byItem = new Map<string, BudgetRow>();
   for (const est of approved) {
-    const mats: any[] = Array.isArray(est.materials) ? est.materials : [];
+    const mats: EstimationMaterial[] = Array.isArray(est.materials)
+      ? (est.materials as EstimationMaterial[])
+      : [];
     for (const m of mats) {
       const itemId = String(m?.itemId ?? "").trim();
       if (!itemId) continue;
@@ -119,7 +129,7 @@ async function sumLivePrLineQuantities(
   const out = new Map<string, number>();
   if (itemIds.length === 0) return out;
 
-  const prs = await (db as any).cnPurchaseRequisition.findMany({
+  const prs = await db.cnPurchaseRequisition.findMany({
     where: {
       orgId,
       projectId,
@@ -155,11 +165,13 @@ async function backfillItemNames(
   );
   if (missing.length === 0) return;
   try {
-    const rows = await (db as any).cnItem.findMany({
+    const rows = await db.cnItem.findMany({
       where: { orgId, id: { in: missing.map((m) => m.itemId) } },
       select: { id: true, name: true, uom: { select: { code: true } } },
     });
-    const byId = new Map<string, any>(rows.map((r: any) => [r.id, r]));
+    const byId = new Map(
+      rows.map((r): [string, (typeof rows)[number]] => [r.id, r]),
+    );
     for (const row of missing) {
       const item = byId.get(row.itemId);
       if (!item) continue;

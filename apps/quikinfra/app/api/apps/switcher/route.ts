@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { getServerSession } from "next-auth";
 import { db as dbCentral } from "@quikit/database";
 import { ADMIN_TIER_ROLES } from "@quikit/shared";
-import { authOptions } from "@/lib/auth/next-auth-options";
+import { authOptions } from "@/lib/auth";
 
 /**
  * GET /api/apps/switcher
@@ -45,7 +45,7 @@ export async function GET() {
 
   // Fall back to first active membership if orgId not in session.
   if (!orgId) {
-    const membership = await (dbCentral as any).orgMember.findFirst({
+    const membership = await dbCentral.orgMember.findFirst({
       where: { userId, status: "active" },
       select: { orgId: true, role: true },
       orderBy: { createdAt: "asc" },
@@ -57,7 +57,7 @@ export async function GET() {
   const memberIsAdmin = isSuperAdmin || ADMIN_TIER_ROLES.has(String(memberRole ?? ""));
 
   // Catalog (active only). Exclude `quikit` — it's the launcher itself.
-  const allApps = await (dbCentral as any).app.findMany({
+  const allApps = await dbCentral.app.findMany({
     where: { status: { not: "disabled" }, slug: { not: "quikit" } },
     select: {
       id: true,
@@ -75,7 +75,7 @@ export async function GET() {
   // Org-level entitlement: SPARSE storage, DEFAULT-OFF. Only apps with an
   // OrgAppAccess row enabled:true are provisioned for this org.
   const orgAllows = orgId
-    ? await (dbCentral as any).orgAppAccess.findMany({
+    ? await dbCentral.orgAppAccess.findMany({
         where: { orgId, enabled: true },
         select: { appId: true },
       })
@@ -87,7 +87,7 @@ export async function GET() {
   // Per-user app access. Presence = explicitly assigned; absence only blocks
   // non-admin tiers (org admins / super admins get full-org visibility).
   const userAccess = orgId
-    ? await (dbCentral as any).userAppAccess.findMany({
+    ? await dbCentral.userAppAccess.findMany({
         where: { userId, orgId },
         select: { appId: true },
       })

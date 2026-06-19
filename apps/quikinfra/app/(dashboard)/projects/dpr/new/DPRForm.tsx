@@ -18,8 +18,10 @@
  * Submit Report → POST /api/projects/dpr { status: "submitted" }
  */
 
-import { useEffect, useMemo, useState } from "react";
+import { toErrorMessage } from "@/lib/api/errors";
+import { Fragment, useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
+import { useQueryClient } from "@tanstack/react-query";
 import Link from "next/link";
 import {
   ArrowLeft,
@@ -43,12 +45,14 @@ import {
   Calendar,
   MapPin,
   Building2,
+  Layers,
 } from "lucide-react";
 import { SelectInput } from "@/components/FormDrawer";
-import { GroupedMaterialSelect } from "@/components/GroupedMaterialSelect";
+import { GroupedMaterialSelect, type GroupedMaterialSelectItem } from "@/components/GroupedMaterialSelect";
+import type { BoqTreeRow } from "@/lib/boq/tree-row";
 import { DPRWeatherMetrics } from "@/components/DPRWeatherMetrics";
 import { useProjects, useItems, useItemGroups, useUOMs, useContractors, useLocations } from "@/hooks/use-masters";
-import { useWorkOrders } from "@/hooks/use-projects";
+import { useWorkOrders, useBOQ } from "@/hooks/use-projects";
 import { BOQActivityPickerModal } from "../../work-orders/new/BOQActivityPickerModal";
 import {
   parseStoredWeatherDetail,
@@ -70,9 +74,12 @@ interface WorkItem {
   todayQty: string;
   location: string;
   remarks: string;
-  /** Site photos for this activity. Stored as base64 data URLs in state
-   *  so the form can preview without an upload round-trip. */
+  /** Site photos for this activity. New photos are base64 data URLs; photos
+   *  already saved to S3 arrive as signed view URLs. */
   images: string[];
+  /** Parallel to `images`: the stored S3 key for each existing photo, or ""
+   *  for a newly-added (not-yet-uploaded) base64 photo. */
+  imageKeys: string[];
 }
 
 interface MaterialRow {
@@ -83,11 +90,32 @@ interface MaterialRow {
 
 interface ManpowerRow {
   contractorId: string;
-  category: string;
-  skillType: string;
-  count: string;
-  hoursWorked: string;
+  /** Free-text location within the site this crew worked. */
+  workingArea: string;
+  /** Per-trade head/effort counts (man-days/man-hours) entered as a wide grid. */
+  messan: string;
+  maleHelper: string;
+  femaleHelper: string;
+  carpenter: string;
+  fitter: string;
+  painter: string;
+  plumber: string;
+  electrician: string;
+  operator: string;
 }
+
+/** The fixed trade columns rendered in the manpower grid, in order. */
+const MANPOWER_TRADES = [
+  { key: "messan", label: "Messan" },
+  { key: "maleHelper", label: "Male H." },
+  { key: "femaleHelper", label: "Female H." },
+  { key: "carpenter", label: "Carp." },
+  { key: "fitter", label: "Fitter" },
+  { key: "painter", label: "Painter" },
+  { key: "plumber", label: "Plumber" },
+  { key: "electrician", label: "Elec." },
+  { key: "operator", label: "Operator" },
+] as const;
 
 interface StaffRow {
   name: string;
@@ -117,6 +145,7 @@ const newWorkItem = (): WorkItem => ({
   location: "",
   remarks: "",
   images: [],
+  imageKeys: [],
 });
 
 const newMaterial = (): MaterialRow => ({
@@ -127,10 +156,16 @@ const newMaterial = (): MaterialRow => ({
 
 const newManpower = (): ManpowerRow => ({
   contractorId: "",
-  category: "",
-  skillType: "",
-  count: "0",
-  hoursWorked: "0",
+  workingArea: "",
+  messan: "0",
+  maleHelper: "0",
+  femaleHelper: "0",
+  carpenter: "0",
+  fitter: "0",
+  painter: "0",
+  plumber: "0",
+  electrician: "0",
+  operator: "0",
 });
 
 const newStaff = (): StaffRow => ({
@@ -148,6 +183,80 @@ const newMachinery = (): MachineryRow => ({
   remarks: "",
 });
 
+// ── Raw shapes of an existing DPR record (edit mode hydration source) ──
+interface DprEditWorkItem {
+  boqItemId?: string;
+  boqNo?: string;
+  description?: string;
+  unit?: string;
+  totalTarget?: number | string;
+  prevQty?: number | string;
+  todayQty?: number | string;
+  workOrderId?: string;
+  location?: string;
+  remarks?: string;
+  images?: string[];
+  imageKeys?: string[];
+}
+interface DprEditMaterial {
+  itemId?: string;
+  consumedQty?: number | string;
+  remarks?: string;
+}
+interface DprEditManpower {
+  contractorId?: string;
+  workingArea?: string;
+  messan?: number | string;
+  maleHelper?: number | string;
+  femaleHelper?: number | string;
+  carpenter?: number | string;
+  fitter?: number | string;
+  painter?: number | string;
+  plumber?: number | string;
+  electrician?: number | string;
+  operator?: number | string;
+}
+interface DprEditStaff {
+  name?: string;
+  designation?: string;
+  present?: boolean;
+  reason?: string;
+}
+interface DprEditMachinery {
+  description?: string;
+  condition?: string;
+  requiredQty?: number | string;
+  actualQty?: number | string;
+  remarks?: string;
+}
+interface DPRRecord {
+  id?: string;
+  projectId?: string;
+  projectName?: string;
+  consumptionLocationId?: string;
+  reportDate?: string;
+  weatherCondition?: string;
+  weatherDetail?: unknown;
+  workHalted?: boolean;
+  siteRemarks?: string;
+  dprNumber?: string;
+  workItems?: DprEditWorkItem[];
+  materials?: DprEditMaterial[];
+  manpower?: DprEditManpower[];
+  staff?: DprEditStaff[];
+  machinery?: DprEditMachinery[];
+}
+
+/** BOQ activity row passed back from the picker modal. */
+interface BoqPickerRow {
+  id: string;
+  boq_no: string;
+  display_name: string;
+  unit?: string | null;
+  scopeQty?: number | string;
+  balanceQty?: number | string;
+}
+
 /**
  * Shared DPR form — used by both the "New DPR" and "Edit DPR" pages.
  * When `editData` is passed, the form hydrates from the existing record
@@ -155,7 +264,7 @@ const newMachinery = (): MachineryRow => ({
  */
 interface DPRFormProps {
   /** When present, switches to edit mode and pre-fills every field. */
-  editData?: any;
+  editData?: DPRRecord;
   /** When true, hides the sticky page header strip (date picker / project /
    *  Save / Submit) so the form can render cleanly inside a side drawer
    *  that supplies its own header / footer chrome. After a successful
@@ -169,6 +278,7 @@ interface DPRFormProps {
 export function DPRForm({ editData, embedded = false, onSaved }: DPRFormProps = {}) {
   const isEdit = !!editData?.id;
   const router = useRouter();
+  const qc = useQueryClient();
   const { data: projectsResult } = useProjects();
   const { data: itemsResult } = useItems();
   const { data: itemGroupsResult } = useItemGroups();
@@ -176,12 +286,17 @@ export function DPRForm({ editData, embedded = false, onSaved }: DPRFormProps = 
   const { data: contractorsResult } = useContractors();
   const { data: locationsResult } = useLocations();
 
-  const projects = projectsResult?.data ?? [];
-  const items = (itemsResult?.data ?? []) as any[];
-  const itemGroups = (itemGroupsResult?.data ?? []) as any[];
-  const uoms = (uomsResult?.data ?? []) as any[];
-  const contractors = (contractorsResult?.data ?? []) as any[];
-  const locations = (locationsResult?.data ?? []) as any[];
+  const projects = (projectsResult?.data ?? []) as unknown as Array<{
+    id: string; name?: string; code?: string; projectCode?: string;
+    location?: string; city?: string; state?: string;
+  }>;
+  const items = (itemsResult?.data ?? []) as unknown as Array<
+    GroupedMaterialSelectItem & { uomId?: string }
+  >;
+  const itemGroups = (itemGroupsResult?.data ?? []) as Array<{ id: string; name?: string; status?: string }>;
+  const uoms = (uomsResult?.data ?? []) as Array<{ id: string; code?: string }>;
+  const contractors = (contractorsResult?.data ?? []) as Array<{ id: string; name?: string }>;
+  const locations = (locationsResult?.data ?? []) as Array<{ id: string; name?: string; status?: string }>;
 
   // Header state
   const [projectId, setProjectId] = useState(() => editData?.projectId ?? "");
@@ -195,7 +310,7 @@ export function DPRForm({ editData, embedded = false, onSaved }: DPRFormProps = 
   // projects list doesn't include it — otherwise a DPR that already has a
   // project shows the empty "Select Project…" placeholder.
   const projectOptions = useMemo(() => {
-    const opts = (projects as any[]).map((p) => ({ value: p.id, label: p.name }));
+    const opts = projects.map((p) => ({ value: p.id, label: p.name ?? "" }));
     if (editData?.projectId && !opts.some((o) => o.value === editData.projectId)) {
       opts.unshift({
         value: editData.projectId,
@@ -206,7 +321,7 @@ export function DPRForm({ editData, embedded = false, onSaved }: DPRFormProps = 
   }, [projects, editData?.projectId, editData?.projectName]);
   const selectedProject = useMemo(
     () =>
-      (projects as any[]).find((p) => p.id === projectId) ??
+      projects.find((p) => p.id === projectId) ??
       (editData?.projectId && editData.projectId === projectId
         ? { id: editData.projectId, name: editData.projectName || "Current project" }
         : undefined),
@@ -221,7 +336,7 @@ export function DPRForm({ editData, embedded = false, onSaved }: DPRFormProps = 
   const projectWorkOrders = useMemo(
     () =>
       (workOrdersResult?.data ?? []).filter(
-        (wo: any) => wo.status !== "inactive"
+        (wo) => wo.status !== "inactive"
       ),
     [workOrdersResult]
   );
@@ -306,7 +421,7 @@ export function DPRForm({ editData, embedded = false, onSaved }: DPRFormProps = 
 
   // Work done
   const [workItems, setWorkItems] = useState<WorkItem[]>(() =>
-    (editData?.workItems ?? []).map((w: any) => ({
+    (editData?.workItems ?? []).map((w) => ({
       boqItemId: w.boqItemId ?? "",
       boqNo: w.boqNo ?? "",
       description: w.description ?? "",
@@ -320,29 +435,36 @@ export function DPRForm({ editData, embedded = false, onSaved }: DPRFormProps = 
       location: w.location ?? "",
       remarks: w.remarks ?? "",
       images: Array.isArray(w.images) ? w.images : [],
+      imageKeys: Array.isArray(w.imageKeys) ? w.imageKeys : [],
     }))
   );
   const [boqModalOpen, setBoqModalOpen] = useState(false);
 
   // Materials / Manpower / Staff / Machinery
   const [materials, setMaterials] = useState<MaterialRow[]>(() =>
-    (editData?.materials ?? []).map((m: any) => ({
+    (editData?.materials ?? []).map((m) => ({
       itemId: m.itemId ?? "",
       consumedQty: String(m.consumedQty ?? "0"),
       remarks: m.remarks ?? "",
     }))
   );
   const [manpower, setManpower] = useState<ManpowerRow[]>(() =>
-    (editData?.manpower ?? []).map((m: any) => ({
+    (editData?.manpower ?? []).map((m) => ({
       contractorId: m.contractorId ?? "",
-      category: m.category ?? "",
-      skillType: m.skillType ?? "",
-      count: String(m.count ?? "0"),
-      hoursWorked: String(m.hoursWorked ?? "0"),
+      workingArea: m.workingArea ?? "",
+      messan: String(m.messan ?? "0"),
+      maleHelper: String(m.maleHelper ?? "0"),
+      femaleHelper: String(m.femaleHelper ?? "0"),
+      carpenter: String(m.carpenter ?? "0"),
+      fitter: String(m.fitter ?? "0"),
+      painter: String(m.painter ?? "0"),
+      plumber: String(m.plumber ?? "0"),
+      electrician: String(m.electrician ?? "0"),
+      operator: String(m.operator ?? "0"),
     }))
   );
   const [staff, setStaff] = useState<StaffRow[]>(() =>
-    (editData?.staff ?? []).map((s: any) => ({
+    (editData?.staff ?? []).map((s) => ({
       name: s.name ?? "",
       designation: s.designation ?? "",
       present: s.present ?? true,
@@ -350,7 +472,7 @@ export function DPRForm({ editData, embedded = false, onSaved }: DPRFormProps = 
     }))
   );
   const [machinery, setMachinery] = useState<MachineryRow[]>(() =>
-    (editData?.machinery ?? []).map((m: any) => ({
+    (editData?.machinery ?? []).map((m) => ({
       description: m.description ?? "",
       condition: (m.condition as MachineryRow["condition"]) ?? "Running",
       requiredQty: String(m.requiredQty ?? "1"),
@@ -373,8 +495,117 @@ export function DPRForm({ editData, embedded = false, onSaved }: DPRFormProps = 
     [workItems]
   );
 
+  // Project BOQ tree — used to resolve each work item's parent group so the
+  // Work Done table can show a group header row above its line items (the
+  // saved DPR only stores the leaf boqItemId, so the parent is looked up
+  // here for both new and edit mode). Cached by React Query, so it reuses
+  // the same fetch the BOQ picker modal makes.
+  const { data: boqTreeResult } = useBOQ(projectId || null);
+  const boqRows = useMemo(
+    () => boqTreeResult?.items ?? boqTreeResult?.data ?? [],
+    [boqTreeResult]
+  );
+  const boqById = useMemo(() => {
+    const m = new Map<string, BoqTreeRow>();
+    for (const r of boqRows) if (r.id) m.set(r.id, r);
+    return m;
+  }, [boqRows]);
+  const boqByNo = useMemo(() => {
+    const m = new Map<string, BoqTreeRow>();
+    for (const r of boqRows) m.set(r.boq_no ?? r.boqNo ?? "", r);
+    return m;
+  }, [boqRows]);
+
+  // Group the work items by their BOQ hierarchy. A leaf only stores its
+  // immediate parent, but BOQ groups can themselves nest (e.g. B → B.3.1 →
+  // B.3.1.1), so we resolve the FULL ancestor-group chain for each leaf and
+  // cluster by the top-level group. Sub-groups are then emitted as indented
+  // sub-headers above their line items. Each row keeps its original index
+  // into `workItems` so the update / remove handlers keep working unchanged.
+  const groupedWorkItems = useMemo(() => {
+    // Ancestor groups for a leaf BOQ id, ordered top → immediate parent.
+    const chainFor = (boqItemId: string) => {
+      const chain: { no: string; name: string }[] = [];
+      const guard = new Set<string>();
+      let cur = boqById.get(boqItemId);
+      while (cur) {
+        const pNo = cur.parent_boq_no ?? cur.parentBoqNo ?? null;
+        if (!pNo || guard.has(pNo)) break;
+        guard.add(pNo);
+        const pRow = boqByNo.get(pNo);
+        chain.unshift({
+          no: pNo,
+          name: pRow?.display_name ?? pRow?.displayName ?? "",
+        });
+        if (!pRow) break;
+        cur = pRow;
+      }
+      return chain;
+    };
+
+    // Cluster by the top-level ancestor, preserving first-appearance order.
+    const groups: {
+      key: string;
+      topNo: string | null;
+      topName: string;
+      items: { w: WorkItem; idx: number; chain: { no: string; name: string }[] }[];
+    }[] = [];
+    const seen = new Map<string, number>();
+    workItems.forEach((w, idx) => {
+      const chain = chainFor(w.boqItemId);
+      const topNo = chain.length ? chain[0].no : null;
+      const key = topNo ?? "__ungrouped__";
+      let pos = seen.get(key);
+      if (pos === undefined) {
+        pos = groups.length;
+        seen.set(key, pos);
+        groups.push({
+          key,
+          topNo,
+          topName: chain.length ? chain[0].name : "",
+          items: [],
+        });
+      }
+      groups[pos].items.push({ w, idx, chain });
+    });
+
+    // Within each top group, flatten into a render list that injects a
+    // sub-group header the first time a deeper ancestor (depth ≥ 1) appears.
+    // `depth` is the nesting level (top items = 1) and drives indentation.
+    return groups.map((g) => {
+      const rendered: (
+        | { kind: "subgroup"; no: string; name: string; depth: number }
+        | { kind: "item"; w: WorkItem; idx: number; depth: number }
+      )[] = [];
+      const emitted = new Set<string>();
+      let leafCount = 0;
+      g.items.forEach(({ w, idx, chain }) => {
+        for (let d = 1; d < chain.length; d++) {
+          if (!emitted.has(chain[d].no)) {
+            emitted.add(chain[d].no);
+            rendered.push({
+              kind: "subgroup",
+              no: chain[d].no,
+              name: chain[d].name,
+              depth: d,
+            });
+          }
+        }
+        rendered.push({ kind: "item", w, idx, depth: chain.length });
+        leafCount += 1;
+      });
+      return {
+        key: g.key,
+        topNo: g.topNo,
+        topName: g.topName,
+        leafCount,
+        rendered,
+      };
+    });
+  }, [workItems, boqById, boqByNo]);
+
   // ── Work Items handlers ──
-  const addWorkItemFromBoq = (row: any) => {
+  const addWorkItemFromBoq = (row: BoqPickerRow) => {
     const totalTarget = Number(row.scopeQty ?? 0);
     const balance = Number(row.balanceQty ?? totalTarget);
     const prevQty = Math.max(0, totalTarget - balance);
@@ -393,6 +624,7 @@ export function DPRForm({ editData, embedded = false, onSaved }: DPRFormProps = 
         location: "",
         remarks: "",
         images: [],
+        imageKeys: [],
       },
     ]);
   };
@@ -415,13 +647,23 @@ export function DPRForm({ editData, embedded = false, onSaved }: DPRFormProps = 
     }
     if (dataUrls.length === 0) return;
     setWorkItems((prev) =>
-      prev.map((r, i) => (i === idx ? { ...r, images: [...r.images, ...dataUrls] } : r))
+      prev.map((r, i) =>
+        i === idx
+          ? { ...r, images: [...r.images, ...dataUrls], imageKeys: [...r.imageKeys, ...dataUrls.map(() => "")] }
+          : r,
+      )
     );
   };
   const removeWorkItemImage = (idx: number, imgIdx: number) =>
     setWorkItems((prev) =>
       prev.map((r, i) =>
-        i === idx ? { ...r, images: r.images.filter((_, j) => j !== imgIdx) } : r
+        i === idx
+          ? {
+              ...r,
+              images: r.images.filter((_, j) => j !== imgIdx),
+              imageKeys: r.imageKeys.filter((_, j) => j !== imgIdx),
+            }
+          : r
       )
     );
   const removeWorkItem = (idx: number) =>
@@ -438,7 +680,11 @@ export function DPRForm({ editData, embedded = false, onSaved }: DPRFormProps = 
 
   // ── Manpower handlers ──
   const addManpower = () => setManpower((p) => [...p, newManpower()]);
-  const updateManpower = (idx: number, field: keyof ManpowerRow, value: string) =>
+  const updateManpower = (
+    idx: number,
+    field: keyof ManpowerRow,
+    value: string
+  ) =>
     setManpower((prev) =>
       prev.map((row, i) => (i === idx ? { ...row, [field]: value } : row))
     );
@@ -448,7 +694,7 @@ export function DPRForm({ editData, embedded = false, onSaved }: DPRFormProps = 
 
   // ── Staff handlers ──
   const addStaff = () => setStaff((p) => [...p, newStaff()]);
-  const updateStaff = (idx: number, field: keyof StaffRow, value: any) =>
+  const updateStaff = (idx: number, field: keyof StaffRow, value: string | boolean) =>
     setStaff((prev) =>
       prev.map((row, i) => (i === idx ? { ...row, [field]: value } : row))
     );
@@ -492,7 +738,7 @@ export function DPRForm({ editData, embedded = false, onSaved }: DPRFormProps = 
           const totalTillDate = w.prevQty + todayNum;
           const pct =
             w.totalTarget > 0 ? (totalTillDate / w.totalTarget) * 100 : 0;
-          const wo = projectWorkOrders.find((x: any) => x.id === w.contractorWO);
+          const wo = projectWorkOrders.find((x) => x.id === w.contractorWO);
           return {
             boqItemId: w.boqItemId,
             boqNo: w.boqNo,
@@ -509,6 +755,7 @@ export function DPRForm({ editData, embedded = false, onSaved }: DPRFormProps = 
             location: w.location,
             remarks: w.remarks,
             images: w.images,
+            imageKeys: w.imageKeys,
           };
         }),
         materials: materials
@@ -516,17 +763,28 @@ export function DPRForm({ editData, embedded = false, onSaved }: DPRFormProps = 
           .map((m) => ({
             itemId: m.itemId,
             consumedQty: parseFloat(m.consumedQty) || 0,
-            uomId: items.find((it: any) => it.id === m.itemId)?.uomId ?? "",
+            uomId: items.find((it) => it.id === m.itemId)?.uomId ?? "",
             remarks: m.remarks || null,
           })),
         manpower: manpower
-          .filter((m) => m.category || m.contractorId)
+          .filter(
+            (m) =>
+              m.contractorId ||
+              m.workingArea.trim() ||
+              MANPOWER_TRADES.some((t) => (parseFloat(m[t.key]) || 0) !== 0)
+          )
           .map((m) => ({
             contractorId: m.contractorId || null,
-            category: m.category,
-            skillType: m.skillType,
-            count: parseInt(m.count) || 0,
-            hoursWorked: parseFloat(m.hoursWorked) || 0,
+            workingArea: m.workingArea || null,
+            messan: parseFloat(m.messan) || 0,
+            maleHelper: parseFloat(m.maleHelper) || 0,
+            femaleHelper: parseFloat(m.femaleHelper) || 0,
+            carpenter: parseFloat(m.carpenter) || 0,
+            fitter: parseFloat(m.fitter) || 0,
+            painter: parseFloat(m.painter) || 0,
+            plumber: parseFloat(m.plumber) || 0,
+            electrician: parseFloat(m.electrician) || 0,
+            operator: parseFloat(m.operator) || 0,
           })),
         staff: staff
           .filter((s) => s.name)
@@ -572,6 +830,15 @@ export function DPRForm({ editData, embedded = false, onSaved }: DPRFormProps = 
       if (!res.ok) throw new Error(json.error ?? `HTTP ${res.status}`);
 
       const savedId = json?.id ?? editData?.id;
+
+      // Invalidate the React Query caches so the detail + edit views refetch
+      // the saved record instead of serving the stale pre-edit snapshot.
+      // router.refresh() only re-runs server components — it does NOT touch
+      // the client query cache that useDPR / the edit page read from, so
+      // without this an edited value looks like it "didn't update".
+      if (savedId) qc.invalidateQueries({ queryKey: ["dpr", savedId] });
+      qc.invalidateQueries({ queryKey: ["dprs"] });
+
       if (embedded) {
         // Drawer host handles refresh + close. Submit-then-page-redirect
         // doesn't apply here — the user can re-enter the row from the
@@ -586,8 +853,8 @@ export function DPRForm({ editData, embedded = false, onSaved }: DPRFormProps = 
         router.push("/projects/dpr");
       }
       router.refresh();
-    } catch (e: any) {
-      setError(e?.message ?? "Failed to save DPR");
+    } catch (e: unknown) {
+      setError(toErrorMessage(e, "Failed to save DPR"));
     } finally {
       setSaving(null);
     }
@@ -921,7 +1188,69 @@ export function DPRForm({ editData, embedded = false, onSaved }: DPRFormProps = 
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-gray-100">
-                      {workItems.map((w, idx) => {
+                      {groupedWorkItems.map((group) => (
+                        <Fragment key={group.key}>
+                          {group.topNo && (
+                            <tr className="bg-gradient-to-r from-orange-50 to-transparent">
+                              <td
+                                colSpan={13}
+                                className="px-3 py-2 border-t border-orange-100"
+                              >
+                                <div className="flex items-center gap-2 min-w-0">
+                                  <Layers className="w-3.5 h-3.5 text-orange-500 shrink-0" />
+                                  <span className="inline-flex items-center px-1.5 py-0.5 rounded font-mono text-[10px] font-bold text-orange-800 bg-orange-100/80 shrink-0">
+                                    {group.topNo}
+                                  </span>
+                                  {group.topName && (
+                                    <span
+                                      className="text-[11px] font-semibold text-slate-600 truncate min-w-0"
+                                      title={group.topName}
+                                    >
+                                      {group.topName}
+                                    </span>
+                                  )}
+                                  <span className="ml-auto pl-3 text-[10px] font-semibold text-orange-700/70 tabular-nums whitespace-nowrap shrink-0">
+                                    {group.leafCount} item
+                                    {group.leafCount === 1 ? "" : "s"}
+                                  </span>
+                                </div>
+                              </td>
+                            </tr>
+                          )}
+                          {group.rendered.map((entry) => {
+                        if (entry.kind === "subgroup") {
+                          return (
+                            <tr
+                              key={`sub-${entry.no}`}
+                              className="bg-orange-50/40"
+                            >
+                              <td
+                                colSpan={13}
+                                className="py-1.5 border-t border-orange-100/70"
+                                style={{
+                                  paddingLeft: `${entry.depth * 16 + 12}px`,
+                                  paddingRight: "12px",
+                                }}
+                              >
+                                <div className="flex items-center gap-2 min-w-0">
+                                  <span className="text-orange-300 shrink-0">└</span>
+                                  <span className="inline-flex items-center px-1.5 py-0.5 rounded font-mono text-[10px] font-bold text-orange-700 bg-orange-100/60 shrink-0">
+                                    {entry.no}
+                                  </span>
+                                  {entry.name && (
+                                    <span
+                                      className="text-[11px] font-medium text-slate-500 truncate min-w-0"
+                                      title={entry.name}
+                                    >
+                                      {entry.name}
+                                    </span>
+                                  )}
+                                </div>
+                              </td>
+                            </tr>
+                          );
+                        }
+                        const { w, idx, depth } = entry;
                         const todayNum = parseFloat(w.todayQty) || 0;
                         const totalTillDate = w.prevQty + todayNum;
                         const pct =
@@ -930,7 +1259,16 @@ export function DPRForm({ editData, embedded = false, onSaved }: DPRFormProps = 
                             : 0;
                         return (
                           <tr key={`${w.boqItemId}-${idx}`}>
-                            <td className="px-3 py-2 font-mono text-xs text-orange-700 font-bold">
+                            <td
+                              className={`px-3 py-2 font-mono text-xs text-orange-700 font-bold ${
+                                depth > 0 ? "border-l-2 border-orange-200" : ""
+                              }`}
+                              style={
+                                depth > 0
+                                  ? { paddingLeft: `${depth * 16 + 12}px` }
+                                  : undefined
+                              }
+                            >
                               {w.boqNo}
                             </td>
                             <td className="px-3 py-2 text-xs text-gray-900">
@@ -951,7 +1289,7 @@ export function DPRForm({ editData, embedded = false, onSaved }: DPRFormProps = 
                                 value={w.contractorWO}
                                 onChange={(v) => updateWorkItem(idx, "contractorWO", v)}
                                 placeholder="Self Work"
-                                options={projectWorkOrders.map((wo: any) => ({
+                                options={projectWorkOrders.map((wo) => ({
                                   value: wo.id,
                                   label: `${wo.woNumber}${wo.contractorName ? ` — ${wo.contractorName}` : ""}`,
                                 }))}
@@ -1097,7 +1435,9 @@ export function DPRForm({ editData, embedded = false, onSaved }: DPRFormProps = 
                             </td>
                           </tr>
                         );
-                      })}
+                          })}
+                        </Fragment>
+                      ))}
                     </tbody>
                   </table>
                 </div>
@@ -1132,8 +1472,8 @@ export function DPRForm({ editData, embedded = false, onSaved }: DPRFormProps = 
                     onChange={setConsumptionLocationId}
                     placeholder="Select location…"
                     options={locations
-                      .filter((l: any) => l.status !== "inactive")
-                      .map((l: any) => ({ value: l.id, label: l.name }))}
+                      .filter((l) => l.status !== "inactive")
+                      .map((l) => ({ value: l.id, label: l.name ?? "" }))}
                   />
                 </div>
                 <span className="text-[10px] text-slate-400">
@@ -1161,9 +1501,9 @@ export function DPRForm({ editData, embedded = false, onSaved }: DPRFormProps = 
                     </thead>
                     <tbody className="divide-y divide-gray-100">
                       {materials.map((m, idx) => {
-                        const item = items.find((it: any) => it.id === m.itemId);
+                        const item = items.find((it) => it.id === m.itemId);
                         const uomCode =
-                          uoms.find((u: any) => u.id === item?.uomId)?.code ?? "—";
+                          uoms.find((u) => u.id === item?.uomId)?.code ?? "—";
                         return (
                           <tr key={idx}>
                             <td className="px-2 py-1.5 min-w-[180px]">
@@ -1173,7 +1513,7 @@ export function DPRForm({ editData, embedded = false, onSaved }: DPRFormProps = 
                                 items={items}
                                 groups={itemGroups.map((g) => ({
                                   id: g.id,
-                                  name: g.name,
+                                  name: g.name ?? "",
                                   status: g.status,
                                 }))}
                                 placeholder="Material"
@@ -1239,57 +1579,64 @@ export function DPRForm({ editData, embedded = false, onSaved }: DPRFormProps = 
                 />
               ) : (
                 <div className="border border-gray-200 rounded-xl overflow-x-auto">
-                  <table className="w-full text-xs min-w-[760px]">
+                  <table className="w-full text-xs min-w-[1240px]">
                     <thead className="bg-gray-50 border-b border-gray-200 text-[10px] uppercase font-bold text-gray-500">
                       <tr>
                         <th className="px-2 py-2 text-left w-[200px]">Contractor</th>
-                        <th className="px-2 py-2 text-left min-w-[160px]">Category</th>
-                        <th className="px-2 py-2 text-left min-w-[140px]">Skill Type</th>
-                        <th className="px-2 py-2 text-right w-[100px]">Count</th>
-                        <th className="px-2 py-2 text-right w-[110px]">Hours</th>
+                        <th className="px-2 py-2 text-left min-w-[160px]">Working Area</th>
+                        {MANPOWER_TRADES.map((t) => (
+                          <th key={t.key} className="px-2 py-2 text-right w-[88px]">
+                            {t.label}
+                          </th>
+                        ))}
+                        <th className="px-2 py-2 text-right w-[88px]">Total</th>
                         <th className="w-[40px]"></th>
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-gray-100">
-                      {manpower.map((m, idx) => (
+                      {manpower.map((m, idx) => {
+                        const rowTotal = MANPOWER_TRADES.reduce(
+                          (sum, t) => sum + (parseFloat(m[t.key]) || 0),
+                          0
+                        );
+                        return (
                         <tr key={idx}>
                           <td className="px-2 py-1.5">
                             <SelectInput
                               value={m.contractorId}
                               onChange={(v) => updateManpower(idx, "contractorId", v)}
                               placeholder="Self / Select…"
-                              options={contractors.map((c) => ({ value: c.id, label: c.name }))}
+                              options={contractors.map((c) => ({ value: c.id, label: c.name ?? "" }))}
                             />
                           </td>
                           <td className="px-2 py-1.5">
                             <input
-                              value={m.category}
+                              value={m.workingArea}
                               onChange={(e) =>
-                                updateManpower(idx, "category", e.target.value)
+                                updateManpower(idx, "workingArea", e.target.value)
                               }
-                              placeholder="e.g. Mason"
+                              placeholder="Area"
                               className="w-full text-xs px-2 py-1 border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-orange-300 focus:border-orange-400"
                             />
                           </td>
-                          <td className="px-2 py-1.5">
-                            <input
-                              value={m.skillType}
-                              onChange={(e) =>
-                                updateManpower(idx, "skillType", e.target.value)
-                              }
-                              placeholder="e.g. Skilled"
-                              className="w-full text-xs px-2 py-1 border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-orange-300 focus:border-orange-400"
+                          {MANPOWER_TRADES.map((t) => (
+                            <NumCell
+                              key={t.key}
+                              value={m[t.key]}
+                              onChange={(v) => updateManpower(idx, t.key, v)}
                             />
+                          ))}
+                          <td className="px-2 py-1.5 text-right font-semibold text-orange-600 tabular-nums">
+                            {Number.isInteger(rowTotal) ? rowTotal : rowTotal.toFixed(2)}
                           </td>
-                          <NumCell value={m.count} onChange={(v) => updateManpower(idx, "count", v)} />
-                          <NumCell value={m.hoursWorked} onChange={(v) => updateManpower(idx, "hoursWorked", v)} />
                           <td className="px-2 py-1.5 text-right">
                             <button onClick={() => removeManpower(idx)} className="text-gray-400 hover:text-red-600">
                               <Trash2 className="w-3.5 h-3.5" />
                             </button>
                           </td>
                         </tr>
-                      ))}
+                        );
+                      })}
                     </tbody>
                   </table>
                 </div>
@@ -1916,7 +2263,7 @@ function EmptyHint({
   // decoration and becomes the primary action when a section is empty.
   // Used by Materials / Manpower / Staff / Machinery — secondary sections
   // that should stay visually quieter than the larger Work-Done empty state.
-  const Tag: any = onAdd ? "button" : "div";
+  const Tag: React.ElementType = onAdd ? "button" : "div";
   return (
     <Tag
       type={onAdd ? "button" : undefined}

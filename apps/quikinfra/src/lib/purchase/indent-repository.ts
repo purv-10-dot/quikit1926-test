@@ -12,7 +12,9 @@
  * `npx prisma db push` + `npx prisma generate` have run.
  */
 
+import { toErrorMessage, getErrorCode , getErrorMeta} from "@/lib/api/errors";
 import { db } from "@/lib/db";
+import { Prisma } from "@quikit/database";
 
 // ─── Types ──────────────────────────────────────────────────────────
 
@@ -113,7 +115,7 @@ function warnOnceMissing(field: string) {
       `\`npx prisma db push && npx prisma generate\`. Saving other fields only.`,
   );
 }
-function stripFieldDeep(obj: any, field: string): any {
+function stripFieldDeep(obj: unknown, field: string): unknown {
   if (obj === null || obj === undefined) return obj;
   if (Array.isArray(obj)) return obj.map((x) => stripFieldDeep(x, field));
   if (typeof obj === "object" && Object.getPrototypeOf(obj) === Object.prototype) {
@@ -126,19 +128,19 @@ function stripFieldDeep(obj: any, field: string): any {
   }
   return obj;
 }
-async function withSchemaDriftRetry<T>(
-  buildPayload: () => Record<string, unknown>,
-  run: (payload: any) => Promise<T>,
+async function withSchemaDriftRetry<T, P extends Record<string, unknown>>(
+  buildPayload: () => P,
+  run: (payload: P) => Promise<T>,
 ): Promise<T> {
   let payload = buildPayload();
   for (let i = 0; i < 10; i++) {
     try {
       return await run(payload);
-    } catch (err: any) {
-      const msg = String(err?.message ?? "");
+    } catch (err: unknown) {
+      const msg = toErrorMessage(err, "");
       let bad: string | null = null;
       if (msg.includes("Unknown argument")) bad = extractUnknownArgument(msg);
-      else if (err?.code === "P2022") bad = String(err?.meta?.column ?? "") || null;
+      else if (getErrorCode(err) === "P2022") bad = String(getErrorMeta(err)?.column ?? "") || null;
       if (!bad) throw err;
       // Postgres P2022 returns `table.column` (e.g.
       // "cn_purchase_indent_lines.estimatedRate"). Strip the table
@@ -151,7 +153,7 @@ async function withSchemaDriftRetry<T>(
       )
         throw err;
       warnOnceMissing(bareBad);
-      payload = stripFieldDeep(payload, bareBad);
+      payload = stripFieldDeep(payload, bareBad) as P;
     }
   }
   return await run(payload);
@@ -165,7 +167,7 @@ async function resolveUomId(
   createdBy: string,
 ): Promise<string> {
   if (input.uomId) {
-    const row = await (db as any).cnUOM.findFirst({
+    const row = await db.cnUOM.findFirst({
       where: { id: input.uomId, orgId },
       select: { id: true },
     });
@@ -175,13 +177,13 @@ async function resolveUomId(
   const code = String(input.uomCode ?? "").trim().toUpperCase();
   if (!code) throw new Error("UOM is required on every line");
 
-  const existing = await (db as any).cnUOM.findFirst({
+  const existing = await db.cnUOM.findFirst({
     where: { orgId, code },
     select: { id: true },
   });
   if (existing) return existing.id;
 
-  const created = await (db as any).cnUOM.create({
+  const created = await db.cnUOM.create({
     data: {
       orgId,
       code,
@@ -200,10 +202,69 @@ async function resolveUomId(
 // only a parent `indent` relation — so we batch-fetch items and UOMs
 // separately and pass lookup maps into enrichLine. Avoids a second
 // round of schema churn just to add those relations.
-async function loadLineLookups(lines: any[], orgId: string): Promise<{
-  itemById: Map<string, any>;
-  uomById: Map<string, any>;
-  vendorById: Map<string, any>;
+/** A money/quantity value as it arrives from Prisma (Decimal) or raw SQL. */
+type Numericish = Prisma.Decimal | number | string | null | undefined;
+
+interface ItemLookup {
+  code?: string | null;
+  name?: string | null;
+  standardRate?: Numericish;
+}
+interface UomLookup {
+  code?: string | null;
+  name?: string | null;
+}
+interface VendorLookup {
+  name?: string | null;
+  companyName?: string | null;
+}
+interface IndentProjectRel {
+  name?: string | null;
+  code?: string | null;
+}
+interface IndentLineRow {
+  id: string;
+  prLineId?: string | null;
+  itemId: string;
+  uomId: string;
+  requiredQty?: Numericish;
+  indentedQty?: Numericish;
+  orderedQty?: Numericish;
+  pendingQty?: Numericish;
+  estimatedRate?: Numericish;
+  estimatedAmount?: Numericish;
+  preferredVendorId?: string | null;
+  qualitySpec?: string | null;
+  lineStatus?: string | null;
+  remarks?: string | null;
+}
+interface IndentRow {
+  id: string;
+  orgId: string;
+  indentNumber: string;
+  prId?: string | null;
+  projectId?: string | null;
+  project?: IndentProjectRel | null;
+  requestedById?: string | null;
+  indentDate?: Date | string | null;
+  requiredDate?: Date | null;
+  isUrgent?: boolean | null;
+  directIndentReason?: string | null;
+  estimatedTotal?: Numericish;
+  status: string;
+  approvalId?: string | null;
+  sourceMrNumber?: string | null;
+  lines?: IndentLineRow[] | null;
+  createdAt?: Date | null;
+  updatedAt?: Date | null;
+  createdBy?: string | null;
+  updatedBy?: string | null;
+}
+
+async function loadLineLookups(lines: IndentLineRow[], orgId: string): Promise<{
+  itemById: Map<string, ItemLookup>;
+  uomById: Map<string, UomLookup>;
+  vendorById: Map<string, VendorLookup>;
 }> {
   const itemIds = Array.from(
     new Set<string>(lines.map((l) => l.itemId).filter(Boolean)),
@@ -212,11 +273,13 @@ async function loadLineLookups(lines: any[], orgId: string): Promise<{
     new Set<string>(lines.map((l) => l.uomId).filter(Boolean)),
   );
   const vendorIds = Array.from(
-    new Set<string>(lines.map((l) => l.preferredVendorId).filter(Boolean)),
+    new Set<string>(
+      lines.map((l) => l.preferredVendorId).filter((v): v is string => Boolean(v)),
+    ),
   );
   const [items, uoms, vendors] = await Promise.all([
     itemIds.length
-      ? (db as any).cnItem.findMany({
+      ? db.cnItem.findMany({
           where: { orgId, id: { in: itemIds } },
           // standardRate is pulled so enrichLine can fall back to it
           // when the indent line's estimatedRate wasn't persisted (e.g.
@@ -225,31 +288,31 @@ async function loadLineLookups(lines: any[], orgId: string): Promise<{
         })
       : Promise.resolve([]),
     uomIds.length
-      ? (db as any).cnUOM.findMany({
+      ? db.cnUOM.findMany({
           where: { orgId, id: { in: uomIds } },
           select: { id: true, code: true, name: true },
         })
       : Promise.resolve([]),
     vendorIds.length
-      ? (db as any).cnVendor.findMany({
+      ? db.cnVendor.findMany({
           where: { orgId, id: { in: vendorIds } },
           select: { id: true, name: true, companyName: true },
         })
       : Promise.resolve([]),
   ]);
   return {
-    itemById: new Map<string, any>(items.map((i: any) => [i.id, i])),
-    uomById: new Map<string, any>(uoms.map((u: any) => [u.id, u])),
-    vendorById: new Map<string, any>(vendors.map((v: any) => [v.id, v])),
+    itemById: new Map<string, ItemLookup>(items.map((i) => [i.id, i])),
+    uomById: new Map<string, UomLookup>(uoms.map((u) => [u.id, u])),
+    vendorById: new Map<string, VendorLookup>(vendors.map((v) => [v.id, v])),
   };
 }
 
 function enrichLine(
-  line: any,
-  itemById: Map<string, any>,
-  uomById: Map<string, any>,
-  vendorById: Map<string, any> = new Map(),
-): any {
+  line: IndentLineRow,
+  itemById: Map<string, ItemLookup>,
+  uomById: Map<string, UomLookup>,
+  vendorById: Map<string, VendorLookup> = new Map(),
+) {
   const item = itemById.get(line.itemId);
   const uom = uomById.get(line.uomId);
   const itemName = item?.name ?? "";
@@ -325,12 +388,12 @@ async function loadSourcePrInfo(
 ): Promise<Map<string, PrSelfHealInfo>> {
   const unique = Array.from(new Set(prIds.filter(Boolean)));
   if (unique.length === 0) return new Map();
-  const rows = await (db as any).cnPurchaseRequisition.findMany({
+  const rows = await db.cnPurchaseRequisition.findMany({
     where: { id: { in: unique } },
     select: { id: true, prNumber: true, requiredDate: true },
   });
   return new Map<string, PrSelfHealInfo>(
-    rows.map((r: any) => [
+    rows.map((r) => [
       r.id,
       { prNumber: r.prNumber, requiredDate: r.requiredDate ?? null },
     ]),
@@ -338,15 +401,15 @@ async function loadSourcePrInfo(
 }
 
 function enrichIndent(
-  row: any,
-  itemById: Map<string, any>,
-  uomById: Map<string, any>,
+  row: IndentRow,
+  itemById: Map<string, ItemLookup>,
+  uomById: Map<string, UomLookup>,
   prInfoById?: Map<string, PrSelfHealInfo>,
-  vendorById: Map<string, any> = new Map(),
-): any {
+  vendorById: Map<string, VendorLookup> = new Map(),
+) {
   const projectName = row.project?.name ?? "";
   const projectCode = row.project?.code ?? "SITE";
-  const lines = (row.lines ?? []).map((l: any) =>
+  const lines = (row.lines ?? []).map((l) =>
     enrichLine(l, itemById, uomById, vendorById),
   );
   // Self-heal sourceMrNumber + requiredDate by falling back to the
@@ -388,13 +451,16 @@ function enrichIndent(
     lines,
     createdAt: row.createdAt?.toISOString?.() ?? null,
     updatedAt: row.updatedAt?.toISOString?.() ?? null,
-    createdBy: row.createdBy,
-    updatedBy: row.updatedBy,
+    createdBy: row.createdBy ?? "",
+    updatedBy: row.updatedBy ?? "",
     // Legacy UI fields the list page still reads — synthesise so the
     // column render functions don't break.
     requestedBy: row.requestedById,
   };
 }
+
+/** The enriched, client-facing Indent shape returned by every public read/write. */
+export type EnrichedIndent = ReturnType<typeof enrichIndent>;
 
 // ─── Queries ───────────────────────────────────────────────────────
 
@@ -422,7 +488,7 @@ export async function listIndents(opts: ListIndentsOptions): Promise<any[]> {
     where.requestedById = opts.ownOnlyForUserId;
   }
 
-  const rows = await (db as any).cnPurchaseIndent.findMany({
+  const rows = await db.cnPurchaseIndent.findMany({
     where,
     include: {
       project: { select: { id: true, name: true, code: true } },
@@ -432,12 +498,14 @@ export async function listIndents(opts: ListIndentsOptions): Promise<any[]> {
     ...(typeof opts.take === "number" ? { take: opts.take } : {}),
     ...(typeof opts.skip === "number" ? { skip: opts.skip } : {}),
   });
-  const allLines = rows.flatMap((r: any) => r.lines ?? []);
+  const allLines = rows.flatMap((r) => r.lines ?? []);
   const [{ itemById, uomById, vendorById }, prInfoById] = await Promise.all([
     loadLineLookups(allLines, opts.orgId),
-    loadSourcePrInfo(rows.map((r: any) => r.prId).filter(Boolean)),
+    loadSourcePrInfo(
+      rows.map((r) => r.prId).filter((x): x is string => Boolean(x)),
+    ),
   ]);
-  return rows.map((r: any) =>
+  return rows.map((r) =>
     enrichIndent(r, itemById, uomById, prInfoById, vendorById),
   );
 }
@@ -445,8 +513,8 @@ export async function listIndents(opts: ListIndentsOptions): Promise<any[]> {
 export async function findIndentById(
   orgId: string,
   id: string,
-): Promise<any | null> {
-  const row = await (db as any).cnPurchaseIndent.findFirst({
+): Promise<ReturnType<typeof enrichIndent> | null> {
+  const row = await db.cnPurchaseIndent.findFirst({
     where: { id, orgId },
     include: {
       project: { select: { id: true, name: true, code: true } },
@@ -463,7 +531,9 @@ export async function findIndentById(
 
 // ─── Mutations ─────────────────────────────────────────────────────
 
-export async function createIndent(input: CreateIndentInput): Promise<any> {
+export async function createIndent(
+  input: CreateIndentInput,
+): Promise<ReturnType<typeof enrichIndent>> {
   // Resolve uomId for every line before the txn — CnUOM create-on-miss
   // needs its own write, and we don't want to inflate the main txn.
   const resolvedLines: Array<IndentLineInput & { uomIdResolved: string }> = [];
@@ -476,7 +546,7 @@ export async function createIndent(input: CreateIndentInput): Promise<any> {
     resolvedLines.push({ ...line, uomIdResolved: uomId });
   }
 
-  const row = await withSchemaDriftRetry<any>(
+  const row = await withSchemaDriftRetry(
     () => ({
       orgId: input.orgId,
       indentNumber: input.indentNumber,
@@ -530,7 +600,7 @@ export async function createIndent(input: CreateIndentInput): Promise<any> {
       },
     }),
     (data) =>
-      (db as any).cnPurchaseIndent.create({
+      db.cnPurchaseIndent.create({
         data,
         include: {
           project: { select: { id: true, name: true, code: true } },
@@ -550,7 +620,7 @@ export async function updateIndent(
   id: string,
   patch: UpdateIndentInput,
 ): Promise<any | null> {
-  const existing = await (db as any).cnPurchaseIndent.findFirst({
+  const existing = await db.cnPurchaseIndent.findFirst({
     where: { id, orgId },
     select: { id: true },
   });
@@ -568,7 +638,7 @@ export async function updateIndent(
       return data;
     },
     (payload) =>
-      (db as any).cnPurchaseIndent.update({
+      db.cnPurchaseIndent.update({
         where: { id },
         data: payload,
       }),
@@ -582,7 +652,7 @@ export async function softDeleteIndent(
   id: string,
   updatedBy: string,
 ): Promise<boolean> {
-  const res = await (db as any).cnPurchaseIndent.updateMany({
+  const res = await db.cnPurchaseIndent.updateMany({
     where: { id, orgId },
     data: { status: "inactive", updatedBy },
   });

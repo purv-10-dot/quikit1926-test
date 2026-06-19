@@ -24,6 +24,7 @@
 
 import { createHash, randomUUID } from "crypto";
 import { NextRequest, NextResponse } from "next/server";
+import type { Prisma } from "@prisma/client";
 import { db } from "@/lib/db";
 import type { TenantContext } from "@/lib/auth/context";
 
@@ -58,10 +59,10 @@ export async function idempotencyGuard(
   req: NextRequest,
   ctx: TenantContext,
   routeKey: string
-): Promise<IdempotencyGuard & { parsedBody: any }> {
+): Promise<IdempotencyGuard & { parsedBody: unknown }> {
   const headerKey = req.headers.get("idempotency-key");
   const rawBody = await req.text();
-  let parsedBody: any = undefined;
+  let parsedBody: unknown = undefined;
   if (rawBody) {
     try {
       parsedBody = JSON.parse(rawBody);
@@ -87,7 +88,7 @@ export async function idempotencyGuard(
   const bodyHash = hashBody(`${urlPath}\n${rawBody ?? ""}`);
   const key = headerKey ?? `auto:${ctx.orgId}:${ctx.userId}:${routeKey}:${bodyHash}`;
 
-  const existing = await (db as any).cnIdempotencyKey.findUnique({
+  const existing = await db.cnIdempotencyKey.findUnique({
     where: { key },
   });
 
@@ -151,7 +152,7 @@ export async function idempotencyGuard(
       if (statusCode >= 500) return;
 
       const ttl = clientProvided ? DEFAULT_TTL_MS : 10 * 60 * 1000; // auto-keys TTL 10m
-      await (db as any).cnIdempotencyKey.create({
+      await db.cnIdempotencyKey.create({
         data: {
           key,
           orgId: ctx.orgId,
@@ -159,7 +160,7 @@ export async function idempotencyGuard(
           route: routeKey,
           bodyHash,
           statusCode,
-          responseJson: body as any,
+          responseJson: body as Prisma.InputJsonValue,
           expiresAt: new Date(Date.now() + ttl),
         },
       });

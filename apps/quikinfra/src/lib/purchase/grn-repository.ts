@@ -3,7 +3,9 @@
  * `cn_grn_lines`.
  */
 
+import { toErrorMessage, getErrorCode } from "@/lib/api/errors";
 import { db } from "@/lib/db";
+import { Prisma } from "@quikit/database";
 
 export interface GRNLineInput {
   poLineId?: string | null;
@@ -57,13 +59,90 @@ function dec(n: string | number | null | undefined): string | null {
   return s;
 }
 
-function isoDate(d: any): string {
+function isoDate(d: Date | string | null | undefined): string {
   if (!d) return "";
   try {
-    return d.toISOString().slice(0, 10);
+    return (d as Date).toISOString().slice(0, 10);
   } catch {
     return "";
   }
+}
+
+/** A money/quantity value as it arrives from Prisma (Decimal) or raw SQL. */
+type Numericish = Prisma.Decimal | number | string | null | undefined;
+
+interface ItemLookup {
+  code?: string | null;
+  name?: string | null;
+}
+interface UomLookup {
+  code?: string | null;
+}
+interface GrnLineRow {
+  id: string;
+  poLineId?: string | null;
+  itemId?: string | null;
+  uomId?: string | null;
+  receivedQty?: Numericish;
+  acceptedQty?: Numericish;
+  rejectedQty?: Numericish;
+  shortQty?: Numericish;
+  unitRate?: Numericish;
+  amount?: Numericish;
+  qualityStatus?: string | null;
+  batchNo?: string | null;
+  heatNo?: string | null;
+  condition?: string | null;
+  testCertRef?: string | null;
+  remarks?: string | null;
+}
+interface GrnProjectRel {
+  name?: string | null;
+  code?: string | null;
+}
+interface GrnVendorRel {
+  name?: string | null;
+  companyName?: string | null;
+  gstin?: string | null;
+}
+interface GrnPoRel {
+  id?: string | null;
+  poNumber?: string | null;
+}
+interface GrnRow {
+  id: string;
+  orgId: string;
+  grnNumber: string;
+  poId: string;
+  projectId: string;
+  vendorId: string;
+  lines?: GrnLineRow[] | null;
+  project?: GrnProjectRel | null;
+  vendor?: GrnVendorRel | null;
+  po?: GrnPoRel | null;
+  grnDate?: Date | string | null;
+  locationId?: string | null;
+  storageLocationId?: string | null;
+  supplierInvoiceNo?: string | null;
+  supplierInvoiceDate?: Date | string | null;
+  challanNo?: string | null;
+  challanDate?: Date | string | null;
+  receivedById?: string | null;
+  receivedByName?: string | null;
+  inspectedById?: string | null;
+  vehicleNo?: string | null;
+  ewayBillNo?: string | null;
+  approxInvoiceValue?: Numericish;
+  challanAttachment?: string | null;
+  overallQualityStatus?: string | null;
+  weighbridgeSlipNo?: string | null;
+  remarks?: string | null;
+  status: string;
+  approvalId?: string | null;
+  createdAt?: Date | null;
+  updatedAt?: Date | null;
+  createdBy?: string | null;
+  updatedBy?: string | null;
 }
 
 async function resolveUomByCode(
@@ -73,7 +152,7 @@ async function resolveUomByCode(
   const code = String(uomCode ?? "").trim().toUpperCase();
   if (!code) return null;
   try {
-    const row = await (db as any).cnUOM.findFirst({
+    const row = await db.cnUOM.findFirst({
       where: { orgId, code },
       select: { id: true },
     });
@@ -83,7 +162,7 @@ async function resolveUomByCode(
   }
 }
 
-function enrichLine(row: any, itemById: Map<string, any>, uomById: Map<string, any>): any {
+function enrichLine(row: GrnLineRow, itemById: Map<string, ItemLookup>, uomById: Map<string, UomLookup>) {
   const item = row.itemId ? itemById.get(row.itemId) : null;
   const uom = row.uomId ? uomById.get(row.uomId) : null;
   return {
@@ -113,13 +192,13 @@ function enrichLine(row: any, itemById: Map<string, any>, uomById: Map<string, a
   };
 }
 
-function enrichGRN(row: any, itemById: Map<string, any>, uomById: Map<string, any>): any {
-  const lines = (row.lines ?? []).map((l: any) => enrichLine(l, itemById, uomById));
+function enrichGRN(row: GrnRow, itemById: Map<string, ItemLookup>, uomById: Map<string, UomLookup>) {
+  const lines = (row.lines ?? []).map((l) => enrichLine(l, itemById, uomById));
   const project = row.project ?? null;
   const vendor = row.vendor ?? null;
   const po = row.po ?? null;
   const grnTotalExGST = lines.reduce(
-    (s: number, l: any) => s + (parseFloat(l.amount) || 0),
+    (s, l) => s + (parseFloat(l.amount) || 0),
     0,
   );
   return {
@@ -161,14 +240,19 @@ function enrichGRN(row: any, itemById: Map<string, any>, uomById: Map<string, an
     lines,
     createdAt: row.createdAt?.toISOString?.() ?? "",
     updatedAt: row.updatedAt?.toISOString?.() ?? "",
-    createdBy: row.createdBy,
-    updatedBy: row.updatedBy,
+    createdBy: row.createdBy ?? "",
+    updatedBy: row.updatedBy ?? "",
   };
 }
 
+/** The enriched, client-facing GRN shape returned by every public read/write. */
+export type EnrichedGRN = ReturnType<typeof enrichGRN>;
+
 async function loadLineLookups(
-  rows: any[],
-): Promise<{ itemById: Map<string, any>; uomById: Map<string, any> }> {
+  rows: Array<{
+    lines?: Array<{ itemId?: string | null; uomId?: string | null }> | null;
+  }>,
+): Promise<{ itemById: Map<string, ItemLookup>; uomById: Map<string, UomLookup> }> {
   const itemIds = new Set<string>();
   const uomIds = new Set<string>();
   for (const r of rows) {
@@ -179,21 +263,21 @@ async function loadLineLookups(
   }
   const [items, uoms] = await Promise.all([
     itemIds.size > 0
-      ? (db as any).cnItem.findMany({
+      ? db.cnItem.findMany({
           where: { id: { in: Array.from(itemIds) } },
           select: { id: true, code: true, name: true },
         })
       : Promise.resolve([]),
     uomIds.size > 0
-      ? (db as any).cnUOM.findMany({
+      ? db.cnUOM.findMany({
           where: { id: { in: Array.from(uomIds) } },
           select: { id: true, code: true },
         })
       : Promise.resolve([]),
   ]);
-  const itemById = new Map<string, any>();
+  const itemById = new Map<string, ItemLookup>();
   for (const i of items) itemById.set(i.id, i);
-  const uomById = new Map<string, any>();
+  const uomById = new Map<string, UomLookup>();
   for (const u of uoms) uomById.set(u.id, u);
   return { itemById, uomById };
 }
@@ -208,7 +292,7 @@ export interface ListGRNsOptions {
   skip?: number;
 }
 
-export async function listGRNs(opts: ListGRNsOptions): Promise<any[]> {
+export async function listGRNs(opts: ListGRNsOptions): Promise<EnrichedGRN[]> {
   const where: Record<string, unknown> = { orgId: opts.orgId };
   if (opts.status && opts.status !== "all") where.status = opts.status;
   if (Array.isArray(opts.projectIds)) {
@@ -222,7 +306,7 @@ export async function listGRNs(opts: ListGRNsOptions): Promise<any[]> {
     ];
   }
 
-  const rows = await (db as any).cnGoodsReceiptNote.findMany({
+  const rows = await db.cnGoodsReceiptNote.findMany({
     where,
     include: {
       lines: true,
@@ -237,14 +321,14 @@ export async function listGRNs(opts: ListGRNsOptions): Promise<any[]> {
     ...(typeof opts.skip === "number" ? { skip: opts.skip } : {}),
   });
   const { itemById, uomById } = await loadLineLookups(rows);
-  return rows.map((r: any) => enrichGRN(r, itemById, uomById));
+  return rows.map((r) => enrichGRN(r, itemById, uomById));
 }
 
 export async function findGRNById(
   orgId: string,
   id: string,
-): Promise<any | null> {
-  const row = await (db as any).cnGoodsReceiptNote.findFirst({
+): Promise<EnrichedGRN | null> {
+  const row = await db.cnGoodsReceiptNote.findFirst({
     where: { id, orgId },
     include: {
       lines: true,
@@ -260,14 +344,14 @@ export async function findGRNById(
   return enrichGRN(row, itemById, uomById);
 }
 
-export async function createGRN(input: CreateGRNInput): Promise<any> {
+export async function createGRN(input: CreateGRNInput): Promise<EnrichedGRN> {
   const resolvedLines = await Promise.all(
     input.lines.map(async (l) => {
       let uomId = l.uomId ?? null;
       if (!uomId && l.uomCode) {
         uomId = await resolveUomByCode(input.orgId, l.uomCode);
       }
-      const num = (raw: any): number => {
+      const num = (raw: unknown): number => {
         const n = parseFloat(String(raw ?? "").trim());
         return Number.isFinite(n) ? n : 0;
       };
@@ -298,8 +382,8 @@ export async function createGRN(input: CreateGRNInput): Promise<any> {
     }
   }
 
-  const buildHeader = (includeDrift: boolean): Record<string, any> => {
-    const base: Record<string, any> = {
+  const buildHeader = (includeDrift: boolean): Record<string, unknown> => {
+    const base: Record<string, unknown> = {
       orgId: input.orgId,
       grnNumber: input.grnNumber,
       poId: input.poId,
@@ -353,11 +437,11 @@ export async function createGRN(input: CreateGRNInput): Promise<any> {
     remarks: l.remarks ?? null,
   }));
 
-  let created: any;
+  let created: GrnRow;
   let needsBackfill = false;
   try {
-    created = await (db as any).cnGoodsReceiptNote.create({
-      data: { ...buildHeader(true), lines: { create: lineData } },
+    created = await db.cnGoodsReceiptNote.create({
+      data: { ...buildHeader(true), lines: { create: lineData } } as unknown as Prisma.CnGoodsReceiptNoteUncheckedCreateInput,
       include: {
         lines: true,
         po: { select: { id: true, poNumber: true } },
@@ -367,8 +451,8 @@ export async function createGRN(input: CreateGRNInput): Promise<any> {
         },
       },
     });
-  } catch (err: any) {
-    const msg = String(err?.message ?? "");
+  } catch (err: unknown) {
+    const msg = toErrorMessage(err, "");
     const isDrift =
       msg.includes("Unknown argument") &&
       (msg.includes("receivedByName") ||
@@ -383,8 +467,8 @@ export async function createGRN(input: CreateGRNInput): Promise<any> {
         "[grn-repository] Prisma client missing new GRN columns — " +
           "creating without them and back-filling via raw SQL.",
       );
-      created = await (db as any).cnGoodsReceiptNote.create({
-        data: { ...buildHeader(false), lines: { create: lineData } },
+      created = await db.cnGoodsReceiptNote.create({
+        data: { ...buildHeader(false), lines: { create: lineData } } as unknown as Prisma.CnGoodsReceiptNoteUncheckedCreateInput,
         include: {
           lines: true,
           po: { select: { id: true, poNumber: true } },
@@ -401,7 +485,7 @@ export async function createGRN(input: CreateGRNInput): Promise<any> {
   }
 
   if (needsBackfill) {
-    await (db as any).$executeRaw`
+    await db.$executeRaw`
       UPDATE app_quikinfra."Goods_receipt_notes"
       SET "receivedByName"      = ${input.receivedByName ?? null},
           "vehicleNo"           = ${input.vehicleNo ?? null},

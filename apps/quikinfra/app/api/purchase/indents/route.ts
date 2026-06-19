@@ -1,3 +1,4 @@
+import { toErrorMessage, getErrorCode } from "@/lib/api/errors";
 import { requirePurchaseAction } from "@/lib/auth/requirePurchaseAction";
 import { NextRequest, NextResponse } from "next/server";
 import { nextProjectScopedDocNumber } from "@/lib/db/doc-number";
@@ -32,7 +33,7 @@ async function resolveIndentVisibility(ctx: {
     return { ownOnly: false };
   }
 
-  const workflow = await (db as any).cnApprovalWorkflow.findFirst({
+  const workflow = await db.cnApprovalWorkflow.findFirst({
     where: {
       orgId: ctx.orgId,
       entityType: "purchase_indents",
@@ -46,10 +47,14 @@ async function resolveIndentVisibility(ctx: {
   if (!workflow || workflow.steps.length === 0) return { ownOnly: false };
 
   const allowedTypes = new Set<string>(
-    workflow.steps.map((s: any) => s.approverRoleId).filter(Boolean),
+    workflow.steps
+      .map((s) => s.approverRoleId)
+      .filter((x): x is string => Boolean(x)),
   );
   const pinnedUsers = new Set<string>(
-    workflow.steps.map((s: any) => s.approverUserId).filter(Boolean),
+    workflow.steps
+      .map((s) => s.approverUserId)
+      .filter((x): x is string => Boolean(x)),
   );
   const isParticipant =
     (callerType && allowedTypes.has(callerType)) ||
@@ -109,6 +114,22 @@ export async function GET(req: NextRequest) {
   return NextResponse.json({ data, total: data.length });
 }
 
+interface IndentLineInput {
+  itemId?: string | null;
+  quantity?: number | string | null;
+  qtyRequired?: number | string | null;
+  qtyRequested?: number | string | null;
+  estimatedRate?: number | string | null;
+  uomCode?: string | null;
+  uomId?: string | null;
+  specification?: string | null;
+  qualitySpec?: string | null;
+  prLineId?: string | null;
+  preferredVendorId?: string | null;
+  id?: string | null;
+  lineId?: string | null;
+}
+
 export async function POST(req: NextRequest) {
   try {
     const ctxOrResp = await requirePurchaseAction("construction.indent", "create");
@@ -122,7 +143,14 @@ export async function POST(req: NextRequest) {
 
     // Source PR inheritance. PRs moved to Prisma — resolve via the
     // repo rather than the demo-store so new-format PRs are found.
-    let sourcePr: any = null;
+    let sourcePr:
+      | {
+          prNumber?: string | null;
+          mrNumber?: string | null;
+          projectId?: string | null;
+          lines?: IndentLineInput[];
+        }
+      | null = null;
     if (body.sourceMrId) {
       sourcePr = await findPRById(ctx.orgId, body.sourceMrId);
       if (sourcePr) {
@@ -132,7 +160,7 @@ export async function POST(req: NextRequest) {
         // If the drawer didn't send line items, copy the PR's lines —
         // the usual "pick a PR and click Create" shortcut.
         if (!Array.isArray(body.lines) || body.lines.length === 0) {
-          body.lines = (sourcePr.lines ?? []).map((l: any) => ({
+          body.lines = (sourcePr.lines ?? []).map((l) => ({
             itemId: l.itemId,
             qtyRequested:
               l.qtyRequired ?? l.quantity ?? l.qtyRequested ?? "0",
@@ -179,12 +207,16 @@ export async function POST(req: NextRequest) {
     // Build lines — resolve item master once to stash code/name + uom
     // for enrichment consumers, and compute line totals for the header
     // estimatedTotal sum.
-    const rawLines: any[] = Array.isArray(body.lines) ? body.lines : [];
+    const rawLines: IndentLineInput[] = Array.isArray(body.lines)
+      ? body.lines
+      : [];
     const itemIds = Array.from(
-      new Set<string>(rawLines.map((l) => l.itemId).filter(Boolean)),
+      new Set<string>(
+        rawLines.map((l) => l.itemId).filter((x): x is string => Boolean(x)),
+      ),
     );
     const items = itemIds.length
-      ? await (db as any).cnItem.findMany({
+      ? await db.cnItem.findMany({
           where: { id: { in: itemIds } },
           select: {
             id: true,
@@ -196,20 +228,23 @@ export async function POST(req: NextRequest) {
           },
         })
       : [];
-    const itemById = new Map<string, any>(items.map((i: any) => [i.id, i]));
+    const itemById = new Map(
+      items.map((i): [string, (typeof items)[number]] => [i.id, i]),
+    );
 
     let estimatedTotal = 0;
-    const repoLines = rawLines.map((line: any) => {
-      const master = itemById.get(line.itemId);
-      const qty = parseFloat(line.qtyRequested ?? line.quantity ?? "0") || 0;
+    const repoLines = rawLines.map((line) => {
+      const master = itemById.get(line.itemId ?? "");
+      const qty =
+        parseFloat(String(line.qtyRequested ?? line.quantity ?? "0")) || 0;
       const rate =
         parseFloat(
-          line.estimatedRate ?? master?.standardRate?.toString?.() ?? "0",
+          String(line.estimatedRate ?? master?.standardRate?.toString?.() ?? "0"),
         ) || 0;
       const amount = Math.round(qty * rate * 100) / 100;
       estimatedTotal += amount;
       return {
-        itemId: line.itemId,
+        itemId: line.itemId ?? "",
         uomId: line.uomId ?? master?.uomId ?? null,
         uomCode: line.uomCode ?? master?.uom?.code ?? null,
         prLineId: line.prLineId ?? null,
@@ -242,11 +277,11 @@ export async function POST(req: NextRequest) {
     });
 
     return NextResponse.json(record, { status: 201 });
-  } catch (err: any) {
+  } catch (err: unknown) {
     if (err instanceof PurchaseValidationError) {
       return NextResponse.json({ error: err.message, code: err.code }, { status: 400 });
     }
-    if (err?.code === "P2002") {
+    if (getErrorCode(err) === "P2002") {
       return NextResponse.json(
         { error: "An indent with this number already exists" },
         { status: 409 },
@@ -254,7 +289,7 @@ export async function POST(req: NextRequest) {
     }
     console.error("[indents.create] failed:", err);
     return NextResponse.json(
-      { error: err?.message ?? "Internal error" },
+      { error: toErrorMessage(err) ?? "Internal error" },
       { status: 500 },
     );
   }

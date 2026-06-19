@@ -21,6 +21,7 @@
  *     (e.g. companyName → companyId), and any per-record validation.
  */
 
+import { toErrorMessage, getErrorCode } from "@/lib/api/errors";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { UploadCloud, X, AlertTriangle, CheckCircle2, FileSpreadsheet, Loader2 } from "lucide-react";
 import { PrimaryButton, SecondaryButton } from "./PageShell";
@@ -100,18 +101,18 @@ async function parseFile(file: File): Promise<{ columns: string[]; rows: Record<
   if (!ws) throw new Error("Could not read first sheet");
   // `defval: ""` keeps blank cells in the row record so `Object.keys`
   // returns every column even when the first row has empty cells.
-  const rows = XLSX.utils.sheet_to_json<Record<string, any>>(ws, { defval: "", raw: false });
+  const rows = XLSX.utils.sheet_to_json<Record<string, unknown>>(ws, { defval: "", raw: false });
   if (rows.length === 0) {
     return { columns: [], rows: [] };
   }
   // Take column order from the first row's key order, which sheet_to_json
   // derives from the header row of the sheet — preserves the spreadsheet's
   // original left-to-right column order in the mapping UI.
-  const columns = Object.keys(rows[0] as Record<string, any>);
+  const columns = Object.keys(rows[0] as Record<string, unknown>);
   const stringRows = rows.map((r) => {
     const out: Record<string, string> = {};
     for (const col of columns) {
-      const v = (r as Record<string, any>)[col];
+      const v = (r as Record<string, unknown>)[col];
       out[col] = v === null || v === undefined ? "" : String(v).trim();
     }
     return out;
@@ -233,8 +234,8 @@ export function ImportDataDrawer({
       setRows(rows);
       setMapping(auto);
       setStage("map");
-    } catch (e: any) {
-      setParseError(e?.message ?? "Could not parse file.");
+    } catch (e: unknown) {
+      setParseError(toErrorMessage(e, "Could not parse file."));
     } finally {
       setParsing(false);
     }
@@ -264,8 +265,8 @@ export function ImportDataDrawer({
       try {
         const res = await onImport(mapped);
         out.push({ rowNumber: i + 2, ok: !!(res && res.ok), error: res && !res.ok ? res.error : undefined });
-      } catch (e: any) {
-        out.push({ rowNumber: i + 2, ok: false, error: e?.message ?? "Failed" });
+      } catch (e: unknown) {
+        out.push({ rowNumber: i + 2, ok: false, error: toErrorMessage(e, "Failed") });
       }
       setProgress({ done: i + 1, total: rows.length });
     }

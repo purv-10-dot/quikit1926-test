@@ -1,3 +1,4 @@
+import { toErrorMessage, getErrorCode } from "@/lib/api/errors";
 import { NextRequest, NextResponse } from "next/server";
 import { requireMastersAction } from "@/lib/auth/requireMastersAction";
 import { hasMatrixAction, getTenantContext } from "@/lib/auth/context";
@@ -55,8 +56,8 @@ export async function POST(req: NextRequest) {
       status: body.status ?? "active",
     });
     return NextResponse.json(record, { status: 201 });
-  } catch (err: any) {
+  } catch (err: unknown) {
     console.error("[item-groups.create] failed:", err);
-    return NextResponse.json({ error: err?.message ?? "Failed to create item group" }, { status: 500 });
+    return NextResponse.json({ error: toErrorMessage(err, "Failed to create item group") }, { status: 500 });
   }
 }

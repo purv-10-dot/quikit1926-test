@@ -25,7 +25,7 @@ export function reportError(err: unknown, context: ErrorContext = {}): void {
   //
   // if (process.env.SENTRY_DSN) {
   //   const Sentry = require("@sentry/nextjs");
-  //   Sentry.withScope((scope: any) => {
+  //   Sentry.withScope((scope) => {
   //     if (context.route) scope.setTag("route", context.route);
   //     if (context.orgId) scope.setTag("orgId", context.orgId);
   //     if (context.userId) scope.setUser({ id: context.userId });

@@ -6,6 +6,7 @@
  * per-step role select + role-filtered user picker.
  */
 
+import { toErrorMessage } from "@/lib/api/errors";
 import { useEffect, useMemo, useState } from "react";
 import { Plus, Trash2, Layers, AlertTriangle, X } from "lucide-react";
 import {
@@ -47,6 +48,11 @@ interface StepRow {
    * approve at resolve time; the requester is excluded server-side.
    */
   approverUserIds: string[];
+}
+
+interface WfUserNode {
+  id: string; status?: string; acceptedAt?: string | null; lastLoginAt?: string | null;
+  userType: string; fullName: string; email: string; projectsAssigned?: string[];
 }
 
 interface ModuleMode {
@@ -95,18 +101,18 @@ export function NewWorkflowDrawer({ open, onClose, defaultEntityType, moduleMode
   const updateMutation = useUpdateWorkflow();
   const { data: usersResult } = useUsers();
   const { data: projectsResult } = useProjects();
-  const allUsers = usersResult?.data ?? [];
+  const allUsers = (usersResult?.data ?? []) as unknown as WfUserNode[];
   const allProjects = projectsResult?.data ?? [];
 
   const userById = useMemo(() => {
-    const map = new Map<string, any>();
+    const map = new Map<string, WfUserNode>();
     for (const u of allUsers) map.set(u.id, u);
     return map;
   }, [allUsers]);
 
   const projectNameById = useMemo(() => {
     const map = new Map<string, string>();
-    for (const p of allProjects) map.set(p.id, p.siteName ?? p.name ?? p.code ?? p.id);
+    for (const p of allProjects) map.set(p.id, (p as { siteName?: string | null }).siteName ?? p.name ?? p.code ?? p.id);
     return map;
   }, [allProjects]);
 
@@ -257,8 +263,8 @@ export function NewWorkflowDrawer({ open, onClose, defaultEntityType, moduleMode
         });
       }
       onClose();
-    } catch (err: any) {
-      setError(err?.message ?? "Failed to create workflow");
+    } catch (err: unknown) {
+      setError(toErrorMessage(err, "Failed to create workflow"));
     }
   };
 
@@ -364,6 +370,15 @@ export function NewWorkflowDrawer({ open, onClose, defaultEntityType, moduleMode
         <div className="space-y-2">
           {steps.map((s, i) => {
             const roleUsers = s.approverRole ? usersByRole.get(s.approverRole) ?? [] : [];
+            // Users already approving on any OTHER step. A single person
+            // shouldn't sit twice in the same approval chain, so we hide
+            // them from this step's picker entirely.
+            const usedElsewhere = new Set(
+              steps.flatMap((other, j) => (j === i ? [] : other.approverUserIds)),
+            );
+            const selectableRoleUsers = roleUsers.filter(
+              (u) => !usedElsewhere.has(u.id),
+            );
             // Pool semantics (multi-select chips) apply to the roles
             // where multiple peers commonly share work:
             //   - USER: peer site workers (yash + bhavna both raise / approve).
@@ -375,11 +390,11 @@ export function NewWorkflowDrawer({ open, onClose, defaultEntityType, moduleMode
               s.approverRole === USER_TYPES.ADMIN;
             // Only show users not yet added — prevents double-adding to
             // the multi-select pool.
-            const remainingOptions = roleUsers
+            const remainingOptions = selectableRoleUsers
               .filter((u) => !s.approverUserIds.includes(u.id))
               .map((u) => ({ value: u.id, label: u.fullName || u.email }));
             // Full option list for the single-select (non-USER) branch.
-            const allUserOptions = roleUsers.map((u) => ({
+            const allUserOptions = selectableRoleUsers.map((u) => ({
               value: u.id,
               label: u.fullName || u.email,
             }));
@@ -394,10 +409,10 @@ export function NewWorkflowDrawer({ open, onClose, defaultEntityType, moduleMode
               !!s.approverRole && roleUsers.length === 0;
             const pickedUsers = s.approverUserIds
               .map((id) => userById.get(id))
-              .filter(Boolean);
+              .filter((u): u is WfUserNode => Boolean(u));
             const projectIds = Array.from(
               new Set(
-                pickedUsers.flatMap((u: any) =>
+                pickedUsers.flatMap((u) =>
                   Array.isArray(u?.projectsAssigned) ? u.projectsAssigned : [],
                 ),
               ),
@@ -460,7 +475,9 @@ export function NewWorkflowDrawer({ open, onClose, defaultEntityType, moduleMode
                             ? "Select role first"
                             : remainingOptions.length === 0
                               ? s.approverUserIds.length === 0
-                                ? "No users in this role"
+                                ? roleUsers.length === 0
+                                  ? "No users in this role"
+                                  : "All users used in other steps"
                                 : "All users added"
                               : s.approverUserIds.length === 0
                                 ? "Select user"
@@ -483,7 +500,9 @@ export function NewWorkflowDrawer({ open, onClose, defaultEntityType, moduleMode
                           !s.approverRole
                             ? "Select role first"
                             : allUserOptions.length === 0
-                              ? "No users in this role"
+                              ? roleUsers.length === 0
+                                ? "No users in this role"
+                                : "All users used in other steps"
                               : "Select user"
                         }
                         disabled={!s.approverRole || allUserOptions.length === 0}
@@ -531,7 +550,7 @@ export function NewWorkflowDrawer({ open, onClose, defaultEntityType, moduleMode
                     a chip strip would just be redundant noise. */}
                 {supportsMultiApprover && pickedUsers.length > 0 && (
                   <div className="pl-6 mt-2 flex flex-wrap gap-1.5">
-                    {pickedUsers.map((u: any) => (
+                    {pickedUsers.map((u) => (
                       <span
                         key={u.id}
                         className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-orange-50 border border-orange-200 text-[11px] text-orange-700"

@@ -75,7 +75,7 @@ export interface BOQImportBatch {
   uploaded_by: string;
   uploaded_by_name?: string;
   status: "processing" | "preview_ready" | "imported" | "failed" | "cancelled";
-  error_detail?: any;
+  error_detail?: unknown;
   file_name?: string;
   row_count?: number;
   created_at: string;

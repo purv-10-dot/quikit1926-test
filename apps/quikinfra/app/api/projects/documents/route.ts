@@ -69,7 +69,7 @@ export async function GET(req: NextRequest) {
     ];
   }
 
-  const rows = await (db as any).cnProjectDocument.findMany({
+  const rows = await db.cnProjectDocument.findMany({
     where,
     include: {
       project: { select: { code: true, name: true } },
@@ -128,7 +128,7 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "Project not found" }, { status: 404 });
   }
 
-  const row = await (db as any).cnProjectDocument.create({
+  const row = await db.cnProjectDocument.create({
     data: {
       orgId: ctx.orgId,
       projectId,

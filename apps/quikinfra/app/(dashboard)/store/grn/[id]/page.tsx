@@ -6,7 +6,8 @@
  *   - Right (sidebar): Source PO card, Approval Timeline, Audit
  */
 
-import { useState } from "react";
+import { toErrorMessage } from "@/lib/api/errors";
+import { useState, type ReactNode } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { Download, Send, FileText, Paperclip, Eye } from "lucide-react";
 import {
@@ -17,8 +18,25 @@ import { useGRN, useSubmitGRN } from "@/hooks/use-purchase";
 import { ApprovalActionBar } from "@/components/ApprovalActionBar";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { USER_TYPE_CATALOG } from "@/lib/rbac/user-types";
-import { usePermissions } from "@/hooks/use-permissions";
+import { usePermissions, type MeResponse } from "@/hooks/use-permissions";
 import { canActOnStep } from "@/lib/approvals/workflow-rbac";
+
+import type {
+  ApprovalStep,
+  ApprovalHistoryEntry,
+  ApprovalInfo,
+} from "@/lib/approvals/approval-info";
+import type { GrnLine, GrnDetail } from "@/lib/purchase/grn-detail";
+
+/** Matches PageShell's ApprovalTimeline entry shape. */
+interface TimelineEntry {
+  step: number;
+  action: string;
+  actionBy: string;
+  actionAt: string;
+  comments?: string;
+  title?: string;
+}
 
 function roleLabel(key: string | null | undefined): string {
   if (!key) return "Any approver";
@@ -32,23 +50,26 @@ function roleLabel(key: string | null | undefined): string {
  * the bypass was tightened to SUPER_ADMIN only) see live buttons that
  * 403 on click.
  */
-function canActOnCurrentStep(me: any, grn: any): boolean {
+function canActOnCurrentStep(
+  me: MeResponse | null | undefined,
+  grn: GrnDetail | null | undefined,
+): boolean {
   if (!me || !grn?.approval) return false;
   if (grn.approval.status !== "pending_approval") return false;
   const step = grn.approval.workflow?.steps?.find(
-    (s: any) => s.stepOrder === grn.approval.currentStepOrder,
+    (s: ApprovalStep) => s.stepOrder === grn.approval?.currentStepOrder,
   );
   if (!step) return false;
   return canActOnStep(
     {
       userId: me.userId,
       roleKey: me.roleKey,
-      projectIds: me.projectIds,
+      projectIds: me.projectIds ?? undefined,
     },
     {
-      approverUserId: step.approverUserId,
+      approverUserId: step.approverUserId ?? null,
       approverUserIds: Array.isArray(step.approverUserIds) ? step.approverUserIds : null,
-      approverRoleId: step.approverRoleId,
+      approverRoleId: step.approverRoleId ?? null,
     },
     grn.projectId ?? null,
   );
@@ -72,8 +93,8 @@ export default function GRNDetailPage() {
     try {
       await submitMutation.mutateAsync(id);
       setSubmitConfirmOpen(false);
-    } catch (err: any) {
-      setSubmitError(err?.message ?? "Failed to submit GRN");
+    } catch (err: unknown) {
+      setSubmitError(toErrorMessage(err, "Failed to submit GRN"));
     }
   };
 
@@ -104,7 +125,7 @@ export default function GRNDetailPage() {
         onBack={() => router.push("/store/grn")}
         actions={
           <div className="flex items-center gap-2">
-            <StatusChip status={grn.status} />
+            <StatusChip status={grn.status ?? ""} />
             {lines.length > 0 && (
               <a
                 href={`/api/purchase/grn/${id}/preview/pdf`}
@@ -130,7 +151,7 @@ export default function GRNDetailPage() {
             <ApprovalActionBar
               entityType="grn"
               entityId={id}
-              currentStatus={grn.status}
+              currentStatus={grn.status ?? undefined}
               requiredPermission="purchase.grn.approve"
               actionEndpoint={`/api/purchase/grn/${id}/approve`}
               invalidateKeys={[["grns"], ["grn", id]]}
@@ -157,7 +178,7 @@ export default function GRNDetailPage() {
                 <InfoField label="Vendor" value={vendorName} />
                 <InfoField
                   label="Status"
-                  value={<StatusChip status={grn.status} />}
+                  value={<StatusChip status={grn.status ?? ""} />}
                 />
                 <InfoField
                   label="Supplier Invoice"
@@ -283,7 +304,7 @@ export default function GRNDetailPage() {
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-gray-50">
-                      {lines.map((line: any, i: number) => (
+                      {lines.map((line: GrnLine, i: number) => (
                         <tr key={line.id ?? i}>
                           <td className="px-3 py-2.5 text-xs text-gray-400">
                             {i + 1}
@@ -372,21 +393,22 @@ export default function GRNDetailPage() {
                 </p>
               ) : (
                 (() => {
-                  const entries: any[] = [
+                  const approval = grn.approval!;
+                  const entries: TimelineEntry[] = [
                     {
                       step: 0,
                       action: "request",
                       title: "Requested",
-                      actionBy: grn.approval.requestedByName || "Requester",
+                      actionBy: approval.requestedByName || "Requester",
                       actionAt: new Date(
-                        grn.approval.requestedAt,
+                        approval.requestedAt ?? "",
                       ).toLocaleString(),
                     },
                   ];
-                  grn.approval.workflow.steps.forEach((s: any) => {
-                    const acted = [...grn.approval.history]
+                  (approval.workflow?.steps ?? []).forEach((s: ApprovalStep) => {
+                    const acted = [...(approval.history ?? [])]
                       .reverse()
-                      .find((h: any) => h.stepOrder === s.stepOrder);
+                      .find((h) => h.stepOrder === s.stepOrder);
                     const approverLabel = s.approverUserName
                       ? `${s.approverUserName} (${roleLabel(s.approverRoleId)})`
                       : roleLabel(s.approverRoleId);
@@ -395,14 +417,14 @@ export default function GRNDetailPage() {
                         step: s.stepOrder,
                         action: acted.action,
                         actionBy: acted.actionByName || approverLabel,
-                        actionAt: new Date(acted.actionAt).toLocaleString(),
+                        actionAt: new Date(acted.actionAt ?? "").toLocaleString(),
                         comments: acted.comments || undefined,
                       });
                       return;
                     }
                     const isCurrent =
-                      grn.approval.status === "pending_approval" &&
-                      grn.approval.currentStepOrder === s.stepOrder;
+                      approval.status === "pending_approval" &&
+                      approval.currentStepOrder === s.stepOrder;
                     entries.push({
                       step: s.stepOrder,
                       action: isCurrent ? "current" : "upcoming",
@@ -475,7 +497,7 @@ function InfoField({
   bold,
 }: {
   label: string;
-  value: any;
+  value: ReactNode;
   bold?: boolean;
 }) {
   return (

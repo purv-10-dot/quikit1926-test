@@ -79,7 +79,7 @@ export function normalizeProjectCode(value: string): string {
 
 // ─── Required field ─────────────────────────────────────────────────
 
-export function validateRequired(value: any, fieldName: string): ValidationResult {
+export function validateRequired(value: unknown, fieldName: string): ValidationResult {
   if (value === null || value === undefined || (typeof value === "string" && !value.trim())) {
     return { valid: false, error: `${fieldName} is required` };
   }
@@ -88,7 +88,7 @@ export function validateRequired(value: any, fieldName: string): ValidationResul
 
 // ─── Positive number ────────────────────────────────────────────────
 
-export function validatePositiveNumber(value: any, fieldName: string): ValidationResult {
+export function validatePositiveNumber(value: unknown, fieldName: string): ValidationResult {
   const n = Number(value);
   if (isNaN(n) || n < 0) return { valid: false, error: `${fieldName} must be a positive number` };
   return { valid: true };
@@ -183,7 +183,7 @@ export function validateHSN(value: string | undefined | null): ValidationResult 
 
 // ─── Percentage (0–100, up to 2 decimals) ──────────────────────────
 
-export function validatePercentage(value: any, fieldName = "Percentage"): ValidationResult {
+export function validatePercentage(value: unknown, fieldName = "Percentage"): ValidationResult {
   if (value === "" || value === null || value === undefined) return { valid: true };
   const n = Number(value);
   if (isNaN(n)) return { valid: false, error: `${fieldName} must be a number` };
@@ -193,7 +193,7 @@ export function validatePercentage(value: any, fieldName = "Percentage"): Valida
 
 // ─── Non-negative number (≥ 0) ─────────────────────────────────────
 
-export function validateNonNegativeNumber(value: any, fieldName = "Value"): ValidationResult {
+export function validateNonNegativeNumber(value: unknown, fieldName = "Value"): ValidationResult {
   if (value === "" || value === null || value === undefined) return { valid: true };
   const n = Number(value);
   if (isNaN(n)) return { valid: false, error: `${fieldName} must be a number` };
@@ -203,7 +203,7 @@ export function validateNonNegativeNumber(value: any, fieldName = "Value"): Vali
 
 // ─── Positive integer (> 0) ────────────────────────────────────────
 
-export function validatePositiveInteger(value: any, fieldName = "Value"): ValidationResult {
+export function validatePositiveInteger(value: unknown, fieldName = "Value"): ValidationResult {
   if (value === "" || value === null || value === undefined) return { valid: true };
   const n = Number(value);
   if (isNaN(n) || !Number.isInteger(n)) return { valid: false, error: `${fieldName} must be an integer` };
@@ -254,7 +254,7 @@ export function validateDateRange(
 
 export interface FieldValidation {
   field: string;
-  value: any;
+  value: unknown;
   validators: Array<(val: any, field?: string) => ValidationResult>;
 }
 

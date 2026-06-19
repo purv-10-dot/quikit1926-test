@@ -1,6 +1,7 @@
+import { toErrorMessage, getErrorCode } from "@/lib/api/errors";
 import { requirePurchaseAction } from "@/lib/auth/requirePurchaseAction";
 import { NextRequest, NextResponse } from "next/server";
-import { buildPOLines } from "@/lib/purchase-engine";
+import { buildPOLines, type POLineInput } from "@/lib/purchase-engine";
 import {
   nextProjectScopedDocNumber,
   withDocNumberRetry,
@@ -21,6 +22,77 @@ import { findProjectById } from "@/lib/masters/projects-repository";
 import { listPOs, createPO } from "@/lib/purchase/po-repository";
 import { db } from "@/lib/db";
 import { parsePagination } from "@/lib/http/pagination";
+
+interface PoVendorRowInput {
+  vendorId?: string;
+  email?: string | null;
+  assignedItemIds?: unknown[];
+}
+interface PoContactInput {
+  name?: string;
+  mobile?: string;
+}
+interface SourceRfqLookup {
+  id: string;
+  sourceIndentId?: string | null;
+  rfqNumber?: string | null;
+  projectId?: string | null;
+  lines?: Array<{
+    itemId?: string | null;
+    quantity?: number | string | null;
+    estimatedRate?: number | string | null;
+  }>;
+}
+interface IndentLookup {
+  id: string;
+  status?: string;
+  lines?: Array<{
+    lineId?: string | null;
+    id?: string;
+    itemId?: string | null;
+    qtyRequested?: number | string | null;
+    quantity?: number | string | null;
+    qtyOpen?: number | string | null;
+  }>;
+}
+/**
+ * A line as produced by buildPOLines, plus the optional drift/legacy
+ * fields the create payload reads defensively (amount/taxAmount/uomId/…).
+ */
+type BuiltPoLine = ReturnType<typeof buildPOLines>[number] & {
+  uomId?: string | null;
+  specification?: string | null;
+  amount?: string | number | null;
+  taxAmount?: string | number | null;
+  totalAmount?: string | number | null;
+  sourceIndentLineId?: string | null;
+};
+
+interface PoCreateBody {
+  vendors?: PoVendorRowInput[];
+  vendorId?: string;
+  vendorEmail?: string | null;
+  sourceRfqId?: string;
+  sourceIndentId?: string;
+  sourceRfqNumber?: string;
+  projectId?: string;
+  lines?: POLineInput[];
+  termsAndConditions?: string;
+  termsTemplateId?: string;
+  contacts?: PoContactInput[];
+  contactPerson?: string;
+  contactMobile?: string;
+  freightCharges?: string | number;
+  paymentTerms?: string;
+  poDate?: string;
+  deliveryDate?: string;
+  deliveryAddress?: string;
+  remarks?: string;
+  isUrgentLocal?: boolean | string;
+  urgentLocalReason?: string;
+  purpose?: string;
+  otherCharges?: string | number;
+}
 
 /**
  * Purchase Order API — Postgres-backed.
@@ -91,7 +163,7 @@ export async function POST(req: NextRequest) {
       return envelopeErr("FORBIDDEN", `Action "add" not allowed for purchase.po`, 403);
     }
 
-    const body = await req.json();
+    const body: PoCreateBody = await req.json();
 
     // Vendor list — drawer sends `vendors: [{ vendorId, email,
     // assignedItemIds: ["row-N"] }]`. When more than one vendor is
@@ -104,12 +176,12 @@ export async function POST(req: NextRequest) {
       assignedItemIds?: string[];
     }> = Array.isArray(body.vendors)
       ? body.vendors
-          .filter((v: any) => v?.vendorId)
-          .map((v: any) => ({
+          .filter((v: PoVendorRowInput) => v?.vendorId)
+          .map((v: PoVendorRowInput) => ({
             vendorId: String(v.vendorId),
             email: v.email ?? null,
             assignedItemIds: Array.isArray(v.assignedItemIds)
-              ? v.assignedItemIds.map((x: any) => String(x))
+              ? v.assignedItemIds.map((x) => String(x))
               : [],
           }))
       : [];
@@ -133,13 +205,13 @@ export async function POST(req: NextRequest) {
     }
 
     // Source RFQ → chain to its Indent so P0 validation keeps working.
-    let sourceRfq: any = null;
+    let sourceRfq: SourceRfqLookup | null = null;
     if (body.sourceRfqId) {
       try {
-        sourceRfq = await (db as any).cnRfq.findFirst({
+        sourceRfq = (await db.cnRfq.findFirst({
           where: { id: body.sourceRfqId, orgId: ctx.orgId },
           include: { lines: true },
-        });
+        })) as unknown as SourceRfqLookup | null;
       } catch {
         /* fall through */
       }
@@ -160,12 +232,12 @@ export async function POST(req: NextRequest) {
           );
         }
         body.sourceIndentId =
-          body.sourceIndentId || sourceRfq.sourceIndentId;
+          body.sourceIndentId || sourceRfq.sourceIndentId || undefined;
         body.sourceRfqNumber =
           body.sourceRfqNumber ?? sourceRfq.rfqNumber ?? "";
-        body.projectId = body.projectId || sourceRfq.projectId;
+        body.projectId = body.projectId || sourceRfq.projectId || undefined;
         if (!Array.isArray(body.lines) || body.lines.length === 0) {
-          body.lines = (sourceRfq.lines ?? []).map((l: any) => ({
+          body.lines = (sourceRfq.lines ?? []).map((l) => ({
             itemId: l.itemId,
             poQty: l.quantity ?? "0",
             unitRate: l.estimatedRate ?? "0",
@@ -183,20 +255,20 @@ export async function POST(req: NextRequest) {
     // Resolve indent for validation against Postgres. Indent rows have
     // been on `cn_purchase_indents` since the early Phase-2 migration —
     // there is no longer a demo-store fallback to hide a missing row.
-    let indent: any = null;
+    let indent: IndentLookup | null = null;
     if (body.sourceIndentId) {
       indent = await findIndentById(ctx.orgId, body.sourceIndentId);
     }
     const indentForPO: IndentForPO | null = indent
       ? {
           id: indent.id,
-          status: indent.status,
-          lines: (indent.lines ?? []).map((l: any) => ({
-            lineId: l.lineId ?? l.id,
-            itemId: l.itemId,
-            qtyRequested: parseFloat(l.qtyRequested ?? l.quantity ?? "0"),
+          status: indent.status ?? "",
+          lines: (indent.lines ?? []).map((l) => ({
+            lineId: l.lineId ?? l.id ?? "",
+            itemId: l.itemId ?? "",
+            qtyRequested: parseFloat(String(l.qtyRequested ?? l.quantity ?? "0")),
             qtyOpen: parseFloat(
-              l.qtyOpen ?? l.qtyRequested ?? l.quantity ?? "0",
+              String(l.qtyOpen ?? l.qtyRequested ?? l.quantity ?? "0"),
             ),
           })),
         }
@@ -214,25 +286,34 @@ export async function POST(req: NextRequest) {
     // Pre-resolve item masters across the FULL line list (not just
     // one vendor's slice) so each per-vendor PO can backfill
     // itemName/itemCode/uomCode without re-hitting Prisma.
-    const allBodyLines: any[] = Array.isArray(body.lines) ? body.lines : [];
+    const allBodyLines: POLineInput[] = Array.isArray(body.lines) ? body.lines : [];
     const itemIds = Array.from(
       new Set<string>(
         allBodyLines
-          .map((l: any) => l?.itemId)
+          .map((l) => l?.itemId)
           .filter(
-            (x: any): x is string => typeof x === "string" && x.length > 0,
+            (x): x is string => typeof x === "string" && x.length > 0,
           ),
       ),
     );
-    let itemMasterById = new Map<string, any>();
+    type ItemMasterLite = {
+      id: string;
+      code: string | null;
+      name: string | null;
+      uomId: string | null;
+      uomCode: string;
+      hsnCode: string;
+      gstRate: string | null;
+    };
+    let itemMasterById = new Map<string, ItemMasterLite>();
     if (itemIds.length) {
       try {
-        const rows = await (db as any).cnItem.findMany({
+        const rows = await db.cnItem.findMany({
           where: { id: { in: itemIds } },
           include: { uom: { select: { id: true, code: true } } },
         });
-        itemMasterById = new Map<string, any>(
-          rows.map((r: any) => [
+        itemMasterById = new Map<string, ItemMasterLite>(
+          rows.map((r) => [
             r.id,
             {
               id: r.id,
@@ -248,7 +329,7 @@ export async function POST(req: NextRequest) {
       } catch (e) {
         console.warn(
           "[po.create] Prisma item lookup failed:",
-          (e as any)?.message ?? e,
+          e instanceof Error ? e.message : e,
         );
       }
     }
@@ -257,7 +338,7 @@ export async function POST(req: NextRequest) {
     let termsAndConditions = body.termsAndConditions ?? "";
     if (!termsAndConditions && body.termsTemplateId) {
       try {
-        const tpl = await (db as any).cnTermsCondition.findFirst({
+        const tpl = await db.cnTermsCondition.findFirst({
           where: { id: body.termsTemplateId, orgId: ctx.orgId },
           select: { body: true },
         });
@@ -272,7 +353,7 @@ export async function POST(req: NextRequest) {
     const contactsList = Array.isArray(body.contacts) ? body.contacts : [];
     const contactPerson =
       contactsList
-        .map((c: any) => String(c?.name ?? "").trim())
+        .map((c) => String(c?.name ?? "").trim())
         .filter(Boolean)
         .join(", ") ||
       (typeof body.contactPerson === "string"
@@ -281,7 +362,7 @@ export async function POST(req: NextRequest) {
       null;
     const contactMobile =
       contactsList
-        .map((c: any) => String(c?.mobile ?? "").replace(/[^\d]/g, ""))
+        .map((c) => String(c?.mobile ?? "").replace(/[^\d]/g, ""))
         .filter(Boolean)
         .join(", ") ||
       (typeof body.contactMobile === "string"
@@ -290,7 +371,7 @@ export async function POST(req: NextRequest) {
       null;
 
     // Resolve every selected vendor in one Prisma round-trip.
-    let vendorMap = new Map<string, any>();
+    let vendorMap: Awaited<ReturnType<typeof findVendorsByIds>> = new Map();
     try {
       vendorMap = await findVendorsByIds(
         ctx.orgId,
@@ -299,7 +380,7 @@ export async function POST(req: NextRequest) {
     } catch (e) {
       console.warn(
         "[po.create] Prisma vendor lookup failed, falling back to demo-store:",
-        (e as any)?.message ?? e,
+        e instanceof Error ? e.message : e,
       );
     }
 
@@ -316,7 +397,7 @@ export async function POST(req: NextRequest) {
         const n = parseInt(String(k).replace(/^row-/, ""), 10);
         if (!Number.isNaN(n)) idxSet.add(n);
       }
-      return allBodyLines.filter((_: any, idx: number) => idxSet.has(idx));
+      return allBodyLines.filter((_, idx: number) => idxSet.has(idx));
     };
 
     // ─── Per-vendor PO creation loop ─────────────────────────────
@@ -325,8 +406,8 @@ export async function POST(req: NextRequest) {
     // items and gets its own poNumber, finance roll-up, and createPO
     // call. Project / source-doc / T&C / contacts / urgent flag are
     // shared across all of them.
-    const createdRecords: any[] = [];
-    const freightCharges = parseFloat(body.freightCharges ?? "0");
+    const createdRecords: Awaited<ReturnType<typeof createPO>>[] = [];
+    const freightCharges = parseFloat(String(body.freightCharges ?? "0"));
     for (const vRow of vendorRows) {
       const vendorLines = linesForVendor(vRow);
       if (vendorLines.length === 0) continue; // no items assigned to this vendor
@@ -334,14 +415,14 @@ export async function POST(req: NextRequest) {
       // Vendor lookup is Prisma-only — vendors have been on
       // `cn_vendors` since the early Phase-2 migration, so a missing
       // vendor here means the row doesn't exist (404 below).
-      const vendorRaw: any = vendorMap.get(vRow.vendorId) ?? null;
+      const vendorRaw = vendorMap.get(vRow.vendorId) ?? null;
       const vendorForPO: VendorForPO | null = vendorRaw
         ? {
             id: vendorRaw.id,
             status: vendorRaw.status,
             isBlacklisted:
-              vendorRaw.isBlacklisted === true ||
-              vendorRaw.status === "blacklisted",
+              (vendorRaw as { isBlacklisted?: boolean }).isBlacklisted ===
+                true || vendorRaw.status === "blacklisted",
           }
         : null;
 
@@ -374,8 +455,8 @@ export async function POST(req: NextRequest) {
 
       const vendor = vendorRaw!;
 
-      const linesWithMasters = vendorLines.map((l: any) => {
-        const master = itemMasterById.get(l.itemId);
+      const linesWithMasters = vendorLines.map((l) => {
+        const master = itemMasterById.get(l.itemId ?? "");
         if (!master) return l;
         return {
           ...l,
@@ -387,17 +468,22 @@ export async function POST(req: NextRequest) {
         };
       });
       const lines = buildPOLines(linesWithMasters, vendor, project);
-      for (const pol of lines as any[]) {
-        const master = itemMasterById.get(pol.itemId);
+      // Backfill display fields from the item master where the builder
+      // left them blank. `uomId` isn't on the builder's line type, so the
+      // loop var is widened to carry it.
+      for (const pol of lines as Array<
+        (typeof lines)[number] & { uomId?: string | null }
+      >) {
+        const master = itemMasterById.get(pol.itemId ?? "");
         if (master) {
-          if (!pol.itemName) pol.itemName = master.name;
-          if (!pol.itemCode) pol.itemCode = master.code;
+          if (!pol.itemName) pol.itemName = master.name ?? "";
+          if (!pol.itemCode) pol.itemCode = master.code ?? "";
           if (!pol.uomCode) pol.uomCode = master.uomCode;
           if (!pol.uomId) pol.uomId = master.uomId;
         }
       }
 
-      const lineCalcs = lines.map((l: any) => ({
+      const lineCalcs = lines.map((l) => ({
         qty: parseFloat(l.poQty ?? "0"),
         unitRate: parseFloat(l.unitRate ?? "0"),
         discountPct: parseFloat(l.discount ?? "0"),
@@ -440,14 +526,16 @@ export async function POST(req: NextRequest) {
         orgId: ctx.orgId,
         createdBy: ctx.userId,
         poNumber,
-        projectId: body.projectId,
+        projectId: body.projectId ?? "",
         vendorId: vRow.vendorId,
         indentId: body.sourceIndentId ?? null,
         rfqId: sourceRfq?.id ?? body.sourceRfqId ?? null,
         poDate: body.poDate ? new Date(body.poDate) : new Date(),
         deliveryDate: body.deliveryDate ? new Date(body.deliveryDate) : null,
         deliveryAddress:
-          body.deliveryAddress ?? (project as any).address ?? null,
+          body.deliveryAddress ??
+          (project as { address?: string | null }).address ??
+          null,
         paymentTermsDays,
         termsConditionId: body.termsTemplateId ?? null,
         termsAndConditions,
@@ -467,9 +555,9 @@ export async function POST(req: NextRequest) {
         totalSGST: String(finance.totalSGST),
         totalAmount: String(finance.poTotalIncGst),
         status: "draft",
-        lines: lines.map((l: any) => ({
+        lines: lines.map((l: BuiltPoLine) => ({
           indentLineId: l.sourceIndentLineId ?? null,
-          itemId: l.itemId,
+          itemId: l.itemId ?? "",
           itemCode: l.itemCode,
           itemName: l.itemName,
           uomId: l.uomId ?? null,
@@ -518,14 +606,14 @@ export async function POST(req: NextRequest) {
       },
       { status: 201 },
     );
-  } catch (err: any) {
+  } catch (err: unknown) {
     if (err instanceof PurchaseValidationError) {
       return NextResponse.json(
         { error: err.message, code: err.code },
         { status: 400 },
       );
     }
-    if (err?.code === "P2002") {
+    if (getErrorCode(err) === "P2002") {
       return NextResponse.json(
         { error: "A PO with this number already exists" },
         { status: 409 },
@@ -533,7 +621,7 @@ export async function POST(req: NextRequest) {
     }
     console.error("[po.create] failed:", err);
     return NextResponse.json(
-      { error: err.message ?? "Internal error" },
+      { error: toErrorMessage(err, "Internal error") },
       { status: 500 },
     );
   }

@@ -17,6 +17,13 @@ const TABS = [
   { key: "paid", label: "Paid" },
 ];
 
+interface RabRow {
+  id?: string; status?: string; billPeriodFrom?: string; billPeriodTo?: string;
+  cumulativeAmount?: number | string; currentBillAmount?: number | string;
+  netPayable?: number | string;
+  [key: string]: unknown;
+}
+
 export default function RABPage() {
   const qc = useQueryClient();
   const [activeTab, setActiveTab] = useState("all");
@@ -28,8 +35,8 @@ export default function RABPage() {
   const { data: projectsData } = useProjects();
   const { data: contractorsData } = useContractors();
 
-  const projectOptions = (projectsData?.data ?? []).map((p: any) => ({ value: p.id, label: p.name }));
-  const contractorOptions = (contractorsData?.data ?? []).map((c: any) => ({ value: c.id, label: c.name }));
+  const projectOptions = (projectsData?.data ?? []).map((p) => ({ value: p.id, label: p.name }));
+  const contractorOptions = (contractorsData?.data ?? []).map((c) => ({ value: c.id, label: c.name }));
 
   const config = {
     title: "Generate RAB",
@@ -62,7 +69,7 @@ export default function RABPage() {
     ],
   };
 
-  const columns: ColDef<any>[] = [
+  const columns: ColDef<RabRow>[] = [
     { key: "rabNumber", label: "RAB No", sortable: true, searchable: true },
     { key: "projectName", label: "Project", sortable: true, searchable: true },
     { key: "contractorName", label: "Contractor", sortable: true, searchable: true },
@@ -102,11 +109,9 @@ export default function RABPage() {
         <DataTable
           id="projects-rab"
           columns={columns}
-          data={data}
+          data={data as unknown as RabRow[]}
           onAdd={() => setDrawerOpen(true)}
           addLabel="Generate RAB"
-          defaultSort="currentBillAmount"
-          defaultSortDir="desc"
         />
       </PageContainer>
       <QuickCreateDrawer open={drawerOpen} onClose={() => setDrawerOpen(false)} config={config} />

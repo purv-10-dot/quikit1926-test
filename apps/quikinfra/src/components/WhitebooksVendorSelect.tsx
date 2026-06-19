@@ -15,7 +15,15 @@ export function WhitebooksVendorSelect(props: {
   line: Record<string, any>;
   update: (patch: Record<string, any>) => void;
   vendorOptions: WhitebooksVendorOption[];
-  vendorById: Map<string, any>;
+  vendorById: Map<
+    string,
+    {
+      gstin?: string | null;
+      email?: string | null;
+      companyName?: string | null;
+      name?: string | null;
+    }
+  >;
 }): ReactNode {
   const { line, update, vendorOptions, vendorById } = props;
   const [busy, setBusy] = useState(false);

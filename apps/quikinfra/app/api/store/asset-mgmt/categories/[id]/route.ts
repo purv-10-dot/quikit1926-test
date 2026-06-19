@@ -12,7 +12,7 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
     return envelopeErr("FORBIDDEN", `Action "edit" not allowed for store.asset_mgmt`, 403);
   }
   const categories = getCategories();
-  const idx = categories.findIndex((c: any) => c.id === params.id);
+  const idx = categories.findIndex((c) => c.id === params.id);
   if (idx < 0) return NextResponse.json({ error: "Category not found" }, { status: 404 });
   const body = await req.json().catch(() => ({}));
   const next = { ...categories[idx], ...body, id: categories[idx].id, updatedAt: new Date().toISOString() };
@@ -28,11 +28,11 @@ export async function DELETE(_req: NextRequest, { params }: { params: { id: stri
     return envelopeErr("FORBIDDEN", `Action "delete" not allowed for store.asset_mgmt`, 403);
   }
   const categories = getCategories();
-  const idx = categories.findIndex((c: any) => c.id === params.id);
+  const idx = categories.findIndex((c) => c.id === params.id);
   if (idx < 0) return NextResponse.json({ error: "Category not found" }, { status: 404 });
   // Reject delete if any asset still references this category — UI
   // should reassign first.
-  const inUse = getAssets().some((a: any) => a.categoryId === params.id);
+  const inUse = getAssets().some((a) => a.categoryId === params.id);
   if (inUse) {
     return NextResponse.json(
       { error: "Category is in use by one or more assets" },
@@ -40,7 +40,7 @@ export async function DELETE(_req: NextRequest, { params }: { params: { id: stri
     );
   }
   // Reject if a sub-category still points here.
-  const isParent = categories.some((c: any) => c.parentId === params.id);
+  const isParent = categories.some((c) => c.parentId === params.id);
   if (isParent) {
     return NextResponse.json(
       { error: "Category has sub-categories — remove them first" },

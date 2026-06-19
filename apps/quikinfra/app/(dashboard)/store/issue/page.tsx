@@ -10,6 +10,7 @@
  * attachment.
  */
 
+import { toErrorMessage } from "@/lib/api/errors";
 import { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Eye, Send, Check, X as XIcon, Lock } from "lucide-react";
@@ -22,9 +23,9 @@ import { useMaterialIssues } from "@/hooks/use-store";
 import { usePurchaseRequisitions } from "@/hooks/use-purchase";
 import { useWorkOrders } from "@/hooks/use-projects";
 import { useMenuActions } from "@/hooks/use-permissions";
-import { QuickCreateDrawer } from "@/components/QuickCreateDrawer";
+import { QuickCreateDrawer, type QuickCreateConfig } from "@/components/QuickCreateDrawer";
 import { SelectInput } from "@/components/FormDrawer";
-import { GroupedMaterialSelect } from "@/components/GroupedMaterialSelect";
+import { GroupedMaterialSelect, type GroupedMaterialSelectItem } from "@/components/GroupedMaterialSelect";
 import {
   useProjects,
   useItems,
@@ -61,6 +62,18 @@ const ISSUE_TYPE_OPTIONS = [
   { value: "Others", label: "Others" },
 ];
 
+interface IssueRow {
+  id: string; issueNumber?: string; status?: string; issueType?: string;
+  issuedToName?: string; contractorName?: string; teamDepartment?: string;
+  receivedBy?: string; lineCount?: number; canActOnCurrentStep?: boolean;
+  [key: string]: unknown;
+}
+type IssueItemNode = GroupedMaterialSelectItem & {
+  currentStock?: number | string | null;
+  stockOnHand?: number | string | null;
+  minStockLevel?: number | string | null;
+};
+
 export default function MaterialIssuePage() {
   const router = useRouter();
   const qc = useQueryClient();
@@ -73,7 +86,7 @@ export default function MaterialIssuePage() {
   // the `kind` discriminant picks the endpoint, the `row` carries the
   // Material Issue id + display label for the dialog.
   const [workflowAction, setWorkflowAction] = useState<
-    { kind: "submit" | "approve" | "reject"; row: any } | null
+    { kind: "submit" | "approve" | "reject"; row: IssueRow } | null
   >(null);
   const [rejectReason, setRejectReason] = useState("");
   const [workflowPending, setWorkflowPending] = useState(false);
@@ -89,12 +102,12 @@ export default function MaterialIssuePage() {
   // Approve/Reject visibility is decided PER ROW by the workflow's
   // current step (server-computed in the list API as
   // `row.canActOnCurrentStep`).
-  const canApproveRow = (row: any): boolean =>
+  const canApproveRow = (row: IssueRow): boolean =>
     isSuper || row?.canActOnCurrentStep === true;
 
   const openWorkflow = (
     kind: "submit" | "approve" | "reject",
-    row: any,
+    row: IssueRow,
   ) => {
     setRejectReason("");
     setWorkflowAction({ kind, row });
@@ -138,8 +151,8 @@ export default function MaterialIssuePage() {
       );
       setWorkflowAction(null);
       setRejectReason("");
-    } catch (err: any) {
-      toast.error(err?.message ?? "Action failed");
+    } catch (err: unknown) {
+      toast.error(toErrorMessage(err, "Action failed"));
     } finally {
       setWorkflowPending(false);
     }
@@ -155,7 +168,7 @@ export default function MaterialIssuePage() {
   const { data: itemGroupsData } = useItemGroups();
   const { data: contractorsData } = useContractors();
   const { data: locData } = useLocations();
-  // PR eligibility for Material Issue: any PR that has cleared the
+  // PR eligibility for Material Issue — every PR that has cleared the
   // approval workflow. Covers both stock-available and
   // indent-required variants plus partial-issue follow-ups so the
   // store user can always find a PR they've signed off on. Stock
@@ -164,7 +177,7 @@ export default function MaterialIssuePage() {
   // and others aren't.
   const { data: prsData } = usePurchaseRequisitions({ status: "all" });
   const prOptions = (prsData?.data ?? [])
-    .filter((p: any) =>
+    .filter((p) =>
       [
         "approved",
         "approved_stock_available",
@@ -172,7 +185,7 @@ export default function MaterialIssuePage() {
         "partially_issued",
       ].includes(p.status),
     )
-    .map((p: any) => ({
+    .map((p) => ({
       value: p.prNumber,
       label: p.prNumber,
     }));
@@ -185,40 +198,40 @@ export default function MaterialIssuePage() {
   // approved onward is live scope the contractor can draw against.
   const { data: wosData } = useWorkOrders({ status: "all" });
   const woOptions = (wosData?.data ?? [])
-    .filter((w: any) =>
+    .filter((w) =>
       ["approved", "in_progress", "completed"].includes(
         String(w.status ?? "").toLowerCase(),
       ),
     )
-    .map((w: any) => ({
+    .map((w) => ({
       value: w.woNumber ?? w.id,
       label: w.woNumber ?? w.id,
     }));
 
-  const projectOptions = (projectsData?.data ?? []).map((p: any) => ({
+  const projectOptions = (projectsData?.data ?? []).map((p) => ({
     value: p.id,
     label: p.name,
   }));
-  const items: any[] = itemsData?.data ?? [];
+  const items = (itemsData?.data ?? []) as unknown as IssueItemNode[];
   const itemGroups = itemGroupsData?.data ?? [];
   const itemById = useMemo(() => {
-    const m = new Map<string, any>();
+    const m = new Map<string, IssueItemNode>();
     for (const i of items) m.set(i.id, i);
     return m;
   }, [items]);
   const contractorOptions = (contractorsData?.data ?? [])
-    .filter((c: any) => c.status !== "blacklisted")
-    .map((c: any) => ({
+    .filter((c) => c.status !== "blacklisted")
+    .map((c) => ({
       value: c.id,
-      label: c.companyName || c.name || c.id,
+      label: (c as { companyName?: string | null }).companyName || c.name || c.id,
     }));
-  const locationOptions = (locData?.data ?? []).map((l: any) => ({
+  const locationOptions = (locData?.data ?? []).map((l) => ({
     value: l.id,
     label: l.name,
   }));
   const todayIso = new Date().toISOString().slice(0, 10);
 
-  const config = {
+  const config: QuickCreateConfig = {
     title: "Issue Material",
     subtitle: "Issue materials from store to site / project / contractor",
     apiEndpoint: "/api/store/issues",
@@ -415,8 +428,8 @@ export default function MaterialIssuePage() {
         { key: "remarks", label: "remarks", type: "text" as const },
       ],
       rowRender: (
-        line: Record<string, any>,
-        update: (patch: Record<string, any>) => void,
+        line,
+        update: (patch: Record<string, unknown>) => void,
         ctx: { formData?: Record<string, string> } = {},
       ) => {
         const formProjectId = ctx.formData?.projectId ?? "";
@@ -467,7 +480,7 @@ export default function MaterialIssuePage() {
                   value={line.itemId ?? ""}
                   onChange={(v) => {
                     const item = v ? itemById.get(v) : null;
-                    const patch: Record<string, any> = { itemId: v };
+                    const patch: Record<string, unknown> = { itemId: v };
                     if (item) {
                       patch.itemName = item.name ?? "";
                       patch.uomCode = item.uomCode ?? "";
@@ -486,7 +499,7 @@ export default function MaterialIssuePage() {
                     fetchStock(v, formProjectId, line.sourceLocationId ?? "");
                   }}
                   items={items}
-                  groups={itemGroups.map((g: any) => ({
+                  groups={itemGroups.map((g) => ({
                     id: g.id,
                     name: g.name,
                     status: g.status,
@@ -607,7 +620,7 @@ export default function MaterialIssuePage() {
     },
   };
 
-  const columns: ColDef<any>[] = [
+  const columns: ColDef<IssueRow>[] = [
     {
       key: "issueNumber",
       label: "Issue No",
@@ -760,11 +773,9 @@ export default function MaterialIssuePage() {
         <DataTable
           id="store-material-issue"
           columns={columns}
-          data={data}
+          data={data as unknown as IssueRow[]}
           onAdd={canAdd ? () => setDrawerOpen(true) : undefined}
           addLabel="Issue Material"
-          defaultSort="issueDate"
-          defaultSortDir="desc"
           historyEntityType="issue,material_issues"
         />
       </PageContainer>

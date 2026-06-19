@@ -16,7 +16,9 @@
  * columns regardless of whether the client is fresh.
  */
 
+import { toErrorMessage, getErrorCode } from "@/lib/api/errors";
 import { db } from "@/lib/db";
+import { Prisma } from "@quikit/database";
 
 export interface POLineInput {
   indentLineId?: string | null;
@@ -89,16 +91,16 @@ function dec(n: string | number | null | undefined): string | null {
   return s;
 }
 
-function parseDate(raw: any): Date | null {
+function parseDate(raw: unknown): Date | null {
   if (!raw) return null;
   const d = raw instanceof Date ? raw : new Date(String(raw));
   return Number.isNaN(d.getTime()) ? null : d;
 }
 
-function isoDate(d: any): string {
+function isoDate(d: Date | string | null | undefined): string {
   if (!d) return "";
   try {
-    return d.toISOString().slice(0, 10);
+    return (d as Date).toISOString().slice(0, 10);
   } catch {
     return String(d).slice(0, 10);
   }
@@ -113,7 +115,7 @@ async function resolveUomByCode(
   const code = String(uomCode ?? "").trim().toUpperCase();
   if (!code) return null;
   try {
-    const row = await (db as any).cnUOM.findFirst({
+    const row = await db.cnUOM.findFirst({
       where: { orgId, code },
       select: { id: true },
     });
@@ -125,7 +127,99 @@ async function resolveUomByCode(
 
 // ─── Shape enrichment (compatible with legacy demo-store readers) ──
 
-function enrichLine(row: any, itemById: Map<string, any>, uomById: Map<string, any>): any {
+/** A money/quantity value as it arrives from Prisma (Decimal) or raw SQL. */
+type Numericish = Prisma.Decimal | number | string | null | undefined;
+
+interface ItemLookup {
+  code?: string | null;
+  name?: string | null;
+  hsnCode?: string | null;
+}
+interface UomLookup {
+  code?: string | null;
+}
+interface PoLineRow {
+  id: string;
+  itemId?: string | null;
+  uomId?: string | null;
+  orderedQty?: Numericish;
+  quantity?: Numericish;
+  receivedQty?: Numericish;
+  pendingQty?: Numericish;
+  unitRate?: Numericish;
+  amount?: Numericish;
+  taxAmount?: Numericish;
+  totalAmount?: Numericish;
+  igstAmount?: Numericish;
+  cgstAmount?: Numericish;
+  sgstAmount?: Numericish;
+  gstRate?: Numericish;
+  specification?: string | null;
+  deliveryDate?: Date | string | null;
+  remarks?: string | null;
+  indentLineId?: string | null;
+}
+interface PoProjectRel {
+  name?: string | null;
+  code?: string | null;
+}
+interface PoVendorRel {
+  name?: string | null;
+  companyName?: string | null;
+  gstin?: string | null;
+  state?: string | null;
+  email?: string | null;
+  phone?: string | null;
+  contactPerson?: string | null;
+  address?: string | null;
+  city?: string | null;
+  pincode?: string | null;
+}
+interface PoRow {
+  id: string;
+  orgId: string;
+  poNumber: string;
+  projectId: string;
+  vendorId: string;
+  lines?: PoLineRow[] | null;
+  project?: PoProjectRel | null;
+  vendor?: PoVendorRel | null;
+  subtotal?: Numericish;
+  freightCharges?: Numericish;
+  taxAmount?: Numericish;
+  totalAmount?: Numericish;
+  totalIGST?: Numericish;
+  totalCGST?: Numericish;
+  totalSGST?: Numericish;
+  otherCharges?: Numericish;
+  indentId?: string | null;
+  rfqId?: string | null;
+  poDate?: Date | string | null;
+  deliveryDate?: Date | string | null;
+  deliveryAddress?: string | null;
+  deliveryLocationId?: string | null;
+  paymentTermsDays?: number | null;
+  termsConditionId?: string | null;
+  termsAndConditions?: string | null;
+  remarks?: string | null;
+  isUrgentLocal?: boolean | null;
+  urgentLocalReason?: string | null;
+  purpose?: string | null;
+  contactPerson?: string | null;
+  contactMobile?: string | null;
+  status: string;
+  approvalId?: string | null;
+  approvalThresholdMet?: boolean | null;
+  closedAt?: Date | null;
+  closedBy?: string | null;
+  closeReason?: string | null;
+  createdAt?: Date | null;
+  updatedAt?: Date | null;
+  createdBy?: string | null;
+  updatedBy?: string | null;
+}
+
+function enrichLine(row: PoLineRow, itemById: Map<string, ItemLookup>, uomById: Map<string, UomLookup>) {
   const item = row.itemId ? itemById.get(row.itemId) : null;
   const uom = row.uomId ? uomById.get(row.uomId) : null;
   const gstRate = row.gstRate != null ? String(row.gstRate) : "0";
@@ -170,8 +264,8 @@ function enrichLine(row: any, itemById: Map<string, any>, uomById: Map<string, a
   };
 }
 
-function enrichPO(row: any, itemById: Map<string, any>, uomById: Map<string, any>): any {
-  const lines = (row.lines ?? []).map((l: any) => enrichLine(l, itemById, uomById));
+function enrichPO(row: PoRow, itemById: Map<string, ItemLookup>, uomById: Map<string, UomLookup>) {
+  const lines = (row.lines ?? []).map((l) => enrichLine(l, itemById, uomById));
   const project = row.project ?? null;
   const vendor = row.vendor ?? null;
   const subtotal = String(row.subtotal ?? "0");
@@ -201,7 +295,7 @@ function enrichPO(row: any, itemById: Map<string, any>, uomById: Map<string, any
     vendorContactPerson: vendor?.contactPerson ?? "",
     vendorAddress:
       [vendor?.address, vendor?.city, vendor?.state, vendor?.pincode]
-        .filter((x: any) => x && String(x).trim())
+        .filter((x) => x && String(x).trim())
         .join(", ") || "",
     sourceIndentId: row.indentId ?? null,
     sourceIndentNumber: "", // filled separately if needed
@@ -234,7 +328,7 @@ function enrichPO(row: any, itemById: Map<string, any>, uomById: Map<string, any
     totalAmount,
     advanceAmount: "0",
     gstType,
-    isRCM: lines.some((l: any) => l.isRCM),
+    isRCM: lines.some((l) => l.isRCM),
     // Status / lines
     status: row.status,
     approvalId: row.approvalId ?? null,
@@ -266,14 +360,39 @@ function enrichPO(row: any, itemById: Map<string, any>, uomById: Map<string, any
     version: 1,
     createdAt: row.createdAt?.toISOString?.() ?? "",
     updatedAt: row.updatedAt?.toISOString?.() ?? "",
-    createdBy: row.createdBy,
-    updatedBy: row.updatedBy,
+    createdBy: row.createdBy ?? "",
+    updatedBy: row.updatedBy ?? "",
   };
 }
 
+/** The enriched, client-facing PO shape returned by every public read/write. */
+export type EnrichedPO = ReturnType<typeof enrichPO>;
+
 // ─── Drift backfill (same pattern as rfq-repository) ──────────────
 
-async function augmentPOsWithDriftFields(poRows: any[]): Promise<void> {
+async function augmentPOsWithDriftFields(
+  poRows: Array<{
+    id: string;
+    freightCharges?: unknown;
+    totalIGST?: unknown;
+    totalCGST?: unknown;
+    totalSGST?: unknown;
+    deliveryAddress?: unknown;
+    termsAndConditions?: unknown;
+    purpose?: unknown;
+    otherCharges?: unknown;
+    contactPerson?: unknown;
+    contactMobile?: unknown;
+    lines?: Array<{
+      id: string;
+      gstRate?: unknown;
+      igstAmount?: unknown;
+      cgstAmount?: unknown;
+      sgstAmount?: unknown;
+      specification?: unknown;
+    }> | null;
+  }>,
+): Promise<void> {
   if (poRows.length === 0) return;
   if ("freightCharges" in poRows[0]) return;
 
@@ -292,7 +411,7 @@ async function augmentPOsWithDriftFields(poRows: any[]): Promise<void> {
       otherCharges: string | null;
       contactPerson: string | null;
       contactMobile: string | null;
-    }> = await (db as any).$queryRaw`
+    }> = await db.$queryRaw`
       SELECT id, "freightCharges", "totalIGST", "totalCGST", "totalSGST",
              "deliveryAddress", "termsAndConditions", "purpose",
              "otherCharges", "contactPerson", "contactMobile"
@@ -330,7 +449,7 @@ async function augmentPOsWithDriftFields(poRows: any[]): Promise<void> {
       cgstAmount: string | null;
       sgstAmount: string | null;
       specification: string | null;
-    }> = await (db as any).$queryRaw`
+    }> = await db.$queryRaw`
       SELECT id, "gstRate", "igstAmount", "cgstAmount", "sgstAmount", "specification"
       FROM app_quikinfra."Purchase_order_lines"
       WHERE id = ANY(${lineIds})
@@ -347,10 +466,10 @@ async function augmentPOsWithDriftFields(poRows: any[]): Promise<void> {
         l.specification = hit.specification;
       }
     }
-  } catch (err: any) {
+  } catch (err: unknown) {
     console.warn(
       "[po-repository] augmentPOsWithDriftFields raw SQL failed:",
-      err?.message ?? err,
+      toErrorMessage(err),
     );
   }
 }
@@ -358,8 +477,10 @@ async function augmentPOsWithDriftFields(poRows: any[]): Promise<void> {
 // ─── Lookups (items + UOMs in one trip) ────────────────────────────
 
 async function loadLineLookups(
-  rows: any[],
-): Promise<{ itemById: Map<string, any>; uomById: Map<string, any> }> {
+  rows: Array<{
+    lines?: Array<{ itemId?: string | null; uomId?: string | null }> | null;
+  }>,
+): Promise<{ itemById: Map<string, ItemLookup>; uomById: Map<string, UomLookup> }> {
   const itemIds = new Set<string>();
   const uomIds = new Set<string>();
   for (const r of rows) {
@@ -370,21 +491,21 @@ async function loadLineLookups(
   }
   const [items, uoms] = await Promise.all([
     itemIds.size > 0
-      ? (db as any).cnItem.findMany({
+      ? db.cnItem.findMany({
           where: { id: { in: Array.from(itemIds) } },
           select: { id: true, code: true, name: true, hsnCode: true },
         })
       : Promise.resolve([]),
     uomIds.size > 0
-      ? (db as any).cnUOM.findMany({
+      ? db.cnUOM.findMany({
           where: { id: { in: Array.from(uomIds) } },
           select: { id: true, code: true },
         })
       : Promise.resolve([]),
   ]);
-  const itemById = new Map<string, any>();
+  const itemById = new Map<string, ItemLookup>();
   for (const i of items) itemById.set(i.id, i);
-  const uomById = new Map<string, any>();
+  const uomById = new Map<string, UomLookup>();
   for (const u of uoms) uomById.set(u.id, u);
   return { itemById, uomById };
 }
@@ -418,7 +539,7 @@ export interface ListPOsOptions {
   fyEnd?: string;
 }
 
-export async function listPOs(opts: ListPOsOptions): Promise<any[]> {
+export async function listPOs(opts: ListPOsOptions): Promise<EnrichedPO[]> {
   const where: Record<string, unknown> = { orgId: opts.orgId };
   if (opts.status && opts.status !== "all") where.status = opts.status;
   if (opts.projectId) where.projectId = opts.projectId;
@@ -441,7 +562,7 @@ export async function listPOs(opts: ListPOsOptions): Promise<any[]> {
     where.poDate = { gte: fyRange.gte, lte: fyRange.lte };
   }
 
-  const rows = await (db as any).cnPurchaseOrder.findMany({
+  const rows = await db.cnPurchaseOrder.findMany({
     where,
     include: {
       lines: true,
@@ -462,7 +583,7 @@ export async function listPOs(opts: ListPOsOptions): Promise<any[]> {
   await augmentPOsWithDriftFields(rows);
   await hydrateCloseFields(rows);
   const { itemById, uomById } = await loadLineLookups(rows);
-  const enriched = rows.map((r: any) => enrichPO(r, itemById, uomById));
+  const enriched = rows.map((r) => enrichPO(r, itemById, uomById));
   await attachSourceDocNumbers(enriched, rows);
   return enriched;
 }
@@ -478,7 +599,14 @@ export async function listPOs(opts: ListPOsOptions): Promise<any[]> {
  * Mutates rows in place — adds the three fields when missing so the
  * downstream `enrichPO` reads them like any other column.
  */
-async function hydrateCloseFields(rows: any[]): Promise<void> {
+async function hydrateCloseFields(
+  rows: Array<{
+    id: string;
+    closedAt?: unknown;
+    closedBy?: unknown;
+    closeReason?: unknown;
+  }>,
+): Promise<void> {
   if (rows.length === 0) return;
   // Only hit the DB when the typed client didn't return the field —
   // once the server is restarted and Prisma regenerates, this becomes
@@ -486,13 +614,20 @@ async function hydrateCloseFields(rows: any[]): Promise<void> {
   const needsHydration = rows.some((r) => r.closedAt === undefined);
   if (!needsHydration) return;
   const ids = rows.map((r) => r.id);
-  const closeRows: any[] = await (db as any).$queryRawUnsafe(
+  const closeRows = await db.$queryRawUnsafe<
+    Array<{
+      id: string;
+      closedAt: Date | string | null;
+      closedBy: string | null;
+      closeReason: string | null;
+    }>
+  >(
     `SELECT id, "closedAt", "closedBy", "closeReason"
        FROM app_quikinfra."Purchase_orders"
       WHERE id = ANY($1::text[])`,
     ids,
   );
-  const byId = new Map<string, any>(closeRows.map((r) => [r.id, r]));
+  const byId = new Map(closeRows.map((r) => [r.id, r]));
   for (const r of rows) {
     const meta = byId.get(r.id);
     if (!meta) continue;
@@ -509,8 +644,13 @@ async function hydrateCloseFields(rows: any[]): Promise<void> {
  * join against `cn_purchase_indents` / `cn_rfqs`.
  */
 async function attachSourceDocNumbers(
-  enrichedRows: any[],
-  rawRows: any[],
+  enrichedRows: Array<{
+    sourceIndentId?: string | null;
+    sourceRfqId?: string | null;
+    sourceIndentNumber?: string | null;
+    sourceRfqNumber?: string | null;
+  }>,
+  rawRows: Array<{ indentId?: string | null; rfqId?: string | null }>,
 ): Promise<void> {
   const indentIds = new Set<string>();
   const rfqIds = new Set<string>();
@@ -520,23 +660,23 @@ async function attachSourceDocNumbers(
   }
   const [indentRows, rfqRows] = await Promise.all([
     indentIds.size
-      ? (db as any).cnPurchaseIndent.findMany({
+      ? db.cnPurchaseIndent.findMany({
           where: { id: { in: Array.from(indentIds) } },
           select: { id: true, indentNumber: true },
         })
       : Promise.resolve([] as Array<{ id: string; indentNumber: string }>),
     rfqIds.size
-      ? (db as any).cnRfq.findMany({
+      ? db.cnRfq.findMany({
           where: { id: { in: Array.from(rfqIds) } },
           select: { id: true, rfqNumber: true },
         })
       : Promise.resolve([] as Array<{ id: string; rfqNumber: string }>),
   ]);
   const indentNumById = new Map<string, string>(
-    indentRows.map((i: any) => [i.id, i.indentNumber]),
+    indentRows.map((i) => [i.id, i.indentNumber]),
   );
   const rfqNumById = new Map<string, string>(
-    rfqRows.map((i: any) => [i.id, i.rfqNumber]),
+    rfqRows.map((i) => [i.id, i.rfqNumber]),
   );
   for (const row of enrichedRows) {
     if (row.sourceIndentId) {
@@ -550,8 +690,8 @@ async function attachSourceDocNumbers(
   }
 }
 
-export async function findPOById(orgId: string, id: string): Promise<any | null> {
-  const row = await (db as any).cnPurchaseOrder.findFirst({
+export async function findPOById(orgId: string, id: string): Promise<EnrichedPO | null> {
+  const row = await db.cnPurchaseOrder.findFirst({
     where: { id, orgId },
     include: {
       lines: true,
@@ -584,7 +724,7 @@ export async function findPOById(orgId: string, id: string): Promise<any | null>
   return enriched;
 }
 
-export async function createPO(input: CreatePOInput): Promise<any> {
+export async function createPO(input: CreatePOInput): Promise<EnrichedPO> {
   // Resolve UOMs per line up-front so the transaction stays short.
   const resolvedLines = await Promise.all(
     input.lines.map(async (l) => {
@@ -630,8 +770,8 @@ export async function createPO(input: CreatePOInput): Promise<any> {
   // Build the header payload. `buildHeader(includeDrift)` toggles the
   // recently-added columns on/off so we can retry without them when
   // the Prisma client is stale.
-  const buildHeader = (includeDrift: boolean): Record<string, any> => {
-    const base: Record<string, any> = {
+  const buildHeader = (includeDrift: boolean): Record<string, unknown> => {
+    const base: Record<string, unknown> = {
       orgId: input.orgId,
       poNumber: input.poNumber,
       projectId: input.projectId,
@@ -673,7 +813,7 @@ export async function createPO(input: CreatePOInput): Promise<any> {
 
   const buildLines = (includeDrift: boolean) =>
     resolvedLines.map((l) => {
-      const row: Record<string, any> = {
+      const row: Record<string, unknown> = {
         indentLineId: l.indentLineId ?? null,
         itemId: l.itemId,
         uomId: l.uomIdResolved,
@@ -698,14 +838,14 @@ export async function createPO(input: CreatePOInput): Promise<any> {
       return row;
     });
 
-  let created: any;
+  let created: PoRow;
   let needsRawBackfill = false;
   try {
-    created = await (db as any).cnPurchaseOrder.create({
+    created = await db.cnPurchaseOrder.create({
       data: {
         ...buildHeader(true),
         lines: { create: buildLines(true) },
-      },
+      } as unknown as Prisma.CnPurchaseOrderUncheckedCreateInput,
       include: {
         lines: true,
         project: { select: { id: true, name: true, code: true } },
@@ -720,8 +860,8 @@ export async function createPO(input: CreatePOInput): Promise<any> {
         },
       },
     });
-  } catch (err: any) {
-    const msg = String(err?.message ?? "");
+  } catch (err: unknown) {
+    const msg = toErrorMessage(err, "");
     const isDrift =
       msg.includes("Unknown argument") &&
       (msg.includes("freightCharges") ||
@@ -741,11 +881,11 @@ export async function createPO(input: CreatePOInput): Promise<any> {
           "creating without them and back-filling via raw SQL. " +
           "Run `npx prisma generate` to restore the typed path.",
       );
-      created = await (db as any).cnPurchaseOrder.create({
+      created = await db.cnPurchaseOrder.create({
         data: {
           ...buildHeader(false),
           lines: { create: buildLines(false) },
-        },
+        } as unknown as Prisma.CnPurchaseOrderUncheckedCreateInput,
         include: {
           lines: true,
           project: { select: { id: true, name: true, code: true } },
@@ -769,7 +909,7 @@ export async function createPO(input: CreatePOInput): Promise<any> {
   // Back-fill the missing columns directly. Header first, then each
   // line row. Done in parallel so it stays snappy.
   if (needsRawBackfill) {
-    await (db as any).$executeRaw`
+    await db.$executeRaw`
       UPDATE app_quikinfra."Purchase_orders"
       SET "deliveryAddress"    = ${input.deliveryAddress ?? null},
           "freightCharges"     = ${dec(input.freightCharges)}::numeric,
@@ -784,10 +924,10 @@ export async function createPO(input: CreatePOInput): Promise<any> {
       WHERE id = ${created.id}
     `;
     await Promise.all(
-      (created.lines ?? []).map((row: any, idx: number) => {
+      (created.lines ?? []).map((row, idx: number) => {
         const l = resolvedLines[idx];
         if (!l) return null;
-        return (db as any).$executeRaw`
+        return db.$executeRaw`
           UPDATE app_quikinfra."Purchase_order_lines"
           SET "gstRate"       = ${dec(l.gstRate)}::numeric,
               "igstAmount"    = ${String(l._igst)}::numeric,
@@ -811,13 +951,13 @@ export async function updatePOStatus(
   status: string,
   updatedBy: string,
   extras?: { approvalId?: string | null },
-): Promise<any | null> {
-  const existing = await (db as any).cnPurchaseOrder.findFirst({
+): Promise<EnrichedPO | null> {
+  const existing = await db.cnPurchaseOrder.findFirst({
     where: { id, orgId },
     select: { id: true },
   });
   if (!existing) return null;
-  await (db as any).cnPurchaseOrder.update({
+  await db.cnPurchaseOrder.update({
     where: { id },
     data: {
       status,
@@ -835,7 +975,7 @@ export async function softDeletePO(
   id: string,
   updatedBy: string,
 ): Promise<boolean> {
-  const res = await (db as any).cnPurchaseOrder.updateMany({
+  const res = await db.cnPurchaseOrder.updateMany({
     where: { id, orgId },
     data: { status: "cancelled", updatedBy },
   });

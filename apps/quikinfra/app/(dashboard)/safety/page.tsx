@@ -18,9 +18,9 @@ export default function SafetyPage() {
     queryFn: () => fetch("/api/safety/toolbox-talks").then(r => r.json()),
   });
 
-  const incidents = incResult?.data ?? [];
+  const incidents = (incResult?.data ?? []) as Array<{ status?: string }>;
   const toolboxTalks = tbtResult?.data ?? [];
-  const openActions = incidents.filter((i: any) => i.status !== "Closed").length;
+  const openActions = incidents.filter((i) => i.status !== "Closed").length;
   const totalIncidentsMonth = incidents.length;
   const daysWithoutIncident = 2; // last incident was Apr 9
 

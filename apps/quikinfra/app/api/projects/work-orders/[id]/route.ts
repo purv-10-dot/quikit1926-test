@@ -1,3 +1,4 @@
+import type { Prisma } from "@prisma/client";
 import { requireProjectsFinanceAction } from "@/lib/auth/requireProjectsFinanceAction";
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
@@ -6,14 +7,24 @@ import { err as envelopeErr } from "@/lib/http/envelope";
 import { requireOwnership } from "@/lib/auth/ownership";
 import { resolveUserNames } from "@/lib/users/resolve-names";
 import { canActOnCurrentStep } from "@/lib/approvals/workflow-rbac";
+import {
+  APPROVAL_INSTANCE_INCLUDE,
+  buildApprovalDto,
+  type ApprovalDto,
+} from "@/lib/approvals/approval-dto";
 
-function enrichWO(row: any, project?: any, contractor?: any): any {
-  const lines = (row.lines ?? []).map((l: any) => ({
+function enrichWO(
+  row: Prisma.CnWorkOrderGetPayload<{ include: { lines: true } }>,
+  project?: { name?: string | null } | null,
+  contractor?: { name?: string | null } | null,
+) {
+  const lines = (row.lines ?? []).map((l) => ({
     id: l.id,
     boqNo: l.boqItemId ?? "",
     boqItemId: l.boqItemId ?? "",
     description: l.description ?? "",
     uomId: l.uomId ?? "",
+    uomCode: l.uomId ?? "",
     quantity: l.quantity?.toString?.() ?? "0",
     rate: l.negotiatedRate?.toString?.() ?? "0",
     amount: l.amount?.toString?.() ?? "0",
@@ -29,7 +40,7 @@ function enrichWO(row: any, project?: any, contractor?: any): any {
     title: row.title ?? "",
     description: row.description ?? "",
     type: "Work Order",
-    workType: "Without Material",
+    workType: row.workType ?? null,
     plannedStart: row.startDate?.toISOString?.().slice(0, 10) ?? null,
     plannedEnd: row.endDate?.toISOString?.().slice(0, 10) ?? null,
     retentionPct: 0,
@@ -57,7 +68,7 @@ export async function GET(
   if (ctxOrResp instanceof NextResponse) return ctxOrResp;
   const ctx = ctxOrResp;
 
-  const row = await (db as any).cnWorkOrder.findFirst({
+  const row = await db.cnWorkOrder.findFirst({
     where: { id: params.id, orgId: ctx.orgId},
     include: {
       lines: true,
@@ -71,22 +82,19 @@ export async function GET(
 
   // Join the approval instance (if any) so the detail page can render
   // the timeline without a second fetch.
-  let approval: any = null;
+  let approval: ApprovalDto | null = null;
   if (row.approvalId) {
-    const instance = await (db as any).cnApprovalInstance.findFirst({
+    const instance = await db.cnApprovalInstance.findFirst({
       where: { id: row.approvalId, orgId: ctx.orgId},
-      include: {
-        history: { orderBy: { actionAt: "asc" } },
-        workflow: { include: { steps: { orderBy: { stepOrder: "asc" } } } },
-      },
+      include: APPROVAL_INSTANCE_INCLUDE,
     });
     if (instance) {
       const userIds = Array.from(
         new Set<string>([
           instance.requestedById,
-          ...instance.history.map((h: any) => h.actionById),
+          ...instance.history.map((h) => h.actionById),
           ...(instance.workflow.steps
-            .map((s: any) => s.approverUserId)
+            .map((s) => s.approverUserId)
             .filter(Boolean) as string[]),
         ]),
       );
@@ -100,43 +108,15 @@ export async function GET(
         instance,
         row.projectId ?? null,
       );
-      approval = {
-        id: instance.id,
-        status: instance.status,
-        currentStepOrder: instance.currentStepOrder,
-        canActOnCurrentStep: callerCanActOnCurrentStep,
-        completedAt: instance.completedAt?.toISOString?.() ?? null,
-        requestedAt: instance.requestedAt.toISOString(),
-        requestedById: instance.requestedById,
-        requestedByName: nameById.get(instance.requestedById) ?? "User",
-        workflow: {
-          id: instance.workflow.id,
-          name: instance.workflow.name,
-          steps: instance.workflow.steps.map((s: any) => ({
-            stepOrder: s.stepOrder,
-            approverRoleId: s.approverRoleId,
-            approverUserId: s.approverUserId,
-            approverUserName: s.approverUserId
-              ? (nameById.get(s.approverUserId) ?? null)
-              : null,
-          })),
-        },
-        history: instance.history.map((h: any) => ({
-          stepOrder: h.stepOrder,
-          action: h.action,
-          actionById: h.actionById,
-          actionByName: nameById.get(h.actionById) ?? "User",
-          actionAt: h.actionAt.toISOString(),
-          comments: h.comments,
-        })),
-      };
+      approval = buildApprovalDto(instance, nameById, callerCanActOnCurrentStep);
     }
   }
 
+  const rowApprovedBy = (row as { approvedBy?: string | null }).approvedBy;
   const auditNames = await resolveUserNames([
     row.createdBy,
     row.updatedBy,
-    (row as any).approvedBy,
+    rowApprovedBy,
   ]);
 
   return NextResponse.json({
@@ -144,8 +124,8 @@ export async function GET(
     approval,
     createdByName: auditNames.get(row.createdBy) ?? row.createdBy,
     updatedByName: auditNames.get(row.updatedBy) ?? row.updatedBy,
-    approvedByName: (row as any).approvedBy
-      ? auditNames.get((row as any).approvedBy) ?? (row as any).approvedBy
+    approvedByName: rowApprovedBy
+      ? auditNames.get(rowApprovedBy) ?? rowApprovedBy
       : null,
   });
 }
@@ -167,7 +147,7 @@ async function handleUpdate(req: NextRequest, id: string) {
     ...safe
   } = body ?? {};
 
-  const existing = await (db as any).cnWorkOrder.findFirst({
+  const existing = await db.cnWorkOrder.findFirst({
     where: { id, orgId: ctx.orgId},
     select: { id: true, createdBy: true },
   });
@@ -177,13 +157,14 @@ async function handleUpdate(req: NextRequest, id: string) {
   const guard = requireOwnership(existing, ctx, "work order");
   if (guard) return guard;
 
-  // Build update payload from supported fields only. Unsupported
-  // demo-only fields (workType, retentionPct, etc.) are silently dropped.
+  // Build update payload from supported fields only. (Remaining demo-only
+  // fields like retentionPct/tdsPct are still display-only and dropped.)
   const data: Record<string, unknown> = {};
   if (safe.title !== undefined) data.title = safe.title;
   if (safe.description !== undefined) data.description = safe.description;
   if (safe.contractorId !== undefined) data.contractorId = safe.contractorId;
   if (safe.workCategoryId !== undefined) data.workCategoryId = safe.workCategoryId;
+  if (safe.workType !== undefined) data.workType = safe.workType ?? null;
   if (safe.plannedStart !== undefined && safe.plannedStart !== null) {
     data.startDate = new Date(safe.plannedStart);
   }
@@ -196,17 +177,27 @@ async function handleUpdate(req: NextRequest, id: string) {
 
   // Re-roll totals when boqItems is included in the update.
   let totalAmount: number | null = null;
-  let boqItems: any[] | null = null;
-  if (Array.isArray(safe.boqItems)) {
-    boqItems = safe.boqItems;
-    totalAmount = safe.boqItems.reduce(
-      (sum: number, it: any) => sum + (Number(it.amount) || 0),
-      0
+  let boqItems: Array<{
+    boqNo?: string | null;
+    boqItemId?: string | null;
+    description?: string | null;
+    quantity?: number | string | null;
+    uomId?: string | null;
+    rate?: number | string | null;
+    amount?: number | string | null;
+  }> | null = null;
+  const bi = safe.boqItems;
+  if (Array.isArray(bi)) {
+    boqItems = bi;
+    totalAmount = bi.reduce(
+      (sum: number, it: { amount?: number | string | null }) =>
+        sum + (Number(it.amount) || 0),
+      0,
     );
     data.totalAmount = String(totalAmount);
   }
 
-  await db.$transaction(async (tx: any) => {
+  await db.$transaction(async (tx) => {
     await tx.cnWorkOrder.update({
       where: { id },
       data: tenantUpdate(ctx, data),
@@ -215,7 +206,7 @@ async function handleUpdate(req: NextRequest, id: string) {
       await tx.cnWorkOrderLine.deleteMany({ where: { woId: id } });
       if (boqItems.length > 0) {
         await tx.cnWorkOrderLine.createMany({
-          data: boqItems.map((it: any) => ({
+          data: boqItems.map((it) => ({
             woId: id,
             boqItemId: String(it.boqNo ?? it.boqItemId ?? ""),
             description: String(it.description ?? ""),
@@ -229,7 +220,7 @@ async function handleUpdate(req: NextRequest, id: string) {
     }
   });
 
-  const next = await (db as any).cnWorkOrder.findFirst({
+  const next = await db.cnWorkOrder.findFirst({
     where: { id },
     include: {
       lines: true,
@@ -237,7 +228,10 @@ async function handleUpdate(req: NextRequest, id: string) {
       contractor: { select: { id: true, name: true } },
     },
   });
-  return NextResponse.json(enrichWO(next, next?.project, next?.contractor));
+  if (!next) {
+    return NextResponse.json({ error: "Work order not found" }, { status: 404 });
+  }
+  return NextResponse.json(enrichWO(next, next.project, next.contractor));
 }
 
 export async function PUT(
@@ -265,7 +259,7 @@ export async function DELETE(
     return envelopeErr("FORBIDDEN", `Action "delete" not allowed for pm.work_order`, 403);
   }
 
-  const existing = await (db as any).cnWorkOrder.findFirst({
+  const existing = await db.cnWorkOrder.findFirst({
     where: { id: params.id, orgId: ctx.orgId},
     select: { id: true, createdBy: true },
   });
@@ -276,7 +270,7 @@ export async function DELETE(
   if (guard) return guard;
 
   // Soft delete via status flip — preserves the row + lines for audit.
-  const res = await (db as any).cnWorkOrder.updateMany({
+  const res = await db.cnWorkOrder.updateMany({
     where: { id: params.id, orgId: ctx.orgId},
     data: { status: "inactive", updatedBy: ctx.userId },
   });

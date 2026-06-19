@@ -73,7 +73,7 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
     const grantSettings = role.name === "admin" && enableSettings;
     if (grantSettings) {
       for (const p of SETTINGS_PERMS) {
-        await (db as any).cnUserPermissionExtra.upsert({
+        await db.cnUserPermissionExtra.upsert({
           where: {
             orgId_userId_resource_action: {
               orgId,
@@ -94,7 +94,7 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
       }
     } else {
       // Remove any old settings extras the user may have had.
-      await (db as any).cnUserPermissionExtra.deleteMany({
+      await db.cnUserPermissionExtra.deleteMany({
         where: {
           orgId,
           userId: targetUserId,

@@ -12,6 +12,8 @@
  * at once.
  */
 
+import type { FieldDef } from "@/components/QuickCreateDrawer";
+
 export interface POOption {
   value: string;
   label: string;
@@ -21,7 +23,7 @@ export interface GrnFieldBuilderArgs {
   /** The "PO Reference" field's configuration — caller supplies
    *  either a select (with options + onChange) for the main GRN list
    *  or a disabled text (with defaultValue) for the PO detail page. */
-  poRefField: Record<string, any>;
+  poRefField: FieldDef;
   /** Option lists the rest of the fields need. */
   projectOptions: Array<{ value: string; label: string }>;
   locationOptions: Array<{ value: string; label: string }>;
@@ -53,7 +55,7 @@ export function buildGrnFields({
   invoiceValueDefault,
   storageLocationDefault,
   projectDefault,
-}: GrnFieldBuilderArgs): Record<string, any>[] {
+}: GrnFieldBuilderArgs): FieldDef[] {
   const today =
     grnDateDefault ?? new Date().toISOString().slice(0, 10);
   return [

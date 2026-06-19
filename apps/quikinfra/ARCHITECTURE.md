@@ -47,7 +47,7 @@ QuickConstructionProject/
 │
 ├── src/
 │   ├── lib/                       # Server-side libraries (NOT bundled to client unless re-exported)
-│   │   ├── auth/                  # context.ts, next-auth-options.ts
+│   │   ├── auth/                  # context.ts (authOptions live in root lib/auth.ts)
 │   │   ├── rbac/                  # roles.ts, permissions.ts
 │   │   ├── boq/                   # parser, adapters, hierarchy, ledgers — see §6
 │   │   ├── purchase/              # purchase-engine, po-pdf, po-email

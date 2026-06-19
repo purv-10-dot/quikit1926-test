@@ -36,6 +36,11 @@ const STATUS_OPTIONS = [
   { value: "Closed", label: "Closed" },
 ];
 
+interface IncidentRow {
+  id: string; status?: string; severity?: string; injuredPerson?: string;
+  [key: string]: unknown;
+}
+
 export default function IncidentsPage() {
   const qc = useQueryClient();
   const [activeTab, setActiveTab] = useState("all");
@@ -47,8 +52,8 @@ export default function IncidentsPage() {
     queryFn: () => fetch(`/api/safety/incidents`).then(r => r.json()),
   });
 
-  const allData = result?.data ?? [];
-  const data = activeTab === "all" ? allData : allData.filter((r: any) => r.status === activeTab);
+  const allData = (result?.data ?? []) as IncidentRow[];
+  const data = activeTab === "all" ? allData : allData.filter((r) => r.status === activeTab);
 
   const config = {
     title: "Report Incident",
@@ -74,7 +79,7 @@ export default function IncidentsPage() {
     return "bg-green-100 text-green-800";
   };
 
-  const columns: ColDef<any>[] = [
+  const columns: ColDef<IncidentRow>[] = [
     { key: "incidentNo", label: "Incident No", sortable: true, searchable: true },
     { key: "date", label: "Date", type: "date", sortable: true },
     { key: "projectName", label: "Project", sortable: true, searchable: true },
@@ -90,7 +95,7 @@ export default function IncidentsPage() {
       options: ["Low", "Medium", "High", "Critical"],
       sortable: true,
       render: (row) => (
-        <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-semibold ${severityColor(row.severity)}`}>{row.severity}</span>
+        <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-semibold ${severityColor(row.severity ?? "")}`}>{row.severity}</span>
       ),
     },
     {
@@ -116,8 +121,6 @@ export default function IncidentsPage() {
           data={data}
           onAdd={canAdd ? () => setDrawerOpen(true) : undefined}
           addLabel="Report Incident"
-          defaultSort="date"
-          defaultSortDir="desc"
         />
       </PageContainer>
       <QuickCreateDrawer open={drawerOpen} onClose={() => setDrawerOpen(false)} config={config} />

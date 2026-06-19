@@ -35,7 +35,7 @@ export async function POST(
     return envelopeErr("FORBIDDEN", `Action "edit" not allowed for pm.estimation`, 403);
   }
 
-  let body: any = {};
+  let body: { action?: string; comments?: string } = {};
   try {
     body = await req.json();
   } catch {
@@ -97,7 +97,7 @@ export async function POST(
 
   if (estStatusPatch) {
     await patchEstimationStatus(ctx.orgId, est.id, {
-      ...(estStatusPatch as any),
+      ...(estStatusPatch as Parameters<typeof patchEstimationStatus>[2]),
       updatedBy: ctx.userId,
     });
   }

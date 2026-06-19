@@ -32,6 +32,40 @@ import { getTenantContext } from "@/lib/auth/context";
  * supplied.
  */
 
+/** Postgres numeric aggregates arrive as string/number (or null). */
+type SqlNum = number | string | null;
+
+interface GrnAggRow {
+  itemId: string;
+  qtyIn: SqlNum;
+  valueIn: SqlNum;
+}
+interface PoAggRow {
+  itemId: string;
+  pendingQty: SqlNum;
+  poValue: SqlNum;
+  orderedQty: SqlNum;
+}
+interface JsonLinesRow {
+  projectId: string | null;
+  materials: unknown;
+}
+interface ItemMetaRow {
+  id: string;
+  code: string | null;
+  name: string | null;
+  minStockLevel: SqlNum;
+  standardRate: SqlNum;
+  groupName: string | null;
+  uomCode: string | null;
+}
+interface StockTransferGlobal {
+  orgId?: string;
+  sourceProjectId?: string;
+  fromLocationId?: string;
+  lines?: unknown;
+}
+
 interface StockRegisterRow {
   id: string;
   itemCode: string;
@@ -80,7 +114,7 @@ export async function GET(req: NextRequest) {
   // unposted receipts don't inflate balances; `submitted` /
   // `pending_approval` / `approved` all count as real receipts.
   let grnWhere = "";
-  const grnParams: any[] = [];
+  const grnParams: unknown[] = [];
   if (ctx) {
     grnWhere += ` AND g."orgId" = $${grnParams.length + 1}`;
     grnParams.push(ctx.orgId);
@@ -93,7 +127,7 @@ export async function GET(req: NextRequest) {
   // We use `unsafe` template interpolation via $queryRawUnsafe so the
   // dynamic filters can build a single SQL string; all user-supplied
   // bits ride as bound params, never concatenated inline.
-  const grnRows: any[] = await (db as any).$queryRawUnsafe(
+  const grnRows = await db.$queryRawUnsafe<GrnAggRow[]>(
     `SELECT l."itemId"                            AS "itemId",
             SUM(l."acceptedQty")                  AS "qtyIn",
             SUM(l."acceptedQty" * l."unitRate")   AS "valueIn"
@@ -120,7 +154,7 @@ export async function GET(req: NextRequest) {
   // unit rate so we can fall back to the PO rate for items that
   // haven't been received yet (otherwise value would be ₹0).
   let poWhere = "";
-  const poParams: any[] = [];
+  const poParams: unknown[] = [];
   if (ctx) {
     poWhere += ` AND po."orgId" = $${poParams.length + 1}`;
     poParams.push(ctx.orgId);
@@ -129,7 +163,7 @@ export async function GET(req: NextRequest) {
     poWhere += ` AND po."projectId" = $${poParams.length + 1}`;
     poParams.push(projectId);
   }
-  const poRows: any[] = await (db as any).$queryRawUnsafe(
+  const poRows = await db.$queryRawUnsafe<PoAggRow[]>(
     `SELECT l."itemId"                                    AS "itemId",
             SUM(GREATEST(l."pendingQty", 0))              AS "pendingQty",
             SUM(l."orderedQty" * l."unitRate")            AS "poValue",
@@ -164,9 +198,9 @@ export async function GET(req: NextRequest) {
     WHERE mi.status IN ('issued', 'approved', 'pending_approval', 'draft')
       ${ctx ? 'AND mi."orgId" = $1' : ""}
   `;
-  const miRows: any[] = ctx
-    ? await (db as any).$queryRawUnsafe(miRowsQuery, ctx.orgId)
-    : await (db as any).$queryRawUnsafe(miRowsQuery);
+  const miRows = ctx
+    ? await db.$queryRawUnsafe<JsonLinesRow[]>(miRowsQuery, ctx.orgId)
+    : await db.$queryRawUnsafe<JsonLinesRow[]>(miRowsQuery);
 
   const outByItem = new Map<string, number>();
   const bumpOut = (itemId: string, qty: number) => {
@@ -192,9 +226,9 @@ export async function GET(req: NextRequest) {
     WHERE gr.status IN ('dispatched', 'approved', 'pending_approval', 'draft')
       ${ctx ? 'AND gr."orgId" = $1' : ""}
   `;
-  const grRows: any[] = ctx
-    ? await (db as any).$queryRawUnsafe(grRowsQuery, ctx.orgId)
-    : await (db as any).$queryRawUnsafe(grRowsQuery);
+  const grRows = ctx
+    ? await db.$queryRawUnsafe<JsonLinesRow[]>(grRowsQuery, ctx.orgId)
+    : await db.$queryRawUnsafe<JsonLinesRow[]>(grRowsQuery);
   for (const gr of grRows) {
     if (projectId && gr.projectId !== projectId) continue;
     const lines = Array.isArray(gr.materials) ? gr.materials : [];
@@ -210,8 +244,8 @@ export async function GET(req: NextRequest) {
   // The transfer API still lives on a globalThis-backed array until
   // it graduates to a Prisma repo, so read from the same ref the
   // POST route writes to. Outward from the source project only.
-  const transfers: any[] =
-    ((globalThis as any).__qcStockTransfers as any[]) ?? [];
+  const transfers: StockTransferGlobal[] =
+    ((globalThis as { __qcStockTransfers?: StockTransferGlobal[] }).__qcStockTransfers) ?? [];
   for (const t of transfers) {
     if (ctx && t.orgId !== ctx.orgId) continue;
     if (projectId && t.sourceProjectId !== projectId) continue;
@@ -242,7 +276,7 @@ export async function GET(req: NextRequest) {
   outByItem.forEach((_v, id) => seenItemIds.add(id));
 
   if (includeAllItems && ctx) {
-    const catalogRows: { id: string }[] = await (db as any).cnItem.findMany({
+    const catalogRows: { id: string }[] = await db.cnItem.findMany({
       where: {
         orgId: ctx.orgId,
         status: { not: "deleted" },
@@ -255,10 +289,20 @@ export async function GET(req: NextRequest) {
   const seenIdList: string[] = [];
   seenItemIds.forEach((id) => seenIdList.push(id));
 
-  const itemMetaById = new Map<string, any>();
+  const itemMetaById = new Map<
+    string,
+    {
+      code: string | null;
+      name: string | null;
+      uomCode: string;
+      groupName: string;
+      minStockLevel: string;
+      standardRate: string;
+    }
+  >();
   if (seenIdList.length > 0) {
-    const dbItems: any[] = ctx
-      ? await (db as any).$queryRawUnsafe(
+    const dbItems = ctx
+      ? await db.$queryRawUnsafe<ItemMetaRow[]>(
           `SELECT i.id, i.code, i.name,
                   i."minStockLevel", i."standardRate",
                   g.name AS "groupName",
@@ -271,7 +315,7 @@ export async function GET(req: NextRequest) {
           seenIdList,
           ctx.orgId,
         )
-      : await (db as any).$queryRawUnsafe(
+      : await db.$queryRawUnsafe<ItemMetaRow[]>(
           `SELECT i.id, i.code, i.name,
                   i."minStockLevel", i."standardRate",
                   g.name AS "groupName",

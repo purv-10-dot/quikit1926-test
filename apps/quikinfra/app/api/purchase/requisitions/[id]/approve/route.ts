@@ -1,3 +1,4 @@
+import { toErrorMessage, getErrorCode } from "@/lib/api/errors";
 import { requirePurchaseAction } from "@/lib/auth/requirePurchaseAction";
 import { findCnUserById } from "@/lib/users/lookup";
 import { NextRequest, NextResponse } from "next/server";
@@ -40,7 +41,7 @@ export async function POST(
     return envelopeErr("FORBIDDEN", `Action "edit" not allowed for purchase.mr`, 403);
   }
 
-  let body: any = {};
+  let body: { action?: string; comments?: string; sourceLocationId?: string } = {};
   try {
     body = await req.json();
   } catch {
@@ -69,7 +70,7 @@ export async function POST(
     );
   }
 
-  const instance = await (db as any).cnApprovalInstance.findFirst({
+  const instance = await db.cnApprovalInstance.findFirst({
     where: { id: pr.approvalId, orgId: ctx.orgId },
   });
   if (!instance) {
@@ -82,7 +83,7 @@ export async function POST(
     );
   }
 
-  const currentStep = await (db as any).cnApprovalWorkflowStep.findFirst({
+  const currentStep = await db.cnApprovalWorkflowStep.findFirst({
     where: {
       workflowId: instance.workflowId,
       stepOrder: instance.currentStepOrder,
@@ -130,7 +131,7 @@ export async function POST(
 
   // Find the next step by ascending stepOrder so approvals follow the
   // admin's actual numbering, even if it's non-contiguous (e.g. [1,3,5]).
-  const nextStep = await (db as any).cnApprovalWorkflowStep.findFirst({
+  const nextStep = await db.cnApprovalWorkflowStep.findFirst({
     where: {
       workflowId: instance.workflowId,
       stepOrder: { gt: instance.currentStepOrder },
@@ -144,7 +145,7 @@ export async function POST(
 
   let finalPRStatus: string | null = null;
 
-  await db.$transaction(async (tx: any) => {
+  await db.$transaction(async (tx) => {
     await tx.cnApprovalHistory.create({
       data: {
         instanceId: instance.id,
@@ -210,7 +211,7 @@ export async function POST(
     let locationName = "";
     if (sourceLocationId) {
       try {
-        const loc = await (db as any).cnLocation.findFirst({
+        const loc = await db.cnLocation.findFirst({
           where: { id: sourceLocationId, orgId: ctx.orgId },
           select: { name: true },
         });
@@ -224,7 +225,7 @@ export async function POST(
     const compactDate = issueDateStr.replace(/-/g, "");
     // Count today's existing issues across the tenant so issueNumber
     // stays unique. The pattern is MI-<YYYYMMDD>-<seq>.
-    const todaysCount = await (db as any).cnMaterialIssue.count({
+    const todaysCount = await db.cnMaterialIssue.count({
       where: {
         orgId: ctx.orgId,
         issueDate: {
@@ -235,7 +236,20 @@ export async function POST(
     });
     const issueNumber = `MI-${compactDate}-${String(todaysCount + 1).padStart(4, "0")}`;
 
-    const lines = (pr.lines ?? []).map((l: any) => ({
+    const lines = (pr.lines ?? []).map((l: {
+      itemId?: string | null;
+      itemName?: string | null;
+      itemCode?: string | null;
+      uomId?: string | null;
+      uomCode?: string | null;
+      quantity?: number | string | null;
+      qtyRequired?: number | string | null;
+      qtyRequested?: number | string | null;
+      specification?: string | null;
+      priority?: string | null;
+      lineId?: string | null;
+      id?: string | null;
+    }) => ({
       itemId: l.itemId,
       itemName: l.itemName,
       itemCode: l.itemCode ?? "",
@@ -250,7 +264,7 @@ export async function POST(
     }));
 
     try {
-      await (db as any).cnMaterialIssue.create({
+      await db.cnMaterialIssue.create({
         data: tenantCreate(ctx, {
           issueNumber,
           projectId: pr.projectId,
@@ -270,16 +284,19 @@ export async function POST(
           approvedBy: ctx.userName,
         }),
       });
-    } catch (e: any) {
-      console.error("[pr.approve] failed to create auto Material Issue:", e?.message ?? e);
+    } catch (e: unknown) {
+      console.error("[pr.approve] failed to create auto Material Issue:", toErrorMessage(e));
     }
   }
 
   const refreshed = await findPRById(ctx.orgId, pr.id);
-  const refreshedInstance = await (db as any).cnApprovalInstance.findUnique({
+  const refreshedInstance = await db.cnApprovalInstance.findUnique({
     where: { id: instance.id },
   });
-  const totalSteps = await (db as any).cnApprovalWorkflowStep.count({
+  if (!refreshedInstance) {
+    return NextResponse.json({ error: "Approval instance not found" }, { status: 404 });
+  }
+  const totalSteps = await db.cnApprovalWorkflowStep.count({
     where: { workflowId: instance.workflowId },
   });
   return NextResponse.json({

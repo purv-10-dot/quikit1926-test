@@ -30,7 +30,7 @@ export async function GET(req: NextRequest) {
   const search = searchParams.get("search")?.toLowerCase() ?? "";
 
   // ─── 1. Workflow-backed instances (Prisma) ────────────────────
-  const prismaInstances = await (db as any).cnApprovalInstance.findMany({
+  const prismaInstances = await db.cnApprovalInstance.findMany({
     where: {
       orgId: ctx.orgId,
       status: "pending_approval",
@@ -52,16 +52,16 @@ export async function GET(req: NextRequest) {
 
   // Pull every step for every workflow referenced so the actor-check can
   // match against the instance's current step in O(1).
-  const workflowIds = Array.from(new Set(prismaInstances.map((i: any) => i.workflowId)));
+  const workflowIds = Array.from(new Set(prismaInstances.map((i) => i.workflowId)));
   const steps = workflowIds.length
-    ? await (db as any).cnApprovalWorkflowStep.findMany({
+    ? await db.cnApprovalWorkflowStep.findMany({
         where: { workflowId: { in: workflowIds } },
       })
     : [];
-  const stepByKey = new Map<string, any>();
+  const stepByKey = new Map<string, (typeof steps)[number]>();
   for (const s of steps) stepByKey.set(`${s.workflowId}:${s.stepOrder}`, s);
 
-  const actionable = prismaInstances.filter((i: any) => {
+  const actionable = prismaInstances.filter((i) => {
     const step = stepByKey.get(`${i.workflowId}:${i.currentStepOrder}`);
     return step ? canActOnStepForInbox(ctx, step) : false;
   });
@@ -70,23 +70,23 @@ export async function GET(req: NextRequest) {
   // the same columns it did off the in-memory store. Batched lookup —
   // one query for the PR rows, one for the project names.
   const prInstanceIds = actionable
-    .filter((i: any) => i.entityType === "purchase_requisitions")
-    .map((i: any) => i.entityId);
+    .filter((i) => i.entityType === "purchase_requisitions")
+    .map((i) => i.entityId);
   const prMap = new Map<string, { projectName: string; estimatedTotal: string }>();
   if (prInstanceIds.length) {
-    const prRows = await (db as any).cnPurchaseRequisition.findMany({
+    const prRows = await db.cnPurchaseRequisition.findMany({
       where: { orgId: ctx.orgId, id: { in: prInstanceIds } },
       select: { id: true, projectId: true, estimatedTotal: true },
     });
-    const projectIds = Array.from(new Set(prRows.map((r: any) => r.projectId).filter(Boolean)));
+    const projectIds = Array.from(new Set(prRows.map((r) => r.projectId).filter(Boolean)));
     const projectRows = projectIds.length
-      ? await (db as any).cnProject.findMany({
+      ? await db.cnProject.findMany({
           where: { id: { in: projectIds } },
           select: { id: true, name: true },
         })
       : [];
-    const projectNameById = new Map<string, string>(projectRows.map((p: any) => [p.id, p.name]));
-    for (const r of prRows as any[]) {
+    const projectNameById = new Map<string, string>(projectRows.map((p) => [p.id, p.name]));
+    for (const r of prRows) {
       prMap.set(r.id, {
         projectName: projectNameById.get(r.projectId) ?? "",
         estimatedTotal: r.estimatedTotal?.toString?.() ?? "0",
@@ -96,10 +96,10 @@ export async function GET(req: NextRequest) {
 
   // Resolve requester display names in a single batch — handles both
   // cn_users (invited team members) and cn_demo_users (seeded admins).
-  const requesterIds = actionable.map((i: any) => i.requestedById);
+  const requesterIds = actionable.map((i) => i.requestedById);
   const nameById = await resolveUserNames(requesterIds);
 
-  const workflowInbox = actionable.map((i: any) => {
+  const workflowInbox = actionable.map((i) => {
     const pr = i.entityType === "purchase_requisitions" ? prMap.get(i.entityId) : null;
     return {
       id: i.id,
@@ -120,7 +120,7 @@ export async function GET(req: NextRequest) {
   let data = workflowInbox;
   if (search) {
     data = data.filter(
-      (a: any) =>
+      (a) =>
         (a.entityNumber ?? "").toLowerCase().includes(search) ||
         (a.projectName ?? "").toLowerCase().includes(search) ||
         (a.requestedByName ?? "").toLowerCase().includes(search),

@@ -6,8 +6,8 @@ import { err as envelopeErr } from "@/lib/http/envelope";
 
 export async function GET() {
   const categories = getCategories();
-  const byId = new Map(categories.map((c: any) => [c.id, c.name]));
-  const data = categories.map((c: any) => ({
+  const byId = new Map(categories.map((c) => [c.id, c.name]));
+  const data = categories.map((c) => ({
     ...c,
     parentName: c.parentId ? byId.get(c.parentId) ?? "—" : null,
   }));
@@ -25,11 +25,11 @@ export async function POST(req: NextRequest) {
   const name = String(body?.name ?? "").trim();
   if (!name) return NextResponse.json({ error: "Category name is required" }, { status: 400 });
   const categories = getCategories();
-  if (categories.some((c: any) => c.name.toLowerCase() === name.toLowerCase())) {
+  if (categories.some((c) => c.name.toLowerCase() === name.toLowerCase())) {
     return NextResponse.json({ error: "A category with this name already exists" }, { status: 409 });
   }
   const parentId = body?.parentId ? String(body.parentId) : null;
-  if (parentId && !categories.some((c: any) => c.id === parentId)) {
+  if (parentId && !categories.some((c) => c.id === parentId)) {
     return NextResponse.json({ error: "Parent category not found" }, { status: 400 });
   }
   const now = new Date().toISOString();

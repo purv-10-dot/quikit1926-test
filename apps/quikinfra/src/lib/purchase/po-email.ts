@@ -9,6 +9,7 @@
  * mailer hit an SMTP hiccup.
  */
 
+import { toErrorMessage, getErrorCode } from "@/lib/api/errors";
 import { db } from "@/lib/db";
 import { findVendorsByIds } from "@/lib/masters/vendors-repository";
 import { sendMail } from "@/lib/email/mailer";
@@ -53,7 +54,7 @@ const MONTHS_SHORT = [
   "Jan", "Feb", "Mar", "Apr", "May", "Jun",
   "Jul", "Aug", "Sep", "Oct", "Nov", "Dec",
 ];
-function formatDate(raw: string | null | undefined): string {
+function formatDate(raw: string | Date | null | undefined): string {
   if (!raw) return "";
   const s = String(raw).trim();
   const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(s);
@@ -78,9 +79,54 @@ function escapeHtml(s: string): string {
  * prefer that; fall back to a Postgres lookup only when the snapshot
  * is empty.
  */
+interface PoEmailLine {
+  itemId?: string | null;
+  itemName?: string | null;
+  uomCode?: string | null;
+  poQty?: number | string | null;
+  quantity?: number | string | null;
+  unitRate?: number | string | null;
+  discount?: number | string | null;
+  gstRate?: number | string | null;
+  specification?: string | null;
+}
+interface PoEmailInput {
+  poNumber?: string | null;
+  poDate?: string | null;
+  projectName?: string | null;
+  vendorId?: string | null;
+  vendorName?: string | null;
+  vendorEmail?: string | null;
+  vendorGSTIN?: string | null;
+  deliveryDate?: string | null;
+  deliveryAddress?: string | null;
+  paymentTerms?: string | null;
+  purpose?: string | null;
+  contactPerson?: string | null;
+  contactMobile?: string | null;
+  termsAndConditions?: string | null;
+  termsTemplateId?: string | null;
+  freightCharges?: number | string | null;
+  otherCharges?: number | string | null;
+  totalAmount?: number | string | null;
+  lines?: PoEmailLine[] | null;
+}
+interface PoVendorMaster {
+  name?: string | null;
+  companyName?: string | null;
+  email?: string | null;
+  phone?: string | null;
+  contactPerson?: string | null;
+  gstin?: string | null;
+  address?: string | null;
+  city?: string | null;
+  state?: string | null;
+  pincode?: string | null;
+}
+
 async function resolveTermsBody(
   orgId: string,
-  po: any,
+  po: PoEmailInput,
 ): Promise<string | null> {
   if (po?.termsAndConditions && String(po.termsAndConditions).trim()) {
     return String(po.termsAndConditions);
@@ -88,7 +134,7 @@ async function resolveTermsBody(
   const id = po?.termsTemplateId;
   if (id) {
     try {
-      const row = await (db as any).cnTermsCondition.findFirst({
+      const row = await db.cnTermsCondition.findFirst({
         where: { id, orgId },
         select: { body: true },
       });
@@ -100,9 +146,9 @@ async function resolveTermsBody(
   return null;
 }
 
-function emailBodyHtml(po: any, vendorName: string): string {
+function emailBodyHtml(po: PoEmailInput, vendorName: string): string {
   const RUPEE = "\u20B9";
-  const grand = parseFloat(po.totalAmount ?? "0") || 0;
+  const grand = parseFloat(String(po.totalAmount ?? "0")) || 0;
   const contact = po.contactPerson || "";
   const mobile = po.contactMobile || "";
   return `
@@ -142,7 +188,7 @@ function emailBodyHtml(po: any, vendorName: string): string {
   `;
 }
 
-function linesToPdfRows(lines: any[]): PoPdfLine[] {
+function linesToPdfRows(lines: PoEmailLine[]): PoPdfLine[] {
   return lines.map((l) => ({
     description: [l.itemName, l.specification]
       .filter((x) => x && String(x).trim())
@@ -154,7 +200,7 @@ function linesToPdfRows(lines: any[]): PoPdfLine[] {
   }));
 }
 
-function subjectFor(po: any): string {
+function subjectFor(po: PoEmailInput): string {
   return `Purchase Order — ${po.poNumber ?? ""}${
     po.projectName ? ` (${po.projectName})` : ""
   }`;
@@ -168,10 +214,10 @@ function subjectFor(po: any): string {
  */
 export async function buildPoPreview(
   orgId: string,
-  po: any,
+  po: PoEmailInput,
 ): Promise<PoPreviewPayload> {
   const termsBody = await resolveTermsBody(orgId, po);
-  const lines: any[] = Array.isArray(po?.lines) ? po.lines : [];
+  const lines: PoEmailLine[] = Array.isArray(po?.lines) ? po.lines : [];
 
   if (!po?.vendorId) {
     return {
@@ -184,7 +230,7 @@ export async function buildPoPreview(
 
   // Pull the vendor master for email fallback — the stored PO row
   // may only carry `vendorEmail` on newer rows.
-  let master: any = null;
+  let master: PoVendorMaster | null = null;
   try {
     const map = await findVendorsByIds(orgId, [po.vendorId]);
     master = map.get(po.vendorId) ?? null;
@@ -195,7 +241,7 @@ export async function buildPoPreview(
   const email = (po.vendorEmail || master?.email || "").trim() || null;
   const vendorName =
     po.vendorName || master?.companyName || master?.name || "Vendor";
-  const items: PoPreviewItem[] = lines.map((l: any) => ({
+  const items: PoPreviewItem[] = lines.map((l) => ({
     itemName: l.itemName ?? l.itemId ?? "—",
     quantity: String(l.poQty ?? l.quantity ?? "—"),
     uomCode: String(l.uomCode ?? "—"),
@@ -230,12 +276,12 @@ export async function buildPoPreview(
  */
 export async function buildPoPreviewPdf(
   orgId: string,
-  po: any,
+  po: PoEmailInput,
 ): Promise<Buffer | null> {
-  const lines: any[] = Array.isArray(po?.lines) ? po.lines : [];
+  const lines: PoEmailLine[] = Array.isArray(po?.lines) ? po.lines : [];
   if (!po?.vendorId || lines.length === 0) return null;
 
-  let master: any = null;
+  let master: PoVendorMaster | null = null;
   try {
     const map = await findVendorsByIds(orgId, [po.vendorId]);
     master = map.get(po.vendorId) ?? null;
@@ -321,7 +367,7 @@ export interface SendPoEmailOptions {
 
 export async function sendPoEmailToVendor(
   orgId: string,
-  po: any,
+  po: PoEmailInput,
   options?: SendPoEmailOptions,
 ): Promise<SendPoEmailResult> {
   const vendorId = po?.vendorId;
@@ -331,7 +377,7 @@ export async function sendPoEmailToVendor(
 
   // Pull the vendor master for GSTIN / phone / full address details
   // that the PDF needs for the supplier block.
-  let master: any = null;
+  let master: PoVendorMaster | null = null;
   try {
     const map = await findVendorsByIds(orgId, [vendorId]);
     master = map.get(vendorId) ?? null;
@@ -442,11 +488,11 @@ export async function sendPoEmailToVendor(
 
     if (res.success) return { sent: true, email };
     return { sent: false, email, error: res.error ?? "send failed" };
-  } catch (e: any) {
+  } catch (e: unknown) {
     return {
       sent: false,
       email,
-      error: e?.message ?? String(e),
+      error: toErrorMessage(e),
     };
   }
 }
@@ -464,7 +510,7 @@ export async function sendPoEmailToVendor(
  */
 export async function sendPoCancellationEmailToVendor(
   orgId: string,
-  po: any,
+  po: PoEmailInput,
   reason: string,
 ): Promise<SendPoEmailResult> {
   const vendorId = po?.vendorId;
@@ -472,7 +518,7 @@ export async function sendPoCancellationEmailToVendor(
     return { sent: false, email: null, skippedReason: "PO has no vendor" };
   }
 
-  let master: any = null;
+  let master: PoVendorMaster | null = null;
   try {
     const map = await findVendorsByIds(orgId, [vendorId]);
     master = map.get(vendorId) ?? null;
@@ -537,11 +583,11 @@ export async function sendPoCancellationEmailToVendor(
     });
     if (res.success) return { sent: true, email };
     return { sent: false, email, error: res.error ?? "send failed" };
-  } catch (e: any) {
+  } catch (e: unknown) {
     return {
       sent: false,
       email,
-      error: e?.message ?? String(e),
+      error: toErrorMessage(e),
     };
   }
 }

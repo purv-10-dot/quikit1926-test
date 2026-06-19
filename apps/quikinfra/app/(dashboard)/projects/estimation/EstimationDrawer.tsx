@@ -11,6 +11,7 @@
  *   - Run its own validation before POSTing to /api/projects/:id/estimations
  */
 
+import { toErrorMessage } from "@/lib/api/errors";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { X, Plus, Trash2, Loader2, AlertTriangle, Save, Send, Check, XCircle } from "lucide-react";
 import { usePermissions } from "@/hooks/use-permissions";
@@ -21,7 +22,7 @@ import { useBOQ } from "@/hooks/use-projects";
 import { useItems, useItemGroups } from "@/hooks/use-masters";
 import { PrimaryButton, SecondaryButton } from "@/components/PageShell";
 import { SelectInput, RIGHT_DRAWER_BACKDROP, RIGHT_DRAWER_FRAME, RIGHT_DRAWER_PANEL } from "@/components/FormDrawer";
-import { GroupedMaterialSelect } from "@/components/GroupedMaterialSelect";
+import { GroupedMaterialSelect, type GroupedMaterialSelectItem } from "@/components/GroupedMaterialSelect";
 
 interface MaterialLine {
   itemId: string;
@@ -31,6 +32,17 @@ interface MaterialLine {
   wasteFactor: string;
   standardRate: string;
 }
+
+interface EstimationMaterial {
+  itemId?: string; itemName?: string; uomCode?: string;
+  qtyPerUnit?: number | string; wastePercent?: number | string; standardRate?: number | string;
+}
+interface EstimationEditData {
+  id?: string; boqItemId?: string; boqNo?: string;
+  projectId?: string; phase?: string; status?: string;
+  materials?: EstimationMaterial[];
+}
+type EstimationItemNode = GroupedMaterialSelectItem & { standardRate?: number | string | null };
 
 interface Props {
   open: boolean;
@@ -45,7 +57,7 @@ interface Props {
    * instead of POST /api/projects/:id/estimations. Pass null/undefined
    * for the create flow.
    */
-  editData?: any | null;
+  editData?: EstimationEditData | null;
 }
 
 const PHASES = [
@@ -147,10 +159,10 @@ export function EstimationDrawer({
   const { data: itemGroupsData } = useItemGroups();
 
   const boqItems: BoqRow[] = useMemo(() => {
-    const raw: any[] = (boqData as any)?.items ?? (boqData as any)?.data ?? [];
+    const raw = boqData?.items ?? boqData?.data ?? [];
     return raw.map((r) => ({
-      id: r.id,
-      boq_no: r.boq_no ?? r.boqNo,
+      id: r.id ?? "",
+      boq_no: r.boq_no ?? r.boqNo ?? "",
       parent_boq_no: r.parent_boq_no ?? r.parentBoqNo ?? null,
       depth: r.depth ?? 0,
       is_group: r.is_group ?? r.isGroup ?? false,
@@ -168,7 +180,7 @@ export function EstimationDrawer({
     }));
   }, [boqData]);
 
-  const items = (itemsData?.data ?? []) as any[];
+  const items = (itemsData?.data ?? []) as unknown as EstimationItemNode[];
   const itemGroups = itemGroupsData?.data ?? [];
 
   // Form state
@@ -196,7 +208,7 @@ export function EstimationDrawer({
       setStatus(editData.status ?? STATUSES[0]);
       setLines(
         Array.isArray(editData.materials) && editData.materials.length > 0
-          ? editData.materials.map((m: any) => ({
+          ? editData.materials.map((m) => ({
               itemId: m.itemId ?? "",
               itemName: m.itemName ?? "",
               uomCode: m.uomCode ?? "",
@@ -350,8 +362,8 @@ export function EstimationDrawer({
       }
       qc.invalidateQueries({ queryKey: ["estimations"] });
       onClose();
-    } catch (err: any) {
-      setError(err?.message ?? "Failed to save");
+    } catch (err: unknown) {
+      setError(toErrorMessage(err, "Failed to save"));
     } finally {
       setSaving(false);
     }
@@ -689,7 +701,7 @@ export function EstimationDrawer({
                           value={line.itemId}
                           onChange={(v) => updateLine(idx, "itemId", v)}
                           items={items}
-                          groups={itemGroups.map((g: any) => ({
+                          groups={itemGroups.map((g) => ({
                             id: g.id,
                             name: g.name,
                             status: g.status,

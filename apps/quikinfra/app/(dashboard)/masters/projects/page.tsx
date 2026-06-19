@@ -1,5 +1,6 @@
 "use client";
 
+import { toErrorMessage } from "@/lib/api/errors";
 import { useState } from "react";
 import { FolderKanban } from "lucide-react";
 import { MasterListPage, type MasterColumnDef } from "@/components/MasterListPage";
@@ -10,7 +11,7 @@ const ImportDataDrawer = dynamic(
   { ssr: false },
 );
 import { ProjectFormDrawer } from "./ProjectFormDrawer";
-import { useProjects, useUpdateProject, useCreateProject, useCompanies, useCustomers } from "@/hooks/use-masters";
+import { useProjects, useUpdateProject, useDeleteProject, useCreateProject, useCompanies, useCustomers } from "@/hooks/use-masters";
 
 interface ProjectRow {
   id: string;
@@ -44,7 +45,12 @@ const columns: MasterColumnDef<ProjectRow>[] = [
       row.projectValue ? `₹ ${Number(row.projectValue).toLocaleString("en-IN")}` : "—",
   },
   { key: "startDate", label: "Start Date" },
-  { key: "status", label: "Status", type: "status" },
+  {
+    key: "status",
+    label: "Status",
+    type: "status",
+    options: ["active", "draft", "on_hold", "completed", "cancelled", "inactive"],
+  },
 ];
 
 // Field definitions for the Import drawer. Order = mapping-screen order.
@@ -76,6 +82,7 @@ export default function ProjectsPage() {
   const { data: result, isLoading } = useProjects();
   const { data: customersResp } = useCustomers();
   const updateMutation = useUpdateProject();
+  const deleteMutation = useDeleteProject();
   const createMutation = useCreateProject();
 
   // Soft delete — projects have a multi-state `status` field
@@ -83,8 +90,8 @@ export default function ProjectsPage() {
   // the universal soft-delete marker so MasterListPage's filter works
   // the same as every other master. "inactive" is added to the Status
   // dropdown in ProjectFormDrawer so users can restore via Edit.
-  const handleDelete = async (item: any) => {
-    await updateMutation.mutateAsync({ id: item.id, status: "inactive" });
+  const handleDelete = async (item: { id: string }) => {
+    await deleteMutation.mutateAsync(item.id);
   };
 
   // Resolve a free-text master name (Company / Client) from the import
@@ -99,10 +106,10 @@ export default function ProjectsPage() {
   // "Commercial Synbags International".
   const normalizeName = (s: string): string =>
     String(s ?? "").trim().replace(/[.,;!]+$/, "").trim().toLowerCase();
-  const findIdByName = (rows: any[] | undefined, name: string): string | null => {
+  const findIdByName = (rows: { id: string; name?: string }[] | undefined, name: string): string | null => {
     const target = normalizeName(name);
     if (!target || !rows) return null;
-    const match = rows.find((r) => normalizeName(r?.name) === target);
+    const match = rows.find((r) => normalizeName(r?.name ?? "") === target);
     return match?.id ?? null;
   };
 
@@ -147,8 +154,8 @@ export default function ProjectsPage() {
         status: row.status?.trim() || "active",
       });
       return { ok: true as const };
-    } catch (err: any) {
-      return { ok: false as const, error: err?.message ?? "Failed to create project" };
+    } catch (err: unknown) {
+      return { ok: false as const, error: toErrorMessage(err, "Failed to create project") };
     }
   };
 
@@ -163,10 +170,10 @@ export default function ProjectsPage() {
         total={result?.total ?? 0}
         isLoading={isLoading}
         onAdd={() => { setEditItem(null); setDrawerOpen(true); }}
-        onEdit={(item: any) => { setEditItem(item); setDrawerOpen(true); }}
+        onEdit={(item) => { setEditItem(item); setDrawerOpen(true); }}
         onDelete={handleDelete}
         onImport={() => setImportOpen(true)}
-        deleteConfirmMessage={(item: any) => (
+        deleteConfirmMessage={(item) => (
           <>
             Delete project{" "}
             <span className="font-semibold text-gray-900">“{item.name}”</span>
@@ -186,7 +193,7 @@ export default function ProjectsPage() {
         key={editItem?.id ?? "new"}
         open={drawerOpen}
         onClose={() => { setDrawerOpen(false); setEditItem(null); }}
-        editData={editItem}
+        editData={editItem ?? undefined}
       />
       <ImportDataDrawer
         open={importOpen}

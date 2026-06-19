@@ -18,8 +18,9 @@ export interface FileMetadata {
 }
 
 // In-memory store for demo mode
-const g = globalThis as any;
-if (!g.__qcFileAttachments) g.__qcFileAttachments = [] as FileMetadata[];
+const g = globalThis as { __qcFileAttachments?: FileMetadata[] };
+if (!g.__qcFileAttachments) g.__qcFileAttachments = [];
+const store: FileMetadata[] = g.__qcFileAttachments;
 
 export class FileAttachmentService {
   /** Attach a file metadata record to an entity */
@@ -29,21 +30,21 @@ export class FileAttachmentService {
       id: `file-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
       createdAt: new Date().toISOString(),
     };
-    g.__qcFileAttachments.push(record);
+    store.push(record);
     return record;
   }
 
   /** Get all attachments for an entity */
   getForEntity(entityType: string, entityId: string): FileMetadata[] {
-    return g.__qcFileAttachments.filter(
-      (f: FileMetadata) => f.entityType === entityType && f.entityId === entityId
+    return store.filter(
+      (f) => f.entityType === entityType && f.entityId === entityId
     );
   }
 
   /** Check if a required attachment role exists for an entity */
   hasRequiredAttachment(entityType: string, entityId: string, fileRole: string): boolean {
-    return g.__qcFileAttachments.some(
-      (f: FileMetadata) => f.entityType === entityType && f.entityId === entityId && f.fileRole === fileRole
+    return store.some(
+      (f) => f.entityType === entityType && f.entityId === entityId && f.fileRole === fileRole
     );
   }
 

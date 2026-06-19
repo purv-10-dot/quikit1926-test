@@ -30,6 +30,7 @@
  *   - shaping the response body for its UI clients
  */
 
+import { Prisma } from "@quikit/database";
 import { db } from "@/lib/db";
 import { findCnUsersByIds } from "@/lib/users/lookup";
 import type { TenantContext } from "@/lib/auth/context";
@@ -69,7 +70,7 @@ export interface ActOnApprovalInput {
    * the entity should stay on its current status (most entities do).
    */
   applyEntityPatch: (
-    tx: any,
+    tx: Prisma.TransactionClient,
     args: { phase: ApprovalPhase; comments: string },
   ) => Promise<void>;
 }
@@ -123,7 +124,7 @@ export async function actOnApproval(
     };
   }
 
-  const instance = await (db as any).cnApprovalInstance.findFirst({
+  const instance = await db.cnApprovalInstance.findFirst({
     where: { id: entity.approvalId, orgId: ctx.orgId },
   });
   if (!instance) {
@@ -143,7 +144,7 @@ export async function actOnApproval(
     };
   }
 
-  const currentStep = await (db as any).cnApprovalWorkflowStep.findFirst({
+  const currentStep = await db.cnApprovalWorkflowStep.findFirst({
     where: {
       workflowId: instance.workflowId,
       stepOrder: instance.currentStepOrder,
@@ -164,8 +165,8 @@ export async function actOnApproval(
       { userId: ctx.userId, roleKey: ctx.roleKey, projectIds: ctx.projectIds },
       {
         approverUserId: currentStep.approverUserId,
-        approverUserIds: Array.isArray((currentStep as any).approverUserIds)
-          ? (currentStep as any).approverUserIds
+        approverUserIds: Array.isArray(currentStep.approverUserIds)
+          ? currentStep.approverUserIds
           : null,
         approverRoleId: currentStep.approverRoleId,
       },
@@ -176,8 +177,8 @@ export async function actOnApproval(
     // multiple users we resolve all their names and join them so the
     // rejected actor sees "Expected: yash, bhavna" rather than a single
     // pinned name that doesn't match what they configured.
-    const poolIds: string[] = Array.isArray((currentStep as any).approverUserIds)
-      ? (currentStep as any).approverUserIds
+    const poolIds: string[] = Array.isArray(currentStep.approverUserIds)
+      ? currentStep.approverUserIds
       : [];
     const effectivePool =
       poolIds.length > 0
@@ -211,7 +212,7 @@ export async function actOnApproval(
     };
   }
 
-  const nextStep = await (db as any).cnApprovalWorkflowStep.findFirst({
+  const nextStep = await db.cnApprovalWorkflowStep.findFirst({
     where: {
       workflowId: instance.workflowId,
       stepOrder: { gt: instance.currentStepOrder },
@@ -228,7 +229,7 @@ export async function actOnApproval(
     phase = "return";
   }
 
-  await db.$transaction(async (tx: any) => {
+  await db.$transaction(async (tx) => {
     await tx.cnApprovalHistory.create({
       data: {
         instanceId: instance.id,
@@ -264,7 +265,7 @@ export async function actOnApproval(
     await input.applyEntityPatch(tx, { phase, comments });
   });
 
-  const totalSteps = await (db as any).cnApprovalWorkflowStep.count({
+  const totalSteps = await db.cnApprovalWorkflowStep.count({
     where: { workflowId: instance.workflowId },
   });
 

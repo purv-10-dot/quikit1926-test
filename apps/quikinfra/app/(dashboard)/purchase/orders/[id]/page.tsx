@@ -1,6 +1,7 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { toErrorMessage } from "@/lib/api/errors";
+import { useEffect, useState, type ReactNode } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { Package, Download, Send, FileText, Mail, Phone, X as XIcon, Lock, AlertTriangle, Eye } from "lucide-react";
 import { WhatsAppLink } from "@/components/WhatsAppLink";
@@ -21,6 +22,37 @@ function roleLabel(key: string | null | undefined): string {
   return USER_TYPE_CATALOG.find((t) => t.key === key)?.label ?? key;
 }
 
+import type {
+  ApprovalStep,
+  ApprovalHistoryEntry,
+  ApprovalInfo,
+} from "@/lib/approvals/approval-info";
+import type { PoLine, PoDetail } from "@/lib/purchase/po-detail";
+
+interface ItemRow {
+  id: string;
+  name?: string;
+  uomCode?: string;
+}
+
+interface MailOutcome {
+  sent?: boolean;
+  email?: string;
+  to?: string;
+  skippedReason?: string;
+  error?: string;
+}
+
+/** Matches PageShell's ApprovalTimeline entry shape. */
+interface TimelineEntry {
+  step: number;
+  action: string;
+  actionBy: string;
+  actionAt: string;
+  comments?: string;
+  title?: string;
+}
+
 /**
  * True when the logged-in user is the expected actor for the current
  * step. Mirrors the server-side `canActOnStep` so the Approve / Reject /
@@ -29,30 +61,33 @@ function roleLabel(key: string | null | undefined): string {
  * permission) would see live buttons that the server now 403s on after
  * the bypass was tightened to SUPER_ADMIN only.
  */
-function canActOnCurrentStep(me: any, po: any): boolean {
+function canActOnCurrentStep(
+  me: MeResponse | null | undefined,
+  po: PoDetail | null | undefined,
+): boolean {
   if (!me || !po?.approval) return false;
   if (po.approval.status !== "pending_approval") return false;
   const step = po.approval.workflow?.steps?.find(
-    (s: any) => s.stepOrder === po.approval.currentStepOrder,
+    (s: ApprovalStep) => s.stepOrder === po.approval?.currentStepOrder,
   );
   if (!step) return false;
   return canActOnStep(
     {
       userId: me.userId,
       roleKey: me.roleKey,
-      projectIds: me.projectIds,
+      projectIds: me.projectIds ?? undefined,
     },
     {
-      approverUserId: step.approverUserId,
+      approverUserId: step.approverUserId ?? null,
       approverUserIds: Array.isArray(step.approverUserIds) ? step.approverUserIds : null,
-      approverRoleId: step.approverRoleId,
+      approverRoleId: step.approverRoleId ?? null,
     },
     po.projectId ?? null,
   );
 }
 import { usePurchaseOrder, useSubmitPO } from "@/hooks/use-purchase";
 import { ApprovalActionBar } from "@/components/ApprovalActionBar";
-import { usePermissions } from "@/hooks/use-permissions";
+import { usePermissions, type MeResponse } from "@/hooks/use-permissions";
 import { canActOnStep } from "@/lib/approvals/workflow-rbac";
 import type { SourceDocType } from "@/components/SourceDocPeekModal";
 const SourceDocPeekModal = dynamic(
@@ -157,8 +192,8 @@ export default function PODetailPage() {
         }
       }
       setCloseOpen(false);
-    } catch (err: any) {
-      setCloseError(err?.message ?? "Failed to close PO");
+    } catch (err: unknown) {
+      setCloseError(toErrorMessage(err, "Failed to close PO"));
     } finally {
       setClosing(false);
     }
@@ -185,12 +220,12 @@ export default function PODetailPage() {
   const doSubmit = async (overrides?: { emailHtmlBody?: string }) => {
     setSubmitError(null);
     try {
-      const result: any = await submitMutation.mutateAsync({
+      const result = (await submitMutation.mutateAsync({
         id,
         ...(overrides?.emailHtmlBody
           ? { emailHtmlBody: overrides.emailHtmlBody }
           : {}),
-      });
+      })) as { mail?: MailOutcome } | null;
       setSubmitConfirmOpen(false);
 
       // Reuse the same shared toast UI that the Close PO flow uses so
@@ -213,9 +248,9 @@ export default function PODetailPage() {
           });
         }
       }
-    } catch (err: any) {
+    } catch (err: unknown) {
       // Keep the dialog open so the user can read the failure reason.
-      setSubmitError(err?.message ?? "Failed to submit PO");
+      setSubmitError(toErrorMessage(err, "Failed to submit PO"));
     }
   };
 
@@ -223,15 +258,15 @@ export default function PODetailPage() {
   const { data: itemsData } = useItems();
   const { data: locationsData } = useLocations();
 
-  const projectOptions = (projectsData?.data ?? []).map((p: any) => ({ value: p.id, label: p.name }));
-  const itemOptions = (itemsData?.data ?? []).map((i: any) => ({ value: i.id, label: i.name }));
-  const locationOptions = (locationsData?.data ?? []).map((l: any) => ({ value: l.id, label: l.name }));
+  const projectOptions = (projectsData?.data ?? []).map((p) => ({ value: p.id, label: p.name }));
+  const itemOptions = (itemsData?.data ?? []).map((i) => ({ value: i.id, label: i.name }));
+  const locationOptions = (locationsData?.data ?? []).map((l) => ({ value: l.id, label: l.name }));
 
   // Client-side items lookup so the table can backfill material
   // name / UOM when the stored PO line has empty strings (happens
   // when the save-time item resolver couldn't hit the master).
-  const itemById = new Map<string, any>(
-    (itemsData?.data ?? []).map((i: any) => [i.id, i]),
+  const itemById = new Map<string, ItemRow>(
+    (itemsData?.data ?? []).map((i) => [i.id, i]),
   );
 
   // Today's date in yyyy-MM-dd format for the GRN date default.
@@ -241,7 +276,7 @@ export default function PODetailPage() {
   // line; reference columns (Material, UOM, PO Qty, Prev. Rcvd,
   // Pending) are filled in so the user only types Received /
   // Rejected / Batch / Condition.
-  const grnInitialLines = (po?.lines ?? []).map((l: any) => {
+  const grnInitialLines = (po?.lines ?? []).map((l: PoLine) => {
     const master = l.itemId ? itemById.get(l.itemId) : null;
     const poQty = parseFloat(String(l.poQty ?? l.quantity ?? "0")) || 0;
     const prevRcvd = parseFloat(String(l.receivedQty ?? "0")) || 0;
@@ -265,12 +300,13 @@ export default function PODetailPage() {
     title: "Create GRN from PO",
     subtitle: `Record goods receipt for ${po?.poNumber ?? "this PO"}`,
     apiEndpoint: "/api/purchase/grn",
-    onSuccess: (created: any) => {
+    onSuccess: (created: unknown) => {
       qc.invalidateQueries({ queryKey: ["grns"] });
       qc.invalidateQueries({ queryKey: ["purchase-order", id] });
       // Jump straight to the new GRN so the user can review / submit
       // for approval without re-finding it in the list.
-      const newId = created?.id ?? created?.data?.id;
+      const c = created as { id?: string; data?: { id?: string } } | null;
+      const newId = c?.id ?? c?.data?.id;
       if (newId) router.push(`/store/grn/${newId}`);
     },
     initialLines: grnInitialLines,
@@ -326,9 +362,9 @@ export default function PODetailPage() {
   if (!po) return <PageContainer><p className="text-gray-500 py-12 text-center">PO not found</p></PageContainer>;
 
   const vendorName = po.vendorName ?? po.vendor?.name ?? "—";
-  const lines = po.lines ?? [];
-  const totalAmount = parseFloat(po.totalAmount) || 0;
-  const taxAmount = parseFloat(po.taxAmount) || 0;
+  const lines: PoLine[] = po.lines ?? [];
+  const totalAmount = parseFloat(String(po.totalAmount ?? "0")) || 0;
+  const taxAmount = parseFloat(String(po.taxAmount ?? "0")) || 0;
   const subtotal = totalAmount - taxAmount;
 
   return (
@@ -344,14 +380,14 @@ export default function PODetailPage() {
         onBack={() => router.push("/purchase/orders")}
         actions={
           <div className="flex items-center gap-2">
-            <StatusChip status={po.status} />
+            <StatusChip status={po.status ?? ""} />
             {po.status === "draft" && (
               <PrimaryButton onClick={handleSubmit} disabled={submitMutation.isPending}>
                 <Send className="w-4 h-4" /> Submit for Approval
               </PrimaryButton>
             )}
             {["approved", "sent", "partially_received"].includes(
-              po.status,
+              po.status ?? "",
             ) && (
               <PrimaryButton
                 onClick={() => router.push(`/store/grn?poId=${id}`)}
@@ -375,7 +411,7 @@ export default function PODetailPage() {
             <ApprovalActionBar
               entityType="po"
               entityId={id}
-              currentStatus={po.status}
+              currentStatus={po.status ?? undefined}
               requiredPermission="purchase.po.approve_l1"
               actionEndpoint={`/api/purchase/orders/${id}/approve`}
               invalidateKeys={[["purchase-orders"], ["purchase-order", id]]}
@@ -423,7 +459,7 @@ export default function PODetailPage() {
                 <InfoField label="PO Number" value={po.poNumber} bold />
                 <InfoField label="PO Date" value={po.poDate} />
                 <InfoField label="Delivery Date" value={po.deliveryDate ?? "—"} />
-                <InfoField label="Status" value={<StatusChip status={po.status} />} />
+                <InfoField label="Status" value={<StatusChip status={po.status ?? ""} />} />
                 <InfoField label="Vendor" value={vendorName} />
                 <InfoField label="Project" value={po.projectName ?? "—"} />
                 <InfoField label="Payment Terms" value={po.paymentTerms ?? "—"} />
@@ -458,7 +494,7 @@ export default function PODetailPage() {
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-gray-50">
-                      {lines.map((line: any, i: number) => {
+                      {lines.map((line: PoLine, i: number) => {
                         // Field-name tolerance — stored shape uses
                         // `poQty` / `lineValueExGST` / `lineValueIncGST`,
                         // older rows used `quantity` / `amount` /
@@ -536,18 +572,18 @@ export default function PODetailPage() {
               {lines.length > 0 && (() => {
                 let gross = 0, lineDisc = 0, net = 0, tax = 0;
                 for (const l of lines) {
-                  const q = parseFloat(String((l as any).poQty ?? (l as any).quantity ?? 0)) || 0;
-                  const r = parseFloat(String((l as any).unitRate ?? (l as any).rate ?? 0)) || 0;
-                  const d = parseFloat(String((l as any).discount ?? 0)) || 0;
-                  const g = parseFloat(String((l as any).gstRate ?? 0)) || 0;
+                  const q = parseFloat(String(l.poQty ?? l.quantity ?? 0)) || 0;
+                  const r = parseFloat(String(l.unitRate ?? l.rate ?? 0)) || 0;
+                  const d = parseFloat(String(l.discount ?? 0)) || 0;
+                  const g = parseFloat(String(l.gstRate ?? 0)) || 0;
                   const gr = q * r;
                   const ld = (gr * d) / 100;
                   const ad = gr - ld;
                   gross += gr; lineDisc += ld; net += ad; tax += (ad * g) / 100;
                 }
-                const freight = parseFloat(po.freightCharges ?? "0") || 0;
-                const other = parseFloat(po.otherCharges ?? "0") || 0;
-                const hdrDisc = parseFloat(po.discount ?? "0") || 0;
+                const freight = parseFloat(String(po.freightCharges ?? "0")) || 0;
+                const other = parseFloat(String(po.otherCharges ?? "0")) || 0;
+                const hdrDisc = parseFloat(String(po.discount ?? "0")) || 0;
                 const grand = net + tax + freight + other - hdrDisc || totalAmount;
                 const RUPEE = "\u20B9";
                 const fmtINR = (n: number) =>
@@ -667,7 +703,7 @@ export default function PODetailPage() {
                         Items ({lines.length})
                       </p>
                       <div className="flex flex-wrap gap-1.5">
-                        {lines.map((line: any, i: number) => {
+                        {lines.map((line: PoLine, i: number) => {
                           const master = line.itemId ? itemById.get(line.itemId) : null;
                           const name =
                             line.itemName ||
@@ -770,21 +806,22 @@ export default function PODetailPage() {
                 </p>
               ) : (
                 (() => {
-                  const entries: any[] = [
+                  const approval = po.approval!;
+                  const entries: TimelineEntry[] = [
                     {
                       step: 0,
                       action: "request",
                       title: "Requested",
-                      actionBy: po.approval.requestedByName || "Requester",
+                      actionBy: approval.requestedByName || "Requester",
                       actionAt: new Date(
-                        po.approval.requestedAt,
+                        approval.requestedAt ?? "",
                       ).toLocaleString(),
                     },
                   ];
-                  po.approval.workflow.steps.forEach((s: any) => {
-                    const acted = [...po.approval.history]
+                  (approval.workflow?.steps ?? []).forEach((s: ApprovalStep) => {
+                    const acted = [...(approval.history ?? [])]
                       .reverse()
-                      .find((h: any) => h.stepOrder === s.stepOrder);
+                      .find((h) => h.stepOrder === s.stepOrder);
                     const approverLabel = s.approverUserName
                       ? `${s.approverUserName} (${roleLabel(s.approverRoleId)})`
                       : roleLabel(s.approverRoleId);
@@ -794,14 +831,14 @@ export default function PODetailPage() {
                         step: s.stepOrder,
                         action: acted.action,
                         actionBy: acted.actionByName || approverLabel,
-                        actionAt: new Date(acted.actionAt).toLocaleString(),
+                        actionAt: new Date(acted.actionAt ?? "").toLocaleString(),
                         comments: acted.comments || undefined,
                       });
                       return;
                     }
                     const isCurrent =
-                      po.approval.status === "pending_approval" &&
-                      po.approval.currentStepOrder === s.stepOrder;
+                      approval.status === "pending_approval" &&
+                      approval.currentStepOrder === s.stepOrder;
                     entries.push({
                       step: s.stepOrder,
                       action: isCurrent ? "current" : "upcoming",
@@ -824,14 +861,14 @@ export default function PODetailPage() {
             <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-5">
               <h3 className="text-sm font-semibold text-gray-900 mb-3">Audit</h3>
               <div className="space-y-2 text-xs text-gray-500">
-                <p>Created: {new Date(po.createdAt).toLocaleString()}</p>
+                <p>Created: {new Date(po.createdAt ?? "").toLocaleString()}</p>
                 <p>By: {po.createdByName ?? po.createdBy ?? "—"}</p>
               </div>
             </div>
           </div>
         </div>
       </PageContainer>
-      <QuickCreateDrawer open={drawerOpen} onClose={() => setDrawerOpen(false)} config={grnConfig as any} />
+      <QuickCreateDrawer open={drawerOpen} onClose={() => setDrawerOpen(false)} config={grnConfig} />
 
       <SourceDocPeekModal
         open={!!peekTarget}
@@ -1035,7 +1072,7 @@ export default function PODetailPage() {
   );
 }
 
-function InfoField({ label, value, bold }: { label: string; value: any; bold?: boolean }) {
+function InfoField({ label, value, bold }: { label: string; value: ReactNode; bold?: boolean }) {
   return (
     <div>
       <p className="text-[10px] font-medium text-gray-500 uppercase tracking-wider">{label}</p>
@@ -1062,7 +1099,7 @@ function StatCell({ label, value }: { label: string; value: string }) {
   );
 }
 
-function Row({ label, value }: { label: string; value: any }) {
+function Row({ label, value }: { label: string; value: ReactNode }) {
   return (
     <div className="flex items-center justify-between">
       <span className="text-xs text-gray-500">{label}</span>
@@ -1073,7 +1110,7 @@ function Row({ label, value }: { label: string; value: any }) {
   );
 }
 
-function TotalRow({ label, value }: { label: string; value: any }) {
+function TotalRow({ label, value }: { label: string; value: ReactNode }) {
   return (
     <div className="flex items-center justify-between">
       <span className="text-xs text-gray-600">{label}</span>
