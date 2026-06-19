@@ -46,19 +46,35 @@ export function WorklogPopover({
   const initial = (userName || "U").trim().charAt(0).toUpperCase();
   const [entries, setEntries] = useState<EntryDetail[]>([]);
   const [issuesByProject, setIssuesByProject] = useState<Record<string, IssueOption[]>>({});
+  const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const ref = useRef<HTMLDivElement>(null);
 
   async function loadEntries() {
+    setLoading(true);
+    setLoadError(null);
     const rows = await Promise.all(
       entryIds.map((id) =>
         fetch(`/api/timesheets/${id}`)
           .then((r) => r.json())
-          .then((j) => (j?.success ? (j.data as EntryDetail) : null))
-          .catch(() => null),
+          .then((j) =>
+            j?.success
+              ? { ok: true as const, entry: j.data as EntryDetail }
+              : { ok: false as const, error: (j?.error as string) || "Failed to load" },
+          )
+          .catch(() => ({ ok: false as const, error: "Failed to load" })),
       ),
     );
-    const list = rows.filter((r): r is EntryDetail => Boolean(r));
+    const list = rows
+      .filter((r): r is { ok: true; entry: EntryDetail } => r.ok)
+      .map((r) => r.entry);
     setEntries(list);
+    // If nothing loaded, surface why (e.g. a 403 on another user's entries)
+    // instead of spinning on "Loading…" forever.
+    if (list.length === 0) {
+      setLoadError(rows.find((r) => !r.ok)?.error ?? "Couldn't load these entries.");
+    }
+    setLoading(false);
     // Preload issues for each project so the inline picker is populated.
     const projectIds = Array.from(
       new Set(list.map((e) => e.projectId ?? e.issue?.projectId).filter(Boolean) as string[]),
@@ -170,12 +186,27 @@ export function WorklogPopover({
           <div className="text-right">Actions</div>
         </div>
         <div className="py-1">
-          {entries.length === 0 ? (
+          {loading ? (
             <div className="py-6 text-xs text-gray-400 text-center">Loading…</div>
+          ) : loadError ? (
+            <div className="py-6 text-xs text-red-600 text-center">{loadError}</div>
+          ) : entries.length === 0 ? (
+            <div className="py-6 text-xs text-gray-400 text-center">No time records.</div>
           ) : (
             entries.map((e) => {
               const pid = e.projectId ?? e.issue?.projectId ?? "";
               const issues = issuesByProject[pid] ?? [];
+              // The entry already carries its own work item (key/title) from the
+              // /api/timesheets/[id] response. Seed it into the picker options so
+              // the selected value always resolves to a label — otherwise the
+              // picker (which matches value against this list) shows the empty
+              // "Pick a task or subtask" placeholder whenever the item isn't in
+              // the capped/EPIC-filtered project fetch. type defaults to TASK
+              // (just the icon); the real option overrides it once issues load.
+              const issueOptions =
+                e.issue && !issues.some((i) => i.id === e.issue!.id)
+                  ? [{ id: e.issue.id, key: e.issue.key, title: e.issue.title, type: "TASK" }, ...issues]
+                  : issues;
               const d = new Date(e.entryDate);
               const dateLabel = `${d.toLocaleDateString(undefined, { month: "short" })} ${d.getDate()}...`;
               return (
@@ -191,18 +222,14 @@ export function WorklogPopover({
                     <span className="text-gray-800 text-xs truncate">{userName}</span>
                   </div>
                   <div>
-                    {issues.length > 0 ? (
+                    {e.issue || issueOptions.length > 0 ? (
                       <WorkItemPicker
-                        issues={issues}
+                        issues={issueOptions}
                         value={e.issue?.id ?? ""}
                         onChange={(id) => void changeIssue(e, id)}
                       />
                     ) : (
-                      <div className="text-gray-700 text-xs">
-                        {e.issue ? (
-                          <span><span className="font-medium text-gray-900">{e.issue.key}</span>{" "}{e.issue.title}</span>
-                        ) : "—"}
-                      </div>
+                      <div className="text-gray-700 text-xs">—</div>
                     )}
                   </div>
                   <div className="text-gray-700 text-xs truncate">

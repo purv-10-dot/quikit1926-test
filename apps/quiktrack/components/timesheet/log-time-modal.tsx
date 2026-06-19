@@ -164,7 +164,11 @@ export function LogTimeModal({
         </div>
 
         <div className="space-y-3">
-          {!lockedProjectId && (
+          {/* The project is only chosen when picking a work item from scratch.
+              When a work item is preset (inline add from a timesheet row), it
+              already determines the project — the API derives projectId from the
+              issue on save — so the picker would be redundant and is hidden. */}
+          {!lockedProjectId && !lockedIssueId && (
             <Field label="Project">
               <ProjectPicker
                 projects={projects}
