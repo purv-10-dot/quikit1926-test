@@ -91,12 +91,30 @@ export default function AppLauncherPage() {
   const [loadingOrgs, setLoadingOrgs] = useState(true);
   const [search, setSearch] = useState("");
   const [orgDropdownOpen, setOrgDropdownOpen] = useState(false);
+  // When an app launch is blocked because the org was suspended (the
+  // super-admin flipped its status while this page was open), we show a
+  // dedicated suspension popup instead of the generic "Not a member" alert.
+  const [suspendedOpen, setSuspendedOpen] = useState(false);
   // Gate the header entrance animation until after mount so SSR and the first
   // client render share the same (hidden) state — otherwise framer-motion
   // hydrates the header at its `animate` style and React warns that the
   // inline `style` prop didn't match the server.
   const [mounted, setMounted] = useState(false);
   useEffect(() => setMounted(true), []);
+
+  // A consumer app (or the launch-token route) bounced the user here because
+  // their org was suspended while they were inside it. Surface the same
+  // suspension popup and strip the marker from the URL so a reload is clean.
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const params = new URLSearchParams(window.location.search);
+    if (params.get("reason") === "org_suspended") {
+      setSuspendedOpen(true);
+      params.delete("reason");
+      const qs = params.toString();
+      window.history.replaceState({}, "", `/apps${qs ? `?${qs}` : ""}`);
+    }
+  }, []);
 
   const isSuperAdmin = session?.user?.isSuperAdmin === true;
   const isImpersonating = session?.user?.impersonating === true;
@@ -227,7 +245,11 @@ export default function AppLauncherPage() {
       });
       const j = await res.json();
       if (!j.success) {
-        window.alert(j.error ?? "Failed to launch app");
+        if (j.code === "ORG_SUSPENDED") {
+          setSuspendedOpen(true);
+        } else {
+          window.alert(j.error ?? "Failed to launch app");
+        }
         return;
       }
       window.location.href = `${url}/auth-handoff?token=${encodeURIComponent(j.data.token)}`;
@@ -683,6 +705,93 @@ export default function AppLauncherPage() {
           </section>
         )}
       </main>
+
+      {/* Org-suspended popup — shown when a launch is blocked because the
+          org was suspended while this page was still open. */}
+      <AnimatePresence>
+        {suspendedOpen && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            transition={{ duration: 0.18, ease }}
+            className="fixed inset-0 z-[2000] flex items-center justify-center px-4"
+            style={{ background: "rgba(13,17,23,0.45)", backdropFilter: "blur(2px)" }}
+            onClick={() => setSuspendedOpen(false)}
+          >
+            <motion.div
+              role="alertdialog"
+              aria-modal="true"
+              aria-labelledby="org-suspended-title"
+              initial={reduce ? false : { opacity: 0, y: 12, scale: 0.97 }}
+              animate={{ opacity: 1, y: 0, scale: 1 }}
+              exit={{ opacity: 0, y: 8, scale: 0.98 }}
+              transition={{ duration: 0.22, ease }}
+              onClick={(e) => e.stopPropagation()}
+              className="w-full max-w-md p-7"
+              style={{
+                background: CARD,
+                border: `1px solid ${HAIRLINE}`,
+                borderRadius: 24,
+                boxShadow:
+                  "0 1px 3px rgba(13,17,23,0.05), 0 30px 70px rgba(13,17,23,0.22)",
+              }}
+            >
+              <div className="flex items-center gap-3 mb-4">
+                <span
+                  style={{
+                    width: 44,
+                    height: 44,
+                    borderRadius: 12,
+                    background: "rgba(220,38,38,0.10)",
+                    color: "#DC2626",
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    flexShrink: 0,
+                  }}
+                >
+                  <Shield className="h-5 w-5" />
+                </span>
+                <h3
+                  id="org-suspended-title"
+                  style={{ fontFamily: SERIF, fontSize: 22, color: INK, lineHeight: 1.15 }}
+                >
+                  Organization suspended
+                </h3>
+              </div>
+
+              <div style={{ fontSize: 14, color: MUTED, lineHeight: 1.6 }}>
+                <p style={{ marginBottom: 10 }}>
+                  This organization has been suspended by QuikIT.
+                </p>
+                <p style={{ marginBottom: 10 }}>
+                  You no longer have access to this organization and its applications.
+                </p>
+                <p>
+                  Please contact your organization administrator or the QuikIT team
+                  for further assistance.
+                </p>
+              </div>
+
+              <div className="flex justify-end mt-6">
+                <button
+                  onClick={() => setSuspendedOpen(false)}
+                  className="px-5 py-2.5 text-sm transition-colors"
+                  style={{
+                    fontWeight: 700,
+                    color: "#fff",
+                    background: INK,
+                    borderRadius: 12,
+                  }}
+                >
+                  OK
+                </button>
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
     </div>
   );
 }

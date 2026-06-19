@@ -122,6 +122,31 @@ export function createMiddleware(config: MiddlewareConfig) {
         // replaying the dead cookie on every request (no manual clear needed).
         return clearSessionCookies(safeRedirect(loginTarget));
       }
+
+      // Session is valid but the selected org was suspended while the user was
+      // inside the app. Route them back to the launcher's org picker (the same
+      // destination as the no-org case) on their next protected navigation —
+      // reload or module click. Super admins are exempt (they manage suspended
+      // orgs), and the select-org route itself is exempt so the launcher's own
+      // /apps doesn't redirect-loop. `reason=org_suspended` lets app wrappers
+      // skip their handoff rewrite and lets the launcher surface the popup.
+      if (
+        remote.valid &&
+        remote.orgActive === false &&
+        !token.isSuperAdmin &&
+        !isSelectOrgRoute
+      ) {
+        if (config.centralSelectOrgUrl) {
+          const target = new URL(config.centralSelectOrgUrl);
+          target.searchParams.set("reason", "org_suspended");
+          return safeRedirect(target.toString());
+        }
+        if (config.selectOrgRoute) {
+          const target = new URL(config.selectOrgRoute, base);
+          target.searchParams.set("reason", "org_suspended");
+          return safeRedirect(target);
+        }
+      }
     }
 
     // Unauthenticated users → central login or local login.

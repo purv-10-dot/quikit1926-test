@@ -14,7 +14,10 @@ export async function GET() {
   }
 
   const memberships = await db.orgMember.findMany({
-    where: { userId: session.user.id },
+    // Hide suspended orgs from the launcher's org picker — a suspended org
+    // should not be selectable or even visible to its members. Mirrors
+    // @quikit/auth/org-memberships.
+    where: { userId: session.user.id, org: { status: "active" } },
     include: {
       org: {
         select: {

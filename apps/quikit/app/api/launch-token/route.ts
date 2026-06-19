@@ -88,14 +88,29 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Must be an active member of the org.
+    // Must be an active member, and the org must not be suspended. We fetch
+    // the org status alongside the membership so we can tell the two failure
+    // modes apart: a genuine non-member ("Not a member…") vs. a member whose
+    // org was suspended (ORG_SUSPENDED) — the launcher renders a dedicated
+    // suspension popup for the latter. Super admins skip this whole branch
+    // and can still launch into suspended orgs to manage them.
     const member = await db.orgMember.findFirst({
       where: { userId, orgId, status: "active" },
-      select: { role: true },
+      select: { role: true, org: { select: { status: true } } },
     });
     if (!member) {
       return NextResponse.json(
         { success: false, error: "Not a member of this organisation" },
+        { status: 403 },
+      );
+    }
+    if (member.org.status !== "active") {
+      return NextResponse.json(
+        {
+          success: false,
+          code: "ORG_SUSPENDED",
+          error: "This organization has been suspended by QuikIT.",
+        },
         { status: 403 },
       );
     }

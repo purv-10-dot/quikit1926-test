@@ -40,17 +40,26 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ valid: true, hasTenant: false });
   }
 
-  // Check 1: Is the membership still active?
+  // Check 1: Is the membership still active, and is the org itself active?
+  // We pull the org status alongside the membership so we can distinguish a
+  // revoked membership ("deactivated") from a super-admin org suspension
+  // ("org_suspended") — the SessionGuard routes each to a different place.
   const membership = await db.orgMember.findFirst({
     where: {
       userId: session.user.id,
       orgId,
       status: "active",
     },
+    select: { id: true, org: { select: { status: true } } },
   });
 
   if (!membership) {
     return NextResponse.json({ valid: false, reason: "deactivated" });
+  }
+
+  // Org suspended/archived by a super-admin → the whole org is off-limits.
+  if (membership.org.status !== "active") {
+    return NextResponse.json({ valid: false, reason: "org_suspended" });
   }
 
   // Check 2: Does the user still have QuikScale app access?

@@ -9,6 +9,9 @@ export interface RemoteVerifyResult {
   activeOrgId?: string | null;
   orgRole?: string | null;
   isSuperAdmin?: boolean;
+  /** Live status of the token's selected org: false when it has been
+   *  suspended/archived. Undefined from older auth hosts (treat as active). */
+  orgActive?: boolean;
   error?: string;
 }
 
