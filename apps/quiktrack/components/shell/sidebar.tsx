@@ -190,7 +190,7 @@ export function Sidebar() {
             open={recentOpen}
             onClose={() => setRecentOpen(false)}
           />
-          <ComingSoonRow icon={Star} label="Starred" description="Star spaces, dashboards, and views to pin them here." />
+          <ComingSoonRow icon={Star} label="Starred" description="Star projects, dashboards, and views to pin them here." />
           <ComingSoonRow icon={AppWindow} label="Apps" description="Browse and install apps that extend QuikTrack." />
           {canSee("plans") && (
             <div ref={plansAnchorRef} className="relative">
@@ -227,7 +227,7 @@ export function Sidebar() {
             ) : (
               <ChevronRight className="h-4 w-4 shrink-0" />
             )}
-            <span className="flex-1 truncate">Spaces</span>
+            <span className="flex-1 truncate">Projects</span>
             <span className="flex items-center">
               <span
                 role="button"
@@ -238,7 +238,7 @@ export function Sidebar() {
                   router.push("/spaces/templates");
                 }}
                 className="p-0.5 rounded hover:bg-gray-200 inline-flex"
-                aria-label="Create space"
+                aria-label="Create project"
               >
                 <Plus className="h-3.5 w-3.5 text-gray-400 hover:text-gray-700" />
               </span>
@@ -281,7 +281,7 @@ export function Sidebar() {
                   }`}
               >
                 <ListIcon className="h-4 w-4 shrink-0" />
-                <span className="flex-1 truncate">More spaces</span>
+                <span className="flex-1 truncate">More projects</span>
                 <ChevronRight className="h-3.5 w-3.5" />
               </button>
             </>

@@ -772,7 +772,7 @@ export function EditIssueModal({
                           </div>
                           {epics.length === 0 && (
                             <div className="px-3 py-2 text-xs text-gray-500">
-                              No epics in this space yet.
+                              No epics in this project yet.
                             </div>
                           )}
                           {epics.slice(0, 5).map((ep) => (
@@ -2209,7 +2209,7 @@ function ParentRowPicker({
           </div>
           <div className="py-1 max-h-64 overflow-y-auto">
             {epics.length === 0 ? (
-              <div className="px-3 py-2 text-xs text-gray-500">No epics in this space.</div>
+              <div className="px-3 py-2 text-xs text-gray-500">No epics in this project.</div>
             ) : filtered.length === 0 ? (
               <div className="px-3 py-2 text-xs text-gray-500">No matches.</div>
             ) : (
@@ -2350,7 +2350,7 @@ function SprintRowPicker({
               onChange={(e) => setScopeOnly(e.target.checked)}
               className="h-3.5 w-3.5 rounded border-gray-300 text-blue-600"
             />
-            Only show sprints in this space
+            Only show sprints in this project
           </label>
           <div className="overflow-y-auto">
             {active.length > 0 && (

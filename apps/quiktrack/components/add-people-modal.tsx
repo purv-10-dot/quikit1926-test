@@ -549,7 +549,7 @@ export function AddPeopleModal({
             onChange={setProjectRoleId}
             placeholder="Use project default"
             options={[
-              { value: "", label: "Use project default", sub: "Whatever this space marks as default" },
+              { value: "", label: "Use project default", sub: "Whatever this project marks as default" },
               ...roles.map((r) => ({
                 value: r.id,
                 label: r.name,

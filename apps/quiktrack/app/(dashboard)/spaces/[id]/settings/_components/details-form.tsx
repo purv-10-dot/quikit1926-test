@@ -123,14 +123,14 @@ export function DetailsForm({ projectId }: { projectId: string }) {
     <div className="px-16 py-8 max-w-[820px] mx-auto">
       <nav className="text-xs text-gray-500 mb-2">
         <Link href="/spaces" className="hover:underline">
-          Spaces
+          Projects
         </Link>
         <span className="mx-1">/</span>
         <Link href={`/spaces/${projectId}/backlog`} className="hover:underline">
           {project?.name ?? "—"}
         </Link>
         <span className="mx-1">/</span>
-        Space settings
+        Project settings
       </nav>
       <div className="flex items-center justify-between mb-6">
         <h1 className="text-2xl font-semibold text-gray-900">Details</h1>
@@ -191,7 +191,7 @@ export function DetailsForm({ projectId }: { projectId: string }) {
 
         <div>
           <label className="flex items-center gap-1 text-xs font-medium text-gray-700 mb-1">
-            Space key
+            Project key
             <Info className="h-3 w-3 text-gray-400" />
             <span className="text-red-500">*</span>
           </label>
@@ -203,17 +203,17 @@ export function DetailsForm({ projectId }: { projectId: string }) {
             className="w-full h-9 px-3 text-sm border border-gray-200 rounded uppercase bg-gray-50 text-gray-500 cursor-not-allowed focus:outline-none"
           />
           <p className="mt-1 text-[11px] text-gray-500">
-            The space key can&apos;t be changed — it&apos;s used in every work-item ID (e.g. {projectKey || "KEY"}-123).
+            The project key can&apos;t be changed — it&apos;s used in every work-item ID (e.g. {projectKey || "KEY"}-123).
           </p>
         </div>
 
         <div>
-          <label className="block text-xs font-medium text-gray-700 mb-1">Space owner</label>
+          <label className="block text-xs font-medium text-gray-700 mb-1">Project owner</label>
           <div className="w-full h-9 px-3 flex items-center text-sm text-gray-700 bg-gray-50 border border-gray-200 rounded">
             {lead ? fullName(lead) : "—"}
           </div>
           <p className="mt-1 text-[11px] text-gray-500">
-            Make sure your space lead has access to work items in the space.
+            Make sure your project lead has access to work items in the project.
           </p>
         </div>
 

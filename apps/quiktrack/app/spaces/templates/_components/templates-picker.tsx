@@ -139,7 +139,7 @@ export function TemplatesPicker() {
           >
             <X className="h-4 w-4" />
           </button>
-          <h1 className="mt-6 text-2xl font-semibold text-gray-900">Space templates</h1>
+          <h1 className="mt-6 text-2xl font-semibold text-gray-900">Project templates</h1>
         </div>
 
         <nav className="px-2 mt-2 space-y-0.5">
@@ -165,7 +165,7 @@ export function TemplatesPicker() {
       {/* ── Main content ────────────────────────────────────────────── */}
       <main className="flex-1 overflow-y-auto">
         <div className="px-12 py-8 max-w-[1400px]">
-          <div className="text-sm text-gray-500">Space templates</div>
+          <div className="text-sm text-gray-500">Project templates</div>
           <h2 className="mt-4 text-2xl font-semibold text-gray-900">
             {activeNav === "made-for-you" ? "Made for you" : activeNav.replace(/-/g, " ").replace(/\b\w/g, (c) => c.toUpperCase())}
           </h2>

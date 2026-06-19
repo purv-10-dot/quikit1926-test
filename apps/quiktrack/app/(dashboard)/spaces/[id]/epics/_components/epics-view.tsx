@@ -128,7 +128,7 @@ export function EpicsView({ projectId }: { projectId: string }) {
         <div className="space-y-1">
           <h1 className="text-2xl font-semibold tracking-tight text-gray-900">Epics</h1>
           <p className="text-sm text-gray-500">
-            Large bodies of work in this space, with progress across their child items.
+            Large bodies of work in this project, with progress across their child items.
           </p>
         </div>
         <div className="relative">

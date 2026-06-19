@@ -163,7 +163,7 @@ export function ProjectHeader({ projectId }: { projectId: string }) {
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2">
             <Link href="/spaces" className="text-xs text-gray-500 hover:underline">
-              Spaces
+              Projects
             </Link>
           </div>
         </div>
