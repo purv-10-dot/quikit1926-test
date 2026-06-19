@@ -1,0 +1,128 @@
+name: CI
+
+on:
+  pull_request:
+    branches: [dev, uat, main]
+  push:
+    branches: [dev, uat, main]
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "npm"
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Generate Prisma client
+        run: npm run db:generate
+
+      - name: Lint
+        run: npx turbo run lint
+
+      - name: Typecheck
+        run: npx turbo run typecheck
+
+      - name: Test
+        run: npx turbo run test
+        env:
+          NODE_ENV: test
+
+      - name: Coverage (quikscale)
+        run: npx vitest run --coverage
+        working-directory: apps/quikscale
+        env:
+          NODE_ENV: test
+
+      - name: Coverage ratchet
+        run: node scripts/coverage-ratchet.mjs apps/quikscale/coverage/coverage-summary.json
+
+      # ── Phase 7 additions ──────────────────────────────────────────
+
+      - name: Security audit
+        run: npm audit --audit-level=high --omit=dev || true
+        # `|| true` because we don't want advisory-only vulns to block PRs.
+        # Fails on HIGH+ severity. Pipe to `true` for now until all advisories
+        # are triaged; change to a hard fail when ready.
+
+      - name: Prisma migration status
+        run: |
+          cd packages/database
+          npx prisma migrate status || echo "⚠ Pending migrations detected"
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL || 'postgresql://placeholder:placeholder@localhost:5432/placeholder' }}
+
+  # ── E2E tests (Phase 7 — separate job, runs on push to main only) ──
+  e2e:
+    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    needs: check
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: test
+          POSTGRES_PASSWORD: test
+          POSTGRES_DB: quikscale_e2e
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "npm"
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Generate Prisma client
+        run: npm run db:generate
+
+      - name: Push schema to E2E database
+        run: cd packages/database && npx prisma db push --force-reset
+        env:
+          DATABASE_URL: postgresql://test:test@localhost:5432/quikscale_e2e
+
+      - name: Seed E2E data
+        run: npm run db:seed:e2e
+        env:
+          DATABASE_URL: postgresql://test:test@localhost:5432/quikscale_e2e
+
+      - name: Install Playwright
+        run: cd apps/quikscale && npx playwright install --with-deps chromium
+
+      - name: Build quikscale
+        run: cd apps/quikscale && npm run build
+        env:
+          DATABASE_URL: postgresql://test:test@localhost:5432/quikscale_e2e
+          NEXTAUTH_SECRET: e2e-secret-key-for-ci
+          NEXTAUTH_URL: http://localhost:3004
+
+      - name: Run E2E tests
+        run: cd apps/quikscale && npx playwright test
+        env:
+          DATABASE_URL: postgresql://test:test@localhost:5432/quikscale_e2e
+          NEXTAUTH_SECRET: e2e-secret-key-for-ci
+          NEXTAUTH_URL: http://localhost:3004
+
+      - name: Upload Playwright report
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-report
+          path: apps/quikscale/playwright-report/
+          retention-days: 7

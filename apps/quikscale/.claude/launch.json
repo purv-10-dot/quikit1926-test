@@ -1,0 +1,11 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "QuikScale Dev Server",
+      "runtimeExecutable": "cmd",
+      "runtimeArgs": ["/c", "cd /d C:\\Users\\user\\OneDrive\\QuikIT\\apps\\quikscale && npx next dev -p 3003"],
+      "port": 3003
+    }
+  ]
+}

@@ -1,0 +1,109 @@
+"use client";
+
+import { useCallback, useEffect, useState } from "react";
+import Link from "next/link";
+import { AddButton, EmptyState, useConfirm } from "@quikit/ui";
+import { Undo2, ArrowLeft, CheckCircle, Trash2, Eye } from "lucide-react";
+import { MultiLineDocForm, type LineColumn } from "@/components/procurement/MultiLineDocForm";
+import type { FieldConfig } from "@/components/masters/MasterListPage";
+
+interface Ret { id: string; returnNumber: string; returnDate: string; status: string;
+  issue: { issueNumber: string } | null; project: { name: string } | null; location: { name: string } | null; }
+interface Opt { id: string; name: string; code?: string }
+
+export default function InternalReturnPage() {
+  const [items, setItems] = useState<Ret[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [formOpen, setFormOpen] = useState(false);
+  const [issues, setIssues] = useState<Opt[]>([]);
+  const [projects, setProjects] = useState<Opt[]>([]);
+  const [locations, setLocations] = useState<Opt[]>([]);
+  const [its, setIts] = useState<Opt[]>([]);
+  const [uoms, setUoms] = useState<Opt[]>([]);
+  const confirm = useConfirm();
+
+  const refresh = useCallback(async () => {
+    setLoading(true);
+    const r = await fetch("/api/store/internal-return"); const j = await r.json();
+    if (j.success) setItems(j.data); setLoading(false);
+  }, []);
+  useEffect(() => {
+    refresh();
+    fetch("/api/store/material-issue?status=posted").then(r => r.json()).then(j => j.success && setIssues(j.data.map((i: { id: string; issueNumber: string }) => ({ id: i.id, name: i.issueNumber }))));
+    fetch("/api/masters/projects").then(r => r.json()).then(j => j.success && setProjects(j.data));
+    fetch("/api/masters/locations").then(r => r.json()).then(j => j.success && setLocations(j.data));
+    fetch("/api/masters/items").then(r => r.json()).then(j => j.success && setIts(j.data));
+    fetch("/api/masters/uom").then(r => r.json()).then(j => j.success && setUoms(j.data));
+  }, [refresh]);
+
+  async function post(r: Ret) {
+    const ok = await confirm({ title: "Post this return?", description: "Stock returns to location.", confirmLabel: "Post", tone: "default" });
+    if (!ok) return;
+    const res = await fetch(`/api/store/internal-return/${r.id}/post`, { method: "POST" });
+    const j = await res.json(); if (!j.success) alert(`Post failed: ${j.error}`); refresh();
+  }
+  async function remove(r: Ret) {
+    const ok = await confirm({ title: "Delete draft?", description: r.returnNumber, confirmLabel: "Delete", tone: "danger" });
+    if (!ok) return;
+    await fetch(`/api/store/internal-return/${r.id}`, { method: "DELETE" }); refresh();
+  }
+
+  return (
+    <div className="p-6 max-w-6xl">
+      <Link href="/store" className="inline-flex items-center gap-1 text-xs text-gray-500 hover:text-gray-800 mb-3"><ArrowLeft className="h-3 w-3" /> Store</Link>
+      <div className="flex items-center justify-between mb-4">
+        <div>
+          <h1 className="text-lg font-semibold text-gray-900">Internal Return</h1>
+          <p className="text-xs text-gray-500">Unused stock returns from an issue. Writes back to the ledger on post.</p>
+        </div>
+        <AddButton onClick={() => setFormOpen(true)}>Add Return</AddButton>
+      </div>
+      {loading ? <div className="text-sm text-gray-500">Loading…</div> : items.length === 0 ? (
+        <EmptyState icon={Undo2} title="No internal returns yet" message="Requires a posted issue to return against." />
+      ) : (
+        <div className="rounded-lg border border-gray-200 bg-white overflow-hidden">
+          <table className="w-full text-sm">
+            <thead className="bg-accent-50 text-xs text-gray-600"><tr>
+              <th className="text-left px-3 py-2">Return #</th><th className="text-left px-3 py-2">Issue #</th>
+              <th className="text-left px-3 py-2">Project</th><th className="text-left px-3 py-2">Date</th>
+              <th className="text-left px-3 py-2">Status</th><th style={{ width: 80 }}></th></tr></thead>
+            <tbody>{items.map(r => (
+              <tr key={r.id} className="border-t border-gray-100 hover:bg-gray-50">
+                <td className="px-3 py-2 font-mono text-xs">{r.returnNumber}</td>
+                <td className="px-3 py-2 font-mono text-xs text-accent-700">{r.issue?.issueNumber ?? "—"}</td>
+                <td className="px-3 py-2 text-gray-700">{r.project?.name ?? "—"}</td>
+                <td className="px-3 py-2 text-xs text-gray-500">{new Date(r.returnDate).toISOString().slice(0, 10)}</td>
+                <td className="px-3 py-2"><span className={`text-[10px] font-semibold uppercase px-1.5 py-0.5 rounded ${r.status === "posted" ? "bg-green-100 text-green-700" : "bg-gray-100 text-gray-600"}`}>{r.status}</span></td>
+                <td className="px-3 py-2 text-right whitespace-nowrap"><Link href={`/store/internal-return/${r.id}`} className="text-gray-400 hover:text-accent-600 p-1 inline-block"><Eye className="h-3.5 w-3.5" /></Link>{r.status === "draft" && <>
+                  <button onClick={() => post(r)} className="text-gray-400 hover:text-green-600 p-1"><CheckCircle className="h-3.5 w-3.5" /></button>
+                  <button onClick={() => remove(r)} className="text-gray-400 hover:text-red-600 p-1"><Trash2 className="h-3.5 w-3.5" /></button>
+                </>}</td>
+              </tr>
+            ))}</tbody>
+          </table>
+        </div>
+      )}
+      <MultiLineDocForm open={formOpen} onClose={() => setFormOpen(false)} title="Internal Return" endpoint="/api/store/internal-return"
+        onSaved={refresh} addLineLabel="Add Item"
+        headerDefaults={{ returnNumber: `IR-${Date.now().toString().slice(-6)}`, returnDate: new Date().toISOString().slice(0, 10) }}
+        lineDefault={{ itemId: "", returnQty: null, uomId: "", unitRate: null, remarks: "" }}
+        headerFields={[
+          { name: "returnNumber", label: "Return #", type: "text", required: true, width: "half", transform: "uppercase" },
+          { name: "returnDate", label: "Return Date", type: "text", required: true, width: "half", placeholder: "YYYY-MM-DD" },
+          { name: "issueId", label: "Source Issue", type: "select", required: true, width: "half", options: issues.map(i => ({ value: i.id, label: i.name })) },
+          { name: "returnedBy", label: "Returned By (user id)", type: "text", required: true, width: "half" },
+          { name: "projectId", label: "Project", type: "select", required: true, width: "half", options: projects.map(p => ({ value: p.id, label: p.name })) },
+          { name: "locationId", label: "Location", type: "select", required: true, width: "half", options: locations.map(l => ({ value: l.id, label: l.name })) },
+          { name: "reason", label: "Reason", type: "textarea" },
+        ] as FieldConfig[]}
+        lineColumns={[
+          { key: "itemId", label: "Item", type: "select", required: true, width: 220, options: its.map(i => ({ value: i.id, label: `${i.code} — ${i.name}` })) },
+          { key: "returnQty", label: "Qty", type: "number", required: true, width: 90, min: 0 },
+          { key: "uomId", label: "UOM", type: "select", required: true, width: 100, options: uoms.map(u => ({ value: u.id, label: u.code ?? u.name })) },
+          { key: "unitRate", label: "Rate", type: "number", required: true, width: 100, min: 0 },
+          { key: "remarks", label: "Remarks", type: "text", width: 140 },
+        ] as LineColumn[]}
+      />
+    </div>
+  );
+}

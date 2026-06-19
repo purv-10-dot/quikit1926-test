@@ -1,0 +1,580 @@
+"use client";
+
+/**
+ * OPSP category + projected-value primitives — extracted from `page.tsx`
+ * in R6.
+ *
+ * These two components share a module-level `catMetaCache` that maps
+ * category name → `{ dataType, symbol, currency }`. `CategorySelect`
+ * populates it when the dropdown loads; `ProjectedInput` reads it to
+ * decide whether to show a currency prefix or a percentage suffix.
+ *
+ * Exports:
+ *   - `CategorySelect`           — category dropdown with inline "+ Add"
+ *   - `ProjectedInput`           — value input with currency/percentage affordances
+ *   - `populateCatCache`         — imperative cache-filler used after fetches
+ *   - `parseProjectedValue`      — helper exported for tests / siblings
+ *   - `combineProjectedValue`    — inverse of `parseProjectedValue`
+ */
+
+import { useState, useEffect, useRef, useCallback } from "react";
+import { ChevronDown, Info } from "lucide-react";
+import { cn } from "@/lib/utils";
+import { CURRENCIES, getScales } from "@/lib/utils/currency";
+import { WithTooltip } from "./pickers";
+import {
+  CATEGORY_TYPE_LABELS,
+  CATEGORY_TYPE_INFO,
+} from "@/lib/utils/breakdownCalc";
+
+const DATA_TYPES = ["Number", "Percentage", "Currency"] as const;
+
+interface CatMeta {
+  dataType: string;
+  symbol: string | null;
+  currency: string | null;
+  /// "Cumulative" | "CumulativeTillEnd" | "Standalone" — distribution shape.
+  categoryType: string;
+  /// "Manual" | "Automatic" — fill mode.
+  breakdownType: string;
+}
+export const catMetaCache = new Map<string, CatMeta>();
+
+export function populateCatCache(
+  data: {
+    name: string;
+    dataType: string;
+    currency: string | null;
+    categoryType?: string;
+    breakdownType?: string;
+  }[],
+) {
+  data.forEach((c) => {
+    const symbol =
+      c.dataType === "Currency"
+        ? (CURRENCIES.find((x) => x.code === c.currency)?.symbol ?? null)
+        : null;
+    catMetaCache.set(c.name, {
+      dataType: c.dataType,
+      symbol,
+      currency: c.currency,
+      categoryType: c.categoryType ?? "Cumulative",
+      breakdownType: c.breakdownType ?? "Automatic",
+    });
+  });
+}
+
+/* ── Scale abbreviation map for currency Projected values ──
+   Maps the full-label scales from lib/utils/currency.ts to short abbreviations
+   shown in the dropdown. Trillion and Hundred Crore are intentionally omitted. */
+const SCALE_ABBR: Record<string, string> = {
+  "": "-",
+  Thousand: "K",
+  Million: "M",
+  Billion: "B",
+  Lakh: "L",
+  Crore: "Cr",
+};
+
+/** List of scale abbreviations available for a given currency. "-" comes first (no scale). */
+export function getScaleAbbrs(currency: string): string[] {
+  const scales = getScales(currency);
+  return scales
+    .map((s) => SCALE_ABBR[s.label])
+    .filter((abbr): abbr is string => abbr !== undefined);
+}
+
+/** Parse a stored string like "250 K" or "1000.00 L" into { num, scale }. */
+export function parseProjectedValue(
+  raw: string,
+  currency: string,
+): { num: string; scale: string } {
+  const trimmed = (raw ?? "").trim();
+  if (!trimmed) return { num: "", scale: "" };
+  const abbrs = getScaleAbbrs(currency).filter((a) => a && a !== "-");
+  for (const abbr of abbrs) {
+    const re = new RegExp(
+      `^(.+?)\\s+${abbr.replace(/[.*+?^${}()|[\\]\\\\]/g, "\\\\$&")}$`,
+    );
+    const m = trimmed.match(re);
+    if (m) return { num: m[1].trim(), scale: abbr };
+  }
+  return { num: trimmed, scale: "" };
+}
+
+/** Combine a number string and scale abbreviation back into storage format. */
+export function combineProjectedValue(num: string, scale: string): string {
+  const n = (num ?? "").trim();
+  if (!n) return "";
+  return scale && scale !== "-" ? `${n} ${scale}` : n;
+}
+
+interface CatFull {
+  name: string;
+  dataType: string;
+  currency: string | null;
+}
+
+/** Display a category name with currency symbol suffix for Currency types. */
+export function displayCategory(name: string): string {
+  if (!name) return name;
+  const meta = catMetaCache.get(name);
+  if (meta?.dataType === "Currency" && meta.symbol) return `${name} (${meta.symbol})`;
+  return name;
+}
+
+export function CategorySelect({
+  value,
+  onChange,
+  excludeNames,
+}: {
+  value: string;
+  onChange: (v: string) => void;
+  /** Category names to hide from the dropdown (e.g. picked in sibling rows
+   *  of the same section). The current row's own `value` is always shown,
+   *  so the user can still see and Clear what they picked. */
+  excludeNames?: string[];
+}) {
+  const [open, setOpen] = useState(false);
+  const [cats, setCats] = useState<CatFull[]>([]);
+  const [adding, setAdding] = useState(false);
+  const [newName, setNewName] = useState("");
+  const [newType, setNewType] = useState("Number");
+  const [newCurrency, setNewCurrency] = useState("NONE");
+  // Category Type drives the OPSP modal distribution shape. The legacy
+  // Breakdown Type axis is always "Automatic" — the Manual radio was removed
+  // from the UI per spec, so we no longer track that state.
+  const [newCategoryType, setNewCategoryType] =
+    useState<"Cumulative" | "CumulativeTillEnd" | "Standalone">("Cumulative");
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState("");
+  const inputRef = useRef<HTMLInputElement>(null);
+  const triggerRef = useRef<HTMLButtonElement>(null);
+  const [dropPos, setDropPos] = useState<{ top?: number; bottom?: number; left: number; width: number }>({ left: 0, width: 224 });
+  const [flipUp, setFlipUp] = useState(false);
+  // When the add-form panel can't fit above or below the trigger, slide it to
+  // the right/left so the whole form stays visible.
+  const [sidePanel, setSidePanel] = useState<null | "right" | "left">(null);
+
+  const computePosition = useCallback((isAdding: boolean) => {
+    if (!triggerRef.current) return;
+    const rect = triggerRef.current.getBoundingClientRect();
+    const requiredHeight = isAdding ? 420 : 240;
+    const spaceBelow = window.innerHeight - rect.bottom;
+    const spaceAbove = rect.top;
+
+    // Side-panel placement: only when adding AND neither vertical option fits.
+    if (isAdding && spaceBelow < requiredHeight && spaceAbove < requiredHeight) {
+      const spaceRight = window.innerWidth - rect.right;
+      const side: "right" | "left" = spaceRight >= 232 ? "right" : "left";
+      setSidePanel(side);
+      setFlipUp(false);
+      const clampedTop = Math.max(
+        8,
+        Math.min(rect.top, window.innerHeight - requiredHeight - 8),
+      );
+      setDropPos({
+        top: clampedTop,
+        left: side === "right" ? rect.right + 4 : Math.max(8, rect.left - 224 - 4),
+        width: 224,
+      });
+      return;
+    }
+
+    setSidePanel(null);
+    const flip = spaceBelow < requiredHeight;
+    setFlipUp(flip);
+    if (flip) {
+      setDropPos({ bottom: window.innerHeight - rect.top + 4, left: rect.left, width: 224 });
+    } else {
+      setDropPos({ top: rect.bottom + 4, left: rect.left, width: 224 });
+    }
+  }, []);
+
+  // Recompute placement when the panel switches between browse and add modes
+  // so a near-bottom dropdown that opens the add form re-flows to the side.
+  useEffect(() => {
+    if (open) computePosition(adding);
+  }, [adding, open, computePosition]);
+
+  function fetchCats() {
+    fetch("/api/categories")
+      .then((r) => r.json())
+      .then((j) => {
+        if (j.success) {
+          const full = j.data as CatFull[];
+          setCats(full);
+          populateCatCache(full);
+        }
+      })
+      .catch(() => {});
+  }
+
+  useEffect(() => {
+    if (open) fetchCats();
+  }, [open]);
+
+  // Hide names picked in sibling rows (passed via `excludeNames`) but always
+  // keep the current row's own `value` visible so the user can re-select or
+  // Clear it. Falsy entries in `excludeNames` (empty strings) are ignored.
+  const excludedSet = new Set((excludeNames ?? []).filter(Boolean));
+  const visibleCats = cats.filter((c) => c.name === value || !excludedSet.has(c.name));
+  const catNames = visibleCats.map((c) => c.name);
+  const allCats: CatFull[] =
+    catNames.includes(value) || !value
+      ? visibleCats
+      : [...visibleCats, { name: value, dataType: "Number", currency: null }];
+
+  function resetForm() {
+    setAdding(false);
+    setNewName("");
+    setNewType("Number");
+    setNewCurrency("NONE");
+    setNewCategoryType("Cumulative");
+    setError("");
+  }
+
+  async function commitNew() {
+    const trimmed = newName.trim();
+    if (!trimmed) {
+      setError("Name is required");
+      return;
+    }
+    // Client-side duplicate check — case-insensitive, scoped to (name, dataType, currency).
+    // Server enforces the same rule via DB unique index; this is a UX pre-check.
+    const effectiveCurrency = newType === "Currency" ? newCurrency : null;
+    const nameLower = trimmed.toLowerCase();
+    const dupe = cats.find(
+      (c) =>
+        c.name.trim().toLowerCase() === nameLower &&
+        c.dataType === newType &&
+        (c.currency ?? null) === (effectiveCurrency ?? null),
+    );
+    if (dupe) {
+      setError("A category with this name and unit already exists.");
+      return;
+    }
+    setSaving(true);
+    setError("");
+    try {
+      const res = await fetch("/api/categories", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          name: trimmed,
+          dataType: newType,
+          currency: effectiveCurrency,
+          categoryType: newCategoryType,
+          // Breakdown Type is always Automatic — Manual was removed from the
+          // UI per spec.
+          breakdownType: "Automatic",
+        }),
+      });
+      const json = await res.json();
+      if (json.success) {
+        fetchCats();
+        onChange(trimmed);
+        setOpen(false);
+        resetForm();
+      } else setError(json.error || "Failed to save");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <div className="relative w-full min-w-0">
+      <WithTooltip content={open ? "" : displayCategory(value) || ""} className="relative block w-full">
+        <button
+          ref={triggerRef}
+          onClick={() => { if (!open) computePosition(false); setOpen(!open); }}
+          className="w-full flex items-center justify-between border border-gray-200 rounded px-2 py-1.5 bg-white hover:bg-gray-50 gap-1"
+        >
+          <span
+            className={cn(
+              "flex-1 min-w-0 text-sm whitespace-nowrap truncate text-left",
+              value ? "text-gray-700" : "text-gray-400",
+            )}
+          >
+            {value ? displayCategory(value) : "Select Category"}
+          </span>
+          <ChevronDown className="h-3.5 w-3.5 text-gray-400 flex-shrink-0" />
+        </button>
+      </WithTooltip>
+      {open && (
+        <>
+          <div
+            className="fixed inset-0 z-[209]"
+            onClick={() => {
+              setOpen(false);
+              resetForm();
+            }}
+          />
+          <div
+            className="fixed z-[210] bg-white border border-gray-200 rounded-lg shadow-lg py-1"
+            style={{
+              width: dropPos.width,
+              left: dropPos.left,
+              ...(sidePanel
+                ? { top: dropPos.top, maxHeight: "calc(100vh - 16px)", overflowY: "auto" }
+                : flipUp
+                  ? { bottom: dropPos.bottom }
+                  : { top: dropPos.top }),
+            }}
+          >
+            <div className="max-h-40 overflow-y-auto">
+              {value && (
+                <button
+                  onClick={() => {
+                    onChange("");
+                    setOpen(false);
+                  }}
+                  className="w-full text-left px-3 py-1.5 text-sm text-gray-400 hover:bg-gray-50 border-b border-gray-100"
+                >
+                  Clear
+                </button>
+              )}
+              {allCats.length === 0 && !adding && (
+                <p className="px-3 py-2 text-xs text-gray-400">No categories yet.</p>
+              )}
+              {allCats.map((c) => (
+                <button
+                  key={c.name}
+                  onClick={() => {
+                    onChange(c.name);
+                    setOpen(false);
+                  }}
+                  className={cn(
+                    "w-full text-left px-3 py-1.5 text-sm hover:bg-gray-50 whitespace-normal break-words leading-snug",
+                    value === c.name && "text-accent-600 font-medium",
+                  )}
+                >
+                  {displayCategory(c.name)}
+                </button>
+              ))}
+            </div>
+
+            <div className="border-t border-gray-100 mt-1 pt-1">
+              {adding ? (
+                <div className="px-3 py-2 space-y-2">
+                  <input
+                    ref={inputRef}
+                    autoFocus
+                    value={newName}
+                    onChange={(e) => {
+                      setNewName(e.target.value);
+                      setError("");
+                    }}
+                    onKeyDown={(e) => {
+                      if (e.key === "Escape") resetForm();
+                    }}
+                    placeholder="Category name *"
+                    disabled={saving}
+                    className="w-full text-xs border border-gray-300 rounded px-2 py-1.5 focus:outline-none focus:ring-1 focus:ring-accent-400 disabled:opacity-50"
+                  />
+                  <select
+                    value={newType}
+                    onChange={(e) => {
+                      setNewType(e.target.value);
+                      setNewCurrency("NONE");
+                    }}
+                    disabled={saving}
+                    className="w-full text-xs border border-gray-300 rounded px-2 py-1.5 bg-white focus:outline-none focus:ring-1 focus:ring-accent-400 disabled:opacity-50"
+                  >
+                    {DATA_TYPES.map((t) => (
+                      <option key={t} value={t}>
+                        {t}
+                      </option>
+                    ))}
+                  </select>
+                  {newType === "Currency" && (
+                    <select
+                      value={newCurrency}
+                      onChange={(e) => setNewCurrency(e.target.value)}
+                      disabled={saving}
+                      className="w-full text-xs border border-gray-300 rounded px-2 py-1.5 bg-white focus:outline-none focus:ring-1 focus:ring-accent-400 disabled:opacity-50"
+                    >
+                      <option value="NONE">None</option>
+                      {CURRENCIES.map((c) => (
+                        <option key={c.code} value={c.code}>
+                          {c.symbol} {c.code} — {c.name}
+                        </option>
+                      ))}
+                    </select>
+                  )}
+                  {/* Category Type drives the OPSP modal distribution shape. */}
+                  <div className="space-y-1">
+                    <div className="flex items-center gap-1 px-0.5">
+                      <p className="text-[10px] font-semibold text-gray-500 uppercase tracking-wide">
+                        Category Type
+                      </p>
+                      <span
+                        className="inline-flex items-center cursor-help text-gray-400 hover:text-gray-600"
+                        title={
+                          `Cumulative — ${CATEGORY_TYPE_INFO.Cumulative}\n\n` +
+                          `Cumulative Till Exit — ${CATEGORY_TYPE_INFO.CumulativeTillEnd}\n\n` +
+                          `Standalone — ${CATEGORY_TYPE_INFO.Standalone}`
+                        }
+                      >
+                        <Info className="h-3 w-3" />
+                      </span>
+                    </div>
+                    <div className="flex items-center gap-2 flex-wrap px-0.5">
+                      {(["Cumulative", "CumulativeTillEnd", "Standalone"] as const).map((v) => (
+                        <label key={v} className="flex items-center gap-1 text-xs text-gray-700 cursor-pointer">
+                          <input
+                            type="radio"
+                            name="newCatCategoryType"
+                            value={v}
+                            checked={newCategoryType === v}
+                            onChange={() => setNewCategoryType(v)}
+                            disabled={saving}
+                            className="accent-accent-600"
+                          />
+                          {CATEGORY_TYPE_LABELS[v]}
+                        </label>
+                      ))}
+                    </div>
+                    <p className="text-[10px] italic text-gray-500 px-0.5 leading-snug">
+                      {CATEGORY_TYPE_INFO[newCategoryType]}
+                    </p>
+                  </div>
+                  {error && <p className="text-red-500 text-xs">{error}</p>}
+                  <div className="flex gap-2">
+                    <button
+                      onClick={resetForm}
+                      disabled={saving}
+                      className="flex-1 text-xs border border-gray-200 rounded py-1 text-gray-500 hover:bg-gray-50 disabled:opacity-50"
+                    >
+                      Cancel
+                    </button>
+                    <button
+                      onClick={commitNew}
+                      disabled={saving || !newName.trim()}
+                      className="flex-1 text-xs bg-gray-900 text-white rounded py-1 font-medium hover:bg-gray-800 disabled:opacity-50"
+                    >
+                      {saving ? "Saving…" : "Add"}
+                    </button>
+                  </div>
+                </div>
+              ) : (
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setAdding(true);
+                    setTimeout(() => inputRef.current?.focus(), 0);
+                  }}
+                  className="w-full text-left px-3 py-1.5 text-sm text-accent-600 hover:bg-accent-50 font-medium flex items-center gap-1.5"
+                >
+                  <span className="text-base leading-none">+</span> Add new category
+                </button>
+              )}
+            </div>
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
+
+/**
+ * Strip non-numeric characters, keeping only digits and a single decimal
+ * point. The OPSP Projected/period cells are `type="text"` (required so
+ * the currency-scale dropdown can sit alongside the input), which means
+ * the browser won't block letters on its own — this is the runtime guard
+ * so values like "6.6fgdgf7" can't be entered.
+ *
+ * Exported so the modal cell inputs can use the same rule.
+ */
+export function sanitizeNumericInput(raw: string): string {
+  let s = (raw ?? "").replace(/[^0-9.]/g, "");
+  const firstDot = s.indexOf(".");
+  if (firstDot >= 0) {
+    // Collapse any subsequent dots into nothing (only one decimal allowed).
+    s = s.slice(0, firstDot + 1) + s.slice(firstDot + 1).replace(/\./g, "");
+  }
+  return s;
+}
+
+export function ProjectedInput({
+  value,
+  onChange,
+  categoryName,
+  placeholder,
+  className,
+}: {
+  value: string;
+  onChange: (v: string) => void;
+  categoryName: string;
+  placeholder?: string;
+  className?: string;
+}) {
+  const meta = catMetaCache.get(categoryName);
+  const isCurrency = meta?.dataType === "Currency";
+  const isPct = meta?.dataType === "Percentage";
+  const symbol = meta?.symbol ?? null;
+  const currency = meta?.currency ?? "USD";
+
+  const { num: numPart, scale: scalePart } = isCurrency
+    ? parseProjectedValue(value, currency)
+    : { num: value, scale: "" };
+  const availScaleAbbrs = isCurrency ? getScaleAbbrs(currency) : [];
+
+  function handleNumChange(newNum: string) {
+    // Numeric-only — strips letters/symbols before storing.
+    const clean = sanitizeNumericInput(newNum);
+    if (isCurrency) onChange(combineProjectedValue(clean, scalePart));
+    else onChange(clean);
+  }
+  function handleScaleChange(newScale: string) {
+    onChange(combineProjectedValue(numPart, newScale));
+  }
+
+  return (
+    <div
+      className={cn(
+        "flex items-center border border-gray-200 rounded bg-white overflow-hidden",
+        className,
+      )}
+    >
+      {isCurrency && symbol && (
+        <span className="w-[15px] flex-shrink-0 text-gray-500 text-xs text-center select-none">
+          {symbol}
+        </span>
+      )}
+
+      <input
+        type="text"
+        inputMode="decimal"
+        value={isCurrency ? numPart : value}
+        onChange={(e) => handleNumChange(e.target.value)}
+        placeholder={placeholder ?? (isPct ? "0" : isCurrency ? "0" : "Num")}
+        className={cn(
+          "flex-1 min-w-0 w-0 bg-transparent focus:outline-none placeholder-gray-400 text-left text-sm text-gray-700",
+          isCurrency ? "px-1 py-1.5" : isPct ? "pl-2 pr-1 py-1.5" : "px-2 py-1.5",
+        )}
+      />
+
+      {isCurrency && (
+        <select
+          value={scalePart || "-"}
+          onChange={(e) => handleScaleChange(e.target.value)}
+          className="w-[40px] flex-shrink-0 px-0.5 py-1.5 text-xs text-gray-600 bg-gray-50 border-l border-gray-200 focus:outline-none cursor-pointer"
+          title="Scale"
+        >
+          {availScaleAbbrs.map((abbr) => (
+            <option key={abbr} value={abbr}>
+              {abbr}
+            </option>
+          ))}
+        </select>
+      )}
+
+      {isPct && (
+        <span className="pr-2 pl-0.5 text-gray-500 text-sm flex-shrink-0 select-none">
+          %
+        </span>
+      )}
+    </div>
+  );
+}

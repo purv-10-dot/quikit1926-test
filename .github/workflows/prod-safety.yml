@@ -1,0 +1,34 @@
+name: Prod safety gate
+
+# Enforces that runtime source code contains no localhost / 127.0.0.1
+# references outside the allowlist. See scripts/check-prod-urls.mjs
+# and docs/engineering/prod-safety-rules.md.
+#
+# Runs on:
+#   - every PR (so the author sees failures before merge)
+#   - pushes to main / uat / dev (belt-and-suspenders)
+
+on:
+  pull_request:
+    branches: [main, uat, dev]
+  push:
+    branches: [main, uat, dev]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: prod-safety-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  check-prod-urls:
+    name: No localhost in prod code paths
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+      - name: Run prod-safety gate
+        run: node scripts/check-prod-urls.mjs

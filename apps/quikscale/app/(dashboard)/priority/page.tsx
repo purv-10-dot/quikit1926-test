@@ -1,0 +1,411 @@
+"use client";
+
+import { useState, useRef, useEffect, useCallback, useMemo } from "react";
+import { usePriorities, useDeletePriority, useBulkRestorePriority } from "@/lib/hooks/usePriority";
+import { useUsers } from "@/lib/hooks/useUsers";
+import { TableSkeleton } from "@/components/ui/Skeleton";
+import {
+  getFiscalYear, getFiscalQuarter, fiscalYearLabel,
+} from "@/lib/utils/fiscal";
+import { useCurrentWeek, useWeekDateRange } from "@/lib/hooks/useCurrentWeek";
+import { PriorityTable } from "./components/PriorityTable";
+import { PriorityModal } from "./components/PriorityModal";
+import { FilterPicker, userToFilterOption, EmptyState, FiscalPeriodPicker, type FiscalQuarter, type ExportSelection } from "@quikit/ui";
+import { useFiscalYears } from "@/lib/hooks/useFiscalYears";
+import { useFilterContext } from "@/lib/context/FilterContext";
+import { useTablePrefs } from "@/lib/hooks/useTablePreferences";
+import { useTableSort, useDebouncedTableSearch } from "@/lib/store";
+import { AddButton } from "@quikit/ui";
+import { useResourcePermissions } from "@/lib/hooks/useResourcePermissions";
+import { Flag } from "lucide-react";
+import { ModuleMoreActions, TrashBanner } from "@/components/table/ModuleMoreActions";
+import { runExport } from "@/lib/export/xlsx";
+import { notify } from "@/lib/utils/notify";
+
+const FISCAL_YEAR = getFiscalYear();
+const FISCAL_QUARTER = getFiscalQuarter();
+const CURRENT_YEAR = new Date().getFullYear();
+const FISCAL_YEARS = Array.from({ length: 5 }, (_, i) => CURRENT_YEAR - 1 + i);
+
+export default function PriorityPage() {
+  const { canCreate, canUpdate, canDelete } = useResourcePermissions("Priority");
+  // Year + quarter via shared FilterContext (persisted across nav + refresh).
+  // Team lives locally (per-page scope). Owner is seeded from context on mount
+  // AND written back on change/clear, so it stays in sync across Dashboard /
+  // KPI / WWW. (Status stays local to this page.)
+  const ctx = useFilterContext();
+  const { year, setYear, quarter, setQuarter } = ctx;
+  const [filterTeam, setFilterTeam] = useState<string>(ctx.filterTeam);
+  const [filterOwner, setFilterOwner] = useState<string>(ctx.filterOwner);
+  const [showAddModal, setShowAddModal] = useState(false);
+
+  // Search + filter — search is debounced and persisted via the shared
+  // tables slice (lib/store). `searchInput` is the controlled input value;
+  // `search` is the debounced value the filter logic below reads from.
+  const [searchInput, setSearchInput, search] = useDebouncedTableSearch("priority");
+  const [filterStatus, setFilterStatus] = useState("");
+  const [showFilter, setShowFilter] = useState(false);
+  const filterRef = useRef<HTMLDivElement>(null);
+
+  // Pagination
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(10);
+
+  // Teams list
+  const [teams, setTeams] = useState<Array<{ id: string; name: string }>>([]);
+  useEffect(() => {
+    fetch("/api/org/teams").then(r => r.json()).then(d => {
+      if (d.success) setTeams(d.data.map((t: { id: string; name: string }) => ({ id: t.id, name: t.name })));
+    });
+  }, []);
+
+  // Year/quarter picker — DB-scoped via shared hook
+  const { years: fyYears, configured: fyConfigured } = useFiscalYears();
+  const availableYears = fyYears.length ? fyYears : [CURRENT_YEAR];
+
+  // Selection for bulk delete
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const handleSelectionChange = useCallback((ids: Set<string>) => setSelectedIds(new Set(ids)), []);
+
+  const { data: users = [] } = useUsers(filterTeam || undefined);
+  const teamUserIds = useMemo(() => new Set(users.map(u => u.id)), [users]);
+  // Hidden cols come from the DB-backed user pref. Sort now lives in the
+  // shared Redux tables slice (lib/store) — same pattern as KPI + WWW. The
+  // priorityPrefs hook is kept for hiddenCols only.
+  const priorityPrefs = useTablePrefs("priority");
+  const { hiddenCols: priorityHidden } = priorityPrefs;
+  const { sortBy: prioritySortBy, sortOrder: prioritySortOrder } = useTableSort("priority");
+  const prioritySort = prioritySortBy ? `${prioritySortBy}:${prioritySortOrder}` : null;
+
+  // View Trash toggle
+  const [viewTrash, setViewTrash] = useState(false);
+
+  const { data: priorities = [], isLoading, error, refetch } = usePriorities(year, quarter, prioritySort, viewTrash);
+  const deletePriority = useDeletePriority();
+  const bulkRestorePriority = useBulkRestorePriority();
+
+  // Toggleable columns surfaced in the Manage Columns modal. Mirrors the
+  // togglable subset of PriorityTable's COL_ORDER_FULL (excludes the
+  // always-visible row controls `_cb`/`_log`/`_id`). Without listing every
+  // togglable column here, "Hide all" couldn't reach them.
+  const PRIORITY_COL_LABELS: Record<string, string> = {
+    team: "Team",
+    priorityName: "Priority Name",
+    owner: "Owner",
+    startWeek: "Start Week",
+    endWeek: "End Week",
+    lastNote: "Last Note",
+    // Audit columns — populated by GET /api/priority via decorateAudit.
+    createdBy: "Created By",
+    updatedBy: "Updated By",
+    createdAt: "Created Date",
+    updatedAt: "Updated Date",
+  };
+  const priorityColumns = Object.entries(PRIORITY_COL_LABELS).map(([key, label]) => ({ key, label }));
+  const visiblePriorityCols = priorityColumns.filter((c) => !priorityHidden.includes(c.key)).map((c) => c.key);
+
+  // Close dropdowns on outside click
+  useEffect(() => {
+    function handler(e: MouseEvent) {
+      if (filterRef.current && !filterRef.current.contains(e.target as Node)) setShowFilter(false);
+    }
+    document.addEventListener("mousedown", handler);
+    return () => document.removeEventListener("mousedown", handler);
+  }, []);
+
+  async function handleBulkDelete() {
+    if (!selectedIds.size) return;
+    const count = selectedIds.size;
+    try {
+      await Promise.all([...selectedIds].map(id => deletePriority.mutateAsync(id)));
+      notify.success(`Deleted ${count} priorit${count === 1 ? "y" : "ies"}`);
+      setSelectedIds(new Set());
+      refetch();
+    } catch (err) {
+      notify.error(err, { context: "Priority", fallback: "Couldn't delete the selected priorities. Please try again." });
+    }
+  }
+
+  async function handleBulkRestore() {
+    if (!selectedIds.size) return;
+    const count = selectedIds.size;
+    try {
+      await bulkRestorePriority.mutateAsync([...selectedIds]);
+      notify.success(`Restored ${count} priorit${count === 1 ? "y" : "ies"}`);
+      setSelectedIds(new Set());
+      refetch();
+    } catch (err) {
+      notify.error(err, { context: "Priority", fallback: "Couldn't restore the selected priorities. Please try again." });
+    }
+  }
+
+  // Filter priorities client-side
+  const filtered = priorities.filter(p => {
+    if (search && !p.name.toLowerCase().includes(search.toLowerCase())) return false;
+    if (filterOwner) { if (p.owner !== filterOwner) return false; }
+    else if (filterTeam) { if (!teamUserIds.has(p.owner)) return false; }
+    if (filterStatus && p.overallStatus !== filterStatus) return false;
+    return true;
+  });
+
+  // Reset to page 1 whenever filter results would push current page out of range
+  useEffect(() => { setPage(1); }, [search, filterOwner, filterTeam, filterStatus, year, quarter, viewTrash, pageSize]);
+
+  const pagedPriorities = filtered.slice((page - 1) * pageSize, page * pageSize);
+
+  // DB-driven current week + date range (respects QuarterSetting.startDate).
+  const fiscalWeek = useCurrentWeek(year, quarter);
+  const fiscalWeekRange = useWeekDateRange(year, quarter, fiscalWeek);
+  const activeFilterCount = (filterTeam ? 1 : 0) + (filterStatus ? 1 : 0) + (filterOwner ? 1 : 0);
+
+  const handlePriorityExport = useCallback(async (sel: ExportSelection) => {
+    const columns = priorityColumns
+      .filter((c) => sel.columnKeys.includes(c.key))
+      .map((c) => ({
+        key: c.key,
+        label: c.label,
+        value: (p: any) => {
+          switch (c.key) {
+            case "priorityName": return p.name ?? "";
+            case "team": return p.team?.name ?? "";
+            case "owner": return p.owner_user ? `${p.owner_user.firstName} ${p.owner_user.lastName}` : "";
+            default: return "";
+          }
+        },
+      }));
+    await runExport<any>({
+      selection: sel,
+      columns,
+      pageRows: filtered,
+      fetchFiltered: async () => priorities as any[],
+      fetchAll: async () => priorities as any[],
+      filename: `Priorities-FY${year}-${quarter}${viewTrash ? "-Trash" : ""}`,
+      sheetName: "Priorities",
+    });
+  }, [priorityColumns, filtered, priorities, year, quarter, viewTrash]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  return (
+    <div className="flex flex-col h-full">
+      {/* Page Header */}
+      <div className="flex items-center justify-between px-6 py-3 border-b border-gray-200 bg-white flex-shrink-0">
+        <div className="flex items-center gap-3">
+          <h1 className="text-base font-semibold text-gray-800 whitespace-nowrap">Priority</h1>
+          <span className="text-xs bg-gray-100 text-gray-600 px-2 py-0.5 rounded-full font-medium">
+            {filtered.length} {filtered.length === 1 ? "item" : "items"}
+          </span>
+          {fiscalWeek !== null && (
+            <span className="text-xs bg-accent-50 text-accent-600 border border-accent-100 px-2 py-0.5 rounded-full font-medium whitespace-nowrap">
+              {quarter} · Week {fiscalWeek}{fiscalWeekRange ? ` · ${fiscalWeekRange}` : ""}
+            </span>
+          )}
+        </div>
+
+        <div className="flex items-center gap-2">
+          {/* Bulk delete — active list only */}
+          {canDelete && selectedIds.size > 0 && !viewTrash && (
+            <button
+              onClick={handleBulkDelete}
+              disabled={deletePriority.isPending}
+              className="flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-medium bg-red-50 border border-red-200 text-red-600 rounded-md hover:bg-red-100 disabled:opacity-50 transition-colors"
+            >
+              {deletePriority.isPending ? (
+                <svg className="h-3.5 w-3.5 animate-spin" fill="none" viewBox="0 0 24 24">
+                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+                </svg>
+              ) : (
+                <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                </svg>
+              )}
+              Delete {selectedIds.size} selected
+            </button>
+          )}
+
+          {/* Bulk restore — trash view only */}
+          {canDelete && selectedIds.size > 0 && viewTrash && (
+            <button
+              onClick={handleBulkRestore}
+              disabled={bulkRestorePriority.isPending}
+              className="flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-medium bg-green-50 border border-green-200 text-green-700 rounded-md hover:bg-green-100 disabled:opacity-50 transition-colors"
+            >
+              {bulkRestorePriority.isPending ? (
+                <svg className="h-3.5 w-3.5 animate-spin" fill="none" viewBox="0 0 24 24">
+                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+                </svg>
+              ) : (
+                <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 10h10a8 8 0 018 8v2M3 10l6-6m-6 6l6 6" />
+                </svg>
+              )}
+              Restore {selectedIds.size} selected
+            </button>
+          )}
+
+          {viewTrash && (
+            <button
+              type="button"
+              onClick={() => setViewTrash(false)}
+              className="flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-medium bg-amber-50 border border-amber-200 text-amber-900 rounded-md hover:bg-amber-100 transition-colors"
+              title="Exit trash view"
+            >
+              <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+              </svg>
+              Viewing deleted ({filtered.length})
+              <svg className="h-3 w-3 ml-0.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+              </svg>
+            </button>
+          )}
+
+          {/* Search */}
+          <div className="relative">
+            <svg className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+            </svg>
+            <input
+              type="text"
+              placeholder="Search..."
+              value={searchInput}
+              onChange={e => setSearchInput(e.target.value)}
+              className="pl-8 pr-3 py-1.5 text-xs border border-gray-200 rounded-md focus:outline-none focus:ring-1 focus:ring-accent-400 w-44"
+            />
+          </div>
+
+          {/* Filter */}
+          <div className="relative" ref={filterRef}>
+            <button
+              onClick={() => setShowFilter(o => !o)}
+              className={`flex items-center gap-1 px-2.5 py-1.5 text-xs border rounded-md hover:bg-gray-50 transition-colors ${showFilter || activeFilterCount > 0 ? "border-accent-300 bg-accent-50 text-accent-600" : "border-gray-200 text-gray-600"}`}
+            >
+              <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 4a1 1 0 011-1h16a1 1 0 011 1v2a1 1 0 01-.293.707L13 13.414V19a1 1 0 01-.553.894l-4 2A1 1 0 017 21v-7.586L3.293 6.707A1 1 0 013 6V4z" />
+              </svg>
+              {activeFilterCount > 0 ? `${activeFilterCount} filter${activeFilterCount > 1 ? "s" : ""}` : "Filter"}
+            </button>
+
+            {showFilter && (
+              <div className="absolute top-full right-0 mt-1.5 w-64 bg-white border border-gray-200 rounded-xl shadow-xl z-50 p-4 space-y-4">
+                <div>
+                  <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider mb-2">Team</p>
+                  <FilterPicker
+                    value={filterTeam}
+                    onChange={setFilterTeam}
+                    options={teams.map(t => ({ value: t.id, label: t.name }))}
+                    allLabel="All teams"
+                  />
+                </div>
+                <div>
+                  <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider mb-2">Owner</p>
+                  <FilterPicker
+                    value={filterOwner}
+                    onChange={(v) => { setFilterOwner(v); ctx.setFilterOwner(v); }}
+                    options={users.map(userToFilterOption)}
+                    allLabel="All owners"
+                  />
+                </div>
+                <div>
+                  <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider mb-2">Status</p>
+                  <select
+                    value={filterStatus}
+                    onChange={e => setFilterStatus(e.target.value)}
+                    className="w-full px-3 py-1.5 text-xs border border-gray-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-accent-400 bg-white"
+                  >
+                    <option value="">All statuses</option>
+                    <option value="on-track">On Track</option>
+                    <option value="behind-schedule">Behind Schedule</option>
+                    <option value="not-yet-started">Not Yet Started</option>
+                    <option value="completed">Completed</option>
+                    <option value="not-applicable">Not Applicable</option>
+                  </select>
+                </div>
+                {(filterTeam || filterStatus || filterOwner) && (
+                  <button
+                    onClick={() => { setFilterTeam(""); setFilterStatus(""); setFilterOwner(""); ctx.setFilterOwner(""); }}
+                    className="w-full text-xs text-gray-500 hover:text-gray-800 py-1 border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors"
+                  >
+                    Clear filters
+                  </button>
+                )}
+              </div>
+            )}
+          </div>
+
+          {/* Year / Quarter picker — shared FiscalPeriodPicker, DB-scoped */}
+          <FiscalPeriodPicker
+            years={availableYears}
+            configured={fyConfigured}
+            year={year}
+            quarter={quarter as FiscalQuarter}
+            formatYear={fiscalYearLabel}
+            onChange={({ year: y, quarter: q }) => { setYear(y); setQuarter(q); }}
+          />
+
+          <ModuleMoreActions
+            columns={priorityColumns}
+            hiddenCols={priorityHidden}
+            onHiddenColsChange={(next) => priorityPrefs.setHiddenCols(next)}
+            isTrashActive={viewTrash}
+            onToggleTrash={setViewTrash}
+            rowCounts={{ page: filtered.length, filtered: filtered.length, all: priorities.length }}
+            onExport={handlePriorityExport}
+            defaultExportColumnKeys={visiblePriorityCols}
+          />
+
+          {canCreate && <AddButton onClick={() => setShowAddModal(true)}>Add Priority</AddButton>}
+        </div>
+      </div>
+
+      {/* Table Area — `min-h-0` required so flex-1 actually shrinks to viewport
+          height; without it the inner scroller inherits content height and
+          vertical scroll silently breaks. */}
+      <div className="flex-1 overflow-hidden min-h-0">
+        {isLoading ? (
+          <TableSkeleton rows={10} cols={7} />
+        ) : error ? (
+          <div className="flex items-center justify-center h-full text-sm text-red-500">
+            Failed to load priorities
+          </div>
+        ) : priorities.length === 0 ? (
+          <div className="flex items-center justify-center h-full">
+            <EmptyState
+              icon={Flag}
+              title="Define your first priority"
+              message={`Priorities are the 3-5 most important things your team will accomplish in ${fiscalYearLabel(year)} · ${quarter}. They turn strategy into focused execution.`}
+              action={canCreate ? { label: "Add your first priority", onClick: () => setShowAddModal(true) } : undefined}
+            />
+          </div>
+        ) : (
+          <PriorityTable
+            priorities={pagedPriorities}
+            onRefresh={refetch}
+            year={year}
+            quarter={quarter}
+            defaultYear={year}
+            defaultQuarter={quarter}
+            onSelectionChange={handleSelectionChange}
+            page={page}
+            pageSize={pageSize}
+            total={filtered.length}
+            onPageChange={setPage}
+            onPageSizeChange={setPageSize}
+            canDelete={canDelete}
+            canUpdate={canUpdate}
+          />
+        )}
+      </div>
+
+      {/* Add New Modal */}
+      {showAddModal && (
+        <PriorityModal
+          defaultYear={year}
+          defaultQuarter={quarter}
+          onClose={() => setShowAddModal(false)}
+          onSuccess={() => { setShowAddModal(false); refetch(); }}
+        />
+      )}
+    </div>
+  );
+}

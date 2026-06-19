@@ -1,0 +1,184 @@
+@import "@quikit/ui/styles";
+
+/* ============================================================================
+   QUIKSCALE APP-SPECIFIC STYLES
+   ============================================================================ */
+
+/* Framer Motion Animations */
+@keyframes shimmer {
+  0% {
+    transform: translate(-100%, -100%);
+  }
+  100% {
+    transform: translate(100%, 100%);
+  }
+}
+
+.animate-shimmer {
+  animation: shimmer 8s infinite;
+}
+
+@keyframes blob {
+  0%, 100% {
+    transform: translate(0, 0) scale(1);
+  }
+  33% {
+    transform: translate(30px, -50px) scale(1.1);
+  }
+  66% {
+    transform: translate(-20px, 20px) scale(0.9);
+  }
+}
+
+.animate-blob {
+  animation: blob 7s infinite;
+}
+
+.animation-delay-2000 {
+  animation-delay: 2s;
+}
+
+/* ============================================================================
+   UTILITY CLASSES
+   ============================================================================ */
+
+.truncate-2 {
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.truncate-3 {
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+/* Glassmorphism effect */
+.glass {
+  background: rgba(255, 255, 255, 0.95);
+  backdrop-filter: blur(10px);
+  border: 1px solid rgba(15, 23, 42, 0.1);
+}
+
+html.dark .glass {
+  background: rgba(30, 41, 59, 0.95);
+  backdrop-filter: blur(10px);
+  border: 1px solid rgba(248, 250, 252, 0.1);
+}
+
+/* ============================================================================
+   RICH EDITOR — contentEditable prose styles
+   ============================================================================ */
+
+.rich-editor:focus { outline: none; }
+.rich-editor {
+  font-family: inherit;
+  font-size: 0.875rem;   /* match text-sm — same as FInput / FTextarea */
+  line-height: 1.25rem;
+  color: rgb(55 65 81);  /* text-gray-700 */
+}
+.rich-editor div { margin: 2px 0; }
+.rich-editor b, .rich-editor strong { font-weight: 700; }
+.rich-editor i, .rich-editor em { font-style: italic; }
+.rich-editor u { text-decoration: underline; }
+.rich-editor s, .rich-editor strike { text-decoration: line-through; }
+
+.rich-editor ul {
+  list-style-type: disc;
+  padding-left: 1.4em;
+  margin: 4px 0;
+}
+.rich-editor ol {
+  list-style-type: decimal;
+  padding-left: 1.4em;
+  margin: 4px 0;
+}
+.rich-editor li { margin: 2px 0; }
+
+.rich-editor blockquote {
+  border-left: 3px solid #d1d5db;
+  margin: 4px 0;
+  padding: 2px 12px;
+  color: #6b7280;
+  font-style: italic;
+}
+
+.rich-editor p { margin: 2px 0; }
+
+/* OPSP preview rich-text rendering */
+.prose-preview { font-size: 9px; line-height: 1.4; color: #374151; }
+.prose-preview p { margin: 1px 0; }
+.prose-preview ul { list-style-type: disc; padding-left: 1em; margin: 2px 0; }
+.prose-preview ol { list-style-type: decimal; padding-left: 1em; margin: 2px 0; }
+.prose-preview li { margin: 1px 0; }
+.prose-preview strong { font-weight: 700; }
+.prose-preview em { font-style: italic; }
+.prose-preview blockquote { border-left: 2px solid #d1d5db; padding-left: 6px; color: #6b7280; font-style: italic; }
+
+/* ============================================================================
+   OPSP FINALIZED — read-only mode for inline form
+   Inputs/selects/textareas/contentEditable become non-interactive.
+   Expand buttons remain clickable.
+   ============================================================================ */
+
+.opsp-finalized {
+  pointer-events: none;
+  opacity: 0.75;
+  user-select: none;
+}
+
+/* Re-enable expand (Maximize2) buttons inside finalized form */
+.opsp-finalized [data-expand="true"] {
+  pointer-events: auto !important;
+  opacity: 1;
+  cursor: pointer;
+}
+
+/* ============================================================================
+   TOASTS (sonner) — theme-aware chrome
+   Success/error/warning keep sonner's semantic richColors palette. Only the
+   neutral default/info toasts and the optional per-team tint are branded with
+   the company accent (--accent-* set live by ThemeApplier). See lib/utils/notify.ts.
+   ============================================================================ */
+
+/* Neutral default + info toasts pick up the company accent as a left bar. */
+.qs-toast[data-type="info"],
+.qs-toast[data-type="default"],
+.qs-toast[data-type="loading"] {
+  border-left: 3px solid var(--accent-500, #0066cc);
+}
+
+.qs-toast-close:hover {
+  color: var(--accent-700, #1d4ed8);
+}
+
+/* Optional per-team / per-action tint — overrides the bar with an inline color
+   (set via the inline custom property --toast-tint in notify.ts). */
+.qs-toast.qs-toast-tinted {
+  border-left: 3px solid var(--toast-tint, var(--accent-500, #0066cc));
+}
+
+/* OPSP edit-after-finalize: marks the field whose change-note card is open.
+   Added/removed imperatively in opsp/page.tsx (survives re-renders since field
+   classNames are static). The blue highlight ring was removed per product
+   request — the change-note card still anchors to the field, so this class is
+   intentionally a visual no-op (kept so the page.tsx classList toggle + ref
+   tracking continue to work without change). */
+.opsp-edit-active {
+  /* no highlight ring */
+}
+
+/* OPSP "edited after finalize" highlight: amber ring on fields/rows changed
+   after the OPSP was finalized, shown until the viewer acknowledges via the
+   History drawer footer. Toggled imperatively in opsp/page.tsx (Form) and via
+   row classNames in the Review table. Amber = semantic "attention/changed",
+   distinct from the accent live-edit ring above. */
+.opsp-edit-changed {
+  box-shadow: 0 0 0 2px #f59e0b !important;
+  border-radius: 0.375rem;
+  background: rgba(245, 158, 11, 0.06);
+  transition: box-shadow 0.15s ease;
+}

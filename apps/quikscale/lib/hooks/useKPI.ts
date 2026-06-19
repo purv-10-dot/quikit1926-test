@@ -1,0 +1,222 @@
+"use client";
+
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import * as kpiService from "@/lib/services/kpiService";
+import { CreateKPIInput, UpdateKPIInput, WeeklyValueInput, KPINoteInput, KPIListParams } from "@/lib/schemas/kpiSchema";
+
+// Query Keys
+const kpiKeys = {
+  all: ["kpi"],
+  lists: () => [...kpiKeys.all, "list"],
+  list: (filters: Partial<KPIListParams>) => [...kpiKeys.lists(), filters],
+  details: () => [...kpiKeys.all, "detail"],
+  detail: (id: string) => [...kpiKeys.details(), id],
+  weekly: (id: string) => [...kpiKeys.detail(id), "weekly"],
+  notes: (id: string) => [...kpiKeys.detail(id), "notes"],
+  logs: (id: string) => [...kpiKeys.detail(id), "logs"],
+};
+
+// List KPIs with filters
+export function useKPIs(params: Partial<KPIListParams> = {}) {
+  return useQuery({
+    queryKey: kpiKeys.list(params),
+    queryFn: () => kpiService.getKPIs(params),
+    staleTime: 1000 * 60 * 5, // 5 minutes
+  });
+}
+
+// List Team KPIs — convenience wrapper that forces kpiLevel="team". Default
+// pageSize is 100 to match kpiListParamsSchema cap (security row-cap). Team
+// KPI sets per tenant per quarter are typically < 50 so this is safe
+// truncation in practice. If a tenant ever exceeds 100 team KPIs, switch
+// to paginated fetch or a dedicated /api/kpi/all endpoint.
+export function useTeamKPIs(params: Partial<KPIListParams> = {}) {
+  return useKPIs({
+    ...params,
+    kpiLevel: "team",
+    pageSize: params.pageSize ?? 100,
+  });
+}
+
+// Get single KPI
+export function useKPI(id: string) {
+  return useQuery({
+    queryKey: kpiKeys.detail(id),
+    queryFn: () => kpiService.getKPI(id),
+    enabled: !!id,
+    staleTime: 1000 * 60 * 5, // 5 minutes
+  });
+}
+
+// Create KPI
+export function useCreateKPI() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: (input: CreateKPIInput) => kpiService.createKPI(input),
+    onSuccess: () => {
+      // Invalidate lists so they refetch
+      queryClient.invalidateQueries({ queryKey: kpiKeys.lists() });
+      // Dashboard summary aggregates KPIs — keep it in sync.
+      queryClient.invalidateQueries({ queryKey: ["dashboard"] });
+    },
+  });
+}
+
+// Update KPI
+export function useUpdateKPI(id: string) {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: (input: Partial<UpdateKPIInput>) => kpiService.updateKPI(id, input),
+    onSuccess: () => {
+      // Invalidate specific KPI and lists
+      queryClient.invalidateQueries({ queryKey: kpiKeys.detail(id) });
+      queryClient.invalidateQueries({ queryKey: kpiKeys.lists() });
+      queryClient.invalidateQueries({ queryKey: ["dashboard"] });
+    },
+  });
+}
+
+// Delete KPI
+export function useDeleteKPI() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: (id: string) => kpiService.deleteKPI(id),
+    onSuccess: () => {
+      // Invalidate all KPI queries
+      queryClient.invalidateQueries({ queryKey: kpiKeys.all });
+      queryClient.invalidateQueries({ queryKey: ["dashboard"] });
+    },
+  });
+}
+
+// Restore KPI — undo soft-delete for a single row.
+export function useRestoreKPI() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async (id: string) => {
+      const res = await fetch(`/api/kpi/${id}/restore`, { method: "POST" });
+      const json = await res.json();
+      if (!json.success) throw new Error(json.error || "Failed to restore KPI");
+      return json.data;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: kpiKeys.all });
+      queryClient.invalidateQueries({ queryKey: ["dashboard"] });
+    },
+  });
+}
+
+// Bulk restore KPIs — undo soft-delete in batch.
+export function useBulkRestoreKPI() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async (ids: string[]) => {
+      const res = await fetch(`/api/kpi/bulk-restore`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ ids }),
+      });
+      const json = await res.json();
+      if (!json.success) throw new Error(json.error || "Failed to restore KPIs");
+      return (json.data ?? { restored: 0 }) as { restored: number };
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: kpiKeys.all });
+      queryClient.invalidateQueries({ queryKey: ["dashboard"] });
+    },
+  });
+}
+
+// Get weekly values
+export function useWeeklyValues(kpiId: string) {
+  return useQuery({
+    queryKey: kpiKeys.weekly(kpiId),
+    queryFn: () => kpiService.getWeeklyValues(kpiId),
+    enabled: !!kpiId,
+    staleTime: 1000 * 60 * 5, // 5 minutes
+  });
+}
+
+// Update weekly value (single-week — kept for callers that still upsert one
+// row at a time; new code should prefer useUpdateWeeklyValuesBatch).
+export function useUpdateWeeklyValue(kpiId: string) {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: (input: WeeklyValueInput) => kpiService.updateWeeklyValue(kpiId, input),
+    onSuccess: () => {
+      // Invalidate weekly values and parent KPI
+      queryClient.invalidateQueries({ queryKey: kpiKeys.weekly(kpiId) });
+      queryClient.invalidateQueries({ queryKey: kpiKeys.detail(kpiId) });
+      queryClient.invalidateQueries({ queryKey: kpiKeys.lists() });
+      // Dashboard pulls weekly values + progress%; keep it fresh after a save.
+      queryClient.invalidateQueries({ queryKey: ["dashboard"] });
+    },
+  });
+}
+
+// Batch update weekly values — one network call per Save click. Same cache
+// invalidation as the single-week variant.
+export function useUpdateWeeklyValuesBatch(kpiId: string) {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: (inputs: WeeklyValueInput[]) =>
+      kpiService.updateWeeklyValuesBatch(kpiId, inputs),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: kpiKeys.weekly(kpiId) });
+      queryClient.invalidateQueries({ queryKey: kpiKeys.detail(kpiId) });
+      queryClient.invalidateQueries({ queryKey: kpiKeys.lists() });
+      queryClient.invalidateQueries({ queryKey: ["dashboard"] });
+    },
+  });
+}
+
+// Get notes
+export function useNotes(kpiId: string) {
+  return useQuery({
+    queryKey: kpiKeys.notes(kpiId),
+    queryFn: () => kpiService.getNotes(kpiId),
+    enabled: !!kpiId,
+    staleTime: 1000 * 60 * 5, // 5 minutes
+  });
+}
+
+// Add note
+export function useAddNote(kpiId: string) {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: (input: KPINoteInput) => kpiService.addNote(kpiId, input),
+    onSuccess: () => {
+      // Invalidate notes
+      queryClient.invalidateQueries({ queryKey: kpiKeys.notes(kpiId) });
+    },
+  });
+}
+
+// Delete note
+export function useDeleteNote(kpiId: string) {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: (noteId: string) => kpiService.deleteNote(kpiId, noteId),
+    onSuccess: () => {
+      // Invalidate notes
+      queryClient.invalidateQueries({ queryKey: kpiKeys.notes(kpiId) });
+    },
+  });
+}
+
+// Get audit logs
+export function useLogs(kpiId: string) {
+  return useQuery({
+    queryKey: kpiKeys.logs(kpiId),
+    queryFn: () => kpiService.getLogs(kpiId),
+    enabled: !!kpiId,
+    staleTime: 1000 * 60 * 5, // 5 minutes
+  });
+}

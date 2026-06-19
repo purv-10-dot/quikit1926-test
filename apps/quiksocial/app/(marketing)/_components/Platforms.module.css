@@ -1,0 +1,148 @@
+.section {
+  position: relative;
+  z-index: 4;
+  color: #fff;
+  /* height set inline from PIN_VH so JS and CSS agree on scroll range */
+}
+
+.sticky {
+  position: sticky;
+  top: 0;
+  height: 100vh;
+  /* Asymmetric top padding shifts the centered content below the
+     vertical midpoint, giving more headroom above. */
+  padding: 22vh 10vw 0;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  overflow: hidden;
+}
+
+.head {
+  text-align: center;
+  max-width: 760px;
+  margin: 0 auto 40px;
+}
+
+.title {
+  font-family: var(--font-serif), 'Times New Roman', serif;
+  font-weight: 400;
+  font-size: clamp(40px, 5vw, 76px);
+  line-height: 1.05;
+  letter-spacing: -0.022em;
+  margin: 0 0 22px;
+  text-shadow: 0 4px 28px rgba(0, 0, 0, 0.5);
+}
+.title em {
+  font-style: italic;
+  background: linear-gradient(180deg, #fff 0%, rgba(255, 255, 255, 0.55) 100%);
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+}
+
+.body {
+  font-size: clamp(15px, 1.1vw, 18px);
+  line-height: 1.6;
+  color: rgba(255, 255, 255, 0.78);
+  max-width: 50ch;
+  margin: 0 auto;
+  text-shadow: 0 2px 12px rgba(0, 0, 0, 0.5);
+}
+
+/* The arc + scrubbing layout. Items are absolutely positioned with their
+   anchor at the orbit's center; JS interpolates each item's translate
+   from (0, -APEX) → (final arc position) over scroll progress. */
+.orbit {
+  position: relative;
+  width: 100%;
+  height: 500px;
+  margin: 0 auto;
+  max-width: 1280px;
+  flex: 0 0 500px;        /* don't let flex shrink the orbit */
+}
+
+.arc {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+}
+
+.chips {
+  position: absolute;
+  inset: 0;
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.item {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  display: inline-flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 14px;
+  /* transform is overwritten by JS — keep base so first paint isn't
+     glued to the top-left corner */
+  transform: translate3d(-50%, -50%, 0);
+  will-change: transform;
+}
+
+.logo {
+  width: 140px;
+  height: 140px;
+  display: block;
+  margin: 0 auto;
+  object-fit: contain;
+  object-position: center;
+  flex: none;
+  padding: 0;
+}
+
+.label {
+  display: inline-flex;
+  align-items: center;
+  padding: 7px 14px;
+  border: 1px solid rgba(255, 255, 255, 0.22);
+  border-radius: 999px;
+  background: rgba(10, 11, 13, 0.6);
+  backdrop-filter: blur(10px);
+  font-family: var(--font-mono), ui-monospace, monospace;
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  color: rgba(255, 255, 255, 0.85);
+  white-space: nowrap;
+  box-shadow: 0 10px 24px rgba(0, 0, 0, 0.35);
+  transition: border-color 0.3s ease;
+}
+.item:hover .label {
+  border-color: rgba(255, 255, 255, 0.55);
+}
+
+/* Tablet — bezier arc still runs (desktop layout), but the 140px
+   icons crowd at the apex. Scale them down so they fan out cleanly. */
+@media (min-width: 721px) and (max-width: 1023px) {
+  .sticky { padding: 18vh 6vw 0; }
+  .head { max-width: 600px; margin-bottom: 32px; }
+  .title { font-size: clamp(36px, 4.8vw, 56px); }
+  .orbit { height: 440px; flex: 0 0 440px; }
+  .logo { width: 96px; height: 96px; }
+}
+
+@media (max-width: 720px) {
+  .sticky { padding: 16vh 18px 0; }
+  .head { margin-bottom: 36px; }
+  .title { font-size: 34px; }
+  .body { font-size: 14px; }
+  .orbit { height: 300px; flex: 0 0 300px; }
+  .logo { width: 56px; height: 56px; }
+}
+@media (max-width: 420px) {
+  .orbit { height: 240px; flex: 0 0 240px; }
+  .logo { width: 44px; height: 44px; }
+  .title { font-size: 30px; }
+}

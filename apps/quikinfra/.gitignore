@@ -1,0 +1,53 @@
+# Dependencies
+node_modules/
+.pnp
+.pnp.js
+
+# Build output
+.next/
+out/
+build/
+dist/
+
+# Prisma — generated clients (custom output path, see schema.prisma)
+node_modules/.prisma-qc/
+node_modules/.prisma/
+
+# Environment
+.env
+.env.local
+.env.production
+.env.development
+.env.example
+
+# Local storage driver data (dev + LAN)
+.storage/
+.storage-*/
+
+# Demo-store JSON snapshot — survives restarts so master/PR/PO/etc data
+# isn't wiped on dev-server reboot. Should never be committed.
+.data/
+
+# User uploads (photo attachments etc.) — written by /api/uploads to
+# `public/uploads/`. Tenant content, not source.
+public/uploads/
+
+# Test artifacts
+tests/.artifacts/
+playwright-report/
+test-results/
+coverage/
+
+# CI logs
+.ci-build.log
+.ci-server.log
+
+# Internal deployment notes — kept locally, not for git
+docs/DB_DEPLOYMENT.md
+docs/DB_OVERVIEW.md
+
+# Misc
+*.log
+.DS_Store
+.vscode/
+.idea/

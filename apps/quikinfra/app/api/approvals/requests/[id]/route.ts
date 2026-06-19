@@ -1,0 +1,30 @@
+import { NextResponse } from "next/server";
+import { z } from "zod";
+import { db } from "@/lib/db";
+import { withOrgAuthForModule } from "@/lib/api/withOrgAuth";
+
+const withOrgAuth = withOrgAuthForModule("approvals");
+
+const decideSchema = z.object({
+  decision: z.enum(["approved", "rejected"]),
+  comment: z.string().optional().nullable(),
+});
+
+export const GET = withOrgAuth<{ id: string }>(async ({ orgId }, _req, { params }) => {
+  const r = await db.cnApprovalRequest.findFirst({ where: { id: params.id, orgId } });
+  if (!r) return NextResponse.json({ success: false, error: "Not found" }, { status: 404 });
+  return NextResponse.json({ success: true, data: r });
+});
+
+export const PATCH = withOrgAuth<{ id: string }>(async ({ orgId, userId }, req, { params }) => {
+  const input = decideSchema.parse(await req.json());
+  const r = await db.cnApprovalRequest.findFirst({ where: { id: params.id, orgId }, select: { id: true, approverId: true, status: true } });
+  if (!r) return NextResponse.json({ success: false, error: "Not found" }, { status: 404 });
+  if (r.approverId !== userId) return NextResponse.json({ success: false, error: "Only the designated approver can decide" }, { status: 403 });
+  if (r.status !== "pending") return NextResponse.json({ success: false, error: `Already ${r.status}` }, { status: 400 });
+  const updated = await db.cnApprovalRequest.update({
+    where: { id: r.id },
+    data: { status: input.decision, decisionAt: new Date(), comment: input.comment ?? null },
+  });
+  return NextResponse.json({ success: true, data: updated });
+});

@@ -1,0 +1,459 @@
+/**
+ * Client Meetings dashboard math — port of meetingrythm.md §7.2–7.5 + §7.8.
+ *
+ * Intentionally pure: every function takes inputs + returns numbers. No DB
+ * access. Route handlers load rows via Prisma, then call these helpers.
+ *
+ * Key concepts:
+ *   - `ClientMeetingStatus.HELD` maps to spec's "Held" string.
+ *   - `ClientMeetingFlag.YES | NA` counts as "passed" for format/quality math
+ *     (spec's `totalYESCount` aggregates `YES` and `NA` alike — NA means "not
+ *     applicable", which by convention doesn't penalise adherence).
+ *   - Punctuality has a 60-second grace window (spec §7.3).
+ *   - Duration-followed has a 60-second grace window (spec §7.4).
+ */
+
+export interface DailyHuddleForMath {
+  meetingDate: Date;
+  callStatus: "HELD" | "NOT_HELD" | "CALL_CANCELLED_BY_CLIENT" | "HOLIDAY_FOR_CLIENT" | "HOLIDAY_FOR_SUCCESS_ALCHEMIST" | "OTHER";
+  actualStartTime: string | null; // HH:mm
+  actualEndTime: string | null;
+  format1Status: "YES" | "NO" | "NA";
+  format2Status: "YES" | "NO" | "NA";
+  stuckCallStatus: "YES" | "NO" | "NA";
+  punctualityOverride: "YES" | "NO" | "NA";
+  totalMembers: number;
+  absentCount: number;
+}
+
+export interface WeeklyMeetingForMath {
+  meetingDate: Date;
+  callStatus: "HELD" | "NOT_HELD" | "CALL_CANCELLED_BY_CLIENT" | "HOLIDAY_FOR_CLIENT" | "HOLIDAY_FOR_SUCCESS_ALCHEMIST" | "OTHER";
+  actualStartTime: string | null;
+  actualEndTime: string | null;
+  goodNewsSharing: "YES" | "NO" | "NA";
+  kpDashboard: "YES" | "NO" | "NA";
+  www: "YES" | "NO" | "NA";
+  feedback: "YES" | "NO" | "NA";
+  collectiveIntelligence: "YES" | "NO" | "NA";
+  gaps: "YES" | "NO" | "NA";
+  opspReview: "YES" | "NO" | "NA";
+  punctualityOverride: "YES" | "NO" | "NA";
+  totalMembers: number;
+  absentCount: number;
+  // Per-member scores — used for avgAuality (dashboard quality) in Weekly mode.
+  memberScores: Array<{
+    userId: string;
+    kpiWeeklyQTD: number; kpiCoding: number; priorityNotes: number;
+    priorityStartEndDate: number; priorityColor: number;
+  }>;
+}
+
+export interface MonthlyStatRow {
+  monthName: string; year: number; monthNumber: number; // 0-indexed JS month
+  totalCalls: number;
+  heldCalls: number;
+  avgHeld: number;
+  avgPunctual: number;
+  avgDurationFollowed: number;
+  avgFormat: number;
+  avgAttendance: number;
+  avgStuckCalls: number;
+  avgAuality: number;
+  avgKP: number;
+  avgWWW: number;
+  avgEF: number;
+  avgCI: number;
+  Total: number;
+  isUpdate: boolean;
+}
+
+/* ─── Time helpers ──────────────────────────────────────────────────────────── */
+
+/** Combine a YYYY-MM-DD date with HH:mm into a Date in UTC. */
+function toTime(date: Date, hhmm: string): Date {
+  const [h, m] = hhmm.split(":").map(n => parseInt(n, 10));
+  const d = new Date(date);
+  d.setUTCHours(h, m, 0, 0);
+  return d;
+}
+
+/**
+ * §7.3 Punctuality:
+ * - Only an explicit YES override counts the call as punctual regardless of
+ *   the clock — that matches "this lateness was sanctioned/planned".
+ *   NA / NO / missing fall through to the time comparison; treating NA as a
+ *   pass was the regression where every held call auto-scored 100% because
+ *   the form defaults `punctualityOverride` to NA.
+ * - Otherwise: actualStart <= plannedStart + 60s grace (inclusive boundary).
+ */
+export function isPunctual(
+  planned: string | null,
+  actual: string | null,
+  date: Date,
+  override: "YES" | "NO" | "NA",
+): boolean {
+  if (override === "YES") return true;
+  if (!planned || !actual) return false;
+  const plannedT = toTime(date, planned);
+  const actualT = toTime(date, actual);
+  return actualT.getTime() <= plannedT.getTime() + 60_000;
+}
+
+/**
+ * §7.4 Duration followed:
+ *   actualDur <= plannedDur + 60s grace.
+ */
+export function isDurationFollowed(
+  plannedStart: string | null, plannedEnd: string | null,
+  actualStart: string | null, actualEnd: string | null,
+  date: Date,
+): boolean {
+  if (!plannedStart || !plannedEnd || !actualStart || !actualEnd) return false;
+  const plannedDur = toTime(date, plannedEnd).getTime() - toTime(date, plannedStart).getTime();
+  const actualDur  = toTime(date, actualEnd).getTime()   - toTime(date, actualStart).getTime();
+  return actualDur <= plannedDur + 60_000;
+}
+
+/* ─── Monthly aggregation ───────────────────────────────────────────────────── */
+
+/**
+ * Build a list of the last N months (inclusive of the current month).
+ * Returned oldest-first so dashboard renders chronologically left-to-right.
+ */
+export function previousMonths(base: Date, n: number): Array<{ year: number; month: number }> {
+  const out: Array<{ year: number; month: number }> = [];
+  const d = new Date(Date.UTC(base.getUTCFullYear(), base.getUTCMonth(), 1));
+  for (let i = n - 1; i >= 0; i--) {
+    const cursor = new Date(d);
+    cursor.setUTCMonth(cursor.getUTCMonth() - i);
+    out.push({ year: cursor.getUTCFullYear(), month: cursor.getUTCMonth() });
+  }
+  return out;
+}
+
+/** Parse a "YYYY-MM" string into {year, month} (month 0-indexed). null if invalid. */
+export function parseYearMonth(s: unknown): { year: number; month: number } | null {
+  if (typeof s !== "string") return null;
+  const [y, m] = s.split("-").map(n => parseInt(n, 10));
+  if (!Number.isInteger(y) || !Number.isInteger(m) || m < 1 || m > 12) return null;
+  return { year: y, month: m - 1 };
+}
+
+/** Parse a numeric year + 1-indexed month into {year, month} (month 0-indexed). null if invalid. */
+export function parseYearMonthNum(year: unknown, month: unknown): { year: number; month: number } | null {
+  if (!Number.isInteger(year) || !Number.isInteger(month)) return null;
+  const m = month as number;
+  if (m < 1 || m > 12) return null;
+  return { year: year as number, month: m - 1 };
+}
+
+/**
+ * Inclusive list of months between two {year, month} points (month is
+ * 0-indexed), oldest-first — so an export reflects EXACTLY the From→To range
+ * the user picked, not a rolling "last N months" window. Returns a single
+ * month when from === to. An inverted range is swapped, and the span is capped
+ * (keeping the most recent `maxMonths`) so a wild pick can't generate hundreds
+ * of columns.
+ */
+export function monthsInRange(
+  from: { year: number; month: number },
+  to: { year: number; month: number },
+  maxMonths = 24,
+): Array<{ year: number; month: number }> {
+  let startIdx = from.year * 12 + from.month;
+  let endIdx = to.year * 12 + to.month;
+  if (startIdx > endIdx) [startIdx, endIdx] = [endIdx, startIdx];
+  if (endIdx - startIdx + 1 > maxMonths) startIdx = endIdx - (maxMonths - 1);
+  const out: Array<{ year: number; month: number }> = [];
+  for (let idx = startIdx; idx <= endIdx; idx++) {
+    out.push({ year: Math.floor(idx / 12), month: idx % 12 });
+  }
+  return out;
+}
+
+const MONTH_NAMES = ["January","February","March","April","May","June","July","August","September","October","November","December"];
+
+function pctYesNA(flags: Array<"YES" | "NO" | "NA">, denom: number): number {
+  if (denom <= 0) return 0;
+  const passed = flags.filter(f => f === "YES" || f === "NA").length;
+  return (passed / denom) * 100;
+}
+
+function smartRound(v: number): number {
+  if (!Number.isFinite(v)) return 0;
+  return Math.round(v);
+}
+
+/** §7.2 — Daily mode monthly stats. */
+export function calculateDailyMonthlyStats(
+  huddles: DailyHuddleForMath[],
+  months: Array<{ year: number; month: number }>,
+  plannedStart: string | null,
+  plannedEnd: string | null,
+): MonthlyStatRow[] {
+  return months.map(({ year, month }) => {
+    const rows = huddles.filter(h =>
+      h.meetingDate.getUTCFullYear() === year && h.meetingDate.getUTCMonth() === month
+    );
+    const totalCalls = rows.length;
+    const heldAndCancelled = rows.filter(r => r.callStatus === "HELD" || r.callStatus === "CALL_CANCELLED_BY_CLIENT");
+    const held = rows.filter(r => r.callStatus === "HELD");
+
+    const punctual = held.filter(r => isPunctual(plannedStart, r.actualStartTime, r.meetingDate, r.punctualityOverride)).length;
+    const durationOk = held.filter(r => isDurationFollowed(plannedStart, plannedEnd, r.actualStartTime, r.actualEndTime, r.meetingDate)).length;
+
+    // avgFormat: 3 format radios × heldCalls denominator
+    const formatFlags = held.flatMap(r => [r.format1Status, r.format2Status, r.stuckCallStatus]);
+    const avgFormat = pctYesNA(formatFlags, held.length * 3);
+
+    // stuck-called-out specifically (separate metric in daily mode)
+    const avgStuckCalls = pctYesNA(held.map(r => r.stuckCallStatus), held.length);
+
+    const attendancePercents = held.map(r => r.totalMembers > 0 ? ((r.totalMembers - r.absentCount) / r.totalMembers) * 100 : 0);
+    const avgAttendance = attendancePercents.length ? attendancePercents.reduce((a, b) => a + b, 0) / attendancePercents.length : 0;
+
+    const avgHeld     = heldAndCancelled.length ? (held.length / heldAndCancelled.length) * 100 : 0;
+    const avgPunctual = held.length ? (punctual   / held.length) * 100 : 0;
+    const avgDur      = held.length ? (durationOk / held.length) * 100 : 0;
+
+    const total = avg([avgHeld, avgPunctual, avgDur, avgFormat, avgAttendance, avgStuckCalls]);
+
+    return {
+      monthName: MONTH_NAMES[month], year, monthNumber: month,
+      totalCalls, heldCalls: held.length,
+      avgHeld: smartRound(avgHeld),
+      avgPunctual: smartRound(avgPunctual),
+      avgDurationFollowed: smartRound(avgDur),
+      avgFormat: smartRound(avgFormat),
+      avgAttendance: smartRound(avgAttendance),
+      avgStuckCalls: smartRound(avgStuckCalls),
+      avgAuality: 0, avgKP: 0, avgWWW: 0, avgEF: 0, avgCI: 0,
+      Total: smartRound(total),
+      isUpdate: held.length > 0,
+    };
+  });
+}
+
+/** §7.2 — Weekly mode monthly stats (adds avgKP/WWW/EF/CI/Auality). */
+export function calculateWeeklyMonthlyStats(
+  meetings: WeeklyMeetingForMath[],
+  months: Array<{ year: number; month: number }>,
+  plannedStart: string | null,
+  plannedEnd: string | null,
+): MonthlyStatRow[] {
+  return months.map(({ year, month }) => {
+    const rows = meetings.filter(m =>
+      m.meetingDate.getUTCFullYear() === year && m.meetingDate.getUTCMonth() === month
+    );
+    const totalCalls = rows.length;
+    const heldAndCancelled = rows.filter(r => r.callStatus === "HELD" || r.callStatus === "CALL_CANCELLED_BY_CLIENT");
+    const held = rows.filter(r => r.callStatus === "HELD");
+
+    const punctual = held.filter(r => isPunctual(plannedStart, r.actualStartTime, r.meetingDate, r.punctualityOverride)).length;
+    const durationOk = held.filter(r => isDurationFollowed(plannedStart, plannedEnd, r.actualStartTime, r.actualEndTime, r.meetingDate)).length;
+
+    // avgFormat: goodNewsSharing + kpDashboard (2 radios × heldCalls denominator)
+    const formatFlags = held.flatMap(r => [r.goodNewsSharing, r.kpDashboard]);
+    const avgFormat = pctYesNA(formatFlags, held.length * 2);
+
+    const avgKP  = pctYesNA(held.map(r => r.gaps),      held.length);
+    const avgWWW = pctYesNA(held.map(r => r.www),        held.length);
+    const avgEF  = pctYesNA(held.map(r => r.feedback),         held.length);
+    const avgCI  = pctYesNA(held.map(r => r.collectiveIntelligence),  held.length);
+
+    // avgAuality ("Quality of the dashboards") — MUST equal the Member
+    // Punch-In Excel export's "Total Average of All Members". That figure is
+    // MEMBER-weighted (see memberWeightedQuality below): each member averages
+    // their own 5 KPIs across the meetings they were scored in, then those
+    // per-member totals are averaged across members.
+    //
+    // The previous implementation was MEETING-weighted (mean of per-meeting
+    // member-averages). With a single meeting the two agree, but once a month
+    // had 2+ meetings with uneven attendance they diverged — a sparse meeting
+    // (e.g. only 2 of 4 members scored, the rest NA/AB) was given the same
+    // weight as a full meeting, dragging the number off the Excel value. See
+    // clientMeetingsMath.test.ts.
+    const avgAuality = memberWeightedQuality(held);
+
+    const attendancePercents = held.map(r => r.totalMembers > 0 ? ((r.totalMembers - r.absentCount) / r.totalMembers) * 100 : 0);
+    const avgAttendance = attendancePercents.length ? attendancePercents.reduce((a, b) => a + b, 0) / attendancePercents.length : 0;
+
+    const avgHeld     = heldAndCancelled.length ? (held.length / heldAndCancelled.length) * 100 : 0;
+    const avgPunctual = held.length ? (punctual   / held.length) * 100 : 0;
+    const avgDur      = held.length ? (durationOk / held.length) * 100 : 0;
+
+    const total = avg([avgHeld, avgPunctual, avgDur, avgAuality, avgKP, avgWWW, avgEF, avgCI, avgAttendance]);
+
+    return {
+      monthName: MONTH_NAMES[month], year, monthNumber: month,
+      totalCalls, heldCalls: held.length,
+      avgHeld: smartRound(avgHeld),
+      avgPunctual: smartRound(avgPunctual),
+      avgDurationFollowed: smartRound(avgDur),
+      avgFormat: smartRound(avgFormat),
+      avgAttendance: smartRound(avgAttendance),
+      avgStuckCalls: 0,
+      // 2-decimal precision (not smartRound) so the cell matches the Excel
+      // "Total Average of All Members" exactly (e.g. 49.75%).
+      avgAuality,
+      avgKP:  smartRound(avgKP),
+      avgWWW: smartRound(avgWWW),
+      avgEF:  smartRound(avgEF),
+      avgCI:  smartRound(avgCI),
+      Total: smartRound(total),
+      isUpdate: held.length > 0,
+    };
+  });
+}
+
+function avg(nums: number[]): number {
+  if (!nums.length) return 0;
+  return nums.reduce((a, b) => a + b, 0) / nums.length;
+}
+
+/**
+ * Member-weighted "Quality of the dashboards" — byte-for-byte the same math
+ * as computeMemberPunchIn + calculateOverallFinalAverage, so the dashboard
+ * cell always equals the Member Punch-In Excel "Total Average of All Members".
+ *
+ *   per member → for each of the 5 KPIs, average across the meetings the
+ *                member was scored in, then Math.round                (per KPI)
+ *   per member → Math.round( sum of the 5 rounded KPI averages / 5 )  (total)
+ *   overall    → average every member's total, kept to 2 decimals
+ *
+ * NA / Absent members never produce a memberScores row, so they're naturally
+ * excluded here — matching `eligibleReports` (present-at-least-once) in the
+ * Excel export.
+ */
+function memberWeightedQuality(
+  held: Array<{ memberScores: WeeklyMeetingForMath["memberScores"] }>,
+): number {
+  const KPI_KEYS = ["kpiWeeklyQTD", "kpiCoding", "priorityNotes", "priorityStartEndDate", "priorityColor"] as const;
+  // Collect each member's per-KPI scores across every held meeting they appear in.
+  const byMember = new Map<string, Record<(typeof KPI_KEYS)[number], number[]>>();
+  for (const r of held) {
+    for (const s of r.memberScores) {
+      let acc = byMember.get(s.userId);
+      if (!acc) {
+        acc = { kpiWeeklyQTD: [], kpiCoding: [], priorityNotes: [], priorityStartEndDate: [], priorityColor: [] };
+        byMember.set(s.userId, acc);
+      }
+      for (const k of KPI_KEYS) acc[k].push(s[k]);
+    }
+  }
+  if (!byMember.size) return 0;
+  const weeklyTotals = [...byMember.values()].map(acc => {
+    const kpiAvgs = KPI_KEYS.map(k => Math.round(acc[k].reduce((a, b) => a + b, 0) / acc[k].length));
+    return Math.round(kpiAvgs.reduce((a, b) => a + b, 0) / kpiAvgs.length);
+  });
+  return Math.round((weeklyTotals.reduce((a, b) => a + b, 0) / weeklyTotals.length) * 100) / 100;
+}
+
+/* ─── Member Punch-In aggregator (spec §7.8) ────────────────────────────────── */
+
+export interface MemberPunchMeeting {
+  meetingDate: string; // YYYY-MM-DD
+  kpiWeeklyQTD: number | "AB" | "NA";
+  kpiCoding: number | "AB" | "NA";
+  priorityNotes: number | "AB" | "NA";
+  priorityStartEndDate: number | "AB" | "NA";
+  priorityColor: number | "AB" | "NA";
+}
+
+export interface MemberPunchReport {
+  memberId: string;
+  memberName: string;
+  weeks: MemberPunchMeeting[];
+  totals: {
+    kpiWeeklyQTD: number; kpiCoding: number; priorityNotes: number;
+    priorityStartEndDate: number; priorityColor: number;
+  };
+  WeeklyTotalAverage: number;
+}
+
+/**
+ * §7.8 — For each member, walk the month's meetings; record their 5 KPI
+ * scores, or "AB" if absent and no entry, or "NA" if on the dashboardNA list.
+ * Then compute per-KPI mean across meetings, and a single top-line average.
+ */
+export function computeMemberPunchIn(
+  meetings: Array<{
+    id: string;
+    meetingDate: Date;
+    absentUserIds: string[];
+    dashboardNAUserIds: string[];
+    memberScores: Array<{
+      userId: string;
+      kpiWeeklyQTD: number; kpiCoding: number; priorityNotes: number;
+      priorityStartEndDate: number; priorityColor: number;
+    }>;
+  }>,
+  member: { id: string; name: string },
+): MemberPunchReport {
+  const KPI_KEYS = ["kpiWeeklyQTD", "kpiCoding", "priorityNotes", "priorityStartEndDate", "priorityColor"] as const;
+
+  const sorted = [...meetings].sort((a, b) => a.meetingDate.getTime() - b.meetingDate.getTime());
+  const weeks: MemberPunchMeeting[] = sorted.map(mtg => {
+    const onDashboardNA = mtg.dashboardNAUserIds.includes(member.id);
+    const isAbsent = mtg.absentUserIds.includes(member.id);
+    const present = mtg.memberScores.find(s => s.userId === member.id);
+
+    const dateStr = mtg.meetingDate.toISOString().slice(0, 10);
+
+    // Status flags WIN over any saved scores: if a member is on the
+    // Dashboard-NA or Absent list for a meeting, every column shows the
+    // status label even when an old score exists in memberScores.
+    // (Previously the `!present` guard let a stale score sneak past.)
+    if (onDashboardNA) {
+      return { meetingDate: dateStr,
+        kpiWeeklyQTD: "NA", kpiCoding: "NA", priorityNotes: "NA",
+        priorityStartEndDate: "NA", priorityColor: "NA" };
+    }
+    if (isAbsent) {
+      return { meetingDate: dateStr,
+        kpiWeeklyQTD: "AB", kpiCoding: "AB", priorityNotes: "AB",
+        priorityStartEndDate: "AB", priorityColor: "AB" };
+    }
+    return {
+      meetingDate: dateStr,
+      kpiWeeklyQTD: present?.kpiWeeklyQTD ?? 0,
+      kpiCoding: present?.kpiCoding ?? 0,
+      priorityNotes: present?.priorityNotes ?? 0,
+      priorityStartEndDate: present?.priorityStartEndDate ?? 0,
+      priorityColor: present?.priorityColor ?? 0,
+    };
+  });
+
+  // Per-KPI average — only count numeric entries (skip AB/NA).
+  const totals = Object.fromEntries(KPI_KEYS.map(k => {
+    const nums = weeks.map(w => w[k]).filter((v): v is number => typeof v === "number");
+    return [k, nums.length ? Math.round(nums.reduce((a, b) => a + b, 0) / nums.length) : 0];
+  })) as MemberPunchReport["totals"];
+
+  const WeeklyTotalAverage = smartRound(
+    (totals.kpiWeeklyQTD + totals.kpiCoding + totals.priorityNotes +
+     totals.priorityStartEndDate + totals.priorityColor) / 5
+  );
+
+  return { memberId: member.id, memberName: member.name, weeks, totals, WeeklyTotalAverage };
+}
+
+/** §7.9 — average of every member's WeeklyTotalAverage. */
+export function calculateOverallFinalAverage(reports: MemberPunchReport[]): number {
+  if (!reports.length) return 0;
+  const sum = reports.reduce((a, r) => a + r.WeeklyTotalAverage, 0);
+  return Math.round((sum / reports.length) * 100) / 100;
+}
+
+/* ─── Color rules (for UI rendering) — spec §10 ─────────────────────────────── */
+
+export type PerformanceColor = "blue" | "green" | "yellow" | "red" | "gray";
+
+export function performanceColor(pct: number, isUpdate: boolean): PerformanceColor {
+  if (!isUpdate) return "gray";
+  if (pct >= 98) return "blue";
+  if (pct >= 90) return "green";
+  if (pct >= 80) return "yellow";
+  return "red";
+}

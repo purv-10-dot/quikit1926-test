@@ -1,0 +1,239 @@
+/**
+ * Helpers for the OPSP "edit after finalize" change log.
+ *
+ * The editor mutates state through two funnels — `set(key, value)` and
+ * `setArr(key, idx, value)` — so when an OPSP is finalized (and editable) we
+ * derive a human-readable {field, label, old, new} descriptor for whatever
+ * scalar actually changed, regardless of the field's shape (plain string,
+ * string[], row-object grid, or a critical-number card).
+ */
+
+/** Top-level FormData key → section/field label shown in the note card + drawer. */
+const SECTION_LABELS: Record<string, string> = {
+  employees: "Employees",
+  customers: "Customers",
+  shareholders: "Shareholders",
+  processItems: "Strengths / Core Competencies",
+  weaknesses: "Weaknesses",
+  coreValues: "Core Values / Beliefs",
+  purpose: "Purpose",
+  actions: "Actions (to live values)",
+  profitPerX: "Profit / X",
+  bhag: "BHAG",
+  targetRows: "Targets (3–5 yrs)",
+  sandbox: "Sandbox",
+  keyThrusts: "Key Thrusts / Capabilities",
+  brandPromiseKPIs: "Brand Promise KPIs",
+  brandPromise: "Brand Promise",
+  goalRows: "Goals (1 yr)",
+  keyInitiatives: "Key Initiatives",
+  criticalNumGoals: "Critical # (Goals)",
+  balancingCritNumGoals: "Balancing Critical # (Goals)",
+  makeBuy: "Make / Buy",
+  sell: "Sell",
+  recordKeeping: "Record Keeping",
+  actionsQtr: "Actions (QTR)",
+  rocks: "Rocks (Quarterly Priorities)",
+  criticalNumProcess: "Critical # (Process)",
+  balancingCritNumProcess: "Balancing Critical # (Process)",
+  theme: "Theme",
+  scoreboardDesign: "Scoreboard Design",
+  celebration: "Celebration",
+  reward: "Reward",
+  kpiAccountability: "Accountability — KPIs",
+  quarterlyPriorities: "Accountability — Quarterly Priorities",
+  criticalNumAcct: "Critical # (Accountability)",
+  balancingCritNumAcct: "Balancing Critical # (Accountability)",
+  trends: "Trends",
+};
+
+/** Row sub-keys → label, for grid cells and card fields. */
+const SUBKEY_LABELS: Record<string, string> = {
+  category: "Category",
+  projected: "Projected",
+  desc: "Description",
+  owner: "Owner",
+  title: "Title",
+  kpi: "KPI",
+  goal: "Goal",
+  priority: "Priority",
+  dueDate: "Due date",
+  y1: "Year 1", y2: "Year 2", y3: "Year 3", y4: "Year 4", y5: "Year 5",
+  q1: "Q1", q2: "Q2", q3: "Q3", q4: "Q4",
+  m1: "Month 1", m2: "Month 2", m3: "Month 3",
+};
+
+export function sectionLabel(key: string): string {
+  return SECTION_LABELS[key] ?? humanize(key);
+}
+
+/**
+ * Read a field's current value out of the form by dotted path
+ * ("employees.0", "coreValues", "targetRows.2.projected"). Returns a display
+ * string (empty when missing). Used to prefill the drawer's value editor.
+ */
+export function getFieldValue(form: Record<string, unknown>, path: string): string {
+  let cur: unknown = form;
+  for (const seg of path.split(".")) {
+    if (cur == null) return "";
+    cur = Array.isArray(cur)
+      ? cur[Number(seg)]
+      : (cur as Record<string, unknown>)[seg];
+  }
+  return toDisplay(cur);
+}
+
+/**
+ * Immutably set a field's value by dotted path, cloning only along the path.
+ * Sets the raw string value (computed grid cells are stored as strings; no
+ * cascade/auto-fill is applied — a deliberate "raw" drawer edit).
+ */
+export function applyFieldPath<T extends Record<string, unknown>>(
+  form: T,
+  path: string,
+  value: string,
+): T {
+  const segs = path.split(".");
+  const root: Record<string | number, unknown> = Array.isArray(form)
+    ? ([...(form as unknown[])] as unknown as Record<string | number, unknown>)
+    : ({ ...(form as Record<string, unknown>) } as Record<string | number, unknown>);
+  let cur: Record<string | number, unknown> = root;
+  for (let i = 0; i < segs.length - 1; i++) {
+    const key: string | number = Array.isArray(cur) ? Number(segs[i]) : segs[i];
+    const child = cur[key];
+    const cloned: unknown = Array.isArray(child)
+      ? [...child]
+      : child && typeof child === "object"
+        ? { ...(child as Record<string, unknown>) }
+        : child ?? {};
+    cur[key] = cloned;
+    cur = cloned as Record<string | number, unknown>;
+  }
+  const lastKey: string | number = Array.isArray(cur)
+    ? Number(segs[segs.length - 1])
+    : segs[segs.length - 1];
+  cur[lastKey] = value;
+  return root as unknown as T;
+}
+
+function subLabel(key: string): string {
+  return SUBKEY_LABELS[key] ?? humanize(key);
+}
+
+/** "balancingCritNumGoals" → "Balancing Crit Num Goals" (fallback only). */
+function humanize(s: string): string {
+  return s
+    .replace(/([A-Z])/g, " $1")
+    .replace(/[_-]+/g, " ")
+    .replace(/\s+/g, " ")
+    .trim()
+    .replace(/^./, (c) => c.toUpperCase());
+}
+
+export interface PendingEdit {
+  field: string; // stable path key, e.g. "targetRows.2.projected"
+  label: string; // display label, e.g. "Targets (3–5 yrs) #3 · Projected"
+  oldValue: string;
+  newValue: string;
+}
+
+/** Coerce any scalar to a short display string. */
+function toDisplay(v: unknown): string {
+  if (v === null || v === undefined) return "";
+  if (typeof v === "string") return v;
+  if (typeof v === "number" || typeof v === "boolean") return String(v);
+  try {
+    return JSON.stringify(v);
+  } catch {
+    return String(v);
+  }
+}
+
+/**
+ * Walk two values in parallel and return the FIRST scalar that differs, along
+ * with its path (array indices as numbers, object keys as strings). Returns
+ * null when nothing scalar changed (e.g. identical, or a no-op object spread).
+ */
+function firstScalarDiff(
+  oldVal: unknown,
+  newVal: unknown,
+  path: (string | number)[] = [],
+): { path: (string | number)[]; old: unknown; new: unknown } | null {
+  if (Array.isArray(oldVal) || Array.isArray(newVal)) {
+    const a = Array.isArray(oldVal) ? oldVal : [];
+    const b = Array.isArray(newVal) ? newVal : [];
+    const len = Math.max(a.length, b.length);
+    for (let i = 0; i < len; i++) {
+      if (JSON.stringify(a[i]) !== JSON.stringify(b[i])) {
+        const d = firstScalarDiff(a[i], b[i], [...path, i]);
+        if (d) return d;
+      }
+    }
+    return null;
+  }
+  if (isPlainObject(oldVal) || isPlainObject(newVal)) {
+    const a = isPlainObject(oldVal) ? oldVal : {};
+    const b = isPlainObject(newVal) ? newVal : {};
+    const keys = new Set([...Object.keys(a), ...Object.keys(b)]);
+    for (const k of keys) {
+      if (JSON.stringify(a[k]) !== JSON.stringify(b[k])) {
+        const d = firstScalarDiff(a[k], b[k], [...path, k]);
+        if (d) return d;
+      }
+    }
+    return null;
+  }
+  return oldVal !== newVal ? { path, old: oldVal, new: newVal } : null;
+}
+
+function isPlainObject(v: unknown): v is Record<string, unknown> {
+  return typeof v === "object" && v !== null && !Array.isArray(v);
+}
+
+function composeLabel(key: string, path: (string | number)[]): string {
+  const base = sectionLabel(key);
+  const parts: string[] = [base];
+  for (const seg of path) {
+    if (typeof seg === "number") {
+      // Special-case crit-card bullets → "Threshold N"
+      parts[parts.length - 1] = parts[parts.length - 1]; // no-op, index handled below
+      parts.push(`#${seg + 1}`);
+    } else {
+      parts.push(subLabel(seg));
+    }
+  }
+  // Join: section, then " #n", then " · subkey"
+  let out = parts[0];
+  for (let i = 1; i < parts.length; i++) {
+    out += parts[i].startsWith("#") ? ` ${parts[i]}` : ` · ${parts[i]}`;
+  }
+  return out;
+}
+
+/** Describe a `set(key, value)` change (any field shape). null = no scalar change. */
+export function describeSetChange(key: string, oldVal: unknown, newVal: unknown): PendingEdit | null {
+  const diff = firstScalarDiff(oldVal, newVal);
+  if (!diff) return null;
+  return {
+    field: [key, ...diff.path].join("."),
+    label: composeLabel(key, diff.path),
+    oldValue: toDisplay(diff.old),
+    newValue: toDisplay(diff.new),
+  };
+}
+
+/** Describe a `setArr(key, idx, value)` change (string-array element). */
+export function describeArrChange(
+  key: string,
+  idx: number,
+  oldVal: unknown,
+  newVal: unknown,
+): PendingEdit | null {
+  if (oldVal === newVal) return null;
+  return {
+    field: `${key}.${idx}`,
+    label: `${sectionLabel(key)} #${idx + 1}`,
+    oldValue: toDisplay(oldVal),
+    newValue: toDisplay(newVal),
+  };
+}
