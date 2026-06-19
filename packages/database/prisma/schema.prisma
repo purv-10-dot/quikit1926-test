@@ -6996,28 +6996,6 @@ model QtFeedback {
   @@schema("app_quiktrack")
 }
 
-/// Radio-style tri-state used by every format / punctuality / quality flag.
-enum ClientMeetingFlag {
-  YES
-  NO
-  NA
-
-  @@schema("app_quikscale")
-}
-
-/// Call status for daily huddles and weekly meetings.
-enum ClientMeetingStatus {
-  HELD
-  NOT_HELD
-  CALL_CANCELLED_BY_CLIENT
-  HOLIDAY_FOR_CLIENT
-  HOLIDAY_FOR_SUCCESS_ALCHEMIST
-  OTHER
-
-  @@schema("app_quikscale")
-}
-
-
 // ===== app_quikcrm models + enums (restored from commit 32931530; tenantId->orgId) =====
 enum CrmOpportunityStage {
   Prospecting

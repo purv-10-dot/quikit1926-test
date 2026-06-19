@@ -35,6 +35,14 @@ export const weeklyStatusSchema = z.object({
   notes:      z.string().optional().nullable(),
 });
 
-export type CreatePriorityInput = z.infer<typeof createPrioritySchema>;
-export type UpdatePriorityInput = z.infer<typeof updatePrioritySchema>;
-export type WeeklyStatusInput   = z.infer<typeof weeklyStatusSchema>;
+// Batch weekly-status save — multiple weeks in one request. Drives the
+// "Bulk weekly update" change-history card when ≥3 distinct weeks change in a
+// single save (e.g. the Completed cascade). 1–13 weeks (the fiscal quarter).
+export const weeklyStatusBatchSchema = z.object({
+  inputs: z.array(weeklyStatusSchema).min(1).max(13),
+});
+
+export type CreatePriorityInput     = z.infer<typeof createPrioritySchema>;
+export type UpdatePriorityInput     = z.infer<typeof updatePrioritySchema>;
+export type WeeklyStatusInput        = z.infer<typeof weeklyStatusSchema>;
+export type WeeklyStatusBatchInput   = z.infer<typeof weeklyStatusBatchSchema>;

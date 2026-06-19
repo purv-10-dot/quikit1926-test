@@ -1,11 +1,12 @@
 import { NextResponse } from "next/server";
-import type { Prisma } from "@prisma/client";
+import { Prisma, ClientMeetingStatus, ClientMeetingFlag } from "@prisma/client";
 import { db } from "@/lib/db";
 import { withOrgAuthForModule } from "@/lib/api/withOrgAuth";
 import { createWeeklyMeetingSchema } from "@/lib/schemas/clientMeetingsSchema";
 import { audit, requestContext } from "@/lib/audit";
 import { parseSort, type SortDirection } from "@/lib/api/parseSort";
 import { parsePagination, paginatedResponse } from "@/lib/api/pagination";
+import { searchUserIds, dateSearchConditions, timeSearchTokens, matchEnumValues, commaTokens } from "@/lib/api/listSearch";
 
 const withOrgAuth = withOrgAuthForModule("clientMeetings.weeklyMeeting");
 
@@ -64,10 +65,55 @@ export const GET = withOrgAuth(async ({ orgId }, request) => {
   const status = url.searchParams.get("status") || undefined;
   if (status) where.callStatus = status;
   if (search) {
+    // Global search across every visible column: client name, notes, Status
+    // (enum) + "other" text, Absent Members + Weekly Dashboard NA (comma-split
+    // relations), Actual Start/End + segment times, the YES/NO/NA flag columns
+    // (Good News / K&P / GAPS / WWW / Feedback / Collective Intel / OPSP Review
+    // / Punctuality), audit users, and the date columns.
+    const actorMatchIds = await searchUserIds(db, search);
+    const memberTokens = commaTokens(search);
+    const tTokens = timeSearchTokens(search);
+    const matchedStatuses = matchEnumValues(Object.values(ClientMeetingStatus), search);
+    const matchedFlags = matchEnumValues(Object.values(ClientMeetingFlag), search);
     where.OR = [
       { client: { name: { contains: search, mode: "insensitive" } } },
       { notesKPDashboard: { contains: search, mode: "insensitive" } },
       { otherNotes: { contains: search, mode: "insensitive" } },
+      { callStatusOther: { contains: search, mode: "insensitive" } },
+      // Absent Members + Weekly Dashboard NA — match any listed member.
+      ...memberTokens.map((t) => ({ absentTeamMembers: { some: { member: { name: { contains: t, mode: "insensitive" as const } } } } })),
+      ...memberTokens.map((t) => ({ dashboardNATeamMembers: { some: { member: { name: { contains: t, mode: "insensitive" as const } } } } })),
+      // Status (enum → matched values).
+      ...(matchedStatuses.length ? [{ callStatus: { in: matchedStatuses } }] : []),
+      // Actual Start/End + segment time strings.
+      ...tTokens.flatMap((t) => [
+        { actualStartTime: { contains: t, mode: "insensitive" as const } },
+        { actualEndTime: { contains: t, mode: "insensitive" as const } },
+        { segmentTime1: { contains: t, mode: "insensitive" as const } },
+        { segmentTime2: { contains: t, mode: "insensitive" as const } },
+        { segmentTime3: { contains: t, mode: "insensitive" as const } },
+        { segmentTime4: { contains: t, mode: "insensitive" as const } },
+        { segmentTime5: { contains: t, mode: "insensitive" as const } },
+        { segmentTime6: { contains: t, mode: "insensitive" as const } },
+        { segmentTime7: { contains: t, mode: "insensitive" as const } },
+      ]),
+      // YES/NO/NA flag columns.
+      ...(matchedFlags.length
+        ? [
+            { goodNewsSharing: { in: matchedFlags } },
+            { kpDashboard: { in: matchedFlags } },
+            { gaps: { in: matchedFlags } },
+            { www: { in: matchedFlags } },
+            { feedback: { in: matchedFlags } },
+            { collectiveIntelligence: { in: matchedFlags } },
+            { opspReview: { in: matchedFlags } },
+            { punctualityOverride: { in: matchedFlags } },
+          ]
+        : []),
+      ...(actorMatchIds.length
+        ? [{ createdBy: { in: actorMatchIds } }, { updatedBy: { in: actorMatchIds } }]
+        : []),
+      ...dateSearchConditions(["meetingDate", "createdAt", "updatedAt"], search),
     ];
   }
 

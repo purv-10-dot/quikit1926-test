@@ -49,3 +49,39 @@ export const WWW_AUDIT_FIELDS = Object.keys(WWW_FIELD_LABELS);
 export function wwwFieldLabel(field: string): string {
   return WWW_FIELD_LABELS[field] ?? field;
 }
+
+/**
+ * WWW fields whose values are ISO date strings (or, for `revisedDates`, an
+ * array of them). Used to drive friendly date rendering in the Change History
+ * diff so the drawer shows "25 Jun 2026" instead of "2026-06-25T00:00:00.000Z".
+ */
+export const WWW_DATE_FIELDS = new Set(["when", "originalDueDate", "revisedDates"]);
+
+/**
+ * Format an ISO date string as "25 Jun 2026" (UTC, date-only). WWW dates are
+ * stored at midnight UTC, so we format in UTC to avoid an off-by-one day from
+ * the viewer's timezone. Falls back to the raw input when it isn't a parseable
+ * date, and "—" for empty values. Shared by the CREATE card and the diff.
+ */
+export function formatWWWDate(iso: string | null | undefined): string {
+  if (iso === null || iso === undefined || iso === "") return "—";
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return String(iso);
+  return d.toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "numeric", timeZone: "UTC" });
+}
+
+/**
+ * Per-field value formatter for the Change History diff (the `formatFieldValue`
+ * hook on the WWW audit config). Renders WWW date fields as friendly dates and
+ * returns `undefined` for everything else so the generic formatter handles it.
+ *
+ * For the `revisedDates` array field the diff renderer calls this per element,
+ * so each element (an ISO string) is formatted individually. Empty/null/non-
+ * string values return `undefined` to fall back to the default "—" display.
+ */
+export function formatWWWFieldValue(fieldName: string, value: unknown): string | undefined {
+  if (!WWW_DATE_FIELDS.has(fieldName)) return undefined;
+  if (value === null || value === undefined || value === "") return undefined;
+  if (typeof value !== "string") return undefined;
+  return formatWWWDate(value);
+}

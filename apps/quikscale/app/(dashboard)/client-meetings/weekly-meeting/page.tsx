@@ -1913,17 +1913,17 @@ function UpdateScoreGrid({
       <span className="inline-block bg-gray-700 text-white text-xs px-3 py-1.5 rounded">
         Meeting Date: {fmtDate(meetingDate)}
       </span>
-      <div className="overflow-x-auto border border-gray-200 rounded-lg">
+      <div className="overflow-auto max-h-[60vh] border border-gray-200 rounded-lg">
         <table className="min-w-full text-xs">
-          <thead className="bg-gray-50 text-gray-600">
+          <thead className="bg-gray-50 text-gray-600 sticky top-0 z-10">
             <tr>
-              <th className="px-3 py-2 text-left font-medium">Member Name</th>
+              <th className="px-3 py-2 text-left font-medium bg-gray-50">Member Name</th>
               {SCORE_FIELDS.map((c) => (
-                <th key={c.key} className="px-3 py-2 text-left font-medium">
+                <th key={c.key} className="px-3 py-2 text-left font-medium bg-gray-50">
                   {c.label}
                 </th>
               ))}
-              <th className="px-3 py-2 text-left font-medium">Status</th>
+              <th className="px-3 py-2 text-left font-medium bg-gray-50">Status</th>
             </tr>
           </thead>
           <tbody>

@@ -30,7 +30,7 @@ export function AccountabilitySection({
 }: Props) {
   return (
     <Card className="flex flex-col gap-4">
-      <div className="flex flex-col gap-4">
+      <div className="flex-1 flex flex-col gap-4">
         <CardH
           title="YOUR ACCOUNTABILITY"
           subtitle="(Who/When)"
@@ -38,8 +38,8 @@ export function AccountabilitySection({
           onExpand={onExpandKpiAcct}
         />
 
-        <div className="rounded-xl border border-gray-200 overflow-hidden">
-          <table className="w-full border-collapse">
+        <div className="flex-1 rounded-xl border border-gray-200 overflow-hidden">
+          <table className="w-full h-full border-collapse">
             <thead>
               <tr className="bg-gray-50">
                 <th className="border-b border-r border-gray-200 px-3 py-2.5 text-xs font-semibold text-gray-600 text-left w-12">
@@ -99,7 +99,7 @@ export function AccountabilitySection({
       </div>
 
       {/* Quarterly Priorities — below KPI table, above Critical # */}
-      <div className="border-t border-gray-100 pt-3">
+      <div className="flex-1 flex flex-col border-t border-gray-100 pt-3">
         <div className="flex items-start justify-between mb-3">
           <p className="text-sm font-bold text-gray-800">Quarterly Priorities</p>
           <button
@@ -110,8 +110,8 @@ export function AccountabilitySection({
             <Maximize2 className="h-3.5 w-3.5" />
           </button>
         </div>
-        <div className="rounded-xl border border-gray-200 overflow-hidden">
-          <table className="w-full border-collapse">
+        <div className="flex-1 rounded-xl border border-gray-200 overflow-hidden">
+          <table className="w-full h-full border-collapse">
             <thead>
               <tr className="bg-gray-50">
                 <th className="border-b border-r border-gray-200 px-3 py-2.5 text-xs font-semibold text-gray-600 text-left w-12">
@@ -191,16 +191,24 @@ export function AccountabilitySection({
         </div>
       </div>
 
-      <div className="border-t border-gray-100 pt-3 space-y-3">
+      {/* Crit cards are equal-weight siblings of the two tables above so the
+          column's leftover height (it is stretched by the parent grid to match
+          its taller neighbours) is shared evenly across all four blocks. Each
+          card grows via flex-1 and `fill` spreads its rows to fill that share. */}
+      <div className="flex-1 flex flex-col border-t border-gray-100 pt-3">
         <CritBlock
           label="Critical #"
           value={form.criticalNumAcct}
           onChange={(v) => set("criticalNumAcct", v)}
+          fill
         />
+      </div>
+      <div className="flex-1 flex flex-col">
         <CritBlock
           label="Balancing Critical #"
           value={form.balancingCritNumAcct}
           onChange={(v) => set("balancingCritNumAcct", v)}
+          fill
         />
       </div>
     </Card>

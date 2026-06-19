@@ -112,6 +112,9 @@ export const POST = withOrgAuth<{ id: string }>(
           status: newStatus,
           previousStatus,
           notes: notes ?? null,
+          // Prior note so the timeline can show old → new note (not just the
+          // new value). Older events without this render the new note only.
+          previousNotes: prior?.notes ?? null,
           notesOnly: !statusChanged && notesChanged,
           kind: "status",
         },

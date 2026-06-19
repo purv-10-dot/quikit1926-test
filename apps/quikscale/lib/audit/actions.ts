@@ -55,17 +55,21 @@ export function classifyUpdateAction(changedFields: readonly string[]): AuditAct
 /** The action filter buckets used by the Change History panel tabs. */
 export type AuditFilterBucket = "create" | "update" | "delete";
 
-/** Map a stored action to its filter bucket (All/Create/Update/Delete tabs). */
+/** Map a stored action to its filter bucket (All/Create/Update/Delete-Restore tabs). */
 export function actionBucket(action: string): AuditFilterBucket {
   switch (action) {
     case "CREATE":
       return "create";
     case "DELETE":
     case "ARCHIVE":
+    // RESTORE shares the lifecycle bucket with DELETE so the "Delete/Restore"
+    // tab shows the full delete → restore history together (it's a lifecycle
+    // action, not a field edit, so it doesn't belong under "Update").
+    case "RESTORE":
       return "delete";
     default:
       // UPDATE, STATUS_CHANGE, OWNERSHIP_CHANGE, ASSIGNMENT_CHANGE,
-      // PERMISSION_CHANGE, WEEKLY_UPDATE, BULK_UPDATE, RESTORE, COMMENT
+      // PERMISSION_CHANGE, WEEKLY_UPDATE, BULK_UPDATE, COMMENT
       return "update";
   }
 }

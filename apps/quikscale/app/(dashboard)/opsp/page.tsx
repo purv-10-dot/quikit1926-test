@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect, useRef, useMemo, useCallback } from "react";
+import dynamic from "next/dynamic";
 import { useSearchParams } from "next/navigation";
 import { useSession } from "next-auth/react";
 import { cn } from "@/lib/utils";
@@ -8,7 +9,7 @@ import { OPSPOwnerNamesProvider } from "./components/pickers";
 import { FInput } from "./components/RichEditor";
 import { Card } from "./components/Card";
 import { populateCatCache } from "./components/category";
-import { ActionsModal, RocksModal, KeyThrustsModal, KeyInitiativesModal, AccountabilityModal, QuarterlyPrioritiesModal } from "./components/modals";
+import { ActionsModal, RocksModal, KeyThrustsModal, KeyInitiativesModal, AccountabilityModal, QuarterlyPrioritiesModal, actionsQtrHasErrors } from "./components/modals";
 import { Eye, Check, AlertTriangle, Loader2, History } from "lucide-react";
 import { fiscalYearLabel, getFiscalYear, getFiscalQuarter } from "@/lib/utils/fiscal";
 import { OPSPSetupWizard } from "./components/SetupWizard";
@@ -18,13 +19,20 @@ import { GoalsSection } from "./components/GoalsSection";
 import { ActionsSection } from "./components/ActionsSection";
 import { AccountabilitySection } from "./components/AccountabilitySection";
 import { useOPSPForm, type FormData } from "./hooks/useOPSPForm";
-import { OPSPPreview } from "./components/OPSPPreview";
-import { validateOPSP, backfillPeriods, type ValidationError } from "./lib/validateOPSP";
+// Lazy-loaded: OPSPPreview is the ONLY path that pulls in @react-pdf/renderer +
+// OPSPDocument. Loading it dynamically (and rendering it only when the preview
+// is open, see below) keeps that heavy PDF stack out of the OPSP page's initial
+// bundle — it arrives only when the user actually opens the preview.
+const OPSPPreview = dynamic(
+  () => import("./components/OPSPPreview").then((m) => m.OPSPPreview),
+  { ssr: false },
+);
+import { validateOPSP, backfillPeriods, categoryRowMissingProjected, type ValidationError } from "./lib/validateOPSP";
 import { useMyPermissions } from "@/lib/hooks/useMyPermissions";
 import { EditNoteCard } from "./components/EditNoteCard";
 import { OPSPHistoryDrawer } from "./components/OPSPHistoryDrawer";
 import { describeSetChange, describeArrChange, getFieldValue, applyFieldPath, type PendingEdit } from "./lib/editLog";
-import { isYearSelectable, isQuarterSelectable } from "./lib/periodGating";
+import { isYearSelectable, isQuarterSelectable, firstSelectableQuarter } from "./lib/periodGating";
 import { useOpspAck } from "@/lib/hooks/useOpspAck";
 import { editedFieldPaths, fieldMatchesEdited, editsSince, latestEdit, type EditLogLike } from "@/lib/utils/opspEditHighlight";
 
@@ -231,6 +239,34 @@ export default function OPSPPage() {
     await logChange(edit, note);
   };
 
+  // An edit to an Actions (QTR) cell that leaves the grid in an invalid state
+  // (e.g. last month < Projected) must NEVER be persisted or logged — the
+  // ActionsModal mutates form state live (onChange per keystroke), so without
+  // this guard an invalid value would reach OPSP Review even though the modal's
+  // Submit button is disabled. Mirrors the modal's own Submit-disable rule.
+  const actionsEditInvalid = (field: string) =>
+    field.startsWith("actionsQtr") &&
+    actionsQtrHasErrors(formRef.current.actionsQtr, formRef.current.goalRows);
+
+  // Clearing a GOALS/TARGETS Projected value (leaving a category with no value)
+  // must NOT be saved — it produces an incomplete row that leaks into the OPSP
+  // Review as a dash-only entry. Block the commit for `goalRows.N.projected` /
+  // `targetRows.N.projected` when that row ends up with a category but no
+  // projected. (Clearing the whole row — category included — stays allowed.)
+  const goalsTargetsEditInvalid = (field: string) => {
+    const m = /^(goalRows|targetRows)\.(\d+)\.projected$/.exec(field);
+    if (!m) return false;
+    const rows = m[1] === "goalRows" ? formRef.current.goalRows : formRef.current.targetRows;
+    const row = rows[Number(m[2])];
+    return !!row && categoryRowMissingProjected(row);
+  };
+
+  // A finalized edit is invalid (Save blocked) when an Actions (QTR) grid error
+  // exists OR a Goals/Targets Projected was cleared. Drives the auto-commit
+  // guard, the Save guard, and the EditNoteCard's disabled state.
+  const editInvalid = (field: string) =>
+    actionsEditInvalid(field) || goalsTargetsEditInvalid(field);
+
   // Merge consecutive edits to the SAME field (keep the baseline old value, update
   // the new). Switching to a different field auto-commits the previous one
   // (persist + note-less log) so nothing is lost now that autosave is off.
@@ -243,7 +279,10 @@ export default function OPSPPage() {
       setPendingEdit(merged);
       return;
     }
-    if (prev) void commitPending(prev, "");
+    // Skip the auto-commit when the previous edit is invalid (Actions grid
+    // error, or a cleared Goals/Targets Projected) — its value stays in form
+    // state and is persisted by the eventual Save once it's valid again.
+    if (prev && !editInvalid(prev.field)) void commitPending(prev, "");
     // Snapshot the form BEFORE this edit applies (captureChange runs ahead of
     // setForm) so Cancel can restore it exactly.
     formSnapshotRef.current = formRef.current;
@@ -256,6 +295,11 @@ export default function OPSPPage() {
   // string → Save: persist the value + log the change with the note.
   const resolvePending = async (note: string | null) => {
     const edit = pendingRef.current;
+    // Save (note is a string) is blocked while the edit is invalid (Actions
+    // grid error, or a cleared Goals/Targets Projected) — keep the card open so
+    // the user can fix it (the Save button is already disabled; this guards the
+    // Ctrl+Enter / programmatic paths). Cancel (note === null) always proceeds.
+    if (note !== null && edit && editInvalid(edit.field)) return;
     const snapshot = formSnapshotRef.current;
     pendingRef.current = null;
     setPendingEdit(null);
@@ -443,7 +487,7 @@ export default function OPSPPage() {
       {/* ── Sticky Header ── */}
       <div className="sticky top-0 z-30 bg-white border-b border-gray-200 px-6 py-3 flex items-center justify-between">
         <div className="flex items-center gap-3">
-          <h1 className="text-base font-semibold text-gray-900">Create OPSP Data</h1>
+          <h1 className="text-base font-semibold text-gray-900">Create One-Page Strategic Plan (OPSP) Data</h1>
           <SaveBadge />
         </div>
         <div className="flex items-center gap-2">
@@ -487,7 +531,19 @@ export default function OPSPPage() {
                       return (
                         <button key={y}
                           disabled={isDisabled}
-                          onClick={() => { if (!isDisabled) { setForm(prev => ({ ...prev, year: y })); loadForPeriod(y, form.quarter); } }}
+                          onClick={() => {
+                            if (isDisabled) return;
+                            // Switching to a different year resets to that
+                            // year's first selectable quarter (Q1 for a newly
+                            // chained year, the plan-start quarter for the
+                            // onboarding year) instead of carrying over the
+                            // previously selected quarter. Same year = no change.
+                            const nextQuarter = y === form.year
+                              ? form.quarter
+                              : firstSelectableQuarter({ year: y, planStartYear, planStartQuarter, reviewedQuarters });
+                            setForm(prev => ({ ...prev, year: y, quarter: nextQuarter }));
+                            loadForPeriod(y, nextQuarter);
+                          }}
                           className={`text-xs px-3 py-1.5 rounded-lg text-left transition-colors ${
                             isSelected
                               ? "bg-gray-900 text-white"
@@ -670,14 +726,19 @@ export default function OPSPPage() {
         rows={form.quarterlyPriorities} onChange={r => set("quarterlyPriorities", r)} readOnly={isLocked} />
 
       {/* ── OPSP Preview (PDF / Word export) ── */}
-      <OPSPPreview
-        open={previewOpen}
-        onClose={() => setPreviewOpen(false)}
-        form={form}
-        users={ownerUsers}
-        tenantName={tenantName}
-        currentUserName={currentUserName}
-      />
+      {/* Rendered only when open so the lazy chunk (incl. @react-pdf) loads on
+          first open rather than on page mount. OPSPPreview still honors `open`
+          internally; gating here is what makes the dynamic import pay off. */}
+      {previewOpen && (
+        <OPSPPreview
+          open={previewOpen}
+          onClose={() => setPreviewOpen(false)}
+          form={form}
+          users={ownerUsers}
+          tenantName={tenantName}
+          currentUserName={currentUserName}
+        />
+      )}
 
       {/* ── Finalized banner ──
          Three variants (in priority order). Note the OPSP is read-only for
@@ -873,11 +934,28 @@ export default function OPSPPage() {
         const top = below + estH > vh ? Math.max(8, anchorRect.top - estH - 6) : below;
         const width = Math.max(320, Math.min(anchorRect.width, 440));
         const left = Math.max(8, Math.min(anchorRect.left, vw - width - 8));
+        // Block the commit while the edit is invalid: an Actions (QTR) grid
+        // error (same rule that disables the modal's Submit), or a Goals/Targets
+        // Projected that was cleared (a category left with no value) — either
+        // would otherwise reach the OPSP Review as bad/incomplete data.
+        const blockedEdit = editInvalid(pendingEdit.field);
+        const blockedReason = pendingEdit.field.startsWith("actionsQtr")
+          ? "Resolve the highlighted errors in the Actions (QTR) editor before saving this change."
+          : "A category's Projected value can't be empty — enter a value or remove the category before saving.";
+        // The expand-modals (Actions/Rocks/…) edit form state live, so editing a
+        // field inside one pops this card while a modal is open. The modals sit
+        // at z-[200]; raise the card to z-[210] so it renders ABOVE the modal
+        // (anchored to the edited cell) instead of being hidden behind it.
+        const expandModalOpen =
+          actionsOpen || rocksOpen || keyThrustsOpen ||
+          keyInitiativesOpen || kpiAcctOpen || qPrioritiesOpen;
         return (
-          <div className="fixed z-[60]" style={{ top, left, width }}>
+          <div className={`fixed ${expandModalOpen ? "z-[210]" : "z-[60]"}`} style={{ top, left, width }}>
             <EditNoteCard
               pending={pendingEdit}
               saving={savingNote}
+              blocked={blockedEdit}
+              blockedReason={blockedReason}
               onSave={(n) => void resolvePending(n)}
               onCancel={() => void resolvePending(null)}
             />

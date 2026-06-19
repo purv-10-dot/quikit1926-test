@@ -149,6 +149,12 @@ export const kpiListParamsSchema = z.object({
   pageSize: z.number().int().min(1).max(100).default(20),
   status: z.enum(["active", "paused", "completed"]).optional(),
   kpiLevel: z.enum(["individual", "team"]).optional(),
+  // Dashboard "My Dashboard" scope: returns KPIs the current user is an owner
+  // of across BOTH levels in one sortable/paginatable query — individual KPIs
+  // they own (KPI.owner === me) ∪ team KPIs they co-own (KPI.ownerIds ∋ me).
+  // Overrides admin row-level bypass so the dashboard stays personal. See the
+  // route's `scope` branch.
+  scope: z.enum(["mine"]).optional(),
   owner: z.string().cuid().optional(),
   teamId: z.string().cuid().optional(),
   parentKPIId: z.string().cuid().optional(),

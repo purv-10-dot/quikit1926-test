@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { Prisma } from "@quikit/database";
 import { db } from "@/lib/db";
 import { withOrgAuthForResource } from "@/lib/api/withOrgAuth";
 const auth = withOrgAuthForResource("kpi", "KPI");
@@ -14,6 +15,7 @@ import { notifyKPIAssignment } from "@/lib/services/kpiNotifications";
 import { isOrgAdmin, getMyTeamIds } from "@/lib/api/visibility";
 import { fetchAuditUserMap, decorateAudit } from "@/lib/api/auditUsers";
 import { audit, requestContext } from "@/lib/audit";
+import { searchUserIds, dateSearchConditions, numericSearchValue } from "@/lib/api/listSearch";
 
 
 // GET /api/kpi - List KPIs with filters and pagination
@@ -21,7 +23,9 @@ export const GET = auth.view(async ({ orgId, userId }, req) => {
   const searchParams = req.nextUrl.searchParams;
   const params = {
     page: parseInt(searchParams.get("page") || "1"),
-    pageSize: parseInt(searchParams.get("pageSize") || "20"),
+    // Accept `limit` as an alias for `pageSize` so the dashboard infinite-scroll
+    // hooks (which speak `limit`) and the module pages (`pageSize`) both work.
+    pageSize: parseInt(searchParams.get("pageSize") || searchParams.get("limit") || "20"),
     status: searchParams.get("status") || undefined,
     kpiLevel: searchParams.get("kpiLevel") || undefined,
     owner: searchParams.get("owner") || undefined,
@@ -37,13 +41,24 @@ export const GET = auth.view(async ({ orgId, userId }, req) => {
   const validated = kpiListParamsSchema.parse(params);
 
   const includeDeleted = searchParams.get("includeDeleted") === "true";
-  const where: any = { orgId };
+  // Dashboard "My Dashboard" personal scope — see kpiListParamsSchema.scope.
+  const scopeMine = searchParams.get("scope") === "mine";
+  // Typed so the `orgId` tenant filter can't be silently dropped by a future edit.
+  const where: Prisma.KPIWhereInput = { orgId };
   // Trash toggle: by default return only active (not soft-deleted). When
   // ?includeDeleted=true, return ONLY soft-deleted records for the trash view.
   where.deletedAt = includeDeleted ? { not: null } : null;
   if (validated.status) where.status = validated.status;
   if (validated.kpiLevel) where.kpiLevel = validated.kpiLevel;
-  if (validated.owner) where.owner = validated.owner;
+  // Owner filter semantics depend on level: individual KPIs carry a single
+  // `owner` scalar; team KPIs carry an `ownerIds[]` co-owner list. Filtering a
+  // team KPI by its scalar `owner` (the creator) would miss co-owners, so when
+  // a team-level owner filter is requested we match the array instead. This
+  // mirrors how the Dashboard's Team tab filters team KPIs by co-owner.
+  if (validated.owner) {
+    if (validated.kpiLevel === "team") where.ownerIds = { has: validated.owner };
+    else where.owner = validated.owner;
+  }
   // Team filter semantics depend on kpiLevel:
   //   - Team KPIs have KPI.teamId set → filter directly on that column.
   //   - Individual KPIs have teamId=null → team membership is stored in
@@ -93,8 +108,19 @@ export const GET = auth.view(async ({ orgId, userId }, req) => {
   //   - Team KPIs under a team they belong to (member or head)
   // The kpiLevel filter routes the visibility scope. When kpiLevel is not
   // set, OR both conditions so neither scope is hidden by accident.
+  // Dashboard personal scope: KPIs the user owns across BOTH levels —
+  // individual (owner === me) ∪ team (ownerIds ∋ me). This is its own
+  // row-level filter, so it overrides the admin/non-admin visibility block
+  // below (an admin viewing "My Dashboard" still only sees their own rows).
+  if (scopeMine) {
+    where.OR = [
+      { kpiLevel: "individual", owner: userId },
+      { kpiLevel: "team", ownerIds: { has: userId } },
+    ];
+  }
+
   const adminBypass = await isOrgAdmin(userId, orgId);
-  if (!adminBypass) {
+  if (!adminBypass && !scopeMine) {
     if (validated.kpiLevel === "individual") {
       where.owner = userId;
     } else if (validated.kpiLevel === "team") {
@@ -102,7 +128,7 @@ export const GET = auth.view(async ({ orgId, userId }, req) => {
       where.teamId = myTeams.length > 0 ? { in: myTeams } : "__no_team_membership__";
     } else {
       const myTeams = await getMyTeamIds(userId, orgId);
-      const ownerOr: Array<Record<string, unknown>> = [{ owner: userId }];
+      const ownerOr: Prisma.KPIWhereInput[] = [{ owner: userId }];
       if (myTeams.length > 0) ownerOr.push({ teamId: { in: myTeams } });
       // Compose with any existing OR (from the teamId branch above) by ANDing
       // through AND[]. Otherwise just attach OR directly.
@@ -116,34 +142,51 @@ export const GET = auth.view(async ({ orgId, userId }, req) => {
   }
 
   if (validated.search) {
-    // Owner-name match: resolve User.firstName/lastName ILIKE %q% → userIds,
-    // then KPI.owner IN (userIds). Lets users type "Rishab" and hit Rishab's KPIs.
+    // Global search across every visible KPI column. Names/text match directly;
+    // user names (owner, co-owners, created-by, updated-by) resolve to ids;
+    // team name matches via the relation; numeric goals match on equality; and
+    // created/updated dates understand year / full-date / month-name terms.
     const q = validated.search;
-    const matchedUsers = await db.user.findMany({
-      where: {
-        OR: [
-          { firstName: { contains: q, mode: "insensitive" } },
-          { lastName: { contains: q, mode: "insensitive" } },
-        ],
-      },
-      select: { id: true },
-    });
-    const matchedUserIds = matchedUsers.map((u) => u.id);
+    const matchedUserIds = await searchUserIds(db, q);
+    const num = numericSearchValue(q);
 
-    const searchOr: Array<Record<string, unknown>> = [
+    const searchOr: Prisma.KPIWhereInput[] = [
       { name: { contains: q, mode: "insensitive" } },
       { description: { contains: q, mode: "insensitive" } },
+      { measurementUnit: { contains: q, mode: "insensitive" } },
+      { lastNotes: { contains: q, mode: "insensitive" } },
+      { team: { is: { name: { contains: q, mode: "insensitive" } } } },
+      // Weekly note text (the "Last Notes" column surfaces a weekly note) —
+      // matched via an EXISTS subquery on KPIWeeklyValue (DB-level).
+      { weeklyValues: { some: { notes: { contains: q, mode: "insensitive" } } } },
     ];
     if (matchedUserIds.length > 0) {
       searchOr.push({ owner: { in: matchedUserIds } });
-      // Also surface Team KPIs whose ownerIds[] contains a matched user
       searchOr.push({ ownerIds: { hasSome: matchedUserIds } });
+      searchOr.push({ createdBy: { in: matchedUserIds } });
+      searchOr.push({ updatedBy: { in: matchedUserIds } });
+    }
+    if (num != null) {
+      searchOr.push({ target: num });
+      searchOr.push({ quarterlyGoal: num });
+      searchOr.push({ qtdGoal: num });
+      searchOr.push({ qtdAchieved: num });
+      // Progress: match the stored progressPercent as a 1-point band so a whole
+      // number ("25") matches 25.x% (exact for Cumulative; Standalone bars are
+      // recomputed client-side and may differ — documented behavior).
+      searchOr.push({ progressPercent: { gte: num, lt: num + 1 } });
+      // Week 1–13 values: match any week whose entered value equals the number
+      // (EXISTS subquery on KPIWeeklyValue — DB-level).
+      searchOr.push({ weeklyValues: { some: { value: num } } });
+    }
+    for (const cond of dateSearchConditions(["createdAt", "updatedAt"], q)) {
+      searchOr.push(cond as Prisma.KPIWhereInput);
     }
 
     // If a visibility filter already wrote where.OR/where.AND, AND-compose so
     // search doesn't blow away the row-level scope.
     if (where.AND) {
-      (where.AND as Array<Record<string, unknown>>).push({ OR: searchOr });
+      (where.AND as Prisma.KPIWhereInput[]).push({ OR: searchOr });
     } else if (where.OR) {
       where.AND = [{ OR: where.OR }, { OR: searchOr }];
       delete where.OR;
@@ -305,9 +348,12 @@ export const GET = auth.view(async ({ orgId, userId }, req) => {
     }, auditMap);
   });
 
+  // `hasMore` lets the dashboard infinite-scroll hook know whether to keep
+  // fetching without re-deriving it from total/page math on the client.
+  const hasMore = validated.page * validated.pageSize < total;
   const response: ApiResponse<any> = {
     success: true,
-    data: { kpis: enriched, total, page: validated.page, pageSize: validated.pageSize },
+    data: { kpis: enriched, total, page: validated.page, pageSize: validated.pageSize, hasMore },
   };
 
   return NextResponse.json(response);

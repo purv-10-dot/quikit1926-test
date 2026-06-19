@@ -8,6 +8,7 @@ import { writeAuditLog } from "@/lib/api/auditLog";
 import { audit, requestContext } from "@/lib/audit";
 import { parseSort, type SortDirection } from "@/lib/api/parseSort";
 import { parsePagination, paginatedResponse } from "@/lib/api/pagination";
+import { searchUserIds, dateSearchConditions, timeSearchTokens, activeBooleanFromSearch, commaTokens } from "@/lib/api/listSearch";
 
 // RBAC v2: Client Master is now per-action gated, mirroring KPI / WWW. The
 // previous `requireAdmin()` gate on POST/PUT/DELETE/restore is removed —
@@ -48,19 +49,43 @@ export const GET = auth.view(async ({ orgId }, request) => {
   const { sortBy, sortOrder, orderBy } = parseSort(request, CLIENT_SORT_WHITELIST, mapClientSort);
   const { page, limit, skip, take } = parsePagination(request);
 
+  // Global search across every visible column: name/description, team-member
+  // name/email (relation, comma-split so a pasted roster matches any listed
+  // member), D/H + Weekly window times, Status (isActive), created-by/updated-by
+  // names, and created/updated dates.
+  const actorMatchIds = search ? await searchUserIds(db, search) : [];
+  const memberTokens = search ? commaTokens(search) : [];
+  const tTokens = search ? timeSearchTokens(search) : [];
+  const activeBool = search ? activeBooleanFromSearch(search) : null;
+  const searchOr: Prisma.ClientWhereInput[] = search
+    ? [
+        { name: { contains: search, mode: "insensitive" } },
+        { description: { contains: search, mode: "insensitive" } },
+        // Team Members — match any listed member by name or email.
+        ...memberTokens.map((t) => ({ teamMembers: { some: { member: { name: { contains: t, mode: "insensitive" as const } } } } })),
+        ...memberTokens.map((t) => ({ teamMembers: { some: { member: { email: { contains: t, mode: "insensitive" as const } } } } })),
+        // D/H Window + Weekly Window time strings (single time or pasted range).
+        ...tTokens.flatMap((t) => [
+          { dailyStartTime: { contains: t, mode: "insensitive" as const } },
+          { dailyEndTime: { contains: t, mode: "insensitive" as const } },
+          { weeklyStartTime: { contains: t, mode: "insensitive" as const } },
+          { weeklyEndTime: { contains: t, mode: "insensitive" as const } },
+        ]),
+        // Status (Active / Inactive → isActive boolean).
+        ...(activeBool != null ? [{ isActive: activeBool }] : []),
+        ...(actorMatchIds.length
+          ? [{ createdBy: { in: actorMatchIds } }, { updatedBy: { in: actorMatchIds } }]
+          : []),
+        ...(dateSearchConditions(["createdAt", "updatedAt"], search) as Prisma.ClientWhereInput[]),
+      ]
+    : [];
+
   const where: Prisma.ClientWhereInput = {
     orgId,
     deletedAt: includeDeleted ? { not: null } : null,
     ...(clientId ? { id: clientId } : {}),
     ...(statusFilter ? { isActive: statusFilter === "active" } : {}),
-    ...(search
-      ? {
-          OR: [
-            { name: { contains: search, mode: "insensitive" } },
-            { description: { contains: search, mode: "insensitive" } },
-          ],
-        }
-      : {}),
+    ...(search ? { OR: searchOr } : {}),
   };
 
   const [rows, total] = await Promise.all([

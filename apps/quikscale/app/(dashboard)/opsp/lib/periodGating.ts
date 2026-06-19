@@ -56,6 +56,27 @@ export function isQuarterSelectable({
   return reviewedQuarters.includes(`${prevYear}:${prevQ}`);
 }
 
+/**
+ * The quarter to land on when the user switches to `year` in the picker.
+ *
+ * Returns the first of Q1–Q4 that is selectable for that year, so switching to
+ * a freshly-opened next fiscal year lands on its Q1 (the one the finalize chain
+ * just unlocked) instead of carrying over the previous year's quarter. For a
+ * mid-year-onboarding plan-start year this is the plan's start quarter (e.g.
+ * Q3), never a locked earlier quarter. Falls back to "Q1" if none qualify.
+ */
+export function firstSelectableQuarter({
+  year,
+  planStartYear,
+  planStartQuarter,
+  reviewedQuarters,
+}: Omit<QuarterSelectableArgs, "qNum">): string {
+  const qNum = [1, 2, 3, 4].find((n) =>
+    isQuarterSelectable({ year, qNum: n, planStartYear, planStartQuarter, reviewedQuarters }),
+  );
+  return qNum ? `Q${qNum}` : "Q1";
+}
+
 export interface YearSelectableArgs {
   year: number;
   /** The fiscal year that contains today's date. Always selectable. */

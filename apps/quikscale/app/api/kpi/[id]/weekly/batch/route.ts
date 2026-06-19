@@ -7,6 +7,7 @@ const withOrgAuth = withOrgAuthForModule("kpi");
 import { getPastWeekFlags, getCurrentFiscalWeekFromDB } from "@/lib/utils/featureFlags";
 import { audit, requestContext } from "@/lib/audit";
 import { weeklyTargetForWeek } from "@/lib/utils/kpiHelpers";
+import { withTxRetry } from "@/lib/api/withTxRetry";
 
 function calcHealthStatus(progress: number, status: string): string {
   if (status === "completed") return "complete";
@@ -186,17 +187,21 @@ export const POST = withOrgAuth<{ id: string }>(async ({ orgId, userId }, req: N
     // No instance-level role check here — RBAC v2 `KPI:update` / `TeamKPI:update`
     // (enforced by the route wrapper) is the sole authorization gate.
 
-    // Primary upsert
+    // Primary upsert — retried on a deadlock victim (idempotent upsert). A
+    // non-deadlock failure still falls through to the per-input error report
+    // below, preserving the batch's partial-success contract.
     try {
-      await upsertRow({
-        kpiId: params.id,
-        orgId,
-        userId: targetUserId,
-        weekNumber: input.weekNumber,
-        value: input.value,
-        notes: input.notes,
-        changedBy: userId,
-      });
+      await withTxRetry(() =>
+        upsertRow({
+          kpiId: params.id,
+          orgId,
+          userId: targetUserId,
+          weekNumber: input.weekNumber,
+          value: input.value,
+          notes: input.notes,
+          changedBy: userId,
+        }),
+      );
     } catch (e: unknown) {
       results.push({ weekNumber: input.weekNumber, userId: targetUserId, ok: false, error: e instanceof Error ? e.message : "Upsert failed" });
       continue;
@@ -209,27 +214,32 @@ export const POST = withOrgAuth<{ id: string }>(async ({ orgId, userId }, req: N
         select: { id: true, orgId: true },
       });
       if (child) {
-        await upsertRow({
-          kpiId: child.id,
-          orgId: child.orgId,
+        await withTxRetry(() =>
+          upsertRow({
+            kpiId: child.id,
+            orgId: child.orgId,
+            userId: targetUserId,
+            weekNumber: input.weekNumber,
+            value: input.value,
+            notes: input.notes,
+            changedBy: userId,
+          }),
+        );
+        touchedKpiIds.add(child.id);
+      }
+    } else if (kpi.parentKPIId) {
+      const parentKpiId = kpi.parentKPIId; // capture: narrowing is lost inside the closure
+      await withTxRetry(() =>
+        upsertRow({
+          kpiId: parentKpiId,
+          orgId,
           userId: targetUserId,
           weekNumber: input.weekNumber,
           value: input.value,
           notes: input.notes,
           changedBy: userId,
-        });
-        touchedKpiIds.add(child.id);
-      }
-    } else if (kpi.parentKPIId) {
-      await upsertRow({
-        kpiId: kpi.parentKPIId,
-        orgId,
-        userId: targetUserId,
-        weekNumber: input.weekNumber,
-        value: input.value,
-        notes: input.notes,
-        changedBy: userId,
-      });
+        }),
+      );
       touchedKpiIds.add(kpi.parentKPIId);
     }
 
@@ -243,9 +253,12 @@ export const POST = withOrgAuth<{ id: string }>(async ({ orgId, userId }, req: N
     results.push({ weekNumber: input.weekNumber, userId: targetUserId, ok: true });
   }
 
-  // Recompute aggregates for each touched KPI (primary + linked partners)
-  for (const id of touchedKpiIds) {
-    await recalcKPI(id);
+  // Recompute aggregates for each touched KPI (primary + linked partners).
+  // Sort the ids so concurrent batches touching the same shared parent KPI
+  // acquire locks in a consistent order, and retry each recompute (idempotent —
+  // it recomputes from the full weekly set) if killed as a deadlock victim.
+  for (const id of [...touchedKpiIds].sort()) {
+    await withTxRetry(() => recalcKPI(id));
   }
 
   // Single audit row summarizing the batch

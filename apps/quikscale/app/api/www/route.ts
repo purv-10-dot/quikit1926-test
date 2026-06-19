@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { Prisma } from "@quikit/database";
 import { db } from "@/lib/db";
 import { withOrgAuthForResource } from "@/lib/api/withOrgAuth";
 const auth = withOrgAuthForResource("www", "WWW");
@@ -11,6 +12,7 @@ import { rateLimit, LIMITS } from "@/lib/api/rateLimit";
 import { notifyWWWAssignment } from "@/lib/services/wwwNotifications";
 import { isOrgAdmin } from "@/lib/api/visibility";
 import { fetchAuditUserMap, decorateAudit } from "@/lib/api/auditUsers";
+import { searchUserIds, dateSearchConditions } from "@/lib/api/listSearch";
 
 // GET /api/www — list all WWWItems for tenant
 export const GET = auth.view(async ({ orgId, userId }, req) => {
@@ -18,16 +20,28 @@ export const GET = auth.view(async ({ orgId, userId }, req) => {
   const search = searchParams.get("search") || undefined;
   const status = searchParams.get("status") || undefined;
   const sortBy = searchParams.get("sortBy") || "createdAt";
-  const sortOrder = (searchParams.get("sortOrder") || "asc") as "asc" | "desc";
+  // Default to newest-first so freshly created items land at the top of page 1
+  // (matches KPI). Explicit ?sortOrder= from the client still wins.
+  const sortOrder = (searchParams.get("sortOrder") || "desc") as "asc" | "desc";
   const { page, limit, skip, take } = parsePagination(req);
 
   const whoFilter = searchParams.get("who") || undefined;
   const teamFilter = searchParams.get("teamId") || undefined;
 
   const includeDeleted = searchParams.get("includeDeleted") === "true";
-  const where: Record<string, unknown> = { orgId };
+  // Typed so the `orgId` tenant filter can't be silently dropped by a future edit.
+  const where: Prisma.WWWItemWhereInput = { orgId };
   where.deletedAt = includeDeleted ? { not: null } : null;
-  if (status) where.status = status;
+  // `status` accepts a single value (`status=completed`) or a comma-separated
+  // set (`status=on-track,behind-schedule`). The Dashboard WWW section uses a
+  // multi-select status filter, so a set maps to `status IN (...)`. An empty
+  // set (every status unchecked) forces an empty result via a sentinel.
+  if (status) {
+    const statuses = status.split(",").map((s) => s.trim()).filter(Boolean);
+    if (statuses.length === 1) where.status = statuses[0];
+    else if (statuses.length > 1) where.status = { in: statuses };
+    else where.status = "__none__";
+  }
 
   // Row-level visibility: admins see all WWW items, non-admins see only
   // items where they are the `who` (assigned person). An explicit who/team
@@ -47,10 +61,23 @@ export const GET = auth.view(async ({ orgId, userId }, req) => {
   }
 
   if (search) {
-    const searchOr = [
+    // Global search across every visible WWW column: what/notes, who (assignee
+    // name), created-by/updated-by, status, and the date columns (when, created,
+    // updated) understanding year / full-date / month-name terms.
+    const matchedIds = await searchUserIds(db, search);
+    const searchOr: Prisma.WWWItemWhereInput[] = [
       { what:  { contains: search, mode: "insensitive" } },
       { notes: { contains: search, mode: "insensitive" } },
+      { status: { contains: search, mode: "insensitive" } },
     ];
+    if (matchedIds.length) {
+      searchOr.push({ who: { in: matchedIds } });
+      searchOr.push({ createdBy: { in: matchedIds } });
+      searchOr.push({ updatedBy: { in: matchedIds } });
+    }
+    for (const cond of dateSearchConditions(["when", "createdAt", "updatedAt"], search)) {
+      searchOr.push(cond as Prisma.WWWItemWhereInput);
+    }
     // Don't blow away any prior OR (none here today, but guard anyway).
     if (where.OR) {
       where.AND = [{ OR: where.OR }, { OR: searchOr }];
@@ -189,28 +216,34 @@ export const POST = auth.create(async ({ orgId, userId }, req) => {
     who_users: resolvedIds.map(id => assignees.find(u => u.id === id)).filter(Boolean),
   };
 
-  // One audit log per created row.
+  // One audit log per created row. Written in parallel rather than in a serial
+  // await-loop: each row's two audit entries are independent rows, both helpers
+  // swallow their own errors, and the response doesn't depend on completion
+  // order — so this is behavior-identical to the prior loop, just without the
+  // per-row round-trip wait stacking up (2N sequential awaits → N parallel).
   const ctx = requestContext(req);
-  for (const item of createdItems) {
-    await writeAuditLog({
-      orgId,
-      actorId: userId,
-      action: "CREATE",
-      entityType: "WWWItem",
-      entityId: item.id,
-      newValues: item,
-    });
-    // ── Centralized audit (dual-write) ── CREATE event with the full
-    // post-state snapshot so the Change History Create card shows all values.
-    await audit.log({
-      entityType: "WWW",
-      entityId: item.id,
-      action: "CREATE",
-      actor: { userId, orgId, teamId: null },
-      snapshot: item,
-      ...ctx,
-    });
-  }
+  await Promise.all(
+    createdItems.map(async (item) => {
+      await writeAuditLog({
+        orgId,
+        actorId: userId,
+        action: "CREATE",
+        entityType: "WWWItem",
+        entityId: item.id,
+        newValues: item,
+      });
+      // ── Centralized audit (dual-write) ── CREATE event with the full
+      // post-state snapshot so the Change History Create card shows all values.
+      await audit.log({
+        entityType: "WWW",
+        entityId: item.id,
+        action: "CREATE",
+        actor: { userId, orgId, teamId: null },
+        snapshot: item,
+        ...ctx,
+      });
+    }),
+  );
 
   // One notification per assignee, scoped to their own row.
   for (const item of createdItems) {

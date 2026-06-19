@@ -7,6 +7,7 @@ import { writeAuditLog } from "@/lib/api/auditLog";
 import { audit, requestContext } from "@/lib/audit";
 import { parseSort, type SortDirection } from "@/lib/api/parseSort";
 import { parsePagination, paginatedResponse } from "@/lib/api/pagination";
+import { searchUserIds, dateSearchConditions } from "@/lib/api/listSearch";
 
 const withOrgAuth = withOrgAuthForModule("clientMeetings.members");
 
@@ -37,19 +38,26 @@ export const GET = withOrgAuth(async ({ orgId }, request) => {
   const { sortBy, sortOrder, orderBy } = parseSort(request, MEMBER_SORT_WHITELIST, mapMemberSort);
   const { page, limit, skip, take } = parsePagination(request);
 
+  // Global search: name/email, created-by/updated-by names (resolved to ids),
+  // and created/updated dates.
+  const actorMatchIds = search ? await searchUserIds(db, search) : [];
+  const searchOr: Prisma.ClientMemberWhereInput[] = search
+    ? [
+        { name: { contains: search, mode: "insensitive" } },
+        { email: { contains: search, mode: "insensitive" } },
+        ...(actorMatchIds.length
+          ? [{ createdBy: { in: actorMatchIds } }, { updatedBy: { in: actorMatchIds } }]
+          : []),
+        ...(dateSearchConditions(["createdAt", "updatedAt"], search) as Prisma.ClientMemberWhereInput[]),
+      ]
+    : [];
+
   const where: Prisma.ClientMemberWhereInput = {
     orgId,
     deletedAt: includeDeleted ? { not: null } : null,
     ...(memberId ? { id: memberId } : {}),
     ...(clientId ? { clientLinks: { some: { clientId } } } : {}),
-    ...(search
-      ? {
-          OR: [
-            { name: { contains: search, mode: "insensitive" } },
-            { email: { contains: search, mode: "insensitive" } },
-          ],
-        }
-      : {}),
+    ...(search ? { OR: searchOr } : {}),
   };
 
   const [rows, total] = await Promise.all([

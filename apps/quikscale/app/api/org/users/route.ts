@@ -9,6 +9,7 @@ import { withOrgAuthForResource } from "@/lib/api/withOrgAuth";
 // inside `userCan()` so admins still pass without any matrix ticks.
 const auth = withOrgAuthForResource("orgSetup.users", "User");
 import { parsePagination, paginatedResponse } from "@/lib/api/pagination";
+import { dateSearchConditions } from "@/lib/api/listSearch";
 import { createOrgUserSchema } from "@/lib/schemas/userSchema";
 import { getQuikScaleAppId } from "@/lib/api/permissions";
 import { seedAllDefaultRoles, ensureUserOnRole } from "@/lib/api/seedAdminAppRole";
@@ -106,6 +107,23 @@ export const GET = auth.view(async ({ orgId }, req) => {
     : [{ user: { firstName: sortOrder } }, { user: { lastName: sortOrder } }];
   orderBy.push({ id: "desc" }); // stable tie-breaker so pages never overlap
 
+  // Global search across every visible column: user first/last name + email,
+  // role, status, team name (relation), joined date (OrgMember.createdAt) and
+  // last-sign-in date (user.lastSignInAt). The app-membership requirement stays
+  // on `user.appRoles` (always ANDed); search is a separate top-level OR.
+  const searchOr: Record<string, unknown>[] = search
+    ? [
+        { user: { firstName: { contains: search, mode: "insensitive" as const } } },
+        { user: { lastName: { contains: search, mode: "insensitive" as const } } },
+        { user: { email: { contains: search, mode: "insensitive" as const } } },
+        { user: { qsUserTeams: { some: { orgId, team: { name: { contains: search, mode: "insensitive" as const } } } } } },
+        { role: { contains: search, mode: "insensitive" as const } },
+        { status: { contains: search, mode: "insensitive" as const } },
+        ...dateSearchConditions(["createdAt"], search),
+        ...dateSearchConditions(["lastSignInAt"], search).map((c) => ({ user: c })),
+      ]
+    : [];
+
   const where = {
     orgId,
     ...(roleFilter ? { role: roleFilter } : {}),
@@ -114,16 +132,8 @@ export const GET = auth.view(async ({ orgId }, req) => {
       appRoles: {
         some: { orgId, role: { appId } },
       },
-      ...(search
-        ? {
-            OR: [
-              { firstName: { contains: search, mode: "insensitive" as const } },
-              { lastName: { contains: search, mode: "insensitive" as const } },
-              { email: { contains: search, mode: "insensitive" as const } },
-            ],
-          }
-        : {}),
     },
+    ...(search ? { OR: searchOr } : {}),
   };
 
   const [memberships, total] = await Promise.all([

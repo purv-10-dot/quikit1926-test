@@ -6,6 +6,7 @@ const withOrgAuth = withOrgAuthForModule("kpi");
 import { getPastWeekFlags, getCurrentFiscalWeekFromDB } from "@/lib/utils/featureFlags";
 import { audit, requestContext } from "@/lib/audit";
 import { weeklyTargetForWeek } from "@/lib/utils/kpiHelpers";
+import { withTxRetry } from "@/lib/api/withTxRetry";
 
 
 function calcHealthStatus(progress: number, status: string): string {
@@ -200,15 +201,19 @@ export const POST = withOrgAuth<{ id: string }>(async ({ orgId, userId }, req, {
     priorRows.find((r) => r.weekNumber === validated.weekNumber - 1)?.value ?? null;
 
   // Primary write — upsert + recompute on the KPI the request targets.
-  await upsertAndRecalc({
-    kpiId: params.id,
-    orgId,
-    userId: targetUserId,
-    weekNumber: validated.weekNumber,
-    value: validated.value,
-    notes: validated.notes,
-    changedBy: userId,
-  });
+  // withTxRetry re-runs the (idempotent) upsert+recompute if Postgres kills it
+  // as a deadlock victim under concurrent saves on the same KPI / shared parent.
+  await withTxRetry(() =>
+    upsertAndRecalc({
+      kpiId: params.id,
+      orgId,
+      userId: targetUserId,
+      weekNumber: validated.weekNumber,
+      value: validated.value,
+      notes: validated.notes,
+      changedBy: userId,
+    }),
+  );
 
   // ── Bidirectional sync between Team KPI ↔ child Individual KPIs ──
   // (a) Team write  → mirror to that owner's child Individual KPI
@@ -223,26 +228,31 @@ export const POST = withOrgAuth<{ id: string }>(async ({ orgId, userId }, req, {
       select: { id: true, orgId: true },
     });
     if (child) {
-      await upsertAndRecalc({
-        kpiId: child.id,
-        orgId: child.orgId,
+      await withTxRetry(() =>
+        upsertAndRecalc({
+          kpiId: child.id,
+          orgId: child.orgId,
+          userId: targetUserId,
+          weekNumber: validated.weekNumber,
+          value: validated.value,
+          notes: validated.notes,
+          changedBy: userId,
+        }),
+      );
+    }
+  } else if (kpi.parentKPIId) {
+    const parentKpiId = kpi.parentKPIId; // capture: narrowing is lost inside the closure
+    await withTxRetry(() =>
+      upsertAndRecalc({
+        kpiId: parentKpiId,
+        orgId,
         userId: targetUserId,
         weekNumber: validated.weekNumber,
         value: validated.value,
         notes: validated.notes,
         changedBy: userId,
-      });
-    }
-  } else if (kpi.parentKPIId) {
-    await upsertAndRecalc({
-      kpiId: kpi.parentKPIId,
-      orgId,
-      userId: targetUserId,
-      weekNumber: validated.weekNumber,
-      value: validated.value,
-      notes: validated.notes,
-      changedBy: userId,
-    });
+      }),
+    );
   }
 
   // Re-read the row we just upserted so the response carries the canonical shape.

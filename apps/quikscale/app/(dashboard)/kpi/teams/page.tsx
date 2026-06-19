@@ -10,6 +10,7 @@ import {
   getFiscalYear, getFiscalQuarter, fiscalYearLabel,
 } from "@/lib/utils/fiscal";
 import { useCurrentWeek, useWeekDateRange } from "@/lib/hooks/useCurrentWeek";
+import { useNumberFormat } from "@/lib/hooks/useFeatureFlags";
 import type { KPIRow } from "@/lib/types/kpi";
 import { TeamSection } from "./components/TeamSection";
 import { KPIModal } from "../components/KPIModal";
@@ -30,6 +31,8 @@ const FISCAL_YEAR = getFiscalYear();
 const FISCAL_QUARTER = getFiscalQuarter();
 export default function TeamsKPIPage() {
   const { canCreate, canUpdate, canDelete } = useResourcePermissions("TeamKPI");
+  // Indian (lakh/crore) vs standard number format — org-level toggle, view-only.
+  const numberFormat = useNumberFormat();
   // Year + quarter live in FilterContext so they persist across module nav.
   // `filterTeam` is also read so the Dashboard's Team-tab team selection
   // pre-seeds this page's multi-select filter on first mount.
@@ -440,6 +443,7 @@ export default function TeamsKPIPage() {
               clearSelectionTrigger={clearSelectionTrigger}
               canDelete={canDelete}
               canUpdate={canUpdate}
+              numberFormat={numberFormat}
             />
           ))}
           </UnreadCountsProvider>

@@ -9,6 +9,7 @@ import {
   QUARTER_STARTS,
 } from "@/lib/utils/fiscal";
 import { achievedPctColor, formatReviewValue, showOpspReviewOwnerColumn } from "./helpers";
+import { reviewRowVisible } from "./reviewRows";
 import { CATEGORY_TYPE_LABELS, type CategoryType } from "@/lib/utils/breakdownCalc";
 import { CriticalReviewSection } from "./CriticalReviewSection";
 
@@ -342,7 +343,7 @@ function buildTableRows(
   const collapse = horizon === "yearly" || horizon === "3to5year";
 
   for (const row of rows) {
-    if (!row.category.trim()) continue;
+    if (!reviewRowVisible(row)) continue;
 
     // Build the (target, achieved) pairs in period order — both horizons use
     // them to compute the aggregate, the Quarter horizon also emits one
@@ -630,7 +631,7 @@ export default function OPSPReviewPage() {
   }, [secondaryTableRows, search]);
 
   const itemCount = viewMode === "primary"
-    ? (data?.rows?.filter((r) => r.category.trim()).length ?? 0)
+    ? (data?.rows?.filter(reviewRowVisible).length ?? 0)
     : secondaryTableRows.length;
 
   const labels = HORIZON_LABELS[horizon];

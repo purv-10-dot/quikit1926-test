@@ -2,7 +2,7 @@
 
 import { ChevronDown, ChevronUp } from "lucide-react";
 import type { WWWItem } from "@/lib/types/www";
-import { wwwFieldLabel } from "@/lib/audit/wwwFields";
+import { wwwFieldLabel, formatWWWDate, formatWWWFieldValue } from "@/lib/audit/wwwFields";
 import { PILLAR_TOKENS } from "@/components/audit/auditLogTokens";
 import { statusDotColor, statusLabel } from "@/lib/constants/status";
 import { useEntityAuditTimeline, useEntityMarkRead } from "@/lib/hooks/useAudit";
@@ -12,12 +12,9 @@ import type { AuditEntityConfig } from "@/components/audit/EntityChangeHistoryPa
 /** WWW entity for the panel — the item plus a derived `name` (its `what`). */
 export type WWWAuditEntity = WWWItem & { name: string };
 
-function fmtDate(iso: string | null | undefined): string {
-  if (!iso) return "—";
-  const d = new Date(iso);
-  if (Number.isNaN(d.getTime())) return String(iso);
-  return d.toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "numeric", timeZone: "UTC" });
-}
+// Date rendering lives in lib/audit/wwwFields.ts (formatWWWDate) so the CREATE
+// card and the UPDATE diff format dates identically.
+const fmtDate = formatWWWDate;
 
 /**
  * WWW entity config for the generic Change History panel. WWW is a single-row
@@ -32,6 +29,9 @@ export const wwwAuditConfig: AuditEntityConfig<WWWAuditEntity> = {
   dialogLabel: "WWW change history",
   exportPrefix: "www",
   fieldLabel: wwwFieldLabel,
+  // Render WWW date fields (when / originalDueDate / revisedDates) as friendly
+  // dates in the diff instead of raw ISO strings; non-date fields fall through.
+  formatFieldValue: formatWWWFieldValue,
   periodLabel: (w) => `Due ${fmtDate(w.when)}`,
   weeklyKind: "status",
   operationFor: (action) => (action === "STATUS_CHANGE" ? "STATUS" : undefined),

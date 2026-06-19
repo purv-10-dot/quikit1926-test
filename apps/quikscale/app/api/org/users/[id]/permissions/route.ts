@@ -8,6 +8,7 @@ import {
   isAction,
   isValidPermissionPair,
 } from "@/lib/api/permissionsRegistry";
+import { withTxRetry } from "@/lib/api/withTxRetry";
 
 // RBAC v2: editing a user's permission extras still mutates the user record,
 // so `User.view` reads and `User.update` writes. Role rows are unchanged.
@@ -162,25 +163,29 @@ export const POST = auth.update<{ id: string }>(async ({ orgId, userId: actorId 
       return true;
     });
 
-    // Atomic replace: deleteMany + createMany inside a transaction.
-    await db.$transaction([
-      db.userPermissionExtra.deleteMany({
-        where: { userId: params.id, orgId },
-      }),
-      ...(desired.length > 0
-        ? [
-            db.userPermissionExtra.createMany({
-              data: desired.map((p) => ({
-                userId: params.id,
-                orgId,
-                resource: p.resource,
-                action: p.action,
-                grantedBy: actorId,
-              })),
-            }),
-          ]
-        : []),
-    ]);
+    // Atomic replace: deleteMany + createMany inside a transaction. Retried as
+    // a unit if the tx is killed as a deadlock victim under concurrent edits —
+    // the replace is idempotent, so the final state is unchanged.
+    await withTxRetry(() =>
+      db.$transaction([
+        db.userPermissionExtra.deleteMany({
+          where: { userId: params.id, orgId },
+        }),
+        ...(desired.length > 0
+          ? [
+              db.userPermissionExtra.createMany({
+                data: desired.map((p) => ({
+                  userId: params.id,
+                  orgId,
+                  resource: p.resource,
+                  action: p.action,
+                  grantedBy: actorId,
+                })),
+              }),
+            ]
+          : []),
+      ]),
+    );
 
     return NextResponse.json({
       success: true,

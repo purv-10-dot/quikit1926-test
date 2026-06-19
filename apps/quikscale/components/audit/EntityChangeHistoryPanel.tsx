@@ -1,7 +1,7 @@
 "use client";
 
 import { useMemo, useState, useEffect, useRef, type ReactNode } from "react";
-import { X, Pin, Copy, Search, Download, ChevronDown, ChevronUp, Info } from "lucide-react";
+import { X, Search, Download, ChevronDown, ChevronUp, Info } from "lucide-react";
 import { OperationPill } from "@/components/audit/OperationPill";
 import { Legend } from "@/components/audit/Legend";
 import type { Operation } from "@/components/audit/auditLogTokens";
@@ -102,7 +102,9 @@ const TABS: { key: AuditFilterBucket | "all"; label: string }[] = [
   { key: "all", label: "All" },
   { key: "create", label: "Create" },
   { key: "update", label: "Update" },
-  { key: "delete", label: "Delete" },
+  // The "delete" bucket holds DELETE, ARCHIVE AND RESTORE (see actionBucket),
+  // so the tab shows the full lifecycle history together.
+  { key: "delete", label: "Delete/Restore" },
 ];
 
 export function EntityChangeHistoryPanel<T extends AuditEntityBase>({
@@ -127,8 +129,6 @@ export function EntityChangeHistoryPanel<T extends AuditEntityBase>({
   const [expandedAll, setExpandedAll] = useState(false);
   const [openCards, setOpenCards] = useState<Set<string>>(new Set());
   const [showLegend, setShowLegend] = useState(false);
-  const [pinned, setPinned] = useState(false);
-  const [copied, setCopied] = useState(false);
 
   // Close on Escape.
   useEffect(() => {
@@ -148,16 +148,6 @@ export function EntityChangeHistoryPanel<T extends AuditEntityBase>({
 
   const statusDot = config.statusDot?.(entity) ?? null;
   const periodLabel = config.periodLabel?.(entity);
-
-  function copyPermalink() {
-    try {
-      void navigator.clipboard?.writeText(window.location.href);
-      setCopied(true);
-      window.setTimeout(() => setCopied(false), 1500);
-    } catch {
-      /* clipboard unavailable — no-op */
-    }
-  }
 
   const now = new Date();
   const weekLabels = config.useWeekLabels(entity);
@@ -248,24 +238,6 @@ export function EntityChangeHistoryPanel<T extends AuditEntityBase>({
             >
               <Info className="h-4 w-4" />
             </button>
-            <button
-              className={`rounded p-1 hover:bg-gray-100 ${pinned ? "text-gray-700" : ""}`}
-              title={pinned ? "Unpin" : "Pin"}
-              aria-label="Pin"
-              type="button"
-              onClick={() => setPinned((v) => !v)}
-            >
-              <Pin className="h-4 w-4" fill={pinned ? "currentColor" : "none"} />
-            </button>
-            <button
-              className="rounded p-1 hover:bg-gray-100"
-              title={copied ? "Copied!" : "Copy permalink"}
-              aria-label="Copy permalink"
-              type="button"
-              onClick={copyPermalink}
-            >
-              <Copy className="h-4 w-4" />
-            </button>
             <button className="rounded p-1 hover:bg-gray-100" title="Close" type="button" onClick={onClose} aria-label="Close">
               <X className="h-4 w-4" />
             </button>
@@ -311,23 +283,14 @@ export function EntityChangeHistoryPanel<T extends AuditEntityBase>({
           </div>
         </div>
 
-        {/* Created banner */}
+        {/* Created banner — info strip only (the CREATE card auto-expands on
+            open, so a jump-to-card "View →" action is unnecessary). */}
         {createEvent && (
-          <div className="mx-5 mb-2 flex items-center justify-between rounded-lg bg-green-50 px-3 py-2 text-sm">
+          <div className="mx-5 mb-2 rounded-lg bg-green-50 px-3 py-2 text-sm">
             <span className="text-gray-700">
-              Created {new Date(createEvent.createdAt).toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "numeric", timeZone: "UTC" })} by{" "}
+              Created {new Date(createEvent.createdAt).toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "numeric" })} by{" "}
               <span className="font-semibold">{createEvent.actorName}</span>
             </span>
-            <button
-              type="button"
-              onClick={() => {
-                setBucket("all");
-                setOpenCards((prev) => new Set(prev).add(createEvent.id));
-              }}
-              className="shrink-0 font-medium text-green-700 hover:underline"
-            >
-              View →
-            </button>
           </div>
         )}
 
@@ -477,7 +440,7 @@ function EventCard<T extends AuditEntityBase>({
 
       <div className="mt-2">
         {event.action === "WEEKLY_UPDATE" && <WeeklyBody snap={snap} kind={config.weeklyKind ?? "numeric"} />}
-        {event.action === "BULK_UPDATE" && <BulkBody snap={snap} open={open} onToggle={onToggle} />}
+        {event.action === "BULK_UPDATE" && <BulkBody snap={snap} kind={config.weeklyKind ?? "numeric"} open={open} onToggle={onToggle} />}
         {event.action === "CREATE" &&
           config.renderCreateCard({ entity, weekLabels, open, onToggle })}
         {event.action === "COMMENT" && (
@@ -678,11 +641,90 @@ function ChangeRow<T extends AuditEntityBase>({
   );
 }
 
+/**
+ * Note display for weekly status cards. Shows old → new when the note changed
+ * (so the timeline records BOTH values), else the single note. Each note sits
+ * in a fixed-height, scrollable, line-preserving box so a multi-line note shows
+ * a scrollbar instead of stretching the card. `oldNote` is absent on older
+ * events (before previousNotes was captured) → renders the new note only.
+ */
+function NoteDiff({ oldNote, newNote }: { oldNote?: unknown; newNote?: unknown }) {
+  const oldN = oldNote != null ? String(oldNote) : "";
+  const newN = newNote != null ? String(newNote) : "";
+  if (!oldN && !newN) return <span className="text-sm text-gray-400">—</span>;
+  const box = "max-h-16 overflow-y-auto whitespace-pre-wrap break-words rounded-md px-2 py-1 text-sm";
+  if (oldN === newN || !oldN) {
+    return <div className={`${box} bg-gray-50 text-gray-600`}>{newN || "—"}</div>;
+  }
+  return (
+    <div className="space-y-0.5">
+      <div className={`${box} bg-rose-50 text-gray-400 line-through`}>{oldN}</div>
+      <div className="text-xs text-gray-400">→</div>
+      <div className={`${box} bg-emerald-50 text-gray-800`}>{newN || "—"}</div>
+    </div>
+  );
+}
+
+/**
+ * Note change rendered as a TABLE — "Old Note | New Note" columns when the note
+ * changed, or a single "Note" column otherwise. Each cell is a fixed-height,
+ * scrollable, line-preserving box so multi-line notes scroll rather than grow
+ * the card. Used by the weekly status card (per the Priority design).
+ */
+function NoteChangeTable({ oldNote, newNote }: { oldNote?: unknown; newNote?: unknown }) {
+  const oldN = oldNote != null ? String(oldNote) : "";
+  const newN = newNote != null ? String(newNote) : "";
+  if (!oldN && !newN) return null;
+  const box = "max-h-16 overflow-y-auto whitespace-pre-wrap break-words text-sm";
+  const changed = !!oldN && oldN !== newN;
+
+  if (!changed) {
+    return (
+      <table className="w-full overflow-hidden rounded-md border border-gray-100 text-sm">
+        <thead>
+          <tr className="bg-gray-50 text-left text-[10px] uppercase tracking-wide text-gray-400">
+            <th className="px-2 py-1">Note</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td className="px-2 py-1 align-top">
+              <div className={`${box} text-gray-600`}>{newN || "—"}</div>
+            </td>
+          </tr>
+        </tbody>
+      </table>
+    );
+  }
+
+  return (
+    <table className="w-full table-fixed overflow-hidden rounded-md border border-gray-100 text-sm">
+      <thead>
+        <tr className="bg-gray-50 text-left text-[10px] uppercase tracking-wide text-gray-400">
+          <th className="w-1/2 px-2 py-1">Old Note</th>
+          <th className="w-1/2 px-2 py-1">New Note</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr className="border-t border-gray-100">
+          <td className="bg-rose-50/40 px-2 py-1 align-top">
+            <div className={`${box} text-gray-400 line-through`}>{oldN}</div>
+          </td>
+          <td className="bg-emerald-50/40 px-2 py-1 align-top">
+            <div className={`${box} text-gray-800`}>{newN || "—"}</div>
+          </td>
+        </tr>
+      </tbody>
+    </table>
+  );
+}
+
 function WeeklyBody({ snap, kind }: { snap: Record<string, unknown>; kind: "numeric" | "status" }) {
   if (kind === "status") {
     const status = snap.status != null ? String(snap.status) : "—";
     const prev = snap.previousStatus != null ? String(snap.previousStatus) : null;
     const notesOnly = snap.notesOnly === true;
+    const hasNote = snap.notes != null || snap.previousNotes != null;
     return (
       <div>
         <p className="text-[11px] font-semibold uppercase tracking-wide text-gray-400">
@@ -697,7 +739,11 @@ function WeeklyBody({ snap, kind }: { snap: Record<string, unknown>; kind: "nume
           )}
           <span className={notesOnly ? "text-gray-500" : "font-semibold text-gray-900"}>{status}</span>
         </div>
-        {snap.notes ? <p className="mt-1 text-sm text-gray-600">Notes {String(snap.notes)}</p> : null}
+        {hasNote ? (
+          <div className="mt-1.5">
+            <NoteChangeTable oldNote={snap.previousNotes} newNote={snap.notes} />
+          </div>
+        ) : null}
       </div>
     );
   }
@@ -747,16 +793,71 @@ function WeeklyBody({ snap, kind }: { snap: Record<string, unknown>; kind: "nume
 
 function BulkBody({
   snap,
+  kind = "numeric",
   open,
   onToggle,
 }: {
   snap: Record<string, unknown>;
+  kind?: "numeric" | "status";
   open: boolean;
   onToggle: () => void;
 }) {
   const rows = (snap.rows as Array<Record<string, unknown>>) ?? [];
   const weeks = (snap.weeks as number[]) ?? [];
   const range = weekRangeLabel(weeks);
+
+  // Status-kind bulk (Priority): the rows carry old/new STATUS strings (no
+  // numeric value/target/Δ), so render a status table instead of the numeric
+  // one. Same purple "Bulk weekly update · weeks N–M" header.
+  if (kind === "status" || snap.kind === "status") {
+    const statusSummary = `${rows.length} weekly ${rows.length === 1 ? "status" : "statuses"} updated in one save`;
+    return (
+      <div>
+        <button type="button" onClick={onToggle} className="flex w-full items-center justify-between text-left">
+          <span className="rounded bg-purple-50 px-2 py-1 text-xs text-purple-700">
+            Bulk weekly update · {range}
+          </span>
+          {open ? <ChevronUp className="h-3.5 w-3.5 text-gray-400" /> : <ChevronDown className="h-3.5 w-3.5 text-gray-400" />}
+        </button>
+        <p className="mt-1 text-xs text-gray-600">{statusSummary}.</p>
+        {open && (
+          <table className="mt-2 w-full text-sm">
+            <thead>
+              <tr className="text-left text-[10px] uppercase text-gray-400">
+                <th className="py-1">Week</th>
+                <th>Status</th>
+                <th>Note</th>
+              </tr>
+            </thead>
+            <tbody>
+              {rows.map((r, i) => {
+                const oldStatus = r.oldStatus != null ? String(r.oldStatus) : null;
+                const newStatus = r.newStatus != null ? String(r.newStatus) : "—";
+                return (
+                  <tr key={i} className="border-t border-gray-50">
+                    <td className="py-1 font-medium">{String(r.weekNumber ?? "")}</td>
+                    <td>
+                      {oldStatus && oldStatus !== newStatus && (
+                        <>
+                          <span className="text-gray-400 line-through">{oldStatus}</span>
+                          {" → "}
+                        </>
+                      )}
+                      <span className="font-medium text-gray-900">{newStatus}</span>
+                    </td>
+                    <td className="min-w-[8rem] align-top">
+                      <NoteDiff oldNote={r.oldNote} newNote={r.note} />
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        )}
+      </div>
+    );
+  }
+
   const summary = `${rows.length} weekly ${rows.length === 1 ? "value" : "values"} updated in one save`;
   const historical =
     rows.length > 0 &&

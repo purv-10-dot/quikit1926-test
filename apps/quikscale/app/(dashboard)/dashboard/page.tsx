@@ -1,9 +1,16 @@
 "use client";
 
 import { useState, useRef, useEffect, useMemo, CSSProperties } from "react";
+import dynamic from "next/dynamic";
 import { createPortal } from "react-dom";
 import { useSession } from "next-auth/react";
 import { useDashboardSummary } from "@/lib/hooks/useDashboardSummary";
+import {
+  useInfiniteKPIs,
+  useInfinitePriorities,
+  useInfiniteWWW,
+  type ListFilters,
+} from "@/lib/hooks/useInfiniteDashboardLists";
 import { useFilterContext } from "@/lib/context/FilterContext";
 import { FilterPicker, userToFilterOption, FiscalPeriodPicker, type FiscalQuarter } from "@quikit/ui";
 import { useFiscalYears } from "@/lib/hooks/useFiscalYears";
@@ -25,15 +32,13 @@ import {
   weekDateLabel, ALL_WEEKS, rollingVisibleWeeks,
 } from "@/lib/utils/fiscal";
 import { useCurrentWeek, useWeekDateRange, useWeekLabels } from "@/lib/hooks/useCurrentWeek";
-import { progressColor, weekCellColors, fmt, fmtCompact, getProgressBadgeColors, getLatestWeeklyNote } from "@/lib/utils/kpiHelpers";
+import { progressColor, weekCellColors, fmt, fmtCompact, fmtCompactBy, getProgressBadgeColors, getLatestWeeklyNote, type NumberFormat } from "@/lib/utils/kpiHelpers";
+import { useNumberFormat } from "@/lib/hooks/useFeatureFlags";
 import { getLatestPriorityNote } from "@/lib/utils/priorityHelpers";
 import { getColorByPercentage } from "@/lib/utils/colorLogic";
 import { dashboardKpiHiddenColumns } from "@/lib/utils/dashboardColumns";
 import { HorizontalScroller } from "@/components/ui/HorizontalScroller";
-import { KPITable } from "../kpi/components/KPITable";
-import { resolveProgressQtd, computeKpiOverviewStats } from "../kpi/components/kpiStats";
-import { PriorityTable } from "../priority/components/PriorityTable";
-import { WWWTable } from "../www/components/WWWTable";
+import { resolveProgressQtd, resolveProgressOverall, computeKpiOverviewStats, kpiOverviewVisible } from "../kpi/components/kpiStats";
 import { useTablePrefs } from "@/lib/hooks/useTablePreferences";
 import { HiddenColsPill } from "@/components/table/HiddenColsPill";
 import { HiddenColsMenu } from "../kpi/components/HiddenColsMenu";
@@ -41,12 +46,79 @@ import { ALL_STATIC_COLS, COL_LABELS as KPI_COL_LABELS } from "../kpi/hooks/useT
 import { ALL_WEEKS as FISCAL_ALL_WEEKS } from "@/lib/utils/fiscal";
 import { DashboardMoreActions, type DashboardSectionKey } from "./DashboardMoreActions";
 
+// Debounce a fast-changing value (e.g. a search input) so it only drives a
+// network query after the user pauses typing. Kept local to the dashboard so
+// its table search stays independent of the Redux-backed module-page search.
+function useDebouncedValue<T>(value: T, delay = 300): T {
+  const [debounced, setDebounced] = useState(value);
+  useEffect(() => {
+    const t = setTimeout(() => setDebounced(value), delay);
+    return () => clearTimeout(t);
+  }, [value, delay]);
+  return debounced;
+}
+
+// Compact search box for a dashboard table header. Controlled — the parent
+// owns the raw input value and debounces it before it drives the DB query.
+function TableSearchInput({ value, onChange, placeholder }: { value: string; onChange: (v: string) => void; placeholder: string }) {
+  return (
+    <div className="relative">
+      <svg className="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-4.35-4.35M11 19a8 8 0 100-16 8 8 0 000 16z" />
+      </svg>
+      <input
+        type="text"
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        placeholder={placeholder}
+        className="w-40 pl-8 pr-7 py-1.5 text-xs border border-gray-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-accent-400 bg-white text-gray-700"
+      />
+      {value && (
+        <button
+          type="button"
+          onClick={() => onChange("")}
+          aria-label="Clear search"
+          className="absolute right-2 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
+        >
+          ×
+        </button>
+      )}
+    </div>
+  );
+}
+
+// ── Lazy-loaded tables ──────────────────────────────────────────────────────
+// KPI/Priority/WWW tables (+ their heavy edit modals) are code-split out of the
+// dashboard's initial bundle. They render only after their data-loading guard
+// (`xLoading ? <Spinner/> : <Table/>`), take plain props, and use no refs, so a
+// dynamic boundary is behavior-equivalent — just async-loaded. The dashboard is
+// already a client component, so no SSR is lost (`ssr: false`).
+const TableChunkLoading = () => (
+  <div className="h-40 w-full animate-pulse rounded-xl bg-gray-50" />
+);
+const KPITable = dynamic(
+  () => import("../kpi/components/KPITable").then((m) => m.KPITable),
+  { ssr: false, loading: TableChunkLoading },
+);
+const PriorityTable = dynamic(
+  () => import("../priority/components/PriorityTable").then((m) => m.PriorityTable),
+  { ssr: false, loading: TableChunkLoading },
+);
+const WWWTable = dynamic(
+  () => import("../www/components/WWWTable").then((m) => m.WWWTable),
+  { ssr: false, loading: TableChunkLoading },
+);
 
 // ── Constants ─────────────────────────────────────────────────────────────────
 
 const CURRENT_YEAR = getFiscalYear();
 const FISCAL_YEARS = Array.from({ length: 5 }, (_, i) => CURRENT_YEAR - 1 + i);
 const QUARTERS = ["Q1", "Q2", "Q3", "Q4"] as const;
+
+// Fixed body height for the dashboard's infinite-scroll tables — roughly 8–10
+// rows including the sticky header. The body scrolls vertically within this cap
+// so the dashboard layout height stays stable as more pages load.
+const DASHBOARD_TABLE_MAX_HEIGHT = 470;
 
 // Shared week column factory. The Dashboard limits visible data to a rolling
 // 5-week window anchored at the current week (see rollingVisibleWeeks), so
@@ -496,19 +568,21 @@ function WeekTableHead({ staticCols, allCols, frozenUpTo, allColKeys, onFreeze, 
 
 // ── KPI mini cards ────────────────────────────────────────────────────────────
 
-function KPICard({ kpi, currentWeek }: { kpi: KPIRow; currentWeek: number | null }) {
+function KPICard({ kpi, currentWeek, numberFormat = "standard" }: { kpi: KPIRow; currentWeek: number | null; numberFormat?: NumberFormat }) {
   // Same denominator for ratio AND percentage so the math agrees with what
   // the user reads. `getProgressBadgeColors` runs the canonical
   // `getColorByPercentage` internally and returns READABLE-on-white text
   // colors (text-blue-700 etc.) instead of the text-on-color text-white
   // tones — so the percentage label is visible on the white card.
   //
-  // Standalone KPIs: the server-stamped `kpi.qtdAchieved` is a cumulative SUM
-  // regardless of division type, so the card showed (e.g.) 365/80 = 456% on a
-  // Standalone KPI whose true QTD is the avg-per-week (52.14/80). resolveProgressQtd
-  // re-derives it for Standalone (matching the KPI table) and leaves Cumulative
-  // KPIs byte-identical.
-  const { achieved, goal } = resolveProgressQtd(kpi, currentWeek);
+  // The card shows OVERALL quarterly progress: QTD Achieved / Quarterly Goal
+  // (e.g. 33.2K / 150K = 22%) — the SAME basis as the Individual-KPI table's
+  // Progress column and the Stats modal's "Overall Progress" headline. (It used
+  // to divide by the to-date QTD goal — 33.2K / 125.2K = 27% — which made the
+  // card disagree with the table and the Stats headline.) Standalone KPIs are
+  // unchanged: resolveProgressOverall re-derives their per-week average against
+  // the constant quarterly target, exactly as before.
+  const { achieved, goal } = resolveProgressOverall(kpi, currentWeek);
   const pct = goal > 0 ? (achieved / goal) * 100 : 0;
   const hasAnyWeeklyValue = (kpi.weeklyValues ?? []).some((wv) => wv.value != null);
   const badge = kpi.qtdAchieved != null
@@ -521,9 +595,12 @@ function KPICard({ kpi, currentWeek }: { kpi: KPIRow; currentWeek: number | null
         <HistoryButton entityId={kpi.id} onClick={() => setHistoryOpen(true)} />
       </div>
       <p className="text-[11px] text-gray-500 font-medium truncate mb-1.5 pr-6" title={kpi.name}>{kpi.name}</p>
-      <div className="flex items-baseline gap-1 mb-2">
-        <span className="text-base font-bold text-gray-800">{fmtCompact(achieved)}</span>
-        <span className="text-xs text-gray-400">/ {fmtCompact(goal)}</span>
+      <div
+        className="flex items-baseline gap-1 mb-2"
+        title="QTD Achieved / Quarterly Goal"
+      >
+        <span className="text-base font-bold text-gray-800">{fmtCompactBy(achieved, numberFormat)}</span>
+        <span className="text-xs text-gray-400">/ {fmtCompactBy(goal, numberFormat)}</span>
       </div>
       <div className="flex items-center gap-2">
         <span className={`text-xs font-semibold ${badge.text}`}>{pct.toFixed(0)}%</span>
@@ -963,8 +1040,11 @@ export default function DashboardPage() {
   // My Dashboard is always scoped to the current user; the Team tab carries
   // its own 3-stage filter (team / KPI type / owner) — no role-based gating
   // is applied at this level any more.
-  const { data: session } = useSession();
+  const { data: session, status: sessionStatus } = useSession();
   const userId = session?.user?.id ?? "";
+  // Dashboard number-format preference (Indian lakh/crore vs standard K/M),
+  // org-level via the `use_indian_numbering` config flag. View-only.
+  const numberFormat = useNumberFormat();
 
   /* ── Consolidated dashboard data — one API call instead of six ─────── */
   const { data: summary, isLoading } = useDashboardSummary({ year, quarter });
@@ -1155,9 +1235,18 @@ export default function DashboardPage() {
 
   /* ── Active tab data selection ───────────────────────────────────────── */
   const kpis = activeTab === "individual" ? myKpis : teamKpis;
-  const kpisLoading = isLoading;
-  const priLoading = isLoading;
-  const wwwLoading = isLoading;
+  // Summary-blob loading drives the KPI overview cards/grid (which use the full
+  // filtered set). The three TABLES have their own loading flags derived from
+  // their DB-level queries — see kpiTableLoading / priTableLoading below.
+  //
+  // Also treat the page as loading while the NextAuth session is still
+  // resolving: `myKpis` filters by `k.owner === userId`, and `userId` is "" until
+  // the session lands. Without this, when the summary query resolves BEFORE the
+  // session, the gate `(kpisLoading || kpis.length > 0)` briefly sees an empty
+  // filtered list and unmounts the whole KPI Overview card — then remounts once
+  // the session arrives. Folding the session-loading state in keeps the section
+  // mounted (showing its skeleton) across that race instead of flickering.
+  const kpisLoading = isLoading || sessionStatus === "loading";
   const priorities = activeTab === "individual" ? myPriorities : teamPriorities;
   const wwwSource = activeTab === "individual" ? myWwwByOwner : teamWwwByOwner;
   // Multi-select filter — keep rows whose status is in the selected set.
@@ -1165,11 +1254,25 @@ export default function DashboardPage() {
   // status; they can re-check from the dropdown).
   const wwwItems = wwwSource.filter((w) => wwwStatusFilter.includes(w.status));
 
-  // Dashboard-local pagination state (10 rows per page for each table)
-  const DASHBOARD_PAGE_SIZE = 10;
-  const [kpiPage, setKpiPage] = useState(1);
-  const [priPage, setPriPage] = useState(1);
-  const [wwwPage, setWwwPage] = useState(1);
+  // Independent DB-level sort + search state for the three Dashboard tables.
+  // Kept LOCAL (not the Redux tables slice the module pages use) so sorting or
+  // searching the dashboard preview never changes the /kpi /priority /www
+  // pages. Sort values are the BACKEND sort keys (e.g. "qtdAchieved", "who").
+  const [kpiSortBy, setKpiSortBy] = useState("");
+  const [kpiSortOrder, setKpiSortOrder] = useState<"asc" | "desc">("asc");
+  const [priSortBy, setPriSortBy] = useState("");
+  const [priSortOrder, setPriSortOrder] = useState<"asc" | "desc">("asc");
+  const [wwwSortBy, setWwwSortBy] = useState("");
+  const [wwwSortOrder, setWwwSortOrder] = useState<"asc" | "desc">("asc");
+
+  const [kpiSearchInput, setKpiSearchInput] = useState("");
+  const [priSearchInput, setPriSearchInput] = useState("");
+  const [wwwSearchInput, setWwwSearchInput] = useState("");
+  // 500ms debounce per the dashboard spec — a longer pause before each server
+  // search fires (and, via the query key, resets the section to page 1).
+  const kpiSearch = useDebouncedValue(kpiSearchInput, 500);
+  const priSearch = useDebouncedValue(priSearchInput, 500);
+  const wwwSearch = useDebouncedValue(wwwSearchInput, 500);
 
   // Hidden-column pills — read straight from useTablePrefs so the dashboard
   // mirrors the main pages. Showing a column from the pill persists via the
@@ -1191,15 +1294,122 @@ export default function DashboardPage() {
     status: "Status", notes: "Notes",
   };
 
-  // Reset to page 1 when filters, year, quarter, or tab change
-  useEffect(() => { setKpiPage(1); }, [activeTab, teamTabTeamId, teamTabKpiType, teamTabOwnerId, year, quarter, kpis.length]);
-  useEffect(() => { setPriPage(1); }, [activeTab, teamTabTeamId, teamTabOwnerId, year, quarter, priorities.length]);
-  useEffect(() => { setWwwPage(1); }, [activeTab, teamTabTeamId, teamTabOwnerId, wwwStatusFilter, wwwItems.length]);
+  // ── DB-level infinite-scroll table data ──────────────────────────────────
+  // Each section streams 25 rows/page and accumulates pages as the user scrolls
+  // (see InfiniteTableShell + useInfinite* hooks). The `filters` object is part
+  // of each query key, so changing search / tab / filter / sort automatically
+  // resets to page 1 and clears the accumulated rows — no manual page state.
+  // State is fully independent per section: scrolling one never refetches
+  // another. The consolidated `useDashboardSummary` blob above still powers the
+  // KPI overview cards, the card grid, export, and the filter dropdowns.
 
-  // Slice each list to the current page's chunk
-  const pagedKpis = kpis.slice((kpiPage - 1) * DASHBOARD_PAGE_SIZE, kpiPage * DASHBOARD_PAGE_SIZE);
-  const pagedPriorities = priorities.slice((priPage - 1) * DASHBOARD_PAGE_SIZE, priPage * DASHBOARD_PAGE_SIZE);
-  const pagedWWW = wwwItems.slice((wwwPage - 1) * DASHBOARD_PAGE_SIZE, wwwPage * DASHBOARD_PAGE_SIZE);
+  // KPI: "My Dashboard" uses scope=mine (individual-owned ∪ team-co-owned).
+  // Team tab maps the 3-stage filter to kpiLevel + owner / teamId (owner takes
+  // precedence over team, mirroring the old client logic).
+  const kpiFilters = useMemo<ListFilters>(() => {
+    const f: ListFilters = {
+      year,
+      quarter,
+      search: kpiSearch.trim() || undefined,
+      sortBy: kpiSortBy || undefined,
+      sortOrder: kpiSortBy ? kpiSortOrder : undefined,
+    };
+    if (activeTab === "individual") {
+      f.scope = "mine";
+    } else {
+      f.kpiLevel = teamTabKpiType;
+      if (teamTabOwnerId) f.owner = teamTabOwnerId;
+      else if (teamTabTeamId) f.teamId = teamTabTeamId;
+    }
+    return f;
+  }, [year, quarter, kpiSearch, kpiSortBy, kpiSortOrder, activeTab, teamTabKpiType, teamTabOwnerId, teamTabTeamId]);
+
+  const priFilters = useMemo<ListFilters>(() => ({
+    year,
+    quarter,
+    search: priSearch.trim() || undefined,
+    sortBy: priSortBy || undefined,
+    sortOrder: priSortBy ? priSortOrder : undefined,
+    ...(activeTab === "individual"
+      ? { owner: userId }
+      : teamTabOwnerId
+        ? { owner: teamTabOwnerId }
+        : teamTabTeamId
+          ? { teamId: teamTabTeamId }
+          : {}),
+  }), [year, quarter, priSearch, priSortBy, priSortOrder, activeTab, userId, teamTabOwnerId, teamTabTeamId]);
+
+  const wwwFilters = useMemo<ListFilters>(() => ({
+    search: wwwSearch.trim() || undefined,
+    sortBy: wwwSortBy || undefined,
+    sortOrder: wwwSortBy ? wwwSortOrder : undefined,
+    // Multi-select status → comma-joined `status IN (...)`. Empty selection
+    // forces an empty result (sentinel) rather than "all", matching the old
+    // client behaviour where unchecking every status cleared the list.
+    status: wwwStatusFilter.length ? wwwStatusFilter.join(",") : "__none__",
+    ...(activeTab === "individual"
+      ? { who: userId }
+      : teamTabOwnerId
+        ? { who: teamTabOwnerId }
+        : teamTabTeamId
+          ? { teamId: teamTabTeamId }
+          : {}),
+  }), [wwwSearch, wwwSortBy, wwwSortOrder, wwwStatusFilter, activeTab, userId, teamTabOwnerId, teamTabTeamId]);
+
+  const kpiTableQuery = useInfiniteKPIs(kpiFilters);
+  const priTableQuery = useInfinitePriorities(priFilters);
+  const wwwTableQuery = useInfiniteWWW(wwwFilters);
+
+  const kpiRows = kpiTableQuery.rows;
+  const kpiTotal = kpiTableQuery.total;
+  const priRows = priTableQuery.rows;
+  const priTotal = priTableQuery.total;
+  const wwwRows = wwwTableQuery.rows;
+  const wwwTotal = wwwTableQuery.total;
+
+  // Owner-picker label fallback. `teamTabOwnerId` is seeded from the persisted
+  // shared filter at mount (and the owner list is a server-paginated 25/page
+  // slice), so the applied owner often isn't in `ownerOptions`. Without a
+  // fallback the FilterPicker trigger shows "All Users" even though the filter
+  // IS applied (the "N filters" badge proves it). Resolve the owner's name from
+  // any loaded source — the selected team's members, or the owner-scoped KPI /
+  // Priority / WWW rows — and feed it as the picker's `selectedOption`. Mirrors
+  // the KPI page's `selectedOwnerOption` pattern.
+  const selectedOwnerOption = useMemo(() => {
+    if (!teamTabOwnerId) return undefined;
+    if (ownerOptions.some((u) => u.id === teamTabOwnerId)) return undefined;
+    const fromTeam = teamMembersForScope.find((u) => u.id === teamTabOwnerId);
+    if (fromTeam) {
+      return userToFilterOption({
+        id: teamTabOwnerId,
+        firstName: fromTeam.firstName,
+        lastName: fromTeam.lastName,
+        email: fromTeam.email ?? "",
+      });
+    }
+    const found =
+      kpiRows.find((k) => k.owner === teamTabOwnerId)?.owner_user ??
+      kpiRows.flatMap((k) => k.owners ?? []).find((o) => o.id === teamTabOwnerId) ??
+      priRows.find((p) => p.owner === teamTabOwnerId)?.owner_user ??
+      wwwRows.find((w) => w.who === teamTabOwnerId)?.who_user;
+    return found
+      ? userToFilterOption({ id: teamTabOwnerId, firstName: found.firstName, lastName: found.lastName, email: "" })
+      : undefined;
+  }, [teamTabOwnerId, ownerOptions, teamMembersForScope, kpiRows, priRows, wwwRows]);
+
+  // Sort handlers — the tables call these with the backend sort key + dir.
+  // Toggling the same column to the same direction again is a no-op for the
+  // user; clearing (col "") resets to the endpoint's default order.
+  const handleKpiSort = (col: string, dir: "asc" | "desc") => { setKpiSortBy(col); setKpiSortOrder(dir); };
+  const handlePriSort = (col: string, dir: "asc" | "desc") => { setPriSortBy(col); setPriSortOrder(dir); };
+  const handleWwwSort = (col: string, dir: "asc" | "desc") => { setWwwSortBy(col); setWwwSortOrder(dir); };
+
+  // Table spinners show only on the FIRST load of each query. `keepPreviousData`
+  // (set in the hooks) holds the prior page visible during sort/page/search
+  // refetches, so `isLoading` is false after the initial fetch — no flicker.
+  const kpiTableLoading = kpiTableQuery.isLoading;
+  const priTableLoading = priTableQuery.isLoading;
+  const wwwTableLoading = wwwTableQuery.isLoading;
 
   // DB-driven current week + date range + per-week compact labels.
   const currentWeek = useCurrentWeek(year, quarter);
@@ -1327,6 +1537,7 @@ export default function DashboardPage() {
                         setShowFilter(false);
                       }}
                       options={ownerOptions.map(userToFilterOption)}
+                      selectedOption={selectedOwnerOption}
                       onSearchChange={setOwnerSearch}
                       onLoadMore={fetchMoreOwners}
                       hasMore={ownersHasMore}
@@ -1387,10 +1598,19 @@ export default function DashboardPage() {
       {/* Body */}
       <div className="flex-1 overflow-y-auto px-4 md:px-6 py-5 space-y-5 min-h-0">
 
-        {/* KPI overview cards — collapsed by default, click header to expand */}
-        {(kpisLoading || kpis.length > 0) && (
+        {/* KPI overview cards — collapsed by default, click header to expand.
+            Gate stays true while the session is still resolving so the card
+            doesn't flicker out when the summary query wins the refresh race —
+            see kpiOverviewVisible. */}
+        {kpiOverviewVisible(isLoading, sessionStatus, kpis.length) && (
           <KPIOverviewContainer count={kpis.length} loading={kpisLoading} kpis={kpis} currentWeek={currentWeek}>
-            <div className="grid gap-3 pt-3" style={{ gridTemplateColumns: "repeat(auto-fill, minmax(160px, 1fr))" }}>
+            {/* Cap the grid at ~4 card rows and scroll vertically. overflow-x
+                is clipped so a long card set never produces a horizontal
+                scrollbar; pr-1 keeps the vertical scrollbar off the cards. */}
+            <div
+              className="grid gap-3 pt-3 overflow-y-auto overflow-x-hidden pr-1"
+              style={{ gridTemplateColumns: "repeat(auto-fill, minmax(160px, 1fr))", maxHeight: 420 }}
+            >
               {kpisLoading
                 ? [1, 2, 3, 4].map(i => (
                     <div key={i} className="bg-white border border-gray-200 rounded-xl px-4 py-3 animate-pulse">
@@ -1401,7 +1621,7 @@ export default function DashboardPage() {
                   ))
                 : (
                   <UnreadCountsProvider entityType="KPI" ids={kpis.map(k => k.id)}>
-                    {kpis.map(k => <KPICard key={k.id} kpi={k} currentWeek={currentWeek} />)}
+                    {kpis.map(k => <KPICard key={k.id} kpi={k} currentWeek={currentWeek} numberFormat={numberFormat} />)}
                   </UnreadCountsProvider>
                 )
               }
@@ -1411,30 +1631,36 @@ export default function DashboardPage() {
 
         <Section
           badge="KPI"
-          count={kpis.length}
+          count={kpiTotal}
           right={
-            kpiHiddenSet.size > 0 ? (
-              <HiddenColsMenu
-                hiddenCols={kpiHiddenSet}
-                allCols={kpiAllCols}
-                onShow={kpiPrefs.showCol}
-              />
-            ) : undefined
+            <div className="flex items-center gap-2">
+              <TableSearchInput value={kpiSearchInput} onChange={setKpiSearchInput} placeholder="Search KPIs" />
+              {kpiHiddenSet.size > 0 && (
+                <HiddenColsMenu
+                  hiddenCols={kpiHiddenSet}
+                  allCols={kpiAllCols}
+                  onShow={kpiPrefs.showCol}
+                />
+              )}
+            </div>
           }
         >
-          {kpisLoading ? <Spinner /> : (
+          {kpiTableLoading ? <Spinner /> : (
             <div className="bg-white border border-gray-200 rounded-xl overflow-hidden">
               <KPITable
-                kpis={pagedKpis}
-                total={kpis.length}
-                page={kpiPage}
-                pageSize={DASHBOARD_PAGE_SIZE}
+                kpis={kpiRows}
                 year={year}
                 quarter={quarter}
-                onPageChange={setKpiPage}
-                onSort={() => {}}
-                onRefresh={() => {}}
+                onSort={handleKpiSort}
+                sortBy={kpiSortBy}
+                sortOrder={kpiSortOrder}
+                onRefresh={() => { void kpiTableQuery.refetch(); }}
                 fillWidth
+                numberFormat={numberFormat}
+                maxBodyHeight={DASHBOARD_TABLE_MAX_HEIGHT}
+                hasMore={kpiTableQuery.hasNextPage}
+                isFetchingMore={kpiTableQuery.isFetchingNextPage}
+                onLoadMore={kpiTableQuery.fetchNextPage}
                 hideColumns={[
                   // On the Team tab the owner column shown follows the KPI Type
                   // toggle: individual KPIs carry a single `owner`, team KPIs
@@ -1449,19 +1675,22 @@ export default function DashboardPage() {
 
         <Section
           badge="Priority"
-          count={priorities.length}
+          count={priTotal}
           right={
-            priorityPrefs.hiddenCols.length > 0 ? (
-              <HiddenColsPill
-                hiddenCols={priorityPrefs.hiddenCols}
-                colLabels={PRIORITY_DASH_COL_LABELS}
-                onRestore={priorityPrefs.showCol}
-                onRestoreAll={priorityPrefs.showAllCols}
-              />
-            ) : undefined
+            <div className="flex items-center gap-2">
+              <TableSearchInput value={priSearchInput} onChange={setPriSearchInput} placeholder="Search priorities" />
+              {priorityPrefs.hiddenCols.length > 0 && (
+                <HiddenColsPill
+                  hiddenCols={priorityPrefs.hiddenCols}
+                  colLabels={PRIORITY_DASH_COL_LABELS}
+                  onRestore={priorityPrefs.showCol}
+                  onRestoreAll={priorityPrefs.showAllCols}
+                />
+              )}
+            </div>
           }
         >
-          {priLoading ? <Spinner /> : (
+          {priTableLoading ? <Spinner /> : (
             // No `overflow-hidden` here — PriorityTable already wraps itself
             // in HorizontalScroller, which IS the correct scroll context for
             // its sticky frozen columns. Clipping at this outer layer
@@ -1469,11 +1698,18 @@ export default function DashboardPage() {
             // the column widths exceeded the dashboard container.
             <div className="bg-white border border-gray-200 rounded-xl">
               <PriorityTable
-                priorities={pagedPriorities}
-                onRefresh={() => {}}
+                priorities={priRows}
+                onRefresh={() => { void priTableQuery.refetch(); }}
                 year={year}
                 quarter={quarter}
                 fillWidth
+                sortBy={priSortBy}
+                sortOrder={priSortOrder}
+                onSort={handlePriSort}
+                maxBodyHeight={DASHBOARD_TABLE_MAX_HEIGHT}
+                hasMore={priTableQuery.hasNextPage}
+                isFetchingMore={priTableQuery.isFetchingNextPage}
+                onLoadMore={priTableQuery.fetchNextPage}
                 hideColumns={[
                   ...(activeTab === "team"
                     ? ["_cb", "_log", "_id", "owner"]
@@ -1481,10 +1717,6 @@ export default function DashboardPage() {
                   ...hiddenWeekCols,
                 ]}
                 readOnly
-                page={priPage}
-                pageSize={DASHBOARD_PAGE_SIZE}
-                total={priorities.length}
-                onPageChange={setPriPage}
               />
             </div>
           )}
@@ -1494,9 +1726,10 @@ export default function DashboardPage() {
             tab + team-tab filter chain (A team scope + C owner). */}
         <Section
           badge="WWW"
-          count={wwwItems.length}
+          count={wwwTotal}
           right={
             <>
+              <TableSearchInput value={wwwSearchInput} onChange={setWwwSearchInput} placeholder="Search WWW" />
               {wwwPrefs.hiddenCols.length > 0 && (
                 <HiddenColsPill
                   hiddenCols={wwwPrefs.hiddenCols}
@@ -1513,17 +1746,20 @@ export default function DashboardPage() {
             </>
           }
         >
-          {wwwLoading ? <Spinner /> : (
+          {wwwTableLoading ? <Spinner /> : (
             <div className="bg-white border border-gray-200 rounded-xl overflow-hidden">
               <WWWTable
-                items={pagedWWW}
-                onRefresh={() => {}}
+                items={wwwRows}
+                onRefresh={() => { void wwwTableQuery.refetch(); }}
                 hideColumns={["_cb", "_log", "_id"]}
                 readOnly
-                page={wwwPage}
-                pageSize={DASHBOARD_PAGE_SIZE}
-                total={wwwItems.length}
-                onPageChange={setWwwPage}
+                sortBy={wwwSortBy}
+                sortOrder={wwwSortOrder}
+                onSort={handleWwwSort}
+                maxBodyHeight={DASHBOARD_TABLE_MAX_HEIGHT}
+                hasMore={wwwTableQuery.hasNextPage}
+                isFetchingMore={wwwTableQuery.isFetchingNextPage}
+                onLoadMore={wwwTableQuery.fetchNextPage}
               />
             </div>
           )}

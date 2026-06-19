@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import type { Prisma } from "@prisma/client";
+import { Prisma, ClientMeetingStatus, ClientMeetingFlag } from "@prisma/client";
 import { db } from "@/lib/db";
 import { withOrgAuthForModule } from "@/lib/api/withOrgAuth";
 import { createDailyHuddleSchema } from "@/lib/schemas/clientMeetingsSchema";
@@ -7,6 +7,7 @@ import { writeAuditLog } from "@/lib/api/auditLog";
 import { audit, requestContext } from "@/lib/audit";
 import { parseSort, type SortDirection } from "@/lib/api/parseSort";
 import { parsePagination, paginatedResponse } from "@/lib/api/pagination";
+import { searchUserIds, dateSearchConditions, timeSearchTokens, matchEnumValues, commaTokens } from "@/lib/api/listSearch";
 
 const withOrgAuth = withOrgAuthForModule("clientMeetings.dailyHuddle");
 
@@ -59,10 +60,42 @@ export const GET = withOrgAuth(async ({ orgId }, request) => {
     where.meetingDate = r;
   }
   if (search) {
+    // Global search across every visible column: client name, notes, absent
+    // members (comma-split), Call Status (enum), Start/End times, the YES/NO/NA
+    // flags (Yesterday/Today/Stuck/Punctuality), audit users, and the date
+    // columns (meeting/created/updated).
+    const actorMatchIds = await searchUserIds(db, search);
+    const memberTokens = commaTokens(search);
+    const tTokens = timeSearchTokens(search);
+    const matchedStatuses = matchEnumValues(Object.values(ClientMeetingStatus), search);
+    const matchedFlags = matchEnumValues(Object.values(ClientMeetingFlag), search);
     where.OR = [
       { client: { name: { contains: search, mode: "insensitive" } } },
+      { notes: { contains: search, mode: "insensitive" } },
       { notesKPDashboard: { contains: search, mode: "insensitive" } },
       { otherNotes: { contains: search, mode: "insensitive" } },
+      // Absent Members — match any listed member.
+      ...memberTokens.map((t) => ({ absentTeamMembers: { some: { member: { name: { contains: t, mode: "insensitive" as const } } } } })),
+      // Call Status (enum → matched values).
+      ...(matchedStatuses.length ? [{ callStatus: { in: matchedStatuses } }] : []),
+      // Start / End time strings.
+      ...tTokens.flatMap((t) => [
+        { actualStartTime: { contains: t, mode: "insensitive" as const } },
+        { actualEndTime: { contains: t, mode: "insensitive" as const } },
+      ]),
+      // YES/NO/NA flag columns (Yesterday/Today/Stuck/Punctuality).
+      ...(matchedFlags.length
+        ? [
+            { format1Status: { in: matchedFlags } },
+            { format2Status: { in: matchedFlags } },
+            { stuckCallStatus: { in: matchedFlags } },
+            { punctualityOverride: { in: matchedFlags } },
+          ]
+        : []),
+      ...(actorMatchIds.length
+        ? [{ createdBy: { in: actorMatchIds } }, { updatedBy: { in: actorMatchIds } }]
+        : []),
+      ...dateSearchConditions(["meetingDate", "createdAt", "updatedAt"], search),
     ];
   }
 

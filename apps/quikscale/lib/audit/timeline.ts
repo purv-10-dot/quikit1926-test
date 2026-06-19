@@ -157,8 +157,27 @@ export function searchEvents(events: TimelineEvent[], query: string): TimelineEv
   });
 }
 
+// Audit timestamps are stored in UTC; we display them in the VIEWER's local
+// timezone (the browser default — no `timeZone` option). Day bucketing uses
+// local calendar parts too, so "Today"/"Yesterday" boundaries line up with the
+// viewer's local midnight rather than UTC midnight.
+//
+// The formatters are built ONCE at module load and reused for every row.
+// Constructing an Intl.DateTimeFormat is the expensive part; `toLocaleString`
+// rebuilds one on each call, so an audit drawer with many rows would pay that
+// cost dozens of times per open. Reusing one instance avoids that.
+const TIME_FMT = new Intl.DateTimeFormat("en-GB", {
+  hour: "2-digit",
+  minute: "2-digit",
+});
+const DATE_FMT = new Intl.DateTimeFormat("en-GB", {
+  day: "2-digit",
+  month: "short",
+  year: "numeric",
+});
+
 function startOfDay(d: Date): number {
-  return Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate());
+  return new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime();
 }
 
 /** Human day label: "Today" / "Yesterday" / "02 Apr 2026". `now` injected. */
@@ -167,12 +186,7 @@ export function dayLabel(iso: string, now: Date): string {
   const diffDays = Math.round((startOfDay(now) - startOfDay(d)) / 86400000);
   if (diffDays <= 0) return "Today";
   if (diffDays === 1) return "Yesterday";
-  return d.toLocaleDateString("en-GB", {
-    day: "2-digit",
-    month: "short",
-    year: "numeric",
-    timeZone: "UTC",
-  });
+  return DATE_FMT.format(d);
 }
 
 /**
@@ -181,21 +195,11 @@ export function dayLabel(iso: string, now: Date): string {
  */
 export function formatTimestamp(iso: string, now: Date): string {
   const d = new Date(iso);
-  const time = d.toLocaleTimeString("en-GB", {
-    hour: "2-digit",
-    minute: "2-digit",
-    timeZone: "UTC",
-  });
+  const time = TIME_FMT.format(d);
   const diffDays = Math.round((startOfDay(now) - startOfDay(d)) / 86400000);
   if (diffDays <= 0) return time;
   if (diffDays === 1) return `yesterday ${time}`;
-  const date = d.toLocaleDateString("en-GB", {
-    day: "2-digit",
-    month: "short",
-    year: "numeric",
-    timeZone: "UTC",
-  });
-  return `${date} ${time}`;
+  return `${DATE_FMT.format(d)} ${time}`;
 }
 
 export interface DayGroup {

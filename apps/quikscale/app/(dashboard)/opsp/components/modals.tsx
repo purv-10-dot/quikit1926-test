@@ -1154,38 +1154,19 @@ export function GoalsModal({
   );
 }
 
-export function ActionsModal({
-  open,
-  onClose,
-  rows,
-  onChange,
-  fiscalYear,
-  fiscalQuarter,
-  goalRows,
-  readOnly = false,
-}: {
-  open: boolean;
-  onClose: () => void;
-  rows: ActionRow[];
-  onChange: (r: ActionRow[]) => void;
-  fiscalYear: number | string;
-  fiscalQuarter: string;
-  goalRows: GoalRow[];
-  readOnly?: boolean;
-}) {
-  // Transient feedback when an over-goal Projected entry is rejected. Keyed by
-  // row index + the cap value to show, so the message sits under the row the
-  // user just typed in. Cleared on a valid entry (below) and whenever the modal
-  // opens/closes so a stale warning doesn't survive a reopen.
-  const [capWarning, setCapWarning] = useState<{ row: number; max: string } | null>(null);
-  useEffect(() => { setCapWarning(null); }, [open]);
-  if (!open) return null;
+/**
+ * Per-row validation for the ACTIONS (QTR) grid. Pure — computes the same
+ * balance / goal-cap / per-cell / monotonic / exit rules the modal renders,
+ * so the logic can be shared between the modal's Submit gate and the OPSP
+ * page's edit-after-finalize commit gate. The modal mutates form state live
+ * (onChange fires per keystroke), so a finalized edit could otherwise reach
+ * OPSP Review even while the modal shows an error and its Submit is disabled.
+ * Keep `actionsQtrHasErrors` in lockstep with the Submit-disabled condition
+ * in ActionsModal below.
+ */
+function computeActionsQtrValidations(rows: ActionRow[], goalRows: GoalRow[]) {
   const mCols: (keyof ActionRow)[] = ["m1", "m2", "m3"];
-  // Columns: Category | Category Type | Projected | M1 | M2 | M3
-  const gridCols = "2fr 1fr 1fr 1fr 1fr 1fr";
-
-  // ── Pre-compute per-row validation ──
-  const rowValidations = rows.map((row) => {
+  return rows.map((row) => {
     const meta = catMetaCache.get(row.category);
     const hasCategory = !!row.category.trim();
     const projectedVal = resolveProjected(row.category, row.projected);
@@ -1299,6 +1280,102 @@ export function ActionsModal({
       lastBelowProjected, lastFilledMonthIndex,
     };
   });
+}
+
+/**
+ * True when ANY ACTIONS (QTR) row is invalid. Mirrors EXACTLY the modal's
+ * Submit-disabled condition (hasAnyUnbalanced || hasAnyExceedsGoal || …).
+ * Used by the OPSP page to block an edit-after-finalize commit (and disable
+ * the "Change logged" Save) so an invalid row can never reach OPSP Review.
+ */
+export function actionsQtrHasErrors(rows: ActionRow[], goalRows: GoalRow[]): boolean {
+  return computeActionsQtrValidations(rows, goalRows).some(
+    (v) =>
+      v.isUnbalanced || v.exceedsGoal || v.hasCellOverProjected ||
+      v.hasMonotonicViolation || v.missingProjected || v.missingBreakdown ||
+      v.lastBelowProjected,
+  );
+}
+
+/**
+ * Per-row ACTIONS (QTR) validation messages — the SAME rules `actionsQtrHasErrors`
+ * checks, surfaced as human messages that mirror the modal's error text. Used by
+ * the page-level Finalize validation so Finalize blocks (with the same message)
+ * whenever the modal would disable Submit — e.g. a CumulativeTillEnd row whose
+ * last month is below Projected. Invariant: `actionsQtrErrors(...).length > 0`
+ * ⟺ `actionsQtrHasErrors(...)`.
+ */
+export function actionsQtrErrors(
+  rows: ActionRow[],
+  goalRows: GoalRow[],
+): { rowIndex: number; message: string }[] {
+  const out: { rowIndex: number; message: string }[] = [];
+  computeActionsQtrValidations(rows, goalRows).forEach((v, i) => {
+    const row = rows[i];
+    if (v.missingProjected) {
+      out.push({ rowIndex: i, message: "Projected value is required." });
+    }
+    if (v.missingBreakdown) {
+      out.push({ rowIndex: i, message: "Monthly breakdown is required." });
+    }
+    if (v.exceedsGoal) {
+      out.push({ rowIndex: i, message: "Projected exceeds the Goal (1 YR)." });
+    }
+    if (v.hasCellOverProjected) {
+      out.push({ rowIndex: i, message: `Month value cannot exceed Projected (${row.projected}).` });
+    }
+    if (v.hasMonotonicViolation) {
+      out.push({ rowIndex: i, message: "Month values must not decrease." });
+    }
+    if (v.lastBelowProjected && v.lastFilledMonthIndex >= 0) {
+      // Matches the modal's per-cell message + the Submit-area hint.
+      out.push({
+        rowIndex: i,
+        message: `Month ${v.lastFilledMonthIndex + 1} value (${v.mValues[v.lastFilledMonthIndex]}) must reach Projected (${row.projected}). Last month must reach Projected.`,
+      });
+    } else if (v.isUnbalanced) {
+      // Generic balance failure (hidden by the modal when the more specific
+      // lastBelowProjected message already fired).
+      out.push({ rowIndex: i, message: "Monthly values must add up to Projected." });
+    }
+  });
+  return out;
+}
+
+export function ActionsModal({
+  open,
+  onClose,
+  rows,
+  onChange,
+  fiscalYear,
+  fiscalQuarter,
+  goalRows,
+  readOnly = false,
+}: {
+  open: boolean;
+  onClose: () => void;
+  rows: ActionRow[];
+  onChange: (r: ActionRow[]) => void;
+  fiscalYear: number | string;
+  fiscalQuarter: string;
+  goalRows: GoalRow[];
+  readOnly?: boolean;
+}) {
+  // Transient feedback when an over-goal Projected entry is rejected. Keyed by
+  // row index + the cap value to show, so the message sits under the row the
+  // user just typed in. Cleared on a valid entry (below) and whenever the modal
+  // opens/closes so a stale warning doesn't survive a reopen.
+  const [capWarning, setCapWarning] = useState<{ row: number; max: string } | null>(null);
+  useEffect(() => { setCapWarning(null); }, [open]);
+  if (!open) return null;
+  const mCols: (keyof ActionRow)[] = ["m1", "m2", "m3"];
+  // Columns: Category | Category Type | Projected | M1 | M2 | M3
+  const gridCols = "2fr 1fr 1fr 1fr 1fr 1fr";
+
+  // ── Pre-compute per-row validation ──
+  // Shared with the OPSP page's edit-after-finalize commit gate via
+  // `actionsQtrHasErrors` (defined above) so the two never drift.
+  const rowValidations = computeActionsQtrValidations(rows, goalRows);
 
   const hasAnyUnbalanced = rowValidations.some(v => v.isUnbalanced);
   const hasAnyExceedsGoal = rowValidations.some(v => v.exceedsGoal);

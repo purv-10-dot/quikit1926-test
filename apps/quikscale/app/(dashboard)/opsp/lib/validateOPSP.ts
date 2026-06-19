@@ -16,7 +16,7 @@
  * "wrong", just unfilled.
  */
 import type { FormData } from "../hooks/useOPSPForm";
-import { resolveProjected, breakdownProjected } from "../components/modals";
+import { resolveProjected, breakdownProjected, actionsQtrErrors } from "../components/modals";
 import { catMetaCache } from "../components/category";
 import type { TargetRow, GoalRow, ActionRow } from "../types";
 
@@ -35,6 +35,19 @@ const partKeys = {
 };
 
 const fmt = new Intl.NumberFormat("en-IN", { maximumFractionDigits: 2 });
+
+/**
+ * True when a category-row section row is incomplete in the one way that must
+ * never be saved: a category is selected but the Projected value is blank.
+ * (A fully-empty row — no category and no value — is fine; clearing a whole row
+ * is allowed.) Shared by `checkBreakdown` (pre-finalize validation) and the
+ * edit-after-finalize commit gate so they apply the same rule.
+ */
+export function categoryRowMissingProjected(row: { category?: string | null; projected?: string | null }): boolean {
+  const cat = (row.category ?? "").trim();
+  const projected = (row.projected ?? "").trim();
+  return cat !== "" && projected === "";
+}
 
 function checkBreakdown(
   section: string,
@@ -58,7 +71,7 @@ function checkBreakdown(
     // actionable message. Without this check the row was silently skipped at
     // page-level finalize even though the in-modal validator flagged it,
     // letting users finalize partial Actions/Goals/Targets data.
-    if (cat && !projectedStr) {
+    if (categoryRowMissingProjected(row)) {
       errors.push({
         section,
         row: i + 1,
@@ -221,7 +234,18 @@ export function validateOPSP(form: FormData): ValidationError[] {
   return [
     ...checkBreakdown("Targets", form.targetRows as unknown as Array<Record<string, string>>, targetParts),
     ...checkBreakdown("Goals", form.goalRows as unknown as Array<Record<string, string>>, partKeys.goals),
-    ...checkBreakdown("Actions", form.actionsQtr as unknown as Array<Record<string, string>>, partKeys.actions),
+    // Actions (QTR) uses the SAME validator the ACTIONS modal does (categoryType-
+    // based, catches lastBelowProjected / monotonic / cell-over / exceeds-goal),
+    // so Finalize blocks with the modal's exact message whenever Submit would be
+    // disabled — closing the modal can't sneak invalid Actions past Finalize.
+    ...actionsQtrErrors(form.actionsQtr, form.goalRows).map((e) => {
+      const cat = (form.actionsQtr[e.rowIndex]?.category ?? "").trim();
+      return {
+        section: "Actions",
+        row: e.rowIndex + 1,
+        message: `Actions row ${e.rowIndex + 1}${cat ? ` (${cat})` : ""}: ${e.message}`,
+      };
+    }),
     // Key Thrusts + Key Initiatives no longer require an owner — the column
     // was removed from the UI per spec, so checking them would block Finalize
     // for data that has no UI to fill the field.

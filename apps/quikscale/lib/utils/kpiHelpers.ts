@@ -23,6 +23,35 @@ export function fmtCompact(val: number | null | undefined): string {
   return fmt(val);
 }
 
+/** Dashboard number-format mode — Western abbreviations vs the Indian system. */
+export type NumberFormat = "standard" | "indian";
+
+/**
+ * Compact format using the Indian numbering system: thousand (K), lakh (L,
+ * 1e5), crore (Cr, 1e7), arab (Ar, 1e9). Mirrors `fmtCompact`'s decimal trimming
+ * and sign handling. e.g. 12_500_000 → "1.25Cr", 849_000 → "8.49L", 5_000 → "5K".
+ * Used only by the Dashboard (gated behind the `use_indian_numbering` toggle).
+ */
+export function fmtCompactIndian(val: number | null | undefined): string {
+  if (val === null || val === undefined) return "—";
+  const abs = Math.abs(val);
+  const sign = val < 0 ? "-" : "";
+  if (abs >= 1_000_000_000) return sign + parseFloat((abs / 1_000_000_000).toFixed(2)) + "Ar";
+  if (abs >= 10_000_000)    return sign + parseFloat((abs / 10_000_000).toFixed(2)) + "Cr";
+  if (abs >= 100_000)       return sign + parseFloat((abs / 100_000).toFixed(2)) + "L";
+  if (abs >= 1_000)         return sign + parseFloat((abs / 1_000).toFixed(1)) + "K";
+  return fmt(val);
+}
+
+/**
+ * Dispatch compact formatting by mode. `"indian"` → lakh/crore/arab; anything
+ * else → the standard K/M/B abbreviations. `fmtCompact` itself is unchanged, so
+ * every surface that doesn't opt into a format stays byte-identical.
+ */
+export function fmtCompactBy(val: number | null | undefined, format: NumberFormat = "standard"): string {
+  return format === "indian" ? fmtCompactIndian(val) : fmtCompact(val);
+}
+
 /**
  * Maps overall KPI progress percentage to color using the new forward logic.
  * Thresholds: ≥120% blue, ≥100% green, ≥80% yellow, <80% red.

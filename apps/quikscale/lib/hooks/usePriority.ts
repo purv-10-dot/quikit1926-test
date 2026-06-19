@@ -123,3 +123,35 @@ export function useUpdateWeeklyStatus(priorityId: string) {
     },
   });
 }
+
+type WeeklyStatusWrite = { weekNumber: number; status: string; notes?: string };
+
+// Batch weekly-status save — many weeks in ONE request. The server groups
+// ≥3 changed weeks into a single BULK_UPDATE audit event ("Bulk weekly update"
+// card); <3 fall back to individual WEEKLY_UPDATE events. Used by the Completed
+// cascade so a multi-week save is one history entry, not N.
+async function updateWeeklyStatusesBatch(
+  priorityId: string,
+  inputs: WeeklyStatusWrite[]
+): Promise<unknown> {
+  const res = await fetch(`/api/priority/${priorityId}/weekly/batch`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ inputs }),
+  });
+  const data = await res.json();
+  if (!data.success) throw new Error(data.error || "Failed to update weekly statuses");
+  return data.data;
+}
+
+export function useUpdateWeeklyStatusesBatch(priorityId: string) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (inputs: WeeklyStatusWrite[]) => updateWeeklyStatusesBatch(priorityId, inputs),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: priority.keys.detail(priorityId) });
+      queryClient.invalidateQueries({ queryKey: priority.keys.lists() });
+      queryClient.invalidateQueries({ queryKey: ["dashboard"] });
+    },
+  });
+}

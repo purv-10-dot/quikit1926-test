@@ -6,7 +6,6 @@ import type { PriorityRow, PriorityWeeklyStatus } from "@/lib/types/priority";
 import { useWeekLabels } from "@/lib/hooks/useCurrentWeek";
 import { priorityFieldLabel } from "@/lib/audit/priorityFields";
 import { PILLAR_TOKENS } from "@/components/audit/auditLogTokens";
-import { CommentComposer } from "@/components/audit/CommentComposer";
 import {
   useEntityAuditTimeline,
   useEntityMarkRead,
@@ -43,9 +42,10 @@ function statusLabel(status: string): string {
 
 /**
  * Priority entity config for the generic Change History panel. Uses the
- * entity-agnostic audit hooks, a status-kind weekly card, a status RAG dot, a
- * comment composer, and a CREATE card that renders the full spec + a per-week
- * status breakdown built on the shared global DataTable.
+ * entity-agnostic audit hooks, a status-kind weekly card, a status RAG dot, and
+ * a CREATE card that renders the full spec + a per-week status breakdown built
+ * on the shared global DataTable. (No comment composer — historical COMMENT
+ * events still render, but adding new comments from the panel is disabled.)
  */
 export const priorityAuditConfig: AuditEntityConfig<PriorityRow> = {
   entityType: "PRIORITY",
@@ -66,7 +66,6 @@ export const priorityAuditConfig: AuditEntityConfig<PriorityRow> = {
     const d = priorityStatusDot(p.overallStatus);
     return { className: d.className, label: `Status indicator: ${d.label}` };
   },
-  renderComposer: (id) => <CommentComposer entityType="PRIORITY" entityId={id} placeholder="Add a comment on this priority…" />,
   renderCreateCard: ({ entity, weekLabels, open, onToggle }) => (
     <PriorityCreateCard priority={entity} weekLabels={weekLabels} open={open} onToggle={onToggle} />
   ),

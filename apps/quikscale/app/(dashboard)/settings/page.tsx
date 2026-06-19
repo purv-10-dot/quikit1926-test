@@ -562,6 +562,7 @@ function ConfigurationsTab() {
   const editPastWeek = flags["edit_past_week_data"]?.enabled ?? false;
   const futureQuarters = flags["enable_future_quarters"]?.enabled ?? false;
   const addPastQuarterHabit = flags["add_past_quarter_habit"]?.enabled ?? false;
+  const indianNumbering = flags["use_indian_numbering"]?.enabled ?? false;
 
   return (
     <div className="w-full space-y-6 relative">
@@ -658,6 +659,22 @@ function ConfigurationsTab() {
             />
             <span className="text-xs font-medium text-[var(--color-text-secondary)]">
               {addPastQuarterHabit ? "Enabled" : "Disabled"}
+            </span>
+          </div>
+        </div>
+
+        {/* Indian Number Format (Lakh / Crore) */}
+        <div className="border border-[var(--color-border)] rounded-xl p-5 bg-[var(--color-bg-primary)]">
+          <h4 className="text-sm font-semibold text-[var(--color-text-primary)] mb-2">Indian Number Format (Lakh / Crore)</h4>
+          <p className="text-xs text-[var(--color-text-secondary)] mb-4">Show Dashboard numbers as K / L (lakh) / Cr (crore) / Ar (arab) instead of K / M / B / T. Affects the Dashboard view only.</p>
+          <div className="flex items-center justify-between">
+            <Toggle
+              enabled={indianNumbering}
+              onChange={() => toggleFlag("use_indian_numbering", indianNumbering)}
+              loading={savingKey === "use_indian_numbering"}
+            />
+            <span className="text-xs font-medium text-[var(--color-text-secondary)]">
+              {indianNumbering ? "Enabled" : "Disabled"}
             </span>
           </div>
         </div>

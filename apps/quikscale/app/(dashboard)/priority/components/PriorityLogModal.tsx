@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { useUpdatePriority, useUpdateWeeklyStatus } from "@/lib/hooks/usePriority";
+import { useUpdatePriority, useUpdateWeeklyStatus, useUpdateWeeklyStatusesBatch } from "@/lib/hooks/usePriority";
 import { useUsers } from "@/lib/hooks/useUsers";
 import { useTeams } from "@/lib/hooks/useTeams";
 import type { PriorityRow } from "@/lib/types/priority";
@@ -87,6 +87,7 @@ export function PriorityLogModal({ priority, onClose, onSuccess, logsOnly = fals
   const { data: teams = [] } = useTeams();
   const updatePriority = useUpdatePriority(priority.id);
   const updateWeeklyStatus = useUpdateWeeklyStatus(priority.id);
+  const updateWeeklyStatusesBatch = useUpdateWeeklyStatusesBatch(priority.id);
 
   function setField(key: string, val: string) {
     setForm(f => ({ ...f, [key]: val }));
@@ -177,9 +178,13 @@ export function PriorityLogModal({ priority, onClose, onSuccess, logsOnly = fals
     }
 
     try {
+      // Send ALL the week writes in ONE batch request so the change history
+      // groups a multi-week save (e.g. the Completed cascade) into a single
+      // "Bulk weekly update" card (≥3 weeks) instead of N separate entries.
+      // A single-week click sends one input and still logs one WEEKLY_UPDATE.
       await Promise.all([
-        ...writes.map(wr =>
-          updateWeeklyStatus.mutateAsync({ weekNumber: wr.weekNumber, status: wr.status, notes: wr.notes }),
+        updateWeeklyStatusesBatch.mutateAsync(
+          writes.map(wr => ({ weekNumber: wr.weekNumber, status: wr.status, notes: wr.notes })),
         ),
         ...(shouldExtendEndWeek
           ? [updatePriority.mutateAsync({ endWeek: QUARTER_END } as any)]

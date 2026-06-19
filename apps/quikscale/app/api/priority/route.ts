@@ -11,6 +11,7 @@ import { getCurrentFiscalWeekFromDB } from "@/lib/utils/featureFlags";
 import { notifyPriorityAssignment } from "@/lib/services/priorityNotifications";
 import { isOrgAdmin } from "@/lib/api/visibility";
 import { fetchAuditUserMap, decorateAudit } from "@/lib/api/auditUsers";
+import { searchUserIds, dateSearchConditions, numericSearchValue } from "@/lib/api/listSearch";
 
 const PRIORITY_SELECT = {
   id: true,
@@ -44,8 +45,12 @@ export const GET = auth.view(async ({ orgId, userId }, req) => {
   const searchParams = req.nextUrl.searchParams;
   const year = searchParams.get("year") ? parseInt(searchParams.get("year")!) : undefined;
   const quarter = searchParams.get("quarter") || undefined;
-  const sortBy = searchParams.get("sortBy") || "createdAt";
-  const sortOrder = (searchParams.get("sortOrder") || "asc") as "asc" | "desc";
+  const sortByParam = searchParams.get("sortBy");
+  const sortBy = sortByParam || "createdAt";
+  // Default the list to newest-first (createdAt desc) so a just-created
+  // priority appears at the TOP. An explicitly chosen column with no direction
+  // still defaults to asc (unchanged); an explicit sortOrder always wins.
+  const sortOrder = (searchParams.get("sortOrder") || (sortByParam ? "asc" : "desc")) as "asc" | "desc";
   const { page, limit, skip, take } = parsePagination(req);
 
   // DB-level filters (previously applied client-side on the page).
@@ -78,22 +83,42 @@ export const GET = auth.view(async ({ orgId, userId }, req) => {
     where.owner = memberIds.length > 0 ? { in: memberIds } : "__no_team_members__";
   }
 
-  // Search by priority name OR owner name (resolve matching users → owner IN).
+  // Global search across every visible Priority column: name/description/notes,
+  // owner + team + created-by/updated-by, start/end week numbers, weekly status
+  // labels + notes, and created/updated dates (year / full-date / month-name).
   if (search) {
-    const matchedUsers = await db.user.findMany({
-      where: {
-        OR: [
-          { firstName: { contains: search, mode: "insensitive" } },
-          { lastName: { contains: search, mode: "insensitive" } },
-        ],
-      },
-      select: { id: true },
-    });
-    const matchedIds = matchedUsers.map((u) => u.id);
-    where.OR = [
+    const matchedIds = await searchUserIds(db, search);
+    const num = numericSearchValue(search);
+    const searchOr: Record<string, unknown>[] = [
       { name: { contains: search, mode: "insensitive" } },
-      ...(matchedIds.length ? [{ owner: { in: matchedIds } }] : []),
+      { description: { contains: search, mode: "insensitive" } },
+      { notes: { contains: search, mode: "insensitive" } },
+      { overallStatus: { contains: search, mode: "insensitive" } },
+      { team: { is: { name: { contains: search, mode: "insensitive" } } } },
+      { weeklyStatuses: { some: { status: { contains: search, mode: "insensitive" } } } },
+      { weeklyStatuses: { some: { notes: { contains: search, mode: "insensitive" } } } },
     ];
+    if (matchedIds.length) {
+      searchOr.push({ owner: { in: matchedIds } });
+      searchOr.push({ createdBy: { in: matchedIds } });
+      searchOr.push({ updatedBy: { in: matchedIds } });
+    }
+    if (num != null) {
+      searchOr.push({ startWeek: num });
+      searchOr.push({ endWeek: num });
+    }
+    for (const cond of dateSearchConditions(["createdAt", "updatedAt"], search)) {
+      searchOr.push(cond);
+    }
+    // AND-compose so search narrows within (never replaces) the row-level
+    // visibility scope (`where.owner` for non-admins, owner/team filters).
+    if (where.owner !== undefined || where.OR) {
+      const existing = where.OR ? [{ OR: where.OR }] : [];
+      delete where.OR;
+      where.AND = [...existing, { OR: searchOr }];
+    } else {
+      where.OR = searchOr;
+    }
   }
 
   // Allowed sort fields + stable `id` tie-breaker so pages never overlap.

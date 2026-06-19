@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useRef, useEffect } from "react";
+import { useState, useRef, useEffect, type UIEvent } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import type { PriorityRow } from "@/lib/types/priority";
 import { ALL_WEEKS, weekDateLabel, getWeekDateRange } from "@/lib/utils/fiscal";
@@ -17,6 +17,7 @@ import { SortIndicator } from "@/components/table/SortIndicator";
 import { HiddenColsPill } from "@/components/table/HiddenColsPill";
 import { UserAuditCell, DateAuditCell } from "@/components/table/AuditCells";
 import { HorizontalScroller } from "@/components/ui/HorizontalScroller";
+import { isNearBottom } from "@/lib/utils/scroll";
 import { useColumnResize, ResizeHandle } from "@/lib/hooks/useColumnResize";
 import { getLatestPriorityNote } from "@/lib/utils/priorityHelpers";
 import { BaseTooltip } from "@/components/ui/base-tooltip";
@@ -178,9 +179,25 @@ interface Props {
   canDelete?: boolean;
   /** RBAC v2 — false makes opened edit drawers read-only. Defaults to true. */
   canUpdate?: boolean;
+  /** Controlled sort override. When `onSort` is provided the table uses these
+   *  props (backend sort keys, e.g. "priorityName") for the header indicator
+   *  and routes clicks through `onSort` instead of its internal Redux store.
+   *  Used by the Dashboard, which drives its own DB-level sort independently of
+   *  the /priority page. When omitted, sort stays Redux-backed as before. */
+  sortBy?: string;
+  sortOrder?: "asc" | "desc";
+  onSort?: (col: string, dir: "asc" | "desc") => void;
+  /** Infinite-scroll mode (dashboard). When `maxBodyHeight` is set the body
+   *  becomes a fixed-height vertical scroll area (sticky header pins, scrollbars
+   *  inside the card) and `onLoadMore` fires near the bottom. Omitted on the
+   *  module page → unchanged. */
+  maxBodyHeight?: number;
+  hasMore?: boolean;
+  isFetchingMore?: boolean;
+  onLoadMore?: () => void;
 }
 
-export function PriorityTable({ priorities: prioritiesAll, onRefresh, year, quarter, defaultYear, defaultQuarter, onSelectionChange, hideColumns, readOnly, maxRows, page, pageSize, total, onPageChange, onPageSizeChange, fillWidth, canDelete = true, canUpdate = true }: Props) {
+export function PriorityTable({ priorities: prioritiesAll, onRefresh, year, quarter, defaultYear, defaultQuarter, onSelectionChange, hideColumns, readOnly, maxRows, page, pageSize, total, onPageChange, onPageSizeChange, fillWidth, canDelete = true, canUpdate = true, sortBy: sortByProp, sortOrder: sortOrderProp, onSort: onSortProp, maxBodyHeight, hasMore, isFetchingMore, onLoadMore }: Props) {
   // Cross-surface cache invalidation — when the inline cell picker saves a
   // weekly status/note, the Dashboard's `useDashboardSummary` query must
   // refetch so the Last Note / week cells update without a page reload.
@@ -189,6 +206,12 @@ export function PriorityTable({ priorities: prioritiesAll, onRefresh, year, quar
   const priorities = maxRows != null ? prioritiesAll.slice(0, maxRows) : prioritiesAll;
   const paginationEnabled = page != null && pageSize != null && total != null && onPageChange != null;
   const totalPages = paginationEnabled ? Math.max(1, Math.ceil((total as number) / (pageSize as number))) : 1;
+  // Infinite-scroll mode: bounded-height body whose vertical scroll loads more.
+  const infiniteMode = maxBodyHeight != null;
+  const handleBodyScroll = (e: UIEvent<HTMLDivElement>) => {
+    if (!infiniteMode || !hasMore || isFetchingMore) return;
+    if (isNearBottom(e.currentTarget)) onLoadMore?.();
+  };
   const [showAddModal, setShowAddModal] = useState(false);
   const [editPriority, setEditPriority] = useState<PriorityRow | null>(null);
   // Separate state for logs-only panel (triggered by the log icon).
@@ -215,14 +238,21 @@ export function PriorityTable({ priorities: prioritiesAll, onRefresh, year, quar
   // intentionally unused here.
   const { frozenCol, setFrozenCol, hiddenCols, hideCol, showCol, showAllCols } = useTablePrefs("priority");
   const { sortBy: redSortBy, sortOrder: redSortOrder, setSort: setRedSort } = useTableSort("priority");
-  const sort = redSortBy ? `${redSortBy}:${redSortOrder}` : null;
+  // Controlled-sort override (Dashboard) wins over the Redux store. Keeps the
+  // /priority page Redux-backed while letting the Dashboard sort independently.
+  const controlledSort = onSortProp != null;
+  const effSortBy = controlledSort ? (sortByProp ?? "") : redSortBy;
+  const effSortOrder = controlledSort ? (sortOrderProp ?? "asc") : redSortOrder;
+  const sort = effSortBy ? `${effSortBy}:${effSortOrder}` : null;
   const setSort = (next: string | null) => {
     if (!next) {
-      setRedSort({ sortBy: "", sortOrder: "asc" });
+      if (controlledSort) onSortProp!("", "asc");
+      else setRedSort({ sortBy: "", sortOrder: "asc" });
       return;
     }
     const [col, dir] = next.split(":") as [string, "asc" | "desc"];
-    setRedSort({ sortBy: col, sortOrder: dir });
+    if (controlledSort) onSortProp!(col, dir);
+    else setRedSort({ sortBy: col, sortOrder: dir });
   };
 
   function toggleSelect(id: string) {
@@ -422,7 +452,12 @@ export function PriorityTable({ priorities: prioritiesAll, onRefresh, year, quar
   return (
     <div className="flex flex-col h-full">
       {/* Table */}
-      <HorizontalScroller className="flex-1">
+      <HorizontalScroller
+        className="flex-1"
+        innerStyle={infiniteMode ? { maxHeight: maxBodyHeight } : undefined}
+        showVerticalScrollbar={infiniteMode}
+        onContentScroll={infiniteMode ? handleBodyScroll : undefined}
+      >
         <table
           className="border-collapse"
           // `fillWidth=true` (Dashboard preview): stretch to the container so
@@ -839,6 +874,16 @@ export function PriorityTable({ priorities: prioritiesAll, onRefresh, year, quar
           </tbody>
         </table>
       </HorizontalScroller>
+
+      {infiniteMode && isFetchingMore && (
+        <div className="flex items-center justify-center gap-2 py-2.5 text-xs text-gray-400 border-t border-gray-100 bg-gray-50">
+          <svg className="h-4 w-4 animate-spin text-gray-300" fill="none" viewBox="0 0 24 24">
+            <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+            <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+          </svg>
+          Loading more…
+        </div>
+      )}
 
       {/* Pagination footer */}
       {paginationEnabled && (

@@ -19,6 +19,11 @@ export default defineConfig({
     environment: "node",
     setupFiles: ["./__tests__/setup.ts"],
     clearMocks: true,
+    // Pin the timezone so date/time-formatting assertions (e.g. audit timeline
+    // timestamps) are deterministic regardless of the developer's machine TZ.
+    // Production renders audit timestamps in the VIEWER's local timezone; tests
+    // assert the UTC-rendered strings, so the worker must run in UTC.
+    env: { TZ: "UTC" },
     coverage: {
       provider: "v8",
       reporter: ["text", "json-summary", "html"],

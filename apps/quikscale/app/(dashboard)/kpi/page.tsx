@@ -12,6 +12,7 @@ import {
   getFiscalYear, getFiscalQuarter, fiscalYearLabel,
 } from "@/lib/utils/fiscal";
 import { useCurrentWeek, useWeekDateRange } from "@/lib/hooks/useCurrentWeek";
+import { useNumberFormat } from "@/lib/hooks/useFeatureFlags";
 import { KPITable } from "./components/KPITable";
 import { KPIModal } from "./components/KPIModal";
 import { ALL_STATIC_COLS, COL_LABELS } from "./hooks/useTableColumns";
@@ -35,6 +36,8 @@ export default function IndividualKPIPage() {
   const { data: session } = useSession();
   const [showAddModal, setShowAddModal] = useState(false);
   const { canCreate, canUpdate, canDelete } = useResourcePermissions("KPI");
+  // Indian (lakh/crore) vs standard number format — org-level toggle, view-only.
+  const numberFormat = useNumberFormat();
 
   // Year + quarter via shared FilterContext so they persist across module nav.
   // filterTeam lives LOCALLY (per-page scope). filterOwner is seeded from
@@ -477,6 +480,7 @@ export default function IndividualKPIPage() {
             hideColumns={["quarterlyGoal", "qtdGoal", "qtdAchieved", "weeklyGoal", "teamHead", "kpiOwner"]}
             canDelete={canDelete}
             canUpdate={canUpdate}
+            numberFormat={numberFormat}
           />
           </UnreadCountsProvider>
         )}
