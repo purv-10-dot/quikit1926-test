@@ -134,6 +134,7 @@ export const GET = withOrgAuth<{ id: string }>(
           sprintId: true,
           assigneeId: true,
           reporterId: true,
+          epicId: true,
           groupId: true,
           orderInGroup: true,
           startDate: true,

@@ -77,6 +77,19 @@ export function GroupedKanbanView({ projectId }: { projectId: string }) {
     ["quiktrack", "project-sprints", projectId],
     `/api/sprints?projectId=${projectId}`,
   );
+  // Epics — used to label groups when grouping by Epic.
+  const { data: epics = [] } = useApiData<{ id: string; key: string; title: string }[]>(
+    ["quiktrack", "project-epics", projectId],
+    `/api/issues?projectId=${projectId}&type=EPIC&limit=200`,
+    {
+      select: (d) =>
+        (Array.isArray(d) ? d : []).map((e: { id: string; key: string; title: string }) => ({
+          id: e.id,
+          key: e.key,
+          title: e.title,
+        })),
+    },
+  );
   const [openTaskId, setOpenTaskId] = useState<string | null>(null);
   const [createOpen, setCreateOpen] = useState(false);
   const [createTaskOpen, setCreateTaskOpen] = useState(false);
@@ -97,6 +110,7 @@ export function GroupedKanbanView({ projectId }: { projectId: string }) {
     manualGroups: board.data?.groups ?? [],
     statuses: board.data?.statuses ?? [],
     members,
+    epics,
   });
 
   function toggleTaskSelected(taskId: string) {

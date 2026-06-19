@@ -1193,7 +1193,7 @@ function IssueRow({
   const [statusOpen, setStatusOpen] = useState(false);
   const [epicOpen, setEpicOpen] = useState(false);
   const [epicSearch, setEpicSearch] = useState("");
-  const epicRef = useRef<HTMLDivElement>(null);
+  const epicRef = useRef<HTMLButtonElement>(null);
   const [assigneeOpen, setAssigneeOpen] = useState(false);
   const [assigneeSearch, setAssigneeSearch] = useState("");
   const assigneeRef = useRef<HTMLButtonElement>(null);
@@ -1247,31 +1247,11 @@ function IssueRow({
       setDeleting(false);
     }
   }
-  const statusRef = useRef<HTMLDivElement>(null);
+  const statusRef = useRef<HTMLButtonElement>(null);
 
-  useEffect(() => {
-    function onClick(e: MouseEvent) {
-      if (statusOpen && statusRef.current && !statusRef.current.contains(e.target as Node)) {
-        setStatusOpen(false);
-      }
-    }
-    document.addEventListener("mousedown", onClick);
-    return () => document.removeEventListener("mousedown", onClick);
-  }, [statusOpen]);
-
-  useEffect(() => {
-    if (!epicOpen) return;
-    function onClick(e: MouseEvent) {
-      if (epicRef.current && !epicRef.current.contains(e.target as Node)) setEpicOpen(false);
-    }
-    function onKey(e: KeyboardEvent) { if (e.key === "Escape") setEpicOpen(false); }
-    document.addEventListener("mousedown", onClick);
-    document.addEventListener("keydown", onKey);
-    return () => {
-      document.removeEventListener("mousedown", onClick);
-      document.removeEventListener("keydown", onKey);
-    };
-  }, [epicOpen]);
+  // Click-outside + Escape for the status and epic dropdowns are handled by
+  // PopoverPanel, which also portals the menu to document.body so the backlog's
+  // scroll container can't clip it.
 
   // Click-outside + Escape are handled by PopoverPanel (which also portals the
   // menu to document.body so it can't be clipped by the scroll container).
@@ -1413,14 +1393,15 @@ function IssueRow({
           themselves don't get the linker — subtasks belong to a parent task,
           epics can't link to themselves. */}
       {fields.epic && issue.type !== "EPIC" && issue.type !== "SUBTASK" && (
-        <div className="relative shrink-0" ref={epicRef}>
+        <>
           {(() => {
             const ep = issue.epicId ? (epics ?? []).find((e) => e.id === issue.epicId) : null;
             return ep ? (
               <button
+                ref={epicRef}
                 type="button"
                 onClick={() => setEpicOpen((v) => !v)}
-                className="inline-flex items-center max-w-[160px] h-5 px-2 rounded text-[10px] font-semibold uppercase tracking-wide bg-red-100 text-red-700 hover:bg-red-200"
+                className="inline-flex shrink-0 items-center max-w-[160px] h-5 px-2 rounded text-[10px] font-semibold uppercase tracking-wide bg-red-100 text-red-700 hover:bg-red-200"
                 title={`Linked to ${ep.key} — ${ep.title}`}
               >
                 <Zap className="h-3 w-3 mr-1 flex-shrink-0" />
@@ -1428,102 +1409,121 @@ function IssueRow({
               </button>
             ) : (
               <button
+                ref={epicRef}
                 type="button"
                 onClick={() => setEpicOpen((v) => !v)}
-                className="inline-flex items-center gap-0.5 h-5 px-2 rounded border border-dashed border-gray-300 bg-white text-[10px] font-medium text-gray-500 opacity-40 transition-opacity hover:border-purple-400 hover:text-purple-600 hover:opacity-100 group-hover:opacity-100"
+                className="inline-flex shrink-0 items-center gap-0.5 h-5 px-2 rounded border border-dashed border-gray-300 bg-white text-[10px] font-medium text-gray-500 opacity-40 transition-opacity hover:border-purple-400 hover:text-purple-600 hover:opacity-100 group-hover:opacity-100"
               >
                 <Plus className="h-3 w-3" />
                 Epic
               </button>
             );
           })()}
-          {epicOpen && (
-            <div className="absolute right-0 top-full z-30 mt-1 w-64 rounded border border-gray-200 bg-white shadow-lg">
+          <PopoverPanel
+            anchorRef={epicRef}
+            open={epicOpen}
+            onClose={() => {
+              setEpicOpen(false);
+              setEpicSearch("");
+            }}
+            align="right"
+            width={256}
+            placement="auto"
+            estimatedHeight={280}
+          >
+            <div className="px-2 pb-1.5 pt-1">
               <input
                 autoFocus
                 type="text"
                 placeholder="Search epics…"
                 value={epicSearch}
                 onChange={(e) => setEpicSearch(e.target.value)}
-                className="w-full rounded-t border-b border-gray-200 px-2 py-1.5 text-sm focus:outline-none"
+                className="w-full h-7 px-2 text-xs border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-blue-500"
               />
-              <div className="max-h-56 overflow-y-auto py-1">
-                {issue.epicId && (
-                  <button
-                    type="button"
-                    onClick={() => { setEpicOpen(false); setEpicSearch(""); void patch({ epicId: null }); }}
-                    className="flex w-full items-center gap-2 px-2 py-1 text-left text-xs text-red-600 hover:bg-red-50"
-                  >
-                    <X className="h-3 w-3" /> Remove from epic
-                  </button>
-                )}
-                {(() => {
-                  const q = epicSearch.trim().toLowerCase();
-                  const list = (epics ?? []).filter((e) => e.id !== issue.id);
-                  const filtered = q
-                    ? list.filter((e) => e.key.toLowerCase().includes(q) || e.title.toLowerCase().includes(q))
-                    : list;
-                  if (filtered.length === 0) {
-                    return <p className="px-2 py-2 text-xs text-gray-400">{q ? "No matches" : "No epics in this project"}</p>;
-                  }
-                  return filtered.map((e) => (
-                    <button
-                      key={e.id}
-                      type="button"
-                      onClick={() => { setEpicOpen(false); setEpicSearch(""); void patch({ epicId: e.id }); }}
-                      className="flex w-full items-center gap-2 px-2 py-1 text-left text-xs hover:bg-gray-50"
-                    >
-                      <Zap className="h-3 w-3 flex-shrink-0 text-purple-500" />
-                      <span className="font-mono text-[10px] text-gray-500">{e.key}</span>
-                      <span className="truncate text-gray-700">{e.title}</span>
-                    </button>
-                  ));
-                })()}
-              </div>
             </div>
-          )}
-        </div>
+            <div className="max-h-56 overflow-y-auto">
+              {issue.epicId && (
+                <button
+                  type="button"
+                  onClick={() => { setEpicOpen(false); setEpicSearch(""); void patch({ epicId: null }); }}
+                  className="flex w-full items-center gap-2 px-2 py-1 text-left text-xs text-red-600 hover:bg-red-50"
+                >
+                  <X className="h-3 w-3" /> Remove from epic
+                </button>
+              )}
+              {(() => {
+                const q = epicSearch.trim().toLowerCase();
+                const list = (epics ?? []).filter((e) => e.id !== issue.id);
+                const filtered = q
+                  ? list.filter((e) => e.key.toLowerCase().includes(q) || e.title.toLowerCase().includes(q))
+                  : list;
+                if (filtered.length === 0) {
+                  return <p className="px-2 py-2 text-xs text-gray-400">{q ? "No matches" : "No epics in this project"}</p>;
+                }
+                return filtered.map((e) => (
+                  <button
+                    key={e.id}
+                    type="button"
+                    onClick={() => { setEpicOpen(false); setEpicSearch(""); void patch({ epicId: e.id }); }}
+                    className="flex w-full items-center gap-2 px-2 py-1 text-left text-xs hover:bg-gray-50"
+                  >
+                    <Zap className="h-3 w-3 flex-shrink-0 text-purple-500" />
+                    <span className="font-mono text-[10px] text-gray-500">{e.key}</span>
+                    <span className="truncate text-gray-700">{e.title}</span>
+                  </button>
+                ));
+              })()}
+            </div>
+          </PopoverPanel>
+        </>
       )}
 
       {/* Status pill (clickable popover) */}
       {fields.status && (
-      <div className="relative shrink-0" ref={statusRef}>
+      <>
         <button
+          ref={statusRef}
           type="button"
           onClick={() => setStatusOpen((v) => !v)}
-          className={`inline-flex items-center gap-1 h-5 px-2 text-[10px] font-semibold uppercase tracking-wide rounded ${statusPillCls(
+          className={`inline-flex shrink-0 items-center gap-1 h-5 px-2 text-[10px] font-semibold uppercase tracking-wide rounded ${statusPillCls(
             issue.status?.category,
           )}`}
         >
           {issue.status?.name ?? "—"}
           <ChevronDown className="h-3 w-3" />
         </button>
-        {statusOpen && (
-          <div className="absolute right-0 top-full mt-1 min-w-[180px] bg-white border border-gray-200 rounded shadow-lg z-30 py-1">
-            {statuses
-              .filter((s) => s.id !== issue.statusId)
-              .map((s) => (
-                <button
-                  key={s.id}
-                  type="button"
-                  onClick={() => {
-                    setStatusOpen(false);
-                    void patch({ statusId: s.id });
-                  }}
-                  className="flex items-center gap-2 w-full px-3 py-1.5 text-left hover:bg-gray-50"
+        <PopoverPanel
+          anchorRef={statusRef}
+          open={statusOpen}
+          onClose={() => setStatusOpen(false)}
+          align="right"
+          width={200}
+          placement="auto"
+          estimatedHeight={220}
+        >
+          {statuses
+            .filter((s) => s.id !== issue.statusId)
+            .map((s) => (
+              <button
+                key={s.id}
+                type="button"
+                onClick={() => {
+                  setStatusOpen(false);
+                  void patch({ statusId: s.id });
+                }}
+                className="flex items-center gap-2 w-full px-3 py-1.5 text-left hover:bg-gray-50"
+              >
+                <span
+                  className={`inline-flex h-5 px-2 items-center text-[10px] font-semibold uppercase tracking-wide rounded ${statusPillCls(
+                    s.category,
+                  )}`}
                 >
-                  <span
-                    className={`inline-flex h-5 px-2 items-center text-[10px] font-semibold uppercase tracking-wide rounded ${statusPillCls(
-                      s.category,
-                    )}`}
-                  >
-                    {s.name}
-                  </span>
-                </button>
-              ))}
-          </div>
-        )}
-      </div>
+                  {s.name}
+                </span>
+              </button>
+            ))}
+        </PopoverPanel>
+      </>
       )}
 
       {/* Overdue badge — shows the due date with a warning when it's past. */}

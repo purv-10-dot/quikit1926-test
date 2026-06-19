@@ -156,16 +156,16 @@ export function ProjectRoleManagementTab({ projectId }: { projectId: string }) {
             </div>
 
             {selectedRole.name === SPACE_ADMIN_ROLE_NAME ? (
-              <div className="flex flex-col items-center justify-center text-center rounded-xl border border-emerald-100 bg-gradient-to-b from-emerald-50 to-white px-8 py-12">
-                <div className="flex h-14 w-14 items-center justify-center rounded-full bg-emerald-100">
-                  <ShieldCheck className="h-7 w-7 text-emerald-600" />
+              <div className="flex flex-col items-center justify-center text-center rounded-xl border border-emerald-100 bg-gradient-to-b from-emerald-50 to-white px-8 py-12 dark:border-emerald-400/20 dark:from-emerald-500/10 dark:to-gray-950">
+                <div className="flex h-14 w-14 items-center justify-center rounded-full bg-emerald-100 dark:bg-emerald-500/15">
+                  <ShieldCheck className="h-7 w-7 text-emerald-600 dark:text-emerald-400" />
                 </div>
-                <h4 className="mt-4 text-lg font-semibold text-gray-900">
+                <h4 className="mt-4 text-lg font-semibold text-gray-900 dark:text-gray-100">
                   Full access within this project
                 </h4>
-                <p className="mt-2 max-w-md text-sm text-gray-600">
-                  The <span className="font-medium text-gray-800">Space Admin</span> role has full
-                  control of <span className="font-medium text-gray-800">{projectName}</span> — every
+                <p className="mt-2 max-w-md text-sm text-gray-600 dark:text-gray-400">
+                  The <span className="font-medium text-gray-800 dark:text-gray-200">Space Admin</span> role has full
+                  control of <span className="font-medium text-gray-800 dark:text-gray-200">{projectName}</span> — every
                   field and entity, just like an app admin but scoped to this project. There&apos;s
                   nothing to configure here; its permissions can&apos;t be restricted.
                 </p>

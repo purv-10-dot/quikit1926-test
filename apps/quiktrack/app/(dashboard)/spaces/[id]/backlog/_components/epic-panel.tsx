@@ -196,7 +196,7 @@ export function EpicPanel({
         {epics.map((e) => {
           const isOpen = selectedEpicId === e.id;
           return (
-            <div key={e.id} className="border-t border-gray-50 first:border-t-0">
+            <div key={e.id} className="border-t border-gray-100 first:border-t-0">
               <button
                 type="button"
                 onClick={() => selectEpic(e.id)}
