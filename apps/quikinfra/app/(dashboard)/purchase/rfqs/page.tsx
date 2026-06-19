@@ -292,8 +292,9 @@ export default function RFQsPage() {
   };
 
   const allVendors = vendorsData?.data ?? [];
+  // Only active vendors are selectable (inactive/deleted/blacklisted excluded).
   const vendorOptions = allVendors
-    .filter((v) => !(v as { isBlacklisted?: boolean }).isBlacklisted && v.status !== "blacklisted")
+    .filter((v) => v.status === "active" && !(v as { isBlacklisted?: boolean }).isBlacklisted)
     .map((v) => ({
       value: v.id,
       label: v.companyName || v.name || v.id,

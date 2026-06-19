@@ -50,6 +50,10 @@ function buildDepartmentsWhere(
   const q = (opts.search ?? "").trim();
   return {
     orgId: opts.orgId,
+    // "deleted" is the hard-soft-delete marker: those rows are gone from the
+    // UI entirely (neither the active nor the Inactive tab shows them).
+    // "inactive" rows are still returned so the Inactive tab can list them.
+    status: { not: "deleted" },
     ...(q
       ? {
           OR: [
@@ -149,7 +153,7 @@ export async function deleteDepartment(
 ): Promise<boolean> {
   const res = await db.cnDepartment.updateMany({
     where: { id, orgId },
-    data: { status: "inactive", updatedBy },
+    data: { status: "deleted", updatedBy },
   });
   return res.count > 0;
 }

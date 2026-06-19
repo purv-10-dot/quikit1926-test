@@ -470,7 +470,7 @@ export default function ItemsPage() {
     if (errors[key]) setErrors(prev => { const next = { ...prev }; delete next[key]; return next; });
   };
 
-  const uomOptions = (uomResult?.data ?? []).map((u) => ({ value: u.id, label: `${u.code} — ${u.name}` }));
+  const uomOptions = (uomResult?.data ?? []).filter((u) => u?.status === "active").map((u) => ({ value: u.id, label: `${u.code} — ${u.name}` }));
 
   const normalizeCategory = (v: string) => v.trim().toLowerCase();
 
@@ -574,6 +574,7 @@ export default function ItemsPage() {
         data={(result?.data ?? []) as ItemRow[]}
         total={result?.total ?? 0}
         isLoading={isLoading}
+        showStatusTabs
         historyEntityType="item"
         onAdd={() => { setForm(emptyForm); setErrors({}); setEditingId(null); setDrawerOpen(true); }}
         onEdit={(item) => {
@@ -588,8 +589,8 @@ export default function ItemsPage() {
             <span className="font-semibold text-gray-900">“{item.name}”</span>
             {item.code ? <> (<span className="font-mono">{item.code}</span>)</> : null}?
             <br />
-            It will be hidden from the list. You can restore it later from the
-            “Show deleted” view.
+            It will be removed from the list. To keep an item but pause it,
+            set its status to Inactive instead — those stay under the Inactive tab.
           </>
         )}
         canExport canImport

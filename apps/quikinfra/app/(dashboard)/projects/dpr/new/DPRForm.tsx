@@ -52,6 +52,7 @@ import { GroupedMaterialSelect, type GroupedMaterialSelectItem } from "@/compone
 import type { BoqTreeRow } from "@/lib/boq/tree-row";
 import { DPRWeatherMetrics } from "@/components/DPRWeatherMetrics";
 import { useProjects, useItems, useItemGroups, useUOMs, useContractors, useLocations } from "@/hooks/use-masters";
+import { buildLookupOptions } from "@/lib/masters/lookup";
 import { useWorkOrders, useBOQ } from "@/hooks/use-projects";
 import { BOQActivityPickerModal } from "../../work-orders/new/BOQActivityPickerModal";
 import {
@@ -295,7 +296,7 @@ export function DPRForm({ editData, embedded = false, onSaved }: DPRFormProps = 
   >;
   const itemGroups = (itemGroupsResult?.data ?? []) as Array<{ id: string; name?: string; status?: string }>;
   const uoms = (uomsResult?.data ?? []) as Array<{ id: string; code?: string }>;
-  const contractors = (contractorsResult?.data ?? []) as Array<{ id: string; name?: string }>;
+  const contractors = (contractorsResult?.data ?? []) as Array<{ id: string; name: string; status?: string }>;
   const locations = (locationsResult?.data ?? []) as Array<{ id: string; name?: string; status?: string }>;
 
   // Header state
@@ -1602,12 +1603,27 @@ export function DPRForm({ editData, embedded = false, onSaved }: DPRFormProps = 
                         return (
                         <tr key={idx}>
                           <td className="px-2 py-1.5">
-                            <SelectInput
-                              value={m.contractorId}
-                              onChange={(v) => updateManpower(idx, "contractorId", v)}
-                              placeholder="Self / Select…"
-                              options={contractors.map((c) => ({ value: c.id, label: c.name ?? "" }))}
-                            />
+                            {(() => {
+                              const { options, notice } = buildLookupOptions({
+                                rows: contractors,
+                                assigned: m.contractorId,
+                                by: "id",
+                                entityLabel: "contractor",
+                              });
+                              return (
+                                <>
+                                  <SelectInput
+                                    value={m.contractorId}
+                                    onChange={(v) => updateManpower(idx, "contractorId", v)}
+                                    placeholder="Self / Select…"
+                                    options={options}
+                                  />
+                                  {notice && (
+                                    <p className="mt-1 text-xs text-amber-600">⚠ {notice}</p>
+                                  )}
+                                </>
+                              );
+                            })()}
                           </td>
                           <td className="px-2 py-1.5">
                             <input
