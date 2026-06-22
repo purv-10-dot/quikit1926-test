@@ -36,6 +36,7 @@ import { useQueryClient } from "@tanstack/react-query";
 import { useApiData } from "@/lib/hooks/useApiData";
 import { useMembersChanged } from "@/lib/hooks/useMembersChanged";
 import { useMyProjectPermissions } from "@/lib/hooks/useMyProjectPermissions";
+import { useFilterPersistence } from "@/lib/hooks/usePersistentFilters";
 import { confirmDialog } from "@/lib/ui/confirm";
 
 export function GroupedKanbanView({ projectId }: { projectId: string }) {
@@ -49,6 +50,17 @@ export function GroupedKanbanView({ projectId }: { projectId: string }) {
     );
     return () => clearTimeout(t);
   }, [searchInput]);
+
+  // Auto-persist this surface's filters per user+project (no Save button).
+  useFilterPersistence<GroupedBoardFilters>({
+    viewKey: "spaces-grouped-kanban",
+    projectId,
+    filters,
+    applySaved: (s) => {
+      setFilters({ ...EMPTY_FILTERS, ...s });
+      if (typeof s.search === "string") setSearchInput(s.search);
+    },
+  });
 
   const board = useGroupedBoard(projectId, filters);
   const ctx = useMemo(() => ({ projectId, filters }), [projectId, filters]);

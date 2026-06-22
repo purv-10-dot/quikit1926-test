@@ -20,6 +20,7 @@ import { BoardFilterMultiSelect } from "./board-filter-multi-select";
 import { useQueryClient } from "@tanstack/react-query";
 import { useApiData } from "@/lib/hooks/useApiData";
 import { useMembersChanged } from "@/lib/hooks/useMembersChanged";
+import { useFilterPersistence } from "@/lib/hooks/usePersistentFilters";
 
 // The edit-issue modal pulls in the full rich-text editor (~17 tiptap packages).
 // It only renders when a card is opened, so load it on demand to keep it out of
@@ -92,6 +93,22 @@ export function BoardView({ projectId }: { projectId: string }) {
     () => ({ search: appliedSearch, assigneeId: filterAssigneeId, type: filterType, priority: filterPriority }),
     [appliedSearch, filterAssigneeId, filterType, filterPriority],
   );
+
+  // Auto-persist this board's filters per user+project (no Save button).
+  useFilterPersistence<BoardFilters>({
+    viewKey: "spaces-board",
+    projectId,
+    filters,
+    applySaved: (s) => {
+      if (typeof s.search === "string") {
+        setSearchInput(s.search);
+        setAppliedSearch(s.search);
+      }
+      if (typeof s.assigneeId === "string") setFilterAssigneeId(s.assigneeId);
+      if (typeof s.type === "string") setFilterType(s.type);
+      if (typeof s.priority === "string") setFilterPriority(s.priority);
+    },
+  });
 
   useEffect(() => {
     const t = setTimeout(() => setAppliedSearch(searchInput.trim()), 300);

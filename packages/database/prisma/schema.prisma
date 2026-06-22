@@ -6236,6 +6236,7 @@ model QtUserViewPref {
   hiddenColumns String[] @default([])
   columnOrder   String[] @default([])
   settings      Json? // structured per-view settings blob (e.g. backlog View settings: epic panel, empty sprints, density, field toggles)
+  filters       Json? // auto-persisted filter state for this surface (list/board/backlog/grouped-kanban/global), per user+project+viewKey
   createdAt     DateTime @default(now())
   updatedAt     DateTime @updatedAt
   Org           Org      @relation(fields: [orgId], references: [id], onDelete: Cascade)

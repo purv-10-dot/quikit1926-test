@@ -5,6 +5,7 @@ import Link from "next/link";
 import { AlertTriangle, Star } from "lucide-react";
 import { FilterToolbar, type ToolbarState, defaultToolbarStateFor } from "./filter-toolbar";
 import { Pager, SkeletonRows } from "./filter-view-parts";
+import { useFilterPersistence } from "@/lib/hooks/usePersistentFilters";
 
 interface IssueRow {
   id: string;
@@ -80,6 +81,27 @@ export function FilterView({ filterId }: { filterId: string }) {
     const t = setTimeout(() => setDebounced(search.trim()), 250);
     return () => clearTimeout(t);
   }, [search]);
+
+  // Auto-persist this default filter's toolbar + search, per user, per slug (no
+  // project scope, no Save button). The page remounts per slug, so each gets
+  // its own row.
+  const persistedFilters = useMemo(
+    () => ({ ...toolbar, search: debounced }),
+    [toolbar, debounced],
+  );
+  useFilterPersistence<typeof persistedFilters>({
+    viewKey: `global-${filterId}`,
+    projectId: null,
+    filters: persistedFilters,
+    applySaved: (s) => {
+      const { search: savedSearch, ...rest } = s;
+      setToolbar((prev) => ({ ...prev, ...(rest as Partial<ToolbarState>) }));
+      if (typeof savedSearch === "string") {
+        setSearch(savedSearch);
+        setDebounced(savedSearch);
+      }
+    },
+  });
 
   // Reset to page 1 whenever the filter, search, page size, or toolbar changes.
   useEffect(() => {

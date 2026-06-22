@@ -10,6 +10,7 @@ import { useQueryClient } from "@tanstack/react-query";
 import { useApiData } from "@/lib/hooks/useApiData";
 import { useMembersChanged } from "@/lib/hooks/useMembersChanged";
 import { useBacklogViewSettings } from "@/lib/hooks/useBacklogViewSettings";
+import { useFilterPersistence } from "@/lib/hooks/usePersistentFilters";
 import { EpicPanel } from "./epic-panel";
 import {
   ViewSettingsPopover,
@@ -2254,6 +2255,26 @@ export function BacklogView({ projectId }: { projectId: string }) {
     }),
     [appliedSearch, filterStatusId, filterAssigneeIds, filterType, filterPriority, filterEpicId],
   );
+
+  // Auto-persist backlog filters per user+project (no Save button).
+  useFilterPersistence<typeof sectionFilters>({
+    viewKey: "spaces-backlog",
+    projectId,
+    filters: sectionFilters,
+    applySaved: (s) => {
+      if (typeof s.search === "string") {
+        setSearch(s.search);
+        setAppliedSearch(s.search);
+      }
+      if (typeof s.statusId === "string") setFilterStatusId(s.statusId);
+      if (typeof s.assigneeId === "string") {
+        setFilterAssigneeIds(s.assigneeId ? s.assigneeId.split(",").filter(Boolean) : []);
+      }
+      if (typeof s.type === "string") setFilterType(s.type);
+      if (typeof s.priority === "string") setFilterPriority(s.priority);
+      if (typeof s.epicId === "string") setFilterEpicId(s.epicId);
+    },
+  });
 
   // Any filter active? The per-sprint status breakdown (CountBadges) reflects the
   // UNfiltered sprint, so it must be hidden while filtering — otherwise it

@@ -144,16 +144,30 @@ export const PATCH = withOrgAuth<{ id: string }>(
       }
     }
 
-    await db.$executeRaw`
-      UPDATE app_quiktrack."QtDoc"
-      SET title = ${nextTitle},
-          content = ${nextContent},
-          "folderId" = ${nextFolderId},
-          status = ${nextStatus},
-          "updatedBy" = ${userId},
-          "updatedAt" = NOW()
-      WHERE id = ${params.id}
-    `;
+    // Only write `status` when it's actually being toggled, so a frequent
+    // content auto-save can never clobber a concurrent publish/unpublish.
+    if (wantsStatusChange) {
+      await db.$executeRaw`
+        UPDATE app_quiktrack."QtDoc"
+        SET title = ${nextTitle},
+            content = ${nextContent},
+            "folderId" = ${nextFolderId},
+            status = ${nextStatus},
+            "updatedBy" = ${userId},
+            "updatedAt" = NOW()
+        WHERE id = ${params.id}
+      `;
+    } else {
+      await db.$executeRaw`
+        UPDATE app_quiktrack."QtDoc"
+        SET title = ${nextTitle},
+            content = ${nextContent},
+            "folderId" = ${nextFolderId},
+            "updatedBy" = ${userId},
+            "updatedAt" = NOW()
+        WHERE id = ${params.id}
+      `;
+    }
     // Email anyone newly @-mentioned in the doc (diff vs the previous content
     // so the auto-saving editor doesn't re-notify existing mentions).
     if (parsed.data.content !== undefined) {

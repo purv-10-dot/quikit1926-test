@@ -8,6 +8,7 @@ import { Pagination } from "@/components/pagination";
 import { useColumnPrefs, useColumnWidths } from "@/lib/hooks/useColumnPrefs";
 import { useMembersChanged } from "@/lib/hooks/useMembersChanged";
 import { useMyProjectPermissions } from "@/lib/hooks/useMyProjectPermissions";
+import { useFilterPersistence } from "@/lib/hooks/usePersistentFilters";
 import { ListTable } from "./list-table";
 import { ListFilterButton } from "./list-filters";
 import { ColumnMenuButton } from "./column-menu-button";
@@ -111,6 +112,15 @@ export function ListView({ projectId }: Props) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [],
   );
+  // A deep-link with filter params wins over saved prefs for this visit.
+  const urlHasFilters = useMemo(
+    () => {
+      const sp = new URLSearchParams(searchParams?.toString() ?? "");
+      return ["q", "statusId", "type", "priority", "assigneeId"].some((k) => !!sp.get(k));
+    },
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [],
+  );
 
   const [filters, setFilters] = useState<ListFilters>(initialFilters);
   const [searchInput, setSearchInput] = useState(initialFilters.search);
@@ -156,6 +166,19 @@ export function ListView({ projectId }: Props) {
     }, SEARCH_DEBOUNCE_MS);
     return () => clearTimeout(t);
   }, [searchInput]);
+
+  // Auto-persist filters per user+project (no Save button). A URL deep-link
+  // wins for the current visit; otherwise the last-saved filters are restored.
+  useFilterPersistence<ListFilters>({
+    viewKey: VIEW_KEY,
+    projectId,
+    filters,
+    skipHydrate: urlHasFilters,
+    applySaved: (s) => {
+      setFilters((prev) => ({ ...prev, ...s }));
+      if (typeof s.search === "string") setSearchInput(s.search);
+    },
+  });
 
   // Mirror state into URL so refresh / share preserves the view.
   useEffect(() => {
