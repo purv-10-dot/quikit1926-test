@@ -8,6 +8,7 @@ import type { Holiday } from "@/lib/constants/holidays";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
+
 export interface CalendarPost {
   _id: string;
   content: string;
