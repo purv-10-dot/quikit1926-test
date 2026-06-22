@@ -30,6 +30,7 @@ import { DeleteWorklogConfirm } from "./delete-worklog-confirm";
 import { SplitWorklogModal } from "./split-worklog-modal";
 import { TimesheetCell } from "./timesheet-cell";
 import { useMyProjectPermissions } from "@/lib/hooks/useMyProjectPermissions";
+import { EditIssueModal } from "@/components/edit-issue-modal";
 
 type GroupBy = "user" | "project" | "issue" | "user-issue" | "epic-issue";
 
@@ -155,6 +156,10 @@ export function TimesheetView({
   const [logIssueId, setLogIssueId] = useState<string | undefined>(undefined);
   const [logIssueLabel, setLogIssueLabel] = useState<string | undefined>(undefined);
   const [editEntryId, setEditEntryId] = useState<string | null>(null);
+  // Issue edit drawer opened by clicking a work-item key. Only wired in the
+  // space-scoped view (projectId set) — EditIssueModal needs a project to load
+  // its statuses/members/sprints.
+  const [editIssueId, setEditIssueId] = useState<string | null>(null);
 
   const [popover, setPopover] = useState<{
     entryIds: string[];
@@ -666,7 +671,30 @@ export function TimesheetView({
                       className="px-3 py-1.5 text-blue-600 sticky bg-white z-20 font-medium truncate"
                       style={{ left: FZ_NAME_W, width: FZ_KEY_W, minWidth: FZ_KEY_W, maxWidth: FZ_KEY_W }}
                     >
-                      {isChild ? row.secondary : !isParent ? row.secondary : ""}
+                      {(() => {
+                        const keyText = isChild
+                          ? row.secondary
+                          : !isParent
+                            ? row.secondary
+                            : "";
+                        if (!keyText) return "";
+                        // Clicking the key opens the issue edit drawer. Needs a
+                        // project context, so it's a link only in the
+                        // space-scoped timesheet.
+                        if (projectId && issueIdForRow) {
+                          return (
+                            <button
+                              type="button"
+                              onClick={() => setEditIssueId(issueIdForRow)}
+                              className="hover:underline"
+                              title="Open issue"
+                            >
+                              {keyText}
+                            </button>
+                          );
+                        }
+                        return keyText;
+                      })()}
                     </td>
                   )}
                   <td
@@ -773,6 +801,15 @@ export function TimesheetView({
             setEditEntryId(null);
             void refresh();
           }}
+        />
+      )}
+      {projectId && (
+        <EditIssueModal
+          open={editIssueId !== null}
+          issueId={editIssueId}
+          projectId={projectId}
+          onClose={() => setEditIssueId(null)}
+          onSaved={() => void refresh()}
         />
       )}
       {popover && (
