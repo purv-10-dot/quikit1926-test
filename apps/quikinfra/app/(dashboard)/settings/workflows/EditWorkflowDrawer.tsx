@@ -34,6 +34,13 @@ const ENTITY_TYPE_OPTIONS = [
   { value: "material_issues", label: "Material Issue" },
   { value: "gate_pass", label: "Gate Pass" },
   { value: "transfer", label: "Stock Transfer" },
+  { value: "asset", label: "Asset Management" },
+  { value: "rab", label: "RA Bills (Sub-Contractor)" },
+  { value: "equipment_logs", label: "Equipment Log Book" },
+  { value: "job_cards", label: "Maintenance" },
+  { value: "equipment_transfers", label: "Deployment & Compliance" },
+  { value: "hire_rent", label: "Hire & Rent" },
+  { value: "equipment_fixed_assets", label: "Fixed Asset / Tools" },
 ];
 
 const ROLE_OPTIONS = getClientSelectableUserTypes().map((t) => ({
