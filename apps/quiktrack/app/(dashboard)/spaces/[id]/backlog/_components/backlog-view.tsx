@@ -2311,6 +2311,20 @@ export function BacklogView({ projectId }: { projectId: string }) {
     return () => clearTimeout(t);
   }, [search]);
 
+  // Stable key of the non-completed sprint ids — changes only when sprints are
+  // added/removed/started, NOT when their counts are refreshed. The filtered-
+  // counts effect keys off this so a post-edit `refreshSprintCounts()` (which
+  // replaces the `sprints` array reference) doesn't re-fire a per-section fetch
+  // storm.
+  const activeSectionKey = useMemo(
+    () =>
+      sprints
+        .filter((sp) => sp.status !== "COMPLETED")
+        .map((s) => s.id)
+        .join(","),
+    [sprints],
+  );
+
   // When any filter is active, fetch a server-side count per section (sprints
   // + backlog) so collapsed section headers reflect the filtered total. Uses
   // limit=1 to keep the payload tiny — only the `total` field matters here.
@@ -2323,8 +2337,9 @@ export function BacklogView({ projectId }: { projectId: string }) {
       return;
     }
     let cancelled = false;
+    const sprintIds = activeSectionKey ? activeSectionKey.split(",") : [];
     const sections: { key: string; sprintId: string | null }[] = [
-      ...sprints.filter((sp) => sp.status !== "COMPLETED").map((s) => ({ key: `sprint:${s.id}`, sprintId: s.id })),
+      ...sprintIds.map((id) => ({ key: `sprint:${id}`, sprintId: id })),
       { key: "backlog", sprintId: null },
     ];
     Promise.all(
@@ -2363,7 +2378,7 @@ export function BacklogView({ projectId }: { projectId: string }) {
       setFilteredBadges(badges);
     });
     return () => { cancelled = true; };
-  }, [projectId, sprints, appliedSearch, filterStatusId, filterAssigneeIds, filterType, filterPriority, filterEpicId]);
+  }, [projectId, activeSectionKey, appliedSearch, filterStatusId, filterAssigneeIds, filterType, filterPriority, filterEpicId]);
 
   useEffect(() => {
     if (!moreMenuOpen) return;
@@ -2521,8 +2536,11 @@ export function BacklogView({ projectId }: { projectId: string }) {
       for (const [k, s] of Object.entries(sectionStates)) {
         if (!s.loaded) continue;
         const sId = k === "backlog" ? null : k.replace("sprint:", "");
-        void refreshSection(k, sId);
+        // withCounts=false — refresh counts once below instead of per section.
+        void refreshSection(k, sId, false);
       }
+      // Single counts refresh for the whole batch (was firing once per section).
+      void refreshSprintCounts();
     }
     function onOpenIssue(e: Event) {
       const id = (e as CustomEvent<{ id?: string }>).detail?.id;
@@ -2685,7 +2703,11 @@ export function BacklogView({ projectId }: { projectId: string }) {
     }
   }
 
-  async function refreshSection(key: string, sprintId: string | null) {
+  async function refreshSection(
+    key: string,
+    sprintId: string | null,
+    withCounts = true,
+  ) {
     // Wipe and re-fetch first page for the section.
     setSectionStates((all) => ({
       ...all,
@@ -2697,9 +2719,19 @@ export function BacklogView({ projectId }: { projectId: string }) {
       excludeType: "EPIC",
       limit: String(ISSUE_PAGE),
     });
+    // Apply the active filters — without these the refetch returns ALL issues,
+    // so an edit would wipe the current filter and show everything.
+    if (sectionFilters.search) params.set("search", sectionFilters.search);
+    if (sectionFilters.statusId) params.set("statusId", sectionFilters.statusId);
+    if (sectionFilters.assigneeId) params.set("assigneeId", sectionFilters.assigneeId);
+    if (sectionFilters.type) params.set("type", sectionFilters.type);
+    if (sectionFilters.priority) params.set("priority", sectionFilters.priority);
+    if (sectionFilters.epicId) params.set("epicId", sectionFilters.epicId);
     const [res] = await Promise.all([
       fetch(`/api/issues?${params.toString()}`).then((r) => r.json()),
-      refreshSprintCounts(),
+      // Counts are refreshed by the caller when batch-refreshing many sections,
+      // so a single edit doesn't fire one /api/sprints call per section.
+      withCounts ? refreshSprintCounts() : Promise.resolve(),
     ]);
     if (res?.success) {
       // Defensive: drop any Epic/Subtask the API may still surface so they

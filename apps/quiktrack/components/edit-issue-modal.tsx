@@ -320,7 +320,9 @@ export function EditIssueModal({
 
   function attachEpic(id: string) {
     setEpicId(id);
-    void patch({ epicId: id || undefined });
+    // Empty id = detach → send null so the epic is actually cleared (undefined
+    // would just omit the field and leave the link in place).
+    void patch({ epicId: id || null });
     setEpicMenuOpen(false);
   }
 
@@ -1297,7 +1299,7 @@ export function EditIssueModal({
                             type="button"
                             onClick={() => {
                               setEpicId("");
-                              void patch({ epicId: undefined });
+                              void patch({ epicId: null });
                             }}
                             className="inline-flex items-center gap-1.5 max-w-full px-2 h-6 rounded bg-red-100 text-red-700 hover:bg-red-200"
                             title="Detach parent"
@@ -1347,7 +1349,7 @@ export function EditIssueModal({
                             value={dueDate}
                             onChange={(v) => {
                               setDueDate(v);
-                              void patch({ dueDate: v ? new Date(v).toISOString() : undefined });
+                              void patch({ dueDate: v ? new Date(v).toISOString() : null });
                             }}
                           />
                         );
@@ -1390,7 +1392,7 @@ export function EditIssueModal({
                             value={startDate}
                             onChange={(v) => {
                               setStartDate(v);
-                              void patch({ startDate: v ? new Date(v).toISOString() : undefined });
+                              void patch({ startDate: v ? new Date(v).toISOString() : null });
                             }}
                           />
                         );

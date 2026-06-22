@@ -31,6 +31,13 @@ export const updateIssueSchema = createIssueSchema
     sprintId: z.string().min(1).nullable().optional(),
     // Nullable so an issue can be unassigned from the details panel / subtask grid.
     assigneeId: z.string().min(1).nullable().optional(),
+    // Nullable so a work item can be removed from its epic / detached from its
+    // parent (the "Remove from epic" / "Detach parent" actions send null).
+    epicId: z.string().min(1).nullable().optional(),
+    parentId: z.string().min(1).nullable().optional(),
+    // Nullable so the start/due date can be cleared from the details panel.
+    startDate: z.string().datetime().nullable().optional(),
+    dueDate: z.string().datetime().nullable().optional(),
     customFields: z.record(z.unknown()).optional(),
   });
 
