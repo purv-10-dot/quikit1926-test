@@ -35,6 +35,7 @@ import { CreateIssueModal } from "@/components/create-issue-modal";
 import { useQueryClient } from "@tanstack/react-query";
 import { useApiData } from "@/lib/hooks/useApiData";
 import { useMembersChanged } from "@/lib/hooks/useMembersChanged";
+import { useMyProjectPermissions } from "@/lib/hooks/useMyProjectPermissions";
 import { confirmDialog } from "@/lib/ui/confirm";
 
 export function GroupedKanbanView({ projectId }: { projectId: string }) {
@@ -51,6 +52,14 @@ export function GroupedKanbanView({ projectId }: { projectId: string }) {
 
   const board = useGroupedBoard(projectId, filters);
   const ctx = useMemo(() => ({ projectId, filters }), [projectId, filters]);
+
+  // Read-only gates: a Viewer (no Issue grants) can browse the grouped board
+  // but not create tasks or manage groups. While perms load, default to
+  // showing the controls to avoid a flash of hidden buttons (same pattern as
+  // the sidebar / list view). The server still enforces both.
+  const perms = useMyProjectPermissions(projectId);
+  const canCreateTask = perms.loading || perms.has("Issue", "create");
+  const canManageGroups = perms.loading || perms.has("Issue", "update");
 
   const renameGroup = useRenameGroup(ctx);
   const recolorGroup = useRecolorGroup(ctx);
@@ -201,6 +210,8 @@ export function GroupedKanbanView({ projectId }: { projectId: string }) {
         onGroupByChange={fieldGrouping.setGroupBy}
         onCreateGroup={() => setCreateOpen(true)}
         onCreateTask={() => setCreateTaskOpen(true)}
+        canCreateTask={canCreateTask}
+        canManageGroups={canManageGroups}
       />
 
       {showNoSprintBanner && (
@@ -231,6 +242,8 @@ export function GroupedKanbanView({ projectId }: { projectId: string }) {
               statuses={statuses}
               members={members}
               sprints={sprints}
+              canAddTask={canCreateTask}
+              canManageGroups={canManageGroups}
               onPatchTask={(id, patch) => updateTask.mutate({ id, patch })}
               onRenameGroup={(id, name) => renameGroup.mutate({ id, name })}
               onRecolorGroup={(id, color) => recolorGroup.mutate({ id, color })}

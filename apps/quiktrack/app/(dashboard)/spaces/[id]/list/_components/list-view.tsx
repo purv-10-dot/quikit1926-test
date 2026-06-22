@@ -7,6 +7,7 @@ import { Search, Upload } from "lucide-react";
 import { Pagination } from "@/components/pagination";
 import { useColumnPrefs, useColumnWidths } from "@/lib/hooks/useColumnPrefs";
 import { useMembersChanged } from "@/lib/hooks/useMembersChanged";
+import { useMyProjectPermissions } from "@/lib/hooks/useMyProjectPermissions";
 import { ListTable } from "./list-table";
 import { ListFilterButton } from "./list-filters";
 import { ColumnMenuButton } from "./column-menu-button";
@@ -95,6 +96,15 @@ export function ListView({ projectId }: Props) {
   const router = useRouter();
   const pathname = usePathname();
   const searchParams = useSearchParams();
+  const perms = useMyProjectPermissions(projectId);
+  // Import/export move issue data in and out, so both ride on Issue:create —
+  // the same grant that gates the New-issue paths. Bulk delete rides on
+  // Issue:delete. A read-only Viewer holds none of these, so the whole bulk
+  // action bar collapses to a plain selection count for them. Export is purely
+  // client-side (no server route), so this UI gate is its only enforcement.
+  const canImport = perms.loading || perms.has("Issue", "create");
+  const canExport = perms.loading || perms.has("Issue", "create");
+  const canDelete = perms.loading || perms.has("Issue", "delete");
 
   const initialFilters = useMemo(
     () => readFiltersFromQuery(new URLSearchParams(searchParams?.toString() ?? "")),
@@ -358,15 +368,17 @@ export function ListView({ projectId }: Props) {
           members={members}
         />
         <div className="ml-auto flex items-center gap-2">
-          <button
-            type="button"
-            onClick={() => setImportOpen(true)}
-            className="flex items-center gap-1.5 rounded border border-gray-200 bg-white px-3 py-1.5 text-sm text-gray-700 hover:bg-gray-50"
-            title="Import from CSV"
-          >
-            <Upload className="h-4 w-4" />
-            Import
-          </button>
+          {canImport && (
+            <button
+              type="button"
+              onClick={() => setImportOpen(true)}
+              className="flex items-center gap-1.5 rounded border border-gray-200 bg-white px-3 py-1.5 text-sm text-gray-700 hover:bg-gray-50"
+              title="Import from CSV"
+            >
+              <Upload className="h-4 w-4" />
+              Import
+            </button>
+          )}
           <ColumnMenuButton
             hidden={colPrefs.hidden}
             onToggle={toggleColumnVisibility}
@@ -380,6 +392,8 @@ export function ListView({ projectId }: Props) {
         onClear={() => setSelected(new Set())}
         onDelete={handleBulkDelete}
         onExport={handleBulkExport}
+        canDelete={canDelete}
+        canExport={canExport}
       />
 
       {error && (

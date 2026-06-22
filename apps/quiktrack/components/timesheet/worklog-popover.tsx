@@ -21,6 +21,8 @@ interface Props {
   date: Date;
   issueLabel: string;
   anchor?: { top: number; left: number; width: number; height: number };
+  /** When false (read-only Viewer), the "Log Time" add button is hidden. */
+  canLog?: boolean;
   onClose: () => void;
   onLog: () => void;
   onEdit: (entryId: string) => void;
@@ -34,6 +36,7 @@ export function WorklogPopover({
   date,
   issueLabel,
   anchor,
+  canLog = true,
   onClose,
   onLog,
   onEdit,
@@ -250,12 +253,14 @@ export function WorklogPopover({
         </div>
 
         <div className="px-5 py-3 border-t border-gray-100 flex items-center justify-end gap-2">
-          <button
-            onClick={onLog}
-            className="inline-flex items-center gap-1 h-9 px-4 text-sm font-medium text-white bg-blue-600 rounded hover:bg-blue-700"
-          >
-            Log Time
-          </button>
+          {canLog && (
+            <button
+              onClick={onLog}
+              className="inline-flex items-center gap-1 h-9 px-4 text-sm font-medium text-white bg-blue-600 rounded hover:bg-blue-700"
+            >
+              Log Time
+            </button>
+          )}
           <button
             onClick={onClose}
             className="h-9 px-4 text-sm text-gray-700 rounded hover:bg-gray-100"

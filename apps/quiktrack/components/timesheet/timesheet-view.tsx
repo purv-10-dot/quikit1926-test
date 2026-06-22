@@ -29,6 +29,7 @@ import { WorklogPopover, type EntryDetail } from "./worklog-popover";
 import { DeleteWorklogConfirm } from "./delete-worklog-confirm";
 import { SplitWorklogModal } from "./split-worklog-modal";
 import { TimesheetCell } from "./timesheet-cell";
+import { useMyProjectPermissions } from "@/lib/hooks/useMyProjectPermissions";
 
 type GroupBy = "user" | "project" | "issue" | "user-issue" | "epic-issue";
 
@@ -126,6 +127,15 @@ export function TimesheetView({
 }) {
   const { data: session } = useSession();
   const currentUserId = session?.user?.id ?? null;
+
+  // Logging time creates a Timesheet entry, so gate every "log" affordance on
+  // Timesheet:create. A read-only Viewer keeps Timesheet:view (sees the grid)
+  // but loses the Log Time button and click-to-log. Edit/delete of entries are
+  // owner-only and the server enforces both, so this is purely the UI gate.
+  // In the space-scoped view `projectId` is set; the global view is admin-only,
+  // where useMyProjectPermissions reports isAdmin → all granted.
+  const perms = useMyProjectPermissions(projectId);
+  const canLogTime = perms.loading || perms.has("Timesheet", "create");
 
   const [groupBy, setGroupBy] = useState<GroupBy>(defaultGroupBy);
   const [period, setPeriod] = useState<Period>("week");
@@ -516,13 +526,15 @@ export function TimesheetView({
             onXls={downloadXls}
             onPdf={downloadPdf}
           />
-          <button
-            type="button"
-            onClick={() => openLogFor()}
-            className="inline-flex items-center h-9 px-4 text-sm font-semibold text-white bg-blue-700 rounded hover:bg-blue-800"
-          >
-            Log Time
-          </button>
+          {canLogTime && (
+            <button
+              type="button"
+              onClick={() => openLogFor()}
+              className="inline-flex items-center h-9 px-4 text-sm font-semibold text-white bg-blue-700 rounded hover:bg-blue-800"
+            >
+              Log Time
+            </button>
+          )}
         </div>
       </div>
 
@@ -666,17 +678,25 @@ export function TimesheetView({
                   {range.days.map((d) => {
                     const k = dateKey(d);
                     const cell = grid?.cells[row.id]?.[k];
+                    // Existing entries are always viewable; the create paths are
+                    // gated on canLogTime so a read-only Viewer can browse but
+                    // not log.
+                    const hasViewableEntries = Boolean(
+                      cell && cell.entryIds.length > 0 && issueClickable,
+                    );
                     const onOpenLog = (
                       anchor?: { top: number; left: number; width: number; height: number },
                     ) => {
-                      if (cell && cell.entryIds.length > 0 && issueClickable) {
+                      if (hasViewableEntries) {
                         openPopover({
-                          entryIds: cell.entryIds,
+                          entryIds: cell!.entryIds,
                           date: d,
                           issueId: issueIdForRow,
                           issueLabel,
                           anchor,
                         });
+                      } else if (!canLogTime) {
+                        // Read-only: nothing to view, can't create.
                       } else if (issueClickable) {
                         openLogFor({
                           date: d,
@@ -687,14 +707,19 @@ export function TimesheetView({
                         openLogFor({ date: d });
                       }
                     };
+                    // Drop the click affordance entirely when there's nothing to
+                    // view and the user can't log — otherwise the cell looks
+                    // clickable but does nothing.
+                    const cellInteractive =
+                      !aggregateRow && (hasViewableEntries || canLogTime);
                     return (
                       <TimesheetCell
                         key={k}
                         cell={cell}
-                        editable={editable}
+                        editable={editable && canLogTime}
                         date={d}
                         onChanged={refresh}
-                        onOpenLog={aggregateRow ? undefined : onOpenLog}
+                        onOpenLog={cellInteractive ? onOpenLog : undefined}
                       />
                     );
                   })}
@@ -756,6 +781,7 @@ export function TimesheetView({
           date={popover.date}
           issueLabel={popover.issueLabel}
           anchor={popover.anchor}
+          canLog={canLogTime}
           onChanged={() => void refresh()}
           onClose={() => setPopover(null)}
           onLog={() => {

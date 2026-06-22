@@ -8,9 +8,20 @@ interface Props {
   onClear: () => void;
   onDelete: () => Promise<void> | void;
   onExport: () => void;
+  /** Show the Export button — false for read-only roles (Viewer). */
+  canExport?: boolean;
+  /** Show the Delete button — false for roles without Issue:delete. */
+  canDelete?: boolean;
 }
 
-export function BulkActionBar({ count, onClear, onDelete, onExport }: Props) {
+export function BulkActionBar({
+  count,
+  onClear,
+  onDelete,
+  onExport,
+  canExport = true,
+  canDelete = true,
+}: Props) {
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [deleting, setDeleting] = useState(false);
 
@@ -38,15 +49,17 @@ export function BulkActionBar({ count, onClear, onDelete, onExport }: Props) {
       </button>
       <span className="font-medium text-gray-900">{count} selected</span>
       <div className="ml-auto flex items-center gap-2">
-        <button
-          type="button"
-          onClick={onExport}
-          className="flex items-center gap-1.5 rounded border border-gray-200 bg-white px-3 py-1 text-gray-700 hover:bg-gray-50"
-        >
-          <Download className="h-4 w-4" />
-          Export CSV
-        </button>
-        {confirmDelete ? (
+        {canExport && (
+          <button
+            type="button"
+            onClick={onExport}
+            className="flex items-center gap-1.5 rounded border border-gray-200 bg-white px-3 py-1 text-gray-700 hover:bg-gray-50"
+          >
+            <Download className="h-4 w-4" />
+            Export CSV
+          </button>
+        )}
+        {!canDelete ? null : confirmDelete ? (
           <div className="flex items-center gap-2 rounded border border-red-200 bg-white px-3 py-1">
             <span className="text-xs text-red-700">Delete {count}?</span>
             <button
