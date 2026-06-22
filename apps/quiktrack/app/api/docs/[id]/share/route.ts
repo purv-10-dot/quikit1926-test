@@ -14,13 +14,14 @@ import { shortCode } from "@/lib/docs/share-code";
 interface DocRow {
   id: string;
   projectId: string;
+  status: string;
   shareToken: string | null;
   shareMode: string | null;
 }
 
 async function loadDoc(orgId: string, docId: string): Promise<DocRow | null> {
   const rows = await db.$queryRaw<DocRow[]>`
-    SELECT id, "projectId", "shareToken", "shareMode"
+    SELECT id, "projectId", status, "shareToken", "shareMode"
     FROM app_quiktrack."QtDoc"
     WHERE id = ${docId} AND "orgId" = ${orgId} AND "isDeleted" = false
     LIMIT 1
@@ -38,6 +39,14 @@ export const POST = withOrgAuth<{ id: string }>(
     }
     if (!(await canDoc(userId, orgId, doc.projectId, "update"))) {
       return NextResponse.json({ success: false, error: "You don't have access to this." }, { status: 403 });
+    }
+    // A draft is private to its author — don't let it be exposed via a public
+    // share link. Publish it first.
+    if (doc.status === "draft") {
+      return NextResponse.json(
+        { success: false, error: "Publish this doc before sharing it publicly." },
+        { status: 409 },
+      );
     }
     const parsed = postSchema.safeParse(await req.json().catch(() => ({})));
     if (!parsed.success) {

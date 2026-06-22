@@ -21,13 +21,14 @@ interface DocRow {
   id: string;
   title: string;
   content: string;
+  status: string;
   shareToken: string | null;
   shareMode: string | null;
 }
 
 async function loadByToken(token: string): Promise<DocRow | null> {
   const rows = await db.$queryRaw<DocRow[]>`
-    SELECT id, title, content, "shareToken", "shareMode"
+    SELECT id, title, content, status, "shareToken", "shareMode"
     FROM app_quiktrack."QtDoc"
     WHERE "shareToken" = ${token} AND "isDeleted" = false
     LIMIT 1
@@ -37,7 +38,8 @@ async function loadByToken(token: string): Promise<DocRow | null> {
 
 export async function GET(_req: NextRequest, { params }: { params: { token: string } }) {
   const doc = await loadByToken(params.token);
-  if (!doc) {
+  // A doc reverted to draft after being shared must stop serving publicly.
+  if (!doc || doc.status === "draft") {
     return NextResponse.json({ success: false, error: "Not found" }, { status: 404 });
   }
   return NextResponse.json({
@@ -58,7 +60,7 @@ const patchSchema = z.object({
 
 export async function PATCH(req: NextRequest, { params }: { params: { token: string } }) {
   const doc = await loadByToken(params.token);
-  if (!doc) {
+  if (!doc || doc.status === "draft") {
     return NextResponse.json({ success: false, error: "Not found" }, { status: 404 });
   }
   if (doc.shareMode !== "edit") {

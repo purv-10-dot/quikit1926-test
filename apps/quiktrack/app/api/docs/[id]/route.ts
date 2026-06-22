@@ -3,6 +3,7 @@ import { z } from "zod";
 import { db } from "@/lib/db";
 import { withOrgAuth } from "@/lib/api/withOrgAuth";
 import { canDoc } from "@/lib/api/docPermissions";
+import { hasAdminAccess } from "@/lib/api/permissions";
 import { notifyDocMentions } from "@/lib/services/mentions";
 
 /**
@@ -18,6 +19,7 @@ interface DocRow {
   content: string;
   templateKey: string | null;
   folderId: string | null;
+  status: string;
   shareToken: string | null;
   shareMode: string | null;
   createdBy: string | null;
@@ -30,7 +32,7 @@ interface DocRow {
 async function loadDoc(orgId: string, docId: string): Promise<DocRow | null> {
   const rows = await db.$queryRaw<DocRow[]>`
     SELECT id, "orgId", "projectId", title, content, "templateKey", "folderId",
-           "shareToken", "shareMode",
+           status, "shareToken", "shareMode",
            "createdBy", "updatedBy", "isDeleted", "createdAt", "updatedAt"
     FROM app_quiktrack."QtDoc"
     WHERE id = ${docId} AND "orgId" = ${orgId} AND "isDeleted" = false
@@ -39,10 +41,22 @@ async function loadDoc(orgId: string, docId: string): Promise<DocRow | null> {
   return rows[0] ?? null;
 }
 
+/**
+ * A draft is visible only to its author — not even to admins (per product
+ * decision). Published docs fall through to the normal Doc:view gate.
+ */
+function isDraftHiddenFrom(doc: DocRow, userId: string): boolean {
+  return doc.status === "draft" && doc.createdBy !== userId;
+}
+
 export const GET = withOrgAuth<{ id: string }>(
   async ({ orgId, userId }, _req, { params }) => {
     const doc = await loadDoc(orgId, params.id);
     if (!doc) {
+      return NextResponse.json({ success: false, error: "Not found" }, { status: 404 });
+    }
+    // Drafts are private to their author; published docs use the Doc:view gate.
+    if (isDraftHiddenFrom(doc, userId)) {
       return NextResponse.json({ success: false, error: "Not found" }, { status: 404 });
     }
     if (!(await canDoc(userId, orgId, doc.projectId, "view"))) {
@@ -58,6 +72,8 @@ const patchSchema = z.object({
   // null = move to root; a string = move into that folder. `.optional()` so a
   // title/content-only save leaves the doc's folder untouched.
   folderId: z.string().min(1).nullable().optional(),
+  // Publish/unpublish toggle. Gated separately from content edits.
+  status: z.enum(["draft", "published"]).optional(),
 });
 
 export const PATCH = withOrgAuth<{ id: string }>(
@@ -66,8 +82,9 @@ export const PATCH = withOrgAuth<{ id: string }>(
     if (!doc) {
       return NextResponse.json({ success: false, error: "Not found" }, { status: 404 });
     }
-    if (!(await canDoc(userId, orgId, doc.projectId, "update"))) {
-      return NextResponse.json({ success: false, error: "You don't have access to this." }, { status: 403 });
+    // A draft can only be touched by its author (others can't even see it).
+    if (isDraftHiddenFrom(doc, userId)) {
+      return NextResponse.json({ success: false, error: "Not found" }, { status: 404 });
     }
     const parsed = patchSchema.safeParse(await req.json());
     if (!parsed.success) {
@@ -76,6 +93,31 @@ export const PATCH = withOrgAuth<{ id: string }>(
         { status: 400 },
       );
     }
+
+    const wantsStatusChange =
+      parsed.data.status !== undefined && parsed.data.status !== doc.status;
+    const wantsContentChange =
+      parsed.data.title !== undefined ||
+      parsed.data.content !== undefined ||
+      "folderId" in parsed.data;
+
+    // Editing title/content/folder needs Doc:update.
+    if (
+      wantsContentChange &&
+      !(await canDoc(userId, orgId, doc.projectId, "update"))
+    ) {
+      return NextResponse.json({ success: false, error: "You don't have access to this." }, { status: 403 });
+    }
+    // Publishing/unpublishing is restricted to the author or an admin.
+    if (wantsStatusChange) {
+      const isAuthor = doc.createdBy === userId;
+      const isAdmin = await hasAdminAccess(userId, orgId);
+      if (!isAuthor && !isAdmin) {
+        return NextResponse.json({ success: false, error: "You don't have access to this." }, { status: 403 });
+      }
+    }
+
+    const nextStatus = wantsStatusChange ? parsed.data.status! : doc.status;
     const nextTitle = parsed.data.title ?? doc.title;
     const nextContent = parsed.data.content ?? doc.content;
 
@@ -107,6 +149,7 @@ export const PATCH = withOrgAuth<{ id: string }>(
       SET title = ${nextTitle},
           content = ${nextContent},
           "folderId" = ${nextFolderId},
+          status = ${nextStatus},
           "updatedBy" = ${userId},
           "updatedAt" = NOW()
       WHERE id = ${params.id}
@@ -129,6 +172,7 @@ export const PATCH = withOrgAuth<{ id: string }>(
         title: nextTitle,
         content: nextContent,
         folderId: nextFolderId,
+        status: nextStatus,
         updatedBy: userId,
       },
     });
@@ -139,6 +183,10 @@ export const DELETE = withOrgAuth<{ id: string }>(
   async ({ orgId, userId }, _req, { params }) => {
     const doc = await loadDoc(orgId, params.id);
     if (!doc) {
+      return NextResponse.json({ success: false, error: "Not found" }, { status: 404 });
+    }
+    // Drafts are private to their author — hide existence from everyone else.
+    if (isDraftHiddenFrom(doc, userId)) {
       return NextResponse.json({ success: false, error: "Not found" }, { status: 404 });
     }
     if (!(await canDoc(userId, orgId, doc.projectId, "delete"))) {

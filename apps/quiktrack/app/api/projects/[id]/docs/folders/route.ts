@@ -32,15 +32,18 @@ function isMissingRelation(err: unknown): boolean {
 }
 
 export const GET = withProjectAccess<{ id: string }>(
-  async ({ projectId }) => {
+  async ({ projectId, userId }) => {
     try {
       // docCount via a correlated subquery (cast to int — COUNT returns
       // bigint, which Prisma would otherwise surface as a BigInt). Lets the UI
-      // show per-folder page counts without loading any docs.
+      // show per-folder page counts without loading any docs. The count mirrors
+      // the list's visibility rule — published docs + the caller's own drafts —
+      // so another user's draft never leaks into the folder count.
       const rows = await db.$queryRaw<FolderRow[]>`
         SELECT f.id, f.name, f."sortOrder", f."createdAt",
                (SELECT COUNT(*)::int FROM app_quiktrack."QtDoc" d
-                 WHERE d."folderId" = f.id AND d."isDeleted" = false) AS "docCount"
+                 WHERE d."folderId" = f.id AND d."isDeleted" = false
+                   AND (d.status = 'published' OR d."createdBy" = ${userId})) AS "docCount"
         FROM app_quiktrack."QtDocFolder" f
         WHERE f."projectId" = ${projectId} AND f."isDeleted" = false
         ORDER BY f.name ASC

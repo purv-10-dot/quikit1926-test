@@ -6129,6 +6129,9 @@ model QtDoc {
   templateKey String?
   folderId    String?
   sortOrder   Int       @default(0)
+  // Draft/publish workflow: "draft" = visible only to its author; "published" =
+  // visible to every project member. New docs start as drafts.
+  status      String    @default("draft")
   // Public share: short base62 code (null = not shared); mode is "view" | "edit".
   shareToken  String?   @unique
   shareMode   String?
@@ -6142,6 +6145,7 @@ model QtDoc {
 
   @@index([orgId])
   @@index([projectId, isDeleted, updatedAt])
+  @@index([projectId, status])
   @@schema("app_quiktrack")
 }
 

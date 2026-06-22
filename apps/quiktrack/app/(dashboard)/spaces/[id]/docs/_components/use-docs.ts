@@ -26,6 +26,8 @@ export interface DocSummary {
   title: string;
   templateKey: string | null;
   folderId: string | null;
+  /** "draft" (author-only) | "published" (all project members). */
+  status?: string;
   createdBy: string | null;
   ownerFirstName: string | null;
   ownerLastName: string | null;
