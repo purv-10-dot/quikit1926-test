@@ -18,6 +18,9 @@ import { TargetsSection } from "./components/TargetsSection";
 import { GoalsSection } from "./components/GoalsSection";
 import { ActionsSection } from "./components/ActionsSection";
 import { AccountabilitySection } from "./components/AccountabilitySection";
+import { SectionUserPicker } from "./components/SectionUserPicker";
+import { ExportKPIDrawer, ExportPriorityDrawer } from "./components/ExportDrawer";
+import { autoFinalizeNudgeDays } from "./lib/autoFinalizeNudge";
 import { useOPSPForm, type FormData } from "./hooks/useOPSPForm";
 // Lazy-loaded: OPSPPreview is the ONLY path that pulls in @react-pdf/renderer +
 // OPSPDocument. Loading it dynamically (and rendering it only when the preview
@@ -56,6 +59,9 @@ export default function OPSPPage() {
     reviewedQuarters, refreshReviewedQuarters,
     showSetupWizard,
     loadForPeriod,
+    sectionUserId,
+    selectSectionUser,
+    responsibleAdminName,
     completeSetup,
     save,
     setAutosaveEnabled,
@@ -68,6 +74,14 @@ export default function OPSPPage() {
   const [keyInitiativesOpen, setKeyInitiativesOpen] = useState(false);
   const [kpiAcctOpen, setKpiAcctOpen] = useState(false);
   const [qPrioritiesOpen, setQPrioritiesOpen] = useState(false);
+  const [exportKpiOpen, setExportKpiOpen] = useState(false);
+  const [exportPriorityOpen, setExportPriorityOpen] = useState(false);
+  // Resolved display name of the picked section user (for the export owner
+  // label + the SectionUserPicker trigger). Empty when viewing own sections.
+  const [sectionUserName, setSectionUserName] = useState("");
+  // Auto-finalize countdown from /api/opsp/deadline — drives the non-admin
+  // "complete your sections before auto-finalize" nudge. Null until loaded.
+  const [finalizeDeadline, setFinalizeDeadline] = useState<{ mode: "A" | "B"; daysLeft: number } | null>(null);
   const [finalizeConfirmOpen, setFinalizeConfirmOpen] = useState(false);
   const [validationErrors, setValidationErrors] = useState<ValidationError[]>([]);
   const [previewOpen, setPreviewOpen] = useState(urlPreview);
@@ -134,6 +148,25 @@ export default function OPSPPage() {
       .catch(() => {});
   }, []);
 
+  /* ── Auto-finalize countdown (for the non-admin nudge) ──
+     Reuses the global deadline endpoint; refetched when the OPSP is finalized
+     so the nudge clears instantly. The endpoint is current-quarter scoped. */
+  useEffect(() => {
+    let cancelled = false;
+    const load = () =>
+      fetch("/api/opsp/deadline")
+        .then(r => r.json())
+        .then(j => { if (!cancelled && j?.success) setFinalizeDeadline(j.finalize ?? null); })
+        .catch(() => {});
+    load();
+    const onFinalized = () => { setFinalizeDeadline(null); };
+    window.addEventListener("opsp-finalized", onFinalized);
+    return () => {
+      cancelled = true;
+      window.removeEventListener("opsp-finalized", onFinalized);
+    };
+  }, []);
+
   /* ── Field helpers ──
      "reviewed" is a stronger lock than "finalized" — once the OPSP review has
      been submitted, the form remains read-only and is still presented as
@@ -141,15 +174,58 @@ export default function OPSPPage() {
      v2: a user with OPSP.History.EditFinalize:update can edit even
      finalized/reviewed OPSPs (the History page Edit button stays enabled). */
   const myPerms = useMyPermissions();
+  const isAdmin = myPerms.isAdmin;
   const canEditFinalized = myPerms.has("OPSP.History.EditFinalize", "update");
+  // Special permission: edit ANOTHER user's per-user sections (drives the user
+  // picker + lets the section writes target a different user).
+  const canEditUser = myPerms.has("OPSP.EditUser", "update");
   // RBAC v2: editing the OPSP requires `update`; admins bypass.
-  const canUpdateOPSPCreate = myPerms.isAdmin || myPerms.has("OPSP.Create", "update");
+  const canUpdateOPSPCreate = isAdmin || myPerms.has("OPSP.Create", "update");
   const statusLocked = form.status === "finalized" || form.status === "reviewed";
   // Once the OPSP Review has been submitted (`reviewed`), the OPSP is locked for
   // EVERYONE — even users with `OPSP.History.EditFinalize:update`. Editing it
   // would invalidate a review that's already been finalized against its targets.
   const reviewSubmitted = form.status === "reviewed";
-  const isLocked = reviewSubmitted || (statusLocked && !canEditFinalized) || !canUpdateOPSPCreate;
+  // The org-wide finalize lock, independent of WHICH part of the form. Reviewed
+  // is a hard lock for everyone; merely-finalized is unlocked by EditFinalize.
+  const lockedByStatus = reviewSubmitted || (statusLocked && !canEditFinalized);
+  // Is the admin viewing/editing ANOTHER user's per-user sections (via picker)?
+  const viewingOtherUser = sectionUserId != null;
+  // STRATEGIC sections (PEOPLE/PROCESS/Targets/Goals/…) are admin-only and lock
+  // with the org-wide finalize. `isLocked` keeps its name (and semantics) for the
+  // existing edit-after-finalize machinery: note card, autosave suspend, history.
+  const isLocked = !isAdmin || lockedByStatus || !canUpdateOPSPCreate;
+  // PER-USER sections (Accountability / Quarterly Priorities / Critical # /
+  // Balanced Critical #): editable by the section owner (OPSP.Create:update) or,
+  // for another user, by an admin with OPSP.EditUser:update — under the same
+  // org-wide finalize lock.
+  const sectionsReadOnly =
+    lockedByStatus || (viewingOtherUser ? !canEditUser : !canUpdateOPSPCreate);
+  // The four per-user section form keys (routed to OPSPUserSection on save).
+  const SECTION_KEYS = new Set([
+    "kpiAccountability",
+    "quarterlyPriorities",
+    "criticalNumAcct",
+    "balancingCritNumAcct",
+  ]);
+  // Independent dimming for the per-user sections card. The whole form wrapper
+  // gets `.opsp-finalized` when the STRATEGIC form is read-only, so this card
+  // needs to either re-enable itself inside that dimmed wrapper (a member
+  // editing only their 4 sections) or dim on its own when the wrapper isn't
+  // dimmed but the sections are locked (e.g. an admin viewing a finalized OPSP
+  // they can't edit-after-finalize). See `.opsp-sections-editable` in globals.css.
+  const acctWrapClass = cn(
+    !sectionsReadOnly && isLocked && "opsp-sections-editable",
+    sectionsReadOnly && !isLocked && "opsp-finalized",
+  );
+  // Non-admin auto-finalize nudge: show the day count or null (hidden). Only on
+  // the current fiscal quarter's draft OPSP, Mode A, for non-admins.
+  const autoFinalizeNudge = autoFinalizeNudgeDays({
+    isAdmin,
+    statusLocked,
+    isCurrentPeriod: form.year === getFiscalYear() && form.quarter === getFiscalQuarter(),
+    finalize: finalizeDeadline,
+  });
   // Show the blue "review locked" banner ONLY to users who could otherwise edit a
   // finalized OPSP (the same predicate that drives the amber "Editing enabled"
   // banner) — they're the ones who lost edit access because the review was
@@ -316,7 +392,10 @@ export default function OPSPPage() {
   };
 
   const set = <K extends keyof FormData>(key: K, value: FormData[K], opts?: { skipLog?: boolean }) => {
-    if (isLocked && key !== "status") return; // read-only guard
+    // Per-field read-only: the four per-user sections follow `sectionsReadOnly`;
+    // everything strategic follows `isLocked`. (`status` is never user-typed.)
+    const fieldLocked = SECTION_KEYS.has(key as string) ? sectionsReadOnly : isLocked;
+    if (fieldLocked && key !== "status") return; // read-only guard
     if (loggedEdit && key !== "status" && !opts?.skipLog) {
       captureChange(describeSetChange(key as string, form[key], value));
     }
@@ -602,8 +681,13 @@ export default function OPSPPage() {
               </div>
             )}
           </div>
-          <button onClick={() => {
-              if (isFinalized) return;
+          <button
+            // Finalize is an org-wide action — admins only. Non-admins see the
+            // pill disabled (their sections lock automatically on finalize).
+            disabled={!isFinalized && !isAdmin}
+            title={!isFinalized && !isAdmin ? "Only an admin can finalize the OPSP" : undefined}
+            onClick={() => {
+              if (isFinalized || !isAdmin) return;
               // Backfill any empty period cells (y/q/m) for rows that have
               // Category + Projected. The matrix modals that used to host
               // manual cell entry were removed, so without this pass Manual
@@ -621,7 +705,9 @@ export default function OPSPPage() {
             className={cn("flex items-center gap-1.5 px-3 py-1.5 border rounded-lg text-sm font-medium",
               isFinalized
                 ? "border-green-500 text-green-600 bg-green-50 cursor-default"
-                : "border-accent-500 text-accent-600 hover:bg-accent-50")}>
+                : !isAdmin
+                  ? "border-gray-200 text-gray-300 cursor-not-allowed"
+                  : "border-accent-500 text-accent-600 hover:bg-accent-50")}>
             <Check className="h-4 w-4" />
             {isFinalized ? "Finalized" : "Finalize"}
           </button>
@@ -721,9 +807,35 @@ export default function OPSPPage() {
       <KeyInitiativesModal open={keyInitiativesOpen} onClose={() => setKeyInitiativesOpen(false)}
         rows={form.keyInitiatives} onChange={r => set("keyInitiatives", r)} readOnly={isLocked} />
       <AccountabilityModal open={kpiAcctOpen} onClose={() => setKpiAcctOpen(false)}
-        rows={form.kpiAccountability} onChange={r => set("kpiAccountability", r)} readOnly={isLocked} />
+        rows={form.kpiAccountability} onChange={r => set("kpiAccountability", r)} readOnly={sectionsReadOnly} />
       <QuarterlyPrioritiesModal open={qPrioritiesOpen} onClose={() => setQPrioritiesOpen(false)}
-        rows={form.quarterlyPriorities} onChange={r => set("quarterlyPriorities", r)} readOnly={isLocked} />
+        rows={form.quarterlyPriorities} onChange={r => set("quarterlyPriorities", r)} readOnly={sectionsReadOnly} />
+
+      {/* ── Export → Create KPIs / Priorities (stepper drawers) ──
+          Owner of the created records = the section user (the picked user when
+          an admin edits someone else's OPSP, else the signed-in user). */}
+      {exportKpiOpen && (
+        <ExportKPIDrawer
+          open={exportKpiOpen}
+          onClose={() => setExportKpiOpen(false)}
+          year={form.year}
+          quarter={form.quarter}
+          ownerId={sectionUserId ?? userId}
+          ownerName={viewingOtherUser ? sectionUserName : currentUserName}
+          rows={form.kpiAccountability}
+        />
+      )}
+      {exportPriorityOpen && (
+        <ExportPriorityDrawer
+          open={exportPriorityOpen}
+          onClose={() => setExportPriorityOpen(false)}
+          year={form.year}
+          quarter={form.quarter}
+          ownerId={sectionUserId ?? userId}
+          ownerName={viewingOtherUser ? sectionUserName : currentUserName}
+          rows={form.quarterlyPriorities}
+        />
+      )}
 
       {/* ── OPSP Preview (PDF / Word export) ── */}
       {/* Rendered only when open so the lazy chunk (incl. @react-pdf) loads on
@@ -740,15 +852,94 @@ export default function OPSPPage() {
         />
       )}
 
-      {/* ── Finalized banner ──
-         Three variants (in priority order). Note the OPSP is read-only for
-         EVERYONE once reviewed; only the banner *copy* depends on permission.
+      {/* ── Admin user-picker (OPSP.EditUser) ──
+         Lets an admin point the four per-user sections at any org user. The
+         strategic OPSP stays org-shared; only the sections rebind. */}
+      {canEditUser && (
+        <div className="mx-6 mt-6 flex items-center gap-3 flex-wrap bg-slate-50 border border-dashed border-accent-300 rounded-xl px-4 py-2.5 text-sm">
+          <span className="font-semibold text-gray-700">Editing sections for:</span>
+          <SectionUserPicker
+            value={sectionUserId}
+            selfId={userId}
+            selfName={currentUserName || "Me"}
+            onChange={(u, name) => { setSectionUserName(u ? name : ""); void selectSectionUser(u); }}
+          />
+          {viewingOtherUser && (
+            <span className="inline-flex items-center gap-1.5 text-[11px] font-medium text-emerald-700 bg-emerald-50 border border-emerald-200 px-2 py-0.5 rounded-full">
+              Editing another user&apos;s Accountability, Priorities &amp; Critical numbers
+            </span>
+          )}
+        </div>
+      )}
+
+      {/* ── Admin holds Edit Any User's OPSP but NOT Edit after Finalize ──
+         Only relevant once the OPSP is finalized: before finalize they can
+         already edit sections, so the nudge would be noise. After finalize it
+         explains why editing is blocked and what to enable. */}
+      {isAdmin && canEditUser && !canEditFinalized && statusLocked && (
+        <div className="mx-6 mt-3 flex items-start gap-3 px-4 py-3 bg-amber-50 border border-amber-200 rounded-xl text-amber-800 text-sm">
+          <AlertTriangle className="h-5 w-5 text-amber-600 flex-shrink-0" />
+          <div>
+            <span className="font-semibold">Heads up:</span> editing a finalized user&apos;s OPSP also
+            requires the <span className="font-semibold">&quot;Edit after Finalize&quot;</span> permission.
+            Enable it in <span className="font-semibold">Users &amp; Permissions</span> so you can update
+            sections after the OPSP is finalized.
+          </div>
+        </div>
+      )}
+
+      {/* ── Non-admin: no edit permission → fully read-only ── */}
+      {!isAdmin && !canUpdateOPSPCreate && (
+        <div className="mx-6 mt-6 flex items-start gap-3 px-4 py-3 bg-accent-50 border border-accent-200 rounded-xl text-accent-700 text-sm">
+          <Eye className="h-5 w-5 flex-shrink-0" />
+          <div>
+            <span className="font-semibold">Read-only view.</span> You don&apos;t have permission to edit
+            the OPSP, so every section is view-only.
+          </div>
+        </div>
+      )}
+
+      {/* ── Non-admin auto-finalize nudge: complete the 4 sections before lock ── */}
+      {autoFinalizeNudge !== null && (
+        <div className="mx-6 mt-6 flex items-start gap-3 px-4 py-3 bg-amber-50 border border-amber-200 rounded-xl text-amber-800 text-sm">
+          <svg className="h-5 w-5 text-amber-600 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
+          <div>
+            <span className="font-semibold">This OPSP auto-finalizes in {autoFinalizeNudge} day{autoFinalizeNudge === 1 ? "" : "s"}.</span>{" "}
+            Please complete your <span className="font-semibold">Your Accountability, Quarterly Priorities, Critical Number &amp; Balanced Critical Number</span> — they lock after auto-finalize.
+          </div>
+        </div>
+      )}
+
+      {/* ── Non-admin with edit rights, pre-finalize: only the 4 sections ── */}
+      {!isAdmin && canUpdateOPSPCreate && !statusLocked && (
+        <div className="mx-6 mt-6 flex items-start gap-3 px-4 py-3 bg-blue-50 border border-blue-200 rounded-xl text-blue-800 text-sm">
+          <svg className="h-5 w-5 text-blue-600 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" /></svg>
+          <div>
+            <span className="font-semibold">You can edit only:</span> Your Accountability · Quarterly
+            Priorities · Critical Number · Balanced Critical Number. All other sections are read-only.
+          </div>
+        </div>
+      )}
+
+      {/* ── Non-admin, finalized: sections locked, contact the responsible admin ── */}
+      {!isAdmin && statusLocked && (
+        <div className="mx-6 mt-6 flex items-start gap-3 px-4 py-3 bg-red-50 border border-red-200 rounded-xl text-red-800 text-sm">
+          <svg className="h-5 w-5 text-red-600 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" /></svg>
+          <div>
+            <span className="font-semibold">This OPSP has been finalized.</span> You can no longer edit
+            your sections. Please <span className="font-semibold">contact your admin{responsibleAdminName ? ` (${responsibleAdminName})` : ""}</span>{" "}
+            to update your Accountability, Priorities &amp; Critical numbers.
+          </div>
+        </div>
+      )}
+
+      {/* ── Finalized banner (admin) ──
+         Variants (in priority order). The OPSP is read-only for EVERYONE once
+         reviewed; only the banner *copy* depends on permission.
          - `reviewLockBanner` (reviewed AND the user could otherwise edit it):
-           blue "review submitted — editing locked" — explains why a user who
-           normally could edit a finalized OPSP no longer can.
-         - Finalized/locked for everyone else (`isFinalized && isLocked`): green
-           "read-only". Covers no-permission users, incl. reviewed ones (who get
-           the same standard read-only copy they'd see for any finalized OPSP).
+           blue "review submitted — editing locked".
+         - Finalized/locked for an admin (`isAdmin && isFinalized && isLocked`):
+           green "read-only" (member equivalent is the red banner above).
          - Finalized but the user can edit (`isFinalized && !isLocked`): amber
            "you have permission to edit". */}
       {reviewLockBanner && (
@@ -762,7 +953,7 @@ export default function OPSPPage() {
           </div>
         </div>
       )}
-      {isFinalized && isLocked && !reviewLockBanner && (
+      {isAdmin && isFinalized && isLocked && !reviewLockBanner && (
         <div className="mx-6 mt-6 flex items-center gap-3 px-4 py-3 bg-green-50 border border-green-200 rounded-xl">
           <div className="flex-shrink-0 w-8 h-8 rounded-full bg-green-100 flex items-center justify-center">
             <Check className="h-4 w-4 text-green-600" />
@@ -898,12 +1089,17 @@ export default function OPSPPage() {
               onExpandRocks={() => setRocksOpen(true)}
             />
 
-            <AccountabilitySection
-              form={form}
-              set={set}
-              onExpandKpiAcct={() => setKpiAcctOpen(true)}
-              onExpandQPriorities={() => setQPrioritiesOpen(true)}
-            />
+            <div className={acctWrapClass}>
+              <AccountabilitySection
+                form={form}
+                set={set}
+                onExpandKpiAcct={() => setKpiAcctOpen(true)}
+                onExpandQPriorities={() => setQPrioritiesOpen(true)}
+                showExport={!sectionsReadOnly}
+                onExportKPI={() => setExportKpiOpen(true)}
+                onExportPriority={() => setExportPriorityOpen(true)}
+              />
+            </div>
           </div>
           {/* Trends */}
           <div className="mt-4">

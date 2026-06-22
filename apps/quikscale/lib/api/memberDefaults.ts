@@ -19,4 +19,13 @@ export const MEMBER_DEFAULT_GRANTS: Array<{ resource: string; action: string }> 
   ...["KPI", "TeamKPI", "Priority", "WWW"].flatMap((resource) =>
     (["view", "create", "update"] as const).map((action) => ({ resource, action })),
   ),
+  // OPSP day-to-day surfaces members own out of the box: authoring an OPSP,
+  // its history, the Critical # Review, and category management — each as
+  // view + create. UPDATE and DELETE are deliberately withheld: editing the
+  // Critical Review's Achieved/Comment values requires OPSP.Review.Critical
+  // `update`, which an admin must grant explicitly (a view/create-only member
+  // can see and seed but not overwrite committed review numbers).
+  ...["OPSP.Create", "OPSP.History", "OPSP.Review.Critical", "OPSP.Categories"].flatMap(
+    (resource) => (["view", "create"] as const).map((action) => ({ resource, action })),
+  ),
 ];

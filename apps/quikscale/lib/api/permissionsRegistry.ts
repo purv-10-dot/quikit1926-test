@@ -173,9 +173,39 @@ export const PERMISSION_TREE: PermissionModule[] = [
         leaves: [{ resource: "OPSP.Review", label: "OPSP Review", actions: ACTIONS }],
       },
       {
+        // Standalone leaf (NOT nested under OPSP Review) — gates the
+        // "Critical # Review" sub-feature. Default-granted as `view` to admin +
+        // member (see memberDefaults); full CRUD so an admin can additionally
+        // grant update (enter Achieved/Comment) / create / delete via the matrix.
+        key: "OPSP.Review.Critical",
+        label: "Critical Review",
+        leaves: [
+          {
+            resource: "OPSP.Review.Critical",
+            label: "Critical Review",
+            actions: ACTIONS,
+          },
+        ],
+      },
+      {
         key: "OPSP.Categories",
         label: "Category Mgmt",
         leaves: [{ resource: "OPSP.Categories", label: "Category Mgmt", actions: ACTIONS }],
+      },
+      {
+        // Special permission: lets an admin pick another user on Create OPSP
+        // and edit THAT user's per-user sections (Your Accountability /
+        // Quarterly Priorities / Critical # / Balanced Critical #). Default
+        // OFF for everyone — admins must opt in (see ADMIN_DEFAULT_EXCLUSIONS).
+        key: "OPSP.EditUser",
+        label: "Edit Any User's OPSP",
+        leaves: [
+          {
+            resource: "OPSP.EditUser",
+            label: "Edit Any User's OPSP",
+            actions: ["update"],
+          },
+        ],
       },
     ],
   },
@@ -260,6 +290,9 @@ export const NAV_RESOURCE: Record<string, string> = {
   "opsp.create": "OPSP.Create",
   "opsp.history": "OPSP.History",
   "opsp.review": "OPSP.Review",
+  // The OPSP Review sidebar item is visible to Critical-Review-only users too
+  // (it relabels to "Critical Review"); this maps that fallback resource.
+  "opsp.review.critical": "OPSP.Review.Critical",
   "opsp.categories": "OPSP.Categories",
   "analytics.scorecard": "Analytics.Scorecard",
   "analytics.individual": "Analytics.Individual",

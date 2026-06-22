@@ -6,6 +6,7 @@ const auth = withOrgAuthForResource("www", "WWW");
 import { parsePagination, paginatedResponse } from "@/lib/api/pagination";
 import { createWWWSchema } from "@/lib/schemas/wwwSchema";
 import { validationError } from "@/lib/api/validationError";
+import { findWWWDuplicate, wwwDuplicateMessage } from "@/lib/api/wwwDuplicate";
 import { writeAuditLog } from "@/lib/api/auditLog";
 import { audit, requestContext } from "@/lib/audit";
 import { rateLimit, LIMITS } from "@/lib/api/rateLimit";
@@ -13,6 +14,7 @@ import { notifyWWWAssignment } from "@/lib/services/wwwNotifications";
 import { isOrgAdmin } from "@/lib/api/visibility";
 import { fetchAuditUserMap, decorateAudit } from "@/lib/api/auditUsers";
 import { searchUserIds, dateSearchConditions } from "@/lib/api/listSearch";
+import { publishRealtime } from "@quikit/realtime/server";
 
 // GET /api/www — list all WWWItems for tenant
 export const GET = auth.view(async ({ orgId, userId }, req) => {
@@ -173,6 +175,17 @@ export const POST = auth.create(async ({ orgId, userId }, req) => {
   );
   const primaryWho = resolvedIds[0]!;
 
+  // ── Duplicate guard ── reject (409) before creating anything:
+  //   • an assignee already has an item due on the same calendar day, OR
+  //   • the "What?" name already exists anywhere in the org.
+  const duplicate = await findWWWDuplicate(db, orgId, { whoIds: resolvedIds, what, when });
+  if (duplicate) {
+    return NextResponse.json(
+      { success: false, error: await wwwDuplicateMessage(db, duplicate) },
+      { status: 409 },
+    );
+  }
+
   // Fan out: one WWWItem record per selected assignee, atomically. Each row
   // owns a single `who`, mirroring the list view's "one row = one assignee"
   // shape so each assignee can independently update their own status / notes.
@@ -258,6 +271,15 @@ export const POST = auth.create(async ({ orgId, userId }, req) => {
       console.error("[POST /api/www] notifyWWWAssignment failed:", err);
     });
   }
+
+  await publishRealtime({
+    entity: "www",
+    action: "created",
+    id: primaryItem.id,
+    orgId,
+    ownerId: primaryWho,
+    actorUserId: userId,
+  });
 
   return NextResponse.json(
     {

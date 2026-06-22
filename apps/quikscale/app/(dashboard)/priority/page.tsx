@@ -114,6 +114,7 @@ export default function PriorityPage() {
     startWeek: "Start Week",
     endWeek: "End Week",
     lastNote: "Last Note",
+    importedFromOpsp: "Imported from OPSP",
     // Audit columns — populated by GET /api/priority via decorateAudit.
     createdBy: "Created By",
     updatedBy: "Updated By",

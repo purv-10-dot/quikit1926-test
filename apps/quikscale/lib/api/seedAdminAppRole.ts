@@ -36,6 +36,9 @@ export { MEMBER_DEFAULT_GRANTS };
  */
 const ADMIN_DEFAULT_EXCLUSIONS = new Set<string>([
   "OPSP.History.EditFinalize:update",
+  // Editing ANOTHER user's OPSP sections is a deliberate, scoped grant — an
+  // admin opts in via the matrix rather than getting it for free on seed.
+  "OPSP.EditUser:update",
 ]);
 import { getQuikScaleAppId } from "@/lib/api/permissions";
 

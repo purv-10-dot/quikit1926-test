@@ -8,6 +8,7 @@ import { getPastWeekFlags, getCurrentFiscalWeekFromDB } from "@/lib/utils/featur
 import { audit, requestContext } from "@/lib/audit";
 import { weeklyTargetForWeek } from "@/lib/utils/kpiHelpers";
 import { withTxRetry } from "@/lib/api/withTxRetry";
+import { publishRealtime } from "@quikit/realtime/server";
 
 function calcHealthStatus(progress: number, status: string): string {
   if (status === "completed") return "complete";
@@ -358,6 +359,19 @@ export const POST = withOrgAuth<{ id: string }>(async ({ orgId, userId }, req: N
         });
       }
     }
+  }
+
+  if (applied > 0) {
+    await publishRealtime({
+      entity: "kpi",
+      action: "updated",
+      id: params.id,
+      orgId,
+      teamId: kpi.teamId,
+      year: kpi.year ?? undefined,
+      quarter: kpi.quarter ?? undefined,
+      actorUserId: userId,
+    });
   }
 
   return NextResponse.json({

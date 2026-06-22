@@ -65,6 +65,7 @@ const CONFIG = {
     emptyTitle: "Build your Function Accountability Chart",
     emptyMessage: "Map every key function in your organization to an accountable person. Identify gaps, duplicates, and misalignments at a glance.",
     href: "/performance/face",
+    backHref: "/performance/goals" as string | null,
   },
   pace: {
     title: "PACe",
@@ -81,6 +82,8 @@ const CONFIG = {
     emptyTitle: "Build your Process Accountability Chart",
     emptyMessage: "Identify 4–9 core processes that run your business and assign an owner to each. Unowned processes are silent risks.",
     href: "/performance/pace",
+    // No Pillar Hub back-link on PACe (per product spec). FACe keeps it.
+    backHref: null as string | null,
   },
 } as const;
 
@@ -232,9 +235,11 @@ export default function AccountabilityChartPage({ chartType }: { chartType: Char
     <div className="flex flex-col h-full">
       {/* Header */}
       <div className="px-6 py-4 border-b border-gray-200 bg-white flex-shrink-0">
-        <Link href="/performance/goals" className="flex items-center gap-1 text-xs text-gray-500 hover:text-gray-800 mb-2 transition-colors">
-          <ChevronLeft className="h-3.5 w-3.5" /> Back to Pillar Hub
-        </Link>
+        {cfg.backHref && (
+          <Link href={cfg.backHref} className="flex items-center gap-1 text-xs text-gray-500 hover:text-gray-800 mb-2 transition-colors">
+            <ChevronLeft className="h-3.5 w-3.5" /> Back to Pillar Hub
+          </Link>
+        )}
         <div className="flex items-center justify-between gap-4">
           <div className="flex items-center gap-3">
             <div className={`h-9 w-9 rounded-lg flex items-center justify-center flex-shrink-0 ${accentBg}`}>

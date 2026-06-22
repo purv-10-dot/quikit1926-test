@@ -1,14 +1,16 @@
 import { NextResponse } from "next/server";
-import type { NextRequest } from "next/server";
 import { db } from "@/lib/db";
-import { requireAdmin } from "@/lib/api/requireAdmin";
-import { gateModuleApi } from "@quikit/auth/feature-gate";
+import { withOrgAuthForResource } from "@/lib/api/withOrgAuth";
 import { writeAuditLog } from "@/lib/api/auditLog";
 import { validationError } from "@/lib/api/validationError";
 import { opspReviewSaveSchema } from "@/lib/schemas/opspReviewSchema";
 import { getScales } from "@/lib/utils/currency";
 import { resolveOpspOwnerOrSelf } from "@/lib/api/opspOwner";
 import { resolveReviewTarget } from "@/lib/utils/opspReviewTarget";
+
+// OPSP Review is permission-gated (not admin-only): anyone with OPSP.Review can
+// view; saving review entries requires update.
+const reviewAuth = withOrgAuthForResource("opsp.review", "OPSP.Review");
 
 /**
  * Server-side mirror of the client `resolveProjected` logic. OPSP stores
@@ -60,16 +62,11 @@ function resolveStoredValue(
  * Loads the OPSP source rows (actions/goals/targets) for the current user
  * and merges in any saved review entries (achieved values).
  *
- * Admin-only — all OPSP Review access requires admin role.
+ * Gated on OPSP.Review:view — admins hold the grant; a non-admin granted
+ * OPSP.Review can view the (org-shared) review data read-only.
  */
-export async function GET(req: NextRequest) {
+export const GET = reviewAuth.view(async ({ orgId, userId }, req) => {
   try {
-    const auth = await requireAdmin();
-    if ("error" in auth && auth.error) return auth.error;
-    const { orgId, userId } = auth;
-    const blocked = await gateModuleApi("quikscale", "opsp.review", orgId);
-    if (blocked) return blocked;
-
     const { searchParams } = req.nextUrl;
     const year = parseInt(searchParams.get("year") ?? String(new Date().getFullYear()));
     const quarter = searchParams.get("quarter") ?? "Q1";
@@ -287,22 +284,17 @@ export async function GET(req: NextRequest) {
     const message = error instanceof Error ? error.message : "Failed to load OPSP review";
     return NextResponse.json({ success: false, error: message }, { status: 500 });
   }
-}
+});
 
 /**
  * POST /api/opsp/review
  *
  * Saves review entries for one category row (all periods at once).
- * Called when the user clicks "Save" in the review modal.
+ * Called when the user clicks "Save" in the review modal. Requires
+ * OPSP.Review:update.
  */
-export async function POST(req: NextRequest) {
+export const POST = reviewAuth.update(async ({ orgId, userId }, req) => {
   try {
-    const auth = await requireAdmin();
-    if ("error" in auth && auth.error) return auth.error;
-    const { orgId, userId } = auth;
-    const blocked = await gateModuleApi("quikscale", "opsp.review", orgId);
-    if (blocked) return blocked;
-
     const parsed = opspReviewSaveSchema.safeParse(await req.json());
     if (!parsed.success) return validationError(parsed, "Invalid review data");
 
@@ -446,7 +438,7 @@ export async function POST(req: NextRequest) {
     const message = error instanceof Error ? error.message : "Failed to save review data";
     return NextResponse.json({ success: false, error: message }, { status: 500 });
   }
-}
+});
 
 /* ── Helpers ── */
 

@@ -12,7 +12,9 @@ import {
 } from "@/lib/audit";
 import { withOrgAuthForResource } from "@/lib/api/withOrgAuth";
 import { canEditWWW, canEditWWWAssignment } from "@/lib/api/wwwPermissions";
+import { findWWWDuplicate, wwwDuplicateMessage } from "@/lib/api/wwwDuplicate";
 import { notifyWWWReassignment } from "@/lib/services/wwwNotifications";
+import { publishRealtime } from "@quikit/realtime/server";
 const auth = withOrgAuthForResource("www", "WWW");
 
 /** Before/after fields needed to diff a WWW item for the audit timeline. */
@@ -254,6 +256,25 @@ export const PUT = auth.update<{ id: string }>(
       }
     }
 
+    // ── Duplicate guard ── compute the item's POST-edit identity (who/what/when)
+    // and reject (409) if it would collide with another active item. Self is
+    // excluded so a no-op edit never trips the guard.
+    const effectiveWho = nextWho ?? existing.who;
+    const effectiveWhat = what ?? existing.what;
+    const effectiveWhen = when ?? existing.when;
+    const duplicate = await findWWWDuplicate(
+      db,
+      orgId,
+      { whoIds: [effectiveWho], what: effectiveWhat, when: effectiveWhen },
+      params.id,
+    );
+    if (duplicate) {
+      return NextResponse.json(
+        { success: false, error: await wwwDuplicateMessage(db, duplicate) },
+        { status: 409 },
+      );
+    }
+
     const updated = await db.wWWItem.update({
       where: { id: params.id },
       data: {
@@ -335,6 +356,15 @@ export const PUT = auth.update<{ id: string }>(
       console.error("[PUT /api/www/[id]] notifyWWWReassignment failed:", err);
     });
 
+    await publishRealtime({
+      entity: "www",
+      action: "updated",
+      id: params.id,
+      orgId,
+      ownerId: updated.who,
+      actorUserId: userId,
+    });
+
     return NextResponse.json({ success: true, data: result });
   },
   { fallbackErrorMessage: "Failed to update WWW item" },
@@ -401,6 +431,15 @@ export const DELETE = auth.delete<{ id: string }>(
         category: existing.category,
       },
       ...requestContext(request),
+    });
+
+    await publishRealtime({
+      entity: "www",
+      action: "deleted",
+      id: params.id,
+      orgId,
+      ownerId: existing.who,
+      actorUserId: userId,
     });
 
     return NextResponse.json({

@@ -13,6 +13,9 @@ export const createPrioritySchema = z.object({
   endWeek:       z.number().int().min(1).max(13).optional().nullable(),
   overallStatus: z.enum(["not-applicable","not-yet-started","behind-schedule","on-track","completed","not-started"]).default("not-yet-started"),
   notes:         z.string().optional().nullable(),
+  // Set true only by the OPSP "Export → Create Priorities" flow. Display-only;
+  // the Add/Edit Priority form never sends it (defaults false).
+  importedFromOpsp: z.boolean().optional(),
 });
 
 // Update — fully partial so PATCH-style updates work.

@@ -24,7 +24,17 @@ import { QuikScaleMark } from "@/components/brand/quikscale-mark";
 import { KpiUnreadDot } from "@/components/audit/KpiUnreadDot";
 
 /* ─── Types ─── */
-interface NavSubItem { label: string; href: string; icon: React.ElementType; moduleKey: string; }
+interface NavSubItem {
+  label: string;
+  href: string;
+  icon: React.ElementType;
+  moduleKey: string;
+  /** Optional override: visible when this returns true (instead of NAV_RESOURCE view).
+   *  Used by OPSP Review so a Critical-Review-only user still sees the item. */
+  resolveVisible?: (hasView: (resource: string) => boolean) => boolean;
+  /** Optional dynamic label (e.g. "OPSP Review" vs "Critical Review"). */
+  resolveLabel?: (hasView: (resource: string) => boolean) => string;
+}
 interface NavItem {
   type?: "item";
   label: string;
@@ -82,7 +92,11 @@ const navigation: SidebarEntry[] = [
   { label: "OPSP", icon: FileText, moduleKey: "opsp", children: [
     { label: "Create OPSP",    href: "/opsp",            icon: FileText, moduleKey: "opsp.create" },
     { label: "OPSP History",   href: "/opsp/history",    icon: BookOpen, moduleKey: "opsp.history" },
-    { label: "OPSP Review",    href: "/opsp/review",     icon: Star,     moduleKey: "opsp.review" },
+    { label: "OPSP Review",    href: "/opsp/review",     icon: Star,     moduleKey: "opsp.review",
+      // Visible to full reviewers AND Critical-Review-only users; relabels to
+      // "Critical Review" when the user lacks the full OPSP.Review grant.
+      resolveVisible: (has) => has("OPSP.Review") || has("OPSP.Review.Critical"),
+      resolveLabel:   (has) => (has("OPSP.Review") ? "OPSP Review" : "Critical Review") },
     { label: "Category Mgmt",  href: "/opsp/categories", icon: List,     moduleKey: "opsp.categories" },
   ]},
   { label: "Habits",  href: "/performance/habits", icon: Activity,  moduleKey: "habits" },
@@ -125,9 +139,17 @@ function filterNavigation(
     if (item.comingSoon) return item;
     if (!isModuleEnabled(item.moduleKey, disabled)) return null;
     if (item.children) {
-      const visibleChildren = item.children.filter(
-        (c) => isModuleEnabled(c.moduleKey, disabled) && canSee(c.moduleKey),
-      );
+      // A child may override visibility (e.g. OPSP Review is visible to
+      // Critical-Review-only users) and/or resolve a dynamic label.
+      const childVisible = (c: NavSubItem) =>
+        c.resolveVisible
+          ? permsLoading || isAdminBypass || c.resolveVisible(hasView)
+          : canSee(c.moduleKey);
+      const visibleChildren = item.children
+        .filter((c) => isModuleEnabled(c.moduleKey, disabled) && childVisible(c))
+        .map((c) =>
+          c.resolveLabel && !permsLoading ? { ...c, label: c.resolveLabel(hasView) } : c,
+        );
       if (visibleChildren.length === 0) return null;
       return { ...item, children: visibleChildren };
     }

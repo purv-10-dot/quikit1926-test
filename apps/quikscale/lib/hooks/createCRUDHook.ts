@@ -38,6 +38,7 @@ import {
   keepPreviousData,
   type UseQueryOptions,
 } from "@tanstack/react-query";
+import { invalidateEntity, type DashboardEntity } from "@/lib/hooks/dashboardInvalidation";
 
 /** Standard pagination meta returned by `paginatedResponse` on the server. */
 export interface ListMeta {
@@ -79,6 +80,9 @@ export function createCRUDHook<Item, Filters>(
   config: CRUDHookConfig<Filters>
 ) {
   const { resource, listUrl, staleTime = 1000 * 60 * 5 } = config;
+  // resource is "priority" | "www" in practice; the helper degrades gracefully
+  // for anything else (list + dashboard only).
+  const entity = resource as DashboardEntity;
 
   // ── Query keys ─────────────────────────────────────────────────────────
   const keys = {
@@ -181,20 +185,20 @@ export function createCRUDHook<Item, Filters>(
     });
   }
 
-  // Dashboard summary aggregates KPI + Priority + WWW in one cached payload
-  // (`useDashboardSummary`, key prefix `["dashboard"]`, staleTime 5min). Any
-  // resource mutation must invalidate it too — otherwise navigating to the
-  // dashboard right after creating/editing a row shows stale data until the
-  // staleTime expires or the user hard-refreshes.
-  const DASHBOARD_KEY = ["dashboard"] as const;
-
+  // Cache invalidation for all mutations below is centralized in
+  // `invalidateEntity` (lib/hooks/dashboardInvalidation.ts): it busts the
+  // module list, the Dashboard summary (["dashboard"]) AND the Dashboard
+  // infinite-scroll list (["<resource>-infinite"]). Keeping it in one place
+  // ensures the editor's own client and the real-time socket clients invalidate
+  // exactly the same keys.
   function useCreate() {
     const queryClient = useQueryClient();
     return useMutation({
       mutationFn: (body: Partial<Item>) => createItem(body),
       onSuccess: () => {
-        queryClient.invalidateQueries({ queryKey: keys.lists() });
-        queryClient.invalidateQueries({ queryKey: DASHBOARD_KEY });
+        // list + dashboard summary + Dashboard infinite list — see
+        // dashboardInvalidation.ts (keeps editor + socket clients in sync).
+        invalidateEntity(queryClient, entity);
       },
     });
   }
@@ -204,9 +208,7 @@ export function createCRUDHook<Item, Filters>(
     return useMutation({
       mutationFn: (body: Partial<Item>) => updateItem(id, body),
       onSuccess: () => {
-        queryClient.invalidateQueries({ queryKey: keys.detail(id) });
-        queryClient.invalidateQueries({ queryKey: keys.lists() });
-        queryClient.invalidateQueries({ queryKey: DASHBOARD_KEY });
+        invalidateEntity(queryClient, entity, { id });
       },
     });
   }
@@ -218,9 +220,7 @@ export function createCRUDHook<Item, Filters>(
       onSuccess: (_data, id) => {
         // Bust the detail cache too — a tab open on the just-deleted row
         // would otherwise keep rendering stale data from before the delete.
-        queryClient.invalidateQueries({ queryKey: keys.detail(id) });
-        queryClient.invalidateQueries({ queryKey: keys.lists() });
-        queryClient.invalidateQueries({ queryKey: DASHBOARD_KEY });
+        invalidateEntity(queryClient, entity, { id });
       },
     });
   }
@@ -234,8 +234,7 @@ export function createCRUDHook<Item, Filters>(
     return useMutation({
       mutationFn: (id: string) => restoreItem(id),
       onSuccess: () => {
-        queryClient.invalidateQueries({ queryKey: keys.lists() });
-        queryClient.invalidateQueries({ queryKey: DASHBOARD_KEY });
+        invalidateEntity(queryClient, entity);
       },
     });
   }
@@ -245,8 +244,7 @@ export function createCRUDHook<Item, Filters>(
     return useMutation({
       mutationFn: (ids: string[]) => bulkRestoreItems(ids),
       onSuccess: () => {
-        queryClient.invalidateQueries({ queryKey: keys.lists() });
-        queryClient.invalidateQueries({ queryKey: DASHBOARD_KEY });
+        invalidateEntity(queryClient, entity);
       },
     });
   }

@@ -34,6 +34,7 @@ export type AuditEntityType =
   | "User"
   | "Membership"
   | "OPSPData"
+  | "OPSPUserSection"
   | "Quarter"
   | "Category"
   | "DailyHuddle"

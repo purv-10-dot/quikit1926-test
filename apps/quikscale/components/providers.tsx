@@ -7,6 +7,7 @@ import { ConfirmProvider } from "@quikit/ui";
 import { Provider as ReduxProvider } from "react-redux";
 import { useEffect, useState } from "react";
 import { store, initTablesPersistence } from "@/lib/store";
+import { RealtimeProvider } from "@/components/realtime-provider";
 
 export function Providers({ children }: { children: React.ReactNode }) {
   const [queryClient] = useState(
@@ -32,9 +33,11 @@ export function Providers({ children }: { children: React.ReactNode }) {
     <ReduxProvider store={store}>
       <SessionProvider>
         <QueryClientProvider client={queryClient}>
-          <ThemeProvider attribute="class" defaultTheme="light" enableSystem>
-            <ConfirmProvider>{children}</ConfirmProvider>
-          </ThemeProvider>
+          <RealtimeProvider>
+            <ThemeProvider attribute="class" defaultTheme="light" enableSystem>
+              <ConfirmProvider>{children}</ConfirmProvider>
+            </ThemeProvider>
+          </RealtimeProvider>
         </QueryClientProvider>
       </SessionProvider>
     </ReduxProvider>

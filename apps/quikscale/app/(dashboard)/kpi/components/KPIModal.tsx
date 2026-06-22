@@ -22,6 +22,7 @@ import {
   buildOwnerBreakdown,
   redistributeOwnerRemainder,
   distributeContributionsEven,
+  applyWeeklyEdit,
   type DivisionType,
 } from "./kpiModalHelpers";
 import { WeeklyScroller } from "./WeeklyScroller";
@@ -496,46 +497,12 @@ export function KPIModal({ mode, kpi, scope, teamId, defaultYear, defaultQuarter
   }
 
   function setWeekBreakdown(w: number, rawVal: string) {
-    setForm(f => {
-      // Clamp: no negatives, and cannot exceed remaining budget (target - sum of prior weeks)
-      const targetNum = actualNum(f);
-      const isWhole = f.measurementUnit === "Number";
-      let priorSum = 0;
-      for (let i = 1; i < w; i++) priorSum += parseFloat(String(f.weeklyBreakdown[i])) || 0;
-      const maxAllowed = Math.max(0, targetNum - priorSum);
-
-      let parsed = parseFloat(rawVal);
-      if (rawVal === "" || isNaN(parsed)) parsed = 0;
-      if (parsed < 0) parsed = 0;
-      if (f.divisionType === "Cumulative" && parsed > maxAllowed) parsed = maxAllowed;
-
-      const val = rawVal === "" ? "" : (isWhole ? String(Math.round(parsed)) : parsed.toFixed(2));
-      const newBreakdown = { ...f.weeklyBreakdown, [w]: val };
-      if (f.divisionType !== "Cumulative") return { ...f, weeklyBreakdown: newBreakdown };
-
-      // Recalculate leftSum including the capped value
-      let leftSum = 0;
-      for (let i = 1; i <= w; i++) leftSum += parseFloat(String(newBreakdown[i])) || 0;
-
-      const remaining = Math.max(0, targetNum - leftSum);
-      const rightCount = 13 - w;
-      if (rightCount <= 0) return { ...f, weeklyBreakdown: newBreakdown };
-
-      if (isWhole) {
-        // Number unit: each editable week gets floor(remaining/rightCount);
-        // Week 13 absorbs the entire flooring residue.
-        const base = Math.floor(remaining / rightCount);
-        for (let i = w + 1; i <= 13; i++) {
-          newBreakdown[i] = String(i === 13 ? Math.round(remaining - base * (rightCount - 1)) : base);
-        }
-      } else {
-        const base = parseFloat((remaining / rightCount).toFixed(2));
-        const diff = parseFloat((remaining - base * rightCount).toFixed(2));
-        for (let i = w + 1; i <= 13; i++) newBreakdown[i] = base.toFixed(2);
-        newBreakdown[13] = (base + diff).toFixed(2);
-      }
-      return { ...f, weeklyBreakdown: newBreakdown };
-    });
+    // Shared with the OPSP export so both redistribute identically — see
+    // `applyWeeklyEdit` in kpiModalHelpers. `actualNum` applies the currency scale.
+    setForm(f => ({
+      ...f,
+      weeklyBreakdown: applyWeeklyEdit(f.weeklyBreakdown, w, rawVal, actualNum(f), f.measurementUnit, f.divisionType),
+    }));
   }
 
   function validate() {

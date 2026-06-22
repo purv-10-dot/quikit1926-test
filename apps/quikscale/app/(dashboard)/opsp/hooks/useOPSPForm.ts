@@ -118,6 +118,20 @@ export interface OPSPFormHandle {
   /** Reload the OPSP form for a different (year, quarter) period. */
   loadForPeriod: (year: number, quarter: string) => Promise<void>;
   /**
+   * The user whose per-user sections (Accountability / Quarterly Priorities /
+   * Critical # / Balanced Critical #) are currently loaded. `null` = the
+   * acting user's own sections. An admin with OPSP.EditUser:update can point
+   * this at another user via {@link OPSPFormHandle.selectSectionUser}.
+   */
+  sectionUserId: string | null;
+  /** Switch which user's per-user sections are loaded/edited (admin only). */
+  selectSectionUser: (userId: string | null) => Promise<void>;
+  /**
+   * Name of the admin a member should contact to update their finalized OPSP
+   * (holds OPSP.EditUser). `null` if nobody holds it. From the GET payload.
+   */
+  responsibleAdminName: string | null;
+  /**
    * Called by the setup wizard's onComplete: stores plan range, seeds form,
    * then re-fetches the freshly-created OPSP for the chosen period.
    */
@@ -164,6 +178,19 @@ export function useOPSPForm(options: UseOPSPFormOptions = {}): OPSPFormHandle {
   const [planEndYear, setPlanEndYear] = useState<number | null>(null);
   const [planStartQuarter, setPlanStartQuarter] = useState<string | null>(null); // e.g. "Q2" if onboarded mid-year
   const [reviewedQuarters, setReviewedQuarters] = useState<string[]>([]);
+  // Which user's per-user sections are loaded (null = self). Mirrored into a ref
+  // so the [] -dep `loadForPeriod`/`save` callbacks read the current value
+  // without being re-created (and without stale closures).
+  const [sectionUserId, setSectionUserId] = useState<string | null>(null);
+  const sectionUserRef = useRef<string | null>(null);
+  sectionUserRef.current = sectionUserId;
+  const [responsibleAdminName, setResponsibleAdminName] = useState<string | null>(null);
+
+  // Append the selected section user (if any) to an OPSP GET URL.
+  const withSectionUser = (url: string) => {
+    const t = sectionUserRef.current;
+    return t ? `${url}&targetUserId=${encodeURIComponent(t)}` : url;
+  };
 
   const refreshReviewedQuarters = useCallback(async () => {
     try {
@@ -199,7 +226,7 @@ export function useOPSPForm(options: UseOPSPFormOptions = {}): OPSPFormHandle {
     setForm({ ...defaultForm(), year, quarter });
 
     try {
-      const res = await fetch(`/api/opsp?year=${year}&quarter=${quarter}`);
+      const res = await fetch(withSectionUser(`/api/opsp?year=${year}&quarter=${quarter}`));
       if (res.status === 401) {
         const draft = localStorage.getItem(`opsp_draft_${year}_${quarter}`);
         if (draft) {
@@ -214,6 +241,7 @@ export function useOPSPForm(options: UseOPSPFormOptions = {}): OPSPFormHandle {
         const json = await res.json();
         if (typeof json.fiscalYearStart === "number") setFiscalYearStart(json.fiscalYearStart);
         setOwnerNames(json.ownerNames ?? {});
+        setResponsibleAdminName(json.responsibleAdminName ?? null);
         if (json.data) {
           skipNextSave.current = true;
           skipNextTargetsCascade.current = true;
@@ -270,7 +298,9 @@ export function useOPSPForm(options: UseOPSPFormOptions = {}): OPSPFormHandle {
       const res = await fetch("/api/opsp", {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(data),
+        body: JSON.stringify(
+          sectionUserRef.current ? { ...data, targetUserId: sectionUserRef.current } : data,
+        ),
       });
       if (res.ok) {
         setSaveState("saved");
@@ -366,6 +396,13 @@ export function useOPSPForm(options: UseOPSPFormOptions = {}): OPSPFormHandle {
     });
   }, [form.goalRows]);
 
+  /* ── Switch which user's per-user sections are loaded (admin OPSP.EditUser) ── */
+  const selectSectionUser = useCallback(async (userId: string | null) => {
+    sectionUserRef.current = userId;
+    setSectionUserId(userId);
+    await loadForPeriod(form.year, form.quarter);
+  }, [loadForPeriod, form.year, form.quarter]);
+
   /* ── Setup-wizard completion: seed plan range, form, and re-fetch fresh OPSP ── */
   const completeSetup = useCallback((data: { year: number; quarter: string; targetYears: number }) => {
     setShowSetupWizard(false);
@@ -411,6 +448,9 @@ export function useOPSPForm(options: UseOPSPFormOptions = {}): OPSPFormHandle {
     showSetupWizard,
     setShowSetupWizard,
     loadForPeriod,
+    sectionUserId,
+    selectSectionUser,
+    responsibleAdminName,
     completeSetup,
     /** Persist the given form immediately (used to commit edit-after-finalize changes). */
     save,

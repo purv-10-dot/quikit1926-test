@@ -7,6 +7,7 @@ import {
 } from "@/lib/utils/featureFlags";
 import { withOrgAuthForModule } from "@/lib/api/withOrgAuth";
 import { audit, requestContext } from "@/lib/audit";
+import { publishRealtime } from "@quikit/realtime/server";
 const withOrgAuth = withOrgAuthForModule("priority");
 
 // POST /api/priority/[id]/weekly — upsert a weekly status
@@ -121,6 +122,17 @@ export const POST = withOrgAuth<{ id: string }>(
         ...requestContext(request),
       });
     }
+
+    await publishRealtime({
+      entity: "priority",
+      action: "updated",
+      id: params.id,
+      orgId,
+      teamId: priority.teamId,
+      year: priority.year ?? undefined,
+      quarter: priority.quarter ?? undefined,
+      actorUserId: userId,
+    });
 
     return NextResponse.json({ success: true, data: record });
   },

@@ -1,5 +1,23 @@
 const path = require("path");
 
+/**
+ * Real-time (Socket.io) relay origin must be allow-listed in the CSP
+ * `connect-src`, otherwise the browser blocks the WebSocket/polling
+ * connection to the relay. Derive both the http(s) and ws(s) variants from
+ * NEXT_PUBLIC_REALTIME_URL so dev (http/ws) and prod (https/wss) both work.
+ */
+const REALTIME_CONNECT_SRC = (() => {
+  const url = process.env.NEXT_PUBLIC_REALTIME_URL;
+  if (!url) return "";
+  try {
+    const u = new URL(url);
+    const wsScheme = u.protocol === "https:" ? "wss:" : "ws:";
+    return `${u.protocol}//${u.host} ${wsScheme}//${u.host}`;
+  } catch {
+    return "";
+  }
+})();
+
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   // Container build: emit a self-contained Node server under .next/standalone.
@@ -18,6 +36,7 @@ const nextConfig = {
     "@quikit/shared",
     "@quikit/database",
     "@quikit/redis",
+    "@quikit/realtime",
   ],
 
   // Phase 4: Image optimization
@@ -75,7 +94,7 @@ const nextConfig = {
               "font-src 'self' fonts.gstatic.com data:",
               "img-src 'self' data: blob: https:",
               // react-pdf fetches embedded fonts/assets via data: URLs.
-              "connect-src 'self' https://*.sentry.io data: blob:",
+              `connect-src 'self' https://*.sentry.io data: blob:${REALTIME_CONNECT_SRC ? " " + REALTIME_CONNECT_SRC : ""}`,
               // PDFViewer (react-pdf) loads its rendered PDF into an iframe via a
               // blob: URL and uses Web Workers to do the layout. Allow both.
               "frame-src 'self' blob:",

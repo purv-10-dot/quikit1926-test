@@ -9,7 +9,7 @@
  * structure but diverge on the due-date cell.
  */
 
-import { Calendar, Maximize2 } from "lucide-react";
+import { Calendar, Maximize2, Download } from "lucide-react";
 import { Card, CardH } from "./Card";
 import { CritBlock } from "./CritBlock";
 import { WithTooltip } from "./pickers";
@@ -20,6 +20,12 @@ interface Props {
   set: <K extends keyof FormData>(key: K, value: FormData[K]) => void;
   onExpandKpiAcct: () => void;
   onExpandQPriorities: () => void;
+  /** Show the Export-to-KPI / Export-to-Priority buttons (sections editable). */
+  showExport?: boolean;
+  /** Open the Export → Create KPIs stepper (seeded from the KPI rows). */
+  onExportKPI?: () => void;
+  /** Open the Export → Create Priorities stepper (seeded from the rows). */
+  onExportPriority?: () => void;
 }
 
 export function AccountabilitySection({
@@ -27,6 +33,9 @@ export function AccountabilitySection({
   set,
   onExpandKpiAcct,
   onExpandQPriorities,
+  showExport = false,
+  onExportKPI,
+  onExportPriority,
 }: Props) {
   return (
     <Card className="flex flex-col gap-4">
@@ -96,6 +105,17 @@ export function AccountabilitySection({
             </tbody>
           </table>
         </div>
+
+        {showExport && (
+          <div className="text-right" data-expand="true">
+            <button
+              onClick={onExportKPI}
+              className="inline-flex items-center gap-1.5 bg-accent-600 text-white text-xs font-semibold px-3 py-1.5 rounded-lg hover:bg-accent-700"
+            >
+              <Download className="h-3.5 w-3.5" /> Export to KPI
+            </button>
+          </div>
+        )}
       </div>
 
       {/* Quarterly Priorities — below KPI table, above Critical # */}
@@ -189,6 +209,17 @@ export function AccountabilitySection({
             </tbody>
           </table>
         </div>
+
+        {showExport && (
+          <div className="text-right mt-3" data-expand="true">
+            <button
+              onClick={onExportPriority}
+              className="inline-flex items-center gap-1.5 bg-accent-600 text-white text-xs font-semibold px-3 py-1.5 rounded-lg hover:bg-accent-700"
+            >
+              <Download className="h-3.5 w-3.5" /> Export to Priority
+            </button>
+          </div>
+        )}
       </div>
 
       {/* Crit cards are equal-weight siblings of the two tables above so the

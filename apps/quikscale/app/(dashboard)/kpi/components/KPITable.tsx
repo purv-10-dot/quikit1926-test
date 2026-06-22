@@ -623,6 +623,17 @@ export function KPITable({ kpis: kpisAll, total, page, pageSize, year, quarter, 
                       </td>
                     );
                   })()}
+                  {/* Imported from OPSP — Yes when this KPI was created via the
+                      OPSP "Export → Create KPIs" flow. Neutral styling (locked table). */}
+                  {!localHideSet.has("importedFromOpsp") && (
+                    <td className={tdClass("importedFromOpsp")} style={stickyStyle("importedFromOpsp", getColWidth("importedFromOpsp"))}>
+                      {kpi.importedFromOpsp ? (
+                        <span className="text-gray-700 font-medium">Yes</span>
+                      ) : (
+                        <span className="text-gray-300">No</span>
+                      )}
+                    </td>
+                  )}
                   {/* Audit columns — Created By / Updated By / Created Date / Updated Date.
                       Populated by GET /api/kpi (see lib/api/auditUsers.ts). */}
                   {!localHideSet.has("createdBy") && (

@@ -24,6 +24,8 @@ import {
 } from "@quikit/ui";
 import { Clock, FileText, X, RotateCcw, AlertTriangle, History } from "lucide-react";
 import { useResourcePermissions } from "@/lib/hooks/useResourcePermissions";
+import { useMyPermissions } from "@/lib/hooks/useMyPermissions";
+import { resolveReviewAccess } from "./lib/reviewAccess";
 import { AuditLogDrawer } from "@/components/logs/audit-log-drawer";
 import { OPSPHistoryDrawer } from "../components/OPSPHistoryDrawer";
 import { OPSP_FIELD_LABELS } from "@/lib/utils/auditLog";
@@ -468,6 +470,17 @@ function computeYearGrowth(
 
 export default function OPSPReviewPage() {
   const { canUpdate: canUpdateReview } = useResourcePermissions("OPSP.Review");
+  const { canUpdate: canUpdateCritical } = useResourcePermissions("OPSP.Review.Critical");
+  // Permission-driven access: full (OPSP.Review/admin), critical-only (just
+  // Critical Review), or none. Drives tab/scope visibility + the picker.
+  const myPerms = useMyPermissions();
+  const access = resolveReviewAccess({
+    isAdmin: myPerms.isAdmin,
+    hasReview: myPerms.has("OPSP.Review", "view"),
+    hasCritical: myPerms.has("OPSP.Review.Critical", "view"),
+    canEditUser: myPerms.has("OPSP.EditUser", "update"),
+  });
+  const accessReady = !myPerms.loading;
   const [year, setYear] = useState(getFiscalYear);
   const [quarter, setQuarter] = useState<string>(getFiscalQuarter);
   const [horizon, setHorizon] = useState<Horizon>("quarter");
@@ -1173,6 +1186,35 @@ export default function OPSPReviewPage() {
      Render
      ═══════════════════════════════════════════════ */
 
+  const selfName = (sessionData?.user as { name?: string } | undefined)?.name ?? "Me";
+
+  // ── Critical-Review-only audience (e.g. a default member): a focused page
+  //    showing only their own Individual Critical # & Balanced Critical #.
+  //    No Review tab, no Year/Quarter scopes, no user-picker. ──
+  if (accessReady && access.mode === "critical-only") {
+    return (
+      <div className="flex flex-col h-full">
+        <div className="flex items-center justify-between px-6 py-3 border-b border-gray-200 bg-white flex-shrink-0">
+          <h1 className="text-base font-semibold text-gray-800 whitespace-nowrap">Critical Review</h1>
+          <span className="flex items-center gap-1.5 px-2.5 py-1.5 text-xs border border-gray-200 rounded-md text-gray-600">
+            {fiscalYearLabel(year)} · {quarter}
+          </span>
+        </div>
+        <div className="flex-1 overflow-hidden min-h-0">
+          <CriticalReviewSection
+            year={year}
+            quarter={quarter}
+            allowedModules={["people"]}
+            canPickUser={false}
+            canEdit={canUpdateCritical}
+            selfId={reviewUserId}
+            selfName={selfName}
+          />
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="flex flex-col h-full">
       {/* ── Page Header (matches Priority/WWW/KPI) ── */}
@@ -1313,7 +1355,9 @@ export default function OPSPReviewPage() {
           {([
             { key: "review",   label: "Review" },
             { key: "critical", label: "Critical # Review" },
-          ] as { key: TopTab; label: string }[]).map((tab) => (
+          ] as { key: TopTab; label: string }[])
+            .filter((tab) => (tab.key === "critical" ? access.showCriticalTab : access.showReviewTab))
+            .map((tab) => (
             <button
               key={tab.key}
               onClick={() => setTopTab(tab.key)}
@@ -1356,7 +1400,15 @@ export default function OPSPReviewPage() {
             Review tab's content area. Owns its own data fetch + sub-tabs. ── */}
       {topTab === "critical" && (
         <div className="flex-1 overflow-hidden min-h-0">
-          <CriticalReviewSection year={year} quarter={quarter} />
+          <CriticalReviewSection
+            year={year}
+            quarter={quarter}
+            allowedModules={access.allowedCriticalModules}
+            canPickUser={access.canPickUser}
+            canEdit={canUpdateCritical}
+            selfId={reviewUserId}
+            selfName={selfName}
+          />
         </div>
       )}
 

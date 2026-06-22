@@ -33,6 +33,9 @@ const kpiBaseFields = {
   targetScale: z.string().optional().nullable(),
   reverseColor: z.boolean().optional(),
   frequency: z.enum(["daily", "weekly", "monthly", "yearly"]).default("weekly"),
+  // Set true only by the OPSP "Export → Create KPIs" flow. Display-only flag;
+  // the Add/Edit KPI form never sends it (defaults false).
+  importedFromOpsp: z.boolean().optional(),
 };
 
 // Create KPI — enforces the kpiLevel invariants:

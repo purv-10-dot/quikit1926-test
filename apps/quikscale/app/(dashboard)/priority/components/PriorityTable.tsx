@@ -373,13 +373,13 @@ export function PriorityTable({ priorities: prioritiesAll, onRefresh, year, quar
   // Column layout — checkbox/log/id are ALWAYS frozen/visible; others are user-controlled
   const COL_ORDER_FULL = [
     "_cb", "_log", "_id", "team", "priorityName", "owner",
-    "startWeek", "endWeek", "lastNote",
+    "startWeek", "endWeek", "lastNote", "importedFromOpsp",
     // Audit columns — last, before week columns.
     "createdBy", "updatedBy", "createdAt", "updatedAt",
   ];
   const COL_WIDTHS: Record<string, number> = {
     _cb: 40, _log: 40, _id: 40, team: 120, priorityName: 260, owner: 140,
-    startWeek: 170, endWeek: 170, lastNote: 200,
+    startWeek: 170, endWeek: 170, lastNote: 200, importedFromOpsp: 150,
     createdBy: 160, updatedBy: 160, createdAt: 130, updatedAt: 130,
   };
   // Drag-to-resize: persisted widths override the defaults above.
@@ -388,6 +388,7 @@ export function PriorityTable({ priorities: prioritiesAll, onRefresh, year, quar
   const COL_LABELS: Record<string, string> = {
     team: "Team", priorityName: "Priority Name", owner: "Owner",
     startWeek: "Start Week", endWeek: "End Week", lastNote: "Last Note",
+    importedFromOpsp: "Imported from OPSP",
     createdBy: "Created By", updatedBy: "Updated By",
     createdAt: "Created Date", updatedAt: "Updated Date",
   };
@@ -768,6 +769,24 @@ export function PriorityTable({ priorities: prioritiesAll, onRefresh, year, quar
                       </td>
                     );
                   })()}
+
+                  {/* Imported from OPSP — Yes when created via the OPSP
+                      "Export → Create Priorities" flow. Neutral styling (locked table). */}
+                  {COL_ORDER.includes("importedFromOpsp") && (
+                    <td className={`z-20 border-r border-gray-100 px-3 py-1.5 bg-inherit ${isColFrozen("importedFromOpsp") ? "sticky" : ""}`}
+                      style={{
+                        left: isColFrozen("importedFromOpsp") ? getLeftOffset("importedFromOpsp") : undefined,
+                        width: getColWidth("importedFromOpsp"),
+                        minWidth: getColWidth("importedFromOpsp"),
+                        boxShadow: lastFrozenKey === "importedFromOpsp" ? "2px 0 4px -1px rgba(0,0,0,0.08)" : undefined,
+                      }}>
+                      {priority.importedFromOpsp ? (
+                        <span className="text-xs text-gray-700 font-medium">Yes</span>
+                      ) : (
+                        <span className="text-xs text-gray-300">No</span>
+                      )}
+                    </td>
+                  )}
 
                   {/* Audit columns — Created By / Updated By / Created Date / Updated Date.
                       Populated by GET /api/priority via decorateAudit. */}

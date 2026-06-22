@@ -3,6 +3,7 @@
 import { useQuery, useMutation, useQueryClient, keepPreviousData } from "@tanstack/react-query";
 import * as kpiService from "@/lib/services/kpiService";
 import { CreateKPIInput, UpdateKPIInput, WeeklyValueInput, KPINoteInput, KPIListParams } from "@/lib/schemas/kpiSchema";
+import { invalidateEntity } from "@/lib/hooks/dashboardInvalidation";
 
 // Query Keys
 const kpiKeys = {
@@ -57,10 +58,9 @@ export function useCreateKPI() {
   return useMutation({
     mutationFn: (input: CreateKPIInput) => kpiService.createKPI(input),
     onSuccess: () => {
-      // Invalidate lists so they refetch
-      queryClient.invalidateQueries({ queryKey: kpiKeys.lists() });
-      // Dashboard summary aggregates KPIs — keep it in sync.
-      queryClient.invalidateQueries({ queryKey: ["dashboard"] });
+      // Invalidate the KPI list + Dashboard summary AND the Dashboard
+      // infinite-scroll list (["kpi-infinite"]) — see dashboardInvalidation.ts.
+      invalidateEntity(queryClient, "kpi");
     },
   });
 }
@@ -72,10 +72,8 @@ export function useUpdateKPI(id: string) {
   return useMutation({
     mutationFn: (input: Partial<UpdateKPIInput>) => kpiService.updateKPI(id, input),
     onSuccess: () => {
-      // Invalidate specific KPI and lists
-      queryClient.invalidateQueries({ queryKey: kpiKeys.detail(id) });
-      queryClient.invalidateQueries({ queryKey: kpiKeys.lists() });
-      queryClient.invalidateQueries({ queryKey: ["dashboard"] });
+      // detail + list + dashboard + dashboard-infinite (single source of truth).
+      invalidateEntity(queryClient, "kpi", { id });
     },
   });
 }
@@ -87,9 +85,10 @@ export function useDeleteKPI() {
   return useMutation({
     mutationFn: (id: string) => kpiService.deleteKPI(id),
     onSuccess: () => {
-      // Invalidate all KPI queries
+      // Broad ["kpi"] invalidation covers cascade-deleted children's detail/weekly;
+      // invalidateEntity adds the Dashboard infinite list + summary.
       queryClient.invalidateQueries({ queryKey: kpiKeys.all });
-      queryClient.invalidateQueries({ queryKey: ["dashboard"] });
+      invalidateEntity(queryClient, "kpi");
     },
   });
 }
@@ -106,7 +105,7 @@ export function useRestoreKPI() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: kpiKeys.all });
-      queryClient.invalidateQueries({ queryKey: ["dashboard"] });
+      invalidateEntity(queryClient, "kpi");
     },
   });
 }
@@ -127,7 +126,7 @@ export function useBulkRestoreKPI() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: kpiKeys.all });
-      queryClient.invalidateQueries({ queryKey: ["dashboard"] });
+      invalidateEntity(queryClient, "kpi");
     },
   });
 }
@@ -150,12 +149,9 @@ export function useUpdateWeeklyValue(kpiId: string) {
   return useMutation({
     mutationFn: (input: WeeklyValueInput) => kpiService.updateWeeklyValue(kpiId, input),
     onSuccess: () => {
-      // Invalidate weekly values and parent KPI
-      queryClient.invalidateQueries({ queryKey: kpiKeys.weekly(kpiId) });
-      queryClient.invalidateQueries({ queryKey: kpiKeys.detail(kpiId) });
-      queryClient.invalidateQueries({ queryKey: kpiKeys.lists() });
-      // Dashboard pulls weekly values + progress%; keep it fresh after a save.
-      queryClient.invalidateQueries({ queryKey: ["dashboard"] });
+      // detail(kpiId) prefix-matches its weekly child; plus list + dashboard +
+      // dashboard-infinite so the Dashboard KPI table reflects the new value.
+      invalidateEntity(queryClient, "kpi", { id: kpiId });
     },
   });
 }
@@ -169,10 +165,7 @@ export function useUpdateWeeklyValuesBatch(kpiId: string) {
     mutationFn: (inputs: WeeklyValueInput[]) =>
       kpiService.updateWeeklyValuesBatch(kpiId, inputs),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: kpiKeys.weekly(kpiId) });
-      queryClient.invalidateQueries({ queryKey: kpiKeys.detail(kpiId) });
-      queryClient.invalidateQueries({ queryKey: kpiKeys.lists() });
-      queryClient.invalidateQueries({ queryKey: ["dashboard"] });
+      invalidateEntity(queryClient, "kpi", { id: kpiId });
     },
   });
 }

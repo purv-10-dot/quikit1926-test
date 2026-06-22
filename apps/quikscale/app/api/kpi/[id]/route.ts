@@ -6,6 +6,7 @@ import { withOrgAuthForResource } from "@/lib/api/withOrgAuth";
 const auth = withOrgAuthForResource("kpi", "KPI");
 import { getPastWeekFlags, getCurrentFiscalWeekFromDB } from "@/lib/utils/featureFlags";
 import { audit, requestContext, classifyUpdateAction, diffFields, KPI_AUDIT_FIELDS } from "@/lib/audit";
+import { publishRealtime } from "@quikit/realtime/server";
 
 /**
  * Push target / weekly-target changes from a Team KPI down to every child
@@ -500,6 +501,18 @@ export const PUT = auth.update<{ id: string }>(async ({ orgId, userId }, req, { 
     ...requestContext(req),
   });
 
+  await publishRealtime({
+    entity: "kpi",
+    action: "updated",
+    id: params.id,
+    orgId,
+    teamId: updatedKPI.teamId,
+    ownerId: updatedKPI.owner,
+    year: updatedKPI.year ?? undefined,
+    quarter: updatedKPI.quarter ?? undefined,
+    actorUserId: userId,
+  });
+
   return NextResponse.json({ success: true, data: updatedKPI, message: "KPI updated successfully" });
 }, { fallbackErrorMessage: "Failed to update KPI" });
 
@@ -569,6 +582,18 @@ export const DELETE = auth.delete<{ id: string }>(async ({ orgId, userId }, req,
       year: kpi.year,
     },
     ...requestContext(req),
+  });
+
+  await publishRealtime({
+    entity: "kpi",
+    action: "deleted",
+    id: params.id,
+    orgId,
+    teamId: kpi.teamId,
+    ownerId: kpi.owner,
+    year: kpi.year ?? undefined,
+    quarter: kpi.quarter ?? undefined,
+    actorUserId: userId,
   });
 
   return NextResponse.json({ success: true, message: "KPI deleted successfully" });

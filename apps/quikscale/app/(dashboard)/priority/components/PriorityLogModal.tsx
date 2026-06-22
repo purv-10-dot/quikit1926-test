@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { useUpdatePriority, useUpdateWeeklyStatus, useUpdateWeeklyStatusesBatch } from "@/lib/hooks/usePriority";
+import { useUpdatePriority, useUpdateWeeklyStatusesBatch } from "@/lib/hooks/usePriority";
 import { useUsers } from "@/lib/hooks/useUsers";
 import { useTeams } from "@/lib/hooks/useTeams";
 import type { PriorityRow } from "@/lib/types/priority";
@@ -71,23 +71,58 @@ export function PriorityLogModal({ priority, onClose, onSuccess, logsOnly = fals
   // Notes tab state
   const [notes, setNotes] = useState(priority.notes ?? "");
 
-  // Weekly status local state (week -> { status, notes })
-  const [weeklyData, setWeeklyData] = useState<Record<number, { status: string; notes: string }>>(() => {
+  // Weekly status local state (week -> { status, notes }).
+  // Weekly edits are BUFFERED locally and only persisted when the user clicks
+  // "Save Weekly changes" — no per-click autosave. We keep a clean baseline
+  // (`baseline`) to diff against so Save sends only the weeks that actually
+  // changed, and re-baseline after a successful save.
+  const buildWeeklyMap = () => {
     const map: Record<number, { status: string; notes: string }> = {};
     priority.weeklyStatuses.forEach(ws => {
       map[ws.weekNumber] = { status: ws.status, notes: ws.notes ?? "" };
     });
     return map;
-  });
+  };
+  const [weeklyData, setWeeklyData] = useState<Record<number, { status: string; notes: string }>>(buildWeeklyMap);
+  // Clean baseline (last-saved state). Re-snapshotted from the current buffer
+  // after each successful save so the Save button disables until the next edit.
+  const [baseline, setBaseline] = useState<Record<number, { status: string; notes: string }>>(buildWeeklyMap);
+  // Brief "Saved ✓" confirmation flash in the footer.
+  const [savedFlash, setSavedFlash] = useState(false);
 
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [saving, setSaving] = useState(false);
 
+  // Note normalization must match the batch route (normNotes): "" and null
+  // are equivalent, so a blank vs. absent note is NOT a change.
+  const normNotes = (s: string | null | undefined) => (s == null || s === "" ? null : s);
+
+  // Weeks whose status or notes differ from the last-saved baseline — drives
+  // both the Save button's enabled state and the payload it sends.
+  function getDirtyWrites(): Array<{ weekNumber: number; status: string; notes: string }> {
+    const writes: Array<{ weekNumber: number; status: string; notes: string }> = [];
+    for (const [wStr, val] of Object.entries(weeklyData)) {
+      const week = parseInt(wStr, 10);
+      const base = baseline[week] ?? { status: "", notes: "" };
+      const changed = base.status !== val.status || normNotes(base.notes) !== normNotes(val.notes);
+      if (changed) writes.push({ weekNumber: week, status: val.status, notes: val.notes });
+    }
+    return writes.sort((a, b) => a.weekNumber - b.weekNumber);
+  }
+
   const { data: users = [] } = useUsers();
   const { data: teams = [] } = useTeams();
   const updatePriority = useUpdatePriority(priority.id);
-  const updateWeeklyStatus = useUpdateWeeklyStatus(priority.id);
   const updateWeeklyStatusesBatch = useUpdateWeeklyStatusesBatch(priority.id);
+
+  // Unsaved-changes guard for Cancel / backdrop click. Weekly edits are
+  // buffered now, so closing with dirty weeks would silently lose them.
+  function requestClose() {
+    if (getDirtyWrites().length > 0 && !window.confirm("Discard unsaved weekly changes?")) {
+      return;
+    }
+    onClose();
+  }
 
   function setField(key: string, val: string) {
     setForm(f => ({ ...f, [key]: val }));
@@ -117,7 +152,7 @@ export function PriorityLogModal({ priority, onClose, onSuccess, logsOnly = fals
   }
 
   async function handleSave() {
-    if (tab === "weekly") return; // auto-saves
+    if (tab === "weekly") return; // weekly tab uses handleSaveWeekly
     const errs = validate();
     if (Object.keys(errs).length) { setErrors(errs); return; }
     setSaving(true);
@@ -138,13 +173,14 @@ export function PriorityLogModal({ priority, onClose, onSuccess, logsOnly = fals
     }
   }
 
-  async function handleWeeklyStatusChange(weekNumber: number, status: string) {
-    // Build the list of (week, status, notes) writes for this change. When the
-    // user marks a week as "completed", cascade Completed forward to every
-    // subsequent week up to the end of the quarter (week 13). Existing notes
-    // on cascaded weeks are preserved. If the priority's endWeek is shorter,
-    // it is auto-extended to 13 so the grid shows blue cells (instead of
-    // out-of-range X markers) for those weeks.
+  // Status-pill click — BUFFERS the change locally; nothing is persisted until
+  // the user clicks "Save Weekly changes". When the user marks a week as
+  // "completed", cascade Completed forward to every subsequent week up to the
+  // end of the quarter (week 13); existing notes on cascaded weeks are
+  // preserved. If the priority's endWeek is shorter, the grid auto-extends to
+  // 13 locally so the cascaded weeks are visible — the extend is committed to
+  // the priority on Save (handleSaveWeekly).
+  function handleWeeklyStatusChange(weekNumber: number, status: string) {
     const QUARTER_END = 13;
     const currentEnd = parseInt(form.endWeek) || QUARTER_END;
     const cascadeUpper = status === "completed" ? QUARTER_END : currentEnd;
@@ -159,59 +195,48 @@ export function PriorityLogModal({ priority, onClose, onSuccess, logsOnly = fals
       }
     }
 
-    // Snapshot for rollback
-    const previous: Record<number, { status: string; notes: string }> = {};
-    for (const wr of writes) {
-      previous[wr.weekNumber] = weeklyData[wr.weekNumber] ?? { status: "", notes: "" };
-    }
-    const previousEndWeek = form.endWeek;
-    const shouldExtendEndWeek = status === "completed" && currentEnd < QUARTER_END;
-
-    // Optimistic update — apply all writes at once
     setWeeklyData(prev => {
       const next = { ...prev };
       for (const wr of writes) next[wr.weekNumber] = { status: wr.status, notes: wr.notes };
       return next;
     });
-    if (shouldExtendEndWeek) {
+    if (status === "completed" && currentEnd < QUARTER_END) {
       setForm(f => ({ ...f, endWeek: String(QUARTER_END) }));
     }
-
-    try {
-      // Send ALL the week writes in ONE batch request so the change history
-      // groups a multi-week save (e.g. the Completed cascade) into a single
-      // "Bulk weekly update" card (≥3 weeks) instead of N separate entries.
-      // A single-week click sends one input and still logs one WEEKLY_UPDATE.
-      await Promise.all([
-        updateWeeklyStatusesBatch.mutateAsync(
-          writes.map(wr => ({ weekNumber: wr.weekNumber, status: wr.status, notes: wr.notes })),
-        ),
-        ...(shouldExtendEndWeek
-          ? [updatePriority.mutateAsync({ endWeek: QUARTER_END } as any)]
-          : []),
-      ]);
-    } catch {
-      // revert all writes on error
-      setWeeklyData(prev => {
-        const next = { ...prev };
-        for (const [wStr, val] of Object.entries(previous)) {
-          next[parseInt(wStr, 10)] = val;
-        }
-        return next;
-      });
-      if (shouldExtendEndWeek) {
-        setForm(f => ({ ...f, endWeek: previousEndWeek }));
-      }
-    }
+    setSavedFlash(false);
   }
 
-  async function handleWeeklyNotesBlur(weekNumber: number) {
-    const current = weeklyData[weekNumber];
-    if (!current) return;
+  // Persist all buffered weekly edits in ONE batch request. The server groups
+  // ≥3 changed weeks into a single "Bulk weekly update" card; 1–2 changed weeks
+  // become individual WEEKLY_UPDATE entries. An auto-extended endWeek (from a
+  // Completed cascade) is committed alongside in the same save.
+  async function handleSaveWeekly() {
+    const writes = getDirtyWrites();
+    const QUARTER_END = 13;
+    const originalEnd = priority.endWeek ?? QUARTER_END;
+    const nextEnd = parseInt(form.endWeek) || QUARTER_END;
+    const shouldExtendEndWeek = nextEnd > originalEnd;
+    if (!writes.length && !shouldExtendEndWeek) return;
+
+    setSaving(true);
+    setErrors({});
     try {
-      await updateWeeklyStatus.mutateAsync({ weekNumber, status: current.status, notes: current.notes });
-    } catch {
-      // ignore
+      await Promise.all([
+        ...(writes.length ? [updateWeeklyStatusesBatch.mutateAsync(writes)] : []),
+        ...(shouldExtendEndWeek
+          ? [updatePriority.mutateAsync({ endWeek: nextEnd } as any)]
+          : []),
+      ]);
+      // Re-baseline to the just-saved buffer so the Save button disables until
+      // the next edit (the dirty diff is now empty).
+      setBaseline({ ...weeklyData });
+      setSavedFlash(true);
+      onSuccess();
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : "Failed to save weekly changes";
+      setErrors({ _: msg });
+    } finally {
+      setSaving(false);
     }
   }
 
@@ -220,7 +245,7 @@ export function PriorityLogModal({ priority, onClose, onSuccess, logsOnly = fals
 
   return (
     <div className="fixed inset-0 z-[200] flex">
-      <div className="absolute inset-0 bg-black/40" onClick={onClose} />
+      <div className="absolute inset-0 bg-black/40" onClick={requestClose} />
       <div className="relative ml-auto h-full w-[520px] bg-white shadow-2xl flex flex-col">
         {/* Header */}
         <div className="flex items-center justify-between px-6 py-4 border-b border-gray-200 flex-shrink-0">
@@ -230,7 +255,7 @@ export function PriorityLogModal({ priority, onClose, onSuccess, logsOnly = fals
               {fiscalYearLabel(priority.year)} · {priority.quarter}
             </p>
           </div>
-          <button onClick={onClose} className="p-1.5 rounded-md hover:bg-gray-100 text-gray-400 hover:text-gray-600">
+          <button onClick={requestClose} className="p-1.5 rounded-md hover:bg-gray-100 text-gray-400 hover:text-gray-600">
             <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
             </svg>
@@ -351,7 +376,7 @@ export function PriorityLogModal({ priority, onClose, onSuccess, logsOnly = fals
               <p className="text-[11px] text-gray-400">
                 {logsOnly
                   ? `Weekly status log for weeks ${startWeek} – ${endWeek} (read-only).`
-                  : `Showing weeks ${startWeek} – ${endWeek}. Status saves automatically.`}
+                  : `Showing weeks ${startWeek} – ${endWeek}. Update statuses & notes, then click Save Weekly changes.`}
               </p>
               {Array.from({ length: endWeek - startWeek + 1 }, (_, i) => startWeek + i).map(weekNum => {
                 const data = weeklyData[weekNum] ?? { status: "", notes: "" };
@@ -388,8 +413,7 @@ export function PriorityLogModal({ priority, onClose, onSuccess, logsOnly = fals
                     </div>
                     <textarea
                       value={data.notes}
-                      onChange={e => setWeeklyData(prev => ({ ...prev, [weekNum]: { ...prev[weekNum], status: prev[weekNum]?.status ?? "", notes: e.target.value } }))}
-                      onBlur={() => handleWeeklyNotesBlur(weekNum)}
+                      onChange={e => { setWeeklyData(prev => ({ ...prev, [weekNum]: { ...prev[weekNum], status: prev[weekNum]?.status ?? "", notes: e.target.value } })); setSavedFlash(false); }}
                       readOnly={weekLocked}
                       placeholder={weekLocked ? "" : "Notes for this week…"}
                       title={weekTitle}
@@ -415,7 +439,22 @@ export function PriorityLogModal({ priority, onClose, onSuccess, logsOnly = fals
 
         {/* Footer */}
         <div className="flex items-center justify-end gap-2 px-6 py-4 border-t border-gray-200 flex-shrink-0">
-          <button onClick={onClose}
+          {/* Dirty / saved hint (weekly tab only) */}
+          {tab === "weekly" && !logsOnly && canUpdate && (() => {
+            const dirtyCount = getDirtyWrites().length;
+            if (dirtyCount > 0) {
+              return (
+                <span className="mr-auto text-[10px] text-amber-600 italic">
+                  {dirtyCount} week{dirtyCount === 1 ? "" : "s"} changed — unsaved
+                </span>
+              );
+            }
+            if (savedFlash) {
+              return <span className="mr-auto text-[10px] text-green-600 italic">Saved ✓</span>;
+            }
+            return null;
+          })()}
+          <button onClick={requestClose}
             className="px-4 py-2 text-xs border border-gray-200 rounded-lg hover:bg-gray-50 text-gray-600 transition-colors">
             Cancel
           </button>
@@ -431,8 +470,17 @@ export function PriorityLogModal({ priority, onClose, onSuccess, logsOnly = fals
               Save Changes
             </button>
           )}
-          {tab === "weekly" && (
-            <span className="text-[10px] text-gray-400 italic">Changes save automatically</span>
+          {canUpdate && tab === "weekly" && !logsOnly && (
+            <button onClick={handleSaveWeekly} disabled={saving || getDirtyWrites().length === 0}
+              className="flex items-center gap-1.5 px-4 py-2 bg-gray-900 text-white text-xs font-medium rounded-lg hover:bg-gray-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors">
+              {saving && (
+                <svg className="h-3.5 w-3.5 animate-spin" fill="none" viewBox="0 0 24 24">
+                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+                </svg>
+              )}
+              Save Weekly changes
+            </button>
           )}
         </div>
       </div>

@@ -16,6 +16,7 @@ import { isOrgAdmin, getMyTeamIds } from "@/lib/api/visibility";
 import { fetchAuditUserMap, decorateAudit } from "@/lib/api/auditUsers";
 import { audit, requestContext } from "@/lib/audit";
 import { searchUserIds, dateSearchConditions, numericSearchValue } from "@/lib/api/listSearch";
+import { publishRealtime } from "@quikit/realtime/server";
 
 
 // GET /api/kpi - List KPIs with filters and pagination
@@ -248,6 +249,7 @@ export const GET = auth.view(async ({ orgId, userId }, req) => {
       targetScale: true,
       reverseColor: true,
       frequency: true,
+      importedFromOpsp: true,
       createdAt: true,
       updatedAt: true,
       createdBy: true,
@@ -483,6 +485,7 @@ export const POST = auth.create(async ({ orgId, userId }, req) => {
       targetScale: validated.targetScale ?? null,
       reverseColor: validated.reverseColor ?? false,
       frequency: validated.frequency ?? "weekly",
+      importedFromOpsp: validated.importedFromOpsp ?? false,
       createdBy: userId,
     },
     select: {
@@ -673,6 +676,18 @@ export const POST = auth.create(async ({ orgId, userId }, req) => {
       console.error("[POST /api/kpi] notifyKPIAssignment failed:", err);
     });
   }
+
+  await publishRealtime({
+    entity: "kpi",
+    action: "created",
+    id: kpi.id,
+    orgId,
+    teamId: kpi.teamId,
+    ownerId: kpi.owner,
+    year: kpi.year ?? undefined,
+    quarter: kpi.quarter ?? undefined,
+    actorUserId: userId,
+  });
 
   return NextResponse.json({ success: true, data: kpi, message: "KPI created successfully" }, { status: 201 });
 });

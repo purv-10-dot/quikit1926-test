@@ -10,6 +10,7 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import type { PriorityRow } from "@/lib/types/priority";
 import { createCRUDHook } from "./createCRUDHook";
+import { invalidateEntity } from "@/lib/hooks/dashboardInvalidation";
 
 export interface PriorityFilters {
   year: number;
@@ -117,9 +118,8 @@ export function useUpdateWeeklyStatus(priorityId: string) {
     mutationFn: (body: { weekNumber: number; status: string; notes?: string }) =>
       updateWeeklyStatus(priorityId, body),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: priority.keys.detail(priorityId) });
-      queryClient.invalidateQueries({ queryKey: priority.keys.lists() });
-      queryClient.invalidateQueries({ queryKey: ["dashboard"] });
+      // detail + list + dashboard + dashboard-infinite (single source of truth).
+      invalidateEntity(queryClient, "priority", { id: priorityId });
     },
   });
 }
@@ -149,9 +149,7 @@ export function useUpdateWeeklyStatusesBatch(priorityId: string) {
   return useMutation({
     mutationFn: (inputs: WeeklyStatusWrite[]) => updateWeeklyStatusesBatch(priorityId, inputs),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: priority.keys.detail(priorityId) });
-      queryClient.invalidateQueries({ queryKey: priority.keys.lists() });
-      queryClient.invalidateQueries({ queryKey: ["dashboard"] });
+      invalidateEntity(queryClient, "priority", { id: priorityId });
     },
   });
 }

@@ -12,6 +12,7 @@ import { notifyPriorityAssignment } from "@/lib/services/priorityNotifications";
 import { isOrgAdmin } from "@/lib/api/visibility";
 import { fetchAuditUserMap, decorateAudit } from "@/lib/api/auditUsers";
 import { searchUserIds, dateSearchConditions, numericSearchValue } from "@/lib/api/listSearch";
+import { publishRealtime } from "@quikit/realtime/server";
 
 const PRIORITY_SELECT = {
   id: true,
@@ -25,6 +26,7 @@ const PRIORITY_SELECT = {
   endWeek: true,
   overallStatus: true,
   notes: true,
+  importedFromOpsp: true,
   createdAt: true,
   updatedAt: true,
   createdBy: true,
@@ -174,7 +176,7 @@ export const POST = auth.create(async ({ orgId, userId }, req) => {
     const error = parsed.error.errors[0]?.message ?? "Invalid input";
     return NextResponse.json({ success: false, error }, { status: 400 });
   }
-  const { name, description, owner, teamId, quarter, year, startWeek, endWeek, overallStatus } = parsed.data;
+  const { name, description, owner, teamId, quarter, year, startWeek, endWeek, overallStatus, importedFromOpsp } = parsed.data;
 
   const created = await db.priority.create({
     data: {
@@ -188,6 +190,7 @@ export const POST = auth.create(async ({ orgId, userId }, req) => {
       startWeek: startWeek ?? null,
       endWeek: endWeek ?? null,
       overallStatus: overallStatus ?? "not-yet-started",
+      importedFromOpsp: importedFromOpsp ?? false,
       createdBy: userId,
     },
     select: PRIORITY_SELECT,
@@ -254,6 +257,18 @@ export const POST = auth.create(async ({ orgId, userId }, req) => {
       console.error("[POST /api/priority] notifyPriorityAssignment failed:", err);
     });
   }
+
+  await publishRealtime({
+    entity: "priority",
+    action: "created",
+    id: priority.id,
+    orgId,
+    teamId: priority.teamId,
+    ownerId: priority.owner,
+    year: priority.year ?? undefined,
+    quarter: priority.quarter ?? undefined,
+    actorUserId: userId,
+  });
 
   return NextResponse.json({ success: true, data: priority }, { status: 201 });
 });
