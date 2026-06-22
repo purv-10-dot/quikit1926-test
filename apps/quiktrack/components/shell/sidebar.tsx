@@ -173,7 +173,7 @@ export function Sidebar() {
       <nav className="flex-1 py-2">
         <div className="px-2 space-y-0.5">
           {canSee("home") && (
-            <NavRow href="/dashboard" icon={User} label="For you" active={isActive("/dashboard")} />
+            <NavRow href="/dashboard" icon={User} label="For you" active={pathname === "/dashboard"} />
           )}
           {/* TODO: Recent + Plans + Starred + Apps — coming soon. Restore when ready.
           <div ref={recentRowRef}>
@@ -322,6 +322,7 @@ export function Sidebar() {
                 href="/dashboards/default"
                 icon={PieChart}
                 label="Default dashboard"
+                active={pathname === "/dashboards/default"}
                 indent
               />
               <div className="my-1.5" />
