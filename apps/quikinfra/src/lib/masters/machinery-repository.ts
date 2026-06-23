@@ -19,6 +19,9 @@ export interface MachineryRecord {
   locationId: string | null;
   fuelType: string | null;
   capacity: string | null;
+  meterType: string;
+  currentMeter: number | null;
+  fuelNorm: number | null;
   status: string;
   createdAt: string;
   updatedAt: string;
@@ -41,6 +44,9 @@ function toRecord(row: Prisma.CnMachineryGetPayload<Record<string, never>> & { p
     locationId: row.locationId ?? null,
     fuelType: row.fuelType ?? null,
     capacity: row.capacity ?? null,
+    meterType: row.meterType ?? "hour",
+    currentMeter: row.currentMeter != null ? Number(row.currentMeter) : null,
+    fuelNorm: row.fuelNorm != null ? Number(row.fuelNorm) : null,
     status: row.status,
     createdAt: row.createdAt?.toISOString?.() ?? "",
     updatedAt: row.updatedAt?.toISOString?.() ?? "",
@@ -75,6 +81,9 @@ function buildMachineryWhere(
   const q = (opts.search ?? "").trim();
   return {
     orgId: opts.orgId,
+    // "deleted" rows are removed from the UI entirely; "inactive" rows are
+    // still returned so they can show under the Inactive tab.
+    status: { not: "deleted" },
     ...(q
       ? {
           OR: [
@@ -200,7 +209,7 @@ export async function deleteMachinery(
 ): Promise<boolean> {
   const res = await db.cnMachinery.updateMany({
     where: { id, orgId },
-    data: { status: "inactive", updatedBy },
+    data: { status: "deleted", updatedBy },
   });
   return res.count > 0;
 }

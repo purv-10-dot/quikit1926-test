@@ -23,7 +23,7 @@ import {
   ChevronRight, Menu, X, Search,
   PanelLeftClose, PanelLeftOpen,
   LogOut, Users, MessageSquare,
-  AlertTriangle, Wallet, Wrench, ClipboardCheck, ListTree,
+  AlertTriangle, Wallet, Wrench, ClipboardCheck, ListTree, Gauge,
   type LucideIcon,
 } from "lucide-react";
 
@@ -204,6 +204,20 @@ const CONSTRUCTION_NAV: NavItem[] = [
       { label: "Inspection/Checklist", href: "/quality",        iconComponent: ClipboardCheck, requiredPermission: "quality.read" },
       { label: "Incidents",     href: "/safety/incidents",      iconComponent: AlertTriangle,  requiredPermission: "safety.read" },
       { label: "Toolbox Talks", href: "/safety/toolbox-talks",  iconComponent: MessageSquare,  requiredPermission: "safety.read" },
+    ],
+  },
+  { label: "MACHINERY & EQUIPMENT", isSection: true },
+  {
+    label: "Machinery & Equipment",
+    iconComponent: Hammer,
+    moduleKey: "machinery_equipment",
+    children: [
+      { label: "Equipment Log Book", href: "/equipment/log-book", iconComponent: Gauge, requiredPermission: "equipment.log.read" },
+      { label: "Maintenance", href: "/equipment/maintenance", iconComponent: Wrench, requiredPermission: "equipment.maintenance.read" },
+      { label: "Deployment & Compliance", href: "/equipment/deployment", iconComponent: Truck, requiredPermission: "equipment.deployment.read" },
+      { label: "Fleet Dashboard", href: "/equipment/fleet", iconComponent: BarChart3, requiredPermission: "equipment.fleet.read" },
+      { label: "Hire & Rent", href: "/equipment/hire-rent", iconComponent: ArrowLeftRight, requiredPermission: "equipment.hire_rent.read" },
+      { label: "Fixed Asset / Tools", href: "/equipment/fixed-assets", iconComponent: Boxes, requiredPermission: "equipment.fixed_assets.read" },
     ],
   },
   { label: "FINANCE", isSection: true },

@@ -84,8 +84,10 @@ describe("GET /api/masters/items — withListRoute", () => {
     db.cnItem.count.mockResolvedValue(0);
     db.cnUOM.findMany.mockResolvedValue([]);
     await GET(buildGET("status=all"));
-    // status=all opts into soft-deleted rows — no status filter at all.
-    expect(db.cnItem.findMany.mock.calls[0][0].where.status).toBeUndefined();
+    // status=all opts into inactive rows, but "deleted" rows are always hidden.
+    expect(db.cnItem.findMany.mock.calls[0][0].where.status).toEqual({
+      not: "deleted",
+    });
   });
 });
 

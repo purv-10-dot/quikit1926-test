@@ -54,7 +54,7 @@ const rules: ValidationRules<typeof emptyForm> = {
 };
 
 export default function TermsPage() {
-  const { data: result, isLoading } = useTermsConditions();
+  const { data: result, isLoading } = useTermsConditions({ status: "all" });
   const createMutation = useCreateTermsCondition();
   const updateMutation = useUpdateTermsCondition();
   const deleteMutation = useDeleteTermsCondition();
@@ -108,6 +108,7 @@ export default function TermsPage() {
   return (
     <>
       <MasterListPage title="Terms & Conditions" entityName="T&C Template" permissionUrl="/masters/terms" columns={columns}
+        showStatusTabs
         data={result?.data ?? []} total={result?.total ?? 0} isLoading={isLoading}
         canImport canExport
         historyEntityType="terms_condition"

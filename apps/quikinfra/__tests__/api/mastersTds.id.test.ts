@@ -96,7 +96,7 @@ describe("DELETE /api/masters/tds/[id]", () => {
     expect((await DELETE(req("DELETE"), params)).status).toBe(403);
   });
 
-  it("soft-deletes (status=inactive) within the org and returns success", async () => {
+  it("soft-deletes (status=deleted) within the org and returns success", async () => {
     setContext(makeAdminCtx());
     db.cnTDSCode.updateMany.mockResolvedValue({ count: 1 });
     const res = await DELETE(req("DELETE"), params);
@@ -104,7 +104,7 @@ describe("DELETE /api/masters/tds/[id]", () => {
     expect((await res.json()).success).toBe(true);
     const call = db.cnTDSCode.updateMany.mock.calls[0][0];
     expect(call.where).toMatchObject({ id: ID, orgId: TEST_TENANT });
-    expect(call.data.status).toBe("inactive");
+    expect(call.data.status).toBe("deleted");
   });
 
   it("returns 404 when nothing was deleted", async () => {

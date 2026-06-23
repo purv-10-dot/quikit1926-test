@@ -546,7 +546,7 @@ export default function PRDetailPage() {
                         value={sourceLocationId}
                         onChange={setSourceLocationId}
                         placeholder="Select location…"
-                        options={locations.map((l) => ({ value: l.id, label: l.name }))}
+                        options={locations.filter((l) => l?.status === "active").map((l) => ({ value: l.id, label: l.name }))}
                       />
                       <p className="text-[10px] text-slate-500 mt-1.5">
                         Material Issue will be auto-created from this store on

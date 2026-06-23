@@ -7,6 +7,7 @@ import {
   listGSTCodes,
   countGSTCodes,
   createGSTCode,
+  findGSTCodeStatusByCode,
 } from "@/lib/masters/gst-codes-repository";
 import { parsePagination, paginateDb } from "@/lib/http/pagination";
 
@@ -68,8 +69,17 @@ export async function POST(req: NextRequest) {
     return NextResponse.json(record, { status: 201 });
   } catch (err: unknown) {
     if (getErrorCode(err) === "P2002") {
+      // The (orgId, code) unique constraint includes soft-deleted rows, so a
+      // code belonging to a deleted GST code still blocks re-creation. Tell the
+      // user which case they hit instead of a generic "already exists".
+      const existingStatus = await findGSTCodeStatusByCode(ctx.orgId, body.code);
+      const isDeleted = existingStatus === "deleted" || existingStatus === "inactive";
       return NextResponse.json(
-        { error: "A GST code with this HSN/SAC already exists" },
+        {
+          error: isDeleted
+            ? "This HSN/SAC code belongs to a GST code you deleted earlier, so the code is still reserved. Use a different code."
+            : "A GST code with this HSN/SAC already exists.",
+        },
         { status: 409 },
       );
     }

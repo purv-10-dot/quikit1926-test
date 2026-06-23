@@ -233,10 +233,6 @@ All list routes are consumed by `MasterListPage`/master pages and the `masterFac
 | `/api/approvals/pending` | GET | USED (app code) | `reports/page.tsx`, `use-approvals.ts` |
 | `/api/approvals/[id]/[action]` | POST | USED (app code) | `use-approvals.ts`, `use-purchase.ts` (`/${id}/${action}`) |
 | `/api/approvals/[id]/history` | GET | USED (app code) | `use-approvals.ts` |
-| `/api/approvals/requests` | GET, POST | USED (tests only) | live flow uses `/api/approvals/[id]/[action]` + `inbox`/`pending` |
-| `/api/approvals/requests/[id]` | GET, PATCH | USED (tests only) | tests only |
-| `/api/approvals/rules` | GET, POST | USED (tests only) | `__tests__/api/approvalsRules.test.ts`; no app caller found |
-| `/api/approvals/rules/[id]` | DELETE | USED (tests only) | tests only |
 
 ### Org & Settings
 
@@ -391,8 +387,6 @@ All models live in the `app_quikinfra` Postgres schema.
 | CnApprovalWorkflowStep | `Approval_workflow_steps` | USED | approval engine |
 | CnApprovalInstance | `Approval_instances` | USED | approval engine (very heavy use) |
 | CnApprovalHistory | `Approval_history` | USED | approval engine / history route |
-| CnApprovalRule | *(none — `CnApprovalRule`)* | USED | `lib/approvals.ts:22` |
-| CnApprovalRequest | *(none — `CnApprovalRequest`)* | USED | `lib/approvals.ts:33` |
 | CnIdempotencyKey | `Idempotency_keys` | USED | workflow idempotency guard |
 
 ### Quality / Safety
@@ -418,8 +412,6 @@ All models live in the `app_quikinfra` Postgres schema.
 ### Routes with no app-code caller (tests only, or caller disabled)
 No route is completely unreferenced, but these have **no live app caller** — candidates for removal or wiring:
 
-- `/api/approvals/requests` and `/api/approvals/requests/[id]` — tests only (live flow uses `/api/approvals/[id]/[action]` + `inbox`/`pending`).
-- `/api/approvals/rules` and `/api/approvals/rules/[id]` — tests only.
 - `/api/projects/[projectId]/rab/summary` — tests only.
 - `/api/org/users/[id]/role` — tests only; app references it only in a comment (role swap runs through `/api/settings/users/[id]`).
 - `/api/projects/dpr/weather` — tests only; caller in `DPRForm.tsx` is commented out.
