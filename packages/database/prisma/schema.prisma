@@ -7837,6 +7837,55 @@ model CrmCallDisposition {
   @@schema("app_quikcrm")
 }
 
+// Activity-logging feature (Phase 1). Admin-configurable activity types +
+// their flat custom-field definitions. Modeled on CrmCallDisposition (a
+// per-org config table). Field VALUES are stored separately in an indexed
+// CrmActivityFieldValue table (Phase 2) — NOT a JSON blob — so the dashboard
+// and digests can aggregate/filter by field value. No cascading fields
+// (no dependsOnKey): the only consumer was the quarantined SMB flow.
+// See apps/quikcrm/ACTIVITY-FEATURE-DECISIONS.md.
+model CrmActivityType {
+  id        String   @id @default(cuid())
+  orgId     String
+  code      String
+  label     String
+  category  String?
+  config    Json?
+  sortOrder Int      @default(0)
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  fieldDefinitions CrmActivityFieldDefinition[]
+
+  @@unique([orgId, code])
+  @@index([orgId])
+  @@schema("app_quikcrm")
+}
+
+model CrmActivityFieldDefinition {
+  id             String   @id @default(cuid())
+  orgId          String
+  activityTypeId String
+  key            String
+  label          String
+  fieldType      String
+  requirement    String   @default("Optional")
+  options        Json?
+  visible        Boolean  @default(true)
+  helpText       String?
+  sortOrder      Int      @default(0)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  activityType CrmActivityType @relation(fields: [activityTypeId], references: [id], onDelete: Cascade)
+
+  @@unique([activityTypeId, key])
+  @@index([orgId])
+  @@index([activityTypeId])
+  @@schema("app_quikcrm")
+}
+
 model CrmCtcCallAudit {
   id               String   @id @default(cuid())
   orgId         String
