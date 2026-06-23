@@ -128,7 +128,7 @@ export function TaskTableView({ projectId }: Props) {
             <tr>
               <th className={`${HEAD_CELL} w-8`} />
               <HeaderCell Icon={Hash} label="Key" width="w-28" />
-              <HeaderCell Icon={AlignLeft} label="Task" width="w-[420px]" />
+              <HeaderCell Icon={AlignLeft} label="Work item" width="w-[420px]" />
               <HeaderCell Icon={GitBranch} label="Sprint" width="w-44" />
               <HeaderCell Icon={UserIcon} label="Assigned to" width="w-44" />
               <HeaderCell Icon={CheckSquare} label="Status" width="w-32" />

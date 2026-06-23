@@ -66,17 +66,17 @@ interface FilterOption {
 const ROW_HEADER: Record<GroupBy, string> = {
   user: "User",
   project: "Project",
-  issue: "Task",
-  "user-issue": "User / Task",
-  "epic-issue": "Epic / Task",
+  issue: "Work item",
+  "user-issue": "User / Work item",
+  "epic-issue": "Epic / Work item",
 };
 
 const GROUP_BY_LABEL: Record<GroupBy, string> = {
   user: "User",
   project: "Project",
-  issue: "Task",
-  "user-issue": "User → Task",
-  "epic-issue": "Epic → Task",
+  issue: "Work item",
+  "user-issue": "User → Work item",
+  "epic-issue": "Epic → Work item",
 };
 
 // Two-level hierarchy modes: a parent dimension over a Work-item leaf. Several
@@ -388,7 +388,7 @@ export function TimesheetView({
     if (!grid) return [];
     const header = [
       "User",
-      "Task",
+      "Work item",
       "Key",
       "Logged",
       ...range.days.map((d) => formatDayHeader(d)),
@@ -1078,7 +1078,7 @@ function MultiSelectFilter({
 const GROUP_DIMENSIONS: { key: "user" | "epic" | "issue" | "project"; label: string }[] = [
   { key: "user", label: "User" },
   { key: "epic", label: "Epic" },
-  { key: "issue", label: "Task" },
+  { key: "issue", label: "Work item" },
   { key: "project", label: "Project" },
 ];
 
