@@ -77,6 +77,28 @@ A general, admin-configurable ACTIVITY-LOGGING system in apps/quikcrm. Admins cr
     lands when that batched migration is applied. Until then: contract-verified,
     not DB-verified.
 
+    ### 2026-06-23 — P1 migration authored; first real-DB verification scheduled at the Phase-2 boundary
+
+12. **P1 migration is hand-authored idempotent SQL** (not `prisma migrate dev`),
+    matching the repo convention (QuikTrack custom-fields precedent: timestamped
+    dir, CREATE TABLE/INDEX IF NOT EXISTS, app_<schema> qualification, FK to
+    quikit."Org" with cascade, applied by hand — the build pipeline does not run
+    `migrate deploy`). Same "follow the working code" principle as decision #10.
+    File: packages/database/prisma/migrations/20260623120000_quikcrm_activity_types/migration.sql.
+    Honors decision #5 (a real committed migration, NOT db push). The
+    P1+P2-batch optimization (decision #5) is relaxed: P1 ships as its own
+    migration; CrmActivityFieldValue (P2) is NOT pulled forward (not built/tested).
+
+13. **First real-DB verification pass is scheduled at the PHASE-2 BOUNDARY,
+    before Phase 3 starts.** Set up local Postgres, apply the P1 (and then P2)
+    migration(s), and confirm against a real DB: the tables exist; the unique
+    constraints actually reject duplicates (CrmActivityType.orgId+code,
+    CrmActivityFieldDefinition.activityTypeId+key); the onDelete: Cascade
+    actually removes field definitions when a type is deleted; and the write
+    path works end-to-end. This CLOSES decision #11's mock/contract-level debt
+    for P1. Do NOT let DB verification stretch to the end of the build — it
+    happens at the P2 boundary, not later.
+
 
 ---
 
