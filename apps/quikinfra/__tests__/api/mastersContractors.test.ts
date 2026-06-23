@@ -66,6 +66,13 @@ describe("GET /api/masters/contractors — happy path", () => {
     expect(where.orgId).toBe(TEST_TENANT);
   });
 
+  it("excludes deleted rows so they leave the UI entirely", async () => {
+    db.cnContractor.findMany.mockResolvedValue([]);
+    await GET(buildGET());
+    const where = db.cnContractor.findMany.mock.calls[0][0].where;
+    expect(where.status).toEqual({ not: "deleted" });
+  });
+
   it("applies a search filter across code/name/contact", async () => {
     db.cnContractor.findMany.mockResolvedValue([]);
     await GET(buildGET("search=Acme"));

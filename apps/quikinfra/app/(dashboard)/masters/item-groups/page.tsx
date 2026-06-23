@@ -67,7 +67,7 @@ export default function ItemGroupsPage() {
 
   const allGroups = useMemo(() => (result?.data ?? []) as Row[], [result]);
   const workCategories = wcResult?.data ?? [];
-  const wcOptions = workCategories.map((w) => ({ value: w.id, label: w.name }));
+  const wcOptions = workCategories.filter((w) => w?.status === "active").map((w) => ({ value: w.id, label: w.name }));
 
   const handleImportRow = async (row: Record<string, string>) => {
     if (!row.name?.trim()) return { ok: false as const, error: "Group name is required" };
@@ -230,6 +230,7 @@ export default function ItemGroupsPage() {
   return (
     <>
       <MasterListPage title="Item Groups / Categories" entityName="Item Group" permissionUrl="/masters/item-groups" columns={columns}
+        showStatusTabs
         data={allGroups} total={result?.total ?? 0} isLoading={isLoading}
         canImport canExport
         historyEntityType="item_group"
@@ -242,8 +243,8 @@ export default function ItemGroupsPage() {
             Delete item group{" "}
             <span className="font-semibold text-gray-900">“{item.name}”</span>?
             <br />
-            It will be marked inactive and stay in the list. You can restore
-            it later via Edit.
+            It will be removed from the list. To keep an item group but pause it,
+            set its status to Inactive instead — those stay under the Inactive tab.
           </>
         )}
         emptyIcon={<Boxes className="w-8 h-8" />}

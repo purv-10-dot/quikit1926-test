@@ -59,6 +59,18 @@ describe("GroupedMaterialSelect", () => {
     fireEvent.click(screen.getByRole("button"));
     expect(screen.getByText("Loading items…")).toBeInTheDocument();
   });
+
+  it("hides inactive/deleted item groups from the picker", () => {
+    const groups: ItemGroupOption[] = [
+      { id: "g1", name: "Cement & Aggregates", status: "active" },
+      { id: "g2", name: "Steel", status: "inactive" },
+    ];
+    render(<GroupedMaterialSelect value="" onChange={() => {}} items={ITEMS} groups={groups} />);
+    fireEvent.click(screen.getByRole("button"));
+    expect(screen.getByText("Cement & Aggregates")).toBeInTheDocument();
+    // "Steel" is inactive → not selectable even though it still has items.
+    expect(screen.queryByText("Steel")).not.toBeInTheDocument();
+  });
 });
 
 describe("GroupedMaterialMultiSelect", () => {

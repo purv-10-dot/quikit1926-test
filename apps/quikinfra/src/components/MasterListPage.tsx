@@ -80,6 +80,13 @@ export interface MasterListPageProps<T extends { id: string; status?: string }> 
    */
   showStatusTabs?: boolean;
   /**
+   * When true, MasterListPage does NOT apply any status filtering — it renders
+   * exactly the rows passed in `data`. Use this when the page provides its own
+   * status filter UI (e.g. Vendors: All / Active / Inactive / Blacklisted) and
+   * needs inactive rows to be selectable. Mutually exclusive with showStatusTabs.
+   */
+  externalStatusFilter?: boolean;
+  /**
    * Entity type used to fetch real change-history from /api/history
    * for the per-row Approval Timeline drawer. When set, the drawer
    * shows merged audit log + approval history + the master row's own
@@ -136,6 +143,7 @@ export function MasterListPage<T extends { id: string; status?: string }>({
   emptyIcon, emptyDescription,
   filters,
   showStatusTabs = false,
+  externalStatusFilter = false,
   historyEntityType,
   permissionUrl,
 }: MasterListPageProps<T>) {
@@ -168,6 +176,8 @@ export function MasterListPage<T extends { id: string; status?: string }>({
   );
   const visibleData = useMemo(
     () => {
+      // Page owns the status filter (e.g. Vendors) — render data verbatim.
+      if (externalStatusFilter) return data;
       if (!showStatusTabs) {
         return data.filter((r) => (r as { status?: string })?.status !== "inactive");
       }
@@ -177,7 +187,7 @@ export function MasterListPage<T extends { id: string; status?: string }>({
       }
       return data.filter((r) => (r as { status?: string })?.status !== "inactive");
     },
-    [data, statusView, showStatusTabs],
+    [data, statusView, showStatusTabs, externalStatusFilter],
   );
 
   // Export always reflects the live master list — soft-deleted (inactive)
@@ -356,7 +366,7 @@ export function MasterListPage<T extends { id: string; status?: string }>({
             previous behavior of just hiding inactive rows. The Users
             page enables this so admins can find disabled accounts. */}
         {showStatusTabs && (effectiveOnDelete || effectiveOnRestore || effectiveOnEdit) ? (
-          <div className="mb-3 inline-flex items-center gap-0.5 bg-white rounded-xl ring-1 ring-slate-200 p-0.5 shadow-sm">
+          <div className="mb-3 inline-flex items-center gap-1 bg-slate-100 rounded-lg p-1">
             {(
               [
                 { key: "active", label: "Active" },
@@ -368,10 +378,10 @@ export function MasterListPage<T extends { id: string; status?: string }>({
                 key={tab.key}
                 type="button"
                 onClick={() => setStatusView(tab.key)}
-                className={`px-3 py-1.5 text-xs font-medium rounded-lg transition-colors ${
+                className={`px-3 py-1.5 text-xs font-medium rounded-md transition-colors ${
                   statusView === tab.key
-                    ? "bg-orange-50 text-orange-700 ring-1 ring-orange-200"
-                    : "text-slate-600 hover:bg-slate-50"
+                    ? "bg-white text-orange-700 shadow-sm"
+                    : "text-slate-600 hover:text-slate-900"
                 }`}
               >
                 {tab.label}
