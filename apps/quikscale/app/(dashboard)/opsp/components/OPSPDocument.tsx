@@ -619,6 +619,15 @@ export function OPSPDocument({
   const rocks5 = (form.rocks ?? []).filter((r) => r.desc && r.desc.trim());
   const kpis5 = (form.kpiAccountability ?? []).filter((r) => r.kpi && r.kpi.trim());
   const priorities5 = (form.quarterlyPriorities ?? []).filter((r) => r.priority && r.priority.trim());
+  // When a per-user section is empty (e.g. the user excluded it from the PDF
+  // download, or simply never filled it), render fixed-count BLANK rows so the
+  // section prints as a fill-in-the-blank form (header + 5 ruled rows) instead
+  // of an empty box. Sections with data render their real rows unchanged.
+  const ACCT_PLACEHOLDER_ROWS = 5;
+  const kpiRows = kpis5.length ? kpis5 : padTo([], ACCT_PLACEHOLDER_ROWS, { kpi: "", goal: "" });
+  const priorityRows = priorities5.length
+    ? priorities5
+    : padTo([], ACCT_PLACEHOLDER_ROWS, { priority: "", dueDate: "" });
 
   /* ── Goals compaction: when the user has more than the default 6 goal rows,
    * we render the Goals table in compact mode (tighter padding + minHeight) so
@@ -959,16 +968,16 @@ export function OPSPDocument({
                     <Text style={s.catProjHeaderText}>Goal</Text>
                   </View>
                 </View>
-                {kpis5.map((r, i) => (
+                {kpiRows.map((r, i) => (
                   <View
                     key={i}
-                    style={{ ...s.catProjRow, ...(i === kpis5.length - 1 ? s.catProjRowLast : {}) }}
+                    style={{ ...s.catProjRow, ...(i === kpiRows.length - 1 ? s.catProjRowLast : {}) }}
                   >
                     <View style={s.catProjCellCat}>
-                      <Text style={{ ...s.cellBodyText, ...(!r.kpi ? s.cellEmpty : {}) }}>{dash(r.kpi)}</Text>
+                      <Text style={{ ...s.cellBodyText, ...(!r.kpi ? s.cellEmpty : {}) }}>{r.kpi || ""}</Text>
                     </View>
                     <View style={s.catProjCellProj}>
-                      <Text style={{ ...s.cellBodyText, ...(!r.goal ? s.cellEmpty : {}) }}>{dash(r.goal)}</Text>
+                      <Text style={{ ...s.cellBodyText, ...(!r.goal ? s.cellEmpty : {}) }}>{r.goal || ""}</Text>
                     </View>
                   </View>
                 ))}
@@ -1008,17 +1017,17 @@ export function OPSPDocument({
                     <Text style={s.catProjHeaderText}>Due</Text>
                   </View>
                 </View>
-                {priorities5.map((r, i) => (
+                {priorityRows.map((r, i) => (
                   <View
                     key={i}
-                    style={{ ...s.catProjRow, ...(i === priorities5.length - 1 ? s.catProjRowLast : {}) }}
+                    style={{ ...s.catProjRow, ...(i === priorityRows.length - 1 ? s.catProjRowLast : {}) }}
                   >
                     <View style={s.catProjCellCat}>
-                      <Text style={{ ...s.cellBodyText, ...(!r.priority ? s.cellEmpty : {}) }}>{dash(r.priority)}</Text>
+                      <Text style={{ ...s.cellBodyText, ...(!r.priority ? s.cellEmpty : {}) }}>{r.priority || ""}</Text>
                     </View>
                     <View style={s.catProjCellProj}>
                       <Text style={{ ...s.cellBodyText, ...(!r.dueDate ? s.cellEmpty : {}) }}>
-                        {r.dueDate ? fmtDue(r.dueDate) : "—"}
+                        {r.dueDate ? fmtDue(r.dueDate) : ""}
                       </Text>
                     </View>
                   </View>

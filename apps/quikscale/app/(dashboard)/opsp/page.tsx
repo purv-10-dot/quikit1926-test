@@ -198,7 +198,6 @@ export default function OPSPPage() {
     lockedByStatus,
     isLocked,
     sectionsReadOnly,
-    needsCreateForEditFinalize,
     sectionsOnlyNotice,
   } = computeOpspEditability({
     isAdmin,
@@ -891,24 +890,6 @@ export default function OPSPPage() {
             requires the <span className="font-semibold">&quot;Edit after Finalize&quot;</span> permission.
             Enable it in <span className="font-semibold">Users &amp; Permissions</span> so you can update
             sections after the OPSP is finalized.
-          </div>
-        </div>
-      )}
-
-      {/* ── Req 4: holds "Edit after Finalize" but NOT "Create OPSP" ──
-         Edit-after-Finalize only lets you change the STRATEGIC plan, which needs
-         Create. Without Create the permission can't do what it implies, so warn
-         and point at the missing grant. (Admins author via their role, so this
-         is a non-admin nudge.) */}
-      {needsCreateForEditFinalize && (
-        <div className="mx-6 mt-6 flex items-start gap-3 px-4 py-3 bg-amber-50 border border-amber-200 rounded-xl text-amber-800 text-sm">
-          <AlertTriangle className="h-5 w-5 text-amber-600 flex-shrink-0" />
-          <div>
-            <span className="font-semibold">Create permission required.</span> The{" "}
-            <span className="font-semibold">&quot;Edit after Finalize&quot;</span> permission lets you edit a
-            finalized OPSP, but editing the strategic plan also needs{" "}
-            <span className="font-semibold">&quot;Create OPSP&quot;</span>. Ask an admin to grant Create OPSP
-            in <span className="font-semibold">Users &amp; Permissions</span>.
           </div>
         </div>
       )}
