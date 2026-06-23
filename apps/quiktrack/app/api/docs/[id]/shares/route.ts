@@ -41,6 +41,21 @@ interface UserLite {
   avatar: string | null;
 }
 
+/**
+ * The public origin the user actually hit (e.g. https://quiktrack.vercel.app),
+ * so emailed links use the real deployment host rather than a QUIKTRACK_URL env
+ * that may still be localhost in prod. Prefers the Origin header, then the
+ * forwarded host that Vercel sets.
+ */
+function requestOrigin(req: Request): string | null {
+  const origin = req.headers.get("origin");
+  if (origin) return origin;
+  const host = req.headers.get("x-forwarded-host") ?? req.headers.get("host");
+  if (!host) return null;
+  const proto = req.headers.get("x-forwarded-proto") ?? "https";
+  return `${proto}://${host}`;
+}
+
 function shapeUser(u: UserLite | undefined | null) {
   if (!u) return null;
   return {
@@ -141,6 +156,7 @@ export const POST = withOrgAuth<{ id: string }>(
         { status: 400 },
       );
     }
+    const reqOrigin = requestOrigin(req);
 
     // ── External invite (email): a per-recipient public link, view-only. ──
     if (parsed.data.email) {
@@ -230,6 +246,7 @@ export const POST = withOrgAuth<{ id: string }>(
               : null,
             role: "viewer",
             shareToken,
+            origin: reqOrigin,
           });
         } catch (e) {
           console.error("[email] doc external-share failed:", e instanceof Error ? e.message : e);
@@ -298,6 +315,7 @@ export const POST = withOrgAuth<{ id: string }>(
               ? [sharer.firstName, sharer.lastName].filter(Boolean).join(" ").trim() || sharer.email
               : null,
             role,
+            origin: reqOrigin,
           });
         }
       } catch (e) {

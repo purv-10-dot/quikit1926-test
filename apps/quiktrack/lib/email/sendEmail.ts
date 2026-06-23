@@ -495,10 +495,15 @@ export async function emailDocShared(args: {
   /** When set, link to the public /share/<token> page (external invites) rather
    *  than the in-app doc URL (which needs a login). */
   shareToken?: string | null;
+  /** Base URL to build the link from. Pass the request origin so links use the
+   *  real deployment host (Vercel) instead of a possibly-misconfigured
+   *  QUIKTRACK_URL env (which can still be localhost in prod). */
+  origin?: string | null;
 }): Promise<void> {
+  const base = args.origin || appUrl();
   const link = args.shareToken
-    ? `${appUrl()}/share/${args.shareToken}`
-    : `${appUrl()}/spaces/${args.projectId}/docs/${args.docId}`;
+    ? `${base}/share/${args.shareToken}`
+    : `${base}/spaces/${args.projectId}/docs/${args.docId}`;
   const verb = args.role === "editor" ? "edit" : "view";
   const html = shell({
     headerSubtitle: "Shared with you",
