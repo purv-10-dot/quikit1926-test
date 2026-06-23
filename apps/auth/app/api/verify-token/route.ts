@@ -45,13 +45,38 @@ export async function GET(req: NextRequest) {
   // Live org-status check: a suspended (or archived) org is no longer usable
   // even though the JWT still carries its id. No org selected → nothing to
   // gate, so treat as active. One indexed PK lookup per protected navigation.
+  //
+  // The same lookup also pulls the org's Subscription (nested join, no extra
+  // round-trip) to compute trial/subscription gating. Defaults are permissive:
+  // no org / no subscription row (grandfathered) / old host → active.
   let orgActive = true;
+  let subscriptionActive = true;
+  let trialExpired = false;
   if (activeOrgId) {
     const org = await db.org.findUnique({
       where: { id: activeOrgId },
-      select: { status: true },
+      select: {
+        status: true,
+        subscription: { select: { status: true, trialEndsAt: true } },
+      },
     });
     orgActive = org?.status === "active";
+
+    const sub = org?.subscription ?? null;
+    if (sub) {
+      const now = Date.now();
+      if (sub.status === "active") {
+        subscriptionActive = true;
+      } else if (sub.status === "trialing") {
+        const ok = Boolean(sub.trialEndsAt) && sub.trialEndsAt!.getTime() > now;
+        subscriptionActive = ok;
+        trialExpired = !ok;
+      } else {
+        // past_due | canceled | expired
+        subscriptionActive = false;
+        trialExpired = sub.status === "expired";
+      }
+    }
   }
   return NextResponse.json({
     valid: true,
@@ -61,5 +86,7 @@ export async function GET(req: NextRequest) {
     orgRole: token.membershipRole ?? null,
     isSuperAdmin: token.isSuperAdmin ?? false,
     orgActive,
+    subscriptionActive,
+    trialExpired,
   });
 }

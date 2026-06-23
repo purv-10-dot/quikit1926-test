@@ -101,10 +101,31 @@ export async function GET(req: NextRequest) {
   const orgAllows = orgId
     ? await db.orgAppAccess.findMany({
         where: { orgId, enabled: true },
-        select: { appId: true },
+        select: { appId: true, trialEndsAt: true },
       })
     : [];
   const orgAllowedAppIds = new Set(orgAllows.map((a) => a.appId));
+  // appId → trial expiry (null = no trial / grandfathered / upgraded → active).
+  const orgTrialMap = new Map(orgAllows.map((a) => [a.appId, a.trialEndsAt]));
+
+  // Per-app trial state used by the launcher's "Active" pills + gating.
+  function trialInfo(appId: string): {
+    trialEndsAt: string | null;
+    trialState: "active" | "trialing" | "expired";
+    daysLeft: number | null;
+  } {
+    const ends = orgTrialMap.get(appId) ?? null;
+    if (!ends) return { trialEndsAt: null, trialState: "active", daysLeft: null };
+    const ms = ends.getTime() - Date.now();
+    if (ms > 0) {
+      return {
+        trialEndsAt: ends.toISOString(),
+        trialState: "trialing",
+        daysLeft: Math.max(1, Math.ceil(ms / (24 * 60 * 60 * 1000))),
+      };
+    }
+    return { trialEndsAt: ends.toISOString(), trialState: "expired", daysLeft: 0 };
+  }
 
   // Per-user app access (FRD FR-OA-002 / FR-OA-003).
   //   - Map entry → user has been explicitly assigned this app; the value
@@ -190,8 +211,27 @@ export async function GET(req: NextRequest) {
     ...app,
     baseUrl: resolveBaseUrl(app.slug, app.baseUrl),
     installed: true, // visibility implies installed under the new rule
+    activated: true,
     role: userAppRoles.get(app.id) ?? (memberIsAdmin ? "admin" : "member"),
+    ...trialInfo(app.id),
   }));
+
+  // "Other Tools in Our Suite" — catalog apps the org has NOT activated yet,
+  // available to start a 14-day trial. Only org admins can activate, so this
+  // list is only meaningful (and only rendered) for them. The Admin Portal
+  // (requiresOrgAdmin) is excluded: it isn't a user-activatable product — it
+  // auto-activates alongside the first app the admin turns on.
+  const available = allApps
+    .filter((app) => !orgAllowedAppIds.has(app.id) && !app.requiresOrgAdmin)
+    .map((app) => ({
+      ...app,
+      baseUrl: resolveBaseUrl(app.slug, app.baseUrl),
+      activated: false,
+      trialEndsAt: null as string | null,
+      trialState: "none" as const,
+      daysLeft: null as number | null,
+      role: "member",
+    }));
 
   // Authoritative IdP URL for the AppSwitcher's "View all apps" link —
   // sourced server-side from QUIKIT_URL so clients don't have to rely on
@@ -201,7 +241,7 @@ export async function GET(req: NextRequest) {
     process.env.QUIKIT_URL ?? process.env.NEXTAUTH_URL ?? null;
 
   return NextResponse.json(
-    { success: true, data, quikitUrl },
+    { success: true, data, available, isOrgAdmin: memberIsAdmin, quikitUrl },
     {
       // No client cache — org switching from the launcher dropdown must
       // hit this endpoint each time so the tile list reflects the active

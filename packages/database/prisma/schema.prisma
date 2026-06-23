@@ -267,6 +267,7 @@ model Org {
   tenantAppAccess         OrgAppAccess[]
   users                   OrgMember[]
   userAppAccess           UserAppAccess[]
+  subscription            Subscription?
 
   @@index([slug])
   @@index([status])
@@ -1875,6 +1876,10 @@ model OrgAppAccess {
   appId     String
   enabled   Boolean  @default(true)
   reason    String?
+  /// Per-app free-trial expiry for self-serve activation. null = no trial
+  /// (grandfathered access granted by an admin, or an upgraded/paid app) →
+  /// treated as active. A future date = trialing; a past date = expired.
+  trialEndsAt DateTime?
   updatedBy String?
   updatedAt DateTime @updatedAt
   createdAt DateTime @default(now())
@@ -1884,6 +1889,28 @@ model OrgAppAccess {
   @@unique([orgId, appId])
   @@index([orgId])
   @@index([appId])
+  @@schema("quikit")
+}
+
+/// Per-org subscription / trial state (self-serve registration). Additive: an
+/// org with NO Subscription row is implicitly grandfathered (treated as active)
+/// by every read path, so the pre-existing orgs are never gated. Self-serve
+/// registrations start as `trialing` with a 14-day `trialEndsAt`. References
+/// public.Plan.slug by value only (no FK — mirrors the Org.plan convention).
+model Subscription {
+  id               String    @id @default(cuid())
+  orgId            String    @unique
+  status           String    @default("trialing") // trialing|active|past_due|canceled|expired
+  planSlug         String    @default("startup")
+  trialEndsAt      DateTime?
+  currentPeriodEnd DateTime?
+  source           String? // self_serve_registration|backfill|super_admin
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
+  org              Org       @relation(fields: [orgId], references: [id], onDelete: Cascade)
+
+  @@index([status])
+  @@index([trialEndsAt])
   @@schema("quikit")
 }
 
