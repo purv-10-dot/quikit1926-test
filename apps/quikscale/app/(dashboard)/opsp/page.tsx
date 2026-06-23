@@ -37,6 +37,7 @@ import { OPSPHistoryDrawer } from "./components/OPSPHistoryDrawer";
 import { describeSetChange, describeArrChange, getFieldValue, applyFieldPath, type PendingEdit } from "./lib/editLog";
 import { isYearSelectable, isQuarterSelectable, firstSelectableQuarter } from "./lib/periodGating";
 import { useOpspAck } from "@/lib/hooks/useOpspAck";
+import { computeOpspEditability } from "@/lib/utils/opspEditability";
 import { editedFieldPaths, fieldMatchesEdited, editsSince, latestEdit, type EditLogLike } from "@/lib/utils/opspEditHighlight";
 
 /* ═══════════════════════════════════════════════
@@ -179,28 +180,34 @@ export default function OPSPPage() {
   // Special permission: edit ANOTHER user's per-user sections (drives the user
   // picker + lets the section writes target a different user).
   const canEditUser = myPerms.has("OPSP.EditUser", "update");
-  // RBAC v2: editing the OPSP requires `update`; admins bypass.
-  const canUpdateOPSPCreate = isAdmin || myPerms.has("OPSP.Create", "update");
-  const statusLocked = form.status === "finalized" || form.status === "reviewed";
-  // Once the OPSP Review has been submitted (`reviewed`), the OPSP is locked for
-  // EVERYONE — even users with `OPSP.History.EditFinalize:update`. Editing it
-  // would invalidate a review that's already been finalized against its targets.
-  const reviewSubmitted = form.status === "reviewed";
-  // The org-wide finalize lock, independent of WHICH part of the form. Reviewed
-  // is a hard lock for everyone; merely-finalized is unlocked by EditFinalize.
-  const lockedByStatus = reviewSubmitted || (statusLocked && !canEditFinalized);
-  // Is the admin viewing/editing ANOTHER user's per-user sections (via picker)?
+  // RBAC v2 capability model for the OPSP create page:
+  //   - STRATEGIC plan (People/Process/Targets/Goals/Actions/…) → authoring the
+  //     whole plan needs `OPSP.Create:create` (admins bypass).
+  //   - OWN per-user sections (Accountability / Quarterly Priorities / Critical
+  //     # / Balanced Critical #) → any user who can VIEW the OPSP may fill their
+  //     own; reaching this page already implies `OPSP.Create:view`.
+  const canCreateOPSP = isAdmin || myPerms.has("OPSP.Create", "create");
+  // Is the user viewing/editing ANOTHER user's per-user sections (via picker)?
   const viewingOtherUser = sectionUserId != null;
-  // STRATEGIC sections (PEOPLE/PROCESS/Targets/Goals/…) are admin-only and lock
-  // with the org-wide finalize. `isLocked` keeps its name (and semantics) for the
-  // existing edit-after-finalize machinery: note card, autosave suspend, history.
-  const isLocked = !isAdmin || lockedByStatus || !canUpdateOPSPCreate;
-  // PER-USER sections (Accountability / Quarterly Priorities / Critical # /
-  // Balanced Critical #): editable by the section owner (OPSP.Create:update) or,
-  // for another user, by an admin with OPSP.EditUser:update — under the same
-  // org-wide finalize lock.
-  const sectionsReadOnly =
-    lockedByStatus || (viewingOtherUser ? !canEditUser : !canUpdateOPSPCreate);
+  // Single source of truth for the OPSP edit gates + banner flags. `isLocked`
+  // (STRATEGIC) and `sectionsReadOnly` (per-user) keep their names/semantics for
+  // the existing edit-after-finalize machinery (note card, autosave, history).
+  const {
+    statusLocked,
+    reviewSubmitted,
+    lockedByStatus,
+    isLocked,
+    sectionsReadOnly,
+    needsCreateForEditFinalize,
+    sectionsOnlyNotice,
+  } = computeOpspEditability({
+    isAdmin,
+    canCreate: canCreateOPSP,
+    canEditFinalized,
+    canEditUser,
+    status: form.status,
+    viewingOtherUser,
+  });
   // The four per-user section form keys (routed to OPSPUserSection on save).
   const SECTION_KEYS = new Set([
     "kpiAccountability",
@@ -230,7 +237,7 @@ export default function OPSPPage() {
   // finalized OPSP (the same predicate that drives the amber "Editing enabled"
   // banner) — they're the ones who lost edit access because the review was
   // submitted. Everyone else just sees the standard green "Finalized — read-only".
-  const reviewLockBanner = reviewSubmitted && canEditFinalized && canUpdateOPSPCreate;
+  const reviewLockBanner = reviewSubmitted && canEditFinalized && canCreateOPSP;
 
   /* ── Edit-after-finalize change logging ──
      Active only in the amber "Editing enabled" state (finalized, editable, not
@@ -888,13 +895,20 @@ export default function OPSPPage() {
         </div>
       )}
 
-      {/* ── Non-admin: no edit permission → fully read-only ── */}
-      {!isAdmin && !canUpdateOPSPCreate && (
-        <div className="mx-6 mt-6 flex items-start gap-3 px-4 py-3 bg-accent-50 border border-accent-200 rounded-xl text-accent-700 text-sm">
-          <Eye className="h-5 w-5 flex-shrink-0" />
+      {/* ── Req 4: holds "Edit after Finalize" but NOT "Create OPSP" ──
+         Edit-after-Finalize only lets you change the STRATEGIC plan, which needs
+         Create. Without Create the permission can't do what it implies, so warn
+         and point at the missing grant. (Admins author via their role, so this
+         is a non-admin nudge.) */}
+      {needsCreateForEditFinalize && (
+        <div className="mx-6 mt-6 flex items-start gap-3 px-4 py-3 bg-amber-50 border border-amber-200 rounded-xl text-amber-800 text-sm">
+          <AlertTriangle className="h-5 w-5 text-amber-600 flex-shrink-0" />
           <div>
-            <span className="font-semibold">Read-only view.</span> You don&apos;t have permission to edit
-            the OPSP, so every section is view-only.
+            <span className="font-semibold">Create permission required.</span> The{" "}
+            <span className="font-semibold">&quot;Edit after Finalize&quot;</span> permission lets you edit a
+            finalized OPSP, but editing the strategic plan also needs{" "}
+            <span className="font-semibold">&quot;Create OPSP&quot;</span>. Ask an admin to grant Create OPSP
+            in <span className="font-semibold">Users &amp; Permissions</span>.
           </div>
         </div>
       )}
@@ -910,19 +924,21 @@ export default function OPSPPage() {
         </div>
       )}
 
-      {/* ── Non-admin with edit rights, pre-finalize: only the 4 sections ── */}
-      {!isAdmin && canUpdateOPSPCreate && !statusLocked && (
+      {/* ── Non-admin WITHOUT Create, pre-finalize: only the 4 own sections ──
+         (With Create they author the full plan, so no restrictive banner.) */}
+      {sectionsOnlyNotice && (
         <div className="mx-6 mt-6 flex items-start gap-3 px-4 py-3 bg-blue-50 border border-blue-200 rounded-xl text-blue-800 text-sm">
           <svg className="h-5 w-5 text-blue-600 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" /></svg>
           <div>
             <span className="font-semibold">You can edit only:</span> Your Accountability · Quarterly
-            Priorities · Critical Number · Balanced Critical Number. All other sections are read-only.
+            Priorities · Critical Number · Balanced Critical Number. All other sections are read-only
+            (the full strategic plan needs the <span className="font-semibold">Create OPSP</span> permission).
           </div>
         </div>
       )}
 
-      {/* ── Non-admin, finalized: sections locked, contact the responsible admin ── */}
-      {!isAdmin && statusLocked && (
+      {/* ── Non-admin, finalized without Edit-after-Finalize: sections locked ── */}
+      {!isAdmin && lockedByStatus && (
         <div className="mx-6 mt-6 flex items-start gap-3 px-4 py-3 bg-red-50 border border-red-200 rounded-xl text-red-800 text-sm">
           <svg className="h-5 w-5 text-red-600 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" /></svg>
           <div>

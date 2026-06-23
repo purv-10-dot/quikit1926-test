@@ -358,8 +358,13 @@ export const GET = auth.view(async ({ orgId, userId }, req) => {
   });
 });
 
-/* ── PUT: upsert (autosave) ── */
-export const PUT = auth.update(async ({ orgId, userId }, req) => {
+/* ── PUT: upsert (autosave) ──
+   Gated on `view` (not `update`): any user who can VIEW the OPSP may save their
+   OWN per-user sections (Accountability / Priorities / Critical #s). Writing the
+   STRATEGIC plan additionally requires `OPSP.Create:create` (enforced per-field
+   below), and editing ANOTHER user's sections requires `OPSP.EditUser:update`
+   (via resolveSectionUserId). */
+export const PUT = auth.view(async ({ orgId, userId }, req) => {
   const parsed = opspUpsertSchema.safeParse(await req.json());
   if (!parsed.success) return validationError(parsed, "Invalid OPSP payload");
   const { year, quarter, ...rest } = parsed.data;
@@ -443,13 +448,16 @@ export const PUT = auth.update(async ({ orgId, userId }, req) => {
 
   // ── Strategic fields → org-shared OPSPData (canonical owner). Written FIRST so
   //    a failure in the per-user section layer can never lose the shared plan.
-  //    Only admins may edit the strategic plan; non-admins' autosave payloads
-  //    carry read-only strategic fields we must ignore (the page disables them,
-  //    but the server is the source of truth). ──
-  const callerIsAdmin = await isOrgAdmin(userId, orgId);
+  //    Authoring the strategic plan requires `OPSP.Create:create` (admins
+  //    bypass). A view-only / per-user-only caller's autosave payload still
+  //    carries read-only strategic fields, which we ignore here (the page
+  //    disables them, but the server is the source of truth). ──
+  const callerCanCreate =
+    (await isOrgAdmin(userId, orgId)) ||
+    (await userCan(userId, orgId, "OPSP.Create", "create"));
   const strategicKeys = Object.keys(fields);
   let data: { id: string } | null = null;
-  if (callerIsAdmin && strategicKeys.length > 0) {
+  if (callerCanCreate && strategicKeys.length > 0) {
     data = await db.oPSPData.upsert({
       where: {
         orgId_userId_year_quarter: { orgId, userId: ownerId, year: yearNum, quarter },

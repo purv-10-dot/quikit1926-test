@@ -921,10 +921,10 @@ export default function OPSPReviewPage() {
       align: "center",
       render: (row) => {
         if (!row.isFirstInGroup) return null;
-        // On Yearly / 3-5yr the row is read-only (Achieved is derived from
-        // the lower horizon) — render as plain text instead of an edit
-        // button so the modal can't be opened.
-        if (horizon !== "quarter") {
+        // Read-only as plain text when: Yearly/3-5yr (Achieved is derived from
+        // the lower horizon) OR the user lacks OPSP.Review:update. Only an
+        // update-holder editing the Quarter source gets the edit button.
+        if (horizon !== "quarter" || !canUpdateReview) {
           return <span className="text-gray-700 font-medium">{row.rowIndex + 1}</span>;
         }
         return (
@@ -1061,7 +1061,7 @@ export default function OPSPReviewPage() {
     // row in those views, so the column adds no info (and the categoryType
     // label "Cumulative / Exit / Average" already lives in the Cat Type column).
     return horizon === "quarter" ? cols : cols.filter((c) => c.key !== "period");
-  }, [primarySel, primaryCategoryIdxs, horizon, openPrimaryModal]);
+  }, [primarySel, primaryCategoryIdxs, horizon, openPrimaryModal, canUpdateReview]);
 
   const secondaryIdxs = useMemo(
     () => filteredSecondary.map((r) => r.index),
@@ -1118,14 +1118,17 @@ export default function OPSPReviewPage() {
       label: "#",
       width: 44,
       align: "center",
-      render: (row) => (
-        <button
-          onClick={() => openSecondaryModal(row.index)}
-          className="text-gray-900 hover:underline font-medium"
-        >
-          {row.index + 1}
-        </button>
-      ),
+      render: (row) =>
+        canUpdateReview ? (
+          <button
+            onClick={() => openSecondaryModal(row.index)}
+            className="text-gray-900 hover:underline font-medium"
+          >
+            {row.index + 1}
+          </button>
+        ) : (
+          <span className="text-gray-700 font-medium">{row.index + 1}</span>
+        ),
     },
     {
       // Owner ("Who") — resolved server-side into `ownerName`. Hidden for the
@@ -1180,7 +1183,7 @@ export default function OPSPReviewPage() {
     // 3-5yr (Key Thrusts) — owner column intentionally hidden per spec; the
     // capability rows on this horizon don't carry per-row ownership.
     return showOpspReviewOwnerColumn(horizon) ? cols : cols.filter((c) => c.key !== "who");
-  }, [secondarySel, secondaryIdxs, horizon, openSecondaryModal]);
+  }, [secondarySel, secondaryIdxs, horizon, openSecondaryModal, canUpdateReview]);
 
   /* ═══════════════════════════════════════════════
      Render
