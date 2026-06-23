@@ -1047,7 +1047,10 @@ export default function DashboardPage() {
   const numberFormat = useNumberFormat();
 
   /* ── Consolidated dashboard data — one API call instead of six ─────── */
-  const { data: summary, isLoading } = useDashboardSummary({ year, quarter });
+  // `refetchSummary` re-runs the consolidated query (KPI overview cards + grid +
+  // export + filter dropdowns); `summaryFetching` is true during any in-flight
+  // fetch. Both feed the manual Reload button below.
+  const { data: summary, isLoading, refetch: refetchSummary, isFetching: summaryFetching } = useDashboardSummary({ year, quarter });
   const summaryData = summary?.data;
   // Each of these uses `?? []` which would create a fresh array on every
   // render when the source is undefined — that breaks downstream useMemo
@@ -1404,6 +1407,41 @@ export default function DashboardPage() {
   const handlePriSort = (col: string, dir: "asc" | "desc") => { setPriSortBy(col); setPriSortOrder(dir); };
   const handleWwwSort = (col: string, dir: "asc" | "desc") => { setWwwSortBy(col); setWwwSortOrder(dir); };
 
+  // ── Manual "Reload" — revalidate all dashboard data in place ──────────────
+  // Re-runs react-query's existing queries (the SWR `mutate()`/`revalidate()`
+  // equivalent): the consolidated summary blob (KPI overview cards/grid) plus
+  // the three infinite-scroll tables (KPI / Priority / WWW). It does NOT touch
+  // any business logic, filters, sort, or pagination — it only refetches the
+  // current query keys, so every widget repaints with fresh server data and the
+  // active filter/sort/scroll state is preserved. No full page reload occurs.
+  //
+  // On failure react-query keeps the last successful data in cache (the queries
+  // are not reset), so a failed refresh leaves the dashboard showing the prior
+  // good data rather than blanking out. `isReloading` drives the button spinner;
+  // re-entrancy is guarded so rapid clicks don't stack duplicate requests.
+  const [isReloading, setIsReloading] = useState(false);
+  const handleReload = async () => {
+    if (isReloading) return;
+    setIsReloading(true);
+    try {
+      await Promise.all([
+        refetchSummary(),
+        kpiTableQuery.refetch(),
+        priTableQuery.refetch(),
+        wwwTableQuery.refetch(),
+      ]);
+    } catch {
+      // Errors are already surfaced per-query (isError/error on each hook) and
+      // the last successful data is preserved — swallow here so the button
+      // simply returns to its idle state.
+    } finally {
+      setIsReloading(false);
+    }
+  };
+  // Reflect any in-flight fetch (manual reload OR an automatic refetch) so the
+  // button can't be triggered while data is already streaming in.
+  const reloadBusy = isReloading || summaryFetching || kpiTableQuery.isFetching || priTableQuery.isFetching || wwwTableQuery.isFetching;
+
   // Table spinners show only on the FIRST load of each query. `keepPreviousData`
   // (set in the hooks) holds the prior page visible during sort/page/search
   // refetches, so `isLoading` is false after the initial fetch — no flicker.
@@ -1466,6 +1504,31 @@ export default function DashboardPage() {
           {/* AvgKPICard moved into the KPI Overview container header — see KPIOverviewContainer */}
         </div>
         <div className="flex items-center gap-2">
+          {/* Reload — revalidates all dashboard data in place (no page reload).
+              Visible on both tabs. Matches the toolbar button styling (Filter
+              button pattern): same border, padding, text size, hover, and
+              accent theming. Spins + disables while a refresh is in flight. */}
+          <button
+            type="button"
+            onClick={handleReload}
+            disabled={reloadBusy}
+            aria-label="Reload dashboard data"
+            aria-busy={reloadBusy}
+            title="Reload dashboard data"
+            className="flex items-center gap-1 px-2.5 py-1.5 text-xs border border-gray-200 text-gray-600 rounded-md hover:bg-gray-50 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+            <svg
+              className={`h-3.5 w-3.5 ${reloadBusy ? "animate-spin" : ""}`}
+              fill="none"
+              viewBox="0 0 24 24"
+              stroke="currentColor"
+              aria-hidden="true"
+            >
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+            </svg>
+            <span className="hidden sm:inline">{reloadBusy ? "Reloading…" : "Reload"}</span>
+          </button>
+
           {/* Filter button — only on Team tab. My Dashboard is locked to current user. */}
           {activeTab === "team" && (
             <div className="relative" ref={filterRef}>

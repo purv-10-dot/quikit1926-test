@@ -46,7 +46,11 @@ export interface InfiniteListResult<T> {
   isFetchingNextPage: boolean;
   hasNextPage: boolean;
   fetchNextPage: () => void;
-  refetch: () => void;
+  // Returns the underlying react-query refetch promise so callers that want to
+  // await the round-trip (e.g. a manual "Reload" button driving a spinner) can
+  // do so. Existing fire-and-forget callers (`void query.refetch()`) are
+  // unaffected — a Promise is assignable wherever `() => void` was expected.
+  refetch: () => Promise<unknown>;
   isError: boolean;
   error: unknown;
 }
