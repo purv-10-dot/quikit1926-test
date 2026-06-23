@@ -19,7 +19,7 @@
 import type { Prisma, PrismaClient } from "@quikit/database";
 import { getActivityTypeWithFields } from "@/lib/services/activity-types/repo";
 import { validateDynamicFields } from "@/lib/services/fields/validate";
-import type { LeadFieldDefinition } from "@/types/field-definition";
+import { toLeadDefShape } from "@/lib/services/activity-types/field-shape";
 import type { ActivityFieldDefinition } from "@/types/activity-type";
 
 type Tx = PrismaClient | Prisma.TransactionClient;
@@ -44,22 +44,6 @@ export interface WriteActivityFieldValuesInput {
   activityId: string;
   activityTypeId: string;
   values: Record<string, unknown> | null | undefined;
-}
-
-/** Map an activity field definition to the LeadFieldDefinition shape that
- *  validateDynamicFields consumes. They share the FieldType union; the lead
- *  validator only reads key/label/fieldType/requirement/options. */
-function toLeadDefShape(def: ActivityFieldDefinition): LeadFieldDefinition {
-  return {
-    key: def.key,
-    label: def.label,
-    fieldType: def.fieldType,
-    requirement: def.requirement,
-    visible: def.visible,
-    options: def.options ?? undefined,
-    // isStandard intentionally omitted/false — all activity fields are custom,
-    // so none are filtered out by validateDynamicFields' standard-key guard.
-  };
 }
 
 /** Route a coerced value into the correct typed column. Non-target columns
