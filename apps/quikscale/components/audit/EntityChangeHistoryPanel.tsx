@@ -24,6 +24,8 @@ import {
   diffArrayValues,
   weekKeyLabel,
   weekRangeLabel,
+  expandableIds,
+  nestedChangeId,
   type TimelineEvent,
   type TimelineChange,
 } from "@/lib/audit/timeline";
@@ -126,8 +128,13 @@ export function EntityChangeHistoryPanel<T extends AuditEntityBase>({
   );
   const [bucket, setBucket] = useState<AuditFilterBucket | "all">("all");
   const [search, setSearch] = useState("");
-  const [expandedAll, setExpandedAll] = useState(false);
-  const [openCards, setOpenCards] = useState<Set<string>>(new Set());
+  // Single source of truth for what's expanded — covers BOTH card-level items
+  // (CREATE / BULK, keyed by event id) and nested structured-diff rows (keyed
+  // by `${eventId}::${changeIndex}`). Bulk expand/collapse and per-row toggles
+  // all mutate this one set, so they can never disagree (the previous
+  // `expandedAll || openCards` split left Collapse-all unable to close a card
+  // already in `openCards`).
+  const [openIds, setOpenIds] = useState<Set<string>>(new Set());
   const [showLegend, setShowLegend] = useState(false);
 
   // Close on Escape.
@@ -156,46 +163,47 @@ export function EntityChangeHistoryPanel<T extends AuditEntityBase>({
   const createEvent = useMemo(() => events.find((e) => e.action === "CREATE"), [events]);
 
   // CREATED card is auto-expanded on first open. Seeded once; the user can
-  // still collapse it afterwards.
+  // still collapse it afterwards (and "Collapse all" now closes it too).
   const seededCreate = useRef(false);
   useEffect(() => {
     if (createEvent && !seededCreate.current) {
       seededCreate.current = true;
-      setOpenCards((prev) => new Set(prev).add(createEvent.id));
+      setOpenIds((prev) => new Set(prev).add(createEvent.id));
     }
   }, [createEvent]);
 
   const visible = useMemo(() => {
     const byBucket = filterByBucket(events, bucket);
-    return searchEvents(byBucket, search);
-  }, [events, bucket, search]);
+    return searchEvents(byBucket, search, config.fieldLabel);
+  }, [events, bucket, search, config.fieldLabel]);
   const groups = useMemo(() => groupEventsByDay(visible, now), [visible, now]);
 
-  const expandableCount = useMemo(
-    () =>
-      visible.filter(
-        (e) =>
-          e.action === "CREATE" ||
-          e.action === "BULK_UPDATE" ||
-          (isUpdateLikeAction(e.action) && e.changes.some((c) => isStructuredChange(c.oldValue, c.newValue))),
-      ).length,
-    [visible],
-  );
+  // Every collapsible unit currently visible (card ids + nested-row ids).
+  const expandable = useMemo(() => expandableIds(visible), [visible]);
+  const expandableCount = expandable.length;
+  // True only when EVERY expandable unit is open — drives the bulk button label
+  // honestly instead of a stale boolean.
+  const allExpanded = expandableCount > 0 && expandable.every((id) => openIds.has(id));
 
+  /** A card (CREATE / BULK) is collapsible; everything else always renders. */
   function isOpen(id: string, action: string): boolean {
-    if (action === "CREATE" || action === "BULK_UPDATE") {
-      return expandedAll || openCards.has(id);
-    }
+    if (action === "CREATE" || action === "BULK_UPDATE") return openIds.has(id);
     return true;
   }
 
-  function toggleCard(id: string) {
-    setOpenCards((prev) => {
+  /** Toggle one unit (card or nested row) in the shared open set. */
+  function toggleId(id: string) {
+    setOpenIds((prev) => {
       const next = new Set(prev);
       if (next.has(id)) next.delete(id);
       else next.add(id);
       return next;
     });
+  }
+
+  /** Bulk: open every expandable unit, or close them all. */
+  function toggleAll() {
+    setOpenIds(allExpanded ? new Set() : new Set(expandable));
   }
 
   function handleExport() {
@@ -272,10 +280,10 @@ export function EntityChangeHistoryPanel<T extends AuditEntityBase>({
             {expandableCount > 0 && (
               <button
                 type="button"
-                onClick={() => setExpandedAll((v) => !v)}
+                onClick={toggleAll}
                 className="rounded bg-gray-900 px-2 py-1 text-[11px] font-semibold text-white hover:bg-gray-700"
               >
-                {expandedAll ? "Collapse all" : "Expand all"}
+                {allExpanded ? "Collapse all" : "Expand all"}
                 <span className="ml-1 opacity-70">{expandableCount} expandable</span>
               </button>
             )}
@@ -351,9 +359,9 @@ export function EntityChangeHistoryPanel<T extends AuditEntityBase>({
                     entity={entity}
                     config={config}
                     weekLabels={weekLabels}
-                    open={isOpen(e.id, e.action)}
-                    onToggle={() => toggleCard(e.id)}
-                    expandedAll={expandedAll}
+                    cardOpen={isOpen(e.id, e.action)}
+                    openIds={openIds}
+                    onToggleId={toggleId}
                   />
                 ))}
               </div>
@@ -402,21 +410,25 @@ function EventCard<T extends AuditEntityBase>({
   entity,
   config,
   weekLabels,
-  open,
-  onToggle,
-  expandedAll,
+  cardOpen,
+  openIds,
+  onToggleId,
 }: {
   event: TimelineEvent;
   entity: T;
   config: AuditEntityConfig<T>;
   weekLabels: string[];
-  open: boolean;
-  onToggle: () => void;
-  expandedAll: boolean;
+  /** Whether THIS card (CREATE / BULK) is expanded. */
+  cardOpen: boolean;
+  /** Shared open set — used by nested structured-diff rows. */
+  openIds: Set<string>;
+  /** Toggle any unit id (this card, or a nested row). */
+  onToggleId: (id: string) => void;
 }) {
   const meta = actionMeta(event.action);
   const time = formatTimestamp(event.createdAt, new Date());
   const snap = (event.snapshot ?? {}) as Record<string, unknown>;
+  const onToggleCard = () => onToggleId(event.id);
 
   return (
     <div className="rounded-xl border border-gray-100 p-3">
@@ -440,9 +452,9 @@ function EventCard<T extends AuditEntityBase>({
 
       <div className="mt-2">
         {event.action === "WEEKLY_UPDATE" && <WeeklyBody snap={snap} kind={config.weeklyKind ?? "numeric"} />}
-        {event.action === "BULK_UPDATE" && <BulkBody snap={snap} kind={config.weeklyKind ?? "numeric"} open={open} onToggle={onToggle} />}
+        {event.action === "BULK_UPDATE" && <BulkBody snap={snap} kind={config.weeklyKind ?? "numeric"} open={cardOpen} onToggle={onToggleCard} />}
         {event.action === "CREATE" &&
-          config.renderCreateCard({ entity, weekLabels, open, onToggle })}
+          config.renderCreateCard({ entity, weekLabels, open: cardOpen, onToggle: onToggleCard })}
         {event.action === "COMMENT" && (
           <CommentBody text={String(snap.content ?? event.reason ?? "")} />
         )}
@@ -459,7 +471,7 @@ function EventCard<T extends AuditEntityBase>({
           </div>
         )}
         {isUpdateLikeAction(event.action) && (
-          <DiffBody event={event} config={config} expandedAll={expandedAll} weekLabels={weekLabels} />
+          <DiffBody event={event} config={config} weekLabels={weekLabels} openIds={openIds} onToggleId={onToggleId} />
         )}
       </div>
       {event.reason &&
@@ -492,13 +504,15 @@ function CommentBody({ text }: { text: string }) {
 function DiffBody<T extends AuditEntityBase>({
   event,
   config,
-  expandedAll,
   weekLabels,
+  openIds,
+  onToggleId,
 }: {
   event: TimelineEvent;
   config: AuditEntityConfig<T>;
-  expandedAll: boolean;
   weekLabels: string[];
+  openIds: Set<string>;
+  onToggleId: (id: string) => void;
 }) {
   if (event.changes.length === 0) {
     // A backfilled (historical) edit kept its post-state snapshot but no field
@@ -521,9 +535,19 @@ function DiffBody<T extends AuditEntityBase>({
         {event.changes.length} field{event.changes.length === 1 ? "" : "s"} changed
       </p>
       <div className="space-y-1">
-        {event.changes.map((c, i) => (
-          <ChangeRow key={`${c.fieldName}-${i}`} change={c} config={config} expandedAll={expandedAll} weekLabels={weekLabels} />
-        ))}
+        {event.changes.map((c, i) => {
+          const rowId = nestedChangeId(event.id, i);
+          return (
+            <ChangeRow
+              key={`${c.fieldName}-${i}`}
+              change={c}
+              config={config}
+              weekLabels={weekLabels}
+              open={openIds.has(rowId)}
+              onToggle={() => onToggleId(rowId)}
+            />
+          );
+        })}
       </div>
     </div>
   );
@@ -544,15 +568,18 @@ function ScalarValue({ value, strike, display }: { value: unknown; strike?: bool
 function ChangeRow<T extends AuditEntityBase>({
   change,
   config,
-  expandedAll,
   weekLabels,
+  open,
+  onToggle,
 }: {
   change: TimelineChange;
   config: AuditEntityConfig<T>;
-  expandedAll: boolean;
   weekLabels: string[];
+  /** Open state for the collapsible object sub-table (ignored by scalar/array
+   *  rows, which always render inline). Driven by the panel's shared open set. */
+  open: boolean;
+  onToggle: () => void;
 }) {
-  const [open, setOpen] = useState(false);
   const label = config.fieldLabel(change.fieldName);
   // A config-provided formatter (e.g. isActive → Active/Inactive, or a
   // teamMemberIds id → member name) overrides the default value display. Used
@@ -581,12 +608,12 @@ function ChangeRow<T extends AuditEntityBase>({
   if (isStructuredChange(change.oldValue, change.newValue)) {
     const keyDiffs = diffObjectKeys(change.oldValue, change.newValue);
     const useWeeks = change.fieldName === "weeklyTargets" || change.fieldName === "weeklyOwnerTargets";
-    const isOpen = expandedAll || open;
+    const isOpen = open;
     return (
       <div>
         <button
           type="button"
-          onClick={() => setOpen((o) => !o)}
+          onClick={onToggle}
           className="flex w-full items-center gap-2 text-left text-sm"
         >
           <span className="text-gray-500">{label}</span>

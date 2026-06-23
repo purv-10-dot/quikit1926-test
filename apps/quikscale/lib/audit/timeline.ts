@@ -141,19 +141,92 @@ export function filterByBucket(
 }
 
 /** Case-insensitive search over actor, action label, field names, and values. */
-export function searchEvents(events: TimelineEvent[], query: string): TimelineEvent[] {
-  const q = query.trim().toLowerCase();
-  if (!q) return events;
-  return events.filter((e) => {
-    if (e.actorName.toLowerCase().includes(q)) return true;
-    if (actionMeta(e.action).label.toLowerCase().includes(q)) return true;
-    if (e.action.toLowerCase().includes(q)) return true;
-    for (const c of e.changes) {
-      if (kpiFieldLabel(c.fieldName).toLowerCase().includes(q)) return true;
-      if (String(c.oldValue ?? "").toLowerCase().includes(q)) return true;
-      if (String(c.newValue ?? "").toLowerCase().includes(q)) return true;
+/**
+ * Recursively collect the searchable primitive strings out of an audit
+ * snapshot (the `snapshot` blob holds the real content of WEEKLY_UPDATE /
+ * BULK_UPDATE / CREATE / COMMENT / DELETE events — week numbers, values,
+ * notes, statuses, names — none of which live in `changes`).
+ *
+ * `weekNumber` keys also emit a synthesized `"week N"` token so the visible
+ * "… · Week 5" header is matchable by typing "week 5". Bounded depth keeps a
+ * pathological/cyclic snapshot from hanging the filter.
+ */
+function collectSnapshotStrings(value: unknown, out: string[], depth = 0): void {
+  if (value === null || value === undefined || depth > 6) return;
+  if (typeof value === "string" || typeof value === "number" || typeof value === "boolean") {
+    out.push(String(value));
+    return;
+  }
+  if (Array.isArray(value)) {
+    for (const v of value) collectSnapshotStrings(v, out, depth + 1);
+    return;
+  }
+  if (typeof value === "object") {
+    for (const [k, v] of Object.entries(value as Record<string, unknown>)) {
+      if (/week/i.test(k) && (typeof v === "string" || typeof v === "number")) {
+        out.push(`week ${v}`);
+      }
+      collectSnapshotStrings(v, out, depth + 1);
     }
-    return false;
+  }
+}
+
+/**
+ * Build the lower-cased, space-joined haystack a query is matched against.
+ * Includes the actor, the action in every form the user might type (badge
+ * label "WEEKLY", normalized "weekly update", raw enum), the reason, each
+ * change's human field label + old/new values, and the snapshot content.
+ *
+ * `fieldLabel` resolves a field name to its display label — defaults to the
+ * KPI map for back-compat, but the panel passes the active entity's resolver
+ * so Priority / WWW / Critical search their own labels.
+ */
+function eventHaystack(
+  e: TimelineEvent,
+  fieldLabel: (field: string) => string,
+): string {
+  const parts: string[] = [
+    e.actorName,
+    actionMeta(e.action).label,
+    e.action.replace(/_/g, " "),
+    e.action,
+  ];
+  if (e.reason) parts.push(e.reason);
+  for (const c of e.changes) {
+    parts.push(fieldLabel(c.fieldName));
+    if (c.oldValue != null) parts.push(String(c.oldValue));
+    if (c.newValue != null) parts.push(String(c.newValue));
+  }
+  collectSnapshotStrings(e.snapshot, parts);
+  return parts.join(" ").toLowerCase();
+}
+
+/**
+ * Filter the timeline to events matching `query`.
+ *
+ * The query is tokenized on whitespace; punctuation-only tokens (e.g. the "·"
+ * separator the cards render) are dropped, and ALL remaining tokens must appear
+ * somewhere in the event's haystack (AND search). This makes the visible text
+ * searchable in pieces — "Weekly", "Weekly Update", and "Weekly update · Week
+ * 5" all match the same WEEKLY_UPDATE event — instead of requiring one exact
+ * contiguous substring.
+ */
+export function searchEvents(
+  events: TimelineEvent[],
+  query: string,
+  fieldLabel: (field: string) => string = kpiFieldLabel,
+): TimelineEvent[] {
+  const tokens = query
+    .toLowerCase()
+    .split(/\s+/)
+    // Trim leading/trailing punctuation (drops a bare "·" separator) but keep
+    // internal punctuation so "on-track" stays one token.
+    .map((t) => t.replace(/^[^\p{L}\p{N}]+|[^\p{L}\p{N}]+$/gu, ""))
+    .filter(Boolean);
+  if (tokens.length === 0) return events;
+  return events.filter((e) => {
+    const haystack = eventHaystack(e, fieldLabel);
+    return tokens.every((t) => haystack.includes(t));
   });
 }
 
@@ -289,6 +362,49 @@ export function isStructuredChange(oldValue: unknown, newValue: unknown): boolea
   return (
     isObjectValue(oldValue) || isObjectValue(newValue) ||
     isArrayValue(oldValue) || isArrayValue(newValue)
+  );
+}
+
+/** Stable id for a nested structured-diff row within an event's change list. */
+export function nestedChangeId(eventId: string, changeIndex: number): string {
+  return `${eventId}::${changeIndex}`;
+}
+
+/**
+ * Enumerate every collapsible UNIT in a timeline as a flat list of stable ids —
+ * the single source of truth for the Change History panel's expand/collapse:
+ *
+ *   - CREATE / BULK_UPDATE cards     → the event id
+ *   - each structured (object/array) change inside an UPDATE-like event
+ *                                     → `nestedChangeId(eventId, i)`
+ *
+ * "Expand all" sets the open set to exactly this list; "Collapse all" empties
+ * it; `length` is the "N expandable" count. Keeping the enumeration here (pure,
+ * deterministic) lets the component stay a thin renderer over one Set.
+ */
+export function expandableIds(events: TimelineEvent[]): string[] {
+  const ids: string[] = [];
+  for (const e of events) {
+    if (e.action === "CREATE" || e.action === "BULK_UPDATE") {
+      ids.push(e.id);
+    } else if (isUpdateLikeAction(e.action)) {
+      e.changes.forEach((c, i) => {
+        // Only OBJECT diffs render a collapsible sub-table; array diffs render
+        // as an inline added/removed summary (no toggle), so they aren't
+        // expandable units — matching the ChangeRow render branches.
+        if (isCollapsibleObjectChange(c.oldValue, c.newValue)) ids.push(nestedChangeId(e.id, i));
+      });
+    }
+  }
+  return ids;
+}
+
+/** A change that renders as a collapsible per-key object table (not an array). */
+export function isCollapsibleObjectChange(oldValue: unknown, newValue: unknown): boolean {
+  return (
+    isStructuredChange(oldValue, newValue) &&
+    !isArrayValue(oldValue) &&
+    !isArrayValue(newValue)
   );
 }
 
