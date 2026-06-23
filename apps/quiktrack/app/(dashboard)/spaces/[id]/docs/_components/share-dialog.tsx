@@ -13,6 +13,7 @@ interface Person {
   email: string;
   avatar: string | null;
   role: Role;
+  external?: boolean;
 }
 interface OwnerLite {
   userId: string;
@@ -118,6 +119,15 @@ export function ShareDialog({
         body: JSON.stringify({ userId, role: pickedRole }),
       }),
     );
+  // External invite — always view-only; the person opens a per-recipient link.
+  const addEmail = (email: string) =>
+    run(() =>
+      fetch(`/api/docs/${docId}/shares`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email, role: "viewer" }),
+      }),
+    );
   const changeRole = (shareId: string, role: Role) =>
     run(() =>
       fetch(`/api/docs/${docId}/shares/${shareId}`, {
@@ -197,6 +207,11 @@ export function ShareDialog({
         })
         .slice(0, 6)
     : [];
+  // Offer an external (email) invite when the query is a valid email that
+  // doesn't match an org user already in the list.
+  const isEmail = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(q);
+  const alreadyShared = (data?.people ?? []).some((p) => p.email.toLowerCase() === q);
+  const showInvite = isEmail && !alreadyShared && matches.length === 0;
 
   return (
     <div
@@ -223,7 +238,7 @@ export function ShareDialog({
                 <input
                   value={query}
                   onChange={(e) => setQuery(e.target.value)}
-                  placeholder="Add people in your org…"
+                  placeholder="Add org members, or invite by email…"
                   className="h-9 flex-1 rounded-md border border-gray-300 px-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-200"
                 />
                 <ShareSelect
@@ -237,8 +252,8 @@ export function ShareDialog({
                   className="shrink-0"
                 />
               </div>
-              {matches.length > 0 && (
-                <div className="absolute left-0 right-0 top-full z-10 mt-1 max-h-56 overflow-auto rounded-md border border-gray-200 bg-white py-1 shadow-lg">
+              {(matches.length > 0 || showInvite) && (
+                <div className="absolute left-0 right-0 top-full z-10 mt-1 max-h-56 overflow-auto rounded-md border border-gray-200 bg-white py-1 shadow-lg dark:border-slate-700 dark:bg-slate-800">
                   {matches.map((u) => {
                     const name = [u.firstName, u.lastName].filter(Boolean).join(" ").trim() || u.email;
                     return (
@@ -250,18 +265,42 @@ export function ShareDialog({
                           setQuery("");
                           void addPerson(u.userId);
                         }}
-                        className="flex w-full items-center gap-2 px-3 py-1.5 text-left text-sm hover:bg-gray-50 disabled:opacity-50"
+                        className="flex w-full items-center gap-2 px-3 py-1.5 text-left text-sm hover:bg-gray-50 disabled:opacity-50 dark:hover:bg-slate-700/60"
                       >
                         <span className="flex h-6 w-6 items-center justify-center rounded-full bg-blue-500 text-[10px] font-semibold text-white">
                           {(name[0] ?? "?").toUpperCase()}
                         </span>
                         <span className="min-w-0">
-                          <span className="block truncate text-gray-800">{name}</span>
-                          <span className="block truncate text-[11px] text-gray-500">{u.email}</span>
+                          <span className="block truncate text-gray-800 dark:text-slate-200">{name}</span>
+                          <span className="block truncate text-[11px] text-gray-500 dark:text-slate-400">{u.email}</span>
                         </span>
                       </button>
                     );
                   })}
+                  {showInvite && (
+                    <button
+                      type="button"
+                      disabled={busy}
+                      onClick={() => {
+                        const email = q;
+                        setQuery("");
+                        void addEmail(email);
+                      }}
+                      className="flex w-full items-center gap-2 px-3 py-1.5 text-left text-sm hover:bg-gray-50 disabled:opacity-50 dark:hover:bg-slate-700/60"
+                    >
+                      <span className="flex h-6 w-6 items-center justify-center rounded-full bg-gray-400 text-[10px] font-semibold text-white">
+                        @
+                      </span>
+                      <span className="min-w-0">
+                        <span className="block truncate text-gray-800 dark:text-slate-200">
+                          Invite “{q}”
+                        </span>
+                        <span className="block truncate text-[11px] text-gray-500 dark:text-slate-400">
+                          External · view-only link sent by email
+                        </span>
+                      </span>
+                    </button>
+                  )}
                 </div>
               )}
             </div>
@@ -276,8 +315,36 @@ export function ShareDialog({
               </Row>
             )}
             {data.people.map((p) => (
-              <Row key={p.shareId} name={p.name} email={p.email} initial={p.name}>
-                {canManage ? (
+              <Row
+                key={p.shareId}
+                name={p.name}
+                email={p.email}
+                initial={p.name}
+                badge={
+                  p.external ? (
+                    <span className="rounded-full bg-amber-500/10 px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-wide text-amber-700 ring-1 ring-inset ring-amber-500/25 dark:text-amber-300/90">
+                      External
+                    </span>
+                  ) : undefined
+                }
+              >
+                {!canManage ? (
+                  <span className="text-xs capitalize text-gray-400">{p.role}</span>
+                ) : p.external ? (
+                  // External invites are view-only — no role dropdown, just remove.
+                  <div className="flex items-center gap-1">
+                    <span className="text-xs text-gray-400">Viewer</span>
+                    <button
+                      type="button"
+                      disabled={busy}
+                      onClick={() => void removePerson(p.shareId)}
+                      className="rounded p-1 text-gray-400 hover:bg-red-50 hover:text-red-600 disabled:opacity-50"
+                      aria-label="Remove access"
+                    >
+                      <X className="h-3.5 w-3.5" />
+                    </button>
+                  </div>
+                ) : (
                   <div className="flex items-center gap-1">
                     <ShareSelect
                       value={p.role}
@@ -299,8 +366,6 @@ export function ShareDialog({
                       <X className="h-3.5 w-3.5" />
                     </button>
                   </div>
-                ) : (
-                  <span className="text-xs capitalize text-gray-400">{p.role}</span>
                 )}
               </Row>
             ))}
@@ -387,11 +452,13 @@ function Row({
   name,
   email,
   initial,
+  badge,
   children,
 }: {
   name: string;
   email: string;
   initial: string;
+  badge?: React.ReactNode;
   children: React.ReactNode;
 }) {
   return (
@@ -400,8 +467,11 @@ function Row({
         {(initial[0] ?? "?").toUpperCase()}
       </span>
       <span className="min-w-0 flex-1">
-        <span className="block truncate text-sm text-gray-800">{name}</span>
-        <span className="block truncate text-[11px] text-gray-500">{email}</span>
+        <span className="flex items-center gap-1.5">
+          <span className="truncate text-sm text-gray-800 dark:text-slate-200">{name}</span>
+          {badge}
+        </span>
+        <span className="block truncate text-[11px] text-gray-500 dark:text-slate-400">{email}</span>
       </span>
       {children}
     </div>

@@ -492,8 +492,13 @@ export async function emailDocShared(args: {
   docId: string;
   sharedBy: string | null;
   role: "viewer" | "editor";
+  /** When set, link to the public /share/<token> page (external invites) rather
+   *  than the in-app doc URL (which needs a login). */
+  shareToken?: string | null;
 }): Promise<void> {
-  const link = `${appUrl()}/spaces/${args.projectId}/docs/${args.docId}`;
+  const link = args.shareToken
+    ? `${appUrl()}/share/${args.shareToken}`
+    : `${appUrl()}/spaces/${args.projectId}/docs/${args.docId}`;
   const verb = args.role === "editor" ? "edit" : "view";
   const html = shell({
     headerSubtitle: "Shared with you",

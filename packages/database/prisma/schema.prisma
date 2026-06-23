@@ -6182,6 +6182,10 @@ model QtDocShare {
   userId    String?
   email     String?
   role      String // "viewer" | "editor"
+  // Per-recipient public token for EXTERNAL (email) invites — a short base62
+  // code; the invitee opens /share/<token> with no login. Null for internal
+  // (userId) shares, which are identity-gated instead.
+  token     String?  @unique
   createdBy String?
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt

@@ -27,13 +27,25 @@ interface DocRow {
 }
 
 async function loadByToken(token: string): Promise<DocRow | null> {
-  const rows = await db.$queryRaw<DocRow[]>`
+  // 1. Doc-level public link ("Anyone with the link").
+  const docRows = await db.$queryRaw<DocRow[]>`
     SELECT id, title, content, status, "shareToken", "shareMode"
     FROM app_quiktrack."QtDoc"
     WHERE "shareToken" = ${token} AND "isDeleted" = false
     LIMIT 1
   `;
-  return rows[0] ?? null;
+  if (docRows[0]) return docRows[0];
+
+  // 2. Per-recipient EXTERNAL invite (QtDocShare.token) — always view-only.
+  const shareRows = await db.$queryRaw<DocRow[]>`
+    SELECT d.id, d.title, d.content, d.status,
+           ${token} AS "shareToken", 'view' AS "shareMode"
+    FROM app_quiktrack."QtDocShare" s
+    JOIN app_quiktrack."QtDoc" d ON d.id = s."docId"
+    WHERE s.token = ${token} AND d."isDeleted" = false
+    LIMIT 1
+  `;
+  return shareRows[0] ?? null;
 }
 
 export async function GET(_req: NextRequest, { params }: { params: { token: string } }) {
