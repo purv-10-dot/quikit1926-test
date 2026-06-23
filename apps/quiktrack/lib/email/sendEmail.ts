@@ -518,10 +518,23 @@ export async function emailDocShared(args: {
     ctaLabel: "Open document",
     ctaHref: link,
   });
+  // Plain-text alternative — an HTML-only body is a spam signal, especially for
+  // external recipients. A real multipart/alternative improves inbox placement.
+  const text = [
+    args.recipientName ? `Hi ${args.recipientName},` : "Hi,",
+    "",
+    `${args.sharedBy ?? "Someone"} shared a document with you — you can ${verb} it.`,
+    "",
+    `Document: ${args.docTitle || "Untitled"}`,
+    `Access: ${args.role === "editor" ? "Editor" : "Viewer"}`,
+    "",
+    `Open it: ${link}`,
+  ].join("\n");
   await sendEmail({
     to: args.to,
     subject: `${args.sharedBy ?? "Someone"} shared "${args.docTitle || "a document"}" with you`,
     html,
+    text,
   });
 }
 
