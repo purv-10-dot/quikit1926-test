@@ -14,6 +14,8 @@ import {
   Filter,
   Search,
   X,
+  CalendarClock,
+  Plus,
 } from "lucide-react";
 import {
   type Period,
@@ -184,6 +186,14 @@ export function TimesheetView({
     const now = Date.now();
     return period === "week" && range.from.getTime() <= now && now <= range.to.getTime();
   }, [period, range]);
+  // ISO-ish week number of the viewed range start (for the "WK NN" badge).
+  const weekNumber = useMemo(() => {
+    const d = range.from;
+    const startOfYear = new Date(d.getFullYear(), 0, 1);
+    return Math.ceil(
+      (((d.getTime() - startOfYear.getTime()) / 86_400_000) + startOfYear.getDay() + 1) / 7,
+    );
+  }, [range]);
 
   const refresh = useCallback(async () => {
     setLoading(true);
@@ -273,28 +283,6 @@ export function TimesheetView({
     }
     return s;
   }, [grid, totalsByRow, groupBy]);
-
-  // Per-person capacity for the period = working days × 8h.
-  const perPersonCapacity = useMemo(
-    () => range.days.filter((d) => !isWeekend(d)).length * 8,
-    [range.days],
-  );
-
-  // Distinct users represented in the current grid, so the capacity bar reflects
-  // the whole team rather than a single person. In issue/project grouping there
-  // are no per-user rows, so fall back to the active user filter (or org headcount).
-  const userCount = useMemo(() => {
-    if (!grid) return 0;
-    if (groupBy === "user") return grid.rows.length;
-    if (groupBy === "user-issue") return grid.rows.filter((r) => !r.parentId).length;
-    if (userFilter.length > 0) return userFilter.length;
-    return userOptions.length;
-  }, [grid, groupBy, userFilter, userOptions]);
-
-  const capacity = useMemo(
-    () => perPersonCapacity * Math.max(userCount, 1),
-    [perPersonCapacity, userCount],
-  );
 
   const openLogFor = useCallback(
     (opts?: { date?: Date; issueId?: string; issueLabel?: string }) => {
@@ -523,35 +511,41 @@ export function TimesheetView({
   return (
     <div className="px-6 py-4">
       <div className="flex flex-wrap items-center justify-between gap-3 mb-3">
-        <div className="flex items-center gap-3">
-          <div className="inline-flex items-center gap-1 border border-gray-300 rounded h-9 px-1">
-            <button
-              type="button"
-              onClick={() => setAnchor((a) => shiftAnchor(period, a, -1))}
-              className="h-7 w-7 inline-flex items-center justify-center rounded hover:bg-gray-100 text-gray-600"
-              aria-label="Previous"
-            >
-              <ChevronLeft className="h-4 w-4" />
-            </button>
-            <div className="px-2 inline-flex items-center text-sm font-medium text-gray-800 select-none">
-              <span className="mr-1.5 text-gray-400">📅</span>
-              {range.label}
-            </div>
-            <button
-              type="button"
-              onClick={() => setAnchor((a) => shiftAnchor(period, a, 1))}
-              className="h-7 w-7 inline-flex items-center justify-center rounded hover:bg-gray-100 text-gray-600"
-              aria-label="Next"
-            >
-              <ChevronRight className="h-4 w-4" />
-            </button>
+        {/* Left — week navigation */}
+        <div className="inline-flex items-center gap-1 border border-gray-300 rounded h-9 px-1">
+          <button
+            type="button"
+            onClick={() => setAnchor((a) => shiftAnchor(period, a, -1))}
+            className="h-7 w-7 inline-flex items-center justify-center rounded hover:bg-gray-100 text-gray-600"
+            aria-label="Previous"
+          >
+            <ChevronLeft className="h-4 w-4" />
+          </button>
+          <div className="px-2 inline-flex items-center gap-2 text-sm font-medium text-gray-800 select-none">
+            {period === "week" && (
+              <span className="text-[10px] font-bold uppercase tracking-wide text-blue-700">
+                WK {weekNumber}
+              </span>
+            )}
+            {range.label}
           </div>
+          <button
+            type="button"
+            onClick={() => setAnchor((a) => shiftAnchor(period, a, 1))}
+            className="h-7 w-7 inline-flex items-center justify-center rounded hover:bg-gray-100 text-gray-600"
+            aria-label="Next"
+          >
+            <ChevronRight className="h-4 w-4" />
+          </button>
+        </div>
+
+        {/* Right — view controls + actions */}
+        <div className="flex flex-wrap items-center gap-2">
           <GroupByDropdown
             value={groupBy}
             onChange={setGroupBy}
             hideProject={Boolean(projectId)}
           />
-          <span className="h-6 w-px bg-gray-200" aria-hidden />
           <MultiSelectFilter
             icon={<Filter className="h-3.5 w-3.5 text-gray-500" />}
             label="User"
@@ -582,27 +576,9 @@ export function TimesheetView({
               Clear
             </button>
           )}
-        </div>
 
-        <div className="flex items-center gap-2">
-          <span className="hidden md:inline text-[11px] text-gray-500 px-1">
-            Total{" "}
-            <span className="font-semibold text-gray-800">{formatHours(grandTotal)}</span> of{" "}
-            <span className="font-semibold text-gray-800">{capacity}h</span>
-          </span>
-          {/* <button
-            type="button"
-            className="h-9 w-9 inline-flex items-center justify-center text-gray-600 hover:bg-gray-100 rounded"
-            aria-label="View options"
-          >
-            <Menu className="h-4 w-4" />
-          </button> */}
-          <PeriodSwitcher value={period} onChange={setPeriod} />
-          <MoreMenu
-            onCsv={downloadCsv}
-            onXls={downloadXls}
-            onPdf={downloadPdf}
-          />
+          <span className="h-6 w-px bg-gray-200" aria-hidden />
+
           {canLogTime && viewingCurrentWeek && (
             <button
               type="button"
@@ -610,6 +586,7 @@ export function TimesheetView({
               title="Copy last week's entries into this week, up to today"
               className="inline-flex items-center gap-1.5 h-9 px-3 text-sm font-medium text-gray-700 border border-gray-300 rounded hover:bg-gray-50"
             >
+              <CalendarClock className="h-4 w-4 text-gray-500" />
               Copy last week
             </button>
           )}
@@ -617,11 +594,19 @@ export function TimesheetView({
             <button
               type="button"
               onClick={() => openLogFor()}
-              className="inline-flex items-center h-9 px-4 text-sm font-semibold text-white bg-blue-700 rounded hover:bg-blue-800"
+              className="inline-flex items-center gap-1.5 h-9 px-4 text-sm font-semibold text-white bg-blue-700 rounded hover:bg-blue-800"
             >
-              Log Time
+              <Plus className="h-4 w-4" />
+              Log time
             </button>
           )}
+          <MoreMenu
+            onCsv={downloadCsv}
+            onXls={downloadXls}
+            onPdf={downloadPdf}
+            period={period}
+            onPeriodChange={setPeriod}
+          />
         </div>
       </div>
 
@@ -1131,8 +1116,8 @@ function GroupByDropdown({
   );
 
   return (
-    <div ref={ref} className="flex items-center gap-2">
-      <span className="text-xs text-gray-500">Group By</span>
+    <div ref={ref} className="flex items-center gap-1.5">
+      <span className="text-xs text-gray-500">Group</span>
       <div className="relative">
         <button
           type="button"
@@ -1181,58 +1166,22 @@ function GroupByDropdown({
   );
 }
 
-function PeriodSwitcher({
-  value,
-  onChange,
-}: {
-  value: Period;
-  onChange: (p: Period) => void;
-}) {
-  const [open, setOpen] = useState(false);
-  const LABEL: Record<Period, string> = { week: "Week", month: "Month", quarter: "Quarter" };
-  return (
-    <div className="relative">
-      <button
-        type="button"
-        onClick={() => setOpen((v) => !v)}
-        className="inline-flex items-center gap-1 h-9 px-3 text-sm text-gray-700 border border-gray-300 rounded hover:bg-gray-50"
-      >
-        {LABEL[value]}
-        <ChevronDown className="h-3.5 w-3.5 text-gray-500" />
-      </button>
-      {open && (
-        <div className="absolute right-0 top-full mt-1 w-32 bg-white border border-gray-200 rounded-md shadow-lg z-50 py-1">
-          {(["week", "month", "quarter"] as Period[]).map((p) => (
-            <button
-              key={p}
-              type="button"
-              onClick={() => {
-                onChange(p);
-                setOpen(false);
-              }}
-              className={`w-full px-3 py-1.5 text-xs text-left hover:bg-gray-50 ${
-                p === value ? "text-blue-700 bg-blue-50 font-medium" : "text-gray-700"
-              }`}
-            >
-              {LABEL[p]}
-            </button>
-          ))}
-        </div>
-      )}
-    </div>
-  );
-}
-
 function MoreMenu({
   onCsv,
   onXls,
   onPdf,
+  period,
+  onPeriodChange,
 }: {
   onCsv: () => void;
   onXls: () => void;
   onPdf: () => void;
+  period: Period;
+  onPeriodChange: (p: Period) => void;
 }) {
   const [open, setOpen] = useState(false);
+  const PERIODS: Period[] = ["week", "month", "quarter"];
+  const PLABEL: Record<Period, string> = { week: "Week", month: "Month", quarter: "Quarter" };
   return (
     <div className="relative">
       <button
@@ -1245,6 +1194,28 @@ function MoreMenu({
       </button>
       {open && (
         <div className="absolute right-0 top-full mt-1 w-56 bg-white border border-gray-200 rounded-md shadow-lg z-50 py-1">
+          <div className="px-3 pt-1.5 pb-1 text-[10px] font-semibold uppercase tracking-wide text-gray-400">
+            View
+          </div>
+          {PERIODS.map((p) => (
+            <button
+              key={p}
+              type="button"
+              onClick={() => {
+                onPeriodChange(p);
+                setOpen(false);
+              }}
+              className={`w-full px-3 py-1.5 text-xs text-left hover:bg-gray-50 ${
+                p === period ? "bg-blue-50 font-medium text-blue-700" : "text-gray-700"
+              }`}
+            >
+              {PLABEL[p]}
+            </button>
+          ))}
+          <div className="my-1 border-t border-gray-100" />
+          <div className="px-3 pt-1 pb-1 text-[10px] font-semibold uppercase tracking-wide text-gray-400">
+            Export
+          </div>
           <ExportRow
             badge="PDF"
             badgeClass="bg-red-100 text-red-700"
