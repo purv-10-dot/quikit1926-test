@@ -31,6 +31,8 @@ import { SplitWorklogModal } from "./split-worklog-modal";
 import { TimesheetCell } from "./timesheet-cell";
 import { useMyProjectPermissions } from "@/lib/hooks/useMyProjectPermissions";
 import { EditIssueModal } from "@/components/edit-issue-modal";
+import { showToast } from "@/lib/ui/toast";
+import { CopyWeekModal, type CopyWeekPreview } from "./copy-week-modal";
 
 type GroupBy = "user" | "project" | "issue" | "user-issue" | "epic-issue";
 
@@ -152,6 +154,10 @@ export function TimesheetView({
   const [projectOptions, setProjectOptions] = useState<FilterOption[]>([]);
 
   const [logOpen, setLogOpen] = useState(false);
+  const [copyingWeek, setCopyingWeek] = useState(false);
+  const [copyOpen, setCopyOpen] = useState(false);
+  const [copyLoading, setCopyLoading] = useState(false);
+  const [copyPreview, setCopyPreview] = useState<CopyWeekPreview | null>(null);
   const [logDate, setLogDate] = useState<Date | undefined>(undefined);
   const [logIssueId, setLogIssueId] = useState<string | undefined>(undefined);
   const [logIssueLabel, setLogIssueLabel] = useState<string | undefined>(undefined);
@@ -172,6 +178,12 @@ export function TimesheetView({
   const [splitState, setSplitState] = useState<EntryDetail | null>(null);
 
   const range = useMemo(() => getPeriodRange(period, anchor), [period, anchor]);
+  // "Copy last week" only makes sense on the week you're actually in — hide it
+  // when navigating to other weeks (and outside the weekly view).
+  const viewingCurrentWeek = useMemo(() => {
+    const now = Date.now();
+    return period === "week" && range.from.getTime() <= now && now <= range.to.getTime();
+  }, [period, range]);
 
   const refresh = useCallback(async () => {
     setLoading(true);
@@ -294,6 +306,66 @@ export function TimesheetView({
     },
     [],
   );
+
+  const copyBody = () => ({
+    weekStart: range.from.toISOString(),
+    weekEnd: range.to.toISOString(),
+    projectId: projectId ?? null,
+  });
+
+  // Open the confirm dialog with a dry-run preview (what will copy / be kept /
+  // wait) — no writes yet.
+  async function openCopyModal() {
+    setCopyOpen(true);
+    setCopyLoading(true);
+    setCopyPreview(null);
+    try {
+      const res = await fetch("/api/timesheets/copy-previous-week", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ ...copyBody(), preview: true }),
+      }).then((r) => r.json());
+      if (res?.success) setCopyPreview(res.data as CopyWeekPreview);
+      else {
+        showToast(res?.error ?? "Couldn't check last week.", "error");
+        setCopyOpen(false);
+      }
+    } catch {
+      showToast("Couldn't check last week.", "error");
+      setCopyOpen(false);
+    } finally {
+      setCopyLoading(false);
+    }
+  }
+
+  // Confirmed → actually copy.
+  async function doCopyWeek() {
+    if (copyingWeek) return;
+    setCopyingWeek(true);
+    try {
+      const res = await fetch("/api/timesheets/copy-previous-week", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(copyBody()),
+      }).then((r) => r.json());
+      if (!res?.success) {
+        showToast(res?.error ?? "Couldn't copy last week.", "error");
+        return;
+      }
+      const created: number = res.data?.created ?? 0;
+      setCopyOpen(false);
+      if (created > 0) {
+        showToast(`Copied ${created} ${created === 1 ? "entry" : "entries"} from last week.`, "success");
+        await refresh();
+      } else {
+        showToast("Nothing to copy up to today.", "info");
+      }
+    } catch {
+      showToast("Couldn't copy last week.", "error");
+    } finally {
+      setCopyingWeek(false);
+    }
+  }
 
   function openPopover(opts: {
     entryIds: string[];
@@ -531,6 +603,16 @@ export function TimesheetView({
             onXls={downloadXls}
             onPdf={downloadPdf}
           />
+          {canLogTime && viewingCurrentWeek && (
+            <button
+              type="button"
+              onClick={openCopyModal}
+              title="Copy last week's entries into this week, up to today"
+              className="inline-flex items-center gap-1.5 h-9 px-3 text-sm font-medium text-gray-700 border border-gray-300 rounded hover:bg-gray-50"
+            >
+              Copy last week
+            </button>
+          )}
           {canLogTime && (
             <button
               type="button"
@@ -784,6 +866,15 @@ export function TimesheetView({
           </tbody>
         </table>
       </div>
+
+      <CopyWeekModal
+        open={copyOpen}
+        loading={copyLoading}
+        preview={copyPreview}
+        busy={copyingWeek}
+        onCancel={() => setCopyOpen(false)}
+        onConfirm={doCopyWeek}
+      />
 
       {logOpen && (
         <LogTimeModal
