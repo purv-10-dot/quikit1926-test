@@ -26,8 +26,10 @@ import {
 } from "@quikit/ui";
 import { useQueryClient } from "@tanstack/react-query";
 import { useInfiniteUsers } from "@/lib/hooks/useInfiniteUsers";
+import { useTeams } from "@/lib/hooks/useTeams";
 import { useCreateKPI } from "@/lib/hooks/useKPI";
 import { useCreatePriority } from "@/lib/hooks/usePriority";
+import { TeamSelect } from "../../priority/components/TeamSelect";
 import { invalidateEntity } from "@/lib/hooks/dashboardInvalidation";
 import { useExportGate, type DuplicateDecision } from "./ExportGateModals";
 import { useCurrentWeek, useWeekLabels } from "@/lib/hooks/useCurrentWeek";
@@ -766,6 +768,7 @@ export function ExportKPIDrawer({
 interface PriorityStepForm {
   name: string;
   owner: string;
+  teamId: string;
   startWeek: number;
   endWeek: number;
   description: string;
@@ -836,6 +839,7 @@ export function ExportPriorityDrawer({
   const gate = useExportGate();
   const [search, setSearch] = useState("");
   const infinite = useInfiniteUsers(undefined, search);
+  const { data: teams = [] } = useTeams();
 
   const [step, setStep] = useState(0);
   const [saving, setSaving] = useState(false);
@@ -888,6 +892,7 @@ export function ExportPriorityDrawer({
       newRows.map(({ row }) => ({
         name: row.priority.trim(),
         owner: ownerId,
+        teamId: "",
         startWeek: 1,
         endWeek: 13,
         description: "",
@@ -907,6 +912,7 @@ export function ExportPriorityDrawer({
       name: f.name.trim(),
       description: f.description || undefined,
       owner: f.owner,
+      teamId: f.teamId || undefined,
       quarter,
       year,
       startWeek: f.startWeek,
@@ -925,6 +931,7 @@ export function ExportPriorityDrawer({
         name: f.name.trim(),
         description: f.description || undefined,
         owner: f.owner,
+        teamId: f.teamId || null,
         startWeek: f.startWeek,
         endWeek: f.endWeek,
       }),
@@ -1057,6 +1064,12 @@ export function ExportPriorityDrawer({
         <div className="col-span-2">
           <label className={fieldLabel}>Priority Name <span className="text-red-500">*</span></label>
           <input className={inputCls} value={cur.name} onChange={(e) => patch({ name: e.target.value })} />
+        </div>
+        <div className="col-span-2">
+          {/* Team is optional metadata; owner stays locked to the OPSP user, so
+              changing the team here never clears the owner. */}
+          <label className={fieldLabel}>Team</label>
+          <TeamSelect value={cur.teamId} onChange={(id) => patch({ teamId: id })} teams={teams} />
         </div>
         <div>
           <label className={fieldLabel}>Owner <span className="text-red-500">*</span></label>

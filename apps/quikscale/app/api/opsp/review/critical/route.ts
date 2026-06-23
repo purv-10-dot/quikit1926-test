@@ -2,8 +2,14 @@ import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { withOrgAuthForResource } from "@/lib/api/withOrgAuth";
 import { isOrgAdmin, forbidden } from "@/lib/api/permissions";
-import { writeAuditLog } from "@/lib/api/auditLog";
+import { audit, requestContext } from "@/lib/audit";
 import { resolveOpspOwnerOrSelf, resolveSectionUserId } from "@/lib/api/opspOwner";
+import {
+  criticalPeriod,
+  CRITICAL_AUDIT_ENTITY_TYPE,
+  MODULE_LABELS,
+  CARD_LABELS,
+} from "@/lib/audit/criticalFields";
 
 // Gated on the standalone Critical-Review permission (view to read, update to
 // save) + the opsp.review feature flag. Admins hold the grant via their role.
@@ -255,12 +261,9 @@ export const POST = critAuth.update(async ({ orgId, userId }, req) => {
     }
 
     // Individual entries are keyed per-subject so each user owns their own row.
-    const period =
-      moduleKey === "people"
-        ? `people:${cardType}:${subjectUserId}`
-        : `${moduleKey}:${cardType}`;
+    const period = criticalPeriod(moduleKey, cardType, subjectUserId);
 
-    // Snapshot pre-update state for the audit-log drawer to diff against.
+    // Snapshot pre-update state so the Change History panel can diff old → new.
     const prev = await db.oPSPReviewEntry.findUnique({
       where: {
         orgId_opspId_horizon_rowIndex_period: {
@@ -273,20 +276,17 @@ export const POST = critAuth.update(async ({ orgId, userId }, req) => {
       },
       select: { achievedValue: true, comment: true, category: true },
     });
-    const oldSnapshot = {
-      module: moduleKey,
-      cardType,
-      category: prev?.category ?? null,
-      achievedValue: prev?.achievedValue != null ? Number(prev.achievedValue) : null,
-      comment: prev?.comment ?? null,
-    };
-    const newSnapshot = {
-      module: moduleKey,
-      cardType,
-      category,
-      achievedValue,
-      comment,
-    };
+    const isCreate = prev == null;
+    // Only the three user-meaningful fields are diffed — Achieved, Comment, and
+    // the card Title. Numeric Decimals coerce via Number() to match `after`.
+    const before = isCreate
+      ? null
+      : {
+          category: prev?.category ?? null,
+          achievedValue: prev?.achievedValue != null ? Number(prev.achievedValue) : null,
+          comment: prev?.comment ?? null,
+        };
+    const after = { category, achievedValue, comment };
 
     const saved = await db.oPSPReviewEntry.upsert({
       where: {
@@ -319,16 +319,20 @@ export const POST = critAuth.update(async ({ orgId, userId }, req) => {
       },
     });
 
-    await writeAuditLog({
-      orgId,
-      actorId: userId,
-      action: "UPDATE",
-      entityType: "Review",
-      entityId: opsp.id,
-      oldValues: oldSnapshot,
-      newValues: newSnapshot,
-      changes: [`critical:${moduleKey}:${cardType}`],
-      reason: `OPSP Critical (${moduleKey}:${cardType}): ${category}`,
+    // Rich change-history event (same AuditEvent system as KPI/Priority/WWW).
+    // Composite entityId scopes the timeline to this one card (per-subject for
+    // Individual), so each card shows only its own history.
+    const scopeLabel = `${MODULE_LABELS[moduleKey] ?? moduleKey} · ${CARD_LABELS[cardType] ?? cardType}`;
+    await audit.log({
+      entityType: CRITICAL_AUDIT_ENTITY_TYPE,
+      entityId: `${opsp.id}:${period}`,
+      action: isCreate ? "CREATE" : "UPDATE",
+      actor: { userId, orgId },
+      before,
+      after,
+      snapshot: { module: moduleKey, cardType, category, achievedValue, comment },
+      reason: category ? `${scopeLabel} — ${category}` : scopeLabel,
+      ...requestContext(req),
     });
 
     return NextResponse.json({

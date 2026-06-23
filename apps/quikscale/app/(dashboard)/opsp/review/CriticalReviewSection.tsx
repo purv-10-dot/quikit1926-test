@@ -27,8 +27,9 @@ import { cn } from "@/lib/utils";
 import { AlertTriangle, Loader2 } from "lucide-react";
 import { CriticalTable, type CriticalTableEntry } from "./CriticalTable";
 import { CriticalReviewDrawer } from "./CriticalReviewDrawer";
-import { AuditLogDrawer } from "@/components/logs/audit-log-drawer";
-import { OPSP_FIELD_LABELS } from "@/lib/utils/auditLog";
+import { EntityChangeHistoryPanel } from "@/components/audit/EntityChangeHistoryPanel";
+import { criticalReviewAuditConfig } from "@/components/audit/criticalReviewAuditConfig";
+import { criticalEntityId, criticalScopeLabel, CARD_LABELS } from "@/lib/audit/criticalFields";
 import { SectionUserPicker } from "../components/SectionUserPicker";
 
 type Module = "actions" | "year" | "people";
@@ -52,6 +53,8 @@ interface CriticalReviewData {
   entries: Record<string, CriticalTableEntry>;
   year: number;
   quarter: string;
+  /** Subject whose Individual criticals are shown — scopes the audit timeline. */
+  subjectUserId?: string | null;
 }
 
 const MODULE_TABS: { key: Module; label: string }[] = [
@@ -320,17 +323,23 @@ export function CriticalReviewSection({
         }
       />
 
-      {/* ── Audit-log drawer for Critical # Review cards ── */}
+      {/* ── Change History panel for Critical # Review cards — the same rich
+          timeline (tabs, operation pills, field-level diffs, export) used by
+          KPI / Priority / WWW. ── */}
       {data?.opspId && logsCard && (
-        <AuditLogDrawer
-          open
+        <EntityChangeHistoryPanel
+          entity={{
+            id: criticalEntityId(data.opspId, activeModule, logsCard.cardType, data.subjectUserId),
+            name: logsCard.title.trim() || CARD_LABELS[logsCard.cardType],
+            scopeLabel: criticalScopeLabel(activeModule, logsCard.cardType),
+            card:
+              logsCard.cardType === "critical"
+                ? moduleCards.critical
+                : moduleCards.balancing,
+            entry: entryFor(logsCard.cardType),
+          }}
+          config={criticalReviewAuditConfig}
           onClose={() => setLogsCard(null)}
-          title={`Audit History — ${logsCard.cardType === "critical" ? "Critical #" : "Balancing Critical #"}`}
-          subtitle={`${logsCard.title || "—"} · ${MODULE_TABS.find((t) => t.key === activeModule)?.label}`}
-          entityType="Review"
-          entityId={data.opspId}
-          extraQuery={`OPSP Critical (${activeModule}:${logsCard.cardType})`}
-          fieldLabels={OPSP_FIELD_LABELS}
         />
       )}
     </div>
