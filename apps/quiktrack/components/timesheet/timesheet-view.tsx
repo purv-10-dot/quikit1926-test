@@ -53,6 +53,9 @@ interface Cell {
 interface GridResponse {
   rows: RowMeta[];
   cells: Record<string, Record<string, Cell>>;
+  // True only for app admins / the project's Space Admin — they may see every
+  // member's data. Everyone else is scoped to their own entries server-side.
+  canSeeAll?: boolean;
 }
 
 interface FilterOption {
@@ -194,6 +197,11 @@ export function TimesheetView({
       (((d.getTime() - startOfYear.getTime()) / 86_400_000) + startOfYear.getDay() + 1) / 7,
     );
   }, [range]);
+
+  // Only app admins / a project's Space Admin may pick other users — everyone
+  // else is scoped to their own data server-side, so the per-user filter would
+  // do nothing. `isAdmin` is known immediately; Space Admin comes back on the grid.
+  const canSeeAllUsers = perms.isAdmin || Boolean(grid?.canSeeAll);
 
   const refresh = useCallback(async () => {
     setLoading(true);
@@ -546,14 +554,16 @@ export function TimesheetView({
             onChange={setGroupBy}
             hideProject={Boolean(projectId)}
           />
-          <MultiSelectFilter
-            icon={<Filter className="h-3.5 w-3.5 text-gray-500" />}
-            label="User"
-            options={userOptions}
-            selected={userFilter}
-            onChange={setUserFilter}
-            emptyHint="No users available"
-          />
+          {canSeeAllUsers && (
+            <MultiSelectFilter
+              icon={<Filter className="h-3.5 w-3.5 text-gray-500" />}
+              label="User"
+              options={userOptions}
+              selected={userFilter}
+              onChange={setUserFilter}
+              emptyHint="No users available"
+            />
+          )}
           {!projectId && (
             <MultiSelectFilter
               label="Project"
