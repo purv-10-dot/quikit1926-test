@@ -186,6 +186,28 @@ export const TENANT_PLANS = {
   ENTERPRISE: "enterprise",
 } as const;
 
+// ── Self-serve registration + subscription/trial ───────────────────────────
+// Apps a brand-new self-serve workspace is granted on registration. Org Admins
+// see every provisioned app in the launcher; these become the org's first
+// OrgAppAccess rows. Adjust freely — slugs must exist in quikit.App.
+export const DEFAULT_REGISTRATION_APP_SLUGS = ["quikcrm", "quiktrack", "admin"] as const;
+
+// Length of the free trial granted to a newly self-registered workspace.
+export const TRIAL_DURATION_DAYS = 14;
+
+// Subscription.status value space. `trialing` + a future trialEndsAt grants
+// access; an expired trial or any of past_due/canceled/expired gates the org.
+// An org with NO Subscription row is grandfathered (treated as active).
+export const SUBSCRIPTION_STATUS = {
+  TRIALING: "trialing",
+  ACTIVE: "active",
+  PAST_DUE: "past_due",
+  CANCELED: "canceled",
+  EXPIRED: "expired",
+} as const;
+export type SubscriptionStatus =
+  (typeof SUBSCRIPTION_STATUS)[keyof typeof SUBSCRIPTION_STATUS];
+
 export const PATHS = {
   HOME: "/",
   LOGIN: "/login",

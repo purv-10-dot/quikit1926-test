@@ -22,12 +22,23 @@ import {
   Building2,
   ChevronDown,
   Shield,
-  ArrowRight,
+  AlertTriangle,
+  Eye,
+  X,
+  Star,
+  Check,
+  Target,
+  MessageSquare,
+  Users,
+  Mail,
+  Megaphone,
+  LayoutGrid,
+  type LucideIcon,
 } from "lucide-react";
 import Link from "next/link";
 import { motion, AnimatePresence, useReducedMotion } from "framer-motion";
 import { UserMenu, globalSignOut } from "@quikit/ui";
-import { getAppConfig } from "@quikit/shared";
+import { APP_DETAILS } from "../_data/app-details";
 
 /* ── Brand tokens (mirror the marketing site + login modal) ── */
 const PAPER = "#F7F7F4";
@@ -51,15 +62,6 @@ const LAUNCHER_ICONS: Record<string, string> = {
   quiksocial: "/app-icons/quiksocial.svg",
 };
 
-function previewModules(slug: string): string[] {
-  const cfg = getAppConfig(slug);
-  if (!cfg) return [];
-  return cfg.modules
-    .filter((m) => m.href && !m.parentKey)
-    .slice(0, 4)
-    .map((m) => m.label);
-}
-
 interface AppInfo {
   id: string;
   name: string;
@@ -68,9 +70,99 @@ interface AppInfo {
   iconUrl: string | null;
   baseUrl: string;
   status: string;
-  installed: boolean;
+  installed?: boolean;
+  activated?: boolean;
+  trialState?: "active" | "trialing" | "expired" | "none";
+  trialEndsAt?: string | null;
+  daysLeft?: number | null;
   role?: string;
 }
+
+/** Coming-soon apps shown in the launcher's "Upcoming" section (not in the
+ *  catalog yet — purely informational, non-launchable). Each has a gradient
+ *  icon tile + glyph mirroring the marketing design. */
+const UPCOMING_APPS: { name: string; description: string; icon: LucideIcon; gradient: string }[] = [
+  { name: "QuikGoals", icon: Target, gradient: "linear-gradient(135deg,#FB923C,#F97316)", description: "Define targets, measure progress, and align every team around the numbers that matter." },
+  { name: "QuikChat", icon: MessageSquare, gradient: "linear-gradient(135deg,#2DD4BF,#14B8A6)", description: "Manage customer conversations across every channel with full context and smart routing." },
+  { name: "QuikHR", icon: Users, gradient: "linear-gradient(135deg,#FB7185,#F43F5E)", description: "Run hiring, onboarding, payroll, and performance reviews end to end in one HR system." },
+  { name: "QuikEmail", icon: Mail, gradient: "linear-gradient(135deg,#818CF8,#6366F1)", description: "Build, send, and automate email campaigns with templates, sequences, and open tracking built in." },
+  { name: "QuikSEO", icon: Search, gradient: "linear-gradient(135deg,#34D399,#10B981)", description: "Find keyword opportunities, monitor rankings, and get AI-driven content recommendations." },
+  { name: "QuikMarketing", icon: Megaphone, gradient: "linear-gradient(135deg,#F87171,#EF4444)", description: "Run AI-powered campaigns across every marketing channel from a single workspace." },
+  { name: "QuikStudio", icon: LayoutGrid, gradient: "linear-gradient(135deg,#60A5FA,#3B82F6)", description: "Build custom apps and automations for your business. No code required." },
+];
+
+const GRID_CLS = "grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5";
+
+/* Section panel — rounded translucent container (mirrors marketing .apps-section). */
+function SectionPanel({
+  title,
+  muted,
+  children,
+}: {
+  title: string;
+  muted?: boolean;
+  children: React.ReactNode;
+}) {
+  return (
+    <section
+      style={{
+        background: muted ? "rgba(255,255,255,0.32)" : "rgba(255,255,255,0.5)",
+        border: "1px solid rgba(0,0,0,0.06)",
+        borderRadius: 22,
+        padding: "24px 24px 26px",
+        WebkitBackdropFilter: "blur(6px)",
+        backdropFilter: "blur(6px)",
+        boxShadow: "0 10px 40px -28px rgba(0,0,0,0.25)",
+      }}
+    >
+      <h2
+        style={{
+          fontSize: 13,
+          fontWeight: 700,
+          letterSpacing: "0.1em",
+          textTransform: "uppercase",
+          color: muted ? MUTED : INK,
+          margin: "0 0 16px",
+        }}
+      >
+        {title}
+      </h2>
+      {children}
+    </section>
+  );
+}
+
+/* Dot-style trial pill (gold = trialing, red = expired). */
+function TrialPill({ state, daysLeft }: { state?: string; daysLeft?: number | null }) {
+  if (state !== "trialing" && state !== "expired") return null;
+  const expired = state === "expired";
+  const color = expired ? "#CE3A3D" : "#9A6217";
+  const bg = expired ? "rgba(206,58,61,0.10)" : "rgba(154,98,23,0.10)";
+  const border = expired ? "rgba(206,58,61,0.22)" : "rgba(154,98,23,0.22)";
+  return (
+    <span
+      className="inline-flex items-center"
+      style={{ gap: 5, padding: "4px 10px", fontSize: 11, fontWeight: 700, lineHeight: 1, color, background: bg, border: `1px solid ${border}`, borderRadius: 999, whiteSpace: "nowrap" }}
+    >
+      <span style={{ width: 6, height: 6, borderRadius: "50%", background: color }} />
+      {expired ? "Free Trial Expired" : `${daysLeft} ${daysLeft === 1 ? "day" : "days"} left`}
+    </span>
+  );
+}
+
+const iconFallbackStyle: React.CSSProperties = {
+  width: 44,
+  height: 44,
+  borderRadius: 12,
+  background: ACCENT_DIM,
+  color: "#7c5e2e",
+  display: "flex",
+  alignItems: "center",
+  justifyContent: "center",
+  fontFamily: SERIF,
+  fontSize: 20,
+};
+
 
 interface OrgInfo {
   orgId: string;
@@ -85,6 +177,14 @@ export default function AppLauncherPage() {
   const { data: session, update } = useSession();
   const reduce = useReducedMotion();
   const [apps, setApps] = useState<AppInfo[]>([]);
+  // "Other Tools in Our Suite" — catalog apps the org hasn't activated yet
+  // (only populated for org admins, who can start trials).
+  const [available, setAvailable] = useState<AppInfo[]>([]);
+  const [isOrgAdmin, setIsOrgAdmin] = useState(false);
+  // App detail modal (the per-app detail screen) + in-flight activation.
+  const [detailApp, setDetailApp] = useState<AppInfo | null>(null);
+  const [detailTab, setDetailTab] = useState<"overview" | "features" | "pricing">("overview");
+  const [activating, setActivating] = useState<string | null>(null);
   const [orgs, setOrgs] = useState<OrgInfo[]>([]);
   const [selectedOrg, setSelectedOrg] = useState<OrgInfo | null>(null);
   const [loadingApps, setLoadingApps] = useState(true);
@@ -95,6 +195,9 @@ export default function AppLauncherPage() {
   // super-admin flipped its status while this page was open), we show a
   // dedicated suspension popup instead of the generic "Not a member" alert.
   const [suspendedOpen, setSuspendedOpen] = useState(false);
+  // The app whose trial has expired and is being offered an upgrade (null =
+  // modal closed). Per-app — replaces the earlier org-level trial pill.
+  const [upgradeApp, setUpgradeApp] = useState<AppInfo | null>(null);
   // Gate the header entrance animation until after mount so SSR and the first
   // client render share the same (hidden) state — otherwise framer-motion
   // hydrates the header at its `animate` style and React warns that the
@@ -108,8 +211,16 @@ export default function AppLauncherPage() {
   useEffect(() => {
     if (typeof window === "undefined") return;
     const params = new URLSearchParams(window.location.search);
-    if (params.get("reason") === "org_suspended") {
+    const reason = params.get("reason");
+    if (reason === "org_suspended") {
       setSuspendedOpen(true);
+      params.delete("reason");
+      const qs = params.toString();
+      window.history.replaceState({}, "", `/apps${qs ? `?${qs}` : ""}`);
+    } else if (reason === "trial_expired" || reason === "subscription_inactive") {
+      // A consumer app bounced the user here because a trial/subscription
+      // lapsed. The per-app "Upgrade to Pro Plan" cards in the Active section
+      // surface the path forward; just clean the URL marker here.
       params.delete("reason");
       const qs = params.toString();
       window.history.replaceState({}, "", `/apps${qs ? `?${qs}` : ""}`);
@@ -169,21 +280,32 @@ export default function AppLauncherPage() {
       .finally(() => setLoadingOrgs(false));
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Load apps whenever selectedOrg changes.
+  // Load the launcher catalog (activated apps + available-to-activate apps).
+  async function loadApps(orgId: string, showSpinner = true) {
+    if (showSpinner) setLoadingApps(true);
+    try {
+      const r = await fetch(`/api/apps/launcher?orgId=${encodeURIComponent(orgId)}`);
+      const j = await r.json();
+      if (j.success) {
+        setApps(j.data ?? []);
+        setAvailable(j.available ?? []);
+        setIsOrgAdmin(Boolean(j.isOrgAdmin));
+      }
+    } catch {
+      // best-effort
+    } finally {
+      if (showSpinner) setLoadingApps(false);
+    }
+  }
+
+  // Reload apps whenever the selected org changes.
   useEffect(() => {
     if (!selectedOrg?.orgId) {
       setLoadingApps(false);
       return;
     }
-    setLoadingApps(true);
-    fetch(`/api/apps/launcher?orgId=${encodeURIComponent(selectedOrg.orgId)}`)
-      .then((r) => r.json())
-      .then((j) => {
-        if (j.success) setApps(j.data);
-      })
-      .catch(() => {})
-      .finally(() => setLoadingApps(false));
-  }, [selectedOrg?.orgId]);
+    void loadApps(selectedOrg.orgId);
+  }, [selectedOrg?.orgId]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Deep-link handoff: ?handoff=<slug>&to=<path> auto-launches once loaded.
   useEffect(() => {
@@ -222,6 +344,13 @@ export default function AppLauncherPage() {
   }
 
   async function handleLaunch(app: AppInfo, to: string = "/") {
+    // Client-side per-app trial gate (defense in depth — launch-token also
+    // blocks server-side). Super admins are never gated; active/grandfathered
+    // apps pass straight through.
+    if (!isSuperAdmin && app.trialState === "expired") {
+      setUpgradeApp(app);
+      return;
+    }
     const url = (app.baseUrl ?? "").trim();
     if (!url) {
       console.error(
@@ -247,6 +376,8 @@ export default function AppLauncherPage() {
       if (!j.success) {
         if (j.code === "ORG_SUSPENDED") {
           setSuspendedOpen(true);
+        } else if (j.code === "TRIAL_EXPIRED") {
+          setUpgradeApp(app);
         } else {
           window.alert(j.error ?? "Failed to launch app");
         }
@@ -259,12 +390,69 @@ export default function AppLauncherPage() {
     }
   }
 
+  // Start a 14-day trial for an app (from the detail modal). Auto-activates
+  // the Admin Portal server-side, then refreshes the catalog.
+  async function handleActivate(app: AppInfo) {
+    setActivating(app.slug);
+    try {
+      const res = await fetch("/api/org/apps/activate", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ appSlug: app.slug }),
+      });
+      const j = await res.json();
+      if (!j.success) {
+        window.alert(j.error ?? "Could not activate this app.");
+        return;
+      }
+      setDetailApp(null);
+      if (selectedOrg?.orgId) await loadApps(selectedOrg.orgId, false);
+    } catch {
+      window.alert("Could not activate this app. Please try again.");
+    } finally {
+      setActivating(null);
+    }
+  }
+
+  // Per-app upgrade — clears the trial (trialEndsAt=null → active). Payment
+  // integration is out of scope; this releases the gate end-to-end.
+  async function handleUpgradeApp(app: AppInfo) {
+    setActivating(app.slug);
+    try {
+      const res = await fetch("/api/org/apps/activate", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ appSlug: app.slug, upgrade: true }),
+      });
+      const j = await res.json();
+      if (!j.success) {
+        window.alert(j.error ?? "Could not upgrade this app.");
+        return;
+      }
+      setUpgradeApp(null);
+      if (selectedOrg?.orgId) await loadApps(selectedOrg.orgId, false);
+    } catch {
+      window.alert("Could not upgrade this app. Please try again.");
+    } finally {
+      setActivating(null);
+    }
+  }
+
+  // Open the per-app detail screen (always start on the Overview tab).
+  function openDetail(app: AppInfo) {
+    setDetailTab("overview");
+    setDetailApp(app);
+  }
+
   const matchesSearch = (a: AppInfo) =>
     !search ||
     a.name.toLowerCase().includes(search.toLowerCase()) ||
     (a.description ?? "").toLowerCase().includes(search.toLowerCase());
 
-  const installed = apps.filter((a) => a.installed && matchesSearch(a));
+  // Activated apps → "Active" section; non-activated catalog apps → "Other
+  // Tools" (admins only, since only they can start trials).
+  const activeApps = apps.filter((a) => matchesSearch(a));
+  const otherTools = (isOrgAdmin ? available : []).filter(matchesSearch);
 
   const ease = [0.16, 1, 0.3, 1] as const; // ease-out-expo
   const gridV = {
@@ -284,6 +472,117 @@ export default function AppLauncherPage() {
     return (name?.[0] ?? "Q").toUpperCase();
   }
 
+  function AppIcon({ app }: { app: AppInfo }) {
+    const iconSrc = LAUNCHER_ICONS[app.slug] ?? app.iconUrl ?? undefined;
+    if (iconSrc) {
+      // eslint-disable-next-line @next/next/no-img-element
+      return (
+        <img
+          src={iconSrc}
+          alt=""
+          width={44}
+          height={44}
+          style={{ width: 44, height: 44, borderRadius: 12, objectFit: "cover" }}
+        />
+      );
+    }
+    return <span style={iconFallbackStyle}>{initialOf(app.name)}</span>;
+  }
+
+  const cardStyle: React.CSSProperties = {
+    background: CARD,
+    border: `1px solid ${HAIRLINE}`,
+    borderRadius: 24,
+    boxShadow: "0 1px 3px rgba(13,17,23,0.04), 0 10px 30px rgba(13,17,23,0.06)",
+    minHeight: 196,
+  };
+  const btnPrimary: React.CSSProperties = {
+    fontWeight: 700,
+    color: "#fff",
+    background: INK,
+    borderRadius: 12,
+    fontSize: 13,
+  };
+  // Outline card button (white bg + dark text + border) — matches the launcher
+  // card design. Background/hover via Tailwind so :hover works; border/color
+  // inline. Used for Open app / Upgrade to Pro Plan / Start free trial.
+  const cardBtnCls =
+    "flex-1 py-2.5 rounded-xl text-sm font-bold transition-colors bg-white hover:bg-[#F2F1ED] disabled:opacity-60";
+  const cardBtnStyle: React.CSSProperties = { color: INK, border: `1px solid ${HAIRLINE}` };
+  const eyeBtnStyle: React.CSSProperties = {
+    border: `1px solid ${HAIRLINE}`,
+    background: CARD,
+    color: MUTED,
+    borderRadius: 12,
+    width: 44,
+    flexShrink: 0,
+  };
+
+  // Card for an ACTIVATED app (Active section): trial pill + Open app / Upgrade.
+  function renderActiveCard(app: AppInfo) {
+    const desc = (app.description ?? "").split(/(?<=[.!?])\s+/)[0];
+    const expired = app.trialState === "expired";
+    return (
+      <motion.div key={app.id} variants={tileV} className="p-5 flex flex-col" style={cardStyle}>
+        <div className="flex items-start justify-between gap-2 mb-3.5">
+          <AppIcon app={app} />
+          <TrialPill state={app.trialState} daysLeft={app.daysLeft} />
+        </div>
+        <h3 className="truncate" style={{ fontSize: 16, fontWeight: 700, color: INK }}>{app.name}</h3>
+        <p className="line-clamp-2 mt-1" style={{ fontSize: 13, color: MUTED, lineHeight: 1.5, flex: 1 }}>
+          {desc || "Open this app in your workspace."}
+        </p>
+        <div className="flex items-center gap-2 mt-4">
+          {expired ? (
+            <button
+              onClick={() => handleUpgradeApp(app)}
+              disabled={activating === app.slug}
+              className={cardBtnCls}
+              style={cardBtnStyle}
+            >
+              {activating === app.slug ? "Upgrading…" : "Upgrade to Pro Plan"}
+            </button>
+          ) : (
+            <button
+              onClick={() => handleLaunch(app)}
+              className={cardBtnCls}
+              style={cardBtnStyle}
+            >
+              Open app
+            </button>
+          )}
+          <button onClick={() => openDetail(app)} className="py-2.5 flex items-center justify-center" style={eyeBtnStyle} title="App details">
+            <Eye className="h-4 w-4 mx-auto" />
+          </button>
+        </div>
+      </motion.div>
+    );
+  }
+
+  // Card for a NOT-activated app (Other Tools section): Start trial + info eye.
+  function renderOtherCard(app: AppInfo) {
+    const desc = (app.description ?? "").split(/(?<=[.!?])\s+/)[0];
+    return (
+      <motion.div key={app.id} variants={tileV} className="p-5 flex flex-col" style={cardStyle}>
+        <div className="flex items-center gap-3 mb-3.5">
+          <AppIcon app={app} />
+          <h3 className="truncate" style={{ fontSize: 16, fontWeight: 700, color: INK }}>{app.name}</h3>
+        </div>
+        <p className="line-clamp-2" style={{ fontSize: 13, color: MUTED, lineHeight: 1.5, flex: 1 }}>
+          {desc || "Start a free trial of this app."}
+        </p>
+        <div className="flex items-center gap-2 mt-4">
+          <button onClick={() => openDetail(app)} className={cardBtnCls} style={cardBtnStyle}>
+            Start free trial
+          </button>
+          <button onClick={() => openDetail(app)} className="py-2.5 flex items-center justify-center" style={eyeBtnStyle} title="App details">
+            <Eye className="h-4 w-4 mx-auto" />
+          </button>
+        </div>
+      </motion.div>
+    );
+  }
+
   return (
     <div
       style={{
@@ -292,32 +591,35 @@ export default function AppLauncherPage() {
         color: INK,
         fontFamily: SANS,
         position: "relative",
-        overflowX: "hidden",
       }}
     >
-      {/* Ambient watercolor-paper wash (brand echo, CSS only — no 3D) */}
+      {/* Full-page watercolor background — fixed so it stays put while the
+          page scrolls (mirrors the marketing .apps-page::before). Content sits
+          above it; the translucent section panels let it show through. */}
       <div
         aria-hidden
         style={{
           position: "fixed",
           inset: 0,
+          zIndex: 0,
           pointerEvents: "none",
-          background: `radial-gradient(60rem 40rem at 78% -8%, ${ACCENT_DIM}, transparent 60%), radial-gradient(48rem 36rem at 6% 8%, rgba(205,177,139,0.10), transparent 55%)`,
+          background: "url('/launcher-bg.webp') center top / cover no-repeat",
         }}
       />
 
-      {/* Header */}
+      {/* Floating sticky header — translucent + blurred, stays fixed on scroll. */}
       <motion.header
         initial={reduce ? false : { opacity: 0, y: -12 }}
         animate={mounted || reduce ? { opacity: 1, y: 0 } : { opacity: 0, y: -12 }}
         transition={{ duration: 0.45, ease }}
         style={{
-          position: "relative",
+          position: "sticky",
+          top: 0,
           zIndex: 50,
-          background: "rgba(247,247,244,0.82)",
-          backdropFilter: "blur(10px)",
-          WebkitBackdropFilter: "blur(10px)",
-          borderBottom: `1px solid ${HAIRLINE}`,
+          background: "rgba(247,247,244,0.72)",
+          backdropFilter: "saturate(150%) blur(14px)",
+          WebkitBackdropFilter: "saturate(150%) blur(14px)",
+          borderBottom: "1px solid rgba(13,17,23,0.04)",
         }}
       >
         <div className="max-w-7xl mx-auto px-4 md:px-6 py-5">
@@ -527,182 +829,99 @@ export default function AppLauncherPage() {
         </div>
       </motion.header>
 
-      {/* App grid */}
-      <main className="relative max-w-7xl mx-auto px-4 md:px-6 py-10">
+      {/* Sectioned app launcher: Active / Other Tools / Upcoming */}
+      <main className="relative max-w-7xl mx-auto px-4 md:px-6 py-10 space-y-8">
+        <h1
+          style={{
+            fontFamily: SERIF,
+            fontSize: 40,
+            lineHeight: 1.08,
+            color: INK,
+            margin: "4px 0 8px",
+          }}
+        >
+          One Platform to Run Your <em style={{ fontStyle: "italic" }}>Entire Business</em>.
+        </h1>
+
         {(loadingApps || loadingOrgs) && (
-          <div
-            className="text-center py-24"
-            style={{ fontSize: 14, color: MUTED }}
-          >
+          <div className="text-center py-24" style={{ fontSize: 14, color: MUTED }}>
             Loading your workspace…
           </div>
         )}
 
-        {!loadingApps && !loadingOrgs && installed.length === 0 && (
+        {!loadingApps && !loadingOrgs && activeApps.length === 0 && otherTools.length === 0 && (
           <div className="text-center py-24">
-            <Rocket
-              className="h-10 w-10 mx-auto mb-3"
-              style={{ color: ACCENT }}
-            />
+            <Rocket className="h-10 w-10 mx-auto mb-3" style={{ color: ACCENT }} />
             <p style={{ fontSize: 14, color: MUTED }}>
               No apps available yet. Contact your administrator.
             </p>
           </div>
         )}
 
-        {installed.length > 0 && (
-          <section>
-            <h2
-              style={{
-                fontFamily: SERIF,
-                fontSize: 24,
-                color: INK,
-                marginBottom: 20,
-              }}
-            >
-              Your apps
-            </h2>
-            <motion.div
-              variants={gridV}
-              initial="hidden"
-              animate="show"
-              className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-5"
-            >
-              {installed.map((app) => {
-                const desc = (app.description ?? "").split(/(?<=[.!?])\s+/)[0];
-                const mods = previewModules(app.slug);
-                const disabled =
-                  app.status === "coming_soon" || app.status === "disabled";
-                const iconSrc = LAUNCHER_ICONS[app.slug] ?? app.iconUrl;
+        {/* ACTIVE — hidden until the org has activated at least one app. */}
+        {!loadingApps && !loadingOrgs && activeApps.length > 0 && (
+          <SectionPanel title="Active">
+            <motion.div variants={gridV} initial="hidden" animate="show" className={GRID_CLS}>
+              {activeApps.map((app) => renderActiveCard(app))}
+            </motion.div>
+          </SectionPanel>
+        )}
+
+        {/* OTHER TOOLS — catalog apps the org can start a trial for (admins). */}
+        {!loadingApps && !loadingOrgs && otherTools.length > 0 && (
+          <SectionPanel title="Other Tools in Our Suite" muted>
+            <motion.div variants={gridV} initial="hidden" animate="show" className={GRID_CLS}>
+              {otherTools.map((app) => renderOtherCard(app))}
+            </motion.div>
+          </SectionPanel>
+        )}
+
+        {/* UPCOMING — informational, non-launchable. */}
+        {!loadingApps && !loadingOrgs && !search && (
+          <SectionPanel title="Upcoming" muted>
+            <div className={GRID_CLS}>
+              {UPCOMING_APPS.map((u) => {
+                const Icon = u.icon;
                 return (
-                  <motion.button
-                    key={app.id}
-                    variants={tileV}
-                    whileHover={
-                      reduce || disabled
-                        ? undefined
-                        : {
-                            y: -5,
-                            boxShadow:
-                              "0 1px 3px rgba(13,17,23,0.05), 0 24px 56px rgba(13,17,23,0.14)",
-                          }
-                    }
-                    transition={{ duration: 0.32, ease }}
-                    onClick={() => !disabled && handleLaunch(app)}
-                    disabled={disabled}
-                    className="group text-left p-5 flex flex-col"
-                    style={{
-                      background: CARD,
-                      border: `1px solid ${HAIRLINE}`,
-                      borderRadius: 24,
-                      boxShadow:
-                        "0 1px 3px rgba(13,17,23,0.04), 0 10px 30px rgba(13,17,23,0.06)",
-                      cursor: disabled ? "not-allowed" : "pointer",
-                      opacity: disabled ? 0.6 : 1,
-                      minHeight: 196,
-                    }}
-                  >
-                    <div className="flex items-center gap-3 mb-3.5">
-                      {iconSrc ? (
-                        // eslint-disable-next-line @next/next/no-img-element
-                        <img
-                          src={iconSrc}
-                          alt=""
-                          width={44}
-                          height={44}
-                          style={{
-                            width: 44,
-                            height: 44,
-                            borderRadius: 12,
-                            objectFit: "cover",
-                          }}
-                        />
-                      ) : (
-                        <span
-                          style={{
-                            width: 44,
-                            height: 44,
-                            borderRadius: 12,
-                            background: ACCENT_DIM,
-                            color: "#7c5e2e",
-                            display: "flex",
-                            alignItems: "center",
-                            justifyContent: "center",
-                            fontFamily: SERIF,
-                            fontSize: 20,
-                          }}
-                        >
-                          {initialOf(app.name)}
-                        </span>
-                      )}
-                      <div className="min-w-0">
-                        <h3
-                          className="truncate"
-                          style={{ fontSize: 16, fontWeight: 700, color: INK }}
-                        >
-                          {app.name}
-                        </h3>
-                        {disabled && (
-                          <span style={{ fontSize: 11, color: MUTED }}>
-                            Coming soon
-                          </span>
-                        )}
-                      </div>
-                    </div>
-
-                    <p
-                      className="line-clamp-2"
-                      style={{
-                        fontSize: 13,
-                        color: MUTED,
-                        lineHeight: 1.5,
-                        flex: 1,
-                      }}
+                  <div key={u.name} className="p-5 flex flex-col" style={{ ...cardStyle, minHeight: 188 }}>
+                    <div
+                      className="flex items-center justify-center mb-3.5"
+                      style={{ width: 44, height: 44, borderRadius: 12, background: u.gradient }}
                     >
-                      {desc || "Open this app in your workspace."}
-                    </p>
-
-                    {mods.length > 0 && (
-                      <div className="flex flex-wrap gap-1.5 mt-3">
-                        {mods.map((m) => (
-                          <span
-                            key={m}
-                            style={{
-                              fontSize: 10.5,
-                              fontWeight: 600,
-                              color: MUTED,
-                              background: PAPER,
-                              border: `1px solid ${HAIRLINE}`,
-                              borderRadius: 999,
-                              padding: "3px 9px",
-                            }}
-                          >
-                            {m}
-                          </span>
-                        ))}
-                      </div>
-                    )}
-
-                    {!disabled && (
+                      <Icon className="h-5 w-5" style={{ color: "#fff" }} />
+                    </div>
+                    <div className="flex items-center gap-2 mb-1.5 flex-wrap">
+                      <h3 style={{ fontSize: 16, fontWeight: 700, color: INK }}>{u.name}</h3>
                       <span
-                        className="inline-flex items-center gap-1.5 mt-4"
                         style={{
-                          fontSize: 13,
+                          fontSize: 9.5,
                           fontWeight: 700,
-                          color: "#7c5e2e",
+                          letterSpacing: "0.06em",
+                          color: "#9A6217",
+                          background: "rgba(154,98,23,0.10)",
+                          border: "1px solid rgba(154,98,23,0.18)",
+                          borderRadius: 999,
+                          padding: "3px 7px",
                         }}
                       >
-                        Launch
-                        <ArrowRight
-                          className="h-3.5 w-3.5 transition-transform group-hover:translate-x-0.5"
-                        />
+                        COMING SOON
                       </span>
-                    )}
-                  </motion.button>
+                    </div>
+                    <p className="line-clamp-2" style={{ fontSize: 13, color: MUTED, lineHeight: 1.5, flex: 1 }}>
+                      {u.description}
+                    </p>
+                    <button
+                      disabled
+                      className="mt-4 w-full py-2.5 text-sm rounded-xl"
+                      style={{ fontWeight: 600, color: MUTED, background: PAPER, border: `1px solid ${HAIRLINE}`, cursor: "not-allowed", opacity: 0.7 }}
+                    >
+                      Notify me
+                    </button>
+                  </div>
                 );
               })}
-            </motion.div>
-          </section>
+            </div>
+          </SectionPanel>
         )}
       </main>
 
@@ -791,6 +1010,247 @@ export default function AppLauncherPage() {
             </motion.div>
           </motion.div>
         )}
+      </AnimatePresence>
+
+      {/* Per-app trial-expired upgrade modal. */}
+      <AnimatePresence>
+        {upgradeApp && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            transition={{ duration: 0.18, ease }}
+            className="fixed inset-0 z-[2000] flex items-center justify-center px-4"
+            style={{ background: "rgba(13,17,23,0.45)", backdropFilter: "blur(2px)" }}
+            onClick={() => setUpgradeApp(null)}
+          >
+            <motion.div
+              role="alertdialog"
+              aria-modal="true"
+              aria-labelledby="trial-expired-title"
+              initial={reduce ? false : { opacity: 0, y: 12, scale: 0.97 }}
+              animate={{ opacity: 1, y: 0, scale: 1 }}
+              exit={{ opacity: 0, y: 8, scale: 0.98 }}
+              transition={{ duration: 0.22, ease }}
+              onClick={(e) => e.stopPropagation()}
+              className="w-full max-w-md p-7"
+              style={{ background: CARD, border: `1px solid ${HAIRLINE}`, borderRadius: 24, boxShadow: "0 1px 3px rgba(13,17,23,0.05), 0 30px 70px rgba(13,17,23,0.22)" }}
+            >
+              <div className="flex items-center gap-3 mb-4">
+                <span style={{ width: 44, height: 44, borderRadius: 12, background: "rgba(180,83,9,0.10)", color: "#B45309", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
+                  <AlertTriangle className="h-5 w-5" />
+                </span>
+                <h3 id="trial-expired-title" style={{ fontFamily: SERIF, fontSize: 22, color: INK, lineHeight: 1.15 }}>
+                  {upgradeApp.name} trial has ended
+                </h3>
+              </div>
+              <div style={{ fontSize: 14, color: MUTED, lineHeight: 1.6 }}>
+                <p style={{ marginBottom: 10 }}>Upgrade to the Pro plan to keep using {upgradeApp.name}.</p>
+                <p>Your data is safe — upgrade and you&apos;ll be right back where you left off.</p>
+              </div>
+              <div className="flex justify-end gap-2 mt-6">
+                <button onClick={() => setUpgradeApp(null)} className="px-5 py-2.5 text-sm transition-colors" style={{ fontWeight: 700, color: INK, background: PAPER, border: `1px solid ${HAIRLINE}`, borderRadius: 12 }}>
+                  Not now
+                </button>
+                <button
+                  onClick={() => handleUpgradeApp(upgradeApp)}
+                  disabled={activating === upgradeApp.slug}
+                  className="px-5 py-2.5 text-sm transition-colors disabled:opacity-60"
+                  style={{ fontWeight: 700, color: "#fff", background: INK, borderRadius: 12 }}
+                >
+                  {activating === upgradeApp.slug ? "Upgrading…" : "Upgrade to Pro Plan"}
+                </button>
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* Per-app detail screen — opened by the eye / "Start free trial". Content
+          is sourced per-app from APP_DETAILS[slug] (falls back to the DB
+          description + a gradient placeholder). Scrolls internally. */}
+      <AnimatePresence>
+        {detailApp && (() => {
+          const detail = APP_DETAILS[detailApp.slug];
+          const accent = detail?.accent ?? "#9A6217";
+          const stats = detail?.stats ?? { rating: "—", language: "EN", updated: "Recently", category: "Business" };
+          const shot = detail?.screenshots?.[0];
+          const tabs: { key: typeof detailTab; label: string }[] = [
+            { key: "overview", label: "Overview" },
+            { key: "features", label: "Features" },
+            { key: "pricing", label: "Pricing" },
+          ];
+          return (
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              transition={{ duration: 0.18, ease }}
+              className="fixed inset-0 z-[2000] flex items-center justify-center px-4 py-8"
+              style={{ background: "rgba(13,17,23,0.45)", backdropFilter: "blur(2px)" }}
+              onClick={() => setDetailApp(null)}
+            >
+              <motion.div
+                role="dialog"
+                aria-modal="true"
+                initial={reduce ? false : { opacity: 0, y: 12, scale: 0.97 }}
+                animate={{ opacity: 1, y: 0, scale: 1 }}
+                exit={{ opacity: 0, y: 8, scale: 0.98 }}
+                transition={{ duration: 0.22, ease }}
+                onClick={(e) => e.stopPropagation()}
+                className="w-full max-w-3xl flex flex-col"
+                style={{ background: CARD, border: `1px solid ${HAIRLINE}`, borderRadius: 24, boxShadow: "0 1px 3px rgba(13,17,23,0.05), 0 30px 70px rgba(13,17,23,0.22)", maxHeight: "88vh" }}
+              >
+                {/* Header */}
+                <div className="flex items-start justify-between gap-4 p-7 pb-4" style={{ flexShrink: 0 }}>
+                  <div className="flex items-center gap-3 min-w-0">
+                    <AppIcon app={detailApp} />
+                    <div className="min-w-0">
+                      <h3 className="truncate" style={{ fontFamily: SERIF, fontSize: 26, color: INK, lineHeight: 1.1 }}>{detailApp.name}</h3>
+                      {detail?.tagline && <p className="truncate" style={{ fontSize: 13, color: MUTED, marginTop: 2 }}>{detail.tagline}</p>}
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-2 flex-shrink-0">
+                    {detailApp.activated ? (
+                      <TrialPill state={detailApp.trialState} daysLeft={detailApp.daysLeft} />
+                    ) : (
+                      <span style={{ fontSize: 12, fontWeight: 700, color: "#fff", background: INK, borderRadius: 999, padding: "6px 12px", whiteSpace: "nowrap" }}>
+                        14 days free trial
+                      </span>
+                    )}
+                    <button onClick={() => setDetailApp(null)} style={{ color: MUTED }} title="Close">
+                      <X className="h-5 w-5" />
+                    </button>
+                  </div>
+                </div>
+
+                {/* Stat row */}
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 px-7" style={{ flexShrink: 0 }}>
+                  {[
+                    { label: "Rating", value: stats.rating, icon: stats.rating !== "—" },
+                    { label: "Language", value: stats.language },
+                    { label: "Updated", value: stats.updated },
+                    { label: "Category", value: stats.category },
+                  ].map((s) => (
+                    <div key={s.label} className="text-center py-3" style={{ background: PAPER, border: `1px solid ${HAIRLINE}`, borderRadius: 14 }}>
+                      <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: "0.06em", textTransform: "uppercase", color: MUTED }}>{s.label}</div>
+                      <div className="inline-flex items-center gap-1 mt-1" style={{ fontSize: 16, fontWeight: 700, color: INK }}>
+                        {s.icon && <Star className="h-3.5 w-3.5" style={{ color: accent }} />}
+                        {s.value}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+
+                {/* Tabs */}
+                <div className="flex gap-6 px-7 mt-5" style={{ flexShrink: 0, borderBottom: `1px solid ${HAIRLINE}` }}>
+                  {tabs.map((t) => {
+                    const active = detailTab === t.key;
+                    return (
+                      <button
+                        key={t.key}
+                        onClick={() => setDetailTab(t.key)}
+                        style={{
+                          fontSize: 14,
+                          fontWeight: 600,
+                          color: active ? INK : MUTED,
+                          padding: "10px 0",
+                          borderBottom: `2px solid ${active ? accent : "transparent"}`,
+                          marginBottom: -1,
+                        }}
+                      >
+                        {t.label}
+                      </button>
+                    );
+                  })}
+                </div>
+
+                {/* Scrollable body */}
+                <div className="px-7 py-5" style={{ overflowY: "auto", flex: 1 }}>
+                  {detailTab === "overview" && (
+                    <>
+                      <p style={{ fontSize: 14.5, color: "#374151", lineHeight: 1.7, marginBottom: 20 }}>
+                        {detail?.overview || detailApp.description || "Activate this app to start a 14-day free trial across your workspace."}
+                      </p>
+                      <div
+                        style={{
+                          borderRadius: 16,
+                          overflow: "hidden",
+                          border: `1px solid ${HAIRLINE}`,
+                          background: shot ? "#fff" : `linear-gradient(135deg, ${accent}22, ${accent}0D)`,
+                          minHeight: shot ? undefined : 220,
+                          display: "flex",
+                          alignItems: "center",
+                          justifyContent: "center",
+                        }}
+                      >
+                        {shot ? (
+                          // eslint-disable-next-line @next/next/no-img-element
+                          <img src={shot} alt={`${detailApp.name} preview`} style={{ width: "100%", display: "block", objectFit: "cover" }} />
+                        ) : (
+                          <div className="flex flex-col items-center gap-3 py-10" style={{ color: accent }}>
+                            <AppIcon app={detailApp} />
+                            <span style={{ fontSize: 13, fontWeight: 600 }}>Preview coming soon</span>
+                          </div>
+                        )}
+                      </div>
+                    </>
+                  )}
+
+                  {detailTab === "features" && (
+                    <ul className="space-y-3">
+                      {(detail?.features ?? ["Part of your connected QuikIT workspace"]).map((f) => (
+                        <li key={f} className="flex items-start gap-2.5" style={{ fontSize: 14, color: INK }}>
+                          <Check className="h-4 w-4 mt-0.5 flex-shrink-0" style={{ color: accent }} />
+                          {f}
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+
+                  {detailTab === "pricing" && (
+                    <div style={{ fontSize: 14, color: "#374151", lineHeight: 1.7 }}>
+                      <p style={{ marginBottom: 10 }}>
+                        Start with a <strong>14-day free trial</strong> — no credit card required.
+                      </p>
+                      <p>
+                        After the trial, keep this app by upgrading to a paid plan. See all plans on the{" "}
+                        <Link href="/billing" style={{ color: accent, fontWeight: 600, textDecoration: "underline" }}>billing page</Link>.
+                      </p>
+                    </div>
+                  )}
+                </div>
+
+                {/* Footer CTA */}
+                <div className="flex justify-end gap-2 px-7 py-5" style={{ flexShrink: 0, borderTop: `1px solid ${HAIRLINE}` }}>
+                  <button onClick={() => setDetailApp(null)} className="px-5 py-2.5 text-sm" style={{ fontWeight: 700, color: INK, background: PAPER, border: `1px solid ${HAIRLINE}`, borderRadius: 12 }}>
+                    Close
+                  </button>
+                  {detailApp.activated ? (
+                    detailApp.trialState === "expired" ? (
+                      <button onClick={() => { const a = detailApp; setDetailApp(null); handleUpgradeApp(a); }} className="px-5 py-2.5 text-sm" style={btnPrimary}>
+                        Upgrade to Pro Plan
+                      </button>
+                    ) : (
+                      <button onClick={() => { const a = detailApp; setDetailApp(null); handleLaunch(a); }} className="px-5 py-2.5 text-sm" style={btnPrimary}>
+                        Open app
+                      </button>
+                    )
+                  ) : (
+                    <button
+                      onClick={() => handleActivate(detailApp)}
+                      disabled={activating === detailApp.slug}
+                      className="px-6 py-2.5 text-sm disabled:opacity-60"
+                      style={btnPrimary}
+                    >
+                      {activating === detailApp.slug ? "Activating…" : "14 Days Free Trial"}
+                    </button>
+                  )}
+                </div>
+              </motion.div>
+            </motion.div>
+          );
+        })()}
       </AnimatePresence>
     </div>
   );

@@ -96,7 +96,15 @@ export async function POST(request: NextRequest) {
     // and can still launch into suspended orgs to manage them.
     const member = await db.orgMember.findFirst({
       where: { userId, orgId, status: "active" },
-      select: { role: true, org: { select: { status: true } } },
+      select: {
+        role: true,
+        org: {
+          select: {
+            status: true,
+            subscription: { select: { status: true, trialEndsAt: true } },
+          },
+        },
+      },
     });
     if (!member) {
       return NextResponse.json(
@@ -115,14 +123,49 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    // Trial/subscription gate (mirrors the central verify-token logic). No
+    // Subscription row → grandfathered → never blocked. Super admins already
+    // bypassed this whole branch above.
+    const sub = member.org.subscription;
+    if (sub) {
+      const trialLapsed =
+        sub.status === "trialing" &&
+        (!sub.trialEndsAt || sub.trialEndsAt.getTime() <= Date.now());
+      const planLapsed = ["past_due", "canceled", "expired"].includes(sub.status);
+      if (trialLapsed || planLapsed) {
+        return NextResponse.json(
+          {
+            success: false,
+            code: "TRIAL_EXPIRED",
+            error: "Your free trial has ended. Upgrade to the Pro plan to continue.",
+          },
+          { status: 403 },
+        );
+      }
+    }
+
     // Org must have the app enabled.
     const orgAllow = await db.orgAppAccess.findFirst({
       where: { orgId, appId: app.id, enabled: true },
-      select: { appId: true },
+      select: { appId: true, trialEndsAt: true },
     });
     if (!orgAllow) {
       return NextResponse.json(
         { success: false, error: "App not enabled for this org" },
+        { status: 403 },
+      );
+    }
+
+    // Per-app trial gate: a past trialEndsAt means this app's free trial has
+    // lapsed (null = grandfathered/upgraded → always allowed). The launcher
+    // surfaces an "Upgrade to Pro Plan" CTA for this code.
+    if (orgAllow.trialEndsAt && orgAllow.trialEndsAt.getTime() <= Date.now()) {
+      return NextResponse.json(
+        {
+          success: false,
+          code: "TRIAL_EXPIRED",
+          error: "Your free trial for this app has ended. Upgrade to the Pro plan to continue.",
+        },
         { status: 403 },
       );
     }

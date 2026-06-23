@@ -19,12 +19,19 @@ import { getRedis } from "@quikit/redis";
  */
 
 export const OTP_TTL_SECONDS = 180;
+/** Registration OTP lives 5 minutes (self-serve sign-up). Password-reset OTP
+ *  keeps its tighter 3-minute window via OTP_TTL_SECONDS. */
+export const REGISTRATION_OTP_TTL_SECONDS = 300;
 export const RESET_TOKEN_TTL_SECONDS = 300;
+/** Pending-registration context (org name) outlives the OTP + reset-token hops
+ *  so a user who takes the full window can still complete sign-up. */
+export const PENDING_REGISTRATION_TTL_SECONDS = 30 * 60;
 export const MAX_OTP_ATTEMPTS = 5;
 
 const otpKey = (userId: string) => `otp:reset:${userId}`;
 const attemptsKey = (userId: string) => `otp:reset-attempts:${userId}`;
 const tokenKey = (token: string) => `otp:reset-token:${token}`;
+const pendingRegKey = (userId: string) => `reg:pending:${userId}`;
 
 /* ─── In-memory fallback ───────────────────────────────────────────────── */
 
@@ -78,16 +85,82 @@ export function generateResetToken(): string {
 /**
  * Store an OTP hash for `userId`, replacing any previous one. Resets the
  * wrong-attempts counter so a fresh code starts with 0/5.
+ *
+ * `ttlSeconds` defaults to the 3-minute password-reset window; the
+ * registration flow passes REGISTRATION_OTP_TTL_SECONDS (5 min).
  */
-export async function storeOtp(userId: string, hash: string): Promise<void> {
+export async function storeOtp(
+  userId: string,
+  hash: string,
+  ttlSeconds: number = OTP_TTL_SECONDS,
+): Promise<void> {
   const r = getRedis();
   if (r) {
-    await r.set(otpKey(userId), hash, "EX", OTP_TTL_SECONDS);
+    await r.set(otpKey(userId), hash, "EX", ttlSeconds);
     await r.del(attemptsKey(userId));
   } else {
-    memSet(otpKey(userId), hash, OTP_TTL_SECONDS);
+    memSet(otpKey(userId), hash, ttlSeconds);
     memDel(attemptsKey(userId));
   }
+}
+
+/* ─── Pending self-serve registration context ──────────────────────────────
+ * Holds the not-yet-created workspace details (org name) between step 1
+ * (account + OTP issued) and step 3 (password set → org provisioned). Kept in
+ * Redis so an abandoned sign-up never leaves an orphan Org/Subscription in
+ * Postgres — only a password-less, unverified User row is persisted up front.
+ */
+export interface PendingRegistration {
+  organizationName: string;
+}
+
+export async function storePendingRegistration(
+  userId: string,
+  data: PendingRegistration,
+): Promise<void> {
+  const payload = JSON.stringify(data);
+  const r = getRedis();
+  if (r) {
+    await r.set(pendingRegKey(userId), payload, "EX", PENDING_REGISTRATION_TTL_SECONDS);
+  } else {
+    memSet(pendingRegKey(userId), payload, PENDING_REGISTRATION_TTL_SECONDS);
+  }
+}
+
+/** Read the pending registration context WITHOUT consuming it (used by the
+ *  resend path, which must keep the org name around for the eventual finish). */
+export async function peekPendingRegistration(
+  userId: string,
+): Promise<PendingRegistration | null> {
+  const r = getRedis();
+  const raw = r ? await r.get(pendingRegKey(userId)) : memGet(pendingRegKey(userId));
+  if (!raw) return null;
+  try {
+    return JSON.parse(raw) as PendingRegistration;
+  } catch {
+    return null;
+  }
+}
+
+/** Atomically read + delete the pending registration context (completion). */
+export async function consumePendingRegistration(
+  userId: string,
+): Promise<PendingRegistration | null> {
+  const r = getRedis();
+  if (r) {
+    try {
+      const key = pendingRegKey(userId);
+      const result = await r.multi().get(key).del(key).exec();
+      const getReply = result?.[0];
+      const value = getReply ? (getReply[1] as string | null) : null;
+      return value ? (JSON.parse(value) as PendingRegistration) : null;
+    } catch (err) {
+      console.error("[otp-store] consumePendingRegistration redis failed:", err);
+    }
+  }
+  const raw = memGet(pendingRegKey(userId));
+  if (raw) memDel(pendingRegKey(userId));
+  return raw ? (JSON.parse(raw) as PendingRegistration) : null;
 }
 
 interface VerifyResult {

@@ -73,6 +73,10 @@ interface SignInComponentProps {
   initialStep?: AuthStep;
   invitationToken?: string | null;
   invitationLauncherUrl?: string;
+  /** When set, renders a "Don't have an account? Sign up" link on the login
+   *  step pointing here (the central auth app passes its /register URL).
+   *  Omitted by other apps → no Sign up link (unchanged). */
+  signUpUrl?: string;
 }
 
 export const SignInComponent = ({
@@ -85,6 +89,7 @@ export const SignInComponent = ({
   initialStep,
   invitationToken,
   invitationLauncherUrl,
+  signUpUrl,
 }: SignInComponentProps) => {
   const router = useRouter();
 
@@ -1027,6 +1032,18 @@ export const SignInComponent = ({
                   onClick={() => setAuthStep("forgot-email")}>
                   Forgot password?
                 </button>
+
+                {signUpUrl && (
+                  <p style={{ textAlign: "center", marginTop: 18, fontSize: 13, color: "#6B7280" }}>
+                    Don&apos;t have an account?{" "}
+                    <a
+                      href={signUpUrl}
+                      style={{ color: "#0D1117", fontWeight: 600, textDecoration: "underline", textUnderlineOffset: 3 }}
+                    >
+                      Sign up
+                    </a>
+                  </p>
+                )}
               </>
             )}
 

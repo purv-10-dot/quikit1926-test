@@ -147,6 +147,32 @@ export function createMiddleware(config: MiddlewareConfig) {
           return safeRedirect(target);
         }
       }
+
+      // Session is valid and the org is active, but its free trial has lapsed
+      // (or its subscription is past_due/canceled/expired). Bounce to the
+      // launcher's org picker / billing surface with a reason marker, exactly
+      // like the suspended-org case. Strict `=== false` so grandfathered orgs
+      // (no Subscription row → undefined) and older auth hosts never gate.
+      // Super admins are exempt; the select-org route itself is exempt so the
+      // launcher's own /apps doesn't redirect-loop (it shows the upgrade UI).
+      if (
+        remote.valid &&
+        remote.subscriptionActive === false &&
+        !token.isSuperAdmin &&
+        !isSelectOrgRoute
+      ) {
+        const reason = remote.trialExpired ? "trial_expired" : "subscription_inactive";
+        if (config.centralSelectOrgUrl) {
+          const target = new URL(config.centralSelectOrgUrl);
+          target.searchParams.set("reason", reason);
+          return safeRedirect(target.toString());
+        }
+        if (config.selectOrgRoute) {
+          const target = new URL(config.selectOrgRoute, base);
+          target.searchParams.set("reason", reason);
+          return safeRedirect(target);
+        }
+      }
     }
 
     // Unauthenticated users → central login or local login.

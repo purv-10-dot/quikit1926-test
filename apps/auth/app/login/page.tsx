@@ -52,6 +52,7 @@ export default function LoginPage() {
       callbackUrl={callbackUrl}
       initialError={initialError}
       initialStep={initialStep}
+      signUpUrl="/register"
       hardNavigate
     />
   );
