@@ -124,7 +124,20 @@ A general, admin-configurable ACTIVITY-LOGGING system in apps/quikcrm. Admins cr
 
 ## OPEN DECISIONS (flagged, not yet locked)
 
-- **Phase 3:** does the empty-types state surface the built-in Note/Call/Email/Meeting/Task seed types as built-in options alongside admin-created ones? (Decide at Phase 3.)
+- **Phase 3 empty-types state: LOCKED — empty-state CTA, NOT seed-type fallback**
+  (2026-06-23). A fresh/un-configured org's logging surface shows an empty-state
+  ("No activity types configured — ask your admin") and NO type-picker. The
+  logging flow stays purely type-driven: it lists ONLY real, isActive,
+  admin-configured types — it does NOT synthesize built-in Note/Call/Email/
+  Meeting/Task options. Rationale: consistency with decision #7 (no built-ins
+  seeded at the config layer → none synthesized at the logging layer);
+  synthesizing fieldless built-ins would need a separate non-activityTypeId
+  code path and half-rebuild the old generic tab, blurring the feature's
+  identity. If an org wants quick-note logging, an admin configures a "Note"
+  type once. Bakes into T-P3.1 (endpoint returns only real types, empty list is
+  valid), T-P3.2 (renderer handles only real field defs), T-P3.3 (empty list →
+  CTA).
+  
 - **`showInList`:** hidden for now via prop (lead-specific), but kept repurposable for a possible Phase 4 "show field as dashboard column." (Decide at Phase 4.)
 
 

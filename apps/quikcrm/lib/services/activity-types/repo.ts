@@ -70,9 +70,21 @@ function toTypeDefinition(row: RawTypeRow): ActivityTypeDefinition {
 }
 
 /** All activity types for an org, ordered for display. Org-scoped. */
-export async function listActivityTypes(orgId: string): Promise<ActivityTypeDefinition[]> {
+/**
+ * All activity types for an org, ordered for display. Org-scoped.
+ *
+ * `opts.activeOnly` is OPT-IN: omit it (the default) to return ALL types —
+ * which the admin settings list relies on, so it can show + reactivate
+ * inactive types. The user-facing logging list passes activeOnly:true so
+ * loggers only see usable types. Do NOT hardcode an isActive filter here, or
+ * the admin list would lose visibility of inactive types.
+ */
+export async function listActivityTypes(
+  orgId: string,
+  opts?: { activeOnly?: boolean },
+): Promise<ActivityTypeDefinition[]> {
   const rows = await prisma.crmActivityType.findMany({
-    where: { orgId },
+    where: { orgId, ...(opts?.activeOnly ? { isActive: true } : {}) },
     orderBy: [{ sortOrder: "asc" }, { label: "asc" }],
   });
   return rows.map((r) => toTypeDefinition(r as unknown as RawTypeRow));
