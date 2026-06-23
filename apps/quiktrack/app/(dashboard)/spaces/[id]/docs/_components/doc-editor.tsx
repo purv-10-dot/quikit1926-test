@@ -29,6 +29,8 @@ interface DocFull {
   status?: string;
   shareToken?: string | null;
   shareMode?: string | null;
+  /** Effective role of the current user on this doc (from the GET response). */
+  role?: "owner" | "editor" | "viewer";
 }
 
 interface UserLite {
@@ -62,10 +64,16 @@ export function DocEditor({
 }) {
   const router = useRouter();
   const qc = useQueryClient();
-  // Editing a doc needs Doc:update; a brand-new draft needs Doc:create. Without
-  // it the editor is read-only (the server PATCH/POST would 403 anyway).
+  // A brand-new draft needs Doc:create (project perm). For an existing doc the
+  // server returns the caller's effective role (owner/editor/viewer) — which
+  // also covers shared users who aren't project members. Editing needs
+  // owner/editor; while the role is still loading we stay optimistic so the
+  // editor doesn't flash read-only.
   const perms = useMyProjectPermissions(projectId);
-  const canEdit = perms.loading || perms.has("Doc", docId ? "update" : "create");
+  const [docRole, setDocRole] = useState<"owner" | "editor" | "viewer" | null>(null);
+  const canEdit = !docId
+    ? perms.loading || perms.has("Doc", "create")
+    : docRole === null || docRole === "owner" || docRole === "editor";
   const canEditRef = useRef(canEdit);
   canEditRef.current = canEdit;
   const [doc, setDoc] = useState<DocFull | null>(null);
@@ -75,8 +83,6 @@ export function DocEditor({
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [maximized, setMaximized] = useState(false);
-  const [shareToken, setShareToken] = useState<string | null>(null);
-  const [shareMode, setShareMode] = useState<"view" | "edit" | null>(null);
   const [shareOpen, setShareOpen] = useState(false);
   // Draft/publish state. New docs (no docId yet) start as drafts.
   const [status, setStatus] = useState<string>("draft");
@@ -132,8 +138,7 @@ export function DocEditor({
           setTitle(x.title);
           setContent(x.content || "<p></p>");
           setStatus(x.status ?? "published");
-          setShareToken(x.shareToken ?? null);
-          setShareMode((x.shareMode as "view" | "edit" | null) ?? null);
+          setDocRole(x.role ?? null);
         }
         if (s?.user) setAuthor(s.user as UserLite);
       })
@@ -385,14 +390,8 @@ export function DocEditor({
               <button
                 type="button"
                 onClick={() => setShareOpen((v) => !v)}
-                disabled={!docIdRef.current || status === "draft"}
-                title={
-                  !docIdRef.current
-                    ? "Save the doc first to share it"
-                    : status === "draft"
-                      ? "Publish the doc before sharing it publicly"
-                      : "Share"
-                }
+                disabled={!docIdRef.current}
+                title={docIdRef.current ? "Share" : "Save the doc first to share it"}
                 className="inline-flex h-8 items-center gap-1.5 rounded-md border border-gray-200 px-3 text-xs font-medium text-gray-700 transition-colors hover:bg-gray-50 disabled:opacity-40 dark:border-slate-600 dark:text-slate-200 dark:hover:bg-slate-700/60"
               >
                 <Share2 className="h-3.5 w-3.5" />
@@ -401,12 +400,6 @@ export function DocEditor({
               {shareOpen && docIdRef.current && (
                 <ShareDialog
                   docId={docIdRef.current}
-                  token={shareToken}
-                  mode={shareMode}
-                  onChange={(t, m) => {
-                    setShareToken(t);
-                    setShareMode(m);
-                  }}
                   onClose={() => setShareOpen(false)}
                 />
               )}

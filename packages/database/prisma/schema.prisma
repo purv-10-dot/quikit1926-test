@@ -6170,6 +6170,29 @@ model QtDocFolder {
   @@schema("app_quiktrack")
 }
 
+// Per-user document sharing (Google-Docs-style). Each row grants one user
+// viewer/editor access to a single QtDoc. The doc's creator is the implicit
+// Owner and is NOT stored here. `email` is reserved for future external
+// invites. No Prisma relation block — the Docs API is raw-SQL only (the local
+// Prisma client is flaky for these models on Windows).
+model QtDocShare {
+  id        String   @id @default(cuid())
+  orgId     String
+  docId     String
+  userId    String?
+  email     String?
+  role      String // "viewer" | "editor"
+  createdBy String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([docId, userId])
+  @@unique([docId, email])
+  @@index([docId])
+  @@index([userId])
+  @@schema("app_quiktrack")
+}
+
 model QtTimesheetEntry {
   id            String   @id @default(cuid())
   orgId         String

@@ -3,7 +3,11 @@ import { z } from "zod";
 import { db } from "@/lib/db";
 import { withOrgAuth } from "@/lib/api/withOrgAuth";
 import { canDoc } from "@/lib/api/docPermissions";
-import { hasAdminAccess } from "@/lib/api/permissions";
+import {
+  resolveDocAccess,
+  canEditDocRole,
+  canManageDocSharing,
+} from "@/lib/api/docAccess";
 import { notifyDocMentions } from "@/lib/services/mentions";
 
 /**
@@ -41,28 +45,21 @@ async function loadDoc(orgId: string, docId: string): Promise<DocRow | null> {
   return rows[0] ?? null;
 }
 
-/**
- * A draft is visible only to its author — not even to admins (per product
- * decision). Published docs fall through to the normal Doc:view gate.
- */
-function isDraftHiddenFrom(doc: DocRow, userId: string): boolean {
-  return doc.status === "draft" && doc.createdBy !== userId;
-}
-
 export const GET = withOrgAuth<{ id: string }>(
   async ({ orgId, userId }, _req, { params }) => {
     const doc = await loadDoc(orgId, params.id);
     if (!doc) {
       return NextResponse.json({ success: false, error: "Not found" }, { status: 404 });
     }
-    // Drafts are private to their author; published docs use the Doc:view gate.
-    if (isDraftHiddenFrom(doc, userId)) {
+    // Effective role across owner/admin, explicit share, and project access
+    // (drafts stay author/share-only). No role → no access.
+    const role = await resolveDocAccess(userId, orgId, doc);
+    if (!role) {
       return NextResponse.json({ success: false, error: "Not found" }, { status: 404 });
     }
-    if (!(await canDoc(userId, orgId, doc.projectId, "view"))) {
-      return NextResponse.json({ success: false, error: "Not found" }, { status: 404 });
-    }
-    return NextResponse.json({ success: true, data: doc });
+    // Surface the role so the editor can enable/disable editing for shared users
+    // who aren't project members.
+    return NextResponse.json({ success: true, data: { ...doc, role } });
   },
 );
 
@@ -82,8 +79,9 @@ export const PATCH = withOrgAuth<{ id: string }>(
     if (!doc) {
       return NextResponse.json({ success: false, error: "Not found" }, { status: 404 });
     }
-    // A draft can only be touched by its author (others can't even see it).
-    if (isDraftHiddenFrom(doc, userId)) {
+    // No access at all → 404 (don't reveal the draft/doc exists).
+    const role = await resolveDocAccess(userId, orgId, doc);
+    if (!role) {
       return NextResponse.json({ success: false, error: "Not found" }, { status: 404 });
     }
     const parsed = patchSchema.safeParse(await req.json());
@@ -101,20 +99,14 @@ export const PATCH = withOrgAuth<{ id: string }>(
       parsed.data.content !== undefined ||
       "folderId" in parsed.data;
 
-    // Editing title/content/folder needs Doc:update.
-    if (
-      wantsContentChange &&
-      !(await canDoc(userId, orgId, doc.projectId, "update"))
-    ) {
+    // Editing title/content/folder needs an editor-or-higher role (owner,
+    // explicit editor share, or project Doc:update — all resolved above).
+    if (wantsContentChange && !canEditDocRole(role)) {
       return NextResponse.json({ success: false, error: "You don't have access to this." }, { status: 403 });
     }
-    // Publishing/unpublishing is restricted to the author or an admin.
-    if (wantsStatusChange) {
-      const isAuthor = doc.createdBy === userId;
-      const isAdmin = await hasAdminAccess(userId, orgId);
-      if (!isAuthor && !isAdmin) {
-        return NextResponse.json({ success: false, error: "You don't have access to this." }, { status: 403 });
-      }
+    // Publishing/unpublishing is restricted to the owner or an admin.
+    if (wantsStatusChange && !(await canManageDocSharing(userId, orgId, doc))) {
+      return NextResponse.json({ success: false, error: "You don't have access to this." }, { status: 403 });
     }
 
     const nextStatus = wantsStatusChange ? parsed.data.status! : doc.status;
@@ -199,11 +191,16 @@ export const DELETE = withOrgAuth<{ id: string }>(
     if (!doc) {
       return NextResponse.json({ success: false, error: "Not found" }, { status: 404 });
     }
-    // Drafts are private to their author — hide existence from everyone else.
-    if (isDraftHiddenFrom(doc, userId)) {
+    // No access at all → 404. Deleting needs owner/admin OR project Doc:delete
+    // (explicit viewer/editor shares can't delete).
+    const role = await resolveDocAccess(userId, orgId, doc);
+    if (!role) {
       return NextResponse.json({ success: false, error: "Not found" }, { status: 404 });
     }
-    if (!(await canDoc(userId, orgId, doc.projectId, "delete"))) {
+    const canRemove =
+      (await canManageDocSharing(userId, orgId, doc)) ||
+      (await canDoc(userId, orgId, doc.projectId, "delete"));
+    if (!canRemove) {
       return NextResponse.json({ success: false, error: "You don't have access to this." }, { status: 403 });
     }
     await db.$executeRaw`

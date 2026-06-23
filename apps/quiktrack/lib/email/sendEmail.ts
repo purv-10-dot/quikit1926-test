@@ -484,6 +484,37 @@ export async function emailDocMention(args: {
   });
 }
 
+export async function emailDocShared(args: {
+  to: string;
+  recipientName: string | null;
+  docTitle: string;
+  projectId: string;
+  docId: string;
+  sharedBy: string | null;
+  role: "viewer" | "editor";
+}): Promise<void> {
+  const link = `${appUrl()}/spaces/${args.projectId}/docs/${args.docId}`;
+  const verb = args.role === "editor" ? "edit" : "view";
+  const html = shell({
+    headerSubtitle: "Shared with you",
+    headerTitle: "Document",
+    greeting: args.recipientName ? `Hi ${args.recipientName},` : "Hi,",
+    intro: `${args.sharedBy ?? "Someone"} shared a document with you — you can ${verb} it.`,
+    rows: [
+      ["Document", esc(args.docTitle || "Untitled")],
+      ["Access", esc(args.role === "editor" ? "Editor" : "Viewer")],
+      ...(args.sharedBy ? ([["Shared by", esc(args.sharedBy)]] as Array<[string, string]>) : []),
+    ],
+    ctaLabel: "Open document",
+    ctaHref: link,
+  });
+  await sendEmail({
+    to: args.to,
+    subject: `${args.sharedBy ?? "Someone"} shared "${args.docTitle || "a document"}" with you`,
+    html,
+  });
+}
+
 export async function emailIssueOverdue(args: {
   to: string;
   recipientName: string | null;
