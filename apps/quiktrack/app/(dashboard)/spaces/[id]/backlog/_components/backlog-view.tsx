@@ -1291,7 +1291,7 @@ function IssueRow({
     <div
       draggable={!titleEditing}
       onDragStart={(e) => onDragStart?.(e, issue.id)}
-      className={`group flex items-center gap-3 px-4 ${density === "compact" ? "py-1" : "py-2"} border-b border-gray-100 ${
+      className={`qt-backlog-row group flex items-center gap-3 px-4 ${density === "compact" ? "py-1" : "py-2"} border-b border-gray-100 ${
         isSelected ? "bg-blue-50" : "hover:bg-gray-50"
       } ${titleEditing ? "bg-blue-50/40" : "cursor-grab active:cursor-grabbing"}`}
     >
@@ -1307,7 +1307,7 @@ function IssueRow({
         <button
           type="button"
           onClick={() => onOpen(issue.id)}
-          className={`text-xs font-medium hover:text-blue-600 hover:underline shrink-0 min-w-[56px] text-left ${
+          className={`qt-key-chip text-xs font-medium hover:underline shrink-0 min-w-[56px] text-left ${
             isDone ? "text-gray-400 line-through" : "text-gray-500"
           }`}
         >

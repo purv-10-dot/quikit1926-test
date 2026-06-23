@@ -59,7 +59,7 @@ function NavRow({
   external,
   indent,
 }: NavRowProps) {
-  const base = `flex items-center gap-2 px-3 ${indent ? "pl-9" : ""} h-8 text-sm rounded ${active ? "bg-blue-50 text-blue-700 font-medium" : "text-gray-700 hover:bg-gray-100"
+  const base = `qt-nav-row flex items-center gap-2 px-3 ${indent ? "pl-9" : ""} h-8 text-sm rounded ${active ? "qt-nav-row--active bg-blue-50 text-blue-700 font-medium" : "text-gray-700 hover:bg-gray-100"
     }`;
 
   const content = (
@@ -168,7 +168,7 @@ export function Sidebar() {
   return (
     <aside
       data-tour="sidebar"
-      className="w-[232px] shrink-0 border-r border-gray-200 bg-white flex flex-col h-full overflow-y-auto"
+      className="qt-sidebar w-[232px] shrink-0 border-r border-gray-200 bg-white flex flex-col h-full overflow-y-auto"
     >
       <nav className="flex-1 py-2">
         <div className="px-2 space-y-0.5">
@@ -217,8 +217,8 @@ export function Sidebar() {
             type="button"
             data-tour="spaces"
             onClick={() => setSpacesOpen((v) => !v)}
-            className={`w-full flex items-center gap-2 px-3 h-8 text-sm rounded text-left ${isActive("/spaces") && spacesOpen
-                ? "bg-blue-50 text-blue-700 font-medium"
+            className={`qt-nav-row w-full flex items-center gap-2 px-3 h-8 text-sm rounded text-left ${isActive("/spaces") && spacesOpen
+                ? "qt-nav-row--active bg-blue-50 text-blue-700 font-medium"
                 : "text-gray-700 hover:bg-gray-100"
               }`}
           >
@@ -258,8 +258,8 @@ export function Sidebar() {
                         <Link
                           key={`recent-${s.id}`}
                           href={`/spaces/${s.id}/backlog`}
-                          className={`flex items-center gap-2 px-3 h-8 text-sm rounded ${isCurrent
-                              ? "bg-blue-50 text-blue-700 font-medium"
+                          className={`qt-nav-row flex items-center gap-2 px-3 h-8 text-sm rounded ${isCurrent
+                              ? "qt-nav-row--active bg-blue-50 text-blue-700 font-medium"
                               : "text-gray-700 hover:bg-gray-100"
                             }`}
                         >
@@ -275,8 +275,8 @@ export function Sidebar() {
                 ref={moreBtnRef}
                 type="button"
                 onClick={() => setMoreOpen((v) => !v)}
-                className={`w-full flex items-center gap-2 px-3 h-8 text-sm rounded text-left ${moreOpen
-                    ? "bg-blue-50 text-blue-700 font-medium"
+                className={`qt-nav-row w-full flex items-center gap-2 px-3 h-8 text-sm rounded text-left ${moreOpen
+                    ? "qt-nav-row--active bg-blue-50 text-blue-700 font-medium"
                     : "text-gray-700 hover:bg-gray-100"
                   }`}
               >
