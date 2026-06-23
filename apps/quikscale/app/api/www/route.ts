@@ -14,7 +14,6 @@ import { notifyWWWAssignment } from "@/lib/services/wwwNotifications";
 import { isOrgAdmin } from "@/lib/api/visibility";
 import { fetchAuditUserMap, decorateAudit } from "@/lib/api/auditUsers";
 import { searchUserIds, dateSearchConditions } from "@/lib/api/listSearch";
-import { publishRealtime } from "@quikit/realtime/server";
 
 // GET /api/www — list all WWWItems for tenant
 export const GET = auth.view(async ({ orgId, userId }, req) => {
@@ -271,15 +270,6 @@ export const POST = auth.create(async ({ orgId, userId }, req) => {
       console.error("[POST /api/www] notifyWWWAssignment failed:", err);
     });
   }
-
-  await publishRealtime({
-    entity: "www",
-    action: "created",
-    id: primaryItem.id,
-    orgId,
-    ownerId: primaryWho,
-    actorUserId: userId,
-  });
 
   return NextResponse.json(
     {

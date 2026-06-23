@@ -16,7 +16,6 @@ import { isOrgAdmin, getMyTeamIds } from "@/lib/api/visibility";
 import { fetchAuditUserMap, decorateAudit } from "@/lib/api/auditUsers";
 import { audit, requestContext } from "@/lib/audit";
 import { searchUserIds, dateSearchConditions, numericSearchValue } from "@/lib/api/listSearch";
-import { publishRealtime } from "@quikit/realtime/server";
 
 
 // GET /api/kpi - List KPIs with filters and pagination
@@ -676,18 +675,6 @@ export const POST = auth.create(async ({ orgId, userId }, req) => {
       console.error("[POST /api/kpi] notifyKPIAssignment failed:", err);
     });
   }
-
-  await publishRealtime({
-    entity: "kpi",
-    action: "created",
-    id: kpi.id,
-    orgId,
-    teamId: kpi.teamId,
-    ownerId: kpi.owner,
-    year: kpi.year ?? undefined,
-    quarter: kpi.quarter ?? undefined,
-    actorUserId: userId,
-  });
 
   return NextResponse.json({ success: true, data: kpi, message: "KPI created successfully" }, { status: 201 });
 });

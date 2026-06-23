@@ -11,7 +11,6 @@ import {
   diffFields,
   PRIORITY_AUDIT_FIELDS,
 } from "@/lib/audit";
-import { publishRealtime } from "@quikit/realtime/server";
 
 /** Before/after fields needed to diff a Priority for the audit timeline. */
 const PRIORITY_AUDIT_SELECT = {
@@ -129,18 +128,6 @@ export const PUT = auth.update<{ id: string }>(async ({ orgId, userId }, req, { 
     ...requestContext(req),
   });
 
-  await publishRealtime({
-    entity: "priority",
-    action: "updated",
-    id: params.id,
-    orgId,
-    teamId: updated.teamId,
-    ownerId: updated.owner,
-    year: updated.year ?? undefined,
-    quarter: updated.quarter ?? undefined,
-    actorUserId: userId,
-  });
-
   return NextResponse.json({ success: true, data: updated });
 });
 
@@ -179,18 +166,6 @@ export const DELETE = auth.delete<{ id: string }>(async ({ orgId, userId }, req,
     actor: { userId, orgId, teamId: existing.teamId },
     snapshot: existing,
     ...requestContext(req),
-  });
-
-  await publishRealtime({
-    entity: "priority",
-    action: "deleted",
-    id: params.id,
-    orgId,
-    teamId: existing.teamId,
-    ownerId: existing.owner,
-    year: existing.year ?? undefined,
-    quarter: existing.quarter ?? undefined,
-    actorUserId: userId,
   });
 
   return NextResponse.json({ success: true, message: "Priority deleted successfully" });

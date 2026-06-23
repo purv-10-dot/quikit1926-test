@@ -14,7 +14,6 @@ import { withOrgAuthForResource } from "@/lib/api/withOrgAuth";
 import { canEditWWW, canEditWWWAssignment } from "@/lib/api/wwwPermissions";
 import { findWWWDuplicate, wwwDuplicateMessage } from "@/lib/api/wwwDuplicate";
 import { notifyWWWReassignment } from "@/lib/services/wwwNotifications";
-import { publishRealtime } from "@quikit/realtime/server";
 const auth = withOrgAuthForResource("www", "WWW");
 
 /** Before/after fields needed to diff a WWW item for the audit timeline. */
@@ -356,15 +355,6 @@ export const PUT = auth.update<{ id: string }>(
       console.error("[PUT /api/www/[id]] notifyWWWReassignment failed:", err);
     });
 
-    await publishRealtime({
-      entity: "www",
-      action: "updated",
-      id: params.id,
-      orgId,
-      ownerId: updated.who,
-      actorUserId: userId,
-    });
-
     return NextResponse.json({ success: true, data: result });
   },
   { fallbackErrorMessage: "Failed to update WWW item" },
@@ -431,15 +421,6 @@ export const DELETE = auth.delete<{ id: string }>(
         category: existing.category,
       },
       ...requestContext(request),
-    });
-
-    await publishRealtime({
-      entity: "www",
-      action: "deleted",
-      id: params.id,
-      orgId,
-      ownerId: existing.who,
-      actorUserId: userId,
     });
 
     return NextResponse.json({

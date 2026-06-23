@@ -3,7 +3,6 @@ import { db } from "@/lib/db";
 import { withOrgAuthForModule } from "@/lib/api/withOrgAuth";
 import { writeAuditLog } from "@/lib/api/auditLog";
 import { audit, requestContext } from "@/lib/audit";
-import { publishRealtime } from "@quikit/realtime/server";
 
 const withOrgAuth = withOrgAuthForModule("www");
 
@@ -51,15 +50,6 @@ export const POST = withOrgAuth<{ id: string }>(async ({ orgId, userId }, req, {
     reason,
     snapshot: { name: existing.what },
     ...requestContext(req),
-  });
-
-  await publishRealtime({
-    entity: "www",
-    action: "restored",
-    id,
-    orgId,
-    ownerId: existing.who,
-    actorUserId: userId,
   });
 
   return NextResponse.json({ success: true, data: restored });

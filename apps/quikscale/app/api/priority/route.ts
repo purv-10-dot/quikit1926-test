@@ -12,7 +12,6 @@ import { notifyPriorityAssignment } from "@/lib/services/priorityNotifications";
 import { isOrgAdmin } from "@/lib/api/visibility";
 import { fetchAuditUserMap, decorateAudit } from "@/lib/api/auditUsers";
 import { searchUserIds, dateSearchConditions, numericSearchValue } from "@/lib/api/listSearch";
-import { publishRealtime } from "@quikit/realtime/server";
 
 const PRIORITY_SELECT = {
   id: true,
@@ -257,18 +256,6 @@ export const POST = auth.create(async ({ orgId, userId }, req) => {
       console.error("[POST /api/priority] notifyPriorityAssignment failed:", err);
     });
   }
-
-  await publishRealtime({
-    entity: "priority",
-    action: "created",
-    id: priority.id,
-    orgId,
-    teamId: priority.teamId,
-    ownerId: priority.owner,
-    year: priority.year ?? undefined,
-    quarter: priority.quarter ?? undefined,
-    actorUserId: userId,
-  });
 
   return NextResponse.json({ success: true, data: priority }, { status: 201 });
 });

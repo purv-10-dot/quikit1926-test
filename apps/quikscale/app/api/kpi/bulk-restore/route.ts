@@ -3,7 +3,6 @@ import { db } from "@/lib/db";
 import { withOrgAuthForModule } from "@/lib/api/withOrgAuth";
 import { writeAuditLog } from "@/lib/api/auditLog";
 import { audit, requestContext } from "@/lib/audit";
-import { publishRealtime } from "@quikit/realtime/server";
 
 const withOrgAuth = withOrgAuthForModule("kpi");
 
@@ -40,14 +39,6 @@ export const POST = withOrgAuth(async ({ orgId, userId }, req) => {
       actor: { userId, orgId, teamId: row.teamId },
       snapshot: { name: row.name },
       ...ctx,
-    });
-    await publishRealtime({
-      entity: "kpi",
-      action: "restored",
-      id: row.id,
-      orgId,
-      teamId: row.teamId,
-      actorUserId: userId,
     });
   }
 

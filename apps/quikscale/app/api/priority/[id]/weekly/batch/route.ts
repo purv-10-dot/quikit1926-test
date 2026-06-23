@@ -7,7 +7,6 @@ import {
 } from "@/lib/utils/featureFlags";
 import { withOrgAuthForModule } from "@/lib/api/withOrgAuth";
 import { audit, requestContext } from "@/lib/audit";
-import { publishRealtime } from "@quikit/realtime/server";
 const withOrgAuth = withOrgAuthForModule("priority");
 
 const normNotes = (s: string | null | undefined) => (s == null || s === "" ? null : s);
@@ -185,19 +184,6 @@ export const POST = withOrgAuth<{ id: string }>(
           });
         }
       }
-    }
-
-    if (applied > 0) {
-      await publishRealtime({
-        entity: "priority",
-        action: "updated",
-        id: params.id,
-        orgId,
-        teamId: priority.teamId,
-        year: priority.year ?? undefined,
-        quarter: priority.quarter ?? undefined,
-        actorUserId: userId,
-      });
     }
 
     return NextResponse.json({ success: true, data: { applied, failed, weeks } });

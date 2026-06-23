@@ -7,7 +7,6 @@ import { getPastWeekFlags, getCurrentFiscalWeekFromDB } from "@/lib/utils/featur
 import { audit, requestContext } from "@/lib/audit";
 import { weeklyTargetForWeek } from "@/lib/utils/kpiHelpers";
 import { withTxRetry } from "@/lib/api/withTxRetry";
-import { publishRealtime } from "@quikit/realtime/server";
 
 
 function calcHealthStatus(progress: number, status: string): string {
@@ -298,19 +297,6 @@ export const POST = withOrgAuth<{ id: string }>(async ({ orgId, userId }, req, {
       ),
     },
     ...requestContext(req),
-  });
-
-  // Real-time: tell other clients in this org a KPI changed so they refetch.
-  await publishRealtime({
-    entity: "kpi",
-    action: "updated",
-    id: params.id,
-    orgId,
-    teamId: kpi.teamId,
-    ownerId: targetUserId,
-    year: kpi.year ?? undefined,
-    quarter: kpi.quarter ?? undefined,
-    actorUserId: userId,
   });
 
   return NextResponse.json({ success: true, data: weeklyValue });
