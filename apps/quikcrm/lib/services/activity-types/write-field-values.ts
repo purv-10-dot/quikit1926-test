@@ -24,6 +24,21 @@ import type { ActivityFieldDefinition } from "@/types/activity-type";
 
 type Tx = PrismaClient | Prisma.TransactionClient;
 
+/**
+ * Thrown when submitted activity field values fail validation (missing
+ * required, bad coercion, unsupported Phone type). Carries statusCode 400 so
+ * the route's errorResponse maps it to a 400 — distinct from an unexpected
+ * server error (no statusCode) which surfaces as 500. Callers that catch this
+ * specifically can map it to a client error without swallowing real failures.
+ */
+export class ActivityFieldValidationError extends Error {
+  readonly statusCode = 400;
+  constructor(message: string) {
+    super(message);
+    this.name = "ActivityFieldValidationError";
+  }
+}
+
 export interface WriteActivityFieldValuesInput {
   orgId: string;
   activityId: string;
@@ -95,7 +110,7 @@ export async function writeActivityFieldValues(
   // explicit, not a silent mis-store.
   const phone = defs.find((d) => d.fieldType === "Phone");
   if (phone) {
-    throw new Error(
+    throw new ActivityFieldValidationError(
       `Activity field "${phone.label}" uses the unsupported Phone type`,
     );
   }
@@ -111,7 +126,7 @@ export async function writeActivityFieldValues(
   const errorKeys = Object.keys(errors);
   if (errorKeys.length > 0) {
     const detail = errorKeys.map((k) => errors[k]).join("; ");
-    throw new Error(`Activity field validation failed: ${detail}`);
+    throw new ActivityFieldValidationError(`Activity field validation failed: ${detail}`);
   }
 
   // One row per provided (non-empty) field. `values` is keyed by field key and

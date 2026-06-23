@@ -127,18 +127,18 @@ A general, admin-configurable ACTIVITY-LOGGING system in apps/quikcrm. Admins cr
 - **Phase 3:** does the empty-types state surface the built-in Note/Call/Email/Meeting/Task seed types as built-in options alongside admin-created ones? (Decide at Phase 3.)
 - **`showInList`:** hidden for now via prop (lead-specific), but kept repurposable for a possible Phase 4 "show field as dashboard column." (Decide at Phase 4.)
 
-- **FOLLOW-UP (P2, open):** Remove `"Phone"` from the activity field-create
-  route's Zod `FIELD_TYPES` enum in
+
+
+  - **FOLLOW-UP (P2, RESOLVED in T-P2.3):** `"Phone"` removed from the activity
+  field-create route's Zod `FIELD_TYPES` enum in
   `apps/quikcrm/app/api/settings/activity-types/[id]/fields/route.ts`, so the
-  admin UI cannot offer Phone as an activity custom-field type. Phone is
-  excluded in v1 (no use case; would couple the lead phone-object shape and is
-  un-queryable by the per-value indexes). `writeActivityFieldValues` already
-  THROWS on Phone (T-P2.2) — and it throws upfront on ANY Phone def on the
-  type, which bricks logging for that whole type, not just the phone field. So
-  until the route enum is tightened there is a LIVE failure path, not a
-  cosmetic mismatch. Close this AS PART OF T-P2.3 (when the create path is
-  wired) — tightening the enum so Phone can't be created turns the service
-  throw into a defensive backstop.
+  admin UI can no longer create a Phone activity field (posting one → 400,
+  test-locked). Phone is excluded in v1 (no use case; would couple the lead
+  phone-object shape and is un-queryable by the per-value indexes). The
+  reachable `writeActivityFieldValues` Phone rejection is a typed 400
+  (ActivityFieldValidationError); the `routeToColumn` Phone branch is now an
+  unreachable plain-Error exhaustiveness backstop. The live failure path
+  (Phone field bricking a whole type) is closed.
 
 ---
 

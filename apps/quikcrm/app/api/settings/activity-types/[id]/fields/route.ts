@@ -11,12 +11,16 @@ export const runtime = "nodejs";
 // parent (decision #4/#10): requireApiUser (401) → requirePermission
 // "settings" (403). Tenant isolation is enforced at the parent — we confirm
 // the activity type belongs to the caller's org before touching its fields.
+// Phone is intentionally EXCLUDED for activity fields (v1): no use case, the
+// lead phone-object shape would couple storage, and it isn't queryable by the
+// per-value indexes. writeActivityFieldValues throws on Phone as a backstop;
+// keeping it out of this enum means the admin UI cannot create one in the first
+// place. See ACTIVITY-FEATURE-DECISIONS.md (OPEN DECISIONS → Phone follow-up).
 const FIELD_TYPES = [
   "Text",
   "TextArea",
   "Number",
   "Email",
-  "Phone",
   "Date",
   "Boolean",
   "Select",
