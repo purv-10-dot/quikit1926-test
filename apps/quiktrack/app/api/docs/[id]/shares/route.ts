@@ -227,31 +227,32 @@ export const POST = withOrgAuth<{ id: string }>(
         }
       }
 
-      // Email the invitee the public per-recipient link (fire-and-forget).
+      // Email the invitee the public per-recipient link. AWAITED (not detached)
+      // so it actually runs on Vercel — a serverless function freezes once the
+      // response is sent, which would drop a fire-and-forget send. The try/catch
+      // keeps a mail failure from failing the share itself.
       const shareToken = token;
-      void (async () => {
-        try {
-          const sharer = await db.user.findUnique({
-            where: { id: userId },
-            select: { email: true, firstName: true, lastName: true },
-          });
-          await emailDocShared({
-            to: email,
-            recipientName: null,
-            docTitle: doc.title ?? "",
-            projectId: doc.projectId,
-            docId: params.id,
-            sharedBy: sharer
-              ? [sharer.firstName, sharer.lastName].filter(Boolean).join(" ").trim() || sharer.email
-              : null,
-            role: "viewer",
-            shareToken,
-            origin: reqOrigin,
-          });
-        } catch (e) {
-          console.error("[email] doc external-share failed:", e instanceof Error ? e.message : e);
-        }
-      })();
+      try {
+        const sharer = await db.user.findUnique({
+          where: { id: userId },
+          select: { email: true, firstName: true, lastName: true },
+        });
+        await emailDocShared({
+          to: email,
+          recipientName: null,
+          docTitle: doc.title ?? "",
+          projectId: doc.projectId,
+          docId: params.id,
+          sharedBy: sharer
+            ? [sharer.firstName, sharer.lastName].filter(Boolean).join(" ").trim() || sharer.email
+            : null,
+          role: "viewer",
+          shareToken,
+          origin: reqOrigin,
+        });
+      } catch (e) {
+        console.error("[email] doc external-share failed:", e instanceof Error ? e.message : e);
+      }
 
       return NextResponse.json({ success: true, data: { email, role: "viewer" } }, { status: 201 });
     }
@@ -289,39 +290,38 @@ export const POST = withOrgAuth<{ id: string }>(
       DO UPDATE SET role = ${role}, "updatedAt" = NOW()
     `;
 
-    // Notify the person by email with the doc link (fire-and-forget — a mail
-    // hiccup must not fail the share).
-    void (async () => {
-      try {
-        const [target, sharer] = await Promise.all([
-          db.user.findUnique({
-            where: { id: targetId },
-            select: { email: true, firstName: true, lastName: true },
-          }),
-          db.user.findUnique({
-            where: { id: userId },
-            select: { email: true, firstName: true, lastName: true },
-          }),
-        ]);
-        if (target?.email) {
-          await emailDocShared({
-            to: target.email,
-            recipientName:
-              [target.firstName, target.lastName].filter(Boolean).join(" ").trim() || null,
-            docTitle: doc.title ?? "",
-            projectId: doc.projectId,
-            docId: params.id,
-            sharedBy: sharer
-              ? [sharer.firstName, sharer.lastName].filter(Boolean).join(" ").trim() || sharer.email
-              : null,
-            role,
-            origin: reqOrigin,
-          });
-        }
-      } catch (e) {
-        console.error("[email] doc-share failed:", e instanceof Error ? e.message : e);
+    // Notify the person by email with the doc link. AWAITED so it runs on
+    // Vercel (a detached send is dropped when the function freezes after the
+    // response). A mail failure is caught and never fails the share.
+    try {
+      const [target, sharer] = await Promise.all([
+        db.user.findUnique({
+          where: { id: targetId },
+          select: { email: true, firstName: true, lastName: true },
+        }),
+        db.user.findUnique({
+          where: { id: userId },
+          select: { email: true, firstName: true, lastName: true },
+        }),
+      ]);
+      if (target?.email) {
+        await emailDocShared({
+          to: target.email,
+          recipientName:
+            [target.firstName, target.lastName].filter(Boolean).join(" ").trim() || null,
+          docTitle: doc.title ?? "",
+          projectId: doc.projectId,
+          docId: params.id,
+          sharedBy: sharer
+            ? [sharer.firstName, sharer.lastName].filter(Boolean).join(" ").trim() || sharer.email
+            : null,
+          role,
+          origin: reqOrigin,
+        });
       }
-    })();
+    } catch (e) {
+      console.error("[email] doc-share failed:", e instanceof Error ? e.message : e);
+    }
 
     return NextResponse.json({ success: true, data: { userId: targetId, role } }, { status: 201 });
   },
