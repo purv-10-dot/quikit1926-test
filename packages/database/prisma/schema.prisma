@@ -632,6 +632,9 @@ model KPI {
   targetScale        String?
   reverseColor       Boolean          @default(false)
   frequency          String           @default("weekly")
+  // True when this KPI was created via the OPSP "Export → Create KPIs" flow.
+  // Display-only (shown in the KPI grid); never edited from the Add/Edit form.
+  importedFromOpsp   Boolean          @default(false)
   lastNotes          String?
   lastNotesAt        DateTime?
   lastNotedBy        String?
@@ -802,6 +805,9 @@ model Priority {
   endWeek        Int?
   overallStatus  String                 @default("not-started")
   notes          String?
+  // True when created via the OPSP "Export → Create Priorities" flow.
+  // Display-only (shown in the Priority grid); never edited from the form.
+  importedFromOpsp Boolean              @default(false)
   createdAt      DateTime               @default(now())
   updatedAt      DateTime               @updatedAt
   createdBy      String
