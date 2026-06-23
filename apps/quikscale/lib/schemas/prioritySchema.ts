@@ -30,6 +30,14 @@ export const updatePrioritySchema = z.object({
   endWeek:       z.number().int().min(1).max(13).optional().nullable(),
   overallStatus: z.enum(["not-applicable","not-yet-started","behind-schedule","on-track","completed","not-started"]).optional(),
   notes:         z.string().optional().nullable(),
+  // OPSP "Export → Replace Priority" flow only. When true, wipe the existing
+  // priority's weekly statuses + notes and reset its overall status so the
+  // replaced priority starts fresh ("Reset"); when false/absent the previous
+  // weekly data is carried forward.
+  resetWeeklyData:  z.boolean().optional(),
+  // When true, email the owner that their priority was replaced (set by the
+  // OPSP export replace flow; the normal Edit form never sends it).
+  notifyReplacement: z.boolean().optional(),
 });
 
 export const weeklyStatusSchema = z.object({

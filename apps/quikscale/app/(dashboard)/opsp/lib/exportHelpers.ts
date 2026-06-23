@@ -96,6 +96,39 @@ export function categorizeKpiRows(
   return { alreadyExported, newRows };
 }
 
+/* ── Replace: carry-forward eligibility ─────────────────────────────────── */
+
+/**
+ * Whether the previous data (weekly actuals, achieved, progress, notes) may be
+ * CARRIED FORWARD when a KPI is replaced via OPSP export.
+ *
+ * Only when the new KPI's target equals the existing KPI's target — a different
+ * target makes the old weekly actuals meaningless against the new goal, so the
+ * UI forces a reset in that case. Mirrors the product rule: "Retain is
+ * available only when the target values of the old and new KPI match."
+ */
+export function canCarryForwardKPI(newTarget: number, existingTarget?: number | null): boolean {
+  return numEq(newTarget, existingTarget ?? null);
+}
+
+/**
+ * Whether previous weekly statuses + notes may be carried forward when a
+ * Priority is replaced. Priorities have no numeric target, so eligibility is
+ * gated on the start/end week RANGE matching (the Priority analog of "same
+ * target") — a different window means the weekly statuses no longer line up.
+ */
+export function canCarryForwardPriority(
+  newStartWeek: number,
+  newEndWeek: number,
+  existingStartWeek?: number | null,
+  existingEndWeek?: number | null,
+): boolean {
+  return (
+    numEq(newStartWeek, existingStartWeek ?? null) &&
+    numEq(newEndWeek, existingEndWeek ?? null)
+  );
+}
+
 export interface PriorityRowCategory {
   row: QPriorRow;
   existing: ExistingExportItem | null;

@@ -44,6 +44,8 @@ import {
   isWeekBlocked,
   categorizeKpiRows,
   categorizePriorityRows,
+  canCarryForwardKPI,
+  canCarryForwardPriority,
   type ExistingExportItem,
 } from "../lib/exportHelpers";
 import type { KPIAcctRow, QPriorRow } from "../types";
@@ -434,13 +436,18 @@ export function ExportKPIDrawer({
     } as Parameters<typeof createKPI.mutateAsync>[0];
   }
 
-  /** Replace = overwrite the matched existing KPI with the new values. */
-  async function replaceKPI(id: string, f: KPIStepForm) {
+  /**
+   * Replace = overwrite the matched existing KPI with the new values.
+   * `reset` controls the previous owner's data: true → clear weekly actuals,
+   * achieved, progress, and notes (start fresh); false → carry them forward.
+   * Either way the owner is emailed about the replacement (`notifyReplacement`).
+   */
+  async function replaceKPI(id: string, f: KPIStepForm, reset: boolean) {
     const { kpiLevel: _lvl, status: _st, quarter: _q, year: _y, ...rest } = kpiCreatePayload(f) as Record<string, unknown>;
     const res = await fetch(`/api/kpi/${id}`, {
       method: "PUT",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(rest),
+      body: JSON.stringify({ ...rest, resetWeeklyData: reset, notifyReplacement: true }),
     });
     const json = await res.json().catch(() => null);
     if (!res.ok || !json?.success) throw new Error(json?.error || "Failed to replace KPI");
@@ -485,6 +492,26 @@ export function ExportKPIDrawer({
         if (decision === "cancel") return;
       }
 
+      // Phase 2c — on Replace, ask per matched item whether to carry the
+      // previous data forward or reset it. Retain is only offered when the new
+      // target matches the existing KPI's target; otherwise it's forced to
+      // reset. `resetByIndex` keys the form index → true when the user (or the
+      // rule) chose reset.
+      const resetByIndex = new Map<number, boolean>();
+      if (decision === "replace") {
+        const matchedEntries = [...matches.entries()];
+        const choices = await gate.askReplaceData(
+          "KPI",
+          matchedEntries.map(([i, ex]) => ({
+            attemptedName: forms[i].name.trim(),
+            existingName: ex.name,
+            canRetain: canCarryForwardKPI(parseFloat(forms[i].target) || 0, ex.target),
+          })),
+        );
+        if (choices === null) return; // user cancelled
+        matchedEntries.forEach(([i], idx) => resetByIndex.set(i, choices[idx] === "reset"));
+      }
+
       // Phase 3 — apply the decision.
       let created = 0;
       let replaced = 0;
@@ -492,7 +519,7 @@ export function ExportKPIDrawer({
         const ex = matches.get(i);
         if (ex && decision === "skip") continue;
         if (ex && decision === "replace") {
-          await replaceKPI(ex.id, forms[i]);
+          await replaceKPI(ex.id, forms[i], resetByIndex.get(i) ?? false);
           replaced++;
           continue;
         }
@@ -922,8 +949,12 @@ export function ExportPriorityDrawer({
     } as Parameters<typeof createPriority.mutateAsync>[0];
   }
 
-  /** Replace = overwrite the matched existing priority with the new values. */
-  async function replacePriority(id: string, f: PriorityStepForm) {
+  /**
+   * Replace = overwrite the matched existing priority with the new values.
+   * `reset` true → clear the previous weekly statuses + notes (start fresh);
+   * false → carry them forward. The owner is emailed either way.
+   */
+  async function replacePriority(id: string, f: PriorityStepForm, reset: boolean) {
     const res = await fetch(`/api/priority/${id}`, {
       method: "PUT",
       headers: { "Content-Type": "application/json" },
@@ -934,6 +965,8 @@ export function ExportPriorityDrawer({
         teamId: f.teamId || null,
         startWeek: f.startWeek,
         endWeek: f.endWeek,
+        resetWeeklyData: reset,
+        notifyReplacement: true,
       }),
     });
     const json = await res.json().catch(() => null);
@@ -979,6 +1012,29 @@ export function ExportPriorityDrawer({
         if (decision === "cancel") return;
       }
 
+      // Phase 2c — on Replace, ask per matched item whether to carry the
+      // previous weekly statuses forward or reset them. Retain is only offered
+      // when the new start/end week range matches the existing priority's.
+      const resetByIndex = new Map<number, boolean>();
+      if (decision === "replace") {
+        const matchedEntries = [...matches.entries()];
+        const choices = await gate.askReplaceData(
+          "Priority",
+          matchedEntries.map(([i, ex]) => ({
+            attemptedName: forms[i].name.trim(),
+            existingName: ex.name,
+            canRetain: canCarryForwardPriority(
+              forms[i].startWeek,
+              forms[i].endWeek,
+              ex.startWeek,
+              ex.endWeek,
+            ),
+          })),
+        );
+        if (choices === null) return; // user cancelled
+        matchedEntries.forEach(([i], idx) => resetByIndex.set(i, choices[idx] === "reset"));
+      }
+
       // Phase 3 — apply the decision.
       let created = 0;
       let replaced = 0;
@@ -986,7 +1042,7 @@ export function ExportPriorityDrawer({
         const ex = matches.get(i);
         if (ex && decision === "skip") continue;
         if (ex && decision === "replace") {
-          await replacePriority(ex.id, forms[i]);
+          await replacePriority(ex.id, forms[i], resetByIndex.get(i) ?? false);
           replaced++;
           continue;
         }

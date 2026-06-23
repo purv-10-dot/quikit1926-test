@@ -106,6 +106,13 @@ export const updateKPISchema = z
     targetScale: z.string().optional().nullable(),
     reverseColor: z.boolean().optional(),
     frequency: z.enum(["daily", "weekly", "monthly", "yearly"]).optional(),
+    // OPSP "Export → Replace KPI" flow only. When true, wipe the existing KPI's
+    // weekly actuals + notes + cached progress so the replaced KPI starts
+    // fresh ("Reset"); when false/absent the previous data is carried forward.
+    resetWeeklyData: z.boolean().optional(),
+    // When true, email the owner that their KPI was replaced (set by the OPSP
+    // export replace flow; the normal Edit form never sends it).
+    notifyReplacement: z.boolean().optional(),
   })
   .refine(
     (d) => {

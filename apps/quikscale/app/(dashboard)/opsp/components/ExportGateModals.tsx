@@ -22,6 +22,26 @@ import { useRef, useState, type ReactNode } from "react";
 
 export type DuplicateDecision = "cancel" | "skip" | "replace";
 
+/** Per-item choice when replacing: carry the previous data forward or reset. */
+export type ReplaceChoice = "carry" | "reset";
+
+export interface ReplaceItemInfo {
+  /** Name being exported (the new item). */
+  attemptedName: string;
+  /** The existing item it will replace. */
+  existingName: string;
+  /**
+   * Whether "Retain previous data" is allowed. KPI → new target == old target;
+   * Priority → start/end week range matches. When false the UI forces a reset.
+   */
+  canRetain: boolean;
+}
+
+interface ReplaceState {
+  entity: string;
+  items: ReplaceItemInfo[];
+}
+
 export interface DuplicateInfo {
   /** The name the user typed for the item being exported. */
   attemptedName: string;
@@ -43,6 +63,12 @@ export interface ExportGate {
   askDuplicates: (entity: string, items: DuplicateInfo[]) => Promise<DuplicateDecision>;
   /** Resolve to `true` if the user wants to export despite the AI being down. */
   askTokenExpired: (entity: string) => Promise<boolean>;
+  /**
+   * After the user chooses Replace, ask — per matched item — whether to carry
+   * the previous data forward or reset it. Resolves to a choice array aligned
+   * to `items`, or `null` if the user cancels.
+   */
+  askReplaceData: (entity: string, items: ReplaceItemInfo[]) => Promise<ReplaceChoice[] | null>;
   /** Render this in the drawer body so the modals can appear. */
   modals: ReactNode;
 }
@@ -50,8 +76,10 @@ export interface ExportGate {
 export function useExportGate(): ExportGate {
   const [dup, setDup] = useState<DupState | null>(null);
   const [token, setToken] = useState<{ entity: string } | null>(null);
+  const [replace, setReplace] = useState<ReplaceState | null>(null);
   const dupResolve = useRef<((d: DuplicateDecision) => void) | null>(null);
   const tokenResolve = useRef<((proceed: boolean) => void) | null>(null);
+  const replaceResolve = useRef<((c: ReplaceChoice[] | null) => void) | null>(null);
 
   function askDuplicates(entity: string, items: DuplicateInfo[]) {
     return new Promise<DuplicateDecision>((resolve) => {
@@ -65,6 +93,12 @@ export function useExportGate(): ExportGate {
       setToken({ entity });
     });
   }
+  function askReplaceData(entity: string, items: ReplaceItemInfo[]) {
+    return new Promise<ReplaceChoice[] | null>((resolve) => {
+      replaceResolve.current = resolve;
+      setReplace({ entity, items });
+    });
+  }
   function decideDup(d: DuplicateDecision) {
     setDup(null);
     dupResolve.current?.(d);
@@ -75,15 +109,21 @@ export function useExportGate(): ExportGate {
     tokenResolve.current?.(proceed);
     tokenResolve.current = null;
   }
+  function decideReplace(choices: ReplaceChoice[] | null) {
+    setReplace(null);
+    replaceResolve.current?.(choices);
+    replaceResolve.current = null;
+  }
 
   const modals = (
     <>
       {dup && <DuplicateWarningModal state={dup} onDecide={decideDup} />}
       {token && <TokenExpiredModal entity={token.entity} onDecide={decideToken} />}
+      {replace && <ReplaceDataModal state={replace} onDecide={decideReplace} />}
     </>
   );
 
-  return { askDuplicates, askTokenExpired, modals };
+  return { askDuplicates, askTokenExpired, askReplaceData, modals };
 }
 
 /* ── overlay shell ─────────────────────────────────────────────────────── */
@@ -153,6 +193,106 @@ function DuplicateWarningModal({
           title="Update the existing item with these values"
         >
           Replace
+        </button>
+      </div>
+    </Overlay>
+  );
+}
+
+/* ── replace data handling (carry forward vs reset, per item) ──────────── */
+
+function ReplaceDataModal({
+  state,
+  onDecide,
+}: {
+  state: ReplaceState;
+  onDecide: (choices: ReplaceChoice[] | null) => void;
+}) {
+  const label = state.entity;
+  // Default: retain where the rule allows it (don't silently lose data); items
+  // whose target/week-range differs are forced to reset. The Confirm click is
+  // the explicit confirmation the spec requires — nothing is applied until then.
+  const [choices, setChoices] = useState<ReplaceChoice[]>(() =>
+    state.items.map((it) => (it.canRetain ? "carry" : "reset")),
+  );
+  const set = (i: number, c: ReplaceChoice) =>
+    setChoices((prev) => prev.map((p, idx) => (idx === i ? c : p)));
+
+  const optionBtn = (active: boolean, disabled?: boolean) =>
+    `flex-1 rounded-lg border px-3 py-2 text-left text-[11px] font-semibold transition-colors ${
+      disabled
+        ? "cursor-not-allowed border-gray-100 bg-gray-50 text-gray-300"
+        : active
+          ? "border-accent-500 bg-accent-50 text-accent-700"
+          : "border-gray-200 text-gray-600 hover:bg-gray-50"
+    }`;
+
+  return (
+    <Overlay>
+      <div className="px-5 pt-5">
+        <h2 className="text-sm font-semibold text-gray-900">
+          Replacing {state.items.length} {label}
+          {state.items.length > 1 ? "s" : ""} — keep previous data?
+        </h2>
+        <p className="mt-1 text-xs text-gray-500">
+          Choose what happens to each {label.toLowerCase()}&apos;s existing weekly progress and
+          notes. <span className="font-medium text-gray-600">Retain</span> is only available when
+          the {label === "KPI" ? "target" : "week range"} matches; otherwise the data is reset.
+        </p>
+        <ul className="mt-3 max-h-72 space-y-3 overflow-y-auto">
+          {state.items.map((it, i) => (
+            <li key={i} className="rounded-lg border border-gray-200 px-3 py-2.5">
+              <p className="text-[11px] text-gray-700">
+                <span className="font-semibold">“{it.attemptedName}”</span> replaces{" "}
+                <span className="font-semibold">“{it.existingName}”</span>
+              </p>
+              <div className="mt-2 flex gap-2">
+                <button
+                  type="button"
+                  disabled={!it.canRetain}
+                  onClick={() => it.canRetain && set(i, "carry")}
+                  className={optionBtn(choices[i] === "carry", !it.canRetain)}
+                  title={
+                    it.canRetain
+                      ? "Keep the previous weekly progress and notes"
+                      : `Unavailable — the ${label === "KPI" ? "target" : "week range"} differs`
+                  }
+                >
+                  Retain previous data
+                </button>
+                <button
+                  type="button"
+                  onClick={() => set(i, "reset")}
+                  className={optionBtn(choices[i] === "reset")}
+                  title="Start fresh — clear weekly progress and notes"
+                >
+                  Reset (start fresh)
+                </button>
+              </div>
+              {!it.canRetain && (
+                <p className="mt-1.5 text-[10px] text-amber-700">
+                  {label === "KPI" ? "Target" : "Week range"} differs from the existing{" "}
+                  {label.toLowerCase()} — previous data will be cleared.
+                </p>
+              )}
+            </li>
+          ))}
+        </ul>
+      </div>
+      <div className="mt-4 flex items-center justify-end gap-2 border-t border-gray-100 px-5 py-3">
+        <button
+          type="button"
+          onClick={() => onDecide(null)}
+          className="rounded-lg border border-gray-200 px-3.5 py-2 text-xs font-semibold text-gray-600 hover:bg-gray-50"
+        >
+          Cancel
+        </button>
+        <button
+          type="button"
+          onClick={() => onDecide(choices)}
+          className="rounded-lg bg-accent-600 px-3.5 py-2 text-xs font-semibold text-white hover:bg-accent-700"
+        >
+          Confirm replace
         </button>
       </div>
     </Overlay>

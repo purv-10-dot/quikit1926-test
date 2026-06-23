@@ -6,6 +6,7 @@ import { withOrgAuthForResource } from "@/lib/api/withOrgAuth";
 const auth = withOrgAuthForResource("kpi", "KPI");
 import { getPastWeekFlags, getCurrentFiscalWeekFromDB } from "@/lib/utils/featureFlags";
 import { audit, requestContext, classifyUpdateAction, diffFields, KPI_AUDIT_FIELDS } from "@/lib/audit";
+import { notifyKPIReplacement } from "@/lib/services/kpiNotifications";
 
 /**
  * Push target / weekly-target changes from a Team KPI down to every child
@@ -378,6 +379,31 @@ export const PUT = auth.update<{ id: string }>(async ({ orgId, userId }, req, { 
     },
   });
 
+  // ── OPSP "Replace → Reset" ──
+  // The OPSP export replace flow sets `resetWeeklyData` when the user chose to
+  // START FRESH (or was forced to because the new target differs). Wipe every
+  // weekly actual AND its note, and zero the cached aggregates, so the replaced
+  // KPI carries none of the old owner's progress. The Change-History timeline
+  // is immutable and stays intact. Takes precedence over the zero-week cascade
+  // below (a full reset supersedes the per-week clear).
+  if (validated.resetWeeklyData) {
+    await db.kPIWeeklyValue.updateMany({
+      where: { kpiId: params.id },
+      data: { value: null, notes: null, updatedBy: userId },
+    });
+    await db.kPI.update({
+      where: { id: params.id },
+      data: {
+        qtdAchieved: 0,
+        progressPercent: 0,
+        currentWeekValue: null,
+        lastNotes: null,
+        lastNotesAt: null,
+        // Match a freshly-created KPI (schema default) — no actuals yet.
+        healthStatus: "on-track",
+      },
+    });
+  } else if (validated.weeklyTargets !== undefined) {
   // ── Cascade-clear weekly actuals when their target is set to 0 ──
   // Editing the breakdown (e.g. zeroing W1/W2 because the user re-anchors
   // the quarter at the current week) should also wipe any previously-entered
@@ -387,7 +413,6 @@ export const PUT = auth.update<{ id: string }>(async ({ orgId, userId }, req, { 
   //
   // Only `value` is nulled — `notes` are preserved so the user can still see
   // what was originally entered against the now-zero week.
-  if (validated.weeklyTargets !== undefined) {
     const wt = validated.weeklyTargets as Record<string, number>;
     const zeroWeeks = Object.entries(wt)
       .filter(([, v]) => v === 0)
@@ -499,6 +524,27 @@ export const PUT = auth.update<{ id: string }>(async ({ orgId, userId }, req, { 
     skipIfNoChanges: true,
     ...requestContext(req),
   });
+
+  // ── Replacement email ──
+  // The OPSP "Export → Replace KPI" flow sets `notifyReplacement` so the owner
+  // is told their KPI was replaced (and whether their data was retained or
+  // reset). The normal Edit form never sends it, so ordinary edits stay quiet.
+  // Individual KPIs only (replace targets a single owner). Fire-and-forget.
+  if (validated.notifyReplacement && updatedKPI.owner) {
+    notifyKPIReplacement({
+      orgId,
+      kpiId: updatedKPI.id,
+      oldName: existingKPI.name,
+      newName: updatedKPI.name,
+      quarter: updatedKPI.quarter,
+      year: updatedKPI.year,
+      replacedByUserId: userId,
+      ownerUserId: updatedKPI.owner,
+      dataRetained: !validated.resetWeeklyData,
+    }).catch((err) => {
+      console.error("[PUT /api/kpi/[id]] notifyKPIReplacement failed:", err);
+    });
+  }
 
   return NextResponse.json({ success: true, data: updatedKPI, message: "KPI updated successfully" });
 }, { fallbackErrorMessage: "Failed to update KPI" });

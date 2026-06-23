@@ -4,6 +4,8 @@ import { withOrgAuthForResource } from "@/lib/api/withOrgAuth";
 const auth = withOrgAuthForResource("priority", "Priority");
 import { updatePrioritySchema } from "@/lib/schemas/prioritySchema";
 import { writeAuditLog } from "@/lib/api/auditLog";
+import { notifyPriorityReplacement } from "@/lib/services/priorityNotifications";
+import { PRIORITY_DEFAULT_STATUS } from "@/lib/constants/status";
 import {
   audit,
   requestContext,
@@ -84,7 +86,7 @@ export const PUT = auth.update<{ id: string }>(async ({ orgId, userId }, req, { 
       { status: 400 }
     );
   }
-  const { name, description, owner, teamId, quarter, year, startWeek, endWeek, overallStatus, notes } = parsed.data;
+  const { name, description, owner, teamId, quarter, year, startWeek, endWeek, overallStatus, notes, resetWeeklyData } = parsed.data;
 
   const updated = await db.priority.update({
     where: { id: params.id },
@@ -97,12 +99,24 @@ export const PUT = auth.update<{ id: string }>(async ({ orgId, userId }, req, { 
       year: year ?? undefined,
       startWeek: startWeek ?? null,
       endWeek: endWeek ?? null,
-      overallStatus: overallStatus ?? undefined,
-      notes: notes ?? null,
+      // On reset, force the status back to the default; otherwise honour the
+      // payload (omitted → unchanged, so carry-forward keeps the status).
+      overallStatus: resetWeeklyData ? PRIORITY_DEFAULT_STATUS : (overallStatus ?? undefined),
+      // PATCH semantics: omitted notes are left UNCHANGED (carry-forward keeps
+      // them); an explicit value replaces; reset clears below.
+      notes: resetWeeklyData ? null : (notes === undefined ? undefined : notes),
       updatedBy: userId,
     },
     select: PRIORITY_SELECT,
   });
+
+  // ── OPSP "Replace → Reset" ──
+  // Start the replaced priority fresh: drop every weekly status row (and their
+  // per-week notes). overallStatus + top-level notes were already reset above.
+  // The Change-History timeline is immutable and stays intact.
+  if (resetWeeklyData) {
+    await db.priorityWeeklyStatus.deleteMany({ where: { priorityId: params.id } });
+  }
 
   await writeAuditLog({
     orgId,
@@ -127,6 +141,26 @@ export const PUT = auth.update<{ id: string }>(async ({ orgId, userId }, req, { 
     skipIfNoChanges: true,
     ...requestContext(req),
   });
+
+  // ── Replacement email ──
+  // Set only by the OPSP "Export → Replace Priority" flow, so ordinary edits
+  // stay quiet. Tells the owner their priority was replaced (and whether their
+  // weekly data was retained or reset). Fire-and-forget.
+  if (parsed.data.notifyReplacement && updated.owner) {
+    notifyPriorityReplacement({
+      orgId,
+      priorityId: updated.id,
+      oldName: existing.name,
+      newName: updated.name,
+      quarter: updated.quarter,
+      year: updated.year,
+      replacedByUserId: userId,
+      ownerUserId: updated.owner,
+      dataRetained: !resetWeeklyData,
+    }).catch((err) => {
+      console.error("[PUT /api/priority/[id]] notifyPriorityReplacement failed:", err);
+    });
+  }
 
   return NextResponse.json({ success: true, data: updated });
 });
