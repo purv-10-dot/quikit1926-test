@@ -25,7 +25,7 @@ A general, admin-configurable ACTIVITY-LOGGING system in apps/quikcrm. Admins cr
 
 ## LOCKED DECISIONS (do not re-litigate without explicit Rishabh sign-off)
 
-1. **Storage = INDEXED key-value table, NOT JSON blob.** Activity custom-field values go in a dedicated `CrmActivityFieldValue` table with typed indexed columns (value_text / value_number / value_datetime / value_bool). Reason: the feature's PURPOSE is aggregation/filtering by custom-field value (dashboard + digests must count/sum/group-by). The lead/product JSON-blob pattern CANNOT do this without full scans. We are greenfield on activities, so indexed storage disturbs nothing; the lead/product JSON pattern stays untouched. **Resist any "match the existing lead/product JSON pattern" temptation — it would build a feature that cannot serve its own reporting purpose.**
+1. **Storage = INDEXED key-value table, NOT JSON blob.** Activity custom-field values go in a dedicated `CrmActivityFieldValue` table with typed indexed columns (valueText / valueNumber / valueDate / valueBoolean, plus valueJson for MultiSelect — camelCase per the shipped schema/migration). Reason: the feature's PURPOSE is aggregation/filtering by custom-field value (dashboard + digests must count/sum/group-by). The lead/product JSON-blob pattern CANNOT do this without full scans. We are greenfield on activities, so indexed storage disturbs nothing; the lead/product JSON pattern stays untouched. **Resist any "match the existing lead/product JSON pattern" temptation — it would build a feature that cannot serve its own reporting purpose.**
 
 2. **SMB is QUARANTINED, not absorbed.** The existing Log-Activity modal's three tabs (Generic / Lead-log / SMB) collapse into ONE dynamic type-driven surface — EXCEPT SMB. Generic + Lead-log are field-variation (absorbed cleanly; lead-score recalc already happens on lead-attached activities). SMB has a REAL side effect: a `$transaction` that writes country/followupPriority back to the parent lead — that is NOT field config. Keep `/api/activities/smb-outreach` (and its tab) as a LEGACY endpoint. Do NOT silently drop its write-back; do NOT try to absorb it into the new system in v1 (would require a "field→parent-column mapping" capability = out of scope).
 
@@ -99,6 +99,25 @@ A general, admin-configurable ACTIVITY-LOGGING system in apps/quikcrm. Admins cr
     for P1. Do NOT let DB verification stretch to the end of the build — it
     happens at the P2 boundary, not later.
 
+    **STATUS UPDATE (2026-06-23 — supersedes the "deferred/scheduled" framing in
+    #5, #11, #13):** Foundation DB-verification is DONE. Both migrations —
+    20260623120000_quikcrm_activity_types (P1) AND
+    20260623130000_quikcrm_activity_field_values (P2) — were applied to a real
+    local Postgres and verified live: all three tables exist; the unique
+    constraint actually REJECTS a duplicate (CrmActivityType orgId+code, Postgres
+    duplicate-key error); the onDelete: Cascade actually FIRES (delete type →
+    field defs 1→0); the FK to quikit."Org" resolves. This CLOSES decision #11's
+    mock/contract-level debt for the foundation (P1 + P2 schema).
+    • Decision #5's "batch P1+P2 into ONE migration" was RELAXED — they shipped
+      as TWO separate migrations (see #12); correctness rule (real migrate, never
+      db push) was honored, only the batch optimization was dropped.
+    • STILL DEFERRED to the Phase-3 CLOSE GATE (not done yet): browser
+      render-verify of the UI + the end-to-end write path (activity + typed
+      values persisting through the real app). Blocked by a corrupted dev-DB
+      OAuth row (the quikcrm App is bound to a quikhrms/:3009 OAuthClient, so SSO
+      login fails before a form renders). The close gate uses a FRESH clean DB
+      (full migration history + clean seed + clean OAuth client), not a
+      quikit_devs patch — see the Phase-3 close-gate plan.
 
 ---
 
@@ -140,7 +159,24 @@ A general, admin-configurable ACTIVITY-LOGGING system in apps/quikcrm. Admins cr
   
 - **`showInList`:** hidden for now via prop (lead-specific), but kept repurposable for a possible Phase 4 "show field as dashboard column." (Decide at Phase 4.)
 
-
+- **Phase 3 "Add Meeting" quick-log preset: OPEN — blocks T-P3.3b (modal collapse).**
+  Hard-gate grep (2026-06-23) of all 9 LogActivityModal call sites found ONE
+  dependence on the Generic tab: `lead-dashboard-shell.tsx` "Add Meeting" quick
+  action passes `initialGenericType="Meeting"` to pre-set a Generic activity.
+  (No caller forces a tab; no other caller passes initialGenericType; no SMB
+  forcing.) Collapsing Generic+Lead-log into the type-driven tab breaks this
+  preset unless handled. Decision needed BEFORE removing any tab JSX:
+    1. Keep a thin preset path for initialGenericType — preserves "Add Meeting"
+       UX, least disruption; collapse = "Generic+Lead-log tabs → type-driven tab
+       + a preset shim" (not total removal). [CC lean]
+    2. Map the preset → a configured "Meeting" type if one exists, else the
+       empty-state/CTA — purest, but a fresh org's "Add Meeting" leads to "ask
+       your admin," which is odd for a built-in quick action.
+    3. Drop the "Add Meeting" preset entirely — cleanest code, but REMOVES an
+       existing user-facing feature (a product call, not just a refactor).
+  Rishabh's product call; recording it here only stops it being lost — it does
+  NOT resolve it. T-P3.3a (the per-type-fields endpoint) is independent and
+  proceeds; T-P3.3b (modal wiring) is gated on this.
 
   - **FOLLOW-UP (P2, RESOLVED in T-P2.3):** `"Phone"` removed from the activity
   field-create route's Zod `FIELD_TYPES` enum in
