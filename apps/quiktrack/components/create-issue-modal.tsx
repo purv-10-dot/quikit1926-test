@@ -396,8 +396,8 @@ export function CreateIssueModal({
             <StatusPicker statuses={statuses} value={statusId} onChange={setStatusId} />
           </Field>
 
-          {/* Summary */}
-          <Field label="Summary" required>
+          {/* Title */}
+          <Field label="Title" required>
             <input
               value={title}
               onChange={(e) => {
@@ -415,13 +415,13 @@ export function CreateIssueModal({
             {titleError && (
               <p className="mt-1 inline-flex items-center gap-1 text-xs text-red-600">
                 <AlertCircle className="h-3.5 w-3.5" />
-                Summary is required
+                Title is required
               </p>
             )}
             {title.trim().length > 255 && (
               <p className="mt-1 inline-flex items-center gap-1 text-xs text-red-600">
                 <AlertCircle className="h-3.5 w-3.5 shrink-0" />
-                Summary must be 255 characters or less (currently {title.trim().length}).
+                Title must be 255 characters or less (currently {title.trim().length}).
               </p>
             )}
           </Field>

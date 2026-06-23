@@ -59,17 +59,17 @@ interface FilterOption {
 const ROW_HEADER: Record<GroupBy, string> = {
   user: "User",
   project: "Project",
-  issue: "Work item",
-  "user-issue": "User / Work item",
-  "epic-issue": "Epic / Work item",
+  issue: "Task",
+  "user-issue": "User / Task",
+  "epic-issue": "Epic / Task",
 };
 
 const GROUP_BY_LABEL: Record<GroupBy, string> = {
   user: "User",
   project: "Project",
-  issue: "Work item",
-  "user-issue": "User → Work item",
-  "epic-issue": "Epic → Work item",
+  issue: "Task",
+  "user-issue": "User → Task",
+  "epic-issue": "Epic → Task",
 };
 
 // Two-level hierarchy modes: a parent dimension over a Work-item leaf. Several
@@ -320,7 +320,7 @@ export function TimesheetView({
     if (!grid) return [];
     const header = [
       "User",
-      "Work Item",
+      "Task",
       "Key",
       "Logged",
       ...range.days.map((d) => formatDayHeader(d)),
@@ -992,7 +992,7 @@ function MultiSelectFilter({
 const GROUP_DIMENSIONS: { key: "user" | "epic" | "issue" | "project"; label: string }[] = [
   { key: "user", label: "User" },
   { key: "epic", label: "Epic" },
-  { key: "issue", label: "Work item" },
+  { key: "issue", label: "Task" },
   { key: "project", label: "Project" },
 ];
 
@@ -1080,7 +1080,7 @@ function GroupByDropdown({
               );
             })}
             <div className="border-t border-gray-100 mt-1 pt-1 px-3 py-1.5 text-[10px] text-gray-400 leading-snug">
-              Work item is always shown. Add User or Epic for a hierarchy.
+              Task is always shown. Add User or Epic for a hierarchy.
               {!hideProject && " Project groups on its own."}
             </div>
           </div>

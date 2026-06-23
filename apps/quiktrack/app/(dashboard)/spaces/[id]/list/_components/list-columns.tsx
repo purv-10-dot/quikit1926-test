@@ -102,7 +102,7 @@ export const COLUMN_DEFS: ColumnDef[] = [
   },
   {
     key: "title",
-    label: "Work",
+    label: "Task",
     sortKey: "title",
     defaultWidth: 420,
     required: true,

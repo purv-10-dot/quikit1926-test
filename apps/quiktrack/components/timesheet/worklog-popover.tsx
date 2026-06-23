@@ -183,7 +183,7 @@ export function WorklogPopover({
         <div className={`${colsClass} py-3 text-[11px] font-semibold uppercase tracking-wider text-gray-500 border-b border-gray-200`}>
           <div>Date</div>
           <div>User</div>
-          <div>Work Item</div>
+          <div>Task</div>
           <div>Description</div>
           <div className="text-right">Logged</div>
           <div className="text-right">Actions</div>
