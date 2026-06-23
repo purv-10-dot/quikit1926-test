@@ -159,24 +159,27 @@ A general, admin-configurable ACTIVITY-LOGGING system in apps/quikcrm. Admins cr
   
 - **`showInList`:** hidden for now via prop (lead-specific), but kept repurposable for a possible Phase 4 "show field as dashboard column." (Decide at Phase 4.)
 
-- **Phase 3 "Add Meeting" quick-log preset: OPEN — blocks T-P3.3b (modal collapse).**
-  Hard-gate grep (2026-06-23) of all 9 LogActivityModal call sites found ONE
-  dependence on the Generic tab: `lead-dashboard-shell.tsx` "Add Meeting" quick
-  action passes `initialGenericType="Meeting"` to pre-set a Generic activity.
-  (No caller forces a tab; no other caller passes initialGenericType; no SMB
-  forcing.) Collapsing Generic+Lead-log into the type-driven tab breaks this
-  preset unless handled. Decision needed BEFORE removing any tab JSX:
-    1. Keep a thin preset path for initialGenericType — preserves "Add Meeting"
-       UX, least disruption; collapse = "Generic+Lead-log tabs → type-driven tab
-       + a preset shim" (not total removal). [CC lean]
-    2. Map the preset → a configured "Meeting" type if one exists, else the
-       empty-state/CTA — purest, but a fresh org's "Add Meeting" leads to "ask
-       your admin," which is odd for a built-in quick action.
-    3. Drop the "Add Meeting" preset entirely — cleanest code, but REMOVES an
-       existing user-facing feature (a product call, not just a refactor).
-  Rishabh's product call; recording it here only stops it being lost — it does
-  NOT resolve it. T-P3.3a (the per-type-fields endpoint) is independent and
-  proceeds; T-P3.3b (modal wiring) is gated on this.
+- **Phase 3 "Add Meeting" quick-log preset: RESOLVED (2026-06-23) — option 2 + label (a).**
+  Decision: NO special Meeting handling. Configured types are logged via the
+  type-picker like any other type (most #7-consistent — no type is special, the
+  picker is the one path). Specifically:
+    • Shell "Add Meeting" generic-preset wiring DROPPED from
+      lead-dashboard-shell.tsx (onAddMeeting → setLogActivityPreset("Meeting"),
+      logActivityPreset state, initialGenericType prop, GenericActivityType
+      import all removed).
+    • Palette "Add meeting" action KEPT (label + keywords unchanged, option-a)
+      but repointed to OPEN the Activity logger — no Meeting preset, no
+      magic-string type resolution.
+    • Builder contract unchanged (build-lead-command-actions.ts onAddMeeting slot
+      stays); ONLY the shell's onAddMeeting callback changes to the open-logger
+      handler. No schema change.
+    • Rejected: option 1 (shim — the two-path "half-rebuild the generic tab" blur
+      we rejected for empty-types); magic-string `code==="meeting"` (fragile,
+      Phone-by-label class of foot-gun); option 3 type-flag (over-scope for v1).
+  command-palette.test.ts asserts the REAL post-repoint behavior ("Add meeting"
+  present + runs the open-logger callback) — NO preset assertion. Unblocks
+  T-P3.3b.
+
 
   - **FOLLOW-UP (P2, RESOLVED in T-P2.3):** `"Phone"` removed from the activity
   field-create route's Zod `FIELD_TYPES` enum in
