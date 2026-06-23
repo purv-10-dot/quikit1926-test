@@ -107,7 +107,11 @@ export async function middleware(request: NextRequest) {
     if (
       launcherOrigin &&
       locUrl.origin === launcherOrigin &&
-      locUrl.pathname === "/apps"
+      locUrl.pathname === "/apps" &&
+      // A suspended-org bounce must land the user directly on the launcher's
+      // org picker (where the popup is shown) — NOT trigger the handoff
+      // handshake, which would try to re-launch quikscale into the org.
+      locUrl.searchParams.get("reason") !== "org_suspended"
     ) {
       const handoff = new URL("/apps", QUIKIT_URL);
       handoff.searchParams.set("handoff", APP_SLUG);

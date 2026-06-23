@@ -127,6 +127,7 @@ export default function MachineryPage() {
   return (
     <>
       <MasterListPage title="Machinery & Equipment" entityName="Machine" permissionUrl="/masters/machinery" columns={columns}
+        showStatusTabs
         data={(result?.data ?? []) as Row[]} total={result?.total ?? 0} isLoading={isLoading}
         canImport
         onImport={() => setImportOpen(true)}
@@ -138,8 +139,8 @@ export default function MachineryPage() {
             Delete machine{" "}
             <span className="font-semibold text-gray-900">“{item.name}”</span>?
             <br />
-            It will be hidden from the list. You can restore it later from the
-            “Show deleted” view.
+            It will be removed from the list. To keep a machine but pause it,
+            set its status to Inactive instead — those stay under the Inactive tab.
           </>
         )}
         canExport

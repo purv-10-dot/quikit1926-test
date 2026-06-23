@@ -122,7 +122,34 @@ export function ProjectFormDrawer({ open, onClose, editData }: Props) {
     }
   }, [open, editData?.id, editData]);
 
-  const customerOptions = (customersData?.data ?? []).map((c) => ({ value: c.id, label: c.name }));
+  // Only active clients are selectable. A project already tied to an inactive
+  // or deleted client keeps showing it (tagged) so the field never blanks and
+  // a careless save can't drop the link.
+  const allCustomers = customersData?.data ?? [];
+  const customerOptions = allCustomers
+    .filter((c) => c?.status === "active")
+    .map((c) => ({ value: c.id, label: c.name }));
+  const assignedClientId = (form.clientId ?? "").trim();
+  const assignedClientActive = customerOptions.some((o) => o.value === assignedClientId);
+  const assignedClient = assignedClientId
+    ? allCustomers.find((c) => c.id === assignedClientId)
+    : undefined;
+  const clientNotice =
+    assignedClientId && !assignedClientActive
+      ? assignedClient
+        ? "This client is inactive — select another to reassign."
+        : "This client no longer exists — select another to reassign."
+      : null;
+  const effectiveCustomerOptions =
+    assignedClientId && !assignedClientActive
+      ? [
+          ...customerOptions,
+          {
+            value: assignedClientId,
+            label: `${assignedClient?.name ?? assignedClientId} (${assignedClient ? "inactive" : "unavailable"})`,
+          },
+        ]
+      : customerOptions;
 
   const handleSubmit = async () => {
     const errs = validateForm(form, rules);
@@ -180,7 +207,10 @@ export function ProjectFormDrawer({ open, onClose, editData }: Props) {
       <FormSection title="Organization">
         <FormRow>
           <Field label="Client" required span={2} error={errors.clientId}>
-            <SelectInput value={form.clientId} onChange={v => set("clientId", v)} options={customerOptions} placeholder="Select client" invalid={!!errors.clientId} />
+            <SelectInput value={form.clientId} onChange={v => set("clientId", v)} options={effectiveCustomerOptions} placeholder="Select client" invalid={!!errors.clientId} />
+            {clientNotice && (
+              <p className="mt-1 text-xs text-amber-600">⚠ {clientNotice}</p>
+            )}
           </Field>
         </FormRow>
       </FormSection>

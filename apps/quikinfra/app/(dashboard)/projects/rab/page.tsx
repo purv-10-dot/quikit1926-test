@@ -36,7 +36,10 @@ export default function RABPage() {
   const { data: contractorsData } = useContractors();
 
   const projectOptions = (projectsData?.data ?? []).map((p) => ({ value: p.id, label: p.name }));
-  const contractorOptions = (contractorsData?.data ?? []).map((c) => ({ value: c.id, label: c.name }));
+  // Only active contractors are selectable (inactive/deleted excluded).
+  const contractorOptions = (contractorsData?.data ?? [])
+    .filter((c) => c?.status === "active")
+    .map((c) => ({ value: c.id, label: c.name }));
 
   const config = {
     title: "Generate RAB",

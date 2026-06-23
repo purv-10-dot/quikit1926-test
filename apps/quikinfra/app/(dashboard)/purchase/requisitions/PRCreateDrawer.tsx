@@ -494,7 +494,7 @@ export function PRCreateDrawer({ open, onClose }: { open: boolean; onClose: () =
                   value={workCategoryId}
                   onChange={setWorkCategoryId}
                   placeholder="Optional"
-                  options={workCategories.map((w) => ({ value: w.id, label: w.name }))}
+                  options={workCategories.filter((w) => w?.status === "active").map((w) => ({ value: w.id, label: w.name }))}
                 />
               </div>
               <div>
@@ -507,7 +507,7 @@ export function PRCreateDrawer({ open, onClose }: { open: boolean; onClose: () =
                       ? "No locations for this project — ask admin to add one"
                       : "Select location"
                   }
-                  options={locations.map((l) => ({ value: l.id, label: l.name }))}
+                  options={locations.filter((l) => l?.status === "active").map((l) => ({ value: l.id, label: l.name }))}
                 />
                 {projectId && locations.length === 0 && (
                   <p className="text-[11px] text-amber-600 mt-1">
@@ -853,7 +853,7 @@ export function PRCreateDrawer({ open, onClose }: { open: boolean; onClose: () =
                               value={line.uomId}
                               onChange={(v) => updateLine(i, "uomId", v)}
                               placeholder="—"
-                              options={uoms.map((u) => ({ value: u.id, label: u.code }))}
+                              options={uoms.filter((u) => u?.status === "active").map((u) => ({ value: u.id, label: u.code }))}
                             />
                           </div>
                           <div>

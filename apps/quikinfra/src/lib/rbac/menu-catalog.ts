@@ -41,6 +41,7 @@ export const MENU_MODULES = [
   "STORE",
   "PROJECT MGMT",
   "QUALITY & SAFETY",
+  "MACHINERY & EQUIPMENT",
   "FINANCE",
   "SYSTEM",
 ] as const;
@@ -115,6 +116,14 @@ export const MENU_CATALOG: MenuItem[] = [
   { key: "quality.home",      label: "Inspection/Checklist", url: "/quality",              module: "QUALITY & SAFETY", supports: allFour },
   { key: "safety.incidents",  label: "Incidents",            url: "/safety/incidents",     module: "QUALITY & SAFETY", supports: allFour },
   { key: "safety.toolbox",    label: "Toolbox Talks",        url: "/safety/toolbox-talks", module: "QUALITY & SAFETY", supports: allFour },
+
+  // ─── MACHINERY & EQUIPMENT ───────────────────────────────────────
+  { key: "equip.log_book", label: "Equipment Log Book", url: "/equipment/log-book", module: "MACHINERY & EQUIPMENT", supports: allFour },
+  { key: "equip.maintenance", label: "Maintenance", url: "/equipment/maintenance", module: "MACHINERY & EQUIPMENT", supports: allFour },
+  { key: "equip.deployment", label: "Deployment & Compliance", url: "/equipment/deployment", module: "MACHINERY & EQUIPMENT", supports: allFour },
+  { key: "equip.fleet", label: "Fleet Dashboard", url: "/equipment/fleet", module: "MACHINERY & EQUIPMENT", supports: readOnly },
+  { key: "equip.hire_rent", label: "Hire & Rent", url: "/equipment/hire-rent", module: "MACHINERY & EQUIPMENT", supports: allFour },
+  { key: "equip.fixed_assets", label: "Fixed Asset / Tools", url: "/equipment/fixed-assets", module: "MACHINERY & EQUIPMENT", supports: allFour },
 
   // ─── FINANCE ─────────────────────────────────────────────────────
   // Mirrors CONSTRUCTION_NAV → FINANCE group. Only the RA Bills page is
@@ -202,6 +211,7 @@ export const MODULE_KEY_TO_MENU_MODULE: Record<string, MenuModule> = {
   store: "STORE",
   project_mgmt: "PROJECT MGMT",
   quality_safety: "QUALITY & SAFETY",
+  machinery_equipment: "MACHINERY & EQUIPMENT",
   finance: "FINANCE",
 };
 

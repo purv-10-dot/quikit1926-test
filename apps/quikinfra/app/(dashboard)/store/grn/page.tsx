@@ -82,7 +82,7 @@ export default function GRNPage() {
 
   const projectOptions = (projectsData?.data ?? []).map((p) => ({ value: p.id, label: p.name }));
   const itemOptions = (itemsData?.data ?? []).map((i) => ({ value: i.id, label: i.name }));
-  const locationOptions = (locationsData?.data ?? []).map((l) => ({ value: l.id, label: l.name }));
+  const locationOptions = (locationsData?.data ?? []).filter((l) => l?.status === "active").map((l) => ({ value: l.id, label: l.name }));
   // Only offer POs that are approved/sent/partially-received — draft
   // POs can't yet receive goods, and fully-received ones don't make
   // sense to GRN-against a second time.

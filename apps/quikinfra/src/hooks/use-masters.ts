@@ -443,10 +443,13 @@ export function useCreateFinancialYear() {
 
 // ─── Terms & Conditions ────────────────────────────────────────────
 
-export function useTermsConditions(params?: { search?: string; applicableTo?: string }) {
+export function useTermsConditions(params?: { search?: string; applicableTo?: string; status?: string }) {
   const qs = new URLSearchParams();
   if (params?.search) qs.set("search", params.search);
   if (params?.applicableTo) qs.set("applicableTo", params.applicableTo);
+  // status:"all" powers the master list's Inactive tab. Pickers omit status and
+  // get active-only (inactive/deleted excluded) from the API default.
+  if (params?.status === "all") qs.set("includeInactive", "true");
   const query = qs.toString();
 
   return useQuery({

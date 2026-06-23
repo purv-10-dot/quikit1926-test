@@ -147,6 +147,7 @@ export default function CustomersPage() {
   return (
     <>
       <MasterListPage title="Customers / Clients" entityName="Customer" permissionUrl="/masters/customers" columns={columns}
+        showStatusTabs
         data={(result?.data ?? []) as CustomerRow[]} total={result?.total ?? 0} isLoading={isLoading}
         canImport canExport
         historyEntityType="customer"
@@ -159,8 +160,8 @@ export default function CustomersPage() {
             Delete customer{" "}
             <span className="font-semibold text-gray-900">“{item.name}”</span>?
             <br />
-            It will be hidden from the list. You can restore it later from the
-            “Show deleted” view.
+            It will be removed from the list. To keep a customer but pause it,
+            set its status to Inactive instead — those stay under the Inactive tab.
           </>
         )}
         emptyIcon={<Building2 className="w-8 h-8" />}

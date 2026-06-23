@@ -25,6 +25,7 @@ export async function middleware(req: NextRequest) {
   const PUBLIC = [
     "/login",
     "/signup",
+    "/register",
     "/forgot-password",
     "/reset-password",
     "/verify-email",

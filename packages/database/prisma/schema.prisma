@@ -137,8 +137,6 @@ model Org {
   createdAt               DateTime                 @default(now())
   updatedAt               DateTime                 @updatedAt
   createdBy               String?
-  cnApprovalRequests      CnApprovalRequest[]
-  cnApprovalRules         CnApprovalRule[]
   cnAssets                CnAsset[]
   cnAuditLogs             CnAuditLog[]
   cnCompanies             CnCompany[]
@@ -159,6 +157,12 @@ model Org {
   cnItemGroups            CnItemGroup[]
   cnLocations             CnLocation[]
   cnMachinery             CnMachinery[]
+  cnEquipmentLogs         CnEquipmentLog[]
+  cnMaintenanceJobCards   CnMaintenanceJobCard[]
+  cnEquipmentDeployments  CnEquipmentDeployment[]
+  cnFleetDashboards       CnFleetDashboard[]
+  cnHireRentRecords       CnHireRentRecord[]
+  cnFixedAssetTransactions CnFixedAssetTransaction[]
   cnMaterialIssues        CnMaterialIssue[]
   cnProjects              CnProject[]
   cnPurchaseIndents       CnPurchaseIndent[]
@@ -273,6 +277,7 @@ model Org {
   tenantAppAccess         OrgAppAccess[]
   users                   OrgMember[]
   userAppAccess           UserAppAccess[]
+  subscription            Subscription?
 
   @@index([slug])
   @@index([status])
@@ -2099,6 +2104,10 @@ model OrgAppAccess {
   appId     String
   enabled   Boolean  @default(true)
   reason    String?
+  /// Per-app free-trial expiry for self-serve activation. null = no trial
+  /// (grandfathered access granted by an admin, or an upgraded/paid app) →
+  /// treated as active. A future date = trialing; a past date = expired.
+  trialEndsAt DateTime?
   updatedBy String?
   updatedAt DateTime @updatedAt
   createdAt DateTime @default(now())
@@ -2108,6 +2117,28 @@ model OrgAppAccess {
   @@unique([orgId, appId])
   @@index([orgId])
   @@index([appId])
+  @@schema("quikit")
+}
+
+/// Per-org subscription / trial state (self-serve registration). Additive: an
+/// org with NO Subscription row is implicitly grandfathered (treated as active)
+/// by every read path, so the pre-existing orgs are never gated. Self-serve
+/// registrations start as `trialing` with a 14-day `trialEndsAt`. References
+/// public.Plan.slug by value only (no FK — mirrors the Org.plan convention).
+model Subscription {
+  id               String    @id @default(cuid())
+  orgId            String    @unique
+  status           String    @default("trialing") // trialing|active|past_due|canceled|expired
+  planSlug         String    @default("startup")
+  trialEndsAt      DateTime?
+  currentPeriodEnd DateTime?
+  source           String? // self_serve_registration|backfill|super_admin
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
+  org              Org       @relation(fields: [orgId], references: [id], onDelete: Cascade)
+
+  @@index([status])
+  @@index([trialEndsAt])
   @@schema("quikit")
 }
 
@@ -2309,6 +2340,7 @@ model CnVendor {
   pos         CnPurchaseOrder[]
   grns        CnGoodsReceiptNote[]
   goodReturns CnGoodReturn[]
+  hireRentRecords CnHireRentRecord[]
 
   // --- grafted: cross-schema relations (Org/User) ---
   org Org @relation(fields: [orgId], references: [id], onDelete: Cascade)
@@ -2349,6 +2381,7 @@ model CnCustomer {
   updatedBy       String
 
   projects CnProject[]
+  hireRentRecords CnHireRentRecord[]
 
   // --- grafted: cross-schema relations (Org/User) ---
   org Org @relation(fields: [orgId], references: [id], onDelete: Cascade)
@@ -2752,6 +2785,15 @@ model CnProject {
   stockLedger      CnStockLedger[]
   estimations      CnMaterialEstimation[]
   dieselLogs       CnDieselLog[]
+  equipmentLogs       CnEquipmentLog[]
+  maintenanceJobCards CnMaintenanceJobCard[]
+  equipmentDeploymentsDest CnEquipmentDeployment[] @relation("DeployDestination")
+  equipmentDeploymentsFrom CnEquipmentDeployment[] @relation("DeploySource")
+  fleetDashboards  CnFleetDashboard[]
+  hireRentRecords  CnHireRentRecord[]
+  fixedAssetTransactions CnFixedAssetTransaction[]
+  fixedAssetTransactionsFrom CnFixedAssetTransaction[] @relation("FaTxnSource")
+  fixedAssetTransactionsTo   CnFixedAssetTransaction[] @relation("FaTxnDestination")
   gatePasses       CnGatePass[]
   goodReturns      CnGoodReturn[]
   internalReturns  CnInternalReturn[]
@@ -2784,13 +2826,28 @@ model CnMachinery {
   locationId     String?
   fuelType       String?
   capacity       String?
-  status         String   @default("active")
+  meterType            String   @default("hour")
+  currentMeter         Decimal? @db.Decimal(18, 2)
+  fuelNorm             Decimal? @db.Decimal(18, 4)
+  serviceIntervalValue Decimal? @db.Decimal(18, 4)
+  serviceIntervalUnit  String?
+  lastServiceMeter     Decimal? @db.Decimal(18, 2)
+  ownershipType        String   @default("owned")
+  capitalisationCost   Decimal? @db.Decimal(18, 2)
+  deprRate             Decimal? @db.Decimal(5, 2)
+  deprMethod           String?
+  capitalisationDate   DateTime?
+  status               String   @default("active")
   createdAt      DateTime @default(now())
   updatedAt      DateTime @updatedAt
   createdBy      String
   updatedBy      String
 
-  dieselLogs CnDieselLog[]
+  dieselLogs          CnDieselLog[]
+  equipmentLogs       CnEquipmentLog[]
+  maintenanceJobCards CnMaintenanceJobCard[]
+  equipmentDeployments CnEquipmentDeployment[]
+  hireRentRecords      CnHireRentRecord[]
 
   project        CnProject?    @relation(fields: [projectId], references: [id])
 
@@ -2801,6 +2858,210 @@ model CnMachinery {
   @@index([orgId])
   @@index([projectId])
   @@map("Machinery")
+  @@schema("app_quikinfra")
+}
+
+/// Sidebar: Equipment Log Book
+model CnEquipmentLog {
+  id              String   @id @default(cuid())
+  orgId           String
+  equipmentId     String
+  projectId       String?
+  logDate         DateTime
+  shift           String   @default("Day")
+  openingMeter    Decimal? @db.Decimal(18, 2)
+  closingMeter    Decimal? @db.Decimal(18, 2)
+  meterReset      Boolean  @default(false)
+  run             Decimal? @db.Decimal(18, 4)
+  idleHours       Decimal? @db.Decimal(18, 4)
+  breakdownHours  Decimal? @db.Decimal(18, 4)
+  dieselIssued    Decimal? @db.Decimal(18, 4)
+  fuelRate        Decimal? @db.Decimal(18, 4)
+  operatorName    String?
+  productivityQty Decimal? @db.Decimal(18, 4)
+  outputUom       String?
+  remarks         String?
+  status          String   @default("draft")
+  approvalId      String?
+  rejectReason    String?
+  submittedAt     DateTime?
+  submittedBy     String?
+  approvedAt      DateTime?
+  approvedBy      String?
+  rejectedAt      DateTime?
+  rejectedBy      String?
+  returnedAt      DateTime?
+  returnedBy      String?
+  returnReason    String?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+  createdBy       String
+  updatedBy       String
+
+  equipment CnMachinery @relation(fields: [equipmentId], references: [id])
+  project   CnProject?  @relation(fields: [projectId], references: [id])
+  org       Org         @relation(fields: [orgId], references: [id], onDelete: Cascade)
+
+  @@index([orgId])
+  @@index([equipmentId])
+  @@index([projectId])
+  @@index([logDate])
+  @@index([status])
+  @@map("Equipment_logs")
+  @@schema("app_quikinfra")
+}
+
+/// Sidebar: Maintenance (spares stored as JSON on job card)
+model CnMaintenanceJobCard {
+  id               String   @id @default(cuid())
+  orgId            String
+  jobNumber        String
+  equipmentId      String
+  projectId        String?
+  jobType          String   @default("breakdown")
+  serviceDate      DateTime
+  meterAtService   Decimal? @db.Decimal(18, 2)
+  downtimeHours    Decimal? @db.Decimal(18, 4)
+  reportedProblem  String?
+  labourCost       Decimal  @default(0) @db.Decimal(18, 2)
+  serviceCost      Decimal  @default(0) @db.Decimal(18, 2)
+  totalCost        Decimal  @default(0) @db.Decimal(18, 2)
+  spares           Json     @default("[]")
+  remarks          String?
+  status           String   @default("open")
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+  createdBy        String
+  updatedBy        String
+
+  equipment CnMachinery @relation(fields: [equipmentId], references: [id])
+  project   CnProject?  @relation(fields: [projectId], references: [id])
+  org       Org         @relation(fields: [orgId], references: [id], onDelete: Cascade)
+
+  @@unique([orgId, jobNumber])
+  @@index([orgId])
+  @@index([equipmentId])
+  @@index([projectId])
+  @@index([status])
+  @@index([serviceDate])
+  @@map("Maintenance_job_cards")
+  @@schema("app_quikinfra")
+}
+
+/// Sidebar: Deployment & Compliance — `recordType`: transfer | document
+model CnEquipmentDeployment {
+  id                   String    @id @default(cuid())
+  orgId                String
+  recordType           String
+  referenceNumber      String?
+  equipmentId          String
+  status               String
+  sourceProjectId      String?
+  destinationProjectId String?
+  transferType         String?
+  transferDate         DateTime?
+  reason               String?
+  remarks              String?
+  gatePassNo           String?
+  docType              String?
+  docNumber            String?
+  issueDate            DateTime?
+  expiryDate           DateTime?
+  alertDays            Int?
+  fileUrl              String?
+  createdAt            DateTime  @default(now())
+  updatedAt            DateTime  @updatedAt
+  createdBy            String
+  updatedBy            String
+
+  equipment          CnMachinery @relation(fields: [equipmentId], references: [id])
+  sourceProject      CnProject?  @relation("DeploySource", fields: [sourceProjectId], references: [id])
+  destinationProject CnProject?  @relation("DeployDestination", fields: [destinationProjectId], references: [id])
+  org                Org         @relation(fields: [orgId], references: [id], onDelete: Cascade)
+
+  @@unique([orgId, referenceNumber])
+  @@index([orgId])
+  @@index([recordType])
+  @@index([equipmentId])
+  @@index([status])
+  @@index([transferDate])
+  @@index([expiryDate])
+  @@map("Equipment_deployment")
+  @@schema("app_quikinfra")
+}
+
+/// Fleet Dashboard — cached KPI snapshots (sidebar: Fleet Dashboard)
+model CnFleetDashboard {
+  id         String    @id @default(cuid())
+  orgId      String
+  cacheKey   String
+  projectId  String?
+  periodFrom DateTime?
+  periodTo   DateTime?
+  payload    Json
+  computedAt DateTime  @default(now())
+  createdAt  DateTime  @default(now())
+  updatedAt  DateTime  @updatedAt
+
+  project CnProject? @relation(fields: [projectId], references: [id])
+  org     Org        @relation(fields: [orgId], references: [id], onDelete: Cascade)
+
+  @@unique([orgId, cacheKey])
+  @@index([orgId])
+  @@index([projectId])
+  @@index([computedAt])
+  @@map("Fleet_dashboard")
+  @@schema("app_quikinfra")
+}
+
+/// Sidebar: Hire & Rent — `recordType`: rate | hire_in | rent_out
+model CnHireRentRecord {
+  id               String    @id @default(cuid())
+  orgId            String
+  recordType       String
+  referenceNumber  String?
+  direction        String?
+  rateBasis        String?
+  equipmentId      String?
+  equipmentType    String?
+  vendorId         String?
+  customerId       String?
+  projectId        String?
+  rate             Decimal?  @db.Decimal(18, 2)
+  sacCode          String?
+  gstPercent       Decimal?  @db.Decimal(5, 2)
+  minGuaranteedQty Decimal?  @db.Decimal(18, 4)
+  effectiveFrom    DateTime?
+  periodFrom       DateTime?
+  periodTo         DateTime?
+  vendorClaimedQty Decimal?  @db.Decimal(18, 4)
+  loggedQty        Decimal?  @db.Decimal(18, 4)
+  billableQty      Decimal?  @db.Decimal(18, 4)
+  varianceQty      Decimal?  @db.Decimal(18, 4)
+  payableAmount    Decimal?  @db.Decimal(18, 2)
+  gstAmount        Decimal?  @db.Decimal(18, 2)
+  totalAmount      Decimal?  @db.Decimal(18, 2)
+  amount           Decimal?  @db.Decimal(18, 2)
+  status           String
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
+  createdBy        String
+  updatedBy        String
+
+  equipment CnMachinery? @relation(fields: [equipmentId], references: [id])
+  vendor    CnVendor?    @relation(fields: [vendorId], references: [id])
+  customer  CnCustomer?  @relation(fields: [customerId], references: [id])
+  project   CnProject?   @relation(fields: [projectId], references: [id])
+  org       Org          @relation(fields: [orgId], references: [id], onDelete: Cascade)
+
+  @@unique([orgId, referenceNumber])
+  @@index([orgId])
+  @@index([recordType])
+  @@index([direction])
+  @@index([equipmentId])
+  @@index([status])
+  @@index([periodFrom])
+  @@map("Hire_rent_records")
   @@schema("app_quikinfra")
 }
 
@@ -2818,6 +3079,10 @@ model CnAsset {
   currentStock    Decimal?  @db.Decimal(18, 4)
   minStockLevel   Decimal?  @db.Decimal(18, 4)
   reorderLevel    Decimal?  @db.Decimal(18, 4)
+  lostQty         Decimal?  @db.Decimal(18, 4)
+  deprMethod      String?
+  deprRate        Decimal?  @db.Decimal(5, 2)
+  accumulatedDepr Decimal?  @db.Decimal(18, 2)
   status          String    @default("In Use")
   createdAt       DateTime  @default(now())
   updatedAt       DateTime  @updatedAt
@@ -2825,6 +3090,7 @@ model CnAsset {
   updatedBy       String
 
   project       CnProject? @relation(fields: [projectId], references: [id])
+  transactions  CnFixedAssetTransaction[]
 
   // --- grafted: cross-schema relations (Org/User) ---
   org Org @relation(fields: [orgId], references: [id], onDelete: Cascade)
@@ -2833,6 +3099,55 @@ model CnAsset {
   @@index([orgId])
   @@index([projectId])
   @@map("Assets")
+  @@schema("app_quikinfra")
+}
+
+/// Sidebar: Fixed Asset / Tools — `recordType`: issuance | transfer | repair | audit
+model CnFixedAssetTransaction {
+  id                   String    @id @default(cuid())
+  orgId                String
+  recordType           String
+  referenceNumber      String
+  assetId              String
+  status               String
+  issuedToType         String?
+  issuedTo             String?
+  projectId            String?
+  quantity             Decimal?  @db.Decimal(18, 4)
+  pendingQty           Decimal?  @db.Decimal(18, 4)
+  gatePassNo           String?
+  expectedReturnDate   DateTime?
+  returnable           Boolean?
+  notes                String?
+  sourceProjectId      String?
+  destinationProjectId String?
+  destinationLocation  String?
+  transferDate         DateTime?
+  reason               String?
+  problem              String?
+  repairCost           Decimal?  @db.Decimal(18, 2)
+  bookQty              Decimal?  @db.Decimal(18, 4)
+  countedQty           Decimal?  @db.Decimal(18, 4)
+  varianceQty          Decimal?  @db.Decimal(18, 4)
+  auditDate            DateTime?
+  remarks              String?
+  createdAt            DateTime  @default(now())
+  updatedAt            DateTime  @updatedAt
+  createdBy            String
+  updatedBy            String
+
+  asset              CnAsset    @relation(fields: [assetId], references: [id])
+  project            CnProject? @relation(fields: [projectId], references: [id])
+  sourceProject      CnProject? @relation("FaTxnSource", fields: [sourceProjectId], references: [id])
+  destinationProject CnProject? @relation("FaTxnDestination", fields: [destinationProjectId], references: [id])
+  org                Org        @relation(fields: [orgId], references: [id], onDelete: Cascade)
+
+  @@unique([orgId, referenceNumber])
+  @@index([orgId])
+  @@index([recordType])
+  @@index([assetId])
+  @@index([status])
+  @@map("Fixed_asset_transactions")
   @@schema("app_quikinfra")
 }
 
@@ -3816,50 +4131,6 @@ model CnRABLine {
 
   @@index([rabId])
   @@map("Rab_lines")
-  @@schema("app_quikinfra")
-}
-
-model CnApprovalRule {
-  id         String    @id @default(cuid())
-  orgId      String
-  name       String
-  docType    String
-  /// Threshold: approval required if doc total >= this amount (null = always).
-  minAmount  Decimal?  @db.Decimal(18, 2)
-  approverId String
-  status     String    @default("active")
-  createdAt  DateTime  @default(now())
-  updatedAt  DateTime  @updatedAt
-  createdBy  String
-  updatedBy  String?
-  deletedAt  DateTime?
-  org        Org       @relation(fields: [orgId], references: [id], onDelete: Cascade)
-
-  @@index([orgId])
-  @@index([orgId, docType])
-  @@index([deletedAt])
-  @@schema("app_quikinfra")
-}
-
-model CnApprovalRequest {
-  id          String    @id @default(cuid())
-  orgId       String
-  docType     String
-  docId       String
-  docRef      String
-  amount      Decimal?  @db.Decimal(18, 2)
-  requestedBy String
-  approverId  String
-  status      String    @default("pending")
-  decisionAt  DateTime?
-  comment     String?
-  createdAt   DateTime  @default(now())
-  updatedAt   DateTime  @updatedAt
-  org         Org       @relation(fields: [orgId], references: [id], onDelete: Cascade)
-
-  @@index([orgId])
-  @@index([approverId, status])
-  @@index([docType, docId])
   @@schema("app_quikinfra")
 }
 

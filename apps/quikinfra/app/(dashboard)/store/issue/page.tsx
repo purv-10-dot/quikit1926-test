@@ -219,13 +219,14 @@ export default function MaterialIssuePage() {
     for (const i of items) m.set(i.id, i);
     return m;
   }, [items]);
+  // Only active contractors are selectable (inactive/deleted/blacklisted excluded).
   const contractorOptions = (contractorsData?.data ?? [])
-    .filter((c) => c.status !== "blacklisted")
+    .filter((c) => c.status === "active")
     .map((c) => ({
       value: c.id,
       label: (c as { companyName?: string | null }).companyName || c.name || c.id,
     }));
-  const locationOptions = (locData?.data ?? []).map((l) => ({
+  const locationOptions = (locData?.data ?? []).filter((l) => l?.status === "active").map((l) => ({
     value: l.id,
     label: l.name,
   }));
