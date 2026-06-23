@@ -19,6 +19,9 @@ export interface MachineryRecord {
   locationId: string | null;
   fuelType: string | null;
   capacity: string | null;
+  meterType: string;
+  currentMeter: number | null;
+  fuelNorm: number | null;
   status: string;
   createdAt: string;
   updatedAt: string;
@@ -41,6 +44,9 @@ function toRecord(row: Prisma.CnMachineryGetPayload<Record<string, never>> & { p
     locationId: row.locationId ?? null,
     fuelType: row.fuelType ?? null,
     capacity: row.capacity ?? null,
+    meterType: row.meterType ?? "hour",
+    currentMeter: row.currentMeter != null ? Number(row.currentMeter) : null,
+    fuelNorm: row.fuelNorm != null ? Number(row.fuelNorm) : null,
     status: row.status,
     createdAt: row.createdAt?.toISOString?.() ?? "",
     updatedAt: row.updatedAt?.toISOString?.() ?? "",
