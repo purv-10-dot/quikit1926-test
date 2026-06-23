@@ -117,8 +117,6 @@ ALTER TABLE IF EXISTS public."CnEmployee" SET SCHEMA app_quikinfra;
 ALTER TABLE IF EXISTS public."CnAttendance" SET SCHEMA app_quikinfra;
 ALTER TABLE IF EXISTS public."CnPayroll" SET SCHEMA app_quikinfra;
 ALTER TABLE IF EXISTS public."CnPayrollLine" SET SCHEMA app_quikinfra;
-ALTER TABLE IF EXISTS public."CnApprovalRule" SET SCHEMA app_quikinfra;
-ALTER TABLE IF EXISTS public."CnApprovalRequest" SET SCHEMA app_quikinfra;
 ALTER TABLE IF EXISTS public."CnQCInspection" SET SCHEMA app_quikinfra;
 ALTER TABLE IF EXISTS public."CnQCDefect" SET SCHEMA app_quikinfra;
 ALTER TABLE IF EXISTS public."CnSafetyIncident" SET SCHEMA app_quikinfra;

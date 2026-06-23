@@ -137,8 +137,6 @@ model Org {
   createdAt               DateTime                 @default(now())
   updatedAt               DateTime                 @updatedAt
   createdBy               String?
-  cnApprovalRequests      CnApprovalRequest[]
-  cnApprovalRules         CnApprovalRule[]
   cnAssets                CnAsset[]
   cnAuditLogs             CnAuditLog[]
   cnCompanies             CnCompany[]
@@ -3882,50 +3880,6 @@ model CnRABLine {
 
   @@index([rabId])
   @@map("Rab_lines")
-  @@schema("app_quikinfra")
-}
-
-model CnApprovalRule {
-  id         String    @id @default(cuid())
-  orgId      String
-  name       String
-  docType    String
-  /// Threshold: approval required if doc total >= this amount (null = always).
-  minAmount  Decimal?  @db.Decimal(18, 2)
-  approverId String
-  status     String    @default("active")
-  createdAt  DateTime  @default(now())
-  updatedAt  DateTime  @updatedAt
-  createdBy  String
-  updatedBy  String?
-  deletedAt  DateTime?
-  org        Org       @relation(fields: [orgId], references: [id], onDelete: Cascade)
-
-  @@index([orgId])
-  @@index([orgId, docType])
-  @@index([deletedAt])
-  @@schema("app_quikinfra")
-}
-
-model CnApprovalRequest {
-  id          String    @id @default(cuid())
-  orgId       String
-  docType     String
-  docId       String
-  docRef      String
-  amount      Decimal?  @db.Decimal(18, 2)
-  requestedBy String
-  approverId  String
-  status      String    @default("pending")
-  decisionAt  DateTime?
-  comment     String?
-  createdAt   DateTime  @default(now())
-  updatedAt   DateTime  @updatedAt
-  org         Org       @relation(fields: [orgId], references: [id], onDelete: Cascade)
-
-  @@index([orgId])
-  @@index([approverId, status])
-  @@index([docType, docId])
   @@schema("app_quikinfra")
 }
 
