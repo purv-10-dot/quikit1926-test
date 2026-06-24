@@ -18,91 +18,84 @@ jobs:
   detect-changes:
     name: Detect Changed Apps
     runs-on: ubuntu-latest
-
     outputs:
       apps: ${{ steps.set-matrix.outputs.apps }}
       run_build: ${{ steps.set-matrix.outputs.run_build }}
-
     steps:
       - name: Checkout
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
 
-      - name: Detect changes
-        id: filter
+      - name: Detect changes in apps and packages
         uses: dorny/paths-filter@v3
+        id: filter
         with:
           filters: |
-            shared:
+            quikit:
+              - 'apps/quikit/**'
               - 'packages/**'
               - 'package.json'
               - 'package-lock.json'
               - 'turbo.json'
-
-            quikit:
-              - 'apps/quikit/**'
-
             auth:
               - 'apps/auth/**'
-
+              - 'packages/**'
+              - 'package.json'
+              - 'package-lock.json'
+              - 'turbo.json'
             admin:
               - 'apps/admin/**'
-
+              - 'packages/**'
+              - 'package.json'
+              - 'package-lock.json'
+              - 'turbo.json'
             quikscale:
               - 'apps/quikscale/**'
-
+              - 'packages/**'
+              - 'package.json'
+              - 'package-lock.json'
+              - 'turbo.json'
             quiktrack:
               - 'apps/quiktrack/**'
-
+              - 'packages/**'
+              - 'package.json'
+              - 'package-lock.json'
+              - 'turbo.json'
             quikinfra:
               - 'apps/quikinfra/**'
-
+              - 'packages/**'
+              - 'package.json'
+              - 'package-lock.json'
+              - 'turbo.json'
             quikcrm:
               - 'apps/quikcrm/**'
-
-      - name: Generate Matrix
+              - 'packages/**'
+              - 'package.json'
+              - 'package-lock.json'
+              - 'turbo.json'
+            quikhrms:
+              - 'apps/quikhrms/**'
+              - 'packages/**'
+              - 'package.json'
+              - 'package-lock.json'
+              - 'turbo.json'
+      - name: Generate Matrix Output
         id: set-matrix
-        shell: bash
         run: |
-          APPS=()
-
           if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
-            APPS=("quikit" "auth" "admin" "quikscale" "quiktrack" "quikinfra" "quikcrm")
-          elif [ "${{ steps.filter.outputs.shared }}" = "true" ]; then
-            APPS=("quikit" "auth" "admin" "quikscale" "quiktrack" "quikinfra" "quikcrm")
-          else
-            [ "${{ steps.filter.outputs.quikit }}" = "true" ] && APPS+=("quikit")
-            [ "${{ steps.filter.outputs.auth }}" = "true" ] && APPS+=("auth")
-            [ "${{ steps.filter.outputs.admin }}" = "true" ] && APPS+=("admin")
-            [ "${{ steps.filter.outputs.quikscale }}" = "true" ] && APPS+=("quikscale")
-            [ "${{ steps.filter.outputs.quiktrack }}" = "true" ] && APPS+=("quiktrack")
-            [ "${{ steps.filter.outputs.quikinfra }}" = "true" ] && APPS+=("quikinfra")
-            [ "${{ steps.filter.outputs.quikcrm }}" = "true" ] && APPS+=("quikcrm")
-          fi
-
-          echo "Selected Apps: ${APPS[@]}"
-
-          if [ ${#APPS[@]} -eq 0 ]; then
-            echo "apps=[]" >> "$GITHUB_OUTPUT"
-            echo "run_build=false" >> "$GITHUB_OUTPUT"
-          else
-            JSON=$(printf '%s\n' "${APPS[@]}" | jq -R . | jq -s -c .)
-            echo "apps=$JSON" >> "$GITHUB_OUTPUT"
+            echo 'apps=["quikit", "auth", "admin", "quikscale", "quiktrack", "quikhrms", "quikinfra", "quikcrm"]' >> "$GITHUB_OUTPUT"
             echo "run_build=true" >> "$GITHUB_OUTPUT"
+          else
+            CHANGES='${{ steps.filter.outputs.changes }}'
+            if [ "$CHANGES" = "[]" ] || [ -z "$CHANGES" ]; then
+              echo 'apps=[]' >> "$GITHUB_OUTPUT"
+              echo "run_build=false" >> "$GITHUB_OUTPUT"
+            else
+              echo "apps=$CHANGES" >> "$GITHUB_OUTPUT"
+              echo "run_build=true" >> "$GITHUB_OUTPUT"
+            fi
           fi
-
-      - name: Debug Outputs
-        run: |
-          echo "shared=${{ steps.filter.outputs.shared }}"
-          echo "quikit=${{ steps.filter.outputs.quikit }}"
-          echo "auth=${{ steps.filter.outputs.auth }}"
-          echo "admin=${{ steps.filter.outputs.admin }}"
-          echo "quikscale=${{ steps.filter.outputs.quikscale }}"
-          echo "quiktrack=${{ steps.filter.outputs.quiktrack }}"
-          echo "quikinfra=${{ steps.filter.outputs.quikinfra }}"
-          echo "quikcrm=${{ steps.filter.outputs.quikcrm }}"
-          echo "apps=${{ steps.set-matrix.outputs.apps }}"
 
   build:
     name: Build ${{ matrix.app }}
