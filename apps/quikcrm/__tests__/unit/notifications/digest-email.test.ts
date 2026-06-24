@@ -74,18 +74,26 @@ describe("renderDigestEmail — email-client-safe template (Phase 5)", () => {
     const { html } = renderDigestEmail(sampleDigest());
     expect(html).toMatch(/DEMO/);
     expect(html).toMatch(/all-time/i);
-    // prominent = appears before §1 content (the by-rep heading)
+    // prominent = appears before §1 content (the reps-active heading)
     const bannerIdx = html.search(/DEMO/);
-    const section1Idx = html.search(/by rep|activity volume/i);
+    const section1Idx = html.search(/reps active|custom-field contribution/i);
     expect(bannerIdx).toBeGreaterThanOrEqual(0);
     expect(section1Idx).toBeGreaterThan(bannerIdx);
   });
 
-  it("§1 renders activity volume by rep (rep names present)", () => {
+  it("§1 renders per-rep rows under an HONEST label — NOT claiming activity volume", () => {
     const { html } = renderDigestEmail(sampleDigest());
-    expect(html).toMatch(/activity volume|by rep/i);
+    // rep rows render
     expect(html).toContain("Rep One");
     expect(html).toContain("Rep Two");
+    // honest heading: it shows custom-field contribution, not activity volume
+    expect(html).toMatch(/reps active|custom-field contribution/i);
+    // explicit flag that the number is NOT activity volume / activities logged
+    expect(html).toMatch(/per-rep activity volume pending|not activities logged|custom-field contributions/i);
+    // it must NOT carry the silent-wrong heading "activity volume by rep"
+    expect(html).not.toMatch(/activity volume by rep/i);
+    // the only mention of "activities logged" must be the negating flag ("NOT activities logged")
+    expect(html).toMatch(/not activities logged/i);
   });
 
   it("§2 renders activity mix by type (type · count)", () => {
