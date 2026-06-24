@@ -1,23 +1,25 @@
 name: UAT-pipeline
 
 on:
-  push:
-    branches:
-      - UAT
-  workflow_dispatch:
+push:
+branches:
+- UAT
+workflow_dispatch:
+
 concurrency:
-  group: UAT-${{ github.ref }}
-  cancel-in-progress: true
+group: UAT-${{ github.ref }}
+cancel-in-progress: true
 
 permissions:
-  contents: read
-  packages: write
+contents: read
+packages: write
 
 jobs:
-  detect-changes:
-    name: Detect Changed Apps
-    runs-on: ubuntu-latest
+detect-changes:
+name: Detect Changed Apps
+runs-on: ubuntu-latest
 
+```
 outputs:
   apps: ${{ steps.set-matrix.outputs.apps }}
   run_build: ${{ steps.set-matrix.outputs.run_build }}
@@ -115,78 +117,76 @@ steps:
         echo "run_build=false" >> "$GITHUB_OUTPUT"
       else
         MATRIX="[$(IFS=,; echo "${APPS[*]}")]"
-
         echo "apps=$MATRIX" >> "$GITHUB_OUTPUT"
         echo "run_build=true" >> "$GITHUB_OUTPUT"
-
-        echo "Detected apps: $MATRIX"
       fi
 
   - name: Debug Matrix
     run: |
       echo "Apps: ${{ steps.set-matrix.outputs.apps }}"
       echo "Run Build: ${{ steps.set-matrix.outputs.run_build }}"
-  build:
-    name: Build ${{ matrix.app }}
-    needs: detect-changes
-    if: needs.detect-changes.outputs.run_build == 'true'
-    runs-on: ubuntu-latest
-    strategy:
-      fail-fast: false
-      matrix:
-        app: ${{ fromJson(needs.detect-changes.outputs.apps) }}
+```
 
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
+build:
+name: Build ${{ matrix.app }}
+needs: detect-changes
+if: needs.detect-changes.outputs.run_build == 'true'
 
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
+```
+runs-on: ubuntu-latest
 
-      - name: Log in to GHCR
-        uses: docker/login-action@v3
-        with:
-          registry: ghcr.io
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
+strategy:
+  fail-fast: false
+  matrix:
+    app: ${{ fromJson(needs.detect-changes.outputs.apps) }}
 
-      - name: Lowercase image owner
-        id: owner
-        run: echo "value=$(echo '${{ github.repository_owner }}' | tr '[:upper:]' '[:lower:]')" >> "$GITHUB_OUTPUT"
+steps:
+  - name: Checkout
+    uses: actions/checkout@v4
 
-      - name: Compute image metadata
-        id: meta
-        uses: docker/metadata-action@v5
-        with:
-          images: ghcr.io/${{ steps.owner.outputs.value }}/${{ matrix.app }}-runtime
-          tags: |
-            type=raw,value=build-${{ github.run_number }}
-            type=sha,prefix=sha-,format=short
+  - name: Set up Docker Buildx
+    uses: docker/setup-buildx-action@v3
 
-      - name: Build and push
-        uses: docker/build-push-action@v5
-        with:
-          context: .
-          file: apps/${{ matrix.app }}/Dockerfile
-          push: true
-          tags: ${{ steps.meta.outputs.tags }}
-          labels: ${{ steps.meta.outputs.labels }}
-          cache-from: type=gha,scope=${{ matrix.app }}
-          cache-to: type=gha,scope=${{ matrix.app }},mode=max
-          platforms: linux/amd64
-          # NEXT_PUBLIC_* env vars used in CLIENT components get inlined
-          # by webpack at `next build` time — runtime K8s env doesn't
-          # override them. Pass real prod URLs as build-args so the
-          # baked-in values match what Cloud Run / GKE pods serve.
-          # These are safe to hardcode: they end up plain-text in every
-          # browser bundle anyway.
-          build-args: |
-            NEXT_PUBLIC_LAUNCHER_URL=https://uatapps.quikit.ai
-            NEXT_PUBLIC_AUTH_URL=https://uatauthn.quikit.ai
-            NEXT_PUBLIC_QUIKIT_URL=https://uatapps.quikit.ai
-            NEXT_PUBLIC_QUIKSCALE_URL=https://uatscale.quikit.ai
-            NEXT_PUBLIC_ADMIN_URL=https://uatorgadmin.quikit.ai
-            NEXT_PUBLIC_LOGIN_URL=https://uatauthn.quikit.ai/login
-            NEXT_PUBLIC_QUIKINFRA_URL=https://uatinfra.quikit.ai
-            NEXT_PUBLIC_QUIKCRM_URL=https://uatcrm.quikit.ai
-            NEXTAUTH_URL=https://uatauthn.quikit.ai
+  - name: Log in to GHCR
+    uses: docker/login-action@v3
+    with:
+      registry: ghcr.io
+      username: ${{ github.actor }}
+      password: ${{ secrets.GITHUB_TOKEN }}
+
+  - name: Lowercase image owner
+    id: owner
+    run: |
+      echo "value=$(echo '${{ github.repository_owner }}' | tr '[:upper:]' '[:lower:]')" >> "$GITHUB_OUTPUT"
+
+  - name: Compute image metadata
+    id: meta
+    uses: docker/metadata-action@v5
+    with:
+      images: ghcr.io/${{ steps.owner.outputs.value }}/${{ matrix.app }}-runtime
+      tags: |
+        type=raw,value=build-${{ github.run_number }}
+        type=sha,prefix=sha-,format=short
+
+  - name: Build and Push
+    uses: docker/build-push-action@v5
+    with:
+      context: .
+      file: apps/${{ matrix.app }}/Dockerfile
+      push: true
+      tags: ${{ steps.meta.outputs.tags }}
+      labels: ${{ steps.meta.outputs.labels }}
+      cache-from: type=gha,scope=${{ matrix.app }}
+      cache-to: type=gha,scope=${{ matrix.app }},mode=max
+      platforms: linux/amd64
+      build-args: |
+        NEXT_PUBLIC_LAUNCHER_URL=https://uatapps.quikit.ai
+        NEXT_PUBLIC_AUTH_URL=https://uatauthn.quikit.ai
+        NEXT_PUBLIC_QUIKIT_URL=https://uatapps.quikit.ai
+        NEXT_PUBLIC_QUIKSCALE_URL=https://uatscale.quikit.ai
+        NEXT_PUBLIC_ADMIN_URL=https://uatorgadmin.quikit.ai
+        NEXT_PUBLIC_LOGIN_URL=https://uatauthn.quikit.ai/login
+        NEXT_PUBLIC_QUIKINFRA_URL=https://uatinfra.quikit.ai
+        NEXT_PUBLIC_QUIKCRM_URL=https://uatcrm.quikit.ai
+        NEXTAUTH_URL=https://uatauthn.quikit.ai
+```
