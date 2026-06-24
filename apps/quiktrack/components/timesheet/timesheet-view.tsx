@@ -227,25 +227,50 @@ export function TimesheetView({
     void refresh();
   }, [refresh]);
 
-  // Load filter option lists once. Projects are skipped in the space-scoped
-  // view (it's already locked to a single project).
+  // Load filter option lists once. In the space-scoped view the user list is
+  // limited to THIS project's members (not the whole org) and the project
+  // filter is skipped (already locked to one project). The global view lists
+  // every org user and every project.
   useEffect(() => {
     let cancelled = false;
     void (async () => {
       const [users, projects] = await Promise.all([
-        fetch("/api/org/users").then((r) => r.json()).catch(() => null),
+        fetch(projectId ? `/api/projects/${projectId}/members` : "/api/org/users")
+          .then((r) => r.json())
+          .catch(() => null),
         projectId
           ? Promise.resolve(null)
           : fetch("/api/projects").then((r) => r.json()).catch(() => null),
       ]);
       if (cancelled) return;
-      if (users?.success && Array.isArray(users.data)) {
-        setUserOptions(
-          users.data.map((u: { userId: string; firstName?: string; lastName?: string; email: string }) => ({
-            id: u.userId,
-            label: `${u.firstName ?? ""} ${u.lastName ?? ""}`.trim() || u.email,
-          })),
-        );
+      if (users?.success) {
+        if (projectId) {
+          // Space-scoped: members of this project only.
+          const members: Array<{
+            userId: string;
+            user?: { firstName?: string; lastName?: string; email?: string } | null;
+          }> = Array.isArray(users.data?.members) ? users.data.members : [];
+          setUserOptions(
+            members
+              .filter((m) => m.userId)
+              .map((m) => ({
+                id: m.userId,
+                label:
+                  `${m.user?.firstName ?? ""} ${m.user?.lastName ?? ""}`.trim() ||
+                  m.user?.email ||
+                  m.userId,
+              })),
+          );
+        } else if (Array.isArray(users.data)) {
+          setUserOptions(
+            users.data.map(
+              (u: { userId: string; firstName?: string; lastName?: string; email: string }) => ({
+                id: u.userId,
+                label: `${u.firstName ?? ""} ${u.lastName ?? ""}`.trim() || u.email,
+              }),
+            ),
+          );
+        }
       }
       if (projects?.success && Array.isArray(projects.data)) {
         setProjectOptions(
