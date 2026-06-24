@@ -70,9 +70,9 @@ jobs:
           APPS=()
 
           if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
-            APPS=("quikit" "auth" "admin" "quikscale" "quiktrack" "quikinfra" "quikcrm")
+            APPS=("quikit" "auth" "admin" "quikscale" "quiktrack" "quikinfra" "quikcrm" "quikhrms")
           elif [ "${{ steps.filter.outputs.shared }}" = "true" ]; then
-            APPS=("quikit" "auth" "admin" "quikscale" "quiktrack" "quikinfra" "quikcrm")
+            APPS=("quikit" "auth" "admin" "quikscale" "quiktrack" "quikinfra" "quikcrm" "quikhrms")
           else
             [ "${{ steps.filter.outputs.quikit }}" = "true" ] && APPS+=("quikit")
             [ "${{ steps.filter.outputs.auth }}" = "true" ] && APPS+=("auth")
