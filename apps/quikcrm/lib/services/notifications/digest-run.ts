@@ -40,6 +40,8 @@ const TOP_N_TYPES = 5;
 export interface AssembledDigest {
   recipient: SessionUser;
   activitiesByType: { type: string; count: number }[];
+  /** True per-rep activity volume (§1) — count of activities per owner, tier-scoped. */
+  activityByRep: { ownerId: string; ownerName: string | null; count: number }[];
   fieldAggregates: { activityTypeId: string; aggregates: ActivityFieldAggregate[] }[];
   isDemo: boolean;
   demoBanner: string;
@@ -54,6 +56,14 @@ export interface DigestRunResult {
 function readActivitiesByType(dto: RoleMetricsDto): { type: string; count: number }[] {
   const m = dto.metrics as { activitiesByType?: { type: string; count: number }[] };
   return m?.activitiesByType ?? [];
+}
+
+/** activityByRep lives on Admin/SalesManager/SalesUser DTOs; read defensively. */
+function readActivityByRep(
+  dto: RoleMetricsDto,
+): { ownerId: string; ownerName: string | null; count: number }[] {
+  const m = dto.metrics as { activityByRep?: { ownerId: string; ownerName: string | null; count: number }[] };
+  return m?.activityByRep ?? [];
 }
 
 /**
@@ -97,7 +107,10 @@ export async function runDailyDigest(): Promise<DigestRunResult> {
     ).filter((r) => !optOut.has(r.userId));
 
     for (const recipient of recipients) {
-      // Services called AS-IS — per-recipient user, NO range arg (unit (i) deferred).
+      // Per-recipient user, NO range arg → ALL-TIME. The window param (unit (i))
+      // is BUILT + real-DB-verified, but the digest stays all-time (DEMO banner)
+      // until the deliberate "go live with yesterday's window" step. §1 now shows
+      // true per-rep activity VOLUME (activityByRep) — the right metric — all-time.
       const metrics = await buildRoleMetrics(recipient);
 
       const fieldAggregates: AssembledDigest["fieldAggregates"] = [];
@@ -109,6 +122,7 @@ export async function runDailyDigest(): Promise<DigestRunResult> {
       digests.push({
         recipient,
         activitiesByType: readActivitiesByType(metrics),
+        activityByRep: readActivityByRep(metrics),
         fieldAggregates,
         isDemo: true,
         demoBanner: DIGEST_DEMO_BANNER,

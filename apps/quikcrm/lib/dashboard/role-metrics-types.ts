@@ -24,6 +24,18 @@ export type ActivityTypeCount = {
   count: number;
 };
 
+/**
+ * Per-rep TRUE activity volume (count of CrmActivity rows per owner), within the
+ * role's tier scope. ownerName is the denormalized CrmActivity.ownerName (same
+ * name source as the per-rep field aggregates — one name behavior per email).
+ * Powers the digest §1 "Activity volume by rep".
+ */
+export type ActivityByRep = {
+  ownerId: string;
+  ownerName: string | null;
+  count: number;
+};
+
 export type AdminMetrics = {
   totalLeads: number;
   totalAccounts: number;
@@ -35,6 +47,7 @@ export type AdminMetrics = {
   totalTasks: number;
   totalQuotes: number;
   activitiesByType: ActivityTypeCount[];
+  activityByRep: ActivityByRep[];
 };
 
 /** Team-level aggregation for the TeamManager dashboard. */
@@ -68,6 +81,7 @@ export type SalesManagerMetrics = {
   teamPipelineDisplay: string;
   teamMemberCount: number;
   activitiesByType: ActivityTypeCount[];
+  activityByRep: ActivityByRep[];
 };
 
 export type SalesUserMetrics = {
@@ -79,6 +93,7 @@ export type SalesUserMetrics = {
   myTasks: number;
   myQuotes: number;
   activitiesByType: ActivityTypeCount[];
+  activityByRep: ActivityByRep[];
 };
 
 export type LeadSourceCount = {

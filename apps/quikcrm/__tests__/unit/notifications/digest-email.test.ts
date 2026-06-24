@@ -30,6 +30,12 @@ function sampleDigest(overrides: Partial<AssembledDigest> = {}): AssembledDigest
       { type: "Upwork Connect", count: 14 },
       { type: "LinkedIn DM", count: 9 },
     ],
+    // §1 now consumes activityByRep (true per-rep activity volume), not derived
+    // from fieldAggregates.
+    activityByRep: [
+      { ownerId: "r1", ownerName: "Rep One", count: 11 },
+      { ownerId: "r2", ownerName: "Rep Two", count: 6 },
+    ],
     fieldAggregates: [
       {
         activityTypeId: "Upwork Connect",
@@ -74,26 +80,25 @@ describe("renderDigestEmail — email-client-safe template (Phase 5)", () => {
     const { html } = renderDigestEmail(sampleDigest());
     expect(html).toMatch(/DEMO/);
     expect(html).toMatch(/all-time/i);
-    // prominent = appears before §1 content (the reps-active heading)
+    // prominent = appears before §1 content (the activity-volume heading)
     const bannerIdx = html.search(/DEMO/);
-    const section1Idx = html.search(/reps active|custom-field contribution/i);
+    const section1Idx = html.search(/activity volume by rep/i);
     expect(bannerIdx).toBeGreaterThanOrEqual(0);
     expect(section1Idx).toBeGreaterThan(bannerIdx);
   });
 
-  it("§1 renders per-rep rows under an HONEST label — NOT claiming activity volume", () => {
+  it("§1 renders TRUE activity volume by rep (from activityByRep), no contribution-flag", () => {
     const { html } = renderDigestEmail(sampleDigest());
-    // rep rows render
+    // true heading now that the number is correct
+    expect(html).toMatch(/activity volume by rep/i);
+    // rep rows + their TRUE per-rep activity counts (from activityByRep, not field-contributions)
     expect(html).toContain("Rep One");
+    expect(html).toContain("11");
     expect(html).toContain("Rep Two");
-    // honest heading: it shows custom-field contribution, not activity volume
-    expect(html).toMatch(/reps active|custom-field contribution/i);
-    // explicit flag that the number is NOT activity volume / activities logged
-    expect(html).toMatch(/per-rep activity volume pending|not activities logged|custom-field contributions/i);
-    // it must NOT carry the silent-wrong heading "activity volume by rep"
-    expect(html).not.toMatch(/activity volume by rep/i);
-    // the only mention of "activities logged" must be the negating flag ("NOT activities logged")
-    expect(html).toMatch(/not activities logged/i);
+    expect(html).toContain("6");
+    // the honest-label workaround is GONE — no contribution flag remains
+    expect(html).not.toMatch(/custom-field contribution/i);
+    expect(html).not.toMatch(/not activities logged/i);
   });
 
   it("§2 renders activity mix by type (type · count)", () => {

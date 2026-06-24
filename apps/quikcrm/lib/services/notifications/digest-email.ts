@@ -56,51 +56,32 @@ function sectionHeading(label: string): string {
     </h3></td></tr>`;
 }
 
-// ── §1 Reps active — by custom-field contribution ───────────────────────────
-// HONEST LABEL (decision 2026-06-24): this is NOT yet true per-rep activity
-// volume. buildRoleMetrics exposes only scalar totals (no per-rep breakdown), so
-// the correct per-rep activity count (a: add activityByRep to buildRoleMetrics'
-// DTO) is DEFERRED and BUNDLED with the window-param edit (unit (i)) — both touch
-// the same shared pinned functions, so the standing gate + FR-4.3 real-DB scope
-// re-check is paid ONCE. Until then this section counts per-rep FIELD-AGGREGATE
-// CONTRIBUTIONS (one per rep per field on the top-N types), NOT activities logged.
-// It MUST NOT claim "activity volume" / "activities logged". A reader must not
-// mistake the number for activity totals — so the heading + an explicit flag say so.
+// ── §1 Activity volume by rep ───────────────────────────────────────────────
+// FLIPPED (2026-06-24): now consumes assembled.activityByRep — TRUE per-rep
+// activity volume (count of CrmActivity rows per owner, tier-scoped), sourced
+// from buildRoleMetrics' new activityByRep DTO field (single-sourced scope). The
+// earlier honest-label workaround (field-aggregate CONTRIBUTIONS + amber flag) is
+// removed because the number is now correct. ownerName is the denormalized
+// CrmActivity.ownerName (same name source as §3 — one name behavior per email).
+// NOTE: numbers are ALL-TIME (the window param is built+verified but not yet
+// applied here — DEMO banner covers that). §1 now shows the right METRIC; the
+// banner covers the time-scope.
 function renderByRep(d: AssembledDigest): string {
-  const counts = new Map<string, { name: string; count: number }>();
-  for (const fa of d.fieldAggregates) {
-    for (const agg of fa.aggregates) {
-      for (const rep of agg.perRep) {
-        const prev = counts.get(rep.ownerId) ?? { name: rep.ownerName ?? rep.ownerId, count: 0 };
-        prev.count += 1; // one field-aggregate contribution per rep per field — NOT activity count
-        counts.set(rep.ownerId, prev);
-      }
-    }
-  }
-  const ranked = Array.from(counts.values()).sort((a, b) => b.count - a.count);
+  const ranked = [...d.activityByRep].sort((a, b) => b.count - a.count);
 
   const rows = ranked.length
     ? ranked
         .map(
           (r) => `<tr>
-            <td style="padding:7px 28px;font-size:14px;color:#0f172a;font-family:${FONT_STACK};border-top:1px solid #f1f5f9;">${escHtml(r.name)}</td>
-            <td align="right" style="padding:7px 28px;font-size:14px;font-weight:600;color:#0f172a;font-family:${FONT_STACK};border-top:1px solid #f1f5f9;">${r.count}</td>
+            <td style="padding:7px 28px;font-size:14px;color:#0f172a;font-family:${FONT_STACK};border-top:1px solid #f1f5f9;">${escHtml(r.ownerName ?? r.ownerId)}</td>
+            <td align="right" style="padding:7px 28px;font-size:14px;font-weight:600;color:#0f172a;font-family:${FONT_STACK};border-top:1px solid #f1f5f9;">${Number(r.count)}</td>
           </tr>`,
         )
         .join("")
-    : `<tr><td style="padding:7px 28px;font-size:13px;color:#94a3b8;font-family:${FONT_STACK};">No rep field-contributions in scope.</td></tr>`;
-
-  // Explicit flag (amber, like the demo banner) so the count is never read as
-  // true activity volume.
-  const flag = `<tr><td style="padding:2px 28px 6px;">
-    <p style="margin:0;font-size:11px;font-weight:600;color:#92400e;font-family:${FONT_STACK};line-height:1.5;">
-      &#9888; True per-rep activity volume pending &mdash; shown counts are custom-field
-      contributions on the top types, NOT activities logged.
-    </p></td></tr>`;
+    : `<tr><td style="padding:7px 28px;font-size:13px;color:#94a3b8;font-family:${FONT_STACK};">No rep activity in scope.</td></tr>`;
 
   return (
-    sectionHeading("Reps active — by custom-field contribution") +
-    flag +
+    sectionHeading("Activity volume by rep") +
     `<tr><td style="padding:0 0 4px;"><table role="presentation" width="100%" cellpadding="0" cellspacing="0">${rows}</table></td></tr>`
   );
 }

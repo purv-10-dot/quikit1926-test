@@ -81,7 +81,7 @@ async function buildScopeSql(user: SessionUser): Promise<Prisma.Sql> {
 
 export async function getActivityFieldAggregates(
   user: SessionUser,
-  opts: { activityTypeId: string },
+  opts: { activityTypeId: string; range?: { from: Date; to: Date } },
 ): Promise<ActivityFieldAggregate[]> {
   // Load the type's field defs (org-scoped read) for labels + types.
   const type = await getActivityTypeWithFields(user.orgId, opts.activityTypeId);
@@ -90,6 +90,15 @@ export async function getActivityFieldAggregates(
 
   const scopeSql = await buildScopeSql(user);
   const fieldKeys = defs.map((d) => d.key);
+
+  // Optional window as a PARAMETERIZED fragment (mirrors buildScopeSql — values
+  // via Prisma.sql ${}, never concatenated). Omitted → Prisma.empty → the WHERE
+  // is byte-identical to the pre-window query (FR-4.3 mock tests stay green).
+  // Passed → an ADDITIONAL occurredAt bound on the joined activity; scope
+  // filters above are untouched (window is additive, not a replacement).
+  const windowSql = opts.range
+    ? Prisma.sql`AND a."occurredAt" >= ${opts.range.from} AND a."occurredAt" < ${opts.range.to}`
+    : Prisma.empty;
 
   // Aggregate per (owner, fieldKey, valueText). SUM(valueNumber) covers Number
   // fields; COUNT grouped by valueText covers Select/Text. ownerName is read
@@ -108,6 +117,7 @@ export async function getActivityFieldAggregates(
       WHERE  v."orgId" = ${user.orgId}
         AND  v."fieldKey" = ANY(${fieldKeys}::text[])
         AND  ${scopeSql}
+        ${windowSql}
       GROUP BY a."ownerId", a."ownerName", v."fieldKey", v."valueText"
     `,
   );
