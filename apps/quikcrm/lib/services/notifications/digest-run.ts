@@ -90,9 +90,11 @@ export async function runDailyDigest(): Promise<DigestRunResult> {
     const topTypes = await selectTopNTypes(orgId, cfg.types);
 
     const optOut = new Set(cfg.optOut);
-    const recipients = (await listDigestRecipients(orgId, cfg.recipientRoles)).filter(
-      (r) => !optOut.has(r.userId),
-    );
+    // Pass the allow-list: non-empty recipientUserIds REPLACES recipientRoles
+    // (empty/absent → role fallback). optOut still applies on top of either path.
+    const recipients = (
+      await listDigestRecipients(orgId, cfg.recipientRoles, cfg.recipientUserIds)
+    ).filter((r) => !optOut.has(r.userId));
 
     for (const recipient of recipients) {
       // Services called AS-IS — per-recipient user, NO range arg (unit (i) deferred).

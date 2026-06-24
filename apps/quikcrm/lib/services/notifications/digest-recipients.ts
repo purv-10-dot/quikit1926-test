@@ -54,14 +54,23 @@ export async function listActiveDigestOrgs(): Promise<string[]> {
 }
 
 /**
- * Leadership recipients for an org, as constructed SessionUsers, filtered to the
- * requested roles. Each maps an app-role row → its User → a SessionUser.
+ * Leadership recipients for an org, as constructed SessionUsers.
+ *
+ * Allow-list (REPLACE semantics): when `recipientUserIds` is NON-EMPTY, ONLY those
+ * userIds receive the digest and `roles` is IGNORED. EMPTY ([]) or absent → fall
+ * back to the role-based set (NOT "email nobody"). CRITICAL: on EITHER path each
+ * recipient's SessionUser carries their REAL role (resolved from their app-role
+ * row), so per-recipient scoping stays correct — the allow-list decides WHO, the
+ * role decides WHAT they see. A named user with no resolvable app-role row is
+ * skipped (we can't scope them safely).
  */
 export async function listDigestRecipients(
   orgId: string,
   roles: string[],
+  recipientUserIds?: string[],
 ): Promise<SessionUser[]> {
   const wanted = new Set(roles);
+  const allowList = recipientUserIds && recipientUserIds.length > 0 ? new Set(recipientUserIds) : null;
 
   const rows = await prisma.crmUserAppRole.findMany({
     where: { orgId },
@@ -71,12 +80,21 @@ export async function listDigestRecipients(
     },
   });
 
-  // userId → SessionUser, de-duped (a user may hold more than one app-role row).
-  const byUser = new Map<string, string>(); // userId → SessionUser role
+  // userId → REAL SessionUser role, de-duped (a user may hold >1 app-role row).
+  // Resolve EVERY row's real role first; the recipient FILTER (allow-list vs
+  // roles) is applied separately so the allow-list path keeps the real role.
+  const byUser = new Map<string, string>();
   for (const r of rows) {
     const sessionRole = APP_ROLE_NAME_TO_SESSION_ROLE[r.role?.name ?? ""] ?? null;
-    if (sessionRole && wanted.has(sessionRole) && !byUser.has(r.userId)) {
-      byUser.set(r.userId, sessionRole);
+    if (!sessionRole || byUser.has(r.userId)) continue;
+
+    if (allowList) {
+      // REPLACE: include iff named in the allow-list (role NOT consulted for
+      // inclusion — but the real role IS kept for scoping).
+      if (allowList.has(r.userId)) byUser.set(r.userId, sessionRole);
+    } else {
+      // Role fallback: include iff the real role is one of the wanted roles.
+      if (wanted.has(sessionRole)) byUser.set(r.userId, sessionRole);
     }
   }
 

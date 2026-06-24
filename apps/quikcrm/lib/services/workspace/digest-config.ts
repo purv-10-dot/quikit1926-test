@@ -30,6 +30,14 @@ export interface DigestConfig {
   recipientRoles: string[];
   types?: string[];
   optOut: string[];
+  /**
+   * Explicit recipient allow-list (REPLACE semantics): when NON-EMPTY, ONLY these
+   * userIds receive the digest and recipientRoles is IGNORED. EMPTY ([]) or absent
+   * → fall back to recipientRoles (NOT "email nobody"). "Name exactly who gets it."
+   * Each named recipient is still scoped by their REAL role downstream
+   * (allow-list = WHO gets it; role = WHAT they see).
+   */
+  recipientUserIds: string[];
 }
 
 // Leadership roles (decision 2): Administrators + SalesManagers. SalesUsers
@@ -56,6 +64,9 @@ export async function getDigestConfig(orgId: string): Promise<DigestConfig> {
         : DEFAULT_DIGEST_RECIPIENT_ROLES,
     ...(Array.isArray(cfg.types) ? { types: cfg.types } : {}),
     optOut: Array.isArray(cfg.optOut) ? cfg.optOut : [],
+    // Allow-list: empty when absent → role fallback downstream (the empty-array
+    // edge behaves exactly like absent, never "email nobody").
+    recipientUserIds: Array.isArray(cfg.recipientUserIds) ? cfg.recipientUserIds : [],
   };
 }
 

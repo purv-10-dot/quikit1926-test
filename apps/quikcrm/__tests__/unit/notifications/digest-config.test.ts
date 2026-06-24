@@ -67,6 +67,22 @@ describe("getDigestConfig — opt-in, default-disabled (Phase 5 plumbing)", () =
     expect(cfg.optOut).toEqual(["u9"]);
   });
 
+  it("reads recipientUserIds when stored (the explicit allow-list)", async () => {
+    findUnique.mockResolvedValue({
+      orgId: "org1",
+      settings: { digest: { enabled: true, recipientUserIds: ["a", "b"] } },
+    });
+    const cfg = await getDigestConfig("org1");
+    expect(cfg.recipientUserIds).toEqual(["a", "b"]);
+  });
+
+  it("defaults recipientUserIds to an empty array when absent (additive, allow-list-ready)", async () => {
+    findUnique.mockResolvedValue(null);
+    const cfg = await getDigestConfig("org1");
+    expect(Array.isArray(cfg.recipientUserIds)).toBe(true);
+    expect(cfg.recipientUserIds).toEqual([]);
+  });
+
   it("does NOT write on read (read-on-read, like getDashboardConfig)", async () => {
     findUnique.mockResolvedValue(null);
     await getDigestConfig("org1");
