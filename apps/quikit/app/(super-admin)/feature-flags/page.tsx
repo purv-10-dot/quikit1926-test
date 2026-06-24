@@ -15,6 +15,7 @@ import { MODULE_REGISTRY } from "@quikit/shared/moduleRegistry";
 /** Friendly display name per app slug. Falls back to titlecased slug. */
 const APP_LABELS: Record<string, string> = {
   quikscale: "QuikScale",
+  quikinfra: "QuikInfra",
   admin: "Admin Portal",
 };
 

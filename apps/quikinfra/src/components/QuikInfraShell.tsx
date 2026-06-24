@@ -9,6 +9,8 @@ import { useRouter, usePathname } from "next/navigation";
 import { useSession } from "next-auth/react";
 import { signOutAndClear } from "@/lib/auth/client-logout";
 import { usePermissions } from "@/hooks/use-permissions";
+import { useDisabledModules } from "@/hooks/useDisabledModules";
+import { isModuleEnabled } from "@quikit/shared/moduleRegistry";
 import { UserAvatar } from "@/components/PageShell";
 import { AppSwitcher, UserMenu } from "@quikit/ui";
 import {
@@ -90,6 +92,15 @@ interface NavItem {
    */
   moduleKey?: string;
   /**
+   * Feature-flag key from the shared MODULE_REGISTRY (`@quikit/shared/moduleRegistry`,
+   * appSlug "quikinfra"). Dot-delimited (e.g. "organization", "organization.companies").
+   * When set, the item is hidden if a super admin has disabled this module
+   * (or any ancestor) for the current tenant in the App Feature Flags UI.
+   * This is the per-tenant gate; `moduleKey` above is the per-user RBAC gate —
+   * the two are independent and both must pass for an item to render.
+   */
+  featureKey?: string;
+  /**
    * When true, this item is gated behind the v2 Settings permissions
    * (`construction.users.manage` / `construction.workflows.manage`).
    * Tenant admins get these by default; sub-admins can be granted
@@ -106,20 +117,21 @@ interface NavItem {
 // with children auto-hide when ALL children are hidden (handled by
 // `filterNav` in the shell render, not duplicated on parents).
 const CONSTRUCTION_NAV: NavItem[] = [
-  { label: "Dashboard", href: "/dashboard", iconComponent: LayoutDashboard },
+  { label: "Dashboard", href: "/dashboard", iconComponent: LayoutDashboard, featureKey: "dashboard" },
   { label: "ADMIN / SETUP", isSection: true },
   {
     label: "Organization",
     iconComponent: Globe,
     moduleKey: "organization",
+    featureKey: "organization",
     children: [
-      { label: "Companies",          href: "/masters/companies",        iconComponent: Globe,        requiredPermission: "masters.read" },
-      { label: "Departments",        href: "/masters/departments",      iconComponent: Building2,    requiredPermission: "masters.read" },
-      { label: "GST Codes",          href: "/masters/gst",              iconComponent: Receipt,      requiredPermission: "finance.gst_config" },
-      { label: "TDS Codes",          href: "/masters/tds",              iconComponent: CreditCard,   requiredPermission: "finance.tds_config" },
-      { label: "UOM",                href: "/masters/uom",              iconComponent: Calculator,   requiredPermission: "masters.read" },
-      { label: "Work Categories",    href: "/masters/work-categories",  iconComponent: ListTodo,     requiredPermission: "masters.read" },
-      { label: "Terms & Conditions", href: "/masters/terms",            iconComponent: FileText,     requiredPermission: "masters.read" },
+      { label: "Companies",          href: "/masters/companies",        iconComponent: Globe,        requiredPermission: "masters.read",       featureKey: "organization.companies" },
+      { label: "Departments",        href: "/masters/departments",      iconComponent: Building2,    requiredPermission: "masters.read",       featureKey: "organization.departments" },
+      { label: "GST Codes",          href: "/masters/gst",              iconComponent: Receipt,      requiredPermission: "finance.gst_config", featureKey: "organization.gst" },
+      { label: "TDS Codes",          href: "/masters/tds",              iconComponent: CreditCard,   requiredPermission: "finance.tds_config", featureKey: "organization.tds" },
+      { label: "UOM",                href: "/masters/uom",              iconComponent: Calculator,   requiredPermission: "masters.read",       featureKey: "organization.uom" },
+      { label: "Work Categories",    href: "/masters/work-categories",  iconComponent: ListTodo,     requiredPermission: "masters.read",       featureKey: "organization.workCategories" },
+      { label: "Terms & Conditions", href: "/masters/terms",            iconComponent: FileText,     requiredPermission: "masters.read",       featureKey: "organization.terms" },
     ],
   },
   { label: "MASTER DATA", isSection: true },
@@ -127,21 +139,22 @@ const CONSTRUCTION_NAV: NavItem[] = [
     label: "Masters",
     iconComponent: Database,
     moduleKey: "masters",
+    featureKey: "masters",
     children: [
       // Customers is a lookup consumed by Projects (project → client), so it
       // lists before Projects — define the customer before the project that references it.
-      { label: "Customers",         href: "/masters/customers",    iconComponent: Building2,    requiredPermission: "masters.read" },
-      { label: "Projects",          href: "/masters/projects",     iconComponent: FolderKanban, requiredPermission: "masters.read" },
+      { label: "Customers",         href: "/masters/customers",    iconComponent: Building2,    requiredPermission: "masters.read", featureKey: "masters.customers" },
+      { label: "Projects",          href: "/masters/projects",     iconComponent: FolderKanban, requiredPermission: "masters.read", featureKey: "masters.projects" },
       // Item Groups is a lookup consumed by Items / Materials (item → group),
       // so it lists first — define the group before the items that reference it.
-      { label: "Item Groups",       href: "/masters/item-groups",  iconComponent: Boxes,        requiredPermission: "masters.read" },
-      { label: "Items / Materials", href: "/masters/items",        iconComponent: Package,      requiredPermission: "masters.read" },
-      { label: "Vendors",           href: "/masters/vendors",      iconComponent: Truck,        requiredPermission: "masters.read" },
-      { label: "Contractors",       href: "/masters/contractors",  iconComponent: HardHat,      requiredPermission: "masters.read" },
-      { label: "Locations / Sites", href: "/masters/locations",    iconComponent: MapPin,       requiredPermission: "masters.read" },
-      { label: "Machinery",         href: "/masters/machinery",    iconComponent: Hammer,       requiredPermission: "masters.read" },
-      { label: "Assets / Tools",    href: "/masters/assets",       iconComponent: Wrench,       requiredPermission: "masters.read" },
-      { label: "Cost Centers",      href: "/masters/cost-centers", iconComponent: BarChart3,    requiredPermission: "masters.read" },
+      { label: "Item Groups",       href: "/masters/item-groups",  iconComponent: Boxes,        requiredPermission: "masters.read", featureKey: "masters.itemGroups" },
+      { label: "Items / Materials", href: "/masters/items",        iconComponent: Package,      requiredPermission: "masters.read", featureKey: "masters.items" },
+      { label: "Vendors",           href: "/masters/vendors",      iconComponent: Truck,        requiredPermission: "masters.read", featureKey: "masters.vendors" },
+      { label: "Contractors",       href: "/masters/contractors",  iconComponent: HardHat,      requiredPermission: "masters.read", featureKey: "masters.contractors" },
+      { label: "Locations / Sites", href: "/masters/locations",    iconComponent: MapPin,       requiredPermission: "masters.read", featureKey: "masters.locations" },
+      { label: "Machinery",         href: "/masters/machinery",    iconComponent: Hammer,       requiredPermission: "masters.read", featureKey: "masters.machinery" },
+      { label: "Assets / Tools",    href: "/masters/assets",       iconComponent: Wrench,       requiredPermission: "masters.read", featureKey: "masters.assets" },
+      { label: "Cost Centers",      href: "/masters/cost-centers", iconComponent: BarChart3,    requiredPermission: "masters.read", featureKey: "masters.costCenters" },
     ],
   },
   // Order: Masters → Projects → Procurement → Inventory.
@@ -154,15 +167,16 @@ const CONSTRUCTION_NAV: NavItem[] = [
     label: "Project Mgmt",
     iconComponent: FolderKanban,
     moduleKey: "project_mgmt",
+    featureKey: "projectMgmt",
     children: [
-      { label: "BOQ",                  href: "/projects/boq",         iconComponent: FileSpreadsheet, requiredPermission: "boq.read" },
-      { label: "WBS & Planning",       href: "/projects/wbs",         iconComponent: ListTree,        requiredPermission: "boq.read" },
-      { label: "Material Estimation",  href: "/projects/estimation",  iconComponent: Calculator,      requiredPermission: "boq.read" },
-      { label: "Work Orders",          href: "/projects/work-orders", iconComponent: Hammer,          requiredPermission: "wo.read" },
-      { label: "Daily Progress (DPR)", href: "/projects/dpr",         iconComponent: CalendarCheck,   requiredPermission: "dpr.read" },
-      { label: "Gantt View",           href: "/projects/gantt",       iconComponent: GanttChart,      requiredPermission: "boq.read" },
-      { label: "Hindrance Register",   href: "/projects/hindrance",   iconComponent: AlertTriangle,   requiredPermission: "dpr.read" },
-      { label: "Documents",            href: "/projects/documents",   iconComponent: FileText,        requiredPermission: "boq.read" },
+      { label: "BOQ",                  href: "/projects/boq",         iconComponent: FileSpreadsheet, requiredPermission: "boq.read", featureKey: "projectMgmt.boq" },
+      { label: "WBS & Planning",       href: "/projects/wbs",         iconComponent: ListTree,        requiredPermission: "boq.read", featureKey: "projectMgmt.wbs" },
+      { label: "Material Estimation",  href: "/projects/estimation",  iconComponent: Calculator,      requiredPermission: "boq.read", featureKey: "projectMgmt.estimation" },
+      { label: "Work Orders",          href: "/projects/work-orders", iconComponent: Hammer,          requiredPermission: "wo.read",  featureKey: "projectMgmt.workOrders" },
+      { label: "Daily Progress (DPR)", href: "/projects/dpr",         iconComponent: CalendarCheck,   requiredPermission: "dpr.read", featureKey: "projectMgmt.dpr" },
+      { label: "Gantt View",           href: "/projects/gantt",       iconComponent: GanttChart,      requiredPermission: "boq.read", featureKey: "projectMgmt.gantt" },
+      { label: "Hindrance Register",   href: "/projects/hindrance",   iconComponent: AlertTriangle,   requiredPermission: "dpr.read", featureKey: "projectMgmt.hindrance" },
+      { label: "Documents",            href: "/projects/documents",   iconComponent: FileText,        requiredPermission: "boq.read", featureKey: "projectMgmt.documents" },
     ],
   },
   { label: "PROCUREMENT", isSection: true },
@@ -170,12 +184,13 @@ const CONSTRUCTION_NAV: NavItem[] = [
     label: "Purchase",
     iconComponent: ShoppingCart,
     moduleKey: "purchase",
+    featureKey: "purchase",
     children: [
-      { label: "Purchase Requisitions",  href: "/purchase/requisitions", iconComponent: ClipboardList,    requiredPermission: "purchase.mr.read" },
-      { label: "Indents",                href: "/purchase/indents",      iconComponent: FileText,         requiredPermission: "purchase.indent.read" },
-      { label: "RFQ",                       href: "/purchase/rfqs",           iconComponent: GitCompareArrows, requiredPermission: "purchase.po.read" },
-      { label: "Quote Analysis & Shortlist", href: "/purchase/quote-analysis", iconComponent: ClipboardCheck,   requiredPermission: "purchase.po.read" },
-      { label: "Purchase Orders",           href: "/purchase/orders",         iconComponent: FileSpreadsheet,  requiredPermission: "purchase.po.read" },
+      { label: "Purchase Requisitions",  href: "/purchase/requisitions", iconComponent: ClipboardList,    requiredPermission: "purchase.mr.read",     featureKey: "purchase.requisitions" },
+      { label: "Indents",                href: "/purchase/indents",      iconComponent: FileText,         requiredPermission: "purchase.indent.read", featureKey: "purchase.indents" },
+      { label: "RFQ",                       href: "/purchase/rfqs",           iconComponent: GitCompareArrows, requiredPermission: "purchase.po.read",  featureKey: "purchase.rfqs" },
+      { label: "Quote Analysis & Shortlist", href: "/purchase/quote-analysis", iconComponent: ClipboardCheck,   requiredPermission: "purchase.po.read",  featureKey: "purchase.quoteAnalysis" },
+      { label: "Purchase Orders",           href: "/purchase/orders",         iconComponent: FileSpreadsheet,  requiredPermission: "purchase.po.read",  featureKey: "purchase.orders" },
     ],
   },
   { label: "INVENTORY", isSection: true },
@@ -183,16 +198,17 @@ const CONSTRUCTION_NAV: NavItem[] = [
     label: "Store",
     iconComponent: Warehouse,
     moduleKey: "store",
+    featureKey: "store",
     children: [
-      { label: "GRN",                  href: "/store/grn",            iconComponent: BadgeCheck,     requiredPermission: "purchase.grn.read" },
-      { label: "Stock Register",       href: "/store/stock-register", iconComponent: BarChart3,      requiredPermission: "store.issue.read" },
-      { label: "Material Issue",       href: "/store/issue",          iconComponent: Package,        requiredPermission: "store.issue.read" },
-      { label: "Gate Pass",            href: "/store/gate-pass",      iconComponent: ClipboardList,  requiredPermission: "store.gate_pass.write" },
-      { label: "Good Return",          href: "/store/good-return",    iconComponent: ArrowLeftRight, requiredPermission: "store.good_return.write" },
-      { label: "Stock Transfer",       href: "/store/transfer",       iconComponent: ArrowLeftRight, requiredPermission: "store.transfer.read" },
-      { label: "Stock Reconciliation", href: "/store/reconciliation", iconComponent: FileBarChart2,  requiredPermission: "store.recon.read" },
-      { label: "Diesel Log",           href: "/store/diesel-log",     iconComponent: Fuel,           requiredPermission: "store.diesel.write" },
-      { label: "Asset Management",     href: "/store/asset-management", iconComponent: Wrench,        requiredPermission: "store.asset_mgmt.view" },
+      { label: "GRN",                  href: "/store/grn",            iconComponent: BadgeCheck,     requiredPermission: "purchase.grn.read",       featureKey: "store.grn" },
+      { label: "Stock Register",       href: "/store/stock-register", iconComponent: BarChart3,      requiredPermission: "store.issue.read",        featureKey: "store.stockRegister" },
+      { label: "Material Issue",       href: "/store/issue",          iconComponent: Package,        requiredPermission: "store.issue.read",        featureKey: "store.issue" },
+      { label: "Gate Pass",            href: "/store/gate-pass",      iconComponent: ClipboardList,  requiredPermission: "store.gate_pass.write",   featureKey: "store.gatePass" },
+      { label: "Good Return",          href: "/store/good-return",    iconComponent: ArrowLeftRight, requiredPermission: "store.good_return.write", featureKey: "store.goodReturn" },
+      { label: "Stock Transfer",       href: "/store/transfer",       iconComponent: ArrowLeftRight, requiredPermission: "store.transfer.read",     featureKey: "store.transfer" },
+      { label: "Stock Reconciliation", href: "/store/reconciliation", iconComponent: FileBarChart2,  requiredPermission: "store.recon.read",        featureKey: "store.reconciliation" },
+      { label: "Diesel Log",           href: "/store/diesel-log",     iconComponent: Fuel,           requiredPermission: "store.diesel.write",      featureKey: "store.diesel" },
+      { label: "Asset Management",     href: "/store/asset-management", iconComponent: Wrench,        requiredPermission: "store.asset_mgmt.view",  featureKey: "store.assetManagement" },
     ],
   },
   { label: "QUALITY & SAFETY", isSection: true },
@@ -200,10 +216,11 @@ const CONSTRUCTION_NAV: NavItem[] = [
     label: "Quality & Safety",
     iconComponent: ShieldCheck,
     moduleKey: "quality_safety",
+    featureKey: "qualitySafety",
     children: [
-      { label: "Inspection/Checklist", href: "/quality",        iconComponent: ClipboardCheck, requiredPermission: "quality.read" },
-      { label: "Incidents",     href: "/safety/incidents",      iconComponent: AlertTriangle,  requiredPermission: "safety.read" },
-      { label: "Toolbox Talks", href: "/safety/toolbox-talks",  iconComponent: MessageSquare,  requiredPermission: "safety.read" },
+      { label: "Inspection/Checklist", href: "/quality",        iconComponent: ClipboardCheck, requiredPermission: "quality.read", featureKey: "qualitySafety.inspection" },
+      { label: "Incidents",     href: "/safety/incidents",      iconComponent: AlertTriangle,  requiredPermission: "safety.read",  featureKey: "qualitySafety.incidents" },
+      { label: "Toolbox Talks", href: "/safety/toolbox-talks",  iconComponent: MessageSquare,  requiredPermission: "safety.read",  featureKey: "qualitySafety.toolbox" },
     ],
   },
   { label: "FINANCE", isSection: true },
@@ -211,12 +228,13 @@ const CONSTRUCTION_NAV: NavItem[] = [
     label: "Finance",
     iconComponent: CreditCard,
     moduleKey: "finance",
+    featureKey: "finance",
     children: [
-      { label: "RA Bills (Sub-Contractor)", href: "/finance/ra-bills", iconComponent: FileSpreadsheet, requiredPermission: "rab.read" },
-      { label: "Vendor Payments", href: "/finance/vendor-payments", iconComponent: CreditCard,  requiredPermission: "finance.view" },
-      { label: "Client Billing",  href: "/finance/client-billing",  iconComponent: Receipt,     requiredPermission: "finance.view" },
-      { label: "Petty Cash",      href: "/finance/petty-cash",      iconComponent: Wallet,      requiredPermission: "finance.view" },
-      { label: "Retention & SD",  href: "/finance/retention",       iconComponent: ShieldCheck, requiredPermission: "finance.view" },
+      { label: "RA Bills (Sub-Contractor)", href: "/finance/ra-bills", iconComponent: FileSpreadsheet, requiredPermission: "rab.read",      featureKey: "finance.raBills" },
+      { label: "Vendor Payments", href: "/finance/vendor-payments", iconComponent: CreditCard,  requiredPermission: "finance.view", featureKey: "finance.vendorPayments" },
+      { label: "Client Billing",  href: "/finance/client-billing",  iconComponent: Receipt,     requiredPermission: "finance.view", featureKey: "finance.clientBilling" },
+      { label: "Petty Cash",      href: "/finance/petty-cash",      iconComponent: Wallet,      requiredPermission: "finance.view", featureKey: "finance.pettyCash" },
+      { label: "Retention & SD",  href: "/finance/retention",       iconComponent: ShieldCheck, requiredPermission: "finance.view", featureKey: "finance.retention" },
     ],
   },
   { label: "SYSTEM", isSection: true },
@@ -224,6 +242,7 @@ const CONSTRUCTION_NAV: NavItem[] = [
     label: "Approvals",
     href: "/approvals",
     iconComponent: CheckCircle2,
+    featureKey: "approvals",
     // Only users who can actually approve something should see the inbox.
     // Any ONE of these permissions is enough (admins satisfy this via `*`).
     requiredPermission: [
@@ -244,13 +263,14 @@ const CONSTRUCTION_NAV: NavItem[] = [
       "rab.approve",
     ],
   },
-  { label: "Reports",   href: "/reports",   iconComponent: FileBarChart2, requiredPermission: "reports.read" },
+  { label: "Reports",   href: "/reports",   iconComponent: FileBarChart2, requiredPermission: "reports.read", featureKey: "reports" },
   {
     label: "Settings",
     iconComponent: Settings,
+    featureKey: "settings",
     children: [
-      { label: "Users",     href: "/settings/users",     iconComponent: UserCog,     requiredPermission: "settings.users",     superAdminOnly: true },
-      { label: "Workflows", href: "/settings/workflows", iconComponent: Workflow,    requiredPermission: "settings.workflows", superAdminOnly: true },
+      { label: "Users",     href: "/settings/users",     iconComponent: UserCog,     requiredPermission: "settings.users",     superAdminOnly: true, featureKey: "settings.users" },
+      { label: "Workflows", href: "/settings/workflows", iconComponent: Workflow,    requiredPermission: "settings.workflows", superAdminOnly: true, featureKey: "settings.workflows" },
     ],
   },
 ];
@@ -276,12 +296,21 @@ function filterNav(
   hasModule: (moduleKey: string) => boolean,
   canViewMenu: (url: string | undefined) => boolean,
   isSuperAdmin: boolean,
+  disabledModules: Set<string>,
   insideAllowedModule = false,
 ): NavItem[] {
   const out: NavItem[] = [];
   for (const item of items) {
     if (item.isSection) {
       out.push(item);
+      continue;
+    }
+    // Per-tenant feature-flag gate — applies to EVERY role (including super
+    // admins): if a super admin disabled this module (or any ancestor) for
+    // the tenant in the App Feature Flags UI, hide it. Runs first so a
+    // disabled parent removes its whole subtree. Items without a featureKey
+    // (none today) are always allowed through this gate.
+    if (item.featureKey && !isModuleEnabled(item.featureKey, disabledModules)) {
       continue;
     }
     // Platform-only items (Settings → Users / Workflows) are hidden from
@@ -300,7 +329,7 @@ function filterNav(
       // Once we're under a moduleKey-gated parent that passed the check,
       // every descendant is considered allowed — skip `requiredPermission`.
       const nextInside = insideAllowedModule || !!item.moduleKey;
-      const kids = filterNav(item.children, can, hasModule, canViewMenu, isSuperAdmin, nextInside);
+      const kids = filterNav(item.children, can, hasModule, canViewMenu, isSuperAdmin, disabledModules, nextInside);
       if (kids.length > 0) out.push({ ...item, children: kids });
       continue;
     }
@@ -541,6 +570,7 @@ export function QuikInfraShell({ children }: { children: ReactNode }) {
   const pathname = usePathname();
   const { data: session } = useSession();
   const { can, hasModule, canViewMenu, isLoading: permsLoading, roleKey, userType } = usePermissions();
+  const disabledModules = useDisabledModules();
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
 
@@ -592,8 +622,8 @@ export function QuikInfraShell({ children }: { children: ReactNode }) {
     () =>
       permsLoading
         ? []
-        : filterNav(CONSTRUCTION_NAV, can, hasModule, canViewMenu, isSuperAdmin),
-    [permsLoading, can, hasModule, canViewMenu, isSuperAdmin]
+        : filterNav(CONSTRUCTION_NAV, can, hasModule, canViewMenu, isSuperAdmin, disabledModules),
+    [permsLoading, can, hasModule, canViewMenu, isSuperAdmin, disabledModules]
   );
 
   const displayNav = useMemo(
