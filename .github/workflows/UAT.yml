@@ -17,85 +17,115 @@ jobs:
   detect-changes:
     name: Detect Changed Apps
     runs-on: ubuntu-latest
-    outputs:
-      apps: ${{ steps.set-matrix.outputs.apps }}
-      run_build: ${{ steps.set-matrix.outputs.run_build }}
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
 
-      - name: Detect changes in apps and packages
-        uses: dorny/paths-filter@v3
-        id: filter
-        with:
-          filters: |
-            quikit:
-              - 'apps/quikit/**'
-              - 'packages/**'
-              - 'package.json'
-              - 'package-lock.json'
-              - 'turbo.json'
-            auth:
-              - 'apps/auth/**'
-              - 'packages/**'
-              - 'package.json'
-              - 'package-lock.json'
-              - 'turbo.json'
-            admin:
-              - 'apps/admin/**'
-              - 'packages/**'
-              - 'package.json'
-              - 'package-lock.json'
-              - 'turbo.json'
-            quikscale:
-              - 'apps/quikscale/**'
-              - 'packages/**'
-              - 'package.json'
-              - 'package-lock.json'
-              - 'turbo.json'
-            quiktrack:
-              - 'apps/quiktrack/**'
-              - 'packages/**'
-              - 'package.json'
-              - 'package-lock.json'
-              - 'turbo.json'
-            quikinfra:
-              - 'apps/quikinfra/**'
-              - 'packages/**'
-              - 'package.json'
-              - 'package-lock.json'
-              - 'turbo.json'
-            quikcrm:
-              - 'apps/quikcrm/**'
-              - 'packages/**'
-              - 'package.json'
-              - 'package-lock.json'
-              - 'turbo.json'
-            quikhrms:
-              - 'apps/quikhrms/**'
-              - 'packages/**'
-              - 'package.json'
-              - 'package-lock.json'
-              - 'turbo.json'
-      - name: Generate Matrix Output
-        id: set-matrix
-        run: |
-          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
-            echo 'apps=["quikit", "auth", "admin", "quikscale", "quiktrack", "quikhrms", "quikinfra", "quikcrm"]' >> "$GITHUB_OUTPUT"
-            echo "run_build=true" >> "$GITHUB_OUTPUT"
-          else
-            CHANGES='${{ steps.filter.outputs.changes }}'
-            if [ "$CHANGES" = "[]" ] || [ -z "$CHANGES" ]; then
-              echo 'apps=[]' >> "$GITHUB_OUTPUT"
-              echo "run_build=false" >> "$GITHUB_OUTPUT"
-            else
-              echo "apps=$CHANGES" >> "$GITHUB_OUTPUT"
-              echo "run_build=true" >> "$GITHUB_OUTPUT"
-            fi
-          fi
+outputs:
+  apps: ${{ steps.set-matrix.outputs.apps }}
+  run_build: ${{ steps.set-matrix.outputs.run_build }}
 
+steps:
+  - name: Checkout
+    uses: actions/checkout@v4
+    with:
+      fetch-depth: 0
+
+  - name: Detect changes in apps and packages
+    id: filter
+    uses: dorny/paths-filter@v3
+    with:
+      filters: |
+        quikit:
+          - 'apps/quikit/**'
+          - 'packages/**'
+          - 'package.json'
+          - 'package-lock.json'
+          - 'turbo.json'
+
+        auth:
+          - 'apps/auth/**'
+          - 'packages/**'
+          - 'package.json'
+          - 'package-lock.json'
+          - 'turbo.json'
+
+        admin:
+          - 'apps/admin/**'
+          - 'packages/**'
+          - 'package.json'
+          - 'package-lock.json'
+          - 'turbo.json'
+
+        quikscale:
+          - 'apps/quikscale/**'
+          - 'packages/**'
+          - 'package.json'
+          - 'package-lock.json'
+          - 'turbo.json'
+
+        quiktrack:
+          - 'apps/quiktrack/**'
+          - 'packages/**'
+          - 'package.json'
+          - 'package-lock.json'
+          - 'turbo.json'
+
+        quikinfra:
+          - 'apps/quikinfra/**'
+          - 'packages/**'
+          - 'package.json'
+          - 'package-lock.json'
+          - 'turbo.json'
+
+        quikcrm:
+          - 'apps/quikcrm/**'
+          - 'packages/**'
+          - 'package.json'
+          - 'package-lock.json'
+          - 'turbo.json'
+
+        quikhrms:
+          - 'apps/quikhrms/**'
+          - 'packages/**'
+          - 'package.json'
+          - 'package-lock.json'
+          - 'turbo.json'
+
+  - name: Generate Matrix Output
+    id: set-matrix
+    shell: bash
+    run: |
+      if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+        echo 'apps=["quikit","auth","admin","quikscale","quiktrack","quikhrms","quikinfra","quikcrm"]' >> "$GITHUB_OUTPUT"
+        echo "run_build=true" >> "$GITHUB_OUTPUT"
+        exit 0
+      fi
+
+      APPS=()
+
+      [ "${{ steps.filter.outputs.quikit }}" = "true" ] && APPS+=('"quikit"')
+      [ "${{ steps.filter.outputs.auth }}" = "true" ] && APPS+=('"auth"')
+      [ "${{ steps.filter.outputs.admin }}" = "true" ] && APPS+=('"admin"')
+      [ "${{ steps.filter.outputs.quikscale }}" = "true" ] && APPS+=('"quikscale"')
+      [ "${{ steps.filter.outputs.quiktrack }}" = "true" ] && APPS+=('"quiktrack"')
+      [ "${{ steps.filter.outputs.quikinfra }}" = "true" ] && APPS+=('"quikinfra"')
+      [ "${{ steps.filter.outputs.quikcrm }}" = "true" ] && APPS+=('"quikcrm"')
+      [ "${{ steps.filter.outputs.quikhrms }}" = "true" ] && APPS+=('"quikhrms"')
+
+      if [ ${#APPS[@]} -eq 0 ]; then
+        echo "apps=[]" >> "$GITHUB_OUTPUT"
+        echo "run_build=false" >> "$GITHUB_OUTPUT"
+      else
+        MATRIX="[$(IFS=,; echo "${APPS[*]}")]"
+
+        echo "apps=$MATRIX" >> "$GITHUB_OUTPUT"
+        echo "run_build=true" >> "$GITHUB_OUTPUT"
+
+        echo "Detected apps: $MATRIX"
+      fi
+
+  - name: Debug Matrix
+    run: |
+      echo "Apps: ${{ steps.set-matrix.outputs.apps }}"
+      echo "Run Build: ${{ steps.set-matrix.outputs.run_build }}"
   build:
     name: Build ${{ matrix.app }}
     needs: detect-changes
