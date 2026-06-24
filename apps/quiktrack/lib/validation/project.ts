@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { isProjectTabPath } from "@/lib/projectTabs";
 
 export const projectKeyRegex = /^[A-Z][A-Z0-9]{1,9}$/;
 
@@ -27,6 +28,22 @@ export const updateProjectSchema = createProjectSchema.partial().extend({
   // Custom backlog heading (functional spaces only). null/empty clears it back
   // to the default "Backlog" label.
   backlogName: z.string().max(120).nullable().optional(),
+  // Per-project tab customization (Space Admin only — the PATCH route is gated
+  // on Project:update). Ordered array of enabled tab paths; null resets to "all
+  // tabs". Must hold ≥1 known path and no duplicates so a project is never left
+  // with an empty/garbage tab bar.
+  tabConfig: z
+    .array(z.string())
+    .nullable()
+    .optional()
+    .refine(
+      (v) =>
+        v == null ||
+        (v.length >= 1 &&
+          new Set(v).size === v.length &&
+          v.every((p) => isProjectTabPath(p))),
+      "tabConfig must be a non-empty list of unique, known tab paths.",
+    ),
 });
 
 export type CreateProjectInput = z.infer<typeof createProjectSchema>;

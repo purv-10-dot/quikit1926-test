@@ -5563,6 +5563,11 @@ model QtProject {
   templateKey      String              @default("scrum")
   /// Custom backlog heading. Honored only for functional spaces; null → "Backlog".
   backlogName      String?
+  /// Per-project tab customization (QuikTrack). Ordered array of enabled tab
+  /// paths (e.g. ["summary","board","docs"]); null = show all tabs. Edited by
+  /// Space Admins via the project tab customizer; role permissions still gate
+  /// each tab on top of this.
+  tabConfig        Json?
   icon             String?
   color            String?             @default("#2563eb")
   status           String              @default("active")
