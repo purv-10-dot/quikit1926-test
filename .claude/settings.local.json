@@ -69,7 +69,11 @@
       "Bash(rm -f apps/quikcrm/vitest.closegate.config.ts apps/quikcrm/__tests__/realdb/digest-window-exclusion.closegate.test.ts apps/quikcrm/__tests__/realdb/digest-window-exclusion.closegate.md)",
       "Bash(rmdir apps/quikcrm/__tests__/realdb)",
       "Bash(grep -nA8 \"model CrmOrgWorkspaceSettings\" packages/database/prisma/schema.prisma)",
-      "Bash(grep -nA10 \"model CrmOrgWorkspaceSettings\" ../../packages/database/prisma/schema.prisma)"
+      "Bash(grep -nA10 \"model CrmOrgWorkspaceSettings\" ../../packages/database/prisma/schema.prisma)",
+      "Bash(grep -nB2 -A4 \"disabled=\" components/activities/log-activity-modal.tsx)",
+      "Bash(grep -rnA12 \"function getQuikCrmAppId\" lib/)",
+      "Bash(git checkout *)",
+      "Bash(grep -nA14 \"model CrmUserAppRole\" packages/database/prisma/schema.prisma)"
     ],
     "additionalDirectories": [
       "c:\\wwwwwwwwww\\Authmergewithmainbranch\\QuikIT\\apps\\auth\\app\\api\\auth\\me"
