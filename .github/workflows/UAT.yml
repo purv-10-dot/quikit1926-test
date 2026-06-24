@@ -100,9 +100,7 @@ jobs:
     name: Build ${{ matrix.app }}
     needs: detect-changes
     if: needs.detect-changes.outputs.run_build == 'true'
-
     runs-on: ubuntu-latest
-
     strategy:
       fail-fast: false
       matrix:
@@ -124,8 +122,7 @@ jobs:
 
       - name: Lowercase image owner
         id: owner
-        run: |
-          echo "value=$(echo '${{ github.repository_owner }}' | tr '[:upper:]' '[:lower:]')" >> "$GITHUB_OUTPUT"
+        run: echo "value=$(echo '${{ github.repository_owner }}' | tr '[:upper:]' '[:lower:]')" >> "$GITHUB_OUTPUT"
 
       - name: Compute image metadata
         id: meta
@@ -136,7 +133,7 @@ jobs:
             type=raw,value=build-${{ github.run_number }}
             type=sha,prefix=sha-,format=short
 
-      - name: Build and Push Image
+      - name: Build and push
         uses: docker/build-push-action@v5
         with:
           context: .
@@ -147,6 +144,12 @@ jobs:
           cache-from: type=gha,scope=${{ matrix.app }}
           cache-to: type=gha,scope=${{ matrix.app }},mode=max
           platforms: linux/amd64
+          # NEXT_PUBLIC_* env vars used in CLIENT components get inlined
+          # by webpack at `next build` time — runtime K8s env doesn't
+          # override them. Pass real prod URLs as build-args so the
+          # baked-in values match what Cloud Run / GKE pods serve.
+          # These are safe to hardcode: they end up plain-text in every
+          # browser bundle anyway.
           build-args: |
             NEXT_PUBLIC_LAUNCHER_URL=https://uatapps.quikit.ai
             NEXT_PUBLIC_AUTH_URL=https://uatauthn.quikit.ai
