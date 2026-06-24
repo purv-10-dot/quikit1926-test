@@ -93,6 +93,7 @@ interface IssueFull {
   storyPoints: number | null;
   eta: number | null;
   reporterId: string | null;
+  createdBy?: string | null;
   projectId: string;
   createdAt?: string;
   updatedAt?: string;
@@ -271,6 +272,9 @@ export function EditIssueModal({
   const perms = useMyProjectPermissions(projectId);
   const canUpdateIssue = perms.loading || perms.has("Issue", "update");
   const canCreateIssue = perms.loading || perms.has("Issue", "create");
+  // Delete is shown when the role has the full Issue:delete grant OR the viewer
+  // owns this issue (reported or created it) — mirroring the server's single
+  // delete rule, so a Contributor sees the trash on their own tasks.
   const canDeleteIssue = perms.loading || perms.has("Issue", "delete");
   const [deleteOpen, setDeleteOpen] = useState(false);
 
@@ -688,7 +692,10 @@ export function EditIssueModal({
             {/* <button className="p-1.5 hover:bg-gray-100 rounded" aria-label="Open in new tab">
               <ExternalLink className="h-4 w-4" />
             </button> */}
-            {issue && canDeleteIssue && (
+            {issue &&
+              (canDeleteIssue ||
+                (!!currentUserId &&
+                  (issue.reporterId === currentUserId || issue.createdBy === currentUserId))) && (
               <button
                 type="button"
                 onClick={() => setDeleteOpen(true)}

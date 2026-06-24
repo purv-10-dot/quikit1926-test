@@ -2650,9 +2650,15 @@ export function BacklogView({ projectId }: { projectId: string }) {
   async function handleBulkDelete() {
     if (selectedIds.size === 0 || bulkBusy) return;
     const n = selectedIds.size;
+    // A full Issue:delete grant removes any selected item; everyone else only
+    // removes the ones they own — so warn that others will be skipped.
+    const canDeleteAny = perms.has("Issue", "delete");
+    const message = canDeleteAny
+      ? `Delete ${n} work item${n === 1 ? "" : "s"}? This is reversible from trash.`
+      : `Delete your selected work items? Only items you created or reported will be deleted — any owned by others are skipped. This is reversible from trash.`;
     const ok = await confirmDialog({
       title: "Delete work items",
-      message: `Delete ${n} work item${n === 1 ? "" : "s"}? This is reversible from trash.`,
+      message,
       confirmText: "Delete",
       danger: true,
     });
@@ -2663,10 +2669,25 @@ export function BacklogView({ projectId }: { projectId: string }) {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ projectId, ids: Array.from(selectedIds) }),
-      }).then((r) => r.json() as Promise<{ success: boolean; error?: string }>);
+      }).then(
+        (r) =>
+          r.json() as Promise<{ success: boolean; error?: string; deleted?: number; skipped?: number }>,
+      );
       if (!res.success) {
         showToast(res.error ?? "Delete failed", "error");
         return;
+      }
+      const deleted = res.deleted ?? 0;
+      const skipped = res.skipped ?? 0;
+      if (skipped > 0) {
+        showToast(
+          deleted > 0
+            ? `Deleted ${deleted} item${deleted === 1 ? "" : "s"}. Skipped ${skipped} owned by others.`
+            : `Nothing deleted — the selected item${skipped === 1 ? " is" : "s are"} owned by others.`,
+          deleted > 0 ? "success" : "error",
+        );
+      } else if (deleted > 0) {
+        showToast(`Deleted ${deleted} item${deleted === 1 ? "" : "s"}.`, "success");
       }
       setSelectedIds(new Set());
       await refreshAllSections();
@@ -3226,7 +3247,10 @@ export function BacklogView({ projectId }: { projectId: string }) {
                 </div>
               )}
             </div>
-            {(perms.loading || perms.has("Issue", "delete")) && (
+            {/* Shown to anyone who can delete any issue (full grant) OR who can
+                create issues (and thus own some to delete). Pure Viewers — who
+                own nothing — don't see it. The server enforces own-only. */}
+            {(perms.loading || perms.has("Issue", "delete") || perms.has("Issue", "create")) && (
               <button
                 type="button"
                 onClick={handleBulkDelete}
