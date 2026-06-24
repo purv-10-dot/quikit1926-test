@@ -192,6 +192,54 @@ A general, admin-configurable ACTIVITY-LOGGING system in apps/quikcrm. Admins cr
   unreachable plain-Error exhaustiveness backstop. The live failure path
   (Phone field bricking a whole type) is closed.
 
+  ### 2026-06-23 — Close-gate findings (recorded; both OWED to integration team / future session)
+
+- **FINDING (a) — Migration history is NOT greenfield-applicable. ESCALATE to
+  integration team.** `npm run db:migrate:deploy` against a FRESH empty DB
+  (quikcrm_closegate) fails at migration `20260417134430_add_app_module_flags`:
+  it FK-references `quikit."App"`, but no prior migration creates `App`. `App`
+  (and the `quikit`/`app_*` multi-schema base) is created later
+  (`20260502183000_v4_auth_quikit_schemas`) and/or out-of-band
+  (`packages/database/migrations/move-to-multischema.sql` + prod-sync scripts).
+  So the Prisma migration folder is an INCREMENTAL history that assumes a
+  pre-provisioned base — it cannot build a DB from zero. `quikit_devs` only
+  works because the real pipeline provisioned that base separately (consistent
+  with the 3 unknown migrations seen on quikit_devs earlier). This is a real
+  shared-`packages/` defect affecting anyone onboarding a fresh dev DB or new
+  environment — NOT this feature's code, NOT ours to fix. Owner: integration
+  team. They owe a from-zero provisioning path or a known-good base dump.
+
+### 2026-06-24 — Close-gate UPDATE: c-3/c-4 DB-verified; c-1/c-2 still owed
+
+- **c-3 + c-4 VERIFIED against real Postgres (quikit_devs).** Via the actual
+  POST /api/activities route handler with ONLY getServerSession stubbed (real
+  prisma, real logActivity, real writeActivityFieldValues, real route
+  $transaction), run under a throwaway no-setup vitest config with two
+  unfakeable pre-flight proofs (current_database()='quikit_devs' +
+  closegate_org exact slug):
+    • c-3: typed values landed in the right indexed columns — bid→valueNumber=250,
+      notes→valueText='…', non-target columns null. Decision #1 proven on a live DB.
+    • c-4: the REAL create-path $transaction rolls back ATOMICALLY. A mid-loop
+      fault (thrown after the 1st value insert, before the 2nd, inside the real
+      route's prisma.$transaction) left NEITHER the activity NOR the
+      already-written value row — outcome A, the partial-write case the mocked
+      $transaction in T-P2.3 could never prove. POST returned 500 with the
+      injected fault (right-reason guard), beforeCount=0, survivingValues=[].
+  HONEST SCOPE: route-handler invocation with stubbed session — HTTP/middleware/
+  auth NOT exercised (auth covered by route unit tests). Throwaway fault was
+  reverted (write-field-values.ts clean, T-P2.2 re-run green); throwaway test
+  files + config deleted; .env.local restored; login/page.tsx never modified.
+
+- **STILL OWED: c-1/c-2 (browser render of admin UI + logging UX).** Remain
+  jsdom-verified only. The local credentials-login path needed to reach them in
+  a browser is blocked: login/page.tsx hard-codes signIn("quikit") (would need a
+  committed-code edit we declined), and the user's account resolves to MoreYeahs
+  as 'member' (non-admin) with no quikcrm app-access. Real browser pass owed once
+  the integration team provides a from-zero provisioning path / known-good base
+  dump (finding a) AND an admin-capable login. NOT "close gate complete."
+
+
+
 ---
 
 ## WORKING DISCIPLINE (from the CredFlow build — these prevented real failures)
