@@ -4,7 +4,10 @@ import { z } from "zod";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import { db } from "@/lib/db";
-import { ADMIN_TIER_ROLES, TRIAL_DURATION_DAYS } from "@quikit/shared";
+import { ADMIN_TIER_ROLES, TRIAL_DURATION_DAYS, MEMBERSHIP_ROLES } from "@quikit/shared";
+import { provisionAppRoles } from "@/lib/provisionAppRoles";
+import { seedDefaultDisabledModuleFlags } from "@/lib/seedDefaultModuleFlags";
+import { invalidateDisabledModules } from "@quikit/auth/feature-gate";
 
 /**
  * POST /api/org/apps/activate
@@ -61,7 +64,7 @@ export async function POST(req: NextRequest) {
 
   const app = await db.app.findUnique({
     where: { slug: appSlug },
-    select: { id: true, slug: true, status: true },
+    select: { id: true, slug: true, status: true, baseUrl: true },
   });
   if (!app || app.status === "disabled") {
     return NextResponse.json({ success: false, error: "Unknown or disabled app" }, { status: 404 });
@@ -71,11 +74,54 @@ export async function POST(req: NextRequest) {
   // no trial → trialEndsAt null → treated as active.
   const trialEndsAt = upgrade ? null : new Date(Date.now() + TRIAL_DURATION_DAYS * 24 * 60 * 60 * 1000);
 
+  // Every Org Admin of this tenant is provisioned alongside the activation, so
+  // a self-serve trial assigns the app + roles + permissions exactly the way a
+  // super-admin assignment does (POST /api/super/org-app-access/:orgId and the
+  // invitation-accept grant). The activating admin is always in this set.
+  const adminMembers = await db.orgMember.findMany({
+    where: { orgId, role: MEMBERSHIP_ROLES.ORG_ADMIN, status: "active" },
+    select: { userId: true },
+  });
+  const adminUserIds = adminMembers.map((m) => m.userId);
+
   await db.orgAppAccess.upsert({
     where: { orgId_appId: { orgId, appId: app.id } },
     update: { enabled: true, trialEndsAt, updatedBy: userId },
     create: { orgId, appId: app.id, enabled: true, trialEndsAt, updatedBy: userId },
   });
+
+  // 1. Per-user access (UserAppAccess) for every Org Admin. This is the record
+  //    that populates the app's user-management list and the per-user role
+  //    hint — mirrors the invitation-accept grant. Idempotent.
+  if (adminUserIds.length > 0) {
+    await db.userAppAccess.createMany({
+      data: adminUserIds.map((uid) => ({
+        userId: uid,
+        orgId,
+        appId: app.id,
+        role: "admin",
+        grantedBy: userId,
+      })),
+      skipDuplicates: true,
+    });
+  }
+
+  // 2. Seed the app's own RBAC (AppRole / RolePermission) and bind every Org
+  //    Admin to the seeded admin AppRole via UserAppRole. Fire-and-forget HTTP
+  //    to the app's /api/internal/provision-roles; the app's lazy seed on
+  //    first load remains the in-process fallback. Apps without a provision
+  //    endpoint are silently skipped inside the helper.
+  void provisionAppRoles({ slug: app.slug, baseUrl: app.baseUrl }, orgId, adminUserIds);
+
+  // 3. Persist the app's "off by default" modules as explicit per-org rows and
+  //    bust the module-gate cache — same as the super-admin grant.
+  await seedDefaultDisabledModuleFlags(db, {
+    orgId,
+    appId: app.id,
+    appSlug: app.slug,
+    actorId: userId,
+  });
+  await invalidateDisabledModules(orgId, app.slug);
 
   // Auto-activate the Admin Portal alongside the first activated app (free —
   // no trial). Skip if the activated app IS the Admin Portal.
@@ -90,6 +136,20 @@ export async function POST(req: NextRequest) {
         update: { enabled: true },
         create: { orgId, appId: adminApp.id, enabled: true, trialEndsAt: null, updatedBy: userId },
       });
+      // Grant the Org Admins per-user access to the Admin Portal too, so it
+      // behaves like any other assigned app in their user list.
+      if (adminUserIds.length > 0) {
+        await db.userAppAccess.createMany({
+          data: adminUserIds.map((uid) => ({
+            userId: uid,
+            orgId,
+            appId: adminApp.id,
+            role: "admin",
+            grantedBy: userId,
+          })),
+          skipDuplicates: true,
+        });
+      }
     }
   }
 

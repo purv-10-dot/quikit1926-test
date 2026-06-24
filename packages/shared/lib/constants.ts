@@ -195,6 +195,12 @@ export const DEFAULT_REGISTRATION_APP_SLUGS = ["quikcrm", "quiktrack", "admin"] 
 // Length of the free trial granted to a newly self-registered workspace.
 export const TRIAL_DURATION_DAYS = 14;
 
+// "Surprise gift" promo — when an app's trial has expired, the launcher offers a
+// one-click gift that re-opens the trial for this many days (an extra month).
+// Server-authoritative: the claim endpoint always uses THIS value, never a
+// client-supplied one. Applies to every app uniformly.
+export const SURPRISE_GIFT_TRIAL_DAYS = 30;
+
 // Subscription.status value space. `trialing` + a future trialEndsAt grants
 // access; an expired trial or any of past_due/canceled/expired gates the org.
 // An org with NO Subscription row is grandfathered (treated as active).

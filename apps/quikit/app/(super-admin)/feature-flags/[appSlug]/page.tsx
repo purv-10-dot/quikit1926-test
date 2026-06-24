@@ -17,6 +17,7 @@ import { getAppConfig } from "@quikit/shared/moduleRegistry";
 
 const APP_LABELS: Record<string, string> = {
   quikscale: "QuikScale",
+  quikinfra: "QuikInfra",
   admin: "Admin Portal",
 };
 

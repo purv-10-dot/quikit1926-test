@@ -118,6 +118,91 @@ export const MODULE_REGISTRY: AppModuleConfig[] = [
     ],
   },
   {
+    // QuikInfra — construction ERP. Order + sections mirror the QuikInfra
+    // sidebar (CONSTRUCTION_NAV in apps/quikinfra/src/components/QuikInfraShell.tsx).
+    // Keep this in sync with that nav so the super-admin toggle tree reads
+    // like the menu users already know.
+    appSlug: "quikinfra",
+    modules: [
+      { key: "dashboard", label: "Dashboard", icon: "LayoutDashboard", href: "/dashboard" },
+
+      /* ─── Admin / Setup ─── */
+      { key: "organization", label: "Organization", icon: "Globe", section: "Admin / Setup" },
+      { key: "organization.companies", label: "Companies", icon: "Globe", href: "/masters/companies", parentKey: "organization" },
+      { key: "organization.departments", label: "Departments", icon: "Building2", href: "/masters/departments", parentKey: "organization" },
+      { key: "organization.gst", label: "GST Codes", icon: "Receipt", href: "/masters/gst", parentKey: "organization" },
+      { key: "organization.tds", label: "TDS Codes", icon: "CreditCard", href: "/masters/tds", parentKey: "organization" },
+      { key: "organization.uom", label: "UOM", icon: "Calculator", href: "/masters/uom", parentKey: "organization" },
+      { key: "organization.workCategories", label: "Work Categories", icon: "ListTodo", href: "/masters/work-categories", parentKey: "organization" },
+      { key: "organization.terms", label: "Terms & Conditions", icon: "FileText", href: "/masters/terms", parentKey: "organization" },
+
+      /* ─── Master Data ─── */
+      { key: "masters", label: "Masters", icon: "Database", section: "Master Data" },
+      { key: "masters.customers", label: "Customers", icon: "Building2", href: "/masters/customers", parentKey: "masters" },
+      { key: "masters.projects", label: "Projects", icon: "FolderKanban", href: "/masters/projects", parentKey: "masters" },
+      { key: "masters.itemGroups", label: "Item Groups", icon: "Boxes", href: "/masters/item-groups", parentKey: "masters" },
+      { key: "masters.items", label: "Items / Materials", icon: "Package", href: "/masters/items", parentKey: "masters" },
+      { key: "masters.vendors", label: "Vendors", icon: "Truck", href: "/masters/vendors", parentKey: "masters" },
+      { key: "masters.contractors", label: "Contractors", icon: "HardHat", href: "/masters/contractors", parentKey: "masters" },
+      { key: "masters.locations", label: "Locations / Sites", icon: "MapPin", href: "/masters/locations", parentKey: "masters" },
+      { key: "masters.machinery", label: "Machinery", icon: "Hammer", href: "/masters/machinery", parentKey: "masters" },
+      { key: "masters.assets", label: "Assets / Tools", icon: "Wrench", href: "/masters/assets", parentKey: "masters" },
+      { key: "masters.costCenters", label: "Cost Centers", icon: "BarChart3", href: "/masters/cost-centers", parentKey: "masters" },
+
+      /* ─── Projects ─── */
+      { key: "projectMgmt", label: "Project Mgmt", icon: "FolderKanban", section: "Projects" },
+      { key: "projectMgmt.boq", label: "BOQ", icon: "FileSpreadsheet", href: "/projects/boq", parentKey: "projectMgmt" },
+      { key: "projectMgmt.wbs", label: "WBS & Planning", icon: "ListTree", href: "/projects/wbs", parentKey: "projectMgmt" },
+      { key: "projectMgmt.estimation", label: "Material Estimation", icon: "Calculator", href: "/projects/estimation", parentKey: "projectMgmt" },
+      { key: "projectMgmt.workOrders", label: "Work Orders", icon: "Hammer", href: "/projects/work-orders", parentKey: "projectMgmt" },
+      { key: "projectMgmt.dpr", label: "Daily Progress (DPR)", icon: "CalendarCheck", href: "/projects/dpr", parentKey: "projectMgmt" },
+      { key: "projectMgmt.gantt", label: "Gantt View", icon: "GanttChart", href: "/projects/gantt", parentKey: "projectMgmt" },
+      { key: "projectMgmt.hindrance", label: "Hindrance Register", icon: "AlertTriangle", href: "/projects/hindrance", parentKey: "projectMgmt" },
+      { key: "projectMgmt.documents", label: "Documents", icon: "FileText", href: "/projects/documents", parentKey: "projectMgmt" },
+
+      /* ─── Procurement ─── */
+      { key: "purchase", label: "Purchase", icon: "ShoppingCart", section: "Procurement" },
+      { key: "purchase.requisitions", label: "Purchase Requisitions", icon: "ClipboardList", href: "/purchase/requisitions", parentKey: "purchase" },
+      { key: "purchase.indents", label: "Indents", icon: "FileText", href: "/purchase/indents", parentKey: "purchase" },
+      { key: "purchase.rfqs", label: "RFQ", icon: "GitCompareArrows", href: "/purchase/rfqs", parentKey: "purchase" },
+      { key: "purchase.quoteAnalysis", label: "Quote Analysis & Shortlist", icon: "ClipboardCheck", href: "/purchase/quote-analysis", parentKey: "purchase" },
+      { key: "purchase.orders", label: "Purchase Orders", icon: "FileSpreadsheet", href: "/purchase/orders", parentKey: "purchase" },
+
+      /* ─── Inventory ─── */
+      { key: "store", label: "Store", icon: "Warehouse", section: "Inventory" },
+      { key: "store.grn", label: "GRN", icon: "BadgeCheck", href: "/store/grn", parentKey: "store" },
+      { key: "store.stockRegister", label: "Stock Register", icon: "BarChart3", href: "/store/stock-register", parentKey: "store" },
+      { key: "store.issue", label: "Material Issue", icon: "Package", href: "/store/issue", parentKey: "store" },
+      { key: "store.gatePass", label: "Gate Pass", icon: "ClipboardList", href: "/store/gate-pass", parentKey: "store" },
+      { key: "store.goodReturn", label: "Good Return", icon: "ArrowLeftRight", href: "/store/good-return", parentKey: "store" },
+      { key: "store.transfer", label: "Stock Transfer", icon: "ArrowLeftRight", href: "/store/transfer", parentKey: "store" },
+      { key: "store.reconciliation", label: "Stock Reconciliation", icon: "FileBarChart2", href: "/store/reconciliation", parentKey: "store" },
+      { key: "store.diesel", label: "Diesel Log", icon: "Fuel", href: "/store/diesel-log", parentKey: "store" },
+      { key: "store.assetManagement", label: "Asset Management", icon: "Wrench", href: "/store/asset-management", parentKey: "store" },
+
+      /* ─── Quality & Safety ─── */
+      { key: "qualitySafety", label: "Quality & Safety", icon: "ShieldCheck", section: "Quality & Safety" },
+      { key: "qualitySafety.inspection", label: "Inspection/Checklist", icon: "ClipboardCheck", href: "/quality", parentKey: "qualitySafety" },
+      { key: "qualitySafety.incidents", label: "Incidents", icon: "AlertTriangle", href: "/safety/incidents", parentKey: "qualitySafety" },
+      { key: "qualitySafety.toolbox", label: "Toolbox Talks", icon: "MessageSquare", href: "/safety/toolbox-talks", parentKey: "qualitySafety" },
+
+      /* ─── Finance ─── */
+      { key: "finance", label: "Finance", icon: "CreditCard", section: "Finance" },
+      { key: "finance.raBills", label: "RA Bills (Sub-Contractor)", icon: "FileSpreadsheet", href: "/finance/ra-bills", parentKey: "finance" },
+      { key: "finance.vendorPayments", label: "Vendor Payments", icon: "CreditCard", href: "/finance/vendor-payments", parentKey: "finance" },
+      { key: "finance.clientBilling", label: "Client Billing", icon: "Receipt", href: "/finance/client-billing", parentKey: "finance" },
+      { key: "finance.pettyCash", label: "Petty Cash", icon: "Wallet", href: "/finance/petty-cash", parentKey: "finance" },
+      { key: "finance.retention", label: "Retention & SD", icon: "ShieldCheck", href: "/finance/retention", parentKey: "finance" },
+
+      /* ─── System ─── */
+      { key: "approvals", label: "Approvals", icon: "CheckCircle2", href: "/approvals", section: "System" },
+      { key: "reports", label: "Reports", icon: "FileBarChart2", href: "/reports", section: "System" },
+      { key: "settings", label: "Settings", icon: "Settings", section: "System" },
+      { key: "settings.users", label: "Users", icon: "UserCog", href: "/settings/users", parentKey: "settings" },
+      { key: "settings.workflows", label: "Workflows", icon: "Workflow", href: "/settings/workflows", parentKey: "settings" },
+    ],
+  },
+  {
     appSlug: "admin",
     modules: [
       { key: "overview", label: "Overview", icon: "LayoutDashboard", href: "/dashboard" },
