@@ -20,6 +20,20 @@ export async function getPastWeekFlags(orgId: string) {
 }
 
 /**
+ * Server-side read of the `add_past_quarter_habit` flag for a tenant. When
+ * off (the default), `POST /api/habits` rejects assessments for quarters
+ * whose configured period has already ended — mirroring how
+ * `getPastWeekFlags` guards past-week KPI/priority writes.
+ */
+export async function getCanAddPastQuarterHabit(orgId: string): Promise<boolean> {
+  const flag = await db.featureFlag.findFirst({
+    where: { orgId, key: "add_past_quarter_habit" },
+    select: { enabled: true },
+  });
+  return flag?.enabled ?? false;
+}
+
+/**
  * Returns the current fiscal week for a given (year, quarter) using the
  * QuarterSetting DB record as the source of truth.
  *

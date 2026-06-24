@@ -1,8 +1,9 @@
 "use client";
 
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useMemo } from "react";
 import { useCreateKPI, useUpdateKPI } from "@/lib/hooks/useKPI";
 import { useUsers } from "@/lib/hooks/useUsers";
+import { useInfiniteUsers } from "@/lib/hooks/useInfiniteUsers";
 import { useTeams } from "@/lib/hooks/useTeams";
 import { useCanEditKPI } from "@/lib/hooks/useCanEditKPI";
 import { humanizeApiError } from "@/lib/utils/humanizeError";
@@ -21,6 +22,7 @@ import {
   buildOwnerBreakdown,
   redistributeOwnerRemainder,
   distributeContributionsEven,
+  applyWeeklyEdit,
   type DivisionType,
 } from "./kpiModalHelpers";
 import { WeeklyScroller } from "./WeeklyScroller";
@@ -110,10 +112,29 @@ export function KPIModal({ mode, kpi, scope, teamId, defaultYear, defaultQuarter
     };
   });
 
-  // In team scope, filter users to members of the selected team
-  const { data: allUsers = [] } = useUsers();
+  // Team scope: owners are members of the selected team (bounded list) — keep
+  // load-all. Individual scope: owner is picked from ALL org users, so use a
+  // DB-level infinite picker (25/page + server search) instead of loading the
+  // whole org. The single-owner picker (non-team) consumes `infiniteOwners`;
+  // the team multi-select + contribution rows consume the bounded `teamMembers`.
   const { data: teamMembers = [] } = useUsers(isTeamScope ? (form.teamId || undefined) : undefined);
-  const users = isTeamScope ? teamMembers : allUsers;
+  const [ownerSearch, setOwnerSearch] = useState("");
+  const infiniteOwners = useInfiniteUsers(undefined, ownerSearch);
+  const users = isTeamScope ? teamMembers : infiniteOwners.users;
+  // Seed the current owner so the (edit-mode, disabled) picker shows their name
+  // even when they're not in the first loaded page.
+  const ownerSeed = useMemo(
+    () =>
+      kpi?.owner_user
+        ? [{
+            id: kpi.owner_user.id,
+            firstName: kpi.owner_user.firstName,
+            lastName: kpi.owner_user.lastName,
+            email: (kpi.owner_user as { email?: string }).email ?? "",
+          }]
+        : [],
+    [kpi?.owner_user],
+  );
   const { data: teams = [] } = useTeams();
   const currentTeam = teams.find(t => t.id === form.teamId);
   const [errors, setErrors] = useState<Record<string, string>>({});
@@ -476,46 +497,12 @@ export function KPIModal({ mode, kpi, scope, teamId, defaultYear, defaultQuarter
   }
 
   function setWeekBreakdown(w: number, rawVal: string) {
-    setForm(f => {
-      // Clamp: no negatives, and cannot exceed remaining budget (target - sum of prior weeks)
-      const targetNum = actualNum(f);
-      const isWhole = f.measurementUnit === "Number";
-      let priorSum = 0;
-      for (let i = 1; i < w; i++) priorSum += parseFloat(String(f.weeklyBreakdown[i])) || 0;
-      const maxAllowed = Math.max(0, targetNum - priorSum);
-
-      let parsed = parseFloat(rawVal);
-      if (rawVal === "" || isNaN(parsed)) parsed = 0;
-      if (parsed < 0) parsed = 0;
-      if (f.divisionType === "Cumulative" && parsed > maxAllowed) parsed = maxAllowed;
-
-      const val = rawVal === "" ? "" : (isWhole ? String(Math.round(parsed)) : parsed.toFixed(2));
-      const newBreakdown = { ...f.weeklyBreakdown, [w]: val };
-      if (f.divisionType !== "Cumulative") return { ...f, weeklyBreakdown: newBreakdown };
-
-      // Recalculate leftSum including the capped value
-      let leftSum = 0;
-      for (let i = 1; i <= w; i++) leftSum += parseFloat(String(newBreakdown[i])) || 0;
-
-      const remaining = Math.max(0, targetNum - leftSum);
-      const rightCount = 13 - w;
-      if (rightCount <= 0) return { ...f, weeklyBreakdown: newBreakdown };
-
-      if (isWhole) {
-        // Number unit: each editable week gets floor(remaining/rightCount);
-        // Week 13 absorbs the entire flooring residue.
-        const base = Math.floor(remaining / rightCount);
-        for (let i = w + 1; i <= 13; i++) {
-          newBreakdown[i] = String(i === 13 ? Math.round(remaining - base * (rightCount - 1)) : base);
-        }
-      } else {
-        const base = parseFloat((remaining / rightCount).toFixed(2));
-        const diff = parseFloat((remaining - base * rightCount).toFixed(2));
-        for (let i = w + 1; i <= 13; i++) newBreakdown[i] = base.toFixed(2);
-        newBreakdown[13] = (base + diff).toFixed(2);
-      }
-      return { ...f, weeklyBreakdown: newBreakdown };
-    });
+    // Shared with the OPSP export so both redistribute identically — see
+    // `applyWeeklyEdit` in kpiModalHelpers. `actualNum` applies the currency scale.
+    setForm(f => ({
+      ...f,
+      weeklyBreakdown: applyWeeklyEdit(f.weeklyBreakdown, w, rawVal, actualNum(f), f.measurementUnit, f.divisionType),
+    }));
   }
 
   function validate() {
@@ -818,7 +805,19 @@ export function KPIModal({ mode, kpi, scope, teamId, defaultYear, defaultQuarter
                 <label className="block text-xs font-medium text-gray-600 mb-1">
                   Owner <span className="text-red-500">*</span>
                 </label>
-                <UserPicker value={form.owner} onChange={v => set("owner", v)} users={users} error={!!errors.owner} disabled={mode === "edit"} />
+                <UserPicker
+                  value={form.owner}
+                  onChange={v => set("owner", v)}
+                  users={users}
+                  selectedUsers={ownerSeed}
+                  onSearchChange={setOwnerSearch}
+                  onLoadMore={infiniteOwners.fetchNextPage}
+                  hasMore={infiniteOwners.hasNextPage}
+                  loadingMore={infiniteOwners.isFetchingNextPage}
+                  loading={infiniteOwners.isLoading}
+                  error={!!errors.owner}
+                  disabled={mode === "edit"}
+                />
                 {errors.owner && <p className="text-[10px] text-red-500 mt-0.5">{errors.owner}</p>}
               </div>
             )}

@@ -8,7 +8,9 @@ import {
   fiscalYearLabel,
   QUARTER_STARTS,
 } from "@/lib/utils/fiscal";
-import { achievedPctColor, formatReviewValue } from "./helpers";
+import { achievedPctColor, formatReviewValue, showOpspReviewOwnerColumn } from "./helpers";
+import { reviewRowVisible } from "./reviewRows";
+import { ReviewPeriodPicker } from "./ReviewPeriodPicker";
 import { CATEGORY_TYPE_LABELS, type CategoryType } from "@/lib/utils/breakdownCalc";
 import { CriticalReviewSection } from "./CriticalReviewSection";
 
@@ -23,6 +25,8 @@ import {
 } from "@quikit/ui";
 import { Clock, FileText, X, RotateCcw, AlertTriangle, History } from "lucide-react";
 import { useResourcePermissions } from "@/lib/hooks/useResourcePermissions";
+import { useMyPermissions } from "@/lib/hooks/useMyPermissions";
+import { resolveReviewAccess } from "./lib/reviewAccess";
 import { AuditLogDrawer } from "@/components/logs/audit-log-drawer";
 import { OPSPHistoryDrawer } from "../components/OPSPHistoryDrawer";
 import { OPSP_FIELD_LABELS } from "@/lib/utils/auditLog";
@@ -194,9 +198,6 @@ import {
   statusLabel as getStatusLabel,
 } from "@/lib/constants/status";
 
-const CURRENT_YEAR = new Date().getFullYear();
-const FISCAL_YEARS = Array.from({ length: 5 }, (_, i) => CURRENT_YEAR - 1 + i);
-
 /* ═══════════════════════════════════════════════
    Helpers
    ═══════════════════════════════════════════════ */
@@ -342,7 +343,7 @@ function buildTableRows(
   const collapse = horizon === "yearly" || horizon === "3to5year";
 
   for (const row of rows) {
-    if (!row.category.trim()) continue;
+    if (!reviewRowVisible(row)) continue;
 
     // Build the (target, achieved) pairs in period order — both horizons use
     // them to compute the aggregate, the Quarter horizon also emits one
@@ -467,6 +468,17 @@ function computeYearGrowth(
 
 export default function OPSPReviewPage() {
   const { canUpdate: canUpdateReview } = useResourcePermissions("OPSP.Review");
+  const { canUpdate: canUpdateCritical } = useResourcePermissions("OPSP.Review.Critical");
+  // Permission-driven access: full (OPSP.Review/admin), critical-only (just
+  // Critical Review), or none. Drives tab/scope visibility + the picker.
+  const myPerms = useMyPermissions();
+  const access = resolveReviewAccess({
+    isAdmin: myPerms.isAdmin,
+    hasReview: myPerms.has("OPSP.Review", "view"),
+    hasCritical: myPerms.has("OPSP.Review.Critical", "view"),
+    canEditUser: myPerms.has("OPSP.EditUser", "update"),
+  });
+  const accessReady = !myPerms.loading;
   const [year, setYear] = useState(getFiscalYear);
   const [quarter, setQuarter] = useState<string>(getFiscalQuarter);
   const [horizon, setHorizon] = useState<Horizon>("quarter");
@@ -493,11 +505,8 @@ export default function OPSPReviewPage() {
   const primarySel = useRowSelection();
   const secondarySel = useRowSelection();
 
-  // Year/Quarter picker
-  const [showYearPicker, setShowYearPicker] = useState(false);
   // OPSP edit-after-finalize history (read-only) — same drawer as the editor.
   const [editHistoryOpen, setEditHistoryOpen] = useState(false);
-  const yearRef = useRef<HTMLDivElement>(null);
 
   /* ── Post-finalize "what changed" highlight ──
      Fetch the edit-log, highlight the Review rows whose source field changed
@@ -560,15 +569,6 @@ export default function OPSPReviewPage() {
   // Secondary local edits
   const [secondaryEdits, setSecondaryEdits] = useState<Record<number, { status: string; comment: string }>>({});
 
-  // Close year picker on outside click
-  useEffect(() => {
-    function handler(e: MouseEvent) {
-      if (yearRef.current && !yearRef.current.contains(e.target as Node)) setShowYearPicker(false);
-    }
-    document.addEventListener("mousedown", handler);
-    return () => document.removeEventListener("mousedown", handler);
-  }, []);
-
   /* ── Load data ── */
   const loadData = useCallback(async () => {
     setLoading(true);
@@ -630,7 +630,7 @@ export default function OPSPReviewPage() {
   }, [secondaryTableRows, search]);
 
   const itemCount = viewMode === "primary"
-    ? (data?.rows?.filter((r) => r.category.trim()).length ?? 0)
+    ? (data?.rows?.filter(reviewRowVisible).length ?? 0)
     : secondaryTableRows.length;
 
   const labels = HORIZON_LABELS[horizon];
@@ -907,10 +907,10 @@ export default function OPSPReviewPage() {
       align: "center",
       render: (row) => {
         if (!row.isFirstInGroup) return null;
-        // On Yearly / 3-5yr the row is read-only (Achieved is derived from
-        // the lower horizon) — render as plain text instead of an edit
-        // button so the modal can't be opened.
-        if (horizon !== "quarter") {
+        // Read-only as plain text when: Yearly/3-5yr (Achieved is derived from
+        // the lower horizon) OR the user lacks OPSP.Review:update. Only an
+        // update-holder editing the Quarter source gets the edit button.
+        if (horizon !== "quarter" || !canUpdateReview) {
           return <span className="text-gray-700 font-medium">{row.rowIndex + 1}</span>;
         }
         return (
@@ -1047,7 +1047,7 @@ export default function OPSPReviewPage() {
     // row in those views, so the column adds no info (and the categoryType
     // label "Cumulative / Exit / Average" already lives in the Cat Type column).
     return horizon === "quarter" ? cols : cols.filter((c) => c.key !== "period");
-  }, [primarySel, primaryCategoryIdxs, horizon, openPrimaryModal]);
+  }, [primarySel, primaryCategoryIdxs, horizon, openPrimaryModal, canUpdateReview]);
 
   const secondaryIdxs = useMemo(
     () => filteredSecondary.map((r) => r.index),
@@ -1104,19 +1104,36 @@ export default function OPSPReviewPage() {
       label: "#",
       width: 44,
       align: "center",
+      render: (row) =>
+        canUpdateReview ? (
+          <button
+            onClick={() => openSecondaryModal(row.index)}
+            className="text-gray-900 hover:underline font-medium"
+          >
+            {row.index + 1}
+          </button>
+        ) : (
+          <span className="text-gray-700 font-medium">{row.index + 1}</span>
+        ),
+    },
+    {
+      // Owner ("Who") — resolved server-side into `ownerName`. Hidden for the
+      // 3–5yr (Key Thrusts) horizon by the filter below, matching the Create page.
+      key: "who",
+      label: "Who",
+      width: 160,
+      align: "left",
       render: (row) => (
-        <button
-          onClick={() => openSecondaryModal(row.index)}
-          className="text-gray-900 hover:underline font-medium"
-        >
-          {row.index + 1}
-        </button>
+        <span className={cn("truncate block text-gray-700", !row.ownerName && "text-gray-400")}>
+          {row.ownerName || "—"}
+        </span>
       ),
     },
     {
       key: "desc",
       label: "Description",
       width: 280,
+      align: "left",
       render: (row) => (
         <span className="text-gray-800 truncate block">{row.desc}</span>
       ),
@@ -1151,12 +1168,43 @@ export default function OPSPReviewPage() {
     ];
     // 3-5yr (Key Thrusts) — owner column intentionally hidden per spec; the
     // capability rows on this horizon don't carry per-row ownership.
-    return horizon === "3to5year" ? cols.filter((c) => c.key !== "who") : cols;
-  }, [secondarySel, secondaryIdxs, horizon, openSecondaryModal]);
+    return showOpspReviewOwnerColumn(horizon) ? cols : cols.filter((c) => c.key !== "who");
+  }, [secondarySel, secondaryIdxs, horizon, openSecondaryModal, canUpdateReview]);
 
   /* ═══════════════════════════════════════════════
      Render
      ═══════════════════════════════════════════════ */
+
+  const selfName = (sessionData?.user as { name?: string } | undefined)?.name ?? "Me";
+
+  // ── Critical-Review-only audience (e.g. a default member): a focused page
+  //    showing only their own Individual Critical # & Balanced Critical #.
+  //    No Review tab, no Year/Quarter scopes, no user-picker. ──
+  if (accessReady && access.mode === "critical-only") {
+    return (
+      <div className="flex flex-col h-full">
+        <div className="flex items-center justify-between px-6 py-3 border-b border-gray-200 bg-white flex-shrink-0">
+          <h1 className="text-base font-semibold text-gray-800 whitespace-nowrap">Critical Review</h1>
+          <ReviewPeriodPicker
+            year={year}
+            quarter={quarter}
+            onChange={(y, q) => { setYear(y); setQuarter(q); }}
+          />
+        </div>
+        <div className="flex-1 overflow-hidden min-h-0">
+          <CriticalReviewSection
+            year={year}
+            quarter={quarter}
+            allowedModules={["people"]}
+            canPickUser={false}
+            canEdit={canUpdateCritical}
+            selfId={reviewUserId}
+            selfName={selfName}
+          />
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="flex flex-col h-full">
@@ -1244,51 +1292,13 @@ export default function OPSPReviewPage() {
             <History className="h-4 w-4" />
           </button>
 
-          {/* Year / Quarter picker (shared across Review + Critical Review tabs) */}
-          <div className="relative" ref={yearRef}>
-            <button
-              onClick={() => setShowYearPicker((o) => !o)}
-              className={cn(
-                "flex items-center gap-1.5 px-2.5 py-1.5 text-xs border rounded-md hover:bg-gray-50 transition-colors",
-                showYearPicker ? "border-accent-300 bg-accent-50 text-accent-600" : "border-gray-200 text-gray-600",
-              )}
-            >
-              <svg className="h-3.5 w-3.5 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
-              </svg>
-              {fiscalYearLabel(year)} · {quarter}
-              <svg className="h-3 w-3 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
-              </svg>
-            </button>
-
-            {showYearPicker && (
-              <div className="absolute top-full right-0 mt-1.5 w-64 bg-white border border-gray-200 rounded-xl shadow-xl z-50 p-4 space-y-4">
-                <div>
-                  <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider mb-2">Fiscal Year</p>
-                  <div className="grid grid-cols-1 gap-1">
-                    {FISCAL_YEARS.map((y) => (
-                      <button key={y} onClick={() => setYear(y)}
-                        className={cn("text-xs px-3 py-1.5 rounded-lg text-left transition-colors", year === y ? "bg-gray-900 text-white" : "hover:bg-gray-50 text-gray-700")}>
-                        {fiscalYearLabel(y)}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-                <div>
-                  <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider mb-2">Quarter</p>
-                  <div className="grid grid-cols-4 gap-1">
-                    {(["Q1", "Q2", "Q3", "Q4"] as const).map((q) => (
-                      <button key={q} onClick={() => { setQuarter(q); setShowYearPicker(false); }}
-                        className={cn("text-xs px-2 py-1.5 rounded-lg transition-colors", quarter === q ? "bg-gray-900 text-white" : "hover:bg-gray-50 text-gray-700 border border-gray-200")}>
-                        {q}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-              </div>
-            )}
-          </div>
+          {/* Year / Quarter picker — shared component (also used in the
+              critical-only mode above). */}
+          <ReviewPeriodPicker
+            year={year}
+            quarter={quarter}
+            onChange={(y, q) => { setYear(y); setQuarter(q); }}
+          />
         </div>
       </div>
 
@@ -1298,7 +1308,9 @@ export default function OPSPReviewPage() {
           {([
             { key: "review",   label: "Review" },
             { key: "critical", label: "Critical # Review" },
-          ] as { key: TopTab; label: string }[]).map((tab) => (
+          ] as { key: TopTab; label: string }[])
+            .filter((tab) => (tab.key === "critical" ? access.showCriticalTab : access.showReviewTab))
+            .map((tab) => (
             <button
               key={tab.key}
               onClick={() => setTopTab(tab.key)}
@@ -1341,7 +1353,15 @@ export default function OPSPReviewPage() {
             Review tab's content area. Owns its own data fetch + sub-tabs. ── */}
       {topTab === "critical" && (
         <div className="flex-1 overflow-hidden min-h-0">
-          <CriticalReviewSection year={year} quarter={quarter} />
+          <CriticalReviewSection
+            year={year}
+            quarter={quarter}
+            allowedModules={access.allowedCriticalModules}
+            canPickUser={access.canPickUser}
+            canEdit={canUpdateCritical}
+            selfId={reviewUserId}
+            selfName={selfName}
+          />
         </div>
       )}
 

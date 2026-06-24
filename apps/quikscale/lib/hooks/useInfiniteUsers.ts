@@ -29,14 +29,14 @@ interface PaginatedUsersResponse {
 
 export const USERS_PAGE_SIZE = 25;
 
-async function fetchUsersPage(opts: { teamId?: string; search?: string; page: number }): Promise<PaginatedUsersResponse> {
+async function fetchUsersPage(opts: { teamId?: string; search?: string; page: number; signal?: AbortSignal }): Promise<PaginatedUsersResponse> {
   const params = new URLSearchParams();
   params.set("page", String(opts.page));
   params.set("limit", String(USERS_PAGE_SIZE));
   params.set("sortBy", "firstName");
   if (opts.teamId) params.set("teamId", opts.teamId);
   if (opts.search) params.set("search", opts.search);
-  const res = await fetch(`/api/users?${params.toString()}`);
+  const res = await fetch(`/api/users?${params.toString()}`, { signal: opts.signal });
   const data = (await res.json()) as PaginatedUsersResponse;
   if (!data.success) throw new Error(data.error || "Failed to fetch users");
   return data;
@@ -53,7 +53,7 @@ export function useInfiniteUsers(teamId?: string, search?: string) {
   const normalizedSearch = (search ?? "").trim();
   const query = useInfiniteQuery({
     queryKey: ["users-infinite", teamId ?? "all", normalizedSearch],
-    queryFn: ({ pageParam }) => fetchUsersPage({ teamId, search: normalizedSearch, page: pageParam }),
+    queryFn: ({ pageParam, signal }) => fetchUsersPage({ teamId, search: normalizedSearch, page: pageParam, signal }),
     initialPageParam: 1,
     getNextPageParam: (lastPage) => {
       const { page, totalPages } = lastPage.meta;

@@ -5,6 +5,8 @@ import { isOrgAdmin, forbidden } from "@/lib/api/permissions";
 import { launchCampaignSchema } from "@/lib/schemas/habitSchema";
 import { validationError } from "@/lib/api/validationError";
 import { annotateRounds } from "@/lib/utils/habitRounds";
+import { getCanAddPastQuarterHabit } from "@/lib/utils/featureFlags";
+import { getQuarterPeriodStatus } from "@/lib/utils/habitQuarterPeriod";
 
 const ADMIN_FIELDS = {
   id: true,
@@ -144,6 +146,27 @@ export const POST = withOrgAuth(
     const parsed = launchCampaignSchema.safeParse(await request.json());
     if (!parsed.success) return validationError(parsed);
     const input = parsed.data;
+
+    // Past-quarter gate. If the (year, quarter) maps to a configured
+    // QuarterSetting whose period has already ended, reject unless the
+    // `add_past_quarter_habit` flag is on. Unconfigured quarters can't be
+    // classified, so they fall through (preserves prior behavior).
+    const qs = await db.quarterSetting.findFirst({
+      where: { orgId, fiscalYear: input.year, quarter: input.quarter },
+      select: { startDate: true, endDate: true },
+    });
+    if (qs && getQuarterPeriodStatus(qs.startDate, qs.endDate) === "past") {
+      if (!(await getCanAddPastQuarterHabit(orgId))) {
+        return NextResponse.json(
+          {
+            success: false,
+            error:
+              "Past-quarter assessments are disabled. Enable 'Add Past Quarter Habit' in Settings → Configurations.",
+          },
+          { status: 403 },
+        );
+      }
+    }
 
     const open = await db.habitAssessment.findFirst({
       where: {

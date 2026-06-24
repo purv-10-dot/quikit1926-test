@@ -11,10 +11,24 @@
  *   - `QuarterDropdown` — Q1-Q4 selector with radio-button styling
  */
 
-import { useState, useMemo, useRef, useCallback } from "react";
+import { useState, useMemo, useRef, useCallback, useEffect, createContext, useContext, type ReactNode } from "react";
 import { ChevronDown } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { useUsers } from "@/lib/hooks/useUsers";
+import { useInfiniteUsers } from "@/lib/hooks/useInfiniteUsers";
+
+/**
+ * Owner-id → "First Last" map for the loaded OPSP, supplied by the page from
+ * the GET payload's `ownerNames`. Lets `OwnerSelect` (and the document/export)
+ * render owner names WITHOUT bulk-loading every org user — the dropdown itself
+ * is now an infinite 25/page list.
+ */
+const OPSPOwnerNamesContext = createContext<Record<string, string>>({});
+export function OPSPOwnerNamesProvider({ value, children }: { value: Record<string, string>; children: ReactNode }) {
+  return <OPSPOwnerNamesContext.Provider value={value}>{children}</OPSPOwnerNamesContext.Provider>;
+}
+export function useOPSPOwnerNames(): Record<string, string> {
+  return useContext(OPSPOwnerNamesContext);
+}
 
 export function WithTooltip({
   content,
@@ -53,7 +67,21 @@ export function OwnerSelect({
 }) {
   const [open, setOpen] = useState(false);
   const [search, setSearch] = useState("");
-  const { data: users = [] } = useUsers();
+  // Server-side search, debounced — the dropdown is an infinite 25/page list.
+  const [debouncedSearch, setDebouncedSearch] = useState("");
+  useEffect(() => {
+    const t = setTimeout(() => setDebouncedSearch(search.trim()), 300);
+    return () => clearTimeout(t);
+  }, [search]);
+  const { users, hasNextPage, isFetchingNextPage, fetchNextPage, isLoading } =
+    useInfiniteUsers(undefined, debouncedSearch);
+
+  // Owner names from the OPSP payload (saved owners) + a cache of owners the
+  // user has picked this session. Together with the loaded page these resolve
+  // the trigger label without needing the full user list.
+  const ownerNamesCtx = useOPSPOwnerNames();
+  const [pickedCache, setPickedCache] = useState<Record<string, { firstName: string; lastName: string }>>({});
+
   const triggerRef = useRef<HTMLButtonElement>(null);
   const [dropPos, setDropPos] = useState<{ top?: number; bottom?: number; left: number; width: number }>({ left: 0, width: 208 });
   const [flipUp, setFlipUp] = useState(false);
@@ -71,23 +99,31 @@ export function OwnerSelect({
     }
   }, []);
 
-  const filtered = useMemo(() => {
-    const q = search.toLowerCase();
-    return users.filter(
-      (u) =>
-        `${u.firstName} ${u.lastName}`.toLowerCase().includes(q) ||
-        u.email.toLowerCase().includes(q),
-    );
-  }, [users, search]);
+  // Server already filtered (search) — render the loaded page as-is.
+  const filtered = users;
+
+  // Infinite-scroll: load the next page when scrolled near the bottom.
+  function handleScroll(e: React.UIEvent<HTMLDivElement>) {
+    if (!hasNextPage || isFetchingNextPage) return;
+    const el = e.currentTarget;
+    if (el.scrollHeight - el.scrollTop - el.clientHeight < 40) fetchNextPage();
+  }
 
   const { fullName, initials } = useMemo(() => {
     if (!value) return { fullName: "", initials: "" };
-    const u = users.find((u) => u.id === value);
+    // Resolve from: payload owner names → picked-this-session → loaded page.
+    const ctxName = ownerNamesCtx[value];
+    if (ctxName) {
+      const parts = ctxName.trim().split(/\s+/);
+      const init = `${parts[0]?.[0] ?? ""}${parts.length > 1 ? parts[parts.length - 1][0] : ""}`.toUpperCase();
+      return { fullName: ctxName, initials: init || ctxName.slice(0, 2).toUpperCase() };
+    }
+    const u = pickedCache[value] ?? users.find((x) => x.id === value);
     if (!u) return { fullName: value, initials: value.slice(0, 2).toUpperCase() };
-    const full = `${u.firstName} ${u.lastName}`;
+    const full = `${u.firstName} ${u.lastName}`.trim();
     const init = `${u.firstName[0] ?? ""}${u.lastName[0] ?? ""}`.toUpperCase();
     return { fullName: full, initials: init };
-  }, [users, value]);
+  }, [ownerNamesCtx, pickedCache, users, value]);
 
   return (
     <div className="relative w-full min-w-0">
@@ -132,9 +168,11 @@ export function OwnerSelect({
                 className="w-full text-xs border border-gray-200 rounded px-2 py-1.5 focus:outline-none focus:ring-1 focus:ring-accent-400"
               />
             </div>
-            <div className="max-h-44 overflow-y-auto">
+            <div className="max-h-44 overflow-y-auto" onScroll={handleScroll}>
               {filtered.length === 0 && (
-                <p className="px-3 py-2 text-xs text-gray-400">No users found.</p>
+                <p className="px-3 py-2 text-xs text-gray-400">
+                  {isLoading ? "Loading…" : "No users found."}
+                </p>
               )}
               {filtered.map((u) => {
                 const fullName = `${u.firstName} ${u.lastName}`;
@@ -142,6 +180,9 @@ export function OwnerSelect({
                   <button
                     key={u.id}
                     onClick={() => {
+                      // Cache the picked owner so the trigger keeps their name
+                      // even after the list scrolls/searches away from them.
+                      setPickedCache((prev) => ({ ...prev, [u.id]: { firstName: u.firstName, lastName: u.lastName } }));
                       onChange(u.id);
                       setOpen(false);
                     }}
@@ -157,6 +198,9 @@ export function OwnerSelect({
                   </button>
                 );
               })}
+              {isFetchingNextPage && (
+                <p className="px-3 py-1.5 text-[10px] text-gray-400 text-center border-t border-gray-100">Loading more…</p>
+              )}
             </div>
           </div>
         </>

@@ -1,9 +1,12 @@
 import { NextResponse } from "next/server";
-import type { Prisma } from "@prisma/client";
+import { Prisma, ClientMeetingStatus, ClientMeetingFlag } from "@prisma/client";
 import { db } from "@/lib/db";
 import { withOrgAuthForModule } from "@/lib/api/withOrgAuth";
 import { createWeeklyMeetingSchema } from "@/lib/schemas/clientMeetingsSchema";
+import { audit, requestContext } from "@/lib/audit";
 import { parseSort, type SortDirection } from "@/lib/api/parseSort";
+import { parsePagination, paginatedResponse } from "@/lib/api/pagination";
+import { searchUserIds, dateSearchConditions, timeSearchTokens, matchEnumValues, commaTokens } from "@/lib/api/listSearch";
 
 const withOrgAuth = withOrgAuthForModule("clientMeetings.weeklyMeeting");
 
@@ -58,23 +61,84 @@ export const GET = withOrgAuth(async ({ orgId }, request) => {
     }
     where.meetingDate = range;
   }
+  const search = (url.searchParams.get("search") ?? "").trim();
+  const status = url.searchParams.get("status") || undefined;
+  if (status) where.callStatus = status;
+  if (search) {
+    // Global search across every visible column: client name, notes, Status
+    // (enum) + "other" text, Absent Members + Weekly Dashboard NA (comma-split
+    // relations), Actual Start/End + segment times, the YES/NO/NA flag columns
+    // (Good News / K&P / GAPS / WWW / Feedback / Collective Intel / OPSP Review
+    // / Punctuality), audit users, and the date columns.
+    const actorMatchIds = await searchUserIds(db, search);
+    const memberTokens = commaTokens(search);
+    const tTokens = timeSearchTokens(search);
+    const matchedStatuses = matchEnumValues(Object.values(ClientMeetingStatus), search);
+    const matchedFlags = matchEnumValues(Object.values(ClientMeetingFlag), search);
+    where.OR = [
+      { client: { name: { contains: search, mode: "insensitive" } } },
+      { notesKPDashboard: { contains: search, mode: "insensitive" } },
+      { otherNotes: { contains: search, mode: "insensitive" } },
+      { callStatusOther: { contains: search, mode: "insensitive" } },
+      // Absent Members + Weekly Dashboard NA — match any listed member.
+      ...memberTokens.map((t) => ({ absentTeamMembers: { some: { member: { name: { contains: t, mode: "insensitive" as const } } } } })),
+      ...memberTokens.map((t) => ({ dashboardNATeamMembers: { some: { member: { name: { contains: t, mode: "insensitive" as const } } } } })),
+      // Status (enum → matched values).
+      ...(matchedStatuses.length ? [{ callStatus: { in: matchedStatuses } }] : []),
+      // Actual Start/End + segment time strings.
+      ...tTokens.flatMap((t) => [
+        { actualStartTime: { contains: t, mode: "insensitive" as const } },
+        { actualEndTime: { contains: t, mode: "insensitive" as const } },
+        { segmentTime1: { contains: t, mode: "insensitive" as const } },
+        { segmentTime2: { contains: t, mode: "insensitive" as const } },
+        { segmentTime3: { contains: t, mode: "insensitive" as const } },
+        { segmentTime4: { contains: t, mode: "insensitive" as const } },
+        { segmentTime5: { contains: t, mode: "insensitive" as const } },
+        { segmentTime6: { contains: t, mode: "insensitive" as const } },
+        { segmentTime7: { contains: t, mode: "insensitive" as const } },
+      ]),
+      // YES/NO/NA flag columns.
+      ...(matchedFlags.length
+        ? [
+            { goodNewsSharing: { in: matchedFlags } },
+            { kpDashboard: { in: matchedFlags } },
+            { gaps: { in: matchedFlags } },
+            { www: { in: matchedFlags } },
+            { feedback: { in: matchedFlags } },
+            { collectiveIntelligence: { in: matchedFlags } },
+            { opspReview: { in: matchedFlags } },
+            { punctualityOverride: { in: matchedFlags } },
+          ]
+        : []),
+      ...(actorMatchIds.length
+        ? [{ createdBy: { in: actorMatchIds } }, { updatedBy: { in: actorMatchIds } }]
+        : []),
+      ...dateSearchConditions(["meetingDate", "createdAt", "updatedAt"], search),
+    ];
+  }
 
   const { orderBy } = parseSort(request, WEEKLY_SORT_WHITELIST, mapWeeklySort);
-  const rows = await db.clientWeeklyMeeting.findMany({
-    where,
-    orderBy,
-    include: {
-      client: { select: { id: true, name: true } },
-      absentMembers: true,
-      dashboardNAMembers: true,
-      absentTeamMembers: {
-        include: { member: { select: { id: true, name: true } } },
+  const { page, limit, skip, take } = parsePagination(request);
+  const [rows, total] = await Promise.all([
+    db.clientWeeklyMeeting.findMany({
+      where,
+      orderBy,
+      skip,
+      take,
+      include: {
+        client: { select: { id: true, name: true } },
+        absentMembers: true,
+        dashboardNAMembers: true,
+        absentTeamMembers: {
+          include: { member: { select: { id: true, name: true } } },
+        },
+        dashboardNATeamMembers: {
+          include: { member: { select: { id: true, name: true } } },
+        },
       },
-      dashboardNATeamMembers: {
-        include: { member: { select: { id: true, name: true } } },
-      },
-    },
-  });
+    }),
+    db.clientWeeklyMeeting.count({ where }),
+  ]);
 
   // Resolve createdBy / updatedBy → name + initials for the table's audit columns.
   const actorIds = [...new Set(rows.flatMap((r) => [r.createdBy, r.updatedBy].filter(Boolean) as string[]))];
@@ -88,9 +152,7 @@ export const GET = withOrgAuth(async ({ orgId }, request) => {
     actorMap[u.id] = { name, initials };
   }
 
-  return NextResponse.json({
-    success: true,
-    data: rows.map((r) => ({
+  const data = rows.map((r) => ({
       id: r.id,
       clientId: r.clientId,
       clientName: r.client.name,
@@ -135,8 +197,9 @@ export const GET = withOrgAuth(async ({ orgId }, request) => {
       updatedBy: r.updatedBy,
       updatedByName: r.updatedBy ? (actorMap[r.updatedBy]?.name ?? null) : null,
       updatedByInitials: r.updatedBy ? (actorMap[r.updatedBy]?.initials ?? null) : null,
-    })),
-  });
+    }));
+
+  return NextResponse.json(paginatedResponse(data, total, page, limit));
 });
 
 /** POST — create weekly meeting with absence + dashboardNA links + per-member scores. */
@@ -255,6 +318,37 @@ export const POST = withOrgAuth(async ({ orgId, userId }, request) => {
       }),
       changedBy: userId,
     },
+  });
+
+  // ── Centralized audit (dual-write) ── CREATE with the full post-state
+  // snapshot so the Change History Create card shows all values.
+  await audit.log({
+    entityType: "WEEKLY_MEETING",
+    entityId: created.id,
+    action: "CREATE",
+    actor: { userId, orgId, teamId: null },
+    snapshot: {
+      clientId: created.clientId,
+      clientName: client.name,
+      meetingDate: created.meetingDate.toISOString(),
+      callStatus: created.callStatus,
+      callStatusOther: created.callStatusOther,
+      actualStartTime: created.actualStartTime,
+      actualEndTime: created.actualEndTime,
+      punctualityOverride: created.punctualityOverride,
+      goodNewsSharing: created.goodNewsSharing,
+      kpDashboard: created.kpDashboard,
+      gaps: created.gaps,
+      www: created.www,
+      feedback: created.feedback,
+      collectiveIntelligence: created.collectiveIntelligence,
+      opspReview: created.opspReview,
+      notesKPDashboard: created.notesKPDashboard,
+      otherNotes: created.otherNotes,
+      absentClientMemberIds: d.absentClientMemberIds,
+      dashboardNAClientMemberIds: d.dashboardNAClientMemberIds,
+    },
+    ...requestContext(request),
   });
 
   return NextResponse.json(

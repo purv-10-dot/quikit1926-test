@@ -9,12 +9,24 @@ export interface UseTableCRUDConfig<T extends object> {
   apiEndpoint: string;
   /** Key used as the unique identifier (default: "id") */
   idKey?: keyof T & string;
-  /** Fields to match when filtering by search query */
+  /** Fields to match when filtering by search query (client mode only) */
   searchFields?: (keyof T & string)[];
   /** Optional query params appended to GET, e.g. { year: "2026" } */
   fetchParams?: Record<string, string>;
   /** Transform API response before storing (default: r => r.data) */
   transformResponse?: (json: Record<string, unknown>) => T[];
+  /**
+   * Opt-in DB-level pagination/search/sort. When true the hook sends
+   * `page`/`limit`/`search`/`sortBy`/`sortOrder` to the API, reads
+   * `json.meta` ({ total, totalPages }), and treats `filtered` as the
+   * already-server-filtered page (no client-side filtering). Default false
+   * keeps the legacy client-side behaviour for every existing consumer.
+   */
+  serverPagination?: boolean;
+  /** Initial page size in server mode (default 10). */
+  defaultLimit?: number;
+  /** Initial sort in server mode, "field:asc" | "field:desc". */
+  defaultSort?: string;
 }
 
 export interface UseTableCRUDReturn<T extends object> {
@@ -28,6 +40,16 @@ export interface UseTableCRUDReturn<T extends object> {
   search: string;
   setSearch: (s: string) => void;
   filtered: T[];
+
+  // ── Server pagination (only meaningful when serverPagination is on) ──
+  page: number;
+  setPage: (p: number) => void;
+  limit: number;
+  setLimit: (n: number) => void;
+  total: number;
+  totalPages: number;
+  sort: string;
+  setSort: (s: string) => void;
 
   // ── Panel / form state ──
   panelOpen: boolean;
@@ -67,12 +89,33 @@ export function useTableCRUD<T extends object>(
     searchFields = [],
     fetchParams,
     transformResponse,
+    serverPagination = false,
+    defaultLimit = 10,
+    defaultSort = "",
   } = config;
 
   // ── Core state ──
   const [items, setItems] = useState<T[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
+
+  // ── Server pagination state (inert in client mode) ──
+  const [page, setPage] = useState(1);
+  const [limit, setLimit] = useState(defaultLimit);
+  const [sort, setSort] = useState(defaultSort);
+  const [total, setTotal] = useState(0);
+  const [totalPages, setTotalPages] = useState(1);
+  // Debounced search term used for the server query so we don't fire a fetch
+  // on every keystroke. Client mode ignores this entirely.
+  const [debouncedSearch, setDebouncedSearch] = useState("");
+  useEffect(() => {
+    if (!serverPagination) return;
+    const t = setTimeout(() => {
+      setDebouncedSearch(search.trim());
+      setPage(1); // any new search starts from the first page
+    }, 300);
+    return () => clearTimeout(t);
+  }, [search, serverPagination]);
 
   // ── Panel state ──
   const [panelOpen, setPanelOpen] = useState(false);
@@ -90,30 +133,45 @@ export function useTableCRUD<T extends object>(
   const refetch = useCallback(async () => {
     setLoading(true);
     try {
-      const params = fetchParams
-        ? "?" + new URLSearchParams(fetchParams).toString()
-        : "";
-      const res = await fetch(`${apiEndpoint}${params}`);
+      const sp = new URLSearchParams(fetchParams ?? {});
+      if (serverPagination) {
+        sp.set("page", String(page));
+        sp.set("limit", String(limit));
+        if (debouncedSearch) sp.set("search", debouncedSearch);
+        if (sort) {
+          const [field, order] = sort.split(":");
+          if (field) sp.set("sortBy", field);
+          if (order) sp.set("sortOrder", order);
+        }
+      }
+      const qs = sp.toString();
+      const res = await fetch(`${apiEndpoint}${qs ? `?${qs}` : ""}`);
       const json = await res.json();
       if (json.success) {
         const data = transformResponse
           ? transformResponse(json)
           : (json.data as T[]);
         setItems(data);
+        if (serverPagination && json.meta) {
+          setTotal(json.meta.total ?? data.length);
+          setTotalPages(json.meta.totalPages ?? 1);
+        }
       }
     } catch {
       // silent — caller can handle via loading state
     } finally {
       setLoading(false);
     }
-  }, [apiEndpoint, fetchParams, transformResponse]);
+  }, [apiEndpoint, fetchParams, transformResponse, serverPagination, page, limit, debouncedSearch, sort]);
 
   useEffect(() => {
     refetch();
   }, [refetch]);
 
   // ── Filtered list ──
+  // In server mode the API already applied search → `items` IS the page.
   const filtered = useMemo(() => {
+    if (serverPagination) return items;
     if (!search.trim()) return items;
     const q = search.toLowerCase();
     return items.filter((item) =>
@@ -122,7 +180,7 @@ export function useTableCRUD<T extends object>(
         return typeof val === "string" && val.toLowerCase().includes(q);
       })
     );
-  }, [items, search, searchFields]);
+  }, [items, search, searchFields, serverPagination]);
 
   // ── Panel helpers ──
   const openCreate = useCallback(() => {
@@ -164,18 +222,23 @@ export function useTableCRUD<T extends object>(
           return null;
         }
         const saved = (json.data ?? json) as T;
-        // Optimistic update
-        setItems((prev) => {
-          const idx = prev.findIndex(
-            (x) => x[idKey] === saved[idKey]
-          );
-          if (idx >= 0) {
-            const next = [...prev];
-            next[idx] = saved;
-            return next;
-          }
-          return [...prev, saved];
-        });
+        if (serverPagination) {
+          // Re-pull the current page so totals + ordering stay authoritative.
+          await refetch();
+        } else {
+          // Optimistic update (client mode)
+          setItems((prev) => {
+            const idx = prev.findIndex(
+              (x) => x[idKey] === saved[idKey]
+            );
+            if (idx >= 0) {
+              const next = [...prev];
+              next[idx] = saved;
+              return next;
+            }
+            return [...prev, saved];
+          });
+        }
         closePanel();
         return saved;
       } catch {
@@ -185,7 +248,7 @@ export function useTableCRUD<T extends object>(
         setSaving(false);
       }
     },
-    [apiEndpoint, editItem, idKey, closePanel]
+    [apiEndpoint, editItem, idKey, closePanel, serverPagination, refetch]
   );
 
   // ── Delete single item ──
@@ -197,9 +260,13 @@ export function useTableCRUD<T extends object>(
         });
         const json = await res.json();
         if (json.success) {
-          setItems((prev) =>
-            prev.filter((x) => x[idKey] !== item[idKey])
-          );
+          if (serverPagination) {
+            await refetch();
+          } else {
+            setItems((prev) =>
+              prev.filter((x) => x[idKey] !== item[idKey])
+            );
+          }
           setDeleteTarget(null);
           return true;
         }
@@ -208,7 +275,7 @@ export function useTableCRUD<T extends object>(
         return false;
       }
     },
-    [apiEndpoint, idKey]
+    [apiEndpoint, idKey, serverPagination, refetch]
   );
 
   // ── Confirm delete (uses deleteTarget) ──
@@ -254,15 +321,19 @@ export function useTableCRUD<T extends object>(
           .filter((r) => r.success)
           .map((_r, i) => [...selected][i])
       );
-      setItems((prev) =>
-        prev.filter((x) => !deletedIds.has(String(x[idKey])))
-      );
+      if (serverPagination) {
+        await refetch();
+      } else {
+        setItems((prev) =>
+          prev.filter((x) => !deletedIds.has(String(x[idKey])))
+        );
+      }
       setSelected(new Set());
       return true;
     } catch {
       return false;
     }
-  }, [apiEndpoint, idKey, selected]);
+  }, [apiEndpoint, idKey, selected, serverPagination, refetch]);
 
   return {
     items,
@@ -272,6 +343,14 @@ export function useTableCRUD<T extends object>(
     search,
     setSearch,
     filtered,
+    page,
+    setPage,
+    limit,
+    setLimit,
+    total,
+    totalPages,
+    sort,
+    setSort,
     panelOpen,
     openCreate,
     openEdit,

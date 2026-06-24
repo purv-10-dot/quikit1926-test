@@ -27,8 +27,10 @@ import { cn } from "@/lib/utils";
 import { AlertTriangle, Loader2 } from "lucide-react";
 import { CriticalTable, type CriticalTableEntry } from "./CriticalTable";
 import { CriticalReviewDrawer } from "./CriticalReviewDrawer";
-import { AuditLogDrawer } from "@/components/logs/audit-log-drawer";
-import { OPSP_FIELD_LABELS } from "@/lib/utils/auditLog";
+import { EntityChangeHistoryPanel } from "@/components/audit/EntityChangeHistoryPanel";
+import { criticalReviewAuditConfig } from "@/components/audit/criticalReviewAuditConfig";
+import { criticalEntityId, criticalScopeLabel, CARD_LABELS } from "@/lib/audit/criticalFields";
+import { SectionUserPicker } from "../components/SectionUserPicker";
 
 type Module = "actions" | "year" | "people";
 type CardType = "critical" | "balancing";
@@ -51,6 +53,8 @@ interface CriticalReviewData {
   entries: Record<string, CriticalTableEntry>;
   year: number;
   quarter: string;
+  /** Subject whose Individual criticals are shown — scopes the audit timeline. */
+  subjectUserId?: string | null;
 }
 
 const MODULE_TABS: { key: Module; label: string }[] = [
@@ -62,11 +66,32 @@ const MODULE_TABS: { key: Module; label: string }[] = [
 export function CriticalReviewSection({
   year,
   quarter,
+  allowedModules = ["year", "actions", "people"],
+  canPickUser = false,
+  // Fail closed: editing requires OPSP.Review.Critical:update. If a caller
+  // forgets to pass `canEdit`, the section stays read-only rather than
+  // silently allowing a view-only user to overwrite review numbers.
+  canEdit = false,
+  selfId = "",
+  selfName = "Me",
 }: {
   year: number;
   quarter: string;
+  /** Sub-tabs the user may see (admins: all; others: ["people"] only). */
+  allowedModules?: Module[];
+  /** Show the Individual user-picker (admin with OPSP.EditUser). */
+  canPickUser?: boolean;
+  /** Whether the Achieved/Comment inputs are editable (OPSP.Review.Critical:update). */
+  canEdit?: boolean;
+  /** Signed-in user's id — excluded from the picker list (shown as "(you)"). */
+  selfId?: string;
+  /** Display name for the signed-in user (the picker's "self" option). */
+  selfName?: string;
 }) {
-  const [activeModule, setActiveModule] = useState<Module>("year");
+  const visibleTabs = MODULE_TABS.filter((t) => allowedModules.includes(t.key));
+  const [activeModule, setActiveModule] = useState<Module>(allowedModules[0] ?? "people");
+  // Individual (people) subject: null = self; an id when an admin picks a user.
+  const [targetUserId, setTargetUserId] = useState<string | null>(null);
   const [data, setData] = useState<CriticalReviewData | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -89,7 +114,8 @@ export function CriticalReviewSection({
     setLoading(true);
     setError(null);
     try {
-      const res = await fetch(`/api/opsp/review/critical?year=${year}&quarter=${quarter}`);
+      const qs = `year=${year}&quarter=${quarter}${targetUserId ? `&targetUserId=${encodeURIComponent(targetUserId)}` : ""}`;
+      const res = await fetch(`/api/opsp/review/critical?${qs}`);
       const json = await res.json();
       if (!json.success) {
         setError(json.error ?? "Failed to load critical review");
@@ -101,7 +127,7 @@ export function CriticalReviewSection({
     } finally {
       setLoading(false);
     }
-  }, [year, quarter]);
+  }, [year, quarter, targetUserId]);
 
   useEffect(() => { loadData(); }, [loadData]);
 
@@ -125,6 +151,8 @@ export function CriticalReviewSection({
             category,
             achievedValue: patch.achievedValue,
             comment: patch.comment,
+            // Per-user Individual review targets the picked subject (admin only).
+            ...(moduleKey === "people" && targetUserId ? { targetUserId } : {}),
           }),
         });
         const json = await res.json();
@@ -150,7 +178,7 @@ export function CriticalReviewSection({
         setSaving(false);
       }
     },
-    [year, quarter, loadData],
+    [year, quarter, loadData, targetUserId],
   );
 
   /* ── Render ── */
@@ -183,7 +211,8 @@ export function CriticalReviewSection({
 
   const isCommitted =
     data.opspStatus === "finalized" || data.opspStatus === "reviewed";
-  const readOnly = !isCommitted || data.opspStatus === "reviewed";
+  // Editable only when finalized (not reviewed) AND the user holds update.
+  const readOnly = !isCommitted || data.opspStatus === "reviewed" || !canEdit;
 
   const moduleCards = data.modules[activeModule];
 
@@ -198,9 +227,9 @@ export function CriticalReviewSection({
 
   return (
     <div className="flex flex-col h-full">
-      {/* ── Module sub-tabs ── */}
-      <div className="flex items-center gap-2 px-6 py-3 border-b border-gray-200 bg-white flex-shrink-0">
-        {MODULE_TABS.map((tab) => (
+      {/* ── Module sub-tabs (filtered to the user's allowed scopes) ── */}
+      <div className="flex items-center gap-2 px-6 py-3 border-b border-gray-200 bg-white flex-shrink-0 flex-wrap">
+        {visibleTabs.map((tab) => (
           <button
             key={tab.key}
             onClick={() => setActiveModule(tab.key)}
@@ -214,6 +243,19 @@ export function CriticalReviewSection({
             {tab.label}
           </button>
         ))}
+
+        {/* Individual scope: admin user-picker to review another user's criticals. */}
+        {canPickUser && activeModule === "people" && (
+          <div className="ml-auto flex items-center gap-2">
+            <span className="text-[11px] font-semibold text-gray-500">Reviewing:</span>
+            <SectionUserPicker
+              value={targetUserId}
+              selfId={selfId}
+              selfName={selfName}
+              onChange={(u) => setTargetUserId(u)}
+            />
+          </div>
+        )}
       </div>
 
       {/* ── Read-only banner (draft / reviewed) ── */}
@@ -281,17 +323,23 @@ export function CriticalReviewSection({
         }
       />
 
-      {/* ── Audit-log drawer for Critical # Review cards ── */}
+      {/* ── Change History panel for Critical # Review cards — the same rich
+          timeline (tabs, operation pills, field-level diffs, export) used by
+          KPI / Priority / WWW. ── */}
       {data?.opspId && logsCard && (
-        <AuditLogDrawer
-          open
+        <EntityChangeHistoryPanel
+          entity={{
+            id: criticalEntityId(data.opspId, activeModule, logsCard.cardType, data.subjectUserId),
+            name: logsCard.title.trim() || CARD_LABELS[logsCard.cardType],
+            scopeLabel: criticalScopeLabel(activeModule, logsCard.cardType),
+            card:
+              logsCard.cardType === "critical"
+                ? moduleCards.critical
+                : moduleCards.balancing,
+            entry: entryFor(logsCard.cardType),
+          }}
+          config={criticalReviewAuditConfig}
           onClose={() => setLogsCard(null)}
-          title={`Audit History — ${logsCard.cardType === "critical" ? "Critical #" : "Balancing Critical #"}`}
-          subtitle={`${logsCard.title || "—"} · ${MODULE_TABS.find((t) => t.key === activeModule)?.label}`}
-          entityType="Review"
-          entityId={data.opspId}
-          extraQuery={`OPSP Critical (${activeModule}:${logsCard.cardType})`}
-          fieldLabels={OPSP_FIELD_LABELS}
         />
       )}
     </div>

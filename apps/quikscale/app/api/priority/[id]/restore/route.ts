@@ -2,10 +2,11 @@ import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { withOrgAuthForModule } from "@/lib/api/withOrgAuth";
 import { writeAuditLog } from "@/lib/api/auditLog";
+import { audit, requestContext } from "@/lib/audit";
 
 const withOrgAuth = withOrgAuthForModule("priority");
 
-export const POST = withOrgAuth<{ id: string }>(async ({ orgId, userId }, _req, { params }) => {
+export const POST = withOrgAuth<{ id: string }>(async ({ orgId, userId }, req, { params }) => {
   const { id } = params;
   if (!id) {
     return NextResponse.json({ success: false, error: "Missing id" }, { status: 400 });
@@ -32,6 +33,16 @@ export const POST = withOrgAuth<{ id: string }>(async ({ orgId, userId }, _req, 
     entityType: "Priority",
     entityId: id,
     newValues: restored,
+  });
+
+  // ── Centralized audit (dual-write) ── RESTORE event for the timeline.
+  await audit.log({
+    entityType: "PRIORITY",
+    entityId: id,
+    action: "RESTORE",
+    actor: { userId, orgId, teamId: existing.teamId },
+    snapshot: { name: existing.name },
+    ...requestContext(req),
   });
 
   return NextResponse.json({ success: true, data: restored });

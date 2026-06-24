@@ -1,7 +1,9 @@
 import { NextResponse } from "next/server";
 import { withOrgAuth } from "@/lib/api/withOrgAuth";
+import { db } from "@/lib/db";
+import { ADMIN_TIER_ROLES } from "@quikit/shared";
 import { loadMyPermissions } from "@/lib/api/permissions";
-import { seedAllDefaultRoles } from "@/lib/api/seedAdminAppRole";
+import { seedAllDefaultRoles, ensureUserOnRole } from "@/lib/api/seedAdminAppRole";
 
 // GET /api/me/permissions
 // Returns the current user's effective permission set for QuikTrack in the
@@ -12,9 +14,25 @@ import { seedAllDefaultRoles } from "@/lib/api/seedAdminAppRole";
 // admin + default User role created on first request. The seeder is cached
 // per process per org (5-min TTL), so real DB writes happen at most once
 // per process per org.
-export const GET = withOrgAuth(async ({ userId, orgId }) => {
+//
+// SELF-SERVE BIND: self-serve registration creates the Org + an org_admin
+// membership but never runs the invite/provision flows that bind a user to
+// an app role, so a fresh org admin would land with zero permissions (empty
+// sidebar). If the caller is an org/super admin and holds no QuikTrack role
+// yet, bind them to the freshly-seeded admin role. Idempotent.
+export const GET = withOrgAuth(async ({ session, userId, orgId }) => {
   try {
-    await seedAllDefaultRoles(orgId);
+    const { adminRoleId } = await seedAllDefaultRoles(orgId);
+    const isAdminTier =
+      session.user.isSuperAdmin === true ||
+      ADMIN_TIER_ROLES.has(String(session.user.membershipRole ?? ""));
+    if (isAdminTier) {
+      const hasRole = await db.userAppRole.findFirst({
+        where: { userId, orgId },
+        select: { id: true },
+      });
+      if (!hasRole) await ensureUserOnRole(userId, orgId, adminRoleId);
+    }
   } catch {
     // Best-effort. Permission fetch must still succeed.
   }

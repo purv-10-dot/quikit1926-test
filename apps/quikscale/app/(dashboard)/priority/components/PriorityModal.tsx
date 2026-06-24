@@ -1,18 +1,18 @@
 "use client";
 
-import { useState, useRef, useEffect, useCallback } from "react";
+import { useState } from "react";
 import { useCreatePriority } from "@/lib/hooks/usePriority";
-import { useUsers } from "@/lib/hooks/useUsers";
-import { useQueryClient } from "@tanstack/react-query";
+import { useInfiniteUsers } from "@/lib/hooks/useInfiniteUsers";
 import { fiscalYearLabel, ALL_QUARTERS, getFiscalYear, getWeekDateRange } from "@/lib/utils/fiscal";
-import { useTeams, type Team } from "@/lib/hooks/useTeams";
+import { useTeams } from "@/lib/hooks/useTeams";
 import { UserPicker, RightPanel, RightPanelFooter, RightPanelCancelButton, RightPanelSubmitButton, DropdownPicker } from "@quikit/ui";
 import { FormErrorBanner } from "@/components/forms/FormErrorBanner";
-import { useClickOutside } from "@/lib/hooks/useClickOutside";
+import { TeamSelect } from "./TeamSelect";
 import { useFiscalYears } from "@/lib/hooks/useFiscalYears";
 import { useQuarterStartDates } from "@/lib/hooks/useQuarterStartDates";
 import { humanizeApiError } from "@/lib/utils/humanizeError";
 import { notify } from "@/lib/utils/notify";
+import { PRIORITY_DEFAULT_STATUS } from "@/lib/constants/status";
 
 interface Props {
   defaultYear?: number;
@@ -23,126 +23,6 @@ interface Props {
 
 const CURRENT_YEAR = getFiscalYear();
 const WEEK_OPTIONS = Array.from({ length: 13 }, (_, i) => i + 1);
-
-// ── Team select with inline Add New ──────────────────────────────────────────
-
-function TeamSelect({ value, onChange, teams }: { value: string; onChange: (id: string) => void; teams: Team[] }) {
-  const queryClient = useQueryClient();
-  const [open, setOpen] = useState(false);
-  const [adding, setAdding] = useState(false);
-  const [newName, setNewName] = useState("");
-  const [saving, setSaving] = useState(false);
-  const [err, setErr] = useState("");
-  const ref = useRef<HTMLDivElement>(null);
-  const inputRef = useRef<HTMLInputElement>(null);
-
-  const handleClose = useCallback(() => {
-    setOpen(false);
-    setAdding(false);
-    setNewName("");
-    setErr("");
-  }, []);
-  useClickOutside(ref, handleClose);
-
-  useEffect(() => {
-    if (adding) setTimeout(() => inputRef.current?.focus(), 50);
-  }, [adding]);
-
-  async function handleCreate() {
-    const name = newName.trim();
-    if (!name) { setErr("Team name is required"); return; }
-    setSaving(true);
-    setErr("");
-    try {
-      const res = await fetch("/api/teams", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ name }),
-      });
-      const data = await res.json();
-      if (!data.success) throw new Error(data.error || "Failed to create team");
-      await queryClient.invalidateQueries({ queryKey: ["teams"] });
-      onChange(data.data.id);
-      setOpen(false);
-      setAdding(false);
-      setNewName("");
-    } catch (e: unknown) {
-      setErr(humanizeApiError(e, { context: "team", fallback: "Couldn't create the team. Please try again." }));
-    } finally {
-      setSaving(false);
-    }
-  }
-
-  const selectedTeam = teams.find(t => t.id === value);
-
-  return (
-    <div className="relative" ref={ref}>
-      <button type="button" onClick={() => setOpen(o => !o)}
-        className={`w-full flex items-center justify-between px-3 py-2 text-xs border rounded-lg focus:outline-none focus:ring-1 focus:ring-accent-400 bg-white text-left ${open ? "border-accent-400 ring-1 ring-accent-400" : "border-gray-200"}`}>
-        <span className={selectedTeam ? "text-gray-800" : "text-gray-400"}>
-          {selectedTeam ? selectedTeam.name : "No team"}
-        </span>
-        <svg className="h-3.5 w-3.5 text-gray-400 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
-        </svg>
-      </button>
-
-      {open && (
-        <div className="absolute top-full left-0 mt-1 w-full bg-white border border-gray-200 rounded-lg shadow-xl z-50 py-1 max-h-52 overflow-y-auto">
-          {/* No team option */}
-          <button type="button" onClick={() => { onChange(""); setOpen(false); }}
-            className={`w-full text-left px-3 py-1.5 text-xs hover:bg-gray-50 transition-colors ${value === "" ? "font-semibold text-gray-800" : "text-gray-500"}`}>
-            No team
-          </button>
-
-          {/* Existing teams */}
-          {teams.map(t => (
-            <button key={t.id} type="button" onClick={() => { onChange(t.id); setOpen(false); }}
-              className={`w-full text-left px-3 py-1.5 text-xs hover:bg-gray-50 transition-colors flex items-center justify-between ${value === t.id ? "font-semibold text-gray-800" : "text-gray-700"}`}>
-              {t.name}
-              {value === t.id && (
-                <svg className="h-3 w-3 text-gray-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M5 13l4 4L19 7" />
-                </svg>
-              )}
-            </button>
-          ))}
-
-          {/* Divider + Add New */}
-          <div className="border-t border-gray-100 mt-1 pt-1">
-            {!adding ? (
-              <button type="button" onClick={() => setAdding(true)}
-                className="w-full text-left px-3 py-1.5 text-xs text-accent-600 hover:bg-accent-50 transition-colors flex items-center gap-1.5 font-medium">
-                <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
-                </svg>
-                Add New Team
-              </button>
-            ) : (
-              <div className="px-2 pb-2 pt-1 space-y-1.5">
-                <input ref={inputRef} value={newName} onChange={e => { setNewName(e.target.value); setErr(""); }}
-                  onKeyDown={e => { if (e.key === "Enter") handleCreate(); if (e.key === "Escape") { setAdding(false); setNewName(""); } }}
-                  placeholder="Team name…"
-                  className="w-full px-2.5 py-1.5 text-xs border border-gray-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-accent-400" />
-                {err && <p className="text-[10px] text-red-500">{err}</p>}
-                <div className="flex gap-1.5">
-                  <button type="button" onClick={() => { setAdding(false); setNewName(""); setErr(""); }}
-                    className="flex-1 py-1 text-xs border border-gray-200 rounded text-gray-500 hover:bg-gray-50 transition-colors">
-                    Cancel
-                  </button>
-                  <button type="button" onClick={handleCreate} disabled={saving}
-                    className="flex-1 py-1 text-xs bg-gray-900 text-white rounded hover:bg-gray-700 disabled:opacity-50 transition-colors font-medium">
-                    {saving ? "..." : "Add"}
-                  </button>
-                </div>
-              </div>
-            )}
-          </div>
-        </div>
-      )}
-    </div>
-  );
-}
 
 export function PriorityModal({ defaultYear, defaultQuarter, onClose, onSuccess }: Props) {
   const [form, setForm] = useState({
@@ -167,7 +47,17 @@ export function PriorityModal({ defaultYear, defaultQuarter, onClose, onSuccess 
   //   - No team → fetch all tenant users so the Owner picker is never empty.
   // When user changes team, we clear `form.owner` if they're not in the
   // new team's member list (handled in handleTeamChange).
-  const { data: users = [] } = useUsers(form.teamId || undefined);
+  // Owner picker — DB-level infinite (25/page) + server search, team-aware.
+  // This modal is create-only (owner starts empty), so no selected-owner seed
+  // is needed; the picked owner is always in the loaded set.
+  const [ownerSearch, setOwnerSearch] = useState("");
+  const {
+    users,
+    isLoading: ownersLoading,
+    hasNextPage: ownersHasMore,
+    isFetchingNextPage: ownersLoadingMore,
+    fetchNextPage: fetchMoreOwners,
+  } = useInfiniteUsers(form.teamId || undefined, ownerSearch);
   const { data: teams = [] } = useTeams();
   const createPriority = useCreatePriority();
 
@@ -228,7 +118,7 @@ export function PriorityModal({ defaultYear, defaultQuarter, onClose, onSuccess 
         year: parseInt(form.year),
         startWeek: parseInt(form.startWeek),
         endWeek: parseInt(form.endWeek),
-        overallStatus: "not-started",
+        overallStatus: PRIORITY_DEFAULT_STATUS,
       } as any);
       notify.saved("Priority", "created");
       onSuccess();
@@ -304,7 +194,17 @@ export function PriorityModal({ defaultYear, defaultQuarter, onClose, onSuccess 
               <label className="block text-xs font-medium text-gray-600 mb-1">
                 Owner <span className="text-red-500">*</span>
               </label>
-              <UserPicker value={form.owner} onChange={v => set("owner", v)} users={users} error={!!errors.owner} />
+              <UserPicker
+                value={form.owner}
+                onChange={v => set("owner", v)}
+                users={users}
+                onSearchChange={setOwnerSearch}
+                onLoadMore={fetchMoreOwners}
+                hasMore={ownersHasMore}
+                loadingMore={ownersLoadingMore}
+                loading={ownersLoading}
+                error={!!errors.owner}
+              />
               {errors.owner && <p className="text-[10px] text-red-500 mt-0.5">{errors.owner}</p>}
             </div>
           </div>

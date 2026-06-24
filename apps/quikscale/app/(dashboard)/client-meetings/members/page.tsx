@@ -10,6 +10,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useFilterContext } from "@/lib/context/FilterContext";
 import { useCurrentWeek } from "@/lib/hooks/useCurrentWeek";
+import { useInfiniteClientMembers } from "@/lib/hooks/useInfiniteClientMembers";
 import {
   RightPanel, RightPanelFooter, RightPanelCancelButton, RightPanelSubmitButton,
   AddButton, EmptyState,
@@ -20,7 +21,7 @@ import { ModuleMoreActions, TrashBanner } from "@/components/table/ModuleMoreAct
 import { FormErrorBanner } from "@/components/forms/FormErrorBanner";
 import { useResourcePermissions } from "@/lib/hooks/useResourcePermissions";
 import { useTablePrefs } from "@/lib/hooks/useTablePreferences";
-import { useTableSort } from "@/lib/store";
+import { useTableSort, useDebouncedTableSearch } from "@/lib/store";
 import { useColumnResize } from "@/lib/hooks/useColumnResize";
 import { useStickyOffsets } from "@/lib/hooks/useStickyOffsets";
 import { HeaderCell } from "@/components/table/HeaderCell";
@@ -41,7 +42,7 @@ const COL_WIDTHS_DEFAULT: Record<string, number> = {
 };
 import { notify } from "@/lib/utils/notify";
 import { runExport } from "@/lib/export/xlsx";
-import { AuditLogDrawer } from "@/components/logs/audit-log-drawer";
+import { ClientMemberChangeHistoryPanel } from "./ClientMemberChangeHistoryPanel";
 
 interface MemberRow {
   id: string;
@@ -63,24 +64,23 @@ function fmtDateShort(iso: string) {
   return `${String(d.getDate()).padStart(2, "0")}/${String(d.getMonth() + 1).padStart(2, "0")}/${d.getFullYear()}`;
 }
 
-/** Friendly field labels for the Client Member audit log (passed to AuditLogDrawer). */
-const MEMBER_FIELD_LABELS: Record<string, string> = {
-  name: "Name",
-  email: "Email",
-};
-
 export default function ClientMembersPage() {
   const { canCreate, canUpdate, canDelete } = useResourcePermissions("ClientMember");
   const { year, quarter } = useFilterContext();
   const currentWeek = useCurrentWeek(year, quarter);
 
   const [rows, setRows] = useState<MemberRow[]>([]);
+  const [total, setTotal] = useState(0);
   const [loading, setLoading] = useState(true);
   const [selected, setSelected] = useState<Set<string>>(new Set());
-  const [search, setSearch] = useState("");
+  const [searchInput, setSearchInput, search] = useDebouncedTableSearch("clientMembers");
 
   // View Trash toggle — when true, GET returns only soft-deleted rows.
   const [viewTrash, setViewTrash] = useState(false);
+
+  // Pagination — default 10 rows, options 10/20/30/50.
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(10);
 
   // Filter popover state. "Name" filter = pick one member to narrow the list.
   const [showFilter, setShowFilter] = useState(false);
@@ -181,26 +181,41 @@ export default function ClientMembersPage() {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
 
-  const [logOpen, setLogOpen] = useState<{ id: string; name: string } | null>(null);
+  const [logOpen, setLogOpen] = useState<MemberRow | null>(null);
 
+  // DB-level pagination + search + (single-member) filter + sort.
   const refresh = useCallback(async () => {
     setLoading(true);
     try {
-      // Forward sort to the server — the route's whitelist defaults to
-      // `createdAt asc` when sortBy is empty so users still see the legacy
-      // ordering before they pick a column.
       const params = new URLSearchParams();
+      params.set("page", String(page));
+      params.set("limit", String(pageSize));
       if (viewTrash) params.set("includeDeleted", "true");
       if (sortBy) params.set("sortBy", sortBy);
       if (sortBy && sortOrder) params.set("sortOrder", sortOrder);
-      const qs = params.toString();
-      const res = await fetch(`/api/client-meetings/members${qs ? "?" + qs : ""}`);
+      if (search.trim()) params.set("search", search.trim());
+      if (filterMemberId) params.set("memberId", filterMemberId);
+      const res = await fetch(`/api/client-meetings/members?${params.toString()}`);
       const json = await res.json();
-      if (json.success) setRows(json.data);
+      if (json.success) {
+        setRows(json.data);
+        setTotal(json.meta?.total ?? json.data.length);
+      }
     } finally { setLoading(false); }
-  }, [viewTrash, sortBy, sortOrder]);
+  }, [page, pageSize, viewTrash, sortBy, sortOrder, search, filterMemberId]);
 
   useEffect(() => { refresh(); }, [refresh]);
+
+  // "Name" filter dropdown — DB-level infinite (25/page) + server search,
+  // instead of loading the full member list.
+  const [nameSearch, setNameSearch] = useState("");
+  const {
+    members: nameMembers,
+    isLoading: nameLoading,
+    hasNextPage: nameHasMore,
+    isFetchingNextPage: nameLoadingMore,
+    fetchNextPage: fetchMoreNames,
+  } = useInfiniteClientMembers(undefined, nameSearch);
 
   // Outside-click for Filter popover.
   useEffect(() => {
@@ -211,31 +226,17 @@ export default function ClientMembersPage() {
     return () => document.removeEventListener("mousedown", onClick);
   }, []);
 
-  const filtered = useMemo(() => {
-    return rows.filter(r => {
-      if (filterMemberId && r.id !== filterMemberId) return false;
-      if (search.trim()) {
-        const q = search.trim().toLowerCase();
-        if (!r.name.toLowerCase().includes(q) && !r.email.toLowerCase().includes(q)) return false;
-      }
-      return true;
-    });
-  }, [rows, search, filterMemberId]);
-
-  // Name filter: every member becomes a selectable option.
+  // Search + member filter run server-side now; `rows` IS the current page.
   const nameOptions = useMemo(
-    () => rows.map(r => ({ value: r.id, label: r.name })),
-    [rows],
+    () => nameMembers.map(m => ({ value: m.id, label: `${m.firstName} ${m.lastName}`.trim() })),
+    [nameMembers],
   );
 
   const activeFilterCount = filterMemberId ? 1 : 0;
 
-  // Pagination — default 10 rows, options 10/20/30/50
-  const [page, setPage] = useState(1);
-  const [pageSize, setPageSize] = useState(10);
   useEffect(() => { setPage(1); }, [search, filterMemberId, viewTrash, pageSize]);
-  const pagedMembers = filtered.slice((page - 1) * pageSize, page * pageSize);
-  const totalMemberPages = Math.max(1, Math.ceil(filtered.length / pageSize));
+  const pagedMembers = rows;
+  const totalMemberPages = Math.max(1, Math.ceil(total / pageSize));
 
   // Column metadata for Manage Columns + Export.
   const moduleColumns = [
@@ -268,10 +269,18 @@ export default function ClientMembersPage() {
       }));
     await runExport<MemberRow>({
       selection: sel, columns,
-      pageRows: filtered,
-      fetchFiltered: async () => filtered,
+      pageRows: rows,
+      fetchFiltered: async () => {
+        const params = new URLSearchParams({ limit: "1000" });
+        if (viewTrash) params.set("includeDeleted", "true");
+        if (search.trim()) params.set("search", search.trim());
+        if (filterMemberId) params.set("memberId", filterMemberId);
+        const res = await fetch(`/api/client-meetings/members?${params.toString()}`);
+        const j = await res.json();
+        return j.success ? (j.data as MemberRow[]) : [];
+      },
       fetchAll: async () => {
-        const res = await fetch("/api/client-meetings/members");
+        const res = await fetch("/api/client-meetings/members?limit=1000");
         const j = await res.json();
         return j.success ? (j.data as MemberRow[]) : [];
       },
@@ -286,8 +295,8 @@ export default function ClientMembersPage() {
   }
 
   function toggleAll() {
-    if (selected.size === filtered.length && filtered.length > 0) setSelected(new Set());
-    else setSelected(new Set(filtered.map(r => r.id)));
+    if (selected.size === rows.length && rows.length > 0) setSelected(new Set());
+    else setSelected(new Set(rows.map(r => r.id)));
   }
 
   function toggleOne(id: string) {
@@ -360,7 +369,7 @@ export default function ClientMembersPage() {
         <div className="flex items-center gap-3">
           <h1 className="text-base font-semibold text-gray-800 whitespace-nowrap">Client Members</h1>
           <span className="text-xs bg-gray-100 text-gray-600 px-2 py-0.5 rounded-full font-medium">
-            {filtered.length} items
+            {total} items
           </span>
           {currentWeek !== null && (
             <span className="text-xs bg-accent-50 text-accent-600 border border-accent-100 px-2 py-0.5 rounded-full font-medium whitespace-nowrap">
@@ -388,7 +397,7 @@ export default function ClientMembersPage() {
 
           <div className="relative">
             <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-gray-400" />
-            <input value={search} onChange={e => setSearch(e.target.value)}
+            <input value={searchInput} onChange={e => setSearchInput(e.target.value)}
               placeholder="Search..."
               className="pl-8 pr-3 py-1.5 text-xs border border-gray-200 rounded-md focus:outline-none focus:ring-1 focus:ring-accent-400 w-44" />
           </div>
@@ -410,6 +419,11 @@ export default function ClientMembersPage() {
                     value={filterMemberId}
                     onChange={setFilterMemberId}
                     options={nameOptions}
+                    onSearchChange={setNameSearch}
+                    onLoadMore={fetchMoreNames}
+                    hasMore={nameHasMore}
+                    loadingMore={nameLoadingMore}
+                    loading={nameLoading}
                     allLabel="All members"
                   />
                 </div>
@@ -430,7 +444,7 @@ export default function ClientMembersPage() {
             onHiddenColsChange={setHiddenCols}
             isTrashActive={viewTrash}
             onToggleTrash={setViewTrash}
-            rowCounts={{ page: filtered.length, filtered: filtered.length, all: rows.length }}
+            rowCounts={{ page: rows.length, filtered: total, all: total }}
             onExport={handleExport}
             defaultExportColumnKeys={visibleColKeys}
           />
@@ -442,7 +456,7 @@ export default function ClientMembersPage() {
       {/* Trash banner — shown while viewing deleted rows. */}
       {viewTrash && (
         <div className="px-6 py-2 flex-shrink-0">
-          <TrashBanner count={filtered.length} onExit={() => setViewTrash(false)} />
+          <TrashBanner count={total} onExit={() => setViewTrash(false)} />
         </div>
       )}
 
@@ -450,7 +464,7 @@ export default function ClientMembersPage() {
       <div className="flex-1 overflow-hidden min-h-0">
         {loading ? (
           <div className="flex items-center justify-center h-full text-xs text-gray-400">Loading…</div>
-        ) : filtered.length === 0 ? (
+        ) : rows.length === 0 ? (
           <div className="flex items-center justify-center h-full">
             <EmptyState
               icon={Users}
@@ -483,7 +497,7 @@ export default function ClientMembersPage() {
                       }}
                     >
                       <input type="checkbox"
-                        checked={selected.size === filtered.length && filtered.length > 0}
+                        checked={selected.size === rows.length && rows.length > 0}
                         onChange={toggleAll} disabled={!canDelete}
                         className={`rounded border-gray-300 text-blue-600 ${canDelete ? "cursor-pointer" : "opacity-40 cursor-not-allowed"}`} />
                     </label>
@@ -523,7 +537,7 @@ export default function ClientMembersPage() {
                     </td>
                     <td className="sticky z-[15] bg-white px-3 py-3 border-b border-r border-gray-100"
                         style={{ left: 40, width: 56, minWidth: 56, maxWidth: 56 }}>
-                      <button onClick={() => setLogOpen({ id: r.id, name: r.name })} className="p-1 rounded hover:bg-gray-100 text-gray-400 hover:text-blue-500" title="View audit log">
+                      <button onClick={() => setLogOpen(r)} className="p-1 rounded hover:bg-gray-100 text-gray-400 hover:text-blue-500" title="View audit log">
                         <History className="h-3.5 w-3.5" />
                       </button>
                     </td>
@@ -594,14 +608,14 @@ export default function ClientMembersPage() {
               </tbody>
             </table>
             </HorizontalScroller>
-            {filtered.length > 0 && (
+            {total > 0 && (
               <Pagination
                 page={page}
                 totalPages={totalMemberPages}
-                total={filtered.length}
+                total={total}
                 limit={pageSize}
                 onPageChange={setPage}
-                onPageSizeChange={setPageSize}
+                onPageSizeChange={(size) => { setPageSize(size); setPage(1); }}
               />
             )}
           </div>
@@ -659,15 +673,10 @@ export default function ClientMembersPage() {
         );
       })()}
 
-      {/* Audit log — shared RightPanel drawer (same styling as Daily Huddle / Weekly Meeting) */}
-      <AuditLogDrawer
-        open={!!logOpen}
-        onClose={() => setLogOpen(null)}
-        entityType="ClientMember"
-        entityId={logOpen?.id ?? ""}
-        title={logOpen ? `Audit Log — ${logOpen.name}` : "Audit Log"}
-        fieldLabels={MEMBER_FIELD_LABELS}
-      />
+      {/* Change History — full audit timeline (shared EntityChangeHistoryPanel) */}
+      {logOpen && (
+        <ClientMemberChangeHistoryPanel member={logOpen} onClose={() => setLogOpen(null)} />
+      )}
     </div>
   );
 }

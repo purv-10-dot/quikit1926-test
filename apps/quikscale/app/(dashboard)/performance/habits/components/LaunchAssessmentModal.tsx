@@ -1,17 +1,32 @@
 "use client";
 
-import { useMemo, useState } from "react";
-import { AlertCircle, X } from "lucide-react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { AlertCircle, Lock, X } from "lucide-react";
 import { useCreateHabitCampaign } from "@/lib/hooks/useHabits";
+import { useFiscalYears } from "@/lib/hooks/useFiscalYears";
+import { useQuarterStartDates } from "@/lib/hooks/useQuarterStartDates";
+import { usePastWeekFlags } from "@/lib/hooks/useFeatureFlags";
 import { getFiscalQuarter, getFiscalYear } from "@/lib/utils/fiscal";
+import {
+  getQuarterPeriodStatus,
+  isQuarterSelectable,
+  formatQuarterDateRange,
+  type QuarterPeriodStatus,
+} from "@/lib/utils/habitQuarterPeriod";
 import type { AdminCampaignRow } from "./types";
 
-const QUARTERS: Array<{ key: "Q1" | "Q2" | "Q3" | "Q4"; range: string }> = [
-  { key: "Q1", range: "Jan – Mar" },
-  { key: "Q2", range: "Apr – Jun" },
-  { key: "Q3", range: "Jul – Sep" },
-  { key: "Q4", range: "Oct – Dec" },
-];
+const ALL_QUARTERS = ["Q1", "Q2", "Q3", "Q4"] as const;
+type QuarterKey = (typeof ALL_QUARTERS)[number];
+
+// Fiscal calendar-month fallback labels for tenants that haven't configured
+// Quarter Settings yet (Q1 = Apr per the app's April-based fiscal year), so
+// the modal is never blank on a fresh org. Real ranges come from QuarterSetting.
+const FALLBACK_RANGE: Record<QuarterKey, string> = {
+  Q1: "Apr – Jun",
+  Q2: "Jul – Sep",
+  Q3: "Oct – Dec",
+  Q4: "Jan – Mar",
+};
 
 interface Props {
   onClose: () => void;
@@ -19,22 +34,89 @@ interface Props {
   existingRows?: AdminCampaignRow[];
 }
 
-export function LaunchAssessmentModal({ onClose, onCreated, existingRows = [] }: Props) {
-  const currentQuarter = getFiscalQuarter();
-  const currentYear = getFiscalYear();
-  const years = Array.from({ length: 6 }, (_, i) => currentYear - 2 + i);
+interface QuarterInfo {
+  status: QuarterPeriodStatus | null;
+  selectable: boolean;
+  rangeLabel: string;
+}
 
-  const [quarter, setQuarter] = useState<string>(currentQuarter);
-  const [year, setYear] = useState<number>(currentYear);
+export function LaunchAssessmentModal({ onClose, onCreated, existingRows = [] }: Props) {
+  const create = useCreateHabitCampaign();
+  const { years: fiscalYears } = useFiscalYears();
+  const { quarters: configuredQuarters, isLoading: quartersLoading } = useQuarterStartDates();
+  const { canAddPastQuarterHabit } = usePastWeekFlags();
+
+  const fallbackYear = getFiscalYear();
+
+  // Year dropdown options — configured fiscal years (source of truth), with a
+  // calendar window fallback only while/if nothing is configured.
+  const years = useMemo(
+    () =>
+      fiscalYears.length > 0
+        ? [...fiscalYears].sort((a, b) => a - b)
+        : Array.from({ length: 6 }, (_, i) => fallbackYear - 2 + i),
+    [fiscalYears, fallbackYear],
+  );
+
+  // (year:quarter) → real configured start/end dates.
+  const quarterByKey = useMemo(() => {
+    const map = new Map<string, { startDate: string; endDate: string }>();
+    for (const q of configuredQuarters) {
+      map.set(`${q.fiscalYear}:${q.quarter}`, { startDate: q.startDate, endDate: q.endDate });
+    }
+    return map;
+  }, [configuredQuarters]);
+
+  const [year, setYear] = useState<number>(() => fallbackYear);
+  const [quarter, setQuarter] = useState<QuarterKey | null>(() => getFiscalQuarter());
   const [deadline, setDeadline] = useState<string>("");
   const [notes, setNotes] = useState<string>("");
   const [error, setError] = useState<string | null>(null);
 
-  const create = useCreateHabitCampaign();
+  const userTouched = useRef(false);
+  const hydrated = useRef(false);
 
-  // Per-quarter context shown beneath each quarter card: "1 round done",
-  // "Active campaign", "Not started" — helps admin see at a glance whether
-  // they're about to start a fresh round or open the first.
+  // Classify a quarter for a given year from its configured dates. Unconfigured
+  // quarters can't be classified → shown with the calendar fallback label and
+  // left selectable (preserves behavior for fresh orgs).
+  function periodFor(y: number, q: QuarterKey): QuarterInfo {
+    const row = quarterByKey.get(`${y}:${q}`);
+    if (!row) return { status: null, selectable: true, rangeLabel: FALLBACK_RANGE[q] };
+    const status = getQuarterPeriodStatus(row.startDate, row.endDate);
+    return {
+      status,
+      selectable: isQuarterSelectable({ status, canAddPastQuarter: canAddPastQuarterHabit }),
+      rangeLabel: formatQuarterDateRange(row.startDate, row.endDate),
+    };
+  }
+
+  // One-time default: once the configured quarters settle, jump to the quarter
+  // that contains today; if today is outside every configured quarter, land on
+  // the latest fiscal year's first selectable quarter. Never overrides a manual
+  // pick, and leaves the calendar fallback untouched on a fresh org.
+  useEffect(() => {
+    if (hydrated.current || quartersLoading) return;
+    hydrated.current = true;
+    if (userTouched.current || configuredQuarters.length === 0) return;
+
+    const today = new Date();
+    const current = configuredQuarters.find(
+      (q) => getQuarterPeriodStatus(q.startDate, q.endDate, today) === "current",
+    );
+    if (current) {
+      setYear(current.fiscalYear);
+      setQuarter(current.quarter as QuarterKey);
+      return;
+    }
+
+    const latestYear = Math.max(...configuredQuarters.map((q) => q.fiscalYear));
+    setYear(latestYear);
+    setQuarter(ALL_QUARTERS.find((q) => periodFor(latestYear, q).selectable) ?? null);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [quartersLoading, configuredQuarters]);
+
+  // Per-quarter round context ("1 round done" / "Open campaign" / "Not started")
+  // from existing campaigns — unchanged semantics, layered under the period tag.
   const quarterStatus = useMemo(() => {
     const map: Record<string, { closed: number; open: number }> = {};
     for (const r of existingRows) {
@@ -46,7 +128,29 @@ export function LaunchAssessmentModal({ onClose, onCreated, existingRows = [] }:
     return map;
   }, [existingRows, year]);
 
+  function handleYearChange(nextYear: number) {
+    userTouched.current = true;
+    setYear(nextYear);
+    // Keep the current quarter if it's still selectable for the new year,
+    // otherwise move to the first selectable one (or none).
+    const stillOk = quarter ? periodFor(nextYear, quarter).selectable : false;
+    if (!stillOk) {
+      setQuarter(ALL_QUARTERS.find((q) => periodFor(nextYear, q).selectable) ?? null);
+    }
+  }
+
+  function handleQuarterClick(q: QuarterKey) {
+    if (!periodFor(year, q).selectable) return;
+    userTouched.current = true;
+    setQuarter(q);
+  }
+
+  const selectedInfo = quarter ? periodFor(year, quarter) : null;
+  const canCreate = !!quarter && !!selectedInfo?.selectable;
+  const noneSelectable = ALL_QUARTERS.every((q) => !periodFor(year, q).selectable);
+
   async function handleSave() {
+    if (!quarter || !canCreate) return;
     setError(null);
     try {
       const result = (await create.mutateAsync({
@@ -95,30 +199,47 @@ export function LaunchAssessmentModal({ onClose, onCreated, existingRows = [] }:
               Quarter
             </label>
             <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
-              {QUARTERS.map((q) => {
-                const stat = quarterStatus[q.key];
-                const isSelected = quarter === q.key;
+              {ALL_QUARTERS.map((q) => {
+                const info = periodFor(year, q);
+                const stat = quarterStatus[q];
+                const isSelected = quarter === q;
+                const disabled = !info.selectable;
                 return (
                   <button
-                    key={q.key}
-                    onClick={() => setQuarter(q.key)}
+                    key={q}
+                    type="button"
+                    onClick={() => handleQuarterClick(q)}
+                    disabled={disabled}
+                    aria-disabled={disabled}
+                    title={disabled ? "This quarter has ended — enable 'Add Past Quarter Habit' in Settings to assess it." : undefined}
                     className={`relative text-left p-3 rounded-lg border transition-all ${
                       isSelected
                         ? "border-accent-500 ring-1 ring-accent-200 bg-accent-50/40 shadow-sm"
+                        : disabled
+                        ? "border-gray-200 bg-gray-50 opacity-60 cursor-not-allowed"
                         : "border-gray-200 hover:border-gray-300 bg-white"
                     }`}
                   >
                     <div className="absolute top-2 right-2">
-                      <RadioDot selected={isSelected} />
+                      {disabled ? (
+                        <Lock className="h-3.5 w-3.5 text-gray-400" />
+                      ) : (
+                        <RadioDot selected={isSelected} />
+                      )}
                     </div>
                     <div
                       className={`text-base font-bold tracking-tight ${
                         isSelected ? "text-accent-700" : "text-gray-900"
                       }`}
                     >
-                      {q.key}
+                      {q}
                     </div>
-                    <div className="text-[10px] text-gray-500 mt-0.5">{q.range}</div>
+                    <div className="text-[10px] text-gray-500 mt-0.5">{info.rangeLabel}</div>
+                    {info.status && (
+                      <div className="mt-1">
+                        <PeriodTag status={info.status} locked={disabled} />
+                      </div>
+                    )}
                     <div className="mt-2 flex items-center gap-1 text-[10px]">
                       <QuarterStatusDot status={stat} />
                       <span className="text-gray-500">{quarterStatusLabel(stat)}</span>
@@ -127,6 +248,13 @@ export function LaunchAssessmentModal({ onClose, onCreated, existingRows = [] }:
                 );
               })}
             </div>
+            {noneSelectable && (
+              <p className="mt-2 text-[11px] text-amber-600 leading-relaxed">
+                Every quarter in {year} has ended. Enable{" "}
+                <span className="font-semibold">Add Past Quarter Habit</span> in Settings →
+                Configurations to assess a past quarter.
+              </p>
+            )}
           </div>
 
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
@@ -136,7 +264,7 @@ export function LaunchAssessmentModal({ onClose, onCreated, existingRows = [] }:
               </label>
               <select
                 value={year}
-                onChange={(e) => setYear(Number(e.target.value))}
+                onChange={(e) => handleYearChange(Number(e.target.value))}
                 className="w-full text-sm border border-gray-200 rounded-lg px-3 py-2 bg-white focus:outline-none focus:ring-2 focus:ring-accent-200 focus:border-accent-400 tabular-nums"
               >
                 {years.map((y) => (
@@ -189,8 +317,8 @@ export function LaunchAssessmentModal({ onClose, onCreated, existingRows = [] }:
           </button>
           <button
             onClick={handleSave}
-            disabled={create.isPending}
-            className="px-4 py-2 text-xs font-semibold text-white bg-accent-600 hover:bg-accent-700 rounded-lg shadow-sm disabled:opacity-50 transition-colors"
+            disabled={create.isPending || !canCreate}
+            className="px-4 py-2 text-xs font-semibold text-white bg-accent-600 hover:bg-accent-700 rounded-lg shadow-sm disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
           >
             {create.isPending ? "Creating…" : "Create draft"}
           </button>
@@ -208,6 +336,24 @@ function RadioDot({ selected }: { selected: boolean }) {
       }`}
     >
       {selected && <span className="h-1.5 w-1.5 rounded-full bg-accent-600" />}
+    </span>
+  );
+}
+
+function PeriodTag({ status, locked }: { status: QuarterPeriodStatus; locked: boolean }) {
+  if (status === "current") {
+    return (
+      <span className="text-[9px] font-semibold uppercase tracking-wide text-green-600">Current</span>
+    );
+  }
+  if (status === "future") {
+    return (
+      <span className="text-[9px] font-semibold uppercase tracking-wide text-blue-600">Upcoming</span>
+    );
+  }
+  return (
+    <span className="text-[9px] font-semibold uppercase tracking-wide text-gray-500">
+      {locked ? "Past · locked" : "Past"}
     </span>
   );
 }
