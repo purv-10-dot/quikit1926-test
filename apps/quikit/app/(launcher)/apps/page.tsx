@@ -39,6 +39,7 @@ import Link from "next/link";
 import { motion, AnimatePresence, useReducedMotion } from "framer-motion";
 import { UserMenu, globalSignOut } from "@quikit/ui";
 import { APP_DETAILS } from "../_data/app-details";
+import { SurpriseGiftPopup } from "../_components/surprise-gift-popup";
 
 /* ── Brand tokens (mirror the marketing site + login modal) ── */
 const PAPER = "#F7F7F4";
@@ -198,6 +199,10 @@ export default function AppLauncherPage() {
   // The app whose trial has expired and is being offered an upgrade (null =
   // modal closed). Per-app — replaces the earlier org-level trial pill.
   const [upgradeApp, setUpgradeApp] = useState<AppInfo | null>(null);
+  // Surprise-gift celebration popup: the app whose gift was just claimed (null =
+  // closed) + the granted trial length, plus the slug whose claim is in flight.
+  const [surpriseApp, setSurpriseApp] = useState<AppInfo | null>(null);
+  const [claimingGift, setClaimingGift] = useState<string | null>(null);
   // Gate the header entrance animation until after mount so SSR and the first
   // client render share the same (hidden) state — otherwise framer-motion
   // hydrates the header at its `animate` style and React warns that the
@@ -219,7 +224,7 @@ export default function AppLauncherPage() {
       window.history.replaceState({}, "", `/apps${qs ? `?${qs}` : ""}`);
     } else if (reason === "trial_expired" || reason === "subscription_inactive") {
       // A consumer app bounced the user here because a trial/subscription
-      // lapsed. The per-app "Upgrade to Pro Plan" cards in the Active section
+      // lapsed. The per-app "Claim Your Surprise Gift" cards in the Active section
       // surface the path forward; just clean the URL marker here.
       params.delete("reason");
       const qs = params.toString();
@@ -414,27 +419,33 @@ export default function AppLauncherPage() {
     }
   }
 
-  // Per-app upgrade — clears the trial (trialEndsAt=null → active). Payment
-  // integration is out of scope; this releases the gate end-to-end.
-  async function handleUpgradeApp(app: AppInfo) {
-    setActivating(app.slug);
+  // Claim the "surprise gift" on an expired app — grants an extra month
+  // (server-authoritative) by extending OrgAppAccess.trialEndsAt, then
+  // celebrates with the confetti popup. Reloading the catalog first means the
+  // popup opens over a card that already reads the extended trial.
+  async function handleClaimGift(app: AppInfo) {
+    setClaimingGift(app.slug);
     try {
-      const res = await fetch("/api/org/apps/activate", {
+      const res = await fetch("/api/org/apps/claim-gift", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ appSlug: app.slug, upgrade: true }),
+        body: JSON.stringify({ appSlug: app.slug }),
       });
       const j = await res.json();
       if (!j.success) {
-        window.alert(j.error ?? "Could not upgrade this app.");
+        // No longer eligible / error — refresh so the card reflects reality.
+        if (selectedOrg?.orgId) await loadApps(selectedOrg.orgId, false);
+        window.alert(j.error ?? "Could not claim your gift.");
         return;
       }
       setUpgradeApp(null);
+      setDetailApp(null);
       if (selectedOrg?.orgId) await loadApps(selectedOrg.orgId, false);
+      setSurpriseApp(app);
     } catch {
-      window.alert("Could not upgrade this app. Please try again.");
+      window.alert("Could not claim your gift. Please try again.");
     } finally {
-      setActivating(null);
+      setClaimingGift(null);
     }
   }
 
@@ -505,7 +516,7 @@ export default function AppLauncherPage() {
   };
   // Outline card button (white bg + dark text + border) — matches the launcher
   // card design. Background/hover via Tailwind so :hover works; border/color
-  // inline. Used for Open app / Upgrade to Pro Plan / Start free trial.
+  // inline. Used for Open app / Claim Your Surprise Gift / Start free trial.
   const cardBtnCls =
     "flex-1 py-2.5 rounded-xl text-sm font-bold transition-colors bg-white hover:bg-[#F2F1ED] disabled:opacity-60";
   const cardBtnStyle: React.CSSProperties = { color: INK, border: `1px solid ${HAIRLINE}` };
@@ -535,12 +546,12 @@ export default function AppLauncherPage() {
         <div className="flex items-center gap-2 mt-4">
           {expired ? (
             <button
-              onClick={() => handleUpgradeApp(app)}
-              disabled={activating === app.slug}
+              onClick={() => handleClaimGift(app)}
+              disabled={claimingGift === app.slug}
               className={cardBtnCls}
               style={cardBtnStyle}
             >
-              {activating === app.slug ? "Upgrading…" : "Upgrade to Pro Plan"}
+              {claimingGift === app.slug ? "Claiming…" : "Claim Your Surprise Gift"}
             </button>
           ) : (
             <button
@@ -1045,20 +1056,20 @@ export default function AppLauncherPage() {
                 </h3>
               </div>
               <div style={{ fontSize: 14, color: MUTED, lineHeight: 1.6 }}>
-                <p style={{ marginBottom: 10 }}>Upgrade to the Pro plan to keep using {upgradeApp.name}.</p>
-                <p>Your data is safe — upgrade and you&apos;ll be right back where you left off.</p>
+                <p style={{ marginBottom: 10 }}>Claim your surprise gift — an extra month of {upgradeApp.name}, on us.</p>
+                <p>Your data is safe — claim it and you&apos;ll be right back where you left off.</p>
               </div>
               <div className="flex justify-end gap-2 mt-6">
                 <button onClick={() => setUpgradeApp(null)} className="px-5 py-2.5 text-sm transition-colors" style={{ fontWeight: 700, color: INK, background: PAPER, border: `1px solid ${HAIRLINE}`, borderRadius: 12 }}>
                   Not now
                 </button>
                 <button
-                  onClick={() => handleUpgradeApp(upgradeApp)}
-                  disabled={activating === upgradeApp.slug}
+                  onClick={() => handleClaimGift(upgradeApp)}
+                  disabled={claimingGift === upgradeApp.slug}
                   className="px-5 py-2.5 text-sm transition-colors disabled:opacity-60"
                   style={{ fontWeight: 700, color: "#fff", background: INK, borderRadius: 12 }}
                 >
-                  {activating === upgradeApp.slug ? "Upgrading…" : "Upgrade to Pro Plan"}
+                  {claimingGift === upgradeApp.slug ? "Claiming…" : "Claim Your Surprise Gift"}
                 </button>
               </div>
             </motion.div>
@@ -1228,8 +1239,8 @@ export default function AppLauncherPage() {
                   </button>
                   {detailApp.activated ? (
                     detailApp.trialState === "expired" ? (
-                      <button onClick={() => { const a = detailApp; setDetailApp(null); handleUpgradeApp(a); }} className="px-5 py-2.5 text-sm" style={btnPrimary}>
-                        Upgrade to Pro Plan
+                      <button onClick={() => handleClaimGift(detailApp)} disabled={claimingGift === detailApp.slug} className="px-5 py-2.5 text-sm disabled:opacity-60" style={btnPrimary}>
+                        {claimingGift === detailApp.slug ? "Claiming…" : "Claim Your Surprise Gift"}
                       </button>
                     ) : (
                       <button onClick={() => { const a = detailApp; setDetailApp(null); handleLaunch(a); }} className="px-5 py-2.5 text-sm" style={btnPrimary}>
@@ -1252,6 +1263,16 @@ export default function AppLauncherPage() {
           );
         })()}
       </AnimatePresence>
+
+      {/* Surprise-gift celebration popup — opens after a successful claim on
+          any expired app, granting an extra month of trial. */}
+      {surpriseApp && (
+        <SurpriseGiftPopup
+          slug={surpriseApp.slug}
+          appName={surpriseApp.name}
+          onClose={() => setSurpriseApp(null)}
+        />
+      )}
     </div>
   );
 }
