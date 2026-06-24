@@ -21,7 +21,7 @@ const TEMPLATES = {
     product: "QuikTrack",
   },
   functional: {
-    title: "Functional",
+    title: "Kanban",
     description: "Manage work on a backlog and an activity board — no sprints.",
     Illustration: KanbanIllustration,
     product: "QuikTrack",

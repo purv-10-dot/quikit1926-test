@@ -4,6 +4,12 @@ import { withOrgAuth } from "@/lib/api/withOrgAuth";
 import { createProjectSchema } from "@/lib/validation/project";
 import { seedProjectDefaults, getStarterProjectRoleId } from "@/lib/services/projectDefaults";
 import { userCan, forbidden, isQuikTrackAppAdmin } from "@/lib/api/permissions";
+import { PROJECT_TAB_PATHS } from "@/lib/projectTabs";
+
+// The "functional" (Kanban) template starts with Epics, List and Task Table
+// hidden — a Space Admin can re-enable them later via the tab customizer (+).
+// Every other template shows all tabs (tabConfig = null).
+const KANBAN_HIDDEN_TABS = ["epics", "list", "task-table"];
 
 export const GET = withOrgAuth(async ({ orgId, userId }, req) => {
   const url = new URL(req.url);
@@ -115,6 +121,13 @@ export const POST = withOrgAuth(async ({ orgId, userId }, req) => {
     );
   }
 
+  const templateKey = parsed.data.templateKey ?? "scrum";
+  // Functional/Kanban projects open with a curated tab set; others show all.
+  const initialTabConfig =
+    templateKey === "functional"
+      ? PROJECT_TAB_PATHS.filter((path) => !KANBAN_HIDDEN_TABS.includes(path))
+      : null;
+
   const project = await db.$transaction(async (tx) => {
     const p = await tx.qtProject.create({
       data: {
@@ -123,7 +136,8 @@ export const POST = withOrgAuth(async ({ orgId, userId }, req) => {
         name: parsed.data.name,
         description: parsed.data.description,
         projectType: parsed.data.projectType ?? "software",
-        templateKey: parsed.data.templateKey ?? "scrum",
+        templateKey,
+        ...(initialTabConfig ? { tabConfig: initialTabConfig } : {}),
         icon: parsed.data.icon,
         color: parsed.data.color ?? "#2563eb",
         startDate: parsed.data.startDate ? new Date(parsed.data.startDate) : null,
