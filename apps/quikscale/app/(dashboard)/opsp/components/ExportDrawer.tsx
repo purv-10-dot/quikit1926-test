@@ -1125,7 +1125,8 @@ export function ExportPriorityDrawer({
           {/* Team is optional metadata; owner stays locked to the OPSP user, so
               changing the team here never clears the owner. */}
           <label className={fieldLabel}>Team</label>
-          <TeamSelect value={cur.teamId} onChange={(id) => patch({ teamId: id })} teams={teams} />
+          {/* OPSP export: assign to an EXISTING team only — no inline create. */}
+          <TeamSelect value={cur.teamId} onChange={(id) => patch({ teamId: id })} teams={teams} allowAddTeam={false} />
         </div>
         <div>
           <label className={fieldLabel}>Owner <span className="text-red-500">*</span></label>

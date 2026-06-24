@@ -8,18 +8,24 @@ import { humanizeApiError } from "@/lib/utils/humanizeError";
 
 // ── Team select with inline Add New ──────────────────────────────────────────
 // Shared by the Add/Edit Priority modal and the OPSP "Export → Create
-// Priorities" drawer. Renders a "No team" default, the tenant's teams, and an
-// inline "Add New Team" creator that POSTs to /api/teams and re-selects the
-// new team on success.
+// Priorities" drawer. Renders a "No team" default, the tenant's teams, and
+// (when `allowAddTeam`) an inline "Add New Team" creator that POSTs to
+// /api/teams and re-selects the new team on success.
+//
+// `allowAddTeam` defaults to true so existing call sites are unchanged. The
+// OPSP export drawer passes `false` — there a priority must be assigned to an
+// EXISTING team, not spawn a new one mid-export.
 
 export function TeamSelect({
   value,
   onChange,
   teams,
+  allowAddTeam = true,
 }: {
   value: string;
   onChange: (id: string) => void;
   teams: Team[];
+  allowAddTeam?: boolean;
 }) {
   const queryClient = useQueryClient();
   const [open, setOpen] = useState(false);
@@ -102,7 +108,8 @@ export function TeamSelect({
             </button>
           ))}
 
-          {/* Divider + Add New */}
+          {/* Divider + Add New — hidden when the caller opts out (OPSP export). */}
+          {allowAddTeam && (
           <div className="border-t border-gray-100 mt-1 pt-1">
             {!adding ? (
               <button type="button" onClick={() => setAdding(true)}
@@ -132,6 +139,7 @@ export function TeamSelect({
               </div>
             )}
           </div>
+          )}
         </div>
       )}
     </div>
