@@ -9,6 +9,7 @@ import {
   Wrench,
   IndianRupee,
   MoreHorizontal,
+  Eye,
 } from "lucide-react";
 import {
   PageHeader,
@@ -26,6 +27,7 @@ import {
 } from "@/hooks/use-equipment";
 import { useMenuActions } from "@/hooks/use-permissions";
 import { useQueryClient } from "@tanstack/react-query";
+import { JobCardDrawer } from "./new/JobCardDrawer";
 
 type TabKey = "due" | "job-cards";
 
@@ -59,6 +61,7 @@ export default function MaintenancePage() {
 
   const [tab, setTab] = useState<TabKey>("job-cards");
   const [actionMenu, setActionMenu] = useState<string | null>(null);
+  const [createOpen, setCreateOpen] = useState(false);
 
   const { data: cardsResult, isLoading: cardsLoading } = useJobCards({});
   const { data: summary } = useJobCardSummary({});
@@ -125,45 +128,58 @@ export default function MaintenancePage() {
       {
         key: "actions",
         label: "Action",
-        width: "80px",
-        render: (row) =>
-          row.status === "open" && canEdit ? (
-            <div className="relative">
-              <button
-                type="button"
-                onClick={(e) => {
-                  e.stopPropagation();
-                  setActionMenu(actionMenu === row.id ? null : row.id);
-                }}
-                className="p-1 rounded hover:bg-gray-100 text-gray-500"
-              >
-                <MoreHorizontal className="w-4 h-4" />
-              </button>
-              {actionMenu === row.id && (
-                <div className="absolute right-0 z-20 mt-1 w-36 rounded-lg border border-gray-200 bg-white shadow-lg py-1 text-sm">
-                  <button
-                    type="button"
-                    className="w-full text-left px-3 py-2 hover:bg-gray-50"
-                    onClick={() => void handleClose(row.id)}
-                  >
-                    Close card
-                  </button>
-                  <button
-                    type="button"
-                    className="w-full text-left px-3 py-2 hover:bg-gray-50 text-red-600"
-                    onClick={() => void handleCancel(row.id)}
-                  >
-                    Cancel
-                  </button>
-                </div>
-              )}
-            </div>
-          ) : (
-            <span className="text-gray-300">—</span>
-          ),
+        width: "100px",
+        render: (row) => (
+          <div className="flex items-center gap-1">
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation();
+                router.push(`/equipment/maintenance/${row.id}`);
+              }}
+              className="p-1.5 rounded hover:bg-gray-100 text-gray-500"
+              title="View"
+              aria-label="View"
+            >
+              <Eye className="w-4 h-4" />
+            </button>
+            {row.status === "open" && canEdit && (
+              <div className="relative">
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setActionMenu(actionMenu === row.id ? null : row.id);
+                  }}
+                  className="p-1 rounded hover:bg-gray-100 text-gray-500"
+                >
+                  <MoreHorizontal className="w-4 h-4" />
+                </button>
+                {actionMenu === row.id && (
+                  <div className="absolute right-0 z-20 mt-1 w-36 rounded-lg border border-gray-200 bg-white shadow-lg py-1 text-sm">
+                    <button
+                      type="button"
+                      className="w-full text-left px-3 py-2 hover:bg-gray-50"
+                      onClick={() => void handleClose(row.id)}
+                    >
+                      Close card
+                    </button>
+                    <button
+                      type="button"
+                      className="w-full text-left px-3 py-2 hover:bg-gray-50 text-red-600"
+                      onClick={() => void handleCancel(row.id)}
+                    >
+                      Cancel
+                    </button>
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+        ),
       },
     ],
-    [actionMenu, canEdit, patchMutation],
+    [actionMenu, canEdit, patchMutation, router],
   );
 
   const dueColumns: ColDef<(typeof dueRows)[number]>[] = [
@@ -213,7 +229,7 @@ export default function MaintenancePage() {
         subtitle="Preventive schedule + breakdown job cards"
         actions={
           canAdd ? (
-            <PrimaryButton onClick={() => router.push("/equipment/maintenance/new")}>
+            <PrimaryButton onClick={() => setCreateOpen(true)}>
               <Plus className="w-4 h-4" />
               New Job Card
             </PrimaryButton>
@@ -278,6 +294,10 @@ export default function MaintenancePage() {
             data={rows}
             loading={cardsLoading}
             fitToContent
+            historyEntityType="job_cards"
+            getHistoryRowLabel={(row) =>
+              `${row.jobNumber} · ${row.equipmentCode}`
+            }
             emptyTitle="No job cards yet"
             emptyHint="Create a maintenance job card for a breakdown or preventive service."
           />
@@ -293,6 +313,17 @@ export default function MaintenancePage() {
           />
         )}
       </PageContainer>
+
+      <JobCardDrawer
+        open={createOpen}
+        onClose={() => setCreateOpen(false)}
+        onSaved={async () => {
+          await qc.invalidateQueries({ queryKey: ["job-cards"] });
+          await qc.invalidateQueries({ queryKey: ["job-cards-summary"] });
+          await qc.invalidateQueries({ queryKey: ["maintenance-due"] });
+          setCreateOpen(false);
+        }}
+      />
     </>
   );
 }

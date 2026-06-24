@@ -57,6 +57,15 @@ export async function POST(req: NextRequest) {
       locationId: body.locationId,
       fuelType: body.fuelType,
       capacity: body.capacity,
+      meterType: body.meterType,
+      currentMeter: body.currentMeter,
+      fuelNorm: body.fuelNorm,
+      serviceIntervalValue: body.serviceIntervalValue,
+      serviceIntervalUnit: body.serviceIntervalUnit,
+      ownershipType: body.ownershipType,
+      capitalisationCost: body.capitalisationCost,
+      deprMethod: body.deprMethod,
+      deprRate: body.deprRate,
       status: body.status ?? "active",
     });
     return NextResponse.json(record, { status: 201 });

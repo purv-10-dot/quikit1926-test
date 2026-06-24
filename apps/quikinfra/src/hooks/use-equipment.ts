@@ -7,7 +7,6 @@ import { refreshListQueries } from "@/lib/react-query/list-cache";
 import { entityMeta } from "@/lib/toast";
 import type {
   EquipmentLogRecord,
-  FuelReconciliationRow,
   JobCardRecord,
   MaintenanceDueRecord,
   EquipmentTransferRecord,
@@ -110,28 +109,6 @@ export function usePatchEquipmentLog() {
   });
 }
 
-export function useFuelReconciliation(params?: {
-  projectId?: string;
-  fromDate?: string;
-  toDate?: string;
-}) {
-  const qs = new URLSearchParams();
-  if (params?.projectId) qs.set("projectId", params.projectId);
-  if (params?.fromDate) qs.set("fromDate", params.fromDate);
-  if (params?.toDate) qs.set("toDate", params.toDate);
-  const query = qs.toString();
-
-  return useQuery({
-    queryKey: ["fuel-reconciliation", query],
-    queryFn: () =>
-      fetchApi<{ data: FuelReconciliationRow[] }>(
-        `/api/equipment/fuel-reconciliation${query ? `?${query}` : ""}`,
-      ),
-    ...equipmentQueryOptions,
-    enabled: true,
-  });
-}
-
 export interface JobCardSummary {
   overdue: number;
   dueSoon: number;
@@ -152,6 +129,15 @@ export function useJobCards(params?: { projectId?: string; status?: string }) {
         `/api/equipment/job-cards${query ? `?${query}` : ""}`,
       ),
     ...equipmentQueryOptions,
+  });
+}
+
+export function useJobCard(id: string | null | undefined) {
+  return useQuery({
+    queryKey: ["job-card", id],
+    queryFn: () => fetchApi<JobCardRecord>(`/api/equipment/job-cards/${id}`),
+    ...equipmentQueryOptions,
+    enabled: !!id,
   });
 }
 
@@ -199,11 +185,12 @@ export function usePatchJobCard() {
   return useMutation({
     mutationFn: ({ id, ...data }: { id: string } & Record<string, unknown>) =>
       mutateApi(`/api/equipment/job-cards/${id}`, "PATCH", data),
-    onSuccess: async () => {
+    onSuccess: async (_data, variables) => {
       await refreshListQueries(qc, "job-cards");
       await refreshListQueries(qc, "job-cards-summary");
       await refreshListQueries(qc, "maintenance-due");
       await refreshListQueries(qc, "fleet-dashboard");
+      await qc.invalidateQueries({ queryKey: ["job-card", variables.id] });
     },
     meta: entityMeta("update", "Job card"),
   });
@@ -221,6 +208,15 @@ export function useEquipmentTransfers(params?: { status?: string }) {
         `/api/equipment/transfers${query ? `?${query}` : ""}`,
       ),
     ...equipmentQueryOptions,
+  });
+}
+
+export function useEquipmentTransfer(id: string | null | undefined) {
+  return useQuery({
+    queryKey: ["equipment-transfer", id],
+    queryFn: () => fetchApi<EquipmentTransferRecord>(`/api/equipment/transfers/${id}`),
+    ...equipmentQueryOptions,
+    enabled: !!id,
   });
 }
 
@@ -396,6 +392,18 @@ export function useHireInVerifications() {
   });
 }
 
+export function useHireInVerification(id: string | null | undefined) {
+  return useQuery({
+    queryKey: ["hire-in-verification", id],
+    queryFn: () =>
+      fetchApi<HireInVerificationRecord>(
+        `/api/equipment/hire-in-verifications/${id}`,
+      ),
+    ...equipmentQueryOptions,
+    enabled: !!id,
+  });
+}
+
 export function useRentOutBills() {
   return useQuery({
     queryKey: ["rent-out-bills"],
@@ -438,9 +446,10 @@ export function usePatchHireInVerification() {
   return useMutation({
     mutationFn: ({ id, ...data }: { id: string } & Record<string, unknown>) =>
       mutateApi(`/api/equipment/hire-in-verifications/${id}`, "PATCH", data),
-    onSuccess: async () => {
+    onSuccess: async (_data, variables) => {
       await refreshListQueries(qc, "hire-in-verifications");
       await refreshListQueries(qc, "hire-rent-summary");
+      await qc.invalidateQueries({ queryKey: ["hire-in-verification", variables.id] });
     },
     meta: entityMeta("update", "Hire-in verification"),
   });

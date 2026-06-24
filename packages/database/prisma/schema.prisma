@@ -145,7 +145,6 @@ model Org {
   cnCustomers             CnCustomer[]
   cnDepartments           CnDepartment[]
   cnDieselLogs            CnDieselLog[]
-  cnDocuments             CnDocument[]
   cnFinancialYears        CnFinancialYear[]
   cnGstCodes              CnGSTCode[]
   cnGatePasses            CnGatePass[]
@@ -170,7 +169,6 @@ model Org {
   cnPurchaseRequisitions  CnPurchaseRequisition[]
   cnQcInspections         CnQCInspection[]
   cnSafetyChecklists      CnSafetyChecklist[]
-  cnSafetyIncidents       CnSafetyIncident[]
   cnStockLedger           CnStockLedger[]
   cnStockReconciliations  CnStockReconciliation[]
   cnStockTransfers        CnStockTransfer[]
@@ -2836,7 +2834,6 @@ model CnMachinery {
   capitalisationCost   Decimal? @db.Decimal(18, 2)
   deprRate             Decimal? @db.Decimal(5, 2)
   deprMethod           String?
-  capitalisationDate   DateTime?
   status               String   @default("active")
   createdAt      DateTime @default(now())
   updatedAt      DateTime @updatedAt
@@ -2960,6 +2957,8 @@ model CnEquipmentDeployment {
   destinationProjectId String?
   transferType         String?
   transferDate         DateTime?
+  returnableFrom       DateTime?
+  returnableTo         DateTime?
   reason               String?
   remarks              String?
   gatePassNo           String?
@@ -3043,6 +3042,17 @@ model CnHireRentRecord {
   totalAmount      Decimal?  @db.Decimal(18, 2)
   amount           Decimal?  @db.Decimal(18, 2)
   status           String
+  approvalId       String?
+  submittedAt      DateTime?
+  submittedBy      String?
+  approvedAt       DateTime?
+  approvedBy       String?
+  rejectedAt       DateTime?
+  rejectedBy       String?
+  rejectReason     String?
+  returnedAt       DateTime?
+  returnedBy       String?
+  returnReason     String?
   createdAt        DateTime  @default(now())
   updatedAt        DateTime  @updatedAt
   createdBy        String
@@ -4170,34 +4180,6 @@ model CnQCInspection {
   @@schema("app_quikinfra")
 }
 
-model CnSafetyIncident {
-  id             String    @id @default(cuid())
-  orgId          String
-  projectId      String?
-  incidentNumber String
-  incidentDate   DateTime
-  category       String
-  severity       String    @default("low")
-  title          String
-  description    String?
-  reportedBy     String
-  status         String    @default("open")
-  resolvedAt     DateTime?
-  resolvedBy     String?
-  createdAt      DateTime  @default(now())
-  updatedAt      DateTime  @updatedAt
-  createdBy      String
-  updatedBy      String?
-  deletedAt      DateTime?
-  org            Org       @relation(fields: [orgId], references: [id], onDelete: Cascade)
-
-  @@unique([orgId, incidentNumber])
-  @@index([orgId])
-  @@index([status])
-  @@index([deletedAt])
-  @@schema("app_quikinfra")
-}
-
 model CnSafetyChecklist {
   id            String    @id @default(cuid())
   orgId         String
@@ -4220,26 +4202,6 @@ model CnSafetyChecklist {
   @@index([checklistDate])
   @@index([deletedAt])
   @@map("Safety_checklists")
-  @@schema("app_quikinfra")
-}
-
-model CnDocument {
-  id          String    @id @default(cuid())
-  orgId       String
-  refType     String
-  refId       String
-  fileName    String
-  mimeType    String
-  sizeBytes   Int
-  /// Path relative to DOCS_ROOT (e.g. "orgId/uuid-file.pdf"). Local disk MVP.
-  storagePath String
-  uploadedBy  String
-  createdAt   DateTime  @default(now())
-  deletedAt   DateTime?
-  org         Org       @relation(fields: [orgId], references: [id], onDelete: Cascade)
-
-  @@index([orgId, refType, refId])
-  @@index([deletedAt])
   @@schema("app_quikinfra")
 }
 

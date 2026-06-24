@@ -13,7 +13,6 @@
  *   transfer(s) / stock-transfer       → construction.transfer
  *   reconciliation(s) / stock-reconciliation → construction.reconciliation
  *   diesel-log(s)                      → construction.diesel
- *   asset-mgmt/*                       → construction.stock (asset = stock-tracked item)
  *   grn under store/                   → construction.grn
  *
  * Usage:

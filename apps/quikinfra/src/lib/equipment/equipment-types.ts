@@ -1,5 +1,7 @@
 /** Client-safe equipment types — no server/db imports. */
 
+import type { ApprovalInfo } from "@/lib/approvals/approval-info";
+
 export type LogStatus = "draft" | "pending_approval" | "approved" | "rejected";
 
 export interface EquipmentLogRecord {
@@ -31,23 +33,13 @@ export interface EquipmentLogRecord {
   status: LogStatus;
   approvalId?: string | null;
   canActOnCurrentStep?: boolean;
+  /** Enriched approval timeline — attached by the detail GET route. */
+  approval?: ApprovalInfo | null;
   rejectReason: string | null;
   createdAt: string;
   updatedAt: string;
   createdBy: string;
   updatedBy: string;
-}
-
-export interface FuelReconciliationRow {
-  equipmentId: string;
-  equipmentCode: string;
-  equipmentName: string;
-  runMeter: number;
-  dieselLitres: number;
-  actualLPerUnit: number | null;
-  fuelNorm: number | null;
-  variancePct: number | null;
-  status: "Excess" | "Short" | "Balanced";
 }
 
 export type JobCardStatus = "open" | "closed" | "cancelled";
@@ -82,6 +74,13 @@ export interface JobCardRecord {
   spares: JobCardSpareRecord[];
   remarks: string | null;
   status: JobCardStatus;
+  /**
+   * Enriched approval timeline — attached by the detail GET route when an
+   * approval workflow is wired for job cards. Absent today (job cards have no
+   * approval instance yet); the detail page renders a "not submitted"
+   * placeholder until then.
+   */
+  approval?: ApprovalInfo | null;
   createdAt: string;
   updatedAt: string;
   createdBy: string;
@@ -117,6 +116,8 @@ export interface EquipmentTransferRecord {
   destinationProjectName: string;
   transferType: TransferType;
   transferDate: string;
+  returnableFrom: string | null;
+  returnableTo: string | null;
   reason: string | null;
   remarks: string | null;
   gatePassNo: string | null;
@@ -290,7 +291,15 @@ export interface Machine360Payload {
 
 export type HireRateDirection = "hire_in" | "rent_out";
 export type HireRateBasis = "hour" | "day" | "month";
-export type HireRentStatus = "draft" | "computed" | "approved" | "cancelled" | "active" | "inactive";
+export type HireRentStatus =
+  | "draft"
+  | "computed"
+  | "pending_approval"
+  | "approved"
+  | "rejected"
+  | "cancelled"
+  | "active"
+  | "inactive";
 
 export interface HireRateRecord {
   id: string;
@@ -325,6 +334,7 @@ export interface HireInVerificationRecord {
   equipmentName: string;
   vendorId: string | null;
   vendorName: string | null;
+  projectId: string | null;
   periodFrom: string;
   periodTo: string;
   rate: number;
@@ -339,8 +349,15 @@ export interface HireInVerificationRecord {
   gstAmount: number | null;
   totalAmount: number | null;
   status: string;
+  approvalId?: string | null;
+  rejectReason?: string | null;
+  returnReason?: string | null;
+  /** Enriched approval timeline — attached by the detail GET route. */
+  approval?: ApprovalInfo | null;
   createdAt: string;
   updatedAt: string;
+  createdBy: string;
+  updatedBy: string;
 }
 
 export interface RentOutBillRecord {

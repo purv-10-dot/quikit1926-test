@@ -1,7 +1,6 @@
 "use client";
 
 import { useState } from "react";
-import { useRouter } from "next/navigation";
 import {
   Plus,
   Layers,
@@ -23,72 +22,48 @@ import {
   useFixedAssetDashboard,
   useFixedAssetIssuances,
   useFixedAssetTransfers,
-  useFixedAssetRepairs,
-  useFixedAssetAudits,
-  useFixedAssetDepreciation,
   useReturnFixedAssetIssuance,
   usePatchFixedAssetTransfer,
-  useCloseFixedAssetRepair,
-  useAdjustFixedAssetAudit,
 } from "@/hooks/use-fixed-assets";
 import { useMenuActions, usePermissions } from "@/hooks/use-permissions";
+import { IssueAssetDrawer } from "./issue/new/IssueAssetDrawer";
+import { AssetTransferDrawer } from "./transfers/new/AssetTransferDrawer";
 import type {
-  FixedAssetAuditRecord,
   FixedAssetCategoryRow,
-  FixedAssetDepreciationRow,
   FixedAssetIssuanceRecord,
-  FixedAssetRepairRecord,
   FixedAssetTransferRecord,
 } from "@/lib/equipment/fixed-assets-types";
 
-type TabKey =
-  | "dashboard"
-  | "issuances"
-  | "transfers"
-  | "repairs"
-  | "audit"
-  | "depreciation";
+type TabKey = "dashboard" | "issuances" | "transfers";
 
 function formatCurrency(n: number) {
   return `₹${n.toLocaleString("en-IN", { maximumFractionDigits: 0 })}`;
 }
 
 export default function FixedAssetsPage() {
-  const router = useRouter();
   const { canAdd, canEdit } = useMenuActions("/equipment/fixed-assets");
   const { isSuper } = usePermissions();
   const [tab, setTab] = useState<TabKey>("dashboard");
+  const [createOpen, setCreateOpen] = useState(false);
 
   const { data: dashboard, isLoading: dashLoading } = useFixedAssetDashboard();
   const { data: issuancesResult, isLoading: issuancesLoading } = useFixedAssetIssuances();
   const { data: transfersResult, isLoading: transfersLoading } = useFixedAssetTransfers();
-  const { data: repairsResult, isLoading: repairsLoading } = useFixedAssetRepairs();
-  const { data: auditsResult, isLoading: auditsLoading } = useFixedAssetAudits();
-  const { data: deprResult, isLoading: deprLoading } = useFixedAssetDepreciation();
 
   const returnIssuance = useReturnFixedAssetIssuance();
   const patchTransfer = usePatchFixedAssetTransfer();
-  const closeRepair = useCloseFixedAssetRepair();
-  const adjustAudit = useAdjustFixedAssetAudit();
 
   const kpis = dashboard?.kpis;
   const byCategory = dashboard?.byCategory ?? [];
   const issuances = issuancesResult?.data ?? [];
   const transfers = transfersResult?.data ?? [];
-  const repairs = repairsResult?.data ?? [];
-  const audits = auditsResult?.data ?? [];
-  const depreciation = deprResult?.data ?? [];
 
   const primaryAction =
     tab === "issuances"
       ? { label: "Issue Asset", href: "/equipment/fixed-assets/issue/new" }
       : tab === "transfers"
         ? { label: "New Transfer", href: "/equipment/fixed-assets/transfers/new" }
-        : tab === "repairs"
-          ? { label: "Open Repair", href: "/equipment/fixed-assets/repairs/new" }
-          : tab === "audit"
-            ? { label: "New Audit", href: "/equipment/fixed-assets/audits/new" }
-            : null;
+        : null;
 
   const issuanceColumns: ColDef<FixedAssetIssuanceRecord>[] = [
     { key: "issuanceNumber", label: "Issuance #", width: "100px" },
@@ -213,151 +188,6 @@ export default function FixedAssetsPage() {
     },
   ];
 
-  const repairColumns: ColDef<FixedAssetRepairRecord>[] = [
-    { key: "repairNumber", label: "Repair #", width: "100px" },
-    {
-      key: "asset",
-      label: "Asset",
-      render: (row) => (
-        <div>
-          <div className="font-medium">{row.assetCode}</div>
-          <div className="text-xs text-gray-500">{row.assetName}</div>
-        </div>
-      ),
-    },
-    { key: "quantity", label: "Qty", width: "60px" },
-    { key: "problem", label: "Problem", render: (r) => r.problem ?? "—" },
-    {
-      key: "repairCost",
-      label: "Cost",
-      width: "90px",
-      render: (r) => formatCurrency(r.repairCost),
-    },
-    {
-      key: "status",
-      label: "Status",
-      width: "80px",
-      render: (r) => <StatusChip status={r.status} />,
-    },
-    {
-      key: "actions",
-      label: "Action",
-      width: "70px",
-      render: (row) =>
-        row.status === "open" && (isSuper || canEdit) ? (
-          <button
-            type="button"
-            className="text-xs font-medium text-emerald-700"
-            onClick={(e) => {
-              e.stopPropagation();
-              void closeRepair.mutateAsync({ id: row.id, action: "close" });
-            }}
-          >
-            Close
-          </button>
-        ) : (
-          "—"
-        ),
-    },
-  ];
-
-  const auditColumns: ColDef<FixedAssetAuditRecord>[] = [
-    { key: "auditNumber", label: "Audit #", width: "100px" },
-    {
-      key: "asset",
-      label: "Asset",
-      render: (row) => (
-        <div>
-          <div className="font-medium">{row.assetCode}</div>
-          <div className="text-xs text-gray-500">{row.assetName}</div>
-        </div>
-      ),
-    },
-    { key: "bookQty", label: "Book Qty", width: "80px" },
-    { key: "countedQty", label: "Counted", width: "80px" },
-    {
-      key: "varianceQty",
-      label: "Variance",
-      width: "80px",
-      render: (r) => (
-        <span className={r.varianceQty < 0 ? "text-red-600 font-medium tabular-nums" : "tabular-nums"}>
-          {r.varianceQty}
-        </span>
-      ),
-    },
-    { key: "auditDate", label: "Date", width: "100px" },
-    {
-      key: "status",
-      label: "Status",
-      width: "80px",
-      render: (r) => <StatusChip status={r.status} />,
-    },
-    {
-      key: "actions",
-      label: "Action",
-      width: "80px",
-      render: (row) =>
-        row.status === "draft" && (isSuper || canEdit) ? (
-          <button
-            type="button"
-            className="text-xs font-medium text-orange-600"
-            onClick={(e) => {
-              e.stopPropagation();
-              void adjustAudit.mutateAsync(row.id);
-            }}
-          >
-            Adjust
-          </button>
-        ) : (
-          "—"
-        ),
-    },
-  ];
-
-  const deprColumns: ColDef<FixedAssetDepreciationRow>[] = [
-    {
-      key: "asset",
-      label: "Asset",
-      render: (row) => (
-        <div>
-          <div className="font-medium">{row.assetCode}</div>
-          <div className="text-xs text-gray-500">{row.assetName}</div>
-        </div>
-      ),
-    },
-    { key: "deprMethod", label: "Method", width: "70px", render: (r) => r.deprMethod ?? "—" },
-    {
-      key: "deprRate",
-      label: "Rate %",
-      width: "70px",
-      render: (r) => (r.deprRate != null ? r.deprRate : "—"),
-    },
-    {
-      key: "cost",
-      label: "Cost",
-      width: "100px",
-      render: (r) => formatCurrency(r.cost),
-    },
-    {
-      key: "accumulatedDepr",
-      label: "Accum. Depr",
-      width: "110px",
-      render: (r) => formatCurrency(r.accumulatedDepr),
-    },
-    {
-      key: "annualDepr",
-      label: "Annual Depr",
-      width: "110px",
-      render: (r) => formatCurrency(r.annualDepr),
-    },
-    {
-      key: "bookValue",
-      label: "Book Value",
-      width: "110px",
-      render: (r) => formatCurrency(r.bookValue),
-    },
-  ];
-
   const categoryColumns: ColDef<FixedAssetCategoryRow>[] = [
     { key: "category", label: "Category" },
     { key: "assets", label: "Assets", width: "100px" },
@@ -373,14 +203,14 @@ export default function FixedAssetsPage() {
     <>
       <PageHeader
         title="Fixed Asset / Tools"
-        subtitle="Issuance · returns · repair · depreciation"
+        subtitle="Issuance · returns · transfers"
         breadcrumbs={[
           { label: "Plant & Machinery", href: "/equipment/fixed-assets" },
           { label: "Fixed Assets" },
         ]}
         actions={
           primaryAction && (canAdd || isSuper) ? (
-            <PrimaryButton onClick={() => router.push(primaryAction.href)}>
+            <PrimaryButton onClick={() => setCreateOpen(true)}>
               <Plus className="h-4 w-4" />
               {primaryAction.label}
             </PrimaryButton>
@@ -395,9 +225,6 @@ export default function FixedAssetsPage() {
               { key: "dashboard", label: "Dashboard" },
               { key: "issuances", label: "Issuances" },
               { key: "transfers", label: "Transfers" },
-              { key: "repairs", label: "Repairs" },
-              { key: "audit", label: "Audit" },
-              { key: "depreciation", label: "Depreciation" },
             ] as const
           ).map((t) => (
             <button
@@ -439,7 +266,7 @@ export default function FixedAssetsPage() {
                 loading={dashLoading}
                 fitToContent
                 emptyTitle="No assets registered"
-                emptyHint="Add tools and fixed assets in Masters → Assets, then set depreciation fields."
+                emptyHint="Add tools and fixed assets in Masters → Assets."
               />
             </div>
           </>
@@ -469,42 +296,18 @@ export default function FixedAssetsPage() {
           />
         )}
 
-        {tab === "repairs" && (
-          <DataTable
-            id="fixed-asset-repairs"
-            columns={repairColumns}
-            data={repairs}
-            loading={repairsLoading}
-            fitToContent
-            emptyTitle="No repairs open"
-            emptyHint="Open a repair job card for damaged tools."
-          />
-        )}
-
-        {tab === "audit" && (
-          <DataTable
-            id="fixed-asset-audits"
-            columns={auditColumns}
-            data={audits}
-            loading={auditsLoading}
-            fitToContent
-            emptyTitle="No audits recorded"
-            emptyHint="Record a physical count and adjust book quantity."
-          />
-        )}
-
-        {tab === "depreciation" && (
-          <DataTable
-            id="fixed-asset-depreciation"
-            columns={deprColumns}
-            data={depreciation}
-            loading={deprLoading}
-            fitToContent
-            emptyTitle="No depreciation data"
-            emptyHint="Set purchase value, depr method (SLM/WDV), and rate on asset master."
-          />
-        )}
       </PageContainer>
+
+      <IssueAssetDrawer
+        open={createOpen && tab === "issuances"}
+        onClose={() => setCreateOpen(false)}
+        onSaved={() => setCreateOpen(false)}
+      />
+      <AssetTransferDrawer
+        open={createOpen && tab === "transfers"}
+        onClose={() => setCreateOpen(false)}
+        onSaved={() => setCreateOpen(false)}
+      />
     </>
   );
 }
