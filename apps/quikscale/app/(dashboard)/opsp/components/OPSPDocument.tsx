@@ -806,11 +806,14 @@ export function OPSPDocument({
                   <SectionHeader title="Key Initiatives" sub="1 Year Priorities" />
                 </View>
               </View>
-              {/* §1.5 body — 5 numbered rows × 3 cols. The slack-absorber for this
-                  page: rows are flex:1 so trimming this height just shortens each
-                  row slightly. 8mm was moved from here to §1.8 (Strengths/Weaknesses)
-                  so its 3 writing lines get comfortable vertical spacing. */}
-              <View style={{ flexDirection: "row", height: "57mm" }}>
+              {/* §1.5 body — 5 numbered rows × 3 cols. The TRUE slack-absorber for
+                  this page: `flex:1` (not a fixed height) so it shrinks to absorb
+                  growth from the unbounded §1.3 Names block above. Without this, a
+                  name that wraps to a 2nd line pushes the all-fixed-height grid past
+                  A4 and react-pdf emits a blank continuation page between the People
+                  and Process pages. `minHeight` keeps the 5 action rows legible; for
+                  extreme content the page still flows naturally (never capped). */}
+              <View style={{ flexDirection: "row", flex: 1, minHeight: "40mm" }}>
                 <View style={{ flex: 1, borderRightWidth: 1, borderBottomWidth: 1, borderTopColor: COLORS.borderDark, borderRightColor: COLORS.borderDark, borderBottomColor: COLORS.borderDark, borderLeftColor: COLORS.borderDark, overflow: "hidden" }}>
                   {actions5.map((v, i) => (
                     <NumberedRow key={i} i={i} text={v} isLast={i === 4} />
