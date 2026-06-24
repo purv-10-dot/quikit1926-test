@@ -3,7 +3,7 @@ name: Prisma — migrate deploy
 on:
   workflow_dispatch:
   push:
-    branches: [Pre-Prod]
+    branches: [Prod]
 
 permissions:
   contents: read
