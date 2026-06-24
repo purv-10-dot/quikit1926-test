@@ -3,6 +3,7 @@ import { db } from "@/lib/db";
 import { withOrgAuth } from "@/lib/api/withOrgAuth";
 import { updateSurveySchema } from "@/lib/schemas/surveySchema";
 import { validationError } from "@/lib/api/validationError";
+import { withTxRetry } from "@/lib/api/withTxRetry";
 
 export const GET = withOrgAuth<{ id: string }>(
   async ({ orgId }, _req, { params }) => {
@@ -58,21 +59,31 @@ export const PUT = withOrgAuth<{ id: string }>(
 
     // Reorder existing questions.
     if (parsed.data.reorder?.length) {
+      // Sort by question id so two concurrent reorders of the same survey
+      // acquire row locks in a consistent order — prevents deadlocks on the
+      // (surveyId, order) unique index. The final `order` written is identical
+      // regardless of statement order, so this is behavior-preserving.
+      const ordered = [...parsed.data.reorder].sort((a, b) =>
+        a.id < b.id ? -1 : a.id > b.id ? 1 : 0,
+      );
       // Re-order in two passes (negative offset, then final order) to avoid unique-constraint clashes.
-      await db.$transaction([
-        ...parsed.data.reorder.map((r) =>
-          db.surveyQuestion.update({
-            where: { id: r.id },
-            data: { order: -1 - r.order },
-          }),
-        ),
-        ...parsed.data.reorder.map((r) =>
-          db.surveyQuestion.update({
-            where: { id: r.id },
-            data: { order: r.order },
-          }),
-        ),
-      ]);
+      // Retried as a unit if Postgres picks this tx as a deadlock victim.
+      await withTxRetry(() =>
+        db.$transaction([
+          ...ordered.map((r) =>
+            db.surveyQuestion.update({
+              where: { id: r.id },
+              data: { order: -1 - r.order },
+            }),
+          ),
+          ...ordered.map((r) =>
+            db.surveyQuestion.update({
+              where: { id: r.id },
+              data: { order: r.order },
+            }),
+          ),
+        ]),
+      );
     }
 
     const updated = await db.survey.findFirst({

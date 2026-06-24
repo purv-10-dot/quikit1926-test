@@ -105,7 +105,7 @@ async function wipe(orgId: string, userIds: string[]) {
   console.log("🧨 Wiping existing demo data (scoped to demo users + demo entities only)…");
   const demoTeamSlugs = TEAMS.map((t) => t.slug);
   const demoCategoryNames = CATEGORIES.map((c) => c.name);
-  const demoTeams = await db.team.findMany({ where: { orgId, slug: { in: demoTeamSlugs } }, select: { id: true } });
+  const demoTeams = await db.qsTeam.findMany({ where: { orgId, slug: { in: demoTeamSlugs } }, select: { id: true } });
   const demoTeamIds = demoTeams.map((t) => t.id);
 
   await db.$transaction([
@@ -119,8 +119,8 @@ async function wipe(orgId: string, userIds: string[]) {
     db.wWWItem.deleteMany({ where: { orgId, createdBy: { in: userIds } } }),
     db.accountabilityFunction.deleteMany({ where: { orgId, teamId: { in: demoTeamIds } } }),
     db.categoryMaster.deleteMany({ where: { orgId, name: { in: demoCategoryNames } } }),
-    db.userTeam.deleteMany({ where: { orgId, userId: { in: userIds } } }),
-    db.team.deleteMany({ where: { orgId, slug: { in: demoTeamSlugs } } }),
+    db.qsUserTeam.deleteMany({ where: { orgId, userId: { in: userIds } } }),
+    db.qsTeam.deleteMany({ where: { orgId, slug: { in: demoTeamSlugs } } }),
     db.userAppAccess.deleteMany({ where: { orgId, userId: { in: userIds } } }),
     db.orgMember.deleteMany({ where: { orgId, userId: { in: userIds } } }),
   ]);
@@ -191,7 +191,7 @@ async function seedTeams(orgId: string, userIds: Record<string, string>) {
   for (const [i, t] of TEAMS.entries()) {
     const headEmail = USERS.find((u) => u.team === t.slug && u.role !== "employee")?.email
       ?? USERS.find((u) => u.team === t.slug)?.email;
-    const team = await db.team.create({
+    const team = await db.qsTeam.create({
       data: {
         orgId,
         name: t.name,
@@ -209,7 +209,7 @@ async function seedTeams(orgId: string, userIds: Record<string, string>) {
       where: { orgId_userId: { orgId, userId: userIds[u.email]! } },
       data: { teamId: teamIds[u.team] },
     });
-    await db.userTeam.create({
+    await db.qsUserTeam.create({
       data: { orgId, userId: userIds[u.email]!, teamId: teamIds[u.team]! },
     });
   }

@@ -1,8 +1,8 @@
 "use client";
 
 import { useState, useRef, useEffect, useCallback, useMemo } from "react";
-import { usePriorities, useDeletePriority, useBulkRestorePriority } from "@/lib/hooks/usePriority";
-import { useUsers } from "@/lib/hooks/useUsers";
+import { usePrioritiesPaginated, useDeletePriority, useBulkRestorePriority, type PriorityFilters } from "@/lib/hooks/usePriority";
+import { useInfiniteUsers } from "@/lib/hooks/useInfiniteUsers";
 import { TableSkeleton } from "@/components/ui/Skeleton";
 import {
   getFiscalYear, getFiscalQuarter, fiscalYearLabel,
@@ -67,8 +67,15 @@ export default function PriorityPage() {
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const handleSelectionChange = useCallback((ids: Set<string>) => setSelectedIds(new Set(ids)), []);
 
-  const { data: users = [] } = useUsers(filterTeam || undefined);
-  const teamUserIds = useMemo(() => new Set(users.map(u => u.id)), [users]);
+  // Owner dropdown — DB-level infinite (25/page) + server search.
+  const [ownerSearch, setOwnerSearch] = useState("");
+  const {
+    users,
+    isLoading: ownersLoading,
+    hasNextPage: ownersHasMore,
+    isFetchingNextPage: ownersLoadingMore,
+    fetchNextPage: fetchMoreOwners,
+  } = useInfiniteUsers(filterTeam || undefined, ownerSearch);
   // Hidden cols come from the DB-backed user pref. Sort now lives in the
   // shared Redux tables slice (lib/store) — same pattern as KPI + WWW. The
   // priorityPrefs hook is kept for hiddenCols only.
@@ -80,7 +87,19 @@ export default function PriorityPage() {
   // View Trash toggle
   const [viewTrash, setViewTrash] = useState(false);
 
-  const { data: priorities = [], isLoading, error, refetch } = usePriorities(year, quarter, prioritySort, viewTrash);
+  // DB-level list: pagination + search + owner/team/status filters all run in
+  // the route now. `search` is the debounced value from the shared store.
+  const listFilters: PriorityFilters = {
+    year, quarter, sort: prioritySort, includeDeleted: viewTrash,
+    page, limit: pageSize,
+    search: search.trim() || undefined,
+    owner: filterOwner || undefined,
+    teamId: filterTeam || undefined,
+    status: filterStatus || undefined,
+  };
+  const { data: pageData, isLoading, error, refetch } = usePrioritiesPaginated(listFilters);
+  const priorities = useMemo(() => pageData?.data ?? [], [pageData]);
+  const total = pageData?.meta.total ?? 0;
   const deletePriority = useDeletePriority();
   const bulkRestorePriority = useBulkRestorePriority();
 
@@ -95,6 +114,7 @@ export default function PriorityPage() {
     startWeek: "Start Week",
     endWeek: "End Week",
     lastNote: "Last Note",
+    importedFromOpsp: "Imported from OPSP",
     // Audit columns — populated by GET /api/priority via decorateAudit.
     createdBy: "Created By",
     updatedBy: "Updated By",
@@ -139,19 +159,9 @@ export default function PriorityPage() {
     }
   }
 
-  // Filter priorities client-side
-  const filtered = priorities.filter(p => {
-    if (search && !p.name.toLowerCase().includes(search.toLowerCase())) return false;
-    if (filterOwner) { if (p.owner !== filterOwner) return false; }
-    else if (filterTeam) { if (!teamUserIds.has(p.owner)) return false; }
-    if (filterStatus && p.overallStatus !== filterStatus) return false;
-    return true;
-  });
-
-  // Reset to page 1 whenever filter results would push current page out of range
-  useEffect(() => { setPage(1); }, [search, filterOwner, filterTeam, filterStatus, year, quarter, viewTrash, pageSize]);
-
-  const pagedPriorities = filtered.slice((page - 1) * pageSize, page * pageSize);
+  // Reset to page 1 whenever a filter/search/sort that changes the result set
+  // is touched, so we never request an out-of-range page.
+  useEffect(() => { setPage(1); }, [search, filterOwner, filterTeam, filterStatus, year, quarter, viewTrash, pageSize, prioritySort]);
 
   // DB-driven current week + date range (respects QuarterSetting.startDate).
   const fiscalWeek = useCurrentWeek(year, quarter);
@@ -176,13 +186,13 @@ export default function PriorityPage() {
     await runExport<any>({
       selection: sel,
       columns,
-      pageRows: filtered,
+      pageRows: priorities,
       fetchFiltered: async () => priorities as any[],
       fetchAll: async () => priorities as any[],
       filename: `Priorities-FY${year}-${quarter}${viewTrash ? "-Trash" : ""}`,
       sheetName: "Priorities",
     });
-  }, [priorityColumns, filtered, priorities, year, quarter, viewTrash]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [priorityColumns, priorities, year, quarter, viewTrash]); // eslint-disable-line react-hooks/exhaustive-deps
 
   return (
     <div className="flex flex-col h-full">
@@ -191,7 +201,7 @@ export default function PriorityPage() {
         <div className="flex items-center gap-3">
           <h1 className="text-base font-semibold text-gray-800 whitespace-nowrap">Priority</h1>
           <span className="text-xs bg-gray-100 text-gray-600 px-2 py-0.5 rounded-full font-medium">
-            {filtered.length} {filtered.length === 1 ? "item" : "items"}
+            {total} {total === 1 ? "item" : "items"}
           </span>
           {fiscalWeek !== null && (
             <span className="text-xs bg-accent-50 text-accent-600 border border-accent-100 px-2 py-0.5 rounded-full font-medium whitespace-nowrap">
@@ -253,7 +263,7 @@ export default function PriorityPage() {
               <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
               </svg>
-              Viewing deleted ({filtered.length})
+              Viewing deleted ({total})
               <svg className="h-3 w-3 ml-0.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
               </svg>
@@ -303,6 +313,11 @@ export default function PriorityPage() {
                     value={filterOwner}
                     onChange={(v) => { setFilterOwner(v); ctx.setFilterOwner(v); }}
                     options={users.map(userToFilterOption)}
+                    onSearchChange={setOwnerSearch}
+                    onLoadMore={fetchMoreOwners}
+                    hasMore={ownersHasMore}
+                    loadingMore={ownersLoadingMore}
+                    loading={ownersLoading}
                     allLabel="All owners"
                   />
                 </div>
@@ -349,7 +364,7 @@ export default function PriorityPage() {
             onHiddenColsChange={(next) => priorityPrefs.setHiddenCols(next)}
             isTrashActive={viewTrash}
             onToggleTrash={setViewTrash}
-            rowCounts={{ page: filtered.length, filtered: filtered.length, all: priorities.length }}
+            rowCounts={{ page: priorities.length, filtered: total, all: total }}
             onExport={handlePriorityExport}
             defaultExportColumnKeys={visiblePriorityCols}
           />
@@ -379,7 +394,7 @@ export default function PriorityPage() {
           </div>
         ) : (
           <PriorityTable
-            priorities={pagedPriorities}
+            priorities={priorities}
             onRefresh={refetch}
             year={year}
             quarter={quarter}
@@ -388,7 +403,7 @@ export default function PriorityPage() {
             onSelectionChange={handleSelectionChange}
             page={page}
             pageSize={pageSize}
-            total={filtered.length}
+            total={total}
             onPageChange={setPage}
             onPageSizeChange={setPageSize}
             canDelete={canDelete}

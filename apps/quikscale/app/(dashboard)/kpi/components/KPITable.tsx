@@ -1,9 +1,9 @@
 "use client";
 
-import { useState, useRef, useEffect, useMemo } from "react";
+import { useState, useRef, useEffect, useMemo, type UIEvent } from "react";
 import type { KPIRow, WeeklyValue } from "@/lib/types/kpi";
 import { ALL_WEEKS, weekDateLabel } from "@/lib/utils/fiscal";
-import { progressColor, weekCellColors, fmt, fmtCompact, getProgressBadgeColors, getLatestWeeklyNote } from "@/lib/utils/kpiHelpers";
+import { progressColor, weekCellColors, fmt, fmtCompactBy, getProgressBadgeColors, getLatestWeeklyNote, type NumberFormat } from "@/lib/utils/kpiHelpers";
 import { getColorByPercentage } from "@/lib/utils/colorLogic";
 import { UserAuditCell, DateAuditCell } from "@/components/table/AuditCells";
 import { computeQtd, weeklyGoalFor } from "./kpiStats";
@@ -11,11 +11,13 @@ import { useTableColumns, ALL_STATIC_COLS, COL_LABELS, SORT_KEYS } from "../hook
 import { useStickyOffsets } from "@/lib/hooks/useStickyOffsets";
 import { FreezeIcon } from "@/components/ui/FreezeIcon";
 import { HorizontalScroller } from "@/components/ui/HorizontalScroller";
+import { isNearBottom } from "@/lib/utils/scroll";
 import { ResizeHandle as SharedResizeHandle } from "@/lib/hooks/useColumnResize";
 import { useCurrentWeek, useWeekLabels } from "@/lib/hooks/useCurrentWeek";
 import { usePastWeekFlags } from "@/lib/hooks/useFeatureFlags";
 import { LogModal } from "./LogModal";
-import { KPILogsModal } from "./KPILogsModal";
+import { ChangeHistoryPanel } from "./ChangeHistoryPanel";
+import { HistoryButton } from "@/components/audit/HistoryButton";
 import { WeekTooltip } from "./WeekTooltip";
 import { DescTooltip } from "./DescTooltip";
 import { NameTooltip } from "./NameTooltip";
@@ -37,12 +39,16 @@ const ResizeHandle = SharedResizeHandle;
 
 interface Props {
   kpis: KPIRow[];
-  total: number;
-  page: number;
-  pageSize: number;
+  // Pagination props are optional: when any is omitted the internal Paginator
+  // is hidden (used by the dashboard's infinite-scroll shell, which renders ALL
+  // accumulated rows itself). Mirrors PriorityTable/WWWTable's paginationEnabled
+  // gate. Cell styling is unchanged.
+  total?: number;
+  page?: number;
+  pageSize?: number;
   year: number;
   quarter: string;
-  onPageChange: (p: number) => void;
+  onPageChange?: (p: number) => void;
   onPageSizeChange?: (size: number) => void;
   onSort: (col: string, dir: "asc" | "desc") => void;
   onRefresh: () => void;
@@ -73,10 +79,38 @@ interface Props {
    *  "name", "owner", "progressPercent"), i.e. SORT_KEYS[col]. */
   sortBy?: string;
   sortOrder?: "asc" | "desc";
+  /** Infinite-scroll mode (dashboard). When `maxBodyHeight` is set the table
+   *  body becomes a fixed-height vertical scroll area (sticky header pins, both
+   *  scrollbars stay inside the card) and `onLoadMore` fires near the bottom.
+   *  Omitted on module pages → classic paginated behavior, unchanged. */
+  maxBodyHeight?: number;
+  hasMore?: boolean;
+  isFetchingMore?: boolean;
+  onLoadMore?: () => void;
+  /** Number display format for the value cells. "indian" → lakh/crore/arab;
+   *  default "standard" → K/M/B. Only the dashboard passes "indian"; module
+   *  pages omit it and stay unchanged. Affects number text only (no styling). */
+  numberFormat?: NumberFormat;
 }
 
-export function KPITable({ kpis: kpisAll, total, page, pageSize, year, quarter, onPageChange, onPageSizeChange, onSort, onRefresh, onSelectionChange, clearSelectionTrigger, onHiddenColsChange, showColTrigger, hideColumns, maxRows, readOnly, fillWidth, canDelete = true, canUpdate = true, sortBy, sortOrder }: Props) {
+export function KPITable({ kpis: kpisAll, total, page, pageSize, year, quarter, onPageChange, onPageSizeChange, onSort, onRefresh, onSelectionChange, clearSelectionTrigger, onHiddenColsChange, showColTrigger, hideColumns, maxRows, readOnly, fillWidth, canDelete = true, canUpdate = true, sortBy, sortOrder, maxBodyHeight, hasMore, isFetchingMore, onLoadMore, numberFormat = "standard" }: Props) {
   const kpis = maxRows != null ? kpisAll.slice(0, maxRows) : kpisAll;
+  // Compact number formatter honoring the caller's format (Indian on dashboard,
+  // standard everywhere else). Number text only — no styling change.
+  const fmtN = (v: number | null | undefined) => fmtCompactBy(v, numberFormat);
+  // Infinite-scroll mode: bounded-height body whose vertical scroll loads more.
+  const infiniteMode = maxBodyHeight != null;
+  const handleBodyScroll = (e: UIEvent<HTMLDivElement>) => {
+    if (!infiniteMode || !hasMore || isFetchingMore) return;
+    if (isNearBottom(e.currentTarget)) onLoadMore?.();
+  };
+  // Pagination is enabled only when the caller wires up all of page/pageSize/
+  // total/onPageChange (module pages). The dashboard omits them → infinite mode.
+  const paginationEnabled = page != null && pageSize != null && total != null && onPageChange != null;
+  // Defaults so row numbering + slicing math stay valid in infinite mode
+  // (page 1, all loaded rows on one logical page).
+  const effPage = page ?? 1;
+  const effPageSize = pageSize ?? (kpisAll.length || 1);
   const allCols = [...ALL_STATIC_COLS, ...ALL_WEEKS.map(w => `week${w}`)];
   const headerRowRef = useRef<HTMLTableRowElement>(null);
   const [logKPI, setLogKPI] = useState<KPIRow | null>(null);
@@ -125,9 +159,56 @@ export function KPITable({ kpis: kpisAll, total, page, pageSize, year, quarter, 
   const hideLog = localHideSet.has("_log");
   const hideId = localHideSet.has("_id");
 
-  const totalPages = Math.ceil(total / pageSize);
+  const totalPages = Math.ceil((total ?? kpisAll.length) / effPageSize);
   const visibleStaticCols = ALL_STATIC_COLS.filter(c => !localHideSet.has(c));
   const visibleWeekCols = ALL_WEEKS.filter(w => !localHideSet.has(`week${w}`));
+
+  // Per-row derived data hoisted out of the render .map. Previously this heavy
+  // compute (Standalone QTD re-derive, weekMap build, badge colors) re-ran for
+  // EVERY visible row on ANY table state change (modal open, selection, column
+  // resize). Computing it once per (kpis, currentWeek) is byte-identical output
+  // — just not recomputed on unrelated re-renders. Keyed by kpi.id.
+  const rowDerived = useMemo(() => {
+    const map = new Map<string, {
+      progressDivisionType: "Cumulative" | "Standalone";
+      progressPct: number;
+      ownerName: string | null;
+      weekMap: Record<number, WeeklyValue>;
+      progressBarBg: string;
+      progressTextColor: string;
+    }>();
+    for (const kpi of kpis) {
+      const progressDivisionType: "Cumulative" | "Standalone" =
+        kpi.divisionType === "Standalone" ? "Standalone" : "Cumulative";
+      const stdProgress =
+        progressDivisionType === "Standalone"
+          ? computeQtd(kpi, currentWeek, "Standalone")
+          : null;
+      const progressAchieved =
+        stdProgress != null ? (stdProgress.qtdAchieved ?? 0) : (kpi.qtdAchieved ?? 0);
+      const progressGoal =
+        stdProgress != null
+          ? (stdProgress.qtdGoal ?? kpi.target ?? 0)
+          : (kpi.qtdGoal ?? kpi.target ?? 0);
+      const progressPct = progressGoal > 0 ? (progressAchieved / progressGoal) * 100 : 0;
+      const ownerName = kpi.owner_user ? `${kpi.owner_user.firstName} ${kpi.owner_user.lastName}` : kpi.owner;
+      const weekMap: Record<number, WeeklyValue> = {};
+      (kpi.weeklyValues ?? []).forEach(wv => { weekMap[wv.weekNumber] = wv; });
+      const hasAnyWeeklyValue = Object.values(weekMap).some((wv) => wv?.value != null);
+      const progressBadge = kpi.qtdAchieved != null
+        ? getProgressBadgeColors(progressAchieved, progressGoal, hasAnyWeeklyValue, kpi.reverseColor ?? false)
+        : { bar: "bg-gray-300", text: "text-gray-500", label: "—" };
+      map.set(kpi.id, {
+        progressDivisionType,
+        progressPct,
+        ownerName,
+        weekMap,
+        progressBarBg: progressBadge.bar,
+        progressTextColor: progressBadge.text,
+      });
+    }
+    return map;
+  }, [kpis, currentWeek]);
 
   function thClass(col: string) {
     const sticky = isFrozen(col);
@@ -162,7 +243,12 @@ export function KPITable({ kpis: kpisAll, total, page, pageSize, year, quarter, 
   return (
     <div className="flex flex-col h-full">
 
-      <HorizontalScroller className="flex-1">
+      <HorizontalScroller
+        className="flex-1"
+        innerStyle={infiniteMode ? { maxHeight: maxBodyHeight } : undefined}
+        showVerticalScrollbar={infiniteMode}
+        onContentScroll={infiniteMode ? handleBodyScroll : undefined}
+      >
         <table
           className={`border-separate border-spacing-0 text-xs ${fillWidth ? "w-full" : ""}`}
           style={fillWidth
@@ -279,30 +365,10 @@ export function KPITable({ kpis: kpisAll, total, page, pageSize, year, quarter, 
               // ~113%. Re-derive via `computeQtd(...,"Standalone")` —
               // that returns avg / kpi.target per the spec. Cumulative
               // path stays byte-identical to before.
-              const progressDivisionType: "Cumulative" | "Standalone" =
-                kpi.divisionType === "Standalone" ? "Standalone" : "Cumulative";
-              const stdProgress =
-                progressDivisionType === "Standalone"
-                  ? computeQtd(kpi, currentWeek, "Standalone")
-                  : null;
-              const progressAchieved =
-                stdProgress != null
-                  ? (stdProgress.qtdAchieved ?? 0)
-                  : (kpi.qtdAchieved ?? 0);
-              const progressGoal =
-                stdProgress != null
-                  ? (stdProgress.qtdGoal ?? kpi.target ?? 0)
-                  : (kpi.qtdGoal ?? kpi.target ?? 0);
-              const progressPct = progressGoal > 0 ? (progressAchieved / progressGoal) * 100 : 0;
-              const ownerName = kpi.owner_user ? `${kpi.owner_user.firstName} ${kpi.owner_user.lastName}` : kpi.owner;
-              const weekMap: Record<number, WeeklyValue> = {};
-              (kpi.weeklyValues ?? []).forEach(wv => { weekMap[wv.weekNumber] = wv; });
-              const hasAnyWeeklyValue = Object.values(weekMap).some((wv) => wv?.value != null);
-              const progressBadge = kpi.qtdAchieved != null
-                ? getProgressBadgeColors(progressAchieved, progressGoal, hasAnyWeeklyValue, kpi.reverseColor ?? false)
-                : { bar: "bg-gray-300", text: "text-gray-500", label: "—" };
-              const progressBarBg = progressBadge.bar;
-              const progressTextColor = progressBadge.text;
+              // Precomputed once in `rowDerived` (see above) — output identical,
+              // just not recomputed for every row on unrelated re-renders.
+              const { progressDivisionType, progressPct, ownerName, weekMap, progressBarBg, progressTextColor } =
+                rowDerived.get(kpi.id)!;
 
               return (
                 <tr key={kpi.id} className="hover:bg-blue-50/30 transition-colors">
@@ -329,13 +395,7 @@ export function KPITable({ kpis: kpisAll, total, page, pageSize, year, quarter, 
                   {!hideLog && (
                     <td className="sticky z-[15] bg-white px-1 py-2 border-b border-r border-gray-100 text-center"
                       style={{ left: hideCheckbox ? 0 : 40, width: 40, minWidth: 40, maxWidth: 40 }}>
-                      <button onClick={() => openLog(kpi)} disabled={readOnly}
-                        className={`p-1 rounded transition-colors ${readOnly ? "text-gray-300 cursor-not-allowed" : "text-gray-400 hover:text-blue-500 hover:bg-gray-100"}`}
-                        title={readOnly ? "Read-only" : "Open log"}>
-                        <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
-                        </svg>
-                      </button>
+                      <HistoryButton entityId={kpi.id} onClick={() => openLog(kpi)} disabled={readOnly} />
                     </td>
                   )}
                   {/* Fixed: ID (hidable) */}
@@ -344,7 +404,7 @@ export function KPITable({ kpis: kpisAll, total, page, pageSize, year, quarter, 
                       style={{ left: (hideCheckbox ? 0 : 40) + (hideLog ? 0 : 40), width: 40, minWidth: 40, maxWidth: 40 }}>
                       <button onClick={() => openEdit(kpi)} disabled={readOnly}
                         className={`font-medium ${readOnly ? "text-gray-400 cursor-not-allowed" : "text-gray-900 hover:underline"}`}>
-                        {idx + 1 + (page - 1) * pageSize}
+                        {idx + 1 + (effPage - 1) * effPageSize}
                       </button>
                     </td>
                   )}
@@ -444,11 +504,11 @@ export function KPITable({ kpis: kpisAll, total, page, pageSize, year, quarter, 
                   )}
                   {/* Target Value */}
                   {!localHideSet.has("targetValue") && (
-                    <td className={tdClass("targetValue")} style={stickyStyle("targetValue", getColWidth("targetValue"))}>{fmtCompact(kpi.target ?? null)}</td>
+                    <td className={tdClass("targetValue")} style={stickyStyle("targetValue", getColWidth("targetValue"))}>{fmtN(kpi.target ?? null)}</td>
                   )}
                   {/* Quarterly Goal */}
                   {!localHideSet.has("quarterlyGoal") && (
-                    <td className={tdClass("quarterlyGoal")} style={stickyStyle("quarterlyGoal", getColWidth("quarterlyGoal"))}>{fmtCompact(kpi.quarterlyGoal ?? null)}</td>
+                    <td className={tdClass("quarterlyGoal")} style={stickyStyle("quarterlyGoal", getColWidth("quarterlyGoal"))}>{fmtN(kpi.quarterlyGoal ?? null)}</td>
                   )}
                   {/* QTD Goal — Σ weeklyTargets[1..currentWeek-1].
                       Falls back to kpi.qtdGoal when currentWeek is unresolvable. */}
@@ -457,7 +517,7 @@ export function KPITable({ kpis: kpisAll, total, page, pageSize, year, quarter, 
                     return (
                       <>
                         <td className={tdClass("qtdGoal")} style={stickyStyle("qtdGoal", getColWidth("qtdGoal"))}>
-                          {qtdGoal != null ? fmtCompact(qtdGoal) : "—"}
+                          {qtdGoal != null ? fmtN(qtdGoal) : "—"}
                         </td>
                         {!localHideSet.has("qtdAchieved") && (() => {
                           // QTD Achieved uses the same semantic traffic-light
@@ -484,7 +544,7 @@ export function KPITable({ kpis: kpisAll, total, page, pageSize, year, quarter, 
                               ].filter(Boolean).join(" ")}
                               style={stickyStyle("qtdAchieved", getColWidth("qtdAchieved"))}
                             >
-                              {qtdAchieved != null ? fmtCompact(qtdAchieved) : "—"}
+                              {qtdAchieved != null ? fmtN(qtdAchieved) : "—"}
                             </td>
                           );
                         })()}
@@ -514,7 +574,7 @@ export function KPITable({ kpis: kpisAll, total, page, pageSize, year, quarter, 
                         ].filter(Boolean).join(" ")}
                         style={stickyStyle("qtdAchieved", getColWidth("qtdAchieved"))}
                       >
-                        {dQtdAchieved != null ? fmtCompact(dQtdAchieved) : "—"}
+                        {dQtdAchieved != null ? fmtN(dQtdAchieved) : "—"}
                       </td>
                     );
                   })()}
@@ -524,7 +584,7 @@ export function KPITable({ kpis: kpisAll, total, page, pageSize, year, quarter, 
                     <td className={tdClass("weeklyGoal")} style={stickyStyle("weeklyGoal", getColWidth("weeklyGoal"))}>
                       {(() => {
                         const wg = weeklyGoalFor(kpi, currentWeek ?? 1);
-                        return wg > 0 ? fmtCompact(wg) : "—";
+                        return wg > 0 ? fmtN(wg) : "—";
                       })()}
                     </td>
                   )}
@@ -563,6 +623,17 @@ export function KPITable({ kpis: kpisAll, total, page, pageSize, year, quarter, 
                       </td>
                     );
                   })()}
+                  {/* Imported from OPSP — Yes when this KPI was created via the
+                      OPSP "Export → Create KPIs" flow. Neutral styling (locked table). */}
+                  {!localHideSet.has("importedFromOpsp") && (
+                    <td className={tdClass("importedFromOpsp")} style={stickyStyle("importedFromOpsp", getColWidth("importedFromOpsp"))}>
+                      {kpi.importedFromOpsp ? (
+                        <span className="text-gray-700 font-medium">Yes</span>
+                      ) : (
+                        <span className="text-gray-300">No</span>
+                      )}
+                    </td>
+                  )}
                   {/* Audit columns — Created By / Updated By / Created Date / Updated Date.
                       Populated by GET /api/kpi (see lib/api/auditUsers.ts). */}
                   {!localHideSet.has("createdBy") && (
@@ -659,7 +730,7 @@ export function KPITable({ kpis: kpisAll, total, page, pageSize, year, quarter, 
                           <WeekTooltip weekNumber={w} value={val} note={note} owners={ownerBreakdown}>
                             <div className="flex items-center justify-center w-full h-full px-2 py-2 cursor-default">
                               {hasValue
-                                ? fmtCompact(val)
+                                ? fmtN(val)
                                 : <span className="text-gray-300 font-normal">—</span>}
                             </div>
                           </WeekTooltip>
@@ -676,17 +747,29 @@ export function KPITable({ kpis: kpisAll, total, page, pageSize, year, quarter, 
         </table>
       </HorizontalScroller>
 
-      <Pagination
-        page={page}
-        totalPages={totalPages}
-        total={total}
-        limit={pageSize}
-        onPageChange={onPageChange}
-        onPageSizeChange={onPageSizeChange}
-      />
+      {infiniteMode && isFetchingMore && (
+        <div className="flex items-center justify-center gap-2 py-2.5 text-xs text-gray-400 border-t border-gray-100 bg-gray-50">
+          <svg className="h-4 w-4 animate-spin text-gray-300" fill="none" viewBox="0 0 24 24">
+            <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+            <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+          </svg>
+          Loading more…
+        </div>
+      )}
 
-      {logKPI && <LogModal kpi={logKPI} onClose={() => setLogKPI(null)} onRefresh={onRefresh} initialTab={logInitialTab} canUpdate={canUpdate} />}
-      {auditKPI && <KPILogsModal kpi={auditKPI} onClose={() => setAuditKPI(null)} />}
+      {paginationEnabled && (
+        <Pagination
+          page={effPage}
+          totalPages={totalPages}
+          total={total as number}
+          limit={effPageSize}
+          onPageChange={onPageChange as (p: number) => void}
+          onPageSizeChange={onPageSizeChange}
+        />
+      )}
+
+      {logKPI && <LogModal kpi={logKPI} onClose={() => setLogKPI(null)} onRefresh={onRefresh} initialTab={logInitialTab} canUpdate={canUpdate} onOpenHistory={() => setAuditKPI(logKPI)} />}
+      {auditKPI && <ChangeHistoryPanel kpi={auditKPI} onClose={() => setAuditKPI(null)} />}
     </div>
   );
 }

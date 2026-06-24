@@ -18,7 +18,7 @@ export const POST = withOrgAuth(async ({ orgId, userId }, req) => {
     );
   }
   // Find candidate trashed teams in scope.
-  const trashed = await db.team.findMany({
+  const trashed = await db.qsTeam.findMany({
     where: { id: { in: ids }, orgId, deletedAt: { not: null } },
     select: { id: true, name: true },
   });
@@ -30,7 +30,7 @@ export const POST = withOrgAuth(async ({ orgId, userId }, req) => {
   // Restoring would silently create a duplicate-name pair, so report them
   // back to the user instead.
   const lowerNames = trashed.map((t) => t.name.toLowerCase());
-  const collisions = await db.team.findMany({
+  const collisions = await db.qsTeam.findMany({
     where: {
       orgId,
       deletedAt: null,
@@ -47,7 +47,7 @@ export const POST = withOrgAuth(async ({ orgId, userId }, req) => {
     .map((t) => ({ id: t.id, name: t.name, reason: "name conflict" as const }));
 
   const { count } = restorableIds.length
-    ? await db.team.updateMany({
+    ? await db.qsTeam.updateMany({
         where: { id: { in: restorableIds }, orgId, deletedAt: { not: null } },
         data: { deletedAt: null },
       })

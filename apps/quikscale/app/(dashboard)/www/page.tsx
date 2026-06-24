@@ -1,8 +1,8 @@
 "use client";
 
 import { useState, useRef, useEffect, useCallback, useMemo } from "react";
-import { useWWWItems, useDeleteWWW, useBulkRestoreWWW } from "@/lib/hooks/useWWW";
-import { useUsers } from "@/lib/hooks/useUsers";
+import { useWWWItemsPaginated, useDeleteWWW, useBulkRestoreWWW, type WWWFilters } from "@/lib/hooks/useWWW";
+import { useInfiniteUsers } from "@/lib/hooks/useInfiniteUsers";
 import { TableSkeleton } from "@/components/ui/Skeleton";
 import { WWWTable } from "./components/WWWTable";
 import { WWWPanel } from "./components/WWWPanel";
@@ -44,8 +44,15 @@ export default function WWWPage() {
     });
   }, []);
 
-  const { data: users = [] } = useUsers(filterTeam || undefined);
-  const teamUserIds = useMemo(() => new Set(users.map(u => u.id)), [users]);
+  // Owner ("Who") dropdown — DB-level infinite (25/page) + server search.
+  const [ownerSearch, setOwnerSearch] = useState("");
+  const {
+    users,
+    isLoading: ownersLoading,
+    hasNextPage: ownersHasMore,
+    isFetchingNextPage: ownersLoadingMore,
+    fetchNextPage: fetchMoreOwners,
+  } = useInfiniteUsers(filterTeam || undefined, ownerSearch);
   const [showAddModal, setShowAddModal] = useState(false);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
 
@@ -72,12 +79,25 @@ export default function WWWPage() {
   // View Trash toggle
   const [viewTrash, setViewTrash] = useState(false);
 
-  // Pass status filter + sort to API
-  const { data: items = [], isLoading, error, refetch } = useWWWItems({
+  // Pagination state — default 10 rows per page; selectable 10/20/30/50.
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(10);
+
+  // DB-level list: pagination + search + who/team/status filters all run in
+  // the route now. `search` is the debounced value from the shared store.
+  const listFilters: WWWFilters = {
     status: filterStatus || undefined,
     sort: wwwSort,
     includeDeleted: viewTrash,
-  });
+    page,
+    limit: pageSize,
+    search: search.trim() || undefined,
+    who: filterWho || undefined,
+    teamId: filterTeam || undefined,
+  };
+  const { data: pageData, isLoading, error, refetch } = useWWWItemsPaginated(listFilters);
+  const items = useMemo(() => pageData?.data ?? [], [pageData]);
+  const total = pageData?.meta.total ?? 0;
 
   const deleteWWW = useDeleteWWW();
   const bulkRestoreWWW = useBulkRestoreWWW();
@@ -117,23 +137,8 @@ export default function WWWPage() {
     }
   }
 
-  // Client-side filters
-  const filtered = items.filter(item => {
-    if (filterWho) { if (item.who !== filterWho) return false; }
-    else if (filterTeam) { if (!teamUserIds.has(item.who)) return false; }
-    if (!search) return true;
-    const q = search.toLowerCase();
-    return (
-      item.what.toLowerCase().includes(q) ||
-      (item.notes ?? "").toLowerCase().includes(q)
-    );
-  });
-
-  // Pagination state — default 10 rows per page; selectable 10/20/30/50.
-  const [page, setPage] = useState(1);
-  const [pageSize, setPageSize] = useState(10);
-  useEffect(() => { setPage(1); }, [filterWho, filterTeam, filterStatus, search, viewTrash, pageSize]);
-  const pagedItems = filtered.slice((page - 1) * pageSize, page * pageSize);
+  // Reset to page 1 whenever a filter/search/sort changes the result set.
+  useEffect(() => { setPage(1); }, [filterWho, filterTeam, filterStatus, search, viewTrash, pageSize, wwwSort]);
 
   const activeFilterCount = (filterTeam ? 1 : 0) + (filterStatus ? 1 : 0) + (filterWho ? 1 : 0);
 
@@ -161,13 +166,13 @@ export default function WWWPage() {
     await runExport<any>({
       selection: sel,
       columns,
-      pageRows: filtered,
+      pageRows: items,
       fetchFiltered: async () => items as any[],
       fetchAll: async () => items as any[],
       filename: `WWW${viewTrash ? "-Trash" : ""}`,
       sheetName: "WWW",
     });
-  }, [wwwColumns, filtered, items, viewTrash]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [wwwColumns, items, viewTrash]); // eslint-disable-line react-hooks/exhaustive-deps
 
   return (
     <div className="flex flex-col h-full">
@@ -176,7 +181,7 @@ export default function WWWPage() {
         <div className="flex items-center gap-3">
           <h1 className="text-base font-semibold text-gray-800 whitespace-nowrap">WWW</h1>
           <span className="text-xs bg-gray-100 text-gray-600 px-2 py-0.5 rounded-full font-medium">
-            {filtered.length} {filtered.length === 1 ? "item" : "items"}
+            {total} {total === 1 ? "item" : "items"}
           </span>
         </div>
 
@@ -233,7 +238,7 @@ export default function WWWPage() {
               <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
               </svg>
-              Viewing deleted ({filtered.length})
+              Viewing deleted ({total})
               <svg className="h-3 w-3 ml-0.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
               </svg>
@@ -283,6 +288,11 @@ export default function WWWPage() {
                     value={filterWho}
                     onChange={(v) => { setFilterWho(v); ctx.setFilterOwner(v); }}
                     options={users.map(userToFilterOption)}
+                    onSearchChange={setOwnerSearch}
+                    onLoadMore={fetchMoreOwners}
+                    hasMore={ownersHasMore}
+                    loadingMore={ownersLoadingMore}
+                    loading={ownersLoading}
                     allLabel="All people"
                   />
                 </div>
@@ -316,7 +326,7 @@ export default function WWWPage() {
             onHiddenColsChange={(next) => wwwPrefs.setHiddenCols(next)}
             isTrashActive={viewTrash}
             onToggleTrash={setViewTrash}
-            rowCounts={{ page: filtered.length, filtered: filtered.length, all: items.length }}
+            rowCounts={{ page: items.length, filtered: total, all: total }}
             onExport={handleWwwExport}
             defaultExportColumnKeys={visibleWwwCols}
           />
@@ -346,12 +356,12 @@ export default function WWWPage() {
           </div>
         ) : (
           <WWWTable
-            items={pagedItems}
+            items={items}
             onRefresh={refetch}
             onSelectionChange={handleSelectionChange}
             page={page}
             pageSize={pageSize}
-            total={filtered.length}
+            total={total}
             onPageChange={setPage}
             onPageSizeChange={setPageSize}
             canDelete={canDelete}

@@ -176,7 +176,7 @@ describe("POST /api/kpi — team KPI data integrity", () => {
   });
 
   it("returns 404 when team does not exist in tenant", async () => {
-    mockDb.team.findUnique.mockResolvedValue(null);
+    mockDb.qsTeam.findUnique.mockResolvedValue(null);
     const res = await POST(buildRequest(baseTeam), { params: {} } as any);
     expect(res.status).toBe(404);
   });
@@ -187,7 +187,7 @@ describe("POST /api/kpi — team KPI happy path", () => {
 
   it("creates a team KPI when admin with valid owners", async () => {
     // Team exists in tenant
-    mockDb.team.findUnique.mockResolvedValue({
+    mockDb.qsTeam.findUnique.mockResolvedValue({
       id: TEAM,
       orgId: TENANT,
       headId: "head-user",
@@ -213,7 +213,7 @@ describe("POST /api/kpi — team KPI happy path", () => {
   });
 
   it("returns 400 when an owner is not a team member", async () => {
-    mockDb.team.findUnique.mockResolvedValue({
+    mockDb.qsTeam.findUnique.mockResolvedValue({
       id: TEAM,
       orgId: TENANT,
       headId: "head-user",

@@ -1,16 +1,17 @@
 "use client";
 
-import { useState, useRef, useEffect } from "react";
+import { useState, useRef, useEffect, type UIEvent } from "react";
 import { useSession } from "next-auth/react";
 import { ROLES, ROLE_HIERARCHY } from "@quikit/shared";
 import type { WWWItem } from "@/lib/types/www";
 import { WWWPanel } from "./WWWPanel";
-import { WWWLogsModal } from "./WWWLogsModal";
+import { WWWChangeHistoryPanel } from "./WWWChangeHistoryPanel";
 import { useTablePrefs } from "@/lib/hooks/useTablePreferences";
 import { useTableSort } from "@/lib/store";
 import { SortIndicator } from "@/components/table/SortIndicator";
 import { ColMenu } from "@/components/table/ColMenu";
 import { HorizontalScroller } from "@/components/ui/HorizontalScroller";
+import { isNearBottom } from "@/lib/utils/scroll";
 import { useColumnResize, ResizeHandle } from "@/lib/hooks/useColumnResize";
 import { BaseTooltip } from "@/components/ui/base-tooltip";
 import { UserAuditCell, DateAuditCell } from "@/components/table/AuditCells";
@@ -58,6 +59,26 @@ function TextTooltip({ text, children }: { text: string; children: React.ReactNo
 
 function WhatTooltip({ text, children }: { text: string; children: React.ReactNode }) {
   return <TextTooltip text={text}>{children}</TextTooltip>;
+}
+
+// ── Notes cell ────────────────────────────────────────────────────────────────
+// Fixed-height (~3 lines), vertically-scrollable note box — the same pattern the
+// Individual KPI ("Last Notes") and Priority tables use, so a long note shows a
+// thin scrollbar inside the cell instead of being clipped to 2 lines (the old
+// `line-clamp-2`) or stretching the row. Native `title` shows the full note on
+// hover. Empty → em dash.
+export function ScrollableNote({ text }: { text: string | null | undefined }) {
+  const t = text ?? "";
+  if (!t) return <span className="text-gray-300">—</span>;
+  return (
+    <div
+      className="text-xs text-gray-600 max-h-[3.25rem] overflow-y-auto leading-snug break-words pr-1 cursor-default"
+      style={{ scrollbarWidth: "thin" }}
+      title={t}
+    >
+      {t}
+    </div>
+  );
 }
 
 // ── Status Picker popover ─────────────────────────────────────────────────────
@@ -203,6 +224,21 @@ interface Props {
   canDelete?: boolean;
   /** RBAC v2 — false makes opened edit drawers read-only. Defaults to true. */
   canUpdate?: boolean;
+  /** Controlled sort override. When `onSort` is provided the table uses these
+   *  props (backend sort keys, e.g. "who") for the header indicator and routes
+   *  clicks through `onSort` instead of its internal Redux store. Used by the
+   *  Dashboard for independent DB-level sort. Omit to keep Redux-backed sort. */
+  sortBy?: string;
+  sortOrder?: "asc" | "desc";
+  onSort?: (col: string, dir: "asc" | "desc") => void;
+  /** Infinite-scroll mode (dashboard). When `maxBodyHeight` is set the body
+   *  becomes a fixed-height vertical scroll area (sticky header pins, scrollbars
+   *  inside the card) and `onLoadMore` fires near the bottom. Omitted on the
+   *  module page → unchanged. */
+  maxBodyHeight?: number;
+  hasMore?: boolean;
+  isFetchingMore?: boolean;
+  onLoadMore?: () => void;
 }
 
 // Column keys: _cb, _log, _id (always visible+frozen) | who, when, what, revisedDate, status, notes
@@ -229,8 +265,14 @@ const WWW_ALWAYS_FROZEN = new Set(["_cb", "_log", "_id"]);
 // Only who/when can be sticky-frozen (they're early in the order)
 const WWW_FREEZABLE = new Set(["who", "when"]);
 
-export function WWWTable({ items: itemsAll, onRefresh, onSelectionChange, hideColumns, readOnly, maxRows, page, pageSize, total, onPageChange, onPageSizeChange, canDelete = true, canUpdate = true }: Props) {
+export function WWWTable({ items: itemsAll, onRefresh, onSelectionChange, hideColumns, readOnly, maxRows, page, pageSize, total, onPageChange, onPageSizeChange, canDelete = true, canUpdate = true, sortBy: sortByProp, sortOrder: sortOrderProp, onSort: onSortProp, maxBodyHeight, hasMore, isFetchingMore, onLoadMore }: Props) {
   const items = maxRows != null ? itemsAll.slice(0, maxRows) : itemsAll;
+  // Infinite-scroll mode: bounded-height body whose vertical scroll loads more.
+  const infiniteMode = maxBodyHeight != null;
+  const handleBodyScroll = (e: UIEvent<HTMLDivElement>) => {
+    if (!infiniteMode || !hasMore || isFetchingMore) return;
+    if (isNearBottom(e.currentTarget)) onLoadMore?.();
+  };
   const paginationEnabled = page != null && pageSize != null && total != null && onPageChange != null;
   const totalPages = paginationEnabled ? Math.max(1, Math.ceil((total as number) / (pageSize as number))) : 1;
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
@@ -262,14 +304,21 @@ export function WWWTable({ items: itemsAll, onRefresh, onSelectionChange, hideCo
   // useTablePrefs are intentionally unused here.
   const { frozenCol, setFrozenCol, hiddenCols, hideCol } = useTablePrefs("www");
   const { sortBy: redSortBy, sortOrder: redSortOrder, setSort: setRedSort } = useTableSort("www");
-  const sort = redSortBy ? `${redSortBy}:${redSortOrder}` : null;
+  // Controlled-sort override (Dashboard) wins over the Redux store. Keeps the
+  // /www page Redux-backed while letting the Dashboard sort independently.
+  const controlledSort = onSortProp != null;
+  const effSortBy = controlledSort ? (sortByProp ?? "") : redSortBy;
+  const effSortOrder = controlledSort ? (sortOrderProp ?? "asc") : redSortOrder;
+  const sort = effSortBy ? `${effSortBy}:${effSortOrder}` : null;
   const setSort = (next: string | null) => {
     if (!next) {
-      setRedSort({ sortBy: "", sortOrder: "asc" });
+      if (controlledSort) onSortProp!("", "asc");
+      else setRedSort({ sortBy: "", sortOrder: "asc" });
       return;
     }
     const [col, dir] = next.split(":") as [string, "asc" | "desc"];
-    setRedSort({ sortBy: col, sortOrder: dir });
+    if (controlledSort) onSortProp!(col, dir);
+    else setRedSort({ sortBy: col, sortOrder: dir });
   };
 
   // Filter out hidden columns.
@@ -357,7 +406,12 @@ export function WWWTable({ items: itemsAll, onRefresh, onSelectionChange, hideCo
 
   return (
     <div className="flex flex-col h-full">
-      <HorizontalScroller className="flex-1">
+      <HorizontalScroller
+        className="flex-1"
+        innerStyle={infiniteMode ? { maxHeight: maxBodyHeight } : undefined}
+        showVerticalScrollbar={infiniteMode}
+        onContentScroll={infiniteMode ? handleBodyScroll : undefined}
+      >
         <table className="border-collapse w-full" style={{ tableLayout: "fixed" }}>
           <thead>
             <tr className="bg-accent-50 border-b border-gray-200">
@@ -642,11 +696,7 @@ export function WWWTable({ items: itemsAll, onRefresh, onSelectionChange, hideCo
                   {/* Notes — hidable */}
                   {WWW_COL_ORDER.includes("notes") && (
                     <td className="border-r border-gray-100 px-2 py-1.5 overflow-hidden align-top" style={{ width: getColWidth("notes"), minWidth: getColWidth("notes") }}>
-                      <TextTooltip text={item.notes ?? ""}>
-                        <span className="text-xs text-gray-600 line-clamp-2 leading-snug break-words block cursor-default">
-                          {item.notes || <span className="text-gray-300">—</span>}
-                        </span>
-                      </TextTooltip>
+                      <ScrollableNote text={item.notes} />
                     </td>
                   )}
 
@@ -678,6 +728,16 @@ export function WWWTable({ items: itemsAll, onRefresh, onSelectionChange, hideCo
         </table>
       </HorizontalScroller>
 
+      {infiniteMode && isFetchingMore && (
+        <div className="flex items-center justify-center gap-2 py-2.5 text-xs text-gray-400 border-t border-gray-100 bg-gray-50">
+          <svg className="h-4 w-4 animate-spin text-gray-300" fill="none" viewBox="0 0 24 24">
+            <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+            <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+          </svg>
+          Loading more…
+        </div>
+      )}
+
       {/* Pagination footer */}
       {paginationEnabled && (
         <Pagination
@@ -701,9 +761,9 @@ export function WWWTable({ items: itemsAll, onRefresh, onSelectionChange, hideCo
         />
       )}
 
-      {/* Change-history panel — audit timeline, read-only (triggered by log icon) */}
+      {/* Change-history panel — full audit timeline (triggered by log icon) */}
       {logItem && (
-        <WWWLogsModal
+        <WWWChangeHistoryPanel
           item={logItem}
           onClose={() => setLogItem(null)}
         />

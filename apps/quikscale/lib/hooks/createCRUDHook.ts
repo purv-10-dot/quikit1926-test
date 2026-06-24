@@ -35,8 +35,22 @@ import {
   useQuery,
   useMutation,
   useQueryClient,
+  keepPreviousData,
   type UseQueryOptions,
 } from "@tanstack/react-query";
+import { invalidateEntity, type DashboardEntity } from "@/lib/hooks/dashboardInvalidation";
+
+/** Standard pagination meta returned by `paginatedResponse` on the server. */
+export interface ListMeta {
+  page: number;
+  limit: number;
+  total: number;
+  totalPages: number;
+}
+export interface PaginatedList<Item> {
+  data: Item[];
+  meta: ListMeta;
+}
 
 export interface CRUDHookConfig<Filters> {
   /** Key prefix + base path segment (e.g. "www", "priority", "kpi") */
@@ -66,6 +80,9 @@ export function createCRUDHook<Item, Filters>(
   config: CRUDHookConfig<Filters>
 ) {
   const { resource, listUrl, staleTime = 1000 * 60 * 5 } = config;
+  // resource is "priority" | "www" in practice; the helper degrades gracefully
+  // for anything else (list + dashboard only).
+  const entity = resource as DashboardEntity;
 
   // ── Query keys ─────────────────────────────────────────────────────────
   const keys = {
@@ -80,6 +97,20 @@ export function createCRUDHook<Item, Filters>(
   async function fetchList(filters: Filters): Promise<Item[]> {
     const res = await fetch(listUrl(filters));
     return unwrap<Item[]>(res, `Failed to fetch ${resource}s`);
+  }
+
+  // Paginated variant — reads BOTH `data` and `meta` from the standard
+  // `paginatedResponse` envelope. Used by list pages that drive DB-level
+  // pagination/search/sort. Falls back to a single-page meta if the route
+  // (older shape) returns only `data`.
+  const DEFAULT_META: ListMeta = { page: 1, limit: 0, total: 0, totalPages: 1 };
+  async function fetchListPaginated(filters: Filters): Promise<PaginatedList<Item>> {
+    const res = await fetch(listUrl(filters));
+    const json = await res.json();
+    if (!json.success) throw new Error(json.error || `Failed to fetch ${resource}s`);
+    const data = (json.data ?? []) as Item[];
+    const meta: ListMeta = json.meta ?? { ...DEFAULT_META, total: data.length, limit: data.length };
+    return { data, meta };
   }
 
   async function createItem(body: Partial<Item>): Promise<Item> {
@@ -136,20 +167,38 @@ export function createCRUDHook<Item, Filters>(
     });
   }
 
-  // Dashboard summary aggregates KPI + Priority + WWW in one cached payload
-  // (`useDashboardSummary`, key prefix `["dashboard"]`, staleTime 5min). Any
-  // resource mutation must invalidate it too — otherwise navigating to the
-  // dashboard right after creating/editing a row shows stale data until the
-  // staleTime expires or the user hard-refreshes.
-  const DASHBOARD_KEY = ["dashboard"] as const;
+  /**
+   * DB-level paginated list. Returns `{ data, meta }` and keeps the previous
+   * page's data visible while the next page loads (no spinner flash on
+   * page/sort/search changes).
+   */
+  function useListPaginated(
+    filters: Filters,
+    options?: Omit<UseQueryOptions<PaginatedList<Item>, Error>, "queryKey" | "queryFn">
+  ) {
+    return useQuery({
+      queryKey: [...keys.list(filters), "paginated"] as const,
+      queryFn: () => fetchListPaginated(filters),
+      staleTime,
+      placeholderData: keepPreviousData,
+      ...options,
+    });
+  }
 
+  // Cache invalidation for all mutations below is centralized in
+  // `invalidateEntity` (lib/hooks/dashboardInvalidation.ts): it busts the
+  // module list, the Dashboard summary (["dashboard"]) AND the Dashboard
+  // infinite-scroll list (["<resource>-infinite"]). Keeping it in one place
+  // ensures the editor's own client and the real-time socket clients invalidate
+  // exactly the same keys.
   function useCreate() {
     const queryClient = useQueryClient();
     return useMutation({
       mutationFn: (body: Partial<Item>) => createItem(body),
       onSuccess: () => {
-        queryClient.invalidateQueries({ queryKey: keys.lists() });
-        queryClient.invalidateQueries({ queryKey: DASHBOARD_KEY });
+        // list + dashboard summary + Dashboard infinite list — see
+        // dashboardInvalidation.ts (keeps editor + socket clients in sync).
+        invalidateEntity(queryClient, entity);
       },
     });
   }
@@ -159,9 +208,7 @@ export function createCRUDHook<Item, Filters>(
     return useMutation({
       mutationFn: (body: Partial<Item>) => updateItem(id, body),
       onSuccess: () => {
-        queryClient.invalidateQueries({ queryKey: keys.detail(id) });
-        queryClient.invalidateQueries({ queryKey: keys.lists() });
-        queryClient.invalidateQueries({ queryKey: DASHBOARD_KEY });
+        invalidateEntity(queryClient, entity, { id });
       },
     });
   }
@@ -173,9 +220,7 @@ export function createCRUDHook<Item, Filters>(
       onSuccess: (_data, id) => {
         // Bust the detail cache too — a tab open on the just-deleted row
         // would otherwise keep rendering stale data from before the delete.
-        queryClient.invalidateQueries({ queryKey: keys.detail(id) });
-        queryClient.invalidateQueries({ queryKey: keys.lists() });
-        queryClient.invalidateQueries({ queryKey: DASHBOARD_KEY });
+        invalidateEntity(queryClient, entity, { id });
       },
     });
   }
@@ -189,8 +234,7 @@ export function createCRUDHook<Item, Filters>(
     return useMutation({
       mutationFn: (id: string) => restoreItem(id),
       onSuccess: () => {
-        queryClient.invalidateQueries({ queryKey: keys.lists() });
-        queryClient.invalidateQueries({ queryKey: DASHBOARD_KEY });
+        invalidateEntity(queryClient, entity);
       },
     });
   }
@@ -200,11 +244,10 @@ export function createCRUDHook<Item, Filters>(
     return useMutation({
       mutationFn: (ids: string[]) => bulkRestoreItems(ids),
       onSuccess: () => {
-        queryClient.invalidateQueries({ queryKey: keys.lists() });
-        queryClient.invalidateQueries({ queryKey: DASHBOARD_KEY });
+        invalidateEntity(queryClient, entity);
       },
     });
   }
 
-  return { keys, useList, useCreate, useUpdate, useDelete, useRestore, useBulkRestore };
+  return { keys, useList, useListPaginated, useCreate, useUpdate, useDelete, useRestore, useBulkRestore };
 }

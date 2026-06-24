@@ -34,11 +34,18 @@ function Chip({ tone, value }: { tone: "old" | "new"; value: string }) {
 export function EditNoteCard({
   pending,
   saving,
+  blocked = false,
+  blockedReason,
   onSave,
   onCancel,
 }: {
   pending: PendingEdit;
   saving: boolean;
+  // When true, the change can't be committed yet (e.g. the Actions (QTR) grid
+  // has a validation error) — Save is disabled and a reason is shown. Cancel
+  // still works so the user can discard the unsaved change.
+  blocked?: boolean;
+  blockedReason?: string;
   onSave: (note: string) => void;
   onCancel: () => void;
 }) {
@@ -75,10 +82,14 @@ export function EditNoteCard({
           placeholder="Add a note for this change (optional)…"
           className="w-full resize-none rounded-lg border border-gray-200 bg-white px-2.5 py-1.5 text-xs text-gray-700 placeholder-gray-400 focus:outline-none focus:ring-1 focus:ring-accent-400"
           onKeyDown={(e) => {
-            if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) onSave(note.trim());
+            if (e.key === "Enter" && (e.metaKey || e.ctrlKey) && !blocked) onSave(note.trim());
             if (e.key === "Escape") onCancel();
           }}
         />
+
+        {blocked && blockedReason && (
+          <p className="text-[11px] font-medium text-red-500">{blockedReason}</p>
+        )}
 
         <div className="flex items-center justify-end gap-2">
           <button
@@ -93,8 +104,8 @@ export function EditNoteCard({
           <button
             type="button"
             onClick={() => onSave(note.trim())}
-            disabled={saving}
-            className="inline-flex items-center gap-1 rounded-lg bg-accent-600 px-3 py-1 text-xs font-semibold text-white hover:bg-accent-700 disabled:opacity-50"
+            disabled={saving || blocked}
+            className="inline-flex items-center gap-1 rounded-lg bg-accent-600 px-3 py-1 text-xs font-semibold text-white hover:bg-accent-700 disabled:opacity-50 disabled:cursor-not-allowed"
           >
             <Check className="h-3.5 w-3.5" />
             {saving ? "Saving…" : "Save"}

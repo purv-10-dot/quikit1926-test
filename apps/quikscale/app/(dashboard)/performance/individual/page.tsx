@@ -1,8 +1,9 @@
 "use client";
 
-import { useState, useMemo } from "react";
+import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { Search, Users } from "lucide-react";
+import { Pagination, DEFAULT_PAGE_SIZE } from "@quikit/ui";
 import { useIndividualPerformance } from "@/lib/hooks/usePerformance";
 
 function scoreColor(score: number | null) {
@@ -43,19 +44,26 @@ function Skeleton() {
 export default function IndividualPerformancePage() {
   const router = useRouter();
   const [search, setSearch] = useState("");
-  const { data, isLoading, error } = useIndividualPerformance();
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(DEFAULT_PAGE_SIZE);
 
-  const people = useMemo(() => {
-    const raw = (data as any[]) ?? [];
-    return [...raw].sort((a, b) => (b.overallScore || 0) - (a.overallScore || 0));
-  }, [data]);
+  const { data, isLoading, error } = useIndividualPerformance({ page, limit: pageSize, search });
 
-  const filtered = people.filter((p) => {
-    const full = `${p.firstName} ${p.lastName}`.toLowerCase();
-    return full.includes(search.toLowerCase());
-  });
+  const people = data?.data ?? [];
+  const meta = data?.meta;
+  const total = meta?.total ?? 0;
+  const totalPages = meta?.totalPages ?? 1;
 
-  if (isLoading) return <Skeleton />;
+  function handleSearch(value: string) {
+    setSearch(value);
+    setPage(1);
+  }
+  function handlePageSize(size: number) {
+    setPageSize(size);
+    setPage(1);
+  }
+
+  if (isLoading && !data) return <Skeleton />;
   if (error) return <div className="p-6 text-xs text-red-600">Error: {(error as Error).message}</div>;
 
   return (
@@ -72,14 +80,14 @@ export default function IndividualPerformancePage() {
             type="text"
             placeholder="Search people..."
             value={search}
-            onChange={e => setSearch(e.target.value)}
+            onChange={e => handleSearch(e.target.value)}
             className="pl-8 pr-3 py-1.5 text-xs border border-gray-200 rounded-md focus:outline-none focus:ring-1 focus:ring-accent-500 w-48"
           />
         </div>
       </div>
 
       <div className="flex-1 overflow-auto min-h-0">
-        {filtered.length === 0 ? (
+        {people.length === 0 ? (
           <div className="flex flex-col items-center justify-center h-48 text-gray-400">
             <Users className="h-8 w-8 mb-2" />
             <p className="text-xs">No people found</p>
@@ -96,13 +104,13 @@ export default function IndividualPerformancePage() {
               </tr>
             </thead>
             <tbody className="bg-white">
-              {filtered.map((p, idx) => (
+              {people.map((p: any, idx: number) => (
                 <tr
                   key={p.userId}
                   className="hover:bg-accent-50 cursor-pointer transition-colors"
                   onClick={() => router.push(`/performance/individual/${p.userId}`)}
                 >
-                  <td className="px-3 py-2.5 border-b border-r border-gray-100 text-gray-400 font-mono">{idx + 1}</td>
+                  <td className="px-3 py-2.5 border-b border-r border-gray-100 text-gray-400 font-mono">{(page - 1) * pageSize + idx + 1}</td>
                   <td className="px-3 py-2.5 border-b border-r border-gray-100">
                     <div className="flex items-center gap-2">
                       <Initials name={`${p.firstName} ${p.lastName}`} />
@@ -128,6 +136,15 @@ export default function IndividualPerformancePage() {
           </table>
         )}
       </div>
+
+      <Pagination
+        page={page}
+        totalPages={totalPages}
+        total={total}
+        limit={pageSize}
+        onPageChange={setPage}
+        onPageSizeChange={handlePageSize}
+      />
     </div>
   );
 }

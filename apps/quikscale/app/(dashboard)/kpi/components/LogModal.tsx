@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import { useSession } from "next-auth/react";
 import { useUpdateKPI, useUpdateWeeklyValuesBatch, useNotes, useAddNote } from "@/lib/hooks/useKPI";
 import { useUsers } from "@/lib/hooks/useUsers";
+import { HistoryButton } from "@/components/audit/HistoryButton";
 import type { KPIRow, WeeklyValue, User } from "@/lib/types/kpi";
 import { fiscalYearLabel, weekDateLabel, ALL_WEEKS } from "@/lib/utils/fiscal";
 import { progressColor, fmt } from "@/lib/utils/kpiHelpers";
@@ -19,6 +20,8 @@ import {
   buildOwnerBreakdown,
   redistributeOwnerRemainder,
   distributeContributionsEven,
+  applyWeeklyEdit,
+  sumBreakdown,
 } from "./kpiModalHelpers";
 import { WeekRow } from "./WeekRow";
 import { StatsTab } from "./StatsTab";
@@ -32,6 +35,8 @@ interface Props {
   /** RBAC v2: false makes the entire drawer read-only — every input is
    *  disabled and Save Changes is hidden. Defaults to true. */
   canUpdate?: boolean;
+  /** Opens the Change History drawer for this KPI (AC-1.1). */
+  onOpenHistory?: () => void;
 }
 
 type Tab = "edit" | "updates" | "stats";
@@ -113,23 +118,22 @@ function EditTab({
   }
 
   function setWeekBreakdown(w: number, val: string) {
-    setForm(f => {
-      const newBreakdown = { ...f.weeklyBreakdown, [w]: val };
-      if (f.divisionType !== "Cumulative") {
-        return { ...f, weeklyBreakdown: newBreakdown };
-      }
-      // `redistributeOwnerRemainder` preserves cells 1..w and re-splits
-      // the remainder across w+1..13. Identical formula to KPIModal.
-      return {
-        ...f,
-        weeklyBreakdown: redistributeOwnerRemainder(
-          newBreakdown,
-          w,
-          actualNum(f),
-          f.measurementUnit,
-        ),
-      };
-    });
+    // Mirror the create form (KPIModal.setWeekBreakdown): `applyWeeklyEdit`
+    // clamps the typed value to [0, target − sum(earlier weeks)] for Cumulative
+    // so a single cell can never push the running total past the target, then
+    // redistributes the remainder across w+1..13. Standalone sets the one cell
+    // with no redistribution. `actualNum` applies the currency scale.
+    setForm(f => ({
+      ...f,
+      weeklyBreakdown: applyWeeklyEdit(
+        f.weeklyBreakdown,
+        w,
+        val,
+        actualNum(f),
+        f.measurementUnit,
+        f.divisionType,
+      ),
+    }));
   }
 
   // ── Team-KPI helpers (mirror KPIModal) ──
@@ -902,7 +906,7 @@ function UpdatesTab({
 
 // ── LogModal ──────────────────────────────────────────────────────────────────
 
-export function LogModal({ kpi, onClose, onRefresh, initialTab = "updates", canUpdate = true }: Props) {
+export function LogModal({ kpi, onClose, onRefresh, initialTab = "updates", canUpdate = true, onOpenHistory }: Props) {
   const [tab, setTab] = useState<Tab>(initialTab);
   const { data: session } = useSession();
   const { data: users = [] } = useUsers();
@@ -1066,6 +1070,26 @@ export function LogModal({ kpi, onClose, onRefresh, initialTab = "updates", canU
     if (!editForm.name.trim()) errs.name = "Required";
     // Team KPIs use ownerIds (multi-select), not the single owner field
     if (!isTeamKPI && !editForm.owner) errs.owner = "Required";
+
+    // Individual + Cumulative: the weekly breakdown must not sum to MORE than
+    // the target value. Backstop for the per-cell clamp in setWeekBreakdown,
+    // and it also catches legacy KPIs saved with an over-target breakdown
+    // before that clamp existed. Standalone is exempt — each week intentionally
+    // carries the full target, so the sum is 13× the target by design.
+    if (!isTeamKPI && editForm.divisionType === "Cumulative") {
+      const scaledTarget = editForm.target
+        ? (parseFloat(editForm.target) || 0) *
+          (editForm.measurementUnit === "Currency" ? getMultiplier(editForm.currency, editForm.targetScale) : 1)
+        : 0;
+      if (scaledTarget > 0) {
+        const weekSum = sumBreakdown(editForm.weeklyBreakdown);
+        // 0.01 tolerance absorbs 2-decimal currency rounding residue.
+        if (weekSum > scaledTarget + 0.01) {
+          errs._ = `Weekly targets add up to ${fmt(weekSum)}, which is more than the target value of ${fmt(scaledTarget)}. Reduce the weekly values so they total the target.`;
+        }
+      }
+    }
+
     if (Object.keys(errs).length) {
       setEditErrors(errs);
       setTab("edit");
@@ -1282,11 +1306,14 @@ export function LogModal({ kpi, onClose, onRefresh, initialTab = "updates", canU
               )}
             </div>
           </div>
-          <button onClick={onClose} className="p-1.5 rounded-md hover:bg-gray-100 text-gray-400 hover:text-gray-600 flex-shrink-0">
-            <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-            </svg>
-          </button>
+          <div className="flex items-center gap-1 flex-shrink-0">
+            {onOpenHistory && <HistoryButton entityId={kpi.id} onClick={onOpenHistory} />}
+            <button onClick={onClose} className="p-1.5 rounded-md hover:bg-gray-100 text-gray-400 hover:text-gray-600">
+              <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+              </svg>
+            </button>
+          </div>
         </div>
 
         {/* Tabs */}

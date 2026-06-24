@@ -28,7 +28,6 @@ import {
   type ManageColumn,
 } from "@quikit/ui";
 import { Download, Trash2, Columns, X, ChevronDown } from "lucide-react";
-import * as XLSX from "xlsx";
 import type { KPIRow } from "@/lib/types/kpi";
 import type { PriorityRow } from "@/lib/types/priority";
 import type { WWWItem } from "@/lib/types/www";
@@ -207,6 +206,10 @@ function ExportSectionsModal({
     if (sel.size === 0) return;
     setBusy(true);
     try {
+      // Lazy-load SheetJS only when the user actually exports — keeps the
+      // ~430 KB xlsx library out of the dashboard's initial bundle. The
+      // namespace import has the identical shape to the prior static import.
+      const XLSX = await import("xlsx");
       const wb = XLSX.utils.book_new();
       if (sel.has("kpi") && kpis.length) {
         // Header labels match the table headers + the Manage Columns modal
