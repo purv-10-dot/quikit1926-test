@@ -1,170 +1,167 @@
-name: Docker — build & push to GHCR
+name: Docker Build and Push to GHCR
 
 on:
-push:
-branches:
-- Prod
-workflow_dispatch:
+  push:
+    branches:
+      - Prod
+  workflow_dispatch:
 
 concurrency:
-group: docker-build-ghcr-${{ github.ref }}
-cancel-in-progress: true
+  group: docker-build-ghcr-${{ github.ref }}
+  cancel-in-progress: true
 
 permissions:
-contents: read
-packages: write
+  contents: read
+  packages: write
 
 jobs:
-detect-changes:
-name: Detect Changed Apps
-runs-on: ubuntu-latest
+  detect-changes:
+    name: Detect Changed Apps
+    runs-on: ubuntu-latest
 
-outputs:
-  apps: ${{ steps.set-matrix.outputs.apps }}
-  run_build: ${{ steps.set-matrix.outputs.run_build }}
+    outputs:
+      apps: ${{ steps.set-matrix.outputs.apps }}
+      run_build: ${{ steps.set-matrix.outputs.run_build }}
 
-steps:
-  - name: Checkout
-    uses: actions/checkout@v4
-    with:
-      fetch-depth: 0
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
-  - name: Detect changes
-    id: filter
-    uses: dorny/paths-filter@v3
-    with:
-      filters: |
-        shared:
-          - 'packages/**'
-          - 'package.json'
-          - 'package-lock.json'
-          - 'turbo.json'
+      - name: Detect changes
+        id: filter
+        uses: dorny/paths-filter@v3
+        with:
+          filters: |
+            shared:
+              - 'packages/**'
+              - 'package.json'
+              - 'package-lock.json'
+              - 'turbo.json'
 
-        quikit:
-          - 'apps/quikit/**'
+            quikit:
+              - 'apps/quikit/**'
 
-        auth:
-          - 'apps/auth/**'
+            auth:
+              - 'apps/auth/**'
 
-        admin:
-          - 'apps/admin/**'
+            admin:
+              - 'apps/admin/**'
 
-        quikscale:
-          - 'apps/quikscale/**'
+            quikscale:
+              - 'apps/quikscale/**'
 
-        quiktrack:
-          - 'apps/quiktrack/**'
+            quiktrack:
+              - 'apps/quiktrack/**'
 
-        quikinfra:
-          - 'apps/quikinfra/**'
+            quikinfra:
+              - 'apps/quikinfra/**'
 
-        quikcrm:
-          - 'apps/quikcrm/**'
+            quikcrm:
+              - 'apps/quikcrm/**'
 
-  - name: Generate Matrix
-    id: set-matrix
-    shell: bash
-    run: |
-      APPS=()
+      - name: Generate Matrix
+        id: set-matrix
+        shell: bash
+        run: |
+          APPS=()
 
-      if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
-        APPS=("quikit" "auth" "admin" "quikscale" "quiktrack" "quikinfra" "quikcrm")
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            APPS=("quikit" "auth" "admin" "quikscale" "quiktrack" "quikinfra" "quikcrm")
+          elif [ "${{ steps.filter.outputs.shared }}" = "true" ]; then
+            APPS=("quikit" "auth" "admin" "quikscale" "quiktrack" "quikinfra" "quikcrm")
+          else
+            [ "${{ steps.filter.outputs.quikit }}" = "true" ] && APPS+=("quikit")
+            [ "${{ steps.filter.outputs.auth }}" = "true" ] && APPS+=("auth")
+            [ "${{ steps.filter.outputs.admin }}" = "true" ] && APPS+=("admin")
+            [ "${{ steps.filter.outputs.quikscale }}" = "true" ] && APPS+=("quikscale")
+            [ "${{ steps.filter.outputs.quiktrack }}" = "true" ] && APPS+=("quiktrack")
+            [ "${{ steps.filter.outputs.quikinfra }}" = "true" ] && APPS+=("quikinfra")
+            [ "${{ steps.filter.outputs.quikcrm }}" = "true" ] && APPS+=("quikcrm")
+          fi
 
-      elif [ "${{ steps.filter.outputs.shared }}" = "true" ]; then
-        APPS=("quikit" "auth" "admin" "quikscale" "quiktrack" "quikinfra" "quikcrm")
+          echo "Selected Apps: ${APPS[@]}"
 
-      else
-        [ "${{ steps.filter.outputs.quikit }}" = "true" ] && APPS+=("quikit")
-        [ "${{ steps.filter.outputs.auth }}" = "true" ] && APPS+=("auth")
-        [ "${{ steps.filter.outputs.admin }}" = "true" ] && APPS+=("admin")
-        [ "${{ steps.filter.outputs.quikscale }}" = "true" ] && APPS+=("quikscale")
-        [ "${{ steps.filter.outputs.quiktrack }}" = "true" ] && APPS+=("quiktrack")
-        [ "${{ steps.filter.outputs.quikinfra }}" = "true" ] && APPS+=("quikinfra")
-        [ "${{ steps.filter.outputs.quikcrm }}" = "true" ] && APPS+=("quikcrm")
-      fi
+          if [ ${#APPS[@]} -eq 0 ]; then
+            echo "apps=[]" >> "$GITHUB_OUTPUT"
+            echo "run_build=false" >> "$GITHUB_OUTPUT"
+          else
+            JSON=$(printf '%s\n' "${APPS[@]}" | jq -R . | jq -s -c .)
+            echo "apps=$JSON" >> "$GITHUB_OUTPUT"
+            echo "run_build=true" >> "$GITHUB_OUTPUT"
+          fi
 
-      echo "Selected Apps: ${APPS[@]}"
+      - name: Debug Outputs
+        run: |
+          echo "shared=${{ steps.filter.outputs.shared }}"
+          echo "quikit=${{ steps.filter.outputs.quikit }}"
+          echo "auth=${{ steps.filter.outputs.auth }}"
+          echo "admin=${{ steps.filter.outputs.admin }}"
+          echo "quikscale=${{ steps.filter.outputs.quikscale }}"
+          echo "quiktrack=${{ steps.filter.outputs.quiktrack }}"
+          echo "quikinfra=${{ steps.filter.outputs.quikinfra }}"
+          echo "quikcrm=${{ steps.filter.outputs.quikcrm }}"
+          echo "apps=${{ steps.set-matrix.outputs.apps }}"
 
-      if [ ${#APPS[@]} -eq 0 ]; then
-        echo "apps=[]" >> $GITHUB_OUTPUT
-        echo "run_build=false" >> $GITHUB_OUTPUT
-      else
-        JSON=$(printf '%s\n' "${APPS[@]}" | jq -R . | jq -s -c .)
-        echo "apps=$JSON" >> $GITHUB_OUTPUT
-        echo "run_build=true" >> $GITHUB_OUTPUT
-      fi
+  build:
+    name: Build ${{ matrix.app }}
+    needs: detect-changes
+    if: needs.detect-changes.outputs.run_build == 'true'
 
-  - name: Debug Outputs
-    run: |
-      echo "shared=${{ steps.filter.outputs.shared }}"
-      echo "quikit=${{ steps.filter.outputs.quikit }}"
-      echo "auth=${{ steps.filter.outputs.auth }}"
-      echo "admin=${{ steps.filter.outputs.admin }}"
-      echo "quikscale=${{ steps.filter.outputs.quikscale }}"
-      echo "quiktrack=${{ steps.filter.outputs.quiktrack }}"
-      echo "quikinfra=${{ steps.filter.outputs.quikinfra }}"
-      echo "quikcrm=${{ steps.filter.outputs.quikcrm }}"
-      echo "apps=${{ steps.set-matrix.outputs.apps }}"
+    runs-on: ubuntu-latest
 
-build:
-name: Build ${{ matrix.app }}
-needs: detect-changes
-if: needs.detect-changes.outputs.run_build == 'true'
+    strategy:
+      fail-fast: false
+      matrix:
+        app: ${{ fromJson(needs.detect-changes.outputs.apps) }}
 
-runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
 
-strategy:
-  fail-fast: false
-  matrix:
-    app: ${{ fromJson(needs.detect-changes.outputs.apps) }}
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
 
-steps:
-  - name: Checkout
-    uses: actions/checkout@v4
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
 
-  - name: Set up Docker Buildx
-    uses: docker/setup-buildx-action@v3
+      - name: Lowercase image owner
+        id: owner
+        run: |
+          echo "value=$(echo '${{ github.repository_owner }}' | tr '[:upper:]' '[:lower:]')" >> "$GITHUB_OUTPUT"
 
-  - name: Log in to GHCR
-    uses: docker/login-action@v3
-    with:
-      registry: ghcr.io
-      username: ${{ github.actor }}
-      password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Compute image metadata
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ghcr.io/${{ steps.owner.outputs.value }}/${{ matrix.app }}-runtime
+          tags: |
+            type=raw,value=build-${{ github.run_number }}
+            type=sha,prefix=sha-,format=short
 
-  - name: Lowercase image owner
-    id: owner
-    run: |
-      echo "value=$(echo '${{ github.repository_owner }}' | tr '[:upper:]' '[:lower:]')" >> $GITHUB_OUTPUT
-
-  - name: Compute image metadata
-    id: meta
-    uses: docker/metadata-action@v5
-    with:
-      images: ghcr.io/${{ steps.owner.outputs.value }}/${{ matrix.app }}-runtime
-      tags: |
-        type=raw,value=build-${{ github.run_number }}
-        type=sha,prefix=sha-,format=short
-
-  - name: Build and Push Image
-    uses: docker/build-push-action@v5
-    with:
-      context: .
-      file: apps/${{ matrix.app }}/Dockerfile
-      push: true
-      tags: ${{ steps.meta.outputs.tags }}
-      labels: ${{ steps.meta.outputs.labels }}
-      cache-from: type=gha,scope=${{ matrix.app }}
-      cache-to: type=gha,scope=${{ matrix.app }},mode=max
-      platforms: linux/amd64
-
-      build-args: |
-        NEXT_PUBLIC_LAUNCHER_URL=https://apps.quikit.ai
-        NEXT_PUBLIC_AUTH_URL=https://authn.quikit.ai
-        NEXT_PUBLIC_QUIKIT_URL=https://apps.quikit.ai
-        NEXT_PUBLIC_QUIKSCALE_URL=https://scale.quikit.ai
-        NEXT_PUBLIC_ADMIN_URL=https://orgadmin.quikit.ai
-        NEXT_PUBLIC_LOGIN_URL=https://authn.quikit.ai/login
-        NEXT_PUBLIC_QUIKINFRA_URL=https://infra.quikit.ai
-        NEXT_PUBLIC_QUIKCRM_URL=https://crm.quikit.ai
-        NEXTAUTH_URL=https://authn.quikit.ai
+      - name: Build and Push Image
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: apps/${{ matrix.app }}/Dockerfile
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha,scope=${{ matrix.app }}
+          cache-to: type=gha,scope=${{ matrix.app }},mode=max
+          platforms: linux/amd64
+          build-args: |
+            NEXT_PUBLIC_LAUNCHER_URL=https://apps.quikit.ai
+            NEXT_PUBLIC_AUTH_URL=https://authn.quikit.ai
+            NEXT_PUBLIC_QUIKIT_URL=https://apps.quikit.ai
+            NEXT_PUBLIC_QUIKSCALE_URL=https://scale.quikit.ai
+            NEXT_PUBLIC_ADMIN_URL=https://orgadmin.quikit.ai
+            NEXT_PUBLIC_LOGIN_URL=https://authn.quikit.ai/login
+            NEXT_PUBLIC_QUIKINFRA_URL=https://infra.quikit.ai
+            NEXT_PUBLIC_QUIKCRM_URL=https://crm.quikit.ai
+            NEXTAUTH_URL=https://authn.quikit.ai
