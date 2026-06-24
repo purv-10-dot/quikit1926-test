@@ -20,6 +20,8 @@ import {
   buildOwnerBreakdown,
   redistributeOwnerRemainder,
   distributeContributionsEven,
+  applyWeeklyEdit,
+  sumBreakdown,
 } from "./kpiModalHelpers";
 import { WeekRow } from "./WeekRow";
 import { StatsTab } from "./StatsTab";
@@ -116,23 +118,22 @@ function EditTab({
   }
 
   function setWeekBreakdown(w: number, val: string) {
-    setForm(f => {
-      const newBreakdown = { ...f.weeklyBreakdown, [w]: val };
-      if (f.divisionType !== "Cumulative") {
-        return { ...f, weeklyBreakdown: newBreakdown };
-      }
-      // `redistributeOwnerRemainder` preserves cells 1..w and re-splits
-      // the remainder across w+1..13. Identical formula to KPIModal.
-      return {
-        ...f,
-        weeklyBreakdown: redistributeOwnerRemainder(
-          newBreakdown,
-          w,
-          actualNum(f),
-          f.measurementUnit,
-        ),
-      };
-    });
+    // Mirror the create form (KPIModal.setWeekBreakdown): `applyWeeklyEdit`
+    // clamps the typed value to [0, target − sum(earlier weeks)] for Cumulative
+    // so a single cell can never push the running total past the target, then
+    // redistributes the remainder across w+1..13. Standalone sets the one cell
+    // with no redistribution. `actualNum` applies the currency scale.
+    setForm(f => ({
+      ...f,
+      weeklyBreakdown: applyWeeklyEdit(
+        f.weeklyBreakdown,
+        w,
+        val,
+        actualNum(f),
+        f.measurementUnit,
+        f.divisionType,
+      ),
+    }));
   }
 
   // ── Team-KPI helpers (mirror KPIModal) ──
@@ -1069,6 +1070,26 @@ export function LogModal({ kpi, onClose, onRefresh, initialTab = "updates", canU
     if (!editForm.name.trim()) errs.name = "Required";
     // Team KPIs use ownerIds (multi-select), not the single owner field
     if (!isTeamKPI && !editForm.owner) errs.owner = "Required";
+
+    // Individual + Cumulative: the weekly breakdown must not sum to MORE than
+    // the target value. Backstop for the per-cell clamp in setWeekBreakdown,
+    // and it also catches legacy KPIs saved with an over-target breakdown
+    // before that clamp existed. Standalone is exempt — each week intentionally
+    // carries the full target, so the sum is 13× the target by design.
+    if (!isTeamKPI && editForm.divisionType === "Cumulative") {
+      const scaledTarget = editForm.target
+        ? (parseFloat(editForm.target) || 0) *
+          (editForm.measurementUnit === "Currency" ? getMultiplier(editForm.currency, editForm.targetScale) : 1)
+        : 0;
+      if (scaledTarget > 0) {
+        const weekSum = sumBreakdown(editForm.weeklyBreakdown);
+        // 0.01 tolerance absorbs 2-decimal currency rounding residue.
+        if (weekSum > scaledTarget + 0.01) {
+          errs._ = `Weekly targets add up to ${fmt(weekSum)}, which is more than the target value of ${fmt(scaledTarget)}. Reduce the weekly values so they total the target.`;
+        }
+      }
+    }
+
     if (Object.keys(errs).length) {
       setEditErrors(errs);
       setTab("edit");

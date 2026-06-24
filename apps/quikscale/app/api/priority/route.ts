@@ -9,6 +9,7 @@ import { audit, requestContext } from "@/lib/audit";
 import { rateLimit, LIMITS } from "@/lib/api/rateLimit";
 import { getCurrentFiscalWeekFromDB } from "@/lib/utils/featureFlags";
 import { notifyPriorityAssignment } from "@/lib/services/priorityNotifications";
+import { findPriorityDuplicate, priorityDuplicateMessage } from "@/lib/api/priorityDuplicate";
 import { isOrgAdmin } from "@/lib/api/visibility";
 import { fetchAuditUserMap, decorateAudit } from "@/lib/api/auditUsers";
 import { searchUserIds, dateSearchConditions, numericSearchValue } from "@/lib/api/listSearch";
@@ -176,6 +177,27 @@ export const POST = auth.create(async ({ orgId, userId }, req) => {
     return NextResponse.json({ success: false, error }, { status: 400 });
   }
   const { name, description, owner, teamId, quarter, year, startWeek, endWeek, overallStatus, importedFromOpsp } = parsed.data;
+
+  // Deterministic duplicate guard for the manual "Add New Priority" form: block
+  // an exact match on name + owner + team + period (quarter/year) + start week.
+  // The OPSP "Export → Priority" flow (importedFromOpsp) has its own AI-advisory
+  // + Replace handling, so it's intentionally exempt from this hard block.
+  if (!importedFromOpsp) {
+    const dup = await findPriorityDuplicate(db, orgId, {
+      name,
+      owner,
+      teamId: teamId ?? null,
+      quarter,
+      year,
+      startWeek: startWeek ?? null,
+    });
+    if (dup) {
+      return NextResponse.json(
+        { success: false, error: priorityDuplicateMessage() },
+        { status: 409 },
+      );
+    }
+  }
 
   const created = await db.priority.create({
     data: {

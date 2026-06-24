@@ -10,6 +10,7 @@ import {
 } from "@/lib/utils/fiscal";
 import { achievedPctColor, formatReviewValue, showOpspReviewOwnerColumn } from "./helpers";
 import { reviewRowVisible } from "./reviewRows";
+import { ReviewPeriodPicker } from "./ReviewPeriodPicker";
 import { CATEGORY_TYPE_LABELS, type CategoryType } from "@/lib/utils/breakdownCalc";
 import { CriticalReviewSection } from "./CriticalReviewSection";
 
@@ -196,9 +197,6 @@ import {
   statusCellBg,
   statusLabel as getStatusLabel,
 } from "@/lib/constants/status";
-
-const CURRENT_YEAR = new Date().getFullYear();
-const FISCAL_YEARS = Array.from({ length: 5 }, (_, i) => CURRENT_YEAR - 1 + i);
 
 /* ═══════════════════════════════════════════════
    Helpers
@@ -507,11 +505,8 @@ export default function OPSPReviewPage() {
   const primarySel = useRowSelection();
   const secondarySel = useRowSelection();
 
-  // Year/Quarter picker
-  const [showYearPicker, setShowYearPicker] = useState(false);
   // OPSP edit-after-finalize history (read-only) — same drawer as the editor.
   const [editHistoryOpen, setEditHistoryOpen] = useState(false);
-  const yearRef = useRef<HTMLDivElement>(null);
 
   /* ── Post-finalize "what changed" highlight ──
      Fetch the edit-log, highlight the Review rows whose source field changed
@@ -573,15 +568,6 @@ export default function OPSPReviewPage() {
 
   // Secondary local edits
   const [secondaryEdits, setSecondaryEdits] = useState<Record<number, { status: string; comment: string }>>({});
-
-  // Close year picker on outside click
-  useEffect(() => {
-    function handler(e: MouseEvent) {
-      if (yearRef.current && !yearRef.current.contains(e.target as Node)) setShowYearPicker(false);
-    }
-    document.addEventListener("mousedown", handler);
-    return () => document.removeEventListener("mousedown", handler);
-  }, []);
 
   /* ── Load data ── */
   const loadData = useCallback(async () => {
@@ -1199,9 +1185,11 @@ export default function OPSPReviewPage() {
       <div className="flex flex-col h-full">
         <div className="flex items-center justify-between px-6 py-3 border-b border-gray-200 bg-white flex-shrink-0">
           <h1 className="text-base font-semibold text-gray-800 whitespace-nowrap">Critical Review</h1>
-          <span className="flex items-center gap-1.5 px-2.5 py-1.5 text-xs border border-gray-200 rounded-md text-gray-600">
-            {fiscalYearLabel(year)} · {quarter}
-          </span>
+          <ReviewPeriodPicker
+            year={year}
+            quarter={quarter}
+            onChange={(y, q) => { setYear(y); setQuarter(q); }}
+          />
         </div>
         <div className="flex-1 overflow-hidden min-h-0">
           <CriticalReviewSection
@@ -1304,51 +1292,13 @@ export default function OPSPReviewPage() {
             <History className="h-4 w-4" />
           </button>
 
-          {/* Year / Quarter picker (shared across Review + Critical Review tabs) */}
-          <div className="relative" ref={yearRef}>
-            <button
-              onClick={() => setShowYearPicker((o) => !o)}
-              className={cn(
-                "flex items-center gap-1.5 px-2.5 py-1.5 text-xs border rounded-md hover:bg-gray-50 transition-colors",
-                showYearPicker ? "border-accent-300 bg-accent-50 text-accent-600" : "border-gray-200 text-gray-600",
-              )}
-            >
-              <svg className="h-3.5 w-3.5 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
-              </svg>
-              {fiscalYearLabel(year)} · {quarter}
-              <svg className="h-3 w-3 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
-              </svg>
-            </button>
-
-            {showYearPicker && (
-              <div className="absolute top-full right-0 mt-1.5 w-64 bg-white border border-gray-200 rounded-xl shadow-xl z-50 p-4 space-y-4">
-                <div>
-                  <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider mb-2">Fiscal Year</p>
-                  <div className="grid grid-cols-1 gap-1">
-                    {FISCAL_YEARS.map((y) => (
-                      <button key={y} onClick={() => setYear(y)}
-                        className={cn("text-xs px-3 py-1.5 rounded-lg text-left transition-colors", year === y ? "bg-gray-900 text-white" : "hover:bg-gray-50 text-gray-700")}>
-                        {fiscalYearLabel(y)}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-                <div>
-                  <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider mb-2">Quarter</p>
-                  <div className="grid grid-cols-4 gap-1">
-                    {(["Q1", "Q2", "Q3", "Q4"] as const).map((q) => (
-                      <button key={q} onClick={() => { setQuarter(q); setShowYearPicker(false); }}
-                        className={cn("text-xs px-2 py-1.5 rounded-lg transition-colors", quarter === q ? "bg-gray-900 text-white" : "hover:bg-gray-50 text-gray-700 border border-gray-200")}>
-                        {q}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-              </div>
-            )}
-          </div>
+          {/* Year / Quarter picker — shared component (also used in the
+              critical-only mode above). */}
+          <ReviewPeriodPicker
+            year={year}
+            quarter={quarter}
+            onChange={(y, q) => { setYear(y); setQuarter(q); }}
+          />
         </div>
       </div>
 

@@ -20,6 +20,7 @@
 import { Document, Page, View, Text, StyleSheet, Font } from "@react-pdf/renderer";
 import type { FormData } from "../hooks/useOPSPForm";
 import type { CritCard } from "../types";
+import { hyphenateWord } from "../lib/hyphenate";
 
 /* ─── Constants ────────────────────────────────────────────────────────────── */
 
@@ -87,13 +88,11 @@ const ownerNameOf = (
  * would render as "Bhavya Lo-" / "hana"). Register a no-op hyphenation
  * callback once at module load so words wrap as whole units to the next line.
  *
- * To customise — return an array of breakpoint substrings:
- *   Font.registerHyphenationCallback((word) => {
- *     if (word.length > 20) return word.match(/.{1,10}/g) ?? [word];
- *     return [word]; // don't split this word
- *   });
+ * Normal-length words stay whole (no mid-word hyphenation); only pathologically
+ * long, space-less tokens are split into chunks so they WRAP inside their cell
+ * (and grow the row) instead of overflowing horizontally. See `hyphenateWord`.
  */
-Font.registerHyphenationCallback((word: string) => [word]);
+Font.registerHyphenationCallback(hyphenateWord);
 
 /* ─── Styles — calibrated to match the previous HTML preview ───────────────── */
 
@@ -216,7 +215,9 @@ const s = StyleSheet.create({
     paddingHorizontal: 6,
     borderRightWidth: 1,
     borderRightColor: COLORS.borderDark,
-    justifyContent: "center",
+    // Top-align so a tall (wrapped) KPI name and its Goal line up at the row
+    // top instead of the Goal floating mid-row when the row grows.
+    justifyContent: "flex-start",
     minHeight: 28,
   },
   catProjCellProj: {
@@ -224,7 +225,7 @@ const s = StyleSheet.create({
     paddingVertical: 6,
     paddingHorizontal: 6,
     textAlign: "right",
-    justifyContent: "center",
+    justifyContent: "flex-start",
     minHeight: 28,
   },
   catProjHeader: { backgroundColor: COLORS.bgGray },
@@ -949,8 +950,10 @@ export function OPSPDocument({
               <SectionHeader title="Your Accountability" sub="(Who/When)" />
             </View>
           </View>
-          {/* §2.4 body */}
-          <View style={{ flexDirection: "row", height: "50mm" }}>
+          {/* §2.4 body — `minHeight` (not fixed `height`) so a row grows to fit
+              wrapped content (e.g. a long KPI name) instead of clipping/overlapping
+              the next row; short data still fills the 50mm minimum. */}
+          <View style={{ flexDirection: "row", minHeight: "50mm" }}>
             <View style={{ flex: 1.01, borderRightWidth: 1, borderBottomWidth: 1, borderLeftWidth: 1, borderTopColor: COLORS.borderDark, borderRightColor: COLORS.borderDark, borderBottomColor: COLORS.borderDark, borderLeftColor: COLORS.borderDark, padding: 2, overflow: "hidden" }}>
               <CatProjTable rows={form.actionsQtr ?? []} />
             </View>
@@ -997,8 +1000,10 @@ export function OPSPDocument({
               <SectionHeader title="Your Quarterly Priorities" sub="Due" />
             </View>
           </View>
-          {/* §2.5 body — fixed 65mm (recalc'd after font sizes bumped) to stay within A4 */}
-          <View style={{ flexDirection: "row", height: "65mm" }}>
+          {/* §2.5 body — `minHeight` (was fixed 65mm) so a long Quarterly
+              Priority / Rock grows its row instead of clipping; short data still
+              fills the 65mm minimum. */}
+          <View style={{ flexDirection: "row", minHeight: "65mm" }}>
             <View style={{ flex: 1.035, borderRightWidth: 1, borderBottomWidth: 1, borderLeftWidth: 1, borderTopColor: COLORS.borderDark, borderRightColor: COLORS.borderDark, borderBottomColor: COLORS.borderDark, borderLeftColor: COLORS.borderDark, overflow: "hidden" }}>
               {rocks5.map((r, i) => (
                 <NumberedRow key={i} i={i} text={r.desc} owner={owner(r.owner)} isLast={i === 4} />

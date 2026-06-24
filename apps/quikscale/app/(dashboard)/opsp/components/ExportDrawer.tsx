@@ -634,7 +634,7 @@ export function ExportKPIDrawer({
         </div>
         <div>
           <label className={fieldLabel}>Target Value <span className="text-red-500">*</span></label>
-          <input className={inputCls} value={cur.target} inputMode="decimal" placeholder="0" onChange={(e) => recompute({ target: e.target.value })} />
+          <input className={inputCls} type="number" min="0" value={cur.target} inputMode="decimal" placeholder="0" onChange={(e) => recompute({ target: e.target.value })} />
         </div>
       </div>
 

@@ -314,7 +314,8 @@ function TokenExpiredModal({
         <h2 className="text-sm font-semibold text-gray-900">Duplicate check unavailable</h2>
         <p className="mt-2 text-xs text-gray-600">
           We are not able to identify if you have similar {entity.toLowerCase()}s right now — our AI
-          duplicate-check service is temporarily unavailable. Do you still want to export?
+          duplicate-check service is temporarily unavailable, likely because its API usage limit has
+          been exhausted. Do you still want to export?
         </p>
       </div>
       <div className="mt-4 flex items-center justify-end gap-2 border-t border-gray-100 px-5 py-3">
