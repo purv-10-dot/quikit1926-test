@@ -110,6 +110,10 @@ export function TaskTableView({ projectId }: Props) {
       statuses,
       members: memberMap,
       sprints: sprintMap,
+      // Array forms for the inline editors' member/sprint pickers (the Maps
+      // above are kept for fast per-row lookup of the current value).
+      memberList: members,
+      sprintList: sprints,
       epics,
       onOpenIssue: (id: string) => setOpenIssueId(id),
       // Both onDelete and onPatchIssue are overridden at the section level so
@@ -117,7 +121,7 @@ export function TaskTableView({ projectId }: Props) {
       onDelete: () => { /* overridden per-section */ },
       onPatchIssue: () => { /* overridden per-section */ },
     }),
-    [projectId, statuses, memberMap, sprintMap, epics],
+    [projectId, statuses, memberMap, sprintMap, members, sprints, epics],
   );
 
   return (
