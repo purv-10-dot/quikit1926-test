@@ -238,6 +238,133 @@ A general, admin-configurable ACTIVITY-LOGGING system in apps/quikcrm. Admins cr
   the integration team provides a from-zero provisioning path / known-good base
   dump (finding a) AND an admin-capable login. NOT "close gate complete."
 
+### Phase 5 digest — tasks-slice framing (Dev question) + activity sections are the core
+
+**Locked 2026-06-24. Read-only investigation; no build.**
+
+**Structure decision — the digest CORE is the activity "who did what" data; the
+tasks slice is a SEPARABLE add-on, not on the critical path.**
+
+- **CORE (proceeds now, blocked by nothing):** the activity sections — by-rep
+  activity counts, by-type counts, per-rep custom-field aggregates. All
+  retrospective, all already built (FR-4.2 `activitiesByType`, FR-4.3
+  `getActivityFieldAggregates`), all queryable today from `CrmActivity` /
+  `CrmActivityFieldValue`. The digest's stated purpose ("management visibility —
+  who did what", decision-log line 12) IS this data. It does NOT depend on
+  `CrmTask` completion at all.
+
+- **TASKS SLICE (separable, Dev-gated, NOT a blocker):** whether the digest's
+  task section should be retrospective ("tasks COMPLETED today") or forward
+  ("tasks DUE / overdue") is a Dev/Minal requirement question — NOT knowable from
+  code or this decision-log. It does not block the core; design/build the
+  activity sections without it.
+
+**`completedAt` gap resolution (the three options, ranked on CORRECTNESS for a
+leadership-facing number):**
+  - **A — `updatedAt` proxy: REJECTED.** `CrmTask.updatedAt` is `@updatedAt`
+    (auto-bumps on ANY write). A task completed last week but edited today would
+    count as "completed today" → a silently-wrong leadership metric. Do not ship.
+  - **B — add a `completedAt` column: DEFERRED, Dev-gated.** Correct, but it's a
+    🟥 shared-schema migration (integration-owner + hand-authored migration, same
+    heavy path as the deferred `activityTypeId`) AND has a backfill gap (existing
+    `Completed` rows have no `completedAt` → "completed today" under-counts until
+    new completions accrue). Only earns its weight if Dev confirms leadership
+    wants backward-looking completion.
+  - **C — reframe to "due today / open / overdue": the DEFAULT-WHEN-BUILT.**
+    Fully queryable now via `dueDate` + `status`, no schema change, no proxy, no
+    backfill gap. DECISIVE evidence it's the established pattern: the deployed
+    `tasks/daily` cron is ENTIRELY forward-looking — it filters
+    `status notIn [Completed,Cancelled]` + `dueDate` windows and NEVER queries
+    `status = Completed`. C extends the shipped convention; A/B invent a
+    backward-looking notion the codebase has never had.
+
+**Net: C is the sensible default IF/WHEN the tasks slice is built; B is a flagged
+deferred enhancement gated on a Dev answer; A is rejected. Neither blocks the
+activity-section core, which proceeds now.**
+
+**Open Dev question (put to Dev, do not guess):** "For the daily digest's task
+section, does leadership want 'tasks COMPLETED today' (retrospective) or 'tasks
+DUE / overdue' (forward)? The activity 'who did what' data is retrospective
+either way; this is only about the task slice. Forward-looking is buildable now
+and matches the existing task reminders; 'completed today' needs a new schema
+column with no history for existing tasks."
+
+### Phase 5 digest — window-param: the ONE non-free part (net-new, re-touches shared functions)
+
+**Locked 2026-06-24 (planning). Window approach = (i) optional range param.**
+
+The digest's "yesterday" window is NET-NEW work — NOT free reuse. Verified by
+reading signatures: buildRoleMetrics(user) and getActivityFieldAggregates(user,…)
+take NO date param; both produce ALL-TIME org-scoped counts. The dashboard's
+from/to range drives a DIFFERENT service (executive-metrics.ts, takes DateRange);
+the RoleKpiGrid cards are intentionally all-time. So a daily digest cannot reuse
+these as-is (would email all-time totals every day).
+
+DECISION: approach (i) — add an OPTIONAL `range` param to BOTH services
+(omitted = current all-time behavior; passed = windowed via occurredAt). Chosen
+over (ii) digest-local windowed queries because (ii) duplicates the scope logic
+→ two scope implementations that can drift + FR-4.3's leak-safety re-proven for
+the copy. (i) keeps ONE scope implementation and its proven leak-safety; additive.
+
+BUILD-TIME OBLIGATIONS (this is a shared-function edit — buildRoleMetrics +
+getActivityFieldAggregates are pinned by FR-4.1/4.2/4.3/4.4; the standing gate
+applies IN FULL):
+  - Grep all tests exercising both functions; run the WHOLE dashboard suite.
+  - PROVE "omitted range = identical where-clause" by FR-4.1/4.2 staying green
+    (the empty-range path must produce the EXACT same where — this is the
+    regression check that caught two prior shared-function regressions).
+  - FR-4.3's $queryRaw gains a NEW parameterized clause (occurredAt BETWEEN in
+    the WHERE). A mock can pin "range passed" but CANNOT prove the windowed raw
+    query still scopes correctly. So the FR-4.3-style real-DB EXCLUSION gate is
+    RE-RUN with a date dimension: rep-in/rep-out × in-window/out-of-window,
+    asserting BOTH the out-of-scope rep AND the out-of-window activity are
+    excluded.
+  - VERIFICATION-PATH FLAG: that real-DB windowed gate does NOT need the login
+    fix — it runs via the SAME seed-direct closegate harness that verified
+    c-3/c-4 (throwaway no-setup vitest config, seeds quikit_devs directly,
+    getServerSession stubbed, two pre-flight proofs). It is RUNNABLE AT BUILD
+    TIME. Distinct from the "real type configured via the UI → digest meets live
+    data" milestone, which DOES need login and stays in the c-1/c-2/FR-4.5 owed
+    cluster.
+
+This window-param edit is a BUILD UNIT with its own RED→GREEN + real-DB gate, not
+a planning detail.
+
+### Phase 5 digest — CONFIG write is admin-gated (requirement; no endpoint yet)
+
+Registered 2026-06-24. REQUIREMENT on the future config surface — NOT built now,
+noted so the gate is real when the endpoint lands (don't build a gate with nothing
+to guard).
+
+- CONFIGURING / enabling the digest (writing settings.digest on
+  CrmOrgWorkspaceSettings) is ADMINISTRATOR-ONLY. When a config endpoint/UI is
+  built, its WRITE path MUST be admin-permission-gated — assertModule(user,
+  "settings", <action>) (or the equivalent requirePermission), the same gate as
+  other org-workspace-settings writes.
+- RECEIVING the digest is NOT admin-only. Recipients span leadership roles
+  (Administrator + SalesManager) — e.g. Akhilesh = Administrator, Sanyukta =
+  SalesManager — resolved via the recipientRoles / (pending) recipientUserIds
+  allow-list, NOT via a single admin gate.
+- CURRENT STATE: no config endpoint exists. Enablement is a direct pgAdmin write
+  to settings.digest (Rishabh). So the admin gate becomes REAL only when the
+  config endpoint/UI is built; until then there is no write path to guard.
+
+### Phase 5 digest — allow-list: named-user-with-no-role silently skipped (v1)
+
+Registered 2026-06-24 (commit e13ffb8f). SILENT-MISS class — same family as the
+override-granted-leaders gap and the dead-team-tables gap; logged so it's a known
+deferral, not a forgotten one.
+
+listDigestRecipients resolves each recipient's REAL role from their CrmUserAppRole
+row (needed for correct per-recipient scoping). CONSEQUENCE: a userId named in the
+recipientUserIds allow-list but with NO resolvable CrmUserAppRole row is SILENTLY
+SKIPPED — no error, no log — because we can't scope them safely. Akhilesh
+(cmpgz28om002k96601zs3vn8e, Administrator) + Sanyukta (cmpgz25ju000896609m1gfxg1,
+SalesManager) BOTH resolve (confirmed by read-only lookup), so the target case is
+fine. Documented so a future "added to the list but not receiving the digest" has
+a ready explanation: check the user has a CrmUserAppRole row in that org.
+
+
 
 
 ---
