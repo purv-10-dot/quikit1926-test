@@ -186,6 +186,15 @@ export const MODULE_REGISTRY: AppModuleConfig[] = [
       { key: "qualitySafety.incidents", label: "Incidents", icon: "AlertTriangle", href: "/safety/incidents", parentKey: "qualitySafety" },
       { key: "qualitySafety.toolbox", label: "Toolbox Talks", icon: "MessageSquare", href: "/safety/toolbox-talks", parentKey: "qualitySafety" },
 
+      /* ─── Machinery & Equipment ─── */
+      { key: "machineryEquipment", label: "Machinery & Equipment", icon: "Hammer", section: "Machinery & Equipment" },
+      { key: "machineryEquipment.logBook", label: "Equipment Log Book", icon: "Gauge", href: "/equipment/log-book", parentKey: "machineryEquipment" },
+      { key: "machineryEquipment.maintenance", label: "Maintenance", icon: "Wrench", href: "/equipment/maintenance", parentKey: "machineryEquipment" },
+      { key: "machineryEquipment.deployment", label: "Deployment & Compliance", icon: "Truck", href: "/equipment/deployment", parentKey: "machineryEquipment" },
+      { key: "machineryEquipment.fleet", label: "Fleet Dashboard", icon: "BarChart3", href: "/equipment/fleet", parentKey: "machineryEquipment" },
+      { key: "machineryEquipment.hireRent", label: "Hire & Rent", icon: "ArrowLeftRight", href: "/equipment/hire-rent", parentKey: "machineryEquipment" },
+      { key: "machineryEquipment.fixedAssets", label: "Fixed Asset / Tools", icon: "Boxes", href: "/equipment/fixed-assets", parentKey: "machineryEquipment" },
+
       /* ─── Finance ─── */
       { key: "finance", label: "Finance", icon: "CreditCard", section: "Finance" },
       { key: "finance.raBills", label: "RA Bills (Sub-Contractor)", icon: "FileSpreadsheet", href: "/finance/ra-bills", parentKey: "finance" },
