@@ -44,10 +44,16 @@ function scopeLabel(
   equipmentName: string | null | undefined,
   equipmentCode: string | null | undefined,
 ): string {
-  if (equipmentName || equipmentCode) {
-    return equipmentType ?? equipmentName ?? equipmentCode ?? "—";
+  // When the rate is scoped to a specific machine, show that machine's
+  // identity (code — name); only fall back to the generic equipment type
+  // for type-scoped rates, then to a dash.
+  const code = equipmentCode?.trim();
+  const name = equipmentName?.trim();
+  if (code || name) {
+    return [code, name].filter(Boolean).join(" — ");
   }
-  return equipmentType ?? "—";
+  const type = equipmentType?.trim();
+  return type || "—";
 }
 
 async function nextVerificationNumber(orgId: string): Promise<string> {
@@ -154,6 +160,7 @@ function toVerificationRecord(
     equipmentName: row.equipment?.name ?? "",
     vendorId: row.vendorId,
     vendorName: row.vendor?.name ?? null,
+    projectId: row.projectId,
     periodFrom: row.periodFrom!.toISOString().slice(0, 10),
     periodTo: row.periodTo!.toISOString().slice(0, 10),
     rate: num(row.rate) ?? 0,
@@ -168,8 +175,13 @@ function toVerificationRecord(
     gstAmount: num(row.gstAmount),
     totalAmount: num(row.totalAmount),
     status: row.status,
+    approvalId: row.approvalId,
+    rejectReason: row.rejectReason,
+    returnReason: row.returnReason,
     createdAt: row.createdAt.toISOString(),
     updatedAt: row.updatedAt.toISOString(),
+    createdBy: row.createdBy,
+    updatedBy: row.updatedBy,
   };
 }
 
@@ -320,6 +332,7 @@ export interface CreateHireInVerificationInput {
   userId: string;
   equipmentId: string;
   vendorId?: string | null;
+  projectId?: string | null;
   periodFrom: string;
   periodTo: string;
   rate: number;
@@ -377,6 +390,7 @@ export async function createHireInVerification(input: CreateHireInVerificationIn
       referenceNumber: verificationNumber,
       equipmentId: input.equipmentId,
       vendorId: input.vendorId ?? null,
+      projectId: input.projectId ?? null,
       periodFrom,
       periodTo,
       rate: input.rate,
@@ -456,6 +470,70 @@ export async function patchHireInVerification(opts: {
     include: verificationInclude,
   });
   return toVerificationRecord(row);
+}
+
+export async function getHireInVerificationById(orgId: string, id: string) {
+  const row = await db.cnHireRentRecord.findFirst({
+    where: { id, orgId, recordType: HIRE_IN },
+    include: verificationInclude,
+  });
+  return row ? toVerificationRecord(row) : null;
+}
+
+/** Raw row used by the workflow routes (needs projectId / approvalId / number). */
+export async function findHireInVerificationRow(orgId: string, id: string) {
+  return db.cnHireRentRecord.findFirst({
+    where: { id, orgId, recordType: HIRE_IN },
+  });
+}
+
+export function formatHireInVerificationEntityNumber(row: {
+  referenceNumber: string | null;
+  id: string;
+}): string {
+  return row.referenceNumber ?? row.id;
+}
+
+export async function patchHireInVerificationWorkflowStatus(
+  orgId: string,
+  id: string,
+  data: {
+    status: string;
+    approvalId?: string | null;
+    submittedAt?: Date | null;
+    submittedBy?: string | null;
+    approvedAt?: Date | null;
+    approvedBy?: string | null;
+    rejectedAt?: Date | null;
+    rejectedBy?: string | null;
+    rejectReason?: string | null;
+    returnedAt?: Date | null;
+    returnedBy?: string | null;
+    returnReason?: string | null;
+    updatedBy: string;
+  },
+) {
+  const updated = await db.cnHireRentRecord.update({
+    where: { id },
+    data: {
+      status: data.status,
+      approvalId: data.approvalId,
+      submittedAt: data.submittedAt,
+      submittedBy: data.submittedBy,
+      approvedAt: data.approvedAt,
+      approvedBy: data.approvedBy,
+      rejectedAt: data.rejectedAt,
+      rejectedBy: data.rejectedBy,
+      rejectReason: data.rejectReason,
+      returnedAt: data.returnedAt,
+      returnedBy: data.returnedBy,
+      returnReason: data.returnReason,
+      updatedBy: data.updatedBy,
+    },
+    include: verificationInclude,
+  });
+  if (updated.orgId !== orgId) throw new Error("NOT_FOUND");
+  return toVerificationRecord(updated);
 }
 
 export async function listRentOutBills(opts: { orgId: string }) {

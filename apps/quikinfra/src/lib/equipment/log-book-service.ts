@@ -10,21 +10,16 @@ import {
 } from "@/lib/equipment/equipment-calculations";
 import type {
   EquipmentLogRecord,
-  FuelReconciliationRow,
   LogStatus,
 } from "@/lib/equipment/equipment-types";
 
-export type { EquipmentLogRecord, FuelReconciliationRow, LogStatus };
+export type { EquipmentLogRecord, LogStatus };
 export { computeRun, computeFuelRate };
 
 function num(v: unknown): number | null {
   if (v == null || v === "") return null;
   const n = Number(v);
   return Number.isFinite(n) ? n : null;
-}
-
-function round4(n: number): number {
-  return Math.round(n * 10000) / 10000;
 }
 
 function isFuelAnomaly(
@@ -479,128 +474,3 @@ export async function patchEquipmentLog(input: PatchLogInput) {
   return toRecord(updated);
 }
 
-export async function getFuelReconciliation(opts: {
-  orgId: string;
-  projectId?: string;
-  fromDate?: string;
-  toDate?: string;
-  projectIds?: string[];
-}) {
-  const logWhere = buildWhere({
-    orgId: opts.orgId,
-    projectId: opts.projectId,
-    fromDate: opts.fromDate,
-    toDate: opts.toDate,
-    projectIds: opts.projectIds,
-    status: "approved",
-  });
-
-  const dieselWhere: Prisma.CnDieselLogWhereInput = { orgId: opts.orgId };
-  if (Array.isArray(opts.projectIds) && opts.projectIds.length > 0) {
-    dieselWhere.projectId = { in: opts.projectIds };
-  }
-  if (opts.projectId) dieselWhere.projectId = opts.projectId;
-  if (opts.fromDate || opts.toDate) {
-    const range: Prisma.DateTimeFilter = {};
-    if (opts.fromDate) range.gte = new Date(opts.fromDate);
-    if (opts.toDate) range.lte = new Date(opts.toDate);
-    dieselWhere.logDate = range;
-  }
-
-  const [logs, dieselRows, machinery] = await Promise.all([
-    db.cnEquipmentLog.findMany({
-      where: logWhere,
-      select: {
-        equipmentId: true,
-        run: true,
-        equipment: {
-          select: { code: true, name: true, fuelNorm: true },
-        },
-      },
-    }),
-    db.cnDieselLog.findMany({
-      where: dieselWhere,
-      select: { machineryId: true, quantityIssued: true },
-    }),
-    db.cnMachinery.findMany({
-      where: { orgId: opts.orgId },
-      select: { id: true, code: true, name: true, fuelNorm: true },
-    }),
-  ]);
-
-  const runByEquip = new Map<string, number>();
-  const dieselByEquip = new Map<string, number>();
-  const metaByEquip = new Map<
-    string,
-    { code: string; name: string; fuelNorm: number | null }
-  >();
-
-  for (const m of machinery) {
-    metaByEquip.set(m.id, {
-      code: m.code,
-      name: m.name,
-      fuelNorm: num(m.fuelNorm),
-    });
-  }
-
-  for (const row of logs) {
-    runByEquip.set(
-      row.equipmentId,
-      (runByEquip.get(row.equipmentId) ?? 0) + (num(row.run) ?? 0),
-    );
-    if (!metaByEquip.has(row.equipmentId)) {
-      metaByEquip.set(row.equipmentId, {
-        code: row.equipment.code,
-        name: row.equipment.name,
-        fuelNorm: num(row.equipment.fuelNorm),
-      });
-    }
-  }
-
-  for (const row of dieselRows) {
-    dieselByEquip.set(
-      row.machineryId,
-      (dieselByEquip.get(row.machineryId) ?? 0) + (num(row.quantityIssued) ?? 0),
-    );
-  }
-
-  const equipmentIds = new Set([
-    ...runByEquip.keys(),
-    ...dieselByEquip.keys(),
-  ]);
-
-  const data: FuelReconciliationRow[] = [];
-
-  for (const equipmentId of equipmentIds) {
-    const meta = metaByEquip.get(equipmentId);
-    if (!meta) continue;
-    const runMeter = runByEquip.get(equipmentId) ?? 0;
-    const dieselLitres = dieselByEquip.get(equipmentId) ?? 0;
-    const actualLPerUnit =
-      runMeter > 0 ? round4(dieselLitres / runMeter) : null;
-    const fuelNorm = meta.fuelNorm;
-    let variancePct: number | null = null;
-    let status: FuelReconciliationRow["status"] = "Balanced";
-
-    if (actualLPerUnit != null && fuelNorm != null && fuelNorm > 0) {
-      variancePct = Math.round(((actualLPerUnit - fuelNorm) / fuelNorm) * 1000) / 10;
-      if (variancePct > 10) status = "Excess";
-      else if (variancePct < -10) status = "Short";
-    }
-
-    data.push({
-      equipmentId,
-      equipmentCode: meta.code,
-      equipmentName: meta.name,
-      runMeter: round4(runMeter),
-      dieselLitres: round4(dieselLitres),
-      actualLPerUnit,
-      fuelNorm,
-      variancePct,
-      status,
-    });
-  }
-
-  data.sort((a, b) => a.equipmentCode.localeCompare(b.equipmentCode));
-  return data;
-}

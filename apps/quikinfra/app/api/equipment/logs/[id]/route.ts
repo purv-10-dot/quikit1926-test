@@ -6,6 +6,13 @@ import {
   getEquipmentLogById,
   patchEquipmentLog,
 } from "@/lib/equipment/log-book-service";
+import { db } from "@/lib/db";
+import { resolveUserNames } from "@/lib/users/resolve-names";
+import {
+  APPROVAL_INSTANCE_INCLUDE,
+  buildApprovalDto,
+  type ApprovalDto,
+} from "@/lib/approvals/approval-dto";
 import { NextRequest, NextResponse } from "next/server";
 
 function mapError(err: unknown) {
@@ -50,7 +57,32 @@ export async function GET(
   if (!row) {
     return NextResponse.json({ error: "Log not found" }, { status: 404 });
   }
-  return NextResponse.json(row);
+
+  // Fan out to the approval instance (if any) so the detail page can render
+  // a real timeline — configured steps with completed/pending markers —
+  // mirroring the Purchase Requisition detail page.
+  let approval: ApprovalDto | null = null;
+  if (row.approvalId) {
+    const instance = await db.cnApprovalInstance.findFirst({
+      where: { id: row.approvalId, orgId: ctx.orgId },
+      include: APPROVAL_INSTANCE_INCLUDE,
+    });
+    if (instance) {
+      const userIds = Array.from(
+        new Set<string>([
+          instance.requestedById,
+          ...instance.history.map((h) => h.actionById),
+          ...(instance.workflow.steps
+            .map((s) => s.approverUserId)
+            .filter(Boolean) as string[]),
+        ]),
+      );
+      const nameById = await resolveUserNames(userIds);
+      approval = buildApprovalDto(instance, nameById);
+    }
+  }
+
+  return NextResponse.json({ ...row, approval });
 }
 
 export async function PATCH(

@@ -95,7 +95,6 @@ export const MENU_CATALOG: MenuItem[] = [
   { key: "store.transfer",    label: "Stock Transfer",       url: "/store/transfer",       module: "STORE", supports: allFour },
   { key: "store.recon",       label: "Stock Reconciliation", url: "/store/reconciliation", module: "STORE", supports: allFour },
   { key: "store.diesel",      label: "Diesel Log",           url: "/store/diesel-log",     module: "STORE", supports: writeOnly },
-  { key: "store.asset_mgmt",  label: "Asset Management",     url: "/store/asset-management", module: "STORE", supports: allFour },
 
   // ─── PROJECT MGMT ────────────────────────────────────────────────
   // Mirror order/contents of CONSTRUCTION_NAV → PROJECT MGMT group.

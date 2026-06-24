@@ -97,14 +97,35 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "transferDate is required" }, { status: 400 });
   }
 
+  const transferType =
+    (body.transferType as "reassignment" | "returnable") ?? "reassignment";
+  if (transferType === "returnable") {
+    if (!body.returnableTo) {
+      return NextResponse.json(
+        { error: "Returnable transfers require a returnable-until date" },
+        { status: 400 },
+      );
+    }
+    if (String(body.returnableTo) < String(body.transferDate)) {
+      return NextResponse.json(
+        { error: "Returnable-until date must be on or after the transfer date" },
+        { status: 400 },
+      );
+    }
+  }
+
   try {
     const created = await createTransfer({
       orgId: ctx.orgId,
       userId: ctx.userId,
       equipmentId: String(body.equipmentId),
       destinationProjectId: String(body.destinationProjectId),
-      transferType: (body.transferType as "reassignment" | "returnable") ?? "reassignment",
+      transferType,
       transferDate: String(body.transferDate),
+      returnableFrom:
+        transferType === "returnable" ? String(body.transferDate) : null,
+      returnableTo:
+        transferType === "returnable" ? String(body.returnableTo) : null,
       reason: body.reason ? String(body.reason) : null,
       remarks: body.remarks ? String(body.remarks) : null,
     });

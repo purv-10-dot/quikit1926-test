@@ -9,6 +9,8 @@ import {
   History,
   MoreHorizontal,
   Trash2,
+  Eye,
+  ExternalLink,
 } from "lucide-react";
 import {
   PageHeader,
@@ -27,6 +29,8 @@ import {
 } from "@/hooks/use-equipment";
 import { useMenuActions } from "@/hooks/use-permissions";
 import { useQueryClient } from "@tanstack/react-query";
+import { TransferDrawer } from "./new/TransferDrawer";
+import { ComplianceDocumentDrawer } from "./documents/new/ComplianceDocumentDrawer";
 
 type TabKey = "transfers" | "compliance";
 
@@ -52,6 +56,7 @@ interface DocRow {
   expiryDate: string | null;
   daysUntilExpiry: number | null;
   complianceState: string;
+  fileUrl: string | null;
 }
 
 const TRANSFER_STATUS: Record<string, "success" | "warning" | "neutral" | "danger"> = {
@@ -75,6 +80,7 @@ export default function DeploymentPage() {
 
   const [tab, setTab] = useState<TabKey>("transfers");
   const [actionMenu, setActionMenu] = useState<string | null>(null);
+  const [createOpen, setCreateOpen] = useState(false);
 
   const { data: transfersResult, isLoading: transfersLoading } =
     useEquipmentTransfers({});
@@ -85,20 +91,32 @@ export default function DeploymentPage() {
   const docRows: DocRow[] = (docsResult?.data ?? []) as DocRow[];
 
   const handleReceive = async (id: string) => {
-    await patchTransfer.mutateAsync({ id, action: "receive" });
-    await qc.invalidateQueries({ queryKey: ["equipment-transfers"] });
     setActionMenu(null);
+    try {
+      await patchTransfer.mutateAsync({ id, action: "receive" });
+      await qc.invalidateQueries({ queryKey: ["equipment-transfers"] });
+    } catch {
+      /* error toast handled globally via mutation meta */
+    }
   };
 
   const handleCancelTransfer = async (id: string) => {
-    await patchTransfer.mutateAsync({ id, action: "cancel" });
-    await qc.invalidateQueries({ queryKey: ["equipment-transfers"] });
     setActionMenu(null);
+    try {
+      await patchTransfer.mutateAsync({ id, action: "cancel" });
+      await qc.invalidateQueries({ queryKey: ["equipment-transfers"] });
+    } catch {
+      /* error toast handled globally via mutation meta */
+    }
   };
 
   const handleDeleteDoc = async (id: string) => {
-    await deleteDoc.mutateAsync(id);
     setActionMenu(null);
+    try {
+      await deleteDoc.mutateAsync(id);
+    } catch {
+      /* error toast handled globally via mutation meta */
+    }
   };
 
   const transferColumns: ColDef<TransferRow>[] = useMemo(
@@ -107,12 +125,19 @@ export default function DeploymentPage() {
       {
         key: "equipment",
         label: "Equipment",
-        render: (row) => (
-          <div>
-            <div className="font-medium text-gray-900">{row.equipmentCode}</div>
-            <div className="text-xs text-gray-500">{row.equipmentName}</div>
-          </div>
-        ),
+        render: (row) =>
+          row.equipmentCode || row.equipmentName ? (
+            <div>
+              <div className="font-medium text-gray-900">
+                {row.equipmentCode || row.equipmentName}
+              </div>
+              {row.equipmentCode && row.equipmentName && (
+                <div className="text-xs text-gray-500">{row.equipmentName}</div>
+              )}
+            </div>
+          ) : (
+            <span className="text-gray-400">—</span>
+          ),
       },
       {
         key: "route",
@@ -142,45 +167,58 @@ export default function DeploymentPage() {
       {
         key: "actions",
         label: "Action",
-        width: "80px",
-        render: (row) =>
-          row.status === "in_transit" && canEdit ? (
-            <div className="relative">
-              <button
-                type="button"
-                onClick={(e) => {
-                  e.stopPropagation();
-                  setActionMenu(actionMenu === row.id ? null : row.id);
-                }}
-                className="p-1 rounded hover:bg-gray-100 text-gray-500"
-              >
-                <MoreHorizontal className="w-4 h-4" />
-              </button>
-              {actionMenu === row.id && (
-                <div className="absolute right-0 z-20 mt-1 w-36 rounded-lg border border-gray-200 bg-white shadow-lg py-1 text-sm">
-                  <button
-                    type="button"
-                    className="w-full text-left px-3 py-2 hover:bg-gray-50"
-                    onClick={() => void handleReceive(row.id)}
-                  >
-                    Receive
-                  </button>
-                  <button
-                    type="button"
-                    className="w-full text-left px-3 py-2 hover:bg-gray-50 text-red-600"
-                    onClick={() => void handleCancelTransfer(row.id)}
-                  >
-                    Cancel
-                  </button>
-                </div>
-              )}
-            </div>
-          ) : (
-            <span className="text-gray-300">—</span>
-          ),
+        width: "100px",
+        render: (row) => (
+          <div className="flex items-center gap-1">
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation();
+                router.push(`/equipment/deployment/${row.id}`);
+              }}
+              className="p-1.5 rounded hover:bg-gray-100 text-gray-500"
+              title="View"
+              aria-label="View"
+            >
+              <Eye className="w-4 h-4" />
+            </button>
+            {row.status === "in_transit" && canEdit && (
+              <div className="relative">
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setActionMenu(actionMenu === row.id ? null : row.id);
+                  }}
+                  className="p-1 rounded hover:bg-gray-100 text-gray-500"
+                >
+                  <MoreHorizontal className="w-4 h-4" />
+                </button>
+                {actionMenu === row.id && (
+                  <div className="absolute right-0 z-20 mt-1 w-36 rounded-lg border border-gray-200 bg-white shadow-lg py-1 text-sm">
+                    <button
+                      type="button"
+                      className="w-full text-left px-3 py-2 hover:bg-gray-50"
+                      onClick={() => void handleReceive(row.id)}
+                    >
+                      Receive
+                    </button>
+                    <button
+                      type="button"
+                      className="w-full text-left px-3 py-2 hover:bg-gray-50 text-red-600"
+                      onClick={() => void handleCancelTransfer(row.id)}
+                    >
+                      Cancel
+                    </button>
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+        ),
       },
     ],
-    [actionMenu, canEdit],
+    [actionMenu, canEdit, router],
   );
 
   const docColumns: ColDef<DocRow>[] = [
@@ -197,9 +235,22 @@ export default function DeploymentPage() {
     {
       key: "docType",
       label: "Document",
-      render: (row) => (
-        <span className="capitalize">{row.docType.replace("_", " ")}</span>
-      ),
+      render: (row) =>
+        row.fileUrl ? (
+          <a
+            href={row.fileUrl}
+            target="_blank"
+            rel="noopener noreferrer"
+            onClick={(e) => e.stopPropagation()}
+            className="inline-flex items-center gap-1.5 capitalize font-medium text-orange-600 hover:text-orange-700 hover:underline"
+            title="Open document in new tab"
+          >
+            {row.docType.replace("_", " ")}
+            <ExternalLink className="w-3.5 h-3.5" />
+          </a>
+        ) : (
+          <span className="capitalize">{row.docType.replace("_", " ")}</span>
+        ),
     },
     { key: "docNumber", label: "Doc No", width: "100px" },
     { key: "expiryDate", label: "Expiry", width: "110px" },
@@ -239,6 +290,8 @@ export default function DeploymentPage() {
             type="button"
             onClick={() => void handleDeleteDoc(row.id)}
             className="p-1 text-gray-400 hover:text-red-600"
+            title="Delete"
+            aria-label="Delete"
           >
             <Trash2 className="w-4 h-4" />
           </button>
@@ -264,7 +317,7 @@ export default function DeploymentPage() {
         subtitle="Inter-site transfers (gate pass) · document expiry alerts"
         actions={
           canAdd ? (
-            <PrimaryButton onClick={() => router.push(primaryAction.href)}>
+            <PrimaryButton onClick={() => setCreateOpen(true)}>
               <Plus className="w-4 h-4" />
               {primaryAction.label}
             </PrimaryButton>
@@ -323,6 +376,10 @@ export default function DeploymentPage() {
             data={transferRows}
             loading={transfersLoading}
             fitToContent
+            historyEntityType="equipment_transfers"
+            getHistoryRowLabel={(row) =>
+              `${row.transferNumber} · ${row.equipmentCode}`
+            }
             emptyTitle="No transfers yet"
             emptyHint="Dispatch a machine to another project with a gate pass."
           />
@@ -338,6 +395,26 @@ export default function DeploymentPage() {
           />
         )}
       </PageContainer>
+
+      <TransferDrawer
+        open={createOpen && tab === "transfers"}
+        onClose={() => setCreateOpen(false)}
+        onSaved={async () => {
+          await qc.invalidateQueries({ queryKey: ["equipment-transfers"] });
+          await qc.invalidateQueries({ queryKey: ["deployment-summary"] });
+          setCreateOpen(false);
+        }}
+      />
+
+      <ComplianceDocumentDrawer
+        open={createOpen && tab === "compliance"}
+        onClose={() => setCreateOpen(false)}
+        onSaved={async () => {
+          await qc.invalidateQueries({ queryKey: ["equipment-documents"] });
+          await qc.invalidateQueries({ queryKey: ["deployment-summary"] });
+          setCreateOpen(false);
+        }}
+      />
     </>
   );
 }

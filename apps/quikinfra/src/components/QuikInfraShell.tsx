@@ -192,7 +192,6 @@ const CONSTRUCTION_NAV: NavItem[] = [
       { label: "Stock Transfer",       href: "/store/transfer",       iconComponent: ArrowLeftRight, requiredPermission: "store.transfer.read" },
       { label: "Stock Reconciliation", href: "/store/reconciliation", iconComponent: FileBarChart2,  requiredPermission: "store.recon.read" },
       { label: "Diesel Log",           href: "/store/diesel-log",     iconComponent: Fuel,           requiredPermission: "store.diesel.write" },
-      { label: "Asset Management",     href: "/store/asset-management", iconComponent: Wrench,        requiredPermission: "store.asset_mgmt.view" },
     ],
   },
   { label: "QUALITY & SAFETY", isSection: true },
