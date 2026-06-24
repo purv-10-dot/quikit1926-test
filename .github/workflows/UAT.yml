@@ -6,7 +6,7 @@ on:
       - UAT
   workflow_dispatch:
 concurrency:
-  group: docker-build-ghcr-${{ github.ref }}
+  group: UAT-${{ github.ref }}
   cancel-in-progress: true
 
 permissions:
@@ -14,17 +14,17 @@ permissions:
   packages: write
 
 jobs:
-  # detect-changes:
-  #   name: Detect Changed Apps
-  #   runs-on: ubuntu-latest
-  #   outputs:
-  #     apps: ${{ steps.set-matrix.outputs.apps }}
-  #     run_build: ${{ steps.set-matrix.outputs.run_build }}
-  #   steps:
-  #     - name: Checkout
-  #       uses: actions/checkout@v4
-  #       with:
-  #         fetch-depth: 0
+  detect-changes:
+    name: Detect Changed Apps
+    runs-on: ubuntu-latest
+    outputs:
+      apps: ${{ steps.set-matrix.outputs.apps }}
+      run_build: ${{ steps.set-matrix.outputs.run_build }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - name: Detect changes in apps and packages
         uses: dorny/paths-filter@v3
