@@ -60,6 +60,8 @@ jobs:
 
             quikcrm:
               - 'apps/quikcrm/**'
+            quikhrms:
+              - 'apps/quikhrms/**'
 
       - name: Generate Matrix
         id: set-matrix
@@ -79,6 +81,7 @@ jobs:
             [ "${{ steps.filter.outputs.quiktrack }}" = "true" ] && APPS+=("quiktrack")
             [ "${{ steps.filter.outputs.quikinfra }}" = "true" ] && APPS+=("quikinfra")
             [ "${{ steps.filter.outputs.quikcrm }}" = "true" ] && APPS+=("quikcrm")
+            [ "${{ steps.filter.outputs.quikcrm }}" = "true" ] && APPS+=("quikhrms")
           fi
 
           echo "Selected Apps: ${APPS[@]}"
@@ -102,6 +105,7 @@ jobs:
           echo "quiktrack=${{ steps.filter.outputs.quiktrack }}"
           echo "quikinfra=${{ steps.filter.outputs.quikinfra }}"
           echo "quikcrm=${{ steps.filter.outputs.quikcrm }}"
+          echo "quikhrms=${{ steps.set-matrix.outputs.apps }}"
           echo "apps=${{ steps.set-matrix.outputs.apps }}"
 
   build:
@@ -164,4 +168,5 @@ jobs:
             NEXT_PUBLIC_LOGIN_URL=https://authn.quikit.ai/login
             NEXT_PUBLIC_QUIKINFRA_URL=https://infra.quikit.ai
             NEXT_PUBLIC_QUIKCRM_URL=https://crm.quikit.ai
+            NEXT_PUBLIC_QUIKHRMS_URL=https://people.quikit.ai
             NEXTAUTH_URL=https://authn.quikit.ai
