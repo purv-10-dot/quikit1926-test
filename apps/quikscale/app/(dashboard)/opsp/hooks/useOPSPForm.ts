@@ -33,6 +33,16 @@ import type {
   QPriorRow,
   CritCard,
 } from "../types";
+import { reconcileActionsWithGoals } from "../lib/actionsGoalsSync";
+
+/**
+ * ACTIONS (QTR) row bounds. Actions can independently hold up to MAX rows via
+ * its own "Add New" (decoupled from the Goals count); MIN is the default/floor,
+ * matching Goals. The Goals→Actions cascade grows Actions toward the Goals
+ * count but never shrinks below the user's own rows — see actionsGoalsSync.ts.
+ */
+export const MIN_ACTION_ROWS = 6;
+export const MAX_ACTION_ROWS = 10;
 
 /* ── Shared form shape ── */
 export interface FormData {
@@ -93,6 +103,9 @@ export interface OPSPFormHandle {
   saveState: SaveState;
   loading: boolean;
   fiscalYearStart: number;
+  /** Resolved owner-id → "First Last" for the loaded OPSP (from the GET payload). */
+  ownerNames: Record<string, string>;
+  setOwnerNames: React.Dispatch<React.SetStateAction<Record<string, string>>>;
   planStartYear: number | null;
   planEndYear: number | null;
   planStartQuarter: string | null;
@@ -104,6 +117,20 @@ export interface OPSPFormHandle {
   setShowSetupWizard: React.Dispatch<React.SetStateAction<boolean>>;
   /** Reload the OPSP form for a different (year, quarter) period. */
   loadForPeriod: (year: number, quarter: string) => Promise<void>;
+  /**
+   * The user whose per-user sections (Accountability / Quarterly Priorities /
+   * Critical # / Balanced Critical #) are currently loaded. `null` = the
+   * acting user's own sections. An admin with OPSP.EditUser:update can point
+   * this at another user via {@link OPSPFormHandle.selectSectionUser}.
+   */
+  sectionUserId: string | null;
+  /** Switch which user's per-user sections are loaded/edited (admin only). */
+  selectSectionUser: (userId: string | null) => Promise<void>;
+  /**
+   * Name of the admin a member should contact to update their finalized OPSP
+   * (holds OPSP.EditUser). `null` if nobody holds it. From the GET payload.
+   */
+  responsibleAdminName: string | null;
   /**
    * Called by the setup wizard's onComplete: stores plan range, seeds form,
    * then re-fetches the freshly-created OPSP for the chosen period.
@@ -142,12 +169,28 @@ export function useOPSPForm(options: UseOPSPFormOptions = {}): OPSPFormHandle {
   const [loading, setLoading] = useState(true);
   // Tenant's fiscal year start month (1 = Jan, 4 = Apr, etc.). Defaults to Jan until loaded.
   const [fiscalYearStart, setFiscalYearStart] = useState<number>(1);
+  // Resolved owner-id → "First Last" map for the loaded OPSP (from the GET
+  // payload). Lets owner names render WITHOUT bulk-loading every org user.
+  const [ownerNames, setOwnerNames] = useState<Record<string, string>>({});
   const [showSetupWizard, setShowSetupWizard] = useState(false);
   // OPSP plan year range (from setup wizard config)
   const [planStartYear, setPlanStartYear] = useState<number | null>(null);
   const [planEndYear, setPlanEndYear] = useState<number | null>(null);
   const [planStartQuarter, setPlanStartQuarter] = useState<string | null>(null); // e.g. "Q2" if onboarded mid-year
   const [reviewedQuarters, setReviewedQuarters] = useState<string[]>([]);
+  // Which user's per-user sections are loaded (null = self). Mirrored into a ref
+  // so the [] -dep `loadForPeriod`/`save` callbacks read the current value
+  // without being re-created (and without stale closures).
+  const [sectionUserId, setSectionUserId] = useState<string | null>(null);
+  const sectionUserRef = useRef<string | null>(null);
+  sectionUserRef.current = sectionUserId;
+  const [responsibleAdminName, setResponsibleAdminName] = useState<string | null>(null);
+
+  // Append the selected section user (if any) to an OPSP GET URL.
+  const withSectionUser = (url: string) => {
+    const t = sectionUserRef.current;
+    return t ? `${url}&targetUserId=${encodeURIComponent(t)}` : url;
+  };
 
   const refreshReviewedQuarters = useCallback(async () => {
     try {
@@ -183,7 +226,7 @@ export function useOPSPForm(options: UseOPSPFormOptions = {}): OPSPFormHandle {
     setForm({ ...defaultForm(), year, quarter });
 
     try {
-      const res = await fetch(`/api/opsp?year=${year}&quarter=${quarter}`);
+      const res = await fetch(withSectionUser(`/api/opsp?year=${year}&quarter=${quarter}`));
       if (res.status === 401) {
         const draft = localStorage.getItem(`opsp_draft_${year}_${quarter}`);
         if (draft) {
@@ -197,6 +240,8 @@ export function useOPSPForm(options: UseOPSPFormOptions = {}): OPSPFormHandle {
       } else {
         const json = await res.json();
         if (typeof json.fiscalYearStart === "number") setFiscalYearStart(json.fiscalYearStart);
+        setOwnerNames(json.ownerNames ?? {});
+        setResponsibleAdminName(json.responsibleAdminName ?? null);
         if (json.data) {
           skipNextSave.current = true;
           skipNextTargetsCascade.current = true;
@@ -235,7 +280,12 @@ export function useOPSPForm(options: UseOPSPFormOptions = {}): OPSPFormHandle {
 
         // 2. Delegate to loadForPeriod so direct URL → Q2/Q3/Q4 also triggers CF.
         await loadForPeriod(form.year, form.quarter);
-      } catch {}
+      } catch {
+        // A network failure on the config fetch must still end the loading
+        // state — otherwise the form hangs on a spinner instead of falling
+        // back to the empty default scaffold.
+        setLoading(false);
+      }
       isFirstLoad.current = false;
     })();
   // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -248,7 +298,9 @@ export function useOPSPForm(options: UseOPSPFormOptions = {}): OPSPFormHandle {
       const res = await fetch("/api/opsp", {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(data),
+        body: JSON.stringify(
+          sectionUserRef.current ? { ...data, targetUserId: sectionUserRef.current } : data,
+        ),
       });
       if (res.ok) {
         setSaveState("saved");
@@ -326,60 +378,30 @@ export function useOPSPForm(options: UseOPSPFormOptions = {}): OPSPFormHandle {
     });
   }, [form.targetRows]);
 
-  // Goals (1 YR) → Actions (QTR): row count is owned by Goals (length sync
-  // below) and the cascade seeds each Action row's category from the
-  // matching Goal. The category field stays editable in the UI so the user
-  // can override per row — but a subsequent edit to the Goal at the same
-  // index will re-propagate (mirrors the Targets → Goals cascade above).
-  // Action-specific values (`projected`, `m1`, `m2`, `m3`) reset whenever
-  // the bound Goal category changes so they don't get stranded against an
-  // out-of-date category.
+  // Goals (1 YR) → Actions (QTR): grow Actions so every Goal has a matching
+  // row (auto-filling its category from the Goal) but NEVER shrink — the user
+  // can add independent Action rows via "Add New" (up to MAX_ACTION_ROWS), and
+  // removing/clearing a Goal must not delete those extra rows. The bound
+  // (overlapping) rows still re-propagate their category from the matching
+  // Goal, resetting projected + m-cells so stale values don't strand against
+  // an out-of-date category. See reconcileActionsWithGoals for the full rules.
   useEffect(() => {
     if (skipNextGoalsCascade.current) {
       skipNextGoalsCascade.current = false;
       return;
     }
     setForm(prev => {
-      const goalLen = prev.goalRows.length;
-      const actLen  = prev.actionsQtr.length;
-      let next: ActionRow[] = prev.actionsQtr;
-      let changed = false;
-
-      // 1) Length sync — grow or shrink Actions to match Goals. Spread/slice
-      //    creates a fresh array, so step 2 below can mutate `next` freely.
-      if (goalLen !== actLen) {
-        next = goalLen > actLen
-          ? [
-              ...prev.actionsQtr,
-              ...Array.from({ length: goalLen - actLen }, (): ActionRow => ({
-                category: "", projected: "", m1: "", m2: "", m3: "",
-              })),
-            ]
-          : prev.actionsQtr.slice(0, goalLen);
-        changed = true;
-      }
-
-      // 2) Category sync — copy Goal category into the matching Action row,
-      //    resetting projected + m-cells when the bound category changes so
-      //    they don't get stranded against an out-of-date category.
-      for (let i = 0; i < goalLen; i++) {
-        if (prev.goalRows[i].category !== next[i].category) {
-          if (next === prev.actionsQtr) next = [...next]; // clone-on-first-write
-          next[i] = {
-            ...next[i],
-            category: prev.goalRows[i].category,
-            projected: "",
-            m1: "",
-            m2: "",
-            m3: "",
-          };
-          changed = true;
-        }
-      }
-
-      return changed ? { ...prev, actionsQtr: next } : prev;
+      const next = reconcileActionsWithGoals(prev.goalRows, prev.actionsQtr, MAX_ACTION_ROWS);
+      return next === prev.actionsQtr ? prev : { ...prev, actionsQtr: next };
     });
   }, [form.goalRows]);
+
+  /* ── Switch which user's per-user sections are loaded (admin OPSP.EditUser) ── */
+  const selectSectionUser = useCallback(async (userId: string | null) => {
+    sectionUserRef.current = userId;
+    setSectionUserId(userId);
+    await loadForPeriod(form.year, form.quarter);
+  }, [loadForPeriod, form.year, form.quarter]);
 
   /* ── Setup-wizard completion: seed plan range, form, and re-fetch fresh OPSP ── */
   const completeSetup = useCallback((data: { year: number; quarter: string; targetYears: number }) => {
@@ -399,6 +421,7 @@ export function useOPSPForm(options: UseOPSPFormOptions = {}): OPSPFormHandle {
       try {
         const res = await fetch(`/api/opsp?year=${data.year}&quarter=${data.quarter}`);
         const json = await res.json();
+        setOwnerNames(json.ownerNames ?? {});
         if (json.data) {
           skipNextSave.current = true;
           const normalized = normalizeLoadedOPSP(json.data);
@@ -415,6 +438,8 @@ export function useOPSPForm(options: UseOPSPFormOptions = {}): OPSPFormHandle {
     saveState,
     loading,
     fiscalYearStart,
+    ownerNames,
+    setOwnerNames,
     planStartYear,
     planEndYear,
     planStartQuarter,
@@ -423,6 +448,9 @@ export function useOPSPForm(options: UseOPSPFormOptions = {}): OPSPFormHandle {
     showSetupWizard,
     setShowSetupWizard,
     loadForPeriod,
+    sectionUserId,
+    selectSectionUser,
+    responsibleAdminName,
     completeSetup,
     /** Persist the given form immediately (used to commit edit-after-finalize changes). */
     save,

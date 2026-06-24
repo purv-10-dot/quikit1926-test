@@ -72,6 +72,13 @@ describe("GET /api/masters/vendors — happy path", () => {
     expect(where.orgId).toBe(TEST_TENANT);
   });
 
+  it("excludes deleted rows so they leave the UI entirely", async () => {
+    db.cnVendor.findMany.mockResolvedValue([]);
+    await GET(buildGET());
+    const where = db.cnVendor.findMany.mock.calls[0][0].where;
+    expect(where.status).toEqual({ not: "deleted" });
+  });
+
   it("pushes take/skip + count down when paginated", async () => {
     db.cnVendor.findMany.mockResolvedValue([]);
     db.cnVendor.count.mockResolvedValue(0);

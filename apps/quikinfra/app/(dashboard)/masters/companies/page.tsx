@@ -5,7 +5,7 @@ import { useState } from "react";
 import { Globe } from "lucide-react";
 import { MasterListPage, type MasterColumnDef } from "@/components/MasterListPage";
 import { useCompanies, useCreateCompany, useUpdateCompany, useDeleteCompany } from "@/hooks/use-masters";
-import { FormDrawer, FormSection, FormRow, Field, TextInput, TextAreaInput, SelectInput, InactiveStatusNotice } from "@/components/FormDrawer";
+import { FormDrawer, FormSection, FormRow, Field, TextInput, TextAreaInput, SelectInput } from "@/components/FormDrawer";
 import dynamic from "next/dynamic";
 import type { ImportFieldDef } from "@/components/ImportDataDrawer";
 const ImportDataDrawer = dynamic(
@@ -22,11 +22,6 @@ import {
 const ACCOUNT_TYPE_OPTIONS = [
   { value: "current", label: "Current" },
   { value: "savings", label: "Savings" },
-];
-
-const STATUS_OPTIONS = [
-  { value: "active", label: "Active" },
-  { value: "inactive", label: "Inactive" },
 ];
 
 interface Row { id: string; name: string; legalName: string; gstin: string; pan: string; city: string; state: string; status: string; }
@@ -266,12 +261,6 @@ export default function CompaniesPage() {
           </FormRow>
           <Field label="Account Type">
             <SelectInput value={form.accountType} onChange={v => set("accountType", v)} options={ACCOUNT_TYPE_OPTIONS} />
-          </Field>
-        </FormSection>
-        <FormSection title="Status">
-          <Field label="Status">
-            <SelectInput value={form.status} onChange={v => set("status", v)} options={STATUS_OPTIONS} />
-            {form.status === "inactive" && <InactiveStatusNotice entityName="Company" />}
           </Field>
         </FormSection>
       </FormDrawer>

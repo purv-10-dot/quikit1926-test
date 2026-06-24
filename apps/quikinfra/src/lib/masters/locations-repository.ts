@@ -105,6 +105,9 @@ function buildLocationsWhere(
     : {};
   return {
     orgId: opts.orgId,
+    // "deleted" rows are removed from the UI entirely; "inactive" rows are
+    // still returned so they can show under the Inactive tab.
+    status: { not: "deleted" },
     ...projectFilter,
     ...(q
       ? {
@@ -263,7 +266,7 @@ export async function deleteLocation(
 ): Promise<boolean> {
   const res = await db.cnLocation.updateMany({
     where: { id, orgId },
-    data: { status: "inactive", updatedBy },
+    data: { status: "deleted", updatedBy },
   });
   return res.count > 0;
 }

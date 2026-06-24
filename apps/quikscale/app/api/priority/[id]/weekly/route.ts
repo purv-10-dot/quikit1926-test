@@ -6,6 +6,7 @@ import {
   getCurrentFiscalWeekFromDB,
 } from "@/lib/utils/featureFlags";
 import { withOrgAuthForModule } from "@/lib/api/withOrgAuth";
+import { audit, requestContext } from "@/lib/audit";
 const withOrgAuth = withOrgAuthForModule("priority");
 
 // POST /api/priority/[id]/weekly — upsert a weekly status
@@ -13,7 +14,7 @@ export const POST = withOrgAuth<{ id: string }>(
   async ({ orgId, userId }, request, { params }) => {
     const priority = await db.priority.findFirst({
       where: { id: params.id, orgId },
-      select: { quarter: true, year: true },
+      select: { quarter: true, year: true, teamId: true },
     });
     if (!priority) {
       return NextResponse.json(
@@ -53,6 +54,16 @@ export const POST = withOrgAuth<{ id: string }>(
       }
     }
 
+    // Snapshot the prior status + notes for this week so the audit captures
+    // old → new AND so we can skip logging a no-op save (re-clicking the same
+    // status, or an autosave that didn't change anything).
+    const prior = await db.priorityWeeklyStatus.findUnique({
+      where: { priorityId_weekNumber: { priorityId: params.id, weekNumber } },
+      select: { status: true, notes: true },
+    });
+    const previousStatus = prior?.status ?? null;
+    const normNotes = (s: string | null | undefined) => (s == null || s === "" ? null : s);
+
     const record = await db.priorityWeeklyStatus.upsert({
       where: {
         priorityId_weekNumber: { priorityId: params.id, weekNumber },
@@ -79,6 +90,37 @@ export const POST = withOrgAuth<{ id: string }>(
         updatedAt: true,
       },
     });
+
+    // ── Centralized audit ── one WEEKLY_UPDATE event per *meaningful* week edit.
+    // Skip no-op saves (same status AND same notes) so re-clicking the current
+    // status or an autosave that changed nothing doesn't litter the timeline
+    // with duplicate entries. Notes-only edits are still logged.
+    const newStatus = String(status);
+    const statusChanged = previousStatus !== newStatus;
+    const notesChanged = normNotes(prior?.notes) !== normNotes(notes);
+    if (statusChanged || notesChanged) {
+      await audit.log({
+        entityType: "PRIORITY",
+        entityId: params.id,
+        action: "WEEKLY_UPDATE",
+        actor: { userId, orgId, teamId: priority.teamId },
+        changes: statusChanged
+          ? [{ fieldName: `week_${weekNumber}`, oldValue: previousStatus, newValue: newStatus }]
+          : [],
+        snapshot: {
+          weekNumber,
+          status: newStatus,
+          previousStatus,
+          notes: notes ?? null,
+          // Prior note so the timeline can show old → new note (not just the
+          // new value). Older events without this render the new note only.
+          previousNotes: prior?.notes ?? null,
+          notesOnly: !statusChanged && notesChanged,
+          kind: "status",
+        },
+        ...requestContext(request),
+      });
+    }
 
     return NextResponse.json({ success: true, data: record });
   },

@@ -7,6 +7,7 @@ import {
   stripHtml,
   type DetailExportColumn,
 } from "@/lib/exports/meetingDetailExcel";
+import { formatCallStatus } from "@/lib/constants/clientMeetingsMetrics";
 
 const withOrgAuth = withOrgAuthForModule("clientMeetings.weeklyMeeting");
 
@@ -93,6 +94,11 @@ export const POST = withOrgAuth(async ({ orgId }, request) => {
       orgId,
       clientId,
       deletedAt: null,
+      // Detail report lists only Held meetings — cancelled / holiday / not-held
+      // / other calls are excluded from this export (per product requirement).
+      // NOTE: the summary export + dashboard intentionally keep counting
+      // cancelled calls, since "Avg % of Calls happened" = held ÷ (held+cancelled).
+      callStatus: "HELD",
       meetingDate: { gte: fromDate, lte: toDate },
     },
     include: {
@@ -141,7 +147,9 @@ export const POST = withOrgAuth(async ({ orgId }, request) => {
 
     return {
       meetingDate: m.meetingDate.toISOString().slice(0, 10),
-      callStatus: m.callStatus,
+      // Friendly label (e.g. "Call cancelled by Client") not the raw enum, and
+      // the free-text label for OTHER. Mirrors the weekly-meeting drawer.
+      callStatus: formatCallStatus(m.callStatus, m.callStatusOther),
       clientName: client.name,
       absentMembers: absentNames,
       dashboardNAMembers: dashboardNANames,

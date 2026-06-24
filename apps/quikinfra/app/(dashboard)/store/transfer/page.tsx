@@ -228,7 +228,7 @@ export default function StockTransferPage() {
     for (const i of items) m.set(i.id, i);
     return m;
   }, [items]);
-  const uomOptions = (uomsData?.data ?? []).map((u) => ({
+  const uomOptions = (uomsData?.data ?? []).filter((u) => u?.status === "active").map((u) => ({
     value: u.code,
     label: u.code,
   }));
@@ -262,6 +262,7 @@ export default function StockTransferPage() {
   const locationOptionsFor = (state: string, city: string) => {
     return locations
       .filter((l) => {
+        if ((l as { status?: string }).status !== "active") return false;
         if (state && l.state !== state) return false;
         if (city && l.city !== city) return false;
         return true;

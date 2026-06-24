@@ -32,7 +32,7 @@ export default function ReportsPage() {
   // one so the user is never stuck reporting against a stale year.
   const { data: fyData } = useFinancialYears();
   const fyOptions = useMemo<FYOption[]>(() => {
-    const fromStore: FYOption[] = (fyData?.data ?? []).map((f) => ({
+    const fromStore: FYOption[] = (fyData?.data ?? []).filter((f) => f.status === "active").map((f) => ({
       id: f.id,
       label: f.label,
       startDate: f.startDate,

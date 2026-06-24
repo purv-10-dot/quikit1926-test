@@ -16,6 +16,11 @@ export interface WWWFilters {
   status?: string;
   sort?: string | null;
   includeDeleted?: boolean;
+  // DB-level pagination + filters.
+  page?: number;
+  limit?: number;
+  who?: string;
+  teamId?: string;
 }
 
 function buildListUrl(filters: WWWFilters): string {
@@ -28,6 +33,10 @@ function buildListUrl(filters: WWWFilters): string {
     if (sortOrder) params.set("sortOrder", sortOrder);
   }
   if (filters.includeDeleted) params.set("includeDeleted", "true");
+  if (filters.page) params.set("page", String(filters.page));
+  if (filters.limit) params.set("limit", String(filters.limit));
+  if (filters.who) params.set("who", filters.who);
+  if (filters.teamId) params.set("teamId", filters.teamId);
   const qs = params.toString();
   return `/api/www${qs ? `?${qs}` : ""}`;
 }
@@ -39,6 +48,8 @@ const www = createCRUDHook<WWWItem, WWWFilters>({
 
 // Public API — preserves the existing call-site names so no consumer breaks.
 export const useWWWItems  = www.useList;
+/** DB-level paginated list — returns `{ data, meta }`, keeps previous page. */
+export const useWWWItemsPaginated = www.useListPaginated;
 export const useCreateWWW = www.useCreate;
 export const useUpdateWWW = www.useUpdate;
 export const useDeleteWWW = www.useDelete;

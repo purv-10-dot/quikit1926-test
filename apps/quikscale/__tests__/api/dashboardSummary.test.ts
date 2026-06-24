@@ -27,7 +27,7 @@ function stubEmptyDb() {
   mockDb.kPI.findMany.mockResolvedValue([] as any);
   mockDb.priority.findMany.mockResolvedValue([] as any);
   mockDb.wWWItem.findMany.mockResolvedValue([] as any);
-  mockDb.team.findMany.mockResolvedValue([] as any);
+  mockDb.qsTeam.findMany.mockResolvedValue([] as any);
   mockDb.orgMember.findMany.mockResolvedValue([] as any);
   mockDb.user.findMany.mockResolvedValue([] as any);
 }
@@ -108,7 +108,7 @@ describe("GET /api/dashboard/summary — happy path", () => {
 
     expect((mockDb.priority.findMany.mock.calls[0]?.[0] as any).where.orgId).toBe(TENANT);
     expect((mockDb.wWWItem.findMany.mock.calls[0]?.[0] as any).where.orgId).toBe(TENANT);
-    expect((mockDb.team.findMany.mock.calls[0]?.[0] as any).where.orgId).toBe(TENANT);
+    expect((mockDb.qsTeam.findMany.mock.calls[0]?.[0] as any).where.orgId).toBe(TENANT);
     expect((mockDb.orgMember.findMany.mock.calls[0]?.[0] as any).where.orgId).toBe(TENANT);
   });
 
@@ -175,7 +175,7 @@ describe("GET /api/dashboard/summary — happy path", () => {
       },
     ] as any);
 
-    mockDb.team.findMany.mockResolvedValue([{ id: "t1", name: "Team A" }] as any);
+    mockDb.qsTeam.findMany.mockResolvedValue([{ id: "t1", name: "Team A" }] as any);
     mockDb.orgMember.findMany.mockResolvedValue([
       { user: { id: USER, firstName: "A", lastName: "B", email: "a@b.c" } },
     ] as any);

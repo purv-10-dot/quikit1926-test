@@ -33,6 +33,9 @@ const kpiBaseFields = {
   targetScale: z.string().optional().nullable(),
   reverseColor: z.boolean().optional(),
   frequency: z.enum(["daily", "weekly", "monthly", "yearly"]).default("weekly"),
+  // Set true only by the OPSP "Export → Create KPIs" flow. Display-only flag;
+  // the Add/Edit KPI form never sends it (defaults false).
+  importedFromOpsp: z.boolean().optional(),
 };
 
 // Create KPI — enforces the kpiLevel invariants:
@@ -103,6 +106,13 @@ export const updateKPISchema = z
     targetScale: z.string().optional().nullable(),
     reverseColor: z.boolean().optional(),
     frequency: z.enum(["daily", "weekly", "monthly", "yearly"]).optional(),
+    // OPSP "Export → Replace KPI" flow only. When true, wipe the existing KPI's
+    // weekly actuals + notes + cached progress so the replaced KPI starts
+    // fresh ("Reset"); when false/absent the previous data is carried forward.
+    resetWeeklyData: z.boolean().optional(),
+    // When true, email the owner that their KPI was replaced (set by the OPSP
+    // export replace flow; the normal Edit form never sends it).
+    notifyReplacement: z.boolean().optional(),
   })
   .refine(
     (d) => {
@@ -149,6 +159,12 @@ export const kpiListParamsSchema = z.object({
   pageSize: z.number().int().min(1).max(100).default(20),
   status: z.enum(["active", "paused", "completed"]).optional(),
   kpiLevel: z.enum(["individual", "team"]).optional(),
+  // Dashboard "My Dashboard" scope: returns KPIs the current user is an owner
+  // of across BOTH levels in one sortable/paginatable query — individual KPIs
+  // they own (KPI.owner === me) ∪ team KPIs they co-own (KPI.ownerIds ∋ me).
+  // Overrides admin row-level bypass so the dashboard stays personal. See the
+  // route's `scope` branch.
+  scope: z.enum(["mine"]).optional(),
   owner: z.string().cuid().optional(),
   teamId: z.string().cuid().optional(),
   parentKPIId: z.string().cuid().optional(),
@@ -162,6 +178,7 @@ export const kpiListParamsSchema = z.object({
       "progressPercent",
       "healthStatus",
       "owner",
+      "team",
       "measurementUnit",
       "target",
       "quarterlyGoal",

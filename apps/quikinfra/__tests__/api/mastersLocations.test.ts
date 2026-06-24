@@ -66,6 +66,13 @@ describe("GET /api/masters/locations — happy path", () => {
     expect(where.orgId).toBe(TEST_TENANT);
   });
 
+  it("excludes deleted rows so they leave the UI entirely", async () => {
+    db.cnLocation.findMany.mockResolvedValue([]);
+    await GET(buildGET());
+    const where = db.cnLocation.findMany.mock.calls[0][0].where;
+    expect(where.status).toEqual({ not: "deleted" });
+  });
+
   it("pushes take/skip + count down when paginated", async () => {
     db.cnLocation.findMany.mockResolvedValue([]);
     db.cnLocation.count.mockResolvedValue(0);

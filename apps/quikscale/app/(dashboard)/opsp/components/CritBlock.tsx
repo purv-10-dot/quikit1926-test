@@ -23,10 +23,17 @@ export function CritBlock({
   label,
   value,
   onChange,
+  fill = false,
 }: {
   label: string;
   value: CritCard;
   onChange: (v: CritCard) => void;
+  /**
+   * When true, the card stretches to its container's full height and the four
+   * tier rows spread evenly to consume the leftover vertical space. Off by
+   * default so every other consumer (Actions, Goals, print) is unaffected.
+   */
+  fill?: boolean;
 }) {
   // Duplicate detection — the 4 tier thresholds must be distinct. Empty
   // bullets are skipped (only entered values are compared); comparison
@@ -66,7 +73,7 @@ export function CritBlock({
   const orderFlags = bulletNums.map((n) => orderError && n !== null);
 
   return (
-    <Card>
+    <Card className={fill ? "flex flex-col h-full" : undefined}>
       <div className="flex items-center gap-2 mb-3">
         <span className="text-xs font-semibold text-gray-700 whitespace-nowrap">
           {label}:
@@ -78,7 +85,7 @@ export function CritBlock({
           className="flex-1 min-w-0 text-xs border-0 border-b border-dashed border-gray-300 focus:outline-none text-gray-500 placeholder-gray-400 bg-transparent overflow-hidden"
         />
       </div>
-      <div className="space-y-1.5">
+      <div className={fill ? "flex-1 flex flex-col justify-between gap-2" : "space-y-1.5"}>
         {BULLET_TIERS.map((tier, i) => (
           <div key={i} className="flex items-center gap-2">
             <span

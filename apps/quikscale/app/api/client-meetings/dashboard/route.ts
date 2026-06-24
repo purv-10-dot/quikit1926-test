@@ -182,6 +182,9 @@ export const GET = withOrgAuth(async ({ orgId }, request) => {
       punchIn = computeMemberPunchIn(
         meetings.map(m => ({
           id: m.id, meetingDate: m.meetingDate,
+          // Held-only filter lives in computeMemberPunchIn — cancelled / not-held
+          // meetings must not surface as 0% rows on the Member Punch-In tab.
+          callStatus: m.callStatus,
           // `absentUserIds` / `dashboardNAUserIds` are misnomers in
           // computeMemberPunchIn's API — the function compares them against
           // `member.id`, which is the ClientMember id. We pass ClientMember

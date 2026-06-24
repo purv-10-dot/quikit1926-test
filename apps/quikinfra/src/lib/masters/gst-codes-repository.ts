@@ -44,8 +44,10 @@ function toRecord(row: Prisma.CnGSTCodeGetPayload<Record<string, never>>): GSTCo
     sgstRate: toStr(row.sgstRate),
     igstRate: toStr(row.igstRate),
     isRcm: !!row.isRcm,
-    effectiveFrom: row.effectiveFrom ? row.effectiveFrom.toISOString() : null,
-    effectiveTo: row.effectiveTo ? row.effectiveTo.toISOString() : null,
+    // Date-only fields — return "YYYY-MM-DD" so the edit form's <input type="date">
+    // can load them (a full ISO datetime string renders blank in a date input).
+    effectiveFrom: row.effectiveFrom ? row.effectiveFrom.toISOString().slice(0, 10) : null,
+    effectiveTo: row.effectiveTo ? row.effectiveTo.toISOString().slice(0, 10) : null,
     itemGroupId: row.itemGroupId ?? null,
     itemGroupName: row.itemGroupName ?? null,
     status: row.status,
@@ -71,6 +73,9 @@ function buildGSTCodesWhere(
   const q = (opts.search ?? "").trim();
   return {
     orgId: opts.orgId,
+    // "deleted" rows are removed from the UI entirely; "inactive" rows are
+    // still returned so they can show under the Inactive tab.
+    status: { not: "deleted" },
     ...(q
       ? {
           OR: [
@@ -204,6 +209,22 @@ export async function updateGSTCode(
   return toRecord(row);
 }
 
+/**
+ * Status of an existing GST code with this (orgId, code) — including
+ * soft-deleted rows. Used to give a clear message when a create hits the
+ * (orgId, code) unique constraint: a "deleted" row still reserves the code.
+ */
+export async function findGSTCodeStatusByCode(
+  orgId: string,
+  code: string,
+): Promise<string | null> {
+  const row = await db.cnGSTCode.findFirst({
+    where: { orgId, code: String(code).trim() },
+    select: { status: true },
+  });
+  return row?.status ?? null;
+}
+
 export async function deleteGSTCode(
   orgId: string,
   id: string,
@@ -211,7 +232,7 @@ export async function deleteGSTCode(
 ): Promise<boolean> {
   const res = await db.cnGSTCode.updateMany({
     where: { id, orgId },
-    data: { status: "inactive", updatedBy },
+    data: { status: "deleted", updatedBy },
   });
   return res.count > 0;
 }

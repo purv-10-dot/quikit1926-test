@@ -84,8 +84,8 @@ describe("GET /api/org/teams — happy path", () => {
       ],
       createdAt: new Date(),
     };
-    mockDb.team.findMany.mockResolvedValue([mockTeam] as any);
-    mockDb.team.count.mockResolvedValue(1);
+    mockDb.qsTeam.findMany.mockResolvedValue([mockTeam] as any);
+    mockDb.qsTeam.count.mockResolvedValue(1);
     mockDb.user.findMany.mockResolvedValue([
       { id: USER, firstName: "Test", lastName: "User" },
     ] as any);
@@ -99,7 +99,7 @@ describe("GET /api/org/teams — happy path", () => {
     expect(body.data[0].headName).toBe("Test User");
 
     // Verify tenant isolation
-    expect(mockDb.team.findMany).toHaveBeenCalledWith(
+    expect(mockDb.qsTeam.findMany).toHaveBeenCalledWith(
       expect.objectContaining({
         where: expect.objectContaining({ orgId: TENANT }),
       }),
@@ -155,7 +155,7 @@ describe("POST /api/org/teams — duplicate name", () => {
   beforeEach(asAdmin);
 
   it("returns 409 when team name already exists in tenant", async () => {
-    mockDb.team.findFirst.mockResolvedValue({
+    mockDb.qsTeam.findFirst.mockResolvedValue({
       id: "existing-t1",
       name: "Engineering",
       orgId: TENANT,
@@ -178,7 +178,7 @@ describe("POST /api/org/teams — happy path", () => {
 
   it("creates a team with 201, generates slug, writes audit log", async () => {
     // No duplicate
-    mockDb.team.findFirst.mockResolvedValue(null);
+    mockDb.qsTeam.findFirst.mockResolvedValue(null);
     const createdTeam = {
       id: "new-t1",
       name: "Engineering",
@@ -190,7 +190,7 @@ describe("POST /api/org/teams — happy path", () => {
       createdBy: USER,
       orgId: TENANT,
     };
-    mockDb.team.create.mockResolvedValue(createdTeam as any);
+    mockDb.qsTeam.create.mockResolvedValue(createdTeam as any);
     mockDb.auditLog.create.mockResolvedValue({} as any);
 
     const res = await POST(buildPOST(validBody), { params: {} } as any);
@@ -201,7 +201,7 @@ describe("POST /api/org/teams — happy path", () => {
     expect(body.data.memberCount).toBe(0);
 
     // Verify slug was generated (contains base name in lowercase)
-    const createArg = (mockDb.team.create as any).mock.calls[0][0];
+    const createArg = (mockDb.qsTeam.create as any).mock.calls[0][0];
     expect(createArg.data.slug).toMatch(/^engineering-/);
     expect(createArg.data.orgId).toBe(TENANT);
     expect(createArg.data.createdBy).toBe(USER);
@@ -214,7 +214,7 @@ describe("POST /api/org/teams — happy path", () => {
   });
 
   it("resolves head name when headId is provided", async () => {
-    mockDb.team.findFirst.mockResolvedValue(null);
+    mockDb.qsTeam.findFirst.mockResolvedValue(null);
     const createdTeam = {
       id: "new-t2",
       name: "Design",
@@ -226,7 +226,7 @@ describe("POST /api/org/teams — happy path", () => {
       createdBy: USER,
       orgId: TENANT,
     };
-    mockDb.team.create.mockResolvedValue(createdTeam as any);
+    mockDb.qsTeam.create.mockResolvedValue(createdTeam as any);
     mockDb.auditLog.create.mockResolvedValue({} as any);
     mockDb.user.findUnique.mockResolvedValue({
       firstName: "Test",

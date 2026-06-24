@@ -11,10 +11,14 @@ async function fetchUsers(teamId?: string): Promise<User[]> {
   return data.data;
 }
 
-export function useUsers(teamId?: string) {
+export function useUsers(teamId?: string, options?: { enabled?: boolean }) {
   return useQuery({
     queryKey: ["users", teamId ?? "all"],
     queryFn: () => fetchUsers(teamId),
     staleTime: 1000 * 60 * 5,
+    // Lets callers skip the fetch entirely (e.g. only load a team's members
+    // when a team is actually selected) — avoids loading the full org list
+    // for a value that won't be used.
+    enabled: options?.enabled ?? true,
   });
 }

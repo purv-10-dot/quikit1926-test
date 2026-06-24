@@ -10,20 +10,48 @@ async function fetchJSON(url: string) {
   return json.data;
 }
 
+export interface PageMeta { page: number; limit: number; total: number; totalPages: number; }
+export interface Paginated<T> { data: T[]; meta: PageMeta; }
+
+async function fetchPaginated<T>(url: string): Promise<Paginated<T>> {
+  const res = await fetch(url);
+  const json = await res.json();
+  if (!json.success) throw new Error(json.error);
+  return { data: json.data ?? [], meta: json.meta };
+}
+
+export interface PageParams { page: number; limit: number; search?: string; }
+
+function toQuery(params: PageParams): string {
+  const qs = new URLSearchParams({ page: String(params.page), limit: String(params.limit) });
+  if (params.search) qs.set("search", params.search);
+  return qs.toString();
+}
+
 export function useScorecard() {
   return useQuery({ queryKey: ["performance", "scorecard"], queryFn: () => fetchJSON(`${BASE}/scorecard`), staleTime: 1000 * 60 * 5 });
 }
 
-export function useIndividualPerformance() {
-  return useQuery({ queryKey: ["performance", "individual"], queryFn: () => fetchJSON(`${BASE}/individual`), staleTime: 1000 * 60 * 5 });
+export function useIndividualPerformance(params: PageParams) {
+  return useQuery({
+    queryKey: ["performance", "individual", params],
+    queryFn: () => fetchPaginated<any>(`${BASE}/individual?${toQuery(params)}`),
+    staleTime: 1000 * 60 * 5,
+    placeholderData: (prev) => prev,
+  });
 }
 
 export function useUserPerformance(userId: string) {
   return useQuery({ queryKey: ["performance", "individual", userId], queryFn: () => fetchJSON(`${BASE}/individual/${userId}`), enabled: !!userId, staleTime: 1000 * 60 * 5 });
 }
 
-export function useTeamPerformance() {
-  return useQuery({ queryKey: ["performance", "teams"], queryFn: () => fetchJSON(`${BASE}/teams`), staleTime: 1000 * 60 * 5 });
+export function useTeamPerformance(params: PageParams) {
+  return useQuery({
+    queryKey: ["performance", "teams", params],
+    queryFn: () => fetchPaginated<any>(`${BASE}/teams?${toQuery(params)}`),
+    staleTime: 1000 * 60 * 5,
+    placeholderData: (prev) => prev,
+  });
 }
 
 export function usePerformanceTrends() {

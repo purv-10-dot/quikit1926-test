@@ -62,11 +62,11 @@ export async function isOrgAdmin(userId: string, orgId: string): Promise<boolean
  */
 export async function getMyTeamIds(userId: string, orgId: string): Promise<string[]> {
   const [memberRows, headedRows] = await Promise.all([
-    db.userTeam.findMany({
+    db.qsUserTeam.findMany({
       where: { userId, orgId },
       select: { teamId: true },
     }),
-    db.team.findMany({
+    db.qsTeam.findMany({
       where: { orgId, headId: userId },
       select: { id: true },
     }),

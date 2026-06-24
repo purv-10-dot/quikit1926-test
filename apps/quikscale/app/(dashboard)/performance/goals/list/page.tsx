@@ -8,16 +8,16 @@
  * to company-wide via the owner filter.
  */
 
-import { useState, useMemo } from "react";
+import { useState } from "react";
 import { useSession } from "next-auth/react";
 import {
   Target, CheckCircle2, AlertTriangle, CircleDashed, ChevronLeft,
-  Trash2, Pencil,
+  Trash2, Pencil, Search,
 } from "lucide-react";
 import Link from "next/link";
 import { useGoals, useCreateGoal, useUpdateGoal, useDeleteGoal } from "@/lib/hooks/useGoals";
 import { useUsers } from "@/lib/hooks/useUsers";
-import { AddButton, EmptyState, useConfirm } from "@quikit/ui";
+import { AddButton, EmptyState, useConfirm, Pagination, DEFAULT_PAGE_SIZE } from "@quikit/ui";
 import { getFiscalYear, getFiscalQuarter } from "@/lib/utils/fiscal";
 import { GOAL_STATUSES, type GoalStatus } from "@/lib/schemas/goalSchema";
 
@@ -54,17 +54,36 @@ export default function GoalsPage() {
   const [scope, setScope] = useState<"me" | "all">("me");
   const [year] = useState(getFiscalYear());
   const [quarter] = useState<string | "">(getFiscalQuarter());
+  const [search, setSearch] = useState("");
+  const [sort, setSort] = useState("createdAt:desc");
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(DEFAULT_PAGE_SIZE);
+
+  const [sortBy, sortOrder] = sort.split(":") as [string, "asc" | "desc"];
 
   const { data, isLoading, error } = useGoals({
     ownerId: scope === "me" ? currentUserId : undefined,
     year,
     quarter: quarter || undefined,
+    search: search.trim() || undefined,
+    sortBy: sortBy === "createdAt" ? undefined : sortBy,
+    sortOrder,
+    page,
+    pageSize,
   });
   const { data: users = [] } = useUsers();
   const createGoal = useCreateGoal();
   const deleteGoal = useDeleteGoal();
 
-  const goals = useMemo(() => (data as GoalRow[] | undefined) ?? [], [data]);
+  const goals = (data?.data as GoalRow[] | undefined) ?? [];
+  const meta = data?.meta;
+  const totalPages = meta?.totalPages ?? 1;
+
+  // Reset to page 1 whenever a filter/search/sort that changes the result set
+  // is touched, so the user never lands on an out-of-range page.
+  function resetTo<T>(setter: (v: T) => void) {
+    return (v: T) => { setter(v); setPage(1); };
+  }
 
   const [showModal, setShowModal] = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
@@ -129,13 +148,8 @@ export default function GoalsPage() {
     await deleteGoal.mutateAsync(id);
   }
 
-  const stats = useMemo(() => {
-    const total = goals.length;
-    const completed = goals.filter((g) => g.status === "completed").length;
-    const atRisk = goals.filter((g) => g.status === "at-risk").length;
-    const onTrack = goals.filter((g) => g.status === "on-track").length;
-    return { total, completed, atRisk, onTrack };
-  }, [goals]);
+  // Stats reflect the FULL filtered set (server aggregate), not just this page.
+  const stats = data?.stats ?? { total: 0, onTrack: 0, atRisk: 0, completed: 0 };
 
   return (
     <div className="flex flex-col h-full">
@@ -156,9 +170,32 @@ export default function GoalsPage() {
             </p>
           </div>
           <div className="flex items-center gap-2">
+            <div className="relative">
+              <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-gray-400" />
+              <input
+                type="text"
+                value={search}
+                onChange={(e) => resetTo(setSearch)(e.target.value)}
+                placeholder="Search goals…"
+                className="pl-8 pr-3 py-1.5 text-xs border border-gray-200 rounded-md focus:outline-none focus:ring-1 focus:ring-accent-400 w-44"
+              />
+            </div>
+            <select
+              value={sort}
+              onChange={(e) => resetTo(setSort)(e.target.value)}
+              className="text-xs border border-gray-200 rounded-md px-2 py-1.5 bg-white focus:outline-none focus:ring-1 focus:ring-accent-400"
+              title="Sort goals"
+            >
+              <option value="createdAt:desc">Newest</option>
+              <option value="title:asc">Title A–Z</option>
+              <option value="title:desc">Title Z–A</option>
+              <option value="status:asc">Status</option>
+              <option value="progressPercent:desc">Progress (high→low)</option>
+              <option value="progressPercent:asc">Progress (low→high)</option>
+            </select>
             <div className="flex border border-gray-200 rounded-md overflow-hidden">
               <button
-                onClick={() => setScope("me")}
+                onClick={() => resetTo(setScope)("me")}
                 className={`px-3 py-1.5 text-xs font-medium ${
                   scope === "me"
                     ? "bg-accent-600 text-white"
@@ -168,7 +205,7 @@ export default function GoalsPage() {
                 Mine
               </button>
               <button
-                onClick={() => setScope("all")}
+                onClick={() => resetTo(setScope)("all")}
                 className={`px-3 py-1.5 text-xs font-medium ${
                   scope === "all"
                     ? "bg-accent-600 text-white"
@@ -243,6 +280,15 @@ export default function GoalsPage() {
           </div>
         </div>
       </div>
+
+      <Pagination
+        page={page}
+        totalPages={totalPages}
+        total={stats.total}
+        limit={pageSize}
+        onPageChange={setPage}
+        onPageSizeChange={(size) => { setPageSize(size); setPage(1); }}
+      />
 
       {/* Create modal */}
       {showModal && (

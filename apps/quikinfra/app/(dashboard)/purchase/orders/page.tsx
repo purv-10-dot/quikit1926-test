@@ -249,8 +249,9 @@ export default function PurchaseOrdersPage() {
   // reads the same in both flows. `||` (not `??`) treats an empty
   // `companyName` as "missing" and falls through to the contact name
   // — matters for vendors created without a registered company.
+  // Only active vendors are selectable (inactive/deleted/blacklisted excluded).
   const vendorOptions = (vendorsData?.data ?? [])
-    .filter((v) => !(v as { isBlacklisted?: boolean }).isBlacklisted && v.status !== "blacklisted")
+    .filter((v) => v.status === "active" && !(v as { isBlacklisted?: boolean }).isBlacklisted)
     .map((v) => ({
       value: v.id,
       label: v.companyName || v.name || v.id,
@@ -275,7 +276,7 @@ export default function PurchaseOrdersPage() {
       })),
     [approvedIndents],
   );
-  const locationOptions = (locationsData?.data ?? []).map((l) => ({
+  const locationOptions = (locationsData?.data ?? []).filter((l) => l?.status === "active").map((l) => ({
     value: l.id,
     label: l.name ?? l.code ?? l.id,
   }));

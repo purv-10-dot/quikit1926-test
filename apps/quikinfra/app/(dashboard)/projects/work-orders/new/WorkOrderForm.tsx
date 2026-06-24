@@ -37,6 +37,7 @@ import {
 import { PageContainer } from "@/components/PageShell";
 import { SelectInput } from "@/components/FormDrawer";
 import { useProjects, useContractors, useUOMs } from "@/hooks/use-masters";
+import { buildLookupOptions } from "@/lib/masters/lookup";
 import { BOQActivityPickerModal } from "./BOQActivityPickerModal";
 
 interface ScopeLine {
@@ -86,7 +87,7 @@ export function WorkOrderForm({ editData, embedded = false, onSaved }: Props) {
 
   const projects = projectsResult?.data ?? [];
   const contractors = contractorsResult?.data ?? [];
-  const uoms = (uomsResult?.data ?? []) as Array<{ code?: string }>;
+  const uoms = (uomsResult?.data ?? []) as Array<{ code?: string; status?: string }>;
 
   // Basic Information state
   const [projectId, setProjectId] = useState("");
@@ -352,12 +353,27 @@ export function WorkOrderForm({ editData, embedded = false, onSaved }: Props) {
               />
             </Field>
             <Field label="CONTRACTOR">
-              <SelectInput
-                value={contractorId}
-                onChange={setContractorId}
-                placeholder="Select Contractor…"
-                options={contractors.map((c) => ({ value: c.id, label: c.name }))}
-              />
+              {(() => {
+                const { options, notice } = buildLookupOptions({
+                  rows: contractors,
+                  assigned: contractorId,
+                  by: "id",
+                  entityLabel: "contractor",
+                });
+                return (
+                  <>
+                    <SelectInput
+                      value={contractorId}
+                      onChange={setContractorId}
+                      placeholder="Select Contractor…"
+                      options={options}
+                    />
+                    {notice && (
+                      <p className="mt-1 text-xs text-amber-600">⚠ {notice}</p>
+                    )}
+                  </>
+                );
+              })()}
             </Field>
             <Field label="WORK TYPE">
               <SelectInput
@@ -483,7 +499,7 @@ export function WorkOrderForm({ editData, embedded = false, onSaved }: Props) {
                             onChange={(v) => updateScopeLine(idx, "uomCode", v)}
                             placeholder="—"
                             options={(() => {
-                              const opts = uoms.map((u) => ({ value: u.code ?? "", label: u.code ?? "" }));
+                              const opts = uoms.filter((u) => u.status === "active").map((u) => ({ value: u.code ?? "", label: u.code ?? "" }));
                               if (
                                 line.uomCode &&
                                 !uoms.find((u) => u.code === line.uomCode)

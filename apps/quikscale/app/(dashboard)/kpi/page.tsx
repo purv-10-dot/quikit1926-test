@@ -6,12 +6,13 @@ import { useKPIs, useDeleteKPI, useBulkRestoreKPI } from "@/lib/hooks/useKPI";
 import { notify } from "@/lib/utils/notify";
 import { useTableSort, useDebouncedTableSearch } from "@/lib/store";
 import { TableSkeleton } from "@/components/ui/Skeleton";
-import { useUsers } from "@/lib/hooks/useUsers";
+import { useInfiniteUsers } from "@/lib/hooks/useInfiniteUsers";
 import { KPIListParams } from "@/lib/schemas/kpiSchema";
 import {
   getFiscalYear, getFiscalQuarter, fiscalYearLabel,
 } from "@/lib/utils/fiscal";
 import { useCurrentWeek, useWeekDateRange } from "@/lib/hooks/useCurrentWeek";
+import { useNumberFormat } from "@/lib/hooks/useFeatureFlags";
 import { KPITable } from "./components/KPITable";
 import { KPIModal } from "./components/KPIModal";
 import { ALL_STATIC_COLS, COL_LABELS } from "./hooks/useTableColumns";
@@ -25,6 +26,7 @@ import { useTablePrefs } from "@/lib/hooks/useTablePreferences";
 import { ModuleMoreActions, TrashBanner } from "@/components/table/ModuleMoreActions";
 import { runExport } from "@/lib/export/xlsx";
 import { getKPIs } from "@/lib/services/kpiService";
+import { UnreadCountsProvider } from "@/components/audit/UnreadCountsProvider";
 import { Target } from "lucide-react";
 
 const FISCAL_YEAR = getFiscalYear();
@@ -34,6 +36,8 @@ export default function IndividualKPIPage() {
   const { data: session } = useSession();
   const [showAddModal, setShowAddModal] = useState(false);
   const { canCreate, canUpdate, canDelete } = useResourcePermissions("KPI");
+  // Indian (lakh/crore) vs standard number format — org-level toggle, view-only.
+  const numberFormat = useNumberFormat();
 
   // Year + quarter via shared FilterContext so they persist across module nav.
   // filterTeam lives LOCALLY (per-page scope). filterOwner is seeded from
@@ -102,8 +106,16 @@ export default function IndividualKPIPage() {
       .catch((err) => console.error("[kpi] Failed to load teams:", err));
   }, []);
 
-  // Users for owner dropdown — filtered by team when one is selected
-  const { data: users = [] } = useUsers(filterTeam || undefined);
+  // Users for owner dropdown — DB-level infinite (25/page) + server search,
+  // filtered by team when one is selected. No full-list load.
+  const [ownerSearch, setOwnerSearch] = useState("");
+  const {
+    users,
+    isLoading: ownersLoading,
+    hasNextPage: ownersHasMore,
+    isFetchingNextPage: ownersLoadingMore,
+    fetchNextPage: fetchMoreOwners,
+  } = useInfiniteUsers(filterTeam || undefined, ownerSearch);
 
   // Year picker — DB-scoped from QuarterSetting via shared hook
   const { years: fyYears, configured: fyConfigured } = useFiscalYears();
@@ -135,6 +147,19 @@ export default function IndividualKPIPage() {
   const { data, isLoading, error, refetch } = useKPIs(filters);
   const kpis = data?.data ?? [];
   const total = data?.total ?? kpis.length;
+
+  // When an owner filter is restored from context (or the owner sits beyond the
+  // loaded 25-user page), the id won't be in the FilterPicker's `options`, so
+  // the trigger would fall back to "All owners". Resolve the owner's name from
+  // the loaded KPI rows (the list is owner-scoped when filtered) and feed it as
+  // the picker's `selectedOption` so the applied owner's name is shown.
+  const selectedOwnerOption = useMemo(() => {
+    if (!filterOwner || users.some((u) => u.id === filterOwner)) return undefined;
+    const ou = kpis.find((k) => k.owner === filterOwner)?.owner_user;
+    return ou
+      ? userToFilterOption({ id: filterOwner, firstName: ou.firstName, lastName: ou.lastName, email: "" })
+      : undefined;
+  }, [filterOwner, users, kpis]);
 
   // Bulk delete
   const deleteKPI = useDeleteKPI();
@@ -365,6 +390,12 @@ export default function IndividualKPIPage() {
                     value={filterOwner}
                     onChange={(v) => { setFilterOwner(v); ctx.setFilterOwner(v); }}
                     options={users.map(userToFilterOption)}
+                    selectedOption={selectedOwnerOption}
+                    onSearchChange={setOwnerSearch}
+                    onLoadMore={fetchMoreOwners}
+                    hasMore={ownersHasMore}
+                    loadingMore={ownersLoadingMore}
+                    loading={ownersLoading}
                     allLabel="All owners"
                   />
                 </div>
@@ -428,6 +459,7 @@ export default function IndividualKPIPage() {
             />
           </div>
         ) : (
+          <UnreadCountsProvider entityType="KPI" ids={kpis.map((k: { id: string }) => k.id)}>
           <KPITable
             kpis={kpis}
             total={total}
@@ -448,7 +480,9 @@ export default function IndividualKPIPage() {
             hideColumns={["quarterlyGoal", "qtdGoal", "qtdAchieved", "weeklyGoal", "teamHead", "kpiOwner"]}
             canDelete={canDelete}
             canUpdate={canUpdate}
+            numberFormat={numberFormat}
           />
+          </UnreadCountsProvider>
         )}
       </div>
 
