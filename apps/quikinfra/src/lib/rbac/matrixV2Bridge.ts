@@ -57,7 +57,13 @@ export const MENU_TO_RESOURCE: Readonly<Record<string, string>> = {
   "store.transfer":    "construction.transfer",
   "store.recon":       "construction.reconciliation",
   "store.diesel":      "construction.diesel",
-  "store.asset_mgmt":  "construction.stock",
+  // Machinery & Equipment
+  "equip.log_book":    "construction.equipment_log",
+  "equip.maintenance": "construction.equipment_maintenance",
+  "equip.deployment":  "construction.equipment_deployment",
+  "equip.fleet":       "construction.equipment_fleet",
+  "equip.hire_rent":   "construction.equipment_hire_rent",
+  "equip.fixed_assets":"construction.equipment_fixed_assets",
   // Project Mgmt
   "pm.boq":        "construction.boq",
   "pm.wbs":        "construction.wbs",

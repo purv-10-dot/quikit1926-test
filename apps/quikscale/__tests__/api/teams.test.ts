@@ -67,8 +67,8 @@ describe("GET /api/teams — happy path", () => {
       { id: "t1", name: "Engineering" },
       { id: "t2", name: "Sales" },
     ];
-    mockDb.team.findMany.mockResolvedValue(teams as any);
-    mockDb.team.count.mockResolvedValue(2);
+    mockDb.qsTeam.findMany.mockResolvedValue(teams as any);
+    mockDb.qsTeam.count.mockResolvedValue(2);
 
     const res = await GET(buildGET(), { params: {} as any });
     expect(res.status).toBe(200);
@@ -79,12 +79,12 @@ describe("GET /api/teams — happy path", () => {
   });
 
   it("filters by orgId (soft delete handled by middleware)", async () => {
-    mockDb.team.findMany.mockResolvedValue([]);
-    mockDb.team.count.mockResolvedValue(0);
+    mockDb.qsTeam.findMany.mockResolvedValue([]);
+    mockDb.qsTeam.count.mockResolvedValue(0);
 
     await GET(buildGET(), { params: {} as any });
 
-    const call = mockDb.team.findMany.mock.calls[0]?.[0] as any;
+    const call = mockDb.qsTeam.findMany.mock.calls[0]?.[0] as any;
     expect(call.where.orgId).toBe(TENANT);
     // deletedAt filtering is handled by the Prisma soft-delete middleware
   });
@@ -131,7 +131,7 @@ describe("POST /api/teams — duplicate name", () => {
   beforeEach(asAdmin);
 
   it("returns 409 when team name already exists", async () => {
-    mockDb.team.findFirst.mockResolvedValue({ id: "t1", name: "Engineering" } as any);
+    mockDb.qsTeam.findFirst.mockResolvedValue({ id: "t1", name: "Engineering" } as any);
 
     const res = await POST(buildPOST({ name: "Engineering" }), { params: {} as any });
     expect(res.status).toBe(409);
@@ -149,8 +149,8 @@ describe("POST /api/teams — happy path", () => {
   beforeEach(asAdmin);
 
   it("creates team and returns data", async () => {
-    mockDb.team.findFirst.mockResolvedValue(null); // no duplicate
-    mockDb.team.create.mockResolvedValue({ id: "t-new", name: "Marketing" } as any);
+    mockDb.qsTeam.findFirst.mockResolvedValue(null); // no duplicate
+    mockDb.qsTeam.create.mockResolvedValue({ id: "t-new", name: "Marketing" } as any);
 
     const res = await POST(buildPOST({ name: "Marketing" }), { params: {} as any });
     expect(res.status).toBe(200);
@@ -160,12 +160,12 @@ describe("POST /api/teams — happy path", () => {
   });
 
   it("scopes creation to tenant", async () => {
-    mockDb.team.findFirst.mockResolvedValue(null);
-    mockDb.team.create.mockResolvedValue({ id: "t-new", name: "Ops" } as any);
+    mockDb.qsTeam.findFirst.mockResolvedValue(null);
+    mockDb.qsTeam.create.mockResolvedValue({ id: "t-new", name: "Ops" } as any);
 
     await POST(buildPOST({ name: "Ops" }), { params: {} as any });
 
-    const call = mockDb.team.create.mock.calls[0]?.[0] as any;
+    const call = mockDb.qsTeam.create.mock.calls[0]?.[0] as any;
     expect(call.data.orgId).toBe(TENANT);
     expect(call.data.name).toBe("Ops");
   });

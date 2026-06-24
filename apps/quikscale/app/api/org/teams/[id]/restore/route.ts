@@ -7,7 +7,7 @@ const withOrgAuth = withOrgAuthForModule("orgSetup.teams");
 
 /** POST /api/org/teams/[id]/restore — undo soft delete. */
 export const POST = withOrgAuth<{ id: string }>(async ({ orgId, userId }, _req, { params }) => {
-  const existing = await db.team.findFirst({
+  const existing = await db.qsTeam.findFirst({
     where: { id: params.id, orgId, deletedAt: { not: null } },
   });
   if (!existing) {
@@ -19,7 +19,7 @@ export const POST = withOrgAuth<{ id: string }>(async ({ orgId, userId }, _req, 
   // Restoring a team that shares a name with an active team would create a
   // duplicate. Block the restore with a clear message instead of silently
   // succeeding into a broken state.
-  const nameClash = await db.team.findFirst({
+  const nameClash = await db.qsTeam.findFirst({
     where: {
       orgId,
       deletedAt: null,
@@ -37,7 +37,7 @@ export const POST = withOrgAuth<{ id: string }>(async ({ orgId, userId }, _req, 
       { status: 409 },
     );
   }
-  await db.team.update({
+  await db.qsTeam.update({
     where: { id: params.id },
     data: { deletedAt: null },
   });

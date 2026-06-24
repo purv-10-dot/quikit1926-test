@@ -10,12 +10,20 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import type { PriorityRow } from "@/lib/types/priority";
 import { createCRUDHook } from "./createCRUDHook";
+import { invalidateEntity } from "@/lib/hooks/dashboardInvalidation";
 
 export interface PriorityFilters {
   year: number;
   quarter: string;
   sort?: string | null;
   includeDeleted?: boolean;
+  // DB-level pagination + search + filters.
+  page?: number;
+  limit?: number;
+  search?: string;
+  owner?: string;
+  teamId?: string;
+  status?: string;
 }
 
 function buildListUrl(filters: PriorityFilters): string {
@@ -29,6 +37,12 @@ function buildListUrl(filters: PriorityFilters): string {
     if (sortOrder) params.set("sortOrder", sortOrder);
   }
   if (filters.includeDeleted) params.set("includeDeleted", "true");
+  if (filters.page) params.set("page", String(filters.page));
+  if (filters.limit) params.set("limit", String(filters.limit));
+  if (filters.search) params.set("search", filters.search);
+  if (filters.owner) params.set("owner", filters.owner);
+  if (filters.teamId) params.set("teamId", filters.teamId);
+  if (filters.status) params.set("status", filters.status);
   return `/api/priority?${params.toString()}`;
 }
 
@@ -41,6 +55,11 @@ const priority = createCRUDHook<PriorityRow, PriorityFilters>({
 // `usePriorities(year, quarter, sort?)` so call sites don't need to change.
 export function usePriorities(year: number, quarter: string, sort?: string | null, includeDeleted?: boolean) {
   return priority.useList({ year, quarter, sort, includeDeleted });
+}
+
+/** DB-level paginated list — returns `{ data, meta }`, keeps previous page. */
+export function usePrioritiesPaginated(filters: PriorityFilters) {
+  return priority.useListPaginated(filters);
 }
 
 export const useCreatePriority = priority.useCreate;
@@ -99,9 +118,38 @@ export function useUpdateWeeklyStatus(priorityId: string) {
     mutationFn: (body: { weekNumber: number; status: string; notes?: string }) =>
       updateWeeklyStatus(priorityId, body),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: priority.keys.detail(priorityId) });
-      queryClient.invalidateQueries({ queryKey: priority.keys.lists() });
-      queryClient.invalidateQueries({ queryKey: ["dashboard"] });
+      // detail + list + dashboard + dashboard-infinite (single source of truth).
+      invalidateEntity(queryClient, "priority", { id: priorityId });
+    },
+  });
+}
+
+type WeeklyStatusWrite = { weekNumber: number; status: string; notes?: string };
+
+// Batch weekly-status save — many weeks in ONE request. The server groups
+// ≥3 changed weeks into a single BULK_UPDATE audit event ("Bulk weekly update"
+// card); <3 fall back to individual WEEKLY_UPDATE events. Used by the Completed
+// cascade so a multi-week save is one history entry, not N.
+async function updateWeeklyStatusesBatch(
+  priorityId: string,
+  inputs: WeeklyStatusWrite[]
+): Promise<unknown> {
+  const res = await fetch(`/api/priority/${priorityId}/weekly/batch`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ inputs }),
+  });
+  const data = await res.json();
+  if (!data.success) throw new Error(data.error || "Failed to update weekly statuses");
+  return data.data;
+}
+
+export function useUpdateWeeklyStatusesBatch(priorityId: string) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (inputs: WeeklyStatusWrite[]) => updateWeeklyStatusesBatch(priorityId, inputs),
+    onSuccess: () => {
+      invalidateEntity(queryClient, "priority", { id: priorityId });
     },
   });
 }

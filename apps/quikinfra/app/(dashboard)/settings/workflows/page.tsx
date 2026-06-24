@@ -26,7 +26,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import {
   Pencil, Plus, CheckCircle2, CircleDashed, Layers, ChevronDown,
   ShoppingCart, FolderKanban, Warehouse, Search, X, ArrowRight, Workflow,
-  CreditCard,
+  CreditCard, Hammer,
 } from "lucide-react";
 import Link from "next/link";
 import { PageHeader, PageContainer } from "@/components/PageShell";
@@ -102,6 +102,19 @@ const MODULE_GROUPS: ModuleGroup[] = [
       // entityType "rab" must match the RA Bill submit/approve routes
       // (submitForApproval({ entityType: "rab" })).
       { type: "rab", label: "RA Bills (Sub-Contractor)" },
+    ],
+  },
+  {
+    key: "machinery_equipment",
+    label: "Machinery & Equipment",
+    description: "Log Book, Maintenance, Deployment, Hire & Rent, Fixed Assets",
+    iconComponent: Hammer,
+    entities: [
+      { type: "equipment_logs", label: "Equipment Log Book" },
+      { type: "job_cards", label: "Maintenance" },
+      { type: "equipment_transfers", label: "Deployment & Compliance" },
+      { type: "hire_rent", label: "Hire & Rent" },
+      { type: "equipment_fixed_assets", label: "Fixed Asset / Tools" },
     ],
   },
 ];
@@ -379,7 +392,7 @@ export default function WorkflowsPage() {
             <p className="text-xs text-gray-500 mt-1.5 max-w-md leading-relaxed">
               Approval workflows are scoped to a project, so you'll need at
               least one active project before you can configure routing for
-              Purchase, Projects, or Store pages.
+              Purchase, Projects, Store, or Machinery & Equipment pages.
             </p>
             <Link
               href="/masters/projects"

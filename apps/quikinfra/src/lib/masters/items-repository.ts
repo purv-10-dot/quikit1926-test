@@ -198,11 +198,13 @@ function buildItemsWhere(
   const q = (opts.search ?? "").trim();
   return {
     orgId: opts.orgId,
-    // Soft-deleted items get status "inactive" (see deleteItem). Hide both
-    // "inactive" and "deleted" by default so pickers across modules (PR / BOQ
-    // / GRN / estimation) never surface a deleted item. The master list opts
-    // in with includeInactive to power its "Show inactive" toggle.
-    ...(opts.includeInactive ? {} : { status: { notIn: ["inactive", "deleted"] } }),
+    // Delete sets status "deleted" (see deleteItem) — those rows leave the UI
+    // entirely. "inactive" rows are hidden from pickers by default but the
+    // master list opts in with includeInactive to show them under its Inactive
+    // tab. Deleted rows are excluded in BOTH modes.
+    ...(opts.includeInactive
+      ? { status: { not: "deleted" } }
+      : { status: { notIn: ["inactive", "deleted"] } }),
     ...(opts.groupId ? { groupId: opts.groupId } : {}),
     ...(q
       ? {
@@ -459,7 +461,7 @@ export async function deleteItem(
 ): Promise<boolean> {
   const res = await db.cnItem.updateMany({
     where: { id, orgId },
-    data: { status: "inactive", updatedBy },
+    data: { status: "deleted", updatedBy },
   });
   return res.count > 0;
 }

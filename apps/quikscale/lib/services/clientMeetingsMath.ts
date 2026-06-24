@@ -373,14 +373,24 @@ export interface MemberPunchReport {
 }
 
 /**
- * §7.8 — For each member, walk the month's meetings; record their 5 KPI
+ * §7.8 — For each member, walk the month's HELD meetings; record their 5 KPI
  * scores, or "AB" if absent and no entry, or "NA" if on the dashboardNA list.
  * Then compute per-KPI mean across meetings, and a single top-line average.
+ *
+ * Only `callStatus === "HELD"` meetings are considered. A cancelled / not-held /
+ * holiday meeting has no scores and nobody on the Absent/NA lists, so the
+ * `?? 0` fallthrough below would impute 0% for EVERY member on a meeting that
+ * never happened — which dragged the "Total Average of All Members" far below
+ * the dashboard's already-held-only "Quality of the dashboards" cell (e.g.
+ * 13.73% vs the correct 92% once a month contained two cancelled calls).
+ * Filtering here keeps this function byte-for-byte consistent with
+ * `calculateWeeklyMonthlyStats`, which has always been held-only.
  */
 export function computeMemberPunchIn(
   meetings: Array<{
     id: string;
     meetingDate: Date;
+    callStatus: WeeklyMeetingForMath["callStatus"];
     absentUserIds: string[];
     dashboardNAUserIds: string[];
     memberScores: Array<{
@@ -393,7 +403,9 @@ export function computeMemberPunchIn(
 ): MemberPunchReport {
   const KPI_KEYS = ["kpiWeeklyQTD", "kpiCoding", "priorityNotes", "priorityStartEndDate", "priorityColor"] as const;
 
-  const sorted = [...meetings].sort((a, b) => a.meetingDate.getTime() - b.meetingDate.getTime());
+  const sorted = [...meetings]
+    .filter(m => m.callStatus === "HELD")
+    .sort((a, b) => a.meetingDate.getTime() - b.meetingDate.getTime());
   const weeks: MemberPunchMeeting[] = sorted.map(mtg => {
     const onDashboardNA = mtg.dashboardNAUserIds.includes(member.id);
     const isAbsent = mtg.absentUserIds.includes(member.id);

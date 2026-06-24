@@ -21,6 +21,7 @@ import {
   RightPanelCancelButton,
   RightPanelSubmitButton,
   TrashBanner,
+  Pagination,
 } from "@quikit/ui";
 import { useTableCRUD } from "@/lib/hooks/useTableCRUD";
 import { useResourcePermissions } from "@/lib/hooks/useResourcePermissions";
@@ -942,6 +943,9 @@ export default function OrgTeamsPage() {
     apiEndpoint: "/api/org/teams",
     searchFields: ["name"],
     fetchParams,
+    // DB-level pagination + search (name+description) + sort, default name A→Z.
+    serverPagination: true,
+    defaultSort: "name:asc",
   });
 
   async function restoreOne(team: OrgTeam) {
@@ -992,6 +996,7 @@ export default function OrgTeamsPage() {
   // action bar doesn't carry ids that aren't visible anymore.
   useEffect(() => {
     crud.clearSelection();
+    crud.setPage(1); // active ↔ trash have different counts → start at page 1
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [viewTrash]);
 
@@ -1016,16 +1021,10 @@ export default function OrgTeamsPage() {
       });
   }, []);
 
-  // Also match description in search
-  const filtered = useMemo(() => {
-    if (!crud.search.trim()) return crud.items;
-    const q = crud.search.toLowerCase();
-    return crud.items.filter(
-      (t) =>
-        t.name.toLowerCase().includes(q) ||
-        (t.description ?? "").toLowerCase().includes(q)
-    );
-  }, [crud.items, crud.search]);
+  // Search now runs at the DB level (name + description) inside the route, so
+  // `crud.filtered` is already the correct server-filtered page — no extra
+  // client-side filtering here (that would double-filter the single page).
+  const filtered = crud.filtered;
 
   function handleSaved(team: OrgTeam) {
     crud.setItems((prev) => {
@@ -1047,6 +1046,9 @@ export default function OrgTeamsPage() {
     queryClient.invalidateQueries({ queryKey: ["users"] });
     queryClient.invalidateQueries({ queryKey: ["users-infinite"] });
     queryClient.invalidateQueries({ queryKey: ["dashboard"] });
+    // Re-pull the current page so the total count + name-sort position of a
+    // newly created/renamed team stay correct under DB-level pagination.
+    crud.refetch();
   }
 
   async function handleRemoveMember(team: OrgTeam, userId: string) {
@@ -1092,7 +1094,7 @@ export default function OrgTeamsPage() {
           <div>
             <h1 className="text-sm font-bold text-gray-900">Teams</h1>
             <p className="text-xs text-gray-400">
-              {crud.items.length} team{crud.items.length !== 1 ? "s" : ""} in
+              {crud.total} team{crud.total !== 1 ? "s" : ""} in
               this organisation
             </p>
           </div>
@@ -1138,7 +1140,7 @@ export default function OrgTeamsPage() {
       <div className="flex-1 overflow-auto p-6 min-h-0">
         {viewTrash && (
           <div className="mb-3">
-            <TrashBanner count={crud.items.length} onExit={() => setViewTrash(false)} />
+            <TrashBanner count={crud.total} onExit={() => setViewTrash(false)} />
           </div>
         )}
         {crud.loading ? (
@@ -1341,6 +1343,16 @@ export default function OrgTeamsPage() {
           </div>
         )}
       </div>
+
+      {/* ── Pagination footer (DB-level) ── */}
+      <Pagination
+        page={crud.page}
+        totalPages={crud.totalPages}
+        total={crud.total}
+        limit={crud.limit}
+        onPageChange={crud.setPage}
+        onPageSizeChange={(size) => { crud.setLimit(size); crud.setPage(1); }}
+      />
 
       {/* ── Panel ── */}
       <TeamPanel

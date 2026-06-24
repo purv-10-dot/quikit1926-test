@@ -137,6 +137,16 @@ html.dark .glass {
   cursor: pointer;
 }
 
+/* Per-user OPSP sections (Your Accountability / Quarterly Priorities /
+   Critical # / Balanced Critical #) stay editable even when the strategic form
+   wrapper is read-only — e.g. a non-admin member may edit only these four while
+   the org-shared strategy is locked. Mirrors the [data-expand] re-enable above. */
+.opsp-finalized .opsp-sections-editable {
+  pointer-events: auto;
+  opacity: 1;
+  user-select: auto;
+}
+
 /* ============================================================================
    TOASTS (sonner) — theme-aware chrome
    Success/error/warning keep sonner's semantic richColors palette. Only the

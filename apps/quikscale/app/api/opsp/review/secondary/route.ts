@@ -1,28 +1,22 @@
 import { NextResponse } from "next/server";
-import type { NextRequest } from "next/server";
 import { db } from "@/lib/db";
-import { requireAdmin } from "@/lib/api/requireAdmin";
-import { gateModuleApi } from "@quikit/auth/feature-gate";
+import { withOrgAuthForResource } from "@/lib/api/withOrgAuth";
 import { writeAuditLog } from "@/lib/api/auditLog";
 import { validationError } from "@/lib/api/validationError";
 import { opspReviewSecondarySaveSchema } from "@/lib/schemas/opspReviewSchema";
 import { resolveOpspOwnerOrSelf } from "@/lib/api/opspOwner";
+
+const reviewAuth = withOrgAuthForResource("opsp.review", "OPSP.Review");
 
 /**
  * POST /api/opsp/review/secondary
  *
  * Saves status + comment for a secondary review row
  * (rocks / key initiatives / key thrusts).
- * Uses OPSPReviewEntry with period="secondary".
+ * Uses OPSPReviewEntry with period="secondary". Requires OPSP.Review:update.
  */
-export async function POST(req: NextRequest) {
+export const POST = reviewAuth.update(async ({ orgId, userId }, req) => {
   try {
-    const auth = await requireAdmin();
-    if ("error" in auth && auth.error) return auth.error;
-    const { orgId, userId } = auth;
-    const blocked = await gateModuleApi("quikscale", "opsp.review", orgId);
-    if (blocked) return blocked;
-
     const parsed = opspReviewSecondarySaveSchema.safeParse(await req.json());
     if (!parsed.success) return validationError(parsed, "Invalid secondary review data");
 
@@ -141,4 +135,4 @@ export async function POST(req: NextRequest) {
     const message = error instanceof Error ? error.message : "Failed to save secondary review data";
     return NextResponse.json({ success: false, error: message }, { status: 500 });
   }
-}
+});

@@ -8,7 +8,7 @@ import { writeAuditLog } from "@/lib/api/auditLog";
 
 // PUT /api/org/teams/[id] — update team
 export const PUT = withOrgAuth<{ id: string }>(async ({ orgId, userId }, req, { params }) => {
-  const existing = await db.team.findFirst({ where: { id: params.id, orgId } });
+  const existing = await db.qsTeam.findFirst({ where: { id: params.id, orgId } });
   if (!existing)
     return NextResponse.json({ success: false, error: "Team not found" }, { status: 404 });
 
@@ -21,14 +21,14 @@ export const PUT = withOrgAuth<{ id: string }>(async ({ orgId, userId }, req, { 
 
   // Check name uniqueness if name is being changed
   if (name?.trim() && name.trim().toLowerCase() !== existing.name.toLowerCase()) {
-    const dup = await db.team.findFirst({
+    const dup = await db.qsTeam.findFirst({
       where: { orgId, name: { equals: name.trim(), mode: "insensitive" }, id: { not: params.id } },
     });
     if (dup)
       return NextResponse.json({ success: false, error: `A team named "${dup.name}" already exists` }, { status: 409 });
   }
 
-  const team = await db.team.update({
+  const team = await db.qsTeam.update({
     where: { id: params.id },
     data: {
       name:        name?.trim()        || undefined,
@@ -80,13 +80,13 @@ export const PUT = withOrgAuth<{ id: string }>(async ({ orgId, userId }, req, { 
 
 // DELETE /api/org/teams/[id] — delete team
 export const DELETE = withOrgAuth<{ id: string }>(async ({ orgId, userId }, req, { params }) => {
-  const existing = await db.team.findFirst({ where: { id: params.id, orgId } });
+  const existing = await db.qsTeam.findFirst({ where: { id: params.id, orgId } });
   if (!existing)
     return NextResponse.json({ success: false, error: "Team not found" }, { status: 404 });
 
   // Soft delete — set deletedAt instead of removing the row so we keep
   // historical KPI/priority references intact.
-  await db.team.update({
+  await db.qsTeam.update({
     where: { id: params.id },
     data: { deletedAt: new Date() },
   });

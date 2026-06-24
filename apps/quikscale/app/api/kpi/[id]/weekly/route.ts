@@ -4,6 +4,9 @@ import { weeklyValueSchema } from "@/lib/schemas/kpiSchema";
 import { withOrgAuthForModule } from "@/lib/api/withOrgAuth";
 const withOrgAuth = withOrgAuthForModule("kpi");
 import { getPastWeekFlags, getCurrentFiscalWeekFromDB } from "@/lib/utils/featureFlags";
+import { audit, requestContext } from "@/lib/audit";
+import { weeklyTargetForWeek } from "@/lib/utils/kpiHelpers";
+import { withTxRetry } from "@/lib/api/withTxRetry";
 
 
 function calcHealthStatus(progress: number, status: string): string {
@@ -125,8 +128,9 @@ export const POST = withOrgAuth<{ id: string }>(async ({ orgId, userId }, req, {
     where: { id: params.id },
     select: {
       orgId: true, qtdGoal: true, target: true, status: true,
-      quarter: true, year: true,
+      quarter: true, year: true, teamId: true,
       kpiLevel: true, owner: true, ownerIds: true, parentKPIId: true,
+      weeklyTargets: true,
     },
   });
   if (!kpi) return NextResponse.json({ success: false, error: "KPI not found" }, { status: 404 });
@@ -181,16 +185,35 @@ export const POST = withOrgAuth<{ id: string }>(async ({ orgId, userId }, req, {
     }
   }
 
-  // Primary write — upsert + recompute on the KPI the request targets.
-  await upsertAndRecalc({
-    kpiId: params.id,
-    orgId,
-    userId: targetUserId,
-    weekNumber: validated.weekNumber,
-    value: validated.value,
-    notes: validated.notes,
-    changedBy: userId,
+  // Capture the same-week previous value (for the audit diff) and the prior
+  // week's value (for the timeline's "Δ from prior" display) before writing.
+  const priorRows = await db.kPIWeeklyValue.findMany({
+    where: {
+      kpiId: params.id,
+      userId: targetUserId,
+      weekNumber: { in: [validated.weekNumber, validated.weekNumber - 1] },
+    },
+    select: { weekNumber: true, value: true },
   });
+  const previousValue =
+    priorRows.find((r) => r.weekNumber === validated.weekNumber)?.value ?? null;
+  const priorWeekValue =
+    priorRows.find((r) => r.weekNumber === validated.weekNumber - 1)?.value ?? null;
+
+  // Primary write — upsert + recompute on the KPI the request targets.
+  // withTxRetry re-runs the (idempotent) upsert+recompute if Postgres kills it
+  // as a deadlock victim under concurrent saves on the same KPI / shared parent.
+  await withTxRetry(() =>
+    upsertAndRecalc({
+      kpiId: params.id,
+      orgId,
+      userId: targetUserId,
+      weekNumber: validated.weekNumber,
+      value: validated.value,
+      notes: validated.notes,
+      changedBy: userId,
+    }),
+  );
 
   // ── Bidirectional sync between Team KPI ↔ child Individual KPIs ──
   // (a) Team write  → mirror to that owner's child Individual KPI
@@ -205,26 +228,31 @@ export const POST = withOrgAuth<{ id: string }>(async ({ orgId, userId }, req, {
       select: { id: true, orgId: true },
     });
     if (child) {
-      await upsertAndRecalc({
-        kpiId: child.id,
-        orgId: child.orgId,
+      await withTxRetry(() =>
+        upsertAndRecalc({
+          kpiId: child.id,
+          orgId: child.orgId,
+          userId: targetUserId,
+          weekNumber: validated.weekNumber,
+          value: validated.value,
+          notes: validated.notes,
+          changedBy: userId,
+        }),
+      );
+    }
+  } else if (kpi.parentKPIId) {
+    const parentKpiId = kpi.parentKPIId; // capture: narrowing is lost inside the closure
+    await withTxRetry(() =>
+      upsertAndRecalc({
+        kpiId: parentKpiId,
+        orgId,
         userId: targetUserId,
         weekNumber: validated.weekNumber,
         value: validated.value,
         notes: validated.notes,
         changedBy: userId,
-      });
-    }
-  } else if (kpi.parentKPIId) {
-    await upsertAndRecalc({
-      kpiId: kpi.parentKPIId,
-      orgId,
-      userId: targetUserId,
-      weekNumber: validated.weekNumber,
-      value: validated.value,
-      notes: validated.notes,
-      changedBy: userId,
-    });
+      }),
+    );
   }
 
   // Re-read the row we just upserted so the response carries the canonical shape.
@@ -241,6 +269,34 @@ export const POST = withOrgAuth<{ id: string }>(async ({ orgId, userId }, req, {
       newValue: JSON.stringify(weeklyValue),
       changedBy: userId,
     },
+  });
+
+  // ── Centralized audit (dual-write) ──
+  const newWeekValue = validated.value ?? null;
+  await audit.log({
+    entityType: "KPI",
+    entityId: params.id,
+    action: "WEEKLY_UPDATE",
+    actor: { userId, orgId, teamId: kpi.teamId },
+    changes:
+      previousValue !== newWeekValue
+        ? [{ fieldName: `week_${validated.weekNumber}`, oldValue: previousValue, newValue: newWeekValue }]
+        : [],
+    snapshot: {
+      weekNumber: validated.weekNumber,
+      value: newWeekValue,
+      notes: validated.notes ?? null,
+      userId: targetUserId,
+      previousValue,
+      priorWeekValue,
+      // Per-week target as shown in the Updates tab: explicit weeklyTargets[week]
+      // when configured, else the flat qtdGoal/13 distribution.
+      weeklyTarget: weeklyTargetForWeek(
+        { weeklyTargets: kpi.weeklyTargets as Record<string, number> | null, qtdGoal: kpi.qtdGoal, target: kpi.target },
+        validated.weekNumber,
+      ),
+    },
+    ...requestContext(req),
   });
 
   return NextResponse.json({ success: true, data: weeklyValue });

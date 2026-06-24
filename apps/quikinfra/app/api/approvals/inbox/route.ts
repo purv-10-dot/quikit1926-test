@@ -9,6 +9,7 @@ import { listGRNs } from "@/lib/purchase/grn-repository";
 import { listMaterialIssues } from "@/lib/store/material-issue-repository";
 import { listStockTransfers } from "@/lib/store/stock-transfer-repository";
 import { canActOnStepForInbox } from "@/lib/approvals/workflow-rbac";
+import { listEquipmentLogs } from "@/lib/equipment/log-book-service";
 import { findCnUsersByIds } from "@/lib/users/lookup";
 
 /**
@@ -333,6 +334,34 @@ export async function GET(req: NextRequest) {
         )
         .catch((err: unknown) => {
           console.error("[approvals-inbox] listDPRs failed", err);
+          return [] as Item[];
+        }),
+    );
+  }
+
+  // ── Equipment Log Book ──────────────────────────────────────
+  if (hasPermission(ctx, "construction.equipment_log.approve")) {
+    tasks.push(
+      listEquipmentLogs({
+        orgId: ctx.orgId,
+        projectIds,
+      })
+        .then((result) =>
+          result.data
+            .filter((log) => matches(log.status))
+            .map((log) => ({
+              id: log.id,
+              entityType: "equipment_logs",
+              title: `${log.equipmentCode} · ${log.logDate}`,
+              subtitle: `${log.projectName ?? ""} · ${log.shift} shift`,
+              status: log.status,
+              submittedBy: log.createdBy,
+              submittedAt: log.logDate,
+              href: "/equipment/log-book",
+            })),
+        )
+        .catch((err) => {
+          console.error("[approvals-inbox] listEquipmentLogs failed", err);
           return [] as Item[];
         }),
     );

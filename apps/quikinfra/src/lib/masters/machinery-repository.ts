@@ -19,6 +19,15 @@ export interface MachineryRecord {
   locationId: string | null;
   fuelType: string | null;
   capacity: string | null;
+  meterType: string;
+  currentMeter: number | null;
+  fuelNorm: number | null;
+  serviceIntervalValue: number | null;
+  serviceIntervalUnit: string | null;
+  ownershipType: string;
+  capitalisationCost: number | null;
+  deprMethod: string | null;
+  deprRate: number | null;
   status: string;
   createdAt: string;
   updatedAt: string;
@@ -41,6 +50,15 @@ function toRecord(row: Prisma.CnMachineryGetPayload<Record<string, never>> & { p
     locationId: row.locationId ?? null,
     fuelType: row.fuelType ?? null,
     capacity: row.capacity ?? null,
+    meterType: row.meterType ?? "hour",
+    currentMeter: row.currentMeter != null ? Number(row.currentMeter) : null,
+    fuelNorm: row.fuelNorm != null ? Number(row.fuelNorm) : null,
+    serviceIntervalValue: row.serviceIntervalValue != null ? Number(row.serviceIntervalValue) : null,
+    serviceIntervalUnit: row.serviceIntervalUnit ?? null,
+    ownershipType: row.ownershipType ?? "owned",
+    capitalisationCost: row.capitalisationCost != null ? Number(row.capitalisationCost) : null,
+    deprMethod: row.deprMethod ?? null,
+    deprRate: row.deprRate != null ? Number(row.deprRate) : null,
     status: row.status,
     createdAt: row.createdAt?.toISOString?.() ?? "",
     updatedAt: row.updatedAt?.toISOString?.() ?? "",
@@ -53,6 +71,12 @@ function sOrNull(v: unknown): string | null {
   if (v === null || v === undefined) return null;
   const s = String(v).trim();
   return s.length ? s : null;
+}
+
+function nOrNull(v: unknown): number | null {
+  if (v === null || v === undefined || v === "") return null;
+  const n = Number(v);
+  return Number.isFinite(n) ? n : null;
 }
 
 function autoCode(type: string, seq: number): string {
@@ -75,6 +99,9 @@ function buildMachineryWhere(
   const q = (opts.search ?? "").trim();
   return {
     orgId: opts.orgId,
+    // "deleted" rows are removed from the UI entirely; "inactive" rows are
+    // still returned so they can show under the Inactive tab.
+    status: { not: "deleted" },
     ...(q
       ? {
           OR: [
@@ -124,6 +151,15 @@ export interface CreateMachineryInput {
   locationId?: string | null;
   fuelType?: string | null;
   capacity?: string | null;
+  meterType?: string | null;
+  currentMeter?: number | string | null;
+  fuelNorm?: number | string | null;
+  serviceIntervalValue?: number | string | null;
+  serviceIntervalUnit?: string | null;
+  ownershipType?: string | null;
+  capitalisationCost?: number | string | null;
+  deprMethod?: string | null;
+  deprRate?: number | string | null;
   status?: string;
 }
 
@@ -148,6 +184,15 @@ export async function createMachinery(input: CreateMachineryInput): Promise<Mach
       locationId: sOrNull(input.locationId),
       fuelType: sOrNull(input.fuelType),
       capacity: sOrNull(input.capacity),
+      meterType: sOrNull(input.meterType) ?? "hour",
+      currentMeter: nOrNull(input.currentMeter),
+      fuelNorm: nOrNull(input.fuelNorm),
+      serviceIntervalValue: nOrNull(input.serviceIntervalValue),
+      serviceIntervalUnit: sOrNull(input.serviceIntervalUnit),
+      ownershipType: sOrNull(input.ownershipType) ?? "owned",
+      capitalisationCost: nOrNull(input.capitalisationCost),
+      deprMethod: sOrNull(input.deprMethod),
+      deprRate: nOrNull(input.deprRate),
       status: input.status ?? "active",
       createdBy: input.createdBy,
       updatedBy: input.createdBy,
@@ -187,6 +232,15 @@ export async function updateMachinery(
   if (patch.locationId !== undefined) data.locationId = sOrNull(patch.locationId);
   if (patch.fuelType !== undefined) data.fuelType = sOrNull(patch.fuelType);
   if (patch.capacity !== undefined) data.capacity = sOrNull(patch.capacity);
+  if (patch.meterType !== undefined) data.meterType = sOrNull(patch.meterType) ?? "hour";
+  if (patch.currentMeter !== undefined) data.currentMeter = nOrNull(patch.currentMeter);
+  if (patch.fuelNorm !== undefined) data.fuelNorm = nOrNull(patch.fuelNorm);
+  if (patch.serviceIntervalValue !== undefined) data.serviceIntervalValue = nOrNull(patch.serviceIntervalValue);
+  if (patch.serviceIntervalUnit !== undefined) data.serviceIntervalUnit = sOrNull(patch.serviceIntervalUnit);
+  if (patch.ownershipType !== undefined) data.ownershipType = sOrNull(patch.ownershipType) ?? "owned";
+  if (patch.capitalisationCost !== undefined) data.capitalisationCost = nOrNull(patch.capitalisationCost);
+  if (patch.deprMethod !== undefined) data.deprMethod = sOrNull(patch.deprMethod);
+  if (patch.deprRate !== undefined) data.deprRate = nOrNull(patch.deprRate);
   if (patch.status !== undefined) data.status = patch.status;
 
   const row = await db.cnMachinery.update({ where: { id }, data });
@@ -200,7 +254,7 @@ export async function deleteMachinery(
 ): Promise<boolean> {
   const res = await db.cnMachinery.updateMany({
     where: { id, orgId },
-    data: { status: "inactive", updatedBy },
+    data: { status: "deleted", updatedBy },
   });
   return res.count > 0;
 }

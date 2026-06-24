@@ -1,6 +1,8 @@
 "use client";
 
+import { useState } from "react";
 import { Users, Trophy } from "lucide-react";
+import { Pagination, DEFAULT_PAGE_SIZE } from "@quikit/ui";
 import { useTeamPerformance } from "@/lib/hooks/usePerformance";
 
 function scoreColor(score: number | null) {
@@ -42,10 +44,22 @@ function Skeleton() {
 }
 
 export default function TeamsPerformancePage() {
-  const { data, isLoading, error } = useTeamPerformance();
-  const teams = (data as any[]) ?? [];
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(DEFAULT_PAGE_SIZE);
+  const { data, isLoading, error } = useTeamPerformance({ page, limit: pageSize });
 
-  if (isLoading) return <Skeleton />;
+  const teams = data?.data ?? [];
+  const meta = data?.meta;
+  const total = meta?.total ?? 0;
+  const totalPages = meta?.totalPages ?? 1;
+  const skip = (page - 1) * pageSize;
+
+  function handlePageSize(size: number) {
+    setPageSize(size);
+    setPage(1);
+  }
+
+  if (isLoading && !data) return <Skeleton />;
   if (error) return <div className="p-6 text-xs text-red-600">Error: {(error as Error).message}</div>;
 
   return (
@@ -56,7 +70,7 @@ export default function TeamsPerformancePage() {
           <h1 className="text-sm font-semibold text-gray-900">Team Leaderboard</h1>
           <p className="text-xs text-gray-500 mt-0.5">Ranked by overall performance score</p>
         </div>
-        <span className="text-xs text-gray-500 flex items-center gap-1"><Users className="h-3.5 w-3.5" />{teams.length} teams</span>
+        <span className="text-xs text-gray-500 flex items-center gap-1"><Users className="h-3.5 w-3.5" />{total} teams</span>
       </div>
 
       <div className="flex-1 overflow-auto min-h-0">
@@ -77,15 +91,16 @@ export default function TeamsPerformancePage() {
               </tr>
             </thead>
             <tbody className="bg-white">
-              {teams.map((t, idx) => {
-                const isTop = idx === 0 && t.overallScore !== null;
+              {teams.map((t: any, idx: number) => {
+                const rank = skip + idx + 1;
+                const isTop = rank === 1 && t.overallScore !== null;
                 return (
                   <tr key={t.teamId} className={isTop ? "bg-amber-50" : "hover:bg-gray-50"}>
                     <td className="px-3 py-2.5 border-b border-r border-gray-100 text-center">
                       {isTop ? (
                         <Trophy className="h-4 w-4 text-amber-500 mx-auto" />
                       ) : (
-                        <span className="text-gray-400 font-mono">{idx + 1}</span>
+                        <span className="text-gray-400 font-mono">{rank}</span>
                       )}
                     </td>
                     <td className="px-3 py-2.5 border-b border-r border-gray-100">
@@ -111,6 +126,15 @@ export default function TeamsPerformancePage() {
           </table>
         )}
       </div>
+
+      <Pagination
+        page={page}
+        totalPages={totalPages}
+        total={total}
+        limit={pageSize}
+        onPageChange={setPage}
+        onPageSizeChange={handlePageSize}
+      />
     </div>
   );
 }

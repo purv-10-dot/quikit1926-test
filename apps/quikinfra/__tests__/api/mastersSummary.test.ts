@@ -41,10 +41,10 @@ describe("GET /api/masters/summary — happy path", () => {
     expect(body.data.terms).toBe(3);
     expect(Object.keys(body.data)).toHaveLength(MODELS.length);
 
-    // Counts exclude soft-deleted rows and are org-scoped.
+    // Counts exclude inactive + deleted rows and are org-scoped.
     const where = db.cnVendor.count.mock.calls[0][0].where;
     expect(where.orgId).toBe(TEST_TENANT);
-    expect(where.status).toEqual({ not: "inactive" });
+    expect(where.status).toEqual({ notIn: ["inactive", "deleted"] });
   });
 
   it("degrades a single failing master to 0 without failing the endpoint", async () => {

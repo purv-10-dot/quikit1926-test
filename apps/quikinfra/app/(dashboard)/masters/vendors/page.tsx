@@ -192,7 +192,7 @@ export default function VendorsPage() {
   const [editId, setEditId] = useState<string | null>(null);
   const [form, setForm] = useState(emptyForm);
   const [errors, setErrors] = useState<Record<string, string>>({});
-  const [statusFilter, setStatusFilter] = useState<"all" | "blacklisted">("all");
+  const [statusFilter, setStatusFilter] = useState<"all" | "inactive" | "blacklisted">("all");
 
   const handleImportRow = async (row: Record<string, string>) => {
     if (!row.name?.trim()) return { ok: false as const, error: "Name is required" };
@@ -324,12 +324,18 @@ export default function VendorsPage() {
   };
 
   const allRows = result?.data ?? [];
-  const visibleRows = allRows.filter((r) => r?.status !== "inactive");
-  const blacklistedCount = visibleRows.filter((r) => r?.status === "blacklisted").length;
+  // "All" = active + blacklisted (non-inactive), matching the original view.
+  // Inactive and Blacklisted are their own filters. Deleted rows are already
+  // excluded by the API.
+  const nonInactive = allRows.filter((r) => r?.status !== "inactive");
+  const inactiveCount = allRows.filter((r) => r?.status === "inactive").length;
+  const blacklistedCount = nonInactive.filter((r) => r?.status === "blacklisted").length;
   const filteredRows =
-    statusFilter === "blacklisted"
-      ? visibleRows.filter((r) => r?.status === "blacklisted")
-      : visibleRows;
+    statusFilter === "inactive"
+      ? allRows.filter((r) => r?.status === "inactive")
+      : statusFilter === "blacklisted"
+        ? nonInactive.filter((r) => r?.status === "blacklisted")
+        : nonInactive;
 
   return (
     <>
@@ -338,6 +344,7 @@ export default function VendorsPage() {
         entityName="Vendor"
         permissionUrl="/masters/vendors"
         columns={columns}
+        externalStatusFilter
         data={filteredRows}
         total={filteredRows.length}
         isLoading={isLoading}
@@ -353,7 +360,18 @@ export default function VendorsPage() {
                   : "bg-white text-gray-600 border-gray-200 hover:bg-gray-50"
               }`}
             >
-              All ({visibleRows.length})
+              All ({nonInactive.length})
+            </button>
+            <button
+              type="button"
+              onClick={() => setStatusFilter("inactive")}
+              className={`px-3 py-1.5 rounded-lg text-xs font-semibold border ${
+                statusFilter === "inactive"
+                  ? "bg-orange-50 text-orange-700 border-orange-200"
+                  : "bg-white text-gray-600 border-gray-200 hover:bg-gray-50"
+              }`}
+            >
+              Inactive ({inactiveCount})
             </button>
             <button
               type="button"
@@ -377,8 +395,8 @@ export default function VendorsPage() {
             Delete vendor{" "}
             <span className="font-semibold text-gray-900">“{item.name}”</span>?
             <br />
-            It will be hidden from the list. You can restore it later from the
-            “Show deleted” view.
+            It will be removed from the list. To keep a vendor but pause it,
+            set its status to Inactive instead — those stay under the Inactive tab.
           </>
         )}
         canExport canImport

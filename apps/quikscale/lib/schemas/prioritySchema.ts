@@ -13,6 +13,9 @@ export const createPrioritySchema = z.object({
   endWeek:       z.number().int().min(1).max(13).optional().nullable(),
   overallStatus: z.enum(["not-applicable","not-yet-started","behind-schedule","on-track","completed","not-started"]).default("not-yet-started"),
   notes:         z.string().optional().nullable(),
+  // Set true only by the OPSP "Export → Create Priorities" flow. Display-only;
+  // the Add/Edit Priority form never sends it (defaults false).
+  importedFromOpsp: z.boolean().optional(),
 });
 
 // Update — fully partial so PATCH-style updates work.
@@ -27,6 +30,14 @@ export const updatePrioritySchema = z.object({
   endWeek:       z.number().int().min(1).max(13).optional().nullable(),
   overallStatus: z.enum(["not-applicable","not-yet-started","behind-schedule","on-track","completed","not-started"]).optional(),
   notes:         z.string().optional().nullable(),
+  // OPSP "Export → Replace Priority" flow only. When true, wipe the existing
+  // priority's weekly statuses + notes and reset its overall status so the
+  // replaced priority starts fresh ("Reset"); when false/absent the previous
+  // weekly data is carried forward.
+  resetWeeklyData:  z.boolean().optional(),
+  // When true, email the owner that their priority was replaced (set by the
+  // OPSP export replace flow; the normal Edit form never sends it).
+  notifyReplacement: z.boolean().optional(),
 });
 
 export const weeklyStatusSchema = z.object({
@@ -35,6 +46,14 @@ export const weeklyStatusSchema = z.object({
   notes:      z.string().optional().nullable(),
 });
 
-export type CreatePriorityInput = z.infer<typeof createPrioritySchema>;
-export type UpdatePriorityInput = z.infer<typeof updatePrioritySchema>;
-export type WeeklyStatusInput   = z.infer<typeof weeklyStatusSchema>;
+// Batch weekly-status save — multiple weeks in one request. Drives the
+// "Bulk weekly update" change-history card when ≥3 distinct weeks change in a
+// single save (e.g. the Completed cascade). 1–13 weeks (the fiscal quarter).
+export const weeklyStatusBatchSchema = z.object({
+  inputs: z.array(weeklyStatusSchema).min(1).max(13),
+});
+
+export type CreatePriorityInput     = z.infer<typeof createPrioritySchema>;
+export type UpdatePriorityInput     = z.infer<typeof updatePrioritySchema>;
+export type WeeklyStatusInput        = z.infer<typeof weeklyStatusSchema>;
+export type WeeklyStatusBatchInput   = z.infer<typeof weeklyStatusBatchSchema>;

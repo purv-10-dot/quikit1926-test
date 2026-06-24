@@ -3,6 +3,7 @@ import type { NextRequest } from "next/server";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import { db } from "@/lib/db";
+import { ADMIN_TIER_ROLES } from "@quikit/shared";
 
 const QUIKTRACK_APP_SLUG = "quiktrack";
 
@@ -25,19 +26,40 @@ export async function GET(_request: NextRequest) {
     return NextResponse.json({ valid: false, reason: "deactivated" });
   }
 
-  const app = await db.app.findUnique({ where: { slug: QUIKTRACK_APP_SLUG } });
+  // Org-level app entitlement (mirrors the launcher + getOrgId gate). Access is
+  // provisioned at the org level via OrgAppAccess; an expired per-app trial
+  // revokes it. Org admins / super admins pass on org-level access alone;
+  // non-admin members additionally need an explicit UserAppAccess row. Checking
+  // UserAppAccess alone bounced self-serve trial org admins back to /login.
+  const app = await db.app.findUnique({
+    where: { slug: QUIKTRACK_APP_SLUG },
+    select: { id: true },
+  });
   if (app) {
-    const appAccess = await db.userAppAccess.findUnique({
-      where: {
-        userId_orgId_appId: {
-          userId: session.user.id,
-          orgId,
-          appId: app.id,
-        },
-      },
+    const orgAccess = await db.orgAppAccess.findUnique({
+      where: { orgId_appId: { orgId, appId: app.id } },
+      select: { enabled: true, trialEndsAt: true },
     });
-    if (!appAccess) {
+    const trialExpired =
+      !!orgAccess?.trialEndsAt && orgAccess.trialEndsAt.getTime() <= Date.now();
+    if (!orgAccess || !orgAccess.enabled || trialExpired) {
       return NextResponse.json({ valid: false, reason: "app_access_revoked" });
+    }
+
+    const isAdminTier =
+      session.user.isSuperAdmin === true ||
+      ADMIN_TIER_ROLES.has(String(session.user.membershipRole ?? ""));
+
+    if (!isAdminTier) {
+      const appAccess = await db.userAppAccess.findUnique({
+        where: {
+          userId_orgId_appId: { userId: session.user.id, orgId, appId: app.id },
+        },
+        select: { id: true },
+      });
+      if (!appAccess) {
+        return NextResponse.json({ valid: false, reason: "app_access_revoked" });
+      }
     }
   }
 

@@ -107,7 +107,7 @@ describe("POST /api/kpi/[id]/weekly — individual KPI happy path", () => {
     mockDb.kPI.findUnique.mockResolvedValue(fakeKPI as any);
     // Authorization is enforced by the route wrapper (RBAC v2 `KPI:update`).
     // Tests run with a default-allow mock for `userCan`.
-    mockDb.team.findFirst.mockResolvedValue(null);
+    mockDb.qsTeam.findFirst.mockResolvedValue(null);
     // Feature flags: past-week edit ALLOWED
     mockDb.featureFlag.findMany.mockResolvedValue([]);
   });
@@ -180,7 +180,7 @@ describe("POST /api/kpi/[id]/weekly — team KPI", () => {
       owner: null,
       ownerIds: [USER, OTHER],
     } as any);
-    mockDb.team.findFirst.mockResolvedValue(null);
+    mockDb.qsTeam.findFirst.mockResolvedValue(null);
     mockDb.featureFlag.findMany.mockResolvedValue([]);
   });
 
@@ -223,7 +223,7 @@ describe("POST /api/kpi/[id]/weekly — health status computation", () => {
   beforeEach(() => {
     asAdmin();
     mockDb.kPI.findUnique.mockResolvedValue(fakeKPI as any);
-    mockDb.team.findFirst.mockResolvedValue(null);
+    mockDb.qsTeam.findFirst.mockResolvedValue(null);
     mockDb.featureFlag.findMany.mockResolvedValue([]);
     mockDb.kPIWeeklyValue.findFirst.mockResolvedValue(null);
     mockDb.kPILog.create.mockResolvedValue({} as any);
@@ -261,7 +261,7 @@ describe("POST /api/kpi/[id]/weekly — past-week enforcement", () => {
   it("blocks edit of past week when feature flag is OFF", async () => {
     asAdmin();
     mockDb.kPI.findUnique.mockResolvedValue(fakeKPI as any);
-    mockDb.team.findFirst.mockResolvedValue(null);
+    mockDb.qsTeam.findFirst.mockResolvedValue(null);
     // Feature flags: edit_past_week_data is DISABLED
     mockDb.featureFlag.findMany.mockResolvedValue([
       { key: "edit_past_week_data", enabled: false, value: null },
