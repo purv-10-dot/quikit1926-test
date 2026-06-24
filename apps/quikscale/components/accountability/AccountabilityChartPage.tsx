@@ -65,7 +65,8 @@ const CONFIG = {
     emptyTitle: "Build your Function Accountability Chart",
     emptyMessage: "Map every key function in your organization to an accountable person. Identify gaps, duplicates, and misalignments at a glance.",
     href: "/performance/face",
-    backHref: "/performance/goals" as string | null,
+    // No Pillar Hub back-link on FACe (removed per product request).
+    backHref: null as string | null,
   },
   pace: {
     title: "PACe",
@@ -82,7 +83,7 @@ const CONFIG = {
     emptyTitle: "Build your Process Accountability Chart",
     emptyMessage: "Identify 4–9 core processes that run your business and assign an owner to each. Unowned processes are silent risks.",
     href: "/performance/pace",
-    // No Pillar Hub back-link on PACe (per product spec). FACe keeps it.
+    // No Pillar Hub back-link on PACe (per product spec).
     backHref: null as string | null,
   },
 } as const;
