@@ -48,6 +48,10 @@ beforeEach(() => {
   // Every prisma count/aggregate/findMany resolves to a benign value so the
   // builders run to completion; we only inspect the `where` args.
   prismaMock.crmActivity.count.mockResolvedValue(0 as never);
+  // buildRoleMetrics now also calls crmActivity.groupBy (FR-4.2 by-type slice);
+  // stub it so the builders run to completion. This test still only asserts the
+  // count where-clauses (the scope contract) — groupBy shape is FR-4.2's test.
+  (prismaMock.crmActivity.groupBy as unknown as { mockResolvedValue: (v: unknown) => void }).mockResolvedValue([]);
   prismaMock.crmTask.count.mockResolvedValue(0 as never);
   prismaMock.crmLead.count.mockResolvedValue(0 as never);
   prismaMock.crmAccount.count.mockResolvedValue(0 as never);

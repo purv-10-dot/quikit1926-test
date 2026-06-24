@@ -29,6 +29,7 @@ import { resolveManagerTeam } from "./team";
 import { resolveTeamScope } from "@/lib/services/teams/team-scope";
 import { formatINR } from "./currency";
 import type {
+  ActivityTypeCount,
   AdminMetrics,
   TeamManagerMetrics,
   SalesManagerMetrics,
@@ -40,6 +41,22 @@ import type {
 
 const CLOSED_WON: CrmOpportunityStage = "ClosedWon";
 const CLOSED_STAGES: CrmOpportunityStage[] = ["ClosedWon", "ClosedLost"];
+
+// FR-4.2: activity counts grouped by type LABEL (CrmActivity.type), within the
+// caller's already-computed scope where-clause. Reuses the SAME `where` the
+// tier's crmActivity.count uses — does NOT re-derive scope (FR-4.1 pins that
+// contract). Grouped by label, not a stable id (no activityTypeId column —
+// see ACTIVITY-FEATURE-DECISIONS.md 2026-06-24).
+async function activitiesByTypeFor(
+  where: Record<string, unknown>,
+): Promise<ActivityTypeCount[]> {
+  const rows = await prisma.crmActivity.groupBy({
+    by: ["type"],
+    where: where as never,
+    _count: { _all: true },
+  });
+  return rows.map((r) => ({ type: r.type, count: r._count._all }));
+}
 
 // ─── Administrator ────────────────────────────────────────────────────────────
 // accountScopeFilter returns null for Administrator, matching /api/leads.
@@ -56,6 +73,7 @@ async function buildAdminMetrics(user: SessionUser): Promise<AdminMetrics> {
     totalActivities,
     totalTasks,
     totalQuotes,
+    activitiesByType,
   ] = await Promise.all([
     prisma.crmLead.count({ where: { orgId, deletedAt: null } }),
     prisma.crmAccount.count({ where: { orgId, deletedAt: null } }),
@@ -68,6 +86,7 @@ async function buildAdminMetrics(user: SessionUser): Promise<AdminMetrics> {
     prisma.crmActivity.count({ where: { orgId } }),
     prisma.crmTask.count({ where: { orgId } }),
     prisma.crmQuote.count({ where: { orgId, deletedAt: null } }),
+    activitiesByTypeFor({ orgId }), // FR-4.2: same { orgId } scope as the count
   ]);
 
   const totalRevenue = Number(wonAgg._sum?.amount ?? 0);
@@ -81,6 +100,7 @@ async function buildAdminMetrics(user: SessionUser): Promise<AdminMetrics> {
     totalActivities,
     totalTasks,
     totalQuotes,
+    activitiesByType,
   };
 }
 
@@ -208,6 +228,7 @@ async function buildSalesManagerMetrics(user: SessionUser): Promise<SalesManager
     teamActivities,
     teamTasks,
     teamQuotes,
+    activitiesByType,
   ] = await Promise.all([
     prisma.crmLead.count({ where: leadWhere }),
     prisma.crmOpportunity.count({ where: oppWhere }),
@@ -216,6 +237,7 @@ async function buildSalesManagerMetrics(user: SessionUser): Promise<SalesManager
     prisma.crmActivity.count({ where: activityWhere }),
     prisma.crmTask.count({ where: taskWhere }),
     prisma.crmQuote.count({ where: quoteWhere }),
+    activitiesByTypeFor(activityWhere), // FR-4.2: reuse the SAME person-scoped where
   ]);
 
   const teamRevenue = Number(wonAgg._sum?.amount ?? 0);
@@ -232,6 +254,7 @@ async function buildSalesManagerMetrics(user: SessionUser): Promise<SalesManager
     teamPipeline,
     teamPipelineDisplay: formatINR(teamPipeline),
     teamMemberCount,
+    activitiesByType,
   };
 }
 
@@ -249,7 +272,7 @@ async function buildSalesUserMetrics(user: SessionUser): Promise<SalesUserMetric
   const wonOppBase = { orgId, ownerId: userId, stage: CLOSED_WON, deletedAt: null };
   const wonOppWhere = aclFilter ? { AND: [wonOppBase, aclFilter] } : wonOppBase;
 
-  const [myLeads, myOpportunities, wonAgg, myActivities, myTasks, myQuotes] =
+  const [myLeads, myOpportunities, wonAgg, myActivities, myTasks, myQuotes, activitiesByType] =
     await Promise.all([
       prisma.crmLead.count({ where: leadWhere }),
       prisma.crmOpportunity.count({ where: oppWhere }),
@@ -257,6 +280,7 @@ async function buildSalesUserMetrics(user: SessionUser): Promise<SalesUserMetric
       prisma.crmActivity.count({ where: { orgId, ownerId: userId } }),
       prisma.crmTask.count({ where: { orgId, assignedToUserId: userId } }),
       prisma.crmQuote.count({ where: { orgId, ownerId: userId, deletedAt: null } }),
+      activitiesByTypeFor({ orgId, ownerId: userId }), // FR-4.2: same own scope as the count
     ]);
 
   const myRevenue = Number(wonAgg._sum?.amount ?? 0);
@@ -268,6 +292,7 @@ async function buildSalesUserMetrics(user: SessionUser): Promise<SalesUserMetric
     myActivities,
     myTasks,
     myQuotes,
+    activitiesByType,
   };
 }
 

@@ -14,6 +14,16 @@
  * because the same ACL helpers are used by both.
  */
 
+/**
+ * Activity count grouped by activity TYPE (FR-4.2). Grouped by the
+ * CrmActivity.type string LABEL (CrmActivity has no activityTypeId column —
+ * see ACTIVITY-FEATURE-DECISIONS.md 2026-06-24). Scoped to the role's tier.
+ */
+export type ActivityTypeCount = {
+  type: string;
+  count: number;
+};
+
 export type AdminMetrics = {
   totalLeads: number;
   totalAccounts: number;
@@ -24,6 +34,7 @@ export type AdminMetrics = {
   totalActivities: number;
   totalTasks: number;
   totalQuotes: number;
+  activitiesByType: ActivityTypeCount[];
 };
 
 /** Team-level aggregation for the TeamManager dashboard. */
@@ -56,6 +67,7 @@ export type SalesManagerMetrics = {
   teamPipeline: number;
   teamPipelineDisplay: string;
   teamMemberCount: number;
+  activitiesByType: ActivityTypeCount[];
 };
 
 export type SalesUserMetrics = {
@@ -66,6 +78,7 @@ export type SalesUserMetrics = {
   myActivities: number;
   myTasks: number;
   myQuotes: number;
+  activitiesByType: ActivityTypeCount[];
 };
 
 export type LeadSourceCount = {
