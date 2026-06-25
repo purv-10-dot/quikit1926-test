@@ -70,6 +70,34 @@ describe("POST /api/timesheets/copy-previous-week", () => {
     expect(mockDb.qtTimesheetEntry.create).toHaveBeenCalledTimes(2);
   });
 
+  // Multiple entries on the same (task, day) collapse into ONE copied entry
+  // carrying the day's total hours, with descriptions merged.
+  it("aggregates same-day entries for a task into one total", async () => {
+    setSession({ id: USER, orgId: TENANT, role: "owner" });
+    mockDb.orgMember.findFirst.mockResolvedValue({ role: "owner" } as never);
+
+    const prev = [
+      { projectId: "proj_1", issueId: "A", parentIssueId: null, entryDate: new Date("2026-06-15T00:00:00Z"), hours: 2, description: "code review" },
+      { projectId: "proj_1", issueId: "A", parentIssueId: null, entryDate: new Date("2026-06-15T00:00:00Z"), hours: 13, description: "fixing" },
+    ];
+    mockDb.qtTimesheetEntry.findMany
+      .mockResolvedValueOnce(prev as never) // previous-week entries
+      .mockResolvedValueOnce([] as never); // nothing logged this week yet
+    mockDb.qtTimesheetEntry.create.mockResolvedValue({} as never);
+    mockDb.qtTimesheetWeeklySummary.findFirst.mockResolvedValue(null);
+    mockDb.qtTimesheetWeeklySummary.create.mockResolvedValue({} as never);
+
+    const res = await POST(postReq(BODY), ROUTE_CTX);
+    expect(res.status).toBe(200);
+    const json = await res.json();
+    // One unified entry, not two fragments.
+    expect(json.data).toEqual({ created: 1, skippedFuture: 0, skippedExisting: 0 });
+    expect(mockDb.qtTimesheetEntry.create).toHaveBeenCalledTimes(1);
+    const data = (mockDb.qtTimesheetEntry.create.mock.calls[0]?.[0] as { data: { hours: number; description: string | null } }).data;
+    expect(data.hours).toBe(15);
+    expect(data.description).toBe("code review; fixing");
+  });
+
   it("returns created:0 when there's nothing in the previous week", async () => {
     setSession({ id: USER, orgId: TENANT, role: "owner" });
     mockDb.orgMember.findFirst.mockResolvedValue({ role: "owner" } as never);

@@ -132,7 +132,8 @@ export const POST = withOrgAuth(async ({ orgId, userId }, req) => {
   const now = new Date();
   const endOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 23, 59, 59, 999);
 
-  // Existing entries this week → don't duplicate a (issue, day).
+  // Existing entries this week → don't duplicate a (issue, day). Also sum their
+  // hours per (issue, day) so the preview can show what's already logged.
   const existing = await db.qtTimesheetEntry.findMany({
     where: {
       orgId,
@@ -141,24 +142,81 @@ export const POST = withOrgAuth(async ({ orgId, userId }, req) => {
       ...(projectId ? { projectId } : {}),
       entryDate: { gte: weekStart, lte: weekEnd },
     },
-    select: { issueId: true, entryDate: true },
+    select: { issueId: true, entryDate: true, hours: true },
   });
   const seen = new Set(existing.map((e) => `${e.issueId}|${dayKey(e.entryDate)}`));
+  const existingHoursByKey = new Map<string, number>();
+  for (const e of existing) {
+    const k = `${e.issueId}|${dayKey(e.entryDate)}`;
+    existingHoursByKey.set(k, (existingHoursByKey.get(k) ?? 0) + e.hours);
+  }
+
+  // In preview mode we also collect a per-entry breakdown so the confirm modal
+  // can show a comparison table (which task, which day, how long, what happens).
+  const wantDetails = parsed.data.preview === true;
+  type Row = {
+    issueId: string;
+    hours: number;
+    source: Date;
+    target: Date;
+    status: "copy" | "existing" | "future";
+  };
+  const rows: Row[] = [];
+
+  // Collapse multiple last-week entries on the same (task, day) into ONE logical
+  // entry carrying the day's TOTAL hours (and merged descriptions). The grid
+  // shows a day's work as a single cell total, so the copy mirrors that instead
+  // of recreating granular fragments.
+  type Grouped = {
+    projectId: string;
+    issueId: string;
+    parentIssueId: string | null;
+    entryDate: Date;
+    hours: number;
+    description: string | null;
+  };
+  const groupedMap = new Map<string, Grouped>();
+  for (const e of prev) {
+    const k = `${e.issueId}|${dayKey(e.entryDate)}`;
+    const g = groupedMap.get(k);
+    if (g) {
+      g.hours += e.hours;
+      if (e.description) {
+        const parts = g.description ? g.description.split("; ") : [];
+        if (!parts.includes(e.description)) {
+          g.description = [...parts, e.description].join("; ");
+        }
+      }
+    } else {
+      groupedMap.set(k, {
+        projectId: e.projectId,
+        issueId: e.issueId,
+        parentIssueId: e.parentIssueId,
+        entryDate: new Date(e.entryDate),
+        hours: e.hours,
+        description: e.description,
+      });
+    }
+  }
+  const groupedPrev = Array.from(groupedMap.values());
 
   let created = 0;
   let skippedFuture = 0;
   let skippedExisting = 0;
-  for (const e of prev) {
+  for (const e of groupedPrev) {
     if (!allowed.has(e.projectId)) continue;
     const target = new Date(e.entryDate);
     target.setDate(target.getDate() + 7);
+    const source = new Date(e.entryDate);
     if (target.getTime() > endOfToday.getTime()) {
       skippedFuture++;
+      if (wantDetails) rows.push({ issueId: e.issueId, hours: e.hours, source, target, status: "future" });
       continue;
     }
     const key = `${e.issueId}|${dayKey(target)}`;
     if (seen.has(key)) {
       skippedExisting++;
+      if (wantDetails) rows.push({ issueId: e.issueId, hours: e.hours, source, target, status: "existing" });
       continue;
     }
     seen.add(key);
@@ -174,9 +232,49 @@ export const POST = withOrgAuth(async ({ orgId, userId }, req) => {
         hours: e.hours,
         description: e.description,
       });
+    } else {
+      rows.push({ issueId: e.issueId, hours: e.hours, source, target, status: "copy" });
     }
     created++;
   }
 
-  return NextResponse.json({ success: true, data: { created, skippedFuture, skippedExisting } });
+  // Resolve issue key/title for the preview rows (one query) and serialize.
+  let details:
+    | Array<{
+        issueKey: string;
+        issueTitle: string;
+        weekday: string;
+        sourceDate: string;
+        targetDate: string;
+        lastWeekHours: number; // hours logged last week (what would copy)
+        thisWeekHours: number; // hours already logged this week on that day (0 if none)
+        status: "copy" | "existing" | "future";
+      }>
+    | undefined;
+  if (wantDetails) {
+    const ids = Array.from(new Set(rows.map((r) => r.issueId)));
+    const issues = ids.length
+      ? await db.qtIssue.findMany({ where: { id: { in: ids }, orgId }, select: { id: true, key: true, title: true } })
+      : [];
+    const byId = new Map(issues.map((i) => [i.id, i] as const));
+    const WD = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+    details = rows
+      .slice()
+      .sort((a, b) => a.target.getTime() - b.target.getTime())
+      .map((r) => ({
+        issueKey: byId.get(r.issueId)?.key ?? "",
+        issueTitle: byId.get(r.issueId)?.title ?? "Untitled",
+        weekday: WD[r.target.getDay()] ?? "",
+        sourceDate: r.source.toISOString(),
+        targetDate: r.target.toISOString(),
+        lastWeekHours: r.hours,
+        thisWeekHours: existingHoursByKey.get(`${r.issueId}|${dayKey(r.target)}`) ?? 0,
+        status: r.status,
+      }));
+  }
+
+  return NextResponse.json({
+    success: true,
+    data: { created, skippedFuture, skippedExisting, ...(details ? { details } : {}) },
+  });
 });
