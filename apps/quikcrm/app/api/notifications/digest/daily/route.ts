@@ -59,11 +59,15 @@ async function handle(req: NextRequest): Promise<NextResponse> {
     const durationMs = Date.now() - t0;
     console.info(`[digest-cron] daily digest complete in ${durationMs}ms`, {
       digests: result.digests.length,
+      sent: result.sentCount,
+      errors: result.errorCount,
       isDemo: result.isDemo,
     });
     return NextResponse.json({
       ok: true,
-      digestCount: result.digests.length,
+      digestCount: result.digests.length, // recipients RESOLVED
+      sentCount: result.sentCount, // sends that SUCCEEDED
+      errorCount: result.errorCount, // sends that FAILED (visible, not a dropped digest)
       isDemo: result.isDemo,
       durationMs,
     });
