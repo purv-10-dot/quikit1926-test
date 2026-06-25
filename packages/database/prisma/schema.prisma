@@ -7529,6 +7529,10 @@ model CrmTask {
   leadId           String?
   createdAt        DateTime        @default(now())
   updatedAt        DateTime        @updatedAt
+  /// Set to now() when status transitions INTO Completed; cleared (null) on
+  /// un-complete. NULL for tasks completed before this column existed (no
+  /// backfill — the digest counts completions forward from when it was added).
+  completedAt      DateTime?
   lead             CrmLead? @relation(fields: [leadId], references: [id])
   @@index([orgId])
   @@index([orgId, assignedToUserId])
