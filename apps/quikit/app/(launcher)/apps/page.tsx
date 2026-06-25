@@ -464,8 +464,8 @@ export default function AppLauncherPage() {
   // Tools" (admins only, since only they can start trials).
   // `HIDDEN_OTHER_TOOLS` lets us suppress specific catalog apps from the
   // "Other Tools" section in the UI without touching the catalog/DB — e.g.
-  // QuikVC is hidden for now.
-  const HIDDEN_OTHER_TOOLS = new Set(["quikvc"]);
+  // QuikVC and QuikSocial are hidden for now.
+  const HIDDEN_OTHER_TOOLS = new Set(["quikvc", "quiksocial"]);
   const activeApps = apps.filter((a) => matchesSearch(a));
   const otherTools = (isOrgAdmin ? available : [])
     .filter((a) => !HIDDEN_OTHER_TOOLS.has(a.slug))
