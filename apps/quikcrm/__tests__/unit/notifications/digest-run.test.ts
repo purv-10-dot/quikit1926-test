@@ -32,11 +32,19 @@ vi.mock("@/lib/services/notifications/digest-recipients", () => ({
   resolveDigestRecipients: vi.fn(),
   listActiveDigestOrgs: vi.fn(),
 }));
+vi.mock("@/lib/services/notifications/digest-email", () => ({ sendDigestEmail: vi.fn() }));
+// Window helper mocked to FIXED bounds — IST→UTC math is the helper's own test
+// (digest-window.test.ts). Here we only assert the range is WIRED into the calls.
+const FIXED_RANGE = { from: new Date("2026-06-23T18:30:00.000Z"), to: new Date("2026-06-24T18:30:00.000Z") };
+vi.mock("@/lib/services/notifications/digest-window", () => ({
+  yesterdayIstRangeUtc: vi.fn(() => ({ from: new Date("2026-06-23T18:30:00.000Z"), to: new Date("2026-06-24T18:30:00.000Z") })),
+}));
 
 import { getDigestConfig } from "@/lib/services/workspace/digest-config";
 import { buildRoleMetrics } from "@/lib/services/dashboard/role-metrics";
 import { getActivityFieldAggregates } from "@/lib/services/dashboard/activity-field-aggregates";
 import { resolveDigestRecipients, listActiveDigestOrgs } from "@/lib/services/notifications/digest-recipients";
+import { sendDigestEmail } from "@/lib/services/notifications/digest-email";
 import { runDailyDigest } from "@/lib/services/notifications/digest-run";
 
 const ADMIN = { userId: "admin1", orgId: "org1", role: "Administrator", email: "a@x.co", name: "Admin" };
@@ -54,6 +62,7 @@ beforeEach(() => {
     metrics: { activitiesByType: [{ type: "Call", count: 5 }] },
   } as never);
   vi.mocked(getActivityFieldAggregates).mockResolvedValue([] as never);
+  vi.mocked(sendDigestEmail).mockResolvedValue(undefined as never);
   // per-org top-N type selection (a small windowed groupBy seam) — stub it
   (prismaMock.crmActivity.groupBy as unknown as { mockResolvedValue: (v: unknown) => void })
     .mockResolvedValue([{ type: "Call", _count: { _all: 5 } }]);
@@ -68,21 +77,24 @@ describe("runDailyDigest — render-loop skeleton (Phase 5 plumbing)", () => {
   });
 
   it("calls the metrics services with the PER-RECIPIENT session user (leak-safe scope reuse)", async () => {
+    // Leak-safety guard: each recipient's OWN SessionUser is the 1st arg. Post
+    // go-live the call is (user, range) — assert the user precisely, range is any
+    // (the windowed range is asserted in the GO-LIVE block).
     await runDailyDigest();
-    expect(buildRoleMetrics).toHaveBeenCalledWith(ADMIN);
-    expect(buildRoleMetrics).toHaveBeenCalledWith(MGR);
+    expect(buildRoleMetrics).toHaveBeenCalledWith(ADMIN, expect.anything());
+    expect(buildRoleMetrics).toHaveBeenCalledWith(MGR, expect.anything());
   });
 
-  it("calls the services AS-IS — NO window/range arg (that is (i), deferred)", async () => {
+  it("GO-LIVE contract: services are called WITH the window range (no longer all-time)", async () => {
+    // Rewritten from the pre-go-live "NO range arg" test — go-live deliberately
+    // flipped the contract: the metrics services now receive the yesterday-IST range.
     await runDailyDigest();
-    // buildRoleMetrics must be called with EXACTLY one arg (the user) — no range.
     for (const call of vi.mocked(buildRoleMetrics).mock.calls) {
-      expect(call).toHaveLength(1);
+      expect(call[1]).toEqual(FIXED_RANGE); // range present, not undefined
     }
-    // getActivityFieldAggregates: (user, { activityTypeId }) — opts must NOT carry a range key.
     for (const call of vi.mocked(getActivityFieldAggregates).mock.calls) {
       const opts = call[1] as Record<string, unknown>;
-      expect(opts).not.toHaveProperty("range");
+      expect(opts).toHaveProperty("range", FIXED_RANGE);
     }
   });
 
@@ -103,13 +115,12 @@ describe("runDailyDigest — render-loop skeleton (Phase 5 plumbing)", () => {
     expect(res.digests.map((d) => d.recipient.userId)).toEqual(["admin1"]);
   });
 
-  it("bakes an UNMISSABLE all-time DEMO banner into each assembled digest", async () => {
+  it("GO-LIVE: each assembled digest is isDemo:false (banner OFF — data is yesterday-real)", async () => {
+    // Rewritten from the pre-go-live "all-time DEMO banner baked" test — go-live
+    // flipped isDemo to false so renderDemoBanner gates the banner off.
     const res = await runDailyDigest();
     for (const d of res.digests) {
-      expect(d.demoBanner).toMatch(/DEMO/);
-      expect(d.demoBanner).toMatch(/all-time/i);
-      expect(d.demoBanner).toMatch(/structure/i); // "review STRUCTURE not numbers"
-      expect(d.isDemo).toBe(true);
+      expect(d.isDemo).toBe(false);
     }
   });
 
@@ -117,5 +128,77 @@ describe("runDailyDigest — render-loop skeleton (Phase 5 plumbing)", () => {
     await runDailyDigest();
     // top-N type ranking runs once for org1, not once per recipient (2 recipients)
     expect(prismaMock.crmActivity.groupBy).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("runDailyDigest — SMTP send wiring (Phase 5 send-wiring stage)", () => {
+  it("calls sendDigestEmail once per assembled digest, with that recipient's digest", async () => {
+    await runDailyDigest();
+    expect(sendDigestEmail).toHaveBeenCalledTimes(2);
+    // each call gets an AssembledDigest whose recipient is the resolved SessionUser
+    const recipients = vi.mocked(sendDigestEmail).mock.calls.map((c) => (c[0] as { recipient: { userId: string } }).recipient.userId);
+    expect(recipients.sort()).toEqual(["admin1", "mgr1"]);
+  });
+
+  it("send is NOT gated on isDemo: fires for every recipient (now isDemo:false post-go-live)", async () => {
+    // Rewritten from the pre-go-live "DEMO-SEND isDemo:true" test. The guard it
+    // protects — send fires regardless of demo-state — still holds; the premise
+    // flipped to isDemo:false at go-live.
+    const res = await runDailyDigest();
+    expect(res.isDemo).toBe(false);
+    expect(sendDigestEmail).toHaveBeenCalledTimes(2);
+  });
+
+  it("returns separate counts: digestCount(resolved) vs sentCount vs errorCount — all-success", async () => {
+    const res = await runDailyDigest();
+    expect(res.digests).toHaveLength(2); // resolved
+    expect(res.sentCount).toBe(2);
+    expect(res.errorCount).toBe(0);
+  });
+
+  it("PARTIAL SUCCESS: one recipient's send throws → others still sent; counts reflect it, digestCount unchanged", async () => {
+    // Sanyukta/MGR send throws; Admin send succeeds.
+    vi.mocked(sendDigestEmail).mockImplementation(async (assembled: { recipient: { userId: string } }) => {
+      if (assembled.recipient.userId === "mgr1") throw new Error("SMTP rejected");
+    });
+
+    const res = await runDailyDigest();
+
+    // BOTH were attempted (one failure did NOT abort the loop)
+    expect(sendDigestEmail).toHaveBeenCalledTimes(2);
+    // resolved count is UNCHANGED — a send failure is visible as errorCount, not a dropped digestCount
+    expect(res.digests).toHaveLength(2);
+    expect(res.sentCount).toBe(1); // admin1 succeeded
+    expect(res.errorCount).toBe(1); // mgr1 failed
+    // the other recipient (admin1) still received
+    const attempted = vi.mocked(sendDigestEmail).mock.calls.map((c) => (c[0] as { recipient: { userId: string } }).recipient.userId);
+    expect(attempted).toContain("admin1");
+  });
+});
+
+describe("runDailyDigest — GO-LIVE: yesterday-IST window wired + DEMO banner OFF (atomic)", () => {
+  it("buildRoleMetrics is called WITH the yesterday-IST range (not undefined/all-time)", async () => {
+    await runDailyDigest();
+    for (const call of vi.mocked(buildRoleMetrics).mock.calls) {
+      expect(call[1]).toEqual(FIXED_RANGE); // 2nd arg = the windowed range
+    }
+  });
+
+  it("getActivityFieldAggregates is called WITH { activityTypeId, range }", async () => {
+    await runDailyDigest();
+    expect(vi.mocked(getActivityFieldAggregates).mock.calls.length).toBeGreaterThan(0);
+    for (const call of vi.mocked(getActivityFieldAggregates).mock.calls) {
+      const opts = call[1] as { activityTypeId: string; range?: { from: Date; to: Date } };
+      expect(opts.range).toEqual(FIXED_RANGE);
+      expect(opts.activityTypeId).toBeTruthy();
+    }
+  });
+
+  it("ATOMIC: isDemo is FALSE in the result AND on every assembled digest", async () => {
+    const res = await runDailyDigest();
+    expect(res.isDemo).toBe(false);
+    for (const d of res.digests) {
+      expect(d.isDemo).toBe(false);
+    }
   });
 });

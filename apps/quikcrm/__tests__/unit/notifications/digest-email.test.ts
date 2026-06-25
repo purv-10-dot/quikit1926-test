@@ -87,6 +87,14 @@ describe("renderDigestEmail — email-client-safe template (Phase 5)", () => {
     expect(section1Idx).toBeGreaterThan(bannerIdx);
   });
 
+  it("GO-LIVE: isDemo:false → DEMO banner is ABSENT (gated off; data is yesterday-real)", () => {
+    const { html } = renderDigestEmail(sampleDigest({ isDemo: false }));
+    expect(html).not.toMatch(/DEMO/);
+    expect(html).not.toMatch(/all-time totals/i);
+    // sections still render — only the banner is gone
+    expect(html).toMatch(/activity volume by rep/i);
+  });
+
   it("§1 renders TRUE activity volume by rep (from activityByRep), no contribution-flag", () => {
     const { html } = renderDigestEmail(sampleDigest());
     // true heading now that the number is correct

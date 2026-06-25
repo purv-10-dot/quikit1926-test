@@ -26,6 +26,8 @@ import {
   listActiveDigestOrgs,
   resolveDigestRecipients,
 } from "@/lib/services/notifications/digest-recipients";
+import { sendDigestEmail } from "@/lib/services/notifications/digest-email";
+import { yesterdayIstRangeUtc } from "@/lib/services/notifications/digest-window";
 import type { SessionUser } from "@/types/permission";
 import type { ActivityFieldAggregate } from "@/lib/services/dashboard/activity-field-aggregates";
 import type { RoleMetricsDto } from "@/lib/dashboard/role-metrics-types";
@@ -48,8 +50,13 @@ export interface AssembledDigest {
 }
 
 export interface DigestRunResult {
+  /** Recipients RESOLVED + assembled (NOT the send outcome). digestCount. */
   digests: AssembledDigest[];
   isDemo: boolean;
+  /** Sends that SUCCEEDED (≤ digests.length). */
+  sentCount: number;
+  /** Sends that FAILED — a send failure surfaces HERE, never as a dropped digest. */
+  errorCount: number;
 }
 
 /** activitiesByType lives on Admin/SalesManager/SalesUser DTOs; read defensively. */
@@ -89,8 +96,16 @@ async function selectTopNTypes(orgId: string, configured?: string[]): Promise<st
 }
 
 export async function runDailyDigest(): Promise<DigestRunResult> {
+  // GO-LIVE: the digest reports YESTERDAY (IST), not all-time. Computed once for
+  // the whole run. Wiring this range AND dropping the DEMO banner (isDemo:false
+  // below) are ONE atomic change — the coupling invariant: never window without
+  // dropping the banner, never drop the banner without windowing.
+  const range = yesterdayIstRangeUtc(new Date());
+
   const orgs = await listActiveDigestOrgs();
   const digests: AssembledDigest[] = [];
+  let sentCount = 0;
+  let errorCount = 0;
 
   for (const orgId of orgs) {
     const cfg = await getDigestConfig(orgId);
@@ -108,28 +123,41 @@ export async function runDailyDigest(): Promise<DigestRunResult> {
     ).filter((r) => !optOut.has(r.userId));
 
     for (const recipient of recipients) {
-      // Per-recipient user, NO range arg → ALL-TIME. The window param (unit (i))
-      // is BUILT + real-DB-verified, but the digest stays all-time (DEMO banner)
-      // until the deliberate "go live with yesterday's window" step. §1 now shows
-      // true per-rep activity VOLUME (activityByRep) — the right metric — all-time.
-      const metrics = await buildRoleMetrics(recipient);
+      // GO-LIVE: per-recipient metrics WINDOWED to yesterday (IST). The window
+      // param (unit (i)) is real-DB-verified; here it is finally wired with the
+      // yesterday-IST range. §1 shows true per-rep activity VOLUME (activityByRep),
+      // now for yesterday only.
+      const metrics = await buildRoleMetrics(recipient, range);
 
       const fieldAggregates: AssembledDigest["fieldAggregates"] = [];
       for (const activityTypeId of topTypes) {
-        const aggregates = await getActivityFieldAggregates(recipient, { activityTypeId });
+        const aggregates = await getActivityFieldAggregates(recipient, { activityTypeId, range });
         fieldAggregates.push({ activityTypeId, aggregates });
       }
 
-      digests.push({
+      const assembled: AssembledDigest = {
         recipient,
         activitiesByType: readActivitiesByType(metrics),
         activityByRep: readActivityByRep(metrics),
         fieldAggregates,
-        isDemo: true,
-        demoBanner: DIGEST_DEMO_BANNER,
-      });
+        isDemo: false, // GO-LIVE: window wired → real yesterday data → DEMO banner OFF
+        demoBanner: DIGEST_DEMO_BANNER, // retained on the type; renderDemoBanner gates on isDemo
+      };
+      digests.push(assembled); // RESOLVED — counted regardless of send outcome
+
+      // Per-recipient send (DEMO-bannered all-time data; demo-send is NOT gated on
+      // go-live — the banner rides on isDemo). Per-recipient try/catch: one
+      // recipient's failure must NOT abort the others (partial success). A send
+      // failure surfaces as errorCount, NEVER as a dropped digest.
+      try {
+        await sendDigestEmail(assembled);
+        sentCount++;
+      } catch (err) {
+        errorCount++;
+        console.error("[digest-cron] send failed for recipient", recipient.userId, err);
+      }
     }
   }
 
-  return { digests, isDemo: true };
+  return { digests, isDemo: false, sentCount, errorCount }; // GO-LIVE: no longer demo
 }
