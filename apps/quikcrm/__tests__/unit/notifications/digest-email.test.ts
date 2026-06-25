@@ -61,6 +61,13 @@ function sampleDigest(overrides: Partial<AssembledDigest> = {}): AssembledDigest
         ],
       },
     ],
+    // §4 completed-tasks-in-window (Stage C) — per-rep + total.
+    completedTasksByRep: [
+      { userId: "r1", ownerName: "Rep One", count: 4 },
+      { userId: "r2", ownerName: "Rep Two", count: 2 },
+    ],
+    completedTasksTotal: 6,
+    variant: "daily",
     isDemo: true,
     demoBanner: "⚠️ DEMO — all-time totals, daily windowing not built yet; review STRUCTURE, not numbers.",
     ...overrides,
@@ -85,6 +92,14 @@ describe("renderDigestEmail — email-client-safe template (Phase 5)", () => {
     const section1Idx = html.search(/activity volume by rep/i);
     expect(bannerIdx).toBeGreaterThanOrEqual(0);
     expect(section1Idx).toBeGreaterThan(bannerIdx);
+  });
+
+  it("GO-LIVE: isDemo:false → DEMO banner is ABSENT (gated off; data is yesterday-real)", () => {
+    const { html } = renderDigestEmail(sampleDigest({ isDemo: false }));
+    expect(html).not.toMatch(/DEMO/);
+    expect(html).not.toMatch(/all-time totals/i);
+    // sections still render — only the banner is gone
+    expect(html).toMatch(/activity volume by rep/i);
   });
 
   it("§1 renders TRUE activity volume by rep (from activityByRep), no contribution-flag", () => {
@@ -125,17 +140,25 @@ describe("renderDigestEmail — email-client-safe template (Phase 5)", () => {
     expect(html).toMatch(/Replied[^<]*2|2[^<]*Replied|×\s*2|x\s*2/i);
   });
 
-  it("§4 tasks: renders a LOUD not-built placeholder, distinct from 'zero tasks today'", () => {
+  it("§4 tasks: renders the real completed-tasks-in-window table (per-rep + total); NO placeholder", () => {
     const { html } = renderDigestEmail(sampleDigest());
-    // section is present in the shape
-    expect(html).toMatch(/tasks/i);
-    // LOUD not-built: explicit "not wired / placeholder / pending" language
-    expect(html).toMatch(/not.*wired|placeholder|not yet wired|pending/i);
-    // and it must NOT read like an empty-but-working section ("no tasks due today")
-    expect(html).not.toMatch(/no tasks (due )?today/i);
-    expect(html).not.toMatch(/0 tasks due/i);
-    // warning-styled (carries the same ⚠ marker class as a flagged block, not a muted row)
-    expect(html).toMatch(/⚠[^<]*tasks|tasks[^<]*not yet/i);
+    // tasks section heading present (completed framing)
+    expect(html).toMatch(/tasks completed/i);
+    // per-rep rows + counts render
+    expect(html).toContain("Rep One");
+    expect(html).toContain("4");
+    expect(html).toContain("Rep Two");
+    expect(html).toContain("2");
+    // total surfaced
+    expect(html).toContain("6");
+    // the "NOT BUILT" placeholder is GONE
+    expect(html).not.toMatch(/not.*wired|not yet wired|placeholder/i);
+  });
+
+  it("§4 empty-state: zero completed tasks → honest empty line, NOT the not-built placeholder", () => {
+    const { html } = renderDigestEmail(sampleDigest({ completedTasksByRep: [], completedTasksTotal: 0 }));
+    expect(html).toMatch(/no tasks completed/i); // real empty-but-working state
+    expect(html).not.toMatch(/not.*wired|not yet wired|placeholder/i);
   });
 
   it("escapes HTML in dynamic values (injection-safe)", () => {
@@ -159,5 +182,26 @@ describe("renderDigestEmail — email-client-safe template (Phase 5)", () => {
   it("subject names the digest", () => {
     const { subject } = renderDigestEmail(sampleDigest());
     expect(subject).toMatch(/digest/i);
+  });
+
+  describe("variant framing — weekly distinguishable from daily", () => {
+    it("weekly: subject = 'Weekly Summary — last 7 days' + 'Weekly Summary' header", () => {
+      const { subject, html } = renderDigestEmail(sampleDigest({ variant: "weekly", isDemo: false }));
+      expect(subject).toMatch(/weekly summary/i);
+      expect(subject).toMatch(/last 7 days/i);
+      expect(html).toMatch(/weekly summary/i); // header reflects the variant
+    });
+
+    it("daily: subject/header stay 'Activity Digest' — NOT weekly (unchanged)", () => {
+      const { subject, html } = renderDigestEmail(sampleDigest({ variant: "daily", isDemo: false }));
+      expect(subject).toMatch(/activity digest/i);
+      expect(subject).not.toMatch(/weekly/i);
+      expect(html).not.toMatch(/weekly summary/i);
+    });
+
+    it("weekly inherits go-live: isDemo:false → no DEMO banner", () => {
+      const { html } = renderDigestEmail(sampleDigest({ variant: "weekly", isDemo: false }));
+      expect(html).not.toMatch(/DEMO/);
+    });
   });
 });

@@ -378,6 +378,129 @@ a ready explanation: check the user has a CrmUserAppRole row in that org.
 - **No push / no deploy without explicit Rishabh go-ahead.**
 - **When context is thin or a fact is inferred, ASK — don't assert.** Tag confidence honestly.
 
+
+## 2026-06-25 — Daily-Digest Recipient Feature + SMTP (Phase 5) — CONSOLIDATED
+
+Admin-configurable digest recipients (Settings→Users toggle) + real SMTP delivery.
+Built as 5 staged commits on `activity_disposition_rishabh`. Decisions below are
+LOCKED — do not re-litigate.
+
+### LOCKED DECISIONS
+
+1. **Role source = `mapRole(UserAppAccess.role ?? OrgMember.role)`** — NOT raw
+   membership (can't distinguish SalesManager from SalesUser), NOT CrmUserAppRole
+   (the empty table that caused the silent-skip). The override fires only when the
+   per-app UserAppAccess role is set AND ≠ "member". Extracted to ONE shared
+   resolver `lib/auth/role-resolution.ts` (`mapRole` + `resolveCrmRole`); used by
+   readSession (request-time session.role), the Settings→Users eligibility DTO,
+   AND digest-run send-time resolution — so UI-eligible ⟺ send-time-eligible by
+   construction. Verified vs live DB: Ashwin org_admin→Administrator,
+   Akhilesh UserAppAccess admin→Administrator, Sanyukta sales-manager→SalesManager.
+
+2. **Eligibility (`isDigestEligible`):** Administrator → eligible (org-wide scope);
+   SalesManager who OWNS ≥1 group in the org → eligible (team scope); SalesManager
+   with no group → ineligible "no-team"; all other roles → "not-eligible-role".
+   The SalesManager group lookup MIRRORS resolveManagerTeam EXACTLY (same
+   crmSalesGroupManager query + org-via-join filter group.orgId===user.orgId) so
+   eligibility ⟺ a resolvable team (no "eligible but empty digest" gap). No
+   CrmUserAppRole dependency.
+
+3. **Auto-flip `enabled` BOTH directions** (setDigestRecipient): first recipient
+   toggled on → enabled=true; last recipient toggled off → enabled=false
+   (enabled = recipientUserIds.length > 0 after the toggle). Kills both footguns:
+   recipients-but-disabled (silent nothing) AND enabled-but-empty (the
+   digestCount:0 state). Makes "enabled + empty" unreachable.
+
+4. **Eligibility asymmetry:** gates ADDING (toggle-on → 400 if target ineligible —
+   eligibility checked on the TARGET, not the acting admin), NEVER REMOVING
+   (toggle-off bypasses eligibility — cleanup must always be allowed, e.g. a
+   SalesManager who lost their team must be removable, not stuck).
+
+5. **recipientRoles fallback DELETED.** The UI owns settings.digest.recipientUserIds
+   (REPLACE semantics); empty allow-list → nobody. The Stage-1 "empty → fall back to
+   recipientRoles" plumbing default is gone — auto-flip makes enabled+empty
+   unreachable, so there is no fallback case. (Earlier manual pgAdmin
+   recipientUserIds entry is now just the UI's initial state; one source of truth.)
+
+6. **Silent-skip ROOT FIX.** CrmUserAppRole removed from recipient resolution
+   entirely (it was empty for Akhilesh/Sanyukta → both dropped → digestCount:0).
+   `resolveDigestRecipients(orgId, recipientUserIds)` resolves each via
+   OrgMember + appId-scoped UserAppAccess → resolveCrmRole → isDigestEligible, with
+   a SEND-TIME eligibility re-check (drops anyone no longer eligible).
+   listActiveDigestOrgs now sourced from digest-config presence
+   (CrmOrgWorkspaceSettings settings.digest key), not CrmUserAppRole; digest-run
+   still gates on getDigestConfig(org).enabled. Admin-gated write =
+   requirePermission(user,"settings","edit").
+
+7. **SMTP delivery.** sendTransactionalEmail gained an SMTP driver mirroring the
+   proven send-report.ts nodemailer transport; dispatch precedence
+   smtp → resend → console; SMTP selected when SMTP_HOST+USER+PASS are set, sending
+   AS SMTP_FROM = support@quikit.ai (Office365). ALL callers route through it (digest,
+   notifications, user invites, quote send) with zero caller change. A-FIX:
+   buildScopeSql in activity-field-aggregates uses `user.role === "Administrator"`
+   instead of getScope() — removed the dead CrmTeamManager (unshipped table)
+   $queryRaw call (swallowed-but-noisy 42P01) from the digest scope path; mirrors
+   getScope's own ADMIN_ROLES check, behavior-preserving (FR-4.1/4.2/4.3 untouched).
+
+### COMMITS (5 recipient stages)
+- 8e38d549 — Stage 2a: shared CRM role resolver (role-resolution.ts; require.ts re-import)
+- a9479448 — Stage 1+2b: eligibility helper + Settings→Users digest DTO
+- b554a6c8 — Stage 3: admin-gated digest-recipient toggle API + setDigestRecipient (auto-flip)
+- dc6eb70b — Stage 4: Daily Digest toggle column (UI; jsdom-verified, browser-owed)
+- deec15b6 — Stage 5: digest recipients via role+eligibility, drop CrmUserAppRole
+(SMTP + A-fix: 6422415e. Settings-nav entry: bb7c9d91.)
+
+### OWED (do NOT forget)
+- **E2E verification (browser + SMTP):** toggle Akhilesh+Sanyukta ON in Settings→Users
+  → PATCH persists; trigger GET/POST /api/notifications/digest/daily (+CRON_SECRET)
+  → expect digestCount:2 → real SMTP send as support@quikit.ai. Data prereqs are set
+  (Akhilesh=Admin, Sanyukta=SalesManager+owns group cmqt5ivyj…+Ashwin is a member).
+  Discharges the Stage-4 browser-owed debt + Stage-5 + SMTP send in one pass.
+- **vercel.json cron entry** — NOT added (deployed-fire bit, held for approval). The
+  digest does not run on a schedule until this lands.
+- **GO-LIVE coupling invariant** — wiring the built+verified window param into
+  digest-run (yesterday's range) AND removing the DEMO banner must happen TOGETHER.
+  Removing the banner alone makes §1/§2/§3 silently all-time under real headings.
+- **§4 tasks section** — LOUD "not built" placeholder; tasks data is its own unit,
+  and the completed-vs-due/overdue framing is the open Dev question.
+- **Pre-existing 31-test branch cluster** — auth/permissions/api (account-acl,
+  middleware-integration, delta-pill, etc.) fail on this branch independent of Phase 5
+  (proven by baseline stash). TRIAGE before any merge to a shared branch.
+- **Vitest harness gap** — @quikit/shared/sso-domain-server subpath export isn't
+  resolved by the broad @quikit/shared alias in vitest.config.ts (mocked in-test).
+  Real fix = one-line subpath alias; file for the vitest-config owner.
+- **Redis fast-fail config (shared infra)** — @quikit/redis lacks connectTimeout +
+  enableOfflineQueue:false, so a dead REDIS_URL blocks the session-check path (admin
+  slowness) instead of failing fast. packages/redis change, integration-owned.
+
+### 2026-06-25 — Org admin missing from QuikCRM users list — INVESTIGATED, NOT a bug (no fix)
+
+Ashwin (org_admin) was missing from Settings→Users. Compared QuikCRM's listUsers
+against quiktrack's /api/org/users (read-only investigation of quiktrack; nothing
+touched there).
+
+BOTH apps gate the users list on a per-app UserAppAccess row, by design:
+- QuikCRM:  orgMember where user.appAccess.some{ appId, orgId }  (users.service.ts)
+- quiktrack: userAppAccess.findMany{ orgId, appId } → orgMember where userId IN [ids]
+  (app/api/org/users/route.ts GET)
+Same convention, two implementations. Both EXCLUDE a membership-only org admin
+(OrgMember.role=org_admin but no UserAppAccess row for that app).
+
+This is INTENTIONAL: per-app provisioning means an org-level admin is NOT
+implicitly an admin/user of every app — you appear in an app's user list only
+once granted that app's UserAppAccess row. The other apps where Ashwin showed up
+simply had his UserAppAccess row provisioned.
+
+RESOLUTION = grant the UserAppAccess row (done for Ashwin via Statement-1:
+quikit."UserAppAccess" role=admin for the quikcrm appId), NOT change the filter.
+Changing QuikCRM's filter to union in membership-only admins would DIVERGE from
+quiktrack's convention. Any "org admins auto-visible across all apps" want is a
+PLATFORM-TEAM concern (org-admin auto-provisioning of per-app UserAppAccess rows),
+not a quikcrm-local change.
+
+NO CODE CHANGE WARRANTED. quiktrack read-only (untouched); quikcrm unchanged.
+
+
 ---
 
 ## How this file is maintained

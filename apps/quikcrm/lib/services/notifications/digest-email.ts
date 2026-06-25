@@ -157,20 +157,26 @@ function renderFieldAggregates(d: AssembledDigest): string {
   );
 }
 
-// ── §4 Tasks — LOUD "NOT BUILT" placeholder (data is a separate unit) ─────────
-function renderTasksPlaceholder(): string {
+// ── §4 Tasks completed in the window — per-rep + total (matches §2 style) ─────
+function renderCompletedTasks(d: AssembledDigest): string {
+  const rows = d.completedTasksByRep.length
+    ? d.completedTasksByRep
+        .map(
+          (r) => `<tr>
+            <td style="padding:7px 28px;font-size:14px;color:#0f172a;font-family:${FONT_STACK};border-top:1px solid #f1f5f9;">${escHtml(r.ownerName ?? r.userId)}</td>
+            <td align="right" style="padding:7px 28px;font-size:14px;font-weight:600;color:#0f172a;font-family:${FONT_STACK};border-top:1px solid #f1f5f9;">${Number(r.count)}</td>
+          </tr>`,
+        )
+        .join("") +
+      `<tr>
+        <td style="padding:7px 28px;font-size:13px;font-weight:600;color:#475569;font-family:${FONT_STACK};border-top:1px solid #e2e8f0;">Total</td>
+        <td align="right" style="padding:7px 28px;font-size:14px;font-weight:700;color:#0f172a;font-family:${FONT_STACK};border-top:1px solid #e2e8f0;">${Number(d.completedTasksTotal)}</td>
+      </tr>`
+    : `<tr><td style="padding:7px 28px;font-size:13px;color:#94a3b8;font-family:${FONT_STACK};">No tasks completed in the last 24h.</td></tr>`;
+
   return (
-    sectionHeading("Tasks due / overdue") +
-    `<tr><td style="padding:4px 28px 18px;">
-      <table role="presentation" width="100%" cellpadding="0" cellspacing="0"
-             style="background:#fef2f2;border:1px solid #fecaca;border-radius:8px;">
-        <tr><td style="padding:12px 14px;font-size:13px;font-weight:600;color:#b91c1c;font-family:${FONT_STACK};line-height:1.5;">
-          &#9888; Tasks section not yet wired &mdash; placeholder, NOT &ldquo;zero tasks&rdquo;.
-          The tasks query (forward-looking: due / overdue today) is a separate unit; this block shows
-          the section LAYOUT only. Do not read absence here as &ldquo;no tasks due&rdquo;.
-        </td></tr>
-      </table>
-    </td></tr>`
+    sectionHeading("Tasks completed") +
+    `<tr><td style="padding:0 0 4px;"><table role="presentation" width="100%" cellpadding="0" cellspacing="0">${rows}</table></td></tr>`
   );
 }
 
@@ -194,19 +200,23 @@ export function renderDigestEmail(assembled: AssembledDigest): {
   html: string;
 } {
   const who = assembled.recipient.name || assembled.recipient.email;
-  const subject = assembled.isDemo
-    ? "[DEMO] QuikCRM Activity Digest"
-    : "QuikCRM Activity Digest";
 
-  // Plain-text fallback (also makes the not-built/demo states explicit in text).
+  // Variant framing — weekly must be distinguishable from daily in subject + header.
+  const isWeekly = assembled.variant === "weekly";
+  const headerLabel = isWeekly ? "Weekly Summary" : "Activity Digest";
+  const baseSubject = isWeekly ? "QuikCRM Weekly Summary — last 7 days" : "QuikCRM Activity Digest";
+  const windowLabel = isWeekly ? "last 7 days" : "last 24h";
+  const subject = assembled.isDemo ? `[DEMO] ${baseSubject}` : baseSubject;
+
+  // Plain-text fallback.
   const text = [
-    assembled.isDemo ? assembled.demoBanner : "QuikCRM Activity Digest",
+    assembled.isDemo ? assembled.demoBanner : baseSubject,
     "",
     `Prepared for: ${who}`,
     "",
     "Activity volume by rep / Activity mix by type / Per-rep field aggregates — see HTML.",
     "",
-    "Tasks due / overdue: SECTION NOT YET WIRED — placeholder, not 'zero tasks'.",
+    `Tasks completed (${windowLabel}): ${assembled.completedTasksTotal}.`,
   ].join("\n");
 
   const html = `<!DOCTYPE html>
@@ -225,7 +235,7 @@ export function renderDigestEmail(assembled: AssembledDigest): {
         <!-- Header -->
         <tr><td style="background:#1e40af;padding:18px 28px;">
           <span style="color:#ffffff;font-size:17px;font-weight:700;letter-spacing:-0.3px;font-family:${FONT_STACK};">QuikCRM</span>
-          <span style="color:#93c5fd;font-size:13px;font-weight:400;margin-left:10px;font-family:${FONT_STACK};">Activity Digest</span>
+          <span style="color:#93c5fd;font-size:13px;font-weight:400;margin-left:10px;font-family:${FONT_STACK};">${escHtml(headerLabel)}</span>
         </td></tr>
 
         <!-- Prepared-for -->
@@ -237,7 +247,7 @@ export function renderDigestEmail(assembled: AssembledDigest): {
         ${renderByRep(assembled)}
         ${renderByType(assembled)}
         ${renderFieldAggregates(assembled)}
-        ${renderTasksPlaceholder()}
+        ${renderCompletedTasks(assembled)}
 
         <!-- Footer -->
         <tr><td style="padding:16px 28px;border-top:1px solid #f1f5f9;">

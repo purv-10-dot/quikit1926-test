@@ -21,7 +21,6 @@
  */
 import { Prisma } from "@quikit/database";
 import { prisma } from "@/lib/db/prisma";
-import { getScope } from "@/lib/auth/account-acl";
 import { resolveManagerTeam } from "@/lib/services/dashboard/team";
 import { getActivityTypeWithFields } from "@/lib/services/activity-types/repo";
 import type { SessionUser } from "@/types/permission";
@@ -58,9 +57,12 @@ type RawAggRow = {
  * concatenated. orgId is ALWAYS filtered (tenant isolation).
  */
 async function buildScopeSql(user: SessionUser): Promise<Prisma.Sql> {
-  const scope = await getScope(user);
-
-  if (scope.unrestricted) {
+  // Administrator → org-only. Checked via the role directly (NOT getScope, which
+  // calls resolveTeamScope → the unshipped CrmTeamManager table → a swallowed but
+  // log-noisy 42P01 on every non-admin digest scope build). getScope's result was
+  // only ever consumed here for the unrestricted flag; this matches getScope's
+  // own ADMIN_ROLES check (=== "Administrator") exactly — no behavior change.
+  if (user.role === "Administrator") {
     // Administrator → org-only.
     return Prisma.sql`a."orgId" = ${user.orgId}`;
   }

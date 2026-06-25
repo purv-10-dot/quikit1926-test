@@ -17,47 +17,11 @@ import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/db/prisma";
 import { getQuikCrmAppId } from "@/lib/api/quikcrm-app";
+import { mapRole } from "@/lib/auth/role-resolution";
 import type { SessionUser } from "@/types/permission";
 
-/**
- * Map QuikIT/Membership role strings to the legacy CRM role enum the ported
- * code reasons about (`Administrator`, `SalesManager`, `SalesUser`,
- * `MarketingUser`, `FinanceUser`). Anything admin-shaped at the platform
- * level becomes `Administrator` in CRM so existing role checks work.
- */
-function mapRole(membershipRole: string | undefined): string {
-  if (!membershipRole) return "SalesUser";
-  const r = membershipRole.toLowerCase();
-  if (
-    r === "admin" ||
-    r === "owner" ||
-    r === "super_admin" ||
-    r === "administrator" ||
-    r === "org_admin" ||
-    r === "app_admin"
-  ) {
-    return "Administrator";
-  }
-  // TeamManager sits above SalesManager in the hierarchy:
-  //   Administrator > TeamManager > SalesManager > SalesUser
-  // Handles both underscore (OrgMember.role) and hyphen (AppRole.name) variants.
-  if (
-    r === "team_manager" || r === "team-manager" ||
-    r === "teammanager" || r === "team manager" ||
-    r === "regional_director"
-  ) return "TeamManager";
-  // AppRole.name uses "sales-manager"; OrgMember.role uses "sales_manager" / "manager".
-  if (r === "manager" || r === "sales_manager" || r === "salesmanager" || r === "sales-manager")
-    return "SalesManager";
-  // AppRole.name uses "marketing-user"; OrgMember.role uses "marketing_user" / "marketing".
-  if (r === "marketing" || r === "marketing_user" || r === "marketinguser" || r === "marketing-user")
-    return "MarketingUser";
-  // AppRole.name uses "finance-user"; OrgMember.role uses "finance_user" / "finance".
-  if (r === "finance" || r === "finance_user" || r === "financeuser" || r === "finance-user")
-    return "FinanceUser";
-  // member / user / "sales-user" / anything else → SalesUser (the broad CRM default).
-  return "SalesUser";
-}
+// mapRole moved to lib/auth/role-resolution.ts (shared with Settings→Users digest
+// eligibility so request-time session.role and UI eligibility resolve identically).
 
 async function readSession(): Promise<SessionUser | null> {
   const s = await getServerSession(authOptions);

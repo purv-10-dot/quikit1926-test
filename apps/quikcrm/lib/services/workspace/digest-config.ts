@@ -73,3 +73,47 @@ export async function getDigestConfig(orgId: string): Promise<DigestConfig> {
 function isFrequency(v: unknown): v is DigestFrequency {
   return v === "daily" || v === "weekly" || v === "off";
 }
+
+/**
+ * Toggle a user into/out of settings.digest.recipientUserIds (admin write path).
+ *
+ * Reads the FULL settings tree and splices in only the `digest` key, so sibling
+ * keys (leadPipelineConfig, dashboard, …) are preserved — mirrors the read-tree /
+ * write-tree merge in pipeline-config.ts.
+ *
+ * AUTO-FLIP enabled (both directions): enabled = (recipientUserIds.length > 0)
+ * after the toggle — first recipient on flips it true, last off flips it false.
+ * Keeps "has recipients" and "is enabled" in sync (no recipients-but-disabled
+ * silent-nothing, no enabled-but-empty digestCount:0).
+ *
+ * Idempotent: adding a present id / removing an absent id is a no-op set.
+ */
+export async function setDigestRecipient(
+  orgId: string,
+  userId: string,
+  enabled: boolean,
+): Promise<{ enabled: boolean; recipientUserIds: string[] }> {
+  const row = await prisma.crmOrgWorkspaceSettings.findUnique({ where: { orgId } });
+  const tree = ((row?.settings as Record<string, unknown> | null) ?? {}) as Record<string, unknown>;
+  const digest = (tree.digest as Partial<DigestConfig> | undefined) ?? {};
+
+  const current = new Set(Array.isArray(digest.recipientUserIds) ? digest.recipientUserIds : []);
+  if (enabled) current.add(userId);
+  else current.delete(userId);
+  const recipientUserIds = [...current];
+
+  const nextDigest = {
+    ...digest,
+    recipientUserIds,
+    enabled: recipientUserIds.length > 0, // auto-flip both directions
+  };
+  const nextTree = { ...tree, digest: nextDigest };
+
+  await prisma.crmOrgWorkspaceSettings.upsert({
+    where: { orgId },
+    create: { orgId, settings: nextTree as object },
+    update: { settings: nextTree as object },
+  });
+
+  return { enabled: nextDigest.enabled, recipientUserIds };
+}

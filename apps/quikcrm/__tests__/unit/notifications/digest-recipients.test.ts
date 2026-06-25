@@ -1,94 +1,116 @@
 /**
- * Phase 5 — digest-recipients allow-list (additive unit, RED→GREEN).
+ * Stage 5 — digest-recipients RESOLUTION REWRITE (RED→GREEN).
  *
- * listDigestRecipients(orgId, roles, recipientUserIds?) gains an explicit
- * allow-list with REPLACE semantics (decision 2026-06-24):
- *   - recipientUserIds NON-EMPTY → ONLY those userIds receive the digest;
- *     recipientRoles is IGNORED. "Name exactly who gets it" (Akhilesh + Sanyukta),
- *     regardless of who else holds the leadership roles.
- *   - recipientUserIds EMPTY ([]) OR absent → fall back to recipientRoles
- *     (NOT "email nobody" — the explicit empty-array edge).
+ * ROOT FIX for the silent-skip: the OLD listDigestRecipients resolved roles via
+ * CrmUserAppRole (the table that was EMPTY for Akhilesh/Sanyukta → both dropped →
+ * digestCount:0). It also did NOT match how session.role resolves. This rewrite:
  *
- * CRITICAL — scope decoupling: even on the allow-list path, each recipient's
- * SessionUser carries their REAL role (Akhilesh=Administrator → org-wide scope,
- * Sanyukta=SalesManager → group scope), so per-recipient digest SCOPING stays
- * correct. Allow-list = WHO gets it; role = WHAT they see. Replace must NOT
- * flatten both to one scope.
+ *   - resolveDigestRecipients(orgId, recipientUserIds) takes the allow-list (the
+ *     UI-managed source of truth) and, FOR EACH userId, resolves the CRM role the
+ *     SAME way readSession does — OrgMember.role + appId-scoped UserAppAccess via
+ *     resolveCrmRole — then re-checks isDigestEligible. Ineligible users are
+ *     DROPPED at send (defense-in-depth: a SalesManager who lost their team since
+ *     being toggled on must not get an empty/garbage digest).
+ *   - NO CrmUserAppRole dependency anywhere.
  *
- * Mocks prisma. The allow-list arg does not exist on listDigestRecipients yet → RED.
+ * listActiveDigestOrgs() returns orgs that have a digest config row (NOT "orgs
+ * with a CrmUserAppRole row" — that was coincidental and is the silent-skip's
+ * sibling). digest-run still filters by getDigestConfig(org).enabled.
+ *
+ * Mocks prisma + role-resolution/eligibility helpers. The new export
+ * resolveDigestRecipients does not exist yet → RED.
  */
 import { describe, it, expect, beforeEach, vi } from "vitest";
 import { prismaMock } from "../../helpers/prisma-unit-mock";
-import { listDigestRecipients } from "@/lib/services/notifications/digest-recipients";
 
-// app-role rows for org1: an Administrator, a SalesManager, and a third Admin
-// (the "other admin" the allow-list is meant to exclude).
-const APP_ROLE_ROWS = [
-  { userId: "akhilesh", role: { name: "admin" } },
-  { userId: "sanyukta", role: { name: "sales-manager" } },
-  { userId: "otheradmin", role: { name: "admin" } },
-];
+vi.mock("@/lib/api/quikcrm-app", () => ({ getQuikCrmAppId: vi.fn(async () => "app_quikcrm") }));
+vi.mock("@/lib/services/notifications/digest-eligibility", () => ({ isDigestEligible: vi.fn() }));
 
-const USERS = [
-  { id: "akhilesh", email: "akhilesh@x.co", firstName: "Akhilesh", lastName: "Gandhi" },
-  { id: "sanyukta", email: "sanyukta@x.co", firstName: "Sanyukta", lastName: "Jha" },
-  { id: "otheradmin", email: "other@x.co", firstName: "Other", lastName: "Admin" },
-];
+import { getQuikCrmAppId } from "@/lib/api/quikcrm-app";
+import { isDigestEligible } from "@/lib/services/notifications/digest-eligibility";
+import { resolveDigestRecipients } from "@/lib/services/notifications/digest-recipients";
 
-const findManyRole = prismaMock.crmUserAppRole.findMany as unknown as { mockResolvedValue: (v: unknown) => void };
-const findManyUser = prismaMock.user.findMany as unknown as {
-  mockImplementation: (fn: (args: unknown) => unknown) => void;
-};
+const ORG = "org1";
+
+function setMembers(rows: { userId: string; role: string }[]) {
+  (prismaMock.orgMember.findMany as unknown as { mockResolvedValue: (v: unknown) => void }).mockResolvedValue(
+    rows.map((r) => ({ userId: r.userId, orgId: ORG, role: r.role })),
+  );
+}
+function setAppAccess(rows: { userId: string; appId: string; role: string }[]) {
+  (prismaMock.userAppAccess.findMany as unknown as { mockResolvedValue: (v: unknown) => void }).mockResolvedValue(rows);
+}
+function setUsers(rows: { id: string; email: string; firstName: string; lastName: string }[]) {
+  (prismaMock.user.findMany as unknown as { mockResolvedValue: (v: unknown) => void }).mockResolvedValue(rows);
+}
 
 beforeEach(() => {
   vi.clearAllMocks();
-  findManyRole.mockResolvedValue(APP_ROLE_ROWS);
-  // user.findMany returns only the users whose ids are requested
-  findManyUser.mockImplementation((args: unknown) => {
-    const ids = ((args as { where?: { id?: { in?: string[] } } })?.where?.id?.in) ?? [];
-    return Promise.resolve(USERS.filter((u) => ids.includes(u.id)));
-  });
+  setMembers([]);
+  setAppAccess([]);
+  setUsers([]);
+  // default: everyone eligible (overridden per-test)
+  vi.mocked(isDigestEligible).mockResolvedValue({ eligible: true } as never);
+  vi.mocked(getQuikCrmAppId).mockResolvedValue("app_quikcrm" as never);
 });
 
-describe("listDigestRecipients — explicit allow-list, REPLACE semantics (Phase 5)", () => {
-  it("allow-list NON-EMPTY → ONLY those userIds, roles ignored", async () => {
-    const recips = await listDigestRecipients(
-      "org1",
-      ["Administrator", "SalesManager"], // would include otheradmin via roles…
-      ["akhilesh", "sanyukta"], // …but the allow-list REPLACES that
+describe("resolveDigestRecipients — role+eligibility (no CrmUserAppRole) (Stage 5)", () => {
+  it("resolves each allow-listed userId to a SessionUser with their REAL role (no CrmUserAppRole)", async () => {
+    setMembers([{ userId: "ak", role: "member" }, { userId: "sa", role: "member" }]);
+    setAppAccess([
+      { userId: "ak", appId: "app_quikcrm", role: "admin" },
+      { userId: "sa", appId: "app_quikcrm", role: "sales-manager" },
+    ]);
+    setUsers([
+      { id: "ak", email: "ak@x.co", firstName: "Akhilesh", lastName: "G" },
+      { id: "sa", email: "sa@x.co", firstName: "Sanyukta", lastName: "J" },
+    ]);
+
+    const recips = await resolveDigestRecipients(ORG, ["ak", "sa"]);
+
+    const ak = recips.find((r) => r.userId === "ak");
+    const sa = recips.find((r) => r.userId === "sa");
+    expect(ak?.role).toBe("Administrator"); // org-wide
+    expect(sa?.role).toBe("SalesManager"); // team — NOT flattened
+    expect(ak?.email).toBe("ak@x.co");
+    // CrmUserAppRole must NOT be consulted (the silent-skip root)
+    expect(prismaMock.crmUserAppRole.findMany).not.toHaveBeenCalled();
+  });
+
+  it("DROPS a recipient who is no longer eligible at send time (defense-in-depth)", async () => {
+    setMembers([{ userId: "ak", role: "member" }, { userId: "sa", role: "member" }]);
+    setAppAccess([
+      { userId: "ak", appId: "app_quikcrm", role: "admin" },
+      { userId: "sa", appId: "app_quikcrm", role: "sales-manager" },
+    ]);
+    setUsers([
+      { id: "ak", email: "ak@x.co", firstName: "A", lastName: "G" },
+      { id: "sa", email: "sa@x.co", firstName: "S", lastName: "J" },
+    ]);
+    // Sanyukta lost her team → ineligible now → must be dropped from the send
+    vi.mocked(isDigestEligible).mockImplementation(
+      async ({ userId }: { userId: string }) =>
+        userId === "sa" ? ({ eligible: false, reason: "no-team" } as never) : ({ eligible: true } as never),
     );
-    expect(recips.map((r) => r.userId).sort()).toEqual(["akhilesh", "sanyukta"]);
-    expect(recips.map((r) => r.userId)).not.toContain("otheradmin");
+
+    const recips = await resolveDigestRecipients(ORG, ["ak", "sa"]);
+    expect(recips.map((r) => r.userId)).toEqual(["ak"]);
   });
 
-  it("CRITICAL: allow-list recipients keep their REAL role (scope not flattened)", async () => {
-    const recips = await listDigestRecipients("org1", ["Administrator", "SalesManager"], ["akhilesh", "sanyukta"]);
-    const ak = recips.find((r) => r.userId === "akhilesh");
-    const sa = recips.find((r) => r.userId === "sanyukta");
-    expect(ak?.role).toBe("Administrator"); // org-wide scope
-    expect(sa?.role).toBe("SalesManager"); // group scope — NOT flattened to Admin
+  it("UserAppAccess fetch is SCOPED to the quikcrm appId (no stray other-app row)", async () => {
+    setMembers([{ userId: "ak", role: "member" }]);
+    setAppAccess([{ userId: "ak", appId: "app_quikcrm", role: "admin" }]);
+    setUsers([{ id: "ak", email: "ak@x.co", firstName: "A", lastName: "G" }]);
+
+    await resolveDigestRecipients(ORG, ["ak"]);
+
+    const calls = (prismaMock.userAppAccess.findMany as unknown as { mock: { calls: { 0: { where?: { appId?: string } } }[] } }).mock.calls;
+    expect(calls.length).toBeGreaterThan(0);
+    for (const c of calls) expect(c[0]?.where?.appId).toBe("app_quikcrm");
   });
 
-  it("allow-list EMPTY ([]) → fall back to roles (NOT 'email nobody')", async () => {
-    const recips = await listDigestRecipients("org1", ["Administrator", "SalesManager"], []);
-    // role-based path: both leadership roles (akhilesh, sanyukta, otheradmin all leadership)
-    expect(recips.map((r) => r.userId).sort()).toEqual(["akhilesh", "otheradmin", "sanyukta"]);
-  });
-
-  it("allow-list ABSENT → fall back to roles (same as empty)", async () => {
-    const recips = await listDigestRecipients("org1", ["Administrator", "SalesManager"]);
-    expect(recips.map((r) => r.userId).sort()).toEqual(["akhilesh", "otheradmin", "sanyukta"]);
-  });
-
-  it("role fallback still filters by the requested roles (SalesManager only)", async () => {
-    const recips = await listDigestRecipients("org1", ["SalesManager"]);
-    expect(recips.map((r) => r.userId)).toEqual(["sanyukta"]);
-  });
-
-  it("constructs a full SessionUser (orgId + email + name) for each recipient", async () => {
-    const recips = await listDigestRecipients("org1", ["Administrator", "SalesManager"], ["akhilesh"]);
-    const ak = recips[0];
-    expect(ak).toMatchObject({ userId: "akhilesh", orgId: "org1", role: "Administrator", email: "akhilesh@x.co" });
-    expect(ak.name).toMatch(/Akhilesh/);
+  it("empty allow-list → no recipients (the UI keeps the list authoritative)", async () => {
+    const recips = await resolveDigestRecipients(ORG, []);
+    expect(recips).toEqual([]);
   });
 });

@@ -15,7 +15,12 @@ import { mockDb } from "../../helpers/mockDb";
 mockDb();
 
 vi.mock("@/lib/services/notifications/digest-run", () => ({
-  runDailyDigest: vi.fn(async () => ({ digests: [{ recipient: { email: "a@x.co" } }], isDemo: true })),
+  runDailyDigest: vi.fn(async () => ({
+    digests: [{ recipient: { email: "a@x.co" } }, { recipient: { email: "b@x.co" } }],
+    isDemo: true,
+    sentCount: 1,
+    errorCount: 1,
+  })),
 }));
 import { runDailyDigest } from "@/lib/services/notifications/digest-run";
 
@@ -73,6 +78,11 @@ describe("GET /api/notifications/digest/daily — cron auth (cloned from tasks/d
     const body = await res.json();
     expect(body.ok).toBe(true);
     expect(body.isDemo).toBe(true); // demo state surfaced honestly in the response
+    // resolved vs sent vs failed are surfaced separately (a send failure is visible,
+    // not hidden by a dropped digestCount).
+    expect(body.digestCount).toBe(2);
+    expect(body.sentCount).toBe(1);
+    expect(body.errorCount).toBe(1);
   });
 
   it("POST is also supported (manual admin trigger), same auth", async () => {
