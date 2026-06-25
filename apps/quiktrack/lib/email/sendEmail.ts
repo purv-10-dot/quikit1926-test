@@ -501,9 +501,12 @@ export async function emailDocShared(args: {
   origin?: string | null;
 }): Promise<void> {
   const base = args.origin || appUrl();
+  // Internal shares link to the STANDALONE doc route (no project shell / no
+  // membership gate) so a doc-shared org member who isn't a project member can
+  // open it. External invites still use the public /share/<token> page.
   const link = args.shareToken
     ? `${base}/share/${args.shareToken}`
-    : `${base}/spaces/${args.projectId}/docs/${args.docId}`;
+    : `${base}/docs/${args.docId}`;
   const verb = args.role === "editor" ? "edit" : "view";
   const html = shell({
     headerSubtitle: "Shared with you",

@@ -53,6 +53,7 @@ export function DocEditor({
   docId,
   draftTemplateKey,
   draftFolderId,
+  standalone,
 }: {
   projectId: string;
   /** Present when editing an existing doc. Omitted in draft mode. */
@@ -61,6 +62,10 @@ export function DocEditor({
    *  only on first save — so opening a template never leaves an empty doc. */
   draftTemplateKey?: string;
   draftFolderId?: string | null;
+  /** Opened from the standalone /docs/[id] route (e.g. a shared user who isn't
+   *  a project member). Closing must not route into the project's docs list —
+   *  they may have no access to it. */
+  standalone?: boolean;
 }) {
   const router = useRouter();
   const qc = useQueryClient();
@@ -244,6 +249,13 @@ export function DocEditor({
   }, []);
 
   function close() {
+    // Standalone viewers (shared non-members) can't open the project docs list,
+    // so go back / to the app root instead of into the project.
+    if (standalone) {
+      if (typeof window !== "undefined" && window.history.length > 1) router.back();
+      else router.push("/");
+      return;
+    }
     router.push(`/spaces/${projectId}/docs`);
   }
 

@@ -100,10 +100,24 @@ export const GET = withOrgAuth<{ id: string }>(
       : [];
     const byId = new Map(users.map((u) => [u.id, u] as const));
 
+    // Project members already have access to a PUBLISHED doc via the project
+    // baseline, so sharing them again is redundant. Surface their ids so the
+    // picker can hide them from the add-people search. (Drafts are author/share-
+    // only, so nobody inherits access there.)
+    let inheritedUserIds: string[] = [];
+    if (doc.status !== "draft") {
+      const members = await db.qtProjectMember.findMany({
+        where: { projectId: doc.projectId, isDeleted: false },
+        select: { userId: true },
+      });
+      inheritedUserIds = members.map((m) => m.userId);
+    }
+
     return NextResponse.json({
       success: true,
       data: {
         canManage,
+        inheritedUserIds,
         owner: shapeUser(doc.createdBy ? byId.get(doc.createdBy) : null),
         people: shares.map((s) =>
           s.userId

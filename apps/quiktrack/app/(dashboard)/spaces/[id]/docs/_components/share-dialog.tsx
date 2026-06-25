@@ -25,6 +25,9 @@ interface SharesData {
   canManage: boolean;
   owner: OwnerLite | null;
   people: Person[];
+  /** Project members who already have access via a published doc — hidden from
+   *  the add-people search since sharing them would be redundant. */
+  inheritedUserIds?: string[];
   generalAccess: "restricted" | "anyone";
   generalRole: Role;
   shareToken: string | null;
@@ -195,7 +198,12 @@ export function ShareDialog({
 
   const canManage = data?.canManage ?? false;
   const takenIds = new Set(
-    [data?.owner?.userId, ...(data?.people.map((p) => p.userId) ?? [])].filter(Boolean) as string[],
+    [
+      data?.owner?.userId,
+      ...(data?.people.map((p) => p.userId) ?? []),
+      // Project members already have access (published doc) — don't offer them.
+      ...(data?.inheritedUserIds ?? []),
+    ].filter(Boolean) as string[],
   );
   const q = query.trim().toLowerCase();
   const matches = q
