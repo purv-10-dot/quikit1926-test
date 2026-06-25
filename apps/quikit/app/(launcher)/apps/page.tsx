@@ -462,8 +462,14 @@ export default function AppLauncherPage() {
 
   // Activated apps → "Active" section; non-activated catalog apps → "Other
   // Tools" (admins only, since only they can start trials).
+  // `HIDDEN_OTHER_TOOLS` lets us suppress specific catalog apps from the
+  // "Other Tools" section in the UI without touching the catalog/DB — e.g.
+  // QuikVC is hidden for now.
+  const HIDDEN_OTHER_TOOLS = new Set(["quikvc"]);
   const activeApps = apps.filter((a) => matchesSearch(a));
-  const otherTools = (isOrgAdmin ? available : []).filter(matchesSearch);
+  const otherTools = (isOrgAdmin ? available : [])
+    .filter((a) => !HIDDEN_OTHER_TOOLS.has(a.slug))
+    .filter(matchesSearch);
 
   const ease = [0.16, 1, 0.3, 1] as const; // ease-out-expo
   const gridV = {
