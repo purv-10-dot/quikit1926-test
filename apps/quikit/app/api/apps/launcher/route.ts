@@ -3,7 +3,7 @@ import type { NextRequest } from "next/server";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import { db } from "@/lib/db";
-import { ADMIN_TIER_ROLES } from "@quikit/shared";
+import { ADMIN_TIER_ROLES, HIDDEN_APP_SLUGS } from "@quikit/shared";
 
 /**
  * GET /api/apps/launcher
@@ -73,7 +73,7 @@ export async function GET(req: NextRequest) {
   // Apps in catalog (active only). Exclude `quikit` itself — it IS the
   // launcher; showing it as a tenant tile is nonsensical.
   const allApps = await db.app.findMany({
-    where: { status: { not: "disabled" }, slug: { not: "quikit" } },
+    where: { status: { not: "disabled" }, slug: { notIn: ["quikit", ...HIDDEN_APP_SLUGS] } },
     select: {
       id: true,
       name: true,
@@ -173,6 +173,7 @@ export async function GET(req: NextRequest) {
     quikinfra: process.env.QUIKINFRA_URL,
     quiksocial: process.env.QUIKSOCIAL_URL,
     quikcrm: process.env.QUIKCRM_URL,
+    quikhrms: process.env.QUIKHRMS_URL,
   };
 
   // Dev-only safety net. If the env var isn't set AND the DB's baseUrl is
@@ -191,6 +192,7 @@ export async function GET(req: NextRequest) {
     quikinfra: "http://localhost:3006",
     quikvc: "http://localhost:3005",
     quikcrm: "http://localhost:3008",
+    quikhrms: "http://localhost:3009",
   };
 
   /**

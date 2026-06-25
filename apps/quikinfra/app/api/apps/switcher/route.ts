@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { getServerSession } from "next-auth";
 import { db as dbCentral } from "@quikit/database";
-import { ADMIN_TIER_ROLES } from "@quikit/shared";
+import { ADMIN_TIER_ROLES, HIDDEN_APP_SLUGS } from "@quikit/shared";
 import { authOptions } from "@/lib/auth";
 
 /**
@@ -58,7 +58,7 @@ export async function GET() {
 
   // Catalog (active only). Exclude `quikit` — it's the launcher itself.
   const allApps = await dbCentral.app.findMany({
-    where: { status: { not: "disabled" }, slug: { not: "quikit" } },
+    where: { status: { not: "disabled" }, slug: { notIn: ["quikit", ...HIDDEN_APP_SLUGS] } },
     select: {
       id: true,
       name: true,
@@ -109,6 +109,7 @@ export async function GET() {
     quikinfra: process.env.QUIKINFRA_URL,
     quiksocial: process.env.QUIKSOCIAL_URL,
     quikcrm: process.env.QUIKCRM_URL,
+    quikhrms: process.env.QUIKHRMS_URL,
   };
   const isDev = process.env.NODE_ENV !== "production";
   const devLocalhostFallbacks: Record<string, string> = {
@@ -121,6 +122,7 @@ export async function GET() {
     quikinfra: "http://localhost:3006",
     quiksocial: "http://localhost:3007",
     quikcrm: "http://localhost:3008",
+    quikhrms: "http://localhost:3009",
   };
   function resolveBaseUrl(slug: string, dbBaseUrl: string | null | undefined): string {
     const fromEnv = envBaseUrls[slug];
