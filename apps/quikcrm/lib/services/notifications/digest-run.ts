@@ -24,7 +24,7 @@ import { buildRoleMetrics } from "@/lib/services/dashboard/role-metrics";
 import { getActivityFieldAggregates } from "@/lib/services/dashboard/activity-field-aggregates";
 import {
   listActiveDigestOrgs,
-  listDigestRecipients,
+  resolveDigestRecipients,
 } from "@/lib/services/notifications/digest-recipients";
 import type { SessionUser } from "@/types/permission";
 import type { ActivityFieldAggregate } from "@/lib/services/dashboard/activity-field-aggregates";
@@ -100,10 +100,11 @@ export async function runDailyDigest(): Promise<DigestRunResult> {
     const topTypes = await selectTopNTypes(orgId, cfg.types);
 
     const optOut = new Set(cfg.optOut);
-    // Pass the allow-list: non-empty recipientUserIds REPLACES recipientRoles
-    // (empty/absent → role fallback). optOut still applies on top of either path.
+    // Recipients come from the UI-managed allow-list (settings.digest.recipientUserIds),
+    // resolved to eligible per-recipient SessionUsers (role+eligibility, no
+    // CrmUserAppRole — the silent-skip root fix). optOut still applies on top.
     const recipients = (
-      await listDigestRecipients(orgId, cfg.recipientRoles, cfg.recipientUserIds)
+      await resolveDigestRecipients(orgId, cfg.recipientUserIds)
     ).filter((r) => !optOut.has(r.userId));
 
     for (const recipient of recipients) {

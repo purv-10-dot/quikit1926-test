@@ -29,14 +29,14 @@ vi.mock("@/lib/services/workspace/digest-config", () => ({ getDigestConfig: vi.f
 vi.mock("@/lib/services/dashboard/role-metrics", () => ({ buildRoleMetrics: vi.fn() }));
 vi.mock("@/lib/services/dashboard/activity-field-aggregates", () => ({ getActivityFieldAggregates: vi.fn() }));
 vi.mock("@/lib/services/notifications/digest-recipients", () => ({
-  listDigestRecipients: vi.fn(),
+  resolveDigestRecipients: vi.fn(),
   listActiveDigestOrgs: vi.fn(),
 }));
 
 import { getDigestConfig } from "@/lib/services/workspace/digest-config";
 import { buildRoleMetrics } from "@/lib/services/dashboard/role-metrics";
 import { getActivityFieldAggregates } from "@/lib/services/dashboard/activity-field-aggregates";
-import { listDigestRecipients, listActiveDigestOrgs } from "@/lib/services/notifications/digest-recipients";
+import { resolveDigestRecipients, listActiveDigestOrgs } from "@/lib/services/notifications/digest-recipients";
 import { runDailyDigest } from "@/lib/services/notifications/digest-run";
 
 const ADMIN = { userId: "admin1", orgId: "org1", role: "Administrator", email: "a@x.co", name: "Admin" };
@@ -48,7 +48,7 @@ beforeEach(() => {
     enabled: true, frequency: "daily", recipientRoles: ["Administrator", "SalesManager"], optOut: [],
   } as never);
   vi.mocked(listActiveDigestOrgs).mockResolvedValue(["org1"] as never);
-  vi.mocked(listDigestRecipients).mockResolvedValue([ADMIN, MGR] as never);
+  vi.mocked(resolveDigestRecipients).mockResolvedValue([ADMIN, MGR] as never);
   vi.mocked(buildRoleMetrics).mockResolvedValue({
     role: "Administrator",
     metrics: { activitiesByType: [{ type: "Call", count: 5 }] },
