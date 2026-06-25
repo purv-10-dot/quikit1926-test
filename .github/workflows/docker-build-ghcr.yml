@@ -1,18 +1,9 @@
-name: Docker — build & push to GHCR
-
-# Builds container images for the 5 deployable apps and pushes them to the
-# GitHub Container Registry (ghcr.io). Triggered on every push to the
-# Pre-Prod branch, or manually via the Actions UI. Changed apps are detected
-# dynamically and built in parallel via a matrix strategy.
-#
-# Images are named `ghcr.io/<owner>/<app>-runtime` and tagged with:
-#   - `sha-<short_sha>`  (immutable, addresses the exact commit)
-#
-# GHCR auth uses the built-in `GITHUB_TOKEN` — no manual secret to add.
+name: Docker Build and Push to GHCR
 
 on:
   push:
-    branches: [Pre-Prod]
+    branches:
+      - Prod
   workflow_dispatch:
 
 concurrency:
@@ -27,90 +18,103 @@ jobs:
   detect-changes:
     name: Detect Changed Apps
     runs-on: ubuntu-latest
+
     outputs:
       apps: ${{ steps.set-matrix.outputs.apps }}
       run_build: ${{ steps.set-matrix.outputs.run_build }}
+
     steps:
       - name: Checkout
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
 
-      - name: Detect changes in apps and packages
-        uses: dorny/paths-filter@v3
+      - name: Detect changes
         id: filter
+        uses: dorny/paths-filter@v3
         with:
           filters: |
+            shared:
+              - 'packages/**'
+              - 'package.json'
+              - 'package-lock.json'
+              - 'turbo.json'
+
             quikit:
               - 'apps/quikit/**'
-              - 'packages/**'
-              - 'package.json'
-              - 'package-lock.json'
-              - 'turbo.json'
+
             auth:
               - 'apps/auth/**'
-              - 'packages/**'
-              - 'package.json'
-              - 'package-lock.json'
-              - 'turbo.json'
+
             admin:
               - 'apps/admin/**'
-              - 'packages/**'
-              - 'package.json'
-              - 'package-lock.json'
-              - 'turbo.json'
+
             quikscale:
               - 'apps/quikscale/**'
-              - 'packages/**'
-              - 'package.json'
-              - 'package-lock.json'
-              - 'turbo.json'
+
             quiktrack:
               - 'apps/quiktrack/**'
-              - 'packages/**'
-              - 'package.json'
-              - 'package-lock.json'
-              - 'turbo.json'
+
             quikinfra:
               - 'apps/quikinfra/**'
-              - 'packages/**'
-              - 'package.json'
-              - 'package-lock.json'
-              - 'turbo.json'
+
             quikcrm:
               - 'apps/quikcrm/**'
-              - 'packages/**'
-              - 'package.json'
-              - 'package-lock.json'
-              - 'turbo.json'
             quikhrms:
               - 'apps/quikhrms/**'
-              - 'packages/**'
-              - 'package.json'
-              - 'package-lock.json'
-              - 'turbo.json'
-      - name: Generate Matrix Output
+
+      - name: Generate Matrix
         id: set-matrix
+        shell: bash
         run: |
+          APPS=()
+
           if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
-            echo 'apps=["quikit", "auth", "admin", "quikscale", "quiktrack", "quikhrms", "quikinfra", "quikcrm"]' >> "$GITHUB_OUTPUT"
-            echo "run_build=true" >> "$GITHUB_OUTPUT"
+            APPS=("quikit" "auth" "admin" "quikscale" "quiktrack" "quikinfra" "quikcrm" "quikhrms")
+          elif [ "${{ steps.filter.outputs.shared }}" = "true" ]; then
+            APPS=("quikit" "auth" "admin" "quikscale" "quiktrack" "quikinfra" "quikcrm" "quikhrms")
           else
-            CHANGES='${{ steps.filter.outputs.changes }}'
-            if [ "$CHANGES" = "[]" ] || [ -z "$CHANGES" ]; then
-              echo 'apps=[]' >> "$GITHUB_OUTPUT"
-              echo "run_build=false" >> "$GITHUB_OUTPUT"
-            else
-              echo "apps=$CHANGES" >> "$GITHUB_OUTPUT"
-              echo "run_build=true" >> "$GITHUB_OUTPUT"
-            fi
+            [ "${{ steps.filter.outputs.quikit }}" = "true" ] && APPS+=("quikit")
+            [ "${{ steps.filter.outputs.auth }}" = "true" ] && APPS+=("auth")
+            [ "${{ steps.filter.outputs.admin }}" = "true" ] && APPS+=("admin")
+            [ "${{ steps.filter.outputs.quikscale }}" = "true" ] && APPS+=("quikscale")
+            [ "${{ steps.filter.outputs.quiktrack }}" = "true" ] && APPS+=("quiktrack")
+            [ "${{ steps.filter.outputs.quikinfra }}" = "true" ] && APPS+=("quikinfra")
+            [ "${{ steps.filter.outputs.quikcrm }}" = "true" ] && APPS+=("quikcrm")
+            [ "${{ steps.filter.outputs.quikhrms }}" = "true" ] && APPS+=("quikhrms")
           fi
+
+          echo "Selected Apps: ${APPS[@]}"
+
+          if [ ${#APPS[@]} -eq 0 ]; then
+            echo "apps=[]" >> "$GITHUB_OUTPUT"
+            echo "run_build=false" >> "$GITHUB_OUTPUT"
+          else
+            JSON=$(printf '%s\n' "${APPS[@]}" | jq -R . | jq -s -c .)
+            echo "apps=$JSON" >> "$GITHUB_OUTPUT"
+            echo "run_build=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Debug Outputs
+        run: |
+          echo "shared=${{ steps.filter.outputs.shared }}"
+          echo "quikit=${{ steps.filter.outputs.quikit }}"
+          echo "auth=${{ steps.filter.outputs.auth }}"
+          echo "admin=${{ steps.filter.outputs.admin }}"
+          echo "quikscale=${{ steps.filter.outputs.quikscale }}"
+          echo "quiktrack=${{ steps.filter.outputs.quiktrack }}"
+          echo "quikinfra=${{ steps.filter.outputs.quikinfra }}"
+          echo "quikcrm=${{ steps.filter.outputs.quikcrm }}"
+          echo "quikhrms=${{ steps.set-matrix.outputs.quikhrms }}"
+          echo "apps=${{ steps.set-matrix.outputs.apps }}"
 
   build:
     name: Build ${{ matrix.app }}
     needs: detect-changes
     if: needs.detect-changes.outputs.run_build == 'true'
+
     runs-on: ubuntu-latest
+
     strategy:
       fail-fast: false
       matrix:
@@ -132,7 +136,8 @@ jobs:
 
       - name: Lowercase image owner
         id: owner
-        run: echo "value=$(echo '${{ github.repository_owner }}' | tr '[:upper:]' '[:lower:]')" >> "$GITHUB_OUTPUT"
+        run: |
+          echo "value=$(echo '${{ github.repository_owner }}' | tr '[:upper:]' '[:lower:]')" >> "$GITHUB_OUTPUT"
 
       - name: Compute image metadata
         id: meta
@@ -143,7 +148,7 @@ jobs:
             type=raw,value=build-${{ github.run_number }}
             type=sha,prefix=sha-,format=short
 
-      - name: Build and push
+      - name: Build and Push Image
         uses: docker/build-push-action@v5
         with:
           context: .
@@ -154,20 +159,14 @@ jobs:
           cache-from: type=gha,scope=${{ matrix.app }}
           cache-to: type=gha,scope=${{ matrix.app }},mode=max
           platforms: linux/amd64
-          # NEXT_PUBLIC_* env vars used in CLIENT components get inlined
-          # by webpack at `next build` time — runtime K8s env doesn't
-          # override them. Pass real prod URLs as build-args so the
-          # baked-in values match what Cloud Run / GKE pods serve.
-          # These are safe to hardcode: they end up plain-text in every
-          # browser bundle anyway.
           build-args: |
             NEXT_PUBLIC_LAUNCHER_URL=https://apps.quikit.ai
             NEXT_PUBLIC_AUTH_URL=https://authn.quikit.ai
             NEXT_PUBLIC_QUIKIT_URL=https://apps.quikit.ai
             NEXT_PUBLIC_QUIKSCALE_URL=https://scale.quikit.ai
-            NEXT_PUBLIC_QUIKHRMS_URL=https://people.quikit.ai
             NEXT_PUBLIC_ADMIN_URL=https://orgadmin.quikit.ai
             NEXT_PUBLIC_LOGIN_URL=https://authn.quikit.ai/login
             NEXT_PUBLIC_QUIKINFRA_URL=https://infra.quikit.ai
             NEXT_PUBLIC_QUIKCRM_URL=https://crm.quikit.ai
+            NEXT_PUBLIC_QUIKHRMS_URL=https://people.quikit.ai
             NEXTAUTH_URL=https://authn.quikit.ai
