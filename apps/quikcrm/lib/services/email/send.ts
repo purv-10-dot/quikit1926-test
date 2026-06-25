@@ -47,7 +47,7 @@ export interface SendEmailArgs {
 }
 
 export interface SendEmailResult {
-  driver: "console" | "resend";
+  driver: "console" | "resend" | "smtp";
   messageId: string;
   /** Wall-clock time the provider acknowledged the message. */
   sentAt: Date;
@@ -69,6 +69,56 @@ function readDriver(): "console" | "resend" {
 function readFrom(override: string | undefined): string {
   const fallback = process.env.EMAIL_FROM ?? "QuikIT CRM <noreply@example.test>";
   return override ?? fallback;
+}
+
+/**
+ * SMTP is configured when host + user + pass are all present (Office365 via
+ * support@quikit.ai in this monorepo). When configured it is the PREFERRED
+ * transport — real transactional mail goes out as SMTP_FROM. Mirrors the proven
+ * transport in lib/services/email/send-report.ts (the report-PDF sender).
+ */
+function isSmtpConfigured(): boolean {
+  return Boolean(process.env.SMTP_HOST && process.env.SMTP_USER && process.env.SMTP_PASS);
+}
+
+async function smtpDriver(args: SendEmailArgs): Promise<SendEmailResult> {
+  // nodemailer@7 is CJS; via ESM dynamic import the exports land on `.default`.
+  // Try both shapes (same interop handling as send-report.ts).
+  type NM = {
+    createTransport: (opts: Record<string, unknown>) => {
+      sendMail: (opts: Record<string, unknown>) => Promise<{ messageId: string; rejected: string[] }>;
+    };
+  };
+  const raw = await import("nodemailer");
+  const nm = ((raw as unknown as { default?: NM }).default ?? (raw as unknown as NM));
+  if (typeof nm?.createTransport !== "function") {
+    throw new EmailError("nodemailer.createTransport unavailable — unexpected module shape", 502);
+  }
+
+  const port = Number(process.env.SMTP_PORT ?? 587);
+  const from = process.env.SMTP_FROM ?? process.env.SMTP_USER ?? readFrom(args.from);
+  const transport = nm.createTransport({
+    host: process.env.SMTP_HOST as string,
+    port,
+    secure: port === 465, // 465 = implicit TLS; 587 = STARTTLS
+    auth: { user: process.env.SMTP_USER as string, pass: process.env.SMTP_PASS as string },
+    tls: { rejectUnauthorized: false },
+  });
+
+  const result = await transport.sendMail({
+    from,
+    to: args.to.join(", "),
+    ...(args.cc?.length ? { cc: args.cc.join(", ") } : {}),
+    ...(args.bcc?.length ? { bcc: args.bcc.join(", ") } : {}),
+    subject: args.subject,
+    text: args.text,
+    ...(args.html ? { html: args.html } : {}),
+  });
+
+  if (result.rejected?.length > 0) {
+    console.warn("[email:smtp] Recipient(s) rejected by SMTP server:", result.rejected);
+  }
+  return { driver: "smtp", messageId: result.messageId, sentAt: new Date() };
 }
 
 function ensureRecipients(args: SendEmailArgs): void {
@@ -196,7 +246,8 @@ export async function sendTransactionalEmail(
   args: SendEmailArgs,
 ): Promise<SendEmailResult> {
   ensureRecipients(args);
-  const driver = readDriver();
-  if (driver === "resend") return resendDriver(args);
+  // Transport precedence: SMTP (Office365 support@quikit.ai) → Resend → console.
+  if (isSmtpConfigured()) return smtpDriver(args);
+  if (readDriver() === "resend") return resendDriver(args);
   return consoleDriver(args);
 }

@@ -7844,6 +7844,7 @@ model CrmActivity {
   createdAt         DateTime  @default(now())
   updatedAt         DateTime  @updatedAt
   lead              CrmLead?  @relation(fields: [leadId], references: [id])
+  fieldValues       CrmActivityFieldValue[]
   @@unique([orgId, sourceSystem, externalId])
   @@index([orgId])
   @@index([orgId, relatedKind, relatedObjectId])
@@ -7866,6 +7867,10 @@ model CrmTask {
   leadId           String?
   createdAt        DateTime        @default(now())
   updatedAt        DateTime        @updatedAt
+  /// Set to now() when status transitions INTO Completed; cleared (null) on
+  /// un-complete. NULL for tasks completed before this column existed (no
+  /// backfill — the digest counts completions forward from when it was added).
+  completedAt      DateTime?
   lead             CrmLead? @relation(fields: [leadId], references: [id])
   @@index([orgId])
   @@index([orgId, assignedToUserId])
@@ -8172,6 +8177,88 @@ model CrmCallDisposition {
   @@unique([orgId, code])
   @@unique([orgId, name])
   @@index([orgId])
+  @@schema("app_quikcrm")
+}
+
+// Activity-logging feature (Phase 1). Admin-configurable activity types +
+// their flat custom-field definitions. Modeled on CrmCallDisposition (a
+// per-org config table). Field VALUES are stored separately in an indexed
+// CrmActivityFieldValue table (Phase 2) — NOT a JSON blob — so the dashboard
+// and digests can aggregate/filter by field value. No cascading fields
+// (no dependsOnKey): the only consumer was the quarantined SMB flow.
+// See apps/quikcrm/ACTIVITY-FEATURE-DECISIONS.md.
+model CrmActivityType {
+  id        String   @id @default(cuid())
+  orgId     String
+  code      String
+  label     String
+  category  String?
+  config    Json?
+  sortOrder Int      @default(0)
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  fieldDefinitions CrmActivityFieldDefinition[]
+
+  @@unique([orgId, code])
+  @@index([orgId])
+  @@schema("app_quikcrm")
+}
+
+model CrmActivityFieldDefinition {
+  id             String   @id @default(cuid())
+  orgId          String
+  activityTypeId String
+  key            String
+  label          String
+  fieldType      String
+  requirement    String   @default("Optional")
+  options        Json?
+  visible        Boolean  @default(true)
+  helpText       String?
+  sortOrder      Int      @default(0)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  activityType CrmActivityType @relation(fields: [activityTypeId], references: [id], onDelete: Cascade)
+  fieldValues  CrmActivityFieldValue[]
+
+  @@unique([activityTypeId, key])
+  @@index([orgId])
+  @@index([activityTypeId])
+  @@schema("app_quikcrm")
+}
+
+// Phase 2: indexed, queryable storage for activity custom-field VALUES.
+// Decision #1 — a dedicated typed-column table, NOT a JSON blob — so the
+// Phase-4 dashboard and digests can aggregate/filter BY value (count, sum,
+// group-by) using the per-value indexes below. One row per (activity, field).
+// Mirrors QuikTrack's QtIssueFieldValue. See ACTIVITY-FEATURE-DECISIONS.md.
+model CrmActivityFieldValue {
+  id                String   @id @default(cuid())
+  orgId             String
+  activityId        String
+  fieldDefinitionId String
+  fieldKey          String
+  valueText         String?
+  valueNumber       Float?
+  valueDate         DateTime?
+  valueBoolean      Boolean?
+  valueJson         Json?
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  activity        CrmActivity                @relation(fields: [activityId], references: [id], onDelete: Cascade)
+  fieldDefinition CrmActivityFieldDefinition @relation(fields: [fieldDefinitionId], references: [id], onDelete: Cascade)
+
+  @@unique([activityId, fieldDefinitionId])
+  @@index([orgId])
+  @@index([activityId])
+  @@index([fieldDefinitionId, valueText])
+  @@index([fieldDefinitionId, valueNumber])
+  @@index([fieldDefinitionId, valueDate])
+  @@index([fieldDefinitionId, valueBoolean])
   @@schema("app_quikcrm")
 }
 
