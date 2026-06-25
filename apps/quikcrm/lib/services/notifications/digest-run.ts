@@ -27,7 +27,7 @@ import {
   resolveDigestRecipients,
 } from "@/lib/services/notifications/digest-recipients";
 import { sendDigestEmail } from "@/lib/services/notifications/digest-email";
-import { yesterdayIstRangeUtc } from "@/lib/services/notifications/digest-window";
+import { rolling24hRangeUtc } from "@/lib/services/notifications/digest-window";
 import type { SessionUser } from "@/types/permission";
 import type { ActivityFieldAggregate } from "@/lib/services/dashboard/activity-field-aggregates";
 import type { RoleMetricsDto } from "@/lib/dashboard/role-metrics-types";
@@ -96,11 +96,11 @@ async function selectTopNTypes(orgId: string, configured?: string[]): Promise<st
 }
 
 export async function runDailyDigest(): Promise<DigestRunResult> {
-  // GO-LIVE: the digest reports YESTERDAY (IST), not all-time. Computed once for
-  // the whole run. Wiring this range AND dropping the DEMO banner (isDemo:false
-  // below) are ONE atomic change — the coupling invariant: never window without
-  // dropping the banner, never drop the banner without windowing.
-  const range = yesterdayIstRangeUtc(new Date());
+  // The digest reports a ROLLING 24h window [now − 24h, now) — not all-time, not
+  // calendar-day. Computed once for the whole run. (isDemo stays false — go-live
+  // already dropped the banner; this is a window-DEFINITION change, not a
+  // demo/banner change, so the coupling invariant is unaffected.)
+  const range = rolling24hRangeUtc(new Date());
 
   const orgs = await listActiveDigestOrgs();
   const digests: AssembledDigest[] = [];

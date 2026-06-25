@@ -1,42 +1,30 @@
 /**
- * Digest reporting window — "yesterday, IST" as UTC bounds.
+ * Digest reporting window — a ROLLING 24-HOUR window: [now − 24h, now).
  *
- * The daily digest reports the prior IST calendar day. CrmActivity.occurredAt is
- * stored UTC and the windowed query uses a half-open [from, to) (gte from, lt to),
- * so we return UTC Date bounds for exactly one IST day.
+ * Stateless. At the 20:30 IST cron this = [yesterday 20:30 IST, today 20:30 IST) —
+ * back-to-back daily windows with no gap or overlap, so an activity logged after
+ * one run rolls into the next run's window.
  *
- * IST = UTC+5:30, NO DST (fixed offset). IST midnight = UTC 18:30 of the previous
- * calendar day — that 18:30-UTC boundary is where day-boundary bugs hide.
- *
- *   yesterday IST = [IST yesterday 00:00, IST today 00:00)
- *                 = [UTC (yesterday−1) 18:30, UTC yesterday 18:30)
+ * NO timezone math: `from`/`to` are plain UTC instants (now and now−24h), and
+ * CrmActivity.occurredAt is stored UTC, so the window is timezone-INDEPENDENT.
+ * IST anchors only the cron TIME (when it runs, set in vercel.json), NOT the
+ * window math — which is why this is simpler than the prior calendar-day helper
+ * (no IST midnight / 18:30-UTC boundary; that whole class of day-boundary bug is
+ * gone). Half-open [from, to): the windowed query uses gte from, lt to.
  *
  * `now` is injected so callers/tests are deterministic; digest-run passes new Date().
- * (Hardcoded IST for now — a configurable per-org timezone is a later want.)
+ *
+ * KNOWN LIMITATION (deferred): a MISSED cron run loses that day — the next run
+ * only reaches back 24h, so the gap between a skipped slot and (next run − 24h) is
+ * never covered. Since-last-successful-run catch-up is deferred; add only if
+ * misses become real. See ACTIVITY-FEATURE-DECISIONS.md.
  */
 
-const IST_OFFSET_MS = (5 * 60 + 30) * 60_000; // +5:30
+const DAY_MS = 24 * 60 * 60 * 1000;
 
-export function yesterdayIstRangeUtc(now: Date): { from: Date; to: Date } {
-  // Shift the UTC instant into IST wall-clock: reading getUTC* on this shifted
-  // value yields IST calendar fields.
-  const istNow = new Date(now.getTime() + IST_OFFSET_MS);
-
-  // IST midnight of TODAY, as a shifted-epoch (IST wall-clock midnight).
-  const istTodayMidnight = Date.UTC(
-    istNow.getUTCFullYear(),
-    istNow.getUTCMonth(),
-    istNow.getUTCDate(),
-    0, 0, 0, 0,
-  );
-
-  // Yesterday IST window in IST wall-clock, half-open [−24h, today-midnight).
-  const istFrom = istTodayMidnight - 24 * 60 * 60_000;
-  const istTo = istTodayMidnight;
-
-  // Convert IST wall-clock back to true UTC by removing the offset.
+export function rolling24hRangeUtc(now: Date): { from: Date; to: Date } {
   return {
-    from: new Date(istFrom - IST_OFFSET_MS),
-    to: new Date(istTo - IST_OFFSET_MS),
+    from: new Date(now.getTime() - DAY_MS),
+    to: now,
   };
 }

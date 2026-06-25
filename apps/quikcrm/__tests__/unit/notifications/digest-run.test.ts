@@ -33,11 +33,11 @@ vi.mock("@/lib/services/notifications/digest-recipients", () => ({
   listActiveDigestOrgs: vi.fn(),
 }));
 vi.mock("@/lib/services/notifications/digest-email", () => ({ sendDigestEmail: vi.fn() }));
-// Window helper mocked to FIXED bounds — IST→UTC math is the helper's own test
-// (digest-window.test.ts). Here we only assert the range is WIRED into the calls.
-const FIXED_RANGE = { from: new Date("2026-06-23T18:30:00.000Z"), to: new Date("2026-06-24T18:30:00.000Z") };
+// Window helper mocked to FIXED bounds — the rolling-24h math is the helper's own
+// test (digest-window.test.ts). Here we only assert the range is WIRED into the calls.
+const FIXED_RANGE = { from: new Date("2026-06-24T15:00:00.000Z"), to: new Date("2026-06-25T15:00:00.000Z") };
 vi.mock("@/lib/services/notifications/digest-window", () => ({
-  yesterdayIstRangeUtc: vi.fn(() => ({ from: new Date("2026-06-23T18:30:00.000Z"), to: new Date("2026-06-24T18:30:00.000Z") })),
+  rolling24hRangeUtc: vi.fn(() => ({ from: new Date("2026-06-24T15:00:00.000Z"), to: new Date("2026-06-25T15:00:00.000Z") })),
 }));
 
 import { getDigestConfig } from "@/lib/services/workspace/digest-config";

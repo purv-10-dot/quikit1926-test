@@ -1,58 +1,70 @@
 /**
- * Go-live Stage — yesterdayIstRangeUtc (RED→GREEN). Target 1.
+ * Window helper — rolling24hRangeUtc (RED→GREEN).
  *
- * Yesterday in IST (UTC+5:30, no DST), half-open [from, to) in UTC, because
- * CrmActivity.occurredAt is stored UTC and the windowed where uses gte:from / lt:to.
+ * The digest reports a ROLLING 24-HOUR window: [now − 24h, now), stateless.
+ * At the 20:30 IST cron this = [yesterday 20:30 IST, today 20:30 IST) — back-to-
+ * back daily windows, no gap/overlap.
  *
- * The 18:30-UTC boundary is where day-boundary bugs hide:
- *   IST midnight = UTC 18:30 of the previous calendar day.
- *   yesterday IST = [IST yesterday 00:00, IST today 00:00)
- *                 = [UTC (day-before-yesterday) 18:30, UTC yesterday 18:30).
+ * NO IST / calendar math: from/to are plain UTC instants (now and now−24h), and
+ * CrmActivity.occurredAt is UTC, so the window is timezone-INDEPENDENT. IST only
+ * anchors the cron TIME (when it runs), not the window math. This replaces the
+ * earlier yesterdayIstRangeUtc (calendar-day) helper, which is removed.
  *
- * `now` is injected so the bounds are deterministic (no Date.now flakiness).
- * Module does not exist yet → RED.
+ * `now` is injected for determinism. Half-open [from, to): gte from, lt to.
  */
 import { describe, it, expect } from "vitest";
-import { yesterdayIstRangeUtc } from "@/lib/services/notifications/digest-window";
+import { rolling24hRangeUtc } from "@/lib/services/notifications/digest-window";
 
-describe("yesterdayIstRangeUtc — IST→UTC half-open yesterday window", () => {
-  it("now = 2026-06-25T09:00:00Z (14:30 IST) → [2026-06-23T18:30Z, 2026-06-24T18:30Z)", () => {
-    const { from, to } = yesterdayIstRangeUtc(new Date("2026-06-25T09:00:00.000Z"));
-    expect(from.toISOString()).toBe("2026-06-23T18:30:00.000Z");
-    expect(to.toISOString()).toBe("2026-06-24T18:30:00.000Z");
+const DAY_MS = 24 * 60 * 60 * 1000;
+
+describe("rolling24hRangeUtc — [now − 24h, now), pure UTC", () => {
+  it("to === now exactly; from === now − 24h exactly", () => {
+    const now = new Date("2026-06-25T15:00:00.000Z");
+    const { from, to } = rolling24hRangeUtc(now);
+    expect(to.getTime()).toBe(now.getTime());
+    expect(from.getTime()).toBe(now.getTime() - DAY_MS);
   });
 
-  it("is HALF-OPEN: to − from === exactly 24h", () => {
-    const { from, to } = yesterdayIstRangeUtc(new Date("2026-06-25T09:00:00.000Z"));
-    expect(to.getTime() - from.getTime()).toBe(24 * 60 * 60 * 1000);
+  it("window is exactly 24h wide", () => {
+    const { from, to } = rolling24hRangeUtc(new Date("2026-06-25T15:00:00.000Z"));
+    expect(to.getTime() - from.getTime()).toBe(DAY_MS);
   });
 
-  it("BOUNDARY: activity at 23:00 IST yesterday is INSIDE the window", () => {
-    const { from, to } = yesterdayIstRangeUtc(new Date("2026-06-25T09:00:00.000Z"));
-    // 23:00 IST on Jun 24 = 17:30:00 UTC Jun 24
-    const act = new Date("2026-06-24T17:30:00.000Z").getTime();
+  it("BOUNDARY: activity 23h ago is INSIDE", () => {
+    const now = new Date("2026-06-25T15:00:00.000Z");
+    const { from, to } = rolling24hRangeUtc(now);
+    const act = now.getTime() - 23 * 60 * 60 * 1000;
     expect(act >= from.getTime() && act < to.getTime()).toBe(true);
   });
 
-  it("BOUNDARY: activity at 00:30 IST today is OUTSIDE (>= to)", () => {
-    const { from, to } = yesterdayIstRangeUtc(new Date("2026-06-25T09:00:00.000Z"));
-    // 00:30 IST on Jun 25 = 19:00:00 UTC Jun 24 → today IST, not yesterday
-    const act = new Date("2026-06-24T19:00:00.000Z").getTime();
-    expect(act >= to.getTime()).toBe(true);
-    void from;
+  it("BOUNDARY: activity 25h ago is OUTSIDE (< from)", () => {
+    const now = new Date("2026-06-25T15:00:00.000Z");
+    const { from } = rolling24hRangeUtc(now);
+    const act = now.getTime() - 25 * 60 * 60 * 1000;
+    expect(act < from.getTime()).toBe(true);
   });
 
-  it("BOUNDARY: activity at exactly yesterday 00:00 IST is INSIDE (from is inclusive)", () => {
-    const { from } = yesterdayIstRangeUtc(new Date("2026-06-25T09:00:00.000Z"));
-    // 00:00 IST Jun 24 = 18:30:00 UTC Jun 23 = exactly `from`
-    expect(new Date("2026-06-23T18:30:00.000Z").getTime()).toBe(from.getTime());
+  it("EDGE: activity at exactly now − 24h is INSIDE (from is inclusive, gte)", () => {
+    const now = new Date("2026-06-25T15:00:00.000Z");
+    const { from } = rolling24hRangeUtc(now);
+    expect((now.getTime() - DAY_MS)).toBe(from.getTime()); // == from → gte includes it
   });
 
-  it("when UTC clock is still 'yesterday' but IST has rolled over: now = 2026-06-25T20:00Z (01:30 IST Jun 26) → yesterday IST = Jun 25", () => {
-    // 20:00 UTC Jun 25 = 01:30 IST Jun 26 → today IST is Jun 26 → yesterday IST = Jun 25
-    // = [Jun 24 18:30Z, Jun 25 18:30Z)
-    const { from, to } = yesterdayIstRangeUtc(new Date("2026-06-25T20:00:00.000Z"));
-    expect(from.toISOString()).toBe("2026-06-24T18:30:00.000Z");
-    expect(to.toISOString()).toBe("2026-06-25T18:30:00.000Z");
+  it("EDGE: activity at exactly now is OUTSIDE (to is exclusive, lt)", () => {
+    const now = new Date("2026-06-25T15:00:00.000Z");
+    const { to } = rolling24hRangeUtc(now);
+    // an activity at exactly `to` (=now) is NOT < to → excluded
+    expect(now.getTime() < to.getTime()).toBe(false);
+  });
+
+  it("NO IST ARTIFACT: from/to are exactly now and now−24h regardless of wall-clock date", () => {
+    // Two very different instants — neither snaps to any calendar/IST boundary;
+    // each yields a pure [now−24h, now).
+    for (const iso of ["2026-01-01T00:00:00.000Z", "2026-06-25T20:30:45.123Z", "2026-12-31T18:30:00.000Z"]) {
+      const now = new Date(iso);
+      const { from, to } = rolling24hRangeUtc(now);
+      expect(to.toISOString()).toBe(now.toISOString());            // to is exactly now (no rounding)
+      expect(from.getTime()).toBe(now.getTime() - DAY_MS);         // from is exactly now−24h (no IST snap)
+    }
   });
 });
