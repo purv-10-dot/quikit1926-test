@@ -294,19 +294,42 @@ export const POST = withOrgAuth<{ id: string }>(
       );
     }
 
-    const id = randomUUID();
-    // Upsert: re-sharing an existing person just updates their role.
-    await db.$executeRaw`
-      INSERT INTO app_quiktrack."QtDocShare"
-        (id, "orgId", "docId", "userId", role, "createdBy", "createdAt", "updatedAt")
-      VALUES (${id}, ${orgId}, ${params.id}, ${targetId}, ${role}, ${userId}, NOW(), NOW())
-      ON CONFLICT ("docId", "userId")
-      DO UPDATE SET role = ${role}, "updatedAt" = NOW()
+    // Recipients open the chrome-less PUBLIC viewer (/share/<token>) instead of
+    // the in-app doc — so a person who has QuikTrack access but isn't in THIS
+    // project never lands in the project shell or hits a "document not found".
+    // We mint a STABLE per-recipient token (reused on re-share, via COALESCE) for
+    // PUBLISHED docs; a draft can't be served publicly, so it falls back to the
+    // in-app /docs/<id> link. Upsert also updates the role on re-share.
+    const published = doc.status !== "draft";
+    for (let attempt = 0; attempt < 5; attempt++) {
+      const candidate = published ? shortCode(10) : null;
+      try {
+        await db.$executeRaw`
+          INSERT INTO app_quiktrack."QtDocShare"
+            (id, "orgId", "docId", "userId", role, token, "createdBy", "createdAt", "updatedAt")
+          VALUES (${randomUUID()}, ${orgId}, ${params.id}, ${targetId}, ${role}, ${candidate}, ${userId}, NOW(), NOW())
+          ON CONFLICT ("docId", "userId")
+          DO UPDATE SET role = ${role},
+                        token = COALESCE(app_quiktrack."QtDocShare".token, EXCLUDED.token),
+                        "updatedAt" = NOW()
+        `;
+        break;
+      } catch (err) {
+        // 23505 = token unique collision; retry with a fresh candidate.
+        if ((err as { code?: string })?.code === "23505" && published) continue;
+        throw err;
+      }
+    }
+    // Read back the effective token (an existing reused one, or the new mint).
+    const tokenRows = await db.$queryRaw<{ token: string | null }[]>`
+      SELECT token FROM app_quiktrack."QtDocShare"
+      WHERE "docId" = ${params.id} AND "userId" = ${targetId} LIMIT 1
     `;
+    const shareToken = tokenRows[0]?.token ?? null;
 
-    // Notify the person by email with the doc link. AWAITED so it runs on
-    // Vercel (a detached send is dropped when the function freezes after the
-    // response). A mail failure is caught and never fails the share.
+    // Notify the person by email. Link to the public viewer when we have a token;
+    // otherwise (draft) the in-app link. AWAITED so it runs on Vercel; a mail
+    // failure is caught and never fails the share.
     try {
       const [target, sharer] = await Promise.all([
         db.user.findUnique({
@@ -329,7 +352,10 @@ export const POST = withOrgAuth<{ id: string }>(
           sharedBy: sharer
             ? [sharer.firstName, sharer.lastName].filter(Boolean).join(" ").trim() || sharer.email
             : null,
-          role,
+          // The public link is view-only; the stored share role still drives
+          // in-app editing for project members.
+          role: shareToken ? "viewer" : role,
+          shareToken,
           origin: reqOrigin,
         });
       }
