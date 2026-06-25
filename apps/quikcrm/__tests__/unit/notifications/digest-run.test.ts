@@ -28,6 +28,7 @@ import { prismaMock } from "../../helpers/prisma-unit-mock";
 vi.mock("@/lib/services/workspace/digest-config", () => ({ getDigestConfig: vi.fn() }));
 vi.mock("@/lib/services/dashboard/role-metrics", () => ({ buildRoleMetrics: vi.fn() }));
 vi.mock("@/lib/services/dashboard/activity-field-aggregates", () => ({ getActivityFieldAggregates: vi.fn() }));
+vi.mock("@/lib/services/dashboard/completed-tasks", () => ({ getCompletedTasksByRep: vi.fn() }));
 vi.mock("@/lib/services/notifications/digest-recipients", () => ({
   resolveDigestRecipients: vi.fn(),
   listActiveDigestOrgs: vi.fn(),
@@ -43,6 +44,7 @@ vi.mock("@/lib/services/notifications/digest-window", () => ({
 import { getDigestConfig } from "@/lib/services/workspace/digest-config";
 import { buildRoleMetrics } from "@/lib/services/dashboard/role-metrics";
 import { getActivityFieldAggregates } from "@/lib/services/dashboard/activity-field-aggregates";
+import { getCompletedTasksByRep } from "@/lib/services/dashboard/completed-tasks";
 import { resolveDigestRecipients, listActiveDigestOrgs } from "@/lib/services/notifications/digest-recipients";
 import { sendDigestEmail } from "@/lib/services/notifications/digest-email";
 import { runDailyDigest } from "@/lib/services/notifications/digest-run";
@@ -62,6 +64,7 @@ beforeEach(() => {
     metrics: { activitiesByType: [{ type: "Call", count: 5 }] },
   } as never);
   vi.mocked(getActivityFieldAggregates).mockResolvedValue([] as never);
+  vi.mocked(getCompletedTasksByRep).mockResolvedValue({ perRep: [], total: 0 } as never);
   vi.mocked(sendDigestEmail).mockResolvedValue(undefined as never);
   // per-org top-N type selection (a small windowed groupBy seam) — stub it
   (prismaMock.crmActivity.groupBy as unknown as { mockResolvedValue: (v: unknown) => void })
@@ -192,6 +195,19 @@ describe("runDailyDigest — GO-LIVE: yesterday-IST window wired + DEMO banner O
       expect(opts.range).toEqual(FIXED_RANGE);
       expect(opts.activityTypeId).toBeTruthy();
     }
+  });
+
+  it("§4: getCompletedTasksByRep is called per recipient WITH the SAME rolling range", async () => {
+    await runDailyDigest();
+    const calls = vi.mocked(getCompletedTasksByRep).mock.calls;
+    expect(calls.length).toBe(2); // one per recipient
+    for (const call of calls) {
+      const opts = call[1] as { range?: { from: Date; to: Date } };
+      expect(opts.range).toEqual(FIXED_RANGE); // reuses the digest-run range, not recomputed
+    }
+    // called with the per-recipient SessionUser (same scoping path as the activity metrics)
+    expect(getCompletedTasksByRep).toHaveBeenCalledWith(ADMIN, { range: FIXED_RANGE });
+    expect(getCompletedTasksByRep).toHaveBeenCalledWith(MGR, { range: FIXED_RANGE });
   });
 
   it("ATOMIC: isDemo is FALSE in the result AND on every assembled digest", async () => {

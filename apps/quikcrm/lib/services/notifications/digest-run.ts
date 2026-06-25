@@ -22,6 +22,7 @@ import { prisma } from "@/lib/db/prisma";
 import { getDigestConfig } from "@/lib/services/workspace/digest-config";
 import { buildRoleMetrics } from "@/lib/services/dashboard/role-metrics";
 import { getActivityFieldAggregates } from "@/lib/services/dashboard/activity-field-aggregates";
+import { getCompletedTasksByRep } from "@/lib/services/dashboard/completed-tasks";
 import {
   listActiveDigestOrgs,
   resolveDigestRecipients,
@@ -45,6 +46,9 @@ export interface AssembledDigest {
   /** True per-rep activity volume (§1) — count of activities per owner, tier-scoped. */
   activityByRep: { ownerId: string; ownerName: string | null; count: number }[];
   fieldAggregates: { activityTypeId: string; aggregates: ActivityFieldAggregate[] }[];
+  /** §4 — tasks COMPLETED in the rolling window, per rep (assignedToUserId), tier-scoped. */
+  completedTasksByRep: { userId: string; ownerName: string | null; count: number }[];
+  completedTasksTotal: number;
   isDemo: boolean;
   demoBanner: string;
 }
@@ -135,11 +139,17 @@ export async function runDailyDigest(): Promise<DigestRunResult> {
         fieldAggregates.push({ activityTypeId, aggregates });
       }
 
+      // §4 — completed tasks in the SAME rolling window, tier-scoped per recipient
+      // (same scoping path as the activity metrics, keyed on assignedToUserId).
+      const completedTasks = await getCompletedTasksByRep(recipient, { range });
+
       const assembled: AssembledDigest = {
         recipient,
         activitiesByType: readActivitiesByType(metrics),
         activityByRep: readActivityByRep(metrics),
         fieldAggregates,
+        completedTasksByRep: completedTasks.perRep,
+        completedTasksTotal: completedTasks.total,
         isDemo: false, // GO-LIVE: window wired → real yesterday data → DEMO banner OFF
         demoBanner: DIGEST_DEMO_BANNER, // retained on the type; renderDemoBanner gates on isDemo
       };
