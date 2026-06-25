@@ -297,12 +297,12 @@ export const POST = withOrgAuth<{ id: string }>(
     // Recipients open the chrome-less PUBLIC viewer (/share/<token>) instead of
     // the in-app doc — so a person who has QuikTrack access but isn't in THIS
     // project never lands in the project shell or hits a "document not found".
-    // We mint a STABLE per-recipient token (reused on re-share, via COALESCE) for
-    // PUBLISHED docs; a draft can't be served publicly, so it falls back to the
-    // in-app /docs/<id> link. Upsert also updates the role on re-share.
-    const published = doc.status !== "draft";
+    // We ALWAYS mint a stable per-recipient token (reused on re-share, via
+    // COALESCE), including for DRAFTS: the public route serves a draft when it's
+    // reached via a per-recipient token (an intentional share to that person),
+    // while the "anyone with the link" token still stays blocked on drafts.
     for (let attempt = 0; attempt < 5; attempt++) {
-      const candidate = published ? shortCode(10) : null;
+      const candidate = shortCode(10);
       try {
         await db.$executeRaw`
           INSERT INTO app_quiktrack."QtDocShare"
@@ -316,7 +316,7 @@ export const POST = withOrgAuth<{ id: string }>(
         break;
       } catch (err) {
         // 23505 = token unique collision; retry with a fresh candidate.
-        if ((err as { code?: string })?.code === "23505" && published) continue;
+        if ((err as { code?: string })?.code === "23505") continue;
         throw err;
       }
     }
@@ -352,9 +352,9 @@ export const POST = withOrgAuth<{ id: string }>(
           sharedBy: sharer
             ? [sharer.firstName, sharer.lastName].filter(Boolean).join(" ").trim() || sharer.email
             : null,
-          // The public link is view-only; the stored share role still drives
-          // in-app editing for project members.
-          role: shareToken ? "viewer" : role,
+          // The per-recipient link reflects the share role (editor → editable),
+          // so report the real role in the email wording.
+          role,
           shareToken,
           origin: reqOrigin,
         });

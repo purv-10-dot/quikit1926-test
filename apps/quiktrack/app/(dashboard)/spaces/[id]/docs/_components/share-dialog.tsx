@@ -65,6 +65,9 @@ export function ShareDialog({
   const [orgUsers, setOrgUsers] = useState<OrgUser[]>([]);
   const [query, setQuery] = useState("");
   const [pickedRole, setPickedRole] = useState<Role>("viewer");
+  // Distinct from `busy` (which also covers remove/role changes) so we can show
+  // an "Inviting…" indicator specifically while an add + email send is running.
+  const [inviting, setInviting] = useState(false);
 
   const load = useCallback(async () => {
     const j = await fetch(`/api/docs/${docId}/shares`).then((r) => r.json());
@@ -114,23 +117,35 @@ export function ShareDialog({
     }
   }
 
-  const addPerson = (userId: string) =>
-    run(() =>
-      fetch(`/api/docs/${docId}/shares`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ userId, role: pickedRole }),
-      }),
-    );
+  const addPerson = async (userId: string) => {
+    setInviting(true);
+    try {
+      await run(() =>
+        fetch(`/api/docs/${docId}/shares`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ userId, role: pickedRole }),
+        }),
+      );
+    } finally {
+      setInviting(false);
+    }
+  };
   // External invite — always view-only; the person opens a per-recipient link.
-  const addEmail = (email: string) =>
-    run(() =>
-      fetch(`/api/docs/${docId}/shares`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email, role: "viewer" }),
-      }),
-    );
+  const addEmail = async (email: string) => {
+    setInviting(true);
+    try {
+      await run(() =>
+        fetch(`/api/docs/${docId}/shares`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ email, role: "viewer" }),
+        }),
+      );
+    } finally {
+      setInviting(false);
+    }
+  };
   const changeRole = (shareId: string, role: Role) =>
     run(() =>
       fetch(`/api/docs/${docId}/shares/${shareId}`, {
@@ -260,6 +275,12 @@ export function ShareDialog({
                   className="shrink-0"
                 />
               </div>
+              {inviting && (
+                <p className="mt-1.5 flex items-center gap-1.5 text-[11px] text-gray-500 dark:text-slate-400">
+                  <Loader2 className="h-3 w-3 animate-spin" />
+                  Inviting… sending the invite email
+                </p>
+              )}
               {(matches.length > 0 || showInvite) && (
                 <div className="absolute left-0 right-0 top-full z-10 mt-1 max-h-56 overflow-auto rounded-md border border-gray-200 bg-white py-1 shadow-lg dark:border-slate-700 dark:bg-slate-800">
                   {matches.map((u) => {
