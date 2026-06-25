@@ -20,6 +20,7 @@ export const FIELD_TYPES = [
   "CHECKBOX",
   "URL",
   "USER_PICKER",
+  "USER_PICKER_MULTI",
   "LABELS",
 ] as const;
 
@@ -40,6 +41,7 @@ export type ControlKind =
   | "checkbox"
   | "url"
   | "user"
+  | "usermulti"
   | "labels";
 
 /** Filter operators a type exposes in the Backlog/Board filter panel (FRD §4). */
@@ -143,6 +145,15 @@ export const FIELD_REGISTRY: Record<FieldType, FieldTypeConfig> = {
     ...textType("USER_PICKER", "User picker", "user"),
     operators: ["is", "is_not", "is_empty"],
   },
+  // Multi-select people picker — value is an array of userIds (valueJson).
+  // Not offered as a separate dropdown entry; the create form exposes it via an
+  // "allow multiple" toggle on the single User picker.
+  USER_PICKER_MULTI: arrayType(
+    "USER_PICKER_MULTI",
+    "User picker (multiple)",
+    "usermulti",
+    ["has_any", "is_empty"],
+  ),
   DROPDOWN_SINGLE: {
     type: "DROPDOWN_SINGLE",
     label: "Dropdown (single)",
@@ -197,8 +208,10 @@ export function fieldConfig(type: string): FieldTypeConfig {
   return FIELD_REGISTRY[type];
 }
 
-/** Convenience list for the "Field type" dropdown in the admin UI. */
-export const FIELD_TYPE_OPTIONS = FIELD_TYPES.map((t) => ({
+/** Convenience list for the "Field type" dropdown in the admin UI. The multi
+ *  people picker is reached via a toggle on the single User picker, so it's not
+ *  a separate dropdown entry. */
+export const FIELD_TYPE_OPTIONS = FIELD_TYPES.filter((t) => t !== "USER_PICKER_MULTI").map((t) => ({
   value: t,
   label: FIELD_REGISTRY[t].label,
 }));
