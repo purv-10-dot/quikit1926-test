@@ -96,7 +96,15 @@
       "Bash(grep -nA4 \"export async function sendDigestEmail\" lib/services/notifications/digest-email.ts)",
       "Bash(git rev-list *)",
       "Bash(xargs git log --oneline -1)",
-      "Bash(xargs -I{} sh -c 'echo \"my OLDEST not-on-backup = {} \\(6422415e SMTP\\) → so backup has NONE of my 12 Phase-5 commits\"')"
+      "Bash(xargs -I{} sh -c 'echo \"my OLDEST not-on-backup = {} \\(6422415e SMTP\\) → so backup has NONE of my 12 Phase-5 commits\"')",
+      "Bash(xargs echo \"completedAt count:\")",
+      "Bash(xargs echo \"status count:\")",
+      "Bash(xargs echo \"dueDate count:\")",
+      "Bash(xargs echo \"assignedToUserId count \\(1 field + 1 index = 2 expected\\):\")",
+      "Bash(xargs echo \"@@index count \\(expect 3\\):\")",
+      "Bash(xargs echo \"CrmTask model count:\")",
+      "Bash(xargs echo \" count:\")",
+      "Bash(xargs echo \"  count:\")"
     ],
     "additionalDirectories": [
       "c:\\wwwwwwwwww\\Authmergewithmainbranch\\QuikIT\\apps\\auth\\app\\api\\auth\\me"
