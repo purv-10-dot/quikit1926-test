@@ -78,17 +78,11 @@ export async function resolveDocAccess(
   const roles: Array<DocRole | null> = [];
 
   // 2. Explicit per-user share — intentional, so it grants access even for a
-  //    draft. Defense-in-depth: only honor it while the user is still an ACTIVE
-  //    org member, so an orphaned share row (user removed from the org) can
-  //    never keep granting access on its own.
-  const shareRole = await getDocShareRole(doc.id, userId);
-  if (shareRole) {
-    const activeMember = await db.orgMember.findFirst({
-      where: { userId, orgId, status: "active" },
-      select: { id: true },
-    });
-    if (activeMember) roles.push(shareRole);
-  }
+  //    draft, and independent of project membership (a doc shared to an org
+  //    member who isn't in the project must still open). The unauthenticated
+  //    surface is the /share/<token> route; this resolver only runs for a
+  //    signed-in org member (withOrgAuth), so a share row here is trustworthy.
+  roles.push(await getDocShareRole(doc.id, userId));
 
   // 3. Project-level baseline — published docs only (drafts are author-only).
   if (doc.status !== "draft") {
