@@ -20,7 +20,7 @@
 
 import { prisma } from "@/lib/db/prisma";
 import { getDigestConfig } from "@/lib/services/workspace/digest-config";
-import { buildRoleMetrics } from "@/lib/services/dashboard/role-metrics";
+import { buildRoleMetrics, type MetricsRange } from "@/lib/services/dashboard/role-metrics";
 import { getActivityFieldAggregates } from "@/lib/services/dashboard/activity-field-aggregates";
 import { getCompletedTasksByRep } from "@/lib/services/dashboard/completed-tasks";
 import {
@@ -28,7 +28,7 @@ import {
   resolveDigestRecipients,
 } from "@/lib/services/notifications/digest-recipients";
 import { sendDigestEmail } from "@/lib/services/notifications/digest-email";
-import { rolling24hRangeUtc } from "@/lib/services/notifications/digest-window";
+import { rollingWindowUtc } from "@/lib/services/notifications/digest-window";
 import type { SessionUser } from "@/types/permission";
 import type { ActivityFieldAggregate } from "@/lib/services/dashboard/activity-field-aggregates";
 import type { RoleMetricsDto } from "@/lib/dashboard/role-metrics-types";
@@ -49,6 +49,8 @@ export interface AssembledDigest {
   /** §4 — tasks COMPLETED in the rolling window, per rep (assignedToUserId), tier-scoped. */
   completedTasksByRep: { userId: string; ownerName: string | null; count: number }[];
   completedTasksTotal: number;
+  /** Which digest produced this — drives the email subject/header framing. */
+  variant: "daily" | "weekly";
   isDemo: boolean;
   demoBanner: string;
 }
@@ -99,13 +101,15 @@ async function selectTopNTypes(orgId: string, configured?: string[]): Promise<st
   return rows.map((r) => r.type);
 }
 
-export async function runDailyDigest(): Promise<DigestRunResult> {
-  // The digest reports a ROLLING 24h window [now − 24h, now) — not all-time, not
-  // calendar-day. Computed once for the whole run. (isDemo stays false — go-live
-  // already dropped the banner; this is a window-DEFINITION change, not a
-  // demo/banner change, so the coupling invariant is unaffected.)
-  const range = rolling24hRangeUtc(new Date());
-
+/**
+ * Shared assembly+send for both digest variants. The org→recipient loop and §1–§4
+ * build are VERBATIM; only the reporting `range` and the `variant` framing differ.
+ * runDailyDigest / runWeeklyDigest are thin wrappers that supply those.
+ */
+async function assembleAndSendDigests(
+  range: MetricsRange,
+  opts: { variant: "daily" | "weekly" },
+): Promise<DigestRunResult> {
   const orgs = await listActiveDigestOrgs();
   const digests: AssembledDigest[] = [];
   let sentCount = 0;
@@ -150,6 +154,7 @@ export async function runDailyDigest(): Promise<DigestRunResult> {
         fieldAggregates,
         completedTasksByRep: completedTasks.perRep,
         completedTasksTotal: completedTasks.total,
+        variant: opts.variant,
         isDemo: false, // GO-LIVE: window wired → real yesterday data → DEMO banner OFF
         demoBanner: DIGEST_DEMO_BANNER, // retained on the type; renderDemoBanner gates on isDemo
       };
@@ -170,4 +175,15 @@ export async function runDailyDigest(): Promise<DigestRunResult> {
   }
 
   return { digests, isDemo: false, sentCount, errorCount }; // GO-LIVE: no longer demo
+}
+
+/** Daily digest — rolling 24h window. Fires daily (20:30 IST cron). */
+export function runDailyDigest(): Promise<DigestRunResult> {
+  return assembleAndSendDigests(rollingWindowUtc(new Date(), 1), { variant: "daily" });
+}
+
+/** Weekly summary — rolling 7-day window. Fires Friday (20:30 IST cron). Full
+ *  4-section structure; overlaps Friday's daily by design (a recap includes today). */
+export function runWeeklyDigest(): Promise<DigestRunResult> {
+  return assembleAndSendDigests(rollingWindowUtc(new Date(), 7), { variant: "weekly" });
 }

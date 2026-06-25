@@ -22,9 +22,20 @@
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 
-export function rolling24hRangeUtc(now: Date): { from: Date; to: Date } {
+/**
+ * Rolling window of `days` days ending now: [now − days*DAY, now). Pure UTC
+ * instants, timezone-independent (same rationale as the 24h window — IST anchors
+ * only the cron time, not the math). The daily digest passes days=1; the weekly
+ * Friday summary passes days=7.
+ */
+export function rollingWindowUtc(now: Date, days: number): { from: Date; to: Date } {
   return {
-    from: new Date(now.getTime() - DAY_MS),
+    from: new Date(now.getTime() - days * DAY_MS),
     to: now,
   };
+}
+
+/** The daily digest's 24h window — thin alias of rollingWindowUtc(now, 1). */
+export function rolling24hRangeUtc(now: Date): { from: Date; to: Date } {
+  return rollingWindowUtc(now, 1);
 }

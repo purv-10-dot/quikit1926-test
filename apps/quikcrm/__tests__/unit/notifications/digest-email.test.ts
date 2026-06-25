@@ -67,6 +67,7 @@ function sampleDigest(overrides: Partial<AssembledDigest> = {}): AssembledDigest
       { userId: "r2", ownerName: "Rep Two", count: 2 },
     ],
     completedTasksTotal: 6,
+    variant: "daily",
     isDemo: true,
     demoBanner: "⚠️ DEMO — all-time totals, daily windowing not built yet; review STRUCTURE, not numbers.",
     ...overrides,
@@ -181,5 +182,26 @@ describe("renderDigestEmail — email-client-safe template (Phase 5)", () => {
   it("subject names the digest", () => {
     const { subject } = renderDigestEmail(sampleDigest());
     expect(subject).toMatch(/digest/i);
+  });
+
+  describe("variant framing — weekly distinguishable from daily", () => {
+    it("weekly: subject = 'Weekly Summary — last 7 days' + 'Weekly Summary' header", () => {
+      const { subject, html } = renderDigestEmail(sampleDigest({ variant: "weekly", isDemo: false }));
+      expect(subject).toMatch(/weekly summary/i);
+      expect(subject).toMatch(/last 7 days/i);
+      expect(html).toMatch(/weekly summary/i); // header reflects the variant
+    });
+
+    it("daily: subject/header stay 'Activity Digest' — NOT weekly (unchanged)", () => {
+      const { subject, html } = renderDigestEmail(sampleDigest({ variant: "daily", isDemo: false }));
+      expect(subject).toMatch(/activity digest/i);
+      expect(subject).not.toMatch(/weekly/i);
+      expect(html).not.toMatch(/weekly summary/i);
+    });
+
+    it("weekly inherits go-live: isDemo:false → no DEMO banner", () => {
+      const { html } = renderDigestEmail(sampleDigest({ variant: "weekly", isDemo: false }));
+      expect(html).not.toMatch(/DEMO/);
+    });
   });
 });

@@ -200,19 +200,23 @@ export function renderDigestEmail(assembled: AssembledDigest): {
   html: string;
 } {
   const who = assembled.recipient.name || assembled.recipient.email;
-  const subject = assembled.isDemo
-    ? "[DEMO] QuikCRM Activity Digest"
-    : "QuikCRM Activity Digest";
 
-  // Plain-text fallback (also makes the not-built/demo states explicit in text).
+  // Variant framing — weekly must be distinguishable from daily in subject + header.
+  const isWeekly = assembled.variant === "weekly";
+  const headerLabel = isWeekly ? "Weekly Summary" : "Activity Digest";
+  const baseSubject = isWeekly ? "QuikCRM Weekly Summary — last 7 days" : "QuikCRM Activity Digest";
+  const windowLabel = isWeekly ? "last 7 days" : "last 24h";
+  const subject = assembled.isDemo ? `[DEMO] ${baseSubject}` : baseSubject;
+
+  // Plain-text fallback.
   const text = [
-    assembled.isDemo ? assembled.demoBanner : "QuikCRM Activity Digest",
+    assembled.isDemo ? assembled.demoBanner : baseSubject,
     "",
     `Prepared for: ${who}`,
     "",
     "Activity volume by rep / Activity mix by type / Per-rep field aggregates — see HTML.",
     "",
-    `Tasks completed (last 24h): ${assembled.completedTasksTotal}.`,
+    `Tasks completed (${windowLabel}): ${assembled.completedTasksTotal}.`,
   ].join("\n");
 
   const html = `<!DOCTYPE html>
@@ -231,7 +235,7 @@ export function renderDigestEmail(assembled: AssembledDigest): {
         <!-- Header -->
         <tr><td style="background:#1e40af;padding:18px 28px;">
           <span style="color:#ffffff;font-size:17px;font-weight:700;letter-spacing:-0.3px;font-family:${FONT_STACK};">QuikCRM</span>
-          <span style="color:#93c5fd;font-size:13px;font-weight:400;margin-left:10px;font-family:${FONT_STACK};">Activity Digest</span>
+          <span style="color:#93c5fd;font-size:13px;font-weight:400;margin-left:10px;font-family:${FONT_STACK};">${escHtml(headerLabel)}</span>
         </td></tr>
 
         <!-- Prepared-for -->

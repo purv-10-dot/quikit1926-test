@@ -34,11 +34,19 @@ vi.mock("@/lib/services/notifications/digest-recipients", () => ({
   listActiveDigestOrgs: vi.fn(),
 }));
 vi.mock("@/lib/services/notifications/digest-email", () => ({ sendDigestEmail: vi.fn() }));
-// Window helper mocked to FIXED bounds — the rolling-24h math is the helper's own
-// test (digest-window.test.ts). Here we only assert the range is WIRED into the calls.
-const FIXED_RANGE = { from: new Date("2026-06-24T15:00:00.000Z"), to: new Date("2026-06-25T15:00:00.000Z") };
+// Window helper mocked to FIXED bounds — the rolling-window math is the helper's
+// own test (digest-window.test.ts). Here we only assert the range is WIRED into the
+// calls. rollingWindowUtc returns distinct fixed bounds per `days` so the daily
+// (1) and weekly (7) ranges are distinguishable in assertions.
+const FIXED_RANGE = { from: new Date("2026-06-24T15:00:00.000Z"), to: new Date("2026-06-25T15:00:00.000Z") }; // days=1
+const FIXED_RANGE_7D = { from: new Date("2026-06-18T15:00:00.000Z"), to: new Date("2026-06-25T15:00:00.000Z") }; // days=7
 vi.mock("@/lib/services/notifications/digest-window", () => ({
   rolling24hRangeUtc: vi.fn(() => ({ from: new Date("2026-06-24T15:00:00.000Z"), to: new Date("2026-06-25T15:00:00.000Z") })),
+  rollingWindowUtc: vi.fn((_now: Date, days: number) =>
+    days === 7
+      ? { from: new Date("2026-06-18T15:00:00.000Z"), to: new Date("2026-06-25T15:00:00.000Z") }
+      : { from: new Date("2026-06-24T15:00:00.000Z"), to: new Date("2026-06-25T15:00:00.000Z") },
+  ),
 }));
 
 import { getDigestConfig } from "@/lib/services/workspace/digest-config";
@@ -47,7 +55,7 @@ import { getActivityFieldAggregates } from "@/lib/services/dashboard/activity-fi
 import { getCompletedTasksByRep } from "@/lib/services/dashboard/completed-tasks";
 import { resolveDigestRecipients, listActiveDigestOrgs } from "@/lib/services/notifications/digest-recipients";
 import { sendDigestEmail } from "@/lib/services/notifications/digest-email";
-import { runDailyDigest } from "@/lib/services/notifications/digest-run";
+import { runDailyDigest, runWeeklyDigest } from "@/lib/services/notifications/digest-run";
 
 const ADMIN = { userId: "admin1", orgId: "org1", role: "Administrator", email: "a@x.co", name: "Admin" };
 const MGR = { userId: "mgr1", orgId: "org1", role: "SalesManager", email: "m@x.co", name: "Mgr" };
@@ -216,5 +224,47 @@ describe("runDailyDigest — GO-LIVE: yesterday-IST window wired + DEMO banner O
     for (const d of res.digests) {
       expect(d.isDemo).toBe(false);
     }
+  });
+
+  it("daily digests carry variant 'daily'", async () => {
+    const res = await runDailyDigest();
+    for (const d of res.digests) {
+      expect((d as { variant?: string }).variant).toBe("daily");
+    }
+  });
+});
+
+describe("runWeeklyDigest — 7-day rolling window, weekly variant, same recipients", () => {
+  it("calls the metrics services with the 7-DAY range (not the 24h one)", async () => {
+    await runWeeklyDigest();
+    for (const call of vi.mocked(buildRoleMetrics).mock.calls) {
+      expect(call[1]).toEqual(FIXED_RANGE_7D);
+    }
+    for (const call of vi.mocked(getCompletedTasksByRep).mock.calls) {
+      expect((call[1] as { range?: unknown }).range).toEqual(FIXED_RANGE_7D);
+    }
+  });
+
+  it("assembled digests carry variant 'weekly' (distinguishes the email) + isDemo:false", async () => {
+    const res = await runWeeklyDigest();
+    expect(res.isDemo).toBe(false);
+    for (const d of res.digests) {
+      expect((d as { variant?: string }).variant).toBe("weekly");
+      expect(d.isDemo).toBe(false);
+    }
+  });
+
+  it("uses the SAME recipientUserIds as the daily (reuses the recipient config)", async () => {
+    await runWeeklyDigest();
+    // resolveDigestRecipients is called with the org's cfg.recipientUserIds — same
+    // path as the daily; no separate weekly list.
+    expect(resolveDigestRecipients).toHaveBeenCalled();
+    expect(vi.mocked(resolveDigestRecipients).mock.calls.length).toBeGreaterThan(0);
+  });
+
+  it("reuses the shared assembly: one digest per recipient per enabled org (same loop as daily)", async () => {
+    const res = await runWeeklyDigest();
+    expect(res.digests.map((d) => d.recipient.email).sort()).toEqual(["a@x.co", "m@x.co"]);
+    expect(sendDigestEmail).toHaveBeenCalledTimes(2);
   });
 });

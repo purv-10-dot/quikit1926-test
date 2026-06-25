@@ -13,7 +13,7 @@
  * `now` is injected for determinism. Half-open [from, to): gte from, lt to.
  */
 import { describe, it, expect } from "vitest";
-import { rolling24hRangeUtc } from "@/lib/services/notifications/digest-window";
+import { rolling24hRangeUtc, rollingWindowUtc } from "@/lib/services/notifications/digest-window";
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 
@@ -66,5 +66,29 @@ describe("rolling24hRangeUtc — [now − 24h, now), pure UTC", () => {
       expect(to.toISOString()).toBe(now.toISOString());            // to is exactly now (no rounding)
       expect(from.getTime()).toBe(now.getTime() - DAY_MS);         // from is exactly now−24h (no IST snap)
     }
+  });
+});
+
+describe("rollingWindowUtc(now, days) — parameterized window (weekly summary)", () => {
+  it("days=1 is byte-identical to the existing 24h behavior (re-pin: daily unchanged)", () => {
+    const now = new Date("2026-06-25T15:00:00.000Z");
+    const param = rollingWindowUtc(now, 1);
+    const legacy = rolling24hRangeUtc(now);
+    expect(param.from.getTime()).toBe(legacy.from.getTime());
+    expect(param.to.getTime()).toBe(legacy.to.getTime());
+    expect(param.to.getTime() - param.from.getTime()).toBe(DAY_MS);
+  });
+
+  it("days=7 → [now − 7*DAY, now); to===now, from===now−7d, exactly 7 days wide", () => {
+    const now = new Date("2026-06-25T15:00:00.000Z");
+    const { from, to } = rollingWindowUtc(now, 7);
+    expect(to.getTime()).toBe(now.getTime());
+    expect(from.getTime()).toBe(now.getTime() - 7 * DAY_MS);
+    expect(to.getTime() - from.getTime()).toBe(7 * DAY_MS);
+  });
+
+  it("rolling24hRangeUtc is the days=1 alias (delegates to rollingWindowUtc)", () => {
+    const now = new Date("2026-06-25T20:30:45.123Z");
+    expect(rolling24hRangeUtc(now)).toEqual(rollingWindowUtc(now, 1));
   });
 });
