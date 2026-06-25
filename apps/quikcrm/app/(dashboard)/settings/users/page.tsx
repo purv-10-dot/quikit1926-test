@@ -9,6 +9,7 @@ import { Input } from "@/components/ui/input";
 import { Select } from "@/components/ui/select";
 import { Modal } from "@/components/ui/modal";
 import { Table, THead, TBody, TR, TH, TD } from "@/components/ui/table";
+import { DigestToggle } from "@/components/settings/digest-toggle";
 import { useToast } from "@/hooks/use-toast";
 
 interface UserRow {
@@ -20,6 +21,9 @@ interface UserRow {
   status: string;
   permissionTemplates: { template: { id: string; name: string } }[];
   appRoles: { role: { id: string; name: string } }[];
+  digestEligible: boolean;
+  digestReason?: string;
+  digestEnabled: boolean;
 }
 
 const ROLES = ["Administrator", "SalesManager", "SalesUser", "MarketingUser", "FinanceUser"];
@@ -130,13 +134,14 @@ export default function UsersPage() {
                   <TH>Role</TH>
                   <TH>Status</TH>
                   <TH>CRM role</TH>
+                  <TH>Daily Digest</TH>
                   <TH className="text-right">Actions</TH>
                 </TR>
               </THead>
               <TBody>
                 {filtered.length === 0 ? (
                   <TR>
-                    <TD colSpan={6} className="py-8 text-center text-sm text-crm-muted">
+                    <TD colSpan={7} className="py-8 text-center text-sm text-crm-muted">
                       No users match &ldquo;{search}&rdquo;
                     </TD>
                   </TR>
@@ -161,6 +166,14 @@ export default function UsersPage() {
                       {u.appRoles.map((p) => p.role.name).join(", ") ||
                         u.permissionTemplates.map((p) => p.template.name).join(", ") ||
                         "—"}
+                    </TD>
+                    <TD>
+                      <DigestToggle
+                        userId={u.id}
+                        digestEligible={u.digestEligible}
+                        digestEnabled={u.digestEnabled}
+                        digestReason={u.digestReason}
+                      />
                     </TD>
                     <TD className="text-right">
                       <Link
