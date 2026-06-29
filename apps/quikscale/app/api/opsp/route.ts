@@ -5,9 +5,90 @@ import { writeAuditLog } from "@/lib/api/auditLog";
 import { validationError } from "@/lib/api/validationError";
 import { withOrgAuthForResource } from "@/lib/api/withOrgAuth";
 import { resolveFiscalYearStart } from "@/lib/api/fiscalYearStart";
-import { userCan, forbidden } from "@/lib/api/permissions";
-import { resolveOpspOwnerOrSelf } from "@/lib/api/opspOwner";
+import { userCan, forbidden, isOrgAdmin } from "@/lib/api/permissions";
+import { resolveOpspOwnerOrSelf, resolveResponsibleAdminName, resolveSectionUserId } from "@/lib/api/opspOwner";
 const auth = withOrgAuthForResource("opsp.create", "OPSP.Create");
+
+/**
+ * The four per-user OPSP sections. The strategic OPSP stays org-shared in
+ * OPSPData (canonical owner); these live in OPSPUserSection keyed by
+ * (orgId, userId, year, quarter) so every user owns their own copy.
+ */
+const USER_SECTION_FIELDS = [
+  "kpiAccountability",
+  "quarterlyPriorities",
+  "criticalNumAcct",
+  "balancingCritNumAcct",
+] as const;
+type UserSectionFields = Pick<
+  { [K in (typeof USER_SECTION_FIELDS)[number]]: unknown },
+  (typeof USER_SECTION_FIELDS)[number]
+>;
+
+const EMPTY_SECTION: UserSectionFields = {
+  kpiAccountability: [],
+  quarterlyPriorities: [],
+  criticalNumAcct: null,
+  balancingCritNumAcct: null,
+};
+
+/**
+ * Resolve the four per-user section fields for `sectionUserId` at (year,
+ * quarter). When no row exists yet, inherit from the prior quarter IF the org's
+ * OPSP for that prior quarter is finalized/reviewed (same org-wide gate the
+ * strategic inheritance uses): the two genuinely-quarterly surfaces
+ * (kpiAccountability, quarterlyPriorities) reset; the Critical numbers carry
+ * forward. Otherwise the sections start empty.
+ */
+async function resolveUserSectionFields(
+  orgId: string,
+  ownerId: string,
+  sectionUserId: string,
+  year: number,
+  quarter: string,
+): Promise<UserSectionFields> {
+  const current = await db.oPSPUserSection.findUnique({
+    where: { orgId_userId_year_quarter: { orgId, userId: sectionUserId, year, quarter } },
+  });
+  if (current) {
+    return {
+      kpiAccountability: current.kpiAccountability ?? [],
+      quarterlyPriorities: current.quarterlyPriorities ?? [],
+      criticalNumAcct: current.criticalNumAcct ?? null,
+      balancingCritNumAcct: current.balancingCritNumAcct ?? null,
+    };
+  }
+
+  const prior = priorQuarterOf(year, quarter);
+  if (prior) {
+    // Org-wide gate: only inherit when the canonical OPSP for the prior quarter
+    // is finalized/reviewed (mirrors the strategic inheritance path).
+    const priorCanonical = await db.oPSPData.findUnique({
+      where: {
+        orgId_userId_year_quarter: { orgId, userId: ownerId, year: prior.year, quarter: prior.quarter },
+      },
+      select: { status: true },
+    });
+    if (priorCanonical && (priorCanonical.status === "finalized" || priorCanonical.status === "reviewed")) {
+      const priorSection = await db.oPSPUserSection.findUnique({
+        where: {
+          orgId_userId_year_quarter: { orgId, userId: sectionUserId, year: prior.year, quarter: prior.quarter },
+        },
+      });
+      if (priorSection) {
+        return {
+          // Quarterly surfaces reset each quarter.
+          kpiAccountability: [],
+          quarterlyPriorities: [],
+          // Critical numbers carry forward.
+          criticalNumAcct: priorSection.criticalNumAcct ?? null,
+          balancingCritNumAcct: priorSection.balancingCritNumAcct ?? null,
+        };
+      }
+    }
+  }
+  return { ...EMPTY_SECTION };
+}
 
 /**
  * Map a target (year, quarter) to its immediate predecessor.
@@ -76,6 +157,45 @@ function rowsHaveAnyContent(json: unknown, fields: readonly string[]): boolean {
   });
 }
 
+/**
+ * Walk an OPSP record's JSON columns and collect every `owner` id referenced
+ * (rocks[].owner, and any other owner-bearing rows). Field-agnostic so it can't
+ * miss a surface. The set is tiny (the handful of owners actually assigned).
+ */
+function collectOwnerIds(obj: unknown, acc: Set<string>): void {
+  if (Array.isArray(obj)) {
+    for (const x of obj) collectOwnerIds(x, acc);
+    return;
+  }
+  if (obj && typeof obj === "object") {
+    for (const [k, v] of Object.entries(obj)) {
+      if (k === "owner" && typeof v === "string" && v) acc.add(v);
+      else collectOwnerIds(v, acc);
+    }
+  }
+}
+
+/**
+ * Resolve the owner ids present in `data` → "First Last" map. Returned
+ * alongside the OPSP payload so the page can render owner names (picker
+ * triggers, the OPSP document, the export) WITHOUT bulk-loading every org
+ * user just for name resolution.
+ */
+async function resolveOwnerNames(orgId: string, data: unknown): Promise<Record<string, string>> {
+  const ids = new Set<string>();
+  collectOwnerIds(data, ids);
+  if (ids.size === 0) return {};
+  // Owner ids already come from THIS org's OPSP record, so resolve by id.
+  void orgId;
+  const users = await db.user.findMany({
+    where: { id: { in: [...ids] } },
+    select: { id: true, firstName: true, lastName: true },
+  });
+  const map: Record<string, string> = {};
+  for (const u of users) map[u.id] = `${u.firstName} ${u.lastName}`.trim();
+  return map;
+}
+
 function looksLikeStubDraft(data: {
   status: string;
   coreValues: string | null;
@@ -113,14 +233,34 @@ export const GET = auth.view(async ({ orgId, userId }, req) => {
   const { searchParams } = req.nextUrl;
   const year    = parseInt(searchParams.get("year") ?? String(new Date().getFullYear()));
   const quarter = searchParams.get("quarter") ?? "Q1";
+  const targetUserId = searchParams.get("targetUserId");
 
   // Derived from configured Quarter Settings (Q1 start month), not the
   // stale Org.fiscalYearStart column — see lib/api/fiscalYearStart.ts.
   const fiscalYearStart = await resolveFiscalYearStart(orgId);
 
   // OPSP is org-shared: read the canonical owner's rows so every permitted user
-  // sees the same plan (not their own empty per-user copy).
+  // sees the same strategic plan (not their own empty per-user copy).
   const ownerId = await resolveOpspOwnerOrSelf(orgId, userId);
+
+  // The four sections (Accountability / Quarterly Priorities / Critical # /
+  // Balanced Critical #) are PER-USER. An admin with OPSP.EditUser:update may
+  // view/edit another user's sections via ?targetUserId.
+  const sectionUserId = await resolveSectionUserId(orgId, userId, targetUserId);
+  if (sectionUserId === null) {
+    return forbidden("Editing another user's OPSP requires the 'Edit Any User's OPSP' permission.");
+  }
+
+  // Resilience: the per-user section layer is non-critical to the org-shared
+  // strategic plan. If either lookup fails (e.g. migration not yet applied in
+  // some environment), degrade gracefully — load the strategic OPSP with empty
+  // sections rather than 500-ing the whole page to a blank form.
+  const [sectionFields, responsibleAdminName] = await Promise.all([
+    resolveUserSectionFields(orgId, ownerId, sectionUserId, year, quarter).catch(() => ({
+      ...EMPTY_SECTION,
+    })),
+    resolveResponsibleAdminName(orgId).catch(() => null),
+  ]);
 
   const data = await db.oPSPData.findUnique({
     where: {
@@ -128,13 +268,15 @@ export const GET = auth.view(async ({ orgId, userId }, req) => {
     },
   });
 
-  // If a real (non-stub) target record exists, return it as-is. Stubs fall
-  // through to the inheritance path so a user who accidentally opened Q2
-  // (autosave created an empty row) still gets the Q1 prefill on next load.
+  // If a real (non-stub) target record exists, return it — but overlay the
+  // viewer's own per-user sections over the canonical owner's copy.
   if (data && !looksLikeStubDraft(data)) {
     return NextResponse.json({
       success: true,
-      data,
+      data: { ...data, ...sectionFields },
+      ownerNames: await resolveOwnerNames(orgId, data),
+      sectionUserId,
+      responsibleAdminName,
       fiscalYearStart,
     });
   }
@@ -167,20 +309,26 @@ export const GET = auth.view(async ({ orgId, userId }, req) => {
         year,
         quarter,
         status: "draft",
-        // Always-clear quarterly-specific surfaces.
+        // Always-clear quarterly-specific surfaces (strategic side).
         actionsQtr: [],
         rocks: [],
-        quarterlyPriorities: [],
-        kpiAccountability: [],
         // Year-boundary extras.
         ...(isYearBoundary
           ? { goalRows: [], keyInitiatives: [] }
           : {}),
+        // Per-user sections come from OPSPUserSection (their own inheritance),
+        // not the canonical owner's carried-over strategic record.
+        ...sectionFields,
       };
 
       return NextResponse.json({
         success: true,
         data: inheritedData,
+        // Inherited payload clears all quarterly owner-bearing rows, so no
+        // owners to resolve — but keep the field shape consistent.
+        ownerNames: {},
+        sectionUserId,
+        responsibleAdminName,
         inherited: {
           fromYear: prior.year,
           fromQuarter: prior.quarter,
@@ -193,24 +341,58 @@ export const GET = auth.view(async ({ orgId, userId }, req) => {
     }
   }
 
-  // No record, no eligible prior — fall back to existing default-form path.
+  // No canonical record, no eligible prior — fall back to the default form, but
+  // still surface the viewer's own per-user sections (they may have a row even
+  // when the org's strategic plan doesn't exist for this period).
+  const hasSection = USER_SECTION_FIELDS.some((f) => {
+    const v = sectionFields[f];
+    return Array.isArray(v) ? v.length > 0 : v != null;
+  });
   return NextResponse.json({
     success: true,
-    data: null,
+    data: hasSection ? { year, quarter, status: "draft", ...sectionFields } : null,
+    ownerNames: {},
+    sectionUserId,
+    responsibleAdminName,
     fiscalYearStart,
   });
 });
 
-/* ── PUT: upsert (autosave) ── */
-export const PUT = auth.update(async ({ orgId, userId }, req) => {
+/* ── PUT: upsert (autosave) ──
+   Gated on `view` (not `update`): any user who can VIEW the OPSP may save their
+   OWN per-user sections (Accountability / Priorities / Critical #s). Writing the
+   STRATEGIC plan additionally requires `OPSP.Create:create` (enforced per-field
+   below), and editing ANOTHER user's sections requires `OPSP.EditUser:update`
+   (via resolveSectionUserId). */
+export const PUT = auth.view(async ({ orgId, userId }, req) => {
   const parsed = opspUpsertSchema.safeParse(await req.json());
   if (!parsed.success) return validationError(parsed, "Invalid OPSP payload");
-  const { year, quarter, ...fields } = parsed.data;
+  const { year, quarter, ...rest } = parsed.data;
   const yearNum = typeof year === "number" ? year : parseInt(year);
 
-  // OPSP is org-shared: writes target the canonical owner's record so every
-  // permitted editor mutates the SAME plan. Audit fields below keep the acting
-  // user's id. Permission to write is already enforced by `auth.update`.
+  // Peel the routing/per-user keys off the strategic payload.
+  const { targetUserId, ...fields } = rest as Record<string, unknown> & {
+    targetUserId?: string | null;
+  };
+
+  // Per-user sections route to OPSPUserSection (the acting user's, or another
+  // user's with OPSP.EditUser:update). Strategic fields stay org-shared.
+  const sectionUserId = await resolveSectionUserId(orgId, userId, targetUserId);
+  if (sectionUserId === null) {
+    return forbidden("Editing another user's OPSP requires the 'Edit Any User's OPSP' permission.");
+  }
+
+  const sectionUpdate: Record<string, unknown> = {};
+  for (const f of USER_SECTION_FIELDS) {
+    if (f in fields) {
+      sectionUpdate[f] = (fields as Record<string, unknown>)[f];
+      delete (fields as Record<string, unknown>)[f];
+    }
+  }
+
+  // OPSP is org-shared: strategic writes target the canonical owner's record so
+  // every permitted editor mutates the SAME plan. Audit fields below keep the
+  // acting user's id. Permission to write is already enforced by `auth.update`.
   const ownerId = await resolveOpspOwnerOrSelf(orgId, userId);
 
   // Read the current record once and use it for two checks below:
@@ -264,37 +446,71 @@ export const PUT = auth.update(async ({ orgId, userId }, req) => {
     }
   }
 
-  const data = await db.oPSPData.upsert({
-    where: {
-      orgId_userId_year_quarter: {
+  // ── Strategic fields → org-shared OPSPData (canonical owner). Written FIRST so
+  //    a failure in the per-user section layer can never lose the shared plan.
+  //    Authoring the strategic plan requires `OPSP.Create:create` (admins
+  //    bypass). A view-only / per-user-only caller's autosave payload still
+  //    carries read-only strategic fields, which we ignore here (the page
+  //    disables them, but the server is the source of truth). ──
+  const callerCanCreate =
+    (await isOrgAdmin(userId, orgId)) ||
+    (await userCan(userId, orgId, "OPSP.Create", "create"));
+  const strategicKeys = Object.keys(fields);
+  let data: { id: string } | null = null;
+  if (callerCanCreate && strategicKeys.length > 0) {
+    data = await db.oPSPData.upsert({
+      where: {
+        orgId_userId_year_quarter: { orgId, userId: ownerId, year: yearNum, quarter },
+      },
+      update: {
+        ...fields,
+        updatedBy: userId,
+      },
+      create: {
         orgId,
         userId: ownerId,
         year: yearNum,
         quarter,
+        createdBy: userId,
+        ...fields,
       },
-    },
-    update: {
-      ...fields,
-      updatedBy: userId,
-    },
-    create: {
+    });
+    await writeAuditLog({
       orgId,
-      userId: ownerId,
-      year: yearNum,
-      quarter,
-      createdBy: userId,
-      ...fields,
-    },
-  });
+      actorId: userId,
+      action: "UPDATE",
+      entityType: "OPSPData",
+      entityId: data.id,
+      changes: strategicKeys,
+    });
+  }
 
-  await writeAuditLog({
-    orgId,
-    actorId: userId,
-    action: "UPDATE",
-    entityType: "OPSPData",
-    entityId: data.id,
-    changes: Object.keys(fields),
-  });
+  // ── Per-user sections (Accountability / Quarterly Priorities / Critical # /
+  //    Balanced Critical #) → OPSPUserSection for the resolved section user. ──
+  if (Object.keys(sectionUpdate).length > 0) {
+    const sectionRow = await db.oPSPUserSection.upsert({
+      where: {
+        orgId_userId_year_quarter: { orgId, userId: sectionUserId, year: yearNum, quarter },
+      },
+      update: { ...sectionUpdate, updatedBy: userId },
+      create: {
+        orgId,
+        userId: sectionUserId,
+        year: yearNum,
+        quarter,
+        createdBy: userId,
+        ...sectionUpdate,
+      },
+    });
+    await writeAuditLog({
+      orgId,
+      actorId: userId,
+      action: "UPDATE",
+      entityType: "OPSPUserSection",
+      entityId: sectionRow.id,
+      changes: Object.keys(sectionUpdate),
+    });
+  }
 
   return NextResponse.json({ success: true, data, savedAt: new Date().toISOString() });
 });

@@ -14,13 +14,29 @@ export const GET = withOrgAuth(async ({ orgId }, req) => {
   const { page, limit, skip, take } = parsePagination(req);
   const url = new URL(req.url);
   const includeDeleted = url.searchParams.get("includeDeleted") === "true";
+  const search = (url.searchParams.get("search") ?? "").trim();
+  // DB-level sort — allow-list of columns the client may sort by; anything
+  // else falls back to the name A→Z default. `order` is asc unless "desc".
+  const SORTABLE = new Set(["name", "createdAt"]);
+  const sortByRaw = url.searchParams.get("sortBy") ?? "";
+  const sortOrder = url.searchParams.get("sortOrder") === "desc" ? "desc" : "asc";
+  const sortBy = SORTABLE.has(sortByRaw) ? sortByRaw : "name";
+
   const where = {
     orgId,
     deletedAt: includeDeleted ? { not: null } : null,
+    ...(search
+      ? {
+          OR: [
+            { name: { contains: search, mode: "insensitive" as const } },
+            { description: { contains: search, mode: "insensitive" as const } },
+          ],
+        }
+      : {}),
   };
 
   const [teams, total] = await Promise.all([
-    db.team.findMany({
+    db.qsTeam.findMany({
       where,
       include: {
         members: {
@@ -31,11 +47,11 @@ export const GET = withOrgAuth(async ({ orgId }, req) => {
           },
         },
       },
-      orderBy: { name: "asc" },
+      orderBy: [{ [sortBy]: sortOrder }, { id: "desc" }],
       skip,
       take,
     }),
-    db.team.count({ where }),
+    db.qsTeam.count({ where }),
   ]);
 
   // Resolve head name
@@ -91,7 +107,7 @@ export const POST = withOrgAuth(async ({ orgId, userId }, req) => {
   }
   const { name, description, color, headId } = parsed.data;
 
-  const existing = await db.team.findFirst({
+  const existing = await db.qsTeam.findFirst({
     where: { orgId, name: { equals: name.trim(), mode: "insensitive" } },
   });
   if (existing)
@@ -100,7 +116,7 @@ export const POST = withOrgAuth(async ({ orgId, userId }, req) => {
   const baseSlug = name.trim().toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
   const slug     = `${baseSlug}-${Date.now().toString(36)}`;
 
-  const team = await db.team.create({
+  const team = await db.qsTeam.create({
     data: {
       orgId,
       name:        name.trim(),

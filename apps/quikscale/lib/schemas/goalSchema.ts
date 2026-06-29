@@ -41,14 +41,29 @@ export const createGoalSchema = z.object({
 
 export const updateGoalSchema = createGoalSchema.partial();
 
+export const GOAL_SORT_FIELDS = [
+  "title",
+  "status",
+  "progressPercent",
+  "year",
+  "createdAt",
+  "updatedAt",
+] as const;
+export type GoalSortField = (typeof GOAL_SORT_FIELDS)[number];
+
 export const listGoalsParamsSchema = z.object({
   ownerId: z.string().cuid().optional(),
   quarter: z.enum(["Q1", "Q2", "Q3", "Q4"]).optional(),
   year: z.coerce.number().int().min(2000).max(2100).optional(),
   status: z.enum(GOAL_STATUSES).optional(),
   parentGoalId: z.string().cuid().optional(),
+  /** Free-text search across title + description (case-insensitive). */
+  search: z.string().trim().optional(),
+  /** DB-level sort. Omitted → default (year desc, quarter desc, createdAt desc). */
+  sortBy: z.enum(GOAL_SORT_FIELDS).optional(),
+  sortOrder: z.enum(["asc", "desc"]).default("desc"),
   page: z.coerce.number().int().positive().default(1),
-  pageSize: z.coerce.number().int().positive().max(100).default(50),
+  pageSize: z.coerce.number().int().positive().max(100).default(10),
 });
 
 export type CreateGoalInput = z.infer<typeof createGoalSchema>;

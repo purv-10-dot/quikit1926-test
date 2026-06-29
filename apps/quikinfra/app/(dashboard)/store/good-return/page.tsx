@@ -156,9 +156,10 @@ export default function GoodReturnPage() {
   const { data: uomsData } = useUOMs();
 
   const projectOptions = (projectsData?.data ?? []).map((p) => ({ value: p.id, label: p.name }));
-  const locationOptions = (locationsData?.data ?? []).map((l) => ({ value: l.id, label: l.name }));
+  const locationOptions = (locationsData?.data ?? []).filter((l) => l?.status === "active").map((l) => ({ value: l.id, label: l.name }));
+  // Only active vendors are selectable (inactive/deleted/blacklisted excluded).
   const vendorOptions = (vendorsData?.data ?? [])
-    .filter((v) => !(v as { isBlacklisted?: boolean }).isBlacklisted && v.status !== "blacklisted")
+    .filter((v) => v.status === "active" && !(v as { isBlacklisted?: boolean }).isBlacklisted)
     .map((v) => ({
       value: v.id,
       label: v.companyName || v.name || v.id,
@@ -167,7 +168,7 @@ export default function GoodReturnPage() {
   const itemGroups = itemGroupsData?.data ?? [];
   const itemById = new Map<string, GroupedMaterialSelectItem>();
   for (const i of items) itemById.set(i.id, i);
-  const uomOptions = (uomsData?.data ?? []).map((u) => ({
+  const uomOptions = (uomsData?.data ?? []).filter((u) => u?.status === "active").map((u) => ({
     value: u.code,
     label: u.code,
   }));

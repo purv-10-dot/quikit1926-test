@@ -561,9 +561,11 @@ function ConfigurationsTab() {
   const addPastWeek = flags["add_past_week_data"]?.enabled ?? false;
   const editPastWeek = flags["edit_past_week_data"]?.enabled ?? false;
   const futureQuarters = flags["enable_future_quarters"]?.enabled ?? false;
+  const addPastQuarterHabit = flags["add_past_quarter_habit"]?.enabled ?? false;
+  const indianNumbering = flags["use_indian_numbering"]?.enabled ?? false;
 
   return (
-    <div className="max-w-4xl space-y-6 relative">
+    <div className="w-full space-y-6 relative">
       {/* Toast */}
       {toast && (
         <div className="fixed bottom-6 right-6 z-[100] animate-in fade-in slide-in-from-bottom-4 duration-300">
@@ -575,7 +577,7 @@ function ConfigurationsTab() {
       )}
 
       {/* Toggle cards - top row */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
         {/* Add Past Week Data */}
         <div className="border border-[var(--color-border)] rounded-xl p-5 bg-[var(--color-bg-primary)]">
           <h4 className="text-sm font-semibold text-[var(--color-text-primary)] mb-2">Add Past Week Data</h4>
@@ -643,6 +645,38 @@ function ConfigurationsTab() {
           >
             {savingKey === "future_days_limit" ? "Saving..." : "Save Future Quarter Settings"}
           </button>
+        </div>
+
+        {/* Add Past Quarter Habit */}
+        <div className="border border-[var(--color-border)] rounded-xl p-5 bg-[var(--color-bg-primary)]">
+          <h4 className="text-sm font-semibold text-[var(--color-text-primary)] mb-2">Add Past Quarter Habit</h4>
+          <p className="text-xs text-[var(--color-text-secondary)] mb-4">Enable to create Habits assessments for past quarters.</p>
+          <div className="flex items-center justify-between">
+            <Toggle
+              enabled={addPastQuarterHabit}
+              onChange={() => toggleFlag("add_past_quarter_habit", addPastQuarterHabit)}
+              loading={savingKey === "add_past_quarter_habit"}
+            />
+            <span className="text-xs font-medium text-[var(--color-text-secondary)]">
+              {addPastQuarterHabit ? "Enabled" : "Disabled"}
+            </span>
+          </div>
+        </div>
+
+        {/* Indian Number Format (Lakh / Crore) */}
+        <div className="border border-[var(--color-border)] rounded-xl p-5 bg-[var(--color-bg-primary)]">
+          <h4 className="text-sm font-semibold text-[var(--color-text-primary)] mb-2">Indian Number Format (Lakh / Crore)</h4>
+          <p className="text-xs text-[var(--color-text-secondary)] mb-4">Show Dashboard numbers as K / L (lakh) / Cr (crore) / Ar (arab) instead of K / M / B / T. Affects the Dashboard view only.</p>
+          <div className="flex items-center justify-between">
+            <Toggle
+              enabled={indianNumbering}
+              onChange={() => toggleFlag("use_indian_numbering", indianNumbering)}
+              loading={savingKey === "use_indian_numbering"}
+            />
+            <span className="text-xs font-medium text-[var(--color-text-secondary)]">
+              {indianNumbering ? "Enabled" : "Disabled"}
+            </span>
+          </div>
         </div>
       </div>
 

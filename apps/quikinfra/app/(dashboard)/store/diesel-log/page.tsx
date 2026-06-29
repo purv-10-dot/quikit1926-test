@@ -37,7 +37,7 @@ export default function DieselLogPage() {
     }
     return m;
   }, [projects]);
-  const machineryOptions = (machineryData?.data ?? []).map((m) => ({ value: m.id, label: m.name }));
+  const machineryOptions = (machineryData?.data ?? []).filter((m) => m?.status === "active").map((m) => ({ value: m.id, label: m.name }));
   const machineryById = useMemo(() => {
     const m = new Map<string, { id: string; name?: string; fuelType?: string }>();
     for (const row of (machineryData?.data ?? []) as { id: string; name?: string; fuelType?: string }[]) {

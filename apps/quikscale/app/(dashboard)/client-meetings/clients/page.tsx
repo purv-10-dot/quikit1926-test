@@ -14,17 +14,18 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useFilterContext } from "@/lib/context/FilterContext";
 import { useCurrentWeek } from "@/lib/hooks/useCurrentWeek";
+import { useInfiniteClientMembers } from "@/lib/hooks/useInfiniteClientMembers";
 import {
   RightPanel, RightPanelFooter, RightPanelCancelButton, RightPanelSubmitButton,
   AddButton, EmptyState,
-  Segmented, FilterPicker, UserMultiPicker, Pagination, type ExportSelection,
+  Segmented, FilterPicker, UserMultiPicker, Pagination, type ExportSelection, type PickerUser,
 } from "@quikit/ui";
 import { Users, History, Clock, Search, Filter, Trash2, RotateCcw } from "lucide-react";
 import { ModuleMoreActions, TrashBanner } from "@/components/table/ModuleMoreActions";
 import { FormErrorBanner } from "@/components/forms/FormErrorBanner";
 import { useResourcePermissions } from "@/lib/hooks/useResourcePermissions";
 import { useTablePrefs } from "@/lib/hooks/useTablePreferences";
-import { useTableSort } from "@/lib/store";
+import { useTableSort, useDebouncedTableSearch } from "@/lib/store";
 import { useColumnResize } from "@/lib/hooks/useColumnResize";
 import { useStickyOffsets } from "@/lib/hooks/useStickyOffsets";
 import { HeaderCell } from "@/components/table/HeaderCell";
@@ -44,7 +45,7 @@ const COL_WIDTHS_DEFAULT: Record<string, number> = {
 };
 import { notify } from "@/lib/utils/notify";
 import { runExport } from "@/lib/export/xlsx";
-import { AuditLogDrawer } from "@/components/logs/audit-log-drawer";
+import { ClientChangeHistoryPanel } from "./ClientChangeHistoryPanel";
 
 interface ClientRow {
   id: string;
@@ -79,19 +80,6 @@ function fmtWindow(s: string | null, e: string | null) {
   return "—";
 }
 
-/** Friendly field labels for the Client audit log (passed to AuditLogDrawer). */
-const CLIENT_FIELD_LABELS: Record<string, string> = {
-  name: "Client name",
-  description: "Description",
-  isActive: "Active",
-  startDate: "Start date",
-  weeklyStartTime: "Weekly window start",
-  weeklyEndTime: "Weekly window end",
-  dailyStartTime: "Daily window start",
-  dailyEndTime: "Daily window end",
-  teamMemberIds: "Team members",
-};
-
 export default function ClientsPage() {
   const { canCreate, canUpdate, canDelete } = useResourcePermissions("ClientMaster");
 
@@ -100,11 +88,31 @@ export default function ClientsPage() {
   const currentWeek = useCurrentWeek(year, quarter);
 
   const [rows, setRows] = useState<ClientRow[]>([]);
-  const [members, setMembers] = useState<MemberOption[]>([]);
+  const [total, setTotal] = useState(0);
+  // All clients (id+name only) for the filter dropdown — fetched once so the
+  // dropdown stays complete even though `rows` is now a single server page.
+  const [allClients, setAllClients] = useState<{ id: string; name: string }[]>([]);
+  // Team-member multi-select (editing a client's roster) — DB-level infinite
+  // (25/page) + server search, instead of loading every client-member.
+  const [memberSearch, setMemberSearch] = useState("");
+  const {
+    members: memberOptions,
+    isLoading: membersLoading,
+    hasNextPage: membersHasMore,
+    isFetchingNextPage: membersLoadingMore,
+    fetchNextPage: fetchMoreMembers,
+  } = useInfiniteClientMembers(undefined, memberSearch);
+  // Selected members' objects for the editing client's roster — seeds the
+  // multi-select chips so they persist across the paginated option slices.
+  const [editSeedMembers, setEditSeedMembers] = useState<PickerUser[]>([]);
   const [loading, setLoading] = useState(true);
   const [selected, setSelected] = useState<Set<string>>(new Set());
-  const [search, setSearch] = useState("");
+  const [searchInput, setSearchInput, search] = useDebouncedTableSearch("clientMaster");
   const [viewTrash, setViewTrash] = useState(false);
+
+  // Pagination — default 10 rows, options 10/20/30/50.
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(10);
 
   // Filter popover — Client name + Status.
   const [showFilter, setShowFilter] = useState(false);
@@ -211,33 +219,51 @@ export default function ClientsPage() {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
 
-  const [logOpen, setLogOpen] = useState<{ id: string; name: string } | null>(null);
-  // Resolve team-member ids → names for the audit log (teamMemberIds stores ids).
+  const [logOpen, setLogOpen] = useState<ClientRow | null>(null);
+  // Resolve team-member ids → names for the Change History "Team Members" diff
+  // (covers MIGRATED entries whose AuditChange rows store raw ids).
+  // Live audit entries store member NAMES; only legacy migrated rows store raw
+  // ids needing resolution. The visible clients' rosters cover the common case;
+  // a removed legacy member falls back to its raw id (rare, legacy-only) — so
+  // we no longer need to load the full member list just for this map.
   const memberNameById = useMemo(() => {
     const m = new Map<string, string>();
-    for (const mem of members) m.set(mem.id, mem.name);
     for (const c of rows) for (const tm of c.teamMembers) m.set(tm.id, tm.name);
     return m;
-  }, [members, rows]);
+  }, [rows]);
 
+  // Clients list — DB-level pagination + search + status/client filters + sort.
   const refresh = useCallback(async () => {
     setLoading(true);
     try {
       const params = new URLSearchParams();
+      params.set("page", String(page));
+      params.set("limit", String(pageSize));
       if (viewTrash) params.set("includeDeleted", "true");
       if (sortBy) params.set("sortBy", sortBy);
       if (sortBy && sortOrder) params.set("sortOrder", sortOrder);
-      const qs = params.toString();
-      const [c, m] = await Promise.all([
-        fetch(`/api/client-meetings/clients${qs ? "?" + qs : ""}`).then(r => r.json()),
-        fetch("/api/client-meetings/members").then(r => r.json()),
-      ]);
-      if (c.success) setRows(c.data);
-      if (m.success) setMembers(m.data);
+      if (search.trim()) params.set("search", search.trim());
+      if (filterStatus) params.set("status", filterStatus);
+      if (filterClientId) params.set("clientId", filterClientId);
+      const c = await fetch(`/api/client-meetings/clients?${params.toString()}`).then(r => r.json());
+      if (c.success) {
+        setRows(c.data);
+        setTotal(c.meta?.total ?? c.data.length);
+      }
     } finally { setLoading(false); }
-  }, [viewTrash, sortBy, sortOrder]);
+  }, [page, pageSize, viewTrash, sortBy, sortOrder, search, filterStatus, filterClientId]);
 
   useEffect(() => { refresh(); }, [refresh]);
+
+  // One-time: all-client options for the filter dropdown. Re-fetched on trash
+  // toggle so the dropdown matches the active/deleted scope. (Members are no
+  // longer bulk-loaded — the roster picker is infinite + the audit name map
+  // comes from the visible rosters.)
+  const refreshAux = useCallback(async () => {
+    const all = await fetch(`/api/client-meetings/clients?limit=1000${viewTrash ? "&includeDeleted=true" : ""}`).then(r => r.json());
+    if (all.success) setAllClients(all.data.map((c: { id: string; name: string }) => ({ id: c.id, name: c.name })));
+  }, [viewTrash]);
+  useEffect(() => { refreshAux(); }, [refreshAux]);
 
   useEffect(() => {
     function onClick(e: MouseEvent) {
@@ -247,56 +273,45 @@ export default function ClientsPage() {
     return () => document.removeEventListener("mousedown", onClick);
   }, []);
 
-  const filtered = useMemo(() => {
-    return rows.filter(r => {
-      if (filterClientId && r.id !== filterClientId) return false;
-      if (filterStatus === "active"   && !r.isActive) return false;
-      if (filterStatus === "inactive" &&  r.isActive) return false;
-      if (search.trim()) {
-        const q = search.trim().toLowerCase();
-        if (!r.name.toLowerCase().includes(q) && !(r.description ?? "").toLowerCase().includes(q)) return false;
-      }
-      return true;
-    });
-  }, [rows, search, filterClientId, filterStatus]);
+  // Search / status / client filters now run server-side, so `rows` IS the
+  // current page. Reset to page 1 whenever a filter/search changes.
+  useEffect(() => { setPage(1); }, [search, filterClientId, filterStatus, viewTrash, pageSize]);
+  const pagedClients = rows;
+  const totalClientPages = Math.max(1, Math.ceil(total / pageSize));
 
   const activeFilterCount = (filterClientId ? 1 : 0) + (filterStatus ? 1 : 0);
-  const clientOptions = useMemo(() => rows.map(r => ({ value: r.id, label: r.name })), [rows]);
+  const clientOptions = useMemo(() => allClients.map(c => ({ value: c.id, label: c.name })), [allClients]);
 
-  // Pagination — default 10 rows, options 10/20/30/50
-  const [page, setPage] = useState(1);
-  const [pageSize, setPageSize] = useState(10);
-  useEffect(() => { setPage(1); }, [search, filterClientId, filterStatus, viewTrash, pageSize]);
-  const pagedClients = filtered.slice((page - 1) * pageSize, page * pageSize);
-  const totalClientPages = Math.max(1, Math.ceil(filtered.length / pageSize));
-
-  // Adapt ClientMember rows to UserMultiPicker's PickerUser shape
-  // (UserMultiPicker expects firstName/lastName — we split on first space).
-  const memberPickerOptions = useMemo(() => members.map(m => {
-    const parts = m.name.trim().split(/\s+/);
-    return {
-      id: m.id,
-      firstName: parts[0] ?? m.name,
-      lastName: parts.slice(1).join(" "),
-      email: m.email,
-    };
-  }), [members]);
+  // Roster picker options come from the infinite hook (25/page + server search).
+  const memberPickerOptions = memberOptions;
 
   function toggleAll() {
-    if (selected.size === filtered.length && filtered.length > 0) setSelected(new Set());
-    else setSelected(new Set(filtered.map(r => r.id)));
+    if (selected.size === rows.length && rows.length > 0) setSelected(new Set());
+    else setSelected(new Set(rows.map(r => r.id)));
   }
   function toggleOne(id: string) {
     setSelected(prev => { const n = new Set(prev); n.has(id) ? n.delete(id) : n.add(id); return n; });
   }
 
+  /** Map a client row's roster → PickerUser[] for seeding the multi-select chips. */
+  function rosterSeed(teamMembers: { id: string; name: string; email: string }[]): PickerUser[] {
+    return teamMembers.map(m => {
+      const parts = m.name.trim().split(/\s+/);
+      return { id: m.id, firstName: parts[0] ?? m.name, lastName: parts.slice(1).join(" "), email: m.email };
+    });
+  }
+
   function openCreate() {
     if (!canCreate) return;
     setError("");
+    setEditSeedMembers([]);
     setEditing({ id: null, form: { ...emptyForm } });
   }
   function openEdit(row: ClientRow) {
     setError("");
+    // Seed the selected roster objects so their chips render even though the
+    // option list is now a paginated 25/page slice.
+    setEditSeedMembers(rosterSeed(row.teamMembers));
     setEditing({
       id: row.id,
       form: {
@@ -431,10 +446,21 @@ export default function ClientsPage() {
       }));
     await runExport<ClientRow>({
       selection: sel, columns,
-      pageRows: filtered,
-      fetchFiltered: async () => filtered,
+      pageRows: rows,
+      fetchFiltered: async () => {
+        // Export the full filtered set (all pages) — request a large limit
+        // with the same search/status/client filters applied server-side.
+        const params = new URLSearchParams({ limit: "1000" });
+        if (viewTrash) params.set("includeDeleted", "true");
+        if (search.trim()) params.set("search", search.trim());
+        if (filterStatus) params.set("status", filterStatus);
+        if (filterClientId) params.set("clientId", filterClientId);
+        const res = await fetch(`/api/client-meetings/clients?${params.toString()}`);
+        const j = await res.json();
+        return j.success ? (j.data as ClientRow[]) : [];
+      },
       fetchAll: async () => {
-        const res = await fetch("/api/client-meetings/clients");
+        const res = await fetch("/api/client-meetings/clients?limit=1000");
         const j = await res.json();
         return j.success ? (j.data as ClientRow[]) : [];
       },
@@ -448,7 +474,7 @@ export default function ClientsPage() {
       <div className="flex items-center justify-between px-6 py-3 border-b border-gray-200 bg-white flex-shrink-0">
         <div className="flex items-center gap-3">
           <h1 className="text-base font-semibold text-gray-800 whitespace-nowrap">Client Master</h1>
-          <span className="text-xs bg-gray-100 text-gray-600 px-2 py-0.5 rounded-full font-medium">{filtered.length} items</span>
+          <span className="text-xs bg-gray-100 text-gray-600 px-2 py-0.5 rounded-full font-medium">{total} items</span>
           {currentWeek !== null && (
             <span className="text-xs bg-accent-50 text-accent-600 border border-accent-100 px-2 py-0.5 rounded-full font-medium whitespace-nowrap">
               {quarter} · Week {currentWeek}
@@ -475,7 +501,7 @@ export default function ClientsPage() {
 
           <div className="relative">
             <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-gray-400" />
-            <input value={search} onChange={e => setSearch(e.target.value)}
+            <input value={searchInput} onChange={e => setSearchInput(e.target.value)}
               placeholder="Search..."
               className="pl-8 pr-3 py-1.5 text-xs border border-gray-200 rounded-md focus:outline-none focus:ring-1 focus:ring-accent-400 w-44" />
           </div>
@@ -517,7 +543,7 @@ export default function ClientsPage() {
             onHiddenColsChange={setHiddenCols}
             isTrashActive={viewTrash}
             onToggleTrash={setViewTrash}
-            rowCounts={{ page: filtered.length, filtered: filtered.length, all: rows.length }}
+            rowCounts={{ page: rows.length, filtered: total, all: total }}
             onExport={handleExport}
             defaultExportColumnKeys={visibleColKeys}
           />
@@ -528,14 +554,14 @@ export default function ClientsPage() {
 
       {viewTrash && (
         <div className="px-6 py-2 flex-shrink-0">
-          <TrashBanner count={filtered.length} onExit={() => setViewTrash(false)} />
+          <TrashBanner count={total} onExit={() => setViewTrash(false)} />
         </div>
       )}
 
       <div className="flex-1 overflow-hidden min-h-0">
         {loading ? (
           <div className="flex items-center justify-center h-full text-xs text-gray-400">Loading…</div>
-        ) : filtered.length === 0 ? (
+        ) : rows.length === 0 ? (
           <div className="flex items-center justify-center h-full">
             <EmptyState
               icon={Users}
@@ -567,7 +593,7 @@ export default function ClientsPage() {
                         }
                       }}
                     >
-                      <input type="checkbox" checked={selected.size === filtered.length && filtered.length > 0} onChange={toggleAll} disabled={!canDelete}
+                      <input type="checkbox" checked={selected.size === rows.length && rows.length > 0} onChange={toggleAll} disabled={!canDelete}
                         className={`rounded border-gray-300 text-blue-600 ${canDelete ? "cursor-pointer" : "opacity-40 cursor-not-allowed"}`} />
                     </label>
                   </th>
@@ -610,7 +636,7 @@ export default function ClientsPage() {
                     </td>
                     <td className="sticky z-[15] bg-white px-3 py-3 border-b border-r border-gray-100"
                         style={{ left: 40, width: 56, minWidth: 56, maxWidth: 56 }}>
-                      <button onClick={() => setLogOpen({ id: r.id, name: r.name })} className="p-1 rounded hover:bg-gray-100 text-gray-400 hover:text-blue-500" title="View audit log">
+                      <button onClick={() => setLogOpen(r)} className="p-1 rounded hover:bg-gray-100 text-gray-400 hover:text-blue-500" title="View audit log">
                         <History className="h-3.5 w-3.5" />
                       </button>
                     </td>
@@ -706,14 +732,14 @@ export default function ClientsPage() {
               </tbody>
             </table>
             </HorizontalScroller>
-            {filtered.length > 0 && (
+            {total > 0 && (
               <Pagination
                 page={page}
                 totalPages={totalClientPages}
-                total={filtered.length}
+                total={total}
                 limit={pageSize}
                 onPageChange={setPage}
-                onPageSizeChange={setPageSize}
+                onPageSizeChange={(size) => { setPageSize(size); setPage(1); }}
               />
             )}
           </div>
@@ -761,7 +787,9 @@ export default function ClientsPage() {
           <fieldset disabled={drawerLocked} className={`space-y-4 ${drawerLocked ? "opacity-70" : ""}`}>
           <div>
             <label className="block text-xs font-medium text-gray-600 mb-1">Team Members <span className="text-red-500">*</span></label>
-            {memberPickerOptions.length === 0 ? (
+            {/* "No members yet" only when the roster is genuinely empty (not
+                loading, no search, no already-selected roster). */}
+            {!membersLoading && memberOptions.length === 0 && !memberSearch && editSeedMembers.length === 0 ? (
               <p className="text-[11px] text-amber-600 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">
                 No Client Members yet. Add some in Meeting Rhythm → Client Members first.
               </p>
@@ -770,6 +798,12 @@ export default function ClientsPage() {
                 values={editing.form.teamMemberIds}
                 onChange={(ids) => setEditing({ ...editing, form: { ...editing.form, teamMemberIds: ids } })}
                 users={memberPickerOptions}
+                selectedUsers={editSeedMembers}
+                onSearchChange={setMemberSearch}
+                onLoadMore={fetchMoreMembers}
+                hasMore={membersHasMore}
+                loadingMore={membersLoadingMore}
+                loading={membersLoading}
                 placeholder="Select members…"
                 // Show every selected member as a chip (no "+N more" collapse) —
                 // the trigger uses flex-wrap so chips wrap onto multiple lines.
@@ -836,16 +870,10 @@ export default function ClientsPage() {
         );
       })()}
 
-      {/* Audit log — shared RightPanel drawer (same styling as Daily Huddle / Weekly Meeting) */}
-      <AuditLogDrawer
-        open={!!logOpen}
-        onClose={() => setLogOpen(null)}
-        entityType="Client"
-        entityId={logOpen?.id ?? ""}
-        title={logOpen ? `Audit Log — ${logOpen.name}` : "Audit Log"}
-        fieldLabels={CLIENT_FIELD_LABELS}
-        nameById={(id) => memberNameById.get(id)}
-      />
+      {/* Change History — full audit timeline (shared EntityChangeHistoryPanel) */}
+      {logOpen && (
+        <ClientChangeHistoryPanel client={logOpen} nameById={memberNameById} onClose={() => setLogOpen(null)} />
+      )}
     </div>
   );
 }

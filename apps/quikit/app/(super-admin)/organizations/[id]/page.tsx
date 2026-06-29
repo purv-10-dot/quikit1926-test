@@ -213,6 +213,23 @@ export default function OrgDetailPage() {
     }
   }
 
+  async function handleReactivate() {
+    if (!org) return;
+    if (!(await confirm({ title: `Reactivate "${org.name}"?`, description: "This will restore platform access for all members of the organization.", confirmLabel: "Reactivate", tone: "default" }))) return;
+    try {
+      const res = await fetch(`/api/super/orgs/${orgId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ status: "active" }),
+      });
+      const data = await res.json();
+      if (!res.ok || !data.success) throw new Error(data.error || "Failed to reactivate");
+      fetchOrg();
+    } catch {
+      // silent
+    }
+  }
+
   async function handleAddMember(e: React.FormEvent) {
     e.preventDefault();
     setMemberError("");
@@ -431,6 +448,14 @@ export default function OrgDetailPage() {
                       className="mt-5 w-full px-4 py-2 text-sm font-medium text-red-600 border border-red-200 rounded-lg hover:bg-red-50 transition-colors"
                     >
                       Suspend Organization
+                    </button>
+                  )}
+                  {org.status === "suspended" && (
+                    <button
+                      onClick={handleReactivate}
+                      className="mt-5 w-full px-4 py-2 text-sm font-medium text-green-700 border border-green-200 rounded-lg hover:bg-green-50 transition-colors"
+                    >
+                      Reactivate Organization
                     </button>
                   )}
                 </>

@@ -45,6 +45,7 @@ const ENTITY_LABEL: Record<string, string> = {
   recon: "Stock Reconciliation",
   dpr: "Daily Progress Report",
   rab: "Running A/c Bill",
+  equipment_logs: "Equipment Log Book",
 };
 
 // Three-tone unified entity palette grouped by ERP function:
@@ -61,6 +62,7 @@ const ENTITY_COLOR: Record<string, string> = {
   transfer: "bg-sky-50 text-sky-700 border border-sky-200",
   dpr:      "bg-sky-50 text-sky-700 border border-sky-200",
   recon:    "bg-emerald-50 text-emerald-700 border border-emerald-200",
+  equipment_logs: "bg-sky-50 text-sky-700 border border-sky-200",
 };
 
 type InboxTab = "pending" | "approved";

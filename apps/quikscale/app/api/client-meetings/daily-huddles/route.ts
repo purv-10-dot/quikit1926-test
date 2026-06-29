@@ -1,10 +1,13 @@
 import { NextResponse } from "next/server";
-import type { Prisma } from "@prisma/client";
+import { Prisma, ClientMeetingStatus, ClientMeetingFlag } from "@prisma/client";
 import { db } from "@/lib/db";
 import { withOrgAuthForModule } from "@/lib/api/withOrgAuth";
 import { createDailyHuddleSchema } from "@/lib/schemas/clientMeetingsSchema";
 import { writeAuditLog } from "@/lib/api/auditLog";
+import { audit, requestContext } from "@/lib/audit";
 import { parseSort, type SortDirection } from "@/lib/api/parseSort";
+import { parsePagination, paginatedResponse } from "@/lib/api/pagination";
+import { searchUserIds, dateSearchConditions, timeSearchTokens, matchEnumValues, commaTokens } from "@/lib/api/listSearch";
 
 const withOrgAuth = withOrgAuthForModule("clientMeetings.dailyHuddle");
 
@@ -44,25 +47,74 @@ export const GET = withOrgAuth(async ({ orgId }, request) => {
   const to             = url.searchParams.get("to");
   const includeDeleted = url.searchParams.get("includeDeleted") === "true";
 
+  const search = (url.searchParams.get("search") ?? "").trim();
+  const status = url.searchParams.get("status") || undefined;
+
   const where: Record<string, unknown> = { orgId, deletedAt: includeDeleted ? { not: null } : null };
   if (clientId) where.clientId = clientId;
+  if (status) where.callStatus = status;
   if (from || to) {
     const r: Record<string, Date> = {};
     if (from) r.gte = new Date(from);
     if (to) { const d = new Date(to); d.setUTCHours(23, 59, 59, 999); r.lte = d; }
     where.meetingDate = r;
   }
+  if (search) {
+    // Global search across every visible column: client name, notes, absent
+    // members (comma-split), Call Status (enum), Start/End times, the YES/NO/NA
+    // flags (Yesterday/Today/Stuck/Punctuality), audit users, and the date
+    // columns (meeting/created/updated).
+    const actorMatchIds = await searchUserIds(db, search);
+    const memberTokens = commaTokens(search);
+    const tTokens = timeSearchTokens(search);
+    const matchedStatuses = matchEnumValues(Object.values(ClientMeetingStatus), search);
+    const matchedFlags = matchEnumValues(Object.values(ClientMeetingFlag), search);
+    where.OR = [
+      { client: { name: { contains: search, mode: "insensitive" } } },
+      { notes: { contains: search, mode: "insensitive" } },
+      { notesKPDashboard: { contains: search, mode: "insensitive" } },
+      { otherNotes: { contains: search, mode: "insensitive" } },
+      // Absent Members — match any listed member.
+      ...memberTokens.map((t) => ({ absentTeamMembers: { some: { member: { name: { contains: t, mode: "insensitive" as const } } } } })),
+      // Call Status (enum → matched values).
+      ...(matchedStatuses.length ? [{ callStatus: { in: matchedStatuses } }] : []),
+      // Start / End time strings.
+      ...tTokens.flatMap((t) => [
+        { actualStartTime: { contains: t, mode: "insensitive" as const } },
+        { actualEndTime: { contains: t, mode: "insensitive" as const } },
+      ]),
+      // YES/NO/NA flag columns (Yesterday/Today/Stuck/Punctuality).
+      ...(matchedFlags.length
+        ? [
+            { format1Status: { in: matchedFlags } },
+            { format2Status: { in: matchedFlags } },
+            { stuckCallStatus: { in: matchedFlags } },
+            { punctualityOverride: { in: matchedFlags } },
+          ]
+        : []),
+      ...(actorMatchIds.length
+        ? [{ createdBy: { in: actorMatchIds } }, { updatedBy: { in: actorMatchIds } }]
+        : []),
+      ...dateSearchConditions(["meetingDate", "createdAt", "updatedAt"], search),
+    ];
+  }
 
   const { orderBy } = parseSort(request, HUDDLE_SORT_WHITELIST, mapHuddleSort);
-  const rows = await db.clientDailyHuddle.findMany({
-    where,
-    orderBy,
-    include: {
-      client: { select: { id: true, name: true } },
-      absentMembers: true,
-      absentTeamMembers: { include: { member: { select: { id: true, name: true } } } },
-    },
-  });
+  const { page, limit, skip, take } = parsePagination(request);
+  const [rows, total] = await Promise.all([
+    db.clientDailyHuddle.findMany({
+      where,
+      orderBy,
+      skip,
+      take,
+      include: {
+        client: { select: { id: true, name: true } },
+        absentMembers: true,
+        absentTeamMembers: { include: { member: { select: { id: true, name: true } } } },
+      },
+    }),
+    db.clientDailyHuddle.count({ where }),
+  ]);
 
   // Resolve actor names/initials.
   const actorIds = [...new Set(rows.flatMap(r => [r.createdBy, r.updatedBy].filter(Boolean) as string[]))];
@@ -75,11 +127,9 @@ export const GET = withOrgAuth(async ({ orgId }, request) => {
     initials: `${u.firstName[0] ?? ""}${u.lastName[0] ?? ""}`.toUpperCase() || "??",
   };
 
-  return NextResponse.json({
-    success: true,
-    data: rows.map((r, i) => ({
+  const data = rows.map((r, i) => ({
       id: r.id,
-      displayId: i + 1,
+      displayId: skip + i + 1,
       clientId: r.clientId,
       clientName: r.client.name,
       meetingDate: r.meetingDate.toISOString(),
@@ -105,8 +155,9 @@ export const GET = withOrgAuth(async ({ orgId }, request) => {
       updatedBy: r.updatedBy,
       updatedByName: r.updatedBy ? actorMap[r.updatedBy]?.name ?? "—" : null,
       updatedByInitials: r.updatedBy ? actorMap[r.updatedBy]?.initials ?? "??" : null,
-    })),
-  });
+    }));
+
+  return NextResponse.json(paginatedResponse(data, total, page, limit));
 });
 
 /** POST — create a daily huddle. Any active tenant member may call. */
@@ -153,6 +204,33 @@ export const POST = withOrgAuth(async ({ orgId, userId }, request) => {
       meetingDate: d.meetingDate,
       callStatus: d.callStatus,
     },
+  });
+
+  // ── Centralized audit (dual-write) ── CREATE with the full post-state
+  // snapshot so the Change History Create card shows all values.
+  await audit.log({
+    entityType: "DAILY_HUDDLE",
+    entityId: created.id,
+    action: "CREATE",
+    actor: { userId, orgId, teamId: null },
+    snapshot: {
+      clientId: d.clientId,
+      clientName: client.name,
+      meetingDate: d.meetingDate,
+      callStatus: d.callStatus,
+      actualStartTime: d.actualStartTime ?? null,
+      actualEndTime: d.actualEndTime ?? null,
+      format1Status: d.format1Status,
+      format2Status: d.format2Status,
+      stuckCallStatus: d.stuckCallStatus,
+      punctualityOverride: d.punctualityOverride,
+      totalMembers,
+      notes: d.notes ?? null,
+      notesKPDashboard: d.notesKPDashboard ?? null,
+      otherNotes: d.otherNotes ?? null,
+      absentClientMemberIds: d.absentClientMemberIds,
+    },
+    ...requestContext(request),
   });
 
   return NextResponse.json({ success: true, data: { id: created.id } }, { status: 201 });

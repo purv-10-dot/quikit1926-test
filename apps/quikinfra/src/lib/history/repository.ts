@@ -138,6 +138,7 @@ const MASTER_MODEL_MAP: Record<string, string> = {
   grn: "cnGoodsReceiptNote",
   issue: "cnMaterialIssue",
   material_issues: "cnMaterialIssue",
+  equipment_logs: "cnEquipmentLog",
   transfer: "cnStockTransfer",
   recon: "cnStockReconciliation",
   good_return: "cnGoodReturn",

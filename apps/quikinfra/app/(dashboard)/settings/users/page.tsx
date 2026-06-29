@@ -397,11 +397,45 @@ export default function UsersPage() {
   const projects = (projectsResult?.data ?? []).filter(
     (p) => p?.status !== "inactive",
   );
-  const departments = deptsResult?.data ?? [];
+  // Only active departments are selectable — inactive (paused) and deleted
+  // ones must not appear in the picker. Deleted rows are already excluded by
+  // the API; this also drops the inactive ones.
+  const allDepartments = deptsResult?.data ?? [];
+  const departments = allDepartments.filter((d) => d?.status === "active");
   const deptOptions = departments.map((d) => ({
     value: d.name,
     label: d.name,
   }));
+
+  // Stale-assignment handling: if the user is already assigned to a department
+  // that is no longer active, keep showing it (tagged) instead of silently
+  // blanking the field — so a careless save can't wipe the assignment. The API
+  // returns active + inactive rows (deleted are excluded), so a name still
+  // present in the list but not active is "inactive"; a name absent entirely is
+  // "unavailable" (deleted/removed).
+  const assignedDept = (form.department ?? "").trim();
+  const assignedIsActive = deptOptions.some((o) => o.value === assignedDept);
+  const assignedIsInactive =
+    !!assignedDept &&
+    !assignedIsActive &&
+    allDepartments.some((d) => d.name === assignedDept);
+  const assignedIsMissing =
+    !!assignedDept && !assignedIsActive && !assignedIsInactive;
+  const staleDeptNotice = assignedIsInactive
+    ? "This department is inactive — select another to reassign."
+    : assignedIsMissing
+      ? "This department no longer exists — select another to reassign."
+      : null;
+  const effectiveDeptOptions =
+    assignedDept && !assignedIsActive
+      ? [
+          ...deptOptions,
+          {
+            value: assignedDept,
+            label: `${assignedDept} (${assignedIsInactive ? "inactive" : "unavailable"})`,
+          },
+        ]
+      : deptOptions;
 
   // Scope flags for the currently-selected role
   const descriptor = getDescriptorByRoleName(form.userType);
@@ -1025,9 +1059,12 @@ export default function UsersPage() {
             <SelectInput
               value={form.department}
               onChange={(v) => set("department", v)}
-              options={deptOptions}
+              options={effectiveDeptOptions}
               placeholder="Select department"
             />
+            {staleDeptNotice && (
+              <p className="mt-1 text-xs text-amber-600">⚠ {staleDeptNotice}</p>
+            )}
           </Field>
         </FormSection>
 

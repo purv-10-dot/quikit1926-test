@@ -203,4 +203,27 @@ export function forbidden(message = "You do not have permission to perform this 
   return NextResponse.json({ success: false, error: message }, { status: 403 });
 }
 
+/**
+ * OrgMember `where` fragment scoping to QuikScale members only — i.e. users
+ * who hold at least one `app_quikscale.UserAppRole` for THIS org + the
+ * QuikScale app. Mirrors the scope used by `/api/org/users` so analytics
+ * never surfaces org members who only have access to other QuikIT apps
+ * (e.g. QuikTrack) but no QuikScale role.
+ *
+ * Returns `null` when the QuikScale App row isn't registered yet; callers
+ * must treat that as "no members" (fail-safe empty list), matching the
+ * Users page behaviour.
+ */
+export async function quikScaleMemberWhere(orgId: string): Promise<{
+  orgId: string;
+  user: { appRoles: { some: { orgId: string; role: { appId: string } } } };
+} | null> {
+  const appId = await getQuikScaleAppId();
+  if (!appId) return null;
+  return {
+    orgId,
+    user: { appRoles: { some: { orgId, role: { appId } } } },
+  };
+}
+
 export { getQuikScaleAppId };

@@ -260,7 +260,7 @@ export default function PODetailPage() {
 
   const projectOptions = (projectsData?.data ?? []).map((p) => ({ value: p.id, label: p.name }));
   const itemOptions = (itemsData?.data ?? []).map((i) => ({ value: i.id, label: i.name }));
-  const locationOptions = (locationsData?.data ?? []).map((l) => ({ value: l.id, label: l.name }));
+  const locationOptions = (locationsData?.data ?? []).filter((l) => l?.status === "active").map((l) => ({ value: l.id, label: l.name }));
 
   // Client-side items lookup so the table can backfill material
   // name / UOM when the stored PO line has empty strings (happens

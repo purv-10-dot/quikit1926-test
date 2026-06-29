@@ -1,0 +1,30 @@
+/**
+ * Audit-log design tokens (mirror of auditLogTokens.ts — keep in sync).
+ * The TypeScript map is the source of truth; these CSS custom properties are
+ * provided for AC-1.44 / any non-React consumer of the shared drawer.
+ */
+:root {
+  /* Operation pills — foreground / background */
+  --audit-pill-created-fg: #15803d;
+  --audit-pill-created-bg: #dcfce7;
+  --audit-pill-updated-fg: #1d4ed8;
+  --audit-pill-updated-bg: #dbeafe;
+  --audit-pill-deleted-fg: #b91c1c;
+  --audit-pill-deleted-bg: #fee2e2;
+  --audit-pill-restored-fg: #0f766e;
+  --audit-pill-restored-bg: #ccfbf1;
+  --audit-pill-weekly-fg: #b45309;
+  --audit-pill-weekly-bg: #fef3c7;
+  --audit-pill-bulk-fg: #6d28d9;
+  --audit-pill-bulk-bg: #ede9fe;
+  --audit-pill-comment-fg: #4338ca;
+  --audit-pill-comment-bg: #e0e7ff;
+  --audit-pill-status-fg: #0e7490;
+  --audit-pill-status-bg: #cffafe;
+
+  /* Pillar badge colours */
+  --audit-pillar-execution: #dc2626;
+  --audit-pillar-alignment: #2563eb;
+  --audit-pillar-people: #7c3aed;
+  --audit-pillar-cadence: #0891b2;
+}

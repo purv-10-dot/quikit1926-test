@@ -9,7 +9,7 @@
  * structure but diverge on the due-date cell.
  */
 
-import { Calendar, Maximize2 } from "lucide-react";
+import { Calendar, Maximize2, Download } from "lucide-react";
 import { Card, CardH } from "./Card";
 import { CritBlock } from "./CritBlock";
 import { WithTooltip } from "./pickers";
@@ -20,6 +20,12 @@ interface Props {
   set: <K extends keyof FormData>(key: K, value: FormData[K]) => void;
   onExpandKpiAcct: () => void;
   onExpandQPriorities: () => void;
+  /** Show the Export-to-KPI / Export-to-Priority buttons (sections editable). */
+  showExport?: boolean;
+  /** Open the Export → Create KPIs stepper (seeded from the KPI rows). */
+  onExportKPI?: () => void;
+  /** Open the Export → Create Priorities stepper (seeded from the rows). */
+  onExportPriority?: () => void;
 }
 
 export function AccountabilitySection({
@@ -27,10 +33,13 @@ export function AccountabilitySection({
   set,
   onExpandKpiAcct,
   onExpandQPriorities,
+  showExport = false,
+  onExportKPI,
+  onExportPriority,
 }: Props) {
   return (
     <Card className="flex flex-col gap-4">
-      <div className="flex flex-col gap-4">
+      <div className="flex-1 flex flex-col gap-4">
         <CardH
           title="YOUR ACCOUNTABILITY"
           subtitle="(Who/When)"
@@ -38,8 +47,8 @@ export function AccountabilitySection({
           onExpand={onExpandKpiAcct}
         />
 
-        <div className="rounded-xl border border-gray-200 overflow-hidden">
-          <table className="w-full border-collapse">
+        <div className="flex-1 rounded-xl border border-gray-200 overflow-hidden">
+          <table className="w-full h-full border-collapse">
             <thead>
               <tr className="bg-gray-50">
                 <th className="border-b border-r border-gray-200 px-3 py-2.5 text-xs font-semibold text-gray-600 text-left w-12">
@@ -63,43 +72,55 @@ export function AccountabilitySection({
                   <td className="border-r border-gray-200 px-3 py-2.5 text-xs text-gray-400 text-center w-12">
                     {String(i + 1).padStart(2, "0")}
                   </td>
-                  <td className="border-r border-gray-200 px-3 py-1.5 relative">
+                  <td className="border-r border-gray-200 px-3 py-1.5">
                     <input
                       value={row.kpi}
-                      maxLength={30}
                       onChange={(e) => {
                         const next = [...form.kpiAccountability];
-                        next[i] = { ...next[i], kpi: e.target.value.slice(0, 30) };
+                        next[i] = { ...next[i], kpi: e.target.value };
                         set("kpiAccountability", next);
                       }}
                       placeholder="Input text"
-                      className="w-full text-sm text-gray-700 placeholder-gray-400 bg-transparent focus:outline-none py-1 pr-10"
+                      className="w-full text-sm text-gray-700 placeholder-gray-400 bg-transparent focus:outline-none py-1"
                     />
-                    <span className={`pointer-events-none absolute bottom-1 right-2 text-[10px] tabular-nums ${row.kpi.length >= 30 ? "text-red-600 font-semibold" : "text-gray-400"}`}>{row.kpi.length}/30</span>
                   </td>
-                  <td className="px-3 py-1.5 relative">
+                  <td className="px-3 py-1.5">
+                    {/* Goal is numeric — same input type as the Individual KPI
+                        Target Value field, so letters/spaces can't be typed. */}
                     <input
+                      type="number"
+                      min="0"
+                      inputMode="decimal"
                       value={row.goal}
-                      maxLength={20}
                       onChange={(e) => {
                         const next = [...form.kpiAccountability];
-                        next[i] = { ...next[i], goal: e.target.value.slice(0, 20) };
+                        next[i] = { ...next[i], goal: e.target.value };
                         set("kpiAccountability", next);
                       }}
-                      placeholder="Input text"
-                      className="w-full text-sm text-gray-700 placeholder-gray-400 bg-transparent focus:outline-none py-1 pr-10"
+                      placeholder="0"
+                      className="w-full text-sm text-gray-700 placeholder-gray-400 bg-transparent focus:outline-none py-1"
                     />
-                    <span className={`pointer-events-none absolute bottom-1 right-2 text-[10px] tabular-nums ${row.goal.length >= 20 ? "text-red-600 font-semibold" : "text-gray-400"}`}>{row.goal.length}/20</span>
                   </td>
                 </tr>
               ))}
             </tbody>
           </table>
         </div>
+
+        {showExport && (
+          <div className="text-right" data-expand="true">
+            <button
+              onClick={onExportKPI}
+              className="inline-flex items-center gap-1.5 bg-accent-600 text-white text-xs font-semibold px-3 py-1.5 rounded-lg hover:bg-accent-700"
+            >
+              <Download className="h-3.5 w-3.5" /> Export to KPI
+            </button>
+          </div>
+        )}
       </div>
 
       {/* Quarterly Priorities — below KPI table, above Critical # */}
-      <div className="border-t border-gray-100 pt-3">
+      <div className="flex-1 flex flex-col border-t border-gray-100 pt-3">
         <div className="flex items-start justify-between mb-3">
           <p className="text-sm font-bold text-gray-800">Quarterly Priorities</p>
           <button
@@ -110,8 +131,8 @@ export function AccountabilitySection({
             <Maximize2 className="h-3.5 w-3.5" />
           </button>
         </div>
-        <div className="rounded-xl border border-gray-200 overflow-hidden">
-          <table className="w-full border-collapse">
+        <div className="flex-1 rounded-xl border border-gray-200 overflow-hidden">
+          <table className="w-full h-full border-collapse">
             <thead>
               <tr className="bg-gray-50">
                 <th className="border-b border-r border-gray-200 px-3 py-2.5 text-xs font-semibold text-gray-600 text-left w-12">
@@ -135,24 +156,22 @@ export function AccountabilitySection({
                   <td className="border-r border-gray-200 px-3 py-2.5 text-xs text-gray-400 text-center w-12">
                     {String(i + 1).padStart(2, "0")}
                   </td>
-                  <td className="border-r border-gray-200 px-3 py-1.5 relative">
+                  <td className="border-r border-gray-200 px-3 py-1.5">
                     <WithTooltip
                       content={row.priority}
                       className="relative block w-full"
                     >
                       <input
                         value={row.priority}
-                        maxLength={70}
                         onChange={(e) => {
                           const next = [...form.quarterlyPriorities];
-                          next[i] = { ...next[i], priority: e.target.value.slice(0, 70) };
+                          next[i] = { ...next[i], priority: e.target.value };
                           set("quarterlyPriorities", next);
                         }}
                         placeholder="Input text"
-                        className="w-full text-sm text-gray-700 placeholder-gray-400 bg-transparent focus:outline-none py-1 pr-10"
+                        className="w-full text-sm text-gray-700 placeholder-gray-400 bg-transparent focus:outline-none py-1"
                       />
                     </WithTooltip>
-                    <span className={`pointer-events-none absolute bottom-1 right-2 text-[10px] tabular-nums ${row.priority.length >= 70 ? "text-red-600 font-semibold" : "text-gray-400"}`}>{row.priority.length}/70</span>
                   </td>
                   <td className="px-3 py-1.5 w-32">
                     <div className="relative flex items-center gap-2 cursor-pointer">
@@ -189,18 +208,37 @@ export function AccountabilitySection({
             </tbody>
           </table>
         </div>
+
+        {showExport && (
+          <div className="text-right mt-3" data-expand="true">
+            <button
+              onClick={onExportPriority}
+              className="inline-flex items-center gap-1.5 bg-accent-600 text-white text-xs font-semibold px-3 py-1.5 rounded-lg hover:bg-accent-700"
+            >
+              <Download className="h-3.5 w-3.5" /> Export to Priority
+            </button>
+          </div>
+        )}
       </div>
 
-      <div className="border-t border-gray-100 pt-3 space-y-3">
+      {/* Crit cards are equal-weight siblings of the two tables above so the
+          column's leftover height (it is stretched by the parent grid to match
+          its taller neighbours) is shared evenly across all four blocks. Each
+          card grows via flex-1 and `fill` spreads its rows to fill that share. */}
+      <div className="flex-1 flex flex-col border-t border-gray-100 pt-3">
         <CritBlock
           label="Critical #"
           value={form.criticalNumAcct}
           onChange={(v) => set("criticalNumAcct", v)}
+          fill
         />
+      </div>
+      <div className="flex-1 flex flex-col">
         <CritBlock
           label="Balancing Critical #"
           value={form.balancingCritNumAcct}
           onChange={(v) => set("balancingCritNumAcct", v)}
+          fill
         />
       </div>
     </Card>

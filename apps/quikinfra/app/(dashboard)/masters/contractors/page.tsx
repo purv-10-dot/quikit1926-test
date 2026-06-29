@@ -190,6 +190,7 @@ export default function ContractorsPage() {
         data={(result?.data ?? []) as ContractorRow[]}
         total={result?.data?.length ?? 0}
         isLoading={isLoading}
+        showStatusTabs
         historyEntityType="contractor"
         canImport canExport
         onImport={() => setImportOpen(true)}
@@ -200,8 +201,8 @@ export default function ContractorsPage() {
             Delete contractor{" "}
             <span className="font-semibold text-gray-900">“{item.name}”</span>?
             <br />
-            It will be hidden from the list. You can restore it later from the
-            “Show deleted” view.
+            It will be removed from the list. To keep a contractor but pause it,
+            set its status to Inactive instead — those stay under the Inactive tab.
           </>
         )}
         onEdit={(item: ContractorEditRow) => {

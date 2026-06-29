@@ -19,7 +19,7 @@ import { addTeamMembersSchema } from "@/lib/schemas/teamMembersSchema";
  */
 export const POST = withOrgAuth<{ id: string }>(async ({ orgId }, req, { params }) => {
   // Verify team belongs to this tenant and isn't soft-deleted
-  const team = await db.team.findFirst({
+  const team = await db.qsTeam.findFirst({
     where: { id: params.id, orgId },
   });
   if (!team) {
@@ -65,7 +65,7 @@ export const POST = withOrgAuth<{ id: string }>(async ({ orgId }, req, { params 
     });
 
     // Multi-team tracking (join table) — upsert so repeated adds are safe
-    await db.userTeam.upsert({
+    await db.qsUserTeam.upsert({
       where: {
         orgId_userId_teamId: { orgId, userId, teamId: params.id },
       },
@@ -77,7 +77,7 @@ export const POST = withOrgAuth<{ id: string }>(async ({ orgId }, req, { params 
   }
 
   // Return the refreshed team in the same shape the Teams page list uses
-  const refreshedTeam = await db.team.findUnique({
+  const refreshedTeam = await db.qsTeam.findUnique({
     where: { id: params.id },
     include: {
       members: {

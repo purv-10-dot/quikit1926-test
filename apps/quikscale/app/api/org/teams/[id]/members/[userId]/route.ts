@@ -18,7 +18,7 @@ type RouteParams = { id: string; userId: string };
 export const DELETE = withOrgAuth<RouteParams>(
   async ({ orgId }, _request, { params }) => {
     // Verify team belongs to this tenant
-    const team = await db.team.findFirst({
+    const team = await db.qsTeam.findFirst({
       where: { id: params.id, orgId },
     });
     if (!team) {
@@ -50,7 +50,7 @@ export const DELETE = withOrgAuth<RouteParams>(
     }
 
     // Drop the UserTeam row (no-op if it doesn't exist)
-    await db.userTeam.deleteMany({
+    await db.qsUserTeam.deleteMany({
       where: { orgId, userId: params.userId, teamId: params.id },
     });
 

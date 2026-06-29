@@ -1,6 +1,6 @@
 "use client";
 
-import { createContext, useContext, useState } from "react";
+import { createContext, useContext, useState, useMemo, useCallback } from "react";
 import { getFiscalYear, getFiscalQuarter } from "@/lib/utils/fiscal";
 import { useSessionState } from "@/lib/hooks/useSessionState";
 
@@ -42,20 +42,23 @@ export function FilterProvider({ children }: { children: React.ReactNode }) {
   const [year, setYear] = useSessionState<number>("qs:filter:year", DEFAULT_YEAR);
   const [quarter, setQuarter] = useSessionState<Quarter>("qs:filter:quarter", DEFAULT_QUARTER);
 
-  function setFilterTeam(v: string) {
+  const setFilterTeam = useCallback((v: string) => {
     setFilterTeamRaw(v);
     setFilterOwner(""); // reset owner whenever team changes
-  }
+  }, [setFilterOwner]);
+
+  // Memoize the context value so consumers (KPI / Priority / WWW / dashboard)
+  // don't re-render on every Provider render from an unrelated state change —
+  // the object identity now changes only when one of these values actually does.
+  const value = useMemo<FilterContextValue>(() => ({
+    filterTeam, setFilterTeam,
+    filterOwner, setFilterOwner,
+    year, setYear,
+    quarter, setQuarter,
+  }), [filterTeam, setFilterTeam, filterOwner, setFilterOwner, year, setYear, quarter, setQuarter]);
 
   return (
-    <FilterContext.Provider
-      value={{
-        filterTeam, setFilterTeam,
-        filterOwner, setFilterOwner,
-        year, setYear,
-        quarter, setQuarter,
-      }}
-    >
+    <FilterContext.Provider value={value}>
       {children}
     </FilterContext.Provider>
   );

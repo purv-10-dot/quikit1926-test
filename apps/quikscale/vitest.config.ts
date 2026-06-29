@@ -19,6 +19,11 @@ export default defineConfig({
     environment: "node",
     setupFiles: ["./__tests__/setup.ts"],
     clearMocks: true,
+    // Pin the timezone so date/time-formatting assertions (e.g. audit timeline
+    // timestamps) are deterministic regardless of the developer's machine TZ.
+    // Production renders audit timestamps in the VIEWER's local timezone; tests
+    // assert the UTC-rendered strings, so the worker must run in UTC.
+    env: { TZ: "UTC" },
     coverage: {
       provider: "v8",
       reporter: ["text", "json-summary", "html"],
@@ -52,6 +57,7 @@ export default defineConfig({
       "@quikit/shared/email": path.resolve(__dirname, "../../packages/shared/lib/email"),
       "@quikit/shared/env": path.resolve(__dirname, "../../packages/shared/lib/env"),
       "@quikit/shared/constants": path.resolve(__dirname, "../../packages/shared/lib/constants"),
+      "@quikit/shared/temp-password": path.resolve(__dirname, "../../packages/shared/lib/temp-password"),
       "@quikit/shared/types": path.resolve(__dirname, "../../packages/shared/types"),
       "@quikit/shared": path.resolve(__dirname, "../../packages/shared"),
     },

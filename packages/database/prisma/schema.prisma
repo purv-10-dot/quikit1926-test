@@ -137,8 +137,6 @@ model Org {
   createdAt               DateTime                 @default(now())
   updatedAt               DateTime                 @updatedAt
   createdBy               String?
-  cnApprovalRequests      CnApprovalRequest[]
-  cnApprovalRules         CnApprovalRule[]
   cnAssets                CnAsset[]
   cnAuditLogs             CnAuditLog[]
   cnCompanies             CnCompany[]
@@ -147,7 +145,6 @@ model Org {
   cnCustomers             CnCustomer[]
   cnDepartments           CnDepartment[]
   cnDieselLogs            CnDieselLog[]
-  cnDocuments             CnDocument[]
   cnFinancialYears        CnFinancialYear[]
   cnGstCodes              CnGSTCode[]
   cnGatePasses            CnGatePass[]
@@ -159,6 +156,12 @@ model Org {
   cnItemGroups            CnItemGroup[]
   cnLocations             CnLocation[]
   cnMachinery             CnMachinery[]
+  cnEquipmentLogs         CnEquipmentLog[]
+  cnMaintenanceJobCards   CnMaintenanceJobCard[]
+  cnEquipmentDeployments  CnEquipmentDeployment[]
+  cnFleetDashboards       CnFleetDashboard[]
+  cnHireRentRecords       CnHireRentRecord[]
+  cnFixedAssetTransactions CnFixedAssetTransaction[]
   cnMaterialIssues        CnMaterialIssue[]
   cnProjects              CnProject[]
   cnPurchaseIndents       CnPurchaseIndent[]
@@ -166,7 +169,6 @@ model Org {
   cnPurchaseRequisitions  CnPurchaseRequisition[]
   cnQcInspections         CnQCInspection[]
   cnSafetyChecklists      CnSafetyChecklist[]
-  cnSafetyIncidents       CnSafetyIncident[]
   cnStockLedger           CnStockLedger[]
   cnStockReconciliations  CnStockReconciliation[]
   cnStockTransfers        CnStockTransfer[]
@@ -193,6 +195,7 @@ model Org {
   habits                  HabitAssessment[]
   kpis                    KPI[]
   opspData                OPSPData[]
+  opspUserSections        OPSPUserSection[]
   opspDocuments           OPSPDocument[]
   opppPlans               OPSPPlan[]
   opspReviewEntries       OPSPReviewEntry[]
@@ -258,15 +261,21 @@ model Org {
   vcVerticals             VCVertical[]
   appModuleFlags          AppModuleFlag[]
   auditLogs               AuditLog[]
+  auditEvents             AuditEvent[]
+  auditEventReads         AuditEventRead[]
+  authLogs                AuthLog[]
   featureFlags            FeatureFlag[]
   invoices                Invoice[]
   notifications           Notification[]
   sessionEvents           SessionEvent[]
   teams                   Team[]
   userTeams               UserTeam[]
+  qsTeams                 QsTeam[]
+  qsUserTeams             QsUserTeam[]
   tenantAppAccess         OrgAppAccess[]
   users                   OrgMember[]
   userAppAccess           UserAppAccess[]
+  subscription            Subscription?
 
   @@index([slug])
   @@index([status])
@@ -319,6 +328,7 @@ model User {
   kpisOwned               KPI[]                            @relation("KPIOwner")
   kpiNotes                KPINote[]
   opspData                OPSPData[]
+  opspUserSections        OPSPUserSection[]
   opppPlan                OPSPPlan?
   opspReviewEntries       OPSPReviewEntry[]
   oneOnOnesAsManager      OneOnOne[]                       @relation("OneOnOneManager")
@@ -343,7 +353,10 @@ model User {
   sessions                Session[]
   verificationTokens      VerificationToken[]
   sessionEvents           SessionEvent[]
+  authLogs                AuthLog[]
+  auditEventReads         AuditEventRead[]
   userTeams               UserTeam[]
+  qsUserTeams             QsUserTeam[]
   memberships             OrgMember[]
   appAccess               UserAppAccess[]
 
@@ -446,7 +459,10 @@ model OrgMember {
   /// "Sign in with Microsoft". One of: "google" | "microsoft" | null.
   inviteProvider    String?
   org               Org       @relation(fields: [orgId], references: [id], onDelete: Cascade)
-  team              Team?     @relation(fields: [teamId], references: [id])
+  // QuikScale owns its team data in app_quikscale."Team" (model QsTeam). This
+  // membership pointer is written ONLY by QuikScale — Admin/QuikTrack track
+  // membership via the UserTeam join, and packages/auth never sets teamId.
+  team              QsTeam?   @relation(fields: [teamId], references: [id])
   user              User      @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@unique([orgId, userId])
@@ -477,7 +493,42 @@ model UserTeam {
   @@schema("public")
 }
 
+// Shared, platform-level teams. Managed by the Admin Portal and shared with
+// QuikTrack (via the UserTeam join). QuikScale no longer reads this table —
+// it owns its own copy in app_quikscale."Team" (model QsTeam). The KPI /
+// Priority / AccountabilityFunction / OrgMember relations that used to point
+// here now point at QsTeam, so those back-relations live on QsTeam.
 model Team {
+  id           String     @id @default(cuid())
+  orgId        String
+  name         String
+  description  String?
+  slug         String
+  parentTeamId String?
+  headId       String?
+  color        String?    @default("#0066cc")
+  createdAt    DateTime   @default(now())
+  updatedAt    DateTime   @updatedAt
+  createdBy    String?
+  deletedAt    DateTime?
+  org          Org        @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  parentTeam   Team?      @relation("TeamHierarchy", fields: [parentTeamId], references: [id])
+  childTeams   Team[]     @relation("TeamHierarchy")
+  userTeams    UserTeam[]
+
+  @@unique([orgId, slug])
+  @@index([orgId])
+  @@index([parentTeamId])
+  @@index([deletedAt])
+  @@schema("public")
+}
+
+// <-------------------------------------------> quikscale schema started <--------------------------------------------------->
+
+// QuikScale-owned copy of Team. Physical table: app_quikscale."Team". Seeded
+// once from public.Team (ids preserved) by the quikscale_own_teams migration.
+// QuikScale is fully independent of shared team data from here on.
+model QsTeam {
   id                      String                   @id @default(cuid())
   orgId                   String
   name                    String
@@ -494,16 +545,36 @@ model Team {
   kpis                    KPI[]
   priorities              Priority[]
   org                     Org                      @relation(fields: [orgId], references: [id], onDelete: Cascade)
-  parentTeam              Team?                    @relation("TeamHierarchy", fields: [parentTeamId], references: [id])
-  childTeams              Team[]                   @relation("TeamHierarchy")
-  userTeams               UserTeam[]
+  parentTeam              QsTeam?                  @relation("QsTeamHierarchy", fields: [parentTeamId], references: [id])
+  childTeams              QsTeam[]                 @relation("QsTeamHierarchy")
+  userTeams               QsUserTeam[]
   members                 OrgMember[]
 
   @@unique([orgId, slug])
   @@index([orgId])
   @@index([parentTeamId])
   @@index([deletedAt])
-  @@schema("public")
+  @@map("Team")
+  @@schema("app_quikscale")
+}
+
+// QuikScale-owned copy of UserTeam. Physical table: app_quikscale."UserTeam".
+model QsUserTeam {
+  id        String   @id @default(cuid())
+  orgId     String
+  userId    String
+  teamId    String
+  createdAt DateTime @default(now())
+  org       Org      @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  team      QsTeam   @relation(fields: [teamId], references: [id], onDelete: Cascade)
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([orgId, userId, teamId])
+  @@index([orgId])
+  @@index([userId])
+  @@index([teamId])
+  @@map("UserTeam")
+  @@schema("app_quikscale")
 }
 
 model AccountabilityFunction {
@@ -525,7 +596,7 @@ model AccountabilityFunction {
   org               Org                      @relation(fields: [orgId], references: [id], onDelete: Cascade)
   parentFunction    AccountabilityFunction?  @relation("FunctionHierarchy", fields: [parentFunctionId], references: [id])
   childFunctions    AccountabilityFunction[] @relation("FunctionHierarchy")
-  team              Team?                    @relation(fields: [teamId], references: [id])
+  team              QsTeam?                  @relation(fields: [teamId], references: [id])
 
   @@unique([orgId, chartType, name])
   @@index([orgId])
@@ -564,6 +635,9 @@ model KPI {
   targetScale        String?
   reverseColor       Boolean          @default(false)
   frequency          String           @default("weekly")
+  // True when this KPI was created via the OPSP "Export → Create KPIs" flow.
+  // Display-only (shown in the KPI grid); never edited from the Add/Edit form.
+  importedFromOpsp   Boolean          @default(false)
   lastNotes          String?
   lastNotesAt        DateTime?
   lastNotedBy        String?
@@ -576,7 +650,7 @@ model KPI {
   owner_user         User?            @relation("KPIOwner", fields: [owner], references: [id])
   parentKPI          KPI?             @relation("KPICascade", fields: [parentKPIId], references: [id])
   childKPIs          KPI[]            @relation("KPICascade")
-  team               Team?            @relation(fields: [teamId], references: [id])
+  team               QsTeam?          @relation(fields: [teamId], references: [id])
   logs               KPILog[]
   notes              KPINote[]
   weeklyValues       KPIWeeklyValue[]
@@ -651,6 +725,76 @@ model KPILog {
   @@schema("app_quikscale")
 }
 
+/// ─────────────────────────────────────────────────────────────────────────
+/// Centralized audit trail (Phase 1: KPI). One AuditEvent per business action,
+/// with field-level diffs stored as AuditChange child rows (only changed
+/// fields). Designed to scale to millions of rows and serve entity timelines,
+/// user-activity history, and compliance/forensic queries. Written via the
+/// reusable audit service (apps/quikscale/lib/audit). Actor name is
+/// denormalized to preserve the name AS IT WAS at the time of the event.
+model AuditEvent {
+  id          String        @id @default(cuid())
+  orgId       String
+  teamId      String?
+  entityType  String // "KPI" | "Priority" | "Goal" | "OPSPlan" | ...
+  entityId    String
+  action      String // CREATE|UPDATE|DELETE|ARCHIVE|RESTORE|STATUS_CHANGE|ASSIGNMENT_CHANGE|OWNERSHIP_CHANGE|PERMISSION_CHANGE|WEEKLY_UPDATE|BULK_UPDATE|COMMENT
+  actorUserId String
+  actorName   String // denormalized name at time of event
+  source      String        @default("web") // web|api|system|import
+  ipAddress   String?
+  userAgent   String?
+  reason      String?
+  snapshot    Json? // optional full post-state for forensics
+  createdAt   DateTime      @default(now())
+  changes     AuditChange[]
+  org         Org           @relation(fields: [orgId], references: [id], onDelete: Cascade)
+
+  @@index([orgId, entityType, entityId, createdAt(sort: Desc)])
+  @@index([orgId, actorUserId, createdAt(sort: Desc)])
+  @@index([orgId, teamId, createdAt(sort: Desc)])
+  @@index([orgId, createdAt(sort: Desc)])
+  @@index([orgId, action, createdAt(sort: Desc)])
+  @@schema("app_quikscale")
+}
+
+/// One row per changed field on an AuditEvent. oldValue/newValue are JSONB so
+/// scalars, arrays (ownerIds), and JSON blobs (weeklyTargets) are all captured.
+model AuditChange {
+  id           String     @id @default(cuid())
+  auditEventId String
+  fieldName    String
+  oldValue     Json?
+  newValue     Json?
+  event        AuditEvent @relation(fields: [auditEventId], references: [id], onDelete: Cascade)
+
+  @@index([auditEventId])
+  @@index([fieldName])
+  @@schema("app_quikscale")
+}
+
+/// Per-user read state for an entity's audit timeline — a high-water mark.
+/// One row per (user, entity); `lastReadAt` is the moment the user last opened
+/// that entity's Change History. Unread = AuditEvents for the entity created
+/// after lastReadAt AND not authored by the user (editors implicitly read
+/// their own actions). Scales to millions of events: one row per user per
+/// viewed entity, never per event.
+model AuditEventRead {
+  id         String   @id @default(cuid())
+  orgId      String
+  userId     String
+  entityType String
+  entityId   String
+  lastReadAt DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+  org        Org      @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, entityType, entityId])
+  @@index([orgId, userId, entityType])
+  @@schema("app_quikscale")
+}
+
 model Priority {
   id             String                 @id @default(cuid())
   orgId          String
@@ -664,6 +808,9 @@ model Priority {
   endWeek        Int?
   overallStatus  String                 @default("not-started")
   notes          String?
+  // True when created via the OPSP "Export → Create Priorities" flow.
+  // Display-only (shown in the Priority grid); never edited from the form.
+  importedFromOpsp Boolean              @default(false)
   createdAt      DateTime               @default(now())
   updatedAt      DateTime               @updatedAt
   createdBy      String
@@ -671,7 +818,7 @@ model Priority {
   deletedAt      DateTime?
   org            Org                    @relation(fields: [orgId], references: [id], onDelete: Cascade)
   owner_user     User                   @relation("PriorityOwner", fields: [owner], references: [id])
-  team           Team?                  @relation(fields: [teamId], references: [id])
+  team           QsTeam?                @relation(fields: [teamId], references: [id])
   weeklyStatuses PriorityWeeklyStatus[]
 
   @@index([orgId])
@@ -1252,6 +1399,35 @@ model OPSPData {
   @@schema("app_quikscale")
 }
 
+/// Per-user OPSP sections. The strategic OPSP (PEOPLE/PROCESS/Targets/Goals/…)
+/// stays org-shared in OPSPData (canonical owner), but these four sections are
+/// owned by each individual user: Your Accountability, Quarterly Priorities,
+/// Critical # and Balanced Critical #. Keyed by (orgId, userId, year, quarter).
+/// Finalize/lock is still driven org-wide by OPSPData.status.
+model OPSPUserSection {
+  id                   String   @id @default(cuid())
+  orgId                String
+  userId               String
+  year                 Int
+  quarter              String
+  kpiAccountability    Json?
+  quarterlyPriorities  Json?
+  criticalNumAcct      Json?
+  balancingCritNumAcct Json?
+  createdAt            DateTime @default(now())
+  updatedAt            DateTime @updatedAt
+  createdBy            String
+  updatedBy            String?
+  org                  Org      @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  user                 User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([orgId, userId, year, quarter])
+  @@index([orgId])
+  @@index([userId])
+  @@index([year, quarter])
+  @@schema("app_quikscale")
+}
+
 model OPSPReviewEntry {
   id                 String   @id @default(cuid())
   orgId              String
@@ -1399,71 +1575,6 @@ model HabitAssessmentResponse {
   @@unique([habitAssessmentId, respondentUserId])
   @@index([habitAssessmentId])
   @@schema("app_quikscale")
-}
-
-model Notification {
-  id                String    @id @default(cuid())
-  orgId             String
-  userId            String
-  title             String
-  message           String
-  type              String
-  relatedEntityId   String?
-  relatedEntityType String?
-  read              Boolean   @default(false)
-  readAt            DateTime?
-  channel           String    @default("in_app")
-  createdAt         DateTime  @default(now())
-  org               Org       @relation(fields: [orgId], references: [id], onDelete: Cascade)
-
-  @@index([orgId])
-  @@index([userId])
-  @@index([read])
-  @@index([orgId, userId, read])
-  @@schema("public")
-}
-
-model AuditLog {
-  id         String   @id @default(cuid())
-  orgId      String
-  action     String
-  entityType String
-  entityId   String
-  oldValues  String?
-  newValues  String?
-  changes    String[]
-  actorId    String
-  actorRole  String?
-  reason     String?
-  ipAddress  String?
-  userAgent  String?
-  createdAt  DateTime @default(now())
-  org        Org      @relation(fields: [orgId], references: [id], onDelete: Cascade)
-
-  @@index([orgId])
-  @@index([entityType, entityId])
-  @@index([actorId])
-  @@index([createdAt])
-  @@index([orgId, createdAt])
-  @@schema("public")
-}
-
-model FeatureFlag {
-  id             String   @id @default(cuid())
-  orgId          String
-  name           String
-  description    String?
-  key            String
-  enabled        Boolean  @default(false)
-  rolloutPercent Int?
-  value          String?
-  createdAt      DateTime @default(now())
-  updatedAt      DateTime @updatedAt
-  org            Org      @relation(fields: [orgId], references: [id], onDelete: Cascade)
-
-  @@unique([orgId, key])
-  @@index([orgId])
-  @@schema("public")
 }
 
 model QuarterSetting {
@@ -1729,6 +1840,94 @@ model FeedbackEntry {
   @@schema("app_quikscale")
 }
 
+/// Radio-style tri-state used by every format / punctuality / quality flag.
+enum ClientMeetingFlag {
+  YES
+  NO
+  NA
+
+  @@schema("app_quikscale")
+}
+
+/// Call status for daily huddles and weekly meetings.
+enum ClientMeetingStatus {
+  HELD
+  NOT_HELD
+  CALL_CANCELLED_BY_CLIENT
+  HOLIDAY_FOR_CLIENT
+  HOLIDAY_FOR_SUCCESS_ALCHEMIST
+  OTHER
+
+  @@schema("app_quikscale")
+}
+
+// <------------------------------------------> quikscale schema end <------------------------------------------->
+
+model Notification {
+  id                String    @id @default(cuid())
+  orgId             String
+  userId            String
+  title             String
+  message           String
+  type              String
+  relatedEntityId   String?
+  relatedEntityType String?
+  read              Boolean   @default(false)
+  readAt            DateTime?
+  channel           String    @default("in_app")
+  createdAt         DateTime  @default(now())
+  org               Org       @relation(fields: [orgId], references: [id], onDelete: Cascade)
+
+  @@index([orgId])
+  @@index([userId])
+  @@index([read])
+  @@index([orgId, userId, read])
+  @@schema("public")
+}
+
+model AuditLog {
+  id         String   @id @default(cuid())
+  orgId      String
+  action     String
+  entityType String
+  entityId   String
+  oldValues  String?
+  newValues  String?
+  changes    String[]
+  actorId    String
+  actorRole  String?
+  reason     String?
+  ipAddress  String?
+  userAgent  String?
+  createdAt  DateTime @default(now())
+  org        Org      @relation(fields: [orgId], references: [id], onDelete: Cascade)
+
+  @@index([orgId])
+  @@index([entityType, entityId])
+  @@index([actorId])
+  @@index([createdAt])
+  @@index([orgId, createdAt])
+  @@schema("public")
+}
+
+model FeatureFlag {
+  id             String   @id @default(cuid())
+  orgId          String
+  name           String
+  description    String?
+  key            String
+  enabled        Boolean  @default(false)
+  rolloutPercent Int?
+  value          String?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+  org            Org      @relation(fields: [orgId], references: [id], onDelete: Cascade)
+
+  @@unique([orgId, key])
+  @@index([orgId])
+  @@schema("public")
+}
+
 model AppModuleFlag {
   id        String   @id @default(cuid())
   orgId     String
@@ -1832,6 +2031,34 @@ model SessionEvent {
   @@schema("public")
 }
 
+/// Authentication / security audit trail. Co-located with SessionEvent in the
+/// shared `public` schema because authentication is centralized in
+/// packages/auth across all apps. Captures login success/failure, logout,
+/// password reset/change, session revoke, and (future) MFA events. userId is
+/// nullable so failed logins for unknown emails are still recorded.
+model AuthLog {
+  id        String   @id @default(cuid())
+  userId    String?
+  orgId     String?
+  email     String? // attempted email — useful for login_failure with unknown user
+  event     String // login_success|login_failure|logout|password_reset_requested|password_reset_completed|password_changed|session_revoke|mfa_enrolled|mfa_challenge_success|mfa_challenge_failure|mfa_disabled
+  outcome   String   @default("success") // success|failure
+  reason    String? // failure/detail code, e.g. "invalid_credentials", "rate_limited"
+  appSlug   String?
+  ipAddress String?
+  userAgent String?
+  metadata  Json?
+  createdAt DateTime @default(now())
+  org       Org?     @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  user      User?    @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, createdAt])
+  @@index([orgId, createdAt])
+  @@index([event, createdAt])
+  @@index([createdAt])
+  @@schema("public")
+}
+
 /// Platform-wide announcement banner shown to tenants. Managed via super admin
 /// broadcast UI. Empty targetOrgIds = all tenants; empty targetAppSlugs = all apps.
 model BroadcastAnnouncement {
@@ -1875,6 +2102,10 @@ model OrgAppAccess {
   appId     String
   enabled   Boolean  @default(true)
   reason    String?
+  /// Per-app free-trial expiry for self-serve activation. null = no trial
+  /// (grandfathered access granted by an admin, or an upgraded/paid app) →
+  /// treated as active. A future date = trialing; a past date = expired.
+  trialEndsAt DateTime?
   updatedBy String?
   updatedAt DateTime @updatedAt
   createdAt DateTime @default(now())
@@ -1884,6 +2115,28 @@ model OrgAppAccess {
   @@unique([orgId, appId])
   @@index([orgId])
   @@index([appId])
+  @@schema("quikit")
+}
+
+/// Per-org subscription / trial state (self-serve registration). Additive: an
+/// org with NO Subscription row is implicitly grandfathered (treated as active)
+/// by every read path, so the pre-existing orgs are never gated. Self-serve
+/// registrations start as `trialing` with a 14-day `trialEndsAt`. References
+/// public.Plan.slug by value only (no FK — mirrors the Org.plan convention).
+model Subscription {
+  id               String    @id @default(cuid())
+  orgId            String    @unique
+  status           String    @default("trialing") // trialing|active|past_due|canceled|expired
+  planSlug         String    @default("startup")
+  trialEndsAt      DateTime?
+  currentPeriodEnd DateTime?
+  source           String? // self_serve_registration|backfill|super_admin
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
+  org              Org       @relation(fields: [orgId], references: [id], onDelete: Cascade)
+
+  @@index([status])
+  @@index([trialEndsAt])
   @@schema("quikit")
 }
 
@@ -2085,6 +2338,7 @@ model CnVendor {
   pos         CnPurchaseOrder[]
   grns        CnGoodsReceiptNote[]
   goodReturns CnGoodReturn[]
+  hireRentRecords CnHireRentRecord[]
 
   // --- grafted: cross-schema relations (Org/User) ---
   org Org @relation(fields: [orgId], references: [id], onDelete: Cascade)
@@ -2125,6 +2379,7 @@ model CnCustomer {
   updatedBy       String
 
   projects CnProject[]
+  hireRentRecords CnHireRentRecord[]
 
   // --- grafted: cross-schema relations (Org/User) ---
   org Org @relation(fields: [orgId], references: [id], onDelete: Cascade)
@@ -2528,6 +2783,15 @@ model CnProject {
   stockLedger      CnStockLedger[]
   estimations      CnMaterialEstimation[]
   dieselLogs       CnDieselLog[]
+  equipmentLogs       CnEquipmentLog[]
+  maintenanceJobCards CnMaintenanceJobCard[]
+  equipmentDeploymentsDest CnEquipmentDeployment[] @relation("DeployDestination")
+  equipmentDeploymentsFrom CnEquipmentDeployment[] @relation("DeploySource")
+  fleetDashboards  CnFleetDashboard[]
+  hireRentRecords  CnHireRentRecord[]
+  fixedAssetTransactions CnFixedAssetTransaction[]
+  fixedAssetTransactionsFrom CnFixedAssetTransaction[] @relation("FaTxnSource")
+  fixedAssetTransactionsTo   CnFixedAssetTransaction[] @relation("FaTxnDestination")
   gatePasses       CnGatePass[]
   goodReturns      CnGoodReturn[]
   internalReturns  CnInternalReturn[]
@@ -2560,13 +2824,27 @@ model CnMachinery {
   locationId     String?
   fuelType       String?
   capacity       String?
-  status         String   @default("active")
+  meterType            String   @default("hour")
+  currentMeter         Decimal? @db.Decimal(18, 2)
+  fuelNorm             Decimal? @db.Decimal(18, 4)
+  serviceIntervalValue Decimal? @db.Decimal(18, 4)
+  serviceIntervalUnit  String?
+  lastServiceMeter     Decimal? @db.Decimal(18, 2)
+  ownershipType        String   @default("owned")
+  capitalisationCost   Decimal? @db.Decimal(18, 2)
+  deprRate             Decimal? @db.Decimal(5, 2)
+  deprMethod           String?
+  status               String   @default("active")
   createdAt      DateTime @default(now())
   updatedAt      DateTime @updatedAt
   createdBy      String
   updatedBy      String
 
-  dieselLogs CnDieselLog[]
+  dieselLogs          CnDieselLog[]
+  equipmentLogs       CnEquipmentLog[]
+  maintenanceJobCards CnMaintenanceJobCard[]
+  equipmentDeployments CnEquipmentDeployment[]
+  hireRentRecords      CnHireRentRecord[]
 
   project        CnProject?    @relation(fields: [projectId], references: [id])
 
@@ -2577,6 +2855,223 @@ model CnMachinery {
   @@index([orgId])
   @@index([projectId])
   @@map("Machinery")
+  @@schema("app_quikinfra")
+}
+
+/// Sidebar: Equipment Log Book
+model CnEquipmentLog {
+  id              String   @id @default(cuid())
+  orgId           String
+  equipmentId     String
+  projectId       String?
+  logDate         DateTime
+  shift           String   @default("Day")
+  openingMeter    Decimal? @db.Decimal(18, 2)
+  closingMeter    Decimal? @db.Decimal(18, 2)
+  meterReset      Boolean  @default(false)
+  run             Decimal? @db.Decimal(18, 4)
+  idleHours       Decimal? @db.Decimal(18, 4)
+  breakdownHours  Decimal? @db.Decimal(18, 4)
+  dieselIssued    Decimal? @db.Decimal(18, 4)
+  fuelRate        Decimal? @db.Decimal(18, 4)
+  operatorName    String?
+  productivityQty Decimal? @db.Decimal(18, 4)
+  outputUom       String?
+  remarks         String?
+  status          String   @default("draft")
+  approvalId      String?
+  rejectReason    String?
+  submittedAt     DateTime?
+  submittedBy     String?
+  approvedAt      DateTime?
+  approvedBy      String?
+  rejectedAt      DateTime?
+  rejectedBy      String?
+  returnedAt      DateTime?
+  returnedBy      String?
+  returnReason    String?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+  createdBy       String
+  updatedBy       String
+
+  equipment CnMachinery @relation(fields: [equipmentId], references: [id])
+  project   CnProject?  @relation(fields: [projectId], references: [id])
+  org       Org         @relation(fields: [orgId], references: [id], onDelete: Cascade)
+
+  @@index([orgId])
+  @@index([equipmentId])
+  @@index([projectId])
+  @@index([logDate])
+  @@index([status])
+  @@map("Equipment_logs")
+  @@schema("app_quikinfra")
+}
+
+/// Sidebar: Maintenance (spares stored as JSON on job card)
+model CnMaintenanceJobCard {
+  id               String   @id @default(cuid())
+  orgId            String
+  jobNumber        String
+  equipmentId      String
+  projectId        String?
+  jobType          String   @default("breakdown")
+  serviceDate      DateTime
+  meterAtService   Decimal? @db.Decimal(18, 2)
+  downtimeHours    Decimal? @db.Decimal(18, 4)
+  reportedProblem  String?
+  labourCost       Decimal  @default(0) @db.Decimal(18, 2)
+  serviceCost      Decimal  @default(0) @db.Decimal(18, 2)
+  totalCost        Decimal  @default(0) @db.Decimal(18, 2)
+  spares           Json     @default("[]")
+  remarks          String?
+  status           String   @default("open")
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+  createdBy        String
+  updatedBy        String
+
+  equipment CnMachinery @relation(fields: [equipmentId], references: [id])
+  project   CnProject?  @relation(fields: [projectId], references: [id])
+  org       Org         @relation(fields: [orgId], references: [id], onDelete: Cascade)
+
+  @@unique([orgId, jobNumber])
+  @@index([orgId])
+  @@index([equipmentId])
+  @@index([projectId])
+  @@index([status])
+  @@index([serviceDate])
+  @@map("Maintenance_job_cards")
+  @@schema("app_quikinfra")
+}
+
+/// Sidebar: Deployment & Compliance — `recordType`: transfer | document
+model CnEquipmentDeployment {
+  id                   String    @id @default(cuid())
+  orgId                String
+  recordType           String
+  referenceNumber      String?
+  equipmentId          String
+  status               String
+  sourceProjectId      String?
+  destinationProjectId String?
+  transferType         String?
+  transferDate         DateTime?
+  returnableFrom       DateTime?
+  returnableTo         DateTime?
+  reason               String?
+  remarks              String?
+  gatePassNo           String?
+  docType              String?
+  docNumber            String?
+  issueDate            DateTime?
+  expiryDate           DateTime?
+  alertDays            Int?
+  fileUrl              String?
+  createdAt            DateTime  @default(now())
+  updatedAt            DateTime  @updatedAt
+  createdBy            String
+  updatedBy            String
+
+  equipment          CnMachinery @relation(fields: [equipmentId], references: [id])
+  sourceProject      CnProject?  @relation("DeploySource", fields: [sourceProjectId], references: [id])
+  destinationProject CnProject?  @relation("DeployDestination", fields: [destinationProjectId], references: [id])
+  org                Org         @relation(fields: [orgId], references: [id], onDelete: Cascade)
+
+  @@unique([orgId, referenceNumber])
+  @@index([orgId])
+  @@index([recordType])
+  @@index([equipmentId])
+  @@index([status])
+  @@index([transferDate])
+  @@index([expiryDate])
+  @@map("Equipment_deployment")
+  @@schema("app_quikinfra")
+}
+
+/// Fleet Dashboard — cached KPI snapshots (sidebar: Fleet Dashboard)
+model CnFleetDashboard {
+  id         String    @id @default(cuid())
+  orgId      String
+  cacheKey   String
+  projectId  String?
+  periodFrom DateTime?
+  periodTo   DateTime?
+  payload    Json
+  computedAt DateTime  @default(now())
+  createdAt  DateTime  @default(now())
+  updatedAt  DateTime  @updatedAt
+
+  project CnProject? @relation(fields: [projectId], references: [id])
+  org     Org        @relation(fields: [orgId], references: [id], onDelete: Cascade)
+
+  @@unique([orgId, cacheKey])
+  @@index([orgId])
+  @@index([projectId])
+  @@index([computedAt])
+  @@map("Fleet_dashboard")
+  @@schema("app_quikinfra")
+}
+
+/// Sidebar: Hire & Rent — `recordType`: rate | hire_in | rent_out
+model CnHireRentRecord {
+  id               String    @id @default(cuid())
+  orgId            String
+  recordType       String
+  referenceNumber  String?
+  direction        String?
+  rateBasis        String?
+  equipmentId      String?
+  equipmentType    String?
+  vendorId         String?
+  customerId       String?
+  projectId        String?
+  rate             Decimal?  @db.Decimal(18, 2)
+  sacCode          String?
+  gstPercent       Decimal?  @db.Decimal(5, 2)
+  minGuaranteedQty Decimal?  @db.Decimal(18, 4)
+  effectiveFrom    DateTime?
+  periodFrom       DateTime?
+  periodTo         DateTime?
+  vendorClaimedQty Decimal?  @db.Decimal(18, 4)
+  loggedQty        Decimal?  @db.Decimal(18, 4)
+  billableQty      Decimal?  @db.Decimal(18, 4)
+  varianceQty      Decimal?  @db.Decimal(18, 4)
+  payableAmount    Decimal?  @db.Decimal(18, 2)
+  gstAmount        Decimal?  @db.Decimal(18, 2)
+  totalAmount      Decimal?  @db.Decimal(18, 2)
+  amount           Decimal?  @db.Decimal(18, 2)
+  status           String
+  approvalId       String?
+  submittedAt      DateTime?
+  submittedBy      String?
+  approvedAt       DateTime?
+  approvedBy       String?
+  rejectedAt       DateTime?
+  rejectedBy       String?
+  rejectReason     String?
+  returnedAt       DateTime?
+  returnedBy       String?
+  returnReason     String?
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
+  createdBy        String
+  updatedBy        String
+
+  equipment CnMachinery? @relation(fields: [equipmentId], references: [id])
+  vendor    CnVendor?    @relation(fields: [vendorId], references: [id])
+  customer  CnCustomer?  @relation(fields: [customerId], references: [id])
+  project   CnProject?   @relation(fields: [projectId], references: [id])
+  org       Org          @relation(fields: [orgId], references: [id], onDelete: Cascade)
+
+  @@unique([orgId, referenceNumber])
+  @@index([orgId])
+  @@index([recordType])
+  @@index([direction])
+  @@index([equipmentId])
+  @@index([status])
+  @@index([periodFrom])
+  @@map("Hire_rent_records")
   @@schema("app_quikinfra")
 }
 
@@ -2594,6 +3089,10 @@ model CnAsset {
   currentStock    Decimal?  @db.Decimal(18, 4)
   minStockLevel   Decimal?  @db.Decimal(18, 4)
   reorderLevel    Decimal?  @db.Decimal(18, 4)
+  lostQty         Decimal?  @db.Decimal(18, 4)
+  deprMethod      String?
+  deprRate        Decimal?  @db.Decimal(5, 2)
+  accumulatedDepr Decimal?  @db.Decimal(18, 2)
   status          String    @default("In Use")
   createdAt       DateTime  @default(now())
   updatedAt       DateTime  @updatedAt
@@ -2601,6 +3100,7 @@ model CnAsset {
   updatedBy       String
 
   project       CnProject? @relation(fields: [projectId], references: [id])
+  transactions  CnFixedAssetTransaction[]
 
   // --- grafted: cross-schema relations (Org/User) ---
   org Org @relation(fields: [orgId], references: [id], onDelete: Cascade)
@@ -2609,6 +3109,55 @@ model CnAsset {
   @@index([orgId])
   @@index([projectId])
   @@map("Assets")
+  @@schema("app_quikinfra")
+}
+
+/// Sidebar: Fixed Asset / Tools — `recordType`: issuance | transfer | repair | audit
+model CnFixedAssetTransaction {
+  id                   String    @id @default(cuid())
+  orgId                String
+  recordType           String
+  referenceNumber      String
+  assetId              String
+  status               String
+  issuedToType         String?
+  issuedTo             String?
+  projectId            String?
+  quantity             Decimal?  @db.Decimal(18, 4)
+  pendingQty           Decimal?  @db.Decimal(18, 4)
+  gatePassNo           String?
+  expectedReturnDate   DateTime?
+  returnable           Boolean?
+  notes                String?
+  sourceProjectId      String?
+  destinationProjectId String?
+  destinationLocation  String?
+  transferDate         DateTime?
+  reason               String?
+  problem              String?
+  repairCost           Decimal?  @db.Decimal(18, 2)
+  bookQty              Decimal?  @db.Decimal(18, 4)
+  countedQty           Decimal?  @db.Decimal(18, 4)
+  varianceQty          Decimal?  @db.Decimal(18, 4)
+  auditDate            DateTime?
+  remarks              String?
+  createdAt            DateTime  @default(now())
+  updatedAt            DateTime  @updatedAt
+  createdBy            String
+  updatedBy            String
+
+  asset              CnAsset    @relation(fields: [assetId], references: [id])
+  project            CnProject? @relation(fields: [projectId], references: [id])
+  sourceProject      CnProject? @relation("FaTxnSource", fields: [sourceProjectId], references: [id])
+  destinationProject CnProject? @relation("FaTxnDestination", fields: [destinationProjectId], references: [id])
+  org                Org        @relation(fields: [orgId], references: [id], onDelete: Cascade)
+
+  @@unique([orgId, referenceNumber])
+  @@index([orgId])
+  @@index([recordType])
+  @@index([assetId])
+  @@index([status])
+  @@map("Fixed_asset_transactions")
   @@schema("app_quikinfra")
 }
 
@@ -3595,50 +4144,6 @@ model CnRABLine {
   @@schema("app_quikinfra")
 }
 
-model CnApprovalRule {
-  id         String    @id @default(cuid())
-  orgId      String
-  name       String
-  docType    String
-  /// Threshold: approval required if doc total >= this amount (null = always).
-  minAmount  Decimal?  @db.Decimal(18, 2)
-  approverId String
-  status     String    @default("active")
-  createdAt  DateTime  @default(now())
-  updatedAt  DateTime  @updatedAt
-  createdBy  String
-  updatedBy  String?
-  deletedAt  DateTime?
-  org        Org       @relation(fields: [orgId], references: [id], onDelete: Cascade)
-
-  @@index([orgId])
-  @@index([orgId, docType])
-  @@index([deletedAt])
-  @@schema("app_quikinfra")
-}
-
-model CnApprovalRequest {
-  id          String    @id @default(cuid())
-  orgId       String
-  docType     String
-  docId       String
-  docRef      String
-  amount      Decimal?  @db.Decimal(18, 2)
-  requestedBy String
-  approverId  String
-  status      String    @default("pending")
-  decisionAt  DateTime?
-  comment     String?
-  createdAt   DateTime  @default(now())
-  updatedAt   DateTime  @updatedAt
-  org         Org       @relation(fields: [orgId], references: [id], onDelete: Cascade)
-
-  @@index([orgId])
-  @@index([approverId, status])
-  @@index([docType, docId])
-  @@schema("app_quikinfra")
-}
-
 model CnQCInspection {
   id               String    @id @default(cuid())
   orgId            String
@@ -3675,34 +4180,6 @@ model CnQCInspection {
   @@schema("app_quikinfra")
 }
 
-model CnSafetyIncident {
-  id             String    @id @default(cuid())
-  orgId          String
-  projectId      String?
-  incidentNumber String
-  incidentDate   DateTime
-  category       String
-  severity       String    @default("low")
-  title          String
-  description    String?
-  reportedBy     String
-  status         String    @default("open")
-  resolvedAt     DateTime?
-  resolvedBy     String?
-  createdAt      DateTime  @default(now())
-  updatedAt      DateTime  @updatedAt
-  createdBy      String
-  updatedBy      String?
-  deletedAt      DateTime?
-  org            Org       @relation(fields: [orgId], references: [id], onDelete: Cascade)
-
-  @@unique([orgId, incidentNumber])
-  @@index([orgId])
-  @@index([status])
-  @@index([deletedAt])
-  @@schema("app_quikinfra")
-}
-
 model CnSafetyChecklist {
   id            String    @id @default(cuid())
   orgId         String
@@ -3725,26 +4202,6 @@ model CnSafetyChecklist {
   @@index([checklistDate])
   @@index([deletedAt])
   @@map("Safety_checklists")
-  @@schema("app_quikinfra")
-}
-
-model CnDocument {
-  id          String    @id @default(cuid())
-  orgId       String
-  refType     String
-  refId       String
-  fileName    String
-  mimeType    String
-  sizeBytes   Int
-  /// Path relative to DOCS_ROOT (e.g. "orgId/uuid-file.pdf"). Local disk MVP.
-  storagePath String
-  uploadedBy  String
-  createdAt   DateTime  @default(now())
-  deletedAt   DateTime?
-  org         Org       @relation(fields: [orgId], references: [id], onDelete: Cascade)
-
-  @@index([orgId, refType, refId])
-  @@index([deletedAt])
   @@schema("app_quikinfra")
 }
 
@@ -6996,125 +7453,6 @@ model QtFeedback {
   @@schema("app_quiktrack")
 }
 
-/// Radio-style tri-state used by every format / punctuality / quality flag.
-enum ClientMeetingFlag {
-  YES
-  NO
-  NA
-
-  @@schema("app_quikscale")
-}
-
-/// Call status for daily huddles and weekly meetings.
-enum ClientMeetingStatus {
-  HELD
-  NOT_HELD
-  CALL_CANCELLED_BY_CLIENT
-  HOLIDAY_FOR_CLIENT
-  HOLIDAY_FOR_SUCCESS_ALCHEMIST
-  OTHER
-
-  @@schema("app_quikscale")
-}
-
-// ============================================================================
-// Custom Fields (a.k.a. Customer Fields) — see FRD "Customer Fields" v2.
-// Two-tier scope: scope="global" (org-wide, projectId NULL) or scope="space"
-// (one project). Values live in QtIssueFieldValue with typed columns so the
-// backlog filter can index by value (NFR-02). Name/key uniqueness within a
-// scope is enforced in the service layer (case-insensitive — FRD §5.1).
-// ============================================================================
-
-model QtCustomField {
-  id           String                @id @default(cuid())
-  orgId        String
-  scope        String                @default("space") // "global" | "space"
-  projectId    String? // NULL when scope = "global"
-  name         String
-  key          String // immutable, generated from name (e.g. "customer_tier")
-  type         String // SHORT_TEXT | LONG_TEXT | NUMBER | DATE | DROPDOWN_SINGLE | DROPDOWN_MULTI | CHECKBOX | URL | USER_PICKER | LABELS
-  description  String?
-  status       String                @default("active") // "active" | "archived"
-  isRequired   Boolean               @default(false)
-  defaultValue Json? // type-dependent default (string | number | bool | string[])
-  placeholder  String?
-  helpText     String?
-  position     Int                   @default(0)
-  isDeleted    Boolean               @default(false)
-  createdAt    DateTime              @default(now())
-  updatedAt    DateTime              @updatedAt
-  createdBy    String?
-  updatedBy    String?
-  org          Org                   @relation(fields: [orgId], references: [id], onDelete: Cascade)
-  project      QtProject?            @relation(fields: [projectId], references: [id], onDelete: Cascade)
-  options      QtCustomFieldOption[]
-  values       QtIssueFieldValue[]
-  audits       QtCustomFieldAudit[]
-
-  @@unique([projectId, key])
-  @@index([orgId, scope, status])
-  @@index([projectId, status])
-  @@schema("app_quiktrack")
-}
-
-model QtCustomFieldOption {
-  id        String        @id @default(cuid())
-  fieldId   String
-  label     String
-  value     String // stored value (slug); kept stable across label renames
-  position  Int           @default(0)
-  isActive  Boolean       @default(true)
-  createdAt DateTime      @default(now())
-  field     QtCustomField @relation(fields: [fieldId], references: [id], onDelete: Cascade)
-
-  @@index([fieldId, isActive])
-  @@schema("app_quiktrack")
-}
-
-model QtIssueFieldValue {
-  id           String        @id @default(cuid())
-  orgId        String
-  issueId      String
-  fieldId      String
-  valueText    String? // SHORT_TEXT, LONG_TEXT, URL, DROPDOWN_SINGLE, USER_PICKER
-  valueNumber  Float? // NUMBER
-  valueDate    DateTime? // DATE
-  valueBoolean Boolean? // CHECKBOX
-  valueJson    Json? // DROPDOWN_MULTI, LABELS (string[])
-  createdAt    DateTime      @default(now())
-  updatedAt    DateTime      @updatedAt
-  createdBy    String?
-  updatedBy    String?
-  org          Org           @relation(fields: [orgId], references: [id], onDelete: Cascade)
-  issue        QtIssue       @relation(fields: [issueId], references: [id], onDelete: Cascade)
-  field        QtCustomField @relation(fields: [fieldId], references: [id], onDelete: Cascade)
-
-  @@unique([issueId, fieldId])
-  @@index([fieldId, valueText])
-  @@index([fieldId, valueNumber])
-  @@index([fieldId, valueDate])
-  @@index([fieldId, valueBoolean])
-  @@index([orgId])
-  @@schema("app_quiktrack")
-}
-
-model QtCustomFieldAudit {
-  id         String         @id @default(cuid())
-  orgId      String
-  fieldId    String?
-  action     String // created | updated | archived | restored | deleted
-  actorId    String?
-  oldValue   Json?
-  newValue   Json?
-  occurredAt DateTime       @default(now())
-  org        Org            @relation(fields: [orgId], references: [id], onDelete: Cascade)
-  field      QtCustomField? @relation(fields: [fieldId], references: [id], onDelete: SetNull)
-
-  @@index([orgId, occurredAt])
-  @@index([fieldId])
-  @@schema("app_quiktrack")
-}
-
 // ===== app_quikcrm models + enums (restored from commit 32931530; tenantId->orgId) =====
 enum CrmOpportunityStage {
   Prospecting
@@ -7550,6 +7888,7 @@ model CrmActivity {
   createdAt         DateTime  @default(now())
   updatedAt         DateTime  @updatedAt
   lead              CrmLead?  @relation(fields: [leadId], references: [id])
+  fieldValues       CrmActivityFieldValue[]
   @@unique([orgId, sourceSystem, externalId])
   @@index([orgId])
   @@index([orgId, relatedKind, relatedObjectId])
@@ -7572,6 +7911,10 @@ model CrmTask {
   leadId           String?
   createdAt        DateTime        @default(now())
   updatedAt        DateTime        @updatedAt
+  /// Set to now() when status transitions INTO Completed; cleared (null) on
+  /// un-complete. NULL for tasks completed before this column existed (no
+  /// backfill — the digest counts completions forward from when it was added).
+  completedAt      DateTime?
   lead             CrmLead? @relation(fields: [leadId], references: [id])
   @@index([orgId])
   @@index([orgId, assignedToUserId])
@@ -7878,6 +8221,88 @@ model CrmCallDisposition {
   @@unique([orgId, code])
   @@unique([orgId, name])
   @@index([orgId])
+  @@schema("app_quikcrm")
+}
+
+// Activity-logging feature (Phase 1). Admin-configurable activity types +
+// their flat custom-field definitions. Modeled on CrmCallDisposition (a
+// per-org config table). Field VALUES are stored separately in an indexed
+// CrmActivityFieldValue table (Phase 2) — NOT a JSON blob — so the dashboard
+// and digests can aggregate/filter by field value. No cascading fields
+// (no dependsOnKey): the only consumer was the quarantined SMB flow.
+// See apps/quikcrm/ACTIVITY-FEATURE-DECISIONS.md.
+model CrmActivityType {
+  id        String   @id @default(cuid())
+  orgId     String
+  code      String
+  label     String
+  category  String?
+  config    Json?
+  sortOrder Int      @default(0)
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  fieldDefinitions CrmActivityFieldDefinition[]
+
+  @@unique([orgId, code])
+  @@index([orgId])
+  @@schema("app_quikcrm")
+}
+
+model CrmActivityFieldDefinition {
+  id             String   @id @default(cuid())
+  orgId          String
+  activityTypeId String
+  key            String
+  label          String
+  fieldType      String
+  requirement    String   @default("Optional")
+  options        Json?
+  visible        Boolean  @default(true)
+  helpText       String?
+  sortOrder      Int      @default(0)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  activityType CrmActivityType @relation(fields: [activityTypeId], references: [id], onDelete: Cascade)
+  fieldValues  CrmActivityFieldValue[]
+
+  @@unique([activityTypeId, key])
+  @@index([orgId])
+  @@index([activityTypeId])
+  @@schema("app_quikcrm")
+}
+
+// Phase 2: indexed, queryable storage for activity custom-field VALUES.
+// Decision #1 — a dedicated typed-column table, NOT a JSON blob — so the
+// Phase-4 dashboard and digests can aggregate/filter BY value (count, sum,
+// group-by) using the per-value indexes below. One row per (activity, field).
+// Mirrors QuikTrack's QtIssueFieldValue. See ACTIVITY-FEATURE-DECISIONS.md.
+model CrmActivityFieldValue {
+  id                String   @id @default(cuid())
+  orgId             String
+  activityId        String
+  fieldDefinitionId String
+  fieldKey          String
+  valueText         String?
+  valueNumber       Float?
+  valueDate         DateTime?
+  valueBoolean      Boolean?
+  valueJson         Json?
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  activity        CrmActivity                @relation(fields: [activityId], references: [id], onDelete: Cascade)
+  fieldDefinition CrmActivityFieldDefinition @relation(fields: [fieldDefinitionId], references: [id], onDelete: Cascade)
+
+  @@unique([activityId, fieldDefinitionId])
+  @@index([orgId])
+  @@index([activityId])
+  @@index([fieldDefinitionId, valueText])
+  @@index([fieldDefinitionId, valueNumber])
+  @@index([fieldDefinitionId, valueDate])
+  @@index([fieldDefinitionId, valueBoolean])
   @@schema("app_quikcrm")
 }
 
@@ -8979,6 +9404,103 @@ model CrmUserPermissionExtra {
   @@schema("app_quikcrm")
 }
 
+// ============================================================================
+// Custom Fields (a.k.a. Customer Fields) — see FRD "Customer Fields" v2.
+// Two-tier scope: scope="global" (org-wide, projectId NULL) or scope="space"
+// (one project). Values live in QtIssueFieldValue with typed columns so the
+// backlog filter can index by value (NFR-02). Name/key uniqueness within a
+// scope is enforced in the service layer (case-insensitive — FRD §5.1).
+// ============================================================================
+
+model QtCustomField {
+  id           String                @id @default(cuid())
+  orgId        String
+  scope        String                @default("space") // "global" | "space"
+  projectId    String? // NULL when scope = "global"
+  name         String
+  key          String // immutable, generated from name (e.g. "customer_tier")
+  type         String // SHORT_TEXT | LONG_TEXT | NUMBER | DATE | DROPDOWN_SINGLE | DROPDOWN_MULTI | CHECKBOX | URL | USER_PICKER | LABELS
+  description  String?
+  status       String                @default("active") // "active" | "archived"
+  isRequired   Boolean               @default(false)
+  defaultValue Json? // type-dependent default (string | number | bool | string[])
+  placeholder  String?
+  helpText     String?
+  position     Int                   @default(0)
+  isDeleted    Boolean               @default(false)
+  createdAt    DateTime              @default(now())
+  updatedAt    DateTime              @updatedAt
+  createdBy    String?
+  updatedBy    String?
+  org          Org                   @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  project      QtProject?            @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  options      QtCustomFieldOption[]
+  values       QtIssueFieldValue[]
+  audits       QtCustomFieldAudit[]
+
+  @@unique([projectId, key])
+  @@index([orgId, scope, status])
+  @@index([projectId, status])
+  @@schema("app_quiktrack")
+}
+
+model QtCustomFieldOption {
+  id        String        @id @default(cuid())
+  fieldId   String
+  label     String
+  value     String // stored value (slug); kept stable across label renames
+  position  Int           @default(0)
+  isActive  Boolean       @default(true)
+  createdAt DateTime      @default(now())
+  field     QtCustomField @relation(fields: [fieldId], references: [id], onDelete: Cascade)
+
+  @@index([fieldId, isActive])
+  @@schema("app_quiktrack")
+}
+
+model QtIssueFieldValue {
+  id           String        @id @default(cuid())
+  orgId        String
+  issueId      String
+  fieldId      String
+  valueText    String? // SHORT_TEXT, LONG_TEXT, URL, DROPDOWN_SINGLE, USER_PICKER
+  valueNumber  Float? // NUMBER
+  valueDate    DateTime? // DATE
+  valueBoolean Boolean? // CHECKBOX
+  valueJson    Json? // DROPDOWN_MULTI, LABELS (string[])
+  createdAt    DateTime      @default(now())
+  updatedAt    DateTime      @updatedAt
+  createdBy    String?
+  updatedBy    String?
+  org          Org           @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  issue        QtIssue       @relation(fields: [issueId], references: [id], onDelete: Cascade)
+  field        QtCustomField @relation(fields: [fieldId], references: [id], onDelete: Cascade)
+
+  @@unique([issueId, fieldId])
+  @@index([fieldId, valueText])
+  @@index([fieldId, valueNumber])
+  @@index([fieldId, valueDate])
+  @@index([fieldId, valueBoolean])
+  @@index([orgId])
+  @@schema("app_quiktrack")
+}
+
+model QtCustomFieldAudit {
+  id         String         @id @default(cuid())
+  orgId      String
+  fieldId    String?
+  action     String // created | updated | archived | restored | deleted
+  actorId    String?
+  oldValue   Json?
+  newValue   Json?
+  occurredAt DateTime       @default(now())
+  org        Org            @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  field      QtCustomField? @relation(fields: [fieldId], references: [id], onDelete: SetNull)
+
+  @@index([orgId, occurredAt])
+  @@index([fieldId])
+  @@schema("app_quiktrack")
+}
 
 // ============================================================================
 // QuikHRMS (app_quikhrms schema) — merged from apps/quikhrms. Models that

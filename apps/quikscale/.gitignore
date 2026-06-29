@@ -5,6 +5,11 @@
 
 # Testing
 /coverage
+__tests__/
+*.test.ts
+*.test.tsx
+*.spec.ts
+*.spec.tsx
 
 # Next.js
 /.next/

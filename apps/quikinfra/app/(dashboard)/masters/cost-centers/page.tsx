@@ -115,6 +115,7 @@ export default function CostCentersPage() {
   return (
     <>
       <MasterListPage title="Cost Centers" entityName="Cost Center" permissionUrl="/masters/cost-centers" columns={columns}
+        showStatusTabs
         data={(result?.data ?? []) as Row[]} total={result?.total ?? 0} isLoading={isLoading}
         canImport canExport
         onImport={() => setImportOpen(true)}
@@ -126,8 +127,8 @@ export default function CostCentersPage() {
             Delete cost center{" "}
             <span className="font-semibold text-gray-900">“{item.name}”</span>?
             <br />
-            It will be hidden from the list. You can restore it later from the
-            “Show deleted” view.
+            It will be removed from the list. To keep a cost center but pause it,
+            set its status to Inactive instead — those stay under the Inactive tab.
           </>
         )}
         emptyIcon={<BarChart3 className="w-8 h-8" />}

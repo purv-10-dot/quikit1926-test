@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { withAdminAuth } from "@/lib/api/withAdminAuth";
 import { db } from "@/lib/db";
+import { HIDDEN_APP_SLUGS } from "@quikit/shared";
 
 /**
  * GET /api/apps/switcher
@@ -24,7 +25,7 @@ import { db } from "@/lib/db";
 export const GET = withAdminAuth(async ({ orgId }) => {
   const [allApps, accessRows] = await Promise.all([
     db.app.findMany({
-      where: { status: { not: "disabled" }, slug: { not: "quikit" } },
+      where: { status: { not: "disabled" }, slug: { notIn: ["quikit", ...HIDDEN_APP_SLUGS] } },
       select: {
         id: true,
         name: true,
@@ -58,6 +59,7 @@ export const GET = withAdminAuth(async ({ orgId }) => {
     quikinfra: process.env.QUIKINFRA_URL,
     quiksocial: process.env.QUIKSOCIAL_URL,
     quikcrm: process.env.QUIKCRM_URL,
+    quikhrms: process.env.QUIKHRMS_URL,
   };
   const isDev = process.env.NODE_ENV !== "production";
   const devLocalhostFallbacks: Record<string, string> = {
@@ -70,6 +72,7 @@ export const GET = withAdminAuth(async ({ orgId }) => {
     quikinfra: "http://localhost:3006",
     quiksocial: "http://localhost:3007",
     quikcrm: "http://localhost:3008",
+    quikhrms: "http://localhost:3009",
   };
   function resolveBaseUrl(slug: string, dbBaseUrl: string | null | undefined): string {
     const fromEnv = envBaseUrls[slug];
