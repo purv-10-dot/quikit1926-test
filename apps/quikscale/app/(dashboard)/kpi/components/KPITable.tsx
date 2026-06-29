@@ -3,7 +3,7 @@
 import { useState, useRef, useEffect, useMemo, type UIEvent } from "react";
 import type { KPIRow, WeeklyValue } from "@/lib/types/kpi";
 import { ALL_WEEKS, weekDateLabel } from "@/lib/utils/fiscal";
-import { progressColor, weekCellColors, fmt, fmtCompactBy, getProgressBadgeColors, getLatestWeeklyNote, type NumberFormat } from "@/lib/utils/kpiHelpers";
+import { progressColor, weekCellColors, fmt, formatScaledKpiValue, getProgressBadgeColors, getLatestWeeklyNote, type NumberFormat } from "@/lib/utils/kpiHelpers";
 import { getColorByPercentage } from "@/lib/utils/colorLogic";
 import { UserAuditCell, DateAuditCell } from "@/components/table/AuditCells";
 import { computeQtd, weeklyGoalFor } from "./kpiStats";
@@ -95,9 +95,17 @@ interface Props {
 
 export function KPITable({ kpis: kpisAll, total, page, pageSize, year, quarter, onPageChange, onPageSizeChange, onSort, onRefresh, onSelectionChange, clearSelectionTrigger, onHiddenColsChange, showColTrigger, hideColumns, maxRows, readOnly, fillWidth, canDelete = true, canUpdate = true, sortBy, sortOrder, maxBodyHeight, hasMore, isFetchingMore, onLoadMore, numberFormat = "standard" }: Props) {
   const kpis = maxRows != null ? kpisAll.slice(0, maxRows) : kpisAll;
-  // Compact number formatter honoring the caller's format (Indian on dashboard,
-  // standard everywhere else). Number text only — no styling change.
-  const fmtN = (v: number | null | undefined) => fmtCompactBy(v, numberFormat);
+  // Goal/value formatter. For a Currency KPI with a chosen scale it renders the
+  // currency + scaled unit (₹4 Cr / $9 M); otherwise it's the plain compact
+  // number honoring the caller's format (Indian on dashboard, standard else).
+  // Number text only — no styling change.
+  const fmtN = (kpi: KPIRow, v: number | null | undefined) =>
+    formatScaledKpiValue(v, {
+      measurementUnit: kpi.measurementUnit,
+      currency: kpi.currency,
+      targetScale: kpi.targetScale,
+      numberFormat,
+    });
   // Infinite-scroll mode: bounded-height body whose vertical scroll loads more.
   const infiniteMode = maxBodyHeight != null;
   const handleBodyScroll = (e: UIEvent<HTMLDivElement>) => {
@@ -504,11 +512,11 @@ export function KPITable({ kpis: kpisAll, total, page, pageSize, year, quarter, 
                   )}
                   {/* Target Value */}
                   {!localHideSet.has("targetValue") && (
-                    <td className={tdClass("targetValue")} style={stickyStyle("targetValue", getColWidth("targetValue"))}>{fmtN(kpi.target ?? null)}</td>
+                    <td className={tdClass("targetValue")} style={stickyStyle("targetValue", getColWidth("targetValue"))}>{fmtN(kpi, kpi.target ?? null)}</td>
                   )}
                   {/* Quarterly Goal */}
                   {!localHideSet.has("quarterlyGoal") && (
-                    <td className={tdClass("quarterlyGoal")} style={stickyStyle("quarterlyGoal", getColWidth("quarterlyGoal"))}>{fmtN(kpi.quarterlyGoal ?? null)}</td>
+                    <td className={tdClass("quarterlyGoal")} style={stickyStyle("quarterlyGoal", getColWidth("quarterlyGoal"))}>{fmtN(kpi, kpi.quarterlyGoal ?? null)}</td>
                   )}
                   {/* QTD Goal — Σ weeklyTargets[1..currentWeek-1].
                       Falls back to kpi.qtdGoal when currentWeek is unresolvable. */}
@@ -517,7 +525,7 @@ export function KPITable({ kpis: kpisAll, total, page, pageSize, year, quarter, 
                     return (
                       <>
                         <td className={tdClass("qtdGoal")} style={stickyStyle("qtdGoal", getColWidth("qtdGoal"))}>
-                          {qtdGoal != null ? fmtN(qtdGoal) : "—"}
+                          {qtdGoal != null ? fmtN(kpi, qtdGoal) : "—"}
                         </td>
                         {!localHideSet.has("qtdAchieved") && (() => {
                           // QTD Achieved uses the same semantic traffic-light
@@ -544,7 +552,7 @@ export function KPITable({ kpis: kpisAll, total, page, pageSize, year, quarter, 
                               ].filter(Boolean).join(" ")}
                               style={stickyStyle("qtdAchieved", getColWidth("qtdAchieved"))}
                             >
-                              {qtdAchieved != null ? fmtN(qtdAchieved) : "—"}
+                              {qtdAchieved != null ? fmtN(kpi, qtdAchieved) : "—"}
                             </td>
                           );
                         })()}
@@ -574,7 +582,7 @@ export function KPITable({ kpis: kpisAll, total, page, pageSize, year, quarter, 
                         ].filter(Boolean).join(" ")}
                         style={stickyStyle("qtdAchieved", getColWidth("qtdAchieved"))}
                       >
-                        {dQtdAchieved != null ? fmtN(dQtdAchieved) : "—"}
+                        {dQtdAchieved != null ? fmtN(kpi, dQtdAchieved) : "—"}
                       </td>
                     );
                   })()}
@@ -584,7 +592,7 @@ export function KPITable({ kpis: kpisAll, total, page, pageSize, year, quarter, 
                     <td className={tdClass("weeklyGoal")} style={stickyStyle("weeklyGoal", getColWidth("weeklyGoal"))}>
                       {(() => {
                         const wg = weeklyGoalFor(kpi, currentWeek ?? 1);
-                        return wg > 0 ? fmtN(wg) : "—";
+                        return wg > 0 ? fmtN(kpi, wg) : "—";
                       })()}
                     </td>
                   )}
@@ -730,7 +738,7 @@ export function KPITable({ kpis: kpisAll, total, page, pageSize, year, quarter, 
                           <WeekTooltip weekNumber={w} value={val} note={note} owners={ownerBreakdown}>
                             <div className="flex items-center justify-center w-full h-full px-2 py-2 cursor-default">
                               {hasValue
-                                ? fmtN(val)
+                                ? fmtN(kpi, val)
                                 : <span className="text-gray-300 font-normal">—</span>}
                             </div>
                           </WeekTooltip>

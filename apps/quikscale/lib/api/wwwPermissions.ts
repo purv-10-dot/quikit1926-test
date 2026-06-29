@@ -55,3 +55,48 @@ export async function canEditWWWAssignment(
   // 2. Org admin (v2 AppRole / legacy role / super-admin)
   return isOrgAdmin(userId, orgId);
 }
+
+/**
+ * Returns true when the user may EDIT a specific WWW note (thread entry).
+ *
+ * A note belongs to its author — only the author (or an org admin / super-admin)
+ * can change its content. Other users who can edit the item can still ADD their
+ * own notes, but cannot rewrite someone else's.
+ *
+ * Server-only helper. Call before persisting a note-content change.
+ */
+export async function canEditWWWNote(
+  userId: string,
+  orgId: string,
+  note: { authorId: string },
+): Promise<boolean> {
+  if (!userId || !orgId || !note) return false;
+
+  // 1. Author
+  if (note.authorId === userId) return true;
+
+  // 2. Org admin (v2 AppRole / legacy role / super-admin)
+  return isOrgAdmin(userId, orgId);
+}
+
+/**
+ * Returns true when the user may DELETE a specific WWW note (thread entry).
+ *
+ * Same rule as editing: the author can delete their own note, and an org admin
+ * (or super-admin) can delete anyone's. Other users cannot delete notes.
+ *
+ * Server-only helper. Call before deleting a note.
+ */
+export async function canDeleteWWWNote(
+  userId: string,
+  orgId: string,
+  note: { authorId: string },
+): Promise<boolean> {
+  if (!userId || !orgId || !note) return false;
+
+  // 1. Author
+  if (note.authorId === userId) return true;
+
+  // 2. Org admin (v2 AppRole / legacy role / super-admin)
+  return isOrgAdmin(userId, orgId);
+}

@@ -328,7 +328,7 @@ export function EntityChangeHistoryPanel<T extends AuditEntityBase>({
                 onClick={() => setBucket(t.key)}
                 className={`rounded-full px-3 py-1 text-xs font-medium ${active ? "bg-gray-900 text-white" : "border border-gray-200 text-gray-600 hover:bg-gray-50"}`}
               >
-                {t.label} {count}
+                {t.label} ({count})
               </button>
             );
           })}
