@@ -12,6 +12,7 @@ import { DropdownPicker } from "@quikit/ui";
 import { invalidateFeatureFlagsCache } from "@/lib/hooks/useFeatureFlags";
 import { useMyPermissions } from "@/lib/hooks/useMyPermissions";
 import { validateThresholdInput } from "@/lib/utils/opspThreshold";
+import { resolveActiveQuarterDaysLeft } from "@/lib/utils/quarterDaysLeft";
 
 /* ─── Constants ─────────────────────────────────────────────────────────────── */
 const ACCENT_PRESETS = [
@@ -498,25 +499,20 @@ function ConfigurationsTab() {
 
   useEffect(() => { fetchFlags(); }, [fetchFlags]);
 
-  // Calculate remaining days in current quarter
+  // Calculate remaining days in current quarter. Uses a shared helper that
+  // counts the whole final day as in-quarter (endDate is stored at midnight),
+  // so the threshold banners stay visible on the day the quarter closes
+  // (0 days left) instead of silently disappearing.
   useEffect(() => {
     (async () => {
       try {
         const res = await fetch("/api/org/quarters");
         const json = await res.json();
         if (json.success) {
-          const today = new Date();
-          for (const q of json.data) {
-            const start = new Date(q.startDate);
-            const end = new Date(q.endDate);
-            if (today >= start && today <= end) {
-              const diff = Math.ceil((end.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
-              setQuarterDaysLeft(diff);
-              setQuarterEndLabel(
-                end.toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" }),
-              );
-              break;
-            }
+          const active = resolveActiveQuarterDaysLeft(json.data, new Date());
+          if (active) {
+            setQuarterDaysLeft(active.daysLeft);
+            setQuarterEndLabel(active.endLabel);
           }
         }
       } catch {}
@@ -580,6 +576,13 @@ function ConfigurationsTab() {
   // submitted. So a value larger than days-left is valid (the reminder just
   // starts/shows sooner) → no current-quarter cap, only whole-number >= 0.
   const opspReviewThresholdCheck = validateThresholdInput(opspReviewThreshold, null);
+  // "ends today" reads better than "ends in 0 days" on the quarter's final day.
+  const quarterEndsPhrase =
+    quarterDaysLeft === null
+      ? ""
+      : quarterDaysLeft === 0
+        ? "ends today"
+        : `ends in ${quarterDaysLeft} day${quarterDaysLeft === 1 ? "" : "s"}`;
 
   return (
     <div className="w-full space-y-6 relative">
@@ -722,8 +725,7 @@ function ConfigurationsTab() {
             <div className="rounded-lg bg-amber-50 border border-amber-200 px-3 py-2 mb-4">
               <p className="text-xs text-amber-700">
                 The threshold is counted backwards from the quarter end{quarterEndLabel ? ` (${quarterEndLabel})` : ""}.
-                Your current quarter ends in {quarterDaysLeft} day{quarterDaysLeft === 1 ? "" : "s"}, so the finalize
-                threshold cannot be higher than {quarterDaysLeft}.
+                Your current quarter {quarterEndsPhrase}, so the finalize threshold cannot be higher than {quarterDaysLeft}.
               </p>
             </div>
           )}
@@ -760,7 +762,7 @@ function ConfigurationsTab() {
               <p className="text-xs text-amber-700">
                 The review reminder starts this many days before the quarter end{quarterEndLabel ? ` (${quarterEndLabel})` : ""}
                 {" "}and then keeps reminding — into the next quarter — until the review is submitted. Your current quarter
-                ends in {quarterDaysLeft} day{quarterDaysLeft === 1 ? "" : "s"}.
+                {" "}{quarterEndsPhrase}.
               </p>
             </div>
           )}

@@ -162,7 +162,7 @@ export function OPSPDeadlineBanner() {
   return (
     <>
       {finalize && <FinalizeSubBanner data={finalize} onClick={() => router.push("/opsp")} />}
-      {review && <ReviewSubBanner data={review} onClick={() => router.push("/opsp")} />}
+      {review && <ReviewSubBanner data={review} onClick={() => router.push("/opsp/review")} />}
     </>
   );
 }
