@@ -11,6 +11,7 @@ import { applyAccentColor } from "@quikit/ui/theme-applier";
 import { DropdownPicker } from "@quikit/ui";
 import { invalidateFeatureFlagsCache } from "@/lib/hooks/useFeatureFlags";
 import { useMyPermissions } from "@/lib/hooks/useMyPermissions";
+import { validateThresholdInput } from "@/lib/utils/opspThreshold";
 
 /* ─── Constants ─────────────────────────────────────────────────────────────── */
 const ACCENT_PRESETS = [
@@ -475,6 +476,9 @@ function ConfigurationsTab() {
   const [opspReviewThreshold, setOpspReviewThreshold] = useState("");
   const [futureDaysLimit, setFutureDaysLimit] = useState("");
   const [quarterDaysLeft, setQuarterDaysLeft] = useState<number | null>(null);
+  // Human "ends on" date for the active quarter, shown in the threshold banners
+  // so admins can see exactly where the countdown lands.
+  const [quarterEndLabel, setQuarterEndLabel] = useState<string | null>(null);
   const [toast, setToast] = useState<string | null>(null);
 
   const fetchFlags = useCallback(async () => {
@@ -508,6 +512,9 @@ function ConfigurationsTab() {
             if (today >= start && today <= end) {
               const diff = Math.ceil((end.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
               setQuarterDaysLeft(diff);
+              setQuarterEndLabel(
+                end.toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" }),
+              );
               break;
             }
           }
@@ -564,6 +571,15 @@ function ConfigurationsTab() {
   const addPastQuarterHabit = flags["add_past_quarter_habit"]?.enabled ?? false;
   const indianNumbering = flags["use_indian_numbering"]?.enabled ?? false;
   const wwwNotesRequired = flags["www_notes_required"]?.enabled ?? false;
+
+  // Finalize: a lead-time window counted backwards from quarter end, BOUNDED by
+  // the current quarter (you must finalize before it closes) → cap at days left.
+  const opspThresholdCheck = validateThresholdInput(opspThreshold, quarterDaysLeft);
+  // Review: also counted backwards from quarter end, but the reminder does NOT
+  // stop at quarter end — it persists into the next quarter until the review is
+  // submitted. So a value larger than days-left is valid (the reminder just
+  // starts/shows sooner) → no current-quarter cap, only whole-number >= 0.
+  const opspReviewThresholdCheck = validateThresholdInput(opspReviewThreshold, null);
 
   return (
     <div className="w-full space-y-6 relative">
@@ -705,22 +721,32 @@ function ConfigurationsTab() {
           {quarterDaysLeft !== null && (
             <div className="rounded-lg bg-amber-50 border border-amber-200 px-3 py-2 mb-4">
               <p className="text-xs text-amber-700">
-                Your current quarter ends in {quarterDaysLeft} days. The finalize threshold cannot be higher than that.
+                The threshold is counted backwards from the quarter end{quarterEndLabel ? ` (${quarterEndLabel})` : ""}.
+                Your current quarter ends in {quarterDaysLeft} day{quarterDaysLeft === 1 ? "" : "s"}, so the finalize
+                threshold cannot be higher than {quarterDaysLeft}.
               </p>
             </div>
           )}
           <label className="text-xs text-[var(--color-text-secondary)] block mb-1.5">Enter Finalize Value</label>
           <input
             type="number"
+            min={0}
+            max={quarterDaysLeft ?? undefined}
             value={opspThreshold}
             onChange={(e) => setOpspThreshold(e.target.value)}
             placeholder="Enter value (e.g. 20)"
-            className="w-full border border-[var(--color-border)] rounded-lg px-3 py-2 text-sm bg-[var(--color-bg-primary)] text-[var(--color-text-primary)] mb-3"
+            aria-invalid={!opspThresholdCheck.ok}
+            className={`w-full border rounded-lg px-3 py-2 text-sm bg-[var(--color-bg-primary)] text-[var(--color-text-primary)] mb-1 ${
+              opspThresholdCheck.ok ? "border-[var(--color-border)]" : "border-red-400"
+            }`}
           />
+          <p className="text-xs mb-3 min-h-[1rem] text-red-500">
+            {!opspThresholdCheck.ok ? opspThresholdCheck.error : ""}
+          </p>
           <button
             onClick={() => saveThreshold("opsp_threshold_days", opspThreshold)}
-            disabled={savingKey === "opsp_threshold_days"}
-            className="w-full py-2.5 rounded-lg text-xs font-semibold text-white bg-red-400 hover:bg-red-500 disabled:opacity-50 transition-colors"
+            disabled={savingKey === "opsp_threshold_days" || !opspThresholdCheck.ok}
+            className="w-full py-2.5 rounded-lg text-xs font-semibold text-white bg-red-400 hover:bg-red-500 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
           >
             {savingKey === "opsp_threshold_days" ? "Saving..." : "Save threshold"}
           </button>
@@ -729,18 +755,34 @@ function ConfigurationsTab() {
         {/* OPSP Review Threshold */}
         <div className="border-2 border-accent-200 rounded-xl p-5 bg-[var(--color-bg-primary)]">
           <h4 className="text-sm font-semibold text-accent-600 mb-3">Threshold days for OPSP review</h4>
+          {quarterDaysLeft !== null && (
+            <div className="rounded-lg bg-amber-50 border border-amber-200 px-3 py-2 mb-4">
+              <p className="text-xs text-amber-700">
+                The review reminder starts this many days before the quarter end{quarterEndLabel ? ` (${quarterEndLabel})` : ""}
+                {" "}and then keeps reminding — into the next quarter — until the review is submitted. Your current quarter
+                ends in {quarterDaysLeft} day{quarterDaysLeft === 1 ? "" : "s"}.
+              </p>
+            </div>
+          )}
           <label className="text-xs text-[var(--color-text-secondary)] block mb-1.5">Enter Review Finalize Value</label>
           <input
             type="number"
+            min={0}
             value={opspReviewThreshold}
             onChange={(e) => setOpspReviewThreshold(e.target.value)}
             placeholder="Enter value (e.g. 20)"
-            className="w-full border border-[var(--color-border)] rounded-lg px-3 py-2 text-sm bg-[var(--color-bg-primary)] text-[var(--color-text-primary)] mb-3"
+            aria-invalid={!opspReviewThresholdCheck.ok}
+            className={`w-full border rounded-lg px-3 py-2 text-sm bg-[var(--color-bg-primary)] text-[var(--color-text-primary)] mb-1 ${
+              opspReviewThresholdCheck.ok ? "border-[var(--color-border)]" : "border-red-400"
+            }`}
           />
+          <p className="text-xs mb-3 min-h-[1rem] text-red-500">
+            {!opspReviewThresholdCheck.ok ? opspReviewThresholdCheck.error : ""}
+          </p>
           <button
             onClick={() => saveThreshold("opsp_review_threshold_days", opspReviewThreshold)}
-            disabled={savingKey === "opsp_review_threshold_days"}
-            className="w-full py-2.5 rounded-lg text-xs font-semibold text-white bg-accent-800 hover:bg-accent-900 disabled:opacity-50 transition-colors"
+            disabled={savingKey === "opsp_review_threshold_days" || !opspReviewThresholdCheck.ok}
+            className="w-full py-2.5 rounded-lg text-xs font-semibold text-white bg-accent-800 hover:bg-accent-900 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
           >
             {savingKey === "opsp_review_threshold_days" ? "Saving..." : "Finalize Review OPSP"}
           </button>
