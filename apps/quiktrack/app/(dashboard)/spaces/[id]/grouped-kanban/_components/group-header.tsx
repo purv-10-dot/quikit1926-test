@@ -36,6 +36,12 @@ interface GroupHeaderProps {
    * so renaming, recoloring and deleting are all disabled. Collapse still works.
    */
   virtual?: boolean;
+  /**
+   * Read-only role (e.g. Viewer): like `virtual`, renaming/recoloring/deleting
+   * are disabled and the options menu is hidden. Collapse still works so the
+   * user can still navigate the board.
+   */
+  readOnly?: boolean;
 }
 
 export function GroupHeader({
@@ -48,7 +54,11 @@ export function GroupHeader({
   draggable,
   onDragStart,
   virtual = false,
+  readOnly = false,
 }: GroupHeaderProps) {
+  // A read-only role can't edit the group name/color or delete it. Reuse the
+  // same disabled rendering as the derived (virtual) header.
+  const locked = virtual || readOnly;
   const [editingName, setEditingName] = useState(false);
   const [nameDraft, setNameDraft] = useState(group.name);
   const [menuOpen, setMenuOpen] = useState(false);
@@ -101,7 +111,7 @@ export function GroupHeader({
           <GripVertical className="h-3.5 w-3.5" />
         </span>
       )}
-      {virtual ? (
+      {locked ? (
         <span
           style={{ color: validColor }}
           className="text-lg font-bold tracking-tight"
@@ -159,7 +169,7 @@ export function GroupHeader({
         </span>
       )}
 
-      {!virtual && (
+      {!locked && (
       <div
         className="ml-auto relative"
         onClick={(e) => e.stopPropagation()}

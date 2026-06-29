@@ -2,6 +2,8 @@
 
 QA matrix covering every working feature, sub-action, field, edge case, security concern, and cross-cutting behavior. Use this as the master regression sheet for releases.
 
+*Updated 2026-06-19 — see §61 for the 2026-06 cycle: Custom Fields, Docs folders/sharing/import, Epics, grouped-kanban grouping, time-by-epic, executive/saved-view reports, the new permission model, and the Space→Project rename.*
+
 **Format per feature:**
 - **Best:** the expected happy-path behavior
 - **Worst:** failure modes / edge cases with expected handling
@@ -1874,4 +1876,84 @@ For every authenticated mutation endpoint, run OWASP Top 10 checks:
 
 ---
 
-*Use this exhaustive matrix as the regression sheet for every release. Pair best-case scenarios with E2E happy-path tests in Playwright; pair worst-case + security + perf scenarios with Vitest unit + dedicated security tests. Cover cross-cutting sections (23–30, 41, 50–60) at least once per major version.*
+# 61. Recently Shipped Features (2026-06)
+
+## 61.1 Custom Fields — Definition (Global & Space)
+- **Best:** Org admin creates a global `DROPDOWN_SINGLE` "Customer Tier"; appears on every project's issue form. Space admin creates a project-only `NUMBER` field.
+- **Worst:**
+  - Duplicate name (case-insensitive) → `409`, save blocked.
+  - Dropdown type with no options → validation error.
+  - Non-admin hits the fields settings → `403`.
+- **Field types:** verify each renders correct control — `SHORT_TEXT, LONG_TEXT, NUMBER, DATE, DROPDOWN_SINGLE, DROPDOWN_MULTI, CHECKBOX, URL, USER_PICKER, LABELS`.
+
+## 61.2 Custom Fields — On Issues
+- **Best:** Required field blocks issue save when empty; values persist and show on the detail panel; globals render before space fields.
+- **Worst:**
+  - Edit field after issues exist → `type`/`key` immutable, rejected.
+  - Deactivate a dropdown option → existing values keep historic label, option gone from new pickers.
+
+## 61.3 Custom Fields — Delete vs Archive
+- **Best:** Field with no stored values → hard delete.
+- **Worst:** Field with values → `409 { needsArchive, issueCount }`; only `?confirmArchive=true` archives it; archived field hidden from forms but historical values intact.
+
+## 61.4 Docs — Folders
+- **Best:** Create folder, create/move docs into it, live doc-count updates.
+- **Worst:**
+  - Delete folder → docs orphan to root (`folderId NULL`), none lost.
+  - Folder name >120 chars → blocked.
+  - Pre-migration env (no folder column) → all docs surface as root, no crash.
+
+## 61.5 Docs — Public Share Link
+- **Best:** Share "Can view" → unauthenticated incognito user loads doc + images (proxied), no edit affordance. Revoke → link 404s immediately.
+- **Worst:**
+  - "Can edit" link → anonymous edits save; switch to view-only → subsequent PATCH `403`.
+  - Tampered/expired token → `404`.
+  - Asset key from another tenant via share endpoint → `403`.
+
+## 61.6 Docs — Import
+- **Best:** Import `.docx` (tables/colors preserved), `.md`, `.html`, `.txt`, `.pdf` (heading heuristics) → sanitized HTML doc created, optionally in a folder.
+- **Worst:**
+  - File >15MB or unsupported type (`.exe`) → `400`.
+  - Script/iframe in HTML → stripped on sanitize.
+  - `folderId` for deleted/foreign folder → `400`.
+
+## 61.7 Epics View
+- **Best:** Epics tab lists epics with progress bars (done/in-progress/to-do); search + pagination work; opening an epic edits in the issue modal.
+- **Worst:** No epics → empty state; search with no match → "no epics" message; epic with 0 children → 0% progress, no divide-by-zero.
+
+## 61.8 Grouped Kanban — Group By
+- **Best:** Switch axis among Custom / Status / Priority / Assignee / Type / Epic; choice persists per project across reloads.
+- **Worst:** Group-by Epic shows "No epic" bucket; drag card to another epic re-parents (`epicId` mutates); assignee axis shows "Unassigned" bucket.
+
+## 61.9 Timesheet — Group By Epic & Log-Time Modal
+- **Best:** Grid `Group by Epic → Issue` rolls hours under each epic + "No epic"; grand total = sum of children.
+- **Time input:** `1` → `01:00`, `1.5` → `01:30`, `01:30` stays, blank → `00:00` on blur; all submit correct decimal hours.
+- **Worst:** Negative/garbage input rejected; entry with `hours=0` soft-deletes.
+
+## 61.10 Reports — Executive
+- **Best:** Preset ranges render weeks/trends/heatmap/top-employees; week-over-week deltas correct for ≥2-week ranges.
+- **Worst:** 1-week range → `weekOverWeek.available=false`; combined project+assignee+team+sprint filters apply with AND; non-admin sees only their projects.
+
+## 61.11 Reports — Saved Views, Export, PM Filter
+- **Best:** Save/pin/rename/delete an executive view (owner-private, pinned-first ordering); task report CSV export opens cleanly in Excel (UTF-8 BOM); resource report `roleUserId` PM filter narrows the roster.
+- **Worst:**
+  - 26th saved view → quota error.
+  - Fetch/delete another user's view → `404`.
+  - Non-admin hits `/api/reports/resource` → `403`.
+
+## 61.12 Permission Model (overhaul)
+- **Best:** App-wide role grants global-only items (`Home/Dashboard/Report:view`); project role is authoritative inside its space; `Space Admin` project role = full project access; per-user extras add access.
+- **Worst:**
+  - App role allows `Issue:create`, project role denies → create blocked in that project.
+  - Field set to `readonly`/`hidden` → mutation rejected with *"Field(s) not editable for your role: …"*.
+  - Global-only resource submitted at project scope → silently dropped, save still succeeds.
+  - User with zero project access → friendly access wall (admin contact emails), not a raw error.
+  - Navigation: sidebar items appear/disappear purely from `view` grants (no separate nav config).
+
+## 61.13 Space → Project Rename & Key Immutability
+- **Best:** UI labels read "Project"; URLs still `/spaces/[id]` resolve.
+- **Worst:** Project key field is read-only in settings; API PATCH ignores `projectKey` change (key embedded in work-item IDs).
+
+---
+
+*Use this exhaustive matrix as the regression sheet for every release. Pair best-case scenarios with E2E happy-path tests in Playwright; pair worst-case + security + perf scenarios with Vitest unit + dedicated security tests. Cover cross-cutting sections (23–30, 41, 50–61) at least once per major version. Section 61 tracks features shipped in the 2026-06 cycle.*

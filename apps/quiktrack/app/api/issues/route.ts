@@ -60,6 +60,9 @@ export const GET = withOrgAuth(async ({ orgId, userId }, req) => {
   const filterEpicId = url.searchParams.get("epicId");
   const filterAssigneeId = url.searchParams.get("assigneeId");
   const filterPriority = url.searchParams.get("priority");
+  // When set, also return a To Do / In Progress / Done breakdown for the
+  // filtered set (used by the backlog section badges so they reflect filters).
+  const wantStatusCounts = url.searchParams.get("statusCounts") === "1";
   const search = url.searchParams.get("search")?.trim();
   // Custom field filters: JSON array of { fieldId, type, op, value, value2 }.
   const customFilters = parseCustomFilters(url.searchParams.get("customFilters"));
@@ -213,6 +216,17 @@ export const GET = withOrgAuth(async ({ orgId, userId }, req) => {
 
   const total = await db.qtIssue.count({ where });
 
+  // Optional filtered status breakdown. `todo` is the remainder so it covers the
+  // BACKLOG category (and anything not DONE/IN_PROGRESS) without an extra query.
+  let statusCounts: { todo: number; inProgress: number; done: number } | undefined;
+  if (wantStatusCounts) {
+    const [done, inProgress] = await Promise.all([
+      db.qtIssue.count({ where: { AND: [where, { status: { category: "DONE" } }] } }),
+      db.qtIssue.count({ where: { AND: [where, { status: { category: "IN_PROGRESS" } }] } }),
+    ]);
+    statusCounts = { done, inProgress, todo: Math.max(0, total - done - inProgress) };
+  }
+
   let nextCursor: string | null = null;
   let pageIssues = issues;
   if (!useOffset && limit > 0 && issues.length > limit) {
@@ -359,7 +373,13 @@ export const GET = withOrgAuth(async ({ orgId, userId }, req) => {
     });
   }
 
-  return NextResponse.json({ success: true, data: shaped, nextCursor, total });
+  return NextResponse.json({
+    success: true,
+    data: shaped,
+    nextCursor,
+    total,
+    ...(statusCounts ? { statusCounts } : {}),
+  });
 });
 
 export const POST = withOrgAuth(async ({ orgId, userId }, req) => {

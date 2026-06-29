@@ -20,6 +20,10 @@ interface ToolbarProps {
   onGroupByChange: (mode: GroupByMode) => void;
   onCreateGroup: () => void;
   onCreateTask: () => void;
+  /** Gate the "New task" button — false for read-only roles (Viewer). */
+  canCreateTask: boolean;
+  /** Gate the "New group" button — false for read-only roles (Viewer). */
+  canManageGroups: boolean;
 }
 
 const GROUP_BY_SELECT_OPTIONS: FilterSelectOption[] = GROUP_BY_OPTIONS.map(
@@ -68,6 +72,8 @@ export function GroupedKanbanToolbar({
   onGroupByChange,
   onCreateGroup,
   onCreateTask,
+  canCreateTask,
+  canManageGroups,
 }: ToolbarProps) {
   function patch(p: Partial<GroupedBoardFilters>) {
     onFilterChange({ ...filters, ...p });
@@ -108,15 +114,17 @@ export function GroupedKanbanToolbar({
 
   return (
     <div className="flex flex-wrap items-center gap-2 mb-4">
-      <button
-        type="button"
-        onClick={onCreateTask}
-        className="inline-flex items-center gap-1 h-8 px-2.5 sm:px-3 text-xs font-medium rounded-md bg-blue-600 text-white hover:bg-blue-700 shadow-sm shrink-0 transition"
-        title="Create a task — defaults to Ungrouped"
-      >
-        <Plus className="h-3.5 w-3.5" />
-        <span className="hidden sm:inline">New task</span>
-      </button>
+      {canCreateTask && (
+        <button
+          type="button"
+          onClick={onCreateTask}
+          className="inline-flex items-center gap-1 h-8 px-2.5 sm:px-3 text-xs font-medium rounded-md bg-blue-600 text-white hover:bg-blue-700 shadow-sm shrink-0 transition"
+          title="Create a task — defaults to Ungrouped"
+        >
+          <Plus className="h-3.5 w-3.5" />
+          <span className="hidden sm:inline">New task</span>
+        </button>
+      )}
 
       <div className="relative flex-1 min-w-0 sm:flex-initial">
         <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-gray-400 pointer-events-none" />
@@ -183,7 +191,7 @@ export function GroupedKanbanToolbar({
         />
       </div>
 
-      {groupBy === "manual" && (
+      {groupBy === "manual" && canManageGroups && (
         <button
           type="button"
           onClick={onCreateGroup}

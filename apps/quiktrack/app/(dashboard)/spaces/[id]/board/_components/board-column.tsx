@@ -50,7 +50,7 @@ export function BoardColumn({
   status: BoardStatus;
   allStatuses: BoardStatus[];
   projectId: string;
-  sprintId: string;
+  sprintId: string | null;
   epicsById: Record<string, EpicLite>;
   statusesById: Record<string, BoardStatus>;
   filters?: { search: string; assigneeId: string; type: string; priority: string };
@@ -81,11 +81,14 @@ export function BoardColumn({
       });
       const params = new URLSearchParams({
         projectId,
-        sprintId,
         statusId: status.id,
         excludeType: "SUBTASK",
         limit: String(PAGE_SIZE),
       });
+      // Scrum boards scope to the active sprint(s) via a sprintId id-list.
+      // Functional ("Activity Board") boards pass null → no sprint filter, so
+      // the issues API returns every task for the status (Kanban-style).
+      if (sprintId) params.set("sprintId", sprintId);
       if (filters?.search) params.set("search", filters.search);
       if (filters?.assigneeId) params.set("assigneeId", filters.assigneeId);
       if (filters?.type) params.set("type", filters.type);

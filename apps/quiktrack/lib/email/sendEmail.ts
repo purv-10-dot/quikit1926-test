@@ -484,6 +484,63 @@ export async function emailDocMention(args: {
   });
 }
 
+export async function emailDocShared(args: {
+  to: string;
+  recipientName: string | null;
+  docTitle: string;
+  projectId: string;
+  docId: string;
+  sharedBy: string | null;
+  role: "viewer" | "editor";
+  /** When set, link to the public /share/<token> page (external invites) rather
+   *  than the in-app doc URL (which needs a login). */
+  shareToken?: string | null;
+  /** Base URL to build the link from. Pass the request origin so links use the
+   *  real deployment host (Vercel) instead of a possibly-misconfigured
+   *  QUIKTRACK_URL env (which can still be localhost in prod). */
+  origin?: string | null;
+}): Promise<void> {
+  const base = args.origin || appUrl();
+  // Internal shares link to the STANDALONE doc route (no project shell / no
+  // membership gate) so a doc-shared org member who isn't a project member can
+  // open it. External invites still use the public /share/<token> page.
+  const link = args.shareToken
+    ? `${base}/share/${args.shareToken}`
+    : `${base}/docs/${args.docId}`;
+  const verb = args.role === "editor" ? "edit" : "view";
+  const html = shell({
+    headerSubtitle: "Shared with you",
+    headerTitle: "Document",
+    greeting: args.recipientName ? `Hi ${args.recipientName},` : "Hi,",
+    intro: `${args.sharedBy ?? "Someone"} shared a document with you — you can ${verb} it.`,
+    rows: [
+      ["Document", esc(args.docTitle || "Untitled")],
+      ["Access", esc(args.role === "editor" ? "Editor" : "Viewer")],
+      ...(args.sharedBy ? ([["Shared by", esc(args.sharedBy)]] as Array<[string, string]>) : []),
+    ],
+    ctaLabel: "Open document",
+    ctaHref: link,
+  });
+  // Plain-text alternative — an HTML-only body is a spam signal, especially for
+  // external recipients. A real multipart/alternative improves inbox placement.
+  const text = [
+    args.recipientName ? `Hi ${args.recipientName},` : "Hi,",
+    "",
+    `${args.sharedBy ?? "Someone"} shared a document with you — you can ${verb} it.`,
+    "",
+    `Document: ${args.docTitle || "Untitled"}`,
+    `Access: ${args.role === "editor" ? "Editor" : "Viewer"}`,
+    "",
+    `Open it: ${link}`,
+  ].join("\n");
+  await sendEmail({
+    to: args.to,
+    subject: `${args.sharedBy ?? "Someone"} shared "${args.docTitle || "a document"}" with you`,
+    html,
+    text,
+  });
+}
+
 export async function emailIssueOverdue(args: {
   to: string;
   recipientName: string | null;

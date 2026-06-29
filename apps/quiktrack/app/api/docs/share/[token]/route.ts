@@ -17,27 +17,56 @@ import { db } from "@/lib/db";
 const CANONICAL_ASSET = "/api/docs/asset?key=";
 const publicAsset = (token: string) => `/api/docs/share/${token}/asset?key=`;
 
-interface DocRow {
+interface RawDoc {
   id: string;
   title: string;
   content: string;
+  status: string;
   shareToken: string | null;
   shareMode: string | null;
 }
+interface DocRow extends RawDoc {
+  /** True when reached via an intentional per-recipient share token
+   *  (QtDocShare.token), vs the doc-level "anyone with the link" token
+   *  (QtDoc.shareToken). Per-recipient tokens may open drafts; the public
+   *  "anyone" token may not. */
+  perRecipient: boolean;
+}
 
 async function loadByToken(token: string): Promise<DocRow | null> {
-  const rows = await db.$queryRaw<DocRow[]>`
-    SELECT id, title, content, "shareToken", "shareMode"
+  // 1. Doc-level public link ("Anyone with the link").
+  const docRows = await db.$queryRaw<RawDoc[]>`
+    SELECT id, title, content, status, "shareToken", "shareMode"
     FROM app_quiktrack."QtDoc"
     WHERE "shareToken" = ${token} AND "isDeleted" = false
     LIMIT 1
   `;
-  return rows[0] ?? null;
+  if (docRows[0]) return { ...docRows[0], perRecipient: false };
+
+  // 2. Per-recipient share (QtDocShare.token) — edit when the share role is
+  //    editor, else view. (External email invites are stored as viewer, so they
+  //    stay view-only.)
+  const shareRows = await db.$queryRaw<RawDoc[]>`
+    SELECT d.id, d.title, d.content, d.status,
+           ${token} AS "shareToken",
+           CASE WHEN s.role = 'editor' THEN 'edit' ELSE 'view' END AS "shareMode"
+    FROM app_quiktrack."QtDocShare" s
+    JOIN app_quiktrack."QtDoc" d ON d.id = s."docId"
+    WHERE s.token = ${token} AND d."isDeleted" = false
+    LIMIT 1
+  `;
+  return shareRows[0] ? { ...shareRows[0], perRecipient: true } : null;
 }
 
 export async function GET(_req: NextRequest, { params }: { params: { token: string } }) {
   const doc = await loadByToken(params.token);
   if (!doc) {
+    return NextResponse.json({ success: false, error: "Not found" }, { status: 404 });
+  }
+  // The doc-level "anyone with the link" token must NOT expose a draft. An
+  // intentional per-recipient share token MAY open a draft — the owner shared
+  // that specific draft with that person on purpose.
+  if (doc.status === "draft" && !doc.perRecipient) {
     return NextResponse.json({ success: false, error: "Not found" }, { status: 404 });
   }
   return NextResponse.json({
@@ -61,6 +90,9 @@ export async function PATCH(req: NextRequest, { params }: { params: { token: str
   if (!doc) {
     return NextResponse.json({ success: false, error: "Not found" }, { status: 404 });
   }
+  if (doc.status === "draft" && !doc.perRecipient) {
+    return NextResponse.json({ success: false, error: "Not found" }, { status: 404 });
+  }
   if (doc.shareMode !== "edit") {
     return NextResponse.json(
       { success: false, error: "This link is view-only." },
@@ -78,10 +110,12 @@ export async function PATCH(req: NextRequest, { params }: { params: { token: str
       ? parsed.data.content.replaceAll(publicAsset(params.token), CANONICAL_ASSET)
       : doc.content;
 
+  // Update by doc id — the token may be a per-recipient QtDocShare.token, which
+  // is NOT the doc's own shareToken, so a WHERE shareToken match would miss it.
   await db.$executeRaw`
     UPDATE app_quiktrack."QtDoc"
     SET title = ${nextTitle}, content = ${nextContent}, "updatedAt" = NOW()
-    WHERE "shareToken" = ${params.token} AND "isDeleted" = false
+    WHERE id = ${doc.id} AND "isDeleted" = false
   `;
   return NextResponse.json({ success: true, data: { id: doc.id } });
 }

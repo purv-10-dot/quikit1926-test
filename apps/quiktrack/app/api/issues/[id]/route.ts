@@ -163,16 +163,21 @@ export const PATCH = withOrgAuth<{ id: string }>(
         `Field(s) not editable for your role: ${rejected.join(", ")}`,
       );
     }
+    // Dates: a present-but-falsy value (null) clears the field; a valid string
+    // sets it; an absent key leaves it unchanged.
+    const allowedFields = allowed as typeof parsed.data;
+    const dateValue = (key: "startDate" | "dueDate") =>
+      key in allowedFields
+        ? allowedFields[key]
+          ? new Date(allowedFields[key]!)
+          : null
+        : undefined;
     const updated = await db.qtIssue.update({
       where: { id: params.id },
       data: {
-        ...(allowed as typeof parsed.data),
-        startDate: (allowed as typeof parsed.data).startDate
-          ? new Date((allowed as typeof parsed.data).startDate!)
-          : undefined,
-        dueDate: (allowed as typeof parsed.data).dueDate
-          ? new Date((allowed as typeof parsed.data).dueDate!)
-          : undefined,
+        ...allowedFields,
+        startDate: dateValue("startDate"),
+        dueDate: dateValue("dueDate"),
         updatedBy: userId,
       },
     });

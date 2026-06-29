@@ -242,7 +242,7 @@ const ARTICLES: HelpArticle[] = [
     tags: ["status", "column", "hide", "board", "backlog"],
     body: `
       <p>You can show or hide statuses to keep your board and backlog focused on the work items you need. This is handy when you use multiple statuses to track your work, but only want to see work items with a specific status at specific points in your workflow.</p>
-      <p>All the action happens in <strong>Space settings</strong> then <strong>Board</strong> and then <strong>Columns and statuses</strong>.</p>
+      <p>All the action happens in <strong>Project settings</strong> then <strong>Board</strong> and then <strong>Columns and statuses</strong>.</p>
       <h3>Show a status and its associated work items</h3>
       <p>You can create new statuses in the workflow editor, or by adding a new column to your board.</p>
       <p>From <strong>Columns and statuses</strong>, select <strong>Manage workflow</strong> (found between the column's name and the column itself).</p>
@@ -265,7 +265,7 @@ const ARTICLES: HelpArticle[] = [
     body: `
       <p>Custom fields let you capture information specific to your team's process — sprint commitment, customer name, severity, story points style, anything that doesn't fit the built-in set.</p>
       <h3>Add a custom field</h3>
-      <p>Open <strong>Space settings</strong> → <strong>Custom fields</strong>. Click <strong>+ Add field</strong> and pick a type:</p>
+      <p>Open <strong>Project settings</strong> → <strong>Custom fields</strong>. Click <strong>+ Add field</strong> and pick a type:</p>
       <ul>
         <li><strong>Text</strong> — single line of plain text.</li>
         <li><strong>Number</strong> — integer or decimal.</li>
@@ -276,7 +276,7 @@ const ARTICLES: HelpArticle[] = [
       </ul>
       <p>Give the field a name and decide whether it's required.</p>
       <h3>Where custom fields appear</h3>
-      <p>Custom fields render in the <strong>Details</strong> panel of every work item, right below the built-in fields, in the order you set in space settings. They are also available as columns on the Task Table and as filters in views that support them.</p>
+      <p>Custom fields render in the <strong>Details</strong> panel of every work item, right below the built-in fields, in the order you set in project settings. They are also available as columns on the Task Table and as filters in views that support them.</p>
     `,
   },
   {
@@ -311,7 +311,7 @@ const ARTICLES: HelpArticle[] = [
   },
   {
     id: "invite-people",
-    title: "Invite people to a space",
+    title: "Invite people to a project",
     excerpt:
       "Click the user-plus icon next to a project name to open the invite modal. Add teammates by name or email, pick a role, and share the project link.",
     category: "GUIDE",
@@ -327,7 +327,7 @@ const ARTICLES: HelpArticle[] = [
       <p>Type a name or email in the <strong>Names or emails</strong> field. Press <kbd>Enter</kbd> or comma to commit each entry as a chip; press <kbd>Backspace</kbd> on an empty field to remove the last chip.</p>
       <p>You can also link from external directories using the Google / Slack / Microsoft buttons under <em>or add from</em>.</p>
       <h3>Pick a role</h3>
-      <p>The <strong>Role</strong> dropdown applies to every invitee in the dialog. Pick from <em>Administrator</em>, <em>Member</em>, or <em>Viewer</em>. You can change individual roles later from <em>Space settings → Members</em>.</p>
+      <p>The <strong>Role</strong> dropdown applies to every invitee in the dialog. Pick from <em>Administrator</em>, <em>Member</em>, or <em>Viewer</em>. You can change individual roles later from <em>Project settings → Members</em>.</p>
       <h3>Share by link</h3>
       <p>Use <strong>Copy link</strong> in the footer to grab the project URL for sharing in chat or email — useful when the recipient doesn't have an account yet but already has access via SSO.</p>
     `,

@@ -12,6 +12,7 @@ import {
   CheckSquare,
   Link2,
   User,
+  Users,
   Tag,
   type LucideIcon,
 } from "lucide-react";
@@ -28,6 +29,7 @@ const ICONS: Record<FieldType, LucideIcon> = {
   CHECKBOX: CheckSquare,
   URL: Link2,
   USER_PICKER: User,
+  USER_PICKER_MULTI: Users,
   LABELS: Tag,
 };
 
@@ -75,7 +77,9 @@ export function FieldTypePicker({
       </button>
       {open && !disabled && (
         <div className="absolute left-0 right-0 top-full mt-1 bg-white border border-gray-200 rounded-md shadow-lg z-50 py-1 max-h-72 overflow-y-auto">
-          {FIELD_TYPES.map((t) => {
+          {/* USER_PICKER_MULTI is selected via the "allow multiple" toggle on the
+              single User picker, not as its own entry. */}
+          {FIELD_TYPES.filter((t) => t !== "USER_PICKER_MULTI").map((t) => {
             const Icon = ICONS[t];
             const active = t === value;
             return (

@@ -57,11 +57,11 @@ export function TimesheetCell({ cell, editable, date, onChanged, onOpenLog }: Pr
     return (
       <td
         onClick={(e) => onOpenLog?.(rectFrom(e))}
-        className={`px-1.5 py-1.5 text-center text-gray-700 border-l border-gray-100 ${
+        className={`qt-ts-cell ${cell ? "qt-ts-cell--filled" : ""} px-1.5 py-1.5 text-center text-gray-700 border-l border-gray-100 ${
           weekend ? "bg-gray-50/60" : ""
         } ${today ? "bg-rose-50/40" : ""} ${onOpenLog ? "cursor-pointer hover:bg-blue-50" : ""}`}
       >
-        {cell ? formatCell(cell.hours) : ""}
+        {cell ? <span className="qt-ts-tile">{formatCell(cell.hours)}</span> : ""}
       </td>
     );
   }
@@ -83,7 +83,7 @@ export function TimesheetCell({ cell, editable, date, onChanged, onOpenLog }: Pr
         setDraft(cell ? formatCell(cell.hours) : "");
         setEditing(true);
       }}
-      className={`px-1.5 py-1.5 text-center cursor-text hover:bg-blue-50 border-l border-gray-100 ${
+      className={`qt-ts-cell ${cell && cell.hours > 0 ? "qt-ts-cell--filled" : "qt-ts-cell--empty"} px-1.5 py-1.5 text-center cursor-text hover:bg-blue-50 border-l border-gray-100 ${
         weekend ? "bg-gray-50/60" : ""
       } ${today ? "bg-rose-50/40" : ""}`}
     >
@@ -101,9 +101,9 @@ export function TimesheetCell({ cell, editable, date, onChanged, onOpenLog }: Pr
           className="w-full max-w-[44px] mx-auto h-6 px-1 text-[11px] text-center border border-blue-500 rounded focus:outline-none"
         />
       ) : cell ? (
-        <span className="text-gray-900">{formatCell(cell.hours)}</span>
+        <span className="qt-ts-tile text-gray-900">{formatCell(cell.hours)}</span>
       ) : (
-        <span className="text-gray-300"></span>
+        <span className="qt-ts-plus text-gray-300" aria-hidden>+</span>
       )}
     </td>
   );

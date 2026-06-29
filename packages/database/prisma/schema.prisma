@@ -6013,6 +6013,18 @@ model QtProject {
   name             String
   description      String?
   projectType      String              @default("software")
+  /// Which template the space was created from. Drives runtime behavior:
+  ///   "scrum"      → sprints + sprint-gated board (default; all existing spaces)
+  ///   "functional" → no sprints; Kanban-style "Activity Board" (all tasks);
+  ///                   renamable backlog (see backlogName).
+  templateKey      String              @default("scrum")
+  /// Custom backlog heading. Honored only for functional spaces; null → "Backlog".
+  backlogName      String?
+  /// Per-project tab customization (QuikTrack). Ordered array of enabled tab
+  /// paths (e.g. ["summary","board","docs"]); null = show all tabs. Edited by
+  /// Space Admins via the project tab customizer; role permissions still gate
+  /// each tab on top of this.
+  tabConfig        Json?
   icon             String?
   color            String?             @default("#2563eb")
   status           String              @default("active")
@@ -6579,6 +6591,9 @@ model QtDoc {
   templateKey String?
   folderId    String?
   sortOrder   Int       @default(0)
+  // Draft/publish workflow: "draft" = visible only to its author; "published" =
+  // visible to every project member. New docs start as drafts.
+  status      String    @default("draft")
   // Public share: short base62 code (null = not shared); mode is "view" | "edit".
   shareToken  String?   @unique
   shareMode   String?
@@ -6592,6 +6607,7 @@ model QtDoc {
 
   @@index([orgId])
   @@index([projectId, isDeleted, updatedAt])
+  @@index([projectId, status])
   @@schema("app_quiktrack")
 }
 
@@ -6613,6 +6629,33 @@ model QtDocFolder {
 
   @@index([orgId])
   @@index([projectId, isDeleted, sortOrder])
+  @@schema("app_quiktrack")
+}
+
+// Per-user document sharing (Google-Docs-style). Each row grants one user
+// viewer/editor access to a single QtDoc. The doc's creator is the implicit
+// Owner and is NOT stored here. `email` is reserved for future external
+// invites. No Prisma relation block — the Docs API is raw-SQL only (the local
+// Prisma client is flaky for these models on Windows).
+model QtDocShare {
+  id        String   @id @default(cuid())
+  orgId     String
+  docId     String
+  userId    String?
+  email     String?
+  role      String // "viewer" | "editor"
+  // Per-recipient public token for EXTERNAL (email) invites — a short base62
+  // code; the invitee opens /share/<token> with no login. Null for internal
+  // (userId) shares, which are identity-gated instead.
+  token     String?  @unique
+  createdBy String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([docId, userId])
+  @@unique([docId, email])
+  @@index([docId])
+  @@index([userId])
   @@schema("app_quiktrack")
 }
 
@@ -6682,6 +6725,7 @@ model QtUserViewPref {
   hiddenColumns String[] @default([])
   columnOrder   String[] @default([])
   settings      Json? // structured per-view settings blob (e.g. backlog View settings: epic panel, empty sprints, density, field toggles)
+  filters       Json? // auto-persisted filter state for this surface (list/board/backlog/grouped-kanban/global), per user+project+viewKey
   createdAt     DateTime @default(now())
   updatedAt     DateTime @updatedAt
   Org           Org      @relation(fields: [orgId], references: [id], onDelete: Cascade)

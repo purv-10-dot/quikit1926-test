@@ -1,3 +1,4 @@
+import type { Prisma } from "@prisma/client";
 import { db } from "@/lib/db";
 import { fieldConfig, type FieldValue } from "@/lib/customFields/registry";
 import { validateFieldValue, type FieldForValidation } from "@/lib/validation/customField";
@@ -166,10 +167,14 @@ export async function writeIssueValues(opts: {
       continue;
     }
 
+    const cols = cfg.toColumns(value);
+    // `toColumns` types valueJson as `unknown` (it holds a JSON-safe string[] | null);
+    // narrow it to Prisma's Json input type — value is unchanged at runtime.
+    const valueJson = cols.valueJson as Prisma.InputJsonValue | undefined;
     await client.qtIssueFieldValue.upsert({
       where: { issueId_fieldId: { issueId, fieldId } },
-      create: { orgId, issueId, fieldId, ...cfg.toColumns(value), createdBy: actorId, updatedBy: actorId },
-      update: { ...cfg.toColumns(value), updatedBy: actorId },
+      create: { orgId, issueId, fieldId, ...cols, valueJson, createdBy: actorId, updatedBy: actorId },
+      update: { ...cols, valueJson, updatedBy: actorId },
     });
     if (JSON.stringify(prev) !== JSON.stringify(value)) {
       changes.push({ fieldId, fieldName: field.name, oldValue: prev, newValue: value });

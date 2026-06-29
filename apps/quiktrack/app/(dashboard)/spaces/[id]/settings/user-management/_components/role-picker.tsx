@@ -164,7 +164,7 @@ function Row({
       aria-selected={selected}
       onClick={onClick}
       className={`w-full text-left px-3 py-2 flex items-start gap-2 hover:bg-gray-50 ${
-        selected ? "bg-emerald-50/60" : ""
+        selected ? "bg-emerald-50" : ""
       }`}
     >
       <Shield

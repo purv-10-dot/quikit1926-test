@@ -32,28 +32,8 @@ import {
   Clock,
   LayoutGrid,
 } from "lucide-react";
-
-/**
- * Tab list with the entity permission that gates each one. `perm: null` means
- * "always show" (Summary / Timeline / Docs are intrinsic project chrome with
- * no enforceable entity behind them today).
- */
-const TABS: Array<{
-  label: string;
-  path: string;
-  icon: typeof Globe;
-  perm: { resource: string; action: string } | null;
-}> = [
-  { label: "Summary", path: "summary", icon: Globe, perm: { resource: "ProjectSummary", action: "view" } },
-  { label: "Timeline", path: "timeline", icon: CalendarIcon, perm: { resource: "ProjectTimeline", action: "view" } },
-  { label: "Backlog", path: "backlog", icon: ListIcon, perm: { resource: "ProjectBacklog", action: "view" } },
-  { label: "Board", path: "board", icon: Columns, perm: { resource: "Board", action: "view" } },
-  { label: "Grouped Kanban", path: "grouped-kanban", icon: LayoutGrid, perm: { resource: "Board", action: "view" } },
-  { label: "List", path: "list", icon: ListChecks, perm: { resource: "ProjectList", action: "view" } },
-  { label: "Task Table", path: "task-table", icon: ListTree, perm: { resource: "ProjectTaskTable", action: "view" } },
-  { label: "Timesheet", path: "timesheet", icon: Clock, perm: { resource: "Timesheet", action: "view" } },
-  { label: "Docs", path: "docs", icon: FileText, perm: { resource: "Doc", action: "view" } },
-];
+import { PROJECT_TABS } from "@/lib/projectTabs";
+import { ProjectTabBar } from "./project-tab-bar";
 
 interface Project {
   id: string;
@@ -61,6 +41,7 @@ interface Project {
   projectKey: string;
   icon?: string | null;
   color?: string | null;
+  templateKey?: string | null;
 }
 
 export function ProjectHeader({ projectId }: { projectId: string }) {
@@ -129,11 +110,11 @@ export function ProjectHeader({ projectId }: { projectId: string }) {
     };
   }, [projectId]);
 
-  const activeTab = TABS.find((t) => pathname.endsWith(`/${t.path}`))?.path ?? "board";
+  const activeTab = PROJECT_TABS.find((t) => pathname.endsWith(`/${t.path}`))?.path ?? "board";
 
   useEffect(() => {
     if (!project || !pathname) return;
-    const tabLabel = TABS.find((t) => t.path === activeTab)?.label ?? "Board";
+    const tabLabel = PROJECT_TABS.find((t) => t.path === activeTab)?.label ?? "Board";
     if (activeTab === "board" || activeTab === "list") {
       recordActivity({
         projectId: project.id,
@@ -162,7 +143,7 @@ export function ProjectHeader({ projectId }: { projectId: string }) {
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2">
             <Link href="/spaces" className="text-xs text-gray-500 hover:underline">
-              Spaces
+              Projects
             </Link>
           </div>
         </div>
@@ -255,30 +236,7 @@ export function ProjectHeader({ projectId }: { projectId: string }) {
         </div>
       </div>
 
-      <div className="px-6 flex items-center gap-1 overflow-x-auto">
-        {TABS.filter(
-          (t) => !t.perm || perms.loading || perms.has(t.perm.resource, t.perm.action),
-        ).map((t) => {
-          const isActive = activeTab === t.path;
-          return (
-            <Link
-              key={t.path}
-              href={`/spaces/${projectId}/${t.path}`}
-              className={`inline-flex items-center gap-1.5 px-3 h-9 text-sm whitespace-nowrap border-b-2 ${
-                isActive
-                  ? "border-blue-600 text-blue-700 font-medium"
-                  : "border-transparent text-gray-700 hover:text-gray-900"
-              }`}
-            >
-              <t.icon className="h-3.5 w-3.5" />
-              {t.label}
-            </Link>
-          );
-        })}
-        {/* <button className="ml-1 p-1.5 rounded hover:bg-gray-100 text-gray-500" aria-label="Add tab">
-          <Plus className="h-4 w-4" />
-        </button> */}
-      </div>
+      <ProjectTabBar projectId={projectId} templateKey={project?.templateKey} />
 
       {addPeopleOpen && project && (
         <AddPeopleModal

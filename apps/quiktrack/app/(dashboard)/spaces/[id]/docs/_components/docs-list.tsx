@@ -1,7 +1,7 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { Pencil, Download, FileText, Trash2 } from "lucide-react";
+import { Pencil, Download, FileText, Trash2, Lock } from "lucide-react";
 import { Avatar } from "@quikit/ui";
 import type { DocSummary } from "./use-docs";
 
@@ -80,6 +80,15 @@ export function DocRow({
         >
           {doc.title}
         </button>
+        {doc.status === "draft" && (
+          <span
+            className="inline-flex shrink-0 items-center gap-1 rounded-full bg-amber-500/10 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-amber-700 ring-1 ring-inset ring-amber-500/25 dark:text-amber-300/90"
+            title="Draft — visible only to you until published"
+          >
+            <Lock className="h-2.5 w-2.5" />
+            Draft
+          </span>
+        )}
       </div>
 
       {/* Owner */}

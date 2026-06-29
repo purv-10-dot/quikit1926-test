@@ -436,7 +436,7 @@ function CreatedNotification({
           <p className="mt-1 text-gray-600 leading-snug">
             For work item{" "}
             <span className="font-medium text-gray-800">{issueKey}</span> to be
-            visible, it must match your space and filters, and have a status
+            visible, it must match your project and filters, and have a status
             that&apos;s assigned to the board.
           </p>
           <div className="mt-2 flex flex-wrap items-center gap-x-2 gap-y-1">

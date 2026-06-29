@@ -1,34 +1,92 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
-import { Check, Copy, Link2, Loader2 } from "lucide-react";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { Check, Copy, Link2, Loader2, Globe, Lock, X } from "lucide-react";
+import { ShareSelect } from "./share-select";
 
-type ShareMode = "view" | "edit";
+type Role = "viewer" | "editor";
+
+interface Person {
+  shareId: string;
+  userId: string | null;
+  name: string;
+  email: string;
+  avatar: string | null;
+  role: Role;
+  external?: boolean;
+}
+interface OwnerLite {
+  userId: string;
+  name: string;
+  email: string;
+  avatar: string | null;
+}
+interface SharesData {
+  canManage: boolean;
+  owner: OwnerLite | null;
+  people: Person[];
+  /** Project members who already have access via a published doc — hidden from
+   *  the add-people search since sharing them would be redundant. */
+  inheritedUserIds?: string[];
+  generalAccess: "restricted" | "anyone";
+  generalRole: Role;
+  shareToken: string | null;
+}
+interface OrgUser {
+  userId: string;
+  firstName?: string | null;
+  lastName?: string | null;
+  email: string;
+}
 
 /**
- * Popover for managing a doc's public share link. Creating a link calls
- * POST /api/docs/[id]/share (returns a short base62 code); the link is
- * `${origin}/share/<code>`. Revoking calls DELETE. Only rendered for a saved
- * doc (an id must exist).
+ * Per-user document sharing panel (Google-Docs-style). Self-contained: fetches
+ * /api/docs/[id]/shares and manages people + general access. Only owners/admins
+ * see the editing controls (`canManage`); everyone else sees a read-only list.
  */
 export function ShareDialog({
   docId,
-  token,
-  mode,
-  onChange,
   onClose,
+  onGeneralChange,
 }: {
   docId: string;
-  token: string | null;
-  mode: ShareMode | null;
-  onChange: (token: string | null, mode: ShareMode | null) => void;
   onClose: () => void;
+  /** Notifies the editor when general (public-link) access changes. */
+  onGeneralChange?: (shared: boolean) => void;
 }) {
   const ref = useRef<HTMLDivElement | null>(null);
+  const [data, setData] = useState<SharesData | null>(null);
+  const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
-  const [copied, setCopied] = useState(false);
-  const [draftMode, setDraftMode] = useState<ShareMode>(mode ?? "edit");
   const [error, setError] = useState<string | null>(null);
+  const [copied, setCopied] = useState(false);
+
+  // Add-people state.
+  const [orgUsers, setOrgUsers] = useState<OrgUser[]>([]);
+  const [query, setQuery] = useState("");
+  const [pickedRole, setPickedRole] = useState<Role>("viewer");
+  // Distinct from `busy` (which also covers remove/role changes) so we can show
+  // an "Inviting…" indicator specifically while an add + email send is running.
+  const [inviting, setInviting] = useState(false);
+
+  const load = useCallback(async () => {
+    const j = await fetch(`/api/docs/${docId}/shares`).then((r) => r.json());
+    if (j?.success) setData(j.data as SharesData);
+    else setError(j?.error ?? "Couldn't load sharing.");
+  }, [docId]);
+
+  useEffect(() => {
+    setLoading(true);
+    void load().finally(() => setLoading(false));
+  }, [load]);
+
+  // Org users for the add-people search (loaded once; filtered client-side).
+  useEffect(() => {
+    fetch(`/api/org/users`)
+      .then((r) => r.json())
+      .then((j) => j?.success && Array.isArray(j.data) && setOrgUsers(j.data))
+      .catch(() => undefined);
+  }, []);
 
   useEffect(() => {
     function onDown(e: MouseEvent) {
@@ -45,145 +103,406 @@ export function ShareDialog({
     };
   }, [onClose]);
 
-  const link =
-    token && typeof window !== "undefined" ? `${window.location.origin}/share/${token}` : "";
-
-  async function setShare(nextMode: ShareMode) {
+  async function run(fn: () => Promise<Response>) {
     setBusy(true);
     setError(null);
     try {
-      const j = await fetch(`/api/docs/${docId}/share`, {
-        method: "POST",
+      const j = await fn().then((r) => r.json());
+      if (!j?.success) setError(j?.error ?? "Something went wrong.");
+      await load();
+    } catch {
+      setError("Something went wrong.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  const addPerson = async (userId: string) => {
+    setInviting(true);
+    try {
+      await run(() =>
+        fetch(`/api/docs/${docId}/shares`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ userId, role: pickedRole }),
+        }),
+      );
+    } finally {
+      setInviting(false);
+    }
+  };
+  // External invite — always view-only; the person opens a per-recipient link.
+  const addEmail = async (email: string) => {
+    setInviting(true);
+    try {
+      await run(() =>
+        fetch(`/api/docs/${docId}/shares`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ email, role: "viewer" }),
+        }),
+      );
+    } finally {
+      setInviting(false);
+    }
+  };
+  const changeRole = (shareId: string, role: Role) =>
+    run(() =>
+      fetch(`/api/docs/${docId}/shares/${shareId}`, {
+        method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ mode: nextMode }),
-      }).then((r) => r.json());
-      if (j?.success) onChange(j.data.token, j.data.mode);
-      else setError(j?.error ?? "Couldn't create link.");
-    } catch {
-      setError("Couldn't create link.");
-    } finally {
-      setBusy(false);
-    }
+        body: JSON.stringify({ role }),
+      }),
+    );
+  const removePerson = (shareId: string) =>
+    run(() => fetch(`/api/docs/${docId}/shares/${shareId}`, { method: "DELETE" }));
+
+  async function setGeneral(generalAccess: "restricted" | "anyone", generalRole: Role) {
+    await run(() =>
+      fetch(`/api/docs/${docId}/share`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ generalAccess, generalRole }),
+      }),
+    );
+    onGeneralChange?.(generalAccess === "anyone");
   }
 
-  async function stopSharing() {
-    setBusy(true);
-    setError(null);
+  // Copy the short, public /share/<token> URL (opens without login). If the doc
+  // is still "Restricted" there's no public link yet, so generate one on demand
+  // (flip to "Anyone with the link") rather than copying the in-app URL.
+  async function copyLink() {
+    let token = data?.shareToken ?? null;
+    if (!token) {
+      if (!canManage) {
+        setError("Turn on “Anyone with the link” to copy a public link.");
+        return;
+      }
+      setBusy(true);
+      setError(null);
+      try {
+        const j = await fetch(`/api/docs/${docId}/share`, {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ generalAccess: "anyone", generalRole: data?.generalRole ?? "viewer" }),
+        }).then((r) => r.json());
+        if (j?.success && j.data?.token) {
+          token = j.data.token as string;
+          onGeneralChange?.(true);
+          await load();
+        } else {
+          setError(j?.error ?? "Couldn't create a public link.");
+          return;
+        }
+      } catch {
+        setError("Couldn't create a public link.");
+        return;
+      } finally {
+        setBusy(false);
+      }
+    }
+    const url = `${window.location.origin}/share/${token}`;
     try {
-      const j = await fetch(`/api/docs/${docId}/share`, { method: "DELETE" }).then((r) => r.json());
-      if (j?.success) onChange(null, null);
-      else setError(j?.error ?? "Couldn't stop sharing.");
-    } catch {
-      setError("Couldn't stop sharing.");
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  function copy() {
-    if (!link) return;
-    navigator.clipboard?.writeText(link).then(() => {
+      await navigator.clipboard?.writeText(url);
       setCopied(true);
       setTimeout(() => setCopied(false), 1500);
-    });
+    } catch {
+      setError("Couldn't copy — copy it manually: " + url);
+    }
   }
+
+  const canManage = data?.canManage ?? false;
+  const takenIds = new Set(
+    [
+      data?.owner?.userId,
+      ...(data?.people.map((p) => p.userId) ?? []),
+      // Project members already have access (published doc) — don't offer them.
+      ...(data?.inheritedUserIds ?? []),
+    ].filter(Boolean) as string[],
+  );
+  const q = query.trim().toLowerCase();
+  const matches = q
+    ? orgUsers
+        .filter((u) => !takenIds.has(u.userId))
+        .filter((u) => {
+          const name = [u.firstName, u.lastName].filter(Boolean).join(" ").toLowerCase();
+          return name.includes(q) || u.email.toLowerCase().includes(q);
+        })
+        .slice(0, 6)
+    : [];
+  // Offer an external (email) invite when the query is a valid email that
+  // doesn't match an org user already in the list.
+  const isEmail = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(q);
+  const alreadyShared = (data?.people ?? []).some((p) => p.email.toLowerCase() === q);
+  const showInvite = isEmail && !alreadyShared && matches.length === 0;
 
   return (
     <div
       ref={ref}
-      className="absolute right-0 top-full z-30 mt-2 w-80 rounded-lg border border-gray-200 bg-white p-4 shadow-xl"
+      className="absolute right-0 top-full z-30 mt-2 w-96 rounded-lg border border-gray-200 bg-white p-4 shadow-xl"
     >
       <h3 className="flex items-center gap-1.5 text-sm font-semibold text-gray-900">
-        <Link2 className="w-4 h-4 text-gray-500" />
-        Share this doc
+        <Link2 className="h-4 w-4 text-gray-500" />
+        Share
       </h3>
 
-      {!token ? (
-        <>
-          <p className="mt-1 text-xs text-gray-500">
-            Anyone with the link can open it — no sign-in needed.
-          </p>
-          <div className="mt-3 flex items-center rounded-md border border-gray-300 overflow-hidden text-xs">
-            {(["view", "edit"] as ShareMode[]).map((m) => (
-              <button
-                key={m}
-                type="button"
-                onClick={() => setDraftMode(m)}
-                className={`flex-1 px-3 py-1.5 capitalize ${
-                  draftMode === m
-                    ? "bg-blue-600 text-white"
-                    : "bg-white text-gray-700 hover:bg-gray-50"
-                }`}
-              >
-                Can {m}
-              </button>
-            ))}
-          </div>
-          <button
-            type="button"
-            disabled={busy}
-            onClick={() => setShare(draftMode)}
-            className="mt-3 w-full inline-flex items-center justify-center gap-1.5 rounded-md bg-blue-600 px-3 py-2 text-xs font-medium text-white hover:bg-blue-700 disabled:opacity-50"
-          >
-            {busy ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Link2 className="w-3.5 h-3.5" />}
-            Create link
-          </button>
-        </>
+      {loading ? (
+        <div className="py-8 text-center text-xs text-gray-400">
+          <Loader2 className="mx-auto h-4 w-4 animate-spin" />
+        </div>
+      ) : !data ? (
+        <p className="mt-3 text-xs text-red-600">{error ?? "Couldn't load sharing."}</p>
       ) : (
         <>
-          <div className="mt-3 flex items-center gap-1.5">
-            <input
-              readOnly
-              value={link}
-              onFocus={(e) => e.currentTarget.select()}
-              className="flex-1 min-w-0 h-8 px-2 text-xs border border-gray-300 rounded bg-gray-50 text-gray-700"
-            />
-            <button
-              type="button"
-              onClick={copy}
-              className="h-8 px-2 inline-flex items-center gap-1 rounded border border-gray-300 text-xs text-gray-700 hover:bg-gray-50"
-            >
-              {copied ? <Check className="w-3.5 h-3.5 text-green-600" /> : <Copy className="w-3.5 h-3.5" />}
-              {copied ? "Copied" : "Copy"}
-            </button>
-          </div>
+          {/* A. Add people (managers only) */}
+          {canManage && (
+            <div className="relative mt-3">
+              <div className="flex items-center gap-2">
+                <input
+                  value={query}
+                  onChange={(e) => setQuery(e.target.value)}
+                  placeholder="Add org members, or invite by email…"
+                  className="h-9 flex-1 rounded-md border border-gray-300 px-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-200"
+                />
+                <ShareSelect
+                  value={pickedRole}
+                  onChange={(v) => setPickedRole(v as Role)}
+                  align="right"
+                  options={[
+                    { value: "viewer", label: "Viewer" },
+                    { value: "editor", label: "Editor" },
+                  ]}
+                  className="shrink-0"
+                />
+              </div>
+              {inviting && (
+                <p className="mt-1.5 flex items-center gap-1.5 text-[11px] text-gray-500 dark:text-slate-400">
+                  <Loader2 className="h-3 w-3 animate-spin" />
+                  Inviting… sending the invite email
+                </p>
+              )}
+              {(matches.length > 0 || showInvite) && (
+                <div className="absolute left-0 right-0 top-full z-10 mt-1 max-h-56 overflow-auto rounded-md border border-gray-200 bg-white py-1 shadow-lg dark:border-slate-700 dark:bg-slate-800">
+                  {matches.map((u) => {
+                    const name = [u.firstName, u.lastName].filter(Boolean).join(" ").trim() || u.email;
+                    return (
+                      <button
+                        key={u.userId}
+                        type="button"
+                        disabled={busy}
+                        onClick={() => {
+                          setQuery("");
+                          void addPerson(u.userId);
+                        }}
+                        className="flex w-full items-center gap-2 px-3 py-1.5 text-left text-sm hover:bg-gray-50 disabled:opacity-50 dark:hover:bg-slate-700/60"
+                      >
+                        <span className="flex h-6 w-6 items-center justify-center rounded-full bg-blue-500 text-[10px] font-semibold text-white">
+                          {(name[0] ?? "?").toUpperCase()}
+                        </span>
+                        <span className="min-w-0">
+                          <span className="block truncate text-gray-800 dark:text-slate-200">{name}</span>
+                          <span className="block truncate text-[11px] text-gray-500 dark:text-slate-400">{u.email}</span>
+                        </span>
+                      </button>
+                    );
+                  })}
+                  {showInvite && (
+                    <button
+                      type="button"
+                      disabled={busy}
+                      onClick={() => {
+                        const email = q;
+                        setQuery("");
+                        void addEmail(email);
+                      }}
+                      className="flex w-full items-center gap-2 px-3 py-1.5 text-left text-sm hover:bg-gray-50 disabled:opacity-50 dark:hover:bg-slate-700/60"
+                    >
+                      <span className="flex h-6 w-6 items-center justify-center rounded-full bg-gray-400 text-[10px] font-semibold text-white">
+                        @
+                      </span>
+                      <span className="min-w-0">
+                        <span className="block truncate text-gray-800 dark:text-slate-200">
+                          Invite “{q}”
+                        </span>
+                        <span className="block truncate text-[11px] text-gray-500 dark:text-slate-400">
+                          External · view-only link sent by email
+                        </span>
+                      </span>
+                    </button>
+                  )}
+                </div>
+              )}
+            </div>
+          )}
 
-          <div className="mt-3 flex items-center rounded-md border border-gray-300 overflow-hidden text-xs">
-            {(["view", "edit"] as ShareMode[]).map((m) => (
-              <button
-                key={m}
-                type="button"
-                disabled={busy}
-                onClick={() => setShare(m)}
-                className={`flex-1 px-3 py-1.5 capitalize disabled:opacity-50 ${
-                  mode === m
-                    ? "bg-blue-600 text-white"
-                    : "bg-white text-gray-700 hover:bg-gray-50"
-                }`}
+          {/* B. People with access */}
+          <p className="mt-4 text-xs font-semibold text-gray-700">People with access</p>
+          <div className="mt-2 space-y-1.5">
+            {data.owner && (
+              <Row name={data.owner.name} email={data.owner.email} initial={data.owner.name}>
+                <span className="text-xs text-gray-400">Owner</span>
+              </Row>
+            )}
+            {data.people.map((p) => (
+              <Row
+                key={p.shareId}
+                name={p.name}
+                email={p.email}
+                initial={p.name}
+                badge={
+                  p.external ? (
+                    <span className="rounded-full bg-amber-500/10 px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-wide text-amber-700 ring-1 ring-inset ring-amber-500/25 dark:text-amber-300/90">
+                      External
+                    </span>
+                  ) : undefined
+                }
               >
-                Can {m}
-              </button>
+                {!canManage ? (
+                  <span className="text-xs capitalize text-gray-400">{p.role}</span>
+                ) : p.external ? (
+                  // External invites are view-only — no role dropdown, just remove.
+                  <div className="flex items-center gap-1">
+                    <span className="text-xs text-gray-400">Viewer</span>
+                    <button
+                      type="button"
+                      disabled={busy}
+                      onClick={() => void removePerson(p.shareId)}
+                      className="rounded p-1 text-gray-400 hover:bg-red-50 hover:text-red-600 disabled:opacity-50"
+                      aria-label="Remove access"
+                    >
+                      <X className="h-3.5 w-3.5" />
+                    </button>
+                  </div>
+                ) : (
+                  <div className="flex items-center gap-1">
+                    <ShareSelect
+                      value={p.role}
+                      disabled={busy}
+                      onChange={(v) => void changeRole(p.shareId, v as Role)}
+                      align="right"
+                      options={[
+                        { value: "viewer", label: "Viewer" },
+                        { value: "editor", label: "Editor" },
+                      ]}
+                    />
+                    <button
+                      type="button"
+                      disabled={busy}
+                      onClick={() => void removePerson(p.shareId)}
+                      className="rounded p-1 text-gray-400 hover:bg-red-50 hover:text-red-600 disabled:opacity-50"
+                      aria-label="Remove access"
+                    >
+                      <X className="h-3.5 w-3.5" />
+                    </button>
+                  </div>
+                )}
+              </Row>
             ))}
           </div>
 
-          {mode === "edit" && (
-            <p className="mt-2 text-[11px] text-amber-600">
-              Anyone with this link can edit the doc.
-            </p>
-          )}
+          {/* C. General access */}
+          <p className="mt-4 text-xs font-semibold text-gray-700">General access</p>
+          <div className="mt-2 flex items-center gap-2">
+            <span
+              className={`flex h-8 w-8 items-center justify-center rounded-full ${
+                data.generalAccess === "anyone" ? "bg-green-100 text-green-700" : "bg-gray-100 text-gray-500"
+              }`}
+            >
+              {data.generalAccess === "anyone" ? <Globe className="h-4 w-4" /> : <Lock className="h-4 w-4" />}
+            </span>
+            <div className="min-w-0 flex-1">
+              <ShareSelect
+                value={data.generalAccess}
+                disabled={!canManage || busy}
+                onChange={(v) =>
+                  void setGeneral(v as "restricted" | "anyone", data.generalRole)
+                }
+                options={[
+                  { value: "restricted", label: "Restricted" },
+                  { value: "anyone", label: "Anyone with the link" },
+                ]}
+              />
+              <p className="mt-0.5 text-[11px] text-gray-500 dark:text-slate-400">
+                {data.generalAccess === "anyone"
+                  ? "Anyone on the internet with the link can open it."
+                  : "Only people with access can open it."}
+              </p>
+            </div>
+            {data.generalAccess === "anyone" && (
+              <ShareSelect
+                value={data.generalRole}
+                disabled={!canManage || busy}
+                onChange={(v) => void setGeneral("anyone", v as Role)}
+                align="right"
+                options={[
+                  { value: "viewer", label: "Viewer" },
+                  { value: "editor", label: "Editor" },
+                ]}
+                className="shrink-0"
+              />
+            )}
+          </div>
 
-          <button
-            type="button"
-            disabled={busy}
-            onClick={stopSharing}
-            className="mt-3 w-full rounded-md border border-gray-300 px-3 py-2 text-xs font-medium text-red-600 hover:bg-red-50 disabled:opacity-50"
-          >
-            Stop sharing
-          </button>
+          {error && <p className="mt-2 text-[11px] text-red-600">{error}</p>}
+
+          {/* D. Actions */}
+          <div className="mt-4 flex items-center justify-between">
+            <button
+              type="button"
+              onClick={copyLink}
+              disabled={busy || (!data.shareToken && !canManage)}
+              title={
+                data.shareToken
+                  ? "Copy the public link"
+                  : canManage
+                    ? "Creates an 'Anyone with the link' link and copies it"
+                    : "Ask the owner to enable link sharing"
+              }
+              className="inline-flex items-center gap-1.5 rounded-md border border-gray-300 px-3 py-1.5 text-xs font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-40"
+            >
+              {copied ? <Check className="h-3.5 w-3.5 text-green-600" /> : <Copy className="h-3.5 w-3.5" />}
+              {copied ? "Copied" : "Copy link"}
+            </button>
+            <button
+              type="button"
+              onClick={onClose}
+              className="rounded-md bg-blue-600 px-4 py-1.5 text-xs font-medium text-white hover:bg-blue-700"
+            >
+              Done
+            </button>
+          </div>
         </>
       )}
+    </div>
+  );
+}
 
-      {error && <p className="mt-2 text-[11px] text-red-600">{error}</p>}
+function Row({
+  name,
+  email,
+  initial,
+  badge,
+  children,
+}: {
+  name: string;
+  email: string;
+  initial: string;
+  badge?: React.ReactNode;
+  children: React.ReactNode;
+}) {
+  return (
+    <div className="flex items-center gap-2">
+      <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-gray-400 text-xs font-semibold text-white">
+        {(initial[0] ?? "?").toUpperCase()}
+      </span>
+      <span className="min-w-0 flex-1">
+        <span className="flex items-center gap-1.5">
+          <span className="truncate text-sm text-gray-800 dark:text-slate-200">{name}</span>
+          {badge}
+        </span>
+        <span className="block truncate text-[11px] text-gray-500 dark:text-slate-400">{email}</span>
+      </span>
+      {children}
     </div>
   );
 }
