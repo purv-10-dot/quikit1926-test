@@ -358,8 +358,13 @@ export const PUT = auth.update<{ id: string }>(async ({ orgId, userId }, req, { 
       weeklyOwnerTargets: effectiveLevel === "team"
         ? ((validated.weeklyOwnerTargets ?? undefined) as any)
         : undefined,
-      currency: validated.currency ?? null,
-      targetScale: validated.targetScale ?? null,
+      // Partial-update: pass the value through as-is. `undefined` (field omitted
+      // — the edit form treats currency as immutable and doesn't send it) means
+      // Prisma SKIPS it, preserving the saved value. The previous `?? null`
+      // turned that omission into an explicit null, wiping the currency on every
+      // edit and breaking the chosen scale unit. null/string still set as given.
+      currency: validated.currency,
+      targetScale: validated.targetScale,
       reverseColor: validated.reverseColor ?? undefined,
       frequency: validated.frequency ?? undefined,
       updatedBy: userId,

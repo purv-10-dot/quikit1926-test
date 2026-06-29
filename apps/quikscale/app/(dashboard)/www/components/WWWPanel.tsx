@@ -4,6 +4,9 @@ import { useState, useEffect } from "react";
 import { useCreateWWW, useUpdateWWW } from "@/lib/hooks/useWWW";
 import { useUsers } from "@/lib/hooks/useUsers";
 import { useCanEditWWW, useCanEditWWWAssignment } from "@/lib/hooks/useCanEditWWW";
+import { useWWWNotesRequired } from "@/lib/hooks/useFeatureFlags";
+import { validateWWWForm } from "@/lib/utils/wwwFormValidation";
+import { WWWNotesThread } from "./WWWNotesThread";
 import type { WWWItem } from "@/lib/types/www";
 import { toDateInputValue } from "@/lib/utils/dateUtils";
 import { notify } from "@/lib/utils/notify";
@@ -179,6 +182,7 @@ function EditTab({
   readOnly,
   whoWhenReadOnly,
   itemId,
+  notesRequired,
 }: {
   form: { whoIds: string[]; what: string; when: string; status: string; revisedDate: string; notes: string; category: string; originalDueDate: string };
   set: (key: string, val: string) => void;
@@ -190,6 +194,8 @@ function EditTab({
   /** Stricter gate for the Who + When fields — creator/admin only (see WWWPanel). */
   whoWhenReadOnly: boolean;
   itemId?: string;
+  /** Org `www_notes_required` flag — when true, Notes is mandatory. */
+  notesRequired: boolean;
 }) {
   return (
     <div className="space-y-4">
@@ -306,110 +312,27 @@ function EditTab({
         </select>
       </div>
 
-      {/* Row 5: Notes */}
-      <div>
-        <label className="block text-xs font-medium text-gray-600 mb-1">Notes</label>
-        <textarea
-          value={form.notes}
-          onChange={e => set("notes", e.target.value)}
-          rows={2}
-          placeholder="Additional notes…"
-          disabled={readOnly}
-          className="w-full px-3 py-2 text-xs border border-gray-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-accent-400 resize-none disabled:bg-gray-50 disabled:text-gray-500"
-        />
-      </div>
-
-      {/* Notes history — shows previous note values with timestamps.
-          Only available in edit mode where itemId exists. */}
-      {mode === "edit" && itemId && <NotesHistory itemId={itemId} users={users} />}
-    </div>
-  );
-}
-
-// ── Notes History ────────────────────────────────────────────────────────────
-
-interface AuditLogEntry {
-  id: string;
-  action: string;
-  oldValue: Record<string, unknown> | null;
-  newValue: Record<string, unknown> | null;
-  changedBy: string;
-  changedByName: string;
-  reason: string | null;
-  createdAt: string;
-}
-
-/**
- * NotesHistory — reads `/api/www/[id]/logs` (audit log) and surfaces only
- * entries where the `notes` field changed. Each entry shows the previous note
- * value, who changed it, and when.
- *
- * Source of truth: AuditLog rows for entityType=WWWItem. We filter in the
- * client so the existing logs endpoint stays generic.
- */
-function NotesHistory({ itemId, users }: { itemId: string; users: Array<{ id: string; firstName: string; lastName: string; email: string }> }) {
-  const [logs, setLogs] = useState<AuditLogEntry[]>([]);
-  const [loading, setLoading] = useState(true);
-
-  useEffect(() => {
-    let alive = true;
-    setLoading(true);
-    fetch(`/api/www/${itemId}/logs`)
-      .then(r => r.json())
-      .then(d => { if (alive && d?.success) setLogs(d.data ?? []); })
-      .catch(() => { if (alive) setLogs([]); })
-      .finally(() => { if (alive) setLoading(false); });
-    return () => { alive = false; };
-  }, [itemId]);
-
-  // Filter to entries where "notes" changed, with a concrete previous value
-  const noteEntries = logs.filter(l => {
-    const oldNotes = (l.oldValue as { notes?: string | null } | null)?.notes;
-    const newNotes = (l.newValue as { notes?: string | null } | null)?.notes;
-    if (oldNotes === undefined && newNotes === undefined) return false;
-    return (oldNotes ?? null) !== (newNotes ?? null);
-  });
-
-  if (loading) {
-    return (
-      <div className="pt-3 border-t border-gray-100">
-        <h4 className="text-[11px] font-semibold text-gray-500 uppercase tracking-wider mb-2">Notes History</h4>
-        <p className="text-xs text-gray-400 italic">Loading history…</p>
-      </div>
-    );
-  }
-
-  return (
-    <div className="pt-3 border-t border-gray-100">
-      <h4 className="text-[11px] font-semibold text-gray-500 uppercase tracking-wider mb-2">Notes History</h4>
-      {noteEntries.length === 0 ? (
-        <p className="text-xs text-gray-400 italic">No previous notes.</p>
+      {/* Row 5: Notes.
+          - CREATE: a single textarea (seeds the first thread note on submit).
+            Required when the org's www_notes_required flag is on.
+          - EDIT: the full note thread (add via send + editable history cards). */}
+      {mode === "create" ? (
+        <div>
+          <label className="block text-xs font-medium text-gray-600 mb-1">
+            Notes {notesRequired && <span className="text-red-500">*</span>}
+          </label>
+          <textarea
+            value={form.notes}
+            onChange={e => set("notes", e.target.value)}
+            rows={2}
+            placeholder="Share your thoughts, updates, or observations…"
+            disabled={readOnly}
+            className={`w-full px-3 py-2 text-xs border rounded-lg focus:outline-none focus:ring-1 focus:ring-accent-400 resize-none disabled:bg-gray-50 disabled:text-gray-500 ${errors.notes ? "border-red-400" : "border-gray-200"}`}
+          />
+          {errors.notes && <p className="text-[10px] text-red-500 mt-0.5">{errors.notes}</p>}
+        </div>
       ) : (
-        <ul className="space-y-2">
-          {noteEntries.map(entry => {
-            const oldNotes = (entry.oldValue as { notes?: string | null } | null)?.notes ?? "";
-            const newNotes = (entry.newValue as { notes?: string | null } | null)?.notes ?? "";
-            const ts = new Date(entry.createdAt);
-            const tsLabel = ts.toLocaleString("en-US", { year: "numeric", month: "short", day: "numeric", hour: "numeric", minute: "2-digit" });
-            return (
-              <li key={entry.id} className="bg-gray-50 border border-gray-100 rounded-lg px-3 py-2">
-                <div className="flex items-center justify-between gap-2 mb-1">
-                  <span className="text-[10px] font-medium text-gray-600">{entry.changedByName}</span>
-                  <span className="text-[10px] text-gray-400">{tsLabel}</span>
-                </div>
-                {oldNotes && (
-                  <p className="text-[11px] text-gray-500 line-through whitespace-pre-wrap mb-0.5">{oldNotes}</p>
-                )}
-                {newNotes && (
-                  <p className="text-[11px] text-gray-700 whitespace-pre-wrap">{newNotes}</p>
-                )}
-                {!oldNotes && !newNotes && (
-                  <p className="text-[11px] text-gray-400 italic">(empty)</p>
-                )}
-              </li>
-            );
-          })}
-        </ul>
+        itemId && <WWWNotesThread itemId={itemId} canAddNotes={!readOnly} />
       )}
     </div>
   );
@@ -458,6 +381,8 @@ export function WWWPanel({ mode, item, initialTab, onClose, onSuccess, logsOnly 
 
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [saving, setSaving] = useState(false);
+  // Org flag: when on, Notes is mandatory on both add + edit.
+  const notesRequired = useWWWNotesRequired();
 
   // Re-populate when item changes (edit mode)
   useEffect(() => {
@@ -491,15 +416,13 @@ export function WWWPanel({ mode, item, initialTab, onClose, onSuccess, logsOnly 
   }
 
   function validate() {
-    const errs: Record<string, string> = {};
-    if (!form.whoIds || form.whoIds.length === 0) errs.whoIds = "At least one assignee is required";
-    if (!form.what.trim()) errs.what = "What is required";
-    if (!form.when) errs.when = "When is required";
-    // Edit mode only: revised date must not be earlier than When
-    if (mode === "edit" && form.revisedDate && form.when && form.revisedDate < form.when) {
-      errs.revisedDate = "Revised date cannot be earlier than When";
-    }
-    return errs;
+    return validateWWWForm(
+      { whoIds: form.whoIds, what: form.what, when: form.when, revisedDate: form.revisedDate, notes: form.notes },
+      // Notes-required is a form-field rule only on CREATE (the single textarea).
+      // In edit mode notes live in the thread; the server PUT enforces the flag
+      // against the latest-note mirror, so don't block the main form on it.
+      { mode, notesRequired: mode === "create" ? notesRequired : false },
+    );
   }
 
   async function handleSubmit() {
@@ -513,10 +436,13 @@ export function WWWPanel({ mode, item, initialTab, onClose, onSuccess, logsOnly 
         what: form.what.trim(),
         when: form.when,
         status: form.status,
-        notes: form.notes || null,
         category: form.category || null,
         originalDueDate: form.originalDueDate || null,
       };
+      // Notes are only set from this form on CREATE (it seeds the first thread
+      // note server-side). In edit mode the thread owns notes — sending the
+      // stale form value here would clobber the latest-note mirror.
+      if (mode === "create") payload.notes = form.notes || null;
 
       // If revised date set, append to revisedDates
       if (form.revisedDate) {
@@ -603,7 +529,7 @@ export function WWWPanel({ mode, item, initialTab, onClose, onSuccess, logsOnly 
       }
     >
       {tab === "edit" && (
-        <EditTab form={form} set={set} setMulti={setMulti} errors={errors} users={users} mode={mode} readOnly={readOnly} whoWhenReadOnly={whoWhenReadOnly} itemId={item?.id} />
+        <EditTab form={form} set={set} setMulti={setMulti} errors={errors} users={users} mode={mode} readOnly={readOnly} whoWhenReadOnly={whoWhenReadOnly} itemId={item?.id} notesRequired={notesRequired} />
       )}
       {tab === "log" && item && (
         <LogTab item={item} users={users} />

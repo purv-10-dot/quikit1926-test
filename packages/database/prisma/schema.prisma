@@ -329,6 +329,7 @@ model User {
   goalsOwned              Goal[]                           @relation("GoalOwner")
   kpisOwned               KPI[]                            @relation("KPIOwner")
   kpiNotes                KPINote[]
+  wwwNotes                WWWNote[]
   opspData                OPSPData[]
   opspUserSections        OPSPUserSection[]
   opppPlan                OPSPPlan?
@@ -871,6 +872,7 @@ model WWWItem {
   whoIds           String[]         @default([])
   org              Org              @relation(fields: [orgId], references: [id], onDelete: Cascade)
   revisionLogs     WWWRevisionLog[]
+  noteEntries      WWWNote[]
 
   @@index([orgId])
   @@index([who])
@@ -896,6 +898,26 @@ model WWWRevisionLog {
 
   @@index([wwwItemId])
   @@index([createdAt])
+  @@schema("app_quikscale")
+}
+
+// Threaded notes on a WWW item — discrete, individually-editable entries with
+// author + timestamps (mirrors KPINote). The WWWItem.notes text field is kept
+// as a denormalized "latest note" for the list column + www_notes_required.
+model WWWNote {
+  id        String   @id @default(cuid())
+  orgId     String
+  wwwItemId String
+  content   String
+  authorId  String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  author    User     @relation(fields: [authorId], references: [id], onDelete: Cascade)
+  wwwItem   WWWItem  @relation(fields: [wwwItemId], references: [id], onDelete: Cascade)
+
+  @@index([orgId])
+  @@index([wwwItemId])
+  @@index([authorId])
   @@schema("app_quikscale")
 }
 

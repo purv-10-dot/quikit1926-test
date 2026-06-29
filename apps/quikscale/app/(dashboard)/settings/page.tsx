@@ -563,6 +563,7 @@ function ConfigurationsTab() {
   const futureQuarters = flags["enable_future_quarters"]?.enabled ?? false;
   const addPastQuarterHabit = flags["add_past_quarter_habit"]?.enabled ?? false;
   const indianNumbering = flags["use_indian_numbering"]?.enabled ?? false;
+  const wwwNotesRequired = flags["www_notes_required"]?.enabled ?? false;
 
   return (
     <div className="w-full space-y-6 relative">
@@ -675,6 +676,22 @@ function ConfigurationsTab() {
             />
             <span className="text-xs font-medium text-[var(--color-text-secondary)]">
               {indianNumbering ? "Enabled" : "Disabled"}
+            </span>
+          </div>
+        </div>
+
+        {/* WWW Notes Required */}
+        <div className="border border-[var(--color-border)] rounded-xl p-5 bg-[var(--color-bg-primary)]">
+          <h4 className="text-sm font-semibold text-[var(--color-text-primary)] mb-2">WWW Notes Required</h4>
+          <p className="text-xs text-[var(--color-text-secondary)] mb-4">When enabled, the Notes field is mandatory when adding or editing a WWW item.</p>
+          <div className="flex items-center justify-between">
+            <Toggle
+              enabled={wwwNotesRequired}
+              onChange={() => toggleFlag("www_notes_required", wwwNotesRequired)}
+              loading={savingKey === "www_notes_required"}
+            />
+            <span className="text-xs font-medium text-[var(--color-text-secondary)]">
+              {wwwNotesRequired ? "Required" : "Optional"}
             </span>
           </div>
         </div>

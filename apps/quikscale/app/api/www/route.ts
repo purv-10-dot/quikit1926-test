@@ -11,6 +11,7 @@ import { writeAuditLog } from "@/lib/api/auditLog";
 import { audit, requestContext } from "@/lib/audit";
 import { rateLimit, LIMITS } from "@/lib/api/rateLimit";
 import { notifyWWWAssignment } from "@/lib/services/wwwNotifications";
+import { isFeatureFlagEnabled } from "@/lib/utils/featureFlags";
 import { isOrgAdmin } from "@/lib/api/visibility";
 import { fetchAuditUserMap, decorateAudit } from "@/lib/api/auditUsers";
 import { searchUserIds, dateSearchConditions } from "@/lib/api/listSearch";
@@ -165,6 +166,12 @@ export const POST = auth.create(async ({ orgId, userId }, req) => {
   if (!parsed.success) return validationError(parsed);
   const { who, whoIds, what, when, status, notes, category, originalDueDate } = parsed.data;
 
+  // Org-configurable: when `www_notes_required` is on, Notes is mandatory.
+  // Enforced server-side (defense-in-depth) so the client toggle can't be bypassed.
+  if (!notes?.trim() && (await isFeatureFlagEnabled(orgId, "www_notes_required"))) {
+    return NextResponse.json({ success: false, error: "Notes are required." }, { status: 400 });
+  }
+
   // Resolve assignee list. Zod refine guarantees at least one of `who`/`whoIds`
   // is set. Dedupe so an accidental duplicate selection doesn't create dupes.
   const resolvedIds = Array.from(
@@ -174,9 +181,9 @@ export const POST = auth.create(async ({ orgId, userId }, req) => {
   );
   const primaryWho = resolvedIds[0]!;
 
-  // ── Duplicate guard ── reject (409) before creating anything:
-  //   • an assignee already has an item due on the same calendar day, OR
-  //   • the "What?" name already exists anywhere in the org.
+  // ── Duplicate guard ── reject (409) before creating anything when an existing
+  // active item is an EXACT repeat: same assignee AND same calendar day AND same
+  // "What?" text. A different "What?" for the same person/day is allowed.
   const duplicate = await findWWWDuplicate(db, orgId, { whoIds: resolvedIds, what, when });
   if (duplicate) {
     return NextResponse.json(
@@ -207,6 +214,22 @@ export const POST = auth.create(async ({ orgId, userId }, req) => {
     ),
   );
   const primaryItem = createdItems[0]!;
+
+  // Seed the note thread: if a note was entered on create, persist it as the
+  // first WWWNote on each created item (the WWWItem.notes mirror already holds
+  // it). This keeps the thread the source of truth so the note shows up when the
+  // item is later opened. The item-CREATE audit event already captures it.
+  const seedNote = notes?.trim();
+  if (seedNote) {
+    await db.wWWNote.createMany({
+      data: createdItems.map((it) => ({
+        wwwItemId: it.id,
+        orgId,
+        content: seedNote,
+        authorId: userId,
+      })),
+    });
+  }
 
   // Hydrate full assignee list for the response.
   const assignees = await db.user.findMany({

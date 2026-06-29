@@ -3,13 +3,16 @@ import type { Prisma, PrismaClient } from "@quikit/database";
 /**
  * Deterministic duplicate detection for WWW ("Who/What/When") items.
  *
- * Two independent rules — either one blocks creation/edit (HTTP 409):
- *   • "who-when": a given assignee already has an active item due on the SAME
- *     calendar day. (Dates are day-granular — the form round-trips a date-only
- *     value, so we compare on the UTC day.)
- *   • "name": the `what` text already exists on an active item ANYWHERE in the
- *     org (case- and whitespace-insensitive). Org-wide uniqueness keeps tracking
- *     and reporting unambiguous.
+ * A single rule blocks creation/edit (HTTP 409): an existing active item matches
+ * on ALL THREE fields —
+ *   • who:  the same assignee (any of the new item's `whoIds`), AND
+ *   • when: the same calendar day (dates are day-granular — the form round-trips
+ *           a date-only value, so we compare on the UTC day), AND
+ *   • what: the same task text (trimmed, case-insensitive).
+ *
+ * So the same person CAN have several items due on one day as long as the "What?"
+ * differs, and the same "What?" CAN recur for a different person/day — only an
+ * exact who+when+what repeat is a duplicate.
  *
  * Soft-deleted items (`deletedAt != null`) never count as duplicates.
  */
@@ -17,9 +20,15 @@ import type { Prisma, PrismaClient } from "@quikit/database";
 /** Narrow client surface so the helper works with both `db` and a tx client. */
 type WWWClient = Pick<PrismaClient, "wWWItem">;
 
-export type WWWDuplicate =
-  | { kind: "who-when"; conflictId: string; who: string; when: Date }
-  | { kind: "name"; conflictId: string };
+export interface WWWDuplicate {
+  conflictId: string;
+  /** Assignee of the existing clashing item (for the message). */
+  who: string;
+  /** Due date of the existing clashing item (for the message). */
+  when: Date;
+  /** "What?" text of the existing clashing item (for the message). */
+  what: string;
+}
 
 export interface WWWDuplicateInput {
   /** Resolved assignee ids the new/edited item will belong to. */
@@ -49,45 +58,31 @@ export async function findWWWDuplicate(
   input: WWWDuplicateInput,
   excludeId?: string,
 ): Promise<WWWDuplicate | null> {
-  const notSelf: Prisma.WWWItemWhereInput = excludeId ? { id: { not: excludeId } } : {};
-
-  // Rule 1 — same assignee + same calendar day.
-  if (input.whoIds.length > 0) {
-    const range = utcDayRange(input.when);
-    const clash = await client.wWWItem.findFirst({
-      where: {
-        orgId,
-        deletedAt: null,
-        who: { in: input.whoIds },
-        when: { gte: range.gte, lt: range.lt },
-        ...notSelf,
-      },
-      select: { id: true, who: true, when: true },
-    });
-    if (clash) {
-      return { kind: "who-when", conflictId: clash.id, who: clash.who, when: clash.when };
-    }
-  }
-
-  // Rule 2 — duplicate name (org-wide, case-insensitive). `mode: "insensitive"`
-  // covers case; trimming the input covers the common stray-whitespace case.
   const trimmed = input.what.trim();
-  if (trimmed) {
-    const clash = await client.wWWItem.findFirst({
-      where: {
-        orgId,
-        deletedAt: null,
-        what: { equals: trimmed, mode: "insensitive" },
-        ...notSelf,
-      },
-      select: { id: true },
-    });
-    if (clash) {
-      return { kind: "name", conflictId: clash.id };
-    }
-  }
+  // Need all three identity fields to compare. No assignee or no "What?" text
+  // means there's nothing to collide against — treat as unique.
+  if (input.whoIds.length === 0 || !trimmed) return null;
 
-  return null;
+  const notSelf: Prisma.WWWItemWhereInput = excludeId ? { id: { not: excludeId } } : {};
+  const range = utcDayRange(input.when);
+
+  // Single combined rule — same assignee AND same calendar day AND same "What?"
+  // (case- and whitespace-insensitive).
+  const clash = await client.wWWItem.findFirst({
+    where: {
+      orgId,
+      deletedAt: null,
+      who: { in: input.whoIds },
+      when: { gte: range.gte, lt: range.lt },
+      what: { equals: trimmed, mode: "insensitive" },
+      ...notSelf,
+    },
+    select: { id: true, who: true, when: true, what: true },
+  });
+
+  return clash
+    ? { conflictId: clash.id, who: clash.who, when: clash.when, what: clash.what }
+    : null;
 }
 
 /** dd-mm-yyyy in UTC — matches the form's date display. */
@@ -99,17 +94,14 @@ function formatDueDate(when: Date): string {
 }
 
 /**
- * Human-facing 409 message for a detected duplicate. For a "who-when" clash the
- * assignee's name is looked up so the message names the person; falls back to a
- * generic phrasing if the user can't be resolved.
+ * Human-facing 409 message for a detected duplicate. The assignee's name is
+ * looked up so the message names the person; it also quotes the task and date so
+ * it's clear this is an exact who+when+what repeat (not just a same-day clash).
  */
 export async function wwwDuplicateMessage(
   client: { user: Pick<PrismaClient["user"], "findUnique"> },
   dup: WWWDuplicate,
 ): Promise<string> {
-  if (dup.kind === "name") {
-    return "A WWW item with this description already exists. Duplicate names aren't allowed.";
-  }
   const user = await client.user.findUnique({
     where: { id: dup.who },
     select: { firstName: true, lastName: true },
@@ -118,5 +110,5 @@ export async function wwwDuplicateMessage(
     ? `${user.firstName ?? ""} ${user.lastName ?? ""}`.trim()
     : "";
   const subject = name || "This person";
-  return `${subject} already has a WWW item due on ${formatDueDate(dup.when)}.`;
+  return `${subject} already has the same WWW item ("${dup.what}") due on ${formatDueDate(dup.when)}.`;
 }

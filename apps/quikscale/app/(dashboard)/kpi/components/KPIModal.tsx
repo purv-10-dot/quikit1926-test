@@ -11,7 +11,7 @@ import { notify } from "@/lib/utils/notify";
 import type { KPIRow as KPI } from "@/lib/types/kpi";
 import type { User } from "@/lib/types/kpi";
 import { fiscalYearLabel, MEASUREMENT_UNITS, ALL_QUARTERS, ALL_WEEKS, weekDateLabel } from "@/lib/utils/fiscal";
-import { CURRENCIES, getScales, getMultiplier, formatActual } from "@/lib/utils/currency";
+import { CURRENCIES, getScales, getMultiplier, formatActual, scaleDownForDisplay, scaleUpFromInput, shortScaleLabel } from "@/lib/utils/currency";
 import { UserPicker, UserMultiPicker, RightPanel, RightPanelFooter, DropdownPicker } from "@quikit/ui";
 import { FormErrorBanner } from "@/components/forms/FormErrorBanner";
 import { usePastWeekFlags } from "@/lib/hooks/useFeatureFlags";
@@ -647,6 +647,20 @@ export function KPIModal({ mode, kpi, scope, teamId, defaultYear, defaultQuarter
     ? (parseFloat(form.target) || 0) * getMultiplier(form.currency, form.targetScale)
     : parseFloat(form.target) || 0;
 
+  // Weekly cells store RAW values but, for a scaled currency target, are shown +
+  // typed in the chosen unit (e.g. Crore). `scaleMult > 1` only when currency +
+  // a real scale is selected; otherwise these pass through unchanged so Number /
+  // Percentage / no-scale KPIs behave exactly as before.
+  const scaleMult = isCurrency ? getMultiplier(form.currency, form.targetScale) : 1;
+  const toDisp = (raw: number | string) =>
+    scaleMult > 1 ? scaleDownForDisplay(raw, form.currency, form.targetScale) : (typeof raw === "string" ? raw : String(raw));
+  const toRaw = (input: string) =>
+    scaleMult > 1 ? scaleUpFromInput(input, form.currency, form.targetScale) : input;
+  /** Unit suffix for the breakdown header, e.g. " — in ₹ Crore". */
+  const scaleUnitLabel = scaleMult > 1 ? ` — in ${currencyObj.symbol} ${form.targetScale}` : "";
+  /** Compact unit shown under each week column, e.g. "₹ Cr". */
+  const scaleUnitShort = scaleMult > 1 ? `${currencyObj.symbol} ${shortScaleLabel(form.targetScale)}`.trim() : "";
+
   const panelTitle =
     mode === "create"
       ? isTeamScope
@@ -1078,7 +1092,7 @@ export function KPIModal({ mode, kpi, scope, teamId, defaultYear, defaultQuarter
           {/* Target Breakdown (editable weekly) */}
           {scaledTarget > 0 && (
             <div>
-              <label className="block text-xs font-medium text-gray-600 mb-2">Target Breakdown (Weekly)</label>
+              <label className="block text-xs font-medium text-gray-600 mb-2">Target Breakdown (Weekly){scaleUnitLabel}</label>
               <WeeklyScroller>
                 <table className="w-full text-xs">
                   <thead>
@@ -1098,6 +1112,7 @@ export function KPIModal({ mode, kpi, scope, teamId, defaultYear, defaultQuarter
                             Week {w}
                           </div>
                           <div className="text-[9px] font-normal text-gray-400">{weekLabels[w - 1] ?? weekDateLabel(parseInt(form.year), form.quarter, w)}</div>
+                          {scaleUnitShort && <div className="text-[9px] font-semibold text-accent-600">{scaleUnitShort}</div>}
                         </th>
                       );})}
                     </tr>
@@ -1133,8 +1148,8 @@ export function KPIModal({ mode, kpi, scope, teamId, defaultYear, defaultQuarter
                               <input
                                 type="number"
                                 min="0"
-                                value={editingCell?.key === `tot-${w}` ? editingCell.raw : displaySum}
-                                onChange={e => { setEditingCell({ key: `tot-${w}`, raw: e.target.value }); setTeamTotalWeekCell(w, e.target.value); }}
+                                value={editingCell?.key === `tot-${w}` ? editingCell.raw : toDisp(displaySum)}
+                                onChange={e => { setEditingCell({ key: `tot-${w}`, raw: e.target.value }); setTeamTotalWeekCell(w, toRaw(e.target.value)); }}
                                 onBlur={() => setEditingCell(null)}
                                 readOnly={isLocked}
                                 title={isPast
@@ -1179,9 +1194,9 @@ export function KPIModal({ mode, kpi, scope, teamId, defaultYear, defaultQuarter
                                 className="w-full px-1 py-1 text-center text-xs border border-gray-200 rounded bg-white focus:outline-none focus:ring-1 focus:ring-accent-400 min-w-[72px] cursor-pointer"
                               >
                                 <option value={zeroStr}>0</option>
-                                <option value={targetStr}>{targetStr || "—"}</option>
+                                <option value={targetStr}>{targetStr ? toDisp(targetStr) : "—"}</option>
                                 {norm !== zeroStr && norm !== "" && norm !== targetStr && (
-                                  <option value={norm}>{norm} (custom)</option>
+                                  <option value={norm}>{toDisp(norm)} (custom)</option>
                                 )}
                               </select>
                             </td>
@@ -1192,8 +1207,8 @@ export function KPIModal({ mode, kpi, scope, teamId, defaultYear, defaultQuarter
                             <input
                               type="number"
                               min="0"
-                              value={editingCell?.key === `ind-${w}` ? editingCell.raw : (form.weeklyBreakdown[w] ?? "")}
-                              onChange={e => { setEditingCell({ key: `ind-${w}`, raw: e.target.value }); setWeekBreakdown(w, e.target.value); }}
+                              value={editingCell?.key === `ind-${w}` ? editingCell.raw : toDisp(form.weeklyBreakdown[w] ?? "")}
+                              onChange={e => { setEditingCell({ key: `ind-${w}`, raw: e.target.value }); setWeekBreakdown(w, toRaw(e.target.value)); }}
                               onBlur={() => setEditingCell(null)}
                               readOnly={isLocked}
                               title={isPast ? "Past week data entry is disabled. Enable in Settings > Configurations." : undefined}
@@ -1251,9 +1266,9 @@ export function KPIModal({ mode, kpi, scope, teamId, defaultYear, defaultQuarter
                                     className="w-full px-1 py-1 text-center text-[11px] border border-gray-200 rounded bg-white focus:outline-none focus:ring-1 focus:ring-accent-400 min-w-[72px] cursor-pointer"
                                   >
                                     <option value={zeroStr}>0</option>
-                                    <option value={targetStr}>{targetStr || "—"}</option>
+                                    <option value={targetStr}>{targetStr ? toDisp(targetStr) : "—"}</option>
                                     {norm !== zeroStr && norm !== "" && norm !== targetStr && (
-                                      <option value={norm}>{norm} (custom)</option>
+                                      <option value={norm}>{toDisp(norm)} (custom)</option>
                                     )}
                                   </select>
                                 </td>
@@ -1264,8 +1279,8 @@ export function KPIModal({ mode, kpi, scope, teamId, defaultYear, defaultQuarter
                                 <input
                                   type="number"
                                   min="0"
-                                  value={editingCell?.key === `own-${id}-${w}` ? editingCell.raw : (ownerRow[w] ?? "")}
-                                  onChange={e => { setEditingCell({ key: `own-${id}-${w}`, raw: e.target.value }); setOwnerWeekCell(id, w, e.target.value); }}
+                                  value={editingCell?.key === `own-${id}-${w}` ? editingCell.raw : toDisp(ownerRow[w] ?? "")}
+                                  onChange={e => { setEditingCell({ key: `own-${id}-${w}`, raw: e.target.value }); setOwnerWeekCell(id, w, toRaw(e.target.value)); }}
                                   onBlur={() => setEditingCell(null)}
                                   readOnly={isLocked}
                                   title={isPast ? "Past week data entry is disabled." : undefined}

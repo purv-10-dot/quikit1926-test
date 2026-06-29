@@ -32,7 +32,7 @@ import {
   weekDateLabel, ALL_WEEKS, rollingVisibleWeeks,
 } from "@/lib/utils/fiscal";
 import { useCurrentWeek, useWeekDateRange, useWeekLabels } from "@/lib/hooks/useCurrentWeek";
-import { progressColor, weekCellColors, fmt, fmtCompact, fmtCompactBy, getProgressBadgeColors, getLatestWeeklyNote, type NumberFormat } from "@/lib/utils/kpiHelpers";
+import { progressColor, weekCellColors, fmt, formatScaledKpiValue, getProgressBadgeColors, getLatestWeeklyNote, type NumberFormat } from "@/lib/utils/kpiHelpers";
 import { useNumberFormat } from "@/lib/hooks/useFeatureFlags";
 import { getLatestPriorityNote } from "@/lib/utils/priorityHelpers";
 import { getColorByPercentage } from "@/lib/utils/colorLogic";
@@ -599,8 +599,8 @@ function KPICard({ kpi, currentWeek, numberFormat = "standard" }: { kpi: KPIRow;
         className="flex items-baseline gap-1 mb-2"
         title="QTD Achieved / Quarterly Goal"
       >
-        <span className="text-base font-bold text-gray-800">{fmtCompactBy(achieved, numberFormat)}</span>
-        <span className="text-xs text-gray-400">/ {fmtCompactBy(goal, numberFormat)}</span>
+        <span className="text-base font-bold text-gray-800">{formatScaledKpiValue(achieved, { measurementUnit: kpi.measurementUnit, currency: kpi.currency, targetScale: kpi.targetScale, numberFormat })}</span>
+        <span className="text-xs text-gray-400">/ {formatScaledKpiValue(goal, { measurementUnit: kpi.measurementUnit, currency: kpi.currency, targetScale: kpi.targetScale, numberFormat })}</span>
       </div>
       <div className="flex items-center gap-2">
         <span className={`text-xs font-semibold ${badge.text}`}>{pct.toFixed(0)}%</span>
@@ -685,6 +685,11 @@ function KPISection({ kpis, year, quarter, visibleWeeks }: { kpis: KPIRow[]; yea
   const allColKeys = ALL_KPI_COLS.map(c => c.key);
   const paged = kpis.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
   const weekLabels = useWeekLabels(year, quarter);
+  const numberFormat = useNumberFormat();
+  // Per-KPI value formatter: currency KPIs render in their own currency/scale
+  // (INR → ₹ Cr even when the global toggle is off); others follow the toggle.
+  const fmtKpiVal = (kpi: KPIRow, v: number | null | undefined) =>
+    formatScaledKpiValue(v, { measurementUnit: kpi.measurementUnit, currency: kpi.currency, targetScale: kpi.targetScale, numberFormat });
 
   if (!kpis.length) return <EmptyState label="No KPI data found" />;
 
@@ -739,7 +744,7 @@ function KPISection({ kpis, year, quarter, visibleWeeks }: { kpis: KPIRow[]; yea
                       className={`border-r border-b border-gray-100 px-4 py-3 text-center ${colors ? colors.bar : frozenBg}`}
                       style={{ ...sticky, ...colW(col) }}>
                       <span className={`text-xs font-semibold ${colors ? "text-white" : "text-gray-300"}`}>
-                        {kpi.qtdAchieved != null ? fmtCompact(kpi.qtdAchieved) : "—"}
+                        {kpi.qtdAchieved != null ? fmtKpiVal(kpi, kpi.qtdAchieved) : "—"}
                       </span>
                     </td>
                   );
@@ -748,9 +753,9 @@ function KPISection({ kpis, year, quarter, visibleWeeks }: { kpis: KPIRow[]; yea
                 const content: Record<string, React.ReactNode> = {
                   name:       <span className="text-xs font-medium text-gray-800 line-clamp-2 block">{kpi.name}</span>,
                   unit:       <span className="text-xs text-gray-500">{kpi.measurementUnit}</span>,
-                  qtrGoal:    <span className="text-xs text-gray-700">{fmtCompact(kpi.quarterlyGoal ?? kpi.target ?? null)}</span>,
-                  qtdGoal:    <span className="text-xs text-gray-700">{fmtCompact(kpi.qtdGoal ?? null)}</span>,
-                  weeklyGoal: <span className="text-xs text-gray-700">{weeklyGoal > 0 ? fmtCompact(weeklyGoal) : "—"}</span>,
+                  qtrGoal:    <span className="text-xs text-gray-700">{fmtKpiVal(kpi, kpi.quarterlyGoal ?? kpi.target ?? null)}</span>,
+                  qtdGoal:    <span className="text-xs text-gray-700">{fmtKpiVal(kpi, kpi.qtdGoal ?? null)}</span>,
+                  weeklyGoal: <span className="text-xs text-gray-700">{weeklyGoal > 0 ? fmtKpiVal(kpi, weeklyGoal) : "—"}</span>,
                 };
 
                 return (
@@ -790,7 +795,7 @@ function KPISection({ kpis, year, quarter, visibleWeeks }: { kpis: KPIRow[]; yea
                       }
                     >
                       <div className="flex items-center justify-center w-full h-full min-h-[36px]">
-                        <span className={`text-xs font-semibold ${text}`}>{val != null ? fmtCompact(val) : "–"}</span>
+                        <span className={`text-xs font-semibold ${text}`}>{val != null ? fmtKpiVal(kpi, val) : "–"}</span>
                       </div>
                     </WeekCellTooltip>
                   </td>
