@@ -90,9 +90,21 @@ describe("modulesFromRevokes", () => {
     expect(ticked.sort()).toEqual([...POPULATED_MODULES].sort());
   });
 
-  it("un-ticks a module when any one of its pairs is revoked", () => {
+  it("keeps a module ticked when only SOME of its pairs are revoked", () => {
+    // Revoking a single action must NOT drop the whole module — the user
+    // still retains access to the rest of it. (Regression: a single unchecked
+    // box used to clear the entire module on the Permissions page reload.)
     const poPair = MODULE_TO_RESOURCES["purchase"][0]; // construction.pr
     const ticked = modulesFromRevokes([{ resource: poPair, action: "view" }]);
+    expect(ticked).toContain("purchase");
+  });
+
+  it("un-ticks a module only when EVERY one of its pairs is revoked", () => {
+    const allPurchasePairs = modulePermissionPairs("purchase").map((p) => ({
+      resource: p.resource,
+      action: p.action,
+    }));
+    const ticked = modulesFromRevokes(allPurchasePairs);
     expect(ticked).not.toContain("purchase");
   });
 
