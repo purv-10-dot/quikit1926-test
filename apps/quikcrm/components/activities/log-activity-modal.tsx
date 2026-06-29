@@ -15,7 +15,6 @@ import {
   FileText,
   Layers,
   List,
-  PhoneCall,
   Sparkles,
   Target,
   User,
@@ -27,19 +26,18 @@ import { Input } from "@/components/ui/input";
 import { Select } from "@/components/ui/select";
 import { useToast } from "@/hooks/use-toast";
 import { SearchableSelect } from "@/components/activities/log-activity/searchable-select";
+import { ActivityFieldInputs } from "@/components/activities/activity-field-inputs";
 import {
-  ACTIVITY_TYPE_META,
-  NOTE_TEMPLATES,
   VISIBILITY_OPTIONS,
   formatVisibilityPrefix,
   sourceBadgeClass,
   type ActivityVisibility,
 } from "@/lib/activities/activity-type-meta";
 import type { SmbDispositionMeta } from "@/lib/services/activities/smb-outreach-meta";
-import {
-  GENERIC_ACTIVITY_TYPES,
-  type GenericActivityType,
-} from "@/lib/services/activities/generic-activity-types";
+import type {
+  ActivityTypeDefinition,
+  ActivityFieldDefinition,
+} from "@/types/activity-type";
 
 export type LeadContext = {
   id: string;
@@ -50,7 +48,6 @@ export type LeadContext = {
 };
 
 type RelatedOption = { id: string; label: string };
-type LeadLogMeta = { activityCodes: string[]; outcomes: string[] };
 type SmbMeta = {
   countries: string[];
   priorities: string[];
@@ -62,7 +59,10 @@ type SmbMeta = {
 const KIND_OPTIONS = ["Lead", "Opportunity", "Contact", "Account"] as const;
 const DRAFT_STORAGE_KEY = "quikcrm.activity-composer.draft.v1";
 
-type TabId = "generic" | "lead-log" | "smb";
+// T-P3.3b: Generic + Lead-log collapsed into one type-driven "activity" tab.
+// SMB stays a separate (quarantined) tab. The lead-log endpoint survives but is
+// now UI-unreachable (covered by its own API test).
+type TabId = "activity" | "smb";
 
 interface Props {
   open: boolean;
@@ -71,20 +71,9 @@ interface Props {
   canViewLeads: boolean;
   initialLead?: LeadContext | null;
   initialRelated?: { kind: (typeof KIND_OPTIONS)[number]; id: string; label: string } | null;
-  /** When set, Generic tab opens with this type (e.g. Meeting from command palette). */
-  initialGenericType?: GenericActivityType | null;
 }
 
-let cachedLeadLogMeta: LeadLogMeta | null = null;
 let cachedSmbMeta: SmbMeta | null = null;
-
-async function fetchLeadLogMeta(): Promise<LeadLogMeta> {
-  if (cachedLeadLogMeta) return cachedLeadLogMeta;
-  const res = await fetch("/api/activities/meta/lead-log");
-  const body = await res.json();
-  cachedLeadLogMeta = body?.data ?? { activityCodes: [], outcomes: [] };
-  return cachedLeadLogMeta!;
-}
 
 async function fetchSmbMeta(): Promise<SmbMeta> {
   if (cachedSmbMeta) return cachedSmbMeta;
@@ -121,10 +110,9 @@ export function LogActivityModal({
   canViewLeads,
   initialLead = null,
   initialRelated = null,
-  initialGenericType = null,
 }: Props) {
   const toast = useToast();
-  const [tab, setTab] = useState<TabId>("generic");
+  const [tab, setTab] = useState<TabId>("activity");
   const [submitting, setSubmitting] = useState(false);
   const [reminderOn, setReminderOn] = useState(false);
   const [visibility, setVisibility] = useState<ActivityVisibility>("team");
@@ -133,31 +121,23 @@ export function LogActivityModal({
   const [leadOptions, setLeadOptions] = useState<RelatedOption[]>([]);
   const [leadOptionsLoaded, setLeadOptionsLoaded] = useState(false);
 
-  const [type, setType] = useState<GenericActivityType>("Note");
+  // Activity tab: type-driven.
+  const [types, setTypes] = useState<ActivityTypeDefinition[] | null>(null);
+  const [activityTypeId, setActivityTypeId] = useState("");
+  const [fieldDefs, setFieldDefs] = useState<ActivityFieldDefinition[]>([]);
+  const [fieldsLoading, setFieldsLoading] = useState(false);
+  const [fieldValues, setFieldValues] = useState<Record<string, unknown>>({});
+
   const [relatedKind, setRelatedKind] =
     useState<(typeof KIND_OPTIONS)[number]>("Lead");
   const [relatedObjectId, setRelatedObjectId] = useState("");
-  const [subject, setSubject] = useState("");
-  const [outcome, setOutcome] = useState("");
-  const [genericNotes, setGenericNotes] = useState("");
-  const [durationMin, setDurationMin] = useState("");
-  const [meetingAt, setMeetingAt] = useState("");
-  const [attendees, setAttendees] = useState("");
-  const [emailRecipient, setEmailRecipient] = useState("");
-  const [emailStatus, setEmailStatus] = useState("");
-  const [nextAction, setNextAction] = useState("");
+  const [activityNotes, setActivityNotes] = useState("");
   const [followUpAt, setFollowUpAt] = useState("");
 
   const [relatedOptions, setRelatedOptions] = useState<
     Record<(typeof KIND_OPTIONS)[number], RelatedOption[] | undefined>
   >({ Lead: undefined, Opportunity: undefined, Contact: undefined, Account: undefined });
   const [relatedLoading, setRelatedLoading] = useState(false);
-
-  const [leadLogMeta, setLeadLogMeta] = useState<LeadLogMeta | null>(null);
-  const [activityCode, setActivityCode] = useState("");
-  const [logOutcome, setLogOutcome] = useState("");
-  const [llDetailNotes, setLlDetailNotes] = useState("");
-  const [llFollowUpAt, setLlFollowUpAt] = useState("");
 
   const [smbMeta, setSmbMeta] = useState<SmbMeta | null>(null);
   const [country, setCountry] = useState("");
@@ -170,11 +150,10 @@ export function LogActivityModal({
   const [smbDetailNotes, setSmbDetailNotes] = useState("");
 
   const showLeadTabs = canViewLeads;
-  const typeMeta = ACTIVITY_TYPE_META[type];
-  const TypeIcon = typeMeta.icon;
+  const selectedType = types?.find((t) => t.id === activityTypeId) ?? null;
 
   const contextRecordLabel = useMemo(() => {
-    if (tab === "generic") {
+    if (tab === "activity") {
       const opt = relatedOptions[relatedKind]?.find((o) => o.id === relatedObjectId);
       return opt?.label ?? (relatedKind === "Lead" && lead?.label) ?? null;
     }
@@ -183,7 +162,7 @@ export function LogActivityModal({
 
   function selectTab(next: TabId) {
     setTab(next);
-    if (next === "generic" || relatedKind !== "Lead" || !relatedObjectId) return;
+    if (next === "activity" || relatedKind !== "Lead" || !relatedObjectId) return;
     const fromCache = relatedOptions.Lead?.find((o) => o.id === relatedObjectId);
     if (fromCache) {
       setLead({ id: fromCache.id, label: fromCache.label, ...lead });
@@ -195,26 +174,16 @@ export function LogActivityModal({
   }
 
   const resetForm = useCallback(() => {
-    setTab("generic");
+    setTab("activity");
     setLead(initialLead);
     setSubmitting(false);
     setReminderOn(false);
     setVisibility("team");
-    setType(initialGenericType ?? "Note");
-    setSubject("");
-    setOutcome("");
-    setGenericNotes("");
-    setDurationMin("");
-    setMeetingAt("");
-    setAttendees("");
-    setEmailRecipient("");
-    setEmailStatus("");
-    setNextAction("");
+    setActivityTypeId("");
+    setFieldDefs([]);
+    setFieldValues({});
+    setActivityNotes("");
     setFollowUpAt("");
-    setActivityCode("");
-    setLogOutcome("");
-    setLlDetailNotes("");
-    setLlFollowUpAt("");
     setCountry("");
     setFollowupPriority("");
     setChannel("");
@@ -240,18 +209,42 @@ export function LogActivityModal({
         }));
       }
     }
-  }, [initialLead, initialRelated, initialGenericType]);
+  }, [initialLead, initialRelated]);
 
   useEffect(() => {
     if (!open) return;
     resetForm();
   }, [open, resetForm]);
 
+  // Activity tab: load the org's active types once the modal opens.
   useEffect(() => {
     if (!open) return;
-    if (tab === "lead-log" && !leadLogMeta) void fetchLeadLogMeta().then(setLeadLogMeta);
+    if (types !== null) return;
+    void fetch("/api/activities/types")
+      .then((r) => (r.ok ? r.json() : null))
+      .then((body) => setTypes(Array.isArray(body?.data) ? body.data : []))
+      .catch(() => setTypes([]));
+  }, [open, types]);
+
+  // When a type is picked, fetch its field definitions.
+  useEffect(() => {
+    if (!open || !activityTypeId) {
+      setFieldDefs([]);
+      return;
+    }
+    setFieldsLoading(true);
+    setFieldValues({});
+    void fetch(`/api/activities/types/${activityTypeId}/fields`)
+      .then((r) => (r.ok ? r.json() : null))
+      .then((body) => setFieldDefs(Array.isArray(body?.data) ? body.data : []))
+      .catch(() => setFieldDefs([]))
+      .finally(() => setFieldsLoading(false));
+  }, [open, activityTypeId]);
+
+  useEffect(() => {
+    if (!open) return;
     if (tab === "smb" && !smbMeta) void fetchSmbMeta().then(setSmbMeta);
-  }, [open, tab, leadLogMeta, smbMeta]);
+  }, [open, tab, smbMeta]);
 
   useEffect(() => {
     if (!open) return;
@@ -297,7 +290,7 @@ export function LogActivityModal({
   );
 
   useEffect(() => {
-    if (!open || tab !== "generic") return;
+    if (!open || tab !== "activity") return;
     if (relatedOptions[relatedKind] !== undefined) return;
     setRelatedLoading(true);
     fetchRelatedOptions(relatedKind)
@@ -315,34 +308,14 @@ export function LogActivityModal({
     return subOptions.find((s) => s.value === subDisposition)?.subSub ?? [];
   }, [subOptions, subDisposition]);
 
-  const genericMeta = useMemo(() => {
-    const m: Record<string, string | undefined> = {};
-    if (type === "Call") {
-      if (durationMin) m["Duration"] = `${durationMin} min`;
-      if (outcome) m["Call outcome"] = outcome;
-    }
-    if (type === "Meeting") {
-      if (meetingAt) m["Meeting"] = meetingAt;
-      if (attendees) m["Attendees"] = attendees;
-      if (nextAction) m["Next action"] = nextAction;
-    }
-    if (type === "Email") {
-      if (emailRecipient) m["Recipient"] = emailRecipient;
-      if (emailStatus) m["Status"] = emailStatus;
-    }
-    return m;
-  }, [type, durationMin, outcome, meetingAt, attendees, nextAction, emailRecipient, emailStatus]);
-
   function saveDraft() {
     try {
       const payload = {
         tab,
-        type,
+        activityTypeId,
         relatedKind,
         relatedObjectId,
-        subject,
-        outcome,
-        genericNotes,
+        activityNotes,
         visibility,
         savedAt: new Date().toISOString(),
       };
@@ -362,21 +335,17 @@ export function LogActivityModal({
       }
       const d = JSON.parse(raw) as {
         tab?: TabId;
-        type?: GenericActivityType;
+        activityTypeId?: string;
         relatedKind?: (typeof KIND_OPTIONS)[number];
         relatedObjectId?: string;
-        subject?: string;
-        outcome?: string;
-        genericNotes?: string;
+        activityNotes?: string;
         visibility?: ActivityVisibility;
       };
       if (d.tab) setTab(d.tab);
-      if (d.type) setType(d.type);
+      if (d.activityTypeId) setActivityTypeId(d.activityTypeId);
       if (d.relatedKind) setRelatedKind(d.relatedKind);
       if (d.relatedObjectId) setRelatedObjectId(d.relatedObjectId);
-      if (d.subject) setSubject(d.subject);
-      if (d.outcome) setOutcome(d.outcome);
-      if (d.genericNotes) setGenericNotes(d.genericNotes);
+      if (d.activityNotes) setActivityNotes(d.activityNotes);
       if (d.visibility) setVisibility(d.visibility);
       toast.success("Draft restored");
     } catch {
@@ -384,22 +353,23 @@ export function LogActivityModal({
     }
   }
 
-  async function submitGeneric() {
+  async function submitActivity() {
+    if (!selectedType) {
+      toast.error("Pick an activity type first");
+      return;
+    }
     setSubmitting(true);
     try {
-      const notes = buildDetailNotes(genericNotes, genericMeta, visibility);
+      const notes = buildDetailNotes(activityNotes, {}, visibility);
       const res = await fetch("/api/activities", {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({
-          type,
+          type: selectedType.label,
+          activityTypeId: selectedType.id,
           relatedKind,
           relatedObjectId,
-          subject: subject || undefined,
-          outcome:
-            type === "Call" || type === "Email"
-              ? outcome || emailStatus || undefined
-              : outcome || undefined,
+          fieldValues,
           detailNotes: notes || undefined,
           followUpAt:
             reminderOn && followUpAt ? new Date(followUpAt).toISOString() : undefined,
@@ -412,37 +382,6 @@ export function LogActivityModal({
       }
       localStorage.removeItem(DRAFT_STORAGE_KEY);
       toast.success("Activity logged");
-      onSuccess();
-      onClose();
-    } finally {
-      setSubmitting(false);
-    }
-  }
-
-  async function submitLeadLog() {
-    if (!lead) {
-      toast.error("Select a lead first");
-      return;
-    }
-    setSubmitting(true);
-    try {
-      const res = await fetch("/api/activities/lead-log", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({
-          leadId: lead.id,
-          activityCode,
-          logOutcome,
-          detailNotes: buildDetailNotes(llDetailNotes, {}, visibility) || undefined,
-          followUpAt: llFollowUpAt ? new Date(llFollowUpAt).toISOString() : undefined,
-        }),
-      });
-      if (!res.ok) {
-        const body = await res.json().catch(() => null);
-        toast.error(body?.error ?? "Failed to log call");
-        return;
-      }
-      toast.success("Call logged");
       onSuccess();
       onClose();
     } finally {
@@ -485,24 +424,22 @@ export function LogActivityModal({
     }
   }
 
-  const submit =
-    tab === "generic" ? submitGeneric : tab === "lead-log" ? submitLeadLog : submitSmb;
+  const hasTypes = (types?.length ?? 0) > 0;
+  const submit = tab === "activity" ? submitActivity : submitSmb;
 
   const submitDisabled =
-    tab === "generic"
-      ? submitting || !type || !relatedKind || !relatedObjectId
-      : tab === "lead-log"
-        ? submitting || !lead || !activityCode || !logOutcome
-        : submitting ||
-          !lead ||
-          !country ||
-          !followupPriority ||
-          !channel ||
-          !competitor ||
-          !disposition ||
-          !subDisposition ||
-          !subSubDisposition ||
-          !smbDetailNotes;
+    tab === "activity"
+      ? submitting || !activityTypeId || !relatedKind || !relatedObjectId
+      : submitting ||
+        !lead ||
+        !country ||
+        !followupPriority ||
+        !channel ||
+        !competitor ||
+        !disposition ||
+        !subDisposition ||
+        !subSubDisposition ||
+        !smbDetailNotes;
 
   const footer = (
     <div className="flex flex-wrap items-center justify-between gap-2">
@@ -533,10 +470,8 @@ export function LogActivityModal({
       <div className="-mx-1 -mt-1 space-y-4">
         <header className="flex items-start justify-between gap-3 border-b border-crm-border pb-3">
           <div className="flex min-w-0 items-start gap-3">
-            <span
-              className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-xl ring-2 ${typeMeta.ring} bg-white`}
-            >
-              <TypeIcon size={18} className={typeMeta.accent} />
+            <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl ring-2 ring-accent-200 bg-white">
+              <FileText size={18} className="text-accent-600" />
             </span>
             <div className="min-w-0">
               <h2 className="text-base font-semibold text-crm-text">Log activity</h2>
@@ -582,170 +517,103 @@ export function LogActivityModal({
           </button>
         </header>
 
-        <SegmentedTabs
-          tab={tab}
-          showLeadTabs={showLeadTabs}
-          onSelect={selectTab}
-        />
+        <SegmentedTabs tab={tab} showLeadTabs={showLeadTabs} onSelect={selectTab} />
 
-        {tab === "generic" && (
+        {tab === "activity" && (
           <div className="space-y-4">
-            <Section title="Activity" description="Type-specific fields appear below.">
-              <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-                <Field label="Type">
-                  <Select
-                    value={type}
-                    onChange={(e) => setType(e.target.value as GenericActivityType)}
-                  >
-                    {GENERIC_ACTIVITY_TYPES.map((t) => (
-                      <option key={t} value={t}>
-                        {t}
-                      </option>
-                    ))}
-                  </Select>
-                </Field>
-                <Field label="Link to">
-                  <Select
-                    value={relatedKind}
-                    onChange={(e) => {
-                      setRelatedKind(e.target.value as (typeof KIND_OPTIONS)[number]);
-                      setRelatedObjectId("");
-                    }}
-                  >
-                    {KIND_OPTIONS.map((k) => (
-                      <option key={k} value={k}>
-                        {k}
-                      </option>
-                    ))}
-                  </Select>
-                </Field>
-                <div className="sm:col-span-2">
-                  <SearchableSelect
-                    label={relatedKind}
-                    placeholder={`Search ${relatedKind.toLowerCase()}…`}
-                    value={relatedObjectId}
-                    loading={relatedLoading && relatedOptions[relatedKind] === undefined}
-                    options={relatedOptions[relatedKind] ?? []}
-                    onChange={(id, opt) => {
-                      setRelatedObjectId(id);
-                      if (relatedKind === "Lead" && opt) {
-                        setLead((prev) => ({
-                          id: opt.id,
-                          label: opt.label,
-                          source: prev?.source,
-                          stage: prev?.stage,
-                          ownerName: prev?.ownerName,
-                        }));
-                      }
-                    }}
-                  />
-                </div>
+            {types === null ? (
+              <p className="px-1 py-6 text-center text-sm text-crm-muted">Loading…</p>
+            ) : !hasTypes ? (
+              <div className="rounded-lg border border-dashed border-crm-border bg-crm-panel/40 px-4 py-8 text-center">
+                <p className="text-sm font-medium text-crm-text">No activity types configured</p>
+                <p className="mx-auto mt-1 max-w-sm text-sm text-crm-muted">
+                  Ask your admin to set up activity types in Settings → Activity Types before
+                  logging.
+                </p>
               </div>
-            </Section>
+            ) : (
+              <>
+                <Section title="Activity" description="Pick a type, then fill its fields.">
+                  <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                    <Field label="Type">
+                      <Select
+                        value={activityTypeId}
+                        onChange={(e) => setActivityTypeId(e.target.value)}
+                      >
+                        <option value="">Select a type…</option>
+                        {types!.map((t) => (
+                          <option key={t.id} value={t.id}>
+                            {t.label}
+                          </option>
+                        ))}
+                      </Select>
+                    </Field>
+                    <Field label="Link to">
+                      <Select
+                        value={relatedKind}
+                        onChange={(e) => {
+                          setRelatedKind(e.target.value as (typeof KIND_OPTIONS)[number]);
+                          setRelatedObjectId("");
+                        }}
+                      >
+                        {KIND_OPTIONS.map((k) => (
+                          <option key={k} value={k}>
+                            {k}
+                          </option>
+                        ))}
+                      </Select>
+                    </Field>
+                    <div className="sm:col-span-2">
+                      <SearchableSelect
+                        label={relatedKind}
+                        placeholder={`Search ${relatedKind.toLowerCase()}…`}
+                        value={relatedObjectId}
+                        loading={relatedLoading && relatedOptions[relatedKind] === undefined}
+                        options={relatedOptions[relatedKind] ?? []}
+                        onChange={(id, opt) => {
+                          setRelatedObjectId(id);
+                          if (relatedKind === "Lead" && opt) {
+                            setLead((prev) => ({
+                              id: opt.id,
+                              label: opt.label,
+                              source: prev?.source,
+                              stage: prev?.stage,
+                              ownerName: prev?.ownerName,
+                            }));
+                          }
+                        }}
+                      />
+                    </div>
+                  </div>
+                </Section>
 
-            <DynamicGenericFields
-              type={type}
-              subject={subject}
-              setSubject={setSubject}
-              outcome={outcome}
-              setOutcome={setOutcome}
-              durationMin={durationMin}
-              setDurationMin={setDurationMin}
-              followUpAt={followUpAt}
-              setFollowUpAt={setFollowUpAt}
-              meetingAt={meetingAt}
-              setMeetingAt={setMeetingAt}
-              attendees={attendees}
-              setAttendees={setAttendees}
-              nextAction={nextAction}
-              setNextAction={setNextAction}
-              emailRecipient={emailRecipient}
-              setEmailRecipient={setEmailRecipient}
-              emailStatus={emailStatus}
-              setEmailStatus={setEmailStatus}
-            />
+                {activityTypeId ? (
+                  fieldsLoading ? (
+                    <p className="px-1 py-3 text-sm text-crm-muted">Loading fields…</p>
+                  ) : fieldDefs.length > 0 ? (
+                    <Section title={`${selectedType?.label ?? "Type"} fields`}>
+                      <ActivityFieldInputs
+                        fields={fieldDefs}
+                        values={fieldValues}
+                        onChange={setFieldValues}
+                      />
+                    </Section>
+                  ) : null
+                ) : null}
 
-            <NotesEditor
-              label="Notes"
-              value={genericNotes}
-              onChange={setGenericNotes}
-              onTemplate={(text) =>
-                setGenericNotes((n) => (n.trim() ? `${n.trim()}\n\n${text}` : text))
-              }
-            />
+                <NotesEditor label="Notes" value={activityNotes} onChange={setActivityNotes} />
 
-            <OptionsRow
-              reminderOn={reminderOn}
-              setReminderOn={setReminderOn}
-              followUpAt={followUpAt}
-              setFollowUpAt={setFollowUpAt}
-              visibility={visibility}
-              setVisibility={setVisibility}
-              onLoadDraft={loadDraft}
-            />
-          </div>
-        )}
-
-        {tab === "lead-log" && (
-          <div className="space-y-4">
-            <Section title="Call log" description="Structured disposition for sales calls.">
-              <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-                <div className="sm:col-span-2">
-                  <SearchableSelect
-                    label="Lead"
-                    placeholder="Search leads…"
-                    value={lead?.id ?? ""}
-                    loading={!leadOptionsLoaded}
-                    options={[
-                      ...(lead && !leadOptions.some((l) => l.id === lead.id)
-                        ? [{ id: lead.id, label: lead.label }]
-                        : []),
-                      ...leadOptions,
-                    ]}
-                    onChange={(id, opt) =>
-                      setLead(opt ? { id: opt.id, label: opt.label, ...lead } : null)
-                    }
-                  />
-                </div>
-                <Field label="Activity code">
-                  <Select value={activityCode} onChange={(e) => setActivityCode(e.target.value)}>
-                    <option value="">—</option>
-                    {leadLogMeta?.activityCodes.map((c) => (
-                      <option key={c} value={c}>
-                        {c}
-                      </option>
-                    ))}
-                  </Select>
-                </Field>
-                <Field label="Outcome">
-                  <Select value={logOutcome} onChange={(e) => setLogOutcome(e.target.value)}>
-                    <option value="">—</option>
-                    {leadLogMeta?.outcomes.map((o) => (
-                      <option key={o} value={o}>
-                        {o}
-                      </option>
-                    ))}
-                  </Select>
-                </Field>
-                <Field label="Follow up">
-                  <Input
-                    type="datetime-local"
-                    value={llFollowUpAt}
-                    onChange={(e) => setLlFollowUpAt(e.target.value)}
-                  />
-                </Field>
-              </div>
-            </Section>
-            <NotesEditor label="Detail notes" value={llDetailNotes} onChange={setLlDetailNotes} />
-            <OptionsRow
-              reminderOn={false}
-              setReminderOn={() => {}}
-              followUpAt=""
-              setFollowUpAt={() => {}}
-              visibility={visibility}
-              setVisibility={setVisibility}
-              hideReminder
-            />
+                <OptionsRow
+                  reminderOn={reminderOn}
+                  setReminderOn={setReminderOn}
+                  followUpAt={followUpAt}
+                  setFollowUpAt={setFollowUpAt}
+                  visibility={visibility}
+                  setVisibility={setVisibility}
+                  onLoadDraft={loadDraft}
+                />
+              </>
+            )}
           </div>
         )}
 
@@ -888,13 +756,8 @@ function SegmentedTabs({
   onSelect: (t: TabId) => void;
 }) {
   const items: { id: TabId; label: string; icon: typeof FileText }[] = [
-    { id: "generic", label: "Generic", icon: Layers },
-    ...(showLeadTabs
-      ? [
-          { id: "lead-log" as const, label: "Lead log", icon: PhoneCall },
-          { id: "smb" as const, label: "SMB", icon: Target },
-        ]
-      : []),
+    { id: "activity", label: "Activity", icon: Layers },
+    ...(showLeadTabs ? [{ id: "smb" as const, label: "SMB", icon: Target }] : []),
   ];
   return (
     <div
@@ -941,134 +804,14 @@ function Section({
   );
 }
 
-function DynamicGenericFields(props: {
-  type: GenericActivityType;
-  subject: string;
-  setSubject: (v: string) => void;
-  outcome: string;
-  setOutcome: (v: string) => void;
-  durationMin: string;
-  setDurationMin: (v: string) => void;
-  followUpAt: string;
-  setFollowUpAt: (v: string) => void;
-  meetingAt: string;
-  setMeetingAt: (v: string) => void;
-  attendees: string;
-  setAttendees: (v: string) => void;
-  nextAction: string;
-  setNextAction: (v: string) => void;
-  emailRecipient: string;
-  setEmailRecipient: (v: string) => void;
-  emailStatus: string;
-  setEmailStatus: (v: string) => void;
-}) {
-  const { type } = props;
-  if (type === "Note" || type === "Task") {
-    return (
-      <Section title="Details">
-        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-          <Field label={type === "Note" ? "Title" : "Subject"}>
-            <Input value={props.subject} onChange={(e) => props.setSubject(e.target.value)} />
-          </Field>
-        </div>
-      </Section>
-    );
-  }
-  if (type === "Call") {
-    return (
-      <Section title="Call details">
-        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-          <Field label="Duration (min)">
-            <Input
-              type="number"
-              min={0}
-              value={props.durationMin}
-              onChange={(e) => props.setDurationMin(e.target.value)}
-            />
-          </Field>
-          <Field label="Call outcome">
-            <Input value={props.outcome} onChange={(e) => props.setOutcome(e.target.value)} />
-          </Field>
-          <Field label="Follow-up">
-            <Input
-              type="datetime-local"
-              value={props.followUpAt}
-              onChange={(e) => props.setFollowUpAt(e.target.value)}
-            />
-          </Field>
-        </div>
-      </Section>
-    );
-  }
-  if (type === "Meeting") {
-    return (
-      <Section title="Meeting details">
-        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-          <Field label="Meeting date">
-            <Input
-              type="datetime-local"
-              value={props.meetingAt}
-              onChange={(e) => props.setMeetingAt(e.target.value)}
-            />
-          </Field>
-          <Field label="Attendees">
-            <Input
-              value={props.attendees}
-              onChange={(e) => props.setAttendees(e.target.value)}
-              placeholder="Names, comma-separated"
-            />
-          </Field>
-          <div className="sm:col-span-2">
-            <Field label="Next action">
-              <Input value={props.nextAction} onChange={(e) => props.setNextAction(e.target.value)} />
-            </Field>
-          </div>
-        </div>
-      </Section>
-    );
-  }
-  if (type === "Email") {
-    return (
-      <Section title="Email details">
-        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-          <Field label="Subject">
-            <Input value={props.subject} onChange={(e) => props.setSubject(e.target.value)} />
-          </Field>
-          <Field label="Recipient">
-            <Input
-              value={props.emailRecipient}
-              onChange={(e) => props.setEmailRecipient(e.target.value)}
-            />
-          </Field>
-          <Field label="Status">
-            <Select
-              value={props.emailStatus}
-              onChange={(e) => props.setEmailStatus(e.target.value)}
-            >
-              <option value="">—</option>
-              <option value="Sent">Sent</option>
-              <option value="Opened">Opened</option>
-              <option value="Replied">Replied</option>
-              <option value="Bounced">Bounced</option>
-            </Select>
-          </Field>
-        </div>
-      </Section>
-    );
-  }
-  return null;
-}
-
 function NotesEditor({
   label,
   value,
   onChange,
-  onTemplate,
 }: {
   label: string;
   value: string;
   onChange: (v: string) => void;
-  onTemplate?: (text: string) => void;
 }) {
   const id = useId();
   return (
@@ -1087,18 +830,6 @@ function NotesEditor({
             if (url) onChange(value ? `${value}\n${url}` : url);
           }}
         />
-        {onTemplate
-          ? NOTE_TEMPLATES.map((t) => (
-              <button
-                key={t.label}
-                type="button"
-                className="rounded-md border border-crm-border bg-white px-2 py-0.5 text-[10px] font-medium text-crm-muted hover:border-accent-300 hover:text-accent-700"
-                onClick={() => onTemplate(t.text)}
-              >
-                {t.label}
-              </button>
-            ))
-          : null}
       </div>
       <textarea
         id={id}

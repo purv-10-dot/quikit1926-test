@@ -1,7 +1,12 @@
 import { createOAuthClientOptions, createAuthOptions } from "@quikit/auth";
 import "@quikit/auth/types";
 
-const QUIKIT_URL = process.env.QUIKIT_URL;
+// Accept both env names — operators sometimes provision the IdP base URL
+// under the OIDC-conventional alias QUIKIT_ISSUER_URL. Reading only QUIKIT_URL
+// silently drops the app into credentials mode (no "quikit" provider), which
+// makes signIn("quikit") on /login loop back to /login forever. Mirrors
+// quikscale / quikvc / quikcrm.
+const QUIKIT_URL = process.env.QUIKIT_URL ?? process.env.QUIKIT_ISSUER_URL;
 const QUIKIT_CLIENT_ID = process.env.QUIKIT_CLIENT_ID;
 const QUIKIT_CLIENT_SECRET = process.env.QUIKIT_CLIENT_SECRET;
 

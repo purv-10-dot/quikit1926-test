@@ -25,6 +25,8 @@ import {
 } from "./timeline-meta";
 import { TimelineRow } from "./timeline-row";
 import { TimelineCreateEpic } from "./timeline-create-epic";
+import { FilterSelect } from "../../grouped-kanban/_components/toolbar/filter-select";
+import { FilterMultiSelect } from "../../grouped-kanban/_components/toolbar/filter-multi-select";
 
 const ROOT_PAGE_SIZE = 20;
 
@@ -45,6 +47,10 @@ export function TimelineView({ projectId }: { projectId: string }) {
   >(null);
   const [statusOpen, setStatusOpen] = useState(false);
   const statusBtnRef = useRef<HTMLDivElement>(null);
+  // Multiselect assignee filter (narrows tasks under each epic) + single epic filter.
+  const [filterAssigneeIds, setFilterAssigneeIds] = useState<string[]>([]);
+  const [filterEpicId, setFilterEpicId] = useState("");
+  const assigneeFilter = filterAssigneeIds.join(",");
   const queryClient = useQueryClient();
   // Shared project members via React Query (same key as the other space views).
   const { data: members = [] } = useApiData<Member[]>(
@@ -55,6 +61,19 @@ export function TimelineView({ projectId }: { projectId: string }) {
         const payload = d as { members?: Member[] } | Member[] | null;
         return Array.isArray(payload) ? payload : payload?.members ?? [];
       },
+    },
+  );
+  // Epics for the Epic filter dropdown options.
+  const { data: epicOptionsData = [] } = useApiData<{ id: string; key: string; title: string }[]>(
+    ["quiktrack", "project-epics", projectId],
+    `/api/issues?projectId=${projectId}&type=EPIC&limit=200`,
+    {
+      select: (d) =>
+        (Array.isArray(d) ? d : []).map((e: { id: string; key: string; title: string }) => ({
+          id: e.id,
+          key: e.key,
+          title: e.title,
+        })),
     },
   );
   const [currentUserId, setCurrentUserId] = useState<string | null>(null);
@@ -254,6 +273,35 @@ export function TimelineView({ projectId }: { projectId: string }) {
               </div>
             )}
           </div>
+          <FilterMultiSelect
+            values={filterAssigneeIds}
+            onChange={setFilterAssigneeIds}
+            options={[
+              { value: "null", label: "Unassigned", muted: true },
+              ...members
+                .filter((m) => m.user)
+                .map((m) => {
+                  const u = m.user!;
+                  const label =
+                    [u.firstName, u.lastName].filter(Boolean).join(" ").trim() || u.email;
+                  return { value: u.id, label };
+                }),
+            ]}
+            placeholder="Any assignee"
+            summaryNoun="people"
+            searchable
+            width={220}
+          />
+          <FilterSelect
+            value={filterEpicId}
+            onChange={setFilterEpicId}
+            options={[
+              { value: "", label: "Any epic", muted: true },
+              ...epicOptionsData.map((e) => ({ value: e.id, label: `${e.key} · ${e.title}` })),
+            ]}
+            placeholder="Any epic"
+            width={240}
+          />
         </div>
 
         {/* <div className="flex items-center gap-2">
@@ -310,8 +358,9 @@ export function TimelineView({ projectId }: { projectId: string }) {
             onCreated={() => setRefreshKey((k) => k + 1)}
           />
 
-          {/* Epic rows (recursive children load on expand) */}
-          {epics.map((e) => (
+          {/* Epic rows (recursive children load on expand). When an epic filter
+              is active, narrow to that single epic. */}
+          {(filterEpicId ? epics.filter((e) => e.id === filterEpicId) : epics).map((e) => (
             <TimelineRow
               key={e.id}
               issue={e}
@@ -319,6 +368,7 @@ export function TimelineView({ projectId }: { projectId: string }) {
               projectId={projectId}
               columns={columns}
               onOpen={setOpenIssueId}
+              assigneeFilter={assigneeFilter}
             />
           ))}
 
@@ -352,7 +402,7 @@ export function TimelineView({ projectId }: { projectId: string }) {
 
       {/* Floating zoom control (visual only for now) */}
       <div className="absolute bottom-4 right-6 flex items-center bg-white border border-gray-200 rounded-md shadow-sm">
-        {(["today", "weeks", "months", "quarters"] as ZoomLevel[]).map((z) => (
+        {(["weeks", "months", "quarters"] as ZoomLevel[]).map((z) => (
           <button
             key={z}
             onClick={() => setZoom(z)}

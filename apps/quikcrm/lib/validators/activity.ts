@@ -32,6 +32,10 @@ export const createActivitySchema = z.object({
   outreach: z.record(z.unknown()).optional(),
   externalId: z.string().trim().max(200).optional().nullable(),
   sourceSystem: z.string().trim().max(80).optional().nullable(),
+  // Activity-type custom fields (Phase 2). When activityTypeId is present, the
+  // route writes fieldValues into CrmActivityFieldValue inside the create tx.
+  activityTypeId: z.string().trim().min(1).optional(),
+  fieldValues: z.record(z.unknown()).optional(),
 });
 
 export const updateActivitySchema = z.object({

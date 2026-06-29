@@ -44,74 +44,75 @@ html.dark {
 }
 
 html.dark body {
-  background-color: #0f172a;
-  color: #f1f5f9;
+  background-color: #0E1116;
+  color: #E8EDF4;
 }
 
 /* Surfaces ────────────────────────────────────────────────────────── */
-html.dark .bg-white            { background-color: #1e293b !important; }
-html.dark .bg-gray-50          { background-color: #0f172a !important; }
-html.dark .bg-gray-100         { background-color: #1e293b !important; }
-html.dark .bg-gray-200         { background-color: #334155 !important; }
-html.dark .bg-gray-300         { background-color: #475569 !important; }
-html.dark .bg-slate-50         { background-color: #0f172a !important; }
-html.dark .bg-slate-100        { background-color: #1e293b !important; }
+html.dark .bg-white            { background-color: #151A21 !important; }
+html.dark .bg-gray-50          { background-color: #0E1116 !important; }
+html.dark .bg-gray-100         { background-color: #1B212B !important; }
+html.dark .bg-gray-200         { background-color: #222A35 !important; }
+html.dark .bg-gray-300         { background-color: #2E3744 !important; }
+html.dark .bg-slate-50         { background-color: #0E1116 !important; }
+html.dark .bg-slate-100        { background-color: #151A21 !important; }
 /* slate-200 is used for the grouped-kanban / task-table column header strip.
-   Use a step LIGHTER than the row bg (#1e293b) so the header reads as an
+   Use a step LIGHTER than the row bg (#151A21) so the header reads as an
    elevated/banded surface — same visual hierarchy as a light-mode gray bar. */
-html.dark .bg-slate-200        { background-color: #334155 !important; }
-html.dark .bg-slate-300        { background-color: #475569 !important; }
-html.dark .bg-slate-400        { background-color: #475569 !important; }
+html.dark .bg-slate-200        { background-color: #222A35 !important; }
+html.dark .bg-slate-300        { background-color: #2E3744 !important; }
+html.dark .bg-slate-400        { background-color: #2E3744 !important; }
 
 /* Executive Report: flatten the page + sticky toolbar onto the same surface as
    the cards (#1e293b) so the dark view is one consistent gray, instead of a
-   near-black page (#0f172a) showing behind dark-gray panels. Equal specificity
+   near-black page (#0E1116) showing behind dark-gray panels. Equal specificity
    to the `.bg-gray-50` remap above but declared later, so it wins. */
-html.dark .exec-surface        { background-color: #1e293b !important; }
+html.dark .exec-surface        { background-color: #151A21 !important; }
 
-html.dark .text-slate-400      { color: #64748b !important; }
-html.dark .text-slate-500      { color: #94a3b8 !important; }
-html.dark .text-slate-600      { color: #94a3b8 !important; }
-html.dark .text-slate-700      { color: #cbd5e1 !important; }
-html.dark .text-slate-800      { color: #e2e8f0 !important; }
-html.dark .text-slate-900      { color: #f8fafc !important; }
+html.dark .text-slate-400      { color: #525B68 !important; }
+html.dark .text-slate-500      { color: #838E9D !important; }
+html.dark .text-slate-600      { color: #838E9D !important; }
+html.dark .text-slate-700      { color: #BAC3CF !important; }
+html.dark .text-slate-800      { color: #D7DEE7 !important; }
+html.dark .text-slate-900      { color: #E8EDF4 !important; }
 
-html.dark .border-slate-100    { border-color: #1e293b !important; }
-html.dark .border-slate-200    { border-color: #334155 !important; }
-html.dark .border-slate-300    { border-color: #475569 !important; }
-html.dark .divide-slate-100 > * + *  { border-color: #1e293b !important; }
-html.dark .divide-slate-200 > * + *  { border-color: #334155 !important; }
+html.dark .border-slate-100    { border-color: #1F2630 !important; }
+html.dark .border-slate-200    { border-color: #262E3A !important; }
+html.dark .border-slate-300    { border-color: #2E3744 !important; }
+html.dark .divide-slate-100 > * + *  { border-color: #1F2630 !important; }
+html.dark .divide-slate-200 > * + *  { border-color: #262E3A !important; }
 
 /* Hover backgrounds (separate rules so non-hover state isn't darkened) */
-html.dark .hover\:bg-white:hover     { background-color: #273449 !important; }
-html.dark .hover\:bg-gray-50:hover   { background-color: #1f2a3d !important; }
-html.dark .hover\:bg-gray-100:hover  { background-color: #273449 !important; }
-html.dark .hover\:bg-gray-200:hover  { background-color: #334155 !important; }
+html.dark .hover\:bg-white:hover     { background-color: #1B212B !important; }
+html.dark .hover\:bg-gray-50:hover   { background-color: #151A21 !important; }
+html.dark .hover\:bg-gray-100:hover  { background-color: #1B212B !important; }
+html.dark .hover\:bg-gray-200:hover  { background-color: #222A35 !important; }
 
 /* Text ──────────────────────────────────────────────────────────────── */
-html.dark .text-gray-900       { color: #f8fafc !important; }
-html.dark .text-gray-800       { color: #e2e8f0 !important; }
-html.dark .text-gray-700       { color: #cbd5e1 !important; }
-html.dark .text-gray-600       { color: #94a3b8 !important; }
-html.dark .text-gray-500       { color: #94a3b8 !important; }
-html.dark .text-gray-400       { color: #64748b !important; }
-html.dark .text-gray-300       { color: #475569 !important; }
-html.dark .text-black          { color: #f8fafc !important; }
+html.dark .text-gray-900       { color: #E8EDF4 !important; }
+html.dark .text-gray-800       { color: #D7DEE7 !important; }
+html.dark .text-gray-700       { color: #BAC3CF !important; }
+html.dark .text-gray-600       { color: #838E9D !important; }
+html.dark .text-gray-500       { color: #838E9D !important; }
+html.dark .text-gray-400       { color: #525B68 !important; }
+html.dark .text-gray-300       { color: #3E4756 !important; }
+html.dark .text-black          { color: #E8EDF4 !important; }
 
-html.dark .hover\:text-gray-900:hover  { color: #f8fafc !important; }
-html.dark .hover\:text-gray-700:hover  { color: #e2e8f0 !important; }
+html.dark .hover\:text-gray-900:hover  { color: #E8EDF4 !important; }
+html.dark .hover\:text-gray-700:hover  { color: #D7DEE7 !important; }
 
 /* Borders ───────────────────────────────────────────────────────────── */
-html.dark .border-gray-100     { border-color: #1e293b !important; }
-html.dark .border-gray-200     { border-color: #334155 !important; }
-html.dark .border-gray-300     { border-color: #475569 !important; }
-html.dark .divide-gray-100 > * + *  { border-color: #1e293b !important; }
-html.dark .divide-gray-200 > * + *  { border-color: #334155 !important; }
+html.dark .border-gray-50      { border-color: #1F2630 !important; }
+html.dark .border-gray-100     { border-color: #1F2630 !important; }
+html.dark .border-gray-200     { border-color: #262E3A !important; }
+html.dark .border-gray-300     { border-color: #2E3744 !important; }
+html.dark .divide-gray-100 > * + *  { border-color: #1F2630 !important; }
+html.dark .divide-gray-200 > * + *  { border-color: #262E3A !important; }
 
 /* Inputs — placeholders, disabled states ───────────────────────────── */
 html.dark input::placeholder,
 html.dark textarea::placeholder {
-  color: #64748b !important;
+  color: #525B68 !important;
 }
 
 /* Global dark-mode treatment for text-entry controls.
@@ -124,30 +125,30 @@ html.dark textarea::placeholder {
 html.dark input:not([type="checkbox"]):not([type="radio"]):not([type="range"]):not([type="color"]):not([type="file"]):not([type="submit"]):not([type="button"]):not([type="reset"]):not([type="image"]),
 html.dark textarea,
 html.dark select {
-  background-color: #1e293b !important;
-  color: #f1f5f9 !important;
-  border-color: #334155 !important;
+  background-color: #151A21 !important;
+  color: #E8EDF4 !important;
+  border-color: #262E3A !important;
 }
 
 html.dark input:not([type="checkbox"]):not([type="radio"]):not([type="range"]):not([type="color"]):not([type="file"]):not([type="submit"]):not([type="button"]):not([type="reset"]):not([type="image"]):hover:not(:disabled):not(:focus),
 html.dark textarea:hover:not(:disabled):not(:focus),
 html.dark select:hover:not(:disabled):not(:focus) {
-  border-color: #475569 !important;
+  border-color: #2E3744 !important;
 }
 
 html.dark input:not([type="checkbox"]):not([type="radio"]):not([type="range"]):not([type="color"]):not([type="file"]):not([type="submit"]):not([type="button"]):not([type="reset"]):not([type="image"]):focus,
 html.dark textarea:focus,
 html.dark select:focus {
-  background-color: #273449 !important;
+  background-color: #1B212B !important;
   border-color: #60a5fa !important;
 }
 
 html.dark input:disabled,
 html.dark textarea:disabled,
 html.dark select:disabled {
-  background-color: #0f172a !important;
-  color: #64748b !important;
-  border-color: #1e293b !important;
+  background-color: #0E1116 !important;
+  color: #525B68 !important;
+  border-color: #1F2630 !important;
 }
 
 /* Status pills (StatusCell in grouped-kanban). In light mode the cell uses
@@ -203,10 +204,115 @@ html.dark .qt-issue-status-pill--done:hover {
 html.dark input:-webkit-autofill,
 html.dark textarea:-webkit-autofill,
 html.dark select:-webkit-autofill {
-  -webkit-text-fill-color: #f1f5f9 !important;
-  -webkit-box-shadow: 0 0 0 1000px #1e293b inset !important;
-  caret-color: #f1f5f9 !important;
+  -webkit-text-fill-color: #E8EDF4 !important;
+  -webkit-box-shadow: 0 0 0 1000px #151A21 inset !important;
+  caret-color: #E8EDF4 !important;
 }
+
+/* ============================================================================
+   GRADIENT CHROME (deep-ink palette)
+   The flat remaps above fill cards/sidebar/topbar with a solid dark color.
+   These layer the design palette's subtle vertical gradients on top via
+   `background-image` — which paints over the `background-color` set earlier,
+   so there's no !important conflict. Declared AFTER `.bg-white` so the
+   sidebar/topbar overrides (whose elements also carry `.bg-white`) win on
+   equal specificity by source order.
+   ============================================================================ */
+/* Cards / panels / modals / popovers — every `.bg-white` surface. */
+html.dark .bg-white {
+  background-image: linear-gradient(180deg, #161C25 0%, #13181F 100%) !important;
+}
+/* Left sidebar — a slightly cooler ink gradient. */
+html.dark [data-tour="sidebar"] {
+  background-image: linear-gradient(180deg, #12171E 0%, #0F141A 100%) !important;
+}
+/* Top bar — flat deep ink, a touch darker than the page (no gradient). */
+html.dark .qt-topbar {
+  background-color: #11161C !important;
+  background-image: none !important;
+}
+
+/* ============================================================================
+   INTERACTION POLISH (deep-ink palette)
+   Stateful styling the utility remaps can't express — sidebar nav states + the
+   amber active accent, hover lifts, the issue-key chip, and timesheet tiles.
+   All scoped to html.dark so light mode is untouched. The qt-* marker classes
+   are added on the components; these rules drive their dark appearance.
+   ============================================================================ */
+
+/* Sidebar rail — softer divider than the app-wide border. */
+html.dark .qt-sidebar { border-right-color: #1F2630 !important; }
+
+/* Nav items — resting / hover / active. The active row carries a 2px Jira-blue
+   left bar (inset box-shadow, so no layout shift) + a subtle inset border. */
+html.dark .qt-nav-row { color: #838E9D !important; }
+html.dark .qt-nav-row:hover { background-color: #151A21 !important; color: #E8EDF4 !important; }
+html.dark .qt-nav-row--active {
+  background-color: #1B212B !important;
+  color: #E8EDF4 !important;
+  box-shadow: inset 2px 0 0 #3B82F6, inset 0 0 0 1px #262E3A;
+}
+
+/* Issue-key chip — blue-tinted chip with light-blue text; brightens on hover. */
+html.dark .qt-key-chip {
+  background-color: #5B8DEF18 !important;
+  color: #C2D0FF !important;
+  border-radius: 4px;
+  padding: 1px 6px;
+}
+html.dark .qt-key-chip:hover { background-color: #5B8DEF2E !important; color: #C2D0FF !important; }
+
+/* Board cards — lift + defined border + drop shadow on hover. */
+html.dark .qt-board-card { transition: transform .12s ease, box-shadow .12s ease, border-color .12s ease; }
+html.dark .qt-board-card:hover {
+  border-color: #838E9D !important;
+  transform: translateY(-2px);
+  box-shadow: 0 10px 20px -12px #000 !important;
+}
+
+/* Backlog rows — subtle ink hover. */
+html.dark .qt-backlog-row:hover { background-color: #161D26 !important; }
+
+/* Primary (blue) buttons — lift 1px + glow on hover. */
+html.dark button.bg-blue-600, html.dark button.bg-blue-700,
+html.dark a.bg-blue-600, html.dark a.bg-blue-700 {
+  transition: transform .12s ease, box-shadow .12s ease;
+}
+html.dark button.bg-blue-600:hover, html.dark button.bg-blue-700:hover,
+html.dark a.bg-blue-600:hover, html.dark a.bg-blue-700:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 6px 18px -8px rgba(59, 130, 246, 0.65);
+}
+
+/* Ghost / secondary (bordered) buttons — brighter edge + raise on hover. */
+html.dark button.border-gray-300:hover, html.dark a.border-gray-300:hover {
+  border-color: #838E9D !important;
+  background-color: #222A35 !important;
+}
+
+/* Timesheet tiles — a filled tile is a small raised pill that lifts on hover;
+   an empty editable cell reveals a dashed border + a faint "+" on hover. */
+html.dark .qt-ts-tile {
+  display: inline-block;
+  min-width: 30px;
+  padding: 1px 6px;
+  border-radius: 5px;
+  background-color: #1B212B;
+  color: #E8EDF4 !important;
+  transition: transform .12s ease, box-shadow .12s ease;
+}
+html.dark .qt-ts-cell--filled:hover { background-color: transparent !important; }
+html.dark .qt-ts-cell--filled:hover .qt-ts-tile {
+  transform: translateY(-2px);
+  box-shadow: 0 6px 14px -8px #000;
+}
+html.dark .qt-ts-plus { color: transparent !important; transition: color .1s ease; }
+html.dark .qt-ts-cell--empty:hover {
+  background-color: transparent !important;
+  outline: 1px dashed #262E3A;
+  outline-offset: -3px;
+}
+html.dark .qt-ts-cell--empty:hover .qt-ts-plus { color: #838E9D !important; }
 
 /* Brand-tinted chrome (sidebar active item, nav highlights) — bring the
    blue-50 wash up to readable contrast against the dark surface. */
@@ -233,6 +339,8 @@ html.dark .text-amber-900      { color: #fde68a !important; }
 
 html.dark .bg-red-50           { background-color: rgba(220, 38, 38, 0.15) !important; }
 html.dark .bg-red-100          { background-color: rgba(220, 38, 38, 0.22) !important; }
+html.dark .hover\:bg-red-50:hover  { background-color: rgba(220, 38, 38, 0.15) !important; }
+html.dark .hover\:bg-red-100:hover { background-color: rgba(220, 38, 38, 0.22) !important; }
 html.dark .border-red-200      { border-color: rgba(248, 113, 113, 0.45) !important; }
 html.dark .text-red-700        { color: #fca5a5 !important; }
 html.dark .text-red-800        { color: #fecaca !important; }
@@ -281,16 +389,16 @@ html.dark .bg-rose-50\/60      { background-color: rgba(244, 63, 94, 0.18) !impo
    that bypass the solid-color overrides above. Listed explicitly because
    they are heavily used for striping, row hover, and selection states. */
 html.dark .bg-white\/80,
-html.dark .bg-white\/90      { background-color: rgba(30, 41, 59, 0.85) !important; }
-html.dark .hover\:bg-white\/10:hover { background-color: rgba(248, 250, 252, 0.08) !important; }
+html.dark .bg-white\/90      { background-color: rgba(21, 26, 33, 0.85) !important; }
+html.dark .hover\:bg-white\/10:hover { background-color: rgba(232, 237, 244, 0.08) !important; }
 
 html.dark .bg-gray-50\/40,
 html.dark .bg-gray-50\/50,
 html.dark .bg-gray-50\/60,
-html.dark .bg-gray-50\/70    { background-color: rgba(15, 23, 42, 0.6) !important; }
-html.dark .bg-gray-100\/60   { background-color: rgba(30, 41, 59, 0.6) !important; }
+html.dark .bg-gray-50\/70    { background-color: rgba(14, 17, 22, 0.6) !important; }
+html.dark .bg-gray-100\/60   { background-color: rgba(27, 33, 43, 0.6) !important; }
 html.dark .hover\:bg-gray-50\/60:hover,
-html.dark .hover\:bg-gray-50\/70:hover { background-color: rgba(51, 65, 85, 0.5) !important; }
+html.dark .hover\:bg-gray-50\/70:hover { background-color: rgba(34, 42, 53, 0.5) !important; }
 
 html.dark .bg-blue-50\/30,
 html.dark .bg-blue-50\/40,
@@ -306,30 +414,30 @@ html.dark .hover\:border-blue-300:hover { border-color: rgba(96, 165, 250, 0.6) 
 /* Subtle shimmer + qt-list-scroll thumbs stay legible on the dark track.
    Override the two tracks set above the override block — these rules need
    to win because the original :root rules use solid greys. */
-html.dark .qt-list-scroll::-webkit-scrollbar-track { background: #1e293b; border-top-color: #334155; }
-html.dark .qt-list-scroll::-webkit-scrollbar-thumb { background: #475569; border-color: #1e293b; }
-html.dark .qt-list-scroll::-webkit-scrollbar-thumb:hover { background: #64748b; }
-html.dark .qt-list-scroll { scrollbar-color: #475569 #1e293b; }
+html.dark .qt-list-scroll::-webkit-scrollbar-track { background: #151A21; border-top-color: #262E3A; }
+html.dark .qt-list-scroll::-webkit-scrollbar-thumb { background: #2E3744; border-color: #151A21; }
+html.dark .qt-list-scroll::-webkit-scrollbar-thumb:hover { background: #3A4350; }
+html.dark .qt-list-scroll { scrollbar-color: #2E3744 #151A21; }
 
 /* Timesheet horizontal scrollbar (Standard view). Default light-mode rule
    below uses #f3f4f6 track + #9ca3af thumb, which sits as a bright bar at
    the bottom of the dark grid. */
-html.dark .qt-timesheet-scroll::-webkit-scrollbar-track { background: #1e293b; }
+html.dark .qt-timesheet-scroll::-webkit-scrollbar-track { background: #151A21; }
 html.dark .qt-timesheet-scroll::-webkit-scrollbar-thumb {
-  background: #475569; border-color: #1e293b;
+  background: #2E3744; border-color: #151A21;
 }
-html.dark .qt-timesheet-scroll::-webkit-scrollbar-thumb:hover { background: #64748b; }
-html.dark .qt-timesheet-scroll { scrollbar-color: #475569 #1e293b; }
+html.dark .qt-timesheet-scroll::-webkit-scrollbar-thumb:hover { background: #3A4350; }
+html.dark .qt-timesheet-scroll { scrollbar-color: #2E3744 #151A21; }
 
 /* Board horizontal scrollbar (Attendance matrix + project board). Uses a
    transparent track in light mode; the thumb just needs a darker base so
    it doesn't blow out against the slate surface. */
-html.dark .qt-board-scroll::-webkit-scrollbar-thumb { background: #475569; }
-html.dark .qt-board-scroll::-webkit-scrollbar-thumb:hover { background: #64748b; }
-html.dark .qt-board-scroll { scrollbar-color: #475569 transparent; }
+html.dark .qt-board-scroll::-webkit-scrollbar-thumb { background: #2E3744; }
+html.dark .qt-board-scroll::-webkit-scrollbar-thumb:hover { background: #3A4350; }
+html.dark .qt-board-scroll { scrollbar-color: #2E3744 transparent; }
 
 html.dark .qt-shimmer {
-  background: linear-gradient(90deg, #1e293b 0%, #334155 50%, #1e293b 100%);
+  background: linear-gradient(90deg, #151A21 0%, #222A35 50%, #151A21 100%);
   background-size: 800px 100%;
 }
 
@@ -440,33 +548,33 @@ html.dark .qt-shimmer {
    arbitrary-variant utilities.
    ============================================================================ */
 html.dark .ProseMirror,
-html.dark .qt-rich-content { color: #e2e8f0; }
+html.dark .qt-rich-content { color: #D7DEE7; }
 
 /* Headings + bold read as off-white, not the light-mode near-black. */
 html.dark .ProseMirror :is(h1, h2, h3, h4, h5, h6),
 html.dark .ProseMirror strong,
 html.dark .qt-rich-content :is(h1, h2, h3, h4, h5, h6),
-html.dark .qt-rich-content strong { color: #f8fafc !important; }
+html.dark .qt-rich-content strong { color: #E8EDF4 !important; }
 
 /* Tables — visible borders + a header strip one step lighter than the canvas
-   (#334155 over the #1e293b page), with light header text. */
+   (#222A35 over the #151A21 page), with light header text. */
 html.dark .ProseMirror :is(table, th, td),
-html.dark .qt-rich-content :is(table, th, td) { border-color: #475569 !important; }
+html.dark .qt-rich-content :is(table, th, td) { border-color: #2E3744 !important; }
 html.dark .ProseMirror th,
-html.dark .qt-rich-content th { background-color: #334155 !important; color: #f1f5f9 !important; }
+html.dark .qt-rich-content th { background-color: #222A35 !important; color: #E8EDF4 !important; }
 html.dark .ProseMirror td,
-html.dark .qt-rich-content td { color: #e2e8f0 !important; }
+html.dark .qt-rich-content td { color: #D7DEE7 !important; }
 
 /* Blockquote, links, code. */
 html.dark .ProseMirror blockquote,
-html.dark .qt-rich-content blockquote { border-left-color: #475569 !important; color: #cbd5e1 !important; }
+html.dark .qt-rich-content blockquote { border-left-color: #2E3744 !important; color: #BAC3CF !important; }
 html.dark .ProseMirror a,
 html.dark .qt-rich-content a { color: #93c5fd !important; }
 html.dark .ProseMirror :not(pre) > code,
-html.dark .qt-rich-content :not(pre) > code { background-color: #334155 !important; color: #e2e8f0 !important; }
+html.dark .qt-rich-content :not(pre) > code { background-color: #222A35 !important; color: #D7DEE7 !important; }
 html.dark .ProseMirror pre,
-html.dark .qt-rich-content pre { background-color: #0b1120 !important; color: #e5e7eb !important; }
-html.dark .qt-rich-content hr { border-top-color: #334155 !important; }
+html.dark .qt-rich-content pre { background-color: #0B0E13 !important; color: #e5e7eb !important; }
+html.dark .qt-rich-content hr { border-top-color: #262E3A !important; }
 
 /* Always-visible horizontal scrollbar for the timesheet grid (matches the
    Jira/Tempo scrollbar that sits permanently below the table). */

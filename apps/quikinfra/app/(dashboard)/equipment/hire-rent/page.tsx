@@ -22,7 +22,6 @@ import {
   useHireInVerifications,
   useRentOutBills,
   useHireRentSummary,
-  usePatchHireInVerification,
   usePatchRentOutBill,
 } from "@/hooks/use-equipment";
 import { useMenuActions, usePermissions } from "@/hooks/use-permissions";
@@ -31,6 +30,9 @@ import type {
   HireRateRecord,
   RentOutBillRecord,
 } from "@/lib/equipment/equipment-types";
+import { HireRateDrawer } from "./rates/new/HireRateDrawer";
+import { HireInDrawer } from "./hire-in/new/HireInDrawer";
+import { RentOutDrawer } from "./rent-out/new/RentOutDrawer";
 
 type TabKey = "rates" | "hire-in" | "rent-out";
 
@@ -53,11 +55,18 @@ function basisLabel(basis: string) {
   }
 }
 
+const STATUS_LABEL: Record<string, string> = {
+  pending_approval: "Pending Approval",
+  submitted: "Pending Approval",
+  computed: "Computed",
+};
+
 export default function HireRentPage() {
   const router = useRouter();
   const { canAdd, canEdit } = useMenuActions("/equipment/hire-rent");
   const { isSuper } = usePermissions();
   const [tab, setTab] = useState<TabKey>("rates");
+  const [createOpen, setCreateOpen] = useState(false);
 
   const { data: summary } = useHireRentSummary();
   const { data: ratesResult, isLoading: ratesLoading } = useHireRates();
@@ -65,7 +74,6 @@ export default function HireRentPage() {
     useHireInVerifications();
   const { data: billsResult, isLoading: billsLoading } = useRentOutBills();
 
-  const patchVerification = usePatchHireInVerification();
   const patchBill = usePatchRentOutBill();
 
   const rates = ratesResult?.data ?? [];
@@ -124,12 +132,17 @@ export default function HireRentPage() {
     {
       key: "equipment",
       label: "Equipment",
-      render: (row) => (
-        <div>
-          <div className="font-medium">{row.equipmentCode}</div>
-          <div className="text-xs text-gray-500">{row.equipmentName}</div>
-        </div>
-      ),
+      render: (row) =>
+        row.equipmentCode || row.equipmentName ? (
+          <div>
+            <div className="font-medium">{row.equipmentCode || row.equipmentName}</div>
+            {row.equipmentCode && row.equipmentName && (
+              <div className="text-xs text-gray-500">{row.equipmentName}</div>
+            )}
+          </div>
+        ) : (
+          <span className="text-gray-400">—</span>
+        ),
     },
     {
       key: "period",
@@ -181,28 +194,27 @@ export default function HireRentPage() {
     {
       key: "status",
       label: "Status",
-      width: "100px",
-      render: (row) => <StatusChip status={row.status} />,
+      width: "130px",
+      render: (row) => (
+        <StatusChip status={row.status} label={STATUS_LABEL[row.status] ?? undefined} />
+      ),
     },
     {
       key: "actions",
       label: "Action",
-      width: "100px",
-      render: (row) =>
-        row.status !== "approved" && (isSuper || canEdit) ? (
-          <button
-            type="button"
-            className="text-xs font-medium text-emerald-700 hover:text-emerald-900"
-            onClick={(e) => {
-              e.stopPropagation();
-              void patchVerification.mutateAsync({ id: row.id, action: "approve" });
-            }}
-          >
-            Approve
-          </button>
-        ) : (
-          "—"
-        ),
+      width: "90px",
+      render: (row) => (
+        <button
+          type="button"
+          className="text-xs font-medium text-emerald-700 hover:text-emerald-900"
+          onClick={(e) => {
+            e.stopPropagation();
+            router.push(`/equipment/hire-rent/verification/${row.id}`);
+          }}
+        >
+          View
+        </button>
+      ),
     },
   ];
 
@@ -211,12 +223,17 @@ export default function HireRentPage() {
     {
       key: "equipment",
       label: "Equipment",
-      render: (row) => (
-        <div>
-          <div className="font-medium">{row.equipmentCode}</div>
-          <div className="text-xs text-gray-500">{row.equipmentName}</div>
-        </div>
-      ),
+      render: (row) =>
+        row.equipmentCode || row.equipmentName ? (
+          <div>
+            <div className="font-medium">{row.equipmentCode || row.equipmentName}</div>
+            {row.equipmentCode && row.equipmentName && (
+              <div className="text-xs text-gray-500">{row.equipmentName}</div>
+            )}
+          </div>
+        ) : (
+          <span className="text-gray-400">—</span>
+        ),
     },
     {
       key: "customerName",
@@ -300,7 +317,7 @@ export default function HireRentPage() {
         ]}
         actions={
           (canAdd || isSuper) ? (
-            <PrimaryButton onClick={() => router.push(primaryAction.href)}>
+            <PrimaryButton onClick={() => setCreateOpen(true)}>
               <Plus className="h-4 w-4" />
               {primaryAction.label}
             </PrimaryButton>
@@ -362,8 +379,8 @@ export default function HireRentPage() {
         {tab === "rates" && (
           <DataTable
             id="hire-rates"
-            columns={rateColumns}
-            data={rates}
+            columns={rateColumns as unknown as ColDef<Record<string, unknown>>[]}
+            data={rates as unknown as Record<string, unknown>[]}
             loading={ratesLoading}
             fitToContent
             emptyTitle="No hire rates yet"
@@ -374,8 +391,8 @@ export default function HireRentPage() {
         {tab === "hire-in" && (
           <DataTable
             id="hire-in-verifications"
-            columns={verificationColumns}
-            data={verifications}
+            columns={verificationColumns as unknown as ColDef<Record<string, unknown>>[]}
+            data={verifications as unknown as Record<string, unknown>[]}
             loading={verificationsLoading}
             fitToContent
             emptyTitle="No hire-in verifications"
@@ -386,8 +403,8 @@ export default function HireRentPage() {
         {tab === "rent-out" && (
           <DataTable
             id="rent-out-bills"
-            columns={billColumns}
-            data={bills}
+            columns={billColumns as unknown as ColDef<Record<string, unknown>>[]}
+            data={bills as unknown as Record<string, unknown>[]}
             loading={billsLoading}
             fitToContent
             emptyTitle="No rent-out bills"
@@ -395,6 +412,22 @@ export default function HireRentPage() {
           />
         )}
       </PageContainer>
+
+      <HireRateDrawer
+        open={createOpen && tab === "rates"}
+        onClose={() => setCreateOpen(false)}
+        onSaved={() => setCreateOpen(false)}
+      />
+      <HireInDrawer
+        open={createOpen && tab === "hire-in"}
+        onClose={() => setCreateOpen(false)}
+        onSaved={() => setCreateOpen(false)}
+      />
+      <RentOutDrawer
+        open={createOpen && tab === "rent-out"}
+        onClose={() => setCreateOpen(false)}
+        onSaved={() => setCreateOpen(false)}
+      />
     </>
   );
 }

@@ -41,9 +41,15 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "Invalid JSON body" }, { status: 400 });
   }
 
-  if (!body.equipmentId || !body.periodFrom || !body.periodTo || body.rate == null) {
+  if (
+    !body.equipmentId ||
+    !body.projectId ||
+    !body.periodFrom ||
+    !body.periodTo ||
+    body.rate == null
+  ) {
     return NextResponse.json(
-      { error: "equipmentId, periodFrom, periodTo, and rate are required" },
+      { error: "equipmentId, projectId, periodFrom, periodTo, and rate are required" },
       { status: 400 },
     );
   }

@@ -44,14 +44,16 @@ function toTransferRecord(
     orgId: row.orgId,
     transferNumber: row.referenceNumber ?? row.id,
     equipmentId: row.equipmentId,
-    equipmentCode: row.equipment.code,
-    equipmentName: row.equipment.name,
+    equipmentCode: row.equipment?.code ?? "",
+    equipmentName: row.equipment?.name ?? "",
     sourceProjectId: row.sourceProjectId,
     sourceProjectName: row.sourceProject?.name ?? null,
     destinationProjectId: row.destinationProjectId ?? "",
     destinationProjectName: row.destinationProject?.name ?? "",
     transferType: (row.transferType ?? "reassignment") as TransferType,
     transferDate: row.transferDate?.toISOString().slice(0, 10) ?? "",
+    returnableFrom: row.returnableFrom?.toISOString().slice(0, 10) ?? null,
+    returnableTo: row.returnableTo?.toISOString().slice(0, 10) ?? null,
     reason: row.reason,
     remarks: row.remarks,
     gatePassNo: row.gatePassNo,
@@ -78,8 +80,8 @@ function toDocumentRecord(
     id: row.id,
     orgId: row.orgId,
     equipmentId: row.equipmentId,
-    equipmentCode: row.equipment.code,
-    equipmentName: row.equipment.name,
+    equipmentCode: row.equipment?.code ?? "",
+    equipmentName: row.equipment?.name ?? "",
     docType: row.docType ?? "",
     docNumber: row.docNumber,
     issueDate: row.issueDate?.toISOString?.().slice(0, 10) ?? null,
@@ -129,6 +131,8 @@ export interface CreateTransferInput {
   destinationProjectId: string;
   transferType?: TransferType;
   transferDate: string;
+  returnableFrom?: string | null;
+  returnableTo?: string | null;
   reason?: string | null;
   remarks?: string | null;
 }
@@ -168,6 +172,8 @@ export async function createTransfer(input: CreateTransferInput) {
       destinationProjectId: input.destinationProjectId,
       transferType: input.transferType ?? "reassignment",
       transferDate: new Date(input.transferDate),
+      returnableFrom: input.returnableFrom ? new Date(input.returnableFrom) : null,
+      returnableTo: input.returnableTo ? new Date(input.returnableTo) : null,
       reason: input.reason ?? null,
       remarks: input.remarks ?? null,
       gatePassNo,

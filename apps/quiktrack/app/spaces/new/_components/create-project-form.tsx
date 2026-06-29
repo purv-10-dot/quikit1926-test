@@ -20,6 +20,12 @@ const TEMPLATES = {
     Illustration: ScrumIllustration,
     product: "QuikTrack",
   },
+  functional: {
+    title: "Kanban",
+    description: "Manage work on a backlog and an activity board — no sprints.",
+    Illustration: KanbanIllustration,
+    product: "QuikTrack",
+  },
   "web-design": {
     title: "Web design process",
     description: "For designers and developers to track web design tasks and stay aligned.",
@@ -79,6 +85,9 @@ export function CreateProjectForm() {
           name,
           projectKey: finalKey,
           projectType: "software",
+          // Only "scrum" and "functional" are real backend templates; any other
+          // preview key (web-design/kanban) falls back to scrum.
+          templateKey: templateKey === "functional" ? "functional" : "scrum",
           icon: randomProjectIconKey(),
         }),
       });

@@ -3,7 +3,7 @@ name: Prisma — migrate deploy
 on:
   workflow_dispatch:
   push:
-    branches: [Pre-Prod]
+    branches: [Prod]
 
 permissions:
   contents: read
@@ -55,3 +55,4 @@ jobs:
             --schema=packages/database/prisma/schema.prisma
         env:
           DATABASE_URL: ${{ secrets.PROD_DATABASE_URL }}
+          DATABASE_URL_DIRECT: ${{ secrets.PROD_DATABASE_URL }}

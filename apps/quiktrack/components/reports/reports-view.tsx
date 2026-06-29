@@ -16,8 +16,8 @@ import { ReportsEmptyState } from "./empty-state";
 import { Pagination } from "./pagination";
 import { KpiCard } from "./resource-report-bits";
 import { ProjectReportToolbar } from "./project-report-toolbar";
+import { showToast } from "@/lib/ui/toast";
 import {
-  escapeCsv,
   formatH,
   monthInput,
   monthLabel,
@@ -38,6 +38,7 @@ export function ReportsView() {
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(10);
   const [openTaskId, setOpenTaskId] = useState<string | null>(null);
+  const [exporting, setExporting] = useState(false);
 
   const query = useQuery({
     queryKey: [
@@ -121,27 +122,41 @@ export function ReportsView() {
     setStartDate("");
   }
 
-  function exportTasks() {
-    const header = ["S.No", "Key", "Task", "Project", "Assignee", "Create Date", "Status", "Est (h)", "Actual (h)"];
-    const rows = tasks.map((t, i) => [
-      String(i + 1),
-      t.key,
-      escapeCsv(t.title),
-      escapeCsv(t.project?.name ?? ""),
-      escapeCsv(t.assignee?.name ?? ""),
-      new Date(t.createdAt).toISOString().slice(0, 10),
-      escapeCsv(t.status?.name ?? ""),
-      String(t.etaHours),
-      String(t.actualHours),
-    ]);
-    const csv = [header, ...rows].map((r) => r.join(",")).join("\n");
-    const blob = new Blob([csv], { type: "text/csv" });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = `project-report-${month}.csv`;
-    a.click();
-    URL.revokeObjectURL(url);
+  // Export runs server-side so it covers EVERY matching row, not just the page
+  // currently loaded in the table. The endpoint applies the same filters and
+  // streams back a downloadable CSV.
+  async function exportTasks() {
+    setExporting(true);
+    try {
+      const params = new URLSearchParams();
+      if (month) params.set("month", month);
+      if (projectId) params.set("projectId", projectId);
+      if (statusName) params.set("statusName", statusName);
+      if (assigneeId) params.set("assigneeId", assigneeId);
+      if (startDate) params.set("startDate", startDate);
+      const res = await fetch(`/api/reports/tasks/export?${params.toString()}`);
+      if (!res.ok) {
+        let msg = "Export failed";
+        try {
+          const j = await res.json();
+          msg = j?.error ?? msg;
+        } catch {
+          /* non-JSON error body */
+        }
+        throw new Error(msg);
+      }
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `project-report-${month || "all"}.csv`;
+      a.click();
+      URL.revokeObjectURL(url);
+    } catch (err: unknown) {
+      showToast(err instanceof Error ? err.message : "Export failed", "error");
+    } finally {
+      setExporting(false);
+    }
   }
 
   const utilization = summary.estHours > 0
@@ -173,11 +188,11 @@ export function ReportsView() {
           <button
             type="button"
             onClick={exportTasks}
-            disabled={tasks.length === 0}
+            disabled={exporting || totalRows === 0}
             className="inline-flex items-center gap-2 h-9 px-3 text-sm font-medium text-white bg-blue-600 rounded-lg shadow-sm hover:bg-blue-700 disabled:bg-gray-200 disabled:text-gray-500"
           >
             <Download className="h-4 w-4" />
-            Export
+            {exporting ? "Exporting…" : "Export"}
           </button>
           <span className="inline-flex items-center gap-1.5 h-9 px-3 text-xs rounded-lg border border-gray-200 bg-white text-gray-500">
             Total

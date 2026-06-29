@@ -125,6 +125,11 @@ export function FieldFormDrawer({ open, onClose, apiBase, queryKey, field }: Pro
     },
     onSuccess: () => {
       void qc.invalidateQueries({ queryKey });
+      // Also refresh the issue create/edit forms, which read the active field
+      // set under a different key ("issue-fields"). Without this a newly created
+      // or edited field only shows up after a manual page refresh. Global fields
+      // affect every project, so invalidate the whole prefix.
+      void qc.invalidateQueries({ queryKey: ["quiktrack", "issue-fields"] });
       onClose();
     },
     onError: (e: unknown) => setError(e instanceof Error ? e.message : "Failed to save field"),
@@ -152,6 +157,27 @@ export function FieldFormDrawer({ open, onClose, apiBase, queryKey, field }: Pro
               onChange={(t) => setForm((f) => ({ ...f, type: t, options: [], defaultValue: null }))}
             />
             {isEdit && <p className="mt-1 text-[11px] text-gray-400">Type can&apos;t be changed after creation.</p>}
+            {/* People pickers come in two flavours — single or multi-select. The
+                multi variant is its own field type (USER_PICKER_MULTI); this
+                toggle just switches between them. */}
+            {(form.type === "USER_PICKER" || form.type === "USER_PICKER_MULTI") && (
+              <label className="mt-2 flex items-center gap-2 text-sm text-gray-700">
+                <input
+                  type="checkbox"
+                  checked={form.type === "USER_PICKER_MULTI"}
+                  disabled={isEdit}
+                  onChange={(e) =>
+                    setForm((f) => ({
+                      ...f,
+                      type: e.target.checked ? "USER_PICKER_MULTI" : "USER_PICKER",
+                      defaultValue: null,
+                    }))
+                  }
+                  className="h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500 disabled:opacity-50"
+                />
+                Allow selecting multiple people
+              </label>
+            )}
           </Field>
 
           <Field label="Name" required>

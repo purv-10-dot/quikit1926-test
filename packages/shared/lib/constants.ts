@@ -192,6 +192,12 @@ export const TENANT_PLANS = {
 // OrgAppAccess rows. Adjust freely — slugs must exist in quikit.App.
 export const DEFAULT_REGISTRATION_APP_SLUGS = ["quikcrm", "quiktrack", "admin"] as const;
 
+// App slugs temporarily hidden from the Apps switcher + launcher UI. The apps
+// stay in the catalog/DB and remain reachable by direct URL — this only removes
+// them from the app-list surfaces (the in-app "Apps" waffle menu and the QuikIT
+// launcher). Remove a slug here to unhide it.
+export const HIDDEN_APP_SLUGS = ["quikvc", "quiksocial"] as const;
+
 // Length of the free trial granted to a newly self-registered workspace.
 export const TRIAL_DURATION_DAYS = 14;
 

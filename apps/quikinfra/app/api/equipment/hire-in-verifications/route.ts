@@ -41,9 +41,15 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "Invalid JSON body" }, { status: 400 });
   }
 
-  if (!body.equipmentId || !body.periodFrom || !body.periodTo || body.rate == null) {
+  if (
+    !body.equipmentId ||
+    !body.projectId ||
+    !body.periodFrom ||
+    !body.periodTo ||
+    body.rate == null
+  ) {
     return NextResponse.json(
-      { error: "equipmentId, periodFrom, periodTo, and rate are required" },
+      { error: "equipmentId, projectId, periodFrom, periodTo, and rate are required" },
       { status: 400 },
     );
   }
@@ -54,6 +60,7 @@ export async function POST(req: NextRequest) {
       userId: ctx.userId,
       equipmentId: String(body.equipmentId),
       vendorId: body.vendorId ? String(body.vendorId) : null,
+      projectId: String(body.projectId),
       periodFrom: String(body.periodFrom),
       periodTo: String(body.periodTo),
       rate: Number(body.rate),

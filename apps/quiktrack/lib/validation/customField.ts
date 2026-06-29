@@ -128,6 +128,12 @@ export function validateFieldValue(field: FieldForValidation, raw: FieldValue): 
       const cleaned = raw.map((v) => String(v).trim()).filter(Boolean);
       return { ok: true, value: cleaned };
     }
+    case "USER_PICKER_MULTI": {
+      // Array of userIds — no option list to validate against; just normalize.
+      if (!Array.isArray(raw)) return { ok: false, error: `${field.name} must be a list.` };
+      const ids = Array.from(new Set(raw.map((v) => String(v)).filter(Boolean)));
+      return { ok: true, value: ids };
+    }
     case "USER_PICKER":
     case "SHORT_TEXT":
     case "LONG_TEXT":

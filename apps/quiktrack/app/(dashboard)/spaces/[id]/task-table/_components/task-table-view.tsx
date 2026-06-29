@@ -110,6 +110,10 @@ export function TaskTableView({ projectId }: Props) {
       statuses,
       members: memberMap,
       sprints: sprintMap,
+      // Array forms for the inline editors' member/sprint pickers (the Maps
+      // above are kept for fast per-row lookup of the current value).
+      memberList: members,
+      sprintList: sprints,
       epics,
       onOpenIssue: (id: string) => setOpenIssueId(id),
       // Both onDelete and onPatchIssue are overridden at the section level so
@@ -117,7 +121,7 @@ export function TaskTableView({ projectId }: Props) {
       onDelete: () => { /* overridden per-section */ },
       onPatchIssue: () => { /* overridden per-section */ },
     }),
-    [projectId, statuses, memberMap, sprintMap, epics],
+    [projectId, statuses, memberMap, sprintMap, members, sprints, epics],
   );
 
   return (
@@ -128,7 +132,7 @@ export function TaskTableView({ projectId }: Props) {
             <tr>
               <th className={`${HEAD_CELL} w-8`} />
               <HeaderCell Icon={Hash} label="Key" width="w-28" />
-              <HeaderCell Icon={AlignLeft} label="Task Name" width="w-[420px]" />
+              <HeaderCell Icon={AlignLeft} label="Work item" width="w-[420px]" />
               <HeaderCell Icon={GitBranch} label="Sprint" width="w-44" />
               <HeaderCell Icon={UserIcon} label="Assigned to" width="w-44" />
               <HeaderCell Icon={CheckSquare} label="Status" width="w-32" />

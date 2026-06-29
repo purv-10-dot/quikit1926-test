@@ -14,9 +14,15 @@ export async function GET(req: NextRequest, { params }: { params: { token: strin
     return NextResponse.json({ success: false, error: "key required" }, { status: 400 });
   }
 
+  // Resolve the doc's tenant by either the doc-level public link OR a
+  // per-recipient external-invite token (QtDocShare.token).
   const rows = await db.$queryRaw<{ orgId: string }[]>`
     SELECT "orgId" FROM app_quiktrack."QtDoc"
     WHERE "shareToken" = ${params.token} AND "isDeleted" = false
+    UNION ALL
+    SELECT d."orgId" FROM app_quiktrack."QtDocShare" s
+    JOIN app_quiktrack."QtDoc" d ON d.id = s."docId"
+    WHERE s.token = ${params.token} AND d."isDeleted" = false
     LIMIT 1
   `;
   const doc = rows[0];

@@ -187,6 +187,28 @@ export function FieldControl({ field, value, onChange, members = [], disabled, a
         />
       );
 
+    case "USER_PICKER_MULTI": {
+      const selected = Array.isArray(value) ? (value as string[]) : [];
+      if (disabled) {
+        const names = selected
+          .map((id) => members.find((m) => m.id === id)?.label)
+          .filter(Boolean);
+        return (
+          <div className={`${INPUT} bg-gray-50 text-gray-400 flex items-center`}>
+            {names.length ? names.join(", ") : field.placeholder || "— Unassigned —"}
+          </div>
+        );
+      }
+      return (
+        <CheckboxGroup
+          options={members.map((m) => ({ value: m.id, label: m.label }))}
+          value={selected}
+          onChange={onChange}
+          disabled={disabled}
+        />
+      );
+    }
+
     case "LABELS":
       return (
         <TagInput

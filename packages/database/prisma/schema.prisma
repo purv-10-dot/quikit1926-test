@@ -145,7 +145,6 @@ model Org {
   cnCustomers             CnCustomer[]
   cnDepartments           CnDepartment[]
   cnDieselLogs            CnDieselLog[]
-  cnDocuments             CnDocument[]
   cnFinancialYears        CnFinancialYear[]
   cnGstCodes              CnGSTCode[]
   cnGatePasses            CnGatePass[]
@@ -170,7 +169,6 @@ model Org {
   cnPurchaseRequisitions  CnPurchaseRequisition[]
   cnQcInspections         CnQCInspection[]
   cnSafetyChecklists      CnSafetyChecklist[]
-  cnSafetyIncidents       CnSafetyIncident[]
   cnStockLedger           CnStockLedger[]
   cnStockReconciliations  CnStockReconciliation[]
   cnStockTransfers        CnStockTransfer[]
@@ -2858,7 +2856,6 @@ model CnMachinery {
   capitalisationCost   Decimal? @db.Decimal(18, 2)
   deprRate             Decimal? @db.Decimal(5, 2)
   deprMethod           String?
-  capitalisationDate   DateTime?
   status               String   @default("active")
   createdAt      DateTime @default(now())
   updatedAt      DateTime @updatedAt
@@ -2982,6 +2979,8 @@ model CnEquipmentDeployment {
   destinationProjectId String?
   transferType         String?
   transferDate         DateTime?
+  returnableFrom       DateTime?
+  returnableTo         DateTime?
   reason               String?
   remarks              String?
   gatePassNo           String?
@@ -3065,6 +3064,17 @@ model CnHireRentRecord {
   totalAmount      Decimal?  @db.Decimal(18, 2)
   amount           Decimal?  @db.Decimal(18, 2)
   status           String
+  approvalId       String?
+  submittedAt      DateTime?
+  submittedBy      String?
+  approvedAt       DateTime?
+  approvedBy       String?
+  rejectedAt       DateTime?
+  rejectedBy       String?
+  rejectReason     String?
+  returnedAt       DateTime?
+  returnedBy       String?
+  returnReason     String?
   createdAt        DateTime  @default(now())
   updatedAt        DateTime  @updatedAt
   createdBy        String
@@ -4192,34 +4202,6 @@ model CnQCInspection {
   @@schema("app_quikinfra")
 }
 
-model CnSafetyIncident {
-  id             String    @id @default(cuid())
-  orgId          String
-  projectId      String?
-  incidentNumber String
-  incidentDate   DateTime
-  category       String
-  severity       String    @default("low")
-  title          String
-  description    String?
-  reportedBy     String
-  status         String    @default("open")
-  resolvedAt     DateTime?
-  resolvedBy     String?
-  createdAt      DateTime  @default(now())
-  updatedAt      DateTime  @updatedAt
-  createdBy      String
-  updatedBy      String?
-  deletedAt      DateTime?
-  org            Org       @relation(fields: [orgId], references: [id], onDelete: Cascade)
-
-  @@unique([orgId, incidentNumber])
-  @@index([orgId])
-  @@index([status])
-  @@index([deletedAt])
-  @@schema("app_quikinfra")
-}
-
 model CnSafetyChecklist {
   id            String    @id @default(cuid())
   orgId         String
@@ -4242,26 +4224,6 @@ model CnSafetyChecklist {
   @@index([checklistDate])
   @@index([deletedAt])
   @@map("Safety_checklists")
-  @@schema("app_quikinfra")
-}
-
-model CnDocument {
-  id          String    @id @default(cuid())
-  orgId       String
-  refType     String
-  refId       String
-  fileName    String
-  mimeType    String
-  sizeBytes   Int
-  /// Path relative to DOCS_ROOT (e.g. "orgId/uuid-file.pdf"). Local disk MVP.
-  storagePath String
-  uploadedBy  String
-  createdAt   DateTime  @default(now())
-  deletedAt   DateTime?
-  org         Org       @relation(fields: [orgId], references: [id], onDelete: Cascade)
-
-  @@index([orgId, refType, refId])
-  @@index([deletedAt])
   @@schema("app_quikinfra")
 }
 
@@ -6073,6 +6035,18 @@ model QtProject {
   name             String
   description      String?
   projectType      String              @default("software")
+  /// Which template the space was created from. Drives runtime behavior:
+  ///   "scrum"      → sprints + sprint-gated board (default; all existing spaces)
+  ///   "functional" → no sprints; Kanban-style "Activity Board" (all tasks);
+  ///                   renamable backlog (see backlogName).
+  templateKey      String              @default("scrum")
+  /// Custom backlog heading. Honored only for functional spaces; null → "Backlog".
+  backlogName      String?
+  /// Per-project tab customization (QuikTrack). Ordered array of enabled tab
+  /// paths (e.g. ["summary","board","docs"]); null = show all tabs. Edited by
+  /// Space Admins via the project tab customizer; role permissions still gate
+  /// each tab on top of this.
+  tabConfig        Json?
   icon             String?
   color            String?             @default("#2563eb")
   status           String              @default("active")
@@ -6639,6 +6613,9 @@ model QtDoc {
   templateKey String?
   folderId    String?
   sortOrder   Int       @default(0)
+  // Draft/publish workflow: "draft" = visible only to its author; "published" =
+  // visible to every project member. New docs start as drafts.
+  status      String    @default("draft")
   // Public share: short base62 code (null = not shared); mode is "view" | "edit".
   shareToken  String?   @unique
   shareMode   String?
@@ -6652,6 +6629,7 @@ model QtDoc {
 
   @@index([orgId])
   @@index([projectId, isDeleted, updatedAt])
+  @@index([projectId, status])
   @@schema("app_quiktrack")
 }
 
@@ -6673,6 +6651,33 @@ model QtDocFolder {
 
   @@index([orgId])
   @@index([projectId, isDeleted, sortOrder])
+  @@schema("app_quiktrack")
+}
+
+// Per-user document sharing (Google-Docs-style). Each row grants one user
+// viewer/editor access to a single QtDoc. The doc's creator is the implicit
+// Owner and is NOT stored here. `email` is reserved for future external
+// invites. No Prisma relation block — the Docs API is raw-SQL only (the local
+// Prisma client is flaky for these models on Windows).
+model QtDocShare {
+  id        String   @id @default(cuid())
+  orgId     String
+  docId     String
+  userId    String?
+  email     String?
+  role      String // "viewer" | "editor"
+  // Per-recipient public token for EXTERNAL (email) invites — a short base62
+  // code; the invitee opens /share/<token> with no login. Null for internal
+  // (userId) shares, which are identity-gated instead.
+  token     String?  @unique
+  createdBy String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([docId, userId])
+  @@unique([docId, email])
+  @@index([docId])
+  @@index([userId])
   @@schema("app_quiktrack")
 }
 
@@ -6742,6 +6747,7 @@ model QtUserViewPref {
   hiddenColumns String[] @default([])
   columnOrder   String[] @default([])
   settings      Json? // structured per-view settings blob (e.g. backlog View settings: epic panel, empty sprints, density, field toggles)
+  filters       Json? // auto-persisted filter state for this surface (list/board/backlog/grouped-kanban/global), per user+project+viewKey
   createdAt     DateTime @default(now())
   updatedAt     DateTime @updatedAt
   Org           Org      @relation(fields: [orgId], references: [id], onDelete: Cascade)
@@ -7904,6 +7910,7 @@ model CrmActivity {
   createdAt         DateTime  @default(now())
   updatedAt         DateTime  @updatedAt
   lead              CrmLead?  @relation(fields: [leadId], references: [id])
+  fieldValues       CrmActivityFieldValue[]
   @@unique([orgId, sourceSystem, externalId])
   @@index([orgId])
   @@index([orgId, relatedKind, relatedObjectId])
@@ -7926,6 +7933,10 @@ model CrmTask {
   leadId           String?
   createdAt        DateTime        @default(now())
   updatedAt        DateTime        @updatedAt
+  /// Set to now() when status transitions INTO Completed; cleared (null) on
+  /// un-complete. NULL for tasks completed before this column existed (no
+  /// backfill — the digest counts completions forward from when it was added).
+  completedAt      DateTime?
   lead             CrmLead? @relation(fields: [leadId], references: [id])
   @@index([orgId])
   @@index([orgId, assignedToUserId])
@@ -8232,6 +8243,88 @@ model CrmCallDisposition {
   @@unique([orgId, code])
   @@unique([orgId, name])
   @@index([orgId])
+  @@schema("app_quikcrm")
+}
+
+// Activity-logging feature (Phase 1). Admin-configurable activity types +
+// their flat custom-field definitions. Modeled on CrmCallDisposition (a
+// per-org config table). Field VALUES are stored separately in an indexed
+// CrmActivityFieldValue table (Phase 2) — NOT a JSON blob — so the dashboard
+// and digests can aggregate/filter by field value. No cascading fields
+// (no dependsOnKey): the only consumer was the quarantined SMB flow.
+// See apps/quikcrm/ACTIVITY-FEATURE-DECISIONS.md.
+model CrmActivityType {
+  id        String   @id @default(cuid())
+  orgId     String
+  code      String
+  label     String
+  category  String?
+  config    Json?
+  sortOrder Int      @default(0)
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  fieldDefinitions CrmActivityFieldDefinition[]
+
+  @@unique([orgId, code])
+  @@index([orgId])
+  @@schema("app_quikcrm")
+}
+
+model CrmActivityFieldDefinition {
+  id             String   @id @default(cuid())
+  orgId          String
+  activityTypeId String
+  key            String
+  label          String
+  fieldType      String
+  requirement    String   @default("Optional")
+  options        Json?
+  visible        Boolean  @default(true)
+  helpText       String?
+  sortOrder      Int      @default(0)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  activityType CrmActivityType @relation(fields: [activityTypeId], references: [id], onDelete: Cascade)
+  fieldValues  CrmActivityFieldValue[]
+
+  @@unique([activityTypeId, key])
+  @@index([orgId])
+  @@index([activityTypeId])
+  @@schema("app_quikcrm")
+}
+
+// Phase 2: indexed, queryable storage for activity custom-field VALUES.
+// Decision #1 — a dedicated typed-column table, NOT a JSON blob — so the
+// Phase-4 dashboard and digests can aggregate/filter BY value (count, sum,
+// group-by) using the per-value indexes below. One row per (activity, field).
+// Mirrors QuikTrack's QtIssueFieldValue. See ACTIVITY-FEATURE-DECISIONS.md.
+model CrmActivityFieldValue {
+  id                String   @id @default(cuid())
+  orgId             String
+  activityId        String
+  fieldDefinitionId String
+  fieldKey          String
+  valueText         String?
+  valueNumber       Float?
+  valueDate         DateTime?
+  valueBoolean      Boolean?
+  valueJson         Json?
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  activity        CrmActivity                @relation(fields: [activityId], references: [id], onDelete: Cascade)
+  fieldDefinition CrmActivityFieldDefinition @relation(fields: [fieldDefinitionId], references: [id], onDelete: Cascade)
+
+  @@unique([activityId, fieldDefinitionId])
+  @@index([orgId])
+  @@index([activityId])
+  @@index([fieldDefinitionId, valueText])
+  @@index([fieldDefinitionId, valueNumber])
+  @@index([fieldDefinitionId, valueDate])
+  @@index([fieldDefinitionId, valueBoolean])
   @@schema("app_quikcrm")
 }
 

@@ -29,6 +29,8 @@ import { resolveManagerTeam } from "./team";
 import { resolveTeamScope } from "@/lib/services/teams/team-scope";
 import { formatINR } from "./currency";
 import type {
+  ActivityTypeCount,
+  ActivityByRep,
   AdminMetrics,
   TeamManagerMetrics,
   SalesManagerMetrics,
@@ -41,11 +43,64 @@ import type {
 const CLOSED_WON: CrmOpportunityStage = "ClosedWon";
 const CLOSED_STAGES: CrmOpportunityStage[] = ["ClosedWon", "ClosedLost"];
 
+/**
+ * Optional reporting window. PARTIAL-WINDOWING CONTRACT: a range passed to
+ * buildRoleMetrics windows ACTIVITY fields ONLY (totalActivities/teamActivities/
+ * myActivities counts, activitiesByType, activityByRep). Leads, opportunities,
+ * tasks, and quotes remain ALL-TIME regardless of range. A future caller (e.g.
+ * the dashboard) must NOT assume the whole DTO windows — only activity fields do.
+ */
+export type MetricsRange = { from: Date; to: Date };
+
+// KEYSTONE: the date filter as a SPREAD FRAGMENT. Omitted range → {} → the
+// activity `where` is BYTE-IDENTICAL to the pre-window behavior (NO occurredAt
+// key), which is what keeps FR-4.1 / FR-4.2 green untouched. Passed → an
+// ADDITIONAL occurredAt bound merged onto the existing tier scope (never replaces
+// scope).
+function dateWhere(range?: MetricsRange): Record<string, unknown> {
+  return range ? { occurredAt: { gte: range.from, lt: range.to } } : {};
+}
+
+// Per-rep TRUE activity volume (count per ownerId), within the SAME tier scope
+// where (single-sourced — does NOT re-derive scope) + the optional window.
+// ownerName from the denormalized CrmActivity.ownerName.
+async function activityByRepFor(
+  where: Record<string, unknown>,
+): Promise<ActivityByRep[]> {
+  const rows = await prisma.crmActivity.groupBy({
+    by: ["ownerId", "ownerName"],
+    where: where as never,
+    _count: { _all: true },
+  });
+  return rows
+    .filter((r) => r.ownerId != null)
+    .map((r) => ({ ownerId: r.ownerId as string, ownerName: r.ownerName ?? null, count: r._count._all }));
+}
+
+// FR-4.2: activity counts grouped by type LABEL (CrmActivity.type), within the
+// caller's already-computed scope where-clause. Reuses the SAME `where` the
+// tier's crmActivity.count uses — does NOT re-derive scope (FR-4.1 pins that
+// contract). Grouped by label, not a stable id (no activityTypeId column —
+// see ACTIVITY-FEATURE-DECISIONS.md 2026-06-24).
+async function activitiesByTypeFor(
+  where: Record<string, unknown>,
+): Promise<ActivityTypeCount[]> {
+  const rows = await prisma.crmActivity.groupBy({
+    by: ["type"],
+    where: where as never,
+    _count: { _all: true },
+  });
+  return rows.map((r) => ({ type: r.type, count: r._count._all }));
+}
+
 // ─── Administrator ────────────────────────────────────────────────────────────
 // accountScopeFilter returns null for Administrator, matching /api/leads.
 
-async function buildAdminMetrics(user: SessionUser): Promise<AdminMetrics> {
+async function buildAdminMetrics(user: SessionUser, range?: MetricsRange): Promise<AdminMetrics> {
   const { orgId } = user;
+
+  // Activity scope where + optional window. Non-activity counts stay all-time.
+  const activityWhere = { orgId, ...dateWhere(range) };
 
   const [
     totalLeads,
@@ -56,6 +111,8 @@ async function buildAdminMetrics(user: SessionUser): Promise<AdminMetrics> {
     totalActivities,
     totalTasks,
     totalQuotes,
+    activitiesByType,
+    activityByRep,
   ] = await Promise.all([
     prisma.crmLead.count({ where: { orgId, deletedAt: null } }),
     prisma.crmAccount.count({ where: { orgId, deletedAt: null } }),
@@ -65,9 +122,11 @@ async function buildAdminMetrics(user: SessionUser): Promise<AdminMetrics> {
       where: { orgId, stage: CLOSED_WON, deletedAt: null },
       _sum: { amount: true },
     }),
-    prisma.crmActivity.count({ where: { orgId } }),
+    prisma.crmActivity.count({ where: activityWhere }),
     prisma.crmTask.count({ where: { orgId } }),
     prisma.crmQuote.count({ where: { orgId, deletedAt: null } }),
+    activitiesByTypeFor(activityWhere), // FR-4.2: same { orgId } scope (+ window) as the count
+    activityByRepFor(activityWhere), // §1: per-rep volume, same scope + window
   ]);
 
   const totalRevenue = Number(wonAgg._sum?.amount ?? 0);
@@ -81,6 +140,8 @@ async function buildAdminMetrics(user: SessionUser): Promise<AdminMetrics> {
     totalActivities,
     totalTasks,
     totalQuotes,
+    activitiesByType,
+    activityByRep,
   };
 }
 
@@ -169,7 +230,7 @@ async function buildTeamManagerMetrics(user: SessionUser): Promise<TeamManagerMe
 // ─── SalesManager ────────────────────────────────────────────────────────────
 // Account scope from managed sales groups + team member IDs.
 
-async function buildSalesManagerMetrics(user: SessionUser): Promise<SalesManagerMetrics> {
+async function buildSalesManagerMetrics(user: SessionUser, range?: MetricsRange): Promise<SalesManagerMetrics> {
   const { orgId } = user;
 
   const aclFilter = await accountScopeFilter(user);
@@ -191,10 +252,12 @@ async function buildSalesManagerMetrics(user: SessionUser): Promise<SalesManager
     ? { orgId, deletedAt: null }
     : { orgId, deletedAt: null, accountId: { in: scope.allowedAccountIds } };
 
-  const activityWhere =
+  const activityScope =
     memberIds.length > 0
       ? { orgId, ownerId: { in: memberIds } }
       : { orgId, ownerId: user.userId };
+  // Activity scope + optional window (the by-type and by-rep slices reuse it).
+  const activityWhere = { ...activityScope, ...dateWhere(range) };
   const taskWhere =
     memberIds.length > 0
       ? { orgId, assignedToUserId: { in: memberIds } }
@@ -208,6 +271,8 @@ async function buildSalesManagerMetrics(user: SessionUser): Promise<SalesManager
     teamActivities,
     teamTasks,
     teamQuotes,
+    activitiesByType,
+    activityByRep,
   ] = await Promise.all([
     prisma.crmLead.count({ where: leadWhere }),
     prisma.crmOpportunity.count({ where: oppWhere }),
@@ -216,6 +281,8 @@ async function buildSalesManagerMetrics(user: SessionUser): Promise<SalesManager
     prisma.crmActivity.count({ where: activityWhere }),
     prisma.crmTask.count({ where: taskWhere }),
     prisma.crmQuote.count({ where: quoteWhere }),
+    activitiesByTypeFor(activityWhere), // FR-4.2: reuse the SAME person-scoped where (+ window)
+    activityByRepFor(activityWhere), // §1: per-rep volume, same scope + window
   ]);
 
   const teamRevenue = Number(wonAgg._sum?.amount ?? 0);
@@ -232,13 +299,15 @@ async function buildSalesManagerMetrics(user: SessionUser): Promise<SalesManager
     teamPipeline,
     teamPipelineDisplay: formatINR(teamPipeline),
     teamMemberCount,
+    activitiesByType,
+    activityByRep,
   };
 }
 
 // ─── SalesUser ────────────────────────────────────────────────────────────────
 // Own records only (ownerId = user.userId) with accountScopeFilter on top.
 
-async function buildSalesUserMetrics(user: SessionUser): Promise<SalesUserMetrics> {
+async function buildSalesUserMetrics(user: SessionUser, range?: MetricsRange): Promise<SalesUserMetrics> {
   const { orgId, userId } = user;
 
   const aclFilter = await accountScopeFilter(user);
@@ -249,14 +318,19 @@ async function buildSalesUserMetrics(user: SessionUser): Promise<SalesUserMetric
   const wonOppBase = { orgId, ownerId: userId, stage: CLOSED_WON, deletedAt: null };
   const wonOppWhere = aclFilter ? { AND: [wonOppBase, aclFilter] } : wonOppBase;
 
-  const [myLeads, myOpportunities, wonAgg, myActivities, myTasks, myQuotes] =
+  // Own-activity scope + optional window (by-type and by-rep reuse it).
+  const activityWhere = { orgId, ownerId: userId, ...dateWhere(range) };
+
+  const [myLeads, myOpportunities, wonAgg, myActivities, myTasks, myQuotes, activitiesByType, activityByRep] =
     await Promise.all([
       prisma.crmLead.count({ where: leadWhere }),
       prisma.crmOpportunity.count({ where: oppWhere }),
       prisma.crmOpportunity.aggregate({ where: wonOppWhere, _sum: { amount: true } }),
-      prisma.crmActivity.count({ where: { orgId, ownerId: userId } }),
+      prisma.crmActivity.count({ where: activityWhere }),
       prisma.crmTask.count({ where: { orgId, assignedToUserId: userId } }),
       prisma.crmQuote.count({ where: { orgId, ownerId: userId, deletedAt: null } }),
+      activitiesByTypeFor(activityWhere), // FR-4.2: same own scope (+ window) as the count
+      activityByRepFor(activityWhere), // §1: per-rep volume (own — degenerate one row), same scope + window
     ]);
 
   const myRevenue = Number(wonAgg._sum?.amount ?? 0);
@@ -268,6 +342,8 @@ async function buildSalesUserMetrics(user: SessionUser): Promise<SalesUserMetric
     myActivities,
     myTasks,
     myQuotes,
+    activitiesByType,
+    activityByRep,
   };
 }
 
@@ -364,20 +440,25 @@ async function buildFinanceMetrics(user: SessionUser): Promise<FinanceMetrics> {
 
 // ─── Dispatcher ───────────────────────────────────────────────────────────────
 
-export async function buildRoleMetrics(user: SessionUser): Promise<RoleMetricsDto> {
+export async function buildRoleMetrics(
+  user: SessionUser,
+  range?: MetricsRange,
+): Promise<RoleMetricsDto> {
   switch (user.role) {
     case "Administrator":
-      return { role: "Administrator", metrics: await buildAdminMetrics(user) };
+      return { role: "Administrator", metrics: await buildAdminMetrics(user, range) };
     case "TeamManager":
+      // TeamManager DTO has no activity-window/by-rep fields (not a digest
+      // recipient role); range is intentionally not threaded here.
       return { role: "TeamManager", metrics: await buildTeamManagerMetrics(user) };
     case "SalesManager":
-      return { role: "SalesManager", metrics: await buildSalesManagerMetrics(user) };
+      return { role: "SalesManager", metrics: await buildSalesManagerMetrics(user, range) };
     case "MarketingUser":
       return { role: "MarketingUser", metrics: await buildMarketingMetrics(user) };
     case "FinanceUser":
       return { role: "FinanceUser", metrics: await buildFinanceMetrics(user) };
     default:
       // SalesUser (and any unrecognised role → most-restricted view)
-      return { role: "SalesUser", metrics: await buildSalesUserMetrics(user) };
+      return { role: "SalesUser", metrics: await buildSalesUserMetrics(user, range) };
   }
 }

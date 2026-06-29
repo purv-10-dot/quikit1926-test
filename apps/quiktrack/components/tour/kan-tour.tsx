@@ -25,14 +25,14 @@ const STEPS: TourStep[] = [
     id: "sidebar",
     title: "Your navigation home",
     body:
-      "Everything important lives in this sidebar — Spaces (your projects), Timesheet, Reports and your dashboards.",
+      "Everything important lives in this sidebar — Projects, Timesheet, Reports and your dashboards.",
     selector: '[data-tour="sidebar"]',
   },
   {
     id: "spaces",
-    title: "Spaces = projects",
+    title: "Projects",
     body:
-      "Each Space holds a project's board, backlog, list, timeline and docs. Click any Space to dive in.",
+      "Each project holds its board, backlog, list, timeline and docs. Click any project to dive in.",
     selector: '[data-tour="spaces"]',
   },
   {

@@ -10,6 +10,7 @@ import {
   deriveFieldGroups,
   isFieldMode,
   type GroupByMode,
+  type GroupedBoardEpicLite,
 } from "../_lib/field-grouping";
 
 const STORAGE_PREFIX = "qt-grouped-kanban-groupby:";
@@ -20,7 +21,8 @@ function isValidMode(v: string | null): v is GroupByMode {
     v === "status" ||
     v === "priority" ||
     v === "assignee" ||
-    v === "type"
+    v === "type" ||
+    v === "epic"
   );
 }
 
@@ -30,6 +32,8 @@ interface FieldGroupingInput {
   manualGroups: GroupedBoardGroup[];
   statuses: GroupedBoardStatus[];
   members: BoardMemberLite[];
+  /** Project epics, used to label groups in "epic" mode. */
+  epics: GroupedBoardEpicLite[];
 }
 
 interface FieldGroupingResult {
@@ -54,6 +58,7 @@ export function useFieldGrouping({
   manualGroups,
   statuses,
   members,
+  epics,
 }: FieldGroupingInput): FieldGroupingResult {
   const [groupBy, setGroupByState] = useState<GroupByMode>("manual");
   const [collapsed, setCollapsed] = useState<Set<string>>(() => new Set());
@@ -96,10 +101,10 @@ export function useFieldGrouping({
   const displayGroups = useMemo<GroupedBoardGroup[]>(() => {
     if (!isVirtual) return manualGroups;
     const allTasks = manualGroups.flatMap((g) => g.tasks);
-    return deriveFieldGroups(groupBy, allTasks, { statuses, members }).map((g) =>
+    return deriveFieldGroups(groupBy, allTasks, { statuses, members, epics }).map((g) =>
       collapsed.has(g.id) ? { ...g, isCollapsed: true } : g,
     );
-  }, [isVirtual, groupBy, manualGroups, statuses, members, collapsed]);
+  }, [isVirtual, groupBy, manualGroups, statuses, members, epics, collapsed]);
 
   return { groupBy, setGroupBy, isVirtual, displayGroups, toggleVirtualCollapse };
 }

@@ -2,7 +2,7 @@
 import { z } from "zod";
 import { db } from "@/lib/db";
 import { withOrgAuth } from "@/lib/api/withOrgAuth";
-import { hasAdminAccess, userCanInProject, forbidden } from "@/lib/api/permissions";
+import { hasAdminAccess, userCanInProject } from "@/lib/api/permissions";
 
 const bodySchema = z.object({
   projectId: z.string().min(1),
@@ -10,9 +10,14 @@ const bodySchema = z.object({
 });
 
 /**
- * Soft-deletes a batch of issues. Caller must be a member of the project (or
- * a tenant admin/owner). All ids must belong to the same project + tenant —
- * any id outside that scope is silently dropped from the count, never deleted.
+ * Soft-deletes a batch of issues. Caller must be a member of the project (or a
+ * tenant admin/owner). Permission mirrors single delete (DELETE /api/issues/[id]):
+ *   - a full `Issue:delete` grant (Space Admin / admins) deletes ANY selected
+ *     issue in the project;
+ *   - otherwise a member deletes only issues they OWN (reported or created) —
+ *     selected issues owned by others are skipped, never deleted.
+ * Returns `{ deleted, skipped }` so the UI can report what was left out.
+ * Ids outside this project/tenant are silently dropped (counted as neither).
  */
 export const POST = withOrgAuth(async ({ orgId, userId }, req) => {
   const parsed = bodySchema.safeParse(await req.json());
@@ -31,8 +36,8 @@ export const POST = withOrgAuth(async ({ orgId, userId }, req) => {
     return NextResponse.json({ success: false, error: "Project not found" }, { status: 404 });
   }
 
-  const isAdmin = await hasAdminAccess(userId, orgId);
-  if (!isAdmin) {
+  let canDeleteAny = await hasAdminAccess(userId, orgId);
+  if (!canDeleteAny) {
     const member = await db.qtProjectMember.findFirst({
       where: { projectId: project.id, userId, isDeleted: false },
       select: { id: true },
@@ -40,22 +45,30 @@ export const POST = withOrgAuth(async ({ orgId, userId }, req) => {
     if (!member) {
       return NextResponse.json({ success: false, error: "Project not found" }, { status: 404 });
     }
-    // Same gate as single delete (DELETE /api/issues/[id]) — membership alone
-    // is not enough; the role must grant Issue:delete in this project.
-    if (!(await userCanInProject(userId, orgId, project.id, "Issue", "delete"))) {
-      return forbidden();
-    }
+    // Full delete grant → may delete any issue here; otherwise own-only below.
+    canDeleteAny = await userCanInProject(userId, orgId, project.id, "Issue", "delete");
   }
 
-  const result = await db.qtIssue.updateMany({
-    where: {
-      id: { in: parsed.data.ids },
-      orgId: orgId,
-      projectId: project.id,
-      isDeleted: false,
-    },
-    data: { isDeleted: true, updatedBy: userId },
+  // Resolve which selected ids actually belong to this project (+ ownership).
+  const inScope = await db.qtIssue.findMany({
+    where: { id: { in: parsed.data.ids }, orgId, projectId: project.id, isDeleted: false },
+    select: { id: true, reporterId: true, createdBy: true },
   });
+  const deletableIds = canDeleteAny
+    ? inScope.map((i) => i.id)
+    : inScope
+        .filter((i) => i.reporterId === userId || i.createdBy === userId)
+        .map((i) => i.id);
+  const skipped = inScope.length - deletableIds.length;
 
-  return NextResponse.json({ success: true, deleted: result.count });
+  let deleted = 0;
+  if (deletableIds.length > 0) {
+    const result = await db.qtIssue.updateMany({
+      where: { id: { in: deletableIds }, orgId, projectId: project.id, isDeleted: false },
+      data: { isDeleted: true, updatedBy: userId },
+    });
+    deleted = result.count;
+  }
+
+  return NextResponse.json({ success: true, deleted, skipped });
 });

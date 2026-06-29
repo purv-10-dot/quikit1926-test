@@ -106,7 +106,7 @@ export function TaskCard({
           // apart from a column reorder drop.
           e.dataTransfer.setData("application/quiktrack-issue", task.id);
         }}
-        className="bg-white border border-gray-200 rounded-md p-2.5 hover:shadow-sm transition-all cursor-grab active:cursor-grabbing"
+        className="qt-board-card bg-white border border-gray-200 rounded-md p-2.5 hover:shadow-sm transition-all cursor-grab active:cursor-grabbing"
       >
         {/* Title + ⋯ */}
         <div className="flex items-start justify-between gap-2 mb-2">
@@ -150,7 +150,7 @@ export function TaskCard({
           <div className="flex items-center gap-1.5 min-w-0">
             <T.Icon className={`w-4 h-4 shrink-0 ${T.color}`} />
             <span
-              className={`truncate font-medium ${isDone ? "line-through text-gray-400" : ""}`}
+              className={`qt-key-chip truncate font-medium ${isDone ? "line-through text-gray-400" : ""}`}
             >
               {task.key}
             </span>
