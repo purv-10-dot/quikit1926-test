@@ -1,5 +1,6 @@
 import DashboardLayout from "@/components/layout/dashboard-layout";
 import { BrandCreationProvider } from "@/components/providers/BrandCreationContext";
+import { SessionGuard } from "@/components/session-guard";
 
 // Every page under /dashboard reads the session, hits MongoDB, or talks to
 // internal API routes. Marking the segment dynamic prevents Next.js from
@@ -12,8 +13,10 @@ export default async function Layout({
   children: React.ReactNode;
 }) {
   return (
-    <BrandCreationProvider>
-      <DashboardLayout>{children}</DashboardLayout>
-    </BrandCreationProvider>
+    <SessionGuard>
+      <BrandCreationProvider>
+        <DashboardLayout>{children}</DashboardLayout>
+      </BrandCreationProvider>
+    </SessionGuard>
   );
 }
