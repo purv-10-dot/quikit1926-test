@@ -39,3 +39,19 @@ export function formatActual(value: number, symbol: string, currency: string): s
   const locale = currency === "INR" ? "en-IN" : "en-US";
   return `${symbol}${value.toLocaleString(locale)}`;
 }
+
+/** Compact unit labels for a chosen target scale (e.g. "Crore" → "Cr"). */
+const SHORT_SCALE_LABELS: Record<string, string> = {
+  Thousand: "K",
+  Lakh: "L",
+  Million: "M",
+  Crore: "Cr",
+  Billion: "B",
+  Trillion: "T",
+  "Hundred Crore": "100 Cr",
+};
+
+/** Short unit suffix for a scale label; "" for no scale / unknown scale. */
+export function shortScaleLabel(scale: string | null | undefined): string {
+  return (scale && SHORT_SCALE_LABELS[scale]) || "";
+}

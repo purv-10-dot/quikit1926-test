@@ -5,6 +5,7 @@ import { weeklyValueBatchSchema } from "@/lib/schemas/kpiSchema";
 import { withOrgAuthForModule } from "@/lib/api/withOrgAuth";
 const withOrgAuth = withOrgAuthForModule("kpi");
 import { getPastWeekFlags, getCurrentFiscalWeekFromDB } from "@/lib/utils/featureFlags";
+import { isWeekBeforeEditableWindow, earliestEditableWeek } from "@/lib/utils/weekLock";
 import { audit, requestContext } from "@/lib/audit";
 import { weeklyTargetForWeek } from "@/lib/utils/kpiHelpers";
 import { withTxRetry } from "@/lib/api/withTxRetry";
@@ -178,9 +179,12 @@ export const POST = withOrgAuth<{ id: string }>(async ({ orgId, userId }, req: N
       continue;
     }
 
-    // Past-week gate — org-level config, not a role check.
-    if (!canEditPastWeek && input.weekNumber < currentWeek) {
-      results.push({ weekNumber: input.weekNumber, userId: targetUserId, ok: false, error: `Editing past weeks is disabled. Week ${input.weekNumber} is before the current week (${currentWeek}). Enable it in Settings > Configurations.` });
+    // Past-week gate — org-level config, not a role check. When edit-past is
+    // off, weeks before the editable window (current week minus the grace) are
+    // rejected; the grace keeps the immediately-previous week editable.
+    if (isWeekBeforeEditableWindow(input.weekNumber, currentWeek, canEditPastWeek)) {
+      const earliest = earliestEditableWeek(currentWeek, canEditPastWeek);
+      results.push({ weekNumber: input.weekNumber, userId: targetUserId, ok: false, error: `Editing past weeks is disabled. Week ${input.weekNumber} is before the earliest editable week (${earliest}). Enable it in Settings > Configurations.` });
       continue;
     }
 
