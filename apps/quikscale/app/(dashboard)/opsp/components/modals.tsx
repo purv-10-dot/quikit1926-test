@@ -1305,6 +1305,21 @@ export function actionsQtrHasErrors(rows: ActionRow[], goalRows: GoalRow[]): boo
  * last month is below Projected. Invariant: `actionsQtrErrors(...).length > 0`
  * ⟺ `actionsQtrHasErrors(...)`.
  */
+/**
+ * True when ONE specific ACTIONS (QTR) row is invalid — the per-row counterpart
+ * of `actionsQtrHasErrors`. Used by the edit-after-finalize gate so a single
+ * field change can be saved as long as THAT row is valid, even when other rows
+ * (e.g. cleared by the Goals→Actions cascade) are still incomplete. Reuses
+ * `actionsQtrErrors` so it stays in lock-step with the modal's validation.
+ */
+export function actionsQtrRowHasError(
+  rows: ActionRow[],
+  goalRows: GoalRow[],
+  rowIndex: number,
+): boolean {
+  return actionsQtrErrors(rows, goalRows).some((e) => e.rowIndex === rowIndex);
+}
+
 export function actionsQtrErrors(
   rows: ActionRow[],
   goalRows: GoalRow[],
