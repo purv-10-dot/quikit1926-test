@@ -2,6 +2,8 @@
 
 End-to-end user journeys organized by **persona** and by **workflow**. Use this as the product narrative document — for sales decks, training, customer onboarding, and engineering acceptance.
 
+*Updated 2026-06-19 — see "Recently Shipped" (Workflows 64–71) for Custom Fields, public Doc sharing, Doc import/folders, the Epics view, grouped-kanban grouping, time-by-epic, executive reporting, and the new layered permission model.*
+
 ---
 
 ## Personas
@@ -1007,6 +1009,117 @@ End-to-end user journeys organized by **persona** and by **workflow**. Use this 
 6. Team triages the bot-filed issue normally.
 
 **Success:** Tools talk to each other; humans focus on the work.
+
+---
+
+# 🆕 Recently Shipped (2026-06)
+
+> *Terminology note:* the user-facing label for a "Space" is now **Project** throughout the UI (URLs remain `/spaces/[id]`). The workflows below reflect the latest build.
+
+## 🧩 Workflow 64 — Defining Custom Fields on Issues
+
+**Actors:** Org admin (global fields), Space admin (project fields)
+
+1. **Ashwin** opens **Settings → Work items → Fields** and clicks **New field**.
+2. He adds a `DROPDOWN_SINGLE` field "Customer Tier" with options *Premium / Standard / Trial*, marks it **required**, and saves — it's now a **global** field on every project's issues.
+3. **Priya**, a space admin, opens her project's **Settings → Fields** and adds a project-only `NUMBER` field "Risk Score".
+4. On the **Create Issue** form both fields now render (globals first, then space fields), with type-appropriate controls and the required validation on "Customer Tier".
+5. Later, Ashwin tries to delete "Customer Tier" but 14 issues already use it — QuikTrack blocks the hard delete and offers **Archive** instead, which hides it from forms while preserving historical values.
+
+**Success:** Teams extend the issue model to their domain without code changes; data is never silently lost.
+
+---
+
+## 🔗 Workflow 65 — Sharing a Doc by Public Link
+
+**Actors:** PM sharing a spec with an external client
+
+1. **Priya** writes a project doc, clicks **Share**, and picks **Can view**.
+2. QuikTrack mints a stable unguessable link; she copies it and emails the client.
+3. The **client opens the link with no QuikTrack account** — the doc and its images render read-only (images proxied through a token-scoped endpoint).
+4. For a collaborative draft she switches the link to **Can edit**; the client edits inline and changes save back to the doc.
+5. When the engagement ends she clicks **Stop sharing** — the link 404s immediately, no account cleanup needed.
+
+**Success:** Frictionless external sharing with instant, reversible revocation.
+
+---
+
+## 📥 Workflow 66 — Importing Existing Docs & Organizing in Folders
+
+**Actors:** Team migrating Word/PDF specs into QuikTrack
+
+1. **Kavya** creates folders "Specs" and "Runbooks" in the project's Docs tab.
+2. She clicks **Upload** and imports a `.docx` spec — formatting (tables, colors, headings) is preserved as sanitized HTML, placed directly in "Specs".
+3. She imports a `.pdf` and a `.md` the same way; heading heuristics rebuild structure for the PDF text.
+4. She drags an older doc from the root into "Runbooks"; the folder's doc count updates live.
+5. She later deletes the "Specs" folder — the docs aren't lost, they float back to **All docs**.
+
+**Success:** Existing knowledge moves in cleanly and stays organized; folder deletion is non-destructive.
+
+---
+
+## 🧬 Workflow 67 — Working the Epics View
+
+**Actors:** PM tracking large initiatives
+
+1. **Priya** opens the project's **Epics** tab — a searchable, paginated list of every epic with a live **progress bar** (done / in-progress / to-do rollup).
+2. She filters the **board** and **grouped-kanban** to a single epic to focus the team's standup on one initiative.
+3. On the **grouped-kanban** she switches the **Group by** axis to **Epic** — tasks reorganize into per-epic columns plus a "No epic" bucket; dragging a card to another epic re-parents it.
+4. She opens an epic to edit dates/owner in the same modal used for any issue.
+
+**Success:** Big-picture initiative tracking sits alongside day-to-day task flow.
+
+---
+
+## 🗂️ Workflow 68 — Flexible Board Grouping (Grouped Kanban)
+
+**Actors:** Team lead who wants different cuts of the same board
+
+1. **Rohan** opens **Grouped Kanban** and uses **Group by** to switch the swimlane axis: *Custom groups, Status, Priority, Assignee, Type,* or *Epic*.
+2. His choice persists per project (stored locally), so it's remembered next visit.
+3. He filters by sprint/assignee/priority/type to narrow the board, then bulk-moves cards within a group.
+
+**Success:** One board, many lenses — no separate saved views needed for common cuts.
+
+---
+
+## ⏱️ Workflow 69 — Logging Time & Reviewing It by Epic
+
+**Actors:** Engineer logging work; PM reviewing effort
+
+1. **Arjun** opens the **Log time** modal from a work item. The time input accepts `HH:MM`, decimals (`1.5` → `01:30`), or a bare integer (`1` → `01:00`), snapping on blur.
+2. He logs 1:30 against a task with a short note.
+3. **Priya** opens the **timesheet grid** and switches **Group by** to **Epic → Issue** — hours roll up under each epic (with a "No epic" bucket), so she sees effort per initiative, not just per task.
+4. She also groups by **User → Issue** to review an individual's week.
+
+**Success:** Time entry is fast and forgiving; effort is reviewable along whatever axis matters.
+
+---
+
+## 📊 Workflow 70 — Executive Productivity Reporting
+
+**Actors:** Department head / leadership
+
+1. **Ashwin** opens **Reports → Executive** and picks a preset range (e.g. *Last 90 days*).
+2. He sees org productivity trends by week, a **team heatmap**, top employees, and **week-over-week deltas**.
+3. He filters by project, department (project-role), assignee, and sprint — all combine with AND.
+4. He clicks **View all** to page through the full employee list, then saves the current filter set as a **pinned saved view** for next quarter's review (max 25 views, private to him).
+
+**Success:** Leadership gets a defensible, repeatable productivity picture without spreadsheets.
+
+---
+
+## 🛡️ Workflow 71 — Granular Access with the New Permission Model
+
+**Actors:** Admin configuring RBAC for a mixed team
+
+1. **Ashwin** sets an **app-wide role** that grants `Report:view` and `Dashboard:view` (these are **global-only**) but withholds project visibility by default.
+2. For a sensitive project he assigns **Priya** the **Space Admin** project role — inside that project her project role is **authoritative and overrides** her app-wide role.
+3. For a contractor he creates a project role that grants `Issue:view/update` but sets the *Priority* and *Due date* fields to **read-only** via field-level permissions; the *Reporter* field is **hidden**.
+4. The contractor's sidebar only shows nav items he has `view` grants for (nav is now **derived** from permissions, not configured separately).
+5. When the contractor tries to edit a locked field, the API rejects it with a clear message — *"Field(s) not editable for your role: priority, dueDate"* — and a user with no project access at all sees a friendly **access wall** with admin contact emails instead of a raw error.
+
+**Success:** Precise, layered access control — global, per-project, and per-field — with humane denials.
 
 ---
 

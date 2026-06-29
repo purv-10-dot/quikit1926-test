@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { withOrgAuth } from "@/lib/api/withOrgAuth";
-import { hasAdminAccess } from "@/lib/api/permissions";
+import { hasAdminAccess, isProjectSpaceAdmin } from "@/lib/api/permissions";
 
 type GroupBy = "user" | "project" | "issue" | "user-issue" | "epic-issue";
 
@@ -53,6 +53,13 @@ export const GET = withOrgAuth(async ({ orgId, userId }, req) => {
     }
   }
 
+  // Only app admins and a project's Space Admin may see everyone's timesheets.
+  // Everyone else is scoped to their OWN entries — so a Contributor/Viewer can
+  // never read a teammate's logged time. (Space Admin only applies to the locked
+  // space-scoped view; a cross-project global view stays self-only unless app admin.)
+  const canSeeAll =
+    isAdmin || (!!projectId && (await isProjectSpaceAdmin(userId, projectId)));
+
   // Resolve the effective project constraint. A locked `projectId` (space-scoped
   // view) always wins. Otherwise we intersect the optional projectIds filter with
   // the caller's allowed projects so a non-admin can't widen their own scope.
@@ -73,7 +80,13 @@ export const GET = withOrgAuth(async ({ orgId, userId }, req) => {
       isDeleted: false,
       entryDate: { gte: fromDate, lte: toDate },
       ...projectWhere,
-      ...(userIdFilter.length > 0 ? { userId: { in: userIdFilter } } : {}),
+      // Self-only unless the caller may see all; otherwise apply the optional
+      // user filter. A non-privileged caller's userIds param is ignored.
+      ...(canSeeAll
+        ? userIdFilter.length > 0
+          ? { userId: { in: userIdFilter } }
+          : {}
+        : { userId }),
     },
     select: {
       id: true,
@@ -284,5 +297,6 @@ export const GET = withOrgAuth(async ({ orgId, userId }, req) => {
       .sort((a, b) => a.label.localeCompare(b.label));
   }
 
-  return NextResponse.json({ success: true, data: { rows, cells } });
+  // `canSeeAll` lets the client hide the per-user filter for self-only callers.
+  return NextResponse.json({ success: true, data: { rows, cells, canSeeAll } });
 });

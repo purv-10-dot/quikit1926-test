@@ -33,6 +33,11 @@ const upsertSchema = z.object({
   hiddenColumns: z.array(z.string()).optional(),
   columnOrder: z.array(z.string()).optional(),
   settings: backlogSettingsSchema.optional(),
+  // Auto-persisted filter state for this surface. Shape varies per view
+  // (list/board/backlog/grouped-kanban/global), so it's a free-form object;
+  // `null` clears it. Independent of column/settings prefs — a filters-only PUT
+  // never clobbers them (and vice versa).
+  filters: z.record(z.string(), z.unknown()).nullable().optional(),
 });
 
 export const GET = withOrgAuth(async ({ orgId, userId }, req) => {
@@ -48,9 +53,21 @@ export const GET = withOrgAuth(async ({ orgId, userId }, req) => {
   const pref = await db.qtUserViewPref.findFirst({
     where: { orgId: orgId, userId, viewKey, projectId },
   });
+  if (!pref) {
+    return NextResponse.json({
+      success: true,
+      data: { hiddenColumns: [], columnOrder: [], settings: null, filters: null },
+    });
+  }
+  // `filters` is read via raw SQL — the generated Prisma client can be stale on
+  // this column on Windows (DLL-lock on `prisma generate`), the same reason the
+  // docs routes use raw SQL.
+  const fRows = await db.$queryRaw<{ filters: unknown }[]>`
+    SELECT filters FROM app_quiktrack."QtUserViewPref" WHERE id = ${pref.id} LIMIT 1
+  `;
   return NextResponse.json({
     success: true,
-    data: pref ?? { hiddenColumns: [], columnOrder: [], settings: null },
+    data: { ...pref, filters: fRows[0]?.filters ?? null },
   });
 });
 
@@ -64,10 +81,12 @@ export const PUT = withOrgAuth(async ({ orgId, userId }, req) => {
   }
 
   const projectId = parsed.data.projectId ?? null;
-  const { hiddenColumns, columnOrder, settings } = parsed.data;
+  const { hiddenColumns, columnOrder, settings, filters } = parsed.data;
 
   // Build the patch from only the fields the request actually carried, so a
-  // settings-only PUT leaves column prefs untouched (and vice versa).
+  // settings-only PUT leaves column prefs untouched (and vice versa). `filters`
+  // is handled separately via raw SQL (below) because the generated Prisma
+  // client can be stale on that column.
   const data: {
     hiddenColumns?: string[];
     columnOrder?: string[];
@@ -97,5 +116,21 @@ export const PUT = withOrgAuth(async ({ orgId, userId }, req) => {
           settings: settings ?? undefined,
         },
       });
-  return NextResponse.json({ success: true, data: pref });
+
+  // Persist filters via raw SQL (null clears it → stored as an empty object).
+  let filtersOut: unknown;
+  if (filters !== undefined) {
+    const json = JSON.stringify(filters ?? {});
+    await db.$executeRaw`
+      UPDATE app_quiktrack."QtUserViewPref"
+      SET filters = ${json}::jsonb, "updatedAt" = NOW()
+      WHERE id = ${pref.id}
+    `;
+    filtersOut = filters ?? {};
+  }
+
+  return NextResponse.json({
+    success: true,
+    data: filters !== undefined ? { ...pref, filters: filtersOut } : pref,
+  });
 });

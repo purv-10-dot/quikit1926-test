@@ -56,6 +56,22 @@ describe("buildLeadCommandActions", () => {
     expect(labels).toContain("Mark won");
   });
 
+  it('keeps the "Add meeting" action and runs the supplied onAddMeeting callback (post-repoint: no preset in the builder)', () => {
+    // T-P3.3b option-2 + label-(a): the palette "Add meeting" action is KEPT
+    // (label + keywords unchanged) and runs whatever onAddMeeting the caller
+    // supplies. After the repoint the SHELL points onAddMeeting at the
+    // open-logger handler (no Meeting preset) — the builder itself never presets
+    // a type, so this asserts the action exists + invokes its callback, with NO
+    // preset assertion (there is no preset behavior here to assert).
+    const onAddMeeting = vi.fn();
+    const actions = build({ onAddMeeting });
+    const meeting = actions.find((a) => a.id === "meeting");
+    expect(meeting).toBeTruthy();
+    expect(meeting!.label).toBe("Add meeting"); // label unchanged (option a)
+    meeting!.run();
+    expect(onAddMeeting).toHaveBeenCalled();
+  });
+
   it("finds convert via keyword search", () => {
     const actions = build();
     const filtered = actions.filter((a) => {

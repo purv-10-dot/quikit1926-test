@@ -14,7 +14,7 @@ import type {
  *    behind these; dragging a task into a derived group mutates that field on
  *    the issue (see `decodeFieldPatch`).
  */
-export type GroupByMode = "manual" | "status" | "priority" | "assignee" | "type";
+export type GroupByMode = "manual" | "status" | "priority" | "assignee" | "type" | "epic";
 
 export const GROUP_BY_OPTIONS: { value: GroupByMode; label: string }[] = [
   { value: "manual", label: "Custom groups" },
@@ -22,7 +22,18 @@ export const GROUP_BY_OPTIONS: { value: GroupByMode; label: string }[] = [
   { value: "priority", label: "Priority" },
   { value: "assignee", label: "Assignee" },
   { value: "type", label: "Type" },
+  { value: "epic", label: "Epic" },
 ];
+
+/** Epic groups share one purple accent (epics have no per-row color). */
+const EPIC_COLOR = "#a855f7";
+
+/** A linked epic, used to label epic-mode groups. */
+export interface GroupedBoardEpicLite {
+  id: string;
+  key: string;
+  title: string;
+}
 
 export function isFieldMode(mode: GroupByMode): boolean {
   return mode !== "manual";
@@ -73,6 +84,8 @@ export function decodeFieldPatch(
       return value ? { type: value } : null;
     case "assignee":
       return { assigneeId: value === UNASSIGNED_VALUE ? null : value };
+    case "epic":
+      return { epicId: value === UNASSIGNED_VALUE ? null : value };
     default:
       return null;
   }
@@ -115,6 +128,7 @@ function makeGroup(
 interface DeriveContext {
   statuses: GroupedBoardStatus[];
   members: BoardMemberLite[];
+  epics: GroupedBoardEpicLite[];
 }
 
 /**
@@ -126,7 +140,7 @@ interface DeriveContext {
 export function deriveFieldGroups(
   mode: GroupByMode,
   tasks: GroupedBoardTask[],
-  { statuses, members }: DeriveContext,
+  { statuses, members, epics }: DeriveContext,
 ): GroupedBoardGroup[] {
   if (mode === "manual") return [];
 
@@ -141,6 +155,8 @@ export function deriveFieldGroups(
         return t.type;
       case "assignee":
         return t.assigneeId ?? UNASSIGNED_VALUE;
+      case "epic":
+        return t.epicId ?? UNASSIGNED_VALUE;
       default:
         return UNASSIGNED_VALUE;
     }
@@ -182,23 +198,27 @@ export function deriveFieldGroups(
         makeGroup(mode, id, memberLabel(m.user), assigneeColor(id), groups.length, bucketed.get(id) ?? []),
       );
     }
+  } else if (mode === "epic") {
+    for (const e of epics) {
+      if (!bucketed.has(e.id)) continue; // only surface epics that own work
+      seen.add(e.id);
+      groups.push(
+        makeGroup(mode, e.id, `${e.key} · ${e.title}`, EPIC_COLOR, groups.length, bucketed.get(e.id) ?? []),
+      );
+    }
   }
 
   // Catch-all: any value present on tasks that wasn't covered above (e.g. an
-  // assignee no longer on the board, or an unexpected enum value).
+  // assignee no longer on the board, a task with no epic, or an unexpected enum).
   for (const [value, list] of bucketed) {
     if (seen.has(value)) continue;
-    const isUnassigned = mode === "assignee" && value === UNASSIGNED_VALUE;
-    groups.push(
-      makeGroup(
-        mode,
-        value,
-        isUnassigned ? "Unassigned" : value || "—",
-        DEFAULT_COLOR,
-        groups.length,
-        list,
-      ),
-    );
+    let name: string;
+    if (value === UNASSIGNED_VALUE) {
+      name = mode === "epic" ? "No epic" : "Unassigned";
+    } else {
+      name = value || "—";
+    }
+    groups.push(makeGroup(mode, value, name, DEFAULT_COLOR, groups.length, list));
   }
 
   return groups;

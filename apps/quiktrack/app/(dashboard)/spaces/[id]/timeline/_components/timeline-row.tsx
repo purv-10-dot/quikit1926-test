@@ -31,12 +31,15 @@ export function TimelineRow({
   projectId,
   columns,
   onOpen,
+  assigneeFilter = "",
 }: {
   issue: TimelineIssue;
   level: number; // 0 = epic, 1 = task, 2 = subtask
   projectId: string;
   columns: Col[];
   onOpen?: (id: string) => void;
+  /** Comma-separated assignee ids; narrows the child tasks/subtasks shown. */
+  assigneeFilter?: string;
 }) {
   const [expanded, setExpanded] = useState(false);
   const [children, setChildren] = useState<TimelineIssue[]>([]);
@@ -65,6 +68,7 @@ export function TimelineRow({
         params.set("parentId", issue.id);
         params.set("type", "SUBTASK");
       }
+      if (assigneeFilter) params.set("assigneeId", assigneeFilter);
       if (!initial && cursor) params.set("cursor", cursor);
       try {
         const res = await fetch(`/api/issues?${params.toString()}`).then((r) => r.json());
@@ -78,13 +82,23 @@ export function TimelineRow({
         setLoading(false);
       }
     },
-    [projectId, issue.id, issue.type, cursor, hasMore, loading],
+    [projectId, issue.id, issue.type, cursor, hasMore, loading, assigneeFilter],
   );
 
   useEffect(() => {
     if (expanded && !loaded) void loadChildren(true);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [expanded, loaded]);
+
+  // Re-fetch already-loaded children when the assignee filter changes.
+  useEffect(() => {
+    if (!loaded) return;
+    setChildren([]);
+    setCursor(null);
+    setHasMore(false);
+    setLoaded(false);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [assigneeFilter]);
 
   useEffect(() => {
     if (!expanded || !hasMore) return;
@@ -189,6 +203,7 @@ export function TimelineRow({
             projectId={projectId}
             columns={columns}
             onOpen={onOpen}
+            assigneeFilter={assigneeFilter}
           />
         ))}
 

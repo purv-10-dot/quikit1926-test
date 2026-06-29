@@ -49,6 +49,24 @@ export const GET = withOrgAuth<{ id: string }>(
         : [] // user picked a non-active sprint → return zero rows
       : activeSprintIds;
 
+    // Assignee filter: the param is a comma-separated list of user IDs, with
+    // the sentinel "null" meaning Unassigned. Build an `in` clause so the
+    // multi-select works — a plain equality (`{ assigneeId: "a,b" }`) only ever
+    // matches the literal string and returns zero rows for 2+ people. The
+    // unassigned+ids case is wrapped in AND so its OR can't clash with the
+    // search OR also present in the where clause below.
+    const assigneeWhere = (() => {
+      if (!assigneeId) return {};
+      const parts = assigneeId.split(",").map((s) => s.trim()).filter(Boolean);
+      if (parts.length === 0) return {};
+      const wantsUnassigned = parts.includes("null");
+      const ids = parts.filter((p) => p !== "null");
+      if (wantsUnassigned && ids.length)
+        return { AND: [{ OR: [{ assigneeId: null }, { assigneeId: { in: ids } }] }] };
+      if (wantsUnassigned) return { assigneeId: null };
+      return { assigneeId: { in: ids } };
+    })();
+
     const [groups, statuses, issues] = await Promise.all([
       db.qtTaskGroup.findMany({
         where: { projectId: params.id, isDeleted: false },
@@ -93,11 +111,7 @@ export const GET = withOrgAuth<{ id: string }>(
           isDeleted: false,
           type: { notIn: ["EPIC", "SUBTASK"] },
           sprintId: { in: sprintIdsToFilter },
-          ...(assigneeId === "null"
-            ? { assigneeId: null }
-            : assigneeId
-              ? { assigneeId }
-              : {}),
+          ...assigneeWhere,
           ...(priority ? { priority } : {}),
           ...(type ? { type } : {}),
           ...(search
@@ -120,6 +134,7 @@ export const GET = withOrgAuth<{ id: string }>(
           sprintId: true,
           assigneeId: true,
           reporterId: true,
+          epicId: true,
           groupId: true,
           orderInGroup: true,
           startDate: true,

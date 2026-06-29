@@ -30,6 +30,8 @@ import { classifySsoProviderAsync } from "@quikit/shared/sso-domain-server";
 import { prisma } from "@/lib/db/prisma";
 import { syncUserCrmAppRole, isCrmRbacClientReady } from "@/lib/api/crm-rbac";
 import { ensureQuikCrmAppAccess, getQuikCrmAppId } from "@/lib/api/quikcrm-app";
+import { resolveCrmRole } from "@/lib/auth/role-resolution";
+import { isDigestEligible } from "@/lib/services/notifications/digest-eligibility";
 import { audit, diffShallow } from "@/lib/services/audit";
 import { sendTransactionalEmail } from "@/lib/services/email/send";
 import {
@@ -66,6 +68,12 @@ export interface SettingsUserView {
   permissionTemplates: { template: { id: string; name: string } }[];
   appRoles: { role: { id: string; name: string } }[];
   allowedAccounts: { accountId: string }[];
+  /** Daily-digest recipient eligibility (Settings→Users toggle). Eligibility is
+   *  computed from the RESOLVED CRM role (resolveCrmRole) + team ownership, not
+   *  stored. digestEnabled = currently in settings.digest.recipientUserIds. */
+  digestEligible: boolean;
+  digestReason?: "no-team" | "not-eligible-role";
+  digestEnabled: boolean;
 }
 
 async function fetchUserView(
@@ -86,7 +94,7 @@ async function fetchUserView(
   });
   if (!m) return null;
   const appId = await getQuikCrmAppId();
-  const [permissionTemplates, appRoles, allowedAccounts] = await Promise.all([
+  const [permissionTemplates, appRoles, allowedAccounts, appAccess, digestRow] = await Promise.all([
     prisma.crmUserPermissionTemplate.findMany({
       where: { userId },
       include: { template: { select: { id: true, name: true } } },
@@ -101,7 +109,18 @@ async function fetchUserView(
       where: { userId },
       select: { accountId: true },
     }),
+    // Digest eligibility — appId-scoped UserAppAccess (same as listUsers).
+    appId
+      ? prisma.userAppAccess.findFirst({
+          where: { userId, orgId: orgId, appId },
+          select: { role: true },
+        })
+      : Promise.resolve(null),
+    prisma.crmOrgWorkspaceSettings.findUnique({ where: { orgId } }),
   ]);
+  const crmRole = resolveCrmRole({ membershipRole: m.role, appAccessRole: appAccess?.role ?? null });
+  const elig = await isDigestEligible({ userId, orgId, role: crmRole });
+  const recipientIds = ((digestRow?.settings as { digest?: { recipientUserIds?: string[] } } | null)?.digest?.recipientUserIds) ?? [];
   return {
     id: userId,
     orgId,
@@ -114,6 +133,9 @@ async function fetchUserView(
     emailSignature: null,
     createdAt: m.createdAt,
     updatedAt: m.updatedAt,
+    digestEligible: elig.eligible,
+    ...(elig.reason ? { digestReason: elig.reason } : {}),
+    digestEnabled: recipientIds.includes(userId),
     permissionTemplates: permissionTemplates.map((upt) => ({
       template: { id: upt.template.id, name: upt.template.name },
     })),
@@ -179,7 +201,7 @@ export async function listUsers(opts: {
 
   const userIds = memberships.map((m) => m.userId);
   // appId already resolved above — reused here, no extra DB call.
-  const [tpl, roles, acl] = await Promise.all([
+  const [tpl, roles, acl, appAccess, digestRow] = await Promise.all([
     prisma.crmUserPermissionTemplate.findMany({
       where: { userId: { in: userIds } },
       include: { template: { select: { id: true, name: true } } },
@@ -194,6 +216,17 @@ export async function listUsers(opts: {
       where: { userId: { in: userIds } },
       select: { userId: true, accountId: true },
     }),
+    // Digest eligibility needs each user's QuikCRM UserAppAccess role to resolve
+    // their effective CRM role the same way readSession does. SCOPED to the
+    // quikcrm appId — a stray other-app row (e.g. QuikScale "member") must NOT
+    // be used (it would mis-resolve; see users-digest-dto cross-app test).
+    appId
+      ? prisma.userAppAccess.findMany({
+          where: { userId: { in: userIds }, orgId: opts.orgId, appId },
+          select: { userId: true, role: true },
+        })
+      : Promise.resolve([]),
+    prisma.crmOrgWorkspaceSettings.findUnique({ where: { orgId: opts.orgId } }),
   ]);
   const tplByUser = new Map<string, SettingsUserView["permissionTemplates"]>();
   for (const t of tpl) {
@@ -214,6 +247,24 @@ export async function listUsers(opts: {
     aclByUser.set(a.userId, arr);
   }
 
+  // ── Digest eligibility (per user) ──────────────────────────────────────────
+  // appAccessRole map (quikcrm-scoped) → resolve effective CRM role the same way
+  // readSession does → isDigestEligible (single source, so UI ⟺ send-time).
+  const appAccessByUser = new Map<string, string>();
+  for (const a of appAccess) appAccessByUser.set(a.userId, a.role);
+
+  const digestSettings = (digestRow?.settings as { digest?: { recipientUserIds?: string[] } } | null)?.digest;
+  const recipientIds = new Set(Array.isArray(digestSettings?.recipientUserIds) ? digestSettings.recipientUserIds : []);
+
+  const eligByUser = new Map<string, { eligible: boolean; reason?: "no-team" | "not-eligible-role" }>();
+  await Promise.all(
+    memberships.map(async (m) => {
+      const role = resolveCrmRole({ membershipRole: m.role, appAccessRole: appAccessByUser.get(m.userId) ?? null });
+      const elig = await isDigestEligible({ userId: m.userId, orgId: m.orgId, role });
+      eligByUser.set(m.userId, elig);
+    }),
+  );
+
   const items: SettingsUserView[] = memberships.map((m) => ({
     id: m.userId,
     orgId: m.orgId,
@@ -229,6 +280,9 @@ export async function listUsers(opts: {
     permissionTemplates: tplByUser.get(m.userId) ?? [],
     appRoles: roleByUser.get(m.userId) ?? [],
     allowedAccounts: aclByUser.get(m.userId) ?? [],
+    digestEligible: eligByUser.get(m.userId)?.eligible ?? false,
+    ...(eligByUser.get(m.userId)?.reason ? { digestReason: eligByUser.get(m.userId)!.reason } : {}),
+    digestEnabled: recipientIds.has(m.userId),
   }));
 
   return { items, total, page: opts.page, pageSize: opts.pageSize };

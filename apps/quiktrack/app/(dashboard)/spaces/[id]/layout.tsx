@@ -1,31 +1,27 @@
 "use client";
 
-import { useEffect } from "react";
+import { useEffect, useMemo } from "react";
 import { usePathname, useRouter } from "next/navigation";
 import { ProjectHeader } from "./_components/project-header";
 import { useMyProjectPermissions } from "@/lib/hooks/useMyProjectPermissions";
+import { useApiData } from "@/lib/hooks/useApiData";
+import {
+  TAB_ROUTE_GATES,
+  isProjectTabPath,
+  isTabEnabled,
+  enabledTabPaths,
+} from "@/lib/projectTabs";
 
 /**
- * Per-route entity-permission requirements inside `/spaces/[id]/<sub>`.
- * Keys are the URL segment after the project id; values are the entity
- * perm the user must hold (Layer 1 ∪ Layer 2) to view that sub-route.
- *
- * Kept in sync with the TABS array in project-header.tsx — if a tab is
- * hidden because the user lacks the perm, the route is also blocked so
- * a direct URL visit doesn't bypass the gate.
+ * A sub-route under /spaces/[id]/<segment> is blocked (and the user bounced to a
+ * safe tab) when EITHER:
+ *   - their role lacks the tab's entity perm (Layer 1 ∪ Layer 2), or
+ *   - the project's admin has hidden that tab via the tab customizer
+ *     (QtProject.tabConfig).
+ * Both gates are kept in sync with the tab bar in project-header.tsx via the
+ * shared registry in lib/projectTabs.ts, so a direct URL visit can't bypass
+ * either. Settings and the full-page work-item view are exempt.
  */
-const ROUTE_GATES: Record<string, { resource: string; action: string }> = {
-  summary: { resource: "ProjectSummary", action: "view" },
-  timeline: { resource: "ProjectTimeline", action: "view" },
-  backlog: { resource: "ProjectBacklog", action: "view" },
-  list: { resource: "ProjectList", action: "view" },
-  "task-table": { resource: "ProjectTaskTable", action: "view" },
-  board: { resource: "Board", action: "view" },
-  "grouped-kanban": { resource: "GroupedKanban", action: "view" },
-  timesheet: { resource: "Timesheet", action: "view" },
-  docs: { resource: "Doc", action: "view" },
-};
-
 export default function SpaceLayout({
   children,
   params,
@@ -36,6 +32,14 @@ export default function SpaceLayout({
   const pathname = usePathname();
   const router = useRouter();
   const perms = useMyProjectPermissions(params.id);
+  // tabConfig: undefined while loading, then string[] (enabled paths) or null
+  // (unconfigured → all tabs). Shares React Query cache with the header's fetch.
+  const { data: tabConfig } = useApiData<string[] | null>(
+    ["quiktrack", "project-tabconfig", params.id],
+    `/api/projects/${params.id}`,
+    { select: (d) => (d as { tabConfig?: string[] | null } | null)?.tabConfig ?? null },
+  );
+  const configLoaded = tabConfig !== undefined;
 
   const isSettings = pathname?.startsWith(`/spaces/${params.id}/settings`) ?? false;
   // Full-page issue view (/spaces/<id>/work/<issueId>) renders its own
@@ -43,28 +47,45 @@ export default function SpaceLayout({
   // single-issue layout.
   const isWorkItem = pathname?.startsWith(`/spaces/${params.id}/work/`) ?? false;
 
-  // Resolve the sub-route segment (e.g. "timesheet" in /spaces/abc/timesheet)
-  // and bounce the user to the project landing page if their role doesn't
-  // grant the required entity perm. Settings and work-item views are
-  // exempt — settings has its own admin-only gate; work-item is shared
-  // chrome that any project member should see.
+  // Resolve the sub-route segment (e.g. "timesheet" in /spaces/abc/timesheet).
   const segment = pathname?.split("/")[3] ?? "";
-  const gate = ROUTE_GATES[segment];
+  const isTab = isProjectTabPath(segment);
+  const gate = TAB_ROUTE_GATES[segment];
+
+  const roleForbidden = isTab && !perms.loading && !!gate && !perms.has(gate.resource, gate.action);
+  const tabDisabled = isTab && configLoaded && !isTabEnabled(tabConfig ?? null, segment);
+
+  // First tab that is BOTH enabled by the project AND permitted for this role —
+  // the safe redirect target (avoids bouncing to a tab that's itself blocked,
+  // which would loop).
+  const fallbackPath = useMemo(() => {
+    if (perms.loading || !configLoaded) return "summary";
+    const visible = enabledTabPaths(tabConfig ?? null).filter((p) => {
+      const g = TAB_ROUTE_GATES[p];
+      return !g || perms.has(g.resource, g.action);
+    });
+    return visible[0] ?? "summary";
+  }, [perms, configLoaded, tabConfig]);
 
   useEffect(() => {
-    if (isSettings || isWorkItem) return;
-    if (!gate || perms.loading) return;
-    if (!perms.has(gate.resource, gate.action)) {
-      router.replace(`/spaces/${params.id}/summary`);
+    if (isSettings || isWorkItem || !isTab) return;
+    if (perms.loading || !configLoaded) return;
+    if ((roleForbidden || tabDisabled) && segment !== fallbackPath) {
+      router.replace(`/spaces/${params.id}/${fallbackPath}`);
     }
-  }, [gate, perms, perms.loading, isSettings, isWorkItem, router, params.id]);
+  }, [
+    isSettings, isWorkItem, isTab, perms.loading, configLoaded,
+    roleForbidden, tabDisabled, segment, fallbackPath, router, params.id,
+  ]);
 
-  // While we're verifying, render nothing for the gated sub-route — avoids
-  // a flash of forbidden content before the redirect fires.
-  if (!isSettings && !isWorkItem && gate && !perms.loading && !perms.has(gate.resource, gate.action)) {
+  // While verifying / before the redirect fires, don't render the blocked
+  // sub-route — avoids a flash of forbidden or hidden content.
+  if (!isSettings && !isWorkItem && isTab && !perms.loading && configLoaded && (roleForbidden || tabDisabled)) {
     return (
       <div className="flex items-center justify-center h-full text-sm text-gray-500">
-        You don&apos;t have access to this view.
+        {roleForbidden
+          ? "You don't have access to this view."
+          : "This tab isn't available for this project."}
       </div>
     );
   }

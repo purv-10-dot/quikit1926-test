@@ -49,6 +49,7 @@ export function CustomFieldsManager({ scope, projectId }: Props) {
       if (data) {
         setConfirm(null);
         void qc.invalidateQueries({ queryKey });
+        void qc.invalidateQueries({ queryKey: ["quiktrack", "issue-fields"] });
       }
     },
   });
@@ -63,7 +64,10 @@ export function CustomFieldsManager({ scope, projectId }: Props) {
       if (!res?.success) throw new Error(res?.error ?? "Failed");
       return res.data;
     },
-    onSuccess: () => void qc.invalidateQueries({ queryKey }),
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey });
+      void qc.invalidateQueries({ queryKey: ["quiktrack", "issue-fields"] });
+    },
   });
 
   return (

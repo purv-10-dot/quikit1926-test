@@ -81,6 +81,10 @@ function resetPrismaMocks() {
   prismaMock.crmCampaign.count.mockResolvedValue(0);
   // groupBy has a complex overloaded type that vitest-mock-extended doesn't fully infer
   (prismaMock.crmLead.groupBy as unknown as ReturnType<typeof vi.fn>).mockResolvedValue([] as never);
+  // FR-4.2: buildRoleMetrics now also calls crmActivity.groupBy (activitiesByType
+  // slice). Stub it so the builders run to completion — this suite asserts the
+  // count where-clauses, not the by-type shape.
+  (prismaMock.crmActivity.groupBy as unknown as ReturnType<typeof vi.fn>).mockResolvedValue([] as never);
   prismaMock.crmSalesGroupManager.findMany.mockResolvedValue([] as never);
   prismaMock.crmSalesGroupMember.findMany.mockResolvedValue([] as never);
   dbMock.user.findMany.mockResolvedValue([] as never);

@@ -19,6 +19,7 @@ interface DocRow {
   title: string;
   templateKey: string | null;
   folderId: string | null;
+  status: string;
   createdBy: string | null;
   ownerFirstName: string | null;
   ownerLastName: string | null;
@@ -35,7 +36,7 @@ function isMissingColumn(err: unknown): boolean {
 }
 
 export const GET = withProjectAccess<{ id: string }>(
-  async ({ projectId }, req) => {
+  async ({ projectId, userId }, req) => {
     const url = new URL(req.url);
     const search = url.searchParams.get("search")?.trim() ?? "";
     const type = url.searchParams.get("type")?.trim() ?? "";
@@ -62,7 +63,7 @@ export const GET = withProjectAccess<{ id: string }>(
       // LEFT JOIN the auth user so the list can show an Owner column (avatar +
       // name) without a second round-trip.
       const rows = await db.$queryRaw<DocRow[]>`
-        SELECT d.id, d.title, d."templateKey", d."folderId", d."createdBy",
+        SELECT d.id, d.title, d."templateKey", d."folderId", d.status, d."createdBy",
                u."firstName" AS "ownerFirstName", u."lastName" AS "ownerLastName",
                u.avatar AS "ownerAvatar",
                d."createdAt", d."updatedAt"
@@ -70,6 +71,9 @@ export const GET = withProjectAccess<{ id: string }>(
         LEFT JOIN "auth"."User" u ON u.id = d."createdBy"
         WHERE d."projectId" = ${projectId}
           AND d."isDeleted" = false
+          -- Drafts are visible only to their author; published docs to every
+          -- project member (membership already verified by withProjectAccess).
+          AND (d.status = 'published' OR d."createdBy" = ${userId})
           AND (${search} = '' OR d.title ILIKE ${"%" + search + "%"})
           AND (${type} = '' OR d."templateKey" = ${type})
           AND (NOT ${folderRoot} OR d."folderId" IS NULL)
@@ -80,8 +84,10 @@ export const GET = withProjectAccess<{ id: string }>(
       return respond(rows);
     } catch (err) {
       if (!isMissingColumn(err)) throw err;
-      // Pre-migration fallback: no folderId column → everything is root.
-      const legacy = await db.$queryRaw<Omit<DocRow, "folderId">[]>`
+      // Pre-migration fallback: folderId and/or status column not added yet →
+      // everything is root + treated as published (legacy behaviour). Run
+      // `prisma db push` to enable folders + the draft/publish filter.
+      const legacy = await db.$queryRaw<Omit<DocRow, "folderId" | "status">[]>`
         SELECT d.id, d.title, d."templateKey", d."createdBy",
                u."firstName" AS "ownerFirstName", u."lastName" AS "ownerLastName",
                u.avatar AS "ownerAvatar",
@@ -95,7 +101,9 @@ export const GET = withProjectAccess<{ id: string }>(
         ORDER BY d."updatedAt" DESC
         LIMIT ${fetchN} OFFSET ${offset}
       `;
-      return respond(legacy.map((r) => ({ ...r, folderId: null })));
+      return respond(
+        legacy.map((r) => ({ ...r, folderId: null, status: "published" })),
+      );
     }
   },
   { paramKey: "id" },
@@ -145,12 +153,13 @@ export const POST = withProjectAccess<{ id: string }>(
       }
     }
 
+    // New docs start as drafts — visible only to the author until published.
     await db.$executeRaw`
       INSERT INTO app_quiktrack."QtDoc"
-        (id, "orgId", "projectId", title, content, "templateKey", "folderId",
+        (id, "orgId", "projectId", title, content, "templateKey", "folderId", status,
          "createdBy", "updatedBy", "isDeleted", "createdAt", "updatedAt")
       VALUES
-        (${id}, ${orgId}, ${projectId}, ${title}, ${content}, ${templateKey}, ${folderId},
+        (${id}, ${orgId}, ${projectId}, ${title}, ${content}, ${templateKey}, ${folderId}, 'draft',
          ${userId}, ${userId}, false, NOW(), NOW())
     `;
     // Resolve the creator for the Owner column so the response matches the
@@ -168,6 +177,7 @@ export const POST = withProjectAccess<{ id: string }>(
           title,
           templateKey,
           folderId,
+          status: "draft",
           createdBy: userId,
           ownerFirstName: owner[0]?.firstName ?? null,
           ownerLastName: owner[0]?.lastName ?? null,

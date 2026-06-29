@@ -10,6 +10,7 @@ import { useQueryClient } from "@tanstack/react-query";
 import { useApiData } from "@/lib/hooks/useApiData";
 import { useMembersChanged } from "@/lib/hooks/useMembersChanged";
 import { useBacklogViewSettings } from "@/lib/hooks/useBacklogViewSettings";
+import { useFilterPersistence } from "@/lib/hooks/usePersistentFilters";
 import { EpicPanel } from "./epic-panel";
 import {
   ViewSettingsPopover,
@@ -124,7 +125,11 @@ function StatusBadge({ status }: { status?: Status }) {
 }
 
 function CountBadges({ counts }: { counts?: Sprint["counts"] }) {
-  const c = counts ?? { todo: 0, inProgress: 0, done: 0 };
+  // No counts → render nothing. The status breakdown is only meaningful for the
+  // unfiltered sprint set; callers pass `undefined` when a filter is active (the
+  // header already shows the filtered total) or when no breakdown exists.
+  if (!counts) return null;
+  const c = counts;
   return (
     <div className="flex items-center gap-1">
       <span className="h-5 min-w-[22px] inline-flex items-center justify-center px-1.5 text-[11px] rounded bg-gray-200 text-gray-700 font-medium">
@@ -1189,7 +1194,7 @@ function IssueRow({
   const [statusOpen, setStatusOpen] = useState(false);
   const [epicOpen, setEpicOpen] = useState(false);
   const [epicSearch, setEpicSearch] = useState("");
-  const epicRef = useRef<HTMLDivElement>(null);
+  const epicRef = useRef<HTMLButtonElement>(null);
   const [assigneeOpen, setAssigneeOpen] = useState(false);
   const [assigneeSearch, setAssigneeSearch] = useState("");
   const assigneeRef = useRef<HTMLButtonElement>(null);
@@ -1243,31 +1248,11 @@ function IssueRow({
       setDeleting(false);
     }
   }
-  const statusRef = useRef<HTMLDivElement>(null);
+  const statusRef = useRef<HTMLButtonElement>(null);
 
-  useEffect(() => {
-    function onClick(e: MouseEvent) {
-      if (statusOpen && statusRef.current && !statusRef.current.contains(e.target as Node)) {
-        setStatusOpen(false);
-      }
-    }
-    document.addEventListener("mousedown", onClick);
-    return () => document.removeEventListener("mousedown", onClick);
-  }, [statusOpen]);
-
-  useEffect(() => {
-    if (!epicOpen) return;
-    function onClick(e: MouseEvent) {
-      if (epicRef.current && !epicRef.current.contains(e.target as Node)) setEpicOpen(false);
-    }
-    function onKey(e: KeyboardEvent) { if (e.key === "Escape") setEpicOpen(false); }
-    document.addEventListener("mousedown", onClick);
-    document.addEventListener("keydown", onKey);
-    return () => {
-      document.removeEventListener("mousedown", onClick);
-      document.removeEventListener("keydown", onKey);
-    };
-  }, [epicOpen]);
+  // Click-outside + Escape for the status and epic dropdowns are handled by
+  // PopoverPanel, which also portals the menu to document.body so the backlog's
+  // scroll container can't clip it.
 
   // Click-outside + Escape are handled by PopoverPanel (which also portals the
   // menu to document.body so it can't be clipped by the scroll container).
@@ -1306,7 +1291,7 @@ function IssueRow({
     <div
       draggable={!titleEditing}
       onDragStart={(e) => onDragStart?.(e, issue.id)}
-      className={`group flex items-center gap-3 px-4 ${density === "compact" ? "py-1" : "py-2"} border-b border-gray-100 ${
+      className={`qt-backlog-row group flex items-center gap-3 px-4 ${density === "compact" ? "py-1" : "py-2"} border-b border-gray-100 ${
         isSelected ? "bg-blue-50" : "hover:bg-gray-50"
       } ${titleEditing ? "bg-blue-50/40" : "cursor-grab active:cursor-grabbing"}`}
     >
@@ -1322,7 +1307,7 @@ function IssueRow({
         <button
           type="button"
           onClick={() => onOpen(issue.id)}
-          className={`text-xs font-medium hover:text-blue-600 hover:underline shrink-0 min-w-[56px] text-left ${
+          className={`qt-key-chip text-xs font-medium hover:underline shrink-0 min-w-[56px] text-left ${
             isDone ? "text-gray-400 line-through" : "text-gray-500"
           }`}
         >
@@ -1409,14 +1394,15 @@ function IssueRow({
           themselves don't get the linker — subtasks belong to a parent task,
           epics can't link to themselves. */}
       {fields.epic && issue.type !== "EPIC" && issue.type !== "SUBTASK" && (
-        <div className="relative shrink-0" ref={epicRef}>
+        <>
           {(() => {
             const ep = issue.epicId ? (epics ?? []).find((e) => e.id === issue.epicId) : null;
             return ep ? (
               <button
+                ref={epicRef}
                 type="button"
                 onClick={() => setEpicOpen((v) => !v)}
-                className="inline-flex items-center max-w-[160px] h-5 px-2 rounded text-[10px] font-semibold uppercase tracking-wide bg-red-100 text-red-700 hover:bg-red-200"
+                className="inline-flex shrink-0 items-center max-w-[160px] h-5 px-2 rounded text-[10px] font-semibold uppercase tracking-wide bg-red-100 text-red-700 hover:bg-red-200"
                 title={`Linked to ${ep.key} — ${ep.title}`}
               >
                 <Zap className="h-3 w-3 mr-1 flex-shrink-0" />
@@ -1424,102 +1410,121 @@ function IssueRow({
               </button>
             ) : (
               <button
+                ref={epicRef}
                 type="button"
                 onClick={() => setEpicOpen((v) => !v)}
-                className="inline-flex items-center gap-0.5 h-5 px-2 rounded border border-dashed border-gray-300 bg-white text-[10px] font-medium text-gray-500 opacity-40 transition-opacity hover:border-purple-400 hover:text-purple-600 hover:opacity-100 group-hover:opacity-100"
+                className="inline-flex shrink-0 items-center gap-0.5 h-5 px-2 rounded border border-dashed border-gray-300 bg-white text-[10px] font-medium text-gray-500 opacity-40 transition-opacity hover:border-purple-400 hover:text-purple-600 hover:opacity-100 group-hover:opacity-100"
               >
                 <Plus className="h-3 w-3" />
                 Epic
               </button>
             );
           })()}
-          {epicOpen && (
-            <div className="absolute right-0 top-full z-30 mt-1 w-64 rounded border border-gray-200 bg-white shadow-lg">
+          <PopoverPanel
+            anchorRef={epicRef}
+            open={epicOpen}
+            onClose={() => {
+              setEpicOpen(false);
+              setEpicSearch("");
+            }}
+            align="right"
+            width={256}
+            placement="auto"
+            estimatedHeight={280}
+          >
+            <div className="px-2 pb-1.5 pt-1">
               <input
                 autoFocus
                 type="text"
                 placeholder="Search epics…"
                 value={epicSearch}
                 onChange={(e) => setEpicSearch(e.target.value)}
-                className="w-full rounded-t border-b border-gray-200 px-2 py-1.5 text-sm focus:outline-none"
+                className="w-full h-7 px-2 text-xs border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-blue-500"
               />
-              <div className="max-h-56 overflow-y-auto py-1">
-                {issue.epicId && (
-                  <button
-                    type="button"
-                    onClick={() => { setEpicOpen(false); setEpicSearch(""); void patch({ epicId: null }); }}
-                    className="flex w-full items-center gap-2 px-2 py-1 text-left text-xs text-red-600 hover:bg-red-50"
-                  >
-                    <X className="h-3 w-3" /> Remove from epic
-                  </button>
-                )}
-                {(() => {
-                  const q = epicSearch.trim().toLowerCase();
-                  const list = (epics ?? []).filter((e) => e.id !== issue.id);
-                  const filtered = q
-                    ? list.filter((e) => e.key.toLowerCase().includes(q) || e.title.toLowerCase().includes(q))
-                    : list;
-                  if (filtered.length === 0) {
-                    return <p className="px-2 py-2 text-xs text-gray-400">{q ? "No matches" : "No epics in this project"}</p>;
-                  }
-                  return filtered.map((e) => (
-                    <button
-                      key={e.id}
-                      type="button"
-                      onClick={() => { setEpicOpen(false); setEpicSearch(""); void patch({ epicId: e.id }); }}
-                      className="flex w-full items-center gap-2 px-2 py-1 text-left text-xs hover:bg-gray-50"
-                    >
-                      <Zap className="h-3 w-3 flex-shrink-0 text-purple-500" />
-                      <span className="font-mono text-[10px] text-gray-500">{e.key}</span>
-                      <span className="truncate text-gray-700">{e.title}</span>
-                    </button>
-                  ));
-                })()}
-              </div>
             </div>
-          )}
-        </div>
+            <div className="max-h-56 overflow-y-auto">
+              {issue.epicId && (
+                <button
+                  type="button"
+                  onClick={() => { setEpicOpen(false); setEpicSearch(""); void patch({ epicId: null }); }}
+                  className="flex w-full items-center gap-2 px-2 py-1 text-left text-xs text-red-600 hover:bg-red-50"
+                >
+                  <X className="h-3 w-3" /> Remove from epic
+                </button>
+              )}
+              {(() => {
+                const q = epicSearch.trim().toLowerCase();
+                const list = (epics ?? []).filter((e) => e.id !== issue.id);
+                const filtered = q
+                  ? list.filter((e) => e.key.toLowerCase().includes(q) || e.title.toLowerCase().includes(q))
+                  : list;
+                if (filtered.length === 0) {
+                  return <p className="px-2 py-2 text-xs text-gray-400">{q ? "No matches" : "No epics in this project"}</p>;
+                }
+                return filtered.map((e) => (
+                  <button
+                    key={e.id}
+                    type="button"
+                    onClick={() => { setEpicOpen(false); setEpicSearch(""); void patch({ epicId: e.id }); }}
+                    className="flex w-full items-center gap-2 px-2 py-1 text-left text-xs hover:bg-gray-50"
+                  >
+                    <Zap className="h-3 w-3 flex-shrink-0 text-purple-500" />
+                    <span className="font-mono text-[10px] text-gray-500">{e.key}</span>
+                    <span className="truncate text-gray-700">{e.title}</span>
+                  </button>
+                ));
+              })()}
+            </div>
+          </PopoverPanel>
+        </>
       )}
 
       {/* Status pill (clickable popover) */}
       {fields.status && (
-      <div className="relative shrink-0" ref={statusRef}>
+      <>
         <button
+          ref={statusRef}
           type="button"
           onClick={() => setStatusOpen((v) => !v)}
-          className={`inline-flex items-center gap-1 h-5 px-2 text-[10px] font-semibold uppercase tracking-wide rounded ${statusPillCls(
+          className={`inline-flex shrink-0 items-center gap-1 h-5 px-2 text-[10px] font-semibold uppercase tracking-wide rounded ${statusPillCls(
             issue.status?.category,
           )}`}
         >
           {issue.status?.name ?? "—"}
           <ChevronDown className="h-3 w-3" />
         </button>
-        {statusOpen && (
-          <div className="absolute right-0 top-full mt-1 min-w-[180px] bg-white border border-gray-200 rounded shadow-lg z-30 py-1">
-            {statuses
-              .filter((s) => s.id !== issue.statusId)
-              .map((s) => (
-                <button
-                  key={s.id}
-                  type="button"
-                  onClick={() => {
-                    setStatusOpen(false);
-                    void patch({ statusId: s.id });
-                  }}
-                  className="flex items-center gap-2 w-full px-3 py-1.5 text-left hover:bg-gray-50"
+        <PopoverPanel
+          anchorRef={statusRef}
+          open={statusOpen}
+          onClose={() => setStatusOpen(false)}
+          align="right"
+          width={200}
+          placement="auto"
+          estimatedHeight={220}
+        >
+          {statuses
+            .filter((s) => s.id !== issue.statusId)
+            .map((s) => (
+              <button
+                key={s.id}
+                type="button"
+                onClick={() => {
+                  setStatusOpen(false);
+                  void patch({ statusId: s.id });
+                }}
+                className="flex items-center gap-2 w-full px-3 py-1.5 text-left hover:bg-gray-50"
+              >
+                <span
+                  className={`inline-flex h-5 px-2 items-center text-[10px] font-semibold uppercase tracking-wide rounded ${statusPillCls(
+                    s.category,
+                  )}`}
                 >
-                  <span
-                    className={`inline-flex h-5 px-2 items-center text-[10px] font-semibold uppercase tracking-wide rounded ${statusPillCls(
-                      s.category,
-                    )}`}
-                  >
-                    {s.name}
-                  </span>
-                </button>
-              ))}
-          </div>
-        )}
-      </div>
+                  {s.name}
+                </span>
+              </button>
+            ))}
+        </PopoverPanel>
+      </>
       )}
 
       {/* Overdue badge — shows the due date with a warning when it's past. */}
@@ -1944,6 +1949,7 @@ function SectionBody({
     assigneeId: string;
     type: string;
     priority: string;
+    epicId: string;
   };
   fields: BacklogViewSettings["fields"];
   density: BacklogViewSettings["density"];
@@ -1975,6 +1981,7 @@ function SectionBody({
       if (filters.assigneeId) params.set("assigneeId", filters.assigneeId);
       if (filters.type) params.set("type", filters.type);
       if (filters.priority) params.set("priority", filters.priority);
+      if (filters.epicId) params.set("epicId", filters.epicId);
       if (!initial && state.cursor) params.set("cursor", state.cursor);
       try {
         const res = await fetch(`/api/issues?${params.toString()}`).then((r) => r.json());
@@ -2000,7 +2007,7 @@ function SectionBody({
         setState((s) => ({ ...s, loading: false }));
       }
     },
-    [projectId, sprintId, state.cursor, state.hasMore, state.loading, setState, filters.search, filters.statusId, filters.assigneeId, filters.type, filters.priority],
+    [projectId, sprintId, state.cursor, state.hasMore, state.loading, setState, filters.search, filters.statusId, filters.assigneeId, filters.type, filters.priority, filters.epicId],
   );
 
   // First-time load when expanded.
@@ -2016,7 +2023,7 @@ function SectionBody({
   useEffect(() => {
     if (!state.expanded) return;
     setState((s) => ({ ...s, loaded: false, loading: false, issues: [], cursor: null, hasMore: true }));
-  }, [filters.search, filters.statusId, filters.assigneeId, filters.type, filters.priority]);
+  }, [filters.search, filters.statusId, filters.assigneeId, filters.type, filters.priority, filters.epicId]);
 
   // IntersectionObserver — load more when the sentinel scrolls into view of the
   // accordion's own scroll container. `enabled` re-attaches the observer on the
@@ -2146,6 +2153,12 @@ export function BacklogView({ projectId }: { projectId: string }) {
   );
   const [epics, setEpics] = useState<EpicLite[]>([]);
   const [currentUserId, setCurrentUserId] = useState<string | null>(null);
+  // Functional spaces have no sprints — the backlog is a flat list with a
+  // renamable heading (backlogName). Scrum spaces keep sprint sections.
+  const [isFunctional, setIsFunctional] = useState(false);
+  const [backlogName, setBacklogName] = useState<string | null>(null);
+  const [renamingBacklog, setRenamingBacklog] = useState(false);
+  const [backlogNameDraft, setBacklogNameDraft] = useState("");
   const [sprints, setSprints] = useState<Sprint[]>([]);
   const [sprintCursor, setSprintCursor] = useState<string | null>(null);
   const [sprintsHasMore, setSprintsHasMore] = useState(true);
@@ -2174,12 +2187,19 @@ export function BacklogView({ projectId }: { projectId: string }) {
   const [filterAssigneeIds, setFilterAssigneeIds] = useState<string[]>([]);
   const [filterType, setFilterType] = useState("");
   const [filterPriority, setFilterPriority] = useState("");
+  // Epic filter — set by selecting an epic in the left EpicPanel. Empty = none.
+  const [filterEpicId, setFilterEpicId] = useState("");
   const [filterOpen, setFilterOpen] = useState(false);
   const [moreMenuOpen, setMoreMenuOpen] = useState(false);
   // Filtered total per section, keyed identically to `sectionStates`. Only
   // populated when at least one filter is active; otherwise the header falls
   // back to the unfiltered sprint counts from /api/sprints.
   const [filteredCounts, setFilteredCounts] = useState<Record<string, number>>({});
+  // Filtered To Do / In Progress / Done breakdown per section, so the header
+  // count badges stay accurate (and visible) while a filter is active.
+  const [filteredBadges, setFilteredBadges] = useState<
+    Record<string, { todo: number; inProgress: number; done: number }>
+  >({});
   const filterBtnRef = useRef<HTMLDivElement>(null);
   const moveBtnRef = useRef<HTMLDivElement>(null);
   const moreMenuRef = useRef<HTMLDivElement>(null);
@@ -2231,8 +2251,36 @@ export function BacklogView({ projectId }: { projectId: string }) {
       assigneeId: filterAssigneeIds.join(","),
       type: filterType,
       priority: filterPriority,
+      epicId: filterEpicId,
     }),
-    [appliedSearch, filterStatusId, filterAssigneeIds, filterType, filterPriority],
+    [appliedSearch, filterStatusId, filterAssigneeIds, filterType, filterPriority, filterEpicId],
+  );
+
+  // Auto-persist backlog filters per user+project (no Save button).
+  useFilterPersistence<typeof sectionFilters>({
+    viewKey: "spaces-backlog",
+    projectId,
+    filters: sectionFilters,
+    applySaved: (s) => {
+      if (typeof s.search === "string") {
+        setSearch(s.search);
+        setAppliedSearch(s.search);
+      }
+      if (typeof s.statusId === "string") setFilterStatusId(s.statusId);
+      if (typeof s.assigneeId === "string") {
+        setFilterAssigneeIds(s.assigneeId ? s.assigneeId.split(",").filter(Boolean) : []);
+      }
+      if (typeof s.type === "string") setFilterType(s.type);
+      if (typeof s.priority === "string") setFilterPriority(s.priority);
+      if (typeof s.epicId === "string") setFilterEpicId(s.epicId);
+    },
+  });
+
+  // Any filter active? The per-sprint status breakdown (CountBadges) reflects the
+  // UNfiltered sprint, so it must be hidden while filtering — otherwise it
+  // contradicts the filtered "(N work items)" header count.
+  const filtersActive = Boolean(
+    appliedSearch || filterStatusId || filterAssigneeIds.length || filterType || filterPriority || filterEpicId,
   );
 
   // Header-checkbox state for a section: returns the all/some flags + a toggle
@@ -2263,19 +2311,35 @@ export function BacklogView({ projectId }: { projectId: string }) {
     return () => clearTimeout(t);
   }, [search]);
 
+  // Stable key of the non-completed sprint ids — changes only when sprints are
+  // added/removed/started, NOT when their counts are refreshed. The filtered-
+  // counts effect keys off this so a post-edit `refreshSprintCounts()` (which
+  // replaces the `sprints` array reference) doesn't re-fire a per-section fetch
+  // storm.
+  const activeSectionKey = useMemo(
+    () =>
+      sprints
+        .filter((sp) => sp.status !== "COMPLETED")
+        .map((s) => s.id)
+        .join(","),
+    [sprints],
+  );
+
   // When any filter is active, fetch a server-side count per section (sprints
   // + backlog) so collapsed section headers reflect the filtered total. Uses
   // limit=1 to keep the payload tiny — only the `total` field matters here.
   useEffect(() => {
     const hasActive =
-      Boolean(appliedSearch || filterStatusId || filterAssigneeIds.length || filterType || filterPriority);
+      Boolean(appliedSearch || filterStatusId || filterAssigneeIds.length || filterType || filterPriority || filterEpicId);
     if (!hasActive) {
       setFilteredCounts({});
+      setFilteredBadges({});
       return;
     }
     let cancelled = false;
+    const sprintIds = activeSectionKey ? activeSectionKey.split(",") : [];
     const sections: { key: string; sprintId: string | null }[] = [
-      ...sprints.filter((sp) => sp.status !== "COMPLETED").map((s) => ({ key: `sprint:${s.id}`, sprintId: s.id })),
+      ...sprintIds.map((id) => ({ key: `sprint:${id}`, sprintId: id })),
       { key: "backlog", sprintId: null },
     ];
     Promise.all(
@@ -2285,25 +2349,36 @@ export function BacklogView({ projectId }: { projectId: string }) {
           sprintId: sprintId ?? "null",
           excludeType: "EPIC,SUBTASK",
           limit: "1",
+          statusCounts: "1", // also returns the filtered To Do/In Progress/Done split
         });
         if (appliedSearch) params.set("search", appliedSearch);
         if (filterStatusId) params.set("statusId", filterStatusId);
         if (filterAssigneeIds.length) params.set("assigneeId", filterAssigneeIds.join(","));
         if (filterType) params.set("type", filterType);
         if (filterPriority) params.set("priority", filterPriority);
+        if (filterEpicId) params.set("epicId", filterEpicId);
         return fetch(`/api/issues?${params.toString()}`)
           .then((r) => r.json())
-          .then((res) => ({ key, total: typeof res?.total === "number" ? res.total : 0 }))
-          .catch(() => ({ key, total: 0 }));
+          .then((res) => ({
+            key,
+            total: typeof res?.total === "number" ? res.total : 0,
+            counts: res?.statusCounts as { todo: number; inProgress: number; done: number } | undefined,
+          }))
+          .catch(() => ({ key, total: 0, counts: undefined }));
       }),
     ).then((rows) => {
       if (cancelled) return;
       const next: Record<string, number> = {};
-      for (const r of rows) next[r.key] = r.total;
+      const badges: Record<string, { todo: number; inProgress: number; done: number }> = {};
+      for (const r of rows) {
+        next[r.key] = r.total;
+        if (r.counts) badges[r.key] = r.counts;
+      }
       setFilteredCounts(next);
+      setFilteredBadges(badges);
     });
     return () => { cancelled = true; };
-  }, [projectId, sprints, appliedSearch, filterStatusId, filterAssigneeIds, filterType, filterPriority]);
+  }, [projectId, activeSectionKey, appliedSearch, filterStatusId, filterAssigneeIds, filterType, filterPriority, filterEpicId]);
 
   useEffect(() => {
     if (!moreMenuOpen) return;
@@ -2461,8 +2536,11 @@ export function BacklogView({ projectId }: { projectId: string }) {
       for (const [k, s] of Object.entries(sectionStates)) {
         if (!s.loaded) continue;
         const sId = k === "backlog" ? null : k.replace("sprint:", "");
-        void refreshSection(k, sId);
+        // withCounts=false — refresh counts once below instead of per section.
+        void refreshSection(k, sId, false);
       }
+      // Single counts refresh for the whole batch (was firing once per section).
+      void refreshSprintCounts();
     }
     function onOpenIssue(e: Event) {
       const id = (e as CustomEvent<{ id?: string }>).detail?.id;
@@ -2484,13 +2562,18 @@ export function BacklogView({ projectId }: { projectId: string }) {
   useEffect(() => {
     let alive = true;
     (async () => {
-      const [sessionRes, sprintsRes, epicsRes] = await Promise.all([
+      const [sessionRes, sprintsRes, epicsRes, projectRes] = await Promise.all([
         fetch(`/api/session`).then((r) => r.json()).catch(() => null),
         fetch(`/api/sprints?projectId=${projectId}&limit=${SPRINT_PAGE}`).then((r) => r.json()),
         fetch(`/api/issues?projectId=${projectId}&type=EPIC&limit=200`).then((r) => r.json()),
+        fetch(`/api/projects/${projectId}`).then((r) => r.json()).catch(() => null),
       ]);
       if (!alive) return;
       if (sessionRes?.user?.id) setCurrentUserId(sessionRes.user.id);
+      if (projectRes?.success && projectRes.data) {
+        setIsFunctional(projectRes.data.templateKey === "functional");
+        setBacklogName(projectRes.data.backlogName ?? null);
+      }
       if (sprintsRes?.success) {
         setSprints(sprintsRes.data ?? []);
         setSprintCursor(sprintsRes.nextCursor ?? null);
@@ -2567,9 +2650,15 @@ export function BacklogView({ projectId }: { projectId: string }) {
   async function handleBulkDelete() {
     if (selectedIds.size === 0 || bulkBusy) return;
     const n = selectedIds.size;
+    // A full Issue:delete grant removes any selected item; everyone else only
+    // removes the ones they own — so warn that others will be skipped.
+    const canDeleteAny = perms.has("Issue", "delete");
+    const message = canDeleteAny
+      ? `Delete ${n} work item${n === 1 ? "" : "s"}? This is reversible from trash.`
+      : `Delete your selected work items? Only items you created or reported will be deleted — any owned by others are skipped. This is reversible from trash.`;
     const ok = await confirmDialog({
       title: "Delete work items",
-      message: `Delete ${n} work item${n === 1 ? "" : "s"}? This is reversible from trash.`,
+      message,
       confirmText: "Delete",
       danger: true,
     });
@@ -2580,10 +2669,25 @@ export function BacklogView({ projectId }: { projectId: string }) {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ projectId, ids: Array.from(selectedIds) }),
-      }).then((r) => r.json() as Promise<{ success: boolean; error?: string }>);
+      }).then(
+        (r) =>
+          r.json() as Promise<{ success: boolean; error?: string; deleted?: number; skipped?: number }>,
+      );
       if (!res.success) {
         showToast(res.error ?? "Delete failed", "error");
         return;
+      }
+      const deleted = res.deleted ?? 0;
+      const skipped = res.skipped ?? 0;
+      if (skipped > 0) {
+        showToast(
+          deleted > 0
+            ? `Deleted ${deleted} item${deleted === 1 ? "" : "s"}. Skipped ${skipped} owned by others.`
+            : `Nothing deleted — the selected item${skipped === 1 ? " is" : "s are"} owned by others.`,
+          deleted > 0 ? "success" : "error",
+        );
+      } else if (deleted > 0) {
+        showToast(`Deleted ${deleted} item${deleted === 1 ? "" : "s"}.`, "success");
       }
       setSelectedIds(new Set());
       await refreshAllSections();
@@ -2620,7 +2724,11 @@ export function BacklogView({ projectId }: { projectId: string }) {
     }
   }
 
-  async function refreshSection(key: string, sprintId: string | null) {
+  async function refreshSection(
+    key: string,
+    sprintId: string | null,
+    withCounts = true,
+  ) {
     // Wipe and re-fetch first page for the section.
     setSectionStates((all) => ({
       ...all,
@@ -2632,9 +2740,19 @@ export function BacklogView({ projectId }: { projectId: string }) {
       excludeType: "EPIC",
       limit: String(ISSUE_PAGE),
     });
+    // Apply the active filters — without these the refetch returns ALL issues,
+    // so an edit would wipe the current filter and show everything.
+    if (sectionFilters.search) params.set("search", sectionFilters.search);
+    if (sectionFilters.statusId) params.set("statusId", sectionFilters.statusId);
+    if (sectionFilters.assigneeId) params.set("assigneeId", sectionFilters.assigneeId);
+    if (sectionFilters.type) params.set("type", sectionFilters.type);
+    if (sectionFilters.priority) params.set("priority", sectionFilters.priority);
+    if (sectionFilters.epicId) params.set("epicId", sectionFilters.epicId);
     const [res] = await Promise.all([
       fetch(`/api/issues?${params.toString()}`).then((r) => r.json()),
-      refreshSprintCounts(),
+      // Counts are refreshed by the caller when batch-refreshing many sections,
+      // so a single edit doesn't fire one /api/sprints call per section.
+      withCounts ? refreshSprintCounts() : Promise.resolve(),
     ]);
     if (res?.success) {
       // Defensive: drop any Epic/Subtask the API may still surface so they
@@ -2691,6 +2809,35 @@ export function BacklogView({ projectId }: { projectId: string }) {
       setSprints(res.data ?? []);
       setSprintCursor(res.nextCursor ?? null);
       setSprintsHasMore(!!res.nextCursor);
+    }
+  }
+
+  // Displayed backlog heading. Functional spaces may rename it; null/empty
+  // falls back to the default "Backlog".
+  const backlogLabel = backlogName?.trim() ? backlogName.trim() : "Backlog";
+
+  function beginRenameBacklog() {
+    setBacklogNameDraft(backlogLabel);
+    setRenamingBacklog(true);
+  }
+
+  async function saveBacklogName() {
+    const next = backlogNameDraft.trim();
+    setRenamingBacklog(false);
+    // No change (or reset to default) — persist null when cleared/equal to default.
+    const persisted = next && next !== "Backlog" ? next : null;
+    if ((backlogName ?? null) === persisted) return;
+    const prev = backlogName ?? null;
+    setBacklogName(persisted); // optimistic
+    try {
+      const res = await fetch(`/api/projects/${projectId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ backlogName: persisted }),
+      }).then((r) => r.json());
+      if (!res?.success) setBacklogName(prev); // revert on failure
+    } catch {
+      setBacklogName(prev);
     }
   }
 
@@ -3007,7 +3154,13 @@ export function BacklogView({ projectId }: { projectId: string }) {
             defaultStatusId={defaultTodoStatusId}
             onOpenEpic={(id) => setEditingIssueId(id)}
             onCreated={reloadEpics}
-            onClose={() => updateSettings({ epicPanel: false })}
+            onClose={() => {
+              // Don't leave a hidden epic filter active when the panel closes.
+              setFilterEpicId("");
+              updateSettings({ epicPanel: false });
+            }}
+            selectedEpicId={filterEpicId || null}
+            onSelectEpic={(id) => setFilterEpicId(id ?? "")}
           />
         )}
         <div className="min-w-0 flex-1">
@@ -3094,7 +3247,10 @@ export function BacklogView({ projectId }: { projectId: string }) {
                 </div>
               )}
             </div>
-            {(perms.loading || perms.has("Issue", "delete")) && (
+            {/* Shown to anyone who can delete any issue (full grant) OR who can
+                create issues (and thus own some to delete). Pure Viewers — who
+                own nothing — don't see it. The server enforces own-only. */}
+            {(perms.loading || perms.has("Issue", "delete") || perms.has("Issue", "create")) && (
               <button
                 type="button"
                 onClick={handleBulkDelete}
@@ -3110,8 +3266,8 @@ export function BacklogView({ projectId }: { projectId: string }) {
         );
       })()}
 
-      {/* Sprints */}
-      {displayedSprints.map((sprint) => {
+      {/* Sprints — hidden entirely for functional spaces (no sprint concept). */}
+      {!isFunctional && displayedSprints.map((sprint) => {
         const key = `sprint:${sprint.id}`;
         const state = sectionStates[key] ?? emptySection();
         const sprintCountsSum =
@@ -3138,7 +3294,7 @@ export function BacklogView({ projectId }: { projectId: string }) {
               }
               title={sprint.name}
               rightLabel={`(${headerCount} work item${headerCount === 1 ? "" : "s"})`}
-              counts={sprint.counts}
+              counts={filtersActive ? filteredBadges[key] : sprint.counts}
               allChecked={sel.all}
               someChecked={sel.some}
               onToggleAll={sel.toggle}
@@ -3265,8 +3421,8 @@ export function BacklogView({ projectId }: { projectId: string }) {
         );
       })}
 
-      {/* Sprint pagination sentinel */}
-      {sprintsHasMore && (
+      {/* Sprint pagination sentinel — not rendered for functional spaces. */}
+      {!isFunctional && sprintsHasMore && (
         <div ref={sprintSentinelRef} className="py-2 text-center text-[11px] text-gray-400">
           {sprintsLoading ? "Loading more sprints…" : ""}
         </div>
@@ -3283,7 +3439,43 @@ export function BacklogView({ projectId }: { projectId: string }) {
           onToggle={() =>
             updateSection("backlog", (s) => ({ ...s, expanded: !s.expanded }))
           }
-          title="Backlog"
+          title={
+            isFunctional ? (
+              renamingBacklog ? (
+                <input
+                  autoFocus
+                  value={backlogNameDraft}
+                  onChange={(e) => setBacklogNameDraft(e.target.value)}
+                  onBlur={() => void saveBacklogName()}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") {
+                      e.preventDefault();
+                      void saveBacklogName();
+                    } else if (e.key === "Escape") {
+                      setRenamingBacklog(false);
+                    }
+                  }}
+                  maxLength={120}
+                  className="h-6 px-1 text-sm font-semibold text-gray-900 border border-blue-400 rounded focus:outline-none focus:ring-1 focus:ring-blue-400"
+                />
+              ) : (
+                <span className="inline-flex items-center gap-1.5">
+                  {backlogLabel}
+                  <button
+                    type="button"
+                    onClick={beginRenameBacklog}
+                    className="p-0.5 rounded hover:bg-gray-200 text-gray-400 hover:text-gray-600"
+                    title="Rename backlog"
+                    aria-label="Rename backlog"
+                  >
+                    <Pencil className="h-3 w-3" />
+                  </button>
+                </span>
+              )
+            ) : (
+              "Backlog"
+            )
+          }
           rightLabel={(() => {
             const count = backlogState.loaded
               ? backlogState.total
@@ -3292,12 +3484,13 @@ export function BacklogView({ projectId }: { projectId: string }) {
                 : backlogState.total ?? 0;
             return `(${count} work item${count === 1 ? "" : "s"})`;
           })()}
-          counts={undefined}
+          counts={filtersActive ? filteredBadges.backlog : undefined}
           allChecked={backlogSel.all}
           someChecked={backlogSel.some}
           onToggleAll={backlogSel.toggle}
           trailing={
-            canCreateSprint ? (
+            // Functional spaces have no sprints — no "Create sprint" affordance.
+            !isFunctional && canCreateSprint ? (
               <button
                 type="button"
                 onClick={createSprint}

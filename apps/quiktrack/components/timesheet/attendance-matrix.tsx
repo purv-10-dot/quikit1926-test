@@ -13,6 +13,7 @@ import {
   type Period,
 } from "@/lib/utils/timesheetPeriod";
 import { UserTimeDrawer } from "./user-time-drawer";
+import { ResourcePeoplePicker } from "@/components/reports/resource-people-picker";
 
 type Status = "present" | "halfday" | "absent" | "future" | "weekend";
 
@@ -73,9 +74,11 @@ export function AttendanceMatrix() {
   const BATCH = 15;
   const [visibleCount, setVisibleCount] = useState(BATCH);
   const sentinelRef = useRef<HTMLTableRowElement>(null);
-  // Reset visible window when period changes (different days/totals matter).
-  useEffect(() => { setVisibleCount(BATCH); }, [period, anchor]);
   const [drawerUser, setDrawerUser] = useState<{ id: string; label: string } | null>(null);
+  // Multiselect people filter. Empty = everyone.
+  const [selectedUserIds, setSelectedUserIds] = useState<string[]>([]);
+  // Reset visible window when the period or people filter changes.
+  useEffect(() => { setVisibleCount(BATCH); }, [period, anchor, selectedUserIds]);
 
   const gridQ = useQuery({
     queryKey: ["quiktrack", "attendance-grid", dateKey(range.from), dateKey(range.to)],
@@ -101,13 +104,16 @@ export function AttendanceMatrix() {
   });
 
   const allUsers = useMemo(() => {
-    const list = (usersQ.data ?? []).map((u) => ({
-      id: u.userId,
-      label: `${u.firstName} ${u.lastName}`.trim() || u.email,
-      email: u.email,
-    }));
+    const sel = new Set(selectedUserIds);
+    const list = (usersQ.data ?? [])
+      .filter((u) => sel.size === 0 || sel.has(u.userId))
+      .map((u) => ({
+        id: u.userId,
+        label: `${u.firstName} ${u.lastName}`.trim() || u.email,
+        email: u.email,
+      }));
     return list.sort((a, b) => a.label.localeCompare(b.label));
-  }, [usersQ.data]);
+  }, [usersQ.data, selectedUserIds]);
 
   // Aggregate per-row status totals across the period.
   const rowTotals = useMemo(() => {
@@ -201,6 +207,11 @@ export function AttendanceMatrix() {
               Today
             </button>
           </div>
+          <ResourcePeoplePicker
+            users={usersQ.data ?? []}
+            selectedUserIds={selectedUserIds}
+            onChange={setSelectedUserIds}
+          />
         </div>
 
         <div className="flex items-center gap-3 text-[11px] text-gray-600 flex-wrap">
@@ -233,7 +244,7 @@ export function AttendanceMatrix() {
                 ))}
               </tr>
             </thead>
-            <tbody className="[&>tr>td]:border-b [&>tr>td]:border-gray-100">
+            <tbody>
               {loading && (
                 <tr>
                   <td colSpan={3 + range.days.length} className="px-3 py-10 text-center text-gray-400">
@@ -253,10 +264,10 @@ export function AttendanceMatrix() {
               const t = rowTotals[u.id] ?? { present: 0, halfday: 0, absent: 0 };
               return (
                 <tr key={u.id} className="hover:bg-gray-50/60">
-                  <td style={{ width: 56, minWidth: 56, maxWidth: 56, left: 0 }} className="sticky z-10 bg-white px-3 py-2 text-gray-600 tabular-nums">
+                  <td style={{ width: 56, minWidth: 56, maxWidth: 56, left: 0 }} className="sticky z-10 bg-white px-3 py-2 text-gray-600 tabular-nums border-b border-gray-100">
                     {idx + 1}
                   </td>
-                  <td style={{ left: 56 }} className="sticky z-10 bg-white px-3 py-2 text-gray-900 font-medium whitespace-nowrap">
+                  <td style={{ left: 56 }} className="sticky z-10 bg-white px-3 py-2 text-gray-900 font-medium whitespace-nowrap border-b border-gray-100">
                     <button
                       type="button"
                       onClick={() => setDrawerUser({ id: u.id, label: u.label })}
@@ -266,7 +277,7 @@ export function AttendanceMatrix() {
                       {u.label}
                     </button>
                   </td>
-                  <td className="px-3 py-2">
+                  <td className="px-3 py-2 border-b border-gray-100">
                     <div className="inline-flex items-center gap-1">
                       <CountPill color="emerald" value={t.present} />
                       <CountPill color="amber"   value={t.halfday} />
@@ -287,7 +298,7 @@ export function AttendanceMatrix() {
                             ? formatHours(hours)
                             : "0";
                     return (
-                      <td key={k} className="px-1 py-1 text-center">
+                      <td key={k} className="px-1 py-1 text-center border-b border-gray-100">
                         <span
                           className={`inline-flex items-center justify-center min-w-[58px] h-6 px-2 text-[11px] rounded-full border whitespace-nowrap ${s.bg} ${s.text} ${s.border}`}
                         >

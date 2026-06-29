@@ -211,6 +211,7 @@ export function IssueActivity({
       {(tab === "comments" || tab === "all") && (
         <CommentsView
           issueId={issueId}
+          projectId={projectId}
           comments={comments}
           sortDesc={sortDesc}
           showComposer={canComment && tab === "comments"}
@@ -251,6 +252,7 @@ export function IssueActivity({
 
 function CommentsView({
   issueId,
+  projectId,
   comments,
   sortDesc,
   showComposer = true,
@@ -258,6 +260,7 @@ function CommentsView({
   mentions,
 }: {
   issueId: string;
+  projectId: string;
   comments: Comment[] | null;
   sortDesc: boolean;
   showComposer?: boolean;
@@ -537,6 +540,11 @@ function LogTimeModal({
   // "Time remaining" is optional so it starts empty.
   const [spent, setSpent] = useState("00:00");
   const [remaining, setRemaining] = useState("");
+  const [date, setDate] = useState(() => {
+    const d = new Date();
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+  });
+  const [description, setDescription] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -555,9 +563,9 @@ function LogTimeModal({
         body: JSON.stringify({
           projectId,
           issueId,
-          entryDate: new Date().toISOString(),
+          entryDate: new Date(date).toISOString(),
           hours,
-          description: undefined,
+          description: description.trim() || undefined,
         }),
       }).then((r) => r.json());
       if (!res?.success) {
@@ -624,9 +632,26 @@ function LogTimeModal({
             />
           </label>
         </div>
-        <p className="mt-3 text-xs text-gray-600 pl-1">
-          Format HH:MM. Type 1 for 01:00, 1.5 for 01:30, or enter 01:30 directly.
-        </p>
+        <label className="block mt-3">
+          <span className="text-xs font-semibold text-gray-700 block mb-1">Date</span>
+          <input
+            type="date"
+            value={date}
+            onChange={(e) => setDate(e.target.value)}
+            className="w-full h-9 px-3 text-sm border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+          />
+        </label>
+        <label className="block mt-3">
+          <span className="text-xs font-semibold text-gray-700 block mb-1">Description</span>
+          <textarea
+            value={description}
+            onChange={(e) => setDescription(e.target.value)}
+            placeholder="What did you work on? (optional)"
+            rows={3}
+            maxLength={2000}
+            className="w-full px-3 py-2 text-sm border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 resize-y"
+          />
+        </label>
         {error && <div className="mt-2 text-xs text-red-600">{error}</div>}
         <div className="mt-4 flex items-center justify-end gap-2">
           <button

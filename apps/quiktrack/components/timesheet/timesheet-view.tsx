@@ -14,6 +14,8 @@ import {
   Filter,
   Search,
   X,
+  CalendarClock,
+  Plus,
 } from "lucide-react";
 import {
   type Period,
@@ -29,6 +31,10 @@ import { WorklogPopover, type EntryDetail } from "./worklog-popover";
 import { DeleteWorklogConfirm } from "./delete-worklog-confirm";
 import { SplitWorklogModal } from "./split-worklog-modal";
 import { TimesheetCell } from "./timesheet-cell";
+import { useMyProjectPermissions } from "@/lib/hooks/useMyProjectPermissions";
+import { EditIssueModal } from "@/components/edit-issue-modal";
+import { showToast } from "@/lib/ui/toast";
+import { CopyWeekModal, type CopyWeekPreview } from "./copy-week-modal";
 
 type GroupBy = "user" | "project" | "issue" | "user-issue" | "epic-issue";
 
@@ -47,6 +53,9 @@ interface Cell {
 interface GridResponse {
   rows: RowMeta[];
   cells: Record<string, Record<string, Cell>>;
+  // True only for app admins / the project's Space Admin — they may see every
+  // member's data. Everyone else is scoped to their own entries server-side.
+  canSeeAll?: boolean;
 }
 
 interface FilterOption {
@@ -127,6 +136,15 @@ export function TimesheetView({
   const { data: session } = useSession();
   const currentUserId = session?.user?.id ?? null;
 
+  // Logging time creates a Timesheet entry, so gate every "log" affordance on
+  // Timesheet:create. A read-only Viewer keeps Timesheet:view (sees the grid)
+  // but loses the Log Time button and click-to-log. Edit/delete of entries are
+  // owner-only and the server enforces both, so this is purely the UI gate.
+  // In the space-scoped view `projectId` is set; the global view is admin-only,
+  // where useMyProjectPermissions reports isAdmin → all granted.
+  const perms = useMyProjectPermissions(projectId);
+  const canLogTime = perms.loading || perms.has("Timesheet", "create");
+
   const [groupBy, setGroupBy] = useState<GroupBy>(defaultGroupBy);
   const [period, setPeriod] = useState<Period>("week");
   const [anchor, setAnchor] = useState<Date>(() => new Date());
@@ -141,10 +159,18 @@ export function TimesheetView({
   const [projectOptions, setProjectOptions] = useState<FilterOption[]>([]);
 
   const [logOpen, setLogOpen] = useState(false);
+  const [copyingWeek, setCopyingWeek] = useState(false);
+  const [copyOpen, setCopyOpen] = useState(false);
+  const [copyLoading, setCopyLoading] = useState(false);
+  const [copyPreview, setCopyPreview] = useState<CopyWeekPreview | null>(null);
   const [logDate, setLogDate] = useState<Date | undefined>(undefined);
   const [logIssueId, setLogIssueId] = useState<string | undefined>(undefined);
   const [logIssueLabel, setLogIssueLabel] = useState<string | undefined>(undefined);
   const [editEntryId, setEditEntryId] = useState<string | null>(null);
+  // Issue edit drawer opened by clicking a work-item key. Only wired in the
+  // space-scoped view (projectId set) — EditIssueModal needs a project to load
+  // its statuses/members/sprints.
+  const [editIssueId, setEditIssueId] = useState<string | null>(null);
 
   const [popover, setPopover] = useState<{
     entryIds: string[];
@@ -157,6 +183,25 @@ export function TimesheetView({
   const [splitState, setSplitState] = useState<EntryDetail | null>(null);
 
   const range = useMemo(() => getPeriodRange(period, anchor), [period, anchor]);
+  // "Copy last week" only makes sense on the week you're actually in — hide it
+  // when navigating to other weeks (and outside the weekly view).
+  const viewingCurrentWeek = useMemo(() => {
+    const now = Date.now();
+    return period === "week" && range.from.getTime() <= now && now <= range.to.getTime();
+  }, [period, range]);
+  // ISO-ish week number of the viewed range start (for the "WK NN" badge).
+  const weekNumber = useMemo(() => {
+    const d = range.from;
+    const startOfYear = new Date(d.getFullYear(), 0, 1);
+    return Math.ceil(
+      (((d.getTime() - startOfYear.getTime()) / 86_400_000) + startOfYear.getDay() + 1) / 7,
+    );
+  }, [range]);
+
+  // Only app admins / a project's Space Admin may pick other users — everyone
+  // else is scoped to their own data server-side, so the per-user filter would
+  // do nothing. `isAdmin` is known immediately; Space Admin comes back on the grid.
+  const canSeeAllUsers = perms.isAdmin || Boolean(grid?.canSeeAll);
 
   const refresh = useCallback(async () => {
     setLoading(true);
@@ -182,25 +227,50 @@ export function TimesheetView({
     void refresh();
   }, [refresh]);
 
-  // Load filter option lists once. Projects are skipped in the space-scoped
-  // view (it's already locked to a single project).
+  // Load filter option lists once. In the space-scoped view the user list is
+  // limited to THIS project's members (not the whole org) and the project
+  // filter is skipped (already locked to one project). The global view lists
+  // every org user and every project.
   useEffect(() => {
     let cancelled = false;
     void (async () => {
       const [users, projects] = await Promise.all([
-        fetch("/api/org/users").then((r) => r.json()).catch(() => null),
+        fetch(projectId ? `/api/projects/${projectId}/members` : "/api/org/users")
+          .then((r) => r.json())
+          .catch(() => null),
         projectId
           ? Promise.resolve(null)
           : fetch("/api/projects").then((r) => r.json()).catch(() => null),
       ]);
       if (cancelled) return;
-      if (users?.success && Array.isArray(users.data)) {
-        setUserOptions(
-          users.data.map((u: { userId: string; firstName?: string; lastName?: string; email: string }) => ({
-            id: u.userId,
-            label: `${u.firstName ?? ""} ${u.lastName ?? ""}`.trim() || u.email,
-          })),
-        );
+      if (users?.success) {
+        if (projectId) {
+          // Space-scoped: members of this project only.
+          const members: Array<{
+            userId: string;
+            user?: { firstName?: string; lastName?: string; email?: string } | null;
+          }> = Array.isArray(users.data?.members) ? users.data.members : [];
+          setUserOptions(
+            members
+              .filter((m) => m.userId)
+              .map((m) => ({
+                id: m.userId,
+                label:
+                  `${m.user?.firstName ?? ""} ${m.user?.lastName ?? ""}`.trim() ||
+                  m.user?.email ||
+                  m.userId,
+              })),
+          );
+        } else if (Array.isArray(users.data)) {
+          setUserOptions(
+            users.data.map(
+              (u: { userId: string; firstName?: string; lastName?: string; email: string }) => ({
+                id: u.userId,
+                label: `${u.firstName ?? ""} ${u.lastName ?? ""}`.trim() || u.email,
+              }),
+            ),
+          );
+        }
       }
       if (projects?.success && Array.isArray(projects.data)) {
         setProjectOptions(
@@ -247,28 +317,6 @@ export function TimesheetView({
     return s;
   }, [grid, totalsByRow, groupBy]);
 
-  // Per-person capacity for the period = working days × 8h.
-  const perPersonCapacity = useMemo(
-    () => range.days.filter((d) => !isWeekend(d)).length * 8,
-    [range.days],
-  );
-
-  // Distinct users represented in the current grid, so the capacity bar reflects
-  // the whole team rather than a single person. In issue/project grouping there
-  // are no per-user rows, so fall back to the active user filter (or org headcount).
-  const userCount = useMemo(() => {
-    if (!grid) return 0;
-    if (groupBy === "user") return grid.rows.length;
-    if (groupBy === "user-issue") return grid.rows.filter((r) => !r.parentId).length;
-    if (userFilter.length > 0) return userFilter.length;
-    return userOptions.length;
-  }, [grid, groupBy, userFilter, userOptions]);
-
-  const capacity = useMemo(
-    () => perPersonCapacity * Math.max(userCount, 1),
-    [perPersonCapacity, userCount],
-  );
-
   const openLogFor = useCallback(
     (opts?: { date?: Date; issueId?: string; issueLabel?: string }) => {
       setLogDate(opts?.date);
@@ -279,6 +327,66 @@ export function TimesheetView({
     },
     [],
   );
+
+  const copyBody = () => ({
+    weekStart: range.from.toISOString(),
+    weekEnd: range.to.toISOString(),
+    projectId: projectId ?? null,
+  });
+
+  // Open the confirm dialog with a dry-run preview (what will copy / be kept /
+  // wait) — no writes yet.
+  async function openCopyModal() {
+    setCopyOpen(true);
+    setCopyLoading(true);
+    setCopyPreview(null);
+    try {
+      const res = await fetch("/api/timesheets/copy-previous-week", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ ...copyBody(), preview: true }),
+      }).then((r) => r.json());
+      if (res?.success) setCopyPreview(res.data as CopyWeekPreview);
+      else {
+        showToast(res?.error ?? "Couldn't check last week.", "error");
+        setCopyOpen(false);
+      }
+    } catch {
+      showToast("Couldn't check last week.", "error");
+      setCopyOpen(false);
+    } finally {
+      setCopyLoading(false);
+    }
+  }
+
+  // Confirmed → actually copy.
+  async function doCopyWeek() {
+    if (copyingWeek) return;
+    setCopyingWeek(true);
+    try {
+      const res = await fetch("/api/timesheets/copy-previous-week", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(copyBody()),
+      }).then((r) => r.json());
+      if (!res?.success) {
+        showToast(res?.error ?? "Couldn't copy last week.", "error");
+        return;
+      }
+      const created: number = res.data?.created ?? 0;
+      setCopyOpen(false);
+      if (created > 0) {
+        showToast(`Copied ${created} ${created === 1 ? "entry" : "entries"} from last week.`, "success");
+        await refresh();
+      } else {
+        showToast("Nothing to copy up to today.", "info");
+      }
+    } catch {
+      showToast("Couldn't copy last week.", "error");
+    } finally {
+      setCopyingWeek(false);
+    }
+  }
 
   function openPopover(opts: {
     entryIds: string[];
@@ -305,7 +413,7 @@ export function TimesheetView({
     if (!grid) return [];
     const header = [
       "User",
-      "Work Item",
+      "Work item",
       "Key",
       "Logged",
       ...range.days.map((d) => formatDayHeader(d)),
@@ -436,43 +544,51 @@ export function TimesheetView({
   return (
     <div className="px-6 py-4">
       <div className="flex flex-wrap items-center justify-between gap-3 mb-3">
-        <div className="flex items-center gap-3">
-          <div className="inline-flex items-center gap-1 border border-gray-300 rounded h-9 px-1">
-            <button
-              type="button"
-              onClick={() => setAnchor((a) => shiftAnchor(period, a, -1))}
-              className="h-7 w-7 inline-flex items-center justify-center rounded hover:bg-gray-100 text-gray-600"
-              aria-label="Previous"
-            >
-              <ChevronLeft className="h-4 w-4" />
-            </button>
-            <div className="px-2 inline-flex items-center text-sm font-medium text-gray-800 select-none">
-              <span className="mr-1.5 text-gray-400">📅</span>
-              {range.label}
-            </div>
-            <button
-              type="button"
-              onClick={() => setAnchor((a) => shiftAnchor(period, a, 1))}
-              className="h-7 w-7 inline-flex items-center justify-center rounded hover:bg-gray-100 text-gray-600"
-              aria-label="Next"
-            >
-              <ChevronRight className="h-4 w-4" />
-            </button>
+        {/* Left — week navigation */}
+        <div className="inline-flex items-center gap-1 border border-gray-300 rounded h-9 px-1">
+          <button
+            type="button"
+            onClick={() => setAnchor((a) => shiftAnchor(period, a, -1))}
+            className="h-7 w-7 inline-flex items-center justify-center rounded hover:bg-gray-100 text-gray-600"
+            aria-label="Previous"
+          >
+            <ChevronLeft className="h-4 w-4" />
+          </button>
+          <div className="px-2 inline-flex items-center gap-2 text-sm font-medium text-gray-800 select-none">
+            {period === "week" && (
+              <span className="text-[10px] font-bold uppercase tracking-wide text-blue-700">
+                WK {weekNumber}
+              </span>
+            )}
+            {range.label}
           </div>
+          <button
+            type="button"
+            onClick={() => setAnchor((a) => shiftAnchor(period, a, 1))}
+            className="h-7 w-7 inline-flex items-center justify-center rounded hover:bg-gray-100 text-gray-600"
+            aria-label="Next"
+          >
+            <ChevronRight className="h-4 w-4" />
+          </button>
+        </div>
+
+        {/* Right — view controls + actions */}
+        <div className="flex flex-wrap items-center gap-2">
           <GroupByDropdown
             value={groupBy}
             onChange={setGroupBy}
             hideProject={Boolean(projectId)}
           />
-          <span className="h-6 w-px bg-gray-200" aria-hidden />
-          <MultiSelectFilter
-            icon={<Filter className="h-3.5 w-3.5 text-gray-500" />}
-            label="User"
-            options={userOptions}
-            selected={userFilter}
-            onChange={setUserFilter}
-            emptyHint="No users available"
-          />
+          {canSeeAllUsers && (
+            <MultiSelectFilter
+              icon={<Filter className="h-3.5 w-3.5 text-gray-500" />}
+              label="User"
+              options={userOptions}
+              selected={userFilter}
+              onChange={setUserFilter}
+              emptyHint="No users available"
+            />
+          )}
           {!projectId && (
             <MultiSelectFilter
               label="Project"
@@ -495,34 +611,37 @@ export function TimesheetView({
               Clear
             </button>
           )}
-        </div>
 
-        <div className="flex items-center gap-2">
-          <span className="hidden md:inline text-[11px] text-gray-500 px-1">
-            Total{" "}
-            <span className="font-semibold text-gray-800">{formatHours(grandTotal)}</span> of{" "}
-            <span className="font-semibold text-gray-800">{capacity}h</span>
-          </span>
-          {/* <button
-            type="button"
-            className="h-9 w-9 inline-flex items-center justify-center text-gray-600 hover:bg-gray-100 rounded"
-            aria-label="View options"
-          >
-            <Menu className="h-4 w-4" />
-          </button> */}
-          <PeriodSwitcher value={period} onChange={setPeriod} />
+          <span className="h-6 w-px bg-gray-200" aria-hidden />
+
+          {canLogTime && viewingCurrentWeek && (
+            <button
+              type="button"
+              onClick={openCopyModal}
+              title="Copy last week's entries into this week, up to today"
+              className="inline-flex items-center gap-1.5 h-9 px-3 text-sm font-medium text-gray-700 border border-gray-300 rounded hover:bg-gray-50"
+            >
+              <CalendarClock className="h-4 w-4 text-gray-500" />
+              Copy last week
+            </button>
+          )}
+          {canLogTime && (
+            <button
+              type="button"
+              onClick={() => openLogFor()}
+              className="inline-flex items-center gap-1.5 h-9 px-4 text-sm font-semibold text-white bg-blue-700 rounded hover:bg-blue-800"
+            >
+              <Plus className="h-4 w-4" />
+              Log time
+            </button>
+          )}
           <MoreMenu
             onCsv={downloadCsv}
             onXls={downloadXls}
             onPdf={downloadPdf}
+            period={period}
+            onPeriodChange={setPeriod}
           />
-          <button
-            type="button"
-            onClick={() => openLogFor()}
-            className="inline-flex items-center h-9 px-4 text-sm font-semibold text-white bg-blue-700 rounded hover:bg-blue-800"
-          >
-            Log Time
-          </button>
         </div>
       </div>
 
@@ -654,7 +773,30 @@ export function TimesheetView({
                       className="px-3 py-1.5 text-blue-600 sticky bg-white z-20 font-medium truncate"
                       style={{ left: FZ_NAME_W, width: FZ_KEY_W, minWidth: FZ_KEY_W, maxWidth: FZ_KEY_W }}
                     >
-                      {isChild ? row.secondary : !isParent ? row.secondary : ""}
+                      {(() => {
+                        const keyText = isChild
+                          ? row.secondary
+                          : !isParent
+                            ? row.secondary
+                            : "";
+                        if (!keyText) return "";
+                        // Clicking the key opens the issue edit drawer. Needs a
+                        // project context, so it's a link only in the
+                        // space-scoped timesheet.
+                        if (projectId && issueIdForRow) {
+                          return (
+                            <button
+                              type="button"
+                              onClick={() => setEditIssueId(issueIdForRow)}
+                              className="hover:underline"
+                              title="Open issue"
+                            >
+                              {keyText}
+                            </button>
+                          );
+                        }
+                        return keyText;
+                      })()}
                     </td>
                   )}
                   <td
@@ -666,17 +808,25 @@ export function TimesheetView({
                   {range.days.map((d) => {
                     const k = dateKey(d);
                     const cell = grid?.cells[row.id]?.[k];
+                    // Existing entries are always viewable; the create paths are
+                    // gated on canLogTime so a read-only Viewer can browse but
+                    // not log.
+                    const hasViewableEntries = Boolean(
+                      cell && cell.entryIds.length > 0 && issueClickable,
+                    );
                     const onOpenLog = (
                       anchor?: { top: number; left: number; width: number; height: number },
                     ) => {
-                      if (cell && cell.entryIds.length > 0 && issueClickable) {
+                      if (hasViewableEntries) {
                         openPopover({
-                          entryIds: cell.entryIds,
+                          entryIds: cell!.entryIds,
                           date: d,
                           issueId: issueIdForRow,
                           issueLabel,
                           anchor,
                         });
+                      } else if (!canLogTime) {
+                        // Read-only: nothing to view, can't create.
                       } else if (issueClickable) {
                         openLogFor({
                           date: d,
@@ -687,14 +837,19 @@ export function TimesheetView({
                         openLogFor({ date: d });
                       }
                     };
+                    // Drop the click affordance entirely when there's nothing to
+                    // view and the user can't log — otherwise the cell looks
+                    // clickable but does nothing.
+                    const cellInteractive =
+                      !aggregateRow && (hasViewableEntries || canLogTime);
                     return (
                       <TimesheetCell
                         key={k}
                         cell={cell}
-                        editable={editable}
+                        editable={editable && canLogTime}
                         date={d}
                         onChanged={refresh}
-                        onOpenLog={aggregateRow ? undefined : onOpenLog}
+                        onOpenLog={cellInteractive ? onOpenLog : undefined}
                       />
                     );
                   })}
@@ -732,6 +887,15 @@ export function TimesheetView({
         </table>
       </div>
 
+      <CopyWeekModal
+        open={copyOpen}
+        loading={copyLoading}
+        preview={copyPreview}
+        busy={copyingWeek}
+        onCancel={() => setCopyOpen(false)}
+        onConfirm={doCopyWeek}
+      />
+
       {logOpen && (
         <LogTimeModal
           lockedProjectId={projectId}
@@ -750,12 +914,22 @@ export function TimesheetView({
           }}
         />
       )}
+      {projectId && (
+        <EditIssueModal
+          open={editIssueId !== null}
+          issueId={editIssueId}
+          projectId={projectId}
+          onClose={() => setEditIssueId(null)}
+          onSaved={() => void refresh()}
+        />
+      )}
       {popover && (
         <WorklogPopover
           entryIds={popover.entryIds}
           date={popover.date}
           issueLabel={popover.issueLabel}
           anchor={popover.anchor}
+          canLog={canLogTime}
           onChanged={() => void refresh()}
           onClose={() => setPopover(null)}
           onLog={() => {
@@ -977,8 +1151,8 @@ function GroupByDropdown({
   );
 
   return (
-    <div ref={ref} className="flex items-center gap-2">
-      <span className="text-xs text-gray-500">Group By</span>
+    <div ref={ref} className="flex items-center gap-1.5">
+      <span className="text-xs text-gray-500">Group</span>
       <div className="relative">
         <button
           type="button"
@@ -1017,7 +1191,7 @@ function GroupByDropdown({
               );
             })}
             <div className="border-t border-gray-100 mt-1 pt-1 px-3 py-1.5 text-[10px] text-gray-400 leading-snug">
-              Work item is always shown. Add User or Epic for a hierarchy.
+              Task is always shown. Add User or Epic for a hierarchy.
               {!hideProject && " Project groups on its own."}
             </div>
           </div>
@@ -1027,58 +1201,22 @@ function GroupByDropdown({
   );
 }
 
-function PeriodSwitcher({
-  value,
-  onChange,
-}: {
-  value: Period;
-  onChange: (p: Period) => void;
-}) {
-  const [open, setOpen] = useState(false);
-  const LABEL: Record<Period, string> = { week: "Week", month: "Month", quarter: "Quarter" };
-  return (
-    <div className="relative">
-      <button
-        type="button"
-        onClick={() => setOpen((v) => !v)}
-        className="inline-flex items-center gap-1 h-9 px-3 text-sm text-gray-700 border border-gray-300 rounded hover:bg-gray-50"
-      >
-        {LABEL[value]}
-        <ChevronDown className="h-3.5 w-3.5 text-gray-500" />
-      </button>
-      {open && (
-        <div className="absolute right-0 top-full mt-1 w-32 bg-white border border-gray-200 rounded-md shadow-lg z-50 py-1">
-          {(["week", "month", "quarter"] as Period[]).map((p) => (
-            <button
-              key={p}
-              type="button"
-              onClick={() => {
-                onChange(p);
-                setOpen(false);
-              }}
-              className={`w-full px-3 py-1.5 text-xs text-left hover:bg-gray-50 ${
-                p === value ? "text-blue-700 bg-blue-50 font-medium" : "text-gray-700"
-              }`}
-            >
-              {LABEL[p]}
-            </button>
-          ))}
-        </div>
-      )}
-    </div>
-  );
-}
-
 function MoreMenu({
   onCsv,
   onXls,
   onPdf,
+  period,
+  onPeriodChange,
 }: {
   onCsv: () => void;
   onXls: () => void;
   onPdf: () => void;
+  period: Period;
+  onPeriodChange: (p: Period) => void;
 }) {
   const [open, setOpen] = useState(false);
+  const PERIODS: Period[] = ["week", "month", "quarter"];
+  const PLABEL: Record<Period, string> = { week: "Week", month: "Month", quarter: "Quarter" };
   return (
     <div className="relative">
       <button
@@ -1091,6 +1229,28 @@ function MoreMenu({
       </button>
       {open && (
         <div className="absolute right-0 top-full mt-1 w-56 bg-white border border-gray-200 rounded-md shadow-lg z-50 py-1">
+          <div className="px-3 pt-1.5 pb-1 text-[10px] font-semibold uppercase tracking-wide text-gray-400">
+            View
+          </div>
+          {PERIODS.map((p) => (
+            <button
+              key={p}
+              type="button"
+              onClick={() => {
+                onPeriodChange(p);
+                setOpen(false);
+              }}
+              className={`w-full px-3 py-1.5 text-xs text-left hover:bg-gray-50 ${
+                p === period ? "bg-blue-50 font-medium text-blue-700" : "text-gray-700"
+              }`}
+            >
+              {PLABEL[p]}
+            </button>
+          ))}
+          <div className="my-1 border-t border-gray-100" />
+          <div className="px-3 pt-1 pb-1 text-[10px] font-semibold uppercase tracking-wide text-gray-400">
+            Export
+          </div>
           <ExportRow
             badge="PDF"
             badgeClass="bg-red-100 text-red-700"

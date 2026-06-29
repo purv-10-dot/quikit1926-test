@@ -111,3 +111,82 @@ describe("sendTransactionalEmail — resend driver placeholder", () => {
     }
   });
 });
+
+// ── SMTP driver selection (support@quikit.ai via Office365) ──────────────────
+// Diff 4 (RED→GREEN): sendTransactionalEmail gains an SMTP transport. Dispatch
+// order = smtp → resend → console. SMTP is selected whenever SMTP_HOST + USER +
+// PASS are all set; it sends via nodemailer AS process.env.SMTP_FROM.
+const sendMailMock = vi.fn(async (opts: Record<string, unknown>) => {
+  void opts;
+  return {
+    messageId: "smtp-msg-123",
+    accepted: ["x@y.co"],
+    rejected: [] as string[],
+    response: "250 OK",
+  };
+});
+const createTransportMock = vi.fn((opts: Record<string, unknown>) => {
+  void opts;
+  return { sendMail: sendMailMock };
+});
+vi.mock("nodemailer", () => ({
+  default: { createTransport: (opts: Record<string, unknown>) => createTransportMock(opts) },
+  createTransport: (opts: Record<string, unknown>) => createTransportMock(opts),
+}));
+
+describe("sendTransactionalEmail — SMTP driver (Office365 support@quikit.ai)", () => {
+  const SMTP_KEYS = ["SMTP_HOST", "SMTP_PORT", "SMTP_USER", "SMTP_PASS", "SMTP_FROM", "EMAIL_PROVIDER"] as const;
+  let saved: Record<string, string | undefined>;
+
+  beforeEach(() => {
+    saved = Object.fromEntries(SMTP_KEYS.map((k) => [k, process.env[k]])) as Record<string, string | undefined>;
+    sendMailMock.mockClear();
+    createTransportMock.mockClear();
+    delete process.env.EMAIL_PROVIDER;
+    process.env.SMTP_HOST = "smtp.office365.com";
+    process.env.SMTP_PORT = "587";
+    process.env.SMTP_USER = "support@quikit.ai";
+    process.env.SMTP_PASS = "secret";
+    process.env.SMTP_FROM = "support@quikit.ai";
+  });
+
+  afterEach(() => {
+    for (const k of SMTP_KEYS) {
+      if (saved[k] === undefined) delete process.env[k];
+      else process.env[k] = saved[k];
+    }
+  });
+
+  it("SMTP env present → picks the smtp driver and sends via nodemailer", async () => {
+    const result = await sendTransactionalEmail({
+      to: ["akhilesh@moreyeahs.com"],
+      subject: "QuikCRM Activity Digest",
+      text: "body",
+      html: "<p>body</p>",
+    });
+    expect(result.driver).toBe("smtp");
+    expect(createTransportMock).toHaveBeenCalledOnce();
+    expect(sendMailMock).toHaveBeenCalledOnce();
+    // sends AS support@quikit.ai (from = SMTP_FROM)
+    const sent = sendMailMock.mock.calls[0]?.[0] as unknown as { from: string; to: string; subject: string };
+    expect(sent.from).toBe("support@quikit.ai");
+    expect(sent.to).toContain("akhilesh@moreyeahs.com");
+  });
+
+  it("SMTP takes precedence over resend when both are configured", async () => {
+    process.env.EMAIL_PROVIDER = "resend";
+    process.env.RESEND_API_KEY = "re_x";
+    const result = await sendTransactionalEmail({ to: ["a@b.co"], subject: "s", text: "t" });
+    expect(result.driver).toBe("smtp");
+    delete process.env.RESEND_API_KEY;
+  });
+
+  it("SMTP NOT configured → falls through to console (existing behavior preserved)", async () => {
+    delete process.env.SMTP_HOST;
+    delete process.env.SMTP_USER;
+    delete process.env.SMTP_PASS;
+    const result = await sendTransactionalEmail({ to: ["a@b.co"], subject: "s", text: "t" });
+    expect(result.driver).toBe("console");
+    expect(sendMailMock).not.toHaveBeenCalled();
+  });
+});

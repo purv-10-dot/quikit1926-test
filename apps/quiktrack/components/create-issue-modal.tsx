@@ -242,7 +242,7 @@ export function CreateIssueModal({
   async function submit() {
     setError(null);
     setTitleError(false);
-    if (!projectId) return setError("Choose a space");
+    if (!projectId) return setError("Choose a project");
     if (!title.trim()) {
       setTitleError(true);
       return;
@@ -359,8 +359,8 @@ export function CreateIssueModal({
             Required fields are marked with an asterisk <span className="text-red-500">*</span>
           </p>
 
-          {/* Space */}
-          <Field label="Space" required>
+          {/* Project */}
+          <Field label="Project" required>
             <SpacePicker
               projects={projects}
               value={projectId}
@@ -396,8 +396,8 @@ export function CreateIssueModal({
             <StatusPicker statuses={statuses} value={statusId} onChange={setStatusId} />
           </Field>
 
-          {/* Summary */}
-          <Field label="Summary" required>
+          {/* Title */}
+          <Field label="Title" required>
             <input
               value={title}
               onChange={(e) => {
@@ -415,13 +415,13 @@ export function CreateIssueModal({
             {titleError && (
               <p className="mt-1 inline-flex items-center gap-1 text-xs text-red-600">
                 <AlertCircle className="h-3.5 w-3.5" />
-                Summary is required
+                Title is required
               </p>
             )}
             {title.trim().length > 255 && (
               <p className="mt-1 inline-flex items-center gap-1 text-xs text-red-600">
                 <AlertCircle className="h-3.5 w-3.5 shrink-0" />
-                Summary must be 255 characters or less (currently {title.trim().length}).
+                Title must be 255 characters or less (currently {title.trim().length}).
               </p>
             )}
           </Field>
@@ -549,7 +549,7 @@ export function CreateIssueModal({
           )}
 
           <p className="text-[11px] text-gray-500">
-            Space:{" "}
+            Project:{" "}
             <span className="font-medium text-gray-700">
               {selectedProject ? `${selectedProject.name} (${selectedProject.projectKey})` : "—"}
             </span>
@@ -676,7 +676,7 @@ function SpacePicker({
             <span className="h-5 w-5 rounded bg-gray-200" />
           )}
           <span className="truncate text-gray-800">
-            {selected ? `${selected.name} (${selected.projectKey})` : "Choose a space"}
+            {selected ? `${selected.name} (${selected.projectKey})` : "Choose a project"}
           </span>
         </span>
         <ChevronDown className="h-3.5 w-3.5 text-gray-500 shrink-0" />
@@ -688,14 +688,14 @@ function SpacePicker({
               autoFocus
               value={query}
               onChange={(e) => setQuery(e.target.value)}
-              placeholder="Search spaces"
+              placeholder="Search projects"
               className="w-full h-8 px-2 text-sm border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
             />
           </div>
           {recent.length > 0 && (
             <>
               <div className="px-3 pt-2 pb-1 text-[11px] font-semibold text-gray-500 uppercase">
-                Recent Spaces
+                Recent Projects
               </div>
               {recent.map((p) => (
                 <SpaceOption
@@ -711,7 +711,7 @@ function SpacePicker({
             </>
           )}
           <div className="px-3 pt-2 pb-1 text-[11px] font-semibold text-gray-500 uppercase">
-            All Spaces
+            All Projects
           </div>
           {all.map((p) => (
             <SpaceOption
@@ -725,7 +725,7 @@ function SpacePicker({
             />
           ))}
           {all.length === 0 && (
-            <div className="px-3 py-3 text-xs text-gray-500">No spaces found.</div>
+            <div className="px-3 py-3 text-xs text-gray-500">No projects found.</div>
           )}
         </div>
       )}
@@ -960,7 +960,7 @@ function ParentPicker({
           </label>
           {epics.length === 0 && (
             <div className="px-3 py-3 text-xs text-gray-500">
-              No epics in this space yet.
+              No epics in this project yet.
             </div>
           )}
           {epics.map((e) => {

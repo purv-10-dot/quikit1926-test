@@ -38,6 +38,7 @@ import {
 import Link from "next/link";
 import { motion, AnimatePresence, useReducedMotion } from "framer-motion";
 import { UserMenu, globalSignOut } from "@quikit/ui";
+import { HIDDEN_APP_SLUGS } from "@quikit/shared";
 import { APP_DETAILS } from "../_data/app-details";
 import { SurpriseGiftPopup } from "../_components/surprise-gift-popup";
 
@@ -462,8 +463,17 @@ export default function AppLauncherPage() {
 
   // Activated apps → "Active" section; non-activated catalog apps → "Other
   // Tools" (admins only, since only they can start trials).
-  const activeApps = apps.filter((a) => matchesSearch(a));
-  const otherTools = (isOrgAdmin ? available : []).filter(matchesSearch);
+  // Defensive UI-side hide of `HIDDEN_APP_SLUGS` (QuikVC / QuikSocial). The
+  // launcher API already excludes these from `data` + `available`, so this is a
+  // belt-and-suspenders filter that keeps the page correct even against a stale
+  // cached response. Single source of truth lives in @quikit/shared.
+  const hiddenApps = new Set<string>(HIDDEN_APP_SLUGS);
+  const activeApps = apps
+    .filter((a) => !hiddenApps.has(a.slug))
+    .filter(matchesSearch);
+  const otherTools = (isOrgAdmin ? available : [])
+    .filter((a) => !hiddenApps.has(a.slug))
+    .filter(matchesSearch);
 
   const ease = [0.16, 1, 0.3, 1] as const; // ease-out-expo
   const gridV = {

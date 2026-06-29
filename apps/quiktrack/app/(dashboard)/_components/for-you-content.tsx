@@ -37,10 +37,10 @@ const TABS: { key: Tab; label: string; count?: number }[] = [
 ];
 
 function spaceTypeLabel(t?: string) {
-  if (t === "software") return "Software space";
+  if (t === "software") return "Software project";
   if (t === "discovery") return "Product Discovery";
   if (t === "service") return "Service space";
-  return "Software space";
+  return "Software project";
 }
 
 function KindIcon({ kind }: { kind: HistoryEntry["kind"] }) {
@@ -125,9 +125,9 @@ export function ForYouContent() {
     <div className="px-12 py-6 max-w-[1180px] mx-auto">
       <section className="mb-8">
         <div className="flex items-center justify-between mb-3">
-          <h2 className="text-base font-semibold text-gray-900">Recommended spaces</h2>
+          <h2 className="text-base font-semibold text-gray-900">Recommended projects</h2>
           <Link href="/spaces" className="text-sm text-blue-600 hover:underline">
-            View all spaces
+            View all projects
           </Link>
         </div>
         {recommended === null ? (
@@ -167,9 +167,9 @@ export function ForYouContent() {
           <div className="text-sm text-gray-500 border border-dashed border-gray-200 rounded-md p-6 text-center">
             {canCreateProject ? (
               <>
-                No spaces yet.{" "}
+                No projects yet.{" "}
                 <Link href="/spaces/templates" className="text-blue-600 hover:underline">
-                  Create your first space
+                  Create your first project
                 </Link>
                 .
               </>
@@ -213,18 +213,18 @@ export function ForYouContent() {
         {/* Recommended / Assigned to me / Worked on — all read off the
             shared `allSpaces` payload and render a list of space cards. */}
         {tab === "recommended" && (
-          <SpaceList spaces={recommended} emptyMessage="No spaces yet." />
+          <SpaceList spaces={recommended} emptyMessage="No projects yet." />
         )}
         {tab === "assigned" && (
           <SpaceList
             spaces={assignedToMe}
-            emptyMessage="You don't lead any spaces yet."
+            emptyMessage="You don't lead any projects yet."
           />
         )}
         {tab === "worked" && (
           <SpaceList
             spaces={workedOn}
-            emptyMessage="You haven't opened any spaces yet."
+            emptyMessage="You haven't opened any projects yet."
           />
         )}
 

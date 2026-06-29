@@ -183,14 +183,17 @@ export async function loadProjectAccess(
 
 /**
  * Write gate for task-group operations (create/rename/recolor/delete/reorder/
- * move-task). Group management is open to any project member — the caller has
- * already verified membership via `loadProjectAccess` (non-members get 404), so
- * there is no additional permission to check.
+ * move-task). Reorganizing the board's grouping is a project write, so it's
+ * gated on `Issue:update` — the same grant that lets a role move/edit work.
+ * Contributor and Space Admin hold it; a read-only Viewer does not, so a Viewer
+ * (who is still a project member) can browse the grouped board but not mutate
+ * its groups. Global admins short-circuit via `isTenantAdmin`.
  */
 export async function canWriteGroups(
-  _access: LoadedProjectAccess,
-  _userId: string,
-  _orgId: string,
+  access: LoadedProjectAccess,
+  userId: string,
+  orgId: string,
 ): Promise<boolean> {
-  return true;
+  if (access.isTenantAdmin) return true;
+  return userCanInProject(userId, orgId, access.projectId, "Issue", "update");
 }

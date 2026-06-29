@@ -15,6 +15,7 @@ import { OppsByStageBar } from "./opps-by-stage-bar";
 import { FunnelChart } from "./funnel-chart";
 import { AtRiskWidget } from "./at-risk-widget";
 import { TeamPerformanceBlock } from "./team-performance-block";
+import { ActivityBreakdownWidget } from "./activity-breakdown-widget";
 import { PinnedReportsBand } from "./pinned-reports-band";
 import { ChartCardSkeleton } from "./chart-card";
 import {
@@ -300,6 +301,13 @@ export function DashboardClient({ userRole }: { userRole: string }) {
             </div>
           ) : null}
         </div>
+      ) : null}
+
+      {/* Activity breakdown — by-type counts + per-rep custom-field aggregates (FR-4.5) */}
+      {isSales ? (
+        <section className="mb-6">
+          <ActivityBreakdownWidget userRole={userRole} />
+        </section>
       ) : null}
 
       <PinnedReportsBand />

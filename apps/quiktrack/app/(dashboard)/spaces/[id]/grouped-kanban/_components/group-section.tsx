@@ -33,6 +33,10 @@ interface GroupSectionProps {
   onGroupDropped: (sourceGroupId: string) => void;
   /** Field-grouped section — header actions disabled, drop sets a field. */
   virtual?: boolean;
+  /** Show the inline "Add task" row — false for read-only roles (Viewer). */
+  canAddTask?: boolean;
+  /** Allow rename/recolor/delete on the group header — false for Viewer. */
+  canManageGroups?: boolean;
 }
 
 export function GroupSection({
@@ -54,6 +58,8 @@ export function GroupSection({
   onTaskDropped,
   onGroupDropped,
   virtual = false,
+  canAddTask = true,
+  canManageGroups = true,
 }: GroupSectionProps) {
   const groupTaskIds = group.tasks.map((t) => t.id);
   const allSelected =
@@ -67,6 +73,7 @@ export function GroupSection({
         group={group}
         taskCount={group.taskCount}
         virtual={virtual}
+        readOnly={!canManageGroups}
         onToggleCollapse={() => onToggleCollapse(group.id, !group.isCollapsed)}
         onRename={(name) => onRenameGroup(group.id, name)}
         onRecolor={(color) => onRecolorGroup(group.id, color)}
@@ -93,7 +100,7 @@ export function GroupSection({
                   ? `Drop a task here to set it to ${group.name}.`
                   : "Drop a task here to add it to this group."}
               </div>
-              <AddTaskRow onAddTask={onAddTask} />
+              {canAddTask && <AddTaskRow onAddTask={onAddTask} />}
             </div>
           ) : (
             <div style={{ minWidth: ROW_GRID_MIN_WIDTH }} className="divide-y divide-slate-100 dark:divide-slate-800">
@@ -117,7 +124,7 @@ export function GroupSection({
                   onToggleSelected={onToggleTaskSelected}
                 />
               ))}
-              <AddTaskRow onAddTask={onAddTask} />
+              {canAddTask && <AddTaskRow onAddTask={onAddTask} />}
             </div>
           )
         }

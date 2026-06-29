@@ -88,7 +88,7 @@ export function MoreSpacesPopover({
       className="fixed w-[400px] bg-white border border-gray-200 rounded-md shadow-xl z-50"
     >
       <div className="flex items-center justify-between px-4 py-3 border-b border-gray-100">
-        <div className="text-sm font-semibold text-gray-900">Spaces</div>
+        <div className="text-sm font-semibold text-gray-900">Projects</div>
         <button
           type="button"
           onClick={onClose}
@@ -105,7 +105,7 @@ export function MoreSpacesPopover({
           <input
             value={search}
             onChange={(e) => setSearch(e.target.value)}
-            placeholder="Search all spaces"
+            placeholder="Search all projects"
             className="w-full h-9 pl-8 pr-3 text-xs border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
           />
         </div>
@@ -150,7 +150,7 @@ export function MoreSpacesPopover({
         )}
         {filtered.length === 0 && (
           <div className="px-4 py-6 text-center text-xs text-gray-500">
-            No spaces match.
+            No projects match.
           </div>
         )}
       </div>
@@ -162,7 +162,7 @@ export function MoreSpacesPopover({
           className="flex items-center gap-2 px-4 py-3 text-sm text-gray-700 hover:bg-gray-50"
         >
           <ListIcon className="h-4 w-4 text-gray-500" />
-          View all spaces
+          View all projects
         </Link>
       </div>
     </div>

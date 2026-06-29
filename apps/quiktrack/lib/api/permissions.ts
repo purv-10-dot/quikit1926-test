@@ -335,3 +335,20 @@ export async function userCanInProject(
   // 3. No project role in this space → fall back to the app-wide grant.
   return userCan(userId, orgId, resource, action);
 }
+
+/**
+ * True when the user is a Space Admin in this project. Space Admin is the
+ * project-scoped equivalent of an app admin (full access within the space), so
+ * it's the gate for "may see everyone's data here" features like the timesheet
+ * grid. App admins are handled separately by `hasAdminAccess`.
+ */
+export async function isProjectSpaceAdmin(
+  userId: string,
+  projectId: string,
+): Promise<boolean> {
+  const assignment = await db.qtProjectUserRole.findUnique({
+    where: { projectId_userId: { projectId, userId } },
+    select: { projectRole: { select: { name: true } } },
+  });
+  return assignment?.projectRole.name === SPACE_ADMIN_ROLE_NAME;
+}
