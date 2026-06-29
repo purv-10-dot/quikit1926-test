@@ -28,7 +28,20 @@ function formatNoteDate(iso: string): string {
   return d.toLocaleDateString("en-US", { day: "numeric", month: "short", year: "numeric" });
 }
 
-export function WWWNotesThread({ itemId, canAddNotes }: { itemId: string; canAddNotes: boolean }) {
+export function WWWNotesThread({
+  itemId,
+  canAddNotes,
+  required = false,
+  showRequiredError = false,
+}: {
+  itemId: string;
+  canAddNotes: boolean;
+  /** Org `www_notes_required` flag — shows a `*` on the header. */
+  required?: boolean;
+  /** When true, show the "add a note before saving" error under the composer
+   *  (driven by the parent after a blocked Save). */
+  showRequiredError?: boolean;
+}) {
   const { data: session } = useSession();
   const currentUserId = session?.user?.id ?? "";
   const { isAdmin } = useMyPermissions();
@@ -87,7 +100,9 @@ export function WWWNotesThread({ itemId, canAddNotes }: { itemId: string; canAdd
 
   return (
     <div className="pt-3 border-t border-gray-100">
-      <h4 className="text-[11px] font-semibold text-gray-500 uppercase tracking-wider mb-2">Notes</h4>
+      <h4 className="text-[11px] font-semibold text-gray-500 uppercase tracking-wider mb-2">
+        Notes {required && <span className="text-red-500">*</span>}
+      </h4>
 
       {/* Composer */}
       {canAddNotes && (
@@ -114,6 +129,12 @@ export function WWWNotesThread({ itemId, canAddNotes }: { itemId: string; canAdd
             {addNote.isPending ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Send className="h-3.5 w-3.5" />}
           </button>
         </div>
+      )}
+
+      {/* Notes-required error — shown after a blocked Save until a new note is
+          added this session. Mirrors the create form's required Notes. */}
+      {showRequiredError && (
+        <p className="text-[10px] text-red-500 -mt-1 mb-3">Notes are required — add a note before saving.</p>
       )}
 
       {/* History */}

@@ -41,7 +41,10 @@ export function validateWWWForm(
     errs.revisedDate = "Revised date cannot be earlier than When";
   }
 
-  // Org-configurable: Notes required (whitespace-only does not count).
+  // Org-configurable: Notes required (whitespace-only does not count). Used by
+  // the create form's single Notes textarea. In edit mode notes live in the
+  // thread, so the requirement is enforced separately (a new note per save) —
+  // the caller passes notesRequired=false for edit.
   if (opts.notesRequired && !form.notes.trim()) {
     errs.notes = "Notes are required";
   }

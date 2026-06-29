@@ -12,6 +12,7 @@ import { UserPicker } from "@quikit/ui";
 import { CURRENCIES, getScales, getMultiplier, formatActual } from "@/lib/utils/currency";
 import { WeeklyScroller } from "./WeeklyScroller";
 import { usePastWeekFlags } from "@/lib/hooks/useFeatureFlags";
+import { weeklyInputLockState, isWeekBeforeEditableWindow } from "@/lib/utils/weekLock";
 import { useCurrentWeek, useWeekLabels } from "@/lib/hooks/useCurrentWeek";
 import { useMyPermissions } from "@/lib/hooks/useMyPermissions";
 import { humanizeApiError } from "@/lib/utils/humanizeError";
@@ -81,7 +82,11 @@ function EditTab({
   // configured QuarterSetting.startDate (may be offset from the hardcoded
   // Apr 1/Jul 1/Oct 1/Jan 1 map).
   const { canEditPastWeek, loaded: flagsLoaded } = usePastWeekFlags();
-  const pastWeekAllowed = flagsLoaded && canEditPastWeek;
+  // A week is locked-by-past when state has resolved and it falls before the
+  // editable window (current week minus the grace). When edit-past is off the
+  // window is [currentWeek - 1, currentWeek]; when on, all past weeks are open.
+  const weekLockedByPast = (w: number): boolean =>
+    flagsLoaded && currentWeek !== null && isWeekBeforeEditableWindow(w, currentWeek, canEditPastWeek);
   const currentWeek = useCurrentWeek(parseInt(form.year) || null, form.quarter);
   const editTabWeekLabels = useWeekLabels(parseInt(form.year) || null, form.quarter);
   const firstEditableWeek = (currentWeek !== null && currentWeek > 1) ? currentWeek : 1;
@@ -482,8 +487,8 @@ function EditTab({
                   )}
                   {ALL_WEEKS.map(w => {
                     const isPastWeek = currentWeek !== null && w < currentWeek;
-                    const isStandaloneEditable = form.divisionType === "Standalone" && isPastWeek && pastWeekAllowed;
-                    const showLock = isPastWeek && !isStandaloneEditable && !pastWeekAllowed;
+                    const isStandaloneEditable = form.divisionType === "Standalone" && isPastWeek && !weekLockedByPast(w);
+                    const showLock = weekLockedByPast(w) && !isStandaloneEditable;
                     return (
                     <th key={w} className={`px-2 py-1.5 text-center font-medium border-r border-gray-200 last:border-r-0 whitespace-nowrap ${showLock ? "text-gray-300" : "text-gray-500"}`}>
                       <div>{showLock ? "🔒 " : ""}W{w}</div>
@@ -503,8 +508,8 @@ function EditTab({
                   {ALL_WEEKS.map(w => {
                     const isPastWeek = currentWeek !== null && w < currentWeek;
                     const isStandalone = form.divisionType === "Standalone";
-                    const isStandalonePastEditable = isStandalone && isPastWeek && pastWeekAllowed;
-                    const isLocked = isStandalone ? !isStandalonePastEditable : (isPastWeek && !pastWeekAllowed);
+                    const isStandalonePastEditable = isStandalone && isPastWeek && !weekLockedByPast(w);
+                    const isLocked = isStandalone ? !isStandalonePastEditable : weekLockedByPast(w);
 
                     // Team mode: total = live sum of per-owner cells, edit redistributes by contribution %.
                     if (isTeamKPI && form.ownerIds.length > 0) {
@@ -523,7 +528,7 @@ function EditTab({
                             value={displaySum}
                             onChange={e => setTeamTotalWeekCell(w, e.target.value)}
                             readOnly={isLocked}
-                            title={isPastWeek && !pastWeekAllowed
+                            title={weekLockedByPast(w)
                               ? "Past week editing is disabled. Enable in Settings > Configurations."
                               : "Editing the total redistributes across owners by contribution %"}
                             className={`w-full px-1 py-1 text-center text-xs font-semibold border rounded focus:outline-none min-w-[72px] ${
@@ -572,7 +577,7 @@ function EditTab({
                         value={form.weeklyBreakdown[w] ?? ""}
                         onChange={e => setWeekBreakdown(w, e.target.value)}
                         readOnly={isLocked}
-                        title={isPastWeek && !pastWeekAllowed ? "Past week editing is disabled. Enable in Settings > Configurations." : undefined}
+                        title={weekLockedByPast(w) ? "Past week editing is disabled. Enable in Settings > Configurations." : undefined}
                         className={`w-full px-1 py-1 text-center text-xs border rounded focus:outline-none min-w-[72px] ${
                           isLocked
                             ? "border-gray-100 bg-gray-50 text-gray-400 cursor-not-allowed"
@@ -596,9 +601,8 @@ function EditTab({
                         <span className="ml-1 text-gray-400">({pct.toFixed(0)}%)</span>
                       </td>
                       {ALL_WEEKS.map(w => {
-                        const isPastWeek = currentWeek !== null && w < currentWeek;
                         const isStandalone = form.divisionType === "Standalone";
-                        const isLocked = isStandalone || (isPastWeek && !pastWeekAllowed);
+                        const isLocked = isStandalone || weekLockedByPast(w);
                         return (
                           <td key={w} className="px-1 py-1.5 border-r border-t border-gray-100 last:border-r-0">
                             <input
@@ -607,7 +611,7 @@ function EditTab({
                               value={ownerRow[w] ?? ""}
                               onChange={e => setOwnerWeekCell(id, w, e.target.value)}
                               readOnly={isLocked}
-                              title={isPastWeek && !pastWeekAllowed
+                              title={weekLockedByPast(w)
                                 ? "Past week editing is disabled. Enable in Settings > Configurations."
                                 : isStandalone ? "Standalone mode locks per-owner cells" : undefined}
                               className={`w-full px-1 py-1 text-center text-xs border rounded focus:outline-none min-w-[72px] ${
@@ -668,7 +672,9 @@ function UpdatesTab({
   const [addingNote, setAddingNote] = useState(false);
 
   // Past week lock. DB-driven: respects tenant's QuarterSetting.startDate.
-  const { canEditPastWeek } = usePastWeekFlags();
+  // `flagsLoaded` gates the lock so past weeks stay locked until the flag +
+  // current-week state resolve (see weeklyInputLockState).
+  const { canEditPastWeek, loaded: flagsLoaded } = usePastWeekFlags();
   const currentWeek = useCurrentWeek(kpi.year, kpi.quarter);
   const updatesTabWeekLabels = useWeekLabels(kpi.year, kpi.quarter);
 
@@ -734,9 +740,9 @@ function UpdatesTab({
             </p>
             <div className="space-y-3">
               {ALL_WEEKS.map(w => {
-                const isPast = !canEditPastWeek && currentWeek !== null && w < currentWeek;
-                const isFuture = currentWeek !== null && w > currentWeek;
-                const locked = isPast || isFuture;
+                const { isPast, isFuture, locked } = weeklyInputLockState({
+                  week: w, currentWeek, canEditPastWeek, flagsLoaded,
+                });
                 // Aggregate total for this week (display only)
                 const total = ownerList.reduce((s, o) => {
                   const v = parseFloat(teamWeeklyState[o.id]?.[w]?.value ?? "") || 0;
@@ -828,9 +834,9 @@ function UpdatesTab({
             </div>
             <div className="border border-gray-200 rounded-lg px-3 bg-white">
               {ALL_WEEKS.map(w => {
-                const isPast = !canEditPastWeek && currentWeek !== null && w < currentWeek;
-                const isFuture = currentWeek !== null && w > currentWeek;
-                const locked = isPast || isFuture;
+                const { locked } = weeklyInputLockState({
+                  week: w, currentWeek, canEditPastWeek, flagsLoaded,
+                });
                 // When a week has no target (target = 0 or unset), lock the input
                 // so nothing new can be entered — but keep any existing historical
                 // value visible so previously entered data is not hidden.
@@ -1176,7 +1182,7 @@ export function LogModal({ kpi, onClose, onRefresh, initialTab = "updates", canU
       type WeeklyInput = { weekNumber: number; value: number | null; notes: string | null; userId?: string };
       const weeklyInputs: WeeklyInput[] = [];
       const isPastWeekLocked = (w: number) =>
-        !canEditPastWeekAtSave && headerCurrentWeek !== null && w < headerCurrentWeek;
+        headerCurrentWeek !== null && isWeekBeforeEditableWindow(w, headerCurrentWeek, canEditPastWeekAtSave);
       const cellsDiffer = (
         cur: { value: string; notes: string } | undefined,
         prev: { value: string; notes: string } | undefined,

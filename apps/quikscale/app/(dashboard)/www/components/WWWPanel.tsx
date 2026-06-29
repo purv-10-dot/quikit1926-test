@@ -1,10 +1,11 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useCreateWWW, useUpdateWWW } from "@/lib/hooks/useWWW";
 import { useUsers } from "@/lib/hooks/useUsers";
 import { useCanEditWWW, useCanEditWWWAssignment } from "@/lib/hooks/useCanEditWWW";
 import { useWWWNotesRequired } from "@/lib/hooks/useFeatureFlags";
+import { useWWWNotes } from "@/lib/hooks/useWWWNotes";
 import { validateWWWForm } from "@/lib/utils/wwwFormValidation";
 import { WWWNotesThread } from "./WWWNotesThread";
 import type { WWWItem } from "@/lib/types/www";
@@ -183,6 +184,7 @@ function EditTab({
   whoWhenReadOnly,
   itemId,
   notesRequired,
+  showNotesRequiredError,
 }: {
   form: { whoIds: string[]; what: string; when: string; status: string; revisedDate: string; notes: string; category: string; originalDueDate: string };
   set: (key: string, val: string) => void;
@@ -196,6 +198,9 @@ function EditTab({
   itemId?: string;
   /** Org `www_notes_required` flag — when true, Notes is mandatory. */
   notesRequired: boolean;
+  /** Edit mode: show the "add a note before saving" error under the composer
+   *  (set after a blocked save until a new note is added). */
+  showNotesRequiredError?: boolean;
 }) {
   return (
     <div className="space-y-4">
@@ -332,7 +337,7 @@ function EditTab({
           {errors.notes && <p className="text-[10px] text-red-500 mt-0.5">{errors.notes}</p>}
         </div>
       ) : (
-        itemId && <WWWNotesThread itemId={itemId} canAddNotes={!readOnly} />
+        itemId && <WWWNotesThread itemId={itemId} canAddNotes={!readOnly} required={notesRequired} showRequiredError={showNotesRequiredError} />
       )}
     </div>
   );
@@ -381,8 +386,37 @@ export function WWWPanel({ mode, item, initialTab, onClose, onSuccess, logsOnly 
 
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [saving, setSaving] = useState(false);
+  // True once the user has attempted to Save — gates the edit-mode notes error
+  // so it appears on Save (and persists) rather than nagging from the start.
+  const [saveAttempted, setSaveAttempted] = useState(false);
   // Org flag: when on, Notes is mandatory on both add + edit.
   const notesRequired = useWWWNotesRequired();
+
+  // ── Edit-mode notes-required (Option A: a NEW note per save) ──
+  // Read the item's note thread (disabled in create mode; shares the thread's
+  // React Query cache, so no extra fetch). We snapshot the note count when the
+  // drawer opens, then require the count to grow — i.e. the user must add a new
+  // note in this edit session before Save Changes is allowed.
+  const { data: threadNotes = [], isSuccess: notesLoaded } = useWWWNotes(item?.id ?? "");
+  const initialNoteCountRef = useRef<number | null>(null);
+  // Reset the baseline (and the attempted flag) whenever the edited item changes.
+  useEffect(() => {
+    initialNoteCountRef.current = null;
+    setSaveAttempted(false);
+  }, [item?.id]);
+  // Capture the baseline once the thread has loaded for this item.
+  useEffect(() => {
+    if (notesLoaded && initialNoteCountRef.current === null) {
+      initialNoteCountRef.current = threadNotes.length;
+    }
+  }, [notesLoaded, threadNotes.length]);
+
+  const requireNoteOnSave = mode === "edit" && notesRequired;
+  const addedNoteThisSession =
+    initialNoteCountRef.current !== null && threadNotes.length > initialNoteCountRef.current;
+  // Show the "add a note" error under the composer after a blocked save attempt,
+  // until a new note is actually added.
+  const showNotesRequiredError = requireNoteOnSave && saveAttempted && !addedNoteThisSession;
 
   // Re-populate when item changes (edit mode)
   useEffect(() => {
@@ -419,15 +453,18 @@ export function WWWPanel({ mode, item, initialTab, onClose, onSuccess, logsOnly 
     return validateWWWForm(
       { whoIds: form.whoIds, what: form.what, when: form.when, revisedDate: form.revisedDate, notes: form.notes },
       // Notes-required is a form-field rule only on CREATE (the single textarea).
-      // In edit mode notes live in the thread; the server PUT enforces the flag
-      // against the latest-note mirror, so don't block the main form on it.
+      // In edit mode notes live in the thread and are enforced separately below
+      // (a NEW note must be added this session), so don't block on form.notes.
       { mode, notesRequired: mode === "create" ? notesRequired : false },
     );
   }
 
   async function handleSubmit() {
     const errs = validate();
-    if (Object.keys(errs).length) { setErrors(errs); setTab("edit"); return; }
+    // Edit + notes-required: a new note must have been added in this session.
+    const blockForNote = requireNoteOnSave && !addedNoteThisSession;
+    if (blockForNote) setSaveAttempted(true);
+    if (Object.keys(errs).length || blockForNote) { setErrors(errs); setTab("edit"); return; }
     setSaving(true);
     try {
       const payload: Partial<WWWItem> = {
@@ -529,7 +566,7 @@ export function WWWPanel({ mode, item, initialTab, onClose, onSuccess, logsOnly 
       }
     >
       {tab === "edit" && (
-        <EditTab form={form} set={set} setMulti={setMulti} errors={errors} users={users} mode={mode} readOnly={readOnly} whoWhenReadOnly={whoWhenReadOnly} itemId={item?.id} notesRequired={notesRequired} />
+        <EditTab form={form} set={set} setMulti={setMulti} errors={errors} users={users} mode={mode} readOnly={readOnly} whoWhenReadOnly={whoWhenReadOnly} itemId={item?.id} notesRequired={notesRequired} showNotesRequiredError={showNotesRequiredError} />
       )}
       {tab === "log" && item && (
         <LogTab item={item} users={users} />

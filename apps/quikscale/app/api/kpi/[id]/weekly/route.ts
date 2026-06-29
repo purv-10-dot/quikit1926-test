@@ -4,6 +4,7 @@ import { weeklyValueSchema } from "@/lib/schemas/kpiSchema";
 import { withOrgAuthForModule } from "@/lib/api/withOrgAuth";
 const withOrgAuth = withOrgAuthForModule("kpi");
 import { getPastWeekFlags, getCurrentFiscalWeekFromDB } from "@/lib/utils/featureFlags";
+import { isWeekBeforeEditableWindow, earliestEditableWeek } from "@/lib/utils/weekLock";
 import { audit, requestContext } from "@/lib/audit";
 import { weeklyTargetForWeek } from "@/lib/utils/kpiHelpers";
 import { withTxRetry } from "@/lib/api/withTxRetry";
@@ -174,11 +175,12 @@ export const POST = withOrgAuth<{ id: string }>(async ({ orgId, userId }, req, {
   const { canEditPastWeek } = await getPastWeekFlags(orgId);
   if (!canEditPastWeek && kpi.quarter && kpi.year) {
     const currentWeek = await getCurrentFiscalWeekFromDB(orgId, kpi.year, kpi.quarter);
-    if (validated.weekNumber < currentWeek) {
+    if (isWeekBeforeEditableWindow(validated.weekNumber, currentWeek, canEditPastWeek)) {
+      const earliest = earliestEditableWeek(currentWeek, canEditPastWeek);
       return NextResponse.json(
         {
           success: false,
-          error: `Editing past weeks is disabled. Week ${validated.weekNumber} is before the current week (${currentWeek}). Enable it in Settings > Configurations.`,
+          error: `Editing past weeks is disabled. Week ${validated.weekNumber} is before the earliest editable week (${earliest}). Enable it in Settings > Configurations.`,
         },
         { status: 403 }
       );
