@@ -1,5 +1,4 @@
 import { getColorByPercentage, type ColorResult } from "./colorLogic";
-import { CURRENCIES, getMultiplier, shortScaleLabel } from "./currency";
 
 /**
  * Format a number for display: strips floating-point noise, max 2 decimal places,
@@ -51,46 +50,6 @@ export function fmtCompactIndian(val: number | null | undefined): string {
  */
 export function fmtCompactBy(val: number | null | undefined, format: NumberFormat = "standard"): string {
   return format === "indian" ? fmtCompactIndian(val) : fmtCompact(val);
-}
-
-/**
- * Format a KPI numeric value for list/table cells, honouring a currency KPI's
- * chosen scale unit. A ₹5 Cr target (raw 50,000,000) renders as "₹5 Cr" instead
- * of the Western "50M". Non-currency KPIs, or currency KPIs without a scale,
- * fall back to {@link fmtCompactBy} so every other surface is byte-identical.
- */
-export function formatScaledKpiValue(
-  val: number | null | undefined,
-  opts: {
-    measurementUnit?: string | null;
-    currency?: string | null;
-    targetScale?: string | null;
-    numberFormat?: NumberFormat;
-  },
-): string {
-  if (val === null || val === undefined) return "—";
-  const { measurementUnit, currency, targetScale, numberFormat = "standard" } = opts;
-  if (measurementUnit === "Currency" && currency && targetScale) {
-    const m = getMultiplier(currency, targetScale);
-    if (m > 1) {
-      const symbol = CURRENCIES.find((c) => c.code === currency)?.symbol ?? "";
-      // A NON-INR currency follows the global Indian toggle: when it's on we
-      // convert the magnitude to lakh/crore/arab (keeping the currency symbol),
-      // e.g. $9M → "$90 L". INR is inherently Indian-system and is unaffected by
-      // the toggle — it always shows its chosen scale ("₹4 Cr").
-      if (currency !== "INR" && numberFormat === "indian") {
-        return `${symbol}${fmtCompactIndian(val)}`;
-      }
-      const scaled = parseFloat((val / m).toFixed(2)).toString();
-      const unit = shortScaleLabel(targetScale);
-      return `${symbol}${scaled}${unit ? ` ${unit}` : ""}`;
-    }
-  }
-  // No explicit scale: INR is inherently an Indian-system currency, so it always
-  // uses lakh/crore/arab magnitudes even when the global toggle is off. Every
-  // other currency (and non-currency) follows the global toggle.
-  const effective: NumberFormat = currency === "INR" ? "indian" : numberFormat;
-  return fmtCompactBy(val, effective);
 }
 
 /**

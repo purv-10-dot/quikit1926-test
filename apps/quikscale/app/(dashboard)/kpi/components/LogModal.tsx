@@ -9,7 +9,7 @@ import type { KPIRow, WeeklyValue, User } from "@/lib/types/kpi";
 import { fiscalYearLabel, weekDateLabel, ALL_WEEKS } from "@/lib/utils/fiscal";
 import { progressColor, fmt } from "@/lib/utils/kpiHelpers";
 import { UserPicker } from "@quikit/ui";
-import { CURRENCIES, getScales, getMultiplier, formatActual, scaleDownForDisplay, scaleUpFromInput, shortScaleLabel } from "@/lib/utils/currency";
+import { CURRENCIES, getScales, getMultiplier, formatActual } from "@/lib/utils/currency";
 import { WeeklyScroller } from "./WeeklyScroller";
 import { usePastWeekFlags } from "@/lib/hooks/useFeatureFlags";
 import { useCurrentWeek, useWeekLabels } from "@/lib/hooks/useCurrentWeek";
@@ -85,9 +85,6 @@ function EditTab({
   const currentWeek = useCurrentWeek(parseInt(form.year) || null, form.quarter);
   const editTabWeekLabels = useWeekLabels(parseInt(form.year) || null, form.quarter);
   const firstEditableWeek = (currentWeek !== null && currentWeek > 1) ? currentWeek : 1;
-  // Buffers in-progress keystrokes for scaled-currency cells so typing a decimal
-  // ("2.5") isn't mangled by the display↔raw round-trip on each keypress.
-  const [editingCell, setEditingCell] = useState<{ key: string; raw: string } | null>(null);
 
   function set(key: string, val: string) {
     setForm(f => ({ ...f, [key]: val }));
@@ -256,16 +253,6 @@ function EditTab({
     ? (parseFloat(form.target) || 0) * getMultiplier(form.currency, form.targetScale)
     : parseFloat(form.target) || 0;
   const targetNum = scaledTarget;
-
-  // Display/input scaling for the weekly breakdown cells — stored RAW, shown +
-  // typed in the chosen scale unit (Crore, etc.). Passthrough when no scale.
-  const scaleMult = isCurrency ? getMultiplier(form.currency, form.targetScale) : 1;
-  const toDisp = (raw: number | string) =>
-    scaleMult > 1 ? scaleDownForDisplay(raw, form.currency, form.targetScale) : (typeof raw === "string" ? raw : String(raw));
-  const toRaw = (input: string) =>
-    scaleMult > 1 ? scaleUpFromInput(input, form.currency, form.targetScale) : input;
-  const scaleUnitLabel = scaleMult > 1 ? ` — in ${currencyObj.symbol} ${form.targetScale}` : "";
-  const scaleUnitShort = scaleMult > 1 ? `${currencyObj.symbol} ${shortScaleLabel(form.targetScale)}`.trim() : "";
 
   return (
     <div className="space-y-4">
@@ -483,7 +470,7 @@ function EditTab({
 
       {targetNum > 0 && (
         <div>
-          <label className="block text-xs font-medium text-gray-600 mb-2">Target Breakdown (Weekly){scaleUnitLabel}</label>
+          <label className="block text-xs font-medium text-gray-600 mb-2">Target Breakdown (Weekly)</label>
           <WeeklyScroller>
             <table className="w-full text-xs">
               <thead>
@@ -501,7 +488,6 @@ function EditTab({
                     <th key={w} className={`px-2 py-1.5 text-center font-medium border-r border-gray-200 last:border-r-0 whitespace-nowrap ${showLock ? "text-gray-300" : "text-gray-500"}`}>
                       <div>{showLock ? "🔒 " : ""}W{w}</div>
                       <div className="text-[9px] font-normal text-gray-400">{editTabWeekLabels[w - 1] ?? weekDateLabel(parseInt(form.year), form.quarter, w)}</div>
-                      {scaleUnitShort && <div className="text-[9px] font-semibold text-accent-600">{scaleUnitShort}</div>}
                     </th>
                   );})}
                 </tr>
@@ -534,9 +520,8 @@ function EditTab({
                           <input
                             type="number"
                             min="0"
-                            value={editingCell?.key === `tot-${w}` ? editingCell.raw : toDisp(displaySum)}
-                            onChange={e => { setEditingCell({ key: `tot-${w}`, raw: e.target.value }); setTeamTotalWeekCell(w, toRaw(e.target.value)); }}
-                            onBlur={() => setEditingCell(null)}
+                            value={displaySum}
+                            onChange={e => setTeamTotalWeekCell(w, e.target.value)}
                             readOnly={isLocked}
                             title={isPastWeek && !pastWeekAllowed
                               ? "Past week editing is disabled. Enable in Settings > Configurations."
@@ -570,9 +555,9 @@ function EditTab({
                             className="w-full px-1 py-1 text-center text-xs border rounded border-gray-200 focus:outline-none focus:ring-1 focus:ring-accent-400 min-w-[72px]"
                           >
                             <option value={zeroStr}>0</option>
-                            {targetStr && <option value={targetStr}>{toDisp(targetStr)}</option>}
+                            {targetStr && <option value={targetStr}>{targetStr}</option>}
                             {norm !== zeroStr && norm !== "" && norm !== targetStr && (
-                              <option value={norm}>{toDisp(norm)} (custom)</option>
+                              <option value={norm}>{norm} (custom)</option>
                             )}
                           </select>
                         </td>
@@ -584,9 +569,8 @@ function EditTab({
                       <input
                         type="number"
                         min="0"
-                        value={editingCell?.key === `ind-${w}` ? editingCell.raw : toDisp(form.weeklyBreakdown[w] ?? "")}
-                        onChange={e => { setEditingCell({ key: `ind-${w}`, raw: e.target.value }); setWeekBreakdown(w, toRaw(e.target.value)); }}
-                        onBlur={() => setEditingCell(null)}
+                        value={form.weeklyBreakdown[w] ?? ""}
+                        onChange={e => setWeekBreakdown(w, e.target.value)}
                         readOnly={isLocked}
                         title={isPastWeek && !pastWeekAllowed ? "Past week editing is disabled. Enable in Settings > Configurations." : undefined}
                         className={`w-full px-1 py-1 text-center text-xs border rounded focus:outline-none min-w-[72px] ${
@@ -620,9 +604,8 @@ function EditTab({
                             <input
                               type="number"
                               min="0"
-                              value={editingCell?.key === `own-${id}-${w}` ? editingCell.raw : toDisp(ownerRow[w] ?? "")}
-                              onChange={e => { setEditingCell({ key: `own-${id}-${w}`, raw: e.target.value }); setOwnerWeekCell(id, w, toRaw(e.target.value)); }}
-                              onBlur={() => setEditingCell(null)}
+                              value={ownerRow[w] ?? ""}
+                              onChange={e => setOwnerWeekCell(id, w, e.target.value)}
                               readOnly={isLocked}
                               title={isPastWeek && !pastWeekAllowed
                                 ? "Past week editing is disabled. Enable in Settings > Configurations."
@@ -702,21 +685,6 @@ function UpdatesTab({
   const targetForWeek = (w: number): number =>
     savedWeeklyTargets?.[String(w)] ?? weeklyTarget;
 
-  // Currency-scale display/input for the Updates tab. Actuals + targets are
-  // stored RAW; for a scaled currency KPI they're shown + typed in the unit
-  // (e.g. Crore). Passthrough when no scale / non-currency. `valBuf` preserves
-  // in-progress decimal keystrokes per cell so "2.5" isn't mangled mid-type.
-  const isCurrencyU = kpi.measurementUnit === "Currency";
-  const scaleMultU = isCurrencyU ? getMultiplier(kpi.currency ?? "", kpi.targetScale ?? "") : 1;
-  const curSymU = CURRENCIES.find(c => c.code === kpi.currency)?.symbol ?? "";
-  const toDispU = (raw: number | string) =>
-    scaleMultU > 1 ? scaleDownForDisplay(raw, kpi.currency ?? "", kpi.targetScale ?? "") : (typeof raw === "string" ? raw : String(raw));
-  const toRawU = (input: string) =>
-    scaleMultU > 1 ? scaleUpFromInput(input, kpi.currency ?? "", kpi.targetScale ?? "") : input;
-  const fmtTargetU = (raw: number) => scaleMultU > 1 ? toDispU(raw) : fmt(raw);
-  const unitHintU = scaleMultU > 1 ? ` (in ${curSymU} ${kpi.targetScale})` : "";
-  const [valBuf, setValBuf] = useState<{ key: string; raw: string } | null>(null);
-
   function handleWeekChange(weekNumber: number, field: "value" | "notes", val: string) {
     setWeeklyState(s => ({
       ...s,
@@ -747,9 +715,9 @@ function UpdatesTab({
     <div className="space-y-5">
       <div>
         <div className="flex items-center justify-between mb-3">
-          <h3 className="text-xs font-semibold text-gray-700">Weekly Values{unitHintU}</h3>
+          <h3 className="text-xs font-semibold text-gray-700">Weekly Values</h3>
           {weeklyTarget > 0 && (
-            <span className="text-[10px] text-gray-400">Weekly target: {fmtTargetU(weeklyTarget)}</span>
+            <span className="text-[10px] text-gray-400">Weekly target: {fmt(weeklyTarget)}</span>
           )}
         </div>
 
@@ -784,7 +752,7 @@ function UpdatesTab({
                         </span>
                       </div>
                       <span className="text-[10px] text-gray-500">
-                        Total: <span className="font-semibold text-gray-700">{fmtTargetU(total)}</span>
+                        Total: <span className="font-semibold text-gray-700">{fmt(total)}</span>
                         {isPast && <span className="ml-2 text-amber-600">· past-week locked</span>}
                         {isFuture && <span className="ml-2 text-gray-400">· future week</span>}
                       </span>
@@ -807,17 +775,16 @@ function UpdatesTab({
                               <div className="text-[9px] text-gray-400">{pct}%</div>
                             </div>
                             <div className="w-16 flex-shrink-0 text-center">
-                              <div className="text-[9px] text-gray-400 leading-none">Target{scaleMultU > 1 ? ` (${shortScaleLabel(kpi.targetScale ?? "")})` : ""}</div>
+                              <div className="text-[9px] text-gray-400 leading-none">Target</div>
                               <div className="text-xs font-medium text-gray-700 mt-0.5">
-                                {ownerWeekTarget > 0 ? `${fmtTargetU(ownerWeekTarget)}${scaleMultU > 1 ? " " + shortScaleLabel(kpi.targetScale ?? "") : ""}` : "—"}
+                                {ownerWeekTarget > 0 ? fmt(ownerWeekTarget) : "—"}
                               </div>
                             </div>
                             <input
                               type="number"
                               min="0"
-                              value={valBuf?.key === `tm-${o.id}-${w}` ? valBuf.raw : toDispU(rowState.value)}
-                              onChange={e => { setValBuf({ key: `tm-${o.id}-${w}`, raw: e.target.value }); handleTeamWeekChange(o.id, w, "value", toRawU(e.target.value)); }}
-                              onBlur={() => setValBuf(null)}
+                              value={rowState.value}
+                              onChange={e => handleTeamWeekChange(o.id, w, "value", e.target.value)}
                               readOnly={!canEditThisRow}
                               placeholder="—"
                               className={`w-24 px-2 py-1 text-xs text-center border rounded focus:outline-none ${
@@ -829,7 +796,6 @@ function UpdatesTab({
                                 ? (isFuture ? "Future week — not yet available" : isPast ? "Past week locked" : "You can only edit your own row")
                                 : undefined}
                             />
-                            {scaleMultU > 1 && <span className="text-[9px] text-gray-400 flex-shrink-0">{shortScaleLabel(kpi.targetScale ?? "")}</span>}
                             <input
                               type="text"
                               value={rowState.notes}
@@ -856,8 +822,8 @@ function UpdatesTab({
           <>
             <div className="flex items-center gap-3 mb-1">
               <div className="w-24 text-[10px] text-gray-400 font-medium">Week</div>
-              <div className="w-20 text-[10px] text-gray-400 font-medium text-center">Target{scaleMultU > 1 ? ` (${shortScaleLabel(kpi.targetScale ?? "")})` : ""}</div>
-              <div className="w-24 text-[10px] text-gray-400 font-medium text-center">Value{scaleMultU > 1 ? ` (${shortScaleLabel(kpi.targetScale ?? "")})` : ""}</div>
+              <div className="w-20 text-[10px] text-gray-400 font-medium text-center">Target</div>
+              <div className="w-24 text-[10px] text-gray-400 font-medium text-center">Value</div>
               <div className="flex-1 text-[10px] text-gray-400 font-medium">Notes</div>
             </div>
             <div className="border border-gray-200 rounded-lg px-3 bg-white">
@@ -874,21 +840,18 @@ function UpdatesTab({
                 <WeekRow
                   key={w}
                   weekNumber={w}
-                  value={valBuf?.key === `w-${w}` ? valBuf.raw : toDispU(weeklyState[w]?.value ?? "")}
+                  value={weeklyState[w]?.value ?? ""}
                   notes={weeklyState[w]?.notes ?? ""}
-                  // Target passed in the SAME (scaled) unit as the value so the
-                  // progress bar ratio stays correct.
-                  weeklyTarget={scaleMultU > 1 ? targetForWeek(w) / scaleMultU : targetForWeek(w)}
+                  weeklyTarget={targetForWeek(w)}
                   year={kpi.year}
                   quarter={kpi.quarter}
                   dateLabel={updatesTabWeekLabels[w - 1]}
-                  onValueChange={v => { setValBuf({ key: `w-${w}`, raw: v }); handleWeekChange(w, "value", toRawU(v)); }}
+                  onValueChange={v => handleWeekChange(w, "value", v)}
                   onNotesChange={n => handleWeekChange(w, "notes", n)}
                   locked={locked || noTargetLocked}
                   lockReason={noTargetLocked ? "No target set for this week." : undefined}
                   reverse={kpi.reverseColor ?? false}
-                  targetDisplay={hasTarget ? `${fmtTargetU(targetForWeek(w))}${scaleMultU > 1 ? " " + shortScaleLabel(kpi.targetScale ?? "") : ""}` : "—"}
-                  unitSuffix={scaleMultU > 1 ? shortScaleLabel(kpi.targetScale ?? "") : ""}
+                  targetDisplay={hasTarget ? fmt(targetForWeek(w)) : "—"}
                 />
               );})}
             </div>

@@ -17,38 +17,11 @@
  */
 
 import type { KPIRow } from "@/lib/types/kpi";
-import { fmt, formatScaledKpiValue, getProgressBadgeColors } from "@/lib/utils/kpiHelpers";
-import { CURRENCIES, getMultiplier, formatActual } from "@/lib/utils/currency";
+import { fmt, getProgressBadgeColors } from "@/lib/utils/kpiHelpers";
 import { computeKPIStats, computeQtd } from "./kpiStats";
 import { useCurrentWeek } from "@/lib/hooks/useCurrentWeek";
-import { useNumberFormat } from "@/lib/hooks/useFeatureFlags";
 
 export function StatsTab({ kpi }: { kpi: KPIRow }) {
-  const numberFormat = useNumberFormat();
-  // Currency-aware stat formatter (matches the list/dashboard via the shared
-  // helper so the Indian toggle behaves identically here):
-  //   • currency + scale  → "₹4 Cr" (INR, always) / "$9 M" (toggle off) /
-  //                          "$90 L" (non-INR, toggle on → Indian magnitude)
-  //   • currency, no scale → "$50,000,000" (symbol + grouped)
-  //   • non-currency       → plain fmt() (unchanged)
-  const fmtStat = (v: number | null | undefined): string => {
-    if (v === null || v === undefined) return "—";
-    if (kpi.measurementUnit === "Currency" && kpi.currency) {
-      const hasScale = kpi.targetScale ? getMultiplier(kpi.currency, kpi.targetScale) > 1 : false;
-      if (hasScale) {
-        return formatScaledKpiValue(v, {
-          measurementUnit: kpi.measurementUnit,
-          currency: kpi.currency,
-          targetScale: kpi.targetScale,
-          numberFormat,
-        });
-      }
-      const symbol = CURRENCIES.find((c) => c.code === kpi.currency)?.symbol ?? "";
-      return formatActual(v, symbol, kpi.currency);
-    }
-    return fmt(v);
-  };
-
   // kpi.target is the user-set quarterly target; kpi.qtdGoal is a derived aggregate
   // that can lag behind after a target edit. Use kpi.target as the primary.
   const target = kpi.target ?? kpi.qtdGoal ?? 0;
@@ -106,8 +79,8 @@ export function StatsTab({ kpi }: { kpi: KPIRow }) {
   const prevWeekTarget = prevWeek != null ? weekTargetFor(prevWeek) : 0;
   const weeklyGoalDisplay = (() => {
     if (prevWeek == null) return "—";
-    const valueStr = prevWeekValue != null ? fmtStat(prevWeekValue) : "—";
-    const targetStr = prevWeekTarget > 0 ? fmtStat(prevWeekTarget) : "—";
+    const valueStr = prevWeekValue != null ? fmt(prevWeekValue) : "—";
+    const targetStr = prevWeekTarget > 0 ? fmt(prevWeekTarget) : "—";
     if (valueStr === "—" && targetStr === "—") return "—";
     return `${valueStr} / ${targetStr}`;
   })();
@@ -129,10 +102,10 @@ export function StatsTab({ kpi }: { kpi: KPIRow }) {
             <div className="text-right">
               <div className="text-xs text-gray-500">Achieved</div>
               <div className="text-lg font-semibold text-gray-800">
-                {fmtStat(achieved)}
+                {fmt(achieved)}
               </div>
               <div className="text-[10px] text-gray-400">
-                of {fmtStat(target)} target
+                of {fmt(target)} target
               </div>
             </div>
           </div>
@@ -148,13 +121,13 @@ export function StatsTab({ kpi }: { kpi: KPIRow }) {
       <div className="grid grid-cols-3 gap-3">
         {[
           { label: "Weeks Reported", value: String(filledWeeks.length), sub: undefined },
-          { label: "Avg / Week", value: fmtStat(avgPerWeek), sub: undefined },
+          { label: "Avg / Week", value: fmt(avgPerWeek), sub: undefined },
           {
             label: "Best Week",
             value: bestWeek ? `W${bestWeek}` : "—",
             // Sub-label surfaces the achieved value for the best-performing
             // week so the stat reads like "W1 — 4.45" instead of a bare label.
-            sub: bestWeek ? fmtStat(bestValue) : undefined,
+            sub: bestWeek ? fmt(bestValue) : undefined,
           },
         ].map((s) => (
           <div
@@ -176,19 +149,19 @@ export function StatsTab({ kpi }: { kpi: KPIRow }) {
         {[
           {
             label: "Quarterly Goal",
-            value: kpi.quarterlyGoal != null ? fmtStat(kpi.quarterlyGoal) : "—",
+            value: kpi.quarterlyGoal != null ? String(kpi.quarterlyGoal) : "—",
           },
           {
             label: "QTD Goal",
-            value: qtdGoal != null ? fmtStat(qtdGoal) : "—",
+            value: qtdGoal != null ? fmt(qtdGoal) : "—",
           },
           {
             label: "QTD Achieved",
             // Format "achieved / goal" so the user sees progress at a glance.
             value:
               qtdGoal != null
-                ? `${fmtStat(qtdAchieved ?? 0)} / ${fmtStat(qtdGoal)}`
-                : fmtStat(qtdAchieved ?? 0),
+                ? `${fmt(qtdAchieved ?? 0)} / ${fmt(qtdGoal)}`
+                : fmt(qtdAchieved ?? 0),
           },
           {
             label: "Weekly Goal",
