@@ -5,7 +5,7 @@ import { useUpdatePriority, useUpdateWeeklyStatusesBatch } from "@/lib/hooks/use
 import { useUsers } from "@/lib/hooks/useUsers";
 import { useTeams } from "@/lib/hooks/useTeams";
 import type { PriorityRow } from "@/lib/types/priority";
-import { fiscalYearLabel, ALL_QUARTERS, getFiscalYear, weekDateLabel, getWeekDateRange } from "@/lib/utils/fiscal";
+import { fiscalYearLabel, ALL_QUARTERS, getFiscalYear, weekDateLabel, getWeekDateRange, weeksArray } from "@/lib/utils/fiscal";
 import { STATUS_META, STATUS_PILL_OPTIONS } from "@/lib/constants/status";
 import { UserPicker } from "@quikit/ui";
 import { useCurrentWeek, useWeekLabels } from "@/lib/hooks/useCurrentWeek";
@@ -29,7 +29,6 @@ interface Props {
 }
 
 const CURRENT_YEAR = getFiscalYear();
-const WEEK_OPTIONS = Array.from({ length: 13 }, (_, i) => i + 1);
 
 export function PriorityLogModal({ priority, onClose, onSuccess, logsOnly = false, canUpdate = true }: Props) {
   // logsOnly mode forces the weekly-log view and locks everything read-only,
@@ -66,7 +65,10 @@ export function PriorityLogModal({ priority, onClose, onSuccess, logsOnly = fals
   // DB-scoped fiscal years via shared hook
   const { years: fyYears } = useFiscalYears();
   const yearOptions = fyYears.length ? fyYears : [CURRENT_YEAR];
-  const { getStartDate: getQuarterStartDate } = useQuarterStartDates();
+  const { getStartDate: getQuarterStartDate, getWeekCount } = useQuarterStartDates();
+  // Weeks in this priority's quarter (Custom Quarter Settings). Defaults to 13.
+  const weekCount = getWeekCount(priority.year, priority.quarter);
+  const weekOptions = weeksArray(weekCount);
 
   // Notes tab state
   const [notes, setNotes] = useState(priority.notes ?? "");
@@ -181,7 +183,7 @@ export function PriorityLogModal({ priority, onClose, onSuccess, logsOnly = fals
   // 13 locally so the cascaded weeks are visible — the extend is committed to
   // the priority on Save (handleSaveWeekly).
   function handleWeeklyStatusChange(weekNumber: number, status: string) {
-    const QUARTER_END = 13;
+    const QUARTER_END = weekCount;
     const currentEnd = parseInt(form.endWeek) || QUARTER_END;
     const cascadeUpper = status === "completed" ? QUARTER_END : currentEnd;
 
@@ -212,7 +214,7 @@ export function PriorityLogModal({ priority, onClose, onSuccess, logsOnly = fals
   // Completed cascade) is committed alongside in the same save.
   async function handleSaveWeekly() {
     const writes = getDirtyWrites();
-    const QUARTER_END = 13;
+    const QUARTER_END = weekCount;
     const originalEnd = priority.endWeek ?? QUARTER_END;
     const nextEnd = parseInt(form.endWeek) || QUARTER_END;
     const shouldExtendEndWeek = nextEnd > originalEnd;
@@ -343,7 +345,7 @@ export function PriorityLogModal({ priority, onClose, onSuccess, logsOnly = fals
                   <label className="block text-xs font-medium text-gray-600 mb-1">Start Week</label>
                   <select value={form.startWeek} onChange={e => handleStartWeekChange(e.target.value)}
                     className="w-full px-3 py-2 text-xs border border-gray-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-accent-400 bg-white">
-                    {WEEK_OPTIONS.map(w => (
+                    {weekOptions.map(w => (
                       <option key={w} value={w}>Week {w}  ({getWeekDateRange(parseInt(form.year), form.quarter, w, getQuarterStartDate(parseInt(form.year), form.quarter))})</option>
                     ))}
                   </select>
@@ -352,7 +354,7 @@ export function PriorityLogModal({ priority, onClose, onSuccess, logsOnly = fals
                   <label className="block text-xs font-medium text-gray-600 mb-1">End Week</label>
                   <select value={form.endWeek} onChange={e => setField("endWeek", e.target.value)}
                     className={`w-full px-3 py-2 text-xs border rounded-lg focus:outline-none focus:ring-1 focus:ring-accent-400 bg-white ${errors.endWeek ? "border-red-400" : "border-gray-200"}`}>
-                    {WEEK_OPTIONS.filter(w => w >= (parseInt(form.startWeek) || 1)).map(w => (
+                    {weekOptions.filter(w => w >= (parseInt(form.startWeek) || 1)).map(w => (
                       <option key={w} value={w}>Week {w}  ({getWeekDateRange(parseInt(form.year), form.quarter, w, getQuarterStartDate(parseInt(form.year), form.quarter))})</option>
                     ))}
                   </select>

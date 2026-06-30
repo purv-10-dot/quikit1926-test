@@ -188,6 +188,7 @@ export function rebuildStepWeekly<T extends WeeklyStepLike>(
   forms: T[],
   firstEditableWeek: number,
   isEdited: (i: number) => boolean,
+  weeksPerQuarter: number = 13,
 ): T[] {
   return forms.map((f, i) => {
     if (isEdited(i)) return f;
@@ -195,7 +196,7 @@ export function rebuildStepWeekly<T extends WeeklyStepLike>(
     if (target <= 0) return f;
     return {
       ...f,
-      weekly: buildBreakdown(f.divisionType, target, f.measurementUnit, firstEditableWeek),
+      weekly: buildBreakdown(f.divisionType, target, f.measurementUnit, firstEditableWeek, weeksPerQuarter),
     };
   });
 }

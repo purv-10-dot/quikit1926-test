@@ -1,9 +1,9 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useCreatePriority } from "@/lib/hooks/usePriority";
 import { useInfiniteUsers } from "@/lib/hooks/useInfiniteUsers";
-import { fiscalYearLabel, ALL_QUARTERS, getFiscalYear, getWeekDateRange } from "@/lib/utils/fiscal";
+import { fiscalYearLabel, ALL_QUARTERS, getFiscalYear, getWeekDateRange, weeksArray } from "@/lib/utils/fiscal";
 import { useTeams } from "@/lib/hooks/useTeams";
 import { UserPicker, RightPanel, RightPanelFooter, RightPanelCancelButton, RightPanelSubmitButton, DropdownPicker } from "@quikit/ui";
 import { FormErrorBanner } from "@/components/forms/FormErrorBanner";
@@ -22,7 +22,6 @@ interface Props {
 }
 
 const CURRENT_YEAR = getFiscalYear();
-const WEEK_OPTIONS = Array.from({ length: 13 }, (_, i) => i + 1);
 
 export function PriorityModal({ defaultYear, defaultQuarter, onClose, onSuccess }: Props) {
   const [form, setForm] = useState({
@@ -40,7 +39,21 @@ export function PriorityModal({ defaultYear, defaultQuarter, onClose, onSuccess 
   // DB-scoped fiscal years via shared hook
   const { years: fyYears } = useFiscalYears();
   const yearOptions = fyYears.length ? fyYears : [CURRENT_YEAR];
-  const { getStartDate: getQuarterStartDate } = useQuarterStartDates();
+  const { getStartDate: getQuarterStartDate, getWeekCount } = useQuarterStartDates();
+  // Weeks in the selected quarter (Custom Quarter Settings). Defaults to 13.
+  const weekCount = getWeekCount(parseInt(form.year) || CURRENT_YEAR, form.quarter);
+  const weekOptions = weeksArray(weekCount);
+
+  // Default the End Week to the quarter's last week once the count resolves —
+  // unless the user already narrowed it. Keeps a custom 14-week quarter from
+  // defaulting to week 13.
+  const [endWeekTouched, setEndWeekTouched] = useState(false);
+  useEffect(() => {
+    if (!endWeekTouched) {
+      setForm(f => ({ ...f, endWeek: String(weekCount) }));
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [weekCount]);
 
   // Owner dropdown filtering:
   //   - Team selected → fetch members of that team (API filters server-side).
@@ -181,7 +194,7 @@ export function PriorityModal({ defaultYear, defaultQuarter, onClose, onSuccess 
               <DropdownPicker
                 value={String(form.startWeek)}
                 onChange={handleStartWeekChange}
-                options={WEEK_OPTIONS.map(w => ({
+                options={weekOptions.map(w => ({
                   value: String(w),
                   label: `Week ${w}`,
                   hint: getWeekDateRange(parseInt(form.year), form.quarter, w, getQuarterStartDate(parseInt(form.year), form.quarter)),
@@ -235,8 +248,8 @@ export function PriorityModal({ defaultYear, defaultQuarter, onClose, onSuccess 
               </label>
               <DropdownPicker
                 value={String(form.endWeek)}
-                onChange={(v) => set("endWeek", v)}
-                options={WEEK_OPTIONS.filter(w => w >= (parseInt(form.startWeek) || 1)).map(w => ({
+                onChange={(v) => { setEndWeekTouched(true); set("endWeek", v); }}
+                options={weekOptions.filter(w => w >= (parseInt(form.startWeek) || 1)).map(w => ({
                   value: String(w),
                   label: `Week ${w}`,
                   hint: getWeekDateRange(parseInt(form.year), form.quarter, w, getQuarterStartDate(parseInt(form.year), form.quarter)),

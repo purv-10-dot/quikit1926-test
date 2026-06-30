@@ -57,12 +57,15 @@ export function fmtCompactBy(val: number | null | undefined, format: NumberForma
  * Display formatter for KPI goal/value numbers that respects a Currency KPI's
  * chosen scale unit. Display-only — stored values stay RAW.
  *
+ * Gated by the per-KPI `scaledDisplay` toggle: scale-unit rendering only applies
+ * when `scaledDisplay` is true AND the KPI is Currency with a chosen scale.
+ * Otherwise it falls back to plain compact (toggle-driven) — today's behaviour.
+ *
  * Rules (see docs/deferred/currency-scale-display.md):
- *   - Currency + scale, INR → always the scaled unit with ₹ ("₹4 Cr"), toggle ignored.
- *   - Currency + scale, non-INR → toggle OFF native scale ("$9 M"); toggle ON
- *     Indian magnitude keeping the symbol ("$90L").
- *   - Currency, no scale → INR forces Indian; others follow the toggle.
- *   - Non-currency → plain compact, toggle-driven (byte-identical to fmtCompactBy).
+ *   - Currency + scale + scaledDisplay, INR → scaled unit with ₹ ("₹4 Cr").
+ *   - Currency + scale + scaledDisplay, non-INR → toggle OFF native scale ("$9 M");
+ *     toggle ON Indian magnitude keeping the symbol ("$90L").
+ *   - scaledDisplay off / no scale / non-currency → plain compact (Indian for INR).
  */
 export function formatScaledKpiValue(
   val: number | null | undefined,
@@ -71,11 +74,13 @@ export function formatScaledKpiValue(
     currency?: string | null;
     targetScale?: string | null;
     numberFormat?: NumberFormat;
+    /** Per-KPI scale-unit display toggle. When false, no scale-unit rendering. */
+    scaledDisplay?: boolean;
   },
 ): string {
   if (val == null) return "—";
-  const { measurementUnit, currency, targetScale, numberFormat = "standard" } = opts;
-  if (measurementUnit === "Currency" && currency && targetScale) {
+  const { measurementUnit, currency, targetScale, numberFormat = "standard", scaledDisplay = false } = opts;
+  if (scaledDisplay && measurementUnit === "Currency" && currency && targetScale) {
     const m = getMultiplier(currency, targetScale);
     if (m > 1) {
       const symbol = CURRENCIES.find(c => c.code === currency)?.symbol ?? "";
@@ -170,10 +175,11 @@ export function weeklyTargetForWeek(
     target?: number | null;
   },
   week: number,
+  weeksPerQuarter: number = 13,
 ): number {
   const explicit = kpi.weeklyTargets?.[String(week)];
   if (explicit != null) return explicit;
-  return (kpi.qtdGoal ?? kpi.target ?? 0) / 13;
+  return (kpi.qtdGoal ?? kpi.target ?? 0) / weeksPerQuarter;
 }
 
 export function weekCellColors(
@@ -181,8 +187,9 @@ export function weekCellColors(
   qtdGoal: number | null | undefined,
   fallbackTarget: number | null | undefined = null,
   reverse: boolean = false,
+  weeksPerQuarter: number = 13,
 ): { bg: string; text: string; label: string } {
-  const weeklyTarget = ((qtdGoal ?? fallbackTarget ?? 0)) / 13;
+  const weeklyTarget = ((qtdGoal ?? fallbackTarget ?? 0)) / weeksPerQuarter;
   const isUpdated = val !== null && val !== undefined;
   const numVal = isUpdated ? val : 0;
   const color: ColorResult = getColorByPercentage(numVal, weeklyTarget, isUpdated, reverse);

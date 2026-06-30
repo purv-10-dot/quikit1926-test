@@ -54,7 +54,14 @@ export const GET = withOrgAuth(async ({ orgId }) => {
     include: { weeklyValues: true },
   });
 
-  const weeklyTrend = Array.from({ length: 13 }, (_, i) => {
+  // Custom Quarter Settings: size the weekly trend to the quarter's week count.
+  const qSetting = await db.quarterSetting.findFirst({
+    where: { orgId, fiscalYear: currentYear, quarter: qLabel },
+    select: { weekCount: true },
+  });
+  const trendWeeks = qSetting?.weekCount ?? 13;
+
+  const weeklyTrend = Array.from({ length: trendWeeks }, (_, i) => {
     const week = i + 1;
     const values = currentQKpis.flatMap((k) =>
       k.weeklyValues.filter((v) => v.weekNumber === week && v.value !== null),

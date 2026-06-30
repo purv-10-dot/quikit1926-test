@@ -29,9 +29,9 @@ import type { PriorityRow } from "@/lib/types/priority";
 import type { WWWItem } from "@/lib/types/www";
 import {
   getFiscalYear, getFiscalQuarter, fiscalYearLabel,
-  weekDateLabel, ALL_WEEKS, rollingVisibleWeeks,
+  weekDateLabel, ALL_WEEKS, weeksArray, rollingVisibleWeeks,
 } from "@/lib/utils/fiscal";
-import { useCurrentWeek, useWeekDateRange, useWeekLabels } from "@/lib/hooks/useCurrentWeek";
+import { useCurrentWeek, useWeekDateRange, useWeekLabels, useQuarterWeekCount } from "@/lib/hooks/useCurrentWeek";
 import { progressColor, weekCellColors, fmt, fmtCompact, formatScaledKpiValue, getProgressBadgeColors, getLatestWeeklyNote, type NumberFormat } from "@/lib/utils/kpiHelpers";
 import { useNumberFormat } from "@/lib/hooks/useFeatureFlags";
 import { getLatestPriorityNote } from "@/lib/utils/priorityHelpers";
@@ -395,7 +395,7 @@ function Section({ badge, count, right, children }: { badge: string; count?: num
  * pill (avg % · on-track · at-risk · behind) lives inside the header to
  * the right of the card-count badge — visible even when collapsed.
  */
-function KPIOverviewContainer({ count, loading, kpis, currentWeek, children }: { count: number; loading: boolean; kpis: KPIRow[]; currentWeek: number | null; children: React.ReactNode }) {
+function KPIOverviewContainer({ count, loading, kpis, currentWeek, weekCount, children }: { count: number; loading: boolean; kpis: KPIRow[]; currentWeek: number | null; weekCount: number; children: React.ReactNode }) {
   const [expanded, setExpanded] = useState(false);
   return (
     <div className="bg-white border border-gray-200 rounded-xl shadow-sm" style={{ overflow: "clip" }}>
@@ -430,7 +430,7 @@ function KPIOverviewContainer({ count, loading, kpis, currentWeek, children }: {
           </span>
         )}
         {/* AvgKPI summary pill — inert (div), clicks bubble up to toggle */}
-        {!loading && kpis.length > 0 && <AvgKPICard kpis={kpis} currentWeek={currentWeek} />}
+        {!loading && kpis.length > 0 && <AvgKPICard kpis={kpis} currentWeek={currentWeek} weekCount={weekCount} />}
         <span className="ml-auto text-[10px] text-gray-400 flex-shrink-0">
           {expanded ? "Click to collapse" : "Click to expand"}
         </span>
@@ -568,7 +568,7 @@ function WeekTableHead({ staticCols, allCols, frozenUpTo, allColKeys, onFreeze, 
 
 // ── KPI mini cards ────────────────────────────────────────────────────────────
 
-function KPICard({ kpi, currentWeek, numberFormat = "standard" }: { kpi: KPIRow; currentWeek: number | null; numberFormat?: NumberFormat }) {
+function KPICard({ kpi, currentWeek, weekCount = 13, numberFormat = "standard" }: { kpi: KPIRow; currentWeek: number | null; weekCount?: number; numberFormat?: NumberFormat }) {
   // Same denominator for ratio AND percentage so the math agrees with what
   // the user reads. `getProgressBadgeColors` runs the canonical
   // `getColorByPercentage` internally and returns READABLE-on-white text
@@ -582,7 +582,7 @@ function KPICard({ kpi, currentWeek, numberFormat = "standard" }: { kpi: KPIRow;
   // card disagree with the table and the Stats headline.) Standalone KPIs are
   // unchanged: resolveProgressOverall re-derives their per-week average against
   // the constant quarterly target, exactly as before.
-  const { achieved, goal } = resolveProgressOverall(kpi, currentWeek);
+  const { achieved, goal } = resolveProgressOverall(kpi, currentWeek, weekCount);
   const pct = goal > 0 ? (achieved / goal) * 100 : 0;
   const hasAnyWeeklyValue = (kpi.weeklyValues ?? []).some((wv) => wv.value != null);
   const badge = kpi.qtdAchieved != null
@@ -595,6 +595,7 @@ function KPICard({ kpi, currentWeek, numberFormat = "standard" }: { kpi: KPIRow;
       measurementUnit: k.measurementUnit,
       currency: k.currency,
       targetScale: k.targetScale,
+      scaledDisplay: k.scaledDisplay,
       numberFormat,
     });
   const [historyOpen, setHistoryOpen] = useState(false);
@@ -625,13 +626,13 @@ function KPICard({ kpi, currentWeek, numberFormat = "standard" }: { kpi: KPIRow;
   );
 }
 
-function AvgKPICard({ kpis, currentWeek }: { kpis: KPIRow[]; currentWeek: number | null }) {
+function AvgKPICard({ kpis, currentWeek, weekCount = 13 }: { kpis: KPIRow[]; currentWeek: number | null; weekCount?: number }) {
   // Average the SAME per-card percentage the KPICards below display
   // (resolveProgressQtd-based) so the pill agrees with the cards. Reading the
   // raw server-stamped `kpi.progressPercent` over-counted Standalone KPIs
   // (cumulative SUM ÷ goal) — see computeKpiOverviewStats /
   // docs/STANDALONE_QTD_ACHIEVED_FIX.md §4.
-  const { avg, onTrack, atRisk, behind } = computeKpiOverviewStats(kpis, currentWeek);
+  const { avg, onTrack, atRisk, behind } = computeKpiOverviewStats(kpis, currentWeek, weekCount);
 
   const ringColor = avg >= 80 ? "#22c55e" : avg >= 50 ? "#f59e0b" : "#ef4444";
   const textColor = avg >= 80 ? "text-green-600" : avg >= 50 ? "text-amber-500" : "text-red-500";
@@ -685,6 +686,7 @@ const KPI_COLS: ColDef[] = [
 ];
 
 function KPISection({ kpis, year, quarter, visibleWeeks }: { kpis: KPIRow[]; year: number; quarter: string; visibleWeeks: number[] }) {
+  const weekCount = useQuarterWeekCount(year, quarter);
   const [frozenUpTo, setFrozenUpTo] = useState<string | null>("name");
   const [page, setPage] = useState(1);
   // Derive per-render week columns + the combined column list. Memoized so
@@ -708,7 +710,7 @@ function KPISection({ kpis, year, quarter, visibleWeeks }: { kpis: KPIRow[]; yea
       <tbody>
         {paged.map((kpi, ri) => {
           const rowBg = ri % 2 === 0 ? "bg-white" : "bg-gray-50";
-          const weeklyGoal = (kpi.qtdGoal ?? kpi.target ?? 0) / 13;
+          const weeklyGoal = (kpi.qtdGoal ?? kpi.target ?? 0) / weekCount;
           const weekMap: Record<number, number | null> = {};
           const weekNoteMap: Record<number, string | null> = {};
           (kpi.weeklyValues ?? []).forEach(wv => {
@@ -773,8 +775,8 @@ function KPISection({ kpis, year, quarter, visibleWeeks }: { kpis: KPIRow[]; yea
                 const val = weekMap[w];
                 const note = weekNoteMap[w];
                 const wTarget = weeklyTargets ? (weeklyTargets[String(w)] ?? 0) : weeklyGoal;
-                // weekCellColors expects qtdGoal (divides by 13 internally), so multiply back
-                const { bg, text } = weekCellColors(val, wTarget * 13, null, false);
+                // weekCellColors divides by weekCount internally, so multiply back
+                const { bg, text } = weekCellColors(val, wTarget * weekCount, null, false, weekCount);
                 const frozenBg = getFrozenBg(col.key, frozenUpTo, ALL_KPI_COLS, rowBg);
                 return (
                   <td key={col.key}
@@ -825,6 +827,7 @@ const PRI_COLS: ColDef[] = [
 ];
 
 function PrioritySection({ priorities, year, quarter, visibleWeeks }: { priorities: PriorityRow[]; year: number; quarter: string; visibleWeeks: number[] }) {
+  const weekCount = useQuarterWeekCount(year, quarter);
   const [frozenUpTo, setFrozenUpTo] = useState<string | null>("name");
   const [page, setPage] = useState(1);
   const weekLabels = useWeekLabels(year, quarter);
@@ -847,7 +850,7 @@ function PrioritySection({ priorities, year, quarter, visibleWeeks }: { prioriti
         {paged.map((p, ri) => {
           const rowBg = ri % 2 === 0 ? "bg-white" : "bg-gray-50";
           const start = p.startWeek ?? 1;
-          const end = p.endWeek ?? 13;
+          const end = p.endWeek ?? weekCount;
           const statusMap: Record<number, string> = {};
           const weekNoteMap: Record<number, string | null> = {};
           p.weeklyStatuses.forEach(ws => {
@@ -1462,6 +1465,8 @@ export default function DashboardPage() {
   const currentWeek = useCurrentWeek(year, quarter);
   const currentWeekRange = useWeekDateRange(year, quarter, currentWeek);
   const weekLabels = useWeekLabels(year, quarter);
+  // Weeks in the active quarter (Custom Quarter Settings). Defaults to 13.
+  const weekCount = useQuarterWeekCount(year, quarter);
 
   // Rolling 5-week window. The dashboard always limits the week-grid to 5
   // weeks ending at the current week. For past quarters useCurrentWeek
@@ -1469,13 +1474,13 @@ export default function DashboardPage() {
   // (so we get weeks 1-5). Until currentWeek is loaded we fall back to the
   // first 5 weeks so the table renders something instead of being empty.
   const visibleWeeks = useMemo(
-    () => rollingVisibleWeeks(currentWeek ?? 5),
-    [currentWeek],
+    () => rollingVisibleWeeks(currentWeek ?? 5, 5, weekCount),
+    [currentWeek, weekCount],
   );
   const hiddenWeekCols = useMemo(() => {
     const visible = new Set(visibleWeeks);
-    return ALL_WEEKS.filter(w => !visible.has(w)).map(w => `week${w}`);
-  }, [visibleWeeks]);
+    return weeksArray(weekCount).filter(w => !visible.has(w)).map(w => `week${w}`);
+  }, [visibleWeeks, weekCount]);
 
   const [showFilter, setShowFilter] = useState(false);
   const filterRef = useRef<HTMLDivElement>(null);
@@ -1675,7 +1680,7 @@ export default function DashboardPage() {
             doesn't flicker out when the summary query wins the refresh race —
             see kpiOverviewVisible. */}
         {kpiOverviewVisible(isLoading, sessionStatus, kpis.length) && (
-          <KPIOverviewContainer count={kpis.length} loading={kpisLoading} kpis={kpis} currentWeek={currentWeek}>
+          <KPIOverviewContainer count={kpis.length} loading={kpisLoading} kpis={kpis} currentWeek={currentWeek} weekCount={weekCount}>
             {/* Cap the grid at ~4 card rows and scroll vertically. overflow-x
                 is clipped so a long card set never produces a horizontal
                 scrollbar; pr-1 keeps the vertical scrollbar off the cards. */}
@@ -1693,7 +1698,7 @@ export default function DashboardPage() {
                   ))
                 : (
                   <UnreadCountsProvider entityType="KPI" ids={kpis.map(k => k.id)}>
-                    {kpis.map(k => <KPICard key={k.id} kpi={k} currentWeek={currentWeek} numberFormat={numberFormat} />)}
+                    {kpis.map(k => <KPICard key={k.id} kpi={k} currentWeek={currentWeek} weekCount={weekCount} numberFormat={numberFormat} />)}
                   </UnreadCountsProvider>
                 )
               }

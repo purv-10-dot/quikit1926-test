@@ -2,7 +2,7 @@
 
 import { useState, useRef, useEffect, useMemo, type UIEvent } from "react";
 import type { KPIRow, WeeklyValue } from "@/lib/types/kpi";
-import { ALL_WEEKS, weekDateLabel } from "@/lib/utils/fiscal";
+import { weeksArray, weekDateLabel } from "@/lib/utils/fiscal";
 import { progressColor, weekCellColors, fmt, formatScaledKpiValue, getProgressBadgeColors, getLatestWeeklyNote, type NumberFormat } from "@/lib/utils/kpiHelpers";
 import { getColorByPercentage } from "@/lib/utils/colorLogic";
 import { UserAuditCell, DateAuditCell } from "@/components/table/AuditCells";
@@ -13,7 +13,7 @@ import { FreezeIcon } from "@/components/ui/FreezeIcon";
 import { HorizontalScroller } from "@/components/ui/HorizontalScroller";
 import { isNearBottom } from "@/lib/utils/scroll";
 import { ResizeHandle as SharedResizeHandle } from "@/lib/hooks/useColumnResize";
-import { useCurrentWeek, useWeekLabels } from "@/lib/hooks/useCurrentWeek";
+import { useCurrentWeek, useWeekLabels, useQuarterWeekCount } from "@/lib/hooks/useCurrentWeek";
 import { usePastWeekFlags } from "@/lib/hooks/useFeatureFlags";
 import { LogModal } from "./LogModal";
 import { ChangeHistoryPanel } from "./ChangeHistoryPanel";
@@ -104,6 +104,7 @@ export function KPITable({ kpis: kpisAll, total, page, pageSize, year, quarter, 
       measurementUnit: kpi.measurementUnit,
       currency: kpi.currency,
       targetScale: kpi.targetScale,
+      scaledDisplay: kpi.scaledDisplay,
       numberFormat,
     });
   // Infinite-scroll mode: bounded-height body whose vertical scroll loads more.
@@ -119,7 +120,8 @@ export function KPITable({ kpis: kpisAll, total, page, pageSize, year, quarter, 
   // (page 1, all loaded rows on one logical page).
   const effPage = page ?? 1;
   const effPageSize = pageSize ?? (kpisAll.length || 1);
-  const allCols = [...ALL_STATIC_COLS, ...ALL_WEEKS.map(w => `week${w}`)];
+  const weekCount = useQuarterWeekCount(year, quarter);
+  const allCols = [...ALL_STATIC_COLS, ...weeksArray(weekCount).map(w => `week${w}`)];
   const headerRowRef = useRef<HTMLTableRowElement>(null);
   const [logKPI, setLogKPI] = useState<KPIRow | null>(null);
   const [logInitialTab, setLogInitialTab] = useState<"updates" | "edit" | "stats">("updates");
@@ -169,7 +171,7 @@ export function KPITable({ kpis: kpisAll, total, page, pageSize, year, quarter, 
 
   const totalPages = Math.ceil((total ?? kpisAll.length) / effPageSize);
   const visibleStaticCols = ALL_STATIC_COLS.filter(c => !localHideSet.has(c));
-  const visibleWeekCols = ALL_WEEKS.filter(w => !localHideSet.has(`week${w}`));
+  const visibleWeekCols = weeksArray(weekCount).filter(w => !localHideSet.has(`week${w}`));
 
   // Per-row derived data hoisted out of the render .map. Previously this heavy
   // compute (Standalone QTD re-derive, weekMap build, badge colors) re-ran for
@@ -190,7 +192,7 @@ export function KPITable({ kpis: kpisAll, total, page, pageSize, year, quarter, 
         kpi.divisionType === "Standalone" ? "Standalone" : "Cumulative";
       const stdProgress =
         progressDivisionType === "Standalone"
-          ? computeQtd(kpi, currentWeek, "Standalone")
+          ? computeQtd(kpi, currentWeek, "Standalone", weekCount)
           : null;
       const progressAchieved =
         stdProgress != null ? (stdProgress.qtdAchieved ?? 0) : (kpi.qtdAchieved ?? 0);
@@ -521,7 +523,7 @@ export function KPITable({ kpis: kpisAll, total, page, pageSize, year, quarter, 
                   {/* QTD Goal — Σ weeklyTargets[1..currentWeek-1].
                       Falls back to kpi.qtdGoal when currentWeek is unresolvable. */}
                   {!localHideSet.has("qtdGoal") && (() => {
-                    const { qtdGoal, qtdAchieved } = computeQtd(kpi, currentWeek, progressDivisionType);
+                    const { qtdGoal, qtdAchieved } = computeQtd(kpi, currentWeek, progressDivisionType, weekCount);
                     return (
                       <>
                         <td className={tdClass("qtdGoal")} style={stickyStyle("qtdGoal", getColWidth("qtdGoal"))}>
@@ -563,7 +565,7 @@ export function KPITable({ kpis: kpisAll, total, page, pageSize, year, quarter, 
                       Use computeQtd so Standalone KPIs render the avg (not the server-stamped SUM). */}
                   {localHideSet.has("qtdGoal") && !localHideSet.has("qtdAchieved") && (() => {
                     const { qtdGoal: dQtdGoal, qtdAchieved: dQtdAchieved } =
-                      computeQtd(kpi, currentWeek, progressDivisionType);
+                      computeQtd(kpi, currentWeek, progressDivisionType, weekCount);
                     const hasAnyWeeklyValue = Object.values(weekMap).some(
                       wv => wv?.value != null,
                     );
@@ -591,7 +593,7 @@ export function KPITable({ kpis: kpisAll, total, page, pageSize, year, quarter, 
                   {!localHideSet.has("weeklyGoal") && (
                     <td className={tdClass("weeklyGoal")} style={stickyStyle("weeklyGoal", getColWidth("weeklyGoal"))}>
                       {(() => {
-                        const wg = weeklyGoalFor(kpi, currentWeek ?? 1);
+                        const wg = weeklyGoalFor(kpi, currentWeek ?? 1, weekCount);
                         return wg > 0 ? fmtN(kpi, wg) : "—";
                       })()}
                     </td>
@@ -682,9 +684,9 @@ export function KPITable({ kpis: kpisAll, total, page, pageSize, year, quarter, 
                     const kpiWeeklyTargets = kpi.weeklyTargets as Record<string, number> | null | undefined;
                     const explicitWeekTarget = kpiWeeklyTargets?.[String(w)];
                     const targetForHelper = explicitWeekTarget != null
-                      ? explicitWeekTarget * 13
+                      ? explicitWeekTarget * weekCount
                       : (kpi.qtdGoal ?? kpi.target ?? 0);
-                    const { bg, text, label: cellLabel } = weekCellColors(val, targetForHelper, null, kpi.reverseColor ?? false);
+                    const { bg, text, label: cellLabel } = weekCellColors(val, targetForHelper, null, kpi.reverseColor ?? false, weekCount);
                     const colW = getColWidth(col);
                     const boundary = col === frozenUpTo;
 

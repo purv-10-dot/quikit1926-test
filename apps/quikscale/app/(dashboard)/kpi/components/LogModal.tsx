@@ -6,14 +6,15 @@ import { useUpdateKPI, useUpdateWeeklyValuesBatch, useNotes, useAddNote } from "
 import { useUsers } from "@/lib/hooks/useUsers";
 import { HistoryButton } from "@/components/audit/HistoryButton";
 import type { KPIRow, WeeklyValue, User } from "@/lib/types/kpi";
-import { fiscalYearLabel, weekDateLabel, ALL_WEEKS } from "@/lib/utils/fiscal";
+import { fiscalYearLabel, weekDateLabel, weeksArray, MAX_WEEKS_PER_QUARTER } from "@/lib/utils/fiscal";
 import { progressColor, fmt } from "@/lib/utils/kpiHelpers";
 import { UserPicker } from "@quikit/ui";
-import { CURRENCIES, getScales, getMultiplier, formatActual } from "@/lib/utils/currency";
+import { CURRENCIES, getScales, getMultiplier, formatActual, shortScaleLabel, scaleDownForDisplay, scaleUpFromInput } from "@/lib/utils/currency";
 import { WeeklyScroller } from "./WeeklyScroller";
 import { usePastWeekFlags } from "@/lib/hooks/useFeatureFlags";
 import { weeklyInputLockState, isWeekBeforeEditableWindow } from "@/lib/utils/weekLock";
-import { useCurrentWeek, useWeekLabels } from "@/lib/hooks/useCurrentWeek";
+import { UnitSelect } from "./UnitSelect";
+import { useCurrentWeek, useWeekLabels, useQuarterWeekCount } from "@/lib/hooks/useCurrentWeek";
 import { useMyPermissions } from "@/lib/hooks/useMyPermissions";
 import { humanizeApiError } from "@/lib/utils/humanizeError";
 import {
@@ -51,6 +52,8 @@ type EditFormState = {
   weeklyBreakdown: Record<number, string>;
   currency: string;
   targetScale: string;
+  unit: string;
+  scaledDisplay: boolean;
   reverseColor: boolean;
   // Team-KPI multi-owner state (mirrors KPIModal's create form so the Edit
   // dialog can show Contribution % per Owner + per-owner Target Breakdown rows).
@@ -89,7 +92,11 @@ function EditTab({
     flagsLoaded && currentWeek !== null && isWeekBeforeEditableWindow(w, currentWeek, canEditPastWeek);
   const currentWeek = useCurrentWeek(parseInt(form.year) || null, form.quarter);
   const editTabWeekLabels = useWeekLabels(parseInt(form.year) || null, form.quarter);
+  const weekCount = useQuarterWeekCount(parseInt(form.year) || null, form.quarter);
   const firstEditableWeek = (currentWeek !== null && currentWeek > 1) ? currentWeek : 1;
+  // Buffers the in-progress keystrokes of a scaled breakdown cell so decimals
+  // (e.g. "2.5") aren't mangled by the raw↔unit round-trip mid-type.
+  const [editingCell, setEditingCell] = useState<{ key: string; raw: string } | null>(null);
 
   function set(key: string, val: string) {
     setForm(f => ({ ...f, [key]: val }));
@@ -105,12 +112,12 @@ function EditTab({
   function setTargetScale(val: string) {
     setForm(f => {
       const n = (parseFloat(f.target) || 0) * getMultiplier(f.currency, val);
-      return { ...f, targetScale: val, weeklyBreakdown: buildBreakdown(f.divisionType, n, f.measurementUnit, firstEditableWeek) };
+      return { ...f, targetScale: val, weeklyBreakdown: buildBreakdown(f.divisionType, n, f.measurementUnit, firstEditableWeek, weekCount) };
     });
   }
 
   function setDivisionType(dt: "Cumulative" | "Standalone") {
-    setForm(f => ({ ...f, divisionType: dt, weeklyBreakdown: buildBreakdown(dt, actualNum(f), f.measurementUnit, firstEditableWeek) }));
+    setForm(f => ({ ...f, divisionType: dt, weeklyBreakdown: buildBreakdown(dt, actualNum(f), f.measurementUnit, firstEditableWeek, weekCount) }));
   }
 
   function setTarget(val: string) {
@@ -118,7 +125,7 @@ function EditTab({
       const n = f.measurementUnit === "Currency"
         ? (parseFloat(val) || 0) * getMultiplier(f.currency, f.targetScale)
         : parseFloat(val) || 0;
-      return { ...f, target: val, weeklyBreakdown: buildBreakdown(f.divisionType, n, f.measurementUnit, firstEditableWeek) };
+      return { ...f, target: val, weeklyBreakdown: buildBreakdown(f.divisionType, n, f.measurementUnit, firstEditableWeek, weekCount) };
     });
   }
 
@@ -137,6 +144,7 @@ function EditTab({
         actualNum(f),
         f.measurementUnit,
         f.divisionType,
+        weekCount,
       ),
     }));
   }
@@ -149,7 +157,7 @@ function EditTab({
     const out: Record<string, Record<number, string>> = {};
     for (const id of f.ownerIds) {
       const pct = parseFloat(f.ownerContributions[id]) || 0;
-      out[id] = buildOwnerBreakdown(pct, tNum, f.divisionType, f.measurementUnit, firstEditableWeek);
+      out[id] = buildOwnerBreakdown(pct, tNum, f.divisionType, f.measurementUnit, firstEditableWeek, weekCount);
     }
     return out;
   }
@@ -259,6 +267,19 @@ function EditTab({
     : parseFloat(form.target) || 0;
   const targetNum = scaledTarget;
 
+  // Scaled-display: breakdown cells show/accept the scale unit when the toggle
+  // is on; form.weeklyBreakdown stays RAW. Passthrough otherwise.
+  const breakdownScaleMult = isCurrency && form.scaledDisplay ? getMultiplier(form.currency, form.targetScale) : 1;
+  const toDisp = (raw: number | string) =>
+    breakdownScaleMult > 1
+      ? scaleDownForDisplay(raw, form.currency, form.targetScale)
+      : (typeof raw === "string" ? raw : String(raw));
+  const toRaw = (input: string) =>
+    breakdownScaleMult > 1 ? scaleUpFromInput(input, form.currency, form.targetScale) : input;
+  const breakdownUnit = breakdownScaleMult > 1 ? shortScaleLabel(form.targetScale) : "";
+  // Currency symbol prefix shown on each scaled breakdown cell (₹2, $9, …).
+  const breakdownPrefix = breakdownScaleMult > 1 ? currencyObj.symbol : "";
+
   return (
     <div className="space-y-4">
       {errors._ && (
@@ -339,6 +360,10 @@ function EditTab({
               ))}
             </select>
           )}
+          {/* Number KPIs: unit-of-measurement dropdown (from Unit Master). */}
+          {form.measurementUnit === "Number" && (
+            <UnitSelect value={form.unit} onChange={v => setForm(f => ({ ...f, unit: v }))} disabled={readOnly} />
+          )}
         </div>
         {isCurrency && form.targetScale && scaledTarget > 0 && (
           <p className="text-[10px] text-gray-400 mt-1">
@@ -347,6 +372,8 @@ function EditTab({
         )}
       </div>
 
+      {/* Division Type + scaled-display toggle share one row. */}
+      <div className="flex flex-wrap gap-6 items-start">
       <div>
         <label className="block text-xs font-medium text-gray-600 mb-1">Division Type</label>
         <div className="flex gap-1 p-0.5 bg-gray-100 rounded-lg w-fit">
@@ -360,8 +387,31 @@ function EditTab({
           ))}
         </div>
         <p className="text-[10px] text-gray-400 mt-1">
-          {form.divisionType === "Cumulative" ? "Target split equally across 13 weeks" : "Each week carries the full target value"}
+          {form.divisionType === "Cumulative" ? `Target split equally across ${weekCount} weeks` : "Each week carries the full target value"}
         </p>
+      </div>
+
+      {/* Scaled display toggle — Currency KPI with a chosen scale only. */}
+      {isCurrency && !!form.targetScale && (
+        <div className="flex-1 min-w-0">
+          <label className="block text-xs font-medium text-gray-600 mb-1">Show values in {form.targetScale}</label>
+          <button
+            type="button"
+            role="switch"
+            aria-checked={form.scaledDisplay}
+            disabled={readOnly}
+            onClick={() => setForm(f => ({ ...f, scaledDisplay: !f.scaledDisplay }))}
+            className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors disabled:opacity-50 ${form.scaledDisplay ? "bg-accent-600" : "bg-gray-300"}`}
+          >
+            <span className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${form.scaledDisplay ? "translate-x-6" : "translate-x-1"}`} />
+          </button>
+          <p className="text-[10px] text-gray-400 mt-1">
+            {form.scaledDisplay
+              ? `Weekly breakdown, Updates & Stats show in ${shortScaleLabel(form.targetScale)} (${currencyObj.symbol} ${form.targetScale}). Stored values stay exact.`
+              : `Off — full numbers (e.g. ${currencyObj.symbol}25,000,000).`}
+          </p>
+        </div>
+      )}
       </div>
 
       {/* Color Coding Mode */}
@@ -475,7 +525,9 @@ function EditTab({
 
       {targetNum > 0 && (
         <div>
-          <label className="block text-xs font-medium text-gray-600 mb-2">Target Breakdown (Weekly)</label>
+          <label className="block text-xs font-medium text-gray-600 mb-2">
+            Target Breakdown (Weekly){breakdownUnit ? ` — in ${currencyObj.symbol} ${breakdownUnit}` : ""}
+          </label>
           <WeeklyScroller>
             <table className="w-full text-xs">
               <thead>
@@ -485,7 +537,7 @@ function EditTab({
                       &nbsp;
                     </th>
                   )}
-                  {ALL_WEEKS.map(w => {
+                  {weeksArray(weekCount).map(w => {
                     const isPastWeek = currentWeek !== null && w < currentWeek;
                     const isStandaloneEditable = form.divisionType === "Standalone" && isPastWeek && !weekLockedByPast(w);
                     const showLock = weekLockedByPast(w) && !isStandaloneEditable;
@@ -505,7 +557,7 @@ function EditTab({
                       Total
                     </td>
                   )}
-                  {ALL_WEEKS.map(w => {
+                  {weeksArray(weekCount).map(w => {
                     const isPastWeek = currentWeek !== null && w < currentWeek;
                     const isStandalone = form.divisionType === "Standalone";
                     const isStandalonePastEditable = isStandalone && isPastWeek && !weekLockedByPast(w);
@@ -522,21 +574,26 @@ function EditTab({
                         : sum.toFixed(2);
                       return (
                         <td key={w} className="px-1 py-1.5 border-r border-gray-100 last:border-r-0 bg-gray-50">
-                          <input
-                            type="number"
-                            min="0"
-                            value={displaySum}
-                            onChange={e => setTeamTotalWeekCell(w, e.target.value)}
-                            readOnly={isLocked}
-                            title={weekLockedByPast(w)
-                              ? "Past week editing is disabled. Enable in Settings > Configurations."
-                              : "Editing the total redistributes across owners by contribution %"}
-                            className={`w-full px-1 py-1 text-center text-xs font-semibold border rounded focus:outline-none min-w-[72px] ${
-                              isLocked
-                                ? "border-gray-100 bg-gray-50 text-gray-400 cursor-not-allowed"
-                                : "border-gray-200 bg-white text-gray-800 focus:ring-1 focus:ring-accent-400"
-                            }`}
-                          />
+                          <div className="flex items-center gap-0.5">
+                            {breakdownPrefix && <span className="text-[9px] text-gray-400 flex-shrink-0">{breakdownPrefix}</span>}
+                            <input
+                              type="number"
+                              min="0"
+                              value={editingCell?.key === `tot-${w}` ? editingCell.raw : toDisp(displaySum)}
+                              onChange={e => { setEditingCell({ key: `tot-${w}`, raw: e.target.value }); setTeamTotalWeekCell(w, toRaw(e.target.value)); }}
+                              onBlur={() => setEditingCell(null)}
+                              readOnly={isLocked}
+                              title={weekLockedByPast(w)
+                                ? "Past week editing is disabled. Enable in Settings > Configurations."
+                                : "Editing the total redistributes across owners by contribution %"}
+                              className={`w-full px-1 py-1 text-center text-xs font-semibold border rounded focus:outline-none min-w-[72px] ${
+                                isLocked
+                                  ? "border-gray-100 bg-gray-50 text-gray-400 cursor-not-allowed"
+                                  : "border-gray-200 bg-white text-gray-800 focus:ring-1 focus:ring-accent-400"
+                              }`}
+                            />
+                            {breakdownUnit && <span className="text-[9px] text-gray-400 flex-shrink-0">{breakdownUnit}</span>}
+                          </div>
                         </td>
                       );
                     }
@@ -554,36 +611,45 @@ function EditTab({
                         : current;
                       return (
                         <td key={w} className="px-1 py-1.5 border-r border-gray-100 last:border-r-0">
-                          <select
-                            value={norm}
-                            onChange={e => setWeekBreakdown(w, e.target.value)}
-                            className="w-full px-1 py-1 text-center text-xs border rounded border-gray-200 focus:outline-none focus:ring-1 focus:ring-accent-400 min-w-[72px]"
-                          >
-                            <option value={zeroStr}>0</option>
-                            {targetStr && <option value={targetStr}>{targetStr}</option>}
-                            {norm !== zeroStr && norm !== "" && norm !== targetStr && (
-                              <option value={norm}>{norm} (custom)</option>
-                            )}
-                          </select>
+                          <div className="flex items-center gap-0.5">
+                            {breakdownPrefix && <span className="text-[9px] text-gray-400 flex-shrink-0">{breakdownPrefix}</span>}
+                            <select
+                              value={norm}
+                              onChange={e => setWeekBreakdown(w, e.target.value)}
+                              className="w-full px-1 py-1 text-center text-xs border rounded border-gray-200 focus:outline-none focus:ring-1 focus:ring-accent-400 min-w-[72px]"
+                            >
+                              <option value={zeroStr}>0</option>
+                              {targetStr && <option value={targetStr}>{toDisp(targetStr)}</option>}
+                              {norm !== zeroStr && norm !== "" && norm !== targetStr && (
+                                <option value={norm}>{toDisp(norm)} (custom)</option>
+                              )}
+                            </select>
+                            {breakdownUnit && <span className="text-[9px] text-gray-400 flex-shrink-0">{breakdownUnit}</span>}
+                          </div>
                         </td>
                       );
                     }
 
                     return (
                     <td key={w} className="px-1 py-1.5 border-r border-gray-100 last:border-r-0">
-                      <input
-                        type="number"
-                        min="0"
-                        value={form.weeklyBreakdown[w] ?? ""}
-                        onChange={e => setWeekBreakdown(w, e.target.value)}
-                        readOnly={isLocked}
-                        title={weekLockedByPast(w) ? "Past week editing is disabled. Enable in Settings > Configurations." : undefined}
-                        className={`w-full px-1 py-1 text-center text-xs border rounded focus:outline-none min-w-[72px] ${
-                          isLocked
-                            ? "border-gray-100 bg-gray-50 text-gray-400 cursor-not-allowed"
-                            : "border-gray-200 focus:ring-1 focus:ring-accent-400"
-                        }`}
-                      />
+                      <div className="flex items-center gap-0.5">
+                        {breakdownPrefix && <span className="text-[9px] text-gray-400 flex-shrink-0">{breakdownPrefix}</span>}
+                        <input
+                          type="number"
+                          min="0"
+                          value={editingCell?.key === `ind-${w}` ? editingCell.raw : toDisp(form.weeklyBreakdown[w] ?? "")}
+                          onChange={e => { setEditingCell({ key: `ind-${w}`, raw: e.target.value }); setWeekBreakdown(w, toRaw(e.target.value)); }}
+                          onBlur={() => setEditingCell(null)}
+                          readOnly={isLocked}
+                          title={weekLockedByPast(w) ? "Past week editing is disabled. Enable in Settings > Configurations." : undefined}
+                          className={`w-full px-1 py-1 text-center text-xs border rounded focus:outline-none min-w-[72px] ${
+                            isLocked
+                              ? "border-gray-100 bg-gray-50 text-gray-400 cursor-not-allowed"
+                              : "border-gray-200 focus:ring-1 focus:ring-accent-400"
+                          }`}
+                        />
+                        {breakdownUnit && <span className="text-[9px] text-gray-400 flex-shrink-0">{breakdownUnit}</span>}
+                      </div>
                     </td>
                   );})}
                 </tr>
@@ -600,26 +666,31 @@ function EditTab({
                         {u.firstName} {u.lastName}
                         <span className="ml-1 text-gray-400">({pct.toFixed(0)}%)</span>
                       </td>
-                      {ALL_WEEKS.map(w => {
+                      {weeksArray(weekCount).map(w => {
                         const isStandalone = form.divisionType === "Standalone";
                         const isLocked = isStandalone || weekLockedByPast(w);
                         return (
                           <td key={w} className="px-1 py-1.5 border-r border-t border-gray-100 last:border-r-0">
-                            <input
-                              type="number"
-                              min="0"
-                              value={ownerRow[w] ?? ""}
-                              onChange={e => setOwnerWeekCell(id, w, e.target.value)}
-                              readOnly={isLocked}
-                              title={weekLockedByPast(w)
-                                ? "Past week editing is disabled. Enable in Settings > Configurations."
-                                : isStandalone ? "Standalone mode locks per-owner cells" : undefined}
-                              className={`w-full px-1 py-1 text-center text-xs border rounded focus:outline-none min-w-[72px] ${
-                                isLocked
-                                  ? "border-gray-100 bg-gray-50 text-gray-400 cursor-not-allowed"
-                                  : "border-gray-200 focus:ring-1 focus:ring-accent-400"
-                              }`}
-                            />
+                            <div className="flex items-center gap-0.5">
+                              {breakdownPrefix && <span className="text-[9px] text-gray-400 flex-shrink-0">{breakdownPrefix}</span>}
+                              <input
+                                type="number"
+                                min="0"
+                                value={editingCell?.key === `own-${id}-${w}` ? editingCell.raw : toDisp(ownerRow[w] ?? "")}
+                                onChange={e => { setEditingCell({ key: `own-${id}-${w}`, raw: e.target.value }); setOwnerWeekCell(id, w, toRaw(e.target.value)); }}
+                                onBlur={() => setEditingCell(null)}
+                                readOnly={isLocked}
+                                title={weekLockedByPast(w)
+                                  ? "Past week editing is disabled. Enable in Settings > Configurations."
+                                  : isStandalone ? "Standalone mode locks per-owner cells" : undefined}
+                                className={`w-full px-1 py-1 text-center text-xs border rounded focus:outline-none min-w-[72px] ${
+                                  isLocked
+                                    ? "border-gray-100 bg-gray-50 text-gray-400 cursor-not-allowed"
+                                    : "border-gray-200 focus:ring-1 focus:ring-accent-400"
+                                }`}
+                              />
+                              {breakdownUnit && <span className="text-[9px] text-gray-400 flex-shrink-0">{breakdownUnit}</span>}
+                            </div>
                           </td>
                         );
                       })}
@@ -677,10 +748,11 @@ function UpdatesTab({
   const { canEditPastWeek, loaded: flagsLoaded } = usePastWeekFlags();
   const currentWeek = useCurrentWeek(kpi.year, kpi.quarter);
   const updatesTabWeekLabels = useWeekLabels(kpi.year, kpi.quarter);
+  const weekCount = useQuarterWeekCount(kpi.year, kpi.quarter);
 
   // Use live form target when available so the header and per-week targets
   // reflect editForm changes immediately (before save).
-  const weeklyTarget = (liveFormTarget ?? kpi.qtdGoal ?? kpi.target ?? 0) / 13;
+  const weeklyTarget = (liveFormTarget ?? kpi.qtdGoal ?? kpi.target ?? 0) / weekCount;
   const isTeamKPI = kpi.kpiLevel === "team";
   const ownerList = (kpi.owners ?? []) as Array<{ id: string; firstName: string; lastName: string }>;
   const contribs = (kpi.ownerContributions as Record<string, number> | null | undefined) ?? {};
@@ -690,6 +762,23 @@ function UpdatesTab({
     liveWeeklyTargets ?? (kpi.weeklyTargets as Record<string, number> | null | undefined) ?? null;
   const targetForWeek = (w: number): number =>
     savedWeeklyTargets?.[String(w)] ?? weeklyTarget;
+
+  // Scaled-display for the Updates tab. Weekly target + actual are stored RAW;
+  // when the KPI's toggle is on they're shown + typed in the scale unit (e.g.
+  // Cr). Passthrough otherwise. `valBuf` preserves in-progress decimals.
+  const scaleMultU =
+    kpi.measurementUnit === "Currency" && kpi.scaledDisplay
+      ? getMultiplier(kpi.currency ?? "", kpi.targetScale ?? "")
+      : 1;
+  const unitU = scaleMultU > 1 ? shortScaleLabel(kpi.targetScale) : "";
+  const curSymU = CURRENCIES.find(c => c.code === kpi.currency)?.symbol ?? "";
+  const toDispU = (raw: number | string) =>
+    scaleMultU > 1 ? scaleDownForDisplay(raw, kpi.currency ?? "", kpi.targetScale ?? "") : (typeof raw === "string" ? raw : String(raw));
+  const toRawU = (input: string) =>
+    scaleMultU > 1 ? scaleUpFromInput(input, kpi.currency ?? "", kpi.targetScale ?? "") : input;
+  const fmtTargetU = (raw: number) => (scaleMultU > 1 ? toDispU(raw) : fmt(raw));
+  const unitHintU = scaleMultU > 1 ? ` (in ${curSymU} ${kpi.targetScale})` : "";
+  const [valBuf, setValBuf] = useState<{ key: string; raw: string } | null>(null);
 
   function handleWeekChange(weekNumber: number, field: "value" | "notes", val: string) {
     setWeeklyState(s => ({
@@ -721,9 +810,9 @@ function UpdatesTab({
     <div className="space-y-5">
       <div>
         <div className="flex items-center justify-between mb-3">
-          <h3 className="text-xs font-semibold text-gray-700">Weekly Values</h3>
+          <h3 className="text-xs font-semibold text-gray-700">Weekly Values{unitHintU}</h3>
           {weeklyTarget > 0 && (
-            <span className="text-[10px] text-gray-400">Weekly target: {fmt(weeklyTarget)}</span>
+            <span className="text-[10px] text-gray-400">Weekly target: {fmtTargetU(weeklyTarget)}</span>
           )}
         </div>
 
@@ -739,7 +828,7 @@ function UpdatesTab({
                 : " You can only edit your own row. Other owners' values are shown read-only."}
             </p>
             <div className="space-y-3">
-              {ALL_WEEKS.map(w => {
+              {weeksArray(weekCount).map(w => {
                 const { isPast, isFuture, locked } = weeklyInputLockState({
                   week: w, currentWeek, canEditPastWeek, flagsLoaded,
                 });
@@ -758,7 +847,7 @@ function UpdatesTab({
                         </span>
                       </div>
                       <span className="text-[10px] text-gray-500">
-                        Total: <span className="font-semibold text-gray-700">{fmt(total)}</span>
+                        Total: <span className="font-semibold text-gray-700">{fmtTargetU(total)}</span>
                         {isPast && <span className="ml-2 text-amber-600">· past-week locked</span>}
                         {isFuture && <span className="ml-2 text-gray-400">· future week</span>}
                       </span>
@@ -781,16 +870,17 @@ function UpdatesTab({
                               <div className="text-[9px] text-gray-400">{pct}%</div>
                             </div>
                             <div className="w-16 flex-shrink-0 text-center">
-                              <div className="text-[9px] text-gray-400 leading-none">Target</div>
+                              <div className="text-[9px] text-gray-400 leading-none">Target{unitU ? ` (${unitU})` : ""}</div>
                               <div className="text-xs font-medium text-gray-700 mt-0.5">
-                                {ownerWeekTarget > 0 ? fmt(ownerWeekTarget) : "—"}
+                                {ownerWeekTarget > 0 ? fmtTargetU(ownerWeekTarget) : "—"}
                               </div>
                             </div>
                             <input
                               type="number"
                               min="0"
-                              value={rowState.value}
-                              onChange={e => handleTeamWeekChange(o.id, w, "value", e.target.value)}
+                              value={valBuf?.key === `tm-${o.id}-${w}` ? valBuf.raw : toDispU(rowState.value)}
+                              onChange={e => { setValBuf({ key: `tm-${o.id}-${w}`, raw: e.target.value }); handleTeamWeekChange(o.id, w, "value", toRawU(e.target.value)); }}
+                              onBlur={() => setValBuf(null)}
                               readOnly={!canEditThisRow}
                               placeholder="—"
                               className={`w-24 px-2 py-1 text-xs text-center border rounded focus:outline-none ${
@@ -828,12 +918,12 @@ function UpdatesTab({
           <>
             <div className="flex items-center gap-3 mb-1">
               <div className="w-24 text-[10px] text-gray-400 font-medium">Week</div>
-              <div className="w-20 text-[10px] text-gray-400 font-medium text-center">Target</div>
-              <div className="w-24 text-[10px] text-gray-400 font-medium text-center">Value</div>
+              <div className="w-20 text-[10px] text-gray-400 font-medium text-center">Target{unitU ? ` (${unitU})` : ""}</div>
+              <div className="w-24 text-[10px] text-gray-400 font-medium text-center">Value{unitU ? ` (${unitU})` : ""}</div>
               <div className="flex-1 text-[10px] text-gray-400 font-medium">Notes</div>
             </div>
             <div className="border border-gray-200 rounded-lg px-3 bg-white">
-              {ALL_WEEKS.map(w => {
+              {weeksArray(weekCount).map(w => {
                 const { locked } = weeklyInputLockState({
                   week: w, currentWeek, canEditPastWeek, flagsLoaded,
                 });
@@ -846,18 +936,21 @@ function UpdatesTab({
                 <WeekRow
                   key={w}
                   weekNumber={w}
-                  value={weeklyState[w]?.value ?? ""}
+                  value={valBuf?.key === `w-${w}` ? valBuf.raw : toDispU(weeklyState[w]?.value ?? "")}
                   notes={weeklyState[w]?.notes ?? ""}
-                  weeklyTarget={targetForWeek(w)}
+                  // Target passed in the SAME (scaled) unit as the value so the
+                  // progress bar ratio stays correct.
+                  weeklyTarget={scaleMultU > 1 ? targetForWeek(w) / scaleMultU : targetForWeek(w)}
                   year={kpi.year}
                   quarter={kpi.quarter}
                   dateLabel={updatesTabWeekLabels[w - 1]}
-                  onValueChange={v => handleWeekChange(w, "value", v)}
+                  onValueChange={v => { setValBuf({ key: `w-${w}`, raw: v }); handleWeekChange(w, "value", toRawU(v)); }}
                   onNotesChange={n => handleWeekChange(w, "notes", n)}
                   locked={locked || noTargetLocked}
                   lockReason={noTargetLocked ? "No target set for this week." : undefined}
                   reverse={kpi.reverseColor ?? false}
-                  targetDisplay={hasTarget ? fmt(targetForWeek(w)) : "—"}
+                  targetDisplay={hasTarget ? fmtTargetU(targetForWeek(w)) : "—"}
+                  unitSuffix={unitU}
                 />
               );})}
             </div>
@@ -921,6 +1014,7 @@ export function LogModal({ kpi, onClose, onRefresh, initialTab = "updates", canU
   // Current week-of-quarter for the header pill. DB-driven: respects tenant's
   // QuarterSetting.startDate (may be offset from Apr 1 / Jul 1 / etc.).
   const headerCurrentWeek = useCurrentWeek(kpi.year, kpi.quarter);
+  const weekCount = useQuarterWeekCount(kpi.year, kpi.quarter);
   // Past-week edit flag — when off (default), the batch endpoint will reject
   // any row with weekNumber < currentWeek. The save handler uses this to
   // skip past weeks instead of sending them and getting a confusing
@@ -963,7 +1057,7 @@ export function LogModal({ kpi, onClose, onRefresh, initialTab = "updates", canU
     const displayTarget = multiplier > 1 ? storedTarget / multiplier : storedTarget;
     const savedWeeklyTargets = kpi.weeklyTargets as Record<string, number> | null | undefined;
     const weeklyBreakdown = savedWeeklyTargets
-      ? Object.fromEntries(ALL_WEEKS.map(w => [w, String(savedWeeklyTargets[String(w)] ?? "")])) as Record<number, string>
+      ? Object.fromEntries(Object.keys(savedWeeklyTargets).map(k => [Number(k), String(savedWeeklyTargets[k] ?? "")])) as Record<number, string>
       : buildBreakdown(divisionType, storedTarget, measurementUnit);
 
     // Team-KPI: rebuild ownerIds + contributions + per-owner weekly maps from
@@ -978,7 +1072,7 @@ export function LogModal({ kpi, onClose, onRefresh, initialTab = "updates", canU
     if (savedOwnerTargets) {
       for (const [ownerId, weekMap] of Object.entries(savedOwnerTargets)) {
         teamWeeklyOwner[ownerId] = Object.fromEntries(
-          ALL_WEEKS.map(w => [w, String(weekMap[String(w)] ?? "")])
+          Object.keys(weekMap).map(k => [Number(k), String(weekMap[k] ?? "")])
         ) as Record<number, string>;
       }
     }
@@ -1000,6 +1094,8 @@ export function LogModal({ kpi, onClose, onRefresh, initialTab = "updates", canU
       weeklyBreakdown,
       currency,
       targetScale: savedScale,
+      unit: kpi.unit ?? "",
+      scaledDisplay: kpi.scaledDisplay ?? (measurementUnit === "Currency" && !!savedScale),
       reverseColor: kpi.reverseColor ?? false,
       ownerIds: teamOwnerIds,
       ownerContributions: teamContribs,
@@ -1037,7 +1133,7 @@ export function LogModal({ kpi, onClose, onRefresh, initialTab = "updates", canU
   // For team KPIs this is still used to SHOW the aggregate (sum of owners) but not submitted.
   const [weeklyState, setWeeklyState] = useState<Record<number, { value: string; notes: string }>>(() => {
     const map: Record<number, { value: string; notes: string }> = {};
-    for (let w = 1; w <= 13; w++) {
+    for (let w = 1; w <= MAX_WEEKS_PER_QUARTER; w++) {
       const wv = (kpi.weeklyValues ?? []).find(x => x.weekNumber === w);
       map[w] = { value: wv?.value?.toString() ?? "", notes: wv?.notes ?? "" };
     }
@@ -1054,7 +1150,7 @@ export function LogModal({ kpi, onClose, onRefresh, initialTab = "updates", canU
     for (const ownerId of ownerIds) {
       const list = byOwner[ownerId] ?? [];
       const map: Record<number, { value: string; notes: string }> = {};
-      for (let w = 1; w <= 13; w++) {
+      for (let w = 1; w <= MAX_WEEKS_PER_QUARTER; w++) {
         const wv = list.find(x => x.weekNumber === w);
         map[w] = { value: wv?.value?.toString() ?? "", notes: wv?.notes ?? "" };
       }
@@ -1116,7 +1212,7 @@ export function LogModal({ kpi, onClose, onRefresh, initialTab = "updates", canU
       const weeklyTargetsPayload = (() => {
         if (isTeamKPI && editForm.ownerIds.length > 0) {
           const out: Record<string, number> = {};
-          for (const w of ALL_WEEKS) {
+          for (const w of weeksArray(weekCount)) {
             let sum = 0;
             for (const id of editForm.ownerIds) {
               sum += parseFloat(editForm.weeklyOwnerBreakdown[id]?.[w] ?? "") || 0;
@@ -1141,6 +1237,9 @@ export function LogModal({ kpi, onClose, onRefresh, initialTab = "updates", canU
         status: editForm.status as "active" | "paused" | "completed",
         divisionType: editForm.divisionType,
         targetScale: editForm.measurementUnit === "Currency" ? editForm.targetScale : null,
+        unit: editForm.measurementUnit === "Number" ? (editForm.unit || null) : null,
+        scaledDisplay:
+          editForm.measurementUnit === "Currency" && !!editForm.targetScale ? editForm.scaledDisplay : false,
         reverseColor: editForm.reverseColor,
         weeklyTargets: weeklyTargetsPayload,
       };
@@ -1152,7 +1251,7 @@ export function LogModal({ kpi, onClose, onRefresh, initialTab = "updates", canU
         kpiPayload.weeklyOwnerTargets = Object.fromEntries(
           editForm.ownerIds.map(id => {
             const row = editForm.weeklyOwnerBreakdown[id] ?? {};
-            return [id, Object.fromEntries(ALL_WEEKS.map(w => [String(w), parseFloat(row[w] ?? "") || 0]))];
+            return [id, Object.fromEntries(weeksArray(weekCount).map(w => [String(w), parseFloat(row[w] ?? "") || 0]))];
           })
         );
         // Per-owner Individual KPI name override — only owners with a non-empty
@@ -1194,7 +1293,7 @@ export function LogModal({ kpi, onClose, onRefresh, initialTab = "updates", canU
           // Skip owners the actor can't edit (to avoid 403 responses that would roll back the batch)
           const canEditThisOwner = canEditAnyOwner || ownerId === currentUserId;
           if (!canEditThisOwner) continue;
-          for (const w of ALL_WEEKS) {
+          for (const w of weeksArray(weekCount)) {
             if (isPastWeekLocked(w)) continue;
             const cur = teamWeeklyState[ownerId]?.[w];
             const prev = initialTeamWeeklyStateRef.current[ownerId]?.[w];
@@ -1204,7 +1303,7 @@ export function LogModal({ kpi, onClose, onRefresh, initialTab = "updates", canU
           }
         }
       } else {
-        for (const w of ALL_WEEKS) {
+        for (const w of weeksArray(weekCount)) {
           if (isPastWeekLocked(w)) continue;
           const cur = weeklyState[w];
           const prev = initialWeeklyStateRef.current[w];

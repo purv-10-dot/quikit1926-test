@@ -9,13 +9,13 @@ import { TableSkeleton } from "@/components/ui/Skeleton";
 import {
   getFiscalYear, getFiscalQuarter, fiscalYearLabel,
 } from "@/lib/utils/fiscal";
-import { useCurrentWeek, useWeekDateRange } from "@/lib/hooks/useCurrentWeek";
+import { useCurrentWeek, useWeekDateRange, useQuarterWeekCount } from "@/lib/hooks/useCurrentWeek";
 import { useNumberFormat } from "@/lib/hooks/useFeatureFlags";
 import type { KPIRow } from "@/lib/types/kpi";
 import { TeamSection } from "./components/TeamSection";
 import { KPIModal } from "../components/KPIModal";
 import { ALL_STATIC_COLS, COL_LABELS } from "../hooks/useTableColumns";
-import { ALL_WEEKS } from "@/lib/utils/fiscal";
+import { weeksArray } from "@/lib/utils/fiscal";
 import { AddButton, FiscalPeriodPicker, Pagination, DEFAULT_PAGE_SIZE, type FiscalQuarter, type ExportSelection } from "@quikit/ui";
 import { useDebouncedTableSearch } from "@/lib/store";
 import { UnreadCountsProvider } from "@/components/audit/UnreadCountsProvider";
@@ -56,9 +56,10 @@ export default function TeamsKPIPage() {
   // an entry unhides that column in every team's table at once.
   const [hiddenColsByTeam, setHiddenColsByTeam] = useState<Record<string, Set<string>>>({});
   const [showColTrigger, setShowColTrigger] = useState<{ col: string; seq: number } | undefined>();
+  const weekCount = useQuarterWeekCount(year, quarter);
   const allTableCols = useMemo(
-    () => [...ALL_STATIC_COLS, ...ALL_WEEKS.map(w => `week${w}`)],
-    []
+    () => [...ALL_STATIC_COLS, ...weeksArray(weekCount).map(w => `week${w}`)],
+    [weekCount]
   );
   const unionHiddenCols = useMemo(() => {
     const s = new Set<string>();
@@ -494,12 +495,13 @@ function TeamKPIMoreActions({
   quarter: string;
 }) {
   const tablePrefs = useTablePrefs("kpi");
-  // Includes the 13 week columns so "Hide all" actually hides every data
+  const weekCount = useQuarterWeekCount(year, quarter);
+  // Includes the quarter's week columns so "Hide all" actually hides every data
   // column. See `apps/quikscale/app/(dashboard)/kpi/page.tsx` for the
   // canonical comment on framework row controls.
   const moduleColumns = [
     ...ALL_STATIC_COLS.map((key) => ({ key, label: COL_LABELS[key] ?? key })),
-    ...ALL_WEEKS.map((w) => ({ key: `week${w}`, label: `Week ${w}` })),
+    ...weeksArray(weekCount).map((w) => ({ key: `week${w}`, label: `Week ${w}` })),
   ];
   const visibleColKeys = moduleColumns
     .filter((c) => !tablePrefs.hiddenCols.includes(c.key))
