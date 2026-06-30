@@ -26,8 +26,17 @@ export async function getPastWeekFlags(orgId: string) {
  * `getPastWeekFlags` guards past-week KPI/priority writes.
  */
 export async function getCanAddPastQuarterHabit(orgId: string): Promise<boolean> {
+  return isFeatureFlagEnabled(orgId, "add_past_quarter_habit");
+}
+
+/**
+ * Generic server-side read of a single tenant feature flag. Returns `false`
+ * when the flag has never been set (the default-off contract every config
+ * toggle follows). Used e.g. by the WWW routes for `www_notes_required`.
+ */
+export async function isFeatureFlagEnabled(orgId: string, key: string): Promise<boolean> {
   const flag = await db.featureFlag.findFirst({
-    where: { orgId, key: "add_past_quarter_habit" },
+    where: { orgId, key },
     select: { enabled: true },
   });
   return flag?.enabled ?? false;

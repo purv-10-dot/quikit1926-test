@@ -1,4 +1,5 @@
 import { getColorByPercentage, type ColorResult } from "./colorLogic";
+import { CURRENCIES, getMultiplier, shortScaleLabel } from "./currency";
 
 /**
  * Format a number for display: strips floating-point noise, max 2 decimal places,
@@ -50,6 +51,44 @@ export function fmtCompactIndian(val: number | null | undefined): string {
  */
 export function fmtCompactBy(val: number | null | undefined, format: NumberFormat = "standard"): string {
   return format === "indian" ? fmtCompactIndian(val) : fmtCompact(val);
+}
+
+/**
+ * Display formatter for KPI goal/value numbers that respects a Currency KPI's
+ * chosen scale unit. Display-only — stored values stay RAW.
+ *
+ * Rules (see docs/deferred/currency-scale-display.md):
+ *   - Currency + scale, INR → always the scaled unit with ₹ ("₹4 Cr"), toggle ignored.
+ *   - Currency + scale, non-INR → toggle OFF native scale ("$9 M"); toggle ON
+ *     Indian magnitude keeping the symbol ("$90L").
+ *   - Currency, no scale → INR forces Indian; others follow the toggle.
+ *   - Non-currency → plain compact, toggle-driven (byte-identical to fmtCompactBy).
+ */
+export function formatScaledKpiValue(
+  val: number | null | undefined,
+  opts: {
+    measurementUnit?: string | null;
+    currency?: string | null;
+    targetScale?: string | null;
+    numberFormat?: NumberFormat;
+  },
+): string {
+  if (val == null) return "—";
+  const { measurementUnit, currency, targetScale, numberFormat = "standard" } = opts;
+  if (measurementUnit === "Currency" && currency && targetScale) {
+    const m = getMultiplier(currency, targetScale);
+    if (m > 1) {
+      const symbol = CURRENCIES.find(c => c.code === currency)?.symbol ?? "";
+      // non-INR + toggle ON → Indian magnitude keeping the symbol ("$90L"); INR ignores the toggle.
+      if (currency !== "INR" && numberFormat === "indian") return `${symbol}${fmtCompactIndian(val)}`;
+      const scaled = parseFloat((val / m).toFixed(2)).toString();
+      const unit = shortScaleLabel(targetScale);
+      return `${symbol}${scaled}${unit ? ` ${unit}` : ""}`; // "₹4 Cr" / "$9 M"
+    }
+  }
+  // No scale / non-currency: INR forces Indian even when the toggle is off.
+  const effective: NumberFormat = currency === "INR" ? "indian" : numberFormat;
+  return fmtCompactBy(val, effective);
 }
 
 /**

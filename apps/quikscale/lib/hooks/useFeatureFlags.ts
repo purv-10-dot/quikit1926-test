@@ -22,6 +22,7 @@ let cache: {
   canEditPastWeek: boolean;
   canAddPastQuarterHabit: boolean;
   useIndianNumbering: boolean;
+  wwwNotesRequired: boolean;
 } | null = null;
 let version = 0;
 const listeners = new Set<() => void>();
@@ -42,12 +43,13 @@ async function fetchFlags() {
         canAddPastQuarterHabit:
           rows.find((f) => f.key === "add_past_quarter_habit")?.enabled ?? false,
         useIndianNumbering: rows.find((f) => f.key === "use_indian_numbering")?.enabled ?? false,
+        wwwNotesRequired: rows.find((f) => f.key === "www_notes_required")?.enabled ?? false,
       };
     } else {
-      cache = { canAddPastWeek: false, canEditPastWeek: false, canAddPastQuarterHabit: false, useIndianNumbering: false };
+      cache = { canAddPastWeek: false, canEditPastWeek: false, canAddPastQuarterHabit: false, useIndianNumbering: false, wwwNotesRequired: false };
     }
   } catch {
-    cache = { canAddPastWeek: false, canEditPastWeek: false, canAddPastQuarterHabit: false, useIndianNumbering: false };
+    cache = { canAddPastWeek: false, canEditPastWeek: false, canAddPastQuarterHabit: false, useIndianNumbering: false, wwwNotesRequired: false };
   }
   version++;
   notifyListeners();
@@ -102,6 +104,26 @@ export function useNumberFormat(): "standard" | "indian" {
   }, []);
 
   return cache?.useIndianNumbering ? "indian" : "standard";
+}
+
+/**
+ * Whether the org requires a non-empty Notes field on WWW items (the
+ * `www_notes_required` config flag). Subscribes to the same flag cache, so
+ * toggling the setting re-renders the WWW add/edit form live.
+ */
+export function useWWWNotesRequired(): boolean {
+  const [, forceUpdate] = useState(0);
+
+  useEffect(() => {
+    const listener = () => forceUpdate((n) => n + 1);
+    listeners.add(listener);
+    fetchFlags();
+    return () => {
+      listeners.delete(listener);
+    };
+  }, []);
+
+  return cache?.wwwNotesRequired ?? false;
 }
 
 /** Force-refresh the cached flags (call after Settings page saves changes). */

@@ -1,11 +1,24 @@
 import { db } from "@/lib/db";
 import type { Prisma } from "@prisma/client";
-import { allPermissionPairs, SPACE_ADMIN_ROLE_NAME } from "@/lib/api/permissionsRegistry";
+import {
+  allPermissionPairs,
+  SPACE_ADMIN_ROLE_NAME,
+} from "@/lib/api/permissionsRegistry";
 
 export const DEFAULT_STATUSES = [
   { name: "To Do", color: "#94a3b8", category: "BACKLOG", orderIndex: 0 },
-  { name: "In Progress", color: "#2563eb", category: "IN_PROGRESS", orderIndex: 1 },
-  { name: "In Review", color: "#9333ea", category: "IN_PROGRESS", orderIndex: 2 },
+  {
+    name: "In Progress",
+    color: "#2563eb",
+    category: "IN_PROGRESS",
+    orderIndex: 1,
+  },
+  {
+    name: "In Review",
+    color: "#9333ea",
+    category: "IN_PROGRESS",
+    orderIndex: 2,
+  },
   { name: "Done", color: "#16a34a", category: "DONE", orderIndex: 3 },
 ];
 
@@ -147,14 +160,20 @@ export async function seedProjectDefaults(
 
   // Seed the 3 starter project roles + their grants. Idempotent: if a role
   // with the same name already exists for this project, skip both the role
-  // create AND the grants fill (don't clobber admin edits).
+  // create AND the grants fill (don't clobber admin edits). Fetch the existing
+  // names in ONE query instead of a findUnique per role — fewer round-trips
+  // keeps this inside the transaction window on a remote (Neon) DB.
   const adminAllPairs = allPermissionPairs();
+  const existingRoleNames = new Set(
+    (
+      await tx.qtProjectRole.findMany({
+        where: { projectId },
+        select: { name: true },
+      })
+    ).map((r) => r.name),
+  );
   for (const tmpl of STARTER_PROJECT_ROLES) {
-    const existing = await tx.qtProjectRole.findUnique({
-      where: { projectId_name: { projectId, name: tmpl.name } },
-      select: { id: true },
-    });
-    if (existing) continue;
+    if (existingRoleNames.has(tmpl.name)) continue;
 
     const role = await tx.qtProjectRole.create({
       data: {
@@ -168,7 +187,8 @@ export async function seedProjectDefaults(
       select: { id: true },
     });
 
-    const grants = tmpl.name === SPACE_ADMIN_ROLE_NAME ? adminAllPairs : tmpl.grants;
+    const grants =
+      tmpl.name === SPACE_ADMIN_ROLE_NAME ? adminAllPairs : tmpl.grants;
     if (grants.length > 0) {
       await tx.qtProjectRolePermission.createMany({
         data: grants.map((g) => ({

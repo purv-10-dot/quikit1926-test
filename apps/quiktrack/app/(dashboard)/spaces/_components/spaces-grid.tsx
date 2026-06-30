@@ -163,7 +163,7 @@ export function SpacesGrid() {
   return (
     <div className="px-10 py-7">
       <div className="flex items-center justify-between mb-6">
-        <h1 className="text-2xl font-semibold text-gray-900">Spaces</h1>
+        <h1 className="text-2xl font-semibold text-gray-900">Projects</h1>
         <div className="flex items-center gap-2">
           {canCreateProject && (
             <>
@@ -171,7 +171,7 @@ export function SpacesGrid() {
                 href="/spaces/templates"
                 className="inline-flex items-center h-9 px-4 text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 rounded"
               >
-                Create space
+                Create project
               </Link>
               <Link
                 href="/spaces/templates"
@@ -190,7 +190,7 @@ export function SpacesGrid() {
           <input
             value={search}
             onChange={(e) => setSearch(e.target.value)}
-            placeholder="Search spaces"
+            placeholder="Search projects"
             className="w-full h-9 pl-9 pr-3 text-sm border border-gray-300 rounded-md placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
           />
         </div>
@@ -271,7 +271,7 @@ export function SpacesGrid() {
               <th className="px-4 py-3 font-medium">Key</th>
               <th className="px-4 py-3 font-medium">Type</th>
               <th className="px-4 py-3 font-medium">Lead</th>
-              <th className="px-4 py-3 font-medium whitespace-nowrap">Space URL</th>
+              <th className="px-4 py-3 font-medium whitespace-nowrap">Project URL</th>
             </tr>
           </thead>
           <tbody>
@@ -308,22 +308,22 @@ export function SpacesGrid() {
               <tr>
                 <td colSpan={7} className="px-4 py-12 text-center text-sm text-gray-500">
                   {debouncedSearch || filters.size > 0 ? (
-                    <span>No spaces match your filters.</span>
+                    <span>No projects match your filters.</span>
                   ) : canCreateProject ? (
                     <span>
-                      No spaces yet.{" "}
+                      No projects yet.{" "}
                       <Link
                         href="/spaces/templates"
                         className="text-blue-600 hover:underline"
                       >
-                        Create your first space
+                        Create your first project
                       </Link>
                       .
                     </span>
                   ) : (
                     <span>
-                      You haven&apos;t been added to any space yet. Ask your
-                      organisation admin to invite you to a project — spaces
+                      You haven&apos;t been added to any project yet. Ask your
+                      organisation admin to invite you to a project — projects
                       you join will appear here.
                     </span>
                   )}
@@ -442,7 +442,7 @@ function SpaceRowMenu({ spaceId }: { spaceId: string }) {
             onClick={() => setOpen(false)}
             className="block px-3 py-2 text-sm text-gray-800 hover:bg-gray-50"
           >
-            Space settings
+            Project settings
           </Link>
         </div>
       )}

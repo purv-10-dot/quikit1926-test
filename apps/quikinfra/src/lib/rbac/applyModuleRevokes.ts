@@ -173,10 +173,17 @@ export function modulesFromRevokes(
     const resourceList = MODULE_TO_RESOURCES[moduleKey] ?? [];
     if (resourceList.length === 0) continue;
     const pairs = modulePermissionPairs(moduleKey);
-    const hasAnyRevoke = pairs.some((p) =>
-      revokeSet.has(`${p.resource}:${p.action}`),
-    );
-    if (!hasAnyRevoke) ticked.push(moduleKey);
+    // A module stays "ticked" (visible/assigned) as long as the user keeps
+    // ANY access inside it. Only when EVERY pair in the module is revoked is
+    // the module fully dropped. Using `some()` here was the bug: a single
+    // unchecked Add/Edit/Delete/View box revoked one pair, which dropped the
+    // whole module from `modulesAssigned`, and the Permissions page then
+    // renders every page in an unassigned module as blank — so unchecking one
+    // box made the entire module clear on reload.
+    const allRevoked =
+      pairs.length > 0 &&
+      pairs.every((p) => revokeSet.has(`${p.resource}:${p.action}`));
+    if (!allRevoked) ticked.push(moduleKey);
   }
   return ticked;
 }

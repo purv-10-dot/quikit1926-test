@@ -116,14 +116,14 @@ export function FilterToolbar({ search, onSearchChange, onClear, state, onChange
 
       {state.projectId ? (
         <ActiveChip
-          label="Space"
+          label="Project"
           op="="
           value={state.projectLabel ?? "—"}
           onClear={() => onChange({ ...state, projectId: undefined, projectLabel: undefined })}
           renderValueMenu={(close) => (
             <SingleSelect
               searchable
-              searchPlaceholder="Search spaces…"
+              searchPlaceholder="Search projects…"
               options={projects.map((p) => ({ value: p.id, label: p.name }))}
               selected={state.projectId}
               onPick={(value, label) => {
@@ -134,11 +134,11 @@ export function FilterToolbar({ search, onSearchChange, onClear, state, onChange
           )}
         />
       ) : (
-        <PillDropdown label="Space">
+        <PillDropdown label="Project">
           {(close) => (
             <SingleSelect
               searchable
-              searchPlaceholder="Search spaces…"
+              searchPlaceholder="Search projects…"
               options={projects.map((p) => ({ value: p.id, label: p.name }))}
               onPick={(value, label) => {
                 onChange({ ...state, projectId: value, projectLabel: label });

@@ -15,6 +15,7 @@ import { requireSession } from "@/lib/require-session";
 import { getVCRole, FUND_ADMIN_ROLES } from "@/lib/rbac";
 import { homePathForPortal, portalForRole } from "@/lib/roles";
 import { db } from "@/lib/db";
+import { SessionGuard } from "@/components/session-guard";
 
 const ALL_NAV_ITEMS = [
   { label: "Home",      href: "/home",      roles: null },
@@ -52,6 +53,7 @@ export default async function VCLayout({ children }: { children: React.ReactNode
     (i) => !i.roles || (role && i.roles.includes(role)),
   );
   return (
+    <SessionGuard>
     <div className="min-h-screen flex bg-gray-50">
       {/* Left rail — slim nav (hidden on mobile, shown on md+) */}
       <aside className="hidden md:flex w-56 bg-slate-900 text-slate-100 flex-shrink-0 flex-col">
@@ -115,5 +117,6 @@ export default async function VCLayout({ children }: { children: React.ReactNode
         <main className="flex-1 overflow-y-auto">{children}</main>
       </div>
     </div>
+    </SessionGuard>
   );
 }

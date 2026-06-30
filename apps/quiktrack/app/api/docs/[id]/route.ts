@@ -3,6 +3,11 @@ import { z } from "zod";
 import { db } from "@/lib/db";
 import { withOrgAuth } from "@/lib/api/withOrgAuth";
 import { canDoc } from "@/lib/api/docPermissions";
+import {
+  resolveDocAccess,
+  canEditDocRole,
+  canManageDocSharing,
+} from "@/lib/api/docAccess";
 import { notifyDocMentions } from "@/lib/services/mentions";
 
 /**
@@ -18,6 +23,7 @@ interface DocRow {
   content: string;
   templateKey: string | null;
   folderId: string | null;
+  status: string;
   shareToken: string | null;
   shareMode: string | null;
   createdBy: string | null;
@@ -30,7 +36,7 @@ interface DocRow {
 async function loadDoc(orgId: string, docId: string): Promise<DocRow | null> {
   const rows = await db.$queryRaw<DocRow[]>`
     SELECT id, "orgId", "projectId", title, content, "templateKey", "folderId",
-           "shareToken", "shareMode",
+           status, "shareToken", "shareMode",
            "createdBy", "updatedBy", "isDeleted", "createdAt", "updatedAt"
     FROM app_quiktrack."QtDoc"
     WHERE id = ${docId} AND "orgId" = ${orgId} AND "isDeleted" = false
@@ -45,10 +51,15 @@ export const GET = withOrgAuth<{ id: string }>(
     if (!doc) {
       return NextResponse.json({ success: false, error: "Not found" }, { status: 404 });
     }
-    if (!(await canDoc(userId, orgId, doc.projectId, "view"))) {
+    // Effective role across owner/admin, explicit share, and project access
+    // (drafts stay author/share-only). No role → no access.
+    const role = await resolveDocAccess(userId, orgId, doc);
+    if (!role) {
       return NextResponse.json({ success: false, error: "Not found" }, { status: 404 });
     }
-    return NextResponse.json({ success: true, data: doc });
+    // Surface the role so the editor can enable/disable editing for shared users
+    // who aren't project members.
+    return NextResponse.json({ success: true, data: { ...doc, role } });
   },
 );
 
@@ -58,6 +69,8 @@ const patchSchema = z.object({
   // null = move to root; a string = move into that folder. `.optional()` so a
   // title/content-only save leaves the doc's folder untouched.
   folderId: z.string().min(1).nullable().optional(),
+  // Publish/unpublish toggle. Gated separately from content edits.
+  status: z.enum(["draft", "published"]).optional(),
 });
 
 export const PATCH = withOrgAuth<{ id: string }>(
@@ -66,8 +79,10 @@ export const PATCH = withOrgAuth<{ id: string }>(
     if (!doc) {
       return NextResponse.json({ success: false, error: "Not found" }, { status: 404 });
     }
-    if (!(await canDoc(userId, orgId, doc.projectId, "update"))) {
-      return NextResponse.json({ success: false, error: "You don't have access to this." }, { status: 403 });
+    // No access at all → 404 (don't reveal the draft/doc exists).
+    const role = await resolveDocAccess(userId, orgId, doc);
+    if (!role) {
+      return NextResponse.json({ success: false, error: "Not found" }, { status: 404 });
     }
     const parsed = patchSchema.safeParse(await req.json());
     if (!parsed.success) {
@@ -76,6 +91,25 @@ export const PATCH = withOrgAuth<{ id: string }>(
         { status: 400 },
       );
     }
+
+    const wantsStatusChange =
+      parsed.data.status !== undefined && parsed.data.status !== doc.status;
+    const wantsContentChange =
+      parsed.data.title !== undefined ||
+      parsed.data.content !== undefined ||
+      "folderId" in parsed.data;
+
+    // Editing title/content/folder needs an editor-or-higher role (owner,
+    // explicit editor share, or project Doc:update — all resolved above).
+    if (wantsContentChange && !canEditDocRole(role)) {
+      return NextResponse.json({ success: false, error: "You don't have access to this." }, { status: 403 });
+    }
+    // Publishing/unpublishing is restricted to the owner or an admin.
+    if (wantsStatusChange && !(await canManageDocSharing(userId, orgId, doc))) {
+      return NextResponse.json({ success: false, error: "You don't have access to this." }, { status: 403 });
+    }
+
+    const nextStatus = wantsStatusChange ? parsed.data.status! : doc.status;
     const nextTitle = parsed.data.title ?? doc.title;
     const nextContent = parsed.data.content ?? doc.content;
 
@@ -102,15 +136,30 @@ export const PATCH = withOrgAuth<{ id: string }>(
       }
     }
 
-    await db.$executeRaw`
-      UPDATE app_quiktrack."QtDoc"
-      SET title = ${nextTitle},
-          content = ${nextContent},
-          "folderId" = ${nextFolderId},
-          "updatedBy" = ${userId},
-          "updatedAt" = NOW()
-      WHERE id = ${params.id}
-    `;
+    // Only write `status` when it's actually being toggled, so a frequent
+    // content auto-save can never clobber a concurrent publish/unpublish.
+    if (wantsStatusChange) {
+      await db.$executeRaw`
+        UPDATE app_quiktrack."QtDoc"
+        SET title = ${nextTitle},
+            content = ${nextContent},
+            "folderId" = ${nextFolderId},
+            status = ${nextStatus},
+            "updatedBy" = ${userId},
+            "updatedAt" = NOW()
+        WHERE id = ${params.id}
+      `;
+    } else {
+      await db.$executeRaw`
+        UPDATE app_quiktrack."QtDoc"
+        SET title = ${nextTitle},
+            content = ${nextContent},
+            "folderId" = ${nextFolderId},
+            "updatedBy" = ${userId},
+            "updatedAt" = NOW()
+        WHERE id = ${params.id}
+      `;
+    }
     // Email anyone newly @-mentioned in the doc (diff vs the previous content
     // so the auto-saving editor doesn't re-notify existing mentions).
     if (parsed.data.content !== undefined) {
@@ -129,6 +178,7 @@ export const PATCH = withOrgAuth<{ id: string }>(
         title: nextTitle,
         content: nextContent,
         folderId: nextFolderId,
+        status: nextStatus,
         updatedBy: userId,
       },
     });
@@ -141,7 +191,16 @@ export const DELETE = withOrgAuth<{ id: string }>(
     if (!doc) {
       return NextResponse.json({ success: false, error: "Not found" }, { status: 404 });
     }
-    if (!(await canDoc(userId, orgId, doc.projectId, "delete"))) {
+    // No access at all → 404. Deleting needs owner/admin OR project Doc:delete
+    // (explicit viewer/editor shares can't delete).
+    const role = await resolveDocAccess(userId, orgId, doc);
+    if (!role) {
+      return NextResponse.json({ success: false, error: "Not found" }, { status: 404 });
+    }
+    const canRemove =
+      (await canManageDocSharing(userId, orgId, doc)) ||
+      (await canDoc(userId, orgId, doc.projectId, "delete"));
+    if (!canRemove) {
       return NextResponse.json({ success: false, error: "You don't have access to this." }, { status: 403 });
     }
     await db.$executeRaw`

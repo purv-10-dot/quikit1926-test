@@ -61,7 +61,7 @@ export function RoleManagementTab() {
             App-wide
           </div>
           <div className="text-xs text-indigo-900 dark:text-indigo-200/80">
-            Applies across every space
+            Applies across every project
           </div>
         </div>
         <div className="px-4 py-3 border-b border-gray-200 flex items-center justify-between dark:border-gray-700">
@@ -150,7 +150,7 @@ export function RoleManagementTab() {
                 </h4>
                 <p className="mt-2 max-w-md text-sm text-gray-600 dark:text-gray-400">
                   The <span className="font-medium text-gray-800 dark:text-gray-200">Admin</span> role
-                  can view and edit every field, entity, and navigation item across all spaces. There&apos;s
+                  can view and edit every field, entity, and navigation item across all projects. There&apos;s
                   nothing to configure here — its permissions can&apos;t be restricted.
                 </p>
               </div>
@@ -160,13 +160,13 @@ export function RoleManagementTab() {
                   <ShieldCheck className="h-7 w-7 text-blue-600 dark:text-blue-300" />
                 </div>
                 <h4 className="mt-4 text-lg font-semibold text-gray-900 dark:text-gray-100">
-                  Can create their own spaces
+                  Can create their own projects
                 </h4>
                 <p className="mt-2 max-w-md text-sm text-gray-600 dark:text-gray-400">
                   The <span className="font-medium text-gray-800 dark:text-gray-200">Space Creator</span> role
                   has standard member access <span className="font-medium">plus</span> the ability to create
-                  spaces. In any space they create they become its <span className="font-medium text-gray-800 dark:text-gray-200">Space Admin</span> (full control of that space).
-                  They see only spaces they belong to and have no org-wide admin powers. This is a preset role —
+                  projects. In any project they create they become its <span className="font-medium text-gray-800 dark:text-gray-200">Space Admin</span> (full control of that project).
+                  They see only projects they belong to and have no org-wide admin powers. This is a preset role —
                   there&apos;s nothing to configure here.
                 </p>
               </div>

@@ -1,7 +1,7 @@
 -- ============================================================================
 -- Machinery & Equipment module — combined manual migration
 -- ============================================================================
--- Single command file consolidating all 10 migrations that were moved out of
+-- Single command file consolidating all 12 migrations that were moved out of
 -- prisma/migrations into manual-migrations. Apply top-to-bottom in one psql
 -- session against the target database (schema: app_quikinfra, references quikit).
 --
@@ -16,6 +16,8 @@
 --   8. 20260622140000_equipment_table_consolidation
 --   9. 20260622150000_fleet_dashboard_table
 --  10. 20260623120000_drop_cn_approval_rule_request
+--  11. 20260624_equipment_transfer_returnable_period
+--  12. 20260624_hire_rent_approval_fields
 --
 -- NOTE: order matters — migrations 02/05/06 create tables that migration 08
 -- consolidates and then DROPs. Do not reorder.
@@ -921,6 +923,43 @@ END $$;
 
 DROP TABLE IF EXISTS "app_quikinfra"."CnApprovalRequest";
 DROP TABLE IF EXISTS "app_quikinfra"."CnApprovalRule";
+
+
+-- ╔══════════════════════════════════════════════════════════════════════════╗
+-- ║ 11. 20260624_equipment_transfer_returnable_period                          ║
+-- ║     Equipment transfers — returnable window (from/to) on deployment        ║
+-- ╚══════════════════════════════════════════════════════════════════════════╝
+-- Returnable transfers need a return window — the dates from/to which the
+-- machine is on loan to the destination project. Both columns nullable:
+-- reassignment transfers and existing rows keep NULL.
+
+ALTER TABLE "app_quikinfra"."Equipment_deployment"
+  ADD COLUMN IF NOT EXISTS "returnableFrom" TIMESTAMP(3),
+  ADD COLUMN IF NOT EXISTS "returnableTo"   TIMESTAMP(3);
+
+
+-- ╔══════════════════════════════════════════════════════════════════════════╗
+-- ║ 12. 20260624_hire_rent_approval_fields                                     ║
+-- ║     Hire/Rent records — approval-workflow linkage + audit stamps           ║
+-- ╚══════════════════════════════════════════════════════════════════════════╝
+-- Hire-In Verifications now run through the configured Hire & Rent approval
+-- workflow (Submit → Pending → Approve/Reject/Return), mirroring the Equipment
+-- Log Book. These columns persist the link to the approval instance and the
+-- submit/approve/reject/return audit stamps. All nullable — existing rows keep
+-- NULL.
+
+ALTER TABLE "app_quikinfra"."Hire_rent_records"
+  ADD COLUMN IF NOT EXISTS "approvalId"   TEXT,
+  ADD COLUMN IF NOT EXISTS "submittedAt"  TIMESTAMP(3),
+  ADD COLUMN IF NOT EXISTS "submittedBy"  TEXT,
+  ADD COLUMN IF NOT EXISTS "approvedAt"   TIMESTAMP(3),
+  ADD COLUMN IF NOT EXISTS "approvedBy"   TEXT,
+  ADD COLUMN IF NOT EXISTS "rejectedAt"   TIMESTAMP(3),
+  ADD COLUMN IF NOT EXISTS "rejectedBy"   TEXT,
+  ADD COLUMN IF NOT EXISTS "rejectReason" TEXT,
+  ADD COLUMN IF NOT EXISTS "returnedAt"   TIMESTAMP(3),
+  ADD COLUMN IF NOT EXISTS "returnedBy"   TEXT,
+  ADD COLUMN IF NOT EXISTS "returnReason" TEXT;
 
 
 COMMIT;

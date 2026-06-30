@@ -10,6 +10,7 @@ import NotificationBell from "@/components/notification-bell";
 import { requireSession } from "@/lib/require-session";
 import { getVCRole } from "@/lib/rbac";
 import { homePathForPortal, portalForRole } from "@/lib/roles";
+import { SessionGuard } from "@/components/session-guard";
 
 const NAV = [
   // Investor's "summary" page = capital roll-up. Routed under /summary
@@ -39,6 +40,7 @@ export default async function InvestorLayout({
     redirect(homePathForPortal(portal));
   }
   return (
+    <SessionGuard>
     <div className="min-h-screen bg-gray-50 flex flex-col">
       <header className="bg-white border-b border-gray-200 px-6 py-3 flex items-center justify-between">
         <div className="flex items-center gap-6">
@@ -67,5 +69,6 @@ export default async function InvestorLayout({
       </header>
       <main className="flex-1">{children}</main>
     </div>
+    </SessionGuard>
   );
 }

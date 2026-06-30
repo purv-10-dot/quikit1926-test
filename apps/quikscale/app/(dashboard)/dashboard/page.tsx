@@ -32,7 +32,7 @@ import {
   weekDateLabel, ALL_WEEKS, rollingVisibleWeeks,
 } from "@/lib/utils/fiscal";
 import { useCurrentWeek, useWeekDateRange, useWeekLabels } from "@/lib/hooks/useCurrentWeek";
-import { progressColor, weekCellColors, fmt, fmtCompact, fmtCompactBy, getProgressBadgeColors, getLatestWeeklyNote, type NumberFormat } from "@/lib/utils/kpiHelpers";
+import { progressColor, weekCellColors, fmt, fmtCompact, formatScaledKpiValue, getProgressBadgeColors, getLatestWeeklyNote, type NumberFormat } from "@/lib/utils/kpiHelpers";
 import { useNumberFormat } from "@/lib/hooks/useFeatureFlags";
 import { getLatestPriorityNote } from "@/lib/utils/priorityHelpers";
 import { getColorByPercentage } from "@/lib/utils/colorLogic";
@@ -588,6 +588,15 @@ function KPICard({ kpi, currentWeek, numberFormat = "standard" }: { kpi: KPIRow;
   const badge = kpi.qtdAchieved != null
     ? getProgressBadgeColors(achieved, goal, hasAnyWeeklyValue, kpi.reverseColor ?? false)
     : { bar: "bg-gray-300", text: "text-gray-500", label: "—" };
+  // Currency KPIs with a scale render their value in that unit (₹4 Cr / $9 M);
+  // non-currency stays plain compact, toggle-driven. Display-only.
+  const fmtKpiVal = (k: KPIRow, v: number | null | undefined) =>
+    formatScaledKpiValue(v, {
+      measurementUnit: k.measurementUnit,
+      currency: k.currency,
+      targetScale: k.targetScale,
+      numberFormat,
+    });
   const [historyOpen, setHistoryOpen] = useState(false);
   return (
     <div className="group relative bg-white border border-gray-200 rounded-xl px-4 py-3 hover:shadow-sm transition-shadow">
@@ -599,8 +608,8 @@ function KPICard({ kpi, currentWeek, numberFormat = "standard" }: { kpi: KPIRow;
         className="flex items-baseline gap-1 mb-2"
         title="QTD Achieved / Quarterly Goal"
       >
-        <span className="text-base font-bold text-gray-800">{fmtCompactBy(achieved, numberFormat)}</span>
-        <span className="text-xs text-gray-400">/ {fmtCompactBy(goal, numberFormat)}</span>
+        <span className="text-base font-bold text-gray-800">{fmtKpiVal(kpi, achieved)}</span>
+        <span className="text-xs text-gray-400">/ {fmtKpiVal(kpi, goal)}</span>
       </div>
       <div className="flex items-center gap-2">
         <span className={`text-xs font-semibold ${badge.text}`}>{pct.toFixed(0)}%</span>

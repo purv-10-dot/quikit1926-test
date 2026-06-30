@@ -13,6 +13,7 @@ import {
 import { withOrgAuthForResource } from "@/lib/api/withOrgAuth";
 import { canEditWWW, canEditWWWAssignment } from "@/lib/api/wwwPermissions";
 import { findWWWDuplicate, wwwDuplicateMessage } from "@/lib/api/wwwDuplicate";
+import { isFeatureFlagEnabled } from "@/lib/utils/featureFlags";
 import { notifyWWWReassignment } from "@/lib/services/wwwNotifications";
 const auth = withOrgAuthForResource("www", "WWW");
 
@@ -219,6 +220,15 @@ export const PUT = auth.update<{ id: string }>(
       revisedDates,
     } = parsed.data;
 
+    // Org-configurable: when `www_notes_required` is on, the item must end up
+    // with non-empty Notes after this edit. `notes` may be absent (field not
+    // touched), so fall back to the existing value. Enforced server-side so the
+    // client toggle can't be bypassed.
+    const effectiveNotes = notes !== undefined ? notes : existing.notes;
+    if (!effectiveNotes?.trim() && (await isFeatureFlagEnabled(orgId, "www_notes_required"))) {
+      return NextResponse.json({ success: false, error: "Notes are required." }, { status: 400 });
+    }
+
     // Resolve assignee list when the client sends either field. Always keep
     // `who` mirrored to whoIds[0] so legacy reads / sort / index queries
     // continue to work.
@@ -256,8 +266,9 @@ export const PUT = auth.update<{ id: string }>(
     }
 
     // ── Duplicate guard ── compute the item's POST-edit identity (who/what/when)
-    // and reject (409) if it would collide with another active item. Self is
-    // excluded so a no-op edit never trips the guard.
+    // and reject (409) only if ALL THREE collide with another active item (same
+    // assignee + same calendar day + same "What?"). Self is excluded so a no-op
+    // edit (or editing only the "What?") never trips the guard.
     const effectiveWho = nextWho ?? existing.who;
     const effectiveWhat = what ?? existing.what;
     const effectiveWhen = when ?? existing.when;
