@@ -152,6 +152,7 @@ export async function GET(req: NextRequest) {
     quikinfra: process.env.QUIKINFRA_URL,
     quiksocial: process.env.QUIKSOCIAL_URL,
     quikcrm: process.env.QUIKCRM_URL,
+    quikfinance: process.env.QUIKFINANCE_URL,
   };
 
   // Dev-only safety net. If the env var isn't set AND the DB's baseUrl is
@@ -170,6 +171,7 @@ export async function GET(req: NextRequest) {
     quikinfra: "http://localhost:3006",
     quikvc: "http://localhost:3005",
     quikcrm: "http://localhost:3008",
+    quikfinance: "http://localhost:3013",
   };
 
   /**

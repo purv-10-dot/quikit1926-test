@@ -67,6 +67,7 @@ const QUIKINFRA_BASE = resolveAppUrl("QUIKINFRA_URL", "http://localhost:3005"); 
 const QUIKSOCIAL_BASE = resolveAppUrl("QUIKSOCIAL_URL", "http://localhost:3006"); // prod-safety-allow: dev fallback, prod throws via resolveAppUrl
 const QUIKVC_BASE = resolveAppUrl("QUIKVC_URL", "http://localhost:3007"); // prod-safety-allow: dev fallback, prod throws via resolveAppUrl
 const QUIKCRM_BASE = resolveAppUrl("QUIKCRM_URL", "http://localhost:3008"); // prod-safety-allow: dev fallback, prod throws via resolveAppUrl
+const QUIKFINANCE_BASE = resolveAppUrl("QUIKFINANCE_URL", "http://localhost:3013"); // prod-safety-allow: dev fallback, prod throws via resolveAppUrl
 // Central launcher (quikit) origin. It hosts every app's icon under
 // /app-icons and is where App.iconUrl is designed to resolve (see the comment
 // on BRAND_ICONS in packages/ui/components/app-switcher.tsx). Used as the
@@ -188,6 +189,26 @@ const APPS = [
       clientSecretPlain: resolveClientSecret("QUIKSOCIAL_OAUTH_CLIENT_SECRET", "quiksocial-dev-secret-change-in-prod"),
       redirectUris: [
         `${QUIKSOCIAL_BASE}/api/auth/callback/quikit`,
+      ],
+      scopes: ["openid", "profile", "email", "tenant"],
+    },
+  },
+  {
+    slug: "quikfinance",
+    name: "QuikFinance",
+    description: "Cloud-native accounting — invoices, bills, banking, GST, ledgers, reports.",
+    baseUrl: QUIKFINANCE_BASE,
+    // Absolute URL on the central launcher (quikit), which hosts every app's
+    // icon under /app-icons. @quikit/ui's brand-icon map has no `quikfinance`
+    // key, so the tile falls back to App.iconUrl — a relative path would 404
+    // cross-origin. (icon asset still TODO; tile renders broken until added.)
+    iconUrl: `${QUIKIT_BASE}/app-icons/quikfinance.svg`,
+    status: "active",
+    oauth: {
+      clientId: "quikfinance",
+      clientSecretPlain: resolveClientSecret("QUIKFINANCE_OAUTH_CLIENT_SECRET", "quikfinance-dev-secret-change-in-prod"),
+      redirectUris: [
+        `${QUIKFINANCE_BASE}/api/auth/callback/quikit`,
       ],
       scopes: ["openid", "profile", "email", "tenant"],
     },

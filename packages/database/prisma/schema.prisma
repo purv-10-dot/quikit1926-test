@@ -7,7 +7,7 @@ datasource db {
   provider  = "postgresql"
   url       = env("DATABASE_URL")
   directUrl = env("DATABASE_URL_DIRECT")
-  schemas   = ["app_quikcrm", "app_quikhrms", "app_quikinfra", "app_quikscale", "app_quiksocial", "app_quiktrack", "app_quikvc", "auth", "public", "quikit"]
+  schemas   = ["app_quikcrm", "app_quikfinance", "app_quikhrms", "app_quikinfra", "app_quikscale", "app_quiksocial", "app_quiktrack", "app_quikvc", "auth", "public", "quikit"]
 }
 
 model App {
@@ -14867,3 +14867,1967 @@ model Invitation {
 // migration — HRMS no longer has its own login/2FA. They had zero code
 // references and no DB tables (schema-only drift). `RefreshToken` was also
 // removed (custom-auth refresh tokens, superseded by central SSO).
+
+// ===========================================================================
+// QuikFinance (app_quikfinance) — merged from the standalone QuikFinance app
+// during platform integration. Models are SCALAR-ONLY (no Prisma relations);
+// org_id/user_id columns reference central quikit.Org / auth.User. Table names
+// preserved via @@map. The finance org-profile is QfOrganization (id keyed 1:1
+// to quikit.Org.id). User table dropped — central auth.User is the identity.
+// ===========================================================================
+
+model QfOrganization {
+  id                 String   @id
+  name               String
+  legal_name         String?
+  tax_id             String?
+  address            Json     @default(dbgenerated("'{}'::jsonb"))
+  phone              String?
+  email              String?
+  logo_url           String?
+  base_currency      String   @default("INR") @db.Char(3)
+  fiscal_year_start  Int      @default(4)
+  date_format        String   @default("MM/DD/YYYY")
+  timezone           String   @default("Asia/Kolkata")
+  invoice_prefix     String   @default("INV")
+  bill_prefix        String   @default("BILL")
+  gstin              String?
+  gst_registered     Boolean  @default(false)
+  tds_apply_level    String   @default("transaction")
+  tds_liabilities_report Boolean @default(false)
+  migration_date     DateTime? @db.Date
+  pan                String?
+  state_code         String?
+  preferred_language String   @default("en")
+  default_upi_id     String?
+  // Extended company-profile settings.
+  industry               String?
+  country                String?
+  street1                String?
+  street2                String?
+  city                   String?
+  custom_fields          String?
+  address_line           String?
+  pin_code               String?
+  fax                    String?
+  address_format         String?
+  website                String?
+  use_payment_address    Boolean  @default(false)
+  payment_address        String?
+  primary_contact_name   String?
+  sender_email           String?
+  report_basis           String   @default("accrual")
+  communication_language String   @default("en")
+  // Module settings (see the respective settings pages).
+  general_settings   Json   @default(dbgenerated("'{}'::jsonb"))
+  customer_vendor_settings Json   @default(dbgenerated("'{}'::jsonb"))
+  quote_settings     Json   @default(dbgenerated("'{}'::jsonb"))
+  invoice_settings   Json   @default(dbgenerated("'{}'::jsonb"))
+  purchase_order_settings Json   @default(dbgenerated("'{}'::jsonb"))
+  created_at         DateTime @default(now()) @db.Timestamptz(6)
+  updated_at         DateTime @default(now()) @db.Timestamptz(6)
+
+  @@map("organizations")
+  @@schema("app_quikfinance")
+}
+
+model QfCustomFieldDefinition {
+  id             String   @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  org_id         String
+  entity         String   @default("contacts")
+  label          String
+  field_key      String
+  data_type      String   @default("text")
+  options        Json?
+  is_mandatory   Boolean  @default(false)
+  show_in_portal Boolean  @default(false)
+  status         String   @default("active")
+  display_order  Int      @default(0)
+  created_at     DateTime @default(now()) @db.Timestamptz(6)
+  updated_at     DateTime @default(now()) @db.Timestamptz(6)
+
+  @@index([org_id, entity])
+  @@map("custom_field_definitions")
+  @@schema("app_quikfinance")
+}
+
+model QfProfile {
+  id                  String    @id @db.Uuid
+  org_id              String?
+  full_name           String?
+  avatar_url          String?
+  role                String    @default("member")
+  is_active           Boolean   @default(true)
+  language_preference String    @default("en")
+  notification_prefs  Json      @default(dbgenerated("'{}'::jsonb"))
+  last_active_at      DateTime? @db.Timestamptz(6)
+  created_at          DateTime  @default(now()) @db.Timestamptz(6)
+
+  @@index([org_id])
+  @@map("profiles")
+  @@schema("app_quikfinance")
+}
+
+model QfCurrency {
+  code           String @id @db.Char(3)
+  name           String
+  symbol         String
+  decimal_places Int    @default(2)
+
+  @@map("currencies")
+  @@schema("app_quikfinance")
+}
+
+model QfExchangeRate {
+  id             String   @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  org_id         String
+  from_currency  String   @db.Char(3)
+  to_currency    String   @db.Char(3)
+  rate           Decimal  @db.Decimal(20, 8)
+  effective_date DateTime @db.Date
+  created_at     DateTime @default(now()) @db.Timestamptz(6)
+
+  @@unique([org_id, from_currency, to_currency, effective_date])
+  @@map("exchange_rates")
+  @@schema("app_quikfinance")
+}
+
+model QfAccountCategory {
+  id             String @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  org_id         String
+  name           String
+  type           String
+  normal_balance String
+  display_order  Int    @default(0)
+
+  @@unique([org_id, name])
+  @@map("account_categories")
+  @@schema("app_quikfinance")
+}
+
+model QfAccount {
+  id           String   @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  org_id       String
+  category_id  String?  @db.Uuid
+  parent_id    String?  @db.Uuid
+  code         String?
+  name         String
+  description  String?
+  account_type String
+  currency     String   @default("USD") @db.Char(3)
+  is_active    Boolean  @default(true)
+  is_system    Boolean  @default(false)
+  show_on_dashboard Boolean @default(false)
+  balance      Decimal  @default(0) @db.Decimal(20, 2)
+  created_at   DateTime @default(now()) @db.Timestamptz(6)
+  updated_at   DateTime @default(now()) @db.Timestamptz(6)
+
+  @@unique([org_id, code])
+  @@index([org_id, account_type])
+  @@map("accounts")
+  @@schema("app_quikfinance")
+}
+
+model QfContact {
+  id               String   @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  org_id           String
+  type             String
+  // Business | individual — drives which name fields are required.
+  contact_kind     String   @default("business")
+  // customer | vendor | customer_vendor.
+  customer_category String  @default("customer")
+  customer_code    String?
+  display_name     String
+  company_name     String?
+  first_name       String?
+  last_name        String?
+  email            String?
+  phone            String?
+  mobile           String?
+  website          String?
+  customer_language String  @default("en")
+  status           String   @default("active")
+  tax_id           String?
+  currency         String   @default("USD") @db.Char(3)
+  payment_terms    Int      @default(30)
+  credit_limit     Decimal? @db.Decimal(20, 2)
+  credit_days      Int?
+  price_list       String?
+  tds_applicable   Boolean  @default(false)
+  billing_address  Json     @default(dbgenerated("'{}'::jsonb"))
+  shipping_address Json     @default(dbgenerated("'{}'::jsonb"))
+  notes            String?
+  ar_account_id    String?  @db.Uuid
+  ap_account_id    String?  @db.Uuid
+  is_active        Boolean  @default(true)
+  pan              String?
+  gst_treatment    String   @default("registered")
+  state_code       String?
+  opening_balance  Decimal  @default(0) @db.Decimal(20, 2)
+  // Tax & compliance.
+  tan              String?
+  msme_number      String?
+  cin_number       String?
+  tax_category     String?
+  tax_exempt       Boolean  @default(false)
+  // Sales information (CRM-ready).
+  account_owner    String?
+  salesperson      String?
+  lead_source      String?
+  customer_segment String?
+  territory        String?
+  region           String?
+  referral_partner String?
+  // Portal access.
+  portal_enabled   Boolean  @default(false)
+  portal_username  String?
+  mfa_enabled      Boolean  @default(false)
+  last_login_at    DateTime? @db.Timestamptz(6)
+  // Projects (feature-flagged).
+  project_name     String?
+  site_name        String?
+  project_manager  String?
+  contract_value   Decimal? @db.Decimal(20, 2)
+  customer_since   DateTime? @db.Date
+  // Custom fields (array of { label, value }).
+  custom_fields    Json     @default(dbgenerated("'[]'::jsonb"))
+  // Audit.
+  created_by       String?
+  updated_by       String?
+  created_at       DateTime @default(now()) @db.Timestamptz(6)
+  updated_at       DateTime @default(now()) @db.Timestamptz(6)
+
+  contacts_people  QfContactPerson[]
+  bank_accounts    QfContactBankAccount[]
+  documents        QfContactDocument[]
+  addresses        QfContactAddress[]
+  comments         QfContactComment[]
+  emails           QfContactEmail[]
+
+  @@unique([org_id, customer_code])
+  @@index([org_id, type])
+  @@index([org_id, customer_category])
+  @@map("contacts")
+  @@schema("app_quikfinance")
+}
+
+model QfContactPerson {
+  id                String   @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  org_id            String
+  contact_id        String   @db.Uuid
+  name              String
+  designation       String?
+  department        String?
+  email             String?
+  mobile            String?
+  whatsapp          String?
+  is_primary        Boolean  @default(false)
+  is_decision_maker Boolean  @default(false)
+  display_order     Int      @default(0)
+  created_at        DateTime @default(now()) @db.Timestamptz(6)
+  updated_at        DateTime @default(now()) @db.Timestamptz(6)
+
+  contactRef QfContact @relation(fields: [contact_id], references: [id], onDelete: Cascade)
+
+  @@index([contact_id])
+  @@map("contact_persons")
+  @@schema("app_quikfinance")
+}
+
+model QfContactBankAccount {
+  id                  String   @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  org_id              String
+  contact_id          String   @db.Uuid
+  account_holder_name String?
+  bank_name           String?
+  // Sensitive values are encrypted at rest (AES-256-GCM) via lib/crypto.
+  account_number_enc  String?
+  ifsc                String?
+  branch              String?
+  swift_code          String?
+  upi_id              String?
+  created_at          DateTime @default(now()) @db.Timestamptz(6)
+  updated_at          DateTime @default(now()) @db.Timestamptz(6)
+
+  contactRef QfContact @relation(fields: [contact_id], references: [id], onDelete: Cascade)
+
+  @@index([contact_id])
+  @@map("contact_bank_accounts")
+  @@schema("app_quikfinance")
+}
+
+model QfContactDocument {
+  id          String   @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  org_id      String
+  contact_id  String   @db.Uuid
+  doc_type    String   @default("other")
+  file_name   String
+  storage_url String?
+  mime_type   String?
+  size_bytes  Int      @default(0)
+  uploaded_by String?
+  created_at  DateTime @default(now()) @db.Timestamptz(6)
+
+  contactRef QfContact @relation(fields: [contact_id], references: [id], onDelete: Cascade)
+
+  @@index([contact_id])
+  @@map("contact_documents")
+  @@schema("app_quikfinance")
+}
+
+model QfContactEmail {
+  id           String   @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  org_id       String
+  contact_id   String   @db.Uuid
+  direction    String   @default("outgoing")
+  to_email     String
+  cc           String?
+  subject      String
+  body         String
+  status       String   @default("queued")
+  provider_id  String?
+  error        String?
+  related_type String?
+  related_id   String?  @db.Uuid
+  sent_by      String?
+  created_at   DateTime @default(now()) @db.Timestamptz(6)
+  sent_at      DateTime? @db.Timestamptz(6)
+
+  contactRef QfContact @relation(fields: [contact_id], references: [id], onDelete: Cascade)
+
+  @@index([contact_id, created_at(sort: Desc)])
+  @@map("contact_emails")
+  @@schema("app_quikfinance")
+}
+
+model QfContactComment {
+  id         String   @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  org_id     String
+  contact_id String   @db.Uuid
+  user_id    String?
+  author     String?
+  body       String
+  created_at DateTime @default(now()) @db.Timestamptz(6)
+
+  contactRef QfContact @relation(fields: [contact_id], references: [id], onDelete: Cascade)
+
+  @@index([contact_id, created_at(sort: Desc)])
+  @@map("contact_comments")
+  @@schema("app_quikfinance")
+}
+
+model QfContactAddress {
+  id           String   @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  org_id       String
+  contact_id   String   @db.Uuid
+  address_type String   @default("billing")
+  line1        String?
+  line2        String?
+  city         String?
+  state        String?
+  country      String?
+  postal_code  String?
+  landmark     String?
+  is_primary   Boolean  @default(false)
+  created_at   DateTime @default(now()) @db.Timestamptz(6)
+  updated_at   DateTime @default(now()) @db.Timestamptz(6)
+
+  contactRef QfContact @relation(fields: [contact_id], references: [id], onDelete: Cascade)
+
+  @@index([contact_id])
+  @@map("contact_addresses")
+  @@schema("app_quikfinance")
+}
+
+model QfTaxRate {
+  id                     String   @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  org_id                 String
+  name                   String
+  rate                   Decimal  @db.Decimal(8, 4)
+  tax_type               String
+  payable_account_id     String?  @db.Uuid
+  recoverable_account_id String?  @db.Uuid
+  is_compound            Boolean  @default(false)
+  is_active              Boolean  @default(true)
+  created_at             DateTime @default(now()) @db.Timestamptz(6)
+  updated_at             DateTime @default(now()) @db.Timestamptz(6)
+
+  @@unique([org_id, name])
+  @@map("tax_rates")
+  @@schema("app_quikfinance")
+}
+
+model QfItem {
+  id                   String   @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  org_id               String
+  sku                  String
+  name                 String
+  description          String?
+  purchase_description String?
+  item_type            String   @default("product")
+  unit                 String   @default("each")
+  sales_price          Decimal  @default(0) @db.Decimal(20, 2)
+  purchase_price       Decimal  @default(0) @db.Decimal(20, 2)
+  income_account_id    String?  @db.Uuid
+  expense_account_id   String?  @db.Uuid
+  asset_account_id     String?  @db.Uuid
+  quantity_on_hand     Decimal  @default(0) @db.Decimal(20, 4)
+  reorder_point        Decimal  @default(0) @db.Decimal(20, 4)
+  is_active            Boolean  @default(true)
+  hsn_sac_code         String?
+  gst_rate             Decimal  @default(0) @db.Decimal(8, 4)
+  category_name        String?
+  barcode              String?
+  track_inventory      Boolean  @default(false)
+  default_warehouse_id String?  @db.Uuid
+  reorder_quantity     Decimal  @default(0) @db.Decimal(20, 4)
+  preferred_vendor_id  String?  @db.Uuid
+  created_at           DateTime @default(now()) @db.Timestamptz(6)
+  updated_at           DateTime @default(now()) @db.Timestamptz(6)
+
+  @@unique([org_id, sku])
+  @@map("items")
+  @@schema("app_quikfinance")
+}
+
+model QfInvoice {
+  id               String    @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  org_id           String
+  contact_id       String    @db.Uuid
+  invoice_number   String
+  status           String    @default("draft")
+  issue_date       DateTime  @db.Date
+  due_date         DateTime  @db.Date
+  currency         String    @default("USD") @db.Char(3)
+  exchange_rate    Decimal   @default(1) @db.Decimal(20, 8)
+  subtotal         Decimal   @default(0) @db.Decimal(20, 2)
+  discount_total   Decimal   @default(0) @db.Decimal(20, 2)
+  tax_total        Decimal   @default(0) @db.Decimal(20, 2)
+  total            Decimal   @default(0) @db.Decimal(20, 2)
+  balance_due      Decimal   @default(0) @db.Decimal(20, 2)
+  notes            String?
+  pdf_url          String?
+  sent_at          DateTime? @db.Timestamptz(6)
+  viewed_at        DateTime? @db.Timestamptz(6)
+  journal_entry_id String?   @db.Uuid
+  created_by       String?
+  place_of_supply  String?
+  round_off        Decimal   @default(0) @db.Decimal(20, 2)
+  tcs_amount       Decimal   @default(0) @db.Decimal(20, 2)
+  order_number     String?
+  warehouse_id     String?   @db.Uuid
+  ar_account_id    String?   @db.Uuid
+  salesperson      String?
+  subject          String?
+  terms            String?
+  template_type    String    @default("classic")
+  // e-Invoice (IRP / GSTN) fields.
+  irn              String?
+  ack_no           String?
+  ack_date         DateTime? @db.Timestamptz(6)
+  signed_qr_code   String?
+  einvoice_status  String?
+  einvoice_payload Json?
+  // e-Way bill (NIC) fields.
+  eway_bill_no     String?
+  eway_bill_date   DateTime? @db.Timestamptz(6)
+  eway_valid_until DateTime? @db.Timestamptz(6)
+  eway_status      String?
+  eway_payload     Json?
+  created_at       DateTime  @default(now()) @db.Timestamptz(6)
+  updated_at       DateTime  @default(now()) @db.Timestamptz(6)
+
+  @@unique([org_id, invoice_number])
+  @@index([org_id, status])
+  @@index([contact_id])
+  @@map("invoices")
+  @@schema("app_quikfinance")
+}
+
+model QfInvoiceLine {
+  id            String  @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  org_id        String
+  invoice_id    String  @db.Uuid
+  item_id       String? @db.Uuid
+  account_id    String? @db.Uuid
+  description   String
+  quantity      Decimal @db.Decimal(20, 4)
+  rate          Decimal @default(0) @db.Decimal(20, 2)
+  discount      Decimal @default(0) @db.Decimal(20, 2)
+  tax_rate_id   String? @db.Uuid
+  tax_amount    Decimal @default(0) @db.Decimal(20, 2)
+  line_total    Decimal @default(0) @db.Decimal(20, 2)
+  display_order Int     @default(0)
+
+  @@map("invoice_lines")
+  @@schema("app_quikfinance")
+}
+
+model QfBill {
+  id               String    @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  org_id           String
+  contact_id       String    @db.Uuid
+  bill_number      String
+  vendor_reference String?
+  order_number     String?
+  warehouse_id     String?   @db.Uuid
+  payment_terms    String?
+  ap_account_id    String?   @db.Uuid
+  subject          String?
+  status           String    @default("draft")
+  issue_date       DateTime  @db.Date
+  due_date         DateTime  @db.Date
+  currency         String    @default("USD") @db.Char(3)
+  exchange_rate    Decimal   @default(1) @db.Decimal(20, 8)
+  subtotal         Decimal   @default(0) @db.Decimal(20, 2)
+  discount_total   Decimal   @default(0) @db.Decimal(20, 2)
+  tax_total        Decimal   @default(0) @db.Decimal(20, 2)
+  total            Decimal   @default(0) @db.Decimal(20, 2)
+  balance_due      Decimal   @default(0) @db.Decimal(20, 2)
+  notes            String?
+  approved_by      String?
+  approved_at      DateTime? @db.Timestamptz(6)
+  journal_entry_id String?   @db.Uuid
+  place_of_supply  String?
+  tds_amount       Decimal   @default(0) @db.Decimal(20, 2)
+  created_at       DateTime  @default(now()) @db.Timestamptz(6)
+  updated_at       DateTime  @default(now()) @db.Timestamptz(6)
+
+  @@unique([org_id, bill_number])
+  @@index([org_id, status])
+  @@map("bills")
+  @@schema("app_quikfinance")
+}
+
+model QfBillLine {
+  id            String  @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  org_id        String
+  bill_id       String  @db.Uuid
+  item_id       String? @db.Uuid
+  account_id    String? @db.Uuid
+  description   String
+  quantity      Decimal @db.Decimal(20, 4)
+  rate          Decimal @default(0) @db.Decimal(20, 2)
+  discount      Decimal @default(0) @db.Decimal(20, 2)
+  tax_rate_id   String? @db.Uuid
+  tax_amount    Decimal @default(0) @db.Decimal(20, 2)
+  line_total    Decimal @default(0) @db.Decimal(20, 2)
+  display_order Int     @default(0)
+
+  @@map("bill_lines")
+  @@schema("app_quikfinance")
+}
+
+model QfPayment {
+  id                 String   @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  org_id             String
+  contact_id         String?  @db.Uuid
+  payment_type       String
+  payment_number     String?
+  warehouse_id       String?  @db.Uuid
+  payment_date       DateTime @db.Date
+  amount             Decimal  @db.Decimal(20, 2)
+  unapplied_amount   Decimal  @default(0) @db.Decimal(20, 2)
+  bank_charges       Decimal  @default(0) @db.Decimal(20, 2)
+  tds_amount         Decimal  @default(0) @db.Decimal(20, 2)
+  refunded_amount    Decimal  @default(0) @db.Decimal(20, 2)
+  currency           String   @default("USD") @db.Char(3)
+  exchange_rate      Decimal  @default(1) @db.Decimal(20, 8)
+  method             String
+  reference          String?
+  deposit_account_id String?  @db.Uuid
+  status             String   @default("posted")
+  memo               String?
+  journal_entry_id   String?  @db.Uuid
+  created_at         DateTime @default(now()) @db.Timestamptz(6)
+  updated_at         DateTime @default(now()) @db.Timestamptz(6)
+
+  @@index([org_id, payment_date])
+  @@map("payments")
+  @@schema("app_quikfinance")
+}
+
+model QfPaymentAllocation {
+  id         String   @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  org_id     String
+  payment_id String   @db.Uuid
+  invoice_id String?  @db.Uuid
+  bill_id    String?  @db.Uuid
+  amount     Decimal  @db.Decimal(20, 2)
+  created_at DateTime @default(now()) @db.Timestamptz(6)
+
+  @@map("payment_allocations")
+  @@schema("app_quikfinance")
+}
+
+model QfExpense {
+  id                 String   @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  org_id             String
+  expense_date       DateTime @db.Date
+  vendor_id          String?  @db.Uuid
+  customer_id        String?  @db.Uuid
+  account_id         String   @db.Uuid
+  project_id         String?  @db.Uuid
+  warehouse_id       String?  @db.Uuid
+  amount             Decimal  @db.Decimal(20, 2)
+  tax_amount         Decimal  @default(0) @db.Decimal(20, 2)
+  currency           String   @default("USD") @db.Char(3)
+  payment_account_id String?  @db.Uuid
+  reference          String?
+  receipt_url        String?
+  is_billable        Boolean  @default(false)
+  is_billed          Boolean  @default(false)
+  billed_invoice_id  String?  @db.Uuid
+  is_mileage         Boolean  @default(false)
+  distance           Decimal? @db.Decimal(20, 2)
+  mileage_rate       Decimal? @db.Decimal(20, 2)
+  mileage_unit       String?
+  employee_name      String?
+  description        String
+  status             String   @default("posted")
+  journal_entry_id   String?  @db.Uuid
+  created_at         DateTime @default(now()) @db.Timestamptz(6)
+  updated_at         DateTime @default(now()) @db.Timestamptz(6)
+
+  @@index([org_id, expense_date])
+  @@map("expenses")
+  @@schema("app_quikfinance")
+}
+
+model QfJournalEntry {
+  id           String    @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  org_id       String
+  entry_number String
+  entry_date   DateTime  @db.Date
+  status       String    @default("draft")
+  memo         String?
+  reference_number String?
+  reporting_method String  @default("accrual_and_cash")
+  currency     String    @default("INR") @db.Char(3)
+  location_id  String?   @db.Uuid
+  department_id String?  @db.Uuid
+  reverse_date DateTime? @db.Date
+  reverse_only_on_date Boolean @default(false)
+  reversal_of_id String? @db.Uuid
+  source_type  String?
+  source_id    String?   @db.Uuid
+  created_by   String?
+  approved_by  String?
+  posted_by    String?
+  approved_at  DateTime? @db.Timestamptz(6)
+  posted_at    DateTime? @db.Timestamptz(6)
+  created_at   DateTime  @default(now()) @db.Timestamptz(6)
+  updated_at   DateTime  @default(now()) @db.Timestamptz(6)
+  lines        QfJournalEntryLine[]
+
+  @@unique([org_id, entry_number])
+  @@index([org_id, entry_date])
+  @@map("journal_entries")
+  @@schema("app_quikfinance")
+}
+
+model QfJournalEntryLine {
+  id               String       @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  org_id           String
+  journal_entry_id String       @db.Uuid
+  account_id       String       @db.Uuid
+  description      String?
+  contact_id       String?      @db.Uuid
+  debit            Decimal      @default(0) @db.Decimal(20, 2)
+  credit           Decimal      @default(0) @db.Decimal(20, 2)
+  display_order    Int          @default(0)
+  journal_entry    QfJournalEntry @relation(fields: [journal_entry_id], references: [id], onDelete: Cascade)
+
+  @@index([journal_entry_id])
+  @@map("journal_entry_lines")
+  @@schema("app_quikfinance")
+}
+
+model QfBankAccount {
+  id                   String   @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  org_id               String
+  account_id           String?  @db.Uuid
+  name                 String
+  institution_name     String?
+  account_number_last4 String?
+  currency             String   @default("USD") @db.Char(3)
+  current_balance      Decimal  @default(0) @db.Decimal(20, 2)
+  is_active            Boolean  @default(true)
+  created_at           DateTime @default(now()) @db.Timestamptz(6)
+  updated_at           DateTime @default(now()) @db.Timestamptz(6)
+
+  @@map("bank_accounts")
+  @@schema("app_quikfinance")
+}
+
+model QfBankTransaction {
+  id                       String   @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  org_id                   String
+  bank_account_id          String   @db.Uuid
+  transaction_date         DateTime @db.Date
+  description              String
+  amount                   Decimal  @db.Decimal(20, 2)
+  reference                String?
+  matched_journal_entry_id String?  @db.Uuid
+  reconciliation_id        String?  @db.Uuid
+  status                   String   @default("imported")
+  created_at               DateTime @default(now()) @db.Timestamptz(6)
+
+  @@index([org_id, bank_account_id])
+  @@map("bank_transactions")
+  @@schema("app_quikfinance")
+}
+
+model QfReconciliation {
+  id                String    @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  org_id            String
+  bank_account_id   String    @db.Uuid
+  statement_start   DateTime  @db.Date
+  statement_end     DateTime  @db.Date
+  statement_balance Decimal   @db.Decimal(20, 2)
+  book_balance      Decimal   @db.Decimal(20, 2)
+  difference        Decimal   @db.Decimal(20, 2)
+  status            String    @default("open")
+  completed_by      String?
+  completed_at      DateTime? @db.Timestamptz(6)
+  created_at        DateTime  @default(now()) @db.Timestamptz(6)
+
+  @@map("reconciliations")
+  @@schema("app_quikfinance")
+}
+
+model QfFixedAsset {
+  id                                  String    @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  org_id                              String
+  asset_number                        String
+  name                                String
+  purchase_date                       DateTime  @db.Date
+  purchase_cost                       Decimal   @db.Decimal(20, 2)
+  salvage_value                       Decimal   @default(0) @db.Decimal(20, 2)
+  useful_life_months                  Int
+  depreciation_method                 String    @default("straight_line")
+  accumulated_depreciation            Decimal   @default(0) @db.Decimal(20, 2)
+  asset_account_id                    String?   @db.Uuid
+  depreciation_expense_account_id     String?   @db.Uuid
+  accumulated_depreciation_account_id String?   @db.Uuid
+  status                              String    @default("active")
+  disposal_date                       DateTime? @db.Date
+  disposal_amount                     Decimal?  @db.Decimal(20, 2)
+  created_at                          DateTime  @default(now()) @db.Timestamptz(6)
+  updated_at                          DateTime  @default(now()) @db.Timestamptz(6)
+
+  @@unique([org_id, asset_number])
+  @@map("fixed_assets")
+  @@schema("app_quikfinance")
+}
+
+model QfDepreciationEntry {
+  id               String    @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  org_id           String
+  fixed_asset_id   String    @db.Uuid
+  period_start     DateTime  @db.Date
+  period_end       DateTime  @db.Date
+  amount           Decimal   @db.Decimal(20, 2)
+  journal_entry_id String?   @db.Uuid
+  posted_at        DateTime? @db.Timestamptz(6)
+  created_at       DateTime  @default(now()) @db.Timestamptz(6)
+
+  @@map("depreciation_entries")
+  @@schema("app_quikfinance")
+}
+
+model QfBudget {
+  id            String   @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  org_id        String
+  name          String
+  fiscal_year   Int
+  period        String   @default("monthly")
+  location_id   String?  @db.Uuid
+  department_id String?  @db.Uuid
+  status        String   @default("draft")
+  total_amount  Decimal  @default(0) @db.Decimal(20, 2)
+  created_at    DateTime @default(now()) @db.Timestamptz(6)
+  updated_at    DateTime @default(now()) @db.Timestamptz(6)
+
+  @@unique([org_id, name, fiscal_year])
+  @@map("budgets")
+  @@schema("app_quikfinance")
+}
+
+model QfDepartment {
+  id         String   @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  org_id     String
+  name       String
+  code       String?
+  type       String   @default("department")
+  parent_id  String?  @db.Uuid
+  is_active  Boolean  @default(true)
+  created_at DateTime @default(now()) @db.Timestamptz(6)
+  updated_at DateTime @default(now()) @db.Timestamptz(6)
+
+  @@unique([org_id, name])
+  @@index([org_id])
+  @@map("departments")
+  @@schema("app_quikfinance")
+}
+
+model QfBudgetLine {
+  id         String  @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  org_id     String
+  budget_id  String  @db.Uuid
+  account_id String  @db.Uuid
+  month      Int
+  amount     Decimal @default(0) @db.Decimal(20, 2)
+
+  @@unique([budget_id, account_id, month])
+  @@map("budget_lines")
+  @@schema("app_quikfinance")
+}
+
+model QfInventoryMovement {
+  id            String   @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  org_id        String
+  item_id       String   @db.Uuid
+  movement_date DateTime @db.Date
+  movement_type String
+  quantity      Decimal  @db.Decimal(20, 4)
+  unit_cost     Decimal  @default(0) @db.Decimal(20, 2)
+  source_type   String?
+  source_id     String?  @db.Uuid
+  created_at    DateTime @default(now()) @db.Timestamptz(6)
+
+  @@map("inventory_movements")
+  @@schema("app_quikfinance")
+}
+
+model QfProject {
+  id             String    @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  org_id         String
+  customer_id    String?   @db.Uuid
+  name           String
+  status         String    @default("active")
+  budget_amount  Decimal   @default(0) @db.Decimal(20, 2)
+  billing_method String    @default("time_and_materials")
+  start_date     DateTime? @db.Date
+  end_date       DateTime? @db.Date
+  created_at     DateTime  @default(now()) @db.Timestamptz(6)
+  updated_at     DateTime  @default(now()) @db.Timestamptz(6)
+
+  @@map("projects")
+  @@schema("app_quikfinance")
+}
+
+model QfProjectTimeEntry {
+  id            String   @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  org_id        String
+  project_id    String   @db.Uuid
+  user_id       String?
+  entry_date    DateTime @db.Date
+  hours         Decimal  @db.Decimal(10, 2)
+  billable_rate Decimal  @default(0) @db.Decimal(20, 2)
+  description   String
+  is_billed     Boolean  @default(false)
+  invoice_id    String?  @db.Uuid
+  created_at    DateTime @default(now()) @db.Timestamptz(6)
+
+  @@map("project_time_entries")
+  @@schema("app_quikfinance")
+}
+
+model QfRecurringTransaction {
+  id               String    @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  org_id           String
+  source_type      String
+  source_id        String    @db.Uuid
+  profile_name     String?
+  order_number     String?
+  frequency        String
+  start_date       DateTime  @db.Date
+  end_date         DateTime? @db.Date
+  occurrence_count Int?
+  next_run_date    DateTime  @db.Date
+  is_active        Boolean   @default(true)
+  created_at       DateTime  @default(now()) @db.Timestamptz(6)
+  updated_at       DateTime  @default(now()) @db.Timestamptz(6)
+
+  @@map("recurring_transactions")
+  @@schema("app_quikfinance")
+}
+
+model QfEmailTemplate {
+  id            String   @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  org_id        String
+  template_type String
+  subject       String
+  body          String
+  is_default    Boolean  @default(false)
+  created_at    DateTime @default(now()) @db.Timestamptz(6)
+  updated_at    DateTime @default(now()) @db.Timestamptz(6)
+
+  @@map("email_templates")
+  @@schema("app_quikfinance")
+}
+
+model QfDocumentAttachment {
+  id           String   @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  org_id       String
+  entity_type  String
+  entity_id    String   @db.Uuid
+  file_name    String
+  file_path    String
+  content_type String
+  size_bytes   BigInt
+  uploaded_by  String?
+  created_at   DateTime @default(now()) @db.Timestamptz(6)
+
+  @@map("document_attachments")
+  @@schema("app_quikfinance")
+}
+
+model QfNotification {
+  id          String    @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  org_id      String
+  user_id     String?
+  title       String
+  body        String
+  entity_type String?
+  entity_id   String?   @db.Uuid
+  read_at     DateTime? @db.Timestamptz(6)
+  created_at  DateTime  @default(now()) @db.Timestamptz(6)
+
+  @@map("notifications")
+  @@schema("app_quikfinance")
+}
+
+model QfAuditLog {
+  id          String   @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  org_id      String
+  user_id     String?
+  action      String
+  entity_type String
+  entity_id   String?  @db.Uuid
+  old_values  Json?
+  new_values  Json?
+  created_at  DateTime @default(now()) @db.Timestamptz(6)
+
+  @@index([org_id, entity_type, entity_id])
+  @@map("audit_logs")
+  @@schema("app_quikfinance")
+}
+
+model QfImportJob {
+  id              String   @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  org_id          String
+  source_type     String
+  entity_type     String
+  file_name       String?
+  bank_account_id String?  @db.Uuid
+  raw_payload     String?
+  status          String   @default("processing")
+  total_rows      Int      @default(0)
+  imported_rows   Int      @default(0)
+  failed_rows     Int      @default(0)
+  summary         Json     @default(dbgenerated("'{}'::jsonb"))
+  notes           String?
+  created_by      String?
+  created_at      DateTime @default(now()) @db.Timestamptz(6)
+  updated_at      DateTime @default(now()) @db.Timestamptz(6)
+
+  @@index([org_id, created_at(sort: Desc)])
+  @@map("import_jobs")
+  @@schema("app_quikfinance")
+}
+
+model QfPeriodLock {
+  id         String   @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  org_id     String
+  start_date DateTime @db.Date
+  end_date   DateTime @db.Date
+  lock_scope String   @default("all")
+  reason     String?
+  is_active  Boolean  @default(true)
+  created_by String?
+  created_at DateTime @default(now()) @db.Timestamptz(6)
+  updated_at DateTime @default(now()) @db.Timestamptz(6)
+
+  @@index([org_id, start_date, end_date])
+  @@map("period_locks")
+  @@schema("app_quikfinance")
+}
+
+model QfOcrDocument {
+  id               String   @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  org_id           String
+  document_type    String   @default("bill")
+  source_name      String
+  source_text      String
+  status           String   @default("parsed")
+  linked_entity_id String?  @db.Uuid
+  extracted_fields Json     @default(dbgenerated("'{}'::jsonb"))
+  notes            String?
+  created_by       String?
+  created_at       DateTime @default(now()) @db.Timestamptz(6)
+  updated_at       DateTime @default(now()) @db.Timestamptz(6)
+
+  @@index([org_id, created_at(sort: Desc)])
+  @@map("ocr_documents")
+  @@schema("app_quikfinance")
+}
+
+model QfInvoicePaymentLink {
+  id                String   @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  org_id            String
+  invoice_id        String   @db.Uuid
+  provider          String   @default("razorpay")
+  provider_link_id  String
+  reference_id      String?
+  short_url         String?
+  status            String   @default("created")
+  currency          String   @default("USD") @db.Char(3)
+  amount            Decimal  @default(0) @db.Decimal(20, 2)
+  amount_paid       Decimal  @default(0) @db.Decimal(20, 2)
+  amount_refunded   Decimal  @default(0) @db.Decimal(20, 2)
+  callback_url      String?
+  latest_payment_id String?
+  raw_response      Json     @default(dbgenerated("'{}'::jsonb"))
+  created_by        String?
+  created_at        DateTime @default(now()) @db.Timestamptz(6)
+  updated_at        DateTime @default(now()) @db.Timestamptz(6)
+
+  @@unique([provider, provider_link_id])
+  @@index([org_id, invoice_id, created_at(sort: Desc)])
+  @@map("invoice_payment_links")
+  @@schema("app_quikfinance")
+}
+
+model QfGatewayEvent {
+  id                  String    @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  org_id              String
+  provider            String
+  event_id            String
+  event_type          String
+  invoice_id          String?   @db.Uuid
+  provider_link_id    String?
+  provider_payment_id String?
+  provider_refund_id  String?
+  payload             Json      @default(dbgenerated("'{}'::jsonb"))
+  processed_at        DateTime? @db.Timestamptz(6)
+  created_at          DateTime  @default(now()) @db.Timestamptz(6)
+
+  @@unique([provider, event_id])
+  @@map("gateway_events")
+  @@schema("app_quikfinance")
+}
+
+model QfQuotation {
+  id               String   @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  org_id           String
+  contact_id       String   @db.Uuid
+  quotation_number String
+  status           String   @default("draft")
+  issue_date       DateTime @db.Date
+  due_date         DateTime @db.Date
+  currency         String   @default("INR") @db.Char(3)
+  reference_number String?
+  expiry_date      DateTime? @db.Date
+  salesperson      String?
+  project_id       String?  @db.Uuid
+  warehouse_id     String?  @db.Uuid
+  subject          String?
+  subtotal         Decimal  @default(0) @db.Decimal(20, 2)
+  discount_total   Decimal  @default(0) @db.Decimal(20, 2)
+  tax_total        Decimal  @default(0) @db.Decimal(20, 2)
+  adjustment       Decimal  @default(0) @db.Decimal(20, 2)
+  total            Decimal  @default(0) @db.Decimal(20, 2)
+  terms            String?
+  notes            String?
+  created_by       String?
+  created_at       DateTime @default(now()) @db.Timestamptz(6)
+  updated_at       DateTime @default(now()) @db.Timestamptz(6)
+
+  @@unique([org_id, quotation_number])
+  @@index([org_id, issue_date(sort: Desc)])
+  @@map("quotations")
+  @@schema("app_quikfinance")
+}
+
+model QfQuotationLine {
+  id            String  @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  org_id        String
+  quotation_id  String  @db.Uuid
+  item_id       String? @db.Uuid
+  account_id    String? @db.Uuid
+  description   String
+  quantity      Decimal @default(1) @db.Decimal(20, 4)
+  rate          Decimal @default(0) @db.Decimal(20, 2)
+  discount      Decimal @default(0) @db.Decimal(20, 2)
+  tax_rate_id   String? @db.Uuid
+  tax_amount    Decimal @default(0) @db.Decimal(20, 2)
+  line_total    Decimal @default(0) @db.Decimal(20, 2)
+  display_order Int     @default(0)
+
+  @@index([quotation_id])
+  @@map("quotation_lines")
+  @@schema("app_quikfinance")
+}
+
+model QfSalesOrder {
+  id                 String   @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  org_id             String
+  contact_id         String   @db.Uuid
+  sales_order_number String
+  status             String   @default("draft")
+  issue_date         DateTime @db.Date
+  due_date           DateTime @db.Date
+  currency           String   @default("INR") @db.Char(3)
+  reference_number   String?
+  expected_shipment_date DateTime? @db.Date
+  payment_terms      String?
+  delivery_method    String?
+  salesperson        String?
+  warehouse_id       String?  @db.Uuid
+  subtotal           Decimal  @default(0) @db.Decimal(20, 2)
+  discount_total     Decimal  @default(0) @db.Decimal(20, 2)
+  tax_total          Decimal  @default(0) @db.Decimal(20, 2)
+  adjustment         Decimal  @default(0) @db.Decimal(20, 2)
+  total              Decimal  @default(0) @db.Decimal(20, 2)
+  terms              String?
+  notes              String?
+  created_by         String?
+  created_at         DateTime @default(now()) @db.Timestamptz(6)
+  updated_at         DateTime @default(now()) @db.Timestamptz(6)
+
+  @@unique([org_id, sales_order_number])
+  @@index([org_id, issue_date(sort: Desc)])
+  @@map("sales_orders")
+  @@schema("app_quikfinance")
+}
+
+model QfSalesOrderLine {
+  id             String  @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  org_id         String
+  sales_order_id String  @db.Uuid
+  item_id        String? @db.Uuid
+  account_id     String? @db.Uuid
+  description    String
+  quantity       Decimal @default(1) @db.Decimal(20, 4)
+  rate           Decimal @default(0) @db.Decimal(20, 2)
+  discount       Decimal @default(0) @db.Decimal(20, 2)
+  tax_rate_id    String? @db.Uuid
+  tax_amount     Decimal @default(0) @db.Decimal(20, 2)
+  line_total     Decimal @default(0) @db.Decimal(20, 2)
+  display_order  Int     @default(0)
+
+  @@index([sales_order_id])
+  @@map("sales_order_lines")
+  @@schema("app_quikfinance")
+}
+
+model QfPurchaseOrder {
+  id                    String   @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  org_id                String
+  contact_id            String   @db.Uuid
+  purchase_order_number String
+  status                String   @default("draft")
+  issue_date            DateTime @db.Date
+  due_date              DateTime @db.Date
+  currency              String   @default("INR") @db.Char(3)
+  reference_number      String?
+  expected_delivery_date DateTime? @db.Date
+  payment_terms         String?
+  delivery_method       String?
+  warehouse_id          String?  @db.Uuid
+  bill_id               String?  @db.Uuid
+  subtotal              Decimal  @default(0) @db.Decimal(20, 2)
+  discount_total        Decimal  @default(0) @db.Decimal(20, 2)
+  tax_total             Decimal  @default(0) @db.Decimal(20, 2)
+  adjustment            Decimal  @default(0) @db.Decimal(20, 2)
+  total                 Decimal  @default(0) @db.Decimal(20, 2)
+  terms                 String?
+  notes                 String?
+  created_by            String?
+  created_at            DateTime @default(now()) @db.Timestamptz(6)
+  updated_at            DateTime @default(now()) @db.Timestamptz(6)
+
+  @@unique([org_id, purchase_order_number])
+  @@index([org_id, issue_date(sort: Desc)])
+  @@map("purchase_orders")
+  @@schema("app_quikfinance")
+}
+
+model QfPurchaseOrderLine {
+  id                String  @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  org_id            String
+  purchase_order_id String  @db.Uuid
+  item_id           String? @db.Uuid
+  account_id        String? @db.Uuid
+  description       String
+  quantity          Decimal @default(1) @db.Decimal(20, 4)
+  rate              Decimal @default(0) @db.Decimal(20, 2)
+  discount          Decimal @default(0) @db.Decimal(20, 2)
+  tax_rate_id       String? @db.Uuid
+  tax_amount        Decimal @default(0) @db.Decimal(20, 2)
+  line_total        Decimal @default(0) @db.Decimal(20, 2)
+  display_order     Int     @default(0)
+
+  @@index([purchase_order_id])
+  @@map("purchase_order_lines")
+  @@schema("app_quikfinance")
+}
+
+model QfCreditNote {
+  id                 String   @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  org_id             String
+  contact_id         String   @db.Uuid
+  invoice_id         String?  @db.Uuid
+  credit_note_number String
+  status             String   @default("draft")
+  issue_date         DateTime @db.Date
+  due_date           DateTime @db.Date
+  currency           String   @default("INR") @db.Char(3)
+  reference_number   String?
+  warehouse_id       String?  @db.Uuid
+  ar_account_id      String?  @db.Uuid
+  salesperson        String?
+  subject            String?
+  place_of_supply    String?
+  subtotal           Decimal  @default(0) @db.Decimal(20, 2)
+  discount_total     Decimal  @default(0) @db.Decimal(20, 2)
+  tax_total          Decimal  @default(0) @db.Decimal(20, 2)
+  round_off          Decimal  @default(0) @db.Decimal(20, 2)
+  total              Decimal  @default(0) @db.Decimal(20, 2)
+  balance            Decimal  @default(0) @db.Decimal(20, 2)
+  journal_entry_id   String?  @db.Uuid
+  terms              String?
+  notes              String?
+  created_by         String?
+  created_at         DateTime @default(now()) @db.Timestamptz(6)
+  updated_at         DateTime @default(now()) @db.Timestamptz(6)
+
+  @@unique([org_id, credit_note_number])
+  @@index([org_id, issue_date(sort: Desc)])
+  @@map("credit_notes")
+  @@schema("app_quikfinance")
+}
+
+model QfCreditNoteLine {
+  id             String  @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  org_id         String
+  credit_note_id String  @db.Uuid
+  item_id        String? @db.Uuid
+  account_id     String? @db.Uuid
+  description    String
+  quantity       Decimal @default(1) @db.Decimal(20, 4)
+  rate           Decimal @default(0) @db.Decimal(20, 2)
+  discount       Decimal @default(0) @db.Decimal(20, 2)
+  tax_rate_id    String? @db.Uuid
+  tax_amount     Decimal @default(0) @db.Decimal(20, 2)
+  line_total     Decimal @default(0) @db.Decimal(20, 2)
+  display_order  Int     @default(0)
+
+  @@index([credit_note_id])
+  @@map("credit_note_lines")
+  @@schema("app_quikfinance")
+}
+
+model QfVendorCredit {
+  id                   String   @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  org_id               String
+  contact_id           String   @db.Uuid
+  bill_id              String?  @db.Uuid
+  vendor_credit_number String
+  status               String   @default("draft")
+  issue_date           DateTime @db.Date
+  due_date             DateTime @db.Date
+  currency             String   @default("INR") @db.Char(3)
+  reference_number     String?
+  order_number         String?
+  warehouse_id         String?  @db.Uuid
+  ap_account_id        String?  @db.Uuid
+  subject              String?
+  place_of_supply      String?
+  subtotal             Decimal  @default(0) @db.Decimal(20, 2)
+  discount_total       Decimal  @default(0) @db.Decimal(20, 2)
+  tax_total            Decimal  @default(0) @db.Decimal(20, 2)
+  total                Decimal  @default(0) @db.Decimal(20, 2)
+  balance              Decimal  @default(0) @db.Decimal(20, 2)
+  terms                String?
+  notes                String?
+  journal_entry_id     String?  @db.Uuid
+  created_by           String?
+  created_at           DateTime @default(now()) @db.Timestamptz(6)
+  updated_at           DateTime @default(now()) @db.Timestamptz(6)
+
+  @@unique([org_id, vendor_credit_number])
+  @@index([org_id, issue_date(sort: Desc)])
+  @@map("vendor_credits")
+  @@schema("app_quikfinance")
+}
+
+model QfVendorCreditLine {
+  id               String  @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  org_id           String
+  vendor_credit_id String  @db.Uuid
+  item_id          String? @db.Uuid
+  account_id       String? @db.Uuid
+  description      String
+  quantity         Decimal @default(1) @db.Decimal(20, 4)
+  rate             Decimal @default(0) @db.Decimal(20, 2)
+  discount         Decimal @default(0) @db.Decimal(20, 2)
+  tax_rate_id      String? @db.Uuid
+  tax_amount       Decimal @default(0) @db.Decimal(20, 2)
+  line_total       Decimal @default(0) @db.Decimal(20, 2)
+  display_order    Int     @default(0)
+
+  @@index([vendor_credit_id])
+  @@map("vendor_credit_lines")
+  @@schema("app_quikfinance")
+}
+
+model QfTimeEntry {
+  id          String   @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  org_id      String
+  project_id  String   @db.Uuid
+  user_id     String?
+  work_date   DateTime @db.Date
+  hours       Decimal  @default(0) @db.Decimal(8, 2)
+  rate        Decimal  @default(0) @db.Decimal(20, 2)
+  description String
+  is_billable Boolean  @default(true)
+  is_billed   Boolean  @default(false)
+  created_at  DateTime @default(now()) @db.Timestamptz(6)
+  updated_at  DateTime @default(now()) @db.Timestamptz(6)
+
+  @@index([org_id, work_date(sort: Desc)])
+  @@map("time_entries")
+  @@schema("app_quikfinance")
+}
+
+model QfPortalLink {
+  id               String    @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  org_id           String
+  portal_type      String
+  contact_id       String?   @db.Uuid
+  display_name     String?
+  email            String?
+  access_token     String    @unique
+  permissions      Json      @default(dbgenerated("'[]'::jsonb"))
+  expires_at       DateTime? @db.Timestamptz(6)
+  last_accessed_at DateTime? @db.Timestamptz(6)
+  is_active        Boolean   @default(true)
+  created_by       String?
+  created_at       DateTime  @default(now()) @db.Timestamptz(6)
+  updated_at       DateTime  @default(now()) @db.Timestamptz(6)
+
+  @@index([org_id, portal_type, created_at(sort: Desc)])
+  @@map("portal_links")
+  @@schema("app_quikfinance")
+}
+
+model QfPortalComment {
+  id             String   @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  org_id         String
+  portal_link_id String   @db.Uuid
+  author_name    String
+  author_email   String?
+  body           String
+  created_at     DateTime @default(now()) @db.Timestamptz(6)
+
+  @@index([portal_link_id, created_at(sort: Desc)])
+  @@map("portal_comments")
+  @@schema("app_quikfinance")
+}
+
+model QfSupportConversation {
+  id              String   @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  org_id          String
+  portal_link_id  String   @db.Uuid
+  contact_id      String?  @db.Uuid
+  title           String?
+  status          String   @default("open")
+  last_message_at DateTime @default(now()) @db.Timestamptz(6)
+  created_at      DateTime @default(now()) @db.Timestamptz(6)
+  updated_at      DateTime @default(now()) @db.Timestamptz(6)
+
+  @@map("support_conversations")
+  @@schema("app_quikfinance")
+}
+
+model QfSupportMessage {
+  id              String   @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  org_id          String
+  conversation_id String   @db.Uuid
+  role            String
+  body            String
+  metadata        Json     @default(dbgenerated("'{}'::jsonb"))
+  created_at      DateTime @default(now()) @db.Timestamptz(6)
+
+  @@map("support_messages")
+  @@schema("app_quikfinance")
+}
+
+model QfSupportTicket {
+  id                 String   @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  org_id             String
+  portal_link_id     String   @db.Uuid
+  conversation_id    String?  @db.Uuid
+  contact_id         String?  @db.Uuid
+  ticket_number      String   @unique
+  subject            String
+  summary            String
+  priority           String   @default("normal")
+  status             String   @default("open")
+  requested_by_name  String?
+  requested_by_email String?
+  source             String   @default("portal_chat")
+  created_at         DateTime @default(now()) @db.Timestamptz(6)
+  updated_at         DateTime @default(now()) @db.Timestamptz(6)
+
+  @@index([org_id, status, created_at(sort: Desc)])
+  @@map("support_tickets")
+  @@schema("app_quikfinance")
+}
+
+model QfPaymentTerm {
+  id         String   @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  org_id     String
+  name       String
+  term_type  String   @default("days")
+  days       Int      @default(0)
+  is_default Boolean  @default(false)
+  is_active  Boolean  @default(true)
+  is_system  Boolean  @default(false)
+  created_at DateTime @default(now()) @db.Timestamptz(6)
+  updated_at DateTime @default(now()) @db.Timestamptz(6)
+
+  @@unique([org_id, name])
+  @@map("payment_terms")
+  @@schema("app_quikfinance")
+}
+
+model QfPdfTemplate {
+  id         String   @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  org_id     String
+  module     String
+  name       String
+  base       String   @default("standard")
+  config     Json     @default(dbgenerated("'{}'::jsonb"))
+  is_default Boolean  @default(false)
+  created_at DateTime @default(now()) @db.Timestamptz(6)
+  updated_at DateTime @default(now()) @db.Timestamptz(6)
+
+  @@index([org_id, module])
+  @@map("pdf_templates")
+  @@schema("app_quikfinance")
+}
+
+model QfTdsRate {
+  id          String    @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  org_id      String
+  name        String
+  rate        Decimal   @default(0) @db.Decimal(6, 2)
+  tax_act     String    @default("new_2025")
+  section     String?
+  higher_rate Boolean   @default(false)
+  start_date  DateTime? @db.Date
+  end_date    DateTime? @db.Date
+  is_active   Boolean   @default(true)
+  created_at  DateTime  @default(now()) @db.Timestamptz(6)
+  updated_at  DateTime  @default(now()) @db.Timestamptz(6)
+
+  @@unique([org_id, name])
+  @@map("tds_rates")
+  @@schema("app_quikfinance")
+}
+
+model QfGstin {
+  id                String   @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  org_id            String
+  gstin             String
+  registration_type String   @default("registered_regular")
+  legal_name        String?
+  trade_name        String?
+  registered_on     DateTime? @db.Date
+  reverse_charge    Boolean  @default(false)
+  sez               Boolean  @default(false)
+  digital_services  Boolean  @default(false)
+  created_at        DateTime @default(now()) @db.Timestamptz(6)
+  updated_at        DateTime @default(now()) @db.Timestamptz(6)
+
+  @@unique([org_id, gstin])
+  @@map("gstins")
+  @@schema("app_quikfinance")
+}
+
+model QfTransactionSeries {
+  id         String   @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  org_id     String
+  name       String
+  is_default Boolean  @default(false)
+  config     Json     @default(dbgenerated("'{}'::jsonb"))
+  created_at DateTime @default(now()) @db.Timestamptz(6)
+  updated_at DateTime @default(now()) @db.Timestamptz(6)
+
+  @@unique([org_id, name])
+  @@map("transaction_series")
+  @@schema("app_quikfinance")
+}
+
+model QfWarehouse {
+  id         String   @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  org_id     String
+  name       String
+  code       String
+  type       String   @default("business")
+  default_series_id String? @db.Uuid
+  gstin_id   String?  @db.Uuid
+  address    Json     @default(dbgenerated("'{}'::jsonb"))
+  is_active  Boolean  @default(true)
+  is_default Boolean  @default(false)
+  notes      String?
+  created_by String?
+  created_at DateTime @default(now()) @db.Timestamptz(6)
+  updated_at DateTime @default(now()) @db.Timestamptz(6)
+
+  @@unique([org_id, code])
+  @@map("warehouses")
+  @@schema("app_quikfinance")
+}
+
+model QfStockAdjustment {
+  id                 String   @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  org_id             String
+  warehouse_id       String   @db.Uuid
+  adjustment_number  String
+  adjustment_date    DateTime @db.Date
+  reason             String
+  status             String   @default("draft")
+  total_value_change Decimal  @default(0) @db.Decimal(20, 2)
+  notes              String?
+  created_by         String?
+  created_at         DateTime @default(now()) @db.Timestamptz(6)
+  updated_at         DateTime @default(now()) @db.Timestamptz(6)
+
+  @@unique([org_id, adjustment_number])
+  @@map("stock_adjustments")
+  @@schema("app_quikfinance")
+}
+
+model QfStockAdjustmentLine {
+  id            String  @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  adjustment_id String  @db.Uuid
+  item_id       String  @db.Uuid
+  qty_before    Decimal @default(0) @db.Decimal(20, 4)
+  qty_change    Decimal @default(0) @db.Decimal(20, 4)
+  qty_after     Decimal @default(0) @db.Decimal(20, 4)
+  unit_cost     Decimal @default(0) @db.Decimal(20, 4)
+  value_change  Decimal @default(0) @db.Decimal(20, 2)
+  notes         String?
+
+  @@map("stock_adjustment_lines")
+  @@schema("app_quikfinance")
+}
+
+model QfStockTransfer {
+  id                String   @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  org_id            String
+  transfer_number   String
+  transfer_date     DateTime @db.Date
+  from_warehouse_id String   @db.Uuid
+  to_warehouse_id   String   @db.Uuid
+  status            String   @default("draft")
+  notes             String?
+  created_by        String?
+  created_at        DateTime @default(now()) @db.Timestamptz(6)
+  updated_at        DateTime @default(now()) @db.Timestamptz(6)
+
+  @@unique([org_id, transfer_number])
+  @@map("stock_transfers")
+  @@schema("app_quikfinance")
+}
+
+model QfStockTransferLine {
+  id              String  @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  transfer_id     String  @db.Uuid
+  item_id         String  @db.Uuid
+  qty_requested   Decimal @default(0) @db.Decimal(20, 4)
+  qty_transferred Decimal @default(0) @db.Decimal(20, 4)
+  unit_cost       Decimal @default(0) @db.Decimal(20, 4)
+  notes           String?
+
+  @@map("stock_transfer_lines")
+  @@schema("app_quikfinance")
+}
+
+model QfGoodsReceipt {
+  id                String   @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  org_id            String
+  grn_number        String
+  receipt_date      DateTime @db.Date
+  purchase_order_id String?  @db.Uuid
+  vendor_id         String   @db.Uuid
+  warehouse_id      String?  @db.Uuid
+  bill_id           String?  @db.Uuid
+  status            String   @default("draft")
+  notes             String?
+  created_by        String?
+  created_at        DateTime @default(now()) @db.Timestamptz(6)
+  updated_at        DateTime @default(now()) @db.Timestamptz(6)
+
+  @@unique([org_id, grn_number])
+  @@index([org_id, receipt_date(sort: Desc)])
+  @@index([purchase_order_id])
+  @@map("goods_receipts")
+  @@schema("app_quikfinance")
+}
+
+model QfGoodsReceiptLine {
+  id           String  @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  grn_id       String  @db.Uuid
+  item_id      String  @db.Uuid
+  po_line_id   String? @db.Uuid
+  qty_ordered  Decimal @default(0) @db.Decimal(20, 4)
+  qty_received Decimal @default(0) @db.Decimal(20, 4)
+  unit_cost    Decimal @default(0) @db.Decimal(20, 4)
+  total_cost   Decimal @default(0) @db.Decimal(20, 2)
+  notes        String?
+
+  @@map("goods_receipt_lines")
+  @@schema("app_quikfinance")
+}
+
+model QfApprovalPolicy {
+  id                     String   @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  org_id                 String
+  name                   String
+  entity_type            String
+  is_active              Boolean  @default(true)
+  require_approval_above Decimal? @db.Decimal(20, 2)
+  approver_role          String   @default("admin")
+  auto_approve_below     Decimal? @db.Decimal(20, 2)
+  sequential_approvals   Boolean  @default(false)
+  notes                  String?
+  created_by             String?
+  created_at             DateTime @default(now()) @db.Timestamptz(6)
+  updated_at             DateTime @default(now()) @db.Timestamptz(6)
+
+  @@map("approval_policies")
+  @@schema("app_quikfinance")
+}
+
+model QfApprovalRequest {
+  id               String    @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  org_id           String
+  policy_id        String?   @db.Uuid
+  entity_type      String
+  entity_id        String    @db.Uuid
+  entity_number    String?
+  entity_amount    Decimal?  @db.Decimal(20, 2)
+  requested_by     String
+  assigned_to      String?
+  status           String    @default("pending")
+  priority         String    @default("normal")
+  notes            String?
+  reviewed_by      String?
+  reviewed_at      DateTime? @db.Timestamptz(6)
+  rejection_reason String?
+  due_date         DateTime? @db.Date
+  created_at       DateTime  @default(now()) @db.Timestamptz(6)
+  updated_at       DateTime  @default(now()) @db.Timestamptz(6)
+
+  @@index([org_id, status, created_at(sort: Desc)])
+  @@index([entity_type, entity_id])
+  @@map("approval_requests")
+  @@schema("app_quikfinance")
+}
+
+model QfBankRule {
+  id                String   @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  org_id            String
+  bank_account_id   String?  @db.Uuid
+  name              String
+  is_active         Boolean  @default(true)
+  priority          Int      @default(0)
+  match_type        String   @default("contains")
+  match_field       String   @default("description")
+  match_value       String
+  amount_min        Decimal? @db.Decimal(20, 2)
+  amount_max        Decimal? @db.Decimal(20, 2)
+  transaction_type  String?
+  action_account_id String?  @db.Uuid
+  action_contact_id String?  @db.Uuid
+  action_category   String?
+  auto_reconcile    Boolean  @default(false)
+  created_by        String?
+  created_at        DateTime @default(now()) @db.Timestamptz(6)
+  updated_at        DateTime @default(now()) @db.Timestamptz(6)
+
+  @@index([org_id, is_active, priority])
+  @@map("bank_rules")
+  @@schema("app_quikfinance")
+}
+
+model QfGatewaySettlement {
+  id                     String   @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  org_id                 String
+  provider               String   @default("razorpay")
+  provider_settlement_id String
+  settlement_date        DateTime @db.Date
+  gross_amount           Decimal  @default(0) @db.Decimal(20, 2)
+  fees_amount            Decimal  @default(0) @db.Decimal(20, 2)
+  tax_on_fees            Decimal  @default(0) @db.Decimal(20, 2)
+  net_amount             Decimal  @default(0) @db.Decimal(20, 2)
+  currency               String   @default("INR") @db.Char(3)
+  bank_account_id        String?  @db.Uuid
+  clearing_account_id    String?  @db.Uuid
+  fees_account_id        String?  @db.Uuid
+  journal_id             String?  @db.Uuid
+  status                 String   @default("pending")
+  raw_response           Json     @default(dbgenerated("'{}'::jsonb"))
+  notes                  String?
+  created_at             DateTime @default(now()) @db.Timestamptz(6)
+  updated_at             DateTime @default(now()) @db.Timestamptz(6)
+
+  @@unique([provider, provider_settlement_id])
+  @@index([org_id, settlement_date(sort: Desc)])
+  @@map("gateway_settlements")
+  @@schema("app_quikfinance")
+}
+
+model QfGatewayFee {
+  id                  String   @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  org_id              String
+  settlement_id       String?  @db.Uuid
+  gateway_event_id    String?  @db.Uuid
+  provider            String   @default("razorpay")
+  provider_payment_id String?
+  fee_type            String   @default("mdr")
+  amount              Decimal  @default(0) @db.Decimal(20, 2)
+  currency            String   @default("INR") @db.Char(3)
+  created_at          DateTime @default(now()) @db.Timestamptz(6)
+
+  @@index([settlement_id])
+  @@map("gateway_fees")
+  @@schema("app_quikfinance")
+}
+
+model QfDocument {
+  id           String   @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  org_id       String
+  file_name    String
+  file_type    String
+  file_size    Int      @default(0)
+  storage_path String
+  public_url   String?
+  category     String   @default("other")
+  tags         String[]
+  uploaded_by  String?
+  created_at   DateTime @default(now()) @db.Timestamptz(6)
+  updated_at   DateTime @default(now()) @db.Timestamptz(6)
+
+  @@index([org_id, category, created_at(sort: Desc)])
+  @@map("documents")
+  @@schema("app_quikfinance")
+}
+
+model QfDocumentLink {
+  id          String   @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  org_id      String
+  document_id String   @db.Uuid
+  entity_type String
+  entity_id   String   @db.Uuid
+  linked_by   String?
+  created_at  DateTime @default(now()) @db.Timestamptz(6)
+
+  @@index([entity_type, entity_id])
+  @@map("document_links")
+  @@schema("app_quikfinance")
+}
+
+model QfImportRow {
+  id            String   @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  org_id        String
+  import_job_id String   @db.Uuid
+  row_index     Int
+  raw_data      Json     @default(dbgenerated("'{}'::jsonb"))
+  mapped_data   Json     @default(dbgenerated("'{}'::jsonb"))
+  status        String   @default("pending")
+  entity_id     String?  @db.Uuid
+  error_message String?
+  created_at    DateTime @default(now()) @db.Timestamptz(6)
+
+  @@index([import_job_id, status])
+  @@map("import_rows")
+  @@schema("app_quikfinance")
+}
+
+model QfPermissionOverride {
+  id         String   @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  org_id     String
+  user_id    String
+  module     String
+  action     String
+  granted    Boolean  @default(true)
+  granted_by String?
+  created_at DateTime @default(now()) @db.Timestamptz(6)
+
+  @@unique([org_id, user_id, module, action])
+  @@map("permission_overrides")
+  @@schema("app_quikfinance")
+}
+
+model QfStockMovement {
+  id             String   @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  org_id         String
+  item_id        String   @db.Uuid
+  warehouse_id   String?  @db.Uuid
+  movement_type  String
+  reference_type String?
+  reference_id   String?  @db.Uuid
+  movement_date  DateTime @db.Date
+  qty_in         Decimal  @default(0) @db.Decimal(20, 4)
+  qty_out        Decimal  @default(0) @db.Decimal(20, 4)
+  unit_cost      Decimal  @default(0) @db.Decimal(20, 4)
+  balance_qty    Decimal  @default(0) @db.Decimal(20, 4)
+  balance_value  Decimal  @default(0) @db.Decimal(20, 2)
+  notes          String?
+  created_by     String?
+  created_at     DateTime @default(now()) @db.Timestamptz(6)
+
+  @@index([org_id, item_id, movement_date(sort: Desc)])
+  @@index([warehouse_id, movement_date(sort: Desc)])
+  @@map("stock_movements")
+  @@schema("app_quikfinance")
+}
+
+model QfStockLayer {
+  id            String   @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  org_id        String
+  item_id       String   @db.Uuid
+  ref_type      String
+  ref_id        String   @db.Uuid
+  unit_cost     Decimal  @default(0) @db.Decimal(20, 4)
+  quantity      Decimal  @default(0) @db.Decimal(20, 4)
+  remaining_qty Decimal  @default(0) @db.Decimal(20, 4)
+  layer_date    DateTime @db.Date
+  created_at    DateTime @default(now()) @db.Timestamptz(6)
+
+  @@index([org_id, item_id, layer_date])
+  @@map("stock_layers")
+  @@schema("app_quikfinance")
+}
+
+model QfStockLayerConsumption {
+  id         String   @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  org_id     String
+  layer_id   String   @db.Uuid
+  ref_type   String
+  ref_id     String   @db.Uuid
+  quantity   Decimal  @default(0) @db.Decimal(20, 4)
+  unit_cost  Decimal  @default(0) @db.Decimal(20, 4)
+  created_at DateTime @default(now()) @db.Timestamptz(6)
+
+  @@index([org_id, ref_type, ref_id])
+  @@index([layer_id])
+  @@map("stock_layer_consumptions")
+  @@schema("app_quikfinance")
+}
+
+model QfGstReturn {
+  id                  String    @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  org_id              String
+  return_type         String
+  period_month        Int
+  period_year         Int
+  status              String    @default("draft")
+  total_taxable_value Decimal   @default(0) @db.Decimal(20, 2)
+  total_igst          Decimal   @default(0) @db.Decimal(20, 2)
+  total_cgst          Decimal   @default(0) @db.Decimal(20, 2)
+  total_sgst          Decimal   @default(0) @db.Decimal(20, 2)
+  total_cess          Decimal   @default(0) @db.Decimal(20, 2)
+  itc_igst            Decimal   @default(0) @db.Decimal(20, 2)
+  itc_cgst            Decimal   @default(0) @db.Decimal(20, 2)
+  itc_sgst            Decimal   @default(0) @db.Decimal(20, 2)
+  net_payable         Decimal   @default(0) @db.Decimal(20, 2)
+  filed_at            DateTime? @db.Timestamptz(6)
+  filed_by            String?
+  raw_data            Json      @default(dbgenerated("'{}'::jsonb"))
+  notes               String?
+  created_at          DateTime  @default(now()) @db.Timestamptz(6)
+  updated_at          DateTime  @default(now()) @db.Timestamptz(6)
+
+  @@unique([org_id, return_type, period_month, period_year])
+  @@index([org_id, return_type, period_year, period_month])
+  @@map("gst_returns")
+  @@schema("app_quikfinance")
+}
+
+model QfDeliveryChallan {
+  id               String   @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  org_id           String
+  challan_number   String
+  contact_id       String   @db.Uuid
+  sales_order_id   String?  @db.Uuid
+  invoice_id       String?  @db.Uuid
+  warehouse_id     String?  @db.Uuid
+  challan_date     DateTime @db.Date
+  challan_type     String   @default("supply_on_approval")
+  status           String   @default("draft")
+  reference        String?
+  place_of_supply  String?
+  subtotal         Decimal  @default(0) @db.Decimal(20, 2)
+  discount_total   Decimal  @default(0) @db.Decimal(20, 2)
+  adjustment       Decimal  @default(0) @db.Decimal(20, 2)
+  total            Decimal  @default(0) @db.Decimal(20, 2)
+  terms            String?
+  notes            String?
+  created_by       String?
+  created_at       DateTime @default(now()) @db.Timestamptz(6)
+  updated_at       DateTime @default(now()) @db.Timestamptz(6)
+
+  @@unique([org_id, challan_number])
+  @@index([org_id, challan_date(sort: Desc)])
+  @@index([contact_id])
+  @@map("delivery_challans")
+  @@schema("app_quikfinance")
+}
+
+model QfDeliveryChallanLine {
+  id            String  @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  org_id        String
+  challan_id    String  @db.Uuid
+  item_id       String? @db.Uuid
+  description   String
+  quantity      Decimal @default(0) @db.Decimal(20, 4)
+  rate          Decimal @default(0) @db.Decimal(20, 2)
+  discount      Decimal @default(0) @db.Decimal(20, 2)
+  line_total    Decimal @default(0) @db.Decimal(20, 2)
+  tax_rate_id   String? @db.Uuid
+  display_order Int     @default(0)
+
+  @@index([challan_id])
+  @@map("delivery_challan_lines")
+  @@schema("app_quikfinance")
+}
+
+model QfGstReconciliationItem {
+  id                  String    @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  org_id              String
+  period_month        Int
+  period_year         Int
+  supplier_gstin      String
+  supplier_name       String?
+  invoice_number      String?
+  invoice_date        DateTime? @db.Date
+  taxable_value_books Decimal?  @db.Decimal(20, 2)
+  tax_books           Decimal?  @db.Decimal(20, 2)
+  taxable_value_2b    Decimal?  @db.Decimal(20, 2)
+  tax_2b              Decimal?  @db.Decimal(20, 2)
+  status              String    @default("unmatched")
+  notes               String?
+  created_at          DateTime  @default(now()) @db.Timestamptz(6)
+
+  @@index([org_id, period_year, period_month])
+  @@map("gst_reconciliation_items")
+  @@schema("app_quikfinance")
+}
