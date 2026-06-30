@@ -24,7 +24,8 @@ export default async function LeadListDetailPage({ params }: { params: Promise<{
   const customDefs = await listCustomFields(user.orgId);
   const filterWhere = parsed.success ? translateFilterToPrismaWhere(parsed.data, customDefs) : {};
   const acl = await accountScopeFilter(user);
-  const baseAnd: Record<string, unknown>[] = [{ orgId: user.orgId }];
+  // Exclude trashed leads — CrmLead is not covered by the soft-delete middleware.
+  const baseAnd: Record<string, unknown>[] = [{ orgId: user.orgId, deletedAt: null }];
   if (Object.keys(filterWhere).length > 0) baseAnd.push(filterWhere);
   if (acl) baseAnd.push(acl);
   const where = { AND: baseAnd };
@@ -38,6 +39,7 @@ export default async function LeadListDetailPage({ params }: { params: Promise<{
         name: true,
         email: true,
         phone: true,
+        mobile: true,
         company: true,
         stage: true,
         status: true,

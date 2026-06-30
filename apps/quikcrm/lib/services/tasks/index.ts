@@ -11,6 +11,11 @@
 import type { Prisma } from "@quikit/database";
 import { prisma } from "@/lib/db/prisma";
 import type { SessionUser } from "@/types/permission";
+import {
+  logBusinessEvent,
+  BUSINESS_EVENT_TYPES,
+} from "@/lib/services/activities/business-events";
+import { normaliseRelatedKind } from "@/lib/services/activities/related-kind";
 import type {
   AdvancedFilterInput,
   CreateTaskInput,
@@ -182,7 +187,29 @@ export async function createTask(user: SessionUser, input: CreateTaskInput) {
     relatedObjectId: input.relatedObjectId ?? null,
     leadId: leadIdFromRelation(input),
   };
-  return prisma.crmTask.create({ data });
+  const created = await prisma.crmTask.create({ data });
+
+  // Global Activities feed: "Task Created" against the linked record. Only when
+  // the task is linked to one of the account-scoped kinds (a standalone task has
+  // no parent to scope visibility off, so it is skipped — matching how task
+  // status/reassignment activities already gate on relatedKind/relatedObjectId).
+  // Visibility inherits via relatedKind/relatedObjectId — RBAC unchanged.
+  const activityKind = normaliseRelatedKind(created.relatedKind);
+  if (activityKind && created.relatedObjectId) {
+    await logBusinessEvent({
+      orgId: user.orgId,
+      userId: user.userId,
+      type: BUSINESS_EVENT_TYPES.taskCreated,
+      relatedKind: activityKind,
+      relatedObjectId: created.relatedObjectId,
+      leadId: created.leadId ?? undefined,
+      subject: `Task created · ${created.subject}`,
+      outcome: created.dueDate ? `Due ${created.dueDate.toISOString().slice(0, 10)}` : "",
+      occurredAt: new Date(),
+    });
+  }
+
+  return created;
 }
 
 interface UpdateOptions {

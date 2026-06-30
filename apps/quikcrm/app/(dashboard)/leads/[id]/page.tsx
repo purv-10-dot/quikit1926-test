@@ -5,6 +5,7 @@ import { prisma } from "@/lib/db/prisma";
 import { getEffectiveMatrix } from "@/lib/auth/permissions";
 import { LeadDashboardShell } from "@/components/leads/lead-dashboard-shell";
 import { getFullLeadRecord } from "@/lib/services/leads/full-record";
+import { isUserVisibleLeadActivity } from "@/lib/services/leads/log-lead-system-activities";
 import { STAGE_LABEL } from "@/lib/services/opportunities/stage-labels";
 import type { CrmOpportunityStage } from "@prisma/client";
 import { formatGeneric } from "@/lib/services/opportunities/currency";
@@ -53,8 +54,14 @@ export default async function LeadDetailPage({ params }: Props) {
     }
   }
 
+  // Suppress the internal lead-creation init events (Source/Owner/Stage/Status)
+  // from the user-facing overview + timeline — only the single "Lead Created"
+  // entry should show. The unfiltered set still drives snapshot/insights/analytics
+  // inside getFullLeadRecord (reporting unaffected).
+  const visibleActivities = record.activities.filter(isUserVisibleLeadActivity);
+
   const overview = {
-    activities: record.activities.map((a) => ({
+    activities: visibleActivities.map((a) => ({
       id: a.id,
       type: a.type,
       subject: a.subject,
@@ -84,7 +91,7 @@ export default async function LeadDetailPage({ params }: Props) {
   };
 
   const timelineSeed = {
-    activities: record.activities.map((a) => ({
+    activities: visibleActivities.map((a) => ({
       id: a.id,
       type: a.type,
       subject: a.subject,

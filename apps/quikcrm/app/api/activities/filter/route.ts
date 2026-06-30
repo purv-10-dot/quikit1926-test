@@ -8,6 +8,7 @@ import {
 } from "@/lib/validators/activity";
 import { translateActivityFilterToPrismaWhere } from "@/lib/services/activities/filter-engine";
 import { buildActivityAclWhere } from "@/lib/services/activities/activity-acl";
+import { EXCLUDE_LEAD_INIT_EVENTS_WHERE } from "@/lib/services/leads/log-lead-system-activities";
 import { toListRows } from "@/lib/services/activities/to-list-row";
 import { readTzFromCookieHeader } from "@/lib/services/reports/csv-columns";
 
@@ -45,6 +46,10 @@ export async function POST(req: NextRequest) {
     const baseAnd: Record<string, unknown>[] = [{ orgId: user.orgId }];
     if (Object.keys(filterWhere).length > 0) baseAnd.push(filterWhere);
     if (acl) baseAnd.push(acl);
+    // Hide the internal lead-creation init events (Source/Owner/Stage/Status)
+    // from the global Activities list — only the single "Lead Created" entry
+    // shows. Rows remain in the DB for audit/reporting.
+    baseAnd.push(EXCLUDE_LEAD_INIT_EVENTS_WHERE);
 
     const where: Record<string, unknown> = { AND: baseAnd };
 

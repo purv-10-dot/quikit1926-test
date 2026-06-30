@@ -218,12 +218,12 @@ export function ActivitiesListClient({ canCreate, canEdit, canDelete, canViewLea
 
       <div className="crm-card overflow-hidden">
         <TableScroll minWidth={900} bleed={false}>
-          <Table>
+          <Table className="crm-table-titlecase-head">
             <THead>
               <TR>
                 <TH>Type</TH>
-                <TH>Related</TH>
-                <TH>Subject / outcome</TH>
+                <TH>Linked To</TH>
+                <TH>Subject / Outcome</TH>
                 <TH hideBelow="lg">Owner</TH>
                 <TH>When</TH>
               </TR>
@@ -261,8 +261,15 @@ export function ActivitiesListClient({ canCreate, canEdit, canDelete, canViewLea
                   >
                     <TD className="whitespace-nowrap">{a.type}</TD>
                     <TD className="text-sm">
-                      <span className="text-crm-muted">{a.relatedKind}</span>{" "}
-                      <span className="font-medium">{a.relatedLabel}</span>
+                      {a.relatedKind === "None" || !a.relatedLabel || a.relatedLabel === "—" ? (
+                        <span className="text-crm-muted">Standalone</span>
+                      ) : (
+                        <>
+                          <span className="text-crm-muted">{a.relatedKind}</span>
+                          <span className="text-crm-muted"> • </span>
+                          <span className="font-medium">{a.relatedLabel}</span>
+                        </>
+                      )}
                     </TD>
                     <TD>
                       <div className="font-medium">{a.subject || "—"}</div>

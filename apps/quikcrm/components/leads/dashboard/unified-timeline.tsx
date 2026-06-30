@@ -45,6 +45,7 @@ const ICONS: Record<UnifiedTimelineItem["kind"], typeof History> = {
   system: Sparkles,
   opportunity: Briefcase,
   document: FileText,
+  conversion: Sparkles,
   activity: History,
 };
 
@@ -60,6 +61,10 @@ export interface UnifiedTimelineSeed {
 interface Props {
   leadId: string;
   seed: UnifiedTimelineSeed;
+  /** Synthesized "Lead Converted" event (lead surfaces only). */
+  conversion?: Parameters<typeof buildUnifiedTimeline>[0]["conversion"];
+  /** Opportunity ids to hide (the conversion-auto-created opp the event names). */
+  suppressOpportunityIds?: readonly string[] | null;
   onLogActivity?: () => void;
   pageSize?: number;
   emptyTitle?: string;
@@ -69,6 +74,8 @@ interface Props {
 export function UnifiedTimeline({
   leadId: _leadId,
   seed,
+  conversion,
+  suppressOpportunityIds,
   onLogActivity,
   pageSize = 25,
   emptyTitle = "No activity yet",
@@ -92,8 +99,12 @@ export function UnifiedTimeline({
           name: d.fileName,
           createdAt: d.createdAt,
         })),
+        // Lead Timeline: show the "Lead Converted" event and hide the
+        // conversion-auto-created Opportunity it already conveys.
+        conversion: conversion ?? null,
+        suppressOpportunityIds: suppressOpportunityIds ?? null,
       }),
-    [seed],
+    [seed, conversion, suppressOpportunityIds],
   );
 
   const mounted = useHasMounted();

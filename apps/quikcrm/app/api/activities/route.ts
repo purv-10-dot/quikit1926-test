@@ -20,6 +20,8 @@ import { createActivitySchema } from "@/lib/validators/activity";
 import {
   assertActivityTargetExists,
   getRelatedAccountId,
+  isStandaloneKind,
+  STANDALONE_RELATED_ID,
 } from "@/lib/services/activities/target-existence";
 import { assertAccountAccess } from "@/lib/auth/account-acl";
 import { buildActivityAclWhere } from "@/lib/services/activities/activity-acl";
@@ -28,6 +30,7 @@ import { writeActivityFieldValues } from "@/lib/services/activity-types/write-fi
 import { toListRow, toListRows } from "@/lib/services/activities/to-list-row";
 import { resolveLeadIdFromActivity } from "@/lib/services/leads/lead-scoring/apply-score";
 import { scheduleLeadScoreRecalc } from "@/lib/services/leads/lead-scoring/schedule";
+import { EXCLUDE_LEAD_INIT_EVENTS_WHERE } from "@/lib/services/leads/log-lead-system-activities";
 
 export const runtime = "nodejs";
 
@@ -99,6 +102,11 @@ export async function GET(req: NextRequest) {
       });
     }
 
+    // Suppress internal lead-creation init events (Source/Owner/Stage/Status)
+    // from the user-facing JSON list / timeline — applied AFTER the export branch
+    // above so CSV/report exports still include every row (reporting unaffected).
+    baseAnd.push(EXCLUDE_LEAD_INIT_EVENTS_WHERE);
+
     // `id desc` tiebreaker → stable page boundaries when many activities share the same `occurredAt`.
     // Note: this route powers the timeline / detail-panel use case, so its pagination
     // defaults (page 1, 100 per page, max 500) are intentionally distinct from the
@@ -156,11 +164,18 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    await assertActivityTargetExists(user.orgId, dto.relatedKind, dto.relatedObjectId);
+    // Standalone activities ("None") carry no real record id — normalize to the
+    // sentinel so the NOT-NULL relatedObjectId column has a value that matches no
+    // record (hence: shows in Global Activities, never on a record timeline).
+    const relatedObjectId = isStandaloneKind(dto.relatedKind)
+      ? STANDALONE_RELATED_ID
+      : (dto.relatedObjectId as string);
+
+    await assertActivityTargetExists(user.orgId, dto.relatedKind, relatedObjectId);
     const accountId = await getRelatedAccountId(
       user.orgId,
       dto.relatedKind,
-      dto.relatedObjectId,
+      relatedObjectId,
     );
     await assertAccountAccess(user, accountId);
 
@@ -170,7 +185,7 @@ export async function POST(req: NextRequest) {
       ownerId: dto.ownerId ?? user.userId,
       type: dto.type,
       relatedKind: dto.relatedKind,
-      relatedObjectId: dto.relatedObjectId,
+      relatedObjectId,
       subject: dto.subject ?? "",
       outcome: dto.outcome ?? "",
       occurredAt: dto.occurredAt ? new Date(dto.occurredAt) : new Date(),
@@ -207,7 +222,7 @@ export async function POST(req: NextRequest) {
     const leadIdForScore = resolveLeadIdFromActivity({
       leadId: dto.leadId,
       relatedKind: dto.relatedKind,
-      relatedObjectId: dto.relatedObjectId,
+      relatedObjectId,
     });
     if (leadIdForScore) scheduleLeadScoreRecalc(user.orgId, leadIdForScore);
 

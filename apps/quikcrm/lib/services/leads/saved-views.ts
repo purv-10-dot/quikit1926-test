@@ -33,7 +33,8 @@ export async function listSavedViewsWithCounts(user: SessionUser): Promise<Saved
       let leadCount = 0;
       if (parsed.success) {
         const filterWhere = translateFilterToPrismaWhere(parsed.data, customDefs);
-        const baseAnd: Record<string, unknown>[] = [{ orgId: user.orgId }];
+        // Exclude trashed leads so list counts match the active list.
+        const baseAnd: Record<string, unknown>[] = [{ orgId: user.orgId, deletedAt: null }];
         if (Object.keys(filterWhere).length > 0) baseAnd.push(filterWhere);
         if (acl) baseAnd.push(acl);
         leadCount = await prisma.crmLead.count({ where: { AND: baseAnd } });

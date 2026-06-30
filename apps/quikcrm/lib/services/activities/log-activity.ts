@@ -20,7 +20,8 @@ export type LogActivityInput = {
   userId?: string;
   ownerId?: string;
   type: string;
-  relatedKind: "Lead" | "Opportunity" | "Contact" | "Account";
+  // "None" = standalone (unlinked) activity. See target-existence.ts.
+  relatedKind: "Lead" | "Opportunity" | "Contact" | "Account" | "None";
   relatedObjectId: string;
   subject?: string;
   outcome?: string;

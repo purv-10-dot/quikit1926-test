@@ -14,13 +14,20 @@ function adminSession() {
 }
 
 describe("POST /api/activities/filter", () => {
-  beforeEach(() => {
+  beforeEach(async () => {
     db.crmActivity.findMany.mockReset();
     db.crmActivity.count.mockReset();
     db.crmLead.findMany.mockReset();
     db.crmOpportunity.findMany.mockReset();
     db.crmContact.findMany.mockReset();
     db.crmAccount.findMany.mockReset();
+    // The global setup's restoreAllMocks/clearAllMocks can strip the account-acl
+    // factory mock's resolved value between tests; re-pin it so every test in
+    // this file resolves a real scope (admin → unrestricted) regardless of order.
+    const acl = await import("@/lib/auth/account-acl");
+    (acl.getScope as unknown as { mockResolvedValue: (v: unknown) => void }).mockResolvedValue({
+      unrestricted: true,
+    });
     setSession(null);
   });
 
@@ -127,5 +134,30 @@ describe("POST /api/activities/filter", () => {
     });
     const res = await POST(req as unknown as import("next/server").NextRequest);
     expect(res.status).toBe(400);
+  });
+
+  it("excludes internal lead-creation init events (LeadSystem) from the list query", async () => {
+    adminSession();
+    db.crmActivity.findMany.mockResolvedValue([]);
+    db.crmActivity.count.mockResolvedValue(0);
+
+    const { POST } = await import("@/app/api/activities/filter/route");
+    const req = new Request("http://test/api/activities/filter", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ filter: { matchMode: "ALL", conditions: [] }, page: 1, pageSize: 25 }),
+    });
+    const res = await POST(req as unknown as import("next/server").NextRequest);
+    expect(res.status).toBe(200);
+
+    const where = db.crmActivity.findMany.mock.calls[0]?.[0]?.where as {
+      AND: Record<string, unknown>[];
+    };
+    expect(where.AND).toContainEqual({ NOT: { type: "LeadSystem" } });
+    // The count (used for pagination) must apply the same exclusion.
+    const countWhere = db.crmActivity.count.mock.calls[0]?.[0]?.where as {
+      AND: Record<string, unknown>[];
+    };
+    expect(countWhere.AND).toContainEqual({ NOT: { type: "LeadSystem" } });
   });
 });

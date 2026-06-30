@@ -2,6 +2,8 @@
 
 import { useEffect, useRef, useState } from "react";
 import {
+  CalendarRange,
+  Check,
   Columns,
   EyeOff,
   MoreVertical,
@@ -9,6 +11,8 @@ import {
   Search,
   SlidersHorizontal,
   Trash2,
+  UserCheck,
+  X,
 } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Select } from "@/components/ui/select";
@@ -28,10 +32,23 @@ export interface LeadsToolbarProps {
   onOwnerChange: (v: string) => void;
   mineOnly: boolean;
   onMineOnlyChange: (v: boolean) => void;
+  /** "Created within" date range (yyyy-MM-dd). Empty string = unbounded. */
+  dateFrom?: string;
+  dateTo?: string;
+  onDateFromChange?: (v: string) => void;
+  onDateToChange?: (v: string) => void;
+  onClearDateRange?: () => void;
   onOpenAdvanced: () => void;
   onOpenColumnPicker?: () => void;
   onOpenHiddenColumns?: () => void;
   hiddenCount?: number;
+  /** "Show Converted Leads" toggle state. */
+  showConverted?: boolean;
+  /**
+   * Toggle handler. When omitted, the menu item is hidden — used to gate the
+   * option by role (only Sales User / Sales Manager / Marketing User get it).
+   */
+  onToggleConverted?: () => void;
   /** Right-aligned primary action — renders an "+ Add lead" button when provided. */
   onAddLead?: () => void;
   /** Secondary action right of the filters — renders a "Trash" button. */
@@ -51,10 +68,17 @@ export function LeadsToolbar({
   onOwnerChange,
   mineOnly,
   onMineOnlyChange,
+  dateFrom = "",
+  dateTo = "",
+  onDateFromChange,
+  onDateToChange,
+  onClearDateRange,
   onOpenAdvanced,
   onOpenColumnPicker,
   onOpenHiddenColumns,
   hiddenCount = 0,
+  showConverted = false,
+  onToggleConverted,
   onAddLead,
   onOpenTrash,
   compact = false,
@@ -88,6 +112,7 @@ export function LeadsToolbar({
   const overflowItemClass =
     "flex w-full items-center gap-2.5 px-3 py-2 text-left text-sm text-crm-text hover:bg-crm-panel disabled:cursor-not-allowed disabled:opacity-50";
   const hasOverflow =
+    !!onToggleConverted ||
     !!onOpenColumnPicker ||
     (!!onOpenHiddenColumns && hiddenCount > 0) ||
     !!onOpenTrash;
@@ -147,6 +172,47 @@ export function LeadsToolbar({
         ))}
       </Select>
 
+      {onDateFromChange && onDateToChange && (
+        <div
+          className="inline-flex h-9 shrink-0 items-center gap-1 rounded-lg border border-crm-border bg-white px-2 text-sm text-crm-text shadow-sm"
+          title="Filter by created date range"
+        >
+          <CalendarRange size={14} className="text-crm-muted" aria-hidden />
+          <input
+            type="date"
+            value={dateFrom}
+            // Don't let "From" exceed "To".
+            max={dateTo || undefined}
+            onChange={(e) => onDateFromChange(e.target.value)}
+            aria-label="Created from date"
+            className="w-[7.5rem] bg-transparent text-sm text-crm-text outline-none [color-scheme:light]"
+          />
+          <span className="text-crm-muted" aria-hidden>
+            →
+          </span>
+          <input
+            type="date"
+            value={dateTo}
+            // Don't let "To" precede "From".
+            min={dateFrom || undefined}
+            onChange={(e) => onDateToChange(e.target.value)}
+            aria-label="Created to date"
+            className="w-[7.5rem] bg-transparent text-sm text-crm-text outline-none [color-scheme:light]"
+          />
+          {(dateFrom || dateTo) && onClearDateRange && (
+            <button
+              type="button"
+              onClick={onClearDateRange}
+              aria-label="Clear date range"
+              title="Clear date range"
+              className="rounded p-0.5 text-crm-muted transition hover:bg-crm-panel hover:text-crm-text"
+            >
+              <X size={14} />
+            </button>
+          )}
+        </div>
+      )}
+
       <label className="inline-flex h-9 shrink-0 cursor-pointer items-center gap-1.5 rounded-lg border border-crm-border bg-white px-2.5 text-sm text-crm-text shadow-sm transition hover:bg-crm-panel">
         <input
           type="checkbox"
@@ -189,8 +255,29 @@ export function LeadsToolbar({
           {overflowOpen && (
             <div
               role="menu"
-              className="absolute right-0 z-20 mt-2 w-52 overflow-hidden rounded-lg border border-crm-border bg-white py-1 shadow-crm-dropdown"
+              className="absolute right-0 z-20 mt-2 w-56 overflow-hidden rounded-lg border border-crm-border bg-white py-1 shadow-crm-dropdown"
             >
+              {onToggleConverted && (
+                <>
+                  <button
+                    type="button"
+                    role="menuitemcheckbox"
+                    aria-checked={showConverted}
+                    className={overflowItemClass}
+                    onClick={() => {
+                      setOverflowOpen(false);
+                      onToggleConverted();
+                    }}
+                  >
+                    <UserCheck size={16} className="text-crm-muted" />
+                    <span className="flex-1">Show Converted Leads</span>
+                    {showConverted && <Check size={16} className="text-crm-blue" aria-hidden />}
+                  </button>
+                  {(onOpenColumnPicker ||
+                    (onOpenHiddenColumns && hiddenCount > 0) ||
+                    onOpenTrash) && <div className="my-1 border-t border-crm-border" />}
+                </>
+              )}
               {onOpenHiddenColumns && hiddenCount > 0 && (
                 <button
                   type="button"

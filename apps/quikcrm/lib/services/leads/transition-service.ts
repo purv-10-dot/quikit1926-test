@@ -52,6 +52,8 @@ export async function transitionLead(opts: {
 
   const stageChanged =
     input.stage !== undefined && input.stage !== existing.stage;
+  const statusChanged =
+    input.status !== undefined && input.status !== existing.status;
 
   const updated = await prisma.$transaction(async (tx) => {
     const row = await tx.crmLead.update({
@@ -71,6 +73,27 @@ export async function transitionLead(opts: {
         outcome: "Stage updated",
         activityCode: "stage_change",
         detailNotes: `Pipeline stage changed from "${existing.stage}" to "${input.stage}".`,
+        occurredAt: new Date(),
+        tx,
+      });
+    }
+
+    // Status changes surface on the Global Activities feed as their own event
+    // (previously audit-only). Same transaction as the row update so the feed
+    // row and the lead state stay consistent. Visibility inherits from
+    // relatedKind/relatedObjectId — RBAC unchanged.
+    if (statusChanged) {
+      await logActivity({
+        orgId: user.orgId,
+        userId: user.userId,
+        type: "LeadStatusChange",
+        relatedKind: "Lead",
+        relatedObjectId: leadId,
+        leadId,
+        subject: `Status: ${existing.status} → ${input.status}`,
+        outcome: "Status updated",
+        activityCode: "status_change",
+        detailNotes: `Lead status changed from "${existing.status}" to "${input.status}".`,
         occurredAt: new Date(),
         tx,
       });

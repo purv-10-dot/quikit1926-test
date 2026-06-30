@@ -50,7 +50,10 @@ export function LeadFieldsPageClient() {
     }
   }
 
-  const standard = items.filter((f) => f.isStandard);
+  // Show only the standard fields that are actually rendered in the Add Lead
+  // form. The `inLeadForm` flag on STANDARD_LEAD_FIELDS is the single source of
+  // truth, so this list stays in sync when form fields are added/removed.
+  const standard = items.filter((f) => f.isStandard && f.inLeadForm);
   const custom = items.filter((f) => !f.isStandard);
 
   return (

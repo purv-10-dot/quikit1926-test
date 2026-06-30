@@ -23,11 +23,15 @@ describe("POST /api/leads/[id]/convert", () => {
     db.crmOpportunity.create.mockReset();
     db.crmAccount.findFirst.mockReset();
     db.crmAccount.create.mockReset();
+    db.crmAccount.update.mockReset();
+    db.crmAccount.update.mockResolvedValue({ id: "acc-updated" } as never);
     db.crmActivity.updateMany.mockReset();
     db.crmTask.updateMany.mockReset();
     db.crmNote.updateMany.mockReset();
     db.crmCallLog.updateMany.mockReset();
     db.crmAuditLog.create.mockReset();
+    db.crmUserAccountAccess.createMany.mockReset();
+    db.crmUserAccountAccess.createMany.mockResolvedValue({ count: 1 } as never);
     // Safe defaults so legacy tests don't have to know about the relink path.
     // Tests that pin specific counts override these via mockResolvedValueOnce.
     db.crmActivity.updateMany.mockResolvedValue({ count: 0 } as never);
@@ -240,6 +244,7 @@ describe("POST /api/leads/[id]/convert", () => {
     expect(auditArg.orgId).toBe("t1");
     expect(auditArg.metadata).toEqual({
       fromLeadId: "lead-full",
+      toAccountId: "acc-1",
       toContactId: "c-new",
       toOpportunityId: "opp-new",
       activitiesRelinked: 5,
@@ -373,5 +378,310 @@ describe("POST /api/leads/[id]/convert", () => {
     });
     expect(res.status).toBe(400);
     expect(db.crmLead.findFirst).not.toHaveBeenCalled();
+  });
+
+  // ── RBAC: converting user gains account-scoped access to the new records ──
+  // Account/Contact/Opportunity visibility is account-scoped via
+  // CrmUserAccountAccess (lib/auth/account-acl.ts), so a single grant for the
+  // conversion's account makes all three visible to the converting user.
+
+  function baseLead(over: Record<string, unknown> = {}) {
+    return {
+      id: "lead-rbac",
+      orgId: "t1",
+      name: "RBAC Lead",
+      email: null,
+      phone: null,
+      mobile: null,
+      jobTitle: null,
+      company: "Acme Corp",
+      industry: null,
+      source: null,
+      ownerId: "u-owner",
+      ownerName: "Owner",
+      accountId: null,
+      linkedContactId: null,
+      ...over,
+    } as never;
+  }
+
+  it("grants the converting SalesUser access to the newly created account", async () => {
+    setSession({ userId: "u-sales", orgId: "t1", role: "SalesUser" });
+    db.crmLead.findFirst.mockResolvedValueOnce(baseLead());
+    db.crmAccount.findFirst.mockResolvedValueOnce(null);
+    db.crmAccount.create.mockResolvedValueOnce({ id: "acc-new" } as never);
+    db.crmContact.create.mockResolvedValueOnce({ id: "c1" } as never);
+    db.crmLead.update.mockResolvedValueOnce({ id: "lead-rbac" } as never);
+
+    const res = await callConvert("lead-rbac", { createContact: true });
+    expect(res.status).toBe(200);
+
+    expect(db.crmUserAccountAccess.createMany).toHaveBeenCalledTimes(1);
+    const arg = db.crmUserAccountAccess.createMany.mock.calls[0]?.[0] as {
+      data: { userId: string; accountId: string }[];
+      skipDuplicates?: boolean;
+    };
+    expect(arg.data).toEqual([{ userId: "u-sales", accountId: "acc-new" }]);
+    expect(arg.skipDuplicates).toBe(true);
+  });
+
+  it("grants the converting SalesManager access (manager ≠ lead owner)", async () => {
+    // Manager converts a team member's lead: lead.ownerId is the rep, not the manager.
+    setSession({ userId: "u-manager", orgId: "t1", role: "SalesManager" });
+    db.crmLead.findFirst.mockResolvedValueOnce(baseLead({ ownerId: "u-rep", ownerName: "Rep" }));
+    db.crmAccount.findFirst.mockResolvedValueOnce(null);
+    db.crmAccount.create.mockResolvedValueOnce({ id: "acc-mgr" } as never);
+    db.crmContact.create.mockResolvedValueOnce({ id: "c2" } as never);
+    db.crmOpportunity.create.mockResolvedValueOnce({ id: "opp-2" } as never);
+    db.crmLead.update.mockResolvedValueOnce({ id: "lead-rbac" } as never);
+
+    const res = await callConvert("lead-rbac", { createContact: true, createOpportunity: true });
+    expect(res.status).toBe(200);
+
+    const arg = db.crmUserAccountAccess.createMany.mock.calls[0]?.[0] as {
+      data: { userId: string; accountId: string }[];
+    };
+    // Grant is keyed on the CONVERTING user, not the lead owner.
+    expect(arg.data).toEqual([{ userId: "u-manager", accountId: "acc-mgr" }]);
+  });
+
+  it("grants access to a reused (existing) account too — so the new contact/opp are visible", async () => {
+    setSession({ userId: "u-sales", orgId: "t1", role: "SalesUser" });
+    db.crmLead.findFirst.mockResolvedValueOnce(baseLead({ company: "  Acme Corp  " }));
+    db.crmAccount.findFirst.mockResolvedValueOnce({ id: "acc-existing" } as never);
+    db.crmContact.create.mockResolvedValueOnce({ id: "c3" } as never);
+    db.crmLead.update.mockResolvedValueOnce({ id: "lead-rbac" } as never);
+
+    const res = await callConvert("lead-rbac", { createContact: true });
+    expect(res.status).toBe(200);
+
+    const arg = db.crmUserAccountAccess.createMany.mock.calls[0]?.[0] as {
+      data: { userId: string; accountId: string }[];
+    };
+    expect(arg.data).toEqual([{ userId: "u-sales", accountId: "acc-existing" }]);
+  });
+
+  it("does NOT grant access for Administrators (unchanged — already unrestricted)", async () => {
+    setSession({ userId: "u-admin", orgId: "t1", role: "Administrator" });
+    db.crmLead.findFirst.mockResolvedValueOnce(baseLead());
+    db.crmAccount.findFirst.mockResolvedValueOnce(null);
+    db.crmAccount.create.mockResolvedValueOnce({ id: "acc-admin" } as never);
+    db.crmContact.create.mockResolvedValueOnce({ id: "c4" } as never);
+    db.crmLead.update.mockResolvedValueOnce({ id: "lead-rbac" } as never);
+
+    const res = await callConvert("lead-rbac", { createContact: true });
+    expect(res.status).toBe(200);
+    expect(db.crmUserAccountAccess.createMany).not.toHaveBeenCalled();
+  });
+
+  it("does NOT grant access when no account is involved (no company, no accountId)", async () => {
+    setSession({ userId: "u-sales", orgId: "t1", role: "SalesUser" });
+    db.crmLead.findFirst.mockResolvedValueOnce(
+      baseLead({ company: null, accountId: null }),
+    );
+    db.crmContact.create.mockResolvedValueOnce({ id: "c5" } as never);
+    db.crmLead.update.mockResolvedValueOnce({ id: "lead-rbac" } as never);
+
+    const res = await callConvert("lead-rbac", { createContact: true });
+    expect(res.status).toBe(200);
+    expect(db.crmUserAccountAccess.createMany).not.toHaveBeenCalled();
+  });
+
+  // ── Revenue mapping: Lead.annualRevenueDisplay → Account revenue fields ──
+
+  it("copies the lead's revenue onto the new account and parses amount/currency", async () => {
+    setSession({ userId: "u-sales", orgId: "t1", role: "SalesUser" });
+    db.crmLead.findFirst.mockResolvedValueOnce(
+      baseLead({ annualRevenueDisplay: "₹2.1Cr" }),
+    );
+    db.crmAccount.findFirst.mockResolvedValueOnce(null);
+    db.crmAccount.create.mockResolvedValueOnce({ id: "acc-rev" } as never);
+    db.crmContact.create.mockResolvedValueOnce({ id: "c-rev" } as never);
+    db.crmLead.update.mockResolvedValueOnce({ id: "lead-rbac" } as never);
+
+    const res = await callConvert("lead-rbac", { createContact: true });
+    expect(res.status).toBe(200);
+
+    const accArg = db.crmAccount.create.mock.calls[0]?.[0]?.data as Record<string, unknown>;
+    expect(accArg.annualRevenueDisplay).toBe("₹2.1Cr");
+    expect(accArg.annualRevenueAmount).toBe(21_000_000); // 2.1 * 1 crore
+    expect(accArg.annualRevenueCurrency).toBe("INR");
+  });
+
+  it("derives USD currency from a $ revenue string", async () => {
+    setSession({ userId: "u-sales", orgId: "t1", role: "SalesUser" });
+    db.crmLead.findFirst.mockResolvedValueOnce(
+      baseLead({ annualRevenueDisplay: "$5M" }),
+    );
+    db.crmAccount.findFirst.mockResolvedValueOnce(null);
+    db.crmAccount.create.mockResolvedValueOnce({ id: "acc-usd" } as never);
+    db.crmContact.create.mockResolvedValueOnce({ id: "c-usd" } as never);
+    db.crmLead.update.mockResolvedValueOnce({ id: "lead-rbac" } as never);
+
+    const res = await callConvert("lead-rbac", { createContact: true });
+    expect(res.status).toBe(200);
+
+    const accArg = db.crmAccount.create.mock.calls[0]?.[0]?.data as Record<string, unknown>;
+    expect(accArg.annualRevenueDisplay).toBe("$5M");
+    expect(accArg.annualRevenueAmount).toBe(5_000_000);
+    expect(accArg.annualRevenueCurrency).toBe("USD");
+  });
+
+  it("keeps an unparseable revenue string as display, amount null, currency INR default", async () => {
+    setSession({ userId: "u-sales", orgId: "t1", role: "SalesUser" });
+    db.crmLead.findFirst.mockResolvedValueOnce(
+      baseLead({ annualRevenueDisplay: "lots of money" }),
+    );
+    db.crmAccount.findFirst.mockResolvedValueOnce(null);
+    db.crmAccount.create.mockResolvedValueOnce({ id: "acc-txt" } as never);
+    db.crmContact.create.mockResolvedValueOnce({ id: "c-txt" } as never);
+    db.crmLead.update.mockResolvedValueOnce({ id: "lead-rbac" } as never);
+
+    const res = await callConvert("lead-rbac", { createContact: true });
+    expect(res.status).toBe(200);
+
+    const accArg = db.crmAccount.create.mock.calls[0]?.[0]?.data as Record<string, unknown>;
+    expect(accArg.annualRevenueDisplay).toBe("lots of money");
+    expect(accArg.annualRevenueAmount).toBeNull();
+    expect(accArg.annualRevenueCurrency).toBe("INR");
+  });
+
+  it("handles a lead with no revenue (null display, null amount)", async () => {
+    setSession({ userId: "u-sales", orgId: "t1", role: "SalesUser" });
+    db.crmLead.findFirst.mockResolvedValueOnce(
+      baseLead({ annualRevenueDisplay: null }),
+    );
+    db.crmAccount.findFirst.mockResolvedValueOnce(null);
+    db.crmAccount.create.mockResolvedValueOnce({ id: "acc-none" } as never);
+    db.crmContact.create.mockResolvedValueOnce({ id: "c-none" } as never);
+    db.crmLead.update.mockResolvedValueOnce({ id: "lead-rbac" } as never);
+
+    const res = await callConvert("lead-rbac", { createContact: true });
+    expect(res.status).toBe(200);
+
+    const accArg = db.crmAccount.create.mock.calls[0]?.[0]?.data as Record<string, unknown>;
+    expect(accArg.annualRevenueDisplay).toBeNull();
+    expect(accArg.annualRevenueAmount).toBeNull();
+    expect(accArg.annualRevenueCurrency).toBe("INR");
+  });
+
+  it("backfills revenue onto a REUSED existing account that has none", async () => {
+    setSession({ userId: "u-sales", orgId: "t1", role: "SalesUser" });
+    db.crmLead.findFirst.mockResolvedValueOnce(
+      baseLead({ annualRevenueDisplay: "5 cr" }),
+    );
+    // Existing account matched by name, with no revenue yet.
+    db.crmAccount.findFirst.mockResolvedValueOnce({
+      id: "acc-existing",
+      annualRevenueDisplay: null,
+      annualRevenueAmount: null,
+    } as never);
+    db.crmContact.create.mockResolvedValueOnce({ id: "c-reuse" } as never);
+    db.crmLead.update.mockResolvedValueOnce({ id: "lead-rbac" } as never);
+
+    const res = await callConvert("lead-rbac", { createContact: true });
+    expect(res.status).toBe(200);
+
+    expect(db.crmAccount.create).not.toHaveBeenCalled();
+    expect(db.crmAccount.update).toHaveBeenCalledTimes(1);
+    const upArg = db.crmAccount.update.mock.calls[0]?.[0] as {
+      where: Record<string, unknown>;
+      data: Record<string, unknown>;
+    };
+    expect(upArg.where).toEqual({ id: "acc-existing" });
+    expect(upArg.data.annualRevenueDisplay).toBe("5 cr");
+    expect(upArg.data.annualRevenueAmount).toBe(50_000_000);
+    expect(upArg.data.annualRevenueCurrency).toBe("INR");
+  });
+
+  it("does NOT clobber revenue on a reused account that already has it", async () => {
+    setSession({ userId: "u-sales", orgId: "t1", role: "SalesUser" });
+    db.crmLead.findFirst.mockResolvedValueOnce(
+      baseLead({ annualRevenueDisplay: "5 cr" }),
+    );
+    db.crmAccount.findFirst.mockResolvedValueOnce({
+      id: "acc-existing",
+      annualRevenueDisplay: "₹10Cr",
+      annualRevenueAmount: 100_000_000,
+    } as never);
+    db.crmContact.create.mockResolvedValueOnce({ id: "c-keep" } as never);
+    db.crmLead.update.mockResolvedValueOnce({ id: "lead-rbac" } as never);
+
+    const res = await callConvert("lead-rbac", { createContact: true });
+    expect(res.status).toBe(200);
+
+    expect(db.crmAccount.create).not.toHaveBeenCalled();
+    expect(db.crmAccount.update).not.toHaveBeenCalled();
+  });
+
+  it("does NOT update a reused account when the lead has no revenue", async () => {
+    setSession({ userId: "u-sales", orgId: "t1", role: "SalesUser" });
+    db.crmLead.findFirst.mockResolvedValueOnce(
+      baseLead({ annualRevenueDisplay: null }),
+    );
+    db.crmAccount.findFirst.mockResolvedValueOnce({
+      id: "acc-existing",
+      annualRevenueDisplay: null,
+      annualRevenueAmount: null,
+    } as never);
+    db.crmContact.create.mockResolvedValueOnce({ id: "c-noop" } as never);
+    db.crmLead.update.mockResolvedValueOnce({ id: "lead-rbac" } as never);
+
+    const res = await callConvert("lead-rbac", { createContact: true });
+    expect(res.status).toBe(200);
+    expect(db.crmAccount.update).not.toHaveBeenCalled();
+  });
+
+  // ── Phone mapping: Contact has one `phone`; lead has phone + mobile. ──
+  // Mobile is the primary/required field in the Add Lead form, so the contact's
+  // phone is mobile-first with a fallback to phone (matches the leads grid).
+
+  function setupContactConvert(over: Record<string, unknown>) {
+    db.crmLead.findFirst.mockResolvedValueOnce(baseLead(over));
+    db.crmAccount.findFirst.mockResolvedValueOnce(null);
+    db.crmAccount.create.mockResolvedValueOnce({ id: "acc-ph" } as never);
+    db.crmContact.create.mockResolvedValueOnce({ id: "c-ph" } as never);
+    db.crmLead.update.mockResolvedValueOnce({ id: "lead-rbac" } as never);
+  }
+  function contactPhone() {
+    const arg = db.crmContact.create.mock.calls[0]?.[0]?.data as Record<string, unknown>;
+    return arg.phone;
+  }
+
+  it("maps the lead's MOBILE to contact.phone when phone is empty (the bug)", async () => {
+    setSession({ userId: "u-sales", orgId: "t1", role: "SalesUser" });
+    setupContactConvert({ phone: null, mobile: "+917896541236" });
+
+    const res = await callConvert("lead-rbac", { createContact: true });
+    expect(res.status).toBe(200);
+    expect(contactPhone()).toBe("+917896541236");
+  });
+
+  it("falls back to the lead's PHONE when mobile is empty", async () => {
+    setSession({ userId: "u-sales", orgId: "t1", role: "SalesUser" });
+    setupContactConvert({ phone: "+911112223334", mobile: null });
+
+    const res = await callConvert("lead-rbac", { createContact: true });
+    expect(res.status).toBe(200);
+    expect(contactPhone()).toBe("+911112223334");
+  });
+
+  it("prefers MOBILE over phone when both are present", async () => {
+    setSession({ userId: "u-sales", orgId: "t1", role: "SalesUser" });
+    setupContactConvert({ phone: "+910000000000", mobile: "+919999999999" });
+
+    const res = await callConvert("lead-rbac", { createContact: true });
+    expect(res.status).toBe(200);
+    expect(contactPhone()).toBe("+919999999999");
+  });
+
+  it("leaves contact.phone null when the lead has neither phone nor mobile", async () => {
+    setSession({ userId: "u-sales", orgId: "t1", role: "SalesUser" });
+    setupContactConvert({ phone: null, mobile: null });
+
+    const res = await callConvert("lead-rbac", { createContact: true });
+    expect(res.status).toBe(200);
+    // `null || null` → null (not undefined) so the column is explicitly cleared.
+    expect(contactPhone()).toBeNull();
   });
 });

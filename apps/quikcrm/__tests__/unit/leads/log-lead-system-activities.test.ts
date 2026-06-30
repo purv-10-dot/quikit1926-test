@@ -10,6 +10,9 @@ import {
   inferLeadCreationChannel,
   logLeadSystemActivitiesOnCreate,
   LEAD_SYSTEM_ACTIVITY_CODE,
+  LEAD_INIT_EVENT_TYPE,
+  EXCLUDE_LEAD_INIT_EVENTS_WHERE,
+  isUserVisibleLeadActivity,
 } from "@/lib/services/leads/log-lead-system-activities";
 
 describe("logLeadSystemActivitiesOnCreate", () => {
@@ -62,5 +65,49 @@ describe("logLeadSystemActivitiesOnCreate", () => {
     expect(
       inferLeadCreationChannel({ sourceSystem: "ui-upload", leadSource: "Partner" }),
     ).toBe("csv_import");
+  });
+
+  it("still writes all 5 events to the DB (init events kept for internal use)", async () => {
+    await logLeadSystemActivitiesOnCreate(baseLead as never, { userId: "creator-1" });
+    // Suppression is a READ-layer concern only — the writer is unchanged.
+    expect(logActivity).toHaveBeenCalledTimes(5);
+    const types = logActivity.mock.calls.map((c) => c[0].type);
+    expect(types.filter((t) => t === "LeadCreated")).toHaveLength(1);
+    expect(types.filter((t) => t === "LeadSystem")).toHaveLength(4);
+  });
+});
+
+describe("lead-activity UI suppression", () => {
+  // Mirrors the events the writer produces (buildSystemEvents).
+  const created = { type: "LeadCreated", subject: "Lead added manually" };
+  const initEvents = [
+    { type: "LeadSystem", subject: "Source added" },
+    { type: "LeadSystem", subject: "Owner assigned" },
+    { type: "LeadSystem", subject: "Stage initialized" },
+    { type: "LeadSystem", subject: "Status initialized" },
+  ];
+
+  it("keeps only the single 'Lead Created' event", () => {
+    const all = [created, ...initEvents];
+    const visible = all.filter(isUserVisibleLeadActivity);
+    expect(visible).toEqual([created]);
+  });
+
+  it("isUserVisibleLeadActivity hides init events, keeps the creation event", () => {
+    expect(isUserVisibleLeadActivity(created)).toBe(true);
+    for (const ev of initEvents) {
+      expect(isUserVisibleLeadActivity(ev)).toBe(false);
+    }
+  });
+
+  it("does not hide ordinary user activities", () => {
+    expect(isUserVisibleLeadActivity({ type: "Call" })).toBe(true);
+    expect(isUserVisibleLeadActivity({ type: "Email" })).toBe(true);
+    expect(isUserVisibleLeadActivity({ type: "Note" })).toBe(true);
+  });
+
+  it("EXCLUDE_LEAD_INIT_EVENTS_WHERE excludes exactly the init event type", () => {
+    expect(EXCLUDE_LEAD_INIT_EVENTS_WHERE).toEqual({ NOT: { type: LEAD_INIT_EVENT_TYPE } });
+    expect(LEAD_INIT_EVENT_TYPE).toBe("LeadSystem");
   });
 });

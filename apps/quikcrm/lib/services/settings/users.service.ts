@@ -14,18 +14,19 @@
  *   auth.User → quikit.OrgMember → quikit.UserAppAccess (QuikCRM app)
  *   → app_quikcrm.UserAppRole + RolePermission (+ optional templates / account ACL).
  *
- * Native invites hash a password (default Quikit123 when omitted) and send
- * the shared QuikIT onboarding email. SSO invites store a null password.
+ * Native invites hash a password (a freshly generated temp password via
+ * generateTempPassword() when the admin omits one) and send the shared
+ * QuikIT onboarding email. SSO invites store a null password.
  */
 
 import crypto from "crypto";
 import bcrypt from "bcryptjs";
 import {
-  DEFAULT_INVITE_PASSWORD,
   INVITE_METHOD,
   renderInvitationEmail,
   type SsoProvider,
 } from "@quikit/shared";
+import { generateTempPassword } from "@quikit/shared/temp-password";
 import { classifySsoProviderAsync } from "@quikit/shared/sso-domain-server";
 import { prisma } from "@/lib/db/prisma";
 import { syncUserCrmAppRole, isCrmRbacClientReady } from "@/lib/api/crm-rbac";
@@ -326,10 +327,15 @@ export async function createUser(opts: {
     }
   }
 
+  // For Native invites with no admin-supplied password, generate a fresh
+  // friendly temp password once. It is bcrypt-hashed into auth.User.password,
+  // emailed to the invitee, and returned once to the admin UI — all three
+  // must use the SAME value, so it is generated a single time here.
   const isNativeNewUser =
     !data.linkExistingUserId && invitationMethod === INVITE_METHOD.NATIVE;
   const usedDefaultPassword = isNativeNewUser && !data.password;
-  const effectivePassword = usedDefaultPassword ? DEFAULT_INVITE_PASSWORD : data.password;
+  const generatedTempPassword = usedDefaultPassword ? generateTempPassword() : null;
+  const effectivePassword = generatedTempPassword ?? data.password;
 
   const tenantTemplates = await prisma.crmPermissionTemplate.findMany({
     where: { orgId: actor.orgId },
@@ -497,7 +503,7 @@ export async function createUser(opts: {
         appBaseUrl: inviteAppBaseUrl(),
         inviteMethod: invitationMethod,
         ssoProvider,
-        tempPassword: usedDefaultPassword ? DEFAULT_INVITE_PASSWORD : effectivePassword,
+        tempPassword: generatedTempPassword ?? effectivePassword,
       });
 
       await sendTransactionalEmail({
@@ -517,7 +523,7 @@ export async function createUser(opts: {
   }
 
   const tempPassword =
-    newUserCreated && usedDefaultPassword ? DEFAULT_INVITE_PASSWORD : null;
+    newUserCreated && usedDefaultPassword ? generatedTempPassword : null;
 
   return {
     user: view,

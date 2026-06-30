@@ -37,7 +37,8 @@ const RANGE_BASE = {
   from: new Date("2026-05-01T00:00:00Z"),
   to: new Date("2026-05-08T23:59:59.999Z"),
 };
-const USER = { userId: "u1", orgId: "t1", role: "SalesUser" };
+// Administrator → org-wide scope so this suite pins tz day-bounds, not RBAC.
+const USER = { userId: "u1", orgId: "t1", role: "Administrator" };
 
 function armPrismaDefaults(): void {
   db.crmLead.count.mockResolvedValue(0);

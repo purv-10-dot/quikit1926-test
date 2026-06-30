@@ -14,6 +14,14 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
 import { prismaMock } from "../../helpers/prisma-unit-mock";
 
+// resolveTeamScope issues a raw `$queryRaw` the deep Prisma mock can't fulfill
+// (it returns undefined, so the `.catch` inside throws). These ACL tests never
+// set up team data, so stub it to "no managed teams" (null) — keeping the suite
+// focused on account/owner scope resolution.
+vi.mock("@/lib/services/teams/team-scope", () => ({
+  resolveTeamScope: vi.fn().mockResolvedValue(null),
+}));
+
 import { getScope, accountScopeFilter, assertAccountAccess } from "@/lib/auth/account-acl";
 import type { SessionUser } from "@/types/permission";
 
@@ -62,7 +70,7 @@ describe("getScope", () => {
     prismaMock.crmSalesGroupManager.findMany.mockResolvedValueOnce([] as never);
 
     const scope = await getScope(SALES);
-    expect(scope).toEqual({ unrestricted: false, allowedAccountIds: ["acc-1"] });
+    expect(scope).toEqual({ unrestricted: false, allowedAccountIds: ["acc-1"], teamMemberIds: [] });
   });
 
   it("non-admin with group membership → restricted with group accounts", async () => {
@@ -76,7 +84,7 @@ describe("getScope", () => {
     ] as never);
 
     const scope = await getScope(SALES);
-    expect(scope).toEqual({ unrestricted: false, allowedAccountIds: ["acc-grp"] });
+    expect(scope).toEqual({ unrestricted: false, allowedAccountIds: ["acc-grp"], teamMemberIds: [] });
   });
 
   it("merges direct + group accounts, deduplicates", async () => {
@@ -110,7 +118,7 @@ describe("getScope", () => {
 
     const scope = await getScope(SALES);
     // Must NOT fall back to unrestricted: true
-    expect(scope).toEqual({ unrestricted: false, allowedAccountIds: [] });
+    expect(scope).toEqual({ unrestricted: false, allowedAccountIds: [], teamMemberIds: [] });
   });
 
   it("SalesManager with no groups → restricted with empty list (not unrestricted)", async () => {
@@ -119,7 +127,7 @@ describe("getScope", () => {
     prismaMock.crmSalesGroupManager.findMany.mockResolvedValueOnce([] as never);
 
     const scope = await getScope(MANAGER);
-    expect(scope).toEqual({ unrestricted: false, allowedAccountIds: [] });
+    expect(scope).toEqual({ unrestricted: false, allowedAccountIds: [], teamMemberIds: [] });
   });
 });
 
@@ -131,7 +139,7 @@ describe("accountScopeFilter", () => {
     expect(filter).toBeNull();
   });
 
-  it("returns OR filter with allowed accounts + owner-only null clause", async () => {
+  it("returns OR filter with allowed accounts + own-leads clause", async () => {
     prismaMock.crmUserAccountAccess.findMany.mockResolvedValueOnce([
       { accountId: "acc-1" },
     ] as never);
@@ -139,37 +147,39 @@ describe("accountScopeFilter", () => {
     prismaMock.crmSalesGroupManager.findMany.mockResolvedValueOnce([] as never);
 
     const filter = await accountScopeFilter(SALES);
+    // Own-leads clause is now `{ ownerId }` (attached or not) so conversion,
+    // which auto-attaches a lead to a fresh out-of-scope account, can't hide it.
     expect(filter).toEqual({
       OR: [
         { accountId: { in: ["acc-1"] } },
-        { accountId: null, ownerId: "u-sales" },
+        { ownerId: "u-sales" },
       ],
     });
   });
 
-  it("with empty allowed list → filter still includes owner-only null clause", async () => {
+  it("with empty allowed list → filter still includes own-leads clause", async () => {
     prismaMock.crmUserAccountAccess.findMany.mockResolvedValueOnce([] as never);
     prismaMock.crmSalesGroupMember.findMany.mockResolvedValueOnce([] as never);
     prismaMock.crmSalesGroupManager.findMany.mockResolvedValueOnce([] as never);
 
     const filter = await accountScopeFilter(SALES);
-    // With no accounts in scope, only own-null-leads are accessible
+    // With no accounts in scope, only the user's own leads are accessible.
     expect(filter).toEqual({
       OR: [
         { accountId: { in: [] } },
-        { accountId: null, ownerId: "u-sales" },
+        { ownerId: "u-sales" },
       ],
     });
   });
 
-  it("null-accountId clause uses the caller's userId, not a hardcoded value", async () => {
+  it("own-leads clause uses the caller's userId, not a hardcoded value", async () => {
     prismaMock.crmUserAccountAccess.findMany.mockResolvedValueOnce([] as never);
     prismaMock.crmSalesGroupMember.findMany.mockResolvedValueOnce([] as never);
     prismaMock.crmSalesGroupManager.findMany.mockResolvedValueOnce([] as never);
 
     const filter = await accountScopeFilter(MANAGER);
     expect(filter).toMatchObject({
-      OR: expect.arrayContaining([{ accountId: null, ownerId: "u-manager" }]),
+      OR: expect.arrayContaining([{ ownerId: "u-manager" }]),
     });
   });
 });
@@ -227,9 +237,11 @@ describe("Lead visibility regression — accountId=null leads", () => {
    * owned by `leadOwnerId`.
    *
    * The Prisma OR filter produced by accountScopeFilter is:
-   *   { OR: [{ accountId: { in: [...] } }, { accountId: null, ownerId: viewerId }] }
+   *   { OR: [{ accountId: { in: [...] } }, { ownerId: viewerId }, (team?) { ownerId: { in: [...] } }] }
    *
-   * A lead matches if either branch matches given the lead's fields.
+   * A lead matches if any branch matches given the lead's fields. For a
+   * null-accountId lead the `accountId: { in }` branch never matches; the
+   * own-leads branch (`{ ownerId }`) matches when the viewer owns it.
    */
   function filterMatchesNullLead(
     filter: Record<string, unknown> | null,
@@ -239,15 +251,15 @@ describe("Lead visibility regression — accountId=null leads", () => {
 
     const orClauses = filter.OR as Array<{
       accountId?: { in?: string[] } | null;
-      ownerId?: string;
+      ownerId?: string | { in?: string[] };
     }>;
 
     return orClauses.some((clause) => {
-      if (clause.accountId === null) {
-        // null-accountId branch: matches only if ownerId matches
+      // The own-leads branch is exactly `{ ownerId: <viewerId> }` (no accountId key).
+      if (clause.accountId === undefined && typeof clause.ownerId === "string") {
         return clause.ownerId === leadOwnerId;
       }
-      // accountId: { in: [...] } branch never matches a null-accountId lead
+      // accountId: { in: [...] } branch never matches a null-accountId lead.
       return false;
     });
   }
@@ -358,5 +370,57 @@ describe("Lead visibility regression — accountId=null leads", () => {
       (c) => (c.accountId as { in?: string[] } | null)?.["in"] !== undefined,
     );
     expect((accountClause?.accountId as { in?: string[] })?.["in"]).toContain("acc-visible");
+  });
+});
+
+// ─── Regression: own converted lead attached to an out-of-scope account ───────
+describe("Regression — converted lead auto-attached to an out-of-scope account", () => {
+  /**
+   * Whether the filter matches a lead with the given (accountId, ownerId) for
+   * a viewer. Mirrors the Prisma OR semantics of accountScopeFilter.
+   */
+  function filterMatchesLead(
+    filter: Record<string, unknown> | null,
+    lead: { accountId: string | null; ownerId: string },
+    viewerId: string,
+  ): boolean {
+    if (filter === null) return true; // Admin (unrestricted)
+    const orClauses = filter.OR as Array<{
+      accountId?: { in?: string[] } | null;
+      ownerId?: string | { in?: string[] };
+    }>;
+    return orClauses.some((c) => {
+      // account-in branch
+      if (c.accountId && typeof c.accountId === "object" && Array.isArray(c.accountId.in)) {
+        return lead.accountId != null && c.accountId.in.includes(lead.accountId);
+      }
+      // own-leads branch: { ownerId: viewerId }
+      if (c.accountId === undefined && typeof c.ownerId === "string") {
+        return lead.ownerId === c.ownerId && c.ownerId === viewerId;
+      }
+      return false;
+    });
+  }
+
+  it("owner sees their own converted lead even though its account is NOT in scope", async () => {
+    // SalesUser owns a lead. On conversion it was auto-attached to a brand-new
+    // account the user has no CrmUserAccountAccess to → empty allowed list.
+    prismaMock.crmUserAccountAccess.findMany.mockResolvedValueOnce([] as never);
+    prismaMock.crmSalesGroupMember.findMany.mockResolvedValueOnce([] as never);
+    prismaMock.crmSalesGroupManager.findMany.mockResolvedValueOnce([] as never);
+
+    const filter = await accountScopeFilter(SALES);
+    const convertedOwnLead = { accountId: "acc-auto-created", ownerId: SALES.userId };
+    expect(filterMatchesLead(filter, convertedOwnLead, SALES.userId)).toBe(true);
+  });
+
+  it("still does NOT leak another user's converted lead on an out-of-scope account", async () => {
+    prismaMock.crmUserAccountAccess.findMany.mockResolvedValueOnce([] as never);
+    prismaMock.crmSalesGroupMember.findMany.mockResolvedValueOnce([] as never);
+    prismaMock.crmSalesGroupManager.findMany.mockResolvedValueOnce([] as never);
+
+    const filter = await accountScopeFilter(SALES);
+    const othersConvertedLead = { accountId: "acc-auto-created", ownerId: "u-someone-else" };
+    expect(filterMatchesLead(filter, othersConvertedLead, SALES.userId)).toBe(false);
   });
 });

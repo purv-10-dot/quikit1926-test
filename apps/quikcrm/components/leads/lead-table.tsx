@@ -3,11 +3,12 @@
 import Link from "next/link";
 import { useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
-import { History, RotateCcw, Star, Trash2, X } from "lucide-react";
+import { Star, Trash2 } from "lucide-react";
 import { LeadChangeLogDrawer } from "@/components/leads/lead-change-log-drawer";
 import { Table, THead, TBody, TR, TH, TD } from "@/components/ui/table";
 import { Pagination } from "@/components/shared/pagination";
-import { CallButton } from "@/components/telephony/call-button";
+import { CallModal } from "@/components/telephony/call-modal";
+import { LeadRowActions } from "@/components/leads/lead-row-actions";
 import { ColumnHeaderMenu } from "@/components/leads/column-header-menu";
 import { useToast } from "@/hooks/use-toast";
 import { formatDate } from "@/lib/utils/date-helpers";
@@ -29,6 +30,13 @@ export interface LeadRow {
   mobile?: string | null;
   jobTitle?: string | null;
   source?: string | null;
+  industry?: string | null;
+  secondaryEmail?: string | null;
+  website?: string | null;
+  linkedinUrl?: string | null;
+  annualRevenueDisplay?: string | null;
+  /** Auto-managed system column — rendered by the "Created Date" column. */
+  createdAt?: string | Date | null;
   dynamicFields?: Record<string, unknown> | null;
   /** Populated only in trash view. */
   deletedAt?: string | Date | null;
@@ -69,6 +77,25 @@ interface Props {
 }
 
 const DEFAULT_COLUMNS = ["name", "company", "email", "phone", "stage", "status", "score", "ownerName"];
+
+/**
+ * Form-derived standard (top-level Lead) field keys the grid's `renderCell` can
+ * render — special-cased cells plus plain top-level properties selected by the
+ * leads API (app/api/leads/filter/route.ts). The Column picker / Hide-columns
+ * list offers exactly these standard fields, so it stays in sync with what the
+ * grid can display. Custom fields render via `dynamicFields` and are not listed
+ * here; system fields (e.g. createdAt) live in SYSTEM_LEAD_FIELDS and are
+ * special-cased separately in `renderCell` — do NOT add them to this list.
+ *
+ * Keep this aligned with the `inLeadForm` standard fields in
+ * types/field-definition.ts — the `standard-fields-columns` test pins that.
+ */
+export const GRID_RENDERABLE_STANDARD_KEYS = [
+  "name", "stage", "status", "score",
+  "email", "phone", "mobile", "company", "jobTitle", "source", "ownerName",
+  "industry", "secondaryEmail", "website", "linkedinUrl", "annualRevenueDisplay",
+] as const;
+
 /** Fixed min-width for frozen columns so we can compute a sticky-left offset without measuring DOM widths. */
 const FROZEN_COL_WIDTH = 180;
 
@@ -99,6 +126,9 @@ export function LeadTable({
   const params = useSearchParams();
   const toast = useToast();
   const [logFor, setLogFor] = useState<{ id: string; name: string } | null>(null);
+  // Lifted out of the per-row CallButton so the dialer can be launched from the
+  // row's three-dot actions menu (which unmounts on item click).
+  const [callFor, setCallFor] = useState<{ id: string; name: string; phone: string | null } | null>(null);
 
   // Frozen columns always render leftmost, in the order they were frozen.
   // The "name" column is implicitly frozen so it stays visible while the user
@@ -232,18 +262,16 @@ export function LeadTable({
                   </TH>
                 );
               })}
-              <TH className="w-12 text-center">Log</TH>
-              {!viewTrash && <TH className="w-16 text-center">Call</TH>}
               {viewTrash && <TH className="w-32 whitespace-nowrap">Deleted</TH>}
-              <TH className="w-20 text-center">
-                {viewTrash ? "Actions" : <span className="sr-only">Row actions</span>}
+              <TH className="w-12 text-center">
+                <span className="sr-only">Row actions</span>
               </TH>
             </TR>
           </THead>
           <TBody>
             {items.length === 0 ? (
               <TR>
-                <TD colSpan={cols.length + 4} className="py-16">
+                <TD colSpan={cols.length + (viewTrash ? 3 : 2)} className="py-16">
                   {viewTrash ? (
                     <div className="flex flex-col items-center gap-2 text-center">
                       <div className="rounded-full bg-amber-50 p-3 ring-1 ring-amber-200">
@@ -319,46 +347,18 @@ export function LeadTable({
                         </TD>
                       );
                     })}
-                    <TD className="text-center">
-                      <button
-                        type="button"
-                        onClick={(e) => {
-                          e.preventDefault();
-                          e.stopPropagation();
-                          setLogFor({ id: l.id, name: l.name });
-                        }}
-                        aria-label={`View change log for ${l.name}`}
-                        title="View change log"
-                        className="rounded p-1.5 text-gray-400 transition hover:bg-gray-100 hover:text-blue-500 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-crm-blue-glow"
-                      >
-                        <History size={14} />
-                      </button>
-                    </TD>
-                    {!viewTrash && (
-                      <TD className="text-center">
-                        <CallButton
-                          to={l.phone}
-                          leadId={l.id}
-                          leadName={l.name}
-                          variant="icon"
-                          disabledReason={
-                            l.phone === null
-                              ? "Phone hidden by your role"
-                              : "No phone number"
-                          }
-                        />
-                      </TD>
-                    )}
                     {viewTrash && (
                       <TD className="whitespace-nowrap text-xs text-crm-muted">
                         <DeletedAtCell value={l.deletedAt ?? null} />
                       </TD>
                     )}
                     <TD className="text-center">
-                      <RowActions
+                      <LeadRowActions
                         lead={l}
                         viewTrash={viewTrash}
                         isAdmin={isAdmin}
+                        onLogActivity={() => setLogFor({ id: l.id, name: l.name })}
+                        onCall={() => setCallFor({ id: l.id, name: l.name, phone: l.phone })}
                         onLeadDelete={onLeadDelete}
                         onLeadRestore={onLeadRestore}
                         onLeadPermanentDelete={onLeadPermanentDelete}
@@ -386,78 +386,15 @@ export function LeadTable({
         open={logFor !== null}
         onClose={() => setLogFor(null)}
       />
+      <CallModal
+        open={callFor !== null}
+        onClose={() => setCallFor(null)}
+        to={callFor?.phone ?? null}
+        leadId={callFor?.id}
+        leadName={callFor?.name}
+      />
     </div>
   );
-}
-
-function RowActions({
-  lead,
-  viewTrash,
-  isAdmin,
-  onLeadDelete,
-  onLeadRestore,
-  onLeadPermanentDelete,
-}: {
-  lead: LeadRow;
-  viewTrash: boolean;
-  isAdmin: boolean;
-  onLeadDelete?: (lead: LeadRow) => void;
-  onLeadRestore?: (lead: LeadRow) => void;
-  onLeadPermanentDelete?: (lead: LeadRow) => void;
-}) {
-  const stop = (e: React.MouseEvent) => {
-    e.preventDefault();
-    e.stopPropagation();
-  };
-  if (viewTrash) {
-    return (
-      <div className="inline-flex items-center justify-center divide-x divide-amber-200/60 overflow-hidden rounded-md ring-1 ring-amber-200/60 bg-white shadow-sm">
-        {onLeadRestore && (
-          <button
-            type="button"
-            onClick={(e) => {
-              stop(e);
-              onLeadRestore(lead);
-            }}
-            className="inline-flex items-center gap-1 px-2 py-1 text-xs font-medium text-crm-blue transition hover:bg-crm-blue-soft"
-            aria-label="Restore lead"
-            title="Restore — return to active leads"
-          >
-            <RotateCcw size={12} />
-            Restore
-          </button>
-        )}
-        {isAdmin && onLeadPermanentDelete && (
-          <button
-            type="button"
-            onClick={(e) => {
-              stop(e);
-              onLeadPermanentDelete(lead);
-            }}
-            className="inline-flex items-center justify-center px-2 py-1 text-red-600 transition hover:bg-red-50"
-            aria-label="Permanently delete lead"
-            title="Permanently delete — cannot be undone"
-          >
-            <X size={14} />
-          </button>
-        )}
-      </div>
-    );
-  }
-  return onLeadDelete ? (
-    <button
-      type="button"
-      onClick={(e) => {
-        stop(e);
-        onLeadDelete(lead);
-      }}
-      className="rounded-md p-1.5 text-crm-muted opacity-60 transition hover:bg-red-50 hover:text-red-600 hover:opacity-100 focus:opacity-100"
-      aria-label="Move lead to trash"
-      title="Move to Trash"
-    >
-      <Trash2 size={14} />
-    </button>
-  ) : null;
 }
 
 /**
@@ -495,10 +432,28 @@ function renderCell(key: string, lead: LeadRow, def?: LeadFieldDefinition): Reac
   }
   if (key === "score") return <span className="font-medium tabular-nums">{lead.score}</span>;
   if (key === "isStarred") return lead.isStarred ? "★" : "—";
+  // System "Created Date" column — app-wide date format (e.g. "Jun 30, 2026").
+  if (key === "createdAt") {
+    if (!lead.createdAt) return <span className="text-crm-muted">—</span>;
+    return <span className="whitespace-nowrap tabular-nums">{formatDate(lead.createdAt)}</span>;
+  }
 
-  // Standard column → top-level lead property
-  const standardKeys = ["email", "phone", "mobile", "company", "jobTitle", "source", "ownerName"];
-  if (standardKeys.includes(key)) {
+  // Phone column shows the lead's mobile number as the primary value, falling
+  // back to the landline `phone` when no mobile is present (and the standard
+  // "—" placeholder when neither is set). This is a display-only preference for
+  // the grid — the underlying `phone`/`mobile` columns are stored and exported
+  // separately (the CSV keeps distinct Phone + Mobile columns). Role-based
+  // field masking (maskHiddenLeadFields) nulls `phone`/`mobile` independently,
+  // so a hidden mobile transparently falls back to phone here.
+  if (key === "phone") {
+    const display = (lead.mobile ?? null) || (lead.phone ?? null);
+    return formatValue(display, def);
+  }
+
+  // Standard column → plain top-level lead property. The special-cased standard
+  // cells above (name/stage/status/score/phone) already returned; the rest of
+  // GRID_RENDERABLE_STANDARD_KEYS render their raw value here.
+  if ((GRID_RENDERABLE_STANDARD_KEYS as readonly string[]).includes(key)) {
     const v = (lead as unknown as Record<string, unknown>)[key];
     return formatValue(v, def);
   }

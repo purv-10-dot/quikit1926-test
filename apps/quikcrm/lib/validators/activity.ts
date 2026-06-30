@@ -1,7 +1,11 @@
 import { z } from "zod";
 import { filterPayloadSchema } from "@/lib/validators/lead-filter";
 import { pageSchema, pageSizeSchema } from "@/lib/validators/pagination";
-import { ACTIVITY_PRIMARY_KINDS } from "@/lib/services/activities/target-existence";
+import {
+  ACTIVITY_KINDS,
+  ACTIVITY_PRIMARY_KINDS,
+  STANDALONE_KIND,
+} from "@/lib/services/activities/target-existence";
 import {
   LEAD_LOG_ACTIVITY_CODES,
   LEAD_LOG_OUTCOMES,
@@ -14,14 +18,20 @@ import {
 } from "@/lib/services/activities/smb-outreach-meta";
 
 const relatedKindEnum = z.enum(ACTIVITY_PRIMARY_KINDS);
+// Composer-facing kind: the 4 primary kinds plus the standalone sentinel "None".
+const createKindEnum = z.enum(ACTIVITY_KINDS);
 
 const isoDate = z.string().datetime();
 
-export const createActivitySchema = z.object({
-  type: z.string().trim().min(1).max(80),
-  relatedKind: relatedKindEnum,
-  relatedObjectId: z.string().trim().min(1),
-  subject: z.string().trim().max(500).optional().nullable(),
+export const createActivitySchema = z
+  .object({
+    type: z.string().trim().min(1).max(80),
+    relatedKind: createKindEnum,
+    // Standalone ("None") activities may omit a real record id — the route
+    // normalizes a missing/blank id to the standalone sentinel. Linked kinds
+    // still require a non-empty id (enforced by the refinement below).
+    relatedObjectId: z.string().trim().optional().nullable(),
+    subject: z.string().trim().max(500).optional().nullable(),
   outcome: z.string().trim().max(500).optional().nullable(),
   occurredAt: isoDate.optional().nullable(),
   detailNotes: z.string().trim().max(5000).optional().nullable(),
@@ -36,7 +46,18 @@ export const createActivitySchema = z.object({
   // route writes fieldValues into CrmActivityFieldValue inside the create tx.
   activityTypeId: z.string().trim().min(1).optional(),
   fieldValues: z.record(z.unknown()).optional(),
-});
+  })
+  .superRefine((val, ctx) => {
+    // Linked activities (Lead/Contact/Account/Opportunity) must carry a real
+    // related record id. Standalone ("None") may omit it.
+    if (val.relatedKind !== STANDALONE_KIND && !val.relatedObjectId?.trim()) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["relatedObjectId"],
+        message: `relatedObjectId is required when relatedKind is ${val.relatedKind}`,
+      });
+    }
+  });
 
 export const updateActivitySchema = z.object({
   type: z.string().trim().min(1).max(80).optional(),

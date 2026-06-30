@@ -82,6 +82,13 @@
   .crm-table tbody tr:hover {
     @apply bg-crm-blue-soft;
   }
+  /* Opt-in header style: Title Case + black header text (vs the default
+   * uppercase + muted grey). Scoped to tables that add `crm-table-titlecase-head`
+   * so other tables are unaffected. Overrides ONLY text-transform + color; font
+   * size, weight, spacing, and background stay inherited from `.crm-table thead th`. */
+  .crm-table-titlecase-head thead th {
+    @apply normal-case text-black;
+  }
 
   /* Wraps a <table> to provide horizontal scroll on small viewports without
    * adding a scrollbar to the page. Pair with `crm-hscroll` if you want the

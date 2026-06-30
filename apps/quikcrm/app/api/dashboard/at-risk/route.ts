@@ -12,9 +12,7 @@ import { requireApiUser, isResponse, errorResponse } from "@/lib/auth/require";
 import { assertModule } from "@/lib/auth/permissions";
 import {
   parseFilters,
-  tenantOwnerWhere,
-  tenantAssigneeWhere,
-  tenantAgentWhere,
+  resolveDashboardScope,
 } from "@/lib/services/dashboard/filters";
 import type { AtRiskBucket, AtRiskDto, AtRiskSampleRow } from "@/lib/dashboard/types";
 
@@ -56,6 +54,10 @@ export async function GET(req: NextRequest) {
     await assertModule(user, "dashboard", "view");
 
     const filters = parseFilters(req, user);
+    // Role-aware RBAC scope (Path B) — same scope as the Leads / Opportunities /
+    // Tasks modules + role-metrics. Admin org-wide; Manager team; User own;
+    // Marketing/Finance account ACL. Owner dropdown narrows within scope.
+    const scope = await resolveDashboardScope(user);
     // Bug 2: cutoffs are anchored to the selected range's `to`, not server
     // `now`. For preset users (range.to ≈ now) behavior is unchanged; for a
     // historical custom range, the widget shows the snapshot as of that
@@ -66,13 +68,13 @@ export async function GET(req: NextRequest) {
     const dispoCutoff = new Date(asOf.getTime() - MISSING_DISPO_AGE_HOURS * MS_HOUR);
 
     const taskWhere = {
-      ...tenantAssigneeWhere(user, filters.resolvedOwnerId),
+      ...scope.taskWhere(filters.resolvedOwnerId),
       status: { not: "Completed" as CrmTaskStatus },
       dueDate: { lt: asOf },
     };
 
     const leadWhere = {
-      ...tenantOwnerWhere(user, filters.resolvedOwnerId),
+      ...scope.recordWhere(filters.resolvedOwnerId),
       // CrmLead has `deletedAt`; filter explicitly (no middleware coverage yet).
       deletedAt: null,
       stage: { notIn: CLOSED_LEAD_STAGES },
@@ -80,7 +82,7 @@ export async function GET(req: NextRequest) {
     };
 
     const oppWhere = {
-      ...tenantOwnerWhere(user, filters.resolvedOwnerId),
+      ...scope.recordWhere(filters.resolvedOwnerId),
       // CrmOpportunity has `deletedAt`; filter explicitly (no middleware coverage yet).
       deletedAt: null,
       stage: { notIn: ["ClosedWon", "ClosedLost"] as CrmOpportunityStage[] },
@@ -88,7 +90,7 @@ export async function GET(req: NextRequest) {
     };
 
     const callWhere = {
-      ...tenantAgentWhere(user, filters.resolvedOwnerId),
+      ...scope.callWhere(filters.resolvedOwnerId),
       dispositionName: null,
       createdAt: { lt: dispoCutoff },
     };
