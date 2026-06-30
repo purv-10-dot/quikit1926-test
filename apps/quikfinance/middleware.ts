@@ -27,9 +27,10 @@ const APP_SLUG = "quikfinance";
 
 const factoryMiddleware = createMiddleware({
   loginRoute: "/login",
-  // No local org picker — no-org users are sent to the launcher /apps via
-  // centralSelectOrgUrl (cross-domain handoff).
-  publicRoutes: ["/login", "/invitations", "/auth-handoff"],
+  // `/` = public marketing landing (the page server-redirects authed users to
+  // /dashboard). No local org picker — no-org users are sent to the launcher
+  // /apps via centralSelectOrgUrl (cross-domain handoff).
+  publicRoutes: ["/", "/login", "/invitations", "/auth-handoff"],
   centralLoginUrl: AUTH_URL ? `${AUTH_URL}/login` : undefined,
   centralSelectOrgUrl: QUIKIT_URL ? `${QUIKIT_URL}/apps` : undefined,
   // Remote session validation hits the central auth service on EVERY protected

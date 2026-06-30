@@ -272,6 +272,15 @@ Runtime action (needs a live DB — BLOCKED on `DATABASE_URL`; none configured i
 
 ## Progress log
 
+- 2026-06-30 — **Public marketing landing added at `/`** (mirrors quiktrack's UX). Dashboard home
+  (CommandCenter) moved `/` → `/dashboard`. New `app/(marketing)/` group: Nav (QuikFinance text
+  wordmark + Login→/login→SSO→/dashboard), Hero (BESPOKE CSS finance mockup — NOT quiktrack's office
+  photo, which the user rejected), Outcomes, Workflows (finance cards), FooterCTA. Reused quiktrack's
+  `marketing.css` for the visual language only. Middleware: added `/` to publicRoutes (exact match);
+  login stub callbackUrl → /dashboard. tsc clean on new files. Unused copied components (Comparison/
+  Testimonial/Features-OPSP/etc.) left in _components/ but not imported. Restart dev to pick up the
+  route-group change.
+
 - 2026-06-30 — **Phase 5 server-side verification PASSED.** Provisioned MoreYeahs test org
   (OrgMember + OrgAppAccess + QfOrganization keyed to the central cuid). Finance query via search_path
   client read app_quikfinance tables by bare name scoped on the cuid org → WORKS (keystone proven at
