@@ -7,6 +7,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import { MobileSidebar } from "@/components/layout/MobileSidebar";
+import { AppSwitcherVertical } from "@/components/shell/app-switcher-vertical";
 import { Button } from "@/components/ui/button";
 import { OPEN_COMMAND_EVENT } from "@/components/layout/CommandPalette";
 import { signOut } from "next-auth/react";
@@ -55,6 +56,7 @@ export function Topbar() {
     <header className="sticky top-0 z-30 border-b bg-background/85 backdrop-blur">
       <div className="flex h-16 items-center gap-3 px-4 md:px-6">
         <MobileSidebar />
+        <AppSwitcherVertical />
         <div className="hidden md:block">
           <p className="text-sm font-semibold">{company.data?.name ?? t("topbar.companyFallback", "QuikFinance Workspace")}</p>
           <p className="text-xs text-muted-foreground">
