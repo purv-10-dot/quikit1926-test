@@ -33,6 +33,12 @@ jobs:
         id: filter
         uses: dorny/paths-filter@v3
         with:
+          # Compare against the branch's previous tip (the actual push delta).
+          # Without this, paths-filter diffs against the default branch (main),
+          # so any app where UAT is ahead of main (e.g. quikcrm) looks "changed"
+          # on every push. Fall back to HEAD for non-push events (e.g. dispatch),
+          # where the matrix is forced to all apps anyway.
+          base: ${{ github.event.before || github.sha }}
           filters: |
             shared:
               - 'packages/**'
