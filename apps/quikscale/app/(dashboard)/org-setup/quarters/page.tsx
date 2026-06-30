@@ -7,6 +7,7 @@ import {
   CalendarDays, Lock, Info,
 } from "lucide-react";
 import { invalidateFiscalYearsCache } from "@/lib/hooks/useFiscalYears";
+import { resolveQuarterInitDefaults } from "@/lib/utils/quarterInit";
 import {
   RightPanel, RightPanelFooter, RightPanelCancelButton, RightPanelSubmitButton, Pagination,
 } from "@quikit/ui";
@@ -340,39 +341,20 @@ function GenerateModal({
     ? existingYears.filter((y) => y !== futureYearAvailable)
     : existingYears;
 
-  // Calculate the next available FY
-  const currentFY = new Date().getMonth() >= 3 ? new Date().getFullYear() : new Date().getFullYear() - 1;
-  const createdYears = existingYears.filter(y => y !== futureYearAvailable);
-  let nextFY = currentFY;
-  while (trulyExistingYears.includes(nextFY)) nextFY++;
+  // FY / start-date defaults are derived by a pure, unit-tested helper so the
+  // "delete all then re-initialize" reload bug stays fixed: given fresh
+  // post-delete inputs (existingYears=[], latestEndDate=null) it resolves back
+  // to the current FY with no `minStart` lock instead of jumping a year ahead.
+  const { nextFY, defaultStart, minStart, isFutureFY } = resolveQuarterInitDefaults({
+    existingYears,
+    futureYearAvailable,
+    latestEndDate,
+  });
 
   // Block only when a future FY is requested AND the `enable_future_quarters`
   // feature flag is off. The server returns `futureYearAvailable != null`
   // whenever the flag is on, regardless of proximity to the current Q end.
-  const isFutureFY = nextFY > currentFY;
   const isBlocked = isFutureFY && futureYearAvailable === null;
-
-  // Default start date:
-  //   - If there are existing quarters, use day-after-latest-end (contiguous FY).
-  //   - Otherwise fall back to April 1 of the next FY (typical Indian FY).
-  const defaultStart = (() => {
-    if (latestEndDate) {
-      const next = new Date(latestEndDate);
-      next.setUTCDate(next.getUTCDate() + 1);
-      return next.toISOString().slice(0, 10);
-    }
-    return `${nextFY}-04-01`;
-  })();
-
-  // Earliest allowed start for the HTML date input — mirrors the server
-  // contiguity check so users see the constraint before submitting.
-  const minStart = latestEndDate
-    ? (() => {
-        const next = new Date(latestEndDate);
-        next.setUTCDate(next.getUTCDate() + 1);
-        return next.toISOString().slice(0, 10);
-      })()
-    : undefined;
 
   useEffect(() => {
     if (open) { setError(""); setStartDate(defaultStart); }
@@ -709,9 +691,12 @@ export default function QuarterSettingsPage() {
     const count = selectedIds.size;
     try {
       await Promise.all([...selectedIds].map(id => fetch(`/api/org/quarters/${id}`, { method: "DELETE" })));
-      setRows(prev => prev.filter(r => !selectedIds.has(r.id)));
       setSelectedIds(new Set());
       invalidateFiscalYearsCache();
+      // Re-fetch from the server so `allYears` + `latestEndDate` reflect reality.
+      // A local row filter alone left those stale, so the Initialize modal kept
+      // anchoring to the deleted FY's end date and forced a manual page reload.
+      await fetchRows(selectedYear ?? undefined);
       notify.success(`Deleted ${count} quarter${count === 1 ? "" : "s"}`);
     } catch (err: unknown) {
       notify.error(err, { context: "quarter" });
@@ -740,8 +725,15 @@ export default function QuarterSettingsPage() {
         setSelectedYear(nextYear);
         await fetchRows(nextYear);
       } else {
-        setSelectedYear(null);
+        // No fiscal years left. Reset to the clean state a page reload would
+        // produce — default FY selected, all server-derived meta cleared — so
+        // the user can re-initialize immediately without reloading. Leaving
+        // `latestEndDate` stale here is exactly what forced the reload.
+        setSelectedYear(defaultFY);
         setRows([]);
+        setLatestEndDate(null);
+        setFutureYearAvailable(null);
+        setHasDataByYear({});
       }
       notify.saved("Quarter", "deleted", {
         description: `FY ${year}-${String(year + 1).slice(-2)} removed.`,

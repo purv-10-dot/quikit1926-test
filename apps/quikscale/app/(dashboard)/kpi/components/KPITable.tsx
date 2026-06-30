@@ -105,6 +105,7 @@ export function KPITable({ kpis: kpisAll, total, page, pageSize, year, quarter, 
       currency: kpi.currency,
       targetScale: kpi.targetScale,
       scaledDisplay: kpi.scaledDisplay,
+      unit: kpi.unit,
       numberFormat,
     });
   // Infinite-scroll mode: bounded-height body whose vertical scroll loads more.

@@ -276,9 +276,25 @@ function EditTab({
       : (typeof raw === "string" ? raw : String(raw));
   const toRaw = (input: string) =>
     breakdownScaleMult > 1 ? scaleUpFromInput(input, form.currency, form.targetScale) : input;
-  const breakdownUnit = breakdownScaleMult > 1 ? shortScaleLabel(form.targetScale) : "";
+  // Number KPI unit-of-measure (from Unit Master, e.g. "lb"). Shown as a plain
+  // suffix — Number values are NOT scaled, so no prefix / no value conversion.
+  const numberUnit = form.measurementUnit === "Number" ? (form.unit || "") : "";
+  // Cell suffix: currency scale unit when scaled, else the Number unit.
+  const breakdownUnit = breakdownScaleMult > 1 ? shortScaleLabel(form.targetScale) : numberUnit;
   // Currency symbol prefix shown on each scaled breakdown cell (₹2, $9, …).
+  // Currency-scaled only — Number unit cells carry no prefix.
   const breakdownPrefix = breakdownScaleMult > 1 ? currencyObj.symbol : "";
+  // Scaled currency cells hold small numbers (e.g. "100") but a wide unit suffix
+  // ("100 Cr"), so shrink the INPUT to leave room. Number cells keep full width
+  // (raw values can be large) — gate on the currency scale, not the suffix.
+  const cellMinW = breakdownScaleMult > 1 ? "min-w-[48px]" : "min-w-[72px]";
+  // Full raw rupee value behind a SCALED currency cell, en-IN formatted (tooltip).
+  const rawTip = (raw: number | string): string | undefined => {
+    if (breakdownScaleMult <= 1) return undefined;
+    const n = typeof raw === "string" ? parseFloat(raw) : raw;
+    if (!Number.isFinite(n)) return undefined;
+    return `= ${formatActual(n, currencyObj.symbol, form.currency)}`;
+  };
 
   return (
     <div className="space-y-4">
@@ -526,7 +542,15 @@ function EditTab({
       {targetNum > 0 && (
         <div>
           <label className="block text-xs font-medium text-gray-600 mb-2">
-            Target Breakdown (Weekly){breakdownUnit ? ` — in ${currencyObj.symbol} ${breakdownUnit}` : ""}
+            Target Breakdown (Weekly)
+            {breakdownScaleMult > 1
+              ? ` — in ${currencyObj.symbol} ${breakdownUnit}`
+              : breakdownUnit ? ` — in ${breakdownUnit}` : ""}
+            {breakdownScaleMult > 1 && (
+              <span className="ml-2 font-normal text-gray-400">
+                = {formatActual(scaledTarget, currencyObj.symbol, form.currency)} total
+              </span>
+            )}
           </label>
           <WeeklyScroller>
             <table className="w-full text-xs">
@@ -575,7 +599,7 @@ function EditTab({
                       return (
                         <td key={w} className="px-1 py-1.5 border-r border-gray-100 last:border-r-0 bg-gray-50">
                           <div className="flex items-center gap-0.5">
-                            {breakdownPrefix && <span className="text-[9px] text-gray-400 flex-shrink-0">{breakdownPrefix}</span>}
+                            {breakdownPrefix && <span className="text-[9px] text-gray-400 flex-shrink-0 whitespace-nowrap">{breakdownPrefix}</span>}
                             <input
                               type="number"
                               min="0"
@@ -586,13 +610,13 @@ function EditTab({
                               title={weekLockedByPast(w)
                                 ? "Past week editing is disabled. Enable in Settings > Configurations."
                                 : "Editing the total redistributes across owners by contribution %"}
-                              className={`w-full px-1 py-1 text-center text-xs font-semibold border rounded focus:outline-none min-w-[72px] ${
+                              className={`w-full px-1 py-1 text-center text-xs font-semibold border rounded focus:outline-none ${cellMinW} ${
                                 isLocked
                                   ? "border-gray-100 bg-gray-50 text-gray-400 cursor-not-allowed"
                                   : "border-gray-200 bg-white text-gray-800 focus:ring-1 focus:ring-accent-400"
                               }`}
                             />
-                            {breakdownUnit && <span className="text-[9px] text-gray-400 flex-shrink-0">{breakdownUnit}</span>}
+                            {breakdownUnit && <span className="text-[9px] text-gray-400 flex-shrink-0 whitespace-nowrap">{breakdownUnit}</span>}
                           </div>
                         </td>
                       );
@@ -612,11 +636,12 @@ function EditTab({
                       return (
                         <td key={w} className="px-1 py-1.5 border-r border-gray-100 last:border-r-0">
                           <div className="flex items-center gap-0.5">
-                            {breakdownPrefix && <span className="text-[9px] text-gray-400 flex-shrink-0">{breakdownPrefix}</span>}
+                            {breakdownPrefix && <span className="text-[9px] text-gray-400 flex-shrink-0 whitespace-nowrap">{breakdownPrefix}</span>}
                             <select
                               value={norm}
                               onChange={e => setWeekBreakdown(w, e.target.value)}
-                              className="w-full px-1 py-1 text-center text-xs border rounded border-gray-200 focus:outline-none focus:ring-1 focus:ring-accent-400 min-w-[72px]"
+                              title={rawTip(form.weeklyBreakdown[w] ?? "")}
+                              className={`w-full px-1 py-1 text-center text-xs border rounded border-gray-200 focus:outline-none focus:ring-1 focus:ring-accent-400 ${cellMinW}`}
                             >
                               <option value={zeroStr}>0</option>
                               {targetStr && <option value={targetStr}>{toDisp(targetStr)}</option>}
@@ -624,7 +649,7 @@ function EditTab({
                                 <option value={norm}>{toDisp(norm)} (custom)</option>
                               )}
                             </select>
-                            {breakdownUnit && <span className="text-[9px] text-gray-400 flex-shrink-0">{breakdownUnit}</span>}
+                            {breakdownUnit && <span className="text-[9px] text-gray-400 flex-shrink-0 whitespace-nowrap">{breakdownUnit}</span>}
                           </div>
                         </td>
                       );
@@ -633,7 +658,7 @@ function EditTab({
                     return (
                     <td key={w} className="px-1 py-1.5 border-r border-gray-100 last:border-r-0">
                       <div className="flex items-center gap-0.5">
-                        {breakdownPrefix && <span className="text-[9px] text-gray-400 flex-shrink-0">{breakdownPrefix}</span>}
+                        {breakdownPrefix && <span className="text-[9px] text-gray-400 flex-shrink-0 whitespace-nowrap">{breakdownPrefix}</span>}
                         <input
                           type="number"
                           min="0"
@@ -641,14 +666,14 @@ function EditTab({
                           onChange={e => { setEditingCell({ key: `ind-${w}`, raw: e.target.value }); setWeekBreakdown(w, toRaw(e.target.value)); }}
                           onBlur={() => setEditingCell(null)}
                           readOnly={isLocked}
-                          title={weekLockedByPast(w) ? "Past week editing is disabled. Enable in Settings > Configurations." : undefined}
-                          className={`w-full px-1 py-1 text-center text-xs border rounded focus:outline-none min-w-[72px] ${
+                          title={weekLockedByPast(w) ? "Past week editing is disabled. Enable in Settings > Configurations." : rawTip(form.weeklyBreakdown[w] ?? "")}
+                          className={`w-full px-1 py-1 text-center text-xs border rounded focus:outline-none ${cellMinW} ${
                             isLocked
                               ? "border-gray-100 bg-gray-50 text-gray-400 cursor-not-allowed"
                               : "border-gray-200 focus:ring-1 focus:ring-accent-400"
                           }`}
                         />
-                        {breakdownUnit && <span className="text-[9px] text-gray-400 flex-shrink-0">{breakdownUnit}</span>}
+                        {breakdownUnit && <span className="text-[9px] text-gray-400 flex-shrink-0 whitespace-nowrap">{breakdownUnit}</span>}
                       </div>
                     </td>
                   );})}
@@ -672,7 +697,7 @@ function EditTab({
                         return (
                           <td key={w} className="px-1 py-1.5 border-r border-t border-gray-100 last:border-r-0">
                             <div className="flex items-center gap-0.5">
-                              {breakdownPrefix && <span className="text-[9px] text-gray-400 flex-shrink-0">{breakdownPrefix}</span>}
+                              {breakdownPrefix && <span className="text-[9px] text-gray-400 flex-shrink-0 whitespace-nowrap">{breakdownPrefix}</span>}
                               <input
                                 type="number"
                                 min="0"
@@ -682,14 +707,14 @@ function EditTab({
                                 readOnly={isLocked}
                                 title={weekLockedByPast(w)
                                   ? "Past week editing is disabled. Enable in Settings > Configurations."
-                                  : isStandalone ? "Standalone mode locks per-owner cells" : undefined}
-                                className={`w-full px-1 py-1 text-center text-xs border rounded focus:outline-none min-w-[72px] ${
+                                  : isStandalone ? "Standalone mode locks per-owner cells" : rawTip(ownerRow[w] ?? "")}
+                                className={`w-full px-1 py-1 text-center text-xs border rounded focus:outline-none ${cellMinW} ${
                                   isLocked
                                     ? "border-gray-100 bg-gray-50 text-gray-400 cursor-not-allowed"
                                     : "border-gray-200 focus:ring-1 focus:ring-accent-400"
                                 }`}
                               />
-                              {breakdownUnit && <span className="text-[9px] text-gray-400 flex-shrink-0">{breakdownUnit}</span>}
+                              {breakdownUnit && <span className="text-[9px] text-gray-400 flex-shrink-0 whitespace-nowrap">{breakdownUnit}</span>}
                             </div>
                           </td>
                         );
@@ -770,14 +795,18 @@ function UpdatesTab({
     kpi.measurementUnit === "Currency" && kpi.scaledDisplay
       ? getMultiplier(kpi.currency ?? "", kpi.targetScale ?? "")
       : 1;
-  const unitU = scaleMultU > 1 ? shortScaleLabel(kpi.targetScale) : "";
+  // Number KPI unit-of-measure (from Unit Master) for the Updates tab.
+  const numberUnitU = kpi.measurementUnit === "Number" ? (kpi.unit ?? "") : "";
+  const unitU = scaleMultU > 1 ? shortScaleLabel(kpi.targetScale) : numberUnitU;
   const curSymU = CURRENCIES.find(c => c.code === kpi.currency)?.symbol ?? "";
   const toDispU = (raw: number | string) =>
     scaleMultU > 1 ? scaleDownForDisplay(raw, kpi.currency ?? "", kpi.targetScale ?? "") : (typeof raw === "string" ? raw : String(raw));
   const toRawU = (input: string) =>
     scaleMultU > 1 ? scaleUpFromInput(input, kpi.currency ?? "", kpi.targetScale ?? "") : input;
   const fmtTargetU = (raw: number) => (scaleMultU > 1 ? toDispU(raw) : fmt(raw));
-  const unitHintU = scaleMultU > 1 ? ` (in ${curSymU} ${kpi.targetScale})` : "";
+  const unitHintU = scaleMultU > 1
+    ? ` (in ${curSymU} ${kpi.targetScale})`
+    : numberUnitU ? ` (in ${numberUnitU})` : "";
   const [valBuf, setValBuf] = useState<{ key: string; raw: string } | null>(null);
 
   function handleWeekChange(weekNumber: number, field: "value" | "notes", val: string) {

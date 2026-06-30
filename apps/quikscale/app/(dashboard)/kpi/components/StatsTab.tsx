@@ -25,15 +25,20 @@ export function StatsTab({ kpi }: { kpi: KPIRow }) {
   // Scaled-display: when the KPI's toggle is on, currency values render in the
   // scale unit (₹ Cr); otherwise raw full numbers (today's behaviour).
   const scaledStat = kpi.measurementUnit === "Currency" && !!kpi.scaledDisplay && !!kpi.targetScale;
-  const fmtStat = (v: number | null | undefined): string =>
-    scaledStat
-      ? formatScaledKpiValue(v, {
-          measurementUnit: kpi.measurementUnit,
-          currency: kpi.currency,
-          targetScale: kpi.targetScale,
-          scaledDisplay: true,
-        })
-      : fmt(v);
+  // Number KPI unit-of-measure (from Unit Master, e.g. "lb") — appended to full
+  // numbers so Stats reads "16 lb", "2 / 13 lb".
+  const numberUnit = kpi.measurementUnit === "Number" ? (kpi.unit ?? "") : "";
+  const fmtStat = (v: number | null | undefined): string => {
+    if (scaledStat)
+      return formatScaledKpiValue(v, {
+        measurementUnit: kpi.measurementUnit,
+        currency: kpi.currency,
+        targetScale: kpi.targetScale,
+        scaledDisplay: true,
+      });
+    const base = fmt(v);
+    return numberUnit && v != null ? `${base} ${numberUnit}` : base;
+  };
   // kpi.target is the user-set quarterly target; kpi.qtdGoal is a derived aggregate
   // that can lag behind after a target edit. Use kpi.target as the primary.
   const target = kpi.target ?? kpi.qtdGoal ?? 0;
