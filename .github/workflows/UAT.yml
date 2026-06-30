@@ -15,22 +15,96 @@ permissions:
   packages: write
 
 jobs:
+  detect-changes:
+    name: Detect Changed Apps
+    runs-on: ubuntu-latest
+
+    outputs:
+      apps: ${{ steps.set-matrix.outputs.apps }}
+      run_build: ${{ steps.set-matrix.outputs.run_build }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Detect changes
+        id: filter
+        uses: dorny/paths-filter@v3
+        with:
+          filters: |
+            shared:
+              - 'packages/**'
+              - 'package.json'
+              - 'package-lock.json'
+              - 'turbo.json'
+
+            quikit:
+              - 'apps/quikit/**'
+
+            auth:
+              - 'apps/auth/**'
+
+            admin:
+              - 'apps/admin/**'
+
+            quikscale:
+              - 'apps/quikscale/**'
+
+            quiktrack:
+              - 'apps/quiktrack/**'
+
+            quikhrms:
+              - 'apps/quikhrms/**'
+
+            quikinfra:
+              - 'apps/quikinfra/**'
+
+            quikcrm:
+              - 'apps/quikcrm/**'
+
+      - name: Generate matrix
+        id: set-matrix
+        shell: bash
+        run: |
+          APPS=()
+          ALL=(quikit auth admin quikscale quiktrack quikhrms quikinfra quikcrm)
+
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ] || [ "${{ steps.filter.outputs.shared }}" = "true" ]; then
+            APPS=("${ALL[@]}")
+          else
+            [ "${{ steps.filter.outputs.quikit }}" = "true" ] && APPS+=("quikit")
+            [ "${{ steps.filter.outputs.auth }}" = "true" ] && APPS+=("auth")
+            [ "${{ steps.filter.outputs.admin }}" = "true" ] && APPS+=("admin")
+            [ "${{ steps.filter.outputs.quikscale }}" = "true" ] && APPS+=("quikscale")
+            [ "${{ steps.filter.outputs.quiktrack }}" = "true" ] && APPS+=("quiktrack")
+            [ "${{ steps.filter.outputs.quikhrms }}" = "true" ] && APPS+=("quikhrms")
+            [ "${{ steps.filter.outputs.quikinfra }}" = "true" ] && APPS+=("quikinfra")
+            [ "${{ steps.filter.outputs.quikcrm }}" = "true" ] && APPS+=("quikcrm")
+          fi
+
+          echo "Selected apps: ${APPS[@]}"
+
+          if [ ${#APPS[@]} -eq 0 ]; then
+            echo "apps=[]" >> "$GITHUB_OUTPUT"
+            echo "run_build=false" >> "$GITHUB_OUTPUT"
+          else
+            JSON=$(printf '%s\n' "${APPS[@]}" | jq -R . | jq -s -c .)
+            echo "apps=$JSON" >> "$GITHUB_OUTPUT"
+            echo "run_build=true" >> "$GITHUB_OUTPUT"
+          fi
+
   build:
     name: Build ${{ matrix.app }}
+    needs: detect-changes
+    if: needs.detect-changes.outputs.run_build == 'true'
     runs-on: ubuntu-latest
 
     strategy:
       fail-fast: false
       matrix:
-        app:
-          - quikit
-          - auth
-          - admin
-          - quikscale
-          - quiktrack
-          - quikhrms
-          - quikinfra
-          - quikcrm
+        app: ${{ fromJson(needs.detect-changes.outputs.apps) }}
 
     steps:
       - name: Checkout
