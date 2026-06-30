@@ -175,10 +175,11 @@ export function weeklyTargetForWeek(
     target?: number | null;
   },
   week: number,
+  weeksPerQuarter: number = 13,
 ): number {
   const explicit = kpi.weeklyTargets?.[String(week)];
   if (explicit != null) return explicit;
-  return (kpi.qtdGoal ?? kpi.target ?? 0) / 13;
+  return (kpi.qtdGoal ?? kpi.target ?? 0) / weeksPerQuarter;
 }
 
 export function weekCellColors(
@@ -186,8 +187,9 @@ export function weekCellColors(
   qtdGoal: number | null | undefined,
   fallbackTarget: number | null | undefined = null,
   reverse: boolean = false,
+  weeksPerQuarter: number = 13,
 ): { bg: string; text: string; label: string } {
-  const weeklyTarget = ((qtdGoal ?? fallbackTarget ?? 0)) / 13;
+  const weeklyTarget = ((qtdGoal ?? fallbackTarget ?? 0)) / weeksPerQuarter;
   const isUpdated = val !== null && val !== undefined;
   const numVal = isUpdated ? val : 0;
   const color: ColorResult = getColorByPercentage(numVal, weeklyTarget, isUpdated, reverse);

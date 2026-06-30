@@ -6,6 +6,7 @@ import { withOrgAuthForResource } from "@/lib/api/withOrgAuth";
 const auth = withOrgAuthForResource("kpi", "KPI");
 import { getPastWeekFlags, getCurrentFiscalWeekFromDB } from "@/lib/utils/featureFlags";
 import { isWeekBeforeEditableWindow, earliestEditableWeek } from "@/lib/utils/weekLock";
+import { MAX_WEEKS_PER_QUARTER } from "@/lib/utils/fiscal";
 import { audit, requestContext, classifyUpdateAction, diffFields, KPI_AUDIT_FIELDS } from "@/lib/audit";
 import { notifyKPIReplacement } from "@/lib/services/kpiNotifications";
 
@@ -67,7 +68,7 @@ async function syncTeamTargetToChildren(teamKpiId: string) {
     const childZeroWeeks = Object.entries(childWeekly)
       .filter(([, v]) => v === 0)
       .map(([w]) => parseInt(w, 10))
-      .filter((n) => Number.isFinite(n) && n >= 1 && n <= 13);
+      .filter((n) => Number.isFinite(n) && n >= 1 && n <= MAX_WEEKS_PER_QUARTER);
     if (childZeroWeeks.length > 0) {
       await db.kPIWeeklyValue.updateMany({
         where: { kpiId: child.id, weekNumber: { in: childZeroWeeks } },
@@ -426,7 +427,7 @@ export const PUT = auth.update<{ id: string }>(async ({ orgId, userId }, req, { 
     const zeroWeeks = Object.entries(wt)
       .filter(([, v]) => v === 0)
       .map(([w]) => parseInt(w, 10))
-      .filter((n) => Number.isFinite(n) && n >= 1 && n <= 13);
+      .filter((n) => Number.isFinite(n) && n >= 1 && n <= MAX_WEEKS_PER_QUARTER);
     if (zeroWeeks.length > 0) {
       await db.kPIWeeklyValue.updateMany({
         where: { kpiId: params.id, weekNumber: { in: zeroWeeks } },

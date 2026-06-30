@@ -11,6 +11,7 @@ import {
   RightPanel, RightPanelFooter, RightPanelCancelButton, RightPanelSubmitButton, Pagination,
 } from "@quikit/ui";
 import { useResourcePermissions } from "@/lib/hooks/useResourcePermissions";
+import { useCustomQuarterSettings } from "@/lib/hooks/useFeatureFlags";
 import { notify } from "@/lib/utils/notify";
 
 /* ─── Types ─────────────────────────────────────────────────────────────────── */
@@ -20,12 +21,16 @@ interface QuarterRow {
   quarter:            string;
   startDate:          string;
   endDate:            string;
+  weekCount:          number;
   createdAt:          string;
   updatedAt:          string;
   createdBy:          string;
   createdByName:      string;
   createdByInitials:  string;
 }
+
+/** Days of the week for the (informational) weekly meeting day picker. */
+const WEEKDAYS = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"];
 
 /* ─── Constants ──────────────────────────────────────────────────────────────── */
 const QUARTERS = ["Q1", "Q2", "Q3", "Q4"];
@@ -60,7 +65,7 @@ function getCurrentQuarterAndWeek(rows: QuarterRow[]): { quarter: string; week: 
     const e = new Date(r.endDate);   e.setHours(23, 59, 59, 999);
     if (today >= s && today <= e) {
       const weekMs = 7 * 24 * 60 * 60 * 1000;
-      const week   = Math.min(13, Math.max(1, Math.floor((today.getTime() - s.getTime()) / weekMs) + 1));
+      const week   = Math.min(r.weekCount ?? 13, Math.max(1, Math.floor((today.getTime() - s.getTime()) / weekMs) + 1));
       return { quarter: r.quarter, week };
     }
   }
@@ -90,26 +95,42 @@ function EditPanel({
   /** RBAC v2 — when denied, fields are disabled and Save is hidden. */
   canUpdate?: boolean;
 }) {
+  const customEnabled = useCustomQuarterSettings();
   const [startDate, setStartDate] = useState("");
+  const [weeks,     setWeeks]     = useState("13");
   const [saving,    setSaving]    = useState(false);
   const [error,     setError]     = useState("");
 
   useEffect(() => {
     if (open && row) {
       setStartDate(toInputDate(row.startDate));
+      setWeeks(String(row.weekCount ?? 13));
       setError("");
     }
   }, [open, row]);
 
+  const isQ1Row = row?.quarter === "Q1";
+
   async function handleSubmit() {
-    if (!startDate) { setError("Start date is required."); return; }
+    // In custom mode, only Q1 needs a start date; other quarters chain off it.
+    if ((!customEnabled || isQ1Row) && !startDate) { setError("Start date is required."); return; }
+
+    const weeksNum = parseInt(weeks, 10);
+    if (customEnabled && (!Number.isFinite(weeksNum) || weeksNum < 1)) {
+      setError("Enter a valid number of weeks.");
+      return;
+    }
+
+    const body = customEnabled
+      ? { ...(isQ1Row ? { startDate } : {}), weekCount: weeksNum }
+      : { startDate };
 
     setSaving(true); setError("");
     try {
       const res  = await fetch(`/api/org/quarters/${row!.id}`, {
         method:  "PUT",
         headers: { "Content-Type": "application/json" },
-        body:    JSON.stringify({ startDate }),
+        body:    JSON.stringify(body),
       });
       const json = await res.json();
       if (!json.success) { setError(json.error || "Failed to save"); return; }
@@ -124,17 +145,19 @@ function EditPanel({
 
   if (!open || !row) return null;
 
-  const isQ1 = row.quarter === "Q1";
+  const weeksNumPreview = parseInt(weeks, 10) || 13;
 
-  // Live-calculate Q1 end date (91 days from start) and FY end
+  // Live-calculate this quarter's end date and FY end. In custom mode the
+  // quarter span is weeks×7 days; otherwise the legacy 91-day Q1 split.
   const parsedStart = startDate ? new Date(startDate) : null;
-  const q1EndPreview = parsedStart
-    ? new Date(new Date(startDate).setDate(parsedStart.getDate() + 90)) // 91 days = start + 90
+  const spanDays = customEnabled ? weeksNumPreview * 7 : 91;
+  const qEndPreview = parsedStart
+    ? new Date(new Date(startDate).setDate(parsedStart.getDate() + spanDays - 1))
     : null;
   const fyEndPreview = parsedStart
     ? new Date(new Date(startDate).setFullYear(parsedStart.getFullYear() + 1, parsedStart.getMonth(), parsedStart.getDate() - 1))
     : null;
-  const computedEnd = q1EndPreview ? fmtDate(q1EndPreview.toISOString()) : fmtDate(row.endDate);
+  const computedEnd = qEndPreview ? fmtDate(qEndPreview.toISOString()) : fmtDate(row.endDate);
 
   return (
     <RightPanel
@@ -142,7 +165,9 @@ function EditPanel({
       onClose={onClose}
       size="sm"
       title={`${row.quarter} · FY ${row.fiscalYear}-${String(row.fiscalYear + 1).slice(-2)}`}
-      subtitle="Change Q1 start date — all quarters will recalculate automatically"
+      subtitle={customEnabled
+        ? "Set this quarter's weeks (and Q1's start date) — following quarters recalculate automatically"
+        : "Change Q1 start date — all quarters will recalculate automatically"}
       footer={
         <RightPanelFooter>
           <RightPanelCancelButton onClick={onClose} />
@@ -162,18 +187,39 @@ function EditPanel({
               Read-only — your role doesn&apos;t grant update access on Quarter Settings.
             </div>
           )}
-          <fieldset disabled={!canUpdate} className={!canUpdate ? "opacity-70" : ""}>
-          <div>
-            <label className="text-xs font-medium text-gray-600 block mb-1.5">
-              Start Date <span className="text-red-400">*</span>
-            </label>
-            <input
-              type="date"
-              value={startDate}
-              onChange={e => { setStartDate(e.target.value); setError(""); }}
-              className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm text-gray-700 focus:outline-none focus:ring-2 focus:ring-accent-400"
-            />
-          </div>
+          <fieldset disabled={!canUpdate} className={!canUpdate ? "opacity-70 space-y-4" : "space-y-4"}>
+          {(!customEnabled || isQ1Row) && (
+            <div>
+              <label className="text-xs font-medium text-gray-600 block mb-1.5">
+                Start Date <span className="text-red-400">*</span>
+              </label>
+              <input
+                type="date"
+                value={startDate}
+                onChange={e => { setStartDate(e.target.value); setError(""); }}
+                className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm text-gray-700 focus:outline-none focus:ring-2 focus:ring-accent-400"
+              />
+            </div>
+          )}
+
+          {customEnabled && (
+            <div>
+              <label className="text-xs font-medium text-gray-600 block mb-1.5">
+                Number of weeks <span className="text-red-400">*</span>
+              </label>
+              <input
+                type="number"
+                min={1}
+                max={26}
+                value={weeks}
+                onChange={e => { setWeeks(e.target.value); setError(""); }}
+                className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm text-gray-700 focus:outline-none focus:ring-2 focus:ring-accent-400"
+              />
+              {!isQ1Row && (
+                <p className="text-[10px] text-gray-400 mt-1">This quarter starts the day after the previous one ends.</p>
+              )}
+            </div>
+          )}
 
           {/* End date read-only — live calculated */}
           <div>
@@ -184,8 +230,8 @@ function EditPanel({
             </div>
           </div>
 
-          {/* Live quarter preview */}
-          {parsedStart && fyEndPreview && (() => {
+          {/* Live quarter preview (legacy day-count split only) */}
+          {!customEnabled && parsedStart && fyEndPreview && (() => {
             const days = [91, 91, 91];
             const names = ["Q1", "Q2", "Q3", "Q4"];
             const preview: { name: string; start: Date; end: Date; days: number }[] = [];
@@ -277,9 +323,13 @@ function GenerateModal({
   /** ISO string of the latest endDate across all existing quarters (tenant-wide). */
   latestEndDate: string | null;
 }) {
+  const customEnabled = useCustomQuarterSettings();
   const [saving, setSaving] = useState(false);
   const [error,  setError]  = useState("");
   const [startDate, setStartDate] = useState("");
+  // Custom Quarter Settings: per-quarter weeks + informational meeting day.
+  const [weekCounts, setWeekCounts] = useState<string[]>(["13", "13", "13", "13"]);
+  const [meetingDay, setMeetingDay] = useState("Wednesday");
 
   // The phantom future-year placeholder lives inside `existingYears` (the API
   // injects it when the `enable_future_quarters` flag is on so it shows up in
@@ -343,9 +393,11 @@ function GenerateModal({
   const isLeapPreview = totalDaysPreview === 366;
   const q4DaysPreview = isLeapPreview ? 93 : 92;
 
-  // Generate quarter date ranges for preview
+  // Generate quarter date ranges for preview. Custom mode uses each quarter's
+  // weeks×7 days; legacy uses the 91/91/91/92(93) day-count split.
+  const customDays = weekCounts.map((w) => (parseInt(w, 10) || 13) * 7);
   const quarterPreviews = parsedStart ? (() => {
-    const days = [91, 91, 91, q4DaysPreview];
+    const days = customEnabled ? customDays : [91, 91, 91, q4DaysPreview];
     const names = ["Q1", "Q2", "Q3", "Q4"];
     const result: { name: string; start: Date; end: Date; days: number }[] = [];
     let cursor = new Date(parsedStart.getTime());
@@ -359,6 +411,12 @@ function GenerateModal({
     }
     return result;
   })() : [];
+  // In custom mode the FY length floats to the sum of the quarters' weeks.
+  const customFyEnd = quarterPreviews.length === 4 ? quarterPreviews[3].end : null;
+  const effectiveFyEnd = customEnabled ? customFyEnd : fyEndPreview;
+  const effectiveTotalDays = customEnabled
+    ? customDays.reduce((s, d) => s + d, 0)
+    : totalDaysPreview;
 
   const fyLabel = `FY ${derivedFY}-${String(derivedFY + 1).slice(-2)}`;
 
@@ -366,12 +424,19 @@ function GenerateModal({
     if (!startDate) { setError("Please select a start date."); return; }
     if (trulyExistingYears.includes(derivedFY)) { setError(`FY ${derivedFY}-${String(derivedFY + 1).slice(-2)} already exists.`); return; }
 
+    const customBody = customEnabled
+      ? {
+          weekCounts: weekCounts.map((w) => parseInt(w, 10) || 13),
+          weeklyMeetingDay: meetingDay,
+        }
+      : {};
+
     setSaving(true); setError("");
     try {
       const res = await fetch("/api/org/quarters", {
         method:  "POST",
         headers: { "Content-Type": "application/json" },
-        body:    JSON.stringify({ fiscalYear: derivedFY, startDate }),
+        body:    JSON.stringify({ fiscalYear: derivedFY, startDate, ...customBody }),
       });
       const json = await res.json();
       if (!json.success) { setError(json.error || "Failed to generate"); return; }
@@ -406,7 +471,9 @@ function GenerateModal({
         ) : (
         <>
         <p className="text-xs text-gray-500 mb-4">
-          Set the financial year start date. Quarters will be generated using day-count distribution.
+          {customEnabled
+            ? "Set the financial year start date, weekly meeting day, and weeks per quarter. Quarter dates are generated from the week counts."
+            : "Set the financial year start date. Quarters will be generated using day-count distribution."}
         </p>
 
         {/* Date picker */}
@@ -424,6 +491,45 @@ function GenerateModal({
           )}
         </div>
 
+        {/* Custom Quarter Settings: meeting day + per-quarter week counts */}
+        {customEnabled && (
+          <div className="mb-4 space-y-3">
+            <div>
+              <label className="text-xs font-medium text-gray-600 block mb-1.5">Weekly Meeting Day</label>
+              <select
+                value={meetingDay}
+                onChange={e => setMeetingDay(e.target.value)}
+                className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm text-gray-700 focus:outline-none focus:ring-2 focus:ring-accent-400"
+              >
+                {WEEKDAYS.map(d => <option key={d} value={d}>{d}</option>)}
+              </select>
+            </div>
+            <div>
+              <label className="text-xs font-medium text-gray-600 block mb-1.5">Weeks per quarter</label>
+              <div className="grid grid-cols-4 gap-2">
+                {["Q1", "Q2", "Q3", "Q4"].map((q, i) => (
+                  <div key={q}>
+                    <span className="text-[10px] text-gray-500 block mb-0.5">{q}</span>
+                    <input
+                      type="number"
+                      min={1}
+                      max={26}
+                      value={weekCounts[i]}
+                      onChange={e => {
+                        const next = [...weekCounts];
+                        next[i] = e.target.value;
+                        setWeekCounts(next);
+                        setError("");
+                      }}
+                      className="w-full border border-gray-200 rounded-lg px-2 py-1.5 text-sm text-gray-700 focus:outline-none focus:ring-2 focus:ring-accent-400"
+                    />
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+        )}
+
         {/* Preview */}
         {startDate && quarterPreviews.length > 0 && (
           <div className="mb-4 space-y-2">
@@ -432,12 +538,12 @@ function GenerateModal({
               <div>
                 <p className="text-xs font-bold text-gray-800">{fyLabel}</p>
                 <p className="text-[10px] text-gray-500 mt-0.5">
-                  {fmtDate(startDate)} → {fyEndPreview ? fmtDate(fyEndPreview.toISOString()) : "—"}
+                  {fmtDate(startDate)} → {effectiveFyEnd ? fmtDate(effectiveFyEnd.toISOString()) : "—"}
                 </p>
               </div>
               <div className="text-right">
-                <p className="text-xs font-semibold text-gray-700">{totalDaysPreview} days</p>
-                {isLeapPreview && <p className="text-[10px] text-amber-600 font-medium">Leap year</p>}
+                <p className="text-xs font-semibold text-gray-700">{effectiveTotalDays} days</p>
+                {!customEnabled && isLeapPreview && <p className="text-[10px] text-amber-600 font-medium">Leap year</p>}
               </div>
             </div>
 
@@ -485,6 +591,7 @@ function GenerateModal({
 /* ─── Main Page ──────────────────────────────────────────────────────────────── */
 export default function QuarterSettingsPage() {
   const { canCreate, canUpdate, canDelete } = useResourcePermissions("Quarter");
+  const customEnabled = useCustomQuarterSettings();
   const [rows,          setRows]          = useState<QuarterRow[]>([]);
   const [allYears,      setAllYears]      = useState<number[]>([]);
   const [loading,       setLoading]       = useState(true);
@@ -696,7 +803,9 @@ export default function QuarterSettingsPage() {
             </tr>
           ) : pagedQuarters.map((row, idx) => {
             const isQ1 = row.quarter === "Q1";
-            const canEdit = isQ1 && !fyHasData;
+            // Legacy: only Q1 editable. Custom: every quarter editable (weeks).
+            const rowEditable = customEnabled || isQ1;
+            const canEdit = rowEditable && !fyHasData;
             return (
             <tr
               key={row.id}
@@ -717,9 +826,9 @@ export default function QuarterSettingsPage() {
               <td className="px-3 py-2 border-b border-r border-gray-100 text-xs text-gray-700">{fmtDate(row.endDate)}</td>
               <td className="px-3 py-2 border-b border-r border-gray-100" onClick={e => e.stopPropagation()}>
                 <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                  {isQ1 && (
+                  {rowEditable && (
                     fyHasData ? (
-                      <span title="Start date cannot be changed — data exists for this fiscal year"
+                      <span title={customEnabled ? "Quarter cannot be changed — data exists for this fiscal year" : "Start date cannot be changed — data exists for this fiscal year"}
                         className="h-7 w-7 flex items-center justify-center rounded-lg text-gray-300 cursor-not-allowed">
                         <Lock className="h-3.5 w-3.5" />
                       </span>

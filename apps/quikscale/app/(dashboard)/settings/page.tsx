@@ -567,6 +567,7 @@ function ConfigurationsTab() {
   const addPastQuarterHabit = flags["add_past_quarter_habit"]?.enabled ?? false;
   const indianNumbering = flags["use_indian_numbering"]?.enabled ?? false;
   const wwwNotesRequired = flags["www_notes_required"]?.enabled ?? false;
+  const customQuarterSettings = flags["enable_custom_quarter_settings"]?.enabled ?? false;
 
   // Finalize: a lead-time window counted backwards from quarter end, BOUNDED by
   // the current quarter (you must finalize before it closes) → cap at days left.
@@ -711,6 +712,22 @@ function ConfigurationsTab() {
             />
             <span className="text-xs font-medium text-[var(--color-text-secondary)]">
               {wwwNotesRequired ? "Required" : "Optional"}
+            </span>
+          </div>
+        </div>
+
+        {/* Custom Quarter Settings */}
+        <div className="border border-[var(--color-border)] rounded-xl p-5 bg-[var(--color-bg-primary)]">
+          <h4 className="text-sm font-semibold text-[var(--color-text-primary)] mb-2">Custom Quarter Settings</h4>
+          <p className="text-xs text-[var(--color-text-secondary)] mb-4">Give each quarter a custom number of weeks (e.g. Q1 = 14, Q2 = 15) and edit quarter dates from Quarter Settings. When off, quarters stay 13 weeks.</p>
+          <div className="flex items-center justify-between">
+            <Toggle
+              enabled={customQuarterSettings}
+              onChange={() => toggleFlag("enable_custom_quarter_settings", customQuarterSettings)}
+              loading={savingKey === "enable_custom_quarter_settings"}
+            />
+            <span className="text-xs font-medium text-[var(--color-text-secondary)]">
+              {customQuarterSettings ? "Enabled" : "Disabled"}
             </span>
           </div>
         </div>

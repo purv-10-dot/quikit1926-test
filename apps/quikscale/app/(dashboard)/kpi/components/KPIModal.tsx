@@ -10,13 +10,13 @@ import { humanizeApiError } from "@/lib/utils/humanizeError";
 import { notify } from "@/lib/utils/notify";
 import type { KPIRow as KPI } from "@/lib/types/kpi";
 import type { User } from "@/lib/types/kpi";
-import { fiscalYearLabel, MEASUREMENT_UNITS, ALL_QUARTERS, ALL_WEEKS, weekDateLabel } from "@/lib/utils/fiscal";
+import { fiscalYearLabel, MEASUREMENT_UNITS, ALL_QUARTERS, weeksArray, weekDateLabel } from "@/lib/utils/fiscal";
 import { CURRENCIES, getScales, getMultiplier, formatActual, shortScaleLabel, scaleDownForDisplay, scaleUpFromInput } from "@/lib/utils/currency";
 import { UnitSelect } from "./UnitSelect";
 import { UserPicker, UserMultiPicker, RightPanel, RightPanelFooter, DropdownPicker } from "@quikit/ui";
 import { FormErrorBanner } from "@/components/forms/FormErrorBanner";
 import { usePastWeekFlags } from "@/lib/hooks/useFeatureFlags";
-import { useCurrentWeek, useWeekLabels } from "@/lib/hooks/useCurrentWeek";
+import { useCurrentWeek, useWeekLabels, useQuarterWeekCount } from "@/lib/hooks/useCurrentWeek";
 import { Lock, ChevronDown } from "lucide-react";
 import {
   buildBreakdown,
@@ -65,10 +65,13 @@ export function KPIModal({ mode, kpi, scope, teamId, defaultYear, defaultQuarter
     const displayTarget = multiplier > 1 ? storedTarget / multiplier : storedTarget;
     const divisionType = (kpi?.divisionType as "Cumulative" | "Standalone") ?? "Cumulative";
 
-    // Restore saved weekly targets or build fresh
+    // Restore saved weekly targets or build fresh. Restore maps over the saved
+    // keys directly so a custom quarter's full week set (>13) is preserved; the
+    // fresh path defaults to 13 and the weekCount effect rebuilds it once the
+    // quarter's real week count resolves.
     const savedWeeklyTargets = kpi?.weeklyTargets as Record<string, number> | null | undefined;
     const weeklyBreakdown: Record<number, string> = savedWeeklyTargets
-      ? Object.fromEntries(ALL_WEEKS.map(w => [w, String(savedWeeklyTargets[String(w)] ?? "")]))
+      ? Object.fromEntries(Object.keys(savedWeeklyTargets).map(k => [Number(k), String(savedWeeklyTargets[k] ?? "")]))
       : buildBreakdown(divisionType, storedTarget, measurementUnit);
 
     // Restore saved per-owner weekly targets (team KPI only).
@@ -78,7 +81,7 @@ export function KPIModal({ mode, kpi, scope, teamId, defaultYear, defaultQuarter
     if (savedOwnerTargets) {
       for (const [ownerId, weekMap] of Object.entries(savedOwnerTargets)) {
         weeklyOwnerBreakdown[ownerId] = Object.fromEntries(
-          ALL_WEEKS.map(w => [w, String(weekMap[String(w)] ?? "")])
+          Object.keys(weekMap).map(k => [Number(k), String(weekMap[k] ?? "")])
         ) as Record<number, string>;
       }
     }
@@ -198,7 +201,7 @@ export function KPIModal({ mode, kpi, scope, teamId, defaultYear, defaultQuarter
         const existing = newBreakdown[id];
         if (!existing || Object.keys(existing).length === 0) {
           const pct = parseFloat(f.ownerContributions[id]) || 0;
-          newBreakdown[id] = buildOwnerBreakdown(pct, tNum, f.divisionType, f.measurementUnit, firstEditableWeek);
+          newBreakdown[id] = buildOwnerBreakdown(pct, tNum, f.divisionType, f.measurementUnit, firstEditableWeek, weekCount);
         }
       }
       return { ...f, weeklyOwnerBreakdown: newBreakdown };
@@ -216,7 +219,7 @@ export function KPIModal({ mode, kpi, scope, teamId, defaultYear, defaultQuarter
       })();
       for (const id of f.ownerIds) {
         const pct = parseFloat(f.ownerContributions[id]) || 0;
-        newBreakdown[id] = buildOwnerBreakdown(pct, tNum, f.divisionType, f.measurementUnit, firstEditableWeek);
+        newBreakdown[id] = buildOwnerBreakdown(pct, tNum, f.divisionType, f.measurementUnit, firstEditableWeek, weekCount);
       }
       return { ...f, weeklyOwnerBreakdown: newBreakdown };
     });
@@ -249,7 +252,7 @@ export function KPIModal({ mode, kpi, scope, teamId, defaultYear, defaultQuarter
       let ownerRow = { ...existingRow, [weekNumber]: val };
 
       if (f.divisionType === "Cumulative") {
-        ownerRow = redistributeOwnerRemainder(ownerRow, weekNumber, ownerSubTarget, f.measurementUnit);
+        ownerRow = redistributeOwnerRemainder(ownerRow, weekNumber, ownerSubTarget, f.measurementUnit, weekCount);
       }
 
       return {
@@ -296,7 +299,7 @@ export function KPIModal({ mode, kpi, scope, teamId, defaultYear, defaultQuarter
 
         if (f.divisionType === "Cumulative") {
           const ownerSubTarget = totalTargetNum * (pct / 100);
-          ownerRow = redistributeOwnerRemainder(ownerRow, weekNumber, ownerSubTarget, f.measurementUnit);
+          ownerRow = redistributeOwnerRemainder(ownerRow, weekNumber, ownerSubTarget, f.measurementUnit, weekCount);
         }
 
         newOwnerBreakdown[id] = ownerRow;
@@ -328,7 +331,7 @@ export function KPIModal({ mode, kpi, scope, teamId, defaultYear, defaultQuarter
       const pct = parseFloat(f.ownerContributions[id]) || 0;
       // Re-derive each owner row from formula: past = 0, distribute owner
       // sub-target across [firstEditableWeek..13] with residue on Week 13.
-      out[id] = buildOwnerBreakdown(pct, tNum, f.divisionType, f.measurementUnit, firstEditableWeek);
+      out[id] = buildOwnerBreakdown(pct, tNum, f.divisionType, f.measurementUnit, firstEditableWeek, weekCount);
     }
     return out;
   }
@@ -390,6 +393,8 @@ export function KPIModal({ mode, kpi, scope, teamId, defaultYear, defaultQuarter
   const { canAddPastWeek, canEditPastWeek, loaded: flagsLoaded } = usePastWeekFlags();
   const currentWeek = useCurrentWeek(parseInt(form.year) || null, form.quarter);
   const weekLabels = useWeekLabels(parseInt(form.year) || null, form.quarter);
+  // Weeks in the selected quarter (Custom Quarter Settings). Defaults to 13.
+  const weekCount = useQuarterWeekCount(parseInt(form.year) || null, form.quarter);
   // For create mode, use canAddPastWeek; for edit mode, use canEditPastWeek.
   // Only evaluate after flags have loaded — before that, default is false anyway.
   const pastWeekAllowed = flagsLoaded && (mode === "create" ? canAddPastWeek : canEditPastWeek);
@@ -426,13 +431,38 @@ export function KPIModal({ mode, kpi, scope, teamId, defaultYear, defaultQuarter
       if (tNum <= 0) return f;
       const next = {
         ...f,
-        weeklyBreakdown: buildBreakdown(f.divisionType, tNum, f.measurementUnit, firstEditableWeek),
+        weeklyBreakdown: buildBreakdown(f.divisionType, tNum, f.measurementUnit, firstEditableWeek, weekCount),
       };
       if (isTeamScope) next.weeklyOwnerBreakdown = computeAllOwnerBreakdowns(next);
       return next;
     });
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [firstEditableWeek]);
+
+  // Custom Quarter Settings: when the quarter's week count resolves to a
+  // non-default value, rebuild the breakdown so the grid has the right number
+  // of cells. Create mode + Standalone only (Cumulative edit keeps the saved
+  // per-week plan; its saved targets already match its quarter's week count).
+  const weekCountResolved = useRef(false);
+  useEffect(() => {
+    if (weekCountResolved.current || weekCount === 13) return;
+    weekCountResolved.current = true;
+    setForm(f => {
+      const allowRebuild = mode === "create" || f.divisionType === "Standalone";
+      if (!allowRebuild) return f;
+      const tNum = f.measurementUnit === "Currency"
+        ? (parseFloat(f.target) || 0) * getMultiplier(f.currency, f.targetScale)
+        : parseFloat(f.target) || 0;
+      if (tNum <= 0) return f;
+      const next = {
+        ...f,
+        weeklyBreakdown: buildBreakdown(f.divisionType, tNum, f.measurementUnit, firstEditableWeek, weekCount),
+      };
+      if (isTeamScope) next.weeklyOwnerBreakdown = computeAllOwnerBreakdowns(next);
+      return next;
+    });
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [weekCount]);
 
   const createKPI = useCreateKPI();
   const updateKPI = useUpdateKPI(kpi?.id ?? "");
@@ -449,7 +479,7 @@ export function KPIModal({ mode, kpi, scope, teamId, defaultYear, defaultQuarter
       const n = val === "Currency"
         ? (parseFloat(f.target) || 0) * getMultiplier(f.currency, f.targetScale)
         : parseFloat(f.target) || 0;
-      const next = { ...f, measurementUnit: val, weeklyBreakdown: buildBreakdown(f.divisionType, n, val, firstEditableWeek) };
+      const next = { ...f, measurementUnit: val, weeklyBreakdown: buildBreakdown(f.divisionType, n, val, firstEditableWeek, weekCount) };
       if (isTeamScope) next.weeklyOwnerBreakdown = computeAllOwnerBreakdowns(next);
       return next;
     });
@@ -459,7 +489,7 @@ export function KPIModal({ mode, kpi, scope, teamId, defaultYear, defaultQuarter
     setForm(f => {
       const validScale = getScales(val).find(s => s.label === f.targetScale) ? f.targetScale : "";
       const n = (parseFloat(f.target) || 0) * getMultiplier(val, validScale);
-      const next = { ...f, currency: val, targetScale: validScale, weeklyBreakdown: buildBreakdown(f.divisionType, n, f.measurementUnit, firstEditableWeek) };
+      const next = { ...f, currency: val, targetScale: validScale, weeklyBreakdown: buildBreakdown(f.divisionType, n, f.measurementUnit, firstEditableWeek, weekCount) };
       if (isTeamScope) next.weeklyOwnerBreakdown = computeAllOwnerBreakdowns(next);
       return next;
     });
@@ -468,7 +498,7 @@ export function KPIModal({ mode, kpi, scope, teamId, defaultYear, defaultQuarter
   function setTargetScale(val: string) {
     setForm(f => {
       const n = (parseFloat(f.target) || 0) * getMultiplier(f.currency, val);
-      const next = { ...f, targetScale: val, weeklyBreakdown: buildBreakdown(f.divisionType, n, f.measurementUnit, firstEditableWeek) };
+      const next = { ...f, targetScale: val, weeklyBreakdown: buildBreakdown(f.divisionType, n, f.measurementUnit, firstEditableWeek, weekCount) };
       if (isTeamScope) next.weeklyOwnerBreakdown = computeAllOwnerBreakdowns(next);
       return next;
     });
@@ -476,7 +506,7 @@ export function KPIModal({ mode, kpi, scope, teamId, defaultYear, defaultQuarter
 
   function setDivisionType(dt: "Cumulative" | "Standalone") {
     setForm(f => {
-      const next = { ...f, divisionType: dt, weeklyBreakdown: buildBreakdown(dt, actualNum(f), f.measurementUnit, firstEditableWeek) };
+      const next = { ...f, divisionType: dt, weeklyBreakdown: buildBreakdown(dt, actualNum(f), f.measurementUnit, firstEditableWeek, weekCount) };
       if (isTeamScope) next.weeklyOwnerBreakdown = computeAllOwnerBreakdowns(next);
       return next;
     });
@@ -495,7 +525,7 @@ export function KPIModal({ mode, kpi, scope, teamId, defaultYear, defaultQuarter
       const next = {
         ...f,
         target: val,
-        weeklyBreakdown: buildBreakdown(f.divisionType, n, f.measurementUnit, firstEditableWeek),
+        weeklyBreakdown: buildBreakdown(f.divisionType, n, f.measurementUnit, firstEditableWeek, weekCount),
       };
       if (isTeamScope) next.weeklyOwnerBreakdown = computeAllOwnerBreakdowns(next);
       return next;
@@ -507,7 +537,7 @@ export function KPIModal({ mode, kpi, scope, teamId, defaultYear, defaultQuarter
     // `applyWeeklyEdit` in kpiModalHelpers. `actualNum` applies the currency scale.
     setForm(f => ({
       ...f,
-      weeklyBreakdown: applyWeeklyEdit(f.weeklyBreakdown, w, rawVal, actualNum(f), f.measurementUnit, f.divisionType),
+      weeklyBreakdown: applyWeeklyEdit(f.weeklyBreakdown, w, rawVal, actualNum(f), f.measurementUnit, f.divisionType, weekCount),
     }));
   }
 
@@ -596,7 +626,7 @@ export function KPIModal({ mode, kpi, scope, teamId, defaultYear, defaultQuarter
         // In individual scope: use the editable weeklyBreakdown as-is.
         weeklyTargets: isTeamScope && form.ownerIds.length > 0
           ? Object.fromEntries(
-              ALL_WEEKS.map(w => {
+              weeksArray(weekCount).map(w => {
                 const sum = form.ownerIds.reduce(
                   (s, id) => s + (parseFloat(form.weeklyOwnerBreakdown[id]?.[w] ?? "") || 0),
                   0
@@ -605,7 +635,7 @@ export function KPIModal({ mode, kpi, scope, teamId, defaultYear, defaultQuarter
               })
             )
           : Object.fromEntries(
-              ALL_WEEKS.map(w => [String(w), parseFloat(form.weeklyBreakdown[w]) || 0])
+              weeksArray(weekCount).map(w => [String(w), parseFloat(form.weeklyBreakdown[w]) || 0])
             ),
         // Per-owner weekly targets — only for team scope
         weeklyOwnerTargets: isTeamScope && form.ownerIds.length > 0
@@ -613,7 +643,7 @@ export function KPIModal({ mode, kpi, scope, teamId, defaultYear, defaultQuarter
               form.ownerIds.map(id => [
                 id,
                 Object.fromEntries(
-                  ALL_WEEKS.map(w => [String(w), parseFloat(form.weeklyOwnerBreakdown[id]?.[w] ?? "") || 0])
+                  weeksArray(weekCount).map(w => [String(w), parseFloat(form.weeklyOwnerBreakdown[id]?.[w] ?? "") || 0])
                 ),
               ])
             )
@@ -1066,7 +1096,7 @@ export function KPIModal({ mode, kpi, scope, teamId, defaultYear, defaultQuarter
             </div>
             {errors.divisionType && <p className="text-[10px] text-red-500 mt-0.5">{errors.divisionType}</p>}
             <p className="text-[10px] text-gray-400 mt-1">
-              {form.divisionType === "Cumulative" ? "Target split equally across 13 weeks" : "Each week carries the full target value"}
+              {form.divisionType === "Cumulative" ? `Target split equally across ${weekCount} weeks` : "Each week carries the full target value"}
             </p>
           </div>
 
@@ -1145,7 +1175,7 @@ export function KPIModal({ mode, kpi, scope, teamId, defaultYear, defaultQuarter
                           &nbsp;
                         </th>
                       )}
-                      {ALL_WEEKS.map(w => {
+                      {weeksArray(weekCount).map(w => {
                         const isPast = currentWeek !== null && w < currentWeek && !pastWeekAllowed;
                         return (
                         <th key={w} className={`px-2 py-1.5 text-center font-medium border-r border-gray-200 last:border-r-0 whitespace-nowrap ${isPast ? "text-gray-300" : "text-gray-500"}`}>
@@ -1168,7 +1198,7 @@ export function KPIModal({ mode, kpi, scope, teamId, defaultYear, defaultQuarter
                           Total
                         </td>
                       )}
-                      {ALL_WEEKS.map(w => {
+                      {weeksArray(weekCount).map(w => {
                         const isPast = currentWeek !== null && w < currentWeek && !pastWeekAllowed;
                         const isStandalone = form.divisionType === "Standalone";
                         const isLocked = isStandalone || isPast;
@@ -1290,7 +1320,7 @@ export function KPIModal({ mode, kpi, scope, teamId, defaultYear, defaultQuarter
                             {u.firstName} {u.lastName}
                             <span className="ml-1 text-gray-400">({pct.toFixed(0)}%)</span>
                           </td>
-                          {ALL_WEEKS.map(w => {
+                          {weeksArray(weekCount).map(w => {
                             const isPast = currentWeek !== null && w < currentWeek && !pastWeekAllowed;
                             const isStandalone = form.divisionType === "Standalone";
                             const isLocked = isStandalone || isPast;
@@ -1367,7 +1397,7 @@ export function KPIModal({ mode, kpi, scope, teamId, defaultYear, defaultQuarter
                         ? "Edit any cell — total updates as sum of owners; editing total redistributes by contribution %"
                         : `Standalone: each week = owner sub-target (fixed)`)
                     : (form.divisionType === "Cumulative"
-                        ? `Target split equally across ${firstEditableWeek > 1 ? `weeks ${firstEditableWeek}–13 (${14 - firstEditableWeek} weeks)` : "13 weeks"} — edit cells to override`
+                        ? `Target split equally across ${firstEditableWeek > 1 ? `weeks ${firstEditableWeek}–${weekCount} (${weekCount + 1 - firstEditableWeek} weeks)` : `${weekCount} weeks`} — edit cells to override`
                         : `Each week = full target${isCurrency ? ` (${currencyObj.symbol}${scaledTarget})` : ` (${scaledTarget})`}`)
                   }
                 </p>

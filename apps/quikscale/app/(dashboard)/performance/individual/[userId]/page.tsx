@@ -36,7 +36,10 @@ function Skeleton() {
 }
 
 function SparkDots({ weeklyValues }: { weeklyValues: { weekNumber: number; value: number | null }[] }) {
-  const weeks = Array.from({ length: 13 }, (_, i) => {
+  // Length derives from the data so custom quarters (>13 weeks) show every dot;
+  // defaults to 13 when there's no data beyond the legacy range.
+  const maxWeek = weeklyValues.reduce((m, v) => Math.max(m, v.weekNumber), 13);
+  const weeks = Array.from({ length: maxWeek }, (_, i) => {
     const wv = weeklyValues.find(v => v.weekNumber === i + 1);
     return wv?.value ?? null;
   });
@@ -208,7 +211,7 @@ export default function UserPerformancePage() {
                     </td>
                     <td className="px-3 py-2.5 border-b border-gray-100">
                       <div className="flex items-center gap-0.5">
-                        {Array.from({ length: 13 }, (_, i) => {
+                        {Array.from({ length: (p.weeklyStatuses ?? []).reduce((m: number, w: any) => Math.max(m, w.weekNumber), 13) }, (_, i) => {
                           const ws = p.weeklyStatuses?.find((w: any) => w.weekNumber === i + 1);
                           const dotColor = ws ? (
                             ws.status === "completed" || ws.status === "done" ? "bg-green-500" :

@@ -11,12 +11,12 @@ import { KPIListParams } from "@/lib/schemas/kpiSchema";
 import {
   getFiscalYear, getFiscalQuarter, fiscalYearLabel,
 } from "@/lib/utils/fiscal";
-import { useCurrentWeek, useWeekDateRange } from "@/lib/hooks/useCurrentWeek";
+import { useCurrentWeek, useWeekDateRange, useQuarterWeekCount } from "@/lib/hooks/useCurrentWeek";
 import { useNumberFormat } from "@/lib/hooks/useFeatureFlags";
 import { KPITable } from "./components/KPITable";
 import { KPIModal } from "./components/KPIModal";
 import { ALL_STATIC_COLS, COL_LABELS } from "./hooks/useTableColumns";
-import { ALL_WEEKS } from "@/lib/utils/fiscal";
+import { weeksArray } from "@/lib/utils/fiscal";
 import { FilterPicker, userToFilterOption, EmptyState, FiscalPeriodPicker, type FiscalQuarter, type ExportSelection } from "@quikit/ui";
 import { useFiscalYears } from "@/lib/hooks/useFiscalYears";
 import { useFilterContext } from "@/lib/context/FilterContext";
@@ -196,7 +196,8 @@ export default function IndividualKPIPage() {
   }
 
   // Hidden columns — now driven through Manage Columns modal via TablePrefs
-  const allTableCols = [...ALL_STATIC_COLS, ...ALL_WEEKS.map(w => `week${w}`)];
+  const weekCount = useQuarterWeekCount(filters.year ?? FISCAL_YEAR, filters.quarter ?? FISCAL_QUARTER);
+  const allTableCols = [...ALL_STATIC_COLS, ...weeksArray(weekCount).map(w => `week${w}`)];
   const tablePrefs = useTablePrefs("kpi");
   const [hiddenCols, setHiddenCols] = useState<Set<string>>(new Set(tablePrefs.hiddenCols));
   const [showColTrigger, setShowColTrigger] = useState<{ col: string; seq: number } | undefined>();
@@ -217,7 +218,7 @@ export default function IndividualKPIPage() {
   // by KPITable, not user-togglable data.
   const moduleColumns = [
     ...ALL_STATIC_COLS.map((key) => ({ key, label: COL_LABELS[key] ?? key })),
-    ...ALL_WEEKS.map((w) => ({ key: `week${w}`, label: `Week ${w}` })),
+    ...weeksArray(weekCount).map((w) => ({ key: `week${w}`, label: `Week ${w}` })),
   ];
   const visibleColKeys = moduleColumns.filter((c) => !hiddenCols.has(c.key)).map((c) => c.key);
 

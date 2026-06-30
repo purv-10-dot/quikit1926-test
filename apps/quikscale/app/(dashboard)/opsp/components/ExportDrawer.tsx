@@ -32,11 +32,11 @@ import { useCreatePriority } from "@/lib/hooks/usePriority";
 import { TeamSelect } from "../../priority/components/TeamSelect";
 import { invalidateEntity } from "@/lib/hooks/dashboardInvalidation";
 import { useExportGate, type DuplicateDecision } from "./ExportGateModals";
-import { useCurrentWeek, useWeekLabels } from "@/lib/hooks/useCurrentWeek";
+import { useCurrentWeek, useWeekLabels, useQuarterWeekCount } from "@/lib/hooks/useCurrentWeek";
 import { usePastWeekFlags } from "@/lib/hooks/useFeatureFlags";
 import { buildBreakdown, applyWeeklyEdit } from "../../kpi/components/kpiModalHelpers";
 import { WeeklyScroller } from "../../kpi/components/WeeklyScroller";
-import { ALL_WEEKS, fiscalYearLabel } from "@/lib/utils/fiscal";
+import { weeksArray, fiscalYearLabel } from "@/lib/utils/fiscal";
 import { PRIORITY_DEFAULT_STATUS } from "@/lib/constants/status";
 import { notify } from "@/lib/utils/notify";
 import {
@@ -284,6 +284,7 @@ export function ExportKPIDrawer({
 }: BaseProps & { rows: KPIAcctRow[] }) {
   const createKPI = useCreateKPI();
   const currentWeek = useCurrentWeek(year, quarter);
+  const weekCount = useQuarterWeekCount(year, quarter);
   // Distribution starts at the current fiscal week (earlier weeks get 0),
   // identical to the Add-New-KPI modal. `useCurrentWeek` resolves async, so
   // this is 1 on the first render and the resolve-effect below recomputes
@@ -372,7 +373,7 @@ export function ExportKPIDrawer({
         reverseColor: false,
         frequency: "weekly" as const,
         description: "",
-        weekly: buildBreakdown("Cumulative", target, "Number", firstEditableWeek),
+        weekly: buildBreakdown("Cumulative", target, "Number", firstEditableWeek, weekCount),
       })),
     );
     setStep(0);
@@ -389,7 +390,7 @@ export function ExportKPIDrawer({
   const recompute = (next: Partial<KPIStepForm>) => {
     const merged = { ...cur, ...next };
     const t = parseFloat(merged.target) || 0;
-    patch({ ...next, weekly: buildBreakdown(merged.divisionType, t, merged.measurementUnit, firstEditableWeek) });
+    patch({ ...next, weekly: buildBreakdown(merged.divisionType, t, merged.measurementUnit, firstEditableWeek, weekCount) });
   };
 
   // Steps whose weekly cells the user hand-edited — never clobber those.
@@ -406,10 +407,10 @@ export function ExportKPIDrawer({
   // KPI modal's "firstEditableWeek resolved" recalculation.
   const weekResolved = useRef(false);
   useEffect(() => {
-    if (weekResolved.current || firstEditableWeek <= 1) return;
+    if (weekResolved.current || (firstEditableWeek <= 1 && weekCount === 13)) return;
     weekResolved.current = true;
-    setForms((fs) => rebuildStepWeekly(fs, firstEditableWeek, (i) => editedWeekly.current.has(i)));
-  }, [firstEditableWeek]);
+    setForms((fs) => rebuildStepWeekly(fs, firstEditableWeek, (i) => editedWeekly.current.has(i), weekCount));
+  }, [firstEditableWeek, weekCount]);
 
   /** Build the create payload for one step form. */
   function kpiCreatePayload(f: KPIStepForm) {
@@ -431,7 +432,7 @@ export function ExportKPIDrawer({
       frequency: f.frequency,
       importedFromOpsp: true,
       weeklyTargets: Object.fromEntries(
-        ALL_WEEKS.map((w) => [String(w), parseFloat(f.weekly[w]) || 0]),
+        weeksArray(weekCount).map((w) => [String(w), parseFloat(f.weekly[w]) || 0]),
       ),
     } as Parameters<typeof createKPI.mutateAsync>[0];
   }
@@ -653,7 +654,7 @@ export function ExportKPIDrawer({
           ))}
         </div>
         <p className="text-[11px] text-gray-400 mt-1">
-          {cur.divisionType === "Cumulative" ? "Target split equally across 13 weeks" : "Full target every week"}
+          {cur.divisionType === "Cumulative" ? `Target split equally across ${weekCount} weeks` : "Full target every week"}
         </p>
       </div>
 
@@ -688,7 +689,7 @@ export function ExportKPIDrawer({
           <table className="border-collapse">
             <thead>
               <tr className="bg-gray-50">
-                {ALL_WEEKS.map((w) => (
+                {weeksArray(weekCount).map((w) => (
                   <th key={w} className="px-2 py-1.5 text-[10px] font-semibold text-gray-500 text-center min-w-[64px] border-r border-gray-100 last:border-r-0">
                     W{w}
                     <div className="text-[9px] font-normal text-gray-400">{weekLabels[w - 1] ?? ""}</div>
@@ -698,7 +699,7 @@ export function ExportKPIDrawer({
             </thead>
             <tbody>
               <tr>
-                {ALL_WEEKS.map((w) => {
+                {weeksArray(weekCount).map((w) => {
                   // Cell rules mirror the Individual KPI modal exactly:
                   //  - Past weeks are blocked (0) unless "Add Past Week Data" is on.
                   //  - Standalone cells are LOCKED at the full target (each week
@@ -714,7 +715,7 @@ export function ExportKPIDrawer({
                   const applyEdit = (raw: string) => {
                     markWeeklyEdited(step);
                     patch({
-                      weekly: applyWeeklyEdit(cur.weekly, w, raw, targetNum, cur.measurementUnit, cur.divisionType),
+                      weekly: applyWeeklyEdit(cur.weekly, w, raw, targetNum, cur.measurementUnit, cur.divisionType, weekCount),
                     });
                   };
 
@@ -776,7 +777,7 @@ export function ExportKPIDrawer({
         </WeeklyScroller>
         <p className="text-[10px] text-gray-400 mt-1">
           {cur.divisionType === "Cumulative"
-            ? `Target split equally across ${firstEditableWeek > 1 ? `weeks ${firstEditableWeek}–13 (${14 - firstEditableWeek} weeks)` : "13 weeks"} — edit cells to override`
+            ? `Target split equally across ${firstEditableWeek > 1 ? `weeks ${firstEditableWeek}–${weekCount} (${weekCount + 1 - firstEditableWeek} weeks)` : `${weekCount} weeks`} — edit cells to override`
             : `Each week = full target (${parseFloat(cur.target) || 0})`}
         </p>
       </div>
@@ -862,6 +863,7 @@ export function ExportPriorityDrawer({
   rows,
 }: BaseProps & { rows: QPriorRow[] }) {
   const createPriority = useCreatePriority();
+  const weekCount = useQuarterWeekCount(year, quarter);
   const queryClient = useQueryClient();
   const gate = useExportGate();
   const [search, setSearch] = useState("");
@@ -921,7 +923,7 @@ export function ExportPriorityDrawer({
         owner: ownerId,
         teamId: "",
         startWeek: 1,
-        endWeek: 13,
+        endWeek: weekCount,
         description: "",
       })),
     );
@@ -1151,13 +1153,13 @@ export function ExportPriorityDrawer({
         <div>
           <label className={fieldLabel}>Start Week <span className="text-red-500">*</span></label>
           <select className={inputCls} value={cur.startWeek} onChange={(e) => patch({ startWeek: Number(e.target.value) })}>
-            {ALL_WEEKS.map((w) => <option key={w} value={w}>Week {w}</option>)}
+            {weeksArray(weekCount).map((w) => <option key={w} value={w}>Week {w}</option>)}
           </select>
         </div>
         <div>
           <label className={fieldLabel}>End Week <span className="text-red-500">*</span></label>
           <select className={inputCls} value={cur.endWeek} onChange={(e) => patch({ endWeek: Number(e.target.value) })}>
-            {ALL_WEEKS.filter((w) => w >= cur.startWeek).map((w) => <option key={w} value={w}>Week {w}</option>)}
+            {weeksArray(weekCount).filter((w) => w >= cur.startWeek).map((w) => <option key={w} value={w}>Week {w}</option>)}
           </select>
         </div>
         <div className="col-span-2">

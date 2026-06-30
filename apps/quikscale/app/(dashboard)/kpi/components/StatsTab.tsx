@@ -19,7 +19,7 @@
 import type { KPIRow } from "@/lib/types/kpi";
 import { fmt, formatScaledKpiValue, getProgressBadgeColors } from "@/lib/utils/kpiHelpers";
 import { computeKPIStats, computeQtd } from "./kpiStats";
-import { useCurrentWeek } from "@/lib/hooks/useCurrentWeek";
+import { useCurrentWeek, useQuarterWeekCount } from "@/lib/hooks/useCurrentWeek";
 
 export function StatsTab({ kpi }: { kpi: KPIRow }) {
   // Scaled-display: when the KPI's toggle is on, currency values render in the
@@ -41,14 +41,16 @@ export function StatsTab({ kpi }: { kpi: KPIRow }) {
   // Progress panel below. Defaults to Cumulative (schema default).
   const divisionType: "Cumulative" | "Standalone" =
     kpi.divisionType === "Standalone" ? "Standalone" : "Cumulative";
-  const { filledWeeks, avgPerWeek, bestWeek, bestValue } = computeKPIStats(kpi);
+  // Weeks in this KPI's quarter (Custom Quarter Settings). Defaults to 13.
+  const weekCount = useQuarterWeekCount(kpi.year, kpi.quarter);
+  const { filledWeeks, avgPerWeek, bestWeek, bestValue } = computeKPIStats(kpi, weekCount);
 
-  // Week-of-quarter (1..13) — DB-driven, respects tenant's QuarterSetting.
+  // Week-of-quarter — DB-driven, respects tenant's QuarterSetting.
   const currentWeek = useCurrentWeek(kpi.year, kpi.quarter);
 
   // Compute QTD totals over [1 .. currentWeek-1]. Falls back to full-quarter
   // totals when currentWeek is unresolvable.
-  const { qtdGoal, qtdAchieved } = computeQtd(kpi, currentWeek, divisionType);
+  const { qtdGoal, qtdAchieved } = computeQtd(kpi, currentWeek, divisionType, weekCount);
 
   // Overall Progress — for Standalone, mirror the computed qtdAchieved (the
   // documented average) because the server-stamped `kpi.qtdAchieved` is a
@@ -74,7 +76,7 @@ export function StatsTab({ kpi }: { kpi: KPIRow }) {
   // We look at the most recent week (≤ currentWeek when known, else any week)
   // that has a non-null actual entered. If nothing's been entered yet, fall
   // back to "— / <current-week target>" so the tile still shows a target.
-  const weekAvg = target > 0 ? target / 13 : 0;
+  const weekAvg = target > 0 ? target / weekCount : 0;
   const wt = kpi.weeklyTargets ?? {};
   const weekTargetFor = (w: number): number => {
     const raw = wt[String(w)];

@@ -40,7 +40,7 @@ function ymd(d: Date): string {
 export const GET = withOrgAuth(async ({ orgId }) => {
   const rows = await db.quarterSetting.findMany({
     where: { orgId },
-    select: { fiscalYear: true, quarter: true, startDate: true, endDate: true },
+    select: { fiscalYear: true, quarter: true, startDate: true, endDate: true, weekCount: true },
     orderBy: [{ fiscalYear: "asc" }, { quarter: "asc" }],
   });
 
@@ -52,6 +52,7 @@ export const GET = withOrgAuth(async ({ orgId }) => {
         quarter: r.quarter,
         startDate: ymd(r.startDate),
         endDate: ymd(r.endDate),
+        weekCount: r.weekCount,
       })),
     },
   });

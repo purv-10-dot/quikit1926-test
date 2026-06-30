@@ -11,7 +11,7 @@
  */
 
 import type { KPIRow, WeeklyValue } from "@/lib/types/kpi";
-import { ALL_WEEKS } from "@/lib/utils/fiscal";
+import { weeksArray, DEFAULT_WEEKS_PER_QUARTER } from "@/lib/utils/fiscal";
 import { getColorByPercentage } from "@/lib/utils/colorLogic";
 
 export interface KPIStats {
@@ -21,13 +21,16 @@ export interface KPIStats {
   bestValue: number;
 }
 
-export function computeKPIStats(kpi: KPIRow): KPIStats {
+export function computeKPIStats(
+  kpi: KPIRow,
+  weeksPerQuarter: number = DEFAULT_WEEKS_PER_QUARTER,
+): KPIStats {
   const weekMap: Record<number, WeeklyValue> = {};
   (kpi.weeklyValues ?? []).forEach((w) => {
     weekMap[w.weekNumber] = w;
   });
 
-  const filledWeeks = ALL_WEEKS.filter(
+  const filledWeeks = weeksArray(weeksPerQuarter).filter(
     (w) => weekMap[w]?.value !== null && weekMap[w]?.value !== undefined,
   );
   const avgPerWeek =
@@ -78,6 +81,7 @@ export function computeQtd(
   kpi: KPIRow,
   currentWeek: number | null,
   divisionType: "Cumulative" | "Standalone" = "Cumulative",
+  weeksPerQuarter: number = DEFAULT_WEEKS_PER_QUARTER,
 ): {
   qtdGoal: number | null;
   qtdAchieved: number | null;
@@ -95,7 +99,7 @@ export function computeQtd(
   const priorWeeks = Array.from({ length: currentWeek - 1 }, (_, i) => i + 1);
   const wt = kpi.weeklyTargets ?? {};
   const totalTarget = kpi.target ?? kpi.qtdGoal ?? 0;
-  const flat = totalTarget > 0 ? totalTarget / 13 : 0;
+  const flat = totalTarget > 0 ? totalTarget / weeksPerQuarter : 0;
 
   // Resolve each prior week's target. Cumulative falls back to the flat
   // 1/13 split so missing weeks still contribute their share to the running
@@ -151,10 +155,11 @@ export function computeQtd(
 export function resolveProgressQtd(
   kpi: KPIRow,
   currentWeek: number | null,
+  weeksPerQuarter: number = DEFAULT_WEEKS_PER_QUARTER,
 ): { achieved: number; goal: number } {
   const divisionType: "Cumulative" | "Standalone" =
     kpi.divisionType === "Standalone" ? "Standalone" : "Cumulative";
-  const { qtdAchieved, qtdGoal } = computeQtd(kpi, currentWeek, divisionType);
+  const { qtdAchieved, qtdGoal } = computeQtd(kpi, currentWeek, divisionType, weeksPerQuarter);
   return { achieved: qtdAchieved ?? 0, goal: qtdGoal ?? kpi.target ?? 0 };
 }
 
@@ -164,8 +169,12 @@ export function resolveProgressQtd(
  * so Standalone KPIs use the re-derived per-week-average QTD instead of the
  * server's cumulative SUM. Returns 0 when the goal is non-positive.
  */
-export function kpiProgressPercent(kpi: KPIRow, currentWeek: number | null): number {
-  const { achieved, goal } = resolveProgressQtd(kpi, currentWeek);
+export function kpiProgressPercent(
+  kpi: KPIRow,
+  currentWeek: number | null,
+  weeksPerQuarter: number = DEFAULT_WEEKS_PER_QUARTER,
+): number {
+  const { achieved, goal } = resolveProgressQtd(kpi, currentWeek, weeksPerQuarter);
   return goal > 0 ? (achieved / goal) * 100 : 0;
 }
 
@@ -189,10 +198,11 @@ export function kpiProgressPercent(kpi: KPIRow, currentWeek: number | null): num
 export function resolveProgressOverall(
   kpi: KPIRow,
   currentWeek: number | null,
+  weeksPerQuarter: number = DEFAULT_WEEKS_PER_QUARTER,
 ): { achieved: number; goal: number } {
   const divisionType: "Cumulative" | "Standalone" =
     kpi.divisionType === "Standalone" ? "Standalone" : "Cumulative";
-  const std = divisionType === "Standalone" ? computeQtd(kpi, currentWeek, "Standalone") : null;
+  const std = divisionType === "Standalone" ? computeQtd(kpi, currentWeek, "Standalone", weeksPerQuarter) : null;
   const achieved = std != null ? (std.qtdAchieved ?? 0) : (kpi.qtdAchieved ?? 0);
   const goal = std != null ? (std.qtdGoal ?? kpi.target ?? 0) : (kpi.qtdGoal ?? kpi.target ?? 0);
   return { achieved, goal };
@@ -203,8 +213,12 @@ export function resolveProgressOverall(
  * goal). The number the dashboard KPI Overview card prints. Returns 0 when the
  * goal is non-positive.
  */
-export function kpiOverallPercent(kpi: KPIRow, currentWeek: number | null): number {
-  const { achieved, goal } = resolveProgressOverall(kpi, currentWeek);
+export function kpiOverallPercent(
+  kpi: KPIRow,
+  currentWeek: number | null,
+  weeksPerQuarter: number = DEFAULT_WEEKS_PER_QUARTER,
+): number {
+  const { achieved, goal } = resolveProgressOverall(kpi, currentWeek, weeksPerQuarter);
   return goal > 0 ? (achieved / goal) * 100 : 0;
 }
 
@@ -246,6 +260,7 @@ export interface KpiOverviewStats {
 export function computeKpiOverviewStats(
   kpis: KPIRow[],
   currentWeek: number | null,
+  weeksPerQuarter: number = DEFAULT_WEEKS_PER_QUARTER,
 ): KpiOverviewStats {
   let onTrack = 0;
   let atRisk = 0;
@@ -254,7 +269,7 @@ export function computeKpiOverviewStats(
   let entered = 0;
 
   for (const kpi of kpis) {
-    const { achieved, goal } = resolveProgressQtd(kpi, currentWeek);
+    const { achieved, goal } = resolveProgressQtd(kpi, currentWeek, weeksPerQuarter);
     const hasAnyWeeklyValue = (kpi.weeklyValues ?? []).some((wv) => wv.value != null);
     if (!hasAnyWeeklyValue) continue; // neutral/gray card — excluded
     entered += 1;
@@ -297,10 +312,14 @@ export function kpiOverviewVisible(
  * Weekly Goal for a specific week. Uses the saved per-week target when set,
  * otherwise falls back to the flat 1/13 split of the quarterly target.
  */
-export function weeklyGoalFor(kpi: KPIRow, weekNumber: number): number {
+export function weeklyGoalFor(
+  kpi: KPIRow,
+  weekNumber: number,
+  weeksPerQuarter: number = DEFAULT_WEEKS_PER_QUARTER,
+): number {
   const wt = kpi.weeklyTargets ?? {};
   const raw = wt[String(weekNumber)];
   if (typeof raw === "number") return raw;
   const total = kpi.target ?? kpi.qtdGoal ?? 0;
-  return total > 0 ? total / 13 : 0;
+  return total > 0 ? total / weeksPerQuarter : 0;
 }

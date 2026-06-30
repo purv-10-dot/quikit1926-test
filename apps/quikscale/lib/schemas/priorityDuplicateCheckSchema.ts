@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { MAX_WEEKS_PER_QUARTER } from "@/lib/utils/fiscal";
 
 /**
  * Request body for `POST /api/priority/duplicate-check`.
@@ -14,8 +15,8 @@ export const priorityDuplicateCheckSchema = z.object({
   owner: z.string().min(1, "Owner is required"),
   quarter: z.enum(["Q1", "Q2", "Q3", "Q4"]),
   year: z.number().int().min(2020).max(2099),
-  startWeek: z.number().int().min(1).max(13).nullable().optional(),
-  endWeek: z.number().int().min(1).max(13).nullable().optional(),
+  startWeek: z.number().int().min(1).max(MAX_WEEKS_PER_QUARTER).nullable().optional(),
+  endWeek: z.number().int().min(1).max(MAX_WEEKS_PER_QUARTER).nullable().optional(),
 });
 
 export type PriorityDuplicateCheckInput = z.infer<typeof priorityDuplicateCheckSchema>;

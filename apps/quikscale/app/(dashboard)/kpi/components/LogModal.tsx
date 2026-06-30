@@ -6,7 +6,7 @@ import { useUpdateKPI, useUpdateWeeklyValuesBatch, useNotes, useAddNote } from "
 import { useUsers } from "@/lib/hooks/useUsers";
 import { HistoryButton } from "@/components/audit/HistoryButton";
 import type { KPIRow, WeeklyValue, User } from "@/lib/types/kpi";
-import { fiscalYearLabel, weekDateLabel, ALL_WEEKS } from "@/lib/utils/fiscal";
+import { fiscalYearLabel, weekDateLabel, weeksArray, MAX_WEEKS_PER_QUARTER } from "@/lib/utils/fiscal";
 import { progressColor, fmt } from "@/lib/utils/kpiHelpers";
 import { UserPicker } from "@quikit/ui";
 import { CURRENCIES, getScales, getMultiplier, formatActual, shortScaleLabel, scaleDownForDisplay, scaleUpFromInput } from "@/lib/utils/currency";
@@ -14,7 +14,7 @@ import { WeeklyScroller } from "./WeeklyScroller";
 import { usePastWeekFlags } from "@/lib/hooks/useFeatureFlags";
 import { weeklyInputLockState, isWeekBeforeEditableWindow } from "@/lib/utils/weekLock";
 import { UnitSelect } from "./UnitSelect";
-import { useCurrentWeek, useWeekLabels } from "@/lib/hooks/useCurrentWeek";
+import { useCurrentWeek, useWeekLabels, useQuarterWeekCount } from "@/lib/hooks/useCurrentWeek";
 import { useMyPermissions } from "@/lib/hooks/useMyPermissions";
 import { humanizeApiError } from "@/lib/utils/humanizeError";
 import {
@@ -92,6 +92,7 @@ function EditTab({
     flagsLoaded && currentWeek !== null && isWeekBeforeEditableWindow(w, currentWeek, canEditPastWeek);
   const currentWeek = useCurrentWeek(parseInt(form.year) || null, form.quarter);
   const editTabWeekLabels = useWeekLabels(parseInt(form.year) || null, form.quarter);
+  const weekCount = useQuarterWeekCount(parseInt(form.year) || null, form.quarter);
   const firstEditableWeek = (currentWeek !== null && currentWeek > 1) ? currentWeek : 1;
   // Buffers the in-progress keystrokes of a scaled breakdown cell so decimals
   // (e.g. "2.5") aren't mangled by the raw↔unit round-trip mid-type.
@@ -111,12 +112,12 @@ function EditTab({
   function setTargetScale(val: string) {
     setForm(f => {
       const n = (parseFloat(f.target) || 0) * getMultiplier(f.currency, val);
-      return { ...f, targetScale: val, weeklyBreakdown: buildBreakdown(f.divisionType, n, f.measurementUnit, firstEditableWeek) };
+      return { ...f, targetScale: val, weeklyBreakdown: buildBreakdown(f.divisionType, n, f.measurementUnit, firstEditableWeek, weekCount) };
     });
   }
 
   function setDivisionType(dt: "Cumulative" | "Standalone") {
-    setForm(f => ({ ...f, divisionType: dt, weeklyBreakdown: buildBreakdown(dt, actualNum(f), f.measurementUnit, firstEditableWeek) }));
+    setForm(f => ({ ...f, divisionType: dt, weeklyBreakdown: buildBreakdown(dt, actualNum(f), f.measurementUnit, firstEditableWeek, weekCount) }));
   }
 
   function setTarget(val: string) {
@@ -124,7 +125,7 @@ function EditTab({
       const n = f.measurementUnit === "Currency"
         ? (parseFloat(val) || 0) * getMultiplier(f.currency, f.targetScale)
         : parseFloat(val) || 0;
-      return { ...f, target: val, weeklyBreakdown: buildBreakdown(f.divisionType, n, f.measurementUnit, firstEditableWeek) };
+      return { ...f, target: val, weeklyBreakdown: buildBreakdown(f.divisionType, n, f.measurementUnit, firstEditableWeek, weekCount) };
     });
   }
 
@@ -143,6 +144,7 @@ function EditTab({
         actualNum(f),
         f.measurementUnit,
         f.divisionType,
+        weekCount,
       ),
     }));
   }
@@ -155,7 +157,7 @@ function EditTab({
     const out: Record<string, Record<number, string>> = {};
     for (const id of f.ownerIds) {
       const pct = parseFloat(f.ownerContributions[id]) || 0;
-      out[id] = buildOwnerBreakdown(pct, tNum, f.divisionType, f.measurementUnit, firstEditableWeek);
+      out[id] = buildOwnerBreakdown(pct, tNum, f.divisionType, f.measurementUnit, firstEditableWeek, weekCount);
     }
     return out;
   }
@@ -385,7 +387,7 @@ function EditTab({
           ))}
         </div>
         <p className="text-[10px] text-gray-400 mt-1">
-          {form.divisionType === "Cumulative" ? "Target split equally across 13 weeks" : "Each week carries the full target value"}
+          {form.divisionType === "Cumulative" ? `Target split equally across ${weekCount} weeks` : "Each week carries the full target value"}
         </p>
       </div>
 
@@ -535,7 +537,7 @@ function EditTab({
                       &nbsp;
                     </th>
                   )}
-                  {ALL_WEEKS.map(w => {
+                  {weeksArray(weekCount).map(w => {
                     const isPastWeek = currentWeek !== null && w < currentWeek;
                     const isStandaloneEditable = form.divisionType === "Standalone" && isPastWeek && !weekLockedByPast(w);
                     const showLock = weekLockedByPast(w) && !isStandaloneEditable;
@@ -555,7 +557,7 @@ function EditTab({
                       Total
                     </td>
                   )}
-                  {ALL_WEEKS.map(w => {
+                  {weeksArray(weekCount).map(w => {
                     const isPastWeek = currentWeek !== null && w < currentWeek;
                     const isStandalone = form.divisionType === "Standalone";
                     const isStandalonePastEditable = isStandalone && isPastWeek && !weekLockedByPast(w);
@@ -664,7 +666,7 @@ function EditTab({
                         {u.firstName} {u.lastName}
                         <span className="ml-1 text-gray-400">({pct.toFixed(0)}%)</span>
                       </td>
-                      {ALL_WEEKS.map(w => {
+                      {weeksArray(weekCount).map(w => {
                         const isStandalone = form.divisionType === "Standalone";
                         const isLocked = isStandalone || weekLockedByPast(w);
                         return (
@@ -746,10 +748,11 @@ function UpdatesTab({
   const { canEditPastWeek, loaded: flagsLoaded } = usePastWeekFlags();
   const currentWeek = useCurrentWeek(kpi.year, kpi.quarter);
   const updatesTabWeekLabels = useWeekLabels(kpi.year, kpi.quarter);
+  const weekCount = useQuarterWeekCount(kpi.year, kpi.quarter);
 
   // Use live form target when available so the header and per-week targets
   // reflect editForm changes immediately (before save).
-  const weeklyTarget = (liveFormTarget ?? kpi.qtdGoal ?? kpi.target ?? 0) / 13;
+  const weeklyTarget = (liveFormTarget ?? kpi.qtdGoal ?? kpi.target ?? 0) / weekCount;
   const isTeamKPI = kpi.kpiLevel === "team";
   const ownerList = (kpi.owners ?? []) as Array<{ id: string; firstName: string; lastName: string }>;
   const contribs = (kpi.ownerContributions as Record<string, number> | null | undefined) ?? {};
@@ -825,7 +828,7 @@ function UpdatesTab({
                 : " You can only edit your own row. Other owners' values are shown read-only."}
             </p>
             <div className="space-y-3">
-              {ALL_WEEKS.map(w => {
+              {weeksArray(weekCount).map(w => {
                 const { isPast, isFuture, locked } = weeklyInputLockState({
                   week: w, currentWeek, canEditPastWeek, flagsLoaded,
                 });
@@ -920,7 +923,7 @@ function UpdatesTab({
               <div className="flex-1 text-[10px] text-gray-400 font-medium">Notes</div>
             </div>
             <div className="border border-gray-200 rounded-lg px-3 bg-white">
-              {ALL_WEEKS.map(w => {
+              {weeksArray(weekCount).map(w => {
                 const { locked } = weeklyInputLockState({
                   week: w, currentWeek, canEditPastWeek, flagsLoaded,
                 });
@@ -1011,6 +1014,7 @@ export function LogModal({ kpi, onClose, onRefresh, initialTab = "updates", canU
   // Current week-of-quarter for the header pill. DB-driven: respects tenant's
   // QuarterSetting.startDate (may be offset from Apr 1 / Jul 1 / etc.).
   const headerCurrentWeek = useCurrentWeek(kpi.year, kpi.quarter);
+  const weekCount = useQuarterWeekCount(kpi.year, kpi.quarter);
   // Past-week edit flag — when off (default), the batch endpoint will reject
   // any row with weekNumber < currentWeek. The save handler uses this to
   // skip past weeks instead of sending them and getting a confusing
@@ -1053,7 +1057,7 @@ export function LogModal({ kpi, onClose, onRefresh, initialTab = "updates", canU
     const displayTarget = multiplier > 1 ? storedTarget / multiplier : storedTarget;
     const savedWeeklyTargets = kpi.weeklyTargets as Record<string, number> | null | undefined;
     const weeklyBreakdown = savedWeeklyTargets
-      ? Object.fromEntries(ALL_WEEKS.map(w => [w, String(savedWeeklyTargets[String(w)] ?? "")])) as Record<number, string>
+      ? Object.fromEntries(Object.keys(savedWeeklyTargets).map(k => [Number(k), String(savedWeeklyTargets[k] ?? "")])) as Record<number, string>
       : buildBreakdown(divisionType, storedTarget, measurementUnit);
 
     // Team-KPI: rebuild ownerIds + contributions + per-owner weekly maps from
@@ -1068,7 +1072,7 @@ export function LogModal({ kpi, onClose, onRefresh, initialTab = "updates", canU
     if (savedOwnerTargets) {
       for (const [ownerId, weekMap] of Object.entries(savedOwnerTargets)) {
         teamWeeklyOwner[ownerId] = Object.fromEntries(
-          ALL_WEEKS.map(w => [w, String(weekMap[String(w)] ?? "")])
+          Object.keys(weekMap).map(k => [Number(k), String(weekMap[k] ?? "")])
         ) as Record<number, string>;
       }
     }
@@ -1129,7 +1133,7 @@ export function LogModal({ kpi, onClose, onRefresh, initialTab = "updates", canU
   // For team KPIs this is still used to SHOW the aggregate (sum of owners) but not submitted.
   const [weeklyState, setWeeklyState] = useState<Record<number, { value: string; notes: string }>>(() => {
     const map: Record<number, { value: string; notes: string }> = {};
-    for (let w = 1; w <= 13; w++) {
+    for (let w = 1; w <= MAX_WEEKS_PER_QUARTER; w++) {
       const wv = (kpi.weeklyValues ?? []).find(x => x.weekNumber === w);
       map[w] = { value: wv?.value?.toString() ?? "", notes: wv?.notes ?? "" };
     }
@@ -1146,7 +1150,7 @@ export function LogModal({ kpi, onClose, onRefresh, initialTab = "updates", canU
     for (const ownerId of ownerIds) {
       const list = byOwner[ownerId] ?? [];
       const map: Record<number, { value: string; notes: string }> = {};
-      for (let w = 1; w <= 13; w++) {
+      for (let w = 1; w <= MAX_WEEKS_PER_QUARTER; w++) {
         const wv = list.find(x => x.weekNumber === w);
         map[w] = { value: wv?.value?.toString() ?? "", notes: wv?.notes ?? "" };
       }
@@ -1208,7 +1212,7 @@ export function LogModal({ kpi, onClose, onRefresh, initialTab = "updates", canU
       const weeklyTargetsPayload = (() => {
         if (isTeamKPI && editForm.ownerIds.length > 0) {
           const out: Record<string, number> = {};
-          for (const w of ALL_WEEKS) {
+          for (const w of weeksArray(weekCount)) {
             let sum = 0;
             for (const id of editForm.ownerIds) {
               sum += parseFloat(editForm.weeklyOwnerBreakdown[id]?.[w] ?? "") || 0;
@@ -1247,7 +1251,7 @@ export function LogModal({ kpi, onClose, onRefresh, initialTab = "updates", canU
         kpiPayload.weeklyOwnerTargets = Object.fromEntries(
           editForm.ownerIds.map(id => {
             const row = editForm.weeklyOwnerBreakdown[id] ?? {};
-            return [id, Object.fromEntries(ALL_WEEKS.map(w => [String(w), parseFloat(row[w] ?? "") || 0]))];
+            return [id, Object.fromEntries(weeksArray(weekCount).map(w => [String(w), parseFloat(row[w] ?? "") || 0]))];
           })
         );
         // Per-owner Individual KPI name override — only owners with a non-empty
@@ -1289,7 +1293,7 @@ export function LogModal({ kpi, onClose, onRefresh, initialTab = "updates", canU
           // Skip owners the actor can't edit (to avoid 403 responses that would roll back the batch)
           const canEditThisOwner = canEditAnyOwner || ownerId === currentUserId;
           if (!canEditThisOwner) continue;
-          for (const w of ALL_WEEKS) {
+          for (const w of weeksArray(weekCount)) {
             if (isPastWeekLocked(w)) continue;
             const cur = teamWeeklyState[ownerId]?.[w];
             const prev = initialTeamWeeklyStateRef.current[ownerId]?.[w];
@@ -1299,7 +1303,7 @@ export function LogModal({ kpi, onClose, onRefresh, initialTab = "updates", canU
           }
         }
       } else {
-        for (const w of ALL_WEEKS) {
+        for (const w of weeksArray(weekCount)) {
           if (isPastWeekLocked(w)) continue;
           const cur = weeklyState[w];
           const prev = initialWeeklyStateRef.current[w];

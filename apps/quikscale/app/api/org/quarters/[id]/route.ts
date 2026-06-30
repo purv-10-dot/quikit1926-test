@@ -1,15 +1,16 @@
 import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { updateQuarterSchema } from "@/lib/schemas/quarterSchema";
-import { addDays } from "@/lib/utils/quarterGen";
+import { addDays, chainQuarterDates } from "@/lib/utils/quarterGen";
 import { withOrgAuthForModule } from "@/lib/api/withOrgAuth";
 import { fyHasData, fyLabel } from "@/lib/api/quartersFyHasData";
+import { getCustomQuarterEnabled } from "@/lib/utils/featureFlags";
 const withOrgAuth = withOrgAuthForModule("orgSetup.quarters");
 
 const DAYS_PER_QUARTER = 91; // 13 weeks
 
 function serializeQuarter(
-  q: { id: string; fiscalYear: number; quarter: string; startDate: Date; endDate: Date; createdAt: Date; updatedAt: Date; createdBy: string },
+  q: { id: string; fiscalYear: number; quarter: string; startDate: Date; endDate: Date; weekCount: number; createdAt: Date; updatedAt: Date; createdBy: string },
   user: { firstName: string; lastName: string } | null,
 ) {
   const name = user ? `${user.firstName} ${user.lastName}` : "—";
@@ -17,6 +18,7 @@ function serializeQuarter(
   return {
     id: q.id, fiscalYear: q.fiscalYear, quarter: q.quarter,
     startDate: q.startDate.toISOString(), endDate: q.endDate.toISOString(),
+    weekCount: q.weekCount,
     createdAt: q.createdAt.toISOString(), updatedAt: q.updatedAt.toISOString(),
     createdBy: q.createdBy, createdByName: name, createdByInitials: ini,
   };
@@ -28,12 +30,15 @@ export const PUT = withOrgAuth<{ id: string }>(async ({ orgId }, request, { para
     if (!existing)
       return NextResponse.json({ success: false, error: "Quarter not found" }, { status: 404 });
 
-    // Only Q1 can be edited
-    if (existing.quarter !== "Q1")
+    const customEnabled = await getCustomQuarterEnabled(orgId);
+
+    // Legacy mode: only Q1's start date can be changed (others auto-calculate).
+    // Custom mode: any quarter's weekCount (and Q1's start) can be edited.
+    if (!customEnabled && existing.quarter !== "Q1")
       return NextResponse.json({ success: false, error: "Only Q1 start date can be changed. All other quarters are auto-calculated." }, { status: 400 });
 
-    // Lock once any KPI / Priority / OPSP exists for this FY — changing the
-    // Q1 start would shift every quarter boundary and orphan existing data.
+    // Lock once any KPI / Priority / OPSP exists for this FY — changing a
+    // quarter boundary or week count would orphan existing data.
     if (await fyHasData(orgId, existing.fiscalYear))
       return NextResponse.json({
         success: false,
@@ -49,37 +54,6 @@ export const PUT = withOrgAuth<{ id: string }>(async ({ orgId }, request, { para
     }
     const startDateStr = parsed.data.startDate;
 
-    if (!startDateStr)
-      return NextResponse.json({ success: false, error: "Start date is required" }, { status: 400 });
-
-    const newQ1Start = new Date(startDateStr);
-    if (isNaN(newQ1Start.getTime()))
-      return NextResponse.json({ success: false, error: "Invalid start date" }, { status: 400 });
-
-    // FY end = Q1 start + 1 year - 1 day
-    const fyEnd = addDays(
-      new Date(Date.UTC(newQ1Start.getUTCFullYear() + 1, newQ1Start.getUTCMonth(), newQ1Start.getUTCDate())),
-      -1
-    );
-
-    // Recalculate all 4 quarters
-    const quarterDates: { quarter: string; startDate: Date; endDate: Date }[] = [];
-    let cursor = new Date(newQ1Start.getTime());
-
-    for (let i = 0; i < 4; i++) {
-      const qStart = new Date(cursor.getTime());
-      const qEnd = i === 3
-        ? fyEnd // Q4 ends at FY end (absorbs remaining days)
-        : addDays(qStart, DAYS_PER_QUARTER - 1); // Q1-Q3: 91 days each
-
-      quarterDates.push({
-        quarter: ["Q1", "Q2", "Q3", "Q4"][i],
-        startDate: qStart,
-        endDate: qEnd,
-      });
-      cursor = addDays(qEnd, 1);
-    }
-
     // Get all 4 quarters for this FY
     const allQuarters = await db.quarterSetting.findMany({
       where: { orgId, fiscalYear: existing.fiscalYear },
@@ -89,14 +63,60 @@ export const PUT = withOrgAuth<{ id: string }>(async ({ orgId }, request, { para
     if (allQuarters.length !== 4)
       return NextResponse.json({ success: false, error: "Incomplete FY — expected 4 quarters" }, { status: 400 });
 
-    // Update all 4 quarters
     const quarterOrder = ["Q1", "Q2", "Q3", "Q4"];
+    const byName = Object.fromEntries(allQuarters.map(q => [q.quarter, q]));
+    let quarterDates: { quarter: string; startDate: Date; endDate: Date; weekCount?: number }[];
+
+    if (customEnabled) {
+      // Custom: chain the FY from Q1's start using each quarter's weekCount,
+      // overriding the edited quarter's startDate (Q1 only) / weekCount.
+      let q1Start = byName["Q1"].startDate;
+      if (existing.quarter === "Q1" && startDateStr) {
+        const d = new Date(startDateStr);
+        if (isNaN(d.getTime()))
+          return NextResponse.json({ success: false, error: "Invalid start date" }, { status: 400 });
+        q1Start = d;
+      }
+      const weekCounts = quarterOrder.map(n => byName[n].weekCount ?? 13);
+      if (parsed.data.weekCount != null) {
+        weekCounts[quarterOrder.indexOf(existing.quarter)] = parsed.data.weekCount;
+      }
+      quarterDates = chainQuarterDates(q1Start, weekCounts);
+    } else {
+      if (!startDateStr)
+        return NextResponse.json({ success: false, error: "Start date is required" }, { status: 400 });
+      const newQ1Start = new Date(startDateStr);
+      if (isNaN(newQ1Start.getTime()))
+        return NextResponse.json({ success: false, error: "Invalid start date" }, { status: 400 });
+
+      // FY end = Q1 start + 1 year - 1 day
+      const fyEnd = addDays(
+        new Date(Date.UTC(newQ1Start.getUTCFullYear() + 1, newQ1Start.getUTCMonth(), newQ1Start.getUTCDate())),
+        -1
+      );
+
+      // Recalculate all 4 quarters (Q1-Q3: 91 days, Q4 absorbs remainder)
+      quarterDates = [];
+      let cursor = new Date(newQ1Start.getTime());
+      for (let i = 0; i < 4; i++) {
+        const qStart = new Date(cursor.getTime());
+        const qEnd = i === 3 ? fyEnd : addDays(qStart, DAYS_PER_QUARTER - 1);
+        quarterDates.push({ quarter: quarterOrder[i], startDate: qStart, endDate: qEnd });
+        cursor = addDays(qEnd, 1);
+      }
+    }
+
+    // Update all 4 quarters
     await Promise.all(
       quarterOrder.map((qName, i) => {
-        const q = allQuarters.find(r => r.quarter === qName)!;
+        const q = byName[qName];
         return db.quarterSetting.update({
           where: { id: q.id },
-          data: { startDate: quarterDates[i].startDate, endDate: quarterDates[i].endDate },
+          data: {
+            startDate: quarterDates[i].startDate,
+            endDate: quarterDates[i].endDate,
+            ...(quarterDates[i].weekCount != null && { weekCount: quarterDates[i].weekCount }),
+          },
         });
       })
     );

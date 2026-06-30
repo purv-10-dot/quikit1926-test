@@ -1,13 +1,19 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { getCurrentFiscalWeekFromStart } from "@/lib/utils/fiscal";
+import { getCurrentFiscalWeekFromStart, DEFAULT_WEEKS_PER_QUARTER, MAX_WEEKS_PER_QUARTER } from "@/lib/utils/fiscal";
 
 interface QuarterRow {
   fiscalYear: number;
   quarter: string;
   startDate: string;
   endDate: string;
+  weekCount?: number;
+}
+
+/** Week count for a cached quarter row, defaulting to the legacy 13. */
+function rowWeekCount(row: QuarterRow | undefined): number {
+  return row?.weekCount ?? DEFAULT_WEEKS_PER_QUARTER;
 }
 
 // Module-level cache
@@ -50,7 +56,7 @@ export function useCurrentWeek(year: number | null | undefined, quarter: string 
       await ensureLoaded();
       const match = cache?.find((q) => q.fiscalYear === year && q.quarter === quarter);
       if (match) {
-        setWeek(getCurrentFiscalWeekFromStart(match.startDate));
+        setWeek(getCurrentFiscalWeekFromStart(match.startDate, rowWeekCount(match)));
       } else {
         // Fallback: assume it's week 1 if we don't have data
         setWeek(1);
@@ -65,6 +71,35 @@ export function useCurrentWeek(year: number | null | undefined, quarter: string 
 export function invalidateCurrentWeekCache() {
   cache = null;
   pending = null;
+}
+
+/**
+ * Returns the number of weeks in a given (year, quarter) from the DB's
+ * QuarterSetting.weekCount. Defaults to 13 while loading or when the quarter is
+ * unknown, so callers can use it as a divisor / loop bound unconditionally.
+ *
+ * This is the primary hook every week-aware surface (KPI, Priority, Dashboard,
+ * OPSP) consumes to size its grid in Custom Quarter Settings mode.
+ */
+export function useQuarterWeekCount(
+  year: number | null | undefined,
+  quarter: string | null | undefined,
+): number {
+  const [count, setCount] = useState<number>(DEFAULT_WEEKS_PER_QUARTER);
+
+  useEffect(() => {
+    if (!year || !quarter) {
+      setCount(DEFAULT_WEEKS_PER_QUARTER);
+      return;
+    }
+    (async () => {
+      await ensureLoaded();
+      const match = cache?.find((q) => q.fiscalYear === year && q.quarter === quarter);
+      setCount(rowWeekCount(match));
+    })();
+  }, [year, quarter]);
+
+  return count;
 }
 
 /**
@@ -110,7 +145,8 @@ export function useWeekLabels(
       }
       const start = new Date(match.startDate);
       const out: string[] = [];
-      for (let w = 1; w <= 13; w++) {
+      const weekCount = rowWeekCount(match);
+      for (let w = 1; w <= weekCount; w++) {
         const ws = new Date(start);
         ws.setDate(ws.getDate() + (w - 1) * 7);
         const we = new Date(ws);
@@ -140,7 +176,7 @@ export function useWeekDateRange(
   const [range, setRange] = useState<string | null>(null);
 
   useEffect(() => {
-    if (!year || !quarter || !weekNumber || weekNumber < 1 || weekNumber > 13) {
+    if (!year || !quarter || !weekNumber || weekNumber < 1 || weekNumber > MAX_WEEKS_PER_QUARTER) {
       setRange(null);
       return;
     }

@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { MAX_WEEKS_PER_QUARTER } from "@/lib/utils/fiscal";
 
 // Shared field set for create/update (kept in one place to avoid drift)
 const kpiBaseFields = {
@@ -134,7 +135,7 @@ export const updateKPISchema = z
 // Phase 2: userId attributes the weekly value to a specific owner (team KPIs)
 // or to the KPI owner (individual KPIs — may be omitted and inferred server-side).
 export const weeklyValueSchema = z.object({
-  weekNumber: z.number().int().min(1).max(13),
+  weekNumber: z.number().int().min(1).max(MAX_WEEKS_PER_QUARTER),
   value: z.number().optional().nullable(),
   // No length cap — DB column is TEXT. Lifted because users were hitting
   // the previous 500-char limit on pasted weekly updates.
@@ -146,7 +147,7 @@ export const weeklyValueSchema = z.object({
 // Server runs per-input validation, permission check, past-week gate, and
 // returns per-input results so the client can surface partial failures.
 export const weeklyValueBatchSchema = z.object({
-  inputs: z.array(weeklyValueSchema).min(1).max(13 * 50), // up to 50 owners × 13 weeks
+  inputs: z.array(weeklyValueSchema).min(1).max(MAX_WEEKS_PER_QUARTER * 50), // up to 50 owners × max weeks
 });
 
 // KPI Note Schema
