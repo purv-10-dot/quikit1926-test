@@ -53,6 +53,7 @@ const DEFAULT_ALLOWED_ORIGINS = [
   "https://crm.quikit.ai",
   "https://social.quikit.ai",
   "https://quikinfra.quikit.ai",
+  "https://people.quikit.ai",
   // UAT custom domains (uat<app>.quikit.ai) — added alongside prod.
   "https://uatapps.quikit.ai",
   "https://uatscale.quikit.ai",
@@ -61,6 +62,7 @@ const DEFAULT_ALLOWED_ORIGINS = [
   "https://uatcrm.quikit.ai",
   "https://uatsocial.quikit.ai",
   "https://uatinfra.quikit.ai",
+  "https://uatpeople.quikit.ai",
 ];
 
 function allowedOrigins(): Set<string> {

@@ -1,0 +1,163 @@
+name: UAT-pipeline
+
+on:
+  push:
+    branches:
+      - UAT
+  workflow_dispatch:
+
+concurrency:
+  group: UAT-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+  packages: write
+
+jobs:
+  detect-changes:
+    name: Detect Changed Apps
+    runs-on: ubuntu-latest
+
+    outputs:
+      apps: ${{ steps.set-matrix.outputs.apps }}
+      run_build: ${{ steps.set-matrix.outputs.run_build }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Detect changes
+        id: filter
+        uses: dorny/paths-filter@v3
+        with:
+          # Compare against the branch's previous tip (the actual push delta).
+          # Without this, paths-filter diffs against the default branch (main),
+          # so any app where UAT is ahead of main (e.g. quikcrm) looks "changed"
+          # on every push. Fall back to HEAD for non-push events (e.g. dispatch),
+          # where the matrix is forced to all apps anyway.
+          base: ${{ github.event.before || github.sha }}
+          filters: |
+            shared:
+              - 'packages/**'
+              - 'package.json'
+              - 'package-lock.json'
+              - 'turbo.json'
+
+            quikit:
+              - 'apps/quikit/**'
+
+            auth:
+              - 'apps/auth/**'
+
+            admin:
+              - 'apps/admin/**'
+
+            quikscale:
+              - 'apps/quikscale/**'
+
+            quiktrack:
+              - 'apps/quiktrack/**'
+
+            quikhrms:
+              - 'apps/quikhrms/**'
+
+            quikinfra:
+              - 'apps/quikinfra/**'
+
+            quikcrm:
+              - 'apps/quikcrm/**'
+
+      - name: Generate matrix
+        id: set-matrix
+        shell: bash
+        run: |
+          APPS=()
+          ALL=(quikit auth admin quikscale quiktrack quikhrms quikinfra quikcrm)
+
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ] || [ "${{ steps.filter.outputs.shared }}" = "true" ]; then
+            APPS=("${ALL[@]}")
+          else
+            [ "${{ steps.filter.outputs.quikit }}" = "true" ] && APPS+=("quikit")
+            [ "${{ steps.filter.outputs.auth }}" = "true" ] && APPS+=("auth")
+            [ "${{ steps.filter.outputs.admin }}" = "true" ] && APPS+=("admin")
+            [ "${{ steps.filter.outputs.quikscale }}" = "true" ] && APPS+=("quikscale")
+            [ "${{ steps.filter.outputs.quiktrack }}" = "true" ] && APPS+=("quiktrack")
+            [ "${{ steps.filter.outputs.quikhrms }}" = "true" ] && APPS+=("quikhrms")
+            [ "${{ steps.filter.outputs.quikinfra }}" = "true" ] && APPS+=("quikinfra")
+            [ "${{ steps.filter.outputs.quikcrm }}" = "true" ] && APPS+=("quikcrm")
+          fi
+
+          echo "Selected apps: ${APPS[@]}"
+
+          if [ ${#APPS[@]} -eq 0 ]; then
+            echo "apps=[]" >> "$GITHUB_OUTPUT"
+            echo "run_build=false" >> "$GITHUB_OUTPUT"
+          else
+            JSON=$(printf '%s\n' "${APPS[@]}" | jq -R . | jq -s -c .)
+            echo "apps=$JSON" >> "$GITHUB_OUTPUT"
+            echo "run_build=true" >> "$GITHUB_OUTPUT"
+          fi
+
+  build:
+    name: Build ${{ matrix.app }}
+    needs: detect-changes
+    if: needs.detect-changes.outputs.run_build == 'true'
+    runs-on: ubuntu-latest
+
+    strategy:
+      fail-fast: false
+      matrix:
+        app: ${{ fromJson(needs.detect-changes.outputs.apps) }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Lowercase image owner
+        id: owner
+        run: |
+          echo "value=$(echo '${{ github.repository_owner }}' | tr '[:upper:]' '[:lower:]')" >> "$GITHUB_OUTPUT"
+      - name: Compute image metadata
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ghcr.io/${{ steps.owner.outputs.value }}/${{ matrix.app }}-runtime
+          tags: |
+            type=raw,value=build-${{ github.run_number }}
+            type=sha,prefix=sha-,format=short
+      - name: Build and Push Docker Image
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: apps/${{ matrix.app }}/Dockerfile
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha,scope=${{ matrix.app }}
+          cache-to: type=gha,scope=${{ matrix.app }},mode=max
+          platforms: linux/amd64
+
+          build-args: |
+            NEXT_PUBLIC_LAUNCHER_URL=https://uatapps.quikit.ai
+            NEXT_PUBLIC_AUTH_URL=https://uatauthn.quikit.ai
+            NEXT_PUBLIC_QUIKIT_URL=https://uatapps.quikit.ai
+            NEXT_PUBLIC_QUIKSCALE_URL=https://uatscale.quikit.ai
+            NEXT_PUBLIC_ADMIN_URL=https://uatorgadmin.quikit.ai
+            NEXT_PUBLIC_LOGIN_URL=https://uatauthn.quikit.ai/login
+            NEXT_PUBLIC_QUIKINFRA_URL=https://uatinfra.quikit.ai
+            NEXT_PUBLIC_QUIKCRM_URL=https://uatcrm.quikit.ai
+            NEXT_PUBLIC_QUIKHRMS_URL=https://uatpeople.quikit.ai
+            NEXTAUTH_URL=https://uatauthn.quikit.ai

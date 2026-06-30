@@ -11,7 +11,6 @@
 #   docker build --build-arg DATABASE_URL="postgresql://..." -f apps/quikcrm/Dockerfile -t quikcrm:latest .
 
 FROM node:20-alpine AS base
-
 # ─────────────────────────────────────────────────────────────────────────
 # Stage 1 — builder: prune monorepo down to just `quikcrm` + its workspace deps
 # ─────────────────────────────────────────────────────────────────────────
@@ -21,7 +20,6 @@ WORKDIR /app
 RUN npm install -g turbo
 COPY . .
 RUN turbo prune quikcrm --docker
-
 # ─────────────────────────────────────────────────────────────────────────
 # Stage 2 — installer: install pruned deps + generate Prisma + build
 # --ignore-scripts skips packages/database's postinstall (we run prisma
