@@ -11,7 +11,7 @@ import { notify } from "@/lib/utils/notify";
 import type { KPIRow as KPI } from "@/lib/types/kpi";
 import type { User } from "@/lib/types/kpi";
 import { fiscalYearLabel, MEASUREMENT_UNITS, ALL_QUARTERS, ALL_WEEKS, weekDateLabel } from "@/lib/utils/fiscal";
-import { CURRENCIES, getScales, getMultiplier, formatActual } from "@/lib/utils/currency";
+import { CURRENCIES, getScales, getMultiplier, formatActual, shortScaleLabel, scaleDownForDisplay, scaleUpFromInput } from "@/lib/utils/currency";
 import { UserPicker, UserMultiPicker, RightPanel, RightPanelFooter, DropdownPicker } from "@quikit/ui";
 import { FormErrorBanner } from "@/components/forms/FormErrorBanner";
 import { usePastWeekFlags } from "@/lib/hooks/useFeatureFlags";
@@ -105,6 +105,9 @@ export function KPIModal({ mode, kpi, scope, teamId, defaultYear, defaultQuarter
       status: kpi?.status ?? "active",
       currency,
       targetScale: savedScale,
+      // Scaled-display toggle: default ON for a Currency KPI that has a scale
+      // (so breakdown/Updates/Stats + grid/cards all read in the unit), else OFF.
+      scaledDisplay: kpi?.scaledDisplay ?? (measurementUnit === "Currency" && !!savedScale),
       divisionType,
       reverseColor: kpi?.reverseColor ?? false,
       frequency: (kpi?.frequency as "daily" | "weekly" | "monthly" | "yearly" | undefined) ?? "weekly",
@@ -580,6 +583,8 @@ export function KPIModal({ mode, kpi, scope, teamId, defaultYear, defaultQuarter
         divisionType: form.divisionType,
         currency: isCurr ? form.currency : null,
         targetScale: isCurr ? form.targetScale : null,
+        // Only meaningful for a Currency KPI with a scale; force false otherwise.
+        scaledDisplay: isCurr && !!form.targetScale ? form.scaledDisplay : false,
         reverseColor: form.reverseColor,
         frequency: form.frequency,
         // In team scope: derive weeklyTargets (total per week) as the live sum of per-owner cells.
@@ -646,6 +651,20 @@ export function KPIModal({ mode, kpi, scope, teamId, defaultYear, defaultQuarter
   const scaledTarget = isCurrency
     ? (parseFloat(form.target) || 0) * getMultiplier(form.currency, form.targetScale)
     : parseFloat(form.target) || 0;
+
+  // Scaled-display: when the toggle is on for a Currency KPI with a scale, the
+  // weekly breakdown cells SHOW + ACCEPT values in the scale unit (e.g. Cr)
+  // while `form.weeklyBreakdown` stays RAW. Passthrough when off / no scale.
+  const breakdownScaleMult = isCurrency && form.scaledDisplay ? getMultiplier(form.currency, form.targetScale) : 1;
+  const toDisp = (raw: number | string) =>
+    breakdownScaleMult > 1
+      ? scaleDownForDisplay(raw, form.currency, form.targetScale)
+      : (typeof raw === "string" ? raw : String(raw));
+  const toRaw = (input: string) =>
+    breakdownScaleMult > 1 ? scaleUpFromInput(input, form.currency, form.targetScale) : input;
+  const breakdownUnit = breakdownScaleMult > 1 ? shortScaleLabel(form.targetScale) : "";
+  // Currency symbol prefix shown on each scaled breakdown cell (₹2, $9, …).
+  const breakdownPrefix = breakdownScaleMult > 1 ? currencyObj.symbol : "";
 
   const panelTitle =
     mode === "create"
@@ -1016,6 +1035,8 @@ export function KPIModal({ mode, kpi, scope, teamId, defaultYear, defaultQuarter
             </div>
           )}
 
+          {/* Division Type + scaled-display toggle share one row. */}
+          <div className="flex flex-wrap gap-6 items-start">
           {/* Division Type — Status field removed per product spec; the form
               still preserves the existing KPI status on edit (and defaults to
               "active" on create) via the form state, but the UI no longer
@@ -1038,6 +1059,30 @@ export function KPIModal({ mode, kpi, scope, teamId, defaultYear, defaultQuarter
             <p className="text-[10px] text-gray-400 mt-1">
               {form.divisionType === "Cumulative" ? "Target split equally across 13 weeks" : "Each week carries the full target value"}
             </p>
+          </div>
+
+          {/* Scaled display toggle — only for a Currency KPI with a chosen scale.
+              When ON, the weekly breakdown, Updates, Stats, list + cards show and
+              accept values in the scale unit (e.g. ₹ Cr); stored values stay RAW. */}
+          {form.measurementUnit === "Currency" && !!form.targetScale && (
+            <div className="flex-1 min-w-0">
+              <label className="block text-xs font-medium text-gray-600 mb-1">Show values in {form.targetScale}</label>
+              <button
+                type="button"
+                role="switch"
+                aria-checked={form.scaledDisplay}
+                onClick={() => setForm(f => ({ ...f, scaledDisplay: !f.scaledDisplay }))}
+                className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${form.scaledDisplay ? "bg-accent-600" : "bg-gray-300"}`}
+              >
+                <span className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${form.scaledDisplay ? "translate-x-6" : "translate-x-1"}`} />
+              </button>
+              <p className="text-[10px] text-gray-400 mt-1">
+                {form.scaledDisplay
+                  ? `Weekly breakdown, Updates & Stats show in ${shortScaleLabel(form.targetScale)} (${currencyObj.symbol} ${form.targetScale}). Stored values stay exact.`
+                  : `Off — full numbers (e.g. ${currencyObj.symbol}25,000,000).`}
+              </p>
+            </div>
+          )}
           </div>
 
           {/* Color Coding Mode */}
@@ -1078,7 +1123,9 @@ export function KPIModal({ mode, kpi, scope, teamId, defaultYear, defaultQuarter
           {/* Target Breakdown (editable weekly) */}
           {scaledTarget > 0 && (
             <div>
-              <label className="block text-xs font-medium text-gray-600 mb-2">Target Breakdown (Weekly)</label>
+              <label className="block text-xs font-medium text-gray-600 mb-2">
+                Target Breakdown (Weekly){breakdownUnit ? ` — in ${currencyObj.symbol} ${breakdownUnit}` : ""}
+              </label>
               <WeeklyScroller>
                 <table className="w-full text-xs">
                   <thead>
@@ -1130,22 +1177,26 @@ export function KPIModal({ mode, kpi, scope, teamId, defaultYear, defaultQuarter
                             : sum.toFixed(2);
                           return (
                             <td key={w} className="px-1 py-1.5 border-r border-gray-100 last:border-r-0 bg-gray-50">
-                              <input
-                                type="number"
-                                min="0"
-                                value={editingCell?.key === `tot-${w}` ? editingCell.raw : displaySum}
-                                onChange={e => { setEditingCell({ key: `tot-${w}`, raw: e.target.value }); setTeamTotalWeekCell(w, e.target.value); }}
-                                onBlur={() => setEditingCell(null)}
-                                readOnly={isLocked}
-                                title={isPast
-                                  ? "Past week data entry is disabled. Enable in Settings > Configurations."
-                                  : "Editing the total redistributes across owners by contribution %"}
-                                className={`w-full px-1 py-1 text-center text-xs font-semibold border rounded focus:outline-none min-w-[72px] ${
-                                  isLocked
-                                    ? "border-gray-100 bg-gray-50 text-gray-400 cursor-not-allowed"
-                                    : "border-gray-200 bg-white text-gray-800 focus:ring-1 focus:ring-accent-400"
-                                }`}
-                              />
+                              <div className="flex items-center gap-0.5">
+                                {breakdownPrefix && <span className="text-[9px] text-gray-400 flex-shrink-0">{breakdownPrefix}</span>}
+                                <input
+                                  type="number"
+                                  min="0"
+                                  value={editingCell?.key === `tot-${w}` ? editingCell.raw : toDisp(displaySum)}
+                                  onChange={e => { setEditingCell({ key: `tot-${w}`, raw: e.target.value }); setTeamTotalWeekCell(w, toRaw(e.target.value)); }}
+                                  onBlur={() => setEditingCell(null)}
+                                  readOnly={isLocked}
+                                  title={isPast
+                                    ? "Past week data entry is disabled. Enable in Settings > Configurations."
+                                    : "Editing the total redistributes across owners by contribution %"}
+                                  className={`w-full px-1 py-1 text-center text-xs font-semibold border rounded focus:outline-none min-w-[72px] ${
+                                    isLocked
+                                      ? "border-gray-100 bg-gray-50 text-gray-400 cursor-not-allowed"
+                                      : "border-gray-200 bg-white text-gray-800 focus:ring-1 focus:ring-accent-400"
+                                  }`}
+                                />
+                                {breakdownUnit && <span className="text-[9px] text-gray-400 flex-shrink-0">{breakdownUnit}</span>}
+                              </div>
                             </td>
                           );
                         }
@@ -1173,36 +1224,44 @@ export function KPIModal({ mode, kpi, scope, teamId, defaultYear, defaultQuarter
                             : current;
                           return (
                             <td key={w} className="px-1 py-1.5 border-r border-gray-100 last:border-r-0">
-                              <select
-                                value={norm}
-                                onChange={e => setWeekBreakdown(w, e.target.value)}
-                                className="w-full px-1 py-1 text-center text-xs border border-gray-200 rounded bg-white focus:outline-none focus:ring-1 focus:ring-accent-400 min-w-[72px] cursor-pointer"
-                              >
-                                <option value={zeroStr}>0</option>
-                                <option value={targetStr}>{targetStr || "—"}</option>
-                                {norm !== zeroStr && norm !== "" && norm !== targetStr && (
-                                  <option value={norm}>{norm} (custom)</option>
-                                )}
-                              </select>
+                              <div className="flex items-center gap-0.5">
+                                {breakdownPrefix && <span className="text-[9px] text-gray-400 flex-shrink-0">{breakdownPrefix}</span>}
+                                <select
+                                  value={norm}
+                                  onChange={e => setWeekBreakdown(w, e.target.value)}
+                                  className="w-full px-1 py-1 text-center text-xs border border-gray-200 rounded bg-white focus:outline-none focus:ring-1 focus:ring-accent-400 min-w-[72px] cursor-pointer"
+                                >
+                                  <option value={zeroStr}>0</option>
+                                  <option value={targetStr}>{targetStr ? toDisp(targetStr) : "—"}</option>
+                                  {norm !== zeroStr && norm !== "" && norm !== targetStr && (
+                                    <option value={norm}>{toDisp(norm)} (custom)</option>
+                                  )}
+                                </select>
+                                {breakdownUnit && <span className="text-[9px] text-gray-400 flex-shrink-0">{breakdownUnit}</span>}
+                              </div>
                             </td>
                           );
                         }
                         return (
                           <td key={w} className="px-1 py-1.5 border-r border-gray-100 last:border-r-0">
-                            <input
-                              type="number"
-                              min="0"
-                              value={editingCell?.key === `ind-${w}` ? editingCell.raw : (form.weeklyBreakdown[w] ?? "")}
-                              onChange={e => { setEditingCell({ key: `ind-${w}`, raw: e.target.value }); setWeekBreakdown(w, e.target.value); }}
-                              onBlur={() => setEditingCell(null)}
-                              readOnly={isLocked}
-                              title={isPast ? "Past week data entry is disabled. Enable in Settings > Configurations." : undefined}
-                              className={`w-full px-1 py-1 text-center text-xs border rounded focus:outline-none min-w-[72px] ${
-                                isLocked
-                                  ? "border-gray-100 bg-gray-50 text-gray-400 cursor-not-allowed"
-                                  : "border-gray-200 focus:ring-1 focus:ring-accent-400"
-                              }`}
-                            />
+                            <div className="flex items-center gap-0.5">
+                              {breakdownPrefix && <span className="text-[9px] text-gray-400 flex-shrink-0">{breakdownPrefix}</span>}
+                              <input
+                                type="number"
+                                min="0"
+                                value={editingCell?.key === `ind-${w}` ? editingCell.raw : toDisp(form.weeklyBreakdown[w] ?? "")}
+                                onChange={e => { setEditingCell({ key: `ind-${w}`, raw: e.target.value }); setWeekBreakdown(w, toRaw(e.target.value)); }}
+                                onBlur={() => setEditingCell(null)}
+                                readOnly={isLocked}
+                                title={isPast ? "Past week data entry is disabled. Enable in Settings > Configurations." : undefined}
+                                className={`w-full px-1 py-1 text-center text-xs border rounded focus:outline-none min-w-[72px] ${
+                                  isLocked
+                                    ? "border-gray-100 bg-gray-50 text-gray-400 cursor-not-allowed"
+                                    : "border-gray-200 focus:ring-1 focus:ring-accent-400"
+                                }`}
+                              />
+                              {breakdownUnit && <span className="text-[9px] text-gray-400 flex-shrink-0">{breakdownUnit}</span>}
+                            </div>
                           </td>
                         );
                       })}
@@ -1245,36 +1304,44 @@ export function KPIModal({ mode, kpi, scope, teamId, defaultYear, defaultQuarter
                                 : current;
                               return (
                                 <td key={w} className="px-1 py-1.5 border-r border-t border-gray-100 last:border-r-0">
-                                  <select
-                                    value={norm}
-                                    onChange={e => setOwnerWeekCell(id, w, e.target.value)}
-                                    className="w-full px-1 py-1 text-center text-[11px] border border-gray-200 rounded bg-white focus:outline-none focus:ring-1 focus:ring-accent-400 min-w-[72px] cursor-pointer"
-                                  >
-                                    <option value={zeroStr}>0</option>
-                                    <option value={targetStr}>{targetStr || "—"}</option>
-                                    {norm !== zeroStr && norm !== "" && norm !== targetStr && (
-                                      <option value={norm}>{norm} (custom)</option>
-                                    )}
-                                  </select>
+                                  <div className="flex items-center gap-0.5">
+                                    {breakdownPrefix && <span className="text-[9px] text-gray-400 flex-shrink-0">{breakdownPrefix}</span>}
+                                    <select
+                                      value={norm}
+                                      onChange={e => setOwnerWeekCell(id, w, e.target.value)}
+                                      className="w-full px-1 py-1 text-center text-[11px] border border-gray-200 rounded bg-white focus:outline-none focus:ring-1 focus:ring-accent-400 min-w-[72px] cursor-pointer"
+                                    >
+                                      <option value={zeroStr}>0</option>
+                                      <option value={targetStr}>{targetStr ? toDisp(targetStr) : "—"}</option>
+                                      {norm !== zeroStr && norm !== "" && norm !== targetStr && (
+                                        <option value={norm}>{toDisp(norm)} (custom)</option>
+                                      )}
+                                    </select>
+                                    {breakdownUnit && <span className="text-[9px] text-gray-400 flex-shrink-0">{breakdownUnit}</span>}
+                                  </div>
                                 </td>
                               );
                             }
                             return (
                               <td key={w} className="px-1 py-1.5 border-r border-t border-gray-100 last:border-r-0">
-                                <input
-                                  type="number"
-                                  min="0"
-                                  value={editingCell?.key === `own-${id}-${w}` ? editingCell.raw : (ownerRow[w] ?? "")}
-                                  onChange={e => { setEditingCell({ key: `own-${id}-${w}`, raw: e.target.value }); setOwnerWeekCell(id, w, e.target.value); }}
-                                  onBlur={() => setEditingCell(null)}
-                                  readOnly={isLocked}
-                                  title={isPast ? "Past week data entry is disabled." : undefined}
-                                  className={`w-full px-1 py-1 text-center text-[11px] border rounded focus:outline-none min-w-[72px] ${
-                                    isLocked
-                                      ? "border-gray-100 bg-gray-50 text-gray-400 cursor-not-allowed"
-                                      : "border-gray-200 bg-white focus:ring-1 focus:ring-accent-400"
-                                  }`}
-                                />
+                                <div className="flex items-center gap-0.5">
+                                  {breakdownPrefix && <span className="text-[9px] text-gray-400 flex-shrink-0">{breakdownPrefix}</span>}
+                                  <input
+                                    type="number"
+                                    min="0"
+                                    value={editingCell?.key === `own-${id}-${w}` ? editingCell.raw : toDisp(ownerRow[w] ?? "")}
+                                    onChange={e => { setEditingCell({ key: `own-${id}-${w}`, raw: e.target.value }); setOwnerWeekCell(id, w, toRaw(e.target.value)); }}
+                                    onBlur={() => setEditingCell(null)}
+                                    readOnly={isLocked}
+                                    title={isPast ? "Past week data entry is disabled." : undefined}
+                                    className={`w-full px-1 py-1 text-center text-[11px] border rounded focus:outline-none min-w-[72px] ${
+                                      isLocked
+                                        ? "border-gray-100 bg-gray-50 text-gray-400 cursor-not-allowed"
+                                        : "border-gray-200 bg-white focus:ring-1 focus:ring-accent-400"
+                                    }`}
+                                  />
+                                  {breakdownUnit && <span className="text-[9px] text-gray-400 flex-shrink-0">{breakdownUnit}</span>}
+                                </div>
                               </td>
                             );
                           })}

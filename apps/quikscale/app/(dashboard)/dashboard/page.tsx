@@ -595,6 +595,7 @@ function KPICard({ kpi, currentWeek, numberFormat = "standard" }: { kpi: KPIRow;
       measurementUnit: k.measurementUnit,
       currency: k.currency,
       targetScale: k.targetScale,
+      scaledDisplay: k.scaledDisplay,
       numberFormat,
     });
   const [historyOpen, setHistoryOpen] = useState(false);
