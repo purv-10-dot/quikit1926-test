@@ -31,6 +31,8 @@ const kpiBaseFields = {
   ownerKpiNames: z.record(z.string(), z.string().min(1)).optional().nullable(),
   currency: z.string().optional().nullable(),
   targetScale: z.string().optional().nullable(),
+  // Display label for Number KPIs, chosen from Unit Master (e.g. "Leads").
+  unit: z.string().optional().nullable(),
   // Per-KPI display toggle — show/accept currency values in the chosen scale unit.
   scaledDisplay: z.boolean().optional(),
   reverseColor: z.boolean().optional(),
@@ -106,6 +108,7 @@ export const updateKPISchema = z
     ownerKpiNames: z.record(z.string(), z.string().min(1)).optional().nullable(),
     currency: z.string().optional().nullable(),
     targetScale: z.string().optional().nullable(),
+    unit: z.string().optional().nullable(),
     scaledDisplay: z.boolean().optional(),
     reverseColor: z.boolean().optional(),
     frequency: z.enum(["daily", "weekly", "monthly", "yearly"]).optional(),

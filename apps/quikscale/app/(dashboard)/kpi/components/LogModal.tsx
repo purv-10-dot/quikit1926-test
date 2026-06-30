@@ -13,6 +13,7 @@ import { CURRENCIES, getScales, getMultiplier, formatActual, shortScaleLabel, sc
 import { WeeklyScroller } from "./WeeklyScroller";
 import { usePastWeekFlags } from "@/lib/hooks/useFeatureFlags";
 import { weeklyInputLockState, isWeekBeforeEditableWindow } from "@/lib/utils/weekLock";
+import { UnitSelect } from "./UnitSelect";
 import { useCurrentWeek, useWeekLabels } from "@/lib/hooks/useCurrentWeek";
 import { useMyPermissions } from "@/lib/hooks/useMyPermissions";
 import { humanizeApiError } from "@/lib/utils/humanizeError";
@@ -51,6 +52,7 @@ type EditFormState = {
   weeklyBreakdown: Record<number, string>;
   currency: string;
   targetScale: string;
+  unit: string;
   scaledDisplay: boolean;
   reverseColor: boolean;
   // Team-KPI multi-owner state (mirrors KPIModal's create form so the Edit
@@ -355,6 +357,10 @@ function EditTab({
                 <option key={s.label} value={s.label}>{s.label || "—"}</option>
               ))}
             </select>
+          )}
+          {/* Number KPIs: unit-of-measurement dropdown (from Unit Master). */}
+          {form.measurementUnit === "Number" && (
+            <UnitSelect value={form.unit} onChange={v => setForm(f => ({ ...f, unit: v }))} disabled={readOnly} />
           )}
         </div>
         {isCurrency && form.targetScale && scaledTarget > 0 && (
@@ -1084,6 +1090,7 @@ export function LogModal({ kpi, onClose, onRefresh, initialTab = "updates", canU
       weeklyBreakdown,
       currency,
       targetScale: savedScale,
+      unit: kpi.unit ?? "",
       scaledDisplay: kpi.scaledDisplay ?? (measurementUnit === "Currency" && !!savedScale),
       reverseColor: kpi.reverseColor ?? false,
       ownerIds: teamOwnerIds,
@@ -1226,6 +1233,7 @@ export function LogModal({ kpi, onClose, onRefresh, initialTab = "updates", canU
         status: editForm.status as "active" | "paused" | "completed",
         divisionType: editForm.divisionType,
         targetScale: editForm.measurementUnit === "Currency" ? editForm.targetScale : null,
+        unit: editForm.measurementUnit === "Number" ? (editForm.unit || null) : null,
         scaledDisplay:
           editForm.measurementUnit === "Currency" && !!editForm.targetScale ? editForm.scaledDisplay : false,
         reverseColor: editForm.reverseColor,

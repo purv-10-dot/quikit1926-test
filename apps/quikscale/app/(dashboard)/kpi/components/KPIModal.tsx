@@ -12,6 +12,7 @@ import type { KPIRow as KPI } from "@/lib/types/kpi";
 import type { User } from "@/lib/types/kpi";
 import { fiscalYearLabel, MEASUREMENT_UNITS, ALL_QUARTERS, ALL_WEEKS, weekDateLabel } from "@/lib/utils/fiscal";
 import { CURRENCIES, getScales, getMultiplier, formatActual, shortScaleLabel, scaleDownForDisplay, scaleUpFromInput } from "@/lib/utils/currency";
+import { UnitSelect } from "./UnitSelect";
 import { UserPicker, UserMultiPicker, RightPanel, RightPanelFooter, DropdownPicker } from "@quikit/ui";
 import { FormErrorBanner } from "@/components/forms/FormErrorBanner";
 import { usePastWeekFlags } from "@/lib/hooks/useFeatureFlags";
@@ -105,6 +106,8 @@ export function KPIModal({ mode, kpi, scope, teamId, defaultYear, defaultQuarter
       status: kpi?.status ?? "active",
       currency,
       targetScale: savedScale,
+      // Unit label (Number KPIs only) from Unit Master; "" = none.
+      unit: kpi?.unit ?? "",
       // Scaled-display toggle: default ON for a Currency KPI that has a scale
       // (so breakdown/Updates/Stats + grid/cards all read in the unit), else OFF.
       scaledDisplay: kpi?.scaledDisplay ?? (measurementUnit === "Currency" && !!savedScale),
@@ -583,6 +586,8 @@ export function KPIModal({ mode, kpi, scope, teamId, defaultYear, defaultQuarter
         divisionType: form.divisionType,
         currency: isCurr ? form.currency : null,
         targetScale: isCurr ? form.targetScale : null,
+        // Unit label only applies to Number KPIs.
+        unit: form.measurementUnit === "Number" ? (form.unit || null) : null,
         // Only meaningful for a Currency KPI with a scale; force false otherwise.
         scaledDisplay: isCurr && !!form.targetScale ? form.scaledDisplay : false,
         reverseColor: form.reverseColor,
@@ -943,6 +948,10 @@ export function KPIModal({ mode, kpi, scope, teamId, defaultYear, defaultQuarter
                     <option key={s.label} value={s.label}>{s.label || "—"}</option>
                   ))}
                 </select>
+              )}
+              {/* Number KPIs: unit-of-measurement dropdown (from Unit Master). */}
+              {form.measurementUnit === "Number" && (
+                <UnitSelect value={form.unit} onChange={v => set("unit", v)} disabled={readOnly} />
               )}
             </div>
             {errors.target && <p className="text-[10px] text-red-500 mt-0.5">{errors.target}</p>}

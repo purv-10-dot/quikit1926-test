@@ -37,6 +37,7 @@ export type AuditEntityType =
   | "OPSPUserSection"
   | "Quarter"
   | "Category"
+  | "Unit"
   | "DailyHuddle"
   | "WeeklyMeeting"
   | "ClientMember"
