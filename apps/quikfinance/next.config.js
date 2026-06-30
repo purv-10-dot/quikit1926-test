@@ -13,6 +13,14 @@ const nextConfig = {
   // down. Gating off so the integrated app builds + runs for Phase 5 verification.
   typescript: { ignoreBuildErrors: true },
   transpilePackages: ["@quikit/ui", "@quikit/auth", "@quikit/shared", "@quikit/database"],
+  // Allow remote images the finance UI references via next/image (Unsplash demo
+  // imagery in the original standalone app). Without this, next/image throws
+  // "hostname not configured". CSP img-src already permits https:.
+  images: {
+    remotePatterns: [
+      { protocol: "https", hostname: "images.unsplash.com" },
+    ],
+  },
   experimental: {
     serverActions: {
       // quikfinance dev port (matches package.json scripts).

@@ -54,10 +54,14 @@
   color: var(--ink);             /* #1a1a1a */
 }
 
-* { box-sizing: border-box; margin: 0; padding: 0; }
+/* Scoped to .marketing-shell so these resets never leak into the dashboard
+   (which shares the document; Next keeps route-group CSS across soft navs). */
+.marketing-shell, .marketing-shell *, .marketing-shell *::before, .marketing-shell *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
-/* All headings use the heading font (alias of --serif) */
-h1, h2, h3, h4, h5, h6,
+/* All headings use the heading font — scoped to .marketing-shell so the
+   `!important` font never overrides dashboard headings on a soft nav. */
+.marketing-shell h1, .marketing-shell h2, .marketing-shell h3,
+.marketing-shell h4, .marketing-shell h5, .marketing-shell h6,
 .section-title, .section-title .serif, .section-title .serif-bold,
 .hero-bold-title, .hero-bold-title .serif, .hero-bold-title .serif-bold,
 .feature-title.serif-bold, .pillar-name.serif-bold,
@@ -122,7 +126,9 @@ html { scroll-behavior: smooth; }
   }
 }
 
-html, body {
+/* Scoped to .marketing-shell — must NOT restyle the dashboard's body font /
+   background when this stylesheet persists across a client-side navigation. */
+.marketing-shell {
   background: var(--bg-stage);
   font-family: var(--sans);
   color: var(--ink);
@@ -131,8 +137,8 @@ html, body {
   overflow-x: clip; /* prevents horizontal scroll without breaking position:sticky */
 }
 
-a { color: inherit; text-decoration: none; }
-ul { list-style: none; }
+.marketing-shell a { color: inherit; text-decoration: none; }
+.marketing-shell ul { list-style: none; }
 
 /* Stage — stacked cards on a calm grey */
 .stage {

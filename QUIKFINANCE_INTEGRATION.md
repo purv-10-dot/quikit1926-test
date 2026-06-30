@@ -258,6 +258,15 @@ Runtime action (needs a live DB — BLOCKED on `DATABASE_URL`; none configured i
   recharts `ResponsiveContainer` (now client-only via `components/design/ClientResponsiveContainer.tsx`
   + `MiniArea` gate) and `CommandCenter`'s `new Date()` (computed post-mount).
 
+- **marketing.css global rules leaked into the dashboard on soft-nav.** The copied marketing.css had
+  unscoped document-wide rules (`html,body{font-family}`, `h1-h6{font-family !important}`, `*` reset,
+  `a`/`ul`). Next App Router keeps a route group's CSS loaded across client navigations, so after
+  visiting `/` those globals overrode the dashboard's fonts/spacing until a hard refresh. Fix: scoped
+  ALL global rules in `app/(marketing)/marketing.css` to `.marketing-shell`. Also: marketing headings
+  use Plus Jakarta Sans (`--heading: var(--sans)`, loaded in the marketing layout) — Fraunces was
+  dropped because it fell back to Times. Added `public/app-icons/quikfinance.svg` + `app/icon.svg`
+  (favicon) and the in-header AppSwitcher (`/api/apps/switcher` → `@quikit/database`).
+
 ## Open questions / risks
 
 - Portal subdomain rewriting — port or drop (Phase 0).
