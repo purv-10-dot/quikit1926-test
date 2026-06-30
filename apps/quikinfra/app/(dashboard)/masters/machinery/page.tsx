@@ -5,7 +5,7 @@ import { useState } from "react";
 import { Hammer } from "lucide-react";
 import { MasterListPage, type MasterColumnDef } from "@/components/MasterListPage";
 import { useMachinery, useCreateMachinery, useUpdateMachinery, useProjects, useDeleteMachinery } from "@/hooks/use-masters";
-import { FormDrawer, FormSection, FormRow, Field, TextInput, SelectInput, InactiveStatusNotice } from "@/components/FormDrawer";
+import { FormDrawer, FormSection, FormRow, Field, TextInput, NumberInput, SelectInput, InactiveStatusNotice } from "@/components/FormDrawer";
 import dynamic from "next/dynamic";
 import type { ImportFieldDef } from "@/components/ImportDataDrawer";
 const ImportDataDrawer = dynamic(
@@ -44,8 +44,33 @@ const columns: MasterColumnDef<Row>[] = [
 
 const MACHINE_TYPES = ["Excavator","Crane","JCB","Concrete Mixer","Transit Mixer","Roller","Compactor","Generator","Welding Machine","Pump","Tower Crane","Batching Plant","Other"].map(t => ({ value: t, label: t }));
 const FUEL_TYPES = [{ value: "Diesel", label: "Diesel" }, { value: "Petrol", label: "Petrol" }, { value: "Electric", label: "Electric" }, { value: "NA", label: "N/A" }];
+const OWNERSHIP_TYPES = [
+  { value: "owned", label: "Owned" },
+  { value: "hired_in", label: "Hired-in" },
+  { value: "rent_out_eligible", label: "Rent-out eligible" },
+];
+const METER_TYPES = [
+  { value: "hour", label: "Hour-meter (HMR)" },
+  { value: "km", label: "Odometer (KM)" },
+];
+const INTERVAL_UNITS = [
+  { value: "hours", label: "Hours" },
+  { value: "km", label: "Kilometers" },
+];
+const DEPR_METHODS = [
+  { value: "", label: "—" },
+  { value: "SLM", label: "Straight-line (SLM)" },
+  { value: "WDV", label: "Written-down value (WDV)" },
+];
 
-const emptyForm = { name: "", type: "", make: "", model: "", registrationNo: "", projectId: "", fuelType: "Diesel", capacity: "", status: "active" };
+const emptyForm = {
+  name: "", type: "", make: "", model: "", registrationNo: "",
+  projectId: "", fuelType: "Diesel", capacity: "", status: "active",
+  ownershipType: "owned", meterType: "hour",
+  currentMeter: "", fuelNorm: "",
+  serviceIntervalValue: "", serviceIntervalUnit: "hours",
+  capitalisationCost: "", deprMethod: "", deprRate: "",
+};
 
 const rules: ValidationRules<typeof emptyForm> = {
   name: [
@@ -127,19 +152,42 @@ export default function MachineryPage() {
   return (
     <>
       <MasterListPage title="Machinery & Equipment" entityName="Machine" permissionUrl="/masters/machinery" columns={columns}
+        showStatusTabs
         data={(result?.data ?? []) as Row[]} total={result?.total ?? 0} isLoading={isLoading}
         canImport
         onImport={() => setImportOpen(true)}
         onAdd={() => { setForm(emptyForm); setErrors({}); setEditingId(null); setDrawerOpen(true); }}
-        onEdit={(item) => { setForm({ ...emptyForm, ...item } as typeof emptyForm); setErrors({}); setEditingId(item.id); setDrawerOpen(true); }}
+        onEdit={(item) => {
+          const r = item as Row & {
+            currentMeter?: number | null; fuelNorm?: number | null;
+            serviceIntervalValue?: number | null; serviceIntervalUnit?: string | null;
+            ownershipType?: string | null; meterType?: string | null;
+            capitalisationCost?: number | null;
+            deprMethod?: string | null; deprRate?: number | null;
+          };
+          setForm({
+            ...emptyForm,
+            ...item,
+            ownershipType: r.ownershipType ?? "owned",
+            meterType: r.meterType ?? "hour",
+            currentMeter: r.currentMeter != null ? String(r.currentMeter) : "",
+            fuelNorm: r.fuelNorm != null ? String(r.fuelNorm) : "",
+            serviceIntervalValue: r.serviceIntervalValue != null ? String(r.serviceIntervalValue) : "",
+            serviceIntervalUnit: r.serviceIntervalUnit ?? "hours",
+            capitalisationCost: r.capitalisationCost != null ? String(r.capitalisationCost) : "",
+            deprMethod: r.deprMethod ?? "",
+            deprRate: r.deprRate != null ? String(r.deprRate) : "",
+          } as typeof emptyForm);
+          setErrors({}); setEditingId(item.id); setDrawerOpen(true);
+        }}
         onDelete={handleDelete}
         deleteConfirmMessage={(item) => (
           <>
             Delete machine{" "}
             <span className="font-semibold text-gray-900">“{item.name}”</span>?
             <br />
-            It will be hidden from the list. You can restore it later from the
-            “Show deleted” view.
+            It will be removed from the list. To keep a machine but pause it,
+            set its status to Inactive instead — those stay under the Inactive tab.
           </>
         )}
         canExport
@@ -177,6 +225,46 @@ export default function MachineryPage() {
             <SelectInput value={form.status} onChange={v => set("status", v)} options={STATUS_OPTIONS} />
             {form.status === "inactive" && <InactiveStatusNotice entityName="Machine" />}
           </Field>
+        </FormSection>
+
+        <FormSection title="Operational & Costing">
+          <FormRow>
+            <Field label="Ownership" hint="Owned costs the project; Rent-out earns from a customer">
+              <SelectInput value={form.ownershipType} onChange={v => set("ownershipType", v)} options={OWNERSHIP_TYPES} />
+            </Field>
+            <Field label="Meter Type">
+              <SelectInput value={form.meterType} onChange={v => set("meterType", v)} options={METER_TYPES} />
+            </Field>
+          </FormRow>
+          <FormRow>
+            <Field label="Current Meter" hint="Auto-advances from approved log book entries">
+              <NumberInput value={form.currentMeter} onChange={v => set("currentMeter", v)} placeholder="0" min={0} />
+            </Field>
+            <Field label="Fuel Norm (L per hr)" hint="Baseline for fuel-variance flagging">
+              <NumberInput value={form.fuelNorm} onChange={v => set("fuelNorm", v)} placeholder="e.g. 12" min={0} step="0.01" />
+            </Field>
+          </FormRow>
+          <FormRow>
+            <Field label="Service Interval">
+              <NumberInput value={form.serviceIntervalValue} onChange={v => set("serviceIntervalValue", v)} placeholder="e.g. 250" min={0} />
+            </Field>
+            <Field label="Interval Unit">
+              <SelectInput value={form.serviceIntervalUnit} onChange={v => set("serviceIntervalUnit", v)} options={INTERVAL_UNITS} />
+            </Field>
+          </FormRow>
+          <FormRow>
+            <Field label="Capitalisation Cost (₹)" hint="Purchase / book value — the depreciation base">
+              <NumberInput value={form.capitalisationCost} onChange={v => set("capitalisationCost", v)} placeholder="e.g. 2500000" min={0} step="0.01" />
+            </Field>
+            <Field label="Depreciation Method">
+              <SelectInput value={form.deprMethod} onChange={v => set("deprMethod", v)} options={DEPR_METHODS} />
+            </Field>
+          </FormRow>
+          <FormRow>
+            <Field label="Depreciation Rate %" hint="For owned machines — feeds the cost sheet">
+              <NumberInput value={form.deprRate} onChange={v => set("deprRate", v)} placeholder="e.g. 15" min={0} max={100} step="0.01" />
+            </Field>
+          </FormRow>
         </FormSection>
       </FormDrawer>
 

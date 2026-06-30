@@ -16,6 +16,7 @@ export interface GroupedBoardTask {
   sprintId: string | null;
   assigneeId: string | null;
   reporterId: string | null;
+  epicId: string | null;
   groupId: string | null;
   orderInGroup: number;
   startDate: string | null;

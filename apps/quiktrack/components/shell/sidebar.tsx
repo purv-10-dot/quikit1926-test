@@ -59,7 +59,7 @@ function NavRow({
   external,
   indent,
 }: NavRowProps) {
-  const base = `flex items-center gap-2 px-3 ${indent ? "pl-9" : ""} h-8 text-sm rounded ${active ? "bg-blue-50 text-blue-700 font-medium" : "text-gray-700 hover:bg-gray-100"
+  const base = `qt-nav-row flex items-center gap-2 px-3 ${indent ? "pl-9" : ""} h-8 text-sm rounded ${active ? "qt-nav-row--active bg-blue-50 text-blue-700 font-medium" : "text-gray-700 hover:bg-gray-100"
     }`;
 
   const content = (
@@ -168,12 +168,12 @@ export function Sidebar() {
   return (
     <aside
       data-tour="sidebar"
-      className="w-[232px] shrink-0 border-r border-gray-200 bg-white flex flex-col h-full overflow-y-auto"
+      className="qt-sidebar w-[232px] shrink-0 border-r border-gray-200 bg-white flex flex-col h-full overflow-y-auto"
     >
       <nav className="flex-1 py-2">
         <div className="px-2 space-y-0.5">
           {canSee("home") && (
-            <NavRow href="/dashboard" icon={User} label="For you" active={isActive("/dashboard")} />
+            <NavRow href="/dashboard" icon={User} label="For you" active={pathname === "/dashboard"} />
           )}
           {/* TODO: Recent + Plans + Starred + Apps — coming soon. Restore when ready.
           <div ref={recentRowRef}>
@@ -190,7 +190,7 @@ export function Sidebar() {
             open={recentOpen}
             onClose={() => setRecentOpen(false)}
           />
-          <ComingSoonRow icon={Star} label="Starred" description="Star spaces, dashboards, and views to pin them here." />
+          <ComingSoonRow icon={Star} label="Starred" description="Star projects, dashboards, and views to pin them here." />
           <ComingSoonRow icon={AppWindow} label="Apps" description="Browse and install apps that extend QuikTrack." />
           {canSee("plans") && (
             <div ref={plansAnchorRef} className="relative">
@@ -217,8 +217,8 @@ export function Sidebar() {
             type="button"
             data-tour="spaces"
             onClick={() => setSpacesOpen((v) => !v)}
-            className={`w-full flex items-center gap-2 px-3 h-8 text-sm rounded text-left ${isActive("/spaces") && spacesOpen
-                ? "bg-blue-50 text-blue-700 font-medium"
+            className={`qt-nav-row w-full flex items-center gap-2 px-3 h-8 text-sm rounded text-left ${isActive("/spaces") && spacesOpen
+                ? "qt-nav-row--active bg-blue-50 text-blue-700 font-medium"
                 : "text-gray-700 hover:bg-gray-100"
               }`}
           >
@@ -227,7 +227,7 @@ export function Sidebar() {
             ) : (
               <ChevronRight className="h-4 w-4 shrink-0" />
             )}
-            <span className="flex-1 truncate">Spaces</span>
+            <span className="flex-1 truncate">Projects</span>
             <span className="flex items-center">
               <span
                 role="button"
@@ -238,7 +238,7 @@ export function Sidebar() {
                   router.push("/spaces/templates");
                 }}
                 className="p-0.5 rounded hover:bg-gray-200 inline-flex"
-                aria-label="Create space"
+                aria-label="Create project"
               >
                 <Plus className="h-3.5 w-3.5 text-gray-400 hover:text-gray-700" />
               </span>
@@ -258,8 +258,8 @@ export function Sidebar() {
                         <Link
                           key={`recent-${s.id}`}
                           href={`/spaces/${s.id}/backlog`}
-                          className={`flex items-center gap-2 px-3 h-8 text-sm rounded ${isCurrent
-                              ? "bg-blue-50 text-blue-700 font-medium"
+                          className={`qt-nav-row flex items-center gap-2 px-3 h-8 text-sm rounded ${isCurrent
+                              ? "qt-nav-row--active bg-blue-50 text-blue-700 font-medium"
                               : "text-gray-700 hover:bg-gray-100"
                             }`}
                         >
@@ -275,13 +275,13 @@ export function Sidebar() {
                 ref={moreBtnRef}
                 type="button"
                 onClick={() => setMoreOpen((v) => !v)}
-                className={`w-full flex items-center gap-2 px-3 h-8 text-sm rounded text-left ${moreOpen
-                    ? "bg-blue-50 text-blue-700 font-medium"
+                className={`qt-nav-row w-full flex items-center gap-2 px-3 h-8 text-sm rounded text-left ${moreOpen
+                    ? "qt-nav-row--active bg-blue-50 text-blue-700 font-medium"
                     : "text-gray-700 hover:bg-gray-100"
                   }`}
               >
                 <ListIcon className="h-4 w-4 shrink-0" />
-                <span className="flex-1 truncate">More spaces</span>
+                <span className="flex-1 truncate">More projects</span>
                 <ChevronRight className="h-3.5 w-3.5" />
               </button>
             </>
@@ -322,6 +322,7 @@ export function Sidebar() {
                 href="/dashboards/default"
                 icon={PieChart}
                 label="Default dashboard"
+                active={pathname === "/dashboards/default"}
                 indent
               />
               <div className="my-1.5" />

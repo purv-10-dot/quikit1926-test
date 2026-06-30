@@ -28,26 +28,28 @@ const LOGIN_URL = buildLoginUrl({
 });
 
 /**
- * Inject a "Log in" CTA into the baked-in marketing navbar (desktop
- * `.nav-actions` + mobile `.mobile-nav-cta`). The nav HTML is identical
- * across every _data/*.json page, so doing this once here covers all
- * pages and keeps the launcher URL in one configurable place rather than
- * mutating a dozen content blobs. Idempotent — skips if already present.
+ * Turn the marketing navbar's single primary CTA into "Get Started →" pointing
+ * at the central login (which then offers "Sign up" → self-serve registration).
+ * The baked-in blobs ship a "Book a demo → /contact" primary button in both the
+ * desktop `.nav-actions` and the mobile `.mobile-nav-cta`; we swap both for one
+ * "Get Started →" button. The nav HTML is identical across every _data/*.json
+ * page, so doing this once here covers all pages rather than mutating a dozen
+ * content blobs. Idempotent — skips if already transformed. The hero
+ * "Get In Touch / Book a demo" buttons (btn-outline) are left unchanged.
  */
 function withLoginCta(html: string): string {
-  if (html.includes('data-quikit-login')) return html;
-  const desktopCta = `<a href="${LOGIN_URL}" data-quikit-login class="btn btn-ghost" style="margin-right:10px;">Log in</a>`;
-  const mobileCta = `<a href="${LOGIN_URL}" data-quikit-login class="btn btn-primary mobile-nav-cta" style="margin-bottom:10px;">Log in</a>`;
+  if (html.includes("data-quikit-login")) return html;
+  const getStarted = `<a href="${LOGIN_URL}" data-quikit-login class="btn btn-primary">Get Started →</a>`;
+  const getStartedMobile = `<a href="${LOGIN_URL}" data-quikit-login class="btn btn-primary mobile-nav-cta">Get Started →</a>`;
   let out = html;
-  // Desktop: prepend inside .nav-actions (before "Book a demo").
+  // Mobile primary CTA first (more specific selector), then desktop.
   out = out.replace(
-    /<div class="nav-actions">/,
-    `<div class="nav-actions">${desktopCta}`,
+    /<a [^>]*class="btn btn-primary mobile-nav-cta">Book a demo[^<]*<\/a>/,
+    getStartedMobile,
   );
-  // Mobile: place a Log in button just before the mobile "Book a demo" CTA.
   out = out.replace(
-    /(<a href="[^"]*" class="btn btn-primary mobile-nav-cta">)/,
-    `${mobileCta}$1`,
+    /<a [^>]*class="btn btn-primary">Book a demo[^<]*<\/a>/,
+    getStarted,
   );
   return out;
 }

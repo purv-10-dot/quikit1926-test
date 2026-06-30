@@ -101,6 +101,30 @@ export const PERMISSIONS = {
   DIESEL_EDIT: "construction.diesel.edit",
   DIESEL_DELETE: "construction.diesel.delete",
 
+  // Machinery & Equipment
+  EQUIPMENT_LOG_VIEW: "construction.equipment_log.view",
+  EQUIPMENT_LOG_CREATE: "construction.equipment_log.create",
+  EQUIPMENT_LOG_EDIT: "construction.equipment_log.edit",
+  EQUIPMENT_LOG_DELETE: "construction.equipment_log.delete",
+  EQUIPMENT_LOG_APPROVE: "construction.equipment_log.approve",
+
+  EQUIPMENT_MAINT_VIEW: "construction.equipment_maintenance.view",
+  EQUIPMENT_MAINT_CREATE: "construction.equipment_maintenance.create",
+  EQUIPMENT_MAINT_EDIT: "construction.equipment_maintenance.edit",
+  EQUIPMENT_MAINT_DELETE: "construction.equipment_maintenance.delete",
+
+  EQUIPMENT_DEPLOY_VIEW: "construction.equipment_deployment.view",
+  EQUIPMENT_DEPLOY_CREATE: "construction.equipment_deployment.create",
+  EQUIPMENT_DEPLOY_EDIT: "construction.equipment_deployment.edit",
+  EQUIPMENT_DEPLOY_DELETE: "construction.equipment_deployment.delete",
+  EQUIPMENT_FLEET_VIEW: "construction.equipment_fleet.view",
+  EQUIPMENT_HIRE_RENT_VIEW: "construction.equipment_hire_rent.view",
+  EQUIPMENT_HIRE_RENT_CREATE: "construction.equipment_hire_rent.create",
+  EQUIPMENT_HIRE_RENT_EDIT: "construction.equipment_hire_rent.edit",
+  EQUIPMENT_FIXED_ASSETS_VIEW: "construction.equipment_fixed_assets.view",
+  EQUIPMENT_FIXED_ASSETS_CREATE: "construction.equipment_fixed_assets.create",
+  EQUIPMENT_FIXED_ASSETS_EDIT: "construction.equipment_fixed_assets.edit",
+
   // Projects
   PROJECT_VIEW: "construction.project.view",
   PROJECT_CREATE: "construction.project.create",
@@ -185,6 +209,12 @@ const ROLE_PERMISSIONS: Record<ConstructionRole, string[]> = {
     PERMISSIONS.TRANSFER_VIEW, PERMISSIONS.TRANSFER_CREATE, PERMISSIONS.TRANSFER_RECEIVE,
     PERMISSIONS.RECONCILIATION_VIEW, PERMISSIONS.RECONCILIATION_CREATE,
     PERMISSIONS.DIESEL_VIEW, PERMISSIONS.DIESEL_CREATE,
+    PERMISSIONS.EQUIPMENT_LOG_VIEW, PERMISSIONS.EQUIPMENT_LOG_CREATE,
+    PERMISSIONS.EQUIPMENT_LOG_EDIT, PERMISSIONS.EQUIPMENT_LOG_APPROVE,
+    PERMISSIONS.EQUIPMENT_MAINT_VIEW, PERMISSIONS.EQUIPMENT_MAINT_CREATE,
+    PERMISSIONS.EQUIPMENT_MAINT_EDIT,
+    PERMISSIONS.EQUIPMENT_DEPLOY_VIEW, PERMISSIONS.EQUIPMENT_DEPLOY_CREATE,
+    PERMISSIONS.EQUIPMENT_DEPLOY_EDIT,
     PERMISSIONS.PROJECT_VIEW,
     PERMISSIONS.BOQ_VIEW,
     PERMISSIONS.WO_VIEW,
@@ -201,6 +231,9 @@ const ROLE_PERMISSIONS: Record<ConstructionRole, string[]> = {
     PERMISSIONS.PROJECT_VIEW,
     PERMISSIONS.BOQ_VIEW,
     PERMISSIONS.DPR_VIEW, PERMISSIONS.DPR_CREATE,
+    PERMISSIONS.EQUIPMENT_LOG_VIEW, PERMISSIONS.EQUIPMENT_LOG_CREATE,
+    PERMISSIONS.EQUIPMENT_MAINT_VIEW, PERMISSIONS.EQUIPMENT_MAINT_CREATE,
+    PERMISSIONS.EQUIPMENT_DEPLOY_VIEW, PERMISSIONS.EQUIPMENT_DEPLOY_CREATE,
   ],
 };
 

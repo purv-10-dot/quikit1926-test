@@ -35,7 +35,7 @@ export default function AssetsPage() {
     projects.map((p) => [String(p.id), String(p.city ?? "").trim()]),
   );
   const rawLocations = locData?.data ?? [];
-  const locationOptions = rawLocations.map((l) => ({ value: l.id, label: l.name }));
+  const locationOptions = rawLocations.filter((l) => l?.status === "active").map((l) => ({ value: l.id, label: l.name }));
 
   const columns: ColDef<AssetRow>[] = [
     { key: "assetCode", label: "Asset Code", sortable: true, searchable: true },

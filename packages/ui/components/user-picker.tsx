@@ -18,9 +18,20 @@ interface Props {
   placeholder?: string;
   error?: boolean;
   disabled?: boolean;
+  /** Infinite-scroll + server-search (optional — see UserSelect). */
+  onLoadMore?: () => void;
+  hasMore?: boolean;
+  loadingMore?: boolean;
+  onSearchChange?: (query: string) => void;
+  loading?: boolean;
+  /** Full object of the selected user, so its label persists across paginated slices. */
+  selectedUsers?: PickerUser[];
 }
 
-export function UserPicker({ value, onChange, users, placeholder, error, disabled }: Props) {
+export function UserPicker({
+  value, onChange, users, placeholder, error, disabled,
+  onLoadMore, hasMore, loadingMore, onSearchChange, loading, selectedUsers,
+}: Props) {
   return (
     <UserSelect
       mode="single"
@@ -30,6 +41,12 @@ export function UserPicker({ value, onChange, users, placeholder, error, disable
       placeholder={placeholder}
       error={error}
       disabled={disabled}
+      onLoadMore={onLoadMore}
+      hasMore={hasMore}
+      loadingMore={loadingMore}
+      onSearchChange={onSearchChange}
+      loading={loading}
+      selectedUsers={selectedUsers}
     />
   );
 }

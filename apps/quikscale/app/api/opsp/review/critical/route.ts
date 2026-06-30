@@ -1,10 +1,19 @@
 import { NextResponse } from "next/server";
-import type { NextRequest } from "next/server";
 import { db } from "@/lib/db";
-import { requireAdmin } from "@/lib/api/requireAdmin";
-import { gateModuleApi } from "@quikit/auth/feature-gate";
-import { writeAuditLog } from "@/lib/api/auditLog";
-import { resolveOpspOwnerOrSelf } from "@/lib/api/opspOwner";
+import { withOrgAuthForResource } from "@/lib/api/withOrgAuth";
+import { isOrgAdmin, forbidden } from "@/lib/api/permissions";
+import { audit, requestContext } from "@/lib/audit";
+import { resolveOpspOwnerOrSelf, resolveSectionUserId } from "@/lib/api/opspOwner";
+import {
+  criticalPeriod,
+  CRITICAL_AUDIT_ENTITY_TYPE,
+  MODULE_LABELS,
+  CARD_LABELS,
+} from "@/lib/audit/criticalFields";
+
+// Gated on the standalone Critical-Review permission (view to read, update to
+// save) + the opsp.review feature flag. Admins hold the grant via their role.
+const critAuth = withOrgAuthForResource("opsp.review", "OPSP.Review.Critical");
 
 /**
  * OPSP Critical Hash Review API — handles the top-level "Critical Hash
@@ -73,61 +82,62 @@ function normalizeCritCard(raw: unknown): CritCardShape {
  * Returns all 6 CritCards (3 modules × 2 cardTypes) + saved review entries
  * for the (year, quarter) OPSP.
  */
-export async function GET(req: NextRequest) {
+export const GET = critAuth.view(async ({ orgId, userId }, req) => {
   try {
-    const auth = await requireAdmin();
-    if ("error" in auth && auth.error) return auth.error;
-    const { orgId, userId } = auth;
-    const blocked = await gateModuleApi("quikscale", "opsp.review", orgId);
-    if (blocked) return blocked;
-
     const { searchParams } = req.nextUrl;
     const year = parseInt(searchParams.get("year") ?? String(new Date().getFullYear()));
     const quarter = searchParams.get("quarter") ?? "Q1";
+    const targetUserId = searchParams.get("targetUserId");
 
-    // OPSP is org-shared: read the canonical owner's plan.
+    // Year/Quarter (year/actions) modules are org-level strategic — admin-only.
+    const isAdmin = await isOrgAdmin(userId, orgId);
+    // Individual (people) is per-user: self, or another user with OPSP.EditUser.
+    const subjectUserId = await resolveSectionUserId(orgId, userId, targetUserId);
+    if (subjectUserId === null) {
+      return forbidden("Viewing another user's critical review requires the 'Edit Any User's OPSP' permission.");
+    }
+
+    // Canonical owner anchors the org OPSP record (id/status + year/actions cards).
     const ownerId = await resolveOpspOwnerOrSelf(orgId, userId);
 
-    const opsp = await db.oPSPData.findUnique({
-      where: { orgId_userId_year_quarter: { orgId, userId: ownerId, year, quarter } },
-      select: {
-        id: true,
-        status: true,
-        criticalNumProcess: true,
-        balancingCritNumProcess: true,
-        criticalNumGoals: true,
-        balancingCritNumGoals: true,
-        criticalNumAcct: true,
-        balancingCritNumAcct: true,
-      },
-    });
+    const [opsp, subjectSection] = await Promise.all([
+      db.oPSPData.findUnique({
+        where: { orgId_userId_year_quarter: { orgId, userId: ownerId, year, quarter } },
+        select: {
+          id: true,
+          status: true,
+          criticalNumProcess: true,
+          balancingCritNumProcess: true,
+          criticalNumGoals: true,
+          balancingCritNumGoals: true,
+        },
+      }),
+      db.oPSPUserSection.findUnique({
+        where: { orgId_userId_year_quarter: { orgId, userId: subjectUserId, year, quarter } },
+        select: { criticalNumAcct: true, balancingCritNumAcct: true },
+      }),
+    ]);
 
     if (!opsp) {
       return NextResponse.json({
         success: true,
-        data: {
-          opspId: null,
-          opspStatus: null,
-          modules: emptyModules(),
-          entries: {},
-          year,
-          quarter,
-        },
+        data: { opspId: null, opspStatus: null, modules: emptyModules(), entries: {}, year, quarter },
       });
     }
 
+    const empty: CritCardShape = { title: "", bullets: ["", "", "", ""] };
     const modules = {
-      actions: {
-        critical:  normalizeCritCard(opsp.criticalNumProcess),
-        balancing: normalizeCritCard(opsp.balancingCritNumProcess),
-      },
-      year: {
-        critical:  normalizeCritCard(opsp.criticalNumGoals),
-        balancing: normalizeCritCard(opsp.balancingCritNumGoals),
-      },
+      // Org-level strategic criticals — withheld from non-admins.
+      actions: isAdmin
+        ? { critical: normalizeCritCard(opsp.criticalNumProcess), balancing: normalizeCritCard(opsp.balancingCritNumProcess) }
+        : { critical: empty, balancing: empty },
+      year: isAdmin
+        ? { critical: normalizeCritCard(opsp.criticalNumGoals), balancing: normalizeCritCard(opsp.balancingCritNumGoals) }
+        : { critical: empty, balancing: empty },
+      // Individual criticals come from the SUBJECT user's per-user section.
       people: {
-        critical:  normalizeCritCard(opsp.criticalNumAcct),
-        balancing: normalizeCritCard(opsp.balancingCritNumAcct),
+        critical: normalizeCritCard(subjectSection?.criticalNumAcct),
+        balancing: normalizeCritCard(subjectSection?.balancingCritNumAcct),
       },
     };
 
@@ -136,10 +146,18 @@ export async function GET(req: NextRequest) {
       select: { period: true, achievedValue: true, comment: true },
     });
 
+    // year/actions entries are keyed "<module>:<cardType>". `people` entries are
+    // per-subject ("people:<cardType>:<subjectId>"); surface ONLY the active
+    // subject's, re-keyed to "people:<cardType>" so the client lookup matches.
     const entries: Record<string, { achievedValue: number | null; comment: string | null }> = {};
     for (const r of reviewRows) {
-      // period = "<module>:<cardType>" — one row per card.
-      entries[r.period] = {
+      let key = r.period;
+      if (r.period.startsWith("people:")) {
+        const parts = r.period.split(":"); // people:<cardType>:<subjectId>
+        if (parts[2] !== subjectUserId) continue; // another subject — skip
+        key = `people:${parts[1]}`;
+      }
+      entries[key] = {
         achievedValue: r.achievedValue != null ? Number(r.achievedValue) : null,
         comment: r.comment ?? null,
       };
@@ -147,20 +165,13 @@ export async function GET(req: NextRequest) {
 
     return NextResponse.json({
       success: true,
-      data: {
-        opspId: opsp.id,
-        opspStatus: opsp.status,
-        modules,
-        entries,
-        year,
-        quarter,
-      },
+      data: { opspId: opsp.id, opspStatus: opsp.status, modules, entries, year, quarter, subjectUserId },
     });
   } catch (error: unknown) {
     const message = error instanceof Error ? error.message : "Failed to load critical review data";
     return NextResponse.json({ success: false, error: message }, { status: 500 });
   }
-}
+});
 
 function emptyModules() {
   const empty: CritCardShape = { title: "", bullets: ["", "", "", ""] };
@@ -188,20 +199,15 @@ function emptyModules() {
  * Upserts a single OPSPReviewEntry per (module, cardType). Achieved +
  * Comment are saved together.
  */
-export async function POST(req: NextRequest) {
+export const POST = critAuth.update(async ({ orgId, userId }, req) => {
   try {
-    const auth = await requireAdmin();
-    if ("error" in auth && auth.error) return auth.error;
-    const { orgId, userId } = auth;
-    const blocked = await gateModuleApi("quikscale", "opsp.review", orgId);
-    if (blocked) return blocked;
-
     const body = await req.json();
     const year = typeof body.year === "number" ? body.year : parseInt(body.year);
     const quarter = String(body.quarter ?? "");
     const moduleKey = String(body.module ?? "");
     const cardType = String(body.cardType ?? "");
     const category = typeof body.category === "string" ? body.category : "";
+    const targetUserId = body.targetUserId == null ? null : String(body.targetUserId);
     const achievedValue =
       body.achievedValue == null || body.achievedValue === ""
         ? null
@@ -226,7 +232,21 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ success: false, error: "Invalid achievedValue" }, { status: 400 });
     }
 
-    // OPSP is org-shared: critical-review entries attach to the canonical owner's plan.
+    // Year/Quarter (year/actions) criticals are org-level — admin-only.
+    const isAdmin = await isOrgAdmin(userId, orgId);
+    if ((moduleKey === "year" || moduleKey === "actions") && !isAdmin) {
+      return forbidden("Only an admin can review the org's Year/Quarter critical numbers.");
+    }
+    // Individual (people): self, or another user with OPSP.EditUser.
+    const subjectUserId =
+      moduleKey === "people"
+        ? await resolveSectionUserId(orgId, userId, targetUserId)
+        : userId;
+    if (subjectUserId === null) {
+      return forbidden("Editing another user's critical review requires the 'Edit Any User's OPSP' permission.");
+    }
+
+    // Critical-review entries attach to the canonical owner's OPSP record.
     const ownerId = await resolveOpspOwnerOrSelf(orgId, userId);
 
     const opsp = await db.oPSPData.findUnique({
@@ -240,9 +260,10 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    const period = `${moduleKey}:${cardType}`;
+    // Individual entries are keyed per-subject so each user owns their own row.
+    const period = criticalPeriod(moduleKey, cardType, subjectUserId);
 
-    // Snapshot pre-update state for the audit-log drawer to diff against.
+    // Snapshot pre-update state so the Change History panel can diff old → new.
     const prev = await db.oPSPReviewEntry.findUnique({
       where: {
         orgId_opspId_horizon_rowIndex_period: {
@@ -255,20 +276,17 @@ export async function POST(req: NextRequest) {
       },
       select: { achievedValue: true, comment: true, category: true },
     });
-    const oldSnapshot = {
-      module: moduleKey,
-      cardType,
-      category: prev?.category ?? null,
-      achievedValue: prev?.achievedValue != null ? Number(prev.achievedValue) : null,
-      comment: prev?.comment ?? null,
-    };
-    const newSnapshot = {
-      module: moduleKey,
-      cardType,
-      category,
-      achievedValue,
-      comment,
-    };
+    const isCreate = prev == null;
+    // Only the three user-meaningful fields are diffed — Achieved, Comment, and
+    // the card Title. Numeric Decimals coerce via Number() to match `after`.
+    const before = isCreate
+      ? null
+      : {
+          category: prev?.category ?? null,
+          achievedValue: prev?.achievedValue != null ? Number(prev.achievedValue) : null,
+          comment: prev?.comment ?? null,
+        };
+    const after = { category, achievedValue, comment };
 
     const saved = await db.oPSPReviewEntry.upsert({
       where: {
@@ -289,7 +307,8 @@ export async function POST(req: NextRequest) {
       create: {
         orgId,
         opspId: opsp.id,
-        userId,
+        // The subject whose critical this reviews (self for year/actions).
+        userId: subjectUserId,
         horizon: "critical",
         rowIndex: 0,
         category,
@@ -300,16 +319,20 @@ export async function POST(req: NextRequest) {
       },
     });
 
-    await writeAuditLog({
-      orgId,
-      actorId: userId,
-      action: "UPDATE",
-      entityType: "Review",
-      entityId: opsp.id,
-      oldValues: oldSnapshot,
-      newValues: newSnapshot,
-      changes: [`critical:${moduleKey}:${cardType}`],
-      reason: `OPSP Critical (${moduleKey}:${cardType}): ${category}`,
+    // Rich change-history event (same AuditEvent system as KPI/Priority/WWW).
+    // Composite entityId scopes the timeline to this one card (per-subject for
+    // Individual), so each card shows only its own history.
+    const scopeLabel = `${MODULE_LABELS[moduleKey] ?? moduleKey} · ${CARD_LABELS[cardType] ?? cardType}`;
+    await audit.log({
+      entityType: CRITICAL_AUDIT_ENTITY_TYPE,
+      entityId: `${opsp.id}:${period}`,
+      action: isCreate ? "CREATE" : "UPDATE",
+      actor: { userId, orgId },
+      before,
+      after,
+      snapshot: { module: moduleKey, cardType, category, achievedValue, comment },
+      reason: category ? `${scopeLabel} — ${category}` : scopeLabel,
+      ...requestContext(req),
     });
 
     return NextResponse.json({
@@ -325,4 +348,4 @@ export async function POST(req: NextRequest) {
     const message = error instanceof Error ? error.message : "Failed to save critical review";
     return NextResponse.json({ success: false, error: message }, { status: 500 });
   }
-}
+});

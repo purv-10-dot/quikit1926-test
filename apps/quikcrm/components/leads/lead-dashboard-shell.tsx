@@ -38,7 +38,6 @@ import {
   type LeadAiSnippetInput,
 } from "@/lib/leads/command-ai-snippets";
 import { resolvePipelineStage } from "@/lib/leads/pipeline-stage-resolve";
-import type { GenericActivityType } from "@/lib/services/activities/generic-activity-types";
 import { LogActivityModal } from "@/components/activities/log-activity-modal";
 import { CallModal } from "@/components/telephony/call-modal";
 import { ConvertLeadModal, type ConvertResult } from "@/components/leads/convert-lead-modal";
@@ -152,9 +151,6 @@ export function LeadDashboardShell(props: LeadDashboardShellProps) {
   const [dispositionOpen, setDispositionOpen] = useState(false);
   const [convertOpen, setConvertOpen] = useState(false);
   const [taskOpen, setTaskOpen] = useState(false);
-  const [logActivityPreset, setLogActivityPreset] = useState<GenericActivityType | null>(
-    null,
-  );
   const [emailOpen, setEmailOpen] = useState(false);
   const [pickKind, setPickKind] = useState<QuickPickKind | null>(null);
   const [pickSaving, setPickSaving] = useState(false);
@@ -255,7 +251,6 @@ export function LeadDashboardShell(props: LeadDashboardShellProps) {
       setTaskOpen(true);
     },
     onLogActivity: () => {
-      setLogActivityPreset(null);
       setLogActivityOpen(true);
     },
     onConvert: () => setConvertOpen(true),
@@ -294,8 +289,10 @@ export function LeadDashboardShell(props: LeadDashboardShellProps) {
           setTaskOpen(true);
         },
         onLogActivity: quickHandlers.onLogActivity,
+        // T-P3.3b: "Add meeting" no longer presets a Generic type (the generic
+        // tab is gone). It opens the type-driven Activity logger; the user
+        // picks the Meeting type (if configured) from the picker like any other.
         onAddMeeting: () => {
-          setLogActivityPreset("Meeting");
           setLogActivityOpen(true);
         },
         onCreateTask: quickHandlers.onTask,
@@ -679,16 +676,11 @@ export function LeadDashboardShell(props: LeadDashboardShellProps) {
 
       <LogActivityModal
         open={logActivityOpen}
-        onClose={() => {
-          setLogActivityOpen(false);
-          setLogActivityPreset(null);
-        }}
+        onClose={() => setLogActivityOpen(false)}
         onSuccess={() => {
           setLogActivityOpen(false);
-          setLogActivityPreset(null);
           router.refresh();
         }}
-        initialGenericType={logActivityPreset}
         canViewLeads={canLogActivity}
         initialLead={{
           id: lead.id,

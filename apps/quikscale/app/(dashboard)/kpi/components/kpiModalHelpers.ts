@@ -112,6 +112,65 @@ export function buildBreakdown(
 }
 
 /**
+ * Apply a manual edit to one weekly Target-Breakdown cell and, for Cumulative,
+ * auto-redistribute the remaining target across the LATER weeks. Single source
+ * of truth shared by the Individual KPI modal (`setWeekBreakdown`) and the OPSP
+ * "Export → Create KPIs" drawer, so both behave identically.
+ *
+ *   - Clamp the typed value to `[0, target − sum(weeks before `week`)]`.
+ *   - Format: whole for "Number", 2-decimal otherwise.
+ *   - Cumulative: spread `target − sum(weeks 1..week)` evenly across
+ *     `week+1..13`, Week 13 absorbing the rounding residue.
+ *   - Standalone: set the one cell, no redistribution.
+ *
+ * `target` is the resolved numeric target (callers apply any currency scale
+ * before passing it in). Pure — no React — so the maths is unit-testable.
+ */
+export function applyWeeklyEdit(
+  weekly: WeeklyBreakdown,
+  week: number,
+  rawVal: string,
+  target: number,
+  measurementUnit: MeasurementUnit,
+  divisionType: DivisionType,
+): WeeklyBreakdown {
+  const isWhole = measurementUnit === "Number";
+
+  let priorSum = 0;
+  for (let i = 1; i < week; i++) priorSum += parseFloat(String(weekly[i])) || 0;
+  const maxAllowed = Math.max(0, target - priorSum);
+
+  let parsed = parseFloat(rawVal);
+  if (rawVal === "" || isNaN(parsed)) parsed = 0;
+  if (parsed < 0) parsed = 0;
+  if (divisionType === "Cumulative" && parsed > maxAllowed) parsed = maxAllowed;
+
+  const val = rawVal === "" ? "" : isWhole ? String(Math.round(parsed)) : parsed.toFixed(2);
+  const next: WeeklyBreakdown = { ...weekly, [week]: val };
+  if (divisionType !== "Cumulative") return next;
+
+  let leftSum = 0;
+  for (let i = 1; i <= week; i++) leftSum += parseFloat(String(next[i])) || 0;
+
+  const remaining = Math.max(0, target - leftSum);
+  const rightCount = 13 - week;
+  if (rightCount <= 0) return next;
+
+  if (isWhole) {
+    const base = Math.floor(remaining / rightCount);
+    for (let i = week + 1; i <= 13; i++) {
+      next[i] = String(i === 13 ? Math.round(remaining - base * (rightCount - 1)) : base);
+    }
+  } else {
+    const base = parseFloat((remaining / rightCount).toFixed(2));
+    const diff = parseFloat((remaining - base * rightCount).toFixed(2));
+    for (let i = week + 1; i <= 13; i++) next[i] = base.toFixed(2);
+    next[13] = (base + diff).toFixed(2);
+  }
+  return next;
+}
+
+/**
  * Compute the 13-week breakdown for a single owner given their
  * contribution percentage. The owner's sub-target is
  * `totalTarget * (ownerContributionPct / 100)`.

@@ -1,6 +1,6 @@
 "use client";
 
-import { createContext, useContext, useState } from "react";
+import { createContext, useContext, useState, useMemo, useCallback } from "react";
 import { getFiscalYear, getFiscalQuarter } from "@/lib/utils/fiscal";
 import { useSessionState } from "@/lib/hooks/useSessionState";
 
@@ -35,27 +35,36 @@ const FilterContext = createContext<FilterContextValue>({
 });
 
 export function FilterProvider({ children }: { children: React.ReactNode }) {
-  // Team stays in-memory (per-page scope, not synced). Owner + year + quarter
-  // are the shared, cross-page filter and persist for the browser-tab session.
+  // Team + Owner stay in-memory: they're shared across in-app navigation
+  // (this Provider lives in the dashboard layout, so it stays mounted as the
+  // user moves between KPI / Priority / WWW / Dashboard) but intentionally do
+  // NOT survive a full refresh / re-login. Owner ids are ORG-SCOPED — persisting
+  // one in sessionStorage let a stale owner from a previous session/org leak
+  // into another org, silently filtering lists to 0 rows and showing a phantom
+  // "1 filter" the user never set. Year + quarter are global (not org-scoped),
+  // so they still persist for the browser-tab session (survive refresh).
   const [filterTeam, setFilterTeamRaw] = useState("");
-  const [filterOwner, setFilterOwner] = useSessionState<string>("qs:filter:owner", "");
+  const [filterOwner, setFilterOwner] = useState<string>("");
   const [year, setYear] = useSessionState<number>("qs:filter:year", DEFAULT_YEAR);
   const [quarter, setQuarter] = useSessionState<Quarter>("qs:filter:quarter", DEFAULT_QUARTER);
 
-  function setFilterTeam(v: string) {
+  const setFilterTeam = useCallback((v: string) => {
     setFilterTeamRaw(v);
     setFilterOwner(""); // reset owner whenever team changes
-  }
+  }, [setFilterOwner]);
+
+  // Memoize the context value so consumers (KPI / Priority / WWW / dashboard)
+  // don't re-render on every Provider render from an unrelated state change —
+  // the object identity now changes only when one of these values actually does.
+  const value = useMemo<FilterContextValue>(() => ({
+    filterTeam, setFilterTeam,
+    filterOwner, setFilterOwner,
+    year, setYear,
+    quarter, setQuarter,
+  }), [filterTeam, setFilterTeam, filterOwner, setFilterOwner, year, setYear, quarter, setQuarter]);
 
   return (
-    <FilterContext.Provider
-      value={{
-        filterTeam, setFilterTeam,
-        filterOwner, setFilterOwner,
-        year, setYear,
-        quarter, setQuarter,
-      }}
-    >
+    <FilterContext.Provider value={value}>
       {children}
     </FilterContext.Provider>
   );

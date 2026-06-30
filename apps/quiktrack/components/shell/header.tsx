@@ -85,7 +85,7 @@ export function Header({ onToggleSidebar, sidebarOpen = true }: HeaderProps) {
 
   return (
     <div className="sticky top-0 z-50">
-      <header className="h-12 bg-white flex items-stretch border-b border-gray-200">
+      <header className="qt-topbar h-12 bg-white flex items-stretch border-b border-gray-200">
         {/* Logo column — when the sidebar is open it matches the sidebar
             width (232px) and carries a right border so the vertical divider
             runs continuously into the sidebar. When collapsed it shrinks to

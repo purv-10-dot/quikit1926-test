@@ -90,7 +90,7 @@ export function SettingsShell({
           className="inline-flex items-center gap-1.5 text-sm font-medium text-gray-900 hover:text-gray-700"
         >
           <ArrowLeft className="h-4 w-4" />
-          Space settings
+          Project settings
         </button>
         <div className="mt-5 flex items-center gap-2 px-2">
           <SpaceIcon icon={project?.icon} name={project?.name} color={project?.color} size={32} radius={8} />

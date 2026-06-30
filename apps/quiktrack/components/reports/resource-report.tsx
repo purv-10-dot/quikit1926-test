@@ -9,18 +9,22 @@ import {
   Target,
   AlertTriangle,
   CalendarRange,
+  Download,
 } from "lucide-react";
 import { UserTimeDrawer } from "@/components/timesheet/user-time-drawer";
+import { showToast } from "@/lib/ui/toast";
 import {
   KpiCard,
   ResourceTableRow,
   SortableHeader,
   computeRange,
   formatHhMm,
+  formatPct,
   type Granularity,
   type SortDir,
   type SortKey,
 } from "./resource-report-bits";
+import { escapeCsv } from "./project-report-bits";
 import { ResourceToolbar } from "./resource-toolbar";
 
 const PAGE_SIZE = 15;
@@ -145,6 +149,79 @@ export function ResourceReport() {
     [reportQ.data],
   );
 
+  const [exporting, setExporting] = useState(false);
+  // Excel auto-detects bare "HH:MM" text as a clock time and rewrites it to
+  // "HH:MM:SS". Emitting the value as an ="..." formula forces Excel to keep
+  // the exact string shown on screen. Already a complete CSV field, so it
+  // must NOT be passed through escapeCsv again.
+  const csvTime = (s: string) => `"=""${s}"""`;
+  async function exportCsv() {
+    setExporting(true);
+    try {
+      // The table is paginated (infinite scroll), so `rows` only holds the
+      // pages scrolled into view. Pull every page here so the export covers
+      // all employees that match the current filters, not just visible ones.
+      const all: Row[] = [];
+      let page = 1;
+      for (;;) {
+        const params = new URLSearchParams({
+          from: range.from,
+          to: range.to,
+          page: String(page),
+          pageSize: "100", // API cap; we loop until hasMore is false.
+          sortBy,
+          sortDir,
+        });
+        if (selectedUserIds.length > 0) params.set("userIds", selectedUserIds.join(","));
+        if (roleUserId) params.set("roleUserId", roleUserId);
+        const r = await fetch(`/api/reports/resource?${params.toString()}`);
+        const j = await r.json();
+        if (!j.success) throw new Error(j.error || "Failed to load");
+        const data: ReportPage = j.data;
+        all.push(...data.rows);
+        if (!data.hasMore) break;
+        page += 1;
+      }
+
+      const header = [
+        "#",
+        "Employee",
+        "Email",
+        "Status",
+        "Expected",
+        "Spent",
+        "Estimated",
+        "Overshot",
+        "Utilisation %",
+        "Overshot %",
+      ];
+      const csvRows = all.map((r, i) => [
+        String(i + 1),
+        escapeCsv(r.name),
+        escapeCsv(r.email),
+        r.timesheetFilled ? "Filled" : "Not filled",
+        csvTime(formatHhMm(r.expectedHours)),
+        csvTime(formatHhMm(r.spentHours)),
+        csvTime(formatHhMm(r.estimatedHours)),
+        csvTime(formatHhMm(r.overshotHours)),
+        formatPct(r.utilizationPct),
+        formatPct(r.overshotPct),
+      ]);
+      const csv = [header, ...csvRows].map((row) => row.join(",")).join("\n");
+      const blob = new Blob([csv], { type: "text/csv" });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `resource-report-${range.from}-to-${range.to}.csv`;
+      a.click();
+      URL.revokeObjectURL(url);
+    } catch (err: unknown) {
+      showToast(err instanceof Error ? err.message : "Export failed", "error");
+    } finally {
+      setExporting(false);
+    }
+  }
+
   const sentinelRef = useRef<HTMLTableRowElement | null>(null);
   const scrollContainerRef = useRef<HTMLDivElement | null>(null);
   useEffect(() => {
@@ -169,11 +246,22 @@ export function ResourceReport() {
 
   return (
     <div className="p-6 space-y-5">
-      <header className="space-y-1">
-        <h1 className="text-2xl font-semibold tracking-tight text-gray-900">Resource Reports</h1>
-        <p className="text-sm text-gray-500">
-          Per-employee utilisation across the selected period — filled timesheets, spent vs. estimated, and overshoot.
-        </p>
+      <header className="flex items-start justify-between gap-4">
+        <div className="space-y-1">
+          <h1 className="text-2xl font-semibold tracking-tight text-gray-900">Resource Reports</h1>
+          <p className="text-sm text-gray-500">
+            Per-employee utilisation across the selected period — filled timesheets, spent vs. estimated, and overshoot.
+          </p>
+        </div>
+        <button
+          type="button"
+          onClick={exportCsv}
+          disabled={exporting || rows.length === 0}
+          className="inline-flex shrink-0 items-center gap-1.5 h-9 px-3 text-sm bg-white border border-gray-200 rounded-md hover:bg-gray-50 text-gray-700 disabled:opacity-50"
+        >
+          <Download className="h-3.5 w-3.5" />
+          {exporting ? "Exporting…" : "Export"}
+        </button>
       </header>
 
       <ResourceToolbar

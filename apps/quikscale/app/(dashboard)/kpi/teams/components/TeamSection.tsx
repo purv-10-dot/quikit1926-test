@@ -4,7 +4,7 @@ import { useMemo, useState } from "react";
 import type { KPIRow } from "@/lib/types/kpi";
 import type { Team } from "@/lib/hooks/useTeams";
 import { useCanManageTeamKPI } from "@/lib/hooks/useCanManageTeamKPI";
-import { progressColor, fmtCompact } from "@/lib/utils/kpiHelpers";
+import { progressColor, fmtCompactBy, type NumberFormat } from "@/lib/utils/kpiHelpers";
 import { KPITable } from "../../components/KPITable";
 import { KPIModal } from "../../components/KPIModal";
 
@@ -27,9 +27,12 @@ interface Props {
   canDelete?: boolean;
   /** RBAC v2 — false makes opened edit drawers read-only. Defaults to true. */
   canUpdate?: boolean;
+  /** Number display format — "indian" → lakh/crore/arab; default "standard".
+   *  View-only; affects number text in the summary + KPITable cells. */
+  numberFormat?: NumberFormat;
 }
 
-export function TeamSection({ team, kpis, year, quarter, onRefresh, defaultExpanded, onHiddenColsChange, showColTrigger, onSelectionChange, clearSelectionTrigger, canDelete = true, canUpdate = true }: Props) {
+export function TeamSection({ team, kpis, year, quarter, onRefresh, defaultExpanded, onHiddenColsChange, showColTrigger, onSelectionChange, clearSelectionTrigger, canDelete = true, canUpdate = true, numberFormat = "standard" }: Props) {
   const [expanded, setExpanded] = useState<boolean>(defaultExpanded ?? kpis.length > 0);
   const [editKPI, setEditKPI] = useState<KPIRow | null>(null);
 
@@ -89,7 +92,7 @@ export function TeamSection({ team, kpis, year, quarter, onRefresh, defaultExpan
               />
             </div>
             <span className="text-[10px] text-gray-400 whitespace-nowrap font-medium">
-              {fmtCompact(summary.totalAchieved)} / {fmtCompact(summary.totalGoal)}
+              {fmtCompactBy(summary.totalAchieved, numberFormat)} / {fmtCompactBy(summary.totalGoal, numberFormat)}
             </span>
           </div>
         )}
@@ -123,6 +126,7 @@ export function TeamSection({ team, kpis, year, quarter, onRefresh, defaultExpan
                 clearSelectionTrigger={clearSelectionTrigger}
                 canDelete={canDelete}
                 canUpdate={canUpdate}
+                numberFormat={numberFormat}
               />
             </div>
           )}

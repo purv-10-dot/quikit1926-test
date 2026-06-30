@@ -163,12 +163,31 @@ const STATUS_COLORS: Record<string, string> = {
 
   // Danger
   rejected:                  CHIP_TONE.danger,
+  overdue:                   CHIP_TONE.danger,
+  expired:                   CHIP_TONE.danger,
+  excess:                    CHIP_TONE.danger,
+
+  // Extra equipment-module states
+  open:                      CHIP_TONE.warn,
+  due_soon:                  CHIP_TONE.warn,
+  expiring:                  CHIP_TONE.warn,
+  short:                     CHIP_TONE.warn,
+  ok:                        CHIP_TONE.success,
 };
 
-export function StatusChip({ status }: { status: string }) {
+export function StatusChip({
+  status,
+  label: labelOverride,
+}: {
+  status: string;
+  /** Optional display text; color still comes from `status`. */
+  label?: string;
+}) {
   const safeStatus = status ?? "";
   const color = STATUS_COLORS[safeStatus] ?? CHIP_TONE.neutral;
-  const label = safeStatus.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase()) || "—";
+  const label =
+    labelOverride ??
+    (safeStatus.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase()) || "—");
 
   return (
     <span className={`inline-flex items-center px-2 py-0.5 rounded-md text-[11px] font-semibold border ${color}`}>

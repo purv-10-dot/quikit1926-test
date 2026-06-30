@@ -9,6 +9,7 @@ import { withOrgAuthForResource } from "@/lib/api/withOrgAuth";
 // inside `userCan()` so admins still pass without any matrix ticks.
 const auth = withOrgAuthForResource("orgSetup.users", "User");
 import { parsePagination, paginatedResponse } from "@/lib/api/pagination";
+import { dateSearchConditions } from "@/lib/api/listSearch";
 import { createOrgUserSchema } from "@/lib/schemas/userSchema";
 import { getQuikScaleAppId } from "@/lib/api/permissions";
 import { seedAllDefaultRoles, ensureUserOnRole } from "@/lib/api/seedAdminAppRole";
@@ -35,7 +36,7 @@ type MembershipWithTeams = {
     email: string;
     avatar: string | null;
     lastSignInAt: Date | null;
-    userTeams: Array<{ teamId: string; team: { id: string; name: string } }>;
+    qsUserTeams: Array<{ teamId: string; team: { id: string; name: string } }>;
   };
 };
 
@@ -53,8 +54,8 @@ function buildUserResponse(
     lastSignInAt: m.user.lastSignInAt?.toISOString() ?? null,
     role:         m.role,
     teamId:       m.teamId,
-    teamIds:      m.user.userTeams.map(ut => ut.teamId),
-    teamNames:    m.user.userTeams.map(ut => ut.team.name),
+    teamIds:      m.user.qsUserTeams.map(ut => ut.teamId),
+    teamNames:    m.user.qsUserTeams.map(ut => ut.team.name),
     status:       m.status,
     joinedAt:     m.createdAt.toISOString(),
     /** Dynamic per-app role (from UserAppAccess.appRoleId → AppRole). */
@@ -64,7 +65,7 @@ function buildUserResponse(
 }
 
 const USER_TEAMS_INCLUDE = (orgId: string) => ({
-  userTeams: {
+  qsUserTeams: {
     where: { orgId },
     include: { team: { select: { id: true, name: true } } },
   },
@@ -89,13 +90,50 @@ export const GET = auth.view(async ({ orgId }, req) => {
     return NextResponse.json(paginatedResponse([], 0, page, limit));
   }
 
+  // DB-level filters / search / sort (replaces the page's old client-side work).
+  const sp = req.nextUrl.searchParams;
+  const search = (sp.get("search") ?? "").trim();
+  const roleFilter = (sp.get("role") ?? "").trim();
+  const statusFilter = (sp.get("status") ?? "").trim();
+
+  const SORTABLE = new Set(["name", "email", "lastSignInAt", "joinedAt"]);
+  const sortByRaw = sp.get("sortBy") ?? "";
+  const sortOrder = sp.get("sortOrder") === "desc" ? "desc" : "asc";
+  const sortBy = SORTABLE.has(sortByRaw) ? sortByRaw : "name";
+  const orderBy: Record<string, unknown>[] =
+    sortBy === "email"        ? [{ user: { email: sortOrder } }]
+    : sortBy === "lastSignInAt" ? [{ user: { lastSignInAt: sortOrder } }]
+    : sortBy === "joinedAt"    ? [{ createdAt: sortOrder }]
+    : [{ user: { firstName: sortOrder } }, { user: { lastName: sortOrder } }];
+  orderBy.push({ id: "desc" }); // stable tie-breaker so pages never overlap
+
+  // Global search across every visible column: user first/last name + email,
+  // role, status, team name (relation), joined date (OrgMember.createdAt) and
+  // last-sign-in date (user.lastSignInAt). The app-membership requirement stays
+  // on `user.appRoles` (always ANDed); search is a separate top-level OR.
+  const searchOr: Record<string, unknown>[] = search
+    ? [
+        { user: { firstName: { contains: search, mode: "insensitive" as const } } },
+        { user: { lastName: { contains: search, mode: "insensitive" as const } } },
+        { user: { email: { contains: search, mode: "insensitive" as const } } },
+        { user: { qsUserTeams: { some: { orgId, team: { name: { contains: search, mode: "insensitive" as const } } } } } },
+        { role: { contains: search, mode: "insensitive" as const } },
+        { status: { contains: search, mode: "insensitive" as const } },
+        ...dateSearchConditions(["createdAt"], search),
+        ...dateSearchConditions(["lastSignInAt"], search).map((c) => ({ user: c })),
+      ]
+    : [];
+
   const where = {
     orgId,
+    ...(roleFilter ? { role: roleFilter } : {}),
+    ...(statusFilter ? { status: statusFilter } : {}),
     user: {
       appRoles: {
         some: { orgId, role: { appId } },
       },
     },
+    ...(search ? { OR: searchOr } : {}),
   };
 
   const [memberships, total] = await Promise.all([
@@ -105,11 +143,11 @@ export const GET = auth.view(async ({ orgId }, req) => {
         user: {
           select: {
             id: true, firstName: true, lastName: true, email: true, avatar: true, lastSignInAt: true,
-            userTeams: { where: { orgId }, include: { team: { select: { id: true, name: true } } } },
+            qsUserTeams: { where: { orgId }, include: { team: { select: { id: true, name: true } } } },
           },
         },
       },
-      orderBy: { createdAt: "asc" },
+      orderBy: orderBy as any,
       skip,
       take,
     }),
@@ -272,7 +310,7 @@ export const POST = auth.create(async ({ orgId, userId }, req) => {
   }
 
   for (const teamId of resolvedTeamIds) {
-    await db.userTeam.upsert({
+    await db.qsUserTeam.upsert({
       where:  { orgId_userId_teamId: { orgId, userId: newUserId, teamId } },
       update: {},
       create: { orgId, userId: newUserId, teamId },
@@ -285,7 +323,7 @@ export const POST = auth.create(async ({ orgId, userId }, req) => {
       user: {
         select: {
           id: true, firstName: true, lastName: true, email: true, avatar: true, lastSignInAt: true,
-          userTeams: { where: { orgId }, include: { team: { select: { id: true, name: true } } } },
+          qsUserTeams: { where: { orgId }, include: { team: { select: { id: true, name: true } } } },
         },
       },
     },

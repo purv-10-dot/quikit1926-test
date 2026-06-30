@@ -2,7 +2,7 @@
 import { z } from "zod";
 import { db } from "@/lib/db";
 import { withOrgAuth } from "@/lib/api/withOrgAuth";
-import { hasAdminAccess } from "@/lib/api/permissions";
+import { userCanInProject, forbidden } from "@/lib/api/permissions";
 import { issuePriorityEnum, issueTypeEnum } from "@/lib/validation/issue";
 
 const rowSchema = z.object({
@@ -57,15 +57,11 @@ export const POST = withOrgAuth(async ({ orgId, userId }, req) => {
     return NextResponse.json({ success: false, error: "Project not found" }, { status: 404 });
   }
 
-  const isAdmin = await hasAdminAccess(userId, orgId);
-  if (!isAdmin) {
-    const member = await db.qtProjectMember.findFirst({
-      where: { projectId: project.id, userId, isDeleted: false },
-      select: { id: true },
-    });
-    if (!member) {
-      return NextResponse.json({ success: false, error: "Project not found" }, { status: 404 });
-    }
+  // Importing creates issues — gate on Issue:create. This resolves the
+  // project-scoped role first (so a Viewer, who has no create grant, is denied
+  // even though they're a project member) and short-circuits app-admins.
+  if (!(await userCanInProject(userId, orgId, project.id, "Issue", "create"))) {
+    return forbidden("You don't have permission to import issues.");
   }
 
   // Resolve foreign references (status names, assignee emails) once per call

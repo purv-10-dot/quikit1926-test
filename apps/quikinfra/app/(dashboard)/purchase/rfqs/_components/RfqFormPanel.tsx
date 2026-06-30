@@ -61,7 +61,7 @@ export function RfqFormPanel({ open, onClose, onSaved }: Props) {
     fetch("/api/masters/vendors?status=active").then(r => r.json()).then(j => j.success && setVendors(j.data));
     fetch("/api/purchase/indents").then(r => r.json()).then(j => j.success && setIndents(j.data.map((i: { id: string; indentNumber: string }) => ({ id: i.id, name: i.indentNumber }))));
     fetch("/api/masters/items").then(r => r.json()).then(j => j.success && setItems_(j.data));
-    fetch("/api/masters/uom").then(r => r.json()).then(j => j.success && setUoms(j.data));
+    fetch("/api/masters/uom").then(r => r.json()).then(j => j.success && setUoms(j.data.filter((u: { status?: string }) => u.status === "active")));
   }, [open]);
 
   function updateLine(idx: number, patch: Partial<LineRow>) {

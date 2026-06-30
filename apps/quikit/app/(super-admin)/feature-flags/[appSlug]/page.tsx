@@ -17,6 +17,7 @@ import { getAppConfig } from "@quikit/shared/moduleRegistry";
 
 const APP_LABELS: Record<string, string> = {
   quikscale: "QuikScale",
+  quikinfra: "QuikInfra",
   admin: "Admin Portal",
 };
 
@@ -41,9 +42,11 @@ export default function AppFeatureFlagsPage() {
   useEffect(() => {
     let cancelled = false;
     setLoadingTenants(true);
-    // Large pageSize to avoid pagination pain in the picker for now; server
+    // Large limit to avoid pagination pain in the picker for now; server
     // already supports search, we can switch to server-side filter later.
-    fetch("/api/super/orgs?page=1&pageSize=100")
+    // NOTE: the param is `limit` (parsePaginationParams reads `limit`, not
+    // `pageSize`); 100 is the server's MAX_LIMIT cap.
+    fetch("/api/super/orgs?page=1&limit=100")
       .then((r) => r.json())
       .then((j) => {
         if (cancelled) return;

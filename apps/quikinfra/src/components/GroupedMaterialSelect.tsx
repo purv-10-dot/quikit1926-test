@@ -147,7 +147,17 @@ export function buildMaterialGroupBuckets(
     }
     bucket.items.push(item);
   }
-  const groupRows = Array.from(map.values()).filter((b) => b.items.length > 0);
+  const groupRows = Array.from(map.values()).filter((b) => {
+    if (b.items.length === 0) return false;
+    // Hide item groups that are inactive/deleted so they never appear in the
+    // picker. Groups with no master meta (or undefined status), and the
+    // synthetic "Others" bucket, stay visible.
+    const meta = groupMetaById.get(b.id);
+    if (meta && (meta.status === "inactive" || meta.status === "deleted")) {
+      return false;
+    }
+    return true;
+  });
   groupRows.sort((a, b) => {
     const ao = a.id === OTHERS_GROUP_ID ? 1 : 0;
     const bo = b.id === OTHERS_GROUP_ID ? 1 : 0;

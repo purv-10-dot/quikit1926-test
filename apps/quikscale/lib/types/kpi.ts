@@ -61,6 +61,8 @@ export interface KPIRow {
   targetScale?: string | null;
   reverseColor?: boolean;
   frequency?: string;
+  /** True when created via the OPSP "Export → Create KPIs" flow (display-only). */
+  importedFromOpsp?: boolean;
   // Team KPI per-owner weekly targets: { userId: { weekNumber: value } }
   weeklyOwnerTargets?: Record<string, Record<string, number>> | null;
   // weeklyValues for team KPIs is the aggregated (sum) per-week view built by the API

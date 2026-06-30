@@ -48,7 +48,7 @@ export async function validateTeamKPICreate(
     );
   }
 
-  const team = await db.team.findUnique({ where: { id: teamId } });
+  const team = await db.qsTeam.findUnique({ where: { id: teamId } });
   if (!team || team.orgId !== orgId) {
     return NextResponse.json(
       { success: false, error: "The selected team could not be found. It may have been deleted." },
@@ -132,7 +132,7 @@ export async function validateIndividualKPICreate(
   }
 
   if (teamId) {
-    const team = await db.team.findUnique({ where: { id: teamId } });
+    const team = await db.qsTeam.findUnique({ where: { id: teamId } });
     if (!team || team.orgId !== orgId) {
       return NextResponse.json(
         { success: false, error: "Team not found" },

@@ -2,29 +2,54 @@ import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { parsePagination, paginatedResponse } from "@/lib/api/pagination";
 import { withOrgAuthForModule } from "@/lib/api/withOrgAuth";
+import { quikScaleMemberWhere } from "@/lib/api/permissions";
 const withOrgAuth = withOrgAuthForModule("analytics.individual");
 
 export const GET = withOrgAuth(async ({ orgId }, request) => {
     const { page, limit, skip, take } = parsePagination(request);
-    const where = { orgId };
+    const search = (request.nextUrl.searchParams.get("search") ?? "").trim();
 
-    const [members, total] = await Promise.all([
-      db.orgMember.findMany({
-        where,
-        include: {
-          user: {
-            include: {
-              kpisOwned: { where: { orgId }, include: { weeklyValues: true } },
-              prioritiesOwned: { where: { orgId }, include: { weeklyStatuses: true } },
-            }
-          },
-          team: true,
+    // SCOPE: only QuikScale members (those with an `app_quikscale.UserAppRole`
+    // for this org + app). Org members who only have access to other QuikIT
+    // apps are excluded. Fail safe to an empty list when the app isn't
+    // registered yet — see /api/org/users for the same pattern.
+    const memberWhere = await quikScaleMemberWhere(orgId);
+    if (!memberWhere) {
+      return NextResponse.json(paginatedResponse([], 0, page, limit));
+    }
+
+    const where = {
+      ...memberWhere,
+      ...(search
+        ? {
+            user: {
+              ...memberWhere.user,
+              OR: [
+                { firstName: { contains: search, mode: "insensitive" as const } },
+                { lastName: { contains: search, mode: "insensitive" as const } },
+                { email: { contains: search, mode: "insensitive" as const } },
+              ],
+            },
+          }
+        : {}),
+    };
+
+    // `overallScore` is computed in JS (not a DB column), so we can't ORDER BY
+    // it in Prisma. Fetch all matching members, compute + sort, then slice the
+    // requested page server-side. `search` already narrows the set in the DB.
+    const members = await db.orgMember.findMany({
+      where,
+      include: {
+        user: {
+          include: {
+            kpisOwned: { where: { orgId }, include: { weeklyValues: true } },
+            prioritiesOwned: { where: { orgId }, include: { weeklyStatuses: true } },
+          }
         },
-        skip,
-        take,
-      }),
-      db.orgMember.count({ where }),
-    ]);
+        team: true,
+      },
+    });
+    const total = members.length;
 
     // Only load meetings whose attendees include the paginated user set —
     // avoids scanning all tenant meetings just to compute attendance for
@@ -83,5 +108,9 @@ export const GET = withOrgAuth(async ({ orgId }, request) => {
       };
     });
 
-    return NextResponse.json(paginatedResponse(people, total, page, limit));
+    // Sort by overall score (desc) then slice the requested page.
+    people.sort((a, b) => (b.overallScore ?? 0) - (a.overallScore ?? 0));
+    const pageSlice = people.slice(skip, skip + take);
+
+    return NextResponse.json(paginatedResponse(pageSlice, total, page, limit));
 });

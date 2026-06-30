@@ -22,6 +22,7 @@ function task(overrides: Partial<GroupedBoardTask>): GroupedBoardTask {
     sprintId: null,
     assigneeId: null,
     reporterId: null,
+    epicId: null,
     groupId: null,
     orderInGroup: 0,
     startDate: null,
@@ -50,6 +51,13 @@ const MEMBERS: BoardMemberLite[] = [
   },
 ];
 
+const EPICS = [
+  { id: "e1", key: "QT-E1", title: "Login flow" },
+  { id: "e2", key: "QT-E2", title: "Billing" },
+];
+
+const CTX = { statuses: STATUSES, members: MEMBERS, epics: EPICS };
+
 describe("isFieldMode", () => {
   it("is false only for manual", () => {
     expect(isFieldMode("manual")).toBe(false);
@@ -57,12 +65,33 @@ describe("isFieldMode", () => {
     expect(isFieldMode("priority")).toBe(true);
     expect(isFieldMode("assignee")).toBe(true);
     expect(isFieldMode("type")).toBe(true);
+    expect(isFieldMode("epic")).toBe(true);
+  });
+});
+
+describe("deriveFieldGroups — epic", () => {
+  it("only surfaces epics that own work, plus a 'No epic' catch-all", () => {
+    const tasks = [
+      task({ id: "a", epicId: "e1" }),
+      task({ id: "b", epicId: null }),
+    ];
+    const groups = deriveFieldGroups("epic", tasks, CTX);
+    const names = groups.map((g) => g.name);
+    expect(names).toContain("QT-E1 · Login flow"); // e1 owns work
+    expect(names).not.toContain("QT-E2 · Billing"); // e2 has none → omitted
+    expect(names).toContain("No epic");
+    expect(decodeFieldPatch(groups.find((g) => g.name === "QT-E1 · Login flow")!.id)).toEqual({
+      epicId: "e1",
+    });
+    expect(decodeFieldPatch(groups.find((g) => g.name === "No epic")!.id)).toEqual({
+      epicId: null,
+    });
   });
 });
 
 describe("deriveFieldGroups — manual", () => {
   it("returns no derived groups in manual mode", () => {
-    expect(deriveFieldGroups("manual", [task({})], { statuses: STATUSES, members: MEMBERS })).toEqual([]);
+    expect(deriveFieldGroups("manual", [task({})], CTX)).toEqual([]);
   });
 });
 
@@ -73,7 +102,7 @@ describe("deriveFieldGroups — status", () => {
       task({ id: "b", key: "QT-1", statusId: "s2" }),
       task({ id: "c", key: "QT-3", statusId: "s1" }),
     ];
-    const groups = deriveFieldGroups("status", tasks, { statuses: STATUSES, members: MEMBERS });
+    const groups = deriveFieldGroups("status", tasks, CTX);
     expect(groups.map((g) => g.name)).toEqual(["To Do", "In Progress", "Done"]);
     expect(groups[0].taskCount).toBe(1); // s1
     expect(groups[1].taskCount).toBe(2); // s2
@@ -87,10 +116,7 @@ describe("deriveFieldGroups — status", () => {
 
 describe("deriveFieldGroups — priority", () => {
   it("emits all five priority buckets in canonical order", () => {
-    const groups = deriveFieldGroups("priority", [task({ priority: "HIGH" })], {
-      statuses: STATUSES,
-      members: MEMBERS,
-    });
+    const groups = deriveFieldGroups("priority", [task({ priority: "HIGH" })], CTX);
     expect(groups.map((g) => g.name)).toEqual(["Highest", "High", "Medium", "Low", "Lowest"]);
     expect(groups.find((g) => g.name === "High")!.taskCount).toBe(1);
   });
@@ -98,10 +124,7 @@ describe("deriveFieldGroups — priority", () => {
 
 describe("deriveFieldGroups — type", () => {
   it("emits TASK/BUG/STORY buckets", () => {
-    const groups = deriveFieldGroups("type", [task({ type: "BUG" })], {
-      statuses: STATUSES,
-      members: MEMBERS,
-    });
+    const groups = deriveFieldGroups("type", [task({ type: "BUG" })], CTX);
     expect(groups.map((g) => g.name)).toEqual(["Task", "Bug", "Story"]);
     expect(decodeFieldPatch(groups[1].id)).toEqual({ type: "BUG" });
   });
@@ -113,7 +136,7 @@ describe("deriveFieldGroups — assignee", () => {
       task({ id: "a", assigneeId: "u1" }),
       task({ id: "b", assigneeId: null }),
     ];
-    const groups = deriveFieldGroups("assignee", tasks, { statuses: STATUSES, members: MEMBERS });
+    const groups = deriveFieldGroups("assignee", tasks, CTX);
     // u1 has work, u2 does not → u2 omitted; Unassigned bucket appended
     const names = groups.map((g) => g.name);
     expect(names).toContain("Ann");

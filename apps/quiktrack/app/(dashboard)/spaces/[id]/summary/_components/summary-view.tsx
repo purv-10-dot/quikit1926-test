@@ -174,11 +174,11 @@ export function SummaryView({ projectId }: { projectId: string }) {
           <Info className="h-4 w-4 text-blue-600 mt-0.5 shrink-0" />
           <div className="flex-1">
             <h3 className="text-sm font-semibold text-gray-900">
-              Customize your Reports view to suit your space.
+              Customize your Reports view to suit your project.
             </h3>
             <p className="mt-1 text-xs text-gray-600">
               Head to the Reports tab to easily customize charts and widgets for a
-              dashboard tailored to your space.
+              dashboard tailored to your project.
             </p>
             <div className="mt-2 flex items-center gap-4 text-xs">
               <Link
@@ -245,10 +245,10 @@ export function SummaryView({ projectId }: { projectId: string }) {
           <h3 className="text-sm font-semibold text-gray-900">Status overview</h3>
           <p className="mt-1 text-xs text-gray-600">
             {total > 0 ? (
-              "A breakdown of work items by status across this space."
+              "A breakdown of work items by status across this project."
             ) : (
               <>
-                The status overview for this space will display here after you{" "}
+                The status overview for this project will display here after you{" "}
                 <Link
                   href={`/spaces/${projectId}/board`}
                   className="text-blue-600 hover:underline"
@@ -275,8 +275,8 @@ export function SummaryView({ projectId }: { projectId: string }) {
                 <NoActivityIllustration className="h-20 w-auto" />
                 <h4 className="mt-3 text-sm font-semibold text-gray-900">No activity yet</h4>
                 <p className="mt-1 text-xs text-gray-600 max-w-[240px] leading-snug">
-                  Create a few work items and invite some teammates to your space to see
-                  your space activity.
+                  Create a few work items and invite some teammates to your project to see
+                  your project activity.
                 </p>
               </div>
             </div>
@@ -538,7 +538,7 @@ export function SummaryView({ projectId }: { projectId: string }) {
           <div className="mt-6 flex flex-col items-center text-center">
             <EpicProgressIllustration />
             <p className="mt-3 text-xs text-gray-600 max-w-[360px]">
-              Use epics to track larger initiatives in your space.{" "}
+              Use epics to track larger initiatives in your project.{" "}
               <a className="text-blue-600 hover:underline" href="#">
                 What is an epic?
               </a>

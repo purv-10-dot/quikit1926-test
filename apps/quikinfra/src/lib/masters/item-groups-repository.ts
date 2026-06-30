@@ -73,6 +73,9 @@ function buildItemGroupsWhere(
   const q = (opts.search ?? "").trim();
   return {
     orgId: opts.orgId,
+    // "deleted" rows are removed from the UI entirely; "inactive" rows are
+    // still returned so they can show under the Inactive tab.
+    status: { not: "deleted" },
     ...(q ? { name: { contains: q, mode: "insensitive" } } : {}),
   };
 }
@@ -166,7 +169,7 @@ export async function deleteItemGroup(
 ): Promise<boolean> {
   const res = await db.cnItemGroup.updateMany({
     where: { id, orgId },
-    data: { status: "inactive", updatedBy },
+    data: { status: "deleted", updatedBy },
   });
   return res.count > 0;
 }

@@ -40,7 +40,12 @@ export const MENU_TO_RESOURCE: Readonly<Record<string, string>> = {
   "master.customer":    "construction.masters",
   "master.location":    "construction.masters",
   "master.machinery":   "construction.masters",
-  "master.asset":       "construction.stock",
+  // Assets/Tools is a MASTERS page — its API routes gate on
+  // `construction.masters` (requireMastersAction). It was mis-wired to
+  // `construction.stock` here, so toggling the Assets checkbox did nothing to
+  // the Assets page and instead revoked Stock Register in the STORE module —
+  // the cross-module "unchecking here unchecks Store" bug.
+  "master.asset":       "construction.masters",
   "master.cost_center": "construction.masters",
   // Purchase
   "purchase.mr":             "construction.pr",
@@ -57,7 +62,13 @@ export const MENU_TO_RESOURCE: Readonly<Record<string, string>> = {
   "store.transfer":    "construction.transfer",
   "store.recon":       "construction.reconciliation",
   "store.diesel":      "construction.diesel",
-  "store.asset_mgmt":  "construction.stock",
+  // Machinery & Equipment
+  "equip.log_book":    "construction.equipment_log",
+  "equip.maintenance": "construction.equipment_maintenance",
+  "equip.deployment":  "construction.equipment_deployment",
+  "equip.fleet":       "construction.equipment_fleet",
+  "equip.hire_rent":   "construction.equipment_hire_rent",
+  "equip.fixed_assets":"construction.equipment_fixed_assets",
   // Project Mgmt
   "pm.boq":        "construction.boq",
   "pm.wbs":        "construction.wbs",

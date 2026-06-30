@@ -109,11 +109,13 @@ export default function ReviewsPage() {
     isLoading: reviewsLoading,
     error: reviewsError,
   } = usePerformanceReviews();
-  const { data: usersData } = useIndividualPerformance();
+  // Reviews needs the full people list (reviewee picker + score auto-fill),
+  // so request a single large page rather than the paginated default.
+  const { data: usersData } = useIndividualPerformance({ page: 1, limit: 1000 });
   const createReview = useCreateReview();
 
   const reviews = useMemo(() => (reviewsData as any[]) ?? [], [reviewsData]);
-  const users = useMemo(() => (usersData as any[]) ?? [], [usersData]);
+  const users = useMemo(() => (usersData?.data as any[]) ?? [], [usersData]);
 
   const [showModal, setShowModal] = useState(false);
   const [form, setForm] = useState<ReviewForm>(DEFAULT_FORM);

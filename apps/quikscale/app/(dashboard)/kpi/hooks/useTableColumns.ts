@@ -8,6 +8,7 @@ const COL_WIDTHS_DEFAULT: Record<string, number> = {
   measurementUnit: 120, targetValue: 90,
   quarterlyGoal: 110, qtdGoal: 100, qtdAchieved: 110, weeklyGoal: 100,
   description: 200, lastNotes: 200,
+  importedFromOpsp: 150,
   // Audit columns
   createdBy: 160, updatedBy: 160, createdAt: 130, updatedAt: 130,
 };
@@ -19,6 +20,7 @@ export const ALL_STATIC_COLS = [
   "measurementUnit", "targetValue",
   "quarterlyGoal", "qtdGoal", "qtdAchieved", "weeklyGoal",
   "description", "lastNotes",
+  "importedFromOpsp",
   // Audit columns — populated by GET /api/kpi (see lib/api/auditUsers.ts).
   "createdBy", "updatedBy", "createdAt", "updatedAt",
 ];
@@ -29,6 +31,7 @@ export const COL_LABELS: Record<string, string> = {
   measurementUnit: "Measurement Unit", targetValue: "Target Value",
   quarterlyGoal: "Quarterly Goal", qtdGoal: "QTD Goal", qtdAchieved: "QTD Achieved", weeklyGoal: "Weekly Goal",
   description: "Description", lastNotes: "Last Notes",
+  importedFromOpsp: "Imported from OPSP",
   createdBy: "Created By", updatedBy: "Updated By",
   createdAt: "Created Date", updatedAt: "Updated Date",
 };

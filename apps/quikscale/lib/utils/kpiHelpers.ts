@@ -1,4 +1,5 @@
 import { getColorByPercentage, type ColorResult } from "./colorLogic";
+import { CURRENCIES, getMultiplier, shortScaleLabel } from "./currency";
 
 /**
  * Format a number for display: strips floating-point noise, max 2 decimal places,
@@ -21,6 +22,73 @@ export function fmtCompact(val: number | null | undefined): string {
   if (abs >= 1_000_000) return sign + parseFloat((abs / 1_000_000).toFixed(2)) + "M";
   if (abs >= 1_000)     return sign + parseFloat((abs / 1_000).toFixed(1)) + "K";
   return fmt(val);
+}
+
+/** Dashboard number-format mode — Western abbreviations vs the Indian system. */
+export type NumberFormat = "standard" | "indian";
+
+/**
+ * Compact format using the Indian numbering system: thousand (K), lakh (L,
+ * 1e5), crore (Cr, 1e7), arab (Ar, 1e9). Mirrors `fmtCompact`'s decimal trimming
+ * and sign handling. e.g. 12_500_000 → "1.25Cr", 849_000 → "8.49L", 5_000 → "5K".
+ * Used only by the Dashboard (gated behind the `use_indian_numbering` toggle).
+ */
+export function fmtCompactIndian(val: number | null | undefined): string {
+  if (val === null || val === undefined) return "—";
+  const abs = Math.abs(val);
+  const sign = val < 0 ? "-" : "";
+  if (abs >= 1_000_000_000) return sign + parseFloat((abs / 1_000_000_000).toFixed(2)) + "Ar";
+  if (abs >= 10_000_000)    return sign + parseFloat((abs / 10_000_000).toFixed(2)) + "Cr";
+  if (abs >= 100_000)       return sign + parseFloat((abs / 100_000).toFixed(2)) + "L";
+  if (abs >= 1_000)         return sign + parseFloat((abs / 1_000).toFixed(1)) + "K";
+  return fmt(val);
+}
+
+/**
+ * Dispatch compact formatting by mode. `"indian"` → lakh/crore/arab; anything
+ * else → the standard K/M/B abbreviations. `fmtCompact` itself is unchanged, so
+ * every surface that doesn't opt into a format stays byte-identical.
+ */
+export function fmtCompactBy(val: number | null | undefined, format: NumberFormat = "standard"): string {
+  return format === "indian" ? fmtCompactIndian(val) : fmtCompact(val);
+}
+
+/**
+ * Display formatter for KPI goal/value numbers that respects a Currency KPI's
+ * chosen scale unit. Display-only — stored values stay RAW.
+ *
+ * Rules (see docs/deferred/currency-scale-display.md):
+ *   - Currency + scale, INR → always the scaled unit with ₹ ("₹4 Cr"), toggle ignored.
+ *   - Currency + scale, non-INR → toggle OFF native scale ("$9 M"); toggle ON
+ *     Indian magnitude keeping the symbol ("$90L").
+ *   - Currency, no scale → INR forces Indian; others follow the toggle.
+ *   - Non-currency → plain compact, toggle-driven (byte-identical to fmtCompactBy).
+ */
+export function formatScaledKpiValue(
+  val: number | null | undefined,
+  opts: {
+    measurementUnit?: string | null;
+    currency?: string | null;
+    targetScale?: string | null;
+    numberFormat?: NumberFormat;
+  },
+): string {
+  if (val == null) return "—";
+  const { measurementUnit, currency, targetScale, numberFormat = "standard" } = opts;
+  if (measurementUnit === "Currency" && currency && targetScale) {
+    const m = getMultiplier(currency, targetScale);
+    if (m > 1) {
+      const symbol = CURRENCIES.find(c => c.code === currency)?.symbol ?? "";
+      // non-INR + toggle ON → Indian magnitude keeping the symbol ("$90L"); INR ignores the toggle.
+      if (currency !== "INR" && numberFormat === "indian") return `${symbol}${fmtCompactIndian(val)}`;
+      const scaled = parseFloat((val / m).toFixed(2)).toString();
+      const unit = shortScaleLabel(targetScale);
+      return `${symbol}${scaled}${unit ? ` ${unit}` : ""}`; // "₹4 Cr" / "$9 M"
+    }
+  }
+  // No scale / non-currency: INR forces Indian even when the toggle is off.
+  const effective: NumberFormat = currency === "INR" ? "indian" : numberFormat;
+  return fmtCompactBy(val, effective);
 }
 
 /**
@@ -89,6 +157,25 @@ export function getProgressBadgeColors(
  * @param fallbackTarget Legacy `target` field as fallback
  * @param reverse True for reverse KPIs (lower is better)
  */
+/**
+ * The target for a single week, matching what the Updates tab renders:
+ * the explicit `weeklyTargets[week]` if the KPI has one configured, otherwise
+ * the flat `(qtdGoal ?? target) / 13` distribution. Mirrors LogModal's
+ * per-row target so audit cards and the editor agree.
+ */
+export function weeklyTargetForWeek(
+  kpi: {
+    weeklyTargets?: Record<string, number> | null;
+    qtdGoal?: number | null;
+    target?: number | null;
+  },
+  week: number,
+): number {
+  const explicit = kpi.weeklyTargets?.[String(week)];
+  if (explicit != null) return explicit;
+  return (kpi.qtdGoal ?? kpi.target ?? 0) / 13;
+}
+
 export function weekCellColors(
   val: number | null | undefined,
   qtdGoal: number | null | undefined,

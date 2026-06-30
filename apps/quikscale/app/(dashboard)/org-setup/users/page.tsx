@@ -1044,15 +1044,32 @@ export default function OrgUsersPage() {
   // elapses or the user hard-refreshes.
   const queryClient = useQueryClient();
 
+  const [roleFilter, setRoleFilter] = useState("");
+  // Default to "" (All statuses) so the Users list mirrors the full member set
+  // (active + inactive) — same 89-member universe as Analytics → Individual.
+  // "active" is now an opt-in narrowing filter, not the default.
+  const [statusFilter, setStatusFilter] = useState("");
+  // Role + status filters run at the DB level via fetchParams; memoised so the
+  // hook only refetches when a filter value actually changes.
+  const usersFetchParams = useMemo(() => {
+    const p: Record<string, string> = {};
+    if (statusFilter) p.status = statusFilter;
+    if (roleFilter) p.role = roleFilter;
+    return p;
+  }, [statusFilter, roleFilter]);
+
   const crud = useTableCRUD<OrgUser>({
     apiEndpoint: "/api/org/users",
     idKey: "userId",
     searchFields: ["firstName", "lastName", "email"],
+    fetchParams: usersFetchParams,
+    // DB-level pagination + search (name/email) + sort. Role/status come via
+    // fetchParams above.
+    serverPagination: true,
+    defaultSort: "name:asc",
   });
 
   const [teams, setTeams] = useState<OrgTeam[]>([]);
-  const [roleFilter, setRoleFilter] = useState("");
-  const [statusFilter, setStatusFilter] = useState("active");
   const [filterOpen, setFilterOpen] = useState(false);
   const [confirmUser, setConfirmUser] = useState<OrgUser | null>(null);
   const [confirmAction, setConfirmAction] = useState<"remove" | "reactivate">(
@@ -1107,21 +1124,17 @@ export default function OrgUsersPage() {
     return () => document.removeEventListener("mousedown", handler);
   }, []);
 
-  // Apply role/status filters on top of hook's search-filtered results
-  const filtered = useMemo(() => {
-    let list = crud.search.trim()
-      ? crud.items.filter((u) => {
-          const q = crud.search.toLowerCase();
-          return (
-            `${u.firstName} ${u.lastName}`.toLowerCase().includes(q) ||
-            u.email.toLowerCase().includes(q)
-          );
-        })
-      : crud.items;
-    if (statusFilter) list = list.filter((u) => u.status === statusFilter);
-    if (roleFilter) list = list.filter((u) => u.role === roleFilter);
-    return list;
-  }, [crud.items, crud.search, roleFilter, statusFilter]);
+  // Search + role + status now all run at the DB level, so `crud.filtered` is
+  // already the correct server-filtered page — no client-side filtering here.
+  const filtered = crud.filtered;
+
+  // Role/status are sent server-side; reset to the first page when either
+  // changes so we never land on an out-of-range page. (Search resets inside
+  // the hook via its debounce.)
+  useEffect(() => {
+    crud.setPage(1);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [roleFilter, statusFilter]);
 
   function handleSaved(user: OrgUser & { tempPassword?: string }) {
     // Optimistic write keeps the list responsive while the temp-password
@@ -1185,16 +1198,15 @@ export default function OrgUsersPage() {
     }
   }
 
-  const activeCount = crud.items.filter((u) => u.status === "active").length;
+  // `crud.total` is the server-side count for the current filter set. With no
+  // status filter (the default) this is the full member count (active +
+  // inactive). Picking Active/Inactive narrows it.
+  const totalForFilter = crud.total;
   const filterCount =
-    (roleFilter ? 1 : 0) + (statusFilter !== "active" ? 1 : 0);
+    (roleFilter ? 1 : 0) + (statusFilter ? 1 : 0);
 
-  // Pagination — default 10 rows, options 10/20/30/50
-  const [page, setPage] = useState(1);
-  const [pageSize, setPageSize] = useState(10);
-  useEffect(() => { setPage(1); }, [crud.search, roleFilter, statusFilter, pageSize]);
-  const pagedUsers = filtered.slice((page - 1) * pageSize, page * pageSize);
-  const totalUserPages = Math.max(1, Math.ceil(filtered.length / pageSize));
+  // Server-side pagination — the API already returns the requested page.
+  const pagedUsers = filtered;
 
   return (
     <div className="flex flex-col h-full bg-gray-50">
@@ -1233,7 +1245,7 @@ export default function OrgUsersPage() {
           <div>
             <h1 className="text-sm font-bold text-gray-900">Users</h1>
             <p className="text-xs text-gray-400">
-              {activeCount} active member{activeCount !== 1 ? "s" : ""}
+              {totalForFilter}{statusFilter === "active" ? " active" : statusFilter === "inactive" ? " inactive" : ""} member{totalForFilter !== 1 ? "s" : ""}
             </p>
           </div>
         </div>
@@ -1498,14 +1510,14 @@ export default function OrgUsersPage() {
           </tbody>
         </table>
         </div>
-        {filtered.length > 0 && (
+        {crud.total > 0 && (
           <Pagination
-            page={page}
-            totalPages={totalUserPages}
-            total={filtered.length}
-            limit={pageSize}
-            onPageChange={setPage}
-            onPageSizeChange={setPageSize}
+            page={crud.page}
+            totalPages={crud.totalPages}
+            total={crud.total}
+            limit={crud.limit}
+            onPageChange={crud.setPage}
+            onPageSizeChange={(size) => { crud.setLimit(size); crud.setPage(1); }}
           />
         )}
       </div>

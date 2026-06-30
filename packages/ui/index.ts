@@ -22,7 +22,7 @@ export { ColMenu } from "./components/col-menu";
 export { HiddenColsPill } from "./components/hidden-cols-pill";
 export { SlidePanel } from "./components/slide-panel";
 export { EmptyState } from "./components/empty-state";
-export { Pagination } from "./components/pagination";
+export { Pagination, DEFAULT_PAGE_SIZE, DEFAULT_PAGE_SIZE_OPTIONS } from "./components/pagination";
 export { Select, type SelectOption, type SelectProps } from "./components/select";
 export { NumberInput, type NumberInputProps } from "./components/number-input";
 export { DateInput, type DateInputProps } from "./components/date-input";

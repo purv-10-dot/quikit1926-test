@@ -10,6 +10,9 @@ import {
   Maximize2,
   Minimize2,
   Share2,
+  Lock,
+  Globe,
+  X,
 } from "lucide-react";
 import { RichTextEditor } from "@/components/rich-text-editor-lazy";
 import { getTemplate } from "./templates-meta";
@@ -23,8 +26,11 @@ interface DocFull {
   content: string;
   projectId: string;
   createdBy: string | null;
+  status?: string;
   shareToken?: string | null;
   shareMode?: string | null;
+  /** Effective role of the current user on this doc (from the GET response). */
+  role?: "owner" | "editor" | "viewer";
 }
 
 interface UserLite {
@@ -47,6 +53,7 @@ export function DocEditor({
   docId,
   draftTemplateKey,
   draftFolderId,
+  standalone,
 }: {
   projectId: string;
   /** Present when editing an existing doc. Omitted in draft mode. */
@@ -55,13 +62,23 @@ export function DocEditor({
    *  only on first save — so opening a template never leaves an empty doc. */
   draftTemplateKey?: string;
   draftFolderId?: string | null;
+  /** Opened from the standalone /docs/[id] route (e.g. a shared user who isn't
+   *  a project member). Closing must not route into the project's docs list —
+   *  they may have no access to it. */
+  standalone?: boolean;
 }) {
   const router = useRouter();
   const qc = useQueryClient();
-  // Editing a doc needs Doc:update; a brand-new draft needs Doc:create. Without
-  // it the editor is read-only (the server PATCH/POST would 403 anyway).
+  // A brand-new draft needs Doc:create (project perm). For an existing doc the
+  // server returns the caller's effective role (owner/editor/viewer) — which
+  // also covers shared users who aren't project members. Editing needs
+  // owner/editor; while the role is still loading we stay optimistic so the
+  // editor doesn't flash read-only.
   const perms = useMyProjectPermissions(projectId);
-  const canEdit = perms.loading || perms.has("Doc", docId ? "update" : "create");
+  const [docRole, setDocRole] = useState<"owner" | "editor" | "viewer" | null>(null);
+  const canEdit = !docId
+    ? perms.loading || perms.has("Doc", "create")
+    : docRole === null || docRole === "owner" || docRole === "editor";
   const canEditRef = useRef(canEdit);
   canEditRef.current = canEdit;
   const [doc, setDoc] = useState<DocFull | null>(null);
@@ -71,9 +88,10 @@ export function DocEditor({
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [maximized, setMaximized] = useState(false);
-  const [shareToken, setShareToken] = useState<string | null>(null);
-  const [shareMode, setShareMode] = useState<"view" | "edit" | null>(null);
   const [shareOpen, setShareOpen] = useState(false);
+  // Draft/publish state. New docs (no docId yet) start as drafts.
+  const [status, setStatus] = useState<string>("draft");
+  const [publishing, setPublishing] = useState(false);
   const dirtyRef = useRef(false);
   // The doc id, which only exists after a draft is first saved. Mutations read
   // this ref so the create→update switch survives the debounced save closure.
@@ -124,8 +142,8 @@ export function DocEditor({
           setDoc(x);
           setTitle(x.title);
           setContent(x.content || "<p></p>");
-          setShareToken(x.shareToken ?? null);
-          setShareMode((x.shareMode as "view" | "edit" | null) ?? null);
+          setStatus(x.status ?? "published");
+          setDocRole(x.role ?? null);
         }
         if (s?.user) setAuthor(s.user as UserLite);
       })
@@ -231,7 +249,37 @@ export function DocEditor({
   }, []);
 
   function close() {
+    // Standalone viewers (shared non-members) can't open the project docs list,
+    // so go back / to the app root instead of into the project.
+    if (standalone) {
+      if (typeof window !== "undefined" && window.history.length > 1) router.back();
+      else router.push("/");
+      return;
+    }
     router.push(`/spaces/${projectId}/docs`);
+  }
+
+  // Publish a draft (visible to all project members) or revert to draft
+  // (author-only). The doc must be saved first so it has an id.
+  async function togglePublish() {
+    const id = docIdRef.current;
+    if (!id || publishing) return;
+    const next = status === "draft" ? "published" : "draft";
+    setPublishing(true);
+    try {
+      const res = await fetch(`/api/docs/${id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ status: next }),
+      }).then((r) => r.json());
+      if (res?.success) {
+        setStatus(next);
+        // Refresh the Docs list so the Draft badge appears/disappears on return.
+        qc.invalidateQueries({ queryKey: ["qt-docs", "list", projectId] });
+      }
+    } finally {
+      setPublishing(false);
+    }
   }
 
   /**
@@ -267,17 +315,96 @@ export function DocEditor({
             </span>
             Write
           </span>
-          <div className="flex items-center gap-1.5">
-            <span className="text-[11px] text-gray-500 mr-1">
-              {!canEdit ? "View only" : saving ? "Saving…" : "All changes saved"}
+          <div className="flex items-center gap-2">
+            {/* Save status — quiet dot + label, never competes with the actions */}
+            <span className="hidden sm:inline-flex items-center gap-1.5 text-[11px] font-medium text-gray-500 dark:text-slate-400">
+              <span
+                className={`h-1.5 w-1.5 rounded-full ${
+                  !canEdit
+                    ? "bg-gray-400 dark:bg-slate-500"
+                    : saving
+                      ? "bg-amber-500 animate-pulse"
+                      : "bg-emerald-500"
+                }`}
+              />
+              {!canEdit ? "View only" : saving ? "Saving" : "Saved"}
             </span>
+
+            {/* Draft ⇄ Published as ONE segmented toggle: the active state is the
+                raised segment; clicking the other side switches it. Muted tints
+                so it sits quietly in the toolbar. Drafts are author-only, so
+                whoever sees a draft is its author and can publish; only the
+                author sees an "unpublish" (go-to-draft) affordance. */}
+            {(() => {
+              const isAuthor = !doc?.createdBy || doc.createdBy === author?.id;
+              const draftActive = status === "draft";
+              // Can switch TO each side?
+              const canGoPublished = canEdit && draftActive && !!docIdRef.current && !publishing;
+              const canGoDraft = canEdit && !draftActive && isAuthor && !publishing;
+              const seg =
+                "inline-flex items-center gap-1 rounded-full px-2.5 h-7 text-[11px] font-semibold uppercase tracking-wide transition-colors";
+              return (
+                <div
+                  role="group"
+                  aria-label="Document visibility"
+                  className="inline-flex items-center rounded-full bg-gray-100 p-0.5 ring-1 ring-inset ring-gray-200 dark:bg-slate-800 dark:ring-slate-700"
+                >
+                  <button
+                    type="button"
+                    onClick={() => canGoDraft && togglePublish()}
+                    disabled={!draftActive && !canGoDraft}
+                    aria-pressed={draftActive}
+                    title={
+                      draftActive
+                        ? "Only you can see this draft"
+                        : isAuthor
+                          ? "Revert to draft — hide from other members"
+                          : "Only the author can change this"
+                    }
+                    className={`${seg} ${
+                      draftActive
+                        ? "bg-white text-amber-700 shadow-sm dark:bg-slate-700 dark:text-amber-300"
+                        : "text-gray-400 hover:text-gray-600 disabled:opacity-40 dark:text-slate-500 dark:hover:text-slate-300"
+                    }`}
+                  >
+                    <Lock className="h-3 w-3" />
+                    Draft
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => canGoPublished && togglePublish()}
+                    disabled={draftActive && !canGoPublished}
+                    aria-pressed={!draftActive}
+                    title={
+                      !draftActive
+                        ? "Visible to all project members"
+                        : docIdRef.current
+                          ? "Publish — make this visible to all project members"
+                          : "Save the doc first to publish it"
+                    }
+                    className={`${seg} ${
+                      !draftActive
+                        ? "bg-white text-emerald-700 shadow-sm dark:bg-slate-700 dark:text-emerald-300"
+                        : "text-gray-400 hover:text-gray-600 disabled:opacity-40 dark:text-slate-500 dark:hover:text-slate-300"
+                    }`}
+                  >
+                    <Globe className="h-3 w-3" />
+                    {publishing ? "…" : "Published"}
+                  </button>
+                </div>
+              );
+            })()}
+
+            <span className="h-5 w-px bg-gray-200 dark:bg-slate-700" />
+
+            {/* Share — quiet outline button so Publish stays the hero action */}
             <div className="relative">
               <button
                 type="button"
                 onClick={() => setShareOpen((v) => !v)}
                 disabled={!docIdRef.current}
                 title={docIdRef.current ? "Share" : "Save the doc first to share it"}
-                className="h-8 px-3 inline-flex items-center gap-1.5 text-xs font-medium text-white bg-blue-600 hover:bg-blue-700 rounded disabled:opacity-50"
+                className="inline-flex h-8 items-center gap-1.5 rounded-md border border-gray-200 px-3 text-xs font-medium text-gray-700 transition-colors hover:bg-gray-50 disabled:opacity-40 dark:border-slate-600 dark:text-slate-200 dark:hover:bg-slate-700/60"
               >
                 <Share2 className="h-3.5 w-3.5" />
                 Share
@@ -285,33 +412,28 @@ export function DocEditor({
               {shareOpen && docIdRef.current && (
                 <ShareDialog
                   docId={docIdRef.current}
-                  token={shareToken}
-                  mode={shareMode}
-                  onChange={(t, m) => {
-                    setShareToken(t);
-                    setShareMode(m);
-                  }}
                   onClose={() => setShareOpen(false)}
                 />
               )}
             </div>
-            <button
-              type="button"
-              onClick={close}
-              className="h-8 px-3 text-xs text-gray-700 hover:bg-gray-100 rounded"
-            >
-              Close
-            </button>
-            {/* <button className="p-1.5 rounded hover:bg-gray-100 text-gray-500" aria-label="More">
-              <MoreHorizontal className="h-4 w-4" />
-            </button> */}
+
+            {/* Window controls — quiet ghost icons */}
             <button
               type="button"
               onClick={() => setMaximized((v) => !v)}
-              className="p-1.5 rounded hover:bg-gray-100 text-gray-500"
+              className="rounded-md p-1.5 text-gray-400 transition-colors hover:bg-gray-100 hover:text-gray-600 dark:text-slate-400 dark:hover:bg-slate-700 dark:hover:text-slate-200"
               aria-label={maximized ? "Restore" : "Maximize"}
             >
               {maximized ? <Minimize2 className="h-4 w-4" /> : <Maximize2 className="h-4 w-4" />}
+            </button>
+            <button
+              type="button"
+              onClick={close}
+              className="rounded-md p-1.5 text-gray-400 transition-colors hover:bg-gray-100 hover:text-gray-600 dark:text-slate-400 dark:hover:bg-slate-700 dark:hover:text-slate-200"
+              aria-label="Close"
+              title="Close"
+            >
+              <X className="h-4 w-4" />
             </button>
           </div>
         </div>

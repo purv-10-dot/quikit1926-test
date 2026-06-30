@@ -93,6 +93,7 @@ interface IssueFull {
   storyPoints: number | null;
   eta: number | null;
   reporterId: string | null;
+  createdBy?: string | null;
   projectId: string;
   createdAt?: string;
   updatedAt?: string;
@@ -271,6 +272,9 @@ export function EditIssueModal({
   const perms = useMyProjectPermissions(projectId);
   const canUpdateIssue = perms.loading || perms.has("Issue", "update");
   const canCreateIssue = perms.loading || perms.has("Issue", "create");
+  // Delete is shown when the role has the full Issue:delete grant OR the viewer
+  // owns this issue (reported or created it) — mirroring the server's single
+  // delete rule, so a Contributor sees the trash on their own tasks.
   const canDeleteIssue = perms.loading || perms.has("Issue", "delete");
   const [deleteOpen, setDeleteOpen] = useState(false);
 
@@ -320,7 +324,9 @@ export function EditIssueModal({
 
   function attachEpic(id: string) {
     setEpicId(id);
-    void patch({ epicId: id || undefined });
+    // Empty id = detach → send null so the epic is actually cleared (undefined
+    // would just omit the field and leave the link in place).
+    void patch({ epicId: id || null });
     setEpicMenuOpen(false);
   }
 
@@ -686,7 +692,10 @@ export function EditIssueModal({
             {/* <button className="p-1.5 hover:bg-gray-100 rounded" aria-label="Open in new tab">
               <ExternalLink className="h-4 w-4" />
             </button> */}
-            {issue && canDeleteIssue && (
+            {issue &&
+              (canDeleteIssue ||
+                (!!currentUserId &&
+                  (issue.reporterId === currentUserId || issue.createdBy === currentUserId))) && (
               <button
                 type="button"
                 onClick={() => setDeleteOpen(true)}
@@ -772,7 +781,7 @@ export function EditIssueModal({
                           </div>
                           {epics.length === 0 && (
                             <div className="px-3 py-2 text-xs text-gray-500">
-                              No epics in this space yet.
+                              No epics in this project yet.
                             </div>
                           )}
                           {epics.slice(0, 5).map((ep) => (
@@ -1297,7 +1306,7 @@ export function EditIssueModal({
                             type="button"
                             onClick={() => {
                               setEpicId("");
-                              void patch({ epicId: undefined });
+                              void patch({ epicId: null });
                             }}
                             className="inline-flex items-center gap-1.5 max-w-full px-2 h-6 rounded bg-red-100 text-red-700 hover:bg-red-200"
                             title="Detach parent"
@@ -1347,7 +1356,7 @@ export function EditIssueModal({
                             value={dueDate}
                             onChange={(v) => {
                               setDueDate(v);
-                              void patch({ dueDate: v ? new Date(v).toISOString() : undefined });
+                              void patch({ dueDate: v ? new Date(v).toISOString() : null });
                             }}
                           />
                         );
@@ -1390,7 +1399,7 @@ export function EditIssueModal({
                             value={startDate}
                             onChange={(v) => {
                               setStartDate(v);
-                              void patch({ startDate: v ? new Date(v).toISOString() : undefined });
+                              void patch({ startDate: v ? new Date(v).toISOString() : null });
                             }}
                           />
                         );
@@ -2209,7 +2218,7 @@ function ParentRowPicker({
           </div>
           <div className="py-1 max-h-64 overflow-y-auto">
             {epics.length === 0 ? (
-              <div className="px-3 py-2 text-xs text-gray-500">No epics in this space.</div>
+              <div className="px-3 py-2 text-xs text-gray-500">No epics in this project.</div>
             ) : filtered.length === 0 ? (
               <div className="px-3 py-2 text-xs text-gray-500">No matches.</div>
             ) : (
@@ -2350,7 +2359,7 @@ function SprintRowPicker({
               onChange={(e) => setScopeOnly(e.target.checked)}
               className="h-3.5 w-3.5 rounded border-gray-300 text-blue-600"
             />
-            Only show sprints in this space
+            Only show sprints in this project
           </label>
           <div className="overflow-y-auto">
             {active.length > 0 && (

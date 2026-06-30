@@ -55,7 +55,9 @@ function buildTermsWhere(
   return {
     orgId: opts.orgId,
     ...(opts.applicableTo ? { applicableTo: opts.applicableTo } : {}),
-    ...(opts.includeInactive ? {} : { status: { not: "inactive" } }),
+    ...(opts.includeInactive
+      ? { status: { not: "deleted" } }
+      : { status: { notIn: ["inactive", "deleted"] } }),
     ...(q
       ? {
           OR: [
@@ -163,7 +165,7 @@ export async function deleteTermsCondition(
 ): Promise<boolean> {
   const res = await db.cnTermsCondition.updateMany({
     where: { id, orgId },
-    data: { status: "inactive", updatedBy },
+    data: { status: "deleted", updatedBy },
   });
   return res.count > 0;
 }

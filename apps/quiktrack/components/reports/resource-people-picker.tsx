@@ -50,8 +50,8 @@ export function ResourcePeoplePicker({
         <ChevronDown className="h-3.5 w-3.5 text-gray-500 shrink-0" />
       </button>
       {open && (
-        <div className="absolute right-0 top-9 z-20 w-72 max-h-80 overflow-auto rounded-lg border border-gray-200 bg-white shadow-lg p-1">
-          <div className="px-1 pt-0.5 pb-1.5 sticky top-0 bg-white">
+        <div className="absolute right-0 top-9 z-50 w-72 max-h-80 overflow-auto rounded-lg border border-gray-200 bg-white shadow-lg p-1">
+          <div className="px-1 pt-0.5 pb-1.5 sticky top-0 bg-white z-10">
             <div className="relative">
               <Search className="absolute left-2 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-gray-400" />
               <input

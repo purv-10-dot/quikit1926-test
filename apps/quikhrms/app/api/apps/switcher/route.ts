@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import { db } from "@/lib/db";
-import { ADMIN_TIER_ROLES } from "@quikit/shared";
+import { ADMIN_TIER_ROLES, HIDDEN_APP_SLUGS } from "@quikit/shared";
 
 /**
  * GET /api/apps/switcher
@@ -46,7 +46,7 @@ export async function GET() {
 
   // Catalog (active only). Exclude `quikit` — it's the launcher itself.
   const allApps = await db.app.findMany({
-    where: { status: { not: "disabled" }, slug: { not: "quikit" } },
+    where: { status: { not: "disabled" }, slug: { notIn: ["quikit", ...HIDDEN_APP_SLUGS] } },
     select: {
       id: true,
       name: true,

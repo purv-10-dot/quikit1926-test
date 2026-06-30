@@ -20,7 +20,7 @@
  *   </HorizontalScroller>
  */
 
-import { useEffect, useId, useRef, useState, useCallback, type ReactNode, type CSSProperties } from "react";
+import { useEffect, useId, useRef, useState, useCallback, type ReactNode, type CSSProperties, type UIEvent } from "react";
 
 interface Props {
   children: ReactNode;
@@ -42,6 +42,19 @@ interface Props {
    * Useful when table has its own sticky column with a shadow.
    */
   hideFades?: boolean;
+  /**
+   * Forwarded to the inner scroll container's `onScroll`. Lets a parent detect
+   * vertical scroll (e.g. infinite-scroll near-bottom) without owning the
+   * element. Coexists with the internal recalc listener.
+   */
+  onContentScroll?: (e: UIEvent<HTMLDivElement>) => void;
+  /**
+   * Show a thin NATIVE vertical scrollbar on the inner container (while still
+   * hiding the native horizontal one, since the custom bar drives horizontal).
+   * Used by the dashboard's fixed-height infinite tables. Default false keeps
+   * the original "both axes hidden" behavior for every existing caller.
+   */
+  showVerticalScrollbar?: boolean;
 }
 
 export function HorizontalScroller({
@@ -52,6 +65,8 @@ export function HorizontalScroller({
   thumbClassName,
   hideBar = false,
   hideFades = false,
+  onContentScroll,
+  showVerticalScrollbar = false,
 }: Props) {
   const scrollRef = useRef<HTMLDivElement>(null);
   const trackRef = useRef<HTMLDivElement>(null);
@@ -138,7 +153,8 @@ export function HorizontalScroller({
         <div
           ref={scrollRef}
           id={scrollRegionId}
-          className={`h-full overflow-auto horizontal-scroller-hide ${innerClassName}`}
+          onScroll={onContentScroll}
+          className={`h-full overflow-auto ${showVerticalScrollbar ? "horizontal-scroller-vscroll" : "horizontal-scroller-hide"} ${innerClassName}`}
           style={innerStyle}
         >
           {children}
@@ -187,6 +203,28 @@ export function HorizontalScroller({
         }
         .horizontal-scroller-hide::-webkit-scrollbar {
           display: none;
+        }
+        /* Thin NATIVE vertical scrollbar; native horizontal scrollbar hidden
+           (the custom bar drives horizontal). webkit-ONLY on purpose: setting
+           the standards \`scrollbar-width\` makes Chromium 121+ ignore every
+           ::-webkit-scrollbar rule, which re-shows the native horizontal bar
+           on top of the custom one (the "two horizontal scrollbars" bug). So we
+           drive everything through the webkit pseudo-elements instead. Firefox
+           falls back to its native scrollbars. */
+        .horizontal-scroller-vscroll::-webkit-scrollbar {
+          width: 8px;
+          height: 0;
+        }
+        .horizontal-scroller-vscroll::-webkit-scrollbar:horizontal {
+          display: none;
+          height: 0;
+        }
+        .horizontal-scroller-vscroll::-webkit-scrollbar-thumb {
+          background: rgba(100, 116, 139, 0.4);
+          border-radius: 4px;
+        }
+        .horizontal-scroller-vscroll::-webkit-scrollbar-track {
+          background: transparent;
         }
       `}</style>
     </div>

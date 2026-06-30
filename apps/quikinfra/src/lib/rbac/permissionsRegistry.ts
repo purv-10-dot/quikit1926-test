@@ -193,6 +193,78 @@ export const PERMISSION_TREE: readonly PermissionModule[] = [
     ],
   },
   {
+    key: "MachineryEquipment",
+    label: "Machinery & Equipment",
+    submodules: [
+      {
+        key: "EquipmentLog",
+        label: "Equipment Log Book",
+        leaves: [
+          {
+            resource: "construction.equipment_log",
+            label: "Equipment Log Book",
+            actions: ["view", "create", "edit", "delete", "approve"],
+          },
+        ],
+      },
+      {
+        key: "Maintenance",
+        label: "Maintenance",
+        leaves: [
+          {
+            resource: "construction.equipment_maintenance",
+            label: "Maintenance",
+            actions: ["view", "create", "edit", "delete"],
+          },
+        ],
+      },
+      {
+        key: "Deployment",
+        label: "Deployment & Compliance",
+        leaves: [
+          {
+            resource: "construction.equipment_deployment",
+            label: "Deployment & Compliance",
+            actions: ["view", "create", "edit", "delete"],
+          },
+        ],
+      },
+      {
+        key: "Fleet",
+        label: "Fleet Dashboard",
+        leaves: [
+          {
+            resource: "construction.equipment_fleet",
+            label: "Fleet Dashboard",
+            actions: ["view"],
+          },
+        ],
+      },
+      {
+        key: "HireRent",
+        label: "Hire & Rent",
+        leaves: [
+          {
+            resource: "construction.equipment_hire_rent",
+            label: "Hire & Rent",
+            actions: ["view", "create", "edit"],
+          },
+        ],
+      },
+      {
+        key: "FixedAssets",
+        label: "Fixed Asset / Tools",
+        leaves: [
+          {
+            resource: "construction.equipment_fixed_assets",
+            label: "Fixed Asset / Tools",
+            actions: ["view", "create", "edit"],
+          },
+        ],
+      },
+    ],
+  },
+  {
     key: "Projects",
     label: "Projects",
     submodules: [
@@ -285,6 +357,12 @@ export const NAV_RESOURCE: Record<string, string> = {
   "store.transfer":       "construction.transfer",
   "store.reconciliation": "construction.reconciliation",
   "store.diesel":         "construction.diesel",
+  "equip.log_book":       "construction.equipment_log",
+  "equip.maintenance":    "construction.equipment_maintenance",
+  "equip.deployment":     "construction.equipment_deployment",
+  "equip.fleet":          "construction.equipment_fleet",
+  "equip.hire_rent":      "construction.equipment_hire_rent",
+  "equip.fixed_assets":   "construction.equipment_fixed_assets",
   "projects.project":     "construction.project",
   "projects.boq":         "construction.boq",
   "projects.estimation":  "construction.estimation",
@@ -346,6 +424,7 @@ export const MODULE_TO_RESOURCES: Readonly<Record<string, readonly string[]>> = 
     "construction.rab",
   ],
   quality_safety: ["construction.quality_safety"],
+  machinery_equipment: ["construction.equipment_log", "construction.equipment_maintenance", "construction.equipment_deployment", "construction.equipment_fleet", "construction.equipment_hire_rent", "construction.equipment_fixed_assets"],
   finance: ["construction.finance"],
 } as const;
 

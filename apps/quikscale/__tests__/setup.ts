@@ -127,6 +127,9 @@ vi.mock("@/lib/utils/featureFlags", () => ({
     canEditPastWeek: false,
   })),
   getCurrentFiscalWeekFromDB: vi.fn(async () => 1),
+  // Default-off; individual tests override via vi.mocked(...).mockResolvedValue.
+  isFeatureFlagEnabled: vi.fn(async () => false),
+  getCanAddPastQuarterHabit: vi.fn(async () => false),
 }));
 
 // ---------------------------------------------------------------------------

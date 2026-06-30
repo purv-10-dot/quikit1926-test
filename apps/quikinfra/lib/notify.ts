@@ -90,13 +90,6 @@ async function sendEmail(args: {
 // Convenience templates
 // ---------------------------------------------------------------------------
 
-export function buildApprovalRequestedEmail(args: { docType: string; docRef: string; amount: number | null; requester: string; }) {
-  return {
-    subject: `Approval requested: ${args.docType.toUpperCase()} ${args.docRef}`,
-    body: `${args.requester} has requested your approval for ${args.docType.toUpperCase()} ${args.docRef}${args.amount ? ` (₹${args.amount})` : ""}.\nReview in your approvals inbox.`,
-  };
-}
-
 export function buildInvoiceOverdueEmail(args: { invoiceNumber: string; customer: string; amount: number; daysOverdue: number }) {
   return {
     subject: `Invoice overdue: ${args.invoiceNumber}`,

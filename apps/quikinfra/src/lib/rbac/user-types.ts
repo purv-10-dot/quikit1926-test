@@ -127,6 +127,7 @@ export const ASSIGNABLE_MODULES = [
   { key: "store",           label: "Store" },
   { key: "project_mgmt",    label: "Project Mgmt" },
   { key: "quality_safety",  label: "Quality & Safety" },
+  { key: "machinery_equipment", label: "Machinery & Equipment" },
   { key: "finance",         label: "Finance" },
 ];
 

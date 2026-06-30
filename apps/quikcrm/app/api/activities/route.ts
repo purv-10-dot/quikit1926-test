@@ -24,6 +24,7 @@ import {
 import { assertAccountAccess } from "@/lib/auth/account-acl";
 import { buildActivityAclWhere } from "@/lib/services/activities/activity-acl";
 import { logActivity } from "@/lib/services/activities/log-activity";
+import { writeActivityFieldValues } from "@/lib/services/activity-types/write-field-values";
 import { toListRow, toListRows } from "@/lib/services/activities/to-list-row";
 import { resolveLeadIdFromActivity } from "@/lib/services/leads/lead-scoring/apply-score";
 import { scheduleLeadScoreRecalc } from "@/lib/services/leads/lead-scoring/schedule";
@@ -146,6 +147,15 @@ export async function POST(req: NextRequest) {
       await assertModule(user, "activities", "edit");
     }
 
+    // fieldValues without an activityTypeId is a client error: there are no
+    // field definitions to validate/route against.
+    if (dto.fieldValues && !dto.activityTypeId) {
+      return NextResponse.json(
+        { success: false, error: "fieldValues require an activityTypeId" },
+        { status: 400 },
+      );
+    }
+
     await assertActivityTargetExists(user.orgId, dto.relatedKind, dto.relatedObjectId);
     const accountId = await getRelatedAccountId(
       user.orgId,
@@ -154,7 +164,7 @@ export async function POST(req: NextRequest) {
     );
     await assertAccountAccess(user, accountId);
 
-    const created = await logActivity({
+    const logInput: Parameters<typeof logActivity>[0] = {
       orgId: user.orgId,
       userId: user.userId,
       ownerId: dto.ownerId ?? user.userId,
@@ -171,7 +181,28 @@ export async function POST(req: NextRequest) {
       externalId: dto.externalId ?? undefined,
       sourceSystem: dto.sourceSystem ?? undefined,
       outreach: dto.outreach as Parameters<typeof logActivity>[0]["outreach"],
-    });
+    };
+
+    let created;
+    if (dto.activityTypeId) {
+      // Option A: the route orchestrates one transaction so the activity row
+      // and its custom-field value rows are written atomically. logActivity and
+      // writeActivityFieldValues both run on the passed tx. A validation throw
+      // (ActivityFieldValidationError, statusCode 400) propagates to the catch
+      // below; errorResponse maps it to 400 while a genuine error stays 500.
+      created = await prisma.$transaction(async (tx) => {
+        const activity = await logActivity({ ...logInput, tx });
+        await writeActivityFieldValues(tx, {
+          orgId: user.orgId,
+          activityId: activity.id,
+          activityTypeId: dto.activityTypeId!,
+          values: dto.fieldValues,
+        });
+        return activity;
+      });
+    } else {
+      created = await logActivity(logInput);
+    }
 
     const leadIdForScore = resolveLeadIdFromActivity({
       leadId: dto.leadId,
