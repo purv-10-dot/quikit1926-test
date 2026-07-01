@@ -11,6 +11,7 @@ import {
   type ReactNode,
 } from "react";
 import {
+  ChevronDown,
   ClipboardList,
   FileText,
   List,
@@ -31,6 +32,13 @@ import {
   sourceBadgeClass,
   type ActivityVisibility,
 } from "@/lib/activities/activity-type-meta";
+import {
+  DRAFT_STORAGE_KEY,
+  DRAFTS_STORAGE_KEY,
+  listDraftEntries,
+  readNamedDrafts,
+  type NamedDraft,
+} from "@/lib/activities/activity-drafts";
 import type {
   ActivityTypeDefinition,
   ActivityFieldDefinition,
@@ -58,7 +66,9 @@ const KIND_LABELS: Record<(typeof KIND_OPTIONS)[number], string> = {
   Contact: "Contact",
   Account: "Account",
 };
-const DRAFT_STORAGE_KEY = "quikcrm.activity-composer.draft.v1";
+// Draft storage keys, the `NamedDraft` shape, and the localStorage read helpers
+// live in @/lib/activities/activity-drafts — shared with the Drafts list so the
+// magic keys never drift.
 
 // Generic + Lead-log were collapsed into one type-driven activity composer.
 // The SMB outreach UI has been removed from this modal; its API
@@ -76,6 +86,12 @@ interface Props {
   canViewLeads?: boolean;
   initialLead?: LeadContext | null;
   initialRelated?: { kind: (typeof KIND_OPTIONS)[number]; id: string; label: string } | null;
+  /**
+   * A saved draft to resume. When set, its fields are applied on open (after the
+   * normal reset), so the composer opens prefilled from the draft. Consumed once
+   * per open; the parent should clear it when the modal closes.
+   */
+  initialDraft?: NamedDraft | null;
 }
 
 function buildDetailNotes(
@@ -98,11 +114,15 @@ export function LogActivityModal({
   onSuccess,
   initialLead = null,
   initialRelated = null,
+  initialDraft = null,
 }: Props) {
   const toast = useToast();
   const [submitting, setSubmitting] = useState(false);
   const [reminderOn, setReminderOn] = useState(false);
   const [visibility, setVisibility] = useState<ActivityVisibility>("team");
+  const [draftsOpen, setDraftsOpen] = useState(false);
+  const [nameDialogOpen, setNameDialogOpen] = useState(false);
+  const [draftName, setDraftName] = useState("");
 
   const [lead, setLead] = useState<LeadContext | null>(initialLead);
 
@@ -167,7 +187,16 @@ export function LogActivityModal({
   useEffect(() => {
     if (!open) return;
     resetForm();
-  }, [open, resetForm]);
+    // Resume a saved draft: apply its fields over the fresh reset so the
+    // composer opens prefilled. Mirrors loadDraft()'s field mapping.
+    if (initialDraft) {
+      if (initialDraft.activityTypeId) setActivityTypeId(initialDraft.activityTypeId);
+      if (initialDraft.relatedKind) setRelatedKind(initialDraft.relatedKind);
+      if (initialDraft.relatedObjectId) setRelatedObjectId(initialDraft.relatedObjectId);
+      if (initialDraft.activityNotes) setActivityNotes(initialDraft.activityNotes);
+      if (initialDraft.visibility) setVisibility(initialDraft.visibility);
+    }
+  }, [open, resetForm, initialDraft]);
 
   // Activity tab: load the org's active types once the modal opens.
   useEffect(() => {
@@ -248,9 +277,14 @@ export function LogActivityModal({
       .finally(() => setRelatedLoading(false));
   }, [open, relatedKind, relatedOptions, fetchRelatedOptions]);
 
-  function saveDraft() {
+  // "Save draft" opens the name dialog; the actual save happens here once a
+  // name is entered. Same payload as before, now stamped with a name and
+  // appended to the named-drafts collection instead of overwriting.
+  function saveDraft(name: string) {
     try {
-      const payload = {
+      const entry: NamedDraft = {
+        id: `${DRAFTS_STORAGE_KEY}:${new Date().toISOString()}`,
+        name: name.trim(),
         activityTypeId,
         relatedKind,
         relatedObjectId,
@@ -258,37 +292,53 @@ export function LogActivityModal({
         visibility,
         savedAt: new Date().toISOString(),
       };
-      localStorage.setItem(DRAFT_STORAGE_KEY, JSON.stringify(payload));
+      const next = [...readNamedDrafts(), entry];
+      localStorage.setItem(DRAFTS_STORAGE_KEY, JSON.stringify(next));
       toast.success("Draft saved on this device");
     } catch {
       toast.error("Could not save draft");
     }
   }
 
-  function loadDraft() {
+  // Restores draft fields. `d` is the chosen entry; when omitted (legacy path)
+  // it falls back to the single v1 draft. The field-setting logic is unchanged.
+  function loadDraft(d?: {
+    activityTypeId?: string;
+    relatedKind?: (typeof KIND_OPTIONS)[number];
+    relatedObjectId?: string;
+    activityNotes?: string;
+    visibility?: ActivityVisibility;
+  }) {
     try {
-      const raw = localStorage.getItem(DRAFT_STORAGE_KEY);
-      if (!raw) {
-        toast.error("No draft found");
-        return;
+      let draft = d;
+      if (!draft) {
+        const raw = localStorage.getItem(DRAFT_STORAGE_KEY);
+        if (!raw) {
+          toast.error("No draft found");
+          return;
+        }
+        draft = JSON.parse(raw);
       }
-      const d = JSON.parse(raw) as {
-        activityTypeId?: string;
-        relatedKind?: (typeof KIND_OPTIONS)[number];
-        relatedObjectId?: string;
-        activityNotes?: string;
-        visibility?: ActivityVisibility;
-      };
-      if (d.activityTypeId) setActivityTypeId(d.activityTypeId);
-      if (d.relatedKind) setRelatedKind(d.relatedKind);
-      if (d.relatedObjectId) setRelatedObjectId(d.relatedObjectId);
-      if (d.activityNotes) setActivityNotes(d.activityNotes);
-      if (d.visibility) setVisibility(d.visibility);
+      if (draft?.activityTypeId) setActivityTypeId(draft.activityTypeId);
+      if (draft?.relatedKind) setRelatedKind(draft.relatedKind);
+      if (draft?.relatedObjectId) setRelatedObjectId(draft.relatedObjectId);
+      if (draft?.activityNotes) setActivityNotes(draft.activityNotes);
+      if (draft?.visibility) setVisibility(draft.visibility);
       toast.success("Draft restored");
     } catch {
       toast.error("Could not load draft");
     }
   }
+
+  // Lists saved drafts for the header dropdown (shared with the Drafts list on
+  // the Activities page). Selecting an entry loads it via `loadDraft`.
+  const savedDrafts = useMemo(() => {
+    if (!open) return [];
+    return listDraftEntries();
+    // localStorage isn't reactive: re-read when the dropdown opens or after a
+    // save closes the name dialog so the list reflects the latest drafts.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open, draftsOpen, nameDialogOpen]);
 
   async function submitActivity() {
     if (!selectedType) {
@@ -351,7 +401,14 @@ export function LogActivityModal({
         <Button variant="secondary" type="button" onClick={onClose}>
           Cancel
         </Button>
-        <Button variant="secondary" type="button" onClick={saveDraft}>
+        <Button
+          variant="secondary"
+          type="button"
+          onClick={() => {
+            setDraftName("");
+            setNameDialogOpen(true);
+          }}
+        >
           Save draft
         </Button>
         <Button type="button" onClick={submit} disabled={submitDisabled}>
@@ -361,7 +418,26 @@ export function LogActivityModal({
     </div>
   );
 
+  const canSaveDraftName = draftName.trim().length > 0;
+  function confirmSaveDraft() {
+    if (!canSaveDraftName) return;
+    saveDraft(draftName);
+    setNameDialogOpen(false);
+    setDraftName("");
+  }
+  const nameDialogFooter = (
+    <div className="flex justify-end gap-2">
+      <Button variant="secondary" type="button" onClick={() => setNameDialogOpen(false)}>
+        Cancel
+      </Button>
+      <Button type="button" onClick={confirmSaveDraft} disabled={!canSaveDraftName}>
+        Save
+      </Button>
+    </div>
+  );
+
   return (
+    <>
     <Modal open={open} onClose={onClose} width="max-w-xl" footer={footer}>
       <div className="-mx-1 -mt-1 space-y-4">
         <header className="flex items-start justify-between gap-3 border-b border-crm-border pb-3">
@@ -403,14 +479,61 @@ export function LogActivityModal({
               </div>
             </div>
           </div>
-          <button
-            type="button"
-            onClick={onClose}
-            className="crm-btn-ghost h-8 w-8 shrink-0 p-0"
-            aria-label="Close"
-          >
-            <X size={16} />
-          </button>
+          <div className="flex shrink-0 items-center gap-1.5">
+            <div className="relative">
+              <button
+                type="button"
+                onClick={() => setDraftsOpen((v) => !v)}
+                className="crm-btn-ghost flex h-8 items-center gap-1 px-2 text-xs font-medium"
+                aria-haspopup="menu"
+                aria-expanded={draftsOpen}
+              >
+                Drafts
+                <ChevronDown size={12} />
+              </button>
+              {draftsOpen ? (
+                <>
+                  <button
+                    type="button"
+                    aria-label="Close drafts menu"
+                    className="fixed inset-0 z-10 cursor-default"
+                    onClick={() => setDraftsOpen(false)}
+                  />
+                  <div
+                    role="menu"
+                    className="absolute right-0 z-20 mt-1 min-w-[12rem] rounded-lg border border-crm-border bg-white py-1 shadow-lg"
+                  >
+                    {savedDrafts.length === 0 ? (
+                      <p className="px-3 py-2 text-xs text-crm-muted">No saved drafts</p>
+                    ) : (
+                      savedDrafts.map((d) => (
+                        <button
+                          key={d.key}
+                          type="button"
+                          role="menuitem"
+                          className="block w-full px-3 py-2 text-left text-xs text-crm-text hover:bg-crm-panel"
+                          onClick={() => {
+                            loadDraft(d.draft);
+                            setDraftsOpen(false);
+                          }}
+                        >
+                          {d.label}
+                        </button>
+                      ))
+                    )}
+                  </div>
+                </>
+              ) : null}
+            </div>
+            <button
+              type="button"
+              onClick={onClose}
+              className="crm-btn-ghost h-8 w-8 p-0"
+              aria-label="Close"
+            >
+              <X size={16} />
+            </button>
+          </div>
         </header>
 
         <div className="space-y-4">
@@ -500,7 +623,7 @@ export function LogActivityModal({
                   ) : null
                 ) : null}
 
-                <NotesEditor label="Notes" value={activityNotes} onChange={setActivityNotes} />
+                <NotesEditor label="Outcome" value={activityNotes} onChange={setActivityNotes} />
 
                 <OptionsRow
                   reminderOn={reminderOn}
@@ -509,7 +632,6 @@ export function LogActivityModal({
                   setFollowUpAt={setFollowUpAt}
                   visibility={visibility}
                   setVisibility={setVisibility}
-                  onLoadDraft={loadDraft}
                 />
               </>
             )}
@@ -521,6 +643,30 @@ export function LogActivityModal({
         </p>
       </div>
     </Modal>
+
+      <Modal
+        open={nameDialogOpen}
+        onClose={() => setNameDialogOpen(false)}
+        title="Name this draft"
+        width="max-w-sm"
+        footer={nameDialogFooter}
+      >
+        <Field label="Draft name">
+          <Input
+            autoFocus
+            value={draftName}
+            onChange={(e) => setDraftName(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === "Enter") {
+                e.preventDefault();
+                confirmSaveDraft();
+              }
+            }}
+            placeholder="Enter draft name..."
+          />
+        </Field>
+      </Modal>
+    </>
   );
 }
 
@@ -611,7 +757,6 @@ function OptionsRow({
   setFollowUpAt,
   visibility,
   setVisibility,
-  onLoadDraft,
   hideReminder,
 }: {
   reminderOn: boolean;
@@ -620,7 +765,6 @@ function OptionsRow({
   setFollowUpAt: (v: string) => void;
   visibility: ActivityVisibility;
   setVisibility: (v: ActivityVisibility) => void;
-  onLoadDraft?: () => void;
   hideReminder?: boolean;
 }) {
   return (
@@ -657,15 +801,6 @@ function OptionsRow({
           ))}
         </Select>
       </Field>
-      {onLoadDraft ? (
-        <button
-          type="button"
-          className="ml-auto text-xs font-medium text-accent-700 hover:underline"
-          onClick={onLoadDraft}
-        >
-          Load draft
-        </button>
-      ) : null}
     </div>
   );
 }
