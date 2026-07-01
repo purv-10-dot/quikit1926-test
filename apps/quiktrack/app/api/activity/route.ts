@@ -39,9 +39,15 @@ export const GET = withOrgAuth(async ({ orgId, userId }, req) => {
   const url = new URL(req.url);
   const limit = Math.min(100, Math.max(1, Number(url.searchParams.get("limit") || 30)));
 
-  // Restrict to projects the user is still a member of.
+  // Restrict to projects the user is still a member of AND that are live —
+  // archived (status !== "active") and trashed (isDeleted) projects must not
+  // resurface in the "Recent/Viewed" feed.
   const visible = await db.qtProjectMember.findMany({
-    where: { userId, isDeleted: false, project: { orgId: orgId, isDeleted: false } },
+    where: {
+      userId,
+      isDeleted: false,
+      project: { orgId: orgId, isDeleted: false, status: "active" },
+    },
     select: { projectId: true },
   });
   const projectIds = visible.map((v) => v.projectId);

@@ -1,9 +1,11 @@
 "use client";
 
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useRef, useState } from "react";
-import { MoreHorizontal, Info } from "lucide-react";
+import { Info, Archive, ArchiveRestore, Trash2 } from "lucide-react";
 import { SpaceIcon, PROJECT_ICONS } from "@/components/space-icon";
+import { ConfirmDialog } from "@/components/confirm-dialog";
 
 interface Project {
   id: string;
@@ -14,7 +16,37 @@ interface Project {
   color: string | null;
   leadUserId: string | null;
   status: string;
+  isAdmin?: boolean;
+  canArchive?: boolean;
 }
+
+type LifecycleAction = "archive" | "unarchive" | "trash";
+
+const LIFECYCLE: Record<
+  LifecycleAction,
+  { title: string; message: string; confirmLabel: string; tone: "default" | "danger" }
+> = {
+  archive: {
+    title: "Archive project?",
+    message:
+      "It'll be hidden from the projects list. You can unarchive it anytime from the Archived tab — nothing is deleted.",
+    confirmLabel: "Archive",
+    tone: "default",
+  },
+  unarchive: {
+    title: "Unarchive project?",
+    message: "It'll return to the active projects list.",
+    confirmLabel: "Unarchive",
+    tone: "default",
+  },
+  trash: {
+    title: "Move to trash?",
+    message:
+      "The project will be removed from the list and permanently deleted after 60 days. An admin can restore it from Trash anytime before then.",
+    confirmLabel: "Move to trash",
+    tone: "danger",
+  },
+};
 
 interface Member {
   userId: string;
@@ -40,6 +72,9 @@ export function DetailsForm({ projectId }: { projectId: string }) {
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState(false);
   const iconRef = useRef<HTMLDivElement>(null);
+  const router = useRouter();
+  const [lifecycle, setLifecycle] = useState<LifecycleAction | null>(null);
+  const [lifecycleBusy, setLifecycleBusy] = useState(false);
 
   useEffect(() => {
     let alive = true;
@@ -117,7 +152,39 @@ export function DetailsForm({ projectId }: { projectId: string }) {
     }
   }
 
+  async function runLifecycle() {
+    if (!project || !lifecycle) return;
+    setLifecycleBusy(true);
+    try {
+      const res =
+        lifecycle === "trash"
+          ? await fetch(`/api/projects/${projectId}`, { method: "DELETE" })
+          : await fetch(`/api/projects/${projectId}`, {
+              method: "PATCH",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ status: lifecycle === "archive" ? "archived" : "active" }),
+            });
+      if (!res.ok) return;
+      if (lifecycle === "trash") {
+        // Project is gone from this org's active set — the settings page is no
+        // longer reachable, so send the user back to the list.
+        router.push("/spaces");
+        return;
+      }
+      setProject((p) => (p ? { ...p, status: lifecycle === "archive" ? "archived" : "active" } : p));
+      setLifecycle(null);
+    } finally {
+      setLifecycleBusy(false);
+    }
+  }
+
   const lead = leadUserId ? members.find((m) => m.userId === leadUserId) : null;
+  // Archive/unarchive: global admins OR this space's Space Admin (canArchive).
+  // Move to trash: global admins only (isAdmin).
+  const isAdmin = !!project?.isAdmin;
+  const canArchive = !!project?.canArchive;
+  const isArchived = project?.status === "archived";
+  const cfg = lifecycle ? LIFECYCLE[lifecycle] : null;
 
   return (
     <div className="px-16 py-8 max-w-[820px] mx-auto">
@@ -132,6 +199,25 @@ export function DetailsForm({ projectId }: { projectId: string }) {
         <span className="mx-1">/</span>
         Project settings
       </nav>
+
+      {isArchived && (
+        <div className="mb-6 flex items-center justify-between gap-3 rounded border border-amber-200 bg-amber-50 px-4 py-3">
+          <div className="flex items-center gap-2 text-sm text-amber-800">
+            <Archive className="h-4 w-4" />
+            <span>This project is archived. It&apos;s hidden from the projects list.</span>
+          </div>
+          {canArchive && (
+            <button
+              type="button"
+              onClick={() => setLifecycle("unarchive")}
+              className="inline-flex items-center gap-1.5 h-8 px-3 text-xs font-medium text-amber-900 border border-amber-300 rounded hover:bg-amber-100"
+            >
+              <ArchiveRestore className="h-3.5 w-3.5" />
+              Unarchive
+            </button>
+          )}
+        </div>
+      )}
       <div className="flex items-center justify-between mb-6">
         <h1 className="text-2xl font-semibold text-gray-900">Details</h1>
         {/* <button className="p-1.5 rounded hover:bg-gray-100 text-gray-600" aria-label="More">
@@ -239,6 +325,93 @@ export function DetailsForm({ projectId }: { projectId: string }) {
           </button>
         </div>
       </div>
+
+      {/* Danger zone — archive: admins + Space Admin; trash: admins only. */}
+      {(canArchive || isAdmin) && (
+        <div className="mt-12 border border-red-200 rounded-lg overflow-hidden">
+          <div className="px-4 py-3 border-b border-red-200 bg-red-50">
+            <h2 className="text-sm font-semibold text-red-800">Danger zone</h2>
+          </div>
+          <div className="divide-y divide-gray-100">
+            {canArchive &&
+              (!isArchived ? (
+                <DangerRow
+                  title="Archive project"
+                  description="Hide it from the projects list. Reversible anytime — nothing is deleted."
+                  actionLabel="Archive"
+                  icon={<Archive className="h-4 w-4" />}
+                  onClick={() => setLifecycle("archive")}
+                />
+              ) : (
+                <DangerRow
+                  title="Unarchive project"
+                  description="Return it to the active projects list."
+                  actionLabel="Unarchive"
+                  icon={<ArchiveRestore className="h-4 w-4" />}
+                  onClick={() => setLifecycle("unarchive")}
+                />
+              ))}
+            {isAdmin && (
+              <DangerRow
+                title="Move to trash"
+                description="Remove the project from the list. Restorable from Trash for 60 days, then permanently deleted."
+                actionLabel="Move to trash"
+                danger
+                icon={<Trash2 className="h-4 w-4" />}
+                onClick={() => setLifecycle("trash")}
+              />
+            )}
+          </div>
+        </div>
+      )}
+
+      <ConfirmDialog
+        open={!!cfg}
+        title={cfg?.title ?? ""}
+        message={cfg?.message}
+        confirmLabel={cfg?.confirmLabel}
+        tone={cfg?.tone}
+        loading={lifecycleBusy}
+        onConfirm={runLifecycle}
+        onCancel={() => !lifecycleBusy && setLifecycle(null)}
+      />
+    </div>
+  );
+}
+
+function DangerRow({
+  title,
+  description,
+  actionLabel,
+  icon,
+  danger,
+  onClick,
+}: {
+  title: string;
+  description: string;
+  actionLabel: string;
+  icon: React.ReactNode;
+  danger?: boolean;
+  onClick: () => void;
+}) {
+  return (
+    <div className="flex items-center justify-between gap-4 px-4 py-4">
+      <div>
+        <p className="text-sm font-medium text-gray-900">{title}</p>
+        <p className="mt-0.5 text-xs text-gray-500">{description}</p>
+      </div>
+      <button
+        type="button"
+        onClick={onClick}
+        className={`inline-flex items-center gap-1.5 h-9 px-4 text-sm font-medium rounded border whitespace-nowrap ${
+          danger
+            ? "border-red-300 text-red-700 hover:bg-red-50"
+            : "border-gray-300 text-gray-700 hover:bg-gray-50"
+        }`}
+      >
+        {icon}
+        {actionLabel}
+      </button>
     </div>
   );
 }
