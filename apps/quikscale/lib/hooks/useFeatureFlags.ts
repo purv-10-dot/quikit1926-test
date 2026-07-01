@@ -14,6 +14,7 @@ export interface PastWeekFlags {
 interface FlagRow {
   key: string;
   enabled: boolean;
+  value?: string | null;
 }
 
 // Module-level cache + version for invalidation
@@ -23,12 +24,26 @@ let cache: {
   canAddPastQuarterHabit: boolean;
   useIndianNumbering: boolean;
   wwwNotesRequired: boolean;
+  customQuarterSettings: boolean;
+  weeklyMeetingDay: string | null;
 } | null = null;
 let version = 0;
 const listeners = new Set<() => void>();
 
 function notifyListeners() {
   listeners.forEach((l) => l());
+}
+
+function emptyFlags(): NonNullable<typeof cache> {
+  return {
+    canAddPastWeek: false,
+    canEditPastWeek: false,
+    canAddPastQuarterHabit: false,
+    useIndianNumbering: false,
+    wwwNotesRequired: false,
+    customQuarterSettings: false,
+    weeklyMeetingDay: null,
+  };
 }
 
 async function fetchFlags() {
@@ -44,12 +59,15 @@ async function fetchFlags() {
           rows.find((f) => f.key === "add_past_quarter_habit")?.enabled ?? false,
         useIndianNumbering: rows.find((f) => f.key === "use_indian_numbering")?.enabled ?? false,
         wwwNotesRequired: rows.find((f) => f.key === "www_notes_required")?.enabled ?? false,
+        customQuarterSettings:
+          rows.find((f) => f.key === "enable_custom_quarter_settings")?.enabled ?? false,
+        weeklyMeetingDay: rows.find((f) => f.key === "weekly_meeting_day")?.value ?? null,
       };
     } else {
-      cache = { canAddPastWeek: false, canEditPastWeek: false, canAddPastQuarterHabit: false, useIndianNumbering: false, wwwNotesRequired: false };
+      cache = emptyFlags();
     }
   } catch {
-    cache = { canAddPastWeek: false, canEditPastWeek: false, canAddPastQuarterHabit: false, useIndianNumbering: false, wwwNotesRequired: false };
+    cache = emptyFlags();
   }
   version++;
   notifyListeners();
@@ -124,6 +142,45 @@ export function useWWWNotesRequired(): boolean {
   }, []);
 
   return cache?.wwwNotesRequired ?? false;
+}
+
+/**
+ * Whether the org has Custom Quarter Settings enabled (`enable_custom_quarter_settings`).
+ * When on, quarters can have a custom week count (≠ 13) and editable dates.
+ * Subscribes to the same flag cache so toggling re-renders consumers live.
+ */
+export function useCustomQuarterSettings(): boolean {
+  const [, forceUpdate] = useState(0);
+
+  useEffect(() => {
+    const listener = () => forceUpdate((n) => n + 1);
+    listeners.add(listener);
+    fetchFlags();
+    return () => {
+      listeners.delete(listener);
+    };
+  }, []);
+
+  return cache?.customQuarterSettings ?? false;
+}
+
+/**
+ * The org's configured weekly meeting day (`weekly_meeting_day`, e.g. "Wednesday"),
+ * or null when unset. Informational — does not change week boundaries.
+ */
+export function useWeeklyMeetingDay(): string | null {
+  const [, forceUpdate] = useState(0);
+
+  useEffect(() => {
+    const listener = () => forceUpdate((n) => n + 1);
+    listeners.add(listener);
+    fetchFlags();
+    return () => {
+      listeners.delete(listener);
+    };
+  }, []);
+
+  return cache?.weeklyMeetingDay ?? null;
 }
 
 /** Force-refresh the cached flags (call after Settings page saves changes). */

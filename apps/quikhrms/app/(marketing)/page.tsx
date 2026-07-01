@@ -1,5 +1,6 @@
 import { redirect } from "next/navigation";
 import { getServerSession } from "next-auth";
+import { AppAccessDeniedPopup } from "@quikit/ui/app-access-denied-popup";
 import { authOptions } from "@/lib/auth";
 
 import { Nav } from "./_components/nav";
@@ -29,12 +30,20 @@ export const dynamic = "force-dynamic";
  * through unauthenticated (exact-match short-circuit in middleware.ts) —
  * this gate is the only thing separating the two audiences.
  */
-export default async function LandingPage() {
+export default async function LandingPage({
+  searchParams,
+}: {
+  searchParams?: { reason?: string };
+}) {
+  // A user bounced here for lacking app access must see the landing page +
+  // popup even if they still hold a session (SessionGuard would re-bounce them).
+  const deniedAccess = searchParams?.reason === "no_app_access";
   const session = await getServerSession(authOptions);
-  if (session?.user) redirect("/dashboard");
+  if (session?.user && !deniedAccess) redirect("/dashboard");
 
   return (
     <>
+      <AppAccessDeniedPopup appName="QuikHRMS" />
       <Nav />
       <main id="top">
         <Hero />

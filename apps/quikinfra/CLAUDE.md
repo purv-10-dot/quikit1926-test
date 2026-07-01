@@ -10,7 +10,7 @@ Auto-loaded by Claude Code on every session. Keep concise. For full architecture
 
 ```
 Stack:    Next.js 14 · TypeScript · Prisma 5.22 · PostgreSQL · NextAuth · React Query · Tailwind · Playwright · SheetJS · nodemailer · pdf-lib
-Dev port: 3010 (pnpm dev)
+Dev port: 3006 (pnpm dev)
 Tests:    pnpm test:api  |  pnpm test:e2e  |  pnpm test:smoke
 ```
 

@@ -1,5 +1,6 @@
 import { redirect } from "next/navigation";
 import { getServerSession } from "next-auth";
+import { AppAccessDeniedPopup } from "@quikit/ui/app-access-denied-popup";
 import { authOptions } from "@/lib/auth";
 import Nav from "./_components/Nav";
 import Hero from "./_components/Hero";
@@ -24,14 +25,22 @@ import FooterCTA from "./_components/FooterCTA";
  * here keeps logged-in users out of the marketing page — they expect the
  * app, not a brochure, when they hit the root.
  */
-export default async function MarketingPage() {
+export default async function MarketingPage({
+  searchParams,
+}: {
+  searchParams?: { reason?: string };
+}) {
+  // See QuikScale marketing page: a user bounced here for lacking app access
+  // must see the landing page + popup even if they still hold a session.
+  const deniedAccess = searchParams?.reason === "no_app_access";
   const session = await getServerSession(authOptions);
-  if (session?.user?.id) {
+  if (session?.user?.id && !deniedAccess) {
     redirect("/dashboard");
   }
 
   return (
     <main className="stage" id="main-content">
+      <AppAccessDeniedPopup appName="QuikTrack" />
       <Nav />
       <Hero />
       <Outcomes />

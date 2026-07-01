@@ -1,68 +1,36 @@
-"use client";
+import { getServerSession } from "next-auth";
+import { requireAppAccess } from "@quikit/auth/app-access";
+import { authOptions } from "@/lib/auth";
+import { DashboardShell } from "@/components/shell/dashboard-shell";
 
-import { useEffect, useState } from "react";
-import { usePathname } from "next/navigation";
-import { Sidebar } from "@/components/shell/sidebar";
-import { Header } from "@/components/shell/header";
-import { KanTour } from "@/components/tour/kan-tour";
-import { SessionGuard } from "@/components/session-guard";
-import { IssueCreatedToast } from "@/components/issue-created-toast";
-import { ToastHost } from "@/components/toast-host";
-import { ConfirmHost } from "@/components/confirm-host";
-import { NoAccessGate } from "@/components/shell/no-access-gate";
-import { ThemeSync } from "@/components/shell/theme-sync";
-import { ImpersonationBanner } from "@quikit/ui";
+// Reads the session per request and gates on app access — never prerender.
+export const dynamic = "force-dynamic";
 
-export default function DashboardLayout({
+const APP_SLUG = "quiktrack";
+
+/**
+ * Server layout for the dashboard route group.
+ *
+ * The app-access check runs HERE, server-side, before any protected UI is
+ * rendered. A user who isn't granted QuikTrack is redirected to the landing
+ * page (`/?reason=no_app_access&…`) and the dashboard never paints — no flash.
+ * The client `SessionGuard` inside <DashboardShell> remains the live-revocation
+ * backstop for access lost while the user is already inside the app.
+ */
+export default async function DashboardLayout({
   children,
 }: {
   children: React.ReactNode;
 }) {
-  const [sidebarVisible, setSidebarVisible] = useState(true);
-  const [fullscreen, setFullscreen] = useState(false);
-  const pathname = usePathname();
-  const isSettings =
-    /^\/spaces\/[^/]+\/settings/.test(pathname ?? "") ||
-    /^\/settings(\/|$)/.test(pathname ?? "");
+  const session = await getServerSession(authOptions);
+  await requireAppAccess({
+    userId: session?.user?.id,
+    orgId: session?.user?.orgId,
+    appSlug: APP_SLUG,
+    isSuperAdmin: session?.user?.isSuperAdmin === true,
+    memberRole: session?.user?.membershipRole,
+    homeUrl: process.env.QUIKIT_URL ?? process.env.NEXT_PUBLIC_QUIKIT_URL,
+  });
 
-  // Pages (like the project header's fullscreen button) dispatch this event
-  // to hide both the top header and the sidebar for a distraction-free view.
-  useEffect(() => {
-    function onFs(e: Event) {
-      const detail = (e as CustomEvent<{ on?: boolean }>).detail;
-      setFullscreen((prev) => (typeof detail?.on === "boolean" ? detail.on : !prev));
-    }
-    window.addEventListener("qt:fullscreen", onFs as EventListener);
-    return () => window.removeEventListener("qt:fullscreen", onFs as EventListener);
-  }, []);
-
-  // Reset on route change so navigating to another page restores the chrome.
-  useEffect(() => {
-    setFullscreen(false);
-  }, [pathname]);
-
-  return (
-    <SessionGuard>
-      <ThemeSync />
-      <ImpersonationBanner />
-      <NoAccessGate>
-        <div className="flex flex-col h-screen bg-white">
-          {!fullscreen && (
-            <Header
-              onToggleSidebar={() => setSidebarVisible((v) => !v)}
-              sidebarOpen={sidebarVisible && !isSettings}
-            />
-          )}
-          <div className="flex flex-1 overflow-hidden">
-            {!fullscreen && sidebarVisible && !isSettings && <Sidebar />}
-            <main className="flex-1 overflow-y-auto bg-white">{children}</main>
-          </div>
-          <IssueCreatedToast />
-          <ToastHost />
-          <ConfirmHost />
-          <KanTour />
-        </div>
-      </NoAccessGate>
-    </SessionGuard>
-  );
+  return <DashboardShell>{children}</DashboardShell>;
 }

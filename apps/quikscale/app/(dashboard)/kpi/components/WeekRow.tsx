@@ -32,6 +32,7 @@ export function WeekRow({
   targetDisplay,
   dateLabel,
   lockReason,
+  unitSuffix,
 }: {
   weekNumber: number;
   value: string;
@@ -49,6 +50,8 @@ export function WeekRow({
   targetDisplay?: string;
   /** Override the default "Past week editing is disabled" lock tooltip. */
   lockReason?: string;
+  /** Scale-unit suffix (e.g. "Cr") shown next to the value input when scaled. */
+  unitSuffix?: string;
 }) {
   const numVal = parseFloat(value);
   const hasValue = value !== "" && !isNaN(numVal);
@@ -111,15 +114,18 @@ export function WeekRow({
       </div>
       {/* Value input */}
       <div className="w-24 flex-shrink-0">
-        <input
-          type="number"
-          min="0"
-          value={value}
-          onChange={(e) => onValueChange(e.target.value)}
-          placeholder="—"
-          readOnly={locked}
-          className={`w-full px-2 py-1.5 text-xs border rounded-md focus:outline-none text-center ${locked ? "border-gray-100 bg-gray-50 text-gray-400 cursor-not-allowed" : "border-gray-200 focus:ring-1 focus:ring-accent-400"}`}
-        />
+        <div className="flex items-center gap-1">
+          <input
+            type="number"
+            min="0"
+            value={value}
+            onChange={(e) => onValueChange(e.target.value)}
+            placeholder="—"
+            readOnly={locked}
+            className={`w-full px-2 py-1.5 text-xs border rounded-md focus:outline-none text-center ${locked ? "border-gray-100 bg-gray-50 text-gray-400 cursor-not-allowed" : "border-gray-200 focus:ring-1 focus:ring-accent-400"}`}
+          />
+          {unitSuffix && <span className="text-[9px] text-gray-400 flex-shrink-0">{unitSuffix}</span>}
+        </div>
       </div>
       {/* Notes */}
       <div className="flex-1">

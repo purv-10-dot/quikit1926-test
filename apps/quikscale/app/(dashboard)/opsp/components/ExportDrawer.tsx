@@ -32,11 +32,16 @@ import { useCreatePriority } from "@/lib/hooks/usePriority";
 import { TeamSelect } from "../../priority/components/TeamSelect";
 import { invalidateEntity } from "@/lib/hooks/dashboardInvalidation";
 import { useExportGate, type DuplicateDecision } from "./ExportGateModals";
-import { useCurrentWeek, useWeekLabels } from "@/lib/hooks/useCurrentWeek";
+import { useCurrentWeek, useWeekLabels, useQuarterWeekCount } from "@/lib/hooks/useCurrentWeek";
 import { usePastWeekFlags } from "@/lib/hooks/useFeatureFlags";
 import { buildBreakdown, applyWeeklyEdit } from "../../kpi/components/kpiModalHelpers";
 import { WeeklyScroller } from "../../kpi/components/WeeklyScroller";
-import { ALL_WEEKS, fiscalYearLabel } from "@/lib/utils/fiscal";
+import { UnitSelect } from "../../kpi/components/UnitSelect";
+import {
+  CURRENCIES, getScales, getMultiplier, formatActual,
+  shortScaleLabel, scaleDownForDisplay, scaleUpFromInput,
+} from "@/lib/utils/currency";
+import { weeksArray, fiscalYearLabel } from "@/lib/utils/fiscal";
 import { PRIORITY_DEFAULT_STATUS } from "@/lib/constants/status";
 import { notify } from "@/lib/utils/notify";
 import {
@@ -46,6 +51,7 @@ import {
   categorizePriorityRows,
   canCarryForwardKPI,
   canCarryForwardPriority,
+  kpiExportCreateFields,
   type ExistingExportItem,
 } from "../lib/exportHelpers";
 import type { KPIAcctRow, QPriorRow } from "../types";
@@ -207,6 +213,14 @@ interface KPIStepForm {
   owner: string;
   target: string;
   measurementUnit: "Number" | "Percentage" | "Currency";
+  /** Currency code (when measurementUnit === "Currency"). */
+  currency: string;
+  /** Currency scale label (e.g. "Crore"); "" = no scale. */
+  targetScale: string;
+  /** Show/accept currency values in the scale unit (Currency + scale only). */
+  scaledDisplay: boolean;
+  /** Unit-of-measure for a Number KPI (from Unit Master). */
+  unit: string;
   divisionType: "Cumulative" | "Standalone";
   reverseColor: boolean;
   frequency: "daily" | "weekly" | "monthly" | "yearly";
@@ -284,6 +298,7 @@ export function ExportKPIDrawer({
 }: BaseProps & { rows: KPIAcctRow[] }) {
   const createKPI = useCreateKPI();
   const currentWeek = useCurrentWeek(year, quarter);
+  const weekCount = useQuarterWeekCount(year, quarter);
   // Distribution starts at the current fiscal week (earlier weeks get 0),
   // identical to the Add-New-KPI modal. `useCurrentWeek` resolves async, so
   // this is 1 on the first render and the resolve-effect below recomputes
@@ -368,11 +383,15 @@ export function ExportKPIDrawer({
         owner: ownerId,
         target: target > 0 ? String(target) : "",
         measurementUnit: "Number" as const,
+        currency: "USD",
+        targetScale: "",
+        scaledDisplay: false,
+        unit: "",
         divisionType: "Cumulative" as const,
         reverseColor: false,
         frequency: "weekly" as const,
         description: "",
-        weekly: buildBreakdown("Cumulative", target, "Number", firstEditableWeek),
+        weekly: buildBreakdown("Cumulative", target, "Number", firstEditableWeek, weekCount),
       })),
     );
     setStep(0);
@@ -385,11 +404,54 @@ export function ExportKPIDrawer({
   const patch = (p: Partial<KPIStepForm>) =>
     setForms((fs) => fs.map((f, i) => (i === step ? { ...f, ...p } : f)));
 
-  // Recompute the weekly distribution when target / division / unit changes.
+  // Recompute the weekly distribution when target / division / unit / currency /
+  // scale changes. For a Currency KPI the stored target is RAW (display ×
+  // scale multiplier), mirroring the Individual KPI modal.
   const recompute = (next: Partial<KPIStepForm>) => {
     const merged = { ...cur, ...next };
-    const t = parseFloat(merged.target) || 0;
-    patch({ ...next, weekly: buildBreakdown(merged.divisionType, t, merged.measurementUnit, firstEditableWeek) });
+    const raw =
+      merged.measurementUnit === "Currency"
+        ? (parseFloat(merged.target) || 0) * getMultiplier(merged.currency, merged.targetScale)
+        : parseFloat(merged.target) || 0;
+    patch({ ...next, weekly: buildBreakdown(merged.divisionType, raw, merged.measurementUnit, firstEditableWeek, weekCount) });
+  };
+
+  // Changing the currency clamps the scale to one valid for that currency
+  // (INR ↔ western scales differ), then rebuilds the breakdown.
+  const changeCurrency = (currency: string) => {
+    const validScale = getScales(currency).find((s) => s.label === cur.targetScale) ? cur.targetScale : "";
+    recompute({ currency, targetScale: validScale });
+  };
+
+  // ── Per-step display derivations (mirror KPIModal) ──
+  // `cur` is undefined only when there are no steps; the JSX below is guarded by
+  // `!cur ? null`, so these safely default and go unused in that case.
+  const isCurrencyStep = cur?.measurementUnit === "Currency";
+  const currencyObj = CURRENCIES.find((c) => c.code === cur?.currency) ?? CURRENCIES[0];
+  const scales = getScales(cur?.currency ?? "USD");
+  const scaleMult = isCurrencyStep ? getMultiplier(cur.currency, cur.targetScale) : 1;
+  const scaledTarget = (parseFloat(cur?.target ?? "") || 0) * scaleMult;
+  // Scale the breakdown cells only when the toggle is on (values stay RAW).
+  const breakdownScaleMult = isCurrencyStep && cur?.scaledDisplay ? scaleMult : 1;
+  const toDisp = (raw: number | string) =>
+    breakdownScaleMult > 1
+      ? scaleDownForDisplay(raw, cur.currency, cur.targetScale)
+      : typeof raw === "string" ? raw : String(raw);
+  const toRaw = (input: string) =>
+    breakdownScaleMult > 1 ? scaleUpFromInput(input, cur.currency, cur.targetScale) : input;
+  // Number KPI unit-of-measure (plain suffix — Number values are not scaled).
+  const numberUnit = cur?.measurementUnit === "Number" ? (cur.unit || "") : "";
+  const breakdownUnit = breakdownScaleMult > 1 ? shortScaleLabel(cur.targetScale) : numberUnit;
+  const breakdownPrefix = breakdownScaleMult > 1 ? currencyObj.symbol : "";
+  // Scaled currency cells hold small numbers but a wide suffix → shrink; Number
+  // cells keep the wider box (raw values can be large).
+  const cellMinW = breakdownScaleMult > 1 ? "min-w-[52px]" : "min-w-[64px]";
+  // Full raw value behind a SCALED currency cell, en-IN formatted (tooltip).
+  const rawTip = (raw: number | string): string | undefined => {
+    if (breakdownScaleMult <= 1) return undefined;
+    const n = typeof raw === "string" ? parseFloat(raw) : raw;
+    if (!Number.isFinite(n)) return undefined;
+    return `= ${formatActual(n, currencyObj.symbol, cur.currency)}`;
   };
 
   // Steps whose weekly cells the user hand-edited — never clobber those.
@@ -406,14 +468,17 @@ export function ExportKPIDrawer({
   // KPI modal's "firstEditableWeek resolved" recalculation.
   const weekResolved = useRef(false);
   useEffect(() => {
-    if (weekResolved.current || firstEditableWeek <= 1) return;
+    if (weekResolved.current || (firstEditableWeek <= 1 && weekCount === 13)) return;
     weekResolved.current = true;
-    setForms((fs) => rebuildStepWeekly(fs, firstEditableWeek, (i) => editedWeekly.current.has(i)));
-  }, [firstEditableWeek]);
+    setForms((fs) => rebuildStepWeekly(fs, firstEditableWeek, (i) => editedWeekly.current.has(i), weekCount));
+  }, [firstEditableWeek, weekCount]);
 
   /** Build the create payload for one step form. */
   function kpiCreatePayload(f: KPIStepForm) {
-    const targetNum = parseFloat(f.target) || 0;
+    // Currency/unit-aware fields (raw target, currency, scale, unit,
+    // scaledDisplay, weeklyTargets) — identical to the Individual KPI modal.
+    const { target, weeklyTargets, currency, targetScale, unit, scaledDisplay } =
+      kpiExportCreateFields(f, weekCount);
     return {
       name: f.name.trim(),
       description: f.description || undefined,
@@ -422,17 +487,19 @@ export function ExportKPIDrawer({
       quarter: quarter as "Q1" | "Q2" | "Q3" | "Q4",
       year,
       measurementUnit: f.measurementUnit,
-      target: targetNum,
-      quarterlyGoal: targetNum,
-      qtdGoal: targetNum,
+      target,
+      quarterlyGoal: target,
+      qtdGoal: target,
       status: "active",
       divisionType: f.divisionType,
+      currency,
+      targetScale,
+      unit,
+      scaledDisplay,
       reverseColor: f.reverseColor,
       frequency: f.frequency,
       importedFromOpsp: true,
-      weeklyTargets: Object.fromEntries(
-        ALL_WEEKS.map((w) => [String(w), parseFloat(f.weekly[w]) || 0]),
-      ),
+      weeklyTargets,
     } as Parameters<typeof createKPI.mutateAsync>[0];
   }
 
@@ -624,6 +691,10 @@ export function ExportKPIDrawer({
             <option value="yearly">Yearly</option>
           </select>
         </div>
+      </div>
+
+      {/* Measurement Unit + Currency (Currency only) — mirrors the Individual KPI form. */}
+      <div className={`mt-3 grid gap-3 ${isCurrencyStep ? "grid-cols-2" : "grid-cols-1"}`}>
         <div>
           <label className={fieldLabel}>Measurement Unit <span className="text-red-500">*</span></label>
           <select className={inputCls} value={cur.measurementUnit} onChange={(e) => recompute({ measurementUnit: e.target.value as KPIStepForm["measurementUnit"] })}>
@@ -632,29 +703,89 @@ export function ExportKPIDrawer({
             <option value="Currency">Currency</option>
           </select>
         </div>
-        <div>
-          <label className={fieldLabel}>Target Value <span className="text-red-500">*</span></label>
-          <input className={inputCls} type="number" min="0" value={cur.target} inputMode="decimal" placeholder="0" onChange={(e) => recompute({ target: e.target.value })} />
-        </div>
+        {isCurrencyStep && (
+          <div>
+            <label className={fieldLabel}>Currency</label>
+            <select className={inputCls} value={cur.currency} onChange={(e) => changeCurrency(e.target.value)}>
+              {CURRENCIES.map((c) => (
+                <option key={c.code} value={c.code}>{c.symbol} {c.code} — {c.name}</option>
+              ))}
+            </select>
+          </div>
+        )}
       </div>
 
+      {/* Target Value — currency prefix + scale dropdown (Currency) / Unit Master dropdown (Number). */}
       <div className="mt-3">
-        <label className={fieldLabel}>Division Type <span className="text-red-500">*</span></label>
-        <div className="inline-flex border border-gray-200 rounded-lg overflow-hidden">
-          {(["Cumulative", "Standalone"] as const).map((dt) => (
-            <button
-              key={dt}
-              type="button"
-              onClick={() => recompute({ divisionType: dt })}
-              className={`px-3.5 py-2 text-xs font-semibold ${cur.divisionType === dt ? "bg-gray-900 text-white" : "bg-white text-gray-700"}`}
-            >
-              {dt}
-            </button>
-          ))}
+        <label className={fieldLabel}>Target Value <span className="text-red-500">*</span></label>
+        <div className="flex rounded-lg border border-gray-200 overflow-hidden focus-within:ring-1 focus-within:ring-accent-400 focus-within:border-accent-400">
+          {isCurrencyStep && (
+            <span className="flex items-center px-2.5 bg-gray-50 border-r border-gray-200 text-sm text-gray-500 select-none whitespace-nowrap flex-shrink-0">
+              {currencyObj.symbol}
+            </span>
+          )}
+          <input type="number" min="0" value={cur.target} inputMode="decimal" placeholder="0"
+            onChange={(e) => recompute({ target: e.target.value })}
+            className="flex-1 px-3 py-2 text-sm focus:outline-none bg-white min-w-0" />
+          {isCurrencyStep && (
+            <select value={cur.targetScale} onChange={(e) => recompute({ targetScale: e.target.value })}
+              className="border-l border-gray-200 pl-2 pr-1 py-2 text-sm bg-white focus:outline-none text-gray-600 flex-shrink-0 cursor-pointer">
+              {scales.map((s) => <option key={s.label} value={s.label}>{s.label || "—"}</option>)}
+            </select>
+          )}
+          {cur.measurementUnit === "Number" && (
+            <UnitSelect value={cur.unit} onChange={(v) => patch({ unit: v })} />
+          )}
         </div>
-        <p className="text-[11px] text-gray-400 mt-1">
-          {cur.divisionType === "Cumulative" ? "Target split equally across 13 weeks" : "Full target every week"}
-        </p>
+        {isCurrencyStep && cur.targetScale && scaledTarget > 0 && (
+          <p className="text-[10px] text-gray-400 mt-1">
+            = {formatActual(scaledTarget, currencyObj.symbol, cur.currency)}
+          </p>
+        )}
+      </div>
+
+      {/* Division Type + "Show values in <scale>" toggle on one row (mirrors the
+          Individual KPI modal). The toggle only renders for a Currency KPI with a
+          chosen scale; without it, Division Type spans the row on its own. */}
+      <div className="mt-3 flex flex-wrap gap-6 items-start">
+        <div>
+          <label className={fieldLabel}>Division Type <span className="text-red-500">*</span></label>
+          <div className="inline-flex border border-gray-200 rounded-lg overflow-hidden">
+            {(["Cumulative", "Standalone"] as const).map((dt) => (
+              <button
+                key={dt}
+                type="button"
+                onClick={() => recompute({ divisionType: dt })}
+                className={`px-3.5 py-2 text-xs font-semibold ${cur.divisionType === dt ? "bg-gray-900 text-white" : "bg-white text-gray-700"}`}
+              >
+                {dt}
+              </button>
+            ))}
+          </div>
+          <p className="text-[11px] text-gray-400 mt-1">
+            {cur.divisionType === "Cumulative" ? `Target split equally across ${weekCount} weeks` : "Full target every week"}
+          </p>
+        </div>
+
+        {isCurrencyStep && !!cur.targetScale && (
+          <div className="flex-1 min-w-0">
+            <label className={fieldLabel}>Show values in {cur.targetScale}</label>
+            <button
+              type="button"
+              role="switch"
+              aria-checked={cur.scaledDisplay}
+              onClick={() => patch({ scaledDisplay: !cur.scaledDisplay })}
+              className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${cur.scaledDisplay ? "bg-accent-600" : "bg-gray-300"}`}
+            >
+              <span className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${cur.scaledDisplay ? "translate-x-6" : "translate-x-1"}`} />
+            </button>
+            <p className="text-[10px] text-gray-400 mt-1">
+              {cur.scaledDisplay
+                ? `Weekly breakdown shows in ${shortScaleLabel(cur.targetScale)} (${currencyObj.symbol} ${cur.targetScale}). Stored values stay exact.`
+                : `Off — full numbers (e.g. ${currencyObj.symbol}25,000,000).`}
+            </p>
+          </div>
+        )}
       </div>
 
       <div className="mt-3">
@@ -683,13 +814,23 @@ export function ExportKPIDrawer({
 
       {/* Target Breakdown (Weekly) */}
       <div className="mt-4">
-        <label className={fieldLabel}>Target Breakdown (Weekly)</label>
+        <label className={fieldLabel}>
+          Target Breakdown (Weekly)
+          {breakdownScaleMult > 1
+            ? ` — in ${currencyObj.symbol} ${breakdownUnit}`
+            : breakdownUnit ? ` — in ${breakdownUnit}` : ""}
+          {breakdownScaleMult > 1 && (
+            <span className="ml-2 font-normal text-gray-400">
+              = {formatActual(scaledTarget, currencyObj.symbol, cur.currency)} total
+            </span>
+          )}
+        </label>
         <WeeklyScroller>
           <table className="border-collapse">
             <thead>
               <tr className="bg-gray-50">
-                {ALL_WEEKS.map((w) => (
-                  <th key={w} className="px-2 py-1.5 text-[10px] font-semibold text-gray-500 text-center min-w-[64px] border-r border-gray-100 last:border-r-0">
+                {weeksArray(weekCount).map((w) => (
+                  <th key={w} className={`px-2 py-1.5 text-[10px] font-semibold text-gray-500 text-center ${cellMinW} border-r border-gray-100 last:border-r-0`}>
                     W{w}
                     <div className="text-[9px] font-normal text-gray-400">{weekLabels[w - 1] ?? ""}</div>
                   </th>
@@ -698,7 +839,7 @@ export function ExportKPIDrawer({
             </thead>
             <tbody>
               <tr>
-                {ALL_WEEKS.map((w) => {
+                {weeksArray(weekCount).map((w) => {
                   // Cell rules mirror the Individual KPI modal exactly:
                   //  - Past weeks are blocked (0) unless "Add Past Week Data" is on.
                   //  - Standalone cells are LOCKED at the full target (each week
@@ -709,12 +850,13 @@ export function ExportKPIDrawer({
                   const isStandalone = cur.divisionType === "Standalone";
                   const isLocked = isStandalone || isPast;
                   const cellKey = `${step}-${w}`;
-                  const targetNum = parseFloat(cur.target) || 0;
+                  // RAW target (display × scale for Currency) — cells store raw.
+                  const targetNum = scaledTarget;
 
                   const applyEdit = (raw: string) => {
                     markWeeklyEdited(step);
                     patch({
-                      weekly: applyWeeklyEdit(cur.weekly, w, raw, targetNum, cur.measurementUnit, cur.divisionType),
+                      weekly: applyWeeklyEdit(cur.weekly, w, raw, targetNum, cur.measurementUnit, cur.divisionType, weekCount),
                     });
                   };
 
@@ -735,38 +877,46 @@ export function ExportKPIDrawer({
                           : current;
                     return (
                       <td key={w} className="px-1 py-1 border-r border-gray-100 last:border-r-0">
-                        <select
-                          value={norm}
-                          onChange={(e) => applyEdit(e.target.value)}
-                          className="w-full text-xs text-center border border-gray-200 rounded px-1 py-1 bg-white focus:outline-none focus:ring-1 focus:ring-accent-400 cursor-pointer"
-                        >
-                          <option value={zeroStr}>0</option>
-                          <option value={targetStr}>{targetStr || "—"}</option>
-                          {norm !== zeroStr && norm !== "" && norm !== targetStr && (
-                            <option value={norm}>{norm} (custom)</option>
-                          )}
-                        </select>
+                        <div className="flex items-center gap-0.5">
+                          {breakdownPrefix && <span className="text-[9px] text-gray-400 flex-shrink-0 whitespace-nowrap">{breakdownPrefix}</span>}
+                          <select
+                            value={norm}
+                            onChange={(e) => applyEdit(e.target.value)}
+                            className={`w-full text-xs text-center border border-gray-200 rounded px-1 py-1 bg-white focus:outline-none focus:ring-1 focus:ring-accent-400 cursor-pointer ${cellMinW}`}
+                          >
+                            <option value={zeroStr}>0</option>
+                            <option value={targetStr}>{targetStr ? toDisp(targetStr) : "—"}</option>
+                            {norm !== zeroStr && norm !== "" && norm !== targetStr && (
+                              <option value={norm}>{toDisp(norm)} (custom)</option>
+                            )}
+                          </select>
+                          {breakdownUnit && <span className="text-[9px] text-gray-400 flex-shrink-0 whitespace-nowrap">{breakdownUnit}</span>}
+                        </div>
                       </td>
                     );
                   }
 
                   return (
                     <td key={w} className="px-1 py-1 border-r border-gray-100 last:border-r-0">
-                      <input
-                        type="number"
-                        min="0"
-                        value={editingCell?.key === cellKey ? editingCell.raw : cur.weekly[w] ?? ""}
-                        readOnly={isLocked}
-                        onChange={(e) => {
-                          setEditingCell({ key: cellKey, raw: e.target.value });
-                          applyEdit(e.target.value);
-                        }}
-                        onBlur={() => setEditingCell(null)}
-                        title={isPast ? "Past week data entry is disabled. Enable in Settings > Configurations." : undefined}
-                        className={`w-full text-xs text-center border border-gray-200 rounded px-1 py-1 focus:outline-none focus:ring-1 focus:ring-accent-400 ${
-                          isLocked ? "bg-gray-50 text-gray-400 cursor-not-allowed" : ""
-                        }`}
-                      />
+                      <div className="flex items-center gap-0.5">
+                        {breakdownPrefix && <span className="text-[9px] text-gray-400 flex-shrink-0 whitespace-nowrap">{breakdownPrefix}</span>}
+                        <input
+                          type="number"
+                          min="0"
+                          value={editingCell?.key === cellKey ? editingCell.raw : toDisp(cur.weekly[w] ?? "")}
+                          readOnly={isLocked}
+                          onChange={(e) => {
+                            setEditingCell({ key: cellKey, raw: e.target.value });
+                            applyEdit(toRaw(e.target.value));
+                          }}
+                          onBlur={() => setEditingCell(null)}
+                          title={isPast ? "Past week data entry is disabled. Enable in Settings > Configurations." : rawTip(cur.weekly[w] ?? "")}
+                          className={`w-full text-xs text-center border border-gray-200 rounded px-1 py-1 focus:outline-none focus:ring-1 focus:ring-accent-400 ${cellMinW} ${
+                            isLocked ? "bg-gray-50 text-gray-400 cursor-not-allowed" : ""
+                          }`}
+                        />
+                        {breakdownUnit && <span className="text-[9px] text-gray-400 flex-shrink-0 whitespace-nowrap">{breakdownUnit}</span>}
+                      </div>
                     </td>
                   );
                 })}
@@ -776,8 +926,8 @@ export function ExportKPIDrawer({
         </WeeklyScroller>
         <p className="text-[10px] text-gray-400 mt-1">
           {cur.divisionType === "Cumulative"
-            ? `Target split equally across ${firstEditableWeek > 1 ? `weeks ${firstEditableWeek}–13 (${14 - firstEditableWeek} weeks)` : "13 weeks"} — edit cells to override`
-            : `Each week = full target (${parseFloat(cur.target) || 0})`}
+            ? `Target split equally across ${firstEditableWeek > 1 ? `weeks ${firstEditableWeek}–${weekCount} (${weekCount + 1 - firstEditableWeek} weeks)` : `${weekCount} weeks`} — edit cells to override`
+            : `Each week = full target (${toDisp(String(scaledTarget))}${breakdownUnit ? ` ${breakdownUnit}` : ""})`}
         </p>
       </div>
 
@@ -862,6 +1012,7 @@ export function ExportPriorityDrawer({
   rows,
 }: BaseProps & { rows: QPriorRow[] }) {
   const createPriority = useCreatePriority();
+  const weekCount = useQuarterWeekCount(year, quarter);
   const queryClient = useQueryClient();
   const gate = useExportGate();
   const [search, setSearch] = useState("");
@@ -921,7 +1072,7 @@ export function ExportPriorityDrawer({
         owner: ownerId,
         teamId: "",
         startWeek: 1,
-        endWeek: 13,
+        endWeek: weekCount,
         description: "",
       })),
     );
@@ -1151,13 +1302,13 @@ export function ExportPriorityDrawer({
         <div>
           <label className={fieldLabel}>Start Week <span className="text-red-500">*</span></label>
           <select className={inputCls} value={cur.startWeek} onChange={(e) => patch({ startWeek: Number(e.target.value) })}>
-            {ALL_WEEKS.map((w) => <option key={w} value={w}>Week {w}</option>)}
+            {weeksArray(weekCount).map((w) => <option key={w} value={w}>Week {w}</option>)}
           </select>
         </div>
         <div>
           <label className={fieldLabel}>End Week <span className="text-red-500">*</span></label>
           <select className={inputCls} value={cur.endWeek} onChange={(e) => patch({ endWeek: Number(e.target.value) })}>
-            {ALL_WEEKS.filter((w) => w >= cur.startWeek).map((w) => <option key={w} value={w}>Week {w}</option>)}
+            {weeksArray(weekCount).filter((w) => w >= cur.startWeek).map((w) => <option key={w} value={w}>Week {w}</option>)}
           </select>
         </div>
         <div className="col-span-2">

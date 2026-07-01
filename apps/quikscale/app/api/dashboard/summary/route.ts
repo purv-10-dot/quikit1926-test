@@ -32,6 +32,8 @@ const KPI_SELECT = {
   weeklyOwnerTargets: true,
   currency: true,
   targetScale: true,
+  unit: true,
+  scaledDisplay: true,
   reverseColor: true,
   createdAt: true,
   updatedAt: true,

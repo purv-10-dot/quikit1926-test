@@ -7,7 +7,19 @@ export const QUARTER_STARTS: Record<string, [number, number]> = {
 };
 
 export const ALL_QUARTERS = ["Q1", "Q2", "Q3", "Q4"] as const;
-export const ALL_WEEKS = Array.from({ length: 13 }, (_, i) => i + 1);
+/** Legacy default quarter length. */
+export const DEFAULT_WEEKS_PER_QUARTER = 13;
+/**
+ * Upper bound for a custom quarter's week count (Custom Quarter Settings).
+ * A real quarter is ~13 weeks; this is generous headroom that also bounds Zod
+ * validation and API clamps so a malformed request can't create absurd grids.
+ */
+export const MAX_WEEKS_PER_QUARTER = 26;
+/** `[1, 2, …, 13]` — the default 13-week list (legacy callers). */
+export const ALL_WEEKS = Array.from({ length: DEFAULT_WEEKS_PER_QUARTER }, (_, i) => i + 1);
+/** `[1, 2, …, count]` — the week list for a quarter of `count` weeks (default 13). */
+export const weeksArray = (count: number = DEFAULT_WEEKS_PER_QUARTER): number[] =>
+  Array.from({ length: count }, (_, i) => i + 1);
 export const MEASUREMENT_UNITS = ["Number", "Percentage", "Currency"] as const;
 
 /** Current fiscal year (April-based). */
@@ -16,13 +28,58 @@ export function getFiscalYear(): number {
   return m >= 3 ? new Date().getFullYear() : new Date().getFullYear() - 1;
 }
 
-/** Current fiscal quarter. */
+/** Current fiscal quarter — CALENDAR-based (Apr–Jun=Q1 … Jan–Mar=Q4).
+ *  Ignores Custom Quarter Settings; for a custom-quarter-aware answer resolve
+ *  from the tenant's QuarterSetting rows via `resolveQuarterForDate`. */
 export function getFiscalQuarter(): "Q1" | "Q2" | "Q3" | "Q4" {
   const m = new Date().getMonth();
   if (m >= 3 && m <= 5) return "Q1";
   if (m >= 6 && m <= 8) return "Q2";
   if (m >= 9 && m <= 11) return "Q3";
   return "Q4";
+}
+
+/** A QuarterSetting row with the fields needed to test whether a date falls in it. */
+export interface QuarterDateRow {
+  quarter: string;
+  startDate: string | Date;
+  endDate: string | Date;
+}
+
+/** Parse an ISO string / Date to a local-midnight Date (no timezone drift). */
+function toLocalDay(value: string | Date): Date {
+  if (typeof value === "string") {
+    const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(value);
+    if (m) return new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3]));
+    const d = new Date(value);
+    return new Date(d.getFullYear(), d.getMonth(), d.getDate());
+  }
+  return new Date(value.getFullYear(), value.getMonth(), value.getDate());
+}
+
+/**
+ * Resolve which quarter contains `now` from a tenant's QuarterSetting date
+ * ranges — the Custom-Quarter-aware answer. Comparison is date-only and
+ * inclusive on both ends (mirrors the Quarter Settings badge), so a quarter
+ * whose custom length pushes its end past the calendar-month boundary (e.g. a
+ * 14-week Q1 ending in July) still resolves correctly. Returns null when no row
+ * contains `now` — callers can then fall back to the calendar `getFiscalQuarter`.
+ */
+export function resolveQuarterForDate(
+  rows: QuarterDateRow[] | null | undefined,
+  now: Date,
+): "Q1" | "Q2" | "Q3" | "Q4" | null {
+  if (!rows || rows.length === 0) return null;
+  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
+  for (const r of rows) {
+    const s = toLocalDay(r.startDate).getTime();
+    const e = toLocalDay(r.endDate).getTime();
+    if (today >= s && today <= e) {
+      const q = r.quarter;
+      if (q === "Q1" || q === "Q2" || q === "Q3" || q === "Q4") return q;
+    }
+  }
+  return null;
 }
 
 /** Formats "2026–2027" style label. */
@@ -60,24 +117,36 @@ export function getQuarterStart(
   return new Date(quarter === "Q4" ? year + 1 : year, mo, dy);
 }
 
-/** Returns the current fiscal week (1–13) within the given quarter (legacy, uses hardcoded months). */
-export function getCurrentFiscalWeek(year: number, quarter: string): number {
+/**
+ * Returns the current fiscal week within the given quarter (legacy, uses
+ * hardcoded months). Clamped to `[1, total]` — pass the quarter's `weekCount`
+ * in Custom Quarter Settings mode (defaults to 13).
+ */
+export function getCurrentFiscalWeek(
+  year: number,
+  quarter: string,
+  total: number = DEFAULT_WEEKS_PER_QUARTER,
+): number {
   const now = new Date();
   const start = getQuarterStart(year, quarter);
   const elapsed = Math.floor((now.getTime() - start.getTime()) / (7 * 24 * 60 * 60 * 1000)) + 1;
-  return Math.min(13, Math.max(1, elapsed));
+  return Math.min(total, Math.max(1, elapsed));
 }
 
 /**
  * Returns current fiscal week given a quarter's actual start date (ISO string or Date).
- * Use this when you have the real QuarterSetting.startDate from the DB.
+ * Use this when you have the real QuarterSetting.startDate from the DB. Clamped to
+ * `[1, total]` — pass the quarter's `weekCount` (defaults to 13).
  */
-export function getCurrentFiscalWeekFromStart(startDate: string | Date): number {
+export function getCurrentFiscalWeekFromStart(
+  startDate: string | Date,
+  total: number = DEFAULT_WEEKS_PER_QUARTER,
+): number {
   const start = typeof startDate === "string" ? new Date(startDate) : startDate;
   const now = new Date();
   if (now < start) return 1;
   const elapsed = Math.floor((now.getTime() - start.getTime()) / (7 * 24 * 60 * 60 * 1000)) + 1;
-  return Math.min(13, Math.max(1, elapsed));
+  return Math.min(total, Math.max(1, elapsed));
 }
 
 /**

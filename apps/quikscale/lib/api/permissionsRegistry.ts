@@ -85,6 +85,7 @@ export const PERMISSION_TREE: PermissionModule[] = [
     leaves: [
       { resource: "Team", label: "Teams", actions: ACTIONS },
       { resource: "Quarter", label: "Quarter Settings", actions: ACTIONS },
+      { resource: "Unit", label: "Unit Master", actions: ACTIONS },
     ],
     // `User` is a SubModule (not a flat leaf) so it can host UI-only
     // sub-permissions for the Add User button and the User Management tab —
@@ -281,6 +282,7 @@ export const NAV_RESOURCE: Record<string, string> = {
   "orgSetup.teams": "Team",
   "orgSetup.users": "User",
   "orgSetup.quarters": "Quarter",
+  "orgSetup.units": "Unit",
   www: "WWW",
   "clientMeetings.dashboard": "ClientMeetings.Dashboard",
   "clientMeetings.clients": "ClientMaster",

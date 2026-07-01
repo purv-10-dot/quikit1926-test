@@ -59,6 +59,10 @@ export interface KPIRow {
   weeklyTargets?: Record<string, number> | null;
   currency?: string | null;
   targetScale?: string | null;
+  /** Display label for Number KPIs (from Unit Master), e.g. "Leads". */
+  unit?: string | null;
+  /** When true (Currency + targetScale), values display/accept in the scale unit. */
+  scaledDisplay?: boolean;
   reverseColor?: boolean;
   frequency?: string;
   /** True when created via the OPSP "Export → Create KPIs" flow (display-only). */

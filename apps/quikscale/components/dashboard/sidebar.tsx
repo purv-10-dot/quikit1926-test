@@ -13,7 +13,7 @@ import {
   BookOpen, Star, List, UserCheck, MessageSquare,
   ChevronDown, ChevronLeft, ChevronRight, X,
   BarChart2, LineChart, ClipboardList, Layers,
-  Settings, DollarSign, GitBranch,
+  Settings, DollarSign, GitBranch, Ruler,
 } from "lucide-react";
 import { isModuleEnabled } from "@quikit/shared/moduleRegistry";
 import { useDisabledModules } from "@/lib/hooks/useFeatureFlagsForApp";
@@ -65,6 +65,7 @@ const navigation: SidebarEntry[] = [
     { label: "Teams",            href: "/org-setup/teams",    icon: Users,        moduleKey: "orgSetup.teams" },
     { label: "Users",            href: "/org-setup/users",    icon: User,         moduleKey: "orgSetup.users" },
     { label: "Quarter Settings", href: "/org-setup/quarters", icon: CalendarDays, moduleKey: "orgSetup.quarters" },
+    { label: "Unit Master",      href: "/org-setup/units",    icon: Ruler,        moduleKey: "orgSetup.units" },
   ]},
 
   { type: "section", label: "Execution" },

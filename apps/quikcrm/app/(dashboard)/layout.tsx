@@ -1,5 +1,8 @@
 import type { ReactNode } from "react";
 import { redirect } from "next/navigation";
+import { getServerSession } from "next-auth";
+import { requireAppAccess } from "@quikit/auth/app-access";
+import { authOptions } from "@/lib/auth";
 import { requireUser } from "@/lib/auth/require";
 import { isCrmAdminUser } from "@/lib/auth/is-crm-admin";
 import { prisma } from "@/lib/db/prisma";
@@ -12,6 +15,21 @@ import { SessionGuard } from "@/components/session-guard";
 const ADMIN_ROLE = "Administrator";
 
 export default async function DashboardLayout({ children }: { children: ReactNode }) {
+  // Server-side app-access gate — runs BEFORE any dashboard UI renders, so a
+  // user without QuikCRM access is redirected to the landing page + popup and
+  // never sees a flash of the app. Uses the raw OAuth session for the org role
+  // (session.role below is the CRM-mapped role, not the org membershipRole that
+  // ADMIN_TIER_ROLES expects).
+  const authSession = await getServerSession(authOptions);
+  await requireAppAccess({
+    userId: authSession?.user?.id,
+    orgId: authSession?.user?.orgId,
+    appSlug: "quikcrm",
+    isSuperAdmin: authSession?.user?.isSuperAdmin === true,
+    memberRole: authSession?.user?.membershipRole,
+    homeUrl: process.env.QUIKIT_URL ?? process.env.NEXT_PUBLIC_QUIKIT_URL,
+  });
+
   const session = await requireUser();
   const [profile, matrix] = await Promise.all([
     prisma.user.findUnique({

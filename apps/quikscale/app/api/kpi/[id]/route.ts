@@ -6,6 +6,7 @@ import { withOrgAuthForResource } from "@/lib/api/withOrgAuth";
 const auth = withOrgAuthForResource("kpi", "KPI");
 import { getPastWeekFlags, getCurrentFiscalWeekFromDB } from "@/lib/utils/featureFlags";
 import { isWeekBeforeEditableWindow, earliestEditableWeek } from "@/lib/utils/weekLock";
+import { MAX_WEEKS_PER_QUARTER } from "@/lib/utils/fiscal";
 import { audit, requestContext, classifyUpdateAction, diffFields, KPI_AUDIT_FIELDS } from "@/lib/audit";
 import { notifyKPIReplacement } from "@/lib/services/kpiNotifications";
 
@@ -67,7 +68,7 @@ async function syncTeamTargetToChildren(teamKpiId: string) {
     const childZeroWeeks = Object.entries(childWeekly)
       .filter(([, v]) => v === 0)
       .map(([w]) => parseInt(w, 10))
-      .filter((n) => Number.isFinite(n) && n >= 1 && n <= 13);
+      .filter((n) => Number.isFinite(n) && n >= 1 && n <= MAX_WEEKS_PER_QUARTER);
     if (childZeroWeeks.length > 0) {
       await db.kPIWeeklyValue.updateMany({
         where: { kpiId: child.id, weekNumber: { in: childZeroWeeks } },
@@ -156,7 +157,7 @@ export const GET = auth.view<{ id: string }>(async ({ orgId }, req, { params }) 
       qtdAchieved: true, currentWeekValue: true, progressPercent: true,
       status: true, healthStatus: true, lastNotes: true, lastNotesAt: true,
       divisionType: true, weeklyTargets: true, weeklyOwnerTargets: true,
-      currency: true, targetScale: true, reverseColor: true, frequency: true,
+      currency: true, targetScale: true, unit: true, scaledDisplay: true, reverseColor: true, frequency: true,
       createdAt: true, updatedAt: true, createdBy: true, updatedBy: true,
       owner_user: { select: { id: true, firstName: true, lastName: true } },
       weeklyValues: { select: { weekNumber: true, value: true, notes: true }, orderBy: { weekNumber: "asc" } },
@@ -367,6 +368,8 @@ export const PUT = auth.update<{ id: string }>(async ({ orgId, userId }, req, { 
       // edit and breaking the chosen scale unit. null/string still set as given.
       currency: validated.currency,
       targetScale: validated.targetScale,
+      unit: validated.unit ?? undefined,
+      scaledDisplay: validated.scaledDisplay ?? undefined,
       reverseColor: validated.reverseColor ?? undefined,
       frequency: validated.frequency ?? undefined,
       updatedBy: userId,
@@ -380,7 +383,7 @@ export const PUT = auth.update<{ id: string }>(async ({ orgId, userId }, req, { 
       target: true, quarterlyGoal: true, qtdGoal: true, qtdAchieved: true,
       progressPercent: true, status: true, healthStatus: true,
       divisionType: true, weeklyTargets: true, weeklyOwnerTargets: true, lastNotes: true,
-      currency: true, targetScale: true, reverseColor: true, frequency: true,
+      currency: true, targetScale: true, unit: true, scaledDisplay: true, reverseColor: true, frequency: true,
       createdAt: true, updatedAt: true, createdBy: true,
       owner_user: { select: { id: true, firstName: true, lastName: true } },
     },
@@ -424,7 +427,7 @@ export const PUT = auth.update<{ id: string }>(async ({ orgId, userId }, req, { 
     const zeroWeeks = Object.entries(wt)
       .filter(([, v]) => v === 0)
       .map(([w]) => parseInt(w, 10))
-      .filter((n) => Number.isFinite(n) && n >= 1 && n <= 13);
+      .filter((n) => Number.isFinite(n) && n >= 1 && n <= MAX_WEEKS_PER_QUARTER);
     if (zeroWeeks.length > 0) {
       await db.kPIWeeklyValue.updateMany({
         where: { kpiId: params.id, weekNumber: { in: zeroWeeks } },
