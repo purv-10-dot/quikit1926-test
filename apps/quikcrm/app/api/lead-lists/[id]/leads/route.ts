@@ -35,7 +35,8 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
 
     const filterWhere = translateFilterToPrismaWhere(filterParsed.data);
     const acl = await accountScopeFilter(user);
-    const baseAnd: Record<string, unknown>[] = [{ orgId: user.orgId }];
+    // Exclude trashed leads — CrmLead is not covered by the soft-delete middleware.
+    const baseAnd: Record<string, unknown>[] = [{ orgId: user.orgId, deletedAt: null }];
     if (Object.keys(filterWhere).length > 0) baseAnd.push(filterWhere);
     if (acl) baseAnd.push(acl);
     const where = { AND: baseAnd };

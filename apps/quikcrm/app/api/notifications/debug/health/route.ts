@@ -9,7 +9,6 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/db/prisma";
 import { requireApiUser, isResponse, errorResponse } from "@/lib/auth/require";
-import { isRedisEnabled, getRedis } from "@/lib/db/redis";
 
 export const runtime = "nodejs";
 
@@ -31,44 +30,6 @@ async function checkDatabase(): Promise<SubsystemResult> {
       detail: `Query failed: ${err instanceof Error ? err.message : String(err)}`,
     };
   }
-}
-
-async function checkRedis(): Promise<SubsystemResult> {
-  if (!isRedisEnabled()) {
-    return { ok: false, detail: "REDIS_URL is not set — realtime notifications disabled." };
-  }
-  const t0 = Date.now();
-  try {
-    const redis = getRedis();
-    const reply = await redis.ping();
-    if (reply !== "PONG") throw new Error(`Unexpected PING reply: ${reply}`);
-    return { ok: true, latencyMs: Date.now() - t0, detail: "Redis PING → PONG." };
-  } catch (err) {
-    return {
-      ok: false,
-      latencyMs: Date.now() - t0,
-      detail: `Redis error: ${err instanceof Error ? err.message : String(err)}`,
-    };
-  }
-}
-
-function checkSse(redisOk: boolean): SubsystemResult {
-  if (!isRedisEnabled()) {
-    return {
-      ok: false,
-      detail: "SSE unavailable — Redis is not configured (REDIS_URL unset). Bell badge falls back to 60s polling.",
-    };
-  }
-  if (!redisOk) {
-    return {
-      ok: false,
-      detail: "SSE degraded — Redis responded with an error. Check Redis health above.",
-    };
-  }
-  return {
-    ok: true,
-    detail: "SSE endpoint is operational. Clients subscribe on /api/notifications/stream.",
-  };
 }
 
 function checkEmail(): SubsystemResult {
@@ -110,13 +71,12 @@ export async function GET() {
       return NextResponse.json({ error: "Forbidden" }, { status: 403 });
     }
 
-    const [database, redis] = await Promise.all([checkDatabase(), checkRedis()]);
-    const sse = checkSse(redis.ok);
+    const database = await checkDatabase();
     const email = checkEmail();
 
-    const allOk = database.ok && redis.ok && sse.ok && email.ok;
+    const allOk = database.ok && email.ok;
 
-    return NextResponse.json({ allOk, database, redis, sse, email });
+    return NextResponse.json({ allOk, database, email });
   } catch (e) {
     return errorResponse(e);
   }

@@ -31,7 +31,24 @@ interface ChangeLogEntry {
    *  human-readable names so the UI doesn't surface raw cuids. */
   resolved: Record<string, { before: string | null; after: string | null }>;
   fields: string[];
+  /** For the conversion entry (`lead_convert_relink`): account/contact/
+   *  opportunity names so the UI can render "Converted to: …" without exposing
+   *  raw ids or the internal action name. Null for non-conversion entries. */
+  conversion: {
+    accountName: string | null;
+    contactName: string | null;
+    opportunityName: string | null;
+  } | null;
   createdAt: Date;
+}
+
+/** The internal audit action the lead conversion writes (legacy name kept for
+ *  data compatibility; the UI labels it "Lead Converted"). */
+const CONVERT_ACTION = "lead_convert_relink";
+
+function metaString(meta: Record<string, unknown> | null, key: string): string | null {
+  const v = meta?.[key];
+  return typeof v === "string" && v ? v : null;
 }
 
 export async function GET(
@@ -109,6 +126,7 @@ export async function GET(
     const userIds = new Set<string>();
     const accountIds = new Set<string>();
     const contactIds = new Set<string>();
+    const opportunityIds = new Set<string>();
     for (const r of fieldFiltered) {
       if (r.userId) userIds.add(r.userId);
       const before = (r.before as Record<string, unknown> | null) ?? {};
@@ -121,9 +139,23 @@ export async function GET(
         const cId = snap.linkedContactId;
         if (typeof cId === "string" && cId) contactIds.add(cId);
       }
+      // Conversion entries carry the created Account/Contact/Opportunity ids in
+      // `metadata` (not before/after). Collect those too so we can name them.
+      if (r.action === CONVERT_ACTION) {
+        const meta = (r.metadata as Record<string, unknown> | null) ?? null;
+        const a = metaString(meta, "toAccountId");
+        const c = metaString(meta, "toContactId");
+        const o = metaString(meta, "toOpportunityId");
+        if (a) accountIds.add(a);
+        if (c) contactIds.add(c);
+        if (o) opportunityIds.add(o);
+      }
     }
+    // Back-compat: older conversion rows omit `toAccountId` — fall back to the
+    // lead's current accountId so the Account name still resolves.
+    if (lead.accountId) accountIds.add(lead.accountId);
 
-    const [profiles, accounts, contacts] = await Promise.all([
+    const [profiles, accounts, contacts, opportunities] = await Promise.all([
       userIds.size
         ? prisma.user.findMany({
             where: { id: { in: Array.from(userIds) } },
@@ -142,6 +174,12 @@ export async function GET(
             select: { id: true, firstName: true, lastName: true, email: true },
           })
         : Promise.resolve([]),
+      opportunityIds.size
+        ? prisma.crmOpportunity.findMany({
+            where: { orgId: user.orgId, id: { in: Array.from(opportunityIds) } },
+            select: { id: true, name: true },
+          })
+        : Promise.resolve([]),
     ]);
 
     const userNameById = new Map<string, string>();
@@ -156,6 +194,8 @@ export async function GET(
       const full = `${c.firstName ?? ""} ${c.lastName ?? ""}`.trim();
       contactNameById.set(c.id, full || c.email || c.id);
     }
+    const opportunityNameById = new Map<string, string>();
+    for (const o of opportunities) opportunityNameById.set(o.id, o.name || o.id);
 
     function resolveRef(field: string, value: unknown): string | null {
       if (typeof value !== "string" || !value) return null;
@@ -182,6 +222,24 @@ export async function GET(
           after: resolveRef(f, after?.[f]),
         };
       }
+
+      // Conversion entry: resolve the created Account/Contact/Opportunity names
+      // from metadata (falling back to the lead's current account for old rows).
+      let conversion: ChangeLogEntry["conversion"] = null;
+      if (r.action === CONVERT_ACTION) {
+        const meta = (r.metadata as Record<string, unknown> | null) ?? null;
+        const accountId = metaString(meta, "toAccountId") ?? lead.accountId ?? null;
+        const contactId = metaString(meta, "toContactId");
+        const opportunityId = metaString(meta, "toOpportunityId");
+        conversion = {
+          accountName: accountId ? accountNameById.get(accountId) ?? null : null,
+          contactName: contactId ? contactNameById.get(contactId) ?? null : null,
+          opportunityName: opportunityId
+            ? opportunityNameById.get(opportunityId) ?? null
+            : null,
+        };
+      }
+
       return {
         id: r.id,
         action: r.action,
@@ -192,6 +250,7 @@ export async function GET(
         after,
         resolved,
         fields,
+        conversion,
         createdAt: r.createdAt,
       };
     });

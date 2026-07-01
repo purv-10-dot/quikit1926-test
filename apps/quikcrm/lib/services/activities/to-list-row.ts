@@ -36,6 +36,15 @@ export type ActivityRow = {
   ownerId: string | null;
   when: string;
   occurredAtIso: string;
+  /** When the activity record was first written to the CRM (audit trail). */
+  createdAtIso: string;
+  /** When the activity record was last modified (audit trail). */
+  updatedAtIso: string;
+  /** Origin system for synced activities (e.g. a telephony gateway); null for
+   *  activities logged directly in the CRM. */
+  sourceSystem: string | null;
+  /** Foreign identifier from the source system, when synced. */
+  externalId: string | null;
   outreach?: ActivityOutreachApi;
   leadLog?: ActivityLeadLogApi;
   linkedCallLogId: string | null;
@@ -117,6 +126,10 @@ export async function toListRows(
     ownerId: r.ownerId ?? null,
     when: formatWhenInTz(r.occurredAt ?? r.createdAt, tz),
     occurredAtIso: (r.occurredAt ?? r.createdAt).toISOString(),
+    createdAtIso: r.createdAt.toISOString(),
+    updatedAtIso: r.updatedAt.toISOString(),
+    sourceSystem: r.sourceSystem ?? null,
+    externalId: r.externalId ?? null,
     outreach: readOutreach(r.outreach),
     leadLog: readLeadLog(r),
     linkedCallLogId: r.linkedCallLogId ?? null,

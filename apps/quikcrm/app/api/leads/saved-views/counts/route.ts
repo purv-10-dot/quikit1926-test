@@ -34,7 +34,8 @@ export async function GET() {
         const parsed = filterPayloadSchema.safeParse(v.filters);
         if (!parsed.success) return [v.id, 0] as const;
         const filterWhere = translateFilterToPrismaWhere(parsed.data, customDefs);
-        const baseAnd: Record<string, unknown>[] = [{ orgId: user.orgId }];
+        // Exclude trashed leads so saved-view counts match the active list.
+        const baseAnd: Record<string, unknown>[] = [{ orgId: user.orgId, deletedAt: null }];
         if (Object.keys(filterWhere).length > 0) baseAnd.push(filterWhere);
         if (acl) baseAnd.push(acl);
         const count = await prisma.crmLead.count({ where: { AND: baseAnd } });

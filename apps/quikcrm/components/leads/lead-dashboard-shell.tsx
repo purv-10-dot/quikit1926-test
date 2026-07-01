@@ -502,6 +502,8 @@ export function LeadDashboardShell(props: LeadDashboardShellProps) {
               ownerName: lead.ownerName,
               accountId: lead.accountId,
               account: lead.account,
+              convertedAt: lead.convertedAt,
+              linkedContactId: lead.linkedContactId,
               dynamicFields: lead.dynamicFields ?? null,
               firstName: lead.firstName,
               lastName: lead.lastName,

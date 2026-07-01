@@ -4,29 +4,29 @@
  * Single entry-point for all notification creation. Every write goes through
  * createNotification() which:
  *   1. Persists the row to CrmNotification (awaited — we want durability).
- *   2. Publishes an SSE event on the per-user Redis channel (fire-and-forget).
- *   3. Sends a transactional email to the recipient (fire-and-forget).
+ *   2. Sends a transactional email to the recipient (fire-and-forget).
  *
- * Steps 2 & 3 are non-blocking — they never surface as errors on the API
- * response that triggered the notification.
+ * Step 2 is non-blocking — it never surfaces as an error on the API
+ * response that triggered the notification. Clients pick up new
+ * notifications via polling (React Query refetchInterval).
  */
 
 import { prisma } from "@/lib/db/prisma";
-import { publishNotificationEvent } from "./realtime";
 import { sendNotificationEmail } from "./email-templates";
 import type { NotificationPayload, NotificationRow } from "./types";
 
 // ─── Create ───────────────────────────────────────────────────────────────────
 
 /**
- * Persist a notification and deliver it via SSE + email (best-effort).
- * Awaits the DB write; SSE publish and email send are fire-and-forget.
+ * Persist a notification and deliver it via email (best-effort).
+ * Awaits the DB write; the email send is fire-and-forget. Clients pick up the
+ * new notification via polling (there is no realtime push).
  */
 export async function createNotification(
   payload: NotificationPayload,
 ): Promise<void> {
   // 1. Persist — synchronous from the caller's perspective.
-  const row = await prisma.crmNotification.create({
+  await prisma.crmNotification.create({
     data: {
       orgId: payload.orgId,
       userId: payload.userId,
@@ -43,17 +43,7 @@ export async function createNotification(
     },
   });
 
-  // 2. Real-time SSE push — fire-and-forget.
-  publishNotificationEvent(payload.orgId, payload.userId, {
-    id: row.id,
-    title: row.title,
-    body: row.body,
-    category: row.category,
-    link: row.link,
-    createdAt: row.createdAt.toISOString(),
-  }).catch(() => {/* already warned inside publishNotificationEvent */});
-
-  // 3. Email delivery — fire-and-forget; swallow all errors.
+  // 2. Email delivery — fire-and-forget; swallow all errors.
   if (!payload.skipEmail) {
     sendNotificationEmail(payload).catch((err) => {
       console.warn(

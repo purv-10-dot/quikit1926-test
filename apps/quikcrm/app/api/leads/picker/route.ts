@@ -27,7 +27,8 @@ export async function GET(req: NextRequest) {
     );
 
     const acl = await accountScopeFilter(user);
-    const baseWhere: Record<string, unknown> = { orgId: user.orgId };
+    // Exclude trashed leads — CrmLead is not covered by the soft-delete middleware.
+    const baseWhere: Record<string, unknown> = { orgId: user.orgId, deletedAt: null };
     if (q) {
       baseWhere.OR = [
         { name: { contains: q, mode: "insensitive" } },

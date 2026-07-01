@@ -75,11 +75,11 @@ export function CommandEmailModal({
       ) : blockReason === "missing" || !address ? (
         <div className="space-y-3">
           <p className="rounded-lg border border-crm-border bg-crm-panel px-3 py-2 text-sm text-crm-text">
-            This lead has no email address yet. Add one under the <strong>Details</strong> tab.
+            This lead has no email address yet. Add one under the <strong>Record Details</strong> tab.
           </p>
           {onGoToDetails ? (
             <Button type="button" variant="secondary" onClick={onGoToDetails}>
-              Open Details tab
+              Open Record Details tab
             </Button>
           ) : null}
         </div>

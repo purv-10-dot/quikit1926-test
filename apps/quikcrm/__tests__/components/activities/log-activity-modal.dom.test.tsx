@@ -53,25 +53,24 @@ function installFetch({ types = [TYPE], fields = FIELDS }: { types?: unknown[]; 
 beforeEach(() => installFetch());
 afterEach(() => cleanup());
 
-describe("<LogActivityModal> — collapsed activity | smb (T-P3.3b)", () => {
-  // ---- RE-POINTED tab-structure tests (1,2) ----
-  it("renders the Activity tab; SMB hidden when canViewLeads is false", () => {
+describe("<LogActivityModal> — single activity composer (SMB removed)", () => {
+  // ---- tab/SMB removal: no tabs at all, no SMB anywhere ----
+  it("renders no tabs — the activity composer is shown directly", () => {
     render(<LogActivityModal open canViewLeads={false} onClose={() => {}} onSuccess={() => {}} />);
-    expect(screen.getByRole("tab", { name: /Activity/i })).toBeTruthy();
-    // Lead-log tab no longer exists at all; SMB hidden without lead access.
-    expect(screen.queryByRole("tab", { name: /Lead log/i })).toBeNull();
-    expect(screen.queryByRole("tab", { name: /SMB/i })).toBeNull();
+    // The segmented tab bar was removed along with SMB; there are no tabs.
+    expect(screen.queryByRole("tab")).toBeNull();
   });
 
-  it("shows the SMB tab when canViewLeads is true (Activity always present)", () => {
+  it("does not render an SMB tab even when canViewLeads is true", () => {
     render(<LogActivityModal open canViewLeads onClose={() => {}} onSuccess={() => {}} />);
-    expect(screen.getByRole("tab", { name: /Activity/i })).toBeTruthy();
-    expect(screen.getByRole("tab", { name: /^SMB$/i })).toBeTruthy();
-    expect(screen.queryByRole("tab", { name: /Lead log/i })).toBeNull();
+    expect(screen.queryByRole("tab", { name: /SMB/i })).toBeNull();
+    expect(screen.queryByText(/^SMB$/)).toBeNull();
+    // The activity composer itself is present (the record-link prompt shows).
+    expect(screen.getByText(/Link to a record/i)).toBeTruthy();
   });
 
-  // ---- RE-POINTED record-picker test (3) — WITH TYPES PRESENT ----
-  it("Activity tab reuses the record picker (asserted with types present, not empty-CTA)", async () => {
+  // ---- record-picker (with types present) ----
+  it("reuses the record picker (asserted with types present, not empty-CTA)", async () => {
     render(<LogActivityModal open canViewLeads onClose={() => {}} onSuccess={() => {}} />);
     // types present -> picker UI renders (the reused relatedKind/relatedObjectId selector)
     await waitFor(() => expect(screen.getByText(/Link to a record/i)).toBeTruthy());
@@ -123,6 +122,42 @@ describe("<LogActivityModal> — collapsed activity | smb (T-P3.3b)", () => {
     });
   });
 
+  // ---- DYNAMIC SWAP: changing the selected type swaps the rendered fields ----
+  it("changing the Activity Type re-fetches and swaps the rendered fields (Call → Meeting)", async () => {
+    // Two types with DISTINCT fields, routed per type id by the fetch mock.
+    const CALL = { id: "call", code: "call", label: "Call", isActive: true, sortOrder: 0 };
+    const MEETING = { id: "meeting", code: "meeting", label: "Meeting", isActive: true, sortOrder: 1 };
+    const CALL_FIELDS = [
+      { id: "f_dir", activityTypeId: "call", key: "direction", label: "Direction", fieldType: "Select", requirement: "Required", options: ["Incoming", "Outgoing"], visible: true, sortOrder: 0 },
+    ];
+    const MEETING_FIELDS = [
+      { id: "f_loc", activityTypeId: "meeting", key: "location", label: "Location", fieldType: "Text", requirement: "Optional", options: null, visible: true, sortOrder: 0 },
+    ];
+    const fetchMock = vi.fn(async (url: string) => {
+      const ok = (data: unknown) => ({ ok: true, json: async () => ({ success: true, data }) }) as Response;
+      if (url.includes("/types/call/fields")) return ok(CALL_FIELDS);
+      if (url.includes("/types/meeting/fields")) return ok(MEETING_FIELDS);
+      if (url.endsWith("/api/activities/types")) return ok([CALL, MEETING]);
+      if (url.includes("picker")) return ok({ items: [] });
+      return ok({});
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    render(<LogActivityModal open canViewLeads onClose={() => {}} onSuccess={() => {}} />);
+
+    const typeSelect = (await screen.findByLabelText("Type")) as HTMLSelectElement;
+
+    // Select Call → its Direction field renders, Location does not.
+    fireEvent.change(typeSelect, { target: { value: "call" } });
+    await waitFor(() => expect(screen.getByText("Direction")).toBeTruthy());
+    expect(screen.queryByText("Location")).toBeNull();
+
+    // Switch to Meeting → fields swap: Location appears, Direction is gone.
+    fireEvent.change(typeSelect, { target: { value: "meeting" } });
+    await waitFor(() => expect(screen.getByText("Location")).toBeTruthy());
+    expect(screen.queryByText("Direction")).toBeNull();
+  });
+
   // ---- empty list -> CTA (UI half of the locked empty-state) ----
   it("renders the empty-state CTA when no activity types are configured", async () => {
     installFetch({ types: [] });
@@ -132,18 +167,20 @@ describe("<LogActivityModal> — collapsed activity | smb (T-P3.3b)", () => {
     expect(screen.queryByText("Upwork Connect")).toBeNull();
   });
 
-  // ---- SMB-SURVIVAL guard (load-bearing): tab renders + posts to smb-outreach ----
-  it("SMB tab still renders after the collapse and posts to /api/activities/smb-outreach", async () => {
+  // ---- SMB-REMOVAL guard: the modal must not surface SMB UI or call its API ----
+  it("does not render SMB outreach fields nor fetch the SMB meta endpoint", async () => {
     const calls = installFetch();
     render(<LogActivityModal open canViewLeads onClose={() => {}} onSuccess={() => {}} />);
 
-    const smbTab = screen.getByRole("tab", { name: /^SMB$/i });
-    fireEvent.click(smbTab);
-    // the SMB tab content renders (its meta fetch fires)
-    await waitFor(() =>
-      expect(calls.some((c) => c.url.includes("/api/activities/smb-outreach/meta"))).toBe(true),
-    );
-    // and the SMB tab is selectable/active (proves the tab survived the rewrite)
-    expect(smbTab.getAttribute("aria-selected")).toBe("true");
+    // Wait for the activity types to load so all open-time effects have fired.
+    await waitFor(() => expect(screen.getByText("Upwork Connect")).toBeTruthy());
+
+    // No SMB-only fields (Disposition hierarchy / Competitor) are rendered.
+    expect(screen.queryByText(/SMB outreach/i)).toBeNull();
+    expect(screen.queryByText(/Sub-sub-disposition/i)).toBeNull();
+    expect(screen.queryByText(/Competitor/i)).toBeNull();
+
+    // And the SMB endpoints are never hit from this modal.
+    expect(calls.some((c) => c.url.includes("/api/activities/smb-outreach"))).toBe(false);
   });
 });

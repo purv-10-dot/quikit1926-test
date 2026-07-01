@@ -8,7 +8,7 @@ import type { NextRequest } from "next/server";
 import { prisma } from "@/lib/db/prisma";
 import { requireApiUser, isResponse, errorResponse } from "@/lib/auth/require";
 import { assertModule } from "@/lib/auth/permissions";
-import { parseFilters } from "@/lib/services/dashboard/filters";
+import { parseFilters, resolveDashboardScope } from "@/lib/services/dashboard/filters";
 import { buildDayBuckets } from "@/lib/services/dashboard/period";
 
 export const runtime = "nodejs";
@@ -32,34 +32,28 @@ export async function GET(req: NextRequest) {
     const metric = readMetric(req);
     const buckets = buildDayBuckets(filters.range);
 
+    // Role-aware RBAC scope (Path B) — per metric: calls→callWhere,
+    // leads→recordWhere, activities→activityWhere. Owner dropdown narrows within.
+    const scope = await resolveDashboardScope(user);
+    const ownerId = filters.resolvedOwnerId;
+    const callBase = scope.callWhere(ownerId);
+    const leadBase = { ...scope.recordWhere(ownerId), deletedAt: null };
+    const activityBase = scope.activityWhere(ownerId);
+
     const counts = await Promise.all(
       buckets.map((b) => {
-        const orgId = user.orgId;
-        const ownerId = filters.resolvedOwnerId;
         if (metric === "calls") {
           return prisma.crmCallLog.count({
-            where: {
-              orgId,
-              createdAt: { gte: b.start, lte: b.end },
-              ...(ownerId ? { agentUserId: ownerId } : {}),
-            },
+            where: { ...callBase, createdAt: { gte: b.start, lte: b.end } },
           });
         }
         if (metric === "leads-created") {
           return prisma.crmLead.count({
-            where: {
-              orgId,
-              createdAt: { gte: b.start, lte: b.end },
-              ...(ownerId ? { ownerId } : {}),
-            },
+            where: { ...leadBase, createdAt: { gte: b.start, lte: b.end } },
           });
         }
         return prisma.crmActivity.count({
-          where: {
-            orgId,
-            occurredAt: { gte: b.start, lte: b.end },
-            ...(ownerId ? { ownerId } : {}),
-          },
+          where: { ...activityBase, occurredAt: { gte: b.start, lte: b.end } },
         });
       }),
     );

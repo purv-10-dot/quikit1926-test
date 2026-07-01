@@ -4,17 +4,12 @@
 
 import type { CrmOpportunityStage, CrmTaskStatus } from "@prisma/client";
 import { prisma } from "@/lib/db/prisma";
-import type { SessionUser } from "@/types/permission";
 import {
   endOfDayInTz,
   startOfDayInTz,
   type DateRange,
 } from "./period";
-import {
-  tenantAgentWhere,
-  tenantAssigneeWhere,
-  tenantOwnerWhere,
-} from "./filters";
+import type { DashboardScope } from "./filters";
 import { formatCompactCurrency, formatINRLong } from "./currency";
 import type {
   ActivityMix,
@@ -31,10 +26,10 @@ function classifyActivity(type: string, code: string | null): "call" | "email" |
 }
 
 export async function buildExecutiveSummary(
-  user: SessionUser,
   range: DateRange,
   resolvedOwnerId: string | null,
   prior: DateRange,
+  scope: DashboardScope,
 ): Promise<{
   executive: ExecutiveSummary;
   callsPrior: number;
@@ -44,15 +39,20 @@ export async function buildExecutiveSummary(
   const startOfToday = startOfDayInTz(now, range.tz);
   const endOfToday = endOfDayInTz(now, range.tz);
 
-  const oppWhere = { ...tenantOwnerWhere(user, resolvedOwnerId), deletedAt: null };
-  const taskWhere = tenantAssigneeWhere(user, resolvedOwnerId);
-  const callWhere = tenantAgentWhere(user, resolvedOwnerId);
+  // Role-aware RBAC scope (Path B) — same scope used across the dashboard so the
+  // Hero KPIs (pipeline / weighted / won / due-today), Recent Wins and My-Work
+  // match each role's module visibility. Owner dropdown narrows within scope.
+  const oppWhere = { ...scope.recordWhere(resolvedOwnerId), deletedAt: null };
+  const taskWhere = scope.taskWhere(resolvedOwnerId);
+  const callWhere = scope.callWhere(resolvedOwnerId);
 
+  // Role-scoped activity where (no time clause yet) reused for both the in-range
+  // activity-mix scan and the today's-follow-ups query below.
+  const activityScopeWhere = scope.activityWhere(resolvedOwnerId);
   const activityBase: Record<string, unknown> = {
-    orgId: user.orgId,
+    ...activityScopeWhere,
     occurredAt: { gte: range.from, lte: range.to },
   };
-  if (resolvedOwnerId) activityBase.ownerId = resolvedOwnerId;
 
   const wonWhere = (from: Date, to: Date) => ({
     ...oppWhere,
@@ -133,9 +133,8 @@ export async function buildExecutiveSummary(
     }),
     prisma.crmActivity.findMany({
       where: {
-        orgId: user.orgId,
+        ...activityScopeWhere,
         followUpAt: { gte: startOfToday, lte: endOfToday },
-        ...(resolvedOwnerId ? { ownerId: resolvedOwnerId } : {}),
       },
       orderBy: { followUpAt: "asc" },
       take: 6,

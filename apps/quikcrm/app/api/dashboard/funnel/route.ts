@@ -3,7 +3,7 @@ import type { NextRequest } from "next/server";
 import { prisma } from "@/lib/db/prisma";
 import { requireApiUser, isResponse, errorResponse } from "@/lib/auth/require";
 import { assertModule } from "@/lib/auth/permissions";
-import { parseFilters, tenantOwnerWhere } from "@/lib/services/dashboard/filters";
+import { parseFilters, resolveDashboardScope } from "@/lib/services/dashboard/filters";
 import { getDashboardConfig } from "@/lib/services/workspace/dashboard-config";
 import type { FunnelStep } from "@/lib/dashboard/types";
 
@@ -17,10 +17,15 @@ export async function GET(req: NextRequest) {
     await assertModule(user, "dashboard", "view");
 
     const filters = parseFilters(req, user);
-    const cfg = await getDashboardConfig(user.orgId);
+    const [cfg, scope] = await Promise.all([
+      getDashboardConfig(user.orgId),
+      resolveDashboardScope(user),
+    ]);
 
     const where = {
-      ...tenantOwnerWhere(user, filters.resolvedOwnerId),
+      // Role-aware lead scope (Admin org-wide / Manager team / User own / ACL),
+      // same as the Leads module + role-metrics. Owner dropdown narrows within.
+      ...scope.recordWhere(filters.resolvedOwnerId),
       // CrmLead has `deletedAt`. The package middleware does not yet inject
       // this clause; filter explicitly until that registration lands.
       deletedAt: null,

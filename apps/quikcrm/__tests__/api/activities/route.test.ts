@@ -121,11 +121,84 @@ describe("POST /api/activities (generic)", () => {
     expect(body.data.relatedKind).toBe("Lead");
     expect(body.data.relatedLabel).toBe("ACME");
   });
+
+  it("creates a STANDALONE activity (relatedKind=None) with no related record", async () => {
+    adminSession();
+    db.user.findUnique.mockResolvedValue({
+      id: "u1",
+      firstName: "Alice",
+      lastName: "",
+      email: "a@b.co",
+    } as never);
+    db.crmActivity.create.mockResolvedValue({
+      id: "act-sa",
+      orgId: "t1",
+      type: "Note",
+      relatedKind: "None",
+      relatedObjectId: "standalone",
+      subject: "",
+      outcome: "",
+      ownerId: "u1",
+      ownerName: "Alice",
+      externalId: null,
+      sourceSystem: null,
+      occurredAt: new Date(),
+      outreach: null,
+      activityCode: null,
+      logOutcome: null,
+      detailNotes: null,
+      followUpAt: null,
+      opportunityId: null,
+      leadId: null,
+      linkedCallLogId: null,
+      relatedOrphanedAt: null,
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    } as never);
+
+    const { POST } = await import("@/app/api/activities/route");
+    const req = new Request("http://test/api/activities", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ type: "Note", relatedKind: "None" }),
+    });
+    const res = await POST(req as unknown as import("next/server").NextRequest);
+    expect(res.status).toBe(201);
+
+    // No related record is looked up for a standalone activity.
+    expect(db.crmLead.findFirst).not.toHaveBeenCalled();
+    expect(db.crmOpportunity.findFirst).not.toHaveBeenCalled();
+    expect(db.crmContact.findFirst).not.toHaveBeenCalled();
+    // The created row uses the standalone sentinel relatedKind/relatedObjectId.
+    const createArg = db.crmActivity.create.mock.calls[0]?.[0]?.data as Record<string, unknown>;
+    expect(createArg.relatedKind).toBe("None");
+    expect(createArg.relatedObjectId).toBe("standalone");
+    expect(createArg.leadId).toBeNull();
+  });
+
+  it("rejects a linked activity (Lead) with no relatedObjectId (400) — backward compat", async () => {
+    adminSession();
+    const { POST } = await import("@/app/api/activities/route");
+    const req = new Request("http://test/api/activities", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ type: "Note", relatedKind: "Lead" }),
+    });
+    const res = await POST(req as unknown as import("next/server").NextRequest);
+    expect(res.status).toBe(400);
+  });
 });
 
 describe("GET /api/activities (relink-aware Opportunity reads)", () => {
-  beforeEach(() => {
+  beforeEach(async () => {
     db.crmActivity.findMany.mockReset();
+    // The global setup's restoreAllMocks/clearAllMocks can strip the account-acl
+    // factory mock's resolved value between tests; re-pin it (admin → unrestricted)
+    // so buildActivityAclWhere resolves regardless of test order.
+    const acl = await import("@/lib/auth/account-acl");
+    (acl.getScope as unknown as { mockResolvedValue: (v: unknown) => void }).mockResolvedValue({
+      unrestricted: true,
+    });
     setSession(null);
   });
 
@@ -191,5 +264,19 @@ describe("GET /api/activities (relink-aware Opportunity reads)", () => {
       | undefined;
     expect(orBranch).toBeDefined();
     expect(orBranch!.OR).toContainEqual({ leadId: "lead-old" });
+  });
+
+  it("excludes internal lead-creation init events (LeadSystem) from the JSON list", async () => {
+    adminSession();
+    db.crmActivity.findMany.mockResolvedValue([] as never);
+    const { GET } = await import("@/app/api/activities/route");
+    const req = new Request("http://test/api/activities?leadId=lead-1");
+    const res = await GET(req as unknown as import("next/server").NextRequest);
+    expect(res.status).toBe(200);
+
+    const findArg = db.crmActivity.findMany.mock.calls[0]?.[0] as {
+      where: { AND: Array<Record<string, unknown>> };
+    };
+    expect(findArg.where.AND).toContainEqual({ NOT: { type: "LeadSystem" } });
   });
 });

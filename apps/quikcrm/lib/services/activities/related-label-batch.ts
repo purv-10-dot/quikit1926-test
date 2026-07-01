@@ -12,6 +12,7 @@ type RowLike = {
 
 const ORPHANED_LABEL = "(deleted)";
 const FALLBACK_LABEL = "—";
+const STANDALONE_LABEL = "—"; // standalone (unlinked) activities show no record
 
 function normalizeKind(k: string): "lead" | "opportunity" | "contact" | "account" | "unknown" {
   const lower = k.toLowerCase();
@@ -81,6 +82,11 @@ export async function resolveRelatedLabels(
   // Caller looks up via labelOf(row) below — we expose that helper too.
   const rowMap = new Map<string, string>();
   for (const r of rows) {
+    // Standalone (unlinked) activity: no related record — show "—", not "(deleted)".
+    if (r.relatedKind === "None") {
+      rowMap.set(rowKey(r), STANDALONE_LABEL);
+      continue;
+    }
     if (r.relatedOrphanedAt) {
       rowMap.set(rowKey(r), ORPHANED_LABEL);
       continue;

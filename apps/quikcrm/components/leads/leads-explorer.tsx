@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { TrashBanner, useConfirm } from "@quikit/ui";
 import { LeadTable } from "@/components/leads/lead-table";
@@ -27,7 +27,7 @@ import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/hooks/use-auth";
 import type { ConditionRow, FilterPayload, LeadSavedView } from "@/types/lead-filter";
 import { LEAD_QUICK_SEARCH_FIELD } from "@/lib/services/leads/filter-engine";
-import type { LeadFieldDefinition } from "@/types/field-definition";
+import { SYSTEM_LEAD_FIELDS, type LeadFieldDefinition } from "@/types/field-definition";
 
 const COLUMNS_STORAGE_KEY = "crm:leads:columns:v1";
 const FROZEN_STORAGE_KEY = "crm:leads:frozen:v1";
@@ -47,6 +47,7 @@ interface LeadRow {
   mobile?: string | null;
   jobTitle?: string | null;
   source?: string | null;
+  createdAt?: string | Date | null;
   dynamicFields?: Record<string, unknown> | null;
   /** Populated only in trash view — used to render the "Deleted on" column. */
   deletedAt?: string | Date | null;
@@ -55,6 +56,14 @@ interface LeadRow {
 const PAGE_SIZE_OPTIONS = [10, 25, 50, 100] as const;
 const DEFAULT_PAGE_SIZE = 10;
 const EMPTY_FILTER: FilterPayload = { matchMode: "ALL", conditions: [] };
+
+/**
+ * CRM roles that get the "Show Converted Leads" toggle. Admins are intentionally
+ * excluded — they always see converted leads server-side (no toggle needed).
+ * Other roles (e.g. FinanceUser, TeamManager) don't get the toggle and keep the
+ * default-hidden behavior. Role strings come from lib/auth/role-resolution.ts.
+ */
+const CONVERTED_TOGGLE_ROLES = new Set(["SalesUser", "SalesManager", "MarketingUser"]);
 
 function readPageFromUrl(sp: URLSearchParams): number {
   const raw = Number(sp.get("page"));
@@ -77,11 +86,38 @@ function withQuickFilter(
   return { ...filter, matchMode: "ALL", conditions: [...stripped, { field, operator, value }] };
 }
 
+/**
+ * Quick "created within" date-range filter. Emits a single `createdAt` /
+ * `between` condition (the engine treats one missing bound as an open-ended,
+ * day-inclusive range). Clears the condition when both bounds are empty.
+ */
+function withDateRangeFilter(
+  filter: FilterPayload,
+  field: string,
+  from: string,
+  to: string,
+): FilterPayload {
+  const stripped = filter.conditions.filter((c) => c.field !== field);
+  if (!from && !to) return { ...filter, matchMode: "ALL", conditions: stripped };
+  return {
+    ...filter,
+    matchMode: "ALL",
+    conditions: [
+      ...stripped,
+      { field, operator: "between", value: from || null, valueTo: to || null },
+    ],
+  };
+}
+
 export function LeadsExplorer() {
   const toast = useToast();
   const confirm = useConfirm();
   const { user } = useAuth();
   const isAdmin = user?.role === "Administrator";
+  // Only the 3 named roles get the toggle. Admins see converted leads always
+  // (server-enforced) and have no toggle; users who can't view leads never
+  // reach this page (the route + API both gate on leads:view).
+  const canToggleConverted = !!user && CONVERTED_TOGGLE_ROLES.has(user.role);
 
   const router = useRouter();
   const pathname = usePathname();
@@ -140,6 +176,19 @@ export function LeadsExplorer() {
   const [stage, setStage] = useState("");
   const [ownerId, setOwnerId] = useState("");
   const [mineOnly, setMineOnly] = useState(false);
+  // "Created within" date-range quick filter (yyyy-MM-dd, native date inputs).
+  const [dateFrom, setDateFrom] = useState("");
+  const [dateTo, setDateTo] = useState("");
+  // "Show Converted Leads" toggle. Converted leads are hidden by default;
+  // session-scoped (not persisted) per the spec. Admins always see converted
+  // leads server-side and don't get the toggle (see canToggleConverted below).
+  const [showConverted, setShowConverted] = useState(false);
+  // Effective "include converted" value read inside loadLeads (a ref so the
+  // stable loadLeads callback doesn't need re-creation or a new positional arg
+  // at its 5 call sites). The refetch effect lists showConverted in its deps so
+  // toggling triggers a reload.
+  const includeConvertedRef = useRef(false);
+  includeConvertedRef.current = isAdmin || showConverted;
 
   const [views, setViews] = useState<LeadSavedView[]>([]);
   const [counts, setCounts] = useState<Record<string, number>>({});
@@ -161,6 +210,24 @@ export function LeadsExplorer() {
   const [frozenCols, setFrozenCols] = useState<string[]>([]);
   const [sort, setSort] = useState<{ by: string; dir: "asc" | "desc" }>({ by: "createdAt", dir: "desc" });
   const [hydrated, setHydrated] = useState(false);
+
+  // Column-eligible field defs — the only fields that may appear as Leads-table
+  // columns (and thus in the Column picker / Hide-columns list). A standard
+  // field qualifies only when it is rendered in the Add Lead form (`inLeadForm`)
+  // AND the grid can render its value; custom fields always qualify. This keeps
+  // the picker and the hide-columns list in sync with the Add Lead form and the
+  // grid, instead of exposing requirement-only standard fields (topic,
+  // technology, budget, etc.) that the table can't render.
+  //
+  // System fields (e.g. Created Date) are appended: they are auto-managed
+  // columns that aren't in the form but ARE selectable + sortable in the grid.
+  const columnFieldDefs = useMemo(
+    () => [
+      ...fieldDefs.filter((d) => (d.isStandard ? d.inLeadForm === true : true)),
+      ...SYSTEM_LEAD_FIELDS,
+    ],
+    [fieldDefs],
+  );
 
   // Sync local state from URL on back/forward navigation. Writes are pushed
   // through `writeUrl`, so when the URL changes via the browser we just mirror
@@ -203,6 +270,23 @@ export function LeadsExplorer() {
       /* ignore quota / private mode */
     }
   }
+
+  // Drop persisted column keys that are no longer column-eligible (e.g. a
+  // standard field removed from the Add Lead form, or a deleted custom field).
+  // Such a stale key would otherwise render a blank column the user can't remove
+  // via the picker (it isn't in `columnFieldDefs`). Runs only after the field
+  // defs have loaded, so we never sanitize against an empty set on first paint.
+  useEffect(() => {
+    if (!hydrated || fieldDefs.length === 0) return;
+    const eligible = new Set(columnFieldDefs.map((f) => f.key));
+    const cleaned = visibleCols.filter((k) => eligible.has(k));
+    if (cleaned.length !== visibleCols.length) {
+      persistVisibleCols(cleaned.length > 0 ? cleaned : DEFAULT_COLUMNS);
+    }
+    const cleanedFrozen = frozenCols.filter((k) => eligible.has(k));
+    if (cleanedFrozen.length !== frozenCols.length) persistFrozenCols(cleanedFrozen);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [hydrated, fieldDefs, columnFieldDefs]);
   function persistFrozenCols(next: string[]) {
     setFrozenCols(next);
     try {
@@ -289,7 +373,11 @@ export function LeadsExplorer() {
     ) => {
       setLoading(true);
       try {
-        const url = trash ? "/api/leads/filter?onlyDeleted=true" : "/api/leads/filter";
+        const url = trash
+          ? "/api/leads/filter?onlyDeleted=true"
+          : includeConvertedRef.current
+            ? "/api/leads/filter?includeConverted=true"
+            : "/api/leads/filter";
         const res = await fetch(url, {
           method: "POST",
           credentials: "include",
@@ -466,18 +554,20 @@ export function LeadsExplorer() {
     let f = filter;
     f = withQuickFilter(f, LEAD_QUICK_SEARCH_FIELD, debouncedSearch, "contains");
     f = withQuickFilter(f, "stage", stage, "eq");
+    f = withDateRangeFilter(f, "createdAt", dateFrom, dateTo);
     if (mineOnly && user?.id) {
       f = withQuickFilter(f, "ownerId", user.id, "eq");
     } else {
       f = withQuickFilter(f, "ownerName", ownerId, "eq");
     }
     return f;
-  }, [filter, debouncedSearch, stage, ownerId, mineOnly, user]);
+  }, [filter, debouncedSearch, stage, ownerId, mineOnly, dateFrom, dateTo, user]);
 
   useEffect(() => {
     if (!hydrated) return; // wait until persisted sort/cols have been restored to avoid a wasted default-sort fetch
     loadLeads(composed, page, pageSize, sort.by, sort.dir, viewTrash);
-  }, [hydrated, composed, page, pageSize, sort.by, sort.dir, viewTrash, loadLeads]);
+    // showConverted drives the includeConverted query param via includeConvertedRef.
+  }, [hydrated, composed, page, pageSize, sort.by, sort.dir, viewTrash, showConverted, loadLeads]);
 
   // === Actions ===
   function pickView(view: LeadSavedView | null) {
@@ -577,10 +667,34 @@ export function LeadsExplorer() {
             setMineOnly(v);
             setPage(1);
           }}
+          dateFrom={dateFrom}
+          dateTo={dateTo}
+          onDateFromChange={(v) => {
+            setDateFrom(v);
+            setPage(1);
+          }}
+          onDateToChange={(v) => {
+            setDateTo(v);
+            setPage(1);
+          }}
+          onClearDateRange={() => {
+            setDateFrom("");
+            setDateTo("");
+            setPage(1);
+          }}
           onOpenAdvanced={() => setShowAdvanced(true)}
           onOpenColumnPicker={() => setColPickerOpen(true)}
           onOpenHiddenColumns={() => setHiddenColsOpen(true)}
-          hiddenCount={fieldDefs.filter((f) => !visibleCols.includes(f.key)).length}
+          hiddenCount={columnFieldDefs.filter((f) => !visibleCols.includes(f.key)).length}
+          showConverted={showConverted}
+          onToggleConverted={
+            canToggleConverted
+              ? () => {
+                  setShowConverted((v) => !v);
+                  setPage(1);
+                }
+              : undefined
+          }
           onAddLead={
             !viewTrash
               ? () => {
@@ -655,7 +769,7 @@ export function LeadsExplorer() {
             pageSize={pageSize}
             pageSizeOptions={PAGE_SIZE_OPTIONS}
             onPageSizeChange={setPageSize}
-            fieldDefs={fieldDefs}
+            fieldDefs={columnFieldDefs}
             visibleKeys={visibleCols}
             sortBy={sort.by}
             sortDir={sort.dir}
@@ -694,7 +808,7 @@ export function LeadsExplorer() {
       <ColumnPickerModal
         open={colPickerOpen}
         onClose={() => setColPickerOpen(false)}
-        available={fieldDefs}
+        available={columnFieldDefs}
         visibleKeys={visibleCols}
         onApply={persistVisibleCols}
       />
@@ -702,7 +816,7 @@ export function LeadsExplorer() {
       <HiddenColumnsModal
         open={hiddenColsOpen}
         onClose={() => setHiddenColsOpen(false)}
-        available={fieldDefs}
+        available={columnFieldDefs}
         visibleKeys={visibleCols}
         onShow={handleShowColumn}
       />

@@ -39,6 +39,15 @@ export interface OverviewOpportunity {
   amountDisplay?: string | null;
 }
 
+/** Synthesized conversion event for the Recent Activity feed (see buildUnifiedTimeline). */
+export interface OverviewConversion {
+  convertedAt: string;
+  ownerName: string | null;
+  accountName: string | null;
+  contactName: string | null;
+  opportunityName: string | null;
+}
+
 interface Props {
   leadId: string;
   leadName: string;
@@ -47,6 +56,10 @@ interface Props {
   notes: OverviewNote[];
   opportunities: OverviewOpportunity[];
   nextFollowUpAt: string | null;
+  /** Present only when the lead is converted — surfaces a "Lead Converted" entry. */
+  conversion?: OverviewConversion | null;
+  /** Opportunity ids to hide (the conversion-auto-created opp the event already names). */
+  suppressOpportunityIds?: readonly string[] | null;
   onNavigateTab: (tab: TabKey) => void;
 }
 
@@ -81,6 +94,8 @@ export function LeadDashboardOverview({
   notes,
   opportunities,
   nextFollowUpAt,
+  conversion,
+  suppressOpportunityIds,
   onNavigateTab,
 }: Props) {
   const openTasks = tasks.filter((t) => t.status !== "Completed" && t.status !== "Cancelled");
@@ -97,8 +112,14 @@ export function LeadDashboardOverview({
           name: d.fileName,
           createdAt: d.createdAt,
         })),
+        // Surface a dedicated "Lead Converted" entry (sorted first) so the
+        // conversion is unmistakable — instead of only the auto-created
+        // Opportunity, which reads like an "Opportunity created" event.
+        conversion: conversion ?? null,
+        // ...and hide that auto-created Opportunity so it isn't shown twice.
+        suppressOpportunityIds: suppressOpportunityIds ?? null,
       }).slice(0, 5),
-    [timelineSeed],
+    [timelineSeed, conversion, suppressOpportunityIds],
   );
   const recentNotes = notes.slice(0, 3);
   const recentOpps = opportunities.slice(0, 3);

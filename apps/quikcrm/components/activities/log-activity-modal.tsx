@@ -11,12 +11,11 @@ import {
   type ReactNode,
 } from "react";
 import {
+  ChevronDown,
   ClipboardList,
   FileText,
-  Layers,
   List,
   Sparkles,
-  Target,
   User,
   X,
 } from "lucide-react";
@@ -33,7 +32,13 @@ import {
   sourceBadgeClass,
   type ActivityVisibility,
 } from "@/lib/activities/activity-type-meta";
-import type { SmbDispositionMeta } from "@/lib/services/activities/smb-outreach-meta";
+import {
+  DRAFT_STORAGE_KEY,
+  DRAFTS_STORAGE_KEY,
+  listDraftEntries,
+  readNamedDrafts,
+  type NamedDraft,
+} from "@/lib/activities/activity-drafts";
 import type {
   ActivityTypeDefinition,
   ActivityFieldDefinition,
@@ -48,45 +53,45 @@ export type LeadContext = {
 };
 
 type RelatedOption = { id: string; label: string };
-type SmbMeta = {
-  countries: string[];
-  priorities: string[];
-  channels: string[];
-  competitors: string[];
-  dispositions: SmbDispositionMeta[];
+
+// "None" = standalone activity (no linked record). The 4 lookup kinds follow.
+const STANDALONE_KIND = "None" as const;
+const LOOKUP_KINDS = ["Lead", "Opportunity", "Contact", "Account"] as const;
+const KIND_OPTIONS = [STANDALONE_KIND, ...LOOKUP_KINDS] as const;
+type LookupKind = (typeof LOOKUP_KINDS)[number];
+const KIND_LABELS: Record<(typeof KIND_OPTIONS)[number], string> = {
+  None: "None (Standalone)",
+  Lead: "Lead",
+  Opportunity: "Opportunity",
+  Contact: "Contact",
+  Account: "Account",
 };
+// Draft storage keys, the `NamedDraft` shape, and the localStorage read helpers
+// live in @/lib/activities/activity-drafts — shared with the Drafts list so the
+// magic keys never drift.
 
-const KIND_OPTIONS = ["Lead", "Opportunity", "Contact", "Account"] as const;
-const DRAFT_STORAGE_KEY = "quikcrm.activity-composer.draft.v1";
-
-// T-P3.3b: Generic + Lead-log collapsed into one type-driven "activity" tab.
-// SMB stays a separate (quarantined) tab. The lead-log endpoint survives but is
-// now UI-unreachable (covered by its own API test).
-type TabId = "activity" | "smb";
+// Generic + Lead-log were collapsed into one type-driven activity composer.
+// The SMB outreach UI has been removed from this modal; its API
+// (/api/activities/smb-outreach) is unaffected and covered by its own tests.
 
 interface Props {
   open: boolean;
   onClose: () => void;
   onSuccess: () => void;
-  canViewLeads: boolean;
+  /**
+   * Retained for API compatibility with existing call sites. Previously gated
+   * the SMB outreach tab (now removed); the activity composer itself is shown
+   * to anyone who can open this modal.
+   */
+  canViewLeads?: boolean;
   initialLead?: LeadContext | null;
   initialRelated?: { kind: (typeof KIND_OPTIONS)[number]; id: string; label: string } | null;
-}
-
-let cachedSmbMeta: SmbMeta | null = null;
-
-async function fetchSmbMeta(): Promise<SmbMeta> {
-  if (cachedSmbMeta) return cachedSmbMeta;
-  const res = await fetch("/api/activities/smb-outreach/meta");
-  const body = await res.json();
-  cachedSmbMeta = body?.data ?? {
-    countries: [],
-    priorities: [],
-    channels: [],
-    competitors: [],
-    dispositions: [],
-  };
-  return cachedSmbMeta!;
+  /**
+   * A saved draft to resume. When set, its fields are applied on open (after the
+   * normal reset), so the composer opens prefilled from the draft. Consumed once
+   * per open; the parent should clear it when the modal closes.
+   */
+  initialDraft?: NamedDraft | null;
 }
 
 function buildDetailNotes(
@@ -107,21 +112,21 @@ export function LogActivityModal({
   open,
   onClose,
   onSuccess,
-  canViewLeads,
   initialLead = null,
   initialRelated = null,
+  initialDraft = null,
 }: Props) {
   const toast = useToast();
-  const [tab, setTab] = useState<TabId>("activity");
   const [submitting, setSubmitting] = useState(false);
   const [reminderOn, setReminderOn] = useState(false);
   const [visibility, setVisibility] = useState<ActivityVisibility>("team");
+  const [draftsOpen, setDraftsOpen] = useState(false);
+  const [nameDialogOpen, setNameDialogOpen] = useState(false);
+  const [draftName, setDraftName] = useState("");
 
   const [lead, setLead] = useState<LeadContext | null>(initialLead);
-  const [leadOptions, setLeadOptions] = useState<RelatedOption[]>([]);
-  const [leadOptionsLoaded, setLeadOptionsLoaded] = useState(false);
 
-  // Activity tab: type-driven.
+  // Type-driven activity composer.
   const [types, setTypes] = useState<ActivityTypeDefinition[] | null>(null);
   const [activityTypeId, setActivityTypeId] = useState("");
   const [fieldDefs, setFieldDefs] = useState<ActivityFieldDefinition[]>([]);
@@ -134,47 +139,23 @@ export function LogActivityModal({
   const [activityNotes, setActivityNotes] = useState("");
   const [followUpAt, setFollowUpAt] = useState("");
 
+  // Keyed by the lookup kinds only — "None" (standalone) has no record options.
   const [relatedOptions, setRelatedOptions] = useState<
-    Record<(typeof KIND_OPTIONS)[number], RelatedOption[] | undefined>
+    Record<LookupKind, RelatedOption[] | undefined>
   >({ Lead: undefined, Opportunity: undefined, Contact: undefined, Account: undefined });
   const [relatedLoading, setRelatedLoading] = useState(false);
 
-  const [smbMeta, setSmbMeta] = useState<SmbMeta | null>(null);
-  const [country, setCountry] = useState("");
-  const [followupPriority, setFollowupPriority] = useState("");
-  const [channel, setChannel] = useState("");
-  const [competitor, setCompetitor] = useState("");
-  const [disposition, setDisposition] = useState("");
-  const [subDisposition, setSubDisposition] = useState("");
-  const [subSubDisposition, setSubSubDisposition] = useState("");
-  const [smbDetailNotes, setSmbDetailNotes] = useState("");
-
-  const showLeadTabs = canViewLeads;
   const selectedType = types?.find((t) => t.id === activityTypeId) ?? null;
 
-  const contextRecordLabel = useMemo(() => {
-    if (tab === "activity") {
-      const opt = relatedOptions[relatedKind]?.find((o) => o.id === relatedObjectId);
-      return opt?.label ?? (relatedKind === "Lead" && lead?.label) ?? null;
-    }
-    return lead?.label ?? null;
-  }, [tab, relatedKind, relatedObjectId, relatedOptions, lead]);
+  const isStandalone = relatedKind === STANDALONE_KIND;
 
-  function selectTab(next: TabId) {
-    setTab(next);
-    if (next === "activity" || relatedKind !== "Lead" || !relatedObjectId) return;
-    const fromCache = relatedOptions.Lead?.find((o) => o.id === relatedObjectId);
-    if (fromCache) {
-      setLead({ id: fromCache.id, label: fromCache.label, ...lead });
-      return;
-    }
-    const fromPicker = leadOptions.find((l) => l.id === relatedObjectId);
-    if (fromPicker) setLead({ id: fromPicker.id, label: fromPicker.label, ...lead });
-    else if (initialLead?.id === relatedObjectId) setLead(initialLead);
-  }
+  const contextRecordLabel = useMemo(() => {
+    if (relatedKind === STANDALONE_KIND) return null;
+    const opt = relatedOptions[relatedKind]?.find((o) => o.id === relatedObjectId);
+    return opt?.label ?? (relatedKind === "Lead" && lead?.label) ?? null;
+  }, [relatedKind, relatedObjectId, relatedOptions, lead]);
 
   const resetForm = useCallback(() => {
-    setTab("activity");
     setLead(initialLead);
     setSubmitting(false);
     setReminderOn(false);
@@ -184,14 +165,6 @@ export function LogActivityModal({
     setFieldValues({});
     setActivityNotes("");
     setFollowUpAt("");
-    setCountry("");
-    setFollowupPriority("");
-    setChannel("");
-    setCompetitor("");
-    setDisposition("");
-    setSubDisposition("");
-    setSubSubDisposition("");
-    setSmbDetailNotes("");
     if (initialRelated) {
       setRelatedKind(initialRelated.kind);
       setRelatedObjectId(initialRelated.id);
@@ -214,7 +187,16 @@ export function LogActivityModal({
   useEffect(() => {
     if (!open) return;
     resetForm();
-  }, [open, resetForm]);
+    // Resume a saved draft: apply its fields over the fresh reset so the
+    // composer opens prefilled. Mirrors loadDraft()'s field mapping.
+    if (initialDraft) {
+      if (initialDraft.activityTypeId) setActivityTypeId(initialDraft.activityTypeId);
+      if (initialDraft.relatedKind) setRelatedKind(initialDraft.relatedKind);
+      if (initialDraft.relatedObjectId) setRelatedObjectId(initialDraft.relatedObjectId);
+      if (initialDraft.activityNotes) setActivityNotes(initialDraft.activityNotes);
+      if (initialDraft.visibility) setVisibility(initialDraft.visibility);
+    }
+  }, [open, resetForm, initialDraft]);
 
   // Activity tab: load the org's active types once the modal opens.
   useEffect(() => {
@@ -226,48 +208,43 @@ export function LogActivityModal({
       .catch(() => setTypes([]));
   }, [open, types]);
 
-  // When a type is picked, fetch its field definitions.
+  // When a type is picked, fetch its field definitions and render them below
+  // the Type selector. `ignore` guards against a stale response winning a race
+  // when the user switches types quickly (Call → Meeting): only the latest
+  // selection's fields are applied. A failed fetch surfaces a toast instead of
+  // silently showing no fields (which previously looked like "nothing happened").
   useEffect(() => {
     if (!open || !activityTypeId) {
       setFieldDefs([]);
       return;
     }
+    let ignore = false;
     setFieldsLoading(true);
     setFieldValues({});
     void fetch(`/api/activities/types/${activityTypeId}/fields`)
-      .then((r) => (r.ok ? r.json() : null))
-      .then((body) => setFieldDefs(Array.isArray(body?.data) ? body.data : []))
-      .catch(() => setFieldDefs([]))
-      .finally(() => setFieldsLoading(false));
-  }, [open, activityTypeId]);
-
-  useEffect(() => {
-    if (!open) return;
-    if (tab === "smb" && !smbMeta) void fetchSmbMeta().then(setSmbMeta);
-  }, [open, tab, smbMeta]);
-
-  useEffect(() => {
-    if (!open) return;
-    if (leadOptionsLoaded) return;
-    if (!showLeadTabs) return;
-    void fetch("/api/leads/picker?limit=200")
-      .then((r) => (r.ok ? r.json() : null))
-      .then((body) => {
-        const items: { id: string; name: string; company?: string | null }[] =
-          body?.data?.items ?? body?.items ?? [];
-        setLeadOptions(
-          items.map((l) => ({
-            id: l.id,
-            label: l.company ? `${l.name} — ${l.company}` : l.name,
-          })),
-        );
-        setLeadOptionsLoaded(true);
+      .then(async (r) => {
+        if (!r.ok) throw new Error(`Failed to load fields (${r.status})`);
+        return r.json();
       })
-      .catch(() => setLeadOptionsLoaded(true));
-  }, [open, leadOptionsLoaded, showLeadTabs]);
+      .then((body) => {
+        if (ignore) return;
+        setFieldDefs(Array.isArray(body?.data) ? body.data : []);
+      })
+      .catch(() => {
+        if (ignore) return;
+        setFieldDefs([]);
+        toast.error("Could not load fields for this activity type");
+      })
+      .finally(() => {
+        if (!ignore) setFieldsLoading(false);
+      });
+    return () => {
+      ignore = true;
+    };
+  }, [open, activityTypeId, toast]);
 
   const fetchRelatedOptions = useCallback(
-    async (kind: (typeof KIND_OPTIONS)[number]): Promise<RelatedOption[]> => {
+    async (kind: LookupKind): Promise<RelatedOption[]> => {
       const path =
         kind === "Lead"
           ? "/api/leads/picker?limit=200"
@@ -290,28 +267,24 @@ export function LogActivityModal({
   );
 
   useEffect(() => {
-    if (!open || tab !== "activity") return;
+    if (!open) return;
+    if (relatedKind === STANDALONE_KIND) return; // no lookup for standalone
     if (relatedOptions[relatedKind] !== undefined) return;
     setRelatedLoading(true);
     fetchRelatedOptions(relatedKind)
       .then((items) => setRelatedOptions((prev) => ({ ...prev, [relatedKind]: items })))
       .catch(() => setRelatedOptions((prev) => ({ ...prev, [relatedKind]: [] })))
       .finally(() => setRelatedLoading(false));
-  }, [open, tab, relatedKind, relatedOptions, fetchRelatedOptions]);
+  }, [open, relatedKind, relatedOptions, fetchRelatedOptions]);
 
-  const subOptions = useMemo<SmbDispositionMeta["sub"]>(() => {
-    if (!smbMeta) return [];
-    return smbMeta.dispositions.find((d) => d.value === disposition)?.sub ?? [];
-  }, [smbMeta, disposition]);
-
-  const subSubOptions = useMemo<string[]>(() => {
-    return subOptions.find((s) => s.value === subDisposition)?.subSub ?? [];
-  }, [subOptions, subDisposition]);
-
-  function saveDraft() {
+  // "Save draft" opens the name dialog; the actual save happens here once a
+  // name is entered. Same payload as before, now stamped with a name and
+  // appended to the named-drafts collection instead of overwriting.
+  function saveDraft(name: string) {
     try {
-      const payload = {
-        tab,
+      const entry: NamedDraft = {
+        id: `${DRAFTS_STORAGE_KEY}:${new Date().toISOString()}`,
+        name: name.trim(),
         activityTypeId,
         relatedKind,
         relatedObjectId,
@@ -319,39 +292,53 @@ export function LogActivityModal({
         visibility,
         savedAt: new Date().toISOString(),
       };
-      localStorage.setItem(DRAFT_STORAGE_KEY, JSON.stringify(payload));
+      const next = [...readNamedDrafts(), entry];
+      localStorage.setItem(DRAFTS_STORAGE_KEY, JSON.stringify(next));
       toast.success("Draft saved on this device");
     } catch {
       toast.error("Could not save draft");
     }
   }
 
-  function loadDraft() {
+  // Restores draft fields. `d` is the chosen entry; when omitted (legacy path)
+  // it falls back to the single v1 draft. The field-setting logic is unchanged.
+  function loadDraft(d?: {
+    activityTypeId?: string;
+    relatedKind?: (typeof KIND_OPTIONS)[number];
+    relatedObjectId?: string;
+    activityNotes?: string;
+    visibility?: ActivityVisibility;
+  }) {
     try {
-      const raw = localStorage.getItem(DRAFT_STORAGE_KEY);
-      if (!raw) {
-        toast.error("No draft found");
-        return;
+      let draft = d;
+      if (!draft) {
+        const raw = localStorage.getItem(DRAFT_STORAGE_KEY);
+        if (!raw) {
+          toast.error("No draft found");
+          return;
+        }
+        draft = JSON.parse(raw);
       }
-      const d = JSON.parse(raw) as {
-        tab?: TabId;
-        activityTypeId?: string;
-        relatedKind?: (typeof KIND_OPTIONS)[number];
-        relatedObjectId?: string;
-        activityNotes?: string;
-        visibility?: ActivityVisibility;
-      };
-      if (d.tab) setTab(d.tab);
-      if (d.activityTypeId) setActivityTypeId(d.activityTypeId);
-      if (d.relatedKind) setRelatedKind(d.relatedKind);
-      if (d.relatedObjectId) setRelatedObjectId(d.relatedObjectId);
-      if (d.activityNotes) setActivityNotes(d.activityNotes);
-      if (d.visibility) setVisibility(d.visibility);
+      if (draft?.activityTypeId) setActivityTypeId(draft.activityTypeId);
+      if (draft?.relatedKind) setRelatedKind(draft.relatedKind);
+      if (draft?.relatedObjectId) setRelatedObjectId(draft.relatedObjectId);
+      if (draft?.activityNotes) setActivityNotes(draft.activityNotes);
+      if (draft?.visibility) setVisibility(draft.visibility);
       toast.success("Draft restored");
     } catch {
       toast.error("Could not load draft");
     }
   }
+
+  // Lists saved drafts for the header dropdown (shared with the Drafts list on
+  // the Activities page). Selecting an entry loads it via `loadDraft`.
+  const savedDrafts = useMemo(() => {
+    if (!open) return [];
+    return listDraftEntries();
+    // localStorage isn't reactive: re-read when the dropdown opens or after a
+    // save closes the name dialog so the list reflects the latest drafts.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open, draftsOpen, nameDialogOpen]);
 
   async function submitActivity() {
     if (!selectedType) {
@@ -368,7 +355,8 @@ export function LogActivityModal({
           type: selectedType.label,
           activityTypeId: selectedType.id,
           relatedKind,
-          relatedObjectId,
+          // Standalone activities send no record id; the API stores the sentinel.
+          relatedObjectId: isStandalone ? undefined : relatedObjectId,
           fieldValues,
           detailNotes: notes || undefined,
           followUpAt:
@@ -389,57 +377,15 @@ export function LogActivityModal({
     }
   }
 
-  async function submitSmb() {
-    if (!lead) {
-      toast.error("Select a lead first");
-      return;
-    }
-    setSubmitting(true);
-    try {
-      const res = await fetch("/api/activities/smb-outreach", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({
-          leadId: lead.id,
-          country,
-          followupPriority,
-          channel,
-          competitor,
-          disposition,
-          subDisposition,
-          subSubDisposition,
-          detailNotes: buildDetailNotes(smbDetailNotes, {}, visibility),
-        }),
-      });
-      if (!res.ok) {
-        const body = await res.json().catch(() => null);
-        toast.error(body?.error ?? "Failed to log outreach");
-        return;
-      }
-      toast.success("Outreach logged");
-      onSuccess();
-      onClose();
-    } finally {
-      setSubmitting(false);
-    }
-  }
-
   const hasTypes = (types?.length ?? 0) > 0;
-  const submit = tab === "activity" ? submitActivity : submitSmb;
+  const submit = submitActivity;
 
   const submitDisabled =
-    tab === "activity"
-      ? submitting || !activityTypeId || !relatedKind || !relatedObjectId
-      : submitting ||
-        !lead ||
-        !country ||
-        !followupPriority ||
-        !channel ||
-        !competitor ||
-        !disposition ||
-        !subDisposition ||
-        !subSubDisposition ||
-        !smbDetailNotes;
+    submitting ||
+    !activityTypeId ||
+    !relatedKind ||
+    // Standalone needs no record; linked kinds require one.
+    (!isStandalone && !relatedObjectId);
 
   const footer = (
     <div className="flex flex-wrap items-center justify-between gap-2">
@@ -455,7 +401,14 @@ export function LogActivityModal({
         <Button variant="secondary" type="button" onClick={onClose}>
           Cancel
         </Button>
-        <Button variant="secondary" type="button" onClick={saveDraft}>
+        <Button
+          variant="secondary"
+          type="button"
+          onClick={() => {
+            setDraftName("");
+            setNameDialogOpen(true);
+          }}
+        >
           Save draft
         </Button>
         <Button type="button" onClick={submit} disabled={submitDisabled}>
@@ -465,7 +418,26 @@ export function LogActivityModal({
     </div>
   );
 
+  const canSaveDraftName = draftName.trim().length > 0;
+  function confirmSaveDraft() {
+    if (!canSaveDraftName) return;
+    saveDraft(draftName);
+    setNameDialogOpen(false);
+    setDraftName("");
+  }
+  const nameDialogFooter = (
+    <div className="flex justify-end gap-2">
+      <Button variant="secondary" type="button" onClick={() => setNameDialogOpen(false)}>
+        Cancel
+      </Button>
+      <Button type="button" onClick={confirmSaveDraft} disabled={!canSaveDraftName}>
+        Save
+      </Button>
+    </div>
+  );
+
   return (
+    <>
     <Modal open={open} onClose={onClose} width="max-w-xl" footer={footer}>
       <div className="-mx-1 -mt-1 space-y-4">
         <header className="flex items-start justify-between gap-3 border-b border-crm-border pb-3">
@@ -507,21 +479,65 @@ export function LogActivityModal({
               </div>
             </div>
           </div>
-          <button
-            type="button"
-            onClick={onClose}
-            className="crm-btn-ghost h-8 w-8 shrink-0 p-0"
-            aria-label="Close"
-          >
-            <X size={16} />
-          </button>
+          <div className="flex shrink-0 items-center gap-1.5">
+            <div className="relative">
+              <button
+                type="button"
+                onClick={() => setDraftsOpen((v) => !v)}
+                className="crm-btn-ghost flex h-8 items-center gap-1 px-2 text-xs font-medium"
+                aria-haspopup="menu"
+                aria-expanded={draftsOpen}
+              >
+                Drafts
+                <ChevronDown size={12} />
+              </button>
+              {draftsOpen ? (
+                <>
+                  <button
+                    type="button"
+                    aria-label="Close drafts menu"
+                    className="fixed inset-0 z-10 cursor-default"
+                    onClick={() => setDraftsOpen(false)}
+                  />
+                  <div
+                    role="menu"
+                    className="absolute right-0 z-20 mt-1 min-w-[12rem] rounded-lg border border-crm-border bg-white py-1 shadow-lg"
+                  >
+                    {savedDrafts.length === 0 ? (
+                      <p className="px-3 py-2 text-xs text-crm-muted">No saved drafts</p>
+                    ) : (
+                      savedDrafts.map((d) => (
+                        <button
+                          key={d.key}
+                          type="button"
+                          role="menuitem"
+                          className="block w-full px-3 py-2 text-left text-xs text-crm-text hover:bg-crm-panel"
+                          onClick={() => {
+                            loadDraft(d.draft);
+                            setDraftsOpen(false);
+                          }}
+                        >
+                          {d.label}
+                        </button>
+                      ))
+                    )}
+                  </div>
+                </>
+              ) : null}
+            </div>
+            <button
+              type="button"
+              onClick={onClose}
+              className="crm-btn-ghost h-8 w-8 p-0"
+              aria-label="Close"
+            >
+              <X size={16} />
+            </button>
+          </div>
         </header>
 
-        <SegmentedTabs tab={tab} showLeadTabs={showLeadTabs} onSelect={selectTab} />
-
-        {tab === "activity" && (
-          <div className="space-y-4">
-            {types === null ? (
+        <div className="space-y-4">
+          {types === null ? (
               <p className="px-1 py-6 text-center text-sm text-crm-muted">Loading…</p>
             ) : !hasTypes ? (
               <div className="rounded-lg border border-dashed border-crm-border bg-crm-panel/40 px-4 py-8 text-center">
@@ -558,31 +574,37 @@ export function LogActivityModal({
                       >
                         {KIND_OPTIONS.map((k) => (
                           <option key={k} value={k}>
-                            {k}
+                            {KIND_LABELS[k]}
                           </option>
                         ))}
                       </Select>
                     </Field>
                     <div className="sm:col-span-2">
-                      <SearchableSelect
-                        label={relatedKind}
-                        placeholder={`Search ${relatedKind.toLowerCase()}…`}
-                        value={relatedObjectId}
-                        loading={relatedLoading && relatedOptions[relatedKind] === undefined}
-                        options={relatedOptions[relatedKind] ?? []}
-                        onChange={(id, opt) => {
-                          setRelatedObjectId(id);
-                          if (relatedKind === "Lead" && opt) {
-                            setLead((prev) => ({
-                              id: opt.id,
-                              label: opt.label,
-                              source: prev?.source,
-                              stage: prev?.stage,
-                              ownerName: prev?.ownerName,
-                            }));
-                          }
-                        }}
-                      />
+                      {relatedKind === STANDALONE_KIND ? (
+                        <p className="rounded-lg border border-dashed border-crm-border bg-crm-panel/40 px-3 py-2 text-xs text-crm-muted">
+                          This activity is not linked to any CRM record. You can link it later.
+                        </p>
+                      ) : (
+                        <SearchableSelect
+                          label={relatedKind}
+                          placeholder={`Search ${relatedKind.toLowerCase()}…`}
+                          value={relatedObjectId}
+                          loading={relatedLoading && relatedOptions[relatedKind] === undefined}
+                          options={relatedOptions[relatedKind] ?? []}
+                          onChange={(id, opt) => {
+                            setRelatedObjectId(id);
+                            if (relatedKind === "Lead" && opt) {
+                              setLead((prev) => ({
+                                id: opt.id,
+                                label: opt.label,
+                                source: prev?.source,
+                                stage: prev?.stage,
+                                ownerName: prev?.ownerName,
+                              }));
+                            }
+                          }}
+                        />
+                      )}
                     </div>
                   </div>
                 </Section>
@@ -601,7 +623,7 @@ export function LogActivityModal({
                   ) : null
                 ) : null}
 
-                <NotesEditor label="Notes" value={activityNotes} onChange={setActivityNotes} />
+                <NotesEditor label="Outcome" value={activityNotes} onChange={setActivityNotes} />
 
                 <OptionsRow
                   reminderOn={reminderOn}
@@ -610,132 +632,10 @@ export function LogActivityModal({
                   setFollowUpAt={setFollowUpAt}
                   visibility={visibility}
                   setVisibility={setVisibility}
-                  onLoadDraft={loadDraft}
                 />
               </>
             )}
-          </div>
-        )}
-
-        {tab === "smb" && (
-          <div className="space-y-4">
-            <Section title="SMB outreach" description="Disposition hierarchy for outbound SMB.">
-              <div className="sm:col-span-2">
-                <SearchableSelect
-                  label="Lead"
-                  placeholder="Search leads…"
-                  value={lead?.id ?? ""}
-                  loading={!leadOptionsLoaded}
-                  options={[
-                    ...(lead && !leadOptions.some((l) => l.id === lead.id)
-                      ? [{ id: lead.id, label: lead.label }]
-                      : []),
-                    ...leadOptions,
-                  ]}
-                  onChange={(id, opt) =>
-                    setLead(opt ? { id: opt.id, label: opt.label, ...lead } : null)
-                  }
-                />
-              </div>
-              <div className="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-2">
-                <Field label="Country">
-                  <Select value={country} onChange={(e) => setCountry(e.target.value)}>
-                    <option value="">—</option>
-                    {smbMeta?.countries.map((c) => (
-                      <option key={c} value={c}>
-                        {c}
-                      </option>
-                    ))}
-                  </Select>
-                </Field>
-                <Field label="Priority">
-                  <Select
-                    value={followupPriority}
-                    onChange={(e) => setFollowupPriority(e.target.value)}
-                  >
-                    <option value="">—</option>
-                    {smbMeta?.priorities.map((c) => (
-                      <option key={c} value={c}>
-                        {c}
-                      </option>
-                    ))}
-                  </Select>
-                </Field>
-                <Field label="Channel">
-                  <Select value={channel} onChange={(e) => setChannel(e.target.value)}>
-                    <option value="">—</option>
-                    {smbMeta?.channels.map((c) => (
-                      <option key={c} value={c}>
-                        {c}
-                      </option>
-                    ))}
-                  </Select>
-                </Field>
-                <Field label="Competitor">
-                  <Select value={competitor} onChange={(e) => setCompetitor(e.target.value)}>
-                    <option value="">—</option>
-                    {smbMeta?.competitors.map((c) => (
-                      <option key={c} value={c}>
-                        {c}
-                      </option>
-                    ))}
-                  </Select>
-                </Field>
-                <Field label="Disposition">
-                  <Select
-                    value={disposition}
-                    onChange={(e) => {
-                      setDisposition(e.target.value);
-                      setSubDisposition("");
-                      setSubSubDisposition("");
-                    }}
-                  >
-                    <option value="">—</option>
-                    {smbMeta?.dispositions.map((d) => (
-                      <option key={d.value} value={d.value}>
-                        {d.value}
-                      </option>
-                    ))}
-                  </Select>
-                </Field>
-                <Field label="Sub-disposition">
-                  <Select
-                    value={subDisposition}
-                    onChange={(e) => {
-                      setSubDisposition(e.target.value);
-                      setSubSubDisposition("");
-                    }}
-                    disabled={!disposition}
-                  >
-                    <option value="">—</option>
-                    {subOptions.map((s) => (
-                      <option key={s.value} value={s.value}>
-                        {s.value}
-                      </option>
-                    ))}
-                  </Select>
-                </Field>
-                <div className="sm:col-span-2">
-                  <Field label="Sub-sub-disposition">
-                    <Select
-                      value={subSubDisposition}
-                      onChange={(e) => setSubSubDisposition(e.target.value)}
-                      disabled={!subDisposition}
-                    >
-                      <option value="">—</option>
-                      {subSubOptions.map((ss) => (
-                        <option key={ss} value={ss}>
-                          {ss}
-                        </option>
-                      ))}
-                    </Select>
-                  </Field>
-                </div>
-              </div>
-            </Section>
-            <NotesEditor label="Detail notes" value={smbDetailNotes} onChange={setSmbDetailNotes} />
-          </div>
-        )}
+        </div>
 
         <p className="rounded-lg border border-dashed border-crm-border bg-crm-panel/40 px-3 py-2 text-[11px] text-crm-muted">
           System activities (lead created, imported, stage changed) are logged automatically on
@@ -743,46 +643,30 @@ export function LogActivityModal({
         </p>
       </div>
     </Modal>
-  );
-}
 
-function SegmentedTabs({
-  tab,
-  showLeadTabs,
-  onSelect,
-}: {
-  tab: TabId;
-  showLeadTabs: boolean;
-  onSelect: (t: TabId) => void;
-}) {
-  const items: { id: TabId; label: string; icon: typeof FileText }[] = [
-    { id: "activity", label: "Activity", icon: Layers },
-    ...(showLeadTabs ? [{ id: "smb" as const, label: "SMB", icon: Target }] : []),
-  ];
-  return (
-    <div
-      className="flex gap-1 rounded-lg bg-crm-panel/80 p-1 ring-1 ring-crm-border"
-      role="tablist"
-    >
-      {items.map(({ id, label, icon: Icon }) => (
-        <button
-          key={id}
-          type="button"
-          role="tab"
-          aria-selected={tab === id}
-          onClick={() => onSelect(id)}
-          className={
-            "flex flex-1 items-center justify-center gap-1.5 rounded-md px-2 py-2 text-xs font-medium transition sm:text-sm " +
-            (tab === id
-              ? "bg-white text-accent-700 shadow-sm ring-1 ring-crm-border"
-              : "text-crm-muted hover:bg-white/60 hover:text-crm-text")
-          }
-        >
-          <Icon size={14} className="shrink-0" />
-          {label}
-        </button>
-      ))}
-    </div>
+      <Modal
+        open={nameDialogOpen}
+        onClose={() => setNameDialogOpen(false)}
+        title="Name this draft"
+        width="max-w-sm"
+        footer={nameDialogFooter}
+      >
+        <Field label="Draft name">
+          <Input
+            autoFocus
+            value={draftName}
+            onChange={(e) => setDraftName(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === "Enter") {
+                e.preventDefault();
+                confirmSaveDraft();
+              }
+            }}
+            placeholder="Enter draft name..."
+          />
+        </Field>
+      </Modal>
+    </>
   );
 }
 
@@ -873,7 +757,6 @@ function OptionsRow({
   setFollowUpAt,
   visibility,
   setVisibility,
-  onLoadDraft,
   hideReminder,
 }: {
   reminderOn: boolean;
@@ -882,7 +765,6 @@ function OptionsRow({
   setFollowUpAt: (v: string) => void;
   visibility: ActivityVisibility;
   setVisibility: (v: ActivityVisibility) => void;
-  onLoadDraft?: () => void;
   hideReminder?: boolean;
 }) {
   return (
@@ -919,15 +801,6 @@ function OptionsRow({
           ))}
         </Select>
       </Field>
-      {onLoadDraft ? (
-        <button
-          type="button"
-          className="ml-auto text-xs font-medium text-accent-700 hover:underline"
-          onClick={onLoadDraft}
-        >
-          Load draft
-        </button>
-      ) : null}
     </div>
   );
 }

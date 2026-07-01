@@ -9,6 +9,12 @@ import { findDuplicateContactByEmail } from "@/lib/services/contacts/duplicate-c
 import { attachAccountNames } from "@/lib/services/contacts/account-name-batch";
 import { resolveOwnerForTenant } from "@/lib/services/contacts/owner-resolve";
 import { evaluateRulesForEvent } from "@/lib/notifications/rules/engine";
+import {
+  logBusinessEvent,
+  summariseChangedFields,
+  changedKeys,
+  BUSINESS_EVENT_TYPES,
+} from "@/lib/services/activities/business-events";
 
 export const runtime = "nodejs";
 
@@ -132,6 +138,31 @@ export async function PATCH(
       data: updateData,
     });
     const [withName] = await attachAccountNames(user.orgId, [updated]);
+
+    // Global Activities feed: "Contact Updated", listing the changed fields
+    // (owner shown as "Owner"). Only emitted when a field actually changed.
+    // Visibility inherits via relatedKind/relatedObjectId — RBAC unchanged.
+    {
+      const changed = changedKeys(
+        existing as unknown as Record<string, unknown>,
+        updated as unknown as Record<string, unknown>,
+        Object.keys(updateData),
+      );
+      if (changed.length > 0) {
+        const name = [updated.firstName, updated.lastName].filter(Boolean).join(" ");
+        await logBusinessEvent({
+          orgId: user.orgId,
+          userId: user.userId,
+          type: BUSINESS_EVENT_TYPES.contactUpdated,
+          relatedKind: "Contact",
+          relatedObjectId: id,
+          subject: `Contact updated · ${name}`,
+          outcome: `Updated: ${summariseChangedFields(changed)}`,
+          occurredAt: new Date(),
+        });
+      }
+    }
+
     evaluateRulesForEvent({
       event: "updated",
       entityType: "contact",

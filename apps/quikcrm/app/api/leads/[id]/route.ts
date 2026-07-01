@@ -7,7 +7,12 @@ import { assertAccountAccess } from "@/lib/auth/account-acl";
 import { updateLeadSchema } from "@/lib/validators/lead";
 import { onLeadUpdated } from "@/lib/services/automation/triggers";
 import { publishLeadEvent } from "@/lib/services/leads/realtime";
-import { recordLeadChange } from "@/lib/services/leads/change-log";
+import { recordLeadChange, diffLead } from "@/lib/services/leads/change-log";
+import {
+  logBusinessEvent,
+  summariseChangedFields,
+  BUSINESS_EVENT_TYPES,
+} from "@/lib/services/activities/business-events";
 import { listLeadFields } from "@/lib/services/fields/repo";
 import { validateDynamicFields } from "@/lib/services/fields/validate";
 import { updateCrmLead } from "@/lib/services/leads/create-record";
@@ -126,6 +131,64 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
       before: existing as unknown as Record<string, unknown>,
       after: updated as unknown as Record<string, unknown>,
     });
+
+    // Global Activities feed: emit user-visible CrmActivity rows for the edit.
+    // Stage / Status / Owner changes each get their own dedicated entry so they
+    // read cleanly in the feed; all other tracked-field edits collapse into a
+    // single "Lead Updated" entry. Visibility is inherited via
+    // relatedKind/relatedObjectId — RBAC unchanged. (Stage/status changes made
+    // through the dedicated transition route emit their own entries there; the
+    // diff-gating here means the same physical change is never logged twice.)
+    {
+      const diff = diffLead(
+        existing as unknown as Record<string, unknown>,
+        updated as unknown as Record<string, unknown>,
+      );
+      const changed = Object.keys(diff.after).filter((f) => f !== "deletedAt");
+      const base = {
+        orgId: user.orgId,
+        userId: user.userId,
+        relatedKind: "Lead" as const,
+        relatedObjectId: updated.id,
+        leadId: updated.id,
+        occurredAt: new Date(),
+      };
+      if (changed.includes("stage")) {
+        await logBusinessEvent({
+          ...base,
+          type: "LeadStageChange",
+          subject: `Stage: ${existing.stage} → ${updated.stage}`,
+          outcome: "Stage updated",
+        });
+      }
+      if (changed.includes("status")) {
+        await logBusinessEvent({
+          ...base,
+          type: BUSINESS_EVENT_TYPES.leadStatusChange,
+          subject: `Status: ${existing.status} → ${updated.status}`,
+          outcome: "Status updated",
+        });
+      }
+      if (changed.includes("ownerId") || changed.includes("ownerName")) {
+        await logBusinessEvent({
+          ...base,
+          type: BUSINESS_EVENT_TYPES.leadOwnerChange,
+          subject: `Owner changed · ${updated.name}`,
+          outcome: updated.ownerName ?? "Unassigned",
+        });
+      }
+      const handled = new Set(["stage", "status", "ownerId", "ownerName"]);
+      const otherFields = changed.filter((f) => !handled.has(f));
+      if (otherFields.length > 0) {
+        await logBusinessEvent({
+          ...base,
+          type: BUSINESS_EVENT_TYPES.leadUpdated,
+          subject: `Lead updated · ${updated.name}`,
+          outcome: `Updated: ${summariseChangedFields(otherFields)}`,
+        });
+      }
+    }
+
     onLeadUpdated(user.orgId, updated.id).catch((err) => console.error("[automation] onLeadUpdated failed", err));
     publishLeadEvent(user.orgId, {
       type: "updated",

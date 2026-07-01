@@ -8,6 +8,35 @@ import { logActivity } from "@/lib/services/activities/log-activity";
 export const LEAD_SYSTEM_ACTIVITY_CODE = "lead_system";
 export const LEAD_SYSTEM_SOURCE = "quikcrm.lead-system";
 
+/**
+ * `type` of the internal lead-creation initialization events ("Source added",
+ * "Owner assigned", "Stage initialized", "Status initialized"). These rows are
+ * written to the DB for internal use (audit / reporting / intelligence counts)
+ * but are SUPPRESSED from user-facing activity lists & timelines so a single
+ * "Lead Created" entry represents the creation event (Salesforce/HubSpot UX).
+ *
+ * The keeper event uses type "LeadCreated" and is NOT in this set.
+ */
+export const LEAD_INIT_EVENT_TYPE = "LeadSystem";
+
+/**
+ * Prisma `where` fragment that EXCLUDES the internal init events. AND-merge it
+ * into activity-list queries that feed the UI. Do NOT apply it to reporting /
+ * export / intelligence queries — those should still see every row.
+ */
+export const EXCLUDE_LEAD_INIT_EVENTS_WHERE = {
+  NOT: { type: LEAD_INIT_EVENT_TYPE },
+} as const;
+
+/**
+ * In-memory predicate equivalent of EXCLUDE_LEAD_INIT_EVENTS_WHERE — use when
+ * filtering an already-fetched activity array for display (keeps the full array
+ * available for any reporting/intelligence computed off the same fetch).
+ */
+export function isUserVisibleLeadActivity(a: { type: string }): boolean {
+  return a.type !== LEAD_INIT_EVENT_TYPE;
+}
+
 export const LEAD_CREATION_CHANNELS = [
   "manual",
   "website",

@@ -90,6 +90,8 @@ const teamConversionRate: CannedReport = {
       by: ["ownerId"],
       where: {
         orgId: ctx.orgId,
+        // Exclude trashed leads — CrmLead is not covered by the soft-delete middleware.
+        deletedAt: null,
         ownerId: { in: userIds },
         createdAt: { gte: monthStart, lte: ctx.to },
       },
@@ -99,6 +101,7 @@ const teamConversionRate: CannedReport = {
       by: ["ownerId"],
       where: {
         orgId: ctx.orgId,
+        deletedAt: null,
         ownerId: { in: userIds },
         createdAt: { gte: monthStart, lte: ctx.to },
         stage: { not: "New" },

@@ -10,6 +10,11 @@
 import type { CrmOpportunityStage, Prisma } from "@quikit/database";
 import { db } from "@/lib/db";
 import { resolveOpportunityPriceListId } from "@/lib/services/quotes/resolve-price-list-for-record";
+import {
+  logBusinessEvent,
+  summariseChangedFields,
+  BUSINESS_EVENT_TYPES,
+} from "@/lib/services/activities/business-events";
 import { computeWeightedAmount } from "./compute";
 
 export { computeWeightedAmount };
@@ -240,6 +245,28 @@ export async function updateOpportunity(args: {
         ownerId: userId,
         occurredAt: new Date(),
       },
+    });
+  }
+
+  // Global Activities feed: a generic "Opportunity Updated" event for any
+  // non-owner field edits (previously these produced no feed row). Stage edits
+  // go through /transition (own event) and never reach this patch path, so they
+  // are not double-counted. Visibility inherits via relatedKind/relatedObjectId
+  // — RBAC unchanged. Owner-only edits are covered by the entry above.
+  const editedFields = Object.keys(input).filter(
+    (k) => k !== "ownerId" && (input as Record<string, unknown>)[k] !== undefined,
+  );
+  if (editedFields.length > 0) {
+    await logBusinessEvent({
+      orgId,
+      userId,
+      type: BUSINESS_EVENT_TYPES.opportunityUpdated,
+      relatedKind: "Opportunity",
+      relatedObjectId: id,
+      opportunityId: id,
+      subject: `Opportunity updated · ${updated.name}`,
+      outcome: `Updated: ${summariseChangedFields(editedFields)}`,
+      occurredAt: new Date(),
     });
   }
 
