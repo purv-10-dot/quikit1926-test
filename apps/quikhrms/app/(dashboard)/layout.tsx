@@ -1,10 +1,29 @@
+import { getServerSession } from "next-auth";
+import { requireAppAccess } from "@quikit/auth/app-access";
+import { authOptions } from "@/lib/auth";
 import { Sidebar } from "@/components/hrms/layout/sidebar";
 import { TopBar } from "@/components/hrms/layout/top-bar";
 import { BackButton } from "@/components/hrms/layout/back-button";
 import { AuthGuard } from "@/components/hrms/layout/auth-guard";
 import { SessionGuard } from "@/components/session-guard";
 
-export default function HRMSLayout({ children }: { children: React.ReactNode }) {
+// Reads the session per request and gates on app access — never prerender.
+export const dynamic = "force-dynamic";
+
+export default async function HRMSLayout({ children }: { children: React.ReactNode }) {
+  // Server-side app-access gate — runs before any dashboard UI renders, so a
+  // user without QuikHRMS access is redirected to the landing page + popup with
+  // no flash of the app.
+  const session = await getServerSession(authOptions);
+  await requireAppAccess({
+    userId: session?.user?.id,
+    orgId: session?.user?.orgId,
+    appSlug: "quikhrms",
+    isSuperAdmin: session?.user?.isSuperAdmin === true,
+    memberRole: session?.user?.membershipRole,
+    homeUrl: process.env.QUIKIT_URL ?? process.env.NEXT_PUBLIC_QUIKIT_URL,
+  });
+
   return (
     <AuthGuard>
       <SessionGuard>

@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getServerSession } from "next-auth";
 import { getToken } from "next-auth/jwt";
+import { ADMIN_TIER_ROLES, HIDDEN_APP_SLUGS } from "@quikit/shared";
 import { authOptions } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { generateAuthCode } from "@/lib/oauth";
@@ -80,6 +81,7 @@ export async function GET(request: NextRequest) {
 
   const userId = session.user.id;
   let orgId = session.user.orgId;
+  let memberRole = session.user.membershipRole;
 
   if (!orgId) {
     // User hasn't selected an org yet — try to auto-select their first membership
@@ -90,6 +92,7 @@ export async function GET(request: NextRequest) {
     });
     if (membership) {
       orgId = membership.orgId;
+      memberRole = membership.role;
     } else {
       // No membership at all → redirect to app launcher
       const currentUrl = request.nextUrl.toString();
@@ -102,18 +105,49 @@ export async function GET(request: NextRequest) {
   // Verify user has access to this app
   const app = await db.app.findFirst({
     where: { oauthClient: { clientId } },
-    select: { id: true },
+    select: { id: true, slug: true, baseUrl: true },
   });
   if (app) {
     const access = await db.userAppAccess.findFirst({
       where: { userId, orgId, appId: app.id },
     });
     if (!access) {
-      const errorUrl = new URL(redirectUri);
-      errorUrl.searchParams.set("error", "access_denied");
-      errorUrl.searchParams.set("error_description", "User does not have access to this app");
-      if (state) errorUrl.searchParams.set("state", state);
-      return NextResponse.redirect(errorUrl.toString());
+      // The user is authenticated but not granted this app. Rather than
+      // completing the OAuth handshake with `?error=access_denied` (which the
+      // consumer's NextAuth callback turns into a generic error page, then the
+      // app's /login re-fires signIn and loops), send them to the app's own
+      // public landing page with a marker. There <AppAccessDeniedPopup />
+      // shows an app-specific "contact your administrator" message.
+      // Falls back to the launcher /apps if the app has no baseUrl configured.
+      //
+      // We ALSO tell the popup, authoritatively, how many OTHER apps this user
+      // can reach, and where the launcher lives — because on the consumer app's
+      // landing page there is no local session yet (the OAuth callback never
+      // ran), so its own /api/apps/switcher would 401 and the popup couldn't
+      // decide whether to show "Go to my apps". Here we still hold the central
+      // session, so we compute it now using the exact launcher visibility rule.
+      const otherAppsCount = await countOtherAccessibleApps({
+        userId,
+        orgId,
+        excludeAppId: app.id,
+        isSuperAdmin: session.user.isSuperAdmin === true,
+        memberRole,
+      });
+      // Resolve the app's landing origin the SAME way the launcher does: a
+      // per-app env override (e.g. QUIKSCALE_URL) wins over the DB's stored
+      // baseUrl. Critical because App.baseUrl holds PRODUCTION URLs, so in local
+      // dev a raw baseUrl redirect would bounce the user to prod. Falls back to
+      // the DB baseUrl (prod) and finally this IdP's /apps.
+      const appBaseUrl = process.env[`${app.slug.toUpperCase()}_URL`] || app.baseUrl;
+      const target = appBaseUrl
+        ? new URL("/", appBaseUrl)
+        : new URL("/apps", request.nextUrl.origin);
+      target.searchParams.set("reason", "no_app_access");
+      target.searchParams.set("others", String(otherAppsCount));
+      // The launcher (this IdP) origin — lets the popup's "Go to my apps" link
+      // resolve without relying on NEXT_PUBLIC_QUIKIT_URL being set client-side.
+      target.searchParams.set("home", process.env.QUIKIT_URL || request.nextUrl.origin);
+      return NextResponse.redirect(target.toString());
     }
   }
 
@@ -142,4 +176,45 @@ export async function GET(request: NextRequest) {
   if (state) callbackUrl.searchParams.set("state", state);
 
   return NextResponse.redirect(callbackUrl.toString());
+}
+
+/**
+ * Count the apps a user can reach in an org, EXCLUDING one app (the one they
+ * were just denied). Mirrors the launcher/switcher visibility rule exactly
+ * (apps/quikit/app/api/apps/launcher/route.ts):
+ *   1. Org must have OrgAppAccess.enabled = true for the app.
+ *   2. `requiresOrgAdmin` apps need an admin-tier caller.
+ *   3. Org admins / super admins see every provisioned app; everyone else
+ *      needs an explicit UserAppAccess row.
+ * Used to decide whether the access-denied popup shows "Go to my apps".
+ */
+async function countOtherAccessibleApps(opts: {
+  userId: string;
+  orgId: string;
+  excludeAppId: string;
+  isSuperAdmin: boolean;
+  memberRole?: string | null;
+}): Promise<number> {
+  const { userId, orgId, excludeAppId, isSuperAdmin, memberRole } = opts;
+  const memberIsAdmin = isSuperAdmin || ADMIN_TIER_ROLES.has(String(memberRole ?? ""));
+
+  const [allApps, orgAllows, userAccess] = await Promise.all([
+    db.app.findMany({
+      where: { status: { not: "disabled" }, slug: { notIn: ["quikit", ...HIDDEN_APP_SLUGS] } },
+      select: { id: true, requiresOrgAdmin: true },
+    }),
+    db.orgAppAccess.findMany({ where: { orgId, enabled: true }, select: { appId: true } }),
+    db.userAppAccess.findMany({ where: { userId, orgId }, select: { appId: true } }),
+  ]);
+
+  const orgAllowedAppIds = new Set(orgAllows.map((a) => a.appId));
+  const userAppIds = new Set(userAccess.map((u) => u.appId));
+
+  return allApps.filter((a) => {
+    if (a.id === excludeAppId) return false;
+    if (!orgAllowedAppIds.has(a.id)) return false;
+    if (a.requiresOrgAdmin && !memberIsAdmin) return false;
+    if (!isSuperAdmin && !memberIsAdmin && !userAppIds.has(a.id)) return false;
+    return true;
+  }).length;
 }
