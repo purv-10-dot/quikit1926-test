@@ -37,6 +37,7 @@ import { OPSPHistoryDrawer } from "./components/OPSPHistoryDrawer";
 import { describeSetChange, describeArrChange, getFieldValue, applyFieldPath, type PendingEdit } from "./lib/editLog";
 import { isYearSelectable, isQuarterSelectable, firstSelectableQuarter } from "./lib/periodGating";
 import { useOpspAck } from "@/lib/hooks/useOpspAck";
+import { useCurrentQuarter } from "@/lib/hooks/useCurrentWeek";
 import { computeOpspEditability } from "@/lib/utils/opspEditability";
 import { editedFieldPaths, fieldMatchesEdited, editsSince, latestEdit, type EditLogLike } from "@/lib/utils/opspEditHighlight";
 
@@ -48,6 +49,12 @@ export default function OPSPPage() {
   const urlYear = searchParams.get("year");
   const urlQuarter = searchParams.get("quarter");
   const urlPreview = searchParams.get("preview") === "true";
+
+  // Current quarter resolved from the tenant's QuarterSetting date ranges
+  // (Custom-Quarter aware) — a 14-week Q1 ending in July stays "Q1", where the
+  // calendar `getFiscalQuarter()` would wrongly say "Q2". Falls back to the
+  // calendar value while the DB loads / if no quarters are configured.
+  const currentQuarter = useCurrentQuarter(getFiscalYear()) ?? getFiscalQuarter();
 
   // Form state + autosave + cascade + setup-wizard gating all live in the hook.
   // See apps/quikscale/app/(dashboard)/opsp/hooks/useOPSPForm.ts.
@@ -229,7 +236,7 @@ export default function OPSPPage() {
   const autoFinalizeNudge = autoFinalizeNudgeDays({
     isAdmin,
     statusLocked,
-    isCurrentPeriod: form.year === getFiscalYear() && form.quarter === getFiscalQuarter(),
+    isCurrentPeriod: form.year === getFiscalYear() && form.quarter === currentQuarter,
     finalize: finalizeDeadline,
   });
   // Show the blue "review locked" banner ONLY to users who could otherwise edit a
@@ -570,7 +577,7 @@ export default function OPSPPage() {
       <OPSPSetupWizard
         fiscalYearStart={fiscalYearStart}
         currentFiscalYear={getFiscalYear()}
-        currentQuarter={getFiscalQuarter()}
+        currentQuarter={currentQuarter}
         onComplete={completeSetup}
       />
     );

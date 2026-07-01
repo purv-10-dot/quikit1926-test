@@ -24,6 +24,8 @@ import {
   redistributeOwnerRemainder,
   distributeContributionsEven,
   applyWeeklyEdit,
+  sumBreakdown,
+  checkBreakdownBalance,
   type DivisionType,
 } from "./kpiModalHelpers";
 import { WeeklyScroller } from "./WeeklyScroller";
@@ -239,14 +241,12 @@ export function KPIModal({ mode, kpi, scope, teamId, defaultYear, defaultQuarter
       const existingRow = f.weeklyOwnerBreakdown[ownerId] ?? {};
 
       // Clamp: no negatives, and cannot exceed remaining owner budget
-      let priorSum = 0;
-      for (let i = 1; i < weekNumber; i++) priorSum += parseFloat(String(existingRow[i])) || 0;
-      const maxAllowed = Math.max(0, ownerSubTarget - priorSum);
-
+      // No upper clamp — an over-sub-target entry stays as typed so the
+      // breakdown-balance indicator can WARN; redistribution still zeroes the
+      // later weeks (remaining goes to 0) and the sum surfaces as "over".
       let parsed = parseFloat(rawVal);
       if (rawVal === "" || isNaN(parsed)) parsed = 0;
       if (parsed < 0) parsed = 0;
-      if (f.divisionType === "Cumulative" && parsed > maxAllowed) parsed = maxAllowed;
 
       const val = rawVal === "" ? "" : (isWhole ? String(Math.round(parsed)) : parsed.toFixed(2));
       let ownerRow = { ...existingRow, [weekNumber]: val };
@@ -273,20 +273,11 @@ export function KPIModal({ mode, kpi, scope, teamId, defaultYear, defaultQuarter
       const totalTargetNum = actualNum(f);
       const isWhole = f.measurementUnit === "Number";
 
-      // Clamp: no negatives, and cannot exceed remaining team budget
-      // Compute prior sum from existing owner rows (sum all owners' cells for weeks < weekNumber)
-      let priorTeamSum = 0;
-      for (let i = 1; i < weekNumber; i++) {
-        for (const id of f.ownerIds) {
-          priorTeamSum += parseFloat(String((f.weeklyOwnerBreakdown[id] ?? {})[i])) || 0;
-        }
-      }
-      const maxAllowed = Math.max(0, totalTargetNum - priorTeamSum);
-
+      // No upper clamp — an over-target total stays as typed so the balance
+      // indicator can WARN; per-owner redistribution handles the rest.
       let parsed = parseFloat(rawVal);
       if (rawVal === "" || isNaN(parsed)) parsed = 0;
       if (parsed < 0) parsed = 0;
-      if (f.divisionType === "Cumulative" && parsed > maxAllowed) parsed = maxAllowed;
 
       const totalNum = parsed;
       const newOwnerBreakdown: Record<string, Record<number, string>> = { ...f.weeklyOwnerBreakdown };
@@ -533,11 +524,12 @@ export function KPIModal({ mode, kpi, scope, teamId, defaultYear, defaultQuarter
   }
 
   function setWeekBreakdown(w: number, rawVal: string) {
-    // Shared with the OPSP export so both redistribute identically — see
-    // `applyWeeklyEdit` in kpiModalHelpers. `actualNum` applies the currency scale.
+    // `actualNum` applies the currency scale. clampToTarget=false → an
+    // over-target entry stays as typed so the balance indicator can WARN
+    // instead of silently capping it (the OPSP export keeps the default clamp).
     setForm(f => ({
       ...f,
-      weeklyBreakdown: applyWeeklyEdit(f.weeklyBreakdown, w, rawVal, actualNum(f), f.measurementUnit, f.divisionType, weekCount),
+      weeklyBreakdown: applyWeeklyEdit(f.weeklyBreakdown, w, rawVal, actualNum(f), f.measurementUnit, f.divisionType, weekCount, false),
     }));
   }
 
@@ -578,6 +570,18 @@ export function KPIModal({ mode, kpi, scope, teamId, defaultYear, defaultQuarter
       }
     } else {
       if (!form.owner) errs.owner = "Please select an owner for this KPI.";
+    }
+
+    // Cumulative: the weekly breakdown must total the target exactly. `balance`
+    // is null for Standalone (exempt) and computed against the raw target.
+    if (balance && balance.status !== "balanced") {
+      const unit = breakdownUnit ? ` ${breakdownUnit}` : "";
+      const dispSum = toDisp(String(balance.sum));
+      const dispTgt = toDisp(String(scaledTarget));
+      const dispDiff = toDisp(String(Math.abs(balance.remaining)));
+      errs._ = balance.status === "under"
+        ? `Weekly targets total ${dispSum}${unit} — ${dispDiff}${unit} short of the ${dispTgt}${unit} target. Adjust the weekly cells so they add up to the target.`
+        : `Weekly targets total ${dispSum}${unit} — ${dispDiff}${unit} over the ${dispTgt}${unit} target. Reduce the weekly cells so they add up to the target.`;
     }
     return errs;
   }
@@ -697,9 +701,39 @@ export function KPIModal({ mode, kpi, scope, teamId, defaultYear, defaultQuarter
       : (typeof raw === "string" ? raw : String(raw));
   const toRaw = (input: string) =>
     breakdownScaleMult > 1 ? scaleUpFromInput(input, form.currency, form.targetScale) : input;
-  const breakdownUnit = breakdownScaleMult > 1 ? shortScaleLabel(form.targetScale) : "";
+  // Number KPI unit-of-measure (from Unit Master, e.g. "lb"). Shown as a plain
+  // suffix — Number values are NOT scaled, so no prefix / no value conversion.
+  const numberUnit = form.measurementUnit === "Number" ? (form.unit || "") : "";
+  // Cell suffix: currency scale unit when scaled, else the Number unit.
+  const breakdownUnit = breakdownScaleMult > 1 ? shortScaleLabel(form.targetScale) : numberUnit;
   // Currency symbol prefix shown on each scaled breakdown cell (₹2, $9, …).
+  // Currency-scaled only — Number unit cells carry no prefix.
   const breakdownPrefix = breakdownScaleMult > 1 ? currencyObj.symbol : "";
+  // Scaled currency cells hold small numbers (e.g. "100") but a wide unit suffix
+  // ("100 Cr"), so shrink the INPUT to leave room. Number cells keep full width
+  // (raw values can be large) — gate on the currency scale, not the suffix.
+  const cellMinW = breakdownScaleMult > 1 ? "min-w-[48px]" : "min-w-[72px]";
+  // Full raw rupee value behind a SCALED currency cell, en-IN formatted (tooltip).
+  const rawTip = (raw: number | string): string | undefined => {
+    if (breakdownScaleMult <= 1) return undefined;
+    const n = typeof raw === "string" ? parseFloat(raw) : raw;
+    if (!Number.isFinite(n)) return undefined;
+    return `= ${formatActual(n, currencyObj.symbol, form.currency)}`;
+  };
+
+  // ── Breakdown balance (Cumulative only) ──
+  // The weekly cells must sum to the target. Team scope sums every owner cell;
+  // individual sums the single breakdown row. Standalone is exempt (each week
+  // carries the full target). Drives the live "Remaining" indicator + submit gate.
+  const breakdownSum = isTeamScope && form.ownerIds.length > 0
+    ? form.ownerIds.reduce(
+        (s, id) => s + sumBreakdown(form.weeklyOwnerBreakdown[id] ?? {}),
+        0,
+      )
+    : sumBreakdown(form.weeklyBreakdown);
+  const balance = form.divisionType === "Cumulative"
+    ? checkBreakdownBalance(breakdownSum, scaledTarget)
+    : null;
 
   const panelTitle =
     mode === "create"
@@ -1163,7 +1197,15 @@ export function KPIModal({ mode, kpi, scope, teamId, defaultYear, defaultQuarter
           {scaledTarget > 0 && (
             <div>
               <label className="block text-xs font-medium text-gray-600 mb-2">
-                Target Breakdown (Weekly){breakdownUnit ? ` — in ${currencyObj.symbol} ${breakdownUnit}` : ""}
+                Target Breakdown (Weekly)
+                {breakdownScaleMult > 1
+                  ? ` — in ${currencyObj.symbol} ${breakdownUnit}`
+                  : breakdownUnit ? ` — in ${breakdownUnit}` : ""}
+                {breakdownScaleMult > 1 && (
+                  <span className="ml-2 font-normal text-gray-400">
+                    = {formatActual(scaledTarget, currencyObj.symbol, form.currency)} total
+                  </span>
+                )}
               </label>
               <WeeklyScroller>
                 <table className="w-full text-xs">
@@ -1217,7 +1259,7 @@ export function KPIModal({ mode, kpi, scope, teamId, defaultYear, defaultQuarter
                           return (
                             <td key={w} className="px-1 py-1.5 border-r border-gray-100 last:border-r-0 bg-gray-50">
                               <div className="flex items-center gap-0.5">
-                                {breakdownPrefix && <span className="text-[9px] text-gray-400 flex-shrink-0">{breakdownPrefix}</span>}
+                                {breakdownPrefix && <span className="text-[9px] text-gray-400 flex-shrink-0 whitespace-nowrap">{breakdownPrefix}</span>}
                                 <input
                                   type="number"
                                   min="0"
@@ -1228,13 +1270,13 @@ export function KPIModal({ mode, kpi, scope, teamId, defaultYear, defaultQuarter
                                   title={isPast
                                     ? "Past week data entry is disabled. Enable in Settings > Configurations."
                                     : "Editing the total redistributes across owners by contribution %"}
-                                  className={`w-full px-1 py-1 text-center text-xs font-semibold border rounded focus:outline-none min-w-[72px] ${
+                                  className={`w-full px-1 py-1 text-center text-xs font-semibold border rounded focus:outline-none ${cellMinW} ${
                                     isLocked
                                       ? "border-gray-100 bg-gray-50 text-gray-400 cursor-not-allowed"
                                       : "border-gray-200 bg-white text-gray-800 focus:ring-1 focus:ring-accent-400"
                                   }`}
                                 />
-                                {breakdownUnit && <span className="text-[9px] text-gray-400 flex-shrink-0">{breakdownUnit}</span>}
+                                {breakdownUnit && <span className="text-[9px] text-gray-400 flex-shrink-0 whitespace-nowrap">{breakdownUnit}</span>}
                               </div>
                             </td>
                           );
@@ -1264,11 +1306,12 @@ export function KPIModal({ mode, kpi, scope, teamId, defaultYear, defaultQuarter
                           return (
                             <td key={w} className="px-1 py-1.5 border-r border-gray-100 last:border-r-0">
                               <div className="flex items-center gap-0.5">
-                                {breakdownPrefix && <span className="text-[9px] text-gray-400 flex-shrink-0">{breakdownPrefix}</span>}
+                                {breakdownPrefix && <span className="text-[9px] text-gray-400 flex-shrink-0 whitespace-nowrap">{breakdownPrefix}</span>}
                                 <select
                                   value={norm}
                                   onChange={e => setWeekBreakdown(w, e.target.value)}
-                                  className="w-full px-1 py-1 text-center text-xs border border-gray-200 rounded bg-white focus:outline-none focus:ring-1 focus:ring-accent-400 min-w-[72px] cursor-pointer"
+                                  title={rawTip(form.weeklyBreakdown[w] ?? "")}
+                                  className={`w-full px-1 py-1 text-center text-xs border border-gray-200 rounded bg-white focus:outline-none focus:ring-1 focus:ring-accent-400 ${cellMinW} cursor-pointer`}
                                 >
                                   <option value={zeroStr}>0</option>
                                   <option value={targetStr}>{targetStr ? toDisp(targetStr) : "—"}</option>
@@ -1276,7 +1319,7 @@ export function KPIModal({ mode, kpi, scope, teamId, defaultYear, defaultQuarter
                                     <option value={norm}>{toDisp(norm)} (custom)</option>
                                   )}
                                 </select>
-                                {breakdownUnit && <span className="text-[9px] text-gray-400 flex-shrink-0">{breakdownUnit}</span>}
+                                {breakdownUnit && <span className="text-[9px] text-gray-400 flex-shrink-0 whitespace-nowrap">{breakdownUnit}</span>}
                               </div>
                             </td>
                           );
@@ -1284,7 +1327,7 @@ export function KPIModal({ mode, kpi, scope, teamId, defaultYear, defaultQuarter
                         return (
                           <td key={w} className="px-1 py-1.5 border-r border-gray-100 last:border-r-0">
                             <div className="flex items-center gap-0.5">
-                              {breakdownPrefix && <span className="text-[9px] text-gray-400 flex-shrink-0">{breakdownPrefix}</span>}
+                              {breakdownPrefix && <span className="text-[9px] text-gray-400 flex-shrink-0 whitespace-nowrap">{breakdownPrefix}</span>}
                               <input
                                 type="number"
                                 min="0"
@@ -1292,14 +1335,14 @@ export function KPIModal({ mode, kpi, scope, teamId, defaultYear, defaultQuarter
                                 onChange={e => { setEditingCell({ key: `ind-${w}`, raw: e.target.value }); setWeekBreakdown(w, toRaw(e.target.value)); }}
                                 onBlur={() => setEditingCell(null)}
                                 readOnly={isLocked}
-                                title={isPast ? "Past week data entry is disabled. Enable in Settings > Configurations." : undefined}
-                                className={`w-full px-1 py-1 text-center text-xs border rounded focus:outline-none min-w-[72px] ${
+                                title={isPast ? "Past week data entry is disabled. Enable in Settings > Configurations." : rawTip(form.weeklyBreakdown[w] ?? "")}
+                                className={`w-full px-1 py-1 text-center text-xs border rounded focus:outline-none ${cellMinW} ${
                                   isLocked
                                     ? "border-gray-100 bg-gray-50 text-gray-400 cursor-not-allowed"
                                     : "border-gray-200 focus:ring-1 focus:ring-accent-400"
                                 }`}
                               />
-                              {breakdownUnit && <span className="text-[9px] text-gray-400 flex-shrink-0">{breakdownUnit}</span>}
+                              {breakdownUnit && <span className="text-[9px] text-gray-400 flex-shrink-0 whitespace-nowrap">{breakdownUnit}</span>}
                             </div>
                           </td>
                         );
@@ -1344,11 +1387,12 @@ export function KPIModal({ mode, kpi, scope, teamId, defaultYear, defaultQuarter
                               return (
                                 <td key={w} className="px-1 py-1.5 border-r border-t border-gray-100 last:border-r-0">
                                   <div className="flex items-center gap-0.5">
-                                    {breakdownPrefix && <span className="text-[9px] text-gray-400 flex-shrink-0">{breakdownPrefix}</span>}
+                                    {breakdownPrefix && <span className="text-[9px] text-gray-400 flex-shrink-0 whitespace-nowrap">{breakdownPrefix}</span>}
                                     <select
                                       value={norm}
                                       onChange={e => setOwnerWeekCell(id, w, e.target.value)}
-                                      className="w-full px-1 py-1 text-center text-[11px] border border-gray-200 rounded bg-white focus:outline-none focus:ring-1 focus:ring-accent-400 min-w-[72px] cursor-pointer"
+                                      title={rawTip(ownerRow[w] ?? "")}
+                                      className={`w-full px-1 py-1 text-center text-[11px] border border-gray-200 rounded bg-white focus:outline-none focus:ring-1 focus:ring-accent-400 ${cellMinW} cursor-pointer`}
                                     >
                                       <option value={zeroStr}>0</option>
                                       <option value={targetStr}>{targetStr ? toDisp(targetStr) : "—"}</option>
@@ -1356,7 +1400,7 @@ export function KPIModal({ mode, kpi, scope, teamId, defaultYear, defaultQuarter
                                         <option value={norm}>{toDisp(norm)} (custom)</option>
                                       )}
                                     </select>
-                                    {breakdownUnit && <span className="text-[9px] text-gray-400 flex-shrink-0">{breakdownUnit}</span>}
+                                    {breakdownUnit && <span className="text-[9px] text-gray-400 flex-shrink-0 whitespace-nowrap">{breakdownUnit}</span>}
                                   </div>
                                 </td>
                               );
@@ -1364,7 +1408,7 @@ export function KPIModal({ mode, kpi, scope, teamId, defaultYear, defaultQuarter
                             return (
                               <td key={w} className="px-1 py-1.5 border-r border-t border-gray-100 last:border-r-0">
                                 <div className="flex items-center gap-0.5">
-                                  {breakdownPrefix && <span className="text-[9px] text-gray-400 flex-shrink-0">{breakdownPrefix}</span>}
+                                  {breakdownPrefix && <span className="text-[9px] text-gray-400 flex-shrink-0 whitespace-nowrap">{breakdownPrefix}</span>}
                                   <input
                                     type="number"
                                     min="0"
@@ -1372,14 +1416,14 @@ export function KPIModal({ mode, kpi, scope, teamId, defaultYear, defaultQuarter
                                     onChange={e => { setEditingCell({ key: `own-${id}-${w}`, raw: e.target.value }); setOwnerWeekCell(id, w, toRaw(e.target.value)); }}
                                     onBlur={() => setEditingCell(null)}
                                     readOnly={isLocked}
-                                    title={isPast ? "Past week data entry is disabled." : undefined}
-                                    className={`w-full px-1 py-1 text-center text-[11px] border rounded focus:outline-none min-w-[72px] ${
+                                    title={isPast ? "Past week data entry is disabled." : rawTip(ownerRow[w] ?? "")}
+                                    className={`w-full px-1 py-1 text-center text-[11px] border rounded focus:outline-none ${cellMinW} ${
                                       isLocked
                                         ? "border-gray-100 bg-gray-50 text-gray-400 cursor-not-allowed"
                                         : "border-gray-200 bg-white focus:ring-1 focus:ring-accent-400"
                                     }`}
                                   />
-                                  {breakdownUnit && <span className="text-[9px] text-gray-400 flex-shrink-0">{breakdownUnit}</span>}
+                                  {breakdownUnit && <span className="text-[9px] text-gray-400 flex-shrink-0 whitespace-nowrap">{breakdownUnit}</span>}
                                 </div>
                               </td>
                             );
@@ -1411,6 +1455,15 @@ export function KPIModal({ mode, kpi, scope, teamId, defaultYear, defaultQuarter
                   </button>
                 )}
               </div>
+              {/* Live balance indicator — the weekly cells must total the target
+                  (Cumulative only). Shows the shortfall/overage in red. */}
+              {balance && balance.status !== "balanced" && (
+                <p className="text-[11px] font-medium text-red-600 mt-1.5">
+                  {balance.status === "under"
+                    ? `Remaining: ${toDisp(String(balance.remaining))}${breakdownUnit ? ` ${breakdownUnit}` : ""} — weekly targets must total the ${toDisp(String(scaledTarget))}${breakdownUnit ? ` ${breakdownUnit}` : ""} target.`
+                    : `Over target by ${toDisp(String(Math.abs(balance.remaining)))}${breakdownUnit ? ` ${breakdownUnit}` : ""} — reduce the weekly targets to total the target.`}
+                </p>
+              )}
             </div>
           )}
     </RightPanel>

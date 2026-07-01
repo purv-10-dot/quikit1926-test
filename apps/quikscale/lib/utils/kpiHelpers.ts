@@ -76,10 +76,12 @@ export function formatScaledKpiValue(
     numberFormat?: NumberFormat;
     /** Per-KPI scale-unit display toggle. When false, no scale-unit rendering. */
     scaledDisplay?: boolean;
+    /** Unit-of-measure for a Number KPI (from Unit Master, e.g. "lb"); appended as a suffix. */
+    unit?: string | null;
   },
 ): string {
   if (val == null) return "—";
-  const { measurementUnit, currency, targetScale, numberFormat = "standard", scaledDisplay = false } = opts;
+  const { measurementUnit, currency, targetScale, numberFormat = "standard", scaledDisplay = false, unit } = opts;
   if (scaledDisplay && measurementUnit === "Currency" && currency && targetScale) {
     const m = getMultiplier(currency, targetScale);
     if (m > 1) {
@@ -93,7 +95,10 @@ export function formatScaledKpiValue(
   }
   // No scale / non-currency: INR forces Indian even when the toggle is off.
   const effective: NumberFormat = currency === "INR" ? "indian" : numberFormat;
-  return fmtCompactBy(val, effective);
+  const base = fmtCompactBy(val, effective);
+  // Number KPI with a Unit Master unit → append it ("16 lb", "150K lb").
+  if (measurementUnit === "Number" && unit) return `${base} ${unit}`;
+  return base;
 }
 
 /**

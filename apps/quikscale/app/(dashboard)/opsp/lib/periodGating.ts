@@ -77,6 +77,40 @@ export function firstSelectableQuarter({
   return qNum ? `Q${qNum}` : "Q1";
 }
 
+/**
+ * The quarter to land on when opening the OPSP editor for `year` WITHOUT a
+ * URL-pinned period. Prefers the DB-resolved CURRENT quarter (custom-quarter
+ * aware) when it's a real, finalize-chain-selectable quarter; otherwise the
+ * first selectable quarter.
+ *
+ * Why not just the calendar quarter: today's calendar month can differ from the
+ * tenant's custom quarter (e.g. a 14-week Q1 running into July), AND a future
+ * quarter stays locked until the prior one is finalized — so the calendar
+ * default could land the editor on a quarter the picker has disabled.
+ * `currentQuarter` is null when it couldn't be resolved (→ first selectable).
+ */
+export function resolveOpspLandingQuarter({
+  currentQuarter,
+  year,
+  planStartYear,
+  planStartQuarter,
+  reviewedQuarters,
+}: {
+  currentQuarter: string | null;
+  year: number;
+  planStartYear: number | null;
+  planStartQuarter: string | null;
+  reviewedQuarters: string[];
+}): string {
+  if (currentQuarter && /^Q[1-4]$/.test(currentQuarter)) {
+    const qNum = parseInt(currentQuarter.slice(1), 10);
+    if (isQuarterSelectable({ year, qNum, planStartYear, planStartQuarter, reviewedQuarters })) {
+      return currentQuarter;
+    }
+  }
+  return firstSelectableQuarter({ year, planStartYear, planStartQuarter, reviewedQuarters });
+}
+
 export interface YearSelectableArgs {
   year: number;
   /** The fiscal year that contains today's date. Always selectable. */

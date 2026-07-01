@@ -21,7 +21,8 @@
 
 import { useState, useEffect, useCallback, useRef } from "react";
 import { normalizeLoadedOPSP } from "@/lib/utils/opspNormalize";
-import { getFiscalYear, getFiscalQuarter } from "@/lib/utils/fiscal";
+import { getFiscalYear, getFiscalQuarter, resolveQuarterForDate } from "@/lib/utils/fiscal";
+import { resolveOpspLandingQuarter } from "../lib/periodGating";
 import type {
   TargetRow,
   GoalRow,
@@ -256,6 +257,9 @@ export function useOPSPForm(options: UseOPSPFormOptions = {}): OPSPFormHandle {
   /* ── Load on mount: check OPSP config first, then delegate to loadForPeriod ── */
   useEffect(() => {
     (async () => {
+      // Quarter the initial load will open; overridden below from the DB-resolved
+      // current quarter when the user didn't pin a period via the URL.
+      let landingQuarter = form.quarter;
       try {
         // 1. Check OPSP plan config (has the wizard been completed?)
         const configRes = await fetch("/api/opsp/config");
@@ -275,11 +279,34 @@ export function useOPSPForm(options: UseOPSPFormOptions = {}): OPSPFormHandle {
             if (config.startYear != null) setPlanStartYear(config.startYear);
             if (config.endYear != null) setPlanEndYear(config.endYear);
             if (config.startQuarter != null) setPlanStartQuarter(config.startQuarter);
+
+            // Landing quarter (no URL pin): the DB-resolved CURRENT quarter
+            // (custom-quarter aware) if it's reachable in the finalize chain,
+            // else the first selectable quarter. Prevents landing on the
+            // calendar-derived quarter (e.g. Q2 in July) which may be disabled
+            // in the picker because the prior quarter isn't finalized yet.
+            if (!urlQuarter) {
+              let resolvedCurrent: string | null = null;
+              try {
+                const qRes = await fetch(`/api/org/quarters?year=${form.year}`);
+                const qJson = await qRes.json();
+                if (qJson.success) resolvedCurrent = resolveQuarterForDate(qJson.data, new Date());
+              } catch {
+                // Quarter lookup failed — fall through with the calendar default.
+              }
+              landingQuarter = resolveOpspLandingQuarter({
+                currentQuarter: resolvedCurrent,
+                year: form.year,
+                planStartYear: config.startYear ?? null,
+                planStartQuarter: config.startQuarter ?? null,
+                reviewedQuarters: Array.isArray(config.reviewedQuarters) ? config.reviewedQuarters : [],
+              });
+            }
           }
         }
 
         // 2. Delegate to loadForPeriod so direct URL → Q2/Q3/Q4 also triggers CF.
-        await loadForPeriod(form.year, form.quarter);
+        await loadForPeriod(form.year, landingQuarter);
       } catch {
         // A network failure on the config fetch must still end the loading
         // state — otherwise the form hangs on a spinner instead of falling
