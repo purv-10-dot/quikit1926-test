@@ -126,7 +126,11 @@ export const createLeadSchema = createLeadObjectSchema.superRefine((val, ctx) =>
 const updateLeadObjectSchema = createLeadObjectSchema
   .omit({ leadType: true, firstName: true, lastName: true, company: true })
   .extend({
-    leadType: z.enum(LEAD_TYPE_OPTIONS).optional(),
+    // Nullable to match the create schema and the frontend payload, which sends
+    // `leadType: leadType || null` when the field is left blank. Without
+    // `.nullable()`, editing a lead that has no leadType (e.g. created via the
+    // basic form) fails validation with "received null".
+    leadType: z.enum(LEAD_TYPE_OPTIONS).optional().nullable(),
     firstName: z.string().trim().min(1).max(120).optional(),
     lastName: z.string().trim().min(1).max(120).optional(),
     company: z.string().trim().min(1).optional(),
