@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import { Loader2, Eye, Pencil } from "lucide-react";
 import { RichTextEditor } from "@/components/rich-text-editor-lazy";
+import { sanitizeRichText } from "@/lib/sanitize";
 
 interface SharedDoc {
   id: string;
@@ -171,7 +172,7 @@ export function PublicDoc({ token }: { token: string }) {
               <h1 className="text-3xl font-bold text-gray-900 mb-6">{title || "Untitled doc"}</h1>
               <div
                 className="qt-rich-content"
-                dangerouslySetInnerHTML={{ __html: content }}
+                dangerouslySetInnerHTML={{ __html: sanitizeRichText(content) }}
               />
             </div>
           )}

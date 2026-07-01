@@ -29,21 +29,56 @@ interface PageResp<T> {
 
 const MIN_GAP_MS = 125; // ~8 req/s
 
+// Atlassian Jira Cloud sites are always `<site>.atlassian.net` (subdomains
+// allowed). A strict suffix allow-list also excludes IPs and internal/link-local
+// hosts by construction, since none of them end in `.atlassian.net`.
+const ATLASSIAN_HOST = /^(?:[a-z0-9](?:[a-z0-9-]*[a-z0-9])?\.)+atlassian\.net$/;
+
+/**
+ * SEC-05: normalise a user-supplied Jira domain to a bare host and constrain it
+ * to Atlassian Jira Cloud (`*.atlassian.net`). Rejects embedded credentials,
+ * explicit ports, IPs, and any non-Atlassian host — closing the SSRF vector
+ * where a migration could be pointed at an internal service while carrying the
+ * admin's Basic-auth credentials. Throws (before any outbound request) on a
+ * disallowed domain; returns the validated bare host otherwise.
+ */
+export function normalizeJiraHost(domain: string): string {
+  if (typeof domain !== "string" || !domain.trim()) {
+    throw new Error("Jira domain is required.");
+  }
+  const raw = domain.trim();
+  // Reject embedded credentials up-front (user@host or user:pass@host) — after
+  // stripping the path they could otherwise smuggle a different authority.
+  if (raw.includes("@")) {
+    throw new Error("Jira domain must not contain credentials.");
+  }
+  const host = raw
+    .replace(/^https?:\/\//i, "")
+    .split("/")[0]
+    .replace(/\/+$/, "")
+    .toLowerCase();
+  if (host.includes(":")) {
+    throw new Error("Jira domain must not include a port.");
+  }
+  if (!ATLASSIAN_HOST.test(host)) {
+    throw new Error(
+      `Jira domain "${host}" is not an Atlassian Cloud site (only *.atlassian.net is allowed).`,
+    );
+  }
+  return host;
+}
+
 export class JiraClient {
   private readonly base: string;
   private readonly authHeader: string;
   private lastRequestAt = 0;
 
   constructor(creds: JiraCreds) {
-    // Defensive normalisation — users often paste the URL from their browser
-    // bar like "https://acme.atlassian.net/jira" or "acme.atlassian.net/".
-    // Strip the protocol, any path, and the trailing slash so we always end
-    // up with bare host + "https://" prefix exactly once.
-    const host = creds.domain
-      .trim()
-      .replace(/^https?:\/\//i, "")
-      .split("/")[0]
-      .replace(/\/+$/, "");
+    // Normalise + SSRF allow-list check (SEC-05). Users often paste the URL from
+    // their browser bar ("https://acme.atlassian.net/jira", "acme.atlassian.net/");
+    // this strips protocol/path/trailing-slash and rejects anything that isn't a
+    // bare *.atlassian.net host.
+    const host = normalizeJiraHost(creds.domain);
     this.base = `https://${host}`;
     this.authHeader =
       "Basic " +

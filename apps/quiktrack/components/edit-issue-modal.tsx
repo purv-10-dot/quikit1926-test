@@ -4,6 +4,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { useSession } from "next-auth/react";
 import { CustomFieldsSection } from "@/components/custom-fields/custom-fields-section";
 import type { CustomFieldDTO } from "@/lib/services/customFields";
+import { sanitizeRichText } from "@/lib/sanitize";
 import type { FieldValue } from "@/lib/customFields/registry";
 import {
   X,
@@ -1038,7 +1039,7 @@ export function EditIssueModal({
                     {description ? (
                       <span
                         className="prose prose-sm max-w-none text-gray-800"
-                        dangerouslySetInnerHTML={{ __html: description }}
+                        dangerouslySetInnerHTML={{ __html: sanitizeRichText(description) }}
                       />
                     ) : (
                       "Add a description..."

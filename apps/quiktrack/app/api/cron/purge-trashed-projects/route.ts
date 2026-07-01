@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 import { db } from "@/lib/db";
+import { safeSecretEqual } from "@/lib/secret-compare";
 
 /**
  * Permanently deletes projects that have been in the trash (soft-deleted) for
@@ -34,7 +35,7 @@ export async function POST(req: NextRequest) {
   }
   const auth = req.headers.get("authorization") ?? "";
   const provided = auth.startsWith("Bearer ") ? auth.slice(7) : "";
-  if (provided !== expected) {
+  if (!safeSecretEqual(provided, expected)) {
     return NextResponse.json({ success: false, error: "Unauthorized" }, { status: 401 });
   }
 
