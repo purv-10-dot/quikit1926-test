@@ -2,7 +2,7 @@ import { NextResponse, type NextRequest } from "next/server";
 import { prisma } from "@/lib/db/prisma";
 import { requireApiUser, isResponse } from "@/lib/auth/require";
 import { assertModule } from "@/lib/auth/permissions";
-import { accountScopeFilter } from "@/lib/auth/account-acl";
+import { getScope } from "@/lib/auth/account-acl";
 
 export const runtime = "nodejs";
 
@@ -26,12 +26,25 @@ export async function GET(req: NextRequest) {
       100,
     );
 
-    const acl = await accountScopeFilter(user);
-    const baseWhere: Record<string, unknown> = { orgId: user.orgId };
-    if (q) {
-      baseWhere.name = { contains: q, mode: "insensitive" };
+    // Scope to the accounts this user can see. `accountScopeFilter` builds an
+    // `accountId`-keyed OR clause meant for lead/contact/opportunity tables —
+    // applied to CrmAccount (whose own key is `id`, not `accountId`) it matched
+    // nothing, so the dropdown showed "No accounts match" for any account the
+    // user didn't personally own. Filter CrmAccount.id against the allowed set,
+    // mirroring the accounts list endpoint (GET /api/accounts).
+    const scope = await getScope(user);
+    // Exclude trashed accounts — the picker should only offer accounts that are
+    // live on the Accounts page (which filters deletedAt: null for its list view).
+    const where: Record<string, unknown> = { orgId: user.orgId, deletedAt: null };
+    if (!scope.unrestricted) {
+      if (scope.allowedAccountIds.length === 0) {
+        return NextResponse.json({ success: true, data: { items: [] } });
+      }
+      where.id = { in: scope.allowedAccountIds };
     }
-    const where: Record<string, unknown> = acl ? { AND: [baseWhere, acl] } : baseWhere;
+    if (q) {
+      where.name = { contains: q, mode: "insensitive" };
+    }
 
     const accounts = await prisma.crmAccount.findMany({
       where,

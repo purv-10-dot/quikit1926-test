@@ -150,6 +150,10 @@ export const convertLeadSchema = z
     opportunityTitle: z.string().optional(),
     opportunityAmount: z.number().optional(),
     opportunityCloseDate: z.string().datetime().optional(),
+    // Optional pre-selected account to convert into. When present, the convert
+    // route links the Contact/Opportunity to this Account instead of resolving
+    // one from the lead's company name. Absent → unchanged company-name logic.
+    accountId: z.string().trim().min(1).optional().nullable(),
   })
   .superRefine((val, ctx) => {
     if (val.createOpportunity && !val.createContact) {

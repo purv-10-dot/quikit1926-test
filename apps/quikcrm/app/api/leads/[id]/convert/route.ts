@@ -37,9 +37,16 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
       );
     }
     await assertAccountAccess(user, lead.accountId);
+    // A pre-selected account (from the Convert modal) must be in the caller's
+    // scope, same gate the lead's own account passes above.
+    if (opts.accountId) await assertAccountAccess(user, opts.accountId);
 
     const result = await prisma.$transaction(async (tx) => {
-      let accountId: string | null = lead.accountId;
+      // Prefer an explicitly selected account, then the lead's existing link.
+      // When neither is set, the block below resolves one from the company name
+      // exactly as before (the selection simply pre-fills `accountId`, which
+      // short-circuits the `if (!accountId …)` company-name branch).
+      let accountId: string | null = opts.accountId ?? lead.accountId;
       if (!accountId && lead.company && lead.company.trim()) {
         const accountName = lead.company.trim();
         const existing = await tx.crmAccount.findFirst({
