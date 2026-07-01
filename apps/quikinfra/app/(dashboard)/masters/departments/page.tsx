@@ -91,11 +91,12 @@ export default function DepartmentsPage() {
     } catch { /* error toast handled globally */ }
   };
 
-  // Soft delete — the DELETE endpoint flips status to "inactive" (same
-  // effect as a status update), but routing through the delete hook gives
-  // the correct "Department deleted" toast instead of "Department updated".
-  // MasterListPage hides inactive rows by default; users can toggle
-  // "Inactive" to find them and click Restore to re-activate.
+  // Delete vs deactivate are two distinct actions:
+  //   - Delete (this handler) → status "deleted": the row is removed from the
+  //     UI entirely (neither the active list nor the Inactive tab shows it).
+  //     It stays in the DB so references aren't orphaned.
+  //   - Setting status "inactive" via the form keeps the row visible under
+  //     the Inactive tab, where it can be restored.
   const handleDelete = async (item: { id: string }) => {
     await deleteMutation.mutateAsync(item.id);
   };
@@ -119,8 +120,8 @@ export default function DepartmentsPage() {
             <span className="font-semibold text-gray-900">“{item.name}”</span>
             {item.code ? <> (<span className="font-mono">{item.code}</span>)</> : null}?
             <br />
-            It will be hidden from the list. You can restore it later from the
-            “Show deleted” view.
+            It will be removed from the list. To keep a department but pause it,
+            set its status to Inactive instead — those stay under the Inactive tab.
           </>
         )}
         emptyIcon={<Users className="w-8 h-8" />}
@@ -133,14 +134,14 @@ export default function DepartmentsPage() {
         <FormSection title="Department Details">
           <FormRow>
             <Field label="Department Code" required error={errors.code} hint="Short code shown in the list (e.g. DEPT-ENG)">
-              <TextInput value={form.code} onChange={v => set("code", v.toUpperCase())} placeholder="DEPT-ENG" className="font-mono" invalid={!!errors.code} />
+              <TextInput value={form.code} onChange={v => set("code", v.toUpperCase())} placeholder="DEPT-ENG" invalid={!!errors.code} />
             </Field>
             <Field label="Department Name" required error={errors.name}>
               <TextInput value={form.name} onChange={v => set("name", v)} placeholder="e.g. Engineering, Procurement" invalid={!!errors.name} />
             </Field>
           </FormRow>
           <Field label="Cost Center Code" error={errors.costCenter} hint="For accounting allocation (separate from Department Code)">
-            <TextInput value={form.costCenter} onChange={v => set("costCenter", v)} placeholder="CC-001" className="font-mono" invalid={!!errors.costCenter} />
+            <TextInput value={form.costCenter} onChange={v => set("costCenter", v)} placeholder="CC-001" invalid={!!errors.costCenter} />
           </Field>
           <Field label="Status">
             <SelectInput value={form.status} onChange={v => set("status", v)} options={STATUS_OPTIONS} />

@@ -32,7 +32,7 @@ const MASTER_MODELS: Record<string, string> = {
   terms: "cnTermsCondition",
 };
 
-type MasterCountWhere = { orgId: string; status?: { not: string } };
+type MasterCountWhere = { orgId: string; status?: { notIn: string[] } };
 
 /**
  * Model-name → typed count thunk. Calls the real Prisma delegate so the
@@ -63,7 +63,7 @@ async function countMaster(model: string, orgId: string): Promise<number> {
   const finder = COUNT_FINDERS[model];
   if (!finder) return 0;
   try {
-    return await finder({ orgId, status: { not: "inactive" } });
+    return await finder({ orgId, status: { notIn: ["inactive", "deleted"] } });
   } catch {
     try {
       return await finder({ orgId });

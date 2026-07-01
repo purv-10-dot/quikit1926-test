@@ -2,7 +2,7 @@
 
 import { useSession, signOut } from "next-auth/react";
 import { useEffect, useRef } from "react";
-import { useRouter } from "next/navigation";
+import { useRouter, usePathname } from "next/navigation";
 
 // Background poll for revoked access. Set to 24h because:
 //   1. Server-side JWT callback already re-checks membership every 5min
@@ -44,6 +44,15 @@ export function createSessionGuard(config: SessionGuardConfig = {}) {
   const loginRoute = config.loginRoute || "/login";
 
   async function handleInvalid(reason?: string) {
+    // Org suspended by a super-admin: the user stays authenticated (they may
+    // belong to other orgs) but is bounced to the launcher's org picker, which
+    // surfaces the suspension popup and hides the suspended org. Cross-domain →
+    // hard nav. We do NOT signOut — only this org is off-limits, not the user.
+    if (reason === "org_suspended") {
+      const launcher = (process.env.NEXT_PUBLIC_QUIKIT_URL ?? "").replace(/\/+$/, "");
+      window.location.href = `${launcher}/apps?reason=org_suspended`;
+      return;
+    }
     const param = reason === "app_access_revoked" ? "app_revoked" : "deactivated";
     await signOut({ callbackUrl: `${loginRoute}?reason=${param}` });
   }
@@ -51,8 +60,14 @@ export function createSessionGuard(config: SessionGuardConfig = {}) {
   return function SessionGuard({ children }: { children: React.ReactNode }) {
     const { status, update } = useSession();
     const router = useRouter();
+    const pathname = usePathname();
     const intervalRef = useRef<NodeJS.Timeout | null>(null);
 
+    // Validate on mount AND on every route change. Soft navigations between
+    // modules don't remount this guard (the layout persists), so without the
+    // pathname dependency a user could keep clicking modules inside a
+    // suspended/revoked org without re-validation. Each nav is user activity,
+    // so re-checking here mirrors the existing focus-listener philosophy.
     useEffect(() => {
       if (status !== "authenticated") return;
       async function check() {
@@ -60,7 +75,7 @@ export function createSessionGuard(config: SessionGuardConfig = {}) {
         if (!data.valid) await handleInvalid(data.reason);
       }
       check();
-    }, [status]);
+    }, [status, pathname]);
 
     useEffect(() => {
       if (status !== "authenticated") return;

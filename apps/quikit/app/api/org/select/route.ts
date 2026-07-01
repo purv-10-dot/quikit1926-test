@@ -19,7 +19,10 @@ export async function POST(request: NextRequest) {
   }
 
   const membership = await db.orgMember.findFirst({
-    where: { userId: session.user.id, orgId, status: "active" },
+    // `org: { status: "active" }` blocks selecting a suspended org even for a
+    // user who still has an active membership row — suspension disables the
+    // whole org, not just new members. Mirrors @quikit/auth/org-select.
+    where: { userId: session.user.id, orgId, status: "active", org: { status: "active" } },
   });
 
   if (!membership) {

@@ -218,6 +218,19 @@ export async function updateTask(
   if (patch.taskType !== undefined) data.taskType = patch.taskType;
   if (patch.priority !== undefined) data.priority = patch.priority;
   if (patch.status !== undefined) data.status = patch.status;
+  // completedAt stamping (keyed on the transition, existing.status vs patch.status):
+  //   - INTO Completed (was not Completed) → stamp now()
+  //   - OUT of Completed (was Completed, now something else) → clear to null
+  //   - otherwise (incl. already-Completed re-edit, non-status edit) → leave untouched
+  // This is the sole status→Completed write path (updateTask), so it captures every
+  // completion for the digest's "completed in window" metric.
+  if (patch.status !== undefined) {
+    if (patch.status === "Completed" && existing.status !== "Completed") {
+      data.completedAt = new Date();
+    } else if (patch.status !== "Completed" && existing.status === "Completed") {
+      data.completedAt = null;
+    }
+  }
   if (patch.dueDate !== undefined) {
     data.dueDate = patch.dueDate ? new Date(patch.dueDate) : null;
   }

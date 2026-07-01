@@ -53,3 +53,70 @@ describe("getOrgId factory", () => {
     expect(await getOrgId(USER)).toBeNull();
   });
 });
+
+describe("getOrgId per-app access gate (appSlug)", () => {
+  // App-scoped factory — exercises the OrgAppAccess / UserAppAccess gate.
+  const getScopedOrgId = createGetOrgId(stubAuthOptions, { appSlug: "quikscale" });
+  const APP_ID = "app-quikscale";
+
+  // Helper: seed the active-membership re-validation + app catalog lookup that
+  // every gated path runs before the access checks.
+  function seedMembershipAndApp() {
+    mockDb.orgMember.findFirst.mockResolvedValue({ id: "m1" } as any);
+    mockDb.app.findUnique.mockResolvedValue({ id: APP_ID } as any);
+  }
+
+  it("allows an org admin via OrgAppAccess even with NO UserAppAccess row (regression: self-serve trial lockout)", async () => {
+    setSession({ id: USER, orgId: ORG, role: "admin", membershipRole: "org_admin" } as any);
+    seedMembershipAndApp();
+    mockDb.orgAppAccess.findUnique.mockResolvedValue({ enabled: true, trialEndsAt: null } as any);
+    mockDb.userAppAccess.findUnique.mockResolvedValue(null);
+    expect(await getScopedOrgId(USER)).toBe(ORG);
+  });
+
+  it("allows an org admin during an unexpired trial", async () => {
+    setSession({ id: USER, orgId: ORG, role: "admin", membershipRole: "org_admin" } as any);
+    seedMembershipAndApp();
+    const future = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000);
+    mockDb.orgAppAccess.findUnique.mockResolvedValue({ enabled: true, trialEndsAt: future } as any);
+    expect(await getScopedOrgId(USER)).toBe(ORG);
+  });
+
+  it("returns null when the org's trial has expired", async () => {
+    setSession({ id: USER, orgId: ORG, role: "admin", membershipRole: "org_admin" } as any);
+    seedMembershipAndApp();
+    const past = new Date(Date.now() - 1000);
+    mockDb.orgAppAccess.findUnique.mockResolvedValue({ enabled: true, trialEndsAt: past } as any);
+    expect(await getScopedOrgId(USER)).toBeNull();
+  });
+
+  it("returns null when the org has no OrgAppAccess row for the app", async () => {
+    setSession({ id: USER, orgId: ORG, role: "admin", membershipRole: "org_admin" } as any);
+    seedMembershipAndApp();
+    mockDb.orgAppAccess.findUnique.mockResolvedValue(null);
+    expect(await getScopedOrgId(USER)).toBeNull();
+  });
+
+  it("requires a UserAppAccess row for a non-admin member", async () => {
+    setSession({ id: USER, orgId: ORG, role: "employee", membershipRole: "member" } as any);
+    seedMembershipAndApp();
+    mockDb.orgAppAccess.findUnique.mockResolvedValue({ enabled: true, trialEndsAt: null } as any);
+    mockDb.userAppAccess.findUnique.mockResolvedValue(null);
+    expect(await getScopedOrgId(USER)).toBeNull();
+  });
+
+  it("allows a non-admin member who has an explicit UserAppAccess row", async () => {
+    setSession({ id: USER, orgId: ORG, role: "employee", membershipRole: "member" } as any);
+    seedMembershipAndApp();
+    mockDb.orgAppAccess.findUnique.mockResolvedValue({ enabled: true, trialEndsAt: null } as any);
+    mockDb.userAppAccess.findUnique.mockResolvedValue({ id: "uaa1" } as any);
+    expect(await getScopedOrgId(USER)).toBe(ORG);
+  });
+
+  it("does not block when the app slug is absent from the catalog", async () => {
+    setSession({ id: USER, orgId: ORG, role: "employee", membershipRole: "member" } as any);
+    mockDb.orgMember.findFirst.mockResolvedValue({ id: "m1" } as any);
+    mockDb.app.findUnique.mockResolvedValue(null);
+    expect(await getScopedOrgId(USER)).toBe(ORG);
+  });
+});

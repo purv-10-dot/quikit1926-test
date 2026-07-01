@@ -172,6 +172,55 @@ export async function sendPasswordResetOtpEmail(params: {
 }
 
 /**
+ * Self-serve registration: the user submitted the "Create your workspace"
+ * form. We email a 6-digit code (5-minute expiry) they enter on the OTP step
+ * to prove email ownership before setting a password. Mirrors the password-
+ * reset OTP email styling.
+ */
+export async function sendRegistrationOtpEmail(params: {
+  to: string;
+  otp: string;
+}): Promise<void> {
+  const safeOtp = esc(params.otp);
+  const html = `<!DOCTYPE html>
+<html>
+  <body style="margin:0;padding:0;background:#f8fafc;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;">
+    <div style="max-width:560px;margin:40px auto;background:#ffffff;border-radius:12px;overflow:hidden;box-shadow:0 4px 6px -1px rgba(15,23,42,0.07);">
+      <div style="background:#4f46e5;padding:24px 32px;">
+        <h1 style="margin:0;color:#ffffff;font-size:18px;font-weight:600;">QuikIT</h1>
+      </div>
+      <div style="padding:32px;">
+        <h2 style="margin:0 0 8px;color:#0f172a;font-size:20px;font-weight:600;">Confirm your email</h2>
+        <p style="margin:0 0 20px;color:#475569;font-size:15px;line-height:1.6;">
+          Welcome to QuikIT! Enter the code below to verify your email and finish setting up your workspace.
+        </p>
+        <div style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:8px;padding:24px;text-align:center;margin:20px 0;">
+          <p style="margin:0 0 12px;color:#64748b;font-size:12px;font-weight:600;letter-spacing:1px;text-transform:uppercase;">Your verification code</p>
+          <p style="margin:0;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;color:#0f172a;font-size:34px;font-weight:600;letter-spacing:8px;">${safeOtp}</p>
+          <p style="margin:14px 0 0;color:#94a3b8;font-size:12px;">This code expires in 5 minutes.</p>
+        </div>
+        <p style="margin:20px 0 0;color:#94a3b8;font-size:12px;line-height:1.5;">
+          If you didn't try to create a QuikIT workspace, you can safely ignore this email.
+        </p>
+      </div>
+      <div style="padding:16px 32px;background:#f8fafc;border-top:1px solid #e2e8f0;">
+        <p style="margin:0;color:#94a3b8;font-size:12px;">Never share this code with anyone. QuikIT staff will never ask for it.</p>
+      </div>
+    </div>
+  </body>
+</html>`;
+
+  await deliver(
+    {
+      to: params.to,
+      subject: "Your QuikIT verification code",
+      html,
+    },
+    () => console.log("[auth-email] registration OTP for", params.to, "→", params.otp),
+  );
+}
+
+/**
  * Password-reset invite: the user has clicked "Send code" on the marketing
  * Reset-password screen, we've reset their password back to the system
  * default and minted a fresh single-use OrgMember.invitationToken. This

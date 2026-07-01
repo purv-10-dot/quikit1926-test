@@ -1,8 +1,9 @@
 "use client";
 
-import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { useQuery, useMutation, useQueryClient, keepPreviousData } from "@tanstack/react-query";
 import * as kpiService from "@/lib/services/kpiService";
 import { CreateKPIInput, UpdateKPIInput, WeeklyValueInput, KPINoteInput, KPIListParams } from "@/lib/schemas/kpiSchema";
+import { invalidateEntity } from "@/lib/hooks/dashboardInvalidation";
 
 // Query Keys
 const kpiKeys = {
@@ -14,6 +15,7 @@ const kpiKeys = {
   weekly: (id: string) => [...kpiKeys.detail(id), "weekly"],
   notes: (id: string) => [...kpiKeys.detail(id), "notes"],
   logs: (id: string) => [...kpiKeys.detail(id), "logs"],
+  audit: (id: string) => [...kpiKeys.detail(id), "audit"],
 };
 
 // List KPIs with filters
@@ -22,19 +24,20 @@ export function useKPIs(params: Partial<KPIListParams> = {}) {
     queryKey: kpiKeys.list(params),
     queryFn: () => kpiService.getKPIs(params),
     staleTime: 1000 * 60 * 5, // 5 minutes
+    // Keep the current page visible while the next page/sort/search loads —
+    // no spinner flash on pagination.
+    placeholderData: keepPreviousData,
   });
 }
 
-// List Team KPIs — convenience wrapper that forces kpiLevel="team". Default
-// pageSize is 100 to match kpiListParamsSchema cap (security row-cap). Team
-// KPI sets per tenant per quarter are typically < 50 so this is safe
-// truncation in practice. If a tenant ever exceeds 100 team KPIs, switch
-// to paginated fetch or a dedicated /api/kpi/all endpoint.
+// List Team KPIs — convenience wrapper that forces kpiLevel="team". The Team
+// KPI page now drives DB-level pagination (page/pageSize), so the caller
+// supplies the page size; default 10 to match the other list pages.
 export function useTeamKPIs(params: Partial<KPIListParams> = {}) {
   return useKPIs({
     ...params,
     kpiLevel: "team",
-    pageSize: params.pageSize ?? 100,
+    pageSize: params.pageSize ?? 10,
   });
 }
 
@@ -55,10 +58,9 @@ export function useCreateKPI() {
   return useMutation({
     mutationFn: (input: CreateKPIInput) => kpiService.createKPI(input),
     onSuccess: () => {
-      // Invalidate lists so they refetch
-      queryClient.invalidateQueries({ queryKey: kpiKeys.lists() });
-      // Dashboard summary aggregates KPIs — keep it in sync.
-      queryClient.invalidateQueries({ queryKey: ["dashboard"] });
+      // Invalidate the KPI list + Dashboard summary AND the Dashboard
+      // infinite-scroll list (["kpi-infinite"]) — see dashboardInvalidation.ts.
+      invalidateEntity(queryClient, "kpi");
     },
   });
 }
@@ -70,10 +72,8 @@ export function useUpdateKPI(id: string) {
   return useMutation({
     mutationFn: (input: Partial<UpdateKPIInput>) => kpiService.updateKPI(id, input),
     onSuccess: () => {
-      // Invalidate specific KPI and lists
-      queryClient.invalidateQueries({ queryKey: kpiKeys.detail(id) });
-      queryClient.invalidateQueries({ queryKey: kpiKeys.lists() });
-      queryClient.invalidateQueries({ queryKey: ["dashboard"] });
+      // detail + list + dashboard + dashboard-infinite (single source of truth).
+      invalidateEntity(queryClient, "kpi", { id });
     },
   });
 }
@@ -85,9 +85,10 @@ export function useDeleteKPI() {
   return useMutation({
     mutationFn: (id: string) => kpiService.deleteKPI(id),
     onSuccess: () => {
-      // Invalidate all KPI queries
+      // Broad ["kpi"] invalidation covers cascade-deleted children's detail/weekly;
+      // invalidateEntity adds the Dashboard infinite list + summary.
       queryClient.invalidateQueries({ queryKey: kpiKeys.all });
-      queryClient.invalidateQueries({ queryKey: ["dashboard"] });
+      invalidateEntity(queryClient, "kpi");
     },
   });
 }
@@ -104,7 +105,7 @@ export function useRestoreKPI() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: kpiKeys.all });
-      queryClient.invalidateQueries({ queryKey: ["dashboard"] });
+      invalidateEntity(queryClient, "kpi");
     },
   });
 }
@@ -125,7 +126,7 @@ export function useBulkRestoreKPI() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: kpiKeys.all });
-      queryClient.invalidateQueries({ queryKey: ["dashboard"] });
+      invalidateEntity(queryClient, "kpi");
     },
   });
 }
@@ -148,12 +149,9 @@ export function useUpdateWeeklyValue(kpiId: string) {
   return useMutation({
     mutationFn: (input: WeeklyValueInput) => kpiService.updateWeeklyValue(kpiId, input),
     onSuccess: () => {
-      // Invalidate weekly values and parent KPI
-      queryClient.invalidateQueries({ queryKey: kpiKeys.weekly(kpiId) });
-      queryClient.invalidateQueries({ queryKey: kpiKeys.detail(kpiId) });
-      queryClient.invalidateQueries({ queryKey: kpiKeys.lists() });
-      // Dashboard pulls weekly values + progress%; keep it fresh after a save.
-      queryClient.invalidateQueries({ queryKey: ["dashboard"] });
+      // detail(kpiId) prefix-matches its weekly child; plus list + dashboard +
+      // dashboard-infinite so the Dashboard KPI table reflects the new value.
+      invalidateEntity(queryClient, "kpi", { id: kpiId });
     },
   });
 }
@@ -167,10 +165,7 @@ export function useUpdateWeeklyValuesBatch(kpiId: string) {
     mutationFn: (inputs: WeeklyValueInput[]) =>
       kpiService.updateWeeklyValuesBatch(kpiId, inputs),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: kpiKeys.weekly(kpiId) });
-      queryClient.invalidateQueries({ queryKey: kpiKeys.detail(kpiId) });
-      queryClient.invalidateQueries({ queryKey: kpiKeys.lists() });
-      queryClient.invalidateQueries({ queryKey: ["dashboard"] });
+      invalidateEntity(queryClient, "kpi", { id: kpiId });
     },
   });
 }
@@ -218,5 +213,62 @@ export function useLogs(kpiId: string) {
     queryFn: () => kpiService.getLogs(kpiId),
     enabled: !!kpiId,
     staleTime: 1000 * 60 * 5, // 5 minutes
+  });
+}
+
+// Get the centralized Change History timeline (AuditEvent/AuditChange)
+export function useAuditTimeline(kpiId: string, enabled = true) {
+  return useQuery({
+    queryKey: kpiKeys.audit(kpiId),
+    queryFn: () => kpiService.getAuditTimeline(kpiId),
+    enabled: !!kpiId && enabled,
+    // The Change History panel mounts only while open, so always refetch on
+    // open: an edit made since the last view (weekly/field/status/delete/
+    // restore) must show without a full page refresh. staleTime:0 marks cached
+    // data stale so the mount refetch fires; cached events render meanwhile.
+    staleTime: 0,
+    refetchOnMount: "always",
+  });
+}
+
+// Per-KPI unread audit-event count (drives the History button badge).
+const auditUnreadKey = (entityId: string) => ["audit", "unread", "KPI", entityId];
+
+export function useUnreadCount(entityId: string, enabled = true) {
+  return useQuery({
+    queryKey: auditUnreadKey(entityId),
+    queryFn: () => kpiService.getAuditUnreadCount(entityId),
+    enabled: !!entityId && enabled,
+    staleTime: 1000 * 30,
+  });
+}
+
+// Marks an entity's timeline read; optimistically clears its badge.
+export function useMarkAuditRead() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (entityId: string) => kpiService.markAuditRead("KPI", entityId),
+    onMutate: (entityId: string) => {
+      queryClient.setQueryData(auditUnreadKey(entityId), 0);
+    },
+    onSuccess: () => {
+      // Re-sync from the server once the mark is persisted.
+      queryClient.invalidateQueries({ queryKey: ["audit", "unread"] });
+      // Also refresh the page-level batched counts (UnreadCountsProvider).
+      queryClient.invalidateQueries({ queryKey: ["audit-unread-counts"] });
+    },
+    // On failure we keep the optimistic 0 (no rollback) — the badge re-appears
+    // on the next natural refetch (window focus). Matches UC-1.17.
+  });
+}
+
+// Module-wide unread (sidebar dot). Refetches on window focus so the dot
+// clears shortly after the user has read the events (AC-1.33).
+export function useModuleUnread(moduleKey = "KPI") {
+  return useQuery({
+    queryKey: ["audit", "module-unread", moduleKey],
+    queryFn: () => kpiService.getModuleUnreadCount(moduleKey),
+    refetchOnWindowFocus: true,
+    staleTime: 1000 * 60,
   });
 }

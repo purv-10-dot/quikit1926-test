@@ -66,6 +66,13 @@ describe("GET /api/masters/departments — happy path", () => {
     expect(where.orgId).toBe(TEST_TENANT);
   });
 
+  it("excludes deleted rows so they leave the UI entirely", async () => {
+    db.cnDepartment.findMany.mockResolvedValue([]);
+    await GET(buildGET());
+    const where = db.cnDepartment.findMany.mock.calls[0][0].where;
+    expect(where.status).toEqual({ not: "deleted" });
+  });
+
   it("applies a search filter across code/name/costCenter", async () => {
     db.cnDepartment.findMany.mockResolvedValue([]);
     await GET(buildGET("search=Civil"));

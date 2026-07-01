@@ -44,3 +44,6 @@ packages/database/.env.tmp
 # ────────────────────────────────────────────────────────────────────────────
 /_internal/
 graphify-out/
+
+# Markdown files — local-only docs, analyses, scratch notes; never committed.
+*.md

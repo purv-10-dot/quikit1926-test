@@ -19,6 +19,7 @@ import { useState, useCallback } from "react";
 import { Loader2, Download, FileText, X } from "lucide-react";
 import type { FormData } from "../hooks/useOPSPForm";
 import { OPSPDocument } from "./OPSPDocument";
+import { redactOpspPerUserSections } from "../lib/pdfRedact";
 
 // PDFViewer is heavy (PDF.js + iframe) — load it client-side only.
 const PDFViewer = dynamic(
@@ -53,14 +54,23 @@ export function OPSPPreview({
   currentUserName?: string;
 }) {
   const [downloading, setDownloading] = useState(false);
+  // Download-confirm modal: asks whether to include the four per-user sections
+  // (Your Accountability / Quarterly Priorities / Critical # / Balanced
+  // Critical #). Default OFF — the user opts IN to include personal data.
+  const [confirmOpen, setConfirmOpen] = useState(false);
+  const [includeSections, setIncludeSections] = useState(false);
 
-  /* ── Download PDF ── single render path: react-pdf .toBlob() ── */
-  const handleDownloadPDF = useCallback(async () => {
+  /* ── Download PDF ── single render path: react-pdf .toBlob() ──
+     `includeSections=false` empties the four per-user sections so they print
+     blank; everything else is unchanged. */
+  const handleDownloadPDF = useCallback(async (include: boolean) => {
     if (downloading) return;
+    setConfirmOpen(false);
     setDownloading(true);
     try {
       const { pdf } = await import("@react-pdf/renderer");
-      const blob = await pdf(<OPSPDocument form={form} users={users} tenantName={tenantName} currentUserName={currentUserName} />).toBlob();
+      const docForm = include ? form : redactOpspPerUserSections(form);
+      const blob = await pdf(<OPSPDocument form={docForm} users={users} tenantName={tenantName} currentUserName={currentUserName} />).toBlob();
       const url = URL.createObjectURL(blob);
       const a = document.createElement("a");
       a.href = url;
@@ -76,6 +86,12 @@ export function OPSPPreview({
       setDownloading(false);
     }
   }, [downloading, form, users, tenantName, currentUserName]);
+
+  // Open the confirm modal (reset the checkbox to its default each time).
+  const openDownloadConfirm = useCallback(() => {
+    setIncludeSections(false);
+    setConfirmOpen(true);
+  }, []);
 
   if (!open) return null;
 
@@ -97,7 +113,7 @@ export function OPSPPreview({
         {/* Right: download + close */}
         <div className="flex items-center gap-2">
           <button
-            onClick={handleDownloadPDF}
+            onClick={openDownloadConfirm}
             disabled={downloading}
             className="flex items-center gap-1.5 px-3.5 py-1.5 text-xs font-semibold bg-blue-600 hover:bg-blue-500 text-white rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed shadow-sm"
           >
@@ -131,6 +147,53 @@ export function OPSPPreview({
           <OPSPDocument form={form} users={users} tenantName={tenantName} currentUserName={currentUserName} />
         </PDFViewer>
       </div>
+
+      {/* ── Download confirm: include the per-user sections? ── */}
+      {confirmOpen && (
+        <div className="fixed inset-0 z-[310] flex items-center justify-center bg-black/50 p-4">
+          <div className="w-full max-w-md rounded-xl bg-white shadow-xl">
+            <div className="px-5 pt-5">
+              <h2 className="text-sm font-semibold text-gray-900">Include personal section data?</h2>
+              <p className="mt-1 text-xs text-gray-500">
+                Do you want to include this OPSP&apos;s <span className="font-semibold">Your Accountability</span>,{" "}
+                <span className="font-semibold">Quarterly Priorities</span>,{" "}
+                <span className="font-semibold">Critical Number</span> &amp;{" "}
+                <span className="font-semibold">Balanced Critical Number</span> in the downloaded PDF?
+                Leave it unchecked to download with those sections blank.
+              </p>
+              <label className="mt-3 flex items-center gap-2 rounded-lg border border-gray-200 px-3 py-2.5 text-xs text-gray-700 cursor-pointer hover:bg-gray-50">
+                <input
+                  type="checkbox"
+                  checked={includeSections}
+                  onChange={(e) => setIncludeSections(e.target.checked)}
+                  className="rounded border-gray-300 text-blue-600 flex-shrink-0"
+                />
+                <span>
+                  Include Your Accountability, Quarterly Priorities, Critical Number &amp; Balanced
+                  Critical Number data
+                </span>
+              </label>
+            </div>
+            <div className="mt-4 flex items-center justify-end gap-2 border-t border-gray-100 px-5 py-3">
+              <button
+                type="button"
+                onClick={() => setConfirmOpen(false)}
+                className="rounded-lg border border-gray-200 px-3.5 py-2 text-xs font-semibold text-gray-600 hover:bg-gray-50"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={() => handleDownloadPDF(includeSections)}
+                className="flex items-center gap-1.5 rounded-lg bg-blue-600 px-3.5 py-2 text-xs font-semibold text-white hover:bg-blue-500"
+              >
+                <Download className="h-3.5 w-3.5" />
+                Download PDF
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

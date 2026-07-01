@@ -21,6 +21,8 @@ export type PriorityRow = {
   endWeek?: number | null;
   overallStatus: string;
   notes?: string | null;
+  /** True when created via the OPSP "Export → Create Priorities" flow (display-only). */
+  importedFromOpsp?: boolean;
   createdAt: string;
   // Audit columns — populated by GET /api/priority (see lib/api/auditUsers.ts).
   updatedAt?: string;

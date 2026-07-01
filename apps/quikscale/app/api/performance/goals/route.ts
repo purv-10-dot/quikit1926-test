@@ -21,11 +21,14 @@ export const GET = withOrgAuth(
       year: request.nextUrl.searchParams.get("year") ?? undefined,
       status: request.nextUrl.searchParams.get("status") ?? undefined,
       parentGoalId: request.nextUrl.searchParams.get("parentGoalId") ?? undefined,
+      search: request.nextUrl.searchParams.get("search") ?? undefined,
+      sortBy: request.nextUrl.searchParams.get("sortBy") ?? undefined,
+      sortOrder: request.nextUrl.searchParams.get("sortOrder") ?? undefined,
       page: request.nextUrl.searchParams.get("page") ?? undefined,
       pageSize: request.nextUrl.searchParams.get("pageSize") ?? undefined,
     });
     if (!parsed.success) return validationError(parsed, "Invalid query");
-    const { ownerId, quarter, year, status, parentGoalId, page, pageSize } =
+    const { ownerId, quarter, year, status, parentGoalId, search, sortBy, sortOrder, page, pageSize } =
       parsed.data;
 
     const where: Record<string, unknown> = { orgId };
@@ -34,8 +37,25 @@ export const GET = withOrgAuth(
     if (year) where.year = year;
     if (status) where.status = status;
     if (parentGoalId) where.parentGoalId = parentGoalId;
+    if (search) {
+      where.OR = [
+        { title: { contains: search, mode: "insensitive" } },
+        { description: { contains: search, mode: "insensitive" } },
+      ];
+    }
 
-    const [total, goals] = await Promise.all([
+    // DB-level sort. A single sortBy maps to one column; otherwise fall back to
+    // the chronological default. `id` is appended as a stable tie-breaker so
+    // pagination never drops/duplicates rows that share a sort value.
+    const orderBy = sortBy
+      ? [{ [sortBy]: sortOrder }, { id: "desc" as const }]
+      : [
+          { year: "desc" as const },
+          { quarter: "desc" as const },
+          { createdAt: "desc" as const },
+        ];
+
+    const [total, goals, statusGroups] = await Promise.all([
       db.goal.count({ where }),
       db.goal.findMany({
         where,
@@ -60,15 +80,29 @@ export const GET = withOrgAuth(
             select: { id: true, firstName: true, lastName: true, email: true },
           },
         },
-        orderBy: [{ year: "desc" }, { quarter: "desc" }, { createdAt: "desc" }],
+        orderBy,
         skip: (page - 1) * pageSize,
         take: pageSize,
       }),
+      // Status breakdown across the FULL filtered set (ignores pagination) so
+      // the page's stats strip stays accurate while only one page is fetched.
+      db.goal.groupBy({ by: ["status"], where, _count: { _all: true } }),
     ]);
+
+    const byStatus = Object.fromEntries(
+      statusGroups.map((g) => [g.status, g._count._all]),
+    ) as Record<string, number>;
+    const stats = {
+      total,
+      onTrack: byStatus["on-track"] ?? 0,
+      atRisk: byStatus["at-risk"] ?? 0,
+      completed: byStatus["completed"] ?? 0,
+    };
 
     return NextResponse.json({
       success: true,
       data: goals,
+      stats,
       meta: { page, pageSize, total, totalPages: Math.ceil(total / pageSize) },
     });
   },

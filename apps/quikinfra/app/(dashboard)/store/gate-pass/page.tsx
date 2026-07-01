@@ -229,7 +229,7 @@ export default function GatePassPage() {
   const { data: uomsData } = useUOMs();
 
   const projectOptions = (projectsData?.data ?? []).map((p) => ({ value: p.id, label: p.name }));
-  const locationOptions = (locationsData?.data ?? []).map((l) => ({ value: l.id, label: l.name }));
+  const locationOptions = (locationsData?.data ?? []).filter((l) => l?.status === "active").map((l) => ({ value: l.id, label: l.name }));
 
   const items = (itemsData?.data ?? []) as unknown as GroupedMaterialSelectItem[];
   const itemGroups = itemGroupsData?.data ?? [];
@@ -238,7 +238,7 @@ export default function GatePassPage() {
     for (const i of items) m.set(i.id, i);
     return m;
   }, [items]);
-  const uomOptions = (uomsData?.data ?? []).map((u) => ({
+  const uomOptions = (uomsData?.data ?? []).filter((u) => u?.status === "active").map((u) => ({
     value: u.code,
     label: u.code,
   }));

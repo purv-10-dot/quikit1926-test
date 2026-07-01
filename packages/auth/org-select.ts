@@ -51,9 +51,12 @@ export function createOrgSelectHandler(
     const { orgId } = parsed.data;
     const userId = session.user.id;
 
-    // 1. Active membership in this tenant
+    // 1. Active membership in an active (non-suspended) tenant. The
+    //    `org: { status: "active" }` clause means a suspended org can't be
+    //    selected even by a user who still has an active membership row —
+    //    suspension blocks the whole org, not just new members.
     const membership = await db.orgMember.findFirst({
-      where: { userId, orgId, status: "active" },
+      where: { userId, orgId, status: "active", org: { status: "active" } },
       select: { orgId: true, role: true },
     });
     if (!membership) {

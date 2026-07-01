@@ -65,6 +65,15 @@ interface FilterPickerProps {
   onSearchChange?: (query: string) => void;
   /** True while a server-side search / page fetch is in flight (server mode). */
   loading?: boolean;
+  /**
+   * Fallback option used to render the trigger label when `value` is set but
+   * the matching option isn't in the loaded `options` slice (e.g. a
+   * server-paginated list whose selected row sits beyond page 1, or a filter
+   * restored from persisted state and never picked in this session). Without
+   * it the trigger would wrongly fall back to `allLabel`. Only its label /
+   * avatar are used, and only when `selectedOption.value === value`.
+   */
+  selectedOption?: FilterOption;
 }
 
 export function FilterPicker({
@@ -78,6 +87,7 @@ export function FilterPicker({
   loadingMore = false,
   onSearchChange,
   loading = false,
+  selectedOption,
 }: FilterPickerProps) {
   const [open, setOpen] = useState(false);
   const [search, setSearch] = useState("");
@@ -115,7 +125,8 @@ export function FilterPicker({
   // them as-is. In client mode, filter the full options list locally.
   const selected =
     options.find(o => o.value === value) ??
-    (lastSelected && lastSelected.value === value ? lastSelected : undefined);
+    (lastSelected && lastSelected.value === value ? lastSelected : undefined) ??
+    (selectedOption && selectedOption.value === value ? selectedOption : undefined);
   const filtered = isServerSearch
     ? options
     : search.trim()

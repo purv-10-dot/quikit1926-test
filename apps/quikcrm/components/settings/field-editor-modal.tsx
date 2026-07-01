@@ -25,6 +25,8 @@ export function FieldEditorModal({
   onClose,
   onSaved,
   apiBase = "/api/settings/fields",
+  showListColumnToggle = true,
+  keyHelpText = "Used as the JSON property name on each lead. Auto-generated from label; edit if you need custom.",
 }: {
   open: boolean;
   initial?: LeadFieldDefinition;
@@ -32,6 +34,15 @@ export function FieldEditorModal({
   onSaved: () => void;
   /** API base path for product vs lead field settings. */
   apiBase?: string;
+  /**
+   * Whether to render the "Show as column in leads list" toggle. Lead/product
+   * callers default to true (unchanged). Activity-type fields pass false to
+   * HIDE it — the `showInList` state/payload stays intact (repurposable for a
+   * Phase 4 dashboard-column toggle), only the control is not shown.
+   */
+  showListColumnToggle?: boolean;
+  /** Help text under the Key field; lead-specific by default. */
+  keyHelpText?: string;
 }) {
   const toast = useToast();
   const isEdit = !!initial;
@@ -133,11 +144,7 @@ export function FieldEditorModal({
             placeholder="lowercase_with_underscores"
             className={isEdit ? "bg-crm-panel" : ""}
           />
-          {!isEdit && (
-            <p className="mt-1 text-[11px] text-crm-muted">
-              Used as the JSON property name on each lead. Auto-generated from label; edit if you need custom.
-            </p>
-          )}
+          {!isEdit && <p className="mt-1 text-[11px] text-crm-muted">{keyHelpText}</p>}
         </Field>
         <Field label="Type">
           <Select value={fieldType} onChange={(e) => setFieldType(e.target.value as FieldType)} disabled={isEdit}>
@@ -174,12 +181,14 @@ export function FieldEditorModal({
             Visible in forms / detail
           </label>
         </Field>
-        <Field label="">
-          <label className="flex items-center gap-2 text-sm">
-            <input type="checkbox" checked={showInList} onChange={(e) => setShowInList(e.target.checked)} />
-            Show as column in leads list
-          </label>
-        </Field>
+        {showListColumnToggle && (
+          <Field label="">
+            <label className="flex items-center gap-2 text-sm">
+              <input type="checkbox" checked={showInList} onChange={(e) => setShowInList(e.target.checked)} />
+              Show as column in leads list
+            </label>
+          </Field>
+        )}
       </div>
 
       <FormActions className="mt-5">

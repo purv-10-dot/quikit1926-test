@@ -389,7 +389,11 @@ export function createAuthOptions(config: AuthConfig): NextAuthOptions {
           // resolved. Multi-org users switch orgs from the launcher's
           // /apps org dropdown on demand.
           const firstMembership = await db.orgMember.findFirst({
-            where: { userId: user.id, status: "active" },
+            // Skip suspended orgs so a user is never auto-dropped into one on
+            // sign-in. If all their orgs are suspended they land org-less and
+            // the middleware bounces them to the launcher (where the org is
+            // also hidden). Mirrors org.status === "active" gating below.
+            where: { userId: user.id, status: "active", org: { status: "active" } },
             orderBy: { createdAt: "asc" },
             select: { orgId: true, role: true },
           });
@@ -435,6 +439,11 @@ export function createAuthOptions(config: AuthConfig): NextAuthOptions {
               userId: token.id as string,
               orgId: token.orgId as string,
               status: "active",
+              // A suspended org invalidates the session's selected org just
+              // like a revoked membership: the query returns null, we clear
+              // orgId + flag membershipInvalid, and the middleware bounces the
+              // user to the launcher (where the suspended org is hidden).
+              org: { status: "active" },
             },
           });
 

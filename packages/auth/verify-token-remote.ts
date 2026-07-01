@@ -9,6 +9,18 @@ export interface RemoteVerifyResult {
   activeOrgId?: string | null;
   orgRole?: string | null;
   isSuperAdmin?: boolean;
+  /** Live status of the token's selected org: false when it has been
+   *  suspended/archived. Undefined from older auth hosts (treat as active). */
+  orgActive?: boolean;
+  /** Live subscription/trial status of the token's selected org: false once
+   *  the org's trial has expired or its subscription is past_due/canceled/
+   *  expired. Undefined from older auth hosts OR when the org has no
+   *  Subscription row (grandfathered) — both treated as active. Only a strict
+   *  `=== false` gates, so missing/undefined never locks anyone out. */
+  subscriptionActive?: boolean;
+  /** True specifically when a free trial lapsed (vs. a lapsed paid plan), so
+   *  the UI can show "Free Trial Expired" rather than a generic message. */
+  trialExpired?: boolean;
   error?: string;
 }
 

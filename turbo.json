@@ -1,6 +1,7 @@
 {
   "$schema": "https://turbo.build/schema.json",
   "globalDependencies": [".env.local"],
+  "globalPassThroughEnv": ["ComSpec", "SystemRoot"],
   "concurrency": "15",
   "tasks": {
     "build": {

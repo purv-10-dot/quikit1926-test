@@ -20,6 +20,7 @@
 import { Document, Page, View, Text, StyleSheet, Font } from "@react-pdf/renderer";
 import type { FormData } from "../hooks/useOPSPForm";
 import type { CritCard } from "../types";
+import { hyphenateWord } from "../lib/hyphenate";
 
 /* ─── Constants ────────────────────────────────────────────────────────────── */
 
@@ -87,13 +88,11 @@ const ownerNameOf = (
  * would render as "Bhavya Lo-" / "hana"). Register a no-op hyphenation
  * callback once at module load so words wrap as whole units to the next line.
  *
- * To customise — return an array of breakpoint substrings:
- *   Font.registerHyphenationCallback((word) => {
- *     if (word.length > 20) return word.match(/.{1,10}/g) ?? [word];
- *     return [word]; // don't split this word
- *   });
+ * Normal-length words stay whole (no mid-word hyphenation); only pathologically
+ * long, space-less tokens are split into chunks so they WRAP inside their cell
+ * (and grow the row) instead of overflowing horizontally. See `hyphenateWord`.
  */
-Font.registerHyphenationCallback((word: string) => [word]);
+Font.registerHyphenationCallback(hyphenateWord);
 
 /* ─── Styles — calibrated to match the previous HTML preview ───────────────── */
 
@@ -216,7 +215,9 @@ const s = StyleSheet.create({
     paddingHorizontal: 6,
     borderRightWidth: 1,
     borderRightColor: COLORS.borderDark,
-    justifyContent: "center",
+    // Top-align so a tall (wrapped) KPI name and its Goal line up at the row
+    // top instead of the Goal floating mid-row when the row grows.
+    justifyContent: "flex-start",
     minHeight: 28,
   },
   catProjCellProj: {
@@ -224,7 +225,7 @@ const s = StyleSheet.create({
     paddingVertical: 6,
     paddingHorizontal: 6,
     textAlign: "right",
-    justifyContent: "center",
+    justifyContent: "flex-start",
     minHeight: 28,
   },
   catProjHeader: { backgroundColor: COLORS.bgGray },
@@ -316,7 +317,7 @@ const s = StyleSheet.create({
     textTransform: "uppercase",
     color: COLORS.text,
   },
-  swList: { paddingHorizontal: 8, paddingBottom: 8, flex: 1 },
+  swList: { paddingHorizontal: 8, paddingTop: 4, paddingBottom: 8, flex: 1, justifyContent: "space-around" },
   swItem: { flexDirection: "row", marginBottom: 5 },
   swItemNum: {
     color: COLORS.muted,
@@ -325,6 +326,16 @@ const s = StyleSheet.create({
     fontSize: 6.5,
   },
   swItemText: { flex: 1, fontSize: 6.5, color: COLORS.text },
+  // Ruled writing row — every Strengths/Weaknesses row sits on an underline
+  // (3 rows always rendered) so the printed form keeps its writing lines
+  // whether or not the row has text.
+  swItemRuled: {
+    flexDirection: "row",
+    alignItems: "flex-end",
+    borderBottomWidth: 0.5,
+    borderBottomColor: COLORS.borderDark,
+    paddingBottom: 3,
+  },
   // Footer — 6pt (matches sub-caption tier)
   footer: {
     flexDirection: "row",
@@ -609,6 +620,15 @@ export function OPSPDocument({
   const rocks5 = (form.rocks ?? []).filter((r) => r.desc && r.desc.trim());
   const kpis5 = (form.kpiAccountability ?? []).filter((r) => r.kpi && r.kpi.trim());
   const priorities5 = (form.quarterlyPriorities ?? []).filter((r) => r.priority && r.priority.trim());
+  // When a per-user section is empty (e.g. the user excluded it from the PDF
+  // download, or simply never filled it), render fixed-count BLANK rows so the
+  // section prints as a fill-in-the-blank form (header + 5 ruled rows) instead
+  // of an empty box. Sections with data render their real rows unchanged.
+  const ACCT_PLACEHOLDER_ROWS = 5;
+  const kpiRows = kpis5.length ? kpis5 : padTo([], ACCT_PLACEHOLDER_ROWS, { kpi: "", goal: "" });
+  const priorityRows = priorities5.length
+    ? priorities5
+    : padTo([], ACCT_PLACEHOLDER_ROWS, { priority: "", dueDate: "" });
 
   /* ── Goals compaction: when the user has more than the default 6 goal rows,
    * we render the Goals table in compact mode (tighter padding + minHeight) so
@@ -786,8 +806,14 @@ export function OPSPDocument({
                   <SectionHeader title="Key Initiatives" sub="1 Year Priorities" />
                 </View>
               </View>
-              {/* §1.5 body — 5 numbered rows × 3 cols (absorbs slack from §1.6/§1.7 shrink) */}
-              <View style={{ flexDirection: "row", height: "65mm" }}>
+              {/* §1.5 body — 5 numbered rows × 3 cols. The TRUE slack-absorber for
+                  this page: `flex:1` (not a fixed height) so it shrinks to absorb
+                  growth from the unbounded §1.3 Names block above. Without this, a
+                  name that wraps to a 2nd line pushes the all-fixed-height grid past
+                  A4 and react-pdf emits a blank continuation page between the People
+                  and Process pages. `minHeight` keeps the 5 action rows legible; for
+                  extreme content the page still flows naturally (never capped). */}
+              <View style={{ flexDirection: "row", flex: 1, minHeight: "40mm" }}>
                 <View style={{ flex: 1, borderRightWidth: 1, borderBottomWidth: 1, borderTopColor: COLORS.borderDark, borderRightColor: COLORS.borderDark, borderBottomColor: COLORS.borderDark, borderLeftColor: COLORS.borderDark, overflow: "hidden" }}>
                   {actions5.map((v, i) => (
                     <NumberedRow key={i} i={i} text={v} isLast={i === 4} />
@@ -838,17 +864,19 @@ export function OPSPDocument({
           </View>
 
           {/* §1.8 Strengths / Weaknesses — sits naturally after §1.7 with 3mm bottom pad
-              (sections sized to exactly fill the page; no flex spacer needed) */}
-          <View style={{ flexDirection: "row", height: "20mm" }}>
+              (sections sized to exactly fill the page; no flex spacer needed).
+              28mm: 8mm borrowed from §1.5 so the 3 ruled writing rows in each
+              column are spread evenly (swList uses justifyContent space-around). */}
+          <View style={{ flexDirection: "row", height: "28mm" }}>
             <View style={{ ...s.swCol, ...s.swColLeft }}>
               <View style={s.swHeader}>
                 <Text style={s.swHeaderText}>Strengths/Core Competencies</Text>
               </View>
               <View style={s.swList}>
-                {processItems3.map((v, i) => (
-                  <View key={i} style={s.swItem}>
+                {padTo(processItems3, 3, "").map((v, i) => (
+                  <View key={i} style={s.swItemRuled}>
                     <Text style={s.swItemNum}>{i + 1}.</Text>
-                    <Text style={{ ...s.swItemText, ...(!v ? s.cellEmpty : {}) }}>{dash(v)}</Text>
+                    <Text style={s.swItemText}>{v}</Text>
                   </View>
                 ))}
               </View>
@@ -858,10 +886,10 @@ export function OPSPDocument({
                 <Text style={s.swHeaderText}>Weaknesses:</Text>
               </View>
               <View style={s.swList}>
-                {weaknesses3.map((v, i) => (
-                  <View key={i} style={s.swItem}>
+                {padTo(weaknesses3, 3, "").map((v, i) => (
+                  <View key={i} style={s.swItemRuled}>
                     <Text style={s.swItemNum}>{i + 1}.</Text>
-                    <Text style={{ ...s.swItemText, ...(!v ? s.cellEmpty : {}) }}>{dash(v)}</Text>
+                    <Text style={s.swItemText}>{v}</Text>
                   </View>
                 ))}
               </View>
@@ -925,8 +953,10 @@ export function OPSPDocument({
               <SectionHeader title="Your Accountability" sub="(Who/When)" />
             </View>
           </View>
-          {/* §2.4 body */}
-          <View style={{ flexDirection: "row", height: "50mm" }}>
+          {/* §2.4 body — `minHeight` (not fixed `height`) so a row grows to fit
+              wrapped content (e.g. a long KPI name) instead of clipping/overlapping
+              the next row; short data still fills the 50mm minimum. */}
+          <View style={{ flexDirection: "row", minHeight: "50mm" }}>
             <View style={{ flex: 1.01, borderRightWidth: 1, borderBottomWidth: 1, borderLeftWidth: 1, borderTopColor: COLORS.borderDark, borderRightColor: COLORS.borderDark, borderBottomColor: COLORS.borderDark, borderLeftColor: COLORS.borderDark, padding: 2, overflow: "hidden" }}>
               <CatProjTable rows={form.actionsQtr ?? []} />
             </View>
@@ -944,16 +974,16 @@ export function OPSPDocument({
                     <Text style={s.catProjHeaderText}>Goal</Text>
                   </View>
                 </View>
-                {kpis5.map((r, i) => (
+                {kpiRows.map((r, i) => (
                   <View
                     key={i}
-                    style={{ ...s.catProjRow, ...(i === kpis5.length - 1 ? s.catProjRowLast : {}) }}
+                    style={{ ...s.catProjRow, ...(i === kpiRows.length - 1 ? s.catProjRowLast : {}) }}
                   >
                     <View style={s.catProjCellCat}>
-                      <Text style={{ ...s.cellBodyText, ...(!r.kpi ? s.cellEmpty : {}) }}>{dash(r.kpi)}</Text>
+                      <Text style={{ ...s.cellBodyText, ...(!r.kpi ? s.cellEmpty : {}) }}>{r.kpi || ""}</Text>
                     </View>
                     <View style={s.catProjCellProj}>
-                      <Text style={{ ...s.cellBodyText, ...(!r.goal ? s.cellEmpty : {}) }}>{dash(r.goal)}</Text>
+                      <Text style={{ ...s.cellBodyText, ...(!r.goal ? s.cellEmpty : {}) }}>{r.goal || ""}</Text>
                     </View>
                   </View>
                 ))}
@@ -973,8 +1003,10 @@ export function OPSPDocument({
               <SectionHeader title="Your Quarterly Priorities" sub="Due" />
             </View>
           </View>
-          {/* §2.5 body — fixed 65mm (recalc'd after font sizes bumped) to stay within A4 */}
-          <View style={{ flexDirection: "row", height: "65mm" }}>
+          {/* §2.5 body — `minHeight` (was fixed 65mm) so a long Quarterly
+              Priority / Rock grows its row instead of clipping; short data still
+              fills the 65mm minimum. */}
+          <View style={{ flexDirection: "row", minHeight: "65mm" }}>
             <View style={{ flex: 1.035, borderRightWidth: 1, borderBottomWidth: 1, borderLeftWidth: 1, borderTopColor: COLORS.borderDark, borderRightColor: COLORS.borderDark, borderBottomColor: COLORS.borderDark, borderLeftColor: COLORS.borderDark, overflow: "hidden" }}>
               {rocks5.map((r, i) => (
                 <NumberedRow key={i} i={i} text={r.desc} owner={owner(r.owner)} isLast={i === 4} />
@@ -993,17 +1025,17 @@ export function OPSPDocument({
                     <Text style={s.catProjHeaderText}>Due</Text>
                   </View>
                 </View>
-                {priorities5.map((r, i) => (
+                {priorityRows.map((r, i) => (
                   <View
                     key={i}
-                    style={{ ...s.catProjRow, ...(i === priorities5.length - 1 ? s.catProjRowLast : {}) }}
+                    style={{ ...s.catProjRow, ...(i === priorityRows.length - 1 ? s.catProjRowLast : {}) }}
                   >
                     <View style={s.catProjCellCat}>
-                      <Text style={{ ...s.cellBodyText, ...(!r.priority ? s.cellEmpty : {}) }}>{dash(r.priority)}</Text>
+                      <Text style={{ ...s.cellBodyText, ...(!r.priority ? s.cellEmpty : {}) }}>{r.priority || ""}</Text>
                     </View>
                     <View style={s.catProjCellProj}>
                       <Text style={{ ...s.cellBodyText, ...(!r.dueDate ? s.cellEmpty : {}) }}>
-                        {r.dueDate ? fmtDue(r.dueDate) : "—"}
+                        {r.dueDate ? fmtDue(r.dueDate) : ""}
                       </Text>
                     </View>
                   </View>

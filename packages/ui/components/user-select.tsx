@@ -53,6 +53,30 @@ interface BaseProps {
   placeholder?: string;
   error?: boolean;
   disabled?: boolean;
+  /**
+   * Optional infinite-scroll hooks. Pass these when `users` is a paginated
+   * server slice that should grow as the dropdown scrolls. Wire `onLoadMore`
+   * to an infinite-query's `fetchNextPage`. Callers passing the full list omit
+   * all of these — behaviour is unchanged.
+   */
+  onLoadMore?: () => void;
+  hasMore?: boolean;
+  loadingMore?: boolean;
+  /**
+   * Optional server-side search. When provided, the picker stops filtering
+   * `users` locally and reports the (debounced) query here; the caller feeds
+   * back the matching `users`. Use with paginated/searched server slices so
+   * members past the first page stay findable.
+   */
+  onSearchChange?: (query: string) => void;
+  /** True while a server search / page fetch is in flight (server mode). */
+  loading?: boolean;
+  /**
+   * Full objects for the currently-selected users. In server-pagination mode
+   * the selected member may not be in the loaded `users` slice — pass them here
+   * so multi-select chips (and the selected-state) still render correctly.
+   */
+  selectedUsers?: PickerUser[];
 }
 
 interface SingleProps extends BaseProps {
@@ -135,18 +159,50 @@ export function UserSelect(props: UserSelectProps) {
     return () => document.removeEventListener("mousedown", handle);
   }, []);
 
-  const { users, placeholder, error, mode, disabled } = props;
+  const { users, placeholder, error, mode, disabled, onLoadMore, hasMore, loadingMore, onSearchChange, loading, selectedUsers } = props;
+  const isServerSearch = !!onSearchChange;
 
-  const filtered = search.trim()
-    ? users.filter(u =>
-        `${u.firstName} ${u.lastName} ${u.email}`.toLowerCase().includes(search.toLowerCase())
-      )
-    : users;
+  // Server-search mode: report the debounced query to the caller (kept in a
+  // ref so an inline callback's identity change can't reset the timer).
+  const onSearchChangeRef = useRef(onSearchChange);
+  useEffect(() => { onSearchChangeRef.current = onSearchChange; });
+  useEffect(() => {
+    if (!onSearchChangeRef.current) return;
+    const handle = setTimeout(() => onSearchChangeRef.current?.(search.trim()), 250);
+    return () => clearTimeout(handle);
+  }, [search]);
+
+  // Remember every user we've ever rendered so multi-select chips for members
+  // selected on an earlier page survive scrolling/searching to other pages.
+  const seenRef = useRef<Map<string, PickerUser>>(new Map());
+  for (const u of users) seenRef.current.set(u.id, u);
+  for (const u of selectedUsers ?? []) seenRef.current.set(u.id, u);
+  const knownById = seenRef.current;
+
+  // In server-search mode the caller supplies already-matched users; render
+  // them as-is. In client mode, filter the full list locally.
+  const filtered = isServerSearch
+    ? users
+    : search.trim()
+      ? users.filter(u =>
+          `${u.firstName} ${u.lastName} ${u.email}`.toLowerCase().includes(search.toLowerCase())
+        )
+      : users;
+
+  // Infinite-scroll trigger — fire `onLoadMore` when near the bottom. Suppress
+  // while a fetch is in flight, and (client mode only) while a local search is
+  // active, since paging in unrelated rows wouldn't help there.
+  function handleScroll(e: React.UIEvent<HTMLDivElement>) {
+    if (!onLoadMore || !hasMore || loadingMore) return;
+    if (!isServerSearch && search.trim()) return;
+    const el = e.currentTarget;
+    if (el.scrollHeight - el.scrollTop - el.clientHeight < 40) onLoadMore();
+  }
 
   // -- Trigger rendering --
   let trigger: ReactNode;
   if (mode === "single") {
-    const selected = users.find(u => u.id === props.value);
+    const selected = knownById.get(props.value);
     trigger = selected ? (
       <div className="flex items-center gap-2">
         <div className={`h-5 w-5 rounded-full flex items-center justify-center text-white text-[9px] font-bold flex-shrink-0 ${avatarBg(`${selected.firstName} ${selected.lastName}`)}`}>
@@ -159,13 +215,16 @@ export function UserSelect(props: UserSelectProps) {
     );
   } else {
     const chipLimit = props.chipLimit ?? 2;
-    const selectedSet = new Set(props.values);
-    const selectedUsers = users.filter(u => selectedSet.has(u.id));
-    trigger = selectedUsers.length === 0 ? (
+    // Resolve selected ids \u2192 full objects via the "known" cache so chips for
+    // members selected on an earlier (now-unloaded) page still render.
+    const selectedChipUsers = props.values
+      .map(id => knownById.get(id))
+      .filter((u): u is PickerUser => !!u);
+    trigger = selectedChipUsers.length === 0 ? (
       <span className="text-gray-400">{placeholder ?? "Select owners\u2026"}</span>
     ) : (
       <div className="scrollbar-visible flex items-center gap-1.5 flex-wrap min-w-0 max-h-20 overflow-y-auto pr-1">
-        {selectedUsers.slice(0, chipLimit).map(u => (
+        {selectedChipUsers.slice(0, chipLimit).map(u => (
           <span key={u.id} className="inline-flex items-center gap-1 bg-accent-50 border border-accent-200 text-accent-700 rounded-full pl-0.5 pr-2 py-0.5">
             <span className={`h-4 w-4 rounded-full flex items-center justify-center text-white text-[8px] font-bold flex-shrink-0 ${avatarBg(`${u.firstName} ${u.lastName}`)}`}>
               {initials(u.firstName, u.lastName)}
@@ -173,8 +232,8 @@ export function UserSelect(props: UserSelectProps) {
             <span className="text-[10px] font-medium truncate max-w-[72px]">{u.firstName} {u.lastName[0] ?? ""}</span>
           </span>
         ))}
-        {selectedUsers.length > chipLimit && (
-          <span className="text-[10px] text-gray-500 font-medium">+{selectedUsers.length - chipLimit} more</span>
+        {selectedChipUsers.length > chipLimit && (
+          <span className="text-[10px] text-gray-500 font-medium">+{selectedChipUsers.length - chipLimit} more</span>
         )}
       </div>
     );
@@ -250,7 +309,7 @@ export function UserSelect(props: UserSelectProps) {
           {/* Items \u2014 the only scrolling region; min-h-0 lets it shrink to fit.
               `scrollbar-visible` opts back in to a visible scrollbar (hidden
               globally) so long member lists read as scrollable. */}
-          <div className="scrollbar-visible flex-1 min-h-0 overflow-y-auto py-1">
+          <div className="scrollbar-visible flex-1 min-h-0 overflow-y-auto py-1" onScroll={handleScroll}>
             {/* Single-mode "clear selection" row */}
             {mode === "single" && props.value && (
               <button
@@ -263,7 +322,9 @@ export function UserSelect(props: UserSelectProps) {
             )}
 
             {filtered.length === 0 ? (
-              <p className="px-3 py-3 text-xs text-gray-400 text-center">No users match.</p>
+              <p className="px-3 py-3 text-xs text-gray-400 text-center">
+                {isServerSearch && (loading || loadingMore) ? "Searching…" : "No users match."}
+              </p>
             ) : filtered.map(u => {
               const full = `${u.firstName} ${u.lastName}`;
               const isSelected = mode === "single"
@@ -291,6 +352,13 @@ export function UserSelect(props: UserSelectProps) {
                 </button>
               );
             })}
+
+            {/* Infinite-scroll footer — only when the caller opts in. */}
+            {onLoadMore && loadingMore && filtered.length > 0 && (
+              <div className="px-3 py-2 text-[10px] text-gray-400 text-center border-t border-gray-100">
+                Loading more…
+              </div>
+            )}
           </div>
 
           {/* Multi-mode count footer — fixed at the bottom of the menu */}

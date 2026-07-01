@@ -3,6 +3,7 @@ import { z } from "zod";
 import { db } from "@/lib/db";
 import { withOrgAuthForResource } from "@/lib/api/withOrgAuth";
 import { isResource, isAction, isValidPermissionPair } from "@/lib/api/permissionsRegistry";
+import { withTxRetry } from "@/lib/api/withTxRetry";
 
 // RBAC v2: gated by the `User` resource. Editing a role's permission grants
 // rides on the same User CRUD as inviting/managing users. `isSystem` still
@@ -74,17 +75,21 @@ export const PUT = auth.update<{ id: string }>(async ({ orgId }, req, { params }
   });
 
   // Atomic replace: deleteMany + createMany inside a transaction so a
-  // half-applied PUT can never leave the role in a mixed state.
-  await db.$transaction([
-    db.rolePermission.deleteMany({ where: { roleId: role.id } }),
-    ...(desired.length > 0
-      ? [
-          db.rolePermission.createMany({
-            data: desired.map((p) => ({ roleId: role.id, resource: p.resource, action: p.action })),
-          }),
-        ]
-      : []),
-  ]);
+  // half-applied PUT can never leave the role in a mixed state. Retried as a
+  // unit if two admins editing the same role get one tx killed as a deadlock
+  // victim — the replace is idempotent, so the final state is unchanged.
+  await withTxRetry(() =>
+    db.$transaction([
+      db.rolePermission.deleteMany({ where: { roleId: role.id } }),
+      ...(desired.length > 0
+        ? [
+            db.rolePermission.createMany({
+              data: desired.map((p) => ({ roleId: role.id, resource: p.resource, action: p.action })),
+            }),
+          ]
+        : []),
+    ]),
+  );
 
   return NextResponse.json({
     success: true,

@@ -44,9 +44,6 @@ For DB models, **Status** mirrors this: **USED** = Prisma delegate (`db.cnXxx` /
 | `/api/apps/switcher` | GET | USED (tests only) | `__tests__/api/appsSwitcher.test.ts`; no in-app fetch found |
 | `/api/uploads` | POST | USED (app code) | upload helper / storage flow |
 | `/api/uploads/view/[...key]` | GET | USED (app code) | presigned-URL minting; URL persisted by `uploads/route.ts` |
-| `/api/documents` | GET, POST | USED (app code) | `components/documents/DocumentAttachments.tsx`, `(dashboard)/documents/page.tsx` |
-| `/api/documents/[id]` | DELETE | USED (app code) | `DocumentAttachments.tsx` delete |
-| `/api/documents/[id]/download` | GET | USED (app code) | `DocumentAttachments.tsx`, documents page download link |
 
 ### Masters
 
@@ -139,12 +136,6 @@ All list routes are consumed by `MasterListPage`/master pages and the `masterFac
 | `/api/store/stock-register` | GET | USED (app code) | `reports/page.tsx`, `use-store.ts` |
 | `/api/store/items-stock` | GET, POST | USED (app code) | `masters/items/page.tsx` |
 | `/api/store/item-stock-locations` | GET | USED (app code) | `masters/items/page.tsx` |
-| `/api/store/asset-mgmt/assets` | GET, POST | USED (app code) | `store/asset-management/page.tsx` |
-| `/api/store/asset-mgmt/assets/[id]` | PATCH, DELETE | USED (app code) | asset-management page |
-| `/api/store/asset-mgmt/categories` | GET, POST | USED (app code) | asset-management page |
-| `/api/store/asset-mgmt/categories/[id]` | PATCH, DELETE | USED (app code) | asset-management page |
-| `/api/store/asset-mgmt/issuances` | GET, POST | USED (app code) | asset-management page |
-| `/api/store/asset-mgmt/issuances/[id]` | PATCH, DELETE | USED (app code) | asset-management page |
 
 ### Purchase
 
@@ -233,10 +224,6 @@ All list routes are consumed by `MasterListPage`/master pages and the `masterFac
 | `/api/approvals/pending` | GET | USED (app code) | `reports/page.tsx`, `use-approvals.ts` |
 | `/api/approvals/[id]/[action]` | POST | USED (app code) | `use-approvals.ts`, `use-purchase.ts` (`/${id}/${action}`) |
 | `/api/approvals/[id]/history` | GET | USED (app code) | `use-approvals.ts` |
-| `/api/approvals/requests` | GET, POST | USED (tests only) | live flow uses `/api/approvals/[id]/[action]` + `inbox`/`pending` |
-| `/api/approvals/requests/[id]` | GET, PATCH | USED (tests only) | tests only |
-| `/api/approvals/rules` | GET, POST | USED (tests only) | `__tests__/api/approvalsRules.test.ts`; no app caller found |
-| `/api/approvals/rules/[id]` | DELETE | USED (tests only) | tests only |
 
 ### Org & Settings
 
@@ -319,7 +306,7 @@ All models live in the `app_quikinfra` Postgres schema.
 | CnFinancialYear | `Financial_years` | USED | masters/financial-years route |
 | CnProject | `Projects` | USED | masters/projects + most modules |
 | CnMachinery | `Machinery` | USED | masters/machinery route |
-| CnAsset | `Assets` | USED | masters/assets + asset-mgmt |
+| CnAsset | `Assets` | USED | masters/assets |
 
 ### Purchase
 
@@ -391,8 +378,6 @@ All models live in the `app_quikinfra` Postgres schema.
 | CnApprovalWorkflowStep | `Approval_workflow_steps` | USED | approval engine |
 | CnApprovalInstance | `Approval_instances` | USED | approval engine (very heavy use) |
 | CnApprovalHistory | `Approval_history` | USED | approval engine / history route |
-| CnApprovalRule | *(none — `CnApprovalRule`)* | USED | `lib/approvals.ts:22` |
-| CnApprovalRequest | *(none — `CnApprovalRequest`)* | USED | `lib/approvals.ts:33` |
 | CnIdempotencyKey | `Idempotency_keys` | USED | workflow idempotency guard |
 
 ### Quality / Safety
@@ -401,14 +386,12 @@ All models live in the `app_quikinfra` Postgres schema.
 |---|---|---|---|
 | CnQCInspection | `Qc_inspections` | USED | quality/inspections route |
 | CnSafetyChecklist | `Safety_checklists` | USED | safety/checklists route |
-| CnSafetyIncident | *(none — `CnSafetyIncident`)* | **UNUSED** | model defined, but `/api/safety/incidents` is an in-memory array stub — zero delegate references anywhere |
 
 ### Audit / System / Documents
 
 | Model | Table (@@map) | Status | Representative reference / note |
 |---|---|---|---|
 | CnAuditLog | `Audit_logs` | USED | `lib/audit.ts:24` |
-| CnDocument | *(none — `CnDocument`)* | USED | documents routes |
 | CnFileObject | `File_objects` | USED | uploads / storage driver |
 
 ---
@@ -418,8 +401,6 @@ All models live in the `app_quikinfra` Postgres schema.
 ### Routes with no app-code caller (tests only, or caller disabled)
 No route is completely unreferenced, but these have **no live app caller** — candidates for removal or wiring:
 
-- `/api/approvals/requests` and `/api/approvals/requests/[id]` — tests only (live flow uses `/api/approvals/[id]/[action]` + `inbox`/`pending`).
-- `/api/approvals/rules` and `/api/approvals/rules/[id]` — tests only.
 - `/api/projects/[projectId]/rab/summary` — tests only.
 - `/api/org/users/[id]/role` — tests only; app references it only in a comment (role swap runs through `/api/settings/users/[id]`).
 - `/api/projects/dpr/weather` — tests only; caller in `DPRForm.tsx` is commented out.
@@ -430,7 +411,7 @@ No route is completely unreferenced, but these have **no live app caller** — c
 Functional dead-ends (wired to UI but **no persistence** — in-memory stubs): `/api/safety/incidents`, `/api/safety/toolbox-talks`.
 
 ### Models with zero references (dead)
-- **`CnSafetyIncident`** — the only model with no delegate reference in app or test code. Its route (`/api/safety/incidents`) uses an in-memory array instead. Safe-to-drop candidate (pending a DB-backed safety-incidents feature).
+- None. (`CnSafetyIncident` and `CnDocument` were removed; the `/api/safety/incidents` and `/api/safety/toolbox-talks` routes remain as in-memory stubs with no backing model.)
 
 ### Models used only via relations (never queried directly)
 Reachable only as `lines`/child arrays on a parent (expected for line-item tables): `CnPurchaseRequisitionLine`, `CnPurchaseOrderLine`, `CnPurchaseIndentLine`, `CnMaterialIssueLine`, `CnStockTransferLine`, `CnStockReconciliationLine`, `CnInternalReturnLine`, `CnGoodReturnLine`, `CnGatePassLine`, `CnRfqLine`, `CnRABLine`.

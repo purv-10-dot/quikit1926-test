@@ -23,6 +23,8 @@ export interface KPIResponse {
   name: string;
   description?: string;
   owner: string;
+  /** Enriched by the GET handler so list rows can render the owner's name. */
+  owner_user?: { id: string; firstName: string; lastName: string } | null;
   teamId?: string;
   parentKPIId?: string;
   quarter: string;
@@ -221,4 +223,64 @@ export async function getLogs(kpiId: string): Promise<KPILogResponse[]> {
     throw new Error(response.data.error || "Failed to fetch audit logs");
   }
   return response.data.data || [];
+}
+
+// ── Centralized audit timeline (new AuditEvent/AuditChange system) ──
+
+export interface AuditChangeResponse {
+  fieldName: string;
+  oldValue: unknown;
+  newValue: unknown;
+}
+
+export interface AuditEventResponse {
+  id: string;
+  action: string;
+  actorUserId: string;
+  actorName: string;
+  source: string;
+  reason: string | null;
+  snapshot: unknown;
+  createdAt: string;
+  teamId: string | null;
+  changes: AuditChangeResponse[];
+}
+
+/** Full Change History timeline for a KPI (newest-first). */
+export async function getAuditTimeline(kpiId: string): Promise<AuditEventResponse[]> {
+  const response = await axios.get<ApiResponse<AuditEventResponse[]>>(
+    `${API_BASE}/${kpiId}/audit`,
+  );
+  if (!response.data.success) {
+    throw new Error(response.data.error || "Failed to fetch audit history");
+  }
+  return response.data.data || [];
+}
+
+// ── Per-user read state ────────────────────────────────────────────────────
+
+/** Mark the current user's read mark for an entity's audit timeline to now. */
+export async function markAuditRead(entityType: string, entityId: string): Promise<void> {
+  await axios.post(`/api/audit/mark-read`, { entityType, entityId });
+}
+
+/** Unread audit-event count for one entity (events newer than my read mark, not mine). */
+export async function getAuditUnreadCount(
+  entityId: string,
+  entityType = "KPI",
+): Promise<number> {
+  const response = await axios.get<ApiResponse<{ unread: number }>>(
+    `/api/audit/unread-count`,
+    { params: { entityType, entityId } },
+  );
+  return response.data?.data?.unread ?? 0;
+}
+
+/** Module-wide unread count (drives the sidebar dot). */
+export async function getModuleUnreadCount(moduleKey = "KPI"): Promise<number> {
+  const response = await axios.get<ApiResponse<{ unread: number }>>(
+    `/api/audit/unread-count`,
+    { params: { moduleKey } },
+  );
+  return response.data?.data?.unread ?? 0;
 }

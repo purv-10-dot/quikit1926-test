@@ -3,23 +3,26 @@
 /**
  * ActionsSection — "ACTIONS (QTR) / Rocks / Critical #" + "THEME / Scoreboard / Celebration / Reward"
  *
- * `actionsQtr` row count is driven by `goalRows` via the cascade in
- * `hooks/useOPSPForm.ts` (Goals → Actions section). The cascade also seeds
- * each Action row's category from the matching Goal — but the field stays
- * editable here, so the user can override on a per-row basis. There are no
- * Add-New / per-row remove controls in Actions because Goals owns the
- * length; to add/remove rows the user edits Goals (1 YR).
+ * Actions rows mirror Goals (1 YR.) for the overlapping rows — the cascade in
+ * `hooks/useOPSPForm.ts` (Goals → Actions) auto-fills each Action row's
+ * category from the matching Goal — but Actions can hold MORE rows than Goals:
+ * the "+ Add New" button below adds independent rows up to MAX_ACTION_ROWS, and
+ * the per-row remove control drops rows down to MIN_ACTION_ROWS. The cascade
+ * grows Actions toward the Goals count but never shrinks below the user's rows,
+ * so removing a Goal won't delete an extra Action row. The category field stays
+ * editable per row. The fixed-height scroll viewport keeps the card height stable.
  */
 
-import { useState } from "react";
-import { Maximize2, X } from "lucide-react";
+import { useState, useEffect } from "react";
+import { createPortal } from "react-dom";
+import { Maximize2, Plus, X } from "lucide-react";
 import { Card, CardH } from "./Card";
 import { FInput, FTextarea } from "./RichEditor";
 import { CritBlock } from "./CritBlock";
 import { CategorySelect, ProjectedInput } from "./category";
 import { breakdownProjected, exceedsGoalProjected } from "./modals";
 import { WithTooltip, OwnerSelect } from "./pickers";
-import type { FormData } from "../hooks/useOPSPForm";
+import { MIN_ACTION_ROWS, MAX_ACTION_ROWS, type FormData } from "../hooks/useOPSPForm";
 import type { PendingEdit } from "../lib/editLog";
 
 interface Props {
@@ -31,9 +34,30 @@ interface Props {
   onExpandRocks: () => void;
 }
 
-// Mirror Goals' floor — users can drop rows down to 6 but no further, so
-// the card always has a usable baseline shape.
-const MIN_ACTION_ROWS = 6;
+const emptyActionRow = () => ({ category: "", projected: "", m1: "", m2: "", m3: "" });
+
+/**
+ * Position the over-goal cap warning ABOVE the Projected input it belongs to.
+ *
+ * The edit-after-finalize "Change logged" overlay (EditNoteCard in page.tsx) is
+ * rendered `fixed` and anchored just BELOW the same input, so a warning placed
+ * inline beneath the input gets painted over. Anchoring it ABOVE — in viewport
+ * (fixed) coordinates, escaping the Actions list's `overflow-y-auto` clip —
+ * keeps the two from ever overlapping. Coordinates are clamped so the badge
+ * stays fully on-screen; if there is no room above (input near the viewport
+ * top) it sticks to the top edge rather than dropping into the overlay's band.
+ */
+export function computeCapWarningPosition(
+  rect: { top: number; left: number },
+  vw: number,
+  badgeW = 220,
+): { top: number; left: number } {
+  const GAP = 6;
+  const BADGE_H = 24;
+  const top = Math.max(8, rect.top - BADGE_H - GAP);
+  const left = Math.max(8, Math.min(rect.left, vw - badgeW - 8));
+  return { top, left };
+}
 
 export function ActionsSection({
   form,
@@ -45,9 +69,56 @@ export function ActionsSection({
   // Transient feedback when an over-goal Projected entry is rejected here on the
   // main grid (the expand modal has its own copy). Keyed by row index + the cap
   // value to show; cleared on a valid entry.
-  const [capWarning, setCapWarning] = useState<{ row: number; max: string } | null>(null);
+  const [capWarning, setCapWarning] = useState<{ row: number; max: string; top: number; left: number } | null>(null);
+
+  // Keep the floating cap warning anchored to its Projected input as the page
+  // scrolls/resizes, and auto-dismiss it after a few seconds so this transient
+  // rejection feedback doesn't linger. Deps are the warning's identity (row +
+  // max) only — NOT its top/left — so a reposition never resets the timer.
+  useEffect(() => {
+    if (!capWarning) return;
+    const row = capWarning.row;
+    const reanchor = () => {
+      const cell = document.querySelector<HTMLElement>(
+        `[data-opsp-field="actionsQtr.${row}"] [data-projected-cell]`,
+      );
+      const r = cell?.getBoundingClientRect();
+      if (!r) {
+        setCapWarning(null);
+        return;
+      }
+      const pos = computeCapWarningPosition(r, window.innerWidth);
+      setCapWarning((w) => (w && w.row === row ? { ...w, ...pos } : w));
+    };
+    window.addEventListener("scroll", reanchor, true);
+    window.addEventListener("resize", reanchor);
+    const timer = window.setTimeout(() => setCapWarning(null), 4000);
+    return () => {
+      window.removeEventListener("scroll", reanchor, true);
+      window.removeEventListener("resize", reanchor);
+      window.clearTimeout(timer);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [capWarning?.row, capWarning?.max]);
+
   return (
     <>
+      {/* Floating over-goal cap warning — anchored ABOVE the Projected input and
+          portaled to <body> so it escapes the Actions list's overflow clip and
+          the finalized-edit "Change logged" overlay (z-[60]) can't cover it. */}
+      {capWarning && typeof document !== "undefined" &&
+        createPortal(
+          <div
+            role="alert"
+            className="fixed z-[70] pointer-events-none"
+            style={{ top: capWarning.top, left: capWarning.left }}
+          >
+            <span className="inline-block rounded-md bg-red-600 px-2 py-1 text-[10px] font-semibold text-white shadow-lg ring-1 ring-red-700/20 whitespace-nowrap">
+              Can&apos;t exceed Goal (1 YR): {capWarning.max}
+            </span>
+          </div>,
+          document.body,
+        )}
       {/* Actions QTR */}
       <Card className="space-y-4">
         <div>
@@ -64,12 +135,12 @@ export function ActionsSection({
             </div>
             <span className="w-5" />
           </div>
-          {/* Fixed-height scroll viewport — when Goals grows past ~6 rows the
-              cascade adds matching Action rows; the card height stays
-              stable and the user scrolls inside this region. Same value
-              GoalsSection uses, so the two cards share a visual rhythm. */}
+          {/* Fixed-height scroll viewport — the "+ Add New" button below (and
+              the Goals cascade) can grow the list up to MAX_ACTION_ROWS; the
+              card height stays stable and the user scrolls inside this region.
+              Same value GoalsSection uses, so the two cards share a rhythm. */}
           <div className="max-h-[268px] overflow-y-auto pr-1">
-            {form.actionsQtr.map((row, i) => (
+            {form.actionsQtr.slice(0, MAX_ACTION_ROWS).map((row, i) => (
               <div
                 key={i}
                 data-opsp-field={`actionsQtr.${i}`}
@@ -81,6 +152,9 @@ export function ActionsSection({
                       value={row.category}
                       excludeNames={form.actionsQtr.map((r, idx) => idx === i ? "" : r.category)}
                       onChange={(v) => {
+                        // Changing category resets Projected to "", so any active
+                        // over-goal warning on this row no longer applies.
+                        setCapWarning((w) => (w?.row === i ? null : w));
                         logEdit?.({
                           field: `actionsQtr.${i}.category`,
                           label: `Actions (QTR) · ${row.category || "#" + (i + 1)} · Category`,
@@ -100,7 +174,7 @@ export function ActionsSection({
                       }}
                     />
                   </div>
-                  <div className="col-span-2 min-w-0">
+                  <div className="col-span-2 min-w-0" data-projected-cell>
                     <ProjectedInput
                       categoryName={row.category}
                       value={row.projected}
@@ -112,11 +186,21 @@ export function ActionsSection({
                         // never autosaves). Same rule the ACTIONS (QTR) modal
                         // enforces — see exceedsGoalProjected in ./modals.
                         if (exceedsGoalProjected(row.category, v, form.goalRows)) {
-                          // Surface the cap so the rejection isn't silent.
+                          // Surface the cap so the rejection isn't silent. Float
+                          // the warning ABOVE this input — the "Change logged"
+                          // overlay is anchored just below it (see
+                          // computeCapWarningPosition).
                           const g = form.goalRows.find(
                             (gr) => gr.category.trim() && gr.category === row.category,
                           );
-                          setCapWarning({ row: i, max: g?.projected?.trim() || "" });
+                          const cell = document.querySelector<HTMLElement>(
+                            `[data-opsp-field="actionsQtr.${i}"] [data-projected-cell]`,
+                          );
+                          const r = cell?.getBoundingClientRect();
+                          const pos = r
+                            ? computeCapWarningPosition(r, window.innerWidth)
+                            : { top: 8, left: 8 };
+                          setCapWarning({ row: i, max: g?.projected?.trim() || "", ...pos });
                           return;
                         }
                         // Valid entry — clear any stale cap warning on this row.
@@ -145,15 +229,10 @@ export function ActionsSection({
                         set("actionsQtr", next, { skipLog: true });
                       }}
                     />
-                    {/* Rejected-entry feedback — fires when the user tries to
-                        type a Projected above the Goal (1 YR). The value is
-                        hard-blocked (never committed), so this is the only
-                        signal the entry was capped. */}
-                    {capWarning?.row === i && (
-                      <p className="text-[10px] text-red-500 mt-0.5 truncate font-medium">
-                        Can&apos;t exceed Goal (1 YR): {capWarning.max}
-                      </p>
-                    )}
+                    {/* Over-goal rejection feedback renders as a floating badge
+                        anchored ABOVE this input (portaled to <body>) — see the
+                        capWarning block at the top of the component. Inline-below
+                        rendering was covered by the "Change logged" overlay. */}
                   </div>
                 </div>
                 {form.actionsQtr.length > MIN_ACTION_ROWS ? (
@@ -175,6 +254,16 @@ export function ActionsSection({
               </div>
             ))}
           </div>
+          {form.actionsQtr.length < MAX_ACTION_ROWS && (
+            <button
+              type="button"
+              onClick={() => set("actionsQtr", [...form.actionsQtr, emptyActionRow()])}
+              className="mt-2 inline-flex items-center gap-1 text-xs text-accent-600 hover:text-accent-700 font-medium"
+            >
+              <Plus className="h-3.5 w-3.5" />
+              Add New
+            </button>
+          )}
         </div>
         {/* Rocks — 3-column table (rank | Quarterly Priority | Who/OwnerSelect). Matches Key Thrusts/Capabilities pattern. */}
         <div className="border-t border-gray-100 pt-3">

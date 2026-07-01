@@ -76,6 +76,9 @@ export const POST = withOrgAuth(async ({ orgId }, request) => {
       meetings.map((mtg) => ({
         id: mtg.id,
         meetingDate: mtg.meetingDate,
+        // Held-only is enforced inside computeMemberPunchIn — cancelled / not-held
+        // meetings are dropped so they don't impute 0% for every member.
+        callStatus: mtg.callStatus,
         absentUserIds:      mtg.absentTeamMembers.map((a) => a.clientMemberId),
         dashboardNAUserIds: mtg.dashboardNATeamMembers.map((a) => a.clientMemberId),
         memberScores: mtg.memberScores.map((s) => ({

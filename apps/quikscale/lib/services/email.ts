@@ -314,6 +314,83 @@ export function buildWWWUpdateEmail({
   return { subject, html, text };
 }
 
+export interface ReplacementEmailParams {
+  ownerName: string;
+  /** The KPI/Priority name before the replacement. */
+  oldName: string;
+  /** The KPI/Priority name after the replacement. */
+  newName: string;
+  quarter: string;
+  year: number;
+  /** Who performed the replacement (the OPSP export actor). */
+  replacedByName: string;
+  /** Whether the previous weekly data was retained (true) or reset (false). */
+  dataRetained: boolean;
+  url?: string;
+}
+
+/** Shared body for KPI/Priority replacement emails. `kind` = "KPI" | "Priority". */
+function buildReplacementEmail(kind: "KPI" | "Priority", p: ReplacementEmailParams) {
+  const subject = `Your ${kind} was replaced`;
+  const dataLine = p.dataRetained
+    ? "Your previous weekly progress and notes were carried forward."
+    : "This is a fresh start — previous weekly progress and notes were cleared.";
+  const viewLabel = `View ${kind}`;
+
+  const text = [
+    `Hi ${p.ownerName},`,
+    "",
+    `${p.replacedByName} replaced a ${kind} assigned to you on QuikScale.`,
+    "",
+    `Previous: ${p.oldName}`,
+    `Now: ${p.newName}`,
+    `Period: ${p.quarter} ${p.year}`,
+    "",
+    dataLine,
+    "",
+    p.url ? `View it here: ${p.url}` : "",
+    "",
+    "— QuikScale",
+  ]
+    .filter(Boolean)
+    .join("\n");
+
+  const html = `
+    <div style="font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;max-width:560px;margin:0 auto;padding:24px;color:#0f172a;">
+      <h2 style="margin:0 0 16px;font-size:20px;color:#0f172a;">Your ${kind} was replaced</h2>
+      <p style="margin:0 0 16px;line-height:1.5;">Hi <strong>${escapeHtml(p.ownerName)}</strong>,</p>
+      <p style="margin:0 0 16px;line-height:1.5;">
+        <strong>${escapeHtml(p.replacedByName)}</strong> replaced a ${kind} assigned to you on QuikScale.
+      </p>
+      <table style="border-collapse:collapse;margin:0 0 16px;">
+        <tbody>
+          <tr><td style="padding:6px 12px 6px 0;color:#64748b;">Previous</td><td style="padding:6px 0;color:#64748b;text-decoration:line-through;">${escapeHtml(p.oldName)}</td></tr>
+          <tr><td style="padding:6px 12px 6px 0;color:#64748b;">Now</td><td style="padding:6px 0;font-weight:600;">${escapeHtml(p.newName)}</td></tr>
+          <tr><td style="padding:6px 12px 6px 0;color:#64748b;">Period</td><td style="padding:6px 0;font-weight:600;">${escapeHtml(p.quarter)} ${p.year}</td></tr>
+          <tr><td style="padding:6px 12px 6px 0;color:#64748b;">Replaced by</td><td style="padding:6px 0;font-weight:600;">${escapeHtml(p.replacedByName)}</td></tr>
+        </tbody>
+      </table>
+      <p style="margin:0 0 16px;line-height:1.5;color:${p.dataRetained ? "#15803d" : "#b45309"};">${escapeHtml(dataLine)}</p>
+      ${
+        p.url
+          ? `<p style="margin:24px 0;"><a href="${escapeHtml(p.url)}" style="background:#0066cc;color:#fff;padding:10px 18px;border-radius:6px;text-decoration:none;font-weight:600;">${viewLabel}</a></p>`
+          : ""
+      }
+      <p style="margin:24px 0 0;color:#94a3b8;font-size:12px;">This is an automated notification from QuikScale.</p>
+    </div>
+  `;
+
+  return { subject, html, text };
+}
+
+export function buildKPIReplacementEmail(params: ReplacementEmailParams) {
+  return buildReplacementEmail("KPI", params);
+}
+
+export function buildPriorityReplacementEmail(params: ReplacementEmailParams) {
+  return buildReplacementEmail("Priority", params);
+}
+
 function escapeHtml(s: string): string {
   return String(s)
     .replace(/&/g, "&amp;")

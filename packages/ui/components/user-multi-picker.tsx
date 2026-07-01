@@ -17,9 +17,20 @@ interface Props {
   error?: boolean;
   chipLimit?: number;
   disabled?: boolean;
+  /** Infinite-scroll + server-search (optional — see UserSelect). */
+  onLoadMore?: () => void;
+  hasMore?: boolean;
+  loadingMore?: boolean;
+  onSearchChange?: (query: string) => void;
+  loading?: boolean;
+  /** Full objects of selected users, so chips persist across paginated slices. */
+  selectedUsers?: PickerUser[];
 }
 
-export function UserMultiPicker({ values, onChange, users, placeholder, error, chipLimit, disabled }: Props) {
+export function UserMultiPicker({
+  values, onChange, users, placeholder, error, chipLimit, disabled,
+  onLoadMore, hasMore, loadingMore, onSearchChange, loading, selectedUsers,
+}: Props) {
   return (
     <UserSelect
       mode="multi"
@@ -30,6 +41,12 @@ export function UserMultiPicker({ values, onChange, users, placeholder, error, c
       error={error}
       chipLimit={chipLimit}
       disabled={disabled}
+      onLoadMore={onLoadMore}
+      hasMore={hasMore}
+      loadingMore={loadingMore}
+      onSearchChange={onSearchChange}
+      loading={loading}
+      selectedUsers={selectedUsers}
     />
   );
 }
