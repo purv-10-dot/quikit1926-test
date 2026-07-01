@@ -21,7 +21,8 @@
     "./public-url": "./public-url.ts",
     "./session-cookies": "./session-cookies.ts",
     "./oauth-prefill-store": "./oauth-prefill-store.ts",
-    "./assign-app-roles": "./assign-app-roles.ts"
+    "./assign-app-roles": "./assign-app-roles.ts",
+    "./app-access": "./app-access.ts"
   },
   "scripts": {
     "typecheck": "tsc --noEmit",

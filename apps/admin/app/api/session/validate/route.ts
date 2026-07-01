@@ -22,11 +22,18 @@ export async function GET() {
 
   const membership = await db.orgMember.findFirst({
     where: { userId: session.user.id, orgId, status: "active" },
-    select: { role: true },
+    select: { role: true, org: { select: { status: true } } },
   });
 
   if (!membership) {
     return NextResponse.json({ valid: false, reason: "deactivated" });
+  }
+
+  // A super-admin org suspension bounces the user to the launcher's org picker
+  // (mirrors every other app). App-access is intentionally NOT gated here —
+  // the admin portal's access is role-based via `requireAdmin` middleware.
+  if (membership.org.status !== "active") {
+    return NextResponse.json({ valid: false, reason: "org_suspended" });
   }
 
   return NextResponse.json({ valid: true, hasTenant: true });

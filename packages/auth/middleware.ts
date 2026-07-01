@@ -75,7 +75,13 @@ export function createMiddleware(config: MiddlewareConfig) {
     // ingress doesn't preserve the Host header. See ./public-url.
     const base = publicBaseUrl(request);
 
-    const isPublicRoute = config.publicRoutes.some((r) => pathname.startsWith(r));
+    // `"/"` must match ONLY the exact root, never as a prefix — otherwise
+    // `pathname.startsWith("/")` is always true and every route becomes public,
+    // silently disabling auth + remote session validation + org enforcement for
+    // the whole app. All other entries keep prefix matching.
+    const isPublicRoute = config.publicRoutes.some((r) =>
+      r === "/" ? pathname === "/" : pathname.startsWith(r),
+    );
     const isLoginRoute = pathname.startsWith(config.loginRoute);
     const isSelectOrgRoute = config.selectOrgRoute
       ? pathname.startsWith(config.selectOrgRoute)

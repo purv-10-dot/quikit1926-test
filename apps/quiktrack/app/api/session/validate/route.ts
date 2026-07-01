@@ -19,11 +19,19 @@ export async function GET(_request: NextRequest) {
     return NextResponse.json({ valid: true, hasTenant: false });
   }
 
+  // Pull org status alongside membership so a super-admin org suspension is
+  // caught here too (mirrors quikscale) — otherwise a suspended org's users
+  // keep using QuikTrack.
   const membership = await db.orgMember.findFirst({
     where: { userId: session.user.id, orgId, status: "active" },
+    select: { id: true, org: { select: { status: true } } },
   });
   if (!membership) {
     return NextResponse.json({ valid: false, reason: "deactivated" });
+  }
+
+  if (membership.org.status !== "active") {
+    return NextResponse.json({ valid: false, reason: "org_suspended" });
   }
 
   // Org-level app entitlement (mirrors the launcher + getOrgId gate). Access is

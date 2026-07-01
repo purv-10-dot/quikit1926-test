@@ -29,6 +29,10 @@ const factoryMiddleware = createMiddleware({
   ],
   centralLoginUrl: AUTH_URL ? `${AUTH_URL}/login` : undefined,
   centralSelectOrgUrl: QUIKIT_URL ? `${QUIKIT_URL}/apps` : undefined,
+  // Remote session validation (Redis TTL/revoke → session_expired) on every
+  // protected nav in production only; dev relies on the JWT-callback Redis
+  // soft-revocation. Explicit + identical across all apps (mirrors quiktrack).
+  enforceRemoteSessionValidation: process.env.NODE_ENV === "production",
 });
 
 export async function middleware(request: NextRequest) {

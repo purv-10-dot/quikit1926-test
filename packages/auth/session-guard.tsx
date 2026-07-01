@@ -53,8 +53,26 @@ export function createSessionGuard(config: SessionGuardConfig = {}) {
       window.location.href = `${launcher}/apps?reason=org_suspended`;
       return;
     }
-    const param = reason === "app_access_revoked" ? "app_revoked" : "deactivated";
-    await signOut({ callbackUrl: `${loginRoute}?reason=${param}` });
+    // No access to THIS app (never granted, or trial/access revoked): send the
+    // user to this app's public landing page, where <AppAccessDeniedPopup />
+    // surfaces an app-specific "contact your administrator" message.
+    //
+    // Deliberately NO signOut here. Two reasons:
+    //   1. On localhost every app shares one host (cookies aren't port-scoped),
+    //      so signing out of this app would ALSO drop the central launcher
+    //      session — clicking "Go to my apps" would then bounce through /login
+    //      even though the user is already authenticated.
+    //   2. The popup needs a live session to query /api/apps/switcher and decide
+    //      whether the user has any OTHER apps (→ show/hide "Go to my apps").
+    // The user keeps their (unusable-here) session; this guard + the landing
+    // popup keep them out of the app, and /apps still recognizes them. Hard nav
+    // so the marketing server component re-runs with the marker.
+    if (reason === "app_access_revoked") {
+      window.location.href = `/?reason=no_app_access`;
+      return;
+    }
+    // Membership deactivated for the whole org → central login is correct.
+    await signOut({ callbackUrl: `${loginRoute}?reason=deactivated` });
   }
 
   return function SessionGuard({ children }: { children: React.ReactNode }) {
