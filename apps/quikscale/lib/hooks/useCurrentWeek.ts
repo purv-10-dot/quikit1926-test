@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { getCurrentFiscalWeekFromStart, DEFAULT_WEEKS_PER_QUARTER, MAX_WEEKS_PER_QUARTER } from "@/lib/utils/fiscal";
+import { getCurrentFiscalWeekFromStart, resolveQuarterForDate, DEFAULT_WEEKS_PER_QUARTER, MAX_WEEKS_PER_QUARTER } from "@/lib/utils/fiscal";
 
 interface QuarterRow {
   fiscalYear: number;
@@ -65,6 +65,30 @@ export function useCurrentWeek(year: number | null | undefined, quarter: string 
   }, [year, quarter]);
 
   return week;
+}
+
+/**
+ * Returns the CURRENT quarter ("Q1".."Q4") for a fiscal year, resolved from the
+ * tenant's actual QuarterSetting date ranges (Custom-Quarter aware) rather than
+ * the calendar month. Returns null while loading or when today falls outside the
+ * year's configured quarters — callers can then fall back to `getFiscalQuarter`.
+ */
+export function useCurrentQuarter(year: number | null | undefined): "Q1" | "Q2" | "Q3" | "Q4" | null {
+  const [quarter, setQuarter] = useState<"Q1" | "Q2" | "Q3" | "Q4" | null>(null);
+
+  useEffect(() => {
+    if (!year) {
+      setQuarter(null);
+      return;
+    }
+    (async () => {
+      await ensureLoaded();
+      const rows = (cache ?? []).filter((q) => q.fiscalYear === year);
+      setQuarter(resolveQuarterForDate(rows, new Date()));
+    })();
+  }, [year]);
+
+  return quarter;
 }
 
 /** Invalidate cache (call after quarter settings are changed). */

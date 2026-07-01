@@ -28,13 +28,58 @@ export function getFiscalYear(): number {
   return m >= 3 ? new Date().getFullYear() : new Date().getFullYear() - 1;
 }
 
-/** Current fiscal quarter. */
+/** Current fiscal quarter — CALENDAR-based (Apr–Jun=Q1 … Jan–Mar=Q4).
+ *  Ignores Custom Quarter Settings; for a custom-quarter-aware answer resolve
+ *  from the tenant's QuarterSetting rows via `resolveQuarterForDate`. */
 export function getFiscalQuarter(): "Q1" | "Q2" | "Q3" | "Q4" {
   const m = new Date().getMonth();
   if (m >= 3 && m <= 5) return "Q1";
   if (m >= 6 && m <= 8) return "Q2";
   if (m >= 9 && m <= 11) return "Q3";
   return "Q4";
+}
+
+/** A QuarterSetting row with the fields needed to test whether a date falls in it. */
+export interface QuarterDateRow {
+  quarter: string;
+  startDate: string | Date;
+  endDate: string | Date;
+}
+
+/** Parse an ISO string / Date to a local-midnight Date (no timezone drift). */
+function toLocalDay(value: string | Date): Date {
+  if (typeof value === "string") {
+    const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(value);
+    if (m) return new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3]));
+    const d = new Date(value);
+    return new Date(d.getFullYear(), d.getMonth(), d.getDate());
+  }
+  return new Date(value.getFullYear(), value.getMonth(), value.getDate());
+}
+
+/**
+ * Resolve which quarter contains `now` from a tenant's QuarterSetting date
+ * ranges — the Custom-Quarter-aware answer. Comparison is date-only and
+ * inclusive on both ends (mirrors the Quarter Settings badge), so a quarter
+ * whose custom length pushes its end past the calendar-month boundary (e.g. a
+ * 14-week Q1 ending in July) still resolves correctly. Returns null when no row
+ * contains `now` — callers can then fall back to the calendar `getFiscalQuarter`.
+ */
+export function resolveQuarterForDate(
+  rows: QuarterDateRow[] | null | undefined,
+  now: Date,
+): "Q1" | "Q2" | "Q3" | "Q4" | null {
+  if (!rows || rows.length === 0) return null;
+  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
+  for (const r of rows) {
+    const s = toLocalDay(r.startDate).getTime();
+    const e = toLocalDay(r.endDate).getTime();
+    if (today >= s && today <= e) {
+      const q = r.quarter;
+      if (q === "Q1" || q === "Q2" || q === "Q3" || q === "Q4") return q;
+    }
+  }
+  return null;
 }
 
 /** Formats "2026–2027" style label. */
