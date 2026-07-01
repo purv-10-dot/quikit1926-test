@@ -24,6 +24,7 @@ import {
   distributeContributionsEven,
   applyWeeklyEdit,
   sumBreakdown,
+  checkBreakdownBalance,
 } from "./kpiModalHelpers";
 import { WeekRow } from "./WeekRow";
 import { StatsTab } from "./StatsTab";
@@ -130,11 +131,11 @@ function EditTab({
   }
 
   function setWeekBreakdown(w: number, val: string) {
-    // Mirror the create form (KPIModal.setWeekBreakdown): `applyWeeklyEdit`
-    // clamps the typed value to [0, target − sum(earlier weeks)] for Cumulative
-    // so a single cell can never push the running total past the target, then
-    // redistributes the remainder across w+1..13. Standalone sets the one cell
-    // with no redistribution. `actualNum` applies the currency scale.
+    // Mirror the create form (KPIModal.setWeekBreakdown). `applyWeeklyEdit`
+    // redistributes the remainder across w+1..lastWeek for Cumulative;
+    // Standalone sets the one cell. `actualNum` applies the currency scale.
+    // clampToTarget=false → an over-target entry stays as typed so the balance
+    // indicator WARNS instead of silently capping it.
     setForm(f => ({
       ...f,
       weeklyBreakdown: applyWeeklyEdit(
@@ -145,6 +146,7 @@ function EditTab({
         f.measurementUnit,
         f.divisionType,
         weekCount,
+        false,
       ),
     }));
   }
@@ -187,14 +189,11 @@ function EditTab({
       const isWhole = f.measurementUnit === "Number";
       const existingRow = f.weeklyOwnerBreakdown[ownerId] ?? {};
 
-      let priorSum = 0;
-      for (let i = 1; i < weekNumber; i++) priorSum += parseFloat(String(existingRow[i])) || 0;
-      const maxAllowed = Math.max(0, ownerSubTarget - priorSum);
-
+      // No upper clamp — an over-sub-target entry stays as typed so the balance
+      // indicator can WARN; redistribution still handles the later weeks.
       let parsed = parseFloat(rawVal);
       if (rawVal === "" || isNaN(parsed)) parsed = 0;
       if (parsed < 0) parsed = 0;
-      if (f.divisionType === "Cumulative" && parsed > maxAllowed) parsed = maxAllowed;
 
       const val = rawVal === "" ? "" : (isWhole ? String(Math.round(parsed)) : parsed.toFixed(2));
       let ownerRow = { ...existingRow, [weekNumber]: val };
@@ -210,18 +209,11 @@ function EditTab({
       const totalTargetNum = actualNum(f);
       const isWhole = f.measurementUnit === "Number";
 
-      let priorTeamSum = 0;
-      for (let i = 1; i < weekNumber; i++) {
-        for (const id of f.ownerIds) {
-          priorTeamSum += parseFloat(String((f.weeklyOwnerBreakdown[id] ?? {})[i])) || 0;
-        }
-      }
-      const maxAllowed = Math.max(0, totalTargetNum - priorTeamSum);
-
+      // No upper clamp — an over-target total stays as typed so the balance
+      // indicator can WARN; per-owner redistribution handles the rest.
       let parsed = parseFloat(rawVal);
       if (rawVal === "" || isNaN(parsed)) parsed = 0;
       if (parsed < 0) parsed = 0;
-      if (f.divisionType === "Cumulative" && parsed > maxAllowed) parsed = maxAllowed;
 
       const totalNum = parsed;
       const newOwnerBreakdown: Record<string, Record<number, string>> = { ...f.weeklyOwnerBreakdown };
@@ -295,6 +287,16 @@ function EditTab({
     if (!Number.isFinite(n)) return undefined;
     return `= ${formatActual(n, currencyObj.symbol, form.currency)}`;
   };
+
+  // Breakdown balance (Cumulative only) — the weekly cells must total the target.
+  // Team sums every owner cell; individual sums the single row. Drives the live
+  // "Remaining" indicator below the breakdown. `scaledTarget` is the raw target.
+  const balanceSum = isTeamKPI && form.ownerIds.length > 0
+    ? form.ownerIds.reduce((s, id) => s + sumBreakdown(form.weeklyOwnerBreakdown[id] ?? {}), 0)
+    : sumBreakdown(form.weeklyBreakdown);
+  const balance = form.divisionType === "Cumulative"
+    ? checkBreakdownBalance(balanceSum, scaledTarget)
+    : null;
 
   return (
     <div className="space-y-4">
@@ -730,6 +732,15 @@ function EditTab({
               ? `Remainder distributed right-to-left — edit cells to override`
               : `Each week = full target${isCurrency ? ` (${currencyObj.symbol}${targetNum})` : ` (${targetNum})`}`}
           </p>
+          {/* Live balance indicator — the weekly cells must total the target
+              (Cumulative only). Shows the shortfall/overage in red. */}
+          {balance && balance.status !== "balanced" && (
+            <p className="text-[11px] font-medium text-red-600 mt-1.5">
+              {balance.status === "under"
+                ? `Remaining: ${toDisp(String(balance.remaining))}${breakdownUnit ? ` ${breakdownUnit}` : ""} — weekly targets must total the ${toDisp(String(scaledTarget))}${breakdownUnit ? ` ${breakdownUnit}` : ""} target.`
+                : `Over target by ${toDisp(String(Math.abs(balance.remaining)))}${breakdownUnit ? ` ${breakdownUnit}` : ""} — reduce the weekly targets to total the target.`}
+            </p>
+          )}
         </div>
       )}
     </div>
@@ -1202,22 +1213,30 @@ export function LogModal({ kpi, onClose, onRefresh, initialTab = "updates", canU
     // Team KPIs use ownerIds (multi-select), not the single owner field
     if (!isTeamKPI && !editForm.owner) errs.owner = "Required";
 
-    // Individual + Cumulative: the weekly breakdown must not sum to MORE than
-    // the target value. Backstop for the per-cell clamp in setWeekBreakdown,
-    // and it also catches legacy KPIs saved with an over-target breakdown
-    // before that clamp existed. Standalone is exempt — each week intentionally
-    // carries the full target, so the sum is 13× the target by design.
-    if (!isTeamKPI && editForm.divisionType === "Cumulative") {
-      const scaledTarget = editForm.target
-        ? (parseFloat(editForm.target) || 0) *
-          (editForm.measurementUnit === "Currency" ? getMultiplier(editForm.currency, editForm.targetScale) : 1)
-        : 0;
-      if (scaledTarget > 0) {
-        const weekSum = sumBreakdown(editForm.weeklyBreakdown);
-        // 0.01 tolerance absorbs 2-decimal currency rounding residue.
-        if (weekSum > scaledTarget + 0.01) {
-          errs._ = `Weekly targets add up to ${fmt(weekSum)}, which is more than the target value of ${fmt(scaledTarget)}. Reduce the weekly values so they total the target.`;
-        }
+    // Cumulative: the weekly breakdown must total the target EXACTLY (under or
+    // over both block). Team sums every owner cell; individual sums the single
+    // row. Standalone is exempt — each week intentionally carries the full
+    // target, so the sum is weeks× the target by design.
+    if (editForm.divisionType === "Cumulative") {
+      const isCurr = editForm.measurementUnit === "Currency";
+      const scaleMult = isCurr ? getMultiplier(editForm.currency, editForm.targetScale) : 1;
+      const scaledTarget = (parseFloat(editForm.target) || 0) * scaleMult;
+      const weekSum = isTeamKPI && editForm.ownerIds.length > 0
+        ? editForm.ownerIds.reduce((s, id) => s + sumBreakdown(editForm.weeklyOwnerBreakdown[id] ?? {}), 0)
+        : sumBreakdown(editForm.weeklyBreakdown);
+      const balance = checkBreakdownBalance(weekSum, scaledTarget);
+      if (balance.status !== "balanced") {
+        // Display in the scale unit when the toggle is on; else raw. Append the
+        // Number unit (from Unit Master) when set.
+        const scaled = isCurr && editForm.scaledDisplay && !!editForm.targetScale;
+        const dispMult = scaled ? scaleMult : 1;
+        const unit = scaled
+          ? ` ${shortScaleLabel(editForm.targetScale)}`
+          : editForm.measurementUnit === "Number" && editForm.unit ? ` ${editForm.unit}` : "";
+        const d = (raw: number) => fmt(raw / dispMult);
+        errs._ = balance.status === "under"
+          ? `Weekly targets total ${d(weekSum)}${unit} — ${d(Math.abs(balance.remaining))}${unit} short of the ${d(scaledTarget)}${unit} target. Adjust the weekly cells so they add up to the target.`
+          : `Weekly targets total ${d(weekSum)}${unit} — ${d(Math.abs(balance.remaining))}${unit} over the ${d(scaledTarget)}${unit} target. Reduce the weekly cells so they add up to the target.`;
       }
     }
 

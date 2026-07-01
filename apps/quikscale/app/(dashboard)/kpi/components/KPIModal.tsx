@@ -24,6 +24,8 @@ import {
   redistributeOwnerRemainder,
   distributeContributionsEven,
   applyWeeklyEdit,
+  sumBreakdown,
+  checkBreakdownBalance,
   type DivisionType,
 } from "./kpiModalHelpers";
 import { WeeklyScroller } from "./WeeklyScroller";
@@ -239,14 +241,12 @@ export function KPIModal({ mode, kpi, scope, teamId, defaultYear, defaultQuarter
       const existingRow = f.weeklyOwnerBreakdown[ownerId] ?? {};
 
       // Clamp: no negatives, and cannot exceed remaining owner budget
-      let priorSum = 0;
-      for (let i = 1; i < weekNumber; i++) priorSum += parseFloat(String(existingRow[i])) || 0;
-      const maxAllowed = Math.max(0, ownerSubTarget - priorSum);
-
+      // No upper clamp — an over-sub-target entry stays as typed so the
+      // breakdown-balance indicator can WARN; redistribution still zeroes the
+      // later weeks (remaining goes to 0) and the sum surfaces as "over".
       let parsed = parseFloat(rawVal);
       if (rawVal === "" || isNaN(parsed)) parsed = 0;
       if (parsed < 0) parsed = 0;
-      if (f.divisionType === "Cumulative" && parsed > maxAllowed) parsed = maxAllowed;
 
       const val = rawVal === "" ? "" : (isWhole ? String(Math.round(parsed)) : parsed.toFixed(2));
       let ownerRow = { ...existingRow, [weekNumber]: val };
@@ -273,20 +273,11 @@ export function KPIModal({ mode, kpi, scope, teamId, defaultYear, defaultQuarter
       const totalTargetNum = actualNum(f);
       const isWhole = f.measurementUnit === "Number";
 
-      // Clamp: no negatives, and cannot exceed remaining team budget
-      // Compute prior sum from existing owner rows (sum all owners' cells for weeks < weekNumber)
-      let priorTeamSum = 0;
-      for (let i = 1; i < weekNumber; i++) {
-        for (const id of f.ownerIds) {
-          priorTeamSum += parseFloat(String((f.weeklyOwnerBreakdown[id] ?? {})[i])) || 0;
-        }
-      }
-      const maxAllowed = Math.max(0, totalTargetNum - priorTeamSum);
-
+      // No upper clamp — an over-target total stays as typed so the balance
+      // indicator can WARN; per-owner redistribution handles the rest.
       let parsed = parseFloat(rawVal);
       if (rawVal === "" || isNaN(parsed)) parsed = 0;
       if (parsed < 0) parsed = 0;
-      if (f.divisionType === "Cumulative" && parsed > maxAllowed) parsed = maxAllowed;
 
       const totalNum = parsed;
       const newOwnerBreakdown: Record<string, Record<number, string>> = { ...f.weeklyOwnerBreakdown };
@@ -533,11 +524,12 @@ export function KPIModal({ mode, kpi, scope, teamId, defaultYear, defaultQuarter
   }
 
   function setWeekBreakdown(w: number, rawVal: string) {
-    // Shared with the OPSP export so both redistribute identically — see
-    // `applyWeeklyEdit` in kpiModalHelpers. `actualNum` applies the currency scale.
+    // `actualNum` applies the currency scale. clampToTarget=false → an
+    // over-target entry stays as typed so the balance indicator can WARN
+    // instead of silently capping it (the OPSP export keeps the default clamp).
     setForm(f => ({
       ...f,
-      weeklyBreakdown: applyWeeklyEdit(f.weeklyBreakdown, w, rawVal, actualNum(f), f.measurementUnit, f.divisionType, weekCount),
+      weeklyBreakdown: applyWeeklyEdit(f.weeklyBreakdown, w, rawVal, actualNum(f), f.measurementUnit, f.divisionType, weekCount, false),
     }));
   }
 
@@ -578,6 +570,18 @@ export function KPIModal({ mode, kpi, scope, teamId, defaultYear, defaultQuarter
       }
     } else {
       if (!form.owner) errs.owner = "Please select an owner for this KPI.";
+    }
+
+    // Cumulative: the weekly breakdown must total the target exactly. `balance`
+    // is null for Standalone (exempt) and computed against the raw target.
+    if (balance && balance.status !== "balanced") {
+      const unit = breakdownUnit ? ` ${breakdownUnit}` : "";
+      const dispSum = toDisp(String(balance.sum));
+      const dispTgt = toDisp(String(scaledTarget));
+      const dispDiff = toDisp(String(Math.abs(balance.remaining)));
+      errs._ = balance.status === "under"
+        ? `Weekly targets total ${dispSum}${unit} — ${dispDiff}${unit} short of the ${dispTgt}${unit} target. Adjust the weekly cells so they add up to the target.`
+        : `Weekly targets total ${dispSum}${unit} — ${dispDiff}${unit} over the ${dispTgt}${unit} target. Reduce the weekly cells so they add up to the target.`;
     }
     return errs;
   }
@@ -716,6 +720,20 @@ export function KPIModal({ mode, kpi, scope, teamId, defaultYear, defaultQuarter
     if (!Number.isFinite(n)) return undefined;
     return `= ${formatActual(n, currencyObj.symbol, form.currency)}`;
   };
+
+  // ── Breakdown balance (Cumulative only) ──
+  // The weekly cells must sum to the target. Team scope sums every owner cell;
+  // individual sums the single breakdown row. Standalone is exempt (each week
+  // carries the full target). Drives the live "Remaining" indicator + submit gate.
+  const breakdownSum = isTeamScope && form.ownerIds.length > 0
+    ? form.ownerIds.reduce(
+        (s, id) => s + sumBreakdown(form.weeklyOwnerBreakdown[id] ?? {}),
+        0,
+      )
+    : sumBreakdown(form.weeklyBreakdown);
+  const balance = form.divisionType === "Cumulative"
+    ? checkBreakdownBalance(breakdownSum, scaledTarget)
+    : null;
 
   const panelTitle =
     mode === "create"
@@ -1437,6 +1455,15 @@ export function KPIModal({ mode, kpi, scope, teamId, defaultYear, defaultQuarter
                   </button>
                 )}
               </div>
+              {/* Live balance indicator — the weekly cells must total the target
+                  (Cumulative only). Shows the shortfall/overage in red. */}
+              {balance && balance.status !== "balanced" && (
+                <p className="text-[11px] font-medium text-red-600 mt-1.5">
+                  {balance.status === "under"
+                    ? `Remaining: ${toDisp(String(balance.remaining))}${breakdownUnit ? ` ${breakdownUnit}` : ""} — weekly targets must total the ${toDisp(String(scaledTarget))}${breakdownUnit ? ` ${breakdownUnit}` : ""} target.`
+                    : `Over target by ${toDisp(String(Math.abs(balance.remaining)))}${breakdownUnit ? ` ${breakdownUnit}` : ""} — reduce the weekly targets to total the target.`}
+                </p>
+              )}
             </div>
           )}
     </RightPanel>
