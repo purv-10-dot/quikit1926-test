@@ -28,10 +28,13 @@
 
 ## 1. Architecture overview
 
-QuikIT is a **Turborepo monorepo** of 9 Next.js (App Router) applications that
-share a set of `@quikit/*` packages. One app — the **launcher (quikit)** — also
-acts as the **central OpenID Provider (IdP)**; the **auth app** is the central
-credentials host. All other apps are OAuth/OIDC **clients** of the launcher.
+QuikIT is a **Turborepo monorepo** of 10 Next.js (App Router) product/platform
+applications (plus the `_template` scaffold) that share a set of `@quikit/*`
+packages. One app — the **launcher (quikit)** — also acts as the **central
+OpenID Provider (IdP)**; the **auth app** is the central credentials host. All
+other apps are OAuth/OIDC **clients** of the launcher. The full set:
+`quikit`, `auth`, `admin`, `quikscale`, `quiktrack`, `quikvc`, `quikinfra`,
+`quiksocial`, `quikcrm`, `quikhrms`.
 
 ```
                          ┌─────────────────────────────────────────────┐
@@ -48,7 +51,7 @@ credentials host. All other apps are OAuth/OIDC **clients** of the launcher.
  quikit(3000)   auth(3001)     admin(3002)  quikscale   quiktrack       quikinfra
  launcher       central creds  org portal   (3003)      (3004)          (3006)
  + OIDC IdP     login host                                              (own Cn* RBAC)
-   │                                          quikvc(3005)  quiksocial(3007)  Quikcrm(3008)
+   │                                          quikvc(3005)  quiksocial(3007)  quikcrm(3008)  quikhrms(3009)
    │
    └── OIDC endpoints: /api/oauth/{authorize,token,userinfo,jwks},
                        /.well-known/openid-configuration
@@ -56,7 +59,7 @@ credentials host. All other apps are OAuth/OIDC **clients** of the launcher.
 
 **Dual auth-config path (per app).** Each app's `lib/auth.ts` chooses its
 NextAuth configuration at runtime
-([apps/quikscale/lib/auth.ts:17-27](QuikIT_New/apps/quikscale/lib/auth.ts#L17-L27)):
+([apps/quikscale/lib/auth.ts:17-27](../apps/quikscale/lib/auth.ts#L17-L27)):
 
 ```ts
 export const authOptions =
@@ -70,7 +73,7 @@ export const authOptions =
 - Without them → the app falls back to the **direct credentials** provider
   (used in local dev / migration).
 
-Both factories live in [packages/auth/index.ts](QuikIT_New/packages/auth/index.ts)
+Both factories live in [packages/auth/index.ts](../packages/auth/index.ts)
 (`createAuthOptions` and `createOAuthClientOptions`).
 
 ---
@@ -126,9 +129,9 @@ user see/launch this app at all," with a simple `role` string (default
 
 ### 4.1 Canonical constants
 
-All defined in [packages/shared/lib/constants.ts](QuikIT_New/packages/shared/lib/constants.ts).
+All defined in [packages/shared/lib/constants.ts](../packages/shared/lib/constants.ts).
 
-**v4 membership roles** (current standard, [constants.ts:63-68](QuikIT_New/packages/shared/lib/constants.ts#L63-L68)):
+**v4 membership roles** (current standard, [constants.ts:63-68](../packages/shared/lib/constants.ts#L63-L68)):
 
 ```ts
 MEMBERSHIP_ROLES = {
@@ -140,11 +143,11 @@ MEMBERSHIP_ROLES = {
 ```
 
 **Legacy roles** (still present for backward-compat,
-[constants.ts:1-8](QuikIT_New/packages/shared/lib/constants.ts#L1-L8)):
+[constants.ts:1-8](../packages/shared/lib/constants.ts#L1-L8)):
 `super_admin`, `admin`, `executive`, `manager`, `employee`, `coach`.
 
 **ROLE_HIERARCHY** — numeric levels merging v4 + legacy
-([constants.ts:12-30](QuikIT_New/packages/shared/lib/constants.ts#L12-L30)):
+([constants.ts:12-30](../packages/shared/lib/constants.ts#L12-L30)):
 
 | Role | Level |
 |---|---|
@@ -156,13 +159,13 @@ MEMBERSHIP_ROLES = {
 | `coach` | 1 |
 
 **ADMIN_TIER_ROLES** — who may access admin-tier apps (`App.requiresOrgAdmin =
-true`), [constants.ts:84-88](QuikIT_New/packages/shared/lib/constants.ts#L84-L88):
+true`), [constants.ts:84-88](../packages/shared/lib/constants.ts#L84-L88):
 `super_admin`, `org_admin`, and legacy `admin`. (`app_admin` and `member` do not
 pass.)
 
 ### 4.2 Where roles are stored
 
-**`OrgMember`** ([schema.prisma:419](QuikIT_New/packages/database/prisma/schema.prisma#L419)):
+**`OrgMember`** ([schema.prisma:419](../packages/database/prisma/schema.prisma#L419)):
 
 ```prisma
 model OrgMember {
@@ -177,12 +180,12 @@ model OrgMember {
 ```
 
 `MEMBERSHIP_STATUS` values: `active`, `invited`, `inactive`, `declined`,
-`pending` ([constants.ts:41-47](QuikIT_New/packages/shared/lib/constants.ts#L41-L47)).
+`pending` ([constants.ts:41-47](../packages/shared/lib/constants.ts#L41-L47)).
 
-**`User.isSuperAdmin`** ([schema.prisma:281](QuikIT_New/packages/database/prisma/schema.prisma#L281)) —
+**`User.isSuperAdmin`** ([schema.prisma:281](../packages/database/prisma/schema.prisma#L281)) —
 a boolean column; the platform-wide super-admin flag.
 
-**`UserAppAccess`** ([schema.prisma:102](QuikIT_New/packages/database/prisma/schema.prisma#L102)) —
+**`UserAppAccess`** ([schema.prisma:102](../packages/database/prisma/schema.prisma#L102)) —
 the org→app grant (`@@unique([userId, orgId, appId])`, `role` default `"member"`).
 
 ### 4.3 How membership roles reach the session
@@ -190,7 +193,7 @@ the org→app grant (`@@unique([userId, orgId, appId])`, `role` default `"member
 The JWT/session callbacks in `createAuthOptions` set `token.orgId`,
 `token.membershipRole` (from the user's first active `OrgMember`), and
 `token.isSuperAdmin`; the session callback maps them onto `session.user`
-(shape in [packages/auth/types.ts](QuikIT_New/packages/auth/types.ts)). For
+(shape in [packages/auth/types.ts](../packages/auth/types.ts)). For
 consumer apps, these arrive via the OIDC id_token / cross-domain handoff
 (see [§6](#6-login--authentication-flow)).
 
@@ -211,7 +214,7 @@ consumer apps, these arrive via the OIDC id_token / cross-domain handoff
 
 Each product app owns its RBAC tables in its **own Postgres schema**, so role
 definitions never collide across apps. The `App` model links to several per-app
-role namespaces ([schema.prisma:27-30](QuikIT_New/packages/database/prisma/schema.prisma#L27-L30)):
+role namespaces ([schema.prisma:27-30](../packages/database/prisma/schema.prisma#L27-L30)):
 `AppRole` (schema `app_quikscale`), `QtAppRole`, `CnAppRole` (quikinfra),
 `QsAppRole`.
 
@@ -225,7 +228,7 @@ RoleNavigation { roleId → AppRole, navKey }                       // sidebar v
 UserPermissionExtra { orgId, userId, resource, action }           // additive per-user grant
 ```
 
-([schema.prisma:775-848](QuikIT_New/packages/database/prisma/schema.prisma#L775-L848))
+([schema.prisma:775-848](../packages/database/prisma/schema.prisma#L775-L848))
 
 - **`AppRole`** — per-org, per-app roles. `isSystem` protects the seeded
   `admin` role; `isDefault` marks the role auto-assigned to new users.
@@ -274,7 +277,7 @@ quikinfra has its own RBAC under `apps/quikinfra/src/lib/rbac/` + `src/lib/auth/
 When a super-admin creates an org or grants app access, the launcher fans out to
 each app's `/api/internal/provision-roles` (guarded by `INTERNAL_SECRET`) to seed
 that app's system/default roles and assign admins — `provisionAppRoles()` in
-[apps/quikit/lib/provisionAppRoles.ts](QuikIT_New/apps/quikit/lib/provisionAppRoles.ts).
+[apps/quikit/lib/provisionAppRoles.ts](../apps/quikit/lib/provisionAppRoles.ts).
 Triggered from `POST /api/super/orgs` and `POST /api/super/org-app-access`.
 
 ---
@@ -334,7 +337,7 @@ The launcher's IdP endpoints (in `apps/quikit/app/api/oauth/`):
 ### 7.1 JWT strategy + claims
 
 NextAuth uses the **JWT strategy** (cookie `next-auth.session-token`). Claim
-shape is augmented in [packages/auth/types.ts](QuikIT_New/packages/auth/types.ts):
+shape is augmented in [packages/auth/types.ts](../packages/auth/types.ts):
 `id, email, firstName, lastName, orgId, membershipRole, membershipInvalid,
 isSuperAdmin, sessionId, sessionTouchedAt, sessionCheckedAt` (+ impersonation
 and `actingAs` principal claims).
@@ -350,20 +353,20 @@ On the `jwt` callback:
 ### 7.2 Cross-domain handoff
 
 Because cookies don't cross hosts, sign-in on the auth host bridges to other
-apps via [`/api/post-login`](QuikIT_New/apps/auth/app/api/post-login/route.ts):
+apps via [`/api/post-login`](../apps/auth/app/api/post-login/route.ts):
 it mints a **120-second HS256 token** signed with `INTERNAL_SECRET` (carrying
 `sub, orgId, membershipRole, isSuperAdmin, email, name, sessionId, to`) and
 redirects to `${target}/auth-handoff?token=…`, where the target app verifies it
 and sets its own host-scoped session cookie. The return origin must be in the
-`AUTH_ALLOWED_RETURN_ORIGINS` allow-list ([post-login/route.ts:40-63](QuikIT_New/apps/auth/app/api/post-login/route.ts#L40-L63)).
+`AUTH_ALLOWED_RETURN_ORIGINS` allow-list ([post-login/route.ts:40-63](../apps/auth/app/api/post-login/route.ts#L40-L63)).
 
 ### 7.3 Soft revocation
 
 The session id is the soft-revocation handle (`auth:session:{sessionId}` in
-Redis, [packages/auth/session-store.ts](QuikIT_New/packages/auth/session-store.ts)).
-`verifyJWT` ([packages/auth/jwt.ts:10-19](QuikIT_New/packages/auth/jwt.ts#L10-L19))
+Redis, [packages/auth/session-store.ts](../packages/auth/session-store.ts)).
+`verifyJWT` ([packages/auth/jwt.ts:10-19](../packages/auth/jwt.ts#L10-L19))
 returns `null` if the session key is gone. The central
-`/api/verify-token` ([apps/auth/app/api/verify-token/route.ts](QuikIT_New/apps/auth/app/api/verify-token/route.ts))
+`/api/verify-token` ([apps/auth/app/api/verify-token/route.ts](../apps/auth/app/api/verify-token/route.ts))
 lets consumer apps' middleware validate a JWT server-to-server (gated by
 `x-internal-secret`) and touch its TTL. Global signout
 (`/api/auth/signout-global`) clears cookies across hosts and revokes the Redis
@@ -477,19 +480,19 @@ In order, the factory:
 
 | Concern | File |
 |---|---|
-| Role constants & hierarchy | [packages/shared/lib/constants.ts](QuikIT_New/packages/shared/lib/constants.ts) |
-| Session/JWT claim shape | [packages/auth/types.ts](QuikIT_New/packages/auth/types.ts) |
-| NextAuth factories (credentials + OIDC client) | [packages/auth/index.ts](QuikIT_New/packages/auth/index.ts) |
-| Per-app auth config selection | [apps/quikscale/lib/auth.ts](QuikIT_New/apps/quikscale/lib/auth.ts) |
+| Role constants & hierarchy | [packages/shared/lib/constants.ts](../packages/shared/lib/constants.ts) |
+| Session/JWT claim shape | [packages/auth/types.ts](../packages/auth/types.ts) |
+| NextAuth factories (credentials + OIDC client) | [packages/auth/index.ts](../packages/auth/index.ts) |
+| Per-app auth config selection | [apps/quikscale/lib/auth.ts](../apps/quikscale/lib/auth.ts) |
 | Admin / super-admin guards | `packages/auth/require-admin.ts`, `packages/auth/require-super-admin.ts` |
-| Middleware factory | [packages/auth/middleware.ts](QuikIT_New/packages/auth/middleware.ts) |
-| Tenant resolution + app-access cache | [packages/auth/get-tenant-id.ts](QuikIT_New/packages/auth/get-tenant-id.ts) |
-| Session store (soft revoke) | [packages/auth/session-store.ts](QuikIT_New/packages/auth/session-store.ts), [packages/auth/jwt.ts](QuikIT_New/packages/auth/jwt.ts) |
-| Cross-domain bridge | [apps/auth/app/api/post-login/route.ts](QuikIT_New/apps/auth/app/api/post-login/route.ts), `apps/*/app/auth-handoff/route.ts` |
-| Remote session check | [apps/auth/app/api/verify-token/route.ts](QuikIT_New/apps/auth/app/api/verify-token/route.ts) |
+| Middleware factory | [packages/auth/middleware.ts](../packages/auth/middleware.ts) |
+| Tenant resolution + app-access cache | [packages/auth/get-tenant-id.ts](../packages/auth/get-tenant-id.ts) |
+| Session store (soft revoke) | [packages/auth/session-store.ts](../packages/auth/session-store.ts), [packages/auth/jwt.ts](../packages/auth/jwt.ts) |
+| Cross-domain bridge | [apps/auth/app/api/post-login/route.ts](../apps/auth/app/api/post-login/route.ts), `apps/*/app/auth-handoff/route.ts` |
+| Remote session check | [apps/auth/app/api/verify-token/route.ts](../apps/auth/app/api/verify-token/route.ts) |
 | OIDC IdP endpoints | `apps/quikit/app/api/oauth/{authorize,token,userinfo,jwks}/route.ts`, `apps/quikit/app/.well-known/openid-configuration/route.ts` |
-| Role/RBAC schema | [packages/database/prisma/schema.prisma](QuikIT_New/packages/database/prisma/schema.prisma) (OrgMember, UserAppAccess, AppRole, UserAppRole, RolePermission) |
+| Role/RBAC schema | [packages/database/prisma/schema.prisma](../packages/database/prisma/schema.prisma) (OrgMember, UserAppAccess, AppRole, UserAppRole, RolePermission) |
 | QuikScale RBAC | `apps/quikscale/lib/api/permissions.ts`, `apps/quikscale/lib/api/seedAdminAppRole.ts` |
 | QuikInfra RBAC | `apps/quikinfra/src/lib/rbac/`, `apps/quikinfra/src/lib/auth/context.ts` |
 | Admin roles API + deferred list | `apps/admin/app/api/roles/route.ts`, `apps/admin/MIGRATION_NOTES.md` |
-| Role provisioning bridge | [apps/quikit/lib/provisionAppRoles.ts](QuikIT_New/apps/quikit/lib/provisionAppRoles.ts) |
+| Role provisioning bridge | [apps/quikit/lib/provisionAppRoles.ts](../apps/quikit/lib/provisionAppRoles.ts) |

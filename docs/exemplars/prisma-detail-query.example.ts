@@ -9,15 +9,15 @@ import { db } from "@/lib/db";
 
 /* ─── Pattern A — fetch single record by composite key ──────────────────────
  * findUnique is the right choice when you have a true uniqueness constraint
- * (here: tenantId + id). Faster than findFirst and the type system enforces
+ * (here: orgId + id). Faster than findFirst and the type system enforces
  * presence of the unique fields.
  */
-export async function getWidget(tenantId: string, id: string) {
+export async function getWidget(orgId: string, id: string) {
   return db.widget.findUnique({
     where: {
-      // Composite key requires `@@unique([tenantId, id])` in schema.prisma OR
+      // Composite key requires `@@unique([orgId, id])` in schema.prisma OR
       // use findFirst with a composite where.
-      tenantId_id: { tenantId, id },
+      orgId_id: { orgId, id },
     },
     include: {
       // Detail views can use `include` since the consumer wants full models.
@@ -32,28 +32,28 @@ export async function getWidget(tenantId: string, id: string) {
 }
 
 /* ─── Pattern B — alternative when no composite unique index ────────────────
- * If you don't have @@unique([tenantId, id]), use findFirst instead. The
- * tenantId filter is still mandatory.
+ * If you don't have @@unique([orgId, id]), use findFirst instead. The
+ * orgId filter is still mandatory.
  */
-export async function getWidgetFallback(tenantId: string, id: string) {
+export async function getWidgetFallback(orgId: string, id: string) {
   return db.widget.findFirst({
-    where: { id, tenantId },     // tenantId STILL required
+    where: { id, orgId },     // orgId STILL required
     include: { owner: true },
   });
 }
 
 /* ─── Pattern C — update with optimistic concurrency check ──────────────────
- * `update` throws if no row matches. The `tenantId` clause guarantees you
- * can't mutate another tenant's data even if you somehow get their `id`.
+ * `update` throws if no row matches. The `orgId` clause guarantees you
+ * can't mutate another org's data even if you somehow get their `id`.
  */
 export async function updateWidget(
-  tenantId: string,
+  orgId: string,
   id: string,
   userId: string,
   data: { name?: string; status?: string },
 ) {
   return db.widget.update({
-    where: { tenantId_id: { tenantId, id } },
+    where: { orgId_id: { orgId, id } },
     data: { ...data, updatedBy: userId },
     select: { id: true, name: true, status: true, updatedAt: true },
   });
@@ -63,9 +63,9 @@ export async function updateWidget(
  * Prefer soft delete (set deletedAt) over hard delete. Lets users undo and
  * preserves audit trail. Add `deletedAt: null` to every read-side query.
  */
-export async function softDeleteWidget(tenantId: string, id: string, userId: string) {
+export async function softDeleteWidget(orgId: string, id: string, userId: string) {
   return db.widget.update({
-    where: { tenantId_id: { tenantId, id } },
+    where: { orgId_id: { orgId, id } },
     data: { deletedAt: new Date(), updatedBy: userId },
     select: { id: true, deletedAt: true },
   });
@@ -75,20 +75,20 @@ export async function softDeleteWidget(tenantId: string, id: string, userId: str
  * Atomic: either both the update and the audit log succeed, or neither does.
  */
 export async function updateWidgetWithAudit(
-  tenantId: string,
+  orgId: string,
   id: string,
   userId: string,
   changes: { name?: string; status?: string },
 ) {
   return db.$transaction(async (tx) => {
     const updated = await tx.widget.update({
-      where: { tenantId_id: { tenantId, id } },
+      where: { orgId_id: { orgId, id } },
       data: { ...changes, updatedBy: userId },
       select: { id: true, name: true, status: true },
     });
     await tx.auditLog.create({
       data: {
-        tenantId,
+        orgId,
         actorId: userId,
         action: "UPDATE",
         entityType: "Widget",
@@ -102,13 +102,13 @@ export async function updateWidgetWithAudit(
 }
 
 /* ─── Pattern F — guarded existence check before operation ─────────────────
- * Sometimes you need to verify the row exists in your tenant *before* doing
+ * Sometimes you need to verify the row exists in your org *before* doing
  * something else (e.g., checking a quota). Use `select: { id: true }` —
  * fastest possible "does this exist for me?" query.
  */
-export async function ensureWidgetExists(tenantId: string, id: string) {
+export async function ensureWidgetExists(orgId: string, id: string) {
   const exists = await db.widget.findFirst({
-    where: { id, tenantId },
+    where: { id, orgId },
     select: { id: true },
   });
   if (!exists) throw new Error("Widget not found");
@@ -116,13 +116,13 @@ export async function ensureWidgetExists(tenantId: string, id: string) {
 
 /* ─── Anti-patterns ─────────────────────────────────────────────────────────
  *
- * ❌ findUnique without tenantId:
+ * ❌ findUnique without orgId:
  *      db.widget.findUnique({ where: { id } })
- *      // Returns the row regardless of tenant. Cross-tenant leak.
+ *      // Returns the row regardless of org. Cross-org leak.
  *
  * ❌ Update with `where: { id }`:
  *      db.widget.update({ where: { id }, data: { ... } })
- *      // No tenant scoping — could mutate another tenant's data.
+ *      // No org scoping — could mutate another org's data.
  *
  * ❌ Mutation without audit log:
  *      db.widget.update({ ... })  // and no auditLog write afterwards

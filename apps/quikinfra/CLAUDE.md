@@ -39,7 +39,7 @@ tests/            → api + e2e (Playwright)
 
 ### Database
 - Models prefixed `Cn` (historical — "construction"). Don't rename.
-- **Always include `tenantId` in `where` clauses.** A `findUnique({ where: { id } })` from a route is a tenant leak.
+- **Always include `orgId` in `where` clauses.** (The scoping column is `orgId` — the legacy `tenantId` was renamed org-wide.) A `findUnique({ where: { id } })` from a route is a cross-org leak.
 - Money: `Decimal(18, 2)`. Quantity: `Decimal(18, 4)`. **Never `Float`.**
 - Masters use soft delete (`status = 'inactive'`). Hard-delete only transient join rows.
 - Side effects go through append-only ledgers — `CnStockLedger`, `CnBOQProgressLedger`, `CnBOQBillingLedger`, `CnApprovalHistory`, `CnAuditLog`. Reversals = compensating row, never UPDATE.
@@ -163,7 +163,7 @@ depth handling › deep refs cap at depth 5 with warning
 ```
 ENVELOPE          { ok, data | error: { code, message }, requestId }
 AUTH GATE         await requirePermission("construction.<domain>.<action>")
-TENANT SCOPE      Always include tenantId in every Prisma where clause
+ORG SCOPE         Always include orgId in every Prisma where clause
 LEDGER PATTERN    Append-only — reversal = compensating row, never UPDATE
 DOC NUMBER        nextDocNumber(ctx, projectId, "PO") → "PO-PROJ-FY-####"
 IDEMPOTENCY       idempotencyGuard(req, ctx, "approve-po") for replays

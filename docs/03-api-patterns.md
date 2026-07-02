@@ -6,13 +6,15 @@ Every API route in this codebase follows the same shape. Read this once, then co
 
 Every API route must:
 
-1. **Be wrapped in an auth helper** — `withTenantAuth`, `requireAdmin`, or (extremely rarely) `requireSuperAdmin`.
+1. **Be wrapped in an auth helper** — the app's `withOrgAuth` (its thin `lib/api/` wrapper over `@quikit/auth`), or `requireAdmin` / (extremely rarely) `requireSuperAdmin`.
 2. **Validate input with Zod** — never trust `req.body` directly.
-3. **Filter by `tenantId`** in every Prisma query.
+3. **Filter by `orgId`** in every Prisma query.
 4. **Return a consistent response shape**: `{ success: true, data }` or `{ success: false, error }`.
 5. **Catch `(error: unknown)`** — never `(e: any)`.
 6. **Return 201 from POSTs that create resources**, 200 from everything else.
-7. **Have at least three tests**: unauthenticated → 401, cross-tenant → rejected, happy path.
+7. **Have at least three tests**: unauthenticated → 401, cross-org → rejected, happy path.
+
+> **Naming:** the wrapper is called `withOrgAuth` in quikscale/quikvc/quiksocial/quiktrack/quikinfra, `withTenantAuth` in quikcrm, and `withAdminAuth` in admin. They all resolve the same `orgId` from the session. Examples below use `withOrgAuth`.
 
 ## The canonical shape
 
@@ -22,16 +24,16 @@ import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 import { z } from "zod";
 import { db } from "@/lib/db";
-import { withTenantAuth } from "@/lib/api/withTenantAuth";
+import { withOrgAuth } from "@/lib/api/withOrgAuth";
 
 const createSchema = z.object({
   name: z.string().min(1).max(120),
   description: z.string().max(2000).optional(),
 });
 
-export const GET = withTenantAuth(async ({ tenantId }) => {
+export const GET = withOrgAuth(async ({ orgId }) => {
   const items = await db.widget.findMany({
-    where: { tenantId },
+    where: { orgId },
     select: { id: true, name: true, createdAt: true },
     orderBy: { createdAt: "desc" },
     take: 50,
@@ -39,7 +41,7 @@ export const GET = withTenantAuth(async ({ tenantId }) => {
   return NextResponse.json({ success: true, data: items });
 });
 
-export const POST = withTenantAuth(async ({ tenantId, userId }, req: NextRequest) => {
+export const POST = withOrgAuth(async ({ orgId, userId }, req: NextRequest) => {
   const parsed = createSchema.safeParse(await req.json());
   if (!parsed.success) {
     return NextResponse.json(
@@ -48,34 +50,47 @@ export const POST = withTenantAuth(async ({ tenantId, userId }, req: NextRequest
     );
   }
   const widget = await db.widget.create({
-    data: { ...parsed.data, tenantId, createdBy: userId },
+    data: { ...parsed.data, orgId, createdBy: userId },
     select: { id: true, name: true },
   });
   return NextResponse.json({ success: true, data: widget }, { status: 201 });
 });
 ```
 
+The `withOrgAuth` context is `{ session, userId, orgId }`. The wrapper already handles the 401 (no session), 403 (no active membership), and 500 (unhandled throw) boilerplate, and fire-and-forget request logging (`logApiCall`) — so your handler only writes the happy path.
+
 ## Auth wrappers
 
 | Wrapper | Use when |
 |---|---|
-| `withTenantAuth` | The route reads/writes data scoped to the calling user's tenant. **99% of routes.** |
-| `requireAdmin` | Route is only available to tenant admins. Same tenant scoping; checks `membershipRole`. |
-| `requireSuperAdmin` | Cross-tenant operations (almost never — only the admin app). |
+| `withOrgAuth` | The route reads/writes data scoped to the calling user's org. **99% of routes.** |
+| `requireAdmin` | Route is only available to org admins. Same org scoping; checks `membershipRole` against `ADMIN_TIER_ROLES` (`super_admin`, `org_admin`, legacy `admin`). |
+| `requireSuperAdmin` | Cross-org operations (almost never — only `quikit`/`admin`). Checks `session.user.isSuperAdmin`. |
 
-All three are factories from `@quikit/auth`. Don't roll your own auth check; use these.
+`requireAdmin`/`requireSuperAdmin`/`getOrgId` are **factories** from `@quikit/auth` (`createRequireAdmin`, `createRequireSuperAdmin`, `createGetOrgId`). Each app instantiates them once in `lib/api/` with its `authOptions`, then `withOrgAuth` composes them. Don't roll your own auth check; use these.
 
-`withTenantAuth` accepts an optional second argument for module gating:
+`withOrgAuth` layers on two optional gates:
+
+**Module gating** — hide a whole module per org (feature flags):
 ```ts
-import { withTenantAuthForModule } from "@quikit/auth/withTenantAuth";
+import { withOrgAuthForModule } from "@/lib/api/withOrgAuth";
+const withOrgAuth = withOrgAuthForModule("kpi");   // 404s if the org has the "kpi" module disabled
 
-// Only tenants on the "quikscale" plan with the "kpi" module enabled hit this:
-export const POST = withTenantAuthForModule("kpi.quikscale")(async ({ tenantId }, req) => {
-  // ...
-});
+export const POST = withOrgAuth(async ({ orgId }, req) => { /* ... */ });
 ```
 
-For your app, leave the module name `null` until the integration owner adds it to the registry.
+**RBAC v2 permission gating** — check a granular `(resource, action)` grant:
+```ts
+import { withOrgAuthForResource } from "@/lib/api/withOrgAuth";
+const auth = withOrgAuthForResource("kpi", "KPI");   // module + resource bound
+
+export const GET    = auth.view(async ({ orgId }, req) => { /* ... */ });
+export const POST   = auth.create(async ({ orgId }, req) => { /* ... */ });
+export const PATCH  = auth.update(async ({ orgId }, req) => { /* ... */ });
+export const DELETE = auth.delete(async ({ orgId }, req) => { /* ... */ });
+```
+
+Under the hood this calls `userCan(userId, orgId, resource, action)`, which is `true` when the user's `UserAppRole → RolePermission` OR an additive `UserPermissionExtra` grants it (see [`login-roles-architecture-and-flow.md`](./login-roles-architecture-and-flow.md)). For a brand-new app, leave both gates off until the integration owner registers your modules/roles.
 
 ## Input validation with Zod
 
@@ -87,7 +102,7 @@ const querySchema = z.object({
   page: z.coerce.number().int().positive().default(1),
 });
 
-export const GET = withTenantAuth(async ({ tenantId }, req: NextRequest) => {
+export const GET = withOrgAuth(async ({ orgId }, req: NextRequest) => {
   const parsed = querySchema.safeParse(Object.fromEntries(req.nextUrl.searchParams));
   if (!parsed.success) return validationError(parsed);
   const { status, page } = parsed.data;
@@ -114,7 +129,7 @@ Don't invent new shapes. Don't return raw arrays. Don't return `null` on success
 ## Error handling
 
 ```ts
-export const POST = withTenantAuth(async ({ tenantId, userId }, req: NextRequest) => {
+export const POST = withOrgAuth(async ({ orgId, userId }, req: NextRequest) => {
   try {
     // ... business logic
     return NextResponse.json({ success: true, data: result }, { status: 201 });
@@ -125,9 +140,11 @@ export const POST = withTenantAuth(async ({ tenantId, userId }, req: NextRequest
 });
 ```
 
+`withOrgAuth` already wraps your handler in a try/catch that returns this exact 500 shape, so an explicit try/catch is only needed when you want a *specific* status (e.g. 409 for a conflict).
+
 - `catch (error: unknown)` is required by ESLint (`no-explicit-any`).
 - Use `instanceof Error` to access `.message`.
-- Status codes: 400 = validation, 401 = auth, 403 = authz, 404 = not found, 409 = conflict (e.g., already-finalized), 500 = unhandled.
+- Status codes: 400 = validation, 401 = auth, 403 = authz, 404 = not found / disabled module, 409 = conflict (e.g., already-finalized), 500 = unhandled.
 - Do not leak stack traces. The `message` is shown to the user.
 
 ## HTTP method conventions
@@ -149,21 +166,21 @@ Use the shared utility:
 ```ts
 import { parsePaginationParams, paginationToSkipTake, buildPaginationResponse } from "@quikit/shared";
 
-export const GET = withTenantAuth(async ({ tenantId }, req: NextRequest) => {
+export const GET = withOrgAuth(async ({ orgId }, req: NextRequest) => {
   const params = parsePaginationParams(req.nextUrl.searchParams);
   const [items, total] = await Promise.all([
     db.widget.findMany({
-      where: { tenantId },
+      where: { orgId },
       select: { id: true, name: true },
       ...paginationToSkipTake(params),
     }),
-    db.widget.count({ where: { tenantId } }),
+    db.widget.count({ where: { orgId } }),
   ]);
   return NextResponse.json({ success: true, data: buildPaginationResponse(items, total, params) });
 });
 ```
 
-Don't hand-roll skip/take. Don't omit pagination on list endpoints — defaults are page 1, limit 50.
+Don't hand-roll skip/take. Don't omit pagination on list endpoints — defaults are page 1, limit 20 (max 100).
 
 ## Audit logging
 
@@ -173,7 +190,7 @@ Mutating operations (create/update/delete) write an audit log entry:
 import { writeAuditLog } from "@/lib/api/auditLog";
 
 await writeAuditLog({
-  tenantId, actorId: userId,
+  orgId, actorId: userId,
   action: "CREATE",                   // CREATE | UPDATE | DELETE
   entityType: "Widget",
   entityId: widget.id,
@@ -192,7 +209,7 @@ For routes that accept untrusted input or expensive operations:
 import { rateLimitAsync } from "@quikit/shared/rateLimit";
 
 const ok = await rateLimitAsync({
-  key: `create-widget:${tenantId}:${userId}`,
+  key: `create-widget:${orgId}:${userId}`,
   windowMs: 60_000,
   max: 10,
 });
@@ -205,7 +222,7 @@ Note: `rateLimitAsync` is on the `@quikit/shared/rateLimit` subpath, not the bar
 
 ## Common mistakes (rejection-bait)
 
-- ❌ `db.widget.findMany({ where: { id } })` — missing `tenantId` filter.
+- ❌ `db.widget.findMany({ where: { id } })` — missing `orgId` filter.
 - ❌ `const data = await req.json(); db.widget.create({ data })` — no Zod validation.
 - ❌ `catch (e: any)` — banned by ESLint.
 - ❌ Returning a raw array or undefined — must wrap in `{ success, data }`.

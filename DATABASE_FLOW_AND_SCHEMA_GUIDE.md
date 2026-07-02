@@ -1,6 +1,6 @@
-# QuikIT database flow and schema guide (`quikitzipnew`)
+# QuikIT database flow and schema guide
 
-This document describes the **current** PostgreSQL layout and request flow for the `quikitzipnew` monorepo: which Postgres schemas exist, what each holds, how apps use them, and how login connects to org selection, the launcher, and product apps.
+This document describes the **current** PostgreSQL layout and request flow for the QuikIT monorepo: which Postgres schemas exist, what each holds, how apps use them, and how login connects to org selection, the launcher, and product apps.
 
 ---
 
@@ -8,16 +8,20 @@ This document describes the **current** PostgreSQL layout and request flow for t
 
 You run **one** PostgreSQL database (name comes from `DATABASE_URL`). Prisma uses **multiple Postgres schemas** so central auth, platform metadata, shared glue, and each product app stay in separate namespaces.
 
-The datasource is declared in `packages/database/prisma/schema.prisma`:
+The datasource is declared in `packages/database/prisma/schema.prisma` (generator uses the `multiSchema` preview feature). It declares **10 schemas** (~655 models total):
 
 | Schema | Role |
 |--------|------|
-| `auth` | Central identity (`User`, OAuth accounts, sessions, verification tokens) |
-| `quikit` | App registry, organizations, memberships, per-user and per-org app access, OAuth IdP tables |
-| `public` | Shared cross-app tables (teams, notifications, audit, telemetry, billing-related rows, super-admin instrumentation, etc.) |
+| `auth` | Central identity (`User`, `Account`, `Session`, `VerificationToken`, `AgentJwtIssuance`) |
+| `quikit` | App registry, organizations, memberships, per-user and per-org app access, subscriptions, OAuth IdP tables |
+| `public` | Shared cross-app tables (teams, notifications, audit, telemetry, billing/plan rows, super-admin instrumentation, etc.) |
 | `app_quikscale` | QuikScale domain data |
-| `app_quikinfra` | QuikInfra domain data |
-| `app_quikvc` | QuikVC domain data |
+| `app_quikinfra` | QuikInfra domain data (`Cn*` models) |
+| `app_quikcrm` | QuikCRM domain data (`Crm*` models) |
+| `app_quikhrms` | QuikHRMS domain data (largest domain) |
+| `app_quiktrack` | QuikTrack domain data (`Qt*` models) |
+| `app_quiksocial` | QuikSocial domain data (`Social*` models) |
+| `app_quikvc` | QuikVC domain data (`VC*` models) |
 
 **Connection variables**
 
@@ -49,12 +53,13 @@ NextAuth-style tables for the central user and credentials:
 
 Platform tables for apps and tenants (organizations):
 
-- `App` ? registered apps (`slug`, `baseUrl`, `status`, ?).
-- `OAuthClient`, `OAuthCode`, `OAuthRefreshToken` ? QuikIT as OAuth2/OIDC IdP for business apps. Codes and refresh tokens carry **`orgId`** (active organization context).
-- `Tenant` (physical table **`Org`**) ? organization master data, including **`allowedEmailDomains`** (optional gate for inviting members by email domain).
-- `Membership` (physical table **`OrgMember`**) ? user-to-org membership, role, optional `teamId`, invitation fields, `status`.
-- `UserAppAccess` ? user-level grant per `(userId, orgId, appId)` with a `role`.
-- `TenantAppAccess` (physical table **`OrgAppAccess`**) ? org-level hard gate per app (`enabled`, optional `reason`).
+- `App` ? registered apps (`slug`, `baseUrl`, `status`, `requiresOrgAdmin`, ?).
+- `OAuthClient`, `OAuthCode`, `OAuthRefreshToken` ? QuikIT as OAuth2/OIDC IdP for business apps. Codes and refresh tokens carry **`orgId`** (active organization context) and an optional `sessionId`.
+- `Org` ? organization master data (model **and** physical table are both named `Org` ? there is no separate `Tenant` model). Includes **`allowedEmailDomains`** (optional gate for inviting members by email domain), `plan`, fiscal settings, and branding.
+- `OrgMember` ? user-to-org membership: `role`, optional `teamId`, invitation fields (`inviteMethod`, `inviteAppIds`, `invitationToken`), `status`. `@@unique([orgId, userId])`.
+- `UserAppAccess` ? user-level grant per `(userId, orgId, appId)` with a `role` (default `member`).
+- `OrgAppAccess` ? org-level hard gate per app (`enabled`, optional `reason`, `trialEndsAt`). Sparse: a row exists only when an app is explicitly disabled/trialing.
+- `Subscription` ? per-org trial/billing state (`status`, `planSlug`, `trialEndsAt`). `@@unique([orgId])`; grandfathered orgs may have no row.
 
 **Typical use:** org list after login, org switcher, launcher authorization, OAuth authorization codes tied to an `orgId`.
 
@@ -62,7 +67,7 @@ Platform tables for apps and tenants (organizations):
 
 ### `public` ? shared platform and operations
 
-Cross-cutting tables (16 Prisma models in this schema), including:
+Cross-cutting tables (~17 Prisma models in this schema), including:
 
 - `Team`, `UserTeam` ? org-scoped team graph (`orgId` on both).
 - `Notification`, `AuditLog`, `FeatureFlag`, `AppModuleFlag` ? org-scoped product and ops concerns.
@@ -77,39 +82,53 @@ Cross-cutting tables (16 Prisma models in this schema), including:
 
 ---
 
-### `app_quikscale` ? QuikScale (38 models)
+### `app_quikscale` ? QuikScale (~59 models)
 
-Operational excellence domain: KPIs, priorities, WWW, client meetings, OPSP, performance, goals, 1:1s, feedback, habits, quarter settings, etc.
+Operational excellence domain: KPIs, priorities, WWW, client meetings (daily huddles + weekly meetings), OPSP, performance reviews, goals, 1:1s, feedback, habits, surveys, quarter settings, RBAC v2 (`AppRole`/`UserAppRole`/`RolePermission`), and a per-entity audit system (`AuditEvent`/`AuditChange`/`AuditEventRead`). QuikScale owns its **own** team tables (`QsTeam`/`QsUserTeam`), separate from `public.Team`.
 
-Tenant-owned rows use **`orgId`** (FK to `quikit.Org` / Prisma `Tenant`).
-
----
-
-### `app_quikinfra` ? QuikInfra (79 models)
-
-Construction / ERP-style domain: companies, projects, procurement, inventory, finance, HR, QC, safety, documents, expenses, numbering, construction-local audit, etc.
-
-Scoped with **`orgId`** on tenant-owned tables (`Cn*` models).
+Org-owned rows use **`orgId`** (FK to `quikit.Org`, `onDelete: Cascade`).
 
 ---
 
-### `app_quikvc` ? QuikVC (28 models)
+### `app_quikinfra` ? QuikInfra (~86 models)
 
-VC workflow: funds, applications, deals, scoring, IC memos and votes, investors, commitments, capital calls, allocations, term sheets, notifications, VC audit log, etc.
+Construction / ERP-style domain: companies, vendors, projects, procurement (PR/PO/GRN/indent), inventory & stock ledger, finance, equipment/fleet, QC, safety, documents, expenses, document numbering, and construction-local RBAC (`CnAppRole`/`CnUserAppRole`/`CnRolePermissionV2`) + audit. All models are prefixed **`Cn`**.
 
-Scoped with **`orgId`**.
+Scoped with **`orgId`** on org-owned tables.
 
 ---
 
-## 3. Naming: `Tenant`, `Org`, and `orgId`
+### `app_quikcrm` ? QuikCRM (~101 models)
+
+Sales domain (models prefixed **`Crm`**): accounts, contacts, leads, opportunities (+ stage transitions), quotes (+ lines/approvals/portal), orders, products & price lists, tasks, call logs & telephony, sales teams/groups, workflow automations, sequences, documents, SLA rules, dashboards. Scoped with **`orgId`**.
+
+### `app_quikhrms` ? QuikHRMS (~283 models ? largest domain)
+
+HR/payroll domain: employees, recruitment (candidates/interviews/offers), on/off-boarding, org structure, attendance, leave, WFH, shifts/rosters, appraisals & goals, payroll (salary structures, pay runs, payslips), statutory compliance (EPF/PT/TDS/LWF), reimbursements, loans, assets, travel, disciplinary, delegations, approvals, plus its own `Hrms*` RBAC tables. ~115 of the schema's enums live here. Scoped with **`orgId`**.
+
+### `app_quiktrack` ? QuikTrack (~45 models)
+
+Project-management domain (models prefixed **`Qt`**): projects, teams, issues, custom fields, grouped kanban, docs & doc sharing, timesheets, dashboards, saved views/reports, invitations, and `Qt*` RBAC tables. Scoped with **`orgId`**.
+
+### `app_quiksocial` ? QuikSocial (~22 models)
+
+Social domain (models prefixed **`Social`**): posts, comments, reactions, connected accounts, auto-reply rules + logs, engagement metrics, mentions, hashtag tracking, and `Social*` RBAC tables. Scoped with **`orgId`**.
+
+### `app_quikvc` ? QuikVC (~28 models)
+
+VC workflow (models prefixed **`VC`**): funds, applications, deals, scoring, IC memos and votes, investors, commitments, capital calls, allocations, term sheets, notifications, VC audit log, etc. Scoped with **`orgId`**.
+
+---
+
+## 3. Naming: `Org`, `OrgMember`, and `orgId`
 
 | Layer | Convention |
 |-------|----------------|
-| **Prisma model** | `Tenant` for the organization entity |
-| **Physical table** | `Org` in schema `quikit` (`@@map("Org")`) |
-| **Foreign key column** | `orgId` in Prisma and in Postgres after migrations |
+| **Prisma model** | `Org` for the organization entity (membership is `OrgMember`) |
+| **Physical table** | `Org` in schema `quikit` (model name = table name; no `@@map`) |
+| **Foreign key column** | `orgId` in Prisma and in Postgres |
 
-There is no `tenantId` column in the current Prisma schema for tenant scoping; a global migration renames legacy `tenantId` to **`orgId`** where applicable (see migrations under `packages/database/prisma/migrations/`).
+There is no `Tenant` model and effectively no `tenantId` column for org scoping; the global migration `20260502201000_global_tenantid_to_orgid` renamed legacy `tenantId` ? **`orgId`** everywhere (see migrations under `packages/database/prisma/migrations/`).
 
 **Application code:** some helpers, logs, or OAuth **scope** strings may still say `tenant`; they usually refer to the **same organization id** as `orgId`. Prefer `orgId` in new API payloads and session fields.
 
@@ -117,7 +136,7 @@ There is no `tenantId` column in the current Prisma schema for tenant scoping; a
 
 ## 4. End-to-end data flow
 
-### A) Login (`apps/auth`, port **3004**)
+### A) Login (`apps/auth`, dev port **3001**)
 
 1. User signs in on the auth app (NextAuth route under `app/api/auth/[...nextauth]`).
 2. `User`, `Account`, `Session` are read/written in the **`auth`** schema.
@@ -133,7 +152,7 @@ There is no `tenantId` column in the current Prisma schema for tenant scoping; a
 
 ---
 
-### C) Launcher (`apps/quikit`, port **3000**)
+### C) Launcher (`apps/quikit`, dev port **3000**)
 
 1. **`GET /api/apps/launcher`** (`apps/quikit/app/api/apps/launcher/route.ts`) loads the app catalog from **`quikit.App`**.
 2. It resolves **`orgId`** from the session JWT, or falls back to the user?s first **active** membership if `orgId` is not yet on the session.
@@ -146,7 +165,7 @@ There is no `tenantId` column in the current Prisma schema for tenant scoping; a
 
 ---
 
-### D) Admin (`apps/admin`, port **3005**)
+### D) Admin (`apps/admin`, dev port **3002**)
 
 Uses **`@quikit/database`** to manage platform configuration: org and access models in **`quikit`**, shared models in **`public`** as needed. If `DATABASE_URL` / `DATABASE_URL_DIRECT` are wrong or the DB is unreachable, Prisma fails at startup.
 
@@ -156,9 +175,13 @@ Uses **`@quikit/database`** to manage platform configuration: org and access mod
 
 | App | Port (dev) | Primary data schema |
 |-----|------------|---------------------|
-| `quikscale` | 3002 | `app_quikscale` + shared schemas as needed |
-| `quikinfra` | 3007 | `app_quikinfra` + shared |
-| `quikvc` | 3008 | `app_quikvc` + shared |
+| `quikscale` | 3003 | `app_quikscale` + shared schemas as needed |
+| `quiktrack` | 3004 | `app_quiktrack` + shared |
+| `quikvc` | 3005 | `app_quikvc` + shared |
+| `quikinfra` | 3006 | `app_quikinfra` + shared |
+| `quiksocial` | 3007 | `app_quiksocial` + shared |
+| `quikcrm` | 3008 | `app_quikcrm` + shared |
+| `quikhrms` | 3009 | `app_quikhrms` + shared |
 
 Each app still reads session and org context from **`auth`** / **`quikit`** (and **`public`** for teams, flags, notifications, etc.) as required.
 
@@ -169,11 +192,15 @@ Each app still reads session and org context from **`auth`** / **`quikit`** (and
 | App | Primary schemas |
 |-----|-----------------|
 | `apps/auth` | Read/write **`auth`**; read **`quikit`** for orgs and memberships; write **`public`** where instrumentation applies |
-| `apps/quikit` (launcher) | Read **`quikit`** for registry and access; read **`public`** for shared features used by the launcher |
+| `apps/quikit` (launcher/IdP) | Read/write **`quikit`** for registry, access, OAuth codes; read **`public`** for shared features + super-admin |
 | `apps/admin` | **`quikit`** + **`public`** for administration |
 | `apps/quikscale` | **`app_quikscale`** + shared schemas |
-| `apps/quikinfra` | **`app_quikinfra`** + shared schemas |
+| `apps/quiktrack` | **`app_quiktrack`** + shared schemas |
 | `apps/quikvc` | **`app_quikvc`** + shared schemas |
+| `apps/quikinfra` | **`app_quikinfra`** + shared schemas |
+| `apps/quiksocial` | **`app_quiksocial`** + shared schemas |
+| `apps/quikcrm` | **`app_quikcrm`** + shared schemas |
+| `apps/quikhrms` | **`app_quikhrms`** + shared schemas |
 
 ---
 
@@ -181,15 +208,21 @@ Each app still reads session and org context from **`auth`** / **`quikit`** (and
 
 **Dev ports** (from each app?s `package.json` `dev` script):
 
-| App | Port |
+| App | Dev port |
 |-----|------|
 | Launcher (`quikit`) | 3000 |
-| QuikScale | 3002 |
-| Auth | 3004 |
-| Admin | 3005 |
-| QuikInfra | 3007 |
-| QuikVC | 3008 |
-| `_template` (scaffold, not in npm workspaces) | 3010 |
+| Auth | 3001 |
+| Admin | 3002 |
+| QuikScale | 3003 |
+| QuikTrack | 3004 |
+| QuikVC | 3005 |
+| QuikInfra | 3006 |
+| QuikSocial | 3007 |
+| QuikCRM | 3008 |
+| QuikHRMS | 3009 |
+| `_template` (scaffold) | 3010 |
+
+(These are the `next dev` ports. A few apps bind different `npm start` ports — see [`docs/13-app-ports-and-env.md`](docs/13-app-ports-and-env.md).)
 
 From the **monorepo root** (`quikitzipnew/`), `npm run dev` runs **Turbo** across packages/apps. Filtered examples: `npm run dev:quikit`, `npm run dev:auth`, `npm run dev:quikscale`, `npm run dev:admin`.
 
