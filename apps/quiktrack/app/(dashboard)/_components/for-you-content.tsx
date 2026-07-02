@@ -53,6 +53,8 @@ function KindIcon({ kind }: { kind: HistoryEntry["kind"] }) {
 }
 
 export function ForYouContent() {
+
+  
   const { data: session } = useSession();
   const perms = useMyPermissions();
   const canCreateProject = perms.loading || perms.has("Project", "create");

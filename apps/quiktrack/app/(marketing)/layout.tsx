@@ -1,5 +1,6 @@
 import type { Metadata, Viewport } from "next";
 import { Fraunces, Inter } from "next/font/google";
+import { headers } from "next/headers";
 import "./marketing.css";
 
 /**
@@ -190,17 +191,23 @@ export default function MarketingLayout({
 }: {
   children: React.ReactNode;
 }) {
+  // SEC-06: the per-request CSP nonce set by middleware. Our inline JSON-LD
+  // scripts must carry it now that script-src no longer allows 'unsafe-inline'.
+  const nonce = headers().get("x-nonce") ?? undefined;
   return (
     <div className={`marketing-shell ${fraunces.variable} ${inter.variable}`}>
       <script
+        nonce={nonce}
         type="application/ld+json"
         dangerouslySetInnerHTML={{ __html: JSON.stringify(organizationJsonLd) }}
       />
       <script
+        nonce={nonce}
         type="application/ld+json"
         dangerouslySetInnerHTML={{ __html: JSON.stringify(softwareJsonLd) }}
       />
       <script
+        nonce={nonce}
         type="application/ld+json"
         dangerouslySetInnerHTML={{ __html: JSON.stringify(faqJsonLd) }}
       />

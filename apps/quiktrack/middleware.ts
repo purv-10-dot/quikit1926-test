@@ -1,6 +1,7 @@
 import { createMiddleware } from "@quikit/auth/middleware";
 import type { NextRequest } from "next/server";
 import { NextResponse } from "next/server";
+import { buildCsp, generateNonce } from "@/lib/csp";
 
 /**
  * quiktrack middleware.
@@ -42,7 +43,13 @@ const factoryMiddleware = createMiddleware({
 });
 
 export async function middleware(request: NextRequest) {
+  // SEC-06: per-request CSP nonce. Build it up-front so every return path below
+  // (redirects, handoff, pass-through) carries the policy.
+  const nonce = generateNonce();
+  const csp = buildCsp(nonce);
+
   const res = await factoryMiddleware(request);
+
   if (QUIKIT_URL && (res.status === 307 || res.status === 308)) {
     const dest = res.headers.get("location") ?? "";
     const launcherLogin = AUTH_URL ? `${AUTH_URL}/login` : "";
@@ -53,10 +60,32 @@ export async function middleware(request: NextRequest) {
         "to",
         request.nextUrl.pathname + request.nextUrl.search,
       );
-      return NextResponse.redirect(handoff);
+      const redirect = NextResponse.redirect(handoff);
+      redirect.headers.set("Content-Security-Policy", csp);
+      return redirect;
     }
   }
-  return res;
+
+  // Redirect responses just get the CSP header — they render no HTML here.
+  if (res.status === 307 || res.status === 308 || res.headers.has("location")) {
+    res.headers.set("Content-Security-Policy", csp);
+    return res;
+  }
+
+  // Pass-through (the page will render): re-issue `next()` with the nonce on the
+  // *request* headers so Next.js stamps it onto its inline bootstrap scripts,
+  // and expose it via `x-nonce` for server components (marketing JSON-LD). Carry
+  // over any cookies the auth factory set (e.g. redirect-counter cleanup).
+  const requestHeaders = new Headers(request.headers);
+  requestHeaders.set("x-nonce", nonce);
+  requestHeaders.set("Content-Security-Policy", csp);
+
+  const response = NextResponse.next({ request: { headers: requestHeaders } });
+  for (const cookie of res.cookies.getAll()) {
+    response.cookies.set(cookie);
+  }
+  response.headers.set("Content-Security-Policy", csp);
+  return response;
 }
 
 export const config = {
