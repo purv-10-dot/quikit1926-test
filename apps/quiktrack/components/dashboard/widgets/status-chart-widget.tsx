@@ -97,7 +97,9 @@ export function StatusChartWidget({ refreshKey = 0 }: { refreshKey?: number }) {
           y="70"
           textAnchor="middle"
           dominantBaseline="middle"
-          className="fill-gray-900"
+          // SVG `fill` isn't remapped by the global dark override (it targets
+          // `color`), so the near-black total vanished on the dark card.
+          className="fill-gray-900 dark:fill-slate-100"
           style={{ fontSize: 22, fontWeight: 600 }}
         >
           {total}
@@ -107,7 +109,7 @@ export function StatusChartWidget({ refreshKey = 0 }: { refreshKey?: number }) {
           y="92"
           textAnchor="middle"
           dominantBaseline="middle"
-          className="fill-gray-500"
+          className="fill-gray-500 dark:fill-slate-400"
           style={{ fontSize: 10 }}
         >
           issues

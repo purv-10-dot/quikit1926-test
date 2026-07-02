@@ -3,13 +3,10 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   Search,
-  ChevronDown,
   ChevronRight,
   Sliders,
   MoreHorizontal,
   Info,
-  Check,
-  X,
 } from "lucide-react";
 import { EditIssueModal } from "@/components/edit-issue-modal";
 import { useQueryClient } from "@tanstack/react-query";
@@ -42,11 +39,6 @@ export function TimelineView({ projectId }: { projectId: string }) {
   const [search, setSearch] = useState("");
   // Debounced copy fed into the API — avoids hammering /api/issues on every keystroke.
   const [appliedSearch, setAppliedSearch] = useState("");
-  const [statusCategory, setStatusCategory] = useState<
-    "BACKLOG" | "IN_PROGRESS" | "DONE" | null
-  >(null);
-  const [statusOpen, setStatusOpen] = useState(false);
-  const statusBtnRef = useRef<HTMLDivElement>(null);
   // Multiselect assignee filter (narrows tasks under each epic) + single epic filter.
   const [filterAssigneeIds, setFilterAssigneeIds] = useState<string[]>([]);
   const [filterEpicId, setFilterEpicId] = useState("");
@@ -130,7 +122,6 @@ export function TimelineView({ projectId }: { projectId: string }) {
           limit: String(ROOT_PAGE_SIZE),
         });
         if (appliedSearch.trim()) params.set("search", appliedSearch.trim());
-        if (statusCategory) params.set("statusCategory", statusCategory);
         if (!initial && cursor) params.set("cursor", cursor);
         const res = await fetch(`/api/issues?${params.toString()}`).then((r) => r.json());
         if (res?.success) {
@@ -143,7 +134,7 @@ export function TimelineView({ projectId }: { projectId: string }) {
         setLoading(false);
       }
     },
-    [projectId, appliedSearch, statusCategory, cursor, hasMore, loading],
+    [projectId, appliedSearch, cursor, hasMore, loading],
   );
 
   // Debounce the raw search input → applied value the API actually uses.
@@ -160,17 +151,7 @@ export function TimelineView({ projectId }: { projectId: string }) {
     setLoaded(false);
     void loadEpics(true);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [projectId, appliedSearch, statusCategory, refreshKey]);
-
-  // Close the status dropdown on outside click.
-  useEffect(() => {
-    if (!statusOpen) return;
-    function onDown(e: MouseEvent) {
-      if (!statusBtnRef.current?.contains(e.target as Node)) setStatusOpen(false);
-    }
-    document.addEventListener("mousedown", onDown);
-    return () => document.removeEventListener("mousedown", onDown);
-  }, [statusOpen]);
+  }, [projectId, appliedSearch, refreshKey]);
 
   // IntersectionObserver for root-level pagination.
   useEffect(() => {
@@ -215,63 +196,6 @@ export function TimelineView({ projectId }: { projectId: string }) {
               placeholder="Search timeline"
               className="h-8 w-[220px] pl-8 pr-3 text-xs border border-gray-300 rounded-md placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
             />
-          </div>
-          <div ref={statusBtnRef} className="relative">
-            <button
-              type="button"
-              onClick={() => setStatusOpen((o) => !o)}
-              className={`inline-flex items-center gap-1.5 h-8 px-3 text-xs border rounded-md hover:bg-gray-50 ${
-                statusCategory
-                  ? "border-blue-500 text-blue-700 bg-blue-50"
-                  : "border-gray-300 text-gray-700"
-              }`}
-            >
-              {statusCategory
-                ? statusCategory === "IN_PROGRESS"
-                  ? "In progress"
-                  : statusCategory === "DONE"
-                    ? "Done"
-                    : "Backlog"
-                : "Status category"}
-              {statusCategory ? (
-                <X
-                  className="h-3.5 w-3.5 text-blue-500 hover:text-blue-700"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    setStatusCategory(null);
-                    setStatusOpen(false);
-                  }}
-                />
-              ) : (
-                <ChevronDown className="h-3.5 w-3.5 text-gray-500" />
-              )}
-            </button>
-            {statusOpen && (
-              <div className="absolute left-0 top-full mt-1 w-44 bg-white border border-gray-200 rounded-md shadow-lg z-30 py-1">
-                {(
-                  [
-                    ["BACKLOG", "Backlog"],
-                    ["IN_PROGRESS", "In progress"],
-                    ["DONE", "Done"],
-                  ] as const
-                ).map(([value, label]) => (
-                  <button
-                    key={value}
-                    type="button"
-                    onClick={() => {
-                      setStatusCategory(value);
-                      setStatusOpen(false);
-                    }}
-                    className="flex items-center justify-between w-full px-3 py-1.5 text-xs text-gray-700 hover:bg-gray-50"
-                  >
-                    <span>{label}</span>
-                    {statusCategory === value && (
-                      <Check className="h-3.5 w-3.5 text-blue-600" />
-                    )}
-                  </button>
-                ))}
-              </div>
-            )}
           </div>
           <FilterMultiSelect
             values={filterAssigneeIds}
