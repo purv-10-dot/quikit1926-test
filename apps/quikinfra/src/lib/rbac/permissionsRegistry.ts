@@ -311,6 +311,27 @@ export const PERMISSION_TREE: readonly PermissionModule[] = [
         ],
       },
       {
+        key: "Gantt",
+        label: "Gantt View",
+        leaves: [
+          { resource: "construction.gantt", label: "Gantt View", actions: ["view"] },
+        ],
+      },
+      {
+        key: "Hindrance",
+        label: "Hindrance Register",
+        leaves: [
+          { resource: "construction.hindrance", label: "Hindrance Register", actions: ["view", "create", "edit", "delete"] },
+        ],
+      },
+      {
+        key: "Documents",
+        label: "Documents",
+        leaves: [
+          { resource: "construction.documents", label: "Documents", actions: ["view", "create", "edit", "delete"] },
+        ],
+      },
+      {
         key: "RAB",
         label: "Running Account Bill",
         leaves: [
@@ -368,6 +389,9 @@ export const NAV_RESOURCE: Record<string, string> = {
   "projects.estimation":  "construction.estimation",
   "projects.wo":          "construction.wo",
   "projects.dpr":         "construction.dpr",
+  "projects.gantt":       "construction.gantt",
+  "projects.hindrance":   "construction.hindrance",
+  "projects.documents":   "construction.documents",
   "projects.rab":         "construction.rab",
   "settings":             "construction.settings",
   "settings.users":       "construction.users",
@@ -421,6 +445,9 @@ export const MODULE_TO_RESOURCES: Readonly<Record<string, readonly string[]>> = 
     "construction.estimation",
     "construction.wo",
     "construction.dpr",
+    "construction.gantt",
+    "construction.hindrance",
+    "construction.documents",
     "construction.rab",
   ],
   quality_safety: ["construction.quality_safety"],
