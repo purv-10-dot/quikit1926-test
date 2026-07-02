@@ -191,9 +191,57 @@ async function seedQuikInfra() {
   }
 }
 
+/* ────────────────────────── QuikSupport (own provision endpoint) ──────────────────────────
+ * QuikSupport is NOT in REGISTRIES for the same reason as QuikInfra: its
+ * runtime seeder (apps/quiksupport/lib/seedAppRole.ts) creates a lowercase
+ * "admin" system role (what userCan/loadMyPermissions check) plus a default
+ * "Member" role — not the generic capital-"Admin" single role this script's
+ * seedAdminRoleFor() would insert. Seeding "Admin" here would create a
+ * mismatched role the app never recognizes. Delegate to QuikSupport's own
+ * /api/internal/provision-roles endpoint, which seeds the correct roles +
+ * permissions + navigation and assigns each org's admins.
+ */
+async function seedQuikSupport() {
+  const base = (process.env.QUIKSUPPORT_URL ?? "http://localhost:3010").replace(/\/+$/, "");
+  const secret = process.env.INTERNAL_SECRET;
+  if (!secret) {
+    console.log("⏭️  QuikSupport skipped — INTERNAL_SECRET not set");
+    return;
+  }
+  const orgs = await db.$queryRaw`
+    SELECT oaa."orgId", o.name AS org_name
+    FROM "quikit"."OrgAppAccess" oaa
+    JOIN "quikit"."App" a ON a.id = oaa."appId"
+    JOIN "quikit"."Org" o ON o.id = oaa."orgId"
+    WHERE oaa.enabled = true AND a.slug = 'quiksupport'
+    ORDER BY o.name`;
+  for (const org of orgs) {
+    const admins = await db.$queryRaw`
+      SELECT "userId" FROM "quikit"."OrgMember"
+      WHERE "orgId" = ${org.orgId}
+        AND lower("role") IN ('org_admin','super_admin','platform_super_admin','admin')`;
+    const adminUserIds = admins.map((a) => a.userId);
+    try {
+      const res = await fetch(`${base}/api/internal/provision-roles`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "x-internal-secret": secret },
+        body: JSON.stringify({ orgId: org.orgId, adminUserIds }),
+      });
+      console.log(
+        `${res.ok ? "✅" : "❌"} ${org.org_name} × QuikSupport  ` +
+        `(provision-roles HTTP ${res.status}, admins=${adminUserIds.length})`,
+      );
+    } catch (e) {
+      console.log(`❌ ${org.org_name} × QuikSupport  (fetch failed: ${e.message})`);
+    }
+  }
+}
+
 async function main() {
-  // QuikInfra seeds via its own provision-roles endpoint (different RBAC shape).
+  // QuikInfra + QuikSupport seed via their own provision-roles endpoints
+  // (different RBAC shape — see notes above each function).
   await seedQuikInfra();
+  await seedQuikSupport();
 
   // Find every (org, app) where the app is enabled AND has a registry.
   const rows = await db.$queryRaw`
