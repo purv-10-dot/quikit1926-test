@@ -66,6 +66,7 @@ const QUIKINFRA_BASE = resolveAppUrl("QUIKINFRA_URL", "http://localhost:3006"); 
 const QUIKSOCIAL_BASE = resolveAppUrl("QUIKSOCIAL_URL", "http://localhost:3007"); // prod-safety-allow: dev fallback, prod throws via resolveAppUrl
 const QUIKVC_BASE = resolveAppUrl("QUIKVC_URL", "http://localhost:3005"); // prod-safety-allow: dev fallback, prod throws via resolveAppUrl
 const QUIKCRM_BASE = resolveAppUrl("QUIKCRM_URL", "http://localhost:3008"); // prod-safety-allow: dev fallback, prod throws via resolveAppUrl
+const QUIKSUPPORT_BASE = resolveAppUrl("QUIKSUPPORT_URL", "http://localhost:3010"); // prod-safety-allow: dev fallback, prod throws via resolveAppUrl
 // Central launcher (quikit) origin. It hosts every app's icon under
 // /app-icons and is where App.iconUrl is designed to resolve (see the comment
 // on BRAND_ICONS in packages/ui/components/app-switcher.tsx). Used as the
@@ -187,6 +188,22 @@ const APPS = [
       clientSecretPlain: resolveClientSecret("QUIKSOCIAL_OAUTH_CLIENT_SECRET", "quiksocial-dev-secret-change-in-prod"),
       redirectUris: [
         `${QUIKSOCIAL_BASE}/api/auth/callback/quikit`,
+      ],
+      scopes: ["openid", "profile", "email", "tenant"],
+    },
+  },
+  {
+    slug: "quiksupport",
+    name: "QuikSupport",
+    description: "Helpdesk & ticketing — tickets, SLA tracking, categories, agent queues, reports.",
+    baseUrl: QUIKSUPPORT_BASE,
+    iconUrl: "/app-icons/quiksupport.svg",
+    status: "active",
+    oauth: {
+      clientId: "quiksupport",
+      clientSecretPlain: resolveClientSecret("QUIKSUPPORT_OAUTH_CLIENT_SECRET", "quiksupport-dev-secret-change-in-prod"),
+      redirectUris: [
+        `${QUIKSUPPORT_BASE}/api/auth/callback/quikit`,
       ],
       scopes: ["openid", "profile", "email", "tenant"],
     },
