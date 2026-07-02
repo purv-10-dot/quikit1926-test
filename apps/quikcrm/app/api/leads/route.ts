@@ -71,9 +71,13 @@ export async function GET(req: NextRequest) {
         { company: { contains: q.q, mode: "insensitive" } },
       ];
     }
-    // Build finalWhere first, then set deletedAt at its TOP LEVEL — the
-    // soft-delete middleware only inspects the top-level keys of the where
-    // object, so a nested deletedAt would be ignored and overridden.
+    // Build finalWhere first, then set deletedAt at its TOP LEVEL. CrmLead is
+    // not registered in the package-level soft-delete middleware, so we filter
+    // `deletedAt` explicitly here — otherwise trashed leads leak into the list,
+    // search, and CSV export (all of which share this where clause).
+    //   ?onlyDeleted=true    → trash only   (deletedAt: { not: null })
+    //   ?includeDeleted=true → both         (no deletedAt clause)
+    //   default              → active only  (deletedAt: null)
     const finalWhere: Record<string, unknown> = aclFilter
       ? { AND: [where, aclFilter] }
       : where;
@@ -81,8 +85,8 @@ export async function GET(req: NextRequest) {
     const includeDeleted = searchParams.get("includeDeleted") === "true";
     if (trashMode) {
       finalWhere.deletedAt = { not: null };
-    } else if (includeDeleted) {
-      finalWhere.deletedAt = undefined;
+    } else if (!includeDeleted) {
+      finalWhere.deletedAt = null;
     }
 
     const format = parseReportFormat(searchParams);

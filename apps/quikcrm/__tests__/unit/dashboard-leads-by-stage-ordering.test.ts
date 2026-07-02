@@ -21,7 +21,8 @@ const RANGE = {
   to: new Date("2026-05-01T23:59:59.999Z"),
   tz: "UTC",
 };
-const USER = { userId: "u1", orgId: "t1", role: "SalesUser" };
+// Administrator → org-wide scope so this suite pins stage-ordering, not RBAC.
+const USER = { userId: "u1", orgId: "t1", role: "Administrator" };
 
 function armPrismaDefaults(): void {
   db.crmLead.count.mockResolvedValue(0);

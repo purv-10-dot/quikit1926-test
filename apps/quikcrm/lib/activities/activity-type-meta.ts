@@ -59,7 +59,7 @@ export const NOTE_TEMPLATES = [
 ] as const;
 
 export const VISIBILITY_OPTIONS: { value: ActivityVisibility; label: string }[] = [
-  { value: "private", label: "Private" },
+  { value: "private", label: "Self" },
   { value: "team", label: "Team" },
   { value: "public", label: "Public" },
 ];

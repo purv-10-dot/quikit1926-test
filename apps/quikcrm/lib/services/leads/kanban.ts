@@ -42,7 +42,9 @@ export async function buildKanbanBoard(opts: {
   const perStage = Math.min(500, Math.max(1, opts.perStage ?? 100));
 
   const acl = await accountScopeFilter(user);
-  const baseAnd: Record<string, unknown>[] = [{ orgId: user.orgId }];
+  // CrmLead is not registered in the package-level soft-delete middleware, so
+  // exclude trashed leads explicitly — otherwise deleted cards appear on the board.
+  const baseAnd: Record<string, unknown>[] = [{ orgId: user.orgId, deletedAt: null }];
   if (acl) baseAnd.push(acl);
   if (opts.ownerName) baseAnd.push({ ownerName: opts.ownerName });
 

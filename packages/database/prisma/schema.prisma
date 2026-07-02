@@ -186,6 +186,7 @@ model Org {
   accountabilityFunctions AccountabilityFunction[]
   appRoles                AppRole[]
   categoryMasters         CategoryMaster[]
+  unitMasters             UnitMaster[]
   clients                 Client[]
   clientDailyHuddles      ClientDailyHuddle[]
   clientMembers           ClientMember[]
@@ -327,6 +328,7 @@ model User {
   goalsOwned              Goal[]                           @relation("GoalOwner")
   kpisOwned               KPI[]                            @relation("KPIOwner")
   kpiNotes                KPINote[]
+  wwwNotes                WWWNote[]
   opspData                OPSPData[]
   opspUserSections        OPSPUserSection[]
   opppPlan                OPSPPlan?
@@ -633,6 +635,13 @@ model KPI {
   weeklyOwnerTargets Json?
   currency           String?
   targetScale        String?
+  // Display label for non-currency (Number) KPIs, chosen from UnitMaster
+  // (e.g. "Leads", "Calls", "kg"). Null = none. Label only — no calculation.
+  unit               String?
+  // When true (Currency KPI with a chosen targetScale), weekly breakdown,
+  // Updates, Stats, list grid + dashboard cards display/accept values in the
+  // chosen scale unit (e.g. ₹ Cr). Display/input only — stored values stay RAW.
+  scaledDisplay      Boolean          @default(false)
   reverseColor       Boolean          @default(false)
   frequency          String           @default("weekly")
   // True when this KPI was created via the OPSP "Export → Create KPIs" flow.
@@ -869,6 +878,7 @@ model WWWItem {
   whoIds           String[]         @default([])
   org              Org              @relation(fields: [orgId], references: [id], onDelete: Cascade)
   revisionLogs     WWWRevisionLog[]
+  noteEntries      WWWNote[]
 
   @@index([orgId])
   @@index([who])
@@ -897,6 +907,26 @@ model WWWRevisionLog {
   @@schema("app_quikscale")
 }
 
+// Threaded notes on a WWW item — discrete, individually-editable entries with
+// author + timestamps (mirrors KPINote). The WWWItem.notes text field is kept
+// as a denormalized "latest note" for the list column + www_notes_required.
+model WWWNote {
+  id        String   @id @default(cuid())
+  orgId     String
+  wwwItemId String
+  content   String
+  authorId  String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  author    User     @relation(fields: [authorId], references: [id], onDelete: Cascade)
+  wwwItem   WWWItem  @relation(fields: [wwwItemId], references: [id], onDelete: Cascade)
+
+  @@index([orgId])
+  @@index([wwwItemId])
+  @@index([authorId])
+  @@schema("app_quikscale")
+}
+
 model CategoryMaster {
   id            String   @id @default(cuid())
   orgId         String
@@ -919,6 +949,25 @@ model CategoryMaster {
   @@unique([orgId, nameKey, dataType, currency], name: "category_tenant_name_type_currency_uniq")
   @@index([orgId])
   @@index([dataType])
+  @@schema("app_quikscale")
+}
+
+// Org-scoped measurement-unit labels (e.g. "Leads", "Calls", "kg") chosen on a
+// Number KPI's Target Value. Mirrors CategoryMaster. Managed under Org Setup →
+// Unit Master. `nameKey` is the lowercased name for case-insensitive dedupe.
+model UnitMaster {
+  id          String   @id @default(cuid())
+  orgId       String
+  name        String
+  nameKey     String
+  description String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  createdBy   String
+  org         Org      @relation(fields: [orgId], references: [id], onDelete: Cascade)
+
+  @@unique([orgId, nameKey], name: "unit_tenant_name_uniq")
+  @@index([orgId])
   @@schema("app_quikscale")
 }
 
@@ -1584,6 +1633,7 @@ model QuarterSetting {
   quarter    String
   startDate  DateTime
   endDate    DateTime
+  weekCount  Int      @default(13)
   status     String   @default("active")
   createdAt  DateTime @default(now())
   updatedAt  DateTime @updatedAt

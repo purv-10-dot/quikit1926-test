@@ -13,9 +13,13 @@ export async function GET(req: NextRequest) {
     if (!q || q.length < 2) return NextResponse.json({ leads: [], accounts: [], contacts: [] });
 
     const [leads, accounts, contacts] = await Promise.all([
+      // CrmLead / CrmAccount / CrmContact all carry `deletedAt` but are not
+      // registered in the soft-delete middleware — exclude trashed rows here so
+      // deleted records don't surface in global search.
       prisma.crmLead.findMany({
         where: {
           orgId: user.orgId,
+          deletedAt: null,
           OR: [
             { name: { contains: q, mode: "insensitive" } },
             { email: { contains: q, mode: "insensitive" } },
@@ -26,13 +30,14 @@ export async function GET(req: NextRequest) {
         select: { id: true, name: true, company: true, stage: true },
       }),
       prisma.crmAccount.findMany({
-        where: { orgId: user.orgId, name: { contains: q, mode: "insensitive" } },
+        where: { orgId: user.orgId, deletedAt: null, name: { contains: q, mode: "insensitive" } },
         take: 10,
         select: { id: true, name: true, industry: true },
       }),
       prisma.crmContact.findMany({
         where: {
           orgId: user.orgId,
+          deletedAt: null,
           OR: [
             { firstName: { contains: q, mode: "insensitive" } },
             { lastName: { contains: q, mode: "insensitive" } },

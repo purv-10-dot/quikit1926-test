@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { Bell } from "lucide-react";
-import { useUnreadCount, useNotificationStream } from "@/hooks/use-notifications";
+import { useUnreadCount } from "@/hooks/use-notifications";
 import { NotificationCenter } from "./notification-center";
 
 export function NotificationBell() {
@@ -12,8 +12,7 @@ export function NotificationBell() {
   const { data } = useUnreadCount();
   const unread = data?.count ?? 0;
 
-  // One SSE connection per mounted bell — drives real-time badge updates.
-  useNotificationStream(true);
+  // Badge is kept up to date by useUnreadCount()'s 60s poll (see use-notifications.ts).
 
   // Close when clicking anywhere outside the wrapper (bell + dropdown).
   useEffect(() => {

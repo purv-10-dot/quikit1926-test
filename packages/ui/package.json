@@ -15,6 +15,7 @@
     "./utils": "./lib/utils.ts",
     "./styles": "./styles/globals.css",
     "./theme-applier": "./components/theme-applier.tsx",
+    "./app-access-denied-popup": "./components/app-access-denied-popup.tsx",
     "./tailwind-config": "./tailwind.config.ts"
   },
   "dependencies": {

@@ -10,7 +10,8 @@ export default async function ReportsDashboardPage() {
   const data = await Promise.all(
     stages.map(async (stage) => ({
       stage,
-      count: await prisma.crmLead.count({ where: { orgId: user.orgId, stage } }),
+      // Exclude trashed leads — CrmLead is not covered by the soft-delete middleware.
+      count: await prisma.crmLead.count({ where: { orgId: user.orgId, stage, deletedAt: null } }),
     })),
   );
 

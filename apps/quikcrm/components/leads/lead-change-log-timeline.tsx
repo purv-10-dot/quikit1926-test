@@ -8,13 +8,21 @@ import {
   Trash2,
   RotateCcw,
   AlertTriangle,
+  GitMerge,
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
-import { RelativeTime } from "@/components/shared/relative-time";
+import { useHasMounted } from "@/hooks/use-has-mounted";
+import { formatDateTime } from "@/lib/utils/date-helpers";
 
 interface ResolvedRef {
   before: string | null;
   after: string | null;
+}
+
+interface ConversionDetail {
+  accountName: string | null;
+  contactName: string | null;
+  opportunityName: string | null;
 }
 
 interface ChangeLogEntry {
@@ -26,8 +34,18 @@ interface ChangeLogEntry {
   after: Record<string, unknown> | null;
   resolved: Record<string, ResolvedRef>;
   fields: string[];
+  conversion: ConversionDetail | null;
   createdAt: string;
 }
+
+/** Internal audit action the conversion writes (UI labels it "Lead Converted"). */
+const CONVERT_ACTION = "lead_convert_relink";
+
+/**
+ * The "Created" entry shows only the key identifying fields (Salesforce/HubSpot
+ * style) instead of dumping every column. Order here is the display order.
+ */
+const CREATE_KEY_FIELDS = ["name", "company", "ownerName", "source", "stage", "status"] as const;
 
 const FIELD_LABELS: Record<string, string> = {
   name: "Name",
@@ -138,7 +156,9 @@ function ChangeLogEntryCard({ entry }: { entry: ChangeLogEntry }) {
   const Icon = iconForAction(entry.action);
   const accent = accentForAction(entry.action);
   const actor = entry.userName ?? (entry.userId ? "Unknown user" : "System");
-  const lines = buildChangeLines(entry);
+  const isConversion = entry.action === CONVERT_ACTION;
+  const conversionLines = isConversion ? buildConversionLines(entry.conversion) : [];
+  const lines = isConversion ? [] : buildChangeLines(entry);
 
   return (
     <li className="rounded-lg border border-crm-border bg-white shadow-sm">
@@ -155,13 +175,27 @@ function ChangeLogEntryCard({ entry }: { entry: ChangeLogEntry }) {
               <span className="font-normal text-crm-muted"> by </span>
               <span className="font-medium text-crm-text">{actor}</span>
             </p>
-            <RelativeTime
-              iso={entry.createdAt}
-              className="shrink-0 text-xs text-crm-muted"
-            />
+            <ChangeLogTime iso={entry.createdAt} />
           </div>
 
-          {lines.length > 0 ? (
+          {isConversion ? (
+            conversionLines.length > 0 ? (
+              <>
+                <p className="mt-2 text-xs font-medium text-crm-text">Converted to:</p>
+                <ul className="mt-1 space-y-1">
+                  {conversionLines.map((line, i) => (
+                    <li
+                      key={`${entry.id}:c${i}`}
+                      className="flex items-start gap-2 text-xs text-crm-text"
+                    >
+                      <span className="mt-1 inline-block h-1 w-1 shrink-0 rounded-full bg-crm-muted" />
+                      <span className="min-w-0 break-words">{line}</span>
+                    </li>
+                  ))}
+                </ul>
+              </>
+            ) : null
+          ) : lines.length > 0 ? (
             <ul className="mt-2 space-y-1">
               {lines.map((line, i) => (
                 <li
@@ -182,6 +216,54 @@ function ChangeLogEntryCard({ entry }: { entry: ChangeLogEntry }) {
   );
 }
 
+/** "Converted to: • Account: X • Contact: Y • Opportunity: Z" — only the parts
+ *  that exist. */
+function buildConversionLines(c: ConversionDetail | null): React.ReactNode[] {
+  if (!c) return [];
+  const lines: React.ReactNode[] = [];
+  const row = (label: string, value: string) => (
+    <>
+      <strong className="font-medium">{label}:</strong>{" "}
+      <span className="font-medium text-crm-text">{value}</span>
+    </>
+  );
+  if (c.accountName) lines.push(row("Account", c.accountName));
+  if (c.contactName) lines.push(row("Contact", c.contactName));
+  if (c.opportunityName) lines.push(row("Opportunity", c.opportunityName));
+  return lines;
+}
+
+/**
+ * Change-log timestamp: "Today, 11:18 AM" / "Yesterday, 4:20 PM" /
+ * "Jun 28, 2026, 9:15 AM". Local-time (these are interactive, client-rendered
+ * timestamps); SSR-safe via useHasMounted (renders the stable UTC string until
+ * mounted to avoid a hydration mismatch).
+ */
+function ChangeLogTime({ iso }: { iso: string }) {
+  const mounted = useHasMounted();
+  const label = mounted ? formatChangeLogTime(iso) : formatDateTime(iso);
+  return (
+    <time dateTime={iso} className="shrink-0 text-xs text-crm-muted" suppressHydrationWarning>
+      {label}
+    </time>
+  );
+}
+
+function formatChangeLogTime(iso: string): string {
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return "";
+  const time = d.toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" });
+  const now = new Date();
+  const startOfDay = (x: Date) => new Date(x.getFullYear(), x.getMonth(), x.getDate());
+  const dayDiff = Math.round(
+    (startOfDay(now).getTime() - startOfDay(d).getTime()) / 86_400_000,
+  );
+  if (dayDiff === 0) return `Today, ${time}`;
+  if (dayDiff === 1) return `Yesterday, ${time}`;
+  const date = d.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
+  return `${date}, ${time}`;
+}
+
 /**
  * Builds one human-readable narrative line per changed field, in the form
  * "Owner changed from Alok Shukla to Trashika Mukati". Empty values render as
@@ -193,7 +275,14 @@ function buildChangeLines(entry: ChangeLogEntry): React.ReactNode[] {
   const after = entry.after ?? {};
   const lines: React.ReactNode[] = [];
 
-  const visibleFields = entry.fields.filter((f) => {
+  // CREATE: show only the key identifying fields (in a fixed order), never the
+  // full column dump. UPDATE: show every field that actually changed.
+  const sourceFields =
+    entry.action === "CREATE"
+      ? CREATE_KEY_FIELDS.filter((f) => entry.fields.includes(f))
+      : entry.fields;
+
+  const visibleFields = sourceFields.filter((f) => {
     const sibling = SUPPRESSED_WHEN_SIBLING[f];
     if (sibling && entry.fields.includes(sibling)) return false;
     return true;
@@ -282,35 +371,52 @@ function labelForField(key: string): string {
     .replace(/^./, (c) => c.toUpperCase());
 }
 
+/** Maps audit actions — including internal snake_case ones — to user-friendly
+ *  labels so the change log never surfaces raw action names. */
+const ACTION_LABELS: Record<string, string> = {
+  CREATE: "Lead Created",
+  UPDATE: "Record Updated",
+  DELETE: "Deleted",
+  RESTORE: "Restored",
+  PERMANENT_DELETE: "Permanently Deleted",
+  lead_convert_relink: "Lead Converted",
+  // Defensive mappings for other internal action names that could appear.
+  create: "Lead Created",
+  update: "Record Updated",
+  delete: "Deleted",
+  system_update: "Record Updated",
+  bulk_update: "Bulk Updated",
+  merge: "Merged",
+};
+
 function labelForAction(action: string): string {
-  switch (action) {
-    case "CREATE":
-      return "Created";
-    case "UPDATE":
-      return "Updated";
-    case "DELETE":
-      return "Moved to trash";
-    case "RESTORE":
-      return "Restored";
-    case "PERMANENT_DELETE":
-      return "Permanently deleted";
-    default:
-      return action;
-  }
+  if (ACTION_LABELS[action]) return ACTION_LABELS[action];
+  // Last-resort humanizer — never show a raw snake_case action name.
+  return action
+    .replace(/_/g, " ")
+    .replace(/\b\w/g, (c) => c.toUpperCase());
 }
 
 function iconForAction(action: string) {
   switch (action) {
     case "CREATE":
+    case "create":
       return PlusCircle;
     case "UPDATE":
+    case "update":
+    case "system_update":
+    case "bulk_update":
       return Pencil;
     case "DELETE":
+    case "delete":
       return Trash2;
     case "RESTORE":
       return RotateCcw;
     case "PERMANENT_DELETE":
       return AlertTriangle;
+    case CONVERT_ACTION:
+    case "merge":
+      return GitMerge;
     default:
       return History;
   }
@@ -319,16 +425,21 @@ function iconForAction(action: string) {
 function accentForAction(action: string) {
   switch (action) {
     case "CREATE":
+    case "create":
       return {
         border: "border-emerald-400",
         iconBg: "bg-emerald-100 text-emerald-700",
       };
     case "UPDATE":
+    case "update":
+    case "system_update":
+    case "bulk_update":
       return {
         border: "border-blue-400",
         iconBg: "bg-blue-100 text-blue-700",
       };
     case "DELETE":
+    case "delete":
       return {
         border: "border-amber-400",
         iconBg: "bg-amber-100 text-amber-700",
@@ -342,6 +453,12 @@ function accentForAction(action: string) {
       return {
         border: "border-red-400",
         iconBg: "bg-red-100 text-red-700",
+      };
+    case CONVERT_ACTION:
+    case "merge":
+      return {
+        border: "border-teal-400",
+        iconBg: "bg-teal-100 text-teal-700",
       };
     default:
       return {

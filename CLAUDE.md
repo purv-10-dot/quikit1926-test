@@ -65,21 +65,21 @@ If you want a one-off preview deploy for a feature branch (e.g. to QA a UI chang
 
 - Use `select` for API endpoints that return lists (reduces payload size)
 - Use `include` only when you need the full related model for business logic
-- Always filter by `tenantId` on every query (except super-admin cross-tenant operations)
+- Always filter by `orgId` on every query (except super-admin cross-org operations). The scoping column is `orgId` — the legacy `tenantId` was renamed org-wide; do not introduce new `tenantId` references.
 - Use the shared pagination utility from `@quikit/shared/pagination` for list endpoints
 
 ```typescript
 // GOOD: List endpoint with select
 const items = await db.kpi.findMany({
-  where: { tenantId },
-  select: { id: true, name: true, owner: { select: { id: true, firstName: true } } },
+  where: { orgId },
+  select: { id: true, name: true, owner_user: { select: { id: true, firstName: true } } },
   ...paginationToSkipTake(params),
 });
 
 // GOOD: Detail endpoint with include (need full model)
 const item = await db.kpi.findUnique({
-  where: { id, tenantId },
-  include: { owner: true, weeklyValues: true },
+  where: { id, orgId },
+  include: { owner_user: true, weeklyValues: true },
 });
 ```
 
@@ -93,9 +93,9 @@ import type { NextRequest } from "next/server";
 
 export async function GET() {
   try {
-    // 1. Auth guard (getTenantId, requireAdmin, or requireSuperAdmin)
+    // 1. Auth guard (getOrgId, requireAdmin, or requireSuperAdmin) via the app's lib/api wrapper (withOrgAuth)
     // 2. Input validation (Zod schemas)
-    // 3. Database query with tenantId filter
+    // 3. Database query with orgId filter
     // 4. Return { success: true, data }
   } catch (error: unknown) {
     const message = error instanceof Error ? error.message : "Operation failed";

@@ -5,6 +5,8 @@ import { ApiResponse } from "@/lib/services/kpiService";
 import { withOrgAuthForResource } from "@/lib/api/withOrgAuth";
 const auth = withOrgAuthForResource("kpi", "KPI");
 import { getPastWeekFlags, getCurrentFiscalWeekFromDB } from "@/lib/utils/featureFlags";
+import { isWeekBeforeEditableWindow, earliestEditableWeek } from "@/lib/utils/weekLock";
+import { MAX_WEEKS_PER_QUARTER } from "@/lib/utils/fiscal";
 import { audit, requestContext, classifyUpdateAction, diffFields, KPI_AUDIT_FIELDS } from "@/lib/audit";
 import { notifyKPIReplacement } from "@/lib/services/kpiNotifications";
 
@@ -66,7 +68,7 @@ async function syncTeamTargetToChildren(teamKpiId: string) {
     const childZeroWeeks = Object.entries(childWeekly)
       .filter(([, v]) => v === 0)
       .map(([w]) => parseInt(w, 10))
-      .filter((n) => Number.isFinite(n) && n >= 1 && n <= 13);
+      .filter((n) => Number.isFinite(n) && n >= 1 && n <= MAX_WEEKS_PER_QUARTER);
     if (childZeroWeeks.length > 0) {
       await db.kPIWeeklyValue.updateMany({
         where: { kpiId: child.id, weekNumber: { in: childZeroWeeks } },
@@ -155,7 +157,7 @@ export const GET = auth.view<{ id: string }>(async ({ orgId }, req, { params }) 
       qtdAchieved: true, currentWeekValue: true, progressPercent: true,
       status: true, healthStatus: true, lastNotes: true, lastNotesAt: true,
       divisionType: true, weeklyTargets: true, weeklyOwnerTargets: true,
-      currency: true, targetScale: true, reverseColor: true, frequency: true,
+      currency: true, targetScale: true, unit: true, scaledDisplay: true, reverseColor: true, frequency: true,
       createdAt: true, updatedAt: true, createdBy: true, updatedBy: true,
       owner_user: { select: { id: true, firstName: true, lastName: true } },
       weeklyValues: { select: { weekNumber: true, value: true, notes: true }, orderBy: { weekNumber: "asc" } },
@@ -250,15 +252,16 @@ export const PUT = auth.update<{ id: string }>(async ({ orgId, userId }, req, { 
       const currentWeek = await getCurrentFiscalWeekFromDB(orgId, existingKPI.year, existingKPI.quarter);
       const oldTargets = (existingKPI.weeklyTargets as Record<string, number> | null) || {};
       const newTargets = validated.weeklyTargets as Record<string, number>;
+      const earliest = earliestEditableWeek(currentWeek, canEditPastWeek);
       for (const [weekStr, newVal] of Object.entries(newTargets)) {
         const week = parseInt(weekStr, 10);
-        if (week < currentWeek) {
+        if (isWeekBeforeEditableWindow(week, currentWeek, canEditPastWeek)) {
           const oldVal = oldTargets[weekStr] ?? 0;
           if ((newVal ?? 0) !== (oldVal ?? 0)) {
             return NextResponse.json(
               {
                 success: false,
-                error: `Editing past week targets is disabled. Week ${week} is before the current week (${currentWeek}). Enable it in Settings > Configurations.`,
+                error: `Editing past week targets is disabled. Week ${week} is before the earliest editable week (${earliest}). Enable it in Settings > Configurations.`,
               },
               { status: 403 }
             );
@@ -358,8 +361,15 @@ export const PUT = auth.update<{ id: string }>(async ({ orgId, userId }, req, { 
       weeklyOwnerTargets: effectiveLevel === "team"
         ? ((validated.weeklyOwnerTargets ?? undefined) as any)
         : undefined,
-      currency: validated.currency ?? null,
-      targetScale: validated.targetScale ?? null,
+      // Partial-update: pass the value through as-is. `undefined` (field omitted
+      // — the edit form treats currency as immutable and doesn't send it) means
+      // Prisma SKIPS it, preserving the saved value. The previous `?? null`
+      // turned that omission into an explicit null, wiping the currency on every
+      // edit and breaking the chosen scale unit. null/string still set as given.
+      currency: validated.currency,
+      targetScale: validated.targetScale,
+      unit: validated.unit ?? undefined,
+      scaledDisplay: validated.scaledDisplay ?? undefined,
       reverseColor: validated.reverseColor ?? undefined,
       frequency: validated.frequency ?? undefined,
       updatedBy: userId,
@@ -373,7 +383,7 @@ export const PUT = auth.update<{ id: string }>(async ({ orgId, userId }, req, { 
       target: true, quarterlyGoal: true, qtdGoal: true, qtdAchieved: true,
       progressPercent: true, status: true, healthStatus: true,
       divisionType: true, weeklyTargets: true, weeklyOwnerTargets: true, lastNotes: true,
-      currency: true, targetScale: true, reverseColor: true, frequency: true,
+      currency: true, targetScale: true, unit: true, scaledDisplay: true, reverseColor: true, frequency: true,
       createdAt: true, updatedAt: true, createdBy: true,
       owner_user: { select: { id: true, firstName: true, lastName: true } },
     },
@@ -417,7 +427,7 @@ export const PUT = auth.update<{ id: string }>(async ({ orgId, userId }, req, { 
     const zeroWeeks = Object.entries(wt)
       .filter(([, v]) => v === 0)
       .map(([w]) => parseInt(w, 10))
-      .filter((n) => Number.isFinite(n) && n >= 1 && n <= 13);
+      .filter((n) => Number.isFinite(n) && n >= 1 && n <= MAX_WEEKS_PER_QUARTER);
     if (zeroWeeks.length > 0) {
       await db.kPIWeeklyValue.updateMany({
         where: { kpiId: params.id, weekNumber: { in: zeroWeeks } },

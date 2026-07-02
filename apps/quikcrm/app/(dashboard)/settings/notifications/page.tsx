@@ -57,8 +57,6 @@ interface SubsystemResult {
 interface HealthData {
   allOk: boolean;
   database: SubsystemResult;
-  redis: SubsystemResult;
-  sse: SubsystemResult;
   email: SubsystemResult;
 }
 
@@ -196,8 +194,6 @@ function HealthSection() {
     Icon: React.ElementType;
   }> = [
     { key: "database", label: "Database (Prisma)", Icon: Database },
-    { key: "redis", label: "Redis (SSE + Realtime)", Icon: Server },
-    { key: "sse", label: "SSE Stream", Icon: Radio },
     { key: "email", label: "Email Provider", Icon: Mail },
   ];
 

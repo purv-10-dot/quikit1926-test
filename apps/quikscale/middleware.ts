@@ -48,6 +48,10 @@ const factory = createMiddleware({
   publicRoutes: ["/", "/login", "/invitations", "/auth-handoff", "/api/health"],
   centralLoginUrl: AUTH_URL ? `${AUTH_URL}/login` : undefined,
   centralSelectOrgUrl: QUIKIT_URL ? `${QUIKIT_URL}/apps` : undefined,
+  // Remote session validation (Redis TTL/revoke → session_expired) on every
+  // protected nav in production only; dev relies on the JWT-callback Redis
+  // soft-revocation. Explicit + identical across all apps (mirrors quiktrack).
+  enforceRemoteSessionValidation: process.env.NODE_ENV === "production",
 });
 
 export async function middleware(request: NextRequest) {
@@ -127,5 +131,10 @@ export async function middleware(request: NextRequest) {
 }
 
 export const config = {
-  matcher: ["/((?!api/|_next/static|_next/image|favicon.ico).*)"],
+  // The `.*\\..*` clause excludes any path containing a dot (i.e. a static
+  // file in /public — the marketing pages serve logo/hero/product PNGs from
+  // the site root via plain <img>, not next/image). Without it the auth
+  // factory intercepts every image request and redirects it, so the browser
+  // gets HTML instead of PNG bytes. Mirrors apps/quiksocial/middleware.ts.
+  matcher: ["/((?!api/|_next/static|_next/image|favicon.ico|.*\\..*).*)"],
 };

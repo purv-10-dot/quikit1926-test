@@ -42,6 +42,42 @@ export function parseExplicitThresholdDays(
   return n;
 }
 
+/* ─────────────────── settings-input validation ─────────────────── */
+
+/**
+ * Validate a threshold value typed in the Settings → Configurations cards
+ * (OPSP finalize + OPSP review). Pure so it can be unit-tested and shared by
+ * both cards.
+ *
+ * The threshold is a lead-time window measured backwards from the quarter END
+ * date, so it can never be larger than the days remaining in the current
+ * quarter (otherwise the reminder window would open in the past).
+ *
+ *   - "" / whitespace        → ok (clears the value; silences the banner)
+ *   - non-integer / < 0      → error
+ *   - > daysLeft (when known) → error
+ *   - daysLeft === null      → no upper cap (no active quarter resolved)
+ */
+export function validateThresholdInput(
+  value: string,
+  daysLeft: number | null,
+): { ok: boolean; error?: string } {
+  const trimmed = (value ?? "").trim();
+  if (trimmed === "") return { ok: true };
+
+  const n = Number(trimmed);
+  if (!Number.isInteger(n) || n < 0) {
+    return { ok: false, error: "Enter a whole number of days (0 or more)." };
+  }
+  if (daysLeft !== null && n > daysLeft) {
+    return {
+      ok: false,
+      error: `Can't exceed ${daysLeft} day${daysLeft === 1 ? "" : "s"} — the days left in the current quarter.`,
+    };
+  }
+  return { ok: true };
+}
+
 /* ─────────────────── date helpers ─────────────────── */
 
 /** Clone `d` set to `00:00:00.000` UTC. */

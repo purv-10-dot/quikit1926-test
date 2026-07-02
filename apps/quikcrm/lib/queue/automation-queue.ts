@@ -1,5 +1,17 @@
-import { Queue, type JobsOptions } from "bullmq";
-import { getQueueRedis } from "@/lib/db/redis";
+/**
+ * Automation queue — BullMQ/Redis has been removed.
+ *
+ * The queue backend is disabled: `enqueueAutomation` is a no-op. Automation is
+ * triggered only from paths guarded by `isRedisEnabled()` / `requireRedisOr503()`
+ * (which now report disabled), so this is never reached on the happy path. Types
+ * are kept so callers and tests need no changes.
+ */
+
+/** Minimal replacement for BullMQ's JobsOptions (only the fields callers pass). */
+export interface AutomationEnqueueOptions {
+  jobId?: string;
+  delay?: number;
+}
 
 export interface AutomationJobData {
   orgId: string;
@@ -14,30 +26,19 @@ export interface AutomationJobData {
 
 const QUEUE_NAME = "automation";
 
-let _queue: Queue<AutomationJobData> | null = null;
-
-export function getAutomationQueue(): Queue<AutomationJobData> {
-  if (_queue) return _queue;
-  _queue = new Queue<AutomationJobData>(QUEUE_NAME, {
-    connection: getQueueRedis(),
-    defaultJobOptions: {
-      attempts: 3,
-      backoff: { type: "exponential", delay: 60_000 },
-      removeOnComplete: { age: 86_400, count: 5_000 },
-      removeOnFail: { age: 7 * 86_400 },
-    },
-  });
-  return _queue;
-}
-
+/**
+ * No-op. Background automation processing is disabled (no BullMQ/Redis). Returns
+ * a synthetic job id so callers that persist it keep working; nothing is
+ * actually queued or run.
+ */
 export async function enqueueAutomation(
   data: AutomationJobData,
-  opts: JobsOptions = {},
+  opts: AutomationEnqueueOptions = {},
 ): Promise<string> {
-  const queue = getAutomationQueue();
-  const jobId = opts.jobId ?? `${data.workflowId}:${data.leadId}:${data.startNodeId}:${data.step ?? 0}`;
-  const job = await queue.add("run", data, { ...opts, jobId });
-  return String(job.id);
+  return (
+    opts.jobId ??
+    `${data.workflowId}:${data.leadId}:${data.startNodeId}:${data.step ?? 0}`
+  );
 }
 
 export const AUTOMATION_QUEUE_NAME = QUEUE_NAME;

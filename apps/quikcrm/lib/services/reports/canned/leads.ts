@@ -17,6 +17,8 @@ async function leadAclWhere(ctx: ReportRunContext): Promise<Prisma.CrmLeadWhereI
   const acl = await accountScopeFilter(ctx.session);
   const base: Prisma.CrmLeadWhereInput = {
     orgId: ctx.orgId,
+    // Exclude trashed leads — CrmLead is not covered by the soft-delete middleware.
+    deletedAt: null,
     ...(ctx.ownerId ? { ownerId: ctx.ownerId } : {}),
   };
   if (!acl) return base;

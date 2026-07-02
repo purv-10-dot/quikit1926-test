@@ -177,7 +177,13 @@ export async function assertAccountAccess(
  *
  * OR clauses:
  *   1. accountId in allowedAccountIds      — account-linked leads in scope
- *   2. accountId = null AND ownerId = self — own unattached leads always visible
+ *   2. ownerId = self                      — own leads always visible, attached
+ *      or not. Covers leads auto-attached to a new account during conversion:
+ *      lead conversion creates/links a CrmAccount the owner has no explicit
+ *      access to, so an `accountId = null` clause would hide a user's own
+ *      converted leads (the "Show Converted Leads" bug). Owning a lead is
+ *      itself sufficient grounds to see it; this never exposes another user's
+ *      lead because it keys on the viewer's own userId.
  *   3. ownerId in teamMemberIds            — any lead owned by a team member
  *      (only added when the user manages a team; covers attached + unattached)
  */
@@ -189,8 +195,11 @@ export async function accountScopeFilter(
 
   const orClauses: Record<string, unknown>[] = [
     { accountId: { in: scope.allowedAccountIds } },
-    // Own unattached leads are always visible to their creator
-    { accountId: null, ownerId: user.userId },
+    // Own leads are always visible to their owner — attached or not. (Broadened
+    // from the prior `accountId: null AND ownerId = self` so conversion, which
+    // auto-attaches the lead to a fresh out-of-scope account, can't hide a
+    // user's own converted leads.)
+    { ownerId: user.userId },
   ];
 
   // Team managers see every lead owned by their team members, regardless of

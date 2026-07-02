@@ -6,19 +6,21 @@ Domain language used across QuikIT. Read whenever you see a term you don't recog
 
 ## Platform terms
 
-**Tenant** — a customer organization. The top-level isolation boundary. Every business object in the platform is scoped to a `tenantId`. Tenants don't see each other's data.
+**Tenant / Org** — a customer organization. The top-level isolation boundary. It's called an **org** in the code: the Prisma model is `Org` and every business object is scoped to an `orgId` (a global migration renamed the legacy `tenantId` → `orgId`). "Tenant" and "org" mean the same thing. Orgs don't see each other's data.
 
-**Membership** — the link between a `User` and a `Tenant`, with a `role` (`admin`, `executive`, `manager`, `employee`, `coach`). One user can have memberships in multiple tenants.
+**Membership** — the link between a `User` and an `Org`, stored on the `OrgMember` model, with a `role`. The current (v4) membership roles are `super_admin`, `org_admin`, `app_admin`, `member`; the legacy roles `admin`, `executive`, `manager`, `employee`, `coach` still exist in `ROLE_HIERARCHY` for backward compatibility. One user can have memberships in multiple orgs and switch the active one via `/api/auth/select-org`.
 
-**App** — a top-level product surface like `quikscale`, `quikit`, `admin`, or your new app. Apps are independently deployed Next.js applications under `apps/`.
+**In-app role (RBAC v2)** — a *second*, per-app role layer independent of membership: `AppRole` → `UserAppRole` → `RolePermission` grant granular `(resource, action)` permissions, checked via `userCan()`. QuikInfra has its own `Cn*` variant. See `login-roles-architecture-and-flow.md`.
+
+**App** — a top-level product surface: `quikit`, `auth`, `admin`, `quikscale`, `quiktrack`, `quikvc`, `quikinfra`, `quiksocial`, `quikcrm`, `quikhrms`, or your new app. Apps are independently deployed Next.js applications under `apps/`, each on its own Vercel project.
 
 **Module** — a sub-feature of an app, gateable per tenant via the module registry. Examples: `kpi.quikscale`, `opsp.quikscale`, `priority.quikscale`. Tenants can have a module enabled or disabled depending on their plan.
 
-**Launcher** — the `quikit` app. Hosts the cross-app sign-in page, app picker, and SSO source for all the other apps.
+**Launcher** — the `quikit` app. Hosts the app picker (`/apps`) and is the OAuth/OIDC **identity provider** for all other apps. The actual credentials login form lives in the separate `auth` app; `quikit` also hosts the super-admin portal.
 
 **Super Admin** — a platform-wide role (NOT a tenant role) that allows cross-tenant operations. Used by the `admin` app for support tasks. You will not be writing code for super admin.
 
-**Plan** — a tenant's subscription tier. Affects which modules they can enable. Today plans are `startup`, `growth`, `scale`. The integration owner manages plan-to-module mapping.
+**Plan** — an org's subscription tier (`TENANT_PLANS`: `startup`, `growth`, `enterprise`). Stored as `Org.plan`; trial/billing state lives on the `Subscription` model (14-day default trial). The `Plan` catalog + `Invoice` records live in the `public` schema. The integration owner manages plan-to-module mapping.
 
 ---
 
@@ -52,13 +54,13 @@ These come from the existing apps. You may or may not encounter them depending o
 
 ### Cross-app
 
-**Audit log** — append-only history of every mutation in the platform. Lives in `public.AuditLog`. Written via `writeAuditLog()` after every create/update/delete on tenant-scoped data.
+**Audit log** — append-only history of every mutation. The cross-app `AuditLog` lives in the `public` schema; QuikScale also has a richer per-entity `AuditEvent` + `AuditChange` system in `app_quikscale`. Written via `writeAuditLog()` after every create/update/delete on org-scoped data.
 
-**Feature flag** — a boolean (or numeric) tenant setting controlled via `FeatureFlag` model. Used for gradual rollout of new features.
+**Feature flag / module gating** — `FeatureFlag` (org-scoped booleans) and `AppModuleFlag` (per-org, per-app module enable/disable) toggle features. Module gating is enforced in API routes via `gateModuleApi` / `gateModuleRoute` from `@quikit/auth/feature-gate`.
 
-**Tenant settings** — per-tenant configuration on the `Tenant` model. Includes `fiscalYearStart`, `quarterStartMonth`, `weekStartDay`, `accentColor`, and others.
+**Org settings** — per-org configuration on the `Org` model. Includes `fiscalYearStart`, `quarterStartMonth`, `weekStartDay`, `brandColor`, `plan`, `allowedEmailDomains`, and others. Org billing/trial state lives on the separate `Subscription` model.
 
-**Fiscal year / fiscal quarter** — non-calendar year boundaries used by tenants whose business year doesn't start in January. Stored as `fiscalYearStart` (1-12, month number) on the Tenant. Defaults to 1 (January) but most tenants set 4 (April) for the Indian fiscal year.
+**Fiscal year / fiscal quarter** — non-calendar year boundaries used by orgs whose business year doesn't start in January. Stored as `fiscalYearStart` (1-12, month number) on the `Org`. Defaults to 1 (January) but most orgs set 4 (April) for the Indian fiscal year.
 
 ---
 
@@ -72,17 +74,17 @@ These come from the existing apps. You may or may not encounter them depending o
 
 **Conventional Commits** — commit message format `type(scope): subject`. Required by CI on every PR.
 
-**withTenantAuth** — the API route wrapper that injects `{ tenantId, userId }` from the session and rejects unauthenticated callers with 401.
+**withOrgAuth** — each app's API-route wrapper (in `lib/api/`) that injects `{ session, userId, orgId }`, rejects unauthenticated callers with 401 and no-active-membership with 403, and can layer on module + RBAC-v2 permission gates. Built on the `@quikit/auth` guard factories. (quikcrm's copy is still named `withTenantAuth`; admin's is `withAdminAuth`.)
 
 **Server Component** — a Next.js component that runs on the server only. No `"use client"` directive. Default for new components in this codebase.
 
 **Client Component** — a Next.js component with `"use client"` at the top. Runs in the browser. Required for hooks, event handlers, browser APIs.
 
-**accent-* classes** — Tailwind utility classes (`accent-50` through `accent-900`) mapped to CSS variables that change per tenant. Used for branded interactive elements.
+**accent-* classes** — Tailwind utility classes (`accent-50` through `accent-900`) mapped to CSS variables that change per org (via `<ThemeApplier />`). Used for branded interactive elements.
 
 **Locked tables** — the 4 tables in quikscale (KPI individual, KPI team, Priority, WWW) whose cell styles are intentionally NOT theme-able. They use fixed semantic colors. You won't touch these in your apps but the rule extends: status indicators are semantic.
 
-**`@quikit/*`** — the shared monorepo packages: `@quikit/auth`, `@quikit/database`, `@quikit/ui`, `@quikit/shared`. You import from these. You don't modify them.
+**`@quikit/*`** — the shared monorepo packages: `@quikit/auth`, `@quikit/database`, `@quikit/redis`, `@quikit/ui`, `@quikit/shared`. You import from these. You don't modify them.
 
 **Per-dev repo** — your stripped-down copy of the master monorepo. Contains only your app + read-only `packages/`. Hosted as a fork in the integration owner's GitHub org.
 

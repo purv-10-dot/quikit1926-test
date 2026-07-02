@@ -17,11 +17,28 @@
  */
 
 import type { KPIRow } from "@/lib/types/kpi";
-import { fmt, getProgressBadgeColors } from "@/lib/utils/kpiHelpers";
+import { fmt, formatScaledKpiValue, getProgressBadgeColors } from "@/lib/utils/kpiHelpers";
 import { computeKPIStats, computeQtd } from "./kpiStats";
-import { useCurrentWeek } from "@/lib/hooks/useCurrentWeek";
+import { useCurrentWeek, useQuarterWeekCount } from "@/lib/hooks/useCurrentWeek";
 
 export function StatsTab({ kpi }: { kpi: KPIRow }) {
+  // Scaled-display: when the KPI's toggle is on, currency values render in the
+  // scale unit (₹ Cr); otherwise raw full numbers (today's behaviour).
+  const scaledStat = kpi.measurementUnit === "Currency" && !!kpi.scaledDisplay && !!kpi.targetScale;
+  // Number KPI unit-of-measure (from Unit Master, e.g. "lb") — appended to full
+  // numbers so Stats reads "16 lb", "2 / 13 lb".
+  const numberUnit = kpi.measurementUnit === "Number" ? (kpi.unit ?? "") : "";
+  const fmtStat = (v: number | null | undefined): string => {
+    if (scaledStat)
+      return formatScaledKpiValue(v, {
+        measurementUnit: kpi.measurementUnit,
+        currency: kpi.currency,
+        targetScale: kpi.targetScale,
+        scaledDisplay: true,
+      });
+    const base = fmt(v);
+    return numberUnit && v != null ? `${base} ${numberUnit}` : base;
+  };
   // kpi.target is the user-set quarterly target; kpi.qtdGoal is a derived aggregate
   // that can lag behind after a target edit. Use kpi.target as the primary.
   const target = kpi.target ?? kpi.qtdGoal ?? 0;
@@ -29,14 +46,16 @@ export function StatsTab({ kpi }: { kpi: KPIRow }) {
   // Progress panel below. Defaults to Cumulative (schema default).
   const divisionType: "Cumulative" | "Standalone" =
     kpi.divisionType === "Standalone" ? "Standalone" : "Cumulative";
-  const { filledWeeks, avgPerWeek, bestWeek, bestValue } = computeKPIStats(kpi);
+  // Weeks in this KPI's quarter (Custom Quarter Settings). Defaults to 13.
+  const weekCount = useQuarterWeekCount(kpi.year, kpi.quarter);
+  const { filledWeeks, avgPerWeek, bestWeek, bestValue } = computeKPIStats(kpi, weekCount);
 
-  // Week-of-quarter (1..13) — DB-driven, respects tenant's QuarterSetting.
+  // Week-of-quarter — DB-driven, respects tenant's QuarterSetting.
   const currentWeek = useCurrentWeek(kpi.year, kpi.quarter);
 
   // Compute QTD totals over [1 .. currentWeek-1]. Falls back to full-quarter
   // totals when currentWeek is unresolvable.
-  const { qtdGoal, qtdAchieved } = computeQtd(kpi, currentWeek, divisionType);
+  const { qtdGoal, qtdAchieved } = computeQtd(kpi, currentWeek, divisionType, weekCount);
 
   // Overall Progress — for Standalone, mirror the computed qtdAchieved (the
   // documented average) because the server-stamped `kpi.qtdAchieved` is a
@@ -62,7 +81,7 @@ export function StatsTab({ kpi }: { kpi: KPIRow }) {
   // We look at the most recent week (≤ currentWeek when known, else any week)
   // that has a non-null actual entered. If nothing's been entered yet, fall
   // back to "— / <current-week target>" so the tile still shows a target.
-  const weekAvg = target > 0 ? target / 13 : 0;
+  const weekAvg = target > 0 ? target / weekCount : 0;
   const wt = kpi.weeklyTargets ?? {};
   const weekTargetFor = (w: number): number => {
     const raw = wt[String(w)];
@@ -79,8 +98,8 @@ export function StatsTab({ kpi }: { kpi: KPIRow }) {
   const prevWeekTarget = prevWeek != null ? weekTargetFor(prevWeek) : 0;
   const weeklyGoalDisplay = (() => {
     if (prevWeek == null) return "—";
-    const valueStr = prevWeekValue != null ? fmt(prevWeekValue) : "—";
-    const targetStr = prevWeekTarget > 0 ? fmt(prevWeekTarget) : "—";
+    const valueStr = prevWeekValue != null ? fmtStat(prevWeekValue) : "—";
+    const targetStr = prevWeekTarget > 0 ? fmtStat(prevWeekTarget) : "—";
     if (valueStr === "—" && targetStr === "—") return "—";
     return `${valueStr} / ${targetStr}`;
   })();
@@ -102,10 +121,10 @@ export function StatsTab({ kpi }: { kpi: KPIRow }) {
             <div className="text-right">
               <div className="text-xs text-gray-500">Achieved</div>
               <div className="text-lg font-semibold text-gray-800">
-                {fmt(achieved)}
+                {fmtStat(achieved)}
               </div>
               <div className="text-[10px] text-gray-400">
-                of {fmt(target)} target
+                of {fmtStat(target)} target
               </div>
             </div>
           </div>
@@ -121,13 +140,13 @@ export function StatsTab({ kpi }: { kpi: KPIRow }) {
       <div className="grid grid-cols-3 gap-3">
         {[
           { label: "Weeks Reported", value: String(filledWeeks.length), sub: undefined },
-          { label: "Avg / Week", value: fmt(avgPerWeek), sub: undefined },
+          { label: "Avg / Week", value: fmtStat(avgPerWeek), sub: undefined },
           {
             label: "Best Week",
             value: bestWeek ? `W${bestWeek}` : "—",
             // Sub-label surfaces the achieved value for the best-performing
             // week so the stat reads like "W1 — 4.45" instead of a bare label.
-            sub: bestWeek ? fmt(bestValue) : undefined,
+            sub: bestWeek ? fmtStat(bestValue) : undefined,
           },
         ].map((s) => (
           <div
@@ -149,19 +168,19 @@ export function StatsTab({ kpi }: { kpi: KPIRow }) {
         {[
           {
             label: "Quarterly Goal",
-            value: kpi.quarterlyGoal != null ? String(kpi.quarterlyGoal) : "—",
+            value: kpi.quarterlyGoal != null ? fmtStat(kpi.quarterlyGoal) : "—",
           },
           {
             label: "QTD Goal",
-            value: qtdGoal != null ? fmt(qtdGoal) : "—",
+            value: qtdGoal != null ? fmtStat(qtdGoal) : "—",
           },
           {
             label: "QTD Achieved",
             // Format "achieved / goal" so the user sees progress at a glance.
             value:
               qtdGoal != null
-                ? `${fmt(qtdAchieved ?? 0)} / ${fmt(qtdGoal)}`
-                : fmt(qtdAchieved ?? 0),
+                ? `${fmtStat(qtdAchieved ?? 0)} / ${fmtStat(qtdGoal)}`
+                : fmtStat(qtdAchieved ?? 0),
           },
           {
             label: "Weekly Goal",

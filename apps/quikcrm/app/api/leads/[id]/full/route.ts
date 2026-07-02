@@ -2,6 +2,7 @@ import { NextResponse, type NextRequest } from "next/server";
 import { requireApiUser, isResponse, errorResponse } from "@/lib/auth/require";
 import { assertModule } from "@/lib/auth/permissions";
 import { getFullLeadRecord } from "@/lib/services/leads/full-record";
+import { isUserVisibleLeadActivity } from "@/lib/services/leads/log-lead-system-activities";
 
 export const runtime = "nodejs";
 
@@ -23,7 +24,13 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
 
     const record = await getFullLeadRecord({ user, leadId: id });
     if (!record) return NextResponse.json({ error: "Not found" }, { status: 404 });
-    return NextResponse.json(record);
+    // Hide the internal lead-creation init events from the UI timeline. The
+    // snapshot/insights/analytics inside `record` were already computed from the
+    // full set, so reporting/intelligence are unaffected.
+    return NextResponse.json({
+      ...record,
+      activities: record.activities.filter(isUserVisibleLeadActivity),
+    });
   } catch (e) {
     return errorResponse(e);
   }

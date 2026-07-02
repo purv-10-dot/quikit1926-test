@@ -10,7 +10,8 @@ export const createUserSchema = z.object({
   phone: z.string().optional().nullable(),
   role: userRoleEnum.default("SalesUser"),
   status: userStatusEnum.default("Active"),
-  /** Required for brand-new native users unless omitted → system default (Quikit123). */
+  /** Optional for brand-new native users — when omitted the server generates a
+   *  unique temp password via generateTempPassword() and emails it to the user. */
   password: z.string().min(8).max(128).optional(),
   permissionTemplateIds: z.array(z.string().trim().min(1)).default([]),
   allowedAccountIds: z.array(z.string().trim().min(1)).default([]),

@@ -137,8 +137,6 @@ export function LeadKanban({ buckets, leads, stages }: Props) {
   // Per-stage expanded limits (sticky across refetches). Stored in a ref so
   // the queryFn closure always reads the latest value without re-keying.
   const expandedLimitsRef = useRef<Map<string, number>>(new Map());
-  const [streamState, setStreamState] = useState<"connecting" | "live" | "unavailable">("connecting");
-
   const scrollRef = useRef<HTMLDivElement>(null);
   const [edges, setEdges] = useState({ left: false, right: false });
 
@@ -218,66 +216,17 @@ export function LeadKanban({ buckets, leads, stages }: Props) {
     queryFn: () => fetchBoard(expandedLimitsRef.current),
     initialData: initialBuckets,
     initialDataUpdatedAt: Date.now(),
-    refetchInterval:
-      activeCard || transitionPending
-        ? false
-        : streamState === "unavailable"
-        ? 20000
-        : 60000,
+    // Realtime removed — poll the board every 20s (paused during drag / an
+    // in-flight transition to avoid clobbering optimistic updates).
+    refetchInterval: activeCard || transitionPending ? false : 20000,
     refetchOnWindowFocus: true,
-    staleTime: streamState === "unavailable" ? 10000 : 30000,
+    staleTime: 10000,
   });
 
   const state = board.data ?? initialBuckets;
 
-  // ─── SSE realtime → invalidate (server is authoritative) ────────────────
-  useEffect(() => {
-    let es: EventSource | null = null;
-    let cancelled = false;
-    let consecutiveFailures = 0;
-    const GIVE_UP_AFTER = 3;
-
-    function open() {
-      if (cancelled) return;
-      es = new EventSource("/api/leads/stream", { withCredentials: true });
-      es.addEventListener("hello", () => {
-        consecutiveFailures = 0;
-        setStreamState("live");
-      });
-      es.addEventListener("lead", () => {
-        // Invalidate triggers a fresh fetch. queryClient.cancelQueries() inside
-        // onMutate prevents this from clobbering an in-flight optimistic update.
-        queryClient.invalidateQueries({ queryKey: KANBAN_QUERY_KEY });
-      });
-      es.onerror = () => {
-        consecutiveFailures += 1;
-        if (consecutiveFailures >= GIVE_UP_AFTER) {
-          es?.close();
-          es = null;
-          setStreamState("unavailable");
-        } else {
-          setStreamState("connecting");
-        }
-      };
-    }
-    open();
-
-    const onFocus = () => {
-      if (streamState === "unavailable") {
-        consecutiveFailures = 0;
-        setStreamState("connecting");
-        open();
-      }
-    };
-    window.addEventListener("focus", onFocus);
-
-    return () => {
-      cancelled = true;
-      window.removeEventListener("focus", onFocus);
-      es?.close();
-    };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  // ─── Realtime removed — the board refreshes via polling (see refetchInterval
+  //     on the board query below). No SSE/Redis subscription. ────────────────
 
   // ─── Horizontal scroll edge detection ───────────────────────────────────
   useEffect(() => {
@@ -387,46 +336,22 @@ export function LeadKanban({ buckets, leads, stages }: Props) {
           aria-live="polite"
           className="pointer-events-none absolute right-3 top-1 z-20 inline-flex items-center gap-1.5 rounded-full bg-white/90 px-2 py-0.5 text-[10px] font-medium text-crm-muted shadow-sm backdrop-blur-sm"
           title={
-            streamState === "unavailable"
-              ? "Live stream unavailable — polling every 20s"
-              : streamState === "connecting"
-              ? "Connecting to live stream…"
-              : board.isFetching
+            board.isFetching
               ? "Syncing latest data…"
               : board.dataUpdatedAt
-              ? `Live · last sync ${new Date(board.dataUpdatedAt).toLocaleTimeString()}`
-              : "Live"
+              ? `Polling · last sync ${new Date(board.dataUpdatedAt).toLocaleTimeString()}`
+              : "Polling every 20s"
           }
         >
           <span className="relative flex h-2 w-2">
             <span
-              className={`absolute inline-flex h-full w-full rounded-full ${
-                streamState === "live"
-                  ? "bg-emerald-400"
-                  : streamState === "unavailable"
-                  ? "bg-slate-400"
-                  : "bg-amber-400"
-              } ${
-                board.isFetching || streamState === "connecting" ? "animate-ping opacity-75" : "opacity-0"
+              className={`absolute inline-flex h-full w-full rounded-full bg-slate-400 ${
+                board.isFetching ? "animate-ping opacity-75" : "opacity-0"
               }`}
             />
-            <span
-              className={`relative inline-flex h-2 w-2 rounded-full ${
-                streamState === "live"
-                  ? "bg-emerald-500"
-                  : streamState === "unavailable"
-                  ? "bg-slate-500"
-                  : "bg-amber-500"
-              }`}
-            />
+            <span className="relative inline-flex h-2 w-2 rounded-full bg-slate-500" />
           </span>
-          {streamState === "unavailable"
-            ? "Polling"
-            : streamState === "connecting"
-            ? "Connecting"
-            : board.isFetching
-            ? "Syncing"
-            : "Live"}
+          {board.isFetching ? "Syncing" : "Polling"}
         </div>
         <div
           ref={scrollRef}

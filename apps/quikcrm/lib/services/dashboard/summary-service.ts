@@ -21,10 +21,7 @@ import {
   startOfDayInTz,
   type DateRange,
 } from "./period";
-import {
-  tenantOwnerWhere,
-  tenantAssigneeWhere,
-} from "./filters";
+import { resolveDashboardScope } from "./filters";
 import { resolveManagerTeam } from "./team";
 import {
   formatINRLong,
@@ -51,17 +48,14 @@ function kpi(value: number, prior: number): Kpi {
 }
 
 async function countActivitiesInRange(
-  user: SessionUser,
-  ownerId: string | null,
+  activityWhereBase: Record<string, unknown>,
   from: Date,
   to: Date,
 ): Promise<number> {
-  const where: Record<string, unknown> = {
-    orgId: user.orgId,
-    occurredAt: { gte: from, lte: to },
-  };
-  if (ownerId) where.ownerId = ownerId;
-  return prisma.crmActivity.count({ where });
+  // Role-scoped activity where (orgId + role/owner scope) + the time window.
+  return prisma.crmActivity.count({
+    where: { ...activityWhereBase, occurredAt: { gte: from, lte: to } },
+  });
 }
 
 export async function buildSummary(
@@ -92,14 +86,21 @@ export async function buildSummary(
 
   const dashCfg = await getDashboardConfig(user.orgId);
 
+  // Role-aware RBAC scope (Path B). Reuses the same helpers as buildRoleMetrics
+  // / the module routes so dashboard totals match what each role sees per module.
+  // Administrator → org-wide; SalesManager → team; SalesUser → own; Marketing/
+  // Finance → account ACL. The Owner dropdown narrows further within scope.
+  const scope = await resolveDashboardScope(user);
+  const activityWhereBase = scope.activityWhere(resolvedOwnerId);
+
   // Soft-delete-aware bases. CrmLead, CrmOpportunity, and CrmAccount all
   // carry `deletedAt`. They are NOT yet registered in the package-level
   // SOFT_DELETE_MODELS middleware (see schema.prisma comment on CrmLead),
   // so every read here filters explicitly. Activity, Task, and CallLog
   // models have no `deletedAt` column and need no clause.
-  const leadWhereBase = { ...tenantOwnerWhere(user, resolvedOwnerId), deletedAt: null };
-  const oppWhereBase = { ...tenantOwnerWhere(user, resolvedOwnerId), deletedAt: null };
-  const taskWhereBase = tenantAssigneeWhere(user, resolvedOwnerId);
+  const leadWhereBase = { ...scope.recordWhere(resolvedOwnerId), deletedAt: null };
+  const oppWhereBase = { ...scope.recordWhere(resolvedOwnerId), deletedAt: null };
+  const taskWhereBase = scope.taskWhere(resolvedOwnerId);
 
   const oppOpenWhere = {
     ...oppWhereBase,
@@ -142,10 +143,10 @@ export async function buildSummary(
     }),
     // STOCK: total accounts right now. Bug 1 dropped createdAt (stock
     // semantics); Bug 3 added deletedAt: null (defense in depth on top
-    // of the SOFT_DELETE_MODELS middleware); Bug 7 routes through
-    // tenantOwnerWhere so the Owner dropdown is honoured.
+    // of the SOFT_DELETE_MODELS middleware). Now role-scoped on the account's
+    // own id (accountWhere) so non-admins only count accounts they can see.
     prisma.crmAccount.count({
-      where: { ...tenantOwnerWhere(user, resolvedOwnerId), deletedAt: null },
+      where: { ...scope.accountWhere(resolvedOwnerId), deletedAt: null },
     }),
     // STOCK: open tasks right now (no createdAt clause)
     prisma.crmTask.count({
@@ -165,12 +166,12 @@ export async function buildSummary(
       _sum: { amount: true },
     }),
     // FLOW: activities in [from, to] (occurredAt)
-    countActivitiesInRange(user, resolvedOwnerId, range.from, range.to),
+    countActivitiesInRange(activityWhereBase, range.from, range.to),
     // FLOW: activities in the prior window
-    countActivitiesInRange(user, resolvedOwnerId, prior.from, prior.to),
+    countActivitiesInRange(activityWhereBase, prior.from, prior.to),
     // TZ-aware per CLAUDE.md § "Timezone correctness"
-    countActivitiesInRange(user, resolvedOwnerId, startOfToday, endOfToday),
-    countActivitiesInRange(user, resolvedOwnerId, weekAgo, new Date()),
+    countActivitiesInRange(activityWhereBase, startOfToday, endOfToday),
+    countActivitiesInRange(activityWhereBase, weekAgo, new Date()),
     // FLOW: leads-by-stage bar reflects leads created in [from, to].
     // Bug 13: orderBy ensures Postgres returns rows deterministically (the
     // chart x-axis was previously shuffling between requests). Final
@@ -190,7 +191,7 @@ export async function buildSummary(
     }),
     Promise.all(
       dayBuckets.map((b) =>
-        countActivitiesInRange(user, resolvedOwnerId, b.start, b.end),
+        countActivitiesInRange(activityWhereBase, b.start, b.end),
       ),
     ),
   ]);
@@ -263,7 +264,7 @@ export async function buildSummary(
 
   const [teamDashboard, executivePack] = await Promise.all([
     buildTeamDashboard(user, range),
-    buildExecutiveSummary(user, range, resolvedOwnerId, prior),
+    buildExecutiveSummary(range, resolvedOwnerId, prior, scope),
   ]);
 
   return {

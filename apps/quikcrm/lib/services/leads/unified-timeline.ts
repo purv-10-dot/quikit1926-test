@@ -12,6 +12,7 @@ export type TimelineItemKind =
   | "system"
   | "opportunity"
   | "document"
+  | "conversion"
   | "activity";
 
 export type TimelineFilter =
@@ -105,8 +106,54 @@ export function buildUnifiedTimeline(input: {
     createdAt: Date | string;
   }[];
   documents: { id: string; name: string; createdAt: Date | string }[];
+  /**
+   * Synthesized "Lead Converted" event. The conversion is not persisted as a
+   * CrmActivity (it only writes audit + notification rows), so the lead detail
+   * UI passes the conversion facts here to surface a dedicated, human-readable
+   * conversion entry instead of letting the auto-created Opportunity ("Name" +
+   * "Prospecting") be the only — and misleading — trace of the conversion.
+   * Omit it (undefined) for unconverted leads / surfaces that don't want it.
+   */
+  conversion?: {
+    convertedAt: Date | string;
+    ownerName: string | null;
+    accountName: string | null;
+    contactName: string | null;
+    opportunityName: string | null;
+  } | null;
+  /**
+   * Opportunity ids to skip in the opportunity loop. Used by the Lead Timeline /
+   * Lead Overview to hide the Opportunity auto-created during conversion, since
+   * the synthesized "Lead Converted" event above already conveys it. The
+   * Opportunity row stays in the DB and still appears on the Opportunity
+   * Timeline / Details and the global Activities feed (which don't pass this).
+   */
+  suppressOpportunityIds?: readonly string[] | null;
 }): UnifiedTimelineItem[] {
   const items: UnifiedTimelineItem[] = [];
+
+  if (input.conversion) {
+    const c = input.conversion;
+    const parts: string[] = [];
+    if (c.accountName?.trim()) parts.push(`Account "${c.accountName.trim()}"`);
+    if (c.contactName?.trim()) parts.push(`Contact "${c.contactName.trim()}"`);
+    if (c.opportunityName?.trim()) parts.push(`Opportunity "${c.opportunityName.trim()}"`);
+    let subtitle: string | null = null;
+    if (parts.length === 1) {
+      subtitle = `Converted to ${parts[0]}.`;
+    } else if (parts.length > 1) {
+      subtitle = `Converted to ${parts.slice(0, -1).join(", ")}, and ${parts[parts.length - 1]}.`;
+    }
+    items.push({
+      id: "conversion",
+      kind: "conversion",
+      at: new Date(c.convertedAt).toISOString(),
+      title: "Lead Converted",
+      subtitle,
+      meta: c.ownerName?.trim() || null,
+      filterTags: ["all"],
+    });
+  }
 
   for (const a of input.activities) {
     const kind = classifyActivity(a.type, a.activityCode ?? null);
@@ -172,7 +219,12 @@ export function buildUnifiedTimeline(input: {
     });
   }
 
+  const suppressedOppIds = new Set(input.suppressOpportunityIds ?? []);
   for (const o of input.opportunities) {
+    // Skip the conversion-auto-created Opportunity — the "Lead Converted" event
+    // already names it. (Only suppressed on Lead surfaces; Opportunity history
+    // and global Activities don't pass suppressOpportunityIds.)
+    if (suppressedOppIds.has(o.id)) continue;
     items.push({
       id: `opp:${o.id}`,
       kind: "opportunity",
@@ -194,7 +246,15 @@ export function buildUnifiedTimeline(input: {
     });
   }
 
-  items.sort((a, b) => new Date(b.at).getTime() - new Date(a.at).getTime());
+  items.sort((a, b) => {
+    const diff = new Date(b.at).getTime() - new Date(a.at).getTime();
+    if (diff !== 0) return diff;
+    // Tie-break: the conversion event always wins so it sits above the
+    // Opportunity created in the same conversion transaction (equal timestamps).
+    if (a.kind === "conversion") return -1;
+    if (b.kind === "conversion") return 1;
+    return 0;
+  });
   return items;
 }
 

@@ -6,13 +6,14 @@
  * requirePermission("settings")-gated). Loggers need to read active types
  * WITHOUT settings perms — so this endpoint gates on activities:view.
  *
- * Empty-types behavior is LOCKED (decision: empty-state CTA, not seed-type
- * fallback): the endpoint returns ONLY real, isActive, admin-configured types.
- * It NEVER synthesizes built-in Note/Call/Email options. An empty org yields
- * { success: true, data: [] } — a valid response, not an error.
+ * Seeding: the first read for an org seeds the 12 default activity types
+ * (ensureDefaultActivityTypes). Once an org has any type, the seed no-ops — so
+ * these tests arm crmActivityType.count > 0 to exercise the steady-state list
+ * path (already-seeded org). The endpoint still returns ONLY real, isActive,
+ * admin-configured types; if an admin deactivates/deletes them all the response
+ * is a valid { success: true, data: [] } (empty-state CTA in the UI).
  *
- * Written BEFORE the route exists → RED for one reason: the module doesn't
- * resolve. Assertions:
+ * Assertions:
  *  (a) inverse-lock: a non-settings user with activities:view CAN list
  *      (proves NOT settings-gated);
  *  (b) org-scoped (query carries the session orgId);
@@ -36,8 +37,26 @@ beforeEach(() => {
   setSession(null);
   vi.mocked(assertModule).mockReset();
   vi.mocked(assertModule).mockResolvedValue(undefined);
+  // The self-healing seed (ensureDefaultActivityTypes) runs before the list read
+  // on every request: it loads existing types/fields (no isActive filter) and
+  // backfills any missing defaults. So crmActivityType.findMany is called more
+  // than once — the LIST query under test is the one carrying isActive: true.
+  // Tests target that call via `listQueryWhere()` rather than calls[0].
   db.crmActivityType.findMany.mockReset();
+  db.crmActivityType.createMany.mockReset();
+  db.crmActivityType.createMany.mockResolvedValue({ count: 0 } as never);
+  db.crmActivityFieldDefinition.findMany.mockReset();
+  db.crmActivityFieldDefinition.findMany.mockResolvedValue([] as never);
+  db.crmActivityFieldDefinition.createMany.mockReset();
+  db.crmActivityFieldDefinition.createMany.mockResolvedValue({ count: 0 } as never);
 });
+
+/** The `where` of the active-types LIST query (the only one with isActive). */
+function listQueryWhere(): { orgId?: string; isActive?: boolean } | undefined {
+  const calls = db.crmActivityType.findMany.mock.calls as { where?: { isActive?: boolean } }[][];
+  const listCall = calls.find((c) => c[0]?.where?.isActive !== undefined);
+  return listCall?.[0]?.where;
+}
 
 describe("GET /api/activities/types (user-facing list for logging)", () => {
   it("returns 401 when unauthenticated", async () => {
@@ -92,8 +111,7 @@ describe("GET /api/activities/types (user-facing list for logging)", () => {
     const { GET } = await import(ROUTE);
     await GET();
 
-    const arg = db.crmActivityType.findMany.mock.calls[0]?.[0] as { where: { orgId?: string } };
-    expect(arg.where.orgId).toBe("t1");
+    expect(listQueryWhere()?.orgId).toBe("t1");
   });
 
   it("returns only isActive types (inactive excluded)", async () => {
@@ -103,8 +121,7 @@ describe("GET /api/activities/types (user-facing list for logging)", () => {
     const { GET } = await import(ROUTE);
     await GET();
 
-    const arg = db.crmActivityType.findMany.mock.calls[0]?.[0] as { where: { isActive?: boolean } };
-    expect(arg.where.isActive).toBe(true);
+    expect(listQueryWhere()?.isActive).toBe(true);
   });
 
   it("empty org → valid { success: true, data: [] } (empty-state, NOT an error, NOT synthesized built-ins)", async () => {

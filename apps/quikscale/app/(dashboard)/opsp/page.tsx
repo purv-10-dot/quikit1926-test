@@ -9,7 +9,7 @@ import { OPSPOwnerNamesProvider } from "./components/pickers";
 import { FInput } from "./components/RichEditor";
 import { Card } from "./components/Card";
 import { populateCatCache } from "./components/category";
-import { ActionsModal, RocksModal, KeyThrustsModal, KeyInitiativesModal, AccountabilityModal, QuarterlyPrioritiesModal, actionsQtrHasErrors } from "./components/modals";
+import { ActionsModal, RocksModal, KeyThrustsModal, KeyInitiativesModal, AccountabilityModal, QuarterlyPrioritiesModal, actionsQtrHasErrors, actionsQtrRowHasError, actionsQtrErrors } from "./components/modals";
 import { Eye, Check, AlertTriangle, Loader2, History } from "lucide-react";
 import { fiscalYearLabel, getFiscalYear, getFiscalQuarter } from "@/lib/utils/fiscal";
 import { OPSPSetupWizard } from "./components/SetupWizard";
@@ -37,6 +37,7 @@ import { OPSPHistoryDrawer } from "./components/OPSPHistoryDrawer";
 import { describeSetChange, describeArrChange, getFieldValue, applyFieldPath, type PendingEdit } from "./lib/editLog";
 import { isYearSelectable, isQuarterSelectable, firstSelectableQuarter } from "./lib/periodGating";
 import { useOpspAck } from "@/lib/hooks/useOpspAck";
+import { useCurrentQuarter } from "@/lib/hooks/useCurrentWeek";
 import { computeOpspEditability } from "@/lib/utils/opspEditability";
 import { editedFieldPaths, fieldMatchesEdited, editsSince, latestEdit, type EditLogLike } from "@/lib/utils/opspEditHighlight";
 
@@ -48,6 +49,12 @@ export default function OPSPPage() {
   const urlYear = searchParams.get("year");
   const urlQuarter = searchParams.get("quarter");
   const urlPreview = searchParams.get("preview") === "true";
+
+  // Current quarter resolved from the tenant's QuarterSetting date ranges
+  // (Custom-Quarter aware) — a 14-week Q1 ending in July stays "Q1", where the
+  // calendar `getFiscalQuarter()` would wrongly say "Q2". Falls back to the
+  // calendar value while the DB loads / if no quarters are configured.
+  const currentQuarter = useCurrentQuarter(getFiscalYear()) ?? getFiscalQuarter();
 
   // Form state + autosave + cascade + setup-wizard gating all live in the hook.
   // See apps/quikscale/app/(dashboard)/opsp/hooks/useOPSPForm.ts.
@@ -229,7 +236,7 @@ export default function OPSPPage() {
   const autoFinalizeNudge = autoFinalizeNudgeDays({
     isAdmin,
     statusLocked,
-    isCurrentPeriod: form.year === getFiscalYear() && form.quarter === getFiscalQuarter(),
+    isCurrentPeriod: form.year === getFiscalYear() && form.quarter === currentQuarter,
     finalize: finalizeDeadline,
   });
   // Show the blue "review locked" banner ONLY to users who could otherwise edit a
@@ -321,14 +328,24 @@ export default function OPSPPage() {
     await logChange(edit, note);
   };
 
-  // An edit to an Actions (QTR) cell that leaves the grid in an invalid state
-  // (e.g. last month < Projected) must NEVER be persisted or logged — the
-  // ActionsModal mutates form state live (onChange per keystroke), so without
-  // this guard an invalid value would reach OPSP Review even though the modal's
-  // Submit button is disabled. Mirrors the modal's own Submit-disable rule.
-  const actionsEditInvalid = (field: string) =>
-    field.startsWith("actionsQtr") &&
-    actionsQtrHasErrors(formRef.current.actionsQtr, formRef.current.goalRows);
+  // An edit to an Actions (QTR) cell that leaves THAT ROW in an invalid state
+  // (e.g. last month < Projected, or a cleared Projected) must NEVER be persisted
+  // or logged — the ActionsModal mutates form state live (onChange per keystroke),
+  // so without this guard an invalid value would reach OPSP Review even though the
+  // modal's Submit button is disabled.
+  //
+  // The gate is PER-ROW, not grid-wide: a single valid field change can be saved
+  // even when OTHER rows are still incomplete (e.g. emptied by the Goals→Actions
+  // cascade), so the user can fill rows one at a time. The whole-grid check still
+  // guards the modal's Submit and Finalize separately.
+  const actionsEditInvalid = (field: string) => {
+    if (!field.startsWith("actionsQtr")) return false;
+    const m = /^actionsQtr\.(\d+)\b/.exec(field);
+    // Unindexed actionsQtr field (shouldn't happen) — fall back to the grid-wide
+    // check to stay safe.
+    if (!m) return actionsQtrHasErrors(formRef.current.actionsQtr, formRef.current.goalRows);
+    return actionsQtrRowHasError(formRef.current.actionsQtr, formRef.current.goalRows, Number(m[1]));
+  };
 
   // Clearing a GOALS/TARGETS Projected value (leaving a category with no value)
   // must NOT be saved — it produces an incomplete row that leaks into the OPSP
@@ -560,7 +577,7 @@ export default function OPSPPage() {
       <OPSPSetupWizard
         fiscalYearStart={fiscalYearStart}
         currentFiscalYear={getFiscalYear()}
-        currentQuarter={getFiscalQuarter()}
+        currentQuarter={currentQuarter}
         onComplete={completeSetup}
       />
     );
@@ -1132,9 +1149,22 @@ export default function OPSPPage() {
         // Projected that was cleared (a category left with no value) — either
         // would otherwise reach the OPSP Review as bad/incomplete data.
         const blockedEdit = editInvalid(pendingEdit.field);
-        const blockedReason = pendingEdit.field.startsWith("actionsQtr")
-          ? "Resolve the highlighted errors in the Actions (QTR) editor before saving this change."
-          : "A category's Projected value can't be empty — enter a value or remove the category before saving.";
+        // Per-row reason: name the specific problem with the edited Actions row
+        // so the user knows exactly what THIS change needs (instead of the old
+        // generic grid-wide message).
+        const blockedReason = (() => {
+          if (pendingEdit.field.startsWith("actionsQtr")) {
+            const m = /^actionsQtr\.(\d+)\b/.exec(pendingEdit.field);
+            const rowErr = m
+              ? actionsQtrErrors(formRef.current.actionsQtr, formRef.current.goalRows)
+                  .find((e) => e.rowIndex === Number(m[1]))
+              : undefined;
+            return rowErr
+              ? `This row can't be saved yet — ${rowErr.message}`
+              : "Resolve the highlighted errors in this Actions (QTR) row before saving this change.";
+          }
+          return "A category's Projected value can't be empty — enter a value or remove the category before saving.";
+        })();
         // The expand-modals (Actions/Rocks/…) edit form state live, so editing a
         // field inside one pops this card while a modal is open. The modals sit
         // at z-[200]; raise the card to z-[210] so it renders ABOVE the modal

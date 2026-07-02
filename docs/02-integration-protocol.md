@@ -96,7 +96,7 @@ The integration owner reads:
 Common reasons for rejection:
 - New top-level dependency added without justification.
 - Files in `packages/` modified.
-- Prisma queries without `tenantId` filter.
+- Prisma queries without `orgId` filter.
 - `as any` cast without comment.
 - `manifest.ts` changed after initial signoff.
 - Missing tests for new API routes.
@@ -129,7 +129,7 @@ When the integration owner promotes to `main`, Vercel deploys. The integration o
 - Touching `packages/` without prior agreement.
 - Touching another app's directory.
 - Skipping tests for new API routes.
-- Skipping `tenantId` filter on Prisma queries.
+- Skipping `orgId` filter on Prisma queries.
 - Committing `.env.local`, secrets, OAuth credentials, or DATABASE_URLs.
 - Bypassing pre-commit hooks (`--no-verify` flag).
 - Disabling ESLint rules with `// eslint-disable-next-line` without a comment explaining why.

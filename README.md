@@ -1,6 +1,8 @@
 # QuikIT
 
-Multi-tenant SaaS platform — a launcher (`quikit`) + product apps (`quikscale`, `admin`, and more) sharing one Postgres database, one auth system, and one design system. Built as a Turborepo monorepo with Next.js 14 + Prisma + NextAuth + Tailwind.
+Multi-tenant SaaS platform — a launcher (`quikit`) that doubles as the OAuth/OIDC identity provider, a central credentials service (`auth`), an org admin portal (`admin`), and a growing set of product apps (`quikscale`, `quiktrack`, `quikvc`, `quikinfra`, `quiksocial`, `quikcrm`, `quikhrms`) — all sharing one Postgres database, one auth system, and one design system. Built as a Turborepo monorepo with Next.js 14 + Prisma + NextAuth + Tailwind + Redis.
+
+> **Terminology:** the tenant/organization boundary is called an **org** in the current codebase — the scoping column is `orgId` (not `tenantId`), the model is `Org`, and the membership model is `OrgMember`. Older prose that says "tenant" refers to the same concept.
 
 ## Quick links
 
@@ -14,20 +16,30 @@ Multi-tenant SaaS platform — a launcher (`quikit`) + product apps (`quikscale`
 
 ```
 QuikIT/
-├── apps/
-│   ├── _template/           Skeleton for new apps (copy + rename via scripts/onboard-dev.sh)
-│   ├── quikit/              Launcher (port 3000) — landing, app picker, SSO
-│   ├── quikscale/           KPI / OPSP / Priority / WWW (port 3002)
-│   └── admin/               Tenant admin portal (port 3005)
+├── apps/                     (dev ports in parentheses)
+│   ├── _template/           Skeleton for new apps (copy + rename via scripts/onboard-dev.sh) (3010)
+│   ├── quikit/              Launcher + OAuth/OIDC IdP + super-admin portal (3000)
+│   ├── auth/                Central credentials / login service (3001)
+│   ├── admin/               Org admin portal — members, teams, apps, roles (3002)
+│   ├── quikscale/           OKR / KPI / OPSP / Priority / WWW (3003)
+│   ├── quiktrack/           Project / task / docs tracker (3004)
+│   ├── quikvc/              Venture-capital deal flow (3005)
+│   ├── quikinfra/           Construction ERP — BOQ / DPR / procurement (3006)
+│   ├── quiksocial/          AI social-media management (3007)
+│   ├── quikcrm/             CRM / sales execution (3008)
+│   └── quikhrms/            HR management system (3009)
 ├── packages/
-│   ├── auth/                NextAuth wrappers, middleware factory, session types
-│   ├── database/            Prisma schema + client
-│   ├── shared/              Constants (ROLES, MEMBERSHIP_STATUS), pagination, email
+│   ├── auth/                NextAuth factories, middleware factory, guards, session store
+│   ├── database/            Prisma schema + client singleton (soft-delete middleware)
+│   ├── redis/              ioredis singleton + best-effort cache helpers (fail-open)
+│   ├── shared/              Constants (ROLES, MEMBERSHIP_ROLES, statuses), pagination, email, module registry
 │   └── ui/                  Shared React components, Tailwind theme, design tokens
 ├── docs/                    Onboarding + reference (read docs/README.md first)
-├── scripts/                 onboard-dev.sh, integrate-app.sh, coverage-ratchet.mjs, …
+├── scripts/                 onboard-dev.sh, integrate-app.sh, coverage-ratchet.mjs, affected-apps.mjs …
 └── CLAUDE.md                Repo-wide LLM/contributor rules
 ```
+
+Full per-app port + env reference: [`docs/13-app-ports-and-env.md`](./docs/13-app-ports-and-env.md).
 
 ## Branch flow (non-negotiable)
 
@@ -44,8 +56,9 @@ feature/* | fix/* → dev → uat → main → Vercel (production)
 | Framework | Next.js 14 (App Router) |
 | Language | TypeScript (strict) |
 | Monorepo | Turborepo + npm workspaces |
-| DB | PostgreSQL via Prisma (Neon in production) |
-| Auth | NextAuth (custom; SSO from `quikit` launcher) |
+| DB | PostgreSQL via Prisma (Neon in production), multi-schema (`auth`, `quikit`, `public`, `app_*`) |
+| Auth | NextAuth (JWT strategy); `quikit` is the OAuth/OIDC IdP, `auth` hosts credentials; cross-domain handoff for SSO |
+| Cache / sessions | Redis (ioredis) via `@quikit/redis` — soft-session store, rate limiting, layered cache (Upstash in prod) |
 | UI | React 18 + Tailwind CSS, components from `@quikit/ui` |
 | Forms | Zod for validation |
 | Tests | Vitest (unit/component/API), Playwright (e2e) |
@@ -53,7 +66,7 @@ feature/* | fix/* → dev → uat → main → Vercel (production)
 
 ## Running locally
 
-Prereqs: Node 20+, npm 11+, Postgres 14+.
+Prereqs: Node 20+, npm 11+, Postgres 14+, and (optional in dev) Redis 6+ on `localhost:6379`. Without Redis the apps fall back to per-process in-memory state — fine locally, not for multi-instance production.
 
 ```bash
 git clone <repo-url>
@@ -66,9 +79,13 @@ npm run dev                # turbo dev — runs all apps in parallel
 App-specific dev:
 
 ```bash
-npm run dev:quikscale      # quikscale on :3002
-npm run dev:admin          # admin on :3005
+npm run dev:quikscale      # quikscale on :3003
+npm run dev:auth           # auth on :3001
+npm run dev:quikit         # launcher on :3000
+npm run dev:admin          # admin on :3002
 ```
+
+Or run a single app directly: `cd apps/<app> && npm run dev`. See [`docs/13-app-ports-and-env.md`](./docs/13-app-ports-and-env.md) for every app's port.
 
 ## Adding a new app
 

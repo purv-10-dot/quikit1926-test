@@ -6,9 +6,8 @@
  *
  * Useful for verifying that:
  *   1. The CrmNotification DB write works.
- *   2. The Redis SSE publish fires correctly.
- *   3. Email delivery is configured.
- *   4. The recipient's bell badge updates in real-time.
+ *   2. Email delivery is configured.
+ *   3. The recipient's bell badge updates on next poll (≤60s).
  *
  * Admin-only.
  *

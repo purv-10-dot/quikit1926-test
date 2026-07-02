@@ -13,6 +13,8 @@ export interface QuarterDateRow {
   quarter: "Q1" | "Q2" | "Q3" | "Q4";
   startDate: Date;
   endDate: Date;
+  /** Custom Quarter Settings: weeks in this quarter. Omitted = legacy 13. */
+  weekCount?: number;
 }
 
 /** True for leap years in the proleptic Gregorian calendar. */
@@ -128,4 +130,34 @@ export function generateQuarterDates(
   }
 
   return quarters;
+}
+
+/**
+ * Custom Quarter Settings: build the 4 contiguous quarters from a Q1 start date
+ * and an explicit per-quarter week count. Each quarter spans `weekCount × 7`
+ * days; the next quarter starts the day after the previous ends. Unlike
+ * `generateQuarterDates`, the fiscal year is NOT pinned to 365/366 days — its
+ * length floats to the sum of the quarters' weeks.
+ *
+ * `weekCounts` must have length 4 (Q1..Q4). All math is UTC-normalized.
+ */
+export function chainQuarterDates(
+  q1Start: Date,
+  weekCounts: number[],
+): QuarterDateRow[] {
+  const names: Array<QuarterDateRow["quarter"]> = ["Q1", "Q2", "Q3", "Q4"];
+  const rows: QuarterDateRow[] = [];
+  let cursor = new Date(
+    Date.UTC(q1Start.getUTCFullYear(), q1Start.getUTCMonth(), q1Start.getUTCDate()),
+  );
+
+  for (let i = 0; i < 4; i++) {
+    const weeks = weekCounts[i] ?? 13;
+    const qStart = new Date(cursor.getTime());
+    const qEnd = addDays(qStart, weeks * 7 - 1);
+    rows.push({ quarter: names[i], startDate: qStart, endDate: qEnd, weekCount: weeks });
+    cursor = addDays(qEnd, 1);
+  }
+
+  return rows;
 }

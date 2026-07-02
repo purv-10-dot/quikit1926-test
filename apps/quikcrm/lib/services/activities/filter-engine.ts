@@ -10,6 +10,23 @@ import type { FilterFieldDef } from "@/types/lead-filter";
 
 type WhereFragment = Record<string, unknown>;
 
+// Virtual field for the toolbar free-text search box. A single condition on
+// this field expands to an OR across the activity text columns, so it composes
+// (AND) cleanly with the structured quick/advanced filters. Mirrors the leads
+// engine's `__quickSearch` pattern.
+export const ACTIVITY_QUICK_SEARCH_FIELD = "__quickSearch";
+const ACTIVITY_QUICK_SEARCH_COLUMNS = ["subject", "outcome", "detailNotes", "type"] as const;
+
+function buildActivityQuickSearchWhere(term: unknown): WhereFragment | null {
+  const s = typeof term === "string" ? term.trim() : term == null ? "" : String(term).trim();
+  if (!s) return null;
+  return {
+    OR: ACTIVITY_QUICK_SEARCH_COLUMNS.map((field) => ({
+      [field]: { contains: s, mode: "insensitive" },
+    })),
+  };
+}
+
 function coerceDate(v: unknown): Date | null {
   if (v instanceof Date) return v;
   if (typeof v === "string" && v.trim()) {
@@ -145,6 +162,11 @@ export function translateActivityFilterToPrismaWhere(
 
   const fragments: WhereFragment[] = [];
   for (const c of payload.conditions) {
+    if (c.field === ACTIVITY_QUICK_SEARCH_FIELD) {
+      const frag = buildActivityQuickSearchWhere(c.value);
+      if (frag) fragments.push(frag);
+      continue;
+    }
     if (!ACTIVITY_FILTER_FIELD_NAMES.has(c.field)) continue;
     const def = getActivityFilterField(c.field);
     if (!def) continue;

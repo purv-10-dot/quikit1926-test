@@ -53,19 +53,18 @@ function resolveClientSecret(envName: string, devFallback: string): string {
   return devFallback;
 }
 
-// Dev fallbacks match `next dev -p <port>` in each app's package.json. The
-// monorepo's local routing architecture is:
-//   auth → 3000   quikit → 3001   admin → 3002   quikscale → 3003
-//   quiktrack → 3004   quikinfra → 3005   quiksocial → 3006
-//   quikvc → 3007 (moved off 3006 to make room for quiksocial)
+// Dev fallbacks MUST match `next dev -p <port>` in each app's package.json:
+//   quikit → 3000   auth → 3001   admin → 3002   quikscale → 3003
+//   quiktrack → 3004   quikvc → 3005   quikinfra → 3006   quiksocial → 3007
+//   quikcrm → 3008   quikhrms → 3009
 // In production these URLs MUST be passed via env vars (resolveAppUrl throws
 // when NODE_ENV=production and the env var is unset).
 const ADMIN_BASE = resolveAppUrl("ADMIN_URL", "http://localhost:3002"); // prod-safety-allow: dev fallback, prod throws via resolveAppUrl
 const QUIKSCALE_BASE = resolveAppUrl("QUIKSCALE_URL", "http://localhost:3003"); // prod-safety-allow: dev fallback, prod throws via resolveAppUrl
 const QUIKTRACK_BASE = resolveAppUrl("QUIKTRACK_URL", "http://localhost:3004"); // prod-safety-allow: dev fallback, prod throws via resolveAppUrl
-const QUIKINFRA_BASE = resolveAppUrl("QUIKINFRA_URL", "http://localhost:3005"); // prod-safety-allow: dev fallback, prod throws via resolveAppUrl
-const QUIKSOCIAL_BASE = resolveAppUrl("QUIKSOCIAL_URL", "http://localhost:3006"); // prod-safety-allow: dev fallback, prod throws via resolveAppUrl
-const QUIKVC_BASE = resolveAppUrl("QUIKVC_URL", "http://localhost:3007"); // prod-safety-allow: dev fallback, prod throws via resolveAppUrl
+const QUIKINFRA_BASE = resolveAppUrl("QUIKINFRA_URL", "http://localhost:3006"); // prod-safety-allow: dev fallback, prod throws via resolveAppUrl
+const QUIKSOCIAL_BASE = resolveAppUrl("QUIKSOCIAL_URL", "http://localhost:3007"); // prod-safety-allow: dev fallback, prod throws via resolveAppUrl
+const QUIKVC_BASE = resolveAppUrl("QUIKVC_URL", "http://localhost:3005"); // prod-safety-allow: dev fallback, prod throws via resolveAppUrl
 const QUIKCRM_BASE = resolveAppUrl("QUIKCRM_URL", "http://localhost:3008"); // prod-safety-allow: dev fallback, prod throws via resolveAppUrl
 const QUIKFINANCE_BASE = resolveAppUrl("QUIKFINANCE_URL", "http://localhost:3013"); // prod-safety-allow: dev fallback, prod throws via resolveAppUrl
 // Central launcher (quikit) origin. It hosts every app's icon under

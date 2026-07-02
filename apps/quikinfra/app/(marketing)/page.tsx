@@ -1,5 +1,6 @@
 import { redirect } from "next/navigation";
 import { getServerSession } from "next-auth";
+import { AppAccessDeniedPopup } from "@quikit/ui/app-access-denied-popup";
 import { authOptions } from "@/lib/auth";
 import ScrollStage from "./_components/ScrollStage";
 import HorizontalPunch from "./_components/HorizontalPunch";
@@ -124,14 +125,22 @@ const ROLES = [
   { ix: "R / 04", title: "Site Engineer", line: "Raise requests and submit DPR from the site — in under a minute.", tag: "Field" },
 ];
 
-export default async function MarketingPage() {
+export default async function MarketingPage({
+  searchParams,
+}: {
+  searchParams?: { reason?: string };
+}) {
+  // A user bounced here for lacking app access must see the landing page +
+  // popup even if they still hold a session (SessionGuard would re-bounce them).
+  const deniedAccess = searchParams?.reason === "no_app_access";
   const session = await getServerSession(authOptions);
-  if (session?.user?.id) {
+  if (session?.user?.id && !deniedAccess) {
     redirect("/dashboard");
   }
 
   return (
     <div className="frame">
+      <AppAccessDeniedPopup appName="QuikInfra" />
       <main className="sheet">
         <Nav />
 

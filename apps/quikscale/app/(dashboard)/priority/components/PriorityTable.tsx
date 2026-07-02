@@ -3,7 +3,7 @@
 import { useState, useRef, useEffect, type UIEvent } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import type { PriorityRow } from "@/lib/types/priority";
-import { ALL_WEEKS, weekDateLabel, getWeekDateRange } from "@/lib/utils/fiscal";
+import { weeksArray, weekDateLabel, getWeekDateRange } from "@/lib/utils/fiscal";
 import { useQuarterStartDates } from "@/lib/hooks/useQuarterStartDates";
 import { PriorityModal } from "./PriorityModal";
 import { PriorityLogModal } from "./PriorityLogModal";
@@ -229,8 +229,10 @@ export function PriorityTable({ priorities: prioritiesAll, onRefresh, year, quar
   const { canEditPastWeek } = usePastWeekFlags();
   const currentWeek = useCurrentWeek(year, quarter);
   const weekLabels = useWeekLabels(year, quarter);
-  const { getStartDate: getQuarterStartDate } = useQuarterStartDates();
+  const { getStartDate: getQuarterStartDate, getWeekCount } = useQuarterStartDates();
   const qStart = getQuarterStartDate(year, quarter);
+  // Weeks in this quarter (Custom Quarter Settings). Defaults to 13.
+  const weekCount = getWeekCount(year, quarter);
 
   // Freeze + hidden cols stay in the DB-backed user pref. Sort moved to the
   // global Redux tables slice (lib/store) so it shares the same persistence
@@ -278,7 +280,7 @@ export function PriorityTable({ priorities: prioritiesAll, onRefresh, year, quar
     // notes are preserved. If the priority's endWeek is shorter, it is
     // auto-extended to 13 via a parallel PUT so the grid shows blue cells
     // (instead of out-of-range X markers) for those weeks.
-    const QUARTER_END = 13;
+    const QUARTER_END = weekCount;
     const priority = prioritiesAll.find(p => p.id === priorityId);
     const currentEnd = priority?.endWeek ?? QUARTER_END;
 
@@ -403,7 +405,7 @@ export function PriorityTable({ priorities: prioritiesAll, onRefresh, year, quar
   const persistedHides = new Set(hiddenCols);
   // Allow the dashboard to limit which week columns are visible by passing
   // `week${n}` keys in `hideColumns`. Default keeps the full 13-week grid.
-  const visibleWeeksList = ALL_WEEKS.filter(w => !instanceHides.has(`week${w}`));
+  const visibleWeeksList = weeksArray(weekCount).filter(w => !instanceHides.has(`week${w}`));
   const COL_ORDER = COL_ORDER_FULL.filter((c) => {
     if (instanceHides.has(c)) return false;
     if (ALWAYS_VISIBLE.has(c)) return true;

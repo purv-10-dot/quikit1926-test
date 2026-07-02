@@ -5,6 +5,12 @@ import { NumberInput, DateInput, Checkbox, Field } from "@quikit/ui";
 import { Modal } from "@/components/ui/modal";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { useDebouncedValue } from "@/hooks/use-debounce";
+
+interface AccountOption {
+  id: string;
+  name: string;
+}
 
 export interface ConvertResult {
   contactId: string | null;
@@ -42,6 +48,16 @@ export function ConvertLeadModal({
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  // Optional "Use Existing Account" selection. When set, it is sent to the
+  // convert API and used as the conversion's account; when null, the API keeps
+  // its existing company-name-based account resolution unchanged.
+  const [accountId, setAccountId] = useState<string | null>(null);
+  const [accountQuery, setAccountQuery] = useState("");
+  const [accountHits, setAccountHits] = useState<AccountOption[]>([]);
+  const [accountListOpen, setAccountListOpen] = useState(false);
+  const [accountLoading, setAccountLoading] = useState(false);
+  const debouncedAccountQuery = useDebouncedValue(accountQuery, 300);
+
   useEffect(() => {
     if (!open) return;
     setCreateOpp(false);
@@ -51,7 +67,56 @@ export function ConvertLeadModal({
     setTitleError("");
     setError(null);
     setSubmitting(false);
+    setAccountId(null);
+    setAccountQuery("");
+    setAccountHits([]);
+    setAccountListOpen(false);
+    setAccountLoading(false);
   }, [open, leadCompany]);
+
+  // Search existing accounts as the user types. Uses the shared, ACL-scoped
+  // account picker endpoint (same source the settings/contacts pickers use).
+  useEffect(() => {
+    if (!open || !accountListOpen) return;
+    let cancel = false;
+    setAccountLoading(true);
+    // Empty query returns the top accounts (endpoint default limit) so the user
+    // can open the dropdown and pick from the list without typing anything.
+    const url = debouncedAccountQuery
+      ? `/api/accounts/picker?q=${encodeURIComponent(debouncedAccountQuery)}`
+      : "/api/accounts/picker";
+    fetch(url, { credentials: "include" })
+      .then((r) => r.json())
+      .then((j) => {
+        if (cancel) return;
+        const items: AccountOption[] = Array.isArray(j?.data?.items)
+          ? j.data.items.map((a: { id: string; name: string }) => ({ id: a.id, name: a.name }))
+          : [];
+        setAccountHits(items);
+      })
+      .catch(() => {
+        if (!cancel) setAccountHits([]);
+      })
+      .finally(() => {
+        if (!cancel) setAccountLoading(false);
+      });
+    return () => {
+      cancel = true;
+    };
+  }, [open, accountListOpen, debouncedAccountQuery]);
+
+  function pickAccount(opt: AccountOption) {
+    setAccountId(opt.id);
+    setAccountQuery(opt.name);
+    setAccountListOpen(false);
+  }
+
+  function clearAccount() {
+    setAccountId(null);
+    setAccountQuery("");
+    setAccountHits([]);
+    setAccountListOpen(false);
+  }
 
   async function handleSubmit() {
     if (createOpp && !title.trim()) {
@@ -66,6 +131,9 @@ export function ConvertLeadModal({
       createContact: true,
       createOpportunity: createOpp,
     };
+    // Only send accountId when the user picked an existing account; omitting it
+    // preserves the API's default company-name account resolution.
+    if (accountId) body.accountId = accountId;
     if (createOpp) {
       body.opportunityTitle = title.trim();
       if (typeof amount === "number") body.opportunityAmount = amount;
@@ -112,6 +180,94 @@ export function ConvertLeadModal({
           label="Create Contact"
           description="Required — the person we're selling to"
         />
+
+        <Field
+          label="Use Existing Account"
+          hint="Search and pick an account, or leave blank to use the default"
+        >
+          <div
+            className="relative"
+            // Close the list when focus leaves the whole control (outside click
+            // or tab-away), but not when it moves between the input and the
+            // dropdown options inside it.
+            onBlur={(e) => {
+              if (!e.currentTarget.contains(e.relatedTarget as Node | null)) {
+                setAccountListOpen(false);
+              }
+            }}
+          >
+            <Input
+              value={accountQuery}
+              placeholder="Search or select an account…"
+              onChange={(e) => {
+                setAccountQuery(e.target.value);
+                setAccountListOpen(true);
+                // Typing after a selection clears it — the conversion only uses
+                // an explicitly picked account.
+                if (accountId) setAccountId(null);
+              }}
+              onFocus={() => setAccountListOpen(true)}
+              onClick={() => setAccountListOpen(true)}
+              aria-label="Use Existing Account"
+              className="!pr-16"
+            />
+            {accountId ? (
+              <button
+                type="button"
+                onClick={clearAccount}
+                className="absolute inset-y-0 right-2 my-auto h-6 rounded px-2 text-xs text-crm-muted hover:bg-crm-panel"
+              >
+                Clear
+              </button>
+            ) : (
+              // Chevron toggle — lets the user open the full list and pick an
+              // account without having to type a name they don't remember.
+              <button
+                type="button"
+                aria-label={accountListOpen ? "Hide accounts" : "Show accounts"}
+                onClick={() => setAccountListOpen((v) => !v)}
+                className="absolute inset-y-0 right-2 my-auto flex h-6 w-6 items-center justify-center rounded text-crm-muted hover:bg-crm-panel"
+              >
+                <svg
+                  viewBox="0 0 20 20"
+                  fill="none"
+                  aria-hidden="true"
+                  className={`h-4 w-4 transition-transform ${accountListOpen ? "rotate-180" : ""}`}
+                >
+                  <path
+                    d="M6 8l4 4 4-4"
+                    stroke="currentColor"
+                    strokeWidth="1.5"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                  />
+                </svg>
+              </button>
+            )}
+            {accountListOpen && (
+              <ul className="absolute z-10 mt-1 max-h-52 w-full overflow-y-auto rounded-lg border border-crm-border bg-white shadow-lg">
+                {accountLoading && accountHits.length === 0 ? (
+                  <li className="px-3 py-2 text-sm text-crm-muted">Loading…</li>
+                ) : accountHits.length === 0 ? (
+                  <li className="px-3 py-2 text-sm text-crm-muted">No accounts match.</li>
+                ) : (
+                  accountHits.map((opt) => (
+                  <li key={opt.id} className="border-b border-crm-border last:border-0">
+                    <button
+                      type="button"
+                      onClick={() => pickAccount(opt)}
+                      className="block w-full px-3 py-1.5 text-left text-sm hover:bg-crm-panel"
+                    >
+                      {opt.name}
+                    </button>
+                  </li>
+                  ))
+                )}
+              </ul>
+            )}
+          </div>
+        </Field>
+
         <Checkbox
           checked={createOpp}
           onChange={(e) => setCreateOpp(e.target.checked)}

@@ -82,19 +82,32 @@ export async function POST(req: NextRequest) {
     if (Object.keys(filterWhere).length > 0) baseAnd.push(filterWhere);
     if (acl) baseAnd.push(acl);
 
-    // Trash filter: must live at the TOP LEVEL of `where`. The soft-delete
-    // middleware checks `"deletedAt" in where` — putting it inside AND keeps
-    // the key off the top level, so the middleware injects its own
-    // `deletedAt: null` and the two clauses contradict.
-    //   ?onlyDeleted=true    → trash only   (top-level deletedAt: { not: null })
-    //   ?includeDeleted=true → both         (top-level deletedAt: undefined → opts out)
-    //   default              → active only  (middleware injects deletedAt: null)
+    // Soft-delete filter — applied EXPLICITLY at the top level of `where`.
+    // CrmLead is not registered in the package-level soft-delete middleware,
+    // so we must filter `deletedAt` here ourselves; otherwise trashed leads
+    // leak back into the active list (and the Trash view double-counts them).
+    //   ?onlyDeleted=true    → trash only   (deletedAt: { not: null })
+    //   ?includeDeleted=true → both         (no deletedAt clause)
+    //   default              → active only  (deletedAt: null)
     const where: Record<string, unknown> = { AND: baseAnd };
     const { searchParams } = new URL(req.url);
     if (searchParams.get("onlyDeleted") === "true") {
       where.deletedAt = { not: null };
-    } else if (searchParams.get("includeDeleted") === "true") {
-      where.deletedAt = undefined;
+    } else if (searchParams.get("includeDeleted") !== "true") {
+      where.deletedAt = null;
+    }
+
+    // Converted leads are hidden from the active list by default (enterprise
+    // CRM behavior — Salesforce/HubSpot/Zoho). End users reveal them via the
+    // "Show Converted Leads" toggle, which sets ?includeConverted=true.
+    //   default / false → exclude status="Converted"
+    //   true            → include both active + converted
+    // Administrators always see converted leads regardless of the param.
+    // Skipped in trash view (a deleted lead's converted-ness is irrelevant there).
+    const includeConverted =
+      user.role === "Administrator" || searchParams.get("includeConverted") === "true";
+    if (!includeConverted && searchParams.get("onlyDeleted") !== "true") {
+      baseAnd.push({ NOT: { status: { equals: "Converted", mode: "insensitive" } } });
     }
 
     // Sorting is restricted to direct Lead columns. Dynamic (JSON) fields and unknown

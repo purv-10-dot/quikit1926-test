@@ -6,7 +6,6 @@ const envSchema = z.object({
   NODE_ENV: z.enum(["development", "test", "production"]).default("development"),
   DATABASE_URL: z.string().min(1),
   REDIS_URL: z.string().optional(), // optional — features that need Redis (rate-limit, BullMQ) gracefully no-op when unset
-  JWT_SECRET: z.string().min(16, "JWT_SECRET must be at least 16 chars"),
   JWT_ACCESS_EXPIRES_IN: z.string().default("15m"),
   JWT_REFRESH_EXPIRES_IN: z.string().default("7d"),
   COOKIE_SECURE: z.string().optional(),
@@ -58,9 +57,6 @@ export function env(): Env {
     throw new Error("Invalid environment configuration");
   }
   if (isProd) {
-    if (parsed.data.JWT_SECRET.length < 32 || /change-me|dev-only|placeholder/i.test(parsed.data.JWT_SECRET)) {
-      throw new Error("JWT_SECRET must be set to a strong production value (≥32 chars, not a placeholder).");
-    }
     if (parsed.data.WEBHOOK_REQUIRE_SECRET === "true" && !parsed.data.RP_DIGITAL_WEBHOOK_SECRET) {
       throw new Error("RP_DIGITAL_WEBHOOK_SECRET is required when WEBHOOK_REQUIRE_SECRET=true");
     }

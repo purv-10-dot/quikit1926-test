@@ -2,9 +2,10 @@ import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 import { db } from "@/lib/db";
 import { generateQuartersSchema } from "@/lib/schemas/quarterSchema";
-import { addDays, generateQuarterDates } from "@/lib/utils/quarterGen";
+import { addDays, generateQuarterDates, chainQuarterDates } from "@/lib/utils/quarterGen";
 import { withOrgAuthForModule } from "@/lib/api/withOrgAuth";
 import { fyHasData, fyLabel } from "@/lib/api/quartersFyHasData";
+import { getCustomQuarterEnabled } from "@/lib/utils/featureFlags";
 
 // Org resolution + auth + the orgSetup.quarters module gate now come from
 // the shared wrapper (same as ../[id]/route.ts), so `orgId` is the org the
@@ -17,7 +18,7 @@ const withOrgAuth = withOrgAuthForModule("orgSetup.quarters");
 /* ─── Serialization ─────────────────────────────────────────────────────────── */
 
 function serializeRow(
-  q: { id: string; fiscalYear: number; quarter: string; startDate: Date; endDate: Date; createdAt: Date; updatedAt: Date; createdBy: string },
+  q: { id: string; fiscalYear: number; quarter: string; startDate: Date; endDate: Date; weekCount: number; createdAt: Date; updatedAt: Date; createdBy: string },
   userMap: Record<string, { firstName: string; lastName: string }>,
 ) {
   const u    = userMap[q.createdBy];
@@ -29,6 +30,7 @@ function serializeRow(
     quarter:     q.quarter,
     startDate:   q.startDate.toISOString(),
     endDate:     q.endDate.toISOString(),
+    weekCount:   q.weekCount,
     createdAt:   q.createdAt.toISOString(),
     updatedAt:   q.updatedAt.toISOString(),
     createdBy:   q.createdBy,
@@ -152,12 +154,18 @@ export const POST = withOrgAuth(async ({ orgId, session }, request: NextRequest)
       { status: 400 }
     );
   }
-  const { fiscalYear, startDate: startDateStr } = parsed.data;
+  const { fiscalYear, startDate: startDateStr, weekCounts, weeklyMeetingDay } = parsed.data;
 
   // Parse optional start date
   const fyStartDate = startDateStr ? new Date(startDateStr) : undefined;
   if (fyStartDate && isNaN(fyStartDate.getTime()))
     return NextResponse.json({ success: false, error: "Invalid start date" }, { status: 400 });
+
+  // Custom Quarter Settings: per-quarter week counts only honored when the org
+  // flag is on AND a Q1 start date is supplied. Otherwise we fall through to the
+  // legacy day-count split (every quarter persists weekCount = 13 by default).
+  const customEnabled = await getCustomQuarterEnabled(orgId);
+  const useCustomWeeks = customEnabled && Array.isArray(weekCounts) && !!fyStartDate;
 
   // ── Future FY feature-flag gate ──
   // `enable_future_quarters` is the single on/off switch. No proximity /
@@ -211,8 +219,10 @@ export const POST = withOrgAuth(async ({ orgId, session }, request: NextRequest)
     }
   }
 
-  // Generate using day-count logic
-  const quarterDates = generateQuarterDates(fiscalYear, fiscalStartMonth, fyStartDate);
+  // Generate dates: custom (weekCount × 7, chained) or legacy day-count split.
+  const quarterDates = useCustomWeeks
+    ? chainQuarterDates(fyStartDate!, weekCounts!)
+    : generateQuarterDates(fiscalYear, fiscalStartMonth, fyStartDate);
 
   const created = await Promise.all(
     quarterDates.map(q =>
@@ -223,11 +233,21 @@ export const POST = withOrgAuth(async ({ orgId, session }, request: NextRequest)
           quarter:   q.quarter,
           startDate: q.startDate,
           endDate:   q.endDate,
+          weekCount: q.weekCount ?? 13,
           createdBy: userId,
         },
       })
     )
   );
+
+  // Persist the (informational) weekly meeting day when supplied in custom mode.
+  if (customEnabled && weeklyMeetingDay != null) {
+    await db.featureFlag.upsert({
+      where: { orgId_key: { orgId, key: "weekly_meeting_day" } },
+      create: { orgId, key: "weekly_meeting_day", name: "weekly meeting day", enabled: true, value: weeklyMeetingDay },
+      update: { value: weeklyMeetingDay },
+    });
+  }
 
   const userMap = {
     [userId]: {

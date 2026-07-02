@@ -1,10 +1,15 @@
 import type { FilterFieldDef } from "@/types/lead-filter";
 
+// "Standalone" activities are stored with the sentinel relatedKind "None"
+// (see target-existence.ts). Including it here lets both the Advanced Filter
+// and the top-level toolbar "Linked To" filter match those rows directly — the
+// engine passes the value through unchanged.
 const RELATED_KIND_OPTIONS = [
   { value: "Lead", label: "Lead" },
-  { value: "Opportunity", label: "Opportunity" },
-  { value: "Contact", label: "Contact" },
   { value: "Account", label: "Account" },
+  { value: "Contact", label: "Contact" },
+  { value: "Opportunity", label: "Opportunity" },
+  { value: "None", label: "Standalone" },
 ];
 
 export const ACTIVITY_FILTER_FIELDS: FilterFieldDef[] = [

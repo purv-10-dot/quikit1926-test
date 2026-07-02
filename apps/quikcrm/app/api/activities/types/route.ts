@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { requireApiUser, isResponse, errorResponse } from "@/lib/auth/require";
 import { assertModule } from "@/lib/auth/permissions";
 import { listActivityTypes } from "@/lib/services/activity-types/repo";
+import { ensureDefaultActivityTypes } from "@/lib/services/activity-types/ensure-defaults";
 
 export const runtime = "nodejs";
 
@@ -10,15 +11,17 @@ export const runtime = "nodejs";
 // can read the types, not just admins (the admin config list lives at
 // /api/settings/activity-types and IS settings-gated).
 //
-// Empty-state-CTA is LOCKED: returns ONLY real, isActive, admin-configured
-// types. No built-in Note/Call/Email synthesis. An un-configured org yields
-// { success: true, data: [] } — a valid response the UI renders as a CTA.
+// First read for an org seeds the 12 default activity types + their fields
+// (ensureDefaultActivityTypes — idempotent, seed-on-first-read). They are
+// ordinary, fully-editable rows afterwards. The empty-state CTA in the modal
+// now only shows if an admin has deactivated/deleted every type.
 export async function GET() {
   try {
     const user = await requireApiUser();
     if (isResponse(user)) return user;
     await assertModule(user, "activities", "view");
 
+    await ensureDefaultActivityTypes(user.orgId);
     const types = await listActivityTypes(user.orgId, { activeOnly: true });
     return NextResponse.json({ success: true, data: types });
   } catch (e) {

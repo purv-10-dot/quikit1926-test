@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { usePathname } from "next/navigation";
 import { LeadDetailsForm } from "@/components/leads/lead-details-form";
 import { LeadTasksTab } from "@/components/leads/lead-tasks-tab";
@@ -27,7 +27,7 @@ export const TABS = [
   { key: "timeline", label: "Timeline" },
   { key: "analytics", label: "Analytics" },
   { key: "callDisposition", label: "Call Disposition" },
-  { key: "details", label: "Details" },
+  { key: "details", label: "Record Details" },
   { key: "tasks", label: "Tasks" },
   { key: "notes", label: "Notes" },
   { key: "opportunities", label: "Opportunities" },
@@ -54,6 +54,9 @@ interface LeadInput {
   ownerName?: string | null;
   accountId?: string | null;
   account?: { id: string; name: string } | null;
+  /** Conversion facts — used to surface a "Lead Converted" entry in Recent Activity. */
+  convertedAt?: string | null;
+  linkedContactId?: string | null;
   dynamicFields?: Record<string, unknown> | null;
   // Contact information
   firstName?: string | null;
@@ -120,6 +123,64 @@ export function LeadDetailTabs({
   const [detailsEpoch, setDetailsEpoch] = useState(0);
   const [notes, setNotes] = useState(initialNotes);
 
+  // Synthesize the "Lead Converted" Recent-Activity / Timeline entry AND
+  // identify the Opportunity auto-created during that conversion so it can be
+  // hidden on the Lead surfaces (the conversion event already conveys it).
+  //
+  // The conversion isn't persisted as a CrmActivity, so we derive it from the
+  // lead's conversion facts (status + convertedAt). The conversion Opportunity
+  // is the one linked to this lead whose createdAt falls within the conversion
+  // transaction window (~convertedAt) — NOT any opportunity manually linked to
+  // the lead later, which must keep showing on the Lead Timeline.
+  // Returns { conversion: null, suppressOpportunityIds: [] } for unconverted leads.
+  const { conversion, suppressOpportunityIds } = useMemo(() => {
+    const isConverted =
+      lead.status?.toLowerCase() === "converted" && !!lead.convertedAt;
+    if (!isConverted) {
+      return { conversion: null, suppressOpportunityIds: [] as string[] };
+    }
+    const convertedMs = new Date(lead.convertedAt as string).getTime();
+    // Same-transaction window: opp.createdAt and lead.convertedAt are written in
+    // one $transaction, so they're within a few ms. A 5s window is comfortably
+    // tolerant while still excluding opportunities created in separate sessions.
+    const WINDOW_MS = 5_000;
+    const conversionOpp =
+      Number.isFinite(convertedMs)
+        ? timelineSeed.opportunities
+            .map((o) => ({ o, dt: Math.abs(new Date(o.createdAt).getTime() - convertedMs) }))
+            .filter((x) => Number.isFinite(x.dt) && x.dt <= WINDOW_MS)
+            .sort((a, b) => a.dt - b.dt)[0]?.o ?? null
+        : null;
+
+    const accountName = lead.account?.name ?? lead.company ?? null;
+    const contactName = lead.linkedContactId
+      ? [lead.firstName, lead.lastName].filter(Boolean).join(" ").trim() ||
+        lead.name ||
+        null
+      : null;
+    return {
+      conversion: {
+        convertedAt: lead.convertedAt as string,
+        ownerName: lead.ownerName ?? null,
+        accountName,
+        contactName,
+        opportunityName: conversionOpp?.name ?? null,
+      },
+      suppressOpportunityIds: conversionOpp ? [conversionOpp.id] : [],
+    };
+  }, [
+    lead.status,
+    lead.convertedAt,
+    lead.account?.name,
+    lead.company,
+    lead.linkedContactId,
+    lead.firstName,
+    lead.lastName,
+    lead.name,
+    lead.ownerName,
+    timelineSeed.opportunities,
+  ]);
+
   useEffect(() => {
     setDetailsEpoch((n) => n + 1);
   }, [pathname]);
@@ -171,6 +232,8 @@ export function LeadDetailTabs({
               notes={overview.notes}
               opportunities={overview.opportunities}
               nextFollowUpAt={snapshot.nextFollowUpAt}
+              conversion={conversion}
+              suppressOpportunityIds={suppressOpportunityIds}
               onNavigateTab={setActive}
             />
           ) : null}
@@ -179,6 +242,8 @@ export function LeadDetailTabs({
             <UnifiedTimeline
               leadId={lead.id}
               seed={timelineSeed}
+              conversion={conversion}
+              suppressOpportunityIds={suppressOpportunityIds}
               onLogActivity={onLogActivity}
             />
           ) : null}

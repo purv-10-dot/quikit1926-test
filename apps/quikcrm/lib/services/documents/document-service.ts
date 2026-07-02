@@ -12,6 +12,11 @@ import { assertDocumentParent, DocumentParentError } from "./ref-config";
 import { toDocumentDto } from "./serialize";
 import type { DocumentDto, DocumentRefType } from "./types";
 import { resolveUploaderNames } from "./uploader-names";
+import {
+  logBusinessEvent,
+  BUSINESS_EVENT_TYPES,
+} from "@/lib/services/activities/business-events";
+import { normaliseRelatedKind } from "@/lib/services/activities/related-kind";
 
 export { DocumentParentError };
 
@@ -90,6 +95,28 @@ export async function uploadEntityDocument(
       },
     });
     const names = await resolveUploaderNames(user.orgId, [user.userId]);
+
+    // Global Activities feed: "Document Uploaded" against the parent record.
+    // Only for the account-scoped kinds (lead/account/opportunity); quote/order
+    // refTypes normalise to null and are skipped (the ACL can't scope them, and
+    // their own quote/order timelines already cover those records). Visibility
+    // inherits via relatedKind/relatedObjectId — RBAC unchanged.
+    const activityKind = normaliseRelatedKind(refType);
+    if (activityKind) {
+      await logBusinessEvent({
+        orgId: user.orgId,
+        userId: user.userId,
+        type: BUSINESS_EVENT_TYPES.documentUploaded,
+        relatedKind: activityKind,
+        relatedObjectId: refId,
+        leadId: activityKind === "Lead" ? refId : undefined,
+        opportunityId: activityKind === "Opportunity" ? refId : undefined,
+        subject: `Document uploaded · ${row.fileName}`,
+        outcome: row.contentType,
+        occurredAt: new Date(),
+      });
+    }
+
     return toDocumentDto(row, names.get(user.userId) ?? null);
   } catch (e: unknown) {
     await deleteCrmUpload(storageKey);

@@ -19,7 +19,9 @@ const RANGE = {
   to: new Date("2026-05-01T23:59:59.999Z"),
   tz: "UTC",
 };
-const USER = { userId: "u1", orgId: "t1", role: "SalesUser" };
+// Administrator → org-wide; the Owner dropdown passes through as an additional
+// ownerId filter (what this suite pins). RBAC self-scoping is covered elsewhere.
+const USER = { userId: "u1", orgId: "t1", role: "Administrator" };
 
 function armPrismaDefaults(): void {
   db.crmLead.count.mockResolvedValue(0);

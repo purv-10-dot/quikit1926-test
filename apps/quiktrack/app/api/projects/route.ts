@@ -2,7 +2,10 @@ import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { withOrgAuth } from "@/lib/api/withOrgAuth";
 import { createProjectSchema } from "@/lib/validation/project";
-import { seedProjectDefaults, getStarterProjectRoleId } from "@/lib/services/projectDefaults";
+import {
+  seedProjectDefaults,
+  getStarterProjectRoleId,
+} from "@/lib/services/projectDefaults";
 import { userCan, forbidden, isQuikTrackAppAdmin } from "@/lib/api/permissions";
 import { SPACE_ADMIN_ROLE_NAME } from "@/lib/api/permissionsRegistry";
 import { PROJECT_TAB_PATHS } from "@/lib/projectTabs";
@@ -24,9 +27,15 @@ export const GET = withOrgAuth(async ({ orgId, userId }, req) => {
   const url = new URL(req.url);
   const search = url.searchParams.get("search")?.trim() || "";
   const filterParam = url.searchParams.get("filter") || "";
-  const filterTypes = filterParam.split(",").map((s) => s.trim()).filter(Boolean);
+  const filterTypes = filterParam
+    .split(",")
+    .map((s) => s.trim())
+    .filter(Boolean);
   const keysParam = url.searchParams.get("keys") || "";
-  const filterKeys = keysParam.split(",").map((s) => s.trim()).filter(Boolean);
+  const filterKeys = keysParam
+    .split(",")
+    .map((s) => s.trim())
+    .filter(Boolean);
   const sort = (url.searchParams.get("sort") || "name") as "name" | "updatedAt";
   const order = (url.searchParams.get("order") || "asc") as "asc" | "desc";
   const page = Math.max(1, Number(url.searchParams.get("page") || 1));
@@ -98,12 +107,22 @@ export const GET = withOrgAuth(async ({ orgId, userId }, req) => {
   });
 
   const leadIds = Array.from(
-    new Set(projects.map((p) => p.leadUserId).filter((id): id is string => Boolean(id))),
+    new Set(
+      projects
+        .map((p) => p.leadUserId)
+        .filter((id): id is string => Boolean(id)),
+    ),
   );
   const leads = leadIds.length
     ? await db.user.findMany({
         where: { id: { in: leadIds } },
-        select: { id: true, firstName: true, lastName: true, email: true, avatar: true },
+        select: {
+          id: true,
+          firstName: true,
+          lastName: true,
+          email: true,
+          avatar: true,
+        },
       })
     : [];
   const leadById = new Map(leads.map((u) => [u.id, u] as const));
@@ -148,7 +167,10 @@ export const POST = withOrgAuth(async ({ orgId, userId }, req) => {
   const parsed = createProjectSchema.safeParse(await req.json());
   if (!parsed.success) {
     return NextResponse.json(
-      { success: false, error: parsed.error.issues.map((i) => i.message).join(", ") },
+      {
+        success: false,
+        error: parsed.error.issues.map((i) => i.message).join(", "),
+      },
       { status: 400 },
     );
   }
@@ -159,7 +181,10 @@ export const POST = withOrgAuth(async ({ orgId, userId }, req) => {
   });
   if (dup) {
     return NextResponse.json(
-      { success: false, error: `Project key "${parsed.data.projectKey}" already exists` },
+      {
+        success: false,
+        error: `Project key "${parsed.data.projectKey}" already exists`,
+      },
       { status: 409 },
     );
   }
@@ -171,49 +196,62 @@ export const POST = withOrgAuth(async ({ orgId, userId }, req) => {
       ? PROJECT_TAB_PATHS.filter((path) => !KANBAN_HIDDEN_TABS.includes(path))
       : null;
 
-  const project = await db.$transaction(async (tx) => {
-    const p = await tx.qtProject.create({
-      data: {
-        orgId,
-        projectKey: parsed.data.projectKey,
-        name: parsed.data.name,
-        description: parsed.data.description,
-        projectType: parsed.data.projectType ?? "software",
-        templateKey,
-        ...(initialTabConfig ? { tabConfig: initialTabConfig } : {}),
-        icon: parsed.data.icon,
-        color: parsed.data.color ?? "#2563eb",
-        startDate: parsed.data.startDate ? new Date(parsed.data.startDate) : null,
-        endDate: parsed.data.endDate ? new Date(parsed.data.endDate) : null,
-        leadUserId: parsed.data.leadUserId ?? userId,
-        createdBy: userId,
-        updatedBy: userId,
-      },
-    });
-    await tx.qtProjectMember.create({
-      data: {
-        projectId: p.id,
-        userId,
-        role: "PROJECT_ADMIN",
-        invitedBy: userId,
-      },
-    });
-    await seedProjectDefaults(tx, p.id, orgId, userId);
-    // Assign the creator the seeded "Space Admin" project role so Layer 2
-    // grants are populated alongside Layer 3 membership.
-    const adminRoleId = await getStarterProjectRoleId(tx, p.id, "Space Admin");
-    if (adminRoleId) {
-      await tx.qtProjectUserRole.create({
+  const project = await db.$transaction(
+    async (tx) => {
+      const p = await tx.qtProject.create({
+        data: {
+          orgId,
+          projectKey: parsed.data.projectKey,
+          name: parsed.data.name,
+          description: parsed.data.description,
+          projectType: parsed.data.projectType ?? "software",
+          templateKey,
+          ...(initialTabConfig ? { tabConfig: initialTabConfig } : {}),
+          icon: parsed.data.icon,
+          color: parsed.data.color ?? "#2563eb",
+          startDate: parsed.data.startDate
+            ? new Date(parsed.data.startDate)
+            : null,
+          endDate: parsed.data.endDate ? new Date(parsed.data.endDate) : null,
+          leadUserId: parsed.data.leadUserId ?? userId,
+          createdBy: userId,
+          updatedBy: userId,
+        },
+      });
+      await tx.qtProjectMember.create({
         data: {
           projectId: p.id,
           userId,
-          projectRoleId: adminRoleId,
-          assignedBy: userId,
+          role: "PROJECT_ADMIN",
+          invitedBy: userId,
         },
       });
-    }
-    return p;
-  });
+      await seedProjectDefaults(tx, p.id, orgId, userId);
+      // Assign the creator the seeded "Space Admin" project role so Layer 2
+      // grants are populated alongside Layer 3 membership.
+      const adminRoleId = await getStarterProjectRoleId(
+        tx,
+        p.id,
+        "Space Admin",
+      );
+      if (adminRoleId) {
+        await tx.qtProjectUserRole.create({
+          data: {
+            projectId: p.id,
+            userId,
+            projectRoleId: adminRoleId,
+            assignedBy: userId,
+          },
+        });
+      }
+      return p;
+    },
+    // Seeding fans out into many sequential inserts (statuses, issue types, and
+    // the 3 starter roles with their permission + field-permission grants). On a
+    // remote DB (Neon) each insert is a network round-trip, which can overrun
+    // Prisma's default 5s interactive-transaction window. Give it headroom.
+    { timeout: 20_000, maxWait: 5_000 },
+  );
 
   return NextResponse.json({ success: true, data: project }, { status: 201 });
 });

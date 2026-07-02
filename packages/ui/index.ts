@@ -39,6 +39,7 @@ export { TenantPicker, type TenantPickerProps, type TenantOption } from "./compo
 export { FeatureDisabledToast } from "./components/feature-disabled-toast";
 export { BroadcastBanner, type BroadcastBannerProps } from "./components/broadcast-banner";
 export { ImpersonationBanner } from "./components/impersonation-banner";
+export { AppAccessDeniedPopup, type AppAccessDeniedPopupProps } from "./components/app-access-denied-popup";
 export { severityClass, severityIcon, type SeverityLevel, type SeverityVariant } from "./lib/severity";
 export { ConfirmProvider, useConfirm, type ConfirmOptions, type ConfirmTone } from "./components/confirm-modal";
 export { UserMenu, type UserMenuProps, type UserMenuItem } from "./components/user-menu";

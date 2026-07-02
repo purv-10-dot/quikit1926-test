@@ -4,6 +4,7 @@ import type { Prisma } from "@quikit/database";
 import { prisma } from "@/lib/db/prisma";
 import { requireApiUser, isResponse, errorResponse } from "@/lib/auth/require";
 import { requirePermission } from "@/lib/auth/require-permission";
+import { ensureDefaultActivityTypes } from "@/lib/services/activity-types/ensure-defaults";
 
 export const runtime = "nodejs";
 
@@ -30,6 +31,9 @@ export async function GET() {
     if (isResponse(user)) return user;
     await requirePermission(user, "settings", "view");
 
+    // Seed the 12 default types + fields on first visit (idempotent). Admins
+    // can then rename / reorder / deactivate / extend them from this page.
+    await ensureDefaultActivityTypes(user.orgId);
     const items = await prisma.crmActivityType.findMany({
       where: { orgId: user.orgId },
       orderBy: [{ sortOrder: "asc" }, { label: "asc" }],

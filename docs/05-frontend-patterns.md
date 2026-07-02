@@ -4,7 +4,7 @@ UI conventions across QuikIT apps. Read once; reference whenever you build a new
 
 ## Components — use `@quikit/ui` first, build local second
 
-The shared library at `@quikit/ui` exports ~40 primitives. Use them. Don't reinvent.
+The shared library at `@quikit/ui` exports ~50 primitives. Use them. Don't reinvent.
 
 ```tsx
 import {
@@ -58,11 +58,11 @@ Reasons:
 - `QueryClientProvider` next so React Query has a session to use in fetchers.
 - `ThemeProvider` innermost because it sets DOM attrs and shouldn't gate auth.
 
-If you add a provider (rare), place it inside `ThemeProvider` unless you have written approval otherwise.
+If you add a provider (rare), place it inside `ThemeProvider` unless you have written approval otherwise. `ConfirmProvider` from `@quikit/ui` (which backs the `useConfirm()` hook) is the one commonly nested inside — most apps mount it just inside `ThemeProvider`.
 
 ## Theming — `accent-*` classes
 
-Use Tailwind's `accent-*` utilities for branded interactive elements. They're mapped to CSS variables that change per tenant via `<ThemeApplier />`.
+Use Tailwind's `accent-*` utilities for branded interactive elements. They're mapped to CSS variables that change per org via `<ThemeApplier />` (each org sets its own `brandColor`/accent).
 
 ```tsx
 // ✅ Themeable — buttons, focus rings, active tabs

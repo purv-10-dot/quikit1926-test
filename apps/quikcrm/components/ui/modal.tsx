@@ -2,7 +2,8 @@
 
 import { X } from "lucide-react";
 import type { ReactNode } from "react";
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
+import { createPortal } from "react-dom";
 
 export function Modal({
   open,
@@ -20,6 +21,15 @@ export function Modal({
   footer?: ReactNode;
   width?: string;
 }) {
+  // Portal target is the document body. Rendering the overlay there (instead
+  // of inline in the React tree) guarantees `position: fixed` anchors to the
+  // viewport. Without this, a modal opened from within an ancestor that has a
+  // `transform`/`filter`/`backdrop-filter` (e.g. the sticky topbar uses
+  // `backdrop-blur`) would anchor to that ancestor and appear stuck near the
+  // top instead of centred. `mounted` keeps this SSR-safe.
+  const [mounted, setMounted] = useState(false);
+  useEffect(() => setMounted(true), []);
+
   useEffect(() => {
     if (!open) return;
     const onKey = (e: KeyboardEvent) => e.key === "Escape" && onClose();
@@ -32,8 +42,8 @@ export function Modal({
     };
   }, [open, onClose]);
 
-  if (!open) return null;
-  return (
+  if (!open || !mounted) return null;
+  return createPortal(
     <div
       className="fixed inset-0 z-50 flex items-end justify-center bg-slate-900/40 sm:items-center sm:px-4"
       onClick={onClose}
@@ -74,6 +84,7 @@ export function Modal({
           ) : null}
         </div>
       </div>
-    </div>
+    </div>,
+    document.body,
   );
 }

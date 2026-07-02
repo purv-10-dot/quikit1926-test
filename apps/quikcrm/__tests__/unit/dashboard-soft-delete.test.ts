@@ -24,7 +24,9 @@ const RANGE = {
   tz: "UTC",
 };
 
-const USER = { userId: "u1", orgId: "t1", role: "SalesUser" };
+// Administrator → org-wide scope ({ orgId }) so this suite pins soft-delete /
+// date semantics, not RBAC scoping (covered by role-metrics + dashboard-rbac tests).
+const USER = { userId: "u1", orgId: "t1", role: "Administrator" };
 const FILTERS = { range: RANGE, resolvedOwnerId: null, ownerId: null };
 
 function armPrismaDefaults(): void {

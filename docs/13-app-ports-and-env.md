@@ -8,35 +8,39 @@ A single reference for every app in the [QuikIT monorepo](../) — what port it 
 
 ## 1. App → Port Map (local dev)
 
-| App | Port | Source file | Role / one-liner |
-|---|---|---|---|
-| **auth** | `3000` | [apps/auth/package.json](../apps/auth/package.json) | Central credentials login service. NextAuth + Google/Microsoft SSO. Other apps redirect unauthenticated users here. |
-| **quikit** | `3001` | [apps/quikit/package.json](../apps/quikit/package.json) | Launcher + OAuth IdP. Hosts `/api/oauth/{authorize,token,userinfo,jwks}` and the `/apps` launcher. Super-admin pages live here under `(super-admin)/`. |
-| **admin** | `3002` | [apps/admin/package.json](../apps/admin/package.json) | Admin portal (tenant/org/user/app management). |
-| **quikscale** | `3003` | [apps/quikscale/package.json](../apps/quikscale/package.json) | QuikScale — OKR / KPI / Priority / WWW tooling. |
-| **quiktrack** | `3004` | [apps/quiktrack/package.json](../apps/quiktrack/package.json) | QuikTrack — task / project tracker. |
-| **quikinfra** | `3005` | [apps/quikinfra/package.json](../apps/quikinfra/package.json) | QuikInfra — construction ERP (BOQ, DPR/RAB, stock, procurement). |
-| **quiksocial** | `3006` | [apps/quiksocial/package.json](../apps/quiksocial/package.json) | QuikSocial — AI social media management. Talks to a Python AI service on Railway. |
-| **quikvc** | `3007` | [apps/quikvc/package.json](../apps/quikvc/package.json) | QuikVC. |
-| **_template** | `3010` | [apps/_template/package.json](../apps/_template/package.json) | Reference scaffold for new apps. Don't run alongside a real app on `3010`. |
+> **Dev vs. start ports.** The table below is the **`next dev`** port (what you use locally). Some apps bind a *different* port under `npm start` (production `next start`): auth `3004`, admin `3005`, quikscale `3002`, quikvc `3008`. In production each app runs on its own Vercel domain, so the start port only matters for local `npm start` smoke tests. Always trust the `dev` script in each app's `package.json`.
+
+| App | Dev port | `start` port | Source file | Role / one-liner |
+|---|---|---|---|---|
+| **quikit** | `3000` | `3000` | [apps/quikit/package.json](../apps/quikit/package.json) | Launcher + OAuth/OIDC IdP. Hosts `/api/oauth/{authorize,token,userinfo,jwks}`, `/.well-known/openid-configuration`, and the `/apps` launcher. Super-admin pages live here under `(super-admin)/`. |
+| **auth** | `3001` | `3004` | [apps/auth/package.json](../apps/auth/package.json) | Central credentials login service. NextAuth + Google/Microsoft SSO. Hosts registration/OTP, password reset, `/api/post-login` handoff, `/api/verify-token`. Other apps redirect unauthenticated users here. |
+| **admin** | `3002` | `3005` | [apps/admin/package.json](../apps/admin/package.json) | Org admin portal (members, teams, apps, roles, audit log, settings). |
+| **quikscale** | `3003` | `3002` | [apps/quikscale/package.json](../apps/quikscale/package.json) | QuikScale — OKR / KPI / OPSP / Priority / WWW tooling. |
+| **quiktrack** | `3004` | `3004` | [apps/quiktrack/package.json](../apps/quiktrack/package.json) | QuikTrack — project / task / docs tracker (Tiptap rich-text docs). |
+| **quikvc** | `3005` | `3008` | [apps/quikvc/package.json](../apps/quikvc/package.json) | QuikVC — venture-capital deal flow (founder / investor / VC-admin portals). |
+| **quikinfra** | `3006` | `3006` | [apps/quikinfra/package.json](../apps/quikinfra/package.json) | QuikInfra — construction ERP (BOQ, DPR/RAB, stock, procurement, finance). Own `Cn*` RBAC. |
+| **quiksocial** | `3007` | `3007` | [apps/quiksocial/package.json](../apps/quiksocial/package.json) | QuikSocial — AI social media management. Talks to a Python AI service on Railway. |
+| **quikcrm** | `3008` | `3008` | [apps/quikcrm/package.json](../apps/quikcrm/package.json) | QuikCRM — sales execution (leads, accounts, opportunities, automations). Has a separate BullMQ `worker` process (`npm run worker`). |
+| **quikhrms** | `3009` | `3009` | [apps/quikhrms/package.json](../apps/quikhrms/package.json) | QuikHRMS (package name `quikit-hrms`) — HR management (employees, payroll, attendance, leave). Requires Node ≥ 20.14. |
+| **_template** | `3010` | `3010` | [apps/_template/package.json](../apps/_template/package.json) | Reference scaffold for new apps. Don't run alongside a real app on `3010`. |
 
 ### Startup flow
 
-1. Start **auth** (`3000`) — every other app redirects unauthenticated users here.
-2. Start **quikit** (`3001`) — the OAuth IdP that mints tokens for sub-apps.
-3. Start any sub-app (`3002`–`3007`).
+1. Start **quikit** (`3000`) — the OAuth/OIDC IdP that mints tokens for sub-apps and hosts the `/apps` launcher.
+2. Start **auth** (`3001`) — the central credentials host every other app redirects unauthenticated users to.
+3. Start any sub-app (`3002`–`3009`).
 4. The local Postgres (`postgresql://...:5432/quikit_dev`) and Redis (`redis://localhost:6379`) must be running.
 
 ### URL constants other apps depend on
 
 | Variable | Value (dev) | Used by |
 |---|---|---|
-| `NEXT_PUBLIC_AUTH_URL` | `http://localhost:3000` | every app's middleware (redirect target) |
-| `QUIKIT_URL` / `NEXT_PUBLIC_QUIKIT_URL` | `http://localhost:3001` | every sub-app (OAuth issuer + launcher) |
-| `NEXT_PUBLIC_LAUNCHER_URL` | `http://localhost:3001/apps` | apps/auth (post-login redirect) |
+| `NEXT_PUBLIC_AUTH_URL` | `http://localhost:3001` | every app's middleware (redirect target — the `auth` credentials host) |
+| `QUIKIT_URL` / `NEXT_PUBLIC_QUIKIT_URL` | `http://localhost:3000` | every sub-app (OAuth issuer + launcher — the `quikit` app) |
+| `NEXT_PUBLIC_LAUNCHER_URL` | `http://localhost:3000/apps` | apps/auth (post-login redirect) |
 | `NEXT_PUBLIC_ADMIN_URL` / `ADMIN_URL` | `http://localhost:3002` | auth, quikit |
 | `QUIKSCALE_URL` / `NEXT_PUBLIC_QUIKSCALE_URL` | `http://localhost:3003` | quikit, admin |
-| `NEXT_PUBLIC_SUPER_ADMIN_URL` | `http://localhost:3001` | quikscale, quiktrack, quikinfra (super-admin lives inside quikit) |
+| `NEXT_PUBLIC_SUPER_ADMIN_URL` | `http://localhost:3000` | quikscale, quiktrack, quikinfra (super-admin lives inside quikit) |
 
 ---
 
@@ -114,11 +118,14 @@ Variables listed in §2 apply everywhere and are not repeated here.
 
 | Variable | Purpose |
 |---|---|
-| `NEXT_PUBLIC_LAUNCHER_URL` | Post-login redirect target — `http://localhost:3001/apps`. |
+| `NEXT_PUBLIC_LAUNCHER_URL` | Post-login redirect target — `http://localhost:3000/apps`. |
 | `NEXT_PUBLIC_ADMIN_URL` | Admin portal URL — `http://localhost:3002`. |
+| `AUTH_ALLOWED_RETURN_ORIGINS` | Comma-separated allow-list of origins the `/api/post-login` cross-domain handoff may redirect back to. Dev defaults to the localhost app origins; **must be set explicitly in prod**. |
+| `AUTH_CORS_ORIGINS` | Comma-separated allow-list of origins permitted to call `POST /api/auth/forgot-password` cross-origin. Required in prod. |
 | `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET` | Google SSO OAuth client. Callback registered at `/api/auth/callback/google`. |
 | `MICROSOFT_CLIENT_ID` / `MICROSOFT_CLIENT_SECRET` | Microsoft SSO OAuth client. Callback at `/api/auth/callback/azure-ad`. |
 | `MICROSOFT_TENANT_ID` | `common` allows work/school + personal accounts; replace with a tenant GUID to restrict. |
+| `RESEND_API_KEY` | Fallback email transport used only when `SMTP_HOST` is unset. |
 | `GMAIL_REFRESH_TOKEN` / `GMAIL_REDIRECT_URI` | Gmail send (optional). |
 | `MICROSOFT_REDIRECT_URI` / `MICROSOFT_CALENDAR_REDIRECT_URL` / `MICROSOFT_TENANT` | Microsoft Outlook calendar (optional). |
 
@@ -182,9 +189,28 @@ Variables listed in §2 apply everywhere and are not repeated here.
 | `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET` | YouTube / Google OAuth (optional). Callback `/api/integrations/callback/youtube`. |
 | `CLOUDINARY_CLOUD_NAME` / `CLOUDINARY_API_KEY` / `CLOUDINARY_API_SECRET` | Cloudinary asset upload (optional). |
 
-### 3.8 [apps/quikvc](../apps/quikvc/) and [apps/_template](../apps/_template/)
+### 3.8 [apps/quikcrm](../apps/quikcrm/) — CRM / sales
 
-Use the common variables only (§2). No app-specific extras.
+| Variable | Purpose |
+|---|---|
+| `REDIS_URL` | **Required** (not just recommended) — the BullMQ job queue backing imports, SLA checks, and the notification cron runs on Redis. The `worker` process (`npm run worker`) connects to the same instance. |
+| `CRON_SECRET` | Bearer token required by the notification cron routes (morning 03:30 / evening 11:30 UTC per `vercel.json`). |
+| `NEXT_PUBLIC_DASHBOARD_REFRESH_MS` | KPI auto-refresh interval (default `60000`). |
+| Telephony / provider keys | RP Digital / IndiaVoice click-to-call credentials (see `apps/quikcrm/CLAUDE.md`). |
+
+### 3.9 [apps/quikhrms](../apps/quikhrms/) — HR management
+
+| Variable | Purpose |
+|---|---|
+| `ANTHROPIC_API_KEY` / `OPENROUTER_API_KEY` / Google Generative AI key | AI features (resume parsing, assistants). |
+| `CRON_SECRET` | Bearer token for the payroll-create (02:00 UTC), ticket auto-close (03:00), and hourly SLA-breach crons. |
+| `AWS_*` / storage keys | Document handling (offer letters, payslips). |
+
+> Requires Node ≥ 20.14 (engines constraint in `package.json`).
+
+### 3.10 [apps/quikvc](../apps/quikvc/) and [apps/_template](../apps/_template/)
+
+Use the common variables only (§2). QuikVC additionally uses `RESEND_API_KEY` (react-email templates), `@vercel/blob` storage, and optional `QUIKVC_DEV_BYPASS` / `QUIKVC_DEV_ROLE` for local role simulation.
 
 ---
 
@@ -202,10 +228,10 @@ NEXTAUTH_SECRET="7ynQaE7hcVrogq9q7OdIQTnCaeg+uPLeqXELLAWQ7LE="
 NEXTAUTH_URL="http://localhost:<port>"
 
 # Central auth + cross-app SSO
-NEXT_PUBLIC_AUTH_URL="http://localhost:3000"
-QUIKIT_URL="http://localhost:3001"
-NEXT_PUBLIC_QUIKIT_URL="http://localhost:3001"
-NEXT_PUBLIC_SUPER_ADMIN_URL="http://localhost:3001"
+NEXT_PUBLIC_AUTH_URL="http://localhost:3001"
+QUIKIT_URL="http://localhost:3000"
+NEXT_PUBLIC_QUIKIT_URL="http://localhost:3000"
+NEXT_PUBLIC_SUPER_ADMIN_URL="http://localhost:3000"
 QUIKIT_CLIENT_ID="<app-name>"
 QUIKIT_CLIENT_SECRET="<app-name>-dev-secret-change-in-prod"
 
@@ -234,4 +260,4 @@ LOG_LEVEL="info"
 
 ---
 
-*Last updated: 2026-05-11. When you change a port or add an env var, update this file in the same PR.*
+*Last updated: 2026-07-02 — port table reconciled against every app's `package.json` `dev` script (quikit 3000 / auth 3001 swap from the pre-2026-05-29 layout; quikvc 3005, quikinfra 3006, quiksocial 3007; quikcrm 3008 and quikhrms 3009 added). When you change a port or add an env var, update this file in the same PR.*

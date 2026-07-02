@@ -360,59 +360,62 @@ async function handleUpdate(req: NextRequest, id: string, ctx: UpdateAuthCtx) {
     }
   }
 
-  // Item 6: Permission-matrix reconciliation. The matrix JSON from the
-  // body becomes a set of (resource, action) revoke rows on
-  // CnUserPermissionExtra. Pairs WITHIN the matrix's universe but NOT
-  // marked as revoked are cleared (delete revoke=true if exists).
+  // Item 6: Permission-matrix reconciliation. For every (resource, action)
+  // pair in the matrix's managed universe we write an explicit
+  // CnUserPermissionExtra row for this user:
+  //
+  //   - cell set to FALSE → revoke=true  (deny override)
+  //   - cell set to TRUE  → revoke=false (ADDITIVE GRANT)
+  //
+  // Writing the additive grant for checked cells is the fix for "I checked a
+  // page/module here but it never showed up for the user". Previously checked
+  // cells only had their revoke row DELETED — which merely stops denying the
+  // page, it does not grant it. The user's sidebar and route guards are built
+  // from real grants (role grants ∪ additive grants − revokes), so a page the
+  // role didn't already include stayed invisible no matter how many boxes the
+  // admin ticked. Making the matrix write grants lets the Permissions page
+  // actually hand out access, matching what the green checkboxes imply and
+  // staying consistent with the Edit-User module flow (applyModuleRevokes).
   //
   // Skipped for admin role — admins bypass via wildcards anyway.
   if (touchingMatrix && !isAdminUserType && authUserId) {
     try {
       const desiredRevokes = matrixToRevokes(matrixIncoming ?? null);
-      const desiredSet = new Set(
+      const revokedSet = new Set(
         desiredRevokes.map((r) => `${r.resource}:${r.action}`),
       );
       const universe = managedPairs();
-      const toAdd = desiredRevokes;
-      const toClear = universe.filter(
-        (p) => !desiredSet.has(`${p.resource}:${p.action}`),
+      const toRevoke = desiredRevokes;
+      const toGrant = universe.filter(
+        (p) => !revokedSet.has(`${p.resource}:${p.action}`),
       );
-      // Upsert revoke=true for cells the admin set to `false`.
-      for (const p of toAdd) {
-        await dbCentral.cnUserPermissionExtra.upsert({
+      const writeExtra = (
+        p: { resource: string; action: string },
+        revoke: boolean,
+      ) =>
+        dbCentral.cnUserPermissionExtra.upsert({
           where: {
             orgId_userId_resource_action: {
               orgId: ctx.orgId,
-              userId: authUserId,
+              userId: authUserId as string,
               resource: p.resource,
               action: p.action,
             },
           },
-          update: { revoke: true },
+          update: { revoke },
           create: {
             orgId: ctx.orgId,
-            userId: authUserId,
+            userId: authUserId as string,
             resource: p.resource,
             action: p.action,
-            revoke: true,
+            revoke,
             grantedBy: ctx.userId,
           },
         });
-      }
-      // Clear revoke=true rows for cells the admin set to `true` (or absent).
-      if (toClear.length > 0) {
-        await dbCentral.cnUserPermissionExtra.deleteMany({
-          where: {
-            orgId: ctx.orgId,
-            userId: authUserId,
-            revoke: true,
-            OR: toClear.map((p) => ({
-              resource: p.resource,
-              action: p.action,
-            })),
-          },
-        });
-      }
+      // Deny the unchecked cells…
+      for (const p of toRevoke) await writeExtra(p, true);
+      // …and explicitly grant the checked cells.
+      for (const p of toGrant) await writeExtra(p, false);
     } catch {
       // Non-fatal — admin can retry by re-saving.
     }

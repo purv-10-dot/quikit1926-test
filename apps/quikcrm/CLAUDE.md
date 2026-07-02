@@ -11,8 +11,8 @@ You may NOT do any of the following without the integration owner's explicit wri
 1. **Create new packages** under `packages/`. You depend on existing `@quikit/*` packages — you do not extend them.
 2. **Modify any file under `packages/`**. They are submodules / shared code owned by the integration team. If you need a feature in `@quikit/ui`, file a request in your PR description and use a local copy as a temporary workaround marked with `// TODO(integration): replace with @quikit/ui when X is added`.
 3. **Add new top-level dependencies** to `package.json` beyond what the template ships with. Justify any addition in the PR description with: (a) the problem, (b) why an existing dep can't solve it, (c) maintenance status of the new dep.
-4. **Bypass `withTenantAuth`** on any DB-touching API route. There are no exceptions outside `/api/health` and `/api/auth/*`.
-5. **Write Prisma queries without a `tenantId` filter**. The only legitimate cross-tenant query is on the super-admin app — and you are not building that.
+4. **Bypass `withTenantAuth`** (this app's `lib/api/` wrapper — a legacy name; it resolves `orgId` and wraps the `@quikit/auth` guard factories) on any DB-touching API route. There are no exceptions outside `/api/health` and `/api/auth/*`.
+5. **Write Prisma queries without an `orgId` filter**. The scoping column is `orgId` (the legacy `tenantId` was renamed org-wide). The only legitimate cross-org query is on the super-admin app — and you are not building that.
 6. **Use `as any`** anywhere. ESLint flags this as an error; don't disable the rule. If you genuinely need an escape hatch, use `as unknown as <NarrowType>` and write a comment explaining why.
 7. **Create files in non-canonical locations**. Routes go in `app/`. Reusable components go in `components/`. Server-only utilities go in `lib/`. Tests go in `__tests__/`. Don't invent new top-level directories.
 8. **Reorder providers** in `components/providers.tsx`. The order `SessionProvider → QueryClientProvider → ThemeProvider` is fixed across all apps.
@@ -26,7 +26,7 @@ You may NOT do any of the following without the integration owner's explicit wri
 3. **Match file naming**: directories `lowercase`, component files `lowercase.tsx`, exports `PascalCase`. The CLAUDE.md root file lists this — don't deviate.
 4. **Catch `(error: unknown)`** in every try/catch — never `(e: any)`. Cast through `instanceof Error` to access `.message`.
 5. **Return `{ success: true, data }` or `{ success: false, error }`** from every API route. Same shape, every time.
-6. **Write tests for every new API route**: 401 unauthenticated, tenant-isolation (cross-tenant rejected), happy path. See `/docs/07-testing.md`.
+6. **Write tests for every new API route**: 401 unauthenticated, org-isolation (cross-org rejected), happy path. See `/docs/07-testing.md`.
 7. **Run `npm run typecheck && npm run lint && npm run test`** before every commit. CI runs these too — don't make CI tell you what local tools could.
 
 ## When in doubt

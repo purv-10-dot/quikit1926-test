@@ -236,20 +236,22 @@ QuikIT runs its own OAuth2/OIDC IdP inside the launcher (`apps/quikit`). Every o
 
 #### Subpath exports (always prefer specific paths over the barrel)
 
+> **The guards are factories, and the route wrapper is app-local.** `@quikit/auth` does **not** export a ready-made `withTenantAuth`/`withOrgAuth`. Instead it exports guard *factories* (`createRequireAdmin`, `createGetOrgId`, …); each app instantiates them once in `lib/api/` and composes its own `withOrgAuth` wrapper (see [`03-api-patterns.md`](./03-api-patterns.md)). Copy the wrapper from an existing app — most use `withOrgAuth`; quikcrm's copy is `withTenantAuth`; admin's is `withAdminAuth`.
+
 | Import | Purpose |
 |---|---|
-| `import { createAuthOptions } from "@quikit/auth"` | NextAuth options factory (provider config, JWT/session callbacks). |
-| `import { createMiddleware } from "@quikit/auth/middleware"` | Edge middleware factory (login redirect, org guard, role guard, central login fan-out). |
-| `import { withTenantAuth } from "@quikit/auth/with-auth"` (legacy alias) / `withOrgAuth` | Wrap API route handlers; receives `{ orgId, userId, membershipRole }`. The recent v4 cleanup renames `withTenantAuth → withOrgAuth` — match the alias your app already uses. |
-| `import { withTenantAuthForModule } from "@quikit/auth/with-auth"` | Same wrapper plus a module-key gate (returns 403 if the org has the module disabled). |
-| `import { requireAdmin } from "@quikit/auth/require-admin"` | Tenant-admin only routes. |
-| `import { requireSuperAdmin } from "@quikit/auth/require-super-admin"` | Cross-org platform operations — **almost certainly not yours to call**. |
-| `import { getTenantId } from "@quikit/auth/get-tenant-id"` | Server-component / handler helper that returns the current `orgId` (or 401s). |
-| `import { gateModuleApi } from "@quikit/auth/feature-gate"` | Module entitlement helper (uses `FeatureFlag` table). |
-| `import { verifyTokenRemote } from "@quikit/auth/verify-token-remote"` | Verify a JWT by hitting the launcher's JWKS endpoint. |
-| `import { getSessionStore } from "@quikit/auth/session-store"` | Persisted session-state store (Redis-backed). |
-| `import { listMyOrgs, switchOrg } from "@quikit/auth/org-memberships"` | Org-list + active-org switcher used by the org picker. |
+| `import { createAuthOptions, createOAuthClientOptions } from "@quikit/auth"` | NextAuth options factories — direct credentials, or OIDC-client (through the launcher IdP). |
+| `import { createMiddleware } from "@quikit/auth/middleware"` | Edge middleware factory (login redirect, org guard, role guard, remote session validation). |
+| `import { createRequireAdmin } from "@quikit/auth/require-admin"` | Factory → `requireAdmin()` for org-admin-only routes (accepts an optional `extraAdminCheck`). |
+| `import { createRequireSuperAdmin } from "@quikit/auth/require-super-admin"` | Factory → `requireSuperAdmin()` for cross-org platform ops — **almost certainly not yours to call**. |
+| `import { createGetOrgId } from "@quikit/auth/get-tenant-id"` | Factory → `getOrgId(userId)` returns the current `orgId` (subpath is still named `get-tenant-id`; alias `createGetTenantId` exists). |
+| `import { gateModuleApi, gateModuleRoute } from "@quikit/auth/feature-gate"` | Module entitlement helpers (use `AppModuleFlag` / `FeatureFlag`). |
+| `import { getOrSet, invalidate } from "@quikit/auth/cache"` | Layered LRU + Redis cache used by the auth resolvers. |
+| `import { verifyTokenRemote } from "@quikit/auth/verify-token-remote"` | Verify a JWT server-to-server against the auth app's `/api/verify-token`. |
+| `import { createAuthSession, isAuthSessionActive, revokeAuthSession, touchAuthSession } from "@quikit/auth/session-store"` | Redis-backed session soft-revocation store. |
 | `import type { Session, JWT } from "@quikit/auth/types"` | Augmented NextAuth types. |
+
+Active-org switching is not a `@quikit/auth` export — it lives in the auth app: `GET /api/org/memberships` (list) + `POST /api/auth/select-org` (switch, then `session.update()`).
 
 #### Session shape
 
@@ -258,7 +260,7 @@ session.user.id              // string — User PK
 session.user.email           // string
 session.user.name            // string | null
 session.user.orgId           // string — currently selected org (was tenantId in v3)
-session.user.membershipRole  // "super_admin" | "org_admin" | "member"
+session.user.membershipRole  // "super_admin" | "org_admin" | "app_admin" | "member"
                              //  + legacy: "admin" | "executive" | "manager" | "employee" | "coach"
 session.user.isSuperAdmin    // boolean — only set on launcher / admin
 session.user.impersonating?  // boolean — true when a super-admin is signed in as another user
@@ -282,7 +284,7 @@ You do not implement steps 3–5 — `createAuthOptions()` does. You configure t
 
 Without real OAuth credentials you cannot run the full flow locally. Two options, in order of preference:
 
-1. Run the auth app (`cd apps/auth && npm run dev` on port 3004) plus the launcher (`apps/quikit` on 3001) and configure your app to use them. The integration owner provides a `dev-creds.txt` with throwaway client IDs.
+1. Run the auth app (`cd apps/auth && npm run dev` on port 3001) plus the launcher (`apps/quikit` on 3000) and configure your app to use them. The integration owner provides a `dev-creds.txt` with throwaway client IDs.
 2. Use a NextAuth credentials provider stub for solo dev (acceptable for UI-only iteration). You must remove the stub before opening the PR.
 
 ### 6.2 RBAC & Roles
@@ -354,7 +356,7 @@ If membership is revoked mid-session, middleware sets `session.user.membershipIn
 
 #### The Tenant → Org rename
 
-The current branch `feature_auth_merge` continues a v4 cleanup that renames `tenantId` → `orgId` in code, types, and APIs. Database column is still `orgId` (the field was already renamed at the schema level). When you see `tenantId` in older code or older docs, treat it as a synonym; do not introduce new `tenantId` references in new code.
+The `tenantId` → `orgId` rename is essentially complete: the schema was migrated wholesale (`20260502201000_global_tenantid_to_orgid`), so the DB column, Prisma model (`Org`/`OrgMember`), session field, and virtually all code use `orgId`. A handful of legacy `tenantId` aliases linger in a few files (e.g. quikcrm's `withTenantAuth`, some OAuth scope strings). When you see `tenantId` in older code or older docs, treat it as a synonym; do not introduce new `tenantId` references in new code.
 
 ### 6.4 Database (`@quikit/database`)
 
@@ -456,14 +458,15 @@ A module is visible iff the module key AND every ancestor key are enabled in the
 #### API gating
 
 ```ts
-import { withTenantAuthForModule } from "@quikit/auth/with-auth";
+// withOrgAuthForModule is defined in your app's lib/api/withOrgAuth.ts,
+// built on gateModuleApi from @quikit/auth/feature-gate.
+import { withOrgAuthForModule } from "@/lib/api/withOrgAuth";
+const withOrgAuth = withOrgAuthForModule("yourapp.coolFeature");
 
-export const POST = withTenantAuthForModule("yourapp.coolFeature")(
-  async ({ orgId, userId }, req) => { /* ... */ }
-);
+export const POST = withOrgAuth(async ({ orgId, userId }, req) => { /* ... */ });
 ```
 
-Returns 403 with `{ success: false, error: "Module disabled" }` if the org has the key off.
+Returns 404 (module not found) if the org has the key off. For finer control, `withOrgAuthForResource(moduleKey, resource)` also applies an RBAC-v2 `(resource, action)` check per HTTP verb.
 
 #### Module IDs already taken (don't collide)
 
@@ -892,7 +895,7 @@ The repo uses **Vitest** for unit / component / API tests and **Playwright** for
 
 - **Prisma**: mock via `__tests__/helpers/mockDb.ts` which `vi.mock`'s both `@quikit/database` and `@/lib/db` and preserves `@prisma/client` enum re-exports through `vi.importActual`.
 - **Sessions**: `setSession(user)` from `__tests__/setup.ts` hooks `getServerSession` from both `next-auth` and `next-auth/next` once for the whole file.
-- **Auth factories**: instantiate `createGetTenantId` / `createRequireAdmin` in the test file with a stub `authOptions`; the mocked `getServerSession` does the rest.
+- **Auth factories**: instantiate `createGetOrgId` / `createRequireAdmin` in the test file with a stub `authOptions`; the mocked `getServerSession` does the rest.
 - **Never** mock the module under test. Never mock individual route handlers — import them and call them with a constructed `NextRequest`.
 
 #### Running tests
@@ -928,23 +931,29 @@ Bring affected modules to ≥50% line coverage before touching them. The harness
 
 ## 11. Port assignments
 
-Pick an unused port, ask the integration owner before claiming one >= 3010.
+Pick an unused port (3011+, since 3000–3010 are taken); confirm with the integration owner before claiming one.
 
-| App | Dev port | Notes |
-|---|---|---|
-| `quikit` (launcher / IdP) | 3001 (dev), 3000 (start) | OAuth issuer base. |
-| `auth` (central credentials) | 3004 (dev), 3000 (start) | Optional shared login UI. |
-| `admin` (org admin portal) | 3002 (dev), 3005 (start) | |
-| `quikscale` (KPI/OKR) | 3003 (dev), 3002 (start) | |
-| `quikinfra` (ERP) | 3004 (dev), 3007 (start) | |
-| `quikvc` (VC OS) | 3005 (dev), 3008 (start) | |
-| `_template` | 3010 (example) | Customize when you fork. |
-| **`<your-app>`** | **3010+** | Pick the next free slot. |
+Definitive table (from each app's `package.json` `dev` script — see [`13-app-ports-and-env.md`](./13-app-ports-and-env.md)):
+
+| App | Dev port | `start` port | Notes |
+|---|---|---|---|
+| `quikit` (launcher / IdP) | 3000 | 3000 | OAuth/OIDC issuer base + `/apps` launcher. |
+| `auth` (central credentials) | 3001 | 3004 | Central login UI, registration/OTP, handoff. |
+| `admin` (org admin portal) | 3002 | 3005 | |
+| `quikscale` (KPI/OKR) | 3003 | 3002 | |
+| `quiktrack` (task tracker) | 3004 | 3004 | |
+| `quikvc` (VC OS) | 3005 | 3008 | |
+| `quikinfra` (construction ERP) | 3006 | 3006 | |
+| `quiksocial` (AI social) | 3007 | 3007 | |
+| `quikcrm` (CRM) | 3008 | 3008 | |
+| `quikhrms` (HRMS) | 3009 | 3009 | |
+| `_template` | 3010 | 3010 | Customize when you fork. |
+| **`<your-app>`** | **3011+** | | Pick the next free slot. |
 
 Set the port in `apps/<your-app>/package.json`:
 ```json
-"dev": "next dev -p 3010",
-"start": "next start -p 3010",
+"dev": "next dev -p 3011",
+"start": "next start -p 3011",
 ```
 
 ---

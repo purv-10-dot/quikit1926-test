@@ -7,7 +7,48 @@
  */
 
 import { buildBreakdown } from "../../kpi/components/kpiModalHelpers";
+import { getMultiplier } from "@/lib/utils/currency";
+import { weeksArray } from "@/lib/utils/fiscal";
 import type { KPIAcctRow, QPriorRow } from "../types";
+
+/** Minimal shape of an export-step KPI form needed to build the create payload. */
+export interface KpiExportFormLike {
+  target: string;
+  measurementUnit: "Number" | "Percentage" | "Currency";
+  currency: string;
+  targetScale: string;
+  scaledDisplay: boolean;
+  unit: string;
+  /** Weekly cells — stored RAW (currency cells already ×scale), keyed by week. */
+  weekly: Record<number, string>;
+}
+
+/**
+ * Currency/unit-aware KPI fields for one export step, mirroring the Individual
+ * KPI modal's create payload so an exported KPI is identical to a hand-created
+ * one. Stored values stay RAW: a Currency KPI's display target is multiplied by
+ * the chosen scale (₹ Cr etc.); Number carries its Unit Master `unit`;
+ * Percentage carries neither. `weeklyTargets` are the raw cell values.
+ */
+export function kpiExportCreateFields(f: KpiExportFormLike, weekCount: number) {
+  const isCurrency = f.measurementUnit === "Currency";
+  const displayTarget = parseFloat(f.target) || 0;
+  const rawTarget = isCurrency
+    ? displayTarget * getMultiplier(f.currency, f.targetScale)
+    : displayTarget;
+  return {
+    target: rawTarget,
+    currency: isCurrency ? f.currency : null,
+    targetScale: isCurrency ? f.targetScale : null,
+    // Unit label only applies to Number KPIs.
+    unit: f.measurementUnit === "Number" ? (f.unit || null) : null,
+    // Only meaningful for a Currency KPI with a scale; force false otherwise.
+    scaledDisplay: isCurrency && !!f.targetScale ? f.scaledDisplay : false,
+    weeklyTargets: Object.fromEntries(
+      weeksArray(weekCount).map((w) => [String(w), parseFloat(f.weekly[w]) || 0]),
+    ) as Record<string, number>,
+  };
+}
 
 /**
  * Parse a free-text "Goal" value (e.g. "$50K", "1,200", "8", "2.5M") into a
@@ -173,6 +214,9 @@ interface WeeklyStepLike {
   measurementUnit: "Number" | "Percentage" | "Currency";
   divisionType: "Cumulative" | "Standalone";
   weekly: Record<number, string>;
+  /** Present on KPI steps — used to build the RAW target for a Currency KPI. */
+  currency?: string;
+  targetScale?: string;
 }
 
 /**
@@ -188,14 +232,20 @@ export function rebuildStepWeekly<T extends WeeklyStepLike>(
   forms: T[],
   firstEditableWeek: number,
   isEdited: (i: number) => boolean,
+  weeksPerQuarter: number = 13,
 ): T[] {
   return forms.map((f, i) => {
     if (isEdited(i)) return f;
-    const target = parseFloat(f.target) || 0;
+    // RAW target — a Currency KPI's display value is ×scale; cells store raw.
+    const display = parseFloat(f.target) || 0;
+    const target =
+      f.measurementUnit === "Currency"
+        ? display * getMultiplier(f.currency ?? "", f.targetScale ?? "")
+        : display;
     if (target <= 0) return f;
     return {
       ...f,
-      weekly: buildBreakdown(f.divisionType, target, f.measurementUnit, firstEditableWeek),
+      weekly: buildBreakdown(f.divisionType, target, f.measurementUnit, firstEditableWeek, weeksPerQuarter),
     };
   });
 }

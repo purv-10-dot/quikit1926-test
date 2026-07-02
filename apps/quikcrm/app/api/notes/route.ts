@@ -7,6 +7,11 @@ import {
   encodeAccountNoteContent,
   type AccountNoteCategoryId,
 } from "@/lib/accounts/account-note-category";
+import {
+  logBusinessEvent,
+  BUSINESS_EVENT_TYPES,
+} from "@/lib/services/activities/business-events";
+import { normaliseRelatedKind } from "@/lib/services/activities/related-kind";
 
 export const runtime = "nodejs";
 
@@ -62,6 +67,28 @@ export async function POST(req: NextRequest) {
       },
     });
     const decoded = decodeAccountNoteContent(note.content);
+
+    // Global Activities feed: surface "Note Added" against the parent record.
+    // Visibility inherits via relatedKind/relatedObjectId (RBAC unchanged). Only
+    // emitted for the four account-scoped kinds; other kinds are skipped so we
+    // never write a feed row the ACL can't scope. Non-blocking + swallowed.
+    const activityKind = normaliseRelatedKind(note.relatedKind);
+    if (activityKind) {
+      const preview = decoded.body.replace(/\s+/g, " ").trim().slice(0, 120);
+      await logBusinessEvent({
+        orgId: user.orgId,
+        userId: user.userId,
+        type: BUSINESS_EVENT_TYPES.noteAdded,
+        relatedKind: activityKind,
+        relatedObjectId: note.relatedObjectId,
+        leadId: note.leadId ?? undefined,
+        subject: "Note added",
+        outcome: preview,
+        detailNotes: decoded.body,
+        occurredAt: new Date(),
+      });
+    }
+
     return NextResponse.json(
       { ...note, noteCategory: decoded.category, content: decoded.body },
       { status: 201 },

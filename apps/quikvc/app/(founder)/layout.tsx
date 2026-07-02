@@ -9,6 +9,7 @@ import { redirect } from "next/navigation";
 import { requireSession } from "@/lib/require-session";
 import { getVCRole } from "@/lib/rbac";
 import { homePathForPortal, portalForRole } from "@/lib/roles";
+import { SessionGuard } from "@/components/session-guard";
 
 const NAV = [
   { label: "Dashboard", href: "/dashboard" },
@@ -34,6 +35,7 @@ export default async function FounderLayout({
     redirect(homePathForPortal(portal));
   }
   return (
+    <SessionGuard>
     <div className="min-h-screen bg-gray-50 flex flex-col">
       <header className="bg-white border-b border-gray-200 px-4 py-3 flex items-center justify-between">
         <div>
@@ -60,5 +62,6 @@ export default async function FounderLayout({
 
       <main className="flex-1">{children}</main>
     </div>
+    </SessionGuard>
   );
 }

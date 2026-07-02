@@ -28,6 +28,10 @@ import {
   parseReportFormat,
 } from "@/lib/services/reports/format-dispatch";
 import { evaluateRulesForEvent } from "@/lib/notifications/rules/engine";
+import {
+  logBusinessEvent,
+  BUSINESS_EVENT_TYPES,
+} from "@/lib/services/activities/business-events";
 
 export const runtime = "nodejs";
 
@@ -195,6 +199,22 @@ export async function POST(req: NextRequest) {
     });
 
     const [withName] = await attachAccountNames(user.orgId, [created]);
+
+    // Global Activities feed: "Contact Created" (previously contacts produced no
+    // feed row at all). Visibility inherits via relatedKind/relatedObjectId —
+    // RBAC unchanged. Non-blocking + swallowed.
+    await logBusinessEvent({
+      orgId: user.orgId,
+      userId: user.userId,
+      ownerId: created.ownerId ?? user.userId,
+      type: BUSINESS_EVENT_TYPES.contactCreated,
+      relatedKind: "Contact",
+      relatedObjectId: created.id,
+      subject: `Contact created · ${[created.firstName, created.lastName].filter(Boolean).join(" ")}`,
+      outcome: created.email ?? "",
+      occurredAt: new Date(),
+    });
+
     evaluateRulesForEvent({
       event: "created",
       entityType: "contact",

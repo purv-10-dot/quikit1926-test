@@ -1,8 +1,8 @@
 import type { Prisma } from "@quikit/database";
-import type { CrmImportEntityType, CrmImportJobStatus } from "@prisma/client";
+import type { CrmImportJobStatus } from "@prisma/client";
 import { prisma } from "@/lib/db/prisma";
-import { enqueueImport, type ImportJobData } from "@/lib/queue/import-queue";
-import { backoffMs, isBlocked } from "@/lib/services/import/batch-coordinator";
+import { type ImportJobData } from "@/lib/queue/import-queue";
+import { isBlocked } from "@/lib/services/import/batch-coordinator";
 import {
   processActivitiesImport,
   processLeadsImport,
@@ -36,8 +36,10 @@ export async function executeImportJob(data: ImportJobData): Promise<ImportJobRu
   }
 
   if (await isBlocked(jobId)) {
-    await enqueueImport(data, { delayMs: 30_000 });
-    return { outcome: "deferred" };
+    // Deferral relied on BullMQ re-enqueue. The queue backend has been removed,
+    // so there is nothing to defer onto — skip rather than strand the job in a
+    // "queued" state that nothing will ever pick up.
+    return { outcome: "skipped" };
   }
 
   const claim = await prisma.crmLeadImportJob.updateMany({
@@ -119,18 +121,19 @@ export async function executeImportJob(data: ImportJobData): Promise<ImportJobRu
       };
     }
 
-    const delay = backoffMs(attempts);
+    // Retry relied on BullMQ scheduling a delayed job. The queue backend has
+    // been removed, so dead-letter the job instead of leaving it "queued"
+    // forever with nothing to pick it up.
     await prisma.crmLeadImportJob.update({
       where: { id: jobId },
-      data: { status: "queued", lastError: message, nextRetryAt: new Date(Date.now() + delay) },
+      data: { status: "dead_letter", deadLetteredAt: new Date(), lastError: message },
     });
-    await enqueueImport(data, { delayMs: delay });
 
     return {
       outcome: "finished",
-      status: "queued",
-      totalRows: 0,
-      importedCount: 0,
+      status: "dead_letter",
+      totalRows: updated?.totalRows ?? 0,
+      importedCount: updated?.importedCount ?? 0,
       rowErrors: [],
       lastError: message,
     };
