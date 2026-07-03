@@ -427,7 +427,6 @@ export const MODULE_TO_RESOURCES: Readonly<Record<string, readonly string[]>> = 
     "construction.indent",
     "construction.rfq",
     "construction.po",
-    "construction.grn",
   ],
   store: [
     "construction.stock",
@@ -437,6 +436,10 @@ export const MODULE_TO_RESOURCES: Readonly<Record<string, readonly string[]>> = 
     "construction.transfer",
     "construction.reconciliation",
     "construction.diesel",
+    // GRN is displayed under the STORE menu group (goods-in counterpart of
+    // Material Issue), so its resource belongs to the Store module toggle —
+    // ticking Store grants it, and leaving Purchase off must not revoke it.
+    "construction.grn",
   ],
   project_mgmt: [
     "construction.project",
