@@ -7,12 +7,21 @@ import {
   getStarterProjectRoleId,
 } from "@/lib/services/projectDefaults";
 import { userCan, forbidden, isQuikTrackAppAdmin } from "@/lib/api/permissions";
+import { SPACE_ADMIN_ROLE_NAME } from "@/lib/api/permissionsRegistry";
 import { PROJECT_TAB_PATHS } from "@/lib/projectTabs";
 
 // The "functional" (Kanban) template starts with Epics, List and Task Table
 // hidden — a Space Admin can re-enable them later via the tab customizer (+).
 // Every other template shows all tabs (tabConfig = null).
 const KANBAN_HIDDEN_TABS = ["epics", "list", "task-table"];
+
+// Which slice of the project list to return. Drives the visibility model:
+//   "active"   → live projects (default; what everyone browses)
+//   "archived" → status="archived" but not trashed (a separate list; members
+//                keep access, unarchive brings them back to "active")
+//   "trash"    → soft-deleted (isDeleted=true). ADMIN-ONLY — the recovery bin.
+const PROJECT_VIEWS = ["active", "archived", "trash"] as const;
+type ProjectView = (typeof PROJECT_VIEWS)[number];
 
 export const GET = withOrgAuth(async ({ orgId, userId }, req) => {
   const url = new URL(req.url);
@@ -32,20 +41,34 @@ export const GET = withOrgAuth(async ({ orgId, userId }, req) => {
   const page = Math.max(1, Number(url.searchParams.get("page") || 1));
   const rawPageSize = Number(url.searchParams.get("pageSize") || 0);
   const pageSize = rawPageSize > 0 ? Math.min(100, rawPageSize) : 0; // 0 = no pagination
+  const viewParam = url.searchParams.get("view") || "active";
+  const view: ProjectView = PROJECT_VIEWS.includes(viewParam as ProjectView)
+    ? (viewParam as ProjectView)
+    : "active";
 
   const orgAdmin = await db.orgMember.findFirst({
     where: { userId, orgId, status: "active" },
     select: { role: true },
   });
   // Org owners/admins AND QuikTrack app-admins see every space in the org;
-  // everyone else sees only spaces they're a member of.
+  // everyone else sees only spaces they're a member of. This is the SAME admin
+  // definition withProjectAccess uses to gate delete/restore, so "can see the
+  // trash" == "can restore from it".
   const isAdmin =
     orgAdmin?.role === "admin" ||
     orgAdmin?.role === "owner" ||
     (await isQuikTrackAppAdmin(userId, orgId));
 
-  const where: Record<string, unknown> = { orgId, isDeleted: false };
-  if (!isAdmin) {
+  // The trash is admin-only — never leak soft-deleted projects to members.
+  if (view === "trash" && !isAdmin) return forbidden();
+
+  // Trash = soft-deleted regardless of status; the other views exclude deleted
+  // and split on status so archived projects drop out of the default list.
+  const where: Record<string, unknown> =
+    view === "trash"
+      ? { orgId, isDeleted: true }
+      : { orgId, isDeleted: false, status: view === "archived" ? "archived" : "active" };
+  if (!isAdmin && view !== "trash") {
     where.members = { some: { userId, isDeleted: false } };
   }
   if (search) {
@@ -104,9 +127,26 @@ export const GET = withOrgAuth(async ({ orgId, userId }, req) => {
     : [];
   const leadById = new Map(leads.map((u) => [u.id, u] as const));
 
+  // Per-project archive capability: global admins can archive anything; a
+  // non-admin can archive only the spaces where they hold the Space Admin role.
+  // (Move-to-trash stays global-admin-only — see the top-level `isAdmin`.)
+  let spaceAdminIds = new Set<string>();
+  if (!isAdmin && projects.length > 0) {
+    const sa = await db.qtProjectUserRole.findMany({
+      where: {
+        userId,
+        projectId: { in: projects.map((p) => p.id) },
+        projectRole: { name: SPACE_ADMIN_ROLE_NAME },
+      },
+      select: { projectId: true },
+    });
+    spaceAdminIds = new Set(sa.map((r) => r.projectId));
+  }
+
   const data = projects.map((p) => ({
     ...p,
-    lead: p.leadUserId ? (leadById.get(p.leadUserId) ?? null) : null,
+    lead: p.leadUserId ? leadById.get(p.leadUserId) ?? null : null,
+    canArchive: isAdmin || spaceAdminIds.has(p.id),
   }));
 
   return NextResponse.json({
@@ -116,6 +156,9 @@ export const GET = withOrgAuth(async ({ orgId, userId }, req) => {
     page,
     pageSize: pageSize || total,
     totalPages: pageSize > 0 ? Math.max(1, Math.ceil(total / pageSize)) : 1,
+    // Lets the client show/hide admin-only lifecycle controls (Move to trash,
+    // Restore, the Trash tab). The server still enforces every action.
+    isAdmin,
   });
 });
 

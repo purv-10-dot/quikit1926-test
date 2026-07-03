@@ -121,16 +121,23 @@ export const GET = withOrgAuth(async ({ orgId, userId }, req) => {
     ? [{ [sortKey]: sortOrder } as Prisma.QtIssueOrderByWithRelationInput, { id: sortOrder }]
     : [{ orderInColumn: "asc" }, { createdAt: "desc" }, { id: "asc" }];
 
+  // Resolve the `type` clause ONCE. A specific `type` filter (e.g. BUG) wins over
+  // `excludeType` (the section's structural EPIC/SUBTASK exclusion) — otherwise a
+  // second `type:` key in the spread would clobber the first, so picking a type
+  // silently fell back to "everything except epics/subtasks".
+  const typeWhere: Prisma.QtIssueWhereInput = filterType
+    ? { type: filterType }
+    : excludeType
+      ? excludeType.includes(",")
+        ? { type: { notIn: excludeType.split(",").filter(Boolean) } }
+        : { type: { not: excludeType } }
+      : {};
+
   const where = {
     orgId: orgId,
     projectId,
     isDeleted: false,
-    ...(filterType ? { type: filterType } : {}),
-    ...(excludeType
-      ? excludeType.includes(",")
-        ? { type: { notIn: excludeType.split(",").filter(Boolean) } }
-        : { type: { not: excludeType } }
-      : {}),
+    ...typeWhere,
     ...(filterStatusId ? { statusId: filterStatusId } : {}),
     ...(filterStatusCategory ? { status: { category: filterStatusCategory } } : {}),
     // sprintId supports three shapes:

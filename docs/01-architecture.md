@@ -6,30 +6,44 @@ A 10-minute read. Covers what the platform is, what your app fits into, and what
 
 QuikIT is a multi-tenant SaaS platform with:
 
-- A **launcher** (`quikit`) — landing page, app picker, SSO source.
-- A set of **product apps** (`quikscale`, `admin`, plus the new ones being built — including yours).
-- Shared **packages** that every app uses (`@quikit/ui`, `@quikit/database`, `@quikit/auth`, `@quikit/shared`).
+- A **launcher + identity provider** (`quikit`) — landing page, app picker, and the OAuth/OIDC IdP. Super-admin pages live here too.
+- A **central credentials service** (`auth`) — hosts the login form, registration/OTP, password reset, and the cross-domain session handoff.
+- An **org admin portal** (`admin`) — members, teams, apps, roles, audit log.
+- A set of **product apps** — `quikscale`, `quiktrack`, `quikvc`, `quikinfra`, `quiksocial`, `quikcrm`, `quikhrms` (plus any new one you're building).
+- Shared **packages** that every app uses (`@quikit/ui`, `@quikit/database`, `@quikit/auth`, `@quikit/redis`, `@quikit/shared`).
 
-A tenant (customer organization) signs in once via the launcher. The launcher's SSO token authenticates them across every app. Each app reads `tenantId` + `userId` from the session and scopes all data access to that tenant.
+A user signs in once through the `auth` credentials host (or an SSO provider). `quikit` acts as the OAuth/OIDC IdP; a short-lived signed handoff token bridges the session to each app's own host-scoped cookie. Each app reads `orgId` + `userId` from the session and scopes all data access to that org.
+
+> **Naming:** the tenant/organization is called an **org**. The scoping column is `orgId` (a repo-wide migration renamed the legacy `tenantId` → `orgId`), the Prisma org model maps to the `Org` table, and membership is `OrgMember`. You'll still see the word "tenant" in some prose and OAuth scope strings — it means the same thing.
 
 ## Repo layout
 
 ```
-QuikIT/
+QuikIT/                          # dev ports in parentheses
 ├── apps/
-│   ├── _template/        # scaffold for new apps (you copy this)
-│   ├── quikit/           # launcher (route prefix /, port 3000)
-│   ├── quikscale/        # KPI / OPSP / Priority / WWW (port 3002)
-│   ├── admin/            # tenant admin portal (port 3005)
-│   └── <your-app>/       # YOUR app (port 3010+)
+│   ├── _template/        # scaffold for new apps (you copy this) (3010)
+│   ├── quikit/           # launcher + OAuth/OIDC IdP + super-admin (3000)
+│   ├── auth/             # central credentials / login service (3001)
+│   ├── admin/            # org admin portal (3002)
+│   ├── quikscale/        # OKR / KPI / OPSP / Priority / WWW (3003)
+│   ├── quiktrack/        # project / task / docs tracker (3004)
+│   ├── quikvc/           # venture-capital deal flow (3005)
+│   ├── quikinfra/        # construction ERP (3006)
+│   ├── quiksocial/       # AI social-media management (3007)
+│   ├── quikcrm/          # CRM / sales (3008)
+│   ├── quikhrms/         # HR management system (3009)
+│   └── <your-app>/       # YOUR app
 ├── packages/
-│   ├── auth/             # NextAuth wrappers, middleware factory, session types
-│   ├── database/         # Prisma schema + client
-│   ├── shared/           # constants (ROLES, ROLE_HIERARCHY, etc.) + utils
+│   ├── auth/             # NextAuth factories, middleware factory, guards, session store
+│   ├── database/         # Prisma schema + client singleton
+│   ├── redis/            # ioredis singleton + cache helpers (fail-open)
+│   ├── shared/           # constants (ROLES, ROLE_HIERARCHY, etc.), pagination, email, module registry
 │   └── ui/               # shared React components, theme tokens, Tailwind config
 ├── docs/                 # this directory
 └── CLAUDE.md             # monorepo-wide conventions
 ```
+
+Ports come from each app's `package.json` `dev` script — see [`13-app-ports-and-env.md`](./13-app-ports-and-env.md) for the definitive table.
 
 Your per-dev repo only contains `apps/<your-app>/`, `packages/*`, `docs/`, and the root config. Other apps are not visible.
 
@@ -57,31 +71,34 @@ You can do whatever you want here as long as you follow the conventions.
 ## How the apps connect
 
 ```
-            ┌──────────────┐
-            │   quikit     │  ← user lands here, signs in via OAuth provider
-            │ (launcher)   │
-            └──────┬───────┘
-                   │ issues SSO token
-                   ▼
-   ┌───────┬───────┴────────┬───────┐
-   │                         │       │
-   ▼                         ▼       ▼
-┌────────┐  ┌────────┐  ┌────────┐  ┌──────────┐
-│quikscale│  │ admin  │  │<your-app>│  │  …more   │
-└────────┘  └────────┘  └────────┘  └──────────┘
-     │           │           │           │
-     └───────────┴───────────┴───────────┘
+     ┌──────────────┐        ┌──────────────┐
+     │    auth      │        │    quikit    │
+     │ (credentials │◄──────►│ (OAuth/OIDC  │  ← user signs in on auth;
+     │   login)     │ handoff│   IdP +      │    quikit issues tokens,
+     └──────┬───────┘        │  launcher)   │    hosts the /apps picker
+            │                └──────┬───────┘
+            │ 120s signed handoff token │
+            ▼                            ▼
+   ┌───────────┬───────────┬───────────┬───────────┐
+   ▼           ▼           ▼           ▼           ▼
+┌────────┐ ┌────────┐ ┌────────┐ ┌────────┐ ┌──────────┐
+│quikscale│ │ admin  │ │quikinfra│ │  …etc  │ │<your-app>│
+└────────┘ └────────┘ └────────┘ └────────┘ └──────────┘
+     │          │          │          │          │
+     └──────────┴──────────┴──────────┴──────────┘
                        │
                        ▼
             ┌──────────────────┐
-            │  Postgres (Neon) │  ← single shared DB, schema-per-domain
-            └──────────────────┘
+            │  Postgres (Neon) │  ← single shared DB, 10 schemas (auth, quikit,
+            └──────────────────┘    public, app_quikscale, app_quikinfra, …)
 ```
+
+Each app sets its own host-scoped session cookie after verifying the handoff token; on later navigations middleware re-validates it server-to-server against the `auth` app's `/api/verify-token`.
 
 Every product app:
 
-1. Receives the user's session via NextAuth + `@quikit/auth`.
-2. Hits the same Postgres database via `@quikit/database` (Prisma client).
+1. Receives the user's session via NextAuth + `@quikit/auth` (JWT strategy; Redis-backed soft-revocation).
+2. Hits the same Postgres database via `@quikit/database` (Prisma client), scoping every query by `orgId`.
 3. Renders UI from `@quikit/ui` components.
 4. Exposes its own routes under `app/` and own API endpoints under `app/api/`.
 
@@ -94,8 +111,9 @@ Your app does not call other apps directly. If you need data that lives in anoth
 | Framework | Next.js 14 (App Router) | Server Components + edge middleware + opinionated routing |
 | Language | TypeScript (strict) | Type safety across monorepo + Prisma client types |
 | Monorepo | Turborepo + npm workspaces | Caching, parallel builds, single `npm install` |
-| DB | PostgreSQL via Prisma | Multi-schema per app domain, type-safe queries |
-| Auth | NextAuth (custom) | OAuth + session JWT with tenantId/membershipRole |
+| DB | PostgreSQL via Prisma | 10-schema multiSchema layout per app domain, type-safe queries |
+| Auth | NextAuth (JWT) | `quikit` OAuth/OIDC IdP + `auth` credentials host; session JWT carries `orgId`/`membershipRole`/`isSuperAdmin` |
+| Cache / sessions | Redis via `@quikit/redis` | Soft-session store, rate limiting, layered cache (fail-open) |
 | UI | React 18 + Tailwind CSS | Standard, fast, well-known |
 | Components | `@quikit/ui` (Radix-based) | Cross-app consistency |
 | Forms | Zod for validation | Same schema for client + server |
@@ -106,23 +124,25 @@ Your app does not call other apps directly. If you need data that lives in anoth
 
 This is the most important rule in the codebase:
 
-> **Every Prisma query that reads or writes tenant-scoped data MUST filter by `tenantId`.**
+> **Every Prisma query that reads or writes org-scoped data MUST filter by `orgId`.**
 
-Failure to do this leaks data across tenants. CI does not catch this automatically — it's caught at code review.
+Failure to do this leaks data across orgs. CI does not catch this automatically — it's caught at code review.
 
-The `withTenantAuth` wrapper used in API routes injects `tenantId` from the session. You then pass it into your `where` clause:
+Each app wraps the shared `@quikit/auth` guards in a thin `lib/api/` helper — most apps call it `withOrgAuth` (quikcrm still calls its copy `withTenantAuth`; admin uses `withAdminAuth`). The wrapper resolves `orgId` from the session via `getOrgId` (= `createGetOrgId(authOptions, { appSlug })`) and hands it to your route. You then pass it into your `where` clause:
 
 ```ts
-export const GET = withTenantAuth(async ({ tenantId }) => {
-  const items = await db.widget.findMany({
-    where: { tenantId },                  // ← non-negotiable
+export const GET = withOrgAuth(async ({ orgId }) => {
+  const items = await db.kpi.findMany({
+    where: { orgId },                     // ← non-negotiable
     select: { id: true, name: true },
   });
   return NextResponse.json({ success: true, data: items });
 });
 ```
 
-When you add a new Prisma model, it needs a `tenantId String` field + an index on `(tenantId)`. The integration owner reviews schema changes for this.
+The wrapper also layers on **module gating** (`gateModuleApi`) and **RBAC v2** permission checks (`withOrgAuthForResource` → `userCan(userId, orgId, resource, action)`) — see [`login-roles-architecture-and-flow.md`](./login-roles-architecture-and-flow.md).
+
+When you add a new Prisma model, it needs an `orgId String` field, an index on `(orgId)`, and a `@relation` to `Org` with `onDelete: Cascade`. The integration owner reviews schema changes for this.
 
 ## The 4 status branches
 

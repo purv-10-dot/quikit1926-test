@@ -37,7 +37,7 @@ export async function POST(req: NextRequest) {
 
     const lead = await prisma.crmLead.findFirst({
       where: { id: dto.leadId, orgId: user.orgId },
-      select: { id: true, accountId: true },
+      select: { id: true, accountId: true, ownerId: true },
     });
     if (!lead) {
       return NextResponse.json(
@@ -45,7 +45,7 @@ export async function POST(req: NextRequest) {
         { status: 404 },
       );
     }
-    await assertAccountAccess(user, lead.accountId);
+    await assertAccountAccess(user, lead.accountId, { recordOwnerId: lead.ownerId });
 
     if (dto.opportunityId) {
       const opp = await prisma.crmOpportunity.findFirst({

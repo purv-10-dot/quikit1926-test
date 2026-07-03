@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import { Loader2, Eye, Pencil } from "lucide-react";
 import { RichTextEditor } from "@/components/rich-text-editor-lazy";
+import { sanitizeRichText } from "@/lib/sanitize";
 
 interface SharedDoc {
   id: string;
@@ -13,6 +14,8 @@ interface SharedDoc {
 
 const SAVE_DEBOUNCE_MS = 800;
 
+type Status = "loading" | "ready" | "missing";
+
 /**
  * Public, no-login renderer for a shared doc. View mode renders the stored HTML
  * read-only via `.qt-rich-content`; edit mode mounts the rich-text editor and
@@ -20,11 +23,17 @@ const SAVE_DEBOUNCE_MS = 800;
  * inline data URLs (no auth needed). The link is revocable — if the code no
  * longer maps to a doc, we show an unavailable state.
  */
-export function PublicDoc({ token }: { token: string }) {
-  const [doc, setDoc] = useState<SharedDoc | null>(null);
-  const [status, setStatus] = useState<"loading" | "ready" | "missing">("loading");
-  const [title, setTitle] = useState("");
-  const [content, setContent] = useState("");
+export function PublicDoc({
+  token,
+  initialDoc,
+}: {
+  token: string;
+  initialDoc?: SharedDoc;
+}) {
+  const [doc, setDoc] = useState<SharedDoc | null>(initialDoc ?? null);
+  const [status, setStatus] = useState<Status>(initialDoc ? "ready" : "loading");
+  const [title, setTitle] = useState(initialDoc?.title ?? "");
+  const [content, setContent] = useState(initialDoc?.content || (initialDoc ? "<p></p>" : ""));
   const [saving, setSaving] = useState(false);
 
   const dirtyRef = useRef(false);
@@ -35,6 +44,8 @@ export function PublicDoc({ token }: { token: string }) {
   const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
+    // Seeded from the server (edit mode) — no need to refetch.
+    if (initialDoc) return;
     let alive = true;
     fetch(`/api/docs/share/${token}`)
       .then((r) => r.json())
@@ -54,6 +65,8 @@ export function PublicDoc({ token }: { token: string }) {
     return () => {
       alive = false;
     };
+    // initialDoc is set once at mount; refetch is keyed on token only.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [token]);
 
   function scheduleSave() {
@@ -171,7 +184,7 @@ export function PublicDoc({ token }: { token: string }) {
               <h1 className="text-3xl font-bold text-gray-900 mb-6">{title || "Untitled doc"}</h1>
               <div
                 className="qt-rich-content"
-                dangerouslySetInnerHTML={{ __html: content }}
+                dangerouslySetInnerHTML={{ __html: sanitizeRichText(content) }}
               />
             </div>
           )}

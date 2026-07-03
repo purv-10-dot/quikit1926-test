@@ -5,6 +5,7 @@ import { useQueryClient } from "@tanstack/react-query";
 import { ArrowDownNarrowWide, X, ChevronDown, ChevronRight } from "lucide-react";
 import { RichTextEditor } from "@/components/rich-text-editor-lazy";
 import { uploadProjectImage } from "@/lib/upload-image";
+import { sanitizeRichText } from "@/lib/sanitize";
 import type { MentionItem } from "@/components/editor/mention";
 import { SkeletonList } from "@/components/skeleton";
 import { useApiData } from "@/lib/hooks/useApiData";
@@ -387,7 +388,7 @@ function CommentsView({
               </div>
               <div
                 className="prose prose-sm max-w-none text-sm text-gray-800 mt-1"
-                dangerouslySetInnerHTML={{ __html: c.body }}
+                dangerouslySetInnerHTML={{ __html: sanitizeRichText(c.body) }}
               />
             </div>
           </div>

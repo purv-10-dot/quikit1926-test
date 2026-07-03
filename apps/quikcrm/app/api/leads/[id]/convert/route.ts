@@ -36,9 +36,10 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
         { status: 409 },
       );
     }
-    await assertAccountAccess(user, lead.accountId);
+    await assertAccountAccess(user, lead.accountId, { recordOwnerId: lead.ownerId });
     // A pre-selected account (from the Convert modal) must be in the caller's
-    // scope, same gate the lead's own account passes above.
+    // scope — strict check, no owner bypass. Owning the source lead does not
+    // grant write access to an arbitrary target account.
     if (opts.accountId) await assertAccountAccess(user, opts.accountId);
 
     const result = await prisma.$transaction(async (tx) => {

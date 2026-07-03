@@ -13,7 +13,7 @@ import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 import { z } from "zod";
 import { db } from "@/lib/db";
-import { withTenantAuth } from "@/lib/api/withTenantAuth";
+import { withOrgAuth } from "@/lib/api/withOrgAuth";
 import { writeAuditLog } from "@/lib/api/auditLog";
 import { parsePaginationParams, paginationToSkipTake, buildPaginationResponse } from "@quikit/shared";
 
@@ -34,12 +34,12 @@ const createSchema = z.object({
 });
 
 /* ─── GET /api/widgets ──────────────────────────────────────────────────────
- * List widgets for the current tenant. Paginated. Filterable.
+ * List widgets for the current org. Paginated. Filterable.
  *
- * Auth: withTenantAuth. Injects { tenantId, userId } from session, returns
- *       401 automatically if unauthenticated.
+ * Auth: withOrgAuth. Injects { session, userId, orgId } from session, returns
+ *       401 (no session) / 403 (no active membership) automatically.
  */
-export const GET = withTenantAuth(async ({ tenantId }, req: NextRequest) => {
+export const GET = withOrgAuth(async ({ orgId }, req: NextRequest) => {
   // 1. Validate query string. Object.fromEntries works because URLSearchParams
   //    iterator yields [key, value] pairs.
   const parsedQuery = listQuerySchema.safeParse(
@@ -52,12 +52,12 @@ export const GET = withTenantAuth(async ({ tenantId }, req: NextRequest) => {
     );
   }
 
-  // 2. Build the where clause. tenantId is non-negotiable — every other filter
+  // 2. Build the where clause. orgId is non-negotiable — every other filter
   //    is conditional. The spread-on-truthy pattern keeps the where clean.
   const { status, search } = parsedQuery.data;
   const pagination = parsePaginationParams(req.nextUrl.searchParams);
   const where = {
-    tenantId,
+    orgId,
     ...(status && { status }),
     ...(search && { name: { contains: search, mode: "insensitive" as const } }),
   };
@@ -94,7 +94,7 @@ export const GET = withTenantAuth(async ({ tenantId }, req: NextRequest) => {
  * Returns 201 on success (per HTTP convention for resource creation).
  * Writes an audit log entry — required for every mutation.
  */
-export const POST = withTenantAuth(async ({ tenantId, userId }, req: NextRequest) => {
+export const POST = withOrgAuth(async ({ orgId, userId }, req: NextRequest) => {
   try {
     // 1. Parse + validate body. Cast to unknown first if you ever need to
     //    pre-process; never `as any`.
@@ -111,12 +111,12 @@ export const POST = withTenantAuth(async ({ tenantId, userId }, req: NextRequest
     //    rolls back. This avoids "ghost" rows with no audit trail.
     const widget = await db.$transaction(async (tx) => {
       const created = await tx.widget.create({
-        data: { ...parsed.data, tenantId, createdBy: userId },
+        data: { ...parsed.data, orgId, createdBy: userId },
         select: { id: true, name: true, status: true },
       });
       await tx.auditLog.create({
         data: {
-          tenantId,
+          orgId,
           actorId: userId,
           action: "CREATE",
           entityType: "Widget",
@@ -142,7 +142,7 @@ export const POST = withTenantAuth(async ({ tenantId, userId }, req: NextRequest
  * - No DELETE — soft delete is preferred; design with the integration owner.
  * - No `include` for nested relations on list endpoints — bloats payload.
  * - No raw `req.body` reads — always Zod-validate.
- * - No tenantId from query parameters — always from session.
+ * - No orgId from query parameters — always from session (the wrapper resolves it).
  * - No string concatenation in queries — Prisma is parameterized.
  *
  * If you find yourself needing any of those, talk to the integration owner

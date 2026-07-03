@@ -28,7 +28,7 @@ export async function POST(_req: NextRequest, { params }: { params: Promise<{ id
     if (!existing || existing.orgId !== user.orgId) {
       return NextResponse.json({ error: "Not found" }, { status: 404 });
     }
-    await assertAccountAccess(user, existing.accountId);
+    await assertAccountAccess(user, existing.accountId, { recordOwnerId: existing.ownerId });
 
     if (!existing.deletedAt) {
       // Already active — idempotent success.

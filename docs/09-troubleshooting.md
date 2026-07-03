@@ -89,7 +89,7 @@ If still broken: `cd packages/ui && npm run build` (or whichever package is miss
 
 ### "Invalid session token" or 500 from auth endpoint
 
-**Cause**: usually a Prisma client mismatch. The auth flow reads from the User/Membership tables; if your local schema is out of date, the lookup fails.
+**Cause**: usually a Prisma client mismatch. The auth flow reads from the `User` / `OrgMember` tables; if your local schema is out of date, the lookup fails. (Redis-backed session soft-revocation can also invalidate a session — see `docs/cache-management.md`.)
 
 **Fix**:
 ```bash
@@ -140,13 +140,13 @@ psql -U postgres -c "CREATE DATABASE quikit_dev;"
    DATABASE_URL="postgresql://user:pass@localhost:5432/quikit_dev?connection_limit=5"
    ```
 
-### Prisma query returns rows from another tenant
+### Prisma query returns rows from another org
 
-**Cause**: you forgot the `tenantId` filter. This is a critical security bug.
+**Cause**: you forgot the `orgId` filter. This is a critical security bug.
 
 **Fix**:
-1. Add `tenantId` to every `where` clause.
-2. Add a regression test (see `docs/07-testing.md` cross-tenant isolation pattern).
+1. Add `orgId` to every `where` clause.
+2. Add a regression test (see `docs/07-testing.md` cross-org isolation pattern).
 3. Audit every other query in the same route.
 
 ---
@@ -215,7 +215,7 @@ const data = result as unknown as MyType;
 // Comment why a narrower path isn't possible.
 ```
 
-### TS: `Property 'tenantId' does not exist on type 'User'`
+### TS: `Property 'orgId' does not exist on type 'User'`
 
 **Cause**: TypeScript doesn't see the augmented session type.
 

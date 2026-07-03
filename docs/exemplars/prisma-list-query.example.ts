@@ -10,12 +10,12 @@ import { db } from "@/lib/db";
 import { paginationToSkipTake, type PaginationParams } from "@quikit/shared";
 
 /* ─── Pattern A — simple list ───────────────────────────────────────────────
- * Read N rows for a tenant, ordered, with a hard `take` cap. Use this 80% of
+ * Read N rows for an org, ordered, with a hard `take` cap. Use this 80% of
  * the time. `select` keeps the payload small and makes the contract explicit.
  */
-export async function listWidgetsSimple(tenantId: string) {
+export async function listWidgetsSimple(orgId: string) {
   return db.widget.findMany({
-    where: { tenantId },
+    where: { orgId },
     select: {
       id: true,
       name: true,
@@ -32,12 +32,12 @@ export async function listWidgetsSimple(tenantId: string) {
  * goes through the shared utility — never roll your own skip/take.
  */
 export async function listWidgetsFiltered(
-  tenantId: string,
+  orgId: string,
   filters: { status?: string; ownerId?: string; search?: string },
   pagination: PaginationParams,
 ) {
   const where = {
-    tenantId,                          // never optional
+    orgId,                          // never optional
     ...(filters.status && { status: filters.status }),
     ...(filters.ownerId && { ownerId: filters.ownerId }),
     ...(filters.search && {
@@ -68,9 +68,9 @@ export async function listWidgetsFiltered(
  * Need "5 comments, 2 attachments" without loading them all? Use _count.
  * This adds zero relation rows to the payload — just a number per relation.
  */
-export async function listWidgetsWithCounts(tenantId: string) {
+export async function listWidgetsWithCounts(orgId: string) {
   return db.widget.findMany({
-    where: { tenantId },
+    where: { orgId },
     select: {
       id: true,
       name: true,
@@ -86,9 +86,9 @@ export async function listWidgetsWithCounts(tenantId: string) {
  * Fetch a row + its parent in one round-trip via select-on-relation. Cheaper
  * than fetching them separately.
  */
-export async function listWidgetsWithOwner(tenantId: string) {
+export async function listWidgetsWithOwner(orgId: string) {
   return db.widget.findMany({
-    where: { tenantId },
+    where: { orgId },
     select: {
       id: true,
       name: true,
@@ -109,12 +109,12 @@ export async function listWidgetsWithOwner(tenantId: string) {
 /* ─── Anti-patterns — these get rejected ────────────────────────────────────
  *
  * ❌ findMany without `take`:
- *      db.widget.findMany({ where: { tenantId } })
+ *      db.widget.findMany({ where: { orgId } })
  *      // Could return millions of rows, blow memory.
  *
- * ❌ findMany without `tenantId` filter:
+ * ❌ findMany without `orgId` filter:
  *      db.widget.findMany({ where: { status: "active" } })
- *      // Cross-tenant data leak. Critical security bug.
+ *      // Cross-org data leak. Critical security bug.
  *
  * ❌ `include` instead of `select` on lists:
  *      db.widget.findMany({ include: { owner: true, comments: true } })
@@ -125,7 +125,7 @@ export async function listWidgetsWithOwner(tenantId: string) {
  *      // SQL injection. Use Prisma's parameterized methods or $queryRaw with `Prisma.sql`.
  *
  * ❌ N+1 query inside .map:
- *      const widgets = await db.widget.findMany({ where: { tenantId } });
+ *      const widgets = await db.widget.findMany({ where: { orgId } });
  *      const enriched = await Promise.all(widgets.map(w => db.user.findUnique({ where: { id: w.ownerId } })));
  *      // Use `select: { owner: { select: ... } }` instead — one round trip.
  */

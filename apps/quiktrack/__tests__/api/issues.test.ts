@@ -76,6 +76,28 @@ describe("GET /api/issues", () => {
     expect(args?.where?.type).toEqual({ not: "EPIC" });
   });
 
+  // Regression: a specific `type` filter must WIN over `excludeType` (the backlog
+  // sends both). Previously the two `type` keys were spread separately and the
+  // excludeType clause clobbered the type filter, so picking "Bug" returned every
+  // non-epic/non-subtask type.
+  it("type filter wins over excludeType when both are present", async () => {
+    setSession({ id: USER, orgId: TENANT, role: "member" });
+    mockDb.qtProject.findFirst.mockResolvedValue({ id: PROJECT } as never);
+    mockDb.qtProjectMember.findFirst.mockResolvedValue({ id: "m" } as never);
+    mockDb.orgMember.findFirst.mockResolvedValue({ role: "member" } as never);
+    mockDb.qtIssue.findMany.mockResolvedValue([] as never);
+    mockDb.qtIssue.count.mockResolvedValue(0 as never);
+
+    const res = await GET(
+      listReq(`projectId=${PROJECT}&type=BUG&excludeType=EPIC,SUBTASK`),
+      ROUTE_CTX,
+    );
+    expect(res.status).toBe(200);
+
+    const args = mockDb.qtIssue.findMany.mock.calls[0]?.[0];
+    expect(args?.where?.type).toBe("BUG");
+  });
+
   it("filters by parentId for subtask listings", async () => {
     setSession({ id: USER, orgId: TENANT, role: "member" });
     mockDb.qtProject.findFirst.mockResolvedValue({ id: PROJECT } as never);

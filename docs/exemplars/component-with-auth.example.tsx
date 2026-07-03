@@ -12,22 +12,24 @@
  * SERVER COMPONENT — apps/<your-app>/app/(dashboard)/widgets/page.tsx
  * ========================================================================= */
 
-import { getServerSession } from "next-auth/next";
+import { getServerSession } from "next-auth";
 import { redirect } from "next/navigation";
 import { db } from "@/lib/db";
+import { authOptions } from "@/lib/auth";
 import { Card, EmptyState, AddButton } from "@quikit/ui";
 import { WidgetList } from "@/components/widget-list";
 
 export default async function WidgetsPage() {
   // Middleware already guarantees auth — but always re-check on the server when
-  // making security-relevant decisions (defence in depth).
-  const session = await getServerSession();
-  if (!session?.user?.tenantId) redirect("/login");
+  // making security-relevant decisions (defence in depth). Pass authOptions so
+  // getServerSession returns the augmented session (orgId, membershipRole, …).
+  const session = await getServerSession(authOptions);
+  if (!session?.user?.orgId) redirect("/login");
 
   // Initial server-side fetch. The list keeps re-fetching client-side via
   // React Query when the user paginates / filters, so this is the SSR seed.
   const initialWidgets = await db.widget.findMany({
-    where: { tenantId: session.user.tenantId },
+    where: { orgId: session.user.orgId },
     select: { id: true, name: true, status: true, createdAt: true },
     orderBy: { createdAt: "desc" },
     take: 25,
@@ -150,7 +152,7 @@ function TableSkeletonRows() {
  *  4. Domain status colors are HARDCODED semantic (gray/blue/green) — not
  *     themeable. Lock per app convention.
  *  5. Themeable elements (`AddButton`, action buttons) use `accent-*` classes
- *     inside @quikit/ui — automatic theming per tenant.
+ *     inside @quikit/ui — automatic theming per org.
  *  6. Empty state uses `<EmptyState />` from @quikit/ui — never plain text.
  *  7. Loading state uses `<Skeleton />` — never "Loading...".
  *  8. Error path returns text but you'd use a real <Toast /> in production.

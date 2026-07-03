@@ -5,7 +5,7 @@ Vitest for unit/component/API tests. Playwright for end-to-end. Coverage ratchet
 ## When tests are required
 
 - **Every bug fix** ships with a regression test that fails before the fix and passes after. No exceptions.
-- **Every new API route** has at minimum: 401 for unauthenticated, tenant-isolation rejection, happy path.
+- **Every new API route** has at minimum: 401 for unauthenticated, org-isolation rejection (cross-org request rejected), happy path.
 - **Every new shared utility** under `lib/utils/` reaches ≥ 90% line coverage in its own test file.
 - **Every new permission helper** has admin/team-head/self/other matrix coverage.
 
@@ -61,32 +61,32 @@ describe("GET /api/widgets", () => {
     expect(res.status).toBe(401);
   });
 
-  it("returns only the caller's tenant widgets", async () => {
-    setSession({ user: { id: "u1", tenantId: "t1" } });
+  it("returns only the caller's org widgets", async () => {
+    setSession({ user: { id: "u1", orgId: "o1" } });
     mockDb.widget.findMany.mockResolvedValue([
-      { id: "w1", name: "A", tenantId: "t1" },
+      { id: "w1", name: "A", orgId: "o1" },
     ]);
     const res = await GET();
     const json = await res.json();
     expect(json.success).toBe(true);
     expect(mockDb.widget.findMany).toHaveBeenCalledWith(
-      expect.objectContaining({ where: { tenantId: "t1" } }),
+      expect.objectContaining({ where: { orgId: "o1" } }),
     );
   });
 
-  it("rejects cross-tenant access (uses tenantId from session)", async () => {
-    setSession({ user: { id: "u1", tenantId: "t1" } });
+  it("rejects cross-org access (uses orgId from session)", async () => {
+    setSession({ user: { id: "u1", orgId: "o1" } });
     await GET();
     const call = mockDb.widget.findMany.mock.calls[0][0];
-    expect(call.where.tenantId).toBe("t1");
+    expect(call.where.orgId).toBe("o1");
     // Verifies that even if a hypothetical query parameter is present,
-    // the tenantId from the session always takes precedence.
+    // the orgId from the session always takes precedence.
   });
 });
 
 describe("POST /api/widgets", () => {
   it("validates input with Zod", async () => {
-    setSession({ user: { id: "u1", tenantId: "t1" } });
+    setSession({ user: { id: "u1", orgId: "o1" } });
     const req = new Request("http://x", {
       method: "POST",
       body: JSON.stringify({ name: "" }),  // invalid
@@ -95,8 +95,8 @@ describe("POST /api/widgets", () => {
     expect(res.status).toBe(400);
   });
 
-  it("creates with tenantId + createdBy from session", async () => {
-    setSession({ user: { id: "u1", tenantId: "t1" } });
+  it("creates with orgId + createdBy from session", async () => {
+    setSession({ user: { id: "u1", orgId: "o1" } });
     mockDb.widget.create.mockResolvedValue({ id: "w1", name: "test" });
     const req = new Request("http://x", {
       method: "POST",
@@ -105,7 +105,7 @@ describe("POST /api/widgets", () => {
     await POST(req);
     expect(mockDb.widget.create).toHaveBeenCalledWith(
       expect.objectContaining({
-        data: expect.objectContaining({ tenantId: "t1", createdBy: "u1" }),
+        data: expect.objectContaining({ orgId: "o1", createdBy: "u1" }),
       }),
     );
   });
@@ -142,7 +142,7 @@ The `// @vitest-environment jsdom` directive at the top is **required** for comp
 
 - **Prisma**: mock via `__tests__/helpers/mockDb.ts` which `vi.mock`'s both `@quikit/database` and `@/lib/db`. Preserve `@prisma/client` enum re-exports via `vi.importActual`.
 - **Sessions**: use `setSession(user)` from `__tests__/helpers/session.ts` — it stubs `getServerSession` from both `next-auth` and `next-auth/next`.
-- **Factory auth helpers** (`createGetTenantId`, `createRequireAdmin`): instantiate the factory in your test with a stub `authOptions`; the mocked `getServerSession` does the rest.
+- **Factory auth helpers** (`createGetOrgId`, `createRequireAdmin`): instantiate the factory in your test with a stub `authOptions`; the mocked `getServerSession` does the rest.
 - **Never** mock the module under test. Never mock individual route handlers — import them and call directly with a constructed `NextRequest`.
 
 ## Helpers you can use
@@ -217,7 +217,7 @@ E2E coverage is light — focus on the 1–2 highest-value flows in your app (si
 ## Common test rejections
 
 - ❌ New API route without a 401 unauthenticated test.
-- ❌ New API route without a tenant-isolation test.
+- ❌ New API route without an org-isolation (cross-org rejection) test.
 - ❌ Component test missing `// @vitest-environment jsdom` directive.
 - ❌ Re-implemented `setSession` / `mockDb` instead of using the helpers.
 - ❌ Test that asserts on rendered text from a sandboxed iframe (not testable; the dom-test should test the wrapper, not the iframe content).

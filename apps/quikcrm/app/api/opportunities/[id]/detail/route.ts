@@ -31,7 +31,7 @@ export async function GET(
       },
     });
     if (!opp) return err("Not found", 404);
-    await assertAccountAccess(user, opp.accountId);
+    await assertAccountAccess(user, opp.accountId, { recordOwnerId: opp.ownerId });
 
     const data = {
       ...opp,

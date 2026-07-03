@@ -15,12 +15,24 @@ Reference + onboarding for the QuikIT monorepo. Read in the order below if you'r
 6. [05-frontend-patterns.md](./05-frontend-patterns.md) — `@quikit/ui`, accent theming, server vs client, forms
 
 ### Reference (load when needed)
-7. [06-shared-packages.md](./06-shared-packages.md) — `@quikit/auth`/`/database`/`/ui`/`/shared` import map
+7. [06-shared-packages.md](./06-shared-packages.md) — `@quikit/auth`/`/database`/`/redis`/`/ui`/`/shared` import map
 8. [07-testing.md](./07-testing.md) — Vitest + Playwright + coverage ratchet
 9. [08-claude-code-setup.md](./08-claude-code-setup.md) — using Claude Code on this codebase
 10. [09-troubleshooting.md](./09-troubleshooting.md) — symptom → cause → fix decision tree
 11. [10-glossary.md](./10-glossary.md) — domain language (OPSP, KPI, Rocks, etc.)
-12. [14-roles-and-permissions.md](./14-roles-and-permissions.md) — auth → org → in-app RBAC: the full role & permission flow (plain-English + code)
+
+### Integration & operations reference
+- [11-app-developer-integration-handbook.md](./11-app-developer-integration-handbook.md) — end-to-end handbook for building & integrating a new app
+- [12-auth-service-integration-response.md](./12-auth-service-integration-response.md) — `/api/verify-token` contract + agent-JWT issuance spec
+- [13-app-ports-and-env.md](./13-app-ports-and-env.md) — definitive per-app port table + every env var
+- [login-roles-architecture-and-flow.md](./login-roles-architecture-and-flow.md) — auth → org → in-app RBAC: the full role & permission flow (plain-English + code)
+- [registration-otp-flow.md](./registration-otp-flow.md) — self-serve sign-up + OTP verification flow
+- [cache-management.md](./cache-management.md) — the 4-layer cache model (React.cache → LRU → Redis → DB) + session store
+- [landing-page-architecture.md](./landing-page-architecture.md) — marketing / landing page architecture
+- [email-templates-by-app.md](./email-templates-by-app.md) — every transactional email template, per app
+- [INFRA_login_redirect_and_cookie_fix.md](./INFRA_login_redirect_and_cookie_fix.md) — runtime `NEXTAUTH_URL` / cookie infra notes
+- [MOBILE_FLUTTER_COOKIE_AUTH.md](./MOBILE_FLUTTER_COOKIE_AUTH.md) — Flutter cookie-based auth integration
+- [PRODUCTION_ENV_VARS.md](./PRODUCTION_ENV_VARS.md) — production env var checklist
 
 ### Annotated reference code
 - [exemplars/api-route.example.ts](./exemplars/api-route.example.ts) — full GET/POST + audit + transaction

@@ -88,14 +88,14 @@ Claude is good at this codebase **if** you give it the right anchors. Bad prompt
 
 > Add an API route for creating a campaign.
 
-What Claude might produce: a route with no auth wrapper, no Zod, no tenantId filter, raw `req.body` parse, no audit log. Rejected at PR.
+What Claude might produce: a route with no auth wrapper, no Zod, no `orgId` filter, raw `req.body` parse, no audit log. Rejected at PR.
 
 ### Good prompt (cites the rules)
 
 > Add a POST /api/campaigns route in apps/quiksocial that creates a Campaign.
 >
 > Follow the canonical pattern from docs/exemplars/api-route.example.ts:
-> - Wrap with withTenantAuth
+> - Wrap with withOrgAuth (the app's lib/api wrapper) and scope every query by orgId
 > - Validate body with Zod (fields: name string min 1 max 200, scheduledFor optional ISO date, channels array of "twitter" | "linkedin" | "facebook")
 > - Use a transaction for create + auditLog write
 > - Return 201 on success
@@ -117,7 +117,7 @@ If Claude is making the same mistake repeatedly, paste the relevant rule directl
 ## What Claude is good at on this repo
 
 - Adding new API routes following the exemplar.
-- Writing Prisma queries with the right tenantId filter.
+- Writing Prisma queries with the right `orgId` filter.
 - Building React components from `@quikit/ui` primitives.
 - Writing Vitest tests following the existing pattern.
 - Refactoring existing files when given clear constraints.
@@ -127,7 +127,7 @@ If Claude is making the same mistake repeatedly, paste the relevant rule directl
 
 - **Schema changes**: don't let Claude edit `packages/database/prisma/schema.prisma`. Always file a request via PR description and wait for the integration owner.
 - **Cross-app patterns**: Claude can't see other apps from your per-dev repo. If you ask "how does quikscale handle this?", it doesn't know. Use docs/exemplars/.
-- **Tenant isolation reasoning**: Claude follows the pattern when shown but doesn't always derive the rule from first principles. **Always review queries for tenantId yourself.**
+- **Org isolation reasoning**: Claude follows the pattern when shown but doesn't always derive the rule from first principles. **Always review queries for the `orgId` filter yourself.**
 - **Branch protection**: Claude will try to push to main if you ask it to. Branch protection blocks it; the blocked-tools list in `settings.json` blocks it earlier. Belt + braces.
 
 ## Useful prompts to keep around
@@ -173,7 +173,7 @@ The repo doesn't ship custom skills (yet). If you build helpful workflows for yo
 
 | Pattern Claude defaults to | What you should say |
 |---|---|
-| `db.widget.findMany({ where: { id } })` | "Add tenantId to every where clause." |
+| `db.widget.findMany({ where: { id } })` | "Add orgId to every where clause." |
 | `try { ... } catch (e: any)` | "Use `catch (error: unknown)` per CLAUDE.md." |
 | `// @ts-ignore` to silence errors | "Don't suppress errors. Fix the underlying type." |
 | Hand-rolled `<Modal>` instead of @quikit/ui | "Use Modal from @quikit/ui." |

@@ -50,14 +50,16 @@ Recommended:
 ```
 QuikIT/
 ├── apps/                          # one Next.js app per business product
-│   ├── auth/                      # :3000 — central credentials login service
-│   ├── quikit/                    # :3001 — launcher + OAuth IdP
-│   ├── admin/                     # :3002 — admin portal
-│   ├── quikscale/                 # :3003 — OKR / KPI tool
-│   ├── quiktrack/                 # :3004 — task / project tracker
-│   ├── quikinfra/          # :3005 — construction ERP
-│   ├── quiksocial/                # :3006 — AI social media
-│   ├── quikvc/                    # :3007 — QuikVC
+│   ├── quikit/                    # :3000 — launcher + OAuth/OIDC IdP + super-admin
+│   ├── auth/                      # :3001 — central credentials login service
+│   ├── admin/                     # :3002 — org admin portal
+│   ├── quikscale/                 # :3003 — OKR / KPI / OPSP / Priority / WWW
+│   ├── quiktrack/                 # :3004 — project / task / docs tracker
+│   ├── quikvc/                    # :3005 — venture capital
+│   ├── quikinfra/                 # :3006 — construction ERP
+│   ├── quiksocial/                # :3007 — AI social media
+│   ├── quikcrm/                   # :3008 — CRM / sales
+│   ├── quikhrms/                  # :3009 — HRMS (package name quikit-hrms)
 │   └── _template/                 # :3010 — scaffold (NOT a workspace; excluded)
 ├── packages/                      # shared workspace packages — DO NOT modify
 │   ├── auth/                      # @quikit/auth
@@ -82,14 +84,16 @@ QuikIT/
 
 | Port | App | Role |
 |---|---|---|
-| **3000** | [apps/auth](apps/auth/) | Central credentials login (NextAuth + Google/Microsoft SSO). Other apps redirect unauthenticated users here. |
-| **3001** | [apps/quikit](apps/quikit/) | Launcher + OAuth IdP. Hosts `/api/oauth/*` and the `/apps` launcher. Super-admin pages live here. |
-| **3002** | [apps/admin](apps/admin/) | Admin portal (tenant / org / user / app management). |
-| **3003** | [apps/quikscale](apps/quikscale/) | OKR / KPI / Priority / WWW tooling. |
-| **3004** | [apps/quiktrack](apps/quiktrack/) | Task / project tracker. |
-| **3005** | [apps/quikinfra](apps/quikinfra/) | Construction ERP (BOQ, DPR/RAB, stock, procurement). |
-| **3006** | [apps/quiksocial](apps/quiksocial/) | AI social media management. |
-| **3007** | [apps/quikvc](apps/quikvc/) | QuikVC. |
+| **3000** | [apps/quikit](apps/quikit/) | Launcher + OAuth/OIDC IdP + super-admin. Hosts `/api/oauth/*` and the `/apps` launcher. Super-admin pages live here. Other apps redirect here for SSO. |
+| **3001** | [apps/auth](apps/auth/) | Central credentials login (NextAuth + Google/Microsoft SSO). Unauthenticated users land here to enter credentials. |
+| **3002** | [apps/admin](apps/admin/) | Org admin portal (tenant / org / user / app management). |
+| **3003** | [apps/quikscale](apps/quikscale/) | OKR / KPI / OPSP / Priority / WWW tooling. |
+| **3004** | [apps/quiktrack](apps/quiktrack/) | Project / task / docs tracker. |
+| **3005** | [apps/quikvc](apps/quikvc/) | Venture capital. |
+| **3006** | [apps/quikinfra](apps/quikinfra/) | Construction ERP (BOQ, DPR/RAB, stock, procurement). |
+| **3007** | [apps/quiksocial](apps/quiksocial/) | AI social media management. |
+| **3008** | [apps/quikcrm](apps/quikcrm/) | CRM / sales. |
+| **3009** | [apps/quikhrms](apps/quikhrms/) | HRMS (package name `quikit-hrms`). |
 | **3010** | [apps/_template](apps/_template/) | Reference scaffold for new apps. Not in workspaces. |
 
 > The `dev` port for each app is hard-coded in its `package.json` `dev` script (e.g. `next dev -p 3003`). Do NOT change it — `NEXTAUTH_URL` and OAuth callback URLs depend on these exact values.
@@ -99,9 +103,9 @@ QuikIT/
 If you want SSO to work end-to-end:
 
 1. Start Postgres (`5432`) and Redis (`6379`).
-2. Start [apps/auth](apps/auth/) on `:3000`.
-3. Start [apps/quikit](apps/quikit/) on `:3001`.
-4. Start any sub-app (`3002`–`3007`).
+2. Start [apps/quikit](apps/quikit/) on `:3000`.
+3. Start [apps/auth](apps/auth/) on `:3001`.
+4. Start any sub-app (`3002`–`3009`).
 
 Apps can run standalone for pure local development, but cross-app sign-in only works when 3000 + 3001 are also up.
 
@@ -223,10 +227,10 @@ NEXTAUTH_URL="http://localhost:<this-app's-port>"
 ### 7.3 Cross-app SSO URLs
 
 ```bash
-NEXT_PUBLIC_AUTH_URL="http://localhost:3000"
-QUIKIT_URL="http://localhost:3001"
-NEXT_PUBLIC_QUIKIT_URL="http://localhost:3001"
-NEXT_PUBLIC_SUPER_ADMIN_URL="http://localhost:3001"
+NEXT_PUBLIC_AUTH_URL="http://localhost:3001"
+QUIKIT_URL="http://localhost:3000"
+NEXT_PUBLIC_QUIKIT_URL="http://localhost:3000"
+NEXT_PUBLIC_SUPER_ADMIN_URL="http://localhost:3000"
 ```
 
 ### 7.4 OAuth client (every sub-app — NOT auth/quikit)
@@ -273,7 +277,7 @@ Each app needs its OWN `.env.local` file. The recipe below is "create the file, 
 
 > Tip: every app already ships an `.env.example` (or `.env.local.example`). The fastest path is `cp apps/<app>/.env.example apps/<app>/.env.local` and then edit. The exact filename varies — see the **Source** column.
 
-### 8.1 [apps/auth](apps/auth/) (port 3000)
+### 8.1 [apps/auth](apps/auth/) (port 3001)
 
 **Source:** [apps/auth/.env.local.example](apps/auth/.env.local.example)
 
@@ -282,10 +286,10 @@ Each app needs its OWN `.env.local` file. The recipe below is "create the file, 
 DATABASE_URL="postgresql://postgres:sa%40123@localhost:5432/quikit_dev"
 DATABASE_URL_DIRECT="postgresql://postgres:sa%40123@localhost:5432/quikit_dev"
 NEXTAUTH_SECRET="7ynQaE7hcVrogq9q7OdIQTnCaeg+uPLeqXELLAWQ7LE="
-NEXTAUTH_URL="http://localhost:3000"
-QUIKIT_URL="http://localhost:3001"
-NEXT_PUBLIC_AUTH_URL="http://localhost:3000"
-NEXT_PUBLIC_LAUNCHER_URL="http://localhost:3001/apps"
+NEXTAUTH_URL="http://localhost:3001"
+QUIKIT_URL="http://localhost:3000"
+NEXT_PUBLIC_AUTH_URL="http://localhost:3001"
+NEXT_PUBLIC_LAUNCHER_URL="http://localhost:3000/apps"
 NEXT_PUBLIC_ADMIN_URL="http://localhost:3002"
 REDIS_URL="redis://localhost:6379"
 INTERNAL_SECRET="shared-secret-for-internal-calls"
@@ -309,7 +313,7 @@ MICROSOFT_TENANT_ID="common"
 
 If your team has real Google/Microsoft OAuth credentials, ask the integration owner — they're rotated separately from this guide.
 
-### 8.2 [apps/quikit](apps/quikit/) (port 3001)
+### 8.2 [apps/quikit](apps/quikit/) (port 3000)
 
 **Source:** [apps/quikit/.env.local.example](apps/quikit/.env.local.example)
 
@@ -317,9 +321,9 @@ If your team has real Google/Microsoft OAuth credentials, ask the integration ow
 DATABASE_URL="postgresql://postgres:sa%40123@localhost:5432/quikit_dev"
 DATABASE_URL_DIRECT="postgresql://postgres:sa%40123@localhost:5432/quikit_dev"
 NEXTAUTH_SECRET="7ynQaE7hcVrogq9q7OdIQTnCaeg+uPLeqXELLAWQ7LE="
-NEXTAUTH_URL="http://localhost:3001"
-NEXT_PUBLIC_AUTH_URL="http://localhost:3000"
-QUIKIT_URL="http://localhost:3001"
+NEXTAUTH_URL="http://localhost:3000"
+NEXT_PUBLIC_AUTH_URL="http://localhost:3001"
+QUIKIT_URL="http://localhost:3000"
 ADMIN_URL="http://localhost:3002"
 QUIKSCALE_URL="http://localhost:3003"
 REDIS_URL="redis://localhost:6379"
@@ -355,12 +359,12 @@ QUIKSCALE_URL="http://localhost:3003"
 NEXT_PUBLIC_QUIKSCALE_URL="http://localhost:3003"
 
 # QuikIT SSO
-QUIKIT_URL="http://localhost:3001"
-NEXT_PUBLIC_QUIKIT_URL="http://localhost:3001"
+QUIKIT_URL="http://localhost:3000"
+NEXT_PUBLIC_QUIKIT_URL="http://localhost:3000"
 QUIKIT_CLIENT_ID="admin"
 QUIKIT_CLIENT_SECRET="admin-dev-secret-change-in-prod"
 
-NEXT_PUBLIC_AUTH_URL="http://localhost:3000"
+NEXT_PUBLIC_AUTH_URL="http://localhost:3001"
 REDIS_URL="redis://localhost:6379"
 INTERNAL_SECRET="shared-secret-for-internal-calls"
 ```
@@ -375,14 +379,14 @@ DATABASE_URL_DIRECT="postgresql://postgres:sa%40123@localhost:5432/quikit_dev"
 NEXTAUTH_SECRET="7ynQaE7hcVrogq9q7OdIQTnCaeg+uPLeqXELLAWQ7LE="
 NEXTAUTH_URL="http://localhost:3003"
 
-NEXT_PUBLIC_SUPER_ADMIN_URL="http://localhost:3001"
+NEXT_PUBLIC_SUPER_ADMIN_URL="http://localhost:3000"
 
-QUIKIT_URL="http://localhost:3001"
-NEXT_PUBLIC_QUIKIT_URL="http://localhost:3001"
+QUIKIT_URL="http://localhost:3000"
+NEXT_PUBLIC_QUIKIT_URL="http://localhost:3000"
 QUIKIT_CLIENT_ID="quikscale"
 QUIKIT_CLIENT_SECRET="quikscale-dev-secret-change-in-prod"
 
-NEXT_PUBLIC_AUTH_URL="http://localhost:3000"
+NEXT_PUBLIC_AUTH_URL="http://localhost:3001"
 INTERNAL_SECRET="shared-secret-for-internal-calls"
 REDIS_URL="redis://localhost:6379"
 
@@ -407,14 +411,14 @@ DATABASE_URL_DIRECT="postgresql://postgres:sa%40123@localhost:5432/quikit_dev"
 NEXTAUTH_SECRET="7ynQaE7hcVrogq9q7OdIQTnCaeg+uPLeqXELLAWQ7LE="
 NEXTAUTH_URL="http://localhost:3004"
 
-NEXT_PUBLIC_SUPER_ADMIN_URL="http://localhost:3001"
-NEXT_PUBLIC_QUIKIT_URL="http://localhost:3001"
+NEXT_PUBLIC_SUPER_ADMIN_URL="http://localhost:3000"
+NEXT_PUBLIC_QUIKIT_URL="http://localhost:3000"
 
-QUIKIT_URL="http://localhost:3001"
+QUIKIT_URL="http://localhost:3000"
 QUIKIT_CLIENT_ID="quiktrack"
 QUIKIT_CLIENT_SECRET="quiktrack-dev-secret-change-in-prod"
 
-NEXT_PUBLIC_AUTH_URL="http://localhost:3000"
+NEXT_PUBLIC_AUTH_URL="http://localhost:3001"
 INTERNAL_SECRET="shared-secret-for-internal-calls"
 REDIS_URL="redis://localhost:6379"
 LOG_LEVEL="info"
@@ -433,7 +437,7 @@ SMTP_PASS="Q!kS#uPp0rt\$24%G4"
 SMTP_FROM="support@quikit.ai"
 ```
 
-### 8.6 [apps/quikinfra](apps/quikinfra/) (port 3005)
+### 8.6 [apps/quikinfra](apps/quikinfra/) (port 3006)
 
 Use the same shape as the other sub-apps. No `.env.example` is committed; build `apps/quikinfra/.env.local` like this:
 
@@ -441,16 +445,16 @@ Use the same shape as the other sub-apps. No `.env.example` is committed; build 
 DATABASE_URL="postgresql://postgres:sa%40123@localhost:5432/quikit_dev"
 DATABASE_URL_DIRECT="postgresql://postgres:sa%40123@localhost:5432/quikit_dev"
 NEXTAUTH_SECRET="7ynQaE7hcVrogq9q7OdIQTnCaeg+uPLeqXELLAWQ7LE="
-NEXTAUTH_URL="http://localhost:3005"
+NEXTAUTH_URL="http://localhost:3006"
 
-NEXT_PUBLIC_SUPER_ADMIN_URL="http://localhost:3001"
-NEXT_PUBLIC_QUIKIT_URL="http://localhost:3001"
+NEXT_PUBLIC_SUPER_ADMIN_URL="http://localhost:3000"
+NEXT_PUBLIC_QUIKIT_URL="http://localhost:3000"
 
-QUIKIT_URL="http://localhost:3001"
+QUIKIT_URL="http://localhost:3000"
 QUIKIT_CLIENT_ID="quikinfra"
 QUIKIT_CLIENT_SECRET="quikinfra-dev-secret-change-in-prod"
 
-NEXT_PUBLIC_AUTH_URL="http://localhost:3000"
+NEXT_PUBLIC_AUTH_URL="http://localhost:3001"
 INTERNAL_SECRET="shared-secret-for-internal-calls"
 REDIS_URL="redis://localhost:6379"
 
@@ -469,7 +473,7 @@ FEATURE_POWER_OF_ONE="true"
 FEATURE_SLACK_INTEGRATION="false"
 ```
 
-### 8.7 [apps/quiksocial](apps/quiksocial/) (port 3006)
+### 8.7 [apps/quiksocial](apps/quiksocial/) (port 3007)
 
 **Source:** [apps/quiksocial/.env.example](apps/quiksocial/.env.example)
 
@@ -477,11 +481,11 @@ FEATURE_SLACK_INTEGRATION="false"
 DATABASE_URL="postgresql://postgres:sa%40123@localhost:5432/quikit_dev"
 DATABASE_URL_DIRECT="postgresql://postgres:sa%40123@localhost:5432/quikit_dev"
 NEXTAUTH_SECRET="7ynQaE7hcVrogq9q7OdIQTnCaeg+uPLeqXELLAWQ7LE="
-NEXTAUTH_URL="http://localhost:3006"
+NEXTAUTH_URL="http://localhost:3007"
 
-NEXT_PUBLIC_AUTH_URL="http://localhost:3000"
-QUIKIT_URL="http://localhost:3001"
-NEXT_PUBLIC_QUIKIT_URL="http://localhost:3001"
+NEXT_PUBLIC_AUTH_URL="http://localhost:3001"
+QUIKIT_URL="http://localhost:3000"
+NEXT_PUBLIC_QUIKIT_URL="http://localhost:3000"
 QUIKIT_CLIENT_ID="quiksocial"
 QUIKIT_CLIENT_SECRET="quiksocial-dev-secret-change-in-prod"
 INTERNAL_SECRET="shared-secret-for-internal-calls"
@@ -517,7 +521,7 @@ CLOUDINARY_API_SECRET=""
 LOG_LEVEL="info"
 ```
 
-### 8.8 [apps/quikvc](apps/quikvc/) (port 3007)
+### 8.8 [apps/quikvc](apps/quikvc/) (port 3005)
 
 **Source:** [apps/quikvc/.env.example](apps/quikvc/.env.example)
 
@@ -528,20 +532,66 @@ DATABASE_URL_DIRECT="postgresql://postgres:sa%40123@localhost:5432/quikit_dev"
 MIGRATION_DATABASE_URL="postgresql://postgres:sa%40123@localhost:5432/quikit_dev"
 
 NEXTAUTH_SECRET="7ynQaE7hcVrogq9q7OdIQTnCaeg+uPLeqXELLAWQ7LE="
-NEXTAUTH_URL="http://localhost:3007"
+NEXTAUTH_URL="http://localhost:3005"
 
 QUIKIT_CLIENT_ID="quikvc"
 QUIKIT_CLIENT_SECRET="quikvc-dev-secret-change-in-prod"
-QUIKIT_ISSUER_URL="http://localhost:3001"
-QUIKIT_URL="http://localhost:3001"
-NEXT_PUBLIC_QUIKIT_URL="http://localhost:3001"
-NEXT_PUBLIC_AUTH_URL="http://localhost:3000"
+QUIKIT_ISSUER_URL="http://localhost:3000"
+QUIKIT_URL="http://localhost:3000"
+NEXT_PUBLIC_QUIKIT_URL="http://localhost:3000"
+NEXT_PUBLIC_AUTH_URL="http://localhost:3001"
 
 INTERNAL_SECRET="shared-secret-for-internal-calls"
 REDIS_URL="redis://localhost:6379"
 ```
 
-### 8.9 [apps/_template](apps/_template/) (port 3010, optional)
+### 8.9 [apps/quikcrm](apps/quikcrm/) (port 3008)
+
+CRM / sales app. Same shape as the other sub-apps; build `apps/quikcrm/.env.local` like this:
+
+```bash
+DATABASE_URL="postgresql://postgres:sa%40123@localhost:5432/quikit_dev"
+DATABASE_URL_DIRECT="postgresql://postgres:sa%40123@localhost:5432/quikit_dev"
+NEXTAUTH_SECRET="7ynQaE7hcVrogq9q7OdIQTnCaeg+uPLeqXELLAWQ7LE="
+NEXTAUTH_URL="http://localhost:3008"
+
+NEXT_PUBLIC_SUPER_ADMIN_URL="http://localhost:3000"
+NEXT_PUBLIC_QUIKIT_URL="http://localhost:3000"
+
+QUIKIT_URL="http://localhost:3000"
+QUIKIT_CLIENT_ID="quikcrm"
+QUIKIT_CLIENT_SECRET="quikcrm-dev-secret-change-in-prod"
+
+NEXT_PUBLIC_AUTH_URL="http://localhost:3001"
+INTERNAL_SECRET="shared-secret-for-internal-calls"
+REDIS_URL="redis://localhost:6379"
+LOG_LEVEL="info"
+```
+
+### 8.10 [apps/quikhrms](apps/quikhrms/) (port 3009)
+
+HRMS app (workspace/package name `quikit-hrms`). Same shape as the other sub-apps; build `apps/quikhrms/.env.local` like this:
+
+```bash
+DATABASE_URL="postgresql://postgres:sa%40123@localhost:5432/quikit_dev"
+DATABASE_URL_DIRECT="postgresql://postgres:sa%40123@localhost:5432/quikit_dev"
+NEXTAUTH_SECRET="7ynQaE7hcVrogq9q7OdIQTnCaeg+uPLeqXELLAWQ7LE="
+NEXTAUTH_URL="http://localhost:3009"
+
+NEXT_PUBLIC_SUPER_ADMIN_URL="http://localhost:3000"
+NEXT_PUBLIC_QUIKIT_URL="http://localhost:3000"
+
+QUIKIT_URL="http://localhost:3000"
+QUIKIT_CLIENT_ID="quikhrms"
+QUIKIT_CLIENT_SECRET="quikhrms-dev-secret-change-in-prod"
+
+NEXT_PUBLIC_AUTH_URL="http://localhost:3001"
+INTERNAL_SECRET="shared-secret-for-internal-calls"
+REDIS_URL="redis://localhost:6379"
+LOG_LEVEL="info"
+```
+
+### 8.11 [apps/_template](apps/_template/) (port 3010, optional)
 
 Only needed if you're scaffolding a new app. Same shape as quikvc with `quikvc` → your `<app-name>`.
 
@@ -652,8 +702,8 @@ cd apps/quikinfra && npm run db:seed:dummy
 
 ```bash
 # Filtered (recommended — starts only that app + its workspace deps)
-npm run dev:auth          # apps/auth on :3000
-npm run dev:quikit        # apps/quikit on :3001
+npm run dev:auth          # apps/auth on :3001
+npm run dev:quikit        # apps/quikit on :3000
 npm run dev:admin         # apps/admin on :3002
 npm run dev:quikscale     # apps/quikscale on :3003
 
@@ -708,7 +758,7 @@ The `start` script for each app is in its `package.json`. Run after a successful
 cd apps/quikscale && npm run start
 ```
 
-Note: a few apps' `start` script intentionally listens on a different port than `dev` (e.g. quikit `dev=3001` vs `start=3000`, admin `dev=3002` vs `start=3005`, quikscale `dev=3003` vs `start=3002`). For local prod parity testing, override with `next start -p <dev-port>`.
+Note: a few apps' `start` script intentionally listens on a different port than `dev` (e.g. quikit `dev=3000` vs `start=3001`, admin `dev=3002` vs `start=3005`, quikscale `dev=3003` vs `start=3002`). For local prod parity testing, override with `next start -p <dev-port>`.
 
 ### 11.4 Vercel deploy
 
@@ -908,8 +958,8 @@ npx tsx prisma/seed-oauth.ts
 cd ../..
 
 # 7. Run the apps (separate terminals)
-npm run dev:auth        # :3000
-npm run dev:quikit      # :3001
+npm run dev:quikit      # :3000
+npm run dev:auth        # :3001
 npm run dev:admin       # :3002
 npm run dev:quikscale   # :3003
 # ...and any other app you need
@@ -920,8 +970,8 @@ npm run dev:quikscale   # :3003
 | Command | What it does |
 |---|---|
 | `npm run dev` | All apps via Turbo |
-| `npm run dev:auth` | Just `apps/auth` (:3000) |
-| `npm run dev:quikit` | Just `apps/quikit` (:3001) |
+| `npm run dev:auth` | Just `apps/auth` (:3001) |
+| `npm run dev:quikit` | Just `apps/quikit` (:3000) |
 | `npm run dev:admin` | Just `apps/admin` (:3002) |
 | `npm run dev:quikscale` | Just `apps/quikscale` (:3003) |
 | `npm run build` | Turbo build all |

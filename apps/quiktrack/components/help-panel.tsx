@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { X, Search, ArrowLeft } from "lucide-react";
+import { sanitizeRichText } from "@/lib/sanitize";
 
 interface HelpArticle {
   id: string;
@@ -529,7 +530,7 @@ function ArticleView({ article }: { article: HelpArticle }) {
           [&_strong]:font-semibold [&_strong]:text-gray-900
           [&_code]:px-1 [&_code]:py-0.5 [&_code]:rounded [&_code]:bg-gray-100 [&_code]:text-[12px] [&_code]:font-mono
           [&_kbd]:px-1 [&_kbd]:py-px [&_kbd]:border [&_kbd]:border-gray-300 [&_kbd]:rounded [&_kbd]:text-[10px] [&_kbd]:font-mono [&_kbd]:bg-gray-50"
-        dangerouslySetInnerHTML={{ __html: article.body }}
+        dangerouslySetInnerHTML={{ __html: sanitizeRichText(article.body) }}
       />
     </div>
   );

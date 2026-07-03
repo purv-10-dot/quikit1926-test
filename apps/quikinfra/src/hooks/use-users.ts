@@ -74,6 +74,13 @@ export function useUpdateUser() {
     mutationFn: ({ id, ...data }: { id: string } & Record<string, unknown>) => mutateApi(`${BASE}/${id}`, "PUT", data),
     onSuccess: async (data, { id }) => {
       await refreshListQueries(qc, KEY, { updatedRow: data, id });
+      // Also refresh the per-user permission view and the current user's own
+      // effective permissions. Editing modules/role here changes the derived
+      // permission matrix; without these the Permissions page (["settings-user", id])
+      // and the sidebar/route gates (["me"]) keep serving stale grants until a
+      // hard refresh — e.g. an unticked module still shows fully granted.
+      await qc.invalidateQueries({ queryKey: ["settings-user", id] });
+      await qc.invalidateQueries({ queryKey: ["me"] });
     },
     meta: entityMeta("update", "User"),
   });
