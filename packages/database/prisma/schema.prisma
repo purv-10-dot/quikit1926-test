@@ -7,7 +7,7 @@ datasource db {
   provider  = "postgresql"
   url       = env("DATABASE_URL")
   directUrl = env("DATABASE_URL_DIRECT")
-  schemas   = ["app_quikcrm", "app_quikfinance", "app_quikhrms", "app_quikinfra", "app_quikscale", "app_quiksocial", "app_quiktrack", "app_quikvc", "auth", "public", "quikit"]
+  schemas   = ["app_quikasset", "app_quikcrm", "app_quikfinance", "app_quikhrms", "app_quikinfra", "app_quikscale", "app_quiksocial", "app_quiktrack", "app_quikvc", "auth", "public", "quikit"]
 }
 
 model App {
@@ -17402,4 +17402,323 @@ model QfGstReconciliationItem {
   @@index([org_id, period_year, period_month])
   @@map("gst_reconciliation_items")
   @@schema("app_quikfinance")
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// QUIKASSET (asset management) — restored from AssetManagement branch (afed028e)
+//
+// Fully self-contained: every model carries a plain `orgId` (and `appId` for
+// RBAC) string for tenant isolation, with NO Prisma relations to the shared
+// quikit.App / quikit.Org models. This keeps the integration purely additive —
+// adding/removing this block never touches another app's tables. Physical
+// table names are @@map-ed so they read naturally inside the app_quikasset
+// schema. Business dates are stored as "YYYY-MM-DD" strings (lexical compare);
+// record timestamps are real DateTime. (See apps/Asset Management/docs.)
+// ─────────────────────────────────────────────────────────────────────────
+
+enum AstStatus {
+  Active
+  Inactive
+
+  @@schema("app_quikasset")
+}
+
+enum AstAssetStatus {
+  Available
+  Assigned
+  InRepair
+  Retired
+
+  @@schema("app_quikasset")
+}
+
+enum AstRepairStatus {
+  Pending
+  InRepair
+  Repaired
+  Recovered
+  Unrepairable
+
+  @@schema("app_quikasset")
+}
+
+enum AstAssignmentStatus {
+  Active
+  Returned
+
+  @@schema("app_quikasset")
+}
+
+/// Employee directory (asset HOLDERS) — distinct from the platform login User.
+model AstEmployee {
+  id          String          @id @default(cuid())
+  orgId       String
+  employeeId  String
+  name        String
+  email       String
+  contact     String?
+  department  String?
+  designation String?
+  joiningDate String?
+  status      AstStatus       @default(Active)
+  createdAt   DateTime        @default(now())
+  updatedAt   DateTime        @updatedAt
+  assignments AstAssignment[]
+  replacements AstReplacement[]
+
+  @@unique([orgId, employeeId])
+  @@unique([orgId, email])
+  @@index([orgId])
+  @@map("employees")
+  @@schema("app_quikasset")
+}
+
+model AstBaseCategory {
+  id         String        @id @default(cuid())
+  orgId      String
+  name       String
+  categories AstCategory[]
+  assets     AstAsset[]
+
+  @@unique([orgId, name])
+  @@index([orgId])
+  @@map("base_categories")
+  @@schema("app_quikasset")
+}
+
+model AstCategory {
+  id             String          @id @default(cuid())
+  orgId          String
+  name           String
+  baseCategoryId String
+  baseCategory   AstBaseCategory @relation(fields: [baseCategoryId], references: [id], onDelete: Cascade)
+  assets         AstAsset[]
+
+  @@unique([orgId, name, baseCategoryId])
+  @@index([orgId])
+  @@index([baseCategoryId])
+  @@map("categories")
+  @@schema("app_quikasset")
+}
+
+model AstAsset {
+  id                   String           @id @default(cuid())
+  orgId                String
+  warehouse            String?
+  assetType            String
+  baseCategoryId       String
+  baseCategory         AstBaseCategory  @relation(fields: [baseCategoryId], references: [id])
+  categoryId           String
+  category             AstCategory      @relation(fields: [categoryId], references: [id])
+  itemName             String
+  itemCode             String
+  serialNumber         String
+  invoiceNumber        String
+  price                Float?
+  purchaseDate         String
+  location             String
+  condition            String
+  warrantyEndDate      String?
+  description          String
+  assetStatus          AstAssetStatus   @default(Available)
+  createdAt            DateTime         @default(now())
+  updatedAt            DateTime         @updatedAt
+  assignments          AstAssignment[]
+  repairs              AstRepair[]
+  replacementsReceived AstReplacement[] @relation("ReplacementAsset")
+
+  @@unique([orgId, itemCode])
+  @@unique([orgId, serialNumber])
+  @@index([orgId])
+  @@index([orgId, assetStatus])
+  @@index([baseCategoryId])
+  @@index([categoryId])
+  @@map("assets")
+  @@schema("app_quikasset")
+}
+
+model AstRepair {
+  id               String           @id @default(cuid())
+  orgId            String
+  assetId          String
+  asset            AstAsset         @relation(fields: [assetId], references: [id])
+  issueTitle       String
+  issueDescription String
+  vendor           String?
+  estimatedCost    Float?
+  actualCost       Float?
+  sentDate         String
+  expectedReturn   String?
+  returnedDate     String?
+  status           AstRepairStatus  @default(Pending)
+  notes            String?
+  createdAt        DateTime         @default(now())
+  updatedAt        DateTime         @updatedAt
+  replacements     AstReplacement[]
+
+  @@index([orgId])
+  @@index([assetId])
+  @@map("repairs")
+  @@schema("app_quikasset")
+}
+
+/// A loaner asset given to an employee while their asset is in repair.
+model AstReplacement {
+  id        String      @id @default(cuid())
+  orgId     String
+  repairId  String
+  repair    AstRepair   @relation(fields: [repairId], references: [id], onDelete: Cascade)
+  assetId   String
+  asset     AstAsset    @relation("ReplacementAsset", fields: [assetId], references: [id])
+  userId    String
+  user      AstEmployee @relation(fields: [userId], references: [id])
+  type      String
+  startDate String
+  endDate   String?
+  notes     String?
+  isActive  Boolean     @default(true)
+  createdAt DateTime    @default(now())
+
+  @@index([orgId])
+  @@index([repairId])
+  @@index([assetId])
+  @@index([userId])
+  @@map("replacements")
+  @@schema("app_quikasset")
+}
+
+model AstAssignment {
+  id             String              @id @default(cuid())
+  orgId          String
+  assetId        String
+  asset          AstAsset            @relation(fields: [assetId], references: [id])
+  userId         String
+  user           AstEmployee         @relation(fields: [userId], references: [id])
+  condition      String
+  expectedReturn String?
+  notes          String?
+  status         AstAssignmentStatus @default(Active)
+  assignedAt     DateTime            @default(now())
+  returnedAt     DateTime?
+
+  @@index([orgId])
+  @@index([assetId])
+  @@index([userId])
+  @@map("assignments")
+  @@schema("app_quikasset")
+}
+
+model AstFiscalBudget {
+  id         String  @id @default(cuid())
+  orgId      String
+  fiscalYear String
+  q1Amount   Float   @default(0)
+  q2Amount   Float   @default(0)
+  q3Amount   Float   @default(0)
+  q4Amount   Float   @default(0)
+  notes      String?
+
+  @@unique([orgId, fiscalYear])
+  @@index([orgId])
+  @@map("fiscal_budgets")
+  @@schema("app_quikasset")
+}
+
+/// Append-only audit trail (audit() helper never throws).
+model AstAuditLog {
+  id         String   @id @default(cuid())
+  orgId      String
+  module     String
+  action     String
+  entityId   String
+  entityName String
+  details    String?
+  actorId    String?
+  actorEmail String?
+  createdAt  DateTime @default(now())
+
+  @@index([orgId])
+  @@index([orgId, createdAt])
+  @@index([orgId, module])
+  @@map("audit_logs")
+  @@schema("app_quikasset")
+}
+
+// ── RBAC v2 (mirrors the shared AppRole/UserAppRole/RolePermission pattern) ──
+
+model AstAppRole {
+  id          String              @id @default(cuid())
+  orgId       String
+  appId       String
+  name        String
+  description String?
+  isSystem    Boolean             @default(false)
+  isDefault   Boolean             @default(false)
+  createdAt   DateTime            @default(now())
+  updatedAt   DateTime            @updatedAt
+  createdBy   String?
+  permissions AstRolePermission[]
+  navigations AstRoleNavigation[]
+  members     AstUserAppRole[]
+
+  @@unique([orgId, appId, name])
+  @@index([orgId, appId])
+  @@map("AppRole")
+  @@schema("app_quikasset")
+}
+
+model AstRolePermission {
+  id       String     @id @default(cuid())
+  roleId   String
+  resource String
+  action   String
+  role     AstAppRole @relation(fields: [roleId], references: [id], onDelete: Cascade)
+
+  @@unique([roleId, resource, action])
+  @@index([roleId])
+  @@map("RolePermission")
+  @@schema("app_quikasset")
+}
+
+model AstRoleNavigation {
+  id     String     @id @default(cuid())
+  roleId String
+  navKey String
+  role   AstAppRole @relation(fields: [roleId], references: [id], onDelete: Cascade)
+
+  @@unique([roleId, navKey])
+  @@index([roleId])
+  @@map("RoleNavigation")
+  @@schema("app_quikasset")
+}
+
+model AstUserAppRole {
+  id         String     @id @default(cuid())
+  userId     String
+  orgId      String
+  roleId     String
+  assignedAt DateTime   @default(now())
+  assignedBy String?
+  role       AstAppRole @relation(fields: [roleId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, orgId, roleId])
+  @@index([roleId])
+  @@index([userId, orgId])
+  @@map("UserAppRole")
+  @@schema("app_quikasset")
+}
+
+model AstUserPermissionExtra {
+  id        String   @id @default(cuid())
+  orgId     String
+  userId    String
+  resource  String
+  action    String
+  grantedBy String?
+  createdAt DateTime @default(now())
+
+  @@unique([orgId, userId, resource, action])
+  @@index([userId, orgId])
+  @@map("UserPermissionExtra")
+  @@schema("app_quikasset")
 }

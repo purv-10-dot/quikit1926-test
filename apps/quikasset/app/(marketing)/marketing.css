@@ -1,0 +1,29 @@
+/* QuikAsset marketing palette — scoped to the landing route group. Loaded
+   AFTER globals.css so these win by source order. Never imported by the
+   dashboard route group, so the brochure look never leaks into the app. */
+
+.qa-landing {
+  --qa-primary: #1f4fd8;
+  --qa-primary-dark: #1838a6;
+  --qa-ink: #0f172a;
+  --qa-muted: #64748b;
+  --qa-bg: #ffffff;
+  --qa-bg-soft: #f5f7fb;
+  --qa-border: #e2e8f0;
+  color: var(--qa-ink);
+  background: var(--qa-bg);
+  font-family: var(--font-jakarta), system-ui, sans-serif;
+}
+
+.qa-landing a { text-decoration: none; }
+
+.qa-btn-primary {
+  background: var(--qa-primary);
+  color: #fff;
+  transition: background 0.15s ease;
+}
+.qa-btn-primary:hover { background: var(--qa-primary-dark); }
+
+.qa-gradient {
+  background: radial-gradient(1100px 480px at 50% -10%, #e8effd 0%, #ffffff 60%);
+}

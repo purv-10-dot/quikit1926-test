@@ -67,6 +67,7 @@ const QUIKSOCIAL_BASE = resolveAppUrl("QUIKSOCIAL_URL", "http://localhost:3007")
 const QUIKVC_BASE = resolveAppUrl("QUIKVC_URL", "http://localhost:3005"); // prod-safety-allow: dev fallback, prod throws via resolveAppUrl
 const QUIKCRM_BASE = resolveAppUrl("QUIKCRM_URL", "http://localhost:3008"); // prod-safety-allow: dev fallback, prod throws via resolveAppUrl
 const QUIKFINANCE_BASE = resolveAppUrl("QUIKFINANCE_URL", "http://localhost:3013"); // prod-safety-allow: dev fallback, prod throws via resolveAppUrl
+const QUIKASSET_BASE = resolveAppUrl("QUIKASSET_URL", "http://localhost:3012"); // prod-safety-allow: dev fallback, prod throws via resolveAppUrl
 // Central launcher (quikit) origin. It hosts every app's icon under
 // /app-icons and is where App.iconUrl is designed to resolve (see the comment
 // on BRAND_ICONS in packages/ui/components/app-switcher.tsx). Used as the
@@ -208,6 +209,26 @@ const APPS = [
       clientSecretPlain: resolveClientSecret("QUIKFINANCE_OAUTH_CLIENT_SECRET", "quikfinance-dev-secret-change-in-prod"),
       redirectUris: [
         `${QUIKFINANCE_BASE}/api/auth/callback/quikit`,
+      ],
+      scopes: ["openid", "profile", "email", "tenant"],
+    },
+  },
+  {
+    slug: "quikasset",
+    name: "QuikAsset",
+    description: "IT & fixed-asset lifecycle management — inventory, assignments, repairs, budgets & reports.",
+    baseUrl: QUIKASSET_BASE,
+    // Absolute URL on the central launcher (quikit), which hosts every app's
+    // icon under /app-icons. @quikit/ui's brand-icon map has no `quikasset`
+    // key, so the tile falls back to App.iconUrl — a relative path would 404
+    // cross-origin.
+    iconUrl: `${QUIKIT_BASE}/app-icons/quikasset.svg`,
+    status: "active",
+    oauth: {
+      clientId: "quikasset",
+      clientSecretPlain: resolveClientSecret("QUIKASSET_OAUTH_CLIENT_SECRET", "quikasset-dev-secret-change-in-prod"),
+      redirectUris: [
+        `${QUIKASSET_BASE}/api/auth/callback/quikit`,
       ],
       scopes: ["openid", "profile", "email", "tenant"],
     },
