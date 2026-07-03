@@ -122,6 +122,14 @@ COPY --from=installer --chown=nextjs:nodejs /app/apps/quiktrack/public          
 COPY --from=installer --chown=nextjs:nodejs /app/node_modules/@prisma  ./node_modules/@prisma
 COPY --from=installer --chown=nextjs:nodejs /app/node_modules/.prisma  ./node_modules/.prisma
 
+# sharp: required by Next.js image optimization in standalone/production mode.
+# It is NOT a quiktrack dependency, so Next's file tracer never copies it into
+# .next/standalone — install the linux-musl build explicitly into the runner's
+# node_modules so `next/image` optimization works at runtime.
+# (musl because the base image is node:20-alpine.)
+RUN npm install --no-save --os=linux --libc=musl --cpu=x64 sharp@0.33.5 \
+ && chown -R nextjs:nodejs ./node_modules/sharp ./node_modules/@img
+
 USER nextjs
 EXPOSE 3004
 
