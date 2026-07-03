@@ -127,8 +127,22 @@ COPY --from=installer --chown=nextjs:nodejs /app/node_modules/.prisma  ./node_mo
 # .next/standalone — install the linux-musl build explicitly into the runner's
 # node_modules so `next/image` optimization works at runtime.
 # (musl because the base image is node:20-alpine.)
-RUN npm install --no-save --os=linux --libc=musl --cpu=x64 sharp@0.33.5 \
- && chown -R nextjs:nodejs ./node_modules/sharp ./node_modules/@img
+#
+# Install in an ISOLATED dir with a throwaway package.json: running `npm install`
+# at /app re-reads the standalone monorepo package.json, enumerates the
+# workspace deps, and tries to resolve the unpublished `@quikit/*` packages from
+# the public registry (E404: '@quikit/ui@*' is not in this registry). Installing
+# under an empty package.json avoids reading any workspace manifest, then we copy
+# just sharp + its @img platform binaries into the runner's node_modules.
+RUN mkdir -p /tmp/sharp-install \
+ && cd /tmp/sharp-install \
+ && echo '{"name":"sharp-install","private":true}' > package.json \
+ && npm install --no-save --os=linux --libc=musl --cpu=x64 sharp@0.33.5 \
+ && mkdir -p /app/node_modules \
+ && cp -R /tmp/sharp-install/node_modules/sharp /app/node_modules/sharp \
+ && cp -R /tmp/sharp-install/node_modules/@img  /app/node_modules/@img \
+ && rm -rf /tmp/sharp-install \
+ && chown -R nextjs:nodejs /app/node_modules/sharp /app/node_modules/@img
 
 USER nextjs
 EXPOSE 3004
