@@ -17,7 +17,7 @@ function err(message: string, status = 500) {
 async function loadOpp(orgId: string, id: string) {
   return db.crmOpportunity.findFirst({
     where: { id, orgId },
-    select: { id: true, accountId: true },
+    select: { id: true, accountId: true, ownerId: true },
   });
 }
 
@@ -33,7 +33,7 @@ export async function GET(
 
     const opp = await loadOpp(user.orgId, id);
     if (!opp) return err("Not found", 404);
-    await assertAccountAccess(user, opp.accountId);
+    await assertAccountAccess(user, opp.accountId, { recordOwnerId: opp.ownerId });
 
     const products = await db.crmOpportunityProduct.findMany({
       where: { orgId: user.orgId, opportunityId: id },
@@ -66,7 +66,7 @@ export async function POST(
 
     const opp = await loadOpp(user.orgId, id);
     if (!opp) return err("Not found", 404);
-    await assertAccountAccess(user, opp.accountId);
+    await assertAccountAccess(user, opp.accountId, { recordOwnerId: opp.ownerId });
 
     const body = await req.json().catch(() => null);
     const parsed = productSchema.safeParse(body);
@@ -128,7 +128,7 @@ export async function PUT(
 
     const opp = await loadOpp(user.orgId, id);
     if (!opp) return err("Not found", 404);
-    await assertAccountAccess(user, opp.accountId);
+    await assertAccountAccess(user, opp.accountId, { recordOwnerId: opp.ownerId });
 
     const result = await recalculateFromProducts(user.orgId, id);
     return NextResponse.json({ success: true, data: result });

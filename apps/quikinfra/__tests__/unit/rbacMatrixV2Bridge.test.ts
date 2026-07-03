@@ -36,6 +36,44 @@ describe("matrixToRevokes", () => {
     const out = matrixToRevokes({ "totally.unknown": { view: false } });
     expect(out).toEqual([]);
   });
+
+  // Regression: Gantt View (read-only, add/edit/delete=false) shares the
+  // construction.dpr resource with DPR. Its forced-false add/edit/delete
+  // cells must NOT emit revokes, or they strip DPR's create/edit/delete.
+  it("does not revoke unsupported actions of a read-only page (Gantt → DPR)", () => {
+    const matrix: PermissionMatrix = {
+      "pm.dpr":   { add: true,  edit: true,  delete: true,  view: true },
+      "pm.gantt": { add: false, edit: false, delete: false, view: true },
+    };
+    const out = matrixToRevokes(matrix);
+    // Gantt's read-only add/edit/delete must not touch construction.dpr.
+    expect(out).not.toContainEqual({ resource: "construction.dpr", action: "create" });
+    expect(out).not.toContainEqual({ resource: "construction.dpr", action: "edit" });
+    expect(out).not.toContainEqual({ resource: "construction.dpr", action: "delete" });
+    expect(out).toEqual([]);
+  });
+
+  // Hindrance Register now owns construction.hindrance, so unchecking it
+  // revokes ITS OWN resource and never touches DPR — the definitive fix for
+  // the "check DPR, save, reopen → cleared again" production bug.
+  it("unchecking Hindrance revokes construction.hindrance, never construction.dpr", () => {
+    const matrix: PermissionMatrix = {
+      "pm.dpr":       { add: true,  edit: true,  delete: true,  view: true },
+      "pm.gantt":     { add: false, edit: false, delete: false, view: true },
+      "pm.hindrance": { add: false, edit: false, delete: false, view: false },
+    };
+    const out = matrixToRevokes(matrix);
+    // DPR keeps everything — it no longer shares a resource with its neighbours.
+    expect(out).not.toContainEqual({ resource: "construction.dpr", action: "create" });
+    expect(out).not.toContainEqual({ resource: "construction.dpr", action: "edit" });
+    expect(out).not.toContainEqual({ resource: "construction.dpr", action: "delete" });
+    expect(out).not.toContainEqual({ resource: "construction.dpr", action: "view" });
+    // Hindrance's own resource is revoked for the cells the admin unchecked.
+    expect(out).toContainEqual({ resource: "construction.hindrance", action: "create" });
+    expect(out).toContainEqual({ resource: "construction.hindrance", action: "view" });
+    // Gantt is read-only → its forced-false add/edit/delete emit nothing.
+    expect(out).not.toContainEqual({ resource: "construction.gantt", action: "create" });
+  });
 });
 
 describe("revokesToMatrix", () => {

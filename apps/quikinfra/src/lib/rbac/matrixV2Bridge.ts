@@ -17,6 +17,16 @@
 import { MENU_CATALOG } from "./menu-catalog";
 
 /**
+ * Menu key → which of add/edit/delete/view the page actually supports.
+ * Read-only pages (Gantt View, Stock Register, Reports) have
+ * add/edit/delete = false. Their unchecked add/edit/delete cells are UI
+ * artifacts, not real denials — see `matrixToRevokes`.
+ */
+const MENU_SUPPORTS: Readonly<
+  Record<string, { add: boolean; edit: boolean; delete: boolean; view: boolean }>
+> = Object.fromEntries(MENU_CATALOG.map((m) => [m.key, m.supports]));
+
+/**
  * Menu key → v2 resource. Mirrors MENU_CATALOG ordering. Keys not listed
  * here are silently skipped during translation (they're "unmanaged" by
  * the matrix-to-v2 bridge — could be new menus added after this file
@@ -75,9 +85,9 @@ export const MENU_TO_RESOURCE: Readonly<Record<string, string>> = {
   "pm.estimation": "construction.estimation",
   "pm.work_order": "construction.wo",
   "pm.dpr":        "construction.dpr",
-  "pm.gantt":      "construction.dpr",
-  "pm.hindrance":  "construction.dpr",
-  "pm.documents":  "construction.project",
+  "pm.gantt":      "construction.gantt",
+  "pm.hindrance":  "construction.hindrance",
+  "pm.documents":  "construction.documents",
   // Quality & Safety
   "quality.home":     "construction.quality_safety",
   "safety.incidents": "construction.quality_safety",
@@ -88,6 +98,20 @@ export const MENU_TO_RESOURCE: Readonly<Record<string, string>> = {
   "system.approvals": "construction.workflows",
   "system.reports":   "construction.dashboard",
 };
+
+/**
+ * v2 resource → the menu keys that map to it. Several pages can share one
+ * resource (Daily Progress, Gantt View and Hindrance Register all map to
+ * construction.dpr). Used by `matrixToRevokes` to avoid one page's
+ * unchecked cell revoking a still-granted sibling that shares the resource.
+ */
+const RESOURCE_TO_MENU_KEYS: Readonly<Record<string, string[]>> = (() => {
+  const out: Record<string, string[]> = {};
+  for (const [menuKey, resource] of Object.entries(MENU_TO_RESOURCE)) {
+    (out[resource] ??= []).push(menuKey);
+  }
+  return out;
+})();
 
 /**
  * Matrix actions are `add` / `edit` / `delete` / `view`. v2 uses
@@ -122,13 +146,35 @@ export type RevokeEntry = { resource: string; action: V2Action };
 export function matrixToRevokes(matrix: PermissionMatrix | null | undefined): RevokeEntry[] {
   if (!matrix) return [];
   const out: RevokeEntry[] = [];
+  const emitted = new Set<string>();
   for (const [menuKey, row] of Object.entries(matrix)) {
     const resource = MENU_TO_RESOURCE[menuKey];
     if (!resource || !row) continue;
     for (const matrixAction of Object.keys(row) as MatrixAction[]) {
-      if (row[matrixAction] === false) {
-        const v2 = MATRIX_TO_V2_ACTION[matrixAction];
-        if (v2) out.push({ resource, action: v2 });
+      if (row[matrixAction] !== false) continue;
+      // A page can only revoke an action it actually supports. Read-only
+      // pages (Gantt View) carry add/edit/delete = false as a UI artifact,
+      // not a real deny.
+      if (MENU_SUPPORTS[menuKey]?.[matrixAction] === false) continue;
+      const v2 = MATRIX_TO_V2_ACTION[matrixAction];
+      if (!v2) continue;
+      const pairKey = `${resource}:${v2}`;
+      if (emitted.has(pairKey)) continue;
+      // Several menu rows can map to one v2 resource — Daily Progress,
+      // Gantt View and Hindrance Register all map to construction.dpr.
+      // Only revoke the shared resource when EVERY page that maps to it
+      // AND supports this action has the cell denied; otherwise a sibling
+      // that is still granted (DPR) would be stripped by an unchecked
+      // neighbour (Hindrance, or read-only Gantt). Pages that don't support
+      // the action are excluded so they can't veto the revoke either.
+      const siblings = RESOURCE_TO_MENU_KEYS[resource] ?? [menuKey];
+      const relevant = siblings.filter(
+        (k) => MENU_SUPPORTS[k]?.[matrixAction] !== false,
+      );
+      const allDenied = relevant.every((k) => matrix[k]?.[matrixAction] === false);
+      if (allDenied) {
+        out.push({ resource, action: v2 });
+        emitted.add(pairKey);
       }
     }
   }

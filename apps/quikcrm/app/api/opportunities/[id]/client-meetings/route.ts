@@ -14,7 +14,7 @@ function err(message: string, status = 500) {
 async function loadOpp(orgId: string, id: string) {
   return db.crmOpportunity.findFirst({
     where: { id, orgId },
-    select: { id: true, accountId: true, name: true },
+    select: { id: true, accountId: true, ownerId: true, name: true },
   });
 }
 
@@ -30,7 +30,7 @@ export async function GET(
 
     const opp = await loadOpp(user.orgId, id);
     if (!opp) return err("Not found", 404);
-    await assertAccountAccess(user, opp.accountId);
+    await assertAccountAccess(user, opp.accountId, { recordOwnerId: opp.ownerId });
 
     const meetings = await db.crmOpportunityClientMeeting.findMany({
       where: { orgId: user.orgId, opportunityId: id },
@@ -56,7 +56,7 @@ export async function POST(
 
     const opp = await loadOpp(user.orgId, id);
     if (!opp) return err("Not found", 404);
-    await assertAccountAccess(user, opp.accountId);
+    await assertAccountAccess(user, opp.accountId, { recordOwnerId: opp.ownerId });
 
     const body = await req.json().catch(() => null);
     const parsed = clientMeetingSchema.safeParse(body);

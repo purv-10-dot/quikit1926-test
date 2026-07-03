@@ -119,6 +119,7 @@ const BRAND_ICONS: Record<string, string> = {
   quiksocial: "/app-icons/quiksocial.svg",
   quikcrm: "/app-icons/quikcrm.svg",
   quikasset: "/app-icons/quikasset.svg",
+  quiksupport: "/app-icons/quiksupport.svg",
 };
 
 /**

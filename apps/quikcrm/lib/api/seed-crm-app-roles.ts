@@ -186,12 +186,35 @@ async function backfillAdminPermissions(orgId: string, appId: string): Promise<v
   });
 }
 
+type SeedResult = { adminRoleId: string; defaultRoleId: string };
+
 const seededOrgs = new Map<string, number>();
 const SEED_CACHE_TTL_MS = 5 * 60 * 1000;
 
-export async function seedAllDefaultCrmRoles(
-  orgId: string,
-): Promise<{ adminRoleId: string; defaultRoleId: string }> {
+/**
+ * In-flight seed promises, keyed by orgId. Deduplicates concurrent cold
+ * requests for the same org so they share ONE seeding pass instead of each
+ * firing the full ~15-query burst. Without this, a burst of first-hit
+ * requests (e.g. a page that fans out to several API calls) multiplied the
+ * seeding load by the request fan-out and starved the connection pool —
+ * exactly the P2024 timeout we're fixing.
+ */
+const inFlightSeeds = new Map<string, Promise<SeedResult>>();
+
+export function seedAllDefaultCrmRoles(orgId: string): Promise<SeedResult> {
+  const existing = inFlightSeeds.get(orgId);
+  if (existing) return existing;
+
+  const p = runSeed(orgId).finally(() => {
+    // Only clear if this promise is still the registered one (guards against
+    // a later call having already replaced it).
+    if (inFlightSeeds.get(orgId) === p) inFlightSeeds.delete(orgId);
+  });
+  inFlightSeeds.set(orgId, p);
+  return p;
+}
+
+async function runSeed(orgId: string): Promise<SeedResult> {
   if (!isCrmRbacClientReady()) {
     throw new Error(
       "CRM RBAC tables are not available — run prisma generate (stop dev server first on Windows).",
@@ -220,10 +243,13 @@ export async function seedAllDefaultCrmRoles(
   const appId = await getQuikCrmAppId();
   if (!appId) throw new Error("QuikCRM App not registered in quikit.App");
 
-  const ids: string[] = [];
-  for (const spec of ROLE_SPECS) {
-    ids.push(await seedRole(orgId, appId, spec));
-  }
+  // Seed all role specs concurrently. Each seedRole call is independent —
+  // they touch distinct AppRole rows (unique per orgId+appId+name) and only
+  // the `sales-user` spec carries `isDefault: true`, so the isDefault-flip
+  // updateMany inside seedRole can't race another spec. Running them in
+  // parallel collapses ~15-20 sequential round-trips into one batch, which
+  // is what was starving the connection pool on cold lambdas.
+  const ids = await Promise.all(ROLE_SPECS.map((spec) => seedRole(orgId, appId, spec)));
   await backfillAdminPermissions(orgId, appId);
 
   seededOrgs.set(orgId, now);
