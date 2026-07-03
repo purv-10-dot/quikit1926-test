@@ -8009,6 +8009,32 @@ model CrmOrgWorkspaceSettings {
   @@schema("app_quikcrm")
 }
 
+/// API Secret Key for third-party dashboard integrations against the public
+/// API layer (`/api/public/*`). Authentication is NOT OAuth — a caller sends
+/// the raw secret via `Authorization: Bearer <key>` or `X-Api-Key`. We only
+/// ever persist a SHA-256 hash of the secret (`keyHash`, unique); the raw
+/// value is shown exactly once at creation time. `prefix`/`lastFour` exist
+/// only to render a non-sensitive label in the UI. `isActive=false` (or a set
+/// `revokedAt`) => 403; unknown hash => 401. Scoped to `orgId` like every
+/// other CRM row.
+model CrmApiKey {
+  id         String    @id @default(cuid())
+  orgId      String
+  name       String
+  keyHash    String    @unique
+  prefix     String
+  lastFour   String
+  isActive   Boolean   @default(true)
+  lastUsedAt DateTime?
+  revokedAt  DateTime?
+  createdByUserId String?
+  createdAt  DateTime  @default(now())
+  updatedAt  DateTime  @updatedAt
+  @@index([orgId])
+  @@index([orgId, isActive])
+  @@schema("app_quikcrm")
+}
+
 model CrmQuickFilter {
   id            String   @id @default(cuid())
   orgId      String

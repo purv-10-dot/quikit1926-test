@@ -32,7 +32,7 @@ export async function GET(
     // Tenant isolation: cross-tenant requests get 404 (not 403) to avoid
     // existence disclosure.
     if (!opp) return err("Not found", 404);
-    await assertAccountAccess(user, opp.accountId);
+    await assertAccountAccess(user, opp.accountId, { recordOwnerId: opp.ownerId });
 
     return NextResponse.json({ success: true, data: opp });
   } catch (error: unknown) {
@@ -74,8 +74,10 @@ export async function PATCH(
     });
     if (!existing) return err("Not found", 404);
 
-    await assertAccountAccess(user, existing.accountId);
+    await assertAccountAccess(user, existing.accountId, { recordOwnerId: existing.ownerId });
     if (parsed.data.accountId && parsed.data.accountId !== existing.accountId) {
+      // Reassigning to a different account is a write — strict scope check,
+      // no owner bypass.
       await assertAccountAccess(user, parsed.data.accountId);
     }
 
@@ -121,10 +123,10 @@ export async function DELETE(
 
     const existing = await db.crmOpportunity.findFirst({
       where: { id, orgId: user.orgId },
-      select: { id: true, accountId: true },
+      select: { id: true, accountId: true, ownerId: true },
     });
     if (!existing) return err("Not found", 404);
-    await assertAccountAccess(user, existing.accountId);
+    await assertAccountAccess(user, existing.accountId, { recordOwnerId: existing.ownerId });
 
     await softDelete(user.orgId, id);
     return NextResponse.json({ success: true, data: { id, deleted: true } });

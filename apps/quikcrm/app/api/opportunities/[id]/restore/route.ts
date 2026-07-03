@@ -30,10 +30,10 @@ export async function POST(
     // fields in `where`.
     const opp = await db.crmOpportunity.findUnique({
       where: { id },
-      select: { id: true, orgId: true, accountId: true, deletedAt: true },
+      select: { id: true, orgId: true, accountId: true, ownerId: true, deletedAt: true },
     });
     if (!opp || opp.orgId !== user.orgId) return err("Not found", 404);
-    await assertAccountAccess(user, opp.accountId);
+    await assertAccountAccess(user, opp.accountId, { recordOwnerId: opp.ownerId });
     if (!opp.deletedAt) return err("Opportunity is not in trash", 400);
 
     await restore(user.orgId, id);

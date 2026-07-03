@@ -36,10 +36,10 @@ export async function PATCH(
 
     const opp = await db.crmOpportunity.findFirst({
       where: { id, orgId: user.orgId },
-      select: { id: true, accountId: true },
+      select: { id: true, accountId: true, ownerId: true },
     });
     if (!opp) return err("Not found", 404);
-    await assertAccountAccess(user, opp.accountId);
+    await assertAccountAccess(user, opp.accountId, { recordOwnerId: opp.ownerId });
 
     const product = await db.crmOpportunityProduct.findFirst({
       where: { id: productId, orgId: user.orgId, opportunityId: id },
@@ -94,10 +94,10 @@ export async function DELETE(
 
     const opp = await db.crmOpportunity.findFirst({
       where: { id, orgId: user.orgId },
-      select: { id: true, accountId: true },
+      select: { id: true, accountId: true, ownerId: true },
     });
     if (!opp) return err("Not found", 404);
-    await assertAccountAccess(user, opp.accountId);
+    await assertAccountAccess(user, opp.accountId, { recordOwnerId: opp.ownerId });
 
     const result = await db.crmOpportunityProduct.deleteMany({
       where: { id: productId, orgId: user.orgId, opportunityId: id },

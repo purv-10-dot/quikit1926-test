@@ -39,7 +39,7 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
     if (!lead || lead.orgId !== user.orgId) {
       return NextResponse.json({ error: "Not found" }, { status: 404 });
     }
-    await assertAccountAccess(user, lead.accountId);
+    await assertAccountAccess(user, lead.accountId, { recordOwnerId: lead.ownerId });
     return NextResponse.json(await maskHiddenLeadFields(user, lead));
   } catch (e) {
     return errorResponse(e);
@@ -62,7 +62,7 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
         { status: 410 },
       );
     }
-    await assertAccountAccess(user, existing.accountId);
+    await assertAccountAccess(user, existing.accountId, { recordOwnerId: existing.ownerId });
 
     const body = await req.json().catch(() => null);
     const parsed = updateLeadSchema.safeParse(body);
@@ -253,7 +253,7 @@ export async function DELETE(_req: NextRequest, { params }: { params: Promise<{ 
     if (!existing || existing.orgId !== user.orgId) {
       return NextResponse.json({ error: "Not found" }, { status: 404 });
     }
-    await assertAccountAccess(user, existing.accountId);
+    await assertAccountAccess(user, existing.accountId, { recordOwnerId: existing.ownerId });
     if (existing.deletedAt) {
       // Already in trash — idempotent success.
       return NextResponse.json({ ok: true, alreadyDeleted: true });

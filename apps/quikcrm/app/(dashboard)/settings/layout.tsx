@@ -38,6 +38,7 @@ const TAB_GROUPS = [
   {
     tabs: [
       { href: "/settings/integrations", label: "Integrations" },
+      { href: "/settings/api-keys", label: "API Keys" },
       { href: "/settings/audit", label: "Audit Log" },
       { href: "/settings/notifications", label: "Notifications" },
     ],
@@ -61,6 +62,7 @@ const ALL_NAV_ITEMS = [
   { href: "/settings/quote-templates", label: "Quote Templates" },
   { href: "/settings/activity-types", label: "Activity Types" },
   { href: "/settings/integrations", label: "Integrations" },
+  { href: "/settings/api-keys", label: "API Keys" },
   { href: "/settings/audit", label: "Audit Log" },
   { href: "/settings/notifications", label: "Notifications" },
 ];
