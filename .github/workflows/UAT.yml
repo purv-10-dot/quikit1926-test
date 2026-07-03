@@ -161,112 +161,119 @@ jobs:
             NEXT_PUBLIC_QUIKCRM_URL=https://uatcrm.quikit.ai
             NEXT_PUBLIC_QUIKHRMS_URL=https://uatpeople.quikit.ai
             NEXTAUTH_URL=https://uatauthn.quikit.ai
-update-gitops:
-  name: Update GitOps Repository
-  needs:
-    - detect-changes
-    - build
-
-  if: needs.detect-changes.outputs.run_build == 'true'
-
-  runs-on: ubuntu-latest
-
-  strategy:
-    fail-fast: false
-    matrix:
-      app: ${{ fromJson(needs.detect-changes.outputs.apps) }}
-
-  steps:
-    - name: Checkout GitOps Repository
-      uses: actions/checkout@v4
-      with:
-        repository: akhileshgandhi/uat-k8s-infra-quikit
-        ref: main
-        token: ${{ secrets.K8S_REPO_TOKEN }}
-        path: gitops
-
-    - name: Install yq
-      uses: mikefarah/yq@v4
-
-    - name: Map Deployment File
-      id: map
-      shell: bash
-      run: |
-        case "${{ matrix.app }}" in
-          auth)
-            FILE="auth-deployment.yaml"
-            IMAGE_NAME="auth-runtime"
-            ;;
-          admin)
-            FILE="admin-deployment.yaml"
-            IMAGE_NAME="admin-runtime"
-            ;;
-          quikit)
-            FILE="quikit-deployment.yaml"
-            IMAGE_NAME="quikit-runtime"
-            ;;
-          quiktrack)
-            FILE="quikittrack-deployment.yaml"
-            IMAGE_NAME="quiktrack-runtime"
-            ;;
-          quikscale)
-            FILE="quikitscale-deployment.yaml"
-            IMAGE_NAME="quikscale-runtime"
-            ;;
-          quikinfra)
-            FILE="quikitinfra-deployment.yaml"
-            IMAGE_NAME="quikinfra-runtime"
-            ;;
-          quikcrm)
-            FILE="crm-deployment.yaml"
-            IMAGE_NAME="quikcrm-runtime"
-            ;;
-          quikhrms)
-            FILE="hrms-deployment.yaml"
-            IMAGE_NAME="quikhrms-runtime"
-            ;;
-          *)
-            echo "Unknown app"
-            exit 1
-            ;;
-        esac
-
-        echo "file=$FILE" >> $GITHUB_OUTPUT
-        echo "image=$IMAGE_NAME" >> $GITHUB_OUTPUT
-
-    - name: Update Image
-      shell: bash
-      run: |
-        cd gitops/quikit
-
-        IMAGE="ghcr.io/akhileshgandhi/${{ steps.map.outputs.image }}:sha-${GITHUB_SHA::7}"
-
-        export IMAGE
-
-        yq -i \
-          '.spec.template.spec.containers[0].image = env(IMAGE)' \
-          "${{ steps.map.outputs.file }}"
-
-    - name: Commit Changes
-      shell: bash
-      run: |
-        cd gitops
-
-        git config user.name "github-actions"
-        git config user.email "github-actions@github.com"
-
-        if git diff --quiet; then
-          echo "No changes"
-          exit 0
-        fi
-
-        git add .
-
-        git commit -m "Deploy ${{ matrix.app }} sha-${GITHUB_SHA::7}"
-
-    - name: Push Changes
-      shell: bash
-      run: |
-        cd gitops
-
-        git push origin main
+    update-gitops:
+      name: Update GitOps Repository
+      needs:
+        - detect-changes
+        - build
+    
+      if: needs.detect-changes.outputs.run_build == 'true'
+    
+      runs-on: ubuntu-latest
+    
+      steps:
+        - name: Checkout GitOps Repository
+          uses: actions/checkout@v4
+          with:
+            repository: akhileshgandhi/uat-k8s-infra-quikit
+            ref: main
+            token: ${{ secrets.K8S_REPO_TOKEN }}
+            path: gitops
+    
+        - name: Install yq
+          uses: mikefarah/yq@v4
+    
+        - name: Update Deployment Images
+          shell: bash
+          run: |
+            APPS='${{ needs.detect-changes.outputs.apps }}'
+    
+            TAG="sha-${GITHUB_SHA::7}"
+    
+            cd gitops/quikit
+    
+            echo "$APPS" | jq -r '.[]' | while read APP
+            do
+    
+              case "$APP" in
+    
+                auth)
+                  FILE="auth-deployment.yaml"
+                  IMAGE="ghcr.io/akhileshgandhi/auth-runtime:${TAG}"
+                  ;;
+    
+                admin)
+                  FILE="admin-deployment.yaml"
+                  IMAGE="ghcr.io/akhileshgandhi/admin-runtime:${TAG}"
+                  ;;
+    
+                quikit)
+                  FILE="quikit-deployment.yaml"
+                  IMAGE="ghcr.io/akhileshgandhi/quikit-runtime:${TAG}"
+                  ;;
+    
+                quiktrack)
+                  FILE="quikittrack-deployment.yaml"
+                  IMAGE="ghcr.io/akhileshgandhi/quiktrack-runtime:${TAG}"
+                  ;;
+    
+                quikscale)
+                  FILE="quikitscale-deployment.yaml"
+                  IMAGE="ghcr.io/akhileshgandhi/quikscale-runtime:${TAG}"
+                  ;;
+    
+                quikinfra)
+                  FILE="quikitinfra-deployment.yaml"
+                  IMAGE="ghcr.io/akhileshgandhi/quikinfra-runtime:${TAG}"
+                  ;;
+    
+                quikcrm)
+                  FILE="crm-deployment.yaml"
+                  IMAGE="ghcr.io/akhileshgandhi/quikcrm-runtime:${TAG}"
+                  ;;
+    
+                quikhrms)
+                  FILE="hrms-deployment.yaml"
+                  IMAGE="ghcr.io/akhileshgandhi/quikhrms-runtime:${TAG}"
+                  ;;
+    
+                *)
+                  echo "Unknown app: $APP"
+                  exit 1
+                  ;;
+              esac
+    
+              echo "Updating $FILE"
+    
+              export IMAGE
+    
+              yq -i \
+                '.spec.template.spec.containers[0].image = env(IMAGE)' \
+                "$FILE"
+    
+            done
+    
+        - name: Commit Changes
+          shell: bash
+          run: |
+            cd gitops
+    
+            git config user.name "github-actions"
+            git config user.email "github-actions@github.com"
+    
+            if git diff --quiet
+            then
+              echo "No changes detected."
+              exit 0
+            fi
+    
+            git add .
+    
+            git commit -m "Update UAT images to sha-${GITHUB_SHA::7}"
+    
+        - name: Push Changes
+          shell: bash
+          run: |
+            cd gitops
+    
+            git push origin main
