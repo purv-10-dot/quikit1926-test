@@ -12,8 +12,8 @@
  *   /api/projects/rab/*                       → construction.rab
  *   /api/projects/[id]/estimations            → construction.estimation
  *   /api/projects/[id]/wbs/tasks/*            → construction.wbs
- *   /api/projects/hindrance/*                 → construction.dpr (no own resource yet)
- *   /api/projects/documents                   → construction.project
+ *   /api/projects/hindrance/*                 → construction.hindrance
+ *   /api/projects/documents                   → construction.documents
  *   /api/finance/*                            → construction.finance
  *
  * Usage:
@@ -32,6 +32,9 @@ export type ProjectsFinanceResource =
   | "construction.estimation"
   | "construction.wo"
   | "construction.dpr"
+  | "construction.gantt"
+  | "construction.hindrance"
+  | "construction.documents"
   | "construction.rab"
   | "construction.finance";
 

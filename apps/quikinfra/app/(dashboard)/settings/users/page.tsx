@@ -508,8 +508,6 @@ export default function UsersPage() {
 
     // Don't ship passwords here — new users set their own via the
     // emailed invite link; existing users hit password reset (Phase 2).
-    // permissionMatrix is sent as-is when set; the server's matrix → revoke
-    // bridge (matrixV2Bridge) translates it into CnUserPermissionExtra rows.
     const { password: _p, retypePassword: _rp, ...payload } = form;
     // Only send `email` when it actually changed on edit — keeps the server
     // from re-validating (and potentially rejecting) an unchanged legacy

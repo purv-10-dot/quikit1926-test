@@ -7,7 +7,7 @@ datasource db {
   provider  = "postgresql"
   url       = env("DATABASE_URL")
   directUrl = env("DATABASE_URL_DIRECT")
-  schemas   = ["app_quikcrm", "app_quikhrms", "app_quikinfra", "app_quikscale", "app_quiksocial", "app_quiktrack", "app_quikvc", "auth", "public", "quikit"]
+  schemas   = ["app_quikcrm", "app_quikhrms", "app_quikinfra", "app_quikscale", "app_quiksocial", "app_quiksupport", "app_quiktrack", "app_quikvc", "auth", "public", "quikit"]
 }
 
 model App {
@@ -119,164 +119,164 @@ model UserAppAccess {
 }
 
 model Org {
-  id                      String                   @id @default(cuid())
-  name                    String
-  slug                    String                   @unique
-  description             String?
-  status                  String                   @default("active")
-  fiscalYearStart         Int                      @default(1)
-  quarterStartMonth       Int                      @default(1)
-  weekStartDay            Int                      @default(1)
-  logoUrl                 String?
-  brandColor              String?                  @default("#0066cc")
-  plan                    String                   @default("startup")
-  billingEmail            String?
+  id                       String                    @id @default(cuid())
+  name                     String
+  slug                     String                    @unique
+  description              String?
+  status                   String                    @default("active")
+  fiscalYearStart          Int                       @default(1)
+  quarterStartMonth        Int                       @default(1)
+  weekStartDay             Int                       @default(1)
+  logoUrl                  String?
+  brandColor               String?                   @default("#0066cc")
+  plan                     String                    @default("startup")
+  billingEmail             String?
   /// Empty = no restriction. Non-empty = POST /api/members must match one
   /// (case-insensitive, no @ prefix — e.g. ["acme.com", "acme.co.uk"]).
-  allowedEmailDomains     String[]                 @default([])
-  createdAt               DateTime                 @default(now())
-  updatedAt               DateTime                 @updatedAt
-  createdBy               String?
-  cnAssets                CnAsset[]
-  cnAuditLogs             CnAuditLog[]
-  cnCompanies             CnCompany[]
-  cnContractors           CnContractor[]
-  cnCostCenters           CnCostCenter[]
-  cnCustomers             CnCustomer[]
-  cnDepartments           CnDepartment[]
-  cnDieselLogs            CnDieselLog[]
-  cnFinancialYears        CnFinancialYear[]
-  cnGstCodes              CnGSTCode[]
-  cnGatePasses            CnGatePass[]
-  cnGoodReturns           CnGoodReturn[]
-  cnGRNs                  CnGoodsReceiptNote[]
-  cnHindrances            CnHindrance[]
-  cnInternalReturns       CnInternalReturn[]
-  cnItems                 CnItem[]
-  cnItemGroups            CnItemGroup[]
-  cnLocations             CnLocation[]
-  cnMachinery             CnMachinery[]
-  cnEquipmentLogs         CnEquipmentLog[]
-  cnMaintenanceJobCards   CnMaintenanceJobCard[]
-  cnEquipmentDeployments  CnEquipmentDeployment[]
-  cnFleetDashboards       CnFleetDashboard[]
-  cnHireRentRecords       CnHireRentRecord[]
+  allowedEmailDomains      String[]                  @default([])
+  createdAt                DateTime                  @default(now())
+  updatedAt                DateTime                  @updatedAt
+  createdBy                String?
+  cnAssets                 CnAsset[]
+  cnAuditLogs              CnAuditLog[]
+  cnCompanies              CnCompany[]
+  cnContractors            CnContractor[]
+  cnCostCenters            CnCostCenter[]
+  cnCustomers              CnCustomer[]
+  cnDepartments            CnDepartment[]
+  cnDieselLogs             CnDieselLog[]
+  cnFinancialYears         CnFinancialYear[]
+  cnGstCodes               CnGSTCode[]
+  cnGatePasses             CnGatePass[]
+  cnGoodReturns            CnGoodReturn[]
+  cnGRNs                   CnGoodsReceiptNote[]
+  cnHindrances             CnHindrance[]
+  cnInternalReturns        CnInternalReturn[]
+  cnItems                  CnItem[]
+  cnItemGroups             CnItemGroup[]
+  cnLocations              CnLocation[]
+  cnMachinery              CnMachinery[]
+  cnEquipmentLogs          CnEquipmentLog[]
+  cnMaintenanceJobCards    CnMaintenanceJobCard[]
+  cnEquipmentDeployments   CnEquipmentDeployment[]
+  cnFleetDashboards        CnFleetDashboard[]
+  cnHireRentRecords        CnHireRentRecord[]
   cnFixedAssetTransactions CnFixedAssetTransaction[]
-  cnMaterialIssues        CnMaterialIssue[]
-  cnProjects              CnProject[]
-  cnPurchaseIndents       CnPurchaseIndent[]
-  cnPurchaseOrders        CnPurchaseOrder[]
-  cnPurchaseRequisitions  CnPurchaseRequisition[]
-  cnQcInspections         CnQCInspection[]
-  cnSafetyChecklists      CnSafetyChecklist[]
-  cnStockLedger           CnStockLedger[]
-  cnStockReconciliations  CnStockReconciliation[]
-  cnStockTransfers        CnStockTransfer[]
-  cnTdsCodes              CnTDSCode[]
-  cnTermsConditions       CnTermsCondition[]
-  cnUoms                  CnUOM[]
-  cnVendors               CnVendor[]
-  cnWorkCategories        CnWorkCategory[]
-  cnWorkOrders            CnWorkOrder[]
-  cnAppRoles              CnAppRole[]
-  cnUserAppRoles          CnUserAppRole[]
-  cnUserPermissionExtras  CnUserPermissionExtra[]
-  cnUserProfiles          CnUserProfile[]
-  cnUserProjectAccess     CnUserProjectAccess[]
-  accountabilityFunctions AccountabilityFunction[]
-  appRoles                AppRole[]
-  categoryMasters         CategoryMaster[]
-  unitMasters             UnitMaster[]
-  clients                 Client[]
-  clientDailyHuddles      ClientDailyHuddle[]
-  clientMembers           ClientMember[]
-  clientWeeklyMeetings    ClientWeeklyMeeting[]
-  feedbackEntries         FeedbackEntry[]
-  goals                   Goal[]
-  habits                  HabitAssessment[]
-  kpis                    KPI[]
-  opspData                OPSPData[]
-  opspUserSections        OPSPUserSection[]
-  opspDocuments           OPSPDocument[]
-  opppPlans               OPSPPlan[]
-  opspReviewEntries       OPSPReviewEntry[]
-  oneOnOnes               OneOnOne[]
-  performanceReviews      PerformanceReview[]
-  priorities              Priority[]
-  quarterSettings         QuarterSetting[]
-  talentAssessments       TalentAssessment[]
-  talentBenchmark         TalentBenchmark?
-  swtEntries              SWTEntry[]
-  surveys                 Survey[]
-  userAppRoles            UserAppRole[]
-  userPermissionExtras    UserPermissionExtra[]
-  userTablePreferences    UserTablePreference[]
-  wwwItems                WWWItem[]
-  brands                  Brand[]
-  AppRole                 QtAppRole[]
-  QtProjectRole           QtProjectRole[]
-  QtDashboard             QtDashboard[]
-  QtDoc                   QtDoc[]
-  QtInvitation            QtInvitation[]
-  qtIssues                QtIssue[]
-  qtProjects              QtProject[]
-  qtTeams                 QtTeam[]
-  qtCustomFields          QtCustomField[]
-  qtIssueFieldValues      QtIssueFieldValue[]
-  qtCustomFieldAudits     QtCustomFieldAudit[]
-  QtTimesheetEntry        QtTimesheetEntry[]
-  QtUserActivity          QtUserActivity[]
-  QtUserViewPref          QtUserViewPref[]
-  QtReportView            QtReportView[]
-  UserAppRole             QtUserAppRole[]
-  UserPermissionExtra     QtUserPermissionExtra[]
-  qsAppRoles              QsAppRole[]
-  qsUserAppRoles          QsUserAppRole[]
-  vcApplications          VCApplication[]
-  vcAuditLogs             VCAuditLog[]
-  vcCapitalCalls          VCCapitalCall[]
-  vcCapitalCallPayments   VCCapitalCallPayment[]
-  vcCommitments           VCCommitment[]
-  vcComparableCompanies   VCComparableCompany[]
-  vcDeals                 VCDeal[]
-  vcDealAllocations       VCDealAllocation[]
-  vcDealDocuments         VCDealDocument[]
-  vcDealQuestions         VCDealQuestion[]
-  vcDealScores            VCDealScore[]
-  vcDealSignals           VCDealSignal[]
-  vcFundProfile           VCFundProfile?
-  vcICMemos               VCICMemo[]
-  vcICMemoVersions        VCICMemoVersion[]
-  vcICVotes               VCICVote[]
-  vcInvestors             VCInvestor[]
-  vcMeetings              VCMeeting[]
-  vcMeetingTranscripts    VCMeetingTranscript[]
-  vcNotifications         VCNotification[]
-  vcRepaymentPayments     VCRepaymentPayment[]
-  vcRepaymentSchedules    VCRepaymentSchedule[]
-  vcScoringCriteria       VCScoringCriterion[]
-  vcSourcedOpportunities  VCSourcedOpportunity[]
-  vcTermSheets            VCTermSheet[]
-  vcTermSheetTemplates    VCTermSheetTemplate[]
-  vcTimelineEvents        VCTimelineEvent[]
-  vcVerticals             VCVertical[]
-  appModuleFlags          AppModuleFlag[]
-  auditLogs               AuditLog[]
-  auditEvents             AuditEvent[]
-  auditEventReads         AuditEventRead[]
-  authLogs                AuthLog[]
-  featureFlags            FeatureFlag[]
-  invoices                Invoice[]
-  notifications           Notification[]
-  sessionEvents           SessionEvent[]
-  teams                   Team[]
-  userTeams               UserTeam[]
-  qsTeams                 QsTeam[]
-  qsUserTeams             QsUserTeam[]
-  tenantAppAccess         OrgAppAccess[]
-  users                   OrgMember[]
-  userAppAccess           UserAppAccess[]
-  subscription            Subscription?
+  cnMaterialIssues         CnMaterialIssue[]
+  cnProjects               CnProject[]
+  cnPurchaseIndents        CnPurchaseIndent[]
+  cnPurchaseOrders         CnPurchaseOrder[]
+  cnPurchaseRequisitions   CnPurchaseRequisition[]
+  cnQcInspections          CnQCInspection[]
+  cnSafetyChecklists       CnSafetyChecklist[]
+  cnStockLedger            CnStockLedger[]
+  cnStockReconciliations   CnStockReconciliation[]
+  cnStockTransfers         CnStockTransfer[]
+  cnTdsCodes               CnTDSCode[]
+  cnTermsConditions        CnTermsCondition[]
+  cnUoms                   CnUOM[]
+  cnVendors                CnVendor[]
+  cnWorkCategories         CnWorkCategory[]
+  cnWorkOrders             CnWorkOrder[]
+  cnAppRoles               CnAppRole[]
+  cnUserAppRoles           CnUserAppRole[]
+  cnUserPermissionExtras   CnUserPermissionExtra[]
+  cnUserProfiles           CnUserProfile[]
+  cnUserProjectAccess      CnUserProjectAccess[]
+  accountabilityFunctions  AccountabilityFunction[]
+  appRoles                 AppRole[]
+  categoryMasters          CategoryMaster[]
+  unitMasters              UnitMaster[]
+  clients                  Client[]
+  clientDailyHuddles       ClientDailyHuddle[]
+  clientMembers            ClientMember[]
+  clientWeeklyMeetings     ClientWeeklyMeeting[]
+  feedbackEntries          FeedbackEntry[]
+  goals                    Goal[]
+  habits                   HabitAssessment[]
+  kpis                     KPI[]
+  opspData                 OPSPData[]
+  opspUserSections         OPSPUserSection[]
+  opspDocuments            OPSPDocument[]
+  opppPlans                OPSPPlan[]
+  opspReviewEntries        OPSPReviewEntry[]
+  oneOnOnes                OneOnOne[]
+  performanceReviews       PerformanceReview[]
+  priorities               Priority[]
+  quarterSettings          QuarterSetting[]
+  talentAssessments        TalentAssessment[]
+  talentBenchmark          TalentBenchmark?
+  swtEntries               SWTEntry[]
+  surveys                  Survey[]
+  userAppRoles             UserAppRole[]
+  userPermissionExtras     UserPermissionExtra[]
+  userTablePreferences     UserTablePreference[]
+  wwwItems                 WWWItem[]
+  brands                   Brand[]
+  AppRole                  QtAppRole[]
+  QtProjectRole            QtProjectRole[]
+  QtDashboard              QtDashboard[]
+  QtDoc                    QtDoc[]
+  QtInvitation             QtInvitation[]
+  qtIssues                 QtIssue[]
+  qtProjects               QtProject[]
+  qtTeams                  QtTeam[]
+  qtCustomFields           QtCustomField[]
+  qtIssueFieldValues       QtIssueFieldValue[]
+  qtCustomFieldAudits      QtCustomFieldAudit[]
+  QtTimesheetEntry         QtTimesheetEntry[]
+  QtUserActivity           QtUserActivity[]
+  QtUserViewPref           QtUserViewPref[]
+  QtReportView             QtReportView[]
+  UserAppRole              QtUserAppRole[]
+  UserPermissionExtra      QtUserPermissionExtra[]
+  qsAppRoles               QsAppRole[]
+  qsUserAppRoles           QsUserAppRole[]
+  vcApplications           VCApplication[]
+  vcAuditLogs              VCAuditLog[]
+  vcCapitalCalls           VCCapitalCall[]
+  vcCapitalCallPayments    VCCapitalCallPayment[]
+  vcCommitments            VCCommitment[]
+  vcComparableCompanies    VCComparableCompany[]
+  vcDeals                  VCDeal[]
+  vcDealAllocations        VCDealAllocation[]
+  vcDealDocuments          VCDealDocument[]
+  vcDealQuestions          VCDealQuestion[]
+  vcDealScores             VCDealScore[]
+  vcDealSignals            VCDealSignal[]
+  vcFundProfile            VCFundProfile?
+  vcICMemos                VCICMemo[]
+  vcICMemoVersions         VCICMemoVersion[]
+  vcICVotes                VCICVote[]
+  vcInvestors              VCInvestor[]
+  vcMeetings               VCMeeting[]
+  vcMeetingTranscripts     VCMeetingTranscript[]
+  vcNotifications          VCNotification[]
+  vcRepaymentPayments      VCRepaymentPayment[]
+  vcRepaymentSchedules     VCRepaymentSchedule[]
+  vcScoringCriteria        VCScoringCriterion[]
+  vcSourcedOpportunities   VCSourcedOpportunity[]
+  vcTermSheets             VCTermSheet[]
+  vcTermSheetTemplates     VCTermSheetTemplate[]
+  vcTimelineEvents         VCTimelineEvent[]
+  vcVerticals              VCVertical[]
+  appModuleFlags           AppModuleFlag[]
+  auditLogs                AuditLog[]
+  auditEvents              AuditEvent[]
+  auditEventReads          AuditEventRead[]
+  authLogs                 AuthLog[]
+  featureFlags             FeatureFlag[]
+  invoices                 Invoice[]
+  notifications            Notification[]
+  sessionEvents            SessionEvent[]
+  teams                    Team[]
+  userTeams                UserTeam[]
+  qsTeams                  QsTeam[]
+  qsUserTeams              QsUserTeam[]
+  tenantAppAccess          OrgAppAccess[]
+  users                    OrgMember[]
+  userAppAccess            UserAppAccess[]
+  subscription             Subscription?
 
   @@index([slug])
   @@index([status])
@@ -805,30 +805,30 @@ model AuditEventRead {
 }
 
 model Priority {
-  id             String                 @id @default(cuid())
-  orgId          String
-  name           String
-  description    String?
-  owner          String
-  teamId         String?
-  quarter        String
-  year           Int
-  startWeek      Int?
-  endWeek        Int?
-  overallStatus  String                 @default("not-started")
-  notes          String?
+  id               String                 @id @default(cuid())
+  orgId            String
+  name             String
+  description      String?
+  owner            String
+  teamId           String?
+  quarter          String
+  year             Int
+  startWeek        Int?
+  endWeek          Int?
+  overallStatus    String                 @default("not-started")
+  notes            String?
   // True when created via the OPSP "Export → Create Priorities" flow.
   // Display-only (shown in the Priority grid); never edited from the form.
-  importedFromOpsp Boolean              @default(false)
-  createdAt      DateTime               @default(now())
-  updatedAt      DateTime               @updatedAt
-  createdBy      String
-  updatedBy      String?
-  deletedAt      DateTime?
-  org            Org                    @relation(fields: [orgId], references: [id], onDelete: Cascade)
-  owner_user     User                   @relation("PriorityOwner", fields: [owner], references: [id])
-  team           QsTeam?                @relation(fields: [teamId], references: [id])
-  weeklyStatuses PriorityWeeklyStatus[]
+  importedFromOpsp Boolean                @default(false)
+  createdAt        DateTime               @default(now())
+  updatedAt        DateTime               @updatedAt
+  createdBy        String
+  updatedBy        String?
+  deletedAt        DateTime?
+  org              Org                    @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  owner_user       User                   @relation("PriorityOwner", fields: [owner], references: [id])
+  team             QsTeam?                @relation(fields: [teamId], references: [id])
+  weeklyStatuses   PriorityWeeklyStatus[]
 
   @@index([orgId])
   @@index([orgId, deletedAt])
@@ -2147,20 +2147,20 @@ model BroadcastDismissal {
 /// regardless of AppModuleFlag state. Evaluated first in the auth/route flow.
 /// Sparse: row exists only when explicitly toggled off (default = enabled).
 model OrgAppAccess {
-  id        String   @id @default(cuid())
-  orgId     String
-  appId     String
-  enabled   Boolean  @default(true)
-  reason    String?
+  id          String    @id @default(cuid())
+  orgId       String
+  appId       String
+  enabled     Boolean   @default(true)
+  reason      String?
   /// Per-app free-trial expiry for self-serve activation. null = no trial
   /// (grandfathered access granted by an admin, or an upgraded/paid app) →
   /// treated as active. A future date = trialing; a past date = expired.
   trialEndsAt DateTime?
-  updatedBy String?
-  updatedAt DateTime @updatedAt
-  createdAt DateTime @default(now())
-  app       App      @relation(fields: [appId], references: [id], onDelete: Cascade)
-  org       Org      @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  updatedBy   String?
+  updatedAt   DateTime  @updatedAt
+  createdAt   DateTime  @default(now())
+  app         App       @relation(fields: [appId], references: [id], onDelete: Cascade)
+  org         Org       @relation(fields: [orgId], references: [id], onDelete: Cascade)
 
   @@unique([orgId, appId])
   @@index([orgId])
@@ -2385,9 +2385,9 @@ model CnVendor {
   createdBy        String
   updatedBy        String
 
-  pos         CnPurchaseOrder[]
-  grns        CnGoodsReceiptNote[]
-  goodReturns CnGoodReturn[]
+  pos             CnPurchaseOrder[]
+  grns            CnGoodsReceiptNote[]
+  goodReturns     CnGoodReturn[]
   hireRentRecords CnHireRentRecord[]
 
   // --- grafted: cross-schema relations (Org/User) ---
@@ -2428,7 +2428,7 @@ model CnCustomer {
   createdBy       String
   updatedBy       String
 
-  projects CnProject[]
+  projects        CnProject[]
   hireRentRecords CnHireRentRecord[]
 
   // --- grafted: cross-schema relations (Org/User) ---
@@ -2634,7 +2634,7 @@ model CnCostCenter {
   createdBy String
   updatedBy String
 
-  project   CnProject? @relation(fields: [projectId], references: [id])
+  project CnProject? @relation(fields: [projectId], references: [id])
 
   // --- grafted: cross-schema relations (Org/User) ---
   org Org @relation(fields: [orgId], references: [id], onDelete: Cascade)
@@ -2814,43 +2814,43 @@ model CnProject {
   createdBy        String
   updatedBy        String
 
-  client           CnCustomer?             @relation(fields: [clientId], references: [id])
-  locations        CnLocation[]
-  costCenters      CnCostCenter[]
-  machinery        CnMachinery[]
-  assets           CnAsset[]
-  boqItems         CnBOQItem[]
-  purchaseReqs     CnPurchaseRequisition[]
-  indents          CnPurchaseIndent[]
-  pos              CnPurchaseOrder[]
-  grns             CnGoodsReceiptNote[]
-  issues           CnMaterialIssue[]
-  transfers        CnStockTransfer[]
-  reconciliations  CnStockReconciliation[]
-  workOrders       CnWorkOrder[]
-  dprs             CnDailyProgressReport[]
-  rabs             CnRunningAccountBill[]
-  stockLedger      CnStockLedger[]
-  estimations      CnMaterialEstimation[]
-  dieselLogs       CnDieselLog[]
-  equipmentLogs       CnEquipmentLog[]
-  maintenanceJobCards CnMaintenanceJobCard[]
-  equipmentDeploymentsDest CnEquipmentDeployment[] @relation("DeployDestination")
-  equipmentDeploymentsFrom CnEquipmentDeployment[] @relation("DeploySource")
-  fleetDashboards  CnFleetDashboard[]
-  hireRentRecords  CnHireRentRecord[]
-  fixedAssetTransactions CnFixedAssetTransaction[]
+  client                     CnCustomer?               @relation(fields: [clientId], references: [id])
+  locations                  CnLocation[]
+  costCenters                CnCostCenter[]
+  machinery                  CnMachinery[]
+  assets                     CnAsset[]
+  boqItems                   CnBOQItem[]
+  purchaseReqs               CnPurchaseRequisition[]
+  indents                    CnPurchaseIndent[]
+  pos                        CnPurchaseOrder[]
+  grns                       CnGoodsReceiptNote[]
+  issues                     CnMaterialIssue[]
+  transfers                  CnStockTransfer[]
+  reconciliations            CnStockReconciliation[]
+  workOrders                 CnWorkOrder[]
+  dprs                       CnDailyProgressReport[]
+  rabs                       CnRunningAccountBill[]
+  stockLedger                CnStockLedger[]
+  estimations                CnMaterialEstimation[]
+  dieselLogs                 CnDieselLog[]
+  equipmentLogs              CnEquipmentLog[]
+  maintenanceJobCards        CnMaintenanceJobCard[]
+  equipmentDeploymentsDest   CnEquipmentDeployment[]   @relation("DeployDestination")
+  equipmentDeploymentsFrom   CnEquipmentDeployment[]   @relation("DeploySource")
+  fleetDashboards            CnFleetDashboard[]
+  hireRentRecords            CnHireRentRecord[]
+  fixedAssetTransactions     CnFixedAssetTransaction[]
   fixedAssetTransactionsFrom CnFixedAssetTransaction[] @relation("FaTxnSource")
   fixedAssetTransactionsTo   CnFixedAssetTransaction[] @relation("FaTxnDestination")
-  gatePasses       CnGatePass[]
-  goodReturns      CnGoodReturn[]
-  internalReturns  CnInternalReturn[]
-  boqRev2Items     CnBOQItemV2[]
-  boqImportBatches CnBOQImportBatch[]
-  boqLockState     CnBOQLockState?
-  wbsTasks         CnWBSTask[]
-  hindrances       CnHindrance[]
-  documents        CnProjectDocument[]
+  gatePasses                 CnGatePass[]
+  goodReturns                CnGoodReturn[]
+  internalReturns            CnInternalReturn[]
+  boqRev2Items               CnBOQItemV2[]
+  boqImportBatches           CnBOQImportBatch[]
+  boqLockState               CnBOQLockState?
+  wbsTasks                   CnWBSTask[]
+  hindrances                 CnHindrance[]
+  documents                  CnProjectDocument[]
 
   // --- grafted: cross-schema relations (Org/User) ---
   org Org @relation(fields: [orgId], references: [id], onDelete: Cascade)
@@ -2862,18 +2862,18 @@ model CnProject {
 }
 
 model CnMachinery {
-  id             String   @id @default(cuid())
-  orgId          String
-  code           String
-  name           String
-  type           String
-  make           String?
-  model          String?
-  registrationNo String?
-  projectId      String?
-  locationId     String?
-  fuelType       String?
-  capacity       String?
+  id                   String   @id @default(cuid())
+  orgId                String
+  code                 String
+  name                 String
+  type                 String
+  make                 String?
+  model                String?
+  registrationNo       String?
+  projectId            String?
+  locationId           String?
+  fuelType             String?
+  capacity             String?
   meterType            String   @default("hour")
   currentMeter         Decimal? @db.Decimal(18, 2)
   fuelNorm             Decimal? @db.Decimal(18, 4)
@@ -2885,18 +2885,18 @@ model CnMachinery {
   deprRate             Decimal? @db.Decimal(5, 2)
   deprMethod           String?
   status               String   @default("active")
-  createdAt      DateTime @default(now())
-  updatedAt      DateTime @updatedAt
-  createdBy      String
-  updatedBy      String
+  createdAt            DateTime @default(now())
+  updatedAt            DateTime @updatedAt
+  createdBy            String
+  updatedBy            String
 
-  dieselLogs          CnDieselLog[]
-  equipmentLogs       CnEquipmentLog[]
-  maintenanceJobCards CnMaintenanceJobCard[]
+  dieselLogs           CnDieselLog[]
+  equipmentLogs        CnEquipmentLog[]
+  maintenanceJobCards  CnMaintenanceJobCard[]
   equipmentDeployments CnEquipmentDeployment[]
   hireRentRecords      CnHireRentRecord[]
 
-  project        CnProject?    @relation(fields: [projectId], references: [id])
+  project CnProject? @relation(fields: [projectId], references: [id])
 
   // --- grafted: cross-schema relations (Org/User) ---
   org Org @relation(fields: [orgId], references: [id], onDelete: Cascade)
@@ -2910,25 +2910,25 @@ model CnMachinery {
 
 /// Sidebar: Equipment Log Book
 model CnEquipmentLog {
-  id              String   @id @default(cuid())
+  id              String    @id @default(cuid())
   orgId           String
   equipmentId     String
   projectId       String?
   logDate         DateTime
-  shift           String   @default("Day")
-  openingMeter    Decimal? @db.Decimal(18, 2)
-  closingMeter    Decimal? @db.Decimal(18, 2)
-  meterReset      Boolean  @default(false)
-  run             Decimal? @db.Decimal(18, 4)
-  idleHours       Decimal? @db.Decimal(18, 4)
-  breakdownHours  Decimal? @db.Decimal(18, 4)
-  dieselIssued    Decimal? @db.Decimal(18, 4)
-  fuelRate        Decimal? @db.Decimal(18, 4)
+  shift           String    @default("Day")
+  openingMeter    Decimal?  @db.Decimal(18, 2)
+  closingMeter    Decimal?  @db.Decimal(18, 2)
+  meterReset      Boolean   @default(false)
+  run             Decimal?  @db.Decimal(18, 4)
+  idleHours       Decimal?  @db.Decimal(18, 4)
+  breakdownHours  Decimal?  @db.Decimal(18, 4)
+  dieselIssued    Decimal?  @db.Decimal(18, 4)
+  fuelRate        Decimal?  @db.Decimal(18, 4)
   operatorName    String?
-  productivityQty Decimal? @db.Decimal(18, 4)
+  productivityQty Decimal?  @db.Decimal(18, 4)
   outputUom       String?
   remarks         String?
-  status          String   @default("draft")
+  status          String    @default("draft")
   approvalId      String?
   rejectReason    String?
   submittedAt     DateTime?
@@ -2940,8 +2940,8 @@ model CnEquipmentLog {
   returnedAt      DateTime?
   returnedBy      String?
   returnReason    String?
-  createdAt       DateTime @default(now())
-  updatedAt       DateTime @updatedAt
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
   createdBy       String
   updatedBy       String
 
@@ -2960,26 +2960,26 @@ model CnEquipmentLog {
 
 /// Sidebar: Maintenance (spares stored as JSON on job card)
 model CnMaintenanceJobCard {
-  id               String   @id @default(cuid())
-  orgId            String
-  jobNumber        String
-  equipmentId      String
-  projectId        String?
-  jobType          String   @default("breakdown")
-  serviceDate      DateTime
-  meterAtService   Decimal? @db.Decimal(18, 2)
-  downtimeHours    Decimal? @db.Decimal(18, 4)
-  reportedProblem  String?
-  labourCost       Decimal  @default(0) @db.Decimal(18, 2)
-  serviceCost      Decimal  @default(0) @db.Decimal(18, 2)
-  totalCost        Decimal  @default(0) @db.Decimal(18, 2)
-  spares           Json     @default("[]")
-  remarks          String?
-  status           String   @default("open")
-  createdAt        DateTime @default(now())
-  updatedAt        DateTime @updatedAt
-  createdBy        String
-  updatedBy        String
+  id              String   @id @default(cuid())
+  orgId           String
+  jobNumber       String
+  equipmentId     String
+  projectId       String?
+  jobType         String   @default("breakdown")
+  serviceDate     DateTime
+  meterAtService  Decimal? @db.Decimal(18, 2)
+  downtimeHours   Decimal? @db.Decimal(18, 4)
+  reportedProblem String?
+  labourCost      Decimal  @default(0) @db.Decimal(18, 2)
+  serviceCost     Decimal  @default(0) @db.Decimal(18, 2)
+  totalCost       Decimal  @default(0) @db.Decimal(18, 2)
+  spares          Json     @default("[]")
+  remarks         String?
+  status          String   @default("open")
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+  createdBy       String
+  updatedBy       String
 
   equipment CnMachinery @relation(fields: [equipmentId], references: [id])
   project   CnProject?  @relation(fields: [projectId], references: [id])
@@ -3149,8 +3149,8 @@ model CnAsset {
   createdBy       String
   updatedBy       String
 
-  project       CnProject? @relation(fields: [projectId], references: [id])
-  transactions  CnFixedAssetTransaction[]
+  project      CnProject?                @relation(fields: [projectId], references: [id])
+  transactions CnFixedAssetTransaction[]
 
   // --- grafted: cross-schema relations (Org/User) ---
   org Org @relation(fields: [orgId], references: [id], onDelete: Cascade)
@@ -4662,13 +4662,13 @@ model CnProjectDocument {
 }
 
 model CnDPRWorkItem {
-  id            String  @id @default(cuid())
+  id            String   @id @default(cuid())
   dprId         String
   boqItemId     String
   woId          String?
   description   String
-  todayQty      Decimal @db.Decimal(18, 4)
-  cumulativeQty Decimal @db.Decimal(18, 4)
+  todayQty      Decimal  @db.Decimal(18, 4)
+  cumulativeQty Decimal  @db.Decimal(18, 4)
   uomId         String
   remarks       String?
   images        String[] @default([])
@@ -4744,6 +4744,7 @@ model CnDPRMaterialEntry {
   @@map("Dpr_material_entries")
   @@schema("app_quikinfra")
 }
+
 model CnDPRStaff {
   id          String  @id @default(cuid())
   dprId       String
@@ -4758,6 +4759,7 @@ model CnDPRStaff {
   @@map("Dpr_staff_entries")
   @@schema("app_quikinfra")
 }
+
 model CnRunningAccountBill {
   id                 String   @id @default(cuid())
   orgId              String
@@ -4774,18 +4776,18 @@ model CnRunningAccountBill {
   grossBillAmount    Decimal  @default(0) @db.Decimal(18, 2)
 
   // Retention
-  retentionPercent   Decimal? @db.Decimal(5, 2)
-  retentionAmount    Decimal? @db.Decimal(18, 2)
+  retentionPercent Decimal? @db.Decimal(5, 2)
+  retentionAmount  Decimal? @db.Decimal(18, 2)
 
   // Tax — GST is ADDED to the bill; TDS is a deduction. Both filled by
   // computeRABill(). Rates are percentages; amounts are money.
-  tdsRate  Decimal? @db.Decimal(5, 2)
-  tdsAmount Decimal? @db.Decimal(18, 2)
-  cgstRate Decimal? @db.Decimal(5, 2)
+  tdsRate    Decimal? @db.Decimal(5, 2)
+  tdsAmount  Decimal? @db.Decimal(18, 2)
+  cgstRate   Decimal? @db.Decimal(5, 2)
   cgstAmount Decimal? @db.Decimal(18, 2)
-  sgstRate Decimal? @db.Decimal(5, 2)
+  sgstRate   Decimal? @db.Decimal(5, 2)
   sgstAmount Decimal? @db.Decimal(18, 2)
-  igstRate Decimal? @db.Decimal(5, 2)
+  igstRate   Decimal? @db.Decimal(5, 2)
   igstAmount Decimal? @db.Decimal(18, 2)
 
   // Other statutory / contractual deductions (all excluded from the GST add-on).
@@ -4796,16 +4798,16 @@ model CnRunningAccountBill {
 
   // Legacy single-lump deduction column — retained for existing rows; new
   // bills break the total out into the granular fields above.
-  deductions         Decimal? @db.Decimal(18, 2)
-  netPayable         Decimal  @db.Decimal(18, 2)
+  deductions Decimal? @db.Decimal(18, 2)
+  netPayable Decimal  @db.Decimal(18, 2)
 
-  status             String   @default("draft")
-  paymentStatus      String   @default("unpaid") // unpaid | partial | paid
-  approvalId         String?
-  createdAt          DateTime @default(now())
-  updatedAt          DateTime @updatedAt
-  createdBy          String
-  updatedBy          String
+  status        String   @default("draft")
+  paymentStatus String   @default("unpaid") // unpaid | partial | paid
+  approvalId    String?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+  createdBy     String
+  updatedBy     String
 
   project    CnProject    @relation(fields: [projectId], references: [id])
   contractor CnContractor @relation(fields: [contractorId], references: [id])
@@ -7578,13 +7580,14 @@ enum CrmWorkflowStatus {
 }
 
 model CrmPermissionTemplate {
-  id        String   @id @default(cuid())
-  orgId  String
+  id        String                      @id @default(cuid())
+  orgId     String
   name      String
   matrix    Json
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  createdAt DateTime                    @default(now())
+  updatedAt DateTime                    @updatedAt
   users     CrmUserPermissionTemplate[]
+
   @@unique([orgId, name])
   @@index([orgId])
   @@schema("app_quikcrm")
@@ -7594,6 +7597,7 @@ model CrmUserPermissionTemplate {
   userId     String
   templateId String
   template   CrmPermissionTemplate @relation(fields: [templateId], references: [id], onDelete: Cascade)
+
   @@id([userId, templateId])
   @@schema("app_quikcrm")
 }
@@ -7602,13 +7606,14 @@ model CrmUserAccountAccess {
   userId    String
   accountId String
   account   CrmAccount @relation(fields: [accountId], references: [id], onDelete: Cascade)
+
   @@id([userId, accountId])
   @@schema("app_quikcrm")
 }
 
 model CrmAccount {
-  id                    String   @id @default(cuid())
-  orgId              String
+  id                    String                 @id @default(cuid())
+  orgId                 String
   name                  String
   segment               String?
   ownerId               String?
@@ -7616,10 +7621,10 @@ model CrmAccount {
   industry              String?
   website               String?
   city                  String?
-  status                String?  @default("Active")
+  status                String?                @default("Active")
   annualRevenueDisplay  String?
-  annualRevenueAmount   Decimal? @db.Decimal(18, 2)
-  annualRevenueCurrency String?  @default("INR")
+  annualRevenueAmount   Decimal?               @db.Decimal(18, 2)
+  annualRevenueCurrency String?                @default("INR")
   segmentEnum           CrmAccountSegment?
   industryKey           String?
   countryCode           String?
@@ -7636,8 +7641,8 @@ model CrmAccount {
   defaultPriceListId    String?
   deletedAt             DateTime?
   createdByUserId       String?
-  createdAt             DateTime @default(now())
-  updatedAt             DateTime @updatedAt
+  createdAt             DateTime               @default(now())
+  updatedAt             DateTime               @updatedAt
   parent                CrmAccount?            @relation("CrmAccountHierarchy", fields: [parentAccountId], references: [id])
   children              CrmAccount[]           @relation("CrmAccountHierarchy")
   defaultPriceList      CrmPriceList?          @relation("AccountDefaultPriceList", fields: [defaultPriceListId], references: [id], onDelete: SetNull)
@@ -7646,6 +7651,7 @@ model CrmAccount {
   opportunities         CrmOpportunity[]
   userAccess            CrmUserAccountAccess[]
   groupAccess           CrmSalesGroupAccount[]
+
   @@index([orgId])
   @@index([orgId, name])
   @@index([orgId, ownerId])
@@ -7659,8 +7665,8 @@ model CrmAccount {
 }
 
 model CrmContact {
-  id           String   @id @default(cuid())
-  orgId     String
+  id           String      @id @default(cuid())
+  orgId        String
   firstName    String
   lastName     String?
   email        String?
@@ -7674,10 +7680,11 @@ model CrmContact {
   contactStage String?
   source       String?
   deletedAt    DateTime?
-  createdAt    DateTime @default(now())
-  updatedAt    DateTime @updatedAt
+  createdAt    DateTime    @default(now())
+  updatedAt    DateTime    @updatedAt
   account      CrmAccount? @relation(fields: [accountId], references: [id])
   lead         CrmLead?    @relation(fields: [leadId], references: [id])
+
   @@index([orgId])
   @@index([orgId, email])
   @@index([orgId, accountId])
@@ -7688,45 +7695,45 @@ model CrmContact {
 }
 
 model CrmLead {
-  id               String    @id @default(cuid())
-  orgId         String
-  name             String
-  email            String?
-  phone            String?
-  mobile           String?
-  company          String?
-  jobTitle         String?
-  source           String?
-  stage            String    @default("New")
-  status           String    @default("Open")
-  substatus        String?
-  score            Int       @default(0)
-  ownerId          String?
-  ownerName        String?
-  accountId        String?
-  linkedContactId  String?
-  externalId       String?
-  sourceSystem     String?
-  country              String?
-  industry             String?
-  secondaryEmail       String?
-  website              String?
-  linkedinUrl          String?
-  annualRevenueDisplay String?
-  leadQuality          String?
-  isDisengaged     Boolean   @default(false)
-  isStarred        Boolean   @default(false)
-  followupPriority String?
-  addressLine1     String?
-  addressLine2     String?
-  area             String?
-  cityName         String?
-  stateName        String?
-  postalCode       String?
-  lat              Float?
-  long             Float?
-  convertedAt      DateTime?
-  dynamicFields    Json?
+  id                     String               @id @default(cuid())
+  orgId                  String
+  name                   String
+  email                  String?
+  phone                  String?
+  mobile                 String?
+  company                String?
+  jobTitle               String?
+  source                 String?
+  stage                  String               @default("New")
+  status                 String               @default("Open")
+  substatus              String?
+  score                  Int                  @default(0)
+  ownerId                String?
+  ownerName              String?
+  accountId              String?
+  linkedContactId        String?
+  externalId             String?
+  sourceSystem           String?
+  country                String?
+  industry               String?
+  secondaryEmail         String?
+  website                String?
+  linkedinUrl            String?
+  annualRevenueDisplay   String?
+  leadQuality            String?
+  isDisengaged           Boolean              @default(false)
+  isStarred              Boolean              @default(false)
+  followupPriority       String?
+  addressLine1           String?
+  addressLine2           String?
+  area                   String?
+  cityName               String?
+  stateName              String?
+  postalCode             String?
+  lat                    Float?
+  long                   Float?
+  convertedAt            DateTime?
+  dynamicFields          Json?
   // Lead profile / qualification fields. These columns exist in the
   // app_quikcrm.CrmLead table (migration 20260519130000_crm_lead_profile_fields)
   // but were missing from this model, causing "Unknown argument" on create.
@@ -7738,7 +7745,7 @@ model CrmLead {
   topic                  String?
   technology             Json?
   requirementDetails     Json?
-  budgetAmount           Decimal?  @db.Decimal(18, 2)
+  budgetAmount           Decimal?             @db.Decimal(18, 2)
   budgetCurrency         String?
   purchaseTimeframe      String?
   sourceDetails          String?
@@ -7747,17 +7754,18 @@ model CrmLead {
   lastContactedAt        DateTime?
   followupNotes          String?
   internalRemarks        String?
-  createdAt        DateTime  @default(now())
-  updatedAt        DateTime  @updatedAt
-  deletedAt        DateTime?
-  account          CrmAccount?          @relation(fields: [accountId], references: [id])
-  attachments      CrmLeadAttachment[]
-  contacts         CrmContact[]
-  activities       CrmActivity[]
-  tasks            CrmTask[]
-  notes            CrmNote[]
-  callLogs         CrmCallLog[]
-  slaTracking      CrmSlaLeadTracking[]
+  createdAt              DateTime             @default(now())
+  updatedAt              DateTime             @updatedAt
+  deletedAt              DateTime?
+  account                CrmAccount?          @relation(fields: [accountId], references: [id])
+  attachments            CrmLeadAttachment[]
+  contacts               CrmContact[]
+  activities             CrmActivity[]
+  tasks                  CrmTask[]
+  notes                  CrmNote[]
+  callLogs               CrmCallLog[]
+  slaTracking            CrmSlaLeadTracking[]
+
   @@unique([orgId, sourceSystem, externalId], name: "lead_external_uk")
   @@index([orgId])
   @@index([orgId, stage])
@@ -7770,7 +7778,7 @@ model CrmLead {
 
 model CrmLeadAttachment {
   id          String   @id @default(cuid())
-  orgId    String
+  orgId       String
   leadId      String
   fileName    String
   contentType String
@@ -7779,44 +7787,48 @@ model CrmLeadAttachment {
   uploadedBy  String
   createdAt   DateTime @default(now())
   lead        CrmLead  @relation(fields: [leadId], references: [id], onDelete: Cascade)
+
   @@index([orgId, leadId])
   @@schema("app_quikcrm")
 }
 
 model CrmLeadListView {
   id        String   @id @default(cuid())
-  orgId  String
+  orgId     String
   userId    String
   name      String
   filters   Json
   isDefault Boolean  @default(false)
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+
   @@index([orgId, userId])
   @@schema("app_quikcrm")
 }
 
 model CrmLeadSavedList {
   id        String   @id @default(cuid())
-  orgId  String
+  orgId     String
   userId    String
   name      String
   filters   Json
   isDefault Boolean  @default(false)
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+
   @@index([orgId, userId])
   @@schema("app_quikcrm")
 }
 
 model CrmLeadSource {
   id        String   @id @default(cuid())
-  orgId  String
+  orgId     String
   name      String
   type      String?
   active    Boolean  @default(true)
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+
   @@unique([orgId, name])
   @@index([orgId])
   @@index([orgId, active])
@@ -7824,19 +7836,19 @@ model CrmLeadSource {
 }
 
 model CrmOpportunity {
-  id                  String              @id @default(cuid())
-  orgId            String
+  id                  String                          @id @default(cuid())
+  orgId               String
   name                String
-  stage               CrmOpportunityStage @default(Prospecting)
-  probability         Int                 @default(10)
-  amount              Decimal?            @db.Decimal(18, 2)
-  currency            String?             @default("INR")
+  stage               CrmOpportunityStage             @default(Prospecting)
+  probability         Int                             @default(10)
+  amount              Decimal?                        @db.Decimal(18, 2)
+  currency            String?                         @default("INR")
   closeDate           DateTime?
   accountId           String?
   leadId              String?
   ownerId             String?
   ownerName           String?
-  weightedAmount      Decimal?            @db.Decimal(18, 2)
+  weightedAmount      Decimal?                        @db.Decimal(18, 2)
   closeReason         String?
   closeReasonCategory String?
   competitorName      String?
@@ -7845,13 +7857,14 @@ model CrmOpportunity {
   priceListId         String?
   deletedAt           DateTime?
   createdByUserId     String?
-  createdAt           DateTime            @default(now())
-  updatedAt           DateTime            @updatedAt
+  createdAt           DateTime                        @default(now())
+  updatedAt           DateTime                        @updatedAt
   account             CrmAccount?                     @relation(fields: [accountId], references: [id])
   priceList           CrmPriceList?                   @relation(fields: [priceListId], references: [id], onDelete: SetNull)
   clientMeetings      CrmOpportunityClientMeeting[]
   products            CrmOpportunityProduct[]
   transitions         CrmOpportunityStageTransition[]
+
   @@index([orgId])
   @@index([orgId, stage])
   @@index([orgId, accountId])
@@ -7862,8 +7875,8 @@ model CrmOpportunity {
 }
 
 model CrmOpportunityClientMeeting {
-  id             String   @id @default(cuid())
-  orgId       String
+  id             String         @id @default(cuid())
+  orgId          String
   opportunityId  String
   subject        String
   meetingAt      DateTime
@@ -7872,33 +7885,35 @@ model CrmOpportunityClientMeeting {
   outcome        String?
   attendees      Json?
   notes          String?
-  createdAt      DateTime @default(now())
+  createdAt      DateTime       @default(now())
   opportunity    CrmOpportunity @relation(fields: [opportunityId], references: [id], onDelete: Cascade)
+
   @@index([orgId, opportunityId])
   @@schema("app_quikcrm")
 }
 
 model CrmOpportunityProduct {
-  id            String   @id @default(cuid())
-  orgId      String
+  id            String         @id @default(cuid())
+  orgId         String
   opportunityId String
   productName   String
-  quantity      Int      @default(1)
-  unitPrice     Decimal  @db.Decimal(18, 2)
-  discountPct   Int      @default(0)
-  lineTotal     Decimal  @db.Decimal(18, 2)
+  quantity      Int            @default(1)
+  unitPrice     Decimal        @db.Decimal(18, 2)
+  discountPct   Int            @default(0)
+  lineTotal     Decimal        @db.Decimal(18, 2)
   notes         String?
-  sortOrder     Int      @default(0)
-  createdAt     DateTime @default(now())
-  updatedAt     DateTime @updatedAt
+  sortOrder     Int            @default(0)
+  createdAt     DateTime       @default(now())
+  updatedAt     DateTime       @updatedAt
   opportunity   CrmOpportunity @relation(fields: [opportunityId], references: [id], onDelete: Cascade)
+
   @@index([orgId, opportunityId])
   @@schema("app_quikcrm")
 }
 
 model CrmOpportunityStageTransition {
   id                  String              @id @default(cuid())
-  orgId            String
+  orgId               String
   opportunityId       String
   fromStage           CrmOpportunityStage
   toStage             CrmOpportunityStage
@@ -7908,14 +7923,15 @@ model CrmOpportunityStageTransition {
   closeReasonCategory String?
   notes               String?
   occurredAt          DateTime            @default(now())
-  opportunity         CrmOpportunity @relation(fields: [opportunityId], references: [id], onDelete: Cascade)
+  opportunity         CrmOpportunity      @relation(fields: [opportunityId], references: [id], onDelete: Cascade)
+
   @@index([orgId, opportunityId, occurredAt])
   @@schema("app_quikcrm")
 }
 
 model CrmActivity {
-  id                String    @id @default(cuid())
-  orgId          String
+  id                String                  @id @default(cuid())
+  orgId             String
   type              String
   relatedKind       String
   relatedObjectId   String
@@ -7935,10 +7951,11 @@ model CrmActivity {
   linkedCallLogId   String?
   leadId            String?
   relatedOrphanedAt DateTime?
-  createdAt         DateTime  @default(now())
-  updatedAt         DateTime  @updatedAt
-  lead              CrmLead?  @relation(fields: [leadId], references: [id])
+  createdAt         DateTime                @default(now())
+  updatedAt         DateTime                @updatedAt
+  lead              CrmLead?                @relation(fields: [leadId], references: [id])
   fieldValues       CrmActivityFieldValue[]
+
   @@unique([orgId, sourceSystem, externalId])
   @@index([orgId])
   @@index([orgId, relatedKind, relatedObjectId])
@@ -7949,7 +7966,7 @@ model CrmActivity {
 
 model CrmTask {
   id               String          @id @default(cuid())
-  orgId         String
+  orgId            String
   subject          String
   taskType         String?
   priority         CrmTaskPriority @default(Medium)
@@ -7965,7 +7982,8 @@ model CrmTask {
   /// un-complete. NULL for tasks completed before this column existed (no
   /// backfill — the digest counts completions forward from when it was added).
   completedAt      DateTime?
-  lead             CrmLead? @relation(fields: [leadId], references: [id])
+  lead             CrmLead?        @relation(fields: [leadId], references: [id])
+
   @@index([orgId])
   @@index([orgId, assignedToUserId])
   @@index([orgId, status])
@@ -7974,7 +7992,7 @@ model CrmTask {
 
 model CrmNote {
   id              String   @id @default(cuid())
-  orgId        String
+  orgId           String
   content         String
   relatedKind     String
   relatedObjectId String
@@ -7982,13 +8000,14 @@ model CrmNote {
   leadId          String?
   createdAt       DateTime @default(now())
   lead            CrmLead? @relation(fields: [leadId], references: [id])
+
   @@index([orgId, relatedKind, relatedObjectId])
   @@schema("app_quikcrm")
 }
 
 model CrmCompanyProfile {
   id          String   @id @default(cuid())
-  orgId    String   @unique
+  orgId       String   @unique
   companyName String
   logoUrl     String?
   website     String?
@@ -7997,15 +8016,17 @@ model CrmCompanyProfile {
   employees   String?
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
+
   @@schema("app_quikcrm")
 }
 
 model CrmOrgWorkspaceSettings {
   id        String   @id @default(cuid())
-  orgId  String   @unique
+  orgId     String   @unique
   settings  Json
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+
   @@schema("app_quikcrm")
 }
 
@@ -8037,7 +8058,7 @@ model CrmApiKey {
 
 model CrmQuickFilter {
   id            String   @id @default(cuid())
-  orgId      String
+  orgId         String
   userId        String
   module        String
   name          String
@@ -8045,17 +8066,19 @@ model CrmQuickFilter {
   isLastApplied Boolean  @default(false)
   createdAt     DateTime @default(now())
   updatedAt     DateTime @updatedAt
+
   @@index([orgId, userId, module])
   @@schema("app_quikcrm")
 }
 
 model CrmDashboardPin {
   id        String   @id @default(cuid())
-  orgId  String
+  orgId     String
   userId    String
   reportId  String
   sortOrder Int      @default(0)
   createdAt DateTime @default(now())
+
   @@unique([orgId, userId, reportId])
   @@index([orgId, userId])
   @@schema("app_quikcrm")
@@ -8063,7 +8086,7 @@ model CrmDashboardPin {
 
 model CrmCampaign {
   id        String    @id @default(cuid())
-  orgId  String
+  orgId     String
   name      String
   status    String    @default("Draft")
   type      String?
@@ -8072,19 +8095,21 @@ model CrmCampaign {
   config    Json?
   createdAt DateTime  @default(now())
   updatedAt DateTime  @updatedAt
+
   @@index([orgId])
   @@schema("app_quikcrm")
 }
 
 model CrmLandingPage {
   id        String   @id @default(cuid())
-  orgId  String
+  orgId     String
   name      String
   slug      String
   status    String   @default("Draft")
   content   Json
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+
   @@unique([orgId, slug])
   @@index([orgId])
   @@schema("app_quikcrm")
@@ -8092,46 +8117,49 @@ model CrmLandingPage {
 
 model CrmWebWidget {
   id        String   @id @default(cuid())
-  orgId  String
+  orgId     String
   name      String
   type      String
   config    Json
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+
   @@index([orgId])
   @@schema("app_quikcrm")
 }
 
 model CrmFormDefinition {
   id        String   @id @default(cuid())
-  orgId  String
+  orgId     String
   name      String
   fields    Json
   config    Json?
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+
   @@index([orgId])
   @@schema("app_quikcrm")
 }
 
 model CrmWorkflowDefinition {
-  id                String            @id @default(cuid())
-  orgId          String
+  id                String                           @id @default(cuid())
+  orgId             String
   name              String
-  status            CrmWorkflowStatus @default(Draft)
+  status            CrmWorkflowStatus                @default(Draft)
   triggerSummary    String?
   triggerType       String?
   scope             String?
-  triggerCount      Int               @default(0)
+  triggerCount      Int                              @default(0)
   externalId        String?
   sourceSystem      String?
   lastPublishedOn   DateTime?
   graphNodes        Json
   graphEdges        Json
-  createdAt         DateTime          @default(now())
-  updatedAt         DateTime          @updatedAt
+  createdAt         DateTime                         @default(now())
+  updatedAt         DateTime                         @updatedAt
   pendingSteps      CrmAutomationPendingStep[]
   distributionState CrmAutomationDistributionState[]
+
   @@unique([orgId, sourceSystem, externalId])
   @@index([orgId])
   @@index([orgId, status])
@@ -8140,7 +8168,7 @@ model CrmWorkflowDefinition {
 
 model CrmAutomationPendingStep {
   id            String                  @id @default(cuid())
-  orgId      String
+  orgId         String
   workflowId    String
   leadId        String
   resumeNodeId  String
@@ -8151,38 +8179,41 @@ model CrmAutomationPendingStep {
   failedReason  String?
   createdAt     DateTime                @default(now())
   updatedAt     DateTime                @updatedAt
-  workflow      CrmWorkflowDefinition @relation(fields: [workflowId], references: [id], onDelete: Cascade)
+  workflow      CrmWorkflowDefinition   @relation(fields: [workflowId], references: [id], onDelete: Cascade)
+
   @@index([orgId, status, resumeAt])
   @@index([orgId, workflowId, leadId])
   @@schema("app_quikcrm")
 }
 
 model CrmAutomationDistributionState {
-  id         String   @id @default(cuid())
-  orgId   String
+  id         String                @id @default(cuid())
+  orgId      String
   workflowId String
   nodeId     String
-  lastIndex  Int      @default(0)
-  updatedAt  DateTime @updatedAt
+  lastIndex  Int                   @default(0)
+  updatedAt  DateTime              @updatedAt
   workflow   CrmWorkflowDefinition @relation(fields: [workflowId], references: [id], onDelete: Cascade)
+
   @@unique([orgId, workflowId, nodeId])
   @@schema("app_quikcrm")
 }
 
 model CrmProcessDefinition {
   id        String   @id @default(cuid())
-  orgId  String
+  orgId     String
   name      String
   config    Json
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+
   @@index([orgId])
   @@schema("app_quikcrm")
 }
 
 model CrmSlaRule {
   id           String   @id @default(cuid())
-  orgId     String
+  orgId        String
   name         String
   targetHours  Int
   appliesTo    String?
@@ -8190,6 +8221,7 @@ model CrmSlaRule {
   sourceSystem String?
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
+
   @@unique([orgId, sourceSystem, externalId])
   @@index([orgId])
   @@schema("app_quikcrm")
@@ -8197,7 +8229,7 @@ model CrmSlaRule {
 
 model CrmSlaLeadTracking {
   id            String    @id @default(cuid())
-  orgId      String
+  orgId         String
   leadId        String
   ruleName      String
   status        String
@@ -8207,7 +8239,8 @@ model CrmSlaLeadTracking {
   sourceSystem  String?
   createdAt     DateTime  @default(now())
   updatedAt     DateTime  @updatedAt
-  lead          CrmLead @relation(fields: [leadId], references: [id], onDelete: Cascade)
+  lead          CrmLead   @relation(fields: [leadId], references: [id], onDelete: Cascade)
+
   @@index([orgId, leadId])
   @@index([orgId, status])
   @@schema("app_quikcrm")
@@ -8215,24 +8248,26 @@ model CrmSlaLeadTracking {
 
 model CrmTelephonyProvider {
   id        String   @id @default(cuid())
-  orgId  String
+  orgId     String
   name      String
   type      String
   config    Json
   isActive  Boolean  @default(true)
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+
   @@index([orgId])
   @@schema("app_quikcrm")
 }
 
 model CrmVirtualNumber {
   id         String   @id @default(cuid())
-  orgId   String
+  orgId      String
   number     String
   label      String?
   providerId String?
   createdAt  DateTime @default(now())
+
   @@unique([orgId, number])
   @@index([orgId])
   @@schema("app_quikcrm")
@@ -8240,7 +8275,7 @@ model CrmVirtualNumber {
 
 model CrmCallLog {
   id                           String    @id @default(cuid())
-  orgId                     String
+  orgId                        String
   leadId                       String?
   agentUserId                  String?
   callSid                      String?
@@ -8271,6 +8306,7 @@ model CrmCallLog {
   createdAt                    DateTime  @default(now())
   updatedAt                    DateTime  @updatedAt
   lead                         CrmLead?  @relation(fields: [leadId], references: [id])
+
   @@unique([orgId, callSid])
   @@index([orgId])
   @@index([orgId, leadId])
@@ -8280,7 +8316,7 @@ model CrmCallLog {
 
 model CrmCallDisposition {
   id                          String   @id @default(cuid())
-  orgId                    String
+  orgId                       String
   code                        String
   label                       String
   category                    String?
@@ -8294,6 +8330,7 @@ model CrmCallDisposition {
   targetLeadStage             String?
   createdAt                   DateTime @default(now())
   updatedAt                   DateTime @updatedAt
+
   @@unique([orgId, code])
   @@unique([orgId, name])
   @@index([orgId])
@@ -8341,7 +8378,7 @@ model CrmActivityFieldDefinition {
   createdAt      DateTime @default(now())
   updatedAt      DateTime @updatedAt
 
-  activityType CrmActivityType @relation(fields: [activityTypeId], references: [id], onDelete: Cascade)
+  activityType CrmActivityType         @relation(fields: [activityTypeId], references: [id], onDelete: Cascade)
   fieldValues  CrmActivityFieldValue[]
 
   @@unique([activityTypeId, key])
@@ -8356,7 +8393,7 @@ model CrmActivityFieldDefinition {
 // group-by) using the per-value indexes below. One row per (activity, field).
 // Mirrors QuikTrack's QtIssueFieldValue. See ACTIVITY-FEATURE-DECISIONS.md.
 model CrmActivityFieldValue {
-  id                String   @id @default(cuid())
+  id                String    @id @default(cuid())
   orgId             String
   activityId        String
   fieldDefinitionId String
@@ -8366,8 +8403,8 @@ model CrmActivityFieldValue {
   valueDate         DateTime?
   valueBoolean      Boolean?
   valueJson         Json?
-  createdAt         DateTime @default(now())
-  updatedAt         DateTime @updatedAt
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
 
   activity        CrmActivity                @relation(fields: [activityId], references: [id], onDelete: Cascade)
   fieldDefinition CrmActivityFieldDefinition @relation(fields: [fieldDefinitionId], references: [id], onDelete: Cascade)
@@ -8384,7 +8421,7 @@ model CrmActivityFieldValue {
 
 model CrmCtcCallAudit {
   id               String   @id @default(cuid())
-  orgId         String
+  orgId            String
   agentUserId      String?
   partyA           String?
   partyB           String?
@@ -8399,6 +8436,7 @@ model CrmCtcCallAudit {
   providerResponse String?  @db.Text
   kind             String?
   createdAt        DateTime @default(now())
+
   @@index([orgId])
   @@index([orgId, agentUserId, createdAt])
   @@schema("app_quikcrm")
@@ -8406,7 +8444,7 @@ model CrmCtcCallAudit {
 
 model CrmIndiaVoiceWebhookLog {
   id                String    @id @default(cuid())
-  orgId          String
+  orgId             String
   callSid           String?
   campid            String?
   vendorEventType   String?
@@ -8425,6 +8463,7 @@ model CrmIndiaVoiceWebhookLog {
   rawPayload        Json
   processDedupeKey  String?
   createdAt         DateTime  @default(now())
+
   @@unique([orgId, processDedupeKey])
   @@index([orgId])
   @@index([orgId, callSid])
@@ -8434,7 +8473,7 @@ model CrmIndiaVoiceWebhookLog {
 
 model CrmLeadImportJob {
   id              String              @id @default(cuid())
-  orgId        String
+  orgId           String
   fileName        String?
   status          CrmImportJobStatus  @default(queued)
   entityType      CrmImportEntityType
@@ -8459,6 +8498,7 @@ model CrmLeadImportJob {
   bullJobId       String?
   createdAt       DateTime            @default(now())
   updatedAt       DateTime            @updatedAt
+
   @@unique([orgId, entityType, sourceSystem, idempotencyKey])
   @@index([orgId])
   @@index([orgId, status])
@@ -8469,19 +8509,20 @@ model CrmLeadImportJob {
 
 model CrmReportDefinition {
   id        String   @id @default(cuid())
-  orgId  String
+  orgId     String
   name      String
   category  String?
   config    Json
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+
   @@index([orgId])
   @@schema("app_quikcrm")
 }
 
 model CrmNotification {
   id        String    @id @default(cuid())
-  orgId  String
+  orgId     String
   userId    String
   title     String
   body      String?
@@ -8490,13 +8531,14 @@ model CrmNotification {
   readAt    DateTime?
   metadata  Json?
   createdAt DateTime  @default(now())
+
   @@index([orgId, userId, readAt])
   @@schema("app_quikcrm")
 }
 
 model CrmOutboundMessageLog {
   id        String    @id @default(cuid())
-  orgId  String
+  orgId     String
   channel   String
   to        String
   subject   String?
@@ -8505,43 +8547,47 @@ model CrmOutboundMessageLog {
   metadata  Json?
   sentAt    DateTime?
   createdAt DateTime  @default(now())
+
   @@index([orgId])
   @@schema("app_quikcrm")
 }
 
 model CrmAttendanceLog {
   id        String    @id @default(cuid())
-  orgId  String
+  orgId     String
   userId    String
   checkIn   DateTime
   checkOut  DateTime?
   metadata  Json?
   createdAt DateTime  @default(now())
+
   @@index([orgId, userId])
   @@schema("app_quikcrm")
 }
 
 model CrmSalesTeam {
   id        String   @id @default(cuid())
-  orgId  String
+  orgId     String
   name      String
   managerId String?
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+
   @@unique([orgId, name])
   @@index([orgId])
   @@schema("app_quikcrm")
 }
 
 model CrmSalesGroup {
-  id        String   @id @default(cuid())
-  orgId  String
+  id        String                 @id @default(cuid())
+  orgId     String
   name      String
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  createdAt DateTime               @default(now())
+  updatedAt DateTime               @updatedAt
   members   CrmSalesGroupMember[]
   managers  CrmSalesGroupManager[]
   accounts  CrmSalesGroupAccount[]
+
   @@unique([orgId, name])
   @@index([orgId])
   @@schema("app_quikcrm")
@@ -8551,6 +8597,7 @@ model CrmSalesGroupMember {
   groupId String
   userId  String
   group   CrmSalesGroup @relation(fields: [groupId], references: [id], onDelete: Cascade)
+
   @@id([groupId, userId])
   @@schema("app_quikcrm")
 }
@@ -8559,6 +8606,7 @@ model CrmSalesGroupManager {
   groupId String
   userId  String
   group   CrmSalesGroup @relation(fields: [groupId], references: [id], onDelete: Cascade)
+
   @@id([groupId, userId])
   @@schema("app_quikcrm")
 }
@@ -8568,13 +8616,14 @@ model CrmSalesGroupAccount {
   accountId String
   group     CrmSalesGroup @relation(fields: [groupId], references: [id], onDelete: Cascade)
   account   CrmAccount    @relation(fields: [accountId], references: [id], onDelete: Cascade)
+
   @@id([groupId, accountId])
   @@schema("app_quikcrm")
 }
 
 model CrmAuditLog {
   id         String   @id @default(cuid())
-  orgId   String
+  orgId      String
   userId     String?
   module     String
   action     String
@@ -8583,6 +8632,7 @@ model CrmAuditLog {
   after      Json?
   metadata   Json?
   createdAt  DateTime @default(now())
+
   @@index([orgId, createdAt])
   @@index([orgId, module, resourceId])
   @@index([orgId, userId, createdAt])
@@ -8591,7 +8641,7 @@ model CrmAuditLog {
 
 model CrmIntegrationConfig {
   id                   String    @id @default(cuid())
-  orgId             String
+  orgId                String
   name                 String
   type                 String
   status               String    @default("inactive")
@@ -8601,6 +8651,7 @@ model CrmIntegrationConfig {
   lastError            String?
   createdAt            DateTime  @default(now())
   updatedAt            DateTime  @updatedAt
+
   @@unique([orgId, name])
   @@index([orgId, status])
   @@schema("app_quikcrm")
@@ -8608,7 +8659,7 @@ model CrmIntegrationConfig {
 
 model CrmPaymentVerification {
   id         String   @id @default(cuid())
-  orgId   String
+  orgId      String
   leadId     String?
   callLogId  String?
   amount     Float
@@ -8618,6 +8669,7 @@ model CrmPaymentVerification {
   metadata   Json?
   createdAt  DateTime @default(now())
   updatedAt  DateTime @updatedAt
+
   @@index([orgId, status])
   @@schema("app_quikcrm")
 }
@@ -8707,8 +8759,8 @@ enum CrmOrderStatus {
 }
 
 model CrmDocumentFolder {
-  id             String    @id @default(cuid())
-  orgId       String
+  id             String              @id @default(cuid())
+  orgId          String
   name           String
   parentFolderId String?
   parentFolder   CrmDocumentFolder?  @relation("FolderHierarchy", fields: [parentFolderId], references: [id], onDelete: Restrict)
@@ -8732,8 +8784,8 @@ model CrmDocumentFolder {
 }
 
 model CrmDocument {
-  id          String    @id @default(cuid())
-  orgId    String
+  id          String             @id @default(cuid())
+  orgId       String
   refType     String
   refId       String
   folderId    String?
@@ -8744,7 +8796,7 @@ model CrmDocument {
   storageKey  String
   uploadedBy  String
   deletedAt   DateTime?
-  createdAt   DateTime  @default(now())
+  createdAt   DateTime           @default(now())
 
   linksFrom CrmDocumentLink[] @relation("DocumentLinkSource")
 
@@ -8755,15 +8807,15 @@ model CrmDocument {
 }
 
 model CrmDocumentLink {
-  id               String    @id @default(cuid())
-  orgId         String
+  id               String      @id @default(cuid())
+  orgId            String
   sourceDocumentId String
   sourceDocument   CrmDocument @relation("DocumentLinkSource", fields: [sourceDocumentId], references: [id], onDelete: Cascade)
   targetFolderId   String?
   refType          String?
   refId            String?
   createdBy        String
-  createdAt        DateTime  @default(now())
+  createdAt        DateTime    @default(now())
   deletedAt        DateTime?
 
   @@index([orgId, targetFolderId])
@@ -8775,7 +8827,7 @@ model CrmDocumentLink {
 
 model CrmProductTaxonomy {
   id        String                 @id @default(cuid())
-  orgId  String
+  orgId     String
   kind      CrmProductTaxonomyKind
   name      String
   parentId  String?
@@ -8799,7 +8851,7 @@ model CrmProductTaxonomy {
 
 model CrmProduct {
   id              String         @id @default(cuid())
-  orgId        String
+  orgId           String
   name            String
   sku             String
   /// Legacy free-text category — prefer categoryId when set.
@@ -8844,11 +8896,11 @@ model CrmProduct {
   brandRef       CrmProductTaxonomy? @relation("ProductBrand", fields: [brandId], references: [id], onDelete: SetNull)
   familyRef      CrmProductTaxonomy? @relation("ProductFamily", fields: [familyId], references: [id], onDelete: SetNull)
 
-  priceListItems  CrmPriceListItem[]
-  variants        CrmProductVariant[]
-  images          CrmProductImage[]
-  inventory       CrmProductInventory[]
-  stockMovements  CrmStockMovement[]
+  priceListItems CrmPriceListItem[]
+  variants       CrmProductVariant[]
+  images         CrmProductImage[]
+  inventory      CrmProductInventory[]
+  stockMovements CrmStockMovement[]
 
   @@unique([orgId, sku])
   @@index([orgId])
@@ -8861,21 +8913,21 @@ model CrmProduct {
 }
 
 model CrmProductVariant {
-  id           String    @id @default(cuid())
-  orgId     String
-  productId    String
-  sku          String
-  name         String?
-  attributes   Json?
-  barcode      String?
-  listPrice    Decimal?  @db.Decimal(18, 2)
-  standardCost Decimal?  @db.Decimal(18, 2)
-  gstRate      Decimal?  @db.Decimal(5, 2)
-  isActive     Boolean   @default(true)
-  createdAt    DateTime  @default(now())
-  updatedAt    DateTime  @updatedAt
-  product      CrmProduct @relation(fields: [productId], references: [id], onDelete: Cascade)
-  inventory    CrmProductInventory[]
+  id             String                @id @default(cuid())
+  orgId          String
+  productId      String
+  sku            String
+  name           String?
+  attributes     Json?
+  barcode        String?
+  listPrice      Decimal?              @db.Decimal(18, 2)
+  standardCost   Decimal?              @db.Decimal(18, 2)
+  gstRate        Decimal?              @db.Decimal(5, 2)
+  isActive       Boolean               @default(true)
+  createdAt      DateTime              @default(now())
+  updatedAt      DateTime              @updatedAt
+  product        CrmProduct            @relation(fields: [productId], references: [id], onDelete: Cascade)
+  inventory      CrmProductInventory[]
   stockMovements CrmStockMovement[]
 
   @@unique([orgId, sku])
@@ -8884,14 +8936,14 @@ model CrmProductVariant {
 }
 
 model CrmWarehouse {
-  id        String   @id @default(cuid())
-  orgId  String
-  name      String
-  code      String?
-  isActive  Boolean  @default(true)
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-  inventory CrmProductInventory[]
+  id             String                @id @default(cuid())
+  orgId          String
+  name           String
+  code           String?
+  isActive       Boolean               @default(true)
+  createdAt      DateTime              @default(now())
+  updatedAt      DateTime              @updatedAt
+  inventory      CrmProductInventory[]
   stockMovements CrmStockMovement[]
 
   @@unique([orgId, code])
@@ -8900,18 +8952,18 @@ model CrmWarehouse {
 }
 
 model CrmProductInventory {
-  id                String   @id @default(cuid())
-  orgId          String
+  id                String             @id @default(cuid())
+  orgId             String
   productId         String
   variantId         String?
   warehouseId       String
-  quantityOnHand    Int      @default(0)
-  quantityReserved  Int      @default(0)
+  quantityOnHand    Int                @default(0)
+  quantityReserved  Int                @default(0)
   lowStockThreshold Int?
-  updatedAt         DateTime @updatedAt
-  product           CrmProduct        @relation(fields: [productId], references: [id], onDelete: Cascade)
+  updatedAt         DateTime           @updatedAt
+  product           CrmProduct         @relation(fields: [productId], references: [id], onDelete: Cascade)
   variant           CrmProductVariant? @relation(fields: [variantId], references: [id], onDelete: Cascade)
-  warehouse         CrmWarehouse      @relation(fields: [warehouseId], references: [id], onDelete: Cascade)
+  warehouse         CrmWarehouse       @relation(fields: [warehouseId], references: [id], onDelete: Cascade)
 
   @@unique([orgId, productId, variantId, warehouseId])
   @@index([orgId, productId])
@@ -8921,7 +8973,7 @@ model CrmProductInventory {
 
 model CrmStockMovement {
   id              String               @id @default(cuid())
-  orgId        String
+  orgId           String
   productId       String
   variantId       String?
   warehouseId     String
@@ -8941,14 +8993,14 @@ model CrmStockMovement {
 }
 
 model CrmProductImage {
-  id        String   @id @default(cuid())
-  orgId  String
+  id        String     @id @default(cuid())
+  orgId     String
   productId String
   url       String
   label     String?
-  sortOrder Int      @default(0)
-  isPrimary Boolean  @default(false)
-  createdAt DateTime @default(now())
+  sortOrder Int        @default(0)
+  isPrimary Boolean    @default(false)
+  createdAt DateTime   @default(now())
   product   CrmProduct @relation(fields: [productId], references: [id], onDelete: Cascade)
 
   @@index([orgId, productId])
@@ -8956,30 +9008,30 @@ model CrmProductImage {
 }
 
 model CrmPriceList {
-  id                String    @id @default(cuid())
-  orgId          String
+  id                String                 @id @default(cuid())
+  orgId             String
   name              String
   description       String?
-  currency          String    @default("INR")
+  currency          String                 @default("INR")
   effectiveFrom     DateTime?
   effectiveTo       DateTime?
-  isActive          Boolean   @default(true)
-  isDefault         Boolean   @default(false)
+  isActive          Boolean                @default(true)
+  isDefault         Boolean                @default(false)
   regionCode        String?
   customerTier      String?
-  versionNumber     Int       @default(1)
+  versionNumber     Int                    @default(1)
   sourcePriceListId String?
   deletedAt         DateTime?
   createdByUserId   String?
   updatedByUserId   String?
-  createdAt         DateTime  @default(now())
-  updatedAt         DateTime  @updatedAt
+  createdAt         DateTime               @default(now())
+  updatedAt         DateTime               @updatedAt
   items             CrmPriceListItem[]
   quotes            CrmQuote[]
   opportunities     CrmOpportunity[]
-  accountsDefault   CrmAccount[] @relation("AccountDefaultPriceList")
-  sourcePriceList   CrmPriceList?  @relation("PriceListClone", fields: [sourcePriceListId], references: [id], onDelete: SetNull)
-  clonedLists       CrmPriceList[] @relation("PriceListClone")
+  accountsDefault   CrmAccount[]           @relation("AccountDefaultPriceList")
+  sourcePriceList   CrmPriceList?          @relation("PriceListClone", fields: [sourcePriceListId], references: [id], onDelete: SetNull)
+  clonedLists       CrmPriceList[]         @relation("PriceListClone")
   auditLogs         CrmPriceListAuditLog[]
 
   @@index([orgId])
@@ -8992,7 +9044,7 @@ model CrmPriceList {
 
 model CrmPriceListItem {
   id              String       @id @default(cuid())
-  orgId        String
+  orgId           String
   priceListId     String
   productId       String
   unitPrice       Decimal      @db.Decimal(18, 2)
@@ -9015,8 +9067,8 @@ model CrmPriceListItem {
 }
 
 model CrmPriceListAuditLog {
-  id          String   @id @default(cuid())
-  orgId    String
+  id          String       @id @default(cuid())
+  orgId       String
   priceListId String
   itemId      String?
   action      String
@@ -9024,7 +9076,7 @@ model CrmPriceListAuditLog {
   changes     Json?
   userId      String?
   userName    String?
-  createdAt   DateTime @default(now())
+  createdAt   DateTime     @default(now())
   priceList   CrmPriceList @relation(fields: [priceListId], references: [id], onDelete: Cascade)
 
   @@index([orgId, priceListId, createdAt])
@@ -9032,32 +9084,32 @@ model CrmPriceListAuditLog {
 }
 
 model CrmQuote {
-  id                    String             @id @default(cuid())
-  orgId              String
+  id                    String                     @id @default(cuid())
+  orgId                 String
   quoteNumber           String
-  versionNumber         Int                @default(1)
+  versionNumber         Int                        @default(1)
   parentQuoteId         String?
   accountId             String
   contactId             String?
   opportunityId         String?
   priceListId           String?
-  currency              String             @default("INR")
+  currency              String                     @default("INR")
   effectiveFrom         DateTime?
   effectiveTo           DateTime?
-  status                CrmQuoteStatus     @default(Draft)
-  pricingMode           CrmQuotePricingMode @default(Exclusive)
+  status                CrmQuoteStatus             @default(Draft)
+  pricingMode           CrmQuotePricingMode        @default(Exclusive)
   companyState          String?
   billingState          String?
-  subtotal              Decimal            @default(0) @db.Decimal(18, 2)
-  totalLineDiscount     Decimal            @default(0) @db.Decimal(18, 2)
-  overallDiscountAmount Decimal            @default(0) @db.Decimal(18, 2)
-  freightAmount         Decimal            @default(0) @db.Decimal(18, 2)
-  taxableAmount         Decimal            @default(0) @db.Decimal(18, 2)
-  cgstAmount            Decimal            @default(0) @db.Decimal(18, 2)
-  sgstAmount            Decimal            @default(0) @db.Decimal(18, 2)
-  igstAmount            Decimal            @default(0) @db.Decimal(18, 2)
-  roundOffAmount        Decimal            @default(0) @db.Decimal(18, 2)
-  grandTotal            Decimal            @default(0) @db.Decimal(18, 2)
+  subtotal              Decimal                    @default(0) @db.Decimal(18, 2)
+  totalLineDiscount     Decimal                    @default(0) @db.Decimal(18, 2)
+  overallDiscountAmount Decimal                    @default(0) @db.Decimal(18, 2)
+  freightAmount         Decimal                    @default(0) @db.Decimal(18, 2)
+  taxableAmount         Decimal                    @default(0) @db.Decimal(18, 2)
+  cgstAmount            Decimal                    @default(0) @db.Decimal(18, 2)
+  sgstAmount            Decimal                    @default(0) @db.Decimal(18, 2)
+  igstAmount            Decimal                    @default(0) @db.Decimal(18, 2)
+  roundOffAmount        Decimal                    @default(0) @db.Decimal(18, 2)
+  grandTotal            Decimal                    @default(0) @db.Decimal(18, 2)
   grandTotalInWords     String?
   termsText             String?
   ownerId               String?
@@ -9067,9 +9119,9 @@ model CrmQuote {
   lostAt                DateTime?
   lostReason            String?
   lostNotes             String?
-  templateKey           String             @default("b2b-standard")
-  approvalStatus        CrmQuoteApprovalStatus @default(None)
-  engagementStatus      CrmQuoteEngagementStatus @default(NotSent)
+  templateKey           String                     @default("b2b-standard")
+  approvalStatus        CrmQuoteApprovalStatus     @default(None)
+  engagementStatus      CrmQuoteEngagementStatus   @default(NotSent)
   portalTokenHash       String?
   portalExpiresAt       DateTime?
   firstViewedAt         DateTime?
@@ -9081,15 +9133,15 @@ model CrmQuote {
   customerComment       String?
   signedAt              DateTime?
   signatureJson         Json?
-  signatureOtpVerified  Boolean            @default(false)
+  signatureOtpVerified  Boolean                    @default(false)
   watermarkText         String?
   bankDetailsJson       Json?
   lockedSnapshotAt      DateTime?
   deletedAt             DateTime?
   createdByUserId       String?
-  createdAt             DateTime           @default(now())
-  updatedAt             DateTime           @updatedAt
-  priceList             CrmPriceList?      @relation(fields: [priceListId], references: [id])
+  createdAt             DateTime                   @default(now())
+  updatedAt             DateTime                   @updatedAt
+  priceList             CrmPriceList?              @relation(fields: [priceListId], references: [id])
   lines                 CrmQuoteLine[]
   transitions           CrmQuoteStatusTransition[]
   order                 CrmOrder?
@@ -9115,7 +9167,7 @@ model CrmQuote {
 
 model CrmQuoteLine {
   id             String   @id @default(cuid())
-  orgId       String
+  orgId          String
   quoteId        String
   lineNumber     Int
   productId      String?
@@ -9145,7 +9197,7 @@ model CrmQuoteLine {
 
 model CrmQuoteStatusTransition {
   id              String         @id @default(cuid())
-  orgId        String
+  orgId           String
   quoteId         String
   fromStatus      CrmQuoteStatus
   toStatus        CrmQuoteStatus
@@ -9162,7 +9214,7 @@ model CrmQuoteStatusTransition {
 
 model CrmQuoteTemplate {
   id              String   @id @default(cuid())
-  orgId        String
+  orgId           String
   key             String
   name            String
   description     String?
@@ -9184,8 +9236,8 @@ model CrmQuoteTemplate {
 }
 
 model CrmQuoteApproval {
-  id              String                @id @default(cuid())
-  orgId        String
+  id              String                 @id @default(cuid())
+  orgId           String
   quoteId         String
   status          CrmQuoteApprovalStatus @default(Pending)
   triggerReason   String
@@ -9194,9 +9246,9 @@ model CrmQuoteApproval {
   decidedById     String?
   decidedByName   String?
   decisionNotes   String?
-  requestedAt     DateTime              @default(now())
+  requestedAt     DateTime               @default(now())
   decidedAt       DateTime?
-  quote           CrmQuote              @relation(fields: [quoteId], references: [id], onDelete: Cascade)
+  quote           CrmQuote               @relation(fields: [quoteId], references: [id], onDelete: Cascade)
 
   @@index([orgId, quoteId])
   @@index([orgId, status])
@@ -9205,7 +9257,7 @@ model CrmQuoteApproval {
 
 model CrmQuotePdfSnapshot {
   id              String   @id @default(cuid())
-  orgId        String
+  orgId           String
   quoteId         String
   versionNumber   Int
   templateKey     String
@@ -9226,32 +9278,32 @@ model CrmQuotePdfSnapshot {
 }
 
 model CrmQuoteComment {
-  id          String   @id @default(cuid())
-  orgId    String
-  quoteId     String
-  body        String
-  mentions    Json?
-  authorId    String?
-  authorName  String?
-  isInternal  Boolean  @default(true)
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
-  quote       CrmQuote @relation(fields: [quoteId], references: [id], onDelete: Cascade)
+  id         String   @id @default(cuid())
+  orgId      String
+  quoteId    String
+  body       String
+  mentions   Json?
+  authorId   String?
+  authorName String?
+  isInternal Boolean  @default(true)
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+  quote      CrmQuote @relation(fields: [quoteId], references: [id], onDelete: Cascade)
 
   @@index([orgId, quoteId, createdAt])
   @@schema("app_quikcrm")
 }
 
 model CrmQuoteEngagementEvent {
-  id         String   @id @default(cuid())
-  orgId   String
-  quoteId    String
-  eventType  String
-  ipAddress  String?
-  userAgent  String?
-  metadata   Json?
-  createdAt  DateTime @default(now())
-  quote      CrmQuote @relation(fields: [quoteId], references: [id], onDelete: Cascade)
+  id        String   @id @default(cuid())
+  orgId     String
+  quoteId   String
+  eventType String
+  ipAddress String?
+  userAgent String?
+  metadata  Json?
+  createdAt DateTime @default(now())
+  quote     CrmQuote @relation(fields: [quoteId], references: [id], onDelete: Cascade)
 
   @@index([orgId, quoteId, createdAt])
   @@index([orgId, eventType])
@@ -9259,16 +9311,16 @@ model CrmQuoteEngagementEvent {
 }
 
 model CrmQuotePortalAccess {
-  id           String    @id @default(cuid())
-  orgId     String
-  quoteId      String
-  tokenHash    String
-  expiresAt    DateTime?
-  revokedAt    DateTime?
-  createdById  String?
-  createdAt    DateTime  @default(now())
-  lastUsedAt   DateTime?
-  quote        CrmQuote  @relation(fields: [quoteId], references: [id], onDelete: Cascade)
+  id          String    @id @default(cuid())
+  orgId       String
+  quoteId     String
+  tokenHash   String
+  expiresAt   DateTime?
+  revokedAt   DateTime?
+  createdById String?
+  createdAt   DateTime  @default(now())
+  lastUsedAt  DateTime?
+  quote       CrmQuote  @relation(fields: [quoteId], references: [id], onDelete: Cascade)
 
   @@unique([tokenHash])
   @@index([orgId, quoteId])
@@ -9277,7 +9329,7 @@ model CrmQuotePortalAccess {
 
 model CrmInvoice {
   id                String           @id @default(cuid())
-  orgId          String
+  orgId             String
   invoiceNumber     String
   quoteId           String?          @unique
   orderId           String?
@@ -9313,7 +9365,7 @@ model CrmInvoice {
 
 model CrmSequence {
   id        String   @id @default(cuid())
-  orgId  String
+  orgId     String
   name      String
   counter   Int      @default(0)
   updatedAt DateTime @updatedAt
@@ -9323,41 +9375,41 @@ model CrmSequence {
 }
 
 model CrmOrder {
-  id                  String          @id @default(cuid())
-  orgId            String
-  orderNumber         String
-  quoteId             String?         @unique
-  opportunityId       String?
-  accountId           String?
-  contactId           String?
-  currency            String          @default("INR")
-  status              CrmOrderStatus  @default(Open)
-  subtotal            Decimal         @default(0) @db.Decimal(18, 2)
-  totalDiscount       Decimal         @default(0) @db.Decimal(18, 2)
-  taxableAmount       Decimal         @default(0) @db.Decimal(18, 2)
-  cgstAmount          Decimal         @default(0) @db.Decimal(18, 2)
-  sgstAmount          Decimal         @default(0) @db.Decimal(18, 2)
-  igstAmount          Decimal         @default(0) @db.Decimal(18, 2)
-  freightAmount       Decimal         @default(0) @db.Decimal(18, 2)
-  grandTotal          Decimal         @default(0) @db.Decimal(18, 2)
-  grandTotalInWords   String?
-  orderDate           DateTime        @default(now())
+  id                   String         @id @default(cuid())
+  orgId                String
+  orderNumber          String
+  quoteId              String?        @unique
+  opportunityId        String?
+  accountId            String?
+  contactId            String?
+  currency             String         @default("INR")
+  status               CrmOrderStatus @default(Open)
+  subtotal             Decimal        @default(0) @db.Decimal(18, 2)
+  totalDiscount        Decimal        @default(0) @db.Decimal(18, 2)
+  taxableAmount        Decimal        @default(0) @db.Decimal(18, 2)
+  cgstAmount           Decimal        @default(0) @db.Decimal(18, 2)
+  sgstAmount           Decimal        @default(0) @db.Decimal(18, 2)
+  igstAmount           Decimal        @default(0) @db.Decimal(18, 2)
+  freightAmount        Decimal        @default(0) @db.Decimal(18, 2)
+  grandTotal           Decimal        @default(0) @db.Decimal(18, 2)
+  grandTotalInWords    String?
+  orderDate            DateTime       @default(now())
   expectedDeliveryDate DateTime?
-  confirmedAt         DateTime?
-  fulfilledAt         DateTime?
-  closedAt            DateTime?
-  cancelledAt         DateTime?
-  cancellationReason  String?
-  internalNotes       String?
-  termsText           String?
-  ownerId             String?
-  ownerName           String?
-  deletedAt           DateTime?
-  createdByUserId     String?
-  createdAt           DateTime        @default(now())
-  updatedAt           DateTime        @updatedAt
-  quote               CrmQuote?       @relation(fields: [quoteId], references: [id])
-  lines               CrmOrderLine[]
+  confirmedAt          DateTime?
+  fulfilledAt          DateTime?
+  closedAt             DateTime?
+  cancelledAt          DateTime?
+  cancellationReason   String?
+  internalNotes        String?
+  termsText            String?
+  ownerId              String?
+  ownerName            String?
+  deletedAt            DateTime?
+  createdByUserId      String?
+  createdAt            DateTime       @default(now())
+  updatedAt            DateTime       @updatedAt
+  quote                CrmQuote?      @relation(fields: [quoteId], references: [id])
+  lines                CrmOrderLine[]
 
   @@unique([orgId, orderNumber])
   @@index([orgId])
@@ -9369,7 +9421,7 @@ model CrmOrder {
 
 model CrmOrderLine {
   id             String   @id @default(cuid())
-  orgId       String
+  orgId          String
   orderId        String
   lineNumber     Int
   productId      String?
@@ -9589,6 +9641,7 @@ enum Gender {
   Female
   NonBinary
   PreferNotToSay
+
   @@schema("app_quikhrms")
 }
 
@@ -9597,6 +9650,7 @@ enum MaritalStatus {
   Married
   Divorced
   Widowed
+
   @@schema("app_quikhrms")
 }
 
@@ -9607,6 +9661,7 @@ enum EmploymentType {
   Intern
   Freelancer
   Consultant
+
   @@schema("app_quikhrms")
 }
 
@@ -9615,6 +9670,7 @@ enum WorkerType {
   Temporary
   Probation
   Notice
+
   @@schema("app_quikhrms")
 }
 
@@ -9622,6 +9678,7 @@ enum WorkLocation {
   Office
   Remote
   Hybrid
+
   @@schema("app_quikhrms")
 }
 
@@ -9633,6 +9690,7 @@ enum EmployeeStatus {
   Suspended
   Relieved
   Absconding
+
   @@schema("app_quikhrms")
 }
 
@@ -9641,6 +9699,7 @@ enum InviteStatus {
   Invited
   Registered
   Active
+
   @@schema("app_quikhrms")
 }
 
@@ -9649,6 +9708,7 @@ enum InvitationStatus {
   Accepted
   Expired
   Revoked
+
   @@schema("app_quikhrms")
 }
 
@@ -9660,6 +9720,7 @@ enum SourceOfHire {
   Campus
   Direct
   Other
+
   @@schema("app_quikhrms")
 }
 
@@ -9672,6 +9733,7 @@ enum BloodGroup {
   ABNegative
   OPositive
   ONegative
+
   @@schema("app_quikhrms")
 }
 
@@ -9680,6 +9742,7 @@ enum LanguageProficiency {
   Conversational
   Fluent
   Native
+
   @@schema("app_quikhrms")
 }
 
@@ -9688,6 +9751,7 @@ enum SkillProficiency {
   Intermediate
   Advanced
   Expert
+
   @@schema("app_quikhrms")
 }
 
@@ -9701,12 +9765,14 @@ enum DocumentType {
   WorkPermit
   Visa
   Custom
+
   @@schema("app_quikhrms")
 }
 
 enum DepartmentStatus {
   Active
   Inactive
+
   @@schema("app_quikhrms")
 }
 
@@ -9715,47 +9781,55 @@ enum PayFrequency {
   SemiMonthly
   BiWeekly
   Weekly
+
   @@schema("app_quikhrms")
 }
 
 enum PayDayType {
   LastWorkingDay
   FixedDay
+
   @@schema("app_quikhrms")
 }
 
 enum SalaryCalcBasis {
   ActualDaysInMonth
   OrganisationWorkingDays
+
   @@schema("app_quikhrms")
 }
 
 enum TaxPaymentFrequency {
   Monthly
   Quarterly
+
   @@schema("app_quikhrms")
 }
 
 enum DeductorType {
   Employee
   NonEmployee
+
   @@schema("app_quikhrms")
 }
 
 enum EPFContributionRate {
   TwelvePercentActual
   TwelvePercentRestricted
+
   @@schema("app_quikhrms")
 }
 
 enum PFDeductionCycle {
   Monthly
+
   @@schema("app_quikhrms")
 }
 
 enum ProfessionalTaxCycle {
   Monthly
   HalfYearly
+
   @@schema("app_quikhrms")
 }
 
@@ -9764,6 +9838,7 @@ enum LWFCycle {
   Quarterly
   HalfYearly
   Yearly
+
   @@schema("app_quikhrms")
 }
 
@@ -9773,6 +9848,7 @@ enum SalaryComponentType {
   Reimbursement
   Benefit
   StatutoryContribution
+
   @@schema("app_quikhrms")
 }
 
@@ -9816,6 +9892,7 @@ enum SalaryComponentCategory {
   OtherDeduction
   OtherReimbursement
   OtherBenefit
+
   @@schema("app_quikhrms")
 }
 
@@ -9825,6 +9902,7 @@ enum SalaryAmountType {
   PercentOfCTC
   PercentOfGross
   Formula
+
   @@schema("app_quikhrms")
 }
 
@@ -9834,6 +9912,7 @@ enum SalaryFrequency {
   HalfYearly
   Yearly
   OneTime
+
   @@schema("app_quikhrms")
 }
 
@@ -9843,6 +9922,7 @@ enum PayRunStatus {
   Approved
   Paid
   Cancelled
+
   @@schema("app_quikhrms")
 }
 
@@ -9851,12 +9931,14 @@ enum PayslipStatus {
   Generated
   Released
   Failed
+
   @@schema("app_quikhrms")
 }
 
 enum TaxRegime {
   OldRegime
   NewRegime
+
   @@schema("app_quikhrms")
 }
 
@@ -9867,6 +9949,7 @@ enum ReimbursementClaimStatus {
   Rejected
   Paid
   Cancelled
+
   @@schema("app_quikhrms")
 }
 
@@ -9876,6 +9959,7 @@ enum InvestmentProofStatus {
   Approved
   PartiallyApproved
   Rejected
+
   @@schema("app_quikhrms")
 }
 
@@ -9884,6 +9968,7 @@ enum SalaryRevisionStatus {
   Approved
   Rejected
   Cancelled
+
   @@schema("app_quikhrms")
 }
 
@@ -9895,6 +9980,7 @@ enum LoanStatus {
   Closed
   Rejected
   WrittenOff
+
   @@schema("app_quikhrms")
 }
 
@@ -9906,6 +9992,7 @@ enum LoanType {
   Vehicle
   Advance
   Other
+
   @@schema("app_quikhrms")
 }
 
@@ -9914,6 +10001,7 @@ enum DonationStatus {
   Submitted
   Verified
   Rejected
+
   @@schema("app_quikhrms")
 }
 
@@ -9925,6 +10013,7 @@ enum PayrollSetupStep {
   SalaryComponents
   Employees
   PriorPayroll
+
   @@schema("app_quikhrms")
 }
 
@@ -9932,7 +10021,7 @@ enum PayrollSetupStep {
 
 model Department {
   id                 String           @id @default(cuid())
-  orgId           String
+  orgId              String
   name               String
   code               String
   parentDepartmentId String?
@@ -9945,15 +10034,15 @@ model Department {
   updatedAt          DateTime         @updatedAt
   deletedAt          DateTime?
 
-  parentDepartment Department?               @relation("DepartmentHierarchy", fields: [parentDepartmentId], references: [id])
-  childDepartments Department[]              @relation("DepartmentHierarchy")
+  parentDepartment Department?      @relation("DepartmentHierarchy", fields: [parentDepartmentId], references: [id])
+  childDepartments Department[]     @relation("DepartmentHierarchy")
   teams            HrmsTeam[]
-  employees        Employee[]                @relation("EmployeeDepartment")
-  head             Employee?                 @relation("DepartmentHead", fields: [headId], references: [id])
+  employees        Employee[]       @relation("EmployeeDepartment")
+  head             Employee?        @relation("DepartmentHead", fields: [headId], references: [id])
   designations     Designation[]
   requisitions     JobRequisition[]
-  ticketCategories TicketCategory[]          @relation("TicketCategoryDepartment")
-  tickets          Ticket[]                  @relation("TicketDepartment")
+  ticketCategories TicketCategory[] @relation("TicketCategoryDepartment")
+  tickets          Ticket[]         @relation("TicketDepartment")
 
   @@unique([orgId, code])
   @@index([orgId])
@@ -9962,9 +10051,8 @@ model Department {
 }
 
 model HrmsTeam {
-  @@map("Team")
   id           String    @id @default(cuid())
-  orgId     String
+  orgId        String
   departmentId String
   name         String
   leadId       String?
@@ -9982,12 +10070,13 @@ model HrmsTeam {
   @@index([orgId])
   @@index([orgId, deletedAt])
   @@index([orgId, departmentId])
+  @@map("Team")
   @@schema("app_quikhrms")
 }
 
 model Designation {
   id           String    @id @default(cuid())
-  orgId     String
+  orgId        String
   title        String
   level        Int       @default(0)
   departmentId String?
@@ -10007,7 +10096,7 @@ model Designation {
 
 model Grade {
   id        String    @id @default(cuid())
-  orgId  String
+  orgId     String
   name      String
   level     Int       @default(0)
   minSalary Decimal?  @db.Decimal(15, 2)
@@ -10027,7 +10116,7 @@ model Grade {
 
 model OfficeLocation {
   id            String    @id @default(cuid())
-  orgId      String
+  orgId         String
   name          String
   address       String?
   city          String?
@@ -10054,8 +10143,8 @@ model OfficeLocation {
 // ─── EMPLOYEE ───────────────────────────────────────────
 
 model Employee {
-  id           String @id @default(cuid())
-  orgId     String
+  id           String  @id @default(cuid())
+  orgId        String
   // Central QuikIT SSO link: the central auth `User.id` this employee maps to.
   // Populated on first SSO login by matching workEmail (see resolveEmployeeByAuthUser
   // in lib/with-auth.ts). Null until linked. RBAC still keys on Employee.id; this
@@ -10064,17 +10153,17 @@ model Employee {
   employeeCode String
 
   // Primary Info
-  firstName           String
-  middleName          String?
-  lastName            String
-  displayName         String?
-  gender              Gender?
-  dateOfBirth         DateTime?
-  bloodGroup          BloodGroup?
-  maritalStatus       MaritalStatus?
-  nationality         String?
-  isHandicapped       Boolean        @default(false)
-  isSeniorCitizen     Boolean        @default(false)
+  firstName       String
+  middleName      String?
+  lastName        String
+  displayName     String?
+  gender          Gender?
+  dateOfBirth     DateTime?
+  bloodGroup      BloodGroup?
+  maritalStatus   MaritalStatus?
+  nationality     String?
+  isHandicapped   Boolean        @default(false)
+  isSeniorCitizen Boolean        @default(false)
 
   // Per-employee statutory applicability overrides. Default `true` for all —
   // payroll-compute respects these flags and skips the corresponding block
@@ -10082,9 +10171,9 @@ model Employee {
   //   epfApplicable=false → "Excluded Employee" (joined > ₹15k, never an EPF member); contractors; expats
   //   esiApplicable=false → contractors / consultants on non-salary engagement
   //   ptApplicable=false  → expats / non-residents; some PwD exemptions per state
-  epfApplicable       Boolean        @default(true)
-  esiApplicable       Boolean        @default(true)
-  ptApplicable        Boolean        @default(true)
+  epfApplicable Boolean @default(true)
+  esiApplicable Boolean @default(true)
+  ptApplicable  Boolean @default(true)
 
   // EPF rate override. Null = use org default from EPFConfig.
   // Values: "TwelvePercentActual" | "TwelvePercentRestricted"
@@ -10094,15 +10183,15 @@ model Employee {
   bio                 String?
 
   // Auth — bcrypt hash of the login password. Null = login not yet provisioned.
-  passwordHash String?
+  passwordHash          String?
   // Forces a password change on next login (e.g. admin-set temporary password).
-  mustChangePassword Boolean   @default(false)
+  mustChangePassword    Boolean   @default(false)
   // When the admin-set temporary password stops working (null = no temp pw).
   tempPasswordExpiresAt DateTime?
   // Account lockout — 3 wrong passwords locks for 1 hour. Reset on any
   // successful login or admin password reset.
-  failedLoginAttempts Int       @default(0)
-  lockedUntil         DateTime?
+  failedLoginAttempts   Int       @default(0)
+  lockedUntil           DateTime?
 
   // Contact
   personalEmail String?
@@ -10178,8 +10267,8 @@ model Employee {
   customFields Json?
 
   // System
-  status       EmployeeStatus @default(Active)
-  inviteStatus InviteStatus   @default(NotInvited)
+  status               EmployeeStatus @default(Active)
+  inviteStatus         InviteStatus   @default(NotInvited)
   // ── Central QuikIT membership sync (lib/rbac/central-sync.ts) ──
   // Last central membership role observed by sync ("member" | "org_admin" | ...).
   // Lets sync act only on central role TRANSITIONS, so locally-made HRMS role
@@ -10190,11 +10279,11 @@ model Employee {
   // Active) if central access comes back. Distinguishes sync-driven
   // deactivation from a deliberate local one, which sync must not undo.
   centralDeactivatedAt DateTime?
-  lastLoginAt  DateTime?
+  lastLoginAt          DateTime?
   // Single active session: holds the jti of the currently valid session token.
   // A new login overwrites it, invalidating any older token (and its tab).
   // Legacy custom-auth field — unused once central QuikIT SSO is the sole login.
-  activeSessionId String?
+  activeSessionId      String?
 
   // Audit
   createdBy String?
@@ -10205,7 +10294,7 @@ model Employee {
 
   // Relations
   department        Department?     @relation("EmployeeDepartment", fields: [departmentId], references: [id])
-  team              HrmsTeam?           @relation("EmployeeTeam", fields: [teamId], references: [id])
+  team              HrmsTeam?       @relation("EmployeeTeam", fields: [teamId], references: [id])
   designation       Designation?    @relation("EmployeeDesignation", fields: [designationId], references: [id])
   grade             Grade?          @relation("EmployeeGrade", fields: [gradeId], references: [id])
   officeLocation    OfficeLocation? @relation("EmployeeOfficeLocation", fields: [officeLocationId], references: [id])
@@ -10218,7 +10307,7 @@ model Employee {
 
   // Reverse relations for org structure
   headOfDepartments Department[] @relation("DepartmentHead")
-  leadOfTeams       HrmsTeam[]       @relation("TeamLead")
+  leadOfTeams       HrmsTeam[]   @relation("TeamLead")
 
   // Phase 2 relations
   attendanceRecords AttendanceRecord[]
@@ -10258,10 +10347,10 @@ model Employee {
   // Phase 6 relations
   socialPosts          SocialPost[]
   postComments         PostComment[]
-  announcements        Announcement[]   @relation("AnnouncementAuthor")
+  announcements        Announcement[]       @relation("AnnouncementAuthor")
   surveyResponses      HrmsSurveyResponse[]
-  recognitionsGiven    Recognition[]    @relation("RecognitionFrom")
-  recognitionsReceived Recognition[]    @relation("RecognitionTo")
+  recognitionsGiven    Recognition[]        @relation("RecognitionFrom")
+  recognitionsReceived Recognition[]        @relation("RecognitionTo")
 
   // Phase 7 relations
   notifications HrmsNotification[]
@@ -10309,6 +10398,7 @@ enum AttendanceStatus {
   WFH
   OnDuty
   NotMarked
+
   @@schema("app_quikhrms")
 }
 
@@ -10318,6 +10408,7 @@ enum AttendanceSource {
   Biometric
   Manual
   AutoCheckout
+
   @@schema("app_quikhrms")
 }
 
@@ -10327,6 +10418,7 @@ enum RegularizationStatus {
   Approved
   Rejected
   Cancelled
+
   @@schema("app_quikhrms")
 }
 
@@ -10338,6 +10430,7 @@ enum DayOfWeek {
   Friday
   Saturday
   Sunday
+
   @@schema("app_quikhrms")
 }
 
@@ -10346,6 +10439,7 @@ enum LeaveAccrualType {
   Quarterly
   Yearly
   Upfront
+
   @@schema("app_quikhrms")
 }
 
@@ -10356,6 +10450,7 @@ enum LeaveRequestStatus {
   Rejected
   Cancelled
   Recalled
+
   @@schema("app_quikhrms")
 }
 
@@ -10364,6 +10459,7 @@ enum LeaveApprovalStatus {
   Approved
   Rejected
   Skipped
+
   @@schema("app_quikhrms")
 }
 
@@ -10372,6 +10468,7 @@ enum WfhStatus {
   Approved
   Rejected
   Cancelled
+
   @@schema("app_quikhrms")
 }
 
@@ -10380,6 +10477,7 @@ enum WfhApprovalStatus {
   Approved
   Rejected
   Skipped
+
   @@schema("app_quikhrms")
 }
 
@@ -10387,6 +10485,7 @@ enum WfhApproverRole {
   Manager
   HR
   SuperAdmin
+
   @@schema("app_quikhrms")
 }
 
@@ -10394,6 +10493,7 @@ enum WfhSession {
   FullDay
   FirstHalf
   SecondHalf
+
   @@schema("app_quikhrms")
 }
 
@@ -10401,6 +10501,7 @@ enum LeaveDaySession {
   FullDay
   FirstHalf
   SecondHalf
+
   @@schema("app_quikhrms")
 }
 
@@ -10408,7 +10509,7 @@ enum LeaveDaySession {
 
 model AttendanceRecord {
   id         String   @id @default(cuid())
-  orgId   String
+  orgId      String
   employeeId String
   date       DateTime @db.Date
 
@@ -10454,9 +10555,9 @@ model AttendanceRecord {
 }
 
 model AttendancePolicy {
-  id       String @id @default(cuid())
+  id    String @id @default(cuid())
   orgId String
-  name     String
+  name  String
 
   applicableTo Json?
 
@@ -10495,11 +10596,11 @@ model AttendancePolicy {
 // ─── SHIFT MANAGEMENT ───────────────────────────────────
 
 model ShiftPolicy {
-  id       String  @id @default(cuid())
+  id    String  @id @default(cuid())
   orgId String
-  name     String
-  code     String
-  color    String?
+  name  String
+  code  String
+  color String?
 
   startTime String
   endTime   String
@@ -10539,7 +10640,7 @@ model ShiftPolicy {
 
 model ShiftAssignment {
   id         String @id @default(cuid())
-  orgId   String
+  orgId      String
   employeeId String
   shiftId    String
 
@@ -10585,7 +10686,7 @@ enum RosterEntryType {
 /// A duty-roster plan for a department/team over a date range.
 model Roster {
   id           String       @id @default(cuid())
-  orgId     String
+  orgId        String
   name         String
   departmentId String?
   periodStart  DateTime     @db.Date
@@ -10611,7 +10712,7 @@ model Roster {
 /// One roster cell: an employee's shift / week-off for a single day.
 model RosterEntry {
   id         String          @id @default(cuid())
-  orgId   String
+  orgId      String
   rosterId   String
   employeeId String
   date       DateTime        @db.Date
@@ -10639,11 +10740,11 @@ model RosterEntry {
 // ─── LEAVE MANAGEMENT ───────────────────────────────────
 
 model LeaveType {
-  id       String  @id @default(cuid())
+  id    String  @id @default(cuid())
   orgId String
-  name     String
-  code     String
-  color    String?
+  name  String
+  code  String
+  color String?
 
   isPaid          Boolean @default(true)
   isCarryForward  Boolean @default(false)
@@ -10708,7 +10809,7 @@ model LeaveType {
 
 model LeaveGroup {
   id          String  @id @default(cuid())
-  orgId    String
+  orgId       String
   name        String
   description String?
   isActive    Boolean @default(true)
@@ -10730,7 +10831,7 @@ model LeaveGroup {
 
 model LeaveGroupItem {
   id            String   @id @default(cuid())
-  orgId      String
+  orgId         String
   leaveGroupId  String
   leaveTypeId   String
   overrideQuota Decimal? @db.Decimal(5, 2)
@@ -10747,7 +10848,7 @@ model LeaveGroupItem {
 
 model LeaveGroupAssignment {
   id           String @id @default(cuid())
-  orgId     String
+  orgId        String
   leaveGroupId String
 
   assigneeType String // "Employee" | "Role"
@@ -10768,7 +10869,7 @@ model LeaveGroupAssignment {
 
 model LeaveRequest {
   id          String @id @default(cuid())
-  orgId    String
+  orgId       String
   employeeId  String
   leaveTypeId String
 
@@ -10809,7 +10910,7 @@ model LeaveRequest {
 
 model LeaveApproval {
   id             String @id @default(cuid())
-  orgId       String
+  orgId          String
   leaveRequestId String
   approverId     String
   level          Int    @default(1)
@@ -10831,7 +10932,7 @@ model LeaveApproval {
 
 model LeaveBalance {
   id          String @id @default(cuid())
-  orgId    String
+  orgId       String
   employeeId  String
   leaveTypeId String
   year        Int
@@ -10865,12 +10966,13 @@ enum LeavePolicyStatus {
   PendingReview
   Active
   Archived
+
   @@schema("app_quikhrms")
 }
 
 model LeavePolicy {
   id          String            @id @default(cuid())
-  orgId    String
+  orgId       String
   name        String
   version     Int               @default(1)
   status      LeavePolicyStatus @default(Draft)
@@ -10927,6 +11029,7 @@ enum ExpenseCategory {
   Training
   Relocation
   Other
+
   @@schema("app_quikhrms")
 }
 
@@ -10940,6 +11043,7 @@ enum ExpenseClaimStatus {
   Rejected
   Paid
   Cancelled
+
   @@schema("app_quikhrms")
 }
 
@@ -10947,6 +11051,7 @@ enum ExpenseApprovalAction {
   ExpApproved
   ExpRejected
   Escalated
+
   @@schema("app_quikhrms")
 }
 
@@ -10954,7 +11059,7 @@ enum ExpenseApprovalAction {
 
 model ExpenseClaim {
   id         String  @id @default(cuid())
-  orgId   String
+  orgId      String
   employeeId String
   policyId   String?
 
@@ -10997,9 +11102,9 @@ model ExpenseClaim {
 }
 
 model ExpensePolicy {
-  id       String @id @default(cuid())
+  id    String @id @default(cuid())
   orgId String
-  name     String
+  name  String
 
   category            String
   maxPerTransaction   Decimal? @db.Decimal(15, 2)
@@ -11028,9 +11133,9 @@ model ExpensePolicy {
 }
 
 model ExpenseApproval {
-  id       String @id @default(cuid())
-  orgId String
-  claimId  String
+  id      String @id @default(cuid())
+  orgId   String
+  claimId String
 
   approverId String
   level      Int                   @default(1)
@@ -11055,6 +11160,7 @@ enum GoalType {
   HrmsTeam
   Department
   Organization
+
   @@schema("app_quikhrms")
 }
 
@@ -11063,6 +11169,7 @@ enum GoalCategory {
   Development
   Behavioral
   Project
+
   @@schema("app_quikhrms")
 }
 
@@ -11074,6 +11181,7 @@ enum GoalStatus {
   Exceeded
   Deferred
   Cancelled
+
   @@schema("app_quikhrms")
 }
 
@@ -11082,6 +11190,7 @@ enum GoalVisibility {
   TeamVisible
   DepartmentVisible
   OrganizationVisible
+
   @@schema("app_quikhrms")
 }
 
@@ -11089,6 +11198,7 @@ enum KeyResultStatus {
   NotStarted
   InProgress
   Completed
+
   @@schema("app_quikhrms")
 }
 
@@ -11099,6 +11209,7 @@ enum AppraisalCycleType {
   Probation
   Confirmation
   PIPReview
+
   @@schema("app_quikhrms")
 }
 
@@ -11110,6 +11221,7 @@ enum AppraisalCycleStatus {
   PeerReview
   Calibration
   Complete
+
   @@schema("app_quikhrms")
 }
 
@@ -11118,6 +11230,7 @@ enum EmployeeAppraisalStatus {
   InProgress
   Submitted
   Completed
+
   @@schema("app_quikhrms")
 }
 
@@ -11126,6 +11239,7 @@ enum FeedbackType {
   Constructive
   Suggestion
   Recognition
+
   @@schema("app_quikhrms")
 }
 
@@ -11136,6 +11250,7 @@ enum FeedbackCategory {
   Communication
   Innovation
   CustomerFocus
+
   @@schema("app_quikhrms")
 }
 
@@ -11145,6 +11260,7 @@ enum PIPStatus {
   PIPCompletedSuccess
   PIPFailed
   PIPWithdrawn
+
   @@schema("app_quikhrms")
 }
 
@@ -11153,15 +11269,15 @@ enum PIPOutcome {
   Terminated
   Extended
   Probation
+
   @@schema("app_quikhrms")
 }
 
 // ─── GOAL MANAGEMENT (OKR) ─────────────────────────────
 
 model HrmsGoal {
-  @@map("Goal")
   id         String @id @default(cuid())
-  orgId   String
+  orgId      String
   employeeId String
 
   parentGoalId String?
@@ -11192,8 +11308,8 @@ model HrmsGoal {
   deletedAt DateTime?
 
   employee   Employee      @relation(fields: [employeeId], references: [id])
-  parentGoal HrmsGoal?         @relation("GoalHierarchy", fields: [parentGoalId], references: [id])
-  childGoals HrmsGoal[]        @relation("GoalHierarchy")
+  parentGoal HrmsGoal?     @relation("GoalHierarchy", fields: [parentGoalId], references: [id])
+  childGoals HrmsGoal[]    @relation("GoalHierarchy")
   keyResults KeyResult[]
   checkIns   GoalCheckIn[]
 
@@ -11201,6 +11317,7 @@ model HrmsGoal {
   @@index([orgId, deletedAt])
   @@index([orgId, employeeId])
   @@index([orgId, status])
+  @@map("Goal")
   @@schema("app_quikhrms")
 }
 
@@ -11219,6 +11336,7 @@ model KeyResult {
   updatedAt DateTime @updatedAt
 
   goal HrmsGoal @relation(fields: [goalId], references: [id])
+
   @@schema("app_quikhrms")
 }
 
@@ -11234,26 +11352,27 @@ model GoalCheckIn {
 
   createdAt DateTime @default(now())
 
-  goal      HrmsGoal     @relation(fields: [goalId], references: [id])
+  goal      HrmsGoal @relation(fields: [goalId], references: [id])
   updatedBy Employee @relation("CheckInUpdater", fields: [updatedById], references: [id])
+
   @@schema("app_quikhrms")
 }
 
 // ─── APPRAISAL / REVIEW CYCLES ──────────────────────────
 
 model AppraisalCycle {
-  id       String @id @default(cuid())
+  id    String @id @default(cuid())
   orgId String
-  name     String
+  name  String
 
   type      AppraisalCycleType   @default(Annual)
   startDate DateTime             @db.Date
   endDate   DateTime             @db.Date
   status    AppraisalCycleStatus @default(Setup)
 
-  reviewFormId     String?
-  applicableTo     Json?
-  stages           Json?
+  reviewFormId String?
+  applicableTo Json?
+  stages       Json?
 
   createdBy String?
   updatedBy String?
@@ -11272,7 +11391,7 @@ model AppraisalCycle {
 
 model ReviewForm {
   id       String @id @default(cuid())
-  orgId String
+  orgId    String
   name     String
   sections Json
 
@@ -11289,7 +11408,7 @@ model ReviewForm {
 
 model EmployeeAppraisal {
   id         String @id @default(cuid())
-  orgId   String
+  orgId      String
   employeeId String
   cycleId    String
 
@@ -11333,7 +11452,7 @@ model EmployeeAppraisal {
 // ─── CONTINUOUS FEEDBACK ────────────────────────────────
 
 model ContinuousFeedback {
-  id       String @id @default(cuid())
+  id    String @id @default(cuid())
   orgId String
 
   fromEmployeeId String
@@ -11347,10 +11466,10 @@ model ContinuousFeedback {
 
   relatedGoalId String?
 
-  approvalStatus   ContentApprovalStatus @default(Approved)
-  approvedById     String?
-  approvedAt       DateTime?
-  rejectionReason  String?
+  approvalStatus  ContentApprovalStatus @default(Approved)
+  approvedById    String?
+  approvedAt      DateTime?
+  rejectionReason String?
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -11369,7 +11488,7 @@ model ContinuousFeedback {
 
 model PIP {
   id            String @id @default(cuid())
-  orgId      String
+  orgId         String
   employeeId    String
   initiatedById String
 
@@ -11407,6 +11526,7 @@ enum RequisitionStatus {
   ReqOnHold
   ReqClosed
   ReqCancelled
+
   @@schema("app_quikhrms")
 }
 
@@ -11414,6 +11534,7 @@ enum RequisitionType {
   NewPosition
   Replacement
   Expansion
+
   @@schema("app_quikhrms")
 }
 
@@ -11422,6 +11543,7 @@ enum RequisitionPriority {
   Medium
   High
   Urgent
+
   @@schema("app_quikhrms")
 }
 
@@ -11434,6 +11556,7 @@ enum CandidateSource {
   CandCampus
   CandDirect
   CandInbound
+
   @@schema("app_quikhrms")
 }
 
@@ -11445,6 +11568,7 @@ enum CandidateStatus {
   CandOnHold
   Withdrawn
   Blacklisted
+
   @@schema("app_quikhrms")
 }
 
@@ -11456,6 +11580,7 @@ enum ApplicationStatus {
   AppWithdrawn
   AppOffered
   AppDeclined
+
   @@schema("app_quikhrms")
 }
 
@@ -11466,6 +11591,7 @@ enum InterviewType {
   Panel
   TakeHome
   GroupDiscussion
+
   @@schema("app_quikhrms")
 }
 
@@ -11475,6 +11601,7 @@ enum InterviewStatus {
   IntCancelled
   IntNoShow
   IntRescheduled
+
   @@schema("app_quikhrms")
 }
 
@@ -11484,6 +11611,7 @@ enum InterviewRecommendation {
   MaybeHire
   NoHire
   StrongNoHire
+
   @@schema("app_quikhrms")
 }
 
@@ -11497,13 +11625,14 @@ enum OfferStatus {
   OfferNegotiating
   OfferRevoked
   OfferExpired
+
   @@schema("app_quikhrms")
 }
 
 // ─── JOB REQUISITION ────────────────────────────────────
 
 model JobRequisition {
-  id       String @id @default(cuid())
+  id    String @id @default(cuid())
   orgId String
 
   requisitionNumber String
@@ -11534,7 +11663,7 @@ model JobRequisition {
 
   // Role Scorecard (optional) — modeled after the Topgrading/JD-Scorecard pattern.
   // Used to set clearer success criteria during hiring + share with candidates.
-  rolePurpose      String? // 1-2 sentence "why this role exists"
+  rolePurpose String? // 1-2 sentence "why this role exists"
 
   status   RequisitionStatus   @default(ReqDraft)
   priority RequisitionPriority @default(Medium)
@@ -11579,7 +11708,7 @@ model JobRequisition {
 }
 
 model Candidate {
-  id       String @id @default(cuid())
+  id    String @id @default(cuid())
   orgId String
 
   firstName String
@@ -11648,9 +11777,9 @@ model Candidate {
 }
 
 model HiringPipeline {
-  id       String @id @default(cuid())
+  id    String @id @default(cuid())
   orgId String
-  name     String
+  name  String
 
   stages    Json
   isDefault Boolean @default(false)
@@ -11670,7 +11799,7 @@ model HiringPipeline {
 
 model JobApplication {
   id            String @id @default(cuid())
-  orgId      String
+  orgId         String
   candidateId   String
   requisitionId String
 
@@ -11689,25 +11818,25 @@ model JobApplication {
   // Offer — formerly the separate OfferDetail table (1:1, keyed by
   // applicationId). Folded in here. offerStatus = null means no offer exists
   // for this application yet.
-  offerStatus          OfferStatus?
-  offerDesignation     String?
-  offerDepartmentId    String?
-  offerReportingToId   String?
-  offeredCTC           Decimal?     @db.Decimal(15, 2)
-  offeredComponents    Json?
-  offerJoiningDate     DateTime?    @db.Date
-  offerJoiningBonus    Decimal?     @db.Decimal(15, 2)
-  offerRelocationBonus Decimal?     @db.Decimal(15, 2)
-  offerEquityGrant     String?
-  offerSentAt          DateTime?
-  offerRespondedAt     DateTime?
-  offerExpiresAt       DateTime?
-  offerDeclineReason   String?
-  offerCounterOfferCTC Decimal?     @db.Decimal(15, 2)
+  offerStatus           OfferStatus?
+  offerDesignation      String?
+  offerDepartmentId     String?
+  offerReportingToId    String?
+  offeredCTC            Decimal?     @db.Decimal(15, 2)
+  offeredComponents     Json?
+  offerJoiningDate      DateTime?    @db.Date
+  offerJoiningBonus     Decimal?     @db.Decimal(15, 2)
+  offerRelocationBonus  Decimal?     @db.Decimal(15, 2)
+  offerEquityGrant      String?
+  offerSentAt           DateTime?
+  offerRespondedAt      DateTime?
+  offerExpiresAt        DateTime?
+  offerDeclineReason    String?
+  offerCounterOfferCTC  Decimal?     @db.Decimal(15, 2)
   offerNegotiationNotes String?
-  offerLetterUrl       String?
-  offerCreatedAt       DateTime?
-  offerCreatedBy       String?
+  offerLetterUrl        String?
+  offerCreatedAt        DateTime?
+  offerCreatedBy        String?
 
   createdBy String?
   updatedBy String?
@@ -11736,7 +11865,7 @@ model JobApplication {
 
 model Interview {
   id            String @id @default(cuid())
-  orgId      String
+  orgId         String
   applicationId String
 
   round         Int           @default(1)
@@ -11760,12 +11889,12 @@ model Interview {
   // Interview scorecard — formerly the separate InterviewScorecard table
   // (1:1, keyed by interviewId). Folded in here. All nullable: an interview
   // has a scorecard once overallRating is set (recommendation submitted).
-  overallRating       Int?
-  recommendation      InterviewRecommendation?
-  criteria            Json?
-  strengths           String?
-  concerns            String?
-  overallComments     String?
+  overallRating        Int?
+  recommendation       InterviewRecommendation?
+  criteria             Json?
+  strengths            String?
+  concerns             String?
+  overallComments      String?
   scorecardSubmittedAt DateTime?
 
   createdBy String?
@@ -11794,6 +11923,7 @@ enum SocialPostType {
   NewJoiner
   Poll
   Event
+
   @@schema("app_quikhrms")
 }
 
@@ -11802,6 +11932,7 @@ enum PostVisibility {
   Department
   HrmsTeam
   Custom
+
   @@schema("app_quikhrms")
 }
 
@@ -11812,6 +11943,7 @@ enum SurveyType {
   Onboarding
   Custom
   ENPS
+
   @@schema("app_quikhrms")
 }
 
@@ -11820,6 +11952,7 @@ enum SurveyStatus {
   SurveyActive
   SurveyClosed
   SurveyAnalysed
+
   @@schema("app_quikhrms")
 }
 
@@ -11831,6 +11964,7 @@ enum SurveyQuestionType {
   FreeText
   NPS
   Matrix
+
   @@schema("app_quikhrms")
 }
 
@@ -11839,6 +11973,7 @@ enum RecognitionType {
   Badge
   Award
   Shoutout
+
   @@schema("app_quikhrms")
 }
 
@@ -11846,7 +11981,7 @@ enum RecognitionType {
 
 model SocialPost {
   id         String @id @default(cuid())
-  orgId   String
+  orgId      String
   employeeId String
 
   type        SocialPostType @default(Update)
@@ -11862,10 +11997,10 @@ model SocialPost {
 
   // Moderation: when an active ApprovalChain exists for module=Engagement,
   // posts are created Pending and only visible once Approved.
-  approvalStatus   ContentApprovalStatus @default(Approved)
-  approvedById     String?
-  approvedAt       DateTime?
-  rejectionReason  String?
+  approvalStatus  ContentApprovalStatus @default(Approved)
+  approvedById    String?
+  approvedAt      DateTime?
+  rejectionReason String?
 
   createdBy String?
   updatedBy String?
@@ -11885,7 +12020,7 @@ model SocialPost {
 
 model PostComment {
   id         String @id @default(cuid())
-  orgId   String
+  orgId      String
   postId     String
   employeeId String
 
@@ -11904,7 +12039,7 @@ model PostComment {
 // ─── ANNOUNCEMENTS ──────────────────────────────────────
 
 model Announcement {
-  id       String @id @default(cuid())
+  id    String @id @default(cuid())
   orgId String
 
   title       String
@@ -11920,11 +12055,10 @@ model Announcement {
   publishedAt DateTime?
   expiresAt   DateTime?
 
-
-  approvalStatus   ContentApprovalStatus @default(Approved)
-  approvedById     String?
-  approvedAt       DateTime?
-  rejectionReason  String?
+  approvalStatus  ContentApprovalStatus @default(Approved)
+  approvedById    String?
+  approvedAt      DateTime?
+  rejectionReason String?
 
   createdBy String?
   updatedBy String?
@@ -11943,8 +12077,7 @@ model Announcement {
 // ─── SURVEYS ────────────────────────────────────────────
 
 model HrmsSurvey {
-  @@map("Survey")
-  id       String @id @default(cuid())
+  id    String @id @default(cuid())
   orgId String
 
   title  String
@@ -11972,30 +12105,31 @@ model HrmsSurvey {
   @@index([orgId])
   @@index([orgId, deletedAt])
   @@index([orgId, status])
+  @@map("Survey")
   @@schema("app_quikhrms")
 }
 
 model HrmsSurveyResponse {
-  @@map("SurveyResponse")
   id         String  @id @default(cuid())
-  orgId   String
+  orgId      String
   surveyId   String
   employeeId String?
 
   answers     Json
   submittedAt DateTime @default(now())
 
-  survey   HrmsSurvey    @relation(fields: [surveyId], references: [id])
-  employee Employee? @relation(fields: [employeeId], references: [id])
+  survey   HrmsSurvey @relation(fields: [surveyId], references: [id])
+  employee Employee?  @relation(fields: [employeeId], references: [id])
 
   @@index([orgId, surveyId])
+  @@map("SurveyResponse")
   @@schema("app_quikhrms")
 }
 
 // ─── RECOGNITION ────────────────────────────────────────
 
 model Recognition {
-  id       String @id @default(cuid())
+  id    String @id @default(cuid())
   orgId String
 
   fromEmployeeId String
@@ -12007,10 +12141,10 @@ model Recognition {
   points   Int             @default(0)
   isPublic Boolean         @default(true)
 
-  approvalStatus   ContentApprovalStatus @default(Approved)
-  approvedById     String?
-  approvedAt       DateTime?
-  rejectionReason  String?
+  approvalStatus  ContentApprovalStatus @default(Approved)
+  approvedById    String?
+  approvedAt      DateTime?
+  rejectionReason String?
 
   createdAt DateTime @default(now())
 
@@ -12038,12 +12172,12 @@ enum AuditAction {
   Approve
   Reject
   StatusChange
+
   @@schema("app_quikhrms")
 }
 
 model HrmsAuditLog {
-  @@map("AuditLog")
-  id       String @id @default(cuid())
+  id    String @id @default(cuid())
   orgId String
 
   userId     String
@@ -12062,6 +12196,7 @@ model HrmsAuditLog {
   @@index([orgId, userId])
   @@index([orgId, createdAt])
   @@index([orgId, entityType, entityId])
+  @@map("AuditLog")
   @@schema("app_quikhrms")
 }
 
@@ -12078,6 +12213,7 @@ enum NotificationType {
   Success
   Error
   Action
+
   @@schema("app_quikhrms")
 }
 
@@ -12085,13 +12221,13 @@ enum NotificationChannel {
   InApp
   Email
   Push
+
   @@schema("app_quikhrms")
 }
 
 model HrmsNotification {
-  @@map("Notification")
   id         String @id @default(cuid())
-  orgId   String
+  orgId      String
   employeeId String
 
   type    NotificationType    @default(Info)
@@ -12117,11 +12253,11 @@ model HrmsNotification {
   @@index([orgId, employeeId, isRead, createdAt(sort: Desc)])
   @@index([orgId, employeeId, createdAt(sort: Desc)])
   @@index([orgId, entityType, entityId])
+  @@map("Notification")
   @@schema("app_quikhrms")
 }
 
 // ─── REPORTS ────────────────────────────────────────────
-
 
 // ─── DATA IMPORT/EXPORT ─────────────────────────────────
 
@@ -12131,11 +12267,12 @@ enum ImportStatus {
   ImportCompleted
   ImportFailed
   ImportPartial
+
   @@schema("app_quikhrms")
 }
 
 model DataImport {
-  id       String @id @default(cuid())
+  id    String @id @default(cuid())
   orgId String
 
   entityType    String
@@ -12165,6 +12302,7 @@ enum CompanyHolidayType {
   Regional
   Company
   Optional
+
   @@schema("app_quikhrms")
 }
 
@@ -12182,6 +12320,7 @@ enum ApprovalModule {
   ProofOfInvestment
   SalaryRevision
   OneTimeEarning
+
   @@schema("app_quikhrms")
 }
 
@@ -12189,6 +12328,7 @@ enum ContentApprovalStatus {
   Pending
   Approved
   Rejected
+
   @@schema("app_quikhrms")
 }
 
@@ -12197,6 +12337,7 @@ enum ApproverType {
   DepartmentHead
   HR
   Custom
+
   @@schema("app_quikhrms")
 }
 
@@ -12205,11 +12346,12 @@ enum NotificationPrefChannel {
   InApp
   Push
   Slack
+
   @@schema("app_quikhrms")
 }
 
 model CompanySettings {
-  id       String @id @default(cuid())
+  id    String @id @default(cuid())
   orgId String @unique
 
   companyName String
@@ -12263,7 +12405,7 @@ model CompanySettings {
 }
 
 model CompanyHoliday {
-  id       String @id @default(cuid())
+  id    String @id @default(cuid())
   orgId String
 
   name                  String
@@ -12290,7 +12432,7 @@ model CompanyHoliday {
 }
 
 model ApprovalChain {
-  id       String @id @default(cuid())
+  id    String @id @default(cuid())
   orgId String
 
   name                 String
@@ -12311,7 +12453,6 @@ model ApprovalChain {
   @@schema("app_quikhrms")
 }
 
-
 // ─── MODULE A: DOCUMENT MANAGEMENT ──────────────────────
 
 enum DocumentCategory {
@@ -12325,6 +12466,7 @@ enum DocumentCategory {
   RelievingLetter
   NDA
   Other
+
   @@schema("app_quikhrms")
 }
 
@@ -12333,6 +12475,7 @@ enum DocumentStatus {
   Active
   Archived
   Expired
+
   @@schema("app_quikhrms")
 }
 
@@ -12340,18 +12483,20 @@ enum DocumentAckStatus {
   Pending
   Acknowledged
   Declined
+
   @@schema("app_quikhrms")
 }
 
 enum DocumentAccessLevel {
   View
   Download
+
   @@schema("app_quikhrms")
 }
 
 model Document {
   id         String  @id @default(cuid())
-  orgId   String
+  orgId      String
   employeeId String?
 
   title            String
@@ -12394,7 +12539,7 @@ model Document {
 
 model DocumentAcknowledgment {
   id         String @id @default(cuid())
-  orgId   String
+  orgId      String
   documentId String
   employeeId String
 
@@ -12418,7 +12563,7 @@ model DocumentAcknowledgment {
 
 model DocumentShare {
   id         String @id @default(cuid())
-  orgId   String
+  orgId      String
   documentId String
 
   sharedWith  String
@@ -12443,6 +12588,7 @@ enum OnboardingStatus {
   InProgress
   OnboardCompleted
   OnboardCancelled
+
   @@schema("app_quikhrms")
 }
 
@@ -12452,6 +12598,7 @@ enum OnboardingTaskStatus {
   TaskCompleted
   TaskSkipped
   TaskBlocked
+
   @@schema("app_quikhrms")
 }
 
@@ -12462,6 +12609,7 @@ enum OnboardingTaskCategory {
   Compliance
   Introduction
   TaskOther
+
   @@schema("app_quikhrms")
 }
 
@@ -12470,6 +12618,7 @@ enum OffboardingStatus {
   OffboardInProgress
   ClearancePending
   OffboardCompleted
+
   @@schema("app_quikhrms")
 }
 
@@ -12478,6 +12627,7 @@ enum OffboardingReason {
   Termination
   Retirement
   ContractEnd
+
   @@schema("app_quikhrms")
 }
 
@@ -12486,6 +12636,7 @@ enum OffboardingTaskCategory {
   AccessRevoke
   KnowledgeTransfer
   Clearance
+
   @@schema("app_quikhrms")
 }
 
@@ -12497,11 +12648,12 @@ enum AssigneeRole {
   AdminRole
   EmployeeRole
   CustomRole
+
   @@schema("app_quikhrms")
 }
 
 model OnboardingTemplate {
-  id       String @id @default(cuid())
+  id    String @id @default(cuid())
   orgId String
 
   name          String
@@ -12527,7 +12679,7 @@ model OnboardingTemplate {
 
 model OnboardingInstance {
   id         String  @id @default(cuid())
-  orgId   String
+  orgId      String
   employeeId String
   templateId String?
 
@@ -12555,7 +12707,7 @@ model OnboardingInstance {
 
 model OnboardingTask {
   id         String @id @default(cuid())
-  orgId   String
+  orgId      String
   instanceId String
 
   title        String
@@ -12592,6 +12744,7 @@ enum ProvisionCategory {
   Compliance
   Facility
   ProvOther
+
   @@schema("app_quikhrms")
 }
 
@@ -12601,12 +12754,13 @@ enum ProvisionStatus {
   ProvDone
   ProvBlocked
   ProvNotRequired
+
   @@schema("app_quikhrms")
 }
 
 model ProvisionItem {
   id          String            @id @default(cuid())
-  orgId    String
+  orgId       String
   name        String
   category    ProvisionCategory @default(ProvOther)
   description String?
@@ -12637,7 +12791,7 @@ model ProvisionItem {
 
 model EmployeeProvision {
   id              String            @id @default(cuid())
-  orgId        String
+  orgId           String
   employeeId      String
   provisionItemId String?
   name            String
@@ -12667,7 +12821,7 @@ model EmployeeProvision {
 
 model OffboardingInstance {
   id         String  @id @default(cuid())
-  orgId   String
+  orgId      String
   employeeId String
   templateId String?
 
@@ -12698,7 +12852,7 @@ model OffboardingInstance {
 
 model OffboardingTask {
   id         String @id @default(cuid())
-  orgId   String
+  orgId      String
   instanceId String
 
   title       String
@@ -12739,6 +12893,7 @@ enum AssetCategory {
   SoftwareLicense
   Peripheral
   AssetOther
+
   @@schema("app_quikhrms")
 }
 
@@ -12748,6 +12903,7 @@ enum AssetStatus {
   InRepair
   Retired
   AssetLost
+
   @@schema("app_quikhrms")
 }
 
@@ -12756,6 +12912,7 @@ enum AssetCondition {
   Good
   Fair
   Poor
+
   @@schema("app_quikhrms")
 }
 
@@ -12764,11 +12921,12 @@ enum AssetAssignmentStatus {
   AssignmentReturned
   AssignmentOverdue
   AssignmentLost
+
   @@schema("app_quikhrms")
 }
 
 model Asset {
-  id       String @id @default(cuid())
+  id    String @id @default(cuid())
   orgId String
 
   assetCode      String
@@ -12812,7 +12970,7 @@ model Asset {
 
 model AssetAssignment {
   id         String @id @default(cuid())
-  orgId   String
+  orgId      String
   assetId    String
   employeeId String
 
@@ -12842,9 +13000,9 @@ model AssetAssignment {
 }
 
 model AssetScrap {
-  id       String @id @default(cuid())
-  orgId String
-  assetId  String
+  id      String @id @default(cuid())
+  orgId   String
+  assetId String
 
   quantity   Int
   reason     String
@@ -12871,6 +13029,7 @@ enum ReportStatus {
   ReportProcessing
   ReportCompleted
   ReportFailed
+
   @@schema("app_quikhrms")
 }
 
@@ -12879,24 +13038,24 @@ enum ReportFormat {
   XLSX
   CSV
   JSON
+
   @@schema("app_quikhrms")
 }
 
-
 model Report {
-  id       String @id @default(cuid())
+  id    String @id @default(cuid())
   orgId String
 
-  name             String
-  type             String
-  parameters       Json?
-  generatedBy      String
-  format           ReportFormat @default(PDF)
-  fileUrl          String?
-  status           ReportStatus @default(ReportQueued)
-  scheduleCron     String?
-  lastRunAt        DateTime?
-  rowCount         Int          @default(0)
+  name         String
+  type         String
+  parameters   Json?
+  generatedBy  String
+  format       ReportFormat @default(PDF)
+  fileUrl      String?
+  status       ReportStatus @default(ReportQueued)
+  scheduleCron String?
+  lastRunAt    DateTime?
+  rowCount     Int          @default(0)
 
   createdBy String?
   updatedBy String?
@@ -12912,7 +13071,7 @@ model Report {
 }
 
 model Dashboard {
-  id       String @id @default(cuid())
+  id    String @id @default(cuid())
   orgId String
 
   name        String
@@ -12945,6 +13104,7 @@ enum TimeLogStatus {
   LogSubmitted
   LogApproved
   LogRejected
+
   @@schema("app_quikhrms")
 }
 
@@ -12953,6 +13113,7 @@ enum TimesheetStatus {
   TsSubmitted
   TsApproved
   TsRejected
+
   @@schema("app_quikhrms")
 }
 
@@ -12960,15 +13121,16 @@ enum TimesheetPeriodType {
   Weekly
   BiWeekly
   Monthly
+
   @@schema("app_quikhrms")
 }
-
 
 enum ProjectStatus {
   ProjectActive
   ProjectOnHold
   ProjectCompleted
   ProjectArchived
+
   @@schema("app_quikhrms")
 }
 
@@ -12976,17 +13138,19 @@ enum JobStatus {
   JobActive
   JobCompleted
   JobCancelled
+
   @@schema("app_quikhrms")
 }
 
 enum ScheduleStatus {
   ScheduleDraft
   SchedulePublished
+
   @@schema("app_quikhrms")
 }
 
 model TimeProject {
-  id       String @id @default(cuid())
+  id    String @id @default(cuid())
   orgId String
 
   name         String
@@ -13020,7 +13184,7 @@ model TimeProject {
 
 model TimeJob {
   id        String @id @default(cuid())
-  orgId  String
+  orgId     String
   projectId String
 
   name           String
@@ -13051,7 +13215,7 @@ model TimeJob {
 
 model JobScheduleEntry {
   id         String @id @default(cuid())
-  orgId   String
+  orgId      String
   employeeId String
 
   date      DateTime       @db.Date
@@ -13078,7 +13242,7 @@ model JobScheduleEntry {
 
 model TimeLog {
   id         String @id @default(cuid())
-  orgId   String
+  orgId      String
   employeeId String
 
   date        DateTime      @db.Date
@@ -13110,7 +13274,7 @@ model TimeLog {
 
 model Timesheet {
   id         String @id @default(cuid())
-  orgId   String
+  orgId      String
   employeeId String
 
   periodType      TimesheetPeriodType @default(Weekly)
@@ -13141,23 +13305,24 @@ model Timesheet {
   @@schema("app_quikhrms")
 }
 
-
 // ─── GAP-FILL: DELEGATION ───────────────────────────────
 
 enum DelegationType {
   DelegationTemporary
   DelegationPermanent
+
   @@schema("app_quikhrms")
 }
 
 enum DelegationNotifyMode {
   NotifyBoth
   NotifyDelegatee
+
   @@schema("app_quikhrms")
 }
 
 model Delegation {
-  id       String @id @default(cuid())
+  id    String @id @default(cuid())
   orgId String
 
   delegatorId String
@@ -13195,12 +13360,13 @@ enum EmploymentChangeType {
   EmpStatusChange
   DepartmentChange
   ManagerChange
+
   @@schema("app_quikhrms")
 }
 
 model EmploymentHistory {
   id         String @id @default(cuid())
-  orgId   String
+  orgId      String
   employeeId String
 
   changeType    EmploymentChangeType
@@ -13237,6 +13403,7 @@ enum ESignStatus {
   ESignDeclined
   ESignCancelled
   ESignExpired
+
   @@schema("app_quikhrms")
 }
 
@@ -13245,22 +13412,23 @@ enum ESignProvider {
   DocuSign
   AdobeSign
   LeegalityProvider
+
   @@schema("app_quikhrms")
 }
 
 model ESignRequest {
   id         String  @id @default(cuid())
-  orgId   String
+  orgId      String
   documentId String?
 
-  title        String
-  provider     ESignProvider @default(Internal)
-  signers      Json
-  message      String?
-  status       ESignStatus   @default(ESignDraft)
-  sentAt       DateTime?
-  completedAt  DateTime?
-  expiresAt    DateTime?
+  title       String
+  provider    ESignProvider @default(Internal)
+  signers     Json
+  message     String?
+  status      ESignStatus   @default(ESignDraft)
+  sentAt      DateTime?
+  completedAt DateTime?
+  expiresAt   DateTime?
 
   createdBy String?
   updatedBy String?
@@ -13279,7 +13447,7 @@ model ESignRequest {
 
 model CandidatePortalAccess {
   id          String @id @default(cuid())
-  orgId    String
+  orgId       String
   candidateId String
 
   accessToken String    @unique
@@ -13309,7 +13477,6 @@ model CandidatePortalAccess {
 //   userId ← Employee.id
 
 model HrmsAppRole {
-  @@map("AppRole")
   id          String   @id @default(cuid())
   orgId       String
   appId       String
@@ -13327,12 +13494,12 @@ model HrmsAppRole {
 
   @@unique([orgId, appId, name])
   @@index([orgId, appId])
+  @@map("AppRole")
   @@schema("app_quikhrms")
 }
 
 model HrmsRolePermission {
-  @@map("RolePermission")
-  id       String  @id @default(cuid())
+  id       String @id @default(cuid())
   roleId   String
   resource String
   action   String
@@ -13341,11 +13508,11 @@ model HrmsRolePermission {
 
   @@unique([roleId, resource, action])
   @@index([roleId])
+  @@map("RolePermission")
   @@schema("app_quikhrms")
 }
 
 model HrmsRoleNavigation {
-  @@map("RoleNavigation")
   id     String @id @default(cuid())
   roleId String
   navKey String
@@ -13354,11 +13521,11 @@ model HrmsRoleNavigation {
 
   @@unique([roleId, navKey])
   @@index([roleId])
+  @@map("RoleNavigation")
   @@schema("app_quikhrms")
 }
 
 model HrmsUserAppRole {
-  @@map("UserAppRole")
   id         String    @id @default(cuid())
   userId     String
   orgId      String
@@ -13367,13 +13534,14 @@ model HrmsUserAppRole {
   assignedBy String?
   expiresAt  DateTime?
 
-  role     HrmsAppRole  @relation(fields: [roleId], references: [id], onDelete: Cascade)
-  employee Employee @relation(fields: [userId], references: [id], onDelete: Cascade)
+  role     HrmsAppRole @relation(fields: [roleId], references: [id], onDelete: Cascade)
+  employee Employee    @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@unique([userId, orgId, roleId])
   @@index([roleId])
   @@index([userId, orgId])
   @@index([expiresAt])
+  @@map("UserAppRole")
   @@schema("app_quikhrms")
 }
 
@@ -13385,7 +13553,6 @@ enum PermissionGrantKind {
 }
 
 model HrmsUserPermissionExtra {
-  @@map("UserPermissionExtra")
   id        String              @id @default(cuid())
   orgId     String
   userId    String
@@ -13399,13 +13566,14 @@ model HrmsUserPermissionExtra {
 
   @@unique([orgId, userId, resource, action])
   @@index([userId, orgId])
+  @@map("UserPermissionExtra")
   @@schema("app_quikhrms")
 }
 
 // ─── PAYROLL ────────────────────────────────────────────
 
 model PayrollSettings {
-  id       String @id @default(cuid())
+  id    String @id @default(cuid())
   orgId String @unique
 
   orgDetailsCompleted          Boolean @default(false)
@@ -13429,7 +13597,7 @@ model PayrollSettings {
 }
 
 model PayrollTaxDetails {
-  id       String @id @default(cuid())
+  id    String @id @default(cuid())
   orgId String @unique
 
   pan                 String?
@@ -13457,7 +13625,7 @@ model PayrollTaxDetails {
 }
 
 model PaySchedule {
-  id       String @id @default(cuid())
+  id    String @id @default(cuid())
   orgId String @unique
 
   workWeek          Json
@@ -13486,7 +13654,7 @@ model PaySchedule {
 }
 
 model EPFConfig {
-  id       String @id @default(cuid())
+  id    String @id @default(cuid())
   orgId String @unique
 
   enabled                    Boolean             @default(false)
@@ -13513,7 +13681,7 @@ model EPFConfig {
 }
 
 model ESIConfig {
-  id       String @id @default(cuid())
+  id    String @id @default(cuid())
   orgId String @unique
 
   enabled                     Boolean          @default(false)
@@ -13536,7 +13704,7 @@ model ESIConfig {
 }
 
 model ProfessionalTaxConfig {
-  id       String @id @default(cuid())
+  id    String @id @default(cuid())
   orgId String
 
   enabled        Boolean              @default(false)
@@ -13559,7 +13727,7 @@ model ProfessionalTaxConfig {
 }
 
 model LWFConfig {
-  id       String @id @default(cuid())
+  id    String @id @default(cuid())
   orgId String
 
   enabled              Boolean  @default(false)
@@ -13586,7 +13754,7 @@ model LWFConfig {
 }
 
 model StatutoryBonusConfig {
-  id       String @id @default(cuid())
+  id    String @id @default(cuid())
   orgId String @unique
 
   enabled            Boolean         @default(false)
@@ -13609,7 +13777,7 @@ model StatutoryBonusConfig {
 // (calc cap = max(₹7,000, applicable state minimum wage)) and similar needs.
 // Lookup: most recent effectiveFrom ≤ pay period for given (tenant, state, scheduledEmployment, skillLevel).
 model StateMinimumWage {
-  id       String @id @default(cuid())
+  id    String @id @default(cuid())
   orgId String
 
   state               String
@@ -13633,7 +13801,7 @@ model StateMinimumWage {
 }
 
 model SalaryComponent {
-  id       String @id @default(cuid())
+  id    String @id @default(cuid())
   orgId String
 
   name        String
@@ -13700,7 +13868,7 @@ model SalaryComponent {
 }
 
 model SalaryStructure {
-  id       String @id @default(cuid())
+  id    String @id @default(cuid())
   orgId String
 
   name        String
@@ -13728,7 +13896,7 @@ model SalaryStructure {
 
 model SalaryStructureComponent {
   id          String @id @default(cuid())
-  orgId    String
+  orgId       String
   structureId String
   componentId String
 
@@ -13751,7 +13919,7 @@ model SalaryStructureComponent {
 
 model EmployeeSalary {
   id         String @id @default(cuid())
-  orgId   String
+  orgId      String
   employeeId String
 
   structureId    String?
@@ -13781,7 +13949,7 @@ model EmployeeSalary {
 
 model PayRun {
   id            String  @id @default(cuid())
-  orgId      String
+  orgId         String
   legalEntityId String?
 
   periodStart     DateTime     @db.Date
@@ -13833,9 +14001,9 @@ model PayRun {
 // lib/services/one-time-defaults.ts applies. Used to set tax/stat behavior
 // ONCE per kind, then applied consistently across every entry of that kind.
 model OneTimeStatutoryDefault {
-  id       String             @id @default(cuid())
+  id    String             @id @default(cuid())
   orgId String
-  kind     OneTimeEarningKind
+  kind  OneTimeEarningKind
 
   taxable        Boolean @default(true)
   considerForEPF Boolean @default(false)
@@ -13857,7 +14025,7 @@ model OneTimeStatutoryDefault {
 // flows back into future payslips. Survives recompute.
 model TdsOverride {
   id         String @id @default(cuid())
-  orgId   String
+  orgId      String
   employeeId String
 
   // Where the override is applied (the "this month" decision).
@@ -13870,14 +14038,14 @@ model TdsOverride {
   overrideTds Decimal @db.Decimal(15, 2)
   // shortfall = originalTds - overrideTds. Positive = underdeducted (to be recovered).
   // Negative = HR over-deducted (no recovery, just a one-month higher TDS).
-  shortfall Decimal @db.Decimal(15, 2)
+  shortfall   Decimal @db.Decimal(15, 2)
 
   // Recovery plan
   recoveryStrategy TdsRecoveryStrategy
   recoveryMonths   Int // 1 for NextMonth, N for Spread (capped to months left in FY)
-  perMonthAmount   Decimal  @db.Decimal(15, 2)
-  recoveryStart    DateTime @db.Date // typically setOnPeriod + 1 month
-  recoveryEnd      DateTime @db.Date // recoveryStart + (recoveryMonths-1) months
+  perMonthAmount   Decimal             @db.Decimal(15, 2)
+  recoveryStart    DateTime            @db.Date // typically setOnPeriod + 1 month
+  recoveryEnd      DateTime            @db.Date // recoveryStart + (recoveryMonths-1) months
 
   reason String?
   status TdsOverrideStatus @default(Active)
@@ -13895,16 +14063,16 @@ model TdsOverride {
 }
 
 enum TdsRecoveryStrategy {
-  NextMonth        // single lump-sum recovery in the month after the override
+  NextMonth // single lump-sum recovery in the month after the override
   SpreadOverMonths // even split across N months starting next month
 
   @@schema("app_quikhrms")
 }
 
 enum TdsOverrideStatus {
-  Active     // current — either being applied this month or in recovery
-  Recovered  // shortfall fully recovered (all recovery months past)
-  Cancelled  // HR deleted before it took effect
+  Active // current — either being applied this month or in recovery
+  Recovered // shortfall fully recovered (all recovery months past)
+  Cancelled // HR deleted before it took effect
   Superseded // a newer override replaced this one (cancels remaining recovery)
 
   @@schema("app_quikhrms")
@@ -13914,7 +14082,7 @@ enum TdsOverrideStatus {
 // adjustments aren't wiped when payroll is recomputed against attendance LOP.
 model PayRunAdjustment {
   id         String @id @default(cuid())
-  orgId   String
+  orgId      String
   payRunId   String
   employeeId String
 
@@ -13938,7 +14106,7 @@ model PayRunAdjustment {
 
 model Payslip {
   id         String @id @default(cuid())
-  orgId   String
+  orgId      String
   payRunId   String
   employeeId String
 
@@ -13976,7 +14144,7 @@ model Payslip {
 
 model PayslipLine {
   id        String @id @default(cuid())
-  orgId  String
+  orgId     String
   payslipId String
 
   componentId   String?
@@ -13997,7 +14165,7 @@ model PayslipLine {
 }
 
 model PriorPayroll {
-  id       String @id @default(cuid())
+  id    String @id @default(cuid())
   orgId String @unique
 
   enabled       Boolean   @default(false)
@@ -14017,7 +14185,7 @@ model PriorPayroll {
 }
 
 model PriorPayrollRecord {
-  id       String @id @default(cuid())
+  id    String @id @default(cuid())
   orgId String
 
   employeeId    String
@@ -14052,7 +14220,7 @@ model PriorPayrollRecord {
 }
 
 model EmployeeLoan {
-  id       String @id @default(cuid())
+  id    String @id @default(cuid())
   orgId String
 
   employeeId        String
@@ -14090,9 +14258,9 @@ model EmployeeLoan {
 }
 
 model LoanRepayment {
-  id       String @id @default(cuid())
-  orgId String
-  loanId   String
+  id     String @id @default(cuid())
+  orgId  String
+  loanId String
 
   payRunId  String?
   payslipId String?
@@ -14113,7 +14281,7 @@ model LoanRepayment {
 }
 
 model Donation {
-  id       String @id @default(cuid())
+  id    String @id @default(cuid())
   orgId String
 
   employeeId       String
@@ -14149,7 +14317,7 @@ model Donation {
 }
 
 model ReimbursementClaim {
-  id       String @id @default(cuid())
+  id    String @id @default(cuid())
   orgId String
 
   employeeId     String
@@ -14191,7 +14359,7 @@ model ReimbursementClaim {
 }
 
 model InvestmentProof {
-  id       String @id @default(cuid())
+  id    String @id @default(cuid())
   orgId String
 
   employeeId     String
@@ -14224,7 +14392,7 @@ model InvestmentProof {
 }
 
 model SalaryRevision {
-  id       String @id @default(cuid())
+  id    String @id @default(cuid())
   orgId String
 
   employeeId    String
@@ -14259,12 +14427,13 @@ enum PayRunApprovalStatus {
   Approved
   Rejected
   Skipped
+
   @@schema("app_quikhrms")
 }
 
 model PayRunApproval {
   id       String @id @default(cuid())
-  orgId String
+  orgId    String
   payRunId String
 
   level        Int // 1, 2, 3 ...
@@ -14290,6 +14459,7 @@ enum TaskStatus {
   InProgress
   Completed
   Cancelled
+
   @@schema("app_quikhrms")
 }
 
@@ -14298,11 +14468,12 @@ enum TaskPriority {
   Normal
   High
   Urgent
+
   @@schema("app_quikhrms")
 }
 
 model TaskList {
-  id       String @id @default(cuid())
+  id    String @id @default(cuid())
   orgId String
 
   name        String
@@ -14328,7 +14499,7 @@ model TaskList {
 }
 
 model Task {
-  id       String @id @default(cuid())
+  id    String @id @default(cuid())
   orgId String
 
   title       String
@@ -14367,9 +14538,9 @@ model Task {
 }
 
 model TaskActivity {
-  id       String @id @default(cuid())
-  orgId String
-  taskId   String
+  id     String @id @default(cuid())
+  orgId  String
+  taskId String
 
   authorId String
   type     String // "created" | "comment" | "status" | "assigned" | "due_date" | "completed"
@@ -14388,11 +14559,12 @@ model TaskActivity {
 enum LegalEntityStatus {
   Active
   Inactive
+
   @@schema("app_quikhrms")
 }
 
 model LegalEntity {
-  id       String @id @default(cuid())
+  id    String @id @default(cuid())
   orgId String
 
   code           String // e.g. "QK-IN-01", "QK-US-01"
@@ -14437,6 +14609,7 @@ enum TaxResidencyStatus {
   NonResident
   ResidentButNotOrdinarilyResident
   Expatriate
+
   @@schema("app_quikhrms")
 }
 
@@ -14446,11 +14619,12 @@ enum SettlementStatus {
   Approved
   Paid
   Cancelled
+
   @@schema("app_quikhrms")
 }
 
 model FullAndFinalSettlement {
-  id       String @id @default(cuid())
+  id    String @id @default(cuid())
   orgId String
 
   employeeId      String
@@ -14492,7 +14666,7 @@ model FullAndFinalSettlement {
 }
 
 model GratuityRecord {
-  id       String @id @default(cuid())
+  id    String @id @default(cuid())
   orgId String
 
   employeeId      String
@@ -14519,7 +14693,7 @@ model GratuityRecord {
 }
 
 model Form12BBDeclaration {
-  id       String @id @default(cuid())
+  id    String @id @default(cuid())
   orgId String
 
   employeeId    String
@@ -14553,7 +14727,7 @@ model Form12BBDeclaration {
   section80G      Decimal @default(0) @db.Decimal(15, 2)
   section80TTA    Decimal @default(0) @db.Decimal(15, 2)
   nps80CCD1B      Decimal @default(0) @db.Decimal(15, 2) // NPS extra ₹50k beyond 80C
-  otherDeductions Json?   // { "80DD": 75000, "80U": 75000, "80EEA": 150000, ... }
+  otherDeductions Json? // { "80DD": 75000, "80U": 75000, "80EEA": 150000, ... }
 
   // Verification block (required by official Form 12BB)
   verificationPlace       String?
@@ -14592,7 +14766,7 @@ model Form12BBDeclaration {
 /// @deprecated use `TdsChallan` — see banner above the enum.
 
 model EmailTemplate {
-  id       String @id @default(cuid())
+  id    String @id @default(cuid())
   orgId String
 
   key         String // e.g. "payslip.released", "payrun.approved"
@@ -14620,11 +14794,12 @@ enum BankReconciliationStatus {
   Unmatched
   PartiallyMatched
   Failed
+
   @@schema("app_quikhrms")
 }
 
 model BankReconciliation {
-  id       String @id @default(cuid())
+  id    String @id @default(cuid())
   orgId String
 
   payRunId       String
@@ -14651,7 +14826,7 @@ model BankReconciliation {
 
 model BankReconciliationLine {
   id               String @id @default(cuid())
-  orgId         String
+  orgId            String
   reconciliationId String
 
   payslipId    String?
@@ -14682,6 +14857,7 @@ enum OneTimeEarningKind {
   ReferralBonus
   Other
   Deduction
+
   @@schema("app_quikhrms")
 }
 
@@ -14690,11 +14866,12 @@ enum OneTimeEarningStatus {
   Approved
   Rejected
   Applied
+
   @@schema("app_quikhrms")
 }
 
 model OneTimeEarning {
-  id       String @id @default(cuid())
+  id    String @id @default(cuid())
   orgId String
 
   employeeId     String
@@ -14711,10 +14888,10 @@ model OneTimeEarning {
   reason         String?
   status         OneTimeEarningStatus    @default(Pending)
 
-  appliedAt        DateTime?
-  approvedBy       String?
-  approvedAt       DateTime?
-  rejectionReason  String?
+  appliedAt       DateTime?
+  approvedBy      String?
+  approvedAt      DateTime?
+  rejectionReason String?
 
   // Provenance — set when this earning was auto-created from another entity
   // (e.g. an approved reimbursement claim). Lets payroll-compute flip the
@@ -14736,7 +14913,7 @@ model OneTimeEarning {
 }
 
 model ClaimsDeclarationSettings {
-  id       String @id @default(cuid())
+  id    String @id @default(cuid())
   orgId String @unique
 
   itDeclarationReleased   Boolean   @default(false)
@@ -14762,7 +14939,7 @@ model ClaimsDeclarationSettings {
 
 model WfhRequest {
   id         String @id @default(cuid())
-  orgId   String
+  orgId      String
   employeeId String
 
   startDate DateTime   @db.Date
@@ -14798,7 +14975,7 @@ model WfhRequest {
 
 model WfhApproval {
   id           String          @id @default(cuid())
-  orgId     String
+  orgId        String
   wfhRequestId String
   approverId   String
   level        Int             @default(1)
@@ -14822,7 +14999,7 @@ model WfhApproval {
 
 model WfhQuotaGroup {
   id          String       @id @default(cuid())
-  orgId    String
+  orgId       String
   name        String
   description String?
   yearlyQuota Int
@@ -14835,8 +15012,8 @@ model WfhQuotaGroup {
   updatedAt DateTime  @updatedAt
   deletedAt DateTime?
 
-  members     Employee[]                @relation("WfhQuotaGroupMembers")
-  departmentIds String[]            @default([])
+  members       Employee[] @relation("WfhQuotaGroupMembers")
+  departmentIds String[]   @default([])
 
   @@unique([orgId, name])
   @@index([orgId])
@@ -14847,13 +15024,14 @@ model WfhQuotaGroup {
 enum WfhGroupMode {
   Department
   Employee
+
   @@schema("app_quikhrms")
 }
-
 
 enum DocumentBundle {
   PreOffer
   PostOffer
+
   @@schema("app_quikhrms")
 }
 
@@ -14862,6 +15040,7 @@ enum CandidateDocRequestStatus {
   Completed
   Expired
   Cancelled
+
   @@schema("app_quikhrms")
 }
 
@@ -14869,12 +15048,13 @@ enum CandidateDocUploadStatus {
   Pending
   Approved
   Rejected
+
   @@schema("app_quikhrms")
 }
 
 model CandidateDocumentType {
   id         String         @id @default(cuid())
-  orgId   String
+  orgId      String
   name       String
   code       String
   bundle     DocumentBundle
@@ -14900,7 +15080,7 @@ model CandidateDocumentType {
 
 model CandidateDocumentRequest {
   id            String                    @id @default(cuid())
-  orgId      String
+  orgId         String
   applicationId String
   bundle        DocumentBundle
   status        CandidateDocRequestStatus @default(Pending)
@@ -14934,7 +15114,7 @@ model CandidateDocumentRequest {
 
 model CandidateDocumentUpload {
   id              String                   @id @default(cuid())
-  orgId        String
+  orgId           String
   requestId       String
   documentTypeId  String?
   customLabel     String?
@@ -14966,18 +15146,20 @@ enum RequisitionApprovalStatus {
   Approved
   Rejected
   Skipped
+
   @@schema("app_quikhrms")
 }
 
 enum RequisitionApproverRole {
   DeptHead
   HR
+
   @@schema("app_quikhrms")
 }
 
 model RequisitionApproval {
   id            String                  @id @default(cuid())
-  orgId      String
+  orgId         String
   requisitionId String
   approverId    String
   level         Int                     @default(1)
@@ -15006,6 +15188,7 @@ enum TicketPriority {
   Medium
   High
   Urgent
+
   @@schema("app_quikhrms")
 }
 
@@ -15017,6 +15200,7 @@ enum TicketStatus {
   Closed
   Reopened
   Cancelled
+
   @@schema("app_quikhrms")
 }
 
@@ -15025,14 +15209,15 @@ enum TicketSource {
   Mobile
   Email
   API
+
   @@schema("app_quikhrms")
 }
 
 model TicketCategory {
-  id       String @id @default(cuid())
+  id    String @id @default(cuid())
   orgId String
-  name     String
-  slug     String
+  name  String
+  slug  String
 
   description        String?
   defaultAssigneeId  String?
@@ -15067,7 +15252,7 @@ model TicketCategory {
 
 model Ticket {
   id       String @id @default(cuid())
-  orgId String
+  orgId    String
   ticketNo String
 
   title       String
@@ -15077,9 +15262,9 @@ model Ticket {
   // for backward-compat with legacy category-based tickets + category management.
   categoryId   String?
   departmentId String?
-  priority   TicketPriority @default(Medium)
-  status     TicketStatus   @default(Open)
-  source     TicketSource   @default(Web)
+  priority     TicketPriority @default(Medium)
+  status       TicketStatus   @default(Open)
+  source       TicketSource   @default(Web)
 
   raisedById   String
   assignedToId String?
@@ -15134,7 +15319,7 @@ model Ticket {
 
 model TicketComment {
   id       String @id @default(cuid())
-  orgId String
+  orgId    String
   ticketId String
   userId   String
 
@@ -15156,7 +15341,7 @@ model TicketComment {
 
 model TicketAttachment {
   id       String @id @default(cuid())
-  orgId String
+  orgId    String
   ticketId String
 
   fileUrl  String
@@ -15177,7 +15362,7 @@ model TicketAttachment {
 
 model TicketActivity {
   id       String  @id @default(cuid())
-  orgId String
+  orgId    String
   ticketId String
   actorId  String?
   isSystem Boolean @default(false)
@@ -15206,18 +15391,19 @@ enum KraAssignmentStatus {
   Active
   Completed
   Cancelled
+
   @@schema("app_quikhrms")
 }
 
 model KraScorecard {
-  id            String   @id @default(cuid())
-  orgId      String
+  id    String @id @default(cuid())
+  orgId String
 
   name          String
   description   String?
   designationId String?
   departmentId  String?
-  tags          Json?    // free-form ["Operations", "Site"]
+  tags          Json? // free-form ["Operations", "Site"]
   effectiveFrom DateTime @db.Date
   isActive      Boolean  @default(true)
 
@@ -15238,7 +15424,7 @@ model KraScorecard {
 }
 
 model KraTemplateEntry {
-  id          String  @id @default(cuid())
+  id          String @id @default(cuid())
   scorecardId String
 
   title       String
@@ -15246,37 +15432,36 @@ model KraTemplateEntry {
   weight      Decimal @db.Decimal(5, 2)
   sortOrder   Int     @default(0)
 
-  scorecard KraScorecard       @relation(fields: [scorecardId], references: [id], onDelete: Cascade)
-  kpis      Json     @default("[]") // array of { id,title,description,measurementMethod,target,unit,weight,sortOrder }
+  scorecard KraScorecard @relation(fields: [scorecardId], references: [id], onDelete: Cascade)
+  kpis      Json         @default("[]") // array of { id,title,description,measurementMethod,target,unit,weight,sortOrder }
 
   @@index([scorecardId])
   @@schema("app_quikhrms")
 }
 
-
 model EmployeeKraAssignment {
-  id            String  @id @default(cuid())
-  orgId      String
+  id    String @id @default(cuid())
+  orgId String
 
-  employeeId    String
-  scorecardId   String
-  cycleId       String?
+  employeeId  String
+  scorecardId String
+  cycleId     String?
 
   effectiveFrom DateTime  @db.Date
   effectiveTo   DateTime? @db.Date
 
   // Frozen snapshot of the scorecard at the moment of assignment so future
   // template edits don't drift the employee's KRAs mid-cycle.
-  snapshot      Json
+  snapshot Json
 
   // Per-KPI progress map — keyed by the KPI's frozen ID inside snapshot.
   // Shape: { [kpiId]: { currentValue, score (0-5), notes, updatedAt } }
-  progress      Json   @default("{}")
+  progress Json @default("{}")
 
   // Composite score (0-5), cached on save for list-page sorting.
   compositeScore Decimal? @db.Decimal(5, 2)
 
-  status        KraAssignmentStatus @default(Active)
+  status KraAssignmentStatus @default(Active)
 
   scorecard KraScorecard @relation(fields: [scorecardId], references: [id])
 
@@ -15304,6 +15489,7 @@ enum TdsPeriodStatus {
   Partial
   Paid
   Excess
+
   @@schema("app_quikhrms")
 }
 
@@ -15311,6 +15497,7 @@ enum TdsChallanStatus {
   Recorded
   PartiallyAllocated
   FullyAllocated
+
   @@schema("app_quikhrms")
 }
 
@@ -15319,32 +15506,33 @@ enum TdsPaymentMode {
   NEFT
   RTGS
   Cheque
+
   @@schema("app_quikhrms")
 }
 
 // One row per (year, month, natureOfPayment). System-owned — refreshed
 // every time payroll runs for that period. Never directly edited by users.
 model TdsLiabilityPeriod {
-  id              String   @id @default(cuid())
-  orgId        String
+  id    String @id @default(cuid())
+  orgId String
 
   periodYear      Int
-  periodMonth     Int                  // 1-12
-  natureOfPayment String   @default("92B")
+  periodMonth     Int // 1-12
+  natureOfPayment String @default("92B")
 
-  totalDeducted   Decimal  @default(0) @db.Decimal(15, 2)
-  totalAllocated  Decimal  @default(0) @db.Decimal(15, 2)
-  employeeCount   Int      @default(0)
-  payslipIds      Json     @default("[]")
+  totalDeducted  Decimal @default(0) @db.Decimal(15, 2)
+  totalAllocated Decimal @default(0) @db.Decimal(15, 2)
+  employeeCount  Int     @default(0)
+  payslipIds     Json    @default("[]")
 
-  dueDate         DateTime @db.Date    // 7th of (periodMonth+1)
-  status          TdsPeriodStatus @default(Pending)
-  lastComputedAt  DateTime @default(now())
+  dueDate        DateTime        @db.Date // 7th of (periodMonth+1)
+  status         TdsPeriodStatus @default(Pending)
+  lastComputedAt DateTime        @default(now())
 
-  allocations     TdsChallanAllocation[]
+  allocations TdsChallanAllocation[]
 
-  createdAt       DateTime @default(now())
-  updatedAt       DateTime @updatedAt
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
   @@unique([orgId, periodYear, periodMonth, natureOfPayment])
   @@index([orgId, status])
@@ -15354,39 +15542,39 @@ model TdsLiabilityPeriod {
 
 // One row per challan deposited. Created by finance after bank payment.
 model TdsChallan {
-  id                   String   @id @default(cuid())
-  orgId             String
+  id    String @id @default(cuid())
+  orgId String
 
-  cin                  String                // unique business key per tenant
-  bsrCode              String                // 7-digit bank branch
-  challanSerial        String
-  depositDate          DateTime @db.Date
-  assessmentYear       String                // "2027-28" — derived from depositDate
-  natureOfPayment      String   @default("92B")
-  tanNumber            String                // snapshot from CompanySettings at create time
+  cin             String // unique business key per tenant
+  bsrCode         String // 7-digit bank branch
+  challanSerial   String
+  depositDate     DateTime @db.Date
+  assessmentYear  String // "2027-28" — derived from depositDate
+  natureOfPayment String   @default("92B")
+  tanNumber       String // snapshot from CompanySettings at create time
 
-  basicTax             Decimal  @db.Decimal(15, 2)
-  surcharge            Decimal  @default(0) @db.Decimal(15, 2)
-  educationCess        Decimal  @default(0) @db.Decimal(15, 2)
-  interest             Decimal  @default(0) @db.Decimal(15, 2)
-  lateFee              Decimal  @default(0) @db.Decimal(15, 2)
-  others               Decimal  @default(0) @db.Decimal(15, 2)
-  totalAmount          Decimal  @db.Decimal(15, 2)
+  basicTax      Decimal @db.Decimal(15, 2)
+  surcharge     Decimal @default(0) @db.Decimal(15, 2)
+  educationCess Decimal @default(0) @db.Decimal(15, 2)
+  interest      Decimal @default(0) @db.Decimal(15, 2)
+  lateFee       Decimal @default(0) @db.Decimal(15, 2)
+  others        Decimal @default(0) @db.Decimal(15, 2)
+  totalAmount   Decimal @db.Decimal(15, 2)
 
   paymentMode          TdsPaymentMode
   bankName             String?
   acknowledgmentNumber String?
 
   // Denormalized — updated transactionally with allocations.
-  remainingAmount      Decimal  @db.Decimal(15, 2)
-  status               TdsChallanStatus @default(Recorded)
+  remainingAmount Decimal          @db.Decimal(15, 2)
+  status          TdsChallanStatus @default(Recorded)
 
-  allocations          TdsChallanAllocation[]
+  allocations TdsChallanAllocation[]
 
-  createdBy            String?
-  createdAt            DateTime @default(now())
-  updatedAt            DateTime @updatedAt
-  deletedAt            DateTime?
+  createdBy String?
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  deletedAt DateTime?
 
   @@unique([orgId, cin])
   @@index([orgId, depositDate])
@@ -15397,15 +15585,15 @@ model TdsChallan {
 
 // The bridge: how a challan's amount is split across liability periods.
 model TdsChallanAllocation {
-  id                String   @id @default(cuid())
-  orgId          String
+  id                String @id @default(cuid())
+  orgId             String
   challanId         String
   liabilityPeriodId String
 
-  allocatedAmount   Decimal  @db.Decimal(15, 2)
-  isAutoAllocated   Boolean  @default(true)
-  allocatedBy       String?
-  allocatedAt       DateTime @default(now())
+  allocatedAmount Decimal  @db.Decimal(15, 2)
+  isAutoAllocated Boolean  @default(true)
+  allocatedBy     String?
+  allocatedAt     DateTime @default(now())
 
   challan TdsChallan         @relation(fields: [challanId], references: [id], onDelete: Cascade)
   period  TdsLiabilityPeriod @relation(fields: [liabilityPeriodId], references: [id])
@@ -15419,8 +15607,8 @@ model TdsChallanAllocation {
 // User invitation: admin invites a person by email; they accept via a
 // tokenized link, set a password, and an Employee account is activated.
 model Invitation {
-  id            String           @id @default(cuid())
-  orgId      String
+  id    String @id @default(cuid())
+  orgId String
 
   // Invitee details (prefilled on the accept page)
   email         String
@@ -15432,23 +15620,23 @@ model Invitation {
   managerId     String?
 
   // Token & lifecycle
-  token         String           @unique // store a hash of the emailed token; never return raw
+  token              String           @unique // store a hash of the emailed token; never return raw
   // Central QuikIT accept-flow token (OrgMember.invitationToken) for brand-new
   // native users. Persisted so resend can rebuild the same /invitations/accept
   // link without re-provisioning. Null for existing/SSO users (they get /login).
   centralInviteToken String?
-  expiresAt     DateTime
-  status        InvitationStatus @default(Pending)
+  expiresAt          DateTime
+  status             InvitationStatus @default(Pending)
 
   // Tracking
-  invitedBy     String           // admin Employee id
-  acceptedAt    DateTime?
-  employeeId    String?          // linked employee once accepted
+  invitedBy  String // admin Employee id
+  acceptedAt DateTime?
+  employeeId String? // linked employee once accepted
 
   // Audit
-  createdAt     DateTime         @default(now())
-  updatedAt     DateTime         @updatedAt
-  deletedAt     DateTime?        // soft delete (revoke)
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  deletedAt DateTime? // soft delete (revoke)
 
   @@index([orgId, status])
   @@index([orgId, email])
@@ -15465,3 +15653,526 @@ model Invitation {
 // migration — HRMS no longer has its own login/2FA. They had zero code
 // references and no DB tables (schema-only drift). `RefreshToken` was also
 // removed (custom-auth refresh tokens, superseded by central SSO).
+
+// ============================================================================
+// QuikSupport (app_quiksupport) — helpdesk/ticketing domain (integrated from
+// the standalone helpdesk-mgt app). Models are Hd*-prefixed (Prisma model/enum
+// names are global) and @@map to the original snake_case table names.
+// HdTenant.id holds the QuikIT orgId; HdUser.external_id holds the QuikIT
+// user id. Identity arrives from the shared session (see apps/quiksupport
+// lib/helpdesk-context.ts) — rows are auto-provisioned on first access.
+// ============================================================================
+
+enum HdUserRole {
+  HELPDESK_ADMIN
+  CATEGORY_LEAD
+  AGENT
+  CUSTOMER
+
+  @@schema("app_quiksupport")
+}
+
+enum HdTicketStatus {
+  open
+  in_progress
+  waiting_customer
+  resolved
+  closed
+
+  @@schema("app_quiksupport")
+}
+
+enum HdTicketPriority {
+  low
+  medium
+  high
+  critical
+
+  @@schema("app_quiksupport")
+}
+
+enum HdTicketSource {
+  portal
+  widget
+  api
+  email
+
+  @@schema("app_quiksupport")
+}
+
+enum HdMessageType {
+  customer_reply
+  agent_reply
+  internal_note
+  status_update
+  system
+
+  @@schema("app_quiksupport")
+}
+
+enum HdNotificationEvent {
+  ticket_created
+  ticket_assigned
+  status_changed
+  new_message
+  sla_at_risk
+  sla_breached
+  ticket_resolved
+
+  @@schema("app_quiksupport")
+}
+
+enum HdMappingStatus {
+  active
+  inactive
+  suspended
+
+  @@schema("app_quiksupport")
+}
+
+enum HdOperatingMode {
+  integrated
+  standalone
+
+  @@schema("app_quiksupport")
+}
+
+model HdTenant {
+  id         String   @id @default(cuid())
+  name       String
+  code       String   @unique
+  logo_url   String?
+  accent     String   @default("#10B981")
+  created_at DateTime @default(now())
+  updated_at DateTime @updatedAt
+
+  apps        HdApp[]
+  users       HdUser[]
+  categories  HdCategory[]
+  tickets     HdTicket[]
+  sla_configs HdSlaConfig[]
+  audit_logs  HdAuditLog[]
+
+  @@map("tenants")
+  @@schema("app_quiksupport")
+}
+
+model HdApp {
+  id         String   @id @default(cuid())
+  tenant_id  String
+  name       String
+  code       String
+  icon       String   @default("📦")
+  color      String   @default("#6366F1")
+  accent     String   @default("#EEF2FF")
+  is_active  Boolean  @default(true)
+  created_at DateTime @default(now())
+  updated_at DateTime @updatedAt
+
+  tenant          HdTenant          @relation(fields: [tenant_id], references: [id], onDelete: Cascade)
+  tickets         HdTicket[]
+  category_agents HdCategoryAgent[]
+
+  @@unique([tenant_id, code])
+  @@map("apps")
+  @@schema("app_quiksupport")
+}
+
+model HdUser {
+  id          String     @id @default(cuid())
+  tenant_id   String
+  external_id String
+  name        String
+  email       String
+  role        HdUserRole @default(CUSTOMER)
+  title       String?
+  avatar_url  String?
+  color       String     @default("#6366F1")
+  is_active   Boolean    @default(true)
+  created_at  DateTime   @default(now())
+  updated_at  DateTime   @updatedAt
+
+  tenant           HdTenant          @relation(fields: [tenant_id], references: [id], onDelete: Cascade)
+  tickets_created  HdTicket[]        @relation("HdTicketRequester")
+  tickets_assigned HdTicket[]        @relation("HdTicketAssignee")
+  messages         HdMessage[]
+  status_history   HdStatusHistory[]
+  category_entries HdCategoryAgent[]
+  notifications    HdNotification[]
+  audit_logs       HdAuditLog[]
+  attachments      HdAttachment[]
+
+  @@unique([tenant_id, external_id])
+  @@index([tenant_id, email])
+  @@map("users")
+  @@schema("app_quiksupport")
+}
+
+model HdCategory {
+  id          String   @id @default(cuid())
+  tenant_id   String
+  name        String
+  icon        String   @default("📁")
+  description String?
+  is_active   Boolean  @default(true)
+  sort_order  Int      @default(0)
+  created_at  DateTime @default(now())
+  updated_at  DateTime @updatedAt
+
+  tenant        HdTenant          @relation(fields: [tenant_id], references: [id], onDelete: Cascade)
+  subcategories HdSubcategory[]
+  agents        HdCategoryAgent[]
+  tickets       HdTicket[]
+  sla_configs   HdSlaConfig[]
+
+  @@unique([tenant_id, name])
+  @@index([tenant_id])
+  @@map("categories")
+  @@schema("app_quiksupport")
+}
+
+model HdSubcategory {
+  id          String   @id @default(cuid())
+  category_id String
+  name        String
+  description String?
+  sort_order  Int      @default(0)
+  created_at  DateTime @default(now())
+  updated_at  DateTime @updatedAt
+
+  category HdCategory @relation(fields: [category_id], references: [id], onDelete: Cascade)
+  tickets  HdTicket[]
+
+  @@map("subcategories")
+  @@schema("app_quiksupport")
+}
+
+model HdCategoryAgent {
+  id          String   @id @default(cuid())
+  category_id String
+  tenant_id   String
+  app_id      String?
+  user_id     String
+  is_lead     Boolean  @default(false)
+  created_at  DateTime @default(now())
+
+  category HdCategory @relation(fields: [category_id], references: [id], onDelete: Cascade)
+  app      HdApp?     @relation(fields: [app_id], references: [id], onDelete: Cascade)
+  user     HdUser     @relation(fields: [user_id], references: [id], onDelete: Cascade)
+
+  @@unique([category_id, app_id, user_id])
+  @@index([category_id, tenant_id])
+  @@map("category_agents")
+  @@schema("app_quiksupport")
+}
+
+model HdTicket {
+  id                String           @id @default(cuid())
+  ticket_number     String           @unique
+  tenant_id         String
+  app_id            String
+  category_id       String?
+  subcategory_id    String?
+  requester_id      String
+  assigned_to_id    String?
+  subject           String
+  description       String?          @db.Text
+  status            HdTicketStatus   @default(open)
+  priority          HdTicketPriority @default(medium)
+  source            HdTicketSource   @default(portal)
+  tags              String[]         @default([])
+  sla_due_at        DateTime?
+  first_response_at DateTime?
+  resolved_at       DateTime?
+  closed_at         DateTime?
+  created_at        DateTime         @default(now())
+  updated_at        DateTime         @updatedAt
+
+  tenant         HdTenant          @relation(fields: [tenant_id], references: [id], onDelete: Cascade)
+  app            HdApp             @relation(fields: [app_id], references: [id])
+  category       HdCategory?       @relation(fields: [category_id], references: [id])
+  subcategory    HdSubcategory?    @relation(fields: [subcategory_id], references: [id])
+  requester      HdUser            @relation("HdTicketRequester", fields: [requester_id], references: [id])
+  assignee       HdUser?           @relation("HdTicketAssignee", fields: [assigned_to_id], references: [id])
+  messages       HdMessage[]
+  status_history HdStatusHistory[]
+  attachments    HdAttachment[]
+  notifications  HdNotification[]
+
+  @@index([tenant_id, status])
+  @@index([tenant_id, app_id])
+  @@index([tenant_id, assigned_to_id])
+  @@index([tenant_id, requester_id])
+  @@index([sla_due_at])
+  @@map("tickets")
+  @@schema("app_quiksupport")
+}
+
+model HdMessage {
+  id           String        @id @default(cuid())
+  ticket_id    String
+  sender_id    String
+  body         String        @db.Text
+  message_type HdMessageType
+  is_internal  Boolean       @default(false)
+  created_at   DateTime      @default(now())
+  updated_at   DateTime      @updatedAt
+
+  ticket HdTicket @relation(fields: [ticket_id], references: [id], onDelete: Cascade)
+  sender HdUser   @relation(fields: [sender_id], references: [id])
+
+  @@index([ticket_id])
+  @@map("messages")
+  @@schema("app_quiksupport")
+}
+
+model HdAttachment {
+  id          String   @id @default(cuid())
+  ticket_id   String
+  uploaded_by String
+  file_name   String
+  file_url    String
+  file_size   Int
+  mime_type   String
+  created_at  DateTime @default(now())
+
+  ticket   HdTicket @relation(fields: [ticket_id], references: [id], onDelete: Cascade)
+  uploader HdUser   @relation(fields: [uploaded_by], references: [id])
+
+  @@index([ticket_id])
+  @@map("attachments")
+  @@schema("app_quiksupport")
+}
+
+model HdStatusHistory {
+  id            String          @id @default(cuid())
+  ticket_id     String
+  changed_by_id String
+  from_status   HdTicketStatus?
+  to_status     HdTicketStatus
+  note          String?
+  changed_at    DateTime        @default(now())
+
+  ticket     HdTicket @relation(fields: [ticket_id], references: [id], onDelete: Cascade)
+  changed_by HdUser   @relation(fields: [changed_by_id], references: [id])
+
+  @@index([ticket_id])
+  @@map("status_history")
+  @@schema("app_quiksupport")
+}
+
+model HdSlaConfig {
+  id                 String           @id @default(cuid())
+  tenant_id          String
+  category_id        String?
+  priority           HdTicketPriority
+  first_response_hrs Float
+  resolve_hrs        Float
+  is_active          Boolean          @default(true)
+  created_at         DateTime         @default(now())
+  updated_at         DateTime         @updatedAt
+
+  tenant   HdTenant    @relation(fields: [tenant_id], references: [id], onDelete: Cascade)
+  category HdCategory? @relation(fields: [category_id], references: [id])
+
+  @@unique([tenant_id, category_id, priority])
+  @@index([tenant_id])
+  @@map("sla_configs")
+  @@schema("app_quiksupport")
+}
+
+model HdNotification {
+  id         String              @id @default(cuid())
+  user_id    String
+  ticket_id  String?
+  event      HdNotificationEvent
+  title      String
+  body       String
+  is_read    Boolean             @default(false)
+  email_sent Boolean             @default(false)
+  created_at DateTime            @default(now())
+
+  user   HdUser    @relation(fields: [user_id], references: [id], onDelete: Cascade)
+  ticket HdTicket? @relation(fields: [ticket_id], references: [id], onDelete: Cascade)
+
+  @@index([user_id, is_read])
+  @@map("notifications")
+  @@schema("app_quiksupport")
+}
+
+model HdRole {
+  id          String   @id @default(cuid())
+  tenant_id   String?
+  name        String
+  description String?
+  is_system   Boolean  @default(false)
+  is_active   Boolean  @default(true)
+  created_at  DateTime @default(now())
+  updated_at  DateTime @updatedAt
+
+  role_permissions HdRolePermission[]
+  user_mappings    HdUserMapping[]
+
+  @@index([tenant_id])
+  @@map("roles")
+  @@schema("app_quiksupport")
+}
+
+model HdPermission {
+  id          String   @id @default(cuid())
+  key         String   @unique
+  name        String
+  description String?
+  resource    String
+  action      String
+  created_at  DateTime @default(now())
+
+  role_permissions HdRolePermission[]
+
+  @@map("permissions")
+  @@schema("app_quiksupport")
+}
+
+model HdRolePermission {
+  id            String   @id @default(cuid())
+  role_id       String
+  permission_id String
+  granted_at    DateTime @default(now())
+  granted_by    String?
+
+  role       HdRole       @relation(fields: [role_id], references: [id], onDelete: Cascade)
+  permission HdPermission @relation(fields: [permission_id], references: [id], onDelete: Cascade)
+
+  @@unique([role_id, permission_id])
+  @@index([role_id])
+  @@map("role_permissions")
+  @@schema("app_quiksupport")
+}
+
+model HdUserMapping {
+  id         String          @id @default(cuid())
+  user_id    String
+  tenant_id  String
+  app_id     String          @default("")
+  role_id    String
+  status     HdMappingStatus @default(active)
+  mode       HdOperatingMode @default(integrated)
+  metadata   Json?
+  created_by String?
+  created_at DateTime        @default(now())
+  updated_at DateTime        @updatedAt
+
+  role HdRole @relation(fields: [role_id], references: [id])
+
+  @@unique([user_id, tenant_id, app_id])
+  @@index([tenant_id, user_id])
+  @@index([role_id])
+  @@map("user_mappings")
+  @@schema("app_quiksupport")
+}
+
+model HdAuditLog {
+  id         String   @id @default(cuid())
+  tenant_id  String
+  user_id    String
+  entity     String
+  entity_id  String
+  action     String
+  changes    Json?
+  ip_address String?
+  created_at DateTime @default(now())
+
+  tenant HdTenant @relation(fields: [tenant_id], references: [id], onDelete: Cascade)
+  user   HdUser   @relation(fields: [user_id], references: [id])
+
+  @@index([tenant_id, entity, entity_id])
+  @@map("audit_logs")
+  @@schema("app_quiksupport")
+}
+
+// ─── QuikSupport standard per-app RBAC (login-roles doc §5.1) ────────────────
+// Canonical QuikIT in-app role tables, same shape/role as quikscale's AppRole
+// family and quiktrack's Qt* set. Prefixed Qsp* (model names are global);
+// @@map to the canonical table names the admin portal reads via raw SQL
+// (`app_quiksupport."AppRole"`, etc.). orgId/appId/userId are SCALARS (no FK to
+// the central App/Org/User models — matches quikforms/quikasset) so the shared
+// models are untouched. This is the QuikIT permission layer; the helpdesk's own
+// Hd* roles remain the in-app domain RBAC.
+
+model QspAppRole {
+  id          String   @id @default(cuid())
+  orgId       String
+  appId       String
+  name        String
+  description String?
+  isSystem    Boolean  @default(false)
+  isDefault   Boolean  @default(false)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  createdBy   String?
+
+  navigations QspRoleNavigation[]
+  permissions QspRolePermission[]
+  members     QspUserAppRole[]
+
+  @@unique([orgId, appId, name])
+  @@index([orgId, appId])
+  @@map("AppRole")
+  @@schema("app_quiksupport")
+}
+
+model QspRolePermission {
+  id       String     @id @default(cuid())
+  roleId   String
+  resource String
+  action   String
+  role     QspAppRole @relation(fields: [roleId], references: [id], onDelete: Cascade)
+
+  @@unique([roleId, resource, action])
+  @@index([roleId])
+  @@map("RolePermission")
+  @@schema("app_quiksupport")
+}
+
+model QspRoleNavigation {
+  id     String     @id @default(cuid())
+  roleId String
+  navKey String
+  role   QspAppRole @relation(fields: [roleId], references: [id], onDelete: Cascade)
+
+  @@unique([roleId, navKey])
+  @@index([roleId])
+  @@map("RoleNavigation")
+  @@schema("app_quiksupport")
+}
+
+model QspUserAppRole {
+  id         String     @id @default(cuid())
+  userId     String
+  orgId      String
+  roleId     String
+  assignedAt DateTime   @default(now())
+  assignedBy String?
+  role       QspAppRole @relation(fields: [roleId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, orgId, roleId])
+  @@index([roleId])
+  @@index([userId, orgId])
+  @@map("UserAppRole")
+  @@schema("app_quiksupport")
+}
+
+model QspUserPermissionExtra {
+  id        String   @id @default(cuid())
+  orgId     String
+  userId    String
+  resource  String
+  action    String
+  grantedBy String?
+  createdAt DateTime @default(now())
+
+  @@unique([orgId, userId, resource, action])
+  @@index([userId, orgId])
+  @@map("UserPermissionExtra")
+  @@schema("app_quiksupport")
+}
