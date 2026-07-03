@@ -179,7 +179,14 @@ export async function assertModule(
   // Deny-by-default: a non-admin user with no RBAC grant and no matching matrix
   // row is forbidden — parity with QuikScale/QuikTrack `userCan` (no grant = no
   // access). Org admins already returned above via the ADMIN_ROLE bypass.
-  const matrix = await getEffectiveMatrix(user.userId, user.orgId);
+  //
+  // We already loaded (empty) RBAC grants above, so skip getEffectiveMatrix's
+  // seed + re-load of the RBAC side and consult only the legacy template
+  // matrix — the RBAC contribution here is known-empty. This halves the DB
+  // round-trips on the deny path (was: loadUserCrmGrants + seed + reload +
+  // template; now: loadUserCrmGrants + template) and avoids piling seeding
+  // work onto the connection pool for every unauthorized request.
+  const matrix = await loadTemplateMatrix(user.userId);
   const row = matrix.find((r) => r.module === module);
   if (!row || !row.actions.includes(action)) {
     const err = new Error(`Forbidden: ${action} on ${module}`) as Error & { statusCode?: number };

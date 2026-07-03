@@ -154,11 +154,34 @@ export async function getScope(user: SessionUser): Promise<AclScope> {
   return { unrestricted: false, allowedAccountIds, teamMemberIds };
 }
 
+/**
+ * Assert the caller may access a given account.
+ *
+ * `opts.recordOwnerId` — when the account guard protects a specific record
+ * (lead / opportunity / contact / activity), pass that record's `ownerId`.
+ * A user always retains access to a record they own, even when the record's
+ * account is outside their ACL scope. This mirrors the own-record clause in
+ * `accountScopeFilter` (`{ ownerId: user.userId }`), which keeps a user's own
+ * records visible in LIST queries — most importantly leads auto-attached to a
+ * fresh, out-of-scope account during conversion. Without this, the list shows
+ * the record but opening it (the per-record `assertAccountAccess`) threw
+ * "account not in scope", because the detail guard never learned the
+ * owner-visibility rule the list filter already enforces.
+ *
+ * Callers that guard a bare account operation (attaching a record to an
+ * account, account CRUD) omit `recordOwnerId` and keep the strict account
+ * scope check — owning some other record must not grant write access to an
+ * arbitrary account.
+ */
 export async function assertAccountAccess(
   user: SessionUser,
   accountId: string | null | undefined,
+  opts?: { recordOwnerId?: string | null },
 ): Promise<void> {
   if (!accountId) return;
+  // Own-record bypass: a user can always reach a record they own, regardless
+  // of whether the record's account is in their ACL scope.
+  if (opts?.recordOwnerId && opts.recordOwnerId === user.userId) return;
   const scope = await getScope(user);
   if (scope.unrestricted) return;
   if (!scope.allowedAccountIds.includes(accountId)) {

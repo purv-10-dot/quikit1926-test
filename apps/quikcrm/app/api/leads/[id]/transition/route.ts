@@ -29,7 +29,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
         { status: 410 },
       );
     }
-    await assertAccountAccess(user, lead.accountId);
+    await assertAccountAccess(user, lead.accountId, { recordOwnerId: lead.ownerId });
 
     const parsed = transitionLeadSchema.safeParse(await req.json().catch(() => null));
     if (!parsed.success) {
