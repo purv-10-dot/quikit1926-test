@@ -1959,6 +1959,11 @@ function SectionBody({
   // bounded-height scrollbar, so the load-more observer must watch this box
   // (not the viewport) to fire as the user scrolls inside the accordion.
   const scrollRef = useRef<HTMLDivElement>(null);
+  // Fetch generation. Bumped whenever filters change (see the reset effect); a
+  // loadMore captures the current value and DISCARDS its response if the value
+  // has since moved — so an in-flight fetch started under the old filter can't
+  // repopulate the list after a reset (the "0 count but stale rows" bug).
+  const genRef = useRef(0);
   // Delete is permission-gated — hide the row's Delete action for users whose
   // role doesn't grant Issue:delete (the API enforces it too). Cached hook, so
   // this shares the single /api/me/... fetch with the other consumers.
@@ -1969,6 +1974,7 @@ function SectionBody({
     async (initial = false) => {
       if (state.loading) return;
       if (!initial && !state.hasMore) return;
+      const gen = genRef.current;
       setState((s) => ({ ...s, loading: true }));
       const params = new URLSearchParams({
         projectId,
@@ -1985,6 +1991,9 @@ function SectionBody({
       if (!initial && state.cursor) params.set("cursor", state.cursor);
       try {
         const res = await fetch(`/api/issues?${params.toString()}`).then((r) => r.json());
+        // A filter change (or another reset) happened while this was in flight —
+        // its results are stale; drop them so they don't clobber the fresh list.
+        if (gen !== genRef.current) return;
         if (!res?.success) {
           setState((s) => ({ ...s, loading: false, loaded: true }));
           return;
@@ -2004,6 +2013,7 @@ function SectionBody({
           total: res.total ?? s.total,
         }));
       } catch {
+        if (gen !== genRef.current) return;
         setState((s) => ({ ...s, loading: false }));
       }
     },
@@ -2022,6 +2032,9 @@ function SectionBody({
   // eslint-disable-next-line react-hooks/exhaustive-deps
   useEffect(() => {
     if (!state.expanded) return;
+    // Invalidate any in-flight fetch, then clear so the section reloads under the
+    // new filter (without a stale response overwriting it).
+    genRef.current += 1;
     setState((s) => ({ ...s, loaded: false, loading: false, issues: [], cursor: null, hasMore: true }));
   }, [filters.search, filters.statusId, filters.assigneeId, filters.type, filters.priority, filters.epicId]);
 

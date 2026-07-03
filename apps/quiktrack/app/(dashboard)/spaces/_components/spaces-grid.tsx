@@ -4,16 +4,22 @@ import Link from "next/link";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useMyPermissions } from "@/lib/hooks/useMyPermissions";
 import { SpaceIcon } from "@/components/space-icon";
+import { SpaceRowMenu, type ProjectView } from "./space-row-menu";
 import {
   Search,
   ChevronDown,
   ChevronLeft,
   ChevronRight,
   Star,
-  MoreHorizontal,
   ArrowDown,
   ArrowUp,
 } from "lucide-react";
+
+const VIEW_TABS: { key: ProjectView; label: string; adminOnly?: boolean }[] = [
+  { key: "active", label: "Active" },
+  { key: "archived", label: "Archived" },
+  { key: "trash", label: "Trash", adminOnly: true },
+];
 
 interface Lead {
   id: string;
@@ -33,6 +39,7 @@ interface Space {
   status?: string;
   updatedAt?: string;
   lead?: Lead | null;
+  canArchive?: boolean;
 }
 
 interface ApiResponse {
@@ -42,6 +49,7 @@ interface ApiResponse {
   page: number;
   pageSize: number;
   totalPages: number;
+  isAdmin?: boolean;
 }
 
 const PAGE_SIZE = 8;
@@ -69,6 +77,8 @@ function typeLabel(t?: string): string {
 export function SpacesGrid() {
   const perms = useMyPermissions();
   const canCreateProject = perms.loading || perms.has("Project", "create");
+  const [view, setView] = useState<ProjectView>("active");
+  const [refreshKey, setRefreshKey] = useState(0);
   const [search, setSearch] = useState("");
   const [debouncedSearch, setDebouncedSearch] = useState("");
   const [filterOpen, setFilterOpen] = useState(false);
@@ -91,7 +101,7 @@ export function SpacesGrid() {
 
   useEffect(() => {
     setPage(1);
-  }, [debouncedSearch, filters]);
+  }, [debouncedSearch, filters, view]);
 
   useEffect(() => {
     let alive = true;
@@ -100,6 +110,7 @@ export function SpacesGrid() {
       pageSize: String(PAGE_SIZE),
       sort: "name",
       order: sortOrder,
+      view,
     });
     if (debouncedSearch) params.set("search", debouncedSearch);
     if (filters.size) {
@@ -116,7 +127,7 @@ export function SpacesGrid() {
     return () => {
       alive = false;
     };
-  }, [debouncedSearch, filters, sortOrder, page]);
+  }, [debouncedSearch, filters, sortOrder, page, view, refreshKey]);
 
   useEffect(() => {
     function onClick(e: MouseEvent) {
@@ -142,6 +153,8 @@ export function SpacesGrid() {
 
   const spaces = resp?.data ?? [];
   const totalPages = resp?.totalPages ?? 1;
+  const isAdmin = resp?.isAdmin ?? false;
+  const visibleTabs = VIEW_TABS.filter((t) => !t.adminOnly || isAdmin);
 
   const visibleKeys = useMemo(() => {
     const q = keyQuery.trim().toLowerCase();
@@ -182,6 +195,26 @@ export function SpacesGrid() {
             </>
           )}
         </div>
+      </div>
+
+      <div className="flex items-center gap-1 mb-4 border-b border-gray-200">
+        {visibleTabs.map((t) => {
+          const active = view === t.key;
+          return (
+            <button
+              key={t.key}
+              type="button"
+              onClick={() => setView(t.key)}
+              className={`-mb-px px-4 py-2 text-sm font-medium border-b-2 ${
+                active
+                  ? "border-blue-600 text-blue-700"
+                  : "border-transparent text-gray-500 hover:text-gray-700"
+              }`}
+            >
+              {t.label}
+            </button>
+          );
+        })}
       </div>
 
       <div className="flex items-center gap-3 mb-4">
@@ -309,6 +342,10 @@ export function SpacesGrid() {
                 <td colSpan={7} className="px-4 py-12 text-center text-sm text-gray-500">
                   {debouncedSearch || filters.size > 0 ? (
                     <span>No projects match your filters.</span>
+                  ) : view === "archived" ? (
+                    <span>No archived projects.</span>
+                  ) : view === "trash" ? (
+                    <span>Trash is empty.</span>
                   ) : canCreateProject ? (
                     <span>
                       No projects yet.{" "}
@@ -336,13 +373,22 @@ export function SpacesGrid() {
                   <Star className="h-4 w-4 text-gray-300 hover:text-yellow-400 cursor-pointer" />
                 </td>
                 <td className="px-4 py-3">
-                  <Link
-                    href={`/spaces/${s.id}/backlog`}
-                    className="inline-flex items-center gap-2 text-blue-700 hover:underline"
-                  >
-                    <SpaceIcon icon={s.icon} name={s.name} color={s.color} size={24} radius={6} />
-                    <span>{s.name}</span>
-                  </Link>
+                  {view === "trash" ? (
+                    // Trashed projects aren't reachable (their pages 404), so the
+                    // name is plain text here — recovery goes through Restore.
+                    <span className="inline-flex items-center gap-2 text-gray-700">
+                      <SpaceIcon icon={s.icon} name={s.name} color={s.color} size={24} radius={6} />
+                      <span>{s.name}</span>
+                    </span>
+                  ) : (
+                    <Link
+                      href={`/spaces/${s.id}/backlog`}
+                      className="inline-flex items-center gap-2 text-blue-700 hover:underline"
+                    >
+                      <SpaceIcon icon={s.icon} name={s.name} color={s.color} size={24} radius={6} />
+                      <span>{s.name}</span>
+                    </Link>
+                  )}
                 </td>
                 <td className="px-4 py-3 text-gray-700">{s.projectKey}</td>
                 <td className="px-4 py-3 text-gray-700">{typeLabel(s.projectType)}</td>
@@ -355,7 +401,13 @@ export function SpacesGrid() {
                   </div>
                 </td>
                 <td className="px-4 py-3">
-                  <SpaceRowMenu spaceId={s.id} />
+                  <SpaceRowMenu
+                    spaceId={s.id}
+                    view={view}
+                    isAdmin={isAdmin}
+                    canArchive={s.canArchive ?? false}
+                    onChanged={() => setRefreshKey((k) => k + 1)}
+                  />
                 </td>
               </tr>
             ))}
@@ -401,49 +453,6 @@ export function SpacesGrid() {
           >
             <ChevronRight className="h-4 w-4" />
           </button>
-        </div>
-      )}
-    </div>
-  );
-}
-
-function SpaceRowMenu({ spaceId }: { spaceId: string }) {
-  const [open, setOpen] = useState(false);
-  const ref = useRef<HTMLDivElement>(null);
-
-  useEffect(() => {
-    function onClick(e: MouseEvent) {
-      if (open && ref.current && !ref.current.contains(e.target as Node)) {
-        setOpen(false);
-      }
-    }
-    document.addEventListener("mousedown", onClick);
-    return () => document.removeEventListener("mousedown", onClick);
-  }, [open]);
-
-  return (
-    <div className="relative inline-block" ref={ref}>
-      <button
-        type="button"
-        onClick={() => setOpen((v) => !v)}
-        className={`p-1 rounded border ${
-          open
-            ? "border-blue-500 bg-blue-50 text-blue-600"
-            : "border-transparent text-gray-500 hover:bg-gray-100"
-        }`}
-        aria-label="More"
-      >
-        <MoreHorizontal className="h-4 w-4" />
-      </button>
-      {open && (
-        <div className="absolute right-0 top-full mt-1 w-44 bg-white border border-gray-200 rounded-md shadow-lg z-20 py-1">
-          <Link
-            href={`/spaces/${spaceId}/settings`}
-            onClick={() => setOpen(false)}
-            className="block px-3 py-2 text-sm text-gray-800 hover:bg-gray-50"
-          >
-            Project settings
-          </Link>
         </div>
       )}
     </div>

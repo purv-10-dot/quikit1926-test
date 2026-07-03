@@ -110,6 +110,70 @@ describe("GET /api/projects — scoping", () => {
   });
 });
 
+describe("GET /api/projects — views (archive/trash)", () => {
+  it("defaults to the active view (status=active, not deleted)", async () => {
+    setSession({ id: USER, orgId: TENANT, role: "admin" });
+    mockDb.orgMember.findFirst.mockResolvedValue({ role: "admin" } as never);
+    mockDb.qtProject.count.mockResolvedValue(0);
+    mockDb.qtProject.findMany.mockResolvedValue([]);
+
+    await GET(getReq(), { params: {} } as never);
+    const call = mockDb.qtProject.findMany.mock.calls[0]?.[0] as {
+      where: Record<string, unknown>;
+    };
+    expect(call.where.isDeleted).toBe(false);
+    expect(call.where.status).toBe("active");
+  });
+
+  it("view=archived filters to status=archived, not deleted", async () => {
+    setSession({ id: USER, orgId: TENANT, role: "admin" });
+    mockDb.orgMember.findFirst.mockResolvedValue({ role: "admin" } as never);
+    mockDb.qtProject.count.mockResolvedValue(0);
+    mockDb.qtProject.findMany.mockResolvedValue([]);
+
+    await GET(getReq("?view=archived"), { params: {} } as never);
+    const call = mockDb.qtProject.findMany.mock.calls[0]?.[0] as {
+      where: Record<string, unknown>;
+    };
+    expect(call.where.status).toBe("archived");
+    expect(call.where.isDeleted).toBe(false);
+  });
+
+  it("view=trash is forbidden (403) for non-admins", async () => {
+    setSession({ id: USER, orgId: TENANT, role: "member" });
+    mockDb.orgMember.findFirst.mockResolvedValue({ role: "member" } as never);
+
+    const res = await GET(getReq("?view=trash"), { params: {} } as never);
+    expect(res.status).toBe(403);
+  });
+
+  it("view=trash returns soft-deleted projects for admins (no status/member filter)", async () => {
+    setSession({ id: USER, orgId: TENANT, role: "admin" });
+    mockDb.orgMember.findFirst.mockResolvedValue({ role: "admin" } as never);
+    mockDb.qtProject.count.mockResolvedValue(0);
+    mockDb.qtProject.findMany.mockResolvedValue([]);
+
+    await GET(getReq("?view=trash"), { params: {} } as never);
+    const call = mockDb.qtProject.findMany.mock.calls[0]?.[0] as {
+      where: Record<string, unknown>;
+    };
+    expect(call.where.isDeleted).toBe(true);
+    expect(call.where.status).toBeUndefined();
+    expect(call.where.members).toBeUndefined();
+  });
+
+  it("exposes isAdmin in the response payload", async () => {
+    setSession({ id: USER, orgId: TENANT, role: "admin" });
+    mockDb.orgMember.findFirst.mockResolvedValue({ role: "admin" } as never);
+    mockDb.qtProject.count.mockResolvedValue(0);
+    mockDb.qtProject.findMany.mockResolvedValue([]);
+
+    const res = await GET(getReq(), { params: {} } as never);
+    const body = await res.json();
+    expect(body.isAdmin).toBe(true);
+  });
+});
+
 describe("POST /api/projects", () => {
   it("returns 401 when unauthenticated", async () => {
     const res = await POST(
