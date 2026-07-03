@@ -264,8 +264,19 @@ async function handleUpdate(req: NextRequest, id: string, ctx: UpdateAuthCtx) {
   // Phase 4: when the admin touches modules on Edit, reconcile the
   // revoke set against the new tick list. Skipped for the admin role
   // (admins see everything) and skipped when no modules were touched.
-  const tickedModules: string[] = Array.isArray(modulesAssigned)
-    ? modulesAssigned.filter(
+  // When the admin edits modules from the Edit User drawer (modules only,
+  // no matrix), their ticked list is AUTHORITATIVE: ticking grants a module
+  // and UNTICKING revokes it. Use the explicit body list here — NOT the
+  // matrix-merged `modulesAssigned`, which re-adds an unticked module
+  // whenever the role/matrix still grants it and so makes the untick a
+  // no-op. When a permission matrix is being saved, the per-cell
+  // reconciliation block below is the source of truth instead.
+  const authoritativeModules =
+    touchingModules && !touchingMatrix && Array.isArray(body.modulesAssigned)
+      ? (body.modulesAssigned as unknown[])
+      : modulesAssigned;
+  const tickedModules: string[] = Array.isArray(authoritativeModules)
+    ? authoritativeModules.filter(
         (m): m is string => typeof m === "string" && m.length > 0,
       )
     : [];

@@ -43,7 +43,7 @@ function toListItem(
 }
 
 export async function GET(req: NextRequest) {
-  const ctxOrResp = await requireProjectsFinanceAction("construction.project", "view");
+  const ctxOrResp = await requireProjectsFinanceAction("construction.documents", "view");
   if (ctxOrResp instanceof NextResponse) return ctxOrResp;
   const ctx = ctxOrResp;
   const { searchParams } = new URL(req.url);
@@ -82,7 +82,7 @@ export async function GET(req: NextRequest) {
 }
 
 export async function POST(req: NextRequest) {
-  const ctxOrResp = await requireProjectsFinanceAction("construction.project", "create");
+  const ctxOrResp = await requireProjectsFinanceAction("construction.documents", "create");
   if (ctxOrResp instanceof NextResponse) return ctxOrResp;
   const ctx = ctxOrResp;
   if (!hasMatrixAction(ctx, "pm.documents", "add")) {

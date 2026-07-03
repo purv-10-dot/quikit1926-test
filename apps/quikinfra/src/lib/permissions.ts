@@ -166,6 +166,22 @@ export const PERMISSIONS = {
   RAB_EDIT: "construction.rab.edit",
   RAB_DELETE: "construction.rab.delete",
   RAB_APPROVE: "construction.rab.approve",
+  // Gantt View is read-only. Hindrance Register is full CRUD. Both used to
+  // piggy-back on construction.dpr, which coupled their permissions to DPR's
+  // — an unchecked Hindrance/Gantt row stripped DPR's grants. They now own
+  // their resources so each page's permissions are independent.
+  GANTT_VIEW: "construction.gantt.view",
+  HINDRANCE_VIEW: "construction.hindrance.view",
+  HINDRANCE_CREATE: "construction.hindrance.create",
+  HINDRANCE_EDIT: "construction.hindrance.edit",
+  HINDRANCE_DELETE: "construction.hindrance.delete",
+  // Documents used to piggy-back on construction.project (shared with the
+  // Masters "Projects" page), coupling the two. It now owns its resource so
+  // Documents and Projects permissions are independent.
+  DOCUMENTS_VIEW: "construction.documents.view",
+  DOCUMENTS_CREATE: "construction.documents.create",
+  DOCUMENTS_EDIT: "construction.documents.edit",
+  DOCUMENTS_DELETE: "construction.documents.delete",
 
   // Settings
   SETTINGS_MANAGE: "construction.settings.manage",
@@ -192,6 +208,9 @@ const ROLE_PERMISSIONS: Record<ConstructionRole, string[]> = {
     PERMISSIONS.BOQ_VIEW,
     PERMISSIONS.WO_VIEW, PERMISSIONS.WO_APPROVE,
     PERMISSIONS.DPR_VIEW, PERMISSIONS.DPR_APPROVE,
+    PERMISSIONS.GANTT_VIEW,
+    PERMISSIONS.HINDRANCE_VIEW,
+    PERMISSIONS.DOCUMENTS_VIEW,
     PERMISSIONS.RAB_VIEW,
     PERMISSIONS.MASTERS_EXPORT,
   ],
@@ -219,6 +238,9 @@ const ROLE_PERMISSIONS: Record<ConstructionRole, string[]> = {
     PERMISSIONS.BOQ_VIEW,
     PERMISSIONS.WO_VIEW,
     PERMISSIONS.DPR_VIEW, PERMISSIONS.DPR_CREATE, PERMISSIONS.DPR_APPROVE,
+    PERMISSIONS.GANTT_VIEW,
+    PERMISSIONS.HINDRANCE_VIEW, PERMISSIONS.HINDRANCE_CREATE, PERMISSIONS.HINDRANCE_EDIT, PERMISSIONS.HINDRANCE_DELETE,
+    PERMISSIONS.DOCUMENTS_VIEW, PERMISSIONS.DOCUMENTS_CREATE, PERMISSIONS.DOCUMENTS_EDIT, PERMISSIONS.DOCUMENTS_DELETE,
     PERMISSIONS.RAB_VIEW,
   ],
   user: [
@@ -231,6 +253,9 @@ const ROLE_PERMISSIONS: Record<ConstructionRole, string[]> = {
     PERMISSIONS.PROJECT_VIEW,
     PERMISSIONS.BOQ_VIEW,
     PERMISSIONS.DPR_VIEW, PERMISSIONS.DPR_CREATE,
+    PERMISSIONS.GANTT_VIEW,
+    PERMISSIONS.HINDRANCE_VIEW, PERMISSIONS.HINDRANCE_CREATE,
+    PERMISSIONS.DOCUMENTS_VIEW, PERMISSIONS.DOCUMENTS_CREATE,
     PERMISSIONS.EQUIPMENT_LOG_VIEW, PERMISSIONS.EQUIPMENT_LOG_CREATE,
     PERMISSIONS.EQUIPMENT_MAINT_VIEW, PERMISSIONS.EQUIPMENT_MAINT_CREATE,
     PERMISSIONS.EQUIPMENT_DEPLOY_VIEW, PERMISSIONS.EQUIPMENT_DEPLOY_CREATE,
