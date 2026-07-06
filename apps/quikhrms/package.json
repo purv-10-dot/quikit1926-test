@@ -19,8 +19,7 @@
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.90.0",
-    "@aws-sdk/client-s3": "^3.967.0",
-    "@aws-sdk/s3-request-presigner": "^3.967.0",
+    "@google-cloud/storage": "^7.14.0",
     "@google/generative-ai": "^0.24.1",
     "@openrouter/sdk": "^0.12.19",
     "@quikit/auth": "*",

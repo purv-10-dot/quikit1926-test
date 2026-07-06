@@ -1,39 +1,47 @@
-﻿import { S3Client, PutObjectCommand, GetObjectCommand } from "@aws-sdk/client-s3";
-import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
+import { Storage, type Bucket } from "@google-cloud/storage";
 import { randomUUID } from "crypto";
 
 /**
- * Singleton S3 client. Credentials come from env (set in `.env.local`):
- *   AWS_REGION, AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY, AWS_S3_BUCKET
+ * Singleton Google Cloud Storage client. Credentials come from env
+ * (set in `.env.local`):
+ *   GCS_PROJECT_ID, GCS_BUCKET, GCS_CLIENT_EMAIL, GCS_PRIVATE_KEY
+ *
+ * The private key is stored with escaped newlines in the env file
+ * (`\n` literals) and un-escaped here so the JWT signer accepts it.
  *
  * Used by /api/docs/upload to push images and by /api/docs/asset to mint
- * short-lived presigned GETs that the doc editor displays inline.
+ * short-lived signed (V4) GETs that the doc editor displays inline.
  */
 
-const region = process.env.AWS_REGION;
-const bucket = process.env.AWS_S3_BUCKET;
-const accessKeyId = process.env.AWS_ACCESS_KEY_ID;
-const secretAccessKey = process.env.AWS_SECRET_ACCESS_KEY;
+const projectId = process.env.GCS_PROJECT_ID;
+const bucket = process.env.GCS_BUCKET;
+const clientEmail = process.env.GCS_CLIENT_EMAIL;
+// Support both raw multi-line keys and single-line keys with escaped newlines.
+const privateKey = process.env.GCS_PRIVATE_KEY?.replace(/\\n/g, "\n");
 
-let client: S3Client | null = null;
+let storage: Storage | null = null;
 
-function getClient(): S3Client {
-  if (!region || !bucket || !accessKeyId || !secretAccessKey) {
+function getClient(): Storage {
+  if (!projectId || !bucket || !clientEmail || !privateKey) {
     throw new Error(
-      "S3 not configured. Set AWS_REGION, AWS_S3_BUCKET, AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY in .env.local.",
+      "GCS not configured. Set GCS_PROJECT_ID, GCS_BUCKET, GCS_CLIENT_EMAIL, GCS_PRIVATE_KEY in .env.local.",
     );
   }
-  if (!client) {
-    client = new S3Client({
-      region,
-      credentials: { accessKeyId, secretAccessKey },
+  if (!storage) {
+    storage = new Storage({
+      projectId,
+      credentials: { client_email: clientEmail, private_key: privateKey },
     });
   }
-  return client;
+  return storage;
+}
+
+function getBucketRef(): Bucket {
+  return getClient().bucket(getBucket());
 }
 
 export function getBucket(): string {
-  if (!bucket) throw new Error("AWS_S3_BUCKET is not set");
+  if (!bucket) throw new Error("GCS_BUCKET is not set");
   return bucket;
 }
 
@@ -69,8 +77,8 @@ function extFromMime(mime: string): string {
 }
 
 /**
- * Build a tenant-scoped key. Putting orgId at the prefix makes it cheap
- * to reason about isolation and to wipe tenant data if needed.
+ * Build a tenant-scoped object name. Putting orgId at the prefix makes it
+ * cheap to reason about isolation and to wipe tenant data if needed.
  */
 export function buildDocImageKey(orgId: string, projectId: string, mime: string): string {
   const ext = extFromMime(mime);
@@ -93,42 +101,37 @@ export async function putObject(
   body: Buffer | Uint8Array,
   contentType: string,
 ): Promise<void> {
-  const s3 = getClient();
-  await s3.send(
-    new PutObjectCommand({
-      Bucket: getBucket(),
-      Key: key,
-      Body: body,
-      ContentType: contentType,
-      CacheControl: "private, max-age=300",
-    }),
-  );
+  await getBucketRef().file(key).save(Buffer.from(body), {
+    contentType,
+    // Small one-shot uploads — skip the resumable-session round trip.
+    resumable: false,
+    metadata: { cacheControl: "private, max-age=300" },
+  });
 }
 
 /**
- * 15-minute presigned GET URL — long enough for a page render + caching.
+ * 15-minute signed (V4) GET URL — long enough for a page render + caching.
  * When `downloadFileName` is set, the URL forces the browser to download
- * (S3 returns `Content-Disposition: attachment; filename="..."`).
+ * (GCS returns `Content-Disposition: attachment; filename="..."`).
  */
 export async function getPresignedGetUrl(
   key: string,
   expiresIn = 900,
   downloadFileName?: string,
 ): Promise<string> {
-  const s3 = getClient();
-  return getSignedUrl(
-    s3,
-    new GetObjectCommand({
-      Bucket: getBucket(),
-      Key: key,
+  const [url] = await getBucketRef()
+    .file(key)
+    .getSignedUrl({
+      version: "v4",
+      action: "read",
+      expires: Date.now() + expiresIn * 1000,
       ...(downloadFileName
         ? {
-            ResponseContentDisposition: `attachment; filename="${downloadFileName.replace(/"/g, "")}"`,
+            responseDisposition: `attachment; filename="${downloadFileName.replace(/"/g, "")}"`,
           }
         : {}),
-    }),
-    { expiresIn },
-  );
+    });
+  return url;
 }
 
 /**

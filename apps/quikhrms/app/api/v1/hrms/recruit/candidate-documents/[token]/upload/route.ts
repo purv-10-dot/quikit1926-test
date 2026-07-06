@@ -3,7 +3,7 @@ import path from "path";
 import { randomUUID } from "crypto";
 import { prisma } from "@/lib/prisma";
 import { verifyCandidateDocToken } from "@/lib/services/candidate-doc-token";
-import { uploadToS3 } from "@/lib/s3";
+import { uploadToS3 } from "@/lib/storage";
 
 const MAX_BYTES = 15 * 1024 * 1024;
 const ALLOWED = new Set([
@@ -64,7 +64,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ tok
     if (!dt) return err("VALIDATION", "Invalid document type for this bundle", 422);
   }
 
-  // Upload to S3
+  // Upload to Google Cloud Storage
   const ext = path.extname(file.name) || "";
   const safeExt = ext.replace(/[^a-zA-Z0-9.]/g, "").slice(0, 8);
   const key = `candidate-docs/${payload.orgId}/${request.id}/${randomUUID()}${safeExt}`;

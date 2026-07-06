@@ -1,11 +1,11 @@
 ﻿import { NextResponse } from "next/server";
 import { withOrgAuth } from "@/lib/api/withOrgAuth";
-import { getPresignedGetUrl, keyBelongsToTenant } from "@/lib/s3";
+import { getPresignedGetUrl, keyBelongsToTenant } from "@/lib/storage";
 
 /**
  * GET /api/docs/asset?key=tenants/{orgId}/...
  *
- * Resolves a stored S3 key into a short-lived presigned GET URL and 302s
+ * Resolves a stored object key into a short-lived signed GET URL and 302s
  * the browser there. Saving this proxy URL inside doc HTML means image
  * src attributes never go stale — every render mints a fresh signature.
  *
@@ -26,12 +26,12 @@ export const GET = withOrgAuth(async (ctx, req) => {
 
   try {
     const signed = await getPresignedGetUrl(key);
-    // 302 so the browser follows to the freshly signed S3 URL, but
+    // 302 so the browser follows to the freshly signed Cloud Storage URL, but
     // `no-store` so the redirect itself is never cached. If the browser
-    // cached the redirect, it could keep pointing at a presigned URL that
+    // cached the redirect, it could keep pointing at a signed URL that
     // expired between the cache hit and the next image render — that was
-    // breaking image loads on doc reopen. The redirect target (S3) has its
-    // own caching headers; this only stops caching of the indirection.
+    // breaking image loads on doc reopen. The redirect target (Cloud Storage)
+    // has its own caching headers; this only stops caching of the indirection.
     return NextResponse.redirect(signed, {
       status: 302,
       headers: {

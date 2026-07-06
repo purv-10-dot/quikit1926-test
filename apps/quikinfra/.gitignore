@@ -18,7 +18,8 @@ node_modules/.prisma/
 .env.local
 .env.production
 .env.development
-.env.example
+# .env.example is a committed template (placeholders only, no secrets)
+!.env.example
 
 # Local storage driver data (dev + LAN)
 .storage/

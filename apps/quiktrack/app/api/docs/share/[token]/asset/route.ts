@@ -1,6 +1,6 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { db } from "@/lib/db";
-import { getPresignedGetUrl, keyBelongsToTenant } from "@/lib/s3";
+import { getPresignedGetUrl, keyBelongsToTenant } from "@/lib/storage";
 
 /**
  * PUBLIC image proxy for shared docs. Mirrors /api/docs/asset but authorizes by
