@@ -6752,6 +6752,49 @@ model QtTimesheetWeeklySummary {
   @@schema("app_quiktrack")
 }
 
+/// Personal to-do checklist (OneNote-style), NOT tied to any project. Private
+/// to the owner (userId) — only its creator ever sees it. Items are NOT
+/// timesheet targets. Reminders are in-app only and are materialized on the
+/// notifications poll when `dueDate` has passed.
+model QtChecklistItem {
+  id             String             @id @default(cuid())
+  orgId          String
+  userId         String
+  name           String
+  statusId       String?
+  dueDate        DateTime?
+  reminderSentAt DateTime?
+  orderIndex     Int                @default(0)
+  isCompleted    Boolean            @default(false)
+  isDeleted      Boolean            @default(false)
+  createdAt      DateTime           @default(now())
+  updatedAt      DateTime           @updatedAt
+  status         QtChecklistStatus? @relation(fields: [statusId], references: [id], onDelete: SetNull)
+
+  @@index([orgId, userId])
+  @@index([dueDate, reminderSentAt])
+  @@schema("app_quiktrack")
+}
+
+/// User-defined statuses for the personal checklist, scoped per user (global —
+/// reused across the user's whole checklist, not per project).
+model QtChecklistStatus {
+  id         String            @id @default(cuid())
+  orgId      String
+  userId     String
+  name       String
+  color      String            @default("#6b7280")
+  orderIndex Int               @default(0)
+  isDefault  Boolean           @default(false)
+  isDeleted  Boolean           @default(false)
+  createdAt  DateTime          @default(now())
+  updatedAt  DateTime          @updatedAt
+  items      QtChecklistItem[]
+
+  @@index([orgId, userId])
+  @@schema("app_quiktrack")
+}
+
 model QtDashboard {
   id           String   @id @default(cuid())
   orgId        String
