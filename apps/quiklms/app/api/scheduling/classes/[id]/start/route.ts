@@ -1,0 +1,10 @@
+import { route, json } from '@/lib/http';
+import { requireAuth, requireRoles } from '@/lib/auth/context';
+import { startClass } from '@/lib/services/scheduling-service';
+
+// PATCH /api/scheduling/classes/:id/start — TEACHER | TENANT_ADMIN | SUB_ADMIN
+export const PATCH = route(async (req, { params }) => {
+  const actor = await requireAuth(req);
+  requireRoles(actor, ['TEACHER', 'TENANT_ADMIN', 'SUB_ADMIN']);
+  return json(await startClass(actor.tenantId!, params!.id));
+});

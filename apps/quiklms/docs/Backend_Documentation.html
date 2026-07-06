@@ -1,0 +1,747 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>QuikSkill LMS — Backend Documentation</title>
+<style>
+  @page { size: A4; margin: 18mm 14mm; }
+  * { box-sizing: border-box; }
+  body { font-family: "Segoe UI", Arial, sans-serif; font-size: 10.5px; line-height: 1.5; color: #1f2937; margin: 0; }
+  h1 { font-size: 30px; color: #1e3a8a; margin: 0 0 6px; }
+  h2 { font-size: 19px; color: #fff; background: #1e40af; padding: 7px 12px; border-radius: 5px; margin: 30px 0 12px; page-break-before: always; page-break-after: avoid; }
+  h2.nobreak { page-break-before: avoid; }
+  h3 { font-size: 14.5px; color: #1e3a8a; border-bottom: 2px solid #bfdbfe; padding-bottom: 3px; margin: 20px 0 8px; page-break-after: avoid; }
+  h4 { font-size: 12px; color: #374151; margin: 12px 0 5px; page-break-after: avoid; }
+  p { margin: 5px 0; }
+  code { background: #f1f5f9; padding: 1px 4px; border-radius: 3px; font-family: "Consolas", monospace; font-size: 9.5px; color: #b91c1c; }
+  pre { background: #0f172a; color: #e2e8f0; padding: 10px 12px; border-radius: 6px; font-family: "Consolas", monospace; font-size: 9px; line-height: 1.45; overflow-x: auto; white-space: pre-wrap; }
+  table { border-collapse: collapse; width: 100%; margin: 8px 0 14px; font-size: 9px; page-break-inside: auto; }
+  tr { page-break-inside: avoid; }
+  th { background: #1e40af; color: #fff; text-align: left; padding: 5px 7px; font-weight: 600; }
+  td { border: 1px solid #d1d5db; padding: 4px 7px; vertical-align: top; }
+  tbody tr:nth-child(even) { background: #f8fafc; }
+  .method { font-weight: 700; font-family: "Consolas", monospace; font-size: 8.5px; }
+  .GET{color:#15803d}.POST{color:#1d4ed8}.PUT{color:#b45309}.PATCH{color:#7c3aed}.DELETE{color:#b91c1c}
+  .tag { display: inline-block; background: #dbeafe; color: #1e40af; padding: 1px 7px; border-radius: 10px; font-size: 9px; margin: 1px 2px; }
+  .tag.green{background:#dcfce7;color:#15803d}.tag.amber{background:#fef3c7;color:#92400e}.tag.red{background:#fee2e2;color:#b91c1c}.tag.purple{background:#ede9fe;color:#6d28d9}
+  .cover { text-align: center; padding: 70px 0 40px; border-bottom: 4px solid #1e40af; margin-bottom: 14px; }
+  .cover .sub { font-size: 16px; color: #475569; }
+  .cover .meta { font-size: 11px; color: #64748b; margin-top: 26px; }
+  .callout { background: #eff6ff; border-left: 4px solid #1e40af; padding: 8px 12px; margin: 10px 0; border-radius: 0 5px 5px 0; }
+  .callout.warn { background: #fffbeb; border-left-color: #d97706; }
+  .callout.green { background: #f0fdf4; border-left-color: #16a34a; }
+  ul, ol { margin: 5px 0; padding-left: 20px; }
+  li { margin: 2px 0; }
+  .toc a { color: #1e40af; text-decoration: none; }
+  .toc li { margin: 3px 0; }
+  .small { font-size: 9px; color: #64748b; }
+  .badge-row { margin: 10px 0; }
+</style>
+</head>
+<body>
+
+<div class="cover">
+  <h1>QuikSkill LMS</h1>
+  <div class="sub">Backend System Documentation &amp; Migration Reference</div>
+  <div class="sub" style="font-size:13px;margin-top:8px;color:#64748b">Complete Data Model · API Routes · Architecture · Features</div>
+  <div class="meta">
+    Current Stack: <b>NestJS 10 + MongoDB (Mongoose) + Redis/Bull + AWS S3</b><br>
+    Target Stack: <b>Next.js + PostgreSQL</b><br>
+    Generated: 5 June 2026 &nbsp;|&nbsp; Document 1 of 2 (Backend)
+  </div>
+</div>
+
+<h2 class="nobreak">Table of Contents</h2>
+<div class="toc">
+<ol>
+  <li><a href="#overview">System Overview &amp; Tech Stack</a></li>
+  <li><a href="#arch">Architecture &amp; Multi-Tenancy Model</a></li>
+  <li><a href="#auth">Authentication, Roles &amp; Authorization (RBAC)</a></li>
+  <li><a href="#infra">Cross-Cutting Infrastructure (Middleware, WebSockets, Queues, Cron, Storage, Integrations)</a></li>
+  <li><a href="#env">Environment Variables</a></li>
+  <li><a href="#datamodel">Complete Data Model — All Collections / Future Postgres Tables</a>
+    <ul class="small">
+      <li>5.1 Identity &amp; Tenancy &nbsp; 5.2 Courses &amp; Content &nbsp; 5.3 Progress, Assessments &amp; Certificates</li>
+      <li>5.4 School Operations &nbsp; 5.5 Communications &nbsp; 5.6 Exams &amp; Proctoring &nbsp; 5.7 Supporting Tables</li>
+    </ul>
+  </li>
+  <li><a href="#api">Complete API Route Reference (by Module)</a></li>
+  <li><a href="#migration">MongoDB → PostgreSQL Migration Guidance</a></li>
+</ol>
+</div>
+
+<h2 id="overview">1. System Overview &amp; Tech Stack</h2>
+<p><b>QuikSkill LMS</b> is a multi-tenant Learning Management System serving two tenant archetypes from a single codebase: <b>Corporate</b> (employee training, compliance, manager hierarchy) and <b>School</b> (batches, attendance, credits, payouts, parents, live classes, proctored exams). The backend is a modular NestJS monolith exposing a REST API plus two Socket.IO gateways.</p>
+
+<h3>Current Technology Stack</h3>
+<table>
+<thead><tr><th>Layer</th><th>Technology</th><th>Notes / Migration Target</th></tr></thead>
+<tbody>
+<tr><td>Runtime / Framework</td><td>Node.js + NestJS 10 (TypeScript)</td><td>Becomes Next.js (API routes / route handlers, or a retained Nest service)</td></tr>
+<tr><td>Database</td><td>MongoDB 8 via Mongoose 8</td><td><b>→ PostgreSQL</b> (Prisma/Drizzle/TypeORM recommended)</td></tr>
+<tr><td>Cache / Queue</td><td>Redis + Bull (<code>@nestjs/bull</code>)</td><td>Retain Redis; Bull → BullMQ or pg-boss</td></tr>
+<tr><td>Object Storage</td><td>AWS S3 (presigned PUT/GET, TUS resumable)</td><td>Retain S3</td></tr>
+<tr><td>Auth</td><td>JWT (passport-jwt) + Google/Microsoft OAuth + OTP</td><td>Retain; or NextAuth/Auth.js</td></tr>
+<tr><td>Realtime</td><td>Socket.IO (messages + exam gateways)</td><td>Retain (separate WS server in Next.js)</td></tr>
+<tr><td>Scheduling</td><td><code>@nestjs/schedule</code> cron + Bull delayed jobs</td><td>Cron worker / serverless cron</td></tr>
+<tr><td>Email</td><td>Nodemailer (SMTP, Office365) + Resend</td><td>Retain</td></tr>
+<tr><td>SMS / Voice</td><td>Twilio</td><td>Retain</td></tr>
+<tr><td>AI</td><td>OpenAI (Whisper transcription / captions)</td><td>Retain</td></tr>
+<tr><td>Video</td><td>Zoom / Google Meet / Jitsi providers</td><td>Retain</td></tr>
+<tr><td>Docs</td><td>PDFKit / html-pdf-node (certificates, reports)</td><td>Retain</td></tr>
+</tbody>
+</table>
+
+<div class="callout">
+<b>Scale of the system:</b> 59 NestJS modules · 48 REST controllers · 55 Mongoose schemas (collections) · 62 services · 2 WebSocket gateways · 7 user roles. Default API port <code>3020</code>. Body size limit 150&nbsp;MB (large media uploads).
+</div>
+
+<h3>Module Inventory (59 modules)</h3>
+<p class="small">Core: features, tenants, auth, users, courses, assessments, scorm, upload, shared-content, seed, email-templates, progress, certificates, audit, course-assignments, compliance, manager, learner, player, jobs, groups, bookmarks, discussions, counters. &nbsp; School: batches, scheduling, credits, attendance, homework, payouts, meetings, messages, analytics. &nbsp; Enhancements: twilio, escalation, student-reminder, reminders, course-assignment-reminders, non-teaching-work, teacher-level, teacher-availability, demo-analytics, privacy, i18n, transcription. &nbsp; Academic/New: tutoring-requests, academic-calendar, gradebook, consent, academic-config. &nbsp; Exams: question-bank, exams, exam-sessions, proctoring, quiz-proctoring, bulk-upload.</p>
+
+<h2 id="arch">2. Architecture &amp; Multi-Tenancy Model</h2>
+<p>Every business record carries a <code>tenantId</code>. A request's tenant is resolved from the JWT payload, the subdomain (e.g. <code>company1.localhost</code>), or an <code>X-Tenant-Key</code> header (<code>TenantResolverMiddleware</code>). <code>TenantGuard</code> blocks cross-tenant reads/writes; <code>SUPER_ADMIN</code> bypasses tenant scoping to administer all organizations.</p>
+<ul>
+<li><b>Tenant types:</b> <code>corporate</code> | <code>school</code> — drives which feature flags &amp; modules are active (stored on <code>Tenant.tenantType</code> + <code>Tenant.featureConfig</code>).</li>
+<li><b>Feature flags:</b> per-tenant <code>featureConfig</code> object toggles courses, SCORM, compliance, manager reports, batches, attendance, homework, credits, payouts, video classes, parent portal, messaging, certificates, analytics, approval workflow.</li>
+<li><b>Content sharing:</b> <code>SUPER_ADMIN</code> authors <b>master courses / certificate templates</b> in a global library and pushes copies to selected tenants (<code>shared-content</code>, <code>selectedTenants</code>).</li>
+<li><b>Approval workflow:</b> <code>SUB_ADMIN</code> / tenant-created courses &amp; certificates can require <code>TENANT_ADMIN</code> or <code>SUPER_ADMIN</code> approval (<code>approvalStatus</code> fields).</li>
+</ul>
+
+<h2 id="auth">3. Authentication, Roles &amp; Authorization (RBAC)</h2>
+
+<h3>3.1 User Roles (UserRole enum)</h3>
+<table>
+<thead><tr><th>Role</th><th>Context</th><th>Scope</th></tr></thead>
+<tbody>
+<tr><td><span class="tag red">SUPER_ADMIN</span></td><td>Platform</td><td>All tenants; master library, approvals, system health, audit</td></tr>
+<tr><td><span class="tag">TENANT_ADMIN</span></td><td>Corporate &amp; School</td><td>Full admin of one tenant</td></tr>
+<tr><td><span class="tag">SUB_ADMIN</span></td><td>Corporate &amp; School</td><td>Delegated admin; some actions need TENANT_ADMIN approval</td></tr>
+<tr><td><span class="tag purple">MANAGER</span></td><td>Corporate</td><td>Team lead — oversees direct reports' learning</td></tr>
+<tr><td><span class="tag green">TEACHER</span></td><td>School</td><td>Instructor — classes, attendance, homework, payouts</td></tr>
+<tr><td><span class="tag amber">PARENT</span></td><td>School</td><td>Guardian — child schedule, homework, credits, live classes</td></tr>
+<tr><td><span class="tag green">LEARNER</span></td><td>Corporate &amp; School</td><td>Student / employee — courses, exams, certificates</td></tr>
+</tbody>
+</table>
+<p class="small">Users may hold a <code>secondaryRole</code>; the <code>RolesGuard</code> checks both primary and secondary role against an endpoint's <code>@Roles(...)</code> list.</p>
+
+<h3>3.2 Strategies, Guards &amp; Flows</h3>
+<table>
+<thead><tr><th>Component</th><th>File</th><th>Responsibility</th></tr></thead>
+<tbody>
+<tr><td>JWT Strategy</td><td>auth/strategies/jwt.strategy.ts</td><td>Parse <code>Authorization: Bearer</code>; secret <code>JWT_SECRET</code>; re-validates user is active; enriches req.user with role, tenantId, tenantType, secondaryRole</td></tr>
+<tr><td>Google Strategy</td><td>strategies/google.strategy.ts</td><td>OAuth2 via <code>GOOGLE_CLIENT_ID/SECRET</code></td></tr>
+<tr><td>Microsoft Strategy</td><td>strategies/microsoft.strategy.ts</td><td>OAuth2 via Microsoft</td></tr>
+<tr><td>Local Strategy</td><td>strategies/local.strategy.ts</td><td>Email + password login</td></tr>
+<tr><td>JwtAuthGuard</td><td>guards/jwt-auth.guard.ts</td><td>Validates JWT; honors <code>@Public()</code></td></tr>
+<tr><td>RolesGuard</td><td>guards/roles.guard.ts</td><td>Enforces <code>@Roles()</code>; ForbiddenException on mismatch</td></tr>
+<tr><td>TenantGuard</td><td>guards/tenant.guard.ts</td><td>Blocks cross-tenant access (SUPER_ADMIN bypass)</td></tr>
+<tr><td>Google/Microsoft/LocalAuthGuard</td><td>guards/*.guard.ts</td><td>Passport guards for each strategy</td></tr>
+<tr><td>FeatureGuard</td><td>guards/feature.guard.ts</td><td>Feature-flag gated endpoints</td></tr>
+</tbody>
+</table>
+<p><b>OTP &amp; Password flows:</b> <code>POST /auth/forgot-password</code> issues a 4-digit OTP (stored in <code>otps</code> with a 10-minute TTL index) → <code>POST /auth/verify-otp</code> → <code>POST /auth/reset-password</code>. New users receive a <code>passwordSetupToken</code> (<code>/auth/validate-setup-token</code> → <code>/auth/setup-password</code>); <code>mustChangePassword</code> forces a change on first login. Admins can force-reset via <code>/auth/admin-reset-password</code>.</p>
+
+<h2 id="infra">4. Cross-Cutting Infrastructure</h2>
+
+<h3>4.1 Global Middleware, Pipes &amp; Filters (main.ts / app.module.ts)</h3>
+<table>
+<thead><tr><th>Component</th><th>Behaviour</th></tr></thead>
+<tbody>
+<tr><td>CORS</td><td><code>origin: '*'</code>; methods GET/HEAD/PUT/PATCH/POST/DELETE/OPTIONS; headers Content-Type, Authorization</td></tr>
+<tr><td>Body Parser</td><td>JSON &amp; urlencoded limit <b>150 MB</b></td></tr>
+<tr><td>LowercaseEmailsMiddleware</td><td>Recursively lowercases+trims every <code>*email*</code> field before validation</td></tr>
+<tr><td>ValidationPipe (global)</td><td><code>whitelist</code>, <code>forbidNonWhitelisted</code>, <code>transform</code> — strips/blocks unknown props, auto-casts DTOs</td></tr>
+<tr><td>AllExceptionsFilter</td><td>Standard error JSON: statusCode, timestamp, path, method, requestId, message, error, validationErrors; never leaks stack in prod</td></tr>
+<tr><td>RequestLoggingMiddleware</td><td>Adds <code>X-Request-Id</code> UUID; logs method/url/status/duration with tenantId+userId; Winston daily-rotate files</td></tr>
+<tr><td>TenantResolverMiddleware</td><td>Resolves tenant from subdomain / <code>X-Tenant-Key</code></td></tr>
+<tr><td>Privacy interceptor</td><td>Strips sensitive fields &amp; records to <code>privacy-audit-log</code></td></tr>
+</tbody>
+</table>
+
+<h3>4.2 WebSocket Gateways (Socket.IO)</h3>
+<table>
+<thead><tr><th>Gateway</th><th>Namespace</th><th>Auth</th><th>Events / Behaviour</th></tr></thead>
+<tbody>
+<tr><td>MessagesGateway</td><td><code>/messages</code></td><td>JWT in handshake</td><td>Send/receive messages, typing indicators, online presence, notifications. Rate limit: 20 msgs / 60s / user</td></tr>
+<tr><td>ExamGateway</td><td><code>/exams</code></td><td>JWT in handshake</td><td><code>joinExam</code>/<code>leaveExam</code> rooms (<code>exam:&lt;sessionId&gt;</code>); emits <code>timerSync</code> (30s), <code>examWarning</code> (5min/1min), <code>forceSubmit</code> on timeout</td></tr>
+</tbody>
+</table>
+
+<h3>4.3 Background Jobs — Cron Schedules</h3>
+<table>
+<thead><tr><th>Cron</th><th>Service</th><th>Purpose</th></tr></thead>
+<tbody>
+<tr><td><code>0 9 * * *</code> (daily 09:00 UTC)</td><td>DeadlineRemindersService</td><td>Remind learners of assignments due within 3 days</td></tr>
+<tr><td><code>30 9 * * *</code> (daily 09:30 UTC)</td><td>DeadlineRemindersService</td><td>Remind learners of overdue assignments</td></tr>
+<tr><td><code>0 7 * * *</code> (daily 07:00 UTC)</td><td>TeacherLatenessRemindersService</td><td>Detect teachers late in last 2 sessions → notify (logged in <code>teacher-lateness-reminder-log</code>)</td></tr>
+<tr><td><code>* * * * *</code> (every minute)</td><td>StudentReminderService</td><td>Find in-progress classes past grace period → queue calls to absent students</td></tr>
+</tbody>
+</table>
+
+<h3>4.4 Background Jobs — Bull Queues (Redis)</h3>
+<table>
+<thead><tr><th>Queue</th><th>Processor</th><th>Purpose</th></tr></thead>
+<tbody>
+<tr><td><code>exam-auto-submit</code></td><td>ExamAutoSubmitProcessor</td><td>Auto-submit an exam session when its server deadline expires</td></tr>
+<tr><td><code>reminders</code></td><td>RemindersProcessor</td><td>Class reminders at −30min (email), −10min (email+SMS), −5min (SMS) with join link</td></tr>
+<tr><td><code>course-assignment-reminders</code></td><td>CourseAssignmentRemindersProcessor</td><td>Immediate "assigned" email + day-10 &amp; day-20 follow-ups (skips if completed)</td></tr>
+<tr><td><code>escalation</code></td><td>EscalationProcessor</td><td>Call teacher up to 3× when absent from a live class; notify admin</td></tr>
+<tr><td><code>student-reminder</code></td><td>StudentReminderProcessor</td><td>Call absent students up to 3× (guardianContact → phone) via Twilio</td></tr>
+</tbody>
+</table>
+
+<h3>4.5 File Storage (AWS S3)</h3>
+<ul>
+<li><b>Presigned PUT</b> (<code>UploadService</code>): browser uploads directly to S3. Key format <code>tenants/{tenantId}/uploads/{uuid}-{fileName}</code>; returns uploadUrl, fileKey, fileUrl.</li>
+<li><b>Presigned GET</b> (<code>S3PresignedService</code>): time-limited read URLs (default 3600s); handles full URLs, bare keys, data URLs.</li>
+<li><b>TUS resumable uploads</b> (<code>@tus/server</code>) for large media at <code>POST /upload/tus</code>.</li>
+<li><b>SCORM</b>: zip parse/extract/validate (manifest.xml) up to 500 MB.</li>
+<li><b>Storage quotas</b>: per-tenant <code>storageLimit</code> (GB); usage tracked &amp; surfaced via <code>/tenants/usage</code>, <code>/audit/storage/*</code>.</li>
+</ul>
+
+<h3>4.6 External Integrations</h3>
+<table>
+<thead><tr><th>Integration</th><th>Use</th><th>Key Env Vars</th></tr></thead>
+<tbody>
+<tr><td>Nodemailer (SMTP)</td><td>Transactional email, PDF attachments</td><td>SMTP_HOST, SMTP_PORT, SMTP_USER, SMTP_PASS</td></tr>
+<tr><td>Resend</td><td>Alt email provider</td><td>RESEND_API_KEY</td></tr>
+<tr><td>Twilio</td><td>SMS &amp; voice (reminders, escalation); +91 normalization</td><td>TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN, TWILIO_PHONE_NUMBER</td></tr>
+<tr><td>OpenAI Whisper</td><td>Video caption/transcription (.vtt → S3), max 25 MB</td><td>OPENAI_API_KEY</td></tr>
+<tr><td>Google APIs</td><td>Google Meet provider, OAuth</td><td>GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET</td></tr>
+<tr><td>Zoom / Jitsi / Teams</td><td>Meeting providers (per-tenant <code>videoConfig</code>)</td><td>Stored per-tenant in DB</td></tr>
+</tbody>
+</table>
+
+<h2 id="env">5. Environment Variables</h2>
+<pre># Database
+MONGODB_URI=mongodb://localhost:27017/quikskill-lms     # → DATABASE_URL (Postgres) after migration
+# Redis (Bull queues)
+REDIS_URL=redis://localhost:6379
+# JWT
+JWT_SECRET=...                 (default fallback: quikskill-lms-dev)
+# AWS S3
+AWS_ACCESS_KEY_ID=...   AWS_SECRET_ACCESS_KEY=...   AWS_REGION=ap-south-1   AWS_S3_BUCKET=quick-lms
+# Email
+SMTP_HOST=smtp.office365.com   SMTP_PORT=587   SMTP_USER=...   SMTP_PASS=...   RESEND_API_KEY=...
+# OAuth
+GOOGLE_CLIENT_ID=...   GOOGLE_CLIENT_SECRET=...   GOOGLE_CALLBACK_URL=...
+MICROSOFT_CLIENT_ID=...   MICROSOFT_CLIENT_SECRET=...   MICROSOFT_CALLBACK_URL=...
+# Twilio
+TWILIO_ACCOUNT_SID=...   TWILIO_AUTH_TOKEN=...   TWILIO_PHONE_NUMBER=+1...
+# OpenAI
+OPENAI_API_KEY=sk-...
+# App
+PORT=3020   NODE_ENV=development   BACKEND_URL=...   ENCRYPTION_KEY=... (32-char, for aiApiKey)</pre>
+
+<h2 id="datamodel">6. Complete Data Model — All Collections / Future Postgres Tables</h2>
+<p>Every collection below maps to a PostgreSQL table. Mongo <code>ObjectId</code> → <code>uuid</code> or <code>bigint</code> PK; <code>ObjectId ref→X</code> → foreign key; embedded <b>[subdoc]</b> arrays → either a child table (1-to-many) or a <code>jsonb</code> column; <code>Map/Object</code> → <code>jsonb</code>; enums → Postgres <code>enum</code> or <code>text</code>+CHECK. All business tables include <code>tenantId</code> (FK to <code>tenants</code>) and Mongoose <code>timestamps</code> give <code>createdAt</code>/<code>updatedAt</code>.</p>
+<div class="callout warn"><b>55 collections total.</b> Sub-documents (arrays of objects) are flagged inline — these are the main normalization decisions for the relational schema.</div>
+
+<h3>6.1 Identity &amp; Tenancy</h3>
+
+<h4><code>users</code> — every person on the platform (all 7 roles)</h4>
+<table>
+<thead><tr><th>Field</th><th>Type</th><th>Req</th><th>Notes</th></tr></thead>
+<tbody>
+<tr><td>email</td><td>String</td><td>Y</td><td>lowercase, trimmed, indexed; unique per tenant</td></tr>
+<tr><td>password</td><td>String</td><td>N</td><td>null for OAuth users (bcrypt hash)</td></tr>
+<tr><td>firstName / lastName</td><td>String</td><td>Y</td><td></td></tr>
+<tr><td>role</td><td>enum</td><td>Y</td><td>SUPER_ADMIN, TENANT_ADMIN, SUB_ADMIN, MANAGER, TEACHER, LEARNER, PARENT (default LEARNER)</td></tr>
+<tr><td>secondaryRole</td><td>enum</td><td>N</td><td>multi-role users</td></tr>
+<tr><td>tenantId</td><td>String</td><td>N</td><td>owning tenant</td></tr>
+<tr><td>managerId</td><td>ObjectId→User</td><td>N</td><td>corporate hierarchy</td></tr>
+<tr><td>isActive</td><td>Boolean</td><td>Y</td><td>default true</td></tr>
+<tr><td>parentIds</td><td>[ObjectId→User]</td><td>N</td><td>LEARNER → linked parents</td></tr>
+<tr><td>parentEmail</td><td>String</td><td>N</td><td>deferred parent linking during bulk upload</td></tr>
+<tr><td>childrenIds</td><td>[ObjectId→User]</td><td>N</td><td>PARENT → linked students</td></tr>
+<tr><td>guardianContact / phone</td><td>String</td><td>N</td><td>SMS/call reminders</td></tr>
+<tr><td>guardianRelation</td><td>String</td><td>N</td><td>father/mother/guardian</td></tr>
+<tr><td>grade / section</td><td>String</td><td>N</td><td>student class &amp; section</td></tr>
+<tr><td>subjects</td><td>[String]</td><td>N</td><td>teacher subjects</td></tr>
+<tr><td>ratePerClass / ratePerHour / monthlyPayout</td><td>Number</td><td>N</td><td>teacher pay</td></tr>
+<tr><td>rateType</td><td>String</td><td>N</td><td>per_class/per_hour/monthly/hybrid</td></tr>
+<tr><td>qualification</td><td>String</td><td>N</td><td>PGT/TGT/PRT/NTT/Other</td></tr>
+<tr><td>employeeId / studentId / parentCode</td><td>String</td><td>N</td><td>unique sparse per tenant</td></tr>
+<tr><td>dateOfBirth</td><td>Date</td><td>N</td><td></td></tr>
+<tr><td>availableSlots</td><td>[subdoc]</td><td>N</td><td>{dayOfWeek, startTime, endTime} — teacher availability</td></tr>
+<tr><td>maxSlotsPerWeek</td><td>Number</td><td>N</td><td></td></tr>
+<tr><td>tutoringEnabled / tutoringCreditCost</td><td>Boolean / Number</td><td>N</td><td>1:1 tutoring</td></tr>
+<tr><td>classesCompleted / classesMissed / classesCancelled / classesRescheduledAndCompleted</td><td>Number</td><td>Y</td><td>teacher counters (default 0)</td></tr>
+<tr><td>punctualityScore</td><td>Number</td><td>N</td><td>0–100</td></tr>
+<tr><td>provider / providerId</td><td>String</td><td>N</td><td>google/microsoft/local OAuth</td></tr>
+<tr><td>profilePicture</td><td>String</td><td>N</td><td>S3 URL</td></tr>
+<tr><td>aiApiKey</td><td>String</td><td>N</td><td>encrypted, select:false</td></tr>
+<tr><td>mustChangePassword</td><td>Boolean</td><td>Y</td><td>default true</td></tr>
+<tr><td>passwordSetupToken / passwordSetupTokenExpiry</td><td>String / Date</td><td>N</td><td>first-time setup</td></tr>
+<tr><td>activeSessionId</td><td>String</td><td>N</td><td>single-session enforcement</td></tr>
+<tr><td>currentStreak / totalPoints / lastActivityDate</td><td>Number/Date</td><td>Y/N</td><td>gamification</td></tr>
+<tr><td>preferredLanguage / timezone</td><td>String</td><td>Y/N</td><td>default 'en'</td></tr>
+<tr><td>notificationPreferences</td><td>Object</td><td>Y</td><td>email/class/homework/credit/payout toggles → jsonb</td></tr>
+</tbody>
+</table>
+<p class="small"><b>Indexes:</b> (tenantId,totalPoints↓), (tenantId,currentStreak↓), (tenantId,role), (tenantId,grade), (parentIds), (childrenIds), unique-sparse (tenantId,studentId)/(tenantId,employeeId)/(tenantId,parentCode), (tenantId,email), (tenantId,parentEmail).</p>
+
+<h4><code>otps</code> — password-reset / 2FA codes</h4>
+<table><thead><tr><th>Field</th><th>Type</th><th>Req</th><th>Notes</th></tr></thead><tbody>
+<tr><td>email</td><td>String</td><td>Y</td><td>indexed</td></tr>
+<tr><td>otp</td><td>String</td><td>Y</td><td>4-digit</td></tr>
+<tr><td>expiresAt</td><td>Date</td><td>Y</td><td>TTL index 600s</td></tr>
+<tr><td>isUsed</td><td>Boolean</td><td>Y</td><td>default false</td></tr>
+</tbody></table>
+
+<h4><code>tenants</code> — organizations (corporate or school)</h4>
+<table><thead><tr><th>Field</th><th>Type</th><th>Req</th><th>Notes</th></tr></thead><tbody>
+<tr><td>name / subdomain / tenantKey</td><td>String</td><td>Y</td><td>all unique</td></tr>
+<tr><td>tenantType</td><td>enum</td><td>Y</td><td>corporate | school (default corporate)</td></tr>
+<tr><td>status</td><td>enum</td><td>Y</td><td>Active | Paused | Trial</td></tr>
+<tr><td>gstNumber</td><td>String</td><td>N</td><td>unique sparse</td></tr>
+<tr><td>dbConnectionString</td><td>String</td><td>N</td><td>optional dedicated DB</td></tr>
+<tr><td>orgName / fullAddress / country / officialPhone / officialEmail / website</td><td>String</td><td>Y*</td><td>org profile</td></tr>
+<tr><td>contact* (firstName, middleName, lastName, phone, email, roleInOrganization)</td><td>String</td><td>Y*</td><td>primary contact</td></tr>
+<tr><td>billing* (firstName, middleName, lastName, address)</td><td>String</td><td>Y*</td><td>billing contact</td></tr>
+<tr><td>featureConfig</td><td>Object→jsonb</td><td>Y</td><td>enableCourses, enableScorm, enableCompliance, enableManagerReports, enableSelfEnrollment, enableBatches, enableAttendance, enableHomework, enableCredits, enablePayouts, enableVideoClasses, enableParentPortal, enableMessaging, enableCertificates, enableAnalytics, approvalWorkflowEnabled</td></tr>
+<tr><td>schoolConfig</td><td>Object→jsonb</td><td>N</td><td>academicYearStartMonth, gradeLevels[], subjects[], defaultCreditExpiryMonths, defaultTeacherRatePerClass</td></tr>
+<tr><td>corporateConfig</td><td>Object→jsonb</td><td>N</td><td>enableComplianceTracking, complianceDueDays, enableTeamHierarchy, enableSelfEnrollment, departmentList[]</td></tr>
+<tr><td>creditConfig</td><td>Object→jsonb</td><td>N</td><td>expiry policy, thresholds, zeroCreditPolicy, packages[]</td></tr>
+<tr><td>payoutConfig</td><td>Object→jsonb</td><td>N</td><td>default rates, payoutGenerationDay, autoApprove, paymentMethods[]</td></tr>
+<tr><td>videoConfig</td><td>Object→jsonb</td><td>N</td><td>provider, credentials, settings, requireParentConsent</td></tr>
+<tr><td>enhancementConfig</td><td>Object→jsonb</td><td>N</td><td>escalation, studentReminder, teacherLevel, demoTrial tuning</td></tr>
+<tr><td>timezone / defaultLanguage / enabledLanguages / locale / currency / localeSettings</td><td>mixed</td><td>Y</td><td>i18n &amp; locale</td></tr>
+<tr><td>storageLimit</td><td>Number</td><td>Y</td><td>GB (default 2)</td></tr>
+<tr><td>logoUrl / faviconUrl / primaryColor / secondaryColor</td><td>String</td><td>N/Y</td><td>branding (#3B82F6 / #1E40AF)</td></tr>
+<tr><td>auth0OrganizationId / auth0UserId / loginUrl</td><td>String</td><td>N</td><td>SSO</td></tr>
+</tbody></table>
+
+<h4><code>counters</code> — sequential ID generator</h4>
+<table><thead><tr><th>Field</th><th>Type</th><th>Notes</th></tr></thead><tbody>
+<tr><td>tenantId</td><td>ObjectId→Tenant</td><td>unique (tenantId,type)</td></tr>
+<tr><td>type</td><td>String</td><td>teacher | student | parent</td></tr>
+<tr><td>seq</td><td>Number</td><td>current value (default 0)</td></tr>
+</tbody></table>
+
+<h4><code>groups</code> — user groups for bulk course assignment</h4>
+<table><thead><tr><th>Field</th><th>Type</th><th>Notes</th></tr></thead><tbody>
+<tr><td>tenantId</td><td>ObjectId→Tenant</td><td>unique (tenantId,name)</td></tr>
+<tr><td>name / description</td><td>String</td><td></td></tr>
+<tr><td>memberIds</td><td>[ObjectId→User]</td><td>→ join table group_members</td></tr>
+<tr><td>createdBy</td><td>ObjectId→User</td><td></td></tr>
+</tbody></table>
+
+<h3>6.2 Courses &amp; Content</h3>
+
+<h4><code>courses</code></h4>
+<table><thead><tr><th>Field</th><th>Type</th><th>Req</th><th>Notes</th></tr></thead><tbody>
+<tr><td>tenantId</td><td>ObjectId</td><td>N</td><td>null for master courses (sparse idx)</td></tr>
+<tr><td>title / category / description</td><td>String</td><td>Y/N</td><td></td></tr>
+<tr><td>authorId</td><td>ObjectId→User</td><td>Y</td><td></td></tr>
+<tr><td>modules</td><td>[ObjectId→Module]</td><td>Y</td><td>ordered module refs</td></tr>
+<tr><td>status</td><td>enum</td><td>Y</td><td>Draft | Published | Archived</td></tr>
+<tr><td>thumbnailUrl</td><td>String</td><td>N</td><td>S3</td></tr>
+<tr><td>isMaster</td><td>Boolean</td><td>Y</td><td>global library course</td></tr>
+<tr><td>selectedTenants</td><td>[ObjectId→Tenant]</td><td>N</td><td>distribution targets</td></tr>
+<tr><td>isFeatured / version</td><td>Boolean / Number</td><td>Y</td><td></td></tr>
+<tr><td>prerequisites</td><td>[ObjectId→Course]</td><td>Y</td><td></td></tr>
+</tbody></table>
+
+<h4><code>modules</code> (contains embedded <b>Lesson</b> subdocs)</h4>
+<table><thead><tr><th>Field</th><th>Type</th><th>Req</th><th>Notes</th></tr></thead><tbody>
+<tr><td>tenantId</td><td>ObjectId</td><td>N</td><td>sparse</td></tr>
+<tr><td>courseId</td><td>ObjectId→Course</td><td>Y</td><td></td></tr>
+<tr><td>title / description</td><td>String</td><td>Y/N</td><td></td></tr>
+<tr><td>orderIndex</td><td>Number</td><td>Y</td><td></td></tr>
+<tr><td>lessons</td><td>[Lesson subdoc]</td><td>Y</td><td>see below → child table <code>lessons</code></td></tr>
+<tr><td>assessmentId</td><td>ObjectId→Assessment</td><td>N</td><td>module quiz</td></tr>
+</tbody></table>
+<p class="small"><b>Lesson subdoc:</b> title, type(Video/PDF/PPT/SCORM/Text/Quiz/Audio/Document/Slides), contentUrl, orderIndex, isMaster, description, duration, fileSize, captions[{language,label,url}], quiz{questions[{id,text,options,questionType,correctAnswer}], passingScore}.</p>
+
+<h4><code>assessments</code> (embedded <b>Question</b> subdocs) &amp; <code>quiz-attempts</code></h4>
+<table><thead><tr><th>Collection</th><th>Field</th><th>Type</th><th>Notes</th></tr></thead><tbody>
+<tr><td rowspan="9"><b>assessments</b></td><td>tenantId</td><td>ObjectId→Tenant</td><td></td></tr>
+<tr><td>moduleId</td><td>ObjectId→Module</td><td></td></tr>
+<tr><td>title</td><td>String</td><td></td></tr>
+<tr><td>questions</td><td>[Question subdoc]</td><td>text, type(MCQ/True-False), options[], correctAnswerIndex(Number|[Number]), explanation, points</td></tr>
+<tr><td>passingScore / retryLimit</td><td>Number</td><td>default 75 / 3</td></tr>
+<tr><td>timeLimit</td><td>Number</td><td>minutes</td></tr>
+<tr><td>randomizeQuestions / questionsToShow</td><td>Boolean/Number</td><td></td></tr>
+<tr><td>additionalQuestions / additionalQuestionsToInclude</td><td>[Question]/Number</td><td>swap-in pool</td></tr>
+<tr><td>isMaster</td><td>Boolean</td><td></td></tr>
+<tr><td rowspan="8"><b>quiz-attempts</b></td><td>tenantId / learnerId / courseId / assessmentId</td><td>ObjectId refs</td><td></td></tr>
+<tr><td>answers</td><td>[QuestionAnswer subdoc]</td><td>questionIndex, questionText, options[], selectedAnswerIndex, correctAnswerIndex, isCorrect, explanation</td></tr>
+<tr><td>score / totalPoints / percentage</td><td>Number</td><td></td></tr>
+<tr><td>passed</td><td>Boolean</td><td></td></tr>
+<tr><td>submittedAt</td><td>Date</td><td></td></tr>
+<tr><td>proctoringSessionId</td><td>ObjectId→QuizProctoringSession</td><td>optional</td></tr>
+</tbody></table>
+
+<h4><code>shared-content</code> · <code>email-templates</code> · <code>bookmarks</code> · <code>discussions</code></h4>
+<table><thead><tr><th>Collection</th><th>Key Fields</th></tr></thead><tbody>
+<tr><td><b>shared-content</b></td><td>masterCourseId→Course, tenantId→Tenant, tenantCourseId→Course, sharedAt, isActive. Unique (masterCourseId,tenantId).</td></tr>
+<tr><td><b>email-templates</b></td><td>type(welcome-kit/course-completion/certificate/upgrade-invoice, unique), subject, htmlContent.</td></tr>
+<tr><td><b>bookmarks</b></td><td>tenantId, userId, courseId, moduleId?, lessonId?, note. Unique (tenantId,userId,courseId).</td></tr>
+<tr><td><b>discussions</b></td><td>tenantId, courseId, lessonId?, userId, parentId?(threading), content, upvotes/downvotes, upvotedBy[]/downvotedBy[], isSticky, isResolved, isDeleted, editedAt.</td></tr>
+</tbody></table>
+
+<h4><code>academic-calendar</code> · <code>subjects</code> · <code>sections</code> (academic-config)</h4>
+<table><thead><tr><th>Collection</th><th>Key Fields</th></tr></thead><tbody>
+<tr><td><b>academic-calendar</b></td><td>tenantId, academicYear ("2025-2026"), terms[{name,startDate,endDate,isActive}], holidays[{date,name,type:national/regional/custom}], createdBy. Unique (tenantId,academicYear).</td></tr>
+<tr><td><b>subjects</b></td><td>tenantId, name, isDefault. Unique (tenantId,name).</td></tr>
+<tr><td><b>sections</b></td><td>tenantId, grade, name. Unique (tenantId,grade,name).</td></tr>
+</tbody></table>
+
+
+<h3>6.3 Progress, Course Assignment, Certificates &amp; Gradebook</h3>
+
+<h4><code>progress</code> — one row per learner per course</h4>
+<table><thead><tr><th>Field</th><th>Type</th><th>Notes</th></tr></thead><tbody>
+<tr><td>tenantId / learnerId / courseId</td><td>ObjectId refs</td><td>unique (tenantId,learnerId,courseId)</td></tr>
+<tr><td>currentModuleId</td><td>ObjectId→Module</td><td></td></tr>
+<tr><td>status</td><td>enum</td><td>Not Started | In Progress | Overdue | Completed | Failed</td></tr>
+<tr><td>completionPercentage / scorePercentage / quizScore</td><td>Number</td><td>0–100</td></tr>
+<tr><td>isPassed</td><td>Boolean</td><td></td></tr>
+<tr><td>startedAt / completedAt</td><td>Date</td><td></td></tr>
+<tr><td>lessonProgress</td><td>Object→jsonb</td><td>map lessonId → {completionPercentage, isCompleted, currentPosition, suspendData, scormData, quizScore, lastPageSeen, lastAccessedAt}</td></tr>
+</tbody></table>
+
+<h4><code>course-assignments</code></h4>
+<table><thead><tr><th>Field</th><th>Type</th><th>Notes</th></tr></thead><tbody>
+<tr><td>tenantId / courseId</td><td>ObjectId refs</td><td></td></tr>
+<tr><td>targetType</td><td>enum</td><td>USER | GROUP</td></tr>
+<tr><td>targetId</td><td>ObjectId</td><td>User or Group id</td></tr>
+<tr><td>dueDate / isMandatory</td><td>Date / Boolean</td><td>default mandatory</td></tr>
+<tr><td>assignedBy / assignedAt</td><td>ObjectId→User / Date</td><td></td></tr>
+</tbody></table>
+
+<h4><code>certificates</code> (templates) &amp; <code>certificate-issued</code></h4>
+<table><thead><tr><th>Collection</th><th>Field</th><th>Type</th><th>Notes</th></tr></thead><tbody>
+<tr><td rowspan="8"><b>certificates</b><br>(templates)</td><td>tenantId</td><td>ObjectId</td><td>null = global</td></tr>
+<tr><td>name</td><td>String</td><td></td></tr>
+<tr><td>backgroundImageUrl / logoImageUrl / signatureImageUrl</td><td>String</td><td>S3</td></tr>
+<tr><td>designation / signatoryName</td><td>String</td><td></td></tr>
+<tr><td>textPlacements / logoPlacement / signaturePlacement</td><td>Object→jsonb</td><td>{x,y,fontSize,color,width,height}</td></tr>
+<tr><td>selectedTenants / isActive</td><td>[ObjectId]/Boolean</td><td></td></tr>
+<tr><td>approvalStatus</td><td>enum</td><td>pending_approval | approved | rejected</td></tr>
+<tr><td>submittedBy / submittedByTenantId / approvedBy / approvalDate / rejectionReason</td><td>mixed</td><td>approval workflow</td></tr>
+<tr><td rowspan="7"><b>certificate-issued</b></td><td>tenantId / learnerId / courseId</td><td>ObjectId refs</td><td>unique (tenantId,learnerId,courseId)</td></tr>
+<tr><td>certificateTemplateId</td><td>ObjectId→Certificate</td><td></td></tr>
+<tr><td>courseName / learnerName</td><td>String</td><td>denormalized snapshot</td></tr>
+<tr><td>certificateId</td><td>String</td><td>unique public verification id</td></tr>
+<tr><td>pdfUrl / qrCodeUrl / verificationUrl</td><td>String</td><td>S3 + QR</td></tr>
+<tr><td>issuedAt / expiresAt</td><td>Date</td><td></td></tr>
+<tr><td>isComplianceCertificate / score / passingScore / passed</td><td>mixed</td><td></td></tr>
+</tbody></table>
+
+<h4><code>grade-records</code> (gradebook)</h4>
+<table><thead><tr><th>Field</th><th>Type</th><th>Notes</th></tr></thead><tbody>
+<tr><td>tenantId / studentId / batchId</td><td>ObjectId refs</td><td>unique (tenantId,studentId,batchId,term)</td></tr>
+<tr><td>subject / term / academicYear</td><td>String</td><td></td></tr>
+<tr><td>homeworkAverage / assessmentAverage / attendancePercent / gradePoints / overallPercentage</td><td>Number</td><td>computed</td></tr>
+<tr><td>finalGrade / remarks</td><td>String</td><td>A/B/C…</td></tr>
+<tr><td>gradedBy / gradedAt</td><td>ObjectId→User / Date</td><td></td></tr>
+</tbody></table>
+
+<h3>6.4 School Operations</h3>
+
+<h4><code>batches</code> — teaching cohorts</h4>
+<table><thead><tr><th>Field</th><th>Type</th><th>Notes</th></tr></thead><tbody>
+<tr><td>tenantId / teacherId</td><td>ObjectId refs</td><td></td></tr>
+<tr><td>name / grade / section / subject / description / term</td><td>String</td><td></td></tr>
+<tr><td>substituteTeacherIds / studentIds</td><td>[ObjectId→User]</td><td>→ join tables</td></tr>
+<tr><td>academicYear</td><td>String</td><td>YYYY-YYYY</td></tr>
+<tr><td>startDate / endDate</td><td>Date</td><td></td></tr>
+<tr><td>schedule</td><td>[subdoc]</td><td>{dayOfWeek 0-6, startTime, endTime, location}</td></tr>
+<tr><td>maxCapacity / creditPerClass / ratePerClass / ratePerHour</td><td>Number</td><td></td></tr>
+<tr><td>defaultMeetingProvider</td><td>enum</td><td>zoom/google_meet/jitsi/manual</td></tr>
+<tr><td>classType / trialClassCount / convertedToRegular / convertedAt</td><td>mixed</td><td>regular/demo/trial</td></tr>
+<tr><td>batchType / source</td><td>enum</td><td>regular|one_on_one / manual|auto_tutoring</td></tr>
+<tr><td>tutoringRequestId</td><td>ObjectId→TutoringRequest</td><td>if auto-created</td></tr>
+<tr><td>status / createdBy</td><td>enum / ObjectId</td><td>draft|active|archived</td></tr>
+</tbody></table>
+
+<h4><code>scheduled-classes</code></h4>
+<table><thead><tr><th>Field</th><th>Type</th><th>Notes</th></tr></thead><tbody>
+<tr><td>tenantId / batchId / teacherId</td><td>ObjectId refs</td><td>unique (batchId,startTime)</td></tr>
+<tr><td>substituteTeacherId</td><td>ObjectId→User</td><td></td></tr>
+<tr><td>title / location / classNotes</td><td>String</td><td></td></tr>
+<tr><td>startTime / endTime</td><td>Date</td><td></td></tr>
+<tr><td>status</td><td>enum</td><td>scheduled | in_progress | completed | cancelled | rescheduled</td></tr>
+<tr><td>cancellationReason / rescheduleReason</td><td>String</td><td></td></tr>
+<tr><td>rescheduledTo / rescheduledFrom</td><td>ObjectId→ScheduledClass</td><td></td></tr>
+<tr><td>rescheduleApprovalStatus</td><td>enum</td><td>pending|approved|rejected</td></tr>
+<tr><td>meetingId</td><td>ObjectId→Meeting</td><td></td></tr>
+<tr><td>attendanceMarkedAt</td><td>Date</td><td></td></tr>
+<tr><td>isRecurring / recurringPattern</td><td>Boolean/subdoc</td><td>{frequency, endDate}</td></tr>
+</tbody></table>
+
+<h4><code>credit-packages</code> &amp; <code>credit-transactions</code></h4>
+<table><thead><tr><th>Collection</th><th>Field</th><th>Type</th><th>Notes</th></tr></thead><tbody>
+<tr><td rowspan="6"><b>credit-packages</b></td><td>tenantId / studentId</td><td>ObjectId refs</td><td></td></tr>
+<tr><td>packageName</td><td>String</td><td></td></tr>
+<tr><td>purchasedCredits / usedCredits / remainingCredits</td><td>Number</td><td></td></tr>
+<tr><td>purchaseDate / expiresAt</td><td>Date</td><td></td></tr>
+<tr><td>status</td><td>enum</td><td>active | exhausted | expired</td></tr>
+<tr><td>price / notes / allocatedBy</td><td>mixed</td><td></td></tr>
+<tr><td rowspan="6"><b>credit-transactions</b></td><td>tenantId / packageId / studentId</td><td>ObjectId refs</td><td></td></tr>
+<tr><td>transactionType</td><td>enum</td><td>purchase, deduct, refund, expire, adjustment, tutoring_hold, tutoring_hold_release, tutoring_deduction</td></tr>
+<tr><td>amount / balanceAfter</td><td>Number</td><td>+add / −deduct</td></tr>
+<tr><td>relatedClassId / relatedAttendanceId</td><td>ObjectId refs</td><td></td></tr>
+<tr><td>notes / processedBy</td><td>mixed</td><td></td></tr>
+</tbody></table>
+
+<h4><code>attendance</code></h4>
+<table><thead><tr><th>Field</th><th>Type</th><th>Notes</th></tr></thead><tbody>
+<tr><td>tenantId / scheduledClassId / batchId / studentId / markedBy</td><td>ObjectId refs</td><td>unique (scheduledClassId,studentId)</td></tr>
+<tr><td>status</td><td>enum</td><td>present | absent | late | excused</td></tr>
+<tr><td>classDate / notes</td><td>Date/String</td><td></td></tr>
+<tr><td>creditDeducted / creditTransactionId</td><td>Boolean/ObjectId</td><td></td></tr>
+<tr><td>editedBy / editReason / editedAt</td><td>mixed</td><td>audit of edits</td></tr>
+</tbody></table>
+
+<h4><code>homework</code> &amp; <code>homework-submissions</code></h4>
+<table><thead><tr><th>Collection</th><th>Field</th><th>Type</th><th>Notes</th></tr></thead><tbody>
+<tr><td rowspan="7"><b>homework</b></td><td>tenantId / batchId / teacherId</td><td>ObjectId refs</td><td></td></tr>
+<tr><td>title / description / instructions</td><td>String</td><td></td></tr>
+<tr><td>attachmentUrls[] / resourceLinks[{url,label}]</td><td>arrays</td><td></td></tr>
+<tr><td>dueDate / lateSubmissionDeadline / publishedAt</td><td>Date</td><td></td></tr>
+<tr><td>assignedToStudentIds[]</td><td>[ObjectId→User]</td><td></td></tr>
+<tr><td>maxScore / allowLateSubmission / latePenaltyPercent</td><td>mixed</td><td></td></tr>
+<tr><td>status / type</td><td>enum</td><td>draft|published|closed / assignment|quiz|project|reading</td></tr>
+<tr><td rowspan="7"><b>homework-submissions</b></td><td>tenantId / homeworkId / studentId</td><td>ObjectId refs</td><td>unique (homeworkId,studentId)</td></tr>
+<tr><td>attachmentUrls[] / textResponse</td><td>mixed</td><td></td></tr>
+<tr><td>submittedAt / isLate</td><td>Date/Boolean</td><td></td></tr>
+<tr><td>status</td><td>enum</td><td>submitted | graded | returned</td></tr>
+<tr><td>score / finalScore / latePenaltyApplied</td><td>Number</td><td></td></tr>
+<tr><td>feedback / richFeedback / correctedFileUrl</td><td>String</td><td></td></tr>
+<tr><td>rubricScores</td><td>[subdoc]</td><td>{criterion,maxScore,score,comment}</td></tr>
+</tbody></table>
+
+<h4><code>teacher-payouts</code></h4>
+<table><thead><tr><th>Field</th><th>Type</th><th>Notes</th></tr></thead><tbody>
+<tr><td>tenantId / teacherId</td><td>ObjectId refs</td><td>unique (teacherId,periodStart,periodEnd)</td></tr>
+<tr><td>periodStart / periodEnd</td><td>Date</td><td></td></tr>
+<tr><td>completedClassIds[]</td><td>[ObjectId→ScheduledClass]</td><td></td></tr>
+<tr><td>totalClassesCompleted / ratePerClass / grossAmount / netAmount</td><td>Number</td><td></td></tr>
+<tr><td>rateType</td><td>enum</td><td>per_class/per_hour/monthly/hybrid</td></tr>
+<tr><td>adjustments</td><td>[subdoc]</td><td>{type:bonus/deduction/reimbursement, amount, reason, appliedBy, appliedAt}</td></tr>
+<tr><td>totalBonus / totalDeductions / nonTeachingWorkAmount</td><td>Number</td><td></td></tr>
+<tr><td>status</td><td>enum</td><td>draft|pending|approved|paid|disputed|rejected</td></tr>
+<tr><td>approvedBy / approvedAt / paidAt / paymentMethod / paymentReference / notes</td><td>mixed</td><td></td></tr>
+<tr><td>source</td><td>enum</td><td>batch | tutoring</td></tr>
+</tbody></table>
+
+<h4><code>meetings</code> &amp; <code>meeting-attendance</code></h4>
+<table><thead><tr><th>Collection</th><th>Field</th><th>Type</th><th>Notes</th></tr></thead><tbody>
+<tr><td rowspan="6"><b>meetings</b></td><td>tenantId / scheduledClassId / hostId / createdBy</td><td>ObjectId refs</td><td></td></tr>
+<tr><td>provider</td><td>enum</td><td>zoom/google_meet/teams/jitsi/manual</td></tr>
+<tr><td>externalMeetingId / joinUrl / hostUrl / password / title</td><td>String</td><td></td></tr>
+<tr><td>scheduledStartTime/EndTime / actualStartTime/EndTime</td><td>Date</td><td></td></tr>
+<tr><td>status / recordingStatus</td><td>enum</td><td>scheduled/started/ended/cancelled · pending/processing/available/expired</td></tr>
+<tr><td>recordingEnabled / recordingUrls[] / isInstant / participantCount / providerMetadata</td><td>mixed</td><td></td></tr>
+<tr><td rowspan="5"><b>meeting-attendance</b></td><td>meetingId / userId</td><td>ObjectId refs</td><td></td></tr>
+<tr><td>role</td><td>enum</td><td>teacher | student</td></tr>
+<tr><td>joinedAt / leftAt / durationMinutes</td><td>mixed</td><td></td></tr>
+<tr><td>deviceType / deviceInfo</td><td>mixed</td><td>desktop/mobile/tablet/unknown</td></tr>
+<tr><td>joinLeaveHistory</td><td>[subdoc]</td><td>{action:join/leave, timestamp}</td></tr>
+</tbody></table>
+
+<h4>Other school-ops collections</h4>
+<table><thead><tr><th>Collection</th><th>Key Fields &amp; Enums</th></tr></thead><tbody>
+<tr><td><b>non-teaching-tasks</b></td><td>tenantId, teacherId, assignedBy, title, description, category(curriculum/content/training/meeting/other), paymentAmount, status(assigned/in_progress/completed_pending/approved/rejected), dueDate, completedAt, approvedAt/By, rejectionReason, completionNotes, hoursSpent, attachmentUrls[].</td></tr>
+<tr><td><b>teacher-levels</b></td><td>tenantId, teacherId(unique), currentLevel(beginner/intermediate/lead), totalClassesTaught, attendanceScore, homeworkCompletionRate, parentFeedbackScore, classesMissed, overallScore, lastCalculatedAt, levelHistory[{month,year,level,score,calculatedAt}].</td></tr>
+<tr><td><b>tutoring-requests</b></td><td>tenantId, studentId, teacherId?, subject, notes, proposedSlots[{date,startTime,endTime}], confirmedSlot, status(PENDING/ACCEPTED/REJECTED/COMPLETED), rejectionReason, teacherNotes, batchId?, scheduledClassId?, creditCostSnapshot, teacherRateSnapshot, creditHoldId→CreditTransaction.</td></tr>
+<tr><td><b>consent-records</b></td><td>tenantId, studentId, parentId, consentType(VIDEO_RECORDING/DATA_PROCESSING/PHOTO_USAGE), granted, grantedAt, revokedAt, ipAddress, consentVersion, notes.</td></tr>
+<tr><td><b>call-escalations</b></td><td>tenantId, scheduledClassId, teacherId, callAttempts[{attemptNumber 1-3, attemptTime, phoneNumber, callStatus(initiated/ringing/answered/no_answer/busy/failed), callDuration, callSid}], status(pending/escalating/resolved/failed), resolutionTime, teacherJoinedAt, adminNotified/At, notes.</td></tr>
+<tr><td><b>student-reminder-calls</b></td><td>tenantId, scheduledClassId, studentId, batchId, callAttempts[{…same shape…}], status(pending/calling/resolved/failed), resolvedAt, notes.</td></tr>
+<tr><td><b>teacher-lateness-reminder-log</b></td><td>tenantId, batchId, teacherId, lastNotifiedScheduledClassId, notifiedAt. (cron dedupe)</td></tr>
+</tbody></table>
+
+<h3>6.5 Communications (Messaging)</h3>
+<table><thead><tr><th>Collection</th><th>Field</th><th>Type</th><th>Notes</th></tr></thead><tbody>
+<tr><td rowspan="6"><b>conversations</b></td><td>tenantId</td><td>ObjectId→Tenant</td><td></td></tr>
+<tr><td>type</td><td>enum</td><td>direct | group</td></tr>
+<tr><td>title / groupIcon / description</td><td>String</td><td>group only</td></tr>
+<tr><td>participants</td><td>[subdoc]</td><td>{userId, joinedAt, lastReadAt, role:admin/member, isArchived, isDeleted, deletedAt, isMuted} → join table</td></tr>
+<tr><td>lastMessageText / lastMessageAt / lastMessageBy / messageCount</td><td>mixed</td><td>denormalized</td></tr>
+<tr><td>blockedUserIds[] / createdBy</td><td>mixed</td><td></td></tr>
+<tr><td rowspan="6"><b>messages</b></td><td>conversationId / senderId</td><td>ObjectId refs</td><td></td></tr>
+<tr><td>text / attachmentUrls[]</td><td>mixed</td><td></td></tr>
+<tr><td>isEdited/editedAt · isDeleted/deletedBy/deletedAt</td><td>mixed</td><td>soft delete</td></tr>
+<tr><td>isFlagged / flagReason</td><td>mixed</td><td>moderation</td></tr>
+<tr><td>replyTo / forwardedFrom</td><td>ObjectId→Message</td><td></td></tr>
+<tr><td>reactions</td><td>[subdoc]</td><td>{emoji, userId, createdAt}</td></tr>
+</tbody></table>
+
+<h3>6.6 Exams &amp; Proctoring</h3>
+
+<h4><code>questions</code> (question-bank)</h4>
+<table><thead><tr><th>Field</th><th>Type</th><th>Notes</th></tr></thead><tbody>
+<tr><td>tenantId / createdBy</td><td>ObjectId refs</td><td></td></tr>
+<tr><td>subject / topic</td><td>String</td><td></td></tr>
+<tr><td>difficulty</td><td>enum</td><td>EASY | MEDIUM | HARD</td></tr>
+<tr><td>type</td><td>enum</td><td>MCQ, MULTI_SELECT, TRUE_FALSE, SHORT_ANSWER, LONG_ANSWER, FILL_BLANK, ONE_WORD, MATCH_COLUMN</td></tr>
+<tr><td>text / imageUrl / audioUrl / explanation</td><td>String</td><td></td></tr>
+<tr><td>options</td><td>[subdoc]</td><td>{text, isCorrect}</td></tr>
+<tr><td>correctAnswer</td><td>Mixed</td><td>bool / string / [string]</td></tr>
+<tr><td>points / negativeMarks</td><td>Number</td><td></td></tr>
+<tr><td>tags[] / isActive / version</td><td>mixed</td><td>soft-delete via isActive</td></tr>
+</tbody></table>
+
+<h4><code>exams</code> &amp; <code>exam-sessions</code></h4>
+<table><thead><tr><th>Collection</th><th>Field</th><th>Type</th><th>Notes</th></tr></thead><tbody>
+<tr><td rowspan="8"><b>exams</b></td><td>tenantId / createdBy / batchId</td><td>ObjectId refs</td><td></td></tr>
+<tr><td>title / description / instructions / subject</td><td>String</td><td></td></tr>
+<tr><td>duration / totalMarks</td><td>Number</td><td>minutes</td></tr>
+<tr><td>questions</td><td>[subdoc]</td><td>{questionId→Question, points, order}</td></tr>
+<tr><td>questionSelectionMode / autoSelectRules</td><td>enum/Object</td><td>MANUAL | AUTO_RANDOM</td></tr>
+<tr><td>settings</td><td>Object→jsonb</td><td>randomizeQuestions, randomizeOptions, showCorrectAnswersAfter, negativeMarkingEnabled, passingScore, allowLateSubmission, graceWindowMinutes, maxAttempts</td></tr>
+<tr><td>proctoringLevel</td><td>enum</td><td>NONE | SOFT</td></tr>
+<tr><td>scheduledStartTime/EndTime · status</td><td>Date/enum</td><td>DRAFT/PUBLISHED/ACTIVE/COMPLETED/RESULTS_PUBLISHED</td></tr>
+<tr><td rowspan="9"><b>exam-sessions</b></td><td>tenantId / examId / studentId</td><td>ObjectId refs</td><td>unique (tenantId,examId,studentId)</td></tr>
+<tr><td>startedAt / endedAt / serverDeadline / lastSavedAt</td><td>Date</td><td></td></tr>
+<tr><td>status</td><td>enum</td><td>NOT_STARTED/IN_PROGRESS/SUBMITTED/AUTO_SUBMITTED/TIMED_OUT/VOIDED</td></tr>
+<tr><td>answers</td><td>Map→jsonb</td><td>questionId → {selectedOptionIndices[], textAnswer, submittedAt}</td></tr>
+<tr><td>assignedQuestions</td><td>[subdoc]</td><td>{questionId, order} randomization snapshot</td></tr>
+<tr><td>score / totalPoints / percentage / passed</td><td>mixed</td><td></td></tr>
+<tr><td>teacherRemarks / gradedBy / gradedAt</td><td>mixed</td><td>manual grading</td></tr>
+<tr><td>proctoringFlags</td><td>Object→jsonb</td><td>tabSwitches, fullscreenExits, copyAttempts, rightClicks, shortcutAttempts, totalFlags, severityLevel</td></tr>
+<tr><td>isReconnection / disconnectedAt / reconnectedAt</td><td>mixed</td><td></td></tr>
+</tbody></table>
+
+<h4>Proctoring logs &amp; incidents (exam + quiz)</h4>
+<table><thead><tr><th>Collection</th><th>Key Fields &amp; Enums</th></tr></thead><tbody>
+<tr><td><b>proctoring-log</b></td><td>tenantId, sessionId→ExamSession, studentId, eventType(TAB_SWITCH, FULLSCREEN_EXIT, COPY_ATTEMPT, PASTE_ATTEMPT, RIGHT_CLICK, SHORTCUT_KEY, PRINT_ATTEMPT, BLUR, BEFOREUNLOAD), timestamp, metadata, severity(LOW/MEDIUM/HIGH).</td></tr>
+<tr><td><b>incident-report</b></td><td>tenantId, sessionId, examId, reviewedBy, reviewedAt, flagSummary{…counts…,total}, disposition(PENDING/DISMISSED/CONFIRMED_VIOLATION), action(NONE/WARNING/PENALTY_APPLIED/SESSION_VOIDED), remarks.</td></tr>
+<tr><td><b>quiz-proctoring-log</b></td><td>tenantId, sessionId→QuizProctoringSession, learnerId, eventType(all exam events + FACE_NO_FACE, FACE_MULTIPLE, FACE_LOOKING_AWAY, FACE_LOOKING_DOWN, FACE_EYES_CLOSED, FACE_TOO_FAR, FACE_CAMERA_ERROR), timestamp, metadata, severity.</td></tr>
+<tr><td><b>quiz-incident-report</b></td><td>tenantId, sessionId, assessmentId(String), reviewedBy/At, flagSummary{…+face flags…}, disposition, action, remarks.</td></tr>
+<tr><td><b>quiz-proctoring-session</b></td><td>tenantId, assessmentId, courseId, learnerId, startedAt/endedAt/serverDeadline, status(IN_PROGRESS/SUBMITTED/AUTO_SUBMITTED/VOIDED), proctoringFlags{…+face counts…}, isReconnection/disconnectedAt/reconnectedAt, selectedQuestionIndices[], selectedAdditionalIndices[], questionManifest[{pool,index}]. Unique (tenantId,assessmentId,learnerId).</td></tr>
+</tbody></table>
+
+<h3>6.7 Audit, Analytics &amp; Privacy</h3>
+<table><thead><tr><th>Collection</th><th>Key Fields &amp; Enums</th></tr></thead><tbody>
+<tr><td><b>activity-logs</b></td><td>tenantId?, userId?, type(upload/storage_threshold/course_created/course_deleted/tenant_created/tenant_updated/user_action), message, metadata, timestamp.</td></tr>
+<tr><td><b>tenant-logs</b></td><td>tenantId, actionType(New Learner Invited, Course Assigned to User/Group, Course Completed, Quiz Passing Score Updated, User Activated/Deactivated, Branding Updated, Storage Requested, Quiz Reset by Manager, User Nudged by Manager, Attendance Marked by Manager, Certificate Approved by Manager, Team Report Exported by Manager), description, performedBy, metadata, ipAddress.</td></tr>
+<tr><td><b>analytics-events</b></td><td>tenantId, userId?, eventType, eventData(jsonb), sessionId, deviceType, ipAddress, createdAt.</td></tr>
+<tr><td><b>analytics-cache</b></td><td>tenantId, metricKey, data(jsonb), calculatedAt, expiresAt(TTL), filters{dateFrom,dateTo,batchId,teacherId}.</td></tr>
+<tr><td><b>privacy-audit-log</b></td><td>tenantId, userId, userRole, endpoint, method, fieldsStripped[], recordsAffected, ipAddress, userAgent.</td></tr>
+</tbody></table>
+
+<h2 id="api">7. Complete API Route Reference (by Module)</h2>
+<p class="small">All routes require <code>JwtAuthGuard</code> unless marked <b>Public</b>. Role restrictions via <code>@Roles(...)</code> shown in the Access column. Tenant-scoped endpoints additionally enforce <code>TenantGuard</code>.</p>
+
+<h3>7.1 Auth &amp; Users</h3>
+<table><thead><tr><th>Method</th><th>Path</th><th>Access</th><th>Purpose</th></tr></thead><tbody>
+<tr><td class="method POST">POST</td><td>/auth/register</td><td>SUPER/TENANT/SUB_ADMIN</td><td>Create user</td></tr>
+<tr><td class="method POST">POST</td><td>/auth/login</td><td>Public</td><td>Email/password login → JWT</td></tr>
+<tr><td class="method GET">GET</td><td>/auth/profile</td><td>Auth</td><td>Current user profile</td></tr>
+<tr><td class="method PUT">PUT/PATCH</td><td>/auth/profile</td><td>Auth</td><td>Update profile</td></tr>
+<tr><td class="method POST">POST</td><td>/auth/profile/upload-photo · /presigned-url</td><td>Auth</td><td>Profile picture to S3</td></tr>
+<tr><td class="method GET">GET</td><td>/auth/google(/callback) · /auth/microsoft(/callback)</td><td>Public (OAuth)</td><td>Google / Microsoft SSO</td></tr>
+<tr><td class="method POST">POST</td><td>/auth/forgot-password · /verify-otp · /reset-password</td><td>Public</td><td>OTP password reset</td></tr>
+<tr><td class="method POST">POST</td><td>/auth/change-password</td><td>Auth</td><td>Change own password</td></tr>
+<tr><td class="method POST">POST</td><td>/auth/validate-setup-token · /setup-password</td><td>Public</td><td>First-time password setup</td></tr>
+<tr><td class="method POST">POST</td><td>/auth/admin-reset-password</td><td>SUPER/TENANT/SUB_ADMIN</td><td>Force-reset a user's password</td></tr>
+<tr><td class="method POST">POST/DEL</td><td>/auth/users/:id/link-student · link-parent · unlink-student</td><td>SUPER/TENANT/SUB_ADMIN</td><td>Parent↔student linking</td></tr>
+<tr><td class="method POST">POST/GET/PATCH</td><td>/users/by-ids · /users · /users/search · /users/:id (+ toggle-active, promote/revoke-subadmin)</td><td>ADMIN / Auth</td><td>User listing, update, role mgmt</td></tr>
+<tr><td class="method POST">POST</td><td>/bulk-upload/teachers · /students · /parents · /template/:type</td><td>SUPER/TENANT/SUB_ADMIN</td><td>CSV bulk import</td></tr>
+</tbody></table>
+
+<h3>7.2 Tenants, Courses &amp; Content</h3>
+<table><thead><tr><th>Method</th><th>Path</th><th>Access</th><th>Purpose</th></tr></thead><tbody>
+<tr><td class="method GET">GET</td><td>/tenants/branding/public</td><td>Public</td><td>Branding pre-login</td></tr>
+<tr><td class="method POST">POST/GET/PATCH/DEL</td><td>/tenants (+ /:id, /onboard, /create-admin-credentials)</td><td>SUPER_ADMIN</td><td>Tenant CRUD &amp; onboarding</td></tr>
+<tr><td class="method GET">GET</td><td>/tenants/current · /current/features · /usage · /storage-check</td><td>Auth</td><td>Tenant config, features, storage</td></tr>
+<tr><td class="method PATCH">PATCH/GET</td><td>/tenants/:id/video-config · /branding · /language-config</td><td>TENANT/SUB/SUPER</td><td>Per-tenant settings</td></tr>
+<tr><td class="method POST">POST/GET/PUT/DEL</td><td>/courses (+ /:id, /modules, /modules/:mid, /lessons)</td><td>Auth (tenant)</td><td>Course/module/lesson CRUD</td></tr>
+<tr><td class="method GET">GET</td><td>/courses/master/all · /master/:id</td><td>SUPER_ADMIN</td><td>Master library</td></tr>
+<tr><td class="method POST">POST/GET</td><td>/assessments (+ /:id, /submit)</td><td>Auth (tenant)</td><td>Quiz CRUD &amp; submit</td></tr>
+<tr><td class="method POST">POST</td><td>/scorm/parse · /extract · /validate</td><td>ADMIN/TEACHER</td><td>SCORM handling</td></tr>
+<tr><td class="method POST">POST</td><td>/upload/presigned-url · /tus · /welcome-kit</td><td>Auth</td><td>File uploads</td></tr>
+<tr><td class="method POST">POST/GET</td><td>/shared-content/push-to-all/:courseId · /tenant</td><td>ADMIN</td><td>Distribute master courses</td></tr>
+<tr><td class="method POST">POST/GET/PATCH/DEL</td><td>/groups (+ /:id, /members)</td><td>SUPER/TENANT/SUB_ADMIN</td><td>User groups</td></tr>
+<tr><td class="method GET">GET/POST</td><td>/email-templates/:type</td><td>SUPER_ADMIN</td><td>Email templates</td></tr>
+<tr><td class="method GET">GET/POST</td><td>/academic-config/subjects · /sections</td><td>Auth</td><td>Subjects &amp; sections</td></tr>
+<tr><td class="method POST">POST/GET/PATCH/DEL</td><td>/academic-calendar (+ /current-term, /:year, /:id/terms, /:id/holidays)</td><td>Auth</td><td>Academic calendar</td></tr>
+<tr><td class="method POST">POST</td><td>/transcription/generate-captions</td><td>SUPER/TENANT/SUB_ADMIN</td><td>Whisper captions</td></tr>
+</tbody></table>
+
+<h3>7.3 Progress, Assignments, Certificates, Compliance, Manager, Learner</h3>
+<table><thead><tr><th>Method</th><th>Path</th><th>Access</th><th>Purpose</th></tr></thead><tbody>
+<tr><td class="method POST">POST/GET/PATCH</td><td>/progress · /progress/my · /progress/:courseId · /sync-progress</td><td>Auth (tenant)</td><td>Learner progress</td></tr>
+<tr><td class="method PATCH">PATCH/POST</td><td>/player/sync · /player/xapi-statements</td><td>Auth (tenant)</td><td>SCORM/xAPI sync</td></tr>
+<tr><td class="method PATCH">PATCH/POST/GET</td><td>/learner/sync-progress · /submit-quiz · /my-certificates · /enrolled-courses · /course-progress/:id</td><td>Auth (tenant)</td><td>Learner self-service</td></tr>
+<tr><td class="method GET">GET/POST/DEL</td><td>/course-assignments/courses · /assign · /my-assignments · /:id</td><td>ADMIN / Auth</td><td>Assign courses to users/groups</td></tr>
+<tr><td class="method POST">POST/GET/PUT/DEL</td><td>/certificates (+ /:id, /:id/generate, /issued/list)</td><td>SUPER/TENANT/SUB_ADMIN</td><td>Certificate templates &amp; issuance</td></tr>
+<tr><td class="method GET">GET</td><td>/certificates/issued/:id/download · /verify/:id</td><td>Public</td><td>Download / verify certificate</td></tr>
+<tr><td class="method GET">GET/POST</td><td>/compliance/analytics · /nudge-users · /nudge-all</td><td>TENANT/SUB_ADMIN</td><td>Compliance &amp; nudges</td></tr>
+<tr><td class="method GET">GET/POST</td><td>/manager/team-stats · /team-list · /learner-courses(+/:courseId) · /team/:id · /bulk-assign · /nudge/:id · /quiz-reset · /attendance · /export-report</td><td>MANAGER</td><td>Team management</td></tr>
+<tr><td class="method GET">GET</td><td>/gradebook/compute · /student/:id(/transcript) · /batch/:id/rankings</td><td>Auth</td><td>Grades, transcript, rankings</td></tr>
+<tr><td class="method POST">POST/GET</td><td>/consent/grant · /revoke · /student/:id · /check/:sid/:type · /pending</td><td>Auth</td><td>Recording/data consents</td></tr>
+</tbody></table>
+
+<h3>7.4 School Operations</h3>
+<table><thead><tr><th>Method</th><th>Path</th><th>Access</th><th>Purpose</th></tr></thead><tbody>
+<tr><td class="method POST">POST/GET/PATCH/DEL</td><td>/batches (+ /:id, /students, /statistics, /teacher/my-batches, /student/my-batches, /:id/unarchive, /:id/permanent)</td><td>ADMIN / TEACHER / LEARNER</td><td>Batch CRUD &amp; enrolment</td></tr>
+<tr><td class="method POST">POST/GET/PATCH</td><td>/scheduling/classes/generate · /teacher/classes · /student/classes · /classes/:id(/start,/complete,/cancel,/reschedule) · /admin/session-join-timestamps</td><td>ADMIN/TEACHER/LEARNER/PARENT</td><td>Class scheduling &amp; lifecycle</td></tr>
+<tr><td class="method GET">GET/POST/PATCH</td><td>/credits/my-balance · /my-transactions · /packages · /allocate · /refund · /balance/:id · /student/:id(/transactions,/balance)</td><td>ADMIN / PARENT / LEARNER</td><td>Credits</td></tr>
+<tr><td class="method POST">POST/GET/PATCH</td><td>/attendance/mark · /class/:id · /student/:id · /batch/:id/report · /:id</td><td>ADMIN / TEACHER</td><td>Attendance</td></tr>
+<tr><td class="method POST">POST/GET/PATCH/DEL</td><td>/homework (+ /:id, /publish, /close, /submit, /submissions, /stats, /teacher, /student/submissions, /submissions/:id/grade)</td><td>ADMIN/TEACHER/LEARNER/PARENT</td><td>Homework lifecycle</td></tr>
+<tr><td class="method POST">POST/GET/PATCH</td><td>/payouts/generate · /payouts · /:id · /:id/adjustment · /submit · /approve · /reject · /pay · /teacher</td><td>ADMIN / TEACHER</td><td>Teacher payouts</td></tr>
+<tr><td class="method POST">POST/GET/PATCH</td><td>/meetings (+ /instant, /:id, /start, /end, /cancel, /recording, /join, /leave, /attendance, /recordings, /live-status/:id, /webhook/zoom)</td><td>ADMIN/TEACHER/(PARENT) · webhook Public</td><td>Video meetings</td></tr>
+<tr><td class="method POST">POST/GET/PATCH</td><td>/non-teaching-work (+ /admin, /teacher, /:id/complete, /approve, /reject)</td><td>ADMIN / TEACHER</td><td>Non-teaching tasks</td></tr>
+<tr><td class="method GET">GET/POST</td><td>/teacher-levels/me · /all · /recalculate(/:id)</td><td>TEACHER / ADMIN</td><td>Teacher levels</td></tr>
+<tr><td class="method GET">GET/PUT</td><td>/teacher-availability/me · /all · /:teacherId</td><td>TEACHER / ADMIN</td><td>Availability slots</td></tr>
+<tr><td class="method GET">GET</td><td>/escalations/admin · /teacher · /student-reminders/admin · /teacher</td><td>ADMIN / TEACHER</td><td>Call escalations &amp; reminders</td></tr>
+<tr><td class="method GET">GET/PATCH</td><td>/demo-analytics (+ /teacher-performance, /student-journey/:id, /convert/:batchId)</td><td>TENANT/SUB_ADMIN</td><td>Demo/trial conversion</td></tr>
+<tr><td class="method POST">POST/GET/PATCH</td><td>/tutoring-requests (+ /available-teachers, /student, /teacher, /admin, /:id/accept, /reject, /complete)</td><td>LEARNER/TEACHER/ADMIN</td><td>1:1 tutoring marketplace</td></tr>
+</tbody></table>
+
+<h3>7.5 Messaging, Exams, Proctoring, Analytics, Audit</h3>
+<table><thead><tr><th>Method</th><th>Path</th><th>Access</th><th>Purpose</th></tr></thead><tbody>
+<tr><td class="method GET">GET/POST/PATCH/DEL</td><td>/messages/contacts · /conversations(+/:id,/messages,/archive,/mute,/read,/group,/participants,/block) · /msg/:id(/react,/forward,/report)</td><td>Auth + Socket.IO</td><td>Messaging (also realtime <code>/messages</code> namespace)</td></tr>
+<tr><td class="method POST">POST/GET/PUT</td><td>/question-bank (+ /:id, /bulk, /subjects, /topics, /tags, /count)</td><td>ADMIN / TEACHER</td><td>Question bank</td></tr>
+<tr><td class="method POST">POST/GET/PUT</td><td>/exams (+ /:id, /student, /publish, /publish-results)</td><td>ADMIN/TEACHER/LEARNER</td><td>Exam creation &amp; publishing</td></tr>
+<tr><td class="method POST">POST/GET/PATCH</td><td>/exam-sessions/:examId/start · /:id/save · /submit · /status · /result · /my-session · /student/:id/results · /exam/:id/submissions · /evaluate · /void · /analytics</td><td>LEARNER/ADMIN/TEACHER/PARENT</td><td>Exam attempts &amp; grading (+ <code>/exams</code> WS timer)</td></tr>
+<tr><td class="method POST">POST/GET/PATCH</td><td>/proctoring/:sid/event · /log · /exam/:id/incidents · /:sid/incident</td><td>LEARNER / ADMIN / TEACHER</td><td>Exam proctoring</td></tr>
+<tr><td class="method POST">POST/GET/PATCH</td><td>/quiz-proctoring/start · /:sid/event · /complete · /session/:aid · /log · /assessment/:id/incidents · /incidents/all · /:sid/incident · /allow-retake</td><td>LEARNER / ADMIN / SUB / MANAGER</td><td>Quiz proctoring (face + behaviour)</td></tr>
+<tr><td class="method GET">GET/POST</td><td>/analytics/corporate(+/learner-courses,/course/:id) · /school · /attendance-trend · /teacher-performance · /teacher-dashboard · /student/:id · /batch/:id · /financial · /arr · /engagement · /batch-utilization · /track · /export(/csv) · /comparison</td><td>ADMIN/TEACHER/PARENT</td><td>Analytics &amp; exports</td></tr>
+<tr><td class="method GET">GET/POST</td><td>/audit/storage/global · /storage/tenants · /activity-logs · /upgrade-invoice/* · /email-status/:id · /tenant-audit/logs · /export-pdf</td><td>SUPER / TENANT / SUB_ADMIN</td><td>Audit &amp; storage</td></tr>
+</tbody></table>
+
+<h2 id="migration">8. MongoDB → PostgreSQL Migration Guidance</h2>
+
+<h3>8.1 Type &amp; Relationship Mapping</h3>
+<table><thead><tr><th>MongoDB / Mongoose</th><th>PostgreSQL</th><th>Guidance</th></tr></thead><tbody>
+<tr><td><code>_id: ObjectId</code></td><td><code>uuid</code> (or <code>bigserial</code>)</td><td>Use <code>uuid</code> + a lookup map during ETL to preserve references; or keep the 24-char hex as <code>char(24)</code> short-term</td></tr>
+<tr><td><code>ObjectId ref→X</code></td><td><code>uuid</code> FK + <code>REFERENCES</code></td><td>Add FK constraints &amp; indexes; enforce <code>ON DELETE</code> rules previously implicit</td></tr>
+<tr><td>Embedded array of subdocs</td><td>Child table (1:N) <b>or</b> <code>jsonb</code></td><td>Normalize high-query arrays (batch.schedule, payout.adjustments, message.reactions, exam.questions, levelHistory, callAttempts). Keep low-value config blobs as <code>jsonb</code></td></tr>
+<tr><td><code>Object</code> config blobs (featureConfig, settings, providerMetadata, lessonProgress, answers Map)</td><td><code>jsonb</code></td><td>Keep as <code>jsonb</code>; add GIN indexes where filtered</td></tr>
+<tr><td><code>enum</code> string fields</td><td>Postgres <code>ENUM</code> or <code>text + CHECK</code></td><td>All enum value lists are documented in §6 — reproduce exactly</td></tr>
+<tr><td>Mongoose <code>timestamps</code></td><td><code>created_at / updated_at timestamptz</code></td><td>Default <code>now()</code>; trigger for updated_at</td></tr>
+<tr><td>TTL index (otps, analytics-cache)</td><td>Scheduled cleanup job / partial index</td><td>Postgres has no TTL — use a cron <code>DELETE WHERE expires_at &lt; now()</code></td></tr>
+<tr><td>Unique compound (tenantId,…)</td><td><code>UNIQUE</code> constraint</td><td>Sparse-unique → partial unique index <code>WHERE col IS NOT NULL</code></td></tr>
+</tbody></table>
+
+<h3>8.2 Recommended Table Groups &amp; Normalization Decisions</h3>
+<ul>
+<li><b>Join tables to create</b> from arrays: <code>group_members</code>, <code>batch_students</code>, <code>batch_substitute_teachers</code>, <code>course_modules</code> (order), <code>conversation_participants</code>, <code>course_selected_tenants</code>, <code>certificate_selected_tenants</code>, <code>user_parents/children</code>, <code>exam_questions</code>, <code>payout_completed_classes</code>.</li>
+<li><b>Child tables</b> for queried subdocs: <code>lessons</code> (from module.lessons), <code>payout_adjustments</code>, <code>message_reactions</code>, <code>call_attempts</code> (escalation + student-reminder), <code>teacher_level_history</code>, <code>batch_schedule</code>, <code>academic_terms</code>, <code>academic_holidays</code>, <code>homework_rubric_scores</code>.</li>
+<li><b>Keep as <code>jsonb</code></b>: tenant *Config blobs, exam/assessment settings, progress.lessonProgress, exam-session.answers, proctoringFlags, providerMetadata, notificationPreferences, analytics event/cache data.</li>
+</ul>
+
+<h3>8.3 Migration Sequence (suggested)</h3>
+<ol>
+<li>Stand up Postgres schema with an ORM (<b>Prisma</b> recommended for Next.js) reproducing §6 exactly, including enums &amp; FKs.</li>
+<li>Build an ETL that walks each Mongo collection, generates a UUID per <code>_id</code>, stores an old→new id map, then re-points all refs.</li>
+<li>Migrate in dependency order: tenants → users → courses/modules/lessons/assessments → progress/assignments/certificates → school-ops → exams/proctoring → logs/analytics.</li>
+<li>Replace Mongoose models with ORM models module-by-module; the REST contract (§7) stays identical so the frontend is unaffected.</li>
+<li>Swap TTL indexes for cron cleanups; re-create unique &amp; performance indexes noted in §6.</li>
+<li>Keep Redis/Bull, S3, Socket.IO, Twilio, OpenAI, OAuth unchanged — none depend on the database engine.</li>
+</ol>
+<div class="callout green"><b>Key insight:</b> Because every endpoint is already tenant-scoped and DTO-validated, the API surface (§7) is engine-agnostic. The migration is almost entirely at the persistence layer — controllers, guards, queues, gateways and integrations port across unchanged.</div>
+
+<p class="small" style="margin-top:30px;text-align:center;color:#94a3b8">— End of Backend Documentation · QuikSkill LMS · Document 1 of 2 —</p>
+
+</body>
+</html>
+
+

@@ -125,6 +125,21 @@ export const APP_DETAILS: Record<string, AppDetail> = {
     stats: { rating: "4.7", language: "EN", category: "Finance", updated: "Recently" },
     screenshots: [],
   },
+  quiklms: {
+    accent: "#0D9488",
+    tagline: "Build, deliver, and track learning in one place.",
+    overview:
+      "QuikSkill LMS is your learning management system — author courses, run cohorts, and track every learner's progress. Deliver lessons, quizzes, and certificates while your team stays connected to the rest of your QuikIT workspace.",
+    features: [
+      "Course & lesson authoring",
+      "Quizzes & assessments",
+      "Cohorts & enrollments",
+      "Progress tracking & certificates",
+      "Learner dashboards & reports",
+    ],
+    stats: { rating: "—", language: "EN", category: "Learning", updated: "Recently" },
+    screenshots: [],
+  },
   admin: {
     accent: "#6B7280",
     tagline: "Administer your organization across every app.",

@@ -7,7 +7,7 @@ datasource db {
   provider  = "postgresql"
   url       = env("DATABASE_URL")
   directUrl = env("DATABASE_URL_DIRECT")
-  schemas   = ["app_quikcrm", "app_quikhrms", "app_quikinfra", "app_quikscale", "app_quiksocial", "app_quiktrack", "app_quikvc", "auth", "public", "quikit"]
+  schemas   = ["app_quikcrm", "app_quikhrms", "app_quikinfra", "app_quiklms", "app_quikscale", "app_quiksocial", "app_quiktrack", "app_quikvc", "auth", "public", "quikit"]
 }
 
 model App {
@@ -15439,3 +15439,2480 @@ model Invitation {
 // migration — HRMS no longer has its own login/2FA. They had zero code
 // references and no DB tables (schema-only drift). `RefreshToken` was also
 // removed (custom-auth refresh tokens, superseded by central SSO).
+
+
+// ============================================================================
+// QuikLMS (app_quiklms) — folded in from the standalone quikskill_lms DB.
+// Models/enums prefixed `Lms`; tables preserved via @@map. tenantId -> orgId
+// remap is a follow-up. See apps/quiklms/INTEGRATION-PLAN.md.
+// ============================================================================
+
+// ============================================================================
+// QuikSkill LMS — Prisma schema (PostgreSQL)
+// Phase 1 of the NestJS/Mongo → Next.js/Postgres re-platform.
+//
+// Source of truth: the 55 Mongoose schemas under QuikSkillsbackend/src.
+//
+// FK STRATEGY = HYBRID (approved):
+//   • Real Prisma relations for OWNING AGGREGATES (Course→Module→Lesson,
+//     Exam→ExamQuestion, Conversation→Message→Reaction, Batch→children, …)
+//     and the §8 JOIN/CHILD tables (group_members, batch_students, user_parents,
+//     exam_questions, payout_*, course prerequisites, the split-out subdoc arrays).
+//   • `tenantId` and every ACTOR reference (userId / teacherId / learnerId /
+//     studentId / createdBy / authorId / …) are indexed `String` SCALARS with
+//     NO relation — identical to MongoDB (which enforced no FKs) and enforced at
+//     the app layer by the mandatory tenantScope() helper (Phase 2).
+//   • CROSS-aggregate references (notably `courseId`, which in the legacy data
+//     points at EITHER the `courses` OR `mastercourses` collection) are also
+//     scalar Strings, so the ETL never fails on a mixed-target id.
+//
+// CONVENTIONS:
+//   • ObjectId → String @id @default(uuid())
+//   • Mongo TTL collections (otps 600s, analytics-cache) keep `expiresAt`;
+//     a worker cron purges them (Phase 4).
+//   • Json columns per §8: all *Config blobs, exam/assessment settings,
+//     progress.lessonProgress, examSession.answers, proctoringFlags,
+//     providerMetadata, notificationPreferences, textPlacements, eventData, …
+//   • Enum member name = stored value when it is a valid identifier; otherwise
+//     an identifier + @map("<exact stored value>").
+//   • Join/child tables intentionally OMIT a denormalized tenantId — they are
+//     tenant-scoped through their parent (documented deviation from the blanket
+//     "all tables get tenantId" rule, to avoid denormalization drift).
+// ============================================================================
+
+// ════════════════════════════════════════════════════════════════════════════
+// ENUMS
+// ════════════════════════════════════════════════════════════════════════════
+
+enum LmsUserRole {
+  SUPER_ADMIN
+  TENANT_ADMIN
+  SUB_ADMIN
+  MANAGER
+  TEACHER
+  PARENT
+  LEARNER
+  @@schema("app_quiklms")
+}
+
+enum LmsTenantType {
+  corporate
+  school
+  @@schema("app_quiklms")
+}
+
+enum LmsTenantStatus {
+  Active
+  Paused
+  Trial
+  @@schema("app_quiklms")
+}
+
+// User.rateType & TeacherPayout.rateType
+enum LmsRateType {
+  per_class
+  per_hour
+  monthly
+  hybrid
+  @@schema("app_quiklms")
+}
+
+enum LmsUserQualification {
+  PGT
+  TGT
+  PRT
+  NTT
+  Other
+  @@schema("app_quiklms")
+}
+
+enum LmsCourseStatus {
+  Draft
+  Published
+  Archived
+  @@schema("app_quiklms")
+}
+
+// Module.lessons[].type
+enum LmsLessonType {
+  Video
+  PDF
+  PPT
+  SCORM
+  Text
+  Quiz
+  Audio
+  Document
+  Slides
+  @@schema("app_quiklms")
+}
+
+enum LmsCourseLevel {
+  Beginner
+  Intermediate
+  Advanced
+  Expert
+  @@schema("app_quiklms")
+}
+
+enum LmsMasterCourseStatus {
+  Draft
+  Published
+  Archived
+  PendingTenantApproval
+  RejectedByTenantAdmin
+  PendingApproval
+  Rejected
+  Resubmitted
+  @@schema("app_quiklms")
+}
+
+// MasterCourse embedded question type
+enum LmsMasterQuestionType {
+  mcq
+  multi_select
+  true_false
+  drag_drop
+  fill_blank
+  @@schema("app_quiklms")
+}
+
+// MasterCourse embedded resource type
+enum LmsResourceType {
+  video_upload
+  video_youtube
+  video_vimeo
+  audio_upload
+  audio_soundcloud
+  document_pdf
+  document_ppt
+  document_word
+  document_excel
+  rich_text
+  scorm_12
+  scorm_2004
+  external_link
+  iframe_embed
+  @@schema("app_quiklms")
+}
+
+// Assessment.questions[].type
+enum LmsAssessmentQuestionType {
+  MCQ
+  TrueFalse @map("True/False")
+  @@schema("app_quiklms")
+}
+
+enum LmsProgressStatus {
+  NotStarted @map("Not Started")
+  InProgress @map("In Progress")
+  Overdue
+  Completed
+  Failed
+  @@schema("app_quiklms")
+}
+
+enum LmsAssignmentTargetType {
+  USER
+  GROUP
+  @@schema("app_quiklms")
+}
+
+enum LmsCertificateApprovalStatus {
+  pending_approval
+  approved
+  rejected
+  @@schema("app_quiklms")
+}
+
+enum LmsConsentType {
+  video_recording
+  data_processing
+  photo_usage
+  @@schema("app_quiklms")
+}
+
+enum LmsEmailTemplateType {
+  welcome_kit       @map("welcome-kit")
+  course_completion @map("course-completion")
+  certificate
+  upgrade_invoice   @map("upgrade-invoice")
+  @@schema("app_quiklms")
+}
+
+enum LmsBatchStatus {
+  draft
+  active
+  archived
+  @@schema("app_quiklms")
+}
+
+enum LmsBatchType {
+  regular
+  one_on_one
+  @@schema("app_quiklms")
+}
+
+enum LmsBatchSource {
+  manual
+  auto_tutoring
+  @@schema("app_quiklms")
+}
+
+enum LmsBatchClassType {
+  regular
+  demo
+  trial
+  @@schema("app_quiklms")
+}
+
+// Batch.defaultMeetingProvider (subset — no 'teams')
+enum LmsBatchMeetingProvider {
+  zoom
+  google_meet
+  jitsi
+  manual
+  @@schema("app_quiklms")
+}
+
+enum LmsClassStatus {
+  scheduled
+  in_progress
+  completed
+  cancelled
+  rescheduled
+  @@schema("app_quiklms")
+}
+
+enum LmsRescheduleApprovalStatus {
+  pending
+  approved
+  rejected
+  @@schema("app_quiklms")
+}
+
+enum LmsCreditPackageStatus {
+  active
+  exhausted
+  expired
+  @@schema("app_quiklms")
+}
+
+enum LmsTransactionType {
+  purchase
+  deduct
+  refund
+  expire
+  adjustment
+  tutoring_hold
+  tutoring_hold_release
+  tutoring_deduction
+  @@schema("app_quiklms")
+}
+
+enum LmsAttendanceStatus {
+  present
+  absent
+  late
+  excused
+  @@schema("app_quiklms")
+}
+
+enum LmsHomeworkStatus {
+  draft
+  published
+  closed
+  @@schema("app_quiklms")
+}
+
+enum LmsHomeworkType {
+  assignment
+  quiz
+  project
+  reading
+  @@schema("app_quiklms")
+}
+
+enum LmsSubmissionStatus {
+  submitted
+  graded
+  returned
+  @@schema("app_quiklms")
+}
+
+enum LmsPayoutStatus {
+  draft
+  pending
+  approved
+  paid
+  disputed
+  rejected
+  @@schema("app_quiklms")
+}
+
+enum LmsPayoutAdjustmentType {
+  bonus
+  deduction
+  reimbursement
+  @@schema("app_quiklms")
+}
+
+enum LmsPayoutSource {
+  batch
+  tutoring
+  @@schema("app_quiklms")
+}
+
+enum LmsMeetingStatus {
+  scheduled
+  started
+  ended
+  cancelled
+  @@schema("app_quiklms")
+}
+
+enum LmsMeetingProvider {
+  zoom
+  google_meet
+  teams
+  jitsi
+  manual
+  @@schema("app_quiklms")
+}
+
+enum LmsRecordingStatus {
+  pending
+  processing
+  available
+  expired
+  @@schema("app_quiklms")
+}
+
+enum LmsMeetingAttendanceRole {
+  teacher
+  student
+  @@schema("app_quiklms")
+}
+
+enum LmsDeviceType {
+  desktop
+  mobile
+  tablet
+  unknown
+  @@schema("app_quiklms")
+}
+
+enum LmsTaskCategory {
+  curriculum
+  content
+  training
+  meeting
+  other
+  @@schema("app_quiklms")
+}
+
+enum LmsTaskStatus {
+  assigned
+  in_progress
+  completed_pending
+  approved
+  rejected
+  @@schema("app_quiklms")
+}
+
+enum LmsTeacherStatus {
+  beginner
+  intermediate
+  lead
+  @@schema("app_quiklms")
+}
+
+enum LmsEscalationStatus {
+  pending
+  escalating
+  resolved
+  failed
+  @@schema("app_quiklms")
+}
+
+// Shared by CallEscalation.callAttempts & StudentReminderCall.callAttempts
+enum LmsCallStatus {
+  initiated
+  ringing
+  answered
+  no_answer
+  busy
+  failed
+  @@schema("app_quiklms")
+}
+
+enum LmsTutoringRequestStatus {
+  pending
+  accepted
+  rejected
+  completed
+  @@schema("app_quiklms")
+}
+
+enum LmsReminderCallStatus {
+  pending
+  calling
+  resolved
+  failed
+  @@schema("app_quiklms")
+}
+
+enum LmsExamStatus {
+  draft
+  published
+  active
+  completed
+  results_published
+  @@schema("app_quiklms")
+}
+
+enum LmsProctoringLevel {
+  none
+  soft
+  @@schema("app_quiklms")
+}
+
+enum LmsQuestionSelectionMode {
+  manual
+  auto_random
+  @@schema("app_quiklms")
+}
+
+enum LmsExamSessionStatus {
+  not_started
+  in_progress
+  submitted
+  auto_submitted
+  timed_out
+  voided
+  @@schema("app_quiklms")
+}
+
+// Shared by exam IncidentReport & QuizIncidentReport
+enum LmsIncidentDisposition {
+  pending
+  dismissed
+  confirmed_violation
+  @@schema("app_quiklms")
+}
+
+enum LmsIncidentAction {
+  none
+  warning
+  penalty_applied
+  session_voided
+  @@schema("app_quiklms")
+}
+
+enum LmsProctoringEventType {
+  tab_switch
+  fullscreen_exit
+  copy_attempt
+  paste_attempt
+  right_click
+  shortcut_key
+  print_attempt
+  blur
+  beforeunload
+  @@schema("app_quiklms")
+}
+
+// Shared by ProctoringLog & QuizProctoringLog
+enum LmsProctoringSeverity {
+  low
+  medium
+  high
+  @@schema("app_quiklms")
+}
+
+enum LmsQuizSessionStatus {
+  in_progress
+  submitted
+  auto_submitted
+  voided
+  @@schema("app_quiklms")
+}
+
+enum LmsQuizProctoringEventType {
+  tab_switch
+  fullscreen_exit
+  copy_attempt
+  paste_attempt
+  right_click
+  shortcut_key
+  print_attempt
+  blur
+  beforeunload
+  face_no_face
+  face_multiple
+  face_looking_away
+  face_looking_down
+  face_eyes_closed
+  face_too_far
+  face_camera_error
+  @@schema("app_quiklms")
+}
+
+// Question-bank question type
+enum LmsBankQuestionType {
+  mcq
+  multi_select
+  true_false
+  short_answer
+  long_answer
+  fill_blank
+  one_word
+  match_column
+  @@schema("app_quiklms")
+}
+
+enum LmsDifficulty {
+  easy
+  medium
+  hard
+  @@schema("app_quiklms")
+}
+
+enum LmsConversationType {
+  direct
+  group
+  @@schema("app_quiklms")
+}
+
+enum LmsConversationParticipantRole {
+  admin
+  member
+  @@schema("app_quiklms")
+}
+
+enum LmsMessageType {
+  text
+  file
+  image
+  system
+  @@schema("app_quiklms")
+}
+
+enum LmsActivityType {
+  upload
+  storage_threshold
+  course_created
+  course_deleted
+  tenant_created
+  tenant_updated
+  user_action
+  @@schema("app_quiklms")
+}
+
+enum LmsTenantActionType {
+  NewLearnerInvited            @map("New Learner Invited")
+  CourseAssignedToUser         @map("Course Assigned to User")
+  CourseAssignedToGroup        @map("Course Assigned to Group")
+  CourseCompleted              @map("Course Completed")
+  QuizPassingScoreUpdated      @map("Quiz Passing Score Updated")
+  UserActivated                @map("User Activated")
+  UserDeactivated              @map("User Deactivated")
+  BrandingUpdated              @map("Branding Updated")
+  StorageRequested             @map("Storage Requested")
+  QuizResetByManager           @map("Quiz Reset by Manager")
+  UserNudgedByManager          @map("User Nudged by Manager")
+  AttendanceMarkedByManager    @map("Attendance Marked by Manager")
+  CertificateApprovedByManager @map("Certificate Approved by Manager")
+  TeamReportExportedByManager  @map("Team Report Exported by Manager")
+  @@schema("app_quiklms")
+}
+
+// ════════════════════════════════════════════════════════════════════════════
+// FOUNDATION: tenants, users, otp, counters, groups, consent
+// ════════════════════════════════════════════════════════════════════════════
+
+model LmsTenant {
+  id                 String       @id @default(uuid())
+  name               String       @unique
+  subdomain          String       @unique
+  tenantType         LmsTenantType   @default(corporate)
+  gstNumber          String?      @unique // nullable @unique = sparse (Postgres treats NULLs as distinct)
+  dbConnectionString String?
+  status             LmsTenantStatus @default(Active)
+  tenantKey          String       @unique
+
+  // Organization profile
+  orgName       String
+  fullAddress   String
+  country       String
+  officialPhone String
+  website       String?
+  officialEmail String
+
+  // Primary contact
+  contactFirstName          String
+  contactMiddleName         String?
+  contactLastName           String
+  contactPhone              String
+  contactEmail              String
+  contactRoleInOrganization String
+
+  // Billing
+  billingFirstName  String
+  billingMiddleName String?
+  billingLastName   String
+  billingAddress    String
+
+  // Config blobs (Json per §8)
+  featureConfig     Json  @default("{}")
+  schoolConfig      Json?
+  corporateConfig   Json?
+  creditConfig      Json?
+  payoutConfig      Json?
+  videoConfig       Json? // provider credentials encrypted at rest (lib/crypto)
+  enhancementConfig Json?
+
+  // Localization
+  timezone         String   @default("UTC")
+  defaultLanguage  String   @default("en")
+  enabledLanguages String[] @default(["en"])
+  locale           String   @default("en-US")
+  currency         String   @default("USD")
+  localeSettings   Json? // { dateFormat, timeFormat, firstDayOfWeek }
+
+  // Storage & branding
+  storageLimit   Int     @default(2) // GB
+  logoUrl        String?
+  faviconUrl     String?
+  primaryColor   String  @default("#3B82F6")
+  secondaryColor String  @default("#1E40AF")
+
+  // Auth0 integration
+  auth0OrganizationId String?
+  auth0UserId         String?
+  loginUrl            String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([tenantType, status])
+  @@map("tenants")
+  @@schema("app_quiklms")
+}
+
+model LmsUser {
+  id            String    @id @default(uuid())
+  email         String // lowercased/trimmed in app layer
+  password      String? // null for OAuth users
+  firstName     String
+  lastName      String
+  role          LmsUserRole  @default(LEARNER)
+  secondaryRole LmsUserRole?
+  tenantId      String? // scalar — global super-admins have no tenant
+  managerId     String? // corporate team manager (scalar self-ref)
+  isActive      Boolean   @default(true)
+
+  // Parent-child linking (graph modelled via UserParent join)
+  parentEmail      String? // deferred-link placeholder during bulk upload
+  guardianContact  String?
+  phone            String?
+  guardianRelation String?
+
+  // School-specific
+  grade         String?
+  subjects      String[]           @default([])
+  ratePerClass  Float?
+  ratePerHour   Float?
+  rateType      LmsRateType?          @default(per_class)
+  qualification LmsUserQualification?
+  monthlyPayout Float?
+  employeeId    String?
+  studentId     String?
+  parentCode    String?
+  dateOfBirth   DateTime?
+  section       String?
+
+  // Teacher availability (SCH-005) — split to UserAvailabilitySlot child
+  availableSlots     LmsUserAvailabilitySlot[]
+  maxSlotsPerWeek    Int?                   @default(0)
+  tutoringEnabled    Boolean                @default(false)
+  tutoringCreditCost Float?
+
+  // Class statistics
+  classesCompleted               Int?   @default(0)
+  classesMissed                  Int?   @default(0)
+  classesCancelled               Int?   @default(0)
+  classesRescheduledAndCompleted Int?   @default(0)
+  punctualityScore               Float? @default(0)
+
+  // Authentication
+  provider                 String?
+  providerId               String?
+  profilePicture           String?
+  aiApiKey                 String? // encrypted (lib/crypto)
+  mustChangePassword       Boolean   @default(true)
+  passwordSetupToken       String?
+  passwordSetupTokenExpiry DateTime?
+  activeSessionId          String? // single-session enforcement
+
+  // Gamification
+  currentStreak    Int       @default(0)
+  totalPoints      Int       @default(0)
+  lastActivityDate DateTime?
+
+  // Localization & notifications
+  preferredLanguage       String  @default("en")
+  timezone                String?
+  notificationPreferences Json? // defaults applied in service layer
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // parent↔child graph
+  children LmsUserParent[] @relation("UserChildren") // rows where this user is the parent
+  parents  LmsUserParent[] @relation("UserParents") // rows where this user is the child
+
+  @@unique([tenantId, studentId]) // sparse per-tenant unique (NULL-distinct)
+  @@unique([tenantId, employeeId])
+  @@unique([tenantId, parentCode])
+  @@index([tenantId, role])
+  @@index([tenantId, grade])
+  @@index([tenantId, email])
+  @@index([tenantId, totalPoints(sort: Desc)])
+  @@index([tenantId, currentStreak(sort: Desc)])
+  @@index([tenantId, parentEmail])
+  @@index([managerId])
+  @@map("users")
+  @@schema("app_quiklms")
+}
+
+// User.availableSlots[] (SCH-005)
+model LmsUserAvailabilitySlot {
+  id        String @id @default(uuid())
+  userId    String
+  user      LmsUser   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  dayOfWeek Int // 0-6
+  startTime String
+  endTime   String
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([userId])
+  @@map("user_availability_slots")
+  @@schema("app_quiklms")
+}
+
+// parent↔child link (user_parents)
+model LmsUserParent {
+  id       String @id @default(uuid())
+  parentId String
+  childId  String
+  parent   LmsUser   @relation("UserChildren", fields: [parentId], references: [id], onDelete: Cascade)
+  child    LmsUser   @relation("UserParents", fields: [childId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([parentId, childId])
+  @@index([childId])
+  @@map("user_parents")
+  @@schema("app_quiklms")
+}
+
+model LmsOtp {
+  id        String   @id @default(uuid())
+  email     String // lowercased/trimmed
+  otp       String // 4-digit
+  expiresAt DateTime // TTL 600s — purged by worker cron
+  isUsed    Boolean  @default(false)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([email])
+  @@index([expiresAt])
+  @@map("otps")
+  @@schema("app_quiklms")
+}
+
+model LmsCounter {
+  id       String @id @default(uuid())
+  tenantId String
+  type     String // 'teacher' | 'student' | 'parent'
+  seq      Int    @default(0)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([tenantId, type])
+  @@map("counters")
+  @@schema("app_quiklms")
+}
+
+model LmsGroup {
+  id          String        @id @default(uuid())
+  tenantId    String
+  name        String
+  description String?
+  createdBy   String? // actor scalar
+  members     LmsGroupMember[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([tenantId, name])
+  @@index([tenantId])
+  @@map("groups")
+  @@schema("app_quiklms")
+}
+
+// Group.memberIds[] (group_members)
+model LmsGroupMember {
+  id      String @id @default(uuid())
+  groupId String
+  group   LmsGroup  @relation(fields: [groupId], references: [id], onDelete: Cascade)
+  userId  String // actor scalar
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([groupId, userId])
+  @@index([userId])
+  @@map("group_members")
+  @@schema("app_quiklms")
+}
+
+model LmsConsentRecord {
+  id             String      @id @default(uuid())
+  tenantId       String
+  studentId      String // actor scalar
+  parentId       String // actor scalar
+  consentType    LmsConsentType
+  granted        Boolean     @default(false)
+  grantedAt      DateTime?
+  revokedAt      DateTime?
+  ipAddress      String?
+  consentVersion String      @default("1.0")
+  notes          String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([tenantId, studentId, consentType])
+  @@index([tenantId, parentId])
+  @@map("consent_records")
+  @@schema("app_quiklms")
+}
+
+// ════════════════════════════════════════════════════════════════════════════
+// COURSES: course, module, lesson, master-course, assessment, quiz-attempt
+// ════════════════════════════════════════════════════════════════════════════
+
+model LmsCourse {
+  id           String       @id @default(uuid())
+  tenantId     String? // optional for master courses
+  title        String
+  category     String?
+  description  String?
+  authorId     String // actor scalar
+  status       LmsCourseStatus @default(Draft)
+  thumbnailUrl String?
+  isMaster     Boolean      @default(false)
+  isFeatured   Boolean      @default(false)
+  version      Int          @default(1)
+
+  modules         LmsModule[]
+  selectedTenants LmsCourseSelectedTenant[]
+  prerequisites   LmsCoursePrerequisite[]   @relation("CourseToPrereqs")
+  prerequisiteFor LmsCoursePrerequisite[]   @relation("CoursePrereqOf")
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([tenantId, status])
+  @@index([isMaster])
+  @@index([isFeatured, status])
+  @@index([category, tenantId])
+  @@map("courses")
+  @@schema("app_quiklms")
+}
+
+// Course.selectedTenants[] (course_selected_tenants)
+model LmsCourseSelectedTenant {
+  id       String @id @default(uuid())
+  courseId String
+  course   LmsCourse @relation(fields: [courseId], references: [id], onDelete: Cascade)
+  tenantId String
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([courseId, tenantId])
+  @@index([tenantId])
+  @@map("course_selected_tenants")
+  @@schema("app_quiklms")
+}
+
+// Course.prerequisites[] (course prerequisites self-join)
+model LmsCoursePrerequisite {
+  id             String @id @default(uuid())
+  courseId       String
+  prerequisiteId String
+  course         LmsCourse @relation("CourseToPrereqs", fields: [courseId], references: [id], onDelete: Cascade)
+  prerequisite   LmsCourse @relation("CoursePrereqOf", fields: [prerequisiteId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([courseId, prerequisiteId])
+  @@index([prerequisiteId])
+  @@map("course_prerequisites")
+  @@schema("app_quiklms")
+}
+
+model LmsModule {
+  id           String  @id @default(uuid())
+  tenantId     String? // optional for master courses
+  courseId     String
+  course       LmsCourse  @relation(fields: [courseId], references: [id], onDelete: Cascade)
+  title        String
+  description  String?
+  orderIndex   Int
+  assessmentId String? // scalar (avoids Module↔Assessment double-link cycle)
+
+  lessons LmsLesson[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([tenantId, courseId])
+  @@index([courseId, orderIndex])
+  @@map("modules")
+  @@schema("app_quiklms")
+}
+
+// Module.lessons[] (lessons child table)
+model LmsLesson {
+  id          String     @id @default(uuid())
+  moduleId    String
+  module      LmsModule     @relation(fields: [moduleId], references: [id], onDelete: Cascade)
+  title       String
+  type        LmsLessonType
+  contentUrl  String?
+  orderIndex  Int
+  isMaster    Boolean    @default(false)
+  description String?
+  duration    Int? // minutes
+  fileSize    Int? // bytes
+  captions    Json? // [{ language, label, url }]
+  quiz        Json? // { questions[], passingScore }
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([moduleId, orderIndex])
+  @@map("lessons")
+  @@schema("app_quiklms")
+}
+
+// Tier-1 authoring document. Deeply nested 3-tier content (modules→subModules→
+// resources, quizzes, assignments) is kept as Json blobs per §8 (queried whole).
+model LmsMasterCourse {
+  id                   String             @id @default(uuid())
+  title                String
+  description          String?
+  category             String?
+  level                LmsCourseLevel        @default(Beginner)
+  thumbnailUrl         String?
+  aiGeneratedThumbnail Boolean            @default(false)
+  authorId             String // actor scalar
+  modules              Json               @default("[]") // CourseModule[] (3-tier nested)
+  settings             Json               @default("{}") // CourseSettings
+  status               LmsMasterCourseStatus @default(Draft)
+  isMaster             Boolean            @default(true)
+  tags                 String[]           @default([])
+  estimatedDuration    Int?
+
+  // Auto-save draft
+  lastAutoSaveAt DateTime?
+  draftData      Json?
+  version        Int       @default(1)
+
+  // Approval workflow
+  submittedBy           String? // actor scalar
+  submittedByTenantId   String? // scalar
+  parentCourseId        String? // scalar self-ref (pending/rejected revision of a published parent)
+  revisionNumber        Int       @default(1)
+  tenantApprovedBy      String?
+  tenantApprovalDate    DateTime?
+  tenantRejectionReason String?
+  approvedBy            String?
+  approvalDate          DateTime?
+  rejectionReason       String?
+
+  selectedTenants LmsMasterCourseSelectedTenant[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([isMaster, status])
+  @@index([authorId])
+  @@index([category, level])
+  @@index([status, submittedByTenantId])
+  @@index([parentCourseId, status])
+  @@map("master_courses")
+  @@schema("app_quiklms")
+}
+
+// MasterCourse.selectedTenants[] (certificate_selected_tenants analogue for master courses)
+model LmsMasterCourseSelectedTenant {
+  id             String       @id @default(uuid())
+  masterCourseId String
+  masterCourse   LmsMasterCourse @relation(fields: [masterCourseId], references: [id], onDelete: Cascade)
+  tenantId       String
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([masterCourseId, tenantId])
+  @@index([tenantId])
+  @@map("master_course_selected_tenants")
+  @@schema("app_quiklms")
+}
+
+model LmsAssessment {
+  id        String @id @default(uuid())
+  tenantId  String
+  moduleId  String // scalar (cross-aggregate; avoids cycle with Module.assessmentId)
+  title     String
+  questions Json   @default("[]") // embedded Question[] (text, type, options, correctAnswerIndex, …)
+
+  passingScore Int  @default(75)
+  retryLimit   Int  @default(3)
+  timeLimit    Int? // minutes
+
+  randomizeQuestions           Boolean @default(false)
+  questionsToShow              Int?
+  additionalQuestions          Json    @default("[]") // bonus pool Question[]
+  additionalQuestionsToInclude Int?
+  isMaster                     Boolean @default(false)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([tenantId, moduleId])
+  @@index([isMaster])
+  @@map("assessments")
+  @@schema("app_quiklms")
+}
+
+model LmsQuizAttempt {
+  id                  String   @id @default(uuid())
+  tenantId            String
+  learnerId           String // actor scalar
+  courseId            String // scalar (Course|MasterCourse ambiguous)
+  assessmentId        String // scalar
+  answers             Json     @default("[]") // QuestionAnswer[]
+  score               Int
+  totalPoints         Int
+  percentage          Float
+  passed              Boolean
+  submittedAt         DateTime @default(now())
+  proctoringSessionId String? // scalar (optional QuizProctoringSession link)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([tenantId, learnerId, courseId])
+  @@index([tenantId, learnerId, assessmentId])
+  @@index([learnerId, courseId, submittedAt(sort: Desc)])
+  @@map("quiz_attempts")
+  @@schema("app_quiklms")
+}
+
+// ════════════════════════════════════════════════════════════════════════════
+// PROGRESS, ASSIGNMENTS, CERTIFICATES, DISCUSSIONS, BOOKMARKS, ACADEMIC, ETC.
+// ════════════════════════════════════════════════════════════════════════════
+
+model LmsProgress {
+  id                   String         @id @default(uuid())
+  tenantId             String
+  learnerId            String // actor scalar
+  courseId             String // scalar (ambiguous target)
+  currentModuleId      String? // scalar
+  status               LmsProgressStatus @default(NotStarted)
+  completionPercentage Int            @default(0)
+  scorePercentage      Float?
+  quizScore            Float?
+  isPassed             Boolean        @default(false)
+  completedAt          DateTime?
+  startedAt            DateTime       @default(now())
+  lessonProgress       Json? // Record<lessonId, {...}> per §8
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([tenantId, learnerId, courseId])
+  @@index([learnerId, status])
+  @@map("progress")
+  @@schema("app_quiklms")
+}
+
+model LmsCourseAssignment {
+  id          String               @id @default(uuid())
+  tenantId    String
+  courseId    String // scalar
+  targetType  LmsAssignmentTargetType
+  targetId    String // User or Group id (scalar)
+  dueDate     DateTime?
+  isMandatory Boolean              @default(true)
+  assignedBy  String // actor scalar
+  assignedAt  DateTime             @default(now())
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([tenantId, courseId])
+  @@index([tenantId, targetId, targetType])
+  @@index([tenantId, isMandatory])
+  @@map("course_assignments")
+  @@schema("app_quiklms")
+}
+
+model LmsCertificate {
+  id                 String  @id @default(uuid())
+  tenantId           String? // optional for global templates
+  name               String
+  backgroundImageUrl String
+  logoImageUrl       String?
+  signatureImageUrl  String?
+  designation        String?
+  signatoryName      String?
+  textPlacements     Json? // per §8
+  logoPlacement      Json?
+  signaturePlacement Json?
+  isActive           Boolean @default(true)
+
+  // Approval workflow
+  approvalStatus      LmsCertificateApprovalStatus @default(approved)
+  submittedBy         String?
+  submittedByTenantId String?
+  approvedBy          String?
+  approvalDate        DateTime?
+  rejectionReason     String?
+
+  selectedTenants LmsCertificateSelectedTenant[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([tenantId, isActive])
+  @@index([approvalStatus])
+  @@map("certificates")
+  @@schema("app_quiklms")
+}
+
+// Certificate.selectedTenants[] (certificate_selected_tenants)
+model LmsCertificateSelectedTenant {
+  id            String      @id @default(uuid())
+  certificateId String
+  certificate   LmsCertificate @relation(fields: [certificateId], references: [id], onDelete: Cascade)
+  tenantId      String
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([certificateId, tenantId])
+  @@index([tenantId])
+  @@map("certificate_selected_tenants")
+  @@schema("app_quiklms")
+}
+
+model LmsCertificateIssued {
+  id                      String    @id @default(uuid())
+  tenantId                String
+  learnerId               String // actor scalar
+  courseId                String // scalar (refs MasterCourse in legacy)
+  certificateTemplateId   String? // scalar
+  courseName              String?
+  learnerName             String?
+  certificateId           String    @unique // public verification id
+  pdfUrl                  String    @default("")
+  qrCodeUrl               String    @default("")
+  verificationUrl         String
+  issuedAt                DateTime
+  isComplianceCertificate Boolean   @default(false)
+  expiresAt               DateTime?
+
+  // Quiz pass-criteria snapshot (frozen at issue time)
+  score        Float?
+  passingScore Float?
+  passed       Boolean?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([tenantId, learnerId, courseId], name: "unique_cert_per_learner_course_tenant")
+  @@index([tenantId, learnerId, courseId])
+  @@index([expiresAt])
+  @@map("certificates_issued")
+  @@schema("app_quiklms")
+}
+
+model LmsDiscussion {
+  id          String    @id @default(uuid())
+  tenantId    String
+  courseId    String // scalar
+  lessonId    String? // scalar
+  userId      String // actor scalar
+  parentId    String? // scalar self-ref (threaded replies)
+  content     String
+  upvotes     Int       @default(0)
+  downvotes   Int       @default(0)
+  upvotedBy   String[]  @default([]) // userId list (scalar array — matches Mongo)
+  downvotedBy String[]  @default([])
+  isSticky    Boolean   @default(false)
+  isResolved  Boolean   @default(false)
+  isDeleted   Boolean   @default(false)
+  editedAt    DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([courseId, isSticky, createdAt])
+  @@index([courseId, lessonId, createdAt])
+  @@index([parentId, createdAt])
+  @@index([userId, createdAt])
+  @@index([tenantId, courseId, isDeleted])
+  @@map("discussions")
+  @@schema("app_quiklms")
+}
+
+model LmsGradeRecord {
+  id                String    @id @default(uuid())
+  tenantId          String
+  studentId         String // actor scalar
+  batchId           String
+  batch             LmsBatch     @relation(fields: [batchId], references: [id], onDelete: Cascade)
+  subject           String
+  term              String?
+  academicYear      String?
+  homeworkAverage   Float     @default(0)
+  assessmentAverage Float     @default(0)
+  attendancePercent Float     @default(0)
+  finalGrade        String?
+  gradePoints       Float?
+  overallPercentage Float?
+  remarks           String?
+  gradedBy          String? // actor scalar
+  gradedAt          DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([tenantId, studentId, batchId, term])
+  @@index([tenantId, batchId, overallPercentage(sort: Desc)])
+  @@map("grade_records")
+  @@schema("app_quiklms")
+}
+
+model LmsBookmark {
+  id       String  @id @default(uuid())
+  tenantId String
+  userId   String // actor scalar
+  courseId String // scalar
+  moduleId String?
+  lessonId String?
+  note     String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([tenantId, userId, courseId])
+  @@index([userId, createdAt(sort: Desc)])
+  @@map("bookmarks")
+  @@schema("app_quiklms")
+}
+
+model LmsSection {
+  id       String @id @default(uuid())
+  tenantId String
+  grade    String
+  name     String
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([tenantId, grade, name])
+  @@index([tenantId])
+  @@map("sections")
+  @@schema("app_quiklms")
+}
+
+model LmsSubject {
+  id        String  @id @default(uuid())
+  tenantId  String
+  name      String
+  isDefault Boolean @default(false)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([tenantId, name])
+  @@index([tenantId])
+  @@map("subjects")
+  @@schema("app_quiklms")
+}
+
+model LmsAcademicCalendar {
+  id           String            @id @default(uuid())
+  tenantId     String
+  academicYear String
+  createdBy    String? // actor scalar
+  terms        LmsAcademicTerm[]
+  holidays     LmsAcademicHoliday[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([tenantId, academicYear])
+  @@index([tenantId])
+  @@map("academic_calendars")
+  @@schema("app_quiklms")
+}
+
+// AcademicCalendar.terms[] (academic_terms)
+model LmsAcademicTerm {
+  id         String           @id @default(uuid())
+  calendarId String
+  calendar   LmsAcademicCalendar @relation(fields: [calendarId], references: [id], onDelete: Cascade)
+  name       String
+  startDate  DateTime
+  endDate    DateTime
+  isActive   Boolean          @default(false)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([calendarId])
+  @@map("academic_terms")
+  @@schema("app_quiklms")
+}
+
+// AcademicCalendar.holidays[] (academic_holidays)
+model LmsAcademicHoliday {
+  id         String           @id @default(uuid())
+  calendarId String
+  calendar   LmsAcademicCalendar @relation(fields: [calendarId], references: [id], onDelete: Cascade)
+  date       DateTime
+  name       String
+  type       String           @default("custom") // national | regional | custom
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([calendarId])
+  @@map("academic_holidays")
+  @@schema("app_quiklms")
+}
+
+model LmsEmailTemplate {
+  id          String            @id @default(uuid())
+  type        LmsEmailTemplateType @unique
+  subject     String
+  htmlContent String
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("email_templates")
+  @@schema("app_quiklms")
+}
+
+model LmsSharedContent {
+  id             String   @id @default(uuid())
+  masterCourseId String // scalar (legacy ref is inconsistent Course/MasterCourse)
+  tenantId       String
+  tenantCourseId String // scalar
+  sharedAt       DateTime @default(now())
+  isActive       Boolean  @default(true)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([masterCourseId, tenantId])
+  @@index([tenantId, isActive])
+  @@map("shared_content")
+  @@schema("app_quiklms")
+}
+
+// ════════════════════════════════════════════════════════════════════════════
+// SCHOOL OPS: batches, scheduling, credits, attendance, homework, payouts,
+// meetings, non-teaching, teacher-level, escalation, tutoring, reminders, jobs
+// ════════════════════════════════════════════════════════════════════════════
+
+model LmsBatch {
+  id          String  @id @default(uuid())
+  tenantId    String
+  name        String
+  grade       String?
+  section     String?
+  subject     String
+  description String?
+  teacherId   String // actor scalar
+
+  academicYear String
+  term         String?
+  startDate    DateTime
+  endDate      DateTime
+
+  maxCapacity            Int?
+  defaultMeetingProvider LmsBatchMeetingProvider? @default(jitsi)
+
+  creditPerClass Float? @default(1)
+  ratePerClass   Float?
+  ratePerHour    Float?
+
+  classType          LmsBatchClassType? @default(regular)
+  trialClassCount    Int?            @default(0)
+  convertedToRegular Boolean?        @default(false)
+  convertedAt        DateTime?
+
+  status    LmsBatchStatus @default(active)
+  createdBy String? // actor scalar
+
+  batchType         LmsBatchType   @default(regular)
+  source            LmsBatchSource @default(manual)
+  tutoringRequestId String? // scalar
+
+  // Decomposed arrays + owned aggregates
+  schedule           LmsBatchSchedule[]
+  students           LmsBatchStudent[]
+  substituteTeachers LmsBatchSubstituteTeacher[]
+  scheduledClasses   LmsScheduledClass[]
+  homeworks          LmsHomework[]
+  gradeRecords       LmsGradeRecord[]
+  exams              LmsExam[]
+  attendances        LmsAttendance[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([tenantId, name, academicYear])
+  @@index([tenantId, academicYear, status])
+  @@index([tenantId, teacherId, status])
+  @@index([tenantId, grade, section, subject])
+  @@map("batches")
+  @@schema("app_quiklms")
+}
+
+// Batch.schedule[] (batch_schedule)
+model LmsBatchSchedule {
+  id        String  @id @default(uuid())
+  batchId   String
+  batch     LmsBatch   @relation(fields: [batchId], references: [id], onDelete: Cascade)
+  dayOfWeek Int // 0-6
+  startTime String
+  endTime   String
+  location  String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([batchId])
+  @@map("batch_schedule")
+  @@schema("app_quiklms")
+}
+
+// Batch.studentIds[] (batch_students)
+model LmsBatchStudent {
+  id        String @id @default(uuid())
+  batchId   String
+  batch     LmsBatch  @relation(fields: [batchId], references: [id], onDelete: Cascade)
+  studentId String // actor scalar
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([batchId, studentId])
+  @@index([studentId])
+  @@map("batch_students")
+  @@schema("app_quiklms")
+}
+
+// Batch.substituteTeacherIds[] (batch_substitute_teachers)
+model LmsBatchSubstituteTeacher {
+  id        String @id @default(uuid())
+  batchId   String
+  batch     LmsBatch  @relation(fields: [batchId], references: [id], onDelete: Cascade)
+  teacherId String // actor scalar
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([batchId, teacherId])
+  @@index([teacherId])
+  @@map("batch_substitute_teachers")
+  @@schema("app_quiklms")
+}
+
+model LmsScheduledClass {
+  id                       String                    @id @default(uuid())
+  tenantId                 String
+  batchId                  String
+  batch                    LmsBatch                     @relation(fields: [batchId], references: [id], onDelete: Cascade)
+  teacherId                String // actor scalar
+  substituteTeacherId      String? // actor scalar
+  title                    String
+  startTime                DateTime
+  endTime                  DateTime
+  location                 String?
+  status                   LmsClassStatus               @default(scheduled)
+  cancellationReason       String?
+  rescheduledTo            String? // scalar self-ref
+  rescheduledFrom          String? // scalar self-ref
+  rescheduleReason         String?
+  rescheduleApprovalStatus LmsRescheduleApprovalStatus?
+  meetingId                String? // scalar
+  attendanceMarkedAt       DateTime?
+  classNotes               String?
+  isRecurring              Boolean                   @default(false)
+  recurringPattern         Json? // { frequency, endDate }
+
+  attendances            LmsAttendance[]
+  payoutCompletedClasses LmsPayoutCompletedClass[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([batchId, startTime]) // guards race-condition double-inserts
+  @@index([tenantId, teacherId, startTime])
+  @@index([tenantId, batchId, startTime])
+  @@index([tenantId, status, startTime])
+  @@index([startTime])
+  @@map("scheduled_classes")
+  @@schema("app_quiklms")
+}
+
+model LmsCreditPackage {
+  id               String              @id @default(uuid())
+  tenantId         String
+  studentId        String // actor scalar
+  packageName      String
+  purchasedCredits Float
+  usedCredits      Float               @default(0)
+  remainingCredits Float
+  purchaseDate     DateTime
+  expiresAt        DateTime?
+  status           LmsCreditPackageStatus @default(active)
+  price            Float?
+  notes            String?
+  allocatedBy      String? // actor scalar
+
+  transactions LmsCreditTransaction[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([studentId, status, expiresAt])
+  @@index([tenantId, studentId])
+  @@map("credit_packages")
+  @@schema("app_quiklms")
+}
+
+model LmsCreditTransaction {
+  id                  String          @id @default(uuid())
+  tenantId            String
+  packageId           String
+  package             LmsCreditPackage   @relation(fields: [packageId], references: [id], onDelete: Cascade)
+  studentId           String // actor scalar
+  transactionType     LmsTransactionType
+  amount              Float // +add / -deduct
+  balanceAfter        Float
+  relatedClassId      String? // scalar
+  relatedAttendanceId String? // scalar
+  notes               String?
+  processedBy         String? // actor scalar
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([tenantId, studentId, createdAt(sort: Desc)])
+  @@index([packageId])
+  @@map("credit_transactions")
+  @@schema("app_quiklms")
+}
+
+model LmsAttendance {
+  id                  String           @id @default(uuid())
+  tenantId            String
+  scheduledClassId    String
+  scheduledClass      LmsScheduledClass   @relation(fields: [scheduledClassId], references: [id], onDelete: Cascade)
+  batchId             String
+  batch               LmsBatch            @relation(fields: [batchId], references: [id], onDelete: Cascade)
+  studentId           String // actor scalar
+  markedBy            String // actor scalar
+  status              LmsAttendanceStatus
+  classDate           DateTime
+  notes               String?
+  creditDeducted      Boolean          @default(false)
+  creditTransactionId String? // scalar
+  editedBy            String? // actor scalar
+  editReason          String?
+  editedAt            DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([scheduledClassId, studentId])
+  @@index([tenantId, scheduledClassId])
+  @@index([tenantId, studentId, classDate(sort: Desc)])
+  @@index([tenantId, batchId, classDate(sort: Desc)])
+  @@map("attendance")
+  @@schema("app_quiklms")
+}
+
+model LmsHomework {
+  id                     String         @id @default(uuid())
+  tenantId               String
+  batchId                String
+  batch                  LmsBatch          @relation(fields: [batchId], references: [id], onDelete: Cascade)
+  teacherId              String // actor scalar
+  title                  String
+  description            String?
+  instructions           String?
+  attachmentUrls         String[]       @default([])
+  resourceLinks          Json           @default("[]") // [{ url, label }]
+  dueDate                DateTime
+  assignedToStudentIds   String[]       @default([]) // actor id list (scalar array)
+  maxScore               Int?
+  allowLateSubmission    Boolean        @default(false)
+  lateSubmissionDeadline DateTime?
+  latePenaltyPercent     Int?
+  status                 LmsHomeworkStatus @default(published)
+  type                   LmsHomeworkType   @default(assignment)
+  publishedAt            DateTime?
+
+  submissions LmsHomeworkSubmission[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([tenantId, batchId, status])
+  @@index([tenantId, teacherId])
+  @@map("homework")
+  @@schema("app_quiklms")
+}
+
+model LmsHomeworkSubmission {
+  id                 String           @id @default(uuid())
+  tenantId           String
+  homeworkId         String
+  homework           LmsHomework         @relation(fields: [homeworkId], references: [id], onDelete: Cascade)
+  studentId          String // actor scalar
+  attachmentUrls     String[]         @default([])
+  textResponse       String?
+  submittedAt        DateTime
+  isLate             Boolean          @default(false)
+  status             LmsSubmissionStatus @default(submitted)
+  score              Int?
+  feedback           String?
+  gradedBy           String? // actor scalar
+  gradedAt           DateTime?
+  correctedFileUrl   String?
+  richFeedback       String?
+  latePenaltyApplied Float?
+  finalScore         Float?
+
+  rubricScores LmsHomeworkRubricScore[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([homeworkId, studentId])
+  @@index([tenantId, studentId, submittedAt(sort: Desc)])
+  @@map("homework_submissions")
+  @@schema("app_quiklms")
+}
+
+// HomeworkSubmission.rubricScores[] (homework_rubric_scores)
+model LmsHomeworkRubricScore {
+  id           String             @id @default(uuid())
+  submissionId String
+  submission   LmsHomeworkSubmission @relation(fields: [submissionId], references: [id], onDelete: Cascade)
+  criterion    String
+  maxScore     Float
+  score        Float
+  comment      String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([submissionId])
+  @@map("homework_rubric_scores")
+  @@schema("app_quiklms")
+}
+
+model LmsTeacherPayout {
+  id                    String        @id @default(uuid())
+  tenantId              String
+  teacherId             String // actor scalar
+  periodStart           DateTime
+  periodEnd             DateTime
+  totalClassesCompleted Int           @default(0)
+  ratePerClass          Float
+  rateType              LmsRateType?     @default(per_class)
+  grossAmount           Float
+  totalBonus            Float         @default(0)
+  totalDeductions       Float         @default(0)
+  nonTeachingWorkAmount Float         @default(0)
+  netAmount             Float
+  status                LmsPayoutStatus  @default(draft)
+  approvedBy            String? // actor scalar
+  approvedAt            DateTime?
+  paidAt                DateTime?
+  paymentMethod         String?
+  paymentReference      String?
+  notes                 String?
+  source                LmsPayoutSource? @default(batch)
+
+  adjustments      LmsPayoutAdjustment[]
+  completedClasses LmsPayoutCompletedClass[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([tenantId, teacherId, periodStart, periodEnd])
+  @@index([tenantId, status])
+  @@map("teacher_payouts")
+  @@schema("app_quiklms")
+}
+
+// TeacherPayout.adjustments[] (payout_adjustments)
+model LmsPayoutAdjustment {
+  id        String               @id @default(uuid())
+  payoutId  String
+  payout    LmsTeacherPayout        @relation(fields: [payoutId], references: [id], onDelete: Cascade)
+  type      LmsPayoutAdjustmentType
+  amount    Float
+  reason    String
+  appliedBy String? // actor scalar
+  appliedAt DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([payoutId])
+  @@map("payout_adjustments")
+  @@schema("app_quiklms")
+}
+
+// TeacherPayout.completedClassIds[] (payout_completed_classes)
+model LmsPayoutCompletedClass {
+  id               String         @id @default(uuid())
+  payoutId         String
+  payout           LmsTeacherPayout  @relation(fields: [payoutId], references: [id], onDelete: Cascade)
+  scheduledClassId String
+  scheduledClass   LmsScheduledClass @relation(fields: [scheduledClassId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([payoutId, scheduledClassId])
+  @@index([scheduledClassId])
+  @@map("payout_completed_classes")
+  @@schema("app_quiklms")
+}
+
+model LmsMeeting {
+  id                 String          @id @default(uuid())
+  tenantId           String
+  scheduledClassId   String? // scalar
+  hostId             String? // actor scalar
+  provider           LmsMeetingProvider
+  externalMeetingId  String?
+  joinUrl            String
+  hostUrl            String?
+  password           String?
+  scheduledStartTime DateTime
+  scheduledEndTime   DateTime
+  actualStartTime    DateTime?
+  actualEndTime      DateTime?
+  status             LmsMeetingStatus   @default(scheduled)
+  recordingEnabled   Boolean         @default(false)
+  recordingUrls      String[]        @default([])
+  recordingStatus    LmsRecordingStatus @default(pending)
+  providerMetadata   Json? // per §8
+  createdBy          String? // actor scalar
+  title              String?
+  isInstant          Boolean         @default(false)
+  participantCount   Int             @default(0)
+
+  attendees LmsMeetingAttendance[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([tenantId, scheduledClassId])
+  @@index([tenantId, status])
+  @@index([status, scheduledStartTime])
+  @@map("meetings")
+  @@schema("app_quiklms")
+}
+
+model LmsMeetingAttendance {
+  id               String                @id @default(uuid())
+  meetingId        String
+  meeting          LmsMeeting               @relation(fields: [meetingId], references: [id], onDelete: Cascade)
+  userId           String // actor scalar
+  role             LmsMeetingAttendanceRole
+  joinedAt         DateTime
+  leftAt           DateTime?
+  durationMinutes  Int?
+  deviceType       LmsDeviceType            @default(unknown)
+  deviceInfo       String?
+  joinLeaveHistory Json                  @default("[]") // [{ action, timestamp }]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([meetingId, userId])
+  @@map("meeting_attendance")
+  @@schema("app_quiklms")
+}
+
+model LmsNonTeachingTask {
+  id              String       @id @default(uuid())
+  tenantId        String
+  teacherId       String // actor scalar
+  assignedBy      String // actor scalar
+  title           String
+  description     String?
+  category        LmsTaskCategory @default(other)
+  paymentAmount   Float
+  status          LmsTaskStatus   @default(assigned)
+  dueDate         DateTime?
+  completedAt     DateTime?
+  approvedAt      DateTime?
+  approvedBy      String? // actor scalar
+  rejectionReason String?
+  completionNotes String?
+  hoursSpent      Float?
+  attachmentUrls  String[]     @default([])
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([tenantId, teacherId, status])
+  @@index([tenantId, status, createdAt(sort: Desc)])
+  @@map("non_teaching_tasks")
+  @@schema("app_quiklms")
+}
+
+model LmsTeacherLevel {
+  id                     String        @id @default(uuid())
+  tenantId               String
+  teacherId              String        @unique // actor scalar, one record per teacher
+  currentLevel           LmsTeacherStatus @default(beginner)
+  totalClassesTaught     Int           @default(0)
+  attendanceScore        Float         @default(0)
+  homeworkCompletionRate Float         @default(0)
+  parentFeedbackScore    Float         @default(0)
+  classesMissed          Int           @default(0)
+  overallScore           Float         @default(0)
+  lastCalculatedAt       DateTime?
+
+  levelHistory LmsTeacherLevelHistory[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([tenantId, teacherId])
+  @@map("teacher_levels")
+  @@schema("app_quiklms")
+}
+
+// TeacherLevel.levelHistory[] (teacher_level_history)
+model LmsTeacherLevelHistory {
+  id             String        @id @default(uuid())
+  teacherLevelId String
+  teacherLevel   LmsTeacherLevel  @relation(fields: [teacherLevelId], references: [id], onDelete: Cascade)
+  month          Int
+  year           Int
+  level          LmsTeacherStatus
+  score          Float
+  calculatedAt   DateTime
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([teacherLevelId])
+  @@map("teacher_level_history")
+  @@schema("app_quiklms")
+}
+
+model LmsCallEscalation {
+  id               String           @id @default(uuid())
+  tenantId         String
+  scheduledClassId String // scalar
+  teacherId        String // actor scalar
+  status           LmsEscalationStatus @default(pending)
+  resolutionTime   DateTime?
+  teacherJoinedAt  DateTime?
+  adminNotified    Boolean          @default(false)
+  adminNotifiedAt  DateTime?
+  notes            String?
+
+  callAttempts LmsCallEscalationAttempt[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([tenantId, scheduledClassId])
+  @@index([tenantId, teacherId, createdAt(sort: Desc)])
+  @@map("call_escalations")
+  @@schema("app_quiklms")
+}
+
+// CallEscalation.callAttempts[] (call_attempts)
+model LmsCallEscalationAttempt {
+  id            String         @id @default(uuid())
+  escalationId  String
+  escalation    LmsCallEscalation @relation(fields: [escalationId], references: [id], onDelete: Cascade)
+  attemptNumber Int // 1-3
+  attemptTime   DateTime
+  phoneNumber   String
+  callStatus    LmsCallStatus
+  callDuration  Int?
+  callSid       String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([escalationId])
+  @@map("call_escalation_attempts")
+  @@schema("app_quiklms")
+}
+
+model LmsTutoringRequest {
+  id                  String                @id @default(uuid())
+  tenantId            String
+  studentId           String // actor scalar
+  teacherId           String? // actor scalar
+  subject             String
+  notes               String?
+  proposedSlots       Json // [{ date, startTime, endTime }]
+  confirmedSlot       Json? // { date, startTime, endTime }
+  status              LmsTutoringRequestStatus @default(pending)
+  rejectionReason     String?
+  teacherNotes        String?
+  batchId             String? // scalar
+  scheduledClassId    String? // scalar
+  creditCostSnapshot  Float?
+  teacherRateSnapshot Float?
+  creditHoldId        String? // scalar (CreditTransaction)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([tenantId, studentId, status])
+  @@index([tenantId, teacherId, status])
+  @@map("tutoring_requests")
+  @@schema("app_quiklms")
+}
+
+model LmsStudentReminderCall {
+  id               String             @id @default(uuid())
+  tenantId         String
+  scheduledClassId String // scalar
+  studentId        String // actor scalar
+  batchId          String // scalar
+  status           LmsReminderCallStatus @default(pending)
+  resolvedAt       DateTime?
+  notes            String?
+
+  callAttempts LmsStudentReminderCallAttempt[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([tenantId, scheduledClassId, studentId])
+  @@index([tenantId, studentId, createdAt(sort: Desc)])
+  @@map("student_reminder_calls")
+  @@schema("app_quiklms")
+}
+
+// StudentReminderCall.callAttempts[] (call_attempts)
+model LmsStudentReminderCallAttempt {
+  id             String              @id @default(uuid())
+  reminderCallId String
+  reminderCall   LmsStudentReminderCall @relation(fields: [reminderCallId], references: [id], onDelete: Cascade)
+  attemptNumber  Int // 1-3
+  attemptTime    DateTime
+  phoneNumber    String
+  callStatus     LmsCallStatus
+  callDuration   Int?
+  callSid        String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([reminderCallId])
+  @@map("student_reminder_call_attempts")
+  @@schema("app_quiklms")
+}
+
+model LmsTeacherLatenessReminderLog {
+  id                           String   @id @default(uuid())
+  tenantId                     String
+  batchId                      String // scalar
+  teacherId                    String // actor scalar
+  lastNotifiedScheduledClassId String // scalar
+  notifiedAt                   DateTime
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([tenantId, batchId, teacherId])
+  @@index([batchId])
+  @@index([teacherId])
+  @@map("teacher_lateness_reminder_logs")
+  @@schema("app_quiklms")
+}
+
+// ════════════════════════════════════════════════════════════════════════════
+// EXAMS, QUESTION-BANK, PROCTORING, QUIZ-PROCTORING
+// ════════════════════════════════════════════════════════════════════════════
+
+model LmsQuestion {
+  id            String           @id @default(uuid())
+  tenantId      String
+  createdBy     String // actor scalar
+  subject       String
+  topic         String?
+  difficulty    LmsDifficulty       @default(medium)
+  tags          String[]         @default([])
+  type          LmsBankQuestionType
+  text          String
+  imageUrl      String?
+  audioUrl      String?
+  options       Json             @default("[]") // [{ text, isCorrect }]
+  correctAnswer Json? // boolean | string | string[]
+  points        Int              @default(1)
+  negativeMarks Int              @default(0)
+  explanation   String?
+  isActive      Boolean          @default(true)
+  version       Int              @default(1)
+
+  examQuestions LmsExamQuestion[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([tenantId, subject, difficulty])
+  @@index([tenantId, type])
+  @@index([tenantId, tags])
+  @@map("questions")
+  @@schema("app_quiklms")
+}
+
+model LmsExam {
+  id                    String                @id @default(uuid())
+  tenantId              String
+  createdBy             String // actor scalar
+  title                 String
+  description           String                @default("")
+  instructions          String                @default("")
+  subject               String                @default("")
+  batchId               String?
+  batch                 LmsBatch?                @relation(fields: [batchId], references: [id])
+  duration              Int // minutes
+  totalMarks            Int                   @default(0)
+  questionSelectionMode LmsQuestionSelectionMode @default(manual)
+  autoSelectRules       Json? // { count, difficulty?, subject?, tags? }
+  settings              Json                  @default("{}") // ExamSettings (defaults applied in service layer)
+  proctoringLevel       LmsProctoringLevel       @default(soft)
+  scheduledStartTime    DateTime?
+  scheduledEndTime      DateTime?
+  status                LmsExamStatus            @default(draft)
+  resultPublishedAt     DateTime?
+
+  questions LmsExamQuestion[]
+  sessions  LmsExamSession[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([tenantId, batchId, status])
+  @@index([tenantId, status, scheduledStartTime])
+  @@map("exams")
+  @@schema("app_quiklms")
+}
+
+// Exam.questions[] (exam_questions)
+model LmsExamQuestion {
+  id         String   @id @default(uuid())
+  examId     String
+  exam       LmsExam     @relation(fields: [examId], references: [id], onDelete: Cascade)
+  questionId String
+  question   LmsQuestion @relation(fields: [questionId], references: [id], onDelete: Cascade)
+  points     Int      @default(1)
+  order      Int?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([examId, questionId])
+  @@index([questionId])
+  @@map("exam_questions")
+  @@schema("app_quiklms")
+}
+
+model LmsExamSession {
+  id                String            @id @default(uuid())
+  tenantId          String
+  examId            String
+  exam              LmsExam              @relation(fields: [examId], references: [id], onDelete: Cascade)
+  studentId         String // actor scalar
+  startedAt         DateTime?
+  endedAt           DateTime?
+  serverDeadline    DateTime?
+  status            LmsExamSessionStatus @default(not_started)
+  answers           Json              @default("{}") // Map<questionId, AnswerEntry> per §8
+  lastSavedAt       DateTime?
+  assignedQuestions Json              @default("[]") // [{ questionId, order }]
+  score             Float?
+  totalPoints       Float?
+  percentage        Float?
+  passed            Boolean?
+  teacherRemarks    String?
+  gradedBy          String? // actor scalar
+  gradedAt          DateTime?
+  proctoringFlags   Json              @default("{}") // per §8
+  isReconnection    Boolean           @default(false)
+  disconnectedAt    DateTime?
+  reconnectedAt     DateTime?
+
+  logs            LmsProctoringLog[]
+  incidentReports LmsIncidentReport[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([tenantId, examId, studentId])
+  @@index([status, serverDeadline])
+  @@map("exam_sessions")
+  @@schema("app_quiklms")
+}
+
+model LmsProctoringLog {
+  id        String              @id @default(uuid())
+  tenantId  String
+  sessionId String
+  session   LmsExamSession         @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  studentId String // actor scalar
+  eventType LmsProctoringEventType
+  timestamp DateTime
+  metadata  Json?
+  severity  LmsProctoringSeverity  @default(low)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([sessionId, eventType])
+  @@index([sessionId, timestamp])
+  @@map("proctoring_logs")
+  @@schema("app_quiklms")
+}
+
+model LmsIncidentReport {
+  id          String              @id @default(uuid())
+  tenantId    String
+  sessionId   String
+  session     LmsExamSession         @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  examId      String // scalar
+  reviewedBy  String? // actor scalar
+  reviewedAt  DateTime?
+  flagSummary Json                @default("{}")
+  disposition LmsIncidentDisposition @default(pending)
+  action      LmsIncidentAction      @default(none)
+  remarks     String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([examId, disposition])
+  @@index([sessionId])
+  @@map("incident_reports")
+  @@schema("app_quiklms")
+}
+
+model LmsQuizProctoringSession {
+  id                        String            @id @default(uuid())
+  tenantId                  String
+  assessmentId              String // scalar (ObjectId OR master-course UUID)
+  courseId                  String // scalar
+  learnerId                 String // actor scalar
+  startedAt                 DateTime?
+  endedAt                   DateTime?
+  serverDeadline            DateTime?
+  status                    LmsQuizSessionStatus @default(in_progress)
+  proctoringFlags           Json              @default("{}") // incl. face_* counters
+  isReconnection            Boolean           @default(false)
+  disconnectedAt            DateTime?
+  reconnectedAt             DateTime?
+  selectedQuestionIndices   Int[]             @default([]) // empty = serve all
+  selectedAdditionalIndices Int[]             @default([])
+  questionManifest          Json? // [{ pool: 'main'|'additional', index }]
+
+  logs            LmsQuizProctoringLog[]
+  incidentReports LmsQuizIncidentReport[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([tenantId, assessmentId, learnerId])
+  @@index([status, serverDeadline])
+  @@map("quiz_proctoring_sessions")
+  @@schema("app_quiklms")
+}
+
+model LmsQuizProctoringLog {
+  id        String                  @id @default(uuid())
+  tenantId  String
+  sessionId String
+  session   LmsQuizProctoringSession   @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  learnerId String // actor scalar
+  eventType LmsQuizProctoringEventType
+  timestamp DateTime
+  metadata  Json?
+  severity  LmsProctoringSeverity      @default(low)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([sessionId, eventType])
+  @@index([sessionId, timestamp])
+  @@map("quiz_proctoring_logs")
+  @@schema("app_quiklms")
+}
+
+model LmsQuizIncidentReport {
+  id           String                @id @default(uuid())
+  tenantId     String
+  sessionId    String
+  session      LmsQuizProctoringSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  assessmentId String // scalar
+  reviewedBy   String? // actor scalar
+  reviewedAt   DateTime?
+  flagSummary  Json                  @default("{}")
+  disposition  LmsIncidentDisposition   @default(pending)
+  action       LmsIncidentAction        @default(none)
+  remarks      String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([assessmentId, disposition])
+  @@index([sessionId])
+  @@map("quiz_incident_reports")
+  @@schema("app_quiklms")
+}
+
+// ════════════════════════════════════════════════════════════════════════════
+// MESSAGING
+// ════════════════════════════════════════════════════════════════════════════
+
+model LmsConversation {
+  id              String           @id @default(uuid())
+  tenantId        String
+  type            LmsConversationType @default(direct)
+  title           String?
+  groupIcon       String?
+  description     String?
+  lastMessageText String?
+  lastMessageAt   DateTime?
+  lastMessageBy   String? // actor scalar
+  messageCount    Int              @default(0)
+  blockedUserIds  String[]         @default([]) // actor id list (scalar array)
+  createdBy       String? // actor scalar
+
+  participants LmsConversationParticipant[]
+  messages     LmsMessage[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([tenantId, lastMessageAt(sort: Desc)])
+  @@map("conversations")
+  @@schema("app_quiklms")
+}
+
+// Conversation.participants[] (conversation_participants)
+model LmsConversationParticipant {
+  id             String                      @id @default(uuid())
+  conversationId String
+  conversation   LmsConversation                @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  userId         String // actor scalar
+  joinedAt       DateTime                    @default(now())
+  lastReadAt     DateTime                    @default(now())
+  role           LmsConversationParticipantRole @default(member)
+  isArchived     Boolean                     @default(false)
+  isDeleted      Boolean                     @default(false)
+  deletedAt      DateTime?
+  isMuted        Boolean                     @default(false)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([conversationId, userId])
+  @@index([userId])
+  @@map("conversation_participants")
+  @@schema("app_quiklms")
+}
+
+model LmsMessage {
+  id             String       @id @default(uuid())
+  conversationId String
+  conversation   LmsConversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  senderId       String // actor scalar
+  text           String
+  attachmentUrls String[]     @default([])
+  isEdited       Boolean      @default(false)
+  editedAt       DateTime?
+  isDeleted      Boolean      @default(false)
+  deletedBy      String? // actor scalar
+  deletedAt      DateTime?
+  isFlagged      Boolean      @default(false)
+  flagReason     String?
+  replyTo        String? // scalar self-ref
+  forwardedFrom  String? // scalar self-ref
+
+  reactions LmsMessageReaction[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([conversationId, createdAt(sort: Desc)])
+  @@index([senderId])
+  @@map("messages")
+  @@schema("app_quiklms")
+}
+
+// Message.reactions[] (message_reactions)
+model LmsMessageReaction {
+  id        String  @id @default(uuid())
+  messageId String
+  message   LmsMessage @relation(fields: [messageId], references: [id], onDelete: Cascade)
+  userId    String // actor scalar
+  emoji     String
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([messageId, userId, emoji])
+  @@index([messageId])
+  @@map("message_reactions")
+  @@schema("app_quiklms")
+}
+
+// ════════════════════════════════════════════════════════════════════════════
+// ANALYTICS, AUDIT, PRIVACY
+// ════════════════════════════════════════════════════════════════════════════
+
+model LmsAnalyticsEvent {
+  id         String  @id @default(uuid())
+  tenantId   String
+  userId     String? // actor scalar
+  eventType  String
+  eventData  Json? // per §8
+  sessionId  String?
+  deviceType String?
+  ipAddress  String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([tenantId, eventType, createdAt(sort: Desc)])
+  @@index([userId, createdAt(sort: Desc)])
+  @@map("analytics_events")
+  @@schema("app_quiklms")
+}
+
+model LmsAnalyticsCache {
+  id           String   @id @default(uuid())
+  tenantId     String
+  metricKey    String
+  data         Json
+  calculatedAt DateTime
+  expiresAt    DateTime // TTL — purged by worker cron
+  filters      Json? // { dateFrom?, dateTo?, batchId?, teacherId? }
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([tenantId, metricKey])
+  @@index([expiresAt])
+  @@map("analytics_cache")
+  @@schema("app_quiklms")
+}
+
+model LmsActivityLog {
+  id        String       @id @default(uuid())
+  tenantId  String? // optional (super-admin global actions)
+  userId    String? // actor scalar
+  type      LmsActivityType
+  message   String
+  metadata  Json?
+  timestamp DateTime     @default(now())
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([tenantId, timestamp(sort: Desc)])
+  @@index([type, timestamp(sort: Desc)])
+  @@index([timestamp(sort: Desc)])
+  @@map("activity_logs")
+  @@schema("app_quiklms")
+}
+
+model LmsTenantLog {
+  id          String           @id @default(uuid())
+  tenantId    String
+  actionType  LmsTenantActionType
+  description String
+  performedBy String // actor scalar
+  metadata    Json?
+  ipAddress   String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([tenantId, createdAt(sort: Desc)])
+  @@index([tenantId, actionType, createdAt(sort: Desc)])
+  @@map("tenant_logs")
+  @@schema("app_quiklms")
+}
+
+model LmsPrivacyAuditLog {
+  id              String   @id @default(uuid())
+  tenantId        String
+  userId          String // actor scalar
+  userRole        String
+  endpoint        String
+  method          String
+  fieldsStripped  String[] @default([])
+  recordsAffected Int      @default(0)
+  ipAddress       String?
+  userAgent       String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([tenantId, createdAt(sort: Desc)])
+  @@index([userId, createdAt(sort: Desc)])
+  @@map("privacy_audit_logs")
+  @@schema("app_quiklms")
+}
+

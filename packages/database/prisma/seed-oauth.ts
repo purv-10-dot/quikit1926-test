@@ -66,6 +66,7 @@ const QUIKINFRA_BASE = resolveAppUrl("QUIKINFRA_URL", "http://localhost:3006"); 
 const QUIKSOCIAL_BASE = resolveAppUrl("QUIKSOCIAL_URL", "http://localhost:3007"); // prod-safety-allow: dev fallback, prod throws via resolveAppUrl
 const QUIKVC_BASE = resolveAppUrl("QUIKVC_URL", "http://localhost:3005"); // prod-safety-allow: dev fallback, prod throws via resolveAppUrl
 const QUIKCRM_BASE = resolveAppUrl("QUIKCRM_URL", "http://localhost:3008"); // prod-safety-allow: dev fallback, prod throws via resolveAppUrl
+const QUIKLMS_BASE = resolveAppUrl("QUIKLMS_URL", "http://localhost:3020"); // prod-safety-allow: dev fallback, prod throws via resolveAppUrl
 // Central launcher (quikit) origin. It hosts every app's icon under
 // /app-icons and is where App.iconUrl is designed to resolve (see the comment
 // on BRAND_ICONS in packages/ui/components/app-switcher.tsx). Used as the
@@ -171,6 +172,22 @@ const APPS = [
       clientSecretPlain: resolveClientSecret("QUIKVC_OAUTH_CLIENT_SECRET", "quikvc-dev-secret-change-in-prod"),
       redirectUris: [
         `${QUIKVC_BASE}/api/auth/callback/quikit`,
+      ],
+      scopes: ["openid", "profile", "email", "tenant"],
+    },
+  },
+  {
+    slug: "quiklms",
+    name: "QuikLMS",
+    description: "Learning Management System — courses, batches, exams, attendance, certificates, teacher/learner portals.",
+    baseUrl: QUIKLMS_BASE,
+    iconUrl: "/app-icons/quiklms.png",
+    status: "active",
+    oauth: {
+      clientId: "quiklms",
+      clientSecretPlain: resolveClientSecret("QUIKLMS_OAUTH_CLIENT_SECRET", "quiklms-dev-secret-change-in-prod"),
+      redirectUris: [
+        `${QUIKLMS_BASE}/api/auth/callback/quikit`,
       ],
       scopes: ["openid", "profile", "email", "tenant"],
     },

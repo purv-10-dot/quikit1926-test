@@ -1,0 +1,341 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>QuikSkill LMS — Frontend Documentation</title>
+<style>
+  @page { size: A4; margin: 18mm 14mm; }
+  * { box-sizing: border-box; }
+  body { font-family: "Segoe UI", Arial, sans-serif; font-size: 10.5px; line-height: 1.5; color: #1f2937; margin: 0; }
+  h1 { font-size: 30px; color: #5b21b6; margin: 0 0 6px; }
+  h2 { font-size: 19px; color: #fff; background: #6d28d9; padding: 7px 12px; border-radius: 5px; margin: 30px 0 12px; page-break-before: always; page-break-after: avoid; }
+  h2.nobreak { page-break-before: avoid; }
+  h3 { font-size: 14.5px; color: #5b21b6; border-bottom: 2px solid #ddd6fe; padding-bottom: 3px; margin: 20px 0 8px; page-break-after: avoid; }
+  h4 { font-size: 12px; color: #374151; margin: 12px 0 5px; page-break-after: avoid; }
+  p { margin: 5px 0; }
+  code { background: #f1f5f9; padding: 1px 4px; border-radius: 3px; font-family: "Consolas", monospace; font-size: 9.5px; color: #be185d; }
+  pre { background: #0f172a; color: #e2e8f0; padding: 10px 12px; border-radius: 6px; font-family: "Consolas", monospace; font-size: 9px; line-height: 1.45; white-space: pre-wrap; }
+  table { border-collapse: collapse; width: 100%; margin: 8px 0 14px; font-size: 9px; page-break-inside: auto; }
+  tr { page-break-inside: avoid; }
+  th { background: #6d28d9; color: #fff; text-align: left; padding: 5px 7px; font-weight: 600; }
+  td { border: 1px solid #d1d5db; padding: 4px 7px; vertical-align: top; }
+  tbody tr:nth-child(even) { background: #faf5ff; }
+  .tag { display: inline-block; background: #ede9fe; color: #6d28d9; padding: 1px 7px; border-radius: 10px; font-size: 9px; margin: 1px 2px; }
+  .tag.green{background:#dcfce7;color:#15803d}.tag.amber{background:#fef3c7;color:#92400e}.tag.red{background:#fee2e2;color:#b91c1c}.tag.blue{background:#dbeafe;color:#1e40af}
+  .cover { text-align: center; padding: 70px 0 40px; border-bottom: 4px solid #6d28d9; margin-bottom: 14px; }
+  .cover .sub { font-size: 16px; color: #475569; }
+  .cover .meta { font-size: 11px; color: #64748b; margin-top: 26px; }
+  .callout { background: #f5f3ff; border-left: 4px solid #6d28d9; padding: 8px 12px; margin: 10px 0; border-radius: 0 5px 5px 0; }
+  .callout.warn { background: #fffbeb; border-left-color: #d97706; }
+  .callout.green { background: #f0fdf4; border-left-color: #16a34a; }
+  ul, ol { margin: 5px 0; padding-left: 20px; } li { margin: 2px 0; }
+  .toc a { color: #6d28d9; text-decoration: none; } .toc li { margin: 3px 0; }
+  .small { font-size: 9px; color: #64748b; }
+</style>
+</head>
+<body>
+
+<div class="cover">
+  <h1>QuikSkill LMS</h1>
+  <div class="sub">Frontend System Documentation &amp; Migration Reference</div>
+  <div class="sub" style="font-size:13px;margin-top:8px;color:#64748b">Routing · Pages by Role · Components · State · Realtime &amp; Media</div>
+  <div class="meta">
+    Current Stack: <b>Vite + React 18 + React Router 6 + TypeScript + Tailwind</b><br>
+    Target Stack: <b>Next.js (App Router) + PostgreSQL backend</b><br>
+    Generated: June 2026 &nbsp;|&nbsp; Document 2 of 2 (Frontend)
+  </div>
+</div>
+
+<h2 class="nobreak">Table of Contents</h2>
+<div class="toc">
+<ol>
+  <li><a href="#overview">Overview &amp; Tech Stack</a></li>
+  <li><a href="#routing">Routing, Client Auth &amp; Route Protection</a></li>
+  <li><a href="#layouts">Role Layouts &amp; Sidebar Navigation</a></li>
+  <li><a href="#api">API / Data Layer, Env Vars &amp; Socket.IO</a></li>
+  <li><a href="#state">State Management, Contexts &amp; i18n</a></li>
+  <li><a href="#pages">Complete Pages Catalog (by Role)</a></li>
+  <li><a href="#components">Key Feature Components</a></li>
+  <li><a href="#media">Real-time &amp; Media Features</a></li>
+  <li><a href="#migration">Vite → Next.js Migration Guidance</a></li>
+</ol>
+</div>
+
+<h2 id="overview">1. Overview &amp; Tech Stack</h2>
+<p>The QuikSkill LMS web client is a single-page React application served by Vite. It renders seven role-specific experiences from one bundle, driven by the tenant's feature flags and the logged-in user's role. It talks to the NestJS REST API and two Socket.IO namespaces, and performs heavy in-browser work: SCORM playback, MediaPipe face-proctoring, resumable uploads, and PDF generation.</p>
+<table>
+<thead><tr><th>Concern</th><th>Library</th><th>Migration Note (Next.js)</th></tr></thead>
+<tbody>
+<tr><td>Build / Dev</td><td>Vite 5</td><td>→ Next.js build pipeline</td></tr>
+<tr><td>UI</td><td>React 18 + TypeScript</td><td>Retain; split into Server/Client Components</td></tr>
+<tr><td>Routing</td><td>react-router-dom 6</td><td>→ Next.js App Router (file-based)</td></tr>
+<tr><td>Styling</td><td>Tailwind CSS 3 + PostCSS</td><td>Retain as-is</td></tr>
+<tr><td>HTTP</td><td>axios 1.6</td><td>Retain client util; or server actions</td></tr>
+<tr><td>State</td><td>React Context API (no Redux/Zustand)</td><td>Wrap in root layout providers</td></tr>
+<tr><td>Forms</td><td>react-hook-form</td><td>Retain</td></tr>
+<tr><td>Realtime</td><td>socket.io-client</td><td>Client component + WS server</td></tr>
+<tr><td>Drag &amp; drop</td><td>@dnd-kit, react-beautiful-dnd</td><td>Retain (client only)</td></tr>
+<tr><td>Media / Video</td><td>react-player, react-pdf</td><td>Retain (client only, dynamic import)</td></tr>
+<tr><td>Proctoring</td><td>@mediapipe/face_detection, tasks-vision, camera_utils</td><td>Retain (client only)</td></tr>
+<tr><td>Uploads</td><td>tus-js-client</td><td>Retain</td></tr>
+<tr><td>PDF / Canvas</td><td>jspdf, html2canvas, pdfkit, canvas-confetti</td><td>Retain (client only)</td></tr>
+<tr><td>Rich text</td><td>react-quill</td><td>Retain (dynamic import, ssr:false)</td></tr>
+<tr><td>i18n</td><td>i18next + react-i18next + browser-languagedetector</td><td>→ next-intl / next-i18next</td></tr>
+<tr><td>Charts</td><td>recharts</td><td>Retain (client only)</td></tr>
+<tr><td>Icons / Toast</td><td>lucide-react, react-icons, react-hot-toast</td><td>Retain</td></tr>
+</tbody>
+</table>
+<div class="callout"><b>Scale:</b> ~89 page components across 8 role folders, ~60 feature components, 7 custom hooks, 3 context providers, 6 role layouts. Source tree: <code>src/{pages,components,contexts,hooks,utils,constants,i18n}</code>.</div>
+
+<h2 id="routing">2. Routing, Client Auth &amp; Route Protection</h2>
+<p>All routing lives in <code>src/App.tsx</code> using <code>&lt;Routes&gt;</code>/<code>&lt;Route&gt;</code>. Auth state is held in <b>browser storage</b> (no server session):</p>
+<ul>
+<li><code>sessionStorage.access_token</code> — JWT attached to every API request.</li>
+<li><code>sessionStorage.user</code> — JSON user object (role, secondaryRole, tenantId, …).</li>
+<li><code>localStorage.activeRole</code> — currently active role for multi-role users (set by <code>RoleSwitcher</code>).</li>
+<li><code>localStorage.quickskill-theme</code>, <code>i18nextLng</code> — theme &amp; language preferences.</li>
+</ul>
+<h3>Route Guards (3 wrappers in App.tsx)</h3>
+<table><thead><tr><th>Guard</th><th>Logic</th></tr></thead><tbody>
+<tr><td><code>PrivateRoute</code></td><td>Renders children only if <code>access_token</code> exists, else redirects to <code>/login</code> (spinner while checking).</td></tr>
+<tr><td><code>RoleProtectedRoute</code></td><td>Checks <code>user.role</code> / <code>user.secondaryRole</code> / <code>activeRole</code> against an <code>allowedRoles</code> list; unauthorized users are bounced to their own dashboard via <code>getDashboardPath()</code>.</td></tr>
+<tr><td><code>RedirectIfAuthenticated</code></td><td>Wraps <code>/login</code> — logged-in users are sent to their role dashboard so they never see the login page again.</td></tr>
+</tbody></table>
+<h3>Role → Landing Route</h3>
+<table><thead><tr><th>Role</th><th>Landing Path</th><th>Layout</th></tr></thead><tbody>
+<tr><td><span class="tag red">SUPER_ADMIN</span></td><td>/dashboard</td><td>SuperAdminLayout</td></tr>
+<tr><td><span class="tag">TENANT_ADMIN</span></td><td>/tenant-dashboard</td><td>TenantAdminLayout</td></tr>
+<tr><td><span class="tag">SUB_ADMIN</span></td><td>/sub-admin-dashboard</td><td>TenantAdminLayout (minus sub-admin mgmt)</td></tr>
+<tr><td><span class="tag">MANAGER</span></td><td>/manager-dashboard</td><td>ManagerLayout</td></tr>
+<tr><td><span class="tag green">TEACHER</span></td><td>/teacher-dashboard</td><td>TeacherLayout</td></tr>
+<tr><td><span class="tag amber">PARENT</span></td><td>/parent-dashboard</td><td>ParentLayout</td></tr>
+<tr><td><span class="tag green">LEARNER</span></td><td>/learner/dashboard</td><td>LearnerLayout (+ fullscreen player routes)</td></tr>
+</tbody></table>
+<p class="small"><b>Public routes:</b> <code>/login</code>, <code>/setup-password</code>, <code>/auth/callback</code>, <code>/verify-certificate/:certificateId</code>. <b>Fullscreen (no layout):</b> <code>/learner/course/:courseId</code> (UniversalLMSPlayer), <code>/learner/course/:courseId/view</code> (CourseViewerPage), <code>/learner/course/:courseId/legacy</code> (LockedCoursePlayer), <code>/exam/:examId/take</code> (ExamTakingPage).</p>
+
+<h2 id="layouts">3. Role Layouts &amp; Sidebar Navigation</h2>
+<p>Each layout (in <code>src/components/layouts/</code>) renders a branded sidebar (logo + colors from <code>BrandingContext</code>) and an <code>&lt;Outlet/&gt;</code>. The <b>TenantAdminLayout</b> switches its nav between Corporate and School depending on <code>tenantType</code> from <code>FeatureContext</code>.</p>
+<table><thead><tr><th>Layout</th><th>Sidebar Navigation Items</th></tr></thead><tbody>
+<tr><td><b>SuperAdminLayout</b></td><td><b>Overview:</b> Organizations · Users · Approvals &nbsp; <b>Content:</b> Master Library · Question Bank · Certificates &nbsp; <b>Platform:</b> System Health · Audit · Profile Settings</td></tr>
+<tr><td><b>TenantAdminLayout</b><br>(Corporate)</td><td><b>Management:</b> Learners · Course Assignment · Groups &nbsp; <b>Operations:</b> Compliance &nbsp; <b>Content:</b> Quiz Proctoring · Messages · Corporate Analytics &nbsp; <b>Settings:</b> Sub Admins · Sub-Admin Submissions · Create Course · Certificate Templates · My Submissions · Branding · Storage · Audit</td></tr>
+<tr><td><b>TenantAdminLayout</b><br>(School)</td><td><b>Management:</b> Batches · Course Assignment · Teachers · Students · Parents &nbsp; <b>Operations:</b> Payouts · Credits Config · Escalations · Non-Teaching Tasks · Teacher Levels · Teacher Availability · Demo Analytics &nbsp; <b>Content:</b> Question Bank · Exams · Session Timestamps · Recordings · Messages · School Analytics &nbsp; <b>Settings:</b> Create Course · Certificate Templates · My Submissions · Branding · Storage · Audit · Video Config</td></tr>
+<tr><td><b>ManagerLayout</b></td><td><b>Management:</b> My Courses · My Team &nbsp; <b>Certification:</b> Certificates</td></tr>
+<tr><td><b>TeacherLayout</b></td><td><b>Overview:</b> My Classes &nbsp; <b>Work:</b> Attendance · Homework · Non-Teaching Tasks &nbsp; <b>Growth:</b> Payouts · My Level · Availability &nbsp; <b>Support:</b> Tutoring Requests · Messages</td></tr>
+<tr><td><b>ParentLayout</b></td><td><b>Overview:</b> Schedule · Homework &nbsp; <b>Support:</b> Credits · Live Classes · Messages</td></tr>
+<tr><td><b>LearnerLayout</b></td><td><b>Learning:</b> Course Status · Schedule* · Homework* · Exams* &nbsp; <b>Achievements:</b> Certificates · Tutoring* &nbsp; <b>Communication:</b> Messages &nbsp; <span class="small">(*school-only, gated by feature flags)</span></td></tr>
+</tbody></table>
+
+<h2 id="api">4. API / Data Layer, Env Vars &amp; Socket.IO</h2>
+<h3>Axios instance — <code>src/utils/api.ts</code></h3>
+<pre>const API_BASE_URL = import.meta.env.VITE_API_URL || 'https://quikskillsbackend.quikit.ai';
+const api = axios.create({ baseURL: API_BASE_URL, headers: { 'Content-Type': 'application/json' } });
+
+// Request: attach JWT; drop Content-Type for FormData (let browser set boundary)
+api.interceptors.request.use(cfg => {
+  const token = sessionStorage.getItem('access_token');
+  if (token) cfg.headers.Authorization = `Bearer ${token}`;
+  if (cfg.data instanceof FormData) delete cfg.headers['Content-Type'];
+  return cfg;
+});
+// Response: on 401 clear session and redirect to /login?error=...
+api.interceptors.response.use(r => r, err => {
+  if (err.response?.status === 401) { sessionStorage.clear(); window.location.href = '/login?error=...'; }
+  return Promise.reject(err);
+});</pre>
+<h3>Socket.IO — <code>src/utils/socket.ts</code></h3>
+<p>Connects to <code>${VITE_API_URL}/messages</code> with <code>auth:{token}</code>, transports websocket+polling, infinite reconnection. <code>disconnectMessagesSocket()</code> is called on logout from every layout. The exam timer uses the <code>/exams</code> namespace.</p>
+<h3>Frontend Environment Variables</h3>
+<table><thead><tr><th>Variable</th><th>Purpose</th><th>Next.js equivalent</th></tr></thead><tbody>
+<tr><td><code>VITE_API_URL</code></td><td>REST + WebSocket base URL (dev <code>http://localhost:3020</code>, prod <code>https://quikskillsbackend.quikit.ai</code>)</td><td><code>NEXT_PUBLIC_API_URL</code></td></tr>
+</tbody></table>
+<div class="callout warn"><b>Migration note:</b> <code>import.meta.env.VITE_*</code> → <code>process.env.NEXT_PUBLIC_*</code>. Browser <code>sessionStorage</code>/<code>localStorage</code> auth should move to <b>HTTP-only cookies</b> so Next.js middleware/server components can read auth.</div>
+
+<h2 id="state">5. State Management, Contexts &amp; i18n</h2>
+<p>State is entirely <b>React Context</b> — no Redux/Zustand. Three providers wrap the app (<code>BrandingProvider</code> → <code>FeatureProvider</code> → app):</p>
+<table><thead><tr><th>Context</th><th>Provides</th><th>Source</th></tr></thead><tbody>
+<tr><td><b>BrandingContext</b></td><td>primaryColor, secondaryColor, logo, setBranding(), refreshBranding(); applies CSS vars <code>--brand-primary/secondary</code></td><td><code>GET /tenants/branding/public</code> (pre-login) → <code>/tenants/current</code></td></tr>
+<tr><td><b>FeatureContext</b></td><td>tenantType (corporate/school), features{…16 flags…}, availableRoles, roleLabels, config, refresh()</td><td><code>GET /tenants/current/features</code>; re-fetches on login (storage event)</td></tr>
+<tr><td><b>ThemeContext</b></td><td>activeTheme, draftTheme, isDarkMode, saveTheme(); light/dark/system; persisted in <code>localStorage.quickskill-theme</code></td><td>OS <code>prefers-color-scheme</code> for system mode</td></tr>
+</tbody></table>
+<p><b>Feature flags</b> (FeatureContext): showCourses, showScormContent, showCompliance, showManagerDashboard, showBatches, showSchedule, showAttendance, showHomework, showCredits, showPayouts, showVideoClasses, showParentPortal, showMessaging, showCertificates, showAnalytics, showNotifications, showMultiLanguage. <code>FeatureRoute</code> component gates routes/menu items by these flags.</p>
+<p><b>i18n</b> (<code>src/i18n/config.ts</code>): i18next + react-i18next + language detector. Languages: English (en), Hindi (hi), Tamil (ta), Telugu (te), Kannada (kn), Marathi (mr), Bengali (bn). Detection: <code>localStorage.i18nextLng</code> → browser; fallback en. JSON dictionaries in <code>src/i18n/locales/</code>. <code>LanguageSwitcher</code> component toggles language.</p>
+
+<h2 id="pages">6. Complete Pages Catalog (by Role)</h2>
+<p class="small">Every page component under <code>src/pages/</code>, with purpose and the primary backend endpoints it calls. ~89 pages across 8 folders.</p>
+
+<h3>6.1 Authentication &amp; Standalone (top-level)</h3>
+<table><thead><tr><th>Page</th><th>Purpose</th><th>Key APIs / Features</th></tr></thead><tbody>
+<tr><td>LoginPage</td><td>Email/password login + SSO entry</td><td>POST /auth/login; Google/Microsoft OAuth</td></tr>
+<tr><td>AuthCallbackPage</td><td>OAuth SSO callback handler — stores token, routes to dashboard</td><td>OAuth provider redirect</td></tr>
+<tr><td>SetupPasswordPage</td><td>First-time password setup from invite link</td><td>POST /auth/validate-setup-token, /auth/setup-password</td></tr>
+<tr><td>ResetPasswordPage</td><td>Change password (in-app)</td><td>POST /auth/change-password</td></tr>
+<tr><td>ProfileSettingsPage</td><td>Edit profile, photo, password, preferences</td><td>GET/PATCH /auth/profile, /auth/profile/upload-photo, /auth/change-password</td></tr>
+<tr><td>VerifyCertificatePage</td><td>Public certificate verification by ID</td><td>GET /certificates/verify/:certificateId (public)</td></tr>
+<tr><td>SuperAdminOnboarding</td><td>Initial super-admin onboarding wizard</td><td>tenant/feature bootstrap</td></tr>
+<tr><td>ExamTakingPage</td><td>Fullscreen proctored exam interface (any role)</td><td>GET /exams/:id, exam-sessions/*, proctoring events, /exams WS timer</td></tr>
+<tr><td>Dashboard / CoursesPage / CourseBuilderPage / UserManagementPage</td><td>Legacy/super-admin course &amp; user management screens</td><td>/courses, /users, /auth/register</td></tr>
+<tr><td>NotFoundPage</td><td>404 catch-all</td><td>—</td></tr>
+</tbody></table>
+
+<h3>6.2 SUPER_ADMIN (<code>pages/super-admin/</code>)</h3>
+<table><thead><tr><th>Page</th><th>Purpose</th><th>Key APIs</th></tr></thead><tbody>
+<tr><td>OrganizationsPage</td><td>Manage all tenant organizations</td><td>GET/POST/PATCH /tenants, /tenants/onboard</td></tr>
+<tr><td>MasterLibraryPage</td><td>Browse global master course library</td><td>GET /courses/master/all</td></tr>
+<tr><td>MasterLibraryBuilderPage</td><td>Author/edit master courses (drag-drop modules/lessons)</td><td>POST/PUT /courses, /modules, /lessons</td></tr>
+<tr><td>CertificatesPage</td><td>Manage global certificate templates</td><td>GET/POST/DEL /certificates</td></tr>
+<tr><td>ApprovalDashboardPage</td><td>Approve tenant-submitted courses &amp; certificate templates</td><td>approval-workflow endpoints</td></tr>
+<tr><td>SystemHealthPage</td><td>Platform health &amp; usage overview</td><td>GET /tenants, /users, /audit/storage/global</td></tr>
+<tr><td>AuditDashboardPage</td><td>Global activity logs &amp; storage breakdown</td><td>GET /audit/activity-logs, /storage/global, /storage/tenants</td></tr>
+</tbody></table>
+
+<h3>6.3 TENANT_ADMIN &amp; SUB_ADMIN (<code>pages/tenant-admin/</code> + school-admin)</h3>
+<table><thead><tr><th>Page</th><th>Purpose</th><th>Key APIs</th></tr></thead><tbody>
+<tr><td>TenantDashboardPage</td><td>Tenant home — KPIs, course progress</td><td>GET /analytics/corporate or school overview</td></tr>
+<tr><td>LearnersPage</td><td>Corporate learner CRUD &amp; assignment</td><td>GET /users, POST /auth/register, /admin-reset-password</td></tr>
+<tr><td>CourseAssignmentPage</td><td>Assign courses to learners/groups</td><td>GET /course-assignments/courses, POST /assign</td></tr>
+<tr><td>GroupsPage</td><td>Create/manage learner groups</td><td>GET/POST /groups, /groups/:id/members</td></tr>
+<tr><td>CompliancePage</td><td>Compliance completion tracking &amp; nudges</td><td>GET /compliance/analytics, /nudge-users, POST /nudge-all</td></tr>
+<tr><td>CorporateAnalyticsPage</td><td>Corporate-wide analytics dashboard</td><td>GET /analytics/corporate</td></tr>
+<tr><td>SchoolAnalyticsPage</td><td>School-wide analytics</td><td>GET /analytics/school</td></tr>
+<tr><td>CourseAnalyticsPage</td><td>Per-course completion analytics</td><td>GET /analytics/corporate/course/:courseId</td></tr>
+<tr><td>SubAdminsPage</td><td>Manage sub-administrators</td><td>/users (promote/revoke sub-admin)</td></tr>
+<tr><td>SubAdminSubmissionsPage / TenantMySubmissionsPage</td><td>Approval queue &amp; own submissions</td><td>approval-workflow endpoints</td></tr>
+<tr><td>TenantCourseCreatorPage</td><td>Create courses (approval workflow)</td><td>POST /courses (submit for approval)</td></tr>
+<tr><td>TenantCertificateTemplatesPage</td><td>Design tenant certificate templates</td><td>POST/PUT /certificates (jsPDF designer)</td></tr>
+<tr><td>BrandingPage</td><td>Logo, colors, theme config</td><td>PATCH /tenants/:id/branding</td></tr>
+<tr><td>StoragePage</td><td>Storage usage &amp; quota</td><td>GET /tenants/usage, /audit/storage</td></tr>
+<tr><td>TenantAuditPage</td><td>Tenant audit trail (+PDF export)</td><td>GET /tenant-audit/logs, /export-pdf</td></tr>
+<tr><td>QuizProctoringReviewPage</td><td>Review proctored quiz incidents (corporate)</td><td>GET /quiz-proctoring/incidents/all, PATCH /:sid/incident</td></tr>
+<tr><td colspan="3" style="background:#f5f3ff"><b>School-admin pages (pages/school-admin/)</b></td></tr>
+<tr><td>SchoolAdminDashboardPage</td><td>School operations home</td><td>school analytics, schedule</td></tr>
+<tr><td>BatchesPage</td><td>Batch CRUD, teacher/student assignment</td><td>GET/POST /batches, /users?role=TEACHER, /academic-config/*</td></tr>
+<tr><td>SchoolCourseAssignmentPage</td><td>Assign courses to batches</td><td>/course-assignments</td></tr>
+<tr><td>TeachersPage / StudentsPage / ParentsPage</td><td>Manage teachers / students / parents</td><td>GET /users?role=…, bulk-upload, CRUD</td></tr>
+<tr><td>PayoutsPage</td><td>Generate/approve teacher payouts</td><td>GET/POST/PATCH /payouts/*</td></tr>
+<tr><td>CreditsConfigPage</td><td>Credit packages &amp; allocation</td><td>GET/POST /credits/packages, /allocate</td></tr>
+<tr><td>VideoConfigPage</td><td>Video provider configuration</td><td>PATCH /tenants/:id/video-config</td></tr>
+<tr><td>SessionTimestampsPage / RecordingsPage</td><td>Session join logs &amp; class recordings</td><td>GET /scheduling/admin/session-join-timestamps, /meetings/recordings</td></tr>
+<tr><td>EscalationLogPage</td><td>Teacher-absence call escalations</td><td>GET /escalations/admin</td></tr>
+<tr><td>NonTeachingTasksPage</td><td>Assign &amp; approve non-teaching tasks</td><td>GET/POST/PATCH /non-teaching-work/*</td></tr>
+<tr><td>TeacherLevelsPage</td><td>Teacher performance levels config</td><td>GET/POST /teacher-levels/*</td></tr>
+<tr><td>TeacherAvailabilityPage</td><td>View/edit teacher availability</td><td>GET/PUT /teacher-availability/*</td></tr>
+<tr><td>DemoAnalyticsPage</td><td>Demo/trial conversion analytics</td><td>GET /demo-analytics, /teacher-performance</td></tr>
+<tr><td>QuestionBankPage</td><td>Exam question repository</td><td>GET/POST/PUT/DEL /question-bank</td></tr>
+<tr><td>ExamListPage / ExamCreationPage</td><td>List &amp; create exams</td><td>GET/POST /exams, /question-bank</td></tr>
+<tr><td>ExamEvaluationPage</td><td>Grade exam submissions</td><td>GET /exam-sessions/exam/:id/submissions, PATCH /evaluate</td></tr>
+<tr><td>IncidentReviewPage</td><td>Review exam proctoring incidents</td><td>GET /proctoring/exam/:id/incidents, PATCH /:sid/incident</td></tr>
+<tr><td>ExamAnalyticsPage</td><td>Exam performance analytics</td><td>GET /exam-sessions/exam/:id/analytics</td></tr>
+<tr><td>StudentExamDashboard</td><td>Admin view of student exam results</td><td>GET /exam-sessions/student/:id/results</td></tr>
+</tbody></table>
+
+<h3>6.4 MANAGER (<code>pages/manager/</code>)</h3>
+<table><thead><tr><th>Page</th><th>Purpose</th><th>Key APIs</th></tr></thead><tbody>
+<tr><td>ManagerDashboardPage</td><td>Team overview &amp; metrics</td><td>GET /manager/team-stats, /learner-courses</td></tr>
+<tr><td>MyCoursesPage</td><td>Assigned courses &amp; team progress</td><td>GET /course-assignments/my-assignments, /progress/my</td></tr>
+<tr><td>MyTeamPage</td><td>Team roster &amp; per-member status</td><td>GET /manager/team-list, /team/:id</td></tr>
+<tr><td>CertificatesPage</td><td>Team member certificates</td><td>GET /certificates (team-filtered)</td></tr>
+</tbody></table>
+
+<h3>6.5 TEACHER (<code>pages/teacher/</code>)</h3>
+<table><thead><tr><th>Page</th><th>Purpose</th><th>Key APIs</th></tr></thead><tbody>
+<tr><td>TeacherDashboardPage</td><td>Today's classes, tasks, earnings</td><td>GET /scheduling/teacher/classes, /analytics/teacher-dashboard</td></tr>
+<tr><td>MyClassesPage</td><td>Batches, schedule, start video class</td><td>GET /scheduling/teacher/classes, /meetings, POST /meetings</td></tr>
+<tr><td>AttendancePage</td><td>Mark class attendance</td><td>GET classes, POST /users/by-ids, /attendance/mark</td></tr>
+<tr><td>HomeworkPage</td><td>Create &amp; grade homework</td><td>GET/POST /homework, /upload/*, PATCH /submissions/:id/grade</td></tr>
+<tr><td>PayoutSummaryPage</td><td>Earnings by month/year</td><td>GET /payouts/teacher?year=…</td></tr>
+<tr><td>TeacherNonTeachingPage</td><td>Non-teaching task board</td><td>GET /non-teaching-work/teacher, PATCH /:id/complete</td></tr>
+<tr><td>TeacherLevelPage</td><td>Personal performance level</td><td>GET /teacher-levels/me</td></tr>
+<tr><td>TeacherAvailabilityPage</td><td>Set availability slots</td><td>GET/PUT /teacher-availability/me</td></tr>
+<tr><td>TutoringRequestsPage</td><td>Accept/reject tutoring requests</td><td>GET /tutoring-requests/teacher, PATCH /accept, /reject, /complete</td></tr>
+</tbody></table>
+
+<h3>6.6 PARENT (<code>pages/parent/</code>)</h3>
+<table><thead><tr><th>Page</th><th>Purpose</th><th>Key APIs</th></tr></thead><tbody>
+<tr><td>ParentDashboardPage</td><td>Child progress summary</td><td>GET /credits/my-balance, /scheduling/student/classes, /homework/student/submissions</td></tr>
+<tr><td>ChildSchedulePage</td><td>Child's class schedule</td><td>GET /scheduling/student/classes</td></tr>
+<tr><td>CreditsPage</td><td>View credits &amp; transaction history</td><td>GET /credits/my-balance, /packages, /my-transactions</td></tr>
+<tr><td>HomeworkStatusPage</td><td>Track child's homework</td><td>GET /homework/student/submissions</td></tr>
+<tr><td>LiveClassStatusPage</td><td>Upcoming/live classes</td><td>GET /meetings/live-status/:studentId</td></tr>
+</tbody></table>
+
+<h3>6.7 LEARNER (<code>pages/learner/</code>)</h3>
+<table><thead><tr><th>Page</th><th>Purpose</th><th>Key APIs</th></tr></thead><tbody>
+<tr><td>LearnerDashboardPage</td><td>Assigned courses, certificates, exams</td><td>GET /course-assignments/my-assignments, /certificates/my-certificates, /exams/student</td></tr>
+<tr><td>CourseStatusTrackingPage</td><td>Per-course progress tracking</td><td>GET /course-assignments/my-assignments, /progress</td></tr>
+<tr><td>CourseViewerPage</td><td>Fullscreen course player</td><td>POST /progress, /player/sync, quizzes</td></tr>
+<tr><td>CompleteLessonPage</td><td>Lesson completion flow</td><td>POST /progress</td></tr>
+<tr><td>StudentSchedulePage</td><td>Class schedule (school)</td><td>GET /scheduling/student/classes</td></tr>
+<tr><td>LearnerHomeworkPage</td><td>View &amp; submit homework (school)</td><td>GET /homework/student/submissions, POST /homework/:id/submit, /upload/*</td></tr>
+<tr><td>TutoringRequestPage</td><td>Request tutoring sessions (school)</td><td>GET /tutoring-requests/available-teachers, POST /tutoring-requests</td></tr>
+<tr><td>CertificatesPage</td><td>View &amp; download certificates</td><td>GET /certificates/my-certificates, POST track-download</td></tr>
+</tbody></table>
+
+<h3>6.8 Shared (<code>pages/shared/</code>)</h3>
+<table><thead><tr><th>Page</th><th>Purpose</th><th>Key APIs</th></tr></thead><tbody>
+<tr><td>MessagesPage</td><td>Chat hub (direct + group) for all roles</td><td>GET /messages/contacts, /conversations; Socket.IO <code>/messages</code></td></tr>
+<tr><td>VideoClassPage</td><td>Embedded video meeting (teacher/parent/learner)</td><td>GET /meetings/:meetingId; Jitsi/Zoom embed; join/leave tracking</td></tr>
+</tbody></table>
+
+<h2 id="components">7. Key Feature Components</h2>
+<table><thead><tr><th>Component</th><th>Role</th><th>What it does</th></tr></thead><tbody>
+<tr><td>CourseBuilder / CourseCreator / MasterCourseStudio</td><td>Admin</td><td>Drag-drop module/lesson authoring (@dnd-kit); SCORM/video/PDF lessons</td></tr>
+<tr><td>QuizBuilderAdvanced / QuizCreator / PasteQuestionsModal</td><td>Admin/Teacher</td><td>Build quizzes (MCQ, T/F, fill-blank, match); bulk paste-import questions</td></tr>
+<tr><td>CertificateDesigner</td><td>Admin</td><td>Visual certificate template editor; field placement; jsPDF render</td></tr>
+<tr><td>UniversalLMSPlayer (learner/)</td><td>Learner</td><td>Main course player — SCORM/PPT (slides), PDF (scroll), Video/Audio (time); progress + offline</td></tr>
+<tr><td>LockedCoursePlayer (learner/)</td><td>Learner</td><td>Legacy locked-course fallback player</td></tr>
+<tr><td>CompliancePlayer</td><td>Learner</td><td>Mandatory compliance course playback &amp; completion</td></tr>
+<tr><td>VideoPlayer</td><td>Learner</td><td>react-player wrapper; position tracking; quiz overlays</td></tr>
+<tr><td>ResourceUploader / SubModuleResourceEngine</td><td>Admin/Teacher</td><td>tus resumable multi-file upload; dynamic resource rendering</td></tr>
+<tr><td>OnboardingWizard / TenantOnboardingWizard</td><td>Admin</td><td>Multi-step user &amp; tenant setup (branding, features)</td></tr>
+<tr><td>RoleSwitcher</td><td>Multi-role</td><td>Switch active role (updates <code>localStorage.activeRole</code>)</td></tr>
+<tr><td>LanguageSwitcher</td><td>All</td><td>i18n language toggle</td></tr>
+<tr><td>BulkUploadModal</td><td>Admin</td><td>CSV import of teachers/students/parents</td></tr>
+<tr><td>AssignCourseModal / OnboardingWizard / NudgeBulkModal</td><td>Admin/Manager</td><td>Bulk assign, onboard, nudge</td></tr>
+<tr><td>StorageHealthWidget</td><td>Admin</td><td>Storage quota indicator</td></tr>
+<tr><td>UpgradeEmailTemplateEditor / WelcomeKitEditor</td><td>Super Admin</td><td>HTML email template editors (react-quill)</td></tr>
+<tr><td>ErrorBoundary</td><td>All</td><td>Catches render errors, fallback UI + logs to <code>/logs/client-error</code></td></tr>
+<tr><td>FeatureRoute</td><td>All</td><td>Gates routes/menu by FeatureContext flags</td></tr>
+</tbody></table>
+<h3>Custom Hooks (<code>src/hooks/</code>)</h3>
+<table><thead><tr><th>Hook</th><th>Purpose</th></tr></thead><tbody>
+<tr><td>useFaceProctoring</td><td>MediaPipe face detection — no-face, multiple faces, looking away/down, eyes closed, too far; grace + debounce</td></tr>
+<tr><td>useProctoringEngine</td><td>Exam behaviour monitor — tab switch, fullscreen exit, copy/paste, print, shortcuts → POST /proctoring/:sid/event</td></tr>
+<tr><td>useQuizProctoringEngine</td><td>Same for master-course quizzes → POST /quiz-proctoring/:sid/event</td></tr>
+<tr><td>useCertificateNotification</td><td>Toast/celebration when a certificate is issued</td></tr>
+<tr><td>useOfflineDetection</td><td>Online/offline status → OfflineAlert; local progress buffering</td></tr>
+<tr><td>useAutoSave</td><td>Debounced autosave for builders/forms</td></tr>
+<tr><td>useTenantOnboarding</td><td>Drives the tenant onboarding wizard state</td></tr>
+</tbody></table>
+
+<h2 id="media">8. Real-time &amp; Media Features</h2>
+<ul>
+<li><b>Messaging (Socket.IO <code>/messages</code>):</b> realtime send/receive, typing indicators, presence, reactions, group chat; auto-reconnect; disconnect on logout.</li>
+<li><b>Exam timer (Socket.IO <code>/exams</code>):</b> server-authoritative countdown — <code>timerSync</code> every 30s, warnings at 5min/1min, <code>forceSubmit</code> at timeout.</li>
+<li><b>Face proctoring (MediaPipe):</b> in-browser webcam analysis for quizzes/exams; violations logged server-side.</li>
+<li><b>Behaviour proctoring:</b> fullscreen enforcement, tab/visibility, copy/paste/print/right-click/shortcut detection.</li>
+<li><b>Video:</b> react-player (YouTube/Vimeo/HLS/MP4) for lessons; Jitsi/Zoom/Meet embeds for live classes (VideoClassPage); join/leave attendance tracking.</li>
+<li><b>SCORM playback:</b> UniversalLMSPlayer tracks <code>lesson_location</code> (slide index / scroll px / playback seconds), score, completion → <code>/player/sync</code>.</li>
+<li><b>Resumable uploads:</b> tus-js-client for large media (pause/resume) → S3 via backend TUS endpoint.</li>
+<li><b>PDF / canvas:</b> jsPDF + html2canvas for certificates &amp; report export; canvas-confetti for completion celebrations; react-pdf for PDF lessons.</li>
+<li><b>Offline:</b> useOfflineDetection buffers progress locally and syncs on reconnect.</li>
+</ul>
+
+<h2 id="migration">9. Vite → Next.js Migration Guidance</h2>
+<table><thead><tr><th>Vite / React</th><th>Next.js (App Router)</th></tr></thead><tbody>
+<tr><td><code>src/App.tsx</code> route table</td><td>File-based routes under <code>app/</code>; route groups per role: <code>app/(super-admin)/</code>, <code>app/(tenant-admin)/</code>, <code>app/(teacher)/</code>, etc.</td></tr>
+<tr><td><code>components/layouts/*</code></td><td>Per-group <code>layout.tsx</code> (sidebar + Outlet → children)</td></tr>
+<tr><td>PrivateRoute / RoleProtectedRoute</td><td><code>middleware.ts</code> (cookie-based auth + role check) + server-side redirects</td></tr>
+<tr><td><code>sessionStorage</code>/<code>localStorage</code> token</td><td><b>HTTP-only cookie</b> for the JWT (readable in middleware/server components); keep theme/lang in localStorage</td></tr>
+<tr><td>BrandingProvider / FeatureProvider / ThemeProvider</td><td>Client providers wrapping <code>app/layout.tsx</code>; feature/branding can be fetched server-side per request for SSR theming</td></tr>
+<tr><td><code>src/utils/api.ts</code> (axios)</td><td><code>lib/api.ts</code> client util, or Next.js Server Actions / Route Handlers for SSR fetches</td></tr>
+<tr><td><code>src/utils/socket.ts</code></td><td><code>lib/socket.ts</code> — client component only (<code>'use client'</code>)</td></tr>
+<tr><td>Media/proctoring/quill/charts</td><td>Mark <code>'use client'</code> &amp; <code>dynamic(() =&gt; …, { ssr:false })</code> — they need <code>window</code>/<code>navigator</code></td></tr>
+<tr><td><code>import.meta.env.VITE_API_URL</code></td><td><code>process.env.NEXT_PUBLIC_API_URL</code></td></tr>
+<tr><td>i18next browser detector</td><td><code>next-intl</code> / <code>next-i18next</code> with locale routing or cookie</td></tr>
+</tbody></table>
+<div class="callout green"><b>Key insight:</b> The REST contract is unchanged by the backend's Mongo→Postgres switch, so the frontend migration is purely a <b>Vite→Next.js framework port</b>: convert the route table to the App Router, move auth from browser storage to cookies, and wrap browser-only components (<code>'use client'</code>/<code>ssr:false</code>). Business logic, API calls, contexts and Tailwind styling carry over directly.</div>
+
+<p class="small" style="margin-top:30px;text-align:center;color:#94a3b8">— End of Frontend Documentation · QuikSkill LMS · Document 2 of 2 —</p>
+
+</body>
+</html>

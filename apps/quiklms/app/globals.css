@@ -1,0 +1,123 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/*
+ * QuikSkill design tokens.
+ *
+ * Two layers:
+ *  1. Brand vars (--brand-primary/secondary) are hex and set server-side per
+ *     tenant (Phase 5). They drive the accent and are overridable per tenant.
+ *  2. Neutral/semantic tokens are static, defined as space-separated RGB
+ *     channels so Tailwind can apply opacity:  rgb(var(--surface) / <alpha>).
+ *     Distinctiveness comes from structure, type, and space — not the hue —
+ *     which is why these stay constant while the brand color varies.
+ */
+:root {
+  /* Brand (tenant-overridable). QuikSkill default = confident indigo. */
+  --brand-primary: #4f46e5;
+  --brand-secondary: #3730a3;
+
+  /* Surfaces */
+  --bg: 247 248 250;            /* app canvas */
+  --surface: 255 255 255;       /* cards, panels */
+  --surface-muted: 244 246 249; /* insets, table headers, hovers */
+  --surface-sunken: 238 241 245;
+
+  /* Text */
+  --fg: 17 24 39;          /* primary text (slate-900-ish) */
+  --fg-muted: 100 116 139; /* secondary text */
+  --fg-subtle: 148 163 184;/* tertiary / placeholders */
+
+  /* Lines */
+  --line: 229 232 238;        /* default borders */
+  --line-strong: 209 215 224; /* emphasized borders */
+
+  /* State (foreground / soft background pairs) */
+  --success: 22 163 74;   --success-soft: 220 252 231;
+  --warning: 217 119 6;   --warning-soft: 254 243 199;
+  --danger: 220 38 38;    --danger-soft: 254 226 226;
+  --info: 37 99 235;      --info-soft: 219 234 254;
+
+  /* Elevation */
+  --shadow-color: 17 24 39;
+
+  /* Radius scale */
+  --radius-sm: 0.375rem;
+  --radius-md: 0.625rem;
+  --radius-lg: 0.875rem;
+  --radius-xl: 1.125rem;
+}
+
+.dark {
+  --bg: 11 15 23;
+  --surface: 19 26 36;
+  --surface-muted: 26 34 46;
+  --surface-sunken: 14 20 28;
+
+  --fg: 232 237 244;
+  --fg-muted: 148 163 184;
+  --fg-subtle: 100 116 139;
+
+  --line: 35 44 58;
+  --line-strong: 46 58 77;
+
+  --success: 74 222 128;   --success-soft: 20 46 33;
+  --warning: 251 191 36;   --warning-soft: 51 38 8;
+  --danger: 248 113 113;   --danger-soft: 51 22 22;
+  --info: 96 165 250;      --info-soft: 18 33 58;
+
+  --shadow-color: 0 0 0;
+}
+
+@layer base {
+  html,
+  body {
+    height: 100%;
+  }
+
+  /* Base styles reference tokens directly so they don't depend on utility
+   * generation (more robust than @apply for custom token colors). */
+  body {
+    background-color: rgb(var(--bg));
+    color: rgb(var(--fg));
+    font-family: var(--font-sans), ui-sans-serif, system-ui, sans-serif;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+
+  /* Display face carries the personality; data uses tabular figures. */
+  h1, h2, h3, h4 {
+    font-family: var(--font-display), var(--font-sans), sans-serif;
+    letter-spacing: -0.02em;
+  }
+
+  /* Numbers in stats/tables shouldn't jitter as values change. */
+  .tabular {
+    font-variant-numeric: tabular-nums;
+    font-feature-settings: 'tnum';
+  }
+
+  /* Accessible, on-brand focus ring — never removed, only restyled. */
+  :where(a, button, input, select, textarea, [tabindex]):focus-visible {
+    outline: 2px solid var(--brand-primary);
+    outline-offset: 2px;
+    border-radius: var(--radius-sm);
+  }
+
+  ::selection {
+    background: var(--brand-primary);
+    color: #fff;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
