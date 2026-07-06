@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { withAuth } from "@/lib/with-auth";
-import { getS3Object } from "@/lib/s3";
+import { getS3Object } from "@/lib/storage";
 
 // Keys are `uploads/<orgId>/<uuid>.<ext>` (see ../route.ts).
 const KEY_PATTERN = /^uploads\/[a-zA-Z0-9_-]+\/[a-f0-9-]{8,}\.[a-zA-Z0-9]{2,8}$/;
@@ -8,7 +8,7 @@ const KEY_PATTERN = /^uploads\/[a-zA-Z0-9_-]+\/[a-f0-9-]{8,}\.[a-zA-Z0-9]{2,8}$/
 /**
  * GET /api/v1/hrms/uploads/proxy?key=...
  *
- * Streams a stored S3 object back to the browser. Auth-guarded AND tenant-scoped:
+ * Streams a stored object back to the browser. Auth-guarded AND tenant-scoped:
  * the key's tenant segment must match the caller's tenant, so one tenant can
  * never fetch another tenant's files by guessing/leaking a key (was previously
  * an open, unauthenticated endpoint).

@@ -4,9 +4,9 @@ import {
   isAllowedMime,
   resolveDocumentPublicUrl,
 } from "@/lib/storage/documents";
-import { isCrmDocumentS3Key } from "@/lib/s3";
+import { isCrmDocumentS3Key } from "@/lib/storage";
 
-describe("crm document S3 keys", () => {
+describe("crm document storage keys", () => {
   it("builds crm-documents/{refId}/{timestamp}-{filename}", () => {
     const key = buildCrmDocumentStorageKey("lead-abc", "my_file.pdf");
     expect(key).toMatch(/^crm-documents\/lead-abc\/\d+-my_file\.pdf$/);

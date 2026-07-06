@@ -3,7 +3,7 @@ import path from "path";
 import { randomUUID } from "crypto";
 import { withAuth } from "@/lib/with-auth";
 import { successResponse, validationError, internalError } from "@/lib/api-response";
-import { uploadToS3 } from "@/lib/s3";
+import { uploadToS3 } from "@/lib/storage";
 
 const MB = 1024 * 1024;
 const MAX_IMAGE_BYTES = 5 * MB;

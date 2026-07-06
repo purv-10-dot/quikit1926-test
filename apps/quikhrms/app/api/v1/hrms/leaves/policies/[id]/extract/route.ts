@@ -4,7 +4,7 @@ import { withAuth } from "@/lib/with-auth";
 import { successResponse, validationError, notFound, internalError } from "@/lib/api-response";
 import { extractLeavePolicy } from "@/lib/services/leave-policy-extractor";
 import { invalidateLeavePolicyCache } from "@/lib/services/leave-policy-engine";
-import { uploadToS3, getS3Object } from "@/lib/s3";
+import { uploadToS3, getS3Object, extractKeyFromUrl } from "@/lib/storage";
 
 const MAX_BYTES = 15 * 1024 * 1024;
 
@@ -22,9 +22,9 @@ const ALLOWED_MIMES = new Set([
  * POST /api/v1/hrms/leaves/policies/[id]/extract
  *
  * Two modes:
- *   1. multipart/form-data with `file` -> upload to S3, then extract.
+ *   1. multipart/form-data with `file` -> upload to storage, then extract.
  *   2. application/json with { fileUrl, fileType, fileName } already stored
- *      -> read from S3 and extract.
+ *      -> read from storage and extract.
  *
  * Result is saved on policy.extractedRules and status moves to PendingReview.
  * Approved rules MUST still be set explicitly via the /approve endpoint.
@@ -66,15 +66,9 @@ export const POST = withAuth(async (req: NextRequest, { orgId, userId }, params)
       if (!url || !type) return validationError("Either upload `file` or provide stored fileUrl + fileType");
 
       const proxyMatch = url.match(/\/uploads\/proxy\?.*?key=([^&]+)/i);
-      const bucket = process.env.AWS_S3_BUCKET ?? "";
-      const region = process.env.AWS_REGION ?? "";
-      let key: string | null = null;
-      if (proxyMatch) key = decodeURIComponent(proxyMatch[1]);
-      else if (bucket && url.includes(`${bucket}.s3.${region}.amazonaws.com/`)) {
-        key = decodeURIComponent(url.split(`${bucket}.s3.${region}.amazonaws.com/`)[1].split("?")[0]);
-      } else if (bucket && url.includes(`${bucket}.s3.amazonaws.com/`)) {
-        key = decodeURIComponent(url.split(`${bucket}.s3.amazonaws.com/`)[1].split("?")[0]);
-      }
+      const key: string | null = proxyMatch
+        ? decodeURIComponent(proxyMatch[1])
+        : extractKeyFromUrl(url);
 
       if (key) {
         const obj = await getS3Object(key);

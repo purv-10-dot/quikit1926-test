@@ -5,15 +5,15 @@ import {
   isAllowedImageType,
   MAX_IMAGE_BYTES,
   putObject,
-} from "@/lib/s3";
+} from "@/lib/storage";
 
 // Force the Node.js runtime (default for app-router but explicit here so
-// streaming the upload to S3 doesn't accidentally land on Edge).
+// streaming the upload to Cloud Storage doesn't accidentally land on Edge).
 export const runtime = "nodejs";
 
 /**
- * POST /api/docs/upload — multipart form upload that pushes an image to S3
- * under a tenant-scoped key and returns a stable proxy URL the editor can
+ * POST /api/docs/upload — multipart form upload that pushes an image to
+ * Cloud Storage under a tenant-scoped key and returns a stable proxy URL the editor can
  * embed directly. The proxy URL never expires; /api/docs/asset signs a
  * fresh GET on every request.
  *

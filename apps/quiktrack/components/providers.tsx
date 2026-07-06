@@ -12,7 +12,15 @@ import { useState } from "react";
  * Do NOT reorder, add new providers without architect approval, or remove
  * any of the three. See CLAUDE.md "Provider Order" rule.
  */
-export function Providers({ children }: { children: React.ReactNode }) {
+export function Providers({
+  children,
+  nonce,
+}: {
+  children: React.ReactNode;
+  /** Per-request CSP nonce (SEC-06) — forwarded to next-themes' inline
+   *  theme script so strict `script-src` doesn't block it. */
+  nonce?: string;
+}) {
   const [queryClient] = useState(() => new QueryClient({
     defaultOptions: {
       queries: { staleTime: 60 * 1000, refetchOnWindowFocus: false },
@@ -27,6 +35,7 @@ export function Providers({ children }: { children: React.ReactNode }) {
           defaultTheme="system"
           enableSystem
           disableTransitionOnChange
+          nonce={nonce}
         >
           {children}
         </ThemeProvider>

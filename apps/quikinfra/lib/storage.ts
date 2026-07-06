@@ -7,7 +7,7 @@
 export {
   getStorageDriver,
   resetStorageDriver,
-  S3Driver,
+  GcsDriver,
   fileService,
   FileService,
   FileError,

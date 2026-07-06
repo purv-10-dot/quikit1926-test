@@ -6,7 +6,7 @@ import {
   isCrmDocumentS3Key,
   isS3Configured,
   putObject,
-} from "@/lib/s3";
+} from "@/lib/storage";
 
 export { isS3Configured };
 
@@ -39,7 +39,7 @@ function sanitizeFileName(name: string): string {
 }
 
 /**
- * S3 key segment: prefer folderId, else refId (legacy), else "root".
+ * Storage key segment: prefer folderId, else refId (legacy), else "root".
  * crm-documents/{segment}/{timestamp}-{filename}
  */
 export function resolveStorageSegment(folderId: string | null | undefined, refId: string): string {
@@ -76,7 +76,7 @@ export async function saveCrmUpload(
 }> {
   if (!isS3Configured()) {
     throw new Error(
-      "Document storage is not configured. Set AWS_REGION, AWS_S3_BUCKET, AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY.",
+      "Document storage is not configured. Set GCS_PROJECT_ID, GCS_BUCKET, GCS_CLIENT_EMAIL, GCS_PRIVATE_KEY.",
     );
   }
   if (file.size > MAX_BYTES) {
