@@ -12,6 +12,7 @@ import { useMembersChanged } from "@/lib/hooks/useMembersChanged";
 import { useBacklogViewSettings } from "@/lib/hooks/useBacklogViewSettings";
 import { useFilterPersistence } from "@/lib/hooks/usePersistentFilters";
 import { EpicPanel } from "./epic-panel";
+import { BulkEditPopover } from "./bulk-edit-popover";
 import {
   ViewSettingsPopover,
   DEFAULT_VIEW_SETTINGS,
@@ -2737,6 +2738,40 @@ export function BacklogView({ projectId }: { projectId: string }) {
     }
   }
 
+  // Apply a field patch (status/assignee/priority/epic/dates/eta) to every
+  // selected issue. Mirrors handleBulkMoveToSprint: parallel PATCH reusing the
+  // per-issue route (permissions, history, notifications, rollup). The selection
+  // is KEPT so edits can be chained; only failures are surfaced.
+  async function handleBulkEdit(patch: Record<string, unknown>) {
+    if (selectedIds.size === 0 || bulkBusy || Object.keys(patch).length === 0) return;
+    setBulkBusy(true);
+    try {
+      const ids = Array.from(selectedIds);
+      const results = await Promise.all(
+        ids.map((id) =>
+          fetch(`/api/issues/${id}`, {
+            method: "PATCH",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(patch),
+          })
+            .then((r) => r.json() as Promise<{ success: boolean }>)
+            .catch(() => ({ success: false as const })),
+        ),
+      );
+      const failed = results.filter((r) => !r.success).length;
+      const ok = results.length - failed;
+      showToast(
+        failed > 0
+          ? `${ok} updated · ${failed} failed`
+          : `${ok} item${ok === 1 ? "" : "s"} updated.`,
+        failed > 0 ? "error" : "success",
+      );
+      await refreshAllSections();
+    } finally {
+      setBulkBusy(false);
+    }
+  }
+
   async function refreshSection(
     key: string,
     sprintId: string | null,
@@ -3208,6 +3243,15 @@ export function BacklogView({ projectId }: { projectId: string }) {
           </button>
           <span className="font-medium text-gray-900">{selectedIds.size} selected</span>
           <div className="ml-auto flex items-center gap-2">
+            {(perms.loading || perms.has("Issue", "update")) && (
+              <BulkEditPopover
+                statuses={statuses}
+                members={members}
+                epics={epics}
+                disabled={bulkBusy}
+                onApply={handleBulkEdit}
+              />
+            )}
             <div ref={moveBtnRef} className="relative">
               <button
                 type="button"
