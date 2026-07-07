@@ -56,8 +56,6 @@ jobs:
               - 'apps/quikcrm/**'
             quiksupport:
               - 'apps/quiksupport/**'
-            quiksupport:
-              - 'apps/quiksupport/**'
 
       - name: Generate matrix
         id: set-matrix
@@ -152,7 +150,6 @@ jobs:
             NEXT_PUBLIC_QUIKSUPPORT_URL=https://uatsupport.quikit.ai
             NEXT_PUBLIC_APP_URL=https://uatsupport.quikit.ai
             NEXTAUTH_URL=https://uatauthn.quikit.ai
-            NEXT_PUBLIC_QUIKSUPPORT_URL=https://uatsupport.quikit.ai
 
   update-gitops:
     name: Update GitOps Repository
