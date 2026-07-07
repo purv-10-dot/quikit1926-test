@@ -212,7 +212,7 @@ jobs:
                 IMAGE="ghcr.io/akhileshgandhi/quikhrms-runtime:${TAG}"
                 ;;
               quiksupport)
-                FILE="quiksupport-deployment.yaml"
+                FILE="support-deployment.yaml"
                 IMAGE="ghcr.io/akhileshgandhi/quiksupport-runtime:${TAG}"
                 ;;
               *)
