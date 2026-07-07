@@ -543,6 +543,7 @@ export function createAuthOptions(config: AuthConfig): NextAuthOptions {
           "https://quikinfra.quikit.ai",
           "https://quikhrms.vercel.app",
           "https://people.quikit.ai",
+          "https://support.quikit.ai",
           // UAT custom domains (uat<app>.quikit.ai) — added alongside prod.
           "https://uatapps.quikit.ai",
           "https://uatscale.quikit.ai",
@@ -552,6 +553,7 @@ export function createAuthOptions(config: AuthConfig): NextAuthOptions {
           "https://uatsocial.quikit.ai",
           "https://uatinfra.quikit.ai",
           "https://uatpeople.quikit.ai",
+          "https://uatsupport.quikit.ai",
         ];
         const fromEnv = (process.env.AUTH_ALLOWED_RETURN_ORIGINS ?? "")
           .split(",")

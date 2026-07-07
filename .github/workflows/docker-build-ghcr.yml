@@ -62,6 +62,8 @@ jobs:
               - 'apps/quikcrm/**'
             quikhrms:
               - 'apps/quikhrms/**'
+            quiksupport:
+              - 'apps/quiksupport/**'
 
       - name: Generate Matrix
         id: set-matrix
@@ -70,9 +72,9 @@ jobs:
           APPS=()
 
           if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
-            APPS=("quikit" "auth" "admin" "quikscale" "quiktrack" "quikinfra" "quikcrm" "quikhrms")
+            APPS=("quikit" "auth" "admin" "quikscale" "quiktrack" "quikinfra" "quikcrm" "quikhrms" "quiksupport")
           elif [ "${{ steps.filter.outputs.shared }}" = "true" ]; then
-            APPS=("quikit" "auth" "admin" "quikscale" "quiktrack" "quikinfra" "quikcrm" "quikhrms")
+            APPS=("quikit" "auth" "admin" "quikscale" "quiktrack" "quikinfra" "quikcrm" "quikhrms" "quiksupport")
           else
             [ "${{ steps.filter.outputs.quikit }}" = "true" ] && APPS+=("quikit")
             [ "${{ steps.filter.outputs.auth }}" = "true" ] && APPS+=("auth")
@@ -82,6 +84,7 @@ jobs:
             [ "${{ steps.filter.outputs.quikinfra }}" = "true" ] && APPS+=("quikinfra")
             [ "${{ steps.filter.outputs.quikcrm }}" = "true" ] && APPS+=("quikcrm")
             [ "${{ steps.filter.outputs.quikhrms }}" = "true" ] && APPS+=("quikhrms")
+            [ "${{ steps.filter.outputs.quiksupport }}" = "true" ] && APPS+=("quiksupport")
           fi
 
           echo "Selected Apps: ${APPS[@]}"
@@ -106,6 +109,7 @@ jobs:
           echo "quikinfra=${{ steps.filter.outputs.quikinfra }}"
           echo "quikcrm=${{ steps.filter.outputs.quikcrm }}"
           echo "quikhrms=${{ steps.set-matrix.outputs.quikhrms }}"
+          echo "quiksupport=${{ steps.filter.outputs.quiksupport }}"
           echo "apps=${{ steps.set-matrix.outputs.apps }}"
 
   build:
@@ -169,4 +173,6 @@ jobs:
             NEXT_PUBLIC_QUIKINFRA_URL=https://infra.quikit.ai
             NEXT_PUBLIC_QUIKCRM_URL=https://crm.quikit.ai
             NEXT_PUBLIC_QUIKHRMS_URL=https://people.quikit.ai
+            NEXT_PUBLIC_QUIKSUPPORT_URL=https://support.quikit.ai
+            NEXT_PUBLIC_APP_URL=https://support.quikit.ai
             NEXTAUTH_URL=https://authn.quikit.ai
