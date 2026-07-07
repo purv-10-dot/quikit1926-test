@@ -56,6 +56,8 @@ jobs:
               - 'apps/quikcrm/**'
             quiksupport:
               - 'apps/quiksupport/**'
+            quiksupport:
+              - 'apps/quiksupport/**'
 
       - name: Generate matrix
         id: set-matrix
@@ -75,7 +77,7 @@ jobs:
             [ "${{ steps.filter.outputs.quikhrms }}" = "true" ] && APPS+=("quikhrms")
             [ "${{ steps.filter.outputs.quikinfra }}" = "true" ] && APPS+=("quikinfra")
             [ "${{ steps.filter.outputs.quikcrm }}" = "true" ] && APPS+=("quikcrm")
-            [ "${{ steps.filter.outputs.quikcrm }}" = "true" ] && APPS+=("quiksupport")
+            [ "${{ steps.filter.outputs.quiksupport }}" = "true" ] && APPS+=("quiksupport")
           fi
 
           echo "Selected apps: ${APPS[@]}"
@@ -147,6 +149,8 @@ jobs:
             NEXT_PUBLIC_QUIKINFRA_URL=https://uatinfra.quikit.ai
             NEXT_PUBLIC_QUIKCRM_URL=https://uatcrm.quikit.ai
             NEXT_PUBLIC_QUIKHRMS_URL=https://uatpeople.quikit.ai
+            NEXT_PUBLIC_QUIKSUPPORT_URL=https://uatsupport.quikit.ai
+            NEXT_PUBLIC_APP_URL=https://uatsupport.quikit.ai
             NEXTAUTH_URL=https://uatauthn.quikit.ai
             NEXT_PUBLIC_QUIKSUPPORT_URL=https://uatsupport.quikit.ai
 
@@ -211,7 +215,7 @@ jobs:
                 IMAGE="ghcr.io/akhileshgandhi/quikhrms-runtime:${TAG}"
                 ;;
               quiksupport)
-                FILE="support-deployment.yaml"
+                FILE="quiksupport-deployment.yaml"
                 IMAGE="ghcr.io/akhileshgandhi/quiksupport-runtime:${TAG}"
                 ;;
               *)

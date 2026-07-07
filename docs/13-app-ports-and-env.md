@@ -22,7 +22,8 @@ A single reference for every app in the [QuikIT monorepo](../) — what port it 
 | **quiksocial** | `3007` | `3007` | [apps/quiksocial/package.json](../apps/quiksocial/package.json) | QuikSocial — AI social media management. Talks to a Python AI service on Railway. |
 | **quikcrm** | `3008` | `3008` | [apps/quikcrm/package.json](../apps/quikcrm/package.json) | QuikCRM — sales execution (leads, accounts, opportunities, automations). Has a separate BullMQ `worker` process (`npm run worker`). |
 | **quikhrms** | `3009` | `3009` | [apps/quikhrms/package.json](../apps/quikhrms/package.json) | QuikHRMS (package name `quikit-hrms`) — HR management (employees, payroll, attendance, leave). Requires Node ≥ 20.14. |
-| **_template** | `3010` | `3010` | [apps/_template/package.json](../apps/_template/package.json) | Reference scaffold for new apps. Don't run alongside a real app on `3010`. |
+| **quiksupport** | `3010` | `3010` | [apps/quiksupport/package.json](../apps/quiksupport/package.json) | QuikSupport — helpdesk / ticketing (tickets, SLA, categories, agent queues). Ported from `helpdesk-mgt`; own `Hd*`/`Qsp*` RBAC. Public domain `support.quikit.ai` / `uatsupport.quikit.ai`. |
+| **_template** | `3010` | `3010` | [apps/_template/package.json](../apps/_template/package.json) | Reference scaffold for new apps. Shares port `3010` with quiksupport — don't run both (or a real app) on `3010` at once. |
 
 ### Startup flow
 
@@ -211,6 +212,16 @@ Variables listed in §2 apply everywhere and are not repeated here.
 ### 3.10 [apps/quikvc](../apps/quikvc/) and [apps/_template](../apps/_template/)
 
 Use the common variables only (§2). QuikVC additionally uses `RESEND_API_KEY` (react-email templates), `@vercel/blob` storage, and optional `QUIKVC_DEV_BYPASS` / `QUIKVC_DEV_ROLE` for local role simulation.
+
+### 3.11 [apps/quiksupport](../apps/quiksupport/) — helpdesk / ticketing
+
+| Variable | Purpose |
+|---|---|
+| `NEXT_PUBLIC_QUIKSUPPORT_URL` | This app's own public origin (`http://localhost:3010` in dev; `https://support.quikit.ai` / `https://uatsupport.quikit.ai` in prod/UAT). Used by the marketing nav's `buildLoginUrl()`. Must equal `NEXTAUTH_URL`. |
+| `NEXT_PUBLIC_APP_URL` | Base origin used in outbound email deep-links (`lib/email.ts`). Must equal this app's origin. |
+| `REDIS_URL` | Backs the email/notification queue. Without it (and a running worker for `workers/email-worker.ts`), async email is a no-op — the ticket still saves. |
+
+> Domain models live in the shared schema under `app_quiksupport` (`Hd*`/`Qsp*`). See [apps/quiksupport/CLAUDE.md](../apps/quiksupport/CLAUDE.md).
 
 ---
 
