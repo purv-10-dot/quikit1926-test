@@ -14,11 +14,12 @@
  * progress ledger has already been posted, so editing the source row
  * would drift the cumulative-done totals out of sync.
  */
-import { useEffect, useMemo, useRef, useState } from "react";
+import { Fragment, useEffect, useMemo, useRef, useState } from "react";
 import { useParams, useRouter, useSearchParams } from "next/navigation";
 import {
   AlertTriangle,
   Check,
+  FileDown,
   Pencil,
   Send,
   Trash2,
@@ -33,7 +34,8 @@ import {
 } from "@/components/PageShell";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { WorkflowConfirmDialog } from "@/components/WorkflowConfirmDialog";
-import { useDPR, useDeleteDPR } from "@/hooks/use-projects";
+import { useDPR, useDeleteDPR, useBOQ } from "@/hooks/use-projects";
+import { groupWorkItemsByBoq } from "@/lib/projects/boq-work-groups";
 import { useItems, useUOMs, useContractors } from "@/hooks/use-masters";
 import { usePermissions } from "@/hooks/use-permissions";
 import { useWorkflowConfirm } from "@/hooks/use-workflow-confirm";
@@ -153,6 +155,18 @@ export default function DPRDetailPage() {
     () => (Array.isArray(dpr?.workItems) ? dpr.workItems : []),
     [dpr],
   );
+  // Resolve each work item's BOQ ancestor chain from the project BOQ tree so
+  // the Work Done table renders the same group / sub-group headers the DPR
+  // form shows. Reuses the React Query-cached BOQ fetch.
+  const { data: boqTreeResult } = useBOQ(dpr?.projectId ?? null);
+  const boqRows = useMemo(
+    () => boqTreeResult?.items ?? boqTreeResult?.data ?? [],
+    [boqTreeResult],
+  );
+  const groupedWorkItems = useMemo(
+    () => groupWorkItemsByBoq(workItems, boqRows),
+    [workItems, boqRows],
+  );
   const materials: MaterialRow[] = useMemo(
     () => (Array.isArray(dpr?.materials) ? dpr.materials : []),
     [dpr],
@@ -185,6 +199,81 @@ export default function DPRDetailPage() {
   const contractorNameById = useMemo(
     () => new Map((contractorsResult?.data ?? []).map((c) => [c.id, c.name])),
     [contractorsResult],
+  );
+
+  // ── Over-allotment check (for the approver) ──────────────────────
+  // The site user is warned at entry time in the DPR form; here we
+  // re-check against live stock so the approving manager sees, before
+  // approving, whether any consumed quantity exceeds what's actually
+  // allotted at the consumption location. Same (project, location, item)
+  // scope the approval deducts against.
+  const dprProjectId = dpr?.projectId ?? "";
+  const consumptionLocationId = dpr?.consumptionLocationId ?? "";
+  const [stockByItem, setStockByItem] = useState<Record<string, number>>({});
+  const materialItemIdsKey = useMemo(
+    () =>
+      Array.from(new Set(materials.map((m) => m.itemId ?? "").filter(Boolean)))
+        .sort()
+        .join(","),
+    [materials],
+  );
+  useEffect(() => {
+    const ids = materialItemIdsKey ? materialItemIdsKey.split(",") : [];
+    if (!dprProjectId || !consumptionLocationId || ids.length === 0) {
+      setStockByItem({});
+      return;
+    }
+    let cancelled = false;
+    (async () => {
+      try {
+        const results = await Promise.all(
+          ids.map(async (itemId) => {
+            const params = new URLSearchParams({
+              itemId,
+              projectId: dprProjectId,
+              locationId: consumptionLocationId,
+            });
+            const res = await fetch(`/api/store/stock-balance?${params.toString()}`);
+            if (!res.ok) return null;
+            const json = await res.json();
+            return { itemId, qty: Number(json?.quantity ?? 0) };
+          }),
+        );
+        if (cancelled) return;
+        const next: Record<string, number> = {};
+        for (const r of results) {
+          if (r) next[r.itemId] = r.qty;
+        }
+        setStockByItem(next);
+      } catch {
+        if (!cancelled) setStockByItem({});
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [dprProjectId, consumptionLocationId, materialItemIdsKey]);
+
+  // Rows whose consumed qty exceeds the allotted stock at the location.
+  const overAllotted = useMemo(
+    () =>
+      materials.flatMap((m) => {
+        const itemId = m.itemId ?? "";
+        if (!itemId || !(itemId in stockByItem)) return [];
+        const available = stockByItem[itemId];
+        const consumed = Number(m.consumedQty ?? 0);
+        if (consumed <= available) return [];
+        return [
+          {
+            itemId,
+            name: itemNameById.get(itemId) ?? itemId,
+            unit: uomCodeById.get(m.uomId ?? "") ?? "",
+            consumed,
+            available,
+          },
+        ];
+      }),
+    [materials, stockByItem, itemNameById, uomCodeById],
   );
 
   // ApprovalTimeline expects { step, action, actionBy, actionAt, comments }.
@@ -256,6 +345,14 @@ export default function DPRDetailPage() {
             <span className={`${HEADER_PILL} ${statusPillTone(dpr.status)}`}>
               {statusLabel(dpr.status)}
             </span>
+            <button
+              type="button"
+              onClick={() => window.open(`/api/projects/dpr/${id}/pdf`, "_blank")}
+              className={`${HEADER_PILL} ${PILL_TONE.blue} hover:bg-orange-100`}
+              title="Open the full DPR as a PDF"
+            >
+              <FileDown className="w-4 h-4" /> PDF
+            </button>
             {canEdit && (
               <button
                 type="button"
@@ -426,27 +523,85 @@ export default function DPRDetailPage() {
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-gray-100">
-                      {workItems.map((it: WorkItemRow, idx: number) => (
-                        <tr key={idx} className="hover:bg-orange-50/20 transition-colors">
-                          <td className="px-4 py-3 text-xs font-mono text-gray-400 tabular-nums">
-                            {String(idx + 1).padStart(2, "0")}
-                          </td>
-                          <td className="px-4 py-3 font-mono text-xs text-orange-700 font-bold">
-                            {it.boqNo ?? it.boqItemId ?? "—"}
-                          </td>
-                          <td className="px-4 py-3 text-gray-900">
-                            {it.description ?? "—"}
-                          </td>
-                          <td className="px-4 py-3 text-right tabular-nums text-gray-900">
-                            {fmtQty(it.todayQty)}
-                          </td>
-                          <td className="px-4 py-3 text-right tabular-nums text-gray-900">
-                            {fmtQty(it.cumulativeQty)}
-                          </td>
-                          <td className="px-4 py-3 text-gray-700 text-xs">
-                            {it.remarks ?? "—"}
-                          </td>
-                        </tr>
+                      {groupedWorkItems.map((group) => (
+                        <Fragment key={group.key}>
+                          {group.topNo && (
+                            <tr className="bg-orange-50/60 border-t border-orange-100">
+                              <td colSpan={6} className="px-4 py-2">
+                                <div className="flex items-center gap-2 min-w-0">
+                                  <span className="inline-flex items-center px-1.5 py-0.5 rounded font-mono text-[10px] font-bold text-orange-700 bg-orange-100/70">
+                                    {group.topNo}
+                                  </span>
+                                  {group.topName && (
+                                    <span className="text-xs font-semibold text-slate-600 truncate">
+                                      {group.topName}
+                                    </span>
+                                  )}
+                                </div>
+                              </td>
+                            </tr>
+                          )}
+                          {group.rendered.map((node) =>
+                            node.kind === "subgroup" ? (
+                              <tr
+                                key={`sub-${group.key}-${node.no}`}
+                                className="bg-orange-50/30"
+                              >
+                                <td
+                                  colSpan={6}
+                                  className="py-1.5"
+                                  style={{
+                                    paddingLeft: `${node.depth * 16 + 16}px`,
+                                    paddingRight: 16,
+                                  }}
+                                >
+                                  <div className="flex items-center gap-2 min-w-0">
+                                    <span className="text-orange-300 shrink-0">└</span>
+                                    <span className="inline-flex items-center px-1.5 py-0.5 rounded font-mono text-[10px] font-bold text-orange-700 bg-orange-100/60">
+                                      {node.no}
+                                    </span>
+                                    {node.name && (
+                                      <span className="text-[11px] font-medium text-slate-500 truncate">
+                                        {node.name}
+                                      </span>
+                                    )}
+                                  </div>
+                                </td>
+                              </tr>
+                            ) : (
+                              <tr
+                                key={`it-${group.key}-${node.idx}`}
+                                className="hover:bg-orange-50/20 transition-colors"
+                              >
+                                <td className="px-4 py-3 text-xs font-mono text-gray-400 tabular-nums">
+                                  {String(node.idx + 1).padStart(2, "0")}
+                                </td>
+                                <td
+                                  className="px-4 py-3 font-mono text-xs text-orange-700 font-bold"
+                                  style={
+                                    node.depth > 1
+                                      ? { paddingLeft: `${node.depth * 16 + 16}px` }
+                                      : undefined
+                                  }
+                                >
+                                  {node.w.boqNo ?? node.w.boqItemId ?? "—"}
+                                </td>
+                                <td className="px-4 py-3 text-gray-900">
+                                  {node.w.description ?? "—"}
+                                </td>
+                                <td className="px-4 py-3 text-right tabular-nums text-gray-900">
+                                  {fmtQty(node.w.todayQty)}
+                                </td>
+                                <td className="px-4 py-3 text-right tabular-nums text-gray-900">
+                                  {fmtQty(node.w.cumulativeQty)}
+                                </td>
+                                <td className="px-4 py-3 text-gray-700 text-xs">
+                                  {node.w.remarks ?? "—"}
+                                </td>
+                              </tr>
+                            ),
+                          )}
+                        </Fragment>
                       ))}
                     </tbody>
                   </table>
@@ -470,6 +625,26 @@ export default function DPRDetailPage() {
                 </p>
               ) : (
                 <div className="overflow-x-auto">
+                  {overAllotted.length > 0 && (
+                    <div className="mx-4 mt-4 flex items-start gap-2 rounded-lg border border-red-200 bg-red-50 px-3 py-2.5 text-sm text-red-700">
+                      <AlertTriangle className="w-4 h-4 shrink-0 mt-0.5" />
+                      <div className="leading-snug">
+                        <span className="font-semibold">
+                          Heads up — consumption exceeds the allotted stock at this location.
+                        </span>{" "}
+                        You can still approve; this is just to flag the over-use:
+                        <ul className="mt-1 list-disc pl-5">
+                          {overAllotted.map((o) => (
+                            <li key={o.itemId}>
+                              <span className="font-medium">{o.name}</span> — consumed{" "}
+                              {o.consumed.toLocaleString("en-IN")} {o.unit}, only{" "}
+                              {o.available.toLocaleString("en-IN")} {o.unit} allotted here.
+                            </li>
+                          ))}
+                        </ul>
+                      </div>
+                    </div>
+                  )}
                   <table className="min-w-full text-sm">
                     <thead className="bg-gray-50 text-[10px] uppercase text-gray-500 tracking-wider border-b border-gray-200">
                       <tr>
@@ -481,8 +656,20 @@ export default function DPRDetailPage() {
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-gray-100">
-                      {materials.map((m: MaterialRow, idx: number) => (
-                        <tr key={idx} className="hover:bg-orange-50/20 transition-colors">
+                      {materials.map((m: MaterialRow, idx: number) => {
+                        const itemId = m.itemId ?? "";
+                        const available =
+                          itemId && itemId in stockByItem ? stockByItem[itemId] : null;
+                        const over =
+                          available != null && Number(m.consumedQty ?? 0) > available;
+                        const unit = uomCodeById.get(m.uomId ?? "") ?? "";
+                        return (
+                        <tr
+                          key={idx}
+                          className={`transition-colors ${
+                            over ? "bg-red-50/60 hover:bg-red-50" : "hover:bg-orange-50/20"
+                          }`}
+                        >
                           <td className="px-4 py-3 text-xs font-mono text-gray-400 tabular-nums">
                             {String(idx + 1).padStart(2, "0")}
                           </td>
@@ -492,14 +679,24 @@ export default function DPRDetailPage() {
                           <td className="px-4 py-3 text-gray-600 uppercase">
                             {uomCodeById.get(m.uomId ?? "") ?? "—"}
                           </td>
-                          <td className="px-4 py-3 text-right tabular-nums text-gray-900">
+                          <td
+                            className={`px-4 py-3 text-right tabular-nums ${
+                              over ? "text-red-700 font-semibold" : "text-gray-900"
+                            }`}
+                          >
                             {fmtQty(m.consumedQty)}
+                            {over && available != null && (
+                              <div className="text-[10px] font-normal text-red-600">
+                                only {available.toLocaleString("en-IN")} {unit} allotted
+                              </div>
+                            )}
                           </td>
                           <td className="px-4 py-3 text-gray-700 text-xs">
                             {m.remarks ?? "—"}
                           </td>
                         </tr>
-                      ))}
+                        );
+                      })}
                     </tbody>
                   </table>
                 </div>

@@ -182,7 +182,10 @@ export function WorkOrderForm({ editData, embedded = false, onSaved }: Props) {
   const handleSave = async () => {
     setError("");
     if (!projectId) return setError("Pick a project");
-    if (plannedStart && plannedEnd && plannedEnd <= plannedStart) {
+    if (!contractorId) return setError("Select a contractor");
+    if (!plannedStart) return setError("Pick a planned start date");
+    if (!plannedEnd) return setError("Pick a planned end date");
+    if (plannedEnd <= plannedStart) {
       return setError("Planned end must be after planned start");
     }
     if (scope.length === 0) return setError("Add at least one BOQ item");
@@ -352,7 +355,7 @@ export function WorkOrderForm({ editData, embedded = false, onSaved }: Props) {
                 ]}
               />
             </Field>
-            <Field label="CONTRACTOR">
+            <Field label="CONTRACTOR" required>
               {(() => {
                 const { options, notice } = buildLookupOptions({
                   rows: contractors,
@@ -386,7 +389,7 @@ export function WorkOrderForm({ editData, embedded = false, onSaved }: Props) {
                 ]}
               />
             </Field>
-            <Field label="PLANNED START">
+            <Field label="PLANNED START" required>
               <input
                 type="date"
                 value={plannedStart}
@@ -401,7 +404,7 @@ export function WorkOrderForm({ editData, embedded = false, onSaved }: Props) {
                 className="w-full text-sm px-3 py-2 border border-gray-300 rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-orange-300 focus:border-orange-400"
               />
             </Field>
-            <Field label="PLANNED END">
+            <Field label="PLANNED END" required>
               <input
                 type="date"
                 value={plannedEnd}

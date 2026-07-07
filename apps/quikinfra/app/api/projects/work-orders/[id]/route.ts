@@ -119,8 +119,25 @@ export async function GET(
     rowApprovedBy,
   ]);
 
+  // Progress: quantity recorded against this WO through APPROVED DPRs
+  // (CnDPRWorkItem.woId) over the WO's total scoped qty (sum of line
+  // quantities). Mirrors the list route so the detail card fills as
+  // site work is reported instead of showing a static 0%.
+  const scopeQty = (row.lines ?? []).reduce(
+    (sum, l) => sum + Number(l.quantity ?? 0),
+    0,
+  );
+  const dprItems = await db.cnDPRWorkItem.findMany({
+    where: { woId: row.id, dpr: { orgId: ctx.orgId, status: "approved" } },
+    select: { todayQty: true },
+  });
+  const doneQty = dprItems.reduce((sum, it) => sum + Number(it.todayQty ?? 0), 0);
+  const progressPct =
+    scopeQty > 0 ? Math.min(100, Math.round((doneQty / scopeQty) * 100)) : 0;
+
   return NextResponse.json({
     ...enrichWO(row, row.project, row.contractor),
+    progressPct,
     approval,
     createdByName: auditNames.get(row.createdBy) ?? row.createdBy,
     updatedByName: auditNames.get(row.updatedBy) ?? row.updatedBy,
