@@ -16,6 +16,7 @@ import {
   Receipt,
   ExternalLink,
   Lock,
+  Braces,
   type LucideIcon,
 } from "lucide-react";
 import { useMyPermissions } from "@/lib/hooks/useMyPermissions";
@@ -29,6 +30,8 @@ interface PopoverItem {
   href?: string;
   /** Renders the small external-link icon at the right edge. */
   external?: boolean;
+  /** Open `href` in a new browser tab instead of client-side navigation. */
+  newTab?: boolean;
   disabled?: boolean;
 }
 
@@ -93,6 +96,15 @@ const SECTIONS: PopoverSection[] = [
         description: "Configure custom fields for work items across all spaces",
         icon: ListChecks,
         href: "/settings/work-items/fields",
+      },
+      {
+        key: "api-docs",
+        label: "API Documentation",
+        description: "Reference and test the QuikTrack REST API for integrations",
+        icon: Braces,
+        href: "/api/v1/docs",
+        external: true,
+        newTab: true,
       },
       {
         key: "marketplace",
@@ -176,6 +188,12 @@ export function SettingsPopover({
   function handleClick(item: PopoverItem) {
     if (item.disabled || !item.href) return;
     onClose();
+    if (item.newTab) {
+      // The API reference is a route handler that renders HTML, not a Next
+      // page — open it in a new tab rather than pushing it through the router.
+      window.open(item.href, "_blank", "noopener,noreferrer");
+      return;
+    }
     router.push(item.href);
   }
 

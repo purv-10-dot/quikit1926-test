@@ -1,6 +1,7 @@
 import nodemailer, { type Transporter } from "nodemailer";
 import { promises as dns } from "node:dns";
 import * as net from "node:net";
+import { EMAIL_HEADER_CID, brandedEmailAttachments } from "./brandAssets";
 
 /**
  * SMTP-based email sender for QuikTrack notifications. Reads:
@@ -161,6 +162,9 @@ export interface SendArgs {
   subject: string;
   html: string;
   text?: string;
+  /** nodemailer attachments — used to embed the branded header image inline
+   *  via a `cid:` reference (see brandedEmailAttachments). */
+  attachments?: Parameters<Transporter["sendMail"]>[0]["attachments"];
 }
 
 export interface SendResult {
@@ -177,7 +181,7 @@ export interface SendResult {
  * to the HTTP response so the user can see whether SMTP is actually working
  * without having to tail the dev terminal.
  */
-export async function sendEmail({ to, subject, html, text }: SendArgs): Promise<SendResult> {
+export async function sendEmail({ to, subject, html, text, attachments }: SendArgs): Promise<SendResult> {
   const transport = await getTransport();
   if (!transport) {
     if (process.env.NODE_ENV !== "production") {
@@ -200,8 +204,14 @@ export async function sendEmail({ to, subject, html, text }: SendArgs): Promise<
   const userDomain = smtpUser.includes("@") ? smtpUser.split("@")[1] : null;
   const realAddr = useNoreplyAddr && userDomain ? `noreply@${userDomain}` : smtpUser;
   const from = envOrNull("MAIL_FROM") ?? `${fromDisplayName} <${realAddr}>`;
+  // Auto-embed the branded header whenever the HTML references it via cid:,
+  // so every branded template gets the inline image without each call site
+  // having to pass attachments explicitly.
+  const finalAttachments =
+    attachments ??
+    (html.includes(`cid:${EMAIL_HEADER_CID}`) ? brandedEmailAttachments() : undefined);
   try {
-    const info = await transport.sendMail({ from, to, subject, html, text: text ?? stripHtml(html) });
+    const info = await transport.sendMail({ from, to, subject, html, text: text ?? stripHtml(html), attachments: finalAttachments });
     console.log(`[email] sent to=${to} subject="${subject}" messageId=${info.messageId}`);
     return { ok: true, messageId: info.messageId };
   } catch (e) {
@@ -215,7 +225,7 @@ function stripHtml(html: string): string {
   return html.replace(/<[^>]+>/g, "").replace(/\s+/g, " ").trim();
 }
 
-function esc(s: string): string {
+export function esc(s: string): string {
   return s
     .replace(/&/g, "&amp;")
     .replace(/</g, "&lt;")
@@ -241,80 +251,139 @@ function issueLink(projectId: string, issueId: string): string {
   return `${appUrl()}/spaces/${projectId}/board?issue=${issueId}`;
 }
 
+export const SUPPORT_EMAIL = "support@quikit.ai";
+
 /**
- * Shared branded card layout. Matches the QuikTrack/PMS notification style:
- * accent-colored header bar with title + subtitle, white card body, footer.
- * Inline styles only — most email clients strip <style> blocks.
- *
- * `intro` is rendered as plain text only (no HTML allowed) so the inbox
- * preview / notification toast doesn't show literal `<strong>` tags. If a
- * template needs richer body content, add it as a row in the details table.
+ * System font stack. The Quikit pack ships Plus Jakarta Sans, but email clients
+ * can't reliably load a custom @font-face, so we render in the platform sans-
+ * serif everywhere (layout is unaffected).
  */
-function shell(opts: {
-  headerTitle: string;
-  headerSubtitle: string;
-  greeting?: string;
-  intro: string;
-  rows: Array<[label: string, value: string]>;
-  ctaLabel: string;
-  ctaHref: string;
-  /** Optional override for the accent (header bar + CTA button) color. */
-  accentColor?: string;
-}): string {
-  const accent = opts.accentColor ?? "#4f46e5"; // indigo-600
-  const greetingHtml = opts.greeting
-    ? `<p style="margin: 0 0 12px; font-size: 14px;">${esc(opts.greeting)}</p>`
+export const EMAIL_FONT =
+  "-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif";
+
+// Inline-styled value spans for detail rows. Gmail strips <style> blocks, so
+// every visual rule has to be inline. Callers pass already-escaped content.
+export const mono = (s: string): string =>
+  `<span style="font-family:'SFMono-Regular',Consolas,Menlo,monospace;color:#2563eb;letter-spacing:.02em;">${s}</span>`;
+export const strong = (s: string): string => `<span style="font-weight:700;color:#111827;">${s}</span>`;
+export const danger = (s: string): string => `<span style="color:#e11d2a;font-weight:700;">${s}</span>`;
+// Monospace blue link (issue Key → the task URL). `key` is already escaped.
+export const keyLink = (key: string, href: string): string =>
+  `<a href="${href}" style="font-family:'SFMono-Regular',Consolas,Menlo,monospace;color:#2563eb;letter-spacing:.02em;text-decoration:none;">${key}</a>`;
+
+/**
+ * CTA button as a table wrapper + inline-styled anchor, so the fill + radius
+ * render in Outlook as well as Gmail/Apple Mail. `label` is escaped here.
+ */
+export function emailButton(label: string, href: string, isDanger = false): string {
+  const bg = isDanger ? "#e11d2a" : "#3b82f6";
+  return `<table role="presentation" cellpadding="0" cellspacing="0" border="0" align="center" style="margin:22px auto 4px;">
+                <tr><td align="center" bgcolor="${bg}" style="border-radius:8px;background:${bg};">
+                  <a href="${href}" style="display:inline-block;padding:12px 30px;font-family:${EMAIL_FONT};font-size:13px;font-weight:700;color:#ffffff;text-decoration:none;border-radius:8px;">${esc(label)}</a>
+                </td></tr>
+              </table>`;
+}
+
+/**
+ * Full-page email chrome, built with tables + inline styles so it survives the
+ * clients that strip <style> blocks and mangle flexbox (Gmail, Outlook). The
+ * branded header is embedded via `cid:` (see brandAssets) so it renders without
+ * any hosting. `cardHtml` is trusted, already-built inner HTML; `preheader`
+ * (escaped) is the hidden inbox-preview line.
+ */
+export function emailChrome(opts: { title: string; preheader?: string; cardHtml: string }): string {
+  const year = new Date().getFullYear();
+  const preheaderHtml = opts.preheader
+    ? `<div style="display:none;max-height:0;overflow:hidden;mso-hide:all;font-size:1px;line-height:1px;color:#eff6ff;">${esc(opts.preheader)}</div>`
     : "";
-  const rowsHtml = opts.rows
-    .map(
-      ([label, value]) => `
-        <tr>
-          <td style="padding: 10px 16px; border-top: 1px solid #e5e7eb; font-size: 13px; color: #6b7280; width: 35%;">${esc(label)}</td>
-          <td style="padding: 10px 16px; border-top: 1px solid #e5e7eb; font-size: 13px; color: #111827;">${value}</td>
-        </tr>`,
-    )
-    .join("");
-  return `<!doctype html>
-<html>
-<body style="margin: 0; padding: 0; background: #f3f4f6; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;">
-  <!-- Preheader: hidden inbox preview text. Escaped so any HTML in the
-       intro field doesn't render as literal tags in the inbox toast. -->
-  <div style="display:none; max-height:0; overflow:hidden; mso-hide:all;">${esc(opts.intro)}</div>
-  <table role="presentation" cellpadding="0" cellspacing="0" width="100%" style="background: #f3f4f6; padding: 32px 16px;">
-    <tr><td align="center">
-      <table role="presentation" cellpadding="0" cellspacing="0" width="100%" style="max-width: 580px; background: white; border-radius: 8px; overflow: hidden; box-shadow: 0 1px 3px rgba(0,0,0,0.06);">
-        <tr>
-          <td style="background: ${accent}; padding: 28px 24px; text-align: center; color: white;">
-            <div style="font-size: 22px; font-weight: 700; letter-spacing: 0.5px;">QuikTrack</div>
-            <div style="font-size: 14px; margin-top: 4px; opacity: 0.9;">${esc(opts.headerSubtitle)}</div>
-          </td>
-        </tr>
-        <tr>
-          <td style="padding: 28px 24px; color: #111827;">
-            ${greetingHtml}
-            <p style="margin: 0 0 18px; font-size: 14px; color: #374151;">${esc(opts.intro)}</p>
-            <table role="presentation" cellpadding="0" cellspacing="0" width="100%" style="border: 1px solid #e5e7eb; border-radius: 6px; overflow: hidden;">
-              <tr>
-                <td colspan="2" style="background: #f9fafb; padding: 10px 16px; font-size: 13px; font-weight: 600; color: #374151;">${esc(opts.headerTitle)}</td>
-              </tr>
-              ${rowsHtml}
-            </table>
-            <div style="text-align: center; margin: 28px 0 8px;">
-              <a href="${opts.ctaHref}" style="display: inline-block; background: ${accent}; color: white; padding: 10px 22px; border-radius: 6px; text-decoration: none; font-weight: 600; font-size: 14px;">${esc(opts.ctaLabel)}</a>
-            </div>
-            <p style="margin: 16px 0 0; color: #9ca3af; font-size: 12px; text-align: center;">This is an automated message from QuikTrack.</p>
-          </td>
-        </tr>
-        <tr>
-          <td style="background: #111827; padding: 14px 24px; text-align: center; color: #9ca3af; font-size: 12px;">
-            Copyright © ${new Date().getFullYear()} | QuikTrack
-          </td>
-        </tr>
+  return `<!DOCTYPE html>
+<html lang="en" xmlns="http://www.w3.org/1999/xhtml">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<meta http-equiv="X-UA-Compatible" content="IE=edge" />
+<title>QuikTrack — ${esc(opts.title)}</title>
+</head>
+<body style="margin:0;padding:0;background:#e8ebf0;">
+  ${preheaderHtml}
+  <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="background:#e8ebf0;">
+    <tr><td align="center" style="padding:24px 12px;">
+      <table role="presentation" width="600" cellpadding="0" cellspacing="0" border="0" style="width:600px;max-width:600px;background:#eef4fc;border-radius:6px;">
+        <tr><td style="padding:0;background:#eef4fc;">
+          <img src="cid:${EMAIL_HEADER_CID}" width="600" alt="QuikTrack" style="display:block;width:100%;max-width:600px;height:auto;border:0;outline:none;text-decoration:none;" />
+          <!-- The overlap (white rounded card-lip over the blue banner) is baked
+               INTO the header PNG, so the card butts flush against it — no
+               negative margins (which Gmail strips). Card is FULL WIDTH (100%),
+               same as the image, so the two scale together and the overlap stays
+               aligned at any width; its white continues the lip's white. -->
+          <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="width:100%;margin:0;background:#ffffff;border-radius:0 0 6px 6px;">
+            <tr><td style="padding:14px 32px 30px;">
+${opts.cardHtml}
+            </td></tr>
+          </table>
+          <div style="height:28px;line-height:28px;font-size:0;">&nbsp;</div>
+        </td></tr>
+        <tr><td style="background:#eef4fc;padding:0 28px;">
+          <div style="height:1px;line-height:1px;font-size:0;background:#d7e0ee;">&nbsp;</div>
+        </td></tr>
+        <tr><td style="background:#eef4fc;padding:14px 28px 22px;border-radius:0 0 6px 6px;">
+          <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">
+            <tr>
+              <td style="font-family:${EMAIL_FONT};font-size:11px;font-weight:400;line-height:1.4;color:#3b4252;white-space:nowrap;vertical-align:top;">&copy; ${year} Quikit&nbsp;&nbsp;|&nbsp;&nbsp;Quikit, Inc.</td>
+              <td align="right" style="font-family:${EMAIL_FONT};font-size:11px;font-weight:400;line-height:1.4;color:#3b4252;vertical-align:top;">Questions? Just reply, or email <a href="mailto:${SUPPORT_EMAIL}" style="color:#3b4252;text-decoration:underline;">${SUPPORT_EMAIL}</a></td>
+            </tr>
+          </table>
+        </td></tr>
       </table>
     </td></tr>
   </table>
 </body>
 </html>`;
+}
+
+/**
+ * Notification card layout: title / greeting / intro / details table / CTA.
+ * Everything is inline-styled (see emailChrome).
+ *
+ * `intro` is rendered as plain text only (no HTML allowed) so the inbox preview
+ * doesn't show literal tags. Rich values may be passed per-row via the
+ * `mono` / `strong` / `danger` helpers.
+ */
+function shell(opts: {
+  /** Card headline, e.g. "Task Assigned". */
+  title: string;
+  /** Heading of the details box, e.g. "Task details" / "Document". */
+  detailsHeading: string;
+  greeting?: string;
+  intro: string;
+  rows: Array<[label: string, value: string]>;
+  ctaLabel: string;
+  ctaHref: string;
+  /** Red CTA button (used by the overdue notification). */
+  danger?: boolean;
+}): string {
+  const greetingHtml = opts.greeting
+    ? `<p style="margin:0 0 10px;font-family:${EMAIL_FONT};font-size:13px;font-weight:400;line-height:1.55;color:#1f2a44;">${esc(opts.greeting)}</p>`
+    : "";
+  const rowsHtml = opts.rows
+    .map(
+      ([label, value]) =>
+        `<tr>
+                  <td width="38%" style="padding:11px 16px;border-top:1px solid #edf0f5;font-family:${EMAIL_FONT};font-size:12px;font-weight:400;line-height:1.45;color:#6b7280;vertical-align:top;">${esc(label)}</td>
+                  <td style="padding:11px 16px;border-top:1px solid #edf0f5;font-family:${EMAIL_FONT};font-size:12px;font-weight:700;line-height:1.45;color:#111827;vertical-align:top;word-break:break-word;">${value}</td>
+                </tr>`,
+    )
+    .join("\n");
+  const cardHtml = `              <h1 style="margin:0 0 14px;font-family:${EMAIL_FONT};font-size:26px;font-weight:700;line-height:1.25;color:#1f2a44;">${esc(opts.title)}</h1>
+              ${greetingHtml}
+              <p style="margin:0 0 4px;font-family:${EMAIL_FONT};font-size:13px;font-weight:400;line-height:1.55;color:#1f2a44;">${esc(opts.intro)}</p>
+              <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="margin:18px 0 6px;border:1px solid #e3e8f0;border-radius:8px;">
+                <tr><td colspan="2" style="background:#e7f0fd;padding:11px 16px;font-family:${EMAIL_FONT};font-size:12px;font-weight:700;color:#1f2a44;border-top-left-radius:8px;border-top-right-radius:8px;">${esc(opts.detailsHeading)}</td></tr>
+                ${rowsHtml}
+              </table>
+              ${emailButton(opts.ctaLabel, opts.ctaHref, opts.danger)}
+              <p style="margin:16px 0 0;text-align:center;font-family:${EMAIL_FONT};font-size:11px;font-weight:400;color:#9aa4b2;">This is an automated message from QuikTrack.</p>`;
+  return emailChrome({ title: opts.title, preheader: opts.intro, cardHtml });
 }
 
 // ── Templates ────────────────────────────────────────────────────────────────
@@ -336,13 +405,13 @@ export async function emailIssueAssigned(args: {
   const link = issueLink(args.issue.projectId, args.issue.id);
   const project = args.issue.projectName ?? "QuikTrack";
   const html = shell({
-    headerSubtitle: "Task notification",
-    headerTitle: "Task details",
+    title: "Task Assigned",
+    detailsHeading: "Task details",
     greeting: args.assigneeName ? `Hi ${args.assigneeName},` : "Hi,",
     intro: `You have been assigned a task in ${project}.`,
     rows: [
       ["Work", esc(args.issue.title)],
-      ["Key", `<span style="font-family: monospace;">${esc(args.issue.key)}</span>`],
+      ["Key", keyLink(esc(args.issue.key), link)],
       ["Assigned to", esc(args.assigneeName ?? "You")],
       ...(args.reassignedBy ? ([["Assigned by", esc(args.reassignedBy)]] as Array<[string, string]>) : []),
     ],
@@ -367,17 +436,17 @@ export async function emailIssueStatusChanged(args: {
   const link = issueLink(args.issue.projectId, args.issue.id);
   const project = args.issue.projectName ?? "QuikTrack";
   const html = shell({
-    headerSubtitle: "Status update",
-    headerTitle: "Task details",
+    title: "Status Update",
+    detailsHeading: "Task details",
     greeting: args.recipientName ? `Hi ${args.recipientName},` : "Hi,",
     intro: `The status of a task you own in ${project} has changed.`,
     rows: [
       ["Work", esc(args.issue.title)],
-      ["Key", `<span style="font-family: monospace;">${esc(args.issue.key)}</span>`],
+      ["Key", keyLink(esc(args.issue.key), link)],
       ...((args.fromStatus
         ? [["From", esc(args.fromStatus)]]
         : []) as Array<[string, string]>),
-      ["To", `<strong>${esc(args.toStatus)}</strong>`],
+      ["To", strong(esc(args.toStatus))],
       ...(args.changedBy ? ([["Changed by", esc(args.changedBy)]] as Array<[string, string]>) : []),
     ],
     ctaLabel: "View task",
@@ -402,13 +471,13 @@ export async function emailIssueMention(args: {
   const project = args.issue.projectName ?? "QuikTrack";
   const where = args.context === "comment" ? "a comment" : "the description";
   const html = shell({
-    headerSubtitle: "You were mentioned",
-    headerTitle: "Task details",
+    title: "You Were Mentioned",
+    detailsHeading: "Task details",
     greeting: args.recipientName ? `Hi ${args.recipientName},` : "Hi,",
     intro: `${args.mentionedBy ?? "Someone"} mentioned you in ${where} on a task in ${project}.`,
     rows: [
       ["Work", esc(args.issue.title)],
-      ["Key", `<span style="font-family: monospace;">${esc(args.issue.key)}</span>`],
+      ["Key", keyLink(esc(args.issue.key), link)],
       ...((args.excerpt ? [["Note", esc(args.excerpt)]] : []) as Array<[string, string]>),
       ...(args.mentionedBy ? ([["Mentioned by", esc(args.mentionedBy)]] as Array<[string, string]>) : []),
     ],
@@ -434,8 +503,8 @@ export async function emailProjectInvite(args: {
   // link (the project name is still shown in the email body for context).
   const link = `${appUrl()}/login`;
   const html = shell({
-    headerSubtitle: "Project invitation",
-    headerTitle: "Project",
+    title: "Project Invitation",
+    detailsHeading: "Project",
     greeting: args.recipientName ? `Hi ${args.recipientName},` : "Hi,",
     intro: `You've been added to a project in QuikTrack${
       args.invitedBy ? ` by ${args.invitedBy}` : ""
@@ -465,8 +534,8 @@ export async function emailDocMention(args: {
 }): Promise<void> {
   const link = `${appUrl()}/spaces/${args.projectId}/docs/${args.docId}`;
   const html = shell({
-    headerSubtitle: "You were mentioned",
-    headerTitle: "Document",
+    title: "You Were Mentioned",
+    detailsHeading: "Document",
     greeting: args.recipientName ? `Hi ${args.recipientName},` : "Hi,",
     intro: `${args.mentionedBy ?? "Someone"} mentioned you in a document.`,
     rows: [
@@ -509,8 +578,8 @@ export async function emailDocShared(args: {
     : `${base}/docs/${args.docId}`;
   const verb = args.role === "editor" ? "edit" : "view";
   const html = shell({
-    headerSubtitle: "Shared with you",
-    headerTitle: "Document",
+    title: "Shared With You",
+    detailsHeading: "Document",
     greeting: args.recipientName ? `Hi ${args.recipientName},` : "Hi,",
     intro: `${args.sharedBy ?? "Someone"} shared a document with you — you can ${verb} it.`,
     rows: [
@@ -553,18 +622,18 @@ export async function emailIssueOverdue(args: {
     ? due.toLocaleDateString(undefined, { day: "numeric", month: "short", year: "numeric" })
     : args.issue.dueDate;
   const html = shell({
-    headerSubtitle: "Overdue task",
-    headerTitle: "Task details",
+    title: "Overdue Task",
+    detailsHeading: "Task details",
     greeting: args.recipientName ? `Hi ${args.recipientName},` : "Hi,",
     intro: `A task assigned to you in ${project} is past its due date.`,
     rows: [
       ["Work", esc(args.issue.title)],
-      ["Key", `<span style="font-family: monospace;">${esc(args.issue.key)}</span>`],
-      ["Due date", `<strong style="color: #dc2626;">${esc(dueLabel)}</strong>`],
+      ["Key", keyLink(esc(args.issue.key), link)],
+      ["Due date", danger(esc(dueLabel))],
     ],
     ctaLabel: "View task",
     ctaHref: link,
-    accentColor: "#dc2626",
+    danger: true,
   });
   await sendEmail({
     to: args.to,
