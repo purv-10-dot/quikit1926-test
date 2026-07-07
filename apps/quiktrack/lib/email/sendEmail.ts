@@ -313,20 +313,18 @@ export function emailChrome(opts: { title: string; preheader?: string; cardHtml:
           <img src="cid:${EMAIL_HEADER_CID}" width="600" alt="QuikTrack" style="display:block;width:100%;max-width:600px;height:auto;border:0;outline:none;text-decoration:none;" />
           <!-- The overlap (white rounded card-lip over the blue banner) is baked
                INTO the header PNG, so the card butts flush against it — no
-               negative margins (which Gmail strips). Card is FULL WIDTH (100%),
-               same as the image, so the two scale together and the overlap stays
-               aligned at any width; its white continues the lip's white. -->
-          <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="width:100%;margin:0;background:#ffffff;border-radius:0 0 6px 6px;">
-            <tr><td style="padding:14px 32px 30px;">
+               negative margins (which Gmail strips). Card is width:70% and the
+               baked lip is inset 15% each side — both PROPORTIONAL, so they scale
+               together and the overlap stays aligned at any width. Its white
+               continues the lip's white; pale-blue body shows on the sides. -->
+          <table role="presentation" align="center" width="70%" cellpadding="0" cellspacing="0" border="0" style="width:70%;margin:0 auto;background:#ffffff;border-radius:0 0 12px 12px;">
+            <tr><td style="padding:14px 28px 28px;">
 ${opts.cardHtml}
             </td></tr>
           </table>
-          <div style="height:28px;line-height:28px;font-size:0;">&nbsp;</div>
+          <div style="height:32px;line-height:32px;font-size:0;">&nbsp;</div>
         </td></tr>
-        <tr><td style="background:#eef4fc;padding:0 28px;">
-          <div style="height:1px;line-height:1px;font-size:0;background:#d7e0ee;">&nbsp;</div>
-        </td></tr>
-        <tr><td style="background:#eef4fc;padding:14px 28px 22px;border-radius:0 0 6px 6px;">
+        <tr><td style="background:#ffffff;padding:16px 28px 20px;border-top:1px solid #e6eaf1;border-radius:0 0 6px 6px;">
           <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">
             <tr>
               <td style="font-family:${EMAIL_FONT};font-size:11px;font-weight:400;line-height:1.4;color:#3b4252;white-space:nowrap;vertical-align:top;">&copy; ${year} Quikit&nbsp;&nbsp;|&nbsp;&nbsp;Quikit, Inc.</td>
