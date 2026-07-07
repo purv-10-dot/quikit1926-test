@@ -157,34 +157,29 @@ export async function listUsersCentral(
   search = "",
 ): Promise<CentralUserRecord[]> {
   const q = search.trim();
-  // Only members who actually have QuikInfra ACCESS appear in QuikInfra's
-  // user list. Someone invited into the org with access to OTHER apps only
-  // (e.g. QuikScale) becomes an OrgMember but must NOT surface here.
+  // List ONLY users with an EXPLICIT QuikInfra grant — a quikit.UserAppAccess
+  // row for the QuikInfra app. This is the per-user, per-app grant written by
+  // the Admin Portal's "App Access" toggle and by the QuikInfra invite flow.
+  // Mirrors QuikScale (user.appRoles.some(role.appId)) and QuikTrack
+  // (userAppAccess for their appId) exactly.
   //
-  // "Has QuikInfra access" = ANY of:
-  //   • a quikit.UserAppAccess row for the QuikInfra app — this is what the
-  //     Admin Portal's "Grant Access To" writes at invite time (and what the
-  //     QuikInfra invite flow writes too), so the member shows immediately.
-  //   • a QuikInfra CnUserAppRole assignment (belt-and-suspenders — covers
-  //     any path that assigned a role without the access tile).
-  //   • a central membership tier (org_admin / super_admin) — the org owner
-  //     always sees the org, even without an explicit access row.
+  // Deliberately NOT included:
+  //   • org-admin / super-admin membership — an org admin can OPEN any app via
+  //     the access-gate bypass, but that is NOT an explicit grant, so they do
+  //     not surface here unless they were also granted the app directly. (Same
+  //     as QuikScale/QuikTrack, whose lists have no admin-tier door.)
+  //   • a bare CnUserAppRole — an app-role assignment is not an access grant;
+  //     the gate ignores it, so a stray/orphaned Cn-role must not list a user.
   //
-  // If the QuikInfra App registry row is missing (appId null) we skip the
-  // access filter rather than hide every user.
+  // If the QuikInfra App registry row is missing (appId null) we FAIL CLOSED —
+  // an empty list — rather than exposing every org member. Matches QuikScale
+  // (apps/quikscale/app/api/org/users/route.ts) and QuikTrack.
   const appId = await getQuikInfraAppId();
-  const where: Record<string, unknown> = { orgId };
-  if (appId) {
-    where.OR = [
-      { user: { appAccess: { some: { orgId, appId } } } },
-      { user: { cnUserAppRoles: { some: { orgId, role: { appId } } } } },
-      {
-        role: {
-          in: ["super_admin", "platform_super_admin", "org_admin", "admin"],
-        },
-      },
-    ];
-  }
+  if (!appId) return [];
+  const where: Record<string, unknown> = {
+    orgId,
+    user: { appAccess: { some: { orgId, appId } } },
+  };
   if (q) {
     // ANDed with the access OR above (Prisma combines top-level keys with AND).
     where.AND = [
