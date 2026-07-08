@@ -40,6 +40,10 @@ import {
   seedAllDefaultRoles,
   ensureUserOnRole,
 } from "@/lib/api/seedAdminAppRole";
+import {
+  seedProjectDefaults,
+  getStarterProjectRoleId,
+} from "@/lib/services/projectDefaults";
 import { getQuikTrackAppId } from "@/lib/api/permissions";
 import { buildIssueAttachmentKey, putObject } from "@/lib/s3";
 import crypto from "node:crypto";
@@ -486,6 +490,9 @@ async function migrateOneProject(args: {
 
   // Upsert QtProject keyed on (orgId, projectKey).
   let qtProjectId = "";
+  // Layer-2 project-role ids, seeded below. Held at this scope so the issue
+  // loop can also map assignees/reporters to the Contributor role.
+  let contributorRoleId: string | null = null;
   if (!dryRun) {
     const existing = await db.qtProject.findFirst({
       where: { orgId, projectKey: jp.key },
@@ -509,6 +516,24 @@ async function migrateOneProject(args: {
       qtProjectId = created.id;
     }
 
+    // Seed the 3 starter project roles (Space Admin / Contributor / Viewer) —
+    // the same Layer-2 roles a normally-created project gets from
+    // POST /api/projects. Without this, a migrated project has "No roles
+    // defined" in the role picker and every member shows an "Unassigned"
+    // project role. Idempotent (skips roles that already exist), so it also
+    // backfills projects imported before this fix.
+    await seedProjectDefaults(db, qtProjectId, orgId, actorUserId);
+    const spaceAdminRoleId = await getStarterProjectRoleId(
+      db,
+      qtProjectId,
+      "Space Admin",
+    );
+    contributorRoleId = await getStarterProjectRoleId(
+      db,
+      qtProjectId,
+      "Contributor",
+    );
+
     // The importing admin auto-joins every project they create as
     // PROJECT_ADMIN — otherwise the /api/projects list filters them out
     // (only org-level tenant admins bypass membership). Idempotent.
@@ -524,6 +549,8 @@ async function migrateOneProject(args: {
         invitedBy: actorUserId,
       },
     });
+    // …and, as the space creator, gets the Space Admin project role.
+    await assignProjectRole(qtProjectId, actorUserId, spaceAdminRoleId, actorUserId);
 
     // Also add the Jira project lead (if mapped) so they show up as a member.
     const jiraLeadQtId = jp.lead ? userMap.get(jp.lead.accountId) : null;
@@ -540,6 +567,8 @@ async function migrateOneProject(args: {
           invitedBy: actorUserId,
         },
       });
+      // Everyone other than the migrating admin lands as a Contributor.
+      await assignProjectRole(qtProjectId, jiraLeadQtId, contributorRoleId, actorUserId);
     }
   }
 
@@ -840,6 +869,8 @@ async function migrateOneProject(args: {
               invitedBy: actorUserId,
             },
           });
+          // Assignees/reporters pulled in from issues are Contributors.
+          await assignProjectRole(qtProjectId, uid, contributorRoleId, actorUserId);
         }
       }
 
@@ -1091,6 +1122,29 @@ async function migrateOneProject(args: {
 }
 
 /* ──────────────────────── Helpers ──────────────────────── */
+
+/**
+ * Assign a Layer-2 project role (Space Admin / Contributor / …) to a member,
+ * mirroring what `POST /api/projects` does on normal project creation. Upserts
+ * on the (projectId, userId) unique key so a user who is both a reporter and an
+ * assignee — or a re-run of the import — never duplicates or throws. The empty
+ * `update` is deliberate: if a role is already assigned (e.g. an admin manually
+ * changed it after a prior import), we do NOT clobber it. No-ops when the role
+ * wasn't seeded (roleId null).
+ */
+async function assignProjectRole(
+  projectId: string,
+  userId: string,
+  projectRoleId: string | null,
+  assignedBy: string,
+): Promise<void> {
+  if (!projectRoleId) return;
+  await db.qtProjectUserRole.upsert({
+    where: { projectId_userId: { projectId, userId } },
+    update: {},
+    create: { projectId, userId, projectRoleId, assignedBy },
+  });
+}
 
 async function ensureMembershipAndAccess(
   userId: string,

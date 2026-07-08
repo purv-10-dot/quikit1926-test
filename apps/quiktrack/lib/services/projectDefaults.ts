@@ -216,6 +216,39 @@ export async function seedProjectDefaults(
   }
 }
 
+/**
+ * Assign a project's default role (`isDefault` — Contributor out of the box) to
+ * a member who has no project role yet. The Add-Member / assign-projects UIs
+ * only write a `QtProjectUserRole` when the admin explicitly picks a role, so a
+ * forgotten pick used to leave the member "Unassigned" (the default flag was
+ * never applied as a fallback). This materializes it — the same behaviour the
+ * org user-creation flow already applies.
+ *
+ * Takes the full `db` client (not a tx) so callers can run it after a
+ * transaction commits. Idempotent against the (projectId, userId) unique key
+ * and never clobbers an existing assignment or an explicit pick. No-ops when
+ * the project has no default role configured.
+ */
+export async function assignDefaultProjectRoleIfNone(
+  projectId: string,
+  userId: string,
+  assignedBy: string,
+): Promise<void> {
+  const existing = await db.qtProjectUserRole.findUnique({
+    where: { projectId_userId: { projectId, userId } },
+    select: { id: true },
+  });
+  if (existing) return;
+  const def = await db.qtProjectRole.findFirst({
+    where: { projectId, isDefault: true },
+    select: { id: true },
+  });
+  if (!def) return;
+  await db.qtProjectUserRole.create({
+    data: { projectId, userId, projectRoleId: def.id, assignedBy },
+  });
+}
+
 /** Returns the QtProjectRole.id for the named starter role in this project. */
 export async function getStarterProjectRoleId(
   tx: Prisma.TransactionClient,
