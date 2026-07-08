@@ -29,6 +29,8 @@ export interface TaskRowContext {
   /** Array form of members + sprints, needed by the inline editors' pickers. */
   memberList: { userId: string; user: UserLite | null }[];
   sprintList: SprintLite[];
+  /** False for functional projects (no sprints) → the Sprint column is hidden. */
+  hasSprints: boolean;
   epics: EpicLite[];
   onOpenIssue: (id: string) => void;
   onDelete: (id: string) => void;
@@ -135,19 +137,21 @@ export function TaskTableRow({ issue, depth, expanded, onToggleExpand, ctx }: Ro
           )}
         </span>
       </td>
-      <td className="w-44 px-3 py-2 align-middle">
-        {/* Epics aren't sprint items — their detail form has no Sprint field, so
-            keep the table consistent and don't offer sprint editing here. */}
-        {issue.type === "EPIC" ? (
-          <span className="text-gray-300">—</span>
-        ) : (
-          <SprintEditor
-            value={sprint}
-            sprints={ctx.sprintList}
-            onChange={(sprintId) => ctx.onPatchIssue(issue.id, { sprintId })}
-          />
-        )}
-      </td>
+      {ctx.hasSprints && (
+        <td className="w-44 px-3 py-2 align-middle">
+          {/* Epics aren't sprint items — their detail form has no Sprint field, so
+              keep the table consistent and don't offer sprint editing here. */}
+          {issue.type === "EPIC" ? (
+            <span className="text-gray-300">—</span>
+          ) : (
+            <SprintEditor
+              value={sprint}
+              sprints={ctx.sprintList}
+              onChange={(sprintId) => ctx.onPatchIssue(issue.id, { sprintId })}
+            />
+          )}
+        </td>
+      )}
       <td className="w-44 px-3 py-2 align-middle">
         <AssigneeEditor
           value={assignee}

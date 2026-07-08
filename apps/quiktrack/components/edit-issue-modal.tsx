@@ -1395,8 +1395,9 @@ export function EditIssueModal({
                       })()}
                     </DetailRow>
 
-                    {/* Sprint — Epics span sprints, so they don't get assigned to one. */}
-                    {issue?.type !== "EPIC" && (
+                    {/* Sprint — Epics span sprints (no single assignment), and
+                        functional projects have no sprints, so hide when none exist. */}
+                    {issue?.type !== "EPIC" && sprints.length > 0 && (
                       <DetailRow label="Sprint">
                         {locked("sprint") ? (
                           <LockedChip>
