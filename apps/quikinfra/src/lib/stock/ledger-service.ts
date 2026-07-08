@@ -8,8 +8,9 @@
  * Invariants enforced here:
  *   1. CnStockLedger is append-only (compensating entries for reversals).
  *   2. CnStockBalance is derived state, kept in sync inside the same txn.
- *   3. Outward postings reject if balance would go negative (except
- *      explicit reconciliation_adj with allowNegative=true).
+ *   3. Outward postings reject if balance would go negative, except
+ *      reconciliation_adj and dpr_consumption with allowNegative=true
+ *      (a DPR records actual site usage and is never blocked on approval).
  *   4. Every posting writes a CnAuditLog row in the same transaction.
  *
  * All methods take a Prisma transaction client (`tx`) so the caller can
@@ -59,7 +60,11 @@ export interface StockPosting {
   refId: string;
   refNumber: string;
   txDate?: Date;
-  allowNegative?: boolean; // only reconciliation_adj may set this
+  // Only reconciliation_adj and dpr_consumption may set this. DPR
+  // consumption records actual on-site usage as reported and must not be
+  // blocked at approval — over-consumption is allowed to drive the balance
+  // negative (surfaced as a warning in the UI, not a hard stop).
+  allowNegative?: boolean;
 }
 
 // ─── Internal helpers ───────────────────────────────────────────────
@@ -126,8 +131,14 @@ export async function postLedgerEntry(
 
   const newQty = currentQty + delta;
 
-  // Negative-balance guard
-  if (newQty < 0 && !(p.txType === LEDGER_TX_TYPES.RECONCILIATION_ADJ && p.allowNegative)) {
+  // Negative-balance guard. Reconciliation adjustments and DPR consumption
+  // may opt out (allowNegative) — a DPR records actual site usage and is
+  // never blocked at approval even when it exceeds the allotted stock.
+  const mayGoNegative =
+    p.allowNegative === true &&
+    (p.txType === LEDGER_TX_TYPES.RECONCILIATION_ADJ ||
+      p.txType === LEDGER_TX_TYPES.DPR_CONSUMPTION);
+  if (newQty < 0 && !mayGoNegative) {
     throw new StockError(
       "INSUFFICIENT_STOCK",
       `Insufficient stock: have ${currentQty}, tried to deduct ${p.qty} (${p.txType}) for item ${p.itemId} at location ${p.locationId}`
@@ -447,6 +458,10 @@ export async function postDPRConsumptionOutward(
       txType: LEDGER_TX_TYPES.DPR_CONSUMPTION,
       refId: dpr.id,
       refNumber: dpr.dprNumber,
+      // Record actual site consumption as reported — approval is never
+      // blocked on insufficient stock; over-consumption is allowed to drive
+      // the balance negative and is surfaced as a warning in the DPR UI.
+      allowNegative: true,
     });
     results.push({
       lineId: line.lineId,

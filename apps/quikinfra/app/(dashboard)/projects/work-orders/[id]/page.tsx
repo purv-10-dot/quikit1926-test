@@ -42,8 +42,11 @@ import {
   useWorkOrder,
   useUpdateWorkOrder,
 } from "@/hooks/use-projects";
+import { useWorkCategories } from "@/hooks/use-masters";
 import { usePermissions } from "@/hooks/use-permissions";
 import { useWorkflowConfirm } from "@/hooks/use-workflow-confirm";
+import { isLabourWorkType, labourLineFromWoItem, sumLabourQty } from "@/lib/projects/labour-scope";
+import { LABOUR_TYPE_OPTIONS } from "@/lib/projects/labour-types";
 
 const MENU_KEY = "pm.work_orders";
 
@@ -140,6 +143,24 @@ export default function WorkOrderDetailPage() {
   const boqItems: BoqScopeItem[] = useMemo(
     () => (Array.isArray(wo?.boqItems) ? wo.boqItems : []),
     [wo],
+  );
+  const isLabourOnly = isLabourWorkType(wo?.workType);
+  const { data: workCategoriesResult } = useWorkCategories();
+  const workCategoryNameById = useMemo(() => {
+    const map = new Map<string, string>();
+    for (const w of workCategoriesResult?.data ?? []) {
+      map.set(w.id, w.name);
+    }
+    return map;
+  }, [workCategoriesResult]);
+  const labourTypeLabel = useMemo(() => {
+    const map = new Map<string, string>();
+    for (const o of LABOUR_TYPE_OPTIONS) map.set(o.value, o.label);
+    return (v: string) => map.get(v) ?? v;
+  }, []);
+  const labourLines = useMemo(
+    () => (isLabourOnly ? boqItems.map((it) => labourLineFromWoItem(it)) : []),
+    [boqItems, isLabourOnly],
   );
 
   // ApprovalTimeline expects { step, action, actionBy, actionAt, comments } —
@@ -447,11 +468,11 @@ export default function WorkOrderDetailPage() {
               )}
             </div>
 
-            {/* ── BOQ Scope ──────────────────────────────────────── */}
+            {/* ── Scope (Labour details or BOQ) ─────────────────── */}
             <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
               <div className="px-6 py-4 border-b border-gray-100 flex items-center justify-between">
                 <h2 className="text-sm font-semibold text-gray-900">
-                  BOQ Scope
+                  {isLabourOnly ? "Work Order Details" : "BOQ Scope"}
                 </h2>
                 <span className="inline-flex items-center gap-1 text-[10px] font-semibold uppercase tracking-wider text-gray-500 bg-gray-50 border border-gray-200 px-2 py-0.5 rounded-full">
                   {boqItems.length} item{boqItems.length === 1 ? "" : "s"}
@@ -462,6 +483,56 @@ export default function WorkOrderDetailPage() {
                 <p className="px-6 py-8 text-center text-sm text-gray-500">
                   No scope items.
                 </p>
+              ) : isLabourOnly ? (
+                <div className="overflow-x-auto">
+                  <table className="min-w-full text-sm">
+                    <thead className="bg-gray-50 text-[10px] uppercase text-gray-500 tracking-wider border-b border-gray-200">
+                      <tr>
+                        <th className="px-4 py-3 text-left font-bold w-10">#</th>
+                        <th className="px-4 py-3 text-left font-bold">Date</th>
+                        <th className="px-4 py-3 text-left font-bold">Activity Name</th>
+                        <th className="px-4 py-3 text-left font-bold">Description</th>
+                        <th className="px-4 py-3 text-left font-bold">Group</th>
+                        <th className="px-4 py-3 text-left font-bold">Labour Type &amp; Count</th>
+                        <th className="px-4 py-3 text-right font-bold">Total</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-gray-100">
+                      {labourLines.map((line, idx) => (
+                        <tr key={idx} className="hover:bg-indigo-50/20 transition-colors">
+                          <td className="px-4 py-3 text-xs font-mono text-gray-400 tabular-nums">
+                            {String(idx + 1).padStart(2, "0")}
+                          </td>
+                          <td className="px-4 py-3 text-gray-700 whitespace-nowrap">
+                            {fmtDate(line.lineDate)}
+                          </td>
+                          <td className="px-4 py-3 text-gray-900">{line.activityName || "—"}</td>
+                          <td className="px-4 py-3 text-gray-700">
+                            {line.description || "—"}
+                          </td>
+                          <td className="px-4 py-3 text-gray-700">
+                            {workCategoryNameById.get(line.workCategoryId) ?? "—"}
+                          </td>
+                          <td className="px-4 py-3 text-gray-700">
+                            {line.labourTypes.length
+                              ? line.labourTypes
+                                  .map(
+                                    (lt) =>
+                                      `${labourTypeLabel(lt.type)} (${
+                                        fmtQty(lt.count) || 0
+                                      })`,
+                                  )
+                                  .join(", ")
+                              : "—"}
+                          </td>
+                          <td className="px-4 py-3 text-right tabular-nums text-gray-900">
+                            {sumLabourQty(line.labourTypes)}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
               ) : (
                 <div className="overflow-x-auto">
                   <table className="min-w-full text-sm">

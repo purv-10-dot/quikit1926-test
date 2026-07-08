@@ -151,7 +151,7 @@ describe("postLedgerEntry — outward (issue) + negative guard", () => {
 });
 
 describe("postLedgerEntry — reconciliation adjustment", () => {
-  it("can drive balance negative only with allowNegative on reconciliation_adj", async () => {
+  it("can drive balance negative with allowNegative on reconciliation_adj", async () => {
     const tx = makeTx({ quantity: 5, avgRate: 100 });
     // reconciliation passes signed qty via the delta-else branch; qty must be
     // positive for the validation, so a negative result needs a negative...
@@ -218,15 +218,33 @@ describe("postDPRConsumptionOutward — values at moving-average rate", () => {
 
   it("values at rate 0 when no balance row exists", async () => {
     const tx = makeTx(null);
-    await expect(
-      postDPRConsumptionOutward(tx as any, ctx, {
-        id: "dpr-1",
-        dprNumber: "DPR-1",
-        projectId: "proj-1",
-        locationId: "loc-1",
-        lines: [{ lineId: "L1", itemId: "i1", uomId: "u1", consumedQty: 1 }],
-      }),
-    ).rejects.toMatchObject({ code: "INSUFFICIENT_STOCK" }); // 0 - 1 < 0
+    const res = await postDPRConsumptionOutward(tx as any, ctx, {
+      id: "dpr-1",
+      dprNumber: "DPR-1",
+      projectId: "proj-1",
+      locationId: "loc-1",
+      lines: [{ lineId: "L1", itemId: "i1", uomId: "u1", consumedQty: 1 }],
+    });
+    expect(res).toHaveLength(1);
+    expect(res[0]!.unitRate).toBe(0);
+    expect(res[0]!.amount).toBe(0);
+  });
+
+  it("records over-consumption without blocking — balance is allowed to go negative", async () => {
+    // DPR consumption logs actual site usage; approval must never be blocked
+    // on insufficient stock. Consuming 10 against a balance of 4 succeeds and
+    // drives the balance negative (surfaced as a warning in the UI, not here).
+    const tx = makeTx({ quantity: 4, avgRate: 100 });
+    const res = await postDPRConsumptionOutward(tx as any, ctx, {
+      id: "dpr-1",
+      dprNumber: "DPR-1",
+      projectId: "proj-1",
+      locationId: "loc-1",
+      lines: [{ lineId: "L1", itemId: "i1", uomId: "u1", consumedQty: 10 }],
+    });
+    expect(res).toHaveLength(1);
+    expect(res[0]!.balanceAfter).toBe(-6); // 4 - 10
+    expect(tx.cnStockLedger.create).toHaveBeenCalled();
   });
 });
 

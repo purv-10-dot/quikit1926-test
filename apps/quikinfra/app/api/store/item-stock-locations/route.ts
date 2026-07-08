@@ -7,13 +7,17 @@ import type { Prisma } from "@prisma/client";
 /**
  * GET /api/store/item-stock-locations?itemId=...&projectId=...
  *
- * Returns per-location stock balances for an item (optionally scoped to a project).
+ * Returns per-project, per-location stock balances for an item
+ * (optionally scoped to a project).
  *
  * Response:
  * {
  *   itemId: string,
  *   total: number,
- *   locations: Array<{ locationId, locationCode, locationName, type, projectId, quantity }>
+ *   locations: Array<{
+ *     locationId, locationCode, locationName, type,
+ *     projectId, projectCode, projectName, quantity
+ *   }>
  * }
  */
 export async function GET(req: NextRequest) {
@@ -42,52 +46,72 @@ export async function GET(req: NextRequest) {
     select: { locationId: true, projectId: true, quantity: true },
   });
 
-  const qtyByLocationId = new Map<string, number>();
+  type StockEntry = { projectId: string; locationId: string; quantity: number };
+  const entryKey = (pId: string, locId: string) => `${pId}|${locId}`;
+  const entries = new Map<string, StockEntry>();
+
   for (const r of balanceRows) {
     const locId = String(r.locationId ?? "");
-    if (!locId) continue;
+    const pId = String(r.projectId ?? "");
+    if (!locId || !pId) continue;
     const qty = Number(r.quantity?.toString?.() ?? r.quantity ?? 0);
-    qtyByLocationId.set(locId, (qtyByLocationId.get(locId) ?? 0) + qty);
+    const key = entryKey(pId, locId);
+    const prev = entries.get(key);
+    entries.set(key, {
+      projectId: pId,
+      locationId: locId,
+      quantity: (prev?.quantity ?? 0) + qty,
+    });
   }
 
-  const locationIds = Array.from(
-    new Set([
-      ...masterLocations.map((l) => l.id),
-      ...balanceRows.map((r) => r.locationId).filter(Boolean),
-    ]),
-  );
+  // Fallback to Location master qty when ledger has no row yet for this project+location+item.
+  for (const master of masterLocations) {
+    const locId = master.id;
+    const pId = String(master.projectId ?? "");
+    if (!locId || !pId) continue;
+    const key = entryKey(pId, locId);
+    if (entries.has(key)) continue;
+    const map = master.itemQtyByItemId;
+    if (!map || typeof map !== "object" || Array.isArray(map)) continue;
+    const raw = (map as Record<string, unknown>)[itemId];
+    const n = raw === null || raw === undefined || String(raw).trim() === "" ? NaN : Number(raw);
+    if (!Number.isFinite(n)) continue;
+    entries.set(key, { projectId: pId, locationId: locId, quantity: n });
+  }
 
-  const locRows =
+  const locationIds = Array.from(new Set([...entries.values()].map((e) => e.locationId)));
+  const projectIds = Array.from(new Set([...entries.values()].map((e) => e.projectId)));
+
+  const [locRows, projectRows] = await Promise.all([
     locationIds.length > 0
-      ? await db.cnLocation.findMany({
+      ? db.cnLocation.findMany({
           where: { orgId: ctx.orgId, id: { in: locationIds } },
           select: { id: true, code: true, name: true, type: true, projectId: true },
         })
-      : [];
+      : Promise.resolve([]),
+    projectIds.length > 0
+      ? db.cnProject.findMany({
+          where: { orgId: ctx.orgId, id: { in: projectIds } },
+          select: { id: true, code: true, name: true },
+        })
+      : Promise.resolve([]),
+  ]);
+
   const locById = new Map(locRows.map((l) => [l.id, l]));
+  const projectById = new Map(projectRows.map((p) => [p.id, p]));
 
-  const locations = locationIds
-    .map((locationId) => {
+  const locations = [...entries.values()]
+    .map(({ projectId: pId, locationId, quantity }) => {
       const loc = locById.get(locationId) ?? null;
-      const ledgerQty = qtyByLocationId.get(locationId);
-      let quantity = typeof ledgerQty === "number" ? ledgerQty : 0;
-
-      // Fallback to Location master qty when ledger has no row yet for this location+item.
-      if (ledgerQty === undefined) {
-        const master = masterLocations.find((l) => l.id === locationId);
-        const map = master?.itemQtyByItemId;
-        if (map && typeof map === "object" && !Array.isArray(map)) {
-          const raw = (map as Record<string, unknown>)[itemId];
-          const n = raw === null || raw === undefined || String(raw).trim() === "" ? NaN : Number(raw);
-          if (Number.isFinite(n)) quantity = n;
-        }
-      }
+      const project = projectById.get(pId) ?? null;
       return {
         locationId,
         locationCode: loc?.code ?? "",
         locationName: loc?.name ?? "",
         type: loc?.type ?? "",
-        projectId: loc?.projectId ?? "",
+        projectId: pId,
+        projectCode: project?.code ?? "",
+        projectName: project?.name ?? "",
         quantity,
       };
     })
@@ -96,4 +120,3 @@ export async function GET(req: NextRequest) {
   const total = locations.reduce((s, r) => s + (Number.isFinite(r.quantity) ? r.quantity : 0), 0);
   return NextResponse.json({ itemId, total, locations });
 }
-
