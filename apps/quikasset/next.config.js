@@ -1,11 +1,25 @@
+const path = require("path");
+
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   reactStrictMode: true,
   swcMinify: true,
+  // Standalone output (self-contained Node server under .next/standalone) is
+  // only emitted when NEXT_BUILD_STANDALONE=1 — set in apps/quikasset/Dockerfile.
+  // It stays off for local `next build` because standalone symlinks the
+  // monorepo's workspace deps, which requires admin privileges on Windows.
+  output: process.env.NEXT_BUILD_STANDALONE === "1" ? "standalone" : undefined,
+  // Skip type/lint checks inside the Docker build — the pruned monorepo tree
+  // may not include every devDep; these checks already run in CI.
+  typescript: { ignoreBuildErrors: true },
+  eslint: { ignoreDuringBuilds: true },
   transpilePackages: ["@quikit/ui", "@quikit/auth", "@quikit/shared", "@quikit/database"],
   experimental: {
+    // Trace workspace deps (@quikit/*) into the standalone bundle by rooting
+    // file-tracing at the monorepo root rather than this app's directory.
+    outputFileTracingRoot: path.join(__dirname, "../.."),
     serverActions: {
-      allowedOrigins: ["localhost:3012"],
+      allowedOrigins: ["localhost:3012", "asset.quikit.ai", "uatasset.quikit.ai"],
     },
   },
   async headers() {

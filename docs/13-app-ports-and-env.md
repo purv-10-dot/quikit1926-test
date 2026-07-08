@@ -41,6 +41,7 @@ A single reference for every app in the [QuikIT monorepo](../) — what port it 
 | `NEXT_PUBLIC_LAUNCHER_URL` | `http://localhost:3000/apps` | apps/auth (post-login redirect) |
 | `NEXT_PUBLIC_ADMIN_URL` / `ADMIN_URL` | `http://localhost:3002` | auth, quikit |
 | `QUIKSCALE_URL` / `NEXT_PUBLIC_QUIKSCALE_URL` | `http://localhost:3003` | quikit, admin |
+| `QUIKASSET_URL` / `NEXT_PUBLIC_QUIKASSET_URL` | `http://localhost:3012` | quikit, admin (prod `https://asset.quikit.ai`, UAT `https://uatasset.quikit.ai`) |
 | `NEXT_PUBLIC_SUPER_ADMIN_URL` | `http://localhost:3000` | quikscale, quiktrack, quikinfra (super-admin lives inside quikit) |
 
 ---

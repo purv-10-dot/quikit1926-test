@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 
+
 /**
  * GET /.well-known/openid-configuration
  *

@@ -3,12 +3,11 @@
 // Force dynamic — see comment in apps/auth/app/login/page.tsx.
 export const dynamic = "force-dynamic";
 
+
 import { Suspense } from "react";
 import { useSearchParams } from "next/navigation";
 import { SignInComponent } from "@quikit/ui";
 import { requireProdEnv } from "@quikit/shared";
-
-
 
 /**
  * Standalone Forgot-Password page.
