@@ -56,7 +56,7 @@ jobs:
               - 'apps/quikcrm/**'
             quiksupport:
               - 'apps/quiksupport/**'
-            quiksupport:
+            quikasset:
               - 'apps/quikasset/**'
 
       - name: Generate matrix
