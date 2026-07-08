@@ -85,6 +85,8 @@ function StockPinCell({
       locationName: string;
       type: string;
       projectId: string;
+      projectCode: string;
+      projectName: string;
       quantity: number;
     }>;
   } | null>(null);
@@ -138,9 +140,9 @@ function StockPinCell({
       </button>
 
       {open ? (
-        <div className="absolute z-50 top-full right-0 mt-2 w-80 rounded-lg border border-gray-200 bg-white shadow-lg overflow-hidden">
+        <div className="absolute z-50 top-full right-0 mt-2 w-96 rounded-lg border border-gray-200 bg-white shadow-lg overflow-hidden">
           <div className="flex items-center justify-between px-3 py-2 border-b border-gray-100">
-            <div className="text-sm font-semibold text-gray-900">Stock by location</div>
+            <div className="text-sm font-semibold text-gray-900">Stock by location &amp; project</div>
             <button type="button" onClick={() => setOpen(false)} className="p-1 rounded hover:bg-gray-100 text-gray-500">
               <X className="w-4 h-4" />
             </button>
@@ -155,14 +157,19 @@ function StockPinCell({
                 <div className="text-xs text-gray-500">Total: <span className="font-semibold text-gray-900">{data.total}</span></div>
                 <div className="max-h-56 overflow-y-auto divide-y divide-gray-100 border border-gray-100 rounded-md">
                   {data.locations.map((r) => (
-                    <div key={`${r.locationId}-${r.projectId}`} className="px-2.5 py-2 flex items-center justify-between gap-3">
+                    <div key={`${r.projectId}-${r.locationId}`} className="px-2.5 py-2 flex items-center justify-between gap-3">
                       <div className="min-w-0">
                         <div className="text-sm text-gray-900 truncate">
                           {r.locationCode ? `${r.locationCode} — ` : ""}{r.locationName || r.locationId}
                         </div>
-                        <div className="text-[10px] text-gray-500 truncate">{r.type || "location"}</div>
+                        <div className="text-[10px] text-gray-500 truncate">
+                          {r.projectCode || r.projectName
+                            ? `${r.projectCode ? `${r.projectCode} — ` : ""}${r.projectName || r.projectId}`
+                            : r.projectId || "—"}
+                          {r.type ? ` · ${r.type}` : ""}
+                        </div>
                       </div>
-                      <div className="text-sm font-semibold text-gray-900 tabular-nums">{r.quantity}</div>
+                      <div className="text-sm font-semibold text-gray-900 tabular-nums shrink-0">{r.quantity}</div>
                     </div>
                   ))}
                 </div>

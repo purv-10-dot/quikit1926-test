@@ -29,6 +29,7 @@ function enrichWO(
 ) {
   const lines = (row.lines ?? []).map((l) => ({
     id: l.id,
+    lineType: l.lineType ?? "boq",
     boqNo: l.boqItemId ?? "",
     boqItemId: l.boqItemId ?? "",
     description: l.description ?? "",
@@ -37,6 +38,10 @@ function enrichWO(
     quantity: l.quantity?.toString?.() ?? "0",
     rate: l.negotiatedRate?.toString?.() ?? "0",
     amount: l.amount?.toString?.() ?? "0",
+    lineDate: l.lineDate?.toISOString?.().slice(0, 10) ?? "",
+    activityName: l.activityName ?? "",
+    workCategoryId: l.workCategoryId ?? "",
+    labourCounts: (l as { labourCounts?: unknown }).labourCounts ?? [],
   }));
   return {
     id: row.id,
@@ -216,6 +221,11 @@ export async function POST(req: NextRequest) {
       uomId?: string | null;
       rate?: number | string | null;
       amount?: number | string | null;
+      lineType?: string | null;
+      lineDate?: string | null;
+      activityName?: string | null;
+      workCategoryId?: string | null;
+      labourCounts?: { type: string; count: number }[] | null;
     }>;
   };
   try {
@@ -295,12 +305,19 @@ export async function POST(req: NextRequest) {
         status: body.status ?? "draft",
         lines: {
           create: boqItems.map((it) => ({
+            lineType: (it.lineType as string) ?? "boq",
             boqItemId: String(it.boqNo ?? it.boqItemId ?? ""),
             description: String(it.description ?? ""),
             quantity: String(Number(it.quantity) || 0),
             uomId: String(it.uomCode ?? it.uomId ?? ""),
             negotiatedRate: String(Number(it.rate) || 0),
             amount: String(Number(it.amount) || 0),
+            lineDate: it.lineDate ? new Date(it.lineDate) : null,
+            activityName: it.activityName ?? null,
+            workCategoryId: it.workCategoryId ?? null,
+            labourCounts: Array.isArray(it.labourCounts)
+              ? (it.labourCounts as Prisma.InputJsonValue)
+              : undefined,
           })),
         },
       }),

@@ -94,9 +94,14 @@ export const GET = auth.manage(async (authCtx, req: NextRequest) => {
   const userIds = data.map((u) => u.id);
   let modulesByUserId = new Map<string, string[]>();
   const projectsByUserId = new Map<string, string[]>();
+  // Users holding the settings grant extras (revoke=false). Drives the
+  // "Grant Settings access" checkbox pre-tick on the Edit drawer — without
+  // this the flag was always undefined, so the box read back unchecked even
+  // after the grant was saved.
+  const settingsUserIds = new Set<string>();
   if (userIds.length > 0) {
     try {
-      const [revokes, accessRows] = await Promise.all([
+      const [revokes, accessRows, settingsGrants] = await Promise.all([
         dbCentral.cnUserPermissionExtra.findMany({
           where: { orgId: authCtx.orgId, userId: { in: userIds }, revoke: true },
           select: { userId: true, resource: true, action: true },
@@ -105,7 +110,25 @@ export const GET = auth.manage(async (authCtx, req: NextRequest) => {
           where: { orgId: authCtx.orgId, userId: { in: userIds } },
           select: { userId: true, projectId: true },
         }) as Promise<Array<{ userId: string; projectId: string }>>,
+        dbCentral.cnUserPermissionExtra.findMany({
+          where: {
+            orgId: authCtx.orgId,
+            userId: { in: userIds },
+            revoke: false,
+            action: "manage",
+            resource: {
+              in: [
+                "construction.settings",
+                "construction.users",
+                "construction.roles",
+                "construction.workflows",
+              ],
+            },
+          },
+          select: { userId: true },
+        }) as Promise<Array<{ userId: string }>>,
       ]);
+      for (const g of settingsGrants) settingsUserIds.add(g.userId);
 
       // modulesAssigned ← group revoke rows per user, then translate.
       const revokesByUserId = new Map<
@@ -145,6 +168,7 @@ export const GET = auth.manage(async (authCtx, req: NextRequest) => {
     ...rest,
     modulesAssigned: modulesByUserId.get(rest.id) ?? rest.modulesAssigned,
     projectsAssigned: projectsByUserId.get(rest.id) ?? rest.projectsAssigned,
+    hasSettingsAccess: settingsUserIds.has(rest.id),
   }));
   return NextResponse.json({ data: sanitized, total: sanitized.length });
 });

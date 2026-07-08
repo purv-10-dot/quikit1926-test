@@ -36,9 +36,16 @@ import {
 } from "lucide-react";
 import { PageContainer } from "@/components/PageShell";
 import { SelectInput } from "@/components/FormDrawer";
-import { useProjects, useContractors, useUOMs } from "@/hooks/use-masters";
+import { useProjects, useContractors, useUOMs, useWorkCategories } from "@/hooks/use-masters";
 import { buildLookupOptions } from "@/lib/masters/lookup";
+import {
+  isLabourWorkType,
+  labourLineFromWoItem,
+  labourLineToBoqItem,
+  type LabourScopeLine,
+} from "@/lib/projects/labour-scope";
 import { BOQActivityPickerModal } from "./BOQActivityPickerModal";
+import { LabourScopeTable } from "./LabourScopeTable";
 
 interface ScopeLine {
   boqItemId: string;
@@ -52,6 +59,9 @@ interface ScopeLine {
 interface WoBoqItem {
   boqItemId?: string; boqNo?: string; description?: string;
   uomCode?: string; quantity?: number | string; rate?: number | string;
+  // Labour-only line fields (per-trade counts arrive as extra numeric keys)
+  lineType?: string; lineDate?: string; activityName?: string;
+  workCategoryId?: string;
 }
 interface WorkOrderEditData {
   id?: string; woNumber?: string; projectId?: string; type?: string;
@@ -84,10 +94,12 @@ export function WorkOrderForm({ editData, embedded = false, onSaved }: Props) {
   const { data: projectsResult } = useProjects();
   const { data: contractorsResult } = useContractors();
   const { data: uomsResult } = useUOMs();
+  const { data: workCategoriesResult } = useWorkCategories();
 
   const projects = projectsResult?.data ?? [];
   const contractors = contractorsResult?.data ?? [];
   const uoms = (uomsResult?.data ?? []) as Array<{ code?: string; status?: string }>;
+  const workCategories = workCategoriesResult?.data ?? [];
 
   // Basic Information state
   const [projectId, setProjectId] = useState("");
@@ -102,8 +114,14 @@ export function WorkOrderForm({ editData, embedded = false, onSaved }: Props) {
   const [scope, setScope] = useState<ScopeLine[]>([]);
   const [boqModalOpen, setBoqModalOpen] = useState(false);
 
+  // Labour-only scope state (shown when work type = Labour Only)
+  const [labourScope, setLabourScope] = useState<LabourScopeLine[]>([]);
+
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
+
+  const isLabourOnly = isLabourWorkType(workType);
+  const hasScopeLines = isLabourOnly ? labourScope.length > 0 : scope.length > 0;
 
   // Pre-fill from editData when the component mounts or the row changes
   useEffect(() => {
@@ -116,16 +134,22 @@ export function WorkOrderForm({ editData, embedded = false, onSaved }: Props) {
     setPlannedStart(editData.plannedStart ? String(editData.plannedStart).slice(0, 10) : "");
     setPlannedEnd(editData.plannedEnd ? String(editData.plannedEnd).slice(0, 10) : "");
     const rawScope: WoBoqItem[] = Array.isArray(editData.boqItems) ? editData.boqItems : [];
-    setScope(
-      rawScope.map((s) => ({
-        boqItemId: s.boqItemId ?? "",
-        boqNo: s.boqNo ?? "",
-        description: s.description ?? "",
-        uomCode: s.uomCode ?? "",
-        quantity: s.quantity != null ? String(s.quantity) : "",
-        rate: s.rate != null ? String(s.rate) : "",
-      }))
-    );
+    if (isLabourWorkType(editData.workType)) {
+      setLabourScope(rawScope.map((s) => labourLineFromWoItem(s)));
+      setScope([]);
+    } else {
+      setScope(
+        rawScope.map((s) => ({
+          boqItemId: s.boqItemId ?? "",
+          boqNo: s.boqNo ?? "",
+          description: s.description ?? "",
+          uomCode: s.uomCode ?? "",
+          quantity: s.quantity != null ? String(s.quantity) : "",
+          rate: s.rate != null ? String(s.rate) : "",
+        }))
+      );
+      setLabourScope([]);
+    }
   }, [editData]);
 
   const totalValue = useMemo(
@@ -188,26 +212,49 @@ export function WorkOrderForm({ editData, embedded = false, onSaved }: Props) {
     if (plannedEnd <= plannedStart) {
       return setError("Planned end must be after planned start");
     }
-    if (scope.length === 0) return setError("Add at least one BOQ item");
-    const invalid = scope.find((s) => !s.quantity || !s.rate);
-    if (invalid) return setError(`Fill qty + rate for all BOQ lines (missing on ${invalid.boqNo})`);
+    if (isLabourOnly) {
+      if (labourScope.length === 0) {
+        return setError("Add at least one labour activity");
+      }
+      const invalidLabour = labourScope.find(
+        (s) =>
+          !s.lineDate ||
+          !s.activityName.trim() ||
+          !s.workCategoryId ||
+          s.labourTypes.length === 0 ||
+          s.labourTypes.some((lt) => !lt.type || !(parseFloat(lt.count) > 0))
+      );
+      if (invalidLabour) {
+        return setError(
+          "For every row fill date, activity name, group, and a count for each labour type"
+        );
+      }
+    } else {
+      if (scope.length === 0) return setError("Add at least one BOQ item");
+      const invalid = scope.find((s) => !s.quantity || !s.rate);
+      if (invalid) {
+        return setError(`Fill qty + rate for all BOQ lines (missing on ${invalid.boqNo})`);
+      }
+    }
 
     setSaving(true);
     try {
       const contractor = contractors.find((c) => c.id === contractorId);
-      const boqItems = scope.map((s) => {
-        const qty = parseFloat(s.quantity) || 0;
-        const rate = parseFloat(s.rate) || 0;
-        return {
-          boqItemId: s.boqItemId,
-          boqNo: s.boqNo,
-          description: s.description,
-          uomCode: s.uomCode,
-          quantity: qty,
-          rate,
-          amount: qty * rate,
-        };
-      });
+      const boqItems = isLabourOnly
+        ? labourScope.map((s) => labourLineToBoqItem(s))
+        : scope.map((s) => {
+            const qty = parseFloat(s.quantity) || 0;
+            const rate = parseFloat(s.rate) || 0;
+            return {
+              boqItemId: s.boqItemId,
+              boqNo: s.boqNo,
+              description: s.description,
+              uomCode: s.uomCode,
+              quantity: qty,
+              rate,
+              amount: qty * rate,
+            };
+          });
 
       const project = projects.find((p) => p.id === projectId);
       const fallbackTitle = `${woType} for ${project?.name ?? ""}`.trim();
@@ -334,13 +381,13 @@ export function WorkOrderForm({ editData, embedded = false, onSaved }: Props) {
               <SelectInput
                 value={projectId}
                 onChange={setProjectId}
-                disabled={isEdit && scope.length > 0}
+                disabled={isEdit && hasScopeLines}
                 placeholder="Select project…"
                 options={projects.map((p) => ({ value: p.id, label: p.name }))}
               />
-              {isEdit && scope.length > 0 && (
+              {isEdit && hasScopeLines && (
                 <p className="mt-1 text-[10px] text-gray-400">
-                  Project is locked because BOQ items are attached.
+                  Project is locked because scope lines are attached.
                 </p>
               )}
             </Field>
@@ -416,28 +463,37 @@ export function WorkOrderForm({ editData, embedded = false, onSaved }: Props) {
           </div>
         </section>
 
-        {/* ── BOQ SCOPE ── */}
+        {/* ── SCOPE: Labour table OR BOQ items ── */}
         <section className="bg-white rounded-2xl border border-slate-200 shadow-soft px-6 py-5 mb-5">
           <div className="flex items-center justify-between mb-4">
             <h2 className="text-xs font-bold text-orange-700 uppercase tracking-wider flex items-center gap-2">
-              <FileText className="w-4 h-4" /> BOQ SCOPE
+              <FileText className="w-4 h-4" />{" "}
+              {isLabourOnly ? "WORK ORDER DETAILS" : "BOQ SCOPE"}
             </h2>
-            <button
-              type="button"
-              onClick={() => {
-                if (!projectId) {
-                  setError("Pick a project first before adding BOQ items");
-                  return;
-                }
-                setBoqModalOpen(true);
-              }}
-              className="inline-flex items-center gap-1.5 text-xs font-semibold text-orange-700 hover:text-orange-800 bg-orange-50 hover:bg-orange-100 border border-orange-200 px-3 py-1.5 rounded-lg transition-colors"
-            >
-              <Plus className="w-3.5 h-3.5" /> Add BOQ Item
-            </button>
+            {!isLabourOnly && (
+              <button
+                type="button"
+                onClick={() => {
+                  if (!projectId) {
+                    setError("Pick a project first before adding BOQ items");
+                    return;
+                  }
+                  setBoqModalOpen(true);
+                }}
+                className="inline-flex items-center gap-1.5 text-xs font-semibold text-orange-700 hover:text-orange-800 bg-orange-50 hover:bg-orange-100 border border-orange-200 px-3 py-1.5 rounded-lg transition-colors"
+              >
+                <Plus className="w-3.5 h-3.5" /> Add BOQ Item
+              </button>
+            )}
           </div>
 
-          {scope.length === 0 ? (
+          {isLabourOnly ? (
+            <LabourScopeTable
+              lines={labourScope}
+              onChange={setLabourScope}
+              workCategories={workCategories}
+            />
+          ) : scope.length === 0 ? (
             <button
               type="button"
               onClick={() => {
@@ -570,14 +626,16 @@ export function WorkOrderForm({ editData, embedded = false, onSaved }: Props) {
         </section>
       </PageContainer>
 
-      {/* BOQ picker modal */}
-      <BOQActivityPickerModal
-        open={boqModalOpen}
-        onClose={() => setBoqModalOpen(false)}
-        projectId={projectId}
-        alreadyAddedIds={alreadyAddedIds}
-        onAdd={addBoqItem}
-      />
+      {/* BOQ picker modal — only for non-labour work types */}
+      {!isLabourOnly && (
+        <BOQActivityPickerModal
+          open={boqModalOpen}
+          onClose={() => setBoqModalOpen(false)}
+          projectId={projectId}
+          alreadyAddedIds={alreadyAddedIds}
+          onAdd={addBoqItem}
+        />
+      )}
 
       {/* Embedded-mode footer — shows the Save button at the bottom of
           the form when hosted inside a drawer (the top header strip is
