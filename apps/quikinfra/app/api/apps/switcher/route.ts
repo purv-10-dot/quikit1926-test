@@ -4,6 +4,7 @@ import { db as dbCentral } from "@quikit/database";
 import { ADMIN_TIER_ROLES, HIDDEN_APP_SLUGS } from "@quikit/shared";
 import { authOptions } from "@/lib/auth";
 
+
 /**
  * GET /api/apps/switcher
  *

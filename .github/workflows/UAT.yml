@@ -78,7 +78,7 @@ jobs:
             [ "${{ steps.filter.outputs.quikinfra }}" = "true" ] && APPS+=("quikinfra")
             [ "${{ steps.filter.outputs.quikcrm }}" = "true" ] && APPS+=("quikcrm")
             [ "${{ steps.filter.outputs.quiksupport }}" = "true" ] && APPS+=("quiksupport")
-            [ "${{ steps.filter.outputs.quiksupport }}" = "true" ] && APPS+=("quikasset")
+            [ "${{ steps.filter.outputs.quikasset }}" = "true" ] && APPS+=("quikasset")
           fi
 
           echo "Selected apps: ${APPS[@]}"
