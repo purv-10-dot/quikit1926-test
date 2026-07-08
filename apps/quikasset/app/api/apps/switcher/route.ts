@@ -85,7 +85,7 @@ export async function GET() {
     quikinfra: "http://localhost:3006",
     quiksocial: "http://localhost:3007",
     quikcrm: "http://localhost:3008",
-    quikasset: "http://localhost:3009",
+    quikasset: "http://localhost:3012",
   };
   function resolveBaseUrl(slug: string, dbBaseUrl: string | null | undefined): string {
     const fromEnv = envBaseUrls[slug];
