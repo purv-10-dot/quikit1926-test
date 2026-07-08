@@ -24,7 +24,7 @@ export function TeamProductivityBar({ data, onSelect }: Props) {
   return (
     <div className="rounded-2xl border border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-900 p-4 shadow-sm h-full flex flex-col">
       <div className="flex items-center gap-1.5">
-        <h3 className="text-sm font-semibold text-gray-900 dark:text-gray-100">Productivity by Department</h3>
+        <h3 className="text-sm font-semibold text-gray-900 dark:text-gray-100">Productivity by Role</h3>
         <Info className="h-3.5 w-3.5 text-gray-400" />
       </div>
 
@@ -75,7 +75,7 @@ function EmptyState() {
   return (
     <div className="flex-1 flex flex-col items-center justify-center text-center py-8">
       <div className="text-3xl mb-2">📊</div>
-      <p className="text-sm text-gray-500 dark:text-gray-400">No department activity in this period</p>
+      <p className="text-sm text-gray-500 dark:text-gray-400">No role activity in this period</p>
       <p className="text-xs text-gray-400 dark:text-gray-500 mt-1">
         Assign roles in Settings &rarr; Roles &amp; Permissions to see productivity here
       </p>
