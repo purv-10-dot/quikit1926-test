@@ -183,6 +183,13 @@ function firstScalarDiff(
     }
     return null;
   }
+  // Treat the "nothing" representations (undefined / null / "") as equivalent,
+  // so a transition *between* them is NOT a change. This stops "Add New" — which
+  // appends a fully-empty row — from registering as an (undefined/"" → "") edit
+  // and popping the finalized-edit "Change logged" card for an empty row. Real
+  // edits still register: "" → "x" and "x" → "" both differ here.
+  const emptyish = (v: unknown) => v === undefined || v === null || v === "";
+  if (emptyish(oldVal) && emptyish(newVal)) return null;
   return oldVal !== newVal ? { path, old: oldVal, new: newVal } : null;
 }
 
@@ -219,6 +226,41 @@ export function describeSetChange(key: string, oldVal: unknown, newVal: unknown)
     label: composeLabel(key, diff.path),
     oldValue: toDisplay(diff.old),
     newValue: toDisplay(diff.new),
+  };
+}
+
+/**
+ * Suffix that marks a grid-row *removal* in the finalized-edit change log.
+ * A row deletion shifts every later row up, so `describeSetChange`'s scalar
+ * diff would misread it as a field edit on the shifted row (and then the
+ * commit gate would validate that shifted row — blocking, e.g., a delete when
+ * the shifted-up row has an empty Projected). Deletions are logged under this
+ * distinct field instead so the gate can recognise and always allow them.
+ */
+const ROW_DELETED_SUFFIX = "__deleted";
+
+/** True when `field` is a grid-row deletion marker (see `describeRowDeletion`). */
+export function isRowDeletionField(field: string): boolean {
+  return field.endsWith(`.${ROW_DELETED_SUFFIX}`);
+}
+
+/**
+ * Describe a grid-row removal (e.g. deleting an ACTIONS (QTR) row). Produces a
+ * `PendingEdit` under the `<key>.<index>.__deleted` field so it reads as a
+ * "Row removed" entry in the change log and bypasses the per-row validity gate
+ * that guards ordinary field edits.
+ */
+export function describeRowDeletion(
+  key: string,
+  index: number,
+  row: { category?: string | null },
+): PendingEdit {
+  const cat = (row.category ?? "").trim();
+  return {
+    field: `${key}.${index}.${ROW_DELETED_SUFFIX}`,
+    label: `${sectionLabel(key)} · ${cat || "#" + (index + 1)} · Row removed`,
+    oldValue: cat || `Row ${index + 1}`,
+    newValue: "(removed)",
   };
 }
 

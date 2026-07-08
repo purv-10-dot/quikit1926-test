@@ -23,7 +23,7 @@ import { CategorySelect, ProjectedInput } from "./category";
 import { breakdownProjected, exceedsGoalProjected } from "./modals";
 import { WithTooltip, OwnerSelect } from "./pickers";
 import { MIN_ACTION_ROWS, MAX_ACTION_ROWS, type FormData } from "../hooks/useOPSPForm";
-import type { PendingEdit } from "../lib/editLog";
+import { describeRowDeletion, type PendingEdit } from "../lib/editLog";
 
 interface Props {
   form: FormData;
@@ -240,9 +240,18 @@ export function ActionsSection({
                     type="button"
                     aria-label="Remove row"
                     onClick={() => {
+                      // Log the removal as a distinct "row deleted" change (not a
+                      // scalar diff). On a finalized OPSP the diff-based logger
+                      // would misread the delete as a category edit on the row
+                      // that shifts up — and the commit gate would then block it
+                      // if that shifted row has an empty Projected. See
+                      // describeRowDeletion / isRowDeletionField in lib/editLog.
+                      logEdit?.(describeRowDeletion("actionsQtr", i, row));
+                      // Any active over-goal warning on this row no longer applies.
+                      setCapWarning((w) => (w?.row === i ? null : w));
                       const next = [...form.actionsQtr];
                       next.splice(i, 1);
-                      set("actionsQtr", next);
+                      set("actionsQtr", next, { skipLog: true });
                     }}
                     className="w-5 h-7 flex items-center justify-center text-gray-300 hover:text-red-500 hover:bg-red-50 rounded opacity-0 group-hover:opacity-100 transition-opacity"
                   >
