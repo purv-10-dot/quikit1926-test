@@ -133,13 +133,88 @@ export function generateQuarterDates(
 }
 
 /**
+ * Add `months` to a UTC date, clamping the day-of-month to the target month's
+ * length so the result never overflows into the following month.
+ *
+ *   addMonthsUTC(2026-01-31, 1) → 2026-02-28  (NOT 2026-03-03)
+ *   addMonthsUTC(2024-02-29, 12) → 2025-02-28 (leap → non-leap clamp)
+ *
+ * `Date.setUTCMonth` alone would roll 31 Jan + 1 month over to 03 Mar; this
+ * clamps to the last valid day instead.
+ */
+export function addMonthsUTC(date: Date, months: number): Date {
+  const y = date.getUTCFullYear();
+  const mAbs = date.getUTCMonth() + months;
+  const targetYear = y + Math.floor(mAbs / 12);
+  const targetMonth = ((mAbs % 12) + 12) % 12;
+  const day = date.getUTCDate();
+  // Day 0 of month+1 is the last day of the target month.
+  const lastDay = new Date(Date.UTC(targetYear, targetMonth + 1, 0)).getUTCDate();
+  return new Date(Date.UTC(targetYear, targetMonth, Math.min(day, lastDay)));
+}
+
+/**
+ * Custom Quarter Settings (month-based): build the 4 quarters on calendar
+ * 3-month intervals anchored on the Q1 start date. Each quarter starts exactly
+ * 3/6/9 months after Q1 (anchored on Q1, NOT chained from the previous quarter,
+ * so a clamped month-end like 30/11 → 28/02 recovers to the 30th afterwards
+ * instead of drifting permanently). Each quarter ends the day before the next
+ * begins; the fiscal year always ends on `Q1 start + 12 months − 1 day`, so the
+ * total is always exactly 365/366 days and every boundary lands on a calendar
+ * month edge — fixing the "1 day missing" (weeks×7 = 364) and month-drift bugs
+ * of `chainQuarterDates`.
+ *
+ * `weekCount` is persisted as 13 for all quarters so the KPI weekly grid stays
+ * 13 columns; the 1–2 trailing days of a 92-day quarter fold into week 13 via
+ * the existing clamp in `getCurrentFiscalWeekFromStart`. All math is UTC-safe.
+ */
+export function generateMonthlyQuarterDates(q1Start: Date): QuarterDateRow[] {
+  const names: Array<QuarterDateRow["quarter"]> = ["Q1", "Q2", "Q3", "Q4"];
+  const anchor = new Date(
+    Date.UTC(q1Start.getUTCFullYear(), q1Start.getUTCMonth(), q1Start.getUTCDate()),
+  );
+
+  // Starts anchored on Q1 (0, 3, 6, 9 months) — avoids compounding clamp drift.
+  const starts = [0, 3, 6, 9].map((m) => addMonthsUTC(anchor, m));
+  const fyEnd = addDays(addMonthsUTC(anchor, 12), -1); // Q1 start + 1yr − 1 day
+
+  return names.map((quarter, i) => ({
+    quarter,
+    startDate: starts[i],
+    endDate: i < 3 ? addDays(starts[i + 1], -1) : fyEnd,
+    weekCount: 13,
+  }));
+}
+
+/**
+ * Custom Quarter mode picks its generator from the per-quarter week counts:
+ *  - all four = 13 (the default) → month-based calendar quarters (365/366 days)
+ *  - any quarter ≠ 13            → week-based chained quarters (weekCount × 7)
+ *
+ * An all-13 *week-based* year is only 364 days (the original "1 day missing"
+ * bug), which nobody wants — so all-13 always maps to the clean calendar year,
+ * and a user opts into literal week lengths by setting a quarter to something
+ * other than 13. A missing/malformed list defaults to month-based.
+ *
+ * Used on both the POST path (from the request body) and the PUT recalculation
+ * (from the persisted counts, with the edit applied) so the client preview,
+ * POST, and PUT always agree.
+ */
+export function isMonthBasedWeekCounts(weekCounts?: number[] | null): boolean {
+  if (!weekCounts || weekCounts.length !== 4) return true;
+  return weekCounts.every((w) => w === 13);
+}
+
+/**
  * Custom Quarter Settings: build the 4 contiguous quarters from a Q1 start date
  * and an explicit per-quarter week count. Each quarter spans `weekCount × 7`
  * days; the next quarter starts the day after the previous ends. Unlike
  * `generateQuarterDates`, the fiscal year is NOT pinned to 365/366 days — its
  * length floats to the sum of the quarters' weeks.
  *
- * `weekCounts` must have length 4 (Q1..Q4). All math is UTC-normalized.
+ * Used for the week-based Custom sub-mode (any quarter ≠ 13 weeks — see
+ * `isMonthBasedWeekCounts`). `weekCounts` must have length 4 (Q1..Q4). All math
+ * is UTC-normalized.
  */
 export function chainQuarterDates(
   q1Start: Date,
