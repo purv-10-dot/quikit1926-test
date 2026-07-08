@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { updateQuarterSchema } from "@/lib/schemas/quarterSchema";
-import { addDays, chainQuarterDates } from "@/lib/utils/quarterGen";
+import { addDays, generateMonthlyQuarterDates, chainQuarterDates, isMonthBasedWeekCounts } from "@/lib/utils/quarterGen";
 import { withOrgAuthForModule } from "@/lib/api/withOrgAuth";
 import { fyHasData, fyLabel } from "@/lib/api/quartersFyHasData";
 import { getCustomQuarterEnabled } from "@/lib/utils/featureFlags";
@@ -68,8 +68,9 @@ export const PUT = withOrgAuth<{ id: string }>(async ({ orgId }, request, { para
     let quarterDates: { quarter: string; startDate: Date; endDate: Date; weekCount?: number }[];
 
     if (customEnabled) {
-      // Custom: chain the FY from Q1's start using each quarter's weekCount,
-      // overriding the edited quarter's startDate (Q1 only) / weekCount.
+      // Custom: reconstruct the per-quarter week counts from the persisted rows,
+      // apply the edit (weekCount for this quarter; startDate for Q1), then pick
+      // the generator below.
       let q1Start = byName["Q1"].startDate;
       if (existing.quarter === "Q1" && startDateStr) {
         const d = new Date(startDateStr);
@@ -81,7 +82,11 @@ export const PUT = withOrgAuth<{ id: string }>(async ({ orgId }, request, { para
       if (parsed.data.weekCount != null) {
         weekCounts[quarterOrder.indexOf(existing.quarter)] = parsed.data.weekCount;
       }
-      quarterDates = chainQuarterDates(q1Start, weekCounts);
+      // Pick the generator the same way POST does — all-13 → month-based
+      // calendar quarters, any ≠ 13 → week-based chained quarters.
+      quarterDates = isMonthBasedWeekCounts(weekCounts)
+        ? generateMonthlyQuarterDates(q1Start)
+        : chainQuarterDates(q1Start, weekCounts);
     } else {
       if (!startDateStr)
         return NextResponse.json({ success: false, error: "Start date is required" }, { status: 400 });

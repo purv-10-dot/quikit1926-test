@@ -10,7 +10,7 @@ export async function GET() {
   return NextResponse.json({
     success: true,
     data: {
-      name: "_template",
+      name: "quiksupport",
       commit: process.env.VERCEL_GIT_COMMIT_SHA ?? "local",
       timestamp: new Date().toISOString(),
     },
