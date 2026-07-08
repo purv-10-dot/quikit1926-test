@@ -4157,12 +4157,22 @@ model CnWorkOrder {
 model CnWorkOrderLine {
   id             String  @id @default(cuid())
   woId           String
+  lineType       String  @default("boq") // "boq" | "labour"
   boqItemId      String
   description    String
   quantity       Decimal @db.Decimal(18, 4)
   uomId          String
   negotiatedRate Decimal @db.Decimal(18, 2)
   amount         Decimal @db.Decimal(18, 2)
+
+  // Labour-only work order fields (null for "boq" lines)
+  lineDate       DateTime?
+  activityName   String?
+  workCategoryId String?
+
+  // Labour-only manpower counts — array of { type, count }, one per selected
+  // trade. JSON so new trades never require a schema change.
+  labourCounts Json?
 
   workOrder CnWorkOrder @relation(fields: [woId], references: [id], onDelete: Cascade)
 

@@ -60,6 +60,20 @@ describe("GroupedMaterialSelect", () => {
     expect(screen.getByText("Loading items…")).toBeInTheDocument();
   });
 
+  it("shows active item groups even when they have no items assigned yet", () => {
+    // Only ungrouped items exist → they fall into "Others". The two active
+    // master groups have no items, but must still appear so users can browse
+    // into them.
+    const ungrouped: GroupedMaterialSelectItem[] = [
+      { id: "x1", name: "Loose Nut", code: "NUT", uomCode: "NOS" },
+    ];
+    render(<GroupedMaterialSelect value="" onChange={() => {}} items={ungrouped} groups={GROUPS} />);
+    fireEvent.click(screen.getByRole("button"));
+    expect(screen.getByText("Cement & Aggregates")).toBeInTheDocument();
+    expect(screen.getByText("Steel")).toBeInTheDocument();
+    expect(screen.getByText("Others")).toBeInTheDocument();
+  });
+
   it("hides inactive/deleted item groups from the picker", () => {
     const groups: ItemGroupOption[] = [
       { id: "g1", name: "Cement & Aggregates", status: "active" },

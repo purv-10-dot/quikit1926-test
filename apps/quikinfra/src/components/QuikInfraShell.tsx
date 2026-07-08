@@ -463,7 +463,7 @@ function NavRailItem({
       className={
         active
           ? "flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-gradient-to-b from-[#FFAF55] to-[#ea580c] text-white shadow-[0_4px_14px_rgba(249,115,22,0.35)]"
-          : "flex h-10 w-10 shrink-0 items-center justify-center rounded-xl text-gray-500 transition-colors hover:bg-slate-100 hover:text-slate-800"
+          : "flex h-10 w-10 shrink-0 items-center justify-center rounded-xl transition-colors hover:bg-slate-100 hover:text-slate-800"
       }
     >
       <Icon className="h-5 w-5" />
@@ -505,7 +505,7 @@ function NavItemComponent({ item, pathname, onNavigate, depth = 0, searchActive 
               ? "text-slate-800 bg-slate-100"
               : expanded
                 ? "text-slate-700 bg-slate-50"
-                : "text-gray-500 hover:bg-slate-50 hover:text-slate-700"
+                : "hover:bg-slate-50 hover:text-slate-700"
           }`}
           aria-expanded={isOpen}
         >
@@ -516,7 +516,7 @@ function NavItemComponent({ item, pathname, onNavigate, depth = 0, searchActive 
                   ? "text-slate-600"
                   : expanded
                     ? "text-slate-500"
-                    : "text-gray-400 group-hover:text-gray-600"
+                    : "group-hover:text-slate-600"
               }`}
             />
           )}
@@ -526,7 +526,7 @@ function NavItemComponent({ item, pathname, onNavigate, depth = 0, searchActive 
               (down-pointing) — replaces the previous two-icon swap
               which was instantaneous. */}
           <ChevronRight
-            className={`w-3.5 h-3.5 shrink-0 text-gray-400 transition-transform duration-200 ${
+            className={`w-3.5 h-3.5 shrink-0 transition-transform duration-200 ${
               isOpen ? "rotate-90" : ""
             }`}
           />
@@ -551,13 +551,13 @@ function NavItemComponent({ item, pathname, onNavigate, depth = 0, searchActive 
       className={
         isActive
           ? `group relative ${activeRowClass}`
-          : "group relative w-full flex items-center gap-3 px-3 py-2.5 rounded-2xl text-sm font-medium text-gray-500 transition-all duration-150 hover:bg-slate-50 hover:text-slate-800"
+          : "group relative w-full flex items-center gap-3 px-3 py-2.5 rounded-2xl text-sm font-medium transition-all duration-150 hover:bg-slate-50 hover:text-slate-800"
       }
     >
       {Icon && (
         <Icon
           className={`w-4 h-4 shrink-0 transition-colors ${
-            isActive ? "text-white" : "text-gray-400 group-hover:text-gray-600"
+            isActive ? "text-white" : "group-hover:text-slate-800"
           }`}
         />
       )}
@@ -765,7 +765,7 @@ export function QuikInfraShell({ children }: { children: ReactNode }) {
       <button
         type="button"
         onClick={toggleSidebar}
-        className="mt-2 flex h-10 w-10 shrink-0 items-center justify-center rounded-xl text-gray-500 transition-colors hover:bg-slate-100 hover:text-slate-800"
+        className="mt-2 flex h-10 w-10 shrink-0 items-center justify-center rounded-xl transition-colors hover:bg-slate-100 hover:text-slate-800"
         aria-label="Expand sidebar"
         title="Expand sidebar"
       >
@@ -778,7 +778,7 @@ export function QuikInfraShell({ children }: { children: ReactNode }) {
           window.localStorage.setItem("quikinfra:sidebarOpen", "1");
           setFocusNavSearch(true);
         }}
-        className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl text-gray-500 transition-colors hover:bg-slate-100 hover:text-slate-800"
+        className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl transition-colors hover:bg-slate-100 hover:text-slate-800"
         aria-label="Search menu"
         title="Search menu"
       >

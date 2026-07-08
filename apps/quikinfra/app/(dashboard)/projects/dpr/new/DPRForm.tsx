@@ -49,9 +49,9 @@ import {
 } from "lucide-react";
 import { SelectInput } from "@/components/FormDrawer";
 import { GroupedMaterialSelect, type GroupedMaterialSelectItem } from "@/components/GroupedMaterialSelect";
-import type { BoqTreeRow } from "@/lib/boq/tree-row";
+import { groupWorkItemsByBoq } from "@/lib/projects/boq-work-groups";
 import { DPRWeatherMetrics } from "@/components/DPRWeatherMetrics";
-import { useProjects, useItems, useItemGroups, useUOMs, useContractors, useLocations } from "@/hooks/use-masters";
+import { useProjects, useItems, useItemGroups, useUOMs, useContractors, useLocations, useMachinery } from "@/hooks/use-masters";
 import { buildLookupOptions } from "@/lib/masters/lookup";
 import { useWorkOrders, useBOQ } from "@/hooks/use-projects";
 import { BOQActivityPickerModal } from "../../work-orders/new/BOQActivityPickerModal";
@@ -286,6 +286,7 @@ export function DPRForm({ editData, embedded = false, onSaved }: DPRFormProps = 
   const { data: uomsResult } = useUOMs();
   const { data: contractorsResult } = useContractors();
   const { data: locationsResult } = useLocations();
+  const { data: machineryResult } = useMachinery();
 
   const projects = (projectsResult?.data ?? []) as unknown as Array<{
     id: string; name?: string; code?: string; projectCode?: string;
@@ -298,6 +299,9 @@ export function DPRForm({ editData, embedded = false, onSaved }: DPRFormProps = 
   const uoms = (uomsResult?.data ?? []) as Array<{ id: string; code?: string }>;
   const contractors = (contractorsResult?.data ?? []) as Array<{ id: string; name: string; status?: string }>;
   const locations = (locationsResult?.data ?? []) as Array<{ id: string; name?: string; status?: string }>;
+  const machineryMaster = (machineryResult?.data ?? []) as Array<{
+    id: string; code?: string; name?: string; type?: string; status?: string;
+  }>;
 
   // Header state
   const [projectId, setProjectId] = useState(() => editData?.projectId ?? "");
@@ -334,10 +338,14 @@ export function DPRForm({ editData, embedded = false, onSaved }: DPRFormProps = 
   const { data: workOrdersResult } = useWorkOrders(
     projectId ? { projectId } : undefined
   );
+  // Only APPROVED work orders are a binding contract with the contractor —
+  // drafts / pending-approval WOs aren't valid to book DPR progress against,
+  // so they're excluded from the Contractor / WO picker. `in_progress` is an
+  // approved WO already underway, so it stays selectable too.
   const projectWorkOrders = useMemo(
     () =>
       (workOrdersResult?.data ?? []).filter(
-        (wo) => wo.status !== "inactive"
+        (wo) => wo.status === "approved" || wo.status === "in_progress"
       ),
     [workOrdersResult]
   );
@@ -449,6 +457,14 @@ export function DPRForm({ editData, embedded = false, onSaved }: DPRFormProps = 
       remarks: m.remarks ?? "",
     }))
   );
+  // Live per-item stock available at the chosen consumption location.
+  // On approval, consumed qty is deducted from (projectId, consumptionLocationId,
+  // itemId) via postDPRConsumptionOutward, which rejects if it would drive the
+  // balance negative. We pre-fetch the same balance here so the form can warn
+  // the moment a user enters more than what's actually allotted at that location
+  // — instead of only failing at approval time. Keyed by itemId; null = balance
+  // couldn't be read (e.g. no stock permission) → no warning shown.
+  const [stockByItem, setStockByItem] = useState<Record<string, number>>({});
   const [manpower, setManpower] = useState<ManpowerRow[]>(() =>
     (editData?.manpower ?? []).map((m) => ({
       contractorId: m.contractorId ?? "",
@@ -506,104 +522,13 @@ export function DPRForm({ editData, embedded = false, onSaved }: DPRFormProps = 
     () => boqTreeResult?.items ?? boqTreeResult?.data ?? [],
     [boqTreeResult]
   );
-  const boqById = useMemo(() => {
-    const m = new Map<string, BoqTreeRow>();
-    for (const r of boqRows) if (r.id) m.set(r.id, r);
-    return m;
-  }, [boqRows]);
-  const boqByNo = useMemo(() => {
-    const m = new Map<string, BoqTreeRow>();
-    for (const r of boqRows) m.set(r.boq_no ?? r.boqNo ?? "", r);
-    return m;
-  }, [boqRows]);
-
-  // Group the work items by their BOQ hierarchy. A leaf only stores its
-  // immediate parent, but BOQ groups can themselves nest (e.g. B → B.3.1 →
-  // B.3.1.1), so we resolve the FULL ancestor-group chain for each leaf and
-  // cluster by the top-level group. Sub-groups are then emitted as indented
-  // sub-headers above their line items. Each row keeps its original index
-  // into `workItems` so the update / remove handlers keep working unchanged.
-  const groupedWorkItems = useMemo(() => {
-    // Ancestor groups for a leaf BOQ id, ordered top → immediate parent.
-    const chainFor = (boqItemId: string) => {
-      const chain: { no: string; name: string }[] = [];
-      const guard = new Set<string>();
-      let cur = boqById.get(boqItemId);
-      while (cur) {
-        const pNo = cur.parent_boq_no ?? cur.parentBoqNo ?? null;
-        if (!pNo || guard.has(pNo)) break;
-        guard.add(pNo);
-        const pRow = boqByNo.get(pNo);
-        chain.unshift({
-          no: pNo,
-          name: pRow?.display_name ?? pRow?.displayName ?? "",
-        });
-        if (!pRow) break;
-        cur = pRow;
-      }
-      return chain;
-    };
-
-    // Cluster by the top-level ancestor, preserving first-appearance order.
-    const groups: {
-      key: string;
-      topNo: string | null;
-      topName: string;
-      items: { w: WorkItem; idx: number; chain: { no: string; name: string }[] }[];
-    }[] = [];
-    const seen = new Map<string, number>();
-    workItems.forEach((w, idx) => {
-      const chain = chainFor(w.boqItemId);
-      const topNo = chain.length ? chain[0].no : null;
-      const key = topNo ?? "__ungrouped__";
-      let pos = seen.get(key);
-      if (pos === undefined) {
-        pos = groups.length;
-        seen.set(key, pos);
-        groups.push({
-          key,
-          topNo,
-          topName: chain.length ? chain[0].name : "",
-          items: [],
-        });
-      }
-      groups[pos].items.push({ w, idx, chain });
-    });
-
-    // Within each top group, flatten into a render list that injects a
-    // sub-group header the first time a deeper ancestor (depth ≥ 1) appears.
-    // `depth` is the nesting level (top items = 1) and drives indentation.
-    return groups.map((g) => {
-      const rendered: (
-        | { kind: "subgroup"; no: string; name: string; depth: number }
-        | { kind: "item"; w: WorkItem; idx: number; depth: number }
-      )[] = [];
-      const emitted = new Set<string>();
-      let leafCount = 0;
-      g.items.forEach(({ w, idx, chain }) => {
-        for (let d = 1; d < chain.length; d++) {
-          if (!emitted.has(chain[d].no)) {
-            emitted.add(chain[d].no);
-            rendered.push({
-              kind: "subgroup",
-              no: chain[d].no,
-              name: chain[d].name,
-              depth: d,
-            });
-          }
-        }
-        rendered.push({ kind: "item", w, idx, depth: chain.length });
-        leafCount += 1;
-      });
-      return {
-        key: g.key,
-        topNo: g.topNo,
-        topName: g.topName,
-        leafCount,
-        rendered,
-      };
-    });
-  }, [workItems, boqById, boqByNo]);
+  // Group the work items by their BOQ hierarchy so the Work Done table can
+  // show group / sub-group header rows above each leaf. Shared with the DPR
+  // detail page via `groupWorkItemsByBoq`.
+  const groupedWorkItems = useMemo(
+    () => groupWorkItemsByBoq(workItems, boqRows),
+    [workItems, boqRows],
+  );
 
   // ── Work Items handlers ──
   const addWorkItemFromBoq = (row: BoqPickerRow) => {
@@ -679,6 +604,58 @@ export function DPRForm({ editData, embedded = false, onSaved }: DPRFormProps = 
   const removeMaterial = (idx: number) =>
     setMaterials((prev) => prev.filter((_, i) => i !== idx));
 
+  // Stable key of the distinct materials picked, so the balance fetch below
+  // only re-runs when the set of items (not their qty/remarks) changes.
+  const materialItemIdsKey = useMemo(
+    () =>
+      Array.from(new Set(materials.map((m) => m.itemId).filter(Boolean)))
+        .sort()
+        .join(","),
+    [materials],
+  );
+
+  // Fetch the current stock balance for every picked material at the chosen
+  // consumption location. Needs both projectId + locationId for an exact
+  // per-location figure (the endpoint widens to a project/tenant total
+  // otherwise, which wouldn't match what approval deducts). Silently skips
+  // when the location isn't chosen yet or the user lacks stock-view access.
+  useEffect(() => {
+    const ids = materialItemIdsKey ? materialItemIdsKey.split(",") : [];
+    if (!projectId || !consumptionLocationId || ids.length === 0) {
+      setStockByItem({});
+      return;
+    }
+    let cancelled = false;
+    (async () => {
+      try {
+        const results = await Promise.all(
+          ids.map(async (itemId) => {
+            const params = new URLSearchParams({
+              itemId,
+              projectId,
+              locationId: consumptionLocationId,
+            });
+            const res = await fetch(`/api/store/stock-balance?${params.toString()}`);
+            if (!res.ok) return null;
+            const json = await res.json();
+            return { itemId, qty: Number(json?.quantity ?? 0) };
+          }),
+        );
+        if (cancelled) return;
+        const next: Record<string, number> = {};
+        for (const r of results) {
+          if (r) next[r.itemId] = r.qty;
+        }
+        setStockByItem(next);
+      } catch {
+        if (!cancelled) setStockByItem({});
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [projectId, consumptionLocationId, materialItemIdsKey]);
+
   // ── Manpower handlers ──
   const addManpower = () => setManpower((p) => [...p, newManpower()]);
   const updateManpower = (
@@ -737,8 +714,14 @@ export function DPRForm({ editData, embedded = false, onSaved }: DPRFormProps = 
         workItems: workItems.map((w) => {
           const todayNum = parseFloat(w.todayQty) || 0;
           const totalTillDate = w.prevQty + todayNum;
+          // Cap at 100% — cumulative qty can technically exceed the target
+          // (over-reporting), but a completion percentage above 100% is
+          // meaningless and misleads downstream progress rollups. Mirrors
+          // the display cell's Math.min(100, …) so stored + shown agree.
           const pct =
-            w.totalTarget > 0 ? (totalTillDate / w.totalTarget) * 100 : 0;
+            w.totalTarget > 0
+              ? Math.min(100, (totalTillDate / w.totalTarget) * 100)
+              : 0;
           const wo = projectWorkOrders.find((x) => x.id === w.contractorWO);
           return {
             boqItemId: w.boqItemId,
@@ -1289,11 +1272,15 @@ export function DPRForm({ editData, embedded = false, onSaved }: DPRFormProps = 
                               <SelectInput
                                 value={w.contractorWO}
                                 onChange={(v) => updateWorkItem(idx, "contractorWO", v)}
-                                placeholder="Self Work"
-                                options={projectWorkOrders.map((wo) => ({
-                                  value: wo.id,
-                                  label: `${wo.woNumber}${wo.contractorName ? ` — ${wo.contractorName}` : ""}`,
-                                }))}
+                                size="sm"
+                                options={[
+                                  { value: "", label: "Self Work", hint: "Own workforce — no contractor" },
+                                  ...projectWorkOrders.map((wo) => ({
+                                    value: wo.id,
+                                    label: wo.woNumber,
+                                    hint: wo.contractorName || "Unassigned contractor",
+                                  })),
+                                ]}
                               />
                             </td>
                             <td className="px-3 py-2 text-right text-xs text-gray-600 tabular-nums">
@@ -1304,14 +1291,21 @@ export function DPRForm({ editData, embedded = false, onSaved }: DPRFormProps = 
                             <td className="px-3 py-2">
                               <input
                                 type="number"
+                                inputMode="decimal"
                                 step="0.01"
                                 min="0"
                                 max={w.balanceQty}
                                 value={w.todayQty}
+                                // Block e / E / + / - so letters + exponents
+                                // can't leak into the qty field.
+                                onKeyDown={(e) => {
+                                  if (["e", "E", "+", "-"].includes(e.key))
+                                    e.preventDefault();
+                                }}
                                 onChange={(e) =>
                                   updateWorkItem(idx, "todayQty", e.target.value)
                                 }
-                                className="w-full text-xs px-2 py-1.5 border border-gray-300 rounded text-right focus:outline-none focus:ring-1 focus:ring-orange-300 focus:border-orange-400"
+                                className="w-full text-xs px-2 py-1.5 border border-gray-300 rounded text-right tabular-nums focus:outline-none focus:ring-1 focus:ring-orange-300 focus:border-orange-400 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
                                 placeholder="0.00"
                               />
                             </td>
@@ -1489,15 +1483,15 @@ export function DPRForm({ editData, embedded = false, onSaved }: DPRFormProps = 
                   addLabel="Add a material"
                 />
               ) : (
-                <div className="border border-gray-200 rounded-xl overflow-x-auto">
-                  <table className="w-full text-xs min-w-[640px]">
+                <div className="border border-gray-200 rounded-xl overflow-x-auto w-fit max-w-full">
+                  <table className="text-xs min-w-[640px]">
                     <thead className="bg-gray-50 border-b border-gray-200 text-[10px] uppercase font-bold text-gray-500">
                       <tr>
-                        <th className="px-2 py-2 text-left min-w-[220px]">Material Name</th>
+                        <th className="px-2 py-2 text-left w-[300px]">Material Name</th>
                         <th className="px-2 py-2 text-left w-[80px]">Unit</th>
-                        <th className="px-2 py-2 text-right w-[130px]">Consumed Qty</th>
-                        <th className="px-2 py-2 text-left min-w-[200px]">Remarks</th>
-                        <th className="w-[40px]"></th>
+                        <th className="px-2 py-2 text-right w-[150px]">Consumed Qty</th>
+                        <th className="px-2 py-2 text-left w-[280px]">Remarks</th>
+                        <th className="w-[44px]"></th>
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-gray-100">
@@ -1506,7 +1500,10 @@ export function DPRForm({ editData, embedded = false, onSaved }: DPRFormProps = 
                         const uomCode =
                           uoms.find((u) => u.id === item?.uomId)?.code ?? "—";
                         return (
-                          <tr key={idx}>
+                          // Top-align every cell so the qty input (which carries
+                          // a stock-warning line below it) stays level with the
+                          // Remarks input instead of being pushed up by centering.
+                          <tr key={idx} className="[&>td]:align-top">
                             <td className="px-2 py-1.5 min-w-[180px]">
                               <GroupedMaterialSelect
                                 value={m.itemId}
@@ -1527,6 +1524,12 @@ export function DPRForm({ editData, embedded = false, onSaved }: DPRFormProps = 
                             <NumCell
                               value={m.consumedQty}
                               onChange={(v) => updateMaterial(idx, "consumedQty", v)}
+                              available={
+                                m.itemId && m.itemId in stockByItem
+                                  ? stockByItem[m.itemId]
+                                  : null
+                              }
+                              unit={uomCode === "—" ? "" : uomCode}
                             />
                             <td className="px-2 py-1.5">
                               <input
@@ -1616,6 +1619,7 @@ export function DPRForm({ editData, embedded = false, onSaved }: DPRFormProps = 
                                     value={m.contractorId}
                                     onChange={(v) => updateManpower(idx, "contractorId", v)}
                                     placeholder="Self / Select…"
+                                    size="sm"
                                     options={options}
                                   />
                                   {notice && (
@@ -1783,11 +1787,28 @@ export function DPRForm({ editData, embedded = false, onSaved }: DPRFormProps = 
                       {machinery.map((m, idx) => (
                         <tr key={idx}>
                           <td className="px-3 py-2">
-                            <input
+                            <SelectInput
                               value={m.description}
-                              onChange={(e) => updateMachinery(idx, "description", e.target.value)}
-                              placeholder="e.g. JCB"
-                              className="w-full text-xs px-2 py-1.5 border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-orange-300 focus:border-orange-400"
+                              onChange={(v) => updateMachinery(idx, "description", v)}
+                              placeholder="Select machinery…"
+                              options={(() => {
+                                const opts = machineryMaster
+                                  .filter((mc) => mc.status === "active")
+                                  .map((mc) => ({
+                                    value: mc.name ?? "",
+                                    label: mc.code ? `${mc.code} — ${mc.name ?? ""}` : (mc.name ?? ""),
+                                    hint: mc.type ?? "",
+                                  }));
+                                // Keep any custom / legacy free-text description
+                                // selectable so editing an old DPR still shows it.
+                                if (
+                                  m.description &&
+                                  !opts.some((o) => o.value === m.description)
+                                ) {
+                                  opts.push({ value: m.description, label: m.description, hint: "" });
+                                }
+                                return opts;
+                              })()}
                             />
                           </td>
                           <td className="px-3 py-2">
@@ -2308,21 +2329,50 @@ function EmptyHint({
 function NumCell({
   value,
   onChange,
+  available,
+  unit,
 }: {
   value: string;
   onChange: (v: string) => void;
+  /** When provided, shows the allotted stock and warns if the entered
+   *  value exceeds it. Omit to render a plain numeric cell. */
+  available?: number | null;
+  unit?: string;
 }) {
+  const hasAvail = typeof available === "number";
+  const entered = parseFloat(value) || 0;
+  const over = hasAvail && entered > (available as number);
   return (
-    <td className="px-2 py-1.5">
+    <td className="px-2 py-1.5 align-middle">
       <input
         type="number"
+        inputMode="decimal"
         step="0.01"
         min="0"
         value={value}
+        // Block e / E / + / - so letters + exponents can't leak into the qty field.
+        onKeyDown={(e) => {
+          if (["e", "E", "+", "-"].includes(e.key)) e.preventDefault();
+        }}
         onChange={(e) => onChange(e.target.value)}
-        className="w-full text-xs px-2 py-1 border border-gray-300 rounded text-right focus:outline-none focus:ring-1 focus:ring-orange-300 focus:border-orange-400"
+        className={`w-full text-xs px-2 py-1 border rounded text-right tabular-nums focus:outline-none focus:ring-1 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none ${
+          over
+            ? "border-red-400 bg-red-50/40 focus:ring-red-300 focus:border-red-400"
+            : "border-gray-300 focus:ring-orange-300 focus:border-orange-400"
+        }`}
         placeholder="0"
       />
+      {hasAvail && (
+        <div
+          className={`mt-0.5 text-right text-[10px] ${
+            over ? "font-semibold text-red-600" : "text-gray-400"
+          }`}
+        >
+          {over
+            ? `Only ${(available as number).toLocaleString("en-IN")} ${unit ?? ""} allotted here`
+            : `${(available as number).toLocaleString("en-IN")} ${unit ?? ""} in stock`}
+        </div>
+      )}
     </td>
   );
 }
