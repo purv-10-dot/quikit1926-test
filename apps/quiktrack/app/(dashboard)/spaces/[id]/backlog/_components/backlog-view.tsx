@@ -13,6 +13,9 @@ import { useBacklogViewSettings } from "@/lib/hooks/useBacklogViewSettings";
 import { useFilterPersistence } from "@/lib/hooks/usePersistentFilters";
 import { EpicPanel } from "./epic-panel";
 import { BulkEditPopover } from "./bulk-edit-popover";
+import { CustomFieldFilters, isFilterableField } from "@/components/custom-fields/custom-field-filters";
+import type { CustomFilter } from "@/lib/customFields/filterQuery";
+import type { CustomFieldDTO } from "@/lib/services/customFields";
 import {
   ViewSettingsPopover,
   DEFAULT_VIEW_SETTINGS,
@@ -1769,7 +1772,7 @@ function FilterRow({
   options: FilterSelectOption[];
 }) {
   return (
-    <div className="mb-2 block text-xs">
+    <div className="text-xs">
       <span className="mb-1 block font-medium text-gray-600">{label}</span>
       <FilterSelect
         value={value}
@@ -1777,6 +1780,7 @@ function FilterRow({
         options={options}
         placeholder="Any"
         expand
+        searchable={options.length > 8}
         width={248}
       />
     </div>
@@ -1951,6 +1955,7 @@ function SectionBody({
     type: string;
     priority: string;
     epicId: string;
+    customFilters: string;
   };
   fields: BacklogViewSettings["fields"];
   density: BacklogViewSettings["density"];
@@ -1989,6 +1994,7 @@ function SectionBody({
       if (filters.type) params.set("type", filters.type);
       if (filters.priority) params.set("priority", filters.priority);
       if (filters.epicId) params.set("epicId", filters.epicId);
+      if (filters.customFilters) params.set("customFilters", filters.customFilters);
       if (!initial && state.cursor) params.set("cursor", state.cursor);
       try {
         const res = await fetch(`/api/issues?${params.toString()}`).then((r) => r.json());
@@ -2037,7 +2043,7 @@ function SectionBody({
     // new filter (without a stale response overwriting it).
     genRef.current += 1;
     setState((s) => ({ ...s, loaded: false, loading: false, issues: [], cursor: null, hasMore: true }));
-  }, [filters.search, filters.statusId, filters.assigneeId, filters.type, filters.priority, filters.epicId]);
+  }, [filters.search, filters.statusId, filters.assigneeId, filters.type, filters.priority, filters.epicId, filters.customFilters]);
 
   // IntersectionObserver — load more when the sentinel scrolls into view of the
   // accordion's own scroll container. `enabled` re-attaches the observer on the
@@ -2165,6 +2171,11 @@ export function BacklogView({ projectId }: { projectId: string }) {
       },
     },
   );
+  // Project custom fields — used to offer the filterable ones in the filter panel.
+  const { data: customFields = [] } = useApiData<CustomFieldDTO[]>(
+    ["quiktrack", "project-issue-fields", projectId],
+    `/api/projects/${projectId}/issue-fields`,
+  );
   const [epics, setEpics] = useState<EpicLite[]>([]);
   const [currentUserId, setCurrentUserId] = useState<string | null>(null);
   // Functional spaces have no sprints — the backlog is a flat list with a
@@ -2201,6 +2212,8 @@ export function BacklogView({ projectId }: { projectId: string }) {
   const [filterAssigneeIds, setFilterAssigneeIds] = useState<string[]>([]);
   const [filterType, setFilterType] = useState("");
   const [filterPriority, setFilterPriority] = useState("");
+  // Custom-field filters (serialized into the `customFilters` query param).
+  const [customFilters, setCustomFilters] = useState<CustomFilter[]>([]);
   // Epic filter — set by selecting an epic in the left EpicPanel. Empty = none.
   const [filterEpicId, setFilterEpicId] = useState("");
   const [filterOpen, setFilterOpen] = useState(false);
@@ -2266,8 +2279,9 @@ export function BacklogView({ projectId }: { projectId: string }) {
       type: filterType,
       priority: filterPriority,
       epicId: filterEpicId,
+      customFilters: customFilters.length ? JSON.stringify(customFilters) : "",
     }),
-    [appliedSearch, filterStatusId, filterAssigneeIds, filterType, filterPriority, filterEpicId],
+    [appliedSearch, filterStatusId, filterAssigneeIds, filterType, filterPriority, filterEpicId, customFilters],
   );
 
   // Auto-persist backlog filters per user+project (no Save button).
@@ -2287,6 +2301,14 @@ export function BacklogView({ projectId }: { projectId: string }) {
       if (typeof s.type === "string") setFilterType(s.type);
       if (typeof s.priority === "string") setFilterPriority(s.priority);
       if (typeof s.epicId === "string") setFilterEpicId(s.epicId);
+      if (typeof s.customFilters === "string") {
+        try {
+          const parsed = s.customFilters ? JSON.parse(s.customFilters) : [];
+          if (Array.isArray(parsed)) setCustomFilters(parsed as CustomFilter[]);
+        } catch {
+          /* ignore malformed persisted value */
+        }
+      }
     },
   });
 
@@ -2294,7 +2316,7 @@ export function BacklogView({ projectId }: { projectId: string }) {
   // UNfiltered sprint, so it must be hidden while filtering — otherwise it
   // contradicts the filtered "(N work items)" header count.
   const filtersActive = Boolean(
-    appliedSearch || filterStatusId || filterAssigneeIds.length || filterType || filterPriority || filterEpicId,
+    appliedSearch || filterStatusId || filterAssigneeIds.length || filterType || filterPriority || filterEpicId || customFilters.length,
   );
 
   // Header-checkbox state for a section: returns the all/some flags + a toggle
@@ -2344,7 +2366,7 @@ export function BacklogView({ projectId }: { projectId: string }) {
   // limit=1 to keep the payload tiny — only the `total` field matters here.
   useEffect(() => {
     const hasActive =
-      Boolean(appliedSearch || filterStatusId || filterAssigneeIds.length || filterType || filterPriority || filterEpicId);
+      Boolean(appliedSearch || filterStatusId || filterAssigneeIds.length || filterType || filterPriority || filterEpicId || customFilters.length);
     if (!hasActive) {
       setFilteredCounts({});
       setFilteredBadges({});
@@ -2371,6 +2393,7 @@ export function BacklogView({ projectId }: { projectId: string }) {
         if (filterType) params.set("type", filterType);
         if (filterPriority) params.set("priority", filterPriority);
         if (filterEpicId) params.set("epicId", filterEpicId);
+        if (customFilters.length) params.set("customFilters", JSON.stringify(customFilters));
         return fetch(`/api/issues?${params.toString()}`)
           .then((r) => r.json())
           .then((res) => ({
@@ -2392,7 +2415,7 @@ export function BacklogView({ projectId }: { projectId: string }) {
       setFilteredBadges(badges);
     });
     return () => { cancelled = true; };
-  }, [projectId, activeSectionKey, appliedSearch, filterStatusId, filterAssigneeIds, filterType, filterPriority, filterEpicId]);
+  }, [projectId, activeSectionKey, appliedSearch, filterStatusId, filterAssigneeIds, filterType, filterPriority, filterEpicId, customFilters]);
 
   useEffect(() => {
     if (!moreMenuOpen) return;
@@ -2408,24 +2431,8 @@ export function BacklogView({ projectId }: { projectId: string }) {
     };
   }, [moreMenuOpen]);
 
-  useEffect(() => {
-    if (!filterOpen) return;
-    function onDown(e: MouseEvent) {
-      const t = e.target as HTMLElement;
-      // FilterSelect (via PopoverPanel) portals its option menu to document.body.
-      // That click is outside `filterBtnRef` but must not close this popover, or
-      // the option unmounts before its onChange runs and the filter never applies.
-      if (t.closest?.("[data-portal-popover]")) return;
-      if (filterBtnRef.current && !filterBtnRef.current.contains(t)) setFilterOpen(false);
-    }
-    function onKey(e: KeyboardEvent) { if (e.key === "Escape") setFilterOpen(false); }
-    document.addEventListener("mousedown", onDown);
-    document.addEventListener("keydown", onKey);
-    return () => {
-      document.removeEventListener("mousedown", onDown);
-      document.removeEventListener("keydown", onKey);
-    };
-  }, [filterOpen]);
+  // Outside-click / Escape close for the filter panel is owned by PopoverPanel
+  // (the panel is portaled to body so it can't be clipped by content overflow).
 
   useEffect(() => {
     if (!moveOpen) return;
@@ -2796,6 +2803,7 @@ export function BacklogView({ projectId }: { projectId: string }) {
     if (sectionFilters.type) params.set("type", sectionFilters.type);
     if (sectionFilters.priority) params.set("priority", sectionFilters.priority);
     if (sectionFilters.epicId) params.set("epicId", sectionFilters.epicId);
+    if (sectionFilters.customFilters) params.set("customFilters", sectionFilters.customFilters);
     const [res] = await Promise.all([
       fetch(`/api/issues?${params.toString()}`).then((r) => r.json()),
       // Counts are refreshed by the caller when batch-refreshing many sections,
@@ -2992,7 +3000,8 @@ export function BacklogView({ projectId }: { projectId: string }) {
               (filterStatusId ? 1 : 0) +
               (filterAssigneeIds.length ? 1 : 0) +
               (filterType ? 1 : 0) +
-              (filterPriority ? 1 : 0);
+              (filterPriority ? 1 : 0) +
+              customFilters.length;
             return (
               <div ref={filterBtnRef} className="relative">
                 <button
@@ -3012,89 +3021,118 @@ export function BacklogView({ projectId }: { projectId: string }) {
                     </span>
                   )}
                 </button>
-                {filterOpen && (
-                  <div className="absolute right-0 top-full z-30 mt-1 w-72 rounded border border-gray-200 bg-white p-3 shadow-lg">
-                    <FilterRow
-                      label="Status"
-                      value={filterStatusId}
-                      onChange={setFilterStatusId}
-                      options={[
-                        { value: "", label: "Any", muted: true },
-                        ...statuses.map((s) => ({ value: s.id, label: s.name })),
-                      ]}
-                    />
-                    <div className="mb-2 block text-xs">
-                      <span className="mb-1 block font-medium text-gray-600">Assignee</span>
-                      <FilterMultiSelect
-                        values={filterAssigneeIds}
-                        onChange={setFilterAssigneeIds}
-                        placeholder="Any"
-                        summaryNoun="people"
-                        searchable
-                        expand
-                        width={248}
-                        options={[
-                          { value: "null", label: "Unassigned", muted: true },
-                          ...members
-                            .filter(
-                              (m): m is Member & { user: NonNullable<Member["user"]> } =>
-                                Boolean(m.user),
-                            )
-                            .map((m) => ({
-                              value: m.user.id,
-                              label:
-                                [m.user.firstName, m.user.lastName]
-                                  .filter(Boolean)
-                                  .join(" ")
-                                  .trim() || m.user.email,
-                            })),
-                        ]}
-                      />
-                    </div>
-                    <FilterRow
-                      label="Type"
-                      value={filterType}
-                      onChange={setFilterType}
-                      options={[
-                        { value: "", label: "Any", muted: true },
-                        { value: "TASK", label: "Task" },
-                        { value: "BUG", label: "Bug" },
-                        { value: "STORY", label: "Story" },
-                      ]}
-                    />
-                    <FilterRow
-                      label="Priority"
-                      value={filterPriority}
-                      onChange={setFilterPriority}
-                      options={[
-                        { value: "", label: "Any", muted: true },
-                        { value: "HIGHEST", label: "Highest" },
-                        { value: "HIGH", label: "High" },
-                        { value: "MEDIUM", label: "Medium" },
-                        { value: "LOW", label: "Low" },
-                        { value: "LOWEST", label: "Lowest" },
-                      ]}
-                    />
-                    {activeCount > 0 && (
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setFilterStatusId("");
-                          setFilterAssigneeIds([]);
-                          setFilterType("");
-                          setFilterPriority("");
-                        }}
-                        className="mt-2 flex w-full items-center justify-center gap-1 rounded border border-gray-200 px-2 py-1 text-xs text-gray-600 hover:bg-gray-50"
+                {filterOpen &&
+                  (() => {
+                    const memberOpts = members
+                      .filter(
+                        (m): m is Member & { user: NonNullable<Member["user"]> } =>
+                          Boolean(m.user),
+                      )
+                      .map((m) => ({
+                        id: m.user.id,
+                        label:
+                          [m.user.firstName, m.user.lastName]
+                            .filter(Boolean)
+                            .join(" ")
+                            .trim() || m.user.email,
+                      }));
+                    const customFilterFields = customFields.filter(isFilterableField);
+                    return (
+                      <PopoverPanel
+                        anchorRef={filterBtnRef}
+                        open={filterOpen}
+                        onClose={() => setFilterOpen(false)}
+                        align="right"
+                        width={520}
+                        estimatedHeight={440}
                       >
-                        <X className="h-3 w-3" /> Clear all
-                      </button>
-                    )}
-                  </div>
-                )}
+                        <div className="flex items-center justify-between border-b border-gray-100 px-3 py-2">
+                          <span className="text-xs font-semibold text-gray-800">Filters</span>
+                          {activeCount > 0 && (
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setFilterStatusId("");
+                                setFilterAssigneeIds([]);
+                                setFilterType("");
+                                setFilterPriority("");
+                                setCustomFilters([]);
+                              }}
+                              className="inline-flex items-center gap-1 text-[11px] font-medium text-blue-600 hover:underline"
+                            >
+                              <X className="h-3 w-3" /> Clear all
+                            </button>
+                          )}
+                        </div>
+                        {/* Two-column grid so a long list of fields stays short
+                            vertically; scrolls only once it exceeds the cap. */}
+                        <div className="grid max-h-[60vh] grid-cols-1 gap-x-4 gap-y-3 overflow-y-auto p-3 sm:grid-cols-2">
+                          <FilterRow
+                            label="Status"
+                            value={filterStatusId}
+                            onChange={setFilterStatusId}
+                            options={[
+                              { value: "", label: "Any", muted: true },
+                              ...statuses.map((s) => ({ value: s.id, label: s.name })),
+                            ]}
+                          />
+                          <div className="text-xs">
+                            <span className="mb-1 block font-medium text-gray-600">Assignee</span>
+                            <FilterMultiSelect
+                              values={filterAssigneeIds}
+                              onChange={setFilterAssigneeIds}
+                              placeholder="Any"
+                              summaryNoun="people"
+                              searchable
+                              expand
+                              width={240}
+                              options={[
+                                { value: "null", label: "Unassigned", muted: true },
+                                ...memberOpts.map((m) => ({ value: m.id, label: m.label })),
+                              ]}
+                            />
+                          </div>
+                          <FilterRow
+                            label="Type"
+                            value={filterType}
+                            onChange={setFilterType}
+                            options={[
+                              { value: "", label: "Any", muted: true },
+                              { value: "TASK", label: "Task" },
+                              { value: "BUG", label: "Bug" },
+                              { value: "STORY", label: "Story" },
+                            ]}
+                          />
+                          <FilterRow
+                            label="Priority"
+                            value={filterPriority}
+                            onChange={setFilterPriority}
+                            options={[
+                              { value: "", label: "Any", muted: true },
+                              { value: "HIGHEST", label: "Highest" },
+                              { value: "HIGH", label: "High" },
+                              { value: "MEDIUM", label: "Medium" },
+                              { value: "LOW", label: "Low" },
+                              { value: "LOWEST", label: "Lowest" },
+                            ]}
+                          />
+                          {/* `contents` lets each custom field become its own grid
+                              cell alongside the built-in filters. */}
+                          <CustomFieldFilters
+                            className="contents"
+                            fields={customFilterFields}
+                            value={customFilters}
+                            onChange={setCustomFilters}
+                            members={memberOpts}
+                          />
+                        </div>
+                      </PopoverPanel>
+                    );
+                  })()}
               </div>
             );
           })()}
-          {(filterStatusId || filterAssigneeIds.length || filterType || filterPriority || appliedSearch) && (
+          {(filterStatusId || filterAssigneeIds.length || filterType || filterPriority || appliedSearch || customFilters.length) && (
             <button
               type="button"
               onClick={() => {
@@ -3102,6 +3140,7 @@ export function BacklogView({ projectId }: { projectId: string }) {
                 setFilterAssigneeIds([]);
                 setFilterType("");
                 setFilterPriority("");
+                setCustomFilters([]);
                 setSearch("");
               }}
               className="text-xs font-medium text-blue-600 hover:underline"

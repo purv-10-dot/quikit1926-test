@@ -1,7 +1,7 @@
 "use client";
 
-import { useRef, useState } from "react";
-import { Check, ChevronDown } from "lucide-react";
+import { useMemo, useRef, useState } from "react";
+import { Check, ChevronDown, Search } from "lucide-react";
 import { PopoverPanel } from "../cells/popover-panel";
 
 export interface FilterSelectOption {
@@ -25,6 +25,8 @@ interface FilterSelectProps {
   align?: "left" | "right";
   /** Stretch the trigger to fill its parent (used inside stacked filter rows). */
   expand?: boolean;
+  /** Show a search box above the options (for long lists e.g. members). */
+  searchable?: boolean;
 }
 
 export function FilterSelect({
@@ -35,10 +37,17 @@ export function FilterSelect({
   width = 220,
   align = "left",
   expand = false,
+  searchable = false,
 }: FilterSelectProps) {
   const [open, setOpen] = useState(false);
+  const [query, setQuery] = useState("");
   const btnRef = useRef<HTMLButtonElement | null>(null);
   const current = options.find((o) => o.value === value);
+  const q = query.trim().toLowerCase();
+  const filtered = useMemo(
+    () => (q ? options.filter((o) => o.label.toLowerCase().includes(q)) : options),
+    [q, options],
+  );
   const isPlaceholder = !current || current.muted;
   const widthClasses = expand
     ? "flex w-full justify-between max-w-none"
@@ -78,13 +87,33 @@ export function FilterSelect({
       <PopoverPanel
         anchorRef={btnRef}
         open={open}
-        onClose={() => setOpen(false)}
+        onClose={() => {
+          setOpen(false);
+          setQuery("");
+        }}
         align={align}
         width={width}
-        estimatedHeight={Math.min(options.length, 9) * 32 + 16}
+        estimatedHeight={Math.min(options.length, 9) * 32 + (searchable ? 48 : 0) + 16}
       >
+        {searchable && (
+          <div className="sticky top-0 z-10 border-b border-gray-100 bg-white p-1.5">
+            <div className="relative">
+              <Search className="absolute left-2 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-gray-400" />
+              <input
+                autoFocus
+                value={query}
+                onChange={(e) => setQuery(e.target.value)}
+                placeholder="Search…"
+                className="h-7 w-full rounded border border-gray-200 pl-7 pr-2 text-xs placeholder:text-gray-400 focus:border-blue-400 focus:outline-none focus:ring-1 focus:ring-blue-200"
+              />
+            </div>
+          </div>
+        )}
         <div className="max-h-64 overflow-y-auto py-0.5" role="listbox">
-          {options.map((o) => {
+          {filtered.length === 0 && (
+            <div className="px-2.5 py-2 text-xs text-gray-400">No matches</div>
+          )}
+          {filtered.map((o) => {
             const isSelected = o.value === value;
             return (
               <button
@@ -94,6 +123,7 @@ export function FilterSelect({
                 aria-selected={isSelected}
                 onClick={() => {
                   setOpen(false);
+                  setQuery("");
                   if (o.value !== value) onChange(o.value);
                 }}
                 className={`w-full flex items-center gap-2 px-2.5 py-1.5 text-xs text-left transition-colors ${

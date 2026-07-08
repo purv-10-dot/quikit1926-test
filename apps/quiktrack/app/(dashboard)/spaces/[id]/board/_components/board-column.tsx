@@ -53,7 +53,7 @@ export function BoardColumn({
   sprintId: string | null;
   epicsById: Record<string, EpicLite>;
   statusesById: Record<string, BoardStatus>;
-  filters?: { search: string; assigneeId: string; type: string; priority: string };
+  filters?: { search: string; assigneeId: string; type: string; priority: string; customFilters: string };
   members: ColumnInlineCreateMember[];
   availableSprints: { id: string; name: string }[];
   onOpen?: (id: string) => void;
@@ -93,6 +93,7 @@ export function BoardColumn({
       if (filters?.assigneeId) params.set("assigneeId", filters.assigneeId);
       if (filters?.type) params.set("type", filters.type);
       if (filters?.priority) params.set("priority", filters.priority);
+      if (filters?.customFilters) params.set("customFilters", filters.customFilters);
       if (!initial) {
         const cursor = stateRef.current?.cursor;
         if (cursor) params.set("cursor", cursor);
@@ -125,14 +126,14 @@ export function BoardColumn({
         setState((s) => ({ ...s, loading: false, loaded: true }));
       }
     },
-    [projectId, sprintId, status.id, filters?.search, filters?.assigneeId, filters?.type, filters?.priority],
+    [projectId, sprintId, status.id, filters?.search, filters?.assigneeId, filters?.type, filters?.priority, filters?.customFilters],
   );
 
   useEffect(() => {
     setState(empty);
     void loadMore(true);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [projectId, sprintId, status.id, filters?.search, filters?.assigneeId, filters?.type, filters?.priority]);
+  }, [projectId, sprintId, status.id, filters?.search, filters?.assigneeId, filters?.type, filters?.priority, filters?.customFilters]);
 
   useEffect(() => {
     const el = sentinelRef.current;
