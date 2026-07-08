@@ -1,8 +1,8 @@
 /**
  * Storage Driver Interface
  *
- * One concrete driver — AWS S3 (see s3-driver.ts). Routes and services only
- * see `StorageDriver`, never the concrete backend.
+ * One concrete driver — Google Cloud Storage (see gcs-driver.ts). Routes and
+ * services only see `StorageDriver`, never the concrete backend.
  *
  * Design notes:
  *  - Presigned URLs are the default upload path. The browser PUTs the file
@@ -28,7 +28,7 @@ export interface PresignedDownloadUrl {
 }
 
 export interface StorageDriver {
-  readonly kind: "s3";
+  readonly kind: "s3" | "gcs";
   readonly bucket: string;
 
   /** Generate a presigned URL the browser can PUT the file body to. */

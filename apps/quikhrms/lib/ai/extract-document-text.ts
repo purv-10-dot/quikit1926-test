@@ -7,7 +7,7 @@
 import { prisma } from "@/lib/prisma";
 import { GoogleGenerativeAI } from "@google/generative-ai";
 import mammoth from "mammoth";
-import { getS3Object } from "@/lib/s3";
+import { getS3Object, extractKeyFromUrl } from "@/lib/storage";
 
 const PDF_MIME = "application/pdf";
 const TEXT_PLAIN = "text/plain";
@@ -45,7 +45,7 @@ export async function extractDocumentText(documentId: string, orgId: string): Pr
     if (!doc) return { ok: false, reason: "Document not found" };
     if (!doc.fileUrl) return { ok: false, reason: "fileUrl empty" };
 
-    // Internal upload proxy URL — extract S3 key from `?key=...` and pull via SDK.
+    // Internal upload proxy URL — extract storage key from `?key=...` and pull via SDK.
     const proxyMatch = doc.fileUrl.match(/\/uploads\/proxy\?.*?key=([^&]+)/i);
     if (proxyMatch) {
       try {
@@ -58,7 +58,7 @@ export async function extractDocumentText(documentId: string, orgId: string): Pr
       } catch (e) {
         const msg = e instanceof Error ? e.message : String(e);
         console.error(`extractDocumentText proxy fetch failed for ${doc.id}:`, e);
-        return { ok: false, reason: `Proxy/S3 fetch failed: ${msg}`, source: "s3" };
+        return { ok: false, reason: `Proxy fetch failed: ${msg}`, source: "s3" };
       }
     }
 
@@ -67,29 +67,21 @@ export async function extractDocumentText(documentId: string, orgId: string): Pr
     let buf: Buffer;
     let mime = doc.fileType || "application/octet-stream";
 
-    // Prefer S3 SDK fetch (handles private buckets) when URL matches our bucket.
-    const bucket = process.env.AWS_S3_BUCKET ?? "";
-    const region = process.env.AWS_REGION ?? "";
-    const s3KeyMatch = bucket && (
-      doc.fileUrl.includes(`${bucket}.s3.${region}.amazonaws.com/`)
-        ? doc.fileUrl.split(`${bucket}.s3.${region}.amazonaws.com/`)[1]
-        : doc.fileUrl.includes(`${bucket}.s3.amazonaws.com/`)
-        ? doc.fileUrl.split(`${bucket}.s3.amazonaws.com/`)[1]
-        : null
-    );
+    // Prefer storage SDK fetch (handles private buckets) when URL matches our bucket.
+    const storageKey = extractKeyFromUrl(doc.fileUrl);
 
     let source: "s3" | "http" = "http";
-    if (s3KeyMatch) {
+    if (storageKey) {
       source = "s3";
       try {
-        const obj = await getS3Object(decodeURIComponent(s3KeyMatch.split("?")[0]));
-        if (obj.body.byteLength > MAX_FETCH_BYTES) return { ok: false, reason: `S3 file too large (${obj.body.byteLength} > ${MAX_FETCH_BYTES})`, source };
+        const obj = await getS3Object(storageKey);
+        if (obj.body.byteLength > MAX_FETCH_BYTES) return { ok: false, reason: `Storage file too large (${obj.body.byteLength} > ${MAX_FETCH_BYTES})`, source };
         buf = obj.body;
         mime = doc.fileType || obj.contentType || "application/octet-stream";
       } catch (e) {
         const msg = e instanceof Error ? e.message : String(e);
-        console.error(`extractDocumentText S3 fetch failed for ${doc.id}:`, e);
-        return { ok: false, reason: `S3 fetch failed: ${msg}`, source };
+        console.error(`extractDocumentText storage fetch failed for ${doc.id}:`, e);
+        return { ok: false, reason: `Storage fetch failed: ${msg}`, source };
       }
     } else {
       const res = await fetch(doc.fileUrl);

@@ -4,7 +4,7 @@ import { getTenantCompanyBranding } from "@/lib/services/company-profile";
 import { getQuote } from "@/lib/services/quotes/quote-service";
 import { toNumber } from "@/lib/services/quotes/decimal";
 import { buildCrmDocumentStorageKey, isS3Configured } from "@/lib/storage/documents";
-import { putObject } from "@/lib/s3";
+import { putObject } from "@/lib/storage";
 import { renderQuoteDocumentHtml } from "./render-html";
 import type { QuotePrintPayload } from "./types";
 import { getQuoteTemplate } from "../template-service";
@@ -124,8 +124,9 @@ export async function buildQuotePreviewPdfBuffer(
 }
 
 /**
- * Generate a locked PDF snapshot: stores HTML in S3 (print-to-PDF ready) and
- * records CrmQuotePdfSnapshot. When S3 is unavailable, returns HTML buffer only.
+ * Generate a locked PDF snapshot: stores HTML in cloud storage (print-to-PDF
+ * ready) and records CrmQuotePdfSnapshot. When storage is unavailable, returns
+ * HTML buffer only.
  */
 export async function generateQuotePdfSnapshot(args: {
   orgId: string;
