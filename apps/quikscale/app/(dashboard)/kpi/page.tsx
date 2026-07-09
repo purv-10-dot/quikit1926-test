@@ -26,6 +26,8 @@ import { useTablePrefs } from "@/lib/hooks/useTablePreferences";
 import { ModuleMoreActions, TrashBanner } from "@/components/table/ModuleMoreActions";
 import { runExport } from "@/lib/export/xlsx";
 import { getKPIs } from "@/lib/services/kpiService";
+import { GlobalExportModal, type GlobalExportSelection } from "@/components/export/GlobalExportModal";
+import { downloadExport } from "@/lib/exports/downloadExport";
 import { UnreadCountsProvider } from "@/components/audit/UnreadCountsProvider";
 import { Target } from "lucide-react";
 
@@ -265,6 +267,32 @@ export default function IndividualKPIPage() {
     });
   }, [moduleColumns, kpis, filters, viewTrash]); // eslint-disable-line react-hooks/exhaustive-deps
 
+  // Global Export (server-side, range-aware). Opened from the "More" menu's
+  // Export Data via onExportClick; hits /api/kpi/export which streams the file
+  // for the selected week range + columns + format (.xlsx / PDF).
+  const [globalExportOpen, setGlobalExportOpen] = useState(false);
+  const [exportError, setExportError] = useState<string | null>(null);
+  const handleGlobalExport = useCallback(
+    async (sel: GlobalExportSelection) => {
+      setExportError(null);
+      try {
+        await downloadExport("/api/kpi/export", {
+          columns: sel.columnKeys.join(","),
+          level: "individual",
+          year: sel.range.mode === "quarter" ? sel.range.year : currentYear,
+          quarters: sel.range.mode === "quarter" ? sel.range.quarters.join(",") : currentQuarter,
+          owner: filterOwner || undefined,
+          teamId: filterTeam || undefined,
+          includeDeleted: viewTrash || undefined,
+        });
+      } catch (err) {
+        setExportError(err instanceof Error ? err.message : "Export failed");
+        throw err; // keep the modal open on failure
+      }
+    },
+    [currentYear, currentQuarter, filterOwner, filterTeam, viewTrash],
+  );
+
   // DB-driven current week + date range (respects QuarterSetting.startDate).
   // Both return null while loading → pill hides until ready.
   const fiscalWeek = useCurrentWeek(currentYear, currentQuarter);
@@ -435,6 +463,7 @@ export default function IndividualKPIPage() {
             onToggleTrash={setViewTrash}
             rowCounts={{ page: kpis.length, filtered: total, all: total }}
             onExport={handleExport}
+            onExportClick={() => setGlobalExportOpen(true)}
             defaultExportColumnKeys={visibleColKeys}
           />
 
@@ -496,6 +525,23 @@ export default function IndividualKPIPage() {
           onClose={() => setShowAddModal(false)}
           onSuccess={() => { setShowAddModal(false); refetch(); }}
         />
+      )}
+
+      {/* Global Export — range-aware server export (.xlsx / PDF) */}
+      <GlobalExportModal
+        open={globalExportOpen}
+        onClose={() => setGlobalExportOpen(false)}
+        title="Export Individual KPI"
+        columns={moduleColumns}
+        defaultCheckedKeys={visibleColKeys}
+        rangeMode="quarter"
+        quarterCtx={{ years: availableYears, defaultYear: currentYear, defaultQuarter: currentQuarter, formatYear: fiscalYearLabel }}
+        onExport={handleGlobalExport}
+      />
+      {exportError && (
+        <div className="fixed bottom-4 right-4 z-[60] bg-red-600 text-white text-xs px-3 py-2 rounded-lg shadow-lg">
+          {exportError}
+        </div>
       )}
     </div>
   );
