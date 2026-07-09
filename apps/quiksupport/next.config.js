@@ -12,10 +12,10 @@ const nextConfig = {
   eslint: { ignoreDuringBuilds: true },
   reactStrictMode: true,
   swcMinify: true,
-  transpilePackages: ["@quikit/ui", "@quikit/auth", "@quikit/shared", "@quikit/database"],
+  transpilePackages: ["@quikit/ui", "@quikit/auth", "@quikit/shared", "@quikit/database", "@quikit/redis"],
   experimental: {
     serverActions: {
-      allowedOrigins: ["localhost:3010"],
+      allowedOrigins: ["localhost:3010", "support.quikit.ai", "uatsupport.quikit.ai"],
     },
     outputFileTracingRoot: path.join(__dirname, "../.."),
   },

@@ -7,7 +7,13 @@ import {
   CalendarDays, Lock, Info,
 } from "lucide-react";
 import { invalidateFiscalYearsCache } from "@/lib/hooks/useFiscalYears";
+import { invalidateCurrentWeekCache } from "@/lib/hooks/useCurrentWeek";
+import { invalidateQuarterStartDatesCache } from "@/lib/hooks/useQuarterStartDates";
 import { resolveQuarterInitDefaults } from "@/lib/utils/quarterInit";
+import {
+  generateMonthlyQuarterDates, chainQuarterDates, isMonthBasedWeekCounts,
+  addMonthsUTC, addDays, diffDays,
+} from "@/lib/utils/quarterGen";
 import {
   RightPanel, RightPanelFooter, RightPanelCancelButton, RightPanelSubmitButton, Pagination,
 } from "@quikit/ui";
@@ -56,6 +62,21 @@ function toInputDate(iso: string): string {
     const d = new Date(iso);
     return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
   } catch { return ""; }
+}
+
+/**
+ * Drop every quarter-derived module cache after a quarter mutation. Week-aware
+ * surfaces (KPI grid size, Priority week labels, current-week/quarter) read
+ * `QuarterSetting` through in-memory caches populated once per SPA session; if
+ * we only invalidate the fiscal-years cache, those keep a pre-mutation snapshot
+ * (e.g. `useQuarterWeekCount` falling back to 13) until a hard reload. Clearing
+ * all three means the next mount of any week-aware view refetches the real
+ * counts — no reload needed. See spec §10.
+ */
+function invalidateAllQuarterCaches() {
+  invalidateFiscalYearsCache();
+  invalidateCurrentWeekCache();
+  invalidateQuarterStartDatesCache();
 }
 
 function getCurrentQuarterAndWeek(rows: QuarterRow[]): { quarter: string; week: number } | null {
@@ -148,14 +169,21 @@ function EditPanel({
 
   const weeksNumPreview = parseInt(weeks, 10) || 13;
 
-  // Live-calculate this quarter's end date and FY end. In custom mode the
-  // quarter span is weeks×7 days; otherwise the legacy 91-day Q1 split.
+  // Live single-quarter end preview. This quarter's own start is Q1's editable
+  // start date (Q1 row) or the fixed persisted start (other rows). In custom
+  // mode a 13-week quarter is month-aligned (end = start + 3 months − 1 day);
+  // any other week count spans weeks×7 days. Legacy Q1 uses the 91-day split.
   const parsedStart = startDate ? new Date(startDate) : null;
-  const spanDays = customEnabled ? weeksNumPreview * 7 : 91;
-  const qEndPreview = parsedStart
-    ? new Date(new Date(startDate).setDate(parsedStart.getDate() + spanDays - 1))
+  const qStartForPreview = isQ1Row ? parsedStart : new Date(row.startDate);
+  const qEndPreview = qStartForPreview && !isNaN(qStartForPreview.getTime())
+    ? (customEnabled
+        ? (weeksNumPreview === 13
+            ? addDays(addMonthsUTC(qStartForPreview, 3), -1)
+            : addDays(qStartForPreview, weeksNumPreview * 7 - 1))
+        : (parsedStart ? addDays(parsedStart, 91 - 1) : null))
     : null;
-  const fyEndPreview = parsedStart
+  // Legacy day-count split shows the full 4-quarter preview off Q1's start.
+  const fyEndPreview = !customEnabled && parsedStart
     ? new Date(new Date(startDate).setFullYear(parsedStart.getFullYear() + 1, parsedStart.getMonth(), parsedStart.getDate() - 1))
     : null;
   const computedEnd = qEndPreview ? fmtDate(qEndPreview.toISOString()) : fmtDate(row.endDate);
@@ -365,40 +393,54 @@ function GenerateModal({
   const parsedStart = startDate ? new Date(startDate) : null;
   const derivedFY = parsedStart ? parsedStart.getFullYear() : nextFY;
 
-  // Calculate FY end and quarter date previews
+  // Calculate FY end and quarter date previews. Legacy uses the 91/91/91/92(93)
+  // day-count split. Custom mode branches the same way the server does: all-13
+  // weeks → month-based 3-month intervals (365/366 days, calendar-aligned); any
+  // week ≠ 13 → week-based (weeks×7, FY length floats to the sum).
+  const weekCountsNum = weekCounts.map((w) => parseInt(w, 10) || 13);
+  const customMonthBased = isMonthBasedWeekCounts(weekCountsNum);
   const fyEndPreview = parsedStart
     ? new Date(new Date(startDate).setFullYear(parsedStart.getFullYear() + 1, parsedStart.getMonth(), parsedStart.getDate() - 1))
     : null;
   const totalDaysPreview = parsedStart && fyEndPreview
     ? Math.round((fyEndPreview.getTime() - parsedStart.getTime()) / 86400000) + 1
     : 365;
-  const isLeapPreview = totalDaysPreview === 366;
-  const q4DaysPreview = isLeapPreview ? 93 : 92;
+  const q4DaysPreview = totalDaysPreview === 366 ? 93 : 92;
 
-  // Generate quarter date ranges for preview. Custom mode uses each quarter's
-  // weeks×7 days; legacy uses the 91/91/91/92(93) day-count split.
-  const customDays = weekCounts.map((w) => (parseInt(w, 10) || 13) * 7);
-  const quarterPreviews = parsedStart ? (() => {
-    const days = customEnabled ? customDays : [91, 91, 91, q4DaysPreview];
-    const names = ["Q1", "Q2", "Q3", "Q4"];
-    const result: { name: string; start: Date; end: Date; days: number }[] = [];
-    let cursor = new Date(parsedStart.getTime());
-    for (let i = 0; i < 4; i++) {
-      const qStart = new Date(cursor.getTime());
-      const qEnd = new Date(cursor.getTime());
-      qEnd.setDate(qEnd.getDate() + days[i] - 1);
-      result.push({ name: names[i], start: qStart, end: qEnd, days: days[i] });
-      cursor = new Date(qEnd.getTime());
-      cursor.setDate(cursor.getDate() + 1);
-    }
-    return result;
-  })() : [];
-  // In custom mode the FY length floats to the sum of the quarters' weeks.
-  const customFyEnd = quarterPreviews.length === 4 ? quarterPreviews[3].end : null;
-  const effectiveFyEnd = customEnabled ? customFyEnd : fyEndPreview;
-  const effectiveTotalDays = customEnabled
-    ? customDays.reduce((s, d) => s + d, 0)
+  const quarterPreviews = parsedStart ? (
+    customEnabled
+      ? (customMonthBased
+          ? generateMonthlyQuarterDates(parsedStart)
+          : chainQuarterDates(parsedStart, weekCountsNum)
+        ).map((q) => ({
+          name: q.quarter,
+          start: q.startDate,
+          end: q.endDate,
+          days: diffDays(q.startDate, q.endDate) + 1,
+        }))
+      : (() => {
+          const days = [91, 91, 91, q4DaysPreview];
+          const names = ["Q1", "Q2", "Q3", "Q4"];
+          const result: { name: string; start: Date; end: Date; days: number }[] = [];
+          let cursor = new Date(parsedStart.getTime());
+          for (let i = 0; i < 4; i++) {
+            const qStart = new Date(cursor.getTime());
+            const qEnd = new Date(cursor.getTime());
+            qEnd.setDate(qEnd.getDate() + days[i] - 1);
+            result.push({ name: names[i], start: qStart, end: qEnd, days: days[i] });
+            cursor = new Date(qEnd.getTime());
+            cursor.setDate(cursor.getDate() + 1);
+          }
+          return result;
+        })()
+  ) : [];
+  const effectiveFyEnd = quarterPreviews.length === 4 ? quarterPreviews[3].end : fyEndPreview;
+  const effectiveTotalDays = quarterPreviews.length === 4
+    ? quarterPreviews.reduce((s, q) => s + q.days, 0)
     : totalDaysPreview;
+  // Leap badge shows in BOTH modes — month-based quarters absorb Feb 29
+  // naturally, so a 366-day FY is meaningful in Custom mode too.
+  const isLeapPreview = effectiveTotalDays === 366;
 
   const fyLabel = `FY ${derivedFY}-${String(derivedFY + 1).slice(-2)}`;
 
@@ -454,7 +496,7 @@ function GenerateModal({
         <>
         <p className="text-xs text-gray-500 mb-4">
           {customEnabled
-            ? "Set the financial year start date, weekly meeting day, and weeks per quarter. Quarter dates are generated from the week counts."
+            ? "Set the financial year start date, weekly meeting day, and weeks per quarter. Leave all quarters at 13 weeks for calendar-month quarters, or set any value for custom week lengths."
             : "Set the financial year start date. Quarters will be generated using day-count distribution."}
         </p>
 
@@ -508,6 +550,11 @@ function GenerateModal({
                   </div>
                 ))}
               </div>
+              <p className="text-[10px] text-gray-400 mt-1">
+                {customMonthBased
+                  ? "All 13 → calendar-month quarters (full 365/366-day year)."
+                  : "Custom week lengths → year length = sum of weeks × 7."}
+              </p>
             </div>
           </div>
         )}
@@ -525,7 +572,7 @@ function GenerateModal({
               </div>
               <div className="text-right">
                 <p className="text-xs font-semibold text-gray-700">{effectiveTotalDays} days</p>
-                {!customEnabled && isLeapPreview && <p className="text-[10px] text-amber-600 font-medium">Leap year</p>}
+                {isLeapPreview && <p className="text-[10px] text-amber-600 font-medium">Leap year</p>}
               </div>
             </div>
 
@@ -675,6 +722,9 @@ export default function QuarterSettingsPage() {
 
   function handleSaved(updated: QuarterRow[]) {
     setRows(updated);
+    // Week counts / boundaries may have changed — clear the quarter caches so
+    // week-aware views (KPI grid, Priority labels) pick them up without reload.
+    invalidateAllQuarterCaches();
   }
 
   function handleGenerated(newRows: QuarterRow[]) {
@@ -683,7 +733,7 @@ export default function QuarterSettingsPage() {
       setSelectedYear(fy);
       setAllYears(prev => [...new Set([...prev, fy])].sort((a, b) => b - a));
       fetchRows(fy);
-      invalidateFiscalYearsCache();
+      invalidateAllQuarterCaches();
     }
   }
 
@@ -692,7 +742,7 @@ export default function QuarterSettingsPage() {
     try {
       await Promise.all([...selectedIds].map(id => fetch(`/api/org/quarters/${id}`, { method: "DELETE" })));
       setSelectedIds(new Set());
-      invalidateFiscalYearsCache();
+      invalidateAllQuarterCaches();
       // Re-fetch from the server so `allYears` + `latestEndDate` reflect reality.
       // A local row filter alone left those stale, so the Initialize modal kept
       // anchoring to the deleted FY's end date and forced a manual page reload.
@@ -717,8 +767,8 @@ export default function QuarterSettingsPage() {
       setAllYears(nextYears);
       setSelectedIds(new Set());
       setDeleteFY(null);
-      // Drop shared fiscal-year cache so every picker across the app refetches.
-      invalidateFiscalYearsCache();
+      // Drop all quarter-derived caches so every picker + week-aware view refetches.
+      invalidateAllQuarterCaches();
 
       if (nextYears.length) {
         const nextYear = nextYears.includes(defaultFY) ? defaultFY : nextYears[0];

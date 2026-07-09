@@ -45,7 +45,7 @@ import {
   getStarterProjectRoleId,
 } from "@/lib/services/projectDefaults";
 import { getQuikTrackAppId } from "@/lib/api/permissions";
-import { buildIssueAttachmentKey, putObject } from "@/lib/s3";
+import { buildIssueAttachmentKey, putObject } from "@/lib/storage";
 import crypto from "node:crypto";
 
 /** Cap per attachment. Anything larger is skipped + counted. */

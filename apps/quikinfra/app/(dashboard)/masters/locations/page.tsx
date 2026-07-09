@@ -260,6 +260,17 @@ export default function LocationsPage() {
 
   const handleSubmit = async () => {
     const errs = validateForm(form, rules);
+    // At least one material must be stocked at the location, and each picked
+    // material needs a positive quantity — an allotted qty of 0 (or blank)
+    // is meaningless and would leave the location with nothing to consume.
+    if (!form.itemIds || form.itemIds.length === 0) {
+      errs.itemIds = "Add at least one material";
+    } else {
+      const missingQty = form.itemIds.some(
+        (id) => !(parseFloat(form.itemQtyByItemId?.[id] ?? "") > 0),
+      );
+      if (missingQty) errs.itemQty = "Enter a quantity for every material";
+    }
     if (Object.keys(errs).length) { setErrors(errs); return; }
     try {
       if (editingId) await updateMutation.mutateAsync({ id: editingId, ...form });
@@ -364,6 +375,8 @@ export default function LocationsPage() {
           </FormRow>
           <Field
             label="Items"
+            required
+            error={errors.itemIds}
             hint="Pick items stored here — choose an item group first, then materials (same as Indents / RFQ)"
           >
             <GroupedMaterialMultiSelect
@@ -378,6 +391,13 @@ export default function LocationsPage() {
                     if (nextQty[id] === undefined) nextQty[id] = "";
                   }
                   return { ...prev, itemIds: nextIds, itemQtyByItemId: nextQty };
+                });
+                setErrors((prev) => {
+                  if (!prev.itemIds && !prev.itemQty) return prev;
+                  const next = { ...prev };
+                  delete next.itemIds;
+                  delete next.itemQty;
+                  return next;
                 });
               }}
               items={groupedMaterialItems}
@@ -405,15 +425,29 @@ export default function LocationsPage() {
                             ...prev,
                             itemQtyByItemId: { ...(prev.itemQtyByItemId ?? {}), [id]: v },
                           }));
+                          if (errors.itemQty) {
+                            setErrors((prev) => {
+                              const next = { ...prev };
+                              delete next.itemQty;
+                              return next;
+                            });
+                          }
                         }}
                         min={0}
                         step="0.0001"
                         placeholder="Qty"
+                        invalid={
+                          !!errors.itemQty &&
+                          !(parseFloat(form.itemQtyByItemId?.[id] ?? "") > 0)
+                        }
                       />
                     </div>
                   </div>
                 );
               })}
+              {errors.itemQty && (
+                <p className="text-xs text-rose-600">{errors.itemQty}</p>
+              )}
             </div>
           ) : null}
           <Field label="Status">

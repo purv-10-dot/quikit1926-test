@@ -147,16 +147,27 @@ export function buildMaterialGroupBuckets(
     }
     bucket.items.push(item);
   }
+  // Seed every active master group so it always appears in the picker even
+  // when no items are assigned to it yet — the group list stays stable and
+  // users can browse into a group before it holds any materials.
+  for (const g of groups) {
+    if (!g?.id || map.has(g.id)) continue;
+    if (g.status === "inactive" || g.status === "deleted") continue;
+    map.set(g.id, { id: g.id, name: g.name?.trim() || "Unknown group", items: [] });
+  }
+
   const groupRows = Array.from(map.values()).filter((b) => {
-    if (b.items.length === 0) return false;
     // Hide item groups that are inactive/deleted so they never appear in the
-    // picker. Groups with no master meta (or undefined status), and the
-    // synthetic "Others" bucket, stay visible.
+    // picker.
     const meta = groupMetaById.get(b.id);
     if (meta && (meta.status === "inactive" || meta.status === "deleted")) {
       return false;
     }
-    return true;
+    // Master-backed groups always show (even with 0 items). The synthetic
+    // "Others" bucket and any unknown-group bucket only show when they
+    // actually hold items.
+    if (meta) return true;
+    return b.items.length > 0;
   });
   groupRows.sort((a, b) => {
     const ao = a.id === OTHERS_GROUP_ID ? 1 : 0;
@@ -423,7 +434,9 @@ export function GroupedMaterialSelect({
                   ? items.length === 0
                     ? "Loading items…"
                     : "No matching groups"
-                  : "No matching items"}
+                  : !query.trim() && itemsInActiveGroup.length === 0
+                    ? "No materials in this group yet"
+                    : "No matching items"}
               </div>
             ) : step === "groups" ? (
               filteredGroups.map((g, i) => {
@@ -732,7 +745,9 @@ export function GroupedMaterialMultiSelect({
                   ? items.length === 0
                     ? "Loading items…"
                     : "No matching groups"
-                  : "No matching items"}
+                  : !query.trim() && itemsInActiveGroup.length === 0
+                    ? "No materials in this group yet"
+                    : "No matching items"}
               </div>
             ) : step === "groups" ? (
               filteredGroups.map((g, i) => {

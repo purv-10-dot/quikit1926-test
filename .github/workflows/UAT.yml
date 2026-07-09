@@ -54,13 +54,17 @@ jobs:
               - 'apps/quikinfra/**'
             quikcrm:
               - 'apps/quikcrm/**'
+            quiksupport:
+              - 'apps/quiksupport/**'
+            quikasset:
+              - 'apps/quikasset/**'
 
       - name: Generate matrix
         id: set-matrix
         shell: bash
         run: |
           APPS=()
-          ALL=(quikit auth admin quikscale quiktrack quikhrms quikinfra quikcrm)
+          ALL=(quikit auth admin quikscale quiktrack quikhrms quikinfra quikcrm quiksupport quikasset)
 
           if [ "${{ github.event_name }}" = "workflow_dispatch" ] || [ "${{ steps.filter.outputs.shared }}" = "true" ]; then
             APPS=("${ALL[@]}")
@@ -73,6 +77,8 @@ jobs:
             [ "${{ steps.filter.outputs.quikhrms }}" = "true" ] && APPS+=("quikhrms")
             [ "${{ steps.filter.outputs.quikinfra }}" = "true" ] && APPS+=("quikinfra")
             [ "${{ steps.filter.outputs.quikcrm }}" = "true" ] && APPS+=("quikcrm")
+            [ "${{ steps.filter.outputs.quiksupport }}" = "true" ] && APPS+=("quiksupport")
+            [ "${{ steps.filter.outputs.quikasset }}" = "true" ] && APPS+=("quikasset")
           fi
 
           echo "Selected apps: ${APPS[@]}"
@@ -144,7 +150,10 @@ jobs:
             NEXT_PUBLIC_QUIKINFRA_URL=https://uatinfra.quikit.ai
             NEXT_PUBLIC_QUIKCRM_URL=https://uatcrm.quikit.ai
             NEXT_PUBLIC_QUIKHRMS_URL=https://uatpeople.quikit.ai
+            NEXT_PUBLIC_QUIKSUPPORT_URL=https://uatsupport.quikit.ai
+            NEXT_PUBLIC_APP_URL=https://uatsupport.quikit.ai
             NEXTAUTH_URL=https://uatauthn.quikit.ai
+            NEXT_PUBLIC_QUIKASSET_URL=https://uatasset.quikit.ai
 
   update-gitops:
     name: Update GitOps Repository
@@ -205,6 +214,14 @@ jobs:
               quikhrms)
                 FILE="hrms-deployment.yaml"
                 IMAGE="ghcr.io/akhileshgandhi/quikhrms-runtime:${TAG}"
+                ;;
+              quiksupport)
+                FILE="support-deployment.yaml"
+                IMAGE="ghcr.io/akhileshgandhi/quiksupport-runtime:${TAG}"
+                ;;
+              quikasset)
+                FILE="asset-deployment.yaml"
+                IMAGE="ghcr.io/akhileshgandhi/quikasset-runtime:${TAG}"
                 ;;
               *)
                 echo "Unknown app: $APP"

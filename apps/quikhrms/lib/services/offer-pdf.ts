@@ -1,5 +1,5 @@
 import { PDFDocument, StandardFonts, rgb, PDFImage } from "pdf-lib";
-import { getS3Object } from "@/lib/s3";
+import { getS3Object } from "@/lib/storage";
 
 export interface OfferPdfInput {
   candidateName: string;
@@ -17,7 +17,7 @@ export interface OfferPdfInput {
   companyName: string;
   companyAddress?: string | null;
   letterDate: string;
-  // Branding assets — S3 keys
+  // Branding assets — storage object keys
   letterheadKey?: string | null;
   sealKey?: string | null;
   signatureKey?: string | null;

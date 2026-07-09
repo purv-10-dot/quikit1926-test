@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 
+
 /**
  * GET /.well-known/openid-configuration
  *
@@ -12,6 +13,7 @@ import type { NextRequest } from "next/server";
  * verify id_token signatures. Without this endpoint, NextAuth's callback
  * fails silently with OAUTH_CALLBACK_ERROR before calling userinfo.
  */
+
 export async function GET(request: NextRequest) {
   // Prefer NEXTAUTH_URL as the canonical issuer; fall back to request origin
   // for local dev. The `iss` claim in id_tokens uses the same value

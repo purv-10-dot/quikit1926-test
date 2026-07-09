@@ -2,10 +2,10 @@ import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { withOrgAuth } from "@/lib/api/withOrgAuth";
 import { hasAdminAccess } from "@/lib/api/permissions";
-import { getPresignedGetUrl, keyBelongsToTenant } from "@/lib/s3";
+import { getPresignedGetUrl, keyBelongsToTenant } from "@/lib/storage";
 
 /**
- * Returns a short-lived presigned GET URL for the attachment, or 302
+ * Returns a short-lived signed GET URL for the attachment, or 302
  * redirects to it when `?redirect=1` is set (handy for `<a href>` download
  * links). Tenant isolation enforced two ways: row.orgId match + s3Key prefix.
  */

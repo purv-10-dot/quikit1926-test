@@ -29,6 +29,18 @@ import {
 
 const auth = withOrgAuthForResource("construction.users");
 
+// The 4 permission pairs that unlock Settings (Users / Roles / Workflows).
+// Mirrors the dedicated role-swap route (/api/org/users/[id]/role) and the
+// invite flow so "Grant Settings access" behaves identically no matter which
+// screen the admin saved from. Written as additive grants (revoke=false) so
+// they survive the sub-admin settings-strip in getTenantContext.
+const SETTINGS_PERMS = [
+  { resource: "construction.settings", action: "manage" },
+  { resource: "construction.users", action: "manage" },
+  { resource: "construction.roles", action: "manage" },
+  { resource: "construction.workflows", action: "manage" },
+] as const;
+
 /**
  * Individual-user API: GET / PUT / PATCH / DELETE /api/settings/users/:id.
  *
@@ -287,7 +299,11 @@ async function handleUpdate(req: NextRequest, id: string, ctx: UpdateAuthCtx) {
     (body.userType ?? updated.userType ?? "").toString().toLowerCase() === "admin";
   // Look up auth.User.id once — role swap + module + project reconciliation
   // all need it, and we'd rather not run the lookup more than once.
+  // `authUserLookupError` captures a DB failure so the module sync below can
+  // tell "this user simply has no login account" apart from "the lookup itself
+  // errored" when it surfaces the failure to the admin.
   let authUserId: string | null = null;
+  let authUserLookupError: string | null = null;
   if (
     roleSwapTo ||
     touchingModules ||
@@ -300,8 +316,9 @@ async function handleUpdate(req: NextRequest, id: string, ctx: UpdateAuthCtx) {
         select: { id: true },
       });
       authUserId = authUser?.id ?? null;
-    } catch {
-      // Non-fatal — sync skipped below.
+    } catch (error: unknown) {
+      authUserLookupError =
+        error instanceof Error ? error.message : "lookup failed";
     }
   }
 
@@ -332,12 +349,89 @@ async function handleUpdate(req: NextRequest, id: string, ctx: UpdateAuthCtx) {
     }
   }
 
-  if (
-    touchingModules &&
-    !isAdminUserType &&
-    tickedModules.length > 0 &&
-    authUserId
-  ) {
+  // Settings access reconciliation. The Edit User drawer sends `enableSettings`
+  // (the "Grant Settings access" checkbox, only shown for the admin role), but
+  // this PUT handler previously ignored it — only the invite flow and the
+  // dedicated role-swap route wrote the settings extras. As a result ticking
+  // the box here never persisted: the grant was dropped, the sidebar kept
+  // Settings hidden, and the checkbox reverted to unchecked on reopen. Mirror
+  // the role-swap route: grant the 4 settings extras when (role = admin AND
+  // enableSettings), otherwise strip them. Only runs when the client actually
+  // sent the flag (a status-only PATCH omits it, leaving settings untouched).
+  if (body.enableSettings !== undefined) {
+    if (!authUserId) {
+      return NextResponse.json(
+        {
+          error: authUserLookupError
+            ? `Settings access was not saved — failed to look up this user's login account: ${authUserLookupError}`
+            : "Settings access was not saved — this user has no login account yet. Ask them to accept their invite (or verify their email address), then try again.",
+        },
+        { status: 422 },
+      );
+    }
+    const grantSettings = isAdminUserType && body.enableSettings === true;
+    try {
+      if (grantSettings) {
+        for (const p of SETTINGS_PERMS) {
+          await dbCentral.cnUserPermissionExtra.upsert({
+            where: {
+              orgId_userId_resource_action: {
+                orgId: ctx.orgId,
+                userId: authUserId,
+                resource: p.resource,
+                action: p.action,
+              },
+            },
+            update: { revoke: false },
+            create: {
+              orgId: ctx.orgId,
+              userId: authUserId,
+              resource: p.resource,
+              action: p.action,
+              revoke: false,
+              grantedBy: ctx.userId,
+            },
+          });
+        }
+      } else {
+        await dbCentral.cnUserPermissionExtra.deleteMany({
+          where: {
+            orgId: ctx.orgId,
+            userId: authUserId,
+            OR: SETTINGS_PERMS.map((p) => ({
+              resource: p.resource,
+              action: p.action,
+            })),
+          },
+        });
+      }
+    } catch (error: unknown) {
+      const message = error instanceof Error ? error.message : "unknown error";
+      return NextResponse.json(
+        { error: `Settings access was not saved: ${message}` },
+        { status: 500 },
+      );
+    }
+  }
+
+  if (touchingModules && !isAdminUserType && tickedModules.length > 0) {
+    // Module access MUST persist — otherwise the sidebar silently keeps the
+    // old module set while the admin sees a successful save. Surface the two
+    // failure modes as real errors instead of swallowing them:
+    //   1. authUserId could not be resolved (no login account, or the lookup
+    //      itself threw) → the grant/revoke rows are keyed on it, so the write
+    //      is impossible.
+    //   2. applyModuleRevokes threw → the write partially or fully failed.
+    if (!authUserId) {
+      return NextResponse.json(
+        {
+          error: authUserLookupError
+            ? `Module access was not saved — failed to look up this user's login account: ${authUserLookupError}`
+            : "Module access was not saved — this user has no login account yet. Ask them to accept their invite (or verify their email address), then try again.",
+        },
+        { status: 422 },
+      );
+    }
     try {
       await applyModuleRevokes(
         dbCentral as never,
@@ -346,8 +440,12 @@ async function handleUpdate(req: NextRequest, id: string, ctx: UpdateAuthCtx) {
         tickedModules,
         ctx.userId,
       );
-    } catch {
-      // Non-fatal — admin can retry by re-saving.
+    } catch (error: unknown) {
+      const message = error instanceof Error ? error.message : "unknown error";
+      return NextResponse.json(
+        { error: `Module access was not saved: ${message}` },
+        { status: 500 },
+      );
     }
   }
 
