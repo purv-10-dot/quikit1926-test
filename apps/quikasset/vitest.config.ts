@@ -20,6 +20,16 @@ export default defineConfig({
       "@quikit/database": path.resolve(__dirname, "../../packages/database"),
       "@quikit/auth": path.resolve(__dirname, "../../packages/auth"),
       "@quikit/ui": path.resolve(__dirname, "../../packages/ui"),
+      // Subpath exports live under packages/shared/lib — map them explicitly so
+      // the naive prefix alias below doesn't resolve them to the package root.
+      "@quikit/shared/sso-domain-server": path.resolve(
+        __dirname,
+        "../../packages/shared/lib/sso-domain-server.ts",
+      ),
+      "@quikit/shared/temp-password": path.resolve(
+        __dirname,
+        "../../packages/shared/lib/temp-password.ts",
+      ),
       "@quikit/shared": path.resolve(__dirname, "../../packages/shared"),
     },
   },
