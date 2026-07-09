@@ -219,6 +219,17 @@ function composeLabel(key: string, path: (string | number)[]): string {
 
 /** Describe a `set(key, value)` change (any field shape). null = no scalar change. */
 export function describeSetChange(key: string, oldVal: unknown, newVal: unknown): PendingEdit | null {
+  // Grid-row deletion: the new array is the old one with a single row removed.
+  // The plain index-wise diff below would misread this as a field edit on the
+  // row that shifted up (e.g. "#7 Category: Renewal → No of presentations"), so
+  // detect it first and log a proper "Row removed" entry instead. This covers
+  // every set()-driven delete path (inline grids + the fullscreen modals).
+  if (Array.isArray(oldVal) && Array.isArray(newVal)) {
+    const removed = findSingleRemovedIndex(oldVal, newVal);
+    if (removed !== -1) {
+      return describeRowDeletion(key, removed, oldVal[removed]);
+    }
+  }
   const diff = firstScalarDiff(oldVal, newVal);
   if (!diff) return null;
   return {
@@ -245,23 +256,74 @@ export function isRowDeletionField(field: string): boolean {
 }
 
 /**
- * Describe a grid-row removal (e.g. deleting an ACTIONS (QTR) row). Produces a
- * `PendingEdit` under the `<key>.<index>.__deleted` field so it reads as a
- * "Row removed" entry in the change log and bypasses the per-row validity gate
- * that guards ordinary field edits.
+ * Preferred row fields, in priority order, used to name a deleted row in the
+ * change log. Different OPSP grids key their "identity" on different columns
+ * (category grids → `category`; Key Thrusts/Initiatives → `desc`; Rocks /
+ * Quarterly Priorities → `priority`; Accountability → `kpi`), so we pick the
+ * first non-empty one instead of assuming `category`.
+ */
+const ROW_LABEL_KEYS = [
+  "category",
+  "desc",
+  "priority",
+  "title",
+  "kpi",
+  "name",
+  "owner",
+] as const;
+
+/** First non-empty representative string on a row object (see ROW_LABEL_KEYS). */
+function representativeRowLabel(row: unknown): string {
+  if (isPlainObject(row)) {
+    for (const k of ROW_LABEL_KEYS) {
+      const v = row[k];
+      if (typeof v === "string" && v.trim()) return v.trim();
+    }
+  }
+  return "";
+}
+
+/**
+ * Describe a grid-row removal (e.g. deleting an ACTIONS (QTR) or GOALS (1 yr)
+ * row). Produces a `PendingEdit` under the `<key>.<index>.__deleted` field so it
+ * reads as a "Row removed" entry in the change log and bypasses the per-row
+ * validity gate that guards ordinary field edits. The row is named by its first
+ * non-empty representative column so the log works for every grid shape.
  */
 export function describeRowDeletion(
   key: string,
   index: number,
-  row: { category?: string | null },
+  row: unknown,
 ): PendingEdit {
-  const cat = (row.category ?? "").trim();
+  const label = representativeRowLabel(row);
   return {
     field: `${key}.${index}.${ROW_DELETED_SUFFIX}`,
-    label: `${sectionLabel(key)} · ${cat || "#" + (index + 1)} · Row removed`,
-    oldValue: cat || `Row ${index + 1}`,
+    label: `${sectionLabel(key)} · ${label || "#" + (index + 1)} · Row removed`,
+    oldValue: label || `Row ${index + 1}`,
     newValue: "(removed)",
   };
+}
+
+/**
+ * When exactly one row was removed from an array, return its index; else -1.
+ *
+ * A single deletion leaves the surviving rows otherwise untouched, just shifted
+ * up from the removed index. We find the first index that differs, then verify
+ * that `old` with that index spliced out equals `new`. Anything messier (a
+ * simultaneous edit + delete, a reorder) returns -1 so the caller falls back to
+ * the ordinary index-wise scalar diff.
+ */
+function findSingleRemovedIndex(oldArr: unknown[], newArr: unknown[]): number {
+  if (newArr.length !== oldArr.length - 1) return -1;
+  let d = 0;
+  while (d < newArr.length && JSON.stringify(oldArr[d]) === JSON.stringify(newArr[d])) {
+    d++;
+  }
+  // d is the candidate removed index (== last index when the whole prefix matched).
+  for (let i = d; i < newArr.length; i++) {
+    if (JSON.stringify(oldArr[i + 1]) !== JSON.stringify(newArr[i])) return -1;
+  }
+  return d;
 }
 
 /** Describe a `setArr(key, idx, value)` change (string-array element). */
