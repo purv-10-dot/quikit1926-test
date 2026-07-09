@@ -51,6 +51,11 @@ interface Props {
   onPageChange?: (p: number) => void;
   onPageSizeChange?: (size: number) => void;
   onSort: (col: string, dir: "asc" | "desc") => void;
+  /** Reset sorting to the default (newest-first) order. Wired to the ColMenu's
+   *  "Clear sort" row / active-direction toggle. Callers implement this by
+   *  setting the backend sort key back to "" (no sort params sent → server
+   *  default order). Optional so read-only embeds can omit it. */
+  onClearSort?: () => void;
   onRefresh: () => void;
   onSelectionChange?: (ids: Set<string>) => void;
   clearSelectionTrigger?: number;
@@ -93,7 +98,7 @@ interface Props {
   numberFormat?: NumberFormat;
 }
 
-export function KPITable({ kpis: kpisAll, total, page, pageSize, year, quarter, onPageChange, onPageSizeChange, onSort, onRefresh, onSelectionChange, clearSelectionTrigger, onHiddenColsChange, showColTrigger, hideColumns, maxRows, readOnly, fillWidth, canDelete = true, canUpdate = true, sortBy, sortOrder, maxBodyHeight, hasMore, isFetchingMore, onLoadMore, numberFormat = "standard" }: Props) {
+export function KPITable({ kpis: kpisAll, total, page, pageSize, year, quarter, onPageChange, onPageSizeChange, onSort, onClearSort, onRefresh, onSelectionChange, clearSelectionTrigger, onHiddenColsChange, showColTrigger, hideColumns, maxRows, readOnly, fillWidth, canDelete = true, canUpdate = true, sortBy, sortOrder, maxBodyHeight, hasMore, isFetchingMore, onLoadMore, numberFormat = "standard" }: Props) {
   const kpis = maxRows != null ? kpisAll.slice(0, maxRows) : kpisAll;
   // Goal/value formatter. For a Currency KPI with a chosen scale it renders the
   // currency + scaled unit (₹4 Cr / $9 M); otherwise it's the plain compact
@@ -316,6 +321,8 @@ export function KPITable({ kpis: kpisAll, total, page, pageSize, year, quarter, 
                       <SortIndicator active={isSorted} direction={sortOrder} />
                       <ColMenu colKey={col}
                         onSort={sortable ? (d => onSort(SORT_KEYS[col], d)) : undefined}
+                        activeSort={isSorted ? (sortOrder ?? null) : null}
+                        onClearSort={sortable && onClearSort ? onClearSort : undefined}
                         onFreeze={() => handleFreezeCol(col)} onHide={() => handleHideCol(col)}
                         frozen={frozenUpTo === col}
                         showSort={sortable} />

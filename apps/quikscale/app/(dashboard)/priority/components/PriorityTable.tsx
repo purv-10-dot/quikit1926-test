@@ -552,6 +552,8 @@ export function PriorityTable({ priorities: prioritiesAll, onRefresh, year, quar
                           <ColMenu
                             colKey={colKey}
                             onSort={sortKey ? (dir) => handleSort(sortKey, dir) : undefined}
+                            activeSort={isSorted ? sortDir : null}
+                            onClearSort={sortKey ? () => setSort(null) : undefined}
                             onFreeze={() => handleFreezeCol(colKey)}
                             onHide={() => handleHideCol(colKey)}
                             frozen={frozen}

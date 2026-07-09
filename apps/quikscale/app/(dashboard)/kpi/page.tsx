@@ -500,6 +500,7 @@ export default function IndividualKPIPage() {
             onPageChange={(p) => setFilters(f => ({ ...f, page: p }))}
             onPageSizeChange={(size) => setFilters(f => ({ ...f, pageSize: size, page: 1 }))}
             onSort={(col, dir) => setSort({ sortBy: col, sortOrder: dir })}
+            onClearSort={() => setSort({ sortBy: "", sortOrder: "desc" })}
             sortBy={reduxSortBy}
             sortOrder={reduxSortOrder}
             onRefresh={refetch}

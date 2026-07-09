@@ -1730,6 +1730,7 @@ export default function DashboardPage() {
                 year={year}
                 quarter={quarter}
                 onSort={handleKpiSort}
+                onClearSort={() => { setKpiSortBy(""); setKpiSortOrder("asc"); }}
                 sortBy={kpiSortBy}
                 sortOrder={kpiSortOrder}
                 onRefresh={() => { void kpiTableQuery.refetch(); }}

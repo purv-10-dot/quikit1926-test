@@ -472,6 +472,8 @@ export function WWWTable({ items: itemsAll, onRefresh, onSelectionChange, hideCo
                           <ColMenu
                             colKey={colKey}
                             onSort={sortKey ? (dir) => handleSort(sortKey, dir) : undefined}
+                            activeSort={isSorted ? sortDir : null}
+                            onClearSort={sortKey ? () => setSort(null) : undefined}
                             onFreeze={canFreeze ? () => handleFreezeCol(colKey) : undefined}
                             onHide={() => handleHideCol(colKey)}
                             frozen={frozen}
