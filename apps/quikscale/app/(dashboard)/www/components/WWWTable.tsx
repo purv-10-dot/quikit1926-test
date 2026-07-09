@@ -202,6 +202,56 @@ function RevisedDatePicker({ itemId, currentDate, existingDates, minDate, onSave
   );
 }
 
+// ── Notes Picker popover ──────────────────────────────────────────────────────
+// Inline editor for the single `notes` string shown in the grid — mirrors the
+// StatusPicker / RevisedDatePicker pattern so Notes can be entered directly from
+// the grid instead of only via the create form. Save is routed through the
+// parent (`onSave`) which closes the popover on success and surfaces the
+// server's `www_notes_required` error on failure (popover stays open).
+interface NotesPickerProps {
+  itemId: string;
+  currentNotes: string;
+  onSave: (id: string, notes: string) => void;
+  onClose: () => void;
+}
+
+function NotesPicker({ itemId, currentNotes, onSave, onClose }: NotesPickerProps) {
+  const ref = useRef<HTMLDivElement>(null);
+  const [value, setValue] = useState(currentNotes);
+  useClickOutside(ref, onClose);
+
+  return (
+    <div
+      ref={ref}
+      className="absolute top-full left-1/2 -translate-x-1/2 mt-1 bg-white border border-gray-200 rounded-xl shadow-xl z-50 w-64 p-3 space-y-2"
+    >
+      <p className="text-[10px] text-gray-400 font-semibold uppercase tracking-wider">Note</p>
+      <textarea
+        value={value}
+        onChange={e => setValue(e.target.value)}
+        placeholder="Add a note…"
+        rows={3}
+        autoFocus
+        className="w-full px-2 py-1.5 text-xs border border-gray-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-blue-400 resize-none"
+      />
+      <div className="flex gap-2">
+        <button
+          onClick={onClose}
+          className="flex-1 py-1.5 text-xs border border-gray-200 rounded-lg text-gray-500 hover:bg-gray-50 transition-colors"
+        >
+          Cancel
+        </button>
+        <button
+          onClick={() => onSave(itemId, value)}
+          className="flex-1 py-1.5 text-xs bg-gray-900 text-white rounded-lg hover:bg-gray-700 transition-colors font-medium"
+        >
+          Save
+        </button>
+      </div>
+    </div>
+  );
+}
+
 // ── Main component ────────────────────────────────────────────────────────────
 
 interface Props {
@@ -282,6 +332,7 @@ export function WWWTable({ items: itemsAll, onRefresh, onSelectionChange, hideCo
   const [logItem, setLogItem] = useState<WWWItem | null>(null);
   const [openStatusPicker, setOpenStatusPicker] = useState<string | null>(null);
   const [openDatePicker, setOpenDatePicker] = useState<string | null>(null);
+  const [openNotesPicker, setOpenNotesPicker] = useState<string | null>(null);
 
   // Per-item edit permission: creator, assignee, admin role, or super-admin.
   // Mirrors the server-side `canEditWWW` helper (source of truth).
@@ -402,6 +453,27 @@ export function WWWTable({ items: itemsAll, onRefresh, onSelectionChange, hideCo
     }
   }
 
+  async function handleNotesSave(id: string, notes: string) {
+    try {
+      const res = await fetch(`/api/www/${id}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ notes }),
+      });
+      const json = await res.json().catch(() => null);
+      if (!res.ok || !json?.success) {
+        // Surface the server error (e.g. the `www_notes_required` "Notes are
+        // required." 400) and keep the popover open so the edit isn't lost.
+        notify.error(json?.error || "Failed to update notes");
+        return;
+      }
+      setOpenNotesPicker(null);
+      onRefresh();
+    } catch {
+      notify.error("Failed to update notes");
+    }
+  }
+
   const thBase = "sticky top-0 z-20 bg-accent-50 border-b border-gray-200 border-r border-r-gray-100 text-left px-2 py-2 text-[10px] font-semibold text-gray-500 uppercase tracking-wider whitespace-nowrap";
 
   return (
@@ -512,6 +584,7 @@ export function WWWTable({ items: itemsAll, onRefresh, onSelectionChange, hideCo
                 : null;
               const isStatusPickerOpen = openStatusPicker === item.id;
               const isDatePickerOpen = openDatePicker === item.id;
+              const isNotesPickerOpen = openNotesPicker === item.id;
 
               return (
                 <tr
@@ -626,6 +699,7 @@ export function WWWTable({ items: itemsAll, onRefresh, onSelectionChange, hideCo
                         onClick={() => {
                           if (rowLocked) return;
                           setOpenStatusPicker(null);
+                          setOpenNotesPicker(null);
                           setOpenDatePicker(isDatePickerOpen ? null : item.id);
                         }}
                         disabled={rowLocked}
@@ -663,6 +737,7 @@ export function WWWTable({ items: itemsAll, onRefresh, onSelectionChange, hideCo
                         onClick={() => {
                           if (rowLocked) return;
                           setOpenDatePicker(null);
+                          setOpenNotesPicker(null);
                           setOpenStatusPicker(isStatusPickerOpen ? null : item.id);
                         }}
                         disabled={rowLocked}
@@ -695,10 +770,30 @@ export function WWWTable({ items: itemsAll, onRefresh, onSelectionChange, hideCo
                     </td>
                   )}
 
-                  {/* Notes — hidable */}
+                  {/* Notes — inline editable, hidable */}
                   {WWW_COL_ORDER.includes("notes") && (
-                    <td className="border-r border-gray-100 px-2 py-1.5 overflow-hidden align-top" style={{ width: getColWidth("notes"), minWidth: getColWidth("notes") }}>
-                      <ScrollableNote text={item.notes} />
+                    <td className="relative border-r border-gray-100 px-2 py-1.5 align-top" style={{ width: getColWidth("notes"), minWidth: getColWidth("notes") }}>
+                      <button
+                        onClick={() => {
+                          if (rowLocked) return;
+                          setOpenStatusPicker(null);
+                          setOpenDatePicker(null);
+                          setOpenNotesPicker(isNotesPickerOpen ? null : item.id);
+                        }}
+                        disabled={rowLocked}
+                        title={rowLocked && !readOnly ? "Only the creator, assignee, or an admin can edit this item" : undefined}
+                        className={`w-full text-left rounded ${rowLocked ? "cursor-default" : "hover:bg-blue-50/40"}`}
+                      >
+                        <ScrollableNote text={item.notes} />
+                      </button>
+                      {isNotesPickerOpen && !rowLocked && (
+                        <NotesPicker
+                          itemId={item.id}
+                          currentNotes={item.notes ?? ""}
+                          onSave={handleNotesSave}
+                          onClose={() => setOpenNotesPicker(null)}
+                        />
+                      )}
                     </td>
                   )}
 
