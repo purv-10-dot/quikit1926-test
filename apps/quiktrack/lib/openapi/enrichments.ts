@@ -326,20 +326,6 @@ export const enrichments: Paths = {
     ),
   },
 
-  "/api/notifications/mark-read": {
-    post: body(
-      {
-        type: "object",
-        description: "Pass ids[] to mark specific notifications, or all=true.",
-        properties: {
-          ids: { type: "array", items: { type: "string" } },
-          all: { type: "boolean" },
-        },
-      },
-      { ids: ["ntf_123"] },
-    ),
-  },
-
   "/api/search": {
     get: { parameters: [q("q", "Search query.", { required: true, example: "login bug" })] },
   },
