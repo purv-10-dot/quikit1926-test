@@ -58,6 +58,10 @@ const PROJECT_SHELL_VIEW: Array<{ resource: string; action: string }> = [
   { resource: "ProjectTaskTable", action: "view" },
   { resource: "Doc", action: "view" },
   { resource: "Timesheet", action: "view" },
+  // Discovery: `IdeaView:view` gates the "Ideas" tab + the view list. Ideas
+  // themselves are membership-based (no Idea:view), matching Issue. Harmless on
+  // non-discovery spaces — the tab only renders for discovery projects.
+  { resource: "IdeaView", action: "view" },
   // Note: Issue / Sprint / IssueComment have no `view` grant — their visibility
   // is membership-based, not gated by a permission (see permissionsRegistry).
   // Report / Home / Dashboards are app-wide-only — governed by the app-wide
@@ -76,6 +80,12 @@ const CONTRIBUTOR_GRANTS: Array<{ resource: string; action: string }> = [
   { resource: "Doc", action: "create" },
   { resource: "Doc", action: "update" },
   { resource: "Timesheet", action: "create" },
+  // Discovery: create/edit/archive ideas and manage saved views. Permanent
+  // Idea:delete stays Space-Admin-only (FR §5.3), so it's not granted here.
+  { resource: "Idea", action: "create" },
+  { resource: "Idea", action: "update" },
+  { resource: "IdeaView", action: "create" },
+  { resource: "IdeaView", action: "update" },
   // No IssueComment/Timesheet update grant — those edits are author/owner-only
   // (ownership checks in the routes), not permission grants.
 ];

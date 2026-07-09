@@ -156,10 +156,13 @@ export const enrichments: Paths = {
     post: body(
       {
         type: "object",
-        required: ["ids"],
-        properties: { ids: { type: "array", items: { type: "string" }, minItems: 1, maxItems: 500 } },
+        required: ["projectId", "ids"],
+        properties: {
+          projectId: { type: "string" },
+          ids: { type: "array", items: { type: "string" }, minItems: 1, maxItems: 500 },
+        },
       },
-      { ids: ["iss_123", "iss_456"] },
+      { projectId: "prj_123", ids: ["iss_123", "iss_456"] },
     ),
   },
 
@@ -173,7 +176,7 @@ export const enrichments: Paths = {
           projectKey: { type: "string", pattern: "^[A-Z][A-Z0-9]{1,9}$", description: "UPPERCASE, starts with a letter, 2–10 chars." },
           description: { type: "string", maxLength: 2000 },
           projectType: { type: "string", enum: ["software", "discovery", "service"] },
-          templateKey: { type: "string", enum: ["scrum", "functional"] },
+          templateKey: { type: "string", enum: ["scrum", "functional", "discovery"] },
           icon: { type: "string", maxLength: 50 },
           color: { type: "string", pattern: "^#([0-9a-fA-F]{6})$" },
           startDate: { type: "string", format: "date-time" },
