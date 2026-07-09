@@ -19,7 +19,7 @@
 import type { KPIRow } from "@/lib/types/kpi";
 import { fmt, formatScaledKpiValue, getProgressBadgeColors } from "@/lib/utils/kpiHelpers";
 import { computeKPIStats, computeQtd } from "./kpiStats";
-import { useCurrentWeek, useQuarterWeekCount } from "@/lib/hooks/useCurrentWeek";
+import { useCurrentWeek, useQtdReferenceWeek, useQuarterWeekCount } from "@/lib/hooks/useCurrentWeek";
 
 export function StatsTab({ kpi }: { kpi: KPIRow }) {
   // Scaled-display: when the KPI's toggle is on, currency values render in the
@@ -50,12 +50,17 @@ export function StatsTab({ kpi }: { kpi: KPIRow }) {
   const weekCount = useQuarterWeekCount(kpi.year, kpi.quarter);
   const { filledWeeks, avgPerWeek, bestWeek, bestValue } = computeKPIStats(kpi, weekCount);
 
-  // Week-of-quarter — DB-driven, respects tenant's QuarterSetting.
+  // Week-of-quarter — DB-driven, respects tenant's QuarterSetting. Used for the
+  // Weekly Goal tile (latest reported week) below.
   const currentWeek = useCurrentWeek(kpi.year, kpi.quarter);
+  // QTD reference week — past/current/future aware. For a fully-past quarter
+  // this is `weekCount + 1` so QTD counts ALL completed weeks (the clamped
+  // `currentWeek` would drop the final week). See `qtdReferenceWeek`.
+  const qtdWeek = useQtdReferenceWeek(kpi.year, kpi.quarter);
 
-  // Compute QTD totals over [1 .. currentWeek-1]. Falls back to full-quarter
-  // totals when currentWeek is unresolvable.
-  const { qtdGoal, qtdAchieved } = computeQtd(kpi, currentWeek, divisionType, weekCount);
+  // Compute QTD totals over the completed weeks. Falls back to full-quarter
+  // totals when the reference week is unresolvable.
+  const { qtdGoal, qtdAchieved } = computeQtd(kpi, qtdWeek, divisionType, weekCount);
 
   // Overall Progress — for Standalone, mirror the computed qtdAchieved (the
   // documented average) because the server-stamped `kpi.qtdAchieved` is a

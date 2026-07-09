@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import {
   getCurrentFiscalWeekFromStart,
+  qtdReferenceWeek,
   resolveQuarterForDate,
   alignToMeetingDay,
   meetingDayIndex,
@@ -116,6 +117,47 @@ export function useCurrentQuarter(year: number | null | undefined): "Q1" | "Q2" 
   }, [year]);
 
   return quarter;
+}
+
+/**
+ * Returns the QTD "reference week" for a (year, quarter) — the value to pass to
+ * `computeQtd`/`resolveProgress*` so quarter-to-date counts the correct number
+ * of completed weeks whether the quarter is past, current, or future (see
+ * `fiscal.qtdReferenceWeek`). Use this INSTEAD of `useCurrentWeek` for QTD math:
+ * a fully-past quarter returns `weekCount + 1` (all weeks complete) instead of
+ * the clamped `weekCount`, so its final week is no longer dropped from QTD.
+ *
+ * Returns null while loading. Not for display/highlighting — use
+ * `useCurrentWeek` for that.
+ */
+export function useQtdReferenceWeek(
+  year: number | null | undefined,
+  quarter: string | null | undefined,
+): number | null {
+  const [ref, setRef] = useState<number | null>(null);
+  const meetingDay = useEffectiveMeetingDay();
+
+  useEffect(() => {
+    if (!year || !quarter) {
+      setRef(null);
+      return;
+    }
+    (async () => {
+      await ensureLoaded();
+      const match = cache?.find((q) => q.fiscalYear === year && q.quarter === quarter);
+      if (!match) {
+        // Unknown quarter — treat as not-yet-started so QTD stays 0 rather than
+        // inventing a full-quarter total.
+        setRef(1);
+        return;
+      }
+      setRef(
+        qtdReferenceWeek(match.startDate, match.endDate, rowWeekCount(match), new Date(), meetingDay),
+      );
+    })();
+  }, [year, quarter, meetingDay]);
+
+  return ref;
 }
 
 /** Invalidate cache (call after quarter settings are changed). */

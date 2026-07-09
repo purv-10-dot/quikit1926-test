@@ -7,7 +7,7 @@ import { TableSkeleton } from "@/components/ui/Skeleton";
 import {
   getFiscalYear, getFiscalQuarter, fiscalYearLabel, weeksArray,
 } from "@/lib/utils/fiscal";
-import { useCurrentWeek, useWeekDateRange, useQuarterWeekCount } from "@/lib/hooks/useCurrentWeek";
+import { useCurrentWeek, useCurrentQuarter, useWeekDateRange, useQuarterWeekCount } from "@/lib/hooks/useCurrentWeek";
 import { GlobalExportModal, type GlobalExportSelection } from "@/components/export/GlobalExportModal";
 import { downloadExport } from "@/lib/exports/downloadExport";
 import { PriorityTable } from "./components/PriorityTable";
@@ -165,9 +165,12 @@ export default function PriorityPage() {
   // is touched, so we never request an out-of-range page.
   useEffect(() => { setPage(1); }, [search, filterOwner, filterTeam, filterStatus, year, quarter, viewTrash, pageSize, prioritySort]);
 
-  // DB-driven current week + date range (respects QuarterSetting.startDate).
-  const fiscalWeek = useCurrentWeek(year, quarter);
-  const fiscalWeekRange = useWeekDateRange(year, quarter, fiscalWeek);
+  // "You are here" pill — reflects TODAY's real fiscal position (the quarter
+  // that actually contains today within the selected year), not the selected
+  // quarter filter. Null when today is outside the selected FY → pill hides.
+  const realQuarter = useCurrentQuarter(year);
+  const fiscalWeek = useCurrentWeek(year, realQuarter);
+  const fiscalWeekRange = useWeekDateRange(year, realQuarter, fiscalWeek);
   const activeFilterCount = (filterTeam ? 1 : 0) + (filterStatus ? 1 : 0) + (filterOwner ? 1 : 0);
 
   const handlePriorityExport = useCallback(async (sel: ExportSelection) => {
@@ -239,9 +242,9 @@ export default function PriorityPage() {
           <span className="text-xs bg-gray-100 text-gray-600 px-2 py-0.5 rounded-full font-medium">
             {total} {total === 1 ? "item" : "items"}
           </span>
-          {fiscalWeek !== null && (
+          {realQuarter && fiscalWeek !== null && (
             <span className="text-xs bg-accent-50 text-accent-600 border border-accent-100 px-2 py-0.5 rounded-full font-medium whitespace-nowrap">
-              {quarter} · Week {fiscalWeek}{fiscalWeekRange ? ` · ${fiscalWeekRange}` : ""}
+              {realQuarter} · Week {fiscalWeek}{fiscalWeekRange ? ` · ${fiscalWeekRange}` : ""}
             </span>
           )}
         </div>

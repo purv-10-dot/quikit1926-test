@@ -11,7 +11,7 @@ import { KPIListParams } from "@/lib/schemas/kpiSchema";
 import {
   getFiscalYear, getFiscalQuarter, fiscalYearLabel,
 } from "@/lib/utils/fiscal";
-import { useCurrentWeek, useWeekDateRange, useQuarterWeekCount } from "@/lib/hooks/useCurrentWeek";
+import { useCurrentWeek, useCurrentQuarter, useWeekDateRange, useQuarterWeekCount } from "@/lib/hooks/useCurrentWeek";
 import { useNumberFormat } from "@/lib/hooks/useFeatureFlags";
 import { KPITable } from "./components/KPITable";
 import { KPIModal } from "./components/KPIModal";
@@ -293,10 +293,15 @@ export default function IndividualKPIPage() {
     [currentYear, currentQuarter, filterOwner, filterTeam, viewTrash],
   );
 
-  // DB-driven current week + date range (respects QuarterSetting.startDate).
-  // Both return null while loading → pill hides until ready.
-  const fiscalWeek = useCurrentWeek(currentYear, currentQuarter);
-  const fiscalWeekRange = useWeekDateRange(currentYear, currentQuarter, fiscalWeek);
+  // "You are here" pill — always reflects TODAY's real fiscal position, not the
+  // selected quarter filter. `useCurrentQuarter` resolves the quarter that
+  // actually contains today within the selected fiscal year (null when today is
+  // outside it → pill hides). Then the week + range are computed for that real
+  // quarter. Fixes the pill showing "Q1 · Week 13" (clamped) while today is
+  // actually Q2 · Week 2.
+  const realQuarter = useCurrentQuarter(currentYear);
+  const fiscalWeek = useCurrentWeek(currentYear, realQuarter);
+  const fiscalWeekRange = useWeekDateRange(currentYear, realQuarter, fiscalWeek);
   const activeFilterCount = (filterTeam ? 1 : 0) + (filterOwner ? 1 : 0);
 
   return (
@@ -308,9 +313,9 @@ export default function IndividualKPIPage() {
           <span className="text-xs bg-gray-100 text-gray-600 px-2 py-0.5 rounded-full font-medium">
             {total} items
           </span>
-          {fiscalWeek !== null && (
+          {realQuarter && fiscalWeek !== null && (
             <span className="text-xs bg-accent-50 text-accent-600 border border-accent-100 px-2 py-0.5 rounded-full font-medium whitespace-nowrap">
-              {currentQuarter} · Week {fiscalWeek}{fiscalWeekRange ? ` · ${fiscalWeekRange}` : ""}
+              {realQuarter} · Week {fiscalWeek}{fiscalWeekRange ? ` · ${fiscalWeekRange}` : ""}
             </span>
           )}
         </div>

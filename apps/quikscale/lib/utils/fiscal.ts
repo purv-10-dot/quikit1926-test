@@ -201,6 +201,44 @@ export function getCurrentFiscalWeekFromStart(
 }
 
 /**
+ * QTD "reference week" — the value to pass to `computeQtd` as its `currentWeek`
+ * so quarter-to-date counts the right number of COMPLETED weeks, accounting for
+ * whether the quarter is past, current, or future relative to `now`:
+ *
+ *   - past   (now  >  quarter end)   → `weekCount + 1`  → QTD counts ALL weeks
+ *                                       (the quarter is finished; nothing is
+ *                                       "in progress" to exclude)
+ *   - future (now  <  quarter start) → `1`              → QTD is 0
+ *   - current                        → the elapsed week  → `computeQtd` excludes
+ *                                       the in-progress week, as it does today
+ *
+ * This is what fixes a fully-past quarter showing QTD short by its final week:
+ * `getCurrentFiscalWeekFromStart` clamps to `[1, weekCount]`, so a past quarter
+ * reads as "week `weekCount`, in progress" and its last week is dropped from
+ * QTD. Here a past quarter returns `weekCount + 1` instead.
+ *
+ * Differs from `getCurrentFiscalWeekFromStart` ONLY for past quarters — current
+ * and future results are identical, so no other week math changes. Meeting-day
+ * aware for the current-quarter elapsed calc (Custom Quarter Settings); works
+ * with the toggle on OR off because past/future detection uses the quarter's
+ * start/end dates, which always exist.
+ */
+export function qtdReferenceWeek(
+  startDate: string | Date,
+  endDate: string | Date,
+  weekCount: number = DEFAULT_WEEKS_PER_QUARTER,
+  now: Date = new Date(),
+  meetingDay?: string | null,
+): number {
+  const today = toLocalDay(now).getTime();
+  const start = toLocalDay(startDate).getTime();
+  const end = toLocalDay(endDate).getTime();
+  if (today > end) return weekCount + 1;   // past → all weeks complete
+  if (today < start) return 1;             // future → nothing started (QTD 0)
+  return getCurrentFiscalWeekFromStart(startDate, weekCount, meetingDay);
+}
+
+/**
  * Internal — compute the [start, end] Dates for one week of a quarter.
  *
  * When a `meetingDay` resolves to a weekday index, Week 1 is anchored on the
