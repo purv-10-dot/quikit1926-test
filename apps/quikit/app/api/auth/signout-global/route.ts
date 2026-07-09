@@ -86,6 +86,13 @@ function resolveRedirect(req: NextRequest): URL {
     // land the user on the originating sub-app's landing page.
     if (parsed.origin === req.nextUrl.origin) return parsed;
     if (allowedOrigins().has(parsed.origin)) return parsed;
+    // Local dev: sub-apps run on localhost:<port> (e.g. quikasset :3012),
+    // which aren't in the prod/UAT allow-list above. Permit any localhost
+    // origin when not in production so the SLO chain lands back on the
+    // originating dev app instead of falling through to the launcher home.
+    if (process.env.NODE_ENV !== "production" && parsed.hostname === "localhost") {
+      return parsed;
+    }
   } catch {
     // Malformed URL — fall through to fallback.
   }
