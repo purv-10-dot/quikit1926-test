@@ -10,6 +10,7 @@ import { FormErrorBanner } from "@/components/forms/FormErrorBanner";
 import { TeamSelect } from "./TeamSelect";
 import { useFiscalYears } from "@/lib/hooks/useFiscalYears";
 import { useQuarterStartDates } from "@/lib/hooks/useQuarterStartDates";
+import { useCustomQuarterSettings, useWeeklyMeetingDay } from "@/lib/hooks/useFeatureFlags";
 import { humanizeApiError } from "@/lib/utils/humanizeError";
 import { notify } from "@/lib/utils/notify";
 import { PRIORITY_DEFAULT_STATUS } from "@/lib/constants/status";
@@ -39,10 +40,26 @@ export function PriorityModal({ defaultYear, defaultQuarter, onClose, onSuccess 
   // DB-scoped fiscal years via shared hook
   const { years: fyYears } = useFiscalYears();
   const yearOptions = fyYears.length ? fyYears : [CURRENT_YEAR];
-  const { getStartDate: getQuarterStartDate, getWeekCount } = useQuarterStartDates();
+  const { getStartDate: getQuarterStartDate, getEndDate: getQuarterEndDate, getWeekCount } = useQuarterStartDates();
   // Weeks in the selected quarter (Custom Quarter Settings). Defaults to 13.
   const weekCount = getWeekCount(parseInt(form.year) || CURRENT_YEAR, form.quarter);
   const weekOptions = weeksArray(weekCount);
+  // Custom Quarter Settings: when on, week-date hints run from the configured
+  // weekly meeting day (Thu→Wed etc.), with the final week clamped to the
+  // quarter end. `effectiveMeetingDay` is null when the toggle is off → the
+  // hints render exactly as before (legacy calendar weeks).
+  const customQuarterOn = useCustomQuarterSettings();
+  const rawMeetingDay = useWeeklyMeetingDay();
+  const effectiveMeetingDay = customQuarterOn ? rawMeetingDay : null;
+  const weekHint = (w: number) =>
+    getWeekDateRange(
+      parseInt(form.year),
+      form.quarter,
+      w,
+      getQuarterStartDate(parseInt(form.year), form.quarter),
+      effectiveMeetingDay,
+      getQuarterEndDate(parseInt(form.year), form.quarter),
+    );
 
   // Default the End Week to the quarter's last week once the count resolves —
   // unless the user already narrowed it. Keeps a custom 14-week quarter from
@@ -197,7 +214,7 @@ export function PriorityModal({ defaultYear, defaultQuarter, onClose, onSuccess 
                 options={weekOptions.map(w => ({
                   value: String(w),
                   label: `Week ${w}`,
-                  hint: getWeekDateRange(parseInt(form.year), form.quarter, w, getQuarterStartDate(parseInt(form.year), form.quarter)),
+                  hint: weekHint(w),
                 }))}
                 searchable
               />
@@ -252,7 +269,7 @@ export function PriorityModal({ defaultYear, defaultQuarter, onClose, onSuccess 
                 options={weekOptions.filter(w => w >= (parseInt(form.startWeek) || 1)).map(w => ({
                   value: String(w),
                   label: `Week ${w}`,
-                  hint: getWeekDateRange(parseInt(form.year), form.quarter, w, getQuarterStartDate(parseInt(form.year), form.quarter)),
+                  hint: weekHint(w),
                 }))}
                 searchable
               />
