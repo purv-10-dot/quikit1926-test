@@ -473,7 +473,7 @@ function MigrationView() {
                   type="file"
                   accept=".csv,text/csv"
                   onChange={handleCsvUpload}
-                  className="block w-full text-sm text-gray-700 file:mr-3 file:py-1.5 file:px-3 file:rounded-md file:border-0 file:bg-accent-50 file:text-accent-700 file:text-xs file:font-semibold hover:file:bg-accent-100 dark:text-gray-300 dark:file:bg-accent-900/30 dark:file:text-accent-300"
+                  className="block w-full text-sm text-gray-700 file:mr-3 file:py-1.5 file:px-3 file:rounded-md file:border-0 file:bg-accent-600 file:text-white file:text-xs file:font-semibold file:cursor-pointer hover:file:bg-accent-700"
                 />
               </label>
               <p className="mt-1.5 text-[11px] text-gray-500 dark:text-gray-400">
@@ -701,7 +701,7 @@ function StepCard({
   return (
     <section className="rounded-2xl border border-gray-200 bg-white p-6 shadow-sm dark:border-gray-700 dark:bg-gray-800">
       <div className="mb-5 flex items-center gap-3">
-        <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-accent-50 text-accent-700 dark:bg-accent-900/30 dark:text-accent-300">
+        <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-accent-600 text-white">
           <Icon className="h-4 w-4" />
         </div>
         <div>
@@ -731,8 +731,10 @@ function ToggleRow({
     <label
       className={`flex cursor-pointer items-center gap-3 rounded-lg border px-3 py-2.5 text-sm transition-colors ${
         checked
-          ? "border-accent-300 bg-accent-50 text-gray-900 dark:border-accent-700/60 dark:bg-accent-900/20 dark:text-gray-100"
-          : "border-gray-200 bg-white text-gray-700 hover:bg-gray-50 dark:border-gray-700 dark:bg-gray-900/40 dark:text-gray-300 dark:hover:bg-gray-900/70"
+          ? // accent-50 has no dark remap in globals.css, so force a transparent
+            // bg in dark (the dark card shows through); gray text is remapped light.
+            "border-accent-500 bg-accent-50 text-gray-800 dark:bg-transparent"
+          : "border-gray-200 bg-white text-gray-700 hover:bg-gray-50"
       }`}
     >
       <input

@@ -95,7 +95,7 @@ export function TaskTableRow({ issue, depth, expanded, onToggleExpand, ctx }: Ro
         <button
           type="button"
           onClick={() => ctx.onOpenIssue(issue.id)}
-          className="font-mono text-[11px] text-gray-700 hover:underline"
+          className="qt-key-chip text-xs font-medium text-gray-500 hover:underline"
         >
           {issue.key}
         </button>

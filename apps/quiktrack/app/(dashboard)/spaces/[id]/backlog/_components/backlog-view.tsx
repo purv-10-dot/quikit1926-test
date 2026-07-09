@@ -3132,7 +3132,7 @@ export function BacklogView({ projectId }: { projectId: string }) {
               </div>
             );
           })()}
-          {(filterStatusId || filterAssigneeIds.length || filterType || filterPriority || appliedSearch || customFilters.length) && (
+          {(Boolean(filterStatusId) || filterAssigneeIds.length > 0 || Boolean(filterType) || Boolean(filterPriority) || Boolean(appliedSearch) || customFilters.length > 0) && (
             <button
               type="button"
               onClick={() => {
