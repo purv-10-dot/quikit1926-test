@@ -53,6 +53,7 @@ export const GET = withAdminAuth(async ({ orgId }) => {
   const envBaseUrls: Record<string, string | undefined> = {
     quikit: process.env.QUIKIT_URL,
     quikscale: process.env.QUIKSCALE_URL,
+    quikasset: process.env.QUIKASSET_URL,
     admin: process.env.ADMIN_URL,
     quiktrack: process.env.QUIKTRACK_URL,
     quikvc: process.env.QUIKVC_URL,
@@ -68,6 +69,7 @@ export const GET = withAdminAuth(async ({ orgId }) => {
     auth: "http://localhost:3001",
     admin: "http://localhost:3002",
     quikscale: "http://localhost:3003",
+    quikasset: "http://localhost:3012",
     quiktrack: "http://localhost:3004",
     quikvc: "http://localhost:3005",
     quikinfra: "http://localhost:3006",
