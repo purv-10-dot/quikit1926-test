@@ -60,6 +60,10 @@ File: `apps/auth/app/api/auth/verify-otp/route.ts`
 3. On success: `generateResetToken()` → `storeResetToken(token, userId)` (Redis, TTL 300s).
 4. Return `{ success, resetToken, expiresInSeconds: 300 }`. (Generic `400` on any failure — no enumeration.)
 
+> **CORS:** this handler is wrapped with `withCors` (+ an `OPTIONS` `preflight`) from `apps/auth/lib/cors.ts`,
+> so the central IdP's OTP verification can be called cross-origin (other apps / the Flutter mobile client).
+> The unknown-email branch still calls `verifyOtp` on a dummy id to equalize latency (no user enumeration).
+
 ### Step 3 — Set password & finish → `POST /api/auth/register/complete`
 File: `apps/auth/app/api/auth/register/complete/route.ts`
 
@@ -68,7 +72,7 @@ File: `apps/auth/app/api/auth/register/complete/route.ts`
 3. One DB transaction:
    - **Update** `User`: `password = bcrypt(pw, 10)`, `emailVerified = now()`.
    - **Insert** `Org` (`plan: "startup"`, `billingEmail`, `createdBy`), slug auto-deduped.
-   - **Insert** `OrgMember` (`role: org_admin`, `status: active`, `acceptedAt: now()`).
+   - **Insert** `OrgMember` (`role: org_admin`, `status: active`, `acceptedAt: now()`, `createdBy: userId`).
    - **Insert** `Subscription` (`status: active`, `planSlug: startup`, `source: self_serve_registration`).
      > Workspace-level subscription is `active` (non-gating). The **14-day trial is per-app** on
      > `OrgAppAccess.trialEndsAt`, set later when the user activates an app from the launcher.
@@ -106,7 +110,7 @@ All in `apps/auth/lib/otp-store.ts` (Redis-backed, with a process-local `Map` fa
 |---|---|---|---|
 | `auth.User` | `id, email, firstName, lastName, password, emailVerified` | Step 1 (`password=null, emailVerified=null`) | Step 3 (`password`, `emailVerified=now`) |
 | `quikit.Org` | `id, name, slug, plan, billingEmail, createdBy` | Step 3 | — |
-| `quikit.OrgMember` | `orgId, userId, role, status, acceptedAt` | Step 3 (`org_admin`, `active`) | — |
+| `quikit.OrgMember` | `orgId, userId, role, status, acceptedAt, createdBy` | Step 3 (`org_admin`, `active`) | — |
 | `quikit.Subscription` | `orgId (unique), status, planSlug, source` | Step 3 (`active`) | on upgrade/activation |
 | `quikit.OrgAppAccess` | `orgId, appId, enabled, trialEndsAt` | on app activation (launcher) | on upgrade |
 | `public.Plan` | `slug, name, priceMonthly, …` | seeded (migration / `db:seed:plans`) | super-admin UI |
@@ -216,7 +220,8 @@ change to the registration flow is required.
 | `apps/auth/app/api/auth/register/complete/route.ts` | Step 3 — set password + provision org/subscription |
 | `apps/auth/app/api/auth/register/resend-otp/route.ts` | Resend OTP for in-progress sign-up |
 | `apps/auth/lib/otp-store.ts` | OTP + reset-token + pending-registration (Redis/in-memory) |
-| `apps/auth/lib/email.ts` | `sendRegistrationOtpEmail` + transport fallback |
+| `apps/auth/lib/email.ts` | `sendRegistrationOtpEmail` + transport fallback (SMTP → Resend → console) |
+| `apps/auth/lib/cors.ts` | `withCors` / `preflight` — cross-origin wrapper for `verify-otp` |
 | `apps/auth/lib/tokens.ts` | `generateToken` / `hashToken` (used elsewhere; OTP uses otp-store) |
 | `packages/auth/session-store.ts` | Redis session store (`auth:session:<id>`) |
 | `packages/redis` | `getRedis()` client |
