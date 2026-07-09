@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { usePathname, useRouter } from "next/navigation";
 import { CalendarDays, Settings2 } from "lucide-react";
 import { useFiscalYears } from "@/lib/hooks/useFiscalYears";
@@ -14,6 +14,14 @@ export function QuarterRequiredGuard({ children }: { children: React.ReactNode }
   const { years, isLoading } = useFiscalYears();
   const [navigating, setNavigating] = useState(false);
 
+  // The guard stays mounted across client-side navigation, so `navigating`
+  // would otherwise stick on "Redirecting…" after the user returns to a
+  // quarter-less page. Reset it once the route actually changes (navigation
+  // finished) so the buttons return to their normal label.
+  useEffect(() => {
+    setNavigating(false);
+  }, [pathname]);
+
   const isExcluded = EXCLUDED_PREFIXES.some((p) => pathname?.startsWith(p));
   if (isExcluded || isLoading || years.length > 0) return <>{children}</>;
 
@@ -21,6 +29,12 @@ export function QuarterRequiredGuard({ children }: { children: React.ReactNode }
     if (navigating) return;
     setNavigating(true);
     router.push("/org-setup/quarters");
+  }
+
+  function handleOpenConfigurations() {
+    if (navigating) return;
+    setNavigating(true);
+    router.push("/settings?tab=configurations");
   }
 
   return (
@@ -55,10 +69,9 @@ export function QuarterRequiredGuard({ children }: { children: React.ReactNode }
           {navigating ? "Redirecting…" : "Go to Quarter Settings"}
         </button>
 
-        {/* Informational tip — how to switch on custom quarter lengths.
-            Purely informative; no action required here. */}
-        <div className="mt-2 w-full text-left rounded-xl border border-[var(--color-border)] bg-[var(--color-bg-card)] p-4">
-          <div className="flex items-start gap-2.5">
+        {/* Informational tip — how to switch on custom quarter lengths. */}
+        <div className="mt-2 w-full rounded-xl border border-[var(--color-border)] bg-[var(--color-bg-card)] p-4">
+          <div className="flex items-start gap-2.5 text-left">
             <Settings2 className="h-4 w-4 mt-0.5 flex-shrink-0 text-[var(--accent-600)]" />
             <div className="space-y-1">
               <p className="text-sm font-semibold text-[var(--color-text-primary)]">
@@ -72,6 +85,24 @@ export function QuarterRequiredGuard({ children }: { children: React.ReactNode }
                 laid out month-wise. Leave it off to keep the standard 13-week quarters.
               </p>
             </div>
+          </div>
+
+          {/* Primary action — centered filled button. */}
+          <div className="mt-4 flex justify-center">
+            <button
+              onClick={handleOpenConfigurations}
+              disabled={navigating}
+              className={[
+                "inline-flex items-center gap-2 px-4 py-2 rounded-lg text-white text-sm font-medium transition-colors",
+                "bg-[var(--accent-600)]",
+                navigating
+                  ? "opacity-60 cursor-not-allowed"
+                  : "hover:bg-[var(--accent-700)] cursor-pointer",
+              ].join(" ")}
+            >
+              <Settings2 className="h-4 w-4" />
+              {navigating ? "Redirecting…" : "Open Configurations"}
+            </button>
           </div>
         </div>
       </div>
