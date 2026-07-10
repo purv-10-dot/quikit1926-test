@@ -22,9 +22,10 @@ import { db } from "@/lib/db";
 import { withOrgAuthForResource } from "@/lib/api/withOrgAuth";
 import { buildKpiScopeWhere } from "@/lib/api/kpiListQuery";
 import { exportBaseSchema, quarterRangeSchema, searchParamsToObject } from "@/lib/exports/exportParams";
-import { getQuarterWeekCounts, getQuarterCurrentWeeks, weekNumbers } from "@/lib/exports/quarterWeeks";
+import { getQuarterWeekCounts, getQuarterWeekTiming, weekNumbers } from "@/lib/exports/quarterWeeks";
 import { kpiExportColumns, type KpiExportRow } from "@/lib/exports/columns/kpiExportColumns";
-import { computeWeeklyGoal } from "@/lib/utils/kpiHelpers";
+import { computeExportStats } from "@/app/(dashboard)/kpi/components/kpiStats";
+import type { KPIRow } from "@/lib/types/kpi";
 import { buildWorkbookSheets, type WorkbookSheet } from "@/lib/exports/buildWorkbook";
 import { fileResponse } from "@/lib/exports/exportResponse";
 import { fiscalYearLabel } from "@/lib/utils/fiscal";
@@ -50,6 +51,7 @@ const KPI_SELECT = {
   qtdGoal: true,
   qtdAchieved: true,
   progressPercent: true,
+  divisionType: true,
   lastNotes: true,
   importedFromOpsp: true,
   weeklyTargets: true,
@@ -81,9 +83,10 @@ export const GET = auth.view(async ({ orgId, userId }, req) => {
   const includeDeleted = sp.get("includeDeleted") === "true";
 
   const weekCounts = await getQuarterWeekCounts(orgId, year, quarters);
-  // Current week per quarter — drives the "Weekly Goal" column (matches the KPI
-  // table, which shows the current week's target, not the QTD goal).
-  const currentWeeks = await getQuarterCurrentWeeks(orgId, year, quarters, weekCounts);
+  // Per-quarter week timing (display week + QTD reference week) — lets the export
+  // recompute QTD Goal / Achieved / Progress / Weekly Goal the SAME way the KPI
+  // table and Stats drawer do, instead of dumping the stale stored aggregates.
+  const timing = await getQuarterWeekTiming(orgId, year, quarters, weekCounts);
 
   // Fetch each quarter's rows (scoped + visibility-filtered identically to the
   // list view), collecting every referenced user id for one batched name lookup.
@@ -120,7 +123,7 @@ export const GET = auth.view(async ({ orgId, userId }, req) => {
       )
     : new Map<string, { firstName: string | null; lastName: string | null }>();
 
-  const toRow = (k: any, currentWeek: number, weekCount: number): KpiExportRow => {
+  const toRow = (k: any, currentWeek: number, qtdWeek: number, weekCount: number): KpiExportRow => {
     const weekMap: Record<number, number | null> = {};
     for (const wv of k.weeklyValues ?? []) {
       const prev = weekMap[wv.weekNumber];
@@ -137,6 +140,10 @@ export const GET = auth.view(async ({ orgId, userId }, req) => {
       const n = Number(tv);
       if (Number.isFinite(n)) weekTargetMap[Number(wk)] = n;
     }
+    // Recompute the stat columns from the per-week breakdown so the export
+    // matches the KPI table / Stats drawer (which never read the stored
+    // aggregates). Quarterly Goal stays the stored value — it already agrees.
+    const stats = computeExportStats(k as KPIRow, currentWeek, qtdWeek, weekCount);
     return {
       name: k.name,
       ownerName,
@@ -145,10 +152,10 @@ export const GET = auth.view(async ({ orgId, userId }, req) => {
       measurementUnit: k.measurementUnit,
       target: k.target,
       quarterlyGoal: k.quarterlyGoal,
-      qtdGoal: k.qtdGoal,
-      qtdAchieved: k.qtdAchieved,
-      weeklyGoal: computeWeeklyGoal(wt, k.target, k.qtdGoal, currentWeek, weekCount),
-      progressPercent: k.progressPercent,
+      qtdGoal: stats.qtdGoal,
+      qtdAchieved: stats.qtdAchieved,
+      weeklyGoal: stats.weeklyGoal,
+      progressPercent: stats.progressPercent,
       description: k.description,
       lastNotes: k.lastNotes,
       importedFromOpsp: k.importedFromOpsp ?? false,
@@ -172,8 +179,8 @@ export const GET = auth.view(async ({ orgId, userId }, req) => {
       return NextResponse.json({ success: false, error: "Select at least one column." }, { status: 400 });
     }
     const headers = columns.map((c) => c.label);
-    const currentWeek = currentWeeks[quarter] ?? 1;
-    const rowObjs = kpis.map((k) => toRow(k, currentWeek, weekCount));
+    const { currentWeek, qtdWeek } = timing[quarter] ?? { currentWeek: 1, qtdWeek: 1 };
+    const rowObjs = kpis.map((k) => toRow(k, currentWeek, qtdWeek, weekCount));
     const rows = rowObjs.map((r) => columns.map((c) => c.value(r)));
     const fills = rowObjs.map((r) => columns.map((c) => c.fill?.(r)));
     sheets.push({ sheetName: quarter, headers, rows, fills });

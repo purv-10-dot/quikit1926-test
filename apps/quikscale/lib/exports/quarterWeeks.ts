@@ -4,7 +4,7 @@
  * or with a null weekCount — default to 13. Server-only (imports db).
  */
 import { db } from "@/lib/db";
-import { getCurrentFiscalWeekFromStart } from "@/lib/utils/fiscal";
+import { getCurrentFiscalWeekFromStart, qtdReferenceWeek } from "@/lib/utils/fiscal";
 
 const DEFAULT_WEEKS = 13;
 
@@ -25,31 +25,41 @@ export async function getQuarterWeekCounts(
 }
 
 /**
- * Resolve the "current week" for each requested quarter from the org's
- * QuarterSetting.startDate — the same value the KPI table's Weekly Goal column
- * uses (via `useCurrentWeek`). A past quarter clamps to its weekCount, a future
- * quarter is week 1. Quarters without a record default to week 1.
+ * Per-quarter week timing the export needs to reproduce the KPI table / Stats
+ * drawer numbers, resolved from the org's QuarterSetting date range:
+ *
+ *   - `currentWeek` — display week (`getCurrentFiscalWeekFromStart`), drives the
+ *     Weekly Goal column. Past quarter clamps to weekCount, future → 1.
+ *   - `qtdWeek`     — QTD reference week (`qtdReferenceWeek`), drives QTD Goal /
+ *     Achieved / Progress. Differs from `currentWeek` ONLY for a past quarter
+ *     (returns weekCount + 1 so the final week isn't dropped from QTD).
+ *
+ * Quarters without a QuarterSetting record default to week 1 for both.
  *
  * Note: meeting-day anchoring (Custom Quarter Settings) is NOT applied here.
- * The Weekly Goal only depends on `currentWeek` when a KPI has explicit
- * per-week `weeklyTargets`; the common flat `target/weekCount` fallback is
- * week-independent, so the exported value matches the UI in the common case.
+ * The Weekly Goal only depends on the week when a KPI has explicit per-week
+ * `weeklyTargets`; the common flat `target/weekCount` fallback is week-
+ * independent, so the exported value matches the UI in the common case.
  */
-export async function getQuarterCurrentWeeks(
+export async function getQuarterWeekTiming(
   orgId: string,
   year: number,
   quarters: string[],
   weekCounts: Record<string, number>,
-): Promise<Record<string, number>> {
-  const map: Record<string, number> = {};
-  for (const q of quarters) map[q] = 1;
+): Promise<Record<string, { currentWeek: number; qtdWeek: number }>> {
+  const map: Record<string, { currentWeek: number; qtdWeek: number }> = {};
+  for (const q of quarters) map[q] = { currentWeek: 1, qtdWeek: 1 };
 
   const rows = await db.quarterSetting.findMany({
     where: { orgId, fiscalYear: year, quarter: { in: quarters } },
-    select: { quarter: true, startDate: true },
+    select: { quarter: true, startDate: true, endDate: true },
   });
   for (const r of rows) {
-    map[r.quarter] = getCurrentFiscalWeekFromStart(r.startDate, weekCounts[r.quarter] ?? DEFAULT_WEEKS);
+    const wc = weekCounts[r.quarter] ?? DEFAULT_WEEKS;
+    map[r.quarter] = {
+      currentWeek: getCurrentFiscalWeekFromStart(r.startDate, wc),
+      qtdWeek: qtdReferenceWeek(r.startDate, r.endDate, wc),
+    };
   }
   return map;
 }

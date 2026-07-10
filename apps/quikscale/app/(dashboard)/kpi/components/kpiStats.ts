@@ -320,3 +320,42 @@ export function weeklyGoalFor(
 ): number {
   return computeWeeklyGoal(kpi.weeklyTargets, kpi.target, kpi.qtdGoal, weekNumber, weeksPerQuarter);
 }
+
+/**
+ * Aggregated stat bundle for the KPI EXPORT — the four numeric columns that were
+ * previously dumped straight from the stored DB aggregates (`kpi.qtdGoal`,
+ * `kpi.qtdAchieved`, `kpi.progressPercent`) and so disagreed with the KPI table
+ * and the Stats drawer (both of which recompute from `weeklyTargets` /
+ * `weeklyValues`). This reuses the SAME functions those surfaces use so the
+ * exported sheet matches what's on screen:
+ *
+ *   - `qtdGoal` / `qtdAchieved` — `computeQtd(kpi, qtdWeek, …)` (Σ weekly goals /
+ *     actuals through the reference week; Standalone → constant goal + avg).
+ *   - `progressPercent`        — `kpiOverallPercent(kpi, qtdWeek, …)` (achieved-
+ *     to-date ÷ full quarterly goal; identical to the table's Progress column).
+ *   - `weeklyGoal`             — `weeklyGoalFor(kpi, currentWeek, …)` (the KPI
+ *     table's Weekly Goal column: the current week's target or the flat split).
+ *
+ * `qtdWeek` is the QTD *reference* week (`qtdReferenceWeek`, past/current/future
+ * aware); `currentWeek` is the display week (`getCurrentFiscalWeekFromStart`).
+ * They differ only for a fully-past quarter — pass both so QTD and Weekly Goal
+ * each use the week the on-screen UI uses.
+ */
+export function computeExportStats(
+  kpi: KPIRow,
+  currentWeek: number | null,
+  qtdWeek: number | null,
+  weeksPerQuarter: number = DEFAULT_WEEKS_PER_QUARTER,
+): {
+  qtdGoal: number | null;
+  qtdAchieved: number | null;
+  progressPercent: number;
+  weeklyGoal: number;
+} {
+  const divisionType: "Cumulative" | "Standalone" =
+    kpi.divisionType === "Standalone" ? "Standalone" : "Cumulative";
+  const { qtdGoal, qtdAchieved } = computeQtd(kpi, qtdWeek, divisionType, weeksPerQuarter);
+  const progressPercent = kpiOverallPercent(kpi, qtdWeek, weeksPerQuarter);
+  const weeklyGoal = weeklyGoalFor(kpi, currentWeek ?? 1, weeksPerQuarter);
+  return { qtdGoal, qtdAchieved, progressPercent, weeklyGoal };
+}
