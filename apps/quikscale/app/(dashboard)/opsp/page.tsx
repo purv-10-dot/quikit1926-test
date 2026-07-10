@@ -71,6 +71,7 @@ export default function OPSPPage() {
     selectSectionUser,
     responsibleAdminName,
     completeSetup,
+    deleteGoalRow,
     save,
     setAutosaveEnabled,
   } = useOPSPForm({ urlYear, urlQuarter });
@@ -1106,6 +1107,7 @@ export default function OPSPPage() {
               form={form}
               set={set}
               logEdit={logEdit}
+              onDeleteGoalRow={(i) => { if (!isLocked) deleteGoalRow(i); }}
               onExpandKeyInitiatives={() => setKeyInitiativesOpen(true)}
             />
           </div>

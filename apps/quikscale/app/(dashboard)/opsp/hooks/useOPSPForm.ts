@@ -138,6 +138,16 @@ export interface OPSPFormHandle {
    */
   completeSetup: (data: { year: number; quarter: string; targetYears: number }) => void;
   /**
+   * Delete Goals (1 YR) row `index` in one atomic write, suppressing the
+   * Goals→Actions cascade for that update (doing the splice via separate set()
+   * calls lets the index-aligned cascade misread the positional shift as an
+   * edit and wipe the following Action row — deleting "Exit Revenue" also
+   * cleared "NPS"). The bound Actions (QTR) row at the same index is removed
+   * ONLY when it still mirrors the Goal's category; a row the user detached to a
+   * different category is preserved. See ProdBug-OPSP.
+   */
+  deleteGoalRow: (index: number) => void;
+  /**
    * Persist a form snapshot immediately (PUT /api/opsp). Used by the
    * edit-after-finalize flow where autosave is suspended and changes are
    * committed explicitly alongside their change-log note.
@@ -452,6 +462,36 @@ export function useOPSPForm(options: UseOPSPFormOptions = {}): OPSPFormHandle {
     });
   }, [form.goalRows]);
 
+  /* ── Delete a Goals (1 YR) row + its bound Actions (QTR) counterpart ── */
+  // Removing a Goal row must be a single atomic write, NOT two separate set()
+  // calls from the component: the Goals→Actions cascade is index-aligned and
+  // change-driven, so a positional row shift would be misread as an in-place
+  // edit of every row below `index` and would wrongly reset those Action rows
+  // (delete "Exit Revenue" would also wipe the following "NPS" row). We splice
+  // here and suppress the very next cascade run via skipNextGoalsCascade — the
+  // cascade then only re-baselines prevGoalCatsRef instead of propagating. A
+  // genuine category edit afterwards still cascades. See ProdBug-OPSP.
+  //
+  // The bound Action row is removed ONLY when it still mirrors the deleted Goal
+  // (same category at the same index). Once the user detaches that Action row by
+  // choosing a different category (e.g. Goal "Revenue" vs Action "a"), it is an
+  // independent entry and deleting the Goal must NOT remove it.
+  const deleteGoalRow = useCallback((index: number) => {
+    skipNextGoalsCascade.current = true;
+    setForm(prev => {
+      const removed = prev.goalRows[index];
+      const goalRows = [...prev.goalRows];
+      goalRows.splice(index, 1);
+      let actionsQtr = prev.actionsQtr;
+      const boundAction = prev.actionsQtr[index];
+      if (removed && boundAction && boundAction.category === removed.category) {
+        actionsQtr = [...prev.actionsQtr];
+        actionsQtr.splice(index, 1);
+      }
+      return { ...prev, goalRows, actionsQtr };
+    });
+  }, []);
+
   /* ── Switch which user's per-user sections are loaded (admin OPSP.EditUser) ── */
   const selectSectionUser = useCallback(async (userId: string | null) => {
     sectionUserRef.current = userId;
@@ -508,6 +548,8 @@ export function useOPSPForm(options: UseOPSPFormOptions = {}): OPSPFormHandle {
     selectSectionUser,
     responsibleAdminName,
     completeSetup,
+    /** Delete a Goals (1 YR) row and its bound Actions (QTR) row atomically. */
+    deleteGoalRow,
     /** Persist the given form immediately (used to commit edit-after-finalize changes). */
     save,
     /** Enable/disable the debounced autosave (off during edit-after-finalize). */
