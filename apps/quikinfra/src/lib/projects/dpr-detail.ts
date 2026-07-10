@@ -55,6 +55,10 @@ export interface DprDetail {
   approval?: ApprovalInfo | null;
   dprNumber?: string | null;
   reportDate?: string | null;
+  projectId?: string | null;
+  /** Location stock is deducted from on approval — used to check whether any
+   *  consumed material exceeds what's allotted there. */
+  consumptionLocationId?: string | null;
   projectName?: string | null;
   weatherCondition?: string | null;
   weatherDetail?: string | null;

@@ -7,6 +7,7 @@ import { audit, requestContext } from "@/lib/audit";
 import { parseSort, type SortDirection } from "@/lib/api/parseSort";
 import { parsePagination, paginatedResponse } from "@/lib/api/pagination";
 import { searchUserIds, dateSearchConditions, timeSearchTokens, matchEnumValues, commaTokens } from "@/lib/api/listSearch";
+import { buildClientMeetingWhere } from "@/lib/api/clientMeetingScopeQuery";
 
 const withOrgAuth = withOrgAuthForModule("clientMeetings.weeklyMeeting");
 
@@ -46,24 +47,10 @@ export const GET = withOrgAuth(async ({ orgId }, request) => {
   const to = url.searchParams.get("to");
   const includeDeleted = url.searchParams.get("includeDeleted") === "true";
 
-  const where: Record<string, unknown> = {
-    orgId,
-    deletedAt: includeDeleted ? { not: null } : null,
-  };
-  if (clientId) where.clientId = clientId;
-  if (from || to) {
-    const range: Record<string, Date> = {};
-    if (from) range.gte = new Date(from);
-    if (to) {
-      const d = new Date(to);
-      d.setUTCHours(23, 59, 59, 999);
-      range.lte = d;
-    }
-    where.meetingDate = range;
-  }
   const search = (url.searchParams.get("search") ?? "").trim();
   const status = url.searchParams.get("status") || undefined;
-  if (status) where.callStatus = status;
+  // Scope shared with the export route so the two never diverge.
+  const where = buildClientMeetingWhere(orgId, { clientId, status, from, to, includeDeleted });
   if (search) {
     // Global search across every visible column: client name, notes, Status
     // (enum) + "other" text, Absent Members + Weekly Dashboard NA (comma-split

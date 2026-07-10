@@ -19,7 +19,6 @@ export default function LoginPage() {
   const callbackUrl = searchParams.get("callbackUrl") ?? "/dashboard";
 
   
-  
   useEffect(() => {
     if (status === "unauthenticated" && !error) {
       signIn("quikit", { callbackUrl });

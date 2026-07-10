@@ -11,6 +11,12 @@ export interface BoqScopeItem {
   quantity?: number | string | null;
   rate?: number | string | null;
   amount?: number | string | null;
+  // Labour-only line fields (present when the work order is "Labour Only")
+  lineType?: string | null;
+  lineDate?: string | null;
+  activityName?: string | null;
+  workCategoryId?: string | null;
+  labourCounts?: { type: string; count: number }[] | null;
 }
 
 export interface WorkOrderDetail {

@@ -12,7 +12,7 @@ import {
 } from "@/lib/api/kpiCreateValidation";
 import { rateLimit, LIMITS } from "@/lib/api/rateLimit";
 import { notifyKPIAssignment } from "@/lib/services/kpiNotifications";
-import { isOrgAdmin, getMyTeamIds } from "@/lib/api/visibility";
+import { buildKpiScopeWhere } from "@/lib/api/kpiListQuery";
 import { fetchAuditUserMap, decorateAudit } from "@/lib/api/auditUsers";
 import { audit, requestContext } from "@/lib/audit";
 import { searchUserIds, dateSearchConditions, numericSearchValue } from "@/lib/api/listSearch";
@@ -43,103 +43,28 @@ export const GET = auth.view(async ({ orgId, userId }, req) => {
   const includeDeleted = searchParams.get("includeDeleted") === "true";
   // Dashboard "My Dashboard" personal scope — see kpiListParamsSchema.scope.
   const scopeMine = searchParams.get("scope") === "mine";
-  // Typed so the `orgId` tenant filter can't be silently dropped by a future edit.
-  const where: Prisma.KPIWhereInput = { orgId };
-  // Trash toggle: by default return only active (not soft-deleted). When
-  // ?includeDeleted=true, return ONLY soft-deleted records for the trash view.
-  where.deletedAt = includeDeleted ? { not: null } : null;
-  if (validated.status) where.status = validated.status;
-  if (validated.kpiLevel) where.kpiLevel = validated.kpiLevel;
-  // Owner filter semantics depend on level: individual KPIs carry a single
-  // `owner` scalar; team KPIs carry an `ownerIds[]` co-owner list. Filtering a
-  // team KPI by its scalar `owner` (the creator) would miss co-owners, so when
-  // a team-level owner filter is requested we match the array instead. This
-  // mirrors how the Dashboard's Team tab filters team KPIs by co-owner.
-  if (validated.owner) {
-    if (validated.kpiLevel === "team") where.ownerIds = { has: validated.owner };
-    else where.owner = validated.owner;
-  }
-  // Team filter semantics depend on kpiLevel:
-  //   - Team KPIs have KPI.teamId set → filter directly on that column.
-  //   - Individual KPIs have teamId=null → team membership is stored in
-  //     Membership.teamId. Resolve team → active member user IDs and filter
-  //     KPI.owner IN (...). Without this shim, "Individual KPI + Team filter"
-  //     always returned zero rows.
-  //   - When kpiLevel is not specified (rare on list pages), apply both
-  //     conditions as an OR so neither scope is hidden.
   // Team KPI multi-select: `teamIds=a,b,c` filters team KPIs to those teams.
-  // Non-admins have their team scope re-applied below (visibility), so this
-  // filter only widens/narrows within what they're already allowed to see.
   const teamIdsParam = searchParams.get("teamIds");
   const teamIdList = teamIdsParam ? teamIdsParam.split(",").filter(Boolean) : [];
 
-  if (validated.kpiLevel === "team" && teamIdList.length > 0) {
-    where.teamId = teamIdList.length === 1 ? teamIdList[0] : { in: teamIdList };
-  } else if (validated.teamId) {
-    if (validated.kpiLevel === "individual") {
-      const members = await db.orgMember.findMany({
-        where: { orgId, teamId: validated.teamId, status: "active" },
-        select: { userId: true },
-      });
-      const memberIds = members.map((m) => m.userId);
-      // Empty team → force empty result (filter to a sentinel that can't match)
-      where.owner = memberIds.length > 0 ? { in: memberIds } : "__no_team_members__";
-    } else if (validated.kpiLevel === "team") {
-      where.teamId = validated.teamId;
-    } else {
-      const members = await db.orgMember.findMany({
-        where: { orgId, teamId: validated.teamId, status: "active" },
-        select: { userId: true },
-      });
-      const memberIds = members.map((m) => m.userId);
-      where.OR = [
-        { teamId: validated.teamId },
-        ...(memberIds.length > 0 ? [{ owner: { in: memberIds } }] : []),
-      ];
-    }
-  }
-  if (validated.parentKPIId) where.parentKPIId = validated.parentKPIId;
-  if (validated.quarter) where.quarter = validated.quarter;
-  if (validated.year) where.year = validated.year;
-
-  // ── Row-level visibility ────────────────────────────────────────────────
-  // Admins see every KPI. Non-admins see only:
-  //   - Individual KPIs they own (KPI.owner === userId)
-  //   - Team KPIs under a team they belong to (member or head)
-  // The kpiLevel filter routes the visibility scope. When kpiLevel is not
-  // set, OR both conditions so neither scope is hidden by accident.
-  // Dashboard personal scope: KPIs the user owns across BOTH levels —
-  // individual (owner === me) ∪ team (ownerIds ∋ me). This is its own
-  // row-level filter, so it overrides the admin/non-admin visibility block
-  // below (an admin viewing "My Dashboard" still only sees their own rows).
-  if (scopeMine) {
-    where.OR = [
-      { kpiLevel: "individual", owner: userId },
-      { kpiLevel: "team", ownerIds: { has: userId } },
-    ];
-  }
-
-  const adminBypass = await isOrgAdmin(userId, orgId);
-  if (!adminBypass && !scopeMine) {
-    if (validated.kpiLevel === "individual") {
-      where.owner = userId;
-    } else if (validated.kpiLevel === "team") {
-      const myTeams = await getMyTeamIds(userId, orgId);
-      where.teamId = myTeams.length > 0 ? { in: myTeams } : "__no_team_membership__";
-    } else {
-      const myTeams = await getMyTeamIds(userId, orgId);
-      const ownerOr: Prisma.KPIWhereInput[] = [{ owner: userId }];
-      if (myTeams.length > 0) ownerOr.push({ teamId: { in: myTeams } });
-      // Compose with any existing OR (from the teamId branch above) by ANDing
-      // through AND[]. Otherwise just attach OR directly.
-      if (where.OR) {
-        where.AND = [{ OR: where.OR }, { OR: ownerOr }];
-        delete where.OR;
-      } else {
-        where.OR = ownerOr;
-      }
-    }
-  }
+  // Scope + trash + column filters + row-level visibility (orgId tenant filter
+  // included) live in the shared helper so the KPI export route enforces the
+  // exact same rules. Search + orderBy are layered on below.
+  const where = await buildKpiScopeWhere(
+    { orgId, userId },
+    {
+      status: validated.status,
+      kpiLevel: validated.kpiLevel,
+      owner: validated.owner,
+      teamId: validated.teamId,
+      teamIds: teamIdList,
+      parentKPIId: validated.parentKPIId,
+      quarter: validated.quarter,
+      year: validated.year,
+      includeDeleted,
+      scopeMine,
+    },
+  );
 
   if (validated.search) {
     // Global search across every visible KPI column. Names/text match directly;

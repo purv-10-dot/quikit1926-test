@@ -10,7 +10,7 @@ import { rateLimit, LIMITS } from "@/lib/api/rateLimit";
 import { getCurrentFiscalWeekFromDB } from "@/lib/utils/featureFlags";
 import { notifyPriorityAssignment } from "@/lib/services/priorityNotifications";
 import { findPriorityDuplicate, priorityDuplicateMessage } from "@/lib/api/priorityDuplicate";
-import { isOrgAdmin } from "@/lib/api/visibility";
+import { buildPriorityScopeWhere } from "@/lib/api/priorityListQuery";
 import { fetchAuditUserMap, decorateAudit } from "@/lib/api/auditUsers";
 import { searchUserIds, dateSearchConditions, numericSearchValue } from "@/lib/api/listSearch";
 
@@ -62,28 +62,12 @@ export const GET = auth.view(async ({ orgId, userId }, req) => {
   const statusFilter = searchParams.get("status") || undefined;
 
   const includeDeleted = searchParams.get("includeDeleted") === "true";
-  const where: Record<string, unknown> = { orgId };
-  where.deletedAt = includeDeleted ? { not: null } : null;
-  if (year) where.year = year;
-  if (quarter) where.quarter = quarter;
-  if (statusFilter) where.overallStatus = statusFilter;
-
-  // Row-level visibility: admins see all priorities, non-admins see only
-  // priorities they own. An explicit owner/team filter can only NARROW within
-  // that scope — a non-admin is always pinned to their own rows.
-  const admin = await isOrgAdmin(userId, orgId);
-  if (!admin) {
-    where.owner = userId;
-  } else if (ownerFilter) {
-    where.owner = ownerFilter; // owner filter takes precedence over team
-  } else if (teamFilter) {
-    const members = await db.orgMember.findMany({
-      where: { orgId, teamId: teamFilter, status: "active" },
-      select: { userId: true },
-    });
-    const memberIds = members.map((m) => m.userId);
-    where.owner = memberIds.length > 0 ? { in: memberIds } : "__no_team_members__";
-  }
+  // Scope + trash + filters + row-level visibility live in the shared helper so
+  // the Priority export route enforces identical rules. Search + orderBy below.
+  const where = (await buildPriorityScopeWhere(
+    { orgId, userId },
+    { year, quarter, status: statusFilter, owner: ownerFilter, teamId: teamFilter, includeDeleted },
+  )) as Record<string, unknown>;
 
   // Global search across every visible Priority column: name/description/notes,
   // owner + team + created-by/updated-by, start/end week numbers, weekly status

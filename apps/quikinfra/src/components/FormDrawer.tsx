@@ -192,8 +192,8 @@ export function NumberInput({
  * changes.
  */
 export function SelectInput({
-  value, onChange, options, placeholder, disabled, invalid, searchable, footer,
-}: { value: string; onChange: (v: string) => void; options: Array<{ value: string; label: string; disabled?: boolean }>; placeholder?: string; disabled?: boolean; invalid?: boolean;
+  value, onChange, options, placeholder, disabled, invalid, searchable, footer, size = "md",
+}: { value: string; onChange: (v: string) => void; options: Array<{ value: string; label: string; hint?: string; disabled?: boolean }>; placeholder?: string; disabled?: boolean; invalid?: boolean;
   /**
    * Show a search input at the top of the dropdown panel that filters
    * options by case-insensitive substring on label + value. Defaults to
@@ -204,6 +204,8 @@ export function SelectInput({
   searchable?: boolean;
   /** Optional footer rendered below the options list (e.g. “+ Add …”). */
   footer?: (helpers: { close: () => void }) => ReactNode;
+  /** Visual size of the trigger. `sm` matches compact `text-xs` table rows. */
+  size?: "sm" | "md";
 }) {
   const [open, setOpen] = useState(false);
   const [highlight, setHighlight] = useState<number>(-1);
@@ -245,7 +247,8 @@ export function SelectInput({
     return options.filter(
       (o) =>
         o.label.toLowerCase().includes(q) ||
-        o.value.toLowerCase().includes(q),
+        o.value.toLowerCase().includes(q) ||
+        (o.hint?.toLowerCase().includes(q) ?? false),
     );
   }, [options, query]);
 
@@ -456,8 +459,15 @@ export function SelectInput({
                               : "text-gray-700"
                       }`}
                     >
-                      <span className="flex-1 truncate">{o.label}</span>
-                      {isSelected && !isDisabled && <Check className="w-3.5 h-3.5 text-orange-600" />}
+                      <span className="flex-1 min-w-0">
+                        <span className="block truncate">{o.label}</span>
+                        {o.hint && (
+                          <span className="block truncate text-[11px] font-normal text-gray-400">
+                            {o.hint}
+                          </span>
+                        )}
+                      </span>
+                      {isSelected && !isDisabled && <Check className="w-3.5 h-3.5 shrink-0 text-orange-600" />}
                     </button>
                   );
                 })
@@ -483,13 +493,17 @@ export function SelectInput({
         onKeyDown={onTriggerKey}
         aria-haspopup="listbox"
         aria-expanded={open}
-        className={`${BASE_INPUT} bg-white text-left flex items-center gap-2 ${invalid ? INPUT_ERR : INPUT_OK}`}
+        className={`${
+          size === "sm"
+            ? "w-full px-2 py-1.5 rounded border text-xs focus:outline-none focus:ring-1 focus:border-transparent disabled:bg-gray-50 disabled:text-gray-500"
+            : BASE_INPUT
+        } bg-white text-left flex items-center gap-2 ${invalid ? INPUT_ERR : INPUT_OK}`}
       >
         <span className={`flex-1 truncate ${selected ? "text-gray-900" : "text-gray-400"}`}>
           {triggerLabel}
         </span>
         <ChevronDown
-          className={`w-4 h-4 shrink-0 text-gray-400 transition-transform ${open ? "rotate-180" : ""}`}
+          className={`${size === "sm" ? "w-3.5 h-3.5" : "w-4 h-4"} shrink-0 text-gray-400 transition-transform ${open ? "rotate-180" : ""}`}
         />
       </button>
       {panelNode}

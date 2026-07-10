@@ -1,4 +1,4 @@
-import { LOGIN_HREF } from "./login-href";
+import { LOGIN_HREF, SIGNUP_HREF } from "./login-href";
 
 /**
  * Public marketing nav for QuikCRM (crm.quikit.ai/).
@@ -25,6 +25,11 @@ export default function Nav() {
         </div>
         <a href={LOGIN_HREF} className="btn">
           Login <span className="dot">→</span>
+        </a>
+        {/* Secondary CTA — white/bordered pill. Inline color wins over the
+            `.nav a.btn { color:#fff }` rule so the label stays legible. */}
+        <a href={SIGNUP_HREF} className="btn btn-pill" style={{ color: "#000" }}>
+          Sign Up
         </a>
       </nav>
     </div>

@@ -17,14 +17,17 @@ function mapMemberSort(key: string, dir: SortDirection): Prisma.ClientMemberOrde
   if (key === "name") return { name: dir };
   if (key === "email") return { email: dir };
   if (key === "updatedAt") return { updatedAt: dir };
-  return { createdAt: key === "createdAt" ? dir : "asc" };
+  if (key === "createdAt") return { createdAt: dir };
+  // __default (no/invalid sortBy) → newest-first, so "Clear sort" surfaces the
+  // most recently added members at the top — consistent with KPI/Priority/WWW.
+  return { createdAt: "desc" };
 }
 
 /**
  * GET /api/client-meetings/members
  *   ?includeDeleted=true → return ONLY soft-deleted rows (trash view)
  *   ?sortBy=<col>&sortOrder=<asc|desc> → server-side sort (whitelist enforced).
- *     Falls back to the historical `createdAt asc` when omitted/invalid.
+ *     Falls back to `createdAt desc` (newest first) when omitted/invalid.
  */
 export const GET = withOrgAuth(async ({ orgId }, request) => {
   const sp = new URL(request.url).searchParams;

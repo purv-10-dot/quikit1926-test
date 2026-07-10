@@ -16,13 +16,16 @@ import { CategorySelect, ProjectedInput } from "./category";
 import { breakdownProjected } from "./modals";
 import { WithTooltip } from "./pickers";
 import type { FormData } from "../hooks/useOPSPForm";
-import type { PendingEdit } from "../lib/editLog";
+import { describeRowDeletion, type PendingEdit } from "../lib/editLog";
 
 interface Props {
   form: FormData;
   set: <K extends keyof FormData>(key: K, value: FormData[K], opts?: { skipLog?: boolean }) => void;
   /** Report the exact field the user edited (Projected/Category) for the change log. */
   logEdit?: (e: PendingEdit) => void;
+  /** Delete Goal row `index` + its bound Actions (QTR) row atomically (owned by
+   *  useOPSPForm so the Goals→Actions cascade is suppressed for the shift). */
+  onDeleteGoalRow: (index: number) => void;
   onExpandKeyInitiatives: () => void;
 }
 
@@ -41,6 +44,7 @@ export function GoalsSection({
   form,
   set,
   logEdit,
+  onDeleteGoalRow,
   onExpandKeyInitiatives,
 }: Props) {
   return (
@@ -130,9 +134,19 @@ export function GoalsSection({
                   type="button"
                   aria-label="Remove row"
                   onClick={() => {
-                    const next = [...form.goalRows];
-                    next.splice(i, 1);
-                    set("goalRows", next);
+                    // Log the removal as a distinct "row deleted" change (not a
+                    // scalar diff). On a finalized OPSP the diff-based logger
+                    // would otherwise misread the delete as a category edit on
+                    // the row that shifts up. See describeRowDeletion /
+                    // isRowDeletionField in lib/editLog (mirrors ActionsSection).
+                    logEdit?.(describeRowDeletion("goalRows", i, row));
+                    // Splice the Goal row AND its bound Actions (QTR) row in one
+                    // atomic, cascade-suppressed write (owned by useOPSPForm).
+                    // Doing it here via two set() calls would let the index-
+                    // aligned Goals→Actions cascade misread the positional shift
+                    // as an edit and wipe the following Action row (e.g. deleting
+                    // "Exit Revenue" also cleared "NPS"). See ProdBug-OPSP.
+                    onDeleteGoalRow(i);
                   }}
                   className="w-5 h-7 flex items-center justify-center text-gray-300 hover:text-red-500 hover:bg-red-50 rounded opacity-0 group-hover:opacity-100 transition-opacity"
                 >

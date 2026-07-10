@@ -239,6 +239,51 @@ describe("GET /api/settings/users", () => {
 });
 
 // ═══════════════════════════════════════════════
+// GET access filter — regression (list must mirror the app-access gate)
+//
+// The list may show ONLY users with an explicit QuikInfra grant (a
+// quikit.UserAppAccess row), exactly like QuikScale/QuikTrack. It must NOT
+// widen via a CnUserAppRole assignment or an org-admin membership role, and
+// it must FAIL CLOSED when the QuikInfra App registry row is missing.
+// Regression for the leak where QuikTrack-only members surfaced in QuikInfra.
+// ═══════════════════════════════════════════════
+
+describe("GET /api/settings/users — access filter (regression)", () => {
+  beforeEach(() => setAuth({ orgId: TEST_TENANT, userId: TEST_USER }));
+
+  it("gates the list on an explicit QuikInfra UserAppAccess grant", async () => {
+    await GET(reqGET(), { params: {} });
+    const where = db.orgMember.findMany.mock.calls[0][0].where;
+    expect(where.user.appAccess.some).toEqual({
+      orgId: TEST_TENANT,
+      appId: "app-quikinfra",
+    });
+  });
+
+  it("does NOT widen the list via CnUserAppRole or admin-tier membership", async () => {
+    await GET(reqGET(), { params: {} });
+    const where = db.orgMember.findMany.mock.calls[0][0].where;
+    // No OR doors — an org-admin membership role or a stray CnUserAppRole must
+    // not surface a user who lacks an explicit grant.
+    expect(where.OR).toBeUndefined();
+    const serialised = JSON.stringify(where);
+    expect(serialised).not.toContain("cnUserAppRoles");
+    expect(serialised).not.toContain("org_admin");
+  });
+
+  it("fails closed (empty, no DB query) when the app registry row is missing", async () => {
+    appIdRef.id = null;
+    const res = await GET(reqGET(), { params: {} });
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.total).toBe(0);
+    expect(body.data).toEqual([]);
+    // Guard returns before touching the membership table.
+    expect(db.orgMember.findMany).not.toHaveBeenCalled();
+  });
+});
+
+// ═══════════════════════════════════════════════
 // POST /api/settings/users — invite/create
 // ═══════════════════════════════════════════════
 

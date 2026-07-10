@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { Package } from "lucide-react";
-import { LOGIN_HREF } from "./login-href";
+import { LOGIN_HREF, SIGNUP_HREF } from "./login-href";
 
 export function Nav() {
   return (
@@ -17,12 +17,20 @@ export function Nav() {
           <a href="#lifecycle" className="hover:text-[var(--qa-ink)]">Lifecycle</a>
           <a href="#reports" className="hover:text-[var(--qa-ink)]">Reports</a>
         </nav>
-        <a
-          href={LOGIN_HREF}
-          className="qa-btn-primary rounded-lg px-4 py-2 text-sm font-semibold"
-        >
-          Log in
-        </a>
+        <div className="flex items-center gap-3">
+          <a
+            href={LOGIN_HREF}
+            className="qa-btn-primary rounded-lg px-4 py-2 text-sm font-semibold"
+          >
+            Log in
+          </a>
+          <a
+            href={SIGNUP_HREF}
+            className="rounded-lg border border-[var(--qa-border)] px-4 py-2 text-sm font-semibold text-[var(--qa-ink)] hover:bg-[var(--qa-bg-soft)]"
+          >
+            Sign Up
+          </a>
+        </div>
       </div>
     </header>
   );

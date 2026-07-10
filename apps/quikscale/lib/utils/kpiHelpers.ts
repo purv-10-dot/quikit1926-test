@@ -187,6 +187,30 @@ export function weeklyTargetForWeek(
   return (kpi.qtdGoal ?? kpi.target ?? 0) / weeksPerQuarter;
 }
 
+/**
+ * Weekly Goal for a specific week — the pure primitive behind the KPI table's
+ * "Weekly Goal" column, the Stats tile, and the export column, so all three
+ * agree. Uses the explicit `weeklyTargets[week]` when configured, otherwise the
+ * flat `(target ?? qtdGoal) / weeksPerQuarter` split.
+ *
+ * Fallback order is `target ?? qtdGoal` (NOT `qtdGoal ?? target` like
+ * `weeklyTargetForWeek`) to match `kpiStats.weeklyGoalFor`, which the table
+ * renders — the export previously emitted raw `qtdGoal` here (e.g. 1300 instead
+ * of 100), the bug this helper fixes.
+ */
+export function computeWeeklyGoal(
+  weeklyTargets: Record<string, unknown> | null | undefined,
+  target: number | null | undefined,
+  qtdGoal: number | null | undefined,
+  weekNumber: number,
+  weeksPerQuarter: number = 13,
+): number {
+  const raw = weeklyTargets?.[String(weekNumber)];
+  if (typeof raw === "number") return raw;
+  const total = target ?? qtdGoal ?? 0;
+  return total > 0 ? total / weeksPerQuarter : 0;
+}
+
 export function weekCellColors(
   val: number | null | undefined,
   qtdGoal: number | null | undefined,
