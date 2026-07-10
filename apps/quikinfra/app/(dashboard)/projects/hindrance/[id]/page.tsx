@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { useParams } from "next/navigation";
 import Link from "next/link";
 import { ArrowLeft } from "lucide-react";
+import { formatDateTimeIST } from "@/lib/format/datetime";
 
 interface Hind {
   id: string; hindranceDate: string; category: string; title: string; description: string | null;
@@ -32,7 +33,7 @@ export default function HindranceDetailPage() {
     { label: "End",           value: h.endDate ? new Date(h.endDate).toISOString().slice(0, 10) : "— ongoing" },
     { label: "Days Impacted", value: h.daysImpacted ?? "—" },
     { label: "Resolved By",   value: h.resolvedBy ?? "—" },
-    { label: "Resolved At",   value: h.resolvedAt ? new Date(h.resolvedAt).toLocaleString() : "—" },
+    { label: "Resolved At",   value: formatDateTimeIST(h.resolvedAt) },
   ];
 
   return (

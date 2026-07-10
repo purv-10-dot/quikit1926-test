@@ -355,7 +355,7 @@ export default function IndentsPage() {
               e.stopPropagation();
               setPeekTarget({ type: "pr", id: row.sourceMrId ?? "" });
             }}
-            className="font-mono text-xs text-indigo-600 hover:text-indigo-800 underline"
+            className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-orange-50 text-orange-700 text-[11px] font-medium hover:bg-orange-100 transition-colors"
             title="View PR details"
           >
             {row.sourceMrNumber}
@@ -394,7 +394,9 @@ export default function IndentsPage() {
     {
       key: "_actions",
       label: "Actions",
-      width: "100px",
+      width: "120px",
+      align: "right",
+      sortable: false,
       render: (row) => {
         const isDraft = row.status === "draft";
         return (

@@ -35,6 +35,7 @@ import { ComplianceDocumentDrawer } from "./documents/new/ComplianceDocumentDraw
 type TabKey = "transfers" | "compliance";
 
 interface TransferRow {
+  [key: string]: unknown;
   id: string;
   transferNumber: string;
   equipmentCode: string;
@@ -48,6 +49,7 @@ interface TransferRow {
 }
 
 interface DocRow {
+  [key: string]: unknown;
   id: string;
   equipmentCode: string;
   equipmentName: string;
@@ -87,8 +89,8 @@ export default function DeploymentPage() {
   const { data: summary } = useDeploymentSummary();
   const { data: docsResult, isLoading: docsLoading } = useEquipmentDocuments();
 
-  const transferRows: TransferRow[] = (transfersResult?.data ?? []) as TransferRow[];
-  const docRows: DocRow[] = (docsResult?.data ?? []) as DocRow[];
+  const transferRows: TransferRow[] = (transfersResult?.data ?? []) as unknown as TransferRow[];
+  const docRows: DocRow[] = (docsResult?.data ?? []) as unknown as DocRow[];
 
   const handleReceive = async (id: string) => {
     setActionMenu(null);

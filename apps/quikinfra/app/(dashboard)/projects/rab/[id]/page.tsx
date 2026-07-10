@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { useParams } from "next/navigation";
 import { DocDetailLayout, type LineCol } from "@/components/procurement/DocDetailLayout";
+import { formatDateTimeIST } from "@/lib/format/datetime";
 
 interface Line {
   id: string; cumulativeQtyDone: string; priorCumulativeQty: string; currentPeriodQty: string;
@@ -65,7 +66,7 @@ export default function RabDetail() {
       lineColumns={columns}
       lines={rab.lines}
       footer={rab.approvedAt ? (
-        <div className="text-xs text-gray-500">Approved by {rab.approvedBy} on {new Date(rab.approvedAt).toLocaleString()}</div>
+        <div className="text-xs text-gray-500">Approved by {rab.approvedBy} on {formatDateTimeIST(rab.approvedAt)}</div>
       ) : null}
     />
   );

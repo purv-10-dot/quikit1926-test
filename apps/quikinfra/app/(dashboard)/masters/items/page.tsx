@@ -75,6 +75,7 @@ function StockPinCell({
   currentStock: number;
 }) {
   const [open, setOpen] = useState(false);
+  const [dropUp, setDropUp] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string>("");
   const [data, setData] = useState<{
@@ -129,6 +130,14 @@ function StockPinCell({
         type="button"
         onClick={async () => {
           const next = !open;
+          if (next) {
+            // Flip the popover above the icon when there isn't enough room
+            // below (bottom rows would otherwise open under / past the table
+            // and get clipped). ~320px ≈ the popover's max height.
+            const rect = rootRef.current?.getBoundingClientRect();
+            const spaceBelow = rect ? window.innerHeight - rect.bottom : Infinity;
+            setDropUp(spaceBelow < 320);
+          }
           setOpen(next);
           if (next && !data && !loading) await load();
         }}
@@ -140,7 +149,11 @@ function StockPinCell({
       </button>
 
       {open ? (
-        <div className="absolute z-50 top-full right-0 mt-2 w-96 rounded-lg border border-gray-200 bg-white shadow-lg overflow-hidden">
+        <div
+          className={`absolute z-50 right-0 w-96 rounded-lg border border-gray-200 bg-white shadow-lg overflow-hidden ${
+            dropUp ? "bottom-full mb-2" : "top-full mt-2"
+          }`}
+        >
           <div className="flex items-center justify-between px-3 py-2 border-b border-gray-100">
             <div className="text-sm font-semibold text-gray-900">Stock by location &amp; project</div>
             <button type="button" onClick={() => setOpen(false)} className="p-1 rounded hover:bg-gray-100 text-gray-500">
@@ -345,7 +358,10 @@ export default function ItemsPage() {
           currentStock={(() => {
             const v = stockByItemId[row.id];
             const n = typeof v === "number" ? v : 0;
-            return Number.isFinite(n) ? n : 0;
+            // Never surface a negative balance in the master grid — a
+            // negative arises only from DPR over-consumption / reconciliation
+            // shortages against un-received stock; clamp to 0 for display.
+            return Number.isFinite(n) ? Math.max(0, n) : 0;
           })()}
         />
       ),

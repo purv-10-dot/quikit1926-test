@@ -1277,7 +1277,7 @@ export function DPRForm({ editData, embedded = false, onSaved }: DPRFormProps = 
                                   { value: "", label: "Self Work", hint: "Own workforce — no contractor" },
                                   ...projectWorkOrders.map((wo) => ({
                                     value: wo.id,
-                                    label: wo.woNumber,
+                                    label: wo.woNumber ?? wo.id,
                                     hint: wo.contractorName || "Unassigned contractor",
                                   })),
                                 ]}
