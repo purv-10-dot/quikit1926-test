@@ -13,7 +13,7 @@ import { FreezeIcon } from "@/components/ui/FreezeIcon";
 import { HorizontalScroller } from "@/components/ui/HorizontalScroller";
 import { isNearBottom } from "@/lib/utils/scroll";
 import { ResizeHandle as SharedResizeHandle } from "@/lib/hooks/useColumnResize";
-import { useCurrentWeek, useWeekLabels, useQuarterWeekCount } from "@/lib/hooks/useCurrentWeek";
+import { useCurrentWeek, useQtdReferenceWeek, useWeekLabels, useQuarterWeekCount } from "@/lib/hooks/useCurrentWeek";
 import { usePastWeekFlags } from "@/lib/hooks/useFeatureFlags";
 import { LogModal } from "./LogModal";
 import { ChangeHistoryPanel } from "./ChangeHistoryPanel";
@@ -51,6 +51,11 @@ interface Props {
   onPageChange?: (p: number) => void;
   onPageSizeChange?: (size: number) => void;
   onSort: (col: string, dir: "asc" | "desc") => void;
+  /** Reset sorting to the default (newest-first) order. Wired to the ColMenu's
+   *  "Clear sort" row / active-direction toggle. Callers implement this by
+   *  setting the backend sort key back to "" (no sort params sent → server
+   *  default order). Optional so read-only embeds can omit it. */
+  onClearSort?: () => void;
   onRefresh: () => void;
   onSelectionChange?: (ids: Set<string>) => void;
   clearSelectionTrigger?: number;
@@ -93,7 +98,7 @@ interface Props {
   numberFormat?: NumberFormat;
 }
 
-export function KPITable({ kpis: kpisAll, total, page, pageSize, year, quarter, onPageChange, onPageSizeChange, onSort, onRefresh, onSelectionChange, clearSelectionTrigger, onHiddenColsChange, showColTrigger, hideColumns, maxRows, readOnly, fillWidth, canDelete = true, canUpdate = true, sortBy, sortOrder, maxBodyHeight, hasMore, isFetchingMore, onLoadMore, numberFormat = "standard" }: Props) {
+export function KPITable({ kpis: kpisAll, total, page, pageSize, year, quarter, onPageChange, onPageSizeChange, onSort, onClearSort, onRefresh, onSelectionChange, clearSelectionTrigger, onHiddenColsChange, showColTrigger, hideColumns, maxRows, readOnly, fillWidth, canDelete = true, canUpdate = true, sortBy, sortOrder, maxBodyHeight, hasMore, isFetchingMore, onLoadMore, numberFormat = "standard" }: Props) {
   const kpis = maxRows != null ? kpisAll.slice(0, maxRows) : kpisAll;
   // Goal/value formatter. For a Currency KPI with a chosen scale it renders the
   // currency + scaled unit (₹4 Cr / $9 M); otherwise it's the plain compact
@@ -130,6 +135,10 @@ export function KPITable({ kpis: kpisAll, total, page, pageSize, year, quarter, 
 
   // Blocked-week detection: past weeks with no value show a red ✕
   const currentWeek = useCurrentWeek(year, quarter);
+  // QTD reference week — past/current/future aware (a fully-past quarter counts
+  // all its weeks in QTD, not weekCount-1). Feeds the QTD Goal / QTD Achieved
+  // columns; display logic keeps using `currentWeek`. See `qtdReferenceWeek`.
+  const qtdWeek = useQtdReferenceWeek(year, quarter);
   // DB-driven week labels (compact "22–28 Apr") indexed [week-1].
   // Falls back to legacy hardcoded labels while loading.
   const weekLabels = useWeekLabels(year, quarter);
@@ -193,7 +202,7 @@ export function KPITable({ kpis: kpisAll, total, page, pageSize, year, quarter, 
         kpi.divisionType === "Standalone" ? "Standalone" : "Cumulative";
       const stdProgress =
         progressDivisionType === "Standalone"
-          ? computeQtd(kpi, currentWeek, "Standalone", weekCount)
+          ? computeQtd(kpi, qtdWeek, "Standalone", weekCount)
           : null;
       const progressAchieved =
         stdProgress != null ? (stdProgress.qtdAchieved ?? 0) : (kpi.qtdAchieved ?? 0);
@@ -316,6 +325,8 @@ export function KPITable({ kpis: kpisAll, total, page, pageSize, year, quarter, 
                       <SortIndicator active={isSorted} direction={sortOrder} />
                       <ColMenu colKey={col}
                         onSort={sortable ? (d => onSort(SORT_KEYS[col], d)) : undefined}
+                        activeSort={isSorted ? (sortOrder ?? null) : null}
+                        onClearSort={sortable && onClearSort ? onClearSort : undefined}
                         onFreeze={() => handleFreezeCol(col)} onHide={() => handleHideCol(col)}
                         frozen={frozenUpTo === col}
                         showSort={sortable} />
@@ -524,7 +535,7 @@ export function KPITable({ kpis: kpisAll, total, page, pageSize, year, quarter, 
                   {/* QTD Goal — Σ weeklyTargets[1..currentWeek-1].
                       Falls back to kpi.qtdGoal when currentWeek is unresolvable. */}
                   {!localHideSet.has("qtdGoal") && (() => {
-                    const { qtdGoal, qtdAchieved } = computeQtd(kpi, currentWeek, progressDivisionType, weekCount);
+                    const { qtdGoal, qtdAchieved } = computeQtd(kpi, qtdWeek, progressDivisionType, weekCount);
                     return (
                       <>
                         <td className={tdClass("qtdGoal")} style={stickyStyle("qtdGoal", getColWidth("qtdGoal"))}>
@@ -566,7 +577,7 @@ export function KPITable({ kpis: kpisAll, total, page, pageSize, year, quarter, 
                       Use computeQtd so Standalone KPIs render the avg (not the server-stamped SUM). */}
                   {localHideSet.has("qtdGoal") && !localHideSet.has("qtdAchieved") && (() => {
                     const { qtdGoal: dQtdGoal, qtdAchieved: dQtdAchieved } =
-                      computeQtd(kpi, currentWeek, progressDivisionType, weekCount);
+                      computeQtd(kpi, qtdWeek, progressDivisionType, weekCount);
                     const hasAnyWeeklyValue = Object.values(weekMap).some(
                       wv => wv?.value != null,
                     );

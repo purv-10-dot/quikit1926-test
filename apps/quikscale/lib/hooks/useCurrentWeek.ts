@@ -1,7 +1,34 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { getCurrentFiscalWeekFromStart, resolveQuarterForDate, DEFAULT_WEEKS_PER_QUARTER, MAX_WEEKS_PER_QUARTER } from "@/lib/utils/fiscal";
+import {
+  getCurrentFiscalWeekFromStart,
+  qtdReferenceWeek,
+  resolveQuarterForDate,
+  alignToMeetingDay,
+  meetingDayIndex,
+  DEFAULT_WEEKS_PER_QUARTER,
+  MAX_WEEKS_PER_QUARTER,
+} from "@/lib/utils/fiscal";
+import { useCustomQuarterSettings, useWeeklyMeetingDay } from "@/lib/hooks/useFeatureFlags";
+
+/**
+ * Effective weekly meeting day for week alignment — the configured day when
+ * Custom Quarter Settings is ON, else `null`. A `null` result disables all
+ * meeting-day anchoring below, so with the toggle off these hooks behave
+ * exactly as they did before (legacy calendar weeks).
+ */
+function useEffectiveMeetingDay(): string | null {
+  const customOn = useCustomQuarterSettings();
+  const meetingDay = useWeeklyMeetingDay();
+  return customOn ? meetingDay : null;
+}
+
+/** Local-midnight Date from an ISO/date string (drops any time component). */
+function localMidnight(value: string): Date {
+  const d = new Date(value);
+  return new Date(d.getFullYear(), d.getMonth(), d.getDate());
+}
 
 interface QuarterRow {
   fiscalYear: number;
@@ -45,6 +72,7 @@ async function ensureLoaded() {
  */
 export function useCurrentWeek(year: number | null | undefined, quarter: string | null | undefined): number | null {
   const [week, setWeek] = useState<number | null>(null);
+  const meetingDay = useEffectiveMeetingDay();
 
   useEffect(() => {
     if (!year || !quarter) {
@@ -56,13 +84,13 @@ export function useCurrentWeek(year: number | null | undefined, quarter: string 
       await ensureLoaded();
       const match = cache?.find((q) => q.fiscalYear === year && q.quarter === quarter);
       if (match) {
-        setWeek(getCurrentFiscalWeekFromStart(match.startDate, rowWeekCount(match)));
+        setWeek(getCurrentFiscalWeekFromStart(match.startDate, rowWeekCount(match), meetingDay));
       } else {
         // Fallback: assume it's week 1 if we don't have data
         setWeek(1);
       }
     })();
-  }, [year, quarter]);
+  }, [year, quarter, meetingDay]);
 
   return week;
 }
@@ -89,6 +117,47 @@ export function useCurrentQuarter(year: number | null | undefined): "Q1" | "Q2" 
   }, [year]);
 
   return quarter;
+}
+
+/**
+ * Returns the QTD "reference week" for a (year, quarter) — the value to pass to
+ * `computeQtd`/`resolveProgress*` so quarter-to-date counts the correct number
+ * of completed weeks whether the quarter is past, current, or future (see
+ * `fiscal.qtdReferenceWeek`). Use this INSTEAD of `useCurrentWeek` for QTD math:
+ * a fully-past quarter returns `weekCount + 1` (all weeks complete) instead of
+ * the clamped `weekCount`, so its final week is no longer dropped from QTD.
+ *
+ * Returns null while loading. Not for display/highlighting — use
+ * `useCurrentWeek` for that.
+ */
+export function useQtdReferenceWeek(
+  year: number | null | undefined,
+  quarter: string | null | undefined,
+): number | null {
+  const [ref, setRef] = useState<number | null>(null);
+  const meetingDay = useEffectiveMeetingDay();
+
+  useEffect(() => {
+    if (!year || !quarter) {
+      setRef(null);
+      return;
+    }
+    (async () => {
+      await ensureLoaded();
+      const match = cache?.find((q) => q.fiscalYear === year && q.quarter === quarter);
+      if (!match) {
+        // Unknown quarter — treat as not-yet-started so QTD stays 0 rather than
+        // inventing a full-quarter total.
+        setRef(1);
+        return;
+      }
+      setRef(
+        qtdReferenceWeek(match.startDate, match.endDate, rowWeekCount(match), new Date(), meetingDay),
+      );
+    })();
+  }, [year, quarter, meetingDay]);
+
+  return ref;
 }
 
 /** Invalidate cache (call after quarter settings are changed). */
@@ -154,6 +223,7 @@ export function useWeekLabels(
   quarter: string | null | undefined,
 ): string[] {
   const [labels, setLabels] = useState<string[]>([]);
+  const meetingDay = useEffectiveMeetingDay();
 
   useEffect(() => {
     if (!year || !quarter) {
@@ -167,19 +237,26 @@ export function useWeekLabels(
         setLabels([]);
         return;
       }
-      const start = new Date(match.startDate);
+      // Custom Quarter Settings: anchor Week 1 on the meeting day and clamp the
+      // final week to the quarter end. Null meeting day → legacy calendar weeks.
+      const idx = meetingDayIndex(meetingDay);
+      const start = idx !== null
+        ? alignToMeetingDay(localMidnight(match.startDate), idx)
+        : new Date(match.startDate);
+      const qEnd = idx !== null ? localMidnight(match.endDate) : null;
       const out: string[] = [];
       const weekCount = rowWeekCount(match);
       for (let w = 1; w <= weekCount; w++) {
         const ws = new Date(start);
         ws.setDate(ws.getDate() + (w - 1) * 7);
-        const we = new Date(ws);
+        let we = new Date(ws);
         we.setDate(we.getDate() + 6);
+        if (qEnd && we.getTime() > qEnd.getTime()) we = qEnd;
         out.push(formatCompactWeekLabel(ws, we));
       }
       setLabels(out);
     })();
-  }, [year, quarter]);
+  }, [year, quarter, meetingDay]);
 
   return labels;
 }
@@ -198,6 +275,7 @@ export function useWeekDateRange(
   weekNumber: number | null | undefined,
 ): string | null {
   const [range, setRange] = useState<string | null>(null);
+  const meetingDay = useEffectiveMeetingDay();
 
   useEffect(() => {
     if (!year || !quarter || !weekNumber || weekNumber < 1 || weekNumber > MAX_WEEKS_PER_QUARTER) {
@@ -212,15 +290,24 @@ export function useWeekDateRange(
         setRange(null);
         return;
       }
-      const start = new Date(match.startDate);
+      // Custom Quarter Settings: anchor on the meeting day + clamp the final
+      // week to the quarter end. Null meeting day → legacy calendar weeks.
+      const idx = meetingDayIndex(meetingDay);
+      const start = idx !== null
+        ? alignToMeetingDay(localMidnight(match.startDate), idx)
+        : new Date(match.startDate);
       const weekStart = new Date(start);
       weekStart.setDate(weekStart.getDate() + (weekNumber - 1) * 7);
-      const weekEnd = new Date(weekStart);
+      let weekEnd = new Date(weekStart);
       weekEnd.setDate(weekEnd.getDate() + 6);
+      if (idx !== null) {
+        const qEnd = localMidnight(match.endDate);
+        if (weekEnd.getTime() > qEnd.getTime()) weekEnd = qEnd;
+      }
       const fmt = (d: Date) => d.toLocaleDateString("en-GB", { day: "numeric", month: "short" });
       setRange(`${fmt(weekStart)} – ${fmt(weekEnd)}`);
     })();
-  }, [year, quarter, weekNumber]);
+  }, [year, quarter, weekNumber, meetingDay]);
 
   return range;
 }

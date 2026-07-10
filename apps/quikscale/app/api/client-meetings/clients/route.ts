@@ -31,14 +31,17 @@ function mapClientSort(key: string, dir: SortDirection): Prisma.ClientOrderByWit
   if (key === "isActive") return { isActive: dir };
   if (key === "weeklyStartTime") return { weeklyStartTime: dir };
   if (key === "dailyStartTime") return { dailyStartTime: dir };
-  return { createdAt: key === "createdAt" ? dir : "asc" }; // default preserves the legacy order
+  if (key === "createdAt") return { createdAt: dir };
+  // __default (no/invalid sortBy) → newest-first, so "Clear sort" surfaces the
+  // most recently added clients at the top — consistent with KPI/Priority/WWW.
+  return { createdAt: "desc" };
 }
 
 /**
  * GET /api/client-meetings/clients
  *   ?includeDeleted=true → return ONLY soft-deleted rows (trash view).
  *   ?sortBy=<col>&sortOrder=<asc|desc> → server-side sort (whitelist enforced).
- *     Falls back to the historical `createdAt asc` when omitted/invalid.
+ *     Falls back to `createdAt desc` (newest first) when omitted/invalid.
  */
 export const GET = auth.view(async ({ orgId }, request) => {
   const sp = new URL(request.url).searchParams;

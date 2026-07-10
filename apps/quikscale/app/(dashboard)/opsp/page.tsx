@@ -9,7 +9,7 @@ import { OPSPOwnerNamesProvider } from "./components/pickers";
 import { FInput } from "./components/RichEditor";
 import { Card } from "./components/Card";
 import { populateCatCache } from "./components/category";
-import { ActionsModal, RocksModal, KeyThrustsModal, KeyInitiativesModal, AccountabilityModal, QuarterlyPrioritiesModal, actionsQtrHasErrors, actionsQtrRowHasError, actionsQtrErrors } from "./components/modals";
+import { ActionsModal, RocksModal, KeyThrustsModal, KeyInitiativesModal, AccountabilityModal, QuarterlyPrioritiesModal, actionsQtrHasErrors, actionsQtrRowHasError, actionsQtrRowHasValueError, actionsQtrErrors } from "./components/modals";
 import { Eye, Check, AlertTriangle, Loader2, History } from "lucide-react";
 import { fiscalYearLabel, getFiscalYear, getFiscalQuarter } from "@/lib/utils/fiscal";
 import { OPSPSetupWizard } from "./components/SetupWizard";
@@ -34,7 +34,7 @@ import { validateOPSP, backfillPeriods, categoryRowMissingProjected, type Valida
 import { useMyPermissions } from "@/lib/hooks/useMyPermissions";
 import { EditNoteCard } from "./components/EditNoteCard";
 import { OPSPHistoryDrawer } from "./components/OPSPHistoryDrawer";
-import { describeSetChange, describeArrChange, getFieldValue, applyFieldPath, type PendingEdit } from "./lib/editLog";
+import { describeSetChange, describeArrChange, getFieldValue, applyFieldPath, isRowDeletionField, type PendingEdit } from "./lib/editLog";
 import { isYearSelectable, isQuarterSelectable, firstSelectableQuarter } from "./lib/periodGating";
 import { useOpspAck } from "@/lib/hooks/useOpspAck";
 import { useCurrentQuarter } from "@/lib/hooks/useCurrentWeek";
@@ -71,6 +71,7 @@ export default function OPSPPage() {
     selectSectionUser,
     responsibleAdminName,
     completeSetup,
+    deleteGoalRow,
     save,
     setAutosaveEnabled,
   } = useOPSPForm({ urlYear, urlQuarter });
@@ -272,8 +273,42 @@ export default function OPSPPage() {
     highlightElRef.current = null;
     setAnchorRect(null);
   };
-  const highlightActive = () => {
-    const el = typeof document !== "undefined" ? document.activeElement : null;
+  // Resolve the anchor element for a field from its `data-opsp-field` node.
+  // Walks from the most specific path down to the row container so both
+  // `actionsQtr.0.category` (→ row `actionsQtr.0`) and scalar fields like
+  // `theme` line up. Projected edits hug the projected cell when present.
+  const anchorElForField = (field: string): HTMLElement | null => {
+    if (typeof document === "undefined") return null;
+    const parts = field.split(".");
+    for (let n = parts.length; n >= 1; n--) {
+      const sel = parts.slice(0, n).join(".");
+      const el = document.querySelector<HTMLElement>(`[data-opsp-field="${sel}"]`);
+      if (el) {
+        if (field.endsWith(".projected")) {
+          const cell = el.querySelector<HTMLElement>("[data-projected-cell]");
+          if (cell) return cell;
+        }
+        return el;
+      }
+    }
+    return null;
+  };
+  const highlightActive = (field?: string) => {
+    // Prefer a genuinely focused editable control — text inputs / textareas /
+    // rich-text (contentEditable) keep focus through the edit, so the card
+    // hugs the exact field. Custom dropdowns (Category / Owner) drop focus to
+    // <body> when an option is clicked, which would anchor the card to the
+    // top-left corner; fall back to the field's data-opsp-field container.
+    const active = typeof document !== "undefined" ? document.activeElement : null;
+    const isFormControl =
+      active instanceof HTMLElement &&
+      active !== document.body &&
+      (active.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(active.tagName));
+    const el = isFormControl
+      ? (active as HTMLElement)
+      : field
+        ? anchorElForField(field)
+        : null;
     if (!(el instanceof HTMLElement)) return;
     if (el !== highlightElRef.current) {
       clearHighlight();
@@ -344,6 +379,13 @@ export default function OPSPPage() {
     // Unindexed actionsQtr field (shouldn't happen) — fall back to the grid-wide
     // check to stay safe.
     if (!m) return actionsQtrHasErrors(formRef.current.actionsQtr, formRef.current.goalRows);
+    // Category selection is step 1 of filling a row (it resets Projected to
+    // empty). Don't block it — or show the "Projected value is required" error —
+    // just because Projected isn't entered yet; block only on genuine bad values.
+    // The following Projected edit is still gated by the full row check below.
+    if (/^actionsQtr\.\d+\.category$/.test(field)) {
+      return actionsQtrRowHasValueError(formRef.current.actionsQtr, formRef.current.goalRows, Number(m[1]));
+    }
     return actionsQtrRowHasError(formRef.current.actionsQtr, formRef.current.goalRows, Number(m[1]));
   };
 
@@ -363,8 +405,13 @@ export default function OPSPPage() {
   // A finalized edit is invalid (Save blocked) when an Actions (QTR) grid error
   // exists OR a Goals/Targets Projected was cleared. Drives the auto-commit
   // guard, the Save guard, and the EditNoteCard's disabled state.
-  const editInvalid = (field: string) =>
-    actionsEditInvalid(field) || goalsTargetsEditInvalid(field);
+  const editInvalid = (field: string) => {
+    // A grid-row removal is always committable — never gate a delete on the
+    // resulting rows' Projected state (deleting a category row with an empty
+    // Projected is allowed). See describeRowDeletion / isRowDeletionField.
+    if (isRowDeletionField(field)) return false;
+    return actionsEditInvalid(field) || goalsTargetsEditInvalid(field);
+  };
 
   // Merge consecutive edits to the SAME field (keep the baseline old value, update
   // the new). Switching to a different field auto-commits the previous one
@@ -387,7 +434,7 @@ export default function OPSPPage() {
     formSnapshotRef.current = formRef.current;
     pendingRef.current = desc;
     setPendingEdit(desc);
-    highlightActive();
+    highlightActive(desc.field);
   };
 
   // note === null → Cancel: discard the unsaved change (revert to snapshot).
@@ -1060,6 +1107,7 @@ export default function OPSPPage() {
               form={form}
               set={set}
               logEdit={logEdit}
+              onDeleteGoalRow={(i) => { if (!isLocked) deleteGoalRow(i); }}
               onExpandKeyInitiatives={() => setKeyInitiativesOpen(true)}
             />
           </div>

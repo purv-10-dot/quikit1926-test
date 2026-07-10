@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { createPortal } from "react-dom";
 import { X, Download } from "lucide-react";
 import { cn } from "../lib/utils";
 
@@ -57,7 +58,7 @@ export function ExportModal({
     }
   }, [open, defaultCheckedKeys]);
 
-  if (!open) return null;
+  if (!open || typeof document === "undefined") return null;
 
   const toggle = (k: string) =>
     setChecked((prev) => {
@@ -83,8 +84,11 @@ export function ExportModal({
     }
   };
 
-  return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
+  return createPortal(
+    // Portaled to <body> at z-[1000] so it always covers the dashboard header
+    // (which owns a z-[100] stacking context) regardless of where in the page
+    // tree the trigger is mounted.
+    <div className="fixed inset-0 z-[1000] flex items-center justify-center bg-black/40">
       <div className="bg-white rounded-xl shadow-2xl w-full max-w-lg max-h-[85vh] overflow-hidden flex flex-col">
         {/* Header */}
         <div className="flex items-center justify-between px-5 py-3 border-b border-gray-200">
@@ -212,6 +216,7 @@ export function ExportModal({
           </button>
         </div>
       </div>
-    </div>
+    </div>,
+    document.body,
   );
 }
