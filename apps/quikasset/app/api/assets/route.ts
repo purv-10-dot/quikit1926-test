@@ -4,6 +4,8 @@ import { Prisma } from "@quikit/database";
 import { db } from "@/lib/db";
 import { audit } from "@/lib/audit";
 import { withOrgAuthForResource } from "@/lib/api/withOrgAuth";
+import { userCan } from "@/lib/api/permissions";
+import { assignedAssetIdsForEmail } from "@/lib/api/assetScope";
 
 const auth = withOrgAuthForResource("Asset");
 
@@ -25,9 +27,23 @@ const createSchema = z.object({
   assetStatus: z.string().optional(),
 });
 
-export const GET = auth.view(async ({ orgId }) => {
+// Role-aware list. Callers with the `Asset:viewAll` capability (admin/asset
+// managers) get the full org register; everyone else is scoped to the assets
+// assigned to them. Scoping uses the email-match STOPGAP — see assetScope.ts.
+export const GET = auth.view(async ({ orgId, userId, userEmail }) => {
+  const canViewAll = await userCan(userId, orgId, "Asset", "viewAll");
+
+  const where: Prisma.AstAssetWhereInput = { orgId };
+  if (!canViewAll) {
+    const assignedIds = await assignedAssetIdsForEmail(orgId, userEmail);
+    if (assignedIds.length === 0) {
+      return NextResponse.json({ success: true, data: [] });
+    }
+    where.id = { in: assignedIds };
+  }
+
   const assets = await db.astAsset.findMany({
-    where: { orgId },
+    where,
     orderBy: { createdAt: "desc" },
     include: {
       baseCategory: true,

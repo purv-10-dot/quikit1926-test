@@ -24,7 +24,7 @@ export const RESOURCES = [
   "Settings",
 ] as const;
 
-export const ACTIONS = ["view", "create", "update", "delete"] as const;
+export const ACTIONS = ["view", "create", "update", "delete", "viewAll"] as const;
 
 export type Resource = (typeof RESOURCES)[number];
 export type Action = (typeof ACTIONS)[number];
@@ -48,6 +48,15 @@ const VIEW_ONLY: ReadonlySet<Resource> = new Set<Resource>([
 ]);
 
 /**
+ * Resources that support the `viewAll` capability — the right to see EVERY
+ * record org-wide, not just those scoped to the caller. Only `Asset` has this
+ * today: it separates "asset manager / admin (sees the full register)" from a
+ * plain member (sees only their assigned assets, enforced in the route layer).
+ * Held by admin/manager roles, never the default Member role.
+ */
+const VIEW_ALL_RESOURCES: ReadonlySet<Resource> = new Set<Resource>(["Asset"]);
+
+/**
  * True when (resource, action) is a real pair in this registry — respects the
  * VIEW_ONLY restriction (those resources only ever grant `view`). Used by the
  * role/extras save endpoints to drop stale/unknown pairs instead of failing the
@@ -55,6 +64,8 @@ const VIEW_ONLY: ReadonlySet<Resource> = new Set<Resource>([
  */
 export function isValidPermissionPair(resource: string, action: string): boolean {
   if (!isResource(resource) || !isAction(action)) return false;
+  // `viewAll` is a special capability — valid only on the resources that opt in.
+  if (action === "viewAll") return VIEW_ALL_RESOURCES.has(resource);
   if (VIEW_ONLY.has(resource)) return action === "view";
   return true;
 }
@@ -66,7 +77,11 @@ export function allPermissionPairs(): Array<{ resource: Resource; action: Action
     if (VIEW_ONLY.has(resource)) {
       out.push({ resource, action: "view" });
     } else {
-      for (const action of ACTIONS) out.push({ resource, action });
+      for (const action of ACTIONS) {
+        // `viewAll` only applies to opted-in resources — don't emit it everywhere.
+        if (action === "viewAll" && !VIEW_ALL_RESOURCES.has(resource)) continue;
+        out.push({ resource, action });
+      }
     }
   }
   return out;

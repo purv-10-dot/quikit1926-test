@@ -12,17 +12,23 @@ import { db } from "@/lib/db";
 import { allPermissionPairs, type Resource, type Action } from "@/lib/api/permissionsRegistry";
 import { getQuikAssetAppId } from "@/lib/api/permissions";
 
-/** Member role's curated default grants. */
+/**
+ * Member role's curated default grants (BRD Phase 0).
+ *
+ * A Member may only VIEW the assets assigned to them (row-scoping enforced in
+ * the route layer via `Asset:viewAll` — which Members deliberately do NOT hold)
+ * and see their own notifications. Everything else — the full register, other
+ * users' data, categories, assignments, repairs, reports, budgets, settings —
+ * is withheld. Asset-request capabilities will be added here when that feature
+ * lands (new `AssetRequest` resource).
+ *
+ * NOTE: seeding is additive-only (backfill never removes). Trimming this list
+ * does NOT revoke grants on orgs already seeded — run
+ * `scripts/trim-member-permissions.ts` to strip the legacy over-grants.
+ */
 const MEMBER_DEFAULT_GRANTS: Array<{ resource: Resource; action: Action }> = [
-  { resource: "Dashboard", action: "view" },
-  { resource: "Report", action: "view" },
-  { resource: "AuditLog", action: "view" },
+  { resource: "Asset", action: "view" },
   { resource: "Notification", action: "view" },
-  ...(["Asset", "Category", "Assignment", "Repair", "Replacement", "Employee"] as const).flatMap(
-    (resource) =>
-      (["view", "create", "update", "delete"] as const).map((action) => ({ resource, action })),
-  ),
-  { resource: "Budget", action: "view" },
 ];
 
 /* ───────────────────────── admin role ───────────────────────── */
