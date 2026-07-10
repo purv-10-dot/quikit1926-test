@@ -51,14 +51,14 @@ export default function TimesheetsPage() {
   return (
     <div>
       <TimeRecordsTabs />
-      <div className="flex items-center justify-between mb-6">
+      <div className="flex items-center justify-between mb-4">
         <div className="flex items-center gap-3">
-          <Calendar className="text-[#3b82f6]" />
-          <h1 className="font-serif-display text-3xl md:text-4xl font-bold text-gray-900">Timesheets</h1>
+          <Calendar className="text-[#22c55e]" />
+          <h1 className="text-base font-semibold text-gray-900">Timesheets</h1>
         </div>
         <button onClick={() => setShowCreate(true)}
           className="flex items-center gap-2 btn btn-primary">
-          <Plus size={16} /> New Timesheet
+          <Plus size={13} /> New Timesheet
         </button>
       </div>
 
@@ -71,14 +71,14 @@ export default function TimesheetsPage() {
               <div className="flex items-start justify-between mb-3">
                 <div>
                   <div className="flex items-center gap-2 mb-1">
-                    <h3 className="font-semibold text-gray-900">
+                    <h3 className="text-[13px] font-semibold text-gray-900">
                       {new Date(s.periodStart).toLocaleDateString("en-IN", { day: "numeric", month: "short" })} — {new Date(s.periodEnd).toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" })}
                     </h3>
-                    <span className="px-2 py-0.5 bg-purple-50 text-purple-700 rounded-full text-xs">{s.periodType}</span>
-                    <span className={clsx("px-2 py-0.5 rounded-full text-xs font-medium",
+                    <span className="px-2 py-0.5 bg-purple-50 text-purple-700 rounded-full text-[11px] font-medium">{s.periodType}</span>
+                    <span className={clsx("px-2 py-0.5 rounded-full text-[11px] font-medium",
                       s.status === "TsApproved" ? "bg-green-100 text-green-700" :
                       s.status === "TsRejected" ? "bg-red-100 text-red-700" :
-                      s.status === "TsSubmitted" ? "bg-[#dbeafe] text-[#2563eb]" : "bg-gray-100 text-gray-600")}>
+                      s.status === "TsSubmitted" ? "bg-[#dcfce7] text-[#16a34a]" : "bg-gray-100 text-gray-600")}>
                       {s.status.replace("Ts", "")}
                     </span>
                   </div>
@@ -89,13 +89,13 @@ export default function TimesheetsPage() {
                 </div>
                 <div className="flex items-center gap-1">
                   {s.status === "TsDraft" && (
-                    <button onClick={() => submitMut.mutate(s.id)} className="flex items-center gap-1 bg-[#16243A] text-white px-3 py-1.5 rounded-lg text-xs hover:bg-[#2563eb]">
-                      <Send size={12} /> Submit
+                    <button onClick={() => submitMut.mutate(s.id)} className="flex items-center gap-1 bg-green-600 text-white px-3 py-1.5 rounded-lg text-xs font-medium hover:bg-green-700">
+                      <Send size={13} /> Submit
                     </button>
                   )}
                   {s.status === "TsSubmitted" && (
                     <>
-                      <button onClick={() => approveMut.mutate({ id: s.id, action: "Approve" })} className="p-2 rounded border border-green-300 text-green-600 hover:bg-green-50"><Check size={14} /></button>
+                      <button onClick={() => approveMut.mutate({ id: s.id, action: "Approve" })} className="p-2 rounded border border-green-300 text-green-600 hover:bg-green-50"><Check size={12} /></button>
                       <button onClick={async () => {
                         const r = await dialog.promptText({
                           title: "Reject timesheet",
@@ -105,7 +105,7 @@ export default function TimesheetsPage() {
                           confirmLabel: "Reject",
                         });
                         if (r) approveMut.mutate({ id: s.id, action: "Reject", reason: r });
-                      }} className="p-2 rounded border border-red-300 text-red-600 hover:bg-red-50"><X size={14} /></button>
+                      }} className="p-2 rounded border border-red-300 text-red-600 hover:bg-red-50"><X size={12} /></button>
                     </>
                   )}
                 </div>
@@ -117,7 +117,7 @@ export default function TimesheetsPage() {
 
       <Modal open={showCreate} onClose={() => setShowCreate(false)} title="New Timesheet">
         <form onSubmit={(e) => { e.preventDefault(); createMut.mutate(form); }} className="space-y-4">
-          <div><label className="block text-sm font-medium text-gray-700 mb-1">Period Type</label>
+          <div><label className="block text-xs font-medium text-gray-700 mb-1">Period Type</label>
             <Select
               value={form.periodType}
               onChange={(v) => setForm({ ...form, periodType: v })}
@@ -128,19 +128,19 @@ export default function TimesheetsPage() {
               ]}
             /></div>
           <div className="grid grid-cols-2 gap-3">
-            <div><label className="block text-sm font-medium text-gray-700 mb-1">Period Start</label>
+            <div><label className="block text-xs font-medium text-gray-700 mb-1">Period Start</label>
               <input type="date" required value={form.periodStart} onChange={(e) => setForm({ ...form, periodStart: e.target.value })}
-                className="w-full border border-[var(--border)] rounded-lg px-3 py-2 text-sm" /></div>
-            <div><label className="block text-sm font-medium text-gray-700 mb-1">Period End</label>
+                className="w-full border border-[var(--border)] rounded-lg px-3 py-1.5 text-xs" /></div>
+            <div><label className="block text-xs font-medium text-gray-700 mb-1">Period End</label>
               <input type="date" required value={form.periodEnd} onChange={(e) => setForm({ ...form, periodEnd: e.target.value })}
-                className="w-full border border-[var(--border)] rounded-lg px-3 py-2 text-sm" /></div>
+                className="w-full border border-[var(--border)] rounded-lg px-3 py-1.5 text-xs" /></div>
           </div>
-          <div><label className="block text-sm font-medium text-gray-700 mb-1">Notes</label>
+          <div><label className="block text-xs font-medium text-gray-700 mb-1">Notes</label>
             <textarea value={form.notes} onChange={(e) => setForm({ ...form, notes: e.target.value })}
-              className="w-full border border-[var(--border)] rounded-lg px-3 py-2 text-sm" rows={2} /></div>
+              className="w-full border border-[var(--border)] rounded-lg px-3 py-1.5 text-xs" rows={2} /></div>
           <div className="flex justify-end gap-2 pt-2">
-            <button type="button" onClick={() => setShowCreate(false)} className="px-4 py-2 border border-[var(--border)] rounded-lg text-sm">Cancel</button>
-            <button type="submit" className="px-4 py-2 bg-[#16243A] text-white rounded-lg text-sm font-medium hover:bg-[#2563eb]">Create</button>
+            <button type="button" onClick={() => setShowCreate(false)} className="px-3 py-1.5 border border-[var(--border)] rounded-lg text-xs font-medium">Cancel</button>
+            <button type="submit" className="px-3 py-1.5 bg-green-600 text-white rounded-lg text-xs font-medium hover:bg-green-700">Create</button>
           </div>
         </form>
       </Modal>

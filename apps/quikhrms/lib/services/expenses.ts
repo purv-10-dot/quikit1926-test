@@ -142,6 +142,129 @@ export async function validateAgainstPolicy(
   return { ok: violations.length === 0, violations };
 }
 
+// ─── Approval-chain eligibility ────────────────────────────────────────
+// Shared by the approve route (gate a decision) and the pending-approvals
+// listing (count claims awaiting a given approver) so both read the chain the
+// same way.
+
+export type ExpenseApproverType = "ReportingManager" | "DepartmentHead" | "HR" | "Finance" | "Custom";
+
+export interface ExpenseChainLevel {
+  level: number;
+  approverType: ExpenseApproverType;
+  approverId?: string;
+  maxAmount?: number;
+}
+
+export const EXPENSE_APPROVER_LABEL: Record<ExpenseApproverType, string> = {
+  ReportingManager: "the employee's reporting manager",
+  DepartmentHead: "the department head",
+  HR: "an HR admin/manager",
+  Finance: "Finance",
+  Custom: "the designated approver",
+};
+
+/** Does the caller satisfy the approverType required at this chain level? */
+export function isEligibleExpenseApprover(
+  level: ExpenseChainLevel,
+  roles: string[],
+  callerEmployeeId: string | null,
+  claimInfo: { reportingManagerId: string | null; departmentHeadId: string | null },
+): boolean {
+  switch (level.approverType) {
+    case "ReportingManager":
+      return !!callerEmployeeId && callerEmployeeId === claimInfo.reportingManagerId;
+    case "DepartmentHead":
+      return !!callerEmployeeId && callerEmployeeId === claimInfo.departmentHeadId;
+    case "HR":
+      return roles.includes("admin");
+    case "Finance":
+      return roles.includes("admin");
+    case "Custom":
+      return !!callerEmployeeId && !!level.approverId && callerEmployeeId === level.approverId;
+    default:
+      return false;
+  }
+}
+
+/** Claim statuses that can still receive an approval action. */
+const ACTIONABLE_CLAIM_STATUSES = ["Submitted", "ManagerApproved", "FinanceApproved"] as const;
+
+/**
+ * List the org's expense claims currently awaiting a decision from this caller.
+ *
+ * Mirrors the gate in the approve route: for each actionable claim we compute the
+ * current chain level (approvals so far + 1) and test the caller against that
+ * level's `approverType`. Claims with no chain, or no config for the current
+ * level, stay permissive (any approver) — matching the route's legacy fallback.
+ * super_admin sees every actionable claim.
+ */
+export interface ClaimRequester {
+  id: string;
+  firstName: string;
+  lastName: string;
+  profilePhoto: string | null;
+}
+
+export async function claimsAwaitingApprover(
+  orgId: string,
+  opts: { callerEmployeeId: string | null; roles: string[]; isSuper: boolean },
+): Promise<{ id: string; status: string; totalAmount: number; requester: ClaimRequester | null }[]> {
+  const claims = await prisma.expenseClaim.findMany({
+    where: { orgId, deletedAt: null, status: { in: [...ACTIONABLE_CLAIM_STATUSES] as never } },
+    orderBy: { createdAt: "desc" },
+    select: {
+      id: true,
+      status: true,
+      totalAmount: true,
+      policySnapshot: true,
+      policy: { select: { approvalChain: true } },
+      employee: {
+        select: {
+          id: true,
+          firstName: true,
+          lastName: true,
+          profilePhoto: true,
+          reportingManagerId: true,
+          department: { select: { headId: true } },
+        },
+      },
+      _count: { select: { approvals: true } },
+    },
+  });
+
+  const { callerEmployeeId, roles, isSuper } = opts;
+  return claims
+    .filter((c) => {
+      if (isSuper) return true;
+      const snap = c.policySnapshot as { approvalChain?: ExpenseChainLevel[] } | null;
+      const chain: ExpenseChainLevel[] =
+        (snap?.approvalChain as ExpenseChainLevel[] | undefined) ??
+        ((c.policy?.approvalChain as ExpenseChainLevel[] | null) ?? []);
+      if (chain.length === 0) return true; // legacy: any approver
+      const currentLevel = c._count.approvals + 1;
+      const levelCfg = chain.find((l) => l.level === currentLevel);
+      if (!levelCfg) return true; // no config for this level → permissive (matches approve route)
+      return isEligibleExpenseApprover(levelCfg, roles, callerEmployeeId, {
+        reportingManagerId: c.employee?.reportingManagerId ?? null,
+        departmentHeadId: c.employee?.department?.headId ?? null,
+      });
+    })
+    .map((c) => ({
+      id: c.id,
+      status: c.status,
+      totalAmount: Number(c.totalAmount),
+      requester: c.employee
+        ? {
+            id: c.employee.id,
+            firstName: c.employee.firstName,
+            lastName: c.employee.lastName,
+            profilePhoto: c.employee.profilePhoto,
+          }
+        : null,
+    }));
+}
+
 export function nextStatusAfterApproval(
   currentStatus: string,
   action: "ExpApproved" | "ExpRejected" | "Escalated",

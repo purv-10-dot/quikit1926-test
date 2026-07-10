@@ -4,6 +4,7 @@ import { withAuth } from "@/lib/with-auth";
 import { successResponse, internalError } from "@/lib/api-response";
 import { APP_ID } from "@/lib/rbac/registry";
 import { widgetsForRole } from "@/lib/rbac/widgets";
+import { isValidNavKey } from "@/lib/rbac/permissions-tree";
 
 /**
  * GET /api/v1/hrms/dashboard/config
@@ -45,9 +46,23 @@ export const GET = withAuth(async (_req: NextRequest, { orgId, userId, roleCode,
             }));
         }
 
+        // Navigation allow-list for this role (default-allow: an empty list
+        // means "not configured" → the sidebar shows everything the role's
+        // permissions allow). Only when a role has explicitly saved nav keys
+        // does the sidebar restrict tabs to that set.
+        const navRows = role
+          ? await prisma.hrmsRoleNavigation.findMany({
+              where: { roleId: role.id },
+              select: { navKey: true },
+            })
+          : [];
+
         return {
           roleMeta: role ? { code: role.name, name: role.name } : null,
           widgets: widgetsForRole(role?.name),
+          // Ignore keys from a prior nav scheme — a role whose saved keys are
+          // all stale collapses to "unconfigured" (default-allow shows all).
+          navKeys: navRows.map((n) => n.navKey).filter(isValidNavKey),
           employee: emp ? {
             id: emp.id,
             name: `${emp.firstName} ${emp.lastName}`.trim(),
@@ -62,6 +77,7 @@ export const GET = withAuth(async (_req: NextRequest, { orgId, userId, roleCode,
       role: cached.roleMeta ?? { code: roleCode ?? "unknown", name: roleCode ?? "Unknown" },
       widgets: cached.widgets,
       permissions,
+      navKeys: cached.navKeys,
       employee: cached.employee,
     });
   } catch (error) {

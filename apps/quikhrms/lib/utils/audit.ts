@@ -17,6 +17,16 @@ interface AuditParams {
   request?: Request;
   before?: Record<string, unknown>;
   after?: Record<string, unknown>;
+  /**
+   * Actor attribution (P2-1). Pass the route's AuthContext (it structurally
+   * satisfies this) or just the actor fields. When `actorType === "ai_agent"`
+   * — i.e. the AI Runtime acted on the employee's behalf via withServiceAuth —
+   * the agent identity is stamped into metadata as
+   * `metadata.actor = { type: "ai_agent", agentId }`, so AI-triggered
+   * mutations are distinguishable from human ones in the audit trail. `userId`
+   * remains the acting employee either way. Omit for normal user actions.
+   */
+  actor?: { actorType?: "user" | "ai_agent"; actingAgentId?: string };
 }
 
 function extractIp(req: Request): string | undefined {
@@ -53,6 +63,16 @@ export async function createAuditLog(params: AuditParams): Promise<void> {
       changes = { ...changes, _diff: diff(params.before, params.after) };
     }
 
+    // Stamp agent attribution into metadata for AI-triggered mutations (P2-1),
+    // leaving normal user actions' metadata untouched.
+    let metadata = params.metadata;
+    if (params.actor?.actorType === "ai_agent") {
+      metadata = {
+        ...metadata,
+        actor: { type: "ai_agent", agentId: params.actor.actingAgentId ?? "unknown-agent" },
+      };
+    }
+
     await prisma.hrmsAuditLog.create({
       data: {
         orgId: params.orgId,
@@ -61,7 +81,7 @@ export async function createAuditLog(params: AuditParams): Promise<void> {
         entityType: params.entityType,
         entityId: params.entityId,
         changes: changes ? JSON.parse(JSON.stringify(changes)) : undefined,
-        metadata: params.metadata ? JSON.parse(JSON.stringify(params.metadata)) : undefined,
+        metadata: metadata ? JSON.parse(JSON.stringify(metadata)) : undefined,
         ipAddress: ip,
         userAgent: ua ?? undefined,
       },

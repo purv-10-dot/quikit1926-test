@@ -14,9 +14,9 @@ export function ExpenseTabs() {
   const canReadAll = isSuper || permissions.includes("hrms.expense.read");
 
   const tabs = [
-    { href: "/expenses", label: "Claims", icon: <Receipt size={14} />, show: true },
-    { href: "/expenses/policies", label: "Policies", icon: <ShieldCheck size={14} />, show: canManage },
-    { href: "/expenses/reports", label: "Reports", icon: <FileBarChart size={14} />, show: canReadAll },
+    { href: "/expenses", label: "Claims", icon: <Receipt size={13} />, show: true },
+    { href: "/expenses/policies", label: "Policies", icon: <ShieldCheck size={13} />, show: canManage },
+    { href: "/expenses/reports", label: "Reports", icon: <FileBarChart size={13} />, show: canReadAll },
   ];
 
   return (
@@ -30,9 +30,9 @@ export function ExpenseTabs() {
             key={t.href}
             href={t.href}
             className={clsx(
-              "inline-flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-semibold transition-all",
+              "inline-flex items-center gap-2 px-4 py-2 rounded-lg text-[13px] font-semibold transition-all",
               active
-                ? "bg-[#16243A] text-white shadow-sm"
+                ? "bg-green-600 text-white shadow-sm"
                 : "text-gray-600 hover:bg-gray-50 hover:text-gray-900",
             )}
           >

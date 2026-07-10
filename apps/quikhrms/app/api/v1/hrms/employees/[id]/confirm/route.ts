@@ -1,12 +1,12 @@
 import { NextRequest } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { withAuth, invalidatePermissionCache } from "@/lib/with-auth";
-import { inviteImportedEmployees } from "@/lib/services/invitation";
+import { provisionCentralInvite } from "@/lib/services/invitation";
 import { successResponse, notFound, validationError, conflict, internalError } from "@/lib/api-response";
 import { confirmEmploymentSchema } from "@/lib/validations/provisions";
 import { createAuditLog } from "@/lib/utils/audit";
 import { fireWorkflow } from "@/lib/workflows/executor";
-import { queueEmail } from "@/lib/services/mailer";
+import { resolveAndSend } from "@/lib/email/resolve";
 import { buildConfirmationEmail } from "@/lib/email-templates/confirmation";
 
 /**
@@ -94,7 +94,7 @@ export const POST = withAuth(async (req: NextRequest, { orgId, userId }, params)
           where: { orgId },
           select: { companyName: true },
         });
-        const { subject, html } = buildConfirmationEmail({
+        const confirmData = {
           employeeName: `${employee.firstName} ${employee.lastName}`.trim(),
           employeeCode: employee.employeeCode,
           jobTitle: employee.jobTitle,
@@ -115,9 +115,31 @@ export const POST = withAuth(async (req: NextRequest, { orgId, userId }, params)
           effectiveDate: confirmDate.toLocaleDateString("en-IN", { day: "2-digit", month: "long", year: "numeric" }),
           probationNoticeDays: 15,
           confirmedNoticePeriodMonths: Math.max(1, Math.round((employee.noticePeriodDays || tenantSettings?.noticePeriodDays || 60) / 30)),
-        });
+        };
         // emailSent = queued; the email worker handles delivery + retries.
-        await queueEmail(orgId, { to: employee.workEmail, subject, html, kind: "employee.confirmation" });
+        await resolveAndSend(orgId, {
+          key: "employee.confirmation",
+          to: employee.workEmail,
+          vars: {
+            employeeName: confirmData.employeeName,
+            employeeCode: confirmData.employeeCode,
+            jobTitle: confirmData.jobTitle ?? "",
+            designation: confirmData.designation ?? "",
+            department: confirmData.department ?? "",
+            dateOfJoining: confirmData.dateOfJoining,
+            confirmationDate: confirmData.confirmationDate,
+            probationMonths: confirmData.probationMonths ?? "",
+            managerName: confirmData.managerName ?? "",
+            nextReviewDate: confirmData.nextReviewDate ?? "",
+            revisedCTC: confirmData.revisedCTC != null ? `₹${Number(confirmData.revisedCTC).toLocaleString("en-IN")}` : "",
+            revisedDesignation: confirmData.revisedDesignation ?? "",
+            effectiveDate: confirmData.effectiveDate,
+            probationNoticeDays: confirmData.probationNoticeDays,
+            confirmedNoticePeriodMonths: confirmData.confirmedNoticePeriodMonths,
+            companyName: confirmData.companyName,
+          },
+          fallback: () => buildConfirmationEmail(confirmData),
+        });
         emailSent = true;
       } catch (e) {
         emailError = e instanceof Error ? e.message : "Unknown email error";
@@ -135,25 +157,32 @@ export const POST = withAuth(async (req: NextRequest, { orgId, userId }, params)
       },
     });
 
-    // ── Activation email ────────────────────────────────────────────
+    // ── Activation via central QuikIT auth ──────────────────────────
     // This is the moment the employee gets their login credentials. Onboard
     // routes intentionally don't send the email; HR finishes the checklist,
-    // then confirming employment triggers the invite. The accept flow sets
-    // a password and routes them to /login (no auto sign-in).
+    // then confirming employment triggers the invite. Mirrors the Invite Users
+    // flow: provision the person centrally (QuikIT member + temp password /
+    // accept token), persist the token on a Pending invitation, then email the
+    // set-password link. Only fires when they don't already have a password.
     let activationQueued = false;
     let activationError: string | null = null;
-    if (!employee.passwordHash) {
+    if (!employee.passwordHash && employee.workEmail) {
       try {
-        const r = await inviteImportedEmployees(orgId, userId, [{
-          id: employee.id,
-          workEmail: employee.workEmail,
+        // Provision centrally (central creates the login account AND sends the
+        // invite/set-password email) + record the local invitation. HRMS never
+        // sends this email itself.
+        const invite = await provisionCentralInvite({
+          orgId,
+          invitedBy: userId,
+          email: employee.workEmail,
           firstName: employee.firstName,
           lastName: employee.lastName,
-          roleId: null,
-        }]);
-        activationQueued = r.queued > 0;
+          employeeId: employee.id,
+        });
+        activationQueued = invite.ok;
+        if (!invite.ok) activationError = invite.error ?? "Central provisioning unavailable";
       } catch (e) {
-        activationError = e instanceof Error ? e.message : "Could not queue activation email";
+        activationError = e instanceof Error ? e.message : "Could not send activation invite";
         console.error("[confirm-employment] activation invite failed:", e);
       }
     }

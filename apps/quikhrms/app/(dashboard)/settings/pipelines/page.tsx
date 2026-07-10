@@ -50,7 +50,7 @@ const STAGE_CATALOG: { value: string; label: string; description?: string }[] = 
   { value: "JoiningLetter", label: "Joining Letter", description: "Issue appointment / joining letter" },
 ];
 
-const REQUIRED_STAGES = ["Screening", "Offer", "Hired"] as const;
+const REQUIRED_STAGES = ["Screening", "HRInterview", "Offer", "Hired"] as const;
 const isRequiredStage = (name: string) => REQUIRED_STAGES.some((r) => r.toLowerCase() === name.toLowerCase());
 
 function inferTemplate(name: string): MailTemplate {
@@ -127,6 +127,7 @@ export default function PipelinesPage() {
   const openCreate = () => {
     const seed: StageConfig[] = [
       { name: "Screening", sendMail: false, mailTemplate: null },
+      { name: "HRInterview", sendMail: false, mailTemplate: "interview" },
       { name: "Offer", sendMail: false, mailTemplate: "offer-branded" },
       { name: "Hired", sendMail: false, mailTemplate: "welcome" },
     ];
@@ -138,10 +139,13 @@ export default function PipelinesPage() {
   const openEdit = (p: Pipeline) => {
     const stages = p.stages.map((s) => ({ ...s }));
     for (const req of REQUIRED_STAGES) {
-      if (!stages.some((s) => s.name.toLowerCase() === req.toLowerCase())) {
-        if (req === "Screening") stages.unshift({ name: req, sendMail: false, mailTemplate: inferTemplate(req) });
-        else stages.push({ name: req, sendMail: false, mailTemplate: inferTemplate(req) });
-      }
+      if (stages.some((s) => s.name.toLowerCase() === req.toLowerCase())) continue;
+      const cfg = { name: req, sendMail: false, mailTemplate: inferTemplate(req) };
+      if (req === "Screening") stages.unshift(cfg);
+      else if (req === "HRInterview") {
+        const offerIdx = stages.findIndex((s) => /^(offer|hired)$/i.test(s.name));
+        if (offerIdx >= 0) stages.splice(offerIdx, 0, cfg); else stages.push(cfg);
+      } else stages.push(cfg);
     }
     setForm({ name: p.name, stages, isDefault: p.isDefault });
     setNewStage("");
@@ -210,14 +214,14 @@ export default function PipelinesPage() {
 
   return (
     <div>
-      <div className="flex items-center justify-between mb-6">
+      <div className="flex items-center justify-between mb-4">
         <div>
-          <h1 className="font-serif-display text-3xl md:text-4xl font-bold text-gray-900">Hiring Pipelines</h1>
-          <p className="text-sm text-gray-500 mt-1">Define stages. Toggle auto-mail per stage. Mark one as default.</p>
+          <h1 className="text-base font-semibold text-gray-900">Hiring Pipelines</h1>
+          <p className="text-xs text-gray-500 mt-1">Define stages. Toggle auto-mail per stage. Mark one as default.</p>
         </div>
         <button onClick={openCreate}
-          className="inline-flex items-center gap-1.5 bg-[#16243A] hover:bg-[#1E3354] text-white px-5 py-2.5 rounded-lg text-sm font-semibold shadow-sm">
-          <Plus size={14} /> New Pipeline
+          className="inline-flex items-center gap-1.5 bg-green-600 hover:bg-green-700 text-white px-3 py-1.5 rounded-lg text-xs font-medium shadow-sm">
+          <Plus size={13} /> New Pipeline
         </button>
       </div>
 
@@ -229,9 +233,9 @@ export default function PipelinesPage() {
         <div className="space-y-3">
           {pipelines.map((p) => (
             <div key={p.id} className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
-              <div className="flex items-center justify-between px-5 py-3 border-b border-gray-100 bg-gradient-to-r from-slate-50 to-white">
+              <div className="flex items-center justify-between px-4 py-3 border-b border-gray-100 bg-gradient-to-r from-slate-50 to-white">
                 <div className="flex items-center gap-2">
-                  <h3 className="font-semibold text-gray-900">{p.name}</h3>
+                  <h3 className="text-[13px] font-semibold text-gray-900">{p.name}</h3>
                   {p.isDefault && (
                     <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-semibold bg-amber-50 text-amber-700 ring-1 ring-amber-200">
                       <Star size={10} className="fill-current" /> Default
@@ -247,7 +251,7 @@ export default function PipelinesPage() {
                     </button>
                   )}
                   <button onClick={() => openEdit(p)}
-                    className="inline-flex items-center gap-1 px-2.5 py-1 rounded-md text-[11px] font-semibold bg-[#dbeafe] text-[#2563eb] ring-1 ring-[#bfdbfe] hover:bg-[#dbeafe] shadow-sm">
+                    className="inline-flex items-center gap-1 px-2.5 py-1 rounded-md text-[11px] font-semibold bg-[#dcfce7] text-[#16a34a] ring-1 ring-[#bbf7d0] hover:bg-[#dcfce7] shadow-sm">
                     <Pencil size={11} /> Edit
                   </button>
                   {(() => {
@@ -267,23 +271,23 @@ export default function PipelinesPage() {
                             : "bg-red-50 text-red-700 ring-1 ring-red-200 hover:bg-red-100")}>
                         <Trash2 size={11} /> Delete
                         {inUseCount > 0 && !p.isDefault && (
-                          <span className="ml-1 px-1.5 py-0.5 rounded-full bg-amber-100 text-amber-800 text-[9px]">{inUseCount} in use</span>
+                          <span className="ml-1 px-1.5 py-0.5 rounded-full bg-amber-100 text-amber-800 text-[10px]">{inUseCount} in use</span>
                         )}
                       </button>
                     );
                   })()}
                 </div>
               </div>
-              <div className="flex flex-wrap items-center gap-1.5 px-5 py-4">
+              <div className="flex flex-wrap items-center gap-1.5 px-4 py-4">
                 {p.stages.map((s, i) => (
                   <span key={`${p.id}-${i}`} className="inline-flex items-center gap-1.5">
                     <span className={clsx(
-                      "inline-flex items-center gap-1 px-2.5 py-1 rounded-md text-xs font-medium ring-1",
+                      "inline-flex items-center gap-1 px-2.5 py-1 rounded-md text-[11px] font-medium ring-1",
                       s.sendMail
                         ? "bg-emerald-50 text-emerald-700 ring-emerald-300"
-                        : "bg-[#dbeafe] text-[#2563eb] ring-[#3b82f6]")}>
+                        : "bg-[#dcfce7] text-[#16a34a] ring-[#22c55e]")}>
                       <span className={clsx("w-4 h-4 rounded-full bg-white text-[10px] font-bold inline-flex items-center justify-center ring-1",
-                        s.sendMail ? "ring-emerald-400 text-emerald-700" : "ring-[#3b82f6] text-[#3b82f6]")}>{i + 1}</span>
+                        s.sendMail ? "ring-emerald-400 text-emerald-700" : "ring-[#22c55e] text-[#22c55e]")}>{i + 1}</span>
                       {s.name.replace(/([A-Z])/g, " $1").trim()}
                       {s.sendMail && <Mail size={10} className="ml-0.5" />}
                     </span>
@@ -298,12 +302,12 @@ export default function PipelinesPage() {
 
       {/* Create / Edit modal */}
       <Modal open={modal.open} onClose={() => setModal({ open: false, item: null })} title={modal.item ? "Edit Pipeline" : "New Pipeline"} size="xl">
-        <form onSubmit={handleSubmit} className="space-y-5">
+        <form onSubmit={handleSubmit} className="space-y-4">
           <div>
             <label className="block text-xs font-medium text-gray-600 mb-1">Pipeline Name <span className="text-red-500">*</span></label>
             <input type="text" value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })}
               placeholder="e.g. Engineering Hiring Pipeline"
-              className="w-full border border-[var(--border)] rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-[#16243A]" />
+              className="w-full border border-[var(--border)] rounded-lg px-3 py-2 text-xs focus:outline-none focus:ring-1 focus:ring-[#166534]" />
           </div>
 
           <div>
@@ -320,8 +324,8 @@ export default function PipelinesPage() {
                   <div key={i} className="bg-slate-50 border border-slate-200 rounded-lg px-3 py-2.5">
                     <div className="flex items-center gap-2">
                       <GripVertical size={14} className="text-slate-400" />
-                      <span className="w-6 h-6 rounded-full bg-[#dbeafe] text-[#2563eb] text-[11px] font-bold inline-flex items-center justify-center">{i + 1}</span>
-                      <span className="flex-1 text-sm text-gray-800 font-medium">{s.name.replace(/([A-Z])/g, " $1").trim()}</span>
+                      <span className="w-6 h-6 rounded-full bg-[#dcfce7] text-[#16a34a] text-[11px] font-medium inline-flex items-center justify-center">{i + 1}</span>
+                      <span className="flex-1 text-[13px] text-gray-800 font-semibold">{s.name === "HRInterview" ? "HR Interview" : s.name.replace(/([A-Z])/g, " $1").trim()}</span>
 
                       {mailAllowed ? (
                         <label className={clsx(
@@ -346,11 +350,11 @@ export default function PipelinesPage() {
                         className="p-1 hover:bg-slate-200 rounded disabled:opacity-30">▼</button>
                       {isRequiredStage(s.name) ? (
                         <span className="p-1 text-slate-300 cursor-not-allowed" title="Required stage — cannot be removed">
-                          <X size={13} />
+                          <X size={12} />
                         </span>
                       ) : (
                         <button type="button" onClick={() => removeStage(i)}
-                          className="p-1 text-red-500 hover:bg-red-50 rounded"><X size={13} /></button>
+                          className="p-1 text-red-500 hover:bg-red-50 rounded"><X size={12} /></button>
                       )}
                     </div>
 
@@ -366,7 +370,7 @@ export default function PipelinesPage() {
                                 brandedLocked && "opacity-60 cursor-not-allowed",
                                 !brandedLocked && "cursor-pointer",
                                 s.mailTemplate === o.value
-                                  ? "bg-[#dbeafe] text-[#2563eb] ring-[#3b82f6]"
+                                  ? "bg-[#dcfce7] text-[#16a34a] ring-[#22c55e]"
                                   : "bg-white text-slate-600 ring-slate-200 hover:bg-slate-50")}
                                 title={brandedLocked ? "Set up letterhead / signature in Settings → Branding first" : undefined}>
                                 <input type="radio" name={`tmpl-${i}`} className="hidden" checked={s.mailTemplate === o.value}
@@ -408,23 +412,23 @@ export default function PipelinesPage() {
                 />
               </div>
             </div>
-            <p className="mt-1 text-[11px] text-gray-400">Pick from catalog — custom stage names are disabled. Screening, Offer and Hired are required and always present.</p>
+            <p className="mt-1 text-[11px] text-gray-400">Pick from catalog — custom stage names are disabled. Screening, HR Interview, Offer and Hired are required and always present.</p>
           </div>
 
           <div className="flex items-center gap-2 bg-amber-50 border border-amber-100 rounded-lg px-3 py-2">
             <input type="checkbox" id="isDefault" checked={form.isDefault}
               onChange={(e) => setForm({ ...form, isDefault: e.target.checked })}
               className="rounded border-amber-300" />
-            <label htmlFor="isDefault" className="text-sm text-amber-800 cursor-pointer">
+            <label htmlFor="isDefault" className="text-xs text-amber-800 cursor-pointer">
               Set as default pipeline <span className="text-[11px] text-amber-600">(used for new requisitions)</span>
             </label>
           </div>
 
           <div className="flex justify-end gap-2 pt-2 border-t border-gray-100">
             <button type="button" onClick={() => setModal({ open: false, item: null })}
-              className="px-4 py-2 border border-[var(--border)] rounded-lg text-sm text-gray-700 hover:bg-gray-50">Cancel</button>
+              className="px-3 py-1.5 border border-[var(--border)] rounded-lg text-xs font-medium text-gray-700 hover:bg-gray-50">Cancel</button>
             <button type="submit" disabled={createMut.isPending || updateMut.isPending}
-              className="inline-flex items-center gap-1.5 px-5 py-2 bg-[#16243A] hover:bg-[#1E3354] text-white rounded-lg text-sm font-semibold shadow-sm disabled:opacity-50">
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-green-600 hover:bg-green-700 text-white rounded-lg text-xs font-medium shadow-sm disabled:opacity-50">
               {modal.item ? (updateMut.isPending ? "Saving..." : "Save Changes") : (createMut.isPending ? "Creating..." : "Create Pipeline")}
             </button>
           </div>
@@ -437,14 +441,14 @@ export default function PipelinesPage() {
           <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-sm"
             onClick={() => !deleteMut.isPending && setDeleteTarget(null)} />
           <div className="relative bg-white rounded-xl shadow-2xl ring-1 ring-slate-200 w-full max-w-md mx-4 overflow-hidden animate-in fade-in zoom-in-95 duration-150">
-            <div className="p-6">
+            <div className="p-4">
               <div className="flex items-start gap-4">
                 <div className="shrink-0 flex items-center justify-center w-12 h-12 rounded-full bg-red-50 ring-4 ring-red-50/60">
                   <AlertTriangle className="w-6 h-6 text-red-600" />
                 </div>
                 <div className="flex-1">
                   <h3 className="text-lg font-semibold text-slate-900">Delete Pipeline?</h3>
-                  <p className="mt-1.5 text-sm text-slate-500">
+                  <p className="mt-1.5 text-xs text-slate-500">
                     Delete <span className="font-semibold text-slate-700">&quot;{deleteTarget.name}&quot;</span>? This cannot be undone.
                   </p>
                   <p className="mt-2 text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded px-2 py-1.5">
@@ -453,11 +457,11 @@ export default function PipelinesPage() {
                 </div>
               </div>
             </div>
-            <div className="flex justify-end gap-2 px-6 py-4 bg-slate-50 border-t border-slate-100">
+            <div className="flex justify-end gap-2 px-5 py-4 bg-slate-50 border-t border-slate-100">
               <button type="button" onClick={() => setDeleteTarget(null)} disabled={deleteMut.isPending}
-                className="px-4 py-2 bg-white border border-slate-300 rounded-lg text-sm font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-50">Keep</button>
+                className="px-3 py-1.5 bg-white border border-slate-300 rounded-lg text-xs font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-50">Keep</button>
               <button type="button" onClick={() => deleteMut.mutate(deleteTarget.id)} disabled={deleteMut.isPending}
-                className="inline-flex items-center gap-1.5 px-4 py-2 bg-gradient-to-r from-red-600 to-blue-600 hover:from-red-700 hover:to-blue-700 text-white rounded-lg text-sm font-semibold shadow-sm disabled:opacity-50">
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-gradient-to-r from-red-600 to-green-600 hover:from-red-700 hover:to-green-700 text-white rounded-lg text-xs font-medium shadow-sm disabled:opacity-50">
                 {deleteMut.isPending ? "Deleting..." : "Yes, Delete"}
               </button>
             </div>

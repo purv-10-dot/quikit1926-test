@@ -8,6 +8,7 @@ import { List, CalendarDays, ChevronLeft, ChevronRight, Settings } from "lucide-
 import { clsx } from "clsx";
 import { EmptyState } from "@/components/hrms/empty-state";
 import { SkeletonTable } from "@/components/hrms/skeleton";
+import { useDashboardConfig } from "@/lib/hooks/use-dashboard-config";
 
 interface HolidayItem {
   id: string;
@@ -29,6 +30,10 @@ const typeColors: Record<string, string> = {
 
 export default function HolidaysPage() {
   const api = useApiClient();
+  const { hasPermission } = useDashboardConfig();
+  // Only users who can actually manage holidays (backend requires
+  // hrms.settings.write) see the management entry point.
+  const canManageHolidays = hasPermission("hrms.settings.write");
   const currentYear = new Date().getFullYear();
   const [year, setYear] = useState(currentYear);
   const [month, setMonth] = useState(new Date().getMonth());
@@ -43,22 +48,22 @@ export default function HolidaysPage() {
 
   return (
     <div>
-      <div className="flex items-center justify-between mb-6">
-        <h1 className="font-serif-display text-3xl md:text-4xl font-bold text-gray-900">Holiday Calendar</h1>
+      <div className="flex items-center justify-between mb-4">
+        <h1 className="text-page-title text-gray-900">Holiday Calendar</h1>
         <div className="flex items-center gap-2">
           {/* View toggle */}
           <div className="inline-flex items-center rounded-lg border border-[var(--border)] overflow-hidden">
             <button
               onClick={() => setView("calendar")}
               title="Calendar view"
-              className={clsx("inline-flex items-center gap-1 px-2.5 py-2 text-sm", view === "calendar" ? "bg-[#dbeafe] text-[#2563eb]" : "text-gray-500 hover:bg-gray-50")}
+              className={clsx("inline-flex items-center gap-1 px-2.5 py-2 text-sm", view === "calendar" ? "bg-[#dcfce7] text-[#16a34a]" : "text-gray-500 hover:bg-gray-50")}
             >
               <CalendarDays size={14} /> Calendar
             </button>
             <button
               onClick={() => setView("list")}
               title="List view"
-              className={clsx("inline-flex items-center gap-1 px-2.5 py-2 text-sm border-l border-[var(--border)]", view === "list" ? "bg-[#dbeafe] text-[#2563eb]" : "text-gray-500 hover:bg-gray-50")}
+              className={clsx("inline-flex items-center gap-1 px-2.5 py-2 text-sm border-l border-[var(--border)]", view === "list" ? "bg-[#dcfce7] text-[#16a34a]" : "text-gray-500 hover:bg-gray-50")}
             >
               <List size={14} /> List
             </button>
@@ -69,11 +74,13 @@ export default function HolidaysPage() {
             options={[2024, 2025, 2026, 2027].map((y) => ({ value: String(y), label: String(y) }))}
             className="w-28"
           />
-          <a href="/settings/holiday-calendar"
-            title="Add or edit holidays"
-            className="flex items-center gap-2 border border-[var(--border)] text-gray-700 px-3 py-2 rounded-lg text-sm hover:bg-gray-50">
-            <Settings size={14} /> Manage Holidays
-          </a>
+          {canManageHolidays && (
+            <a href="/settings/holiday-calendar"
+              title="Add or edit holidays"
+              className="flex items-center gap-2 border border-[var(--border)] text-gray-700 px-3 py-2 rounded-lg text-sm hover:bg-gray-50">
+              <Settings size={14} /> Manage Holidays
+            </a>
+          )}
         </div>
       </div>
 
@@ -96,10 +103,10 @@ export default function HolidaysPage() {
           <table className="w-full">
             <thead>
               <tr className="bg-gray-50 border-b border-gray-200">
-                <th className="text-left px-4 py-3 text-xs font-medium text-gray-500 uppercase">Holiday</th>
-                <th className="text-left px-4 py-3 text-xs font-medium text-gray-500 uppercase">Date</th>
-                <th className="text-left px-4 py-3 text-xs font-medium text-gray-500 uppercase">Day</th>
-                <th className="text-left px-4 py-3 text-xs font-medium text-gray-500 uppercase">Type</th>
+                <th className="text-left px-4 py-3 text-table-head font-semibold text-gray-500 uppercase tracking-[0.03em]">Holiday</th>
+                <th className="text-left px-4 py-3 text-table-head font-semibold text-gray-500 uppercase tracking-[0.03em]">Date</th>
+                <th className="text-left px-4 py-3 text-table-head font-semibold text-gray-500 uppercase tracking-[0.03em]">Day</th>
+                <th className="text-left px-4 py-3 text-table-head font-semibold text-gray-500 uppercase tracking-[0.03em]">Type</th>
               </tr>
             </thead>
             <tbody>
@@ -109,13 +116,13 @@ export default function HolidaysPage() {
                   <tr key={h.id} className="row-stagger border-b border-gray-100 hover:bg-gray-50" style={{ ["--i" as never]: Math.min(i, 10) }}>
                     <td className="px-4 py-3 text-sm font-medium text-gray-900">
                       {h.name}
-                      {h.isOptional && <span className="ml-1 text-xs text-[#3b82f6]">(Optional)</span>}
+                      {h.isOptional && <span className="ml-1 text-xs text-[#22c55e]">(Optional)</span>}
                     </td>
                     <td className="px-4 py-3 text-sm text-gray-700">
-                      {d.toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" })}
+                      {d.toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric", timeZone: "UTC" })}
                     </td>
                     <td className="px-4 py-3 text-sm text-gray-700">
-                      {d.toLocaleDateString("en-IN", { weekday: "long" })}
+                      {d.toLocaleDateString("en-IN", { weekday: "long", timeZone: "UTC" })}
                     </td>
                     <td className="px-4 py-3">
                       <span className={clsx("px-2 py-0.5 rounded-full text-xs font-medium", typeColors[h.type] ?? "bg-gray-100 text-gray-700")}>
@@ -142,11 +149,13 @@ function MonthHolidayCalendar({ holidays, year, month, setMonth }: {
 }) {
   const byDay = new Map<number, HolidayItem[]>();
   for (const h of holidays) {
+    // Holiday dates are stored at UTC midnight — bucket by UTC parts so a
+    // client behind UTC doesn't land the holiday on the previous day.
     const d = new Date(h.date);
-    if (d.getFullYear() === year && d.getMonth() === month) {
-      const arr = byDay.get(d.getDate()) ?? [];
+    if (d.getUTCFullYear() === year && d.getUTCMonth() === month) {
+      const arr = byDay.get(d.getUTCDate()) ?? [];
       arr.push(h);
-      byDay.set(d.getDate(), arr);
+      byDay.set(d.getUTCDate(), arr);
     }
   }
 
@@ -182,9 +191,9 @@ function MonthHolidayCalendar({ holidays, year, month, setMonth }: {
               const hs = byDay.get(day) ?? [];
               const td = isToday(day);
               return (
-                <div key={idx} className={clsx("min-h-[96px] border-b border-r border-gray-100 p-1.5 flex flex-col gap-1 transition-colors", td ? "bg-blue-50/50" : "hover:bg-gray-50/60")}>
+                <div key={idx} className={clsx("min-h-[96px] border-b border-r border-gray-100 p-1.5 flex flex-col gap-1 transition-colors", td ? "bg-green-50/50" : "hover:bg-gray-50/60")}>
                   <div className="flex justify-end">
-                    <span className={clsx("inline-grid place-items-center text-[11px] w-6 h-6 rounded-full", td ? "bg-[#2563eb] text-white font-bold shadow-sm" : "text-gray-500")}>{day}</span>
+                    <span className={clsx("inline-grid place-items-center text-[11px] w-6 h-6 rounded-full", td ? "bg-[#16a34a] text-white font-bold shadow-sm" : "text-gray-500")}>{day}</span>
                   </div>
                   <div className="flex flex-col gap-1">
                     {hs.slice(0, 3).map((h, i) => (
@@ -211,11 +220,11 @@ function MonthHolidayCalendar({ holidays, year, month, setMonth }: {
                 <div key={`${h.id}-${i}`} className="flex items-center gap-2.5">
                   <div className="w-9 text-center shrink-0">
                     <div className="text-sm font-bold text-gray-900 tabular-nums leading-none">{String(day).padStart(2, "0")}</div>
-                    <div className="text-[9px] uppercase tracking-wide text-gray-400 mt-0.5">{monthShort}</div>
+                    <div className="text-[10px] uppercase tracking-wide text-gray-400 mt-0.5">{monthShort}</div>
                   </div>
                   <div className="min-w-0 flex-1">
                     <div className="text-sm font-medium text-gray-900 truncate">
-                      {h.name}{h.isOptional && <span className="ml-1 text-[10px] text-[#3b82f6]">(Optional)</span>}
+                      {h.name}{h.isOptional && <span className="ml-1 text-[10px] text-[#22c55e]">(Optional)</span>}
                     </div>
                     <span className={clsx("inline-block mt-0.5 px-1.5 py-0.5 rounded-full text-[10px] font-medium", typeColors[h.type] ?? "bg-gray-100 text-gray-700")}>{h.type}</span>
                   </div>

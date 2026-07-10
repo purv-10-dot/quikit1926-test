@@ -97,10 +97,10 @@ export default function MyPayrollPage() {
   return (
     <div className="space-y-4">
       <div className="flex items-center gap-3">
-        <Wallet className="text-[#3b82f6]" />
+        <Wallet className="text-[#22c55e]" />
         <div>
-          <h1 className="font-serif-display text-3xl md:text-4xl font-bold text-gray-900">My Payroll</h1>
-          <p className="text-sm text-gray-500">Your payslips, current salary structure, and revision history.</p>
+          <h1 className="text-page-title text-gray-900">My Payroll</h1>
+          <p className="text-xs text-gray-500">Your payslips, current salary structure, and revision history.</p>
         </div>
       </div>
 
@@ -115,8 +115,8 @@ export default function MyPayrollPage() {
             onClick={() => setTab(t.key)}
             data-active={tab === t.key}
             className={clsx(
-              "tab-underline px-4 py-2 text-sm font-medium -mb-px",
-              tab === t.key ? "text-[#3b82f6]" : "text-gray-600 hover:text-gray-900",
+              "tab-underline px-4 py-2 text-[13px] font-semibold -mb-px",
+              tab === t.key ? "text-[#22c55e]" : "text-gray-600 hover:text-gray-900",
             )}
           >
             {t.label}
@@ -192,19 +192,19 @@ function PayslipsTab() {
 
       <div className="rounded-lg border border-gray-200 bg-white shadow-sm overflow-hidden">
         <div className="px-5 py-3 border-b border-gray-100 flex items-center justify-between">
-          <h2 className="text-sm font-bold text-gray-900">Payslip History — FY {fy}</h2>
-          <Link href={`/payroll/claims-declarations`} className="text-xs text-[#3b82f6] hover:underline">
+          <h2 className="text-[13px] font-semibold text-gray-900">Payslip History — FY {fy}</h2>
+          <Link href={`/payroll/claims-declarations`} className="text-xs text-[#22c55e] hover:underline">
             Submit IT declaration / claims →
           </Link>
         </div>
         {isLoading ? (
           <div className="p-4"><SkeletonTable rows={5} cols={5} /></div>
         ) : !res || res.payslips.length === 0 ? (
-          <div className="py-12 text-center text-sm text-gray-500">No payslips for FY {fy}.</div>
+          <div className="py-12 text-center text-xs text-gray-500">No payslips for FY {fy}.</div>
         ) : (
           <table className="w-full text-sm">
             <thead>
-              <tr className="text-[10px] font-bold text-gray-500 uppercase tracking-wider border-b border-gray-200">
+              <tr className="text-table-head font-bold text-gray-500 uppercase tracking-wider border-b border-gray-200">
                 <th className="text-left py-2 px-3">Month</th>
                 <th className="text-left py-2 px-3">Pay Date</th>
                 <th className="text-right py-2 px-3">Days</th>
@@ -229,7 +229,7 @@ function PayslipsTab() {
                   <td className="py-2 px-3">
                     <span className={clsx("inline-block px-2 py-0.5 rounded text-[11px] font-semibold",
                       p.status === "Released" ? "bg-emerald-100 text-emerald-700" :
-                      p.status === "Generated" ? "bg-blue-100 text-blue-700" : "bg-gray-100 text-gray-600")}>
+                      p.status === "Generated" ? "bg-green-100 text-green-700" : "bg-gray-100 text-gray-600")}>
                       {p.status}
                     </span>
                   </td>
@@ -238,7 +238,7 @@ function PayslipsTab() {
                       type="button"
                       onClick={() => downloadPdf(p)}
                       disabled={downloading.has(p.id)}
-                      className="inline-flex items-center gap-1 px-2 py-1 text-xs bg-[#16243A] hover:bg-[#1E3354] disabled:opacity-60 disabled:cursor-not-allowed text-white rounded"
+                      className="inline-flex items-center gap-1 px-2 py-1 text-xs bg-green-600 hover:bg-green-700 disabled:opacity-60 disabled:cursor-not-allowed text-white rounded"
                     >
                       {downloading.has(p.id) ? <Loader2 size={12} className="animate-spin" /> : <Download size={12} />}
                       {downloading.has(p.id) ? "Downloading…" : "PDF"}
@@ -268,7 +268,7 @@ function StructureTab() {
   }
   if (!s) {
     return (
-      <div className="rounded-lg border border-gray-200 bg-white py-12 text-center text-sm text-gray-500">
+      <div className="rounded-lg border border-gray-200 bg-white py-12 text-center text-xs text-gray-500">
         No active salary structure assigned. Contact HR.
       </div>
     );
@@ -310,11 +310,11 @@ function RevisionsTab() {
       {isLoading ? (
         <div className="p-4"><SkeletonTable rows={4} cols={5} /></div>
       ) : rows.length === 0 ? (
-        <div className="py-12 text-center text-sm text-gray-500">No salary records yet.</div>
+        <div className="py-12 text-center text-xs text-gray-500">No salary records yet.</div>
       ) : (
         <table className="w-full text-sm">
           <thead>
-            <tr className="text-[10px] font-bold text-gray-500 uppercase tracking-wider bg-gray-50/60 border-b border-gray-200">
+            <tr className="text-table-head font-bold text-gray-500 uppercase tracking-wider bg-gray-50/60 border-b border-gray-200">
               <th className="text-left py-2 px-3">Effective From</th>
               <th className="text-left py-2 px-3">Effective To</th>
               <th className="text-right py-2 px-3">Annual CTC</th>
@@ -382,11 +382,11 @@ function Section({ title, rows, fixedAllowance }: { title: string; rows: CompRow
   return (
     <div className="rounded-lg border border-gray-200 bg-white shadow-sm overflow-hidden">
       <div className="px-5 py-3 border-b border-gray-100">
-        <h2 className="text-sm font-bold text-gray-900">{title}</h2>
+        <h2 className="text-[13px] font-semibold text-gray-900">{title}</h2>
       </div>
       <table className="w-full text-sm">
         <thead>
-          <tr className="text-[10px] font-bold text-gray-500 uppercase tracking-wider bg-gray-50/60 border-b border-gray-200">
+          <tr className="text-table-head font-bold text-gray-500 uppercase tracking-wider bg-gray-50/60 border-b border-gray-200">
             <th className="text-left py-2 px-3 w-2/5">Component</th>
             <th className="text-left py-2 px-3">Calculation</th>
             <th className="text-right py-2 px-3">Monthly</th>
@@ -415,7 +415,7 @@ function Section({ title, rows, fixedAllowance }: { title: string; rows: CompRow
               <td className="py-2.5 px-3 text-right pr-5 text-gray-900">₹{INR.format(Math.round(fixedAllowance.annual))}</td>
             </tr>
           )}
-          <tr className="bg-[#dbeafe]/60 font-semibold">
+          <tr className="bg-[#dcfce7]/60 font-semibold">
             <td className="py-2.5 px-3 text-gray-900">Total {title}</td>
             <td />
             <td className="py-2.5 px-3 text-right text-gray-900">₹{INR.format(Math.round(totalMonthly))}</td>
@@ -434,7 +434,7 @@ function KPI({ label, value, icon, highlight }: { label: string; value: string; 
         {icon && <span className="text-gray-400">{icon}</span>}
         <p className="text-[10px] font-bold text-gray-500 uppercase tracking-wide">{label}</p>
       </div>
-      <p className={clsx("text-base font-bold mt-0.5", highlight ? "text-emerald-700" : "text-gray-900")}>{value}</p>
+      <p className={clsx("text-sm font-bold mt-0.5", highlight ? "text-emerald-700" : "text-gray-900")}>{value}</p>
     </div>
   );
 }

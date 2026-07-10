@@ -2,7 +2,6 @@
 
 import type { LucideIcon } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
-import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useApiClient } from "@/lib/hooks/use-api";
@@ -112,7 +111,6 @@ export default function DashboardDetailPage() {
   const updateMut = useMutation({
     mutationFn: (widgets: WidgetConfig[]) => api.put(`/api/v1/hrms/dashboards/${id}`, { widgets }),
     onSuccess: () => qc.invalidateQueries({ queryKey: ["dashboards", id] }),
-    onError: (e: Error) => toast.error("Save failed", e.message),
   });
 
   const deleteMut = useMutation({
@@ -122,7 +120,6 @@ export default function DashboardDetailPage() {
       qc.invalidateQueries({ queryKey: ["dashboards", "all"] });
       router.push("/dashboards");
     },
-    onError: (e: Error) => toast.error("Delete failed", e.message),
   });
 
   const addWidget = (type: string, title: string) => {
@@ -195,42 +192,38 @@ export default function DashboardDetailPage() {
   const HeroIcon = d ? (DASHBOARD_ICONS[d.iconName ?? "BarChart3"] ?? BarChart3) : BarChart3;
 
   return (
-    <div className="w-full max-w-[1400px] mx-auto px-6 py-6 pb-24">
-      <Link href="/dashboards" className="inline-flex items-center gap-1 text-xs text-gray-500 hover:text-[#3b82f6] mb-4 transition">
-        <ChevronLeft size={14} /> Back to Dashboards
-      </Link>
-
+    <div className="w-full max-w-[1400px] mx-auto px-5 py-4 pb-24">
       {isLoading || !d ? (
         <>
           {/* Hero skeleton */}
           <div className="rounded-2xl bg-gradient-to-r from-slate-200 to-slate-100 h-28 animate-pulse mb-5" />
           {/* Widget skeletons */}
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             {[0, 1, 2, 3].map((i) => (
-              <div key={i} className="rounded-xl border border-gray-200 bg-white p-5 h-72 animate-pulse" />
+              <div key={i} className="rounded-xl border border-gray-200 bg-white p-4 h-72 animate-pulse" />
             ))}
           </div>
         </>
       ) : (
         <>
           {/* Hero */}
-          <div className="relative rounded-2xl overflow-hidden bg-gradient-to-r from-[#16243A] via-[#1E3354] to-[#2563eb] text-white px-6 py-5 shadow-md mb-5">
+          <div className="relative rounded-2xl overflow-hidden bg-gradient-to-r from-[#166534] via-[#15803d] to-[#16a34a] text-white px-5 py-4 shadow-md mb-5">
             <div className="absolute -right-12 -top-12 w-48 h-48 rounded-full bg-white/5 blur-2xl pointer-events-none" />
-            <div className="absolute -right-24 bottom-0 w-64 h-64 rounded-full bg-[#3b82f6]/10 blur-3xl pointer-events-none" />
+            <div className="absolute -right-24 bottom-0 w-64 h-64 rounded-full bg-[#22c55e]/10 blur-3xl pointer-events-none" />
             <div className="relative flex items-start gap-4">
               <div className="w-12 h-12 rounded-xl bg-white/15 backdrop-blur flex items-center justify-center shrink-0 ring-1 ring-white/20">
                 <HeroIcon size={22} />
               </div>
               <div className="flex-1 min-w-0">
                 <div className="flex items-center gap-2 flex-wrap">
-                  <h1 className="font-serif-display text-2xl md:text-3xl font-bold leading-tight">{d.name}</h1>
+                  <h1 className="font-serif-display text-base font-semibold leading-tight">{d.name}</h1>
                   {d.isPrebuilt && (
-                    <span className="text-[10px] px-2 py-0.5 bg-white/15 backdrop-blur text-white rounded font-bold uppercase tracking-wide ring-1 ring-white/20">
+                    <span className="text-[11px] px-2 py-0.5 bg-white/15 backdrop-blur text-white rounded font-medium uppercase tracking-wide ring-1 ring-white/20">
                       Pre-built by Quikit
                     </span>
                   )}
                 </div>
-                {d.description && <p className="text-xs md:text-sm text-white/75 mt-1 max-w-2xl">{d.description}</p>}
+                {d.description && <p className="text-xs text-white/75 mt-1 max-w-2xl">{d.description}</p>}
                 <div className="mt-3 flex items-center gap-2 text-[11px] text-white/70">
                   <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-white/10 ring-1 ring-white/15">
                     {d.widgets?.length ?? 0} widgets
@@ -256,7 +249,7 @@ export default function DashboardDetailPage() {
                 ]}
                 className="w-44"
               />
-              <button className="inline-flex items-center gap-1.5 px-3 py-2 text-xs font-medium border border-gray-200 rounded-md text-gray-700 hover:bg-gray-50 transition">
+              <button className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium border border-gray-200 rounded-md text-gray-700 hover:bg-gray-50 transition">
                 <Filter size={13} /> Filters
               </button>
             </div>
@@ -264,7 +257,7 @@ export default function DashboardDetailPage() {
               <button
                 onClick={handleDownloadCsv}
                 disabled={downloading || !d.widgets?.length}
-                className="group inline-flex items-center gap-1.5 px-3.5 py-2 rounded-md text-xs font-semibold text-white bg-gradient-to-r from-emerald-500 to-emerald-600 hover:from-emerald-600 hover:to-emerald-700 shadow-sm hover:shadow-md disabled:opacity-60 disabled:cursor-not-allowed transition-all"
+                className="group inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium text-white bg-gradient-to-r from-emerald-500 to-emerald-600 hover:from-emerald-600 hover:to-emerald-700 shadow-sm hover:shadow-md disabled:opacity-60 disabled:cursor-not-allowed transition-all"
               >
                 {downloading ? (
                   <>
@@ -298,7 +291,7 @@ export default function DashboardDetailPage() {
           {d.widgets.length === 0 ? (
             <div className="rounded-xl border-2 border-dashed border-gray-200 bg-white py-16 text-center">
               <BarChart3 size={32} className="mx-auto mb-3 text-gray-300" />
-              <p className="text-sm font-semibold text-gray-700">No widgets yet</p>
+              <p className="text-[13px] font-semibold text-gray-700">No widgets yet</p>
               <p className="text-xs text-gray-500 mt-1">Add some via the Actions menu.</p>
             </div>
           ) : (
@@ -306,7 +299,7 @@ export default function DashboardDetailPage() {
               const kpiWidgets = d.widgets.filter((w) => METRIC_WIDGETS.has(w.type));
               const chartWidgets = d.widgets.filter((w) => !METRIC_WIDGETS.has(w.type));
               return (
-                <div className="space-y-5">
+                <div className="space-y-4">
                   {kpiWidgets.length > 0 && (
                     <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3">
                       {kpiWidgets.map((w) => (
@@ -315,7 +308,7 @@ export default function DashboardDetailPage() {
                     </div>
                   )}
                   {chartWidgets.length > 0 && (
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                       {chartWidgets.map((w) => (
                         <div key={w.id} className="transition-transform hover:-translate-y-0.5">
                           <Widget config={w} months={months} />
@@ -366,7 +359,7 @@ function ActionsMenu({
       <button
         type="button"
         onClick={() => setOpen((s) => !s)}
-        className={`inline-flex items-center gap-1.5 px-3 py-2 text-xs font-medium border rounded-md transition ${open ? "bg-gray-900 text-white border-gray-900" : "border-gray-200 text-gray-700 hover:bg-gray-50"}`}
+        className={`inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium border rounded-md transition ${open ? "bg-gray-900 text-white border-gray-900" : "border-gray-200 text-gray-700 hover:bg-gray-50"}`}
       >
         <MoreVertical size={13} /> Actions
       </button>

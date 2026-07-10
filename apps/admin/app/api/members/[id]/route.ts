@@ -131,6 +131,35 @@ export const PATCH = withAdminAuth<{ id: string }>(async ({ orgId, userId }, req
     await assignNamedRolesForAccess(orgId, newRoleAssignments).catch(() => {});
   }
 
+  // Forward role sync → QuikHRMS. HRMS keys its own role table by Employee.id +
+  // caches permissions, so we hand the change to HRMS's own provision-roles
+  // endpoint (which resolves the Employee, swaps the role and busts its cache)
+  // instead of writing its schema directly. Best-effort — never fails the save.
+  const hrmsAccess = appAccess?.find((a) => a.appSlug === "quikhrms");
+  const internalSecret = process.env.INTERNAL_SECRET;
+  if (hrmsAccess && internalSecret) {
+    try {
+      let base = process.env.QUIKHRMS_URL ?? process.env.QUIKHRMS ?? null;
+      if (!base) {
+        const app = await db.app.findFirst({ where: { slug: "quikhrms" }, select: { baseUrl: true } });
+        base = app?.baseUrl ?? null;
+      }
+      base = (base ?? "").replace(/\/+$/, "");
+      if (base) {
+        await fetch(`${base}/api/internal/provision-roles`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json", "x-internal-secret": internalSecret },
+          body: JSON.stringify({
+            orgId,
+            roleAssignments: [{ userId: membership.userId, roleName: hrmsAccess.role }],
+          }),
+        });
+      }
+    } catch {
+      // advisory — HRMS login-time JIT / reconcile remain the safety net
+    }
+  }
+
   await Promise.all([
     invalidateMembershipCache(membership.userId, orgId),
     invalidateUserPermissionCache(orgId, membership.userId),

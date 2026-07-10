@@ -30,7 +30,11 @@ export const PATCH = withAuth(async (req: NextRequest, { orgId, userId }, params
     const parsed = updateRequisitionSchema.safeParse(body);
     if (!parsed.success) return validationError("Validation failed", parsed.error.flatten().fieldErrors);
 
-    const { responsibilities, requirements, niceToHave, skills, skillWeights, benefits, ...rest } = parsed.data;
+    const {
+      responsibilities, requirements, niceToHave, skills, skillWeights, benefits,
+      interviewPanelIds, targetJoiningDate, closedDate,
+      ...rest
+    } = parsed.data;
     const r = await prisma.jobRequisition.update({
       where: { id: params.id },
       data: {
@@ -41,7 +45,10 @@ export const PATCH = withAuth(async (req: NextRequest, { orgId, userId }, params
         ...(skills && { skills: JSON.parse(JSON.stringify(skills)) }),
         ...(skillWeights && { skillWeights: JSON.parse(JSON.stringify(skillWeights)) }),
         ...(benefits && { benefits: JSON.parse(JSON.stringify(benefits)) }),
-        ...(rest.status === "ReqClosed" && { closedDate: new Date() }),
+        ...(interviewPanelIds && { interviewPanel: JSON.parse(JSON.stringify(interviewPanelIds)) }),
+        ...(targetJoiningDate !== undefined && { targetJoiningDate: targetJoiningDate ? new Date(targetJoiningDate) : null }),
+        ...(closedDate !== undefined && { closedDate: closedDate ? new Date(closedDate) : null }),
+        ...(rest.status === "ReqClosed" && !closedDate && { closedDate: new Date() }),
         updatedBy: userId,
       },
     });

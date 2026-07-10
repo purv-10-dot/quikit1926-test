@@ -9,8 +9,18 @@ import { Select } from "@/components/hrms/ui/select";
 import { Plus, Search, Filter, Maximize2, Minimize2, MoreHorizontal, Eye, EyeOff, ArrowUpDown, Edit2, Send, Mail, Download, RefreshCw, X } from "lucide-react";
 import { clsx } from "clsx";
 import { SkeletonLine } from "@/components/hrms/skeleton";
+import { useToast } from "@/components/hrms/toast";
+import { todayInput } from "@/lib/utils/date-input";
+import { exportCsv as exportCsvFile, fmtDate, formatGroup, formatAddress, type CsvColumn } from "@/lib/utils/csv";
 
 type SourceOfHire = "Referral" | "JobPortal" | "LinkedIn" | "Agency" | "Campus" | "Direct" | "Other";
+
+interface AddressJson { line1?: string; line2?: string; city?: string; state?: string; country?: string; postalCode?: string }
+interface EmergencyContactJson { name?: string; relationship?: string; phone?: string; email?: string; address?: string }
+interface EducationJson { schoolName?: string; degree?: string; fieldOfStudy?: string; completionDate?: string; notes?: string }
+interface ExperienceJson { occupation?: string; company?: string; summary?: string; duration?: string; currentlyWorkHere?: boolean }
+interface CertificationJson { name?: string; courseName?: string; issuingAuthority?: string; year?: string; expiryDate?: string; credentialUrl?: string }
+interface FamilyMemberJson { name?: string; relation?: string; dob?: string; occupation?: string }
 
 interface Candidate {
   id: string;
@@ -19,13 +29,34 @@ interface Candidate {
   lastName: string;
   personalEmail: string | null;
   workEmail: string;
+  personalPhone: string | null;
+  profilePhoto: string | null;
   department: string | null;
   departmentId: string | null;
+  designation: string | null;
+  jobTitle: string | null;
+  officeLocation: string | null;
+  reportingManager: string | null;
   sourceOfHire: SourceOfHire | null;
   dateOfJoining: string;
+  tentativeJoiningDate: string | null;
   panNumber: string | null;
   aadhaarNumber: string | null;
   uanNumber: string | null;
+  previousExperience: number | null;
+  currentSalary: number | null;
+  ctcLpa: number | null;
+  highestQualification: string | null;
+  skillSet: string | null;
+  additionalInfo: string | null;
+  offerLetterUrl: string | null;
+  currentAddress: AddressJson | null;
+  permanentAddress: AddressJson | null;
+  emergencyContacts: EmergencyContactJson[] | null;
+  educations: EducationJson[] | null;
+  pastExperiences: ExperienceJson[] | null;
+  certifications: CertificationJson[] | null;
+  familyMembers: FamilyMemberJson[] | null;
   onboardingStatus: string;
   onboardingInstanceId: string | null;
 }
@@ -39,7 +70,7 @@ const STATUSES = ["NotStarted", "InProgress", "OnboardCompleted", "OnboardCancel
 
 const statusColors: Record<string, string> = {
   NotStarted: "bg-gray-100 text-gray-600",
-  InProgress: "bg-[#dbeafe] text-[#2563eb]",
+  InProgress: "bg-[#dcfce7] text-[#16a34a]",
   OnboardCompleted: "bg-green-100 text-green-700",
   OnboardCancelled: "bg-red-100 text-red-600",
 };
@@ -47,6 +78,7 @@ const statusColors: Record<string, string> = {
 export default function OnboardingCandidatesPage() {
   const api = useApiClient();
   const qc = useQueryClient();
+  const toast = useToast();
 
   const [showAdd, setShowAdd] = useState(false);
   const [search, setSearch] = useState("");
@@ -145,17 +177,47 @@ export default function OnboardingCandidatesPage() {
   const total = filteredCandidates.length;
   const activeFilterCount = filters.status.length + filters.source.length;
 
+  // Export EVERY captured field. Nested groups (addresses, emergency contacts,
+  // education, experience, family, certifications) each collapse into one
+  // readable cell via formatGroup/formatAddress. Columns mirror the Add
+  // Candidate form so a downloaded CSV round-trips all the input data.
+  const CANDIDATE_COLUMNS: CsvColumn<Candidate>[] = [
+    { header: "Employee Code", value: (c) => c.employeeCode },
+    { header: "First Name", value: (c) => c.firstName },
+    { header: "Last Name", value: (c) => c.lastName },
+    { header: "Email ID (Work)", value: (c) => c.workEmail },
+    { header: "Official Email (Personal)", value: (c) => c.personalEmail },
+    { header: "Phone", value: (c) => c.personalPhone },
+    { header: "Photo URL", value: (c) => c.profilePhoto },
+    { header: "Status", value: (c) => c.onboardingStatus },
+    { header: "Department", value: (c) => c.department },
+    { header: "Designation", value: (c) => c.designation ?? c.jobTitle },
+    { header: "Office Location", value: (c) => c.officeLocation },
+    { header: "Reporting Manager", value: (c) => c.reportingManager },
+    { header: "Source of Hire", value: (c) => c.sourceOfHire },
+    { header: "Joining Date", value: (c) => fmtDate(c.dateOfJoining) },
+    { header: "Tentative Joining Date", value: (c) => fmtDate(c.tentativeJoiningDate) },
+    { header: "PAN Number", value: (c) => c.panNumber },
+    { header: "Aadhaar Number", value: (c) => c.aadhaarNumber },
+    { header: "UAN Number", value: (c) => c.uanNumber },
+    { header: "Experience (months)", value: (c) => c.previousExperience },
+    { header: "Current Salary", value: (c) => c.currentSalary },
+    { header: "CTC (LPA)", value: (c) => c.ctcLpa },
+    { header: "Highest Qualification", value: (c) => c.highestQualification },
+    { header: "Skill Set", value: (c) => c.skillSet },
+    { header: "Additional Info", value: (c) => c.additionalInfo },
+    { header: "Offer Letter URL", value: (c) => c.offerLetterUrl },
+    { header: "Present Address", value: (c) => formatAddress(c.currentAddress) },
+    { header: "Permanent Address", value: (c) => formatAddress(c.permanentAddress) },
+    { header: "Emergency Contacts", value: (c) => formatGroup(c.emergencyContacts, (x) => `${x.name ?? ""} (${x.relationship ?? ""}) ${x.phone ?? ""}${x.email ? ` ${x.email}` : ""}`) },
+    { header: "Education", value: (c) => formatGroup(c.educations, (x) => `${x.degree ?? ""}${x.fieldOfStudy ? ` ${x.fieldOfStudy}` : ""}${x.schoolName ? `, ${x.schoolName}` : ""}${x.completionDate ? ` (${fmtDate(x.completionDate)})` : ""}`) },
+    { header: "Experience", value: (c) => formatGroup(c.pastExperiences, (x) => `${x.occupation ?? ""}${x.company ? ` @ ${x.company}` : ""}${x.duration ? ` (${x.duration})` : ""}${x.currentlyWorkHere ? " [current]" : ""}`) },
+    { header: "Family Members", value: (c) => formatGroup(c.familyMembers, (x) => `${x.name ?? ""} (${x.relation ?? ""})${x.occupation ? ` ${x.occupation}` : ""}${x.dob ? ` ${fmtDate(x.dob)}` : ""}`) },
+    { header: "Certifications", value: (c) => formatGroup(c.certifications, (x) => `${x.name ?? ""}${x.issuingAuthority ? ` — ${x.issuingAuthority}` : ""}${x.year ? ` (${x.year})` : ""}`) },
+  ];
+
   const exportCsv = () => {
-    const headers = ["First Name", "Last Name", "Personal Email", "Official Email", "Status", "Department", "Source", "Joining Date"];
-    const rows = filteredCandidates.map((c) => [c.firstName, c.lastName, c.personalEmail ?? "", c.workEmail, c.onboardingStatus, c.department ?? "", c.sourceOfHire ?? "", c.dateOfJoining]);
-    const csv = [headers, ...rows].map((r) => r.map((v) => `"${String(v).replace(/"/g, '""')}"`).join(",")).join("\n");
-    const blob = new Blob([csv], { type: "text/csv" });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = `candidates-${new Date().toISOString().slice(0, 10)}.csv`;
-    a.click();
-    URL.revokeObjectURL(url);
+    exportCsvFile("candidates", CANDIDATE_COLUMNS, filteredCandidates);
     setShowMore(false);
   };
 
@@ -178,10 +240,10 @@ export default function OnboardingCandidatesPage() {
   };
 
   return (
-    <div className="w-full px-6 py-6">
-      <h1 className="font-serif-display text-3xl md:text-4xl font-bold text-gray-900 mb-5">Onboarding</h1>
+    <div className="w-full px-5 py-4">
+      <h1 className="text-page-title text-gray-900 mb-5">Onboarding</h1>
       <div className="border-b border-gray-100 mb-4">
-        <button className="text-sm text-[#3b82f6] font-semibold border-b-2 border-[#3b82f6] py-2 -mb-px">Candidate</button>
+        <button className="text-[13px] text-[#22c55e] font-semibold border-b-2 border-[#22c55e] py-2 -mb-px">Candidate</button>
       </div>
 
       <div className="">
@@ -193,10 +255,10 @@ export default function OnboardingCandidatesPage() {
               options={[{ value: "Candidate View", label: "Candidate View" }]}
               className="w-48"
             />
-            <button className="text-sm text-[#3b82f6] font-medium px-2 py-1 rounded hover:bg-blue-50 transition">Edit</button>
+            <button className="text-xs text-[#22c55e] font-medium px-2 py-1 rounded hover:bg-green-50 transition">Edit</button>
           </div>
           <div className="flex items-center gap-2">
-            <button className="text-sm text-[#3b82f6] font-medium px-2 py-1 rounded hover:bg-blue-50 transition">View All Data</button>
+            <button className="text-xs text-[#22c55e] font-medium px-2 py-1 rounded hover:bg-green-50 transition">View All Data</button>
             <Select
               value={view}
               onChange={(v) => setView(v)}
@@ -204,41 +266,41 @@ export default function OnboardingCandidatesPage() {
               className="w-44"
             />
             <Link href="/onboarding/candidates/new"
-              className="inline-flex items-center gap-1.5 bg-[#16243A] hover:bg-[#1E3354] text-white px-4 py-2 rounded-md text-sm font-semibold shadow-sm transition">
-              <Plus size={14} /> Add Candidate
+              className="inline-flex items-center gap-1.5 bg-green-600 hover:bg-green-700 text-white px-3 py-1.5 rounded-md text-xs font-medium shadow-sm transition">
+              <Plus size={13} /> Add Candidate
             </Link>
             <div className="inline-flex items-center bg-white border border-[var(--border)] rounded-lg shadow-sm divide-x divide-gray-200">
               <button
                 onClick={toggleFullscreen}
                 title={isFullscreen ? "Exit fullscreen" : "Fullscreen"}
-                className="p-2 text-gray-600 hover:bg-gray-50 hover:text-[#3b82f6] transition rounded-l-lg"
+                className="p-2 text-gray-600 hover:bg-gray-50 hover:text-[#22c55e] transition rounded-l-lg"
               >
-                {isFullscreen ? <Minimize2 size={14} /> : <Maximize2 size={14} />}
+                {isFullscreen ? <Minimize2 size={12} /> : <Maximize2 size={12} />}
               </button>
               <div ref={filterRef} className="relative">
                 <button
                   onClick={() => { setShowFilters((v) => !v); setShowMore(false); }}
                   title="Filters"
-                  className={clsx("relative p-2 text-gray-600 hover:bg-gray-50 hover:text-[#3b82f6] transition", showFilters && "bg-blue-50 text-[#3b82f6]")}
+                  className={clsx("relative p-2 text-gray-600 hover:bg-gray-50 hover:text-[#22c55e] transition", showFilters && "bg-green-50 text-[#22c55e]")}
                 >
-                  <Filter size={14} />
+                  <Filter size={12} />
                   {activeFilterCount > 0 && (
-                    <span className="absolute -top-1 -right-1 bg-[#16243A] text-white text-[10px] font-bold w-4 h-4 rounded-full flex items-center justify-center">{activeFilterCount}</span>
+                    <span className="absolute -top-1 -right-1 bg-green-600 text-white text-[11px] font-semibold w-4 h-4 rounded-full flex items-center justify-center">{activeFilterCount}</span>
                   )}
                 </button>
                 {showFilters && (
                   <div className="absolute right-0 top-full mt-2 w-64 bg-white border border-gray-200 rounded-lg shadow-xl z-20 p-3">
                     <div className="flex items-center justify-between mb-2 pb-2 border-b border-gray-100">
-                      <h4 className="text-sm font-semibold text-gray-900">Filters</h4>
+                      <h4 className="text-[13px] font-semibold text-gray-900">Filters</h4>
                       {activeFilterCount > 0 && (
-                        <button onClick={() => setFilters({ status: [], source: [] })} className="text-xs text-[#3b82f6] font-medium hover:underline">Clear all</button>
+                        <button onClick={() => setFilters({ status: [], source: [] })} className="text-xs text-[#22c55e] font-medium hover:underline">Clear all</button>
                       )}
                     </div>
                     <div className="mb-3">
                       <p className="text-xs font-semibold text-gray-600 mb-1.5 uppercase tracking-wide">Status</p>
                       <div className="space-y-1">
                         {STATUSES.map((s) => (
-                          <label key={s} className="flex items-center gap-2 text-sm text-gray-700 hover:bg-gray-50 rounded px-1 py-0.5 cursor-pointer">
+                          <label key={s} className="flex items-center gap-2 text-xs text-gray-700 hover:bg-gray-50 rounded px-1 py-0.5 cursor-pointer">
                             <input
                               type="checkbox"
                               checked={filters.status.includes(s)}
@@ -256,7 +318,7 @@ export default function OnboardingCandidatesPage() {
                       <p className="text-xs font-semibold text-gray-600 mb-1.5 uppercase tracking-wide">Source</p>
                       <div className="space-y-1 max-h-32 overflow-y-auto">
                         {SOURCES.map((s) => (
-                          <label key={s} className="flex items-center gap-2 text-sm text-gray-700 hover:bg-gray-50 rounded px-1 py-0.5 cursor-pointer">
+                          <label key={s} className="flex items-center gap-2 text-xs text-gray-700 hover:bg-gray-50 rounded px-1 py-0.5 cursor-pointer">
                             <input
                               type="checkbox"
                               checked={filters.source.includes(s)}
@@ -277,28 +339,28 @@ export default function OnboardingCandidatesPage() {
                 <button
                   onClick={() => { setShowMore((v) => !v); setShowFilters(false); }}
                   title="More options"
-                  className={clsx("p-2 text-gray-600 hover:bg-gray-50 hover:text-[#3b82f6] transition rounded-r-lg", showMore && "bg-blue-50 text-[#3b82f6]")}
+                  className={clsx("p-2 text-gray-600 hover:bg-gray-50 hover:text-[#22c55e] transition rounded-r-lg", showMore && "bg-green-50 text-[#22c55e]")}
                 >
-                  <MoreHorizontal size={14} />
+                  <MoreHorizontal size={12} />
                 </button>
                 {showMore && (
                   <div className="absolute right-0 top-full mt-2 w-48 bg-white border border-gray-200 rounded-lg shadow-xl z-20 py-1">
                     <button
                       onClick={() => { qc.invalidateQueries({ queryKey: ["onboarding"] }); setShowMore(false); }}
-                      className="w-full text-left flex items-center gap-2 px-3 py-2 text-sm text-gray-700 hover:bg-gray-50"
+                      className="w-full text-left flex items-center gap-2 px-3 py-2 text-xs text-gray-700 hover:bg-gray-50"
                     >
                       <RefreshCw size={13} /> Refresh
                     </button>
                     <button
                       onClick={exportCsv}
-                      className="w-full text-left flex items-center gap-2 px-3 py-2 text-sm text-gray-700 hover:bg-gray-50"
+                      className="w-full text-left flex items-center gap-2 px-3 py-2 text-xs text-gray-700 hover:bg-gray-50"
                     >
                       <Download size={13} /> Export CSV
                     </button>
                     {selected.size > 0 && (
                       <button
                         onClick={() => { setSelected(new Set()); setShowMore(false); }}
-                        className="w-full text-left flex items-center gap-2 px-3 py-2 text-sm text-gray-700 hover:bg-gray-50 border-t border-gray-100"
+                        className="w-full text-left flex items-center gap-2 px-3 py-2 text-xs text-gray-700 hover:bg-gray-50 border-t border-gray-100"
                       >
                         <X size={13} /> Clear Selection ({selected.size})
                       </button>
@@ -315,18 +377,18 @@ export default function OnboardingCandidatesPage() {
             <div className="relative flex-1 max-w-xs">
               <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
               <input placeholder="Search candidates..." value={search} onChange={(e) => setSearch(e.target.value)}
-                className="w-full pl-9 pr-3 py-1.5 border border-gray-200 rounded text-sm focus:outline-none focus:ring-1 focus:ring-[#16243A]" />
+                className="w-full pl-9 pr-3 py-1.5 border border-gray-200 rounded text-xs focus:outline-none focus:ring-1 focus:ring-[#166534]" />
             </div>
           </div>
 
           <div className="overflow-x-auto">
-            <table className="w-full text-sm">
-              <thead className="bg-gray-50 text-xs text-gray-600 border-b border-gray-200">
+            <table className="w-full text-xs">
+              <thead className="bg-gray-50 text-table-head text-gray-600 border-b border-gray-200">
                 <tr>
-                  <th className="w-10 px-3 py-3">
+                  <th className="w-10 px-4 py-2.5">
                     <Edit2 size={12} className="text-gray-400" />
                   </th>
-                  <th className="w-10 px-3 py-3">
+                  <th className="w-10 px-4 py-2.5">
                     <input type="checkbox" checked={selected.size === filteredCandidates.length && filteredCandidates.length > 0} onChange={toggleAll} />
                   </th>
                   <HeaderCell label="First name" />
@@ -354,7 +416,7 @@ export default function OnboardingCandidatesPage() {
                   Array.from({ length: 6 }).map((_, r) => (
                     <tr key={`sk-${r}`}>
                       {Array.from({ length: 12 }).map((__, c) => (
-                        <td key={c} className="px-3 py-3"><SkeletonLine w="80%" h={10} /></td>
+                        <td key={c} className="px-4 py-2.5"><SkeletonLine w="80%" h={10} /></td>
                       ))}
                     </tr>
                   ))
@@ -362,39 +424,39 @@ export default function OnboardingCandidatesPage() {
                   <tr><td colSpan={12} className="text-center py-12 text-gray-500">{activeFilterCount > 0 ? "No candidates match filters." : "No candidates. Click \"Add Candidate\" to get started."}</td></tr>
                 ) : filteredCandidates.map((c, i) => (
                   <tr key={c.id} className="row-stagger hover:bg-gray-50" style={{ ["--i" as never]: Math.min(i, 10) }}>
-                    <td className="px-3 py-3"></td>
-                    <td className="px-3 py-3">
+                    <td className="px-4 py-2.5"></td>
+                    <td className="px-4 py-2.5">
                       <input type="checkbox" checked={selected.has(c.id)} onChange={() => toggle(c.id)} />
                     </td>
-                    <td className="px-3 py-3">
-                      <Link href={c.onboardingInstanceId ? `/onboarding/${c.id}` : "#"} className="text-gray-900 hover:text-[#3b82f6]">
+                    <td className="px-4 py-2.5">
+                      <Link href={c.onboardingInstanceId ? `/onboarding/${c.id}` : "#"} className="text-[13px] font-medium text-gray-900 hover:text-[#22c55e]">
                         {c.firstName}
                       </Link>
                     </td>
-                    <td className="px-3 py-3 text-gray-900">{c.lastName}</td>
-                    <td className="px-3 py-3">
+                    <td className="px-4 py-2.5 text-gray-900">{c.lastName}</td>
+                    <td className="px-4 py-2.5">
                       <span className="text-gray-700">{truncate(c.personalEmail ?? "", 22)}</span>
                     </td>
-                    <td className="px-3 py-3 text-gray-700">{truncate(c.workEmail, 22)}</td>
-                    <td className="px-3 py-3">
-                      <span className={clsx("px-2 py-0.5 rounded-full text-xs font-medium", statusColors[c.onboardingStatus] ?? "bg-gray-100 text-gray-600")}>
+                    <td className="px-4 py-2.5 text-gray-700">{truncate(c.workEmail, 22)}</td>
+                    <td className="px-4 py-2.5">
+                      <span className={clsx("px-2 py-0.5 rounded-full text-[11px] font-medium", statusColors[c.onboardingStatus] ?? "bg-gray-100 text-gray-600")}>
                         {c.onboardingStatus}
                       </span>
                     </td>
-                    <td className="px-3 py-3 text-gray-700">{c.department ?? "—"}</td>
-                    <td className="px-3 py-3 text-gray-700">{c.sourceOfHire ?? "—"}</td>
-                    <td className="px-3 py-3 font-mono text-xs text-gray-700">{mask(c.panNumber, revealPan, 10)}</td>
-                    <td className="px-3 py-3 font-mono text-xs text-gray-700">{mask(c.aadhaarNumber, revealAadhaar, 10)}</td>
-                    <td className="px-3 py-3 font-mono text-xs text-gray-700">{mask(c.uanNumber, false, 9)}</td>
+                    <td className="px-4 py-2.5 text-gray-700">{c.department ?? "—"}</td>
+                    <td className="px-4 py-2.5 text-gray-700">{c.sourceOfHire ?? "—"}</td>
+                    <td className="px-4 py-2.5 font-mono text-xs text-gray-700">{mask(c.panNumber, revealPan, 10)}</td>
+                    <td className="px-4 py-2.5 font-mono text-xs text-gray-700">{mask(c.aadhaarNumber, revealAadhaar, 10)}</td>
+                    <td className="px-4 py-2.5 font-mono text-xs text-gray-700">{mask(c.uanNumber, false, 9)}</td>
                   </tr>
                 ))}
               </tbody>
             </table>
           </div>
 
-          <div className="border-t border-gray-200 px-4 py-3 flex items-center justify-between text-sm">
+          <div className="border-t border-gray-200 px-4 py-3 flex items-center justify-between text-xs">
             <div>
-              Total Record Count : <span className="text-[#3b82f6] font-medium">{total}</span>
+              Total Record Count : <span className="text-[#22c55e] font-medium">{total}</span>
             </div>
             <div className="flex items-center gap-3">
               <Select
@@ -428,19 +490,19 @@ export default function OnboardingCandidatesPage() {
           });
         }} className="space-y-4 max-h-[80vh] overflow-y-auto pr-2">
           <div className="grid grid-cols-2 gap-3">
-            <div><label className="block text-sm font-medium text-gray-700 mb-1">First Name *</label>
+            <div><label className="block text-xs font-medium text-gray-700 mb-1">First Name *</label>
               <input required value={form.firstName} onChange={(e) => setForm({ ...form, firstName: e.target.value })}
-                className="w-full border border-[var(--border)] rounded-lg px-3 py-2 text-sm" /></div>
-            <div><label className="block text-sm font-medium text-gray-700 mb-1">Last Name *</label>
+                className="w-full border border-[var(--border)] rounded-lg px-3 py-1.5 text-xs" /></div>
+            <div><label className="block text-xs font-medium text-gray-700 mb-1">Last Name *</label>
               <input required value={form.lastName} onChange={(e) => setForm({ ...form, lastName: e.target.value })}
-                className="w-full border border-[var(--border)] rounded-lg px-3 py-2 text-sm" /></div>
-            <div><label className="block text-sm font-medium text-gray-700 mb-1">Personal Email</label>
+                className="w-full border border-[var(--border)] rounded-lg px-3 py-1.5 text-xs" /></div>
+            <div><label className="block text-xs font-medium text-gray-700 mb-1">Personal Email</label>
               <input type="email" value={form.personalEmail} onChange={(e) => setForm({ ...form, personalEmail: e.target.value })}
-                className="w-full border border-[var(--border)] rounded-lg px-3 py-2 text-sm" /></div>
-            <div><label className="block text-sm font-medium text-gray-700 mb-1">Official Email *</label>
+                className="w-full border border-[var(--border)] rounded-lg px-3 py-1.5 text-xs" /></div>
+            <div><label className="block text-xs font-medium text-gray-700 mb-1">Official Email *</label>
               <input type="email" required value={form.workEmail} onChange={(e) => setForm({ ...form, workEmail: e.target.value })}
-                className="w-full border border-[var(--border)] rounded-lg px-3 py-2 text-sm" /></div>
-            <div><label className="block text-sm font-medium text-gray-700 mb-1">Department</label>
+                className="w-full border border-[var(--border)] rounded-lg px-3 py-1.5 text-xs" /></div>
+            <div><label className="block text-xs font-medium text-gray-700 mb-1">Department</label>
               <Select
                 value={form.departmentId}
                 onChange={(v) => setForm({ ...form, departmentId: v })}
@@ -448,16 +510,16 @@ export default function OnboardingCandidatesPage() {
                 searchable
                 options={(depts?.data ?? []).map((d) => ({ value: d.id, label: d.name }))}
               /></div>
-            <div><label className="block text-sm font-medium text-gray-700 mb-1">Source of Hire</label>
+            <div><label className="block text-xs font-medium text-gray-700 mb-1">Source of Hire</label>
               <Select
                 value={form.sourceOfHire}
                 onChange={(v) => setForm({ ...form, sourceOfHire: v as SourceOfHire })}
                 options={SOURCES.map((s) => ({ value: s, label: s }))}
               /></div>
-            <div><label className="block text-sm font-medium text-gray-700 mb-1">Date of Joining *</label>
-              <input type="date" required value={form.dateOfJoining} onChange={(e) => setForm({ ...form, dateOfJoining: e.target.value })}
-                className="w-full border border-[var(--border)] rounded-lg px-3 py-2 text-sm" /></div>
-            <div><label className="block text-sm font-medium text-gray-700 mb-1">Onboarding Template</label>
+            <div><label className="block text-xs font-medium text-gray-700 mb-1">Date of Joining *</label>
+              <input type="date" required value={form.dateOfJoining} min={todayInput()} onChange={(e) => setForm({ ...form, dateOfJoining: e.target.value })}
+                className="w-full border border-[var(--border)] rounded-lg px-3 py-1.5 text-xs" /></div>
+            <div><label className="block text-xs font-medium text-gray-700 mb-1">Onboarding Template</label>
               <Select
                 value={form.templateId}
                 onChange={(v) => setForm({ ...form, templateId: v })}
@@ -465,20 +527,20 @@ export default function OnboardingCandidatesPage() {
                 searchable
                 options={(templates?.data ?? []).map((t) => ({ value: t.id, label: t.name }))}
               /></div>
-            <div><label className="block text-sm font-medium text-gray-700 mb-1">PAN Number</label>
+            <div><label className="block text-xs font-medium text-gray-700 mb-1">PAN Number</label>
               <input value={form.panNumber} onChange={(e) => setForm({ ...form, panNumber: e.target.value.toUpperCase() })}
-                className="w-full border border-[var(--border)] rounded-lg px-3 py-2 text-sm font-mono" maxLength={10} /></div>
-            <div><label className="block text-sm font-medium text-gray-700 mb-1">Aadhaar Number</label>
+                className="w-full border border-[var(--border)] rounded-lg px-3 py-1.5 text-sm font-mono" maxLength={10} /></div>
+            <div><label className="block text-xs font-medium text-gray-700 mb-1">Aadhaar Number</label>
               <input value={form.aadhaarNumber} onChange={(e) => setForm({ ...form, aadhaarNumber: e.target.value })}
-                className="w-full border border-[var(--border)] rounded-lg px-3 py-2 text-sm font-mono" maxLength={12} /></div>
-            <div className="col-span-2"><label className="block text-sm font-medium text-gray-700 mb-1">UAN Number</label>
+                className="w-full border border-[var(--border)] rounded-lg px-3 py-1.5 text-sm font-mono" maxLength={12} /></div>
+            <div className="col-span-2"><label className="block text-xs font-medium text-gray-700 mb-1">UAN Number</label>
               <input value={form.uanNumber} onChange={(e) => setForm({ ...form, uanNumber: e.target.value })}
-                className="w-full border border-[var(--border)] rounded-lg px-3 py-2 text-sm font-mono" maxLength={12} /></div>
+                className="w-full border border-[var(--border)] rounded-lg px-3 py-1.5 text-sm font-mono" maxLength={12} /></div>
           </div>
 
           <div className="flex justify-end gap-2 pt-2 border-t border-gray-100 sticky bottom-0 bg-white">
-            <button type="button" onClick={() => setShowAdd(false)} className="px-4 py-2 border border-[var(--border)] rounded-lg text-sm">Cancel</button>
-            <button type="submit" disabled={addMut.isPending} className="px-4 py-2 bg-[#16243A] text-white rounded-lg text-sm font-medium hover:bg-[#2563eb] disabled:opacity-50">
+            <button type="button" onClick={() => setShowAdd(false)} className="px-3 py-1.5 border border-[var(--border)] rounded-lg text-xs font-medium">Cancel</button>
+            <button type="submit" disabled={addMut.isPending} className="px-3 py-1.5 bg-green-600 text-white rounded-lg text-xs font-medium hover:bg-green-700 disabled:opacity-50">
               {addMut.isPending ? "Adding..." : "Add Candidate"}
             </button>
           </div>
@@ -493,14 +555,14 @@ export default function OnboardingCandidatesPage() {
             <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-sm"
               onClick={() => !sendWelcomeMailMut.isPending && setMailConfirm(null)} />
             <div className="relative bg-white rounded-xl shadow-2xl ring-1 ring-slate-200 w-full max-w-md mx-4 overflow-hidden">
-              <div className="p-6">
+              <div className="p-4">
                 <div className="flex items-start gap-4">
                   <div className="shrink-0 flex items-center justify-center w-12 h-12 rounded-full ring-4 bg-emerald-50 ring-emerald-50/60">
                     <Mail className="w-6 h-6 text-emerald-600" />
                   </div>
                   <div className="flex-1">
                     <h3 className="text-lg font-semibold text-slate-900">Send Welcome Email?</h3>
-                    <p className="mt-1.5 text-sm text-slate-500 leading-relaxed">New joinee will receive a welcome email with employee code, joining date and onboarding details.</p>
+                    <p className="mt-1.5 text-xs text-slate-500 leading-relaxed">New joinee will receive a welcome email with employee code, joining date and onboarding details.</p>
                     <div className="mt-3 text-xs bg-slate-50 border border-slate-100 rounded-md px-2.5 py-2 text-slate-600 space-y-0.5">
                       <div className="font-semibold text-slate-800">{e.firstName} {e.lastName}</div>
                       <div className="text-[11px] text-slate-500">To: {to}</div>
@@ -511,16 +573,20 @@ export default function OnboardingCandidatesPage() {
                   </div>
                 </div>
               </div>
-              <div className="flex justify-end gap-2 px-6 py-4 bg-slate-50 border-t border-slate-100">
+              <div className="flex justify-end gap-2 px-5 py-4 bg-slate-50 border-t border-slate-100">
                 <button type="button" onClick={() => setMailConfirm(null)} disabled={sendWelcomeMailMut.isPending}
-                  className="px-4 py-2 bg-white border border-slate-300 rounded-lg text-sm font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-50">
+                  className="px-3 py-1.5 bg-white border border-slate-300 rounded-lg text-xs font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-50">
                   Skip
                 </button>
                 <button type="button"
-                  onClick={() => sendWelcomeMailMut.mutate({ employeeId: e.id })}
+                  onClick={() => toast.promise(sendWelcomeMailMut.mutateAsync({ employeeId: e.id }), {
+                    loading: "Sending welcome email…",
+                    success: "Welcome email sent",
+                    error: "Couldn't send the welcome email",
+                  })}
                   disabled={sendWelcomeMailMut.isPending}
-                  className="inline-flex items-center gap-1.5 px-4 py-2 text-white rounded-lg text-sm font-semibold shadow-sm disabled:opacity-50 bg-gradient-to-r from-emerald-500 to-green-600 hover:from-emerald-600 hover:to-green-700">
-                  <Send size={14} />
+                  className="inline-flex items-center gap-1.5 px-3 py-1.5 text-white rounded-lg text-xs font-medium shadow-sm disabled:opacity-50 bg-gradient-to-r from-emerald-500 to-green-600 hover:from-emerald-600 hover:to-green-700">
+                  <Send size={13} />
                   {sendWelcomeMailMut.isPending ? "Sending..." : "Send Welcome Email"}
                 </button>
               </div>
@@ -537,7 +603,7 @@ export default function OnboardingCandidatesPage() {
 
 function HeaderCell({ label, action }: { label: string; action?: React.ReactNode }) {
   return (
-    <th className="px-3 py-3 text-left font-medium text-gray-700 whitespace-nowrap">
+    <th className="px-4 py-2.5 text-left font-semibold text-gray-700 whitespace-nowrap">
       <div className="flex items-center gap-1.5">
         <span>{label}</span>
         <ArrowUpDown size={10} className="text-gray-400" />

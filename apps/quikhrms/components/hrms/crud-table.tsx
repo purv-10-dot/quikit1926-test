@@ -40,15 +40,15 @@ export function CrudTable<T extends { id: string }>({
 
   return (
     <div>
-      <div className="flex items-center justify-between mb-6 flex-wrap gap-3">
-        <h1 className="font-serif-display text-3xl md:text-4xl font-bold text-gray-900">{title}</h1>
+      <div className="flex items-center justify-between mb-4 flex-wrap gap-3">
+        <h1 className="text-base font-semibold text-gray-900">{title}</h1>
         <button onClick={onAdd} className="btn btn-primary">
-          <Plus size={14} /> Add new
+          <Plus size={13} /> Add new
         </button>
       </div>
 
       <div className="surface-card overflow-hidden">
-        <div className="px-5 py-3 border-b border-gray-100">
+        <div className="px-4 py-3 border-b border-gray-100">
           <div className="relative max-w-sm">
             <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
             <input
@@ -56,21 +56,19 @@ export function CrudTable<T extends { id: string }>({
               placeholder={searchPlaceholder}
               value={search}
               onChange={(e) => onSearchChange(e.target.value)}
-              className="w-full pl-9 pr-4 py-2 border border-gray-300 rounded-full text-sm focus:outline-none focus:ring-1 focus:ring-[#3b82f6]"
+              className="w-full ds-control pl-9"
             />
           </div>
         </div>
 
         {isLoading ? (
-          <table className="w-full">
+          <table className="ds-table">
             <thead>
-              <tr className="bg-gray-50/50 border-b border-gray-100">
+              <tr>
                 {columns.map((col) => (
-                  <th key={col.key} className="text-left px-4 py-3 text-[10px] font-bold text-gray-500 uppercase tracking-wide">
-                    {col.label}
-                  </th>
+                  <th key={col.key}>{col.label}</th>
                 ))}
-                <th className="text-right px-4 py-3 text-[10px] font-bold text-gray-500 uppercase tracking-wide w-24">Actions</th>
+                <th className="text-right w-24">Actions</th>
               </tr>
             </thead>
             <tbody>
@@ -97,20 +95,18 @@ export function CrudTable<T extends { id: string }>({
               variant="search"
               title="No items found"
               description={search ? `No results for "${search}". Try a different search or add a new entry.` : `No ${title.toLowerCase()} yet. Click Add new to get started.`}
-              action={<button onClick={onAdd} className="btn btn-primary"><Plus size={14} /> Add new</button>}
+              action={<button onClick={onAdd} className="btn btn-primary"><Plus size={13} /> Add new</button>}
               className="border-0 shadow-none"
             />
           </div>
         ) : (
-          <table className="w-full">
+          <table className="ds-table">
             <thead>
-              <tr className="bg-gray-50/50 border-b border-gray-100">
+              <tr>
                 {columns.map((col) => (
-                  <th key={col.key} className="text-left px-4 py-3 text-[10px] font-bold text-gray-500 uppercase tracking-wide">
-                    {col.label}
-                  </th>
+                  <th key={col.key}>{col.label}</th>
                 ))}
-                <th className="text-right px-4 py-3 text-[10px] font-bold text-gray-500 uppercase tracking-wide w-24">Actions</th>
+                <th className="text-right w-24">Actions</th>
               </tr>
             </thead>
             <tbody>
@@ -121,19 +117,19 @@ export function CrudTable<T extends { id: string }>({
                   style={{ ["--i" as never]: Math.min(i, 10) }}
                 >
                   {columns.map((col) => (
-                    <td key={col.key} className="px-4 py-3 text-sm text-gray-700">
+                    <td key={col.key}>
                       {col.render
                         ? col.render(item)
                         : String((item as Record<string, unknown>)[col.key] ?? "—")}
                     </td>
                   ))}
-                  <td className="px-4 py-3 text-right">
+                  <td className="text-right">
                     <div className="flex items-center justify-end gap-1">
                       <button
                         onClick={() => onEdit(item)}
-                        className="p-1.5 text-gray-400 hover:text-[#3b82f6] rounded hover:bg-blue-50"
+                        className="w-8 h-8 inline-flex items-center justify-center text-gray-400 hover:text-[#22c55e] rounded-lg hover:bg-green-50"
                       >
-                        <Pencil size={14} />
+                        <Pencil size={12} />
                       </button>
                       {deleteId === item.id ? (
                         <div className="flex items-center gap-1">
@@ -153,9 +149,9 @@ export function CrudTable<T extends { id: string }>({
                       ) : (
                         <button
                           onClick={() => setDeleteId(item.id)}
-                          className="p-1.5 text-gray-400 hover:text-red-600 rounded hover:bg-red-50"
+                          className="w-8 h-8 inline-flex items-center justify-center text-gray-400 hover:text-red-600 rounded-lg hover:bg-red-50"
                         >
-                          <Trash2 size={14} />
+                          <Trash2 size={12} />
                         </button>
                       )}
                     </div>

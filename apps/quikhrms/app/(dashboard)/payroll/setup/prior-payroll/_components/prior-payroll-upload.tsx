@@ -149,7 +149,6 @@ export function PriorPayrollUpload() {
       if (r.failed === 0) toast.success("All records imported", `${r.succeeded} saved`);
       else toast.error("Partial import", `${r.succeeded} of ${r.total} saved; ${r.failed} failed`);
     },
-    onError: (e: Error) => toast.error("Upload failed", e.message),
   });
 
   const downloadTemplate = () => {
@@ -285,11 +284,11 @@ export function PriorPayrollUpload() {
   const invalidCount = (parsed?.length ?? 0) - validCount;
 
   return (
-    <div className="rounded-md border border-gray-200 bg-white p-5 space-y-3">
+    <div className="rounded-md border border-gray-200 bg-white p-4 space-y-3">
       <div className="flex items-start justify-between gap-3">
         <div>
-          <h3 className="text-sm font-bold text-gray-900 flex items-center gap-1.5">
-            <FileSpreadsheet size={15} className="text-blue-600" />
+          <h3 className="text-[13px] font-semibold text-gray-900 flex items-center gap-1.5">
+            <FileSpreadsheet size={15} className="text-green-600" />
             Upload YTD payroll records
           </h3>
           <p className="text-xs text-gray-500 mt-0.5">
@@ -299,15 +298,15 @@ export function PriorPayrollUpload() {
         <button
           type="button"
           onClick={downloadTemplate}
-          className="shrink-0 inline-flex items-center gap-1.5 px-2.5 py-1.5 border border-gray-300 bg-white hover:bg-gray-50 text-gray-700 rounded text-xs font-semibold"
+          className="shrink-0 inline-flex items-center gap-1.5 px-3 py-1.5 border border-gray-300 bg-white hover:bg-gray-50 text-gray-700 rounded text-xs font-medium"
         >
-          <Download size={12} /> Download Template
+          <Download size={13} /> Download Template
         </button>
       </div>
 
       {/* Step 1 — empty state: choose file */}
       {!parsed && !result && (
-        <div className="rounded border border-dashed border-gray-300 bg-gray-50 p-6 text-center">
+        <div className="rounded border border-dashed border-gray-300 bg-gray-50 p-4 text-center">
           <Upload size={20} className="mx-auto text-gray-400 mb-2" />
           <input
             ref={fileRef}
@@ -319,9 +318,9 @@ export function PriorPayrollUpload() {
           <button
             type="button"
             onClick={() => fileRef.current?.click()}
-            className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-[#16243A] hover:bg-[#1E3354] text-white rounded text-xs font-semibold"
+            className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-green-600 hover:bg-green-700 text-white rounded text-xs font-medium"
           >
-            <Upload size={12} /> Choose CSV
+            <Upload size={13} /> Choose CSV
           </button>
           <p className="text-[11px] text-gray-500 mt-2">
             Required columns: EmployeeCode · FinancialYear · PeriodStart · PeriodEnd · GrossEarnings.
@@ -413,9 +412,9 @@ export function PriorPayrollUpload() {
               type="button"
               onClick={submit}
               disabled={validCount === 0 || uploadMut.isPending}
-              className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-[#16243A] hover:bg-[#1E3354] disabled:opacity-60 disabled:cursor-not-allowed text-white rounded text-xs font-semibold"
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-green-600 hover:bg-green-700 disabled:opacity-60 disabled:cursor-not-allowed text-white rounded text-xs font-medium"
             >
-              {uploadMut.isPending ? <Loader2 size={12} className="animate-spin" /> : <Upload size={12} />}
+              {uploadMut.isPending ? <Loader2 size={13} className="animate-spin" /> : <Upload size={13} />}
               {uploadMut.isPending
                 ? "Uploading…"
                 : `Upload ${validCount} record${validCount !== 1 ? "s" : ""}`}

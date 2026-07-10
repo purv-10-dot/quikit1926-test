@@ -32,7 +32,10 @@ export const NumberInput = forwardRef<HTMLInputElement, NumberInputProps>(functi
       onChange={(e) => {
         let raw = e.target.value;
         if (!allowNegative && raw.startsWith("-")) raw = raw.replace(/-/g, "");
-        if (!allowDecimal) raw = raw.replace(/\./g, "");
+        // Integer-only: DROP the fractional part (keep digits before the dot).
+        // Previously we deleted the dot itself, which turned "0.5" into "05" → 5
+        // (a silent 10× corruption). Truncating gives the correct "0.5" → "0".
+        if (!allowDecimal) raw = raw.split(".")[0];
         setText(raw);
         if (raw === "" || raw === "-" || raw === ".") {
           onChange(null);

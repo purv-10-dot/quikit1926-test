@@ -70,7 +70,7 @@ const STATUS_META: Record<PeriodStatus, { label: string; pill: string; icon: Rea
   Overdue:  { label: "Overdue",  pill: "bg-red-100 text-red-700",        icon: <AlertTriangle size={11} /> },
   Partial:  { label: "Partial",  pill: "bg-amber-100 text-amber-700",    icon: <AlertTriangle size={11} /> },
   Paid:     { label: "Paid",     pill: "bg-emerald-100 text-emerald-700", icon: <CheckCircle2 size={11} /> },
-  Excess:   { label: "Excess",   pill: "bg-blue-100 text-blue-700",      icon: <AlertTriangle size={11} /> },
+  Excess:   { label: "Excess",   pill: "bg-green-100 text-green-700",      icon: <AlertTriangle size={11} /> },
 };
 
 function currentFY(): string {
@@ -82,7 +82,7 @@ function currentFY(): string {
 
 export default function TdsPage() {
   return (
-    <Suspense fallback={<div className="p-6"><SkeletonLine w="40%" h={20} /></div>}>
+    <Suspense fallback={<div className="p-4"><SkeletonLine w="40%" h={20} /></div>}>
       <TdsPageInner />
     </Suspense>
   );
@@ -105,14 +105,14 @@ function TdsPageInner() {
   };
 
   return (
-    <div className="w-full space-y-5">
+    <div className="w-full space-y-4">
       {/* Hero */}
       <div className="flex items-center justify-between gap-3">
         <div className="flex items-center gap-3">
-          <Receipt size={28} className="text-[#3b82f6]" />
+          <Receipt size={28} className="text-[#22c55e]" />
           <div>
-            <h1 className="font-serif-display text-3xl md:text-4xl font-bold text-gray-900">TDS &amp; Challans</h1>
-            <p className="text-sm text-gray-500">
+            <h1 className="text-page-title text-gray-900">TDS &amp; Challans</h1>
+            <p className="text-xs text-gray-500">
               Monthly TDS deducted from payroll, deposit challans recorded by Finance, and how they reconcile.
             </p>
           </div>
@@ -164,8 +164,8 @@ function TabPill({ active, onClick, label, icon }: { active: boolean; onClick: (
       type="button"
       onClick={onClick}
       className={clsx(
-        "inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-semibold transition",
-        active ? "bg-white text-[#16243A] shadow-sm ring-1 ring-gray-200" : "text-gray-600 hover:text-[#16243A] hover:bg-white/60",
+        "inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[13px] font-semibold transition",
+        active ? "bg-white text-[#166534] shadow-sm ring-1 ring-gray-200" : "text-gray-600 hover:text-[#166534] hover:bg-white/60",
       )}
     >
       {icon} {label}
@@ -205,7 +205,6 @@ function LiabilityTab({ fy, onRecordChallan }: { fy: string; onRecordChallan: (p
       qc.invalidateQueries({ queryKey: ["tds", "liability"] });
       toast.success("Liability refreshed");
     },
-    onError: (e: Error) => toast.error("Refresh failed", e.message),
   });
 
   return (
@@ -227,7 +226,7 @@ function LiabilityTab({ fy, onRecordChallan }: { fy: string; onRecordChallan: (p
           type="button"
           onClick={() => recomputeMut.mutate()}
           disabled={recomputeMut.isPending}
-          className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-gray-700 bg-white border border-gray-300 rounded-md hover:bg-gray-50 disabled:opacity-60"
+          className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-gray-700 bg-white border border-gray-300 rounded-md hover:bg-gray-50 disabled:opacity-60"
         >
           <RefreshCw size={12} className={clsx(recomputeMut.isPending && "animate-spin")} />
           {recomputeMut.isPending ? "Refreshing…" : "Recompute"}
@@ -237,7 +236,7 @@ function LiabilityTab({ fy, onRecordChallan }: { fy: string; onRecordChallan: (p
       {/* Table */}
       <div className="rounded-xl border border-gray-200 bg-white overflow-hidden">
         {isLoading ? (
-          <div className="p-6 text-sm text-gray-500">Loading…</div>
+          <div className="p-4 text-xs text-gray-500">Loading…</div>
         ) : periods.length === 0 ? (
           <EmptyState
             title="No liability periods yet"
@@ -245,7 +244,7 @@ function LiabilityTab({ fy, onRecordChallan }: { fy: string; onRecordChallan: (p
           />
         ) : (
           <table className="w-full text-sm">
-            <thead className="bg-gray-50 text-xs uppercase text-gray-500">
+            <thead className="bg-gray-50 text-table-head uppercase text-gray-500">
               <tr>
                 <th className="text-left px-4 py-3">Period</th>
                 <th className="text-right px-4 py-3">Deducted</th>
@@ -265,7 +264,7 @@ function LiabilityTab({ fy, onRecordChallan }: { fy: string; onRecordChallan: (p
                 return (
                   <tr key={p.id} className="hover:bg-gray-50">
                     <td className="px-4 py-2.5">
-                      <div className="font-semibold text-gray-900">
+                      <div className="text-[13px] font-medium text-gray-900">
                         {MONTHS[p.periodMonth - 1]} {String(p.periodYear).slice(-2)}
                       </div>
                       <div className="text-[11px] text-gray-500">{p.employeeCount} employee{p.employeeCount === 1 ? "" : "s"}</div>
@@ -279,7 +278,7 @@ function LiabilityTab({ fy, onRecordChallan }: { fy: string; onRecordChallan: (p
                       {new Date(p.dueDate).toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "2-digit" })}
                     </td>
                     <td className="px-4 py-2.5">
-                      <span className={clsx("inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold", meta.pill)}>
+                      <span className={clsx("inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-medium", meta.pill)}>
                         {meta.icon} {meta.label}
                       </span>
                     </td>
@@ -288,7 +287,7 @@ function LiabilityTab({ fy, onRecordChallan }: { fy: string; onRecordChallan: (p
                         <button
                           type="button"
                           onClick={() => onRecordChallan(p)}
-                          className="inline-flex items-center gap-1 px-2.5 py-1 rounded-md text-xs font-semibold text-emerald-700 hover:bg-emerald-50"
+                          className="inline-flex items-center gap-1 px-2.5 py-1 rounded-md text-xs font-normal text-emerald-700 hover:bg-emerald-50"
                         >
                           <Plus size={12} /> Record challan
                         </button>
@@ -329,7 +328,6 @@ function ChallansTab({ fy, onNewChallan }: { fy: string; onNewChallan: () => voi
       qc.invalidateQueries({ queryKey: ["tds", "liability"] });
       toast.success("Challan deleted");
     },
-    onError: (e: Error) => toast.error("Delete failed", e.message),
   });
 
   return (
@@ -344,15 +342,15 @@ function ChallansTab({ fy, onNewChallan }: { fy: string; onNewChallan: () => voi
         <button
           type="button"
           onClick={onNewChallan}
-          className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-[#16243A] hover:bg-[#1E3354] text-white rounded-md text-sm font-semibold shadow-sm"
+          className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-green-600 hover:bg-green-700 text-white rounded-md text-xs font-medium shadow-sm"
         >
-          <Plus size={14} /> Record challan
+          <Plus size={13} /> Record challan
         </button>
       </div>
 
       <div className="rounded-xl border border-gray-200 bg-white overflow-hidden">
         {isLoading ? (
-          <div className="p-6 text-sm text-gray-500">Loading…</div>
+          <div className="p-4 text-xs text-gray-500">Loading…</div>
         ) : challans.length === 0 ? (
           <EmptyState
             title="No challans recorded yet"
@@ -360,7 +358,7 @@ function ChallansTab({ fy, onNewChallan }: { fy: string; onNewChallan: () => voi
           />
         ) : (
           <table className="w-full text-sm">
-            <thead className="bg-gray-50 text-xs uppercase text-gray-500">
+            <thead className="bg-gray-50 text-table-head uppercase text-gray-500">
               <tr>
                 <th className="text-left px-4 py-3">CIN</th>
                 <th className="text-left px-4 py-3">Deposit</th>
@@ -393,7 +391,7 @@ function ChallansTab({ fy, onNewChallan }: { fy: string; onNewChallan: () => voi
                     ) : (
                       <div className="flex flex-wrap gap-1">
                         {c.allocations.map((a) => (
-                          <span key={a.id} className="px-1.5 py-0.5 rounded bg-blue-50 text-blue-700 text-[10px] font-semibold">
+                          <span key={a.id} className="px-1.5 py-0.5 rounded bg-green-50 text-green-700 text-[10px] font-semibold">
                             {MONTHS[a.period.periodMonth - 1]} {String(a.period.periodYear).slice(-2)} · ₹{INR.format(Number(a.allocatedAmount))}
                           </span>
                         ))}
@@ -417,7 +415,7 @@ function ChallansTab({ fy, onNewChallan }: { fy: string; onNewChallan: () => voi
                       }}
                       className="p-1.5 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded transition"
                     >
-                      <Trash2 size={14} />
+                      <Trash2 size={12} />
                     </button>
                   </td>
                 </tr>
@@ -437,7 +435,7 @@ function ChallanStatusPill({ status }: { status: ChallanStatus }) {
     FullyAllocated:     { label: "Allocated",    cls: "bg-emerald-100 text-emerald-700" },
   };
   const m = map[status];
-  return <span className={clsx("inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold", m.cls)}>{m.label}</span>;
+  return <span className={clsx("inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-medium", m.cls)}>{m.label}</span>;
 }
 
 /* ────────────────────── Small atoms ────────────────────── */
@@ -449,7 +447,7 @@ function StatCard({ label, value, tint, isCount }: {
   isCount?: boolean;
 }) {
   const tintMap: Record<typeof tint, string> = {
-    blue: "bg-blue-50 text-blue-700 ring-blue-100",
+    blue: "bg-green-50 text-green-700 ring-green-100",
     emerald: "bg-emerald-50 text-emerald-700 ring-emerald-100",
     amber: "bg-amber-50 text-amber-700 ring-amber-100",
     red: "bg-red-50 text-red-700 ring-red-100",
@@ -458,7 +456,7 @@ function StatCard({ label, value, tint, isCount }: {
   return (
     <div className={clsx("rounded-xl ring-1 p-4", tintMap[tint])}>
       <p className="text-[10px] uppercase font-bold tracking-wider">{label}</p>
-      <p className="font-serif-display text-2xl font-bold mt-1 tabular-nums">
+      <p className="font-serif-display text-xl font-bold mt-1 tabular-nums">
         {isCount ? value : `₹${INR.format(value)}`}
       </p>
     </div>
@@ -467,9 +465,9 @@ function StatCard({ label, value, tint, isCount }: {
 
 function EmptyState({ title, body }: { title: string; body: string }) {
   return (
-    <div className="py-12 text-center px-6">
+    <div className="py-12 text-center px-5">
       <Calendar size={28} className="text-gray-300 mx-auto mb-2" />
-      <p className="text-sm font-bold text-gray-900">{title}</p>
+      <p className="text-[13px] font-semibold text-gray-900">{title}</p>
       <p className="text-xs text-gray-500 mt-1 max-w-md mx-auto">{body}</p>
     </div>
   );

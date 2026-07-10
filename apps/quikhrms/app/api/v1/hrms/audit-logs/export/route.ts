@@ -32,11 +32,37 @@ export const POST = withAuth(async (req: NextRequest, { orgId, userId }) => {
     await createAuditLog({ orgId, userId, action: "Export", entityType: "AuditLog", metadata: { count: logs.length } });
 
     if (parsed.data.format === "CSV") {
-      const headers = ["Timestamp", "Actor", "Action", "Entity", "EntityId", "IP"];
+      // Resolve actor ids → readable names (userId is the Employee.id) so the
+      // export is legible, not a wall of ids.
+      const actorIds = [...new Set(logs.map((l) => l.userId).filter(Boolean))] as string[];
+      const actors = actorIds.length
+        ? await prisma.employee.findMany({
+            where: { orgId, id: { in: actorIds } },
+            select: { id: true, firstName: true, lastName: true, employeeCode: true },
+          })
+        : [];
+      const actorMap = new Map(actors.map((a) => [a.id, `${a.firstName} ${a.lastName} (${a.employeeCode})`]));
+
+      const esc = (v: unknown): string => {
+        const s = v === null || v === undefined ? "" : typeof v === "object" ? JSON.stringify(v) : String(v);
+        return `"${s.replace(/"/g, '""')}"`;
+      };
+      // Every field on the audit record, including the changes diff + metadata.
+      const headers = ["Log ID", "Timestamp", "Actor ID", "Actor", "Action", "Entity", "Entity ID", "Changes", "Metadata", "IP Address", "User Agent"];
       const rows = logs.map((l) => [
-        l.createdAt.toISOString(), l.userId, l.action, l.entityType, l.entityId ?? "", l.ipAddress ?? "",
+        l.id,
+        l.createdAt.toISOString(),
+        l.userId ?? "",
+        (l.userId && actorMap.get(l.userId)) || l.userId || "",
+        l.action,
+        l.entityType,
+        l.entityId ?? "",
+        l.changes ?? "",
+        l.metadata ?? "",
+        l.ipAddress ?? "",
+        l.userAgent ?? "",
       ]);
-      const csv = [headers, ...rows].map((r) => r.map((v) => `"${v}"`).join(",")).join("\n");
+      const csv = "﻿" + [headers, ...rows].map((r) => r.map(esc).join(",")).join("\r\n");
       return new NextResponse(csv, {
         headers: { "Content-Type": "text/csv", "Content-Disposition": `attachment; filename="audit_${Date.now()}.csv"` },
       });

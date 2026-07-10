@@ -7,6 +7,12 @@ export interface DashboardConfig {
   role: { code: string; name: string };
   widgets: string[];
   permissions: string[];
+  /**
+   * Navigation allow-list for the user's role. Empty = not configured →
+   * sidebar shows everything the permissions allow (default-allow). When
+   * non-empty, the sidebar restricts tabs to these keys (see NAV_TREE).
+   */
+  navKeys: string[];
   employee: {
     id: string;
     name: string;
@@ -29,6 +35,7 @@ export function useDashboardConfig() {
     role: q.data?.data?.role ?? null,
     widgets: q.data?.data?.widgets ?? [],
     permissions: q.data?.data?.permissions ?? [],
+    navKeys: q.data?.data?.navKeys ?? [],
     employee: q.data?.data?.employee ?? null,
     /** Convenience flag — new joiner who hasn't been promoted to Active. */
     preBoarding: q.data?.data?.employee?.status === "PreBoarding",

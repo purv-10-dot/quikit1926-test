@@ -17,8 +17,8 @@ export const POST = withAuth(async (req: NextRequest, { orgId, userId }, params)
     const body = await req.json();
     const overallRating = Number(body.overallRating);
     const recommendation = String(body.recommendation ?? "");
-    if (!overallRating || overallRating < 1 || overallRating > 5) {
-      return validationError("Rating must be between 1 and 5");
+    if (!overallRating || overallRating < 1 || overallRating > 10) {
+      return validationError("Rating must be between 1 and 10");
     }
     if (!["StrongHire", "Hire", "MaybeHire", "NoHire", "StrongNoHire"].includes(recommendation)) {
       return validationError("Invalid recommendation");

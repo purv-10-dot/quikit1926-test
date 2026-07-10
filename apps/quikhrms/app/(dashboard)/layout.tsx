@@ -3,9 +3,9 @@ import { requireAppAccess } from "@quikit/auth/app-access";
 import { authOptions } from "@/lib/auth";
 import { Sidebar } from "@/components/hrms/layout/sidebar";
 import { TopBar } from "@/components/hrms/layout/top-bar";
-import { BackButton } from "@/components/hrms/layout/back-button";
 import { AuthGuard } from "@/components/hrms/layout/auth-guard";
 import { SessionGuard } from "@/components/session-guard";
+import { SetupGate } from "@/components/hrms/setup/setup-gate";
 
 // Reads the session per request and gates on app access — never prerender.
 export const dynamic = "force-dynamic";
@@ -27,6 +27,9 @@ export default async function HRMSLayout({ children }: { children: React.ReactNo
   return (
     <AuthGuard>
       <SessionGuard>
+        {/* First-run org-setup gate — blocks admins behind a checklist until
+            core configuration is complete (no-op for non-admins / once done). */}
+        <SetupGate />
         <div className="flex h-screen overflow-hidden bg-gray-50 dark:bg-[#0b1220]">
           <Sidebar />
           <main className="flex-1 overflow-y-auto">
@@ -34,10 +37,7 @@ export default async function HRMSLayout({ children }: { children: React.ReactNo
             <div className="sticky top-0 z-30 bg-gray-50/85 backdrop-blur supports-[backdrop-filter]:bg-gray-50/70 dark:bg-[#0b1220]/85 px-4 lg:px-6 py-3 border-b border-gray-200/60 dark:border-white/10">
               <TopBar />
             </div>
-            <div className="p-6">
-              <div className="mb-2">
-                <BackButton />
-              </div>
+            <div className="px-4 py-4 lg:px-6 lg:py-5">
               {children}
             </div>
           </main>

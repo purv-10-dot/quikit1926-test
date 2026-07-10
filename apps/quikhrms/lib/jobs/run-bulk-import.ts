@@ -2,7 +2,7 @@ import { z } from "zod";
 import { prisma } from "@/lib/prisma";
 import { processBulkEmployees } from "@/lib/services/gap-fill";
 import { createAuditLog } from "@/lib/utils/audit";
-import { inviteImportedEmployees } from "@/lib/services/invitation";
+import { provisionCentralInvite } from "@/lib/services/invitation";
 import { bulkEmployeeRowSchema } from "@/lib/validations/gap-fill";
 
 const rowsSchema = z.array(bulkEmployeeRowSchema);
@@ -58,15 +58,29 @@ export async function runBulkEmployeeImport(args: BulkImportArgs): Promise<void>
     metadata: { importId, success: result.success, failed: result.failed, dryRun },
   });
 
-  // Auto-invite freshly onboarded employees — creates a Users & Invitations row
-  // + sends an activation email (inline) so each sets their own password.
+  // Auto-invite freshly onboarded employees — provision each in central QuikIT
+  // (central creates the login account AND sends the invite/set-password email)
+  // + record a local Users & Invitations row. HRMS does not send the email.
   if (!dryRun && result.createdEmployees.length > 0) {
-    try {
-      const inv = await inviteImportedEmployees(orgId, userId, result.createdEmployees);
-      console.log(`[bulk-import] invitations: ${inv.invited} created, ${inv.queued} emails sent`);
-    } catch (e) {
-      console.error("[bulk-import] auto-invite step failed:", e);
+    let provisioned = 0;
+    for (const emp of result.createdEmployees) {
+      if (!emp.workEmail) continue;
+      try {
+        const r = await provisionCentralInvite({
+          orgId,
+          invitedBy: userId,
+          email: emp.workEmail,
+          firstName: emp.firstName,
+          lastName: emp.lastName,
+          employeeId: emp.id,
+          roleIds: emp.roleId ? [emp.roleId] : [],
+        });
+        if (r.ok) provisioned++;
+      } catch (e) {
+        console.error("[bulk-import] auto-invite failed for", emp.workEmail, e);
+      }
     }
+    console.log(`[bulk-import] central invites provisioned: ${provisioned}/${result.createdEmployees.length}`);
   }
 }
 

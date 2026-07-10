@@ -11,6 +11,7 @@ import { cascadeSoftDeleteEmployee, restoreEmployee } from "@/lib/services/emplo
 import { resolveEmployeeId } from "@/lib/resolve-employee";
 import { resolveScope, employeeScopeFilter } from "@/lib/rbac/scope";
 import { syncEmploymentHistory } from "@/lib/services/employment-history";
+import { emitEmployeeIndex, emitEmployeeDeindex } from "@/lib/search/search-index";
 
 /** GET /api/v1/hrms/employees/:id — full employee detail */
 export const GET = withAuth(async (_req: NextRequest, ctx, params) => {
@@ -243,6 +244,9 @@ export const PATCH = withAuth(async (req: NextRequest, { orgId, userId, permissi
       });
     }
 
+    // Search index (§S-3): re-index the updated employee (§13-safe projection).
+    emitEmployeeIndex(orgId, params.id, "update");
+
     return successResponse(employee);
   } catch (error) {
     console.error("PATCH /employees/:id error:", error);
@@ -271,6 +275,9 @@ export const DELETE = withAuth(async (_req: NextRequest, { orgId, userId }, para
     }
 
     const result = await cascadeSoftDeleteEmployee(orgId, params.id, userId);
+
+    // Search index (§S-3): remove the soft-deleted employee from the index.
+    emitEmployeeDeindex(orgId, params.id);
 
     void scheduleOrgChartRebuild(orgId, "employee.deleted", userId);
 

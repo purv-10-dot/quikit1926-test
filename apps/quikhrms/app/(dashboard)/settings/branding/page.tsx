@@ -1,10 +1,12 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Save, Loader2, Image as ImageIcon, Stamp, PenLine } from "lucide-react";
+import { Save, Loader2, Image as ImageIcon, Stamp, PenLine, FileText, Eye, RotateCcw } from "lucide-react";
 import { useApiClient } from "@/lib/hooks/use-api";
+import { useToast } from "@/components/hrms/toast";
 import { FileUploadInput } from "@/components/hrms/file-upload-input";
+import { OFFER_LETTER_FIELDS, DEFAULT_OFFER_LETTER_BODY } from "@/lib/recruit/offer-letter-fields";
 
 interface Branding {
   letterheadKey?: string | null;
@@ -13,6 +15,7 @@ interface Branding {
   signatoryName?: string | null;
   signatoryDesignation?: string | null;
   offerLetterFooter?: string | null;
+  offerLetterBody?: string | null;
   companyName?: string | null;
 }
 
@@ -33,6 +36,37 @@ function keyToProxyUrl(key?: string | null): string {
 export default function BrandingSettingsPage() {
   const api = useApiClient();
   const qc = useQueryClient();
+  const toast = useToast();
+  const bodyRef = useRef<HTMLTextAreaElement>(null);
+  const [previewing, setPreviewing] = useState(false);
+
+  // Insert a {{field}} token at the cursor in the body textarea.
+  const insertField = (name: string) => {
+    const token = `{{${name}}}`;
+    const el = bodyRef.current;
+    const cur = form.offerLetterBody ?? "";
+    const s = el?.selectionStart ?? cur.length;
+    const e = el?.selectionEnd ?? cur.length;
+    const next = cur.slice(0, s) + token + cur.slice(e);
+    setForm((f) => ({ ...f, offerLetterBody: next }));
+    requestAnimationFrame(() => { el?.focus(); if (el) el.selectionStart = el.selectionEnd = s + token.length; });
+  };
+
+  // Render a sample PDF (dummy data) with the current, unsaved template.
+  const previewSample = async () => {
+    setPreviewing(true);
+    try {
+      await api.downloadPost(
+        "/api/v1/hrms/settings/branding/preview",
+        { body: form.offerLetterBody ?? "" },
+        "Offer-Letter-Sample.pdf",
+      );
+    } catch {
+      toast.error("Preview failed", "Could not generate the sample letter.");
+    } finally {
+      setPreviewing(false);
+    }
+  };
 
   const { data, isLoading } = useQuery({
     queryKey: ["settings", "branding"],
@@ -44,7 +78,11 @@ export default function BrandingSettingsPage() {
 
   const saveMut = useMutation({
     mutationFn: (payload: Branding) => api.put<Branding>("/api/v1/hrms/settings/branding", payload),
-    onSuccess: () => { qc.invalidateQueries({ queryKey: ["settings", "branding"] }); },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["settings", "branding"] });
+      toast.success("Branding saved", "Offer-letter branding updated.");
+    },
+    onError: (e: unknown) => toast.error(e instanceof Error ? e.message : "Save failed"),
   });
 
   const save = () => saveMut.mutate({
@@ -54,117 +92,175 @@ export default function BrandingSettingsPage() {
     signatoryName: form.signatoryName ?? null,
     signatoryDesignation: form.signatoryDesignation ?? null,
     offerLetterFooter: form.offerLetterFooter ?? null,
+    offerLetterBody: form.offerLetterBody ?? null,
   });
 
   if (isLoading) {
-    return <div className="p-6"><Loader2 className="animate-spin text-blue-600" /></div>;
+    return <div className="p-4"><Loader2 className="animate-spin text-green-600" /></div>;
   }
 
   return (
-    <div className="p-6 max-w-3xl space-y-6">
+    <div className="p-4 space-y-4">
       <div>
-        <h1 className="text-xl font-semibold text-gray-900">Offer Letter Branding</h1>
-        <p className="text-sm text-gray-500 mt-1">
+        <h1 className="text-base font-semibold text-gray-900">Offer Letter Branding</h1>
+        <p className="text-xs text-gray-500 mt-1">
           Upload letterhead, seal and signature used for generated offer letters.
         </p>
       </div>
 
-      <div className="bg-white border border-gray-200 rounded-lg p-5 space-y-5">
-        <div>
-          <div className="flex items-center gap-2 mb-2">
-            <ImageIcon size={14} className="text-blue-600" />
-            <label className="text-sm font-medium text-gray-900">Letterhead (blank, A4 portrait)</label>
-          </div>
-          <FileUploadInput
-            value={keyToProxyUrl(form.letterheadKey)}
-            accept="image/png,image/jpeg,image/webp"
-            placeholder="Upload letterhead image"
-            maxMB={5}
-            onChange={(url) => setForm(f => ({ ...f, letterheadKey: url ? keyFromProxyUrl(url) : null }))}
-          />
-          <p className="text-[11px] text-gray-500 mt-1">Recommended 2480 × 3508 px (A4 at 300 DPI). PNG or JPG.</p>
-        </div>
-
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 items-start">
+        {/* Left — branding assets + save (fills the space under the card) */}
+        <div className="space-y-4">
+          <div className="bg-white border border-gray-200 rounded-lg p-4 space-y-4">
           <div>
             <div className="flex items-center gap-2 mb-2">
-              <Stamp size={14} className="text-blue-600" />
-              <label className="text-sm font-medium text-gray-900">Company Seal</label>
+              <ImageIcon size={14} className="text-green-600" />
+              <label className="text-xs font-medium text-gray-900">Letterhead (blank, A4 portrait)</label>
             </div>
             <FileUploadInput
-              value={keyToProxyUrl(form.sealKey)}
-              accept="image/png,image/webp"
-              placeholder="Upload seal (PNG, transparent)"
-              maxMB={2}
-              onChange={(url) => setForm(f => ({ ...f, sealKey: url ? keyFromProxyUrl(url) : null }))}
+              value={keyToProxyUrl(form.letterheadKey)}
+              accept="image/png,image/jpeg,image/webp"
+              placeholder="Upload letterhead image"
+              maxMB={5}
+              onChange={(url) => setForm(f => ({ ...f, letterheadKey: url ? keyFromProxyUrl(url) : null }))}
             />
+            <p className="text-[11px] text-gray-500 mt-1">Recommended 2480 × 3508 px (A4 at 300 DPI). PNG or JPG.</p>
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <div>
+              <div className="flex items-center gap-2 mb-2">
+                <Stamp size={14} className="text-green-600" />
+                <label className="text-xs font-medium text-gray-900">Company Seal</label>
+              </div>
+              <FileUploadInput
+                value={keyToProxyUrl(form.sealKey)}
+                accept="image/png,image/webp"
+                placeholder="Upload seal (PNG, transparent)"
+                maxMB={2}
+                onChange={(url) => setForm(f => ({ ...f, sealKey: url ? keyFromProxyUrl(url) : null }))}
+              />
+            </div>
+
+            <div>
+              <div className="flex items-center gap-2 mb-2">
+                <PenLine size={14} className="text-green-600" />
+                <label className="text-xs font-medium text-gray-900">Authorised Signature</label>
+              </div>
+              <FileUploadInput
+                value={keyToProxyUrl(form.signatureKey)}
+                accept="image/png,image/webp"
+                placeholder="Upload signature (PNG, transparent)"
+                maxMB={2}
+                onChange={(url) => setForm(f => ({ ...f, signatureKey: url ? keyFromProxyUrl(url) : null }))}
+              />
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <div>
+              <label className="text-xs font-medium text-gray-600">Signatory Name</label>
+              <input
+                type="text"
+                className="mt-1 w-full border border-[var(--border)] rounded-lg px-3 py-2 text-xs"
+                value={form.signatoryName ?? ""}
+                onChange={(e) => setForm(f => ({ ...f, signatoryName: e.target.value }))}
+                placeholder="e.g. Priya Nair"
+              />
+            </div>
+            <div>
+              <label className="text-xs font-medium text-gray-600">Signatory Designation</label>
+              <input
+                type="text"
+                className="mt-1 w-full border border-[var(--border)] rounded-lg px-3 py-2 text-xs"
+                value={form.signatoryDesignation ?? ""}
+                onChange={(e) => setForm(f => ({ ...f, signatoryDesignation: e.target.value }))}
+                placeholder="Head of Human Resources"
+              />
+            </div>
           </div>
 
           <div>
-            <div className="flex items-center gap-2 mb-2">
-              <PenLine size={14} className="text-blue-600" />
-              <label className="text-sm font-medium text-gray-900">Authorised Signature</label>
-            </div>
-            <FileUploadInput
-              value={keyToProxyUrl(form.signatureKey)}
-              accept="image/png,image/webp"
-              placeholder="Upload signature (PNG, transparent)"
-              maxMB={2}
-              onChange={(url) => setForm(f => ({ ...f, signatureKey: url ? keyFromProxyUrl(url) : null }))}
+            <label className="text-xs font-medium text-gray-600">Footer Text</label>
+            <textarea
+              className="mt-1 w-full border border-[var(--border)] rounded-lg px-3 py-2 text-xs"
+              rows={2}
+              value={form.offerLetterFooter ?? ""}
+              onChange={(e) => setForm(f => ({ ...f, offerLetterFooter: e.target.value }))}
+              placeholder="Printed at the bottom of every offer letter (e.g. address, CIN)."
             />
+          </div>
+          </div>
+
+          {/* Save — sits in the empty space beneath the branding card */}
+          <div className="bg-white border border-gray-200 rounded-lg px-4 py-3 flex items-center gap-3">
+            <button
+              onClick={save}
+              disabled={saveMut.isPending}
+              className="inline-flex items-center gap-2 px-3 py-1.5 bg-green-600 text-white rounded-lg text-xs font-medium hover:bg-green-700 disabled:opacity-60"
+            >
+              {saveMut.isPending ? <Loader2 size={13} className="animate-spin" /> : <Save size={13} />}
+              Save Branding
+            </button>
+            {saveMut.isError && (
+              <p className="text-xs text-red-600">Save failed. Check network and try again.</p>
+            )}
+            {saveMut.isSuccess && (
+              <p className="text-xs text-green-600">Saved.</p>
+            )}
           </div>
         </div>
 
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-          <div>
-            <label className="text-xs font-medium text-gray-600">Signatory Name</label>
-            <input
-              type="text"
-              className="mt-1 w-full border border-[var(--border)] rounded-lg px-3 py-2 text-sm"
-              value={form.signatoryName ?? ""}
-              onChange={(e) => setForm(f => ({ ...f, signatoryName: e.target.value }))}
-              placeholder="e.g. Priya Nair"
-            />
+        {/* Right — offer letter content (editable body with dynamic {{fields}}) */}
+        <div className="bg-white border border-gray-200 rounded-lg p-4 space-y-2">
+          <div className="flex items-center gap-2">
+            <FileText size={14} className="text-green-600" />
+            <label className="text-xs font-medium text-gray-900">Offer Letter Content</label>
           </div>
-          <div>
-            <label className="text-xs font-medium text-gray-600">Signatory Designation</label>
-            <input
-              type="text"
-              className="mt-1 w-full border border-[var(--border)] rounded-lg px-3 py-2 text-sm"
-              value={form.signatoryDesignation ?? ""}
-              onChange={(e) => setForm(f => ({ ...f, signatoryDesignation: e.target.value }))}
-              placeholder="Head of Human Resources"
-            />
+          <p className="text-[11px] text-gray-500">
+            Write the letter body. Click a field to insert it — it&apos;s replaced with the real value when the offer is generated.
+            Use <code className="rounded bg-gray-100 px-1">{"{{signature}}"}</code> to place the signature image.
+          </p>
+          <div className="flex flex-wrap gap-1.5">
+            {OFFER_LETTER_FIELDS.map((f) => (
+              <button
+                key={f.name}
+                type="button"
+                title={f.label}
+                onClick={() => insertField(f.name)}
+                className="rounded border border-gray-200 bg-gray-50 px-1.5 py-0.5 font-mono text-[11px] text-gray-700 hover:bg-green-50 hover:border-green-200"
+              >
+                {`{{${f.name}}}`}
+              </button>
+            ))}
           </div>
-        </div>
-
-        <div>
-          <label className="text-xs font-medium text-gray-600">Footer Text</label>
           <textarea
-            className="mt-1 w-full border border-[var(--border)] rounded-lg px-3 py-2 text-sm"
-            rows={2}
-            value={form.offerLetterFooter ?? ""}
-            onChange={(e) => setForm(f => ({ ...f, offerLetterFooter: e.target.value }))}
-            placeholder="Printed at the bottom of every offer letter (e.g. address, CIN)."
+            ref={bodyRef}
+            rows={18}
+            value={form.offerLetterBody ?? ""}
+            onChange={(e) => setForm((f) => ({ ...f, offerLetterBody: e.target.value }))}
+            placeholder={DEFAULT_OFFER_LETTER_BODY}
+            className="w-full border border-[var(--border)] rounded-lg px-3 py-2 text-xs font-mono resize-y"
           />
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={() => setForm((f) => ({ ...f, offerLetterBody: DEFAULT_OFFER_LETTER_BODY }))}
+              className="inline-flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-medium text-gray-600 border border-gray-200 rounded-lg hover:bg-gray-50"
+            >
+              <RotateCcw size={13} /> Reset to default
+            </button>
+            <button
+              type="button"
+              onClick={previewSample}
+              disabled={previewing}
+              className="inline-flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-medium text-green-700 border border-green-200 rounded-lg hover:bg-green-50 disabled:opacity-60"
+            >
+              {previewing ? <Loader2 size={13} className="animate-spin" /> : <Eye size={13} />}
+              Preview sample
+            </button>
+          </div>
         </div>
-
-        <div className="flex justify-end gap-2 pt-2 border-t border-gray-100">
-          <button
-            onClick={save}
-            disabled={saveMut.isPending}
-            className="inline-flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg text-sm font-medium hover:bg-blue-700 disabled:opacity-60"
-          >
-            {saveMut.isPending ? <Loader2 size={14} className="animate-spin" /> : <Save size={14} />}
-            Save Branding
-          </button>
-        </div>
-        {saveMut.isError && (
-          <p className="text-xs text-red-600">Save failed. Check network and try again.</p>
-        )}
-        {saveMut.isSuccess && (
-          <p className="text-xs text-green-600">Saved.</p>
-        )}
       </div>
     </div>
   );

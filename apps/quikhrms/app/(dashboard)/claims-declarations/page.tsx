@@ -8,6 +8,7 @@ import { FileCheck, Receipt, FileText, ShieldCheck, Info, Save, Lock, Unlock, Ar
 import { clsx } from "clsx";
 import { Select } from "@/components/hrms/ui/select";
 import { SkeletonTable } from "@/components/hrms/skeleton";
+import { Tooltip } from "@/components/hrms/tooltip";
 import { useDashboardConfig } from "@/lib/hooks/use-dashboard-config";
 import { EmployeeClaimSection } from "../payroll/claims-declarations/_components/employee-claim-section";
 import { Form12BBSubmissions } from "../payroll/claims-declarations/_components/form12bb-submissions";
@@ -15,9 +16,9 @@ import { PoiReview } from "../payroll/claims-declarations/_components/poi-review
 
 type TabKey = "Reimbursement" | "ITDeclaration" | "POI";
 const TABS: { key: TabKey; label: string; icon: React.ReactNode }[] = [
-  { key: "Reimbursement", label: "Reimbursement Claims",   icon: <Receipt size={14} /> },
-  { key: "ITDeclaration", label: "Income Tax Declaration", icon: <FileText size={14} /> },
-  { key: "POI",           label: "Proof Of Investments",   icon: <ShieldCheck size={14} /> },
+  { key: "Reimbursement", label: "Reimbursement Claims",   icon: <Receipt size={13} /> },
+  { key: "ITDeclaration", label: "Income Tax Declaration", icon: <FileText size={13} /> },
+  { key: "POI",           label: "Proof Of Investments",   icon: <ShieldCheck size={13} /> },
 ];
 
 interface Res {
@@ -55,22 +56,31 @@ export default function ClaimsDeclarationsPage() {
   const info = data?.data;
 
   return (
-    <div className="w-full px-6 py-6 space-y-4">
+    <div className="w-full px-5 py-4 space-y-4">
       <div className="flex items-start gap-3 mb-2">
-        <FileCheck size={28} className="text-[#3b82f6] mt-1.5" />
-        <h1 className="font-serif-display text-3xl md:text-4xl font-bold text-gray-900 leading-tight">Claims and declarations</h1>
+        <FileCheck size={28} className="text-[#22c55e] mt-1.5" />
+        <h1 className="text-page-title text-gray-900 leading-tight">Claims and declarations</h1>
+        <Tooltip
+          placement="bottom"
+          maxWidth={300}
+          content="Reimbursement Claims here are tax-free salary components (e.g. fuel, telephone) — submit bills to save tax on them. For work expenses you paid out-of-pocket and want reimbursed, use the Expenses module instead."
+        >
+          <button type="button" aria-label="About Claims and declarations" className="mt-2 text-gray-400 hover:text-[#22c55e]">
+            <Info size={18} />
+          </button>
+        </Tooltip>
       </div>
       <div className="surface-card overflow-hidden">
-        <div className="border-b border-gray-200 px-5">
-          <div className="flex gap-6 overflow-x-auto">
+        <div className="border-b border-gray-200 px-4">
+          <div className="flex gap-4 overflow-x-auto">
             {TABS.map((t) => (
               <button
                 key={t.key}
                 onClick={() => setTab(t.key)}
                 data-active={tab === t.key}
                 className={clsx(
-                  "tab-underline whitespace-nowrap py-3 px-1 text-sm -mb-px inline-flex items-center gap-1.5",
-                  tab === t.key ? "text-[#3b82f6] font-semibold" : "text-gray-500 hover:text-gray-700",
+                  "tab-underline whitespace-nowrap py-3 px-1 text-[13px] -mb-px inline-flex items-center gap-1.5",
+                  tab === t.key ? "text-[#22c55e] font-semibold" : "text-gray-500 hover:text-gray-700",
                 )}
               >
                 {t.icon} {t.label}
@@ -79,7 +89,7 @@ export default function ClaimsDeclarationsPage() {
           </div>
         </div>
 
-        <div className="p-5">
+        <div className="p-4">
           {isLoading ? (
             <SkeletonTable rows={5} cols={4} />
           ) : (
@@ -116,7 +126,7 @@ function SubTabSwitch<T extends string>({
           className={clsx(
             "px-3 py-1.5 text-xs font-semibold rounded transition",
             value === o.value
-              ? "bg-white text-[#16243A] shadow-sm"
+              ? "bg-white text-[#166534] shadow-sm"
               : "text-gray-600 hover:text-gray-900",
           )}
         >
@@ -148,6 +158,7 @@ function ITDeclarationTab({ info, onSaved }: { info: Res | undefined; onSaved: (
   const saveMut = useMutation({
     mutationFn: (body: Record<string, unknown>) => api.put("/api/v1/hrms/payroll/claims-declarations", body),
     onSuccess: () => { onSaved(); setErr(null); },
+    meta: { suppressGlobalError: true },
     onError: (e: Error) => setErr(e.message),
   });
 
@@ -172,23 +183,23 @@ function ITDeclarationTab({ info, onSaved }: { info: Res | undefined; onSaved: (
       ) : (
         <div className="space-y-4">
           <div className="flex items-start justify-between gap-3">
-            <p className="text-sm text-gray-700 max-w-2xl">
+            <p className="text-xs text-gray-700 max-w-2xl">
               Employees can declare their tax saving investments and expense details through the employee portal once you enable this option.
             </p>
             <Link
               href="/payroll/form12bb"
-              className="shrink-0 inline-flex items-center gap-1.5 px-3 py-1.5 border border-[#16243A] text-[#16243A] hover:bg-[#16243A] hover:text-white rounded-md text-xs font-semibold transition-colors"
+              className="shrink-0 inline-flex items-center gap-1.5 px-3 py-1.5 border border-[#166534] text-[#166534] hover:bg-[#166534] hover:text-white rounded-md text-xs font-medium transition-colors"
             >
               Submit your own <ArrowRight size={12} />
             </Link>
           </div>
 
           <div className="rounded-lg border border-gray-200 bg-gradient-to-b from-gray-50/50 to-white p-8 text-center">
-            <div className="mx-auto w-24 h-24 rounded-full bg-gradient-to-br from-[#dbeafe] to-[#dbeafe] flex items-center justify-center mb-4">
-              {released ? <Unlock size={40} className="text-emerald-500" strokeWidth={1.5} /> : <Lock size={40} className="text-[#bfdbfe]" strokeWidth={1.5} />}
+            <div className="mx-auto w-24 h-24 rounded-full bg-gradient-to-br from-[#dcfce7] to-[#dcfce7] flex items-center justify-center mb-4">
+              {released ? <Unlock size={40} className="text-emerald-500" strokeWidth={1.5} /> : <Lock size={40} className="text-[#bbf7d0]" strokeWidth={1.5} />}
             </div>
-            <p className="text-base font-bold text-gray-900">{released ? "IT Declaration is Released" : "IT Declaration is Locked"}</p>
-            <p className="text-sm text-gray-600 mt-2 max-w-2xl mx-auto">
+            <p className="text-[13px] font-semibold text-gray-900">{released ? "IT Declaration is Released" : "IT Declaration is Locked"}</p>
+            <p className="text-xs text-gray-600 mt-2 max-w-2xl mx-auto">
               {released
                 ? "Employees can now submit their IT Declaration through their portal. You can lock it anytime."
                 : "Release IT Declaration so employees can submit Form 12BB."}
@@ -196,21 +207,21 @@ function ITDeclarationTab({ info, onSaved }: { info: Res | undefined; onSaved: (
             <button
               onClick={() => saveMut.mutate({ itDeclarationReleased: !released })}
               disabled={saveMut.isPending}
-              className="mt-4 px-4 py-2 border border-[var(--border)] bg-white hover:bg-gray-50 text-gray-700 rounded-md text-sm font-semibold disabled:opacity-60"
+              className="mt-4 px-3 py-1.5 border border-[var(--border)] bg-white hover:bg-gray-50 text-gray-700 rounded-md text-xs font-medium disabled:opacity-60"
             >
               {released ? "Lock IT Declaration" : "Release IT Declaration"}
             </button>
           </div>
 
           <div>
-            <p className="text-sm font-semibold text-gray-900">Other Configurations</p>
+            <p className="text-[13px] font-semibold text-gray-900">Other Configurations</p>
             <div className="mt-2 space-y-2">
-              <label className="flex items-center gap-2 text-sm text-gray-700">
-                <input type="checkbox" checked={allowRegimeSwitch} onChange={(e) => setAllowRegimeSwitch(e.target.checked)} className="text-[#3b82f6] rounded" />
+              <label className="flex items-center gap-2 text-xs text-gray-700">
+                <input type="checkbox" checked={allowRegimeSwitch} onChange={(e) => setAllowRegimeSwitch(e.target.checked)} className="text-[#22c55e] rounded" />
                 Allow employees to switch tax regimes
               </label>
-              <label className="flex items-start gap-2 text-sm text-gray-700">
-                <input type="checkbox" checked={allowTDSMod} onChange={(e) => setAllowTDSMod(e.target.checked)} className="mt-0.5 text-[#3b82f6] rounded" />
+              <label className="flex items-start gap-2 text-xs text-gray-700">
+                <input type="checkbox" checked={allowTDSMod} onChange={(e) => setAllowTDSMod(e.target.checked)} className="mt-0.5 text-[#22c55e] rounded" />
                 <span>
                   Allow TDS modification to exceed the current fiscal year&apos;s calculated tax amount
                   <Info size={11} className="inline-block ml-1 text-gray-400" />
@@ -219,15 +230,15 @@ function ITDeclarationTab({ info, onSaved }: { info: Res | undefined; onSaved: (
             </div>
           </div>
 
-          {err && <p className="text-sm text-red-600 bg-red-50 border border-red-100 rounded px-3 py-2">{err}</p>}
+          {err && <p className="text-xs text-red-600 bg-red-50 border border-red-100 rounded px-3 py-2">{err}</p>}
 
           <div className="pt-2">
             <button
               onClick={() => saveMut.mutate({ allowRegimeSwitch, allowTDSModification: allowTDSMod })}
               disabled={saveMut.isPending}
-              className="inline-flex items-center gap-2 px-4 py-2 bg-[#16243A] hover:bg-[#1E3354] disabled:opacity-60 text-white rounded-md text-sm font-semibold shadow-sm"
+              className="inline-flex items-center gap-2 px-3 py-1.5 bg-green-600 hover:bg-green-700 disabled:opacity-60 text-white rounded-md text-xs font-medium shadow-sm"
             >
-              <Save size={14} /> {saveMut.isPending ? "Saving..." : "Save"}
+              <Save size={13} /> {saveMut.isPending ? "Saving..." : "Save"}
             </button>
           </div>
         </div>
@@ -259,6 +270,7 @@ function POITab({ info, onSaved }: { info: Res | undefined; onSaved: () => void 
   const saveMut = useMutation({
     mutationFn: (body: Record<string, unknown>) => api.put("/api/v1/hrms/payroll/claims-declarations", body),
     onSuccess: () => { onSaved(); setErr(null); },
+    meta: { suppressGlobalError: true },
     onError: (e: Error) => setErr(e.message),
   });
 
@@ -283,23 +295,23 @@ function POITab({ info, onSaved }: { info: Res | undefined; onSaved: () => void 
       ) : (
         <div className="space-y-4">
           <div className="flex items-start justify-between gap-3">
-            <p className="text-sm text-gray-700 max-w-2xl">
+            <p className="text-xs text-gray-700 max-w-2xl">
               Employees can submit the necessary supporting documents for their declared investments through the employee portal once you enable this option.
             </p>
             <Link
               href="/payroll/form12bb"
-              className="shrink-0 inline-flex items-center gap-1.5 px-3 py-1.5 border border-[#16243A] text-[#16243A] hover:bg-[#16243A] hover:text-white rounded-md text-xs font-semibold transition-colors"
+              className="shrink-0 inline-flex items-center gap-1.5 px-3 py-1.5 border border-[#166534] text-[#166534] hover:bg-[#166534] hover:text-white rounded-md text-xs font-medium transition-colors"
             >
               Submit your own <ArrowRight size={12} />
             </Link>
           </div>
 
           <div className="rounded-lg border border-gray-200 bg-gradient-to-b from-gray-50/50 to-white p-8 text-center">
-            <div className="mx-auto w-24 h-24 rounded-full bg-gradient-to-br from-[#dbeafe] to-[#dbeafe] flex items-center justify-center mb-4">
-              {released ? <Unlock size={40} className="text-emerald-500" strokeWidth={1.5} /> : <Lock size={40} className="text-[#bfdbfe]" strokeWidth={1.5} />}
+            <div className="mx-auto w-24 h-24 rounded-full bg-gradient-to-br from-[#dcfce7] to-[#dcfce7] flex items-center justify-center mb-4">
+              {released ? <Unlock size={40} className="text-emerald-500" strokeWidth={1.5} /> : <Lock size={40} className="text-[#bbf7d0]" strokeWidth={1.5} />}
             </div>
-            <p className="text-base font-bold text-gray-900">{released ? "POI is Released" : "POI is Locked"}</p>
-            <p className="text-sm text-gray-600 mt-2 max-w-2xl mx-auto">
+            <p className="text-[13px] font-semibold text-gray-900">{released ? "POI is Released" : "POI is Locked"}</p>
+            <p className="text-xs text-gray-600 mt-2 max-w-2xl mx-auto">
               {released
                 ? "Employees can now submit their investment proofs via the portal."
                 : "Release POI so employees can attach proofs to their declarations."}
@@ -307,7 +319,7 @@ function POITab({ info, onSaved }: { info: Res | undefined; onSaved: () => void 
             <button
               onClick={() => saveMut.mutate({ poiReleased: !released })}
               disabled={saveMut.isPending}
-              className="mt-4 px-4 py-2 border border-[var(--border)] bg-white hover:bg-gray-50 text-gray-700 rounded-md text-sm font-semibold disabled:opacity-60"
+              className="mt-4 px-3 py-1.5 border border-[var(--border)] bg-white hover:bg-gray-50 text-gray-700 rounded-md text-xs font-medium disabled:opacity-60"
             >
               {released ? "Lock Proof Of Investments" : "Release Proof Of Investments"}
             </button>
@@ -316,7 +328,7 @@ function POITab({ info, onSaved }: { info: Res | undefined; onSaved: () => void 
           <div className="border-t border-gray-100 pt-4">
             <div className="flex items-center justify-between gap-4">
               <div>
-                <p className="text-sm font-semibold text-gray-900">Process payroll with approved POI amount from</p>
+                <p className="text-[13px] font-semibold text-gray-900">Process payroll with approved POI amount from</p>
                 <p className="text-xs text-emerald-700 mt-0.5">
                   The approved POI amount will be considered for the payroll from <span className="font-semibold">{MONTHS[startMonth - 1]}</span> onwards.
                 </p>
@@ -334,28 +346,28 @@ function POITab({ info, onSaved }: { info: Res | undefined; onSaved: () => void 
           </div>
 
           <div className="border-t border-gray-100 pt-4">
-            <p className="text-sm font-semibold text-gray-900">Other Configurations</p>
+            <p className="text-[13px] font-semibold text-gray-900">Other Configurations</p>
             <div className="mt-2 space-y-2">
-              <label className="flex items-center gap-2 text-sm text-gray-700">
-                <input type="checkbox" checked={allowRegimeSwitch} onChange={(e) => setAllowRegimeSwitch(e.target.checked)} className="text-[#3b82f6] rounded" />
+              <label className="flex items-center gap-2 text-xs text-gray-700">
+                <input type="checkbox" checked={allowRegimeSwitch} onChange={(e) => setAllowRegimeSwitch(e.target.checked)} className="text-[#22c55e] rounded" />
                 Allow employees to switch tax regimes
               </label>
-              <label className="flex items-center gap-2 text-sm text-gray-700">
-                <input type="checkbox" checked={allowTDSPayroll} onChange={(e) => setAllowTDSPayroll(e.target.checked)} className="text-[#3b82f6] rounded" />
+              <label className="flex items-center gap-2 text-xs text-gray-700">
+                <input type="checkbox" checked={allowTDSPayroll} onChange={(e) => setAllowTDSPayroll(e.target.checked)} className="text-[#22c55e] rounded" />
                 Allow TDS modification during Payroll
               </label>
             </div>
           </div>
 
-          {err && <p className="text-sm text-red-600 bg-red-50 border border-red-100 rounded px-3 py-2">{err}</p>}
+          {err && <p className="text-xs text-red-600 bg-red-50 border border-red-100 rounded px-3 py-2">{err}</p>}
 
           <div className="pt-2">
             <button
               onClick={() => saveMut.mutate({ poiStartMonth: startMonth, allowRegimeSwitch, allowTDSModificationPayroll: allowTDSPayroll })}
               disabled={saveMut.isPending}
-              className="inline-flex items-center gap-2 px-4 py-2 bg-[#16243A] hover:bg-[#1E3354] disabled:opacity-60 text-white rounded-md text-sm font-semibold shadow-sm"
+              className="inline-flex items-center gap-2 px-3 py-1.5 bg-green-600 hover:bg-green-700 disabled:opacity-60 text-white rounded-md text-xs font-medium shadow-sm"
             >
-              <Save size={14} /> {saveMut.isPending ? "Saving..." : "Save"}
+              <Save size={13} /> {saveMut.isPending ? "Saving..." : "Save"}
             </button>
           </div>
         </div>
@@ -374,7 +386,7 @@ function StatusBanner({
   return (
     <div
       className={clsx(
-        "flex items-start gap-3 rounded-md border px-4 py-3 text-sm",
+        "flex items-start gap-3 rounded-md border px-4 py-3 text-xs",
         open
           ? "border-emerald-200 bg-emerald-50 text-emerald-900"
           : "border-gray-200 bg-gray-50 text-gray-700",
@@ -382,7 +394,7 @@ function StatusBanner({
     >
       {open ? <Unlock size={16} className="mt-0.5 shrink-0 text-emerald-600" /> : <Lock size={16} className="mt-0.5 shrink-0 text-gray-500" />}
       <div>
-        <p className="font-semibold">{open ? "Window is open" : "Window is closed"}</p>
+        <p className="text-[13px] font-semibold">{open ? "Window is open" : "Window is closed"}</p>
         <p className="text-xs mt-0.5 opacity-90">{open ? openCopy : closedCopy}</p>
       </div>
     </div>
@@ -391,14 +403,14 @@ function StatusBanner({
 
 function EmployeeITDView({ released }: { released: boolean }) {
   return (
-    <div className="max-w-2xl mx-auto py-4 space-y-5">
+    <div className="max-w-2xl mx-auto py-4 space-y-4">
       <div className="flex items-start gap-3">
-        <div className="w-11 h-11 rounded-lg bg-blue-50 text-[#3b82f6] flex items-center justify-center shrink-0">
+        <div className="w-11 h-11 rounded-lg bg-green-50 text-[#22c55e] flex items-center justify-center shrink-0">
           <FileText size={20} />
         </div>
         <div>
-          <h3 className="font-serif-display text-xl font-bold text-gray-900 leading-tight">Income Tax Declaration</h3>
-          <p className="text-sm text-gray-600 mt-1">
+          <h3 className="font-serif-display text-base font-semibold text-gray-900 leading-tight">Income Tax Declaration</h3>
+          <p className="text-xs text-gray-600 mt-1">
             Declare your planned tax-saving investments and exemptions (rent, 80C, 80D, home loan interest, etc.) so
             payroll deducts the right TDS each month — instead of the full default.
           </p>
@@ -411,14 +423,14 @@ function EmployeeITDView({ released }: { released: boolean }) {
         closedCopy="HR has not opened submissions yet for this FY. Check back later, or ask your payroll admin."
       />
 
-      <div className="rounded-lg border border-gray-200 bg-white p-5">
-        <p className="text-sm font-semibold text-gray-900">What you&apos;ll need</p>
-        <ul className="mt-2 space-y-1.5 text-sm text-gray-700">
-          <li className="flex items-start gap-2"><span className="text-[#3b82f6]">•</span><span>Rent details + landlord PAN (if claiming HRA &gt; ₹1L/yr)</span></li>
-          <li className="flex items-start gap-2"><span className="text-[#3b82f6]">•</span><span>Investment proofs: LIC, PPF, ELSS, NPS — to claim 80C / 80CCD</span></li>
-          <li className="flex items-start gap-2"><span className="text-[#3b82f6]">•</span><span>Health insurance premium receipt — to claim 80D</span></li>
-          <li className="flex items-start gap-2"><span className="text-[#3b82f6]">•</span><span>Home loan interest certificate — to claim u/s 24</span></li>
-          <li className="flex items-start gap-2"><span className="text-[#3b82f6]">•</span><span>Donation receipts — to claim 80G</span></li>
+      <div className="rounded-lg border border-gray-200 bg-white p-4">
+        <p className="text-[13px] font-semibold text-gray-900">What you&apos;ll need</p>
+        <ul className="mt-2 space-y-1.5 text-xs text-gray-700">
+          <li className="flex items-start gap-2"><span className="text-[#22c55e]">•</span><span>Rent details + landlord PAN (if claiming HRA &gt; ₹1L/yr)</span></li>
+          <li className="flex items-start gap-2"><span className="text-[#22c55e]">•</span><span>Investment proofs: LIC, PPF, ELSS, NPS — to claim 80C / 80CCD</span></li>
+          <li className="flex items-start gap-2"><span className="text-[#22c55e]">•</span><span>Health insurance premium receipt — to claim 80D</span></li>
+          <li className="flex items-start gap-2"><span className="text-[#22c55e]">•</span><span>Home loan interest certificate — to claim u/s 24</span></li>
+          <li className="flex items-start gap-2"><span className="text-[#22c55e]">•</span><span>Donation receipts — to claim 80G</span></li>
         </ul>
 
         <div className="mt-5 flex justify-end">
@@ -427,14 +439,14 @@ function EmployeeITDView({ released }: { released: boolean }) {
             aria-disabled={!released}
             tabIndex={released ? 0 : -1}
             className={clsx(
-              "inline-flex items-center gap-2 px-4 py-2.5 rounded-md text-sm font-semibold shadow-sm",
+              "inline-flex items-center gap-2 px-3 py-1.5 rounded-md text-xs font-medium shadow-sm",
               released
-                ? "bg-[#16243A] hover:bg-[#1E3354] text-white"
+                ? "bg-green-600 hover:bg-green-700 text-white"
                 : "bg-gray-200 text-gray-500 cursor-not-allowed pointer-events-none",
             )}
           >
             {released ? "Submit IT Declaration" : "Submissions closed"}
-            <ArrowRight size={14} />
+            <ArrowRight size={13} />
           </Link>
         </div>
       </div>
@@ -448,14 +460,14 @@ function EmployeeITDView({ released }: { released: boolean }) {
 
 function EmployeePOIView({ released }: { released: boolean }) {
   return (
-    <div className="max-w-2xl mx-auto py-4 space-y-5">
+    <div className="max-w-2xl mx-auto py-4 space-y-4">
       <div className="flex items-start gap-3">
-        <div className="w-11 h-11 rounded-lg bg-blue-50 text-[#3b82f6] flex items-center justify-center shrink-0">
+        <div className="w-11 h-11 rounded-lg bg-green-50 text-[#22c55e] flex items-center justify-center shrink-0">
           <ShieldCheck size={20} />
         </div>
         <div>
-          <h3 className="font-serif-display text-xl font-bold text-gray-900 leading-tight">Proof of Investments</h3>
-          <p className="text-sm text-gray-600 mt-1">
+          <h3 className="font-serif-display text-base font-semibold text-gray-900 leading-tight">Proof of Investments</h3>
+          <p className="text-xs text-gray-600 mt-1">
             At year-end, payroll needs proof of the investments you declared. Without proof, the tax-saving deduction
             is reversed and TDS is recovered from your final payslips.
           </p>
@@ -468,14 +480,14 @@ function EmployeePOIView({ released }: { released: boolean }) {
         closedCopy="HR has not opened proof submission yet. Check back closer to year-end."
       />
 
-      <div className="rounded-lg border border-gray-200 bg-white p-5">
-        <p className="text-sm font-semibold text-gray-900">How proofs are submitted</p>
-        <p className="text-sm text-gray-700 mt-1.5">
+      <div className="rounded-lg border border-gray-200 bg-white p-4">
+        <p className="text-[13px] font-semibold text-gray-900">How proofs are submitted</p>
+        <p className="text-xs text-gray-700 mt-1.5">
           Proofs attach automatically when you upload supporting documents in your Form 12BB declaration — each
           section (HRA, 80C, 80D, home loan, etc.) gets a separate review row that HR can approve, partially approve,
           or reject.
         </p>
-        <p className="text-sm text-gray-700 mt-2">
+        <p className="text-xs text-gray-700 mt-2">
           Use the same Form 12BB page — add or replace documents per section, then re-submit.
         </p>
 
@@ -485,14 +497,14 @@ function EmployeePOIView({ released }: { released: boolean }) {
             aria-disabled={!released}
             tabIndex={released ? 0 : -1}
             className={clsx(
-              "inline-flex items-center gap-2 px-4 py-2.5 rounded-md text-sm font-semibold shadow-sm",
+              "inline-flex items-center gap-2 px-3 py-1.5 rounded-md text-xs font-medium shadow-sm",
               released
-                ? "bg-[#16243A] hover:bg-[#1E3354] text-white"
+                ? "bg-green-600 hover:bg-green-700 text-white"
                 : "bg-gray-200 text-gray-500 cursor-not-allowed pointer-events-none",
             )}
           >
             {released ? "Attach Investment Proofs" : "Submissions closed"}
-            <ArrowRight size={14} />
+            <ArrowRight size={13} />
           </Link>
         </div>
       </div>

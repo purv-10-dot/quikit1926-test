@@ -1,13 +1,15 @@
 import { NextRequest } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { withAuth } from "@/lib/with-auth";
-import { successResponse, validationError, notFound, internalError } from "@/lib/api-response";
+import { successResponse, validationError, notFound, forbidden, internalError } from "@/lib/api-response";
 import { updateDocumentSchema } from "@/lib/validations/documents";
 import { createAuditLog } from "@/lib/utils/audit";
 import { extractDocumentText } from "@/lib/ai/extract-document-text";
+import { resolveScope, employeeScopeFilter, getCallerEmployeeId } from "@/lib/rbac/scope";
 
-export const GET = withAuth(async (_req: NextRequest, { orgId }, params) => {
+export const GET = withAuth(async (_req: NextRequest, ctx, params) => {
   try {
+    const { orgId } = ctx;
     const doc = await prisma.document.findFirst({
       where: { id: params.id, orgId, deletedAt: null },
       include: {
@@ -17,7 +19,42 @@ export const GET = withAuth(async (_req: NextRequest, { orgId }, params) => {
       },
     });
     if (!doc) return notFound("Document not found");
-    return successResponse(doc);
+
+    // Access gate — previously ANY org member could open ANY document by id.
+    // Allow only: company-wide docs (no owner), the owner, a share recipient,
+    // or a caller whose read-scope covers the owning employee.
+    const scope = resolveScope(ctx, {
+      all: "hrms.document.read",
+      team: "hrms.document.read_team",
+      self: "hrms.document.read_self",
+    });
+    const sf = await employeeScopeFilter(ctx, scope);
+    if (!sf.allow) return forbidden("No document read permission");
+    const callerId = await getCallerEmployeeId(ctx);
+    const allowed =
+      doc.employeeId === null ||                                            // company-wide
+      sf.employeeIds === undefined ||                                       // unrestricted read
+      (!!doc.employeeId && sf.employeeIds.includes(doc.employeeId)) ||      // owner in read-scope
+      (!!callerId && doc.employeeId === callerId) ||                        // own document
+      (!!callerId && doc.shares.some((s) => s.sharedWith === callerId));    // shared with caller
+    if (!allowed) return forbidden("You don't have access to this document");
+
+    // Enrich acknowledgment entries with employee names (no relation exists on
+    // DocumentAcknowledgment — resolve by id, scoped to the org).
+    const ackEmpIds = [...new Set(doc.acknowledgments.map((a) => a.employeeId))];
+    const ackEmps = ackEmpIds.length
+      ? await prisma.employee.findMany({
+          where: { id: { in: ackEmpIds }, orgId, deletedAt: null },
+          select: { id: true, firstName: true, lastName: true, employeeCode: true },
+        })
+      : [];
+    const ackEmpMap = new Map(ackEmps.map((e) => [e.id, e]));
+    const acknowledgments = doc.acknowledgments.map((a) => ({
+      ...a,
+      employee: ackEmpMap.get(a.employeeId) ?? null,
+    }));
+
+    return successResponse({ ...doc, acknowledgments });
   } catch (error) {
     console.error("GET /documents/[id] error:", error);
     return internalError();

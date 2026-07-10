@@ -185,4 +185,54 @@ export const recruitmentReports: ReportDefinition[] = [
       };
     },
   },
+  {
+    key: "requisitions-by-requester",
+    label: "Requester Report",
+    description: "Job requisitions grouped by the person who raised them, with status, fill progress and aging.",
+    category: "Recruitment",
+    usesDateRange: true,
+    async run({ orgId, dateFrom, dateTo }) {
+      const reqs = await prisma.jobRequisition.findMany({
+        where: {
+          orgId, deletedAt: null, raisedById: { not: null },
+          ...((dateFrom || dateTo) ? { raisedAt: { ...(dateFrom ? { gte: dateFrom } : {}), ...(dateTo ? { lte: dateTo } : {}) } } : {}),
+        },
+        orderBy: [{ raisedById: "asc" }, { raisedAt: "desc" }],
+      });
+      const depts = await departmentMap(orgId, reqs.map((r) => r.departmentId));
+      const raiserIds = [...new Set(reqs.map((r) => r.raisedById).filter(Boolean) as string[])];
+      const raisers = raiserIds.length
+        ? await prisma.employee.findMany({ where: { orgId, id: { in: raiserIds } }, select: { id: true, firstName: true, lastName: true } })
+        : [];
+      const rMap = new Map(raisers.map((e) => [e.id, fullName(e)]));
+      const now = Date.now();
+      return {
+        title: "Requester Report",
+        columns: [
+          { key: "requester", label: "Requester", width: 22 },
+          { key: "reqNumber", label: "Req #", width: 14 },
+          { key: "title", label: "Title", width: 24 },
+          { key: "department", label: "Department", width: 18 },
+          { key: "positions", label: "Positions", width: 10 },
+          { key: "filled", label: "Filled", width: 8 },
+          { key: "status", label: "Status", width: 14 },
+          { key: "priority", label: "Priority", width: 10 },
+          { key: "raisedAt", label: "Raised On", width: 12 },
+          { key: "ageDays", label: "Age (days)", width: 10 },
+        ],
+        rows: reqs.map((r) => ({
+          requester: r.raisedById ? rMap.get(r.raisedById) ?? "" : "",
+          reqNumber: r.requisitionNumber,
+          title: r.title,
+          department: r.departmentId ? depts.get(r.departmentId) ?? "" : "",
+          positions: r.positions,
+          filled: r.filledPositions,
+          status: r.status,
+          priority: r.priority,
+          raisedAt: fmtDate(r.raisedAt),
+          ageDays: r.raisedAt ? Math.max(0, Math.round((now - r.raisedAt.getTime()) / 86_400_000)) : "",
+        })),
+      };
+    },
+  },
 ];

@@ -66,10 +66,10 @@ export default function TimeTrackerPage() {
               key={t.id}
               onClick={() => setTab(t.id)}
               className={clsx(
-                "inline-flex items-center gap-1.5 px-4 py-1.5 rounded-md text-sm font-semibold transition",
+                "inline-flex items-center gap-1.5 px-4 py-1.5 rounded-md text-[13px] font-semibold transition",
                 active
-                  ? "bg-[#16243A] text-white shadow-sm"
-                  : "text-gray-600 hover:text-[#16243A] hover:bg-gray-50",
+                  ? "bg-green-600 text-white shadow-sm"
+                  : "text-gray-600 hover:text-[#166534] hover:bg-gray-50",
               )}
             >
               {t.icon} {t.label}
@@ -176,9 +176,9 @@ function TimeLogsTab() {
             if (view === "calendar") d.setMonth(d.getMonth() - 1);
             else d.setDate(d.getDate() - 7);
             setCursor(d);
-          }} className="p-1 hover:bg-gray-100 rounded"><ChevronLeft size={14} /></button>
+          }} className="p-1 hover:bg-gray-100 rounded"><ChevronLeft size={12} /></button>
           <Calendar size={14} className="text-gray-500" />
-          <span className="text-sm font-medium">
+          <span className="text-xs font-medium">
             {view === "calendar"
               ? cursor.toLocaleDateString("en-IN", { month: "short", year: "numeric" })
               : `${fmtDate(rangeStart)} - ${fmtDate(rangeEnd)}`}
@@ -188,17 +188,17 @@ function TimeLogsTab() {
             if (view === "calendar") d.setMonth(d.getMonth() + 1);
             else d.setDate(d.getDate() + 7);
             setCursor(d);
-          }} className="p-1 hover:bg-gray-100 rounded"><ChevronRight size={14} /></button>
+          }} className="p-1 hover:bg-gray-100 rounded"><ChevronRight size={12} /></button>
         </div>
         <div className="flex items-center gap-2">
-          <div ref={logMenuRef} className="relative inline-flex shadow-sm rounded-lg ring-1 ring-[#2563eb]/10 hover:ring-[#2563eb]/20 transition">
+          <div ref={logMenuRef} className="relative inline-flex shadow-sm rounded-lg ring-1 ring-[#16a34a]/10 hover:ring-[#16a34a]/20 transition">
             <button
               onClick={() => {
                 setLogForm({ date: todayStr, startTime: "", endTime: "", projectId: "", jobId: "", description: "", isBillable: false });
                 setShowLog(true);
               }}
-              className="inline-flex items-center gap-1.5 bg-[#16243A] hover:bg-[#1E3354] text-white pl-4 pr-3 py-2.5 text-sm font-semibold rounded-l-lg transition">
-              <Plus size={14} strokeWidth={2.5} />
+              className="inline-flex items-center gap-1.5 bg-green-600 hover:bg-green-700 text-white px-3 py-1.5 text-xs font-medium rounded-l-lg transition">
+              <Plus size={13} strokeWidth={2.5} />
               Log Time
             </button>
             <div className="w-px bg-white/25" />
@@ -206,10 +206,10 @@ function TimeLogsTab() {
               onClick={() => setLogMenuOpen((o) => !o)}
               aria-label="More log options"
               className={clsx(
-                "bg-gradient-to-r from-[#2563eb] to-[#1d4ed8] hover:from-[#1d4ed8] hover:to-[#1d4ed8] text-white px-2.5 rounded-r-lg flex items-center justify-center transition",
-                logMenuOpen && "from-[#1d4ed8] to-[#1d4ed8]",
+                "bg-gradient-to-r from-[#16a34a] to-[#15803d] hover:from-[#15803d] hover:to-[#15803d] text-white px-2.5 rounded-r-lg flex items-center justify-center transition",
+                logMenuOpen && "from-[#15803d] to-[#15803d]",
               )}>
-              <ChevronDown size={16} className={clsx("transition-transform duration-200", logMenuOpen && "rotate-180")} />
+              <ChevronDown size={12} className={clsx("transition-transform duration-200", logMenuOpen && "rotate-180")} />
             </button>
             {logMenuOpen && (
               <div className="absolute right-0 top-full mt-2 bg-white border border-gray-100 rounded-xl shadow-xl py-2 w-56 z-50 origin-top-right animate-in fade-in zoom-in-95 duration-150">
@@ -234,13 +234,13 @@ function TimeLogsTab() {
                         setBulkMode(m.id as "daily" | "weekly" | "semi" | "monthly");
                       }
                     }}
-                    className="group w-full flex items-center gap-3 px-3 py-2 text-sm text-gray-700 hover:bg-[#dbeafe] transition"
+                    className="group w-full flex items-center gap-3 px-3 py-2 text-xs text-gray-700 hover:bg-[#dcfce7] transition"
                   >
-                    <span className="flex items-center justify-center w-7 h-7 rounded-lg bg-gray-100 text-gray-500 group-hover:bg-[#dbeafe] group-hover:text-[#3b82f6] transition">
+                    <span className="flex items-center justify-center w-7 h-7 rounded-lg bg-gray-100 text-gray-500 group-hover:bg-[#dcfce7] group-hover:text-[#22c55e] transition">
                       {m.icon}
                     </span>
                     <span className="flex flex-col items-start">
-                      <span className="font-medium text-gray-800 group-hover:text-[#2563eb]">{m.label}</span>
+                      <span className="font-medium text-gray-800 group-hover:text-[#16a34a]">{m.label}</span>
                       <span className="text-[11px] text-gray-400">{m.desc}</span>
                     </span>
                   </button>
@@ -250,19 +250,19 @@ function TimeLogsTab() {
           </div>
           <Tooltip content="List view">
             <button onClick={() => { setView("list"); setCursor(weekStart(new Date())); }}
-              className={clsx("p-2 border rounded-lg", view === "list" ? "border-[#93c5fd] bg-[#dbeafe]" : "border-gray-200 bg-white hover:bg-gray-50")}>
-              <List size={14} className={view === "list" ? "text-[#3b82f6]" : "text-gray-500"} />
+              className={clsx("p-2 border rounded-lg", view === "list" ? "border-[#86efac] bg-[#dcfce7]" : "border-gray-200 bg-white hover:bg-gray-50")}>
+              <List size={12} className={view === "list" ? "text-[#22c55e]" : "text-gray-500"} />
             </button>
           </Tooltip>
           <Tooltip content="Calendar view">
             <button onClick={() => { setView("calendar"); setCursor(monthStart(new Date())); }}
-              className={clsx("p-2 border rounded-lg", view === "calendar" ? "border-[#93c5fd] bg-[#dbeafe]" : "border-gray-200 bg-white hover:bg-gray-50")}>
-              <CalendarDays size={14} className={view === "calendar" ? "text-[#3b82f6]" : "text-gray-500"} />
+              className={clsx("p-2 border rounded-lg", view === "calendar" ? "border-[#86efac] bg-[#dcfce7]" : "border-gray-200 bg-white hover:bg-gray-50")}>
+              <CalendarDays size={12} className={view === "calendar" ? "text-[#22c55e]" : "text-gray-500"} />
             </button>
           </Tooltip>
           <Tooltip content="Filter">
             <button onClick={() => setShowFilter(true)} className="p-2 border border-gray-200 rounded-lg bg-white hover:bg-gray-50">
-              <Filter size={14} className="text-gray-500" />
+              <Filter size={12} className="text-gray-500" />
             </button>
           </Tooltip>
           <MoreMenu />
@@ -289,7 +289,7 @@ function TimeLogsTab() {
         />
         <input value={form.description} onChange={(e) => setForm({ ...form, description: e.target.value })}
           placeholder="What are you working on?"
-          className="flex-1 border border-[var(--border)] rounded-lg px-3 py-2 text-sm" />
+          className="flex-1 border border-[var(--border)] rounded-lg px-3 py-1.5 text-xs" />
         <Select
           value={form.isBillable ? "Billable" : "Non-Billable"}
           onChange={(v) => setForm({ ...form, isBillable: v === "Billable" })}
@@ -305,35 +305,35 @@ function TimeLogsTab() {
         <CalendarView cursor={cursor} logs={logs} />
       ) : logs.length === 0 ? (
         <div className="bg-white rounded-lg border border-gray-200 py-16 flex flex-col items-center justify-center">
-          <div className="w-24 h-24 rounded-full bg-[#dbeafe] flex items-center justify-center mb-3">
-            <Clock size={40} className="text-[#bfdbfe]" />
+          <div className="w-24 h-24 rounded-full bg-[#dcfce7] flex items-center justify-center mb-3">
+            <Clock size={40} className="text-[#bbf7d0]" />
           </div>
-          <p className="text-sm text-gray-500">No time logs added currently. To add new time logs, click Log Time</p>
+          <p className="text-xs text-gray-500">No time logs added currently. To add new time logs, click Log Time</p>
         </div>
       ) : (
         <div className="bg-white rounded-lg border border-gray-200 overflow-hidden">
-          <table className="w-full text-sm">
-            <thead className="bg-gray-50 text-xs text-gray-500 uppercase">
+          <table className="w-full text-xs">
+            <thead className="bg-gray-50 text-[11px] font-semibold text-gray-500 uppercase tracking-[0.04em]">
               <tr>
-                <th className="text-left px-4 py-2">Date</th>
-                <th className="text-left px-4 py-2">Start</th>
-                <th className="text-left px-4 py-2">End</th>
-                <th className="text-right px-4 py-2">Hours</th>
-                <th className="text-left px-4 py-2">Description</th>
-                <th className="text-left px-4 py-2">Billable</th>
-                <th className="text-left px-4 py-2">Status</th>
+                <th className="text-left px-4 py-2.5">Date</th>
+                <th className="text-left px-4 py-2.5">Start</th>
+                <th className="text-left px-4 py-2.5">End</th>
+                <th className="text-right px-4 py-2.5">Hours</th>
+                <th className="text-left px-4 py-2.5">Description</th>
+                <th className="text-left px-4 py-2.5">Billable</th>
+                <th className="text-left px-4 py-2.5">Status</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-100">
               {logs.map((l) => (
                 <tr key={l.id}>
-                  <td className="px-4 py-2">{new Date(l.date).toLocaleDateString("en-IN")}</td>
-                  <td className="px-4 py-2 text-xs">{new Date(l.startTime).toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit" })}</td>
-                  <td className="px-4 py-2 text-xs">{l.endTime ? new Date(l.endTime).toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit" }) : "—"}</td>
-                  <td className="px-4 py-2 text-right font-medium font-mono">{formatHMM(Number(l.duration))}</td>
-                  <td className="px-4 py-2 text-gray-600">{l.description ?? "—"}</td>
-                  <td className="px-4 py-2">{l.isBillable ? <span className="text-green-600">✓</span> : "—"}</td>
-                  <td className="px-4 py-2 text-xs text-gray-500">{l.status.replace("Log", "")}</td>
+                  <td className="px-4 py-2.5">{new Date(l.date).toLocaleDateString("en-IN")}</td>
+                  <td className="px-4 py-2.5 text-xs">{new Date(l.startTime).toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit" })}</td>
+                  <td className="px-4 py-2.5 text-xs">{l.endTime ? new Date(l.endTime).toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit" }) : "—"}</td>
+                  <td className="px-4 py-2.5 text-right font-medium font-mono">{formatHMM(Number(l.duration))}</td>
+                  <td className="px-4 py-2.5 text-gray-600">{l.description ?? "—"}</td>
+                  <td className="px-4 py-2.5">{l.isBillable ? <span className="text-green-600">✓</span> : "—"}</td>
+                  <td className="px-4 py-2.5 text-xs text-gray-500">{l.status.replace("Log", "")}</td>
                 </tr>
               ))}
             </tbody>
@@ -393,13 +393,13 @@ function TimeLogsTab() {
         >
           <div className="grid grid-cols-2 gap-3">
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Date</label>
+              <label className="block text-xs font-medium text-gray-700 mb-1">Date</label>
               <input type="date" required max={todayStr} value={logForm.date}
                 onChange={(e) => setLogForm({ ...logForm, date: e.target.value })}
-                className="w-full border border-[var(--border)] rounded-lg px-3 py-2 text-sm" />
+                className="w-full border border-[var(--border)] rounded-lg px-3 py-1.5 text-xs" />
             </div>
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Project</label>
+              <label className="block text-xs font-medium text-gray-700 mb-1">Project</label>
               <Select
                 value={logForm.projectId}
                 onChange={(v) => setLogForm({ ...logForm, projectId: v, jobId: "" })}
@@ -409,35 +409,35 @@ function TimeLogsTab() {
               />
             </div>
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Start Time</label>
+              <label className="block text-xs font-medium text-gray-700 mb-1">Start Time</label>
               <input type="time" required max={isTodayLog ? currentTimeStr : undefined} value={logForm.startTime}
                 onChange={(e) => setLogForm({ ...logForm, startTime: e.target.value })}
-                className="w-full border border-[var(--border)] rounded-lg px-3 py-2 text-sm" />
+                className="w-full border border-[var(--border)] rounded-lg px-3 py-1.5 text-xs" />
             </div>
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">End Time</label>
+              <label className="block text-xs font-medium text-gray-700 mb-1">End Time</label>
               <input type="time" required max={isTodayLog ? currentTimeStr : undefined} value={logForm.endTime}
                 onChange={(e) => setLogForm({ ...logForm, endTime: e.target.value })}
-                className="w-full border border-[var(--border)] rounded-lg px-3 py-2 text-sm" />
+                className="w-full border border-[var(--border)] rounded-lg px-3 py-1.5 text-xs" />
             </div>
           </div>
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Description</label>
+            <label className="block text-xs font-medium text-gray-700 mb-1">Description</label>
             <textarea value={logForm.description} rows={2}
               placeholder="What did you work on?"
               onChange={(e) => setLogForm({ ...logForm, description: e.target.value })}
-              className="w-full border border-[var(--border)] rounded-lg px-3 py-2 text-sm" />
+              className="w-full border border-[var(--border)] rounded-lg px-3 py-1.5 text-xs" />
           </div>
-          <label className="flex items-center gap-2 text-sm text-gray-700">
+          <label className="flex items-center gap-2 text-xs text-gray-700">
             <input type="checkbox" checked={logForm.isBillable}
               onChange={(e) => setLogForm({ ...logForm, isBillable: e.target.checked })} />
             Billable
           </label>
           <div className="flex justify-end gap-2 pt-2">
             <button type="button" onClick={() => setShowLog(false)}
-              className="px-4 py-2 border border-[var(--border)] rounded-lg text-sm text-gray-700 hover:bg-gray-50">Cancel</button>
+              className="px-3 py-1.5 border border-[var(--border)] rounded-lg text-xs font-medium text-gray-700 hover:bg-gray-50">Cancel</button>
             <button type="submit" disabled={createMut.isPending}
-              className="px-4 py-2 bg-[#16243A] text-white rounded-lg text-sm font-medium hover:bg-[#2563eb] disabled:opacity-50">
+              className="px-3 py-1.5 bg-green-600 text-white rounded-lg text-xs font-medium hover:bg-green-700 disabled:opacity-50">
               {createMut.isPending ? "Saving..." : "Save"}
             </button>
           </div>
@@ -459,10 +459,10 @@ function TimeLogsTab() {
         />
       )}
 
-      <div className="mt-6 flex items-center justify-end gap-6 text-sm">
-        <div className="border-l-2 border-[#3b82f6] pl-3">
+      <div className="mt-4 flex items-center justify-end gap-4 text-xs">
+        <div className="border-l-2 border-[#22c55e] pl-3">
           <div className="text-xs text-gray-500">Total</div>
-          <div className="font-semibold"><span className="text-[#3b82f6]">{formatHMM(totals.total)} Hrs</span></div>
+          <div className="font-semibold"><span className="text-[#22c55e]">{formatHMM(totals.total)} Hrs</span></div>
         </div>
         <div className="border-l-2 border-green-500 pl-3">
           <div className="text-xs text-gray-500">Submitted</div>
@@ -637,7 +637,7 @@ function BulkLogGrid({
     <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4 animate-in fade-in duration-150">
       <div className="bg-white rounded-2xl shadow-2xl w-full max-w-[96vw] max-h-[94vh] flex flex-col overflow-hidden ring-1 ring-slate-200">
         {/* Header */}
-        <div className="flex items-center justify-between px-6 py-4 border-b border-slate-100 bg-gradient-to-r from-slate-50 to-white">
+        <div className="flex items-center justify-between px-5 py-4 border-b border-slate-100 bg-gradient-to-r from-slate-50 to-white">
           <div className="flex items-center gap-3">
             <div className="flex items-center gap-1 bg-white border border-slate-200 rounded-lg px-1 py-1 shadow-sm">
               <button onClick={() => setCursor(shiftMode(currentMode, cursor, -1))}
@@ -645,15 +645,15 @@ function BulkLogGrid({
                 <ChevronLeft size={15} className="text-slate-600" />
               </button>
               <div className="flex items-center gap-1.5 px-2">
-                <Calendar size={14} className="text-[#3b82f6]" />
-                <span className="text-sm font-semibold text-slate-800">{headerLabel(currentMode, days)}</span>
+                <Calendar size={14} className="text-[#22c55e]" />
+                <span className="text-[13px] font-semibold text-slate-800">{headerLabel(currentMode, days)}</span>
               </div>
               <button onClick={() => setCursor(shiftMode(currentMode, cursor, 1))}
                 className="p-1.5 hover:bg-slate-100 rounded-md transition">
                 <ChevronRight size={15} className="text-slate-600" />
               </button>
             </div>
-            <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-[#dbeafe] text-[#2563eb] text-[11px] font-semibold border border-[#93c5fd]">
+            <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-[#dcfce7] text-[#16a34a] text-[11px] font-semibold border border-[#86efac]">
               {modeLabel(currentMode)}
             </span>
           </div>
@@ -670,12 +670,12 @@ function BulkLogGrid({
               className="w-44"
             />
             <button onClick={clone}
-              className="inline-flex items-center gap-1 border border-[#93c5fd] text-[#3b82f6] px-3 py-2 rounded-lg text-sm font-medium hover:bg-[#dbeafe] transition shadow-sm">
+              className="inline-flex items-center gap-1 border border-[#86efac] text-[#22c55e] px-3 py-1.5 rounded-lg text-xs font-medium hover:bg-[#dcfce7] transition shadow-sm">
               <Plus size={14} /> Clone
             </button>
             <button onClick={onClose}
               className="p-2 hover:bg-slate-100 rounded-lg transition">
-              <X size={16} className="text-slate-500" />
+              <X size={12} className="text-slate-500" />
             </button>
           </div>
         </div>
@@ -698,12 +698,12 @@ function BulkLogGrid({
                     <th key={dayKey(d)} className={clsx(
                       "px-2 py-2 border-b border-slate-200 text-center min-w-[82px]",
                       weekend && !isToday && "bg-amber-50/70",
-                      isToday && "bg-[#dbeafe]/70",
+                      isToday && "bg-[#dcfce7]/70",
                     )}>
-                      <div className={clsx("text-[11px] font-semibold", isToday ? "text-[#2563eb]" : "text-slate-600")}>
+                      <div className={clsx("text-[11px] font-semibold", isToday ? "text-[#16a34a]" : "text-slate-600")}>
                         {d.toLocaleDateString("en-IN", { month: "short", day: "2-digit" })}
                       </div>
-                      <div className={clsx("text-[10px] mt-0.5", isToday ? "text-[#3b82f6]" : weekend ? "text-amber-700" : "text-slate-400")}>
+                      <div className={clsx("text-[10px] mt-0.5", isToday ? "text-[#22c55e]" : weekend ? "text-amber-700" : "text-slate-400")}>
                         {d.toLocaleDateString("en-IN", { weekday: "short" })}
                       </div>
                     </th>
@@ -714,7 +714,7 @@ function BulkLogGrid({
             </thead>
             <tbody>
               {rows.map((r, i) => (
-                <tr key={i} className={clsx("transition", i % 2 === 0 ? "bg-white" : "bg-slate-50/40", "hover:bg-[#dbeafe]/30")}>
+                <tr key={i} className={clsx("transition", i % 2 === 0 ? "bg-white" : "bg-slate-50/40", "hover:bg-[#dcfce7]/30")}>
                   <td className="px-3 py-2.5 text-slate-400 font-medium border-b border-slate-100">{i + 1}</td>
                   <td className="px-2 py-2 border-b border-slate-100">
                     <Select
@@ -741,7 +741,7 @@ function BulkLogGrid({
                     <input value={r.workItem}
                       onChange={(e) => setRow(i, { workItem: e.target.value })}
                       placeholder="Task"
-                      className="w-full border border-slate-200 rounded-md px-2 py-1.5 text-xs bg-white focus:outline-none focus:ring-1 focus:ring-[#16243A]" />
+                      className="w-full border border-slate-200 rounded-md px-2 py-1.5 text-xs bg-white focus:outline-none focus:ring-1 focus:ring-[#166534]" />
                   </td>
                   <td className="px-2 py-2 border-b border-slate-100">
                     <div className="inline-flex rounded-md border border-slate-200 bg-slate-100 p-0.5 w-full">
@@ -762,7 +762,7 @@ function BulkLogGrid({
                       <input value={r.description}
                         onChange={(e) => setRow(i, { description: e.target.value })}
                         placeholder="Enter description"
-                        className="w-full border border-slate-200 rounded-md px-2 py-1.5 text-xs bg-white focus:outline-none focus:ring-1 focus:ring-[#16243A]" />
+                        className="w-full border border-slate-200 rounded-md px-2 py-1.5 text-xs bg-white focus:outline-none focus:ring-1 focus:ring-[#166534]" />
                     </td>
                   )}
                   {days.map((d) => {
@@ -775,20 +775,20 @@ function BulkLogGrid({
                       <td key={dk} className={clsx(
                         "px-1 py-2 border-b border-slate-100",
                         weekend && !isToday && "bg-amber-50/40",
-                        isToday && "bg-[#dbeafe]/40",
+                        isToday && "bg-[#dcfce7]/40",
                       )}>
                         <input value={cellVal}
                           onChange={(e) => setHour(i, dk, e.target.value)}
                           placeholder="00:00"
                           className={clsx(
-                            "w-full rounded-md px-1 py-1.5 text-xs text-center font-mono bg-white focus:outline-none focus:ring-1 focus:ring-[#16243A] transition",
-                            hasValue ? "border border-[#93c5fd] text-[#2563eb] font-semibold bg-[#dbeafe]/50" : "border border-slate-200 text-slate-700",
+                            "w-full rounded-md px-1 py-1.5 text-xs text-center font-mono bg-white focus:outline-none focus:ring-1 focus:ring-[#166534] transition",
+                            hasValue ? "border border-[#86efac] text-[#16a34a] font-semibold bg-[#dcfce7]/50" : "border border-slate-200 text-slate-700",
                           )} />
                       </td>
                     );
                   })}
                   <td className={clsx("px-3 py-2 text-right font-bold text-xs border-b border-slate-100 bg-slate-50",
-                    rowTotal(r) > 0 && "text-[#2563eb]")}>
+                    rowTotal(r) > 0 && "text-[#16a34a]")}>
                     {fmtHM(rowTotal(r))}
                   </td>
                 </tr>
@@ -801,13 +801,13 @@ function BulkLogGrid({
                   const t = colTotal(dk);
                   return (
                     <td key={dk} className={clsx("px-2 py-3 text-center font-semibold text-xs font-mono",
-                      t > 0 ? "text-[#2563eb]" : "text-slate-400")}>
+                      t > 0 ? "text-[#16a34a]" : "text-slate-400")}>
                       {fmtHM(t)}
                     </td>
                   );
                 })}
                 <td className={clsx("px-3 py-3 text-right font-bold text-sm",
-                  grandTotal > 0 ? "text-[#1d4ed8]" : "text-slate-400")}>
+                  grandTotal > 0 ? "text-[#15803d]" : "text-slate-400")}>
                   {fmtHM(grandTotal)}
                 </td>
               </tr>
@@ -816,9 +816,9 @@ function BulkLogGrid({
         </div>
 
         {/* Footer */}
-        <div className="flex items-center justify-between px-6 py-4 border-t border-slate-100 bg-white">
+        <div className="flex items-center justify-between px-5 py-4 border-t border-slate-100 bg-white">
           <button onClick={addRow}
-            className="inline-flex items-center gap-1.5 text-[#3b82f6] text-sm font-semibold hover:bg-[#dbeafe] px-3 py-1.5 rounded-lg transition">
+            className="inline-flex items-center gap-1.5 text-[#22c55e] text-xs font-medium hover:bg-[#dcfce7] px-3 py-1.5 rounded-lg transition">
             <Plus size={14} /> Add Row
           </button>
           <div className="flex items-center gap-3">
@@ -826,11 +826,11 @@ function BulkLogGrid({
               Grand total: <span className="font-bold text-slate-800 font-mono">{fmtHM(grandTotal)}</span>
             </div>
             <button onClick={onClose}
-              className="px-4 py-2 border border-slate-200 rounded-lg text-sm text-slate-700 hover:bg-slate-50 transition font-medium">
+              className="px-3 py-1.5 border border-slate-200 rounded-lg text-xs text-slate-700 hover:bg-slate-50 transition font-medium">
               Cancel
             </button>
             <button onClick={save} disabled={saving}
-              className="inline-flex items-center gap-1.5 px-5 py-2 bg-[#16243A] hover:bg-[#1E3354] text-white rounded-lg text-sm font-semibold shadow-sm disabled:opacity-50 transition">
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-green-600 hover:bg-green-700 text-white rounded-lg text-xs font-medium shadow-sm disabled:opacity-50 transition">
               {saving ? "Saving..." : "Save Log"}
             </button>
           </div>
@@ -869,10 +869,10 @@ function TimesheetsTab() {
       <div className="flex items-center justify-between mb-4">
         <div />
         <div className="flex items-center gap-2 bg-white border border-gray-200 rounded-lg px-2 py-1">
-          <button onClick={() => { const d = new Date(cursor); d.setMonth(d.getMonth() - 1); setCursor(d); }} className="p-1 hover:bg-gray-100 rounded"><ChevronLeft size={14} /></button>
+          <button onClick={() => { const d = new Date(cursor); d.setMonth(d.getMonth() - 1); setCursor(d); }} className="p-1 hover:bg-gray-100 rounded"><ChevronLeft size={12} /></button>
           <Calendar size={14} className="text-gray-500" />
-          <span className="text-sm font-medium">{cursor.toLocaleDateString("en-IN", { month: "short", year: "numeric" })}</span>
-          <button onClick={() => { const d = new Date(cursor); d.setMonth(d.getMonth() + 1); setCursor(d); }} className="p-1 hover:bg-gray-100 rounded"><ChevronRight size={14} /></button>
+          <span className="text-xs font-medium">{cursor.toLocaleDateString("en-IN", { month: "short", year: "numeric" })}</span>
+          <button onClick={() => { const d = new Date(cursor); d.setMonth(d.getMonth() + 1); setCursor(d); }} className="p-1 hover:bg-gray-100 rounded"><ChevronRight size={12} /></button>
         </div>
         <div className="flex items-center gap-2">
           <Select
@@ -891,28 +891,28 @@ function TimesheetsTab() {
             className="btn btn-primary">
             Create Timesheet
           </button>
-          <button className="p-2 border border-gray-200 rounded-lg bg-white hover:bg-gray-50"><Filter size={14} className="text-gray-500" /></button>
+          <button className="p-2 border border-gray-200 rounded-lg bg-white hover:bg-gray-50"><Filter size={12} className="text-gray-500" /></button>
         </div>
       </div>
 
       {sheets.length === 0 ? (
         <div className="bg-white rounded-lg border border-gray-200 py-16 flex flex-col items-center justify-center">
-          <div className="w-24 h-24 rounded-full bg-[#dbeafe] flex items-center justify-center mb-3">
-            <Clock size={40} className="text-[#bfdbfe]" />
+          <div className="w-24 h-24 rounded-full bg-[#dcfce7] flex items-center justify-center mb-3">
+            <Clock size={40} className="text-[#bbf7d0]" />
           </div>
-          <p className="text-sm text-gray-500 text-center">No timesheets found for the applied filters.<br />To add new timesheets, click Create Timesheet</p>
+          <p className="text-xs text-gray-500 text-center">No timesheets found for the applied filters.<br />To add new timesheets, click Create Timesheet</p>
         </div>
       ) : (
         <div className="space-y-2">
           {sheets.map((s) => (
             <div key={s.id} className="bg-white rounded-lg border border-gray-200 p-4 flex items-center justify-between">
               <div>
-                <div className="font-medium">{new Date(s.periodStart).toLocaleDateString("en-IN", { day: "numeric", month: "short" })} — {new Date(s.periodEnd).toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" })}</div>
+                <div className="text-[13px] font-semibold">{new Date(s.periodStart).toLocaleDateString("en-IN", { day: "numeric", month: "short" })} — {new Date(s.periodEnd).toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" })}</div>
                 <div className="text-xs text-gray-500 mt-0.5">{s.periodType} • {Number(s.totalHours).toFixed(1)} hrs</div>
               </div>
-              <span className={clsx("px-2 py-0.5 rounded-full text-xs font-medium",
+              <span className={clsx("px-2 py-0.5 rounded-full text-[11px] font-medium",
                 s.status === "TsApproved" ? "bg-green-100 text-green-700" :
-                s.status === "TsSubmitted" ? "bg-[#dbeafe] text-[#2563eb]" :
+                s.status === "TsSubmitted" ? "bg-[#dcfce7] text-[#16a34a]" :
                 s.status === "TsRejected" ? "bg-red-100 text-red-700" : "bg-gray-100 text-gray-600")}>
                 {s.status.replace("Ts", "")}
               </span>
@@ -924,7 +924,7 @@ function TimesheetsTab() {
       <Modal open={showCreate} onClose={() => setShowCreate(false)} title="Create Timesheet">
         <form onSubmit={(e) => { e.preventDefault(); createMut.mutate(form); }} className="space-y-4">
           <div>
-            <label className="block text-sm text-gray-600 mb-1">Period Type</label>
+            <label className="block text-xs font-medium text-gray-600 mb-1">Period Type</label>
             <Select
               value={form.periodType}
               onChange={(v) => setForm({ ...form, periodType: v })}
@@ -937,19 +937,19 @@ function TimesheetsTab() {
           </div>
           <div className="grid grid-cols-2 gap-2">
             <div>
-              <label className="block text-sm text-gray-600 mb-1">Start</label>
+              <label className="block text-xs font-medium text-gray-600 mb-1">Start</label>
               <input type="date" required value={form.periodStart} onChange={(e) => setForm({ ...form, periodStart: e.target.value })}
-                className="w-full border border-[var(--border)] rounded-lg px-3 py-2 text-sm" />
+                className="w-full border border-[var(--border)] rounded-lg px-3 py-1.5 text-xs" />
             </div>
             <div>
-              <label className="block text-sm text-gray-600 mb-1">End</label>
+              <label className="block text-xs font-medium text-gray-600 mb-1">End</label>
               <input type="date" required value={form.periodEnd} onChange={(e) => setForm({ ...form, periodEnd: e.target.value })}
-                className="w-full border border-[var(--border)] rounded-lg px-3 py-2 text-sm" />
+                className="w-full border border-[var(--border)] rounded-lg px-3 py-1.5 text-xs" />
             </div>
           </div>
           <div className="flex justify-end gap-2 pt-2">
-            <button type="button" onClick={() => setShowCreate(false)} className="px-4 py-2 border border-[var(--border)] rounded-lg text-sm">Cancel</button>
-            <button type="submit" className="px-4 py-2 bg-[#16243A] text-white rounded-lg text-sm font-medium hover:bg-[#2563eb]">Create</button>
+            <button type="button" onClick={() => setShowCreate(false)} className="px-3 py-1.5 border border-[var(--border)] rounded-lg text-xs font-medium">Cancel</button>
+            <button type="submit" className="px-3 py-1.5 bg-green-600 text-white rounded-lg text-xs font-medium hover:bg-green-700">Create</button>
           </div>
         </form>
       </Modal>
@@ -996,7 +996,7 @@ function JobsTab() {
           <div className="flex items-center border border-gray-200 rounded-lg overflow-hidden">
             {(["Employee", "Department"] as const).map((v) => (
               <button key={v} onClick={() => setView(v)}
-                className={clsx("px-4 py-1.5 text-sm", view === v ? "bg-white text-[#3b82f6] font-medium border border-[#3b82f6]" : "bg-gray-50 text-gray-500")}>
+                className={clsx("px-4 py-1.5 text-xs", view === v ? "bg-white text-[#22c55e] font-medium border border-[#22c55e]" : "bg-gray-50 text-gray-500")}>
                 {v}
               </button>
             ))}
@@ -1005,40 +1005,40 @@ function JobsTab() {
             className="btn btn-primary">
             Add Job
           </button>
-          <button className="p-2 border border-gray-200 rounded-lg bg-white hover:bg-gray-50"><Maximize2 size={14} className="text-gray-500" /></button>
-          <button className="p-2 border border-gray-200 rounded-lg bg-white hover:bg-gray-50"><Filter size={14} className="text-gray-500" /></button>
+          <button className="p-2 border border-gray-200 rounded-lg bg-white hover:bg-gray-50"><Maximize2 size={12} className="text-gray-500" /></button>
+          <button className="p-2 border border-gray-200 rounded-lg bg-white hover:bg-gray-50"><Filter size={12} className="text-gray-500" /></button>
           <MoreMenu />
         </div>
       </div>
 
       {jobs.length === 0 ? (
         <div className="bg-white rounded-lg border border-gray-200 py-16 flex flex-col items-center justify-center">
-          <div className="w-24 h-24 rounded-full bg-[#dbeafe] flex items-center justify-center mb-3">
-            <Clock size={40} className="text-[#bfdbfe]" />
+          <div className="w-24 h-24 rounded-full bg-[#dcfce7] flex items-center justify-center mb-3">
+            <Clock size={40} className="text-[#bbf7d0]" />
           </div>
-          <p className="text-sm text-gray-500">No Jobs added currently. To add new Jobs, click Add Job</p>
+          <p className="text-xs text-gray-500">No Jobs added currently. To add new Jobs, click Add Job</p>
         </div>
       ) : (
         <div className="bg-white rounded-lg border border-gray-200 overflow-hidden">
-          <table className="w-full text-sm">
-            <thead className="bg-gray-50 text-xs uppercase text-gray-500">
+          <table className="w-full text-xs">
+            <thead className="bg-gray-50 text-[11px] font-semibold uppercase text-gray-500 tracking-[0.04em]">
               <tr>
-                <th className="text-left px-4 py-2">Name</th>
-                <th className="text-left px-4 py-2">Project</th>
-                <th className="text-left px-4 py-2">Assignee</th>
-                <th className="text-right px-4 py-2">Est Hours</th>
-                <th className="text-left px-4 py-2">Status</th>
+                <th className="text-left px-4 py-2.5">Name</th>
+                <th className="text-left px-4 py-2.5">Project</th>
+                <th className="text-left px-4 py-2.5">Assignee</th>
+                <th className="text-right px-4 py-2.5">Est Hours</th>
+                <th className="text-left px-4 py-2.5">Status</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-100">
               {jobs.map((j) => (
                 <tr key={j.id}>
-                  <td className="px-4 py-2 font-medium">{j.name}</td>
-                  <td className="px-4 py-2 text-gray-600">{j.project.name}</td>
-                  <td className="px-4 py-2 font-mono text-xs">{j.assigneeId ?? "—"}</td>
-                  <td className="px-4 py-2 text-right">{j.estimatedHours ? Number(j.estimatedHours).toFixed(1) : "—"}</td>
-                  <td className="px-4 py-2">
-                    <span className={clsx("px-2 py-0.5 rounded-full text-xs", j.status === "JobActive" ? "bg-[#dbeafe] text-[#2563eb]" : "bg-gray-100 text-gray-600")}>
+                  <td className="px-4 py-2.5 text-[13px] font-medium">{j.name}</td>
+                  <td className="px-4 py-2.5 text-gray-600">{j.project.name}</td>
+                  <td className="px-4 py-2.5 font-mono text-xs">{j.assigneeId ?? "—"}</td>
+                  <td className="px-4 py-2.5 text-right">{j.estimatedHours ? Number(j.estimatedHours).toFixed(1) : "—"}</td>
+                  <td className="px-4 py-2.5">
+                    <span className={clsx("px-2 py-0.5 rounded-full text-[11px] font-medium", j.status === "JobActive" ? "bg-[#dcfce7] text-[#16a34a]" : "bg-gray-100 text-gray-600")}>
                       {j.status.replace("Job", "")}
                     </span>
                   </td>
@@ -1052,7 +1052,7 @@ function JobsTab() {
       <Modal open={showAdd} onClose={() => setShowAdd(false)} title="Add Job">
         <form onSubmit={(e) => { e.preventDefault(); createMut.mutate({ ...form, estimatedHours: form.estimatedHours || undefined }); }} className="space-y-4">
           <div>
-            <label className="block text-sm text-gray-600 mb-1">Project</label>
+            <label className="block text-xs font-medium text-gray-600 mb-1">Project</label>
             <Select
               required
               value={form.projectId}
@@ -1063,33 +1063,33 @@ function JobsTab() {
             />
           </div>
           <div>
-            <label className="block text-sm text-gray-600 mb-1">Job Name</label>
+            <label className="block text-xs font-medium text-gray-600 mb-1">Job Name</label>
             <input required value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })}
-              className="w-full border border-[var(--border)] rounded-lg px-3 py-2 text-sm" />
+              className="w-full border border-[var(--border)] rounded-lg px-3 py-1.5 text-xs" />
           </div>
           <div className="grid grid-cols-2 gap-2">
             <div>
-              <label className="block text-sm text-gray-600 mb-1">Code</label>
+              <label className="block text-xs font-medium text-gray-600 mb-1">Code</label>
               <input value={form.code} onChange={(e) => setForm({ ...form, code: e.target.value })}
-                className="w-full border border-[var(--border)] rounded-lg px-3 py-2 text-sm font-mono" />
+                className="w-full border border-[var(--border)] rounded-lg px-3 py-1.5 text-xs font-mono" />
             </div>
             <div>
-              <label className="block text-sm text-gray-600 mb-1">Assignee ID</label>
+              <label className="block text-xs font-medium text-gray-600 mb-1">Assignee ID</label>
               <input value={form.assigneeId} onChange={(e) => setForm({ ...form, assigneeId: e.target.value })}
-                className="w-full border border-[var(--border)] rounded-lg px-3 py-2 text-sm font-mono" />
+                className="w-full border border-[var(--border)] rounded-lg px-3 py-1.5 text-xs font-mono" />
             </div>
           </div>
           <div>
-            <label className="block text-sm text-gray-600 mb-1">Estimated Hours</label>
+            <label className="block text-xs font-medium text-gray-600 mb-1">Estimated Hours</label>
             <NumberInput step="0.5" value={form.estimatedHours} onChange={(v) => setForm({ ...form, estimatedHours: v ?? 0 })}
-              className="w-full border border-[var(--border)] rounded-lg px-3 py-2 text-sm" />
+              className="w-full border border-[var(--border)] rounded-lg px-3 py-1.5 text-xs" />
           </div>
-          <label className="flex items-center gap-2 text-sm">
+          <label className="flex items-center gap-2 text-xs">
             <input type="checkbox" checked={form.isBillable} onChange={(e) => setForm({ ...form, isBillable: e.target.checked })} /> Billable
           </label>
           <div className="flex justify-end gap-2 pt-2">
-            <button type="button" onClick={() => setShowAdd(false)} className="px-4 py-2 border border-[var(--border)] rounded-lg text-sm">Cancel</button>
-            <button type="submit" className="px-4 py-2 bg-[#16243A] text-white rounded-lg text-sm font-medium hover:bg-[#2563eb]">Save</button>
+            <button type="button" onClick={() => setShowAdd(false)} className="px-3 py-1.5 border border-[var(--border)] rounded-lg text-xs font-medium">Cancel</button>
+            <button type="submit" className="px-3 py-1.5 bg-green-600 text-white rounded-lg text-xs font-medium hover:bg-green-700">Save</button>
           </div>
         </form>
       </Modal>
@@ -1131,7 +1131,7 @@ function ProjectsTab() {
           <div className="flex items-center border border-gray-200 rounded-lg overflow-hidden">
             {(["Employee", "Department"] as const).map((v) => (
               <button key={v} onClick={() => setView(v)}
-                className={clsx("px-4 py-1.5 text-sm", view === v ? "bg-white text-[#3b82f6] font-medium border border-[#3b82f6]" : "bg-gray-50 text-gray-500")}>
+                className={clsx("px-4 py-1.5 text-xs", view === v ? "bg-white text-[#22c55e] font-medium border border-[#22c55e]" : "bg-gray-50 text-gray-500")}>
                 {v}
               </button>
             ))}
@@ -1140,40 +1140,40 @@ function ProjectsTab() {
             className="btn btn-primary">
             Add Project
           </button>
-          <button className="p-2 border border-gray-200 rounded-lg bg-white hover:bg-gray-50"><Maximize2 size={14} className="text-gray-500" /></button>
-          <button className="p-2 border border-gray-200 rounded-lg bg-white hover:bg-gray-50"><Filter size={14} className="text-gray-500" /></button>
+          <button className="p-2 border border-gray-200 rounded-lg bg-white hover:bg-gray-50"><Maximize2 size={12} className="text-gray-500" /></button>
+          <button className="p-2 border border-gray-200 rounded-lg bg-white hover:bg-gray-50"><Filter size={12} className="text-gray-500" /></button>
           <MoreMenu />
         </div>
       </div>
 
       {projects.length === 0 ? (
         <div className="bg-white rounded-lg border border-gray-200 py-16 flex flex-col items-center justify-center">
-          <div className="w-24 h-24 rounded-full bg-[#dbeafe] flex items-center justify-center mb-3">
-            <Clock size={40} className="text-[#bfdbfe]" />
+          <div className="w-24 h-24 rounded-full bg-[#dcfce7] flex items-center justify-center mb-3">
+            <Clock size={40} className="text-[#bbf7d0]" />
           </div>
-          <p className="text-sm text-gray-500">No Projects added currently. To add new Projects, click Add Project</p>
+          <p className="text-xs text-gray-500">No Projects added currently. To add new Projects, click Add Project</p>
         </div>
       ) : (
         <div className="bg-white rounded-lg border border-gray-200 overflow-hidden">
-          <table className="w-full text-sm">
-            <thead className="bg-gray-50 text-xs uppercase text-gray-500">
+          <table className="w-full text-xs">
+            <thead className="bg-gray-50 text-[11px] font-semibold uppercase text-gray-500 tracking-[0.04em]">
               <tr>
-                <th className="text-left px-4 py-2">Name</th>
-                <th className="text-left px-4 py-2">Code</th>
-                <th className="text-left px-4 py-2">Client</th>
-                <th className="text-right px-4 py-2">Jobs</th>
-                <th className="text-left px-4 py-2">Status</th>
+                <th className="text-left px-4 py-2.5">Name</th>
+                <th className="text-left px-4 py-2.5">Code</th>
+                <th className="text-left px-4 py-2.5">Client</th>
+                <th className="text-right px-4 py-2.5">Jobs</th>
+                <th className="text-left px-4 py-2.5">Status</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-100">
               {projects.map((p) => (
                 <tr key={p.id}>
-                  <td className="px-4 py-2 font-medium">{p.name}</td>
-                  <td className="px-4 py-2 font-mono text-xs">{p.code ?? "—"}</td>
-                  <td className="px-4 py-2 text-gray-600">{p.clientName ?? "—"}</td>
-                  <td className="px-4 py-2 text-right">{p._count.jobs}</td>
-                  <td className="px-4 py-2">
-                    <span className={clsx("px-2 py-0.5 rounded-full text-xs",
+                  <td className="px-4 py-2.5 text-[13px] font-medium">{p.name}</td>
+                  <td className="px-4 py-2.5 font-mono text-xs">{p.code ?? "—"}</td>
+                  <td className="px-4 py-2.5 text-gray-600">{p.clientName ?? "—"}</td>
+                  <td className="px-4 py-2.5 text-right">{p._count.jobs}</td>
+                  <td className="px-4 py-2.5">
+                    <span className={clsx("px-2 py-0.5 rounded-full text-[11px] font-medium",
                       p.status === "ProjectActive" ? "bg-green-100 text-green-700" :
                       p.status === "ProjectOnHold" ? "bg-yellow-100 text-yellow-700" : "bg-gray-100 text-gray-600")}>
                       {p.status.replace("Project", "")}
@@ -1189,33 +1189,33 @@ function ProjectsTab() {
       <Modal open={showAdd} onClose={() => setShowAdd(false)} title="Add Project">
         <form onSubmit={(e) => { e.preventDefault(); createMut.mutate({ ...form, budgetHours: form.budgetHours || undefined, code: form.code || undefined, clientName: form.clientName || undefined }); }} className="space-y-4">
           <div>
-            <label className="block text-sm text-gray-600 mb-1">Project Name</label>
+            <label className="block text-xs font-medium text-gray-600 mb-1">Project Name</label>
             <input required value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })}
-              className="w-full border border-[var(--border)] rounded-lg px-3 py-2 text-sm" />
+              className="w-full border border-[var(--border)] rounded-lg px-3 py-1.5 text-xs" />
           </div>
           <div className="grid grid-cols-2 gap-2">
             <div>
-              <label className="block text-sm text-gray-600 mb-1">Code</label>
+              <label className="block text-xs font-medium text-gray-600 mb-1">Code</label>
               <input value={form.code} onChange={(e) => setForm({ ...form, code: e.target.value })}
-                className="w-full border border-[var(--border)] rounded-lg px-3 py-2 text-sm font-mono" />
+                className="w-full border border-[var(--border)] rounded-lg px-3 py-1.5 text-xs font-mono" />
             </div>
             <div>
-              <label className="block text-sm text-gray-600 mb-1">Client</label>
+              <label className="block text-xs font-medium text-gray-600 mb-1">Client</label>
               <input value={form.clientName} onChange={(e) => setForm({ ...form, clientName: e.target.value })}
-                className="w-full border border-[var(--border)] rounded-lg px-3 py-2 text-sm" />
+                className="w-full border border-[var(--border)] rounded-lg px-3 py-1.5 text-xs" />
             </div>
           </div>
           <div>
-            <label className="block text-sm text-gray-600 mb-1">Budget Hours</label>
+            <label className="block text-xs font-medium text-gray-600 mb-1">Budget Hours</label>
             <NumberInput value={form.budgetHours} onChange={(v) => setForm({ ...form, budgetHours: v ?? 0 })}
-              className="w-full border border-[var(--border)] rounded-lg px-3 py-2 text-sm" />
+              className="w-full border border-[var(--border)] rounded-lg px-3 py-1.5 text-xs" />
           </div>
-          <label className="flex items-center gap-2 text-sm">
+          <label className="flex items-center gap-2 text-xs">
             <input type="checkbox" checked={form.isBillable} onChange={(e) => setForm({ ...form, isBillable: e.target.checked })} /> Billable
           </label>
           <div className="flex justify-end gap-2 pt-2">
-            <button type="button" onClick={() => setShowAdd(false)} className="px-4 py-2 border border-[var(--border)] rounded-lg text-sm">Cancel</button>
-            <button type="submit" className="px-4 py-2 bg-[#16243A] text-white rounded-lg text-sm font-medium hover:bg-[#2563eb]">Save</button>
+            <button type="button" onClick={() => setShowAdd(false)} className="px-3 py-1.5 border border-[var(--border)] rounded-lg text-xs font-medium">Cancel</button>
+            <button type="submit" className="px-3 py-1.5 bg-green-600 text-white rounded-lg text-xs font-medium hover:bg-green-700">Save</button>
           </div>
         </form>
       </Modal>
@@ -1264,16 +1264,16 @@ function JobScheduleTab() {
       <div className="flex items-center justify-between mb-4">
         <div />
         <div className="flex items-center gap-2 bg-white border border-gray-200 rounded-lg px-2 py-1">
-          <button onClick={() => shiftDays(cursor, setCursor, -7)} className="p-1 hover:bg-gray-100 rounded"><ChevronLeft size={14} /></button>
+          <button onClick={() => shiftDays(cursor, setCursor, -7)} className="p-1 hover:bg-gray-100 rounded"><ChevronLeft size={12} /></button>
           <Calendar size={14} className="text-gray-500" />
-          <span className="text-sm font-medium">{fmtDate(cursor)} - {fmtDate(weekEnd)}</span>
-          <button onClick={() => shiftDays(cursor, setCursor, 7)} className="p-1 hover:bg-gray-100 rounded"><ChevronRight size={14} /></button>
+          <span className="text-xs font-medium">{fmtDate(cursor)} - {fmtDate(weekEnd)}</span>
+          <button onClick={() => shiftDays(cursor, setCursor, 7)} className="p-1 hover:bg-gray-100 rounded"><ChevronRight size={12} /></button>
         </div>
         <div className="flex items-center gap-2">
           <div className="flex items-center border border-gray-200 rounded-lg overflow-hidden">
             {(["Day", "Week"] as const).map((m) => (
               <button key={m} onClick={() => setMode(m)}
-                className={clsx("px-4 py-1.5 text-sm", mode === m ? "bg-white text-[#3b82f6] font-medium border border-[#3b82f6]" : "bg-gray-50 text-gray-500")}>
+                className={clsx("px-4 py-1.5 text-xs", mode === m ? "bg-white text-[#22c55e] font-medium border border-[#22c55e]" : "bg-gray-50 text-gray-500")}>
                 {m}
               </button>
             ))}
@@ -1283,10 +1283,10 @@ function JobScheduleTab() {
             <span className="text-orange-600 font-semibold">{pendingCount}</span> pending changes
           </span>
           <button onClick={() => publishMut.mutate()} disabled={publishMut.isPending || pendingCount === 0}
-            className="btn btn-primary disabled:bg-[#93c5fd]">
+            className="btn btn-primary disabled:bg-[#86efac]">
             {publishMut.isPending ? "Publishing..." : "Published"}
           </button>
-          <button className="p-2 border border-gray-200 rounded-lg bg-white hover:bg-gray-50"><Filter size={14} className="text-gray-500" /></button>
+          <button className="p-2 border border-gray-200 rounded-lg bg-white hover:bg-gray-50"><Filter size={12} className="text-gray-500" /></button>
           <MoreMenu />
         </div>
       </div>
@@ -1307,7 +1307,7 @@ function JobScheduleTab() {
               <div key={idx} className="contents">
                 <div className={clsx("border-t border-gray-100 px-2 py-2", isWeekend && "bg-amber-50")}>
                   <div className="text-xs text-gray-500">{d.toLocaleDateString("en-IN", { weekday: "short" })}</div>
-                  <div className={clsx("font-semibold", isToday ? "bg-[#dbeafe]0 text-white inline-flex items-center justify-center rounded-full w-6 h-6 text-xs" : "text-gray-900")}>{d.getDate()}</div>
+                  <div className={clsx("font-semibold", isToday ? "bg-[#dcfce7]0 text-white inline-flex items-center justify-center rounded-full w-6 h-6 text-xs" : "text-gray-900")}>{d.getDate()}</div>
                   <div className="text-xs text-gray-500 mt-1 flex items-center gap-1">
                     <Clock size={10} /> {hoursPerDay[idx].toFixed(2)} hrs
                   </div>
@@ -1343,7 +1343,7 @@ function MoreMenu() {
       <Tooltip content="More actions">
         <button onClick={() => setOpen(!open)}
           className={clsx("p-2 border rounded-lg", open ? "bg-gray-800 text-white border-gray-800" : "border-gray-200 bg-white text-gray-600 hover:bg-gray-50")}>
-          <MoreHorizontal size={14} />
+          <MoreHorizontal size={12} />
         </button>
       </Tooltip>
       {open && (
@@ -1360,7 +1360,7 @@ function MoreMenu() {
 
 function MenuItem({ icon, label, onClick }: { icon: React.ReactNode; label: string; onClick?: () => void }) {
   return (
-    <button onClick={onClick} className="w-full flex items-center gap-3 px-4 py-2 text-sm text-gray-700 hover:bg-gray-50">
+    <button onClick={onClick} className="w-full flex items-center gap-3 px-4 py-2 text-xs text-gray-700 hover:bg-gray-50">
       <span className="text-gray-500">{icon}</span>
       {label}
     </button>
@@ -1415,11 +1415,11 @@ function CalendarView({ cursor, logs }: { cursor: Date; logs: TimeLog[] }) {
               <div key={cIdx} className={clsx("min-h-[120px] border-r border-gray-100 px-2 py-2 relative",
                 isWeekend && "bg-amber-50/60")}>
                 <div className={clsx("inline-flex items-center justify-center w-6 h-6 rounded text-xs font-semibold mb-1",
-                  isToday(d) ? "bg-[#dbeafe]0 text-white" : isWeekend ? "text-amber-800" : "text-gray-900")}>
+                  isToday(d) ? "bg-[#dcfce7]0 text-white" : isWeekend ? "text-amber-800" : "text-gray-900")}>
                   {d.getDate()}
                 </div>
                 {dayLogs.slice(0, 2).map((l) => (
-                  <div key={l.id} className="text-[11px] bg-[#dbeafe] text-[#2563eb] rounded px-1.5 py-0.5 mb-1 truncate">
+                  <div key={l.id} className="text-[11px] bg-[#dcfce7] text-[#16a34a] rounded px-1.5 py-0.5 mb-1 truncate">
                     {formatHMM(Number(l.duration))} · {l.description ?? "Work"}
                   </div>
                 ))}
@@ -1428,7 +1428,7 @@ function CalendarView({ cursor, logs }: { cursor: Date; logs: TimeLog[] }) {
             );
           })}
           <div className="min-h-[120px] border-l border-gray-200 px-3 py-2 flex items-start">
-            <span className="text-sm font-mono text-gray-700">{formatHMM(weekTotals[rIdx])}</span>
+            <span className="text-xs font-mono text-gray-700">{formatHMM(weekTotals[rIdx])}</span>
           </div>
         </div>
       ))}
@@ -1449,15 +1449,15 @@ function FilterDrawer({
   return (
     <div className="fixed inset-0 z-50" onClick={onClose}>
       <div className="absolute inset-0 bg-black/20" />
-      <div className="absolute right-0 top-0 bottom-0 w-80 bg-white shadow-xl p-5" onClick={(e) => e.stopPropagation()}>
+      <div className="absolute right-0 top-0 bottom-0 w-80 bg-white shadow-xl p-4" onClick={(e) => e.stopPropagation()}>
         <div className="flex items-center justify-between mb-5">
-          <h3 className="font-semibold text-gray-900">Filter</h3>
-          <button onClick={onClose} className="p-1 hover:bg-gray-100 rounded"><Plus size={16} className="rotate-45 text-gray-500" /></button>
+          <h3 className="text-[13px] font-semibold text-gray-900">Filter</h3>
+          <button onClick={onClose} className="p-1 hover:bg-gray-100 rounded"><Plus size={12} className="rotate-45 text-gray-500" /></button>
         </div>
 
         <div className="space-y-4">
           <div>
-            <label className="block text-sm text-gray-600 mb-1">Clients</label>
+            <label className="block text-xs font-medium text-gray-600 mb-1">Clients</label>
             <Select
               value={filter.clientId}
               onChange={(v) => setFilter({ ...filter, clientId: v })}
@@ -1471,7 +1471,7 @@ function FilterDrawer({
           </div>
 
           <div>
-            <label className="block text-sm text-gray-600 mb-1">Projects</label>
+            <label className="block text-xs font-medium text-gray-600 mb-1">Projects</label>
             <Select
               value={filter.projectId}
               onChange={(v) => setFilter({ ...filter, projectId: v, jobId: "" })}
@@ -1485,7 +1485,7 @@ function FilterDrawer({
           </div>
 
           <div>
-            <label className="block text-sm text-gray-600 mb-1">Jobs</label>
+            <label className="block text-xs font-medium text-gray-600 mb-1">Jobs</label>
             <Select
               value={filter.jobId}
               onChange={(v) => setFilter({ ...filter, jobId: v })}
@@ -1499,7 +1499,7 @@ function FilterDrawer({
           </div>
 
           <div>
-            <label className="block text-sm text-gray-600 mb-1">Billable Status</label>
+            <label className="block text-xs font-medium text-gray-600 mb-1">Billable Status</label>
             <Select
               value={filter.billableStatus}
               onChange={(v) => setFilter({ ...filter, billableStatus: v as "All" })}
@@ -1512,7 +1512,7 @@ function FilterDrawer({
           </div>
 
           <div>
-            <label className="block text-sm text-gray-600 mb-1">Approval Status</label>
+            <label className="block text-xs font-medium text-gray-600 mb-1">Approval Status</label>
             <Select
               value={filter.approvalStatus}
               onChange={(v) => setFilter({ ...filter, approvalStatus: v as "All" })}

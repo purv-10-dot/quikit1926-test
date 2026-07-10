@@ -33,7 +33,22 @@ export const GET = withAuth(async (req: NextRequest, { orgId }) => {
       }),
     ]);
 
-    return successResponse({ instances, counts }, paginationMeta(page, limit, total));
+    // OffboardingInstance stores only employeeId (no Prisma relation to Employee),
+    // so resolve names in a single follow-up query and merge them in.
+    const employees = await prisma.employee.findMany({
+      where: { orgId, id: { in: instances.map((i) => i.employeeId) } },
+      select: { id: true, firstName: true, lastName: true, displayName: true, employeeCode: true },
+    });
+    const employeeById = new Map(employees.map((e) => [e.id, e]));
+    const instancesWithEmployee = instances.map((i) => ({
+      ...i,
+      employee: employeeById.get(i.employeeId) ?? null,
+    }));
+
+    return successResponse(
+      { instances: instancesWithEmployee, counts },
+      paginationMeta(page, limit, total),
+    );
   } catch (error) {
     console.error("GET /offboarding error:", error);
     return internalError();

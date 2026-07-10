@@ -8,6 +8,7 @@ import { useToast } from "@/components/hrms/toast";
 import { Trophy, BarChart3, Send, X, Sparkles, Image as ImageIcon, Video, Loader2, Smile, Globe, Users, ChevronDown, ChevronRight, Lock, CalendarClock, Star } from "lucide-react";
 import { clsx } from "clsx";
 import { Modal } from "@/components/hrms/modal";
+import { Select } from "@/components/hrms/select";
 import { useDialog } from "@/components/hrms/dialog";
 import confetti from "canvas-confetti";
 
@@ -57,7 +58,7 @@ type Mode = "shoutout" | "kudos" | "poll" | null;
 function fireConfetti() {
   const duration = 1200;
   const end = Date.now() + duration;
-  const colors = ["#3b82f6", "#60a5fa", "#fbbf24", "#34d399", "#f472b6"];
+  const colors = ["#22c55e", "#4ade80", "#fbbf24", "#34d399", "#f472b6"];
   (function frame() {
     confetti({ particleCount: 4, angle: 60, spread: 55, origin: { x: 0 }, colors });
     confetti({ particleCount: 4, angle: 120, spread: 55, origin: { x: 1 }, colors });
@@ -87,7 +88,6 @@ export function ShoutoutComposer() {
       qc.invalidateQueries({ queryKey: ["home", "feed"] });
       setMode(null);
     },
-    onError: (e: Error) => toast.error("Post failed", e.message),
   });
 
   const kudosMut = useMutation({
@@ -98,7 +98,6 @@ export function ShoutoutComposer() {
       qc.invalidateQueries({ queryKey: ["home", "feed"] });
       setMode(null);
     },
-    onError: (e: Error) => toast.error("Kudos failed", e.message),
   });
 
   const initials = me ? `${me.firstName[0] ?? ""}${me.lastName[0] ?? ""}`.toUpperCase() : "?";
@@ -108,7 +107,7 @@ export function ShoutoutComposer() {
     // eslint-disable-next-line @next/next/no-img-element
     <img src={me.profilePhoto} alt="" className="w-10 h-10 rounded-full ring-2 ring-white shadow object-cover shrink-0" />
   ) : (
-    <div className="w-10 h-10 rounded-full bg-gradient-to-br from-[#3b82f6] to-[#2563eb] flex items-center justify-center text-white font-bold text-sm shadow shrink-0">
+    <div className="w-10 h-10 rounded-full bg-gradient-to-br from-[#22c55e] to-[#16a34a] flex items-center justify-center text-white font-bold text-sm shadow shrink-0">
       {initials}
     </div>
   );
@@ -130,21 +129,21 @@ export function ShoutoutComposer() {
       <div className="grid grid-cols-3 border-t border-gray-100 px-2 py-1">
         <button
           onClick={() => setMode("shoutout")}
-          className="flex items-center justify-center gap-2 py-2.5 text-sm font-semibold text-gray-700 hover:bg-gray-50 rounded-lg transition"
+          className="flex items-center justify-center gap-2 py-1.5 text-xs font-medium text-gray-700 hover:bg-gray-50 rounded-lg transition"
         >
-          <ImageIcon size={18} className="text-emerald-500" /> Photo/video
+          <ImageIcon size={13} className="text-emerald-500" /> Photo/video
         </button>
         <button
           onClick={() => setMode("kudos")}
-          className="flex items-center justify-center gap-2 py-2.5 text-sm font-semibold text-gray-700 hover:bg-gray-50 rounded-lg transition"
+          className="flex items-center justify-center gap-2 py-1.5 text-xs font-medium text-gray-700 hover:bg-gray-50 rounded-lg transition"
         >
-          <Trophy size={18} className="text-amber-500" /> Kudos
+          <Trophy size={13} className="text-amber-500" /> Kudos
         </button>
         <button
           onClick={() => setMode("poll")}
-          className="flex items-center justify-center gap-2 py-2.5 text-sm font-semibold text-gray-700 hover:bg-gray-50 rounded-lg transition"
+          className="flex items-center justify-center gap-2 py-1.5 text-xs font-medium text-gray-700 hover:bg-gray-50 rounded-lg transition"
         >
-          <BarChart3 size={18} className="text-blue-500" /> Poll
+          <BarChart3 size={13} className="text-green-500" /> Poll
         </button>
       </div>
 
@@ -444,24 +443,24 @@ function ShoutoutForm({ me, submitting, onCancel, onSubmit }: {
   };
 
   return (
-    <form onSubmit={(e) => { e.preventDefault(); handleSubmit(); }} className="px-5 pt-4 pb-5">
+    <form onSubmit={(e) => { e.preventDefault(); handleSubmit(); }} className="px-4 pt-4 pb-4">
       {/* Author + visibility */}
       <div className="flex items-center gap-3 mb-4">
         {me?.profilePhoto ? (
           // eslint-disable-next-line @next/next/no-img-element
           <img src={me.profilePhoto} alt="" className="w-11 h-11 rounded-full ring-2 ring-white shadow object-cover" />
         ) : (
-          <div className="w-11 h-11 rounded-full bg-gradient-to-br from-[#3b82f6] to-[#2563eb] flex items-center justify-center text-white font-bold text-sm shadow">
+          <div className="w-11 h-11 rounded-full bg-gradient-to-br from-[#22c55e] to-[#16a34a] flex items-center justify-center text-white font-bold text-sm shadow">
             {initials}
           </div>
         )}
         <div>
-          <p className="text-sm font-bold text-gray-900">{me ? `${me.firstName} ${me.lastName}` : "You"}</p>
+          <p className="text-[13px] font-semibold text-gray-900">{me ? `${me.firstName} ${me.lastName}` : "You"}</p>
           <div className="relative" ref={visRef}>
             <button
               type="button"
               onClick={() => setShowVisibility((s) => !s)}
-              className="mt-1 inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md bg-gray-100 hover:bg-gray-200 text-xs font-semibold text-gray-800 transition"
+              className="mt-1 inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md bg-gray-100 hover:bg-gray-200 text-xs font-medium text-gray-800 transition"
             >
               <VisibilityIcon size={12} /> {visOpt.label} <ChevronDown size={12} />
             </button>
@@ -476,7 +475,7 @@ function ShoutoutForm({ me, submitting, onCancel, onSubmit }: {
                       onClick={() => { setVisibility(v.value); setShowVisibility(false); }}
                       className={clsx(
                         "w-full flex items-start gap-2 px-3 py-2 text-left hover:bg-slate-50 transition",
-                        visibility === v.value && "bg-blue-50/60",
+                        visibility === v.value && "bg-green-50/60",
                       )}
                     >
                       <Icon size={14} className="text-gray-500 mt-0.5" />
@@ -496,7 +495,7 @@ function ShoutoutForm({ me, submitting, onCancel, onSubmit }: {
       {/* Ringed textarea + floating counter & emoji */}
       <div className={clsx(
         "relative rounded-2xl bg-white ring-1 transition focus-within:ring-2",
-        overLimit ? "ring-rose-300 focus-within:ring-rose-400" : "ring-gray-200 focus-within:ring-blue-400",
+        overLimit ? "ring-rose-300 focus-within:ring-rose-400" : "ring-gray-200 focus-within:ring-green-400",
       )}>
         <textarea
           autoFocus
@@ -504,7 +503,7 @@ function ShoutoutForm({ me, submitting, onCancel, onSubmit }: {
           onChange={(e) => setContent(e.target.value.slice(0, MAX_LEN + 50))}
           placeholder={`What's on your mind${me?.firstName ? `, ${me.firstName}` : ""}?`}
           rows={5}
-          className="w-full px-4 pt-4 pb-10 bg-transparent border-0 focus:outline-none focus:ring-0 resize-none text-[15px] leading-relaxed placeholder:text-gray-400"
+          className="w-full px-4 pt-4 pb-10 bg-transparent border-0 focus:outline-none focus:ring-0 resize-none text-xs leading-relaxed placeholder:text-gray-400"
         />
         <div className="absolute bottom-2.5 right-3 flex items-center gap-2">
           <span className={clsx(
@@ -522,7 +521,7 @@ function ShoutoutForm({ me, submitting, onCancel, onSubmit }: {
             )}
             title="Insert emoji"
           >
-            <Smile size={15} />
+            <Smile size={12} />
           </button>
         </div>
 
@@ -546,7 +545,7 @@ function ShoutoutForm({ me, submitting, onCancel, onSubmit }: {
             <div className="mt-2 pt-2 border-t border-gray-100">
               <button
                 type="button"
-                className="inline-flex items-center gap-1.5 text-[11px] font-semibold text-violet-600 hover:underline w-full"
+                className="inline-flex items-center gap-1.5 text-[11px] font-medium text-violet-600 hover:underline w-full"
                 title="More reactions coming soon"
               >
                 <Star size={12} className="text-violet-500" /> More reactions
@@ -619,9 +618,9 @@ function ShoutoutForm({ me, submitting, onCancel, onSubmit }: {
                     className="absolute top-1.5 right-1.5 w-7 h-7 rounded-full bg-black/70 hover:bg-black text-white flex items-center justify-center transition"
                     aria-label="Remove"
                   >
-                    <X size={14} />
+                    <X size={12} />
                   </button>
-                  <span className="absolute bottom-1.5 left-1.5 px-1.5 py-0.5 rounded bg-black/60 text-white text-[10px] font-bold uppercase tracking-wider">
+                  <span className="absolute bottom-1.5 left-1.5 px-1.5 py-0.5 rounded bg-black/60 text-white text-[11px] font-medium uppercase tracking-wider">
                     {m.type}
                   </span>
                 </div>
@@ -637,7 +636,7 @@ function ShoutoutForm({ me, submitting, onCancel, onSubmit }: {
       {/* "Add to your post" row */}
       <div className="mt-4 ring-1 ring-gray-200 rounded-xl px-4 py-2.5">
         <div className="flex items-center justify-between gap-3">
-          <span className="text-sm font-semibold text-gray-700">Add to your post</span>
+          <span className="text-[13px] font-semibold text-gray-700">Add to your post</span>
           <div className="flex items-center gap-2">
             <button
               type="button"
@@ -650,9 +649,9 @@ function ShoutoutForm({ me, submitting, onCancel, onSubmit }: {
                     ? "Image limit reached"
                     : "Media limit reached"
               }
-              className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg hover:bg-emerald-50 text-emerald-600 text-sm font-semibold transition disabled:opacity-50 disabled:cursor-not-allowed"
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg hover:bg-emerald-50 text-emerald-600 text-xs font-medium transition disabled:opacity-50 disabled:cursor-not-allowed"
             >
-              <ImageIcon size={16} /> Image
+              <ImageIcon size={13} /> Image
             </button>
             <button
               type="button"
@@ -665,16 +664,16 @@ function ShoutoutForm({ me, submitting, onCancel, onSubmit }: {
                     ? "Only one video per post"
                     : "Media limit reached"
               }
-              className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg hover:bg-rose-50 text-rose-600 text-sm font-semibold transition disabled:opacity-50 disabled:cursor-not-allowed"
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg hover:bg-rose-50 text-rose-600 text-xs font-medium transition disabled:opacity-50 disabled:cursor-not-allowed"
             >
-              <Video size={16} /> Video
+              <Video size={13} /> Video
             </button>
             <button
               type="button"
               onClick={() => setShowEmoji((s) => !s)}
-              className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg hover:bg-amber-50 text-amber-600 text-sm font-semibold transition"
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg hover:bg-amber-50 text-amber-600 text-xs font-medium transition"
             >
-              <Smile size={16} /> Feeling
+              <Smile size={13} /> Feeling
             </button>
           </div>
         </div>
@@ -684,7 +683,7 @@ function ShoutoutForm({ me, submitting, onCancel, onSubmit }: {
             <span className="text-gray-400"> · {MAX_IMAGE_MB}MB image · {MAX_VIDEO_MB}MB video</span>
           </span>
           {uploadingCount > 0 && (
-            <span className="inline-flex items-center gap-1 text-blue-600 font-semibold">
+            <span className="inline-flex items-center gap-1 text-green-600 font-semibold">
               <Loader2 size={11} className="animate-spin" />
               Uploading {uploadingCount}…
             </span>
@@ -696,13 +695,13 @@ function ShoutoutForm({ me, submitting, onCancel, onSubmit }: {
       <button
         type="button"
         onClick={() => setShowVisibility(true)}
-        className="mt-4 w-full flex items-center gap-3 px-4 py-3 rounded-xl bg-gradient-to-r from-blue-50 to-indigo-50 ring-1 ring-blue-100 text-left hover:from-blue-100/70 hover:to-indigo-100/70 transition"
+        className="mt-4 w-full flex items-center gap-3 px-4 py-3 rounded-xl bg-gradient-to-r from-green-50 to-green-50 ring-1 ring-green-100 text-left hover:from-green-100/70 hover:to-green-100/70 transition"
       >
-        <div className="w-9 h-9 rounded-full bg-white ring-1 ring-blue-200 flex items-center justify-center shrink-0">
-          <Lock size={14} className="text-blue-600" />
+        <div className="w-9 h-9 rounded-full bg-white ring-1 ring-green-200 flex items-center justify-center shrink-0">
+          <Lock size={14} className="text-green-600" />
         </div>
         <div className="flex-1 min-w-0">
-          <p className="text-sm font-bold text-gray-900">This post will be visible to your {visOpt.label.toLowerCase()}</p>
+          <p className="text-[13px] font-semibold text-gray-900">This post will be visible to your {visOpt.label.toLowerCase()}</p>
           <p className="text-[11px] text-gray-600">{visOpt.visibleTo}</p>
         </div>
         <ChevronRight size={16} className="text-gray-400 shrink-0" />
@@ -712,28 +711,28 @@ function ShoutoutForm({ me, submitting, onCancel, onSubmit }: {
       <button
         type="submit"
         disabled={!canPost}
-        className="mt-4 w-full py-2.5 rounded-lg bg-blue-600 hover:bg-blue-700 text-white text-sm font-bold transition disabled:opacity-50 disabled:cursor-not-allowed inline-flex items-center justify-center gap-2 shadow-md"
+        className="mt-4 w-full py-2.5 rounded-lg bg-green-600 hover:bg-green-700 text-white text-xs font-medium transition disabled:opacity-50 disabled:cursor-not-allowed inline-flex items-center justify-center gap-2 shadow-md"
       >
         {submitting ? (
-          <><Loader2 size={14} className="animate-spin" /> Posting…</>
+          <><Loader2 size={13} className="animate-spin" /> Posting…</>
         ) : (
-          <><Send size={14} /> Post</>
+          <><Send size={13} /> Post</>
         )}
       </button>
 
       {/* OR divider */}
-      <div className="my-3 text-center text-sm text-gray-400">or</div>
+      <div className="my-3 text-center text-xs text-gray-400">or</div>
 
       {/* Schedule post */}
       {showSchedule ? (
-        <div className="rounded-xl ring-1 ring-blue-200 bg-blue-50/40 p-3">
+        <div className="rounded-xl ring-1 ring-green-200 bg-green-50/40 p-3">
           <label className="block text-xs font-semibold text-gray-700 mb-1.5">Schedule for</label>
           <input
             type="datetime-local"
             value={scheduledAt}
             onChange={(e) => setScheduledAt(e.target.value)}
             min={new Date().toISOString().slice(0, 16)}
-            className="w-full px-3 py-2 ring-1 ring-gray-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-blue-400"
+            className="w-full px-3 py-2 ring-1 ring-gray-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-green-400"
           />
           <div className="flex items-center justify-end gap-2 mt-2">
             <button type="button" onClick={() => setShowSchedule(false)} className="text-xs text-gray-500 hover:text-gray-700 px-2 py-1">
@@ -743,7 +742,7 @@ function ShoutoutForm({ me, submitting, onCancel, onSubmit }: {
               type="button"
               disabled={!scheduledAt || !canPost}
               onClick={() => handleSubmit(scheduledAt)}
-              className="px-3 py-1.5 rounded-md bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold disabled:opacity-50"
+              className="px-3 py-1.5 rounded-md bg-green-600 hover:bg-green-700 text-white text-xs font-medium disabled:opacity-50"
             >
               Schedule
             </button>
@@ -753,13 +752,13 @@ function ShoutoutForm({ me, submitting, onCancel, onSubmit }: {
         <button
           type="button"
           onClick={() => setShowSchedule(true)}
-          className="w-full py-2.5 rounded-xl ring-1 ring-gray-200 hover:bg-blue-50 hover:ring-blue-200 text-blue-600 text-sm font-bold transition inline-flex items-center justify-center gap-2"
+          className="w-full py-2.5 rounded-xl ring-1 ring-gray-200 hover:bg-green-50 hover:ring-green-200 text-green-600 text-xs font-medium transition inline-flex items-center justify-center gap-2"
         >
-          <CalendarClock size={14} /> Schedule post
+          <CalendarClock size={13} /> Schedule post
         </button>
       )}
 
-      <button type="button" onClick={onCancel} className="mt-3 w-full py-2 text-sm text-gray-500 hover:text-gray-700 font-medium">
+      <button type="button" onClick={onCancel} className="mt-3 w-full py-2 text-xs text-gray-500 hover:text-gray-700 font-medium">
         Cancel
       </button>
     </form>
@@ -788,38 +787,37 @@ function KudosForm({ submitting, onCancel, onSubmit }: {
         if (!toEmployeeId || !message.trim()) return;
         onSubmit({ toEmployeeId, message, type, isPublic: true });
       }}
-      className="border-t border-gray-100 px-5 py-4 bg-gradient-to-b from-amber-50/40 to-white"
+      className="border-t border-gray-100 px-4 py-4 bg-gradient-to-b from-amber-50/40 to-white"
     >
       <div className="flex items-center gap-2 mb-3">
         <Sparkles size={16} className="text-amber-500" />
-        <span className="text-sm font-semibold text-gray-900">Send Kudos</span>
+        <span className="text-[13px] font-semibold text-gray-900">Send Kudos</span>
       </div>
       <div className="grid grid-cols-2 gap-3">
         <div>
           <label className="block text-xs font-semibold text-gray-700 mb-1">To *</label>
-          <select
+          <Select
             value={toEmployeeId}
-            onChange={(e) => setToEmployeeId(e.target.value)}
-            className="w-full px-3 py-2 border border-[var(--border)] rounded-md text-sm focus:outline-none focus:ring-1 focus:ring-[#16243A]"
-          >
-            <option value="">Select teammate</option>
-            {employees.map((e) => (
-              <option key={e.id} value={e.id}>{e.firstName} {e.lastName} ({e.employeeCode})</option>
-            ))}
-          </select>
+            onChange={(v) => setToEmployeeId(v)}
+            placeholder="Select teammate"
+            className="w-full"
+            searchable
+            options={employees.map((e) => ({ value: e.id, label: `${e.firstName} ${e.lastName} (${e.employeeCode})` }))}
+          />
         </div>
         <div>
           <label className="block text-xs font-semibold text-gray-700 mb-1">Type</label>
-          <select
+          <Select
             value={type}
-            onChange={(e) => setType(e.target.value as typeof type)}
-            className="w-full px-3 py-2 border border-[var(--border)] rounded-md text-sm focus:outline-none focus:ring-1 focus:ring-[#16243A]"
-          >
-            <option value="Kudos">Kudos</option>
-            <option value="Badge">Badge</option>
-            <option value="Award">Award</option>
-            <option value="Shoutout">Shoutout</option>
-          </select>
+            onChange={(v) => setType(v as typeof type)}
+            className="w-full"
+            options={[
+              { value: "Kudos", label: "Kudos" },
+              { value: "Badge", label: "Badge" },
+              { value: "Award", label: "Award" },
+              { value: "Shoutout", label: "Shoutout" },
+            ]}
+          />
         </div>
       </div>
       <textarea
@@ -827,7 +825,7 @@ function KudosForm({ submitting, onCancel, onSubmit }: {
         onChange={(e) => setMessage(e.target.value)}
         placeholder="Tell them what they did great..."
         rows={3}
-        className="mt-3 w-full px-3 py-2 border border-[var(--border)] rounded-md text-sm focus:outline-none focus:ring-1 focus:ring-[#16243A]"
+        className="mt-3 w-full px-3 py-2 border border-[var(--border)] rounded-md text-sm focus:outline-none focus:ring-1 focus:ring-[#166534]"
       />
       <div className="flex justify-end gap-2 mt-3">
         <button type="button" onClick={onCancel} className="btn btn-ghost btn-sm">
@@ -863,14 +861,14 @@ function PollForm({ submitting, onCancel, onSubmit }: {
   return (
     <form
       onSubmit={(e) => { e.preventDefault(); submit(); }}
-      className="border-t border-gray-100 px-5 py-4 bg-blue-50/30"
+      className="border-t border-gray-100 px-4 py-4 bg-green-50/30"
     >
       <input
         autoFocus
         value={question}
         onChange={(e) => setQuestion(e.target.value)}
         placeholder="Your question"
-        className="w-full px-3 py-2 border border-[var(--border)] rounded-md text-sm font-semibold focus:outline-none focus:ring-1 focus:ring-[#16243A]"
+        className="w-full px-3 py-2 border border-[var(--border)] rounded-md text-sm font-semibold focus:outline-none focus:ring-1 focus:ring-[#166534]"
       />
       <div className="space-y-2 mt-3">
         {options.map((opt, i) => (
@@ -879,17 +877,17 @@ function PollForm({ submitting, onCancel, onSubmit }: {
               value={opt}
               onChange={(e) => setOption(i, e.target.value)}
               placeholder={`Option ${i + 1}`}
-              className="flex-1 px-3 py-2 border border-[var(--border)] rounded-md text-sm focus:outline-none focus:ring-1 focus:ring-[#16243A]"
+              className="flex-1 px-3 py-2 border border-[var(--border)] rounded-md text-sm focus:outline-none focus:ring-1 focus:ring-[#166534]"
             />
             {options.length > 2 && (
               <button type="button" onClick={() => removeOption(i)} className="p-1 text-gray-400 hover:text-red-600">
-                <X size={14} />
+                <X size={12} />
               </button>
             )}
           </div>
         ))}
         {options.length < 6 && (
-          <button type="button" onClick={addOption} className="text-xs text-[#3b82f6] hover:underline">+ Add option</button>
+          <button type="button" onClick={addOption} className="text-xs text-[#22c55e] hover:underline">+ Add option</button>
         )}
       </div>
       <label className="mt-3 inline-flex items-center gap-2 text-xs text-gray-700 cursor-pointer">
@@ -897,7 +895,7 @@ function PollForm({ submitting, onCancel, onSubmit }: {
           type="checkbox"
           checked={allowMultiple}
           onChange={(e) => setAllowMultiple(e.target.checked)}
-          className="rounded text-blue-600 focus:ring-blue-400"
+          className="rounded text-green-600 focus:ring-green-400"
         />
         Allow multiple choices
       </label>

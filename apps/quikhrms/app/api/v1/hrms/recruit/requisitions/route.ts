@@ -83,6 +83,8 @@ export const POST = withAuth(async (req: NextRequest, { orgId, userId }) => {
         careerPageVisible: data.careerPageVisible,
         internalPostingOnly: data.internalPostingOnly,
         referralBonusAmount: data.referralBonusAmount,
+        rolePurpose: data.rolePurpose,
+        closedDate: data.closedDate ? new Date(data.closedDate) : undefined,
         createdById: creatorEmpId, hiringManagerId: data.hiringManagerId, recruiterId: data.recruiterId,
         createdBy: userId, updatedBy: userId,
       },

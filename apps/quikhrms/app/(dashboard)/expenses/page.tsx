@@ -10,7 +10,6 @@ import { NumberInput } from "@/components/hrms/ui/number-input";
 import { Receipt, Plus } from "lucide-react";
 import { FilterBar, FilterDivider, FilterSearch } from "@/components/hrms/ui/filter-bar";
 import { ExpenseTabs } from "./_components/expense-tabs";
-import { PageHeader } from "@/components/hrms/ui/page-header";
 import { clsx } from "clsx";
 import { FileUploadInput } from "@/components/hrms/file-upload-input";
 import { SkeletonTable } from "@/components/hrms/skeleton";
@@ -23,7 +22,17 @@ interface Claim {
   totalAmount: string | number; currency: string; expenseDate: string | null; status: Status;
   receiptUrl: string | null; submittedAt: string | null; createdAt: string;
   policy: { id: string; name: string } | null;
+  employee: { id: string; firstName: string; lastName: string; employeeCode: string | null } | null;
   _count: { approvals: number };
+}
+
+function employeeName(
+  e: { firstName?: string | null; lastName?: string | null; employeeCode?: string | null } | null | undefined,
+  fallback: string,
+): string {
+  if (!e) return fallback;
+  const full = `${e.firstName ?? ""} ${e.lastName ?? ""}`.trim();
+  return full || e.employeeCode || fallback;
 }
 
 interface Policy {
@@ -40,15 +49,15 @@ const CATEGORIES: Category[] = ["Travel", "Medical", "Food", "Internet", "Phone"
 const STATUSES: Status[] = ["Draft", "Submitted", "ManagerApproved", "FinanceApproved", "Approved", "PartiallyApproved", "Rejected", "Paid", "Cancelled"];
 
 const statusColors: Record<Status, string> = {
-  Draft: "bg-gray-100 text-gray-700",
-  Submitted: "bg-[#dbeafe] text-[#2563eb]",
-  ManagerApproved: "bg-cyan-100 text-cyan-700",
-  FinanceApproved: "bg-[#dbeafe] text-[#2563eb]",
-  Approved: "bg-green-100 text-green-700",
-  PartiallyApproved: "bg-yellow-100 text-yellow-700",
-  Rejected: "bg-red-100 text-red-700",
-  Paid: "bg-emerald-100 text-emerald-700",
-  Cancelled: "bg-gray-100 text-gray-500",
+  Draft: "bg-slate-100 text-slate-600 ring-slate-200",
+  Submitted: "bg-green-50 text-green-700 ring-green-200",
+  ManagerApproved: "bg-cyan-50 text-cyan-700 ring-cyan-200",
+  FinanceApproved: "bg-green-50 text-green-700 ring-green-200",
+  Approved: "bg-emerald-50 text-emerald-700 ring-emerald-200",
+  PartiallyApproved: "bg-amber-50 text-amber-700 ring-amber-200",
+  Rejected: "bg-red-50 text-red-700 ring-red-200",
+  Paid: "bg-emerald-50 text-emerald-700 ring-emerald-200",
+  Cancelled: "bg-slate-100 text-slate-500 ring-slate-200",
 };
 
 export default function ExpensesListPage() {
@@ -90,6 +99,13 @@ export default function ExpensesListPage() {
   const policiesForCategory = (policies?.data ?? []).filter((p) => p.category === form.category);
   const violations: string[] = [];
   const warnings: string[] = [];
+  // Logical checks independent of policy.
+  if (form.totalAmount == null || Number(form.totalAmount) <= 0) {
+    violations.push("Amount must be greater than 0.");
+  }
+  if (form.expenseDate && form.expenseDate > new Date().toISOString().slice(0, 10)) {
+    violations.push("Expense date can't be in the future.");
+  }
   if (!form.policyId) {
     if (policiesForCategory.length === 0) {
       violations.push(`No active policy exists for category "${form.category}". Ask Finance to create one.`);
@@ -123,17 +139,19 @@ export default function ExpensesListPage() {
   const blockSubmit = violations.length > 0;
 
   return (
-    <div className="w-full px-6 py-6">
-      <PageHeader
-        icon={<Receipt size={28} className="text-[#3b82f6]" />}
-        title="Expense claims"
-        subtitle="Submit and track reimbursement claims."
-        actions={
-          <button onClick={() => setShowCreate(true)} className="btn btn-primary">
-            <Plus size={14} /> New claim
-          </button>
-        }
-      />
+    <div className="w-full px-5 py-4">
+      <div className="flex items-start justify-between mb-5 gap-4 flex-wrap">
+        <div className="flex items-center gap-3">
+          <Receipt size={28} className="text-[#22c55e]" />
+          <div>
+            <h1 className="text-page-title text-gray-900 leading-tight">Expense claims</h1>
+            <p className="text-xs text-gray-500 mt-1">Submit and track reimbursement claims.</p>
+          </div>
+        </div>
+        <button onClick={() => setShowCreate(true)} className="btn btn-primary">
+          <Plus size={13} /> New claim
+        </button>
+      </div>
       <div className="mb-5"><ExpenseTabs /></div>
 
       <div className="mb-4">
@@ -156,34 +174,36 @@ export default function ExpensesListPage() {
       </div>
 
       {isLoading ? <SkeletonTable rows={6} cols={5} /> : claims.length === 0 ? (
-        <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-8 text-center text-gray-500">
-          <Receipt size={32} className="mx-auto mb-2 text-gray-300" /> No claims
+        <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-12 text-center text-slate-500">
+          <Receipt size={36} className="mx-auto mb-2 text-slate-300" />
+          <p className="text-[13px] font-semibold">No claims found</p>
+          <p className="text-xs text-slate-400 mt-0.5">Submit your first reimbursement claim</p>
         </div>
       ) : (
-        <div className="bg-white rounded-lg shadow-sm border border-gray-200 overflow-hidden">
-          <table className="w-full text-sm">
-            <thead className="bg-gray-50 text-xs uppercase text-gray-500">
-              <tr>
-                <th className="text-left px-4 py-2">Title</th>
-                <th className="text-left px-4 py-2">Employee</th>
-                <th className="text-left px-4 py-2">Category</th>
-                <th className="text-left px-4 py-2">Date</th>
-                <th className="text-right px-4 py-2">Amount</th>
-                <th className="text-left px-4 py-2">Status</th>
+        <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
+          <table className="w-full">
+            <thead>
+              <tr className="bg-slate-50/60 border-b border-slate-200">
+                <th className="text-left px-4 py-2.5 text-[11px] font-semibold text-slate-500 uppercase tracking-[0.04em]">Title</th>
+                <th className="text-left px-4 py-2.5 text-[11px] font-semibold text-slate-500 uppercase tracking-[0.04em]">Employee</th>
+                <th className="text-left px-4 py-2.5 text-[11px] font-semibold text-slate-500 uppercase tracking-[0.04em]">Category</th>
+                <th className="text-left px-4 py-2.5 text-[11px] font-semibold text-slate-500 uppercase tracking-[0.04em]">Date</th>
+                <th className="text-right px-4 py-2.5 text-[11px] font-semibold text-slate-500 uppercase tracking-[0.04em]">Amount</th>
+                <th className="text-left px-4 py-2.5 text-[11px] font-semibold text-slate-500 uppercase tracking-[0.04em]">Status</th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-gray-100">
+            <tbody>
               {claims.map((c, i) => (
-                <tr key={c.id} className="row-stagger hover:bg-gray-50" style={{ ["--i" as never]: Math.min(i, 10) }}>
-                  <td className="px-4 py-2">
-                    <Link href={`/expenses/${c.id}`} className="text-[#3b82f6] hover:underline font-medium">{c.title}</Link>
-                    {c.policy && <div className="text-xs text-gray-400">{c.policy.name}</div>}
+                <tr key={c.id} className="row-stagger border-b border-slate-100 transition hover:bg-slate-50/60" style={{ ["--i" as never]: Math.min(i, 10) }}>
+                  <td className="px-4 py-2.5">
+                    <Link href={`/expenses/${c.id}`} className="text-[#22c55e] hover:underline font-semibold text-[13px]">{c.title}</Link>
+                    {c.policy && <div className="text-[11px] text-slate-400">{c.policy.name}</div>}
                   </td>
-                  <td className="px-4 py-2 font-mono text-xs">{c.employeeId}</td>
-                  <td className="px-4 py-2"><span className="px-2 py-0.5 bg-purple-50 text-purple-700 rounded-full text-xs">{c.category}</span></td>
-                  <td className="px-4 py-2 text-xs">{c.expenseDate ? new Date(c.expenseDate).toLocaleDateString("en-IN") : "—"}</td>
-                  <td className="px-4 py-2 text-right font-medium">{c.currency} {Number(c.totalAmount).toLocaleString("en-IN")}</td>
-                  <td className="px-4 py-2"><span className={clsx("px-2 py-0.5 rounded-full text-xs font-medium", statusColors[c.status])}>{c.status}</span></td>
+                  <td className="px-4 py-2.5 text-xs text-slate-600">{employeeName(c.employee, c.employeeId)}</td>
+                  <td className="px-4 py-2.5"><span className="inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-medium bg-purple-50 text-purple-700 ring-1 ring-purple-200">{c.category}</span></td>
+                  <td className="px-4 py-2.5 text-xs text-slate-700">{c.expenseDate ? new Date(c.expenseDate).toLocaleDateString("en-IN") : "—"}</td>
+                  <td className="px-4 py-2.5 text-right text-sm font-semibold text-slate-900">{c.currency} {Number(c.totalAmount).toLocaleString("en-IN")}</td>
+                  <td className="px-4 py-2.5"><span className={clsx("inline-flex items-center px-2.5 py-0.5 rounded-full text-[11px] font-medium ring-1", statusColors[c.status])}>{c.status}</span></td>
                 </tr>
               ))}
             </tbody>
@@ -264,12 +284,12 @@ export default function ExpensesListPage() {
           )}
 
           <div className="flex justify-end gap-2 pt-2">
-            <button type="button" onClick={() => setShowCreate(false)} className="px-4 py-2 border border-[var(--border)] rounded-lg text-sm">Cancel</button>
+            <button type="button" onClick={() => setShowCreate(false)} className="btn btn-secondary">Cancel</button>
             <button
               type="submit"
               disabled={createMut.isPending || blockSubmit}
               title={blockSubmit ? "Resolve policy violations first" : undefined}
-              className="px-4 py-2 bg-[#16243A] text-white rounded-lg text-sm font-medium hover:bg-[#2563eb] disabled:opacity-50 disabled:cursor-not-allowed"
+              className="btn btn-primary"
             >
               Create Draft
             </button>

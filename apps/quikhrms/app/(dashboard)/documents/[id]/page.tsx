@@ -1,7 +1,7 @@
 "use client";
 
-import { use, useState } from "react";
-import Link from "next/link";
+import { useState } from "react";
+import { useRouter } from "next/navigation";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useApiClient } from "@/lib/hooks/use-api";
 import { Modal } from "@/components/hrms/modal";
@@ -9,8 +9,15 @@ import { Select } from "@/components/hrms/ui/select";
 import { FileText, ArrowLeft, Check, X, Share2, Download, Calendar } from "lucide-react";
 import { clsx } from "clsx";
 import { SkeletonLine } from "@/components/hrms/skeleton";
+import { todayInput } from "@/lib/utils/date-input";
+import { withBasePath } from "@/lib/utils/base-path";
 
-interface Ack { id: string; employeeId: string; status: string; acknowledgedAt: string | null; signature: string | null; }
+/** Prepend basePath for internally-proxied uploads; leave external links as-is. */
+function docHref(url: string): string {
+  return url.startsWith("/") ? withBasePath(url) : url;
+}
+
+interface Ack { id: string; employeeId: string; status: string; acknowledgedAt: string | null; signature: string | null; employee: { id: string; firstName: string | null; lastName: string | null; employeeCode: string | null } | null; }
 interface Share { id: string; sharedWith: string; sharedBy: string; accessLevel: string; expiresAt: string | null; }
 interface DocDetail {
   id: string; title: string; description: string | null; category: string; status: string;
@@ -20,14 +27,14 @@ interface DocDetail {
   acknowledgments: Ack[]; shares: Share[];
 }
 
-export default function DocumentDetailPage({ params }: { params: Promise<{ id: string }> }) {
-  const { id } = use(params);
+export default function DocumentDetailPage({ params }: { params: { id: string } }) {
+  const { id } = params;
   const api = useApiClient();
+  const router = useRouter();
   const qc = useQueryClient();
   const [showShare, setShowShare] = useState(false);
   const [shareForm, setShareForm] = useState({ sharedWith: "", accessLevel: "View" as "View" | "Download", expiresAt: "" });
   const [showAck, setShowAck] = useState(false);
-  const [signature, setSignature] = useState("");
 
   const { data, isLoading } = useQuery({
     queryKey: ["document", id],
@@ -41,8 +48,8 @@ export default function DocumentDetailPage({ params }: { params: Promise<{ id: s
   });
 
   const ackMut = useMutation({
-    mutationFn: (body: { action: string; signature?: string }) => api.post(`/api/v1/hrms/documents/${id}/acknowledge`, body),
-    onSuccess: () => { qc.invalidateQueries({ queryKey: ["document", id] }); setShowAck(false); setSignature(""); },
+    mutationFn: (body: { action: string }) => api.post(`/api/v1/hrms/documents/${id}/acknowledge`, body),
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ["document", id] }); setShowAck(false); },
   });
 
   if (isLoading) return (
@@ -59,18 +66,22 @@ export default function DocumentDetailPage({ params }: { params: Promise<{ id: s
 
   return (
     <div className="max-w-5xl">
-      <Link href="/documents" className="inline-flex items-center gap-1.5 px-3 py-1.5 mb-4 text-[13px] font-semibold text-[#16243A] bg-[#16243A]/10 hover:bg-[#16243A] hover:text-white rounded-full transition-colors">
-        <ArrowLeft size={14} /> Back to library
-      </Link>
+      <button
+        type="button"
+        onClick={() => router.back()}
+        className="inline-flex items-center gap-1.5 px-3 py-1.5 mb-4 text-[11px] font-semibold text-[#166534] bg-[#166534]/10 hover:bg-[#166534] hover:text-white rounded-full transition-colors"
+      >
+        <ArrowLeft size={14} /> Back
+      </button>
 
-      <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6 mb-4">
+      <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-4 mb-4">
         <div className="flex items-start justify-between mb-3">
           <div className="flex items-start gap-3">
-            <FileText className="text-[#3b82f6] mt-1" />
+            <FileText className="text-[#22c55e] mt-1" />
             <div>
-              <h1 className="font-serif-display text-3xl md:text-4xl font-bold text-gray-900">{d.title}</h1>
+              <h1 className="text-page-title text-gray-900">{d.title}</h1>
               <div className="flex items-center gap-2 mt-1 text-sm text-gray-500">
-                <span className="px-2 py-0.5 bg-[#dbeafe] text-[#2563eb] rounded-full text-xs font-medium">{d.category}</span>
+                <span className="px-2 py-0.5 bg-[#dcfce7] text-[#16a34a] rounded-full text-xs font-medium">{d.category}</span>
                 <span className={clsx("px-2 py-0.5 rounded-full text-xs font-medium", d.status === "Active" ? "bg-green-100 text-green-700" : "bg-gray-100 text-gray-600")}>{d.status}</span>
                 <span>v{d.version}</span>
                 <span>•</span>
@@ -85,7 +96,7 @@ export default function DocumentDetailPage({ params }: { params: Promise<{ id: s
             <button onClick={() => setShowShare(true)} className="flex items-center gap-1 border border-[var(--border)] px-3 py-1.5 rounded-lg text-sm hover:bg-gray-50">
               <Share2 size={14} /> Share
             </button>
-            {d.fileUrl && <a href={d.fileUrl} target="_blank" rel="noreferrer" className="flex items-center gap-1 bg-[#16243A] text-white px-3 py-1.5 rounded-lg text-sm hover:bg-[#2563eb]">
+            {d.fileUrl && <a href={docHref(d.fileUrl)} target="_blank" rel="noreferrer" className="flex items-center gap-1 bg-green-600 text-white px-3 py-1.5 rounded-lg text-sm hover:bg-green-700">
               <Download size={14} /> Open
             </a>}
           </div>
@@ -105,7 +116,7 @@ export default function DocumentDetailPage({ params }: { params: Promise<{ id: s
       </div>
 
       {metadataContent && (
-        <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6 mb-4">
+        <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-4 mb-4">
           <h2 className="font-semibold text-gray-900 mb-3">Generated Content</h2>
           <div className="prose prose-sm max-w-none whitespace-pre-wrap text-gray-700">{metadataContent}</div>
         </div>
@@ -118,7 +129,7 @@ export default function DocumentDetailPage({ params }: { params: Promise<{ id: s
             <div className="space-y-2">
               {d.acknowledgments.map((a) => (
                 <div key={a.id} className="flex items-center justify-between text-sm border-b border-gray-100 pb-2 last:border-0">
-                  <span className="font-mono text-xs text-gray-600">{a.employeeId}</span>
+                  <span className="text-xs text-gray-600">{`${a.employee?.firstName ?? ""} ${a.employee?.lastName ?? ""}`.trim() || a.employee?.employeeCode || a.employeeId}</span>
                   <span className={clsx("px-2 py-0.5 rounded-full text-xs font-medium",
                     a.status === "Acknowledged" ? "bg-green-100 text-green-700" :
                     a.status === "Declined" ? "bg-red-100 text-red-700" : "bg-yellow-100 text-yellow-700")}>
@@ -138,7 +149,7 @@ export default function DocumentDetailPage({ params }: { params: Promise<{ id: s
                 <div key={s.id} className="flex items-center justify-between text-sm border-b border-gray-100 pb-2 last:border-0">
                   <span className="font-mono text-xs text-gray-600">{s.sharedWith}</span>
                   <div className="flex items-center gap-2">
-                    <span className="px-2 py-0.5 bg-[#dbeafe] text-[#2563eb] rounded-full text-xs">{s.accessLevel}</span>
+                    <span className="px-2 py-0.5 bg-[#dcfce7] text-[#16a34a] rounded-full text-xs">{s.accessLevel}</span>
                     {s.expiresAt && <span className="text-xs text-gray-400">→ {new Date(s.expiresAt).toLocaleDateString("en-IN")}</span>}
                   </div>
                 </div>
@@ -170,11 +181,11 @@ export default function DocumentDetailPage({ params }: { params: Promise<{ id: s
               ]}
             /></div>
           <div><label className="block text-sm font-medium text-gray-700 mb-1">Expires At (optional)</label>
-            <input type="date" value={shareForm.expiresAt} onChange={(e) => setShareForm({ ...shareForm, expiresAt: e.target.value })}
+            <input type="date" min={todayInput()} value={shareForm.expiresAt} onChange={(e) => setShareForm({ ...shareForm, expiresAt: e.target.value })}
               className="w-full border border-[var(--border)] rounded-lg px-3 py-2 text-sm" /></div>
           <div className="flex justify-end gap-2 pt-2">
             <button type="button" onClick={() => setShowShare(false)} className="px-4 py-2 border border-[var(--border)] rounded-lg text-sm">Cancel</button>
-            <button type="submit" className="px-4 py-2 bg-[#16243A] text-white rounded-lg text-sm font-medium hover:bg-[#2563eb]">Share</button>
+            <button type="submit" className="px-4 py-2 bg-green-600 text-white rounded-lg text-sm font-medium hover:bg-green-700">Share</button>
           </div>
         </form>
       </Modal>
@@ -182,15 +193,12 @@ export default function DocumentDetailPage({ params }: { params: Promise<{ id: s
       <Modal open={showAck} onClose={() => setShowAck(false)} title="Acknowledge Document">
         <div className="space-y-4">
           <p className="text-sm text-gray-600">I acknowledge I have read and understood the document <b>{d.title}</b>.</p>
-          <div><label className="block text-sm font-medium text-gray-700 mb-1">Your signature (type name)</label>
-            <input value={signature} onChange={(e) => setSignature(e.target.value)}
-              className="w-full border border-[var(--border)] rounded-lg px-3 py-2 text-sm" placeholder="John Doe" /></div>
           <div className="flex justify-end gap-2 pt-2">
             <button type="button" onClick={() => ackMut.mutate({ action: "Declined" })} className="flex items-center gap-1 border border-red-300 text-red-600 px-3 py-2 rounded-lg text-sm hover:bg-red-50">
               <X size={14} /> Decline
             </button>
-            <button type="button" onClick={() => ackMut.mutate({ action: "Acknowledged", signature })}
-              disabled={!signature}
+            <button type="button" onClick={() => ackMut.mutate({ action: "Acknowledged" })}
+              disabled={ackMut.isPending}
               className="flex items-center gap-1 bg-green-600 text-white px-3 py-2 rounded-lg text-sm hover:bg-green-700 disabled:opacity-50">
               <Check size={14} /> Acknowledge
             </button>

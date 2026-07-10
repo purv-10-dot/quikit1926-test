@@ -17,7 +17,13 @@ export const GET = withAuth(async (_req: NextRequest, { orgId }, params) => {
     const completed = instance.tasks.filter((t) => t.status === "TaskCompleted" || t.status === "TaskSkipped").length;
     const progress = total > 0 ? Math.round((completed / total) * 100) : 0;
 
-    return successResponse({ ...instance, progress, totalTasks: total, completedTasks: completed });
+    // OffboardingInstance stores only employeeId (no Prisma relation), so resolve the name separately.
+    const employee = await prisma.employee.findFirst({
+      where: { orgId, id: instance.employeeId },
+      select: { id: true, firstName: true, lastName: true, displayName: true, employeeCode: true },
+    });
+
+    return successResponse({ ...instance, employee, progress, totalTasks: total, completedTasks: completed });
   } catch (error) {
     console.error("GET /offboarding/[employeeId] error:", error);
     return internalError();

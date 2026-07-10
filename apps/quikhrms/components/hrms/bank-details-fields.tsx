@@ -76,7 +76,7 @@ interface Props {
   inputCls: string;
 }
 
-const inputClsBase = "w-full border border-[var(--border)] rounded-lg px-3 py-2 text-sm bg-white focus:outline-none focus:ring-1 focus:ring-[#16243A] focus:border-[#16243A]";
+const inputClsBase = "w-full border border-[var(--border)] rounded-lg px-3 py-2 text-sm bg-white focus:outline-none focus:ring-1 focus:ring-[#166534] focus:border-[#166534]";
 
 export function BankDetailsFields({ value, onChange, inputCls = inputClsBase }: Props) {
   const [ifscState, setIfscState] = useState<"idle" | "loading" | "ok" | "invalid">("idle");

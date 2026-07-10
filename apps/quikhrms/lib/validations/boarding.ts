@@ -37,6 +37,15 @@ export const createOnboardingTemplateSchema = z.object({
   isActive: z.boolean().default(true),
 });
 
+export const updateOnboardingTemplateSchema = z.object({
+  name: z.string().min(1).optional(),
+  description: z.string().optional().nullable(),
+  departmentId: z.string().optional().nullable(),
+  designationId: z.string().optional().nullable(),
+  tasks: z.array(onboardingTaskTemplateSchema).min(1, "At least one task required").optional(),
+  isActive: z.boolean().optional(),
+});
+
 // ─── Onboarding Instance ────────────────────────────────
 
 export const initiateOnboardingSchema = z.object({

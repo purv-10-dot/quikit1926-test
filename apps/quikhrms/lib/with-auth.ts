@@ -136,6 +136,51 @@ export async function resolveIdentity(
   return null;
 }
 
+/** Agent claims carried by the AI Runtime service-auth path (P0-1). */
+interface ServiceClaims {
+  actingAgentId: string;
+  actingAs: string;
+}
+
+/**
+ * AI Runtime service-auth (the runtime acting *as* a specific employee).
+ *
+ * The runtime presents `x-internal-secret: INTERNAL_AI_RUNTIME_SECRET` (a
+ * dedicated secret — deliberately NOT `INTERNAL_SECRET`, so a leak of the
+ * launcher's handoff secret can never be used to impersonate an employee)
+ * plus `x-org-id` + `x-acting-employee-id`. We validate the secret, confirm
+ * the acting employee is real + active in that org, and hand back its
+ * Employee.id. The caller (withAuth) then resolves permissions for that
+ * employee exactly as it would for a human session — so the agent inherits
+ * that employee's access and nothing more, and the same PreBoarding /
+ * mustChangePassword locks apply.
+ *
+ * Returns null when the secret is absent/wrong or the required headers are
+ * missing/unresolvable, so withAuth falls through to the normal session path.
+ */
+async function resolveServiceIdentity(
+  req: NextRequest
+): Promise<{ orgId: string; userId: string; agent: ServiceClaims } | null> {
+  const secret = process.env.INTERNAL_AI_RUNTIME_SECRET;
+  const provided = req.headers.get("x-internal-secret");
+  if (!secret || !provided || provided !== secret) return null;
+
+  const orgId = req.headers.get("x-org-id")?.trim();
+  const actingEmployeeId = req.headers.get("x-acting-employee-id")?.trim();
+  if (!orgId || !actingEmployeeId) return null;
+
+  const actingAgentId = req.headers.get("x-acting-agent-id")?.trim() || "unknown-agent";
+  const actingAs = req.headers.get("x-acting-as")?.trim() || "ai_agent";
+
+  const emp = await prisma.employee.findFirst({
+    where: { orgId, id: actingEmployeeId, deletedAt: null },
+    select: { id: true },
+  });
+  if (!emp) return null;
+
+  return { orgId, userId: emp.id, agent: { actingAgentId, actingAs } };
+}
+
 type RouteHandler = (
   req: NextRequest,
   ctx: AuthContext,
@@ -160,6 +205,12 @@ interface WithAuthOptions {
    * daily cap).
    */
   rateLimit?: RateLimitSpec | RateLimitSpec[];
+  /**
+   * Allow the AI Runtime service-auth path (P0-1) on this route: an
+   * `x-internal-secret` + acting-employee header set is accepted in place of a
+   * user session. Off by default — opt in per route (or use `withServiceAuth`).
+   */
+  allowServiceAuth?: boolean;
 }
 
 interface RateLimitSpec {
@@ -204,7 +255,6 @@ const PREBOARDING_ALLOWED = new Set<string>([
   "hrms.holiday.read",
   "hrms.announcement.read",
   "hrms.notification.read_self",
-  "hrms.asset.read_self",
 ]);
 
 /**
@@ -386,7 +436,23 @@ export function withAuth(handler: RouteHandler, options?: WithAuthOptions) {
     try {
       const params = await context.params;
 
-      const identity = await resolveIdentity(req);
+      // Identity precedence: AI Runtime service-auth (when the route opts in and
+      // the headers/secret are present), else the normal central-session / dev-
+      // header path. `service` is non-null only for the agent path.
+      let identity: { orgId: string; userId: string; fromSession: boolean } | null = null;
+      let service: ServiceClaims | null = null;
+      if (options?.allowServiceAuth) {
+        const svc = await resolveServiceIdentity(req);
+        if (svc) {
+          // fromSession=true suppresses dev-header role spoofing: the agent is a
+          // trusted first-party caller, never the local no-login flow.
+          identity = { orgId: svc.orgId, userId: svc.userId, fromSession: true };
+          service = svc.agent;
+        }
+      }
+      if (!identity) {
+        identity = await resolveIdentity(req);
+      }
       if (!identity) {
         return unauthorized("Missing authentication credentials");
       }
@@ -479,6 +545,8 @@ export function withAuth(handler: RouteHandler, options?: WithAuthOptions) {
         permissions: isSuperAdmin ? ["*"] : permissions,
         roleCode,
         mustChangePassword,
+        actorType: service ? "ai_agent" : "user",
+        ...(service && { actingAgentId: service.actingAgentId }),
       };
       return await handler(req, authCtx, params);
     } catch (error) {
@@ -495,4 +563,21 @@ export function withAuth(handler: RouteHandler, options?: WithAuthOptions) {
       return internalError();
     }
   };
+}
+
+/**
+ * withAuth variant that additionally accepts the AI Runtime service-auth path
+ * (P0-1): `x-internal-secret: INTERNAL_AI_RUNTIME_SECRET` + `x-org-id` +
+ * `x-acting-employee-id` (optionally `x-acting-agent-id`, `x-acting-as`).
+ *
+ * The agent runs with exactly the acting employee's resolved permissions —
+ * the same RBAC, orgId scoping, and PreBoarding/mustChangePassword locks as a
+ * human session. Every request carries actorType="ai_agent" + actingAgentId on
+ * the AuthContext so mutating routes can attribute the change in the audit log.
+ *
+ * A normal user session still works on these routes — service-auth is only
+ * attempted when the internal secret header is present.
+ */
+export function withServiceAuth(handler: RouteHandler, options?: WithAuthOptions) {
+  return withAuth(handler, { ...options, allowServiceAuth: true });
 }

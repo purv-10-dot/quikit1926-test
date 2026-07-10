@@ -136,18 +136,18 @@ export default function BulkBankImportPage() {
 
   return (
     <div className="max-w-5xl">
-      <div className="flex items-center gap-3 mb-6">
-        <Building2 className="text-[#3b82f6]" />
-        <h1 className="font-serif-display text-3xl md:text-4xl font-bold text-gray-900">
+      <div className="flex items-center gap-3 mb-4">
+        <Building2 className="text-[#22c55e]" />
+        <h1 className="text-base font-semibold text-gray-900">
           Bulk Bank Details Import
         </h1>
       </div>
 
-      <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-5 mb-4">
+      <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-4 mb-4">
         <div className="flex items-center justify-between mb-3">
-          <h2 className="font-semibold text-gray-900">1. Upload Bank CSV</h2>
-          <button onClick={downloadTemplate} className="flex items-center gap-1 text-xs text-[#2563eb] hover:underline">
-            <Download size={12} /> Download Template
+          <h2 className="text-[13px] font-semibold text-gray-900">1. Upload Bank CSV</h2>
+          <button onClick={downloadTemplate} className="flex items-center gap-1 text-xs font-medium text-[#16a34a] hover:underline">
+            <Download size={13} /> Download Template
           </button>
         </div>
         <p className="text-xs text-gray-500 mb-3">
@@ -158,7 +158,7 @@ export default function BulkBankImportPage() {
           type="file"
           accept=".csv,.xlsx,.xls"
           onChange={handleFile}
-          className="block w-full text-sm text-gray-700 file:mr-4 file:py-2 file:px-4 file:rounded-lg file:border-0 file:text-sm file:font-medium file:bg-[#dbeafe] file:text-[#2563eb] hover:file:bg-[#dbeafe]"
+          className="block w-full text-xs text-gray-700 file:mr-4 file:py-1.5 file:px-3 file:rounded-lg file:border-0 file:text-xs file:font-medium file:bg-[#dcfce7] file:text-[#16a34a] hover:file:bg-[#dcfce7]"
         />
         {parseError && (
           <div className="mt-3 p-2 bg-red-50 border border-red-200 rounded text-xs text-red-700 flex items-start gap-2">
@@ -174,11 +174,11 @@ export default function BulkBankImportPage() {
       </div>
 
       {rows.length > 0 && (
-        <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-5 mb-4">
-          <h2 className="font-semibold text-gray-900 mb-3">2. Preview ({rows.length} rows)</h2>
+        <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-4 mb-4">
+          <h2 className="text-[13px] font-semibold text-gray-900 mb-3">2. Preview ({rows.length} rows)</h2>
           <div className="overflow-x-auto mb-3 border border-gray-100 rounded">
             <table className="w-full text-xs">
-              <thead className="bg-gray-50 text-gray-600">
+              <thead className="bg-gray-50 text-table-head text-gray-600">
                 <tr>
                   <th className="text-left px-2 py-1">Emp ID</th>
                   <th className="text-left px-2 py-1">Bank</th>
@@ -212,15 +212,15 @@ export default function BulkBankImportPage() {
               className="btn btn-primary disabled:opacity-50 flex items-center gap-2"
             >
               {importMut.isPending ? "Importing..." : "Import"}
-              {!importMut.isPending && <ArrowRight size={14} />}
+              {!importMut.isPending && <ArrowRight size={13} />}
             </button>
           </div>
         </div>
       )}
 
       {result && (
-        <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-5">
-          <h2 className="font-semibold text-gray-900 mb-3">3. Result</h2>
+        <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-4">
+          <h2 className="text-[13px] font-semibold text-gray-900 mb-3">3. Result</h2>
           <div className="grid grid-cols-3 gap-3 mb-4">
             <div className="bg-green-50 border border-green-200 rounded-lg p-3 flex items-center gap-2">
               <CheckCircle className="text-green-600" size={20} />
@@ -243,7 +243,7 @@ export default function BulkBankImportPage() {
           </div>
           {result.errors.length > 0 && (
             <div>
-              <h3 className="font-medium text-gray-900 text-sm mb-2 flex items-center gap-1">
+              <h3 className="text-[13px] font-semibold text-gray-900 mb-2 flex items-center gap-1">
                 <AlertTriangle size={14} className="text-yellow-600" /> Errors
               </h3>
               <div className="space-y-1 max-h-64 overflow-y-auto">

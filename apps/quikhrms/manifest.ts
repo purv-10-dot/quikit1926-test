@@ -46,8 +46,8 @@ const manifest: AppManifest = {
     { label: "Payroll", href: "/payroll", icon: "Wallet" },
     { label: "Leaves", href: "/leaves", icon: "CalendarDays" },
     { label: "Attendance", href: "/attendance", icon: "Clock" },
-    { label: "Recruitment", href: "/recruit", icon: "UserPlus" },
-    { label: "Performance", href: "/performance", icon: "Target" },
+    { label: "Recruitment", href: "/recruit/requisitions", icon: "UserPlus" },
+    { label: "Performance", href: "/performance/goals", icon: "Target" },
     { label: "Reports", href: "/reports", icon: "BarChart3" },
   ],
 };

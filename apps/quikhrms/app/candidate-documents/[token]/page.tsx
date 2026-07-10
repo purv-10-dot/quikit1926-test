@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, use } from "react";
+import { useEffect, useState } from "react";
 import { AlertTriangle, CheckCircle2, Clock, FileText, Loader2, Paperclip, Plus, RefreshCw, Upload, XCircle } from "lucide-react";
 import { clsx } from "clsx";
 
@@ -30,11 +30,12 @@ interface Detail {
   docTypes: DocType[];
   uploads: UploadRow[];
   tokenExpiresAt: string;
+  submissionDeadline: string | null;
   submittedAt: string | null;
 }
 
-export default function CandidateDocPortal({ params }: { params: Promise<{ token: string }> }) {
-  const { token } = use(params);
+export default function CandidateDocPortal({ params }: { params: { token: string } }) {
+  const { token } = params;
   const [detail, setDetail] = useState<Detail | null>(null);
   const [loadErr, setLoadErr] = useState<string | null>(null);
   const [busyTypeId, setBusyTypeId] = useState<string | null>(null);
@@ -146,6 +147,11 @@ export default function CandidateDocPortal({ params }: { params: Promise<{ token
         <p className="text-xs uppercase tracking-widest text-blue-600 font-semibold mb-1">{detail.bundle === "PreOffer" ? "Before Offer" : "After Offer"} — Document Submission</p>
         <h1 className="text-2xl font-bold text-gray-900">Welcome, {detail.candidate.name}</h1>
         <p className="text-sm text-gray-600 mt-1">Role: <strong>{detail.jobTitle}</strong> · {detail.companyName}</p>
+        {detail.submissionDeadline && (
+          <span className="mt-2 inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold bg-amber-50 text-amber-700 ring-1 ring-amber-200">
+            <Clock size={13} /> Submit by {new Date(detail.submissionDeadline).toLocaleDateString("en-IN", { day: "2-digit", month: "long", year: "numeric" })}
+          </span>
+        )}
       </header>
 
       <div className={clsx("rounded-lg border p-3 mb-4 flex items-center gap-3",
@@ -201,7 +207,7 @@ export default function CandidateDocPortal({ params }: { params: Promise<{ token
 
       {/* Submit footer — visible only while not yet submitted. */}
       {!submitted && (
-        <div className="mt-6 bg-white border border-gray-200 rounded-lg p-4 flex items-center justify-between gap-4">
+        <div className="mt-4 bg-white border border-gray-200 rounded-lg p-4 flex items-center justify-between gap-4">
           <div className="min-w-0">
             <p className="text-sm font-semibold text-gray-900">Ready to submit?</p>
             <p className="text-xs text-gray-500 mt-0.5">
@@ -228,7 +234,7 @@ export default function CandidateDocPortal({ params }: { params: Promise<{ token
       )}
 
       {!submitted && (
-      <div className="mt-8 bg-white border border-gray-200 rounded-lg p-4">
+      <div className="mt-5 bg-white border border-gray-200 rounded-lg p-4">
         <p className="text-sm font-semibold text-gray-900 flex items-center gap-1.5"><Plus size={14} /> Other documents (optional)</p>
         <p className="text-xs text-gray-500 mt-0.5">Submit anything else HR asked for — experience letters, certifications, etc.</p>
         <div className="flex items-center gap-2 mt-3">
@@ -269,7 +275,7 @@ export default function CandidateDocPortal({ params }: { params: Promise<{ token
       </div>
       )}
 
-      <p className="text-[11px] text-gray-400 text-center mt-8">
+      <p className="text-[11px] text-gray-400 text-center mt-5">
         Secure link · No login required · Expires automatically · HR team of {detail.companyName}
       </p>
     </Shell>
@@ -352,7 +358,7 @@ function StatusBadge({ status }: { status: UploadStatus }) {
 
 function Shell({ children }: { children: React.ReactNode }) {
   return (
-    <div className="min-h-screen bg-slate-50 py-8 px-4">
+    <div className="min-h-screen bg-slate-50 py-5 px-4">
       <div className="max-w-3xl mx-auto">{children}</div>
     </div>
   );
