@@ -30,6 +30,16 @@ const EXCLUDE_SEGMENTS = new Set([
   "debug", // dev-only
   "health", // infra probe
   "session", // internal session validation
+  "docs", // documents feature — removed from the external API reference
+  "org", // org administration — removed from the external API reference
+  "teams", // team management — removed from the external API reference
+  "notifications", // in-app notifications — removed from the external API reference
+]);
+
+// Individual operations to drop from the reference (method + path). Use this
+// for one-off internal endpoints inside an otherwise-kept group.
+const EXCLUDE_OPS = new Set([
+  "POST /api/me/tour-status", // internal onboarding-tour toggle ("Create a me")
 ]);
 
 /** Recursively find every route.ts under app/api. */
@@ -303,7 +313,11 @@ for (const file of routes) {
     continue;
   }
   const source = readFileSync(file, "utf8");
-  const methods = detectMethods(source);
+  // Drop individually-excluded operations; if a path has none left, skip it
+  // entirely so no empty path or ghost tag is emitted.
+  const methods = detectMethods(source).filter(
+    (m) => !EXCLUDE_OPS.has(`${m} ${apiPath}`),
+  );
   if (methods.length === 0) continue;
 
   const tag = tagFor(apiPath);
