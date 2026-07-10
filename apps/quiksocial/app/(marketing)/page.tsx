@@ -31,6 +31,11 @@ const LOGIN_HREF = buildLoginUrl({
   postLoginPath: "/dashboard",
 });
 
+// Self-serve registration lives on the central QuikAuth /register wizard
+// (workspace → OTP → password), which signs the user in and lands them on the
+// launcher /apps grid. Literal NEXT_PUBLIC_AUTH_URL access; dev fallback :3001.
+const SIGNUP_HREF = `${(process.env.NEXT_PUBLIC_AUTH_URL ?? "http://localhost:3001").replace(/\/$/, "")}/register`;
+
 export default async function MarketingPage({
   searchParams,
 }: {
@@ -62,6 +67,13 @@ export default async function MarketingPage({
         <div style={{ display: "flex", alignItems: "center", gap: 14 }}>
           <a href={LOGIN_HREF} className="topbar-cta">
             LOGIN
+          </a>
+          <a
+            href={SIGNUP_HREF}
+            className="topbar-cta"
+            style={{ background: "var(--ink)", color: "var(--bg)", borderColor: "var(--ink)" }}
+          >
+            SIGN UP
           </a>
           <ContactCTA />
         </div>
