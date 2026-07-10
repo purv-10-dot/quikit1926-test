@@ -216,6 +216,17 @@ export function useOPSPForm(options: UseOPSPFormOptions = {}): OPSPFormHandle {
   const skipNextTargetsCascade = useRef(false);
   const skipNextGoalsCascade = useRef(false);
 
+  // Previous upstream category snapshots for the CHANGE-driven cascades below.
+  // The cascade must propagate a category downstream only when the user
+  // actually EDITS the upstream row — never merely because upstream and
+  // downstream currently differ. A difference-driven cascade re-seeds rows the
+  // user intentionally cleared downstream (Goals/Actions) every time the
+  // upstream array gets a fresh reference (e.g. `backfillPeriods` on Finalize,
+  // or any unrelated Target edit). See ProdBug-OPSP: clearing Goals/Actions
+  // rows 3-5 then clicking Finalize repopulated them.
+  const prevTargetCatsRef = useRef<string[]>([]);
+  const prevGoalCatsRef = useRef<string[]>([]);
+
   /* ── Reload when year/quarter changes ── */
   const loadForPeriod = useCallback(async (year: number, quarter: string) => {
     setLoading(true);
@@ -379,19 +390,30 @@ export function useOPSPForm(options: UseOPSPFormOptions = {}): OPSPFormHandle {
     //
     // Skip flag fires on the render right after `loadForPeriod` so freshly
     // hydrated rows don't trigger spurious resets.
+    const curCats = form.targetRows.map(r => r.category);
     if (skipNextTargetsCascade.current) {
       skipNextTargetsCascade.current = false;
+      prevTargetCatsRef.current = curCats; // establish baseline; don't propagate
       return;
     }
+    // Change-driven: only propagate the rows whose Target category the user
+    // actually edited since the last run — NOT every row where Target ≠ Goal.
+    // This lets a Goal the user cleared downstream stay cleared even when the
+    // Target array gets a new reference (e.g. backfillPeriods on Finalize).
+    const prevCats = prevTargetCatsRef.current;
+    prevTargetCatsRef.current = curCats;
     setForm(prev => {
       const next = [...prev.goalRows];
       let changed = false;
       for (let i = 0; i < Math.min(prev.targetRows.length, next.length); i++) {
-        const t = prev.targetRows[i];
-        if (t.category.trim() && next[i].category !== t.category) {
+        const cat = prev.targetRows[i].category;
+        const wasCat = prevCats[i] ?? "";
+        // Propagate only on an actual edit (cat changed vs last snapshot).
+        // A cleared Target (cat === "") propagates the clear downstream.
+        if (cat !== wasCat && next[i].category !== cat) {
           next[i] = {
             ...next[i],
-            category: t.category,
+            category: cat,
             projected: "",
             q1: "",
             q2: "",
@@ -413,12 +435,19 @@ export function useOPSPForm(options: UseOPSPFormOptions = {}): OPSPFormHandle {
   // Goal, resetting projected + m-cells so stale values don't strand against
   // an out-of-date category. See reconcileActionsWithGoals for the full rules.
   useEffect(() => {
+    const curCats = form.goalRows.map(r => r.category);
     if (skipNextGoalsCascade.current) {
       skipNextGoalsCascade.current = false;
+      prevGoalCatsRef.current = curCats; // establish baseline; don't propagate
       return;
     }
+    const prevCats = prevGoalCatsRef.current;
+    prevGoalCatsRef.current = curCats;
     setForm(prev => {
-      const next = reconcileActionsWithGoals(prev.goalRows, prev.actionsQtr, MAX_ACTION_ROWS);
+      // Grow-only length sync always applies; category auto-fill only for the
+      // Goal rows the user actually edited (change-driven), so an Action row
+      // the user cleared downstream is not re-seeded from an unchanged Goal.
+      const next = reconcileActionsWithGoals(prev.goalRows, prev.actionsQtr, MAX_ACTION_ROWS, prevCats);
       return next === prev.actionsQtr ? prev : { ...prev, actionsQtr: next };
     });
   }, [form.goalRows]);

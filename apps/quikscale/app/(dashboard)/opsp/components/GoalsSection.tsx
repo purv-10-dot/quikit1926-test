@@ -139,6 +139,19 @@ export function GoalsSection({
                     const next = [...form.goalRows];
                     next.splice(i, 1);
                     set("goalRows", next, { skipLog: true });
+                    // Mirror the deletion into the bound Actions (QTR) row at the
+                    // same index. The Goals→Actions cascade is grow-only and
+                    // index-aligned, so without this the deleted Goal's Action
+                    // counterpart is left behind — the goal categories below it
+                    // shift up and the last Action row keeps its now-orphaned
+                    // category, appearing as a duplicate. Independent Action rows
+                    // (added via "Add New" beyond the goal count) sit after the
+                    // bound range, so this splice preserves them. See ProdBug-OPSP.
+                    if (i < form.actionsQtr.length) {
+                      const nextActions = [...form.actionsQtr];
+                      nextActions.splice(i, 1);
+                      set("actionsQtr", nextActions, { skipLog: true });
+                    }
                   }}
                   className="w-5 h-7 flex items-center justify-center text-gray-300 hover:text-red-500 hover:bg-red-50 rounded opacity-0 group-hover:opacity-100 transition-opacity"
                 >

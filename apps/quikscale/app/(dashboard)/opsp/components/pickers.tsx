@@ -11,7 +11,8 @@
  *   - `QuarterDropdown` — Q1-Q4 selector with radio-button styling
  */
 
-import { useState, useMemo, useRef, useCallback, useEffect, createContext, useContext, type ReactNode } from "react";
+import { useState, useMemo, useRef, useCallback, useEffect, useLayoutEffect, createContext, useContext, type ReactNode } from "react";
+import { createPortal } from "react-dom";
 import { ChevronDown } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useInfiniteUsers } from "@/lib/hooks/useInfiniteUsers";
@@ -40,20 +41,42 @@ export function WithTooltip({
   className?: string;
 }) {
   const [show, setShow] = useState(false);
+  const wrapRef = useRef<HTMLDivElement>(null);
+  // Fixed-viewport coords for the portalled tooltip. Rendering the tooltip
+  // as an `absolute` child inside the OPSP scroll containers (e.g. the Goals
+  // list `overflow-y-auto` in GoalsSection) enlarged the scroll extent on
+  // hover, toggled a scrollbar, and reflowed every row (the "fluctuating"
+  // Goals bug). Portalling to <body> with `position: fixed` keeps the tooltip
+  // out of any clipping/scroll ancestor so it can't affect layout.
+  const [pos, setPos] = useState<{ top: number; left: number } | null>(null);
   const hasContent = !!(content && content.trim());
+
+  useLayoutEffect(() => {
+    if (!show || !hasContent || !wrapRef.current) return;
+    const r = wrapRef.current.getBoundingClientRect();
+    // 8px gap below the trigger, mirroring the old `mt-2`.
+    setPos({ top: r.bottom + 8, left: r.left });
+  }, [show, hasContent]);
+
   return (
     <div
+      ref={wrapRef}
       className={className}
       onMouseEnter={() => hasContent && setShow(true)}
       onMouseLeave={() => setShow(false)}
     >
       {children}
-      {show && hasContent && (
-        <div className="absolute top-full left-0 mt-2 z-[9999] bg-gray-900 text-white text-xs rounded-lg px-3 py-2 max-w-sm whitespace-pre-wrap shadow-2xl pointer-events-none min-w-[120px]">
-          <span className="absolute bottom-full left-4 w-0 h-0 border-x-4 border-x-transparent border-b-4 border-b-gray-900" />
-          {content}
-        </div>
-      )}
+      {show && hasContent && pos && typeof document !== "undefined" &&
+        createPortal(
+          <div
+            style={{ position: "fixed", top: pos.top, left: pos.left }}
+            className="z-[9999] bg-gray-900 text-white text-xs rounded-lg px-3 py-2 max-w-sm whitespace-pre-wrap shadow-2xl pointer-events-none min-w-[120px]"
+          >
+            <span className="absolute bottom-full left-4 w-0 h-0 border-x-4 border-x-transparent border-b-4 border-b-gray-900" />
+            {content}
+          </div>,
+          document.body,
+        )}
     </div>
   );
 }
