@@ -26,6 +26,7 @@ import { useTablePrefs } from "@/lib/hooks/useTablePreferences";
 import { ModuleMoreActions, TrashBanner } from "@/components/table/ModuleMoreActions";
 import { runExport } from "@/lib/export/xlsx";
 import { getKPIs } from "@/lib/services/kpiService";
+import { computeWeeklyGoal } from "@/lib/utils/kpiHelpers";
 import { GlobalExportModal, type GlobalExportSelection } from "@/components/export/GlobalExportModal";
 import { downloadExport } from "@/lib/exports/downloadExport";
 import { UnreadCountsProvider } from "@/components/audit/UnreadCountsProvider";
@@ -243,7 +244,13 @@ export default function IndividualKPIPage() {
             case "quarterlyGoal": return k.quarterlyGoal ?? "";
             case "qtdGoal": return k.qtdGoal ?? "";
             case "qtdAchieved": return k.qtdAchieved ?? 0;
-            case "weeklyGoal": return k.qtdGoal ?? "";
+            case "weeklyGoal": {
+              // Match the KPI table's Weekly Goal column (current week's target
+              // or flat split) — NOT the QTD goal. `fiscalWeek`/`weekCount` are
+              // read at export time (closure), so no render-time TDZ.
+              const wg = computeWeeklyGoal(k.weeklyTargets, k.target, k.qtdGoal, fiscalWeek ?? 1, weekCount);
+              return wg > 0 ? wg : "";
+            }
             case "progress": return typeof k.progressPercent === "number" ? `${k.progressPercent.toFixed(1)}%` : "";
             case "description": return k.description ?? "";
             default: return "";

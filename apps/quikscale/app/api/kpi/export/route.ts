@@ -22,8 +22,9 @@ import { db } from "@/lib/db";
 import { withOrgAuthForResource } from "@/lib/api/withOrgAuth";
 import { buildKpiScopeWhere } from "@/lib/api/kpiListQuery";
 import { exportBaseSchema, quarterRangeSchema, searchParamsToObject } from "@/lib/exports/exportParams";
-import { getQuarterWeekCounts, weekNumbers } from "@/lib/exports/quarterWeeks";
+import { getQuarterWeekCounts, getQuarterCurrentWeeks, weekNumbers } from "@/lib/exports/quarterWeeks";
 import { kpiExportColumns, type KpiExportRow } from "@/lib/exports/columns/kpiExportColumns";
+import { computeWeeklyGoal } from "@/lib/utils/kpiHelpers";
 import { buildWorkbookSheets, type WorkbookSheet } from "@/lib/exports/buildWorkbook";
 import { fileResponse } from "@/lib/exports/exportResponse";
 import { fiscalYearLabel } from "@/lib/utils/fiscal";
@@ -80,6 +81,9 @@ export const GET = auth.view(async ({ orgId, userId }, req) => {
   const includeDeleted = sp.get("includeDeleted") === "true";
 
   const weekCounts = await getQuarterWeekCounts(orgId, year, quarters);
+  // Current week per quarter — drives the "Weekly Goal" column (matches the KPI
+  // table, which shows the current week's target, not the QTD goal).
+  const currentWeeks = await getQuarterCurrentWeeks(orgId, year, quarters, weekCounts);
 
   // Fetch each quarter's rows (scoped + visibility-filtered identically to the
   // list view), collecting every referenced user id for one batched name lookup.
@@ -116,7 +120,7 @@ export const GET = auth.view(async ({ orgId, userId }, req) => {
       )
     : new Map<string, { firstName: string | null; lastName: string | null }>();
 
-  const toRow = (k: any): KpiExportRow => {
+  const toRow = (k: any, currentWeek: number, weekCount: number): KpiExportRow => {
     const weekMap: Record<number, number | null> = {};
     for (const wv of k.weeklyValues ?? []) {
       const prev = weekMap[wv.weekNumber];
@@ -143,6 +147,7 @@ export const GET = auth.view(async ({ orgId, userId }, req) => {
       quarterlyGoal: k.quarterlyGoal,
       qtdGoal: k.qtdGoal,
       qtdAchieved: k.qtdAchieved,
+      weeklyGoal: computeWeeklyGoal(wt, k.target, k.qtdGoal, currentWeek, weekCount),
       progressPercent: k.progressPercent,
       description: k.description,
       lastNotes: k.lastNotes,
@@ -160,13 +165,15 @@ export const GET = auth.view(async ({ orgId, userId }, req) => {
   // Build one sheet per quarter.
   const sheets: WorkbookSheet[] = [];
   for (const { quarter, kpis } of perQuarter) {
-    const weeks = weekNumbers(weekCounts[quarter] ?? 13);
+    const weekCount = weekCounts[quarter] ?? 13;
+    const weeks = weekNumbers(weekCount);
     const columns = kpiExportColumns(base.data.columns, weeks);
     if (columns.length === 0) {
       return NextResponse.json({ success: false, error: "Select at least one column." }, { status: 400 });
     }
     const headers = columns.map((c) => c.label);
-    const rowObjs = kpis.map(toRow);
+    const currentWeek = currentWeeks[quarter] ?? 1;
+    const rowObjs = kpis.map((k) => toRow(k, currentWeek, weekCount));
     const rows = rowObjs.map((r) => columns.map((c) => c.value(r)));
     const fills = rowObjs.map((r) => columns.map((c) => c.fill?.(r)));
     sheets.push({ sheetName: quarter, headers, rows, fills });

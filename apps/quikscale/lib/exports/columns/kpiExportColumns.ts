@@ -20,6 +20,8 @@ export interface KpiExportRow {
   quarterlyGoal: number | null;
   qtdGoal: number | null;
   qtdAchieved: number | null;
+  /** Per-week goal for the quarter's current week (weeklyTargets[wk] or flat split). */
+  weeklyGoal: number | null;
   progressPercent: number | null;
   description: string | null;
   lastNotes: string | null;
@@ -62,7 +64,7 @@ const STATIC_COLUMNS: KpiExportColumn[] = [
   { key: "quarterlyGoal", label: "Quarterly Goal", value: (r) => r.quarterlyGoal ?? "" },
   { key: "qtdGoal", label: "QTD Goal", value: (r) => r.qtdGoal ?? "" },
   { key: "qtdAchieved", label: "QTD Achieved", value: (r) => r.qtdAchieved ?? 0 },
-  { key: "weeklyGoal", label: "Weekly Goal", value: (r) => r.qtdGoal ?? "" },
+  { key: "weeklyGoal", label: "Weekly Goal", value: (r) => r.weeklyGoal ?? "" },
   { key: "description", label: "Description", value: (r) => r.description ?? "" },
   { key: "lastNotes", label: "Last Notes", value: (r) => r.lastNotes ?? "" },
   { key: "importedFromOpsp", label: "Imported from OPSP", value: (r) => (r.importedFromOpsp ? "Yes" : "No") },

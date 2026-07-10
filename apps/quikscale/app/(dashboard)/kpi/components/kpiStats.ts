@@ -13,6 +13,7 @@
 import type { KPIRow, WeeklyValue } from "@/lib/types/kpi";
 import { weeksArray, DEFAULT_WEEKS_PER_QUARTER } from "@/lib/utils/fiscal";
 import { getColorByPercentage } from "@/lib/utils/colorLogic";
+import { computeWeeklyGoal } from "@/lib/utils/kpiHelpers";
 
 export interface KPIStats {
   filledWeeks: number[];
@@ -317,9 +318,5 @@ export function weeklyGoalFor(
   weekNumber: number,
   weeksPerQuarter: number = DEFAULT_WEEKS_PER_QUARTER,
 ): number {
-  const wt = kpi.weeklyTargets ?? {};
-  const raw = wt[String(weekNumber)];
-  if (typeof raw === "number") return raw;
-  const total = kpi.target ?? kpi.qtdGoal ?? 0;
-  return total > 0 ? total / weeksPerQuarter : 0;
+  return computeWeeklyGoal(kpi.weeklyTargets, kpi.target, kpi.qtdGoal, weekNumber, weeksPerQuarter);
 }
