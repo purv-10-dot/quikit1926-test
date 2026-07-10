@@ -62,18 +62,36 @@ export interface IdeasBundle {
  *  plain value. Everything else falls back to the generic renderer. */
 export const K = DISCOVERY_FIELD_KEYS;
 
-/** Fields shown as a 1–5 dot rating and the accent color of a filled dot. */
+/** Fields shown as a 1–5 dot rating and the accent color of a filled dot.
+ *  Lighter blue / coral to match the JPD reference. */
 export const RATING_DOTS: Record<string, { max: number; fill: string }> = {
-  [K.impact]: { max: 5, fill: "bg-blue-500" },
-  [K.effort]: { max: 5, fill: "bg-rose-400" },
+  [K.impact]: { max: 5, fill: "bg-blue-400" },
+  [K.effort]: { max: 5, fill: "bg-red-400" },
 };
 
-/** Fixed roadmap pill palette (data state — not themeable). */
+/** Fixed roadmap pill palette (data state — not themeable). Keys are option
+ *  slugs (generateFieldKey of the label), so "Won't do" → "won_t_do". */
 export const ROADMAP_STYLES: Record<string, string> = {
   now: "bg-green-100 text-green-700",
   next: "bg-amber-100 text-amber-800",
   later: "bg-slate-100 text-slate-600",
-  wont_do: "bg-gray-100 text-gray-500",
+  won_t_do: "bg-gray-100 text-gray-500",
+};
+
+/** Theme option → emoji + text colour + light lozenge background, matching the
+ *  JPD reference. Keyed by option slug. Unknown themes fall back to a neutral chip. */
+export const THEME_META: Record<string, { emoji: string; text: string; bg: string }> = {
+  increase_revenue: { emoji: "🌱", text: "text-green-700", bg: "bg-green-50" },
+  win_enterprise_customers: { emoji: "🎯", text: "text-rose-700", bg: "bg-rose-50" },
+  delight_users: { emoji: "❤️", text: "text-rose-700", bg: "bg-rose-50" },
+  expand_horizons: { emoji: "🚀", text: "text-blue-700", bg: "bg-blue-50" },
+};
+
+/** Non-field columns rendered with bespoke placeholder cells. */
+export const SPECIAL_COLUMNS: Record<string, string> = {
+  summary: "Summary",
+  insights: "Insights",
+  delivery: "Delivery progress",
 };
 
 /** A small, stable palette for non-roadmap dropdown chips (e.g. Theme). Colour

@@ -14,12 +14,11 @@ import {
 function RatingDots({ value, max, fill }: { value: number; max: number; fill: string }) {
   const filled = Math.max(0, Math.min(max, Math.round(value)));
   return (
-    <div className="flex items-center gap-1">
+    <div className="flex items-center gap-1.5">
       {Array.from({ length: max }).map((_, i) => (
-        <span
-          key={i}
-          className={`h-2 w-2 rounded-full ${i < filled ? fill : "bg-gray-200"}`}
-        />
+        <span key={i} className="flex h-3.5 w-3.5 items-center justify-center">
+          <span className={`rounded-full ${i < filled ? `h-2.5 w-2.5 ${fill}` : "h-1 w-1 bg-gray-300"}`} />
+        </span>
       ))}
     </div>
   );

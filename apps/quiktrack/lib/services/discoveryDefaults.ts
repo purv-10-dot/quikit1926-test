@@ -84,18 +84,37 @@ export const DISCOVERY_FIELDS: SeedField[] = [
   },
 ];
 
-/** Column order of the default "All ideas" Table view. `summary` is the
- *  built-in title column; the rest are seeded field keys. (Insights and Delivery
- *  progress columns arrive in later phases.) */
+/** Column order of the default "All ideas" Table view, matching the JPD
+ *  reference exactly: Summary, Theme, Insights, Impact, Effort, Roadmap,
+ *  Delivery progress. `summary` is the built-in title column; `insights` and
+ *  `delivery` are special (feature-backed later) columns; the rest are field
+ *  keys. Reach/Confidence/Score fields still exist (they feed the Score) but
+ *  aren't shown in this view by default. */
 export const DISCOVERY_DEFAULT_COLUMNS = [
   "summary",
   DISCOVERY_FIELD_KEYS.theme,
+  "insights",
   DISCOVERY_FIELD_KEYS.impact,
   DISCOVERY_FIELD_KEYS.effort,
-  DISCOVERY_FIELD_KEYS.reach,
-  DISCOVERY_FIELD_KEYS.confidence,
   DISCOVERY_FIELD_KEYS.roadmap,
-  DISCOVERY_FIELD_KEYS.score,
+  "delivery",
+];
+
+/** The five sample ideas every new discovery space is pre-filled with (mirrors
+ *  the JPD template). Values use option SLUGS (generateFieldKey of the label).
+ *  impact/effort are 1–5 ratings. */
+export const SAMPLE_IDEAS: Array<{
+  title: string;
+  theme: string;
+  impact: number;
+  effort: number;
+  roadmap: string;
+}> = [
+  { title: "New rewards program", theme: "increase_revenue", impact: 5, effort: 2, roadmap: "now" },
+  { title: "Express checkout", theme: "win_enterprise_customers", impact: 4, effort: 2, roadmap: "next" },
+  { title: "Improve waiting list experience", theme: "delight_users", impact: 4, effort: 4, roadmap: "next" },
+  { title: "Refactor user profile data", theme: "delight_users", impact: 3, effort: 4, roadmap: "later" },
+  { title: "Explore VR travel features", theme: "expand_horizons", impact: 1, effort: 5, roadmap: "won_t_do" },
 ];
 
 /**
@@ -113,7 +132,13 @@ export async function seedDiscoveryDefaults(
     data: DISCOVERY_STATUSES.map((s) => ({ ...s, projectId })),
     skipDuplicates: true,
   });
+  const firstStatus = await tx.qtIdeaStatus.findFirst({
+    where: { projectId, isDeleted: false },
+    orderBy: { orderIndex: "asc" },
+    select: { id: true },
+  });
 
+  const fieldIdByKey = new Map<string, string>();
   let position = 0;
   for (const f of DISCOVERY_FIELDS) {
     const key = generateFieldKey(f.name);
@@ -131,6 +156,7 @@ export async function seedDiscoveryDefaults(
       },
       select: { id: true },
     });
+    fieldIdByKey.set(key, field.id);
     if (f.options?.length) {
       await tx.qtCustomFieldOption.createMany({
         data: f.options.map((label, i) => ({
@@ -156,4 +182,45 @@ export async function seedDiscoveryDefaults(
       createdBy,
     },
   });
+
+  // Pre-fill the five sample ideas (FR: "always pre-filled on create").
+  if (firstStatus) {
+    const project = await tx.qtProject.findUnique({
+      where: { id: projectId },
+      select: { projectKey: true },
+    });
+    const prefix = project?.projectKey ?? "IDEA";
+    const themeId = fieldIdByKey.get(DISCOVERY_FIELD_KEYS.theme);
+    const impactId = fieldIdByKey.get(DISCOVERY_FIELD_KEYS.impact);
+    const effortId = fieldIdByKey.get(DISCOVERY_FIELD_KEYS.effort);
+    const roadmapId = fieldIdByKey.get(DISCOVERY_FIELD_KEYS.roadmap);
+
+    for (let i = 0; i < SAMPLE_IDEAS.length; i++) {
+      const s = SAMPLE_IDEAS[i];
+      const idea = await tx.qtIdea.create({
+        data: {
+          orgId,
+          projectId,
+          key: `${prefix}-${i + 1}`,
+          title: s.title,
+          statusId: firstStatus.id,
+          reporterId: createdBy,
+          orderIndex: i,
+          createdBy,
+          updatedBy: createdBy,
+        },
+        select: { id: true },
+      });
+      const rows: Array<{ fieldId: string; valueText?: string; valueNumber?: number }> = [];
+      if (themeId) rows.push({ fieldId: themeId, valueText: s.theme });
+      if (roadmapId) rows.push({ fieldId: roadmapId, valueText: s.roadmap });
+      if (impactId) rows.push({ fieldId: impactId, valueNumber: s.impact });
+      if (effortId) rows.push({ fieldId: effortId, valueNumber: s.effort });
+      if (rows.length) {
+        await tx.qtIdeaFieldValue.createMany({
+          data: rows.map((r) => ({ orgId, ideaId: idea.id, createdBy, updatedBy: createdBy, ...r })),
+        });
+      }
+    }
+  }
 }
