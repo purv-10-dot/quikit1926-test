@@ -52,6 +52,10 @@ const KPI_SELECT = {
   qtdAchieved: true,
   progressPercent: true,
   divisionType: true,
+  currency: true,
+  targetScale: true,
+  scaledDisplay: true,
+  unit: true,
   lastNotes: true,
   importedFromOpsp: true,
   weeklyTargets: true,
@@ -123,7 +127,7 @@ export const GET = auth.view(async ({ orgId, userId }, req) => {
       )
     : new Map<string, { firstName: string | null; lastName: string | null }>();
 
-  const toRow = (k: any, currentWeek: number, qtdWeek: number, weekCount: number): KpiExportRow => {
+  const toRow = (k: any, quarter: string, currentWeek: number, qtdWeek: number, weekCount: number): KpiExportRow => {
     const weekMap: Record<number, number | null> = {};
     for (const wv of k.weeklyValues ?? []) {
       const prev = weekMap[wv.weekNumber];
@@ -145,11 +149,16 @@ export const GET = auth.view(async ({ orgId, userId }, req) => {
     // aggregates). Quarterly Goal stays the stored value — it already agrees.
     const stats = computeExportStats(k as KPIRow, currentWeek, qtdWeek, weekCount);
     return {
+      quarter,
       name: k.name,
       ownerName,
       teamName: k.team?.name ?? "",
       teamHeadName: k.team?.headId ? fullName(userMap.get(k.team.headId)) : "",
       measurementUnit: k.measurementUnit,
+      currency: k.currency ?? null,
+      targetScale: k.targetScale ?? null,
+      scaledDisplay: k.scaledDisplay ?? false,
+      unit: k.unit ?? null,
       target: k.target,
       quarterlyGoal: k.quarterlyGoal,
       qtdGoal: stats.qtdGoal,
@@ -169,21 +178,54 @@ export const GET = auth.view(async ({ orgId, userId }, req) => {
     };
   };
 
-  // Build one sheet per quarter.
   const sheets: WorkbookSheet[] = [];
-  for (const { quarter, kpis } of perQuarter) {
+
+  if (quarters.length === 1) {
+    // ── Single quarter → one sheet named after the quarter (no Quarter col).
+    const quarter = quarters[0];
+    const kpis = perQuarter.find((p) => p.quarter === quarter)?.kpis ?? [];
     const weekCount = weekCounts[quarter] ?? 13;
     const weeks = weekNumbers(weekCount);
     const columns = kpiExportColumns(base.data.columns, weeks);
     if (columns.length === 0) {
       return NextResponse.json({ success: false, error: "Select at least one column." }, { status: 400 });
     }
-    const headers = columns.map((c) => c.label);
     const { currentWeek, qtdWeek } = timing[quarter] ?? { currentWeek: 1, qtdWeek: 1 };
-    const rowObjs = kpis.map((k) => toRow(k, currentWeek, qtdWeek, weekCount));
-    const rows = rowObjs.map((r) => columns.map((c) => c.value(r)));
-    const fills = rowObjs.map((r) => columns.map((c) => c.fill?.(r)));
-    sheets.push({ sheetName: quarter, headers, rows, fills });
+    const rowObjs = kpis.map((k) => toRow(k, quarter, currentWeek, qtdWeek, weekCount));
+    sheets.push({
+      sheetName: quarter,
+      headers: columns.map((c) => c.label),
+      rows: rowObjs.map((r) => columns.map((c) => c.value(r))),
+      fills: rowObjs.map((r) => columns.map((c) => c.fill?.(r))),
+    });
+  } else {
+    // ── Multiple quarters (Full Year / multi-select) → ONE combined sheet with
+    //    a leading "Quarter" column, so every quarter's rows sit together
+    //    instead of being split across per-quarter tabs (which read as "only
+    //    Q1 has data" when later quarters are empty). Week columns span the
+    //    widest quarter; each row's weekly values come from its own quarter,
+    //    and QTD/Weekly stats are still computed per-quarter in toRow.
+    const maxWeekCount = Math.max(...quarters.map((q) => weekCounts[q] ?? 13));
+    const weeks = weekNumbers(maxWeekCount);
+    const dataColumns = kpiExportColumns(base.data.columns, weeks);
+    if (dataColumns.length === 0) {
+      return NextResponse.json({ success: false, error: "Select at least one column." }, { status: 400 });
+    }
+
+    // Flatten every quarter's rows (kept in Q1→Q4 order), tagged with quarter.
+    const rowObjs: KpiExportRow[] = [];
+    for (const { quarter, kpis } of perQuarter) {
+      const weekCount = weekCounts[quarter] ?? 13;
+      const { currentWeek, qtdWeek } = timing[quarter] ?? { currentWeek: 1, qtdWeek: 1 };
+      for (const k of kpis) rowObjs.push(toRow(k, quarter, currentWeek, qtdWeek, weekCount));
+    }
+
+    sheets.push({
+      sheetName: quarters.length === 4 ? "Full Year" : quarters.join("-"),
+      headers: ["Quarter", ...dataColumns.map((c) => c.label)],
+      rows: rowObjs.map((r) => [r.quarter ?? "", ...dataColumns.map((c) => c.value(r))]),
+      fills: rowObjs.map((r) => [undefined, ...dataColumns.map((c) => c.fill?.(r))]),
+    });
   }
 
   const label = level === "team" ? "TeamKPI" : "IndividualKPI";

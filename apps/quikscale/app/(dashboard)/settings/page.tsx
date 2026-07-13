@@ -731,7 +731,7 @@ function ConfigurationsTab() {
         {/* Custom Quarter Settings */}
         <div className="border border-[var(--color-border)] rounded-xl p-5 bg-[var(--color-bg-primary)]">
           <h4 className="text-sm font-semibold text-[var(--color-text-primary)] mb-2">Custom Quarter Settings</h4>
-          <p className="text-xs text-[var(--color-text-secondary)] mb-4">Give each quarter a custom number of weeks (e.g. Q1 = 14, Q2 = 15) and edit quarter dates from Quarter Settings. When off, quarters stay 13 weeks.</p>
+          <p className="text-xs text-[var(--color-text-secondary)] mb-4">When on, weeks start on your chosen Weekly Meeting Day, so quarters run 13–14 weeks (with partial weeks at the edges). When off, every quarter is a fixed 13 weeks.</p>
           <div className="flex items-center justify-between">
             <Toggle
               enabled={customQuarterSettings}

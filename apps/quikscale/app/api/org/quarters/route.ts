@@ -6,6 +6,27 @@ import { addDays, generateQuarterDates, generateMonthlyQuarterDates, chainQuarte
 import { withOrgAuthForModule } from "@/lib/api/withOrgAuth";
 import { fyHasData, fyLabel } from "@/lib/api/quartersFyHasData";
 import { getCustomQuarterEnabled } from "@/lib/utils/featureFlags";
+import { generateMeetingDayWeeks, meetingDayIndex } from "@/lib/utils/fiscal";
+
+/**
+ * Custom Quarter Settings + a weekly meeting day: derive each quarter's week
+ * count from the meeting-day week chain (13 or 14 incl. partial weeks) instead
+ * of a fixed 13, and write it back onto each row. Dates use the calendar
+ * Y-M-D (via toISOString slice) so the count is timezone-invariant. No-op when
+ * no meeting day is configured (mdIdx null).
+ */
+function applyMeetingDayWeekCounts(
+  rows: Array<{ quarter: string; startDate: Date; endDate: Date; weekCount?: number }>,
+  weeklyMeetingDay: string | null | undefined,
+): void {
+  const mdIdx = meetingDayIndex(weeklyMeetingDay);
+  if (mdIdx === null) return;
+  for (const q of rows) {
+    const s = q.startDate.toISOString().slice(0, 10);
+    const e = q.endDate.toISOString().slice(0, 10);
+    q.weekCount = generateMeetingDayWeeks(s, e, mdIdx, q.quarter === "Q1").length;
+  }
+}
 
 // Org resolution + auth + the orgSetup.quarters module gate now come from
 // the shared wrapper (same as ../[id]/route.ts), so `orgId` is the org the
@@ -228,6 +249,12 @@ export const POST = withOrgAuth(async ({ orgId, session }, request: NextRequest)
         ? generateMonthlyQuarterDates(fyStartDate!)
         : chainQuarterDates(fyStartDate!, weekCounts!))
     : generateQuarterDates(fiscalYear, fiscalStartMonth, fyStartDate);
+
+  // Custom Quarter Settings: when a weekly meeting day is configured, each
+  // quarter's week grid is meeting-day aligned (Thu→Wed etc.) with partial
+  // weeks, so the count is 13 or 14 — derive & store it here (overrides the
+  // generator's fixed 13). No-op without a meeting day.
+  if (useCustomQuarters) applyMeetingDayWeekCounts(quarterDates, weeklyMeetingDay);
 
   const created = await Promise.all(
     quarterDates.map(q =>

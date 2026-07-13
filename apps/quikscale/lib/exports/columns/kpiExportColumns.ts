@@ -8,14 +8,25 @@
  */
 import type { Cell } from "../buildWorkbook";
 import { kpiWeekArgb } from "../exportColors";
+import { formatScaledKpiValue } from "@/lib/utils/kpiHelpers";
 
 /** Flattened, name-resolved KPI row the column extractors read. */
 export interface KpiExportRow {
+  /** Which quarter this row belongs to. Populated for the combined
+   *  multi-quarter ("Full Year") sheet so a leading Quarter column can
+   *  distinguish rows; unused for single-quarter sheets. */
+  quarter?: string;
   name: string | null;
   ownerName: string;
   teamName: string;
   teamHeadName: string;
   measurementUnit: string | null;
+  /** Currency-display metadata so numeric columns render exactly like the KPI
+   *  module's `formatScaledKpiValue` (₹4 Cr / $9 M / 795.6K / "16 lb"). */
+  currency: string | null;
+  targetScale: string | null;
+  scaledDisplay: boolean;
+  unit: string | null;
   target: number | null;
   quarterlyGoal: number | null;
   qtdGoal: number | null;
@@ -51,6 +62,27 @@ function fmtDate(d: Date | null): string {
   return d.toISOString().slice(0, 10);
 }
 
+/**
+ * Format a KPI goal/value number exactly as the Individual/Team KPI table does,
+ * so exported cells match the on-screen display (currency + scale unit "₹4 Cr" /
+ * "$9 M", INR lakh/crore, compact "795.6K", Number-KPI unit suffix "16 lb").
+ *
+ * `numberFormat: "standard"` mirrors the module pages (only the Dashboard passes
+ * "indian"); INR still forces the Indian magnitude internally, matching the UI.
+ * Returns "" for null/undefined so the cell renders blank rather than "—".
+ */
+function fmtVal(row: KpiExportRow, v: number | null | undefined): string {
+  if (v == null) return "";
+  return formatScaledKpiValue(v, {
+    measurementUnit: row.measurementUnit,
+    currency: row.currency,
+    targetScale: row.targetScale,
+    scaledDisplay: row.scaledDisplay,
+    unit: row.unit,
+    numberFormat: "standard",
+  });
+}
+
 /** Static (non-week) columns, in table order. */
 const STATIC_COLUMNS: KpiExportColumn[] = [
   { key: "progress", label: "Progress", value: (r) => (r.progressPercent != null ? `${r.progressPercent.toFixed(1)}%` : "") },
@@ -60,11 +92,12 @@ const STATIC_COLUMNS: KpiExportColumn[] = [
   { key: "teamHead", label: "Team Head", value: (r) => r.teamHeadName },
   { key: "kpiOwner", label: "KPI Owner", value: (r) => r.ownerName },
   { key: "measurementUnit", label: "Measurement Unit", value: (r) => r.measurementUnit ?? "" },
-  { key: "targetValue", label: "Target Value", value: (r) => r.target ?? "" },
-  { key: "quarterlyGoal", label: "Quarterly Goal", value: (r) => r.quarterlyGoal ?? "" },
-  { key: "qtdGoal", label: "QTD Goal", value: (r) => r.qtdGoal ?? "" },
-  { key: "qtdAchieved", label: "QTD Achieved", value: (r) => r.qtdAchieved ?? 0 },
-  { key: "weeklyGoal", label: "Weekly Goal", value: (r) => r.weeklyGoal ?? "" },
+  { key: "targetValue", label: "Target Value", value: (r) => fmtVal(r, r.target) },
+  { key: "quarterlyGoal", label: "Quarterly Goal", value: (r) => fmtVal(r, r.quarterlyGoal) },
+  { key: "qtdGoal", label: "QTD Goal", value: (r) => fmtVal(r, r.qtdGoal) },
+  // QTD Achieved shows "0" (not blank) when null — matches the module's cell.
+  { key: "qtdAchieved", label: "QTD Achieved", value: (r) => fmtVal(r, r.qtdAchieved ?? 0) },
+  { key: "weeklyGoal", label: "Weekly Goal", value: (r) => fmtVal(r, r.weeklyGoal) },
   { key: "description", label: "Description", value: (r) => r.description ?? "" },
   { key: "lastNotes", label: "Last Notes", value: (r) => r.lastNotes ?? "" },
   { key: "importedFromOpsp", label: "Imported from OPSP", value: (r) => (r.importedFromOpsp ? "Yes" : "No") },
@@ -79,7 +112,9 @@ export function kpiWeekColumns(weeks: number[]): KpiExportColumn[] {
   return weeks.map((w) => ({
     key: `week${w}`,
     label: `Week ${w}`,
-    value: (r: KpiExportRow) => r.weekMap[w] ?? "",
+    // Text matches the module cell (compact/currency); the fill below still
+    // derives the traffic-light color from the RAW value, so colors are unchanged.
+    value: (r: KpiExportRow) => fmtVal(r, r.weekMap[w]),
     fill: (r: KpiExportRow) => {
       const raw = r.weekMap[w];
       const updated = raw != null;
