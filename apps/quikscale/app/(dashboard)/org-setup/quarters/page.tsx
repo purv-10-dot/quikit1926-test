@@ -479,7 +479,7 @@ function GenerateModal({
           end: q.endDate,
           days: diffDays(q.startDate, q.endDate) + 1,
           weeks: meetingDayIdxNum !== null
-            ? generateMeetingDayWeeks(q.startDate, q.endDate, meetingDayIdxNum, q.quarter === "Q1").length
+            ? generateMeetingDayWeeks(q.startDate, q.endDate, meetingDayIdxNum).length
             : undefined,
         }))
       : (() => {
