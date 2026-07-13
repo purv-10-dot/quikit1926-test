@@ -156,9 +156,9 @@ export function EssentialsWidget() {
   const items = [
     { label: "Payslip", icon: <Wallet size={18} className="text-gray-700" />, href: "/payroll/my-payslips" },
     { label: "My Profile", icon: <UserCircle size={18} className="text-gray-700" />, href: profileHref },
-    { label: "Calendar", icon: <CalendarIcon size={18} className="text-gray-700" />, href: "/leaves/calendar" },
+    { label: "Calendar", icon: <CalendarIcon size={18} className="text-gray-700" />, href: "/holidays" },
     { label: "Documents", icon: <FileIcon size={18} className="text-gray-700" />, href: "/documents/my-vault" },
-    { label: "Org Chart", icon: <Network size={18} className="text-gray-700" />, href: "/org-chart" },
+    { label: "Org Chart", icon: <Network size={18} className="text-gray-700" />, href: "/org-chart?tab=orgchart" },
     { label: "Policies", icon: <ShieldCheck size={18} className="text-gray-700" />, href: "/documents" },
   ];
 

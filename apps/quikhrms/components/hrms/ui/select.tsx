@@ -203,24 +203,24 @@ export function Select({
                       onClick={() => pick(o)}
                       disabled={o.disabled}
                       className={clsx(
-                        "w-full flex items-center gap-2 px-3 py-2 text-left text-[13px] transition",
+                        "w-full flex items-center gap-2 px-3 py-1.5 text-left text-[13px] transition",
                         o.disabled && "opacity-40 cursor-not-allowed",
-                        !o.disabled && isHighlight && !isSelected && "bg-[#dcfce7]/60",
-                        !o.disabled && isSelected && "bg-[#22c55e] text-white",
+                        !o.disabled && isSelected && "bg-emerald-50",
+                        !o.disabled && isHighlight && !isSelected && "bg-gray-50",
                         !o.disabled && !isHighlight && !isSelected && "hover:bg-gray-50",
                       )}
                     >
                       <div className="flex-1 min-w-0">
-                        <div className={clsx("truncate", isSelected ? "text-white font-medium" : "text-gray-900")}>
+                        <div className={clsx("truncate", isSelected ? "text-emerald-700 font-medium" : "text-gray-900")}>
                           {o.label}
                         </div>
                         {o.description && (
-                          <div className={clsx("text-[11px] truncate", isSelected ? "text-white/80" : "text-gray-500")}>
+                          <div className={clsx("text-[11px] truncate", isSelected ? "text-emerald-600/80" : "text-gray-500")}>
                             {o.description}
                           </div>
                         )}
                       </div>
-                      {isSelected && <Check size={14} className="shrink-0" />}
+                      {isSelected && <Check size={14} className="shrink-0 text-emerald-600" />}
                     </button>
                   </li>
                 );

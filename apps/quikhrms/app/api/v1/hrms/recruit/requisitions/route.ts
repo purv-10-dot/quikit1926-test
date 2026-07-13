@@ -82,8 +82,17 @@ export const POST = withAuth(async (req: NextRequest, { orgId, userId }) => {
         priority: data.priority,
         careerPageVisible: data.careerPageVisible,
         internalPostingOnly: data.internalPostingOnly,
+        postToJobPortal: data.postToJobPortal,
         referralBonusAmount: data.referralBonusAmount,
         rolePurpose: data.rolePurpose,
+        // Previously dropped on create — persisted so they show up when editing.
+        interviewPanel: data.interviewPanelIds ? JSON.parse(JSON.stringify(data.interviewPanelIds)) : undefined,
+        jobOpeningName: data.jobOpeningName,
+        budget: data.budget,
+        jobGrade: data.jobGrade,
+        costCenter: data.costCenter,
+        etaToFillDays: data.etaToFillDays,
+        targetJoiningDate: data.targetJoiningDate ? new Date(data.targetJoiningDate) : undefined,
         closedDate: data.closedDate ? new Date(data.closedDate) : undefined,
         createdById: creatorEmpId, hiringManagerId: data.hiringManagerId, recruiterId: data.recruiterId,
         createdBy: userId, updatedBy: userId,
@@ -98,4 +107,4 @@ export const POST = withAuth(async (req: NextRequest, { orgId, userId }) => {
 
     return successResponse(req_, undefined, 201);
   } catch (error) { console.error("POST /recruit/requisitions error:", error); return internalError(); }
-});
+}, { requiredPermissions: ["hrms.recruit.write"] });

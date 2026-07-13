@@ -19,7 +19,6 @@ import { useParams, useRouter, useSearchParams } from "next/navigation";
 import {
   AlertTriangle,
   Check,
-  FileDown,
   Pencil,
   Send,
   Trash2,
@@ -33,6 +32,7 @@ import {
   ApprovalTimeline,
 } from "@/components/PageShell";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
+import { formatDateTimeIST } from "@/lib/format/datetime";
 import { WorkflowConfirmDialog } from "@/components/WorkflowConfirmDialog";
 import { useDPR, useDeleteDPR, useBOQ } from "@/hooks/use-projects";
 import { groupWorkItemsByBoq } from "@/lib/projects/boq-work-groups";
@@ -282,7 +282,7 @@ export default function DPRDetailPage() {
       step: h.stepOrder ?? 0,
       action: h.action,
       actionBy: h.actionByName ?? "User",
-      actionAt: h.actionAt ? new Date(h.actionAt).toLocaleString() : "",
+      actionAt: h.actionAt ? formatDateTimeIST(h.actionAt) : "",
       comments: h.comments ?? undefined,
     })) ?? [];
 
@@ -345,14 +345,6 @@ export default function DPRDetailPage() {
             <span className={`${HEADER_PILL} ${statusPillTone(dpr.status)}`}>
               {statusLabel(dpr.status)}
             </span>
-            <button
-              type="button"
-              onClick={() => window.open(`/api/projects/dpr/${id}/pdf`, "_blank")}
-              className={`${HEADER_PILL} ${PILL_TONE.blue} hover:bg-orange-100`}
-              title="Open the full DPR as a PDF"
-            >
-              <FileDown className="w-4 h-4" /> PDF
-            </button>
             {canEdit && (
               <button
                 type="button"
@@ -992,9 +984,7 @@ export default function DPRDetailPage() {
                     Created
                   </div>
                   <div className="mt-0.5 text-gray-900">
-                    {dpr.createdAt
-                      ? new Date(dpr.createdAt).toLocaleString()
-                      : "—"}
+                    {formatDateTimeIST(dpr.createdAt)}
                   </div>
                 </div>
                 <div>
@@ -1011,7 +1001,7 @@ export default function DPRDetailPage() {
                       Last Updated
                     </div>
                     <div className="mt-0.5 text-gray-900">
-                      {new Date(dpr.updatedAt).toLocaleString()}
+                      {formatDateTimeIST(dpr.updatedAt)}
                     </div>
                   </div>
                 )}

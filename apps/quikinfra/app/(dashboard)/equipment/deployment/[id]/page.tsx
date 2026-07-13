@@ -20,6 +20,7 @@ import {
   PageSkeleton,
 } from "@/components/PageShell";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
+import { formatDateTimeIST } from "@/lib/format/datetime";
 import { useEquipmentTransfer, usePatchTransfer } from "@/hooks/use-equipment";
 import { useUsers } from "@/hooks/use-users";
 import { toErrorMessage } from "@/lib/api/errors";
@@ -152,12 +153,12 @@ export default function TransferDetailPage() {
               <div className="space-y-3">
                 <InfoField
                   label="Created"
-                  value={transfer.createdAt ? new Date(transfer.createdAt).toLocaleString() : "—"}
+                  value={formatDateTimeIST(transfer.createdAt)}
                 />
                 <InfoField label="Created By" value={userName(transfer.createdBy)} />
                 <InfoField
                   label="Updated"
-                  value={transfer.updatedAt ? new Date(transfer.updatedAt).toLocaleString() : "—"}
+                  value={formatDateTimeIST(transfer.updatedAt)}
                 />
                 <InfoField label="Updated By" value={userName(transfer.updatedBy)} />
               </div>

@@ -36,7 +36,15 @@ export default function TasksHubPage() {
 function TasksList({ scope }: { scope: "mine" }) {
   const api = useApiClient();
   const [datePreset, setDatePreset] = useState<"anytime" | "overdue" | "today" | "week" | "month">("anytime");
-  const [statusFilter, setStatusFilter] = useState<string>("Open,InProgress,Completed");
+  // Honor a ?status= deep link (e.g. dashboard "Open tasks" → Incomplete tab);
+  // default to All otherwise.
+  const [statusFilter, setStatusFilter] = useState<string>(() => {
+    if (typeof window !== "undefined") {
+      const s = new URLSearchParams(window.location.search).get("status");
+      if (s) return s;
+    }
+    return "Open,InProgress,Completed";
+  });
   const [search, setSearch] = useState("");
 
   const params = useMemo(() => {

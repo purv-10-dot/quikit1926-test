@@ -2,11 +2,9 @@ import { defineConfig } from "vitest/config";
 import react from "@vitejs/plugin-react";
 import tsconfigPaths from "vite-tsconfig-paths";
 
-// QuikInfra splits its code across BOTH `./` (root: app/, lib/) and `./src/`
-// (src/lib/, src/components/). The tsconfig `paths` encode that fallback
-// (`"@/lib/*": ["./lib/*", "./src/lib/*"]`). A static Vite alias can't express
-// the per-path "root first, else src" precedence, so we let `vite-tsconfig-paths`
-// resolve `@/*` exactly the way `tsc` does — picking whichever file exists.
+// QuikInfra keeps all app code at the root (app/, lib/, components/, hooks/) —
+// no `src/` folder. We let `vite-tsconfig-paths` resolve `@/*` exactly the way
+// `tsc` does, straight from the tsconfig `paths` map.
 export default defineConfig({
   plugins: [tsconfigPaths(), react()],
   test: {
@@ -27,10 +25,9 @@ export default defineConfig({
       provider: "v8",
       reporter: ["text", "json-summary", "html"],
       include: [
-        "src/lib/**/*.{ts,tsx}",
         "lib/**/*.{ts,tsx}",
         "app/api/**/*.{ts,tsx}",
-        "src/components/**/*.{ts,tsx}",
+        "components/**/*.{ts,tsx}",
       ],
       exclude: [
         "**/*.test.{ts,tsx}",

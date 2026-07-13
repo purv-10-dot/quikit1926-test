@@ -20,12 +20,17 @@ interface Props {
   lines: LabourScopeLine[];
   onChange: (lines: LabourScopeLine[]) => void;
   workCategories: WorkCategoryOption[];
+  /** When true, empty required cells are highlighted with an inline message. */
+  showErrors?: boolean;
 }
+
+const ERR_INPUT = "border-rose-400 focus:ring-rose-300 focus:border-rose-400";
 
 export function LabourScopeTable({
   lines,
   onChange,
   workCategories,
+  showErrors = false,
 }: Props) {
   const workCategoryOptions = workCategories
     .filter((w) => (w.status ?? "active") === "active")
@@ -122,6 +127,11 @@ export function LabourScopeTable({
                     entityLabel: "work category",
                   });
 
+                const errDate = showErrors && !line.lineDate;
+                const errActivity = showErrors && !line.activityName.trim();
+                const errGroup = showErrors && !line.workCategoryId;
+                const errNoLabour = showErrors && line.labourTypes.length === 0;
+
                 return (
                   <tr
                     key={idx}
@@ -137,8 +147,13 @@ export function LabourScopeTable({
                         onChange={(e) =>
                           updateLine(idx, { lineDate: e.target.value })
                         }
-                        className="w-full text-xs px-2 py-1.5 border border-gray-300 rounded bg-white focus:outline-none focus:ring-1 focus:ring-orange-300 focus:border-orange-400"
+                        className={`w-full text-xs px-2 py-1.5 border rounded bg-white focus:outline-none focus:ring-1 focus:ring-orange-300 focus:border-orange-400 ${errDate ? ERR_INPUT : "border-gray-300"}`}
                       />
+                      {errDate && (
+                        <p className="mt-1 text-[10px] text-rose-600">
+                          Date is required
+                        </p>
+                      )}
                     </td>
                     <td className="px-3 py-2">
                       <input
@@ -148,8 +163,13 @@ export function LabourScopeTable({
                           updateLine(idx, { activityName: e.target.value })
                         }
                         placeholder="Enter activity name"
-                        className="w-full text-xs px-2 py-1.5 border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-orange-300 focus:border-orange-400"
+                        className={`w-full text-xs px-2 py-1.5 border rounded focus:outline-none focus:ring-1 focus:ring-orange-300 focus:border-orange-400 ${errActivity ? ERR_INPUT : "border-gray-300"}`}
                       />
+                      {errActivity && (
+                        <p className="mt-1 text-[10px] text-rose-600">
+                          Activity name is required
+                        </p>
+                      )}
                     </td>
                     <td className="px-3 py-2">
                       <input
@@ -168,44 +188,59 @@ export function LabourScopeTable({
                         onChange={(v) => updateLine(idx, { workCategoryId: v })}
                         placeholder="Select group…"
                         options={groupOptions}
+                        invalid={errGroup}
                       />
-                      {groupNotice && (
-                        <p className="mt-1 text-[10px] text-amber-600">
-                          {groupNotice}
+                      {errGroup ? (
+                        <p className="mt-1 text-[10px] text-rose-600">
+                          Group is required
                         </p>
+                      ) : (
+                        groupNotice && (
+                          <p className="mt-1 text-[10px] text-amber-600">
+                            {groupNotice}
+                          </p>
+                        )
                       )}
                     </td>
                     <td className="px-3 py-2">
                       <div className="space-y-1.5">
-                        {line.labourTypes.map((lt, typeIdx) => (
-                          <div
-                            key={lt.type}
-                            className="flex items-center gap-2 bg-orange-50/60 border border-orange-200 rounded-lg pl-2.5 pr-1.5 py-1"
-                          >
-                            <span className="flex-1 text-xs font-medium text-orange-800 truncate">
-                              {labelForType(lt.type)}
-                            </span>
-                            <input
-                              type="number"
-                              step="1"
-                              min="0"
-                              value={lt.count}
-                              onChange={(e) =>
-                                updateLabourCount(idx, typeIdx, e.target.value)
-                              }
-                              placeholder="0"
-                              className="w-14 text-xs px-1.5 py-1 border border-gray-300 rounded text-right bg-white focus:outline-none focus:ring-1 focus:ring-orange-300 focus:border-orange-400"
-                            />
-                            <button
-                              type="button"
-                              onClick={() => removeLabourType(idx, typeIdx)}
-                              className="p-0.5 rounded text-orange-400 hover:text-rose-600 hover:bg-white transition-colors"
-                              title="Remove labour type"
-                            >
-                              <X className="w-3.5 h-3.5" />
-                            </button>
-                          </div>
-                        ))}
+                        {line.labourTypes.map((lt, typeIdx) => {
+                          const errCount =
+                            showErrors && !(parseFloat(lt.count) > 0);
+                          return (
+                            <div key={lt.type}>
+                              <div className="flex items-center gap-2 bg-orange-50/60 border border-orange-200 rounded-lg pl-2.5 pr-1.5 py-1">
+                                <span className="flex-1 text-xs font-medium text-orange-800 truncate">
+                                  {labelForType(lt.type)}
+                                </span>
+                                <input
+                                  type="number"
+                                  step="1"
+                                  min="0"
+                                  value={lt.count}
+                                  onChange={(e) =>
+                                    updateLabourCount(idx, typeIdx, e.target.value)
+                                  }
+                                  placeholder="0"
+                                  className={`w-14 text-xs px-1.5 py-1 border rounded text-right bg-white focus:outline-none focus:ring-1 focus:ring-orange-300 focus:border-orange-400 ${errCount ? ERR_INPUT : "border-gray-300"}`}
+                                />
+                                <button
+                                  type="button"
+                                  onClick={() => removeLabourType(idx, typeIdx)}
+                                  className="p-0.5 rounded text-orange-400 hover:text-rose-600 hover:bg-white transition-colors"
+                                  title="Remove labour type"
+                                >
+                                  <X className="w-3.5 h-3.5" />
+                                </button>
+                              </div>
+                              {errCount && (
+                                <p className="mt-1 text-[10px] text-rose-600">
+                                  Enter a count greater than 0
+                                </p>
+                              )}
+                            </div>
+                          );
+                        })}
                         <SelectInput
                           value=""
                           onChange={(v) => addLabourType(idx, v)}
@@ -215,6 +250,11 @@ export function LabourScopeTable({
                               !line.labourTypes.some((lt) => lt.type === o.value),
                           ).map((o) => ({ value: o.value, label: o.label }))}
                         />
+                        {errNoLabour && (
+                          <p className="mt-1 text-[10px] text-rose-600">
+                            Add at least one labour type
+                          </p>
+                        )}
                       </div>
                     </td>
                     <td className="px-3 py-2 text-right text-xs font-semibold text-slate-700 tabular-nums align-top pt-3">

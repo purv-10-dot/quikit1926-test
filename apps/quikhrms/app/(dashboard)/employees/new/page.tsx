@@ -497,7 +497,7 @@ function NewEmployeePageInner() {
       </header>
 
       <div className="bg-white border-b border-gray-100 px-5 py-4 sticky top-[57px] z-10">
-        <div className="max-w-5xl mx-auto">
+        <div className="max-w-none">
           <div className="flex items-center justify-between">
             {STEPS.map((s, idx) => {
               const active = activeStep === s.id;
@@ -545,7 +545,7 @@ function NewEmployeePageInner() {
 
       <form onSubmit={handleSubmit} noValidate className="flex-1 flex flex-col min-h-0">
         <div ref={scrollRef} className="flex-1 overflow-y-auto px-5 py-4">
-          <div className="max-w-5xl mx-auto pb-5">
+          <div className="max-w-none pb-5">
             <StepPanels active={activeStep}>
             <Section
               id="personal"
@@ -554,7 +554,7 @@ function NewEmployeePageInner() {
               subtitle="Basic information about the employee."
               sectionRef={(el) => { sectionRefs.current.personal = el; }}
             >
-              <div className="grid grid-cols-2 gap-x-5 gap-y-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-x-5 gap-y-4">
                 <Field label="First Name" required>
                   <IconInput icon={<User size={14} />}>
                     <input required placeholder="Enter first name" value={form.firstName} onChange={(e) => setForm({ ...form, firstName: e.target.value })} className={inputCls} />
@@ -606,7 +606,7 @@ function NewEmployeePageInner() {
                     className={inputCls}
                   />
                 </Field>
-                <div className="col-span-2 flex items-center gap-4 pt-1">
+                <div className="col-span-full flex items-center gap-4 pt-1">
                   <label className="flex items-center gap-2 text-xs text-gray-700 cursor-pointer">
                     <input
                       type="checkbox"
@@ -630,7 +630,7 @@ function NewEmployeePageInner() {
 
                 {/* Statutory Applicability — per-employee opt-out of EPF / ESI / PT.
                     Defaults to all-true; unchecking suppresses that deduction in payroll. */}
-                <div className="col-span-2 pt-3 border-t border-gray-100">
+                <div className="col-span-full pt-3 border-t border-gray-100">
                   <p className="text-xs font-semibold text-gray-700 uppercase tracking-wide mb-1">
                     Statutory applicability
                   </p>
@@ -669,7 +669,7 @@ function NewEmployeePageInner() {
               subtitle="Contact information for communication."
               sectionRef={(el) => { sectionRefs.current.contact = el; }}
             >
-              <div className="grid grid-cols-2 gap-x-5 gap-y-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-x-5 gap-y-4">
                 <Field label="Work Email" required>
                   <IconInput icon={<Mail size={14} />}>
                     <input type="email" required placeholder="work.email@example.com" value={form.workEmail} onChange={(e) => setForm({ ...form, workEmail: e.target.value })} className={inputCls} />
@@ -712,7 +712,7 @@ function NewEmployeePageInner() {
                     <div className="text-xs font-semibold text-gray-500 uppercase mb-3">
                       {i === 0 ? "Primary contact" : `Contact ${i + 1}`}
                     </div>
-                    <div className="grid grid-cols-2 gap-x-5 gap-y-4">
+                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-x-5 gap-y-4">
                       <Field label="Name" required>
                         <input placeholder="Full name" value={c.name} onChange={(e) => updateEmergencyContact(i, "name", e.target.value)} className={inputCls} />
                       </Field>
@@ -734,7 +734,7 @@ function NewEmployeePageInner() {
                           <input type="email" placeholder="optional" value={c.email} onChange={(e) => updateEmergencyContact(i, "email", e.target.value)} className={inputCls} />
                         </IconInput>
                       </Field>
-                      <div className="col-span-2">
+                      <div className="col-span-full">
                         <Field label="Address">
                           <textarea rows={2} placeholder="Full address" value={c.address} onChange={(e) => updateEmergencyContact(i, "address", e.target.value)} className={inputCls} />
                         </Field>
@@ -784,7 +784,7 @@ function NewEmployeePageInner() {
               subtitle="Job and employment related information."
               sectionRef={(el) => { sectionRefs.current.employment = el; }}
             >
-              <div className="grid grid-cols-2 gap-x-5 gap-y-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-x-5 gap-y-4">
                 <Field label="Job Title" required>
                   <IconInput icon={<Briefcase size={14} />}>
                     <input placeholder="Enter job title" value={form.jobTitle} onChange={(e) => setForm({ ...form, jobTitle: e.target.value })} className={inputCls} />
@@ -867,7 +867,7 @@ function NewEmployeePageInner() {
                   const selectedTemplate = (salaryTemplates?.data ?? []).find((s) => s.id === form.salaryTemplateId);
                   if (!selectedTemplate) return null;
                   return (
-                    <div className="col-span-2">
+                    <div className="col-span-full">
                       <SalaryBreakdown
                         components={selectedTemplate.components ?? []}
                         annualCTC={(form.ctcLpa ?? 0) * 100000}
@@ -1096,7 +1096,7 @@ function NewEmployeePageInner() {
               subtitle="PAN and Aadhaar mandatory."
               sectionRef={(el) => { sectionRefs.current.identity = el; }}
             >
-              <div className="grid grid-cols-2 gap-x-5 gap-y-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-x-5 gap-y-4">
                 <Field label="PAN Number" required>
                   <IconInput icon={<IdCard size={14} />}>
                     <input required placeholder="Enter PAN number" value={form.panNumber} onChange={(e) => setForm({ ...form, panNumber: e.target.value.toUpperCase() })} className={`${inputCls} font-mono text-sm`} maxLength={10} />
@@ -1333,7 +1333,7 @@ function ExperienceCard({ index, exp, canRemove, onChange, onRemove }: {
         {index === 0 ? "Most recent role" : `Role ${index + 1}`}
       </div>
 
-      <div className="grid grid-cols-2 gap-x-5 gap-y-4">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-x-5 gap-y-4">
         <Field label="Company"><input value={exp.company} onChange={(e) => onChange("company", e.target.value)} placeholder="Company name" className={inputCls} /></Field>
         <Field label="Title / Position"><input value={exp.designation} onChange={(e) => onChange("designation", e.target.value)} placeholder="e.g. Senior Engineer" className={inputCls} /></Field>
 

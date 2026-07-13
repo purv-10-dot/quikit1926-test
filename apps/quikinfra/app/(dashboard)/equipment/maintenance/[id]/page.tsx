@@ -21,6 +21,7 @@ import {
   PageSkeleton,
 } from "@/components/PageShell";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
+import { formatDateTimeIST } from "@/lib/format/datetime";
 import { useJobCard, usePatchJobCard } from "@/hooks/use-equipment";
 import { useUsers } from "@/hooks/use-users";
 import { USER_TYPE_CATALOG } from "@/lib/rbac/user-types";
@@ -228,9 +229,7 @@ export default function JobCardDetailPage() {
                       action: "request",
                       title: "Requested",
                       actionBy: approval.requestedByName || "Requester",
-                      actionAt: new Date(
-                        approval.requestedAt ?? "",
-                      ).toLocaleString(),
+                      actionAt: formatDateTimeIST(approval.requestedAt),
                     },
                   ];
 
@@ -250,9 +249,7 @@ export default function JobCardDetailPage() {
                         step: s.stepOrder,
                         action: acted.action, // approve | reject | return
                         actionBy: acted.actionByName || approverLabel,
-                        actionAt: new Date(
-                          acted.actionAt ?? "",
-                        ).toLocaleString(),
+                        actionAt: formatDateTimeIST(acted.actionAt),
                         comments: acted.comments || undefined,
                       });
                       return;
@@ -283,12 +280,12 @@ export default function JobCardDetailPage() {
               <div className="space-y-3">
                 <InfoField
                   label="Created"
-                  value={card.createdAt ? new Date(card.createdAt).toLocaleString() : "—"}
+                  value={formatDateTimeIST(card.createdAt)}
                 />
                 <InfoField label="Created By" value={userName(card.createdBy)} />
                 <InfoField
                   label="Updated"
-                  value={card.updatedAt ? new Date(card.updatedAt).toLocaleString() : "—"}
+                  value={formatDateTimeIST(card.updatedAt)}
                 />
                 <InfoField label="Updated By" value={userName(card.updatedBy)} />
               </div>

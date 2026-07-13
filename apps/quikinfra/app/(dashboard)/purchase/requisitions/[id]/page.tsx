@@ -16,6 +16,7 @@
  */
 
 import { toErrorMessage } from "@/lib/api/errors";
+import { formatDateTimeIST } from "@/lib/format/datetime";
 import { useMemo, useState, type ReactNode } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { Send, CheckCircle2, AlertTriangle, Warehouse } from "lucide-react";
@@ -25,6 +26,7 @@ import {
 } from "@/components/PageShell";
 import { ApprovalActionBar } from "@/components/ApprovalActionBar";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
+import { ProcurementCells } from "@/components/ProcurementCells";
 import { SelectInput } from "@/components/FormDrawer";
 import { usePurchaseRequisition, useSubmitPR } from "@/hooks/use-purchase";
 import { useLocations } from "@/hooks/use-masters";
@@ -393,6 +395,8 @@ export default function PRDetailPage() {
                         <th className="px-4 py-3 text-right text-[11px] font-bold text-slate-600 uppercase tracking-wider w-32">Amount (₹)</th>
                         <th className="px-4 py-3 text-left text-[11px] font-bold text-slate-600 uppercase tracking-wider w-28">Stock</th>
                         <th className="px-4 py-3 text-left text-[11px] font-bold text-slate-600 uppercase tracking-wider">Specification</th>
+                        <th className="px-4 py-3 text-left text-[11px] font-bold text-slate-600 uppercase tracking-wider w-32">PO</th>
+                        <th className="px-4 py-3 text-left text-[11px] font-bold text-slate-600 uppercase tracking-wider w-28">GRN</th>
                       </tr>
                     </thead>
                     <tbody>
@@ -453,6 +457,7 @@ export default function PRDetailPage() {
                             <td className="px-4 py-3 text-xs text-slate-500">
                               {line.specification ?? "—"}
                             </td>
+                            <ProcurementCells procurement={line.procurement} />
                           </tr>
                         );
                       })}
@@ -465,7 +470,7 @@ export default function PRDetailPage() {
                         <td className="px-4 py-3 text-sm font-bold text-orange-700 text-right tabular-nums">
                           ₹ {estimatedTotal.toLocaleString("en-IN", { minimumFractionDigits: 2 })}
                         </td>
-                        <td colSpan={2}></td>
+                        <td colSpan={4}></td>
                       </tr>
                     </tfoot>
                   </table>
@@ -580,7 +585,7 @@ export default function PRDetailPage() {
                       action: "request",
                       title: "Requested",
                       actionBy: approval.requestedByName || "Requester",
-                      actionAt: new Date(approval.requestedAt ?? "").toLocaleString(),
+                      actionAt: formatDateTimeIST(approval.requestedAt),
                     },
                   ];
 
@@ -601,7 +606,7 @@ export default function PRDetailPage() {
                         step: s.stepOrder,
                         action: acted.action, // approve | reject | return
                         actionBy: acted.actionByName || approverLabel,
-                        actionAt: new Date(acted.actionAt ?? "").toLocaleString(),
+                        actionAt: formatDateTimeIST(acted.actionAt),
                         comments: acted.comments || undefined,
                       });
                       return;
@@ -634,7 +639,7 @@ export default function PRDetailPage() {
               <div className="space-y-2">
                 <InfoField
                   label="Created"
-                  value={pr.createdAt ? new Date(pr.createdAt).toLocaleString() : "—"}
+                  value={formatDateTimeIST(pr.createdAt)}
                 />
                 <InfoField
                   label="Created By"

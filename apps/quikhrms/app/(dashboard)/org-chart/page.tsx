@@ -210,6 +210,13 @@ function Connector({ thick }: { thick?: boolean }) {
 export default function OrgChartPage() {
   const api = useApiClient();
   const qc = useQueryClient();
+  const { hasPermission, isLoading: permsLoading } = useDashboardConfig();
+  // People directory access — same gate as the rest of the app. Users without
+  // it may still view the Org Chart, but must not reach the Directory tab.
+  const canViewDirectory =
+    hasPermission("hrms.employee.read") ||
+    hasPermission("hrms.employee.read_team") ||
+    hasPermission("hrms.org.read");
   const [editMode, setEditMode] = useState(false);
   const [draggingId, setDraggingId] = useState<string | null>(null);
   const [dropTargetId, setDropTargetId] = useState<string | null>(null);
@@ -223,7 +230,16 @@ export default function OrgChartPage() {
     onError: (e: Error) => setDragError(e.message),
   });
 
-  const [topTab, setTopTab] = useState<"directory" | "orgchart">("directory");
+  const [topTab, setTopTab] = useState<"directory" | "orgchart">(() =>
+    (typeof window !== "undefined" && new URLSearchParams(window.location.search).get("tab") === "orgchart")
+      ? "orgchart"
+      : "directory",
+  );
+  // Once permissions load, lock users without directory access to the Org Chart.
+  useEffect(() => {
+    if (!permsLoading && !canViewDirectory) setTopTab("orgchart");
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [permsLoading, canViewDirectory]);
   const [directoryView, setDirectoryView] = useState<"list" | "grid">("list");
   const [statusFilter, setStatusFilter] = useState<string>("");
   const [exporting, setExporting] = useState(false);
@@ -593,6 +609,7 @@ export default function OrgChartPage() {
 
       {/* Top tabs — Directory vs Org Chart */}
       <div className="bg-white rounded-lg border border-gray-200 p-1 inline-flex items-center gap-1 mb-3 shadow-sm">
+        {canViewDirectory && (
         <button
           onClick={() => setTopTab("directory")}
           className={clsx(
@@ -608,6 +625,7 @@ export default function OrgChartPage() {
             {activeEmployees.length}
           </span>
         </button>
+        )}
         <button
           onClick={() => setTopTab("orgchart")}
           className={clsx(
@@ -722,7 +740,7 @@ export default function OrgChartPage() {
         </div>
       </div>
 
-      {topTab === "directory" ? (
+      {topTab === "directory" && canViewDirectory ? (
         <DirectoryView
           employees={activeEmployees}
           hasActiveFilter={hasActiveFilter}

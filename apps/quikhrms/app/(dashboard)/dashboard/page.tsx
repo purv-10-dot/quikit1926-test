@@ -54,8 +54,9 @@ export default function HRMSHomePage() {
             </DeferredSection>
           </div>
 
-          {/* Right column — sticks to the top on scroll so it stays in view. */}
-          <aside className="lg:col-span-4 space-y-4 lg:sticky lg:top-4 lg:self-start">
+          {/* Right column — sticks below the (sticky, translucent) top bar on
+              scroll so its content never slides under the frosted header. */}
+          <aside className="lg:col-span-4 space-y-4 lg:sticky lg:top-[72px] lg:self-start">
             <ProfileCardWidget />
             <AttendanceWidget />
             <DeferredSection>

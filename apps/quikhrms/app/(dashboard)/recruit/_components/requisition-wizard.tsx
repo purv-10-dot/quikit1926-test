@@ -251,6 +251,16 @@ export function RequisitionWizard({ form, setForm, isEdit, departments, pipeline
   const [weightDraft, setWeightDraft] = useState(7);
   const [generating, setGenerating] = useState(false);
 
+  // ETA to Fill is auto-calculated from today → Timeline to Close. Keep it in
+  // sync whenever the close date is present (covers editing older requisitions
+  // whose etaToFillDays was never stored, so the field isn't left blank).
+  useEffect(() => {
+    if (!form.closedDate) return;
+    const eta = Math.max(0, Math.ceil((new Date(form.closedDate + "T00:00:00").getTime() - Date.now()) / 86400000));
+    if (eta !== form.etaToFillDays) setForm((p) => ({ ...p, etaToFillDays: eta }));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [form.closedDate]);
+
   const empOpts: MSOption[] = employees.map((e) => ({
     value: e.id,
     label: (e.displayName?.trim() || `${e.firstName} ${e.lastName}`).trim(),
@@ -625,6 +635,15 @@ export function RequisitionWizard({ form, setForm, isEdit, departments, pipeline
                       }
                     }
                   }}
+                  // Commit a typed skill when leaving the field (e.g. clicking Save),
+                  // so a skill isn't silently lost if the user forgets to "+ Add".
+                  onBlur={() => {
+                    const s = skillDraft.trim();
+                    if (s && !form.skillWeights.some((x) => x.skill.toLowerCase() === s.toLowerCase())) {
+                      setForm((p) => ({ ...p, skillWeights: [...p.skillWeights, { skill: s, weight: weightDraft }] }));
+                      setSkillDraft("");
+                    }
+                  }}
                   placeholder="e.g., React, AWS, System Design"
                   className="flex-1 border border-gray-300 rounded-md px-2.5 py-1.5 text-xs focus:outline-none focus:ring-1 focus:ring-green-500" />
                 <div className="flex items-center gap-1">
@@ -788,6 +807,9 @@ function BulletListField({
           value={draft}
           onChange={(e) => setDraft(e.target.value)}
           onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); add(); } }}
+          // Commit typed-but-not-added text when leaving the field (e.g. clicking
+          // Next), so users don't silently lose an item they forgot to "+".
+          onBlur={add}
           placeholder={placeholder}
           className="flex-1 px-2.5 py-1.5 text-xs border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-green-500/20 focus:border-green-500"
         />

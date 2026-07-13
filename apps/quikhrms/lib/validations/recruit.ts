@@ -174,6 +174,8 @@ export const updateInterviewSchema = z.object({
   scheduledAt: z.string().optional().refine((v) => !v || new Date(v).getTime() > Date.now() - 60_000, {
     message: "Scheduled date/time cannot be in the past",
   }),
+  location: z.string().optional(),
+  meetingLink: z.string().optional(),
   candidateFeedback: z.string().optional(),
 });
 

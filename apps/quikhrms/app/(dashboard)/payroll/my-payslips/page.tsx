@@ -5,7 +5,7 @@ import Link from "next/link";
 import { useQuery } from "@tanstack/react-query";
 import { useApiClient } from "@/lib/hooks/use-api";
 import { Select } from "@/components/hrms/ui/select";
-import { Wallet, Download, FileText, TrendingUp, TrendingDown, Minus, Info, Loader2 } from "lucide-react";
+import { Wallet, Download, FileText, TrendingUp, TrendingDown, Minus, Info, Loader2, Eye } from "lucide-react";
 import { useToast } from "@/components/hrms/toast";
 import { SkeletonTable } from "@/components/hrms/skeleton";
 import { clsx } from "clsx";
@@ -139,6 +139,22 @@ function PayslipsTab() {
   // Routed through the api client so the dev auth headers actually get sent —
   // a plain <a href> can't carry them and the route returns UNAUTHORIZED.
   const [downloading, setDownloading] = useState<Set<string>>(new Set());
+  const [viewing, setViewing] = useState<Set<string>>(new Set());
+
+  const viewPdf = async (p: Payslip) => {
+    setViewing((s) => new Set(s).add(p.id));
+    try {
+      await api.view(`/api/v1/hrms/payroll/payslips/${p.id}/pdf`);
+    } catch (e) {
+      toast.error("Couldn't open payslip", (e as Error).message);
+    } finally {
+      setViewing((s) => {
+        const next = new Set(s);
+        next.delete(p.id);
+        return next;
+      });
+    }
+  };
 
   const downloadPdf = async (p: Payslip) => {
     setDownloading((s) => new Set(s).add(p.id));
@@ -212,7 +228,7 @@ function PayslipsTab() {
                 <th className="text-right py-2 px-3">Deductions</th>
                 <th className="text-right py-2 px-3">Net Pay</th>
                 <th className="text-left py-2 px-3">Status</th>
-                <th className="w-20" />
+                <th className="w-40" />
               </tr>
             </thead>
             <tbody>
@@ -233,16 +249,27 @@ function PayslipsTab() {
                       {p.status}
                     </span>
                   </td>
-                  <td className="py-2 px-3 text-right">
-                    <button
-                      type="button"
-                      onClick={() => downloadPdf(p)}
-                      disabled={downloading.has(p.id)}
-                      className="inline-flex items-center gap-1 px-2 py-1 text-xs bg-green-600 hover:bg-green-700 disabled:opacity-60 disabled:cursor-not-allowed text-white rounded"
-                    >
-                      {downloading.has(p.id) ? <Loader2 size={12} className="animate-spin" /> : <Download size={12} />}
-                      {downloading.has(p.id) ? "Downloading…" : "PDF"}
-                    </button>
+                  <td className="py-2 px-3">
+                    <div className="flex items-center justify-end gap-2">
+                      <button
+                        type="button"
+                        onClick={() => viewPdf(p)}
+                        disabled={viewing.has(p.id)}
+                        className="inline-flex items-center gap-1 px-2 py-1 text-xs border border-gray-200 text-gray-700 hover:bg-gray-50 disabled:opacity-60 disabled:cursor-not-allowed rounded"
+                      >
+                        {viewing.has(p.id) ? <Loader2 size={12} className="animate-spin" /> : <Eye size={12} />}
+                        View
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => downloadPdf(p)}
+                        disabled={downloading.has(p.id)}
+                        className="inline-flex items-center gap-1 px-2 py-1 text-xs bg-green-600 hover:bg-green-700 disabled:opacity-60 disabled:cursor-not-allowed text-white rounded"
+                      >
+                        {downloading.has(p.id) ? <Loader2 size={12} className="animate-spin" /> : <Download size={12} />}
+                        {downloading.has(p.id) ? "Downloading…" : "PDF"}
+                      </button>
+                    </div>
                   </td>
                 </tr>
               ))}

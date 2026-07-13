@@ -22,7 +22,7 @@
 
 import { useMemo, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
-import { ArrowLeft, Building2, CheckCircle2 } from "lucide-react";
+import { AlertTriangle, ArrowLeft, Building2, CheckCircle2, FileText } from "lucide-react";
 import { PageContainer, PageSkeleton } from "@/components/PageShell";
 import { useRFQ } from "@/hooks/use-approvals";
 
@@ -76,6 +76,13 @@ export default function ComparativeStatementDetailPage() {
   const [vendorShortlistId, setVendorShortlistId] = useState<string | null>(null);
   const [perLineSelection, setPerLineSelection] = useState<Record<string, string>>({});
   const [offeredQty, setOfferedQty] = useState<Record<string, Record<string, string>>>({});
+  // Non-L1 justification gate (MoM: mandatory reason when a vendor that
+  // isn't the lowest bid is selected). `justifyVendorId` is the vendor
+  // awaiting a reason; `shortlistReason` is the recorded justification
+  // for the current non-L1 shortlist.
+  const [justifyVendorId, setJustifyVendorId] = useState<string | null>(null);
+  const [justifyText, setJustifyText] = useState("");
+  const [shortlistReason, setShortlistReason] = useState<string | null>(null);
 
   const { quotedVendors, lineRows, vendorTotals, vendorLowestId } = useMemo(() => {
     const vendors: RfqVendor[] = Array.isArray(rfq?.vendors) ? (rfq.vendors as RfqVendor[]) : [];
@@ -154,6 +161,47 @@ export default function ComparativeStatementDetailPage() {
     return perLineSelection[lineKey] === vendorId;
   };
 
+  const lowestVendor =
+    quotedVendors.find((v) => v.id === vendorLowestId) ?? null;
+  const justifyVendor = justifyVendorId
+    ? quotedVendors.find((v) => v.id === justifyVendorId) ?? null
+    : null;
+
+  // Shortlist a vendor. Toggling off, or picking the lowest (L1) bid,
+  // is immediate; picking any non-L1 vendor first requires a business
+  // justification via the dialog below.
+  const chooseVendor = (vendorId: string) => {
+    if (vendorShortlistId === vendorId) {
+      setVendorShortlistId(null);
+      setShortlistReason(null);
+      setPerLineSelection({});
+      return;
+    }
+    if (vendorId !== vendorLowestId) {
+      setJustifyText("");
+      setJustifyVendorId(vendorId);
+      return;
+    }
+    setVendorShortlistId(vendorId);
+    setShortlistReason(null);
+    setPerLineSelection({});
+  };
+
+  const shortlistedVendor = vendorShortlistId
+    ? quotedVendors.find((v) => v.id === vendorShortlistId) ?? null
+    : null;
+
+  // Raise a PO for the shortlisted vendor — routes to the PO create
+  // drawer prefilled with this vendor + the RFQ's items at their quoted
+  // rates (same flow as the RFQ compare modal). Non-L1 selections carry
+  // their justification through so it lands on the PO.
+  const createPO = () => {
+    if (!vendorShortlistId) return;
+    const params = new URLSearchParams({ rfqId: id, vendorRowId: vendorShortlistId });
+    if (shortlistReason) params.set("nonL1Justification", shortlistReason);
+    router.push(`/purchase/orders?${params.toString()}`);
+  };
+
   return (
     <PageContainer>
       {/* Header */}
@@ -166,16 +214,41 @@ export default function ComparativeStatementDetailPage() {
         >
           <ArrowLeft className="w-5 h-5" />
         </button>
-        <div>
+        <div className="min-w-0">
           <h1 className="text-xl font-semibold text-gray-900">
             Comparative Statement{" "}
-            <span className="text-indigo-600 font-medium">
+            <span className="text-orange-600 font-medium">
               &mdash; Comparison Qty Wise
             </span>
           </h1>
           <p className="text-sm text-gray-500 mt-0.5">
             Select lowest quotes per item or shortlist a single vendor.
           </p>
+        </div>
+        {/* Create PO — enabled once a vendor is shortlisted; opens the PO
+            drawer prefilled with that vendor + its quoted rates. */}
+        <div className="ml-auto shrink-0 flex flex-col items-end gap-1">
+          <button
+            type="button"
+            onClick={createPO}
+            disabled={!vendorShortlistId}
+            title={
+              vendorShortlistId
+                ? "Create a PO for the shortlisted vendor"
+                : "Shortlist a vendor first"
+            }
+            className="inline-flex items-center gap-1.5 px-4 py-2 rounded-lg text-sm font-semibold text-white bg-gradient-to-b from-orange-500 to-orange-600 hover:from-orange-600 hover:to-orange-700 shadow-brand active:translate-y-[1px] transition-all disabled:opacity-40 disabled:cursor-not-allowed disabled:shadow-none"
+          >
+            <FileText className="w-4 h-4" /> Create PO
+          </button>
+          {shortlistedVendor && (
+            <span className="text-[11px] text-gray-500">
+              for{" "}
+              <span className="font-medium text-gray-700">
+                {shortlistedVendor.vendorName || shortlistedVendor.vendorId}
+              </span>
+            </span>
+          )}
         </div>
       </div>
 
@@ -230,10 +303,7 @@ export default function ComparativeStatementDetailPage() {
                   total={total}
                   isLowest={isLowest}
                   isShortlisted={isShortlisted}
-                  onSelect={() => {
-                    setVendorShortlistId((prev) => (prev === v.id ? null : v.id));
-                    setPerLineSelection({});
-                  }}
+                  onSelect={() => chooseVendor(v.id)}
                 />
               );
             })}
@@ -241,7 +311,28 @@ export default function ComparativeStatementDetailPage() {
         )}
       </div>
 
-      {/* Per-item rows */}
+      {/* Non-L1 justification banner */}
+      {vendorShortlistId && shortlistReason && (
+        <div className="mb-4 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 flex items-start gap-3">
+          <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
+          <div className="text-xs text-amber-800">
+            <span className="font-semibold">Non-L1 selection justified: </span>
+            {shortlistReason}
+          </div>
+        </div>
+      )}
+
+      {/* Item-wise comparison */}
+      <div className="flex items-center justify-between mb-3 mt-2">
+        <h2 className="text-sm font-semibold text-gray-900 flex items-center gap-2">
+          <span className="w-1 h-4 rounded-full bg-gradient-to-b from-orange-500 to-orange-600" />
+          Item-wise Comparison
+        </h2>
+        <span className="text-[11px] text-gray-500">
+          {lineRows.length} {lineRows.length === 1 ? "item" : "items"} · lowest
+          rate per item highlighted
+        </span>
+      </div>
       <div className="space-y-3">
         {lineRows.map((row) => (
           <div
@@ -279,12 +370,33 @@ export default function ComparativeStatementDetailPage() {
                 )}
                 {row.quotes.map((q) => {
                   const v = quotedVendors.find((x) => x.id === q.vendorId);
-                  if (!v || q.rate == null || q.amount == null) return null;
+                  if (!v) return null;
+                  const name = v.vendorName || v.vendorId || "Vendor";
+                  // Vendor didn't quote THIS line — show a muted "Not
+                  // quoted" card so every vendor stays visible and it's
+                  // obvious who skipped the line (rather than hiding it).
+                  if (q.rate == null || q.amount == null) {
+                    return (
+                      <div
+                        key={q.vendorId}
+                        className="rounded-xl border border-dashed border-gray-200 bg-gray-50/60 overflow-hidden"
+                      >
+                        <div className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-gray-500 bg-gray-100">
+                          <Building2 className="w-3.5 h-3.5 shrink-0" />
+                          <span className="truncate">{name}</span>
+                        </div>
+                        <div className="px-3 py-4 text-xs text-gray-400 italic text-center">
+                          Not quoted for this item
+                        </div>
+                      </div>
+                    );
+                  }
                   const isLowest = q.amount === row.lowestAmount;
                   const selected = isLineSelected(row.key, v.id);
                   return (
                     <VendorLineCard
                       key={q.vendorId}
+                      name={name}
                       amount={q.amount}
                       rate={q.rate}
                       uomCode={row.uomCode}
@@ -309,6 +421,83 @@ export default function ComparativeStatementDetailPage() {
           </div>
         ))}
       </div>
+
+      {/* Non-L1 justification gate — selecting a vendor that isn't the
+          lowest bid requires a business reason first. */}
+      {justifyVendor && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md overflow-hidden">
+            <div className="flex items-start gap-3 px-5 py-4 border-b border-gray-100">
+              <div className="w-9 h-9 rounded-lg bg-amber-50 text-amber-600 flex items-center justify-center shrink-0">
+                <AlertTriangle className="w-4.5 h-4.5" />
+              </div>
+              <div className="min-w-0">
+                <h3 className="text-sm font-semibold text-gray-900">
+                  Justify non-L1 selection
+                </h3>
+                <p className="text-xs text-gray-500 mt-0.5">
+                  <span className="font-medium text-gray-700">
+                    {justifyVendor.vendorName || justifyVendor.vendorId || "This vendor"}
+                  </span>{" "}
+                  isn&apos;t the lowest bid
+                  {lowestVendor
+                    ? ` (L1 — ${lowestVendor.vendorName || lowestVendor.vendorId || "lowest bidder"})`
+                    : ""}
+                  . A business justification is required to select it.
+                </p>
+              </div>
+            </div>
+            <div className="px-5 py-4">
+              <label className="block text-xs font-semibold text-gray-700 mb-1.5">
+                Business justification <span className="text-rose-500">*</span>
+              </label>
+              <textarea
+                value={justifyText}
+                onChange={(e) => setJustifyText(e.target.value)}
+                rows={4}
+                autoFocus
+                placeholder="e.g. L1 vendor's delivery lead time exceeds the site schedule; L2 can deliver within the required window."
+                className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-orange-500 resize-none"
+              />
+              <p
+                className={`text-[11px] tabular-nums mt-1 text-right ${
+                  justifyText.trim().length < 50
+                    ? "text-rose-500"
+                    : "text-emerald-600"
+                }`}
+              >
+                {justifyText.trim().length}/50 min
+              </p>
+            </div>
+            <div className="px-5 py-3 bg-gray-50 border-t border-gray-100 flex justify-end gap-2">
+              <button
+                type="button"
+                onClick={() => setJustifyVendorId(null)}
+                className="px-4 py-1.5 rounded-lg text-sm font-medium text-gray-700 bg-white border border-gray-200 hover:bg-gray-100 transition-colors"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                disabled={justifyText.trim().length < 50}
+                onClick={() => {
+                  const target = justifyVendorId;
+                  const reason = justifyText.trim();
+                  setJustifyVendorId(null);
+                  if (target) {
+                    setVendorShortlistId(target);
+                    setShortlistReason(reason);
+                    setPerLineSelection({});
+                  }
+                }}
+                className="px-4 py-1.5 rounded-lg text-sm font-semibold text-white bg-orange-600 hover:bg-orange-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                Confirm selection
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </PageContainer>
   );
 }
@@ -338,7 +527,7 @@ function VendorSummaryCard({
     <div
       className={
         isShortlisted
-          ? "rounded-xl border-2 border-indigo-500 bg-white shadow-lg shadow-indigo-200/50 overflow-hidden"
+          ? "rounded-xl border-2 border-orange-500 bg-white shadow-lg shadow-orange-200/50 overflow-hidden"
           : `rounded-xl border border-gray-200 bg-white ${cardShadow} overflow-hidden hover:shadow-md transition-shadow`
       }
     >
@@ -367,7 +556,7 @@ function VendorSummaryCard({
             onClick={onSelect}
             className={
               isShortlisted
-                ? "inline-flex items-center gap-1 text-[11px] font-semibold px-2.5 py-1 rounded-md bg-indigo-600 text-white shadow-sm"
+                ? "inline-flex items-center gap-1 text-[11px] font-semibold px-2.5 py-1 rounded-md bg-orange-600 text-white shadow-sm"
                 : isLowest
                   ? "inline-flex items-center gap-1 text-[11px] font-semibold px-2.5 py-1 rounded-md bg-gradient-to-r from-rose-500 to-orange-500 text-white shadow-sm hover:shadow-md hover:shadow-rose-200 transition-shadow"
                   : "inline-flex items-center gap-1 text-[11px] font-semibold px-2.5 py-1 rounded-md bg-gradient-to-r from-emerald-500 to-emerald-600 text-white shadow-sm hover:shadow-md transition-shadow"
@@ -383,6 +572,7 @@ function VendorSummaryCard({
 }
 
 function VendorLineCard({
+  name,
   amount,
   rate,
   uomCode,
@@ -392,6 +582,7 @@ function VendorLineCard({
   isSelected,
   onSelect,
 }: {
+  name: string;
   amount: number;
   rate: number;
   uomCode: string;
@@ -411,21 +602,25 @@ function VendorLineCard({
     <div
       className={
         isSelected
-          ? "rounded-xl border-2 border-indigo-500 bg-white shadow-lg shadow-indigo-200/50 overflow-hidden"
+          ? "rounded-xl border-2 border-orange-500 bg-white shadow-lg shadow-orange-200/50 overflow-hidden"
           : `rounded-xl border border-gray-200 bg-white ${cardShadow} overflow-hidden hover:shadow-md transition-shadow`
       }
     >
+      {/* Header shows WHICH vendor this card belongs to, plus SELECT. */}
       <div
-        className={`flex items-center justify-between gap-2 px-3 py-1.5 text-xs font-bold tabular-nums ${headerCls}`}
+        className={`flex items-center justify-between gap-2 px-3 py-1.5 text-xs font-semibold ${headerCls}`}
       >
-        <span>{fmtINR(amount)}</span>
+        <span className="inline-flex items-center gap-1.5 truncate">
+          <Building2 className="w-3.5 h-3.5 shrink-0" />
+          <span className="truncate">{name}</span>
+        </span>
         <button
           type="button"
           onClick={onSelect}
           className={
             isSelected
-              ? "inline-flex items-center gap-1 text-[10px] font-semibold px-2 py-0.5 rounded bg-indigo-600 text-white"
-              : "inline-flex items-center gap-1 text-[10px] font-semibold px-2 py-0.5 rounded bg-white/90 text-gray-800 hover:bg-white"
+              ? "inline-flex items-center gap-1 text-[10px] font-semibold px-2 py-0.5 rounded bg-orange-600 text-white shrink-0"
+              : "inline-flex items-center gap-1 text-[10px] font-semibold px-2 py-0.5 rounded bg-white/90 text-gray-800 hover:bg-white shrink-0"
           }
         >
           {isSelected && <CheckCircle2 className="w-3 h-3" />}
@@ -433,6 +628,18 @@ function VendorLineCard({
         </button>
       </div>
       <div className="px-3 py-2 text-xs space-y-1.5">
+        <div className="flex items-center justify-between gap-2">
+          <span className="text-gray-500">Amount</span>
+          <span
+            className={
+              isLowest
+                ? "font-bold text-rose-700 tabular-nums"
+                : "font-bold text-gray-900 tabular-nums"
+            }
+          >
+            {fmtINR(amount)}
+          </span>
+        </div>
         <div className="flex items-center justify-between gap-2">
           <span className="text-gray-500">Rate / {uomCode || "UNIT"}</span>
           <span className="font-semibold text-gray-800 tabular-nums">
@@ -449,7 +656,7 @@ function VendorLineCard({
             step="0.01"
             value={offeredQty}
             onChange={(e) => onOfferedQtyChange(e.target.value)}
-            className="w-20 px-1.5 py-0.5 rounded border border-gray-200 text-xs text-right tabular-nums focus:outline-none focus:ring-1 focus:ring-indigo-500"
+            className="w-20 px-1.5 py-0.5 rounded border border-gray-200 text-xs text-right tabular-nums focus:outline-none focus:ring-1 focus:ring-orange-500"
           />
         </div>
       </div>

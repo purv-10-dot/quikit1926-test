@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useApiClient } from "@/lib/hooks/use-api";
-import { Receipt, Send, Check, X, FileText, AlertTriangle, Pencil, Trash2 } from "lucide-react";
+import { Receipt, Send, Check, X, FileText, AlertTriangle, Pencil, Trash2, ArrowLeft } from "lucide-react";
 import { clsx } from "clsx";
 import { SkeletonLine } from "@/components/hrms/skeleton";
 import { Modal } from "@/components/hrms/modal";
@@ -125,6 +125,17 @@ export default function ExpenseDetailPage({ params }: { params: { id: string } }
 
   return (
     <div className="max-w-4xl">
+      <button
+        type="button"
+        onClick={() => {
+          if (typeof window !== "undefined" && window.history.length > 1) router.back();
+          else router.push("/expenses");
+        }}
+        aria-label="Go back"
+        className="mb-4 inline-flex items-center gap-1.5 px-3 py-1.5 text-[14px] font-semibold text-green-700 bg-green-600/10 hover:bg-green-600 hover:text-white rounded-full transition-colors"
+      >
+        <ArrowLeft size={14} /> Back
+      </button>
       <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-4 mb-4">
         <div className="flex items-start justify-between mb-4">
           <div>

@@ -115,9 +115,9 @@ export function RecentlyAssigned() {
   // `people` rows render an avatar stack; count-only rows (tasks are yours, no
   // requester) keep the number badge.
   const items = [
-    { label: "Open tasks", count: taskCount, people: null as Person[] | null, href: "/tasks", icon: <CheckSquare size={14} /> },
-    { label: "Leave approvals", count: leavePeople.length, people: leavePeople, href: "/leaves", icon: <Palmtree size={14} /> },
-    { label: "Expense approvals", count: expensePeople.length, people: expensePeople, href: "/expenses", icon: <Receipt size={14} /> },
+    { label: "Open tasks", count: taskCount, people: null as Person[] | null, href: "/tasks?status=Open,InProgress", icon: <CheckSquare size={14} /> },
+    { label: "Leave approvals", count: leavePeople.length, people: leavePeople, href: "/leaves/team-leaves", icon: <Palmtree size={14} /> },
+    { label: "Expense approvals", count: expensePeople.length, people: expensePeople, href: "/expenses?tab=approvals", icon: <Receipt size={14} /> },
   ].filter((i) => i.count > 0);
 
   return (

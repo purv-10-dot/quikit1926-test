@@ -21,6 +21,7 @@ import {
   PageSkeleton,
 } from "@/components/PageShell";
 import { ApprovalActionBar } from "@/components/ApprovalActionBar";
+import { formatDateTimeIST } from "@/lib/format/datetime";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { useQueryClient } from "@tanstack/react-query";
 import { useHireInVerification } from "@/hooks/use-equipment";
@@ -309,7 +310,7 @@ export default function HireInVerificationDetailPage() {
                       action: "request",
                       title: "Requested",
                       actionBy: approval.requestedByName || "Requester",
-                      actionAt: new Date(approval.requestedAt ?? "").toLocaleString(),
+                      actionAt: formatDateTimeIST(approval.requestedAt),
                     },
                   ];
 
@@ -326,7 +327,7 @@ export default function HireInVerificationDetailPage() {
                         step: s.stepOrder,
                         action: acted.action,
                         actionBy: acted.actionByName || approverLabel,
-                        actionAt: new Date(acted.actionAt ?? "").toLocaleString(),
+                        actionAt: formatDateTimeIST(acted.actionAt),
                         comments: acted.comments || undefined,
                       });
                       return;
@@ -355,12 +356,12 @@ export default function HireInVerificationDetailPage() {
               <div className="space-y-3">
                 <InfoField
                   label="Created"
-                  value={v.createdAt ? new Date(v.createdAt).toLocaleString() : "—"}
+                  value={formatDateTimeIST(v.createdAt)}
                 />
                 <InfoField label="Created By" value={userName(v.createdBy)} />
                 <InfoField
                   label="Updated"
-                  value={v.updatedAt ? new Date(v.updatedAt).toLocaleString() : "—"}
+                  value={formatDateTimeIST(v.updatedAt)}
                 />
                 <InfoField label="Updated By" value={userName(v.updatedBy)} />
               </div>

@@ -207,6 +207,12 @@ function MiniCalendar({
   const [mounted, setMounted] = useState(false);
   useEffect(() => setMounted(true), []);
   const today = mounted ? new Date() : null;
+
+  // Month/year picker popover (the "July 2026 ▾" label opens it).
+  const [pickerOpen, setPickerOpen] = useState(false);
+  const [pickerYear, setPickerYear] = useState(cursor.getFullYear());
+  const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+  const openPicker = () => { setPickerYear(cursor.getFullYear()); setPickerOpen(true); };
   const isCurrentMonth = !!today && today.getMonth() === cursor.getMonth() && today.getFullYear() === cursor.getFullYear();
   const firstDay = new Date(cursor.getFullYear(), cursor.getMonth(), 1).getDay();
   const daysInMonth = new Date(cursor.getFullYear(), cursor.getMonth() + 1, 0).getDate();
@@ -218,9 +224,55 @@ function MiniCalendar({
   return (
     <div className="rounded-2xl ring-1 ring-gray-100 bg-white p-4">
       <div className="flex items-center justify-between mb-4">
-        <button className="inline-flex items-center gap-1.5 text-[13px] font-semibold text-gray-900 hover:text-green-600 transition">
-          {monthLabel} <ChevronDown size={16} className="text-gray-500" />
-        </button>
+        <div className="relative">
+          <button
+            type="button"
+            onClick={openPicker}
+            className="inline-flex items-center gap-1.5 text-[13px] font-semibold text-gray-900 hover:text-green-600 transition"
+          >
+            {monthLabel} <ChevronDown size={16} className={clsx("text-gray-500 transition-transform", pickerOpen && "rotate-180")} />
+          </button>
+          {pickerOpen && (
+            <>
+              <div className="fixed inset-0 z-30" onClick={() => setPickerOpen(false)} />
+              <div className="absolute z-40 top-full left-0 mt-2 w-60 rounded-xl bg-white ring-1 ring-gray-200 shadow-xl p-3">
+                <div className="flex items-center justify-between mb-2">
+                  <button
+                    type="button" aria-label="Previous year" onClick={() => setPickerYear((y) => y - 1)}
+                    className="w-7 h-7 rounded-lg ring-1 ring-gray-200 hover:bg-gray-50 flex items-center justify-center text-gray-600"
+                  >
+                    <ChevronLeft size={12} />
+                  </button>
+                  <span className="text-[13px] font-semibold text-gray-900">{pickerYear}</span>
+                  <button
+                    type="button" aria-label="Next year" onClick={() => setPickerYear((y) => y + 1)}
+                    className="w-7 h-7 rounded-lg ring-1 ring-gray-200 hover:bg-gray-50 flex items-center justify-center text-gray-600"
+                  >
+                    <ChevronRight size={12} />
+                  </button>
+                </div>
+                <div className="grid grid-cols-3 gap-1.5">
+                  {MONTHS.map((m, i) => {
+                    const active = i === cursor.getMonth() && pickerYear === cursor.getFullYear();
+                    return (
+                      <button
+                        key={m}
+                        type="button"
+                        onClick={() => { setCursor(new Date(pickerYear, i, 1)); setPickerOpen(false); }}
+                        className={clsx(
+                          "px-2 py-1.5 rounded-lg text-xs font-medium transition",
+                          active ? "bg-green-600 text-white" : "text-gray-700 hover:bg-gray-100",
+                        )}
+                      >
+                        {m}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            </>
+          )}
+        </div>
         <div className="flex items-center gap-1.5">
           <button
             onClick={() => setCursor(new Date(cursor.getFullYear(), cursor.getMonth() - 1, 1))}
@@ -595,7 +647,7 @@ export function HomeStatRow() {
       <StatCard
         iconBg="bg-sky-50" iconColor="text-sky-500" Icon={Plane}
         label="Leave" value={onLeave} caption={onLeave === 0 ? "People on leave" : onLeave === 1 ? "Person on leave" : "People on leave"}
-        href="/leaves"
+        href="/leaves/team-leaves"
       />
       <StatCard
         iconBg="bg-emerald-50" iconColor="text-emerald-500" Icon={Home}
@@ -610,7 +662,7 @@ export function HomeStatRow() {
       <StatCard
         iconBg="bg-pink-50" iconColor="text-pink-500" Icon={Cake}
         label="Birthdays" value={birthdayValue} caption={birthdayCaption}
-        href="/org-chart"
+        href="/celebrations?tab=birthdays"
       />
     </div>
   );

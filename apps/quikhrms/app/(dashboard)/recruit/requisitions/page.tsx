@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useApiClient } from "@/lib/hooks/use-api";
+import { useDashboardConfig } from "@/lib/hooks/use-dashboard-config";
 import { useToast } from "@/components/hrms/toast";
 import { Modal } from "@/components/hrms/modal";
 import { Select } from "@/components/hrms/ui/select";
@@ -119,6 +120,10 @@ export default function RequisitionsPage() {
   const api = useApiClient();
   const qc = useQueryClient();
   const toast = useToast();
+  const { hasPermission } = useDashboardConfig();
+  // Creating / editing / deleting requisitions requires recruit write (also
+  // enforced by the API). Viewers reach this page via the dashboard "View All".
+  const canManage = hasPermission("hrms.recruit.write");
   const [showCreate, setShowCreate] = useState(false);
   const [editId, setEditId] = useState<string | null>(null);
   const [viewReq, setViewReq] = useState<ReqItem | null>(null);
@@ -207,10 +212,12 @@ export default function RequisitionsPage() {
               );
             })}
           </div>
-          <button onClick={() => { setForm(emptyForm); setEditId(null); setShowCreate(true); }}
-            className="inline-flex items-center gap-1.5 h-10 px-3 rounded-[14px] bg-green-600 hover:bg-green-700 text-white text-xs font-medium shrink-0 transition">
-            <Plus size={13} /> New requisition
-          </button>
+          {canManage && (
+            <button onClick={() => { setForm(emptyForm); setEditId(null); setShowCreate(true); }}
+              className="inline-flex items-center gap-1.5 h-10 px-3 rounded-[14px] bg-green-600 hover:bg-green-700 text-white text-xs font-medium shrink-0 transition">
+              <Plus size={13} /> New requisition
+            </button>
+          )}
         </div>
       </div>
 
@@ -253,7 +260,12 @@ export default function RequisitionsPage() {
                           </span>
                         )}
                         {toClose != null && (
-                          <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-semibold bg-green-50 text-green-700 ring-1 ring-green-200">
+                          <span className={clsx(
+                            "inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-semibold ring-1",
+                            toClose >= 0
+                              ? "bg-green-50 text-green-700 ring-green-200"
+                              : "bg-red-50 text-red-700 ring-red-200",
+                          )}>
                             {toClose >= 0 ? `${toClose}d to close` : `${Math.abs(toClose)}d overdue`}
                           </span>
                         )}
@@ -273,6 +285,7 @@ export default function RequisitionsPage() {
                   <td className="px-4 py-2.5 text-right">
                     <div className="inline-flex items-center gap-1.5 justify-end">
                       <ActionBtn title="View" variant="slate" icon={<Eye size={12} />} onClick={() => setViewReq(r)} />
+                      {canManage && (<>
                       {r.status !== "ReqCancelled" && r.status !== "ReqClosed" && (
                         <ActionBtn title="Edit" variant="green" icon={<Pencil size={12} />} onClick={() => {
                           setForm(reqToForm(r));
@@ -300,6 +313,7 @@ export default function RequisitionsPage() {
                         <ActionBtn title="Cancel" variant="red" icon={<Trash2 size={12} />}
                           onClick={() => setCancelTarget(r)} />
                       )}
+                      </>)}
                     </div>
                   </td>
                 </tr>

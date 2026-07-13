@@ -22,6 +22,7 @@ import {
   PageSkeleton,
 } from "@/components/PageShell";
 import { ApprovalActionBar } from "@/components/ApprovalActionBar";
+import { formatDateTimeIST } from "@/lib/format/datetime";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { useQueryClient } from "@tanstack/react-query";
 import { useEquipmentLog } from "@/hooks/use-equipment";
@@ -329,9 +330,7 @@ export default function EquipmentLogDetailPage() {
                       action: "request",
                       title: "Requested",
                       actionBy: approval.requestedByName || "Requester",
-                      actionAt: new Date(
-                        approval.requestedAt ?? "",
-                      ).toLocaleString(),
+                      actionAt: formatDateTimeIST(approval.requestedAt),
                     },
                   ];
 
@@ -351,9 +350,7 @@ export default function EquipmentLogDetailPage() {
                         step: s.stepOrder,
                         action: acted.action, // approve | reject | return
                         actionBy: acted.actionByName || approverLabel,
-                        actionAt: new Date(
-                          acted.actionAt ?? "",
-                        ).toLocaleString(),
+                        actionAt: formatDateTimeIST(acted.actionAt),
                         comments: acted.comments || undefined,
                       });
                       return;
@@ -384,12 +381,12 @@ export default function EquipmentLogDetailPage() {
               <div className="space-y-3">
                 <InfoField
                   label="Created"
-                  value={log.createdAt ? new Date(log.createdAt).toLocaleString() : "—"}
+                  value={formatDateTimeIST(log.createdAt)}
                 />
                 <InfoField label="Created By" value={userName(log.createdBy)} />
                 <InfoField
                   label="Updated"
-                  value={log.updatedAt ? new Date(log.updatedAt).toLocaleString() : "—"}
+                  value={formatDateTimeIST(log.updatedAt)}
                 />
                 <InfoField label="Updated By" value={userName(log.updatedBy)} />
               </div>

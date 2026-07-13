@@ -88,6 +88,8 @@ export const PATCH = withAuth(async (req: NextRequest, { orgId, userId }, params
       data: {
         ...(data.status && { status: data.status }),
         ...(data.scheduledAt && { scheduledAt: new Date(data.scheduledAt) }),
+        ...(data.location !== undefined && { location: data.location }),
+        ...(data.meetingLink !== undefined && { meetingLink: data.meetingLink }),
         ...(data.candidateFeedback && { candidateFeedback: data.candidateFeedback }),
         updatedBy: userId,
       },

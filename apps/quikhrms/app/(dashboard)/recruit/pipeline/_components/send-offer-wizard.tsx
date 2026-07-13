@@ -124,11 +124,23 @@ export function SendOfferWizard({ app, onClose, onSent }: { app: SendOfferApp; o
   // Prefill any saved wizard meta when editing an existing offer.
   const { data: existingOfferRes } = useQuery({
     queryKey: ["offer-detail", app.id],
-    queryFn: () => api.get<{ offeredComponents?: Record<string, unknown> | null }>(`/api/v1/hrms/recruit/offers/${app.id}`),
+    queryFn: () => api.get<{
+      offeredComponents?: Record<string, unknown> | null;
+      joiningBonus?: string | number | null;
+      relocationBonus?: string | number | null;
+      expiresAt?: string | null;
+    }>(`/api/v1/hrms/recruit/offers/${app.id}`),
     enabled: isEdit,
   });
   useEffect(() => {
-    const meta = existingOfferRes?.data?.offeredComponents as Record<string, unknown> | null | undefined;
+    const offer = existingOfferRes?.data;
+    if (!offer) return;
+    // Seed the top-level offer columns so editing shows the saved values.
+    if (offer.joiningBonus != null) setJoiningBonus(Number(offer.joiningBonus) || 0);
+    if (offer.relocationBonus != null) setRelocationBonus(Number(offer.relocationBonus) || 0);
+    if (offer.expiresAt) setExpiresAt(new Date(offer.expiresAt).toISOString().slice(0, 10));
+
+    const meta = offer.offeredComponents as Record<string, unknown> | null | undefined;
     if (!meta) return;
     if (typeof meta.employmentType === "string") setEmploymentType(meta.employmentType);
     if (typeof meta.compensationType === "string") setCompensationType(meta.compensationType);

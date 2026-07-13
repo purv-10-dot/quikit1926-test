@@ -209,7 +209,7 @@ export interface ClaimRequester {
 export async function claimsAwaitingApprover(
   orgId: string,
   opts: { callerEmployeeId: string | null; roles: string[]; isSuper: boolean },
-): Promise<{ id: string; status: string; totalAmount: number; requester: ClaimRequester | null }[]> {
+): Promise<{ id: string; status: string; totalAmount: number; currency: string; title: string; category: string; expenseDate: Date | null; requester: ClaimRequester | null }[]> {
   const claims = await prisma.expenseClaim.findMany({
     where: { orgId, deletedAt: null, status: { in: [...ACTIONABLE_CLAIM_STATUSES] as never } },
     orderBy: { createdAt: "desc" },
@@ -217,6 +217,10 @@ export async function claimsAwaitingApprover(
       id: true,
       status: true,
       totalAmount: true,
+      currency: true,
+      title: true,
+      category: true,
+      expenseDate: true,
       policySnapshot: true,
       policy: { select: { approvalChain: true } },
       employee: {
@@ -254,6 +258,10 @@ export async function claimsAwaitingApprover(
       id: c.id,
       status: c.status,
       totalAmount: Number(c.totalAmount),
+      currency: c.currency,
+      title: c.title,
+      category: c.category,
+      expenseDate: c.expenseDate,
       requester: c.employee
         ? {
             id: c.employee.id,

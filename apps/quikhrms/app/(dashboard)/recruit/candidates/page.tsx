@@ -287,7 +287,6 @@ export default function CandidatesPage() {
                 <th className="text-left px-4 py-2.5 text-[11px] font-semibold text-gray-500 uppercase tracking-[0.04em]">Current</th>
                 <th className="text-left px-4 py-2.5 text-[11px] font-semibold text-gray-500 uppercase tracking-[0.04em]">Experience</th>
                 <th className="text-left px-4 py-2.5 text-[11px] font-semibold text-gray-500 uppercase tracking-[0.04em]">Source</th>
-                <th className="text-center px-4 py-2.5 text-[11px] font-semibold text-gray-500 uppercase tracking-[0.04em]">Apps</th>
                 <th className="text-left px-4 py-2.5 text-[11px] font-semibold text-gray-500 uppercase tracking-[0.04em]">Status</th>
                 <th className="text-right px-4 py-2.5 text-[11px] font-semibold text-gray-500 uppercase tracking-[0.04em]">Actions</th>
               </tr>
@@ -342,7 +341,6 @@ export default function CandidatesPage() {
                     {c.totalExperience ? `${Math.floor(c.totalExperience / 12)}y ${c.totalExperience % 12}m` : "—"}
                   </td>
                   <td className="px-4 py-2.5 text-xs text-gray-700">{c.source.replace("Cand", "")}</td>
-                  <td className="px-4 py-2.5 text-xs text-gray-700 text-center">{c._count.applications}</td>
                   <td className="px-4 py-2.5">
                     <StatusCell status={c.status} stage={c.applications[0]?.currentStage ?? null} />
                   </td>
