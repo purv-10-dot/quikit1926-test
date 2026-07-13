@@ -202,15 +202,17 @@ describe("GET /api/store/item-stock-locations", () => {
 
   it("returns per-location balances scoped to the org", async () => {
     setContext(makeAdminCtx());
-    db.cnLocation.findMany
-      .mockResolvedValueOnce([
-        { id: "l1", code: "WH1", name: "Warehouse 1", type: "warehouse", projectId: "p1", itemQtyByItemId: {} },
-      ])
-      .mockResolvedValueOnce([
-        { id: "l1", code: "WH1", name: "Warehouse 1", type: "warehouse", projectId: "p1" },
-      ]);
+    db.cnLocation.findMany.mockResolvedValueOnce([
+      { id: "l1", code: "WH1", name: "Warehouse 1", type: "warehouse", projectId: "p1", itemQtyByItemId: {} },
+    ]);
     db.cnStockBalance.findMany.mockResolvedValue([
       { locationId: "l1", projectId: "p1", quantity: 7 },
+    ]);
+    db.cnLocation.findMany.mockResolvedValueOnce([
+      { id: "l1", code: "WH1", name: "Warehouse 1", type: "warehouse", projectId: "p1" },
+    ]);
+    db.cnProject.findMany.mockResolvedValueOnce([
+      { id: "p1", code: "PRJ-001", name: "Highway Project" },
     ]);
     const res = await ITEM_STOCK_LOCATIONS(buildGET("/api/store/item-stock-locations", "itemId=i1"));
     expect(res.status).toBe(200);
@@ -218,6 +220,8 @@ describe("GET /api/store/item-stock-locations", () => {
     expect(body.itemId).toBe("i1");
     expect(body.total).toBe(7);
     expect(body.locations[0].locationId).toBe("l1");
+    expect(body.locations[0].projectCode).toBe("PRJ-001");
+    expect(body.locations[0].projectName).toBe("Highway Project");
     // master-locations query is org-scoped
     expect(db.cnLocation.findMany.mock.calls[0][0].where.orgId).toBe(TEST_TENANT);
     expect(db.cnStockBalance.findMany.mock.calls[0][0].where.orgId).toBe(TEST_TENANT);

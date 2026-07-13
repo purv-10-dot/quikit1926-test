@@ -284,7 +284,13 @@ export interface CreateItemInput {
 export async function createItem(input: CreateItemInput): Promise<ItemRecord> {
   const record = await db.$transaction(async (tx) => {
     const category = (input.category ?? input.groupName ?? "").trim();
-    const groupId = await ensureDefaultItemGroup(tx, input.orgId, input.createdBy);
+    // Assign the item to the group the user actually picked. Falling back to
+    // the default "Others" group only when no category was supplied. (Before,
+    // this always used the default group, so every item landed under "Others"
+    // and the grouped material picker showed 0 materials in every real group.)
+    const groupId = category
+      ? await ensureItemGroup(tx, input.orgId, category, input.createdBy)
+      : await ensureDefaultItemGroup(tx, input.orgId, input.createdBy);
 
     const requestedIds: string[] = [];
     if (Array.isArray(input.uomIds) && input.uomIds.length) {
@@ -412,7 +418,13 @@ export async function updateItem(
       data.description = patch.description;
 
     const category = patch.category ?? patch.groupName;
-    if (category !== undefined) data.category = String(category).trim() || null;
+    if (category !== undefined) {
+      const clean = String(category).trim();
+      data.category = clean || null;
+      // Keep the groupId FK in sync with the chosen category so the item moves
+      // into the right bucket in the grouped material picker.
+      if (clean) data.groupId = await ensureItemGroup(tx, orgId, clean, patch.updatedBy);
+    }
 
     const requestedIds: string[] = [];
     if (Array.isArray(patch.uomIds)) {

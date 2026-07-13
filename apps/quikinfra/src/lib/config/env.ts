@@ -15,7 +15,7 @@
  *   - Production mode is strict: `NEXTAUTH_SECRET` and `DATABASE_URL`
  *     are REQUIRED.
  *
- * Storage config is NOT validated here. File uploads read AWS_* directly in
+ * Storage config is NOT validated here. File uploads read GCS_* directly in
  * the storage layer (src/lib/storage) — same convention as quiktrack.
  *
  * Importing this module has a side effect (validation). That's intentional —

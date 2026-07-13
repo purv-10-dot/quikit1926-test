@@ -20,6 +20,7 @@ function enrichWO(
 ) {
   const lines = (row.lines ?? []).map((l) => ({
     id: l.id,
+    lineType: l.lineType ?? "boq",
     boqNo: l.boqItemId ?? "",
     boqItemId: l.boqItemId ?? "",
     description: l.description ?? "",
@@ -28,6 +29,10 @@ function enrichWO(
     quantity: l.quantity?.toString?.() ?? "0",
     rate: l.negotiatedRate?.toString?.() ?? "0",
     amount: l.amount?.toString?.() ?? "0",
+    lineDate: l.lineDate?.toISOString?.().slice(0, 10) ?? "",
+    activityName: l.activityName ?? "",
+    workCategoryId: l.workCategoryId ?? "",
+    labourCounts: (l as { labourCounts?: unknown }).labourCounts ?? [],
   }));
   return {
     id: row.id,
@@ -119,8 +124,25 @@ export async function GET(
     rowApprovedBy,
   ]);
 
+  // Progress: quantity recorded against this WO through APPROVED DPRs
+  // (CnDPRWorkItem.woId) over the WO's total scoped qty (sum of line
+  // quantities). Mirrors the list route so the detail card fills as
+  // site work is reported instead of showing a static 0%.
+  const scopeQty = (row.lines ?? []).reduce(
+    (sum, l) => sum + Number(l.quantity ?? 0),
+    0,
+  );
+  const dprItems = await db.cnDPRWorkItem.findMany({
+    where: { woId: row.id, dpr: { orgId: ctx.orgId, status: "approved" } },
+    select: { todayQty: true },
+  });
+  const doneQty = dprItems.reduce((sum, it) => sum + Number(it.todayQty ?? 0), 0);
+  const progressPct =
+    scopeQty > 0 ? Math.min(100, Math.round((doneQty / scopeQty) * 100)) : 0;
+
   return NextResponse.json({
     ...enrichWO(row, row.project, row.contractor),
+    progressPct,
     approval,
     createdByName: auditNames.get(row.createdBy) ?? row.createdBy,
     updatedByName: auditNames.get(row.updatedBy) ?? row.updatedBy,
@@ -183,8 +205,14 @@ async function handleUpdate(req: NextRequest, id: string) {
     description?: string | null;
     quantity?: number | string | null;
     uomId?: string | null;
+    uomCode?: string | null;
     rate?: number | string | null;
     amount?: number | string | null;
+    lineType?: string | null;
+    lineDate?: string | null;
+    activityName?: string | null;
+    workCategoryId?: string | null;
+    labourCounts?: { type: string; count: number }[] | null;
   }> | null = null;
   const bi = safe.boqItems;
   if (Array.isArray(bi)) {
@@ -203,17 +231,25 @@ async function handleUpdate(req: NextRequest, id: string) {
       data: tenantUpdate(ctx, data),
     });
     if (boqItems) {
+      // Replace all lines wholesale (labour counts are plain columns).
       await tx.cnWorkOrderLine.deleteMany({ where: { woId: id } });
       if (boqItems.length > 0) {
         await tx.cnWorkOrderLine.createMany({
           data: boqItems.map((it) => ({
             woId: id,
+            lineType: (it.lineType as string) ?? "boq",
             boqItemId: String(it.boqNo ?? it.boqItemId ?? ""),
             description: String(it.description ?? ""),
             quantity: String(Number(it.quantity) || 0),
-            uomId: String(it.uomId ?? ""),
+            uomId: String(it.uomCode ?? it.uomId ?? ""),
             negotiatedRate: String(Number(it.rate) || 0),
             amount: String(Number(it.amount) || 0),
+            lineDate: it.lineDate ? new Date(it.lineDate) : null,
+            activityName: it.activityName ?? null,
+            workCategoryId: it.workCategoryId ?? null,
+            labourCounts: Array.isArray(it.labourCounts)
+              ? (it.labourCounts as Prisma.InputJsonValue)
+              : undefined,
           })),
         });
       }

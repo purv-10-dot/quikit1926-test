@@ -38,6 +38,7 @@ falling back to the DB row. Set these if you want to override the DB:
 |---|---|
 | `ADMIN_URL` | admin portal |
 | `QUIKSCALE_URL` | quikscale |
+| `QUIKASSET_URL` | quikasset (`https://asset.quikit.ai`) |
 | `QUIKVC_URL` | quikvc |
 | `QUIKINFRA_URL` | quikinfra |
 | (`QUIKIT_URL` itself) | launcher tile |

@@ -48,21 +48,12 @@ interface ModuleGroup {
 }
 
 // One source of truth for how the document types group into modules.
-// Order = the order the cards render. Edit here when a new document
-// type is added to the system, NOT in two places.
+// Order = the order the cards render, and it mirrors the sidebar
+// (CONSTRUCTION_NAV in QuikInfraShell.tsx): Projects → Purchase → Store
+// → Machinery & Equipment → Finance. Keep this in step with the sidebar
+// so the workflow cards read in the same hierarchy users navigate by.
+// Edit here when a new document type is added to the system, NOT in two places.
 const MODULE_GROUPS: ModuleGroup[] = [
-  {
-    key: "purchase",
-    label: "Purchase",
-    description: "PR → Indent → RFQ → PO",
-    iconComponent: ShoppingCart,
-    entities: [
-      { type: "purchase_requisitions", label: "Purchase Requisitions" },
-      { type: "purchase_indents", label: "Purchase Indents" },
-      { type: "rfqs", label: "RFQs" },
-      { type: "purchase_order", label: "Purchase Order" },
-    ],
-  },
   {
     key: "projects",
     label: "Projects",
@@ -73,6 +64,18 @@ const MODULE_GROUPS: ModuleGroup[] = [
       { type: "material_estimations", label: "Material Estimation" },
       { type: "work_order", label: "Work Orders" },
       { type: "dpr", label: "Daily Progress Report" },
+    ],
+  },
+  {
+    key: "purchase",
+    label: "Purchase",
+    description: "PR → Indent → RFQ → PO",
+    iconComponent: ShoppingCart,
+    entities: [
+      { type: "purchase_requisitions", label: "Purchase Requisitions" },
+      { type: "purchase_indents", label: "Purchase Indents" },
+      { type: "rfqs", label: "RFQs" },
+      { type: "purchase_order", label: "Purchase Order" },
     ],
   },
   {
@@ -94,17 +97,6 @@ const MODULE_GROUPS: ModuleGroup[] = [
     ],
   },
   {
-    key: "finance",
-    label: "Finance",
-    description: "RA Bills (Sub-Contractor)",
-    iconComponent: CreditCard,
-    entities: [
-      // entityType "rab" must match the RA Bill submit/approve routes
-      // (submitForApproval({ entityType: "rab" })).
-      { type: "rab", label: "RA Bills (Sub-Contractor)" },
-    ],
-  },
-  {
     key: "machinery_equipment",
     label: "Machinery & Equipment",
     description: "Log Book, Maintenance, Deployment, Hire & Rent, Fixed Assets",
@@ -115,6 +107,17 @@ const MODULE_GROUPS: ModuleGroup[] = [
       { type: "equipment_transfers", label: "Deployment & Compliance" },
       { type: "hire_rent", label: "Hire & Rent" },
       { type: "equipment_fixed_assets", label: "Fixed Asset / Tools" },
+    ],
+  },
+  {
+    key: "finance",
+    label: "Finance",
+    description: "RA Bills (Sub-Contractor)",
+    iconComponent: CreditCard,
+    entities: [
+      // entityType "rab" must match the RA Bill submit/approve routes
+      // (submitForApproval({ entityType: "rab" })).
+      { type: "rab", label: "RA Bills (Sub-Contractor)" },
     ],
   },
 ];
@@ -422,7 +425,10 @@ export default function WorkflowsPage() {
             const isCollapsed = collapsedModules.has(mod.key);
 
             return (
-              <section key={mod.key}>
+              <section
+                key={mod.key}
+                className="rounded-xl border border-gray-200 bg-white overflow-hidden"
+              >
                 {/* Module header — collapsible accordion trigger.
                     The whole row is a button so the click target is
                     forgiving (header text, icon, chevron, chips all
@@ -433,7 +439,7 @@ export default function WorkflowsPage() {
                   onClick={() => toggleModuleOpen(mod.key)}
                   aria-expanded={!isCollapsed}
                   aria-controls={`module-section-${mod.key}`}
-                  className="w-full flex items-center gap-3 mb-2 px-1 py-1 rounded-md hover:bg-gray-50 transition-colors text-left"
+                  className="w-full flex items-center gap-3 px-4 py-3 hover:bg-gray-50 transition-colors text-left"
                 >
                   <ChevronDown
                     className={`w-4 h-4 text-gray-400 transition-transform shrink-0 ${
@@ -445,7 +451,7 @@ export default function WorkflowsPage() {
                   </div>
                   <div className="min-w-0 flex-1">
                     <div className="flex items-center gap-2 flex-wrap">
-                      <h3 className="text-sm font-bold text-gray-900 uppercase tracking-wider">
+                      <h3 className="text-sm font-bold text-gray-900">
                         {mod.label}
                       </h3>
                       <span className="text-[11px] text-gray-500">{mod.description}</span>
@@ -466,8 +472,19 @@ export default function WorkflowsPage() {
                   </div>
                 </button>
 
-                {!isCollapsed && (
-                <div id={`module-section-${mod.key}`}>
+                {/* Collapsible body — animated open/close via the
+                    grid-rows [0fr↔1fr] trick so the panel slides to its
+                    natural height with no fixed max-height guesswork. The
+                    inner wrapper keeps overflow-hidden so content clips
+                    cleanly while the row track animates. */}
+                <div
+                  id={`module-section-${mod.key}`}
+                  aria-hidden={isCollapsed}
+                  className={`grid transition-[grid-template-rows] duration-300 ease-out ${
+                    isCollapsed ? "grid-rows-[0fr]" : "grid-rows-[1fr]"
+                  }`}
+                >
+                  <div className="overflow-hidden">
                 {/* Pages list — one wide row per document type.
                     Designed for at-a-glance scanning:
                       ── Big colored status icon on the left answers
@@ -481,7 +498,7 @@ export default function WorkflowsPage() {
                          tabs as a secondary). Replaces the previous
                          2-column card grid which made every row look
                          identical regardless of state. */}
-                <div className="bg-white rounded-xl border border-gray-200 divide-y divide-gray-100 overflow-hidden">
+                <div className="border-t border-gray-100 divide-y divide-gray-100">
                   {entityRows.map(({ entity, workflow }) => {
                     const isConfigured = !!workflow;
                     const stepCount = workflow?.steps?.length ?? 0;
@@ -549,9 +566,9 @@ export default function WorkflowsPage() {
                       </div>
                     );
                   })}
+                  </div>
+                  </div>
                 </div>
-                </div>
-                )}
               </section>
             );
           })}

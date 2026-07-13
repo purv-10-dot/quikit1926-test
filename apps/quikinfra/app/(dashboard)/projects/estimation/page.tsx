@@ -3,7 +3,7 @@
 import { toErrorMessage } from "@/lib/api/errors";
 import { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
-import { Calculator, Check, Pencil, Send, Trash2, X as XIcon } from "lucide-react";
+import { Calculator, Check, Eye, Pencil, Send, Trash2, X as XIcon } from "lucide-react";
 import { useQueryClient } from "@tanstack/react-query";
 import { PageHeader, PageContainer, StatusChip, KPICard } from "@/components/PageShell";
 import { DataTable, type ColDef } from "@/components/DataTable";
@@ -274,28 +274,16 @@ export default function EstimationPage() {
       label: "Status",
       width: "160px",
       sortable: true,
-      render: (row) => (
-        <button
-          type="button"
-          onClick={(e) => {
-            e.stopPropagation();
-            openDetail(row);
-          }}
-          title="Open details"
-          className="inline-flex items-center rounded-full transition ring-1 ring-transparent hover:ring-indigo-300 focus:outline-none focus:ring-2 focus:ring-indigo-500"
-        >
-          <StatusChip status={row.status ?? "draft"} />
-        </button>
-      ),
+      render: (row) => <StatusChip status={row.status ?? "draft"} />,
     },
     {
       key: "__actions",
       label: "Actions",
-      // Edit/Delete are icon-only; Submit/Approve/Reject render as
+      // View/Edit/Delete are icon-only; Submit/Approve/Reject render as
       // labeled pills (matches the Work Orders list), so the column
-      // needs enough room for "Submit" or "Approve" + "Reject" to sit
+      // needs enough room for the icons plus "Approve" + "Reject" to sit
       // on one line without wrapping.
-      width: "210px",
+      width: "250px",
       sortable: false,
       searchable: false,
       hideable: false,
@@ -318,6 +306,18 @@ export default function EstimationPage() {
 
         return (
           <div className="flex items-center justify-end gap-0.5">
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation();
+                openDetail(row);
+              }}
+              className="inline-flex items-center justify-center w-7 h-7 rounded-md text-gray-500 hover:bg-gray-100 hover:text-gray-700 transition"
+              title="View"
+              aria-label="View"
+            >
+              <Eye className="w-3.5 h-3.5" />
+            </button>
             {canEdit && (
               <button
                 type="button"

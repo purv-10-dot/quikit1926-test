@@ -40,7 +40,7 @@ function tryLoad(): SentrySdk | false {
     return false;
   }
   try {
-    // Hidden from webpack's static analyzer — same trick as s3-driver.ts
+    // Hidden from webpack's static analyzer via runtime require.
     const dynRequire = new Function("m", "return require(m)") as (m: string) => unknown;
     sdk = dynRequire("@sentry/nextjs") as SentrySdk;
     return sdk;

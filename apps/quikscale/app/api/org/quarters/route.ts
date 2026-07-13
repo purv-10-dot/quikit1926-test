@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 import { db } from "@/lib/db";
 import { generateQuartersSchema } from "@/lib/schemas/quarterSchema";
-import { addDays, generateQuarterDates, chainQuarterDates } from "@/lib/utils/quarterGen";
+import { addDays, generateQuarterDates, generateMonthlyQuarterDates, chainQuarterDates, isMonthBasedWeekCounts } from "@/lib/utils/quarterGen";
 import { withOrgAuthForModule } from "@/lib/api/withOrgAuth";
 import { fyHasData, fyLabel } from "@/lib/api/quartersFyHasData";
 import { getCustomQuarterEnabled } from "@/lib/utils/featureFlags";
@@ -161,11 +161,13 @@ export const POST = withOrgAuth(async ({ orgId, session }, request: NextRequest)
   if (fyStartDate && isNaN(fyStartDate.getTime()))
     return NextResponse.json({ success: false, error: "Invalid start date" }, { status: 400 });
 
-  // Custom Quarter Settings: per-quarter week counts only honored when the org
-  // flag is on AND a Q1 start date is supplied. Otherwise we fall through to the
-  // legacy day-count split (every quarter persists weekCount = 13 by default).
+  // Custom Quarter Settings (flag on + a Q1 start date supplied) picks its
+  // generator from the per-quarter week counts (see `isMonthBasedWeekCounts`):
+  //  - all four = 13 (default) → month-based calendar quarters (365/366 days)
+  //  - any quarter ≠ 13        → week-based chained quarters (weekCount × 7)
+  // Otherwise we fall through to the legacy day-count split (weekCount = 13).
   const customEnabled = await getCustomQuarterEnabled(orgId);
-  const useCustomWeeks = customEnabled && Array.isArray(weekCounts) && !!fyStartDate;
+  const useCustomQuarters = customEnabled && !!fyStartDate;
 
   // ── Future FY feature-flag gate ──
   // `enable_future_quarters` is the single on/off switch. No proximity /
@@ -219,9 +221,12 @@ export const POST = withOrgAuth(async ({ orgId, session }, request: NextRequest)
     }
   }
 
-  // Generate dates: custom (weekCount × 7, chained) or legacy day-count split.
-  const quarterDates = useCustomWeeks
-    ? chainQuarterDates(fyStartDate!, weekCounts!)
+  // Generate dates: custom month-based (all-13) or week-based (any ≠ 13), else
+  // the legacy day-count split.
+  const quarterDates = useCustomQuarters
+    ? (isMonthBasedWeekCounts(weekCounts)
+        ? generateMonthlyQuarterDates(fyStartDate!)
+        : chainQuarterDates(fyStartDate!, weekCounts!))
     : generateQuarterDates(fiscalYear, fiscalStartMonth, fyStartDate);
 
   const created = await Promise.all(
