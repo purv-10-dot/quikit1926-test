@@ -381,14 +381,16 @@ export function KPIModal({ mode, kpi, scope, teamId, defaultYear, defaultQuarter
   }, []);
 
   // Past-week feature flags
-  const { canAddPastWeek, canEditPastWeek, loaded: flagsLoaded } = usePastWeekFlags();
+  const { canAddPastWeek, loaded: flagsLoaded } = usePastWeekFlags();
   const currentWeek = useCurrentWeek(parseInt(form.year) || null, form.quarter);
   const weekLabels = useWeekLabels(parseInt(form.year) || null, form.quarter);
   // Weeks in the selected quarter (Custom Quarter Settings). Defaults to 13.
   const weekCount = useQuarterWeekCount(parseInt(form.year) || null, form.quarter);
-  // For create mode, use canAddPastWeek; for edit mode, use canEditPastWeek.
+  // The Target Breakdown (weekly *targets*) is gated by "Add Past Week Data"
+  // (canAddPastWeek) in BOTH create and edit modes. "Edit Past Week Data"
+  // governs only the weekly *values* on the LogModal Updates tab, not targets.
   // Only evaluate after flags have loaded — before that, default is false anyway.
-  const pastWeekAllowed = flagsLoaded && (mode === "create" ? canAddPastWeek : canEditPastWeek);
+  const pastWeekAllowed = flagsLoaded && canAddPastWeek;
 
   /** Resolve display-target → actual stored number (handles Currency scale multiplier). */
   function actualNum(f: typeof form): number {

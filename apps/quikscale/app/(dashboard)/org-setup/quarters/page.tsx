@@ -226,6 +226,16 @@ function EditPanel({
             </div>
           )}
           <fieldset disabled={!canUpdate} className={!canUpdate ? "opacity-70 space-y-4" : "space-y-4"}>
+          {meetingDayMode && (
+            <div>
+              <label className="text-xs font-medium text-gray-600 block mb-1.5">Meeting Day</label>
+              <div className="w-full border border-gray-100 rounded-lg px-3 py-2 text-sm text-gray-400 bg-gray-50">
+                {meetingDay}
+                <span className="text-[10px] ml-2 text-gray-300">(read-only)</span>
+              </div>
+            </div>
+          )}
+
           {(!customEnabled || isQ1Row) && (
             <div>
               <label className="text-xs font-medium text-gray-600 block mb-1.5">
@@ -632,6 +642,8 @@ function GenerateModal({
 export default function QuarterSettingsPage() {
   const { canCreate, canUpdate, canDelete } = useResourcePermissions("Quarter");
   const customEnabled = useCustomQuarterSettings();
+  const meetingDay = useWeeklyMeetingDay();
+  const meetingDayActive = customEnabled && meetingDayIndex(meetingDay) !== null;
   const [rows,          setRows]          = useState<QuarterRow[]>([]);
   const [allYears,      setAllYears]      = useState<number[]>([]);
   const [loading,       setLoading]       = useState(true);
@@ -934,6 +946,12 @@ export default function QuarterSettingsPage() {
             <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-accent-50 text-accent-600 text-xs font-medium border border-accent-200">
               <span className="h-1.5 w-1.5 rounded-full bg-accent-500 inline-block" />
               Quarter: {currentQW.quarter} • Week {currentQW.week}
+            </span>
+          )}
+          {meetingDayActive && (
+            <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-accent-50 text-accent-600 text-xs font-medium border border-accent-200">
+              <CalendarDays className="h-3 w-3" />
+              Meeting Day: {meetingDay}
             </span>
           )}
           {fyHasData && (

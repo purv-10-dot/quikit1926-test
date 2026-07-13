@@ -81,16 +81,19 @@ function EditTab({
   kpiOwners?: Array<{ id: string; firstName: string; lastName: string }>;
   readOnly?: boolean;
 }) {
-  // Past-week lock for target breakdown editing.
+  // Past-week lock for the Target Breakdown (weekly *targets*).
+  // Bound to the "Add Past Week Data" toggle (canAddPastWeek) — NOT
+  // "Edit Past Week Data" (which governs the Updates tab's weekly *values*).
   // Uses DB-driven useCurrentWeek so the week number honours the tenant's
   // configured QuarterSetting.startDate (may be offset from the hardcoded
   // Apr 1/Jul 1/Oct 1/Jan 1 map).
-  const { canEditPastWeek, loaded: flagsLoaded } = usePastWeekFlags();
-  // A week is locked-by-past when state has resolved and it falls before the
-  // editable window (current week minus the grace). When edit-past is off the
-  // window is [currentWeek - 1, currentWeek]; when on, all past weeks are open.
+  const { canAddPastWeek, loaded: flagsLoaded } = usePastWeekFlags();
+  // A week is locked-by-past when state has resolved and the week is strictly
+  // before the current quarter week AND the org disallows adding past-week
+  // data. This is a hard binary (no "current week − 1" grace) — that grace
+  // window lives exclusively on the Updates tab.
   const weekLockedByPast = (w: number): boolean =>
-    flagsLoaded && currentWeek !== null && isWeekBeforeEditableWindow(w, currentWeek, canEditPastWeek);
+    flagsLoaded && currentWeek !== null && w < currentWeek && !canAddPastWeek;
   const currentWeek = useCurrentWeek(parseInt(form.year) || null, form.quarter);
   const editTabWeekLabels = useWeekLabels(parseInt(form.year) || null, form.quarter);
   const weekCount = useQuarterWeekCount(parseInt(form.year) || null, form.quarter);
@@ -610,7 +613,7 @@ function EditTab({
                               onBlur={() => setEditingCell(null)}
                               readOnly={isLocked}
                               title={weekLockedByPast(w)
-                                ? "Past week editing is disabled. Enable in Settings > Configurations."
+                                ? "Past week targets are locked. Enable “Add Past Week Data” in Settings > Configurations."
                                 : "Editing the total redistributes across owners by contribution %"}
                               className={`w-full px-1 py-1 text-center text-xs font-semibold border rounded focus:outline-none ${cellMinW} ${
                                 isLocked
@@ -668,7 +671,7 @@ function EditTab({
                           onChange={e => { setEditingCell({ key: `ind-${w}`, raw: e.target.value }); setWeekBreakdown(w, toRaw(e.target.value)); }}
                           onBlur={() => setEditingCell(null)}
                           readOnly={isLocked}
-                          title={weekLockedByPast(w) ? "Past week editing is disabled. Enable in Settings > Configurations." : rawTip(form.weeklyBreakdown[w] ?? "")}
+                          title={weekLockedByPast(w) ? "Past week targets are locked. Enable “Add Past Week Data” in Settings > Configurations." : rawTip(form.weeklyBreakdown[w] ?? "")}
                           className={`w-full px-1 py-1 text-center text-xs border rounded focus:outline-none ${cellMinW} ${
                             isLocked
                               ? "border-gray-100 bg-gray-50 text-gray-400 cursor-not-allowed"
@@ -708,7 +711,7 @@ function EditTab({
                                 onBlur={() => setEditingCell(null)}
                                 readOnly={isLocked}
                                 title={weekLockedByPast(w)
-                                  ? "Past week editing is disabled. Enable in Settings > Configurations."
+                                  ? "Past week targets are locked. Enable “Add Past Week Data” in Settings > Configurations."
                                   : isStandalone ? "Standalone mode locks per-owner cells" : rawTip(ownerRow[w] ?? "")}
                                 className={`w-full px-1 py-1 text-center text-xs border rounded focus:outline-none ${cellMinW} ${
                                   isLocked
