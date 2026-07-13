@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect, useMemo } from "react";
+import Link from "next/link";
 import { useMutation } from "@tanstack/react-query";
 import { useApiClient } from "@/lib/hooks/use-api";
 import { MAX_BULK_UPLOAD_ROWS } from "@/lib/validations/gap-fill";
@@ -1268,6 +1269,14 @@ export default function BulkImportEmployeesPage() {
                   </div>
                 ))}
               </div>
+            </div>
+          )}
+          {result.success > 0 && (
+            <div className="mt-4 flex items-center justify-between gap-3 rounded-lg bg-green-50 border border-green-200 px-3 py-2.5">
+              <p className="text-xs text-green-800">Imported employees aren&apos;t invited yet — send their portal invites from the Users screen.</p>
+              <Link href="/settings/users" className="shrink-0 inline-flex items-center gap-1.5 rounded-lg bg-green-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-green-700 transition">
+                Go to Users
+              </Link>
             </div>
           )}
         </div>

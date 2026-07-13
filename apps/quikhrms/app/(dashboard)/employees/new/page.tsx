@@ -233,8 +233,8 @@ function NewEmployeePageInner() {
   const createMut = useMutation({
     mutationFn: (body: Record<string, unknown>) => api.post("/api/v1/hrms/employees", body),
     onSuccess: () => {
-      toast.success("Employee added", `${form.firstName} ${form.lastName} · portal invite sent`);
-      router.push(returnTo && returnTo.startsWith("/") ? returnTo : "/employees");
+      toast.success("Employee added", `${form.firstName} ${form.lastName} · send the invite from Users`);
+      router.push("/settings/users");
     },
     // Errors handled by global MutationCache.onError in providers.tsx (single toast).
   });
@@ -454,20 +454,17 @@ function NewEmployeePageInner() {
         familyMembers: form.familyMembers.filter((m) => m.name && m.relation),
       },
     };
-    // Clear confirmation popup so the user knows what's about to happen (create
-    // the employee AND email a portal invite) — same pattern as Edit Employee.
+    // Confirmation popup so the user knows what's about to happen. No invite is
+    // sent here — the portal invite is triggered later from the Users screen.
     const ok = await dialog.confirm({
       title: "Add this employee?",
-      description: `Create ${form.firstName} ${form.lastName} and email a portal invite to ${form.workEmail}?`,
+      description: `Create ${form.firstName} ${form.lastName}? You can send their portal invite afterwards from the Users screen.`,
       confirmLabel: "Add employee",
       cancelLabel: "Keep editing",
       variant: "info",
     });
     if (!ok) return;
-    // Portal invite is mandatory — login uses centralized auth, so every new
-    // employee must be provisioned + emailed a set-password link. Create and
-    // send the invite directly (no opt-out prompt).
-    createMut.mutate({ ...body, sendInvite: true });
+    createMut.mutate(body);
   };
 
   const deptName = depts?.data?.find((d) => d.id === form.departmentId)?.name;

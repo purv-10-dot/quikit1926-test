@@ -114,6 +114,15 @@ export default function UsersPage() {
   });
   const users = usersResp?.data ?? [];
 
+  // Employees who can still be invited: no login account + no Pending invite.
+  // These are people added via People / bulk import / onboarding who haven't
+  // been sent a portal invite yet — invited manually from here.
+  const { data: invitableResp, isLoading: invitableLoading } = useQuery({
+    queryKey: ["invitable-employees"],
+    queryFn: () => api.get<OrgUser[]>("/api/v1/hrms/employees?limit=200&invitable=true"),
+  });
+  const invitable = invitableResp?.data ?? [];
+
   const { data: rolesResp } = useQuery({
     queryKey: ["roles"],
     queryFn: () => api.get<Role[]>("/api/v1/hrms/settings/roles"),
@@ -160,6 +169,17 @@ export default function UsersPage() {
       qc.invalidateQueries({ queryKey: ["invitations"] });
       setShowInvite(false);
       resetForm();
+    },
+  });
+
+  // Send the portal invite for an existing employee (the "Not yet invited" list).
+  const inviteEmployeeMut = useMutation({
+    mutationFn: (id: string) => api.post(`/api/v1/hrms/employees/${id}/invite`, {}),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["invitations"] });
+      qc.invalidateQueries({ queryKey: ["invitable-employees"] });
+      qc.invalidateQueries({ queryKey: ["org-users"] });
+      toast.success("Invitation sent");
     },
   });
 
@@ -419,6 +439,55 @@ export default function UsersPage() {
         </table>
       </div>
 
+      {/* Employees added (People / bulk import / onboarding) who haven't been
+          sent a portal invite yet. Invite is triggered manually from here. */}
+      <div className="mb-2 text-[11px] font-semibold text-gray-700">Not yet invited</div>
+      <div className="mb-4 overflow-hidden rounded-xl border border-gray-200 bg-white">
+        <table className="w-full text-xs">
+          <thead>
+            <tr className="border-b border-gray-100 bg-gray-50 text-left text-table-head uppercase tracking-wide text-gray-500">
+              <th className="px-4 py-2.5 font-semibold">Person</th>
+              <th className="px-4 py-2.5 font-semibold">Role</th>
+              <th className="px-4 py-2.5 text-right font-semibold">Actions</th>
+            </tr>
+          </thead>
+          <tbody>
+            {invitableLoading ? (
+              <tr><td colSpan={3} className="px-4 py-10 text-center text-gray-400">Loading…</td></tr>
+            ) : invitable.length === 0 ? (
+              <tr><td colSpan={3} className="px-4 py-10 text-center text-gray-400">Everyone has been invited.</td></tr>
+            ) : (
+              invitable.map((u) => {
+                const name = u.displayName || [u.firstName, u.lastName].filter(Boolean).join(" ") || "—";
+                const busy = inviteEmployeeMut.isPending && inviteEmployeeMut.variables === u.id;
+                return (
+                  <tr key={u.id} className="border-b border-gray-50 last:border-0">
+                    <td className="px-4 py-2.5">
+                      <div className="text-[13px] font-medium text-gray-900">{name}</div>
+                      {u.workEmail && (
+                        <div className="flex items-center gap-1 text-[11px] text-gray-500"><Mail size={12} /> {u.workEmail}</div>
+                      )}
+                    </td>
+                    <td className="px-4 py-2.5 text-gray-600">{u.role?.name ?? "—"}</td>
+                    <td className="px-4 py-2.5 text-right">
+                      <button
+                        type="button"
+                        onClick={() => inviteEmployeeMut.mutate(u.id)}
+                        disabled={!u.workEmail || busy}
+                        title={u.workEmail ? "Send portal invite" : "No work email on file"}
+                        className="inline-flex items-center gap-1.5 rounded-lg bg-green-600 px-2.5 py-1.5 text-[11px] font-semibold text-white hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed transition"
+                      >
+                        <Send size={12} /> {busy ? "Inviting…" : "Invite"}
+                      </button>
+                    </td>
+                  </tr>
+                );
+              })
+            )}
+          </tbody>
+        </table>
+      </div>
+
       <div className="mb-2 text-[11px] font-semibold text-gray-700">Pending Invitations</div>
       <div className="overflow-hidden rounded-xl border border-gray-200 bg-white">
         <table className="w-full text-xs">
@@ -594,11 +663,11 @@ export default function UsersPage() {
             )}
             {isExistingMember ? (
               <p className="mt-1.5 text-[12.5px] text-emerald-600">
-                Existing QuikIT member — they'll be linked automatically. No invitation method needed.
+                Existing QuikIT member — they&apos;ll be linked automatically. No invitation method needed.
               </p>
             ) : (
               <p className="mt-1.5 text-[12.5px] text-gray-400">
-                If this email already belongs to a QuikIT user, they're linked automatically — no duplicate account is created.
+                If this email already belongs to a QuikIT user, they&apos;re linked automatically — no duplicate account is created.
               </p>
             )}
           </div>
@@ -647,7 +716,7 @@ export default function UsersPage() {
               options={roles.map((r) => ({ value: r.id, label: r.name }))}
             />
             <p className="mt-1.5 text-[12.5px] text-gray-400">
-              This is their role inside HRMS. In QuikIT they're added as a member.
+              This is their role inside HRMS. In QuikIT they&apos;re added as a member.
             </p>
           </div>
 

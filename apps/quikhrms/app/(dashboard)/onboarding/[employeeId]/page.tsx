@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useApiClient } from "@/lib/hooks/use-api";
 import { useDashboardConfig } from "@/lib/hooks/use-dashboard-config";
@@ -910,6 +911,7 @@ function ConfirmationPanel({ employeeId, pendingMandatory }: { employeeId: strin
   });
   const emp = empData?.data;
 
+  const router = useRouter();
   const confirmMut = useMutation({
     mutationFn: () => api.post(`/api/v1/hrms/employees/${employeeId}/confirm`, {
       confirmationDate: form.confirmationDate,
@@ -920,21 +922,15 @@ function ConfirmationPanel({ employeeId, pendingMandatory }: { employeeId: strin
       sendEmail: form.sendEmail,
     }),
     onSuccess: (r) => {
-      const payload = r.data as {
-        emailSent: boolean;
-        emailError: string | null;
-        activationQueued?: boolean;
-        activationError?: string | null;
-      };
+      const payload = r.data as { emailSent: boolean; emailError: string | null };
       qc.invalidateQueries({ queryKey: ["employee", employeeId] });
       qc.invalidateQueries({ queryKey: ["employees", "me"] });
-      const parts: string[] = [];
-      if (payload.activationQueued) parts.push("Activation email sent — they can now set their password.");
-      else if (payload.activationError) parts.push(`Activation email failed: ${payload.activationError}`);
+      const parts = ["Send their portal invite from the Users screen."];
       if (payload.emailSent) parts.push("Confirmation email sent.");
       else if (payload.emailError) parts.push(`Confirmation email failed: ${payload.emailError}`);
       toast.success("Employment confirmed", parts.join(" "));
       setShowModal(false);
+      router.push("/settings/users");
     },
   });
 
