@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import {
   Plus,
@@ -37,8 +37,8 @@ export function IdeasTableView({ projectId }: { projectId: string }) {
   const [panelId, setPanelId] = useState<string | null>(null);
   const [activeId, setActiveId] = useState<string | null>(null);
   const [search, setSearch] = useState("");
-  const [newTitle, setNewTitle] = useState("");
   const [creating, setCreating] = useState(false);
+  const openAddRef = useRef<(() => void) | null>(null);
 
   useEffect(() => { if (data) setRows(data.ideas); }, [data]);
   // Default the active (green-accent) row to the first idea, like JPD.
@@ -119,26 +119,19 @@ export function IdeasTableView({ projectId }: { projectId: string }) {
     }
   }
 
-  async function createIdea() {
-    const title = newTitle.trim();
-    if (!title) return;
-    setNewTitle("");
-    await createIdeaWithTitle(title);
-  }
-
   const visible = search
     ? rows.filter((r) => r.title.toLowerCase().includes(search.toLowerCase()))
     : rows;
   const panelIdea = rows.find((r) => r.id === panelId) ?? null;
 
   return (
-    <div className="flex h-full min-h-0">
+    <div className="flex h-full min-h-0 overflow-hidden">
       <div className="flex min-w-0 flex-1 flex-col">
         {/* Title row */}
         <div className="flex items-start justify-between gap-3 px-6 pt-4 pb-2">
           <div className="flex min-w-0 items-center gap-2">
-            <span className="text-lg">👋</span>
-            <h2 className="text-lg font-semibold text-gray-900">All ideas</h2>
+            <span className="text-2xl">👋</span>
+            <h2 className="text-2xl font-semibold text-gray-900">All ideas</h2>
             <span className="rounded bg-gray-100 px-2 py-0.5 text-xs font-medium text-gray-600">
               {rows.length} {rows.length === 1 ? "idea" : "ideas"}
             </span>
@@ -161,7 +154,7 @@ export function IdeasTableView({ projectId }: { projectId: string }) {
           <div className="flex items-center gap-2">
             <button
               type="button"
-              onClick={() => document.getElementById("qt-idea-quickadd")?.focus()}
+              onClick={() => openAddRef.current?.()}
               className="inline-flex items-center gap-1 rounded bg-accent-600 px-2.5 py-1 text-sm font-medium text-white hover:bg-accent-700"
             >
               Create
@@ -203,26 +196,22 @@ export function IdeasTableView({ projectId }: { projectId: string }) {
                 onReorder={onReorder}
                 onCreate={createIdeaWithTitle}
                 creating={creating}
-                footer={
+                openAddRef={openAddRef}
+                footer={(openAdd) => (
                   <div className="flex items-center gap-3 border-t border-gray-200 px-3 py-2 text-sm">
-                    <div className="inline-flex items-center gap-1 text-gray-500">
-                      <Plus className="h-3.5 w-3.5" />
-                      <input
-                        id="qt-idea-quickadd"
-                        value={newTitle}
-                        onChange={(e) => setNewTitle(e.target.value)}
-                        onKeyDown={(e) => { if (e.key === "Enter") void createIdea(); }}
-                        disabled={creating}
-                        placeholder="Create"
-                        className="w-56 bg-transparent outline-none placeholder:text-gray-400"
-                      />
-                    </div>
+                    <button
+                      type="button"
+                      onClick={openAdd}
+                      className="inline-flex items-center gap-1 text-gray-500 hover:text-gray-700"
+                    >
+                      <Plus className="h-3.5 w-3.5" /> Create
+                    </button>
                     <span className="text-gray-300">|</span>
                     <button type="button" className="inline-flex items-center gap-1 text-gray-500 hover:text-gray-700">
                       <Upload className="h-3.5 w-3.5" /> CSV Import
                     </button>
                   </div>
-                }
+                )}
               />
             </>
           )}

@@ -9744,6 +9744,9 @@ model QtIdea {
   project      QtProject          @relation(fields: [projectId], references: [id], onDelete: Cascade)
   status       QtIdeaStatus       @relation(fields: [statusId], references: [id])
   fieldValues  QtIdeaFieldValue[]
+  comments     QtIdeaComment[]
+  insights     QtIdeaInsight[]
+  deliveries   QtIdeaDelivery[]
 
   @@unique([projectId, key])
   @@index([orgId])
@@ -9803,6 +9806,88 @@ model QtIdeaView {
   project    QtProject @relation(fields: [projectId], references: [id], onDelete: Cascade)
 
   @@index([projectId, orderIndex])
+  @@schema("app_quiktrack")
+}
+
+/// A comment on an idea (JPD "Comments" tab). Threaded via optional parentId.
+/// TODO(integration): PENDING integration-owner sign-off before this migration
+/// lands on the shared/Neon DB.
+model QtIdeaComment {
+  id        String          @id @default(cuid())
+  orgId     String
+  ideaId    String
+  parentId  String?
+  body      String
+  isDeleted Boolean         @default(false)
+  createdAt DateTime        @default(now())
+  updatedAt DateTime        @updatedAt
+  createdBy String?
+  idea      QtIdea                  @relation(fields: [ideaId], references: [id], onDelete: Cascade)
+  parent    QtIdeaComment?          @relation("QtIdeaCommentReplies", fields: [parentId], references: [id], onDelete: Cascade)
+  replies   QtIdeaComment[]         @relation("QtIdeaCommentReplies")
+  reactions QtIdeaCommentReaction[]
+
+  @@index([ideaId, createdAt])
+  @@index([orgId])
+  @@schema("app_quiktrack")
+}
+
+/// An emoji reaction on an idea comment. One row per (comment, user, emoji);
+/// toggled on/off. TODO(integration): PENDING integration-owner sign-off.
+model QtIdeaCommentReaction {
+  id        String        @id @default(cuid())
+  orgId     String
+  commentId String
+  emoji     String
+  userId    String
+  createdAt DateTime      @default(now())
+  comment   QtIdeaComment @relation(fields: [commentId], references: [id], onDelete: Cascade)
+
+  @@unique([commentId, userId, emoji])
+  @@index([commentId])
+  @@schema("app_quiktrack")
+}
+
+/// A research insight attached to an idea (JPD "Insights" tab): a snippet of
+/// evidence with an optional source URL (rendered as a link-preview card), an
+/// Impact rating (0–5), and freeform labels. TODO(integration): PENDING
+/// integration-owner sign-off before this migration lands on the shared/Neon DB.
+model QtIdeaInsight {
+  id        String   @id @default(cuid())
+  orgId     String
+  ideaId    String
+  body      String
+  url       String?
+  impact    Int      @default(0)
+  labels    Json? // string[]
+  isDeleted Boolean  @default(false)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  createdBy String?
+  idea      QtIdea   @relation(fields: [ideaId], references: [id], onDelete: Cascade)
+
+  @@index([ideaId, createdAt])
+  @@index([orgId])
+  @@schema("app_quiktrack")
+}
+
+/// Delivery link between a discovery idea and a QtIssue (work item). The issue
+/// may live in ANOTHER project (JPD "Delivery" tab tracks delivery work across
+/// spaces). No FK to QtIssue (cross-project + soft-delete tolerant); the issueId
+/// is resolved at read time. TODO(integration): PENDING integration-owner sign-off.
+model QtIdeaDelivery {
+  id        String   @id @default(cuid())
+  orgId     String
+  ideaId    String
+  issueId   String
+  createdAt DateTime @default(now())
+  createdBy String?
+  idea      QtIdea   @relation(fields: [ideaId], references: [id], onDelete: Cascade)
+
+  @@unique([ideaId, issueId])
+  @@index([ideaId])
+  @@index([issueId])
+  @@index([orgId])
   @@schema("app_quiktrack")
 }
 

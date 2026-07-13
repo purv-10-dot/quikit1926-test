@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useRef } from "react";
+import { useState, useRef, useEffect } from "react";
 import {
   BarChart3,
   Target,
@@ -201,6 +201,7 @@ export function IdeasTable({
   onReorder,
   onCreate,
   creating,
+  openAddRef,
   footer,
 }: {
   columns: Column[];
@@ -213,7 +214,8 @@ export function IdeasTable({
   onReorder: (fromId: string, toId: string) => void;
   onCreate: (title: string) => void;
   creating: boolean;
-  footer?: React.ReactNode;
+  openAddRef?: React.MutableRefObject<(() => void) | null>;
+  footer?: (openAdd: () => void) => React.ReactNode;
 }) {
   const [widths, setWidths] = useState<Record<string, number>>({});
   const widthOf = (key: string) => widths[key] ?? defaultWidth(key);
@@ -226,6 +228,10 @@ export function IdeasTable({
   // Inline "add ideas" row (opened by the + in the Summary header, JPD-style).
   const [adding, setAdding] = useState(false);
   const [addDraft, setAddDraft] = useState("");
+  // Let external triggers (toolbar/footer Create) open the inline add-row.
+  useEffect(() => {
+    if (openAddRef) openAddRef.current = () => setAdding(true);
+  }, [openAddRef]);
   const totalCols = columns.length + 2; // checkbox + columns + trailing spacer
   function submitAdd() {
     const t = addDraft.trim();
@@ -393,7 +399,7 @@ export function IdeasTable({
         </tbody>
       </table>
       </div>
-      {footer}
+      {footer?.(() => setAdding(true))}
     </div>
   );
 }
