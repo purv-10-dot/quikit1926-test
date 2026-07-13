@@ -184,9 +184,12 @@ function EditPanel({
   // any other week count spans weeks×7 days. Legacy Q1 uses the 91-day split.
   const parsedStart = startDate ? new Date(startDate) : null;
   const qStartForPreview = isQ1Row ? parsedStart : new Date(row.startDate);
+  // Meeting-day mode is always month-based server-side (end = start + 3 months
+  // − 1 day), so the End Date preview must match the table's persisted value —
+  // NOT the weeks×7 fallback (14 weeks would otherwise over-count by ~7 days).
   const qEndPreview = qStartForPreview && !isNaN(qStartForPreview.getTime())
     ? (customEnabled
-        ? (weeksNumPreview === 13
+        ? ((meetingDayMode || weeksNumPreview === 13)
             ? addDays(addMonthsUTC(qStartForPreview, 3), -1)
             : addDays(qStartForPreview, weeksNumPreview * 7 - 1))
         : (parsedStart ? addDays(parsedStart, 91 - 1) : null))
