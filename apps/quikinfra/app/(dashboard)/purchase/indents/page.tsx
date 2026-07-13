@@ -48,6 +48,7 @@ const STATUS_TABS: TabSpec[] = [
 
 /** A PR line as carried by the source-PR payload (dual field names). */
 interface PrSourceLine {
+  id?: string; lineId?: string;
   itemId?: string; itemCode?: string; itemName?: string;
   quantity?: number | string; qtyRequired?: number | string; qtyRequested?: number | string;
   uomCode?: string; uom?: string;
@@ -174,6 +175,10 @@ export default function IndentsPage() {
           // Auto-select the material when we can reconcile it to the current master.
           // If the match fails, keep it blank and force the user to pick.
           itemId: match?.id ?? "",
+          // Carry the PR line id so the PR → Indent link persists — the
+          // indent route stores this as `prLineId`, which the PR's "PO"
+          // column rollup walks (PR line → indent line → PO line).
+          prLineId: l.id ?? l.lineId ?? null,
           // UI hint: start the picker scoped to the PR line's group.
           prefillGroupId,
           qtyRequested: String(l.quantity ?? l.qtyRequired ?? l.qtyRequested ?? ""),

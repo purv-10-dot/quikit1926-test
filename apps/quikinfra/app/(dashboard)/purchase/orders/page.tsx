@@ -17,6 +17,8 @@ import { formatDate } from "@/lib/format/datetime";
 import { Eye, Send, ListChecks, FileText } from "lucide-react";
 import { WhatsAppLink } from "@/components/WhatsAppLink";
 import { resolveVendorPhone } from "@/lib/whatsapp";
+import { toErrorMessage } from "@/lib/api/errors";
+import { ConfirmDialog } from "@/components/ConfirmDialog";
 import {
   PageHeader, PageContainer, StatusChip, TabBar,
 } from "@/components/PageShell";
@@ -146,6 +148,8 @@ export default function PurchaseOrdersPage() {
 
   const { data: result } = usePurchaseOrders({ status: "all", search: "" });
   const submitMutation = useSubmitPO();
+  const [submitTarget, setSubmitTarget] = useState<{ id: string; poNumber: string | null } | null>(null);
+  const [submitError, setSubmitError] = useState<string | null>(null);
   const allRows = result?.data ?? [];
   const tabs = useMemo(() => buildTabCounts(allRows, STATUS_TABS), [allRows]);
   const data = useMemo(
@@ -153,11 +157,23 @@ export default function PurchaseOrdersPage() {
     [allRows, activeTab],
   );
 
-  const handleSubmit = async (id: string) => {
-    if (!confirm("Submit this PO for approval?")) return;
+  // Submit-for-approval opens a lightweight ConfirmDialog (matching the
+  // Purchase Requisitions list) instead of a browser confirm().
+  const handleSubmit = (row: { id: string; poNumber?: string | null }) => {
+    setSubmitError(null);
+    setSubmitTarget({ id: row.id, poNumber: row.poNumber ?? null });
+  };
+
+  const doSubmit = async () => {
+    if (!submitTarget) return;
+    setSubmitError(null);
     try {
-      await submitMutation.mutateAsync(id);
-    } catch { /* error toast handled globally */ }
+      await submitMutation.mutateAsync(submitTarget.id);
+      setSubmitTarget(null);
+    } catch (err: unknown) {
+      // Keep the dialog open so the user can read the failure reason.
+      setSubmitError(toErrorMessage(err, "Failed to submit PO"));
+    }
   };
 
   const { data: projectsData } = useProjects();
@@ -1602,7 +1618,7 @@ export default function PurchaseOrdersPage() {
           </button>
           {row.status === "draft" && (
             <button
-              onClick={() => handleSubmit(row.id)}
+              onClick={() => handleSubmit(row)}
               className="p-1.5 rounded hover:bg-orange-50 text-orange-600 hover:text-orange-700 transition-colors"
               title="Submit for Approval"
             >
@@ -1651,6 +1667,38 @@ export default function PurchaseOrdersPage() {
         initial={peekTarget}
         onClose={() => setPeekTarget(null)}
       />
+
+      <ConfirmDialog
+        open={!!submitTarget}
+        onClose={() => {
+          if (!submitMutation.isPending) {
+            setSubmitTarget(null);
+            setSubmitError(null);
+          }
+        }}
+        onConfirm={doSubmit}
+        title="Submit for Approval"
+        confirmLabel="Submit"
+        tone="primary"
+        loading={submitMutation.isPending}
+        message={
+          <>
+            Submit PO{" "}
+            <span className="font-semibold text-slate-900">
+              {submitTarget?.poNumber ?? submitTarget?.id}
+            </span>{" "}
+            for approval? It will be routed through the active Purchase Order
+            workflow and you won't be able to edit it until an approver returns
+            it.
+            {submitError && (
+              <span className="mt-3 block rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-xs text-rose-700">
+                {submitError}
+              </span>
+            )}
+          </>
+        }
+      />
+
 
       <ItemPickerModal
         open={!!pickerCtx}

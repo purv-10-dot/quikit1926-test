@@ -576,7 +576,12 @@ export async function POST(req: NextRequest) {
         totalAmount: String(finance.poTotalIncGst),
         status: "draft",
         lines: lines.map((l: BuiltPoLine) => ({
-          indentLineId: l.sourceIndentLineId ?? null,
+          // `buildPOLines` emits the source indent-line id on `indentLineId`
+          // (from the posted line's `indentLineId`/`lineId`); the legacy
+          // `sourceIndentLineId` alias is never populated. Persisting the
+          // wrong field left every PO line with a null indent link, which
+          // broke the PR → indent → PO rollup (PRs stuck on "Not ordered").
+          indentLineId: l.indentLineId || l.sourceIndentLineId || null,
           itemId: l.itemId ?? "",
           itemCode: l.itemCode,
           itemName: l.itemName,
