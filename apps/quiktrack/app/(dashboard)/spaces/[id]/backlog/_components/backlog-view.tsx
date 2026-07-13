@@ -2237,6 +2237,13 @@ export function BacklogView({ projectId }: { projectId: string }) {
   // so they survive logout/login and sync across devices. A localStorage cache
   // inside the hook seeds the first paint to avoid a flash of defaults.
   const { settings, updateSettings } = useBacklogViewSettings(projectId);
+  // "Completed sprints" view setting swaps the sprint list between two modes:
+  //  - off (default): active + planned only (completed excluded)
+  //  - on: ONLY completed sprints
+  // Query fragment shared by every sprint-list fetch.
+  const sprintExcludeQs = settings.completedSprints
+    ? "&statuses=COMPLETED"
+    : "&excludeStatus=COMPLETED";
   const [viewSettingsOpen, setViewSettingsOpen] = useState(false);
   const viewSettingsRef = useRef<HTMLDivElement>(null);
 
@@ -2585,7 +2592,7 @@ export function BacklogView({ projectId }: { projectId: string }) {
     (async () => {
       const [sessionRes, sprintsRes, epicsRes, projectRes] = await Promise.all([
         fetch(`/api/session`).then((r) => r.json()).catch(() => null),
-        fetch(`/api/sprints?projectId=${projectId}&limit=${SPRINT_PAGE}&excludeStatus=COMPLETED`).then((r) => r.json()),
+        fetch(`/api/sprints?projectId=${projectId}&limit=${SPRINT_PAGE}${sprintExcludeQs}`).then((r) => r.json()),
         fetch(`/api/issues?projectId=${projectId}&type=EPIC&limit=200`).then((r) => r.json()),
         fetch(`/api/projects/${projectId}`).then((r) => r.json()).catch(() => null),
       ]);
@@ -2625,8 +2632,9 @@ export function BacklogView({ projectId }: { projectId: string }) {
       const params = new URLSearchParams({
         projectId,
         limit: String(SPRINT_PAGE),
-        excludeStatus: "COMPLETED",
       });
+      if (settings.completedSprints) params.set("statuses", "COMPLETED");
+      else params.set("excludeStatus", "COMPLETED");
       if (sprintCursor) params.set("cursor", sprintCursor);
       const res = await fetch(`/api/sprints?${params.toString()}`).then((r) => r.json());
       if (res?.success) {
@@ -2641,7 +2649,7 @@ export function BacklogView({ projectId }: { projectId: string }) {
     } finally {
       setSprintsLoading(false);
     }
-  }, [projectId, sprintCursor, sprintsHasMore, sprintsLoading]);
+  }, [projectId, sprintCursor, sprintsHasMore, sprintsLoading, settings.completedSprints]);
 
   useOnScreen(sprintSentinelRef, () => {
     if (!bootLoading) loadMoreSprints();
@@ -2659,6 +2667,31 @@ export function BacklogView({ projectId }: { projectId: string }) {
     const r = el.getBoundingClientRect();
     if (r.top < window.innerHeight && r.bottom > 0) void loadMoreSprints();
   }, [sprints, sprintsHasMore, sprintsLoading, bootLoading, loadMoreSprints]);
+
+  // Reload the sprint list from page 1 when the "Completed sprints" toggle flips
+  // — the fetch filter changes, so we re-run it (skips the initial mount, which
+  // the boot fetch already covers).
+  const completedToggleMounted = useRef(false);
+  useEffect(() => {
+    if (!completedToggleMounted.current) {
+      completedToggleMounted.current = true;
+      return;
+    }
+    setSprints([]);
+    setSprintCursor(null);
+    setSprintsHasMore(true);
+    void (async () => {
+      const res = await fetch(
+        `/api/sprints?projectId=${projectId}&limit=${SPRINT_PAGE}${sprintExcludeQs}`,
+      ).then((r) => r.json());
+      if (res?.success) {
+        setSprints(res.data ?? []);
+        setSprintCursor(res.nextCursor ?? null);
+        setSprintsHasMore(!!res.nextCursor);
+      }
+    })();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [settings.completedSprints]);
 
   const statusesById = useMemo(
     () => new Map(statuses.map((s) => [s.id, s] as const)),
@@ -2849,8 +2882,9 @@ export function BacklogView({ projectId }: { projectId: string }) {
     const params = new URLSearchParams({
       projectId,
       limit: String(Math.max(SPRINT_PAGE, sprints.length)),
-      excludeStatus: "COMPLETED",
     });
+    if (settings.completedSprints) params.set("statuses", "COMPLETED");
+    else params.set("excludeStatus", "COMPLETED");
     const res = await fetch(`/api/sprints?${params.toString()}`).then((r) => r.json());
     if (res?.success) {
       const map = new Map<string, Sprint["counts"]>(
@@ -2874,7 +2908,7 @@ export function BacklogView({ projectId }: { projectId: string }) {
     setSprintCursor(null);
     setSprintsHasMore(true);
     const res = await fetch(
-      `/api/sprints?projectId=${projectId}&limit=${SPRINT_PAGE}&excludeStatus=COMPLETED`,
+      `/api/sprints?projectId=${projectId}&limit=${SPRINT_PAGE}${sprintExcludeQs}`,
     ).then((r) => r.json());
     if (res?.success) {
       setSprints(res.data ?? []);
@@ -2922,9 +2956,12 @@ export function BacklogView({ projectId }: { projectId: string }) {
     );
   }
 
-  // Completed sprints are already excluded server-side (excludeStatus=COMPLETED)
-  // so scroll pagination stays honest; this stays as a defensive no-op.
-  const activeSprints = sprints.filter((s) => s.status !== "COMPLETED");
+  // Completed sprints are excluded server-side unless the "Completed sprints"
+  // view setting is on — then they're fetched and shown. Keep the client filter
+  // aligned so it never hides what the fetch intentionally included.
+  const activeSprints = settings.completedSprints
+    ? sprints
+    : sprints.filter((s) => s.status !== "COMPLETED");
   // "Empty sprints" toggle — when off, hide sprints whose work-item count is 0.
   const displayedSprints = settings.emptySprints
     ? activeSprints
@@ -3443,6 +3480,11 @@ export function BacklogView({ projectId }: { projectId: string }) {
                     >
                       Complete sprint
                     </button>
+                  ) : sprint.status === "COMPLETED" ? (
+                    // Completed sprints are done — no start/complete action, just a badge.
+                    <span className="inline-flex h-7 items-center gap-1 rounded bg-gray-100 px-3 text-xs font-medium text-gray-500">
+                      Completed
+                    </span>
                   ) : (
                     <button
                       type="button"
@@ -3660,7 +3702,7 @@ export function BacklogView({ projectId }: { projectId: string }) {
           onClose={() => setEditingSprint(null)}
           onUpdated={async () => {
             const res = await fetch(
-              `/api/sprints?projectId=${projectId}&limit=${SPRINT_PAGE}&excludeStatus=COMPLETED`,
+              `/api/sprints?projectId=${projectId}&limit=${SPRINT_PAGE}${sprintExcludeQs}`,
             ).then((r) => r.json());
             if (res?.success) {
               setSprints(res.data ?? []);
@@ -3697,7 +3739,7 @@ export function BacklogView({ projectId }: { projectId: string }) {
           onClose={() => setStartingSprint(null)}
           onStarted={async () => {
             const res = await fetch(
-              `/api/sprints?projectId=${projectId}&limit=${SPRINT_PAGE}&excludeStatus=COMPLETED`,
+              `/api/sprints?projectId=${projectId}&limit=${SPRINT_PAGE}${sprintExcludeQs}`,
             ).then((r) => r.json());
             if (res?.success) {
               setSprints(res.data ?? []);
@@ -3728,7 +3770,7 @@ export function BacklogView({ projectId }: { projectId: string }) {
           onCompleted={async () => {
             // Refetch sprints + reset all section caches.
             const res = await fetch(
-              `/api/sprints?projectId=${projectId}&limit=${SPRINT_PAGE}&excludeStatus=COMPLETED`,
+              `/api/sprints?projectId=${projectId}&limit=${SPRINT_PAGE}${sprintExcludeQs}`,
             ).then((r) => r.json());
             if (res?.success) {
               setSprints(res.data ?? []);

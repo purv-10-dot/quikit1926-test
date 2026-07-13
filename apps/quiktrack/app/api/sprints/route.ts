@@ -42,12 +42,22 @@ export const GET = withOrgAuth(async ({ orgId, userId }, req) => {
     .split(",")
     .map((s) => s.trim())
     .filter(Boolean);
+  // Include-list (whitelist) — takes precedence over excludeStatus. The backlog
+  // uses `statuses=COMPLETED` for its "Completed sprints" view.
+  const includeStatuses = (url.searchParams.get("statuses") ?? "")
+    .split(",")
+    .map((s) => s.trim())
+    .filter(Boolean);
 
   const sprints = await db.qtSprint.findMany({
     where: {
       projectId,
       isDeleted: false,
-      ...(excludeStatus.length ? { status: { notIn: excludeStatus } } : {}),
+      ...(includeStatuses.length
+        ? { status: { in: includeStatuses } }
+        : excludeStatus.length
+          ? { status: { notIn: excludeStatus } }
+          : {}),
     },
     orderBy: [{ status: "asc" }, { startDate: "asc" }, { createdAt: "asc" }, { id: "asc" }],
     take: limit > 0 ? limit + 1 : undefined,
