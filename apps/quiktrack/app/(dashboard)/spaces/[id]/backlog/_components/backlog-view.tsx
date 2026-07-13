@@ -2024,7 +2024,7 @@ function SectionBody({
         setState((s) => ({ ...s, loading: false }));
       }
     },
-    [projectId, sprintId, state.cursor, state.hasMore, state.loading, setState, filters.search, filters.statusId, filters.assigneeId, filters.type, filters.priority, filters.epicId],
+    [projectId, sprintId, state.cursor, state.hasMore, state.loading, setState, filters.search, filters.statusId, filters.assigneeId, filters.type, filters.priority, filters.epicId, filters.customFilters],
   );
 
   // First-time load when expanded.
@@ -2034,13 +2034,19 @@ function SectionBody({
     }
   }, [state.expanded, state.loaded, state.loading, loadMore]);
 
-  // Reset and re-fetch the section's first page whenever any filter changes.
+  // Invalidate the section's cached page whenever any filter changes — for
+  // collapsed sections too. A collapsed section keeps its `loaded` rows in
+  // state; if we skipped it here, re-expanding it later would short-circuit the
+  // first-load effect (loaded === true) and show STALE, unfiltered rows behind a
+  // correctly-filtered header count. Clearing it (no network) forces a fresh,
+  // filtered fetch the moment it's expanded.
   // We deliberately don't depend on loadMore (would re-run on cursor change too).
   // eslint-disable-next-line react-hooks/exhaustive-deps
   useEffect(() => {
-    if (!state.expanded) return;
     // Invalidate any in-flight fetch, then clear so the section reloads under the
-    // new filter (without a stale response overwriting it).
+    // new filter (without a stale response overwriting it). Expanded sections
+    // refetch immediately via the first-load effect; collapsed ones refetch on
+    // their next expand.
     genRef.current += 1;
     setState((s) => ({ ...s, loaded: false, loading: false, issues: [], cursor: null, hasMore: true }));
   }, [filters.search, filters.statusId, filters.assigneeId, filters.type, filters.priority, filters.epicId, filters.customFilters]);
@@ -2368,9 +2374,11 @@ export function BacklogView({ projectId }: { projectId: string }) {
     [sprints],
   );
 
-  // When any filter is active, fetch a server-side count per section (sprints
-  // + backlog) so collapsed section headers reflect the filtered total. Uses
-  // limit=1 to keep the payload tiny — only the `total` field matters here.
+  // When any filter is active, fetch server-side counts for every section
+  // (sprints + backlog) in ONE batched request so collapsed headers reflect the
+  // filtered totals. `/api/issues/section-counts` groups by sprint on the server,
+  // replacing the old N+1 (one request per sprint) with a single call — applying
+  // a filter now costs one request regardless of sprint count.
   useEffect(() => {
     const hasActive =
       Boolean(appliedSearch || filterStatusId || filterAssigneeIds.length || filterType || filterPriority || filterEpicId || customFilters.length);
@@ -2381,46 +2389,45 @@ export function BacklogView({ projectId }: { projectId: string }) {
     }
     let cancelled = false;
     const sprintIds = activeSectionKey ? activeSectionKey.split(",") : [];
-    const sections: { key: string; sprintId: string | null }[] = [
-      ...sprintIds.map((id) => ({ key: `sprint:${id}`, sprintId: id })),
-      { key: "backlog", sprintId: null },
-    ];
-    Promise.all(
-      sections.map(({ key, sprintId }) => {
-        const params = new URLSearchParams({
-          projectId,
-          sprintId: sprintId ?? "null",
-          excludeType: "EPIC,SUBTASK",
-          limit: "1",
-          statusCounts: "1", // also returns the filtered To Do/In Progress/Done split
-        });
-        if (appliedSearch) params.set("search", appliedSearch);
-        if (filterStatusId) params.set("statusId", filterStatusId);
-        if (filterAssigneeIds.length) params.set("assigneeId", filterAssigneeIds.join(","));
-        if (filterType) params.set("type", filterType);
-        if (filterPriority) params.set("priority", filterPriority);
-        if (filterEpicId) params.set("epicId", filterEpicId);
-        if (customFilters.length) params.set("customFilters", JSON.stringify(customFilters));
-        return fetch(`/api/issues?${params.toString()}`)
-          .then((r) => r.json())
-          .then((res) => ({
-            key,
-            total: typeof res?.total === "number" ? res.total : 0,
-            counts: res?.statusCounts as { todo: number; inProgress: number; done: number } | undefined,
-          }))
-          .catch(() => ({ key, total: 0, counts: undefined }));
-      }),
-    ).then((rows) => {
-      if (cancelled) return;
-      const next: Record<string, number> = {};
-      const badges: Record<string, { todo: number; inProgress: number; done: number }> = {};
-      for (const r of rows) {
-        next[r.key] = r.total;
-        if (r.counts) badges[r.key] = r.counts;
-      }
-      setFilteredCounts(next);
-      setFilteredBadges(badges);
-    });
+    const params = new URLSearchParams({ projectId });
+    if (appliedSearch) params.set("search", appliedSearch);
+    if (filterStatusId) params.set("statusId", filterStatusId);
+    if (filterAssigneeIds.length) params.set("assigneeId", filterAssigneeIds.join(","));
+    if (filterType) params.set("type", filterType);
+    if (filterPriority) params.set("priority", filterPriority);
+    if (filterEpicId) params.set("epicId", filterEpicId);
+    if (customFilters.length) params.set("customFilters", JSON.stringify(customFilters));
+    fetch(`/api/issues/section-counts?${params.toString()}`)
+      .then((r) => r.json())
+      .then((res) => {
+        if (cancelled) return;
+        const data = (res?.success ? res.data : {}) as Record<
+          string,
+          { total: number; todo: number; inProgress: number; done: number }
+        >;
+        // Materialise an explicit entry for every displayed section (defaulting
+        // absent ones to 0) so a section that filters down to nothing still
+        // shows "0" rather than a stale count.
+        const next: Record<string, number> = {};
+        const badges: Record<string, { todo: number; inProgress: number; done: number }> = {};
+        for (const key of [...sprintIds.map((id) => `sprint:${id}`), "backlog"]) {
+          const c = data[key];
+          next[key] = c?.total ?? 0;
+          badges[key] = {
+            todo: c?.todo ?? 0,
+            inProgress: c?.inProgress ?? 0,
+            done: c?.done ?? 0,
+          };
+        }
+        setFilteredCounts(next);
+        setFilteredBadges(badges);
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setFilteredCounts({});
+          setFilteredBadges({});
+        }
+      });
     return () => { cancelled = true; };
   }, [projectId, activeSectionKey, appliedSearch, filterStatusId, filterAssigneeIds, filterType, filterPriority, filterEpicId, customFilters]);
 
