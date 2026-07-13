@@ -288,6 +288,7 @@ export default function EstimationPage() {
       searchable: false,
       hideable: false,
       freezable: false,
+      align: "right",
       render: (row) => {
         // Normalize so empty string / null / mixed-case all collapse to
         // a single canonical lowercase value before the comparisons.

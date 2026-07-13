@@ -51,6 +51,9 @@ export interface QuarterStartDatesResult extends QuarterStartDatesData {
   isLoading: boolean;
   /** Lookup helper — returns the startDate (YYYY-MM-DD) or null when not configured. */
   getStartDate: (year: number, quarter: string) => string | null;
+  /** Lookup helper — returns the endDate (YYYY-MM-DD) or null when not configured.
+   *  Needed to clamp the final meeting-day-aligned week to the quarter end. */
+  getEndDate: (year: number, quarter: string) => string | null;
   /** Lookup helper — returns the quarter's week count, defaulting to 13. */
   getWeekCount: (year: number, quarter: string) => number;
 }
@@ -85,12 +88,17 @@ export function useQuarterStartDates(): QuarterStartDatesResult {
     return hit ? hit.startDate : null;
   }
 
+  function getEndDate(year: number, quarter: string): string | null {
+    const hit = data.quarters.find((q) => q.fiscalYear === year && q.quarter === quarter);
+    return hit ? hit.endDate : null;
+  }
+
   function getWeekCount(year: number, quarter: string): number {
     const hit = data.quarters.find((q) => q.fiscalYear === year && q.quarter === quarter);
     return hit?.weekCount ?? 13;
   }
 
-  return { ...data, isLoading, getStartDate, getWeekCount };
+  return { ...data, isLoading, getStartDate, getEndDate, getWeekCount };
 }
 
 /**

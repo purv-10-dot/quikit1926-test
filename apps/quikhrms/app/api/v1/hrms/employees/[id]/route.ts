@@ -11,6 +11,7 @@ import { cascadeSoftDeleteEmployee, restoreEmployee } from "@/lib/services/emplo
 import { resolveEmployeeId } from "@/lib/resolve-employee";
 import { resolveScope, employeeScopeFilter } from "@/lib/rbac/scope";
 import { syncEmploymentHistory } from "@/lib/services/employment-history";
+import { mirrorHrmsRolesToCentral } from "@/lib/rbac/mirrorRole";
 
 /** GET /api/v1/hrms/employees/:id — full employee detail */
 export const GET = withAuth(async (_req: NextRequest, ctx, params) => {
@@ -205,6 +206,15 @@ export const PATCH = withAuth(async (req: NextRequest, { orgId, userId, permissi
     if (incomingRoleId !== undefined) changedFields.push("roleId");
 
     if (incomingRoleId !== undefined) {
+      // Keep the central UserAppAccess.role mirror (what the Admin Portal
+      // shows) in sync with the role just assigned in QuikHrms.
+      const assignedRole = incomingRoleId
+        ? await prisma.hrmsAppRole.findFirst({
+            where: { id: incomingRoleId, orgId },
+            select: { name: true },
+          })
+        : null;
+      await mirrorHrmsRolesToCentral(orgId, [params.id], assignedRole?.name);
       invalidatePermissionCache(orgId, params.id);
     }
 

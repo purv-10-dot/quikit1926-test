@@ -131,6 +131,13 @@ export function HeaderCell({
               ? (d) => setSort({ sortBy: effectiveSortKey, sortOrder: d })
               : undefined
           }
+          // Active direction for THIS column drives the ✓ + "Clear sort" row.
+          activeSort={isSorted ? sortOrder : null}
+          // Clearing resets to `sortBy: ""` — the pages omit sort params when
+          // empty, so the endpoint's default (newest-first) order takes over.
+          onClearSort={
+            sortable ? () => setSort({ sortBy: "", sortOrder: "desc" }) : undefined
+          }
           onFreeze={() => onFreeze(k)}
           onHide={() => hideCol(k)}
           frozen={boundary}

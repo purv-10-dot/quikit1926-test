@@ -1320,6 +1320,35 @@ export function actionsQtrRowHasError(
   return actionsQtrErrors(rows, goalRows).some((e) => e.rowIndex === rowIndex);
 }
 
+/**
+ * True when ONE ACTIONS (QTR) row has a genuine *value* error — data that is
+ * WRONG (over the Goal cap, a month over Projected, non-monotonic running
+ * totals, last month below Projected, or an unbalanced breakdown). This
+ * DELIBERATELY excludes the "row not filled in yet" errors (missing Projected /
+ * missing monthly breakdown).
+ *
+ * Used by the edit-after-finalize gate for a *category selection*: picking a
+ * category is step 1 of filling a row (it resets Projected to empty), so it must
+ * not be blocked just because Projected isn't entered yet — only block if the
+ * row already holds bad values. The Projected edit that follows is still gated
+ * by the full `actionsQtrRowHasError`.
+ */
+export function actionsQtrRowHasValueError(
+  rows: ActionRow[],
+  goalRows: GoalRow[],
+  rowIndex: number,
+): boolean {
+  const v = computeActionsQtrValidations(rows, goalRows)[rowIndex];
+  if (!v) return false;
+  return (
+    v.isUnbalanced ||
+    v.exceedsGoal ||
+    v.hasCellOverProjected ||
+    v.hasMonotonicViolation ||
+    v.lastBelowProjected
+  );
+}
+
 export function actionsQtrErrors(
   rows: ActionRow[],
   goalRows: GoalRow[],

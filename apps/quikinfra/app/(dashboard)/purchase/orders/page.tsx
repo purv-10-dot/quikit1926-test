@@ -11,11 +11,14 @@
  * indent must be L3-approved, etc.) still passes.
  */
 
-import { useMemo, useState } from "react";
-import { useRouter } from "next/navigation";
-import { Eye, Send, ListChecks } from "lucide-react";
-// import { WhatsAppLink } from "@/components/WhatsAppLink";
-// import { resolveVendorPhone } from "@/lib/whatsapp";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
+import { formatDate } from "@/lib/format/datetime";
+import { Eye, Send, ListChecks, FileText } from "lucide-react";
+import { WhatsAppLink } from "@/components/WhatsAppLink";
+import { resolveVendorPhone } from "@/lib/whatsapp";
+import { toErrorMessage } from "@/lib/api/errors";
+import { ConfirmDialog } from "@/components/ConfirmDialog";
 import {
   PageHeader, PageContainer, StatusChip, TabBar,
 } from "@/components/PageShell";
@@ -106,6 +109,8 @@ interface PoRow {
   sourceIndentNumber?: string;
   sourceIndentId?: string;
   vendorName?: string;
+  vendorPhone?: string | null;
+  vendorId?: string | null;
   projectName?: string;
   poDate?: string;
   deliveryDate?: string;
@@ -121,6 +126,17 @@ export default function PurchaseOrdersPage() {
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [peekTarget, setPeekTarget] = useState<{ type: SourceDocType; id: string } | null>(null);
   const { canAdd } = useMenuActions("/purchase/orders");
+  // Prefill for "Create PO" launched from the RFQ quote-comparison. The
+  // compare modal routes here with ?rfqId&vendorRowId(&nonL1Justification);
+  // we resolve the RFQ + that vendor's quoted rates and open the drawer
+  // pre-populated with vendor, items, rates, project and dates.
+  const searchParams = useSearchParams();
+  const prefillHandledRef = useRef(false);
+  const [prefill, setPrefill] = useState<{
+    formData: Record<string, string>;
+    lines: Record<string, unknown>[];
+    secondaryLines: Record<string, unknown>[];
+  } | null>(null);
   // Item-picker modal state for the PO Vendor section's "Assign
   // items" button — same ergonomics as the RFQ drawer.
   const [pickerCtx, setPickerCtx] = useState<{
@@ -132,6 +148,8 @@ export default function PurchaseOrdersPage() {
 
   const { data: result } = usePurchaseOrders({ status: "all", search: "" });
   const submitMutation = useSubmitPO();
+  const [submitTarget, setSubmitTarget] = useState<{ id: string; poNumber: string | null } | null>(null);
+  const [submitError, setSubmitError] = useState<string | null>(null);
   const allRows = result?.data ?? [];
   const tabs = useMemo(() => buildTabCounts(allRows, STATUS_TABS), [allRows]);
   const data = useMemo(
@@ -139,11 +157,23 @@ export default function PurchaseOrdersPage() {
     [allRows, activeTab],
   );
 
-  const handleSubmit = async (id: string) => {
-    if (!confirm("Submit this PO for approval?")) return;
+  // Submit-for-approval opens a lightweight ConfirmDialog (matching the
+  // Purchase Requisitions list) instead of a browser confirm().
+  const handleSubmit = (row: { id: string; poNumber?: string | null }) => {
+    setSubmitError(null);
+    setSubmitTarget({ id: row.id, poNumber: row.poNumber ?? null });
+  };
+
+  const doSubmit = async () => {
+    if (!submitTarget) return;
+    setSubmitError(null);
     try {
-      await submitMutation.mutateAsync(id);
-    } catch { /* error toast handled globally */ }
+      await submitMutation.mutateAsync(submitTarget.id);
+      setSubmitTarget(null);
+    } catch (err: unknown) {
+      // Keep the dialog open so the user can read the failure reason.
+      setSubmitError(toErrorMessage(err, "Failed to submit PO"));
+    }
   };
 
   const { data: projectsData } = useProjects();
@@ -318,8 +348,8 @@ export default function PurchaseOrdersPage() {
   }, [allItems]);
   const allVendors = vendorsData?.data ?? [];
   const vendorById = useMemo(() => {
-    const m = new Map<string, { id: string; companyName?: string; name?: string; email?: string }>();
-    for (const v of allVendors as unknown as { id: string; companyName?: string; name?: string; email?: string }[]) m.set(v.id, v);
+    const m = new Map<string, { id: string; companyName?: string; name?: string; email?: string; phone?: string; mobile?: string }>();
+    for (const v of allVendors as unknown as { id: string; companyName?: string; name?: string; email?: string; phone?: string; mobile?: string }[]) m.set(v.id, v);
     return m;
   }, [allVendors]);
 
@@ -358,12 +388,94 @@ export default function PurchaseOrdersPage() {
     return { vendorId: chosen?.vendorId ?? null, rateByLineKey };
   };
 
+  // Resolve the ?rfqId&vendorRowId prefill (from the RFQ compare modal's
+  // "Create PO") into a fully-populated PO draft: the chosen vendor, the
+  // RFQ's line items at that vendor's quoted rates, plus project/date and
+  // any non-L1 justification stamped into remarks.
+  useEffect(() => {
+    const rfqId = searchParams.get("rfqId");
+    const vendorRowId = searchParams.get("vendorRowId");
+    if (!rfqId || !vendorRowId) {
+      prefillHandledRef.current = false;
+      return;
+    }
+    if (prefillHandledRef.current) return;
+
+    const allRfqs = (rfqsResult?.data ?? []) as unknown as OrderRfqNode[];
+    const rfq = allRfqs.find((r) => r.id === rfqId);
+    if (!rfq) return; // RFQ list not loaded yet — retry on next render
+    const rfqVendors =
+      (rfq as { vendors?: Array<Record<string, unknown>> }).vendors ?? [];
+    const vendorRow = rfqVendors.find((v) => v.id === vendorRowId);
+    if (!vendorRow) return;
+    prefillHandledRef.current = true;
+
+    const rateByLineKey = new Map<string, string>();
+    const quoted = Array.isArray(vendorRow.quotedRates)
+      ? (vendorRow.quotedRates as Array<{ lineId?: string; rate?: unknown }>)
+      : [];
+    for (const q of quoted) {
+      if (q?.lineId) rateByLineKey.set(String(q.lineId), String(q.rate ?? ""));
+    }
+
+    const lines = (rfq.lines ?? []).map((l: SourceLine, i: number) => {
+      const key = String(l.id ?? l.lineId ?? `row-${i}`);
+      const itemId = resolveItemId(l);
+      const master = itemById.get(itemId);
+      const qty = String(l.quantity ?? l.qtyRequested ?? "");
+      return {
+        itemId,
+        indentLineId: l.sourceIndentLineId ?? undefined,
+        poQty: qty,
+        maxQty: "",
+        uomCode: l.uomCode ?? master?.uomCode ?? "",
+        unitRate:
+          rateByLineKey.get(key) ?? String(master?.standardRate ?? ""),
+        gstRate: String(master?.gstRate ?? "18"),
+      } as Record<string, unknown>;
+    });
+
+    const vendorId = String(vendorRow.vendorId ?? "");
+    const email =
+      vendorById.get(vendorId)?.email ??
+      (typeof vendorRow.email === "string" ? vendorRow.email : "") ??
+      "";
+    // Single-vendor PO → assign every prefilled line to this vendor so
+    // the mandatory per-vendor item rule is satisfied out of the box.
+    const secondaryLines: Record<string, unknown>[] = [
+      {
+        vendorId,
+        email,
+        assignedItemIds: lines.map((_, i) => `row-${i}`),
+      },
+    ];
+
+    const formData: Record<string, string> = {
+      poDate: todayIso,
+      sourceRfqId: rfqId,
+      sourceRfqNumber: String(rfq.rfqNumber ?? ""),
+      projectId: String(rfq.projectId ?? ""),
+      deliveryDate: rfq.dueDate ? String(rfq.dueDate).slice(0, 10) : "",
+    };
+    if (rfq.sourceIndentId) formData.sourceIndentId = String(rfq.sourceIndentId);
+    const justification = searchParams.get("nonL1Justification");
+    if (justification) {
+      formData.remarks = `Non-L1 vendor justification: ${justification}`;
+    }
+
+    setPrefill({ formData, lines, secondaryLines });
+    setDrawerOpen(true);
+    router.replace("/purchase/orders");
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [searchParams, rfqsResult, itemById, vendorById]);
+
   const config: QuickCreateConfig = {
     title: "New Purchase Order",
     subtitle:
       "Standard POs trace back to an Indent / RFQ. Tick Urgent Local to raise one directly for an emergency site need.",
     apiEndpoint: "/api/purchase/orders",
     onSuccess: () => qc.invalidateQueries({ queryKey: ["purchase-orders"] }),
+    initialLines: prefill?.lines,
     fields: [
       {
         // Standard vs Urgent Local toggle. When ticked, the Indent /
@@ -632,12 +744,12 @@ export default function PurchaseOrdersPage() {
         placeholder: "0",
       },
       {
-        // Free-text subject rendered on the printed PO as
-        // "Supply For: <text>". Mirrors the RFQ's Subject field so
-        // the outgoing PDF reads like the RFQ the vendor already
-        // quoted against.
+        // Free-text subject rendered on the printed PO under the
+        // "Subject :-" bar. Mirrors the RFQ's Subject field so the
+        // outgoing PDF reads like the RFQ the vendor already quoted
+        // against.
         key: "purpose",
-        label: "Subject / Supply For",
+        label: "Subject",
         type: "text" as const,
         span: 2 as const,
         placeholder: "e.g. MAHINDRA JCB PARTS, Q2 cement supply",
@@ -695,6 +807,20 @@ export default function PurchaseOrdersPage() {
       label: "Vendors",
       key: "vendors",
       addLabel: "Add Vendor",
+      // Every vendor must have at least one item assigned — an empty
+      // selection is no longer allowed to mean "include all". Only
+      // rows with a chosen vendor are checked (the trailing blank row
+      // is ignored).
+      validateBeforeSubmit: (vendors) => {
+        const withVendor = vendors.filter((v) => v.vendorId);
+        const missing = withVendor.some(
+          (v) =>
+            !Array.isArray(v.assignedItemIds) ||
+            v.assignedItemIds.length === 0,
+        );
+        if (!missing) return null;
+        return "Please select the item material for the vendor — each vendor must have at least one item assigned.";
+      },
       fields: [
         {
           key: "vendorId",
@@ -762,7 +888,7 @@ export default function PurchaseOrdersPage() {
               pickerItems.length === 0
                 ? "Add materials first"
                 : cleanSelected.length === 0
-                  ? `Include all ${pickerItems.length}`
+                  ? "Select items (required)"
                   : `${cleanSelected.length} of ${pickerItems.length}`;
             const vendor = line.vendorId
               ? vendorById.get(line.vendorId)
@@ -826,6 +952,10 @@ export default function PurchaseOrdersPage() {
           type: "text" as const,
           placeholder: "10-digit mobile",
           width: "wide" as const,
+          // Digits only, capped at 10 — strips any non-numeric input.
+          onChange: (value: string) => ({
+            mobile: value.replace(/\D/g, "").slice(0, 10),
+          }),
         },
       ],
     },
@@ -1039,7 +1169,7 @@ export default function PurchaseOrdersPage() {
                 <label className="block text-[11px] font-semibold text-gray-700 mb-1">
                   Net ({RUPEE})
                 </label>
-                <div className="mt-1 h-[38px] px-2 flex items-center justify-end rounded-lg border border-indigo-200 bg-white text-[13px] font-bold tabular-nums text-indigo-700 whitespace-nowrap overflow-hidden">
+                <div className="mt-1 h-[38px] px-2 flex items-center justify-end rounded-lg border border-orange-200 bg-white text-[13px] font-bold tabular-nums text-orange-700 whitespace-nowrap overflow-hidden">
                   {fmt(net)}
                 </div>
               </div>
@@ -1358,7 +1488,7 @@ export default function PurchaseOrdersPage() {
                 e.stopPropagation();
                 setPeekTarget({ type: "rfq", id: row.sourceRfqId ?? "" });
               }}
-              className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-indigo-50 text-indigo-700 text-[11px] font-medium hover:bg-indigo-100 transition-colors"
+              className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-orange-50 text-orange-700 text-[11px] font-medium hover:bg-orange-100 transition-colors"
               title="View RFQ details"
             >
               <span className="font-mono">{row.sourceRfqNumber}</span>
@@ -1391,18 +1521,17 @@ export default function PurchaseOrdersPage() {
       searchable: true,
       render: (row) => {
         const name = row.vendorName?.trim() || "—";
-        // WhatsApp quick-action temporarily disabled — see commented block below.
-        // const phone = resolveVendorPhone(row, vendorById);
-        // const poRef = row.poNumber ? String(row.poNumber) : "";
-        // const message = poRef
-        //   ? `Hello, regarding Purchase Order ${poRef}.`
-        //   : undefined;
+        const phone = resolveVendorPhone(row, vendorById);
+        const poRef = row.poNumber ? String(row.poNumber) : "";
+        const message = poRef
+          ? `Hello, regarding Purchase Order ${poRef}.`
+          : undefined;
         return (
           <div className="flex items-center gap-2 min-w-0 max-w-[240px]">
             <span className="truncate text-slate-800" title={name}>
               {name}
             </span>
-            {/* {phone ? (
+            {phone ? (
               <WhatsAppLink
                 phone={phone}
                 message={message}
@@ -1419,7 +1548,7 @@ export default function PurchaseOrdersPage() {
               >
                 No mobile
               </span>
-            )} */}
+            )}
           </div>
         );
       },
@@ -1432,14 +1561,15 @@ export default function PurchaseOrdersPage() {
       type: "date",
       sortable: true,
       render: (row) => {
-        const dd = row.deliveryDate ? String(row.deliveryDate).slice(0, 10) : "";
-        if (!dd) return <span className="text-slate-300">—</span>;
+        const raw = row.deliveryDate ? String(row.deliveryDate).slice(0, 10) : "";
+        if (!raw) return <span className="text-slate-300">—</span>;
+        const label = formatDate(raw);
         if (row.isOverdue) {
-          const ms = Date.now() - new Date(dd).getTime();
+          const ms = Date.now() - new Date(raw).getTime();
           const days = Math.max(0, Math.floor(ms / (1000 * 60 * 60 * 24)));
           return (
             <div className="flex items-center gap-2">
-              <span className="text-amber-700 tabular-nums">{dd}</span>
+              <span className="text-amber-700 tabular-nums">{label}</span>
               <span
                 className="inline-flex items-center text-[10px] font-medium text-amber-700 bg-amber-50 px-1.5 py-0.5 rounded"
                 title={`Delivery overdue by ${days} day${days === 1 ? "" : "s"}`}
@@ -1449,7 +1579,7 @@ export default function PurchaseOrdersPage() {
             </div>
           );
         }
-        return <span className="text-slate-700 tabular-nums">{dd}</span>;
+        return <span className="text-slate-700 tabular-nums">{label}</span>;
       },
     },
     {
@@ -1463,7 +1593,7 @@ export default function PurchaseOrdersPage() {
       render: (row) => <StatusChip status={row.status ?? ""} />,
     },
     {
-      key: "_actions", label: "Actions", width: "90px",
+      key: "_actions", label: "Actions", width: "120px", align: "right", sortable: false,
       render: (row) => (
         <div className="flex items-center justify-end gap-1.5">
           <button
@@ -1473,9 +1603,22 @@ export default function PurchaseOrdersPage() {
           >
             <Eye className="w-4 h-4" />
           </button>
+          <button
+            onClick={() =>
+              window.open(
+                `/api/purchase/orders/${row.id}/preview/pdf`,
+                "_blank",
+                "noopener",
+              )
+            }
+            className="p-1.5 rounded hover:bg-orange-50 text-gray-500 hover:text-orange-600 transition-colors"
+            title="View PDF"
+          >
+            <FileText className="w-4 h-4" />
+          </button>
           {row.status === "draft" && (
             <button
-              onClick={() => handleSubmit(row.id)}
+              onClick={() => handleSubmit(row)}
               className="p-1.5 rounded hover:bg-orange-50 text-orange-600 hover:text-orange-700 transition-colors"
               title="Submit for Approval"
             >
@@ -1510,8 +1653,13 @@ export default function PurchaseOrdersPage() {
 
       <QuickCreateDrawer
         open={drawerOpen}
-        onClose={() => setDrawerOpen(false)}
+        onClose={() => {
+          setDrawerOpen(false);
+          setPrefill(null);
+        }}
         config={config}
+        initialFormData={prefill?.formData}
+        initialSecondaryLines={prefill?.secondaryLines}
       />
 
       <SourceDocPeekModal
@@ -1520,14 +1668,47 @@ export default function PurchaseOrdersPage() {
         onClose={() => setPeekTarget(null)}
       />
 
+      <ConfirmDialog
+        open={!!submitTarget}
+        onClose={() => {
+          if (!submitMutation.isPending) {
+            setSubmitTarget(null);
+            setSubmitError(null);
+          }
+        }}
+        onConfirm={doSubmit}
+        title="Submit for Approval"
+        confirmLabel="Submit"
+        tone="primary"
+        loading={submitMutation.isPending}
+        message={
+          <>
+            Submit PO{" "}
+            <span className="font-semibold text-slate-900">
+              {submitTarget?.poNumber ?? submitTarget?.id}
+            </span>{" "}
+            for approval? It will be routed through the active Purchase Order
+            workflow and you won't be able to edit it until an approver returns
+            it.
+            {submitError && (
+              <span className="mt-3 block rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-xs text-rose-700">
+                {submitError}
+              </span>
+            )}
+          </>
+        }
+      />
+
+
       <ItemPickerModal
         open={!!pickerCtx}
         title="Assign items to vendor"
         subtitle={
           pickerCtx
-            ? `Pick which PO items to include for ${pickerCtx.vendorLabel}. Leave empty to include all.`
+            ? `Pick which PO items to include for ${pickerCtx.vendorLabel}. At least one item is required.`
             : undefined
         }
+        requireSelection
         items={pickerCtx?.items ?? []}
         selectedIds={pickerCtx?.selectedIds ?? []}
         onClose={() => setPickerCtx(null)}

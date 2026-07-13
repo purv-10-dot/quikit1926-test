@@ -10,6 +10,7 @@
  */
 
 import { toErrorMessage } from "@/lib/api/errors";
+import { formatDateTimeIST } from "@/lib/format/datetime";
 import { useMemo, useState, type ReactNode } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { Send, FileText, Mail, Phone, Building2, Eye } from "lucide-react";
@@ -213,7 +214,7 @@ export default function RFQDetailPage() {
                   label="Source Indent"
                   value={
                     rfq.sourceIndentNumber ? (
-                      <span className="font-mono text-xs text-indigo-600">
+                      <span className="text-xs text-orange-600">
                         {rfq.sourceIndentNumber}
                       </span>
                     ) : (
@@ -406,7 +407,7 @@ export default function RFQDetailPage() {
                     onClick={() =>
                       router.push(`/purchase/indents/${rfq.sourceIndentId}`)
                     }
-                    className="w-9 h-9 rounded-lg bg-indigo-50 text-indigo-600 flex items-center justify-center shrink-0 hover:bg-indigo-100"
+                    className="w-9 h-9 rounded-lg bg-orange-50 text-orange-600 flex items-center justify-center shrink-0 hover:bg-orange-100"
                     title="Open Indent details"
                   >
                     <FileText className="w-4 h-4" />
@@ -417,7 +418,7 @@ export default function RFQDetailPage() {
                       onClick={() =>
                         router.push(`/purchase/indents/${rfq.sourceIndentId}`)
                       }
-                      className="text-sm font-semibold text-gray-900 font-mono truncate hover:text-indigo-700 text-left"
+                      className="text-sm font-semibold text-gray-900 font-mono truncate hover:text-orange-700 text-left"
                     >
                       {rfq.sourceIndentNumber ?? rfq.sourceIndentId}
                     </button>
@@ -452,7 +453,7 @@ export default function RFQDetailPage() {
                       action: "request",
                       title: "Requested",
                       actionBy: approval.requestedByName || "Requester",
-                      actionAt: new Date(approval.requestedAt ?? "").toLocaleString(),
+                      actionAt: formatDateTimeIST(approval.requestedAt),
                     },
                   ];
 
@@ -469,7 +470,7 @@ export default function RFQDetailPage() {
                         step: s.stepOrder,
                         action: acted.action,
                         actionBy: acted.actionByName || approverLabel,
-                        actionAt: new Date(acted.actionAt ?? "").toLocaleString(),
+                        actionAt: formatDateTimeIST(acted.actionAt),
                         comments: acted.comments || undefined,
                       });
                       return;
@@ -500,7 +501,7 @@ export default function RFQDetailPage() {
               <div className="space-y-2">
                 <InfoField
                   label="Created"
-                  value={rfq.createdAt ? new Date(rfq.createdAt).toLocaleString() : "—"}
+                  value={formatDateTimeIST(rfq.createdAt)}
                 />
                 <InfoField
                   label="Created By"
@@ -509,7 +510,7 @@ export default function RFQDetailPage() {
                 {rfq.updatedAt && (
                   <InfoField
                     label="Last Updated"
-                    value={new Date(rfq.updatedAt).toLocaleString()}
+                    value={formatDateTimeIST(rfq.updatedAt)}
                   />
                 )}
                 {(rfq.updatedByName || rfq.updatedBy) && (

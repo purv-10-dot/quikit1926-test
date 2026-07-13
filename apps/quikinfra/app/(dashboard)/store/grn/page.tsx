@@ -10,7 +10,7 @@
 
 import { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
-import { Eye, Send } from "lucide-react";
+import { Eye, Send, FileText } from "lucide-react";
 import { PageHeader, PageContainer, StatusChip, TabBar } from "@/components/PageShell";
 import { DataTable, type ColDef } from "@/components/DataTable";
 import { useGRNs, usePurchaseOrders, useSubmitGRN } from "@/hooks/use-purchase";
@@ -336,6 +336,8 @@ export default function GRNPage() {
       key: "_actions",
       label: "Actions",
       width: "100px",
+      align: "right",
+      sortable: false,
       render: (row) => (
         <div className="flex items-center justify-end gap-1">
           <button
@@ -347,6 +349,20 @@ export default function GRNPage() {
             title="View"
           >
             <Eye className="w-4 h-4" />
+          </button>
+          <button
+            onClick={(e) => {
+              e.stopPropagation();
+              window.open(
+                `/api/purchase/grn/${row.id}/preview/pdf`,
+                "_blank",
+                "noopener",
+              );
+            }}
+            className="p-1.5 rounded hover:bg-orange-50 text-gray-500 hover:text-orange-600"
+            title="View PDF"
+          >
+            <FileText className="w-4 h-4" />
           </button>
           {row.status === "draft" && (
             <button

@@ -606,7 +606,7 @@ export function PRCreateDrawer({ open, onClose }: { open: boolean; onClose: () =
             <div className="bg-white border border-gray-200 rounded-xl">
               <div className="flex items-center justify-between px-4 py-3 bg-gray-50 border-b border-gray-200 rounded-t-xl">
                 <div className="flex items-center gap-2">
-                  <FileText className="w-4 h-4 text-indigo-600" />
+                  <FileText className="w-4 h-4 text-orange-600" />
                   <h3 className="text-xs font-bold text-gray-700 uppercase tracking-wider">
                     Material Estimation
                   </h3>

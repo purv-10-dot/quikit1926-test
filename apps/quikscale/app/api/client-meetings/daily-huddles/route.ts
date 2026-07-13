@@ -8,6 +8,7 @@ import { audit, requestContext } from "@/lib/audit";
 import { parseSort, type SortDirection } from "@/lib/api/parseSort";
 import { parsePagination, paginatedResponse } from "@/lib/api/pagination";
 import { searchUserIds, dateSearchConditions, timeSearchTokens, matchEnumValues, commaTokens } from "@/lib/api/listSearch";
+import { buildClientMeetingWhere } from "@/lib/api/clientMeetingScopeQuery";
 
 const withOrgAuth = withOrgAuthForModule("clientMeetings.dailyHuddle");
 
@@ -50,15 +51,8 @@ export const GET = withOrgAuth(async ({ orgId }, request) => {
   const search = (url.searchParams.get("search") ?? "").trim();
   const status = url.searchParams.get("status") || undefined;
 
-  const where: Record<string, unknown> = { orgId, deletedAt: includeDeleted ? { not: null } : null };
-  if (clientId) where.clientId = clientId;
-  if (status) where.callStatus = status;
-  if (from || to) {
-    const r: Record<string, Date> = {};
-    if (from) r.gte = new Date(from);
-    if (to) { const d = new Date(to); d.setUTCHours(23, 59, 59, 999); r.lte = d; }
-    where.meetingDate = r;
-  }
+  // Scope shared with the export route so the two never diverge.
+  const where = buildClientMeetingWhere(orgId, { clientId, status, from, to, includeDeleted });
   if (search) {
     // Global search across every visible column: client name, notes, absent
     // members (comma-split), Call Status (enum), Start/End times, the YES/NO/NA

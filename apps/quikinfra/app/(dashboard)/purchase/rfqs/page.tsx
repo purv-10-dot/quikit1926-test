@@ -12,7 +12,7 @@
 import { toErrorMessage } from "@/lib/api/errors";
 import { useCallback, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
-import { Eye, Send, CheckCircle2, GitCompare } from "lucide-react";
+import { Eye, Send, CheckCircle2, GitCompare, FileText } from "lucide-react";
 import { PageHeader, PageContainer, StatusChip, TabBar } from "@/components/PageShell";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { DataTable, type ColDef } from "@/components/DataTable";
@@ -391,7 +391,7 @@ export default function RFQsPage() {
       },
       {
         key: "purpose",
-        label: "Subject / Supply For",
+        label: "Subject",
         type: "text" as const,
         span: 2 as const,
         placeholder: "e.g. Mahindra JCB parts, Q2 cement supply",
@@ -472,6 +472,11 @@ export default function RFQsPage() {
           type: "text" as const,
           placeholder: "10-digit mobile",
           width: "wide" as const,
+          // Digits only, capped at 10 — strips anything the user types
+          // that isn't a number (the field previously accepted text).
+          onChange: (value: string) => ({
+            mobile: value.replace(/\D/g, "").slice(0, 10),
+          }),
         },
       ],
     },
@@ -479,6 +484,20 @@ export default function RFQsPage() {
       label: "Vendors to Send RFQ",
       key: "vendors",
       addLabel: "Add Vendor",
+      // Every vendor must have at least one item assigned — an empty
+      // selection is no longer allowed to mean "send all". Only rows
+      // with a chosen vendor are checked (the trailing blank row is
+      // ignored).
+      validateBeforeSubmit: (vendors) => {
+        const withVendor = vendors.filter((v) => v.vendorId);
+        const missing = withVendor.some(
+          (v) =>
+            !Array.isArray(v.assignedItemIds) ||
+            v.assignedItemIds.length === 0,
+        );
+        if (!missing) return null;
+        return "Please select the item material for the vendor — each vendor must have at least one item assigned.";
+      },
       fields: [
         {
           key: "vendorId",
@@ -552,7 +571,7 @@ export default function RFQsPage() {
               pickerItems.length === 0
                 ? "Add materials first"
                 : cleanSelected.length === 0
-                  ? `Send all ${pickerItems.length}`
+                  ? "Select items (required)"
                   : `${cleanSelected.length} of ${pickerItems.length}`;
             const vendor = line.vendorId
               ? vendorById.get(line.vendorId)
@@ -685,7 +704,7 @@ export default function RFQsPage() {
               e.stopPropagation();
               setPeekTarget({ type: "indent", id: row.sourceIndentId ?? "" });
             }}
-            className="font-mono text-xs text-indigo-600 hover:text-indigo-800 underline"
+            className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-orange-50 text-orange-700 text-[11px] font-medium hover:bg-orange-100 transition-colors"
             title="View Indent details"
           >
             {row.sourceIndentNumber}
@@ -711,7 +730,7 @@ export default function RFQsPage() {
       // vendors collapses to "+N more" (hover to see the names).
       key: "_vendors",
       label: "Vendors",
-      width: "240px",
+      width: "190px",
       render: (row) => {
         const vendors: RfqVendor[] = Array.isArray(row.vendors) ? row.vendors : [];
         if (vendors.length === 0) {
@@ -749,9 +768,9 @@ export default function RFQsPage() {
                   <li
                     key={v.id ?? v.vendorId ?? i}
                     title={`${tip} \u00B7 ${hasQuoted ? "Quoted" : "Pending"}`}
-                    className="flex items-center justify-between gap-2 text-xs"
+                    className="flex items-center gap-2 text-xs"
                   >
-                    <div className="flex items-center gap-1.5 min-w-0 flex-1">
+                    <div className="flex items-center gap-1.5 min-w-0">
                       <span
                         className={
                           hasQuoted
@@ -762,8 +781,8 @@ export default function RFQsPage() {
                       <span
                         className={
                           hasQuoted
-                            ? "text-gray-800 truncate"
-                            : "text-gray-500 truncate"
+                            ? "text-gray-800 truncate max-w-[100px]"
+                            : "text-gray-500 truncate max-w-[100px]"
                         }
                       >
                         {name}
@@ -801,7 +820,7 @@ export default function RFQsPage() {
                             initialVendorRowId: v.id,
                           });
                         }}
-                        className="text-[11px] text-indigo-600 hover:text-indigo-800 hover:underline font-medium shrink-0"
+                        className="text-[11px] text-orange-600 hover:text-orange-700 hover:underline font-medium shrink-0"
                       >
                         Add Quote
                       </button>
@@ -846,6 +865,8 @@ export default function RFQsPage() {
       key: "_actions",
       label: "Actions",
       width: "210px",
+      sortable: false,
+      align: "right",
       render: (row) => {
         const rowVendors: RfqVendor[] = Array.isArray(row.vendors) ? row.vendors : [];
         const anyQuoted = rowVendors.some(
@@ -866,7 +887,7 @@ export default function RFQsPage() {
                     lines: Array.isArray(row.lines) ? row.lines : [],
                   });
                 }}
-                className="inline-flex items-center gap-1 px-2 py-1 rounded-md text-xs font-medium text-indigo-700 bg-indigo-50 border border-indigo-200 hover:bg-indigo-100"
+                className="inline-flex items-center gap-1 px-2 py-1 rounded-md text-xs font-medium text-orange-700 bg-orange-50 border border-orange-200 hover:bg-orange-100"
                 title="Compare vendor quotes"
               >
                 <GitCompare className="w-3.5 h-3.5" />
@@ -882,6 +903,20 @@ export default function RFQsPage() {
               title="View"
             >
               <Eye className="w-4 h-4" />
+            </button>
+            <button
+              onClick={(e) => {
+                e.stopPropagation();
+                window.open(
+                  `/api/purchase/rfqs/${row.id}/preview/pdf`,
+                  "_blank",
+                  "noopener",
+                );
+              }}
+              className="p-1.5 rounded hover:bg-orange-50 text-gray-500 hover:text-orange-600"
+              title="View PDF"
+            >
+              <FileText className="w-4 h-4" />
             </button>
             {isDraft && (
               <button
@@ -940,9 +975,10 @@ export default function RFQsPage() {
         title="Assign items to vendor"
         subtitle={
           pickerCtx
-            ? `Pick which RFQ materials to send to ${pickerCtx.vendorLabel}. Leave empty to send all.`
+            ? `Pick which RFQ materials to send to ${pickerCtx.vendorLabel}. At least one item is required.`
             : undefined
         }
+        requireSelection
         items={pickerCtx?.items ?? []}
         selectedIds={pickerCtx?.selectedIds ?? []}
         onClose={() => setPickerCtx(null)}
@@ -984,14 +1020,17 @@ export default function RFQsPage() {
           });
           setCompareCtx(null);
         }}
-        onCreatePO={(vendorRowId) => {
+        onCreatePO={(vendorRowId, justification) => {
           if (!compareCtx) return;
-          // Stub: route to PO create flow. A proper implementation
-          // would prefill the PO form with the RFQ's items at this
-          // vendor's quoted rates.
-          router.push(
-            `/purchase/orders?rfqId=${encodeURIComponent(compareCtx.rfqId)}&vendorRowId=${encodeURIComponent(vendorRowId)}`,
-          );
+          // Route to PO create flow. For a non-L1 vendor the compare
+          // modal supplies the mandatory business justification, which
+          // we carry into the PO form so it can be stored on the PO.
+          const params = new URLSearchParams({
+            rfqId: compareCtx.rfqId,
+            vendorRowId,
+          });
+          if (justification) params.set("nonL1Justification", justification);
+          router.push(`/purchase/orders?${params.toString()}`);
         }}
       />
 

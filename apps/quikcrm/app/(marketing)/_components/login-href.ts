@@ -12,3 +12,11 @@ export const LOGIN_HREF = buildLoginUrl({
   appUrl: process.env.NEXT_PUBLIC_QUIKCRM_URL ?? "http://localhost:3008",
   postLoginPath: "/dashboard",
 });
+
+/**
+ * Self-serve registration lives on the central QuikAuth /register wizard
+ * (workspace → OTP → password), which signs the user in and lands them on the
+ * launcher /apps grid. Literal NEXT_PUBLIC_AUTH_URL access so webpack inlines
+ * it into the client bundle; dev fallback :3001.
+ */
+export const SIGNUP_HREF = `${(process.env.NEXT_PUBLIC_AUTH_URL ?? "http://localhost:3001").replace(/\/$/, "")}/register`;

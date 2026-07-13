@@ -21,6 +21,7 @@ import {
   type ExportSelection,
   TrashBanner,
 } from "@quikit/ui";
+export type { MoreMenuItem };
 import { Download, Trash2, Columns } from "lucide-react";
 
 interface ModuleMoreActionsProps {
@@ -45,9 +46,16 @@ interface ModuleMoreActionsProps {
    * Optional override for the "Export Data" item. When provided, clicking
    * Export Data calls this instead of opening the built-in column-selection
    * ExportModal — useful for pages that prefer a custom modal (e.g. the
-   * Client Meeting "From / To / Client" modal).
+   * Global Export modal).
    */
   onExportClick?: () => void;
+
+  /**
+   * Extra menu items appended after the built-ins. Used by Daily Huddle /
+   * Weekly Meeting to keep the "Metrics Report…" (aggregate ExcelJS) action
+   * alongside the unified Global Export.
+   */
+  extraItems?: MoreMenuItem[];
 }
 
 export function ModuleMoreActions({
@@ -60,6 +68,7 @@ export function ModuleMoreActions({
   onExport,
   defaultExportColumnKeys,
   onExportClick,
+  extraItems,
 }: ModuleMoreActionsProps) {
   const [showExport, setShowExport] = useState(false);
   const [showManage, setShowManage] = useState(false);
@@ -71,6 +80,7 @@ export function ModuleMoreActions({
       icon: Download,
       onSelect: () => (onExportClick ? onExportClick() : setShowExport(true)),
     },
+    ...(extraItems ?? []),
     {
       key: "trash",
       label: isTrashActive ? "Exit Trash" : "View Trash",

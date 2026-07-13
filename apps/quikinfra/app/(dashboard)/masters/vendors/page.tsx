@@ -14,7 +14,7 @@ const ImportDataDrawer = dynamic(
 import { useVendors, useCreateVendor, useUpdateVendor, useItemGroups, useDeleteVendor } from "@/hooks/use-masters";
 import {
   FormDrawer, FormSection, FormRow, Field,
-  TextInput, NumberInput, SelectInput, TextAreaInput, CheckboxInput, DateInput, InactiveStatusNotice,
+  TextInput, NumberInput, SelectInput, MultiSelectInput, TextAreaInput, CheckboxInput, DateInput, InactiveStatusNotice,
 } from "@/components/FormDrawer";
 import {
   validateForm, type ValidationRules, validateEmail, validateMobile,
@@ -285,16 +285,28 @@ export default function VendorsPage() {
 
   const isSaving = createMutation.isPending || updateMutation.isPending;
 
-  const vendorCategorySelectOptions = useMemo(() => {
-    const base = [{ value: "", label: "— Select category —" }, ...itemGroupCategoryOptions];
-    const cur = String(form.category ?? "").trim();
-    if (!cur) return base;
-    if (itemGroupCategoryOptions.some((o) => o.value === cur)) return base;
-    return [
-      ...base,
-      { value: cur, label: `${cur} (not in Item Groups)` },
-    ];
-  }, [itemGroupCategoryOptions, form.category]);
+  // Category is stored as a comma-separated string on the vendor record.
+  // The UI edits it as a list of selected Item Groups.
+  const categoryValues = useMemo(
+    () =>
+      String(form.category ?? "")
+        .split(",")
+        .map((s) => s.trim())
+        .filter(Boolean),
+    [form.category],
+  );
+
+  const vendorCategoryMultiOptions = useMemo(() => {
+    const base = [...itemGroupCategoryOptions];
+    // Keep any already-selected value that no longer maps to an Item Group so
+    // it stays selectable/visible instead of silently disappearing.
+    for (const cur of categoryValues) {
+      if (!base.some((o) => o.value === cur)) {
+        base.push({ value: cur, label: `${cur} (not in Item Groups)` });
+      }
+    }
+    return base;
+  }, [itemGroupCategoryOptions, categoryValues]);
 
   const handleEdit = (item: VendorEditRow) => {
     setEditId(item.id);
@@ -424,14 +436,13 @@ export default function VendorsPage() {
             </Field>
             <Field
               label="Category"
-              hint="Options come from Masters › Item Groups. Add groups there to see them here."
+              hint="Select one or more Item Groups. Add groups in Masters › Item Groups to see them here."
             >
-              <SelectInput
-                value={form.category}
-                onChange={(v) => set("category", v)}
-                options={vendorCategorySelectOptions}
-                placeholder="Select item group"
-                searchable={vendorCategorySelectOptions.length > 8}
+              <MultiSelectInput
+                values={categoryValues}
+                onChange={(vals) => set("category", vals.join(", "))}
+                options={vendorCategoryMultiOptions}
+                placeholder="Select item groups"
               />
             </Field>
           </FormRow>

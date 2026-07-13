@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { LOGIN_HREF } from "./login-href";
+import { LOGIN_HREF, SIGNUP_HREF } from "./login-href";
 
 /** Circular "Q" brand mark shared by nav + footer. */
 export function BrandMark() {
@@ -121,6 +121,9 @@ export function Nav() {
                 />
               </svg>
             </button>
+            <a href={SIGNUP_HREF} className="btn btn-ghost" style={{ padding: "10px 20px" }}>
+              Sign Up
+            </a>
             <a href={LOGIN_HREF} className="btn btn-primary" style={{ padding: "10px 20px" }}>
               Login
             </a>

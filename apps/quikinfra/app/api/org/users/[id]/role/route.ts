@@ -23,6 +23,8 @@ import type { NextRequest } from "next/server";
 import { db } from "@quikit/database";
 import { requireAdmin } from "@/lib/rbac/requireAdmin";
 import { AdminLockoutError, assertWouldNotEmptyAdmin } from "@/lib/rbac/preventAdminLockout";
+import { getQuikInfraAppId } from "@/lib/rbac/userCan";
+import { mirrorAppRoleToCentral } from "@quikit/auth/assign-app-roles";
 
 const SETTINGS_PERMS = [
   { resource: "construction.settings", action: "manage" },
@@ -65,6 +67,18 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
         data: { userId: targetUserId, orgId, roleId, assignedBy: actingUserId },
       }),
     ]);
+
+    // Keep the central UserAppAccess.role mirror (what the Admin Portal shows)
+    // in sync with the role just assigned in QuikInfra.
+    const appId = await getQuikInfraAppId();
+    if (appId) {
+      await mirrorAppRoleToCentral(db, {
+        orgId,
+        userId: targetUserId,
+        appId,
+        roleName: role.name,
+      });
+    }
 
     // Reconcile settings-access extras. The new role + checkbox combo
     // determines whether the user keeps Settings access:

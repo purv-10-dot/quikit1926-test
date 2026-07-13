@@ -11,10 +11,21 @@ interface ColMenuProps {
   showSort?: boolean;
   showFreeze?: boolean;
   showHide?: boolean;
+  /** Current sort direction for THIS column, or null when it isn't the active
+   *  sort. Drives the ✓ marker + reveals the "Clear sort" row. */
+  activeSort?: "asc" | "desc" | null;
+  /** Reset sorting back to the list's default order (newest first). Only
+   *  rendered when the column is actively sorted. */
+  onClearSort?: () => void;
 }
 
 /**
  * Shared table column menu -- three-dot menu with sort, freeze, and hide options.
+ *
+ * Sort UX: both directions are always listed. When this column is the active
+ * sort (`activeSort` set), the matching direction shows a ✓, clicking it again
+ * clears the sort, and a dedicated "Clear sort" row appears so returning to the
+ * default (newest-first) order is discoverable.
  */
 export function ColMenu({
   colKey,
@@ -25,6 +36,8 @@ export function ColMenu({
   showSort = true,
   showFreeze = true,
   showHide = true,
+  activeSort = null,
+  onClearSort,
 }: ColMenuProps) {
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
@@ -53,23 +66,57 @@ export function ColMenu({
           {showSort && onSort && (
             <>
               <button
-                onClick={() => { onSort("asc"); setOpen(false); }}
+                onClick={() => {
+                  // Clicking the already-active direction clears the sort;
+                  // otherwise apply ascending.
+                  if (activeSort === "asc" && onClearSort) onClearSort();
+                  else onSort("asc");
+                  setOpen(false);
+                }}
                 className="flex items-center gap-2 w-full px-3 py-1.5 hover:bg-gray-50 text-gray-700"
               >
                 <svg className="h-3.5 w-3.5 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 15l7-7 7 7" />
                 </svg>
-                Sort Ascending
+                <span className="flex-1 text-left">Sort Ascending</span>
+                {activeSort === "asc" && (
+                  <svg className="h-3.5 w-3.5 text-accent-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                  </svg>
+                )}
               </button>
               <button
-                onClick={() => { onSort("desc"); setOpen(false); }}
+                onClick={() => {
+                  if (activeSort === "desc" && onClearSort) onClearSort();
+                  else onSort("desc");
+                  setOpen(false);
+                }}
                 className="flex items-center gap-2 w-full px-3 py-1.5 hover:bg-gray-50 text-gray-700"
               >
                 <svg className="h-3.5 w-3.5 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
                 </svg>
-                Sort Descending
+                <span className="flex-1 text-left">Sort Descending</span>
+                {activeSort === "desc" && (
+                  <svg className="h-3.5 w-3.5 text-accent-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                  </svg>
+                )}
               </button>
+              {activeSort && onClearSort && (
+                <>
+                  <div className="my-1 border-t border-gray-100" />
+                  <button
+                    onClick={() => { onClearSort(); setOpen(false); }}
+                    className="flex items-center gap-2 w-full px-3 py-1.5 hover:bg-gray-50 text-gray-700"
+                  >
+                    <svg className="h-3.5 w-3.5 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                    </svg>
+                    Clear sort
+                  </button>
+                </>
+              )}
             </>
           )}
           {showFreeze && onFreeze && (

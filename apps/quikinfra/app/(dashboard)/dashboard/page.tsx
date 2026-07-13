@@ -318,8 +318,8 @@ export default function DashboardPage() {
         ) : (
           <div className="overflow-x-auto">
             <div className="min-w-[640px]">
-              <div className="grid grid-cols-[28px_1fr_1fr_100px_120px] gap-2 px-5 py-2.5 bg-slate-50 text-[11px] font-semibold text-slate-400 uppercase tracking-wide border-b border-slate-100">
-                <span className="sr-only">Select</span>
+              <div className="grid grid-cols-[28px_190px_minmax(0,1fr)_110px_120px] gap-2 px-5 py-2.5 bg-slate-50 text-[11px] font-semibold text-slate-400 uppercase tracking-wide border-b border-slate-100">
+                <span aria-hidden />
                 <span>PR Number</span>
                 <span>Project</span>
                 <span>Date</span>
@@ -331,7 +331,7 @@ export default function DashboardPage() {
                     type="button"
                     key={pr.id}
                     onClick={() => router.push(`/purchase/requisitions/${pr.id}`)}
-                    className="w-full grid grid-cols-[28px_1fr_1fr_100px_120px] gap-2 px-5 py-3 text-left items-center hover:bg-slate-50 transition-colors"
+                    className="w-full grid grid-cols-[28px_190px_minmax(0,1fr)_110px_120px] gap-2 px-5 py-3 text-left items-center hover:bg-slate-50 transition-colors"
                   >
                     <span aria-hidden className="w-4 h-4 rounded border border-slate-200 bg-white shrink-0 mx-auto" />
                     <span className="text-sm font-semibold text-blue-600 truncate">{pr.number}</span>
@@ -366,8 +366,8 @@ export default function DashboardPage() {
         ) : (
           <div className="overflow-x-auto">
             <div className="min-w-[640px]">
-              <div className="grid grid-cols-[28px_1fr_1fr_100px_120px] gap-2 px-5 py-2.5 bg-slate-50 text-[11px] font-semibold text-slate-400 uppercase tracking-wide border-b border-slate-100">
-                <span className="sr-only">Select</span>
+              <div className="grid grid-cols-[28px_190px_minmax(0,1fr)_110px_120px] gap-2 px-5 py-2.5 bg-slate-50 text-[11px] font-semibold text-slate-400 uppercase tracking-wide border-b border-slate-100">
+                <span aria-hidden />
                 <span>PO Number</span>
                 <span>Vendor / Project</span>
                 <span className="text-right">Amount</span>
@@ -379,7 +379,7 @@ export default function DashboardPage() {
                     type="button"
                     key={po.id}
                     onClick={() => router.push(`/purchase/orders/${po.id}`)}
-                    className="w-full grid grid-cols-[28px_1fr_1fr_100px_120px] gap-2 px-5 py-3 text-left items-center hover:bg-slate-50 transition-colors"
+                    className="w-full grid grid-cols-[28px_190px_minmax(0,1fr)_110px_120px] gap-2 px-5 py-3 text-left items-center hover:bg-slate-50 transition-colors"
                   >
                     <span aria-hidden className="w-4 h-4 rounded border border-slate-200 bg-white shrink-0 mx-auto" />
                     <span className="text-sm font-semibold text-blue-600 truncate">{po.number}</span>
