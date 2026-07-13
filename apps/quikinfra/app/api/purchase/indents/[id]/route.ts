@@ -7,6 +7,7 @@ import {
   findIndentById,
   softDeleteIndent,
 } from "@/lib/purchase/indent-repository";
+import { procurementByIndentLine } from "@/lib/purchase/procurement-status";
 import { resolveUserNames } from "@/lib/users/resolve-names";
 import { db } from "@/lib/db";
 import {
@@ -69,8 +70,22 @@ export async function GET(
     row.requestedById,
     rowApprovedBy,
   ]);
+
+  // Enrich each line with its downstream PO/GRN status ("ordered?" /
+  // "arrived?"). Traced indent line → PO line → GRN line.
+  const indentLines = (row.lines ?? []) as Array<{ id?: string }>;
+  const procByLine = await procurementByIndentLine(
+    ctx.orgId,
+    indentLines.map((l) => l?.id ?? "").filter(Boolean),
+  );
+  const linesWithProcurement = indentLines.map((l) => ({
+    ...l,
+    procurement: (l?.id && procByLine.get(l.id)) || null,
+  }));
+
   return NextResponse.json({
     ...row,
+    lines: linesWithProcurement,
     approval,
     createdByName: auditNames.get(row.createdBy) ?? row.createdBy,
     updatedByName: auditNames.get(row.updatedBy) ?? row.updatedBy,

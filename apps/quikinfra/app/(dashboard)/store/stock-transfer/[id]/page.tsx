@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { useParams } from "next/navigation";
 import { DocDetailLayout, type LineCol } from "@/components/procurement/DocDetailLayout";
+import { formatDateTimeIST } from "@/lib/format/datetime";
 
 interface Line { id: string; item: { code: string; name: string }; uom: { code: string }; quantity: string; unitRate: string; amount: string; remarks: string | null }
 interface Doc {
@@ -41,7 +42,7 @@ export default function StockTransferDetailPage() {
         { label: "From", value: doc.fromLocation?.name ?? "—" },
         { label: "To", value: doc.toLocation?.name ?? "—" },
         { label: "Transfer Date", value: new Date(doc.transferDate).toISOString().slice(0, 10) },
-        { label: "Received At", value: doc.receivedAt ? new Date(doc.receivedAt).toLocaleString() : "—" },
+        { label: "Received At", value: formatDateTimeIST(doc.receivedAt) },
       ]}
       lineColumns={columns}
       lines={doc.lines}

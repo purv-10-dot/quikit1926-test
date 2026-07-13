@@ -23,7 +23,6 @@ import { useParams, useRouter } from "next/navigation";
 import {
   AlertTriangle,
   Check,
-  Eye,
   Pencil,
   Send,
   Trash2,
@@ -37,6 +36,7 @@ import {
   ApprovalTimeline,
 } from "@/components/PageShell";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
+import { formatDateTimeIST } from "@/lib/format/datetime";
 import { WorkflowConfirmDialog } from "@/components/WorkflowConfirmDialog";
 import {
   useWorkOrder,
@@ -171,7 +171,7 @@ export default function WorkOrderDetailPage() {
       step: h.stepOrder ?? 0,
       action: h.action,
       actionBy: h.actionByName ?? "User",
-      actionAt: h.actionAt ? new Date(h.actionAt).toLocaleString() : "",
+      actionAt: h.actionAt ? formatDateTimeIST(h.actionAt) : "",
       comments: h.comments ?? undefined,
     })) ?? [];
 
@@ -328,17 +328,6 @@ export default function WorkOrderDetailPage() {
                   Overview
                 </h2>
                 <div className="flex items-center gap-2">
-                  {boqItems.length > 0 && (
-                    <a
-                      href={`/api/projects/work-orders/${id}/preview/pdf`}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="inline-flex items-center gap-1 text-xs font-semibold text-orange-600 hover:text-orange-700 hover:underline"
-                      title="Open the Work Order PDF in a new tab"
-                    >
-                      <Eye className="w-3.5 h-3.5" /> View PDF
-                    </a>
-                  )}
                   <StatusChip status={wo.status ?? "draft"} />
                 </div>
               </div>
@@ -649,9 +638,7 @@ export default function WorkOrderDetailPage() {
                     Created
                   </div>
                   <div className="mt-0.5 text-gray-900">
-                    {wo.createdAt
-                      ? new Date(wo.createdAt).toLocaleString()
-                      : "—"}
+                    {formatDateTimeIST(wo.createdAt)}
                   </div>
                 </div>
                 <div>
@@ -668,7 +655,7 @@ export default function WorkOrderDetailPage() {
                       Last Updated
                     </div>
                     <div className="mt-0.5 text-gray-900">
-                      {new Date(wo.updatedAt).toLocaleString()}
+                      {formatDateTimeIST(wo.updatedAt)}
                     </div>
                   </div>
                 )}

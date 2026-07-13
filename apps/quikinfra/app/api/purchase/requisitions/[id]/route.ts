@@ -4,6 +4,7 @@ import { hasMatrixAction } from "@/lib/auth/context";
 import { err as envelopeErr } from "@/lib/http/envelope";
 import { requireOwnership } from "@/lib/auth/ownership";
 import { findPRById, updatePR, deletePR } from "@/lib/purchase/pr-repository";
+import { procurementByPrLine } from "@/lib/purchase/procurement-status";
 import { resolveUserNames } from "@/lib/users/resolve-names";
 import { db } from "@/lib/db";
 import {
@@ -56,8 +57,22 @@ export async function GET(
   }
 
   const auditNames = await resolveUserNames([pr.createdBy, pr.updatedBy]);
+
+  // Enrich each line with its downstream PO/GRN status ("ordered?" /
+  // "arrived?"). Traced PR line → indent line → PO line → GRN line.
+  const prLines = (pr.lines ?? []) as Array<{ id?: string }>;
+  const procByLine = await procurementByPrLine(
+    ctx.orgId,
+    prLines.map((l) => l?.id ?? "").filter(Boolean),
+  );
+  const linesWithProcurement = prLines.map((l) => ({
+    ...l,
+    procurement: (l?.id && procByLine.get(l.id)) || null,
+  }));
+
   return NextResponse.json({
     ...pr,
+    lines: linesWithProcurement,
     approval,
     createdByName: auditNames.get(pr.createdBy) ?? pr.createdBy,
     updatedByName: auditNames.get(pr.updatedBy) ?? pr.updatedBy,
