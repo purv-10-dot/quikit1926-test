@@ -5,6 +5,7 @@ import { addDays, generateMonthlyQuarterDates, chainQuarterDates, isMonthBasedWe
 import { withOrgAuthForModule } from "@/lib/api/withOrgAuth";
 import { fyHasData, fyLabel } from "@/lib/api/quartersFyHasData";
 import { getCustomQuarterEnabled } from "@/lib/utils/featureFlags";
+import { generateMeetingDayWeeks, meetingDayIndex } from "@/lib/utils/fiscal";
 const withOrgAuth = withOrgAuthForModule("orgSetup.quarters");
 
 const DAYS_PER_QUARTER = 91; // 13 weeks
@@ -31,6 +32,11 @@ export const PUT = withOrgAuth<{ id: string }>(async ({ orgId }, request, { para
       return NextResponse.json({ success: false, error: "Quarter not found" }, { status: 404 });
 
     const customEnabled = await getCustomQuarterEnabled(orgId);
+    const meetingDayFlag = await db.featureFlag.findFirst({
+      where: { orgId, key: "weekly_meeting_day" },
+      select: { value: true },
+    });
+    const meetingDayValue = meetingDayFlag?.value ?? null;
 
     // Legacy mode: only Q1's start date can be changed (others auto-calculate).
     // Custom mode: any quarter's weekCount (and Q1's start) can be edited.
@@ -78,15 +84,31 @@ export const PUT = withOrgAuth<{ id: string }>(async ({ orgId }, request, { para
           return NextResponse.json({ success: false, error: "Invalid start date" }, { status: 400 });
         q1Start = d;
       }
-      const weekCounts = quarterOrder.map(n => byName[n].weekCount ?? 13);
-      if (parsed.data.weekCount != null) {
-        weekCounts[quarterOrder.indexOf(existing.quarter)] = parsed.data.weekCount;
+      const mdIdx = meetingDayIndex(meetingDayValue);
+      if (mdIdx !== null) {
+        // Meeting-day mode: quarter dates are always calendar-month based and
+        // each quarter's week count is DERIVED from the meeting-day chain
+        // (13 or 14, incl. partial weeks). The persisted counts are outputs
+        // here, so we must NOT feed them back into the generator selection
+        // (that would flip a 14-week FY to chained, non-month dates). Any
+        // manual `weekCount` in the request is ignored — it's UI-disabled.
+        quarterDates = generateMonthlyQuarterDates(q1Start);
+        for (const q of quarterDates) {
+          const s = q.startDate.toISOString().slice(0, 10);
+          const e = q.endDate.toISOString().slice(0, 10);
+          q.weekCount = generateMeetingDayWeeks(s, e, mdIdx, q.quarter === "Q1").length;
+        }
+      } else {
+        const weekCounts = quarterOrder.map(n => byName[n].weekCount ?? 13);
+        if (parsed.data.weekCount != null) {
+          weekCounts[quarterOrder.indexOf(existing.quarter)] = parsed.data.weekCount;
+        }
+        // No meeting day — pick the generator the same way POST does: all-13 →
+        // month-based calendar quarters, any ≠ 13 → week-based chained quarters.
+        quarterDates = isMonthBasedWeekCounts(weekCounts)
+          ? generateMonthlyQuarterDates(q1Start)
+          : chainQuarterDates(q1Start, weekCounts);
       }
-      // Pick the generator the same way POST does — all-13 → month-based
-      // calendar quarters, any ≠ 13 → week-based chained quarters.
-      quarterDates = isMonthBasedWeekCounts(weekCounts)
-        ? generateMonthlyQuarterDates(q1Start)
-        : chainQuarterDates(q1Start, weekCounts);
     } else {
       if (!startDateStr)
         return NextResponse.json({ success: false, error: "Start date is required" }, { status: 400 });
