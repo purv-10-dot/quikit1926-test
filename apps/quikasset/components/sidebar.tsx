@@ -13,6 +13,7 @@ import {
   Mail,
   BarChart2,
   Users,
+  UserCog,
   Settings,
   Tags,
   X,
@@ -46,7 +47,10 @@ const NAV_SECTIONS: NavSection[] = [
   },
   {
     label: "Admin",
-    items: [{ label: "Settings", href: "/settings", icon: Settings }],
+    items: [
+      { label: "User Management", href: "/settings/user-management", icon: UserCog },
+      { label: "Settings", href: "/settings", icon: Settings },
+    ],
   },
 ];
 

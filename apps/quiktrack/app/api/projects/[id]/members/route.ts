@@ -3,6 +3,7 @@ import { db } from "@/lib/db";
 import { withProjectAccess } from "@/lib/api/withProjectAccess";
 import { addMemberSchema } from "@/lib/validation/member";
 import { notifyProjectInvite } from "@/lib/services/projectNotifications";
+import { assignDefaultProjectRoleIfNone } from "@/lib/services/projectDefaults";
 import { randomBytes } from "node:crypto";
 
 export const GET = withProjectAccess<{ id: string }>(
@@ -109,6 +110,9 @@ export const POST = withProjectAccess<{ id: string }>(
         },
         update: { role: parsed.data.role, isDeleted: false },
       });
+      // Fall back to the project's default project role when none is assigned
+      // (the UI only sets one if the admin explicitly picks it).
+      await assignDefaultProjectRoleIfNone(projectId, parsed.data.userId, userId);
       // Existing org/app member added to this project → email them (only when
       // it's a genuinely new membership, not a role change / re-add).
       if (!alreadyMember) {
@@ -144,6 +148,8 @@ export const POST = withProjectAccess<{ id: string }>(
           },
           update: { role: parsed.data.role, isDeleted: false },
         });
+        // Fall back to the project's default project role when none is assigned.
+        await assignDefaultProjectRoleIfNone(projectId, existing.id, userId);
         if (!alreadyMember) {
           void notifyProjectInvite({
             orgId,

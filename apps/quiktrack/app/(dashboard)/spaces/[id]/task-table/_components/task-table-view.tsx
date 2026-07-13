@@ -114,6 +114,8 @@ export function TaskTableView({ projectId }: Props) {
       // above are kept for fast per-row lookup of the current value).
       memberList: members,
       sprintList: sprints,
+      // Functional projects have no sprints → hide the Sprint column entirely.
+      hasSprints: sprints.length > 0,
       epics,
       onOpenIssue: (id: string) => setOpenIssueId(id),
       // Both onDelete and onPatchIssue are overridden at the section level so
@@ -133,7 +135,9 @@ export function TaskTableView({ projectId }: Props) {
               <th className={`${HEAD_CELL} w-8`} />
               <HeaderCell Icon={Hash} label="Key" width="w-28" />
               <HeaderCell Icon={AlignLeft} label="Work item" width="w-[420px]" />
-              <HeaderCell Icon={GitBranch} label="Sprint" width="w-44" />
+              {sprints.length > 0 && (
+                <HeaderCell Icon={GitBranch} label="Sprint" width="w-44" />
+              )}
               <HeaderCell Icon={UserIcon} label="Assigned to" width="w-44" />
               <HeaderCell Icon={CheckSquare} label="Status" width="w-32" />
               <HeaderCell Icon={CalendarDays} label="Start Date" width="w-28" />

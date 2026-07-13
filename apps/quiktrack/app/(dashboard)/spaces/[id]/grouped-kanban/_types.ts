@@ -74,6 +74,8 @@ export interface GroupedBoardFilters {
   priority: string;
   type: string;
   search: string;
+  /** Serialized CustomFilter[] (JSON) — empty string when none. */
+  customFilters: string;
 }
 
 export const EMPTY_FILTERS: GroupedBoardFilters = {
@@ -82,4 +84,5 @@ export const EMPTY_FILTERS: GroupedBoardFilters = {
   priority: "",
   type: "",
   search: "",
+  customFilters: "",
 };

@@ -63,6 +63,22 @@ interface FilterOption {
   label: string;
 }
 
+// Per-entry row returned by /api/timesheets/grid?detail=1 — used by exports so
+// each worklog's description (which the matrix grid omits) is included.
+interface DetailEntry {
+  id: string;
+  date: string;
+  userId: string;
+  issueId: string;
+  projectId: string;
+  userName: string;
+  projectName: string | null;
+  issueKey: string | null;
+  issueTitle: string;
+  hours: number;
+  description: string | null;
+}
+
 const ROW_HEADER: Record<GroupBy, string> = {
   user: "User",
   project: "Project",
@@ -105,6 +121,14 @@ function formatDecimal(hours: number): string {
 function formatDisplay(hours: number): string {
   if (!Number.isFinite(hours) || hours <= 0) return "";
   return formatHours(hours);
+}
+
+// Local YYYY-MM-DD for <input type="date"> values (avoids UTC shift from toISOString).
+function toDateInput(d: Date): string {
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  return `${y}-${m}-${day}`;
 }
 
 function formatDayHeader(d: Date): string {
@@ -182,7 +206,18 @@ export function TimesheetView({
   const [deleteState, setDeleteState] = useState<EntryDetail | null>(null);
   const [splitState, setSplitState] = useState<EntryDetail | null>(null);
 
+  // Export date range (YYYY-MM-DD). Defaults to the viewed range but is
+  // independently editable in the Export menu so a report can span any window.
+  const [exportFrom, setExportFrom] = useState("");
+  const [exportTo, setExportTo] = useState("");
+
   const range = useMemo(() => getPeriodRange(period, anchor), [period, anchor]);
+  // Keep the export range in step with the view whenever the user navigates —
+  // they can still override it before exporting.
+  useEffect(() => {
+    setExportFrom(toDateInput(range.from));
+    setExportTo(toDateInput(range.to));
+  }, [range.from, range.to]);
   // "Copy last week" only makes sense on the week you're actually in — hide it
   // when navigating to other weeks (and outside the weekly view).
   const viewingCurrentWeek = useMemo(() => {
@@ -409,23 +444,121 @@ export function TimesheetView({
 
   // ============================== Export helpers ==============================
 
-  function exportRows(): string[][] {
-    if (!grid) return [];
+  // Fetch the permission-scoped grid AND the per-entry list (with descriptions)
+  // for the chosen export range in one call. Honors the active filters.
+  async function fetchExportData(): Promise<{
+    rows: RowMeta[];
+    cells: Record<string, Record<string, Cell>>;
+    entries: DetailEntry[];
+  } | null> {
+    if (!exportFrom || !exportTo) return null;
+    const fromDate = new Date(`${exportFrom}T00:00:00`);
+    const toDate = new Date(`${exportTo}T23:59:59.999`);
+    const params = new URLSearchParams({
+      from: fromDate.toISOString(),
+      to: toDate.toISOString(),
+      groupBy,
+      detail: "1",
+    });
+    if (projectId) params.set("projectId", projectId);
+    if (userFilter.length > 0) params.set("userIds", userFilter.join(","));
+    if (!projectId && projectFilter.length > 0)
+      params.set("projectIds", projectFilter.join(","));
+    const res = await fetch(`/api/timesheets/grid?${params.toString()}`).then((r) => r.json());
+    if (!res?.success) return null;
+    return {
+      rows: (res.data?.rows ?? []) as RowMeta[],
+      cells: (res.data?.cells ?? {}) as Record<string, Record<string, Cell>>,
+      entries: Array.isArray(res.data?.entries) ? (res.data.entries as DetailEntry[]) : [],
+    };
+  }
+
+  // Every calendar day in the export range (inclusive) — one matrix column each.
+  function exportDays(): Date[] {
+    const days: Date[] = [];
+    const cur = new Date(`${exportFrom}T00:00:00`);
+    const end = new Date(`${exportTo}T00:00:00`);
+    while (cur <= end) {
+      days.push(new Date(cur));
+      cur.setDate(cur.getDate() + 1);
+    }
+    return days;
+  }
+
+  // Classic matrix export (User · Work item · Description · Key · Logged · one
+  // column per day). Description is aggregated from the worklog notes of that
+  // row's entries — keyed to whatever grouping mode is active.
+  function buildMatrix(
+    rows: RowMeta[],
+    cells: Record<string, Record<string, Cell>>,
+    entries: DetailEntry[],
+    days: Date[],
+  ): string[][] {
+    const byIssue = new Map<string, string[]>();
+    const byUserIssue = new Map<string, string[]>();
+    const byUser = new Map<string, string[]>();
+    const byProject = new Map<string, string[]>();
+    const push = (m: Map<string, string[]>, k: string, v: string) => {
+      const arr = m.get(k);
+      if (arr) arr.push(v);
+      else m.set(k, [v]);
+    };
+    for (const e of entries) {
+      if (!e.description) continue;
+      push(byIssue, e.issueId, e.description);
+      push(byUserIssue, `${e.userId}::${e.issueId}`, e.description);
+      push(byUser, e.userId, e.description);
+      push(byProject, e.projectId, e.description);
+    }
+    const descFor = (row: RowMeta): string => {
+      const parts = row.id.split("::");
+      let notes: string[] = [];
+      if (parts.length === 2) {
+        notes =
+          groupBy === "user-issue"
+            ? byUserIssue.get(row.id) ?? []
+            : byIssue.get(parts[1]!) ?? []; // epic-issue child
+      } else if (groupBy === "issue") {
+        notes = byIssue.get(row.id) ?? [];
+      } else if (groupBy === "user") {
+        notes = byUser.get(row.id) ?? [];
+      } else if (groupBy === "project") {
+        notes = byProject.get(row.id) ?? [];
+      }
+      return Array.from(new Set(notes.filter(Boolean))).join(" | ");
+    };
+
+    // Totals recomputed from the fetched cells (export range, not the view).
+    const rowTotals: Record<string, number> = {};
+    const dateTotals: Record<string, number> = {};
+    let grand = 0;
+    for (const rowId of Object.keys(cells)) {
+      let s = 0;
+      for (const k of Object.keys(cells[rowId]!)) s += cells[rowId]![k]!.hours ?? 0;
+      rowTotals[rowId] = s;
+      // Skip hierarchy child rows so parent + child don't double-count totals.
+      if (isHierarchyMode(groupBy) && rowId.includes("::")) continue;
+      grand += s;
+      for (const k of Object.keys(cells[rowId]!)) {
+        dateTotals[k] = (dateTotals[k] ?? 0) + (cells[rowId]![k]!.hours ?? 0);
+      }
+    }
+
+    const userById = new Map<string, string>();
+    for (const r of rows) if (groupBy === "user-issue" && !r.parentId) userById.set(r.id, r.label);
+
     const header = [
       "User",
       "Work item",
+      "Description",
       "Key",
       "Logged",
-      ...range.days.map((d) => formatDayHeader(d)),
+      ...days.map((d) => formatDayHeader(d)),
     ];
     const out: string[][] = [header];
-    const userById = new Map<string, string>();
-    for (const r of grid.rows) {
-      if (groupBy === "user-issue" && !r.parentId) userById.set(r.id, r.label);
-    }
-    for (const row of grid.rows) {
+    for (const row of rows) {
       const isChild = Boolean(row.parentId);
-      const rowData = grid.cells[row.id] ?? {};
+      const rowData = cells[row.id] ?? {};
       const user =
         groupBy === "user-issue"
           ? isChild
@@ -441,39 +574,57 @@ export function TimesheetView({
         : groupBy === "user-issue"
         ? ""
         : row.label;
-      const key = row.secondary ?? "";
-      const logged = formatDecimal(totalsByRow[row.id] ?? 0);
-      const dayCols = range.days.map((d) => {
+      const dayCols = days.map((d) => {
         const c = rowData[dateKey(d)];
         return c ? formatDecimal(c.hours) : "";
       });
-      out.push([user, workItem, key, logged, ...dayCols]);
+      out.push([
+        user,
+        workItem,
+        descFor(row),
+        row.secondary ?? "",
+        formatDecimal(rowTotals[row.id] ?? 0),
+        ...dayCols,
+      ]);
     }
-    const totalRow = [
+    out.push([
       "Total",
       "",
       "",
-      formatDecimal(grandTotal),
-      ...range.days.map((d) => formatDecimal(totalsByDate[dateKey(d)] ?? 0)),
-    ];
-    out.push(totalRow);
+      "",
+      formatDecimal(grand),
+      ...days.map((d) => formatDecimal(dateTotals[dateKey(d)] ?? 0)),
+    ]);
     return out;
   }
 
-  function downloadCsv() {
-    const rows = exportRows();
+  // Resolve the export rows once, guarding the empty-range case with a toast.
+  async function buildExportRows(): Promise<string[][] | null> {
+    const data = await fetchExportData();
+    if (!data) return null;
+    if (data.rows.length === 0) {
+      showToast("No timesheet entries in the selected date range.");
+      return null;
+    }
+    return buildMatrix(data.rows, data.cells, data.entries, exportDays());
+  }
+
+  async function downloadCsv() {
+    const rows = await buildExportRows();
+    if (!rows) return;
     const lines = rows.map((r) => r.map(escapeCsv).join(","));
     const blob = new Blob([lines.join("\n")], { type: "text/csv" });
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = url;
-    a.download = `timesheet-${range.from.toISOString().slice(0, 10)}.csv`;
+    a.download = `timesheet-${exportFrom}_to_${exportTo}.csv`;
     a.click();
     URL.revokeObjectURL(url);
   }
 
-  function downloadXls() {
-    const rows = exportRows();
+  async function downloadXls() {
+    const rows = await buildExportRows();
+    if (!rows) return;
     const html = `<table border="1">${rows
       .map(
         (r, i) =>
@@ -490,13 +641,14 @@ export function TimesheetView({
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = url;
-    a.download = `timesheet-${range.from.toISOString().slice(0, 10)}.xls`;
+    a.download = `timesheet-${exportFrom}_to_${exportTo}.xls`;
     a.click();
     URL.revokeObjectURL(url);
   }
 
-  function downloadPdf() {
-    const rows = exportRows();
+  async function downloadPdf() {
+    const rows = await buildExportRows();
+    if (!rows) return;
     const win = window.open("", "_blank");
     if (!win) return;
     const html = `<!doctype html><html><head><title>Timesheet</title><style>
@@ -507,7 +659,7 @@ export function TimesheetView({
       th { background: #f3f4f6; }
       tr:last-child td { font-weight: 600; background: #f9fafb; }
     </style></head><body>
-      <h1>Timesheet — ${escapeHtml(range.label)}</h1>
+      <h1>Timesheet — ${escapeHtml(exportFrom)} to ${escapeHtml(exportTo)}</h1>
       <table>${rows
         .map(
           (r, i) =>
@@ -641,6 +793,10 @@ export function TimesheetView({
             onPdf={downloadPdf}
             period={period}
             onPeriodChange={setPeriod}
+            exportFrom={exportFrom}
+            exportTo={exportTo}
+            onExportFromChange={setExportFrom}
+            onExportToChange={setExportTo}
           />
         </div>
       </div>
@@ -1207,12 +1363,20 @@ function MoreMenu({
   onPdf,
   period,
   onPeriodChange,
+  exportFrom,
+  exportTo,
+  onExportFromChange,
+  onExportToChange,
 }: {
   onCsv: () => void;
   onXls: () => void;
   onPdf: () => void;
   period: Period;
   onPeriodChange: (p: Period) => void;
+  exportFrom: string;
+  exportTo: string;
+  onExportFromChange: (v: string) => void;
+  onExportToChange: (v: string) => void;
 }) {
   const [open, setOpen] = useState(false);
   const PERIODS: Period[] = ["week", "month", "quarter"];
@@ -1228,7 +1392,7 @@ function MoreMenu({
         <MoreHorizontal className="h-4 w-4" />
       </button>
       {open && (
-        <div className="absolute right-0 top-full mt-1 w-56 bg-white border border-gray-200 rounded-md shadow-lg z-50 py-1">
+        <div className="absolute right-0 top-full mt-1 w-64 bg-white border border-gray-200 rounded-md shadow-lg z-50 py-1">
           <div className="px-3 pt-1.5 pb-1 text-[10px] font-semibold uppercase tracking-wide text-gray-400">
             View
           </div>
@@ -1250,6 +1414,28 @@ function MoreMenu({
           <div className="my-1 border-t border-gray-100" />
           <div className="px-3 pt-1 pb-1 text-[10px] font-semibold uppercase tracking-wide text-gray-400">
             Export
+          </div>
+          <div className="px-3 pb-2 pt-0.5 space-y-1.5">
+            <label className="flex items-center gap-2 text-[11px] font-medium text-gray-500">
+              <span className="w-8 shrink-0">From</span>
+              <input
+                type="date"
+                value={exportFrom}
+                max={exportTo || undefined}
+                onChange={(e) => onExportFromChange(e.target.value)}
+                className="flex-1 min-w-0 h-8 px-2 text-xs text-gray-700 border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-blue-400 focus:border-blue-400"
+              />
+            </label>
+            <label className="flex items-center gap-2 text-[11px] font-medium text-gray-500">
+              <span className="w-8 shrink-0">To</span>
+              <input
+                type="date"
+                value={exportTo}
+                min={exportFrom || undefined}
+                onChange={(e) => onExportToChange(e.target.value)}
+                className="flex-1 min-w-0 h-8 px-2 text-xs text-gray-700 border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-blue-400 focus:border-blue-400"
+              />
+            </label>
           </div>
           <ExportRow
             badge="PDF"

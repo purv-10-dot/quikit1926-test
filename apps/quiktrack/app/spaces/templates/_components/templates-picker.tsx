@@ -13,6 +13,7 @@ import {
 type TemplateKey =
   | "scrum"
   | "functional"
+  | "discovery"
   | "general-service-management"
   | "development-requests"
   | "kanban"
@@ -45,6 +46,17 @@ const TEMPLATES: Template[] = [
     description: "Manage work on a backlog and an activity board — no sprints.",
     Illustration: KanbanIllustration,
     enabled: true,
+    product: "QuikTrack",
+  },
+  {
+    key: "discovery",
+    title: "Product discovery",
+    description: "Prioritize ideas then connect them from discovery through to delivery.",
+    badge: { label: "RECOMMENDED", tone: "purple" },
+    Illustration: WebDesignIllustration,
+    // Temporarily hidden from the gallery (pending owner sign-off). The
+    // discovery template/route still works if reached directly.
+    enabled: false,
     product: "QuikTrack",
   },
   {

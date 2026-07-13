@@ -110,6 +110,18 @@ export function ProjectHeader({ projectId }: { projectId: string }) {
     };
   }, [projectId]);
 
+  const isDiscovery = project?.templateKey === "discovery";
+  // When an idea detail drawer is open it carries its own breadcrumb, so the
+  // discovery header hides (matches real JPD — no duplicate header / Feedback).
+  const [ideaPanelOpen, setIdeaPanelOpen] = useState(false);
+  useEffect(() => {
+    function onPanel(e: Event) {
+      const d = (e as CustomEvent<{ open?: boolean }>).detail;
+      if (typeof d?.open === "boolean") setIdeaPanelOpen(d.open);
+    }
+    window.addEventListener("qt:idea-panel", onPanel as EventListener);
+    return () => window.removeEventListener("qt:idea-panel", onPanel as EventListener);
+  }, []);
   const activeTab = PROJECT_TABS.find((t) => pathname.endsWith(`/${t.path}`))?.path ?? "board";
 
   useEffect(() => {
@@ -136,6 +148,41 @@ export function ProjectHeader({ projectId }: { projectId: string }) {
       color: project.color ?? null,
     });
   }, [project, pathname, activeTab]);
+
+  // Discovery projects use the real-JPD chrome: a single slim breadcrumb line
+  // ("Spaces / icon name") with a Feedback link, and NO project-name row or tab
+  // strip — the "All ideas" toolbar (in the Ideas view) carries the page actions.
+  if (isDiscovery && project) {
+    // Drawer open → suppress the header entirely (its breadcrumb takes over).
+    if (ideaPanelOpen) return null;
+    return (
+      <div className="bg-white">
+        <div className="flex items-center justify-between px-6 pt-4 pb-1">
+          <div className="flex items-center gap-1.5 text-sm text-gray-600">
+            <Link href="/spaces" className="text-gray-500 hover:underline">
+              Spaces
+            </Link>
+            <span className="text-gray-300">/</span>
+            <SpaceIcon icon={project.icon} name={project.name} color={project.color} size={18} radius={4} />
+            <span className="font-medium text-gray-900">{project.name}</span>
+          </div>
+          <button
+            type="button"
+            onClick={() => setFeedbackOpen(true)}
+            className="inline-flex items-center gap-1.5 text-sm text-gray-500 hover:text-gray-700"
+          >
+            <LinkIcon className="h-3.5 w-3.5" /> Feedback
+          </button>
+        </div>
+        {feedbackOpen && (
+          <ShareFeedbackModal projectId={projectId} onClose={() => setFeedbackOpen(false)} />
+        )}
+        {addPeopleOpen && (
+          <AddPeopleModal projectId={projectId} projectName={project.name} onClose={() => setAddPeopleOpen(false)} />
+        )}
+      </div>
+    );
+  }
 
   return (
     <div className="bg-white border-b border-gray-200">
