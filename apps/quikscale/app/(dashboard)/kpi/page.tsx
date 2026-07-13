@@ -1,12 +1,13 @@
 "use client";
 
-import { useState, useEffect, useRef, useCallback, useMemo } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
 import { useSession } from "next-auth/react";
 import { useKPIs, useDeleteKPI, useBulkRestoreKPI } from "@/lib/hooks/useKPI";
 import { notify } from "@/lib/utils/notify";
 import { useTableSort, useDebouncedTableSearch } from "@/lib/store";
 import { TableSkeleton } from "@/components/ui/Skeleton";
 import { useInfiniteUsers } from "@/lib/hooks/useInfiniteUsers";
+import { useUserOption } from "@/lib/hooks/useUserOption";
 import { KPIListParams } from "@/lib/schemas/kpiSchema";
 import {
   getFiscalYear, getFiscalQuarter, fiscalYearLabel,
@@ -153,16 +154,11 @@ export default function IndividualKPIPage() {
 
   // When an owner filter is restored from context (or the owner sits beyond the
   // loaded 25-user page), the id won't be in the FilterPicker's `options`, so
-  // the trigger would fall back to "All owners". Resolve the owner's name from
-  // the loaded KPI rows (the list is owner-scoped when filtered) and feed it as
-  // the picker's `selectedOption` so the applied owner's name is shown.
-  const selectedOwnerOption = useMemo(() => {
-    if (!filterOwner || users.some((u) => u.id === filterOwner)) return undefined;
-    const ou = kpis.find((k) => k.owner === filterOwner)?.owner_user;
-    return ou
-      ? userToFilterOption({ id: filterOwner, firstName: ou.firstName, lastName: ou.lastName, email: "" })
-      : undefined;
-  }, [filterOwner, users, kpis]);
+  // the trigger would fall back to "All owners". Resolve the owner by id (via
+  // useUserOption) and feed it as the picker's `selectedOption` so the applied
+  // owner's name is shown even when the filtered list is empty (0 KPIs) — the
+  // old approach read the name from loaded KPI rows and broke on an empty list.
+  const selectedOwnerOption = useUserOption(filterOwner);
 
   // Bulk delete
   const deleteKPI = useDeleteKPI();
