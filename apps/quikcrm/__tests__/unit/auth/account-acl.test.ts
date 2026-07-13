@@ -12,7 +12,7 @@
  *   Lead C  ownerId=SalesU,  accountId=null → Admin✅  SalesManager❌  SalesUser✅
  */
 import { describe, it, expect, beforeEach, vi } from "vitest";
-import { prismaMock } from "../../helpers/prisma-unit-mock";
+import { prismaMock, resetPrismaUnitMocks } from "../../helpers/prisma-unit-mock";
 
 // resolveTeamScope issues a raw `$queryRaw` the deep Prisma mock can't fulfill
 // (it returns undefined, so the `.catch` inside throws). These ACL tests never
@@ -51,7 +51,12 @@ const SALES: SessionUser = {
   name: "Sales Rep",
 };
 
-beforeEach(() => vi.clearAllMocks());
+beforeEach(() => {
+  // Full reset (not just clearAllMocks) so any unconsumed mockResolvedValueOnce
+  // queue entries from a prior test don't bleed into the next one.
+  resetPrismaUnitMocks();
+  vi.clearAllMocks();
+});
 
 // ─── getScope ────────────────────────────────────────────────────────────────
 
@@ -214,6 +219,57 @@ describe("assertAccountAccess", () => {
 
     const err = await assertAccountAccess(SALES, "forbidden-account").catch((e) => e);
     expect(err).toBeInstanceOf(Error);
+    expect((err as { statusCode?: number }).statusCode).toBe(403);
+  });
+
+  // ── Own-record bypass: the detail-guard ↔ list-filter consistency fix ───────
+  //
+  // accountScopeFilter (LIST) has always had an `{ ownerId: self }` clause, so a
+  // user's own record shows in the list even when its account is out of scope
+  // (e.g. a lead auto-attached to a fresh account during conversion). The
+  // per-record assertAccountAccess (DETAIL) lacked the matching bypass, so
+  // opening that same record threw "account <id> not in scope". These tests
+  // pin the two surfaces together.
+
+  it("own-record bypass: owner reaches their own record on an out-of-scope account", async () => {
+    // Empty ACL → the account is NOT in scope...
+    prismaMock.crmUserAccountAccess.findMany.mockResolvedValueOnce([] as never);
+    prismaMock.crmSalesGroupMember.findMany.mockResolvedValueOnce([] as never);
+    prismaMock.crmSalesGroupManager.findMany.mockResolvedValueOnce([] as never);
+
+    // ...but the caller owns the record, so access is granted without throwing.
+    await expect(
+      assertAccountAccess(SALES, "acc-out-of-scope", { recordOwnerId: SALES.userId }),
+    ).resolves.toBeUndefined();
+  });
+
+  it("own-record bypass does NOT run any scope query (short-circuits on ownership)", async () => {
+    await expect(
+      assertAccountAccess(SALES, "acc-out-of-scope", { recordOwnerId: SALES.userId }),
+    ).resolves.toBeUndefined();
+    // Ownership match returns before getScope is consulted.
+    expect(prismaMock.crmUserAccountAccess.findMany).not.toHaveBeenCalled();
+  });
+
+  it("own-record bypass does NOT leak another user's record on an out-of-scope account", async () => {
+    prismaMock.crmUserAccountAccess.findMany.mockResolvedValueOnce([] as never);
+    prismaMock.crmSalesGroupMember.findMany.mockResolvedValueOnce([] as never);
+    prismaMock.crmSalesGroupManager.findMany.mockResolvedValueOnce([] as never);
+
+    // Record owned by someone else → owner bypass does not apply → 403.
+    const err = await assertAccountAccess(SALES, "acc-out-of-scope", {
+      recordOwnerId: "u-other",
+    }).catch((e) => e);
+    expect((err as { statusCode?: number }).statusCode).toBe(403);
+  });
+
+  it("bare-account check (no recordOwnerId) stays strict — write/attach paths unaffected", async () => {
+    prismaMock.crmUserAccountAccess.findMany.mockResolvedValueOnce([] as never);
+    prismaMock.crmSalesGroupMember.findMany.mockResolvedValueOnce([] as never);
+    prismaMock.crmSalesGroupManager.findMany.mockResolvedValueOnce([] as never);
+
+    // No owner context (e.g. attaching a record to an arbitrary account) → 403.
+    const err = await assertAccountAccess(SALES, "acc-out-of-scope").catch((e) => e);
     expect((err as { statusCode?: number }).statusCode).toBe(403);
   });
 

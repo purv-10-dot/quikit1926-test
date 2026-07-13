@@ -33,7 +33,7 @@ function serialize(
 
 
 export async function GET(req: NextRequest) {
-  const ctxOrResp = await requireProjectsFinanceAction("construction.dpr", "view");
+  const ctxOrResp = await requireProjectsFinanceAction("construction.hindrance", "view");
   if (ctxOrResp instanceof NextResponse) return ctxOrResp;
   const ctx = ctxOrResp;
 
@@ -64,7 +64,7 @@ export async function GET(req: NextRequest) {
 }
 
 export async function POST(req: NextRequest) {
-  const ctxOrResp = await requireProjectsFinanceAction("construction.dpr", "create");
+  const ctxOrResp = await requireProjectsFinanceAction("construction.hindrance", "create");
   if (ctxOrResp instanceof NextResponse) return ctxOrResp;
   const ctx = ctxOrResp;
   if (!hasMatrixAction(ctx, "pm.hindrance", "add")) {

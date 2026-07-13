@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { withProjectAccess } from "@/lib/api/withProjectAccess";
+import { forbidden, isProjectSpaceAdmin } from "@/lib/api/permissions";
 import { updateProjectSchema } from "@/lib/validation/project";
 
 /**
@@ -19,7 +20,7 @@ async function readTabConfig(orgId: string, projectId: string): Promise<string[]
 }
 
 export const GET = withProjectAccess<{ id: string }>(
-  async ({ orgId, projectId }) => {
+  async ({ orgId, userId, projectId, isTenantAdmin }) => {
     const project = await db.qtProject.findFirst({
       where: { id: projectId, orgId: orgId, isDeleted: false },
       include: {
@@ -34,16 +35,24 @@ export const GET = withProjectAccess<{ id: string }>(
     // (can't be regenerated while the dev server holds the engine DLL), so read
     // the column raw and merge it into the response.
     const tabConfig = await readTabConfig(orgId, projectId);
+    // Two lifecycle capabilities drive the settings "Danger zone":
+    //   • canArchive — global admins AND this space's Space Admin (archive is a
+    //     project-owner action).
+    //   • isAdmin    — global admins only (move-to-trash / restore).
+    // The client hides buttons accordingly; the routes still enforce both.
+    const canArchive = isTenantAdmin || (await isProjectSpaceAdmin(userId, projectId));
     return NextResponse.json({
       success: true,
-      data: project ? { ...project, tabConfig } : project,
+      data: project
+        ? { ...project, tabConfig, isAdmin: isTenantAdmin, canArchive }
+        : project,
     });
   },
   { paramKey: "id" },
 );
 
 export const PATCH = withProjectAccess<{ id: string }>(
-  async ({ orgId, userId, projectId }, req) => {
+  async ({ orgId, userId, projectId, isTenantAdmin }, req) => {
     const parsed = updateProjectSchema.safeParse(await req.json());
     if (!parsed.success) {
       return NextResponse.json(
@@ -52,14 +61,25 @@ export const PATCH = withProjectAccess<{ id: string }>(
       );
     }
 
+    // Archiving / unarchiving (a status change) is a project-owner action:
+    // allowed for global admins and this space's Space Admin, but NOT for a
+    // regular Project:update holder (who may still edit name/icon/etc.).
+    if (
+      parsed.data.status !== undefined &&
+      !isTenantAdmin &&
+      !(await isProjectSpaceAdmin(userId, projectId))
+    ) {
+      return forbidden();
+    }
+
     try {
       // The space key is immutable — it's embedded in every work-item ID, so
       // changing it would orphan existing references. Strip any incoming
       // projectKey so it can never be updated, even via a crafted request.
       // tabConfig is pulled out too: the stale client doesn't know that column,
       // so it's persisted via raw SQL below (validated already by the schema).
-      // eslint-disable-next-line @typescript-eslint/no-unused-vars
       const { projectKey: _immutableKey, tabConfig, ...updatable } = parsed.data;
+      void _immutableKey; // intentionally discarded (immutable key)
       // withProjectAccess has already verified this user can edit this
       // project in this org, so the unique-id where is safe to use directly.
       const project = await db.qtProject.update({
@@ -103,13 +123,18 @@ export const PATCH = withProjectAccess<{ id: string }>(
   { paramKey: "id", requirePermission: { resource: "Project", action: "update" } },
 );
 
+// Move a project to trash (soft-delete). ADMIN-ONLY: only org owners/admins and
+// QuikTrack app-admins may trash a project — a project-scoped Space Admin cannot.
+// isTenantAdmin is true only for those global admins, so we gate on it directly
+// instead of the Project:delete permission grant.
 export const DELETE = withProjectAccess<{ id: string }>(
-  async ({ orgId, userId, projectId }) => {
+  async ({ userId, projectId, isTenantAdmin }) => {
+    if (!isTenantAdmin) return forbidden();
     await db.qtProject.update({
       where: { id: projectId },
       data: { isDeleted: true, updatedBy: userId },
     });
     return NextResponse.json({ success: true, data: { id: projectId } });
   },
-  { paramKey: "id", requirePermission: { resource: "Project", action: "delete" } },
+  { paramKey: "id" },
 );

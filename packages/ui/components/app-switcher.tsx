@@ -98,6 +98,7 @@ const ICON_FALLBACKS: Record<string, { emoji: string; bg: string }> = {
   quikhr:      { emoji: "👥", bg: "bg-green-100" },
   quikfinance: { emoji: "💰", bg: "bg-amber-100" },
   quiksales:   { emoji: "📈", bg: "bg-teal-100" },
+  quikasset:   { emoji: "📦", bg: "bg-emerald-100" },
 };
 
 const DEFAULT_ICON = { emoji: "📦", bg: "bg-gray-100" };
@@ -117,6 +118,8 @@ const BRAND_ICONS: Record<string, string> = {
   quiktrack: "/app-icons/quiktrack.svg",
   quiksocial: "/app-icons/quiksocial.svg",
   quikcrm: "/app-icons/quikcrm.svg",
+  quikasset: "/app-icons/quikasset.svg",
+  quiksupport: "/app-icons/quiksupport.svg",
 };
 
 /**

@@ -6,9 +6,30 @@ import {
   migrateFromJira,
   type MigrationReport,
 } from "@/lib/services/migration/migrate-jira";
+import { normalizeJiraHost } from "@/lib/services/migration/jira-client";
 
 const bodySchema = z.object({
-  domain: z.string().trim().min(3),
+  // SEC-05: constrain the target to *.atlassian.net (no creds/port/internal
+  // hosts) so an invalid domain is rejected with a clean 400 before any
+  // outbound request. The JiraClient constructor re-checks as defense-in-depth.
+  domain: z
+    .string()
+    .trim()
+    .min(3)
+    .refine(
+      (d) => {
+        try {
+          normalizeJiraHost(d);
+          return true;
+        } catch {
+          return false;
+        }
+      },
+      {
+        message:
+          "Domain must be an Atlassian Cloud site (*.atlassian.net) with no credentials or port",
+      },
+    ),
   email: z.string().trim().email(),
   apiToken: z.string().trim().min(8),
   projectKeys: z.array(z.string().trim().min(1)).optional(),

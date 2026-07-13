@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 import { db } from "@/lib/db";
 import { emailIssueOverdue } from "@/lib/email/sendEmail";
+import { safeSecretEqual } from "@/lib/secret-compare";
 
 /**
  * Daily-cron-friendly endpoint that scans every project for overdue,
@@ -29,7 +30,7 @@ export async function POST(req: NextRequest) {
   }
   const auth = req.headers.get("authorization") ?? "";
   const provided = auth.startsWith("Bearer ") ? auth.slice(7) : "";
-  if (provided !== expected) {
+  if (!safeSecretEqual(provided, expected)) {
     return NextResponse.json({ success: false, error: "Unauthorized" }, { status: 401 });
   }
 

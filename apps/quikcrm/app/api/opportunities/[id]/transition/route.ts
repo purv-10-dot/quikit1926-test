@@ -49,10 +49,10 @@ export async function POST(
 
     const opp = await db.crmOpportunity.findFirst({
       where: { id, orgId: user.orgId, deletedAt: null },
-      select: { id: true, accountId: true, stage: true, name: true },
+      select: { id: true, accountId: true, ownerId: true, stage: true, name: true },
     });
     if (!opp) return err("Not found", 404);
-    await assertAccountAccess(user, opp.accountId);
+    await assertAccountAccess(user, opp.accountId, { recordOwnerId: opp.ownerId });
 
     try {
       validateTransition(

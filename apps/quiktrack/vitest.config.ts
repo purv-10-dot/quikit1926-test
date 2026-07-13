@@ -1,7 +1,12 @@
 import { defineConfig } from "vitest/config";
+import react from "@vitejs/plugin-react";
 import path from "path";
 
 export default defineConfig({
+  // The app tsconfig sets `jsx: "preserve"` (Next.js requirement), which the test
+  // bundler would otherwise inherit and pass JSX through untransformed — breaking
+  // every .tsx test at parse time. The React plugin transforms JSX for tests.
+  plugins: [react()],
   test: {
     environment: "node",
     setupFiles: ["./__tests__/setup.ts"],

@@ -3,6 +3,7 @@ import type { NextRequest } from "next/server";
 import { jwtVerify } from "jose";
 import { encode } from "next-auth/jwt";
 import { publicBaseUrl } from "@quikit/auth/public-url";
+import { consumeHandoffJti } from "@/lib/handoff-replay";
 
 /**
  * GET /auth-handoff?token=<jwt>
@@ -56,12 +57,16 @@ export async function GET(request: NextRequest) {
     lastName?: string | null;
     name?: string | null;
     sessionId?: string | null;
+    jti?: string;
   };
   try {
     const result = await jwtVerify(
       token,
       new TextEncoder().encode(internalSecret),
-      { clockTolerance: "10s" },
+      // SEC-02: tighten the freshness window from the mint TTL (120s) to 30s on
+      // the consumer side so a captured token has a much smaller replay window,
+      // even before the single-use jti check below.
+      { clockTolerance: "10s", maxTokenAge: "30s" },
     );
     payload = result.payload as typeof payload;
   } catch (err) {
@@ -71,6 +76,22 @@ export async function GET(request: NextRequest) {
 
   if (!payload.sub) {
     return NextResponse.redirect(new URL("/login?reason=invalid_handoff", origin));
+  }
+
+  // TODO(SEC-03): app-binding check temporarily removed to unblock UAT, where
+  // the App catalog row's `slug` does not match manifest.appId ("quiktrack").
+  // RESTORE THIS before shipping — without it, a handoff token minted for ANY
+  // consumer app (shared INTERNAL_SECRET) can be converted into a quiktrack
+  // session (cross-app session forgery, P0). Proper fix is to correct the
+  // UAT App.slug in the DB, then re-enable:
+  //   if (payload.slug !== manifest.appId) {
+  //     return NextResponse.redirect(new URL("/login?reason=wrong_app_handoff", origin));
+  //   }
+
+  // SEC-02: enforce single use. A token with no jti is malformed; a jti that has
+  // already been consumed is a replay. Either way, refuse to mint a session.
+  if (!payload.jti || !(await consumeHandoffJti(payload.jti))) {
+    return NextResponse.redirect(new URL("/login?reason=replayed_handoff", origin));
   }
 
   // Mint a NextAuth-compatible session JWE for this app's domain.

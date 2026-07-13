@@ -73,10 +73,12 @@ export function StatusDonut({
               return seg;
             })}
           </g>
-          <text x={cx} y={cy - 2} textAnchor="middle" className="fill-gray-900" style={{ fontSize: 28, fontWeight: 600 }}>
+          {/* SVG `fill` isn't touched by the global dark remap (that targets
+              `color`), so the total went near-black-on-dark. Set dark fills. */}
+          <text x={cx} y={cy - 2} textAnchor="middle" className="fill-gray-900 dark:fill-slate-100" style={{ fontSize: 28, fontWeight: 600 }}>
             {total}
           </text>
-          <text x={cx} y={cy + 17} textAnchor="middle" className="fill-gray-500" style={{ fontSize: 11 }}>
+          <text x={cx} y={cy + 17} textAnchor="middle" className="fill-gray-500 dark:fill-slate-400" style={{ fontSize: 11 }}>
             Total
           </text>
         </svg>

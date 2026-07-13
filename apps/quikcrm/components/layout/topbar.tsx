@@ -2,15 +2,19 @@
 
 import { useEffect, useRef, useState } from "react";
 import {
+  Bell,
   Building2,
   ChevronDown,
   Gauge,
+  KeyRound,
   Layers3,
   ListChecks,
   LogOut,
   Menu,
   Package,
   Phone,
+  Plug,
+  ScrollText,
   Search,
   Settings,
   ShieldCheck,
@@ -99,6 +103,35 @@ const SETTINGS_MENU = [
         icon: ListChecks,
         label: "Activity Types",
         description: "Define activity types and their custom fields",
+      },
+    ],
+  },
+  {
+    section: "Integrations & Access",
+    items: [
+      {
+        href: "/settings/integrations",
+        icon: Plug,
+        label: "Integrations",
+        description: "Connect third-party tools and services",
+      },
+      {
+        href: "/settings/api-keys",
+        icon: KeyRound,
+        label: "API Keys",
+        description: "Secret keys for public API integrations",
+      },
+      {
+        href: "/settings/audit",
+        icon: ScrollText,
+        label: "Audit Log",
+        description: "Review changes and activity history",
+      },
+      {
+        href: "/settings/notifications",
+        icon: Bell,
+        label: "Notifications",
+        description: "Manage notification rules and recipients",
       },
     ],
   },

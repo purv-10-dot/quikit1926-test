@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 import { seedAllDefaultRoles, ensureUserOnRole } from "@/lib/api/seedAdminAppRole";
+import { safeSecretEqual } from "@/lib/secret-compare";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -22,7 +23,7 @@ export const dynamic = "force-dynamic";
 export async function POST(req: NextRequest) {
   const secret = process.env.INTERNAL_SECRET;
   const provided = req.headers.get("x-internal-secret");
-  if (!secret || !provided || provided !== secret) {
+  if (!safeSecretEqual(provided, secret)) {
     return NextResponse.json(
       { success: false, error: "Unauthorized" },
       { status: 401 },

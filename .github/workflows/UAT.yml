@@ -18,11 +18,9 @@ jobs:
   detect-changes:
     name: Detect Changed Apps
     runs-on: ubuntu-latest
-
     outputs:
       apps: ${{ steps.set-matrix.outputs.apps }}
       run_build: ${{ steps.set-matrix.outputs.run_build }}
-
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -33,11 +31,6 @@ jobs:
         id: filter
         uses: dorny/paths-filter@v3
         with:
-          # Compare against the branch's previous tip (the actual push delta).
-          # Without this, paths-filter diffs against the default branch (main),
-          # so any app where UAT is ahead of main (e.g. quikcrm) looks "changed"
-          # on every push. Fall back to HEAD for non-push events (e.g. dispatch),
-          # where the matrix is forced to all apps anyway.
           base: ${{ github.event.before || github.sha }}
           filters: |
             shared:
@@ -45,28 +38,20 @@ jobs:
               - 'package.json'
               - 'package-lock.json'
               - 'turbo.json'
-
             quikit:
               - 'apps/quikit/**'
-
             auth:
               - 'apps/auth/**'
-
             admin:
               - 'apps/admin/**'
-
             quikscale:
               - 'apps/quikscale/**'
-
             quiktrack:
               - 'apps/quiktrack/**'
-
             quikhrms:
               - 'apps/quikhrms/**'
-
             quikinfra:
               - 'apps/quikinfra/**'
-
             quikcrm:
               - 'apps/quikcrm/**'
 
@@ -106,12 +91,10 @@ jobs:
     needs: detect-changes
     if: needs.detect-changes.outputs.run_build == 'true'
     runs-on: ubuntu-latest
-
     strategy:
       fail-fast: false
       matrix:
         app: ${{ fromJson(needs.detect-changes.outputs.apps) }}
-
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -130,6 +113,7 @@ jobs:
         id: owner
         run: |
           echo "value=$(echo '${{ github.repository_owner }}' | tr '[:upper:]' '[:lower:]')" >> "$GITHUB_OUTPUT"
+
       - name: Compute image metadata
         id: meta
         uses: docker/metadata-action@v5
@@ -138,6 +122,7 @@ jobs:
           tags: |
             type=raw,value=build-${{ github.run_number }}
             type=sha,prefix=sha-,format=short
+
       - name: Build and Push Docker Image
         uses: docker/build-push-action@v5
         with:
@@ -149,7 +134,6 @@ jobs:
           cache-from: type=gha,scope=${{ matrix.app }}
           cache-to: type=gha,scope=${{ matrix.app }},mode=max
           platforms: linux/amd64
-
           build-args: |
             NEXT_PUBLIC_LAUNCHER_URL=https://uatapps.quikit.ai
             NEXT_PUBLIC_AUTH_URL=https://uatauthn.quikit.ai
@@ -161,3 +145,93 @@ jobs:
             NEXT_PUBLIC_QUIKCRM_URL=https://uatcrm.quikit.ai
             NEXT_PUBLIC_QUIKHRMS_URL=https://uatpeople.quikit.ai
             NEXTAUTH_URL=https://uatauthn.quikit.ai
+
+  update-gitops:
+    name: Update GitOps Repository
+    needs:
+      - detect-changes
+      - build
+    if: needs.detect-changes.outputs.run_build == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout GitOps Repository
+        uses: actions/checkout@v4
+        with:
+          repository: akhileshgandhi/uat-k8s-infra-quikit
+          ref: main
+          token: ${{ secrets.K8S_REPO_TOKEN }}
+          path: gitops
+
+      - name: Install yq
+        uses: mikefarah/yq@v4
+
+      - name: Update Deployment Images
+        shell: bash
+        run: |
+          APPS='${{ needs.detect-changes.outputs.apps }}'
+          TAG="sha-${GITHUB_SHA::7}"
+          cd gitops/quikit
+          echo "$APPS" | jq -r '.[]' | while read APP
+          do
+            case "$APP" in
+              auth)
+                FILE="auth-deployment.yaml"
+                IMAGE="ghcr.io/akhileshgandhi/auth-runtime:${TAG}"
+                ;;
+              admin)
+                FILE="admin-deployment.yaml"
+                IMAGE="ghcr.io/akhileshgandhi/admin-runtime:${TAG}"
+                ;;
+              quikit)
+                FILE="quikit-deployment.yaml"
+                IMAGE="ghcr.io/akhileshgandhi/quikit-runtime:${TAG}"
+                ;;
+              quiktrack)
+                FILE="quikittrack-deployment.yaml"
+                IMAGE="ghcr.io/akhileshgandhi/quiktrack-runtime:${TAG}"
+                ;;
+              quikscale)
+                FILE="quikitscale-deployment.yaml"
+                IMAGE="ghcr.io/akhileshgandhi/quikscale-runtime:${TAG}"
+                ;;
+              quikinfra)
+                FILE="quikitinfra-deployment.yaml"
+                IMAGE="ghcr.io/akhileshgandhi/quikinfra-runtime:${TAG}"
+                ;;
+              quikcrm)
+                FILE="crm-deployment.yaml"
+                IMAGE="ghcr.io/akhileshgandhi/quikcrm-runtime:${TAG}"
+                ;;
+              quikhrms)
+                FILE="hrms-deployment.yaml"
+                IMAGE="ghcr.io/akhileshgandhi/quikhrms-runtime:${TAG}"
+                ;;
+              *)
+                echo "Unknown app: $APP"
+                exit 1
+                ;;
+            esac
+            echo "Updating $FILE"
+            export IMAGE
+            yq -i '.spec.template.spec.containers[0].image = env(IMAGE)' "$FILE"
+          done
+
+      - name: Commit Changes
+        shell: bash
+        run: |
+          cd gitops
+          git config user.name "github-actions"
+          git config user.email "github-actions@github.com"
+          if git diff --quiet
+          then
+            echo "No changes detected."
+            exit 0
+          fi
+          git add .
+          git commit -m "Update UAT images to sha-${GITHUB_SHA::7}"
+
+      - name: Push Changes
+        shell: bash
+        run: |
+          cd gitops
+          git push origin main

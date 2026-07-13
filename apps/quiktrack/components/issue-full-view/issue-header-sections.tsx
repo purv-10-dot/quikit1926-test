@@ -10,6 +10,7 @@ import {
   Zap,
 } from "lucide-react";
 import { RichTextEditor } from "@/components/rich-text-editor-lazy";
+import { sanitizeRichText } from "@/lib/sanitize";
 import { uploadProjectImage } from "@/lib/upload-image";
 import type { MentionItem } from "@/components/editor/mention";
 import { SubtaskGrid } from "./subtask-grid";
@@ -178,7 +179,7 @@ export function IssueHeaderSections({
                   setDescEditing(true);
                 }}
                 className="qt-rich-content text-sm text-gray-800 rounded p-2 -mx-2 cursor-text hover:bg-gray-50"
-                dangerouslySetInnerHTML={{ __html: issue.description }}
+                dangerouslySetInnerHTML={{ __html: sanitizeRichText(issue.description) }}
               />
             ) : (
               <button
