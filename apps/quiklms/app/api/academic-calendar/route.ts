@@ -24,14 +24,14 @@ const createSchema = z.object({
 // POST /api/academic-calendar — any authenticated user
 export const POST = route(async (req) => {
   const actor = await requireAuth(req);
-  if (!actor.tenantId) throw BadRequest('Tenant ID required');
+  if (!actor.orgId) throw BadRequest('Tenant ID required');
   const dto = await parseBody(req, createSchema);
-  return json(await createCalendar(actor.tenantId, dto, actor.id));
+  return json(await createCalendar(actor.orgId, dto, actor.id));
 });
 
 // GET /api/academic-calendar — any authenticated user
 export const GET = route(async (req) => {
   const actor = await requireAuth(req);
-  if (!actor.tenantId) throw BadRequest('Tenant ID required');
-  return json(await getAllCalendars(actor.tenantId));
+  if (!actor.orgId) throw BadRequest('Tenant ID required');
+  return json(await getAllCalendars(actor.orgId));
 });

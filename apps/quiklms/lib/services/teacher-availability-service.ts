@@ -1,7 +1,7 @@
 /**
  * Teacher-availability service — ported from NestJS TeacherAvailabilityService
  * (Mongoose → Prisma). User.availableSlots is the userAvailabilitySlot child
- * table here. Tenant isolation via explicit tenantId args + teacher tenant check.
+ * table here. Tenant isolation via explicit orgId args + teacher tenant check.
  */
 import { prisma } from '@/lib/prisma';
 import { NotFound } from '@/lib/http';
@@ -39,12 +39,12 @@ function subtractRanges(
 }
 
 export async function updateAvailableSlots(
-  tenantId: string,
+  orgId: string,
   teacherId: string,
   slots: { dayOfWeek: number; startTime: string; endTime: string }[],
   maxSlotsPerWeek?: number,
 ) {
-  const teacher = await prisma.user.findFirst({ where: { id: teacherId, tenantId, role: 'TEACHER' } });
+  const teacher = await prisma.user.findFirst({ where: { id: teacherId, orgId, role: 'TEACHER' } });
   if (!teacher) throw NotFound('Teacher not found');
 
   await prisma.userAvailabilitySlot.deleteMany({ where: { userId: teacherId } });
@@ -60,9 +60,9 @@ export async function updateAvailableSlots(
   return prisma.user.findUnique({ where: { id: teacherId }, include: { availableSlots: true } });
 }
 
-export async function getTeacherAvailability(tenantId: string, teacherId: string) {
+export async function getTeacherAvailability(orgId: string, teacherId: string) {
   const teacher = await prisma.user.findFirst({
-    where: { id: teacherId, tenantId, role: 'TEACHER' },
+    where: { id: teacherId, orgId, role: 'TEACHER' },
     select: {
       id: true, firstName: true, lastName: true, email: true, maxSlotsPerWeek: true,
       classesCompleted: true, classesMissed: true, classesCancelled: true, punctualityScore: true,
@@ -72,7 +72,7 @@ export async function getTeacherAvailability(tenantId: string, teacherId: string
   if (!teacher) throw NotFound('Teacher not found');
 
   const batches = await prisma.batch.findMany({
-    where: { tenantId, teacherId, status: { in: ['active', 'draft'] } },
+    where: { orgId, teacherId, status: { in: ['active', 'draft'] } },
     select: { name: true, schedule: { select: { dayOfWeek: true, startTime: true, endTime: true } } },
   });
 
@@ -136,16 +136,16 @@ export async function getTeacherAvailability(tenantId: string, teacherId: string
   };
 }
 
-export async function getAllTeacherAvailability(tenantId: string) {
+export async function getAllTeacherAvailability(orgId: string) {
   const teachers = await prisma.user.findMany({
-    where: { tenantId, role: 'TEACHER', isActive: true },
+    where: { orgId, role: 'TEACHER', isActive: true },
     select: { id: true, firstName: true, lastName: true, email: true },
   });
 
   const results: unknown[] = [];
   for (const teacher of teachers) {
     try {
-      results.push(await getTeacherAvailability(tenantId, teacher.id));
+      results.push(await getTeacherAvailability(orgId, teacher.id));
     } catch {
       results.push({
         teacher: { _id: teacher.id, firstName: teacher.firstName, lastName: teacher.lastName, email: teacher.email },

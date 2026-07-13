@@ -6,8 +6,10 @@ import { findTenant } from '@/lib/services/tenants-service';
 export const GET = route(async (req) => {
   const actor = await requireAuth(req);
 
-  // SUPER_ADMIN has no tenant — return platform-level defaults
-  if (!actor.tenantId) {
+  // SUPER_ADMIN is the operator — its org has no Tenant row (schools/corporates
+  // are separate orgs it onboards). Return platform-level defaults rather than
+  // 404ing on findTenant. Also covers a platform super-admin with no org.
+  if (actor.role === 'SUPER_ADMIN' || !actor.orgId) {
     return json({
       success: true,
       data: {
@@ -22,7 +24,7 @@ export const GET = route(async (req) => {
     });
   }
 
-  const tenant = await findTenant(actor.tenantId);
+  const tenant = await findTenant(actor.orgId);
   return json({
     success: true,
     data: {

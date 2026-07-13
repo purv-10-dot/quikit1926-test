@@ -7,7 +7,7 @@ import { getConversations, createConversation } from '@/lib/services/messages-se
 // GET /api/messages/conversations — list non-archived conversations
 export const GET = route(async (req) => {
   const actor = await requireAuth(req);
-  return json(await getConversations(actor.tenantId ?? '', actor.id));
+  return json(await getConversations(actor.orgId ?? '', actor.id));
 });
 
 const createSchema = z.object({
@@ -24,6 +24,6 @@ export const POST = route(async (req) => {
   const actor = await requireAuth(req);
   const dto = await parseBody(req, createSchema);
   const userRole = actor.role || 'LEARNER';
-  const conv = await createConversation(actor.tenantId ?? '', actor.id, userRole, dto);
+  const conv = await createConversation(actor.orgId ?? '', actor.id, userRole, dto);
   return json(conv);
 });

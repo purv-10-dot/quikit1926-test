@@ -6,5 +6,5 @@ import { approveCertificate } from '@/lib/services/manager-service';
 export const PATCH = route(async (req, { params }) => {
   const user = await requireAuth(req);
   requireRoles(user, ['MANAGER']);
-  return json(await approveCertificate(user.id, user.tenantId as string, params!.certificateId));
+  return json(await approveCertificate(user.id, user.orgId as string, params!.certificateId));
 });

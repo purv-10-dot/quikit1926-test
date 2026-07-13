@@ -1,8 +1,8 @@
-import { route, json, Conflict, BadRequest } from '@/lib/http';
+import { route, json, Conflict, BadRequest, Forbidden } from '@/lib/http';
 import { requireAuth, requireRoles } from '@/lib/auth/context';
-import { registerUser, type RegisterUserInput } from '@/lib/services/auth-service';
-import { createCentralIdentity } from '@/lib/services/identity-service';
-import { prisma } from '@/lib/prisma';
+import { canAssignRole, isUserRole } from '@/lib/auth/role-policy';
+import { type RegisterUserInput } from '@/lib/services/auth-service';
+import { provisionLmsUser } from '@/lib/services/identity-service';
 
 /**
  * POST /api/auth/register — create a login-capable LMS person (student /
@@ -26,34 +26,37 @@ export const POST = route(async (req) => {
   const email = String(body.email ?? '').trim().toLowerCase();
   const firstName = String(body.firstName ?? '').trim();
   const lastName = String(body.lastName ?? '').trim();
-  const lmsRole = String(body.role ?? 'LEARNER');
+  const lmsRole = String(body.role ?? 'LEARNER').trim().toUpperCase();
   if (!email || !firstName) throw BadRequest('First name and email are required.');
 
-  // Force the org to the caller's session (super-admins may target another org).
+  // Role must be a real enum value AND one the caller is allowed to grant. This
+  // blocks privilege escalation — a TENANT_ADMIN/SUB_ADMIN cannot mint a role at
+  // or above their own tier (and SUPER_ADMIN is never mintable here). See
+  // lib/auth/role-policy.ts.
+  if (!isUserRole(lmsRole)) throw BadRequest(`Invalid role: ${lmsRole}`);
+  if (!canAssignRole(actor.role, lmsRole)) {
+    throw Forbidden(`Your role (${actor.role}) cannot assign the role ${lmsRole}.`);
+  }
+
+  // Platform Org id — the scope key (orgId-native). Forced to the caller's
+  // session; super-admins may target another org via body.orgId.
   const orgId =
-    actor.role === 'SUPER_ADMIN' ? body.tenantId ?? actor.tenantId ?? undefined : actor.tenantId ?? undefined;
+    actor.role === 'SUPER_ADMIN'
+      ? body.orgId ?? actor.orgId ?? undefined
+      : actor.orgId ?? undefined;
   if (!orgId) throw BadRequest('No organization context to create the user in.');
 
   try {
-    // 1) Platform identity (login-capable).
-    const identity = await createCentralIdentity({ email, firstName, lastName, orgId, lmsRole });
-
-    // 2) LMS row with the shared id (idempotent — skip if already linked).
-    const existingLms = await prisma.user.findUnique({
-      where: { id: identity.userId },
-      select: { id: true },
+    // Centralized provisioning: platform identity (User + OrgMember +
+    // UserAppAccess) + LMS row, one shared id. See provisionLmsUser.
+    const identity = await provisionLmsUser({
+      ...(body as Partial<RegisterUserInput>),
+      email,
+      firstName,
+      lastName,
+      orgId,
+      lmsRole,
     });
-    if (!existingLms) {
-      await registerUser({
-        ...body,
-        id: identity.userId,
-        email,
-        firstName,
-        lastName,
-        role: lmsRole,
-        tenantId: orgId,
-      });
-    }
 
     return json(
       {

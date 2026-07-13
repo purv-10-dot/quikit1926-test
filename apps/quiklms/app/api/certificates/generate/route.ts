@@ -13,7 +13,7 @@ export const POST = route(async (req) => {
     certificateTemplateId: body.certificateTemplateId as string | undefined,
     learnerId: body.learnerId as string,
     courseId: body.courseId as string,
-    tenantId: user.tenantId as string,
+    orgId: user.orgId as string,
     userName: body.userName as string,
     courseName: body.courseName as string,
     designation: body.designation as string | undefined,

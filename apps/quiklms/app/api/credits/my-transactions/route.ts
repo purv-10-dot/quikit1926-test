@@ -11,5 +11,5 @@ export const GET = route(async (req) => {
   const limit = parseInt(url.searchParams.get('limit') || '') || 20;
   const studentIdParam = url.searchParams.get('studentId') || undefined;
   const studentId = actor.role === 'PARENT' && studentIdParam ? studentIdParam : actor.id;
-  return json(await getTransactions(actor.tenantId!, studentId, page, limit));
+  return json(await getTransactions(actor.orgId!, studentId, page, limit));
 });

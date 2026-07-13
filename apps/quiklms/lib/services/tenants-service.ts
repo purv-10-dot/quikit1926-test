@@ -7,7 +7,7 @@ import { randomUUID } from 'crypto';
 import type { Prisma } from '@prisma/client';
 import { prisma } from '@/lib/prisma';
 import { Conflict, NotFound } from '@/lib/http';
-import { registerUser } from './auth-service';
+import { provisionOrgForTenant, provisionLmsUser } from './identity-service';
 
 const SCHOOL_FEATURES = {
   enableCourses: false, enableScorm: false, enableCompliance: false, enableManagerReports: false, enableSelfEnrollment: false,
@@ -39,6 +39,13 @@ export interface OnboardInput {
   billingLastName: string;
   billingAddress: string;
   storageLimit?: number;
+  /**
+   * Platform quikit `Org.id` to link this tenant to (Phase-3 fold). Optional
+   * until the provisioning flow creates the paired platform Org — when present,
+   * it makes `resolveOrgToTenantId` an exact lookup instead of a natural-key
+   * guess. Leave unset and the backfill (subdomain↔slug) links it later.
+   */
+  orgId?: string;
 }
 
 async function uniqueSubdomain(orgName: string): Promise<string> {
@@ -65,8 +72,14 @@ export async function onboardTenant(dto: OnboardInput) {
   const existingAdmin = await prisma.user.findFirst({ where: { email: dto.email.toLowerCase().trim() } });
   if (existingAdmin) throw Conflict('A user with the admin email already exists');
 
+  // 1) Provision the platform Org (+ enable QuikLMS). Its id IS the LMS Tenant id
+  //    (orgId-native), and it's what lets the tenant admin SSO-log-in.
+  const orgId = dto.orgId ?? (await provisionOrgForTenant({ name: dto.orgName, billingEmail: dto.officialEmail }));
+
   const tenant = await prisma.tenant.create({
     data: {
+      id: orgId,
+      orgId,
       name: dto.orgName,
       subdomain,
       tenantType,
@@ -93,18 +106,19 @@ export async function onboardTenant(dto: OnboardInput) {
     },
   });
 
-  // Tenant admin (random temp password; user sets their own via the welcome link)
-  await registerUser({
+  // 3) Tenant admin — CENTRALIZED (platform User + OrgMember + UserAppAccess +
+  //    LMS row, all keyed on orgId). This is what makes the admin SSO-log-in
+  //    capable. Returns a temp password for the super-admin to relay.
+  const admin = await provisionLmsUser({
     email: dto.email,
-    password: randomUUID(),
     firstName: dto.firstName,
     lastName: dto.lastName,
-    role: 'TENANT_ADMIN',
-    tenantId: tenant.id,
+    orgId,
+    lmsRole: 'TENANT_ADMIN',
     phone: dto.phone,
   });
 
-  return tenant;
+  return { ...tenant, adminTempPassword: admin.tempPassword };
 }
 
 export async function createTenant(data: Prisma.TenantCreateInput) {
@@ -131,15 +145,15 @@ export async function removeTenant(id: string) {
   await prisma.tenant.delete({ where: { id } });
 }
 
-export async function getStorageUsage(tenantId: string): Promise<{ currentUsage: number; storageLimit: number }> {
-  const tenant = await findTenant(tenantId);
+export async function getStorageUsage(orgId: string): Promise<{ currentUsage: number; storageLimit: number }> {
+  const tenant = await findTenant(orgId);
   const storageLimit = (tenant.storageLimit || 2) * 1024 * 1024 * 1024; // GB → bytes
 
   // Master courses linked to this tenant
-  const links = await prisma.masterCourseSelectedTenant.findMany({ where: { tenantId }, select: { masterCourseId: true } });
+  const links = await prisma.masterCourseSelectedTenant.findMany({ where: { orgId }, select: { masterCourseId: true } });
   const ids = links.map((l) => l.masterCourseId);
   const courses = await prisma.masterCourse.findMany({
-    where: { OR: [{ id: { in: ids } }, { submittedByTenantId: tenantId }] },
+    where: { OR: [{ id: { in: ids } }, { submittedByTenantId: orgId }] },
     select: { modules: true },
   });
 

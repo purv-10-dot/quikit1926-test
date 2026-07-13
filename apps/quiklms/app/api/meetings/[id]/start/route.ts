@@ -6,5 +6,5 @@ import { startMeeting } from '@/lib/services/meetings-service';
 export const POST = route(async (req, { params }) => {
   const actor = await requireAuth(req);
   requireRoles(actor, ['TEACHER', 'TENANT_ADMIN', 'SUB_ADMIN']);
-  return json(await startMeeting(actor.tenantId!, params!.id));
+  return json(await startMeeting(actor.orgId!, params!.id));
 });

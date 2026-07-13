@@ -16,10 +16,10 @@ const schema = z.object({
 export const POST = route(async (req) => {
   const user = await requireAuth(req);
   requireRoles(user, ['SUPER_ADMIN', 'TENANT_ADMIN', 'SUB_ADMIN']);
-  const tenantId = user.tenantId;
-  if (!tenantId) throw BadRequest('Tenant ID is required');
+  const orgId = user.orgId;
+  if (!orgId) throw BadRequest('Tenant ID is required');
 
   const body = await parseBody(req, schema);
-  const results = await bulkAssignCourses(tenantId, user.id, body.courseIds, body.targetType as never, body.targetIds, body.dueDate, body.isMandatory);
+  const results = await bulkAssignCourses(orgId, user.id, body.courseIds, body.targetType as never, body.targetIds, body.dueDate, body.isMandatory);
   return json({ success: true, data: results, message: `${body.courseIds.length} course(s) assigned to ${body.targetIds.length} target(s)` });
 });

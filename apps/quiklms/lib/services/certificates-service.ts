@@ -33,22 +33,22 @@ export async function createTemplate(data: Record<string, unknown>) {
     data: {
       ...(rest as object),
       ...(selectedTenants?.length
-        ? { selectedTenants: { create: selectedTenants.map((tenantId) => ({ tenantId })) } }
+        ? { selectedTenants: { create: selectedTenants.map((orgId) => ({ orgId })) } }
         : {}),
     } as never,
   });
-  if (created.isActive) await deactivateOtherTenantTemplates(created.id, created.tenantId, created.submittedByTenantId);
+  if (created.isActive) await deactivateOtherTenantTemplates(created.id, created.orgId, created.submittedByTenantId);
   return created;
 }
 
-/** Returns certificate templates assigned to a tenant, or all for super admin (tenantId undefined). */
-export async function findAll(tenantId?: string) {
-  if (tenantId) {
+/** Returns certificate templates assigned to a tenant, or all for super admin (orgId undefined). */
+export async function findAll(orgId?: string) {
+  if (orgId) {
     const where = {
       OR: [
-        { selectedTenants: { some: { tenantId } } },
-        { tenantId },
-        { submittedByTenantId: tenantId },
+        { selectedTenants: { some: { orgId } } },
+        { orgId },
+        { submittedByTenantId: orgId },
       ],
     };
     let certs = await prisma.certificate.findMany({ where: { AND: [where, { isActive: true }] } });
@@ -81,21 +81,21 @@ export async function findAllApprovalItems() {
   });
 }
 
-export async function findBySubmittedTenant(tenantId: string) {
+export async function findBySubmittedTenant(orgId: string) {
   return prisma.certificate.findMany({
-    where: { OR: [{ submittedByTenantId: tenantId }, { selectedTenants: { some: { tenantId } } }] },
+    where: { OR: [{ submittedByTenantId: orgId }, { selectedTenants: { some: { orgId } } }] },
     orderBy: { updatedAt: 'desc' },
   });
 }
 
-async function deactivateOtherTenantTemplates(excludeId: string, tenantId?: string | null, submittedByTenantId?: string | null) {
-  const tid = tenantId || submittedByTenantId;
+async function deactivateOtherTenantTemplates(excludeId: string, orgId?: string | null, submittedByTenantId?: string | null) {
+  const tid = orgId || submittedByTenantId;
   if (!tid) return;
   await prisma.certificate.updateMany({
     where: {
       id: { not: excludeId },
       isActive: true,
-      OR: [{ tenantId: tid }, { submittedByTenantId: tid }, { selectedTenants: { some: { tenantId: tid } } }],
+      OR: [{ orgId: tid }, { submittedByTenantId: tid }, { selectedTenants: { some: { orgId: tid } } }],
     },
     data: { isActive: false },
   });
@@ -109,7 +109,7 @@ export async function approve(id: string, approvedById: string) {
     where: { id },
     data: { approvalStatus: 'approved', isActive: true, approvedBy: approvedById, approvalDate: new Date(), rejectionReason: null },
   });
-  await deactivateOtherTenantTemplates(saved.id, saved.tenantId, saved.submittedByTenantId);
+  await deactivateOtherTenantTemplates(saved.id, saved.orgId, saved.submittedByTenantId);
   return saved;
 }
 
@@ -124,27 +124,27 @@ export async function reject(id: string, rejectedById: string, reason: string) {
 }
 
 /** A template is visible to a tenant if it owns / submitted / was assigned it. */
-function tenantTemplateScope(tenantId?: string | null) {
-  if (!tenantId) return undefined; // super-admin: no scoping
+function tenantTemplateScope(orgId?: string | null) {
+  if (!orgId) return undefined; // super-admin: no scoping
   return {
     OR: [
-      { tenantId },
-      { submittedByTenantId: tenantId },
-      { selectedTenants: { some: { tenantId } } },
+      { orgId },
+      { submittedByTenantId: orgId },
+      { selectedTenants: { some: { orgId } } },
     ],
   };
 }
 
-export async function findOne(id: string, tenantId?: string | null) {
-  const scope = tenantTemplateScope(tenantId);
+export async function findOne(id: string, orgId?: string | null) {
+  const scope = tenantTemplateScope(orgId);
   const cert = await prisma.certificate.findFirst({ where: scope ? { AND: [{ id }, scope] } : { id } });
   if (!cert) throw NotFound('Certificate template not found');
   return cert;
 }
 
-export async function updateTemplate(id: string, data: Record<string, unknown>, tenantId?: string | null) {
+export async function updateTemplate(id: string, data: Record<string, unknown>, orgId?: string | null) {
   const { selectedTenants, ...rest } = data as { selectedTenants?: string[] } & Record<string, unknown>;
-  const scope = tenantTemplateScope(tenantId);
+  const scope = tenantTemplateScope(orgId);
   const result = await prisma.certificate.updateMany({
     where: scope ? { AND: [{ id }, scope] } : { id },
     data: rest as never,
@@ -172,7 +172,7 @@ export async function removeDuplicateIssuedCertificates() {
   const seen = new Map<string, string>();
   const toRemove: string[] = [];
   for (const c of all) {
-    const key = `${c.tenantId}|${c.learnerId}|${c.courseId}`;
+    const key = `${c.orgId}|${c.learnerId}|${c.courseId}`;
     if (seen.has(key)) toRemove.push(c.id);
     else seen.set(key, c.id);
   }
@@ -186,7 +186,7 @@ interface GenerateInput {
   certificateTemplateId?: string;
   learnerId: string;
   courseId: string;
-  tenantId: string;
+  orgId: string;
   userName: string;
   courseName: string;
   designation?: string;
@@ -198,8 +198,8 @@ interface GenerateInput {
 }
 
 export async function generateCertificate(data: GenerateInput) {
-  const { tenantId, learnerId, courseId } = data;
-  const existing = await prisma.certificateIssued.findFirst({ where: { tenantId, learnerId, courseId } });
+  const { orgId, learnerId, courseId } = data;
+  const existing = await prisma.certificateIssued.findFirst({ where: { orgId, learnerId, courseId } });
   if (existing) return existing;
 
   const certificateId = newCertificateId();
@@ -207,7 +207,7 @@ export async function generateCertificate(data: GenerateInput) {
   // PDF/QR generation deferred — store placeholder urls.
   return prisma.certificateIssued.create({
     data: {
-      tenantId, learnerId, courseId,
+      orgId, learnerId, courseId,
       certificateTemplateId: data.certificateTemplateId ?? null,
       certificateId, courseName: data.courseName, learnerName: data.userName,
       pdfUrl: '', qrCodeUrl: '', verificationUrl, issuedAt: new Date(),
@@ -225,16 +225,16 @@ export async function generateDefaultCertificate(data: GenerateInput) {
  * Certificate completion generation — ported from ProgressService.generateCertificateForCompletion.
  * Re-verifies completion + quiz pass gate, selects active template, then issues.
  */
-export async function generateCertificateForCompletion(tenantId: string, learnerId: string, courseId: string): Promise<void> {
+export async function generateCertificateForCompletion(orgId: string, learnerId: string, courseId: string): Promise<void> {
   const progress = await prisma.progress.findUnique({
-    where: { tenantId_learnerId_courseId: { tenantId, learnerId, courseId } },
+    where: { orgId_learnerId_courseId: { orgId, learnerId, courseId } },
   });
   if (!progress) return;
   if (progress.completionPercentage < 100 && progress.status !== 'Completed') return;
   if (progress.quizScore != null && progress.isPassed !== true) return;
 
   // Already issued?
-  const existing = await prisma.certificateIssued.findFirst({ where: { tenantId, learnerId, courseId } });
+  const existing = await prisma.certificateIssued.findFirst({ where: { orgId, learnerId, courseId } });
   if (existing) return;
 
   const user = await prisma.user.findUnique({ where: { id: learnerId } });
@@ -251,14 +251,14 @@ export async function generateCertificateForCompletion(tenantId: string, learner
   if (!course) return;
 
   // Tenant feature + designation
-  const tenant = await prisma.tenant.findUnique({ where: { id: tenantId } });
+  const tenant = await prisma.tenant.findUnique({ where: { id: orgId } });
   const featureConfig = (tenant?.featureConfig as Record<string, unknown>) || {};
   if (featureConfig.enableCertificates === false) return;
   if (settings?.certificateEnabled === false && settings?.certificateTemplateId) return;
 
   // Compliance metadata
   const assignment = await prisma.courseAssignment.findFirst({
-    where: { tenantId, targetType: 'USER', targetId: learnerId, courseId },
+    where: { orgId, targetType: 'USER', targetId: learnerId, courseId },
     select: { isMandatory: true },
   });
   const isComplianceCertificate = Boolean(assignment?.isMandatory);
@@ -272,7 +272,7 @@ export async function generateCertificateForCompletion(tenantId: string, learner
   const userName = `${user.firstName} ${user.lastName}`.trim() || user.email || 'Learner';
 
   // Active template selection (base64 preference)
-  const templates = await findAll(tenantId);
+  const templates = await findAll(orgId);
   const hasBase64 = (t: { backgroundImageUrl: string }) => t.backgroundImageUrl?.startsWith('data:');
   const sorted = [...templates].sort(
     (a, b) => new Date(b.updatedAt || b.createdAt).getTime() - new Date(a.updatedAt || a.createdAt).getTime(),
@@ -286,7 +286,7 @@ export async function generateCertificateForCompletion(tenantId: string, learner
   let certPassingScore: number | undefined;
   try {
     const latestAttempt = await prisma.quizAttempt.findFirst({
-      where: { tenantId, learnerId, courseId }, orderBy: { submittedAt: 'desc' },
+      where: { orgId, learnerId, courseId }, orderBy: { submittedAt: 'desc' },
     });
     if (latestAttempt) {
       const a = await prisma.assessment.findFirst({ where: { id: latestAttempt.assessmentId }, select: { passingScore: true } });
@@ -298,13 +298,13 @@ export async function generateCertificateForCompletion(tenantId: string, learner
 
   if (active) {
     await generateCertificate({
-      certificateTemplateId: active.id, learnerId, courseId, tenantId, userName,
+      certificateTemplateId: active.id, learnerId, courseId, orgId, userName,
       courseName: course.title, designation: active.designation || tenant?.contactRoleInOrganization || '',
       isComplianceCertificate, expiresAt, score: certScore, passingScore: certPassingScore, passed,
     });
   } else {
     await generateDefaultCertificate({
-      learnerId, courseId, tenantId, userName, courseName: course.title,
+      learnerId, courseId, orgId, userName, courseName: course.title,
       designation: tenant?.contactRoleInOrganization || 'Course Administrator',
       isComplianceCertificate, expiresAt, score: certScore, passingScore: certPassingScore, passed,
     });
@@ -327,8 +327,8 @@ async function resolveCourseMap(courseIds: string[]) {
   return map;
 }
 
-export async function getLearnerCertificates(tenantId: string, learnerId: string) {
-  const certs = await prisma.certificateIssued.findMany({ where: { tenantId, learnerId }, orderBy: { issuedAt: 'desc' } });
+export async function getLearnerCertificates(orgId: string, learnerId: string) {
+  const certs = await prisma.certificateIssued.findMany({ where: { orgId, learnerId }, orderBy: { issuedAt: 'desc' } });
   const courseMap = await resolveCourseMap(certs.map((c) => c.courseId).filter(Boolean));
   const seen = new Set<string>();
   return certs
@@ -348,8 +348,8 @@ export async function getLearnerCertificates(tenantId: string, learnerId: string
     });
 }
 
-export async function getTenantIssuedCertificates(tenantId: string) {
-  const certs = await prisma.certificateIssued.findMany({ where: { tenantId }, orderBy: { issuedAt: 'desc' } });
+export async function getTenantIssuedCertificates(orgId: string) {
+  const certs = await prisma.certificateIssued.findMany({ where: { orgId }, orderBy: { issuedAt: 'desc' } });
   const courseMap = await resolveCourseMap(certs.map((c) => c.courseId).filter(Boolean));
   const learnerIds = [...new Set(certs.map((c) => c.learnerId).filter(Boolean))];
   const learners = await prisma.user.findMany({
@@ -479,10 +479,10 @@ export async function buildCertificatePdf(cert: CertificateIssued): Promise<Buff
   return Buffer.from(arrayBuffer);
 }
 
-/** Regenerate PDF for an issued certificate (tenant-scoped when tenantId given). */
-export async function regeneratePdfForIssuedCertificate(id: string, tenantId?: string | null) {
-  const where: { id: string; tenantId?: string } = { id };
-  if (tenantId) where.tenantId = tenantId;
+/** Regenerate PDF for an issued certificate (tenant-scoped when orgId given). */
+export async function regeneratePdfForIssuedCertificate(id: string, orgId?: string | null) {
+  const where: { id: string; orgId?: string } = { id };
+  if (orgId) where.orgId = orgId;
   const cert = await prisma.certificateIssued.findFirst({ where });
   if (!cert) throw NotFound('Issued certificate not found');
   const buffer = await buildCertificatePdf(cert);
@@ -497,9 +497,9 @@ export async function regeneratePdfByCertificateId(certificateId: string) {
 }
 
 /** Stored download url (no S3 presigning). */
-export async function getDownloadUrl(id: string, tenantId: string | null, learnerId: string) {
-  const where: { id: string; tenantId?: string; learnerId?: string } = { id };
-  if (tenantId) where.tenantId = tenantId;
+export async function getDownloadUrl(id: string, orgId: string | null, learnerId: string) {
+  const where: { id: string; orgId?: string; learnerId?: string } = { id };
+  if (orgId) where.orgId = orgId;
   if (learnerId) where.learnerId = learnerId;
   const cert = await prisma.certificateIssued.findFirst({ where });
   if (!cert) throw NotFound('Certificate not found');

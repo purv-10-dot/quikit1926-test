@@ -11,5 +11,5 @@ export const PATCH = route(async (req, { params }) => {
   const actor = await requireAuth(req);
   requireRoles(actor, ['TEACHER', 'TENANT_ADMIN', 'SUB_ADMIN']);
   const body = await parseBody(req, schema);
-  return json(await toggleRecording(actor.tenantId!, params!.id, body.enabled));
+  return json(await toggleRecording(actor.orgId!, params!.id, body.enabled));
 });

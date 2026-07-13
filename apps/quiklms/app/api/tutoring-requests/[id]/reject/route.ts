@@ -11,5 +11,5 @@ export const PATCH = route(async (req, { params }) => {
   const actor = await requireAuth(req);
   requireRoles(actor, ['TEACHER']);
   const dto = await parseBody(req, schema);
-  return json(await reject(actor.tenantId!, actor.id, params!.id, dto));
+  return json(await reject(actor.orgId!, actor.id, params!.id, dto));
 });

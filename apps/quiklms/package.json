@@ -12,6 +12,8 @@
     "start": "next start -p 3020",
     "lint": "next lint",
     "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "test:watch": "vitest",
     "prisma:generate": "prisma generate",
     "prisma:format": "prisma format",
     "prisma:validate": "prisma validate",

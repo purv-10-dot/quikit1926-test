@@ -25,18 +25,18 @@ const WITH_CHILDREN = {
 } as const;
 
 export async function createCalendar(
-  tenantId: string,
+  orgId: string,
   dto: { academicYear: string; terms?: TermInput[]; holidays?: HolidayInput[] },
   createdBy: string,
 ) {
   const existing = await prisma.academicCalendar.findFirst({
-    where: { tenantId, academicYear: dto.academicYear },
+    where: { orgId, academicYear: dto.academicYear },
   });
   if (existing) throw Conflict(`Academic calendar for ${dto.academicYear} already exists`);
 
   return prisma.academicCalendar.create({
     data: {
-      tenantId,
+      orgId,
       academicYear: dto.academicYear,
       createdBy,
       terms: {
@@ -59,27 +59,27 @@ export async function createCalendar(
   });
 }
 
-export async function getCalendarForYear(tenantId: string, academicYear: string) {
+export async function getCalendarForYear(orgId: string, academicYear: string) {
   const calendar = await prisma.academicCalendar.findFirst({
-    where: { tenantId, academicYear },
+    where: { orgId, academicYear },
     include: WITH_CHILDREN,
   });
   if (!calendar) throw NotFound(`No calendar found for ${academicYear}`);
   return calendar;
 }
 
-export async function getAllCalendars(tenantId: string) {
+export async function getAllCalendars(orgId: string) {
   return prisma.academicCalendar.findMany({
-    where: { tenantId },
+    where: { orgId },
     orderBy: { academicYear: 'desc' },
     include: WITH_CHILDREN,
   });
 }
 
-export async function getCurrentTerm(tenantId: string) {
+export async function getCurrentTerm(orgId: string) {
   const now = new Date();
   const calendars = await prisma.academicCalendar.findMany({
-    where: { tenantId },
+    where: { orgId },
     include: WITH_CHILDREN,
   });
   for (const calendar of calendars) {
@@ -92,8 +92,8 @@ export async function getCurrentTerm(tenantId: string) {
   return null;
 }
 
-export async function updateTerms(tenantId: string, calendarId: string, terms: TermInput[]) {
-  const calendar = await prisma.academicCalendar.findFirst({ where: { id: calendarId, tenantId } });
+export async function updateTerms(orgId: string, calendarId: string, terms: TermInput[]) {
+  const calendar = await prisma.academicCalendar.findFirst({ where: { id: calendarId, orgId } });
   if (!calendar) throw NotFound('Academic calendar not found');
   await prisma.$transaction([
     prisma.academicTerm.deleteMany({ where: { calendarId } }),
@@ -110,8 +110,8 @@ export async function updateTerms(tenantId: string, calendarId: string, terms: T
   return prisma.academicCalendar.findUnique({ where: { id: calendarId }, include: WITH_CHILDREN });
 }
 
-export async function updateHolidays(tenantId: string, calendarId: string, holidays: HolidayInput[]) {
-  const calendar = await prisma.academicCalendar.findFirst({ where: { id: calendarId, tenantId } });
+export async function updateHolidays(orgId: string, calendarId: string, holidays: HolidayInput[]) {
+  const calendar = await prisma.academicCalendar.findFirst({ where: { id: calendarId, orgId } });
   if (!calendar) throw NotFound('Academic calendar not found');
   await prisma.$transaction([
     prisma.academicHoliday.deleteMany({ where: { calendarId } }),
@@ -127,8 +127,8 @@ export async function updateHolidays(tenantId: string, calendarId: string, holid
   return prisma.academicCalendar.findUnique({ where: { id: calendarId }, include: WITH_CHILDREN });
 }
 
-export async function deleteCalendar(tenantId: string, calendarId: string) {
-  const calendar = await prisma.academicCalendar.findFirst({ where: { id: calendarId, tenantId } });
+export async function deleteCalendar(orgId: string, calendarId: string) {
+  const calendar = await prisma.academicCalendar.findFirst({ where: { id: calendarId, orgId } });
   if (!calendar) throw NotFound('Academic calendar not found');
   await prisma.academicCalendar.delete({ where: { id: calendarId } });
   return { success: true };

@@ -6,6 +6,6 @@ import { getNudgeUsers } from '@/lib/services/compliance-service';
 export const GET = route(async (req) => {
   const user = await requireAuth(req);
   requireRoles(user, ['TENANT_ADMIN', 'SUB_ADMIN']);
-  const nudgeUsers = await getNudgeUsers(user.tenantId as string);
+  const nudgeUsers = await getNudgeUsers(user.orgId as string);
   return json({ success: true, data: nudgeUsers, message: 'Nudge users fetched successfully' });
 });

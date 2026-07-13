@@ -6,6 +6,6 @@ import { getTeamStats } from '@/lib/services/manager-service';
 export const GET = route(async (req) => {
   const user = await requireAuth(req);
   requireRoles(user, ['MANAGER']);
-  const stats = await getTeamStats(user.id, user.tenantId as string);
+  const stats = await getTeamStats(user.id, user.orgId as string);
   return json({ success: true, data: stats, message: 'Team stats fetched successfully' });
 });

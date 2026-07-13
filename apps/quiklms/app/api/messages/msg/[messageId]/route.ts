@@ -10,11 +10,11 @@ const editSchema = z.object({ text: z.string() });
 export const PATCH = route(async (req, { params }) => {
   const actor = await requireAuth(req);
   const { text } = await parseBody(req, editSchema);
-  return json(await editMessage(actor.tenantId ?? '', params!.messageId, actor.id, text));
+  return json(await editMessage(actor.orgId ?? '', params!.messageId, actor.id, text));
 });
 
 // DELETE /api/messages/msg/:messageId — delete own message
 export const DELETE = route(async (req, { params }) => {
   const actor = await requireAuth(req);
-  return json(await deleteMessage(actor.tenantId ?? '', params!.messageId, actor.id));
+  return json(await deleteMessage(actor.orgId ?? '', params!.messageId, actor.id));
 });

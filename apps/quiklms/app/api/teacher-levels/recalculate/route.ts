@@ -6,6 +6,6 @@ import { recalculateTenantLevels } from '@/lib/services/teacher-level-service';
 export const POST = route(async (req) => {
   const actor = await requireAuth(req);
   requireRoles(actor, ['TENANT_ADMIN', 'SUB_ADMIN']);
-  await recalculateTenantLevels(actor.tenantId!);
+  await recalculateTenantLevels(actor.orgId!);
   return json({ success: true, message: 'Recalculation completed' });
 });

@@ -1,9 +1,9 @@
 /**
  * Messages service — ported from MessagesService (Prisma).
  *
- * Tenant isolation: conversations carry `tenantId`; messages/reactions/participants
+ * Tenant isolation: conversations carry `orgId`; messages/reactions/participants
  * are scoped through their parent conversation. Every conversation lookup is scoped
- * by tenantId AND participant membership (the legacy `'participants.userId': userId`
+ * by orgId AND participant membership (the legacy `'participants.userId': userId`
  * filter). Realtime broadcast (Socket.IO) lives in the worker (Phase 4) — these REST
  * handlers only persist + read.
  *
@@ -131,7 +131,7 @@ async function shapeConversation(conv: ConvWithChildren) {
 
 // ═══════════════ GET MESSAGEABLE CONTACTS (role-scoped) ═══════════════
 export async function getMessageableContacts(
-  tenantId: string,
+  orgId: string,
   userId: string,
   userRole: string,
   opts: { q?: string; filterRole?: string; batchId?: string } = {},
@@ -142,7 +142,7 @@ export async function getMessageableContacts(
   let batchTeacherId: string | null = null;
   if (opts.batchId) {
     const batch = await prisma.batch.findFirst({
-      where: { id: opts.batchId, tenantId },
+      where: { id: opts.batchId, orgId },
       select: { teacherId: true, students: { select: { studentId: true } } },
     });
     if (batch) {
@@ -152,7 +152,7 @@ export async function getMessageableContacts(
   }
 
   const where: Prisma.UserWhereInput = {
-    tenantId,
+    orgId,
     isActive: true,
     id: { not: userId },
   };
@@ -215,9 +215,9 @@ export async function getMessageableContacts(
 }
 
 // ═══════════════ LIST CONVERSATIONS ═══════════════
-export async function getConversations(tenantId: string, userId: string) {
+export async function getConversations(orgId: string, userId: string) {
   const convs = await prisma.conversation.findMany({
-    where: { tenantId, participants: { some: { userId } } },
+    where: { orgId, participants: { some: { userId } } },
     include: { participants: true },
     orderBy: [{ lastMessageAt: 'desc' }, { createdAt: 'desc' }],
   });
@@ -229,9 +229,9 @@ export async function getConversations(tenantId: string, userId: string) {
   return Promise.all(visible.map(shapeConversation));
 }
 
-export async function getArchivedConversations(tenantId: string, userId: string) {
+export async function getArchivedConversations(orgId: string, userId: string) {
   const convs = await prisma.conversation.findMany({
-    where: { tenantId, participants: { some: { userId } } },
+    where: { orgId, participants: { some: { userId } } },
     include: { participants: true },
     orderBy: [{ lastMessageAt: 'desc' }, { createdAt: 'desc' }],
   });
@@ -245,7 +245,7 @@ export async function getArchivedConversations(tenantId: string, userId: string)
 
 // ═══════════════ CREATE CONVERSATION ═══════════════
 export async function createConversation(
-  tenantId: string,
+  orgId: string,
   userId: string,
   userRole: string,
   dto: CreateConversationInput,
@@ -253,7 +253,7 @@ export async function createConversation(
   const uniqueIds = [...new Set([userId, ...dto.participantIds])];
 
   const participantDocs = await prisma.user.findMany({
-    where: { id: { in: uniqueIds }, tenantId },
+    where: { id: { in: uniqueIds }, orgId },
     select: { id: true, role: true },
   });
 
@@ -286,7 +286,7 @@ export async function createConversation(
     if (dto.participantIds.length === 1) {
       const candidates = await prisma.conversation.findMany({
         where: {
-          tenantId,
+          orgId,
           type: 'direct',
           AND: [
             { participants: { some: { userId } } },
@@ -312,7 +312,7 @@ export async function createConversation(
 
   const conversation = await prisma.conversation.create({
     data: {
-      tenantId,
+      orgId,
       type: dto.type || (uniqueIds.length > 2 ? 'group' : 'direct'),
       title: dto.title,
       description: dto.description,
@@ -329,7 +329,7 @@ export async function createConversation(
   });
 
   if (dto.initialMessage) {
-    await sendMessage(tenantId, conversation.id, userId, { text: dto.initialMessage });
+    await sendMessage(orgId, conversation.id, userId, { text: dto.initialMessage });
   }
 
   const refreshed = await prisma.conversation.findUnique({
@@ -340,29 +340,29 @@ export async function createConversation(
 }
 
 // ═══════════════ GET CONVERSATION DETAILS ═══════════════
-async function loadConversationOrThrow(tenantId: string, conversationId: string, userId: string) {
+async function loadConversationOrThrow(orgId: string, conversationId: string, userId: string) {
   const conversation = await prisma.conversation.findFirst({
-    where: { id: conversationId, tenantId, participants: { some: { userId } } },
+    where: { id: conversationId, orgId, participants: { some: { userId } } },
     include: { participants: true },
   });
   if (!conversation) throw NotFound('Conversation not found');
   return conversation;
 }
 
-export async function getConversation(tenantId: string, conversationId: string, userId: string) {
-  const conversation = await loadConversationOrThrow(tenantId, conversationId, userId);
+export async function getConversation(orgId: string, conversationId: string, userId: string) {
+  const conversation = await loadConversationOrThrow(orgId, conversationId, userId);
   return shapeConversation(conversation);
 }
 
 // ═══════════════ GET MESSAGES ═══════════════
 export async function getMessages(
-  tenantId: string,
+  orgId: string,
   conversationId: string,
   userId: string,
   page = 1,
   limit = 50,
 ) {
-  await loadConversationOrThrow(tenantId, conversationId, userId);
+  await loadConversationOrThrow(orgId, conversationId, userId);
 
   const skip = (page - 1) * limit;
   const [rows, total] = await Promise.all([
@@ -406,12 +406,12 @@ async function shapeMessage(m: MessageWithReactions) {
 
 // ═══════════════ SEND MESSAGE ═══════════════
 export async function sendMessage(
-  tenantId: string,
+  orgId: string,
   conversationId: string,
   senderId: string,
   dto: SendMessageInput,
 ) {
-  const conversation = await loadConversationOrThrow(tenantId, conversationId, senderId);
+  const conversation = await loadConversationOrThrow(orgId, conversationId, senderId);
 
   if ((conversation.blockedUserIds || []).includes(senderId)) {
     throw Forbidden('You are blocked from sending messages in this conversation.');
@@ -452,7 +452,7 @@ export async function sendMessage(
 }
 
 // ═══════════════ EDIT MESSAGE ═══════════════
-export async function editMessage(tenantId: string, messageId: string, userId: string, text: string) {
+export async function editMessage(orgId: string, messageId: string, userId: string, text: string) {
   const message = await prisma.message.findUnique({ where: { id: messageId } });
   if (!message) throw NotFound('Message not found');
   if (message.senderId !== userId) throw Forbidden('You can only edit your own messages');
@@ -470,7 +470,7 @@ export async function editMessage(tenantId: string, messageId: string, userId: s
 }
 
 // ═══════════════ DELETE MESSAGE ═══════════════
-export async function deleteMessage(tenantId: string, messageId: string, userId: string) {
+export async function deleteMessage(orgId: string, messageId: string, userId: string) {
   const message = await prisma.message.findUnique({ where: { id: messageId } });
   if (!message) throw NotFound('Message not found');
   if (message.senderId !== userId) throw Forbidden('You can only delete your own messages');
@@ -488,11 +488,11 @@ export async function deleteMessage(tenantId: string, messageId: string, userId:
 }
 
 // ═══════════════ REACT TO MESSAGE ═══════════════
-export async function reactToMessage(tenantId: string, messageId: string, userId: string, emoji: string) {
+export async function reactToMessage(orgId: string, messageId: string, userId: string, emoji: string) {
   const message = await prisma.message.findUnique({ where: { id: messageId } });
   if (!message) throw NotFound('Message not found');
 
-  await loadConversationOrThrow(tenantId, message.conversationId, userId);
+  await loadConversationOrThrow(orgId, message.conversationId, userId);
 
   const existing = await prisma.messageReaction.findFirst({ where: { messageId, userId, emoji } });
   if (existing) {
@@ -507,7 +507,7 @@ export async function reactToMessage(tenantId: string, messageId: string, userId
 
 // ═══════════════ FORWARD MESSAGE ═══════════════
 export async function forwardMessage(
-  tenantId: string,
+  orgId: string,
   messageId: string,
   userId: string,
   targetConversationId: string,
@@ -515,10 +515,10 @@ export async function forwardMessage(
   const original = await prisma.message.findUnique({ where: { id: messageId } });
   if (!original) throw NotFound('Original message not found');
 
-  await loadConversationOrThrow(tenantId, original.conversationId, userId);
-  await loadConversationOrThrow(tenantId, targetConversationId, userId);
+  await loadConversationOrThrow(orgId, original.conversationId, userId);
+  await loadConversationOrThrow(orgId, targetConversationId, userId);
 
-  return sendMessage(tenantId, targetConversationId, userId, {
+  return sendMessage(orgId, targetConversationId, userId, {
     text: original.text,
     attachmentUrls: original.attachmentUrls,
     forwardedFrom: messageId,
@@ -527,42 +527,42 @@ export async function forwardMessage(
 
 // ═══════════════ ARCHIVE / UNARCHIVE ═══════════════
 async function setParticipantFlag(
-  tenantId: string,
+  orgId: string,
   conversationId: string,
   userId: string,
   data: Prisma.ConversationParticipantUpdateManyMutationInput,
 ) {
   const conv = await prisma.conversation.findFirst({
-    where: { id: conversationId, tenantId, participants: { some: { userId } } },
+    where: { id: conversationId, orgId, participants: { some: { userId } } },
     select: { id: true },
   });
   if (!conv) throw NotFound('Conversation not found');
   await prisma.conversationParticipant.updateMany({ where: { conversationId, userId }, data });
 }
 
-export async function archiveConversation(tenantId: string, conversationId: string, userId: string) {
-  await setParticipantFlag(tenantId, conversationId, userId, { isArchived: true });
+export async function archiveConversation(orgId: string, conversationId: string, userId: string) {
+  await setParticipantFlag(orgId, conversationId, userId, { isArchived: true });
   return { success: true };
 }
 
-export async function unarchiveConversation(tenantId: string, conversationId: string, userId: string) {
-  await setParticipantFlag(tenantId, conversationId, userId, { isArchived: false });
+export async function unarchiveConversation(orgId: string, conversationId: string, userId: string) {
+  await setParticipantFlag(orgId, conversationId, userId, { isArchived: false });
   return { success: true };
 }
 
-export async function deleteConversation(tenantId: string, conversationId: string, userId: string) {
-  await setParticipantFlag(tenantId, conversationId, userId, { isDeleted: true, deletedAt: new Date() });
+export async function deleteConversation(orgId: string, conversationId: string, userId: string) {
+  await setParticipantFlag(orgId, conversationId, userId, { isDeleted: true, deletedAt: new Date() });
   return { success: true };
 }
 
-export async function muteConversation(tenantId: string, conversationId: string, userId: string, muted: boolean) {
-  await setParticipantFlag(tenantId, conversationId, userId, { isMuted: muted });
+export async function muteConversation(orgId: string, conversationId: string, userId: string, muted: boolean) {
+  await setParticipantFlag(orgId, conversationId, userId, { isMuted: muted });
   return { success: true, muted };
 }
 
 // ═══════════════ GROUP MANAGEMENT ═══════════════
-export async function updateGroup(tenantId: string, conversationId: string, userId: string, dto: UpdateGroupInput) {
-  const conv = await loadConversationOrThrow(tenantId, conversationId, userId);
+export async function updateGroup(orgId: string, conversationId: string, userId: string, dto: UpdateGroupInput) {
+  const conv = await loadConversationOrThrow(orgId, conversationId, userId);
   if (conv.type !== 'group') throw BadRequest('Cannot update a direct conversation');
 
   const participant = conv.participants.find((p) => p.userId === userId);
@@ -583,8 +583,8 @@ export async function updateGroup(tenantId: string, conversationId: string, user
   return refreshed ? shapeConversation(refreshed) : null;
 }
 
-export async function addParticipants(tenantId: string, conversationId: string, userId: string, participantIds: string[]) {
-  const conv = await loadConversationOrThrow(tenantId, conversationId, userId);
+export async function addParticipants(orgId: string, conversationId: string, userId: string, participantIds: string[]) {
+  const conv = await loadConversationOrThrow(orgId, conversationId, userId);
   if (conv.type !== 'group') throw BadRequest('Cannot add participants to a direct conversation');
 
   const participant = conv.participants.find((p) => p.userId === userId);
@@ -616,8 +616,8 @@ export async function addParticipants(tenantId: string, conversationId: string, 
   return refreshed ? shapeConversation(refreshed) : null;
 }
 
-export async function removeParticipant(tenantId: string, conversationId: string, userId: string, targetUserId: string) {
-  const conv = await loadConversationOrThrow(tenantId, conversationId, userId);
+export async function removeParticipant(orgId: string, conversationId: string, userId: string, targetUserId: string) {
+  const conv = await loadConversationOrThrow(orgId, conversationId, userId);
   if (conv.type !== 'group') throw BadRequest('Cannot remove participants from a direct conversation');
 
   if (userId !== targetUserId) {
@@ -639,8 +639,8 @@ export async function removeParticipant(tenantId: string, conversationId: string
   return { success: true };
 }
 
-export async function makeAdmin(tenantId: string, conversationId: string, userId: string, targetUserId: string) {
-  const conv = await loadConversationOrThrow(tenantId, conversationId, userId);
+export async function makeAdmin(orgId: string, conversationId: string, userId: string, targetUserId: string) {
+  const conv = await loadConversationOrThrow(orgId, conversationId, userId);
   const participant = conv.participants.find((p) => p.userId === userId);
   if (!participant || participant.role !== 'admin') {
     throw Forbidden('Only admins can promote members');
@@ -654,9 +654,9 @@ export async function makeAdmin(tenantId: string, conversationId: string, userId
 }
 
 // ═══════════════ MARK AS READ ═══════════════
-export async function markAsRead(tenantId: string, conversationId: string, userId: string) {
+export async function markAsRead(orgId: string, conversationId: string, userId: string) {
   const conv = await prisma.conversation.findFirst({
-    where: { id: conversationId, tenantId, participants: { some: { userId } } },
+    where: { id: conversationId, orgId, participants: { some: { userId } } },
     select: { id: true },
   });
   if (conv) {
@@ -669,24 +669,24 @@ export async function markAsRead(tenantId: string, conversationId: string, userI
 }
 
 // ═══════════════ BLOCK / UNBLOCK ═══════════════
-export async function blockUser(tenantId: string, conversationId: string, userId: string, blockedUserId: string) {
-  await loadConversationOrThrow(tenantId, conversationId, userId);
-  const conv = await prisma.conversation.findFirst({ where: { id: conversationId, tenantId }, select: { blockedUserIds: true } });
+export async function blockUser(orgId: string, conversationId: string, userId: string, blockedUserId: string) {
+  await loadConversationOrThrow(orgId, conversationId, userId);
+  const conv = await prisma.conversation.findFirst({ where: { id: conversationId, orgId }, select: { blockedUserIds: true } });
   if (conv && !conv.blockedUserIds.includes(blockedUserId)) {
     await prisma.conversation.updateMany({
-      where: { id: conversationId, tenantId },
+      where: { id: conversationId, orgId },
       data: { blockedUserIds: { push: blockedUserId } },
     });
   }
   return { success: true, message: 'User blocked in this conversation.' };
 }
 
-export async function unblockUser(tenantId: string, conversationId: string, userId: string, blockedUserId: string) {
-  await loadConversationOrThrow(tenantId, conversationId, userId);
-  const conv = await prisma.conversation.findFirst({ where: { id: conversationId, tenantId }, select: { blockedUserIds: true } });
+export async function unblockUser(orgId: string, conversationId: string, userId: string, blockedUserId: string) {
+  await loadConversationOrThrow(orgId, conversationId, userId);
+  const conv = await prisma.conversation.findFirst({ where: { id: conversationId, orgId }, select: { blockedUserIds: true } });
   if (conv) {
     await prisma.conversation.updateMany({
-      where: { id: conversationId, tenantId },
+      where: { id: conversationId, orgId },
       data: { blockedUserIds: { set: conv.blockedUserIds.filter((id) => id !== blockedUserId) } },
     });
   }
@@ -694,10 +694,10 @@ export async function unblockUser(tenantId: string, conversationId: string, user
 }
 
 // ═══════════════ REPORT / FLAG ═══════════════
-export async function reportMessage(tenantId: string, messageId: string, userId: string, reason: string) {
+export async function reportMessage(orgId: string, messageId: string, userId: string, reason: string) {
   const message = await prisma.message.findUnique({ where: { id: messageId } });
   if (!message) throw NotFound('Message not found.');
-  await loadConversationOrThrow(tenantId, message.conversationId, userId);
+  await loadConversationOrThrow(orgId, message.conversationId, userId);
   await prisma.message.update({ where: { id: messageId }, data: { isFlagged: true, flagReason: reason } });
   return { success: true, message: 'Message has been reported.' };
 }

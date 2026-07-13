@@ -1,6 +1,6 @@
 /**
  * AWS S3 helpers — presigned PUT/GET, same key format as the legacy NestJS app:
- *   tenants/{tenantId}/uploads/{uuid}-{fileName}
+ *   tenants/{orgId}/uploads/{uuid}-{fileName}
  *
  * Large files (>150MB) never pass through Next.js API routes; the browser
  * uploads directly to S3 via the presigned PUT URL, or to the TUS server in
@@ -28,8 +28,8 @@ export const s3 = new S3Client({
 export const S3_BUCKET = optionalEnv('AWS_S3_BUCKET');
 
 /** Canonical S3 key — identical format to the legacy backend. */
-export function buildUploadKey(tenantId: string, fileName: string): string {
-  return `tenants/${tenantId}/uploads/${randomUUID()}-${fileName}`;
+export function buildUploadKey(orgId: string, fileName: string): string {
+  return `tenants/${orgId}/uploads/${randomUUID()}-${fileName}`;
 }
 
 export async function presignPut(key: string, contentType: string, expiresIn = 900): Promise<string> {

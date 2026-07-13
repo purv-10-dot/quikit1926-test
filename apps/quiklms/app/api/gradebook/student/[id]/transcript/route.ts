@@ -6,5 +6,5 @@ import { getTranscript } from '@/lib/services/gradebook-service';
 export const GET = route(async (req, { params }) => {
   const user = await requireAuth(req);
   const academicYear = new URL(req.url).searchParams.get('academicYear') || undefined;
-  return json(await getTranscript(user.tenantId as string, params!.id, academicYear));
+  return json(await getTranscript(user.orgId as string, params!.id, academicYear));
 });

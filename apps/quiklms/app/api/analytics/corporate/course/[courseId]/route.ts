@@ -6,5 +6,5 @@ import { getCourseAnalytics } from '@/lib/services/analytics-service';
 export const GET = route(async (req, { params }) => {
   const actor = await requireAuth(req);
   requireRoles(actor, ['TENANT_ADMIN', 'SUB_ADMIN', 'SUPER_ADMIN']);
-  return json(await getCourseAnalytics(actor.tenantId ?? '', params!.courseId));
+  return json(await getCourseAnalytics(actor.orgId ?? '', params!.courseId));
 });

@@ -17,11 +17,11 @@ const schema = z.object({
 export const POST = route(async (req) => {
   const user = await requireAuth(req);
   requireRoles(user, ['SUPER_ADMIN', 'TENANT_ADMIN', 'SUB_ADMIN']);
-  const tenantId = user.tenantId;
-  if (!tenantId) throw BadRequest('Tenant ID is required');
+  const orgId = user.orgId;
+  if (!orgId) throw BadRequest('Tenant ID is required');
 
   const dto = await parseBody(req, schema);
-  const result = await assignCourse(tenantId, user.id, dto as AssignCourseInput);
+  const result = await assignCourse(orgId, user.id, dto as AssignCourseInput);
 
   const targetLabel = dto.targetType === 'USER' ? 'user(s)' : 'group(s)';
   let message: string;

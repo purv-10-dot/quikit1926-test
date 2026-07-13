@@ -5,5 +5,5 @@ import { getPendingConsents } from '@/lib/services/consent-service';
 // GET /api/consent/pending
 export const GET = route(async (req) => {
   const user = await requireAuth(req);
-  return json(await getPendingConsents(user.tenantId as string, user.id));
+  return json(await getPendingConsents(user.orgId as string, user.id));
 });

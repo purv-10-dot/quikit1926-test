@@ -21,7 +21,7 @@ const updateSchema = z.object({
 // GET /api/homework/:id — any authed user
 export const GET = route(async (req, { params }) => {
   const actor = await requireAuth(req);
-  return json(await findOne(actor.tenantId!, params!.id));
+  return json(await findOne(actor.orgId!, params!.id));
 });
 
 // PATCH /api/homework/:id — TEACHER | TENANT_ADMIN | SUB_ADMIN
@@ -29,13 +29,13 @@ export const PATCH = route(async (req, { params }) => {
   const actor = await requireAuth(req);
   requireRoles(actor, ['TEACHER', 'TENANT_ADMIN', 'SUB_ADMIN']);
   const dto = await parseBody(req, updateSchema);
-  return json(await update(actor.tenantId!, params!.id, dto as UpdateHomeworkInput));
+  return json(await update(actor.orgId!, params!.id, dto as UpdateHomeworkInput));
 });
 
 // DELETE /api/homework/:id — TEACHER | TENANT_ADMIN | SUB_ADMIN
 export const DELETE = route(async (req, { params }) => {
   const actor = await requireAuth(req);
   requireRoles(actor, ['TEACHER', 'TENANT_ADMIN', 'SUB_ADMIN']);
-  await remove(actor.tenantId!, params!.id);
+  await remove(actor.orgId!, params!.id);
   return json(null);
 });

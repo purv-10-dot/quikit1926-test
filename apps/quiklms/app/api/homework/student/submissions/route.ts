@@ -10,7 +10,7 @@ export const GET = route(async (req) => {
   const studentIdParam = url.searchParams.get('studentId') || undefined;
   const studentId = actor.role === 'PARENT' && studentIdParam ? studentIdParam : actor.id;
   return json(
-    await getStudentSubmissions(actor.tenantId!, studentId, {
+    await getStudentSubmissions(actor.orgId!, studentId, {
       status: url.searchParams.get('status') || undefined,
     }),
   );

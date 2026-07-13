@@ -5,11 +5,11 @@ import { getConversation, deleteConversation } from '@/lib/services/messages-ser
 // GET /api/messages/conversations/:id
 export const GET = route(async (req, { params }) => {
   const actor = await requireAuth(req);
-  return json(await getConversation(actor.tenantId ?? '', params!.id, actor.id));
+  return json(await getConversation(actor.orgId ?? '', params!.id, actor.id));
 });
 
 // DELETE /api/messages/conversations/:id — per-user soft delete
 export const DELETE = route(async (req, { params }) => {
   const actor = await requireAuth(req);
-  return json(await deleteConversation(actor.tenantId ?? '', params!.id, actor.id));
+  return json(await deleteConversation(actor.orgId ?? '', params!.id, actor.id));
 });

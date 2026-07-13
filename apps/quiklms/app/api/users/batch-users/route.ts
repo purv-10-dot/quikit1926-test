@@ -7,5 +7,5 @@ export const GET = route(async (req) => {
   const actor = await requireAuth(req);
   const idsParam = new URL(req.url).searchParams.get('ids') || '';
   const ids = idsParam.split(',').map((s) => s.trim()).filter(Boolean);
-  return json({ success: true, data: await findUsersByIds(actor.tenantId!, ids) });
+  return json({ success: true, data: await findUsersByIds(actor.orgId!, ids) });
 });

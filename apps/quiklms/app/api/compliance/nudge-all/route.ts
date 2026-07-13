@@ -10,12 +10,12 @@ const schema = z.object({ userIds: z.array(z.string()).optional() });
 export const POST = route(async (req) => {
   const user = await requireAuth(req);
   requireRoles(user, ['TENANT_ADMIN', 'SUB_ADMIN']);
-  const tenantId = user.tenantId as string;
+  const orgId = user.orgId as string;
 
   const body = await parseBody(req, schema);
-  const nudgeUsers = await getNudgeUsers(tenantId);
+  const nudgeUsers = await getNudgeUsers(orgId);
   const userIdsToNudge = body.userIds || nudgeUsers.users.map((u) => u.userId);
-  const result = await sendNudgeEmails(tenantId, userIdsToNudge, user.id);
+  const result = await sendNudgeEmails(orgId, userIdsToNudge, user.id);
 
   return json({
     success: result.success,

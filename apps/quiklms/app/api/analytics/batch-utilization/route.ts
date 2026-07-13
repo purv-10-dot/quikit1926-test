@@ -6,5 +6,5 @@ import { getBatchUtilization } from '@/lib/services/analytics-service';
 export const GET = route(async (req) => {
   const actor = await requireAuth(req);
   requireRoles(actor, ['TENANT_ADMIN', 'SUB_ADMIN']);
-  return json(await getBatchUtilization(actor.tenantId ?? ''));
+  return json(await getBatchUtilization(actor.orgId ?? ''));
 });

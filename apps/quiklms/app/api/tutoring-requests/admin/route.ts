@@ -8,7 +8,7 @@ export const GET = route(async (req) => {
   requireRoles(actor, ['TENANT_ADMIN', 'SUB_ADMIN', 'SUPER_ADMIN']);
   const url = new URL(req.url);
   return json(
-    await getForAdmin(actor.tenantId!, {
+    await getForAdmin(actor.orgId!, {
       status: url.searchParams.get('status') || undefined,
       studentId: url.searchParams.get('studentId') || undefined,
       teacherId: url.searchParams.get('teacherId') || undefined,

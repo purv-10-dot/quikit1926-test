@@ -16,8 +16,8 @@ const schema = z.object({
 export const POST = route(async (req) => {
   const actor = await requireAuth(req);
   requireRoles(actor, ['SUPER_ADMIN', 'TENANT_ADMIN', 'SUB_ADMIN']);
-  if (!actor.tenantId) throw BadRequest('Tenant ID required');
+  if (!actor.orgId) throw BadRequest('Tenant ID required');
   const dto = await parseBody(req, schema);
-  const module = await addModule(actor.tenantId, dto);
+  const module = await addModule(actor.orgId, dto);
   return json({ success: true, data: module, message: 'Module added successfully' });
 });

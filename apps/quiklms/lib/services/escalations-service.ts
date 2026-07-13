@@ -24,9 +24,9 @@ async function userMap(ids: string[], select: Prisma.UserSelect) {
   return new Map(users.map((u) => [u.id, { _id: u.id, ...(u as Record<string, unknown>) }]));
 }
 
-export async function getTeacherEscalations(tenantId: string, teacherId: string) {
+export async function getTeacherEscalations(orgId: string, teacherId: string) {
   const rows = await prisma.callEscalation.findMany({
-    where: { tenantId, teacherId },
+    where: { orgId, teacherId },
     include: { callAttempts: true },
     orderBy: { createdAt: 'desc' },
     take: 50,
@@ -40,8 +40,8 @@ export async function getTeacherEscalations(tenantId: string, teacherId: string)
   }));
 }
 
-export async function getAdminEscalations(tenantId: string, filters?: { status?: string; from?: Date; to?: Date }) {
-  const where: Prisma.CallEscalationWhereInput = { tenantId };
+export async function getAdminEscalations(orgId: string, filters?: { status?: string; from?: Date; to?: Date }) {
+  const where: Prisma.CallEscalationWhereInput = { orgId };
   if (filters?.status) where.status = filters.status as EscalationStatus;
   if (filters?.from || filters?.to) {
     where.createdAt = {};

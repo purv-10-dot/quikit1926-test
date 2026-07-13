@@ -10,13 +10,13 @@ const ROLES = ['TENANT_ADMIN', 'SUB_ADMIN', 'TEACHER'] as const;
 export const GET = route(async (req) => {
   const actor = await requireAuth(req);
   requireRoles(actor, [...ROLES]);
-  if (!actor.tenantId) throw BadRequest('Tenant ID required');
+  if (!actor.orgId) throw BadRequest('Tenant ID required');
   const url = new URL(req.url);
   const tagsRaw = url.searchParams.get('tags');
   const tags = tagsRaw ? tagsRaw.split(',').map((t) => t.trim()).filter(Boolean) : undefined;
   const page = url.searchParams.get('page');
   const limit = url.searchParams.get('limit');
-  const result = await findAllQuestions(actor.tenantId, {
+  const result = await findAllQuestions(actor.orgId, {
     subject: url.searchParams.get('subject') || undefined,
     difficulty: url.searchParams.get('difficulty') || undefined,
     type: url.searchParams.get('type') || undefined,
@@ -33,8 +33,8 @@ export const GET = route(async (req) => {
 export const POST = route(async (req) => {
   const actor = await requireAuth(req);
   requireRoles(actor, [...ROLES]);
-  if (!actor.tenantId) throw BadRequest('Tenant ID required');
+  if (!actor.orgId) throw BadRequest('Tenant ID required');
   const body = await parseBody(req, z.object({}).passthrough());
-  const question = await createQuestion(actor.tenantId, actor.id, body as Record<string, unknown>);
+  const question = await createQuestion(actor.orgId, actor.id, body as Record<string, unknown>);
   return json({ success: true, data: question });
 });

@@ -20,11 +20,17 @@ export function mapPlatformRoleToLmsRole(
 
   const r = (membershipRole ?? "").toLowerCase().replace(/[-\s]/g, "_");
   switch (r) {
+    // The platform `org_admin` is the QuikLMS *operator* — the first member of
+    // an org (seeded by apps/quikit `POST /api/super/orgs`) who has no LMS
+    // `User` row yet. QuikLMS's operator tier is SUPER_ADMIN: they onboard the
+    // school/corporate tenants (each its own Org) and each of those gets a
+    // `TENANT_ADMIN` who DOES have an LMS row, so `getAuthContext` reads that
+    // row directly and this coarse fallback never mislabels them.
     case "super_admin":
+    case "org_admin":
     case "owner":
     case "administrator":
       return "SUPER_ADMIN";
-    case "org_admin":
     case "admin":
     case "tenant_admin":
       return "TENANT_ADMIN";

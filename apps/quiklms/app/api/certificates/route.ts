@@ -13,16 +13,16 @@ function isTenantOrSubAdmin(role: string, secondaryRole: string | null) {
 export const POST = route(async (req) => {
   const user = await requireAuth(req);
   requireRoles(user, ['SUPER_ADMIN', 'TENANT_ADMIN', 'SUB_ADMIN']);
-  const tenantId = user.tenantId;
+  const orgId = user.orgId;
 
   await removeDuplicateIssuedCertificates().catch(() => {});
 
   const body = (await parseBody(req, z.object({}).passthrough())) as Record<string, unknown>;
 
   let approvalEnabled = true;
-  if (isTenantOrSubAdmin(user.role, user.secondaryRole) && tenantId) {
+  if (isTenantOrSubAdmin(user.role, user.secondaryRole) && orgId) {
     try {
-      const tenant = await prisma.tenant.findUnique({ where: { id: tenantId }, select: { featureConfig: true } });
+      const tenant = await prisma.tenant.findUnique({ where: { id: orgId }, select: { featureConfig: true } });
       approvalEnabled = (tenant?.featureConfig as Record<string, unknown>)?.approvalWorkflowEnabled !== false;
     } catch { /* default */ }
   }
@@ -30,10 +30,10 @@ export const POST = route(async (req) => {
   if (isTenantOrSubAdmin(user.role, user.secondaryRole)) {
     if (approvalEnabled) { body.approvalStatus = 'pending_approval'; body.isActive = false; }
     else { body.approvalStatus = 'approved'; body.isActive = true; }
-    body.tenantId = tenantId;
+    body.orgId = orgId;
     body.submittedBy = user.id;
-    body.submittedByTenantId = tenantId;
-    body.selectedTenants = [tenantId];
+    body.submittedByTenantId = orgId;
+    body.selectedTenants = [orgId];
   } else {
     body.approvalStatus = 'approved';
     body.isActive = true;
@@ -53,6 +53,6 @@ export const GET = route(async (req) => {
   const user = await requireAuth(req);
   requireRoles(user, ['SUPER_ADMIN', 'TENANT_ADMIN', 'SUB_ADMIN', 'MANAGER', 'LEARNER']);
   void userHasRole;
-  const certificates = await findAll(user.tenantId ?? undefined);
+  const certificates = await findAll(user.orgId ?? undefined);
   return json({ success: true, data: certificates });
 });

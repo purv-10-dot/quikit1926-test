@@ -11,6 +11,6 @@ export const GET = route(async (req) => {
   const batchId = url.searchParams.get('batchId') || undefined;
   const userRole = actor.role || 'LEARNER';
   return json(
-    await getMessageableContacts(actor.tenantId ?? '', actor.id, userRole, { q, filterRole: role, batchId }),
+    await getMessageableContacts(actor.orgId ?? '', actor.id, userRole, { q, filterRole: role, batchId }),
   );
 });

@@ -16,5 +16,5 @@ export const POST = route(async (req) => {
   const user = await requireAuth(req);
   const dto = await parseBody(req, schema);
   const ipAddress = req.headers.get('x-forwarded-for')?.split(',')[0]?.trim() || undefined;
-  return json(await grantConsent(user.tenantId as string, user.id, dto, ipAddress));
+  return json(await grantConsent(user.orgId as string, user.id, dto, ipAddress));
 });

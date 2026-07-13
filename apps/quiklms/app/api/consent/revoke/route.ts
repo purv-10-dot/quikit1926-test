@@ -14,5 +14,5 @@ const schema = z.object({
 export const POST = route(async (req) => {
   const user = await requireAuth(req);
   const dto = await parseBody(req, schema);
-  return json(await revokeConsent(user.tenantId as string, user.id, dto));
+  return json(await revokeConsent(user.orgId as string, user.id, dto));
 });

@@ -8,5 +8,5 @@ export const GET = route(async (req) => {
   const url = new URL(req.url);
   const status = url.searchParams.get('status') || undefined;
   const limit = url.searchParams.get('limit');
-  return json(await getAllRecordings(actor.tenantId!, { status, limit: limit ? parseInt(limit) : undefined }));
+  return json(await getAllRecordings(actor.orgId!, { status, limit: limit ? parseInt(limit) : undefined }));
 });

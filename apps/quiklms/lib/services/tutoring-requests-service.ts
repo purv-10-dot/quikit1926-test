@@ -1,6 +1,6 @@
 /**
  * Tutoring-requests service — ported from NestJS TutoringRequestsService
- * (Mongoose → Prisma). Tenant isolation via explicit tenantId args.
+ * (Mongoose → Prisma). Tenant isolation via explicit orgId args.
  *
  * Cross-module dependencies that the legacy injected are reproduced inline against
  * Prisma so this module is self-contained (lib/services/* may not be modified):
@@ -53,18 +53,18 @@ async function shapeMany(rows: { id: string; studentId: string; teacherId: strin
 }
 
 // ═══════════════ CREDIT HELPERS (ported from CreditsService) ═══════════════
-async function getStudentBalance(tenantId: string, studentId: string) {
+async function getStudentBalance(orgId: string, studentId: string) {
   const packages = await prisma.creditPackage.findMany({
-    where: { tenantId, studentId, status: 'active' },
+    where: { orgId, studentId, status: 'active' },
     orderBy: { expiresAt: 'asc' },
   });
   const available = packages.reduce((sum, p) => sum + p.remainingCredits, 0);
   return { available };
 }
 
-async function holdCredit(tenantId: string, studentId: string, amount: number, notes: string): Promise<string> {
+async function holdCredit(orgId: string, studentId: string, amount: number, notes: string): Promise<string> {
   const packages = await prisma.creditPackage.findMany({
-    where: { tenantId, studentId, status: 'active', remainingCredits: { gt: 0 } },
+    where: { orgId, studentId, status: 'active', remainingCredits: { gt: 0 } },
     orderBy: [{ expiresAt: 'asc' }, { purchaseDate: 'asc' }],
   });
   if (packages.length === 0) throw BadRequest('No credits available for this student');
@@ -82,7 +82,7 @@ async function holdCredit(tenantId: string, studentId: string, amount: number, n
 
   const transaction = await prisma.creditTransaction.create({
     data: {
-      tenantId,
+      orgId,
       packageId: pkg.id,
       studentId,
       transactionType: 'tutoring_hold',
@@ -112,7 +112,7 @@ async function revertDeduction(transactionId: string, customNotes?: string) {
   });
   await prisma.creditTransaction.create({
     data: {
-      tenantId: transaction.tenantId,
+      orgId: transaction.orgId,
       packageId: pkg.id,
       studentId: transaction.studentId,
       transactionType: 'tutoring_hold_release',
@@ -124,9 +124,9 @@ async function revertDeduction(transactionId: string, customNotes?: string) {
 }
 
 // ═══════════════ READ ENDPOINTS ═══════════════
-export async function getAvailableTeachers(tenantId: string) {
+export async function getAvailableTeachers(orgId: string) {
   const teachers = await prisma.user.findMany({
-    where: { tenantId, role: 'TEACHER', isActive: true, tutoringEnabled: true, tutoringCreditCost: { gt: 0 } },
+    where: { orgId, role: 'TEACHER', isActive: true, tutoringEnabled: true, tutoringCreditCost: { gt: 0 } },
     select: {
       id: true, firstName: true, lastName: true, email: true, subjects: true, tutoringCreditCost: true,
       availableSlots: { select: { dayOfWeek: true, startTime: true, endTime: true } },
@@ -137,14 +137,14 @@ export async function getAvailableTeachers(tenantId: string) {
 }
 
 export async function create(
-  tenantId: string,
+  orgId: string,
   studentId: string,
   dto: { subject: string; notes?: string; proposedSlots: Slot[]; teacherId?: string },
 ) {
   if (!studentId) throw BadRequest('Student ID is required');
 
   const teacher = dto.teacherId
-    ? await prisma.user.findFirst({ where: { id: dto.teacherId, tenantId, role: 'TEACHER' } })
+    ? await prisma.user.findFirst({ where: { id: dto.teacherId, orgId, role: 'TEACHER' } })
     : null;
   if (!teacher) throw NotFound('Teacher not found');
   if (!teacher.tutoringEnabled) throw BadRequest('Teacher is not available for tutoring');
@@ -153,7 +153,7 @@ export async function create(
   const creditCostSnapshot = teacher.tutoringCreditCost;
   const teacherRateSnapshot = teacher.ratePerClass || 0;
 
-  const balance = await getStudentBalance(tenantId, studentId);
+  const balance = await getStudentBalance(orgId, studentId);
   if (balance.available < creditCostSnapshot) {
     throw BadRequest(
       `Insufficient credits. This session costs ${creditCostSnapshot} credits. Your balance: ${balance.available} credits.`,
@@ -162,7 +162,7 @@ export async function create(
 
   let creditHoldId: string;
   try {
-    creditHoldId = await holdCredit(tenantId, studentId, creditCostSnapshot, 'Hold for tutoring request - pending teacher acceptance');
+    creditHoldId = await holdCredit(orgId, studentId, creditCostSnapshot, 'Hold for tutoring request - pending teacher acceptance');
   } catch (err) {
     throw BadRequest(`Failed to reserve credits: ${(err as Error).message}`);
   }
@@ -170,7 +170,7 @@ export async function create(
   try {
     const doc = await prisma.tutoringRequest.create({
       data: {
-        tenantId,
+        orgId,
         studentId,
         teacherId: dto.teacherId,
         subject: dto.subject,
@@ -189,17 +189,17 @@ export async function create(
   }
 }
 
-export async function getForStudent(tenantId: string, studentId: string) {
+export async function getForStudent(orgId: string, studentId: string) {
   if (!studentId) return [];
-  const rows = await prisma.tutoringRequest.findMany({ where: { tenantId, studentId }, orderBy: { createdAt: 'desc' } });
+  const rows = await prisma.tutoringRequest.findMany({ where: { orgId, studentId }, orderBy: { createdAt: 'desc' } });
   return shapeMany(rows);
 }
 
-export async function getForTeacher(tenantId: string, teacherId: string) {
+export async function getForTeacher(orgId: string, teacherId: string) {
   if (!teacherId) return [];
   const rows = await prisma.tutoringRequest.findMany({
     where: {
-      tenantId,
+      orgId,
       OR: [{ teacherId }, { teacherId: null, status: 'pending' }],
     },
     orderBy: { createdAt: 'desc' },
@@ -207,8 +207,8 @@ export async function getForTeacher(tenantId: string, teacherId: string) {
   return shapeMany(rows);
 }
 
-export async function getForAdmin(tenantId: string, query: { status?: string; studentId?: string; teacherId?: string }) {
-  const where: Prisma.TutoringRequestWhereInput = { tenantId };
+export async function getForAdmin(orgId: string, query: { status?: string; studentId?: string; teacherId?: string }) {
+  const where: Prisma.TutoringRequestWhereInput = { orgId };
   if (query.status) where.status = query.status as TutoringRequestStatus;
   if (query.studentId) where.studentId = query.studentId;
   if (query.teacherId) where.teacherId = query.teacherId;
@@ -218,12 +218,12 @@ export async function getForAdmin(tenantId: string, query: { status?: string; st
 
 // ═══════════════ ACCEPT ═══════════════
 export async function accept(
-  tenantId: string,
+  orgId: string,
   teacherId: string,
   requestId: string,
   dto: { confirmedSlot: Slot; teacherNotes?: string },
 ) {
-  const request = await prisma.tutoringRequest.findFirst({ where: { id: requestId, tenantId, status: 'pending' } });
+  const request = await prisma.tutoringRequest.findFirst({ where: { id: requestId, orgId, status: 'pending' } });
   if (!request) throw NotFound('Tutoring request not found or not in pending state');
 
   const confirmedDate = new Date(dto.confirmedSlot.date);
@@ -235,7 +235,7 @@ export async function accept(
   try {
     batch = await prisma.batch.create({
       data: {
-        tenantId,
+        orgId,
         name: `1:1 Tutoring - ${request.subject} - ${dateStr}`,
         subject: request.subject,
         teacherId,
@@ -264,7 +264,7 @@ export async function accept(
     if (existing) {
       scheduledClass = existing;
     } else {
-      const classes = (await generateClasses(tenantId, { batchId: batch.id })) as { id: string; startTime: Date; endTime: Date }[];
+      const classes = (await generateClasses(orgId, { batchId: batch.id })) as { id: string; startTime: Date; endTime: Date }[];
       if (!classes || classes.length === 0) throw new Error('No class sessions generated');
       scheduledClass = classes[0];
     }
@@ -272,7 +272,7 @@ export async function accept(
     // 4. Create the meeting (provider from tenant videoConfig, default jitsi)
     let provider: 'zoom' | 'google_meet' | 'jitsi' | 'manual' = 'jitsi';
     try {
-      const tenant = await prisma.tenant.findUnique({ where: { id: tenantId } });
+      const tenant = await prisma.tenant.findUnique({ where: { id: orgId } });
       const p = (tenant as Record<string, any> | null)?.videoConfig?.provider;
       if (p) provider = p;
     } catch {
@@ -280,7 +280,7 @@ export async function accept(
     }
 
     const meeting = await createMeeting(
-      tenantId,
+      orgId,
       {
         title: `Tutoring: ${request.subject}`,
         scheduledStartTime: scheduledClass.startTime.toISOString(),
@@ -316,12 +316,12 @@ export async function accept(
 
 // ═══════════════ REJECT ═══════════════
 export async function reject(
-  tenantId: string,
+  orgId: string,
   teacherId: string,
   requestId: string,
   dto: { rejectionReason?: string },
 ) {
-  const request = await prisma.tutoringRequest.findFirst({ where: { id: requestId, tenantId, status: 'pending' } });
+  const request = await prisma.tutoringRequest.findFirst({ where: { id: requestId, orgId, status: 'pending' } });
   if (!request) throw NotFound('Tutoring request not found or not in pending state');
 
   if (request.creditHoldId) {
@@ -338,8 +338,8 @@ export async function reject(
 }
 
 // ═══════════════ MARK COMPLETED ═══════════════
-export async function markCompleted(tenantId: string, requestId: string) {
-  const request = await prisma.tutoringRequest.findFirst({ where: { id: requestId, tenantId, status: 'accepted' } });
+export async function markCompleted(orgId: string, requestId: string) {
+  const request = await prisma.tutoringRequest.findFirst({ where: { id: requestId, orgId, status: 'accepted' } });
   if (!request) throw NotFound('Accepted tutoring request not found');
 
   // 1. Finalize credit deduction (convert the hold into a deduction)
@@ -365,7 +365,7 @@ export async function markCompleted(tenantId: string, requestId: string) {
 
       await prisma.teacherPayout.create({
         data: {
-          tenantId,
+          orgId,
           teacherId: request.teacherId!,
           periodStart,
           periodEnd,

@@ -9,7 +9,7 @@
 //     Exam→ExamQuestion, Conversation→Message→Reaction, Batch→children, …)
 //     and the §8 JOIN/CHILD tables (group_members, batch_students, user_parents,
 //     exam_questions, payout_*, course prerequisites, the split-out subdoc arrays).
-//   • `tenantId` and every ACTOR reference (userId / teacherId / learnerId /
+//   • `orgId` and every ACTOR reference (userId / teacherId / learnerId /
 //     studentId / createdBy / authorId / …) are indexed `String` SCALARS with
 //     NO relation — identical to MongoDB (which enforced no FKs) and enforced at
 //     the app layer by the mandatory tenantScope() helper (Phase 2).
@@ -26,9 +26,9 @@
 //     providerMetadata, notificationPreferences, textPlacements, eventData, …
 //   • Enum member name = stored value when it is a valid identifier; otherwise
 //     an identifier + @map("<exact stored value>").
-//   • Join/child tables intentionally OMIT a denormalized tenantId — they are
+//   • Join/child tables intentionally OMIT a denormalized orgId — they are
 //     tenant-scoped through their parent (documented deviation from the blanket
-//     "all tables get tenantId" rule, to avoid denormalization drift).
+//     "all tables get orgId" rule, to avoid denormalization drift).
 // ============================================================================
 
 generator client {
@@ -36,7 +36,7 @@ generator client {
   // Isolated output: this monorepo's ROOT node_modules/@prisma/client is
   // generated from packages/database (the org/quikscale schema, User.orgId, no
   // Course). quiklms is a workspace member, so a bare `@prisma/client` import
-  // hoists to that root client and rejects this app's tenantId/Course models.
+  // hoists to that root client and rejects this app's orgId/Course models.
   // Generating here + the tsconfig `@prisma/client` alias keeps this client
   // fully isolated and un-clobberable by root's `prisma generate`.
   output = "../lib/generated/prisma"
@@ -546,6 +546,12 @@ model Tenant {
   status             TenantStatus @default(Active)
   tenantKey          String       @unique
 
+  // Platform link (Phase-3 fold): the quikit `Org.id` this LMS Tenant maps to.
+  // Nullable + sparse-unique until backfilled (Postgres treats NULLs as distinct).
+  // Populated by prisma/backfill-tenant-orgid.ts and by onboardTenant going
+  // forward; resolveOrgToTenantId prefers this over the subdomain↔slug match.
+  orgId              String?      @unique
+
   // Organization profile
   orgName       String
   fullAddress   String
@@ -612,7 +618,7 @@ model User {
   lastName      String
   role          UserRole  @default(LEARNER)
   secondaryRole UserRole?
-  tenantId      String? // scalar — global super-admins have no tenant
+  orgId      String? // scalar — global super-admins have no tenant
   managerId     String? // corporate team manager (scalar self-ref)
   isActive      Boolean   @default(true)
 
@@ -676,15 +682,15 @@ model User {
   children UserParent[] @relation("UserChildren") // rows where this user is the parent
   parents  UserParent[] @relation("UserParents") // rows where this user is the child
 
-  @@unique([tenantId, studentId]) // sparse per-tenant unique (NULL-distinct)
-  @@unique([tenantId, employeeId])
-  @@unique([tenantId, parentCode])
-  @@index([tenantId, role])
-  @@index([tenantId, grade])
-  @@index([tenantId, email])
-  @@index([tenantId, totalPoints(sort: Desc)])
-  @@index([tenantId, currentStreak(sort: Desc)])
-  @@index([tenantId, parentEmail])
+  @@unique([orgId, studentId]) // sparse per-tenant unique (NULL-distinct)
+  @@unique([orgId, employeeId])
+  @@unique([orgId, parentCode])
+  @@index([orgId, role])
+  @@index([orgId, grade])
+  @@index([orgId, email])
+  @@index([orgId, totalPoints(sort: Desc)])
+  @@index([orgId, currentStreak(sort: Desc)])
+  @@index([orgId, parentEmail])
   @@index([managerId])
   @@map("users")
 }
@@ -738,20 +744,20 @@ model Otp {
 
 model Counter {
   id       String @id @default(uuid())
-  tenantId String
+  orgId String
   type     String // 'teacher' | 'student' | 'parent'
   seq      Int    @default(0)
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  @@unique([tenantId, type])
+  @@unique([orgId, type])
   @@map("counters")
 }
 
 model Group {
   id          String        @id @default(uuid())
-  tenantId    String
+  orgId    String
   name        String
   description String?
   createdBy   String? // actor scalar
@@ -760,8 +766,8 @@ model Group {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  @@unique([tenantId, name])
-  @@index([tenantId])
+  @@unique([orgId, name])
+  @@index([orgId])
   @@map("groups")
 }
 
@@ -782,7 +788,7 @@ model GroupMember {
 
 model ConsentRecord {
   id             String      @id @default(uuid())
-  tenantId       String
+  orgId       String
   studentId      String // actor scalar
   parentId       String // actor scalar
   consentType    ConsentType
@@ -796,8 +802,8 @@ model ConsentRecord {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  @@index([tenantId, studentId, consentType])
-  @@index([tenantId, parentId])
+  @@index([orgId, studentId, consentType])
+  @@index([orgId, parentId])
   @@map("consent_records")
 }
 
@@ -807,7 +813,7 @@ model ConsentRecord {
 
 model Course {
   id           String       @id @default(uuid())
-  tenantId     String? // optional for master courses
+  orgId     String? // optional for master courses
   title        String
   category     String?
   description  String?
@@ -826,10 +832,10 @@ model Course {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  @@index([tenantId, status])
+  @@index([orgId, status])
   @@index([isMaster])
   @@index([isFeatured, status])
-  @@index([category, tenantId])
+  @@index([category, orgId])
   @@map("courses")
 }
 
@@ -838,13 +844,13 @@ model CourseSelectedTenant {
   id       String @id @default(uuid())
   courseId String
   course   Course @relation(fields: [courseId], references: [id], onDelete: Cascade)
-  tenantId String
+  orgId String
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  @@unique([courseId, tenantId])
-  @@index([tenantId])
+  @@unique([courseId, orgId])
+  @@index([orgId])
   @@map("course_selected_tenants")
 }
 
@@ -866,7 +872,7 @@ model CoursePrerequisite {
 
 model Module {
   id           String  @id @default(uuid())
-  tenantId     String? // optional for master courses
+  orgId     String? // optional for master courses
   courseId     String
   course       Course  @relation(fields: [courseId], references: [id], onDelete: Cascade)
   title        String
@@ -879,7 +885,7 @@ model Module {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  @@index([tenantId, courseId])
+  @@index([orgId, courseId])
   @@index([courseId, orderIndex])
   @@map("modules")
 }
@@ -960,19 +966,19 @@ model MasterCourseSelectedTenant {
   id             String       @id @default(uuid())
   masterCourseId String
   masterCourse   MasterCourse @relation(fields: [masterCourseId], references: [id], onDelete: Cascade)
-  tenantId       String
+  orgId       String
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  @@unique([masterCourseId, tenantId])
-  @@index([tenantId])
+  @@unique([masterCourseId, orgId])
+  @@index([orgId])
   @@map("master_course_selected_tenants")
 }
 
 model Assessment {
   id        String @id @default(uuid())
-  tenantId  String
+  orgId  String
   moduleId  String // scalar (cross-aggregate; avoids cycle with Module.assessmentId)
   title     String
   questions Json   @default("[]") // embedded Question[] (text, type, options, correctAnswerIndex, …)
@@ -990,14 +996,14 @@ model Assessment {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  @@index([tenantId, moduleId])
+  @@index([orgId, moduleId])
   @@index([isMaster])
   @@map("assessments")
 }
 
 model QuizAttempt {
   id                  String   @id @default(uuid())
-  tenantId            String
+  orgId            String
   learnerId           String // actor scalar
   courseId            String // scalar (Course|MasterCourse ambiguous)
   assessmentId        String // scalar
@@ -1012,8 +1018,8 @@ model QuizAttempt {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  @@index([tenantId, learnerId, courseId])
-  @@index([tenantId, learnerId, assessmentId])
+  @@index([orgId, learnerId, courseId])
+  @@index([orgId, learnerId, assessmentId])
   @@index([learnerId, courseId, submittedAt(sort: Desc)])
   @@map("quiz_attempts")
 }
@@ -1024,7 +1030,7 @@ model QuizAttempt {
 
 model Progress {
   id                   String         @id @default(uuid())
-  tenantId             String
+  orgId             String
   learnerId            String // actor scalar
   courseId             String // scalar (ambiguous target)
   currentModuleId      String? // scalar
@@ -1040,14 +1046,14 @@ model Progress {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  @@unique([tenantId, learnerId, courseId])
+  @@unique([orgId, learnerId, courseId])
   @@index([learnerId, status])
   @@map("progress")
 }
 
 model CourseAssignment {
   id          String               @id @default(uuid())
-  tenantId    String
+  orgId    String
   courseId    String // scalar
   targetType  AssignmentTargetType
   targetId    String // User or Group id (scalar)
@@ -1059,15 +1065,15 @@ model CourseAssignment {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  @@index([tenantId, courseId])
-  @@index([tenantId, targetId, targetType])
-  @@index([tenantId, isMandatory])
+  @@index([orgId, courseId])
+  @@index([orgId, targetId, targetType])
+  @@index([orgId, isMandatory])
   @@map("course_assignments")
 }
 
 model Certificate {
   id                 String  @id @default(uuid())
-  tenantId           String? // optional for global templates
+  orgId           String? // optional for global templates
   name               String
   backgroundImageUrl String
   logoImageUrl       String?
@@ -1092,7 +1098,7 @@ model Certificate {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  @@index([tenantId, isActive])
+  @@index([orgId, isActive])
   @@index([approvalStatus])
   @@map("certificates")
 }
@@ -1102,19 +1108,19 @@ model CertificateSelectedTenant {
   id            String      @id @default(uuid())
   certificateId String
   certificate   Certificate @relation(fields: [certificateId], references: [id], onDelete: Cascade)
-  tenantId      String
+  orgId      String
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  @@unique([certificateId, tenantId])
-  @@index([tenantId])
+  @@unique([certificateId, orgId])
+  @@index([orgId])
   @@map("certificate_selected_tenants")
 }
 
 model CertificateIssued {
   id                      String    @id @default(uuid())
-  tenantId                String
+  orgId                String
   learnerId               String // actor scalar
   courseId                String // scalar (refs MasterCourse in legacy)
   certificateTemplateId   String? // scalar
@@ -1136,15 +1142,15 @@ model CertificateIssued {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  @@unique([tenantId, learnerId, courseId], name: "unique_cert_per_learner_course_tenant")
-  @@index([tenantId, learnerId, courseId])
+  @@unique([orgId, learnerId, courseId], name: "unique_cert_per_learner_course_tenant")
+  @@index([orgId, learnerId, courseId])
   @@index([expiresAt])
   @@map("certificates_issued")
 }
 
 model Discussion {
   id          String    @id @default(uuid())
-  tenantId    String
+  orgId    String
   courseId    String // scalar
   lessonId    String? // scalar
   userId      String // actor scalar
@@ -1166,13 +1172,13 @@ model Discussion {
   @@index([courseId, lessonId, createdAt])
   @@index([parentId, createdAt])
   @@index([userId, createdAt])
-  @@index([tenantId, courseId, isDeleted])
+  @@index([orgId, courseId, isDeleted])
   @@map("discussions")
 }
 
 model GradeRecord {
   id                String    @id @default(uuid())
-  tenantId          String
+  orgId          String
   studentId         String // actor scalar
   batchId           String
   batch             Batch     @relation(fields: [batchId], references: [id], onDelete: Cascade)
@@ -1192,14 +1198,14 @@ model GradeRecord {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  @@unique([tenantId, studentId, batchId, term])
-  @@index([tenantId, batchId, overallPercentage(sort: Desc)])
+  @@unique([orgId, studentId, batchId, term])
+  @@index([orgId, batchId, overallPercentage(sort: Desc)])
   @@map("grade_records")
 }
 
 model Bookmark {
   id       String  @id @default(uuid())
-  tenantId String
+  orgId String
   userId   String // actor scalar
   courseId String // scalar
   moduleId String?
@@ -1209,42 +1215,42 @@ model Bookmark {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  @@unique([tenantId, userId, courseId])
+  @@unique([orgId, userId, courseId])
   @@index([userId, createdAt(sort: Desc)])
   @@map("bookmarks")
 }
 
 model Section {
   id       String @id @default(uuid())
-  tenantId String
+  orgId String
   grade    String
   name     String
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  @@unique([tenantId, grade, name])
-  @@index([tenantId])
+  @@unique([orgId, grade, name])
+  @@index([orgId])
   @@map("sections")
 }
 
 model Subject {
   id        String  @id @default(uuid())
-  tenantId  String
+  orgId  String
   name      String
   isDefault Boolean @default(false)
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  @@unique([tenantId, name])
-  @@index([tenantId])
+  @@unique([orgId, name])
+  @@index([orgId])
   @@map("subjects")
 }
 
 model AcademicCalendar {
   id           String            @id @default(uuid())
-  tenantId     String
+  orgId     String
   academicYear String
   createdBy    String? // actor scalar
   terms        AcademicTerm[]
@@ -1253,8 +1259,8 @@ model AcademicCalendar {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  @@unique([tenantId, academicYear])
-  @@index([tenantId])
+  @@unique([orgId, academicYear])
+  @@index([orgId])
   @@map("academic_calendars")
 }
 
@@ -1306,7 +1312,7 @@ model EmailTemplate {
 model SharedContent {
   id             String   @id @default(uuid())
   masterCourseId String // scalar (legacy ref is inconsistent Course/MasterCourse)
-  tenantId       String
+  orgId       String
   tenantCourseId String // scalar
   sharedAt       DateTime @default(now())
   isActive       Boolean  @default(true)
@@ -1314,8 +1320,8 @@ model SharedContent {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  @@unique([masterCourseId, tenantId])
-  @@index([tenantId, isActive])
+  @@unique([masterCourseId, orgId])
+  @@index([orgId, isActive])
   @@map("shared_content")
 }
 
@@ -1326,7 +1332,7 @@ model SharedContent {
 
 model Batch {
   id          String  @id @default(uuid())
-  tenantId    String
+  orgId    String
   name        String
   grade       String?
   section     String?
@@ -1371,10 +1377,10 @@ model Batch {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  @@unique([tenantId, name, academicYear])
-  @@index([tenantId, academicYear, status])
-  @@index([tenantId, teacherId, status])
-  @@index([tenantId, grade, section, subject])
+  @@unique([orgId, name, academicYear])
+  @@index([orgId, academicYear, status])
+  @@index([orgId, teacherId, status])
+  @@index([orgId, grade, section, subject])
   @@map("batches")
 }
 
@@ -1427,7 +1433,7 @@ model BatchSubstituteTeacher {
 
 model ScheduledClass {
   id                       String                    @id @default(uuid())
-  tenantId                 String
+  orgId                 String
   batchId                  String
   batch                    Batch                     @relation(fields: [batchId], references: [id], onDelete: Cascade)
   teacherId                String // actor scalar
@@ -1455,16 +1461,16 @@ model ScheduledClass {
   updatedAt DateTime @updatedAt
 
   @@unique([batchId, startTime]) // guards race-condition double-inserts
-  @@index([tenantId, teacherId, startTime])
-  @@index([tenantId, batchId, startTime])
-  @@index([tenantId, status, startTime])
+  @@index([orgId, teacherId, startTime])
+  @@index([orgId, batchId, startTime])
+  @@index([orgId, status, startTime])
   @@index([startTime])
   @@map("scheduled_classes")
 }
 
 model CreditPackage {
   id               String              @id @default(uuid())
-  tenantId         String
+  orgId         String
   studentId        String // actor scalar
   packageName      String
   purchasedCredits Float
@@ -1483,13 +1489,13 @@ model CreditPackage {
   updatedAt DateTime @updatedAt
 
   @@index([studentId, status, expiresAt])
-  @@index([tenantId, studentId])
+  @@index([orgId, studentId])
   @@map("credit_packages")
 }
 
 model CreditTransaction {
   id                  String          @id @default(uuid())
-  tenantId            String
+  orgId            String
   packageId           String
   package             CreditPackage   @relation(fields: [packageId], references: [id], onDelete: Cascade)
   studentId           String // actor scalar
@@ -1504,14 +1510,14 @@ model CreditTransaction {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  @@index([tenantId, studentId, createdAt(sort: Desc)])
+  @@index([orgId, studentId, createdAt(sort: Desc)])
   @@index([packageId])
   @@map("credit_transactions")
 }
 
 model Attendance {
   id                  String           @id @default(uuid())
-  tenantId            String
+  orgId            String
   scheduledClassId    String
   scheduledClass      ScheduledClass   @relation(fields: [scheduledClassId], references: [id], onDelete: Cascade)
   batchId             String
@@ -1531,15 +1537,15 @@ model Attendance {
   updatedAt DateTime @updatedAt
 
   @@unique([scheduledClassId, studentId])
-  @@index([tenantId, scheduledClassId])
-  @@index([tenantId, studentId, classDate(sort: Desc)])
-  @@index([tenantId, batchId, classDate(sort: Desc)])
+  @@index([orgId, scheduledClassId])
+  @@index([orgId, studentId, classDate(sort: Desc)])
+  @@index([orgId, batchId, classDate(sort: Desc)])
   @@map("attendance")
 }
 
 model Homework {
   id                     String         @id @default(uuid())
-  tenantId               String
+  orgId               String
   batchId                String
   batch                  Batch          @relation(fields: [batchId], references: [id], onDelete: Cascade)
   teacherId              String // actor scalar
@@ -1563,14 +1569,14 @@ model Homework {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  @@index([tenantId, batchId, status])
-  @@index([tenantId, teacherId])
+  @@index([orgId, batchId, status])
+  @@index([orgId, teacherId])
   @@map("homework")
 }
 
 model HomeworkSubmission {
   id                 String           @id @default(uuid())
-  tenantId           String
+  orgId           String
   homeworkId         String
   homework           Homework         @relation(fields: [homeworkId], references: [id], onDelete: Cascade)
   studentId          String // actor scalar
@@ -1594,7 +1600,7 @@ model HomeworkSubmission {
   updatedAt DateTime @updatedAt
 
   @@unique([homeworkId, studentId])
-  @@index([tenantId, studentId, submittedAt(sort: Desc)])
+  @@index([orgId, studentId, submittedAt(sort: Desc)])
   @@map("homework_submissions")
 }
 
@@ -1617,7 +1623,7 @@ model HomeworkRubricScore {
 
 model TeacherPayout {
   id                    String        @id @default(uuid())
-  tenantId              String
+  orgId              String
   teacherId             String // actor scalar
   periodStart           DateTime
   periodEnd             DateTime
@@ -1644,8 +1650,8 @@ model TeacherPayout {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  @@unique([tenantId, teacherId, periodStart, periodEnd])
-  @@index([tenantId, status])
+  @@unique([orgId, teacherId, periodStart, periodEnd])
+  @@index([orgId, status])
   @@map("teacher_payouts")
 }
 
@@ -1685,7 +1691,7 @@ model PayoutCompletedClass {
 
 model Meeting {
   id                 String          @id @default(uuid())
-  tenantId           String
+  orgId           String
   scheduledClassId   String? // scalar
   hostId             String? // actor scalar
   provider           MeetingProvider
@@ -1712,8 +1718,8 @@ model Meeting {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  @@index([tenantId, scheduledClassId])
-  @@index([tenantId, status])
+  @@index([orgId, scheduledClassId])
+  @@index([orgId, status])
   @@index([status, scheduledStartTime])
   @@map("meetings")
 }
@@ -1740,7 +1746,7 @@ model MeetingAttendance {
 
 model NonTeachingTask {
   id              String       @id @default(uuid())
-  tenantId        String
+  orgId        String
   teacherId       String // actor scalar
   assignedBy      String // actor scalar
   title           String
@@ -1760,14 +1766,14 @@ model NonTeachingTask {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  @@index([tenantId, teacherId, status])
-  @@index([tenantId, status, createdAt(sort: Desc)])
+  @@index([orgId, teacherId, status])
+  @@index([orgId, status, createdAt(sort: Desc)])
   @@map("non_teaching_tasks")
 }
 
 model TeacherLevel {
   id                     String        @id @default(uuid())
-  tenantId               String
+  orgId               String
   teacherId              String        @unique // actor scalar, one record per teacher
   currentLevel           TeacherStatus @default(beginner)
   totalClassesTaught     Int           @default(0)
@@ -1783,7 +1789,7 @@ model TeacherLevel {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  @@unique([tenantId, teacherId])
+  @@unique([orgId, teacherId])
   @@map("teacher_levels")
 }
 
@@ -1807,7 +1813,7 @@ model TeacherLevelHistory {
 
 model CallEscalation {
   id               String           @id @default(uuid())
-  tenantId         String
+  orgId         String
   scheduledClassId String // scalar
   teacherId        String // actor scalar
   status           EscalationStatus @default(pending)
@@ -1822,8 +1828,8 @@ model CallEscalation {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  @@index([tenantId, scheduledClassId])
-  @@index([tenantId, teacherId, createdAt(sort: Desc)])
+  @@index([orgId, scheduledClassId])
+  @@index([orgId, teacherId, createdAt(sort: Desc)])
   @@map("call_escalations")
 }
 
@@ -1848,7 +1854,7 @@ model CallEscalationAttempt {
 
 model TutoringRequest {
   id                  String                @id @default(uuid())
-  tenantId            String
+  orgId            String
   studentId           String // actor scalar
   teacherId           String? // actor scalar
   subject             String
@@ -1867,14 +1873,14 @@ model TutoringRequest {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  @@index([tenantId, studentId, status])
-  @@index([tenantId, teacherId, status])
+  @@index([orgId, studentId, status])
+  @@index([orgId, teacherId, status])
   @@map("tutoring_requests")
 }
 
 model StudentReminderCall {
   id               String             @id @default(uuid())
-  tenantId         String
+  orgId         String
   scheduledClassId String // scalar
   studentId        String // actor scalar
   batchId          String // scalar
@@ -1887,8 +1893,8 @@ model StudentReminderCall {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  @@index([tenantId, scheduledClassId, studentId])
-  @@index([tenantId, studentId, createdAt(sort: Desc)])
+  @@index([orgId, scheduledClassId, studentId])
+  @@index([orgId, studentId, createdAt(sort: Desc)])
   @@map("student_reminder_calls")
 }
 
@@ -1913,7 +1919,7 @@ model StudentReminderCallAttempt {
 
 model TeacherLatenessReminderLog {
   id                           String   @id @default(uuid())
-  tenantId                     String
+  orgId                     String
   batchId                      String // scalar
   teacherId                    String // actor scalar
   lastNotifiedScheduledClassId String // scalar
@@ -1922,7 +1928,7 @@ model TeacherLatenessReminderLog {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  @@unique([tenantId, batchId, teacherId])
+  @@unique([orgId, batchId, teacherId])
   @@index([batchId])
   @@index([teacherId])
   @@map("teacher_lateness_reminder_logs")
@@ -1934,7 +1940,7 @@ model TeacherLatenessReminderLog {
 
 model Question {
   id            String           @id @default(uuid())
-  tenantId      String
+  orgId      String
   createdBy     String // actor scalar
   subject       String
   topic         String?
@@ -1957,15 +1963,15 @@ model Question {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  @@index([tenantId, subject, difficulty])
-  @@index([tenantId, type])
-  @@index([tenantId, tags])
+  @@index([orgId, subject, difficulty])
+  @@index([orgId, type])
+  @@index([orgId, tags])
   @@map("questions")
 }
 
 model Exam {
   id                    String                @id @default(uuid())
-  tenantId              String
+  orgId              String
   createdBy             String // actor scalar
   title                 String
   description           String                @default("")
@@ -1990,8 +1996,8 @@ model Exam {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  @@index([tenantId, batchId, status])
-  @@index([tenantId, status, scheduledStartTime])
+  @@index([orgId, batchId, status])
+  @@index([orgId, status, scheduledStartTime])
   @@map("exams")
 }
 
@@ -2015,7 +2021,7 @@ model ExamQuestion {
 
 model ExamSession {
   id                String            @id @default(uuid())
-  tenantId          String
+  orgId          String
   examId            String
   exam              Exam              @relation(fields: [examId], references: [id], onDelete: Cascade)
   studentId         String // actor scalar
@@ -2044,14 +2050,14 @@ model ExamSession {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  @@unique([tenantId, examId, studentId])
+  @@unique([orgId, examId, studentId])
   @@index([status, serverDeadline])
   @@map("exam_sessions")
 }
 
 model ProctoringLog {
   id        String              @id @default(uuid())
-  tenantId  String
+  orgId  String
   sessionId String
   session   ExamSession         @relation(fields: [sessionId], references: [id], onDelete: Cascade)
   studentId String // actor scalar
@@ -2070,7 +2076,7 @@ model ProctoringLog {
 
 model IncidentReport {
   id          String              @id @default(uuid())
-  tenantId    String
+  orgId    String
   sessionId   String
   session     ExamSession         @relation(fields: [sessionId], references: [id], onDelete: Cascade)
   examId      String // scalar
@@ -2091,7 +2097,7 @@ model IncidentReport {
 
 model QuizProctoringSession {
   id                        String            @id @default(uuid())
-  tenantId                  String
+  orgId                  String
   assessmentId              String // scalar (ObjectId OR master-course UUID)
   courseId                  String // scalar
   learnerId                 String // actor scalar
@@ -2113,14 +2119,14 @@ model QuizProctoringSession {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  @@unique([tenantId, assessmentId, learnerId])
+  @@unique([orgId, assessmentId, learnerId])
   @@index([status, serverDeadline])
   @@map("quiz_proctoring_sessions")
 }
 
 model QuizProctoringLog {
   id        String                  @id @default(uuid())
-  tenantId  String
+  orgId  String
   sessionId String
   session   QuizProctoringSession   @relation(fields: [sessionId], references: [id], onDelete: Cascade)
   learnerId String // actor scalar
@@ -2139,7 +2145,7 @@ model QuizProctoringLog {
 
 model QuizIncidentReport {
   id           String                @id @default(uuid())
-  tenantId     String
+  orgId     String
   sessionId    String
   session      QuizProctoringSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
   assessmentId String // scalar
@@ -2164,7 +2170,7 @@ model QuizIncidentReport {
 
 model Conversation {
   id              String           @id @default(uuid())
-  tenantId        String
+  orgId        String
   type            ConversationType @default(direct)
   title           String?
   groupIcon       String?
@@ -2182,7 +2188,7 @@ model Conversation {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  @@index([tenantId, lastMessageAt(sort: Desc)])
+  @@index([orgId, lastMessageAt(sort: Desc)])
   @@map("conversations")
 }
 
@@ -2257,7 +2263,7 @@ model MessageReaction {
 
 model AnalyticsEvent {
   id         String  @id @default(uuid())
-  tenantId   String
+  orgId   String
   userId     String? // actor scalar
   eventType  String
   eventData  Json? // per §8
@@ -2268,14 +2274,14 @@ model AnalyticsEvent {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  @@index([tenantId, eventType, createdAt(sort: Desc)])
+  @@index([orgId, eventType, createdAt(sort: Desc)])
   @@index([userId, createdAt(sort: Desc)])
   @@map("analytics_events")
 }
 
 model AnalyticsCache {
   id           String   @id @default(uuid())
-  tenantId     String
+  orgId     String
   metricKey    String
   data         Json
   calculatedAt DateTime
@@ -2285,14 +2291,14 @@ model AnalyticsCache {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  @@index([tenantId, metricKey])
+  @@index([orgId, metricKey])
   @@index([expiresAt])
   @@map("analytics_cache")
 }
 
 model ActivityLog {
   id        String       @id @default(uuid())
-  tenantId  String? // optional (super-admin global actions)
+  orgId  String? // optional (super-admin global actions)
   userId    String? // actor scalar
   type      ActivityType
   message   String
@@ -2302,7 +2308,7 @@ model ActivityLog {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  @@index([tenantId, timestamp(sort: Desc)])
+  @@index([orgId, timestamp(sort: Desc)])
   @@index([type, timestamp(sort: Desc)])
   @@index([timestamp(sort: Desc)])
   @@map("activity_logs")
@@ -2310,7 +2316,7 @@ model ActivityLog {
 
 model TenantLog {
   id          String           @id @default(uuid())
-  tenantId    String
+  orgId    String
   actionType  TenantActionType
   description String
   performedBy String // actor scalar
@@ -2320,14 +2326,14 @@ model TenantLog {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  @@index([tenantId, createdAt(sort: Desc)])
-  @@index([tenantId, actionType, createdAt(sort: Desc)])
+  @@index([orgId, createdAt(sort: Desc)])
+  @@index([orgId, actionType, createdAt(sort: Desc)])
   @@map("tenant_logs")
 }
 
 model PrivacyAuditLog {
   id              String   @id @default(uuid())
-  tenantId        String
+  orgId        String
   userId          String // actor scalar
   userRole        String
   endpoint        String
@@ -2340,7 +2346,7 @@ model PrivacyAuditLog {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  @@index([tenantId, createdAt(sort: Desc)])
+  @@index([orgId, createdAt(sort: Desc)])
   @@index([userId, createdAt(sort: Desc)])
   @@map("privacy_audit_logs")
 }

@@ -7,13 +7,13 @@ import { syncProgress } from '@/lib/services/progress-service';
 // PATCH /api/learner/sync-progress
 export const PATCH = route(async (req) => {
   const user = await requireAuth(req);
-  const tenantId = user.tenantId;
+  const orgId = user.orgId;
   const learnerId = user.id;
-  if (!tenantId || !learnerId) return json({ success: false, message: 'Tenant ID and Learner ID are required' });
+  if (!orgId || !learnerId) return json({ success: false, message: 'Tenant ID and Learner ID are required' });
 
   const body = await parseBody(req, z.object({}).passthrough()) as Record<string, unknown>;
   const progress = await syncProgress({
-    tenantId, learnerId,
+    orgId, learnerId,
     courseId: body.courseId as string,
     moduleId: body.moduleId as string | undefined,
     lessonId: body.lessonId as string | undefined,

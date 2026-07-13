@@ -1,8 +1,8 @@
 /**
  * Payouts service — ported from NestJS PayoutsService (Mongoose → Prisma).
  *
- * Tenant isolation: every query is scoped by an explicit tenantId argument
- * (callers pass actor.tenantId; the controllers enforce roles). Mongo populate()
+ * Tenant isolation: every query is scoped by an explicit orgId argument
+ * (callers pass actor.orgId; the controllers enforce roles). Mongo populate()
  * of teacher / completed classes / approvedBy is reproduced with manual lookups,
  * returning the same nested shapes the legacy API produced (with `_id` aliases).
  *
@@ -75,10 +75,10 @@ function shapePayout(
 }
 
 // ═══════════════ COMPLETED-CLASSES LOOKUP (scheduling helper) ═══════════════
-async function findCompletedClassesForPayout(tenantId: string, teacherId: string, periodStart: Date, periodEnd: Date) {
+async function findCompletedClassesForPayout(orgId: string, teacherId: string, periodStart: Date, periodEnd: Date) {
   const classes = await prisma.scheduledClass.findMany({
     where: {
-      tenantId,
+      orgId,
       teacherId,
       status: 'completed',
       attendanceMarkedAt: { not: null },
@@ -96,10 +96,10 @@ async function findCompletedClassesForPayout(tenantId: string, teacherId: string
 }
 
 // ═══════════════ TEACHER LEVEL RATE (teacher-level helper) ═══════════════
-async function getTeacherRateByLevel(tenantId: string, teacherId: string, baseRate: number): Promise<number> {
+async function getTeacherRateByLevel(orgId: string, teacherId: string, baseRate: number): Promise<number> {
   try {
-    const level = await prisma.teacherLevel.findFirst({ where: { tenantId, teacherId } });
-    const tenant = await prisma.tenant.findUnique({ where: { id: tenantId } });
+    const level = await prisma.teacherLevel.findFirst({ where: { orgId, teacherId } });
+    const tenant = await prisma.tenant.findUnique({ where: { id: orgId } });
     const levelConfig = (tenant as Record<string, any> | null)?.enhancementConfig?.teacherLevel;
     if (!level || !levelConfig) return baseRate;
     switch (level.currentLevel) {
@@ -118,24 +118,24 @@ async function getTeacherRateByLevel(tenantId: string, teacherId: string, baseRa
 }
 
 // ═══════════════ NON-TEACHING MONTHLY PAY (non-teaching-work helper) ═══════════════
-async function getTeacherMonthlyNonTeachingPay(tenantId: string, teacherId: string, month: number, year: number): Promise<number> {
+async function getTeacherMonthlyNonTeachingPay(orgId: string, teacherId: string, month: number, year: number): Promise<number> {
   const startDate = new Date(year, month - 1, 1);
   const endDate = new Date(year, month, 0, 23, 59, 59, 999);
   const tasks = await prisma.nonTeachingTask.findMany({
-    where: { tenantId, teacherId, status: 'approved', approvedAt: { gte: startDate, lte: endDate } },
+    where: { orgId, teacherId, status: 'approved', approvedAt: { gte: startDate, lte: endDate } },
     select: { paymentAmount: true },
   });
   return tasks.reduce((sum, t) => sum + (t.paymentAmount || 0), 0);
 }
 
 // ═══════════════ GENERATE PAYOUTS ═══════════════
-export async function generatePayouts(tenantId: string, dto: { month: number; year: number; perClassRate?: number }) {
+export async function generatePayouts(orgId: string, dto: { month: number; year: number; perClassRate?: number }) {
   const periodStart = new Date(dto.year, dto.month - 1, 1);
   const periodEnd = new Date(dto.year, dto.month, 0, 23, 59, 59);
 
-  const teachers = await prisma.user.findMany({ where: { tenantId, role: 'TEACHER', isActive: true } });
+  const teachers = await prisma.user.findMany({ where: { orgId, role: 'TEACHER', isActive: true } });
 
-  const tenant = await prisma.tenant.findUnique({ where: { id: tenantId } });
+  const tenant = await prisma.tenant.findUnique({ where: { id: orgId } });
   const tenantCfg = tenant as Record<string, any> | null;
   const defaultRate = tenantCfg?.payoutConfig?.defaultRatePerClass || 500;
   const demoTrialConfig = tenantCfg?.enhancementConfig?.demoTrial;
@@ -146,13 +146,13 @@ export async function generatePayouts(tenantId: string, dto: { month: number; ye
     const teacherRateType = (teacher.rateType as string) || 'per_class';
     const teacherMonthlyPayout = teacher.monthlyPayout || 0;
 
-    const completedClasses = await findCompletedClassesForPayout(tenantId, teacher.id, periodStart, periodEnd);
+    const completedClasses = await findCompletedClassesForPayout(orgId, teacher.id, periodStart, periodEnd);
 
     if (completedClasses.length === 0 && teacherRateType !== 'monthly' && teacherRateType !== 'hybrid') continue;
 
     let baseRate = teacher.ratePerClass || dto.perClassRate || defaultRate;
     try {
-      baseRate = await getTeacherRateByLevel(tenantId, teacher.id, baseRate);
+      baseRate = await getTeacherRateByLevel(orgId, teacher.id, baseRate);
     } catch {
       /* use base rate */
     }
@@ -188,13 +188,13 @@ export async function generatePayouts(tenantId: string, dto: { month: number; ye
 
     let nonTeachingWorkAmount = 0;
     try {
-      nonTeachingWorkAmount = await getTeacherMonthlyNonTeachingPay(tenantId, teacher.id, dto.month, dto.year);
+      nonTeachingWorkAmount = await getTeacherMonthlyNonTeachingPay(orgId, teacher.id, dto.month, dto.year);
     } catch {
       /* ignore */
     }
 
     const existing = await prisma.teacherPayout.findFirst({
-      where: { tenantId, teacherId: teacher.id, periodStart, periodEnd },
+      where: { orgId, teacherId: teacher.id, periodStart, periodEnd },
     });
 
     if (existing) {
@@ -222,7 +222,7 @@ export async function generatePayouts(tenantId: string, dto: { month: number; ye
 
     const payout = await prisma.teacherPayout.create({
       data: {
-        tenantId,
+        orgId,
         teacherId: teacher.id,
         periodStart,
         periodEnd,
@@ -249,10 +249,10 @@ export async function generatePayouts(tenantId: string, dto: { month: number; ye
 
 // ═══════════════ LIST PAYOUTS ═══════════════
 export async function findAll(
-  tenantId: string,
+  orgId: string,
   filters?: { month?: number; year?: number; status?: string; teacherId?: string; source?: string },
 ) {
-  const where: Prisma.TeacherPayoutWhereInput = { tenantId };
+  const where: Prisma.TeacherPayoutWhereInput = { orgId };
   if (filters?.status) where.status = filters.status as PayoutStatus;
   if (filters?.teacherId) where.teacherId = filters.teacherId;
   if (filters?.source) where.source = filters.source as 'batch' | 'tutoring';
@@ -299,7 +299,7 @@ export async function findAll(
   );
 
   // Totals for the entire period (ignoring source filter)
-  const totalsWhere: Prisma.TeacherPayoutWhereInput = { tenantId };
+  const totalsWhere: Prisma.TeacherPayoutWhereInput = { orgId };
   if (periodStart && periodEnd) {
     totalsWhere.periodStart = { gte: periodStart };
     totalsWhere.periodEnd = { lte: periodEnd };
@@ -324,8 +324,8 @@ export async function findAll(
 }
 
 // ═══════════════ GET TEACHER'S PAYOUTS ═══════════════
-export async function getTeacherPayouts(tenantId: string, teacherId: string, year?: number) {
-  const where: Prisma.TeacherPayoutWhereInput = { tenantId, teacherId };
+export async function getTeacherPayouts(orgId: string, teacherId: string, year?: number) {
+  const where: Prisma.TeacherPayoutWhereInput = { orgId, teacherId };
   if (year) {
     where.periodStart = { gte: new Date(year, 0, 1) };
     where.periodEnd = { lte: new Date(year, 11, 31, 23, 59, 59) };
@@ -350,9 +350,9 @@ export async function getTeacherPayouts(tenantId: string, teacherId: string, yea
 }
 
 // ═══════════════ GET PAYOUT BY ID ═══════════════
-export async function findOne(tenantId: string, payoutId: string) {
+export async function findOne(orgId: string, payoutId: string) {
   const r = await prisma.teacherPayout.findFirst({
-    where: { id: payoutId, tenantId },
+    where: { id: payoutId, orgId },
     include: { adjustments: true, completedClasses: { select: { scheduledClassId: true } } },
   });
   if (!r) throw NotFound('Payout not found');
@@ -376,13 +376,13 @@ export async function findOne(tenantId: string, payoutId: string) {
 
 // ═══════════════ ADD ADJUSTMENT ═══════════════
 export async function addAdjustment(
-  tenantId: string,
+  orgId: string,
   payoutId: string,
   dto: { type: 'bonus' | 'deduction' | 'reimbursement'; amount: number; reason: string },
   appliedBy: string,
 ) {
   const payout = await prisma.teacherPayout.findFirst({
-    where: { id: payoutId, tenantId },
+    where: { id: payoutId, orgId },
     include: { adjustments: true },
   });
   if (!payout) throw NotFound('Payout not found');
@@ -413,41 +413,41 @@ export async function addAdjustment(
     data: { totalBonus, totalDeductions, netAmount },
   });
 
-  return findOne(tenantId, payoutId);
+  return findOne(orgId, payoutId);
 }
 
 // ═══════════════ STATUS TRANSITIONS ═══════════════
-async function updateStatus(tenantId: string, payoutId: string, newStatus: PayoutStatus, allowedFrom: PayoutStatus[], extra: Prisma.TeacherPayoutUpdateInput = {}) {
+async function updateStatus(orgId: string, payoutId: string, newStatus: PayoutStatus, allowedFrom: PayoutStatus[], extra: Prisma.TeacherPayoutUpdateInput = {}) {
   const result = await prisma.teacherPayout.updateMany({
-    where: { id: payoutId, tenantId, status: { in: allowedFrom } },
+    where: { id: payoutId, orgId, status: { in: allowedFrom } },
     data: { status: newStatus, ...extra },
   });
   if (result.count === 0) throw BadRequest(`Payout not found or cannot transition to ${newStatus}`);
-  return prisma.teacherPayout.findFirst({ where: { id: payoutId, tenantId } });
+  return prisma.teacherPayout.findFirst({ where: { id: payoutId, orgId } });
 }
 
-export async function submit(tenantId: string, payoutId: string) {
-  return updateStatus(tenantId, payoutId, 'pending', ['draft']);
+export async function submit(orgId: string, payoutId: string) {
+  return updateStatus(orgId, payoutId, 'pending', ['draft']);
 }
 
-export async function approve(tenantId: string, payoutId: string, approvedBy: string) {
+export async function approve(orgId: string, payoutId: string, approvedBy: string) {
   const result = await prisma.teacherPayout.updateMany({
-    where: { id: payoutId, tenantId, status: { in: ['pending', 'draft'] } },
+    where: { id: payoutId, orgId, status: { in: ['pending', 'draft'] } },
     data: { status: 'approved', approvedBy, approvedAt: new Date() },
   });
   if (result.count === 0) throw BadRequest('Payout not found or cannot be approved');
-  return prisma.teacherPayout.findFirst({ where: { id: payoutId, tenantId } });
+  return prisma.teacherPayout.findFirst({ where: { id: payoutId, orgId } });
 }
 
-export async function reject(tenantId: string, payoutId: string) {
-  return updateStatus(tenantId, payoutId, 'rejected', ['pending']);
+export async function reject(orgId: string, payoutId: string) {
+  return updateStatus(orgId, payoutId, 'rejected', ['pending']);
 }
 
-export async function markPaid(tenantId: string, payoutId: string, dto: { paymentMethod: string; paymentReference: string }) {
+export async function markPaid(orgId: string, payoutId: string, dto: { paymentMethod: string; paymentReference: string }) {
   const result = await prisma.teacherPayout.updateMany({
-    where: { id: payoutId, tenantId, status: 'approved' },
+    where: { id: payoutId, orgId, status: 'approved' },
     data: { status: 'paid', paidAt: new Date(), paymentMethod: dto.paymentMethod, paymentReference: dto.paymentReference },
   });
   if (result.count === 0) throw BadRequest('Payout not found or not approved');
-  return prisma.teacherPayout.findFirst({ where: { id: payoutId, tenantId } });
+  return prisma.teacherPayout.findFirst({ where: { id: payoutId, orgId } });
 }

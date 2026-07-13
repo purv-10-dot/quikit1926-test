@@ -18,9 +18,15 @@ function getTransporter(): Transporter {
     port: Number(optionalEnv('SMTP_PORT') || 587),
     secure: Number(optionalEnv('SMTP_PORT')) === 465,
     auth:
-      optionalEnv('SMTP_USER') && optionalEnv('SMTP_PASS')
-        ? { user: optionalEnv('SMTP_USER'), pass: optionalEnv('SMTP_PASS') }
+      (optionalEnv('SMTP_USER') || optionalEnv('EMAIL_USER')) &&
+      (optionalEnv('SMTP_PASS') || optionalEnv('EMAIL_PASSWORD'))
+        ? {
+            user: optionalEnv('SMTP_USER') || optionalEnv('EMAIL_USER'),
+            pass: optionalEnv('SMTP_PASS') || optionalEnv('EMAIL_PASSWORD'),
+          }
         : undefined,
+    // Match apps/quikit's known-good Office365 transport (STARTTLS on 587).
+    tls: { ciphers: 'SSLv3' },
   });
   return transporter;
 }

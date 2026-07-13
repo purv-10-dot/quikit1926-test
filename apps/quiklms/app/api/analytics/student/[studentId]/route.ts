@@ -6,5 +6,5 @@ import { getStudentProgress } from '@/lib/services/analytics-service';
 export const GET = route(async (req, { params }) => {
   const actor = await requireAuth(req);
   requireRoles(actor, ['TENANT_ADMIN', 'SUB_ADMIN', 'TEACHER', 'PARENT']);
-  return json(await getStudentProgress(actor.tenantId ?? '', params!.studentId));
+  return json(await getStudentProgress(actor.orgId ?? '', params!.studentId));
 });

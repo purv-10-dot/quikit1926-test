@@ -16,12 +16,13 @@ const ALL_FEATURES: FeatureSet = {
 export const GET = route(async (req) => {
   const actor = await requireAuth(req);
 
-  // SUPER_ADMIN has no tenant — return all features enabled at platform level
-  if (!actor.tenantId) {
+  // SUPER_ADMIN is the operator — its org has no Tenant row. Return all
+  // features enabled at platform level rather than 404ing on findTenant.
+  if (actor.role === 'SUPER_ADMIN' || !actor.orgId) {
     return json({
       success: true,
       data: {
-        tenantId: null,
+        orgId: null,
         tenantType: null,
         tenantName: 'QuikSkill Platform',
         features: ALL_FEATURES,
@@ -34,6 +35,6 @@ export const GET = route(async (req) => {
     });
   }
 
-  const tenant = await findTenant(actor.tenantId);
+  const tenant = await findTenant(actor.orgId);
   return json({ success: true, data: buildTenantFeaturesResponse(tenant) });
 });

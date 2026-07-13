@@ -7,7 +7,7 @@ import { exportTeamReport } from '@/lib/services/manager-service';
 export const GET = route(async (req) => {
   const user = await requireAuth(req);
   requireRoles(user, ['MANAGER']);
-  const reportData = await exportTeamReport(user.id, user.tenantId as string);
+  const reportData = await exportTeamReport(user.id, user.orgId as string);
   return new NextResponse(JSON.stringify({ success: true, data: reportData }), {
     status: 200,
     headers: { 'Content-Type': 'application/json', 'Content-Disposition': `attachment; filename=team-report-${Date.now()}.json` },

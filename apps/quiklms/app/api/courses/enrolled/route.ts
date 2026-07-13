@@ -14,7 +14,7 @@ export const GET = route(async (req) => {
       where: {
         targetId: actor.id,
         targetType: 'USER',
-        tenantId: actor.tenantId ?? undefined,
+        orgId: actor.orgId ?? undefined,
       },
       include: {
         // courseAssignment has no relation field to Course (scalar courseId only)

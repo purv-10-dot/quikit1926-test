@@ -12,17 +12,17 @@ interface CompletionRates { completed: number; inProgress: number; notStarted: n
 interface TopPerformer { userId: string; userName: string; email: string; coursesCompleted: number; averageScore: number }
 interface DifficultModule { courseId: string; courseTitle: string; averageScore: number; totalAttempts: number }
 
-export async function getComplianceAnalytics(tenantId: string): Promise<{
+export async function getComplianceAnalytics(orgId: string): Promise<{
   completionRates: CompletionRates; topPerformers: TopPerformer[]; difficultModules: DifficultModule[];
 }> {
-  if (!tenantId) return { completionRates: { completed: 0, inProgress: 0, notStarted: 0 }, topPerformers: [], difficultModules: [] };
+  if (!orgId) return { completionRates: { completed: 0, inProgress: 0, notStarted: 0 }, topPerformers: [], difficultModules: [] };
 
-  const users = await prisma.user.findMany({ where: { tenantId, role: { in: ['LEARNER', 'TEACHER'] } } });
+  const users = await prisma.user.findMany({ where: { orgId, role: { in: ['LEARNER', 'TEACHER'] } } });
   const userIds = users.map((u) => u.id);
 
-  const assignments = await prisma.courseAssignment.findMany({ where: { tenantId, targetType: 'USER' } });
+  const assignments = await prisma.courseAssignment.findMany({ where: { orgId, targetType: 'USER' } });
   const allProgress = await prisma.progress.findMany({
-    where: { OR: [{ learnerId: { in: userIds } }, { tenantId }] },
+    where: { OR: [{ learnerId: { in: userIds } }, { orgId }] },
   });
 
   const completedProgress = allProgress.filter((p) => p.completionPercentage >= 100 || p.status === 'Completed');
@@ -89,12 +89,12 @@ interface NudgeUser {
   overdueCourses?: { courseId: string; courseTitle: string; dueDate: Date; daysOverdue: number }[];
 }
 
-export async function getNudgeUsers(tenantId: string): Promise<{ users: NudgeUser[]; totalCount: number }> {
-  if (!tenantId) return { users: [], totalCount: 0 };
+export async function getNudgeUsers(orgId: string): Promise<{ users: NudgeUser[]; totalCount: number }> {
+  if (!orgId) return { users: [], totalCount: 0 };
   const now = new Date();
 
-  const users = await prisma.user.findMany({ where: { tenantId, role: { in: ['LEARNER', 'TEACHER'] } } });
-  const assignments = await prisma.courseAssignment.findMany({ where: { tenantId, targetType: 'USER', isMandatory: true } });
+  const users = await prisma.user.findMany({ where: { orgId, role: { in: ['LEARNER', 'TEACHER'] } } });
+  const assignments = await prisma.courseAssignment.findMany({ where: { orgId, targetType: 'USER', isMandatory: true } });
   const courseIds = [...new Set(assignments.map((a) => a.courseId))];
   const masters = await prisma.masterCourse.findMany({ where: { id: { in: courseIds } }, select: { id: true, title: true } });
   const titleMap = new Map(masters.map((m) => [m.id, m.title]));
@@ -137,13 +137,13 @@ export async function getNudgeUsers(tenantId: string): Promise<{ users: NudgeUse
 }
 
 export async function sendNudgeEmails(
-  tenantId: string,
+  orgId: string,
   userIds: string[],
   senderId: string,
 ): Promise<{ success: boolean; sentCount: number }> {
   if (userIds.length === 0) return { success: false, sentCount: 0 };
   const users = await prisma.user.findMany({
-    where: { id: { in: userIds }, tenantId },
+    where: { id: { in: userIds }, orgId },
     select: { id: true, email: true, firstName: true, lastName: true },
   });
   if (users.length === 0) return { success: false, sentCount: 0 };
@@ -151,7 +151,7 @@ export async function sendNudgeEmails(
   // Deliver a real in-app notification (Message inbox) to each user, plus a
   // best-effort email, plus a tenant audit row. Only count delivered users.
   const { deliveredCount } = await notifyUsers({
-    tenantId,
+    orgId,
     senderId,
     recipients: users,
     message: 'Reminder: you have pending or overdue training. Please complete your assigned courses.',

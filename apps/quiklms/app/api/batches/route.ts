@@ -44,7 +44,7 @@ export const POST = route(async (req) => {
   const actor = await requireAuth(req);
   requireRoles(actor, ['TENANT_ADMIN', 'SUB_ADMIN', 'TEACHER']);
   const dto = await parseBody(req, createSchema);
-  return json(await create(actor.tenantId!, dto as CreateBatchInput, actor.id));
+  return json(await create(actor.orgId!, dto as CreateBatchInput, actor.id));
 });
 
 // GET /api/batches?status=&teacherId=&academicYear=&grade=&subject= — any authed user
@@ -52,7 +52,7 @@ export const GET = route(async (req) => {
   const actor = await requireAuth(req);
   const url = new URL(req.url);
   return json(
-    await findAll(actor.tenantId!, {
+    await findAll(actor.orgId!, {
       status: (url.searchParams.get('status') as BatchStatus) || undefined,
       teacherId: url.searchParams.get('teacherId') || undefined,
       academicYear: url.searchParams.get('academicYear') || undefined,

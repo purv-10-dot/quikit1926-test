@@ -6,10 +6,10 @@ import { getStorageUsage } from '@/lib/services/tenants-service';
 export const GET = route(async (req) => {
   const actor = await requireAuth(req);
   requireRoles(actor, ['SUPER_ADMIN', 'TENANT_ADMIN', 'SUB_ADMIN']);
-  const tenantId = actor.tenantId;
-  if (!tenantId && actor.role === 'SUPER_ADMIN') {
+  const orgId = actor.orgId;
+  if (!orgId && actor.role === 'SUPER_ADMIN') {
     return json({ success: true, data: { currentUsage: 0, storageLimit: 10 * 1024 * 1024 * 1024 } });
   }
-  if (!tenantId) throw BadRequest('Tenant ID is required');
-  return json({ success: true, data: await getStorageUsage(tenantId) });
+  if (!orgId) throw BadRequest('Tenant ID is required');
+  return json({ success: true, data: await getStorageUsage(orgId) });
 });

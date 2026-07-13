@@ -6,5 +6,5 @@ import { getRemindersForTeacher } from '@/lib/services/student-reminders-service
 export const GET = route(async (req) => {
   const actor = await requireAuth(req);
   requireRoles(actor, ['TEACHER']);
-  return json(await getRemindersForTeacher(actor.tenantId!, actor.id));
+  return json(await getRemindersForTeacher(actor.orgId!, actor.id));
 });

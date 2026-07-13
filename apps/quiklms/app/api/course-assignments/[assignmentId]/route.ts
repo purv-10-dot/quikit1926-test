@@ -6,8 +6,8 @@ import { removeAssignment } from '@/lib/services/course-assignments-service';
 export const DELETE = route(async (req, { params }) => {
   const user = await requireAuth(req);
   requireRoles(user, ['SUPER_ADMIN', 'TENANT_ADMIN', 'SUB_ADMIN']);
-  const tenantId = user.tenantId;
-  if (!tenantId) throw BadRequest('Tenant ID is required');
-  await removeAssignment(tenantId, params!.assignmentId);
+  const orgId = user.orgId;
+  if (!orgId) throw BadRequest('Tenant ID is required');
+  await removeAssignment(orgId, params!.assignmentId);
   return json({ success: true, message: 'Assignment removed successfully' });
 });

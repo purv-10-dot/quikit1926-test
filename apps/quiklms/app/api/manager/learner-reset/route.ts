@@ -11,5 +11,5 @@ export const PATCH = route(async (req) => {
   const user = await requireAuth(req);
   requireRoles(user, ['MANAGER']);
   const dto = await parseBody(req, schema);
-  return json(await learnerReset(user.id, user.tenantId as string, dto));
+  return json(await learnerReset(user.id, user.orgId as string, dto));
 });

@@ -34,8 +34,8 @@ export const GET = route(async (req, { params }) => {
     try {
       const progress = await prisma.progress.findUnique({
         where: {
-          tenantId_learnerId_courseId: {
-            tenantId: actor.tenantId ?? '',
+          orgId_learnerId_courseId: {
+            orgId: actor.orgId ?? '',
             learnerId: actor.id,
             courseId,
           },

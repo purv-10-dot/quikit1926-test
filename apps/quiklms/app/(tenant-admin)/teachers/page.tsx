@@ -202,9 +202,9 @@ const TeachersPage = () => {
     try {
       const userStr = sessionStorage.getItem('user');
       const currentUser = userStr ? JSON.parse(userStr) : null;
-      const tenantId = currentUser?.tenantId;
+      const orgId = currentUser?.orgId;
 
-      if (!tenantId) {
+      if (!orgId) {
         setError('Tenant ID not found. Please log out and log in again.');
         setCreating(false);
         return;
@@ -235,7 +235,7 @@ const TeachersPage = () => {
         firstName: formData.firstName,
         lastName: formData.lastName,
         role: 'TEACHER',
-        tenantId,
+        orgId,
         subjects: formData.subjects,
         ratePerClass: formData.ratePerClass,
         rateType: formData.rateType,

@@ -13,7 +13,7 @@ const slotsSchema = z.object({
 export const GET = route(async (req) => {
   const actor = await requireAuth(req);
   requireRoles(actor, ['TEACHER']);
-  return json({ success: true, data: await getTeacherAvailability(actor.tenantId!, actor.id) });
+  return json({ success: true, data: await getTeacherAvailability(actor.orgId!, actor.id) });
 });
 
 // PUT /api/teacher-availability/me — TEACHER (update own availability)
@@ -21,6 +21,6 @@ export const PUT = route(async (req) => {
   const actor = await requireAuth(req);
   requireRoles(actor, ['TEACHER']);
   const body = await parseBody(req, slotsSchema);
-  await updateAvailableSlots(actor.tenantId!, actor.id, body.slots, body.maxSlotsPerWeek);
-  return json({ success: true, data: await getTeacherAvailability(actor.tenantId!, actor.id) });
+  await updateAvailableSlots(actor.orgId!, actor.id, body.slots, body.maxSlotsPerWeek);
+  return json({ success: true, data: await getTeacherAvailability(actor.orgId!, actor.id) });
 });

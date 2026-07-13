@@ -200,10 +200,10 @@ export async function startSession(
   courseId: string,
   timeLimitMinutes?: number,
 ) {
-  const tenantId = user.tenantId as string;
+  const orgId = user.orgId as string;
 
   const voided = await prisma.quizProctoringSession.findFirst({
-    where: { tenantId, learnerId, assessmentId, status: 'voided' },
+    where: { orgId, learnerId, assessmentId, status: 'voided' },
   });
   if (voided) {
     throw BadRequest(
@@ -212,7 +212,7 @@ export async function startSession(
   }
 
   const existing = await prisma.quizProctoringSession.findFirst({
-    where: { tenantId, learnerId, assessmentId },
+    where: { orgId, learnerId, assessmentId },
   });
 
   if (existing) {
@@ -308,7 +308,7 @@ export async function startSession(
 
   const session = await prisma.quizProctoringSession.create({
     data: {
-      tenantId,
+      orgId,
       learnerId,
       assessmentId,
       courseId,
@@ -341,10 +341,10 @@ export async function logEvent(
   eventType: string,
   metadata?: unknown,
 ) {
-  const tenantId = user.tenantId as string;
+  const orgId = user.orgId as string;
 
   const session = await prisma.quizProctoringSession.findFirst({
-    where: { id: sessionId, tenantId, learnerId, status: 'in_progress' },
+    where: { id: sessionId, orgId, learnerId, status: 'in_progress' },
   });
   if (!session) return { severity: 'low' };
 
@@ -360,7 +360,7 @@ export async function logEvent(
 
   const log = await prisma.quizProctoringLog.create({
     data: {
-      tenantId,
+      orgId,
       sessionId,
       learnerId,
       eventType: eventType as QuizProctoringEventType,
@@ -386,9 +386,9 @@ export async function logEvent(
 }
 
 export async function completeSession(user: AuthUser, learnerId: string, sessionId: string) {
-  const tenantId = user.tenantId as string;
+  const orgId = user.orgId as string;
   const existing = await prisma.quizProctoringSession.findFirst({
-    where: { id: sessionId, tenantId, learnerId, status: 'in_progress' },
+    where: { id: sessionId, orgId, learnerId, status: 'in_progress' },
   });
   if (!existing) return null;
   return prisma.quizProctoringSession.update({
@@ -398,37 +398,37 @@ export async function completeSession(user: AuthUser, learnerId: string, session
 }
 
 export async function getSessionLog(user: AuthUser, sessionId: string) {
-  const tenantId = user.tenantId as string;
+  const orgId = user.orgId as string;
   return prisma.quizProctoringLog.findMany({
-    where: { tenantId, sessionId },
+    where: { orgId, sessionId },
     orderBy: { timestamp: 'asc' },
   });
 }
 
 export async function getAssessmentIncidents(user: AuthUser, assessmentId: string) {
-  const tenantId = user.tenantId as string;
+  const orgId = user.orgId as string;
   const sessions = await prisma.quizProctoringSession.findMany({
-    where: { tenantId, assessmentId, proctoringFlags: { path: ['totalFlags'], gt: 0 } },
+    where: { orgId, assessmentId, proctoringFlags: { path: ['totalFlags'], gt: 0 } },
   });
-  return buildIncidentList(sessions, tenantId, assessmentId);
+  return buildIncidentList(sessions, orgId, assessmentId);
 }
 
 export async function getAllIncidents(user: AuthUser) {
-  const tenantId = user.tenantId as string;
+  const orgId = user.orgId as string;
   const sessions = await prisma.quizProctoringSession.findMany({
-    where: { tenantId, proctoringFlags: { path: ['totalFlags'], gt: 0 } },
+    where: { orgId, proctoringFlags: { path: ['totalFlags'], gt: 0 } },
     orderBy: { startedAt: 'desc' },
     take: 100,
   });
-  return buildIncidentList(sessions, tenantId);
+  return buildIncidentList(sessions, orgId);
 }
 
 type QuizSessionRecord = Prisma.QuizProctoringSessionGetPayload<object>;
 
-async function buildIncidentList(sessions: QuizSessionRecord[], tenantId: string, defaultAssessmentId?: string) {
+async function buildIncidentList(sessions: QuizSessionRecord[], orgId: string, defaultAssessmentId?: string) {
   const incidents: unknown[] = [];
   for (const session of sessions) {
-    let incident = await prisma.quizIncidentReport.findFirst({ where: { sessionId: session.id, tenantId } });
+    let incident = await prisma.quizIncidentReport.findFirst({ where: { sessionId: session.id, orgId } });
     if (!incident) {
       const logs = await prisma.quizProctoringLog.findMany({ where: { sessionId: session.id } });
       const summary: Record<string, number> = {};
@@ -440,7 +440,7 @@ async function buildIncidentList(sessions: QuizSessionRecord[], tenantId: string
       summary.total = total;
       incident = await prisma.quizIncidentReport.create({
         data: {
-          tenantId,
+          orgId,
           sessionId: session.id,
           assessmentId: session.assessmentId || (defaultAssessmentId as string),
           flagSummary: summary as unknown as Prisma.InputJsonValue,
@@ -473,9 +473,9 @@ export async function reviewIncident(
   sessionId: string,
   data: { disposition: string; action: string; remarks?: string },
 ) {
-  const tenantId = user.tenantId as string;
+  const orgId = user.orgId as string;
 
-  const existing = await prisma.quizIncidentReport.findFirst({ where: { sessionId, tenantId } });
+  const existing = await prisma.quizIncidentReport.findFirst({ where: { sessionId, orgId } });
   if (!existing) throw NotFound('Incident report not found');
 
   const incident = await prisma.quizIncidentReport.update({
@@ -499,10 +499,10 @@ export async function reviewIncident(
   if (data.disposition === 'confirmed_violation') {
     if (data.action === 'penalty_applied') {
       await prisma.quizAttempt.updateMany({
-        where: { tenantId, learnerId, assessmentId },
+        where: { orgId, learnerId, assessmentId },
         data: { score: 0, percentage: 0, passed: false },
       });
-      await resetQuizLessonProgress(tenantId, learnerId, courseId, assessmentId);
+      await resetQuizLessonProgress(orgId, learnerId, courseId, assessmentId);
     }
 
     if (data.action === 'session_voided') {
@@ -510,8 +510,8 @@ export async function reviewIncident(
         where: { id: sessionId },
         data: { status: 'voided', endedAt: new Date() },
       });
-      await prisma.quizAttempt.deleteMany({ where: { tenantId, learnerId, assessmentId } });
-      await resetQuizLessonProgress(tenantId, learnerId, courseId, assessmentId);
+      await prisma.quizAttempt.deleteMany({ where: { orgId, learnerId, assessmentId } });
+      await resetQuizLessonProgress(orgId, learnerId, courseId, assessmentId);
     }
   }
 
@@ -519,13 +519,13 @@ export async function reviewIncident(
 }
 
 async function resetQuizLessonProgress(
-  tenantId: string,
+  orgId: string,
   learnerId: string,
   courseId: string,
   assessmentId: string,
 ) {
   try {
-    const progress = await prisma.progress.findFirst({ where: { tenantId, learnerId, courseId } });
+    const progress = await prisma.progress.findFirst({ where: { orgId, learnerId, courseId } });
     if (!progress) return;
 
     const lp = (progress.lessonProgress as unknown as Record<string, { completionPercentage?: number }>) || {};
@@ -555,8 +555,8 @@ async function resetQuizLessonProgress(
 }
 
 export async function allowRetake(user: AuthUser, sessionId: string) {
-  const tenantId = user.tenantId as string;
-  const session = await prisma.quizProctoringSession.findFirst({ where: { id: sessionId, tenantId } });
+  const orgId = user.orgId as string;
+  const session = await prisma.quizProctoringSession.findFirst({ where: { id: sessionId, orgId } });
   if (!session) throw NotFound('Session not found');
   if (session.status !== 'voided') throw BadRequest('Only voided sessions can be allowed for retake');
   await prisma.quizProctoringSession.delete({ where: { id: sessionId } });
@@ -564,6 +564,6 @@ export async function allowRetake(user: AuthUser, sessionId: string) {
 }
 
 export async function getSessionForLearner(user: AuthUser, learnerId: string, assessmentId: string) {
-  const tenantId = user.tenantId as string;
-  return prisma.quizProctoringSession.findFirst({ where: { tenantId, learnerId, assessmentId } });
+  const orgId = user.orgId as string;
+  return prisma.quizProctoringSession.findFirst({ where: { orgId, learnerId, assessmentId } });
 }

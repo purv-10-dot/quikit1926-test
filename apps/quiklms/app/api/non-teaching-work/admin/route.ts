@@ -9,5 +9,5 @@ export const GET = route(async (req) => {
   const url = new URL(req.url);
   const teacherId = url.searchParams.get('teacherId') || undefined;
   const status = url.searchParams.get('status') || undefined;
-  return json({ success: true, data: await getAdminTasks(actor.tenantId!, { teacherId, status }) });
+  return json({ success: true, data: await getAdminTasks(actor.orgId!, { teacherId, status }) });
 });

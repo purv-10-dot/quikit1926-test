@@ -32,7 +32,7 @@ interface ConversationParticipant {
 
 interface Conversation {
   _id: string;
-  tenantId: string;
+  orgId: string;
   type: 'direct' | 'group';
   title?: string;
   description?: string;

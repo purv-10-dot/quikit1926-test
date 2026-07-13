@@ -10,5 +10,5 @@ export const GET = route(async (req) => {
   const type = url.searchParams.get('type') || 'school-overview';
   const dateFrom = url.searchParams.get('dateFrom') || undefined;
   const dateTo = url.searchParams.get('dateTo') || undefined;
-  return json(await exportData(actor.tenantId ?? '', type, dateFrom, dateTo));
+  return json(await exportData(actor.orgId ?? '', type, dateFrom, dateTo));
 });

@@ -9,11 +9,11 @@ const schema = z.object({ statements: z.array(z.object({ verb: z.object({ id: z.
 // POST /api/player/xapi-statements
 export const POST = route(async (req) => {
   const user = await requireAuth(req);
-  const tenantId = user.tenantId;
+  const orgId = user.orgId;
   const learnerId = user.id;
-  if (!tenantId || !learnerId) return json({ success: false, message: 'Tenant ID and Learner ID are required' });
+  if (!orgId || !learnerId) return json({ success: false, message: 'Tenant ID and Learner ID are required' });
 
   const { statements } = await parseBody(req, schema);
-  const result = await processXAPIStatements(tenantId, learnerId, statements as { verb: { id: string } }[]);
+  const result = await processXAPIStatements(orgId, learnerId, statements as { verb: { id: string } }[]);
   return json({ success: true, data: result, message: 'xAPI statements processed successfully' });
 });

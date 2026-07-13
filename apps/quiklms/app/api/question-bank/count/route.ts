@@ -6,11 +6,11 @@ import { countQuestionsByFilters } from '@/lib/services/question-bank-service';
 export const GET = route(async (req) => {
   const actor = await requireAuth(req);
   requireRoles(actor, ['TENANT_ADMIN', 'SUB_ADMIN', 'TEACHER']);
-  if (!actor.tenantId) throw BadRequest('Tenant ID required');
+  if (!actor.orgId) throw BadRequest('Tenant ID required');
   const url = new URL(req.url);
   const tagsRaw = url.searchParams.get('tags');
   const tags = tagsRaw ? tagsRaw.split(',').map((t) => t.trim()).filter(Boolean) : undefined;
-  const data = await countQuestionsByFilters(actor.tenantId, {
+  const data = await countQuestionsByFilters(actor.orgId, {
     subject: url.searchParams.get('subject') || undefined,
     difficulty: url.searchParams.get('difficulty') || undefined,
     tags,

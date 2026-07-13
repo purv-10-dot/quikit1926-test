@@ -12,9 +12,50 @@
 import bcrypt from 'bcryptjs';
 import { generateTempPassword } from '@quikit/shared/temp-password';
 import { orgDb, ORG_DB_ENABLED } from '@/lib/org-db';
+import { prisma } from '@/lib/prisma';
+import { registerUser, type RegisterUserInput } from '@/lib/services/auth-service';
 import { BadRequest } from '@/lib/http';
+import { sendEmail } from '@/lib/email';
+import { invitationEmail } from '@/lib/email-templates';
 
 const QUIKLMS_SLUG = 'quiklms';
+
+/** The tenant login entry point — SSO handoff bounces through here. */
+const LOGIN_URL = `${(process.env.BASE_URL || process.env.FRONTEND_URL || 'http://localhost:3020').replace(/\/$/, '')}/login`;
+
+/**
+ * Send the invitation/welcome email for a freshly provisioned identity. Every
+ * user-creation flow (tenant admin, roster, bulk upload) reaches this via
+ * createCentralIdentity, so this is the ONE place invitations are dispatched.
+ * Best-effort: a mail outage must never fail identity provisioning, so all
+ * errors are swallowed (and logged). `orgName` is looked up for context.
+ */
+async function sendInvitation(params: {
+  email: string;
+  firstName: string;
+  role: string;
+  orgId: string;
+  tempPassword: string | null;
+}): Promise<void> {
+  try {
+    const org = await orgDb.org.findUnique({
+      where: { id: params.orgId },
+      select: { name: true },
+    });
+    const { subject, html } = invitationEmail({
+      firstName: params.firstName,
+      email: params.email,
+      role: params.role,
+      orgName: org?.name,
+      tempPassword: params.tempPassword,
+      loginUrl: LOGIN_URL,
+    });
+    await sendEmail({ to: params.email, subject, html });
+  } catch (err) {
+    // eslint-disable-next-line no-console
+    console.error('[identity] invitation email failed (provisioning kept):', err);
+  }
+}
 
 /** LMS role → platform membership role (coarse org-level tier). */
 function toMembershipRole(lmsRole: string): string {
@@ -40,6 +81,13 @@ export interface CreateCentralIdentityInput {
   lastName: string;
   orgId: string;
   lmsRole: string;
+  /**
+   * Whether to dispatch the invitation/welcome email. Defaults to true — every
+   * admin-driven creation flow (tenant onboarding, roster, bulk upload) invites
+   * the person. Set false only for flows where the user is not meant to be
+   * notified (e.g. a silent backfill).
+   */
+  sendInvite?: boolean;
 }
 
 export interface CreateCentralIdentityResult {
@@ -114,5 +162,114 @@ export async function createCentralIdentity(
     });
   }
 
+  // 4) Invitation email — the single dispatch point for every creation flow.
+  //    Best-effort; never blocks or fails provisioning.
+  if (input.sendInvite !== false) {
+    await sendInvitation({
+      email,
+      firstName,
+      role: lmsRole,
+      orgId,
+      tempPassword,
+    });
+  }
+
   return { userId, tempPassword, reused: Boolean(existing) };
+}
+
+// ---------------------------------------------------------------------------
+// Centralized provisioning helpers — the ONE path every user/tenant-creation
+// flow must use, so every account is login-capable via QuikIT SSO ("each means
+// each"). No flow may write a bare LMS User without a central identity.
+// ---------------------------------------------------------------------------
+
+function slugify(s: string): string {
+  return s.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 50) || 'org';
+}
+
+async function uniqueOrgSlug(base: string): Promise<string> {
+  const root = slugify(base);
+  let slug = root;
+  let n = 1;
+  while (await orgDb.org.findUnique({ where: { slug }, select: { id: true } })) slug = `${root}-${n++}`;
+  return slug;
+}
+
+/**
+ * Provision a NEW platform Org for a tenant being onboarded and enable QuikLMS
+ * for it (OrgAppAccess). Returns the platform Org id — used AS the LMS Tenant id
+ * (orgId-native). Every onboarded tenant is thus a real platform org.
+ */
+export async function provisionOrgForTenant(input: {
+  name: string;
+  billingEmail?: string;
+}): Promise<string> {
+  if (!ORG_DB_ENABLED) {
+    throw BadRequest('Identity provisioning is not configured on this server (ORG_DATABASE_URL is unset).');
+  }
+  const slug = await uniqueOrgSlug(input.name);
+  const org = await orgDb.org.create({
+    data: {
+      name: input.name,
+      slug,
+      status: 'active',
+      ...(input.billingEmail ? { billingEmail: input.billingEmail } : {}),
+    },
+    select: { id: true },
+  });
+
+  // Enable QuikLMS at the org level so the app is provisioned for the tenant.
+  const app = await orgDb.app.findUnique({ where: { slug: QUIKLMS_SLUG }, select: { id: true } });
+  if (app) {
+    await orgDb.orgAppAccess.upsert({
+      where: { orgId_appId: { orgId: org.id, appId: app.id } },
+      update: { enabled: true },
+      create: { orgId: org.id, appId: app.id, enabled: true },
+    });
+  }
+  return org.id;
+}
+
+/**
+ * The single centralized user-creation entry point. Creates the platform
+ * identity (User + OrgMember + UserAppAccess) via createCentralIdentity, then
+ * the LMS row with the SAME id (orgId-native). Pass any role-specific LMS fields
+ * (subjects, grade, childrenIds, …) — they flow through to the LMS row.
+ */
+export interface ProvisionLmsUserResult extends CreateCentralIdentityResult {
+  /** The LMS row (id + any generated codes like employeeId/studentId). */
+  lms?: { id: string; employeeId?: string; [k: string]: unknown };
+}
+
+export async function provisionLmsUser(
+  input: CreateCentralIdentityInput & Partial<RegisterUserInput>,
+): Promise<ProvisionLmsUserResult> {
+  const identity = await createCentralIdentity({
+    email: input.email,
+    firstName: input.firstName,
+    lastName: input.lastName,
+    orgId: input.orgId,
+    lmsRole: input.lmsRole,
+    sendInvite: input.sendInvite,
+  });
+
+  // LMS row with the shared central id (idempotent — skip if already linked).
+  const existingLms = await prisma.user.findUnique({
+    where: { id: identity.userId },
+    select: { id: true },
+  });
+  let lms: ProvisionLmsUserResult['lms'];
+  if (!existingLms) {
+    const res = await registerUser({
+      ...(input as Partial<RegisterUserInput>),
+      id: identity.userId,
+      email: input.email,
+      firstName: input.firstName,
+      lastName: input.lastName,
+      role: input.lmsRole,
+      orgId: input.orgId,
+    });
+    lms = res.data;
+  }
+  return { ...identity, lms };
 }

@@ -17,8 +17,8 @@ export interface TenantLogFilters {
   skip?: number;
 }
 
-function buildWhere(tenantId: string, filters?: TenantLogFilters): Prisma.TenantLogWhereInput {
-  const where: Prisma.TenantLogWhereInput = { tenantId };
+function buildWhere(orgId: string, filters?: TenantLogFilters): Prisma.TenantLogWhereInput {
+  const where: Prisma.TenantLogWhereInput = { orgId };
   if (filters?.startDate || filters?.endDate) {
     where.createdAt = {};
     if (filters.startDate) where.createdAt.gte = filters.startDate;
@@ -44,8 +44,8 @@ async function populatePerformedBy<T extends { performedBy: string }>(rows: T[])
   return rows.map((r) => ({ ...r, _id: (r as unknown as { id: string }).id, performedBy: map.get(r.performedBy) ?? r.performedBy }));
 }
 
-export async function getTenantLogs(tenantId: string, filters?: TenantLogFilters) {
-  const where = buildWhere(tenantId, filters);
+export async function getTenantLogs(orgId: string, filters?: TenantLogFilters) {
+  const where = buildWhere(orgId, filters);
   const total = await prisma.tenantLog.count({ where });
   const rows = await prisma.tenantLog.findMany({
     where,
@@ -58,12 +58,12 @@ export async function getTenantLogs(tenantId: string, filters?: TenantLogFilters
 }
 
 export async function getLogsForPDF(
-  tenantId: string,
+  orgId: string,
   startDate?: Date,
   endDate?: Date,
   actionType?: TenantActionType,
 ) {
-  const where = buildWhere(tenantId, { startDate, endDate, actionType });
+  const where = buildWhere(orgId, { startDate, endDate, actionType });
   const rows = await prisma.tenantLog.findMany({ where, orderBy: { createdAt: 'desc' } });
   return populatePerformedBy(rows);
 }
@@ -72,8 +72,8 @@ export async function getLogsForPDF(
  * Backfill audit logs from existing data the first time a tenant views the trail.
  * Mirrors the legacy seed: course assignments, learner invites, course completions.
  */
-export async function seedIfEmpty(tenantId: string): Promise<number> {
-  const count = await prisma.tenantLog.count({ where: { tenantId } });
+export async function seedIfEmpty(orgId: string): Promise<number> {
+  const count = await prisma.tenantLog.count({ where: { orgId } });
   if (count > 0) return 0;
 
   let seeded = 0;
@@ -81,7 +81,7 @@ export async function seedIfEmpty(tenantId: string): Promise<number> {
   // 1. Course assignments → CourseAssignedToUser, grouped by assignedBy + courseId
   try {
     const assignments = await prisma.courseAssignment.findMany({
-      where: { tenantId },
+      where: { orgId },
       select: { courseId: true, assignedBy: true, assignedAt: true, createdAt: true },
     });
     const courseIds = [...new Set(assignments.map((a) => a.courseId).filter(Boolean))];
@@ -109,7 +109,7 @@ export async function seedIfEmpty(tenantId: string): Promise<number> {
     for (const [, data] of grouped) {
       await prisma.tenantLog.create({
         data: {
-          tenantId,
+          orgId,
           actionType: 'CourseAssignedToUser',
           description: `Course "${data.courseTitle}" assigned to ${data.count} learner(s)`,
           performedBy: data.assignedBy,
@@ -126,16 +126,16 @@ export async function seedIfEmpty(tenantId: string): Promise<number> {
   // 2. Learner invites → NewLearnerInvited
   try {
     const learners = await prisma.user.findMany({
-      where: { tenantId, role: 'LEARNER' },
+      where: { orgId, role: 'LEARNER' },
       select: { id: true, firstName: true, lastName: true, email: true, createdAt: true },
     });
     if (learners.length > 0) {
-      const admin = await prisma.user.findFirst({ where: { tenantId, role: 'TENANT_ADMIN' }, select: { id: true } });
+      const admin = await prisma.user.findFirst({ where: { orgId, role: 'TENANT_ADMIN' }, select: { id: true } });
       const performedBy = admin?.id || learners[0].id;
       for (const learner of learners) {
         await prisma.tenantLog.create({
           data: {
-            tenantId,
+            orgId,
             actionType: 'NewLearnerInvited',
             description: `Learner ${learner.firstName} ${learner.lastName} (${learner.email}) added to organization`,
             performedBy,
@@ -153,7 +153,7 @@ export async function seedIfEmpty(tenantId: string): Promise<number> {
   // 3. Course completions → CourseCompleted
   try {
     const completions = await prisma.progress.findMany({
-      where: { tenantId, status: 'Completed' },
+      where: { orgId, status: 'Completed' },
       select: { courseId: true, learnerId: true, completedAt: true, updatedAt: true },
     });
     const courseIds = [...new Set(completions.map((c) => c.courseId).filter(Boolean))];
@@ -165,7 +165,7 @@ export async function seedIfEmpty(tenantId: string): Promise<number> {
     for (const progress of completions) {
       await prisma.tenantLog.create({
         data: {
-          tenantId,
+          orgId,
           actionType: 'CourseCompleted',
           description: `Learner completed course "${courseMap.get(progress.courseId) || 'Unknown Course'}"`,
           performedBy: progress.learnerId,

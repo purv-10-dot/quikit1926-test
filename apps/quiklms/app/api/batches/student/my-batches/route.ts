@@ -6,5 +6,5 @@ import { findByStudent } from '@/lib/services/batches-service';
 export const GET = route(async (req) => {
   const actor = await requireAuth(req);
   requireRoles(actor, ['LEARNER']);
-  return json(await findByStudent(actor.tenantId!, actor.id));
+  return json(await findByStudent(actor.orgId!, actor.id));
 });

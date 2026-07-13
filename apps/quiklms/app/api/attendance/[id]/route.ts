@@ -15,5 +15,5 @@ export const PATCH = route(async (req, { params }) => {
   const actor = await requireAuth(req);
   requireRoles(actor, ['TENANT_ADMIN', 'SUB_ADMIN', 'TEACHER']);
   const dto = await parseBody(req, schema);
-  return json(await editAttendance(actor.tenantId!, params!.id, dto as EditAttendanceInput, actor.id, actor.role));
+  return json(await editAttendance(actor.orgId!, params!.id, dto as EditAttendanceInput, actor.id, actor.role));
 });

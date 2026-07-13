@@ -10,6 +10,6 @@ const schema = z.object({ eventType: z.string(), eventData: z.any().optional() }
 export const POST = route(async (req) => {
   const actor = await requireAuth(req);
   const body = await parseBody(req, schema);
-  await trackEvent(actor.tenantId ?? '', body.eventType, body.eventData, actor.id);
+  await trackEvent(actor.orgId ?? '', body.eventType, body.eventData, actor.id);
   return json({ tracked: true });
 });

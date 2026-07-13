@@ -16,7 +16,7 @@ export const GET = route(async (req, { params }) => {
     return json({ success: false, message: 'Certificate not found' }, 404);
   }
   // Tenant isolation: non-super-admins may only download certs in their tenant.
-  if (user.tenantId && issued.tenantId !== user.tenantId) {
+  if (user.orgId && issued.orgId !== user.orgId) {
     return json({ success: false, message: 'Certificate not found' }, 404);
   }
   // Learners may only download their own certificate.
@@ -28,7 +28,7 @@ export const GET = route(async (req, { params }) => {
   }
 
   try {
-    const { buffer, certificate } = await regeneratePdfForIssuedCertificate(params!.id, user.tenantId);
+    const { buffer, certificate } = await regeneratePdfForIssuedCertificate(params!.id, user.orgId);
     const filename = `Certificate_${certificate.certificateId || params!.id}.pdf`;
     const body = new Uint8Array(buffer);
     return new NextResponse(body, {

@@ -6,5 +6,5 @@ import { update } from '@/lib/services/batches-service';
 export const PATCH = route(async (req, { params }) => {
   const actor = await requireAuth(req);
   requireRoles(actor, ['TENANT_ADMIN', 'SUB_ADMIN']);
-  return json(await update(actor.tenantId!, params!.id, { status: 'active' }));
+  return json(await update(actor.orgId!, params!.id, { status: 'active' }));
 });

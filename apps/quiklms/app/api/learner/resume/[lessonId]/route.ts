@@ -12,12 +12,12 @@ function parseSCORMLocation(location: string | number | undefined): number {
 // GET /api/learner/resume/:lessonId?courseId=
 export const GET = route(async (req, { params }) => {
   const user = await requireAuth(req);
-  const tenantId = user.tenantId;
+  const orgId = user.orgId;
   const learnerId = user.id;
-  if (!tenantId || !learnerId) return json({ success: false, message: 'Tenant ID and Learner ID are required' });
+  if (!orgId || !learnerId) return json({ success: false, message: 'Tenant ID and Learner ID are required' });
 
   const courseId = new URL(req.url).searchParams.get('courseId') || '';
-  const progress = await getProgress(tenantId, learnerId, courseId);
+  const progress = await getProgress(orgId, learnerId, courseId);
   const lp = (progress?.lessonProgress as Record<string, Record<string, unknown>> | undefined)?.[params!.lessonId];
 
   if (!lp) return json({ success: true, data: { lastTime: 0, lastPage: 1 } });

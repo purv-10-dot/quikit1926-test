@@ -1,6 +1,6 @@
 /**
  * Teacher-level service — ported from NestJS TeacherLevelService (Mongoose → Prisma).
- * Tenant isolation enforced via explicit tenantId args. The cron-driven monthly
+ * Tenant isolation enforced via explicit orgId args. The cron-driven monthly
  * recalculation lives in the worker (Phase 4); these functions own the DB state.
  *
  * levelHistory (capped at last 12 in Mongo via $slice:-12) is the
@@ -16,10 +16,10 @@ interface LevelConfig {
   [k: string]: unknown;
 }
 
-async function getLevelConfig(tenantId: string): Promise<LevelConfig> {
+async function getLevelConfig(orgId: string): Promise<LevelConfig> {
   const defaults: LevelConfig = { beginnerMaxScore: 80, intermediateMaxScore: 200, leadMinScore: 200 };
   try {
-    const tenant = await prisma.tenant.findUnique({ where: { id: tenantId } });
+    const tenant = await prisma.tenant.findUnique({ where: { id: orgId } });
     const cfg = (tenant as Record<string, any> | null)?.enhancementConfig?.teacherLevel;
     if (cfg) return { ...defaults, ...cfg };
   } catch {
@@ -28,17 +28,17 @@ async function getLevelConfig(tenantId: string): Promise<LevelConfig> {
   return defaults;
 }
 
-export async function getTeacherLevel(tenantId: string, teacherId: string) {
-  let level = await prisma.teacherLevel.findFirst({ where: { tenantId, teacherId } });
+export async function getTeacherLevel(orgId: string, teacherId: string) {
+  let level = await prisma.teacherLevel.findFirst({ where: { orgId, teacherId } });
   if (!level) {
-    level = await prisma.teacherLevel.create({ data: { tenantId, teacherId } });
+    level = await prisma.teacherLevel.create({ data: { orgId, teacherId } });
   }
   return level;
 }
 
-export async function getAllTeacherLevels(tenantId: string) {
+export async function getAllTeacherLevels(orgId: string) {
   const rows = await prisma.teacherLevel.findMany({
-    where: { tenantId },
+    where: { orgId },
     include: { levelHistory: { orderBy: { calculatedAt: 'asc' } } },
     orderBy: { overallScore: 'desc' },
   });
@@ -60,24 +60,24 @@ export async function getAllTeacherLevels(tenantId: string) {
   });
 }
 
-export async function calculateTeacherLevel(tenantId: string, teacherId: string) {
+export async function calculateTeacherLevel(orgId: string, teacherId: string) {
   const teacher = await prisma.user.findUnique({ where: { id: teacherId } });
 
   const totalClasses = await prisma.scheduledClass.count({
-    where: { tenantId, teacherId, status: 'completed' },
+    where: { orgId, teacherId, status: 'completed' },
   });
 
   const totalScheduled = await prisma.scheduledClass.count({
-    where: { tenantId, teacherId, status: { in: ['completed', 'in_progress', 'cancelled'] } },
+    where: { orgId, teacherId, status: { in: ['completed', 'in_progress', 'cancelled'] } },
   });
   const attendanceScore = totalScheduled > 0 ? Math.round((totalClasses / totalScheduled) * 100) : 0;
 
   // Homework grading rate — scoped to this tenant's submissions
   let homeworkCompletionRate = 80;
   try {
-    const teacherHomework = await prisma.homeworkSubmission.count({ where: { tenantId, gradedBy: teacherId } });
+    const teacherHomework = await prisma.homeworkSubmission.count({ where: { orgId, gradedBy: teacherId } });
     const totalSubmissions = await prisma.homeworkSubmission.count({
-      where: { tenantId, status: { in: ['submitted', 'graded'] } },
+      where: { orgId, status: { in: ['submitted', 'graded'] } },
     });
     if (totalSubmissions > 0 && teacherHomework > 0) {
       homeworkCompletionRate = Math.min(100, Math.round((teacherHomework / totalSubmissions) * 100));
@@ -94,7 +94,7 @@ export async function calculateTeacherLevel(tenantId: string, teacherId: string)
     Math.round(totalClasses * 2 + attendanceScore * 0.3 + homeworkCompletionRate * 0.2 - missedPenalty),
   );
 
-  const config = await getLevelConfig(tenantId);
+  const config = await getLevelConfig(orgId);
 
   let currentLevel: TeacherStatus;
   if (overallScore >= config.intermediateMaxScore) currentLevel = 'lead';
@@ -103,14 +103,14 @@ export async function calculateTeacherLevel(tenantId: string, teacherId: string)
 
   const now = new Date();
 
-  const existing = await prisma.teacherLevel.findFirst({ where: { tenantId, teacherId } });
+  const existing = await prisma.teacherLevel.findFirst({ where: { orgId, teacherId } });
   const level = existing
     ? await prisma.teacherLevel.update({
         where: { id: existing.id },
         data: { currentLevel, totalClassesTaught: totalClasses, attendanceScore, homeworkCompletionRate, classesMissed, overallScore, lastCalculatedAt: now },
       })
     : await prisma.teacherLevel.create({
-        data: { tenantId, teacherId, currentLevel, totalClassesTaught: totalClasses, attendanceScore, homeworkCompletionRate, classesMissed, overallScore, lastCalculatedAt: now },
+        data: { orgId, teacherId, currentLevel, totalClassesTaught: totalClasses, attendanceScore, homeworkCompletionRate, classesMissed, overallScore, lastCalculatedAt: now },
       });
 
   await prisma.teacherLevelHistory.create({
@@ -142,14 +142,14 @@ export async function calculateTeacherLevel(tenantId: string, teacherId: string)
   return { _id: result!.id, ...result, levelHistory: result!.levelHistory.map((h) => ({ _id: h.id, ...h })) };
 }
 
-export async function recalculateTenantLevels(tenantId: string) {
+export async function recalculateTenantLevels(orgId: string) {
   const teachers = await prisma.user.findMany({
-    where: { tenantId, role: 'TEACHER', isActive: true },
+    where: { orgId, role: 'TEACHER', isActive: true },
     select: { id: true },
   });
   for (const teacher of teachers) {
     try {
-      await calculateTeacherLevel(tenantId, teacher.id);
+      await calculateTeacherLevel(orgId, teacher.id);
     } catch {
       /* skip failed teacher, matching legacy resilience */
     }

@@ -13,5 +13,5 @@ export const POST = route(async (req) => {
   requireRoles(actor, ['TEACHER', 'TENANT_ADMIN', 'SUB_ADMIN']);
   const body = await parseBody(req, schema);
   const provider = (body.provider as MeetingProvider) || 'jitsi';
-  return json(await createInstantMeeting(actor.tenantId!, actor.id, provider, body.title));
+  return json(await createInstantMeeting(actor.orgId!, actor.id, provider, body.title));
 });

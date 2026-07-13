@@ -11,5 +11,5 @@ export const PATCH = route(async (req, { params }) => {
   const actor = await requireAuth(req);
   requireRoles(actor, ['TENANT_ADMIN', 'SUB_ADMIN']);
   const dto = await parseBody(req, schema);
-  return json({ success: true, data: await rejectTask(actor.tenantId!, params!.id, actor.id, dto.rejectionReason) });
+  return json({ success: true, data: await rejectTask(actor.orgId!, params!.id, actor.id, dto.rejectionReason) });
 });

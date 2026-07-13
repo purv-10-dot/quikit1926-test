@@ -159,8 +159,8 @@ const CertificatesPage = () => {
     setLoading(true);
     setError(null);
 
-    if (user && !user.tenantId) {
-      console.warn('[CertificatesPage] User missing tenantId — may not be assigned to an organization');
+    if (user && !user.orgId) {
+      console.warn('[CertificatesPage] User missing orgId — may not be assigned to an organization');
     }
 
     try {

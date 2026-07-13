@@ -6,5 +6,5 @@ import { getCorporateOverview } from '@/lib/services/analytics-service';
 export const GET = route(async (req) => {
   const actor = await requireAuth(req);
   requireRoles(actor, ['TENANT_ADMIN', 'SUB_ADMIN', 'SUPER_ADMIN']);
-  return json(await getCorporateOverview(actor.tenantId ?? ''));
+  return json(await getCorporateOverview(actor.orgId ?? ''));
 });

@@ -6,7 +6,7 @@ import { promoteToSubAdmin } from '@/lib/services/users-service';
 export const PATCH = route(async (req, { params }) => {
   const actor = await requireAuth(req);
   requireRoles(actor, ['SUPER_ADMIN', 'TENANT_ADMIN']);
-  if (!actor.tenantId) throw BadRequest('Tenant ID required');
-  const data = await promoteToSubAdmin(params!.id, actor.tenantId);
+  if (!actor.orgId) throw BadRequest('Tenant ID required');
+  const data = await promoteToSubAdmin(params!.id, actor.orgId);
   return json({ success: true, data, message: 'Sub Admin role granted successfully' });
 });

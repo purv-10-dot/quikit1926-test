@@ -6,7 +6,7 @@ import * as svc from '@/lib/services/master-course-service';
 export const GET = route(async (req) => {
   const actor = await requireAuth(req);
   requireRoles(actor, ['TENANT_ADMIN']);
-  if (!actor.tenantId) throw BadRequest('Tenant ID required');
-  const data = await svc.findSubAdminSubmissions(actor.tenantId);
+  if (!actor.orgId) throw BadRequest('Tenant ID required');
+  const data = await svc.findSubAdminSubmissions(actor.orgId);
   return json({ success: true, data });
 });

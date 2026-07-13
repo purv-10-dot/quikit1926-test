@@ -10,5 +10,5 @@ const schema = z.object({ reason: z.string() });
 export const POST = route(async (req, { params }) => {
   const actor = await requireAuth(req);
   const { reason } = await parseBody(req, schema);
-  return json(await reportMessage(actor.tenantId ?? '', params!.messageId, actor.id, reason));
+  return json(await reportMessage(actor.orgId ?? '', params!.messageId, actor.id, reason));
 });

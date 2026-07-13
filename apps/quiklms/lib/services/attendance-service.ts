@@ -1,6 +1,6 @@
 /**
  * Attendance service — ported from NestJS AttendanceService (Mongoose → Prisma).
- * Tenant scoping via explicit tenantId arguments. The credit-deduction-on-mark
+ * Tenant scoping via explicit orgId arguments. The credit-deduction-on-mark
  * flow (zero-credit policy gating + FIFO deduction via credits-service) is ported
  * faithfully. The non-blocking payout auto-generation and parent zero-credit
  * notification are owned by the worker process (Phase 4) and reduced to no-ops.
@@ -31,9 +31,9 @@ export interface EditAttendanceInput {
 }
 
 // ═══════════════ MARK ATTENDANCE (BULK) ═══════════════
-export async function markAttendance(tenantId: string, dto: MarkAttendanceInput, markedBy: string) {
+export async function markAttendance(orgId: string, dto: MarkAttendanceInput, markedBy: string) {
   const scheduledClass = await prisma.scheduledClass.findFirst({
-    where: { id: dto.scheduledClassId, tenantId },
+    where: { id: dto.scheduledClassId, orgId },
   });
   if (!scheduledClass) throw NotFound('Scheduled class not found');
 
@@ -49,7 +49,7 @@ export async function markAttendance(tenantId: string, dto: MarkAttendanceInput,
   for (const student of dto.students) {
     let attendance = await prisma.attendance.create({
       data: {
-        tenantId,
+        orgId,
         scheduledClassId: dto.scheduledClassId,
         batchId,
         studentId: student.studentId,
@@ -70,7 +70,7 @@ export async function markAttendance(tenantId: string, dto: MarkAttendanceInput,
       }
 
       try {
-        const zeroCreditStatus = await getZeroCreditStatus(tenantId, student.studentId);
+        const zeroCreditStatus = await getZeroCreditStatus(orgId, student.studentId);
         if (!zeroCreditStatus.hasCredits) {
           const policy = zeroCreditStatus.policy;
           if (policy === 'block') {
@@ -104,7 +104,7 @@ export async function markAttendance(tenantId: string, dto: MarkAttendanceInput,
 
       try {
         const creditResult = await deductCredit(
-          tenantId,
+          orgId,
           student.studentId,
           dto.scheduledClassId,
           attendance.id,
@@ -147,9 +147,9 @@ export async function markAttendance(tenantId: string, dto: MarkAttendanceInput,
 }
 
 // ═══════════════ GET CLASS ATTENDANCE ═══════════════
-export async function getClassAttendance(tenantId: string, classId: string) {
+export async function getClassAttendance(orgId: string, classId: string) {
   const records = await prisma.attendance.findMany({
-    where: { tenantId, scheduledClassId: classId },
+    where: { orgId, scheduledClassId: classId },
   });
   return hydrateAttendance(records, {
     studentSelect: { id: true, firstName: true, lastName: true, email: true, grade: true, studentId: true },
@@ -158,8 +158,8 @@ export async function getClassAttendance(tenantId: string, classId: string) {
 }
 
 // ═══════════════ GET STUDENT ATTENDANCE HISTORY ═══════════════
-export async function getStudentAttendance(tenantId: string, studentId: string, startDate?: string, endDate?: string) {
-  const where: Prisma.AttendanceWhereInput = { tenantId, studentId };
+export async function getStudentAttendance(orgId: string, studentId: string, startDate?: string, endDate?: string) {
+  const where: Prisma.AttendanceWhereInput = { orgId, studentId };
   applyClassDateRange(where, startDate, endDate);
 
   const records = await prisma.attendance.findMany({ where, orderBy: { classDate: 'desc' } });
@@ -182,8 +182,8 @@ export async function getStudentAttendance(tenantId: string, studentId: string, 
 }
 
 // ═══════════════ GET BATCH ATTENDANCE REPORT ═══════════════
-export async function getBatchReport(tenantId: string, batchId: string, startDate?: string, endDate?: string) {
-  const where: Prisma.AttendanceWhereInput = { tenantId, batchId };
+export async function getBatchReport(orgId: string, batchId: string, startDate?: string, endDate?: string) {
+  const where: Prisma.AttendanceWhereInput = { orgId, batchId };
   applyClassDateRange(where, startDate, endDate);
 
   const rawRecords = await prisma.attendance.findMany({ where, orderBy: { classDate: 'desc' } });
@@ -216,13 +216,13 @@ export async function getBatchReport(tenantId: string, batchId: string, startDat
 
 // ═══════════════ EDIT ATTENDANCE ═══════════════
 export async function editAttendance(
-  tenantId: string,
+  orgId: string,
   attendanceId: string,
   dto: EditAttendanceInput,
   editedBy: string,
   userRole?: string,
 ) {
-  const attendance = await prisma.attendance.findFirst({ where: { id: attendanceId, tenantId } });
+  const attendance = await prisma.attendance.findFirst({ where: { id: attendanceId, orgId } });
   if (!attendance) throw NotFound('Attendance record not found');
 
   if (userRole === 'TEACHER' && attendance.markedBy !== editedBy) {

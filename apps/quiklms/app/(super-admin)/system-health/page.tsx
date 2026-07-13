@@ -57,10 +57,10 @@ const SystemHealthPage = () => {
     }
   };
 
-  const handleTogglePause = async (tenantId: string, currentStatus: string) => {
+  const handleTogglePause = async (orgId: string, currentStatus: string) => {
     try {
       const newStatus = currentStatus === 'Active' ? 'Paused' : 'Active';
-      await api.patch(`/tenants/${tenantId}`, { status: newStatus });
+      await api.patch(`/tenants/${orgId}`, { status: newStatus });
       toast.success(`Tenant ${newStatus === 'Active' ? 'reactivated' : 'deactivated'} successfully`);
       loadTenants();
     } catch (error) {

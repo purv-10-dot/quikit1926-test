@@ -12,7 +12,7 @@ export const GET = route(async (req) => {
   const dateFrom = url.searchParams.get('dateFrom') || undefined;
   const dateTo = url.searchParams.get('dateTo') || undefined;
 
-  const result = await exportData(actor.tenantId ?? '', type, dateFrom, dateTo);
+  const result = await exportData(actor.orgId ?? '', type, dateFrom, dateTo);
   const csvContent = convertToCSV(result.data);
   const fileName = `analytics_${type}_${new Date().toISOString().split('T')[0]}.csv`;
 

@@ -10,7 +10,7 @@ export const GET = route(async (req, { params }) => {
   const url = new URL(req.url);
   const page = parseInt(url.searchParams.get('page') || '') || 1;
   const limit = parseInt(url.searchParams.get('limit') || '') || 50;
-  return json(await getMessages(actor.tenantId ?? '', params!.id, actor.id, page, limit));
+  return json(await getMessages(actor.orgId ?? '', params!.id, actor.id, page, limit));
 });
 
 const sendSchema = z.object({
@@ -24,5 +24,5 @@ const sendSchema = z.object({
 export const POST = route(async (req, { params }) => {
   const actor = await requireAuth(req);
   const dto = await parseBody(req, sendSchema);
-  return json(await sendMessage(actor.tenantId ?? '', params!.id, actor.id, dto));
+  return json(await sendMessage(actor.orgId ?? '', params!.id, actor.id, dto));
 });

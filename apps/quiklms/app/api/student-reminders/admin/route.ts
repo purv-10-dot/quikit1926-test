@@ -10,5 +10,5 @@ export const GET = route(async (req) => {
   const status = url.searchParams.get('status') || undefined;
   const from = url.searchParams.get('from') || undefined;
   const to = url.searchParams.get('to') || undefined;
-  return json(await getRemindersForAdmin(actor.tenantId!, { status, from, to }));
+  return json(await getRemindersForAdmin(actor.orgId!, { status, from, to }));
 });

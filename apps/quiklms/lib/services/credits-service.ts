@@ -1,6 +1,6 @@
 /**
  * Credits service — ported from NestJS CreditsService (Mongoose → Prisma).
- * Tenant scoping via explicit tenantId arguments. Credit deduction logic (FIFO
+ * Tenant scoping via explicit orgId arguments. Credit deduction logic (FIFO
  * across packages, creditTransaction logging, remainingCredits decrement) is
  * ported faithfully. Parent→child links use the UserParent join (legacy used a
  * denormalized childrenIds array).
@@ -26,14 +26,14 @@ interface TenantCreditConfig {
   packages?: Array<Record<string, unknown>>;
 }
 
-async function getCreditConfig(tenantId: string): Promise<TenantCreditConfig> {
-  const tenant = await prisma.tenant.findUnique({ where: { id: tenantId }, select: { creditConfig: true } });
+async function getCreditConfig(orgId: string): Promise<TenantCreditConfig> {
+  const tenant = await prisma.tenant.findUnique({ where: { id: orgId }, select: { creditConfig: true } });
   return ((tenant?.creditConfig as TenantCreditConfig) || {}) as TenantCreditConfig;
 }
 
 // ═══════════════ ALLOCATE CREDITS TO STUDENT ═══════════════
 export async function allocateCredits(
-  tenantId: string,
+  orgId: string,
   dto: { studentId: string; packageName: string; credits: number; price?: number; validityMonths?: number; expiresAt?: string; notes?: string },
   allocatedBy: string,
 ) {
@@ -44,14 +44,14 @@ export async function allocateCredits(
     expiresAt = new Date();
     expiresAt.setMonth(expiresAt.getMonth() + dto.validityMonths);
   } else {
-    const months = (await getCreditConfig(tenantId)).expiryMonths || 6;
+    const months = (await getCreditConfig(orgId)).expiryMonths || 6;
     expiresAt = new Date();
     expiresAt.setMonth(expiresAt.getMonth() + months);
   }
 
   const creditPackage = await prisma.creditPackage.create({
     data: {
-      tenantId,
+      orgId,
       studentId: dto.studentId,
       packageName: dto.packageName,
       purchasedCredits: dto.credits,
@@ -68,7 +68,7 @@ export async function allocateCredits(
 
   await prisma.creditTransaction.create({
     data: {
-      tenantId,
+      orgId,
       packageId: creditPackage.id,
       studentId: dto.studentId,
       transactionType: 'purchase',
@@ -84,7 +84,7 @@ export async function allocateCredits(
 
 // ═══════════════ DEDUCT CREDIT (FIFO) ═══════════════
 export async function deductCredit(
-  tenantId: string,
+  orgId: string,
   studentId: string,
   classId?: string,
   attendanceId?: string,
@@ -93,7 +93,7 @@ export async function deductCredit(
   customType?: TransactionType,
 ): Promise<CreditDeductionResult> {
   const packages = await prisma.creditPackage.findMany({
-    where: { tenantId, studentId, status: 'active', remainingCredits: { gt: 0 } },
+    where: { orgId, studentId, status: 'active', remainingCredits: { gt: 0 } },
     orderBy: [{ expiresAt: 'asc' }, { purchaseDate: 'asc' }],
   });
   if (packages.length === 0) throw BadRequest('No credits available for this student');
@@ -114,7 +114,7 @@ export async function deductCredit(
 
   const transaction = await prisma.creditTransaction.create({
     data: {
-      tenantId: packageToUse.tenantId,
+      orgId: packageToUse.orgId,
       packageId: packageToUse.id,
       studentId,
       transactionType: customType || 'deduct',
@@ -129,7 +129,7 @@ export async function deductCredit(
   const totalRemaining = await getTotalRemainingCredits(studentId);
 
   const warnings: string[] = [];
-  const threshold = (await getCreditConfig(packageToUse.tenantId)).lowCreditThreshold || 3;
+  const threshold = (await getCreditConfig(packageToUse.orgId)).lowCreditThreshold || 3;
   if (totalRemaining <= threshold) warnings.push(`Low credit balance: ${totalRemaining} remaining`);
 
   return {
@@ -152,9 +152,9 @@ export async function getTotalRemainingCredits(studentId: string): Promise<numbe
 }
 
 // ═══════════════ GET STUDENT BALANCE ═══════════════
-export async function getStudentBalance(tenantId: string, studentId: string) {
+export async function getStudentBalance(orgId: string, studentId: string) {
   const packages = await prisma.creditPackage.findMany({
-    where: { tenantId, studentId, status: 'active' },
+    where: { orgId, studentId, status: 'active' },
     orderBy: { expiresAt: 'asc' },
   });
 
@@ -185,9 +185,9 @@ export async function getStudentBalance(tenantId: string, studentId: string) {
 }
 
 // ═══════════════ GET TRANSACTIONS ═══════════════
-export async function getTransactions(tenantId: string, studentId: string, page = 1, limit = 20) {
+export async function getTransactions(orgId: string, studentId: string, page = 1, limit = 20) {
   const skip = (page - 1) * limit;
-  const where: Prisma.CreditTransactionWhereInput = { tenantId, studentId };
+  const where: Prisma.CreditTransactionWhereInput = { orgId, studentId };
 
   const [rawTransactions, total] = await Promise.all([
     prisma.creditTransaction.findMany({ where, orderBy: { createdAt: 'desc' }, skip, take: limit }),
@@ -219,11 +219,11 @@ export async function getTransactions(tenantId: string, studentId: string, page 
 
 // ═══════════════ REFUND CREDITS ═══════════════
 export async function refundCredits(
-  tenantId: string,
+  orgId: string,
   dto: { packageId: string; amount: number; reason: string; notes?: string },
   processedBy: string,
 ) {
-  const pkg = await prisma.creditPackage.findFirst({ where: { id: dto.packageId, tenantId } });
+  const pkg = await prisma.creditPackage.findFirst({ where: { id: dto.packageId, orgId } });
   if (!pkg) throw NotFound('Credit package not found');
 
   const newUsed = Math.max(0, pkg.usedCredits - dto.amount);
@@ -237,7 +237,7 @@ export async function refundCredits(
 
   await prisma.creditTransaction.create({
     data: {
-      tenantId,
+      orgId,
       packageId: pkg.id,
       studentId: pkg.studentId,
       transactionType: 'refund',
@@ -252,15 +252,15 @@ export async function refundCredits(
 }
 
 // ═══════════════ CREDIT PACKAGE DEFINITIONS (TENANT CONFIG) ═══════════════
-export async function getPackageDefinitions(tenantId: string) {
-  return (await getCreditConfig(tenantId)).packages || [];
+export async function getPackageDefinitions(orgId: string) {
+  return (await getCreditConfig(orgId)).packages || [];
 }
 
 export async function createPackageDefinition(
-  tenantId: string,
+  orgId: string,
   dto: { name: string; credits: number; price: number; validityMonths: number; isActive?: boolean },
 ) {
-  const config = await getCreditConfig(tenantId);
+  const config = await getCreditConfig(orgId);
   const id = crypto.randomUUID();
   const newPkg = {
     id,
@@ -272,18 +272,18 @@ export async function createPackageDefinition(
   };
   const packages = [...(config.packages || []), newPkg];
   await prisma.tenant.update({
-    where: { id: tenantId },
+    where: { id: orgId },
     data: { creditConfig: { ...(config as Record<string, unknown>), packages } as Prisma.InputJsonValue },
   });
   return { id, ...dto, isActive: dto.isActive !== false };
 }
 
 export async function updatePackageDefinition(
-  tenantId: string,
+  orgId: string,
   packageId: string,
   dto: { name?: string; credits?: number; price?: number; validityMonths?: number; isActive?: boolean },
 ) {
-  const config = await getCreditConfig(tenantId);
+  const config = await getCreditConfig(orgId);
   const packages = (config.packages || []).map((p) => {
     if ((p as { id?: string }).id !== packageId) return p;
     const updated = { ...p };
@@ -295,31 +295,31 @@ export async function updatePackageDefinition(
     return updated;
   });
   await prisma.tenant.update({
-    where: { id: tenantId },
+    where: { id: orgId },
     data: { creditConfig: { ...(config as Record<string, unknown>), packages } as Prisma.InputJsonValue },
   });
   return { success: true };
 }
 
-export async function deletePackageDefinition(tenantId: string, packageId: string) {
-  const config = await getCreditConfig(tenantId);
+export async function deletePackageDefinition(orgId: string, packageId: string) {
+  const config = await getCreditConfig(orgId);
   const packages = (config.packages || []).filter((p) => (p as { id?: string }).id !== packageId);
   await prisma.tenant.update({
-    where: { id: tenantId },
+    where: { id: orgId },
     data: { creditConfig: { ...(config as Record<string, unknown>), packages } as Prisma.InputJsonValue },
   });
   return { success: true };
 }
 
 // ═══════════════ ZERO CREDIT STATUS ═══════════════
-export async function getZeroCreditStatus(tenantId: string, studentId: string) {
+export async function getZeroCreditStatus(orgId: string, studentId: string) {
   const totalRemaining = await getTotalRemainingCredits(studentId);
-  const config = await getCreditConfig(tenantId);
+  const config = await getCreditConfig(orgId);
   const policy = config.zeroCreditPolicy || 'warn';
   const gracePeriodClasses = config.gracePeriodClasses ?? 3;
 
   const exhaustedPackages = await prisma.creditPackage.findMany({
-    where: { tenantId, studentId, status: 'exhausted' },
+    where: { orgId, studentId, status: 'exhausted' },
   });
   const graceClassesUsed = exhaustedPackages.reduce(
     (sum, p) => sum + ((p as unknown as { graceClassesUsed?: number }).graceClassesUsed || 0),
@@ -330,8 +330,8 @@ export async function getZeroCreditStatus(tenantId: string, studentId: string) {
 }
 
 // ═══════════════ GET BALANCE BY PARENT (find children) ═══════════════
-export async function getBalanceByParent(tenantId: string, parentId: string) {
-  const parent = await prisma.user.findFirst({ where: { id: parentId, tenantId } });
+export async function getBalanceByParent(orgId: string, parentId: string) {
+  const parent = await prisma.user.findFirst({ where: { id: parentId, orgId } });
   if (!parent) throw NotFound('Parent not found');
 
   const links = await prisma.userParent.findMany({ where: { parentId }, select: { childId: true } });
@@ -346,7 +346,7 @@ export async function getBalanceByParent(tenantId: string, parentId: string) {
 
   const balances: unknown[] = [];
   for (const childId of childrenIds) {
-    const balance = await getStudentBalance(tenantId, childId);
+    const balance = await getStudentBalance(orgId, childId);
     const child = childMap.get(childId);
     balances.push({
       studentId: childId,

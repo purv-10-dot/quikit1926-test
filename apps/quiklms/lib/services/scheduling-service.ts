@@ -1,7 +1,7 @@
 /**
  * Scheduling service — ported from NestJS SchedulingService (Mongoose → Prisma).
  * Tenant isolation enforced by callers via tenantWhere/assertTenantMatch and the
- * explicit tenantId arguments threaded through every query.
+ * explicit orgId arguments threaded through every query.
  *
  * Notes on the re-platform:
  *  - Mongo `populate()` of teacher/student/batch is reproduced with manual
@@ -68,11 +68,11 @@ async function loadBatchLite(batchIds: string[]) {
 
 // ═══════════════ GENERATE CLASSES FROM BATCH SCHEDULE ═══════════════
 export async function generateClasses(
-  tenantId: string,
+  orgId: string,
   dto: { batchId: string; fromDate?: string; toDate?: string },
 ): Promise<unknown[]> {
   const batch = await prisma.batch.findFirst({
-    where: { id: dto.batchId, tenantId },
+    where: { id: dto.batchId, orgId },
     include: { schedule: true },
   });
   if (!batch) throw NotFound('Batch not found');
@@ -83,7 +83,7 @@ export async function generateClasses(
 
   const existingClasses = await prisma.scheduledClass.findMany({
     where: {
-      tenantId,
+      orgId,
       batchId: batch.id,
       startTime: { gte: fromDate, lte: toDate },
       status: { notIn: ['cancelled', 'rescheduled'] },
@@ -109,7 +109,7 @@ export async function generateClasses(
         if (!existingSet.has(startTime.getTime())) {
           existingSet.add(startTime.getTime());
           toCreate.push({
-            tenantId,
+            orgId,
             batchId: batch.id,
             teacherId: batch.teacherId,
             title: `${batch.subject} - ${batch.name}`,
@@ -142,7 +142,7 @@ export async function generateClasses(
 
 // ═══════════════ GET SESSION JOIN TIMESTAMPS (ADMIN) ═══════════════
 export async function getSessionJoinTimestamps(
-  tenantId: string,
+  orgId: string,
   params: { startDate?: string; endDate?: string; batchId?: string; teacherId?: string; limit?: number },
 ) {
   const now = new Date();
@@ -151,7 +151,7 @@ export async function getSessionJoinTimestamps(
   const limit = Math.min(Math.max(Number(params.limit || 200), 1), 1000);
 
   const where: Prisma.ScheduledClassWhereInput = {
-    tenantId,
+    orgId,
     startTime: { gte: start, lte: end },
     status: { not: 'rescheduled' },
   };
@@ -241,8 +241,8 @@ export async function getSessionJoinTimestamps(
 }
 
 // ═══════════════ GET ALL TENANT CLASSES (ADMIN) ═══════════════
-export async function getAllTenantClasses(tenantId: string, startDate?: string, endDate?: string) {
-  const where: Prisma.ScheduledClassWhereInput = { tenantId };
+export async function getAllTenantClasses(orgId: string, startDate?: string, endDate?: string) {
+  const where: Prisma.ScheduledClassWhereInput = { orgId };
   applyDateRange(where, startDate, endDate);
 
   const classes = await prisma.scheduledClass.findMany({ where, orderBy: { startTime: 'asc' } });
@@ -250,9 +250,9 @@ export async function getAllTenantClasses(tenantId: string, startDate?: string, 
 }
 
 // ═══════════════ GET TEACHER'S CLASSES ═══════════════
-export async function getTeacherClasses(tenantId: string, teacherId: string, startDate?: string, endDate?: string) {
+export async function getTeacherClasses(orgId: string, teacherId: string, startDate?: string, endDate?: string) {
   const where: Prisma.ScheduledClassWhereInput = {
-    tenantId,
+    orgId,
     status: { notIn: ['rescheduled', 'cancelled'] },
     OR: [{ teacherId }, { substituteTeacherId: teacherId }],
   };
@@ -265,16 +265,16 @@ export async function getTeacherClasses(tenantId: string, teacherId: string, sta
 }
 
 // ═══════════════ GET STUDENT'S CLASSES ═══════════════
-export async function getStudentClasses(tenantId: string, studentId: string, startDate?: string, endDate?: string) {
+export async function getStudentClasses(orgId: string, studentId: string, startDate?: string, endDate?: string) {
   const batchRows = await prisma.batchStudent.findMany({
-    where: { studentId, batch: { tenantId, status: ACTIVE } },
+    where: { studentId, batch: { orgId, status: ACTIVE } },
     select: { batchId: true },
   });
   const batchIds = batchRows.map((b) => b.batchId);
   if (batchIds.length === 0) return [];
 
   const where: Prisma.ScheduledClassWhereInput = {
-    tenantId,
+    orgId,
     batchId: { in: batchIds },
     status: { notIn: ['cancelled', 'rescheduled'] },
   };
@@ -285,17 +285,17 @@ export async function getStudentClasses(tenantId: string, studentId: string, sta
 }
 
 // ═══════════════ GET CLASS BY ID ═══════════════
-export async function findOne(tenantId: string, classId: string) {
+export async function findOne(orgId: string, classId: string) {
   const cls = await prisma.scheduledClass.findUnique({ where: { id: classId } });
-  if (!cls || cls.tenantId !== tenantId) throw NotFound('Scheduled class not found');
+  if (!cls || cls.orgId !== orgId) throw NotFound('Scheduled class not found');
   const [shaped] = await hydrateClasses([cls], true);
   return shaped;
 }
 
 // ═══════════════ START CLASS ═══════════════
-export async function startClass(tenantId: string, classId: string) {
+export async function startClass(orgId: string, classId: string) {
   const cls = await prisma.scheduledClass.findUnique({ where: { id: classId } });
-  if (!cls || cls.tenantId !== tenantId) throw NotFound('Scheduled class not found');
+  if (!cls || cls.orgId !== orgId) throw NotFound('Scheduled class not found');
   if (cls.status !== 'scheduled') throw BadRequest('Class can only be started from scheduled status');
 
   const updated = await prisma.scheduledClass.update({ where: { id: classId }, data: { status: 'in_progress' } });
@@ -318,9 +318,9 @@ export async function startClass(tenantId: string, classId: string) {
 }
 
 // ═══════════════ COMPLETE CLASS ═══════════════
-export async function completeClass(tenantId: string, classId: string) {
+export async function completeClass(orgId: string, classId: string) {
   const cls = await prisma.scheduledClass.findUnique({ where: { id: classId } });
-  if (!cls || cls.tenantId !== tenantId) throw NotFound('Scheduled class not found');
+  if (!cls || cls.orgId !== orgId) throw NotFound('Scheduled class not found');
   if (cls.status !== 'in_progress' && cls.status !== 'scheduled') {
     throw BadRequest('Class can only be completed from in_progress or scheduled status');
   }
@@ -335,9 +335,9 @@ export async function completeClass(tenantId: string, classId: string) {
 }
 
 // ═══════════════ CANCEL CLASS ═══════════════
-export async function cancelClass(tenantId: string, classId: string, dto: { reason: string }) {
+export async function cancelClass(orgId: string, classId: string, dto: { reason: string }) {
   const cls = await prisma.scheduledClass.findUnique({ where: { id: classId } });
-  if (!cls || cls.tenantId !== tenantId) throw NotFound('Scheduled class not found');
+  if (!cls || cls.orgId !== orgId) throw NotFound('Scheduled class not found');
   if (cls.status === 'completed') throw BadRequest('Cannot cancel a completed class');
 
   const updated = await prisma.scheduledClass.update({
@@ -354,19 +354,19 @@ export async function cancelClass(tenantId: string, classId: string, dto: { reas
 
 // ═══════════════ RESCHEDULE CLASS ═══════════════
 export async function rescheduleClass(
-  tenantId: string,
+  orgId: string,
   classId: string,
   dto: { newStartTime: string; newEndTime: string; reason: string; newLocation?: string },
 ) {
   const cls = await prisma.scheduledClass.findUnique({ where: { id: classId } });
-  if (!cls || cls.tenantId !== tenantId) throw NotFound('Scheduled class not found');
+  if (!cls || cls.orgId !== orgId) throw NotFound('Scheduled class not found');
   if (cls.status === 'cancelled' || cls.status === 'rescheduled') {
     throw BadRequest('Cannot reschedule a cancelled or already-rescheduled class');
   }
 
   const newClass = await prisma.scheduledClass.create({
     data: {
-      tenantId,
+      orgId,
       batchId: cls.batchId,
       teacherId: cls.teacherId,
       title: cls.title,
@@ -397,9 +397,9 @@ export async function markAttendanceTimestamp(classId: string): Promise<void> {
 }
 
 // ═══════════════ CANCEL FUTURE CLASSES FOR BATCH ═══════════════
-export async function cancelFutureClassesForBatch(tenantId: string, batchId: string, fromDate: Date): Promise<void> {
+export async function cancelFutureClassesForBatch(orgId: string, batchId: string, fromDate: Date): Promise<void> {
   await prisma.scheduledClass.updateMany({
-    where: { tenantId, batchId, status: 'scheduled', startTime: { gte: fromDate } },
+    where: { orgId, batchId, status: 'scheduled', startTime: { gte: fromDate } },
     data: { status: 'cancelled', cancellationReason: 'Batch schedule updated' },
   });
 }
@@ -412,7 +412,7 @@ export async function validateTeacherSchedule(
 ): Promise<{ available: boolean; reason?: string }[]> {
   const teacher = await prisma.user.findUnique({
     where: { id: teacherId },
-    select: { tenantId: true, availableSlots: { select: { dayOfWeek: true, startTime: true, endTime: true } } },
+    select: { orgId: true, availableSlots: { select: { dayOfWeek: true, startTime: true, endTime: true } } },
   });
   if (!teacher) return schedule.map(() => ({ available: false, reason: 'Teacher not found' }));
 
@@ -428,9 +428,9 @@ export async function validateTeacherSchedule(
   const dayNames = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
 
   let existingSchedules: { dayOfWeek: number; start: number; end: number; batchName: string }[] = [];
-  if (teacher.tenantId) {
+  if (teacher.orgId) {
     const batchWhere: Prisma.BatchWhereInput = {
-      tenantId: teacher.tenantId,
+      orgId: teacher.orgId,
       teacherId,
       status: { in: ['active', 'draft'] },
     };

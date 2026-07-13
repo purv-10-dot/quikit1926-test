@@ -21,7 +21,7 @@ export const POST = route(async (req) => {
   if (!file.type.startsWith('image/')) throw BadRequest('Only image files are allowed');
   if (file.size > 5 * 1024 * 1024) throw BadRequest('Image size must be less than 5MB');
 
-  const key = buildUploadKey(actor.tenantId ?? 'global', file.name);
+  const key = buildUploadKey(actor.orgId ?? 'global', file.name);
   const body = Buffer.from(await file.arrayBuffer());
 
   await s3.send(

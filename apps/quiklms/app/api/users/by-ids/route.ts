@@ -11,5 +11,5 @@ export const POST = route(async (req) => {
   const actor = await requireAuth(req);
   requireRoles(actor, ['SUPER_ADMIN', 'TENANT_ADMIN', 'SUB_ADMIN', 'MANAGER', 'TEACHER']);
   const { ids } = await parseBody(req, schema);
-  return json({ success: true, data: await findUsersByIds(actor.tenantId!, ids ?? []) });
+  return json({ success: true, data: await findUsersByIds(actor.orgId!, ids ?? []) });
 });

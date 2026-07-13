@@ -14,5 +14,5 @@ export const POST = route(async (req, { params }) => {
   const actor = await requireAuth(req);
   requireRoles(actor, ['LEARNER']);
   const dto = await parseBody(req, schema);
-  return json(await submitHomework(actor.tenantId!, params!.id, actor.id, dto));
+  return json(await submitHomework(actor.orgId!, params!.id, actor.id, dto));
 });

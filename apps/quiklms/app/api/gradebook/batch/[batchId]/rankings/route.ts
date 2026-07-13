@@ -6,5 +6,5 @@ import { getClassRanking } from '@/lib/services/gradebook-service';
 export const GET = route(async (req, { params }) => {
   const user = await requireAuth(req);
   const term = new URL(req.url).searchParams.get('term') || undefined;
-  return json(await getClassRanking(user.tenantId as string, params!.batchId, term));
+  return json(await getClassRanking(user.orgId as string, params!.batchId, term));
 });

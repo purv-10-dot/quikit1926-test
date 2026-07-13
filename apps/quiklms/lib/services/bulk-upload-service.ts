@@ -1,14 +1,14 @@
 /**
  * Bulk upload service — ported from BulkUploadService (Prisma).
- * Parses CSV → creates users via registerUser (auth-service), which already
+ * Parses CSV → creates users via provisionLmsUser (centralized identity), which
  * handles per-tenant id generation, parent↔child linking (UserParent join) and
- * deferred parent-email linking. A random password is generated per row (the
- * learner sets their real password via the setup-token email flow handled in
- * registerUser). Email sending for setup links is handled by registerUser.
+ * deferred parent-email linking. Each row is provisioned with a temp password in
+ * the ORG identity DB; the invitation/welcome email (with those credentials) is
+ * dispatched centrally by createCentralIdentity — one email per invited user.
  */
 import { randomBytes } from 'crypto';
 import { prisma } from '@/lib/prisma';
-import { registerUser } from './auth-service';
+import { provisionLmsUser } from './identity-service';
 
 export interface RowResult {
   row: number;
@@ -64,7 +64,7 @@ function parseAvailability(raw: string): { dayOfWeek: number; startTime: string;
 
 const randomPassword = () => randomBytes(16).toString('hex') + 'A1!';
 
-export async function uploadTeachers(tenantId: string, csvContent: string): Promise<{ success: RowResult[]; failed: RowResult[] }> {
+export async function uploadTeachers(orgId: string, csvContent: string): Promise<{ success: RowResult[]; failed: RowResult[] }> {
   const rows = parseCsv(csvContent);
   const success: RowResult[] = [];
   const failed: RowResult[] = [];
@@ -79,9 +79,9 @@ export async function uploadTeachers(tenantId: string, csvContent: string): Prom
       const exists = await prisma.user.findFirst({ where: { email: row.email.toLowerCase() } });
       if (exists) { failed.push({ row: rowNum, email: row.email, reason: 'Email already exists' }); continue; }
 
-      const { data } = await registerUser({
+      const { userId, lms } = await provisionLmsUser({
         email: row.email, password: randomPassword(), firstName: row.firstName, lastName: row.lastName,
-        role: 'TEACHER', tenantId, phone: row.phone || undefined,
+        lmsRole: 'TEACHER', orgId, phone: row.phone || undefined,
         subjects: row.subjects ? row.subjects.split(';').map((s) => s.trim()) : undefined,
         ratePerClass: row.ratePerClass ? Number(row.ratePerClass) : undefined,
         rateType: row.rateType || 'per_class',
@@ -89,7 +89,7 @@ export async function uploadTeachers(tenantId: string, csvContent: string): Prom
         monthlyPayout: row.monthlyPayout ? Number(row.monthlyPayout) : undefined,
         availableSlots: parseAvailability(row.availability),
       });
-      success.push({ row: rowNum, email: row.email, userId: data.id, generatedId: data.employeeId ?? undefined });
+      success.push({ row: rowNum, email: row.email, userId, generatedId: lms?.employeeId ?? undefined });
     } catch (err) {
       failed.push({ row: rowNum, email: row.email, reason: err instanceof Error ? err.message : String(err) });
     }
@@ -97,7 +97,7 @@ export async function uploadTeachers(tenantId: string, csvContent: string): Prom
   return { success, failed };
 }
 
-export async function uploadStudents(tenantId: string, csvContent: string): Promise<{ success: RowResult[]; failed: RowResult[] }> {
+export async function uploadStudents(orgId: string, csvContent: string): Promise<{ success: RowResult[]; failed: RowResult[] }> {
   const rows = parseCsv(csvContent);
   const success: RowResult[] = [];
   const failed: RowResult[] = [];
@@ -121,19 +121,16 @@ export async function uploadStudents(tenantId: string, csvContent: string): Prom
       let parentEmail: string | undefined;
       if (row.parentEmail) {
         const pe = row.parentEmail.trim().toLowerCase();
-        const parent = await prisma.user.findFirst({ where: { email: pe, role: 'PARENT', tenantId } });
+        const parent = await prisma.user.findFirst({ where: { email: pe, role: 'PARENT', orgId } });
         if (parent) parentId = parent.id;
         else parentEmail = pe;
       }
 
-      const { data } = await registerUser({
+      const { userId, lms } = await provisionLmsUser({
         email, password: randomPassword(), firstName: row.firstName, lastName: row.lastName,
-        role: 'LEARNER', tenantId, phone: row.phone || undefined,
+        lmsRole: 'LEARNER', orgId, phone: row.phone || undefined,
         grade: row.grade || undefined, section: row.section || undefined, skipEmail,
       });
-
-      // Apply deferred parentEmail + parent link (registerUser doesn't take parentEmail).
-      const userId = data.id;
       if (parentEmail) await prisma.user.update({ where: { id: userId }, data: { parentEmail } });
       if (parentId) {
         await prisma.userParent.upsert({
@@ -142,7 +139,7 @@ export async function uploadStudents(tenantId: string, csvContent: string): Prom
         });
       }
 
-      success.push({ row: rowNum, email, userId, generatedId: (data as any).studentId ?? undefined });
+      success.push({ row: rowNum, email, userId, generatedId: (lms as { studentId?: string } | undefined)?.studentId ?? undefined });
     } catch (err) {
       failed.push({ row: rowNum, email: row.email, reason: err instanceof Error ? err.message : String(err) });
     }
@@ -150,7 +147,7 @@ export async function uploadStudents(tenantId: string, csvContent: string): Prom
   return { success, failed };
 }
 
-export async function uploadParents(tenantId: string, csvContent: string): Promise<{ success: RowResult[]; failed: RowResult[] }> {
+export async function uploadParents(orgId: string, csvContent: string): Promise<{ success: RowResult[]; failed: RowResult[] }> {
   const rows = parseCsv(csvContent);
   const success: RowResult[] = [];
   const failed: RowResult[] = [];
@@ -171,15 +168,15 @@ export async function uploadParents(tenantId: string, csvContent: string): Promi
         if (student) childrenIds.push(student.id);
       }
 
-      // registerUser handles PARENT id generation, children linking AND deferred
-      // student auto-link (learners whose parentEmail == this new parent's email).
-      const { data } = await registerUser({
+      // Centralized: platform identity + LMS row. registerUser (inside) handles
+      // PARENT id generation, children linking AND deferred student auto-link.
+      const { userId, lms } = await provisionLmsUser({
         email: row.email, password: randomPassword(), firstName: row.firstName, lastName: row.lastName,
-        role: 'PARENT', tenantId, phone: row.phone || undefined,
+        lmsRole: 'PARENT', orgId, phone: row.phone || undefined,
         guardianRelation: row.guardianRelation || undefined,
         childrenIds: childrenIds.length ? childrenIds : undefined,
       });
-      success.push({ row: rowNum, email: row.email, userId: data.id, generatedId: (data as any).parentCode ?? undefined });
+      success.push({ row: rowNum, email: row.email, userId, generatedId: (lms as { parentCode?: string } | undefined)?.parentCode ?? undefined });
     } catch (err) {
       failed.push({ row: rowNum, email: row.email, reason: err instanceof Error ? err.message : String(err) });
     }

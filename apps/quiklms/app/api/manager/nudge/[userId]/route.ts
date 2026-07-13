@@ -17,5 +17,5 @@ export const POST = route(async (req, { params }) => {
   } catch {
     /* ignore malformed/empty body — nudge with default message */
   }
-  return json(await nudgeUser(user.id, user.tenantId as string, params!.userId, message));
+  return json(await nudgeUser(user.id, user.orgId as string, params!.userId, message));
 });

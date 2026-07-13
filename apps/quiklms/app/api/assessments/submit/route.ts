@@ -23,9 +23,9 @@ const schema = z.object({
 // POST /api/assessments/submit — any authenticated user (TenantGuard)
 export const POST = route(async (req) => {
   const actor = await requireAuth(req);
-  if (!actor.tenantId) throw BadRequest('Tenant ID required');
+  if (!actor.orgId) throw BadRequest('Tenant ID required');
   const dto = await parseBody(req, schema);
-  const result = await submitQuiz(actor.tenantId, actor.id, dto as SubmitQuizDto);
+  const result = await submitQuiz(actor.orgId, actor.id, dto as SubmitQuizDto);
   return json({
     success: true,
     data: result,

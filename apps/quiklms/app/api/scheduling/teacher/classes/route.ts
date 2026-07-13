@@ -13,8 +13,8 @@ export const GET = route(async (req) => {
 
   const isAdmin = userHasRole(actor, 'TENANT_ADMIN') || userHasRole(actor, 'SUB_ADMIN');
   if (isAdmin && !teacherIdParam) {
-    return json(await getAllTenantClasses(actor.tenantId!, startDate, endDate));
+    return json(await getAllTenantClasses(actor.orgId!, startDate, endDate));
   }
   const teacherId = isAdmin && teacherIdParam ? teacherIdParam : actor.id;
-  return json(await getTeacherClasses(actor.tenantId!, teacherId, startDate, endDate));
+  return json(await getTeacherClasses(actor.orgId!, teacherId, startDate, endDate));
 });

@@ -14,5 +14,5 @@ const schema = z.object({
 export const PATCH = route(async (req, { params }) => {
   const actor = await requireAuth(req);
   const dto = await parseBody(req, schema);
-  return json(await updateGroup(actor.tenantId ?? '', params!.id, actor.id, dto));
+  return json(await updateGroup(actor.orgId ?? '', params!.id, actor.id, dto));
 });

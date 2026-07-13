@@ -14,10 +14,10 @@ const schema = z.object({ fileName: z.string(), fileType: z.string(), fileSize: 
 export const POST = route(async (req) => {
   const actor = await requireAuth(req);
   requireRoles(actor, ['TEACHER', 'LEARNER', 'TENANT_ADMIN', 'SUB_ADMIN', 'SUPER_ADMIN']);
-  if (!actor.tenantId) throw BadRequest('Tenant ID is required');
+  if (!actor.orgId) throw BadRequest('Tenant ID is required');
   const { fileName, fileType, fileSize } = await parseBody(req, schema);
   const { uploadUrl, s3Key, permanentUrl } = await presignForPrefix(
-    `tenants/${actor.tenantId}/homework`, fileName, fileType,
+    `tenants/${actor.orgId}/homework`, fileName, fileType,
   );
   return json({
     success: true,

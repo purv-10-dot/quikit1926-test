@@ -5,5 +5,5 @@ import { unarchiveConversation } from '@/lib/services/messages-service';
 // PATCH /api/messages/conversations/:id/unarchive
 export const PATCH = route(async (req, { params }) => {
   const actor = await requireAuth(req);
-  return json(await unarchiveConversation(actor.tenantId ?? '', params!.id, actor.id));
+  return json(await unarchiveConversation(actor.orgId ?? '', params!.id, actor.id));
 });

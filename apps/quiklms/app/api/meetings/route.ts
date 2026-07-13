@@ -10,7 +10,7 @@ export const GET = route(async (req) => {
   const url = new URL(req.url);
   const scheduledClassId = url.searchParams.get('scheduledClassId') || undefined;
   const status = url.searchParams.get('status') || undefined;
-  return json(await findAll(actor.tenantId!, { scheduledClassId, status }));
+  return json(await findAll(actor.orgId!, { scheduledClassId, status }));
 });
 
 const createSchema = z.object({
@@ -31,5 +31,5 @@ export const POST = route(async (req) => {
   const actor = await requireAuth(req);
   requireRoles(actor, ['TEACHER', 'TENANT_ADMIN', 'SUB_ADMIN']);
   const dto = await parseBody(req, createSchema);
-  return json(await createMeeting(actor.tenantId!, dto as CreateMeetingDto, actor.id));
+  return json(await createMeeting(actor.orgId!, dto as CreateMeetingDto, actor.id));
 });

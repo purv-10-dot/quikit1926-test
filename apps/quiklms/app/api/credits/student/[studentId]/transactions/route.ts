@@ -9,5 +9,5 @@ export const GET = route(async (req, { params }) => {
   const url = new URL(req.url);
   const page = parseInt(url.searchParams.get('page') || '') || 1;
   const limit = parseInt(url.searchParams.get('limit') || '') || 20;
-  return json(await getTransactions(actor.tenantId!, params!.studentId, page, limit));
+  return json(await getTransactions(actor.orgId!, params!.studentId, page, limit));
 });

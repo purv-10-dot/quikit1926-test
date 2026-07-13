@@ -26,7 +26,7 @@ export const GET = route(async (req, { params }) => {
     return json({ success: false, message: 'You can only export reports for your own team' }, 403);
   }
 
-  const data = await getTeamReportData(params!.managerId, user.tenantId as string);
+  const data = await getTeamReportData(params!.managerId, user.orgId as string);
 
   const header = [
     'Learner Name',

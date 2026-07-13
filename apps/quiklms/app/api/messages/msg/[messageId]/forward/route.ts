@@ -10,5 +10,5 @@ const schema = z.object({ targetConversationId: z.string() });
 export const POST = route(async (req, { params }) => {
   const actor = await requireAuth(req);
   const { targetConversationId } = await parseBody(req, schema);
-  return json(await forwardMessage(actor.tenantId ?? '', params!.messageId, actor.id, targetConversationId));
+  return json(await forwardMessage(actor.orgId ?? '', params!.messageId, actor.id, targetConversationId));
 });

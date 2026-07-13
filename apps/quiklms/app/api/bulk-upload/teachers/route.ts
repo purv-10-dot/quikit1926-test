@@ -6,10 +6,10 @@ import { uploadTeachers } from '@/lib/services/bulk-upload-service';
 export const POST = route(async (req) => {
   const user = await requireAuth(req);
   requireRoles(user, ['TENANT_ADMIN', 'SUB_ADMIN', 'SUPER_ADMIN']);
-  if (!user.tenantId) throw BadRequest('Tenant ID required');
+  if (!user.orgId) throw BadRequest('Tenant ID required');
   const form = await req.formData();
   const file = form.get('file');
   if (!(file instanceof File)) throw BadRequest('No file uploaded');
   const content = await file.text();
-  return json({ success: true, data: await uploadTeachers(user.tenantId, content) });
+  return json({ success: true, data: await uploadTeachers(user.orgId, content) });
 });

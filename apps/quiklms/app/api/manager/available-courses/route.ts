@@ -6,6 +6,6 @@ import { getAvailableCourses } from '@/lib/services/manager-service';
 export const GET = route(async (req) => {
   const user = await requireAuth(req);
   requireRoles(user, ['MANAGER']);
-  const courses = await getAvailableCourses(user.tenantId as string);
+  const courses = await getAvailableCourses(user.orgId as string);
   return json({ success: true, data: courses, message: 'Available courses fetched successfully' });
 });

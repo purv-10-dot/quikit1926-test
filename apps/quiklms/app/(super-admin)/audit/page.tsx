@@ -46,13 +46,13 @@ interface EmailPreview {
   subject: string;
   html: string;
   tenantName: string;
-  tenantId?: string;
+  orgId?: string;
   storagePercentage: number;
   storageUsedMB: number;
 }
 
 interface TenantStorage {
-  tenantId: string;
+  orgId: string;
   orgName: string;
   storageUsed: number;
   storageUsedMB: number;
@@ -73,7 +73,7 @@ interface ActivityLog {
     sentAt?: string;
     failedAt?: string;
   };
-  tenantId?: {
+  orgId?: {
     orgName: string;
   };
   userId?: {
@@ -125,11 +125,11 @@ export default function AuditDashboardPage() {
     }
   };
 
-  const handleUpgradeClick = async (tenantId: string) => {
+  const handleUpgradeClick = async (orgId: string) => {
     try {
-      setPreviewLoading(tenantId);
-      const response = await api.get<{ data: EmailPreview }>(`/audit/upgrade-invoice/preview/${tenantId}`);
-      setEmailPreview({ ...(response as any).data, tenantId });
+      setPreviewLoading(orgId);
+      const response = await api.get<{ data: EmailPreview }>(`/audit/upgrade-invoice/preview/${orgId}`);
+      setEmailPreview({ ...(response as any).data, orgId });
       setShowPreview(true);
     } catch (err: any) {
       toast.error(
@@ -141,11 +141,11 @@ export default function AuditDashboardPage() {
     }
   };
 
-  const handleSendUpgradeInvoice = async (tenantId: string) => {
+  const handleSendUpgradeInvoice = async (orgId: string) => {
     try {
-      setSendingInvoice(tenantId);
+      setSendingInvoice(orgId);
       const response = await api.post<{ success: boolean; data?: { email?: string; error?: string }; message?: string }>(
-        `/audit/upgrade-invoice/${tenantId}`
+        `/audit/upgrade-invoice/${orgId}`
       );
 
       if ((response as any).success) {
@@ -172,14 +172,14 @@ export default function AuditDashboardPage() {
     }
   };
 
-  const handleCheckEmailStatus = async (tenantId: string) => {
+  const handleCheckEmailStatus = async (orgId: string) => {
     try {
-      setCheckingStatus(tenantId);
-      const response = await api.get<{ success: boolean; data: any }>(`/audit/email-status/${tenantId}`);
+      setCheckingStatus(orgId);
+      const response = await api.get<{ success: boolean; data: any }>(`/audit/email-status/${orgId}`);
       if ((response as any).success) {
         setEmailStatuses((prev) => ({
           ...prev,
-          [tenantId]: (response as any).data,
+          [orgId]: (response as any).data,
         }));
       }
     } catch (err: any) {
@@ -490,7 +490,7 @@ export default function AuditDashboardPage() {
               <tbody className="divide-y divide-line text-sm font-bold">
                 {tenantStorage.map((tenant) => (
                   <tr
-                    key={tenant.tenantId}
+                    key={tenant.orgId}
                     className="group hover:bg-surface-muted transition-all duration-300"
                   >
                     <td className="px-8 py-6 whitespace-nowrap">
@@ -536,45 +536,45 @@ export default function AuditDashboardPage() {
                     <td className="px-8 py-6 whitespace-nowrap text-right">
                       <div className="flex items-center justify-end gap-2">
                         <button
-                          onClick={() => handleUpgradeClick(tenant.tenantId)}
+                          onClick={() => handleUpgradeClick(tenant.orgId)}
                           disabled={
-                            previewLoading === tenant.tenantId || sendingInvoice === tenant.tenantId
+                            previewLoading === tenant.orgId || sendingInvoice === tenant.orgId
                           }
                           className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-[10px] font-black uppercase tracking-widest transition-all shadow-lg shadow-indigo-100 active:scale-95 disabled:opacity-50"
                         >
-                          {previewLoading === tenant.tenantId ? (
+                          {previewLoading === tenant.orgId ? (
                             <Loader2 className="w-3.5 h-3.5 animate-spin" />
                           ) : (
                             'Optimize Storage'
                           )}
                         </button>
                         <button
-                          onClick={() => handleCheckEmailStatus(tenant.tenantId)}
-                          disabled={checkingStatus === tenant.tenantId}
+                          onClick={() => handleCheckEmailStatus(tenant.orgId)}
+                          disabled={checkingStatus === tenant.orgId}
                           className="p-2.5 bg-surface-muted hover:bg-surface-muted text-fg-muted hover:text-fg rounded-xl transition-all border border-line"
                           title="Check Link Connectivity"
                         >
-                          {checkingStatus === tenant.tenantId ? (
+                          {checkingStatus === tenant.orgId ? (
                             <Loader2 className="w-4 h-4 animate-spin" />
                           ) : (
                             <RefreshCw className="w-4 h-4" />
                           )}
                         </button>
-                        {emailStatuses[tenant.tenantId] && (
+                        {emailStatuses[tenant.orgId] && (
                           <div className="animate-in fade-in slide-in-from-right-2">
-                            {emailStatuses[tenant.tenantId].deliveryStatus === 'pending' && (
+                            {emailStatuses[tenant.orgId].deliveryStatus === 'pending' && (
                               <div
                                 className="w-2.5 h-2.5 rounded-full bg-amber-500 animate-pulse"
                                 title="Pending Transmission"
                               ></div>
                             )}
-                            {emailStatuses[tenant.tenantId].deliveryStatus === 'delivered' && (
+                            {emailStatuses[tenant.orgId].deliveryStatus === 'delivered' && (
                               <div
                                 className="w-2.5 h-2.5 rounded-full bg-emerald-500"
                                 title="Packet Delivered"
                               ></div>
                             )}
-                            {emailStatuses[tenant.tenantId].deliveryStatus === 'failed' && (
+                            {emailStatuses[tenant.orgId].deliveryStatus === 'failed' && (
                               <div
                                 className="w-2.5 h-2.5 rounded-full bg-red-500"
                                 title="Transmission Failed"
@@ -679,7 +679,7 @@ export default function AuditDashboardPage() {
                       </td>
                       <td className="px-8 py-6 whitespace-nowrap">
                         <div className="text-xs font-black text-fg-muted uppercase tracking-widest group-hover:text-indigo-600 transition-colors">
-                          {log.tenantId?.orgName || 'ROOT'}
+                          {log.orgId?.orgName || 'ROOT'}
                         </div>
                       </td>
                       <td className="px-8 py-6 whitespace-nowrap text-right">
@@ -812,8 +812,8 @@ export default function AuditDashboardPage() {
                     </button>
                     <button
                       onClick={async () => {
-                        if (emailPreview.tenantId) {
-                          await handleSendUpgradeInvoice(emailPreview.tenantId);
+                        if (emailPreview.orgId) {
+                          await handleSendUpgradeInvoice(emailPreview.orgId);
                         }
                       }}
                       disabled={!!sendingInvoice}

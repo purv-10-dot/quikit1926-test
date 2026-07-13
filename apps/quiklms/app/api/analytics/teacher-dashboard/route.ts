@@ -6,5 +6,5 @@ import { getTeacherDashboard } from '@/lib/services/analytics-service';
 export const GET = route(async (req) => {
   const actor = await requireAuth(req);
   requireRoles(actor, ['TEACHER']);
-  return json(await getTeacherDashboard(actor.tenantId ?? '', actor.id));
+  return json(await getTeacherDashboard(actor.orgId ?? '', actor.id));
 });

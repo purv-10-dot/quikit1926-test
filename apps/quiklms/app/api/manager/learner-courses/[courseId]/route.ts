@@ -6,6 +6,6 @@ import { getLearnersByCourse } from '@/lib/services/manager-service';
 export const GET = route(async (req, { params }) => {
   const user = await requireAuth(req);
   requireRoles(user, ['MANAGER']);
-  const data = await getLearnersByCourse(user.id, user.tenantId as string, params!.courseId);
+  const data = await getLearnersByCourse(user.id, user.orgId as string, params!.courseId);
   return json({ success: true, data, message: 'Learner course detail fetched successfully' });
 });

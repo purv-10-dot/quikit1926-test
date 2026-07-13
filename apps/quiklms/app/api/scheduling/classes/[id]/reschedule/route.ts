@@ -16,5 +16,5 @@ export const PATCH = route(async (req, { params }) => {
   const actor = await requireAuth(req);
   requireRoles(actor, ['TEACHER', 'TENANT_ADMIN', 'SUB_ADMIN']);
   const dto = await parseBody(req, schema);
-  return json(await rescheduleClass(actor.tenantId!, params!.id, dto));
+  return json(await rescheduleClass(actor.orgId!, params!.id, dto));
 });

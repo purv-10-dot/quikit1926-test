@@ -40,7 +40,7 @@ export async function getGlobalStorageUsage() {
 }
 
 export interface TenantStorageRow {
-  tenantId: string;
+  orgId: string;
   orgName: string;
   storageUsed: number;
   storageUsedMB: number;
@@ -55,7 +55,7 @@ export async function getTenantStorageBreakdown(): Promise<TenantStorageRow[]> {
       modules: true,
       updatedAt: true,
       submittedByTenantId: true,
-      selectedTenants: { select: { tenantId: true } },
+      selectedTenants: { select: { orgId: true } },
     },
   });
 
@@ -63,7 +63,7 @@ export async function getTenantStorageBreakdown(): Promise<TenantStorageRow[]> {
   for (const course of courses) {
     const size = sumModuleFileSizes(course.modules);
     if (size === 0) continue;
-    const tenantIds = new Set<string>(course.selectedTenants.map((s) => s.tenantId));
+    const tenantIds = new Set<string>(course.selectedTenants.map((s) => s.orgId));
     if (course.submittedByTenantId) tenantIds.add(course.submittedByTenantId);
     for (const tid of tenantIds) {
       const cur = usageByTenant.get(tid) || { totalSize: 0, lastUpdated: course.updatedAt };
@@ -78,37 +78,37 @@ export async function getTenantStorageBreakdown(): Promise<TenantStorageRow[]> {
 
   // Last activity per tenant (activity logs)
   const activityLogs = await prisma.activityLog.groupBy({
-    by: ['tenantId'],
-    where: { tenantId: { not: null } },
+    by: ['orgId'],
+    where: { orgId: { not: null } },
     _max: { timestamp: true },
   });
   const activityMap = new Map<string, Date | null>();
-  for (const a of activityLogs) if (a.tenantId) activityMap.set(a.tenantId, a._max.timestamp);
+  for (const a of activityLogs) if (a.orgId) activityMap.set(a.orgId, a._max.timestamp);
 
   const breakdown: TenantStorageRow[] = [];
-  for (const [tenantId, usage] of usageByTenant) {
+  for (const [orgId, usage] of usageByTenant) {
     const storageUsed = usage.totalSize;
     const percentage = (storageUsed / STORAGE_LIMIT_BYTES) * 100;
     breakdown.push({
-      tenantId,
-      orgName: tenantMap.get(tenantId) || 'Unknown',
+      orgId,
+      orgName: tenantMap.get(orgId) || 'Unknown',
       storageUsed,
       storageUsedMB: storageUsed / (1024 * 1024),
       percentage: Math.min(100, percentage),
-      lastActivity: activityMap.get(tenantId) || usage.lastUpdated,
+      lastActivity: activityMap.get(orgId) || usage.lastUpdated,
     });
   }
 
   // Add tenants with no storage
-  for (const [tenantId, orgName] of tenantMap) {
-    if (!breakdown.find((b) => b.tenantId === tenantId)) {
+  for (const [orgId, orgName] of tenantMap) {
+    if (!breakdown.find((b) => b.orgId === orgId)) {
       breakdown.push({
-        tenantId,
+        orgId,
         orgName,
         storageUsed: 0,
         storageUsedMB: 0,
         percentage: 0,
-        lastActivity: activityMap.get(tenantId) || undefined,
+        lastActivity: activityMap.get(orgId) || undefined,
       });
     }
   }
@@ -116,15 +116,15 @@ export async function getTenantStorageBreakdown(): Promise<TenantStorageRow[]> {
   return breakdown.sort((a, b) => b.storageUsedMB - a.storageUsedMB);
 }
 
-export async function getActivityLogs(limit = 50, skip = 0, tenantId?: string) {
-  const where = tenantId ? { tenantId } : {};
+export async function getActivityLogs(limit = 50, skip = 0, orgId?: string) {
+  const where = orgId ? { orgId } : {};
   const [rows, total] = await Promise.all([
     prisma.activityLog.findMany({ where, orderBy: { timestamp: 'desc' }, take: limit, skip }),
     prisma.activityLog.count({ where }),
   ]);
 
-  // Mirror legacy populate('tenantId','orgName') + populate('userId','firstName lastName email')
-  const tenantIds = [...new Set(rows.map((r) => r.tenantId).filter((x): x is string => !!x))];
+  // Mirror legacy populate('orgId','orgName') + populate('userId','firstName lastName email')
+  const tenantIds = [...new Set(rows.map((r) => r.orgId).filter((x): x is string => !!x))];
   const userIds = [...new Set(rows.map((r) => r.userId).filter((x): x is string => !!x))];
   const [tenants, users] = await Promise.all([
     tenantIds.length
@@ -140,7 +140,7 @@ export async function getActivityLogs(limit = 50, skip = 0, tenantId?: string) {
   const logs = rows.map((r) => ({
     ...r,
     _id: r.id,
-    tenantId: r.tenantId ? tMap.get(r.tenantId) ?? r.tenantId : r.tenantId,
+    orgId: r.orgId ? tMap.get(r.orgId) ?? r.orgId : r.orgId,
     userId: r.userId ? uMap.get(r.userId) ?? r.userId : r.userId,
   }));
   return { logs, total };
@@ -193,13 +193,13 @@ function generateUpgradeInvoiceHtml(
     `;
 }
 
-export async function previewUpgradeInvoice(tenantId: string) {
-  const tenant = await prisma.tenant.findUnique({ where: { id: tenantId } });
-  if (!tenant) throw new Error(`Tenant with ID ${tenantId} not found`);
+export async function previewUpgradeInvoice(orgId: string) {
+  const tenant = await prisma.tenant.findUnique({ where: { id: orgId } });
+  if (!tenant) throw new Error(`Tenant with ID ${orgId} not found`);
 
   const breakdown = await getTenantStorageBreakdown();
-  const tenantStorage = breakdown.find((t) => t.tenantId === tenantId);
-  if (!tenantStorage) throw new Error(`Storage data not found for tenant ${tenantId}`);
+  const tenantStorage = breakdown.find((t) => t.orgId === orgId);
+  if (!tenantStorage) throw new Error(`Storage data not found for tenant ${orgId}`);
 
   const billingEmail = tenant.officialEmail || tenant.contactEmail;
   if (!billingEmail) throw new Error(`No billing email found for tenant ${tenant.orgName}`);
@@ -217,13 +217,13 @@ export async function previewUpgradeInvoice(tenantId: string) {
   };
 }
 
-export async function sendUpgradeInvoice(tenantId: string) {
-  const tenant = await prisma.tenant.findUnique({ where: { id: tenantId } });
-  if (!tenant) throw new Error(`Tenant with ID ${tenantId} not found`);
+export async function sendUpgradeInvoice(orgId: string) {
+  const tenant = await prisma.tenant.findUnique({ where: { id: orgId } });
+  if (!tenant) throw new Error(`Tenant with ID ${orgId} not found`);
 
   const breakdown = await getTenantStorageBreakdown();
-  const tenantStorage = breakdown.find((t) => t.tenantId === tenantId);
-  if (!tenantStorage) throw new Error(`Storage data not found for tenant ${tenantId}`);
+  const tenantStorage = breakdown.find((t) => t.orgId === orgId);
+  if (!tenantStorage) throw new Error(`Storage data not found for tenant ${orgId}`);
 
   const billingEmail = tenant.officialEmail || tenant.contactEmail;
   if (!billingEmail) throw new Error(`No billing email found for tenant ${tenant.orgName}`);
@@ -238,7 +238,7 @@ export async function sendUpgradeInvoice(tenantId: string) {
       data: {
         type: 'user_action',
         message: `Upgrade invoice email sent to ${tenant.orgName} (${billingEmail})`,
-        tenantId,
+        orgId,
         metadata: {
           email: billingEmail,
           storagePercentage: tenantStorage.percentage,
@@ -256,7 +256,7 @@ export async function sendUpgradeInvoice(tenantId: string) {
       data: {
         type: 'user_action',
         message: `Failed to send upgrade invoice email to ${tenant.orgName} (${billingEmail})`,
-        tenantId,
+        orgId,
         metadata: {
           email: billingEmail,
           storagePercentage: tenantStorage.percentage,
@@ -272,10 +272,10 @@ export async function sendUpgradeInvoice(tenantId: string) {
   }
 }
 
-export async function getEmailDeliveryStatus(tenantId: string) {
+export async function getEmailDeliveryStatus(orgId: string) {
   // Legacy filter: most recent user_action log with metadata.emailStatus present.
   const candidates = await prisma.activityLog.findMany({
-    where: { tenantId, type: 'user_action' },
+    where: { orgId, type: 'user_action' },
     orderBy: { timestamp: 'desc' },
     take: 50,
   });

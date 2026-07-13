@@ -16,5 +16,5 @@ export const POST = route(async (req) => {
   const user = await requireAuth(req);
   requireRoles(user, ['MANAGER']);
   const dto = await parseBody(req, schema);
-  return json(await markAttendance(user.id, user.tenantId as string, dto));
+  return json(await markAttendance(user.id, user.orgId as string, dto));
 });

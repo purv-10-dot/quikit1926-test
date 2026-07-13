@@ -7,7 +7,7 @@ import { prisma } from '@/lib/prisma';
  *
  * Single source of truth for client-side identity. The client providers fetch
  * this on load and mirror it into sessionStorage('user') so the many pages that
- * read `user.tenantId` / `user._id` / `user.managerId` / `user.childIds` work
+ * read `user.orgId` / `user._id` / `user.managerId` / `user.childIds` work
  * under the cookie-based auth (which never set sessionStorage before).
  *
  * Returns both `id` and `_id` (Mongo-era alias still read by ported pages).
@@ -20,7 +20,7 @@ export const GET = route(async (req) => {
   const db = actor.id
     ? await prisma.user.findUnique({
         where: { id: actor.id },
-        select: { id: true, email: true, firstName: true, lastName: true, role: true, secondaryRole: true, tenantId: true, managerId: true, isActive: true },
+        select: { id: true, email: true, firstName: true, lastName: true, role: true, secondaryRole: true, orgId: true, managerId: true, isActive: true },
       })
     : null;
 
@@ -40,7 +40,7 @@ export const GET = route(async (req) => {
     lastName: db?.lastName ?? actor.lastName,
     role: db?.role ?? actor.role,
     secondaryRole: db?.secondaryRole ?? actor.secondaryRole,
-    tenantId: db?.tenantId ?? actor.tenantId,
+    orgId: db?.orgId ?? actor.orgId,
     tenantType: actor.tenantType,
     managerId: db?.managerId ?? null,
     childIds,

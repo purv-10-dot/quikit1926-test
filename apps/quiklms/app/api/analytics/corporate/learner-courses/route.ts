@@ -6,5 +6,5 @@ import { getCorporateLearnerCoursesOverview } from '@/lib/services/analytics-ser
 export const GET = route(async (req) => {
   const actor = await requireAuth(req);
   requireRoles(actor, ['TENANT_ADMIN', 'SUB_ADMIN', 'SUPER_ADMIN']);
-  return json(await getCorporateLearnerCoursesOverview(actor.tenantId ?? ''));
+  return json(await getCorporateLearnerCoursesOverview(actor.orgId ?? ''));
 });

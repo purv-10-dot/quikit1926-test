@@ -11,6 +11,6 @@ export const GET = route(async (req, { params }) => {
   if (user.id !== params!.managerId) {
     return json({ success: false, message: 'You can only download certificates for your own team' }, 403);
   }
-  const certificates = await getTeamCertificates(params!.managerId, user.tenantId as string);
+  const certificates = await getTeamCertificates(params!.managerId, user.orgId as string);
   return json({ success: true, data: certificates });
 });

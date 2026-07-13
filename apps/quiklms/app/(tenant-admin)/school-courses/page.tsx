@@ -50,7 +50,7 @@ const SchoolCourseAssignmentPage = () => {
   const router = useRouter();
   const currentUser = typeof window !== 'undefined' ? JSON.parse(sessionStorage.getItem('user') || '{}') : {};
   const currentUserId = currentUser?._id || currentUser?.id;
-  const currentUserTenantId = currentUser?.tenantId;
+  const currentUserTenantId = currentUser?.orgId;
   const { branding } = useBranding();
 
   const [courses, setCourses] = useState<Course[]>([]);

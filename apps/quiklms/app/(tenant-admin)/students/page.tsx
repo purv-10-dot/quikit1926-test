@@ -157,9 +157,9 @@ const StudentsPage = () => {
     try {
       const userStr = sessionStorage.getItem('user');
       const currentUser = userStr ? JSON.parse(userStr) : null;
-      const tenantId = currentUser?.tenantId;
+      const orgId = currentUser?.orgId;
 
-      if (!tenantId) {
+      if (!orgId) {
         setError('Tenant ID not found. Please log out and log in again.');
         setCreating(false);
         return;
@@ -189,7 +189,7 @@ const StudentsPage = () => {
         firstName: formData.firstName,
         lastName: formData.lastName,
         role: 'LEARNER',
-        tenantId,
+        orgId,
         grade: formData.grade || undefined,
         section: formData.section || undefined,
         studentId: formData.studentId || undefined,

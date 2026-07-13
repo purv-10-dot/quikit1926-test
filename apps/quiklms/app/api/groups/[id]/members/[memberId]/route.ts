@@ -6,6 +6,6 @@ import { removeMember } from '@/lib/services/groups-service';
 export const DELETE = route(async (req, { params }) => {
   const user = await requireAuth(req);
   requireRoles(user, ['SUPER_ADMIN', 'TENANT_ADMIN', 'SUB_ADMIN']);
-  if (!user.tenantId) throw BadRequest('Tenant ID is required');
-  return json({ success: true, data: await removeMember(user.tenantId, params!.id, params!.memberId) });
+  if (!user.orgId) throw BadRequest('Tenant ID is required');
+  return json({ success: true, data: await removeMember(user.orgId, params!.id, params!.memberId) });
 });

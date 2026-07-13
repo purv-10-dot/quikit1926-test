@@ -141,13 +141,13 @@ const BrandingPage = () => {
     try {
       const userStr = sessionStorage.getItem('user');
       const user = userStr ? JSON.parse(userStr) : null;
-      const tenantId = user?.tenantId;
-      if (!tenantId) {
+      const orgId = user?.orgId;
+      if (!orgId) {
         toast.error('Tenant context not found. Please log out and log in again.', { id: toastId });
         setSaving(false);
         return;
       }
-      await api.patch(`/tenants/${tenantId}/branding`, {
+      await api.patch(`/tenants/${orgId}/branding`, {
         logoUrl: localLogo,
         primaryColor: localPrimary,
         secondaryColor: localSecondary,

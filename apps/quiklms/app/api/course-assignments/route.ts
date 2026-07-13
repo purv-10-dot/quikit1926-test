@@ -12,7 +12,7 @@ export const GET = route(async (req) => {
   requireRoles(user, ['SUPER_ADMIN', 'TENANT_ADMIN', 'SUB_ADMIN']);
 
   // Non-super-admins must be scoped to a tenant.
-  if (user.role !== 'SUPER_ADMIN' && !user.tenantId) throw BadRequest('Tenant ID is required');
+  if (user.role !== 'SUPER_ADMIN' && !user.orgId) throw BadRequest('Tenant ID is required');
 
   const assignments = await prisma.courseAssignment.findMany({
     where: tenantWhere(user),

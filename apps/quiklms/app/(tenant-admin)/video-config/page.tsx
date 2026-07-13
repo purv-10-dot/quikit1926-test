@@ -61,7 +61,7 @@ const DEFAULT_CONFIG: VideoConfig = {
 
 const VideoConfigPage = () => {
   const { branding } = useBranding();
-  const [tenantId, setTenantId] = useState<string | null>(null);
+  const [orgId, setTenantId] = useState<string | null>(null);
   const [config, setConfig] = useState<VideoConfig>(DEFAULT_CONFIG);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -69,20 +69,20 @@ const VideoConfigPage = () => {
 
   useEffect(() => {
     const userStr = sessionStorage.getItem('user') || '{}';
-    const user = JSON.parse(userStr) as { tenantId?: string };
-    const id = user.tenantId || null;
+    const user = JSON.parse(userStr) as { orgId?: string };
+    const id = user.orgId || null;
     setTenantId(id);
   }, []);
 
   useEffect(() => {
-    if (!tenantId) {
+    if (!orgId) {
       setLoading(false);
       return;
     }
     const fetchConfig = async () => {
       try {
         setLoading(true);
-        const res = await api.get<any>(`/tenants/${tenantId}/video-config`);
+        const res = await api.get<any>(`/tenants/${orgId}/video-config`);
         const data = (res.data as { data?: VideoConfig } & VideoConfig)?.data || res.data;
         setConfig({
           provider: (data as VideoConfig).provider || 'none',
@@ -116,7 +116,7 @@ const VideoConfigPage = () => {
       }
     };
     fetchConfig();
-  }, [tenantId]);
+  }, [orgId]);
 
   const handleTestConnection = () => {
     setTestSuccess(null);
@@ -146,13 +146,13 @@ const VideoConfigPage = () => {
   };
 
   const handleSave = async () => {
-    if (!tenantId) {
+    if (!orgId) {
       toast.error('Tenant ID not found. Please log in again.');
       return;
     }
     try {
       setSaving(true);
-      await api.patch<any>(`/tenants/${tenantId}/video-config`, config);
+      await api.patch<any>(`/tenants/${orgId}/video-config`, config);
       toast.success('Video configuration saved successfully.');
     } catch (err: unknown) {
       const msg = (err as { message?: string })?.message;
@@ -182,7 +182,7 @@ const VideoConfigPage = () => {
     );
   }
 
-  if (!tenantId) {
+  if (!orgId) {
     return (
       <div className="rounded-2xl bg-red-50 dark:bg-red-900/20 p-8 text-center">
         <Shield className="w-12 h-12 text-red-400 mx-auto mb-3" />

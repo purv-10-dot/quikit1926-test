@@ -41,8 +41,8 @@ function shapeRows(
   }));
 }
 
-export async function getRemindersForAdmin(tenantId: string, query: { status?: string; from?: string; to?: string }) {
-  const where: Prisma.StudentReminderCallWhereInput = { tenantId };
+export async function getRemindersForAdmin(orgId: string, query: { status?: string; from?: string; to?: string }) {
+  const where: Prisma.StudentReminderCallWhereInput = { orgId };
   if (query.status) where.status = query.status as ReminderCallStatus;
   if (query.from || query.to) {
     where.createdAt = {};
@@ -61,15 +61,15 @@ export async function getRemindersForAdmin(tenantId: string, query: { status?: s
   return shapeRows(rows, smap, cmap);
 }
 
-export async function getRemindersForTeacher(tenantId: string, teacherId: string) {
+export async function getRemindersForTeacher(orgId: string, teacherId: string) {
   const teacherClasses = await prisma.scheduledClass.findMany({
-    where: { tenantId, teacherId },
+    where: { orgId, teacherId },
     select: { id: true },
   });
   const classIds = teacherClasses.map((c) => c.id);
 
   const rows = await prisma.studentReminderCall.findMany({
-    where: { tenantId, scheduledClassId: { in: classIds } },
+    where: { orgId, scheduledClassId: { in: classIds } },
     include: { callAttempts: true },
     orderBy: { createdAt: 'desc' },
     take: 50,

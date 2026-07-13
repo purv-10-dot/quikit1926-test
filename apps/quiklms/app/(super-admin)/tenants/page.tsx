@@ -90,14 +90,14 @@ export default function TenantsPage() {
     tenant.contactEmail.toLowerCase().includes(searchQuery.toLowerCase()),
   );
 
-  const handleToggleApprovalWorkflow = async (tenantId: string, currentValue: boolean) => {
+  const handleToggleApprovalWorkflow = async (orgId: string, currentValue: boolean) => {
     try {
-      await api.patch(`/tenants/${tenantId}`, {
+      await api.patch(`/tenants/${orgId}`, {
         featureConfig: { approvalWorkflowEnabled: !currentValue },
       });
       setTenants((prev) =>
         prev.map((t) =>
-          t._id === tenantId
+          t._id === orgId
             ? { ...t, featureConfig: { ...(t.featureConfig || {}), approvalWorkflowEnabled: !currentValue } }
             : t,
         ),
@@ -107,10 +107,10 @@ export default function TenantsPage() {
     }
   };
 
-  const handleToggleStatus = async (tenantId: string, currentStatus: string) => {
+  const handleToggleStatus = async (orgId: string, currentStatus: string) => {
     try {
       const newStatus = currentStatus === 'Active' ? 'Paused' : 'Active';
-      await api.patch(`/tenants/${tenantId}`, { status: newStatus });
+      await api.patch(`/tenants/${orgId}`, { status: newStatus });
       loadTenants();
     } catch (error) {
       console.error('Failed to update tenant status:', error);

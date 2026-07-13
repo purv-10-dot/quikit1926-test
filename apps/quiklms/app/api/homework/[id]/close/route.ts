@@ -6,5 +6,5 @@ import { close } from '@/lib/services/homework-service';
 export const PATCH = route(async (req, { params }) => {
   const actor = await requireAuth(req);
   requireRoles(actor, ['TEACHER', 'TENANT_ADMIN', 'SUB_ADMIN']);
-  return json(await close(actor.tenantId!, params!.id));
+  return json(await close(actor.orgId!, params!.id));
 });

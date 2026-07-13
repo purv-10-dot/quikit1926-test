@@ -6,5 +6,5 @@ import { getUserAssignments } from '@/lib/services/course-assignments-service';
 export const GET = route(async (req) => {
   const user = await requireAuth(req);
   if (!user.id) throw BadRequest('User ID is required');
-  return json({ success: true, data: await getUserAssignments(user.tenantId ?? null, user.id) });
+  return json({ success: true, data: await getUserAssignments(user.orgId ?? null, user.id) });
 });

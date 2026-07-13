@@ -1,6 +1,6 @@
 /**
  * Users service — ported from UsersService (Prisma). Tenant scoping is applied
- * by callers via the tenantId argument (SUPER_ADMIN passes undefined to span all).
+ * by callers via the orgId argument (SUPER_ADMIN passes undefined to span all).
  */
 import type { Prisma, UserRole } from '@prisma/client';
 import { prisma } from '@/lib/prisma';
@@ -9,7 +9,7 @@ import { BadRequest, Forbidden, NotFound } from '@/lib/http';
 const LIST_SELECT = {
   id: true, firstName: true, lastName: true, email: true, role: true, secondaryRole: true,
   profilePicture: true, grade: true, section: true, studentId: true, employeeId: true, parentCode: true,
-  isActive: true, managerId: true, tenantId: true, phone: true, subjects: true, createdAt: true,
+  isActive: true, managerId: true, orgId: true, phone: true, subjects: true, createdAt: true,
 } satisfies Prisma.UserSelect;
 
 function nameSearch(search: string): Prisma.UserWhereInput {
@@ -33,9 +33,9 @@ function nameSearch(search: string): Prisma.UserWhereInput {
   };
 }
 
-export async function searchUsers(tenantId: string | undefined, query?: string, role?: string, excludeRoles: string[] = []) {
+export async function searchUsers(orgId: string | undefined, query?: string, role?: string, excludeRoles: string[] = []) {
   const where: Prisma.UserWhereInput = { isActive: true };
-  if (tenantId) where.tenantId = tenantId;
+  if (orgId) where.orgId = orgId;
   if (role) where.role = role as UserRole;
   else if (excludeRoles.length) where.role = { notIn: excludeRoles as UserRole[] };
   if (query?.trim()) Object.assign(where, nameSearch(query));
@@ -47,9 +47,9 @@ export async function searchUsers(tenantId: string | undefined, query?: string, 
   });
 }
 
-export async function findAllUsers(tenantId: string | undefined, search?: string, role?: string, excludeRoles: string[] = []) {
+export async function findAllUsers(orgId: string | undefined, search?: string, role?: string, excludeRoles: string[] = []) {
   const where: Prisma.UserWhereInput = {};
-  if (tenantId) where.tenantId = tenantId;
+  if (orgId) where.orgId = orgId;
   if (role === 'SUB_ADMIN') where.OR = [{ role: 'SUB_ADMIN' }, { secondaryRole: 'SUB_ADMIN' }];
   else if (role && role !== 'ALL') where.role = role as UserRole;
   else if (excludeRoles.length) where.role = { notIn: excludeRoles as UserRole[] };
@@ -57,40 +57,40 @@ export async function findAllUsers(tenantId: string | undefined, search?: string
   return prisma.user.findMany({ where, select: LIST_SELECT, orderBy: [{ firstName: 'asc' }, { lastName: 'asc' }] });
 }
 
-export async function findUsersByIds(tenantId: string, ids: string[]) {
+export async function findUsersByIds(orgId: string, ids: string[]) {
   if (!ids.length) return [];
   return prisma.user.findMany({
-    where: { id: { in: ids }, tenantId },
+    where: { id: { in: ids }, orgId },
     select: { id: true, firstName: true, lastName: true, email: true, role: true, grade: true, section: true, studentId: true },
   });
 }
 
-export async function promoteToSubAdmin(userId: string, tenantId: string) {
+export async function promoteToSubAdmin(userId: string, orgId: string) {
   const user = await prisma.user.findUnique({ where: { id: userId } });
   if (!user) throw NotFound('User not found');
-  if (!user.tenantId || user.tenantId !== tenantId) throw Forbidden('User is not in this organization');
+  if (!user.orgId || user.orgId !== orgId) throw Forbidden('User is not in this organization');
   if (user.secondaryRole === 'SUB_ADMIN') throw BadRequest('User already has Sub Admin role');
   return prisma.user.update({ where: { id: userId }, data: { secondaryRole: 'SUB_ADMIN' }, select: LIST_SELECT });
 }
 
-export async function revokeSubAdmin(userId: string, tenantId: string) {
+export async function revokeSubAdmin(userId: string, orgId: string) {
   const user = await prisma.user.findUnique({ where: { id: userId } });
   if (!user) throw NotFound('User not found');
-  if (!user.tenantId || user.tenantId !== tenantId) throw Forbidden('User is not in this organization');
+  if (!user.orgId || user.orgId !== orgId) throw Forbidden('User is not in this organization');
   return prisma.user.update({ where: { id: userId }, data: { secondaryRole: null }, select: LIST_SELECT });
 }
 
-export async function toggleActive(id: string, tenantId: string | undefined, isActive: boolean) {
+export async function toggleActive(id: string, orgId: string | undefined, isActive: boolean) {
   const where: Prisma.UserWhereInput = { id };
-  if (tenantId) where.tenantId = tenantId;
+  if (orgId) where.orgId = orgId;
   const existing = await prisma.user.findFirst({ where });
   if (!existing) throw NotFound('User not found');
   return prisma.user.update({ where: { id }, data: { isActive }, select: LIST_SELECT });
 }
 
-export async function updateUser(id: string, tenantId: string | undefined, data: Record<string, unknown>) {
+export async function updateUser(id: string, orgId: string | undefined, data: Record<string, unknown>) {
   const where: Prisma.UserWhereInput = { id };
-  if (tenantId) where.tenantId = tenantId;
+  if (orgId) where.orgId = orgId;
   const current = await prisma.user.findFirst({ where });
   if (!current) throw NotFound('User not found or access denied');
 
@@ -104,7 +104,7 @@ export async function updateUser(id: string, tenantId: string | undefined, data:
     const newEmail = String(data.email).trim().toLowerCase();
     if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(newEmail)) throw BadRequest('A valid email address is required');
     if (newEmail !== current.email.toLowerCase()) {
-      const dup = await prisma.user.findFirst({ where: { id: { not: id }, email: newEmail, tenantId: current.tenantId } });
+      const dup = await prisma.user.findFirst({ where: { id: { not: id }, email: newEmail, orgId: current.orgId } });
       if (dup) throw BadRequest('Another user with this email already exists');
       update.email = newEmail;
     }

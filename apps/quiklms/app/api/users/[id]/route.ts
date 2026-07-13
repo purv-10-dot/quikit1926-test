@@ -9,7 +9,7 @@ export const PATCH = route(async (req, { params }) => {
   const actor = await requireAuth(req);
   requireRoles(actor, ['SUPER_ADMIN', 'TENANT_ADMIN', 'SUB_ADMIN']);
   const data = await parseBody(req, z.object({}).passthrough());
-  const tenantId = actor.role === 'SUPER_ADMIN' ? undefined : actor.tenantId ?? undefined;
-  const result = await updateUser(params!.id, tenantId, data as Record<string, unknown>);
+  const orgId = actor.role === 'SUPER_ADMIN' ? undefined : actor.orgId ?? undefined;
+  const result = await updateUser(params!.id, orgId, data as Record<string, unknown>);
   return json({ success: true, data: result.user, emailWelcomeSent: result.emailWelcomeSent, message: 'User updated successfully' });
 });

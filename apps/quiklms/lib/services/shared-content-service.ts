@@ -30,7 +30,7 @@ export async function pushToAllTenants(
   for (const tenant of activeTenants) {
     try {
       const existing = await prisma.sharedContent.findUnique({
-        where: { masterCourseId_tenantId: { masterCourseId, tenantId: tenant.id } },
+        where: { masterCourseId_orgId: { masterCourseId, orgId: tenant.id } },
       });
 
       if (existing) {
@@ -45,14 +45,14 @@ export async function pushToAllTenants(
         data: {
           title: masterCourse.title,
           description: masterCourse.description,
-          tenantId: tenant.id,
+          orgId: tenant.id,
           authorId: masterCourse.authorId,
           status: 'Published',
           isMaster: false,
           thumbnailUrl: masterCourse.thumbnailUrl,
           modules: {
             create: masterCourse.modules.map((m) => ({
-              tenantId: tenant.id,
+              orgId: tenant.id,
               title: m.title,
               description: m.description,
               orderIndex: m.orderIndex,
@@ -79,7 +79,7 @@ export async function pushToAllTenants(
       await prisma.sharedContent.create({
         data: {
           masterCourseId,
-          tenantId: tenant.id,
+          orgId: tenant.id,
           tenantCourseId: tenantCourse.id,
           isActive: true,
         },
@@ -94,9 +94,9 @@ export async function pushToAllTenants(
   return { success: true, sharedCount, tenantIds: sharedTenantIds };
 }
 
-export async function getSharedContentForTenant(tenantId: string) {
+export async function getSharedContentForTenant(orgId: string) {
   const shared = await prisma.sharedContent.findMany({
-    where: { tenantId, isActive: true },
+    where: { orgId, isActive: true },
   });
 
   // Legacy populated masterCourseId + tenantCourseId. Those are scalar refs here

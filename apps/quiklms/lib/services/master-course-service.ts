@@ -17,9 +17,9 @@ import { BadRequest, NotFound } from '@/lib/http';
 type AnyRec = Record<string, unknown>;
 
 // ── tenant feature: approval workflow ────────────────────────────────────────
-export async function isApprovalWorkflowEnabled(tenantId: string): Promise<boolean> {
+export async function isApprovalWorkflowEnabled(orgId: string): Promise<boolean> {
   try {
-    const tenant = await prisma.tenant.findUnique({ where: { id: tenantId }, select: { featureConfig: true } });
+    const tenant = await prisma.tenant.findUnique({ where: { id: orgId }, select: { featureConfig: true } });
     const config = (tenant?.featureConfig as AnyRec) || {};
     return config.approvalWorkflowEnabled !== false;
   } catch {
@@ -32,7 +32,7 @@ async function setSelectedTenants(masterCourseId: string, tenantIds: string[]): 
   await prisma.masterCourseSelectedTenant.deleteMany({ where: { masterCourseId } });
   if (tenantIds.length) {
     await prisma.masterCourseSelectedTenant.createMany({
-      data: tenantIds.map((tenantId) => ({ masterCourseId, tenantId })),
+      data: tenantIds.map((orgId) => ({ masterCourseId, orgId })),
       skipDuplicates: true,
     });
   }
@@ -40,9 +40,9 @@ async function setSelectedTenants(masterCourseId: string, tenantIds: string[]): 
 
 async function getSelectedTenantIds(masterCourseId: string): Promise<string[]> {
   const rows = await prisma.masterCourseSelectedTenant.findMany({
-    where: { masterCourseId }, select: { tenantId: true },
+    where: { masterCourseId }, select: { orgId: true },
   });
-  return rows.map((r) => r.tenantId);
+  return rows.map((r) => r.orgId);
 }
 
 /** Attach selectedTenants id list to a course object for the response shape. */
@@ -187,7 +187,7 @@ export async function update(id: string, dto: AnyRec) {
 
 export async function createOrUpdateRevisionFromPublished(
   parentCourseId: string,
-  tenantId: string,
+  orgId: string,
   editorUserId: string,
   dto: AnyRec,
 ) {
@@ -211,12 +211,12 @@ export async function createOrUpdateRevisionFromPublished(
   const existingRevision = await prisma.masterCourse.findFirst({
     where: {
       parentCourseId: parent.id,
-      submittedByTenantId: tenantId,
+      submittedByTenantId: orgId,
       status: { in: ['PendingApproval', 'PendingTenantApproval', 'RejectedByTenantAdmin', 'Resubmitted', 'Rejected'] },
     },
   });
 
-  const approvalEnabled = await isApprovalWorkflowEnabled(tenantId);
+  const approvalEnabled = await isApprovalWorkflowEnabled(orgId);
   const nextStatus: MasterCourseStatus = !approvalEnabled
     ? 'Published'
     : existingRevision?.status === 'Rejected'
@@ -247,7 +247,7 @@ export async function createOrUpdateRevisionFromPublished(
         lastAutoSaveAt: null,
       },
     });
-    await setSelectedTenants(updated.id, [tenantId]);
+    await setSelectedTenants(updated.id, [orgId]);
     return withSelectedTenants(updated);
   }
 
@@ -267,13 +267,13 @@ export async function createOrUpdateRevisionFromPublished(
       estimatedDuration: payload.estimatedDuration,
       authorId: parent.authorId,
       submittedBy: editorUserId,
-      submittedByTenantId: tenantId,
+      submittedByTenantId: orgId,
       parentCourseId: parent.id,
       version: (parent.version || 1) + 1,
       revisionNumber: (parent.revisionNumber || parent.version || 1) + 1,
     },
   });
-  await setSelectedTenants(revision.id, [tenantId]);
+  await setSelectedTenants(revision.id, [orgId]);
   return withSelectedTenants(revision);
 }
 
@@ -420,10 +420,10 @@ export async function findAllApprovalItems() {
   return Promise.all(courses.map(withSelectedTenants));
 }
 
-export async function findBySubmittedTenant(tenantId: string) {
+export async function findBySubmittedTenant(orgId: string) {
   const courses = await prisma.masterCourse.findMany({
     where: {
-      submittedByTenantId: tenantId,
+      submittedByTenantId: orgId,
       status: { in: ['PendingApproval', 'PendingTenantApproval', 'RejectedByTenantAdmin', 'Resubmitted', 'Rejected', 'Published'] },
     },
     orderBy: { updatedAt: 'desc' },
@@ -439,10 +439,10 @@ export async function findBySubmittedUser(userId: string) {
   return Promise.all(courses.map(withSelectedTenants));
 }
 
-export async function findSubAdminSubmissions(tenantId: string) {
+export async function findSubAdminSubmissions(orgId: string) {
   const courses = await prisma.masterCourse.findMany({
     where: {
-      submittedByTenantId: tenantId,
+      submittedByTenantId: orgId,
       status: { in: ['PendingTenantApproval', 'RejectedByTenantAdmin', 'PendingApproval', 'Published', 'Rejected'] },
     },
     orderBy: { updatedAt: 'desc' },
@@ -450,11 +450,11 @@ export async function findSubAdminSubmissions(tenantId: string) {
   return Promise.all(courses.map(withSelectedTenants));
 }
 
-export async function tenantApprove(id: string, tenantAdminUserId: string, tenantId: string) {
+export async function tenantApprove(id: string, tenantAdminUserId: string, orgId: string) {
   const course = await prisma.masterCourse.findFirst({ where: { id, isMaster: true } });
   if (!course) throw NotFound('Master course not found');
   if (course.status !== 'PendingTenantApproval') throw BadRequest('Only courses pending Tenant Admin approval can be approved');
-  if (course.submittedByTenantId !== tenantId) throw BadRequest('You can only approve courses from your own organization');
+  if (course.submittedByTenantId !== orgId) throw BadRequest('You can only approve courses from your own organization');
   const updated = await prisma.masterCourse.update({
     where: { id },
     data: { tenantApprovedBy: tenantAdminUserId, tenantApprovalDate: new Date(), tenantRejectionReason: null, status: 'PendingApproval' },
@@ -462,11 +462,11 @@ export async function tenantApprove(id: string, tenantAdminUserId: string, tenan
   return withSelectedTenants(updated);
 }
 
-export async function tenantReject(id: string, _tenantAdminUserId: string, tenantId: string, reason: string) {
+export async function tenantReject(id: string, _tenantAdminUserId: string, orgId: string, reason: string) {
   const course = await prisma.masterCourse.findFirst({ where: { id, isMaster: true } });
   if (!course) throw NotFound('Master course not found');
   if (course.status !== 'PendingTenantApproval') throw BadRequest('Only courses pending Tenant Admin approval can be rejected');
-  if (course.submittedByTenantId !== tenantId) throw BadRequest('You can only reject courses from your own organization');
+  if (course.submittedByTenantId !== orgId) throw BadRequest('You can only reject courses from your own organization');
   const updated = await prisma.masterCourse.update({
     where: { id }, data: { tenantRejectionReason: reason, status: 'RejectedByTenantAdmin' },
   });
@@ -535,9 +535,9 @@ export async function reject(id: string, rejectedById: string, reason: string) {
 // ── controller-side ownership check (canTenantAdminEditCourse) ────────────────
 export function canTenantAdminEditCourse(
   course: { submittedByTenantId?: string | null; selectedTenants?: string[] },
-  tenantId: string,
+  orgId: string,
 ): boolean {
-  const tenantIdStr = String(tenantId);
+  const tenantIdStr = String(orgId);
   const submittedTenantId = course.submittedByTenantId ? String(course.submittedByTenantId) : undefined;
   const tenantScoped = (course.selectedTenants || []).includes(tenantIdStr);
   return submittedTenantId === tenantIdStr || (!submittedTenantId && tenantScoped);

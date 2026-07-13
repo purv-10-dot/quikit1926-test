@@ -5,5 +5,5 @@ import { getConsentHistory } from '@/lib/services/consent-service';
 // GET /api/consent/student/:id
 export const GET = route(async (req, { params }) => {
   const user = await requireAuth(req);
-  return json(await getConsentHistory(user.tenantId as string, params!.id));
+  return json(await getConsentHistory(user.orgId as string, params!.id));
 });

@@ -9,14 +9,14 @@ const TEN_MB = 10 * 1024 * 1024;
 export const GET = route(async (req) => {
   const actor = await requireAuth(req);
   requireRoles(actor, ['SUPER_ADMIN', 'TENANT_ADMIN', 'SUB_ADMIN', 'MANAGER']);
-  const tenantId = actor.tenantId;
+  const orgId = actor.orgId;
 
-  if (!tenantId && actor.role === 'SUPER_ADMIN') {
+  if (!orgId && actor.role === 'SUPER_ADMIN') {
     return json({ success: true, data: { canUpload: true, availableSpace: TEN_GB, usedSpace: 0, totalSpace: TEN_GB }, message: 'Storage available for upload' });
   }
-  if (!tenantId) throw BadRequest('Tenant ID is required');
+  if (!orgId) throw BadRequest('Tenant ID is required');
 
-  const usage = await getStorageUsage(tenantId);
+  const usage = await getStorageUsage(orgId);
   const availableSpace = usage.storageLimit - usage.currentUsage;
   if (availableSpace < TEN_MB) {
     throw Forbidden('Storage limit exceeded. Please free up space or contact your administrator.');

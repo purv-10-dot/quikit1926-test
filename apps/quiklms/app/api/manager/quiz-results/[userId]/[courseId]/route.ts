@@ -6,6 +6,6 @@ import { getQuizResults } from '@/lib/services/manager-service';
 export const GET = route(async (req, { params }) => {
   const user = await requireAuth(req);
   requireRoles(user, ['MANAGER']);
-  const results = await getQuizResults(params!.userId, params!.courseId, user.id, user.tenantId as string);
+  const results = await getQuizResults(params!.userId, params!.courseId, user.id, user.orgId as string);
   return json({ success: true, data: results, message: 'Quiz results fetched successfully' });
 });

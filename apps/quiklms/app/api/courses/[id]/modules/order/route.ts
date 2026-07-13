@@ -9,8 +9,8 @@ const schema = z.object({ moduleIds: z.array(z.string()) });
 // PUT /api/courses/:id/modules/order — any authenticated user (TenantGuard)
 export const PUT = route(async (req, { params }) => {
   const actor = await requireAuth(req);
-  if (!actor.tenantId) throw BadRequest('Tenant ID required');
+  if (!actor.orgId) throw BadRequest('Tenant ID required');
   const { moduleIds } = await parseBody(req, schema);
-  const course = await updateModuleOrder(actor.tenantId, params!.id, moduleIds);
+  const course = await updateModuleOrder(actor.orgId, params!.id, moduleIds);
   return json({ success: true, data: course, message: 'Module order updated successfully' });
 });

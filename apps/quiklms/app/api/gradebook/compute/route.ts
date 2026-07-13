@@ -8,5 +8,5 @@ export const POST = route(async (req) => {
   const url = new URL(req.url);
   const batchId = url.searchParams.get('batchId') || '';
   const term = url.searchParams.get('term') || undefined;
-  return json(await computeBatchGrades(user.tenantId as string, batchId, term));
+  return json(await computeBatchGrades(user.orgId as string, batchId, term));
 });

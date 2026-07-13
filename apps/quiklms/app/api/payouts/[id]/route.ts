@@ -6,7 +6,7 @@ import { findOne } from '@/lib/services/payouts-service';
 export const GET = route(async (req, { params }) => {
   const actor = await requireAuth(req);
   requireRoles(actor, ['SUPER_ADMIN', 'TENANT_ADMIN', 'SUB_ADMIN', 'MANAGER', 'TEACHER']);
-  const payout = await findOne(actor.tenantId!, params!.id);
+  const payout = await findOne(actor.orgId!, params!.id);
   // A TEACHER (without an admin/manager role) may only view their own payout.
   const isStaff = ['SUPER_ADMIN', 'TENANT_ADMIN', 'SUB_ADMIN', 'MANAGER'].some((r) =>
     userHasRole(actor, r as Parameters<typeof userHasRole>[1]),

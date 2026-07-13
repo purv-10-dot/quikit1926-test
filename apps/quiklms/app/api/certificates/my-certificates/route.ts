@@ -7,6 +7,6 @@ export const GET = route(async (req) => {
   const user = await requireAuth(req);
   requireRoles(user, ['SUPER_ADMIN', 'TENANT_ADMIN', 'SUB_ADMIN', 'MANAGER', 'LEARNER']);
   if (!user.id) throw new Error('User ID is required');
-  if (!user.tenantId) return json({ success: true, data: [] });
-  return json({ success: true, data: await getLearnerCertificates(user.tenantId, user.id) });
+  if (!user.orgId) return json({ success: true, data: [] });
+  return json({ success: true, data: await getLearnerCertificates(user.orgId, user.id) });
 });

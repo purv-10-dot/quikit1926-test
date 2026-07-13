@@ -7,5 +7,5 @@ export const GET = route(async (req) => {
   const actor = await requireAuth(req);
   requireRoles(actor, ['TEACHER']);
   const year = new URL(req.url).searchParams.get('year');
-  return json(await getTeacherPayouts(actor.tenantId!, actor.id, year ? parseInt(year) : undefined));
+  return json(await getTeacherPayouts(actor.orgId!, actor.id, year ? parseInt(year) : undefined));
 });

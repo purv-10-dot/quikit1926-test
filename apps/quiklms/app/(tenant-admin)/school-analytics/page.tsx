@@ -266,10 +266,10 @@ export default function SchoolAnalyticsPage() {
   const [comparisonData, setComparisonData] = useState<any>(null);
   const [comparisonLoading, setComparisonLoading] = useState(false);
 
-  const tenantId = useMemo(() => {
+  const orgId = useMemo(() => {
     try {
       const user = JSON.parse(sessionStorage.getItem('user') || '{}');
-      return user.tenantId;
+      return user.orgId;
     } catch {
       return null;
     }
@@ -278,14 +278,14 @@ export default function SchoolAnalyticsPage() {
   const { dateFrom, dateTo, days } = useMemo(() => getDateRange(dateRange), [dateRange]);
 
   useEffect(() => {
-    if (!tenantId) {
+    if (!orgId) {
       setLoading(false);
       setError('Please log in to view analytics.');
       return;
     }
     fetchAllData();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [tenantId, dateFrom, dateTo, days]);
+  }, [orgId, dateFrom, dateTo, days]);
 
   const fetchAllData = async () => {
     setLoading(true);

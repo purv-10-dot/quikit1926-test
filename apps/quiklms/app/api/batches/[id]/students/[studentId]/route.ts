@@ -6,5 +6,5 @@ import { removeStudent } from '@/lib/services/batches-service';
 export const DELETE = route(async (req, { params }) => {
   const actor = await requireAuth(req);
   requireRoles(actor, ['TENANT_ADMIN', 'SUB_ADMIN', 'TEACHER']);
-  return json(await removeStudent(actor.tenantId!, params!.id, params!.studentId));
+  return json(await removeStudent(actor.orgId!, params!.id, params!.studentId));
 });

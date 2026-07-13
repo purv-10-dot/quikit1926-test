@@ -8,22 +8,22 @@ import { createCourse, findAllForTenant } from '@/lib/services/courses-service';
 export const POST = route(async (req) => {
   const actor = await requireAuth(req);
   requireRoles(actor, ['SUPER_ADMIN', 'TENANT_ADMIN', 'SUB_ADMIN']);
-  const tenantId = actor.tenantId;
-  if (!tenantId) {
+  const orgId = actor.orgId;
+  if (!orgId) {
     return json({ success: false, message: 'Tenant ID is required', data: [] });
   }
   const dto = await parseBody(req, z.object({}).passthrough());
-  const course = await createCourse(tenantId, actor.id, dto as Record<string, unknown>);
+  const course = await createCourse(orgId, actor.id, dto as Record<string, unknown>);
   return json({ success: true, data: course, message: 'Course created successfully' });
 });
 
 // GET /api/courses — any authenticated user (tenant-scoped)
 export const GET = route(async (req) => {
   const actor = await requireAuth(req);
-  const tenantId = actor.tenantId;
-  if (!tenantId) {
+  const orgId = actor.orgId;
+  if (!orgId) {
     return json({ success: false, message: 'Tenant ID is required', data: [] });
   }
-  const data = await findAllForTenant(tenantId);
+  const data = await findAllForTenant(orgId);
   return json({ success: true, data });
 });

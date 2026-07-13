@@ -62,7 +62,7 @@ function createJitsiMeeting(topic: string) {
 }
 
 // ═══════════════ CREATE MEETING ═══════════════
-export async function createMeeting(tenantId: string, dto: CreateMeetingDto, createdBy: string) {
+export async function createMeeting(orgId: string, dto: CreateMeetingDto, createdBy: string) {
   const provider: MeetingProvider = dto.provider || 'jitsi';
 
   let teacherName = '';
@@ -79,7 +79,7 @@ export async function createMeeting(tenantId: string, dto: CreateMeetingDto, cre
   // Tenant video config for auto-record
   let autoRecord = false;
   try {
-    const tenant = await prisma.tenant.findUnique({ where: { id: tenantId } });
+    const tenant = await prisma.tenant.findUnique({ where: { id: orgId } });
     const vc = (tenant as Record<string, any> | null)?.videoConfig;
     if (vc?.meetingSettings?.autoRecord || vc?.settings?.autoRecord) autoRecord = true;
   } catch {
@@ -104,7 +104,7 @@ export async function createMeeting(tenantId: string, dto: CreateMeetingDto, cre
 
   const meeting = await prisma.meeting.create({
     data: {
-      tenantId,
+      orgId,
       scheduledClassId: dto.scheduledClassId,
       hostId: createdBy,
       provider,
@@ -130,12 +130,12 @@ export async function createMeeting(tenantId: string, dto: CreateMeetingDto, cre
 }
 
 // ═══════════════ CREATE INSTANT MEETING ═══════════════
-export async function createInstantMeeting(tenantId: string, createdBy: string, provider: MeetingProvider, title?: string) {
+export async function createInstantMeeting(orgId: string, createdBy: string, provider: MeetingProvider, title?: string) {
   const now = new Date();
   const endTime = new Date(now.getTime() + 60 * 60 * 1000);
 
   const created = await createMeeting(
-    tenantId,
+    orgId,
     { provider, scheduledStartTime: now.toISOString(), scheduledEndTime: endTime.toISOString(), title: title || 'Instant Meeting', isInstant: true },
     createdBy,
   );
@@ -148,8 +148,8 @@ export async function createInstantMeeting(tenantId: string, createdBy: string, 
 }
 
 // ═══════════════ LIST MEETINGS ═══════════════
-export async function findAll(tenantId: string, filters?: { scheduledClassId?: string; status?: string }) {
-  const where: Prisma.MeetingWhereInput = { tenantId };
+export async function findAll(orgId: string, filters?: { scheduledClassId?: string; status?: string }) {
+  const where: Prisma.MeetingWhereInput = { orgId };
   if (filters?.scheduledClassId) where.scheduledClassId = filters.scheduledClassId;
   if (filters?.status) where.status = filters.status as MeetingStatus;
 
@@ -167,8 +167,8 @@ export async function findAll(tenantId: string, filters?: { scheduledClassId?: s
 }
 
 // ═══════════════ GET MEETING BY ID ═══════════════
-export async function findOne(tenantId: string, meetingId: string) {
-  const meeting = await prisma.meeting.findFirst({ where: { id: meetingId, tenantId } });
+export async function findOne(orgId: string, meetingId: string) {
+  const meeting = await prisma.meeting.findFirst({ where: { id: meetingId, orgId } });
   if (!meeting) throw NotFound('Meeting not found');
 
   const cmap = await classMap([meeting.scheduledClassId], { id: true, title: true, startTime: true, endTime: true, batchId: true, teacherId: true });
@@ -185,50 +185,50 @@ export async function findOne(tenantId: string, meetingId: string) {
 }
 
 // ═══════════════ START MEETING ═══════════════
-export async function startMeeting(tenantId: string, meetingId: string) {
+export async function startMeeting(orgId: string, meetingId: string) {
   const result = await prisma.meeting.updateMany({
-    where: { id: meetingId, tenantId, status: 'scheduled' },
+    where: { id: meetingId, orgId, status: 'scheduled' },
     data: { status: 'started', actualStartTime: new Date() },
   });
   if (result.count === 0) throw BadRequest('Meeting not found or cannot be started');
-  const m = await prisma.meeting.findFirst({ where: { id: meetingId, tenantId } });
+  const m = await prisma.meeting.findFirst({ where: { id: meetingId, orgId } });
   return { _id: m!.id, ...m };
 }
 
 // ═══════════════ END MEETING ═══════════════
-export async function endMeeting(tenantId: string, meetingId: string) {
+export async function endMeeting(orgId: string, meetingId: string) {
   const result = await prisma.meeting.updateMany({
-    where: { id: meetingId, tenantId, status: 'started' },
+    where: { id: meetingId, orgId, status: 'started' },
     data: { status: 'ended', actualEndTime: new Date() },
   });
   if (result.count === 0) throw BadRequest('Meeting not found or not started');
   await calculateAttendanceDurations(meetingId);
-  const m = await prisma.meeting.findFirst({ where: { id: meetingId, tenantId } });
+  const m = await prisma.meeting.findFirst({ where: { id: meetingId, orgId } });
   return { _id: m!.id, ...m };
 }
 
 // ═══════════════ CANCEL MEETING ═══════════════
-export async function cancelMeeting(tenantId: string, meetingId: string) {
+export async function cancelMeeting(orgId: string, meetingId: string) {
   const result = await prisma.meeting.updateMany({
-    where: { id: meetingId, tenantId, status: { in: ['scheduled', 'started'] } },
+    where: { id: meetingId, orgId, status: { in: ['scheduled', 'started'] } },
     data: { status: 'cancelled' },
   });
   if (result.count === 0) throw BadRequest('Meeting not found or cannot be cancelled');
-  const m = await prisma.meeting.findFirst({ where: { id: meetingId, tenantId } });
+  const m = await prisma.meeting.findFirst({ where: { id: meetingId, orgId } });
   return { _id: m!.id, ...m };
 }
 
 // ═══════════════ TOGGLE RECORDING ═══════════════
-export async function toggleRecording(tenantId: string, meetingId: string, enabled: boolean) {
-  const existing = await prisma.meeting.findFirst({ where: { id: meetingId, tenantId } });
+export async function toggleRecording(orgId: string, meetingId: string, enabled: boolean) {
+  const existing = await prisma.meeting.findFirst({ where: { id: meetingId, orgId } });
   if (!existing) throw NotFound('Meeting not found');
   const m = await prisma.meeting.update({ where: { id: meetingId }, data: { recordingEnabled: enabled } });
   return { _id: m.id, ...m };
 }
 
 // ═══════════════ GET RECORDINGS ═══════════════
-export async function getRecordings(tenantId: string, meetingId: string) {
-  const meeting = await prisma.meeting.findFirst({ where: { id: meetingId, tenantId } });
+export async function getRecordings(orgId: string, meetingId: string) {
+  const meeting = await prisma.meeting.findFirst({ where: { id: meetingId, orgId } });
   if (!meeting) throw NotFound('Meeting not found');
   return {
     meetingId: meeting.id,
@@ -240,8 +240,8 @@ export async function getRecordings(tenantId: string, meetingId: string) {
 }
 
 // ═══════════════ GET ALL RECORDINGS FOR TENANT ═══════════════
-export async function getAllRecordings(tenantId: string, filters?: { status?: string; limit?: number }) {
-  const where: Prisma.MeetingWhereInput = { tenantId, NOT: { recordingUrls: { isEmpty: true } } };
+export async function getAllRecordings(orgId: string, filters?: { status?: string; limit?: number }) {
+  const where: Prisma.MeetingWhereInput = { orgId, NOT: { recordingUrls: { isEmpty: true } } };
   if (filters?.status) where.recordingStatus = filters.status as Prisma.MeetingWhereInput['recordingStatus'];
 
   const rows = await prisma.meeting.findMany({
@@ -265,8 +265,8 @@ export async function getAllRecordings(tenantId: string, filters?: { status?: st
 }
 
 // ═══════════════ JOIN MEETING (LOG ATTENDANCE) ═══════════════
-export async function joinMeeting(tenantId: string, meetingId: string, userId: string, role: string, deviceType?: string) {
-  const meeting = await prisma.meeting.findFirst({ where: { id: meetingId, tenantId } });
+export async function joinMeeting(orgId: string, meetingId: string, userId: string, role: string, deviceType?: string) {
+  const meeting = await prisma.meeting.findFirst({ where: { id: meetingId, orgId } });
   if (!meeting) throw NotFound('Meeting not found');
 
   const existing = await prisma.meetingAttendance.findFirst({
@@ -312,8 +312,8 @@ export async function leaveMeeting(meetingId: string, userId: string) {
 }
 
 // ═══════════════ GET MEETING ATTENDANCE ═══════════════
-export async function getMeetingAttendance(tenantId: string, meetingId: string) {
-  const meeting = await prisma.meeting.findFirst({ where: { id: meetingId, tenantId } });
+export async function getMeetingAttendance(orgId: string, meetingId: string) {
+  const meeting = await prisma.meeting.findFirst({ where: { id: meetingId, orgId } });
   if (!meeting) throw NotFound('Meeting not found');
 
   const rows = await prisma.meetingAttendance.findMany({ where: { meetingId }, orderBy: { joinedAt: 'asc' } });
@@ -430,9 +430,9 @@ async function handleWebhookParticipantLeave(externalMeetingId: string, email: s
 }
 
 // ═══════════════ LIVE CLASS STATUS (for parents) ═══════════════
-export async function getLiveClassStatus(tenantId: string, studentId: string) {
+export async function getLiveClassStatus(orgId: string, studentId: string) {
   const batches = await prisma.batch.findMany({
-    where: { tenantId, status: 'active', students: { some: { studentId } } },
+    where: { orgId, status: 'active', students: { some: { studentId } } },
     select: { id: true },
   });
   const batchIds = batches.map((b) => b.id);

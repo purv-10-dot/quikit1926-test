@@ -113,7 +113,7 @@ export function buildTenantFeaturesResponse(tenant: Tenant) {
   for (const r of availableRoles) roleLabels[r] = getRoleLabel(r, tenant.tenantType);
 
   return {
-    tenantId: tenant.id,
+    orgId: tenant.id,
     tenantType: tenant.tenantType,
     tenantName: tenant.name,
     features: getFeatures(tenant),

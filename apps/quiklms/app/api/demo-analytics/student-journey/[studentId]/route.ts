@@ -6,5 +6,5 @@ import { getStudentJourney } from '@/lib/services/demo-analytics-service';
 export const GET = route(async (req, { params }) => {
   const actor = await requireAuth(req);
   requireRoles(actor, ['TENANT_ADMIN', 'SUB_ADMIN']);
-  return json({ success: true, data: await getStudentJourney(actor.tenantId!, params!.studentId) });
+  return json({ success: true, data: await getStudentJourney(actor.orgId!, params!.studentId) });
 });

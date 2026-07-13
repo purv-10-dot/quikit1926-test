@@ -6,5 +6,5 @@ import { startClass } from '@/lib/services/scheduling-service';
 export const PATCH = route(async (req, { params }) => {
   const actor = await requireAuth(req);
   requireRoles(actor, ['TEACHER', 'TENANT_ADMIN', 'SUB_ADMIN']);
-  return json(await startClass(actor.tenantId!, params!.id));
+  return json(await startClass(actor.orgId!, params!.id));
 });

@@ -6,5 +6,5 @@ import { getForStudent } from '@/lib/services/tutoring-requests-service';
 export const GET = route(async (req) => {
   const actor = await requireAuth(req);
   requireRoles(actor, ['LEARNER']);
-  return json(await getForStudent(actor.tenantId!, actor.id));
+  return json(await getForStudent(actor.orgId!, actor.id));
 });

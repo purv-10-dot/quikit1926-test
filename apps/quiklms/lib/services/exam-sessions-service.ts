@@ -35,14 +35,14 @@ function shuffleArray<T>(arr: T[]): T[] {
 const examSettings = (s: Prisma.JsonValue | undefined): ExamSettings => (s as ExamSettings) || {};
 
 export async function startSession(user: AuthUser, studentId: string, examId: string) {
-  const tenantId = user.tenantId as string;
+  const orgId = user.orgId as string;
 
   const exam = await prisma.exam.findFirst({
     where: tenantWhere(user, { id: examId }),
     include: { questions: true },
   });
   if (!exam) throw NotFound('Exam not found');
-  assertTenantMatch(user, exam.tenantId);
+  assertTenantMatch(user, exam.orgId);
 
   if (!['published', 'active', 'completed'].includes(exam.status)) {
     throw BadRequest('Exam is not available');
@@ -69,7 +69,7 @@ export async function startSession(user: AuthUser, studentId: string, examId: st
   if (exam.scheduledEndTime && now > exam.scheduledEndTime) throw BadRequest('Exam window has ended');
 
   const existing = await prisma.examSession.findUnique({
-    where: { tenantId_examId_studentId: { tenantId, examId, studentId } },
+    where: { orgId_examId_studentId: { orgId, examId, studentId } },
   });
   if (existing) {
     if (existing.status === 'in_progress') return getSessionWithQuestions(existing, exam);
@@ -94,7 +94,7 @@ export async function startSession(user: AuthUser, studentId: string, examId: st
 
   const session = await prisma.examSession.create({
     data: {
-      tenantId,
+      orgId,
       examId,
       studentId,
       startedAt: now,
@@ -119,7 +119,7 @@ async function getSessionWithQuestions(session: SessionRecord, examDoc?: ExamRec
   const assigned = (session.assignedQuestions as unknown as AssignedQuestion[]) || [];
   const questionIds = assigned.map((q) => q.questionId);
   const questions = await prisma.question.findMany({
-    where: { id: { in: questionIds }, tenantId: session.tenantId },
+    where: { id: { in: questionIds }, orgId: session.orgId },
     select: { id: true, text: true, type: true, options: true, imageUrl: true, audioUrl: true, points: true },
   });
   const questionMap = new Map(questions.map((q) => [q.id, q]));
@@ -163,8 +163,8 @@ async function getSessionWithQuestions(session: SessionRecord, examDoc?: ExamRec
 }
 
 export async function saveAnswers(user: AuthUser, studentId: string, sessionId: string, answers: AnswersMap) {
-  const tenantId = user.tenantId as string;
-  const session = await prisma.examSession.findFirst({ where: { id: sessionId, tenantId, studentId } });
+  const orgId = user.orgId as string;
+  const session = await prisma.examSession.findFirst({ where: { id: sessionId, orgId, studentId } });
   if (!session) throw NotFound('Session not found');
   if (session.status !== 'in_progress') throw BadRequest('Session is not in progress');
 
@@ -185,8 +185,8 @@ export async function saveAnswers(user: AuthUser, studentId: string, sessionId: 
 }
 
 export async function submitSession(user: AuthUser, studentId: string, sessionId: string) {
-  const tenantId = user.tenantId as string;
-  const session = await prisma.examSession.findFirst({ where: { id: sessionId, tenantId, studentId } });
+  const orgId = user.orgId as string;
+  const session = await prisma.examSession.findFirst({ where: { id: sessionId, orgId, studentId } });
   if (!session) throw NotFound('Session not found');
   if (session.status !== 'in_progress') throw BadRequest('Session is not in progress');
   return gradeAndFinalize(session, 'submitted');
@@ -201,7 +201,7 @@ async function gradeAndFinalize(session: SessionRecord, status: FinalStatus) {
   const assigned = (session.assignedQuestions as unknown as AssignedQuestion[]) || [];
   const answers = (session.answers as unknown as AnswersMap) || {};
   const questionIds = assigned.map((q) => q.questionId);
-  const questions = await prisma.question.findMany({ where: { id: { in: questionIds }, tenantId: session.tenantId } });
+  const questions = await prisma.question.findMany({ where: { id: { in: questionIds }, orgId: session.orgId } });
   const questionMap = new Map(questions.map((q) => [q.id, q]));
   const settings = examSettings(exam.settings);
 
@@ -294,9 +294,9 @@ function checkAnswer(question: QuestionRecord, answer: AnswerEntry): boolean {
 }
 
 export async function getSessionStatus(user: AuthUser, studentId: string, sessionId: string) {
-  const tenantId = user.tenantId as string;
+  const orgId = user.orgId as string;
   const session = await prisma.examSession.findFirst({
-    where: { id: sessionId, tenantId, studentId },
+    where: { id: sessionId, orgId, studentId },
     select: { status: true, startedAt: true, serverDeadline: true, answers: true, lastSavedAt: true, proctoringFlags: true },
   });
   if (!session) throw NotFound('Session not found');
@@ -314,9 +314,9 @@ export async function getSessionStatus(user: AuthUser, studentId: string, sessio
 }
 
 export async function getResult(user: AuthUser, studentId: string, sessionId: string) {
-  const tenantId = user.tenantId as string;
+  const orgId = user.orgId as string;
   const session = await prisma.examSession.findFirst({
-    where: { id: sessionId, tenantId, studentId },
+    where: { id: sessionId, orgId, studentId },
     include: { exam: { select: { id: true, title: true, subject: true, totalMarks: true, settings: true, status: true } } },
   });
   if (!session) throw NotFound('Session not found');
@@ -331,9 +331,9 @@ export async function getResult(user: AuthUser, studentId: string, sessionId: st
 }
 
 export async function getSubmissions(user: AuthUser, examId: string) {
-  const tenantId = user.tenantId as string;
+  const orgId = user.orgId as string;
   return prisma.examSession.findMany({
-    where: { tenantId, examId },
+    where: { orgId, examId },
     orderBy: { score: 'desc' },
   });
 }
@@ -344,8 +344,8 @@ export async function evaluateSession(
   sessionId: string,
   data: { score: number; teacherRemarks?: string },
 ) {
-  const tenantId = user.tenantId as string;
-  const session = await prisma.examSession.findFirst({ where: { id: sessionId, tenantId } });
+  const orgId = user.orgId as string;
+  const session = await prisma.examSession.findFirst({ where: { id: sessionId, orgId } });
   if (!session) throw NotFound('Session not found');
 
   const percentage = session.totalPoints ? Math.round((data.score / session.totalPoints) * 100) : 0;
@@ -366,8 +366,8 @@ export async function evaluateSession(
 }
 
 export async function voidSession(user: AuthUser, sessionId: string) {
-  const tenantId = user.tenantId as string;
-  const existing = await prisma.examSession.findFirst({ where: { id: sessionId, tenantId } });
+  const orgId = user.orgId as string;
+  const existing = await prisma.examSession.findFirst({ where: { id: sessionId, orgId } });
   if (!existing) throw NotFound('Session not found');
   return prisma.examSession.update({
     where: { id: sessionId },
@@ -376,8 +376,8 @@ export async function voidSession(user: AuthUser, sessionId: string) {
 }
 
 export async function getMySession(user: AuthUser, studentId: string, examId: string) {
-  const tenantId = user.tenantId as string;
-  const session = await prisma.examSession.findFirst({ where: { examId, studentId, tenantId } });
+  const orgId = user.orgId as string;
+  const session = await prisma.examSession.findFirst({ where: { examId, studentId, orgId } });
   if (!session) return null;
 
   const exam = await prisma.exam.findUnique({
@@ -406,9 +406,9 @@ export async function getMySession(user: AuthUser, studentId: string, examId: st
 }
 
 export async function getStudentResults(user: AuthUser, studentId: string) {
-  const tenantId = user.tenantId as string;
+  const orgId = user.orgId as string;
   const sessions = await prisma.examSession.findMany({
-    where: { studentId, tenantId, status: { in: ['submitted', 'auto_submitted'] } },
+    where: { studentId, orgId, status: { in: ['submitted', 'auto_submitted'] } },
     include: { exam: { select: { id: true, title: true, subject: true, totalMarks: true, settings: true, status: true } } },
     orderBy: { endedAt: 'desc' },
   });
@@ -438,9 +438,9 @@ export async function getStudentResults(user: AuthUser, studentId: string) {
 }
 
 export async function getExamAnalytics(user: AuthUser, examId: string) {
-  const tenantId = user.tenantId as string;
+  const orgId = user.orgId as string;
   const sessions = await prisma.examSession.findMany({
-    where: { tenantId, examId, status: { in: ['submitted', 'auto_submitted'] } },
+    where: { orgId, examId, status: { in: ['submitted', 'auto_submitted'] } },
   });
 
   if (sessions.length === 0) return { totalSubmissions: 0 };

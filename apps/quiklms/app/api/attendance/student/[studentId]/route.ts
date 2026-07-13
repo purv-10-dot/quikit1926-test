@@ -8,7 +8,7 @@ export const GET = route(async (req, { params }) => {
   const url = new URL(req.url);
   return json(
     await getStudentAttendance(
-      actor.tenantId!,
+      actor.orgId!,
       params!.studentId,
       url.searchParams.get('startDate') || undefined,
       url.searchParams.get('endDate') || undefined,

@@ -12,21 +12,21 @@ export const POST = route(async (req) => {
   const actor = await requireAuth(req);
   requireRoles(actor, ['SUPER_ADMIN', 'TENANT_ADMIN', 'SUB_ADMIN']);
   const dto = (await parseBody(req, z.object({}).passthrough())) as Record<string, unknown>;
-  const tenantId = actor.tenantId ?? undefined;
+  const orgId = actor.orgId ?? undefined;
 
   let message = 'Master course created successfully';
   if (isSubAdminActor(actor)) {
-    dto.selectedTenants = [tenantId];
+    dto.selectedTenants = [orgId];
     dto.status = 'PendingTenantApproval';
     dto.submittedBy = actor.id;
-    dto.submittedByTenantId = tenantId;
+    dto.submittedByTenantId = orgId;
     message = 'Course submitted for Tenant Admin approval';
-  } else if (isPrimaryTenantAdmin(actor) && tenantId) {
-    const approvalEnabled = await svc.isApprovalWorkflowEnabled(tenantId);
-    dto.selectedTenants = [tenantId];
+  } else if (isPrimaryTenantAdmin(actor) && orgId) {
+    const approvalEnabled = await svc.isApprovalWorkflowEnabled(orgId);
+    dto.selectedTenants = [orgId];
     dto.status = approvalEnabled ? 'PendingApproval' : 'Published';
     dto.submittedBy = actor.id;
-    dto.submittedByTenantId = tenantId;
+    dto.submittedByTenantId = orgId;
     message = approvalEnabled ? 'Course submitted for approval' : 'Course published successfully';
   }
 

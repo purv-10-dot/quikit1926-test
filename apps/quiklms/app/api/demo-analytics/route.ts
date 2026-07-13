@@ -6,5 +6,5 @@ import { getAnalytics } from '@/lib/services/demo-analytics-service';
 export const GET = route(async (req) => {
   const actor = await requireAuth(req);
   requireRoles(actor, ['TENANT_ADMIN', 'SUB_ADMIN']);
-  return json({ success: true, data: await getAnalytics(actor.tenantId!) });
+  return json({ success: true, data: await getAnalytics(actor.orgId!) });
 });

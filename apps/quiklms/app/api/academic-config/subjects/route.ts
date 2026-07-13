@@ -4,9 +4,9 @@ import { parseBody } from '@/lib/validation';
 import { requireAuth } from '@/lib/auth/context';
 import { getSubjects, addSubject } from '@/lib/services/academic-config-service';
 
-function tenantOf(req: Request, tenantId: string | null): string {
+function tenantOf(req: Request, orgId: string | null): string {
   const headerTenant = req.headers.get('x-tenant-id') || undefined;
-  const resolved = tenantId ?? headerTenant;
+  const resolved = orgId ?? headerTenant;
   if (!resolved) throw BadRequest('Tenant ID required');
   return resolved;
 }
@@ -14,14 +14,14 @@ function tenantOf(req: Request, tenantId: string | null): string {
 // GET /api/academic-config/subjects — any authenticated user
 export const GET = route(async (req) => {
   const actor = await requireAuth(req);
-  const tenantId = tenantOf(req, actor.tenantId);
-  return json(await getSubjects(tenantId));
+  const orgId = tenantOf(req, actor.orgId);
+  return json(await getSubjects(orgId));
 });
 
 // POST /api/academic-config/subjects { name }
 export const POST = route(async (req) => {
   const actor = await requireAuth(req);
-  const tenantId = tenantOf(req, actor.tenantId);
+  const orgId = tenantOf(req, actor.orgId);
   const body = await parseBody(req, z.object({ name: z.string() }));
-  return json({ name: await addSubject(tenantId, body.name) });
+  return json({ name: await addSubject(orgId, body.name) });
 });

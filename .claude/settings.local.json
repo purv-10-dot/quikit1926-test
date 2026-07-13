@@ -51,7 +51,11 @@
       "Bash(netstat -ano)",
       "Bash(DATABASE_URL=\"postgresql://postgres:postgres@localhost:5433/quikit_dev\" npx tsx \"C:\\\\Users\\\\user\\\\AppData\\\\Local\\\\Temp\\\\claude\\\\C--Users-user-Desktop-quikit-quikit1926\\\\15173d2b-04df-4c08-9d78-7a941809cbd3\\\\scratchpad\\\\inspect-oauth.ts\")",
       "Bash(DATABASE_URL=\"postgresql://postgres:postgres@localhost:5433/quikit_dev\" npx tsx prisma/_inspect-oauth.ts)",
-      "Bash(grep -rn \"Error\\(\\\\\"This\\\\|Error\\('This\\\\|throw new Error\\(\\\\`This\" app lib)"
+      "Bash(grep -rn \"Error\\(\\\\\"This\\\\|Error\\('This\\\\|throw new Error\\(\\\\`This\" app lib)",
+      "Bash(DATABASE_URL=\"postgresql://postgres@localhost:5432/quikskill_lms\" npx prisma migrate status --schema prisma/schema.prisma)",
+      "Bash(DATABASE_URL=\"postgresql://postgres@localhost:5432/quikskill_lms\" DATABASE_URL_DIRECT=\"postgresql://postgres:@localhost:5432/quikskill_lms?sslmode=disable\" npx prisma migrate deploy --schema prisma/schema.prisma)",
+      "Bash(../../node_modules/.bin/tsc --noEmit)",
+      "Bash(../../node_modules/.bin/vitest run *)"
     ],
     "additionalDirectories": [
       "c:\\wwwwwwwwww\\Authmergewithmainbranch\\QuikIT\\apps\\auth\\app\\api\\auth\\me"

@@ -11,5 +11,5 @@ export const POST = route(async (req, { params }) => {
   const actor = await requireAuth(req);
   requireRoles(actor, ['TENANT_ADMIN', 'SUB_ADMIN', 'TEACHER']);
   const dto = await parseBody(req, schema);
-  return json(await addStudents(actor.tenantId!, params!.id, dto));
+  return json(await addStudents(actor.orgId!, params!.id, dto));
 });

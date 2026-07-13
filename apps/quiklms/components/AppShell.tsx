@@ -187,16 +187,9 @@ export function AppShell({ role, children }: { role: string; children: React.Rea
                 </div>
               )}
             </div>
-          ) : (
-            <Link
-              href="/role-select"
-              className="inline-flex h-9 items-center gap-1.5 rounded-md px-3 text-sm font-medium text-white transition-[filter] hover:brightness-110 active:scale-[0.98]"
-              style={{ backgroundColor: 'var(--brand-secondary)' }}
-            >
-              <RefreshCw className="size-3.5" />
-              <span>Switch Role</span>
-            </Link>
-          )}
+          ) : null /* Single-role users: role is fixed by their centralized
+             login (the retired qs_role dev-switch is gone). To act as another
+             role, log in as that user — or use impersonation (future). */}
         </header>
 
         {/* ── Scrollable page content with a consistent max-width ──────────── */}

@@ -11,7 +11,7 @@ export const PATCH = route(async (req, { params }) => {
   const actor = await requireAuth(req);
   requireRoles(actor, ['SUPER_ADMIN', 'TENANT_ADMIN', 'SUB_ADMIN']);
   const { isActive } = await parseBody(req, schema);
-  const tenantId = actor.role === 'SUPER_ADMIN' ? undefined : actor.tenantId ?? undefined;
-  const data = await toggleActive(params!.id, tenantId, isActive);
+  const orgId = actor.role === 'SUPER_ADMIN' ? undefined : actor.orgId ?? undefined;
+  const data = await toggleActive(params!.id, orgId, isActive);
   return json({ success: true, data, message: `User ${isActive ? 'activated' : 'deactivated'} successfully` });
 });

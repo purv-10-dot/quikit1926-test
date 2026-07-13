@@ -9,7 +9,7 @@ export const GET = route(async (req, { params }) => {
   const url = new URL(req.url);
   return json(
     await getBatchReport(
-      actor.tenantId!,
+      actor.orgId!,
       params!.batchId,
       url.searchParams.get('startDate') || undefined,
       url.searchParams.get('endDate') || undefined,

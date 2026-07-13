@@ -6,14 +6,14 @@ import { prisma } from '@/lib/prisma';
 export const POST = route(async (req, { params }) => {
   const actor = await requireAuth(req);
   const { courseId, lessonId } = params!;
-  const tenantId = actor.tenantId ?? '';
+  const orgId = actor.orgId ?? '';
 
   try {
     // Fetch existing progress to merge lessonProgress JSON
     const existing = await prisma.progress.findUnique({
       where: {
-        tenantId_learnerId_courseId: {
-          tenantId,
+        orgId_learnerId_courseId: {
+          orgId,
           learnerId: actor.id,
           courseId,
         },
@@ -49,8 +49,8 @@ export const POST = route(async (req, { params }) => {
 
     await prisma.progress.upsert({
       where: {
-        tenantId_learnerId_courseId: {
-          tenantId,
+        orgId_learnerId_courseId: {
+          orgId,
           learnerId: actor.id,
           courseId,
         },
@@ -62,7 +62,7 @@ export const POST = route(async (req, { params }) => {
         completedAt: completionPercentage >= 100 ? new Date() : null,
       },
       create: {
-        tenantId,
+        orgId,
         learnerId: actor.id,
         courseId,
         lessonProgress: updatedLessonProgress as unknown as import('@prisma/client').Prisma.InputJsonValue,

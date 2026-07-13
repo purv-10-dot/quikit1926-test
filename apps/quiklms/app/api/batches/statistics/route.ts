@@ -6,5 +6,5 @@ import { getStatistics } from '@/lib/services/batches-service';
 export const GET = route(async (req) => {
   const actor = await requireAuth(req);
   requireRoles(actor, ['TENANT_ADMIN', 'SUB_ADMIN']);
-  return json(await getStatistics(actor.tenantId!));
+  return json(await getStatistics(actor.orgId!));
 });

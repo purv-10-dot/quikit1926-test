@@ -5,5 +5,5 @@ import { muteConversation } from '@/lib/services/messages-service';
 // PATCH /api/messages/conversations/:id/unmute
 export const PATCH = route(async (req, { params }) => {
   const actor = await requireAuth(req);
-  return json(await muteConversation(actor.tenantId ?? '', params!.id, actor.id, false));
+  return json(await muteConversation(actor.orgId ?? '', params!.id, actor.id, false));
 });

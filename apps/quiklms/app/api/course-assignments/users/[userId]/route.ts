@@ -6,7 +6,7 @@ import { getUserAssignments } from '@/lib/services/course-assignments-service';
 export const GET = route(async (req, { params }) => {
   const user = await requireAuth(req);
   requireRoles(user, ['SUPER_ADMIN', 'TENANT_ADMIN', 'SUB_ADMIN']);
-  const tenantId = user.tenantId;
-  if (!tenantId) throw BadRequest('Tenant ID is required');
-  return json({ success: true, data: await getUserAssignments(tenantId, params!.userId) });
+  const orgId = user.orgId;
+  if (!orgId) throw BadRequest('Tenant ID is required');
+  return json({ success: true, data: await getUserAssignments(orgId, params!.userId) });
 });

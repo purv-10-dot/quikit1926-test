@@ -6,10 +6,10 @@ import { prisma } from '@/lib/prisma';
 
 const PREFIX: Record<string, string> = { teacher: 'SCH-T', student: 'SCH-S', parent: 'SCH-P' };
 
-export async function getNextId(tenantId: string, type: 'teacher' | 'student' | 'parent'): Promise<string> {
+export async function getNextId(orgId: string, type: 'teacher' | 'student' | 'parent'): Promise<string> {
   const counter = await prisma.counter.upsert({
-    where: { tenantId_type: { tenantId, type } },
-    create: { tenantId, type, seq: 1 },
+    where: { orgId_type: { orgId, type } },
+    create: { orgId, type, seq: 1 },
     update: { seq: { increment: 1 } },
   });
   const seq = counter.seq.toString().padStart(4, '0');

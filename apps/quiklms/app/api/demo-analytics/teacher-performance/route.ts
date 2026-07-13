@@ -6,5 +6,5 @@ import { getTeacherConversionPerformance } from '@/lib/services/demo-analytics-s
 export const GET = route(async (req) => {
   const actor = await requireAuth(req);
   requireRoles(actor, ['TENANT_ADMIN', 'SUB_ADMIN']);
-  return json({ success: true, data: await getTeacherConversionPerformance(actor.tenantId!) });
+  return json({ success: true, data: await getTeacherConversionPerformance(actor.orgId!) });
 });

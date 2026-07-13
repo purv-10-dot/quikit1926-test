@@ -1,7 +1,9 @@
 /**
  * Stub auth-service — replaces the old JWT-based auth service.
- * registerUser creates users directly in the database.
- * Email/setup-token flows are disabled in dev (mock auth mode).
+ * registerUser creates the LMS User row only (no auth/password of its own —
+ * login is centralized via the ORG identity DB). It intentionally sends NO
+ * email: the invitation/welcome email is dispatched centrally by
+ * createCentralIdentity (see identity-service), which owns the temp password.
  */
 import { randomBytes } from 'crypto';
 import { prisma } from '@/lib/prisma';
@@ -14,7 +16,7 @@ export interface RegisterUserInput {
   firstName: string;
   lastName: string;
   role: string;
-  tenantId?: string;
+  orgId?: string;
   phone?: string;
   studentId?: string;
   guardianContact?: string;
@@ -38,7 +40,7 @@ export interface RegisterUserInput {
 }
 
 export async function registerUser(input: RegisterUserInput): Promise<{ data: { id: string; employeeId?: string; [key: string]: unknown } }> {
-  const { id, email, firstName, lastName, role, tenantId, phone } = input;
+  const { id, email, firstName, lastName, role, orgId, phone } = input;
 
   const existing = await prisma.user.findFirst({ where: { email: email.toLowerCase() } });
   if (existing) throw new Error(`User with email ${email} already exists`);
@@ -55,7 +57,7 @@ export async function registerUser(input: RegisterUserInput): Promise<{ data: { 
       firstName,
       lastName,
       role: role as never,
-      tenantId: tenantId ?? null,
+      orgId: orgId ?? null,
       phone: phone ?? null,
       studentId: input.studentId ?? null,
       guardianContact: input.guardianContact ?? null,

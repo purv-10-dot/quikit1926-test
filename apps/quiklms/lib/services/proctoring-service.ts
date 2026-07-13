@@ -1,7 +1,7 @@
 /**
  * Proctoring service — ported from ProctoringService (Mongo → Prisma).
  * Writes ProctoringLog rows, aggregates proctoringFlags Json on the ExamSession,
- * and lazily generates IncidentReport rows. tenantId enforced via tenantWhere().
+ * and lazily generates IncidentReport rows. orgId enforced via tenantWhere().
  */
 import type { Prisma, ProctoringEventType, ProctoringSeverity } from '@prisma/client';
 import { prisma } from '@/lib/prisma';
@@ -33,7 +33,7 @@ export async function logEvent(
   eventType: string,
   metadata?: unknown,
 ) {
-  const tenantId = user.tenantId as string;
+  const orgId = user.orgId as string;
 
   const count = await prisma.proctoringLog.count({
     where: { sessionId, eventType: eventType as ProctoringEventType },
@@ -47,7 +47,7 @@ export async function logEvent(
 
   const log = await prisma.proctoringLog.create({
     data: {
-      tenantId,
+      orgId,
       sessionId,
       studentId,
       eventType: eventType as ProctoringEventType,
@@ -76,23 +76,23 @@ export async function logEvent(
 }
 
 export async function getSessionLog(user: AuthUser, sessionId: string) {
-  const tenantId = user.tenantId as string;
+  const orgId = user.orgId as string;
   return prisma.proctoringLog.findMany({
-    where: { tenantId, sessionId },
+    where: { orgId, sessionId },
     orderBy: { timestamp: 'asc' },
   });
 }
 
 export async function getExamIncidents(user: AuthUser, examId: string) {
-  const tenantId = user.tenantId as string;
+  const orgId = user.orgId as string;
 
   const sessions = await prisma.examSession.findMany({
-    where: { tenantId, examId, proctoringFlags: { path: ['totalFlags'], gt: 0 } },
+    where: { orgId, examId, proctoringFlags: { path: ['totalFlags'], gt: 0 } },
   });
 
   const incidents: unknown[] = [];
   for (const session of sessions) {
-    let incident = await prisma.incidentReport.findFirst({ where: { sessionId: session.id, tenantId } });
+    let incident = await prisma.incidentReport.findFirst({ where: { sessionId: session.id, orgId } });
     if (!incident) {
       const logs = await prisma.proctoringLog.findMany({ where: { sessionId: session.id } });
       const summary: Record<string, number> = {};
@@ -105,7 +105,7 @@ export async function getExamIncidents(user: AuthUser, examId: string) {
 
       incident = await prisma.incidentReport.create({
         data: {
-          tenantId,
+          orgId,
           sessionId: session.id,
           examId,
           flagSummary: summary as unknown as Prisma.InputJsonValue,
@@ -135,9 +135,9 @@ export async function reviewIncident(
   sessionId: string,
   data: { disposition: string; action: string; remarks?: string },
 ) {
-  const tenantId = user.tenantId as string;
+  const orgId = user.orgId as string;
 
-  const existing = await prisma.incidentReport.findFirst({ where: { sessionId, tenantId } });
+  const existing = await prisma.incidentReport.findFirst({ where: { sessionId, orgId } });
   if (!existing) throw NotFound('Incident report not found');
 
   const incident = await prisma.incidentReport.update({

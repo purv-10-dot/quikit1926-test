@@ -193,9 +193,9 @@ const UserManagementPage = () => {
 
       const userStr = sessionStorage.getItem('user');
       const currentUser = userStr ? JSON.parse(userStr) : null;
-      const tenantId = currentUser?.tenantId;
+      const orgId = currentUser?.orgId;
 
-      if (!tenantId) {
+      if (!orgId) {
         toast.error('Tenant ID not found. Please log out and log in again.');
         setUploading(false);
         return;
@@ -234,7 +234,7 @@ const UserManagementPage = () => {
             firstName: values[firstNameIndex],
             lastName: values[lastNameIndex],
             role,
-            tenantId,
+            orgId,
           };
           if (managerId) payload.managerId = managerId;
 
@@ -264,9 +264,9 @@ const UserManagementPage = () => {
     try {
       const userStr = sessionStorage.getItem('user');
       const currentUser = userStr ? JSON.parse(userStr) : null;
-      const tenantId = currentUser?.tenantId;
+      const orgId = currentUser?.orgId;
 
-      if (!tenantId) {
+      if (!orgId) {
         toast.error('Tenant ID not found. Please log out and log in again.');
         setCreating(false);
         return;
@@ -274,7 +274,7 @@ const UserManagementPage = () => {
 
       const payload: any = {
         ...data,
-        tenantId,
+        orgId,
       };
       if (data.role !== 'LEARNER' || !data.managerId) {
         delete payload.managerId;

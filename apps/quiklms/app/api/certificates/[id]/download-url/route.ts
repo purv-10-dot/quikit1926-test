@@ -10,6 +10,6 @@ export const GET = route(async (req, { params }) => {
   if (!user.id) throw new Error('User ID is required');
 
   const { certificate } = await regeneratePdfForIssuedCertificate(params!.id);
-  const url = await getDownloadUrl(certificate.id, user.tenantId ?? null, user.id);
+  const url = await getDownloadUrl(certificate.id, user.orgId ?? null, user.id);
   return json({ success: true, data: { url } });
 });

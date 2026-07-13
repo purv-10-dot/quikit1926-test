@@ -15,8 +15,8 @@ export const GET = route(async (req) => {
   const actor = await requireAuth(req);
   requireRoles(actor, ['TENANT_ADMIN', 'SUB_ADMIN']);
 
-  const tenantId = actor.tenantId;
-  if (!tenantId) {
+  const orgId = actor.orgId;
+  if (!orgId) {
     return json({ success: false, message: 'No tenant context found' }, 400);
   }
 
@@ -26,7 +26,7 @@ export const GET = route(async (req) => {
   const actionType = (url.searchParams.get('actionType') as TenantActionType | null) || undefined;
 
   // Data path is preserved (validates filters / scoping) even though we cannot render.
-  await getLogsForPDF(tenantId, startDate, endDate, actionType);
+  await getLogsForPDF(orgId, startDate, endDate, actionType);
 
   throw new ApiError(501, 'PDF export is not yet available in this build (pdfkit dependency pending).', 'Not Implemented');
 });

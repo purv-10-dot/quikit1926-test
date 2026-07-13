@@ -10,5 +10,5 @@ const schema = z.object({ deviceType: z.string().optional() });
 export const POST = route(async (req, { params }) => {
   const actor = await requireAuth(req);
   const body = await parseBody(req, schema);
-  return json(await joinMeeting(actor.tenantId!, params!.id, actor.id, actor.role, body?.deviceType));
+  return json(await joinMeeting(actor.orgId!, params!.id, actor.id, actor.role, body?.deviceType));
 });

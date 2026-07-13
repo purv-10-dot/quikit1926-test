@@ -10,5 +10,5 @@ const schema = z.object({ participantIds: z.array(z.string()).min(1) });
 export const POST = route(async (req, { params }) => {
   const actor = await requireAuth(req);
   const { participantIds } = await parseBody(req, schema);
-  return json(await addParticipants(actor.tenantId ?? '', params!.id, actor.id, participantIds));
+  return json(await addParticipants(actor.orgId ?? '', params!.id, actor.id, participantIds));
 });

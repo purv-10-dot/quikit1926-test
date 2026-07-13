@@ -6,5 +6,5 @@ import { getTeacherEscalations } from '@/lib/services/escalations-service';
 export const GET = route(async (req) => {
   const actor = await requireAuth(req);
   requireRoles(actor, ['TEACHER']);
-  return json(await getTeacherEscalations(actor.tenantId!, actor.id));
+  return json(await getTeacherEscalations(actor.orgId!, actor.id));
 });

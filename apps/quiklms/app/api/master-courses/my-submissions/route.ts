@@ -8,9 +8,9 @@ const isPrimaryTenantAdmin = (u: AuthUser) => u.role === 'TENANT_ADMIN';
 export const GET = route(async (req) => {
   const actor = await requireAuth(req);
   requireRoles(actor, ['TENANT_ADMIN', 'SUB_ADMIN']);
-  if (!actor.tenantId) throw BadRequest('Tenant ID required');
+  if (!actor.orgId) throw BadRequest('Tenant ID required');
   const data = isPrimaryTenantAdmin(actor)
-    ? await svc.findBySubmittedTenant(actor.tenantId)
+    ? await svc.findBySubmittedTenant(actor.orgId)
     : await svc.findBySubmittedUser(actor.id);
   return json({ success: true, data });
 });

@@ -2,7 +2,7 @@
  * Upload service — presigned-URL minting ported from UploadService.
  * Large files NEVER stream through route bodies; the browser PUTs directly to S3
  * using these presigned URLs. Key format matches the legacy backend exactly:
- *   tenants/{tenantId}/uploads/{uuid}-{fileName}
+ *   tenants/{orgId}/uploads/{uuid}-{fileName}
  * and the specialised prefixes (course-resources, homework, scorm, …).
  */
 import { randomUUID } from 'crypto';
@@ -21,11 +21,11 @@ function safeName(fileName: string): string {
 
 /** Generic upload presign (matches UploadService.generatePresignedUrl). */
 export async function generatePresignedUrl(
-  tenantId: string,
+  orgId: string,
   fileName: string,
   fileType: string,
 ): Promise<{ uploadUrl: string; fileKey: string; fileUrl: string }> {
-  const fileKey = `tenants/${tenantId}/uploads/${randomUUID()}-${fileName}`;
+  const fileKey = `tenants/${orgId}/uploads/${randomUUID()}-${fileName}`;
   const uploadUrl = await presignPut(fileKey, fileType, 3600);
   return { uploadUrl, fileKey, fileUrl: publicUrl(fileKey) };
 }

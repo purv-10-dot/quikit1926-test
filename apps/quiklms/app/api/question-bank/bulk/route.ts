@@ -10,8 +10,8 @@ const schema = z.object({ questions: z.array(z.record(z.string(), z.any())).defa
 export const POST = route(async (req) => {
   const actor = await requireAuth(req);
   requireRoles(actor, ['TENANT_ADMIN', 'SUB_ADMIN', 'TEACHER']);
-  if (!actor.tenantId) throw BadRequest('Tenant ID required');
+  if (!actor.orgId) throw BadRequest('Tenant ID required');
   const body = await parseBody(req, schema);
-  const result = await bulkCreateQuestions(actor.tenantId, actor.id, body.questions as Record<string, unknown>[]);
+  const result = await bulkCreateQuestions(actor.orgId, actor.id, body.questions as Record<string, unknown>[]);
   return json({ success: true, data: result, count: result.length });
 });

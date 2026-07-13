@@ -51,6 +51,53 @@ export function welcomeEmail(firstName: string, email: string, role: string, set
   return { subject: 'Welcome to QuikSkill - Your Login Credentials', html: shell('Welcome to QuikSkill!', 'Your learning journey begins now', inner) };
 }
 
+/**
+ * Invitation / welcome email for a newly provisioned, login-capable account.
+ *
+ * Used by EVERY user-creation flow (tenant admin onboarding, roster
+ * students/teachers/parents, bulk upload) via the centralized identity path
+ * (createCentralIdentity). Unlike `welcomeEmail` — whose /setup-password link
+ * has no backing route in this build — this template matches the actual
+ * centralized-auth mechanism: a temp password seeded in the ORG identity DB with
+ * `mustChangePassword: true`, changed on first SSO login.
+ *
+ * `tempPassword === null` means the invitee already had a platform password
+ * (e.g. they belong to another org) — we then send an access-granted notice with
+ * no credentials instead of a password.
+ */
+export function invitationEmail(params: {
+  firstName: string;
+  email: string;
+  role: string;
+  orgName?: string;
+  tempPassword: string | null;
+  loginUrl: string;
+}): { subject: string; html: string } {
+  const { firstName, email, role, orgName, tempPassword, loginUrl } = params;
+  const org = orgName ? escapeHtml(orgName) : 'your organization';
+  const loginHref = `${loginUrl}?email=${encodeURIComponent(email)}`;
+
+  const credentialsBlock = tempPassword
+    ? `<div style="background:#f0fdf4;border:1px solid #86efac;border-radius:12px;padding:24px;margin:24px 0;">
+<h3 style="color:#166534;margin:0 0 16px;font-size:15px;text-transform:uppercase;letter-spacing:.05em;">Your login credentials</h3>
+<p style="color:#374151;font-size:14px;margin:0 0 10px;"><strong>Email:</strong> ${escapeHtml(email)}</p>
+<p style="color:#374151;font-size:14px;margin:0;"><strong>Temporary password:</strong> <span style="font-family:ui-monospace,monospace;font-size:16px;color:#14532d;word-break:break-all;">${escapeHtml(tempPassword)}</span></p></div>
+<p style="color:#6b7280;font-size:13px;line-height:1.6;">For your security, you'll be asked to set a new password the first time you sign in.</p>`
+    : `<div style="background:#eff6ff;border:1px solid #bfdbfe;border-radius:12px;padding:24px;margin:24px 0;">
+<p style="color:#1e3a8a;font-size:14px;margin:0;">This account (<strong>${escapeHtml(email)}</strong>) already has a QuikIT password. Sign in with your existing credentials — no new password is needed.</p></div>`;
+
+  const inner = `
+<p style="color:#374151;font-size:16px;line-height:1.6;">Hello <strong>${escapeHtml(firstName || 'there')}</strong>,</p>
+<p style="color:#374151;font-size:16px;line-height:1.6;">You've been invited to <strong>${org}</strong> on QuikSkill LMS as <strong>${roleDisplayName(role)}</strong>.</p>
+${credentialsBlock}
+<div style="text-align:center;margin:28px 0 8px;"><a href="${loginHref}" style="display:inline-block;background:linear-gradient(135deg,#667eea 0%,#764ba2 100%);color:#fff;padding:14px 32px;border-radius:8px;text-decoration:none;font-weight:600;font-size:16px;">Log in to QuikSkill</a></div>
+<p style="text-align:center;margin:12px 0;"><a href="${loginHref}" style="color:#667eea;font-size:13px;word-break:break-all;text-decoration:none;">${loginHref}</a></p>`;
+  return {
+    subject: `You've been invited to ${orgName ? orgName + ' on ' : ''}QuikSkill LMS`,
+    html: shell('Welcome to QuikSkill!', `You've been invited as ${roleDisplayName(role)}`, inner),
+  };
+}
+
 export function adminResetEmail(firstName: string, email: string, newPassword: string): { subject: string; html: string } {
   const loginUrl = `${FRONTEND_URL}/login?email=${encodeURIComponent(email)}`;
   const inner = `

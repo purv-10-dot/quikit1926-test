@@ -13,21 +13,21 @@ function isTenantOrSubAdmin(role: string, secondaryRole: string | null) {
 export const GET = route(async (req, { params }) => {
   const user = await requireAuth(req);
   requireRoles(user, ['SUPER_ADMIN', 'TENANT_ADMIN', 'SUB_ADMIN']);
-  return json({ success: true, data: await findOne(params!.id, user.tenantId) });
+  return json({ success: true, data: await findOne(params!.id, user.orgId) });
 });
 
 // PUT /api/certificates/:id — SUPER_ADMIN | TENANT_ADMIN | SUB_ADMIN
 export const PUT = route(async (req, { params }) => {
   const user = await requireAuth(req);
   requireRoles(user, ['SUPER_ADMIN', 'TENANT_ADMIN', 'SUB_ADMIN']);
-  const tenantId = user.tenantId;
+  const orgId = user.orgId;
   const updateData = (await parseBody(req, z.object({}).passthrough())) as Record<string, unknown>;
 
   if (isTenantOrSubAdmin(user.role, user.secondaryRole)) {
     let approvalEnabled = true;
-    if (tenantId) {
+    if (orgId) {
       try {
-        const tenant = await prisma.tenant.findUnique({ where: { id: tenantId }, select: { featureConfig: true } });
+        const tenant = await prisma.tenant.findUnique({ where: { id: orgId }, select: { featureConfig: true } });
         approvalEnabled = (tenant?.featureConfig as Record<string, unknown>)?.approvalWorkflowEnabled !== false;
       } catch { /* default */ }
     }
@@ -38,7 +38,7 @@ export const PUT = route(async (req, { params }) => {
       updateData.approvalStatus = 'approved'; updateData.isActive = true;
     }
   }
-  const certificate = await updateTemplate(params!.id, updateData, user.tenantId);
+  const certificate = await updateTemplate(params!.id, updateData, user.orgId);
   return json({ success: true, data: certificate });
 });
 
@@ -46,13 +46,13 @@ export const PUT = route(async (req, { params }) => {
 export const DELETE = route(async (req, { params }) => {
   const user = await requireAuth(req);
   requireRoles(user, ['SUPER_ADMIN', 'TENANT_ADMIN', 'SUB_ADMIN']);
-  const tenantId = user.tenantId;
+  const orgId = user.orgId;
 
   if (isTenantOrSubAdmin(user.role, user.secondaryRole)) {
     const template = await findOne(params!.id).catch(() => null);
     if (!template) throw NotFound('Certificate template not found');
-    const templateTenantId = template.submittedByTenantId?.toString() || template.tenantId?.toString();
-    if (!templateTenantId || templateTenantId !== tenantId?.toString()) {
+    const templateTenantId = template.submittedByTenantId?.toString() || template.orgId?.toString();
+    if (!templateTenantId || templateTenantId !== orgId?.toString()) {
       throw Forbidden('You can only delete templates you have created');
     }
   }

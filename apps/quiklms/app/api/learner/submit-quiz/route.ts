@@ -26,17 +26,17 @@ const schema = z.object({
 // and best-effort issues a completion certificate when the gate is met.
 export const POST = route(async (req) => {
   const user = await requireAuth(req);
-  if (!user.tenantId || !user.id) {
+  if (!user.orgId || !user.id) {
     return json({ success: false, message: 'Tenant ID and Learner ID are required' }, 400);
   }
 
   const dto = await parseBody(req, schema);
-  const result = await submitQuiz(user.tenantId, user.id, dto as SubmitQuizDto);
+  const result = await submitQuiz(user.orgId, user.id, dto as SubmitQuizDto);
 
   // Best-effort certificate issuance once the learner has passed and completed.
   if (result.passed) {
     try {
-      await generateCertificateForCompletion(user.tenantId, user.id, dto.courseId);
+      await generateCertificateForCompletion(user.orgId, user.id, dto.courseId);
     } catch {
       /* certificate issuance is best-effort; grading already succeeded */
     }

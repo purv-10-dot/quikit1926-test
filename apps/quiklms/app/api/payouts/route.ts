@@ -18,7 +18,7 @@ export const GET = route(async (req) => {
   }
 
   return json(
-    await findAll(actor.tenantId!, {
+    await findAll(actor.orgId!, {
       month: month ? parseInt(month) : undefined,
       year: year ? parseInt(year) : undefined,
       status,

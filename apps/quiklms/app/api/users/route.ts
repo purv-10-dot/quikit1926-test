@@ -9,7 +9,7 @@ export const GET = route(async (req) => {
   const url = new URL(req.url);
   const search = url.searchParams.get('search') || undefined;
   const role = url.searchParams.get('role') || undefined;
-  const tenantId = actor.role === 'SUPER_ADMIN' ? undefined : actor.tenantId ?? undefined;
+  const orgId = actor.role === 'SUPER_ADMIN' ? undefined : actor.orgId ?? undefined;
   const excludeRoles = actor.role !== 'SUPER_ADMIN' && actor.tenantType === 'corporate' ? ['TEACHER', 'PARENT'] : [];
-  return json({ success: true, data: await findAllUsers(tenantId, search, role, excludeRoles) });
+  return json({ success: true, data: await findAllUsers(orgId, search, role, excludeRoles) });
 });

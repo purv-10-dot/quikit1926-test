@@ -14,5 +14,5 @@ export const GET = route(async (req) => {
   const isParentOrAdmin =
     actor.role === 'PARENT' || userHasRole(actor, 'TENANT_ADMIN') || userHasRole(actor, 'SUB_ADMIN');
   const studentId = isParentOrAdmin && studentIdParam ? studentIdParam : actor.id;
-  return json(await getStudentClasses(actor.tenantId!, studentId, startDate, endDate));
+  return json(await getStudentClasses(actor.orgId!, studentId, startDate, endDate));
 });

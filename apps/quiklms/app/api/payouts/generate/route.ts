@@ -15,5 +15,5 @@ export const POST = route(async (req) => {
   const actor = await requireAuth(req);
   requireRoles(actor, ['TENANT_ADMIN', 'SUB_ADMIN']);
   const dto = await parseBody(req, schema);
-  return json(await generatePayouts(actor.tenantId!, dto));
+  return json(await generatePayouts(actor.orgId!, dto));
 });

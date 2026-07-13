@@ -860,7 +860,7 @@ export default function CourseAssignmentPage() {
   const [bulkModalOpen, setBulkModalOpen] = useState(false);
 
   const currentUserId = user?._id || user?.id;
-  const currentUserTenantId = user?.tenantId;
+  const currentUserTenantId = user?.orgId;
 
   useEffect(() => {
     loadCourses();

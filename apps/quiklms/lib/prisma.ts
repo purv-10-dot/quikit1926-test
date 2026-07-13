@@ -5,7 +5,7 @@
  *
  * IMPORTANT: business-table queries must NOT use this client directly. Use the
  * tenant-scoped helpers in lib/tenant-scope.ts (Phase 2) which inject the
- * tenantId filter automatically. Direct access here is for auth, tenants, and
+ * orgId filter automatically. Direct access here is for auth, tenants, and
  * SUPER_ADMIN paths only.
  */
 import { PrismaClient } from '@prisma/client';

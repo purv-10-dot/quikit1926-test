@@ -9,5 +9,5 @@ export const GET = route(async (req) => {
   const url = new URL(req.url);
   const dateFrom = url.searchParams.get('dateFrom') || undefined;
   const dateTo = url.searchParams.get('dateTo') || undefined;
-  return json(await getTeacherPerformance(actor.tenantId ?? '', dateFrom, dateTo));
+  return json(await getTeacherPerformance(actor.orgId ?? '', dateFrom, dateTo));
 });

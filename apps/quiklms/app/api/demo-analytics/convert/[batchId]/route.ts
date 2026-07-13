@@ -6,5 +6,5 @@ import { convertToRegular } from '@/lib/services/demo-analytics-service';
 export const PATCH = route(async (req, { params }) => {
   const actor = await requireAuth(req);
   requireRoles(actor, ['TENANT_ADMIN', 'SUB_ADMIN']);
-  return json({ success: true, data: await convertToRegular(actor.tenantId!, params!.batchId) });
+  return json({ success: true, data: await convertToRegular(actor.orgId!, params!.batchId) });
 });

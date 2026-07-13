@@ -16,10 +16,10 @@ const MODULES_INCLUDE = {
   modules: { include: { lessons: { orderBy: { orderIndex: 'asc' } } }, orderBy: { orderIndex: 'asc' } },
 } satisfies Prisma.CourseInclude;
 
-export async function createCourse(tenantId: string, authorId: string, dto: Record<string, unknown>) {
+export async function createCourse(orgId: string, authorId: string, dto: Record<string, unknown>) {
   const { modules: _m, selectedTenants: _s, ...rest } = dto as Record<string, unknown>;
   return prisma.course.create({
-    data: { ...(rest as Prisma.CourseCreateInput), tenantId, authorId },
+    data: { ...(rest as Prisma.CourseCreateInput), orgId, authorId },
   });
 }
 
@@ -27,12 +27,12 @@ export async function createCourse(tenantId: string, authorId: string, dto: Reco
  * All courses visible to a tenant: legacy tenant courses + master courses
  * distributed to it, plus published MasterCourse docs assigned to it.
  */
-export async function findAllForTenant(tenantId: string) {
+export async function findAllForTenant(orgId: string) {
   const legacyCourses = await prisma.course.findMany({
     where: {
       OR: [
-        { tenantId },
-        { isMaster: true, selectedTenants: { some: { tenantId } } },
+        { orgId },
+        { isMaster: true, selectedTenants: { some: { orgId } } },
       ],
     },
     include: MODULES_INCLUDE,
@@ -42,7 +42,7 @@ export async function findAllForTenant(tenantId: string) {
   const masterCourses = await prisma.masterCourse.findMany({
     where: {
       status: 'Published',
-      selectedTenants: { some: { tenantId } },
+      selectedTenants: { some: { orgId } },
       parentCourseId: null,
     },
     orderBy: { createdAt: 'desc' },
@@ -86,10 +86,10 @@ export async function findOneMaster(id: string) {
   return course;
 }
 
-export async function findOne(id: string, tenantId: string) {
+export async function findOne(id: string, orgId: string) {
   // First try a published MasterCourse assigned to this tenant.
   const masterCourse = await prisma.masterCourse.findFirst({
-    where: { id, status: 'Published', parentCourseId: null, selectedTenants: { some: { tenantId } } },
+    where: { id, status: 'Published', parentCourseId: null, selectedTenants: { some: { orgId } } },
   });
   if (masterCourse) return transformMasterCourseForPlayer(masterCourse);
 
@@ -97,7 +97,7 @@ export async function findOne(id: string, tenantId: string) {
   const course = await prisma.course.findFirst({
     where: {
       id,
-      OR: [{ tenantId }, { isMaster: true, selectedTenants: { some: { tenantId } } }],
+      OR: [{ orgId }, { isMaster: true, selectedTenants: { some: { orgId } } }],
     },
     include: MODULES_INCLUDE,
   });
@@ -105,13 +105,13 @@ export async function findOne(id: string, tenantId: string) {
   return course;
 }
 
-export async function addModule(tenantId: string, dto: { courseId: string; title: string; description?: string; orderIndex?: number; assessmentId?: string }) {
-  const course = await prisma.course.findFirst({ where: { id: dto.courseId, tenantId } });
+export async function addModule(orgId: string, dto: { courseId: string; title: string; description?: string; orderIndex?: number; assessmentId?: string }) {
+  const course = await prisma.course.findFirst({ where: { id: dto.courseId, orgId } });
   if (!course) throw NotFound('Course not found');
   const count = await prisma.module.count({ where: { courseId: dto.courseId } });
   return prisma.module.create({
     data: {
-      tenantId,
+      orgId,
       courseId: dto.courseId,
       title: dto.title,
       description: dto.description,
@@ -121,9 +121,9 @@ export async function addModule(tenantId: string, dto: { courseId: string; title
   });
 }
 
-export async function addLesson(tenantId: string, dto: Record<string, unknown>) {
+export async function addLesson(orgId: string, dto: Record<string, unknown>) {
   const moduleId = String(dto.moduleId);
-  const module = await prisma.module.findFirst({ where: { id: moduleId, tenantId }, include: { lessons: true } });
+  const module = await prisma.module.findFirst({ where: { id: moduleId, orgId }, include: { lessons: true } });
   if (!module) throw NotFound('Module not found');
   const order = typeof dto.orderIndex === 'number' ? (dto.orderIndex as number) : module.lessons.length;
   await prisma.lesson.create({
@@ -143,20 +143,20 @@ export async function addLesson(tenantId: string, dto: Record<string, unknown>) 
   return prisma.module.findUnique({ where: { id: moduleId }, include: { lessons: { orderBy: { orderIndex: 'asc' } } } });
 }
 
-export async function updateModuleOrder(tenantId: string, courseId: string, moduleIds: string[]) {
-  const course = await prisma.course.findFirst({ where: { id: courseId, tenantId } });
+export async function updateModuleOrder(orgId: string, courseId: string, moduleIds: string[]) {
+  const course = await prisma.course.findFirst({ where: { id: courseId, orgId } });
   if (!course) throw NotFound('Course not found');
   await prisma.$transaction(
     moduleIds.map((id, index) =>
-      prisma.module.updateMany({ where: { id, courseId, tenantId }, data: { orderIndex: index } }),
+      prisma.module.updateMany({ where: { id, courseId, orgId }, data: { orderIndex: index } }),
     ),
   );
   return prisma.course.findUnique({ where: { id: courseId }, include: MODULES_INCLUDE });
 }
 
-export async function updateLessonOrder(tenantId: string, moduleId: string, lessonIndices: number[]) {
+export async function updateLessonOrder(orgId: string, moduleId: string, lessonIndices: number[]) {
   const module = await prisma.module.findFirst({
-    where: { id: moduleId, tenantId },
+    where: { id: moduleId, orgId },
     include: { lessons: { orderBy: { orderIndex: 'asc' } } },
   });
   if (!module) throw NotFound('Module not found');
@@ -188,7 +188,7 @@ export async function createMasterCourse(authorId: string, courseData: Record<st
       isMaster: true,
       status: 'Draft',
       selectedTenants: selectedTenants.length
-        ? { create: selectedTenants.map((tenantId) => ({ tenantId })) }
+        ? { create: selectedTenants.map((orgId) => ({ orgId })) }
         : undefined,
       modules: {
         create: incomingModules.map((moduleData, moduleIndex) => ({
@@ -232,7 +232,7 @@ export async function updateMasterCourse(id: string, courseData: Record<string, 
   if (courseData.selectedTenants !== undefined) {
     const tenants = (courseData.selectedTenants as string[]) || [];
     await prisma.courseSelectedTenant.deleteMany({ where: { courseId: id } });
-    data.selectedTenants = tenants.length ? { create: tenants.map((tenantId) => ({ tenantId })) } : undefined;
+    data.selectedTenants = tenants.length ? { create: tenants.map((orgId) => ({ orgId })) } : undefined;
   }
 
   await prisma.course.update({
@@ -241,7 +241,7 @@ export async function updateMasterCourse(id: string, courseData: Record<string, 
       ...data,
       modules: {
         create: incomingModules.map((moduleData, moduleIndex) => ({
-          tenantId: null,
+          orgId: null,
           title: String(moduleData.title ?? ''),
           orderIndex: moduleIndex,
           lessons: {

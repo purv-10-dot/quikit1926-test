@@ -11,7 +11,7 @@ export const GET = route(async (req) => {
   const from = url.searchParams.get('from');
   const to = url.searchParams.get('to');
   return json(
-    await getAdminEscalations(actor.tenantId!, {
+    await getAdminEscalations(actor.orgId!, {
       status,
       from: from ? new Date(from) : undefined,
       to: to ? new Date(to) : undefined,

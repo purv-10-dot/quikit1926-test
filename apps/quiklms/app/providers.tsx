@@ -30,7 +30,7 @@ export const useTheme = () => useContext(ThemeCtx);
 // ── Current user ────────────────────────────────────────────────────────────
 export interface CurrentUser {
   id: string; _id: string; email: string; firstName: string; lastName: string;
-  role: string; secondaryRole: string | null; tenantId: string | null;
+  role: string; secondaryRole: string | null; orgId: string | null;
   tenantType: 'corporate' | 'school' | null; managerId: string | null;
   childIds: string[]; isActive: boolean;
 }
@@ -71,7 +71,7 @@ export function Providers({ children }: { children: ReactNode }) {
   }, []);
 
   // Mirror the current user into sessionStorage('user') + qs_uid cookie.
-  // Many ported pages read user.tenantId / _id / managerId / childIds from
+  // Many ported pages read user.orgId / _id / managerId / childIds from
   // sessionStorage; under cookie auth this was never populated. Source of
   // truth is GET /api/me (derived from the auth cookie server-side).
   const refreshUser = useCallback(async () => {

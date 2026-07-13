@@ -6,5 +6,5 @@ import { getSubmissions } from '@/lib/services/homework-service';
 export const GET = route(async (req, { params }) => {
   const actor = await requireAuth(req);
   requireRoles(actor, ['TEACHER', 'TENANT_ADMIN', 'SUB_ADMIN']);
-  return json(await getSubmissions(actor.tenantId!, params!.id));
+  return json(await getSubmissions(actor.orgId!, params!.id));
 });

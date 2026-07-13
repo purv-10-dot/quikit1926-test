@@ -1,40 +1,40 @@
 /**
  * Demo-analytics service — ported from NestJS DemoAnalyticsService.
  * Mongo aggregation pipelines re-expressed as Prisma queries + JS aggregation,
- * preserving the exact response objects. Tenant isolation via explicit tenantId.
+ * preserving the exact response objects. Tenant isolation via explicit orgId.
  * `studentIds` membership is the batchStudent child table here.
  */
 import { prisma } from '@/lib/prisma';
 import { Internal } from '@/lib/http';
 
 // ═══════════════ DASHBOARD ANALYTICS ═══════════════
-export async function getAnalytics(tenantId: string) {
+export async function getAnalytics(orgId: string) {
   const [totalDemo, totalTrial, totalRegular] = await Promise.all([
-    prisma.batch.count({ where: { tenantId, classType: 'demo' } }),
-    prisma.batch.count({ where: { tenantId, classType: 'trial' } }),
-    prisma.batch.count({ where: { tenantId, OR: [{ classType: 'regular' }, { classType: null }] } }),
+    prisma.batch.count({ where: { orgId, classType: 'demo' } }),
+    prisma.batch.count({ where: { orgId, classType: 'trial' } }),
+    prisma.batch.count({ where: { orgId, OR: [{ classType: 'regular' }, { classType: null }] } }),
   ]);
 
   const convertedBatches = await prisma.batch.count({
-    where: { tenantId, classType: { in: ['demo', 'trial'] }, convertedToRegular: true },
+    where: { orgId, classType: { in: ['demo', 'trial'] }, convertedToRegular: true },
   });
   const totalDemoTrial = totalDemo + totalTrial;
   const conversionRate = totalDemoTrial > 0 ? Math.round((convertedBatches / totalDemoTrial) * 100) : 0;
 
   const demoTrialBatches = await prisma.batch.findMany({
-    where: { tenantId, classType: { in: ['demo', 'trial'] } },
+    where: { orgId, classType: { in: ['demo', 'trial'] } },
     select: { id: true, trialClassCount: true, classType: true, convertedToRegular: true },
   });
   const demoTrialBatchIds = demoTrialBatches.map((b) => b.id);
 
   const [completedDemoClasses, totalDemoClasses] = await Promise.all([
-    prisma.scheduledClass.count({ where: { tenantId, batchId: { in: demoTrialBatchIds }, status: 'completed' } }),
-    prisma.scheduledClass.count({ where: { tenantId, batchId: { in: demoTrialBatchIds } } }),
+    prisma.scheduledClass.count({ where: { orgId, batchId: { in: demoTrialBatchIds }, status: 'completed' } }),
+    prisma.scheduledClass.count({ where: { orgId, batchId: { in: demoTrialBatchIds } } }),
   ]);
 
   const [demoAttendancePresent, demoAttendanceTotal] = await Promise.all([
-    prisma.attendance.count({ where: { tenantId, batchId: { in: demoTrialBatchIds }, status: { in: ['present', 'late'] } } }),
-    prisma.attendance.count({ where: { tenantId, batchId: { in: demoTrialBatchIds } } }),
+    prisma.attendance.count({ where: { orgId, batchId: { in: demoTrialBatchIds }, status: { in: ['present', 'late'] } } }),
+    prisma.attendance.count({ where: { orgId, batchId: { in: demoTrialBatchIds } } }),
   ]);
   const demoAttendanceRate = demoAttendanceTotal > 0 ? Math.round((demoAttendancePresent / demoAttendanceTotal) * 100) : 0;
 
@@ -54,7 +54,7 @@ export async function getAnalytics(tenantId: string) {
   const sixMonthsAgo = new Date();
   sixMonthsAgo.setMonth(sixMonthsAgo.getMonth() - 6);
   const trendBatches = await prisma.batch.findMany({
-    where: { tenantId, classType: { in: ['demo', 'trial'] }, createdAt: { gte: sixMonthsAgo } },
+    where: { orgId, classType: { in: ['demo', 'trial'] }, createdAt: { gte: sixMonthsAgo } },
     select: { createdAt: true, convertedToRegular: true },
   });
   const trendBuckets = new Map<string, { _id: { year: number; month: number }; total: number; converted: number }>();
@@ -91,9 +91,9 @@ export async function getAnalytics(tenantId: string) {
 }
 
 // ═══════════════ TEACHER CONVERSION PERFORMANCE ═══════════════
-export async function getTeacherConversionPerformance(tenantId: string) {
+export async function getTeacherConversionPerformance(orgId: string) {
   const batches = await prisma.batch.findMany({
-    where: { tenantId, classType: { in: ['demo', 'trial'] } },
+    where: { orgId, classType: { in: ['demo', 'trial'] } },
     select: { teacherId: true, convertedToRegular: true },
   });
 
@@ -132,9 +132,9 @@ export async function getTeacherConversionPerformance(tenantId: string) {
 }
 
 // ═══════════════ STUDENT JOURNEY ═══════════════
-export async function getStudentJourney(tenantId: string, studentId: string) {
+export async function getStudentJourney(orgId: string, studentId: string) {
   const batches = await prisma.batch.findMany({
-    where: { tenantId, students: { some: { studentId } } },
+    where: { orgId, students: { some: { studentId } } },
     orderBy: { createdAt: 'asc' },
     select: {
       id: true, name: true, classType: true, convertedToRegular: true, convertedAt: true,
@@ -174,9 +174,9 @@ export async function getStudentJourney(tenantId: string, studentId: string) {
 }
 
 // ═══════════════ CONVERT BATCH TO REGULAR ═══════════════
-export async function convertToRegular(tenantId: string, batchId: string) {
+export async function convertToRegular(orgId: string, batchId: string) {
   const result = await prisma.batch.updateMany({
-    where: { id: batchId, tenantId, classType: { in: ['demo', 'trial'] } },
+    where: { id: batchId, orgId, classType: { in: ['demo', 'trial'] } },
     data: { convertedToRegular: true, convertedAt: new Date(), classType: 'regular' },
   });
   if (result.count === 0) throw Internal('Batch not found or not a demo/trial batch');

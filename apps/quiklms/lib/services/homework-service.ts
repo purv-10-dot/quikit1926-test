@@ -1,6 +1,6 @@
 /**
  * Homework service — ported from NestJS HomeworkService (Mongoose → Prisma).
- * Tenant scoping via explicit tenantId arguments. Submission rubric scores map to
+ * Tenant scoping via explicit orgId arguments. Submission rubric scores map to
  * the HomeworkRubricScore child table. The legacy S3 presigning of attachment
  * URLs is an external-infra enrichment; URLs are returned as stored (passthrough)
  * to preserve the response shape without inventing presign behavior.
@@ -83,10 +83,10 @@ async function batchLite(batchId: string, withStudents = false) {
 }
 
 // ═══════════════ CREATE HOMEWORK ═══════════════
-export async function create(tenantId: string, teacherId: string, dto: CreateHomeworkInput) {
+export async function create(orgId: string, teacherId: string, dto: CreateHomeworkInput) {
   const homework = await prisma.homework.create({
     data: {
-      tenantId,
+      orgId,
       teacherId,
       batchId: dto.batchId,
       title: dto.title,
@@ -110,11 +110,11 @@ export async function create(tenantId: string, teacherId: string, dto: CreateHom
 
 // ═══════════════ GET TEACHER'S HOMEWORK ═══════════════
 export async function getTeacherHomework(
-  tenantId: string,
+  orgId: string,
   teacherId: string,
   filters?: { status?: string; batchId?: string },
 ) {
-  const where: Prisma.HomeworkWhereInput = { tenantId, teacherId };
+  const where: Prisma.HomeworkWhereInput = { orgId, teacherId };
   if (filters?.status) where.status = filters.status as HomeworkStatus;
   if (filters?.batchId) where.batchId = filters.batchId;
 
@@ -125,9 +125,9 @@ export async function getTeacherHomework(
 }
 
 // ═══════════════ GET HOMEWORK BY ID ═══════════════
-export async function findOne(tenantId: string, homeworkId: string) {
+export async function findOne(orgId: string, homeworkId: string) {
   const homework = await prisma.homework.findUnique({ where: { id: homeworkId } });
-  if (!homework || homework.tenantId !== tenantId) throw NotFound('Homework not found');
+  if (!homework || homework.orgId !== orgId) throw NotFound('Homework not found');
   const [batch, teacher] = await Promise.all([
     batchLite(homework.batchId, true),
     prisma.user.findUnique({ where: { id: homework.teacherId }, select: { id: true, firstName: true, lastName: true } }),
@@ -136,9 +136,9 @@ export async function findOne(tenantId: string, homeworkId: string) {
 }
 
 // ═══════════════ UPDATE HOMEWORK ═══════════════
-export async function update(tenantId: string, homeworkId: string, dto: UpdateHomeworkInput) {
+export async function update(orgId: string, homeworkId: string, dto: UpdateHomeworkInput) {
   const homework = await prisma.homework.findUnique({ where: { id: homeworkId } });
-  if (!homework || homework.tenantId !== tenantId) throw NotFound('Homework not found');
+  if (!homework || homework.orgId !== orgId) throw NotFound('Homework not found');
 
   const data: Prisma.HomeworkUpdateInput = {};
   if (dto.title !== undefined) data.title = dto.title;
@@ -156,16 +156,16 @@ export async function update(tenantId: string, homeworkId: string, dto: UpdateHo
 }
 
 // ═══════════════ DELETE HOMEWORK ═══════════════
-export async function remove(tenantId: string, homeworkId: string): Promise<void> {
+export async function remove(orgId: string, homeworkId: string): Promise<void> {
   const homework = await prisma.homework.findUnique({ where: { id: homeworkId } });
-  if (!homework || homework.tenantId !== tenantId) throw NotFound('Homework not found');
+  if (!homework || homework.orgId !== orgId) throw NotFound('Homework not found');
   await prisma.homework.delete({ where: { id: homeworkId } });
 }
 
 // ═══════════════ PUBLISH HOMEWORK ═══════════════
-export async function publish(tenantId: string, homeworkId: string) {
+export async function publish(orgId: string, homeworkId: string) {
   const homework = await prisma.homework.findUnique({ where: { id: homeworkId } });
-  if (!homework || homework.tenantId !== tenantId) throw NotFound('Homework not found');
+  if (!homework || homework.orgId !== orgId) throw NotFound('Homework not found');
   return prisma.homework.update({
     where: { id: homeworkId },
     data: { status: 'published', publishedAt: new Date() },
@@ -173,16 +173,16 @@ export async function publish(tenantId: string, homeworkId: string) {
 }
 
 // ═══════════════ CLOSE HOMEWORK ═══════════════
-export async function close(tenantId: string, homeworkId: string) {
+export async function close(orgId: string, homeworkId: string) {
   const homework = await prisma.homework.findUnique({ where: { id: homeworkId } });
-  if (!homework || homework.tenantId !== tenantId) throw NotFound('Homework not found');
+  if (!homework || homework.orgId !== orgId) throw NotFound('Homework not found');
   return prisma.homework.update({ where: { id: homeworkId }, data: { status: 'closed' } });
 }
 
 // ═══════════════ SUBMIT HOMEWORK (STUDENT) ═══════════════
-export async function submitHomework(tenantId: string, homeworkId: string, studentId: string, dto: SubmitHomeworkInput) {
+export async function submitHomework(orgId: string, homeworkId: string, studentId: string, dto: SubmitHomeworkInput) {
   const homework = await prisma.homework.findUnique({ where: { id: homeworkId } });
-  if (!homework || homework.tenantId !== tenantId) throw NotFound('Homework not found');
+  if (!homework || homework.orgId !== orgId) throw NotFound('Homework not found');
   if (homework.status === 'closed') throw BadRequest('This homework is closed for submissions');
 
   const existing = await prisma.homeworkSubmission.findFirst({ where: { homeworkId, studentId } });
@@ -196,7 +196,7 @@ export async function submitHomework(tenantId: string, homeworkId: string, stude
 
   const created = await prisma.homeworkSubmission.create({
     data: {
-      tenantId,
+      orgId,
       homeworkId,
       studentId,
       attachmentUrls: normalizeUrls(dto.attachmentUrls || []),
@@ -210,9 +210,9 @@ export async function submitHomework(tenantId: string, homeworkId: string, stude
 }
 
 // ═══════════════ GET SUBMISSIONS FOR HOMEWORK ═══════════════
-export async function getSubmissions(tenantId: string, homeworkId: string) {
+export async function getSubmissions(orgId: string, homeworkId: string) {
   const subs = await prisma.homeworkSubmission.findMany({
-    where: { tenantId, homeworkId },
+    where: { orgId, homeworkId },
     orderBy: { submittedAt: 'desc' },
     include: { rubricScores: true },
   });
@@ -228,8 +228,8 @@ export async function getSubmissions(tenantId: string, homeworkId: string) {
 }
 
 // ═══════════════ GRADE SUBMISSION ═══════════════
-export async function gradeSubmission(tenantId: string, submissionId: string, gradedBy: string, dto: GradeSubmissionInput) {
-  const submission = await prisma.homeworkSubmission.findFirst({ where: { id: submissionId, tenantId } });
+export async function gradeSubmission(orgId: string, submissionId: string, gradedBy: string, dto: GradeSubmissionInput) {
+  const submission = await prisma.homeworkSubmission.findFirst({ where: { id: submissionId, orgId } });
   if (!submission) throw NotFound('Submission not found');
 
   let finalScore = dto.score;
@@ -276,8 +276,8 @@ export async function gradeSubmission(tenantId: string, submissionId: string, gr
 }
 
 // ═══════════════ GET HOMEWORK STATS ═══════════════
-export async function getHomeworkStats(tenantId: string, homeworkId: string) {
-  const homework = await findOne(tenantId, homeworkId);
+export async function getHomeworkStats(orgId: string, homeworkId: string) {
+  const homework = await findOne(orgId, homeworkId);
   const batchStudentCount = (homework.batchId as { studentIds?: string[] })?.studentIds?.length || 0;
 
   const submissions = await prisma.homeworkSubmission.findMany({ where: { homeworkId } });
@@ -297,8 +297,8 @@ export async function getHomeworkStats(tenantId: string, homeworkId: string) {
 }
 
 // ═══════════════ GET STUDENT'S SUBMISSIONS (PARENT/STUDENT VIEW) ═══════════════
-export async function getStudentSubmissions(tenantId: string, studentId: string, filters?: { status?: string }) {
-  const where: Prisma.HomeworkSubmissionWhereInput = { tenantId, studentId };
+export async function getStudentSubmissions(orgId: string, studentId: string, filters?: { status?: string }) {
+  const where: Prisma.HomeworkSubmissionWhereInput = { orgId, studentId };
   if (filters?.status) where.status = filters.status as Prisma.HomeworkSubmissionWhereInput['status'];
 
   const submissions = await prisma.homeworkSubmission.findMany({
@@ -332,7 +332,7 @@ export async function getStudentSubmissions(tenantId: string, studentId: string,
     : [];
   const graderMap = new Map(graders.map((g) => [g.id, g]));
 
-  const studentBatches = await prisma.batchStudent.findMany({ where: { studentId, batch: { tenantId } }, select: { batchId: true } });
+  const studentBatches = await prisma.batchStudent.findMany({ where: { studentId, batch: { orgId } }, select: { batchId: true } });
   const studentBatchIds = studentBatches.map((b) => b.batchId);
 
   const submittedHomeworkIds = submissions.map((s) => s.homeworkId);
@@ -340,7 +340,7 @@ export async function getStudentSubmissions(tenantId: string, studentId: string,
   const pendingHomeworkRaw = studentBatchIds.length
     ? await prisma.homework.findMany({
         where: {
-          tenantId,
+          orgId,
           status: 'published',
           batchId: { in: studentBatchIds },
           id: { notIn: submittedHomeworkIds.length ? submittedHomeworkIds : ['__none__'] },

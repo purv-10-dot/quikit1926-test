@@ -9,7 +9,7 @@ export const GET = route(async (req) => {
   const url = new URL(req.url);
   const limit = url.searchParams.get('limit');
   return json(
-    await getSessionJoinTimestamps(actor.tenantId!, {
+    await getSessionJoinTimestamps(actor.orgId!, {
       startDate: url.searchParams.get('startDate') || undefined,
       endDate: url.searchParams.get('endDate') || undefined,
       batchId: url.searchParams.get('batchId') || undefined,

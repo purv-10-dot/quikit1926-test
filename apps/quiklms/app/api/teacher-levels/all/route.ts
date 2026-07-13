@@ -6,5 +6,5 @@ import { getAllTeacherLevels } from '@/lib/services/teacher-level-service';
 export const GET = route(async (req) => {
   const actor = await requireAuth(req);
   requireRoles(actor, ['TENANT_ADMIN', 'SUB_ADMIN']);
-  return json({ success: true, data: await getAllTeacherLevels(actor.tenantId!) });
+  return json({ success: true, data: await getAllTeacherLevels(actor.orgId!) });
 });

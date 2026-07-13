@@ -6,5 +6,5 @@ import { getBatchAnalytics } from '@/lib/services/analytics-service';
 export const GET = route(async (req, { params }) => {
   const actor = await requireAuth(req);
   requireRoles(actor, ['TENANT_ADMIN', 'SUB_ADMIN', 'TEACHER']);
-  return json(await getBatchAnalytics(actor.tenantId ?? '', params!.batchId));
+  return json(await getBatchAnalytics(actor.orgId ?? '', params!.batchId));
 });

@@ -1,6 +1,6 @@
 /**
  * Batches service — ported from NestJS BatchesService (Mongoose → Prisma).
- * Tenant scoping is applied with the explicit tenantId arguments threaded through
+ * Tenant scoping is applied with the explicit orgId arguments threaded through
  * every query (callers obtain it from the authed user / SUPER_ADMIN bypass via
  * tenantWhere). Mongo subdoc arrays (schedule/studentIds/substituteTeacherIds)
  * map to the BatchSchedule / BatchStudent / BatchSubstituteTeacher child tables.
@@ -57,14 +57,14 @@ function validateAcademicYear(academicYear: string): void {
 
 /** Verify every supplied user ID belongs to the actor's tenant (optionally with a role). */
 async function assertUsersInTenant(
-  tenantId: string,
+  orgId: string,
   ids: string[],
   opts: { role?: 'LEARNER' | 'TEACHER'; label: string },
 ): Promise<void> {
   const unique = [...new Set(ids)];
   if (!unique.length) return;
   const found = await prisma.user.count({
-    where: { id: { in: unique }, tenantId, ...(opts.role ? { role: opts.role } : {}) },
+    where: { id: { in: unique }, orgId, ...(opts.role ? { role: opts.role } : {}) },
   });
   if (found !== unique.length) throw BadRequest(`One or more ${opts.label} are invalid for this tenant`);
 }
@@ -125,16 +125,16 @@ async function enrichBatch(
 }
 
 // ═══════════════ CREATE BATCH ═══════════════
-export async function create(tenantId: string, dto: CreateBatchInput, userId?: string) {
+export async function create(orgId: string, dto: CreateBatchInput, userId?: string) {
   const teacher = await prisma.user.findFirst({
-    where: { id: dto.teacherId, tenantId, role: 'TEACHER', isActive: true },
+    where: { id: dto.teacherId, orgId, role: 'TEACHER', isActive: true },
   });
   if (!teacher) throw BadRequest('Invalid teacher ID or teacher not found');
 
   validateAcademicYear(dto.academicYear);
 
   const existing = await prisma.batch.findFirst({
-    where: { tenantId, name: dto.name, academicYear: dto.academicYear },
+    where: { orgId, name: dto.name, academicYear: dto.academicYear },
   });
   if (existing) {
     throw Conflict(`A batch with name "${dto.name}" already exists for academic year ${dto.academicYear}`);
@@ -151,14 +151,14 @@ export async function create(tenantId: string, dto: CreateBatchInput, userId?: s
   if (startDate > endDate) throw BadRequest('End date must be after start date');
 
   // Validate client-supplied member IDs belong to this tenant before writing them.
-  if (dto.studentIds?.length) await assertUsersInTenant(tenantId, dto.studentIds, { role: 'LEARNER', label: 'student IDs' });
-  if (dto.substituteTeacherIds?.length) await assertUsersInTenant(tenantId, dto.substituteTeacherIds, { role: 'TEACHER', label: 'substitute teacher IDs' });
+  if (dto.studentIds?.length) await assertUsersInTenant(orgId, dto.studentIds, { role: 'LEARNER', label: 'student IDs' });
+  if (dto.substituteTeacherIds?.length) await assertUsersInTenant(orgId, dto.substituteTeacherIds, { role: 'TEACHER', label: 'substitute teacher IDs' });
 
   const status = (dto.status as BatchStatus) ?? 'active';
 
   const created = await prisma.batch.create({
     data: {
-      tenantId,
+      orgId,
       name: dto.name,
       grade: dto.grade,
       section: dto.section,
@@ -204,7 +204,7 @@ export async function create(tenantId: string, dto: CreateBatchInput, userId?: s
   // here so the serverless function does not terminate before they persist).
   if (created.status === 'active') {
     try {
-      await generateClasses(tenantId, { batchId: created.id });
+      await generateClasses(orgId, { batchId: created.id });
     } catch {
       /* non-blocking */
     }
@@ -215,10 +215,10 @@ export async function create(tenantId: string, dto: CreateBatchInput, userId?: s
 
 // ═══════════════ FIND ALL BATCHES ═══════════════
 export async function findAll(
-  tenantId: string,
+  orgId: string,
   options?: { status?: BatchStatus; teacherId?: string; academicYear?: string; grade?: string; subject?: string },
 ) {
-  const where: Prisma.BatchWhereInput = { tenantId };
+  const where: Prisma.BatchWhereInput = { orgId };
   if (options?.status) where.status = options.status;
   if (options?.teacherId) where.teacherId = options.teacherId;
   if (options?.academicYear) where.academicYear = options.academicYear;
@@ -238,17 +238,17 @@ export async function findAll(
 }
 
 // ═══════════════ FIND ONE BATCH ═══════════════
-export async function findOne(tenantId: string, batchId: string) {
+export async function findOne(orgId: string, batchId: string) {
   const batch = await prisma.batch.findUnique({ where: { id: batchId } });
-  if (!batch || batch.tenantId !== tenantId) throw NotFound('Batch not found');
+  if (!batch || batch.orgId !== orgId) throw NotFound('Batch not found');
   return shapeBatch(batchId, { fullTeacher: true, fullStudents: true, subs: true });
 }
 
 // ═══════════════ FIND BATCHES BY TEACHER ═══════════════
-export async function findByTeacher(tenantId: string, teacherId: string) {
+export async function findByTeacher(orgId: string, teacherId: string) {
   const batches = await prisma.batch.findMany({
     where: {
-      tenantId,
+      orgId,
       status: 'active',
       OR: [{ teacherId }, { substituteTeachers: { some: { teacherId } } }],
     },
@@ -280,9 +280,9 @@ export async function findByTeacher(tenantId: string, teacherId: string) {
 }
 
 // ═══════════════ FIND BATCHES BY STUDENT ═══════════════
-export async function findByStudent(tenantId: string, studentId: string) {
+export async function findByStudent(orgId: string, studentId: string) {
   const batches = await prisma.batch.findMany({
-    where: { tenantId, status: 'active', students: { some: { studentId } } },
+    where: { orgId, status: 'active', students: { some: { studentId } } },
     orderBy: { createdAt: 'desc' },
     include: {
       schedule: true,
@@ -294,13 +294,13 @@ export async function findByStudent(tenantId: string, studentId: string) {
 }
 
 // ═══════════════ UPDATE BATCH ═══════════════
-export async function update(tenantId: string, batchId: string, dto: UpdateBatchInput) {
+export async function update(orgId: string, batchId: string, dto: UpdateBatchInput) {
   const batch = await prisma.batch.findUnique({ where: { id: batchId } });
-  if (!batch || batch.tenantId !== tenantId) throw NotFound('Batch not found');
+  if (!batch || batch.orgId !== orgId) throw NotFound('Batch not found');
 
   if (dto.teacherId) {
     const teacher = await prisma.user.findFirst({
-      where: { id: dto.teacherId, tenantId, role: 'TEACHER', isActive: true },
+      where: { id: dto.teacherId, orgId, role: 'TEACHER', isActive: true },
     });
     if (!teacher) throw BadRequest('Invalid teacher ID or teacher not found');
   }
@@ -317,7 +317,7 @@ export async function update(tenantId: string, batchId: string, dto: UpdateBatch
   if (dto.name) {
     const academicYear = dto.academicYear || batch.academicYear;
     const dup = await prisma.batch.findFirst({
-      where: { id: { not: batchId }, tenantId, name: dto.name, academicYear },
+      where: { id: { not: batchId }, orgId, name: dto.name, academicYear },
     });
     if (dup) throw Conflict(`A batch with name "${dto.name}" already exists for academic year ${academicYear}`);
   }
@@ -327,8 +327,8 @@ export async function update(tenantId: string, batchId: string, dto: UpdateBatch
   }
 
   // Validate client-supplied member IDs belong to this tenant before writing them.
-  if (dto.studentIds?.length) await assertUsersInTenant(tenantId, dto.studentIds, { role: 'LEARNER', label: 'student IDs' });
-  if (dto.substituteTeacherIds?.length) await assertUsersInTenant(tenantId, dto.substituteTeacherIds, { role: 'TEACHER', label: 'substitute teacher IDs' });
+  if (dto.studentIds?.length) await assertUsersInTenant(orgId, dto.studentIds, { role: 'LEARNER', label: 'student IDs' });
+  if (dto.substituteTeacherIds?.length) await assertUsersInTenant(orgId, dto.substituteTeacherIds, { role: 'TEACHER', label: 'substitute teacher IDs' });
 
   const data: Prisma.BatchUpdateInput = {};
   if (dto.name !== undefined) data.name = dto.name;
@@ -379,9 +379,9 @@ export async function update(tenantId: string, batchId: string, dto: UpdateBatch
   if (datesOrScheduleChanged && updated.status === 'active') {
     const today = new Date();
     today.setHours(0, 0, 0, 0);
-    await cancelFutureClassesForBatch(tenantId, batchId, today);
+    await cancelFutureClassesForBatch(orgId, batchId, today);
     try {
-      await generateClasses(tenantId, { batchId });
+      await generateClasses(orgId, { batchId });
     } catch {
       /* non-blocking */
     }
@@ -391,12 +391,12 @@ export async function update(tenantId: string, batchId: string, dto: UpdateBatch
 }
 
 // ═══════════════ ADD STUDENTS TO BATCH ═══════════════
-export async function addStudents(tenantId: string, batchId: string, dto: { studentIds: string[] }) {
+export async function addStudents(orgId: string, batchId: string, dto: { studentIds: string[] }) {
   const batch = await prisma.batch.findUnique({
     where: { id: batchId },
     include: { students: { select: { studentId: true } } },
   });
-  if (!batch || batch.tenantId !== tenantId) throw NotFound('Batch not found');
+  if (!batch || batch.orgId !== orgId) throw NotFound('Batch not found');
 
   if (batch.maxCapacity) {
     const currentCount = batch.students.length;
@@ -409,7 +409,7 @@ export async function addStudents(tenantId: string, batchId: string, dto: { stud
   }
 
   const students = await prisma.user.findMany({
-    where: { id: { in: dto.studentIds }, tenantId, role: 'LEARNER', isActive: true },
+    where: { id: { in: dto.studentIds }, orgId, role: 'LEARNER', isActive: true },
     select: { id: true },
   });
   if (students.length !== dto.studentIds.length) throw BadRequest('One or more student IDs are invalid');
@@ -423,24 +423,24 @@ export async function addStudents(tenantId: string, batchId: string, dto: { stud
 }
 
 // ═══════════════ REMOVE STUDENT FROM BATCH ═══════════════
-export async function removeStudent(tenantId: string, batchId: string, studentId: string) {
+export async function removeStudent(orgId: string, batchId: string, studentId: string) {
   const batch = await prisma.batch.findUnique({ where: { id: batchId } });
-  if (!batch || batch.tenantId !== tenantId) throw NotFound('Batch not found');
+  if (!batch || batch.orgId !== orgId) throw NotFound('Batch not found');
   await prisma.batchStudent.deleteMany({ where: { batchId, studentId } });
   return shapeBatch(batchId);
 }
 
 // ═══════════════ ARCHIVE BATCH ═══════════════
-export async function archive(tenantId: string, batchId: string) {
+export async function archive(orgId: string, batchId: string) {
   const batch = await prisma.batch.findUnique({ where: { id: batchId } });
-  if (!batch || batch.tenantId !== tenantId) throw NotFound('Batch not found');
+  if (!batch || batch.orgId !== orgId) throw NotFound('Batch not found');
   return prisma.batch.update({ where: { id: batchId }, data: { status: 'archived' } });
 }
 
 // ═══════════════ DELETE BATCH (draft/archived only) ═══════════════
-export async function remove(tenantId: string, batchId: string): Promise<void> {
+export async function remove(orgId: string, batchId: string): Promise<void> {
   const batch = await prisma.batch.findUnique({ where: { id: batchId } });
-  if (!batch || batch.tenantId !== tenantId) throw NotFound('Batch not found');
+  if (!batch || batch.orgId !== orgId) throw NotFound('Batch not found');
   if (batch.status === 'active') {
     throw BadRequest(
       'Active batches cannot be deleted directly. Please archive the batch first, then delete it.',
@@ -450,9 +450,9 @@ export async function remove(tenantId: string, batchId: string): Promise<void> {
 }
 
 // ═══════════════ GET BATCH STATISTICS ═══════════════
-export async function getStatistics(tenantId: string) {
+export async function getStatistics(orgId: string) {
   const batches = await prisma.batch.findMany({
-    where: { tenantId },
+    where: { orgId },
     select: { status: true, _count: { select: { students: true } } },
   });
 

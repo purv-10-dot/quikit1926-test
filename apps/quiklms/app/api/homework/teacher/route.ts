@@ -8,7 +8,7 @@ export const GET = route(async (req) => {
   requireRoles(actor, ['TEACHER', 'TENANT_ADMIN', 'SUB_ADMIN']);
   const url = new URL(req.url);
   return json(
-    await getTeacherHomework(actor.tenantId!, actor.id, {
+    await getTeacherHomework(actor.orgId!, actor.id, {
       status: url.searchParams.get('status') || undefined,
       batchId: url.searchParams.get('batchId') || undefined,
     }),

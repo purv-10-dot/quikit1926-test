@@ -10,5 +10,5 @@ export const GET = route(async (req) => {
   const dateFrom = url.searchParams.get('dateFrom') || '';
   const dateTo = url.searchParams.get('dateTo') || '';
   const metric = url.searchParams.get('metric') || undefined;
-  return json(await getPeriodComparison(actor.tenantId ?? '', dateFrom, dateTo, metric));
+  return json(await getPeriodComparison(actor.orgId ?? '', dateFrom, dateTo, metric));
 });

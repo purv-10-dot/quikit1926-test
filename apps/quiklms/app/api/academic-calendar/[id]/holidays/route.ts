@@ -14,7 +14,7 @@ const schema = z.object({ holidays: z.array(holidaySchema) });
 // PATCH /api/academic-calendar/:id/holidays — any authenticated user
 export const PATCH = route(async (req, { params }) => {
   const actor = await requireAuth(req);
-  if (!actor.tenantId) throw BadRequest('Tenant ID required');
+  if (!actor.orgId) throw BadRequest('Tenant ID required');
   const { holidays } = await parseBody(req, schema);
-  return json(await updateHolidays(actor.tenantId, params!.id, holidays));
+  return json(await updateHolidays(actor.orgId, params!.id, holidays));
 });

@@ -6,5 +6,5 @@ import { getAvailableTeachers } from '@/lib/services/tutoring-requests-service';
 export const GET = route(async (req) => {
   const actor = await requireAuth(req);
   requireRoles(actor, ['LEARNER', 'TENANT_ADMIN', 'SUB_ADMIN']);
-  return json(await getAvailableTeachers(actor.tenantId!));
+  return json(await getAvailableTeachers(actor.orgId!));
 });

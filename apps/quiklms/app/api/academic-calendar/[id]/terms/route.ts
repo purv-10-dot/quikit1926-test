@@ -15,7 +15,7 @@ const schema = z.object({ terms: z.array(termSchema) });
 // PATCH /api/academic-calendar/:id/terms — any authenticated user
 export const PATCH = route(async (req, { params }) => {
   const actor = await requireAuth(req);
-  if (!actor.tenantId) throw BadRequest('Tenant ID required');
+  if (!actor.orgId) throw BadRequest('Tenant ID required');
   const { terms } = await parseBody(req, schema);
-  return json(await updateTerms(actor.tenantId, params!.id, terms));
+  return json(await updateTerms(actor.orgId, params!.id, terms));
 });

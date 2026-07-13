@@ -11,5 +11,5 @@ export const PATCH = route(async (req) => {
   const user = await requireAuth(req);
   requireRoles(user, ['MANAGER']);
   const body = await parseBody(req, schema);
-  return json(await resetQuizAttempts(user.id, user.tenantId as string, body.userId, body.courseId));
+  return json(await resetQuizAttempts(user.id, user.orgId as string, body.userId, body.courseId));
 });

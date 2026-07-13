@@ -1,7 +1,34 @@
 import path from 'node:path';
+import fs from 'node:fs';
 import { fileURLToPath } from 'node:url';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
+
+// --- Prisma query-engine resolution for the webpack-bundled server runtime ---
+// Next.js bundles the Prisma client runtime into `.next/server/...`, so its
+// baked `__dirname` no longer sits next to the query-engine `.node` binary and
+// Prisma throws "could not locate the Query Engine for runtime windows". None of
+// Prisma's fallback search paths point back to where the engine actually lives
+// (`lib/generated/prisma/` for the LMS client, `node_modules/.prisma/client/`
+// for the org identity client). Both clients are the SAME Prisma version and so
+// ship a byte-identical engine binary — so pointing the global
+// `PRISMA_QUERY_ENGINE_LIBRARY` env at the LMS copy resolves the engine for every
+// Prisma client in the process at once. Guarded: only set when the var is unset
+// AND the file exists, so it is a no-op wherever the engine already resolves
+// (e.g. the client hasn't been generated, or a platform that locates it natively).
+if (!process.env.PRISMA_QUERY_ENGINE_LIBRARY) {
+  const engineDir = path.resolve(__dirname, 'lib/generated/prisma');
+  try {
+    const engine = fs
+      .readdirSync(engineDir)
+      .find((f) => /query_engine-.*\.node$/.test(f));
+    if (engine) {
+      process.env.PRISMA_QUERY_ENGINE_LIBRARY = path.join(engineDir, engine);
+    }
+  } catch {
+    // engine dir missing (client not generated yet) — leave default resolution.
+  }
+}
 
 /** @type {import('next').NextConfig} */
 const nextConfig = {

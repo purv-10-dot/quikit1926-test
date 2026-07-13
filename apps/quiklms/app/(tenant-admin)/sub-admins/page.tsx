@@ -68,8 +68,8 @@ const SubAdminsPage = () => {
     try {
       const userStr = sessionStorage.getItem('user');
       const currentUser = userStr ? JSON.parse(userStr) : null;
-      const tenantId = currentUser?.tenantId;
-      if (!tenantId) {
+      const orgId = currentUser?.orgId;
+      if (!orgId) {
         toast.error('Tenant ID not found. Please log out and log in again.');
         setCreating(false);
         return;
@@ -80,7 +80,7 @@ const SubAdminsPage = () => {
         firstName: data.firstName,
         lastName: data.lastName,
         role: 'SUB_ADMIN',
-        tenantId,
+        orgId,
       };
       await api.post('/auth/register', payload);
       setShowCreateModal(false);

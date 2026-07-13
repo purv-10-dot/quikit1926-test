@@ -22,13 +22,13 @@ export const POST = route(async (req) => {
   requireRoles(actor, ['SUPER_ADMIN', 'TENANT_ADMIN', 'SUB_ADMIN']);
   const { fileName, fileType, fileSize } = await parseBody(req, schema);
 
-  const tenantId = actor.tenantId;
-  const isMasterCourse = !tenantId && actor.role === 'SUPER_ADMIN';
-  if (!isMasterCourse && !tenantId) throw BadRequest('Tenant ID is required for tenant-specific courses');
+  const orgId = actor.orgId;
+  const isMasterCourse = !orgId && actor.role === 'SUPER_ADMIN';
+  if (!isMasterCourse && !orgId) throw BadRequest('Tenant ID is required for tenant-specific courses');
 
   const prefix = isMasterCourse
     ? 'master-courses/resources'
-    : `tenants/${tenantId}/course-resources`;
+    : `tenants/${orgId}/course-resources`;
   const { uploadUrl, s3Key, permanentUrl } = await presignForPrefix(prefix, fileName, fileType);
 
   return json({

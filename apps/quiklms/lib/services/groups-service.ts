@@ -21,35 +21,35 @@ async function enrichGroup(group: { id: string; createdBy: string | null } & Rec
   return { ...group, memberIds: users, createdBy: creator, memberCount: memberIds.length };
 }
 
-export async function create(tenantId: string, createdBy: string, dto: { name: string; description?: string; memberIds?: string[] }) {
-  const existing = await prisma.group.findFirst({ where: { tenantId, name: dto.name } });
+export async function create(orgId: string, createdBy: string, dto: { name: string; description?: string; memberIds?: string[] }) {
+  const existing = await prisma.group.findFirst({ where: { orgId, name: dto.name } });
   if (existing) throw Conflict(`A group named "${dto.name}" already exists`);
   const group = await prisma.group.create({
     data: {
-      tenantId, name: dto.name, description: dto.description, createdBy,
+      orgId, name: dto.name, description: dto.description, createdBy,
       ...(dto.memberIds?.length ? { members: { create: dto.memberIds.map((userId) => ({ userId })) } } : {}),
     },
   });
   return group;
 }
 
-export async function findAll(tenantId: string) {
-  const groups = await prisma.group.findMany({ where: { tenantId }, orderBy: { createdAt: 'desc' } });
+export async function findAll(orgId: string) {
+  const groups = await prisma.group.findMany({ where: { orgId }, orderBy: { createdAt: 'desc' } });
   return Promise.all(groups.map((g) => enrichGroup(g)));
 }
 
-export async function findOne(tenantId: string, groupId: string) {
-  const group = await prisma.group.findFirst({ where: { id: groupId, tenantId } });
+export async function findOne(orgId: string, groupId: string) {
+  const group = await prisma.group.findFirst({ where: { id: groupId, orgId } });
   if (!group) throw NotFound('Group not found');
   return enrichGroup(group);
 }
 
-export async function update(tenantId: string, groupId: string, dto: { name?: string; description?: string; memberIds?: string[] }) {
-  const group = await prisma.group.findFirst({ where: { id: groupId, tenantId } });
+export async function update(orgId: string, groupId: string, dto: { name?: string; description?: string; memberIds?: string[] }) {
+  const group = await prisma.group.findFirst({ where: { id: groupId, orgId } });
   if (!group) throw NotFound('Group not found');
 
   if (dto.name && dto.name !== group.name) {
-    const conflict = await prisma.group.findFirst({ where: { tenantId, name: dto.name, id: { not: groupId } } });
+    const conflict = await prisma.group.findFirst({ where: { orgId, name: dto.name, id: { not: groupId } } });
     if (conflict) throw Conflict(`A group named "${dto.name}" already exists`);
   }
 
@@ -70,13 +70,13 @@ export async function update(tenantId: string, groupId: string, dto: { name?: st
   return updated;
 }
 
-export async function remove(tenantId: string, groupId: string) {
-  const result = await prisma.group.deleteMany({ where: { id: groupId, tenantId } });
+export async function remove(orgId: string, groupId: string) {
+  const result = await prisma.group.deleteMany({ where: { id: groupId, orgId } });
   if (result.count === 0) throw NotFound('Group not found');
 }
 
-export async function addMembers(tenantId: string, groupId: string, dto: { memberIds: string[] }) {
-  const group = await prisma.group.findFirst({ where: { id: groupId, tenantId } });
+export async function addMembers(orgId: string, groupId: string, dto: { memberIds: string[] }) {
+  const group = await prisma.group.findFirst({ where: { id: groupId, orgId } });
   if (!group) throw NotFound('Group not found');
   if (dto.memberIds.length) {
     await prisma.groupMember.createMany({ data: dto.memberIds.map((userId) => ({ groupId, userId })), skipDuplicates: true });
@@ -84,15 +84,15 @@ export async function addMembers(tenantId: string, groupId: string, dto: { membe
   return prisma.group.findUnique({ where: { id: groupId } });
 }
 
-export async function removeMember(tenantId: string, groupId: string, memberId: string) {
-  const group = await prisma.group.findFirst({ where: { id: groupId, tenantId } });
+export async function removeMember(orgId: string, groupId: string, memberId: string) {
+  const group = await prisma.group.findFirst({ where: { id: groupId, orgId } });
   if (!group) throw NotFound('Group not found');
   await prisma.groupMember.deleteMany({ where: { groupId, userId: memberId } });
   return prisma.group.findUnique({ where: { id: groupId } });
 }
 
-export async function getMemberIds(tenantId: string, groupId: string): Promise<string[]> {
-  const group = await prisma.group.findFirst({ where: { id: groupId, tenantId } });
+export async function getMemberIds(orgId: string, groupId: string): Promise<string[]> {
+  const group = await prisma.group.findFirst({ where: { id: groupId, orgId } });
   if (!group) throw NotFound('Group not found');
   const members = await prisma.groupMember.findMany({ where: { groupId }, select: { userId: true } });
   return members.map((m) => m.userId);

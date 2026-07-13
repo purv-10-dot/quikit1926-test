@@ -6,5 +6,5 @@ import { reject } from '@/lib/services/payouts-service';
 export const PATCH = route(async (req, { params }) => {
   const actor = await requireAuth(req);
   requireRoles(actor, ['TENANT_ADMIN', 'SUB_ADMIN']);
-  return json(await reject(actor.tenantId!, params!.id));
+  return json(await reject(actor.orgId!, params!.id));
 });

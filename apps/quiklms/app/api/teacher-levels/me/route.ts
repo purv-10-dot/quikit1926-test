@@ -6,5 +6,5 @@ import { calculateTeacherLevel } from '@/lib/services/teacher-level-service';
 export const GET = route(async (req) => {
   const actor = await requireAuth(req);
   requireRoles(actor, ['TEACHER']);
-  return json({ success: true, data: await calculateTeacherLevel(actor.tenantId!, actor.id) });
+  return json({ success: true, data: await calculateTeacherLevel(actor.orgId!, actor.id) });
 });

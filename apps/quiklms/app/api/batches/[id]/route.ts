@@ -38,7 +38,7 @@ const updateSchema = z.object({
 // GET /api/batches/:id — any authed user
 export const GET = route(async (req, { params }) => {
   const actor = await requireAuth(req);
-  return json(await findOne(actor.tenantId!, params!.id));
+  return json(await findOne(actor.orgId!, params!.id));
 });
 
 // PATCH /api/batches/:id — TENANT_ADMIN | SUB_ADMIN | TEACHER
@@ -46,12 +46,12 @@ export const PATCH = route(async (req, { params }) => {
   const actor = await requireAuth(req);
   requireRoles(actor, ['TENANT_ADMIN', 'SUB_ADMIN', 'TEACHER']);
   const dto = await parseBody(req, updateSchema);
-  return json(await update(actor.tenantId!, params!.id, dto as UpdateBatchInput));
+  return json(await update(actor.orgId!, params!.id, dto as UpdateBatchInput));
 });
 
 // DELETE /api/batches/:id — TENANT_ADMIN | SUB_ADMIN (archive)
 export const DELETE = route(async (req, { params }) => {
   const actor = await requireAuth(req);
   requireRoles(actor, ['TENANT_ADMIN', 'SUB_ADMIN']);
-  return json(await archive(actor.tenantId!, params!.id));
+  return json(await archive(actor.orgId!, params!.id));
 });

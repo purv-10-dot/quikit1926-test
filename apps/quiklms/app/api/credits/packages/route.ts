@@ -15,7 +15,7 @@ const schema = z.object({
 // GET /api/credits/packages — any authed user
 export const GET = route(async (req) => {
   const actor = await requireAuth(req);
-  return json(await getPackageDefinitions(actor.tenantId!));
+  return json(await getPackageDefinitions(actor.orgId!));
 });
 
 // POST /api/credits/packages — TENANT_ADMIN | SUB_ADMIN
@@ -23,5 +23,5 @@ export const POST = route(async (req) => {
   const actor = await requireAuth(req);
   requireRoles(actor, ['TENANT_ADMIN', 'SUB_ADMIN']);
   const dto = await parseBody(req, schema);
-  return json(await createPackageDefinition(actor.tenantId!, dto));
+  return json(await createPackageDefinition(actor.orgId!, dto));
 });

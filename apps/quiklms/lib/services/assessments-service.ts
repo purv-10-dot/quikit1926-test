@@ -17,14 +17,14 @@ type AnyRec = Record<string, unknown>;
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
-export async function create(tenantId: string, dto: AnyRec) {
+export async function create(orgId: string, dto: AnyRec) {
   const normalisePoints = (q: AnyRec) => ({ ...q, points: q.points || 1 });
   const questions = ((dto.questions as AnyRec[]) || []).map(normalisePoints);
   const additionalQuestions = ((dto.additionalQuestions as AnyRec[]) || []).map(normalisePoints);
 
   return prisma.assessment.create({
     data: {
-      tenantId,
+      orgId,
       moduleId: String(dto.moduleId),
       title: String(dto.title ?? ''),
       questions: questions as unknown as Prisma.InputJsonValue,
@@ -42,8 +42,8 @@ export async function create(tenantId: string, dto: AnyRec) {
 }
 
 /** Find an assessment by id (standalone Assessment row, else master-course quiz). */
-export async function findOne(id: string, tenantId: string): Promise<AnyRec> {
-  const standalone = await prisma.assessment.findFirst({ where: { id, tenantId } });
+export async function findOne(id: string, orgId: string): Promise<AnyRec> {
+  const standalone = await prisma.assessment.findFirst({ where: { id, orgId } });
   if (standalone) return standalone as unknown as AnyRec;
 
   // Search master-course embedded quizzes by quiz id.
@@ -53,24 +53,24 @@ export async function findOne(id: string, tenantId: string): Promise<AnyRec> {
     for (const module of modules) {
       for (const subModule of (module.subModules as AnyRec[]) || []) {
         const quiz = subModule.quiz as AnyRec | undefined;
-        if (quiz && quiz.id === id) return transformMasterQuiz(id, tenantId, quiz, 'Quiz');
+        if (quiz && quiz.id === id) return transformMasterQuiz(id, orgId, quiz, 'Quiz');
       }
       const endQuiz = module.moduleEndQuiz as AnyRec | undefined;
-      if (endQuiz && endQuiz.id === id) return transformMasterQuiz(id, tenantId, endQuiz, 'Module Quiz');
+      if (endQuiz && endQuiz.id === id) return transformMasterQuiz(id, orgId, endQuiz, 'Module Quiz');
     }
   }
 
   throw NotFound(`Assessment with ID ${id} not found`);
 }
 
-function transformMasterQuiz(id: string, tenantId: string, quiz: AnyRec, fallbackTitle: string): AnyRec {
+function transformMasterQuiz(id: string, orgId: string, quiz: AnyRec, fallbackTitle: string): AnyRec {
   const settings = (quiz.settings as AnyRec) || {};
   const mapped = ((quiz.questions as AnyRec[]) || []).map(mapQuizQuestion);
   const mappedAdditional = ((quiz.additionalQuestions as AnyRec[]) || []).map(mapQuizQuestion);
   return {
     _id: id,
     originalId: id,
-    tenantId,
+    orgId,
     moduleId: '',
     title: quiz.title || fallbackTitle,
     questions: mapped,
@@ -87,21 +87,21 @@ function transformMasterQuiz(id: string, tenantId: string, quiz: AnyRec, fallbac
   };
 }
 
-export async function update(id: string, tenantId: string, updateData: AnyRec) {
-  const existing = await prisma.assessment.findFirst({ where: { id, tenantId } });
+export async function update(id: string, orgId: string, updateData: AnyRec) {
+  const existing = await prisma.assessment.findFirst({ where: { id, orgId } });
   if (!existing) throw NotFound('Assessment not found');
-  const { id: _id, tenantId: _t, createdAt: _ca, updatedAt: _ua, ...rest } = updateData;
+  const { id: _id, orgId: _t, createdAt: _ca, updatedAt: _ua, ...rest } = updateData;
   return prisma.assessment.update({ where: { id }, data: rest as Prisma.AssessmentUpdateInput });
 }
 
 /** Prior submitted attempts for retry-limit enforcement. */
-async function countLearnerAttempts(tenantId: string, learnerId: string, courseId: string, assessmentId: string): Promise<number> {
-  const attempts = await getQuizAttempts(tenantId, learnerId, assessmentId);
+async function countLearnerAttempts(orgId: string, learnerId: string, courseId: string, assessmentId: string): Promise<number> {
+  const attempts = await getQuizAttempts(orgId, learnerId, assessmentId);
   if (attempts.length > 0) return attempts.length;
 
   // For UUID/master assessments we don't persist QuizAttempt rows; use
   // lessonProgress as a "1 prior attempt" signal.
-  const progress = await prisma.progress.findFirst({ where: { tenantId, learnerId, courseId } });
+  const progress = await prisma.progress.findFirst({ where: { orgId, learnerId, courseId } });
   const lp = (progress?.lessonProgress as AnyRec | null) || undefined;
   if (!lp) return 0;
   const isDone = (v: AnyRec) => v && (v.isCompleted === true || (Number(v.completionPercentage) || 0) >= 95);
@@ -113,11 +113,11 @@ async function countLearnerAttempts(tenantId: string, learnerId: string, courseI
   return 0;
 }
 
-export async function getQuizAttempts(tenantId: string, learnerId: string, assessmentId: string) {
-  if (!tenantId || !learnerId || !assessmentId) return [];
+export async function getQuizAttempts(orgId: string, learnerId: string, assessmentId: string) {
+  if (!orgId || !learnerId || !assessmentId) return [];
   if (UUID_RE.test(assessmentId)) return []; // master-course quizzes aren't stored by assessmentId
   return prisma.quizAttempt.findMany({
-    where: { tenantId, learnerId, assessmentId },
+    where: { orgId, learnerId, assessmentId },
     orderBy: { submittedAt: 'desc' },
   });
 }
@@ -129,10 +129,10 @@ export interface SubmitQuizDto {
   sessionId?: string;
 }
 
-export async function submitQuiz(tenantId: string, learnerId: string, dto: SubmitQuizDto) {
-  const assessment = await findOne(dto.assessmentId, tenantId);
+export async function submitQuiz(orgId: string, learnerId: string, dto: SubmitQuizDto) {
+  const assessment = await findOne(dto.assessmentId, orgId);
 
-  const priorAttempts = await countLearnerAttempts(tenantId, learnerId, dto.courseId, dto.assessmentId);
+  const priorAttempts = await countLearnerAttempts(orgId, learnerId, dto.courseId, dto.assessmentId);
   const retryLimitRaw = assessment.retryLimit;
   const retryLimit = typeof retryLimitRaw === 'number' && retryLimitRaw > 0 ? retryLimitRaw : Number.POSITIVE_INFINITY;
   if (priorAttempts >= retryLimit) throw BadRequest(`You have used all ${retryLimit} attempts for this quiz.`);
@@ -194,7 +194,7 @@ export async function submitQuiz(tenantId: string, learnerId: string, dto: Submi
   const passed = percentage >= passingScore;
 
   // Update or create progress.
-  const existingProgress = await prisma.progress.findFirst({ where: { tenantId, learnerId, courseId: dto.courseId } });
+  const existingProgress = await prisma.progress.findFirst({ where: { orgId, learnerId, courseId: dto.courseId } });
   const lessonProgress: AnyRec = (existingProgress?.lessonProgress as AnyRec | null) || {};
   lessonProgress[dto.assessmentId] = {
     lessonId: dto.assessmentId,
@@ -215,7 +215,7 @@ export async function submitQuiz(tenantId: string, learnerId: string, dto: Submi
       })
     : await prisma.progress.create({
         data: {
-          tenantId,
+          orgId,
           learnerId,
           courseId: dto.courseId,
           status: 'InProgress',
@@ -258,7 +258,7 @@ export async function submitQuiz(tenantId: string, learnerId: string, dto: Submi
 
     await prisma.quizAttempt.create({
       data: {
-        tenantId,
+        orgId,
         learnerId,
         courseId: dto.courseId,
         assessmentId: dto.assessmentId,

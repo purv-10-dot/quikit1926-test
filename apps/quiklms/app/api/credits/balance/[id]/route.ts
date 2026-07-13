@@ -6,5 +6,5 @@ import { getBalanceByParent } from '@/lib/services/credits-service';
 export const GET = route(async (req, { params }) => {
   const actor = await requireAuth(req);
   requireRoles(actor, ['TENANT_ADMIN', 'SUB_ADMIN']);
-  return json(await getBalanceByParent(actor.tenantId!, params!.id));
+  return json(await getBalanceByParent(actor.orgId!, params!.id));
 });

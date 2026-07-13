@@ -1,7 +1,7 @@
 /**
  * Exams service — ported from ExamsService (Mongo → Prisma).
  * Exam.questions is the exam_questions join table (ExamQuestion → Question).
- * tenantId is enforced by callers via tenantWhere(); assertTenantMatch after
+ * orgId is enforced by callers via tenantWhere(); assertTenantMatch after
  * single fetch. The Socket.IO realtime timer/forceSubmit lives in the worker.
  */
 import type { Prisma } from '@prisma/client';
@@ -21,8 +21,8 @@ interface AutoSelectRules {
   tags?: string[];
 }
 
-async function autoSelectQuestions(tenantId: string, rules: AutoSelectRules) {
-  const where: Prisma.QuestionWhereInput = { tenantId, isActive: true };
+async function autoSelectQuestions(orgId: string, rules: AutoSelectRules) {
+  const where: Prisma.QuestionWhereInput = { orgId, isActive: true };
   if (rules.subject) where.subject = rules.subject;
   if (rules.difficulty) where.difficulty = rules.difficulty;
   if (rules.tags?.length) where.tags = { hasSome: rules.tags };
@@ -43,7 +43,7 @@ function shuffleArray<T>(arr: T[]): T[] {
 }
 
 export async function createExam(user: AuthUser, userId: string, data: Record<string, unknown>) {
-  const tenantId = user.tenantId as string;
+  const orgId = user.orgId as string;
 
   if (data.batchId) {
     const batch = await prisma.batch.findFirst({ where: tenantWhere(user, { id: data.batchId as string }) });
@@ -56,7 +56,7 @@ export async function createExam(user: AuthUser, userId: string, data: Record<st
   let totalMarks = (data.totalMarks as number) || 0;
 
   if (data.questionSelectionMode === 'auto_random' && data.autoSelectRules) {
-    const selected = await autoSelectQuestions(tenantId, data.autoSelectRules as AutoSelectRules);
+    const selected = await autoSelectQuestions(orgId, data.autoSelectRules as AutoSelectRules);
     questions = selected.map((q, i) => ({ questionId: q.id, points: q.points || 1, order: i + 1 }));
     totalMarks = questions.reduce((sum, q) => sum + (q.points || 0), 0);
   }
@@ -72,7 +72,7 @@ export async function createExam(user: AuthUser, userId: string, data: Record<st
   // Tenant-scope client-supplied question IDs: only this tenant's questions may be attached.
   if (cleanQuestions.length) {
     const ids = [...new Set(cleanQuestions.map((q) => q.questionId))];
-    const owned = await prisma.question.findMany({ where: { id: { in: ids }, tenantId }, select: { id: true } });
+    const owned = await prisma.question.findMany({ where: { id: { in: ids }, orgId }, select: { id: true } });
     const ownedSet = new Set(owned.map((q) => q.id));
     const foreign = ids.filter((id) => !ownedSet.has(id));
     if (foreign.length) throw BadRequest('One or more question IDs are invalid for this tenant');
@@ -93,7 +93,7 @@ export async function createExam(user: AuthUser, userId: string, data: Record<st
       proctoringLevel: (data.proctoringLevel as 'none' | 'soft') || 'soft',
       scheduledStartTime: data.scheduledStartTime ? new Date(data.scheduledStartTime as string) : undefined,
       scheduledEndTime: data.scheduledEndTime ? new Date(data.scheduledEndTime as string) : undefined,
-      tenantId,
+      orgId,
       createdBy: userId,
       questions: {
         create: cleanQuestions.map((q) => ({
@@ -135,7 +135,7 @@ export async function findOneExam(user: AuthUser, id: string) {
     },
   });
   if (!exam) throw NotFound('Exam not found');
-  assertTenantMatch(user, exam.tenantId);
+  assertTenantMatch(user, exam.orgId);
   return exam;
 }
 
@@ -145,14 +145,14 @@ async function findOneRaw(user: AuthUser, id: string) {
     include: { questions: true },
   });
   if (!exam) throw NotFound('Exam not found');
-  assertTenantMatch(user, exam.tenantId);
+  assertTenantMatch(user, exam.orgId);
   return exam;
 }
 
 export async function updateExam(user: AuthUser, id: string, data: Record<string, unknown>) {
   const exam = await prisma.exam.findFirst({ where: tenantWhere(user, { id }), include: { questions: true } });
   if (!exam) throw NotFound('Exam not found');
-  assertTenantMatch(user, exam.tenantId);
+  assertTenantMatch(user, exam.orgId);
   if (exam.status !== 'draft') throw BadRequest('Only draft exams can be edited');
 
   const update: Prisma.ExamUpdateInput = {};
@@ -176,7 +176,7 @@ export async function updateExam(user: AuthUser, id: string, data: Record<string
     // Tenant-scope client-supplied question IDs: only this tenant's questions may be attached.
     const ids = [...new Set(questions.map((q) => q.questionId))];
     if (ids.length) {
-      const owned = await prisma.question.findMany({ where: { id: { in: ids }, tenantId: exam.tenantId }, select: { id: true } });
+      const owned = await prisma.question.findMany({ where: { id: { in: ids }, orgId: exam.orgId }, select: { id: true } });
       const ownedSet = new Set(owned.map((q) => q.id));
       const foreign = ids.filter((qid) => !ownedSet.has(qid));
       if (foreign.length) throw BadRequest('One or more question IDs are invalid for this tenant');
@@ -212,7 +212,7 @@ export async function publishResults(user: AuthUser, id: string) {
 }
 
 export async function getStudentExams(user: AuthUser, studentId: string) {
-  const tenantId = user.tenantId as string;
+  const orgId = user.orgId as string;
 
   const learner = await prisma.user.findFirst({
     where: tenantWhere(user, { id: studentId }),
@@ -259,7 +259,7 @@ export async function getStudentExams(user: AuthUser, studentId: string) {
 
   const examIds = exams.map((e) => e.id);
   const sessions = await prisma.examSession.findMany({
-    where: { studentId, examId: { in: examIds }, tenantId },
+    where: { studentId, examId: { in: examIds }, orgId },
     select: { examId: true, status: true, score: true, percentage: true, passed: true, startedAt: true, endedAt: true },
   });
   const sessionMap = new Map(sessions.map((s) => [s.examId, s]));

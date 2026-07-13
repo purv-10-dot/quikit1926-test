@@ -17,12 +17,12 @@ export const PATCH = route(async (req, { params }) => {
   const actor = await requireAuth(req);
   requireRoles(actor, ['TENANT_ADMIN', 'SUB_ADMIN']);
   const dto = await parseBody(req, schema);
-  return json(await updatePackageDefinition(actor.tenantId!, params!.id, dto));
+  return json(await updatePackageDefinition(actor.orgId!, params!.id, dto));
 });
 
 // DELETE /api/credits/packages/:id — TENANT_ADMIN | SUB_ADMIN
 export const DELETE = route(async (req, { params }) => {
   const actor = await requireAuth(req);
   requireRoles(actor, ['TENANT_ADMIN', 'SUB_ADMIN']);
-  return json(await deletePackageDefinition(actor.tenantId!, params!.id));
+  return json(await deletePackageDefinition(actor.orgId!, params!.id));
 });

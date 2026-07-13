@@ -6,5 +6,5 @@ import { getTeacherTasks } from '@/lib/services/non-teaching-work-service';
 export const GET = route(async (req) => {
   const actor = await requireAuth(req);
   requireRoles(actor, ['TEACHER']);
-  return json({ success: true, data: await getTeacherTasks(actor.tenantId!, actor.id) });
+  return json({ success: true, data: await getTeacherTasks(actor.orgId!, actor.id) });
 });

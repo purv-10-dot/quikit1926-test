@@ -10,5 +10,5 @@ const schema = z.object({ emoji: z.string() });
 export const POST = route(async (req, { params }) => {
   const actor = await requireAuth(req);
   const { emoji } = await parseBody(req, schema);
-  return json(await reactToMessage(actor.tenantId ?? '', params!.messageId, actor.id, emoji));
+  return json(await reactToMessage(actor.orgId ?? '', params!.messageId, actor.id, emoji));
 });

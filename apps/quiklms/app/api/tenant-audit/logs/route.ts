@@ -8,8 +8,8 @@ export const GET = route(async (req) => {
   const actor = await requireAuth(req);
   requireRoles(actor, ['TENANT_ADMIN', 'SUB_ADMIN']);
 
-  const tenantId = actor.tenantId;
-  if (!tenantId) {
+  const orgId = actor.orgId;
+  if (!orgId) {
     return json({
       success: true,
       data: { logs: [], pagination: { total: 0, page: 1, limit: 50, totalPages: 0 } },
@@ -18,7 +18,7 @@ export const GET = route(async (req) => {
   }
 
   // Seed audit logs from existing data if this tenant has no audit history
-  await seedIfEmpty(tenantId);
+  await seedIfEmpty(orgId);
 
   const url = new URL(req.url);
   const startDate = url.searchParams.get('startDate') ? new Date(url.searchParams.get('startDate')!) : undefined;
@@ -28,7 +28,7 @@ export const GET = route(async (req) => {
   const limitNum = parseInt(url.searchParams.get('limit') || '50', 10);
   const skip = (pageNum - 1) * limitNum;
 
-  const result = await getTenantLogs(tenantId, { startDate, endDate, actionType, limit: limitNum, skip });
+  const result = await getTenantLogs(orgId, { startDate, endDate, actionType, limit: limitNum, skip });
 
   return json({
     success: true,

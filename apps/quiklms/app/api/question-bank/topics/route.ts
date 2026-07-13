@@ -6,8 +6,8 @@ import { getQuestionTopics } from '@/lib/services/question-bank-service';
 export const GET = route(async (req) => {
   const actor = await requireAuth(req);
   requireRoles(actor, ['TENANT_ADMIN', 'SUB_ADMIN', 'TEACHER']);
-  if (!actor.tenantId) throw BadRequest('Tenant ID required');
+  if (!actor.orgId) throw BadRequest('Tenant ID required');
   const subject = new URL(req.url).searchParams.get('subject') || undefined;
-  const data = await getQuestionTopics(actor.tenantId, subject);
+  const data = await getQuestionTopics(actor.orgId, subject);
   return json({ success: true, data });
 });

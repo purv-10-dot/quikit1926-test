@@ -10,8 +10,8 @@ const ROLES = ['TENANT_ADMIN', 'SUB_ADMIN', 'TEACHER'] as const;
 export const GET = route(async (req, { params }) => {
   const actor = await requireAuth(req);
   requireRoles(actor, [...ROLES]);
-  if (!actor.tenantId) throw BadRequest('Tenant ID required');
-  const data = await findQuestion(actor.tenantId, params!.id);
+  if (!actor.orgId) throw BadRequest('Tenant ID required');
+  const data = await findQuestion(actor.orgId, params!.id);
   return json({ success: true, data });
 });
 
@@ -19,9 +19,9 @@ export const GET = route(async (req, { params }) => {
 export const PUT = route(async (req, { params }) => {
   const actor = await requireAuth(req);
   requireRoles(actor, [...ROLES]);
-  if (!actor.tenantId) throw BadRequest('Tenant ID required');
+  if (!actor.orgId) throw BadRequest('Tenant ID required');
   const body = await parseBody(req, z.object({}).passthrough());
-  const data = await updateQuestion(actor.tenantId, params!.id, body as Record<string, unknown>);
+  const data = await updateQuestion(actor.orgId, params!.id, body as Record<string, unknown>);
   return json({ success: true, data });
 });
 
@@ -29,7 +29,7 @@ export const PUT = route(async (req, { params }) => {
 export const DELETE = route(async (req, { params }) => {
   const actor = await requireAuth(req);
   requireRoles(actor, [...ROLES]);
-  if (!actor.tenantId) throw BadRequest('Tenant ID required');
-  await softDeleteQuestion(actor.tenantId, params!.id);
+  if (!actor.orgId) throw BadRequest('Tenant ID required');
+  await softDeleteQuestion(actor.orgId, params!.id);
   return json({ success: true, message: 'Question deactivated' });
 });

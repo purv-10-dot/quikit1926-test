@@ -27,13 +27,13 @@ const FRONTEND_URL = process.env.FRONTEND_URL || 'https://quikskills.quikit.ai';
  * role-pair gate (manager↔learner is an internal system delivery channel).
  */
 async function getOrCreateDirectConversation(
-  tenantId: string,
+  orgId: string,
   senderId: string,
   recipientId: string,
 ): Promise<string> {
   const candidates = await prisma.conversation.findMany({
     where: {
-      tenantId,
+      orgId,
       type: 'direct',
       AND: [
         { participants: { some: { userId: senderId } } },
@@ -54,7 +54,7 @@ async function getOrCreateDirectConversation(
 
   const conversation = await prisma.conversation.create({
     data: {
-      tenantId,
+      orgId,
       type: 'direct',
       createdBy: senderId,
       participants: {
@@ -71,12 +71,12 @@ async function getOrCreateDirectConversation(
 
 /** Persist an in-app message to one recipient. Returns true on success. */
 async function deliverInApp(
-  tenantId: string,
+  orgId: string,
   senderId: string,
   recipientId: string,
   text: string,
 ): Promise<boolean> {
-  const conversationId = await getOrCreateDirectConversation(tenantId, senderId, recipientId);
+  const conversationId = await getOrCreateDirectConversation(orgId, senderId, recipientId);
   await prisma.message.create({
     data: { conversationId, senderId, text: text.slice(0, 2000) },
   });
@@ -100,7 +100,7 @@ export interface NudgeRecipient {
 }
 
 export interface NotifyOptions {
-  tenantId: string;
+  orgId: string;
   senderId: string;
   recipients: NudgeRecipient[];
   /** In-app + plain-text email body. */
@@ -122,12 +122,12 @@ export interface NotifyResult {
  * persisted in-app message are counted as delivered.
  */
 export async function notifyUsers(opts: NotifyOptions): Promise<NotifyResult> {
-  const { tenantId, senderId, recipients, message, subject, auditAction } = opts;
+  const { orgId, senderId, recipients, message, subject, auditAction } = opts;
   let deliveredCount = 0;
 
   for (const r of recipients) {
     try {
-      const ok = await deliverInApp(tenantId, senderId, r.id, message);
+      const ok = await deliverInApp(orgId, senderId, r.id, message);
       if (ok) deliveredCount++;
     } catch (err) {
       // eslint-disable-next-line no-console
@@ -153,7 +153,7 @@ export async function notifyUsers(opts: NotifyOptions): Promise<NotifyResult> {
     try {
       await prisma.tenantLog.create({
         data: {
-          tenantId,
+          orgId,
           actionType: auditAction,
           description: `${subject} — delivered to ${deliveredCount} user(s)`,
           performedBy: senderId,
