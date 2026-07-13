@@ -334,14 +334,12 @@ function splitName(full: string): { firstName: string; lastName: string } {
 // etc.) can still be added as an extra column in the uploaded file; the column
 // mapper recognises them via autoMap. Keeping the template lean stops users from
 // feeling they must fill 50+ columns.
+// Only the strictly-required columns (bulkEmployeeRowSchema requires just
+// firstName + lastName). Any other field can still be added as an extra column
+// in the uploaded file — the mapper recognises it via autoMap.
 const TEMPLATE_HEADERS = [
   "First Name",
   "Last Name",
-  "Work Email",
-  "Date of Joining",
-  "Department",
-  "Designation",
-  "Reporting Manager (EMP ID)",
 ];
 
 export default function BulkImportEmployeesPage() {

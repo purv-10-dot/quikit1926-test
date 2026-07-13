@@ -46,6 +46,10 @@ export interface ReqFormShape {
   etaToFillDays: number | null;
   jobGrade: string;
   costCenter: string;
+  jobLocation: string;
+  jobDuration: string;
+  workTimings: string;
+  interviewMode: string;
   jobDescription: string;
   requirements: string[];
   niceToHave: string[];
@@ -69,6 +73,7 @@ export const emptyReqForm: ReqFormShape = {
   interviewPanelIds: [], reportingToId: "", hiringManagerId: "", recruiterId: "",
   experienceMin: null, experienceMax: null, salaryMin: null, salaryMax: null, budget: null,
   targetJoiningDate: "", closedDate: "", etaToFillDays: null, jobGrade: "", costCenter: "",
+  jobLocation: "", jobDuration: "", workTimings: "", interviewMode: "",
   jobDescription: "", requirements: [], niceToHave: [], benefits: [],
   education: "", referralBonusAmount: null, careerPageVisible: true, internalPostingOnly: false, postToJobPortal: false,
   rolePurpose: "", responsibilities: [], skillWeights: [], justification: "",
@@ -102,6 +107,10 @@ export function toReqPayload(f: ReqFormShape) {
     etaToFillDays: n(f.etaToFillDays),
     jobGrade: s(f.jobGrade),
     costCenter: s(f.costCenter),
+    jobLocation: s(f.jobLocation),
+    jobDuration: s(f.jobDuration),
+    workTimings: s(f.workTimings),
+    interviewMode: f.interviewMode ? f.interviewMode : undefined,
     jobDescription: s(f.jobDescription),
     requirements: arr(f.requirements),
     niceToHave: arr(f.niceToHave),
@@ -396,6 +405,23 @@ export function RequisitionWizard({ form, setForm, isEdit, departments, pipeline
                   options={["Office", "Remote", "Hybrid"].map((t) => ({ value: t, label: t }))} />
               </div>
             </div>
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+              <div>
+                <label className={reqLabel}>Job Location</label>
+                <input value={form.jobLocation} onChange={(e) => setForm({ ...form, jobLocation: e.target.value })}
+                  placeholder="e.g. Indore, MP" className={reqInput} />
+              </div>
+              <div>
+                <label className={reqLabel}>Job Duration</label>
+                <input value={form.jobDuration} onChange={(e) => setForm({ ...form, jobDuration: e.target.value })}
+                  placeholder="e.g. Permanent / 6 months" className={reqInput} />
+              </div>
+              <div>
+                <label className={reqLabel}>Work Timings / Shift</label>
+                <input value={form.workTimings} onChange={(e) => setForm({ ...form, workTimings: e.target.value })}
+                  placeholder="e.g. 9 AM–6 PM / Night shift" className={reqInput} />
+              </div>
+            </div>
             <div>
               <label className={reqLabel}>Priority</label>
               <div className="inline-flex items-center gap-2 flex-wrap">
@@ -447,6 +473,17 @@ export function RequisitionWizard({ form, setForm, isEdit, departments, pipeline
                   options={empOpts} placeholder="Select panel members..." />
                 <p className="mt-1 text-[11px] text-gray-400">Only these employees can be picked as interviewers for this role.</p>
               </div>
+            </div>
+            <div>
+              <label className={reqLabel}>In-person / Video interviews required?</label>
+              <Select value={form.interviewMode} onChange={(v) => setForm({ ...form, interviewMode: v })}
+                placeholder="— Select —"
+                options={[
+                  { value: "Video", label: "Yes — Video" },
+                  { value: "InPerson", label: "Yes — In-person" },
+                  { value: "Either", label: "Either" },
+                  { value: "NotRequired", label: "Not required" },
+                ]} />
             </div>
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
               <div>

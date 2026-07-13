@@ -1,6 +1,6 @@
 import { NextRequest } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { withAuth } from "@/lib/with-auth";
+import { withServiceAuth } from "@/lib/with-auth";
 import { successResponse, internalError, notFound, validationError } from "@/lib/api-response";
 import { resolveEmployeeId } from "@/lib/resolve-employee";
 
@@ -10,7 +10,7 @@ function fyBounds(fy: string): { start: Date; end: Date } {
   return { start: new Date(`${y}-04-01`), end: new Date(`${y + 1}-03-31`) };
 }
 
-export const GET = withAuth(async (req: NextRequest, { orgId, userId }) => {
+export const GET = withServiceAuth(async (req: NextRequest, { orgId, userId }) => {
   try {
     const employeeId = await resolveEmployeeId(orgId, userId);
     if (!employeeId) return notFound("Employee record not found");

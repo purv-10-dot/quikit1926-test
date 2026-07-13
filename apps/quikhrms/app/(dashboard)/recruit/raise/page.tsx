@@ -34,14 +34,19 @@ export default function RaiseRequisitionPage() {
 
   const raiseMut = useMutation({
     mutationFn: (body: ReqFormShape) =>
-      api.post<{ requisition: { id: string; requisitionNumber: string }; approvers: { deptHead: { name: string }; hr: { name: string } } }>(
+      api.post<{ requisition: { id: string; requisitionNumber: string } }>(
         "/api/v1/hrms/recruit/requisitions/raise",
         toReqPayload(body),
       ),
-    onSuccess: (res) => {
-      const d = res.data;
-      toast.success("Requisition raised", d ? `Sent to ${d.approvers.deptHead.name} for first approval` : undefined);
+    onSuccess: () => {
+      toast.success("Requisition raised", "Sent to the first approver in your requisition approval chain.");
       setTimeout(() => router.push("/recruit/requisitions"), 800);
+    },
+    meta: { suppressGlobalError: true },
+    onError: (e) => {
+      // Most common: no Requisition approval chain configured → the API returns
+      // a clear message pointing to Settings → Approval Chains.
+      toast.error("Couldn't raise requisition", e instanceof Error ? e.message : "Please try again.");
     },
   });
 
@@ -51,7 +56,7 @@ export default function RaiseRequisitionPage() {
         <Briefcase size={24} className="text-green-600 mt-1" />
         <div>
           <h1 className="text-page-title text-gray-900 leading-tight">Raise a requisition</h1>
-          <p className="text-xs text-gray-500 mt-1">Submit a hiring request. Flow: Department Head &rarr; HR &rarr; Open.</p>
+          <p className="text-xs text-gray-500 mt-1">Submit a hiring request. Approval follows your configured Requisition chain (Settings &rarr; Approval Chains).</p>
         </div>
       </div>
 

@@ -1,6 +1,6 @@
 import { NextRequest } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { withAuth } from "@/lib/with-auth";
+import { withAuth, withServiceAuth } from "@/lib/with-auth";
 import { successResponse, validationError, internalError } from "@/lib/api-response";
 import { createRequisitionSchema } from "@/lib/validations/recruit";
 import { parsePagination, paginationMeta } from "@/lib/utils/pagination";
@@ -9,7 +9,7 @@ import { resolveEmployeeId } from "@/lib/resolve-employee";
 import { fireWorkflow } from "@/lib/workflows/executor";
 import type { Prisma } from "@quikit/database";
 
-export const GET = withAuth(async (req: NextRequest, { orgId }) => {
+export const GET = withServiceAuth(async (req: NextRequest, { orgId }) => {
   try {
     const { searchParams } = new URL(req.url);
     const { page, limit } = parsePagination(searchParams);
@@ -91,6 +91,10 @@ export const POST = withAuth(async (req: NextRequest, { orgId, userId }) => {
         budget: data.budget,
         jobGrade: data.jobGrade,
         costCenter: data.costCenter,
+        jobLocation: data.jobLocation,
+        jobDuration: data.jobDuration,
+        workTimings: data.workTimings,
+        interviewMode: data.interviewMode,
         etaToFillDays: data.etaToFillDays,
         targetJoiningDate: data.targetJoiningDate ? new Date(data.targetJoiningDate) : undefined,
         closedDate: data.closedDate ? new Date(data.closedDate) : undefined,

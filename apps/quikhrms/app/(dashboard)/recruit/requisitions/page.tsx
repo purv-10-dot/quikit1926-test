@@ -46,6 +46,10 @@ interface ReqItem {
   etaToFillDays?: number | null;
   jobGrade?: string | null;
   costCenter?: string | null;
+  jobLocation?: string | null;
+  jobDuration?: string | null;
+  workTimings?: string | null;
+  interviewMode?: string | null;
   experienceMin?: number | null;
   experienceMax?: number | null;
   salaryMin?: string | number | null;
@@ -366,6 +370,9 @@ export default function RequisitionsPage() {
           ReqDraft: "Draft", PendingApproval: "Pending Approval", ReqApproved: "Approved",
           ReqOpen: "Open", ReqOnHold: "On Hold", ReqClosed: "Closed", ReqCancelled: "Cancelled",
         };
+        const INTERVIEW_MODE_LABEL: Record<string, string> = {
+          Video: "Yes — Video", InPerson: "Yes — In-person", Either: "Either", NotRequired: "Not required",
+        };
         const rng = (a: string | number | null | undefined, b: string | number | null | undefined, suffix: string) =>
           a != null || b != null ? `${a ?? "?"} – ${b ?? "?"} ${suffix}` : "—";
         const fmtDate = (d?: string | null) =>
@@ -376,6 +383,10 @@ export default function RequisitionsPage() {
           ["Hiring Manager", hm],
           ["Employment Type", viewReq.employmentType ?? "—"],
           ["Work Location", viewReq.workLocation ?? "—"],
+          ["Job Location", viewReq.jobLocation ?? "—"],
+          ["Job Duration", viewReq.jobDuration ?? "—"],
+          ["Work Timings / Shift", viewReq.workTimings ?? "—"],
+          ["In-person / Video", INTERVIEW_MODE_LABEL[viewReq.interviewMode ?? ""] ?? "—"],
           ["Positions", `${viewReq.filledPositions}/${viewReq.positions}`],
           ["Applications", String(viewReq._count.applications)],
           ["Priority", viewReq.priority ?? "—"],
@@ -508,6 +519,10 @@ function reqToForm(r: ReqItem): ReqFormShape {
     etaToFillDays: reqNum(r.etaToFillDays),
     jobGrade: r.jobGrade ?? "",
     costCenter: r.costCenter ?? "",
+    jobLocation: r.jobLocation ?? "",
+    jobDuration: r.jobDuration ?? "",
+    workTimings: r.workTimings ?? "",
+    interviewMode: r.interviewMode ?? "",
     jobDescription: r.jobDescription ?? "",
     requirements: Array.isArray(r.requirements) ? r.requirements : [],
     niceToHave: Array.isArray(r.niceToHave) ? r.niceToHave : [],

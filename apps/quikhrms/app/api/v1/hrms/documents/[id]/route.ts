@@ -1,13 +1,13 @@
 import { NextRequest } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { withAuth } from "@/lib/with-auth";
+import { withAuth, withServiceAuth } from "@/lib/with-auth";
 import { successResponse, validationError, notFound, forbidden, internalError } from "@/lib/api-response";
 import { updateDocumentSchema } from "@/lib/validations/documents";
 import { createAuditLog } from "@/lib/utils/audit";
 import { extractDocumentText } from "@/lib/ai/extract-document-text";
 import { resolveScope, employeeScopeFilter, getCallerEmployeeId } from "@/lib/rbac/scope";
 
-export const GET = withAuth(async (_req: NextRequest, ctx, params) => {
+export const GET = withServiceAuth(async (_req: NextRequest, ctx, params) => {
   try {
     const { orgId } = ctx;
     const doc = await prisma.document.findFirst({

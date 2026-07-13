@@ -11653,6 +11653,12 @@ model JobRequisition {
   positions         Int     @default(1)
   filledPositions   Int     @default(0)
 
+  // Job Requisition Form fields (moreYeahs template parity).
+  jobLocation   String? // free-text city / office location
+  jobDuration   String? // e.g. contract length ("6 months"), "Permanent"
+  workTimings   String? // working hours / shift ("9 AM–6 PM", "Night shift")
+  interviewMode String? // "Video" | "InPerson" | "Either" | "NotRequired"
+
   type           RequisitionType @default(NewPosition)
   employmentType EmploymentType  @default(FullTime)
   workLocation   WorkLocation    @default(Office)
@@ -12342,6 +12348,7 @@ enum ApprovalModule {
   ProofOfInvestment
   SalaryRevision
   OneTimeEarning
+  Requisition
 
   @@schema("app_quikhrms")
 }
@@ -15212,7 +15219,9 @@ model RequisitionApproval {
   requisitionId String
   approverId    String
   level         Int                     @default(1)
-  role          RequisitionApproverRole
+  // Nullable: rows created from a configurable Approval Chain have no fixed
+  // DeptHead/HR role (legacy hardcoded rows still set it).
+  role          RequisitionApproverRole?
 
   status    RequisitionApprovalStatus @default(Pending)
   comment   String?

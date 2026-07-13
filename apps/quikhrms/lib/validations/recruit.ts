@@ -76,6 +76,11 @@ const requisitionBaseObject = z.object({
   etaToFillDays: z.number().int().optional(),
   jobGrade: z.string().optional(),
   costCenter: z.string().optional(),
+  // Job Requisition Form parity
+  jobLocation: z.string().optional(),
+  jobDuration: z.string().optional(),
+  workTimings: z.string().optional(),
+  interviewMode: z.enum(["Video", "InPerson", "Either", "NotRequired"]).optional(),
 });
 
 // Cross-field logical checks shared by create + update. Each guard is null-safe

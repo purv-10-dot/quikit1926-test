@@ -64,6 +64,28 @@ const STATUS_STYLE: Record<Invitation["status"], string> = {
   Revoked: "bg-red-50 text-red-600 ring-red-200",
 };
 
+/** A single row in the unified list — an existing user, a not-yet-invited
+ *  employee, or an invitation record. */
+interface UnifiedRow {
+  key: string;
+  name: string;
+  email: string;
+  role: string;
+  status: string;
+  kind: "user" | "invitable" | "invitation";
+  invitation?: Invitation;
+  employeeId?: string;
+  hasEmail?: boolean;
+}
+
+function statusBadgeClass(status: string): string {
+  const s = STATUS_STYLE[status as Invitation["status"]];
+  if (s) return s;
+  if (status === "Active") return "bg-emerald-50 text-emerald-700 ring-emerald-200";
+  if (status === "Not invited") return "bg-blue-50 text-blue-700 ring-blue-200";
+  return "bg-gray-100 text-gray-600 ring-gray-200";
+}
+
 export default function UsersPage() {
   const api = useApiClient();
   const qc = useQueryClient();
@@ -80,6 +102,7 @@ export default function UsersPage() {
   });
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [search, setSearch] = useState("");
+  const [statusFilter, setStatusFilter] = useState("");
 
   // ── Existing-member typeahead (Add New User modal) ──
   // When the admin picks someone who's already a central QuikIT member, we
@@ -101,7 +124,7 @@ export default function UsersPage() {
     queryKey: ["invitations"],
     queryFn: () => api.get<Invitation[]>("/api/v1/hrms/invitations"),
   });
-  const invitations = invitesResp?.data ?? [];
+  const invitations = useMemo(() => invitesResp?.data ?? [], [invitesResp]);
 
   // Existing provisioned users (the first Org Admin + everyone added since).
   // Mirrors quikscale/quiktrack, which list the org's members — not just
@@ -112,7 +135,7 @@ export default function UsersPage() {
     // native password), not every active employee.
     queryFn: () => api.get<OrgUser[]>("/api/v1/hrms/employees?limit=200&provisioned=true"),
   });
-  const users = usersResp?.data ?? [];
+  const users = useMemo(() => usersResp?.data ?? [], [usersResp]);
 
   // Employees who can still be invited: no login account + no Pending invite.
   // These are people added via People / bulk import / onboarding who haven't
@@ -121,7 +144,7 @@ export default function UsersPage() {
     queryKey: ["invitable-employees"],
     queryFn: () => api.get<OrgUser[]>("/api/v1/hrms/employees?limit=200&invitable=true"),
   });
-  const invitable = invitableResp?.data ?? [];
+  const invitable = useMemo(() => invitableResp?.data ?? [], [invitableResp]);
 
   const { data: rolesResp } = useQuery({
     queryKey: ["roles"],
@@ -313,32 +336,46 @@ export default function UsersPage() {
   }
 
   const q = search.trim().toLowerCase();
-  const filtered = q
-    ? invitations.filter((i) =>
-        [i.email, i.firstName, i.lastName, [i.firstName, i.lastName].filter(Boolean).join(" "), i.status, ...i.roleNames]
-          .filter(Boolean)
-          .some((v) => String(v).toLowerCase().includes(q)),
-      )
-    : invitations;
 
-  // Only surface users who need attention here — Active users are hidden (they
-  // don't need any action). Suspended / Relieved / other non-active statuses
-  // still show so an admin can see and act on them.
-  const nonActiveUsers = users.filter((u) => u.status !== "Active");
-  const filteredUsers = q
-    ? nonActiveUsers.filter((u) =>
-        [u.firstName, u.lastName, u.displayName, u.workEmail, u.jobTitle, u.status, u.role?.name]
-          .filter(Boolean)
-          .some((v) => String(v).toLowerCase().includes(q)),
-      )
-    : nonActiveUsers;
+  // One unified list: provisioned users (any status) + not-yet-invited employees
+  // + invitation records. An Accepted invitation whose email already has an
+  // account is deduped away so nobody shows twice.
+  const rows = useMemo<UnifiedRow[]>(() => {
+    const userEmails = new Set(users.map((u) => (u.workEmail ?? "").toLowerCase()).filter(Boolean));
+    const fullName = (f: string | null, l: string | null, dn?: string | null) =>
+      dn || [f, l].filter(Boolean).join(" ") || "—";
+    const out: UnifiedRow[] = [];
+    for (const u of users) {
+      out.push({ key: `user-${u.id}`, name: fullName(u.firstName, u.lastName, u.displayName), email: u.workEmail ?? "", role: u.role?.name ?? "—", status: u.status, kind: "user" });
+    }
+    for (const u of invitable) {
+      out.push({ key: `invitable-${u.id}`, name: fullName(u.firstName, u.lastName, u.displayName), email: u.workEmail ?? "", role: u.role?.name ?? "—", status: "Not invited", kind: "invitable", employeeId: u.id, hasEmail: !!u.workEmail });
+    }
+    for (const inv of invitations) {
+      if (inv.status === "Accepted" && userEmails.has(inv.email.toLowerCase())) continue;
+      out.push({ key: `invitation-${inv.id}`, name: fullName(inv.firstName, inv.lastName), email: inv.email, role: inv.roleNames.join(", ") || "—", status: inv.status, kind: "invitation", invitation: inv });
+    }
+    return out;
+  }, [users, invitable, invitations]);
+
+  const statusOptions = useMemo(() => Array.from(new Set(rows.map((r) => r.status))).sort(), [rows]);
+
+  const visibleRows = useMemo(() => rows.filter((r) => {
+    if (statusFilter && r.status !== statusFilter) return false;
+    if (!q) return true;
+    return [r.name, r.email, r.role, r.status].filter(Boolean).some((v) => v.toLowerCase().includes(q));
+  }), [rows, statusFilter, q]);
+
+  const anyLoading = usersLoading || invitableLoading || isLoading;
 
   const toggleSelect = (id: string) =>
     setSelected((s) => { const n = new Set(s); n.has(id) ? n.delete(id) : n.add(id); return n; });
-  const allSelected = filtered.length > 0 && filtered.every((i) => selected.has(i.id));
-  const someSelected = filtered.some((i) => selected.has(i.id));
+  // Only invitation rows are bulk-deletable.
+  const selectableIds = visibleRows.filter((r) => r.kind === "invitation").map((r) => r.invitation!.id);
+  const allSelected = selectableIds.length > 0 && selectableIds.every((id) => selected.has(id));
+  const someSelected = selectableIds.some((id) => selected.has(id));
   const toggleSelectAll = () =>
-    setSelected(() => (allSelected ? new Set() : new Set(filtered.map((i) => i.id))));
+    setSelected(() => (allSelected ? new Set() : new Set(selectableIds)));
 
   async function onBulkDelete() {
     if (selected.size === 0) return;
@@ -368,18 +405,6 @@ export default function UsersPage() {
               <Trash2 size={13} /> {bulkDeleteMut.isPending ? "Deleting…" : `Delete selected (${selected.size})`}
             </button>
           )}
-          <button
-            onClick={() => { resetBulk(); setShowBulk(true); }}
-            className="inline-flex items-center gap-2 rounded-lg border border-gray-200 bg-white px-3 py-1.5 text-xs font-medium text-gray-700 transition hover:bg-gray-50"
-          >
-            <Upload size={13} /> Bulk Import
-          </button>
-          <button
-            onClick={() => setShowInvite(true)}
-            className="inline-flex items-center gap-2 rounded-lg bg-green-600 px-3 py-1.5 text-xs font-medium text-white transition hover:bg-green-700"
-          >
-            <UserPlus size={13} /> Invite User
-          </button>
         </div>
       </div>
 
@@ -395,100 +420,16 @@ export default function UsersPage() {
         />
       </div>
 
-      {/* Active users — existing org members (incl. the first Org Admin).
-          Mirrors quikscale/quiktrack: the admin who set up the app is always
-          visible here, not just pending invitations. */}
-      <div className="mb-2 text-[11px] font-semibold text-gray-700">Users</div>
-      <div className="mb-4 overflow-hidden rounded-xl border border-gray-200 bg-white">
-        <table className="w-full text-xs">
-          <thead>
-            <tr className="border-b border-gray-100 bg-gray-50 text-left text-table-head uppercase tracking-wide text-gray-500">
-              <th className="px-4 py-2.5 font-semibold">Person</th>
-              <th className="px-4 py-2.5 font-semibold">Role</th>
-              <th className="px-4 py-2.5 font-semibold">Status</th>
-            </tr>
-          </thead>
-          <tbody>
-            {usersLoading ? (
-              <tr><td colSpan={3} className="px-4 py-10 text-center text-gray-400">Loading…</td></tr>
-            ) : filteredUsers.length === 0 ? (
-              <tr><td colSpan={3} className="px-4 py-10 text-center text-gray-400">{nonActiveUsers.length === 0 ? "No inactive users — everyone is active." : "No users match your search."}</td></tr>
-            ) : (
-              filteredUsers.map((u) => {
-                const name = u.displayName || [u.firstName, u.lastName].filter(Boolean).join(" ") || "—";
-                return (
-                  <tr key={u.id} className="border-b border-gray-50 last:border-0">
-                    <td className="px-4 py-2.5">
-                      <div className="text-[13px] font-medium text-gray-900">{name}</div>
-                      {u.workEmail && (
-                        <div className="flex items-center gap-1 text-[11px] text-gray-500"><Mail size={12} /> {u.workEmail}</div>
-                      )}
-                    </td>
-                    <td className="px-4 py-2.5 text-gray-600">{u.role?.name ?? "—"}</td>
-                    <td className="px-4 py-2.5">
-                      <span className={clsx(
-                        "inline-flex rounded-full px-2 py-0.5 text-[11px] font-medium ring-1",
-                        u.status === "Active" ? "bg-emerald-50 text-emerald-700 ring-emerald-200" : "bg-gray-100 text-gray-600 ring-gray-200",
-                      )}>{u.status}</span>
-                    </td>
-                  </tr>
-                );
-              })
-            )}
-          </tbody>
-        </table>
+      {/* One unified list — everyone (users, not-yet-invited, invitations),
+          filterable by status. */}
+      <div className="mb-3 max-w-[200px]">
+        <Select
+          value={statusFilter}
+          onChange={(v) => setStatusFilter(v)}
+          options={[{ value: "", label: "All statuses" }, ...statusOptions.map((s) => ({ value: s, label: s }))]}
+        />
       </div>
 
-      {/* Employees added (People / bulk import / onboarding) who haven't been
-          sent a portal invite yet. Invite is triggered manually from here. */}
-      <div className="mb-2 text-[11px] font-semibold text-gray-700">Not yet invited</div>
-      <div className="mb-4 overflow-hidden rounded-xl border border-gray-200 bg-white">
-        <table className="w-full text-xs">
-          <thead>
-            <tr className="border-b border-gray-100 bg-gray-50 text-left text-table-head uppercase tracking-wide text-gray-500">
-              <th className="px-4 py-2.5 font-semibold">Person</th>
-              <th className="px-4 py-2.5 font-semibold">Role</th>
-              <th className="px-4 py-2.5 text-right font-semibold">Actions</th>
-            </tr>
-          </thead>
-          <tbody>
-            {invitableLoading ? (
-              <tr><td colSpan={3} className="px-4 py-10 text-center text-gray-400">Loading…</td></tr>
-            ) : invitable.length === 0 ? (
-              <tr><td colSpan={3} className="px-4 py-10 text-center text-gray-400">Everyone has been invited.</td></tr>
-            ) : (
-              invitable.map((u) => {
-                const name = u.displayName || [u.firstName, u.lastName].filter(Boolean).join(" ") || "—";
-                const busy = inviteEmployeeMut.isPending && inviteEmployeeMut.variables === u.id;
-                return (
-                  <tr key={u.id} className="border-b border-gray-50 last:border-0">
-                    <td className="px-4 py-2.5">
-                      <div className="text-[13px] font-medium text-gray-900">{name}</div>
-                      {u.workEmail && (
-                        <div className="flex items-center gap-1 text-[11px] text-gray-500"><Mail size={12} /> {u.workEmail}</div>
-                      )}
-                    </td>
-                    <td className="px-4 py-2.5 text-gray-600">{u.role?.name ?? "—"}</td>
-                    <td className="px-4 py-2.5 text-right">
-                      <button
-                        type="button"
-                        onClick={() => inviteEmployeeMut.mutate(u.id)}
-                        disabled={!u.workEmail || busy}
-                        title={u.workEmail ? "Send portal invite" : "No work email on file"}
-                        className="inline-flex items-center gap-1.5 rounded-lg bg-green-600 px-2.5 py-1.5 text-[11px] font-semibold text-white hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed transition"
-                      >
-                        <Send size={12} /> {busy ? "Inviting…" : "Invite"}
-                      </button>
-                    </td>
-                  </tr>
-                );
-              })
-            )}
-          </tbody>
-        </table>
-      </div>
-
-      <div className="mb-2 text-[11px] font-semibold text-gray-700">Pending Invitations</div>
       <div className="overflow-hidden rounded-xl border border-gray-200 bg-white">
         <table className="w-full text-xs">
           <thead>
@@ -503,7 +444,7 @@ export default function UsersPage() {
                 />
               </th>
               <th className="px-4 py-2.5 font-semibold">Person</th>
-              <th className="px-4 py-2.5 font-semibold">Roles</th>
+              <th className="px-4 py-2.5 font-semibold">Role</th>
               <th className="px-4 py-2.5 font-semibold">Status</th>
               <th className="px-4 py-2.5 font-semibold">Invited by</th>
               <th className="px-4 py-2.5 font-semibold">Expires</th>
@@ -511,77 +452,95 @@ export default function UsersPage() {
             </tr>
           </thead>
           <tbody>
-            {isLoading ? (
+            {anyLoading ? (
               <tr><td colSpan={7} className="px-4 py-10 text-center text-gray-400">Loading…</td></tr>
-            ) : filtered.length === 0 ? (
-              <tr><td colSpan={7} className="px-4 py-10 text-center text-gray-400">{invitations.length === 0 ? "No invitations yet." : "No invitations match your search."}</td></tr>
+            ) : visibleRows.length === 0 ? (
+              <tr><td colSpan={7} className="px-4 py-10 text-center text-gray-400">{rows.length === 0 ? "No users yet." : "No users match your filter."}</td></tr>
             ) : (
-              filtered.map((inv) => (
-                <tr key={inv.id} className={clsx("border-b border-gray-50 last:border-0", selected.has(inv.id) && "bg-green-50/40")}>
-                  <td className="px-4 py-2.5">
-                    <input
-                      type="checkbox"
-                      checked={selected.has(inv.id)}
-                      onChange={() => toggleSelect(inv.id)}
-                      className="rounded border-gray-300"
-                    />
-                  </td>
-                  <td className="px-4 py-2.5">
-                    <div className="text-[13px] font-medium text-gray-900">
-                      {[inv.firstName, inv.lastName].filter(Boolean).join(" ") || "—"}
-                    </div>
-                    <div className="flex items-center gap-1 text-[11px] text-gray-500">
-                      <Mail size={12} /> {inv.email}
-                    </div>
-                  </td>
-                  <td className="px-4 py-2.5 text-gray-600">{inv.roleNames.join(", ") || "—"}</td>
-                  <td className="px-4 py-2.5">
-                    <span className={clsx("inline-flex rounded-full px-2 py-0.5 text-[11px] font-medium ring-1", STATUS_STYLE[inv.status])}>
-                      {inv.status}
-                    </span>
-                  </td>
-                  <td className="px-4 py-2.5 text-gray-600">{inv.invitedByName ?? "—"}</td>
-                  <td className="px-4 py-2.5 text-gray-500">{new Date(inv.expiresAt).toLocaleDateString()}</td>
-                  <td className="px-4 py-2.5">
-                    <div className="flex justify-end gap-2">
-                      {(inv.status === "Pending" || inv.status === "Expired") && (
-                        <>
-                          <button
-                            onClick={() =>
-                              toast.promise(resendMut.mutateAsync(inv.id), {
-                                loading: "Resending invitation…",
-                                success: "Invitation resent",
-                                error: "Couldn't resend the invitation",
-                              })
-                            }
-                            disabled={resendMut.isPending}
-                            title="Resend invitation"
-                            className="inline-flex items-center gap-1 rounded-md border border-gray-200 px-2.5 py-1 text-xs font-normal text-gray-600 transition hover:bg-gray-50 disabled:opacity-50"
-                          >
-                            <RotateCw size={12} /> Resend
-                          </button>
-                          <button
-                            onClick={() => onRevoke(inv)}
-                            disabled={revokeMut.isPending}
-                            title="Revoke invitation"
-                            className="inline-flex items-center gap-1 rounded-md border border-red-200 px-2.5 py-1 text-xs font-normal text-red-600 transition hover:bg-red-50 disabled:opacity-50"
-                          >
-                            <Ban size={12} /> Revoke
-                          </button>
-                        </>
+              visibleRows.map((r) => {
+                const inv = r.invitation;
+                const isSel = inv ? selected.has(inv.id) : false;
+                const busy = r.kind === "invitable" && inviteEmployeeMut.isPending && inviteEmployeeMut.variables === r.employeeId;
+                return (
+                  <tr key={r.key} className={clsx("border-b border-gray-50 last:border-0", isSel && "bg-green-50/40")}>
+                    <td className="px-4 py-2.5">
+                      {inv && (
+                        <input
+                          type="checkbox"
+                          checked={isSel}
+                          onChange={() => toggleSelect(inv.id)}
+                          className="rounded border-gray-300"
+                        />
                       )}
-                      <button
-                        onClick={() => onDelete(inv)}
-                        disabled={deleteMut.isPending}
-                        title="Delete invitation"
-                        className="inline-flex items-center gap-1 rounded-md border border-gray-200 px-2.5 py-1 text-xs font-normal text-gray-500 transition hover:bg-red-50 hover:text-red-600 hover:border-red-200 disabled:opacity-50"
-                      >
-                        <Trash2 size={12} /> Delete
-                      </button>
-                    </div>
-                  </td>
-                </tr>
-              ))
+                    </td>
+                    <td className="px-4 py-2.5">
+                      <div className="text-[13px] font-medium text-gray-900">{r.name}</div>
+                      {r.email && (
+                        <div className="flex items-center gap-1 text-[11px] text-gray-500"><Mail size={12} /> {r.email}</div>
+                      )}
+                    </td>
+                    <td className="px-4 py-2.5 text-gray-600">{r.role}</td>
+                    <td className="px-4 py-2.5">
+                      <span className={clsx("inline-flex rounded-full px-2 py-0.5 text-[11px] font-medium ring-1", statusBadgeClass(r.status))}>
+                        {r.status}
+                      </span>
+                    </td>
+                    <td className="px-4 py-2.5 text-gray-600">{inv?.invitedByName ?? "—"}</td>
+                    <td className="px-4 py-2.5 text-gray-500">{inv ? new Date(inv.expiresAt).toLocaleDateString() : "—"}</td>
+                    <td className="px-4 py-2.5">
+                      <div className="flex justify-end gap-2">
+                        {r.kind === "invitable" && (
+                          <button
+                            type="button"
+                            onClick={() => inviteEmployeeMut.mutate(r.employeeId!)}
+                            disabled={!r.hasEmail || busy}
+                            title={r.hasEmail ? "Send portal invite" : "No work email on file"}
+                            className="inline-flex items-center gap-1.5 rounded-lg bg-green-600 px-2.5 py-1.5 text-[11px] font-semibold text-white hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed transition"
+                          >
+                            <Send size={12} /> {busy ? "Inviting…" : "Invite"}
+                          </button>
+                        )}
+                        {inv && (inv.status === "Pending" || inv.status === "Expired") && (
+                          <>
+                            <button
+                              onClick={() =>
+                                toast.promise(resendMut.mutateAsync(inv.id), {
+                                  loading: "Resending invitation…",
+                                  success: "Invitation resent",
+                                  error: "Couldn't resend the invitation",
+                                })
+                              }
+                              disabled={resendMut.isPending}
+                              title="Resend invitation"
+                              className="inline-flex items-center gap-1.5 rounded-lg border border-gray-200 px-2.5 py-1.5 text-[11px] font-semibold text-gray-600 transition hover:bg-gray-50 disabled:opacity-50"
+                            >
+                              <RotateCw size={12} /> Resend
+                            </button>
+                            <button
+                              onClick={() => onRevoke(inv)}
+                              disabled={revokeMut.isPending}
+                              title="Revoke invitation"
+                              className="inline-flex items-center gap-1.5 rounded-lg border border-red-200 px-2.5 py-1.5 text-[11px] font-semibold text-red-600 transition hover:bg-red-50 disabled:opacity-50"
+                            >
+                              <Ban size={12} /> Revoke
+                            </button>
+                          </>
+                        )}
+                        {inv && (
+                          <button
+                            onClick={() => onDelete(inv)}
+                            disabled={deleteMut.isPending}
+                            title="Delete invitation"
+                            className="inline-flex items-center gap-1.5 rounded-lg border border-gray-200 px-2.5 py-1.5 text-[11px] font-semibold text-gray-500 transition hover:bg-red-50 hover:text-red-600 hover:border-red-200 disabled:opacity-50"
+                          >
+                            <Trash2 size={12} /> Delete
+                          </button>
+                        )}
+                      </div>
+                    </td>
+                  </tr>
+                );
+              })
             )}
           </tbody>
         </table>

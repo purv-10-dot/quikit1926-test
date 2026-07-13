@@ -1,11 +1,11 @@
 import { NextRequest } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { withAuth } from "@/lib/with-auth";
+import { withAuth, withServiceAuth } from "@/lib/with-auth";
 import { successResponse, validationError, conflict, internalError } from "@/lib/api-response";
 import { createLeaveTypeSchema } from "@/lib/validations/leave";
 import { parsePagination, paginationMeta } from "@/lib/utils/pagination";
 
-export const GET = withAuth(async (req: NextRequest, { orgId }) => {
+export const GET = withServiceAuth(async (req: NextRequest, { orgId }) => {
   try {
     const { searchParams } = new URL(req.url);
     const { page, limit } = parsePagination(searchParams);

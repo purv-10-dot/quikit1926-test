@@ -13,9 +13,9 @@ import { clsx } from "clsx";
 import { SkeletonCards } from "@/components/hrms/skeleton";
 
 type ApprovalModule =
-  | "Leave" | "Expense" | "Onboarding" | "Offboarding"
+  | "Leave" | "Expense" | "Asset" | "Onboarding" | "Offboarding"
   | "Attendance" | "Document" | "Engagement" | "Feedback"
-  | "Reimbursement" | "ProofOfInvestment" | "SalaryRevision" | "OneTimeEarning";
+  | "Reimbursement" | "ProofOfInvestment" | "SalaryRevision" | "OneTimeEarning" | "Requisition";
 type ApproverKind = "ROLE" | "USER";
 
 interface Level {
@@ -48,21 +48,23 @@ interface EmployeeRef {
 }
 
 const MODULES: ApprovalModule[] = [
-  "Leave", "Expense", "Onboarding", "Offboarding",
+  "Leave", "Expense", "Asset", "Onboarding", "Offboarding",
   "Attendance", "Document", "Engagement", "Feedback",
-  "Reimbursement", "ProofOfInvestment", "SalaryRevision", "OneTimeEarning",
+  "Reimbursement", "ProofOfInvestment", "SalaryRevision", "OneTimeEarning", "Requisition",
 ];
 
 const MODULE_ICON: Record<ApprovalModule, string> = {
-  Leave: "🌴", Expense: "💰", Onboarding: "👋", Offboarding: "👋",
+  Leave: "🌴", Expense: "💰", Asset: "💻", Onboarding: "👋", Offboarding: "👋",
   Attendance: "🕐", Document: "📄", Engagement: "🎉", Feedback: "💬",
   Reimbursement: "🧾", ProofOfInvestment: "🛡️", SalaryRevision: "📈", OneTimeEarning: "🎁",
+  Requisition: "📋",
 };
 
 // Human-readable labels for the Select / display.
 const MODULE_LABEL: Record<ApprovalModule, string> = {
   Leave: "Leave",
   Expense: "Expense",
+  Asset: "Asset",
   Onboarding: "Onboarding",
   Offboarding: "Offboarding",
   Attendance: "Attendance",
@@ -73,6 +75,7 @@ const MODULE_LABEL: Record<ApprovalModule, string> = {
   ProofOfInvestment: "Proof of Investment",
   SalaryRevision: "Salary Revision",
   OneTimeEarning: "One-Time Earning / Deduction",
+  Requisition: "Requisition",
 };
 
 interface FormState {

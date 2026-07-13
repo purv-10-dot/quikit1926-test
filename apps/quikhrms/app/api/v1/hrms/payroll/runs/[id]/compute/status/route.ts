@@ -1,10 +1,10 @@
 import { NextRequest } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { withAuth } from "@/lib/with-auth";
+import { withServiceAuth } from "@/lib/with-auth";
 import { successResponse, internalError, notFound } from "@/lib/api-response";
 import { getPayrollComputeState } from "@/lib/services/payroll-compute-state";
 
-export const GET = withAuth(async (_req: NextRequest, { orgId }, { id }) => {
+export const GET = withServiceAuth(async (_req: NextRequest, { orgId }, { id }) => {
   try {
     const run = await prisma.payRun.findFirst({
       where: { id, orgId, deletedAt: null },

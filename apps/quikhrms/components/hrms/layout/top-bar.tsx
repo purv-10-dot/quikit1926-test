@@ -15,7 +15,7 @@ import { NavSearch } from "@/components/hrms/layout/nav-search";
 import {
   Bell, BellRing, ChevronDown, CheckCheck,
   User as UserIcon, FolderLock, Settings, DoorOpen, LogOut,
-  Info, AlertCircle, CheckCircle2, AlertTriangle, Moon, Sun,
+  Info, AlertCircle, CheckCircle2, AlertTriangle,
 } from "lucide-react";
 
 interface Me {
@@ -302,7 +302,6 @@ function NotificationBell() {
 
 function UserMenu({ me }: { me: Me | undefined }) {
   const [open, setOpen] = useState(false);
-  const [dark, setDark] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -312,17 +311,6 @@ function UserMenu({ me }: { me: Me | undefined }) {
     if (open) document.addEventListener("mousedown", onClick);
     return () => document.removeEventListener("mousedown", onClick);
   }, [open]);
-
-  useEffect(() => {
-    setDark(document.documentElement.classList.contains("dark"));
-  }, []);
-
-  const toggleTheme = () => {
-    const next = !dark;
-    setDark(next);
-    localStorage.setItem("hrms.theme", next ? "dark" : "light");
-    document.documentElement.classList.toggle("dark", next);
-  };
 
   const initials = me ? `${me.firstName[0] ?? ""}${me.lastName[0] ?? ""}`.toUpperCase() : "?";
   const fullName = me ? (me.displayName ?? `${me.firstName} ${me.lastName}`) : "";
@@ -373,28 +361,6 @@ function UserMenu({ me }: { me: Me | undefined }) {
                 {m.label}
               </Link>
             ))}
-            <button
-              onClick={toggleTheme}
-              className="w-full flex items-center justify-between gap-2.5 px-3 py-2 text-[13px] text-gray-700 hover:bg-slate-50 hover:text-green-600 transition"
-            >
-              <span className="flex items-center gap-2.5">
-                <span className="text-gray-400">{dark ? <Sun size={13} /> : <Moon size={13} />}</span>
-                {dark ? "Light mode" : "Dark mode"}
-              </span>
-              <span
-                className={clsx(
-                  "relative w-8 h-4 rounded-full transition-colors",
-                  dark ? "bg-green-600" : "bg-gray-300",
-                )}
-              >
-                <span
-                  className={clsx(
-                    "absolute top-0.5 w-3 h-3 rounded-full bg-white transition-transform",
-                    dark ? "translate-x-4" : "translate-x-0.5",
-                  )}
-                />
-              </span>
-            </button>
           </div>
           <div className="py-1 border-t border-slate-100">
             <button

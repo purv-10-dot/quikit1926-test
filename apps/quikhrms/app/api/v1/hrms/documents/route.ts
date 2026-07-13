@@ -1,6 +1,6 @@
 import { NextRequest } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { withAuth } from "@/lib/with-auth";
+import { withAuth, withServiceAuth } from "@/lib/with-auth";
 import { successResponse, validationError, internalError } from "@/lib/api-response";
 import { createDocumentSchema, bulkCreateDocumentSchema } from "@/lib/validations/documents";
 import { parsePagination, paginationMeta } from "@/lib/utils/pagination";
@@ -11,7 +11,7 @@ import { resolveScope, employeeScopeFilter, getCallerEmployeeId } from "@/lib/rb
 import { forbidden } from "@/lib/api-response";
 import type { Prisma } from "@quikit/database";
 
-export const GET = withAuth(async (req: NextRequest, ctx) => {
+export const GET = withServiceAuth(async (req: NextRequest, ctx) => {
   try {
     const { orgId } = ctx;
     const { searchParams } = new URL(req.url);

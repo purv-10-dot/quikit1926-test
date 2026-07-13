@@ -1,6 +1,6 @@
 import { NextRequest } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { withAuth } from "@/lib/with-auth";
+import { withServiceAuth } from "@/lib/with-auth";
 import { successResponse, internalError } from "@/lib/api-response";
 
 interface AvailabilityRow {
@@ -18,7 +18,7 @@ function classify(name: string, code: string): AvailabilityRow["category"] | nul
   return null;
 }
 
-export const GET = withAuth(async (_req: NextRequest, { orgId }) => {
+export const GET = withServiceAuth(async (_req: NextRequest, { orgId }) => {
   try {
     const today = new Date();
     today.setHours(0, 0, 0, 0);

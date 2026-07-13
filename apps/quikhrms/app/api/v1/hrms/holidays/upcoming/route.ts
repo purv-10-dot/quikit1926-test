@@ -1,13 +1,13 @@
 import { NextRequest } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { withAuth } from "@/lib/with-auth";
+import { withServiceAuth } from "@/lib/with-auth";
 import { successResponse, internalError } from "@/lib/api-response";
 
 /**
  * GET /api/v1/hrms/holidays/upcoming — dashboard widget feed.
  * Sources the single flat `CompanyHoliday` table.
  */
-export const GET = withAuth(async (req: NextRequest, { orgId }) => {
+export const GET = withServiceAuth(async (req: NextRequest, { orgId }) => {
   try {
     const url = new URL(req.url);
     const limit = Number(url.searchParams.get("limit") ?? 10);

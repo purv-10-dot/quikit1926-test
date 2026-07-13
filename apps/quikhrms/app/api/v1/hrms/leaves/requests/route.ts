@@ -16,7 +16,7 @@ import { resolveActivePolicyRules, evaluateLeavePolicy } from "@/lib/services/le
 import type { Prisma } from "@quikit/database";
 
 /** GET /api/v1/hrms/leaves/requests */
-export const GET = withAuth(async (req: NextRequest, ctx) => {
+export const GET = withServiceAuth(async (req: NextRequest, ctx) => {
   try {
     const { orgId, userId } = ctx;
     const { searchParams } = new URL(req.url);

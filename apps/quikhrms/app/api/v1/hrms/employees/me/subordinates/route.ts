@@ -1,6 +1,6 @@
 import { NextRequest } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { withAuth } from "@/lib/with-auth";
+import { withServiceAuth } from "@/lib/with-auth";
 import { successResponse, internalError } from "@/lib/api-response";
 import { resolveEmployeeId } from "@/lib/resolve-employee";
 
@@ -9,7 +9,7 @@ import { resolveEmployeeId } from "@/lib/resolve-employee";
  * Returns the current employee's id + a flat list of all-level-down subordinate ids
  * (direct + indirect reports). Used to exclude downline from selectors like Delegations.
  */
-export const GET = withAuth(async (_req: NextRequest, { orgId, userId }) => {
+export const GET = withServiceAuth(async (_req: NextRequest, { orgId, userId }) => {
   try {
     const employeeId = await resolveEmployeeId(orgId, userId);
     if (!employeeId) {
