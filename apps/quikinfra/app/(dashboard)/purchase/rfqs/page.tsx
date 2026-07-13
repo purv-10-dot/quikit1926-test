@@ -44,6 +44,7 @@ import { WhitebooksVendorSelect } from "@/components/WhitebooksVendorSelect";
 import { useProjects, useItems, useItemGroups, useVendors, useTermsConditions } from "@/hooks/use-masters";
 import { useQueryClient } from "@tanstack/react-query";
 import { buildTabCounts, filterByTab, type TabSpec } from "@/lib/tab-counts";
+import { buildRfqLinesFromIndent } from "@/lib/purchase/rfq-line-seed";
 
 const STATUS_TABS: TabSpec[] = [
   { key: "all", label: "All" },
@@ -116,6 +117,8 @@ interface ItemRow {
 }
 
 interface IndentLine {
+  id?: string;
+  lineId?: string;
   itemId?: string;
   itemCode?: string;
   itemName?: string;
@@ -345,17 +348,19 @@ export default function RFQsPage() {
           if (indent.projectId) fields.projectId = indent.projectId;
           if (indent.requiredDate) fields.dueDate = indent.requiredDate;
           // Resolve each indent line to a current item id by code/name
-          // so a rename of the items master doesn't break old indents.
-          const lines: Record<string, string>[] = (indent.lines ?? []).map(
+          // (so a rename of the items master doesn't break old indents)
+          // and carry its `sourceIndentLineId` — the id the PR/Indent "PO"
+          // column rollup walks (PR line → indent line → PO line). Dropping
+          // it left every RFQ-sourced PO unlinked and the source PR/Indent
+          // stuck reading "Not ordered".
+          const lines = buildRfqLinesFromIndent(
+            (indent.lines ?? []) as IndentLine[],
             (l: IndentLine) => {
               const match = resolveItemMatch(l);
               return {
                 itemId: match?.id ?? "",
                 prefillGroupId: prefillGroupIdForMatch(match),
-                quantity: String(
-                  l.qtyRequested ?? l.indentedQty ?? l.quantity ?? "",
-                ),
-                uomCode: l.uomCode ?? match?.uomCode ?? "",
+                uomCode: match?.uomCode ?? "",
               };
             },
           );
