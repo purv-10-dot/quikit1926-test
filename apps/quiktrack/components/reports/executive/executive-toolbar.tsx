@@ -42,28 +42,41 @@ export function ExecutiveToolbar({
   filtersDirty,
   rangeLabel,
 }: Props) {
+  // Employee options are loaded a page at a time (scroll to load more) so large
+  // orgs aren't capped — the picker searches server-side too.
+  const EMP_PAGE = 25;
   const [memberOptions, setMemberOptions] = useState<MemberOption[]>([]);
+  const [empQuery, setEmpQuery] = useState("");
+  const [empOffset, setEmpOffset] = useState(0);
+  const [empHasMore, setEmpHasMore] = useState(false);
+  const [empLoading, setEmpLoading] = useState(false);
+  const empSeq = useRef(0);
 
-  useEffect(() => {
-    let cancelled = false;
-    fetch("/api/users/search?limit=50")
-      .then((r) => r.json())
-      .then((j) => {
-        if (cancelled || !j?.success) return;
-        const rows: Array<{ id: string; firstName: string | null; lastName: string | null; email: string }> =
-          Array.isArray(j.data) ? j.data : [];
-        setMemberOptions(
-          rows.map((u) => ({
-            id: u.id,
-            label: `${u.firstName ?? ""} ${u.lastName ?? ""}`.trim() || u.email,
-          })),
-        );
-      })
-      .catch(() => {});
-    return () => {
-      cancelled = true;
-    };
-  }, []);
+  async function loadEmployees(query: string, offset: number) {
+    const seq = ++empSeq.current;
+    setEmpLoading(true);
+    try {
+      const res = await fetch(
+        `/api/users/search?limit=${EMP_PAGE}&offset=${offset}&q=${encodeURIComponent(query)}`,
+      ).then((r) => r.json());
+      if (seq !== empSeq.current) return;
+      const rows: Array<{ id: string; firstName: string | null; lastName: string | null; email: string }> =
+        Array.isArray(res?.data) ? res.data : [];
+      const opts = rows.map((u) => ({
+        id: u.id,
+        label: `${u.firstName ?? ""} ${u.lastName ?? ""}`.trim() || u.email,
+      }));
+      setMemberOptions((prev) => (offset === 0 ? opts : [...prev, ...opts]));
+      setEmpHasMore(Boolean(res?.hasMore));
+      setEmpOffset(offset + opts.length);
+    } catch {
+      /* ignore */
+    } finally {
+      if (seq === empSeq.current) setEmpLoading(false);
+    }
+  }
+
+  const selectedEmpLabel = memberOptions.find((m) => m.id === (filters.assigneeIds[0] ?? ""))?.label;
 
   function patch(p: Partial<ExecutiveFilters>) {
     onChange({ ...filters, ...p });
@@ -78,7 +91,7 @@ export function ExecutiveToolbar({
           <span className="h-6 w-px bg-gray-200 dark:bg-gray-700" />
 
           <FilterDropdown
-            label="All Departments"
+            label="All Roles"
             icon={Users}
             value={filters.teamIds[0] ?? ""}
             onChange={(id) => patch({ teamIds: id ? [id] : [] })}
@@ -114,6 +127,16 @@ export function ExecutiveToolbar({
             onChange={(id) => patch({ assigneeIds: id ? [id] : [] })}
             options={memberOptions.map((m) => ({ value: m.id, label: m.label }))}
             searchable
+            async
+            onSearch={(query) => {
+              setEmpQuery(query);
+              void loadEmployees(query, 0);
+            }}
+            onLoadMore={() => {
+              if (empHasMore && !empLoading) void loadEmployees(empQuery, empOffset);
+            }}
+            loading={empLoading}
+            selectedLabel={selectedEmpLabel}
             minWidth={140}
           />
 

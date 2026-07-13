@@ -128,7 +128,7 @@ export function CustomFieldsManager({ scope, projectId }: Props) {
                     <div className="flex items-center gap-2">
                       <span className="font-medium text-gray-900">{f.name}</span>
                       {f.scope === "global" && (
-                        <span className="inline-flex items-center gap-1 text-[10px] font-semibold text-indigo-700 bg-indigo-50 border border-indigo-200 rounded px-1.5 py-0.5">
+                        <span className="inline-flex items-center gap-1 text-[10px] font-semibold text-indigo-700 bg-indigo-50 border border-indigo-200 rounded px-1.5 py-0.5 dark:text-indigo-300 dark:bg-indigo-500/15 dark:border-indigo-500/40">
                           <Globe className="h-3 w-3" /> Global
                         </span>
                       )}

@@ -11,6 +11,7 @@
 import { db } from "@/lib/db";
 import { allPermissionPairs, type Resource, type Action } from "@/lib/api/permissionsRegistry";
 import { getQuikAssetAppId } from "@/lib/api/permissions";
+import { mirrorAppRoleToCentral } from "@quikit/auth/assign-app-roles";
 
 /** Member role's curated default grants. */
 const MEMBER_DEFAULT_GRANTS: Array<{ resource: Resource; action: Action }> = [
@@ -158,6 +159,16 @@ export async function ensureUserOnRole(
   await db.astUserAppRole.create({
     data: { userId, orgId, roleId, assignedBy: assignedBy ?? null },
   });
+
+  // Keep the central UserAppAccess.role mirror (what the Admin Portal shows)
+  // in sync with the QuikAsset app role just assigned.
+  const [role, appId] = await Promise.all([
+    db.astAppRole.findUnique({ where: { id: roleId }, select: { name: true } }),
+    getQuikAssetAppId(),
+  ]);
+  if (appId) {
+    await mirrorAppRoleToCentral(db, { orgId, userId, appId, roleName: role?.name });
+  }
 }
 
 /* ───────────────────────── orchestrator ───────────────────────── */

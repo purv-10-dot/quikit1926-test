@@ -8,6 +8,8 @@ export interface BacklogViewSettings {
   epicPanel: boolean;
   /** Show sprints that have zero work items. */
   emptySprints: boolean;
+  /** Show completed sprints in the backlog (hidden by default). */
+  completedSprints: boolean;
   /** Row spacing. */
   density: "default" | "compact";
   /** Which columns render on each work-item row. */
@@ -23,6 +25,7 @@ export interface BacklogViewSettings {
 export const DEFAULT_VIEW_SETTINGS: BacklogViewSettings = {
   epicPanel: false,
   emptySprints: true,
+  completedSprints: false,
   density: "default",
   fields: { workType: true, key: true, epic: true, status: true, assignee: true },
 };
@@ -81,6 +84,10 @@ export function ViewSettingsPopover({
       <div className="flex items-center justify-between py-1.5">
         <span className="text-sm text-gray-700">Empty sprints</span>
         <Switch label="Empty sprints" checked={settings.emptySprints} onChange={(v) => onChange({ emptySprints: v })} />
+      </div>
+      <div className="flex items-center justify-between py-1.5">
+        <span className="text-sm text-gray-700">Completed sprints</span>
+        <Switch label="Completed sprints" checked={settings.completedSprints} onChange={(v) => onChange({ completedSprints: v })} />
       </div>
 
       <div className="mt-3 border-t border-gray-100 pt-3">

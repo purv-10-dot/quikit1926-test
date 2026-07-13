@@ -123,7 +123,7 @@ export function TopEmployeesTable({ data, queryParams = "", onSelect }: Props) {
             <thead>
               <tr className="text-[11px] uppercase tracking-wider text-gray-500 dark:text-gray-400 border-b border-gray-100 dark:border-gray-800 [&>th]:sticky [&>th]:top-0 [&>th]:bg-white dark:[&>th]:bg-slate-800 [&>th]:z-10">
                 <th className="text-left py-2 font-medium">Employee</th>
-                <th className="text-left py-2 font-medium">Department</th>
+                <th className="text-left py-2 font-medium">Role</th>
                 <th className="text-left py-2 font-medium">Productivity</th>
                 <th className="text-left py-2 font-medium">Tasks Completed</th>
                 <th className="text-left py-2 font-medium">On-time Rate</th>

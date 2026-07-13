@@ -119,6 +119,19 @@ export const PERMISSION_TREE: PermissionModule[] = [
     ],
   },
   {
+    key: "Discovery",
+    label: "Product Discovery",
+    leaves: [
+      // Idea visibility is membership-based (not gated), matching Issue: no
+      // `view`. Archive is an `update`; permanent delete is `delete` (Space
+      // Admin only — Contributors get create/update but not delete).
+      { resource: "Idea", label: "Idea", actions: ["create", "update", "delete"] },
+      // `view` gates the discovery "Ideas" tab AND the view list. create/update/
+      // delete manage saved views (a later phase ships >1 view type).
+      { resource: "IdeaView", label: "Idea view", actions: ACTIONS },
+    ],
+  },
+  {
     key: "ProjectViews",
     label: "Project views",
     leaves: [

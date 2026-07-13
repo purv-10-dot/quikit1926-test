@@ -12,12 +12,14 @@ import {
 import { notifyProjectInvite } from "@/lib/services/projectNotifications";
 import {
   INVITE_METHOD,
-  renderInvitationEmail,
   type SsoProvider,
 } from "@quikit/shared";
 import { classifySsoProviderAsync } from "@quikit/shared/sso-domain-server";
 import { generateTempPassword } from "@quikit/shared/temp-password";
 import { sendEmail } from "@/lib/email/sendEmail";
+// QuikTrack-skinned invitation email (forked from the shared renderer so
+// re-skinning it here doesn't affect other apps). Same signature + subjects.
+import { renderInvitationEmail } from "@/lib/email/invitationEmail";
 
 type InviteMethod = (typeof INVITE_METHOD)[keyof typeof INVITE_METHOD];
 

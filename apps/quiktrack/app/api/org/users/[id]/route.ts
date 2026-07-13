@@ -3,6 +3,7 @@ import { z } from "zod";
 import bcrypt from "bcryptjs";
 import { db } from "@/lib/db";
 import { requireAdmin } from "@/lib/api/requireAdmin";
+import { assignDefaultProjectRoleIfNone } from "@/lib/services/projectDefaults";
 
 const patchSchema = z.object({
   firstName: z.string().trim().min(1).max(64).optional(),
@@ -209,6 +210,13 @@ export async function PATCH(
           }),
         ),
       ]);
+
+      // Newly-added memberships get the project's default role so they don't
+      // land "Unassigned" (same fallback the Add-Member and user-creation flows
+      // apply). Runs after the tx commits — the helper uses the base client.
+      for (const projectId of toAdd) {
+        await assignDefaultProjectRoleIfNone(projectId, params.id, actorId);
+      }
     }
 
     const updated = await db.user.findUnique({

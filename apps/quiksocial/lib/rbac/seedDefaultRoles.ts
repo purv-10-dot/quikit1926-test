@@ -19,6 +19,7 @@
  * QuikSocial starts clean with the v2 registry, no pre-v2 rows to migrate.
  */
 import { db } from "@quikit/database";
+import { mirrorAppRoleToCentral } from "@quikit/auth/assign-app-roles";
 import {
   ACTIONS,
   USER_DEFAULT_GRANTS,
@@ -253,6 +254,16 @@ export async function ensureUserOnRole(
   await db.qsUserAppRole.create({
     data: { userId, orgId, roleId, assignedBy: assignedBy ?? null },
   });
+
+  // Keep the central UserAppAccess.role mirror (what the Admin Portal shows)
+  // in sync with the QuikSocial app role just assigned.
+  const [role, appId] = await Promise.all([
+    db.qsAppRole.findUnique({ where: { id: roleId }, select: { name: true } }),
+    getQuikSocialAppId(),
+  ]);
+  if (appId) {
+    await mirrorAppRoleToCentral(db, { orgId, userId, appId, roleName: role?.name });
+  }
 }
 
 /* ───────────────────────── Orchestrator ───────────────────────── */

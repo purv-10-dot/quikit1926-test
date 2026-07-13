@@ -10,6 +10,9 @@ export const GET = withOrgAuth(async ({ orgId }, req) => {
   const url = new URL(req.url);
   const q = url.searchParams.get("q")?.trim() ?? "";
   const limit = Math.min(100, Math.max(1, Number(url.searchParams.get("limit") ?? "10")));
+  // Offset paging so callers (e.g. the executive report's employee picker) can
+  // scroll through every org member instead of being capped at the first page.
+  const offset = Math.max(0, Number(url.searchParams.get("offset") ?? "0"));
 
   const [memberships, appId] = await Promise.all([
     db.orgMember.findMany({
@@ -28,7 +31,9 @@ export const GET = withOrgAuth(async ({ orgId }, req) => {
             }
           : {}),
       },
-      take: limit,
+      // Fetch one extra row to tell the client whether another page exists.
+      take: limit + 1,
+      skip: offset,
       orderBy: { user: { firstName: "asc" } },
       select: {
         user: {
@@ -38,6 +43,9 @@ export const GET = withOrgAuth(async ({ orgId }, req) => {
     }),
     getQuikTrackAppId(),
   ]);
+
+  const hasMore = memberships.length > limit;
+  if (hasMore) memberships.length = limit;
 
   const users = memberships.map((m) => m.user).filter(Boolean) as Array<{
     id: string;
@@ -62,5 +70,5 @@ export const GET = withOrgAuth(async ({ orgId }, req) => {
     hasQuikTrackAccess: accessByUserId.has(u.id),
   }));
 
-  return NextResponse.json({ success: true, data });
+  return NextResponse.json({ success: true, data, hasMore });
 });

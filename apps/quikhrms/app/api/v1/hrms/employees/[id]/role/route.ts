@@ -6,6 +6,7 @@ import { assignRoleSchema } from "@/lib/validations/rbac";
 import { createAuditLog } from "@/lib/utils/audit";
 import { ensureSuperAdminRemains } from "@/lib/rbac/guards";
 import { APP_ID } from "@/lib/rbac/registry";
+import { mirrorHrmsRolesToCentral } from "@/lib/rbac/mirrorRole";
 
 /**
  * PUT /api/v1/hrms/employees/:id/role — replace employee's primary role.
@@ -62,6 +63,10 @@ export const PUT = withAuth(async (req: NextRequest, { orgId, userId }, params) 
         });
       }
     });
+
+    // Keep the central UserAppAccess.role mirror (what the Admin Portal shows)
+    // in sync with the role just assigned in QuikHrms.
+    await mirrorHrmsRolesToCentral(orgId, [params.id], roleName);
 
     await createAuditLog({
       orgId, userId, action: "Update", entityType: "EmployeeRole", entityId: params.id,

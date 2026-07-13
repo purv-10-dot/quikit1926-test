@@ -23,6 +23,8 @@ import {
   type SortKey,
   type UserLite,
 } from "./list-types";
+import { useApiData } from "@/lib/hooks/useApiData";
+import type { CustomFieldDTO } from "@/lib/services/customFields";
 
 // The edit-issue modal carries a large static dependency graph; it only opens
 // on row click, so load it on demand to keep it out of the list's initial bundle.
@@ -65,6 +67,9 @@ function readFiltersFromQuery(sp: URLSearchParams): ListFilters {
     type: sp.get("type") ?? "",
     priority: sp.get("priority") ?? "",
     assigneeId: sp.get("assigneeId") ?? "",
+    // Custom filters aren't mirrored to the URL (kept clean); restored via
+    // the per-user filter persistence instead.
+    customFilters: [],
   };
 }
 
@@ -86,6 +91,7 @@ function buildIssuesQuery(
   if (filters.type) p.set("type", filters.type);
   if (filters.priority) p.set("priority", filters.priority);
   if (filters.assigneeId) p.set("assigneeId", filters.assigneeId);
+  if (filters.customFilters.length) p.set("customFilters", JSON.stringify(filters.customFilters));
   if (sort) {
     p.set("sort", sort);
     p.set("order", order);
@@ -148,6 +154,10 @@ export function ListView({ projectId }: Props) {
 
   const [statuses, setStatuses] = useState<IssueStatus[]>([]);
   const [members, setMembers] = useState<{ userId: string; user: UserLite | null }[]>([]);
+  const { data: customFields = [] } = useApiData<CustomFieldDTO[]>(
+    ["quiktrack", "project-issue-fields", projectId],
+    `/api/projects/${projectId}/issue-fields`,
+  );
 
   // Column visibility + order persisted via /api/view-prefs (qtUserViewPref).
   // Widths are local-only to avoid hammering the network on every drag pixel.
@@ -389,6 +399,7 @@ export function ListView({ projectId }: Props) {
           onChange={handleFiltersChange}
           statuses={statuses}
           members={members}
+          customFields={customFields}
         />
         <div className="ml-auto flex items-center gap-2">
           {canImport && (

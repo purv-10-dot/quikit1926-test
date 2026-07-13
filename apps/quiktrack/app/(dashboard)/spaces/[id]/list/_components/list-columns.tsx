@@ -94,7 +94,7 @@ export const COLUMN_DEFS: ColumnDef[] = [
       <button
         type="button"
         onClick={() => onOpenIssue(issue.id)}
-        className="qt-key-chip font-mono text-xs text-gray-900 hover:underline"
+        className="qt-key-chip text-xs font-medium text-gray-500 hover:underline"
       >
         {issue.key}
       </button>
