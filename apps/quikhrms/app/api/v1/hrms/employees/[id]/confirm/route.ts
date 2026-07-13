@@ -1,7 +1,6 @@
 import { NextRequest } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { withAuth, invalidatePermissionCache } from "@/lib/with-auth";
-import { provisionCentralInvite } from "@/lib/services/invitation";
 import { successResponse, notFound, validationError, conflict, internalError } from "@/lib/api-response";
 import { confirmEmploymentSchema } from "@/lib/validations/provisions";
 import { createAuditLog } from "@/lib/utils/audit";
@@ -157,40 +156,12 @@ export const POST = withAuth(async (req: NextRequest, { orgId, userId }, params)
       },
     });
 
-    // ── Activation via central QuikIT auth ──────────────────────────
-    // This is the moment the employee gets their login credentials. Onboard
-    // routes intentionally don't send the email; HR finishes the checklist,
-    // then confirming employment triggers the invite. Mirrors the Invite Users
-    // flow: provision the person centrally (QuikIT member + temp password /
-    // accept token), persist the token on a Pending invitation, then email the
-    // set-password link. Only fires when they don't already have a password.
-    let activationQueued = false;
-    let activationError: string | null = null;
-    if (!employee.passwordHash && employee.workEmail) {
-      try {
-        // Provision centrally (central creates the login account AND sends the
-        // invite/set-password email) + record the local invitation. HRMS never
-        // sends this email itself.
-        const invite = await provisionCentralInvite({
-          orgId,
-          invitedBy: userId,
-          email: employee.workEmail,
-          firstName: employee.firstName,
-          lastName: employee.lastName,
-          employeeId: employee.id,
-        });
-        activationQueued = invite.ok;
-        if (!invite.ok) activationError = invite.error ?? "Central provisioning unavailable";
-      } catch (e) {
-        activationError = e instanceof Error ? e.message : "Could not send activation invite";
-        console.error("[confirm-employment] activation invite failed:", e);
-      }
-    }
+    // No activation invite is sent here. Invitations are triggered manually
+    // from the Users & Invitations screen — after confirming employment, the
+    // employee appears there under "Not yet invited".
 
     return successResponse({
       employee: updated,
-      activationQueued,
-      activationError,
       emailSent,
       emailError,
     });
