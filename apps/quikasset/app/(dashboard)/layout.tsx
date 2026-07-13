@@ -1,11 +1,14 @@
 import { redirect } from "next/navigation";
 import { getServerSession } from "next-auth";
+import { requireAppAccess } from "@quikit/auth/app-access";
 import { authOptions } from "@/lib/auth";
 import { getOrgId } from "@/lib/api/getOrgId";
 import { ADMIN_TIER_ROLES } from "@quikit/shared";
 import { seedAllDefaultRoles, ensureUserOnRole } from "@/lib/api/seedAppRoles";
 import { loadMyPermissions } from "@/lib/api/permissions";
 import { DashboardShell } from "@/components/dashboard-shell";
+
+const APP_SLUG = "quikasset";
 
 /**
  * Authenticated shell. Server component so it can:
@@ -20,6 +23,21 @@ export const dynamic = "force-dynamic";
 export default async function DashboardLayout({ children }: { children: React.ReactNode }) {
   const session = await getServerSession(authOptions);
   if (!session?.user?.id) redirect("/login");
+
+  // App-access gate FIRST. A signed-in user who isn't granted QuikAsset is
+  // redirected to the landing page with the access-denied popup markers
+  // (`/?reason=no_app_access&…`), exactly like quiktrack. Without this,
+  // getOrgId() below returns null for such a user → redirect to /login → the
+  // /login page bounces the still-authenticated user back to /dashboard →
+  // infinite redirect loop (ERR_TOO_MANY_REDIRECTS).
+  await requireAppAccess({
+    userId: session.user.id,
+    orgId: session.user.orgId,
+    appSlug: APP_SLUG,
+    isSuperAdmin: session.user.isSuperAdmin === true,
+    memberRole: session.user.membershipRole,
+    homeUrl: process.env.QUIKIT_URL ?? process.env.NEXT_PUBLIC_QUIKIT_URL,
+  });
 
   const orgId = await getOrgId(session.user.id);
   if (!orgId) redirect("/login?reason=no_org");

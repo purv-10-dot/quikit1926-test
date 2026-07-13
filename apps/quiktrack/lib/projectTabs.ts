@@ -30,7 +30,21 @@ export const PROJECT_TABS: ProjectTab[] = [
   { path: "task-table", label: "Task Table", perm: { resource: "ProjectTaskTable", action: "view" } },
   { path: "timesheet", label: "Timesheet", perm: { resource: "Timesheet", action: "view" } },
   { path: "docs", label: "Docs", perm: { resource: "Doc", action: "view" } },
+  // Product Discovery only — the "All ideas" surface. Excluded from the
+  // "all tabs" default (see DISCOVERY_ONLY_TABS) so non-discovery spaces never
+  // show it; discovery spaces provision with an explicit tabConfig of ["ideas"].
+  { path: "ideas", label: "Ideas", perm: { resource: "IdeaView", action: "view" } },
 ];
+
+/** Tabs that only make sense on a discovery space. Kept out of the default
+ *  ("all tabs") set so a software/functional space never surfaces them. */
+export const DISCOVERY_ONLY_TABS: ReadonlySet<string> = new Set(["ideas"]);
+
+/** Every tab path except the discovery-only ones — the real "all tabs" default
+ *  for a normal (software/functional) space. */
+const DEFAULT_TAB_PATHS: string[] = PROJECT_TABS.filter(
+  (t) => !DISCOVERY_ONLY_TABS.has(t.path),
+).map((t) => t.path);
 
 /** Ordered list of every known tab path. */
 export const PROJECT_TAB_PATHS: string[] = PROJECT_TABS.map((t) => t.path);
@@ -52,9 +66,9 @@ export function isProjectTabPath(p: string): boolean {
  * - empty after filtering → all tabs (never leave a project with no tabs)
  */
 export function enabledTabPaths(config: string[] | null | undefined): string[] {
-  if (!config) return PROJECT_TAB_PATHS;
+  if (!config) return DEFAULT_TAB_PATHS;
   const known = config.filter(isProjectTabPath);
-  return known.length > 0 ? known : PROJECT_TAB_PATHS;
+  return known.length > 0 ? known : DEFAULT_TAB_PATHS;
 }
 
 /** True when `path` is enabled for the project under the given config. */

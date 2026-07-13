@@ -26,6 +26,12 @@ const TEMPLATES = {
     Illustration: KanbanIllustration,
     product: "QuikTrack",
   },
+  discovery: {
+    title: "Product discovery",
+    description: "Prioritize ideas then connect them from discovery through to delivery.",
+    Illustration: WebDesignIllustration,
+    product: "QuikTrack",
+  },
   "web-design": {
     title: "Web design process",
     description: "For designers and developers to track web design tasks and stay aligned.",
@@ -78,16 +84,22 @@ export function CreateProjectForm() {
     const finalKey = projectKey || deriveKey(name) || "QT";
     setSubmitting(true);
     try {
+      // Only "scrum", "functional" and "discovery" are real backend templates;
+      // any other preview key (web-design/kanban) falls back to scrum.
+      const backendTemplate =
+        templateKey === "functional"
+          ? "functional"
+          : templateKey === "discovery"
+            ? "discovery"
+            : "scrum";
       const res = await fetch("/api/projects", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           name,
           projectKey: finalKey,
-          projectType: "software",
-          // Only "scrum" and "functional" are real backend templates; any other
-          // preview key (web-design/kanban) falls back to scrum.
-          templateKey: templateKey === "functional" ? "functional" : "scrum",
+          projectType: backendTemplate === "discovery" ? "discovery" : "software",
+          templateKey: backendTemplate,
           icon: randomProjectIconKey(),
         }),
       });
@@ -96,7 +108,9 @@ export function CreateProjectForm() {
         setError(json.error || "Failed to create project");
         return;
       }
-      router.push(`/spaces/${json.data.id}/backlog`);
+      // Discovery spaces land on their Ideas view; others on the backlog.
+      const landing = backendTemplate === "discovery" ? "ideas" : "backlog";
+      router.push(`/spaces/${json.data.id}/${landing}`);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to create project");
     } finally {

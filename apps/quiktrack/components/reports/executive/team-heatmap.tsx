@@ -21,7 +21,7 @@ export function TeamHeatmap({ data }: Props) {
     <div className="rounded-2xl border border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-900 p-4 shadow-sm">
       <div className="flex items-center justify-between gap-2">
         <div className="flex items-center gap-1.5">
-          <h3 className="text-sm font-semibold text-gray-900 dark:text-gray-100">Department Productivity Heatmap</h3>
+          <h3 className="text-sm font-semibold text-gray-900 dark:text-gray-100">Role Productivity Heatmap</h3>
           <Info className="h-3.5 w-3.5 text-gray-400" />
         </div>
         <div className="flex items-center gap-3 text-[10px] text-gray-500 dark:text-gray-400">
@@ -33,7 +33,7 @@ export function TeamHeatmap({ data }: Props) {
 
       {rows.length === 0 ? (
         <div className="py-10 text-center text-sm text-gray-500 dark:text-gray-400">
-          No department activity in this period.
+          No role activity in this period.
         </div>
       ) : (
         <div className="mt-4 overflow-x-auto">
@@ -41,7 +41,7 @@ export function TeamHeatmap({ data }: Props) {
             <thead>
               <tr>
                 <th className="text-left text-[10px] uppercase tracking-wider text-gray-500 dark:text-gray-400 font-medium pb-2 min-w-[110px]">
-                  Department
+                  Role
                 </th>
                 {visibleWeeks.map((w, i) => (
                   <th

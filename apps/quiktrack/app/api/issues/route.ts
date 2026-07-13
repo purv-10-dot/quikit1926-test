@@ -184,6 +184,20 @@ export const GET = withOrgAuth(async ({ orgId, userId }, req) => {
       : {}),
   };
 
+  // idsOnly mode: return every matching id for the current filter, unpaginated.
+  // Used by the backlog's "select all in section" so a bulk move/edit can act on
+  // items that haven't been scrolled into view yet (not just the loaded page).
+  // Capped so a pathological selection can't return an unbounded payload.
+  if (url.searchParams.get("idsOnly") === "1") {
+    const rows = await db.qtIssue.findMany({
+      where,
+      orderBy,
+      take: 5000,
+      select: { id: true },
+    });
+    return NextResponse.json({ success: true, data: rows, total: rows.length });
+  }
+
   // Build pagination args separately — inlining a ternary spread confuses TS
   // into thinking required keys (skip/take) might be undefined.
   const paginationArgs: { skip?: number; take?: number; cursor?: { id: string } } = useOffset

@@ -42,7 +42,7 @@ export function WorkloadScatter({ data }: Props) {
             onClick={() => setOpen((v) => !v)}
             className="inline-flex items-center gap-1 h-7 px-2 text-xs font-medium border border-gray-200 dark:border-gray-700 rounded-md bg-white dark:bg-gray-900 hover:bg-gray-50 dark:hover:bg-gray-800"
           >
-            {teamFilter === "all" ? "All Departments" : teamFilter}
+            {teamFilter === "all" ? "All Roles" : teamFilter}
             <ChevronDown className="h-3 w-3 text-gray-400" />
           </button>
           {open && (
@@ -59,7 +59,7 @@ export function WorkloadScatter({ data }: Props) {
                     t === teamFilter ? "text-violet-600 dark:text-violet-400 font-medium" : "text-gray-700 dark:text-gray-300"
                   }`}
                 >
-                  {t === "all" ? "All Departments" : t}
+                  {t === "all" ? "All Roles" : t}
                 </button>
               ))}
             </div>

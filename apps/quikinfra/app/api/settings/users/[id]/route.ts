@@ -7,6 +7,7 @@ import {
 } from "@/lib/users/central-repository";
 import { withOrgAuthForResource } from "@/lib/api/withOrgAuth";
 import { getQuikInfraAppId } from "@/lib/rbac/userCan";
+import { mirrorAppRoleToCentral } from "@quikit/auth/assign-app-roles";
 import {
   MENU_CATALOG,
   MODULE_KEY_TO_MENU_MODULE,
@@ -342,6 +343,14 @@ async function handleUpdate(req: NextRequest, id: string, ctx: UpdateAuthCtx) {
             roleId: roleSwapTo.id,
             assignedBy: ctx.userId,
           },
+        });
+        // Keep the central UserAppAccess.role mirror (what the Admin Portal
+        // shows) in sync with the role just assigned in QuikInfra.
+        await mirrorAppRoleToCentral(dbCentral, {
+          orgId: ctx.orgId,
+          userId: authUserId,
+          appId,
+          roleName: roleSwapTo.name,
         });
       }
     } catch {

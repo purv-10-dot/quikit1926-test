@@ -183,8 +183,8 @@ export function EpicsView({ projectId }: { projectId: string }) {
                   onClick={() => setEditingId(e.id)}
                   className="flex items-center gap-2.5 text-left min-w-0 group"
                 >
-                  <span className="inline-flex h-6 w-6 shrink-0 items-center justify-center rounded bg-purple-100">
-                    <Zap className="h-3.5 w-3.5 text-purple-600" />
+                  <span className="inline-flex h-6 w-6 shrink-0 items-center justify-center rounded bg-purple-100 dark:bg-purple-500/20">
+                    <Zap className="h-3.5 w-3.5 text-purple-600 dark:text-purple-300" />
                   </span>
                   <span className="min-w-0">
                     <span className="text-[11px] font-medium text-gray-500">{e.key}</span>

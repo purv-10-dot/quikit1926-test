@@ -8,6 +8,7 @@ import {
   ensureUserOnRole,
 } from "@/lib/api/seedAdminAppRole";
 import { assertWouldNotEmptyAdmin, AdminLockoutError } from "@/lib/api/preventAdminLockout";
+import { mirrorAppRoleToCentral } from "@quikit/auth/assign-app-roles";
 
 // RBAC v2: assigning/revoking a user's app role mutates the user record, so
 // it lives under the `User.update` grant (not `Role.update` — the role row
@@ -137,6 +138,15 @@ export const PATCH = auth.update<{ id: string }>(async ({ orgId, userId: actorId
           select: { id: true, name: true },
         })
       : null;
+
+    // Keep the central UserAppAccess.role mirror (what the Admin Portal shows)
+    // in sync with the role just assigned in QuikScale.
+    await mirrorAppRoleToCentral(db, {
+      orgId,
+      userId: params.id,
+      appId,
+      roleName: role?.name,
+    });
 
     return NextResponse.json({
       success: true,

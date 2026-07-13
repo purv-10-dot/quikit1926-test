@@ -16,12 +16,15 @@ export function TimelineCreateEpic({
   currentUserId,
   columns,
   onCreated,
+  leftWidth = WORK_COL_WIDTH,
 }: {
   projectId: string;
   members: Member[];
   currentUserId: string | null;
   columns: Col[];
   onCreated: () => void;
+  /** Width of the frozen left area (Work + optional Status/Assignee columns). */
+  leftWidth?: number;
 }) {
   const [creating, setCreating] = useState(false);
   const [title, setTitle] = useState("");
@@ -90,8 +93,8 @@ export function TimelineCreateEpic({
   return (
     <div className="flex border-b border-gray-100 relative">
       <div
-        style={{ width: WORK_COL_WIDTH }}
-        className="shrink-0 px-3 py-2 sticky left-0 bg-white z-[15]"
+        style={{ width: leftWidth }}
+        className="shrink-0 px-3 py-2 sticky left-0 bg-white z-[15] border-r border-gray-100"
       >
         {creating ? (
           <div className="relative">

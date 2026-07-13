@@ -16,6 +16,11 @@ export function FilterDropdown({
   options,
   searchable,
   minWidth = 170,
+  async: asyncMode = false,
+  onSearch,
+  onLoadMore,
+  loading = false,
+  selectedLabel,
 }: {
   label: string;
   icon?: React.ElementType;
@@ -24,15 +29,42 @@ export function FilterDropdown({
   options: Option[];
   searchable?: boolean;
   minWidth?: number;
+  /** Server-driven mode: skip client filtering; call onSearch/onLoadMore. */
+  async?: boolean;
+  /** Debounced query callback (async mode) — parent fetches the matching page. */
+  onSearch?: (q: string) => void;
+  /** Called when the list is scrolled near the bottom (async mode). */
+  onLoadMore?: () => void;
+  /** Show a loading row at the end of the list (async mode). */
+  loading?: boolean;
+  /** Label for the current value when it isn't in the loaded page (async mode). */
+  selectedLabel?: string;
 }) {
   const [open, setOpen] = useState(false);
   const [q, setQ] = useState("");
   const ref = useRef<HTMLDivElement>(null);
+  const onSearchRef = useRef(onSearch);
+  onSearchRef.current = onSearch;
+  const onLoadMoreRef = useRef(onLoadMore);
+  onLoadMoreRef.current = onLoadMore;
 
   // Clear the search box each time the menu closes.
   useEffect(() => {
     if (!open) setQ("");
   }, [open]);
+
+  // Async mode: (re)load the matching page when opened or the query changes.
+  useEffect(() => {
+    if (!asyncMode || !open) return;
+    const t = setTimeout(() => onSearchRef.current?.(q.trim()), 250);
+    return () => clearTimeout(t);
+  }, [q, open, asyncMode]);
+
+  function handleScroll(e: React.UIEvent<HTMLDivElement>) {
+    if (!asyncMode || !onLoadMoreRef.current || loading) return;
+    const el = e.currentTarget;
+    if (el.scrollTop + el.clientHeight >= el.scrollHeight - 48) onLoadMoreRef.current();
+  }
 
   useEffect(() => {
     if (!open) return;
@@ -50,11 +82,16 @@ export function FilterDropdown({
     };
   }, [open]);
 
-  const selected = options.find((o) => o.value === value);
+  const selected =
+    options.find((o) => o.value === value) ??
+    (value ? { value, label: selectedLabel ?? label } : undefined);
   const query = q.trim().toLowerCase();
-  const filtered = searchable && query
-    ? options.filter((o) => o.label.toLowerCase().includes(query))
-    : options;
+  // In async mode the server already returned the matching page — don't
+  // re-filter client-side (that would hide rows beyond the loaded page).
+  const filtered =
+    !asyncMode && searchable && query
+      ? options.filter((o) => o.label.toLowerCase().includes(query))
+      : options;
 
   return (
     <div ref={ref} className="relative" style={{ minWidth }}>
@@ -117,8 +154,8 @@ export function FilterDropdown({
               </div>
             </div>
           )}
-          <div className="overflow-y-auto py-1">
-            {filtered.length === 0 ? (
+          <div className="overflow-y-auto py-1" onScroll={handleScroll}>
+            {filtered.length === 0 && !loading ? (
               <div className="px-3 py-2 text-xs text-gray-400">No options</div>
             ) : (
               filtered.map((o) => {
@@ -140,6 +177,9 @@ export function FilterDropdown({
                   </button>
                 );
               })
+            )}
+            {loading && (
+              <div className="px-3 py-2 text-xs text-gray-400">Loading…</div>
             )}
           </div>
         </div>

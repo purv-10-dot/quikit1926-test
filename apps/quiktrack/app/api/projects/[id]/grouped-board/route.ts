@@ -1,8 +1,10 @@
 import { NextResponse } from "next/server";
+import type { Prisma } from "@prisma/client";
 import { db } from "@/lib/db";
 import { withOrgAuth } from "@/lib/api/withOrgAuth";
 import { loadProjectAccess } from "@/lib/api/withProjectAccess";
 import { ensureDefaultGroup } from "@/lib/services/groupService";
+import { parseCustomFilters, customFiltersToWhere } from "@/lib/customFields/filterQuery";
 
 /**
  * GET /api/projects/[id]/grouped-board
@@ -28,6 +30,7 @@ export const GET = withOrgAuth<{ id: string }>(
     const priority = url.searchParams.get("priority");
     const type = url.searchParams.get("type");
     const search = url.searchParams.get("search")?.trim();
+    const customFilters = parseCustomFilters(url.searchParams.get("customFilters"));
 
     const defaultGroup = await ensureDefaultGroup(orgId, params.id, userId);
 
@@ -55,17 +58,20 @@ export const GET = withOrgAuth<{ id: string }>(
     // matches the literal string and returns zero rows for 2+ people. The
     // unassigned+ids case is wrapped in AND so its OR can't clash with the
     // search OR also present in the where clause below.
-    const assigneeWhere = (() => {
-      if (!assigneeId) return {};
+    // Collect AND-combined conditions: the assignee clause (whose unassigned+ids
+    // case needs its own OR) and the custom-field filters (each is a separate
+    // `fieldValues.some`, so they must AND rather than collide on one key).
+    const andConds: Prisma.QtIssueWhereInput[] = [];
+    if (assigneeId) {
       const parts = assigneeId.split(",").map((s) => s.trim()).filter(Boolean);
-      if (parts.length === 0) return {};
       const wantsUnassigned = parts.includes("null");
       const ids = parts.filter((p) => p !== "null");
       if (wantsUnassigned && ids.length)
-        return { AND: [{ OR: [{ assigneeId: null }, { assigneeId: { in: ids } }] }] };
-      if (wantsUnassigned) return { assigneeId: null };
-      return { assigneeId: { in: ids } };
-    })();
+        andConds.push({ OR: [{ assigneeId: null }, { assigneeId: { in: ids } }] });
+      else if (wantsUnassigned) andConds.push({ assigneeId: null });
+      else if (ids.length) andConds.push({ assigneeId: { in: ids } });
+    }
+    andConds.push(...customFiltersToWhere(customFilters));
 
     const [groups, statuses, issues] = await Promise.all([
       db.qtTaskGroup.findMany({
@@ -111,7 +117,7 @@ export const GET = withOrgAuth<{ id: string }>(
           isDeleted: false,
           type: { notIn: ["EPIC", "SUBTASK"] },
           sprintId: { in: sprintIdsToFilter },
-          ...assigneeWhere,
+          ...(andConds.length ? { AND: andConds } : {}),
           ...(priority ? { priority } : {}),
           ...(type ? { type } : {}),
           ...(search
