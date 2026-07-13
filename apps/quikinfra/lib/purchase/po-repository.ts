@@ -578,7 +578,11 @@ export async function listPOs(opts: ListPOsOptions): Promise<EnrichedPO[]> {
         },
       },
     },
-    orderBy: { poDate: "desc" },
+    // Newest first. `createdAt` is the tiebreaker so POs raised on the
+    // same poDate still order by when they were actually created — without
+    // it, same-date POs fall back to arbitrary insertion order and a
+    // freshly-created PO can land below older ones.
+    orderBy: [{ poDate: "desc" }, { createdAt: "desc" }],
   });
   await augmentPOsWithDriftFields(rows);
   await hydrateCloseFields(rows);

@@ -3,8 +3,9 @@
 /**
  * QuikInfra — /settings/roles
  *
- * v2 Dynamic RBAC matrix UI. Admin-only (gated by middleware
- * SETTINGS_ADMIN_ROLES + server-side requireAdmin on every API call).
+ * v2 Dynamic RBAC matrix UI. Admin-only (gated by the settings layout
+ * guard in app/(dashboard)/settings/layout.tsx + server-side requireAdmin
+ * on every API call).
  *
  * Left pane: role list (system + default badges, create + delete)
  * Right pane: RolePermissionMatrix for the selected role
