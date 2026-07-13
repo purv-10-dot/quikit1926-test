@@ -6,6 +6,7 @@ import {
   seedProjectDefaults,
   getStarterProjectRoleId,
 } from "@/lib/services/projectDefaults";
+import { seedDiscoveryDefaults } from "@/lib/services/discoveryDefaults";
 import { userCan, forbidden, isQuikTrackAppAdmin } from "@/lib/api/permissions";
 import { SPACE_ADMIN_ROLE_NAME } from "@/lib/api/permissionsRegistry";
 import { PROJECT_TAB_PATHS } from "@/lib/projectTabs";
@@ -190,11 +191,19 @@ export const POST = withOrgAuth(async ({ orgId, userId }, req) => {
   }
 
   const templateKey = parsed.data.templateKey ?? "scrum";
-  // Functional/Kanban projects open with a curated tab set; others show all.
+  // A discovery space defaults its projectType to "discovery" (the label the UI
+  // already renders) unless the caller overrode it explicitly.
+  const projectType =
+    parsed.data.projectType ??
+    (templateKey === "discovery" ? "discovery" : "software");
+  // Functional/Kanban projects open with a curated tab set; discovery spaces
+  // show only the "Ideas" tab (their whole surface); others show all.
   const initialTabConfig =
-    templateKey === "functional"
-      ? PROJECT_TAB_PATHS.filter((path) => !KANBAN_HIDDEN_TABS.includes(path))
-      : null;
+    templateKey === "discovery"
+      ? ["ideas"]
+      : templateKey === "functional"
+        ? PROJECT_TAB_PATHS.filter((path) => !KANBAN_HIDDEN_TABS.includes(path))
+        : null;
 
   const project = await db.$transaction(
     async (tx) => {
@@ -204,7 +213,7 @@ export const POST = withOrgAuth(async ({ orgId, userId }, req) => {
           projectKey: parsed.data.projectKey,
           name: parsed.data.name,
           description: parsed.data.description,
-          projectType: parsed.data.projectType ?? "software",
+          projectType,
           templateKey,
           ...(initialTabConfig ? { tabConfig: initialTabConfig } : {}),
           icon: parsed.data.icon,
@@ -227,6 +236,12 @@ export const POST = withOrgAuth(async ({ orgId, userId }, req) => {
         },
       });
       await seedProjectDefaults(tx, p.id, orgId, userId);
+      // Discovery spaces get their idea funnel statuses, scoring fields, and the
+      // default "All ideas" Table view on top of the shared defaults — all in
+      // this same transaction so provisioning is atomic (FR-1.2).
+      if (templateKey === "discovery") {
+        await seedDiscoveryDefaults(tx, p.id, orgId, userId);
+      }
       // Assign the creator the seeded "Space Admin" project role so Layer 2
       // grants are populated alongside Layer 3 membership.
       const adminRoleId = await getStarterProjectRoleId(

@@ -2,127 +2,167 @@
 
 import type { CustomFieldDTO } from "@/lib/services/customFields";
 import type { CustomFilter } from "@/lib/customFields/filterQuery";
+import type { FieldType } from "@/lib/customFields/registry";
 import type { MemberOption } from "./field-control";
+import { FilterSelect } from "@/app/(dashboard)/spaces/[id]/grouped-kanban/_components/toolbar/filter-select";
+import { FilterMultiSelect } from "@/app/(dashboard)/spaces/[id]/grouped-kanban/_components/toolbar/filter-multi-select";
 
 /**
  * Filter controls for custom fields, for the Backlog/Board filter panel.
  * Produces a `CustomFilter[]` the caller serializes into the `customFilters`
- * query param on /api/issues. Each field maps to its primary operator (FRD §4);
- * an empty value drops the filter.
+ * query param on /api/issues. An empty value drops the filter.
+ *
+ * Only the field types that make a sensible, precise filter are offered
+ * ({@link FILTERABLE_CUSTOM_FIELD_TYPES}) — free-text (Short/Long text, URL),
+ * Number, and free-form Labels are intentionally excluded. Option- and
+ * people-pickers use searchable dropdowns so long lists stay usable.
  */
+
+/** Custom-field types exposed in the filter panel. */
+export const FILTERABLE_CUSTOM_FIELD_TYPES: FieldType[] = [
+  "DROPDOWN_SINGLE",
+  "DROPDOWN_MULTI",
+  "CHECKBOX",
+  "USER_PICKER",
+  "USER_PICKER_MULTI",
+  "DATE",
+];
+
+const FILTERABLE = new Set<string>(FILTERABLE_CUSTOM_FIELD_TYPES);
+
+/** True when a field's type can be added to the filter panel. */
+export function isFilterableField(field: { type: string }): boolean {
+  return FILTERABLE.has(field.type);
+}
+
 interface Props {
   fields: CustomFieldDTO[];
   value: CustomFilter[];
   onChange: (next: CustomFilter[]) => void;
   members?: MemberOption[];
+  /** Wrapper class. Pass "contents" to let each field flow into a parent grid. */
+  className?: string;
 }
 
 const SELECT =
   "w-full h-8 px-2 text-xs border border-gray-300 rounded bg-white focus:outline-none focus:ring-1 focus:ring-blue-400";
 
-export function CustomFieldFilters({ fields, value, onChange, members = [] }: Props) {
-  if (fields.length === 0) return null;
+export function CustomFieldFilters({
+  fields,
+  value,
+  onChange,
+  members = [],
+  className = "space-y-2",
+}: Props) {
+  const filterable = fields.filter(isFilterableField);
+  if (filterable.length === 0) return null;
 
   const byId = new Map(value.map((f) => [f.fieldId, f]));
+  const memberOptions = members.map((m) => ({ value: m.id, label: m.label }));
 
   function set(field: CustomFieldDTO, op: CustomFilter["op"], v: unknown) {
     const next = value.filter((f) => f.fieldId !== field.id);
-    const blank = v === "" || v === null || v === undefined || (Array.isArray(v) && v.length === 0);
+    const blank =
+      v === "" || v === null || v === undefined || (Array.isArray(v) && v.length === 0);
     if (!blank) next.push({ fieldId: field.id, type: field.type, op, value: v });
     onChange(next);
   }
 
   return (
-    <div className="space-y-2">
-      {fields.map((field) => {
+    <div className={className}>
+      {filterable.map((field) => {
         const current = byId.get(field.id);
         return (
           <div key={field.id} className="text-xs">
             <span className="mb-1 block font-medium text-gray-600">{field.name}</span>
-            {renderControl(field, current, members, set)}
+            {renderControl(field, current)}
           </div>
         );
       })}
     </div>
   );
 
-  function renderControl(
-    field: CustomFieldDTO,
-    current: CustomFilter | undefined,
-    members: MemberOption[],
-    set: (field: CustomFieldDTO, op: CustomFilter["op"], v: unknown) => void,
-  ) {
+  function renderControl(field: CustomFieldDTO, current: CustomFilter | undefined) {
     const active = field.options.filter((o) => o.isActive);
     const v = current?.value;
 
     switch (field.type) {
       case "DROPDOWN_SINGLE":
         return (
-          <select className={SELECT} value={(v as string) ?? ""} onChange={(e) => set(field, "in", e.target.value ? [e.target.value] : "")}>
-            <option value="">Any</option>
-            {active.map((o) => (
-              <option key={o.id} value={o.value}>{o.label}</option>
-            ))}
-          </select>
+          <FilterSelect
+            expand
+            searchable
+            placeholder="Any"
+            value={typeof v === "string" ? v : Array.isArray(v) ? (v[0] as string) ?? "" : ""}
+            onChange={(val) => set(field, "in", val ? [val] : "")}
+            options={[
+              { value: "", label: "Any", muted: true },
+              ...active.map((o) => ({ value: o.value, label: o.label })),
+            ]}
+          />
         );
       case "DROPDOWN_MULTI":
-      case "LABELS":
         return (
-          <div className="flex flex-wrap gap-1">
-            {active.length === 0 && field.type === "LABELS" ? (
-              <input
-                className={SELECT}
-                placeholder="label,label"
-                defaultValue={Array.isArray(v) ? (v as string[]).join(",") : ""}
-                onBlur={(e) => set(field, "has_any", e.target.value.split(",").map((s) => s.trim()).filter(Boolean))}
-              />
-            ) : (
-              active.map((o) => {
-                const arr = (Array.isArray(v) ? (v as string[]) : []);
-                const on = arr.includes(o.value);
-                return (
-                  <button
-                    key={o.id}
-                    type="button"
-                    onClick={() => set(field, "has_any", on ? arr.filter((x) => x !== o.value) : [...arr, o.value])}
-                    className={`px-2 h-6 rounded-full border ${on ? "bg-blue-50 border-blue-300 text-blue-700" : "border-gray-300 text-gray-600"}`}
-                  >
-                    {o.label}
-                  </button>
-                );
-              })
-            )}
-          </div>
+          <FilterMultiSelect
+            expand
+            searchable
+            placeholder="Any"
+            summaryNoun="options"
+            values={Array.isArray(v) ? (v as string[]) : []}
+            onChange={(vals) => set(field, "has_any", vals)}
+            options={active.map((o) => ({ value: o.value, label: o.label }))}
+          />
+        );
+      case "USER_PICKER":
+        return (
+          <FilterSelect
+            expand
+            searchable
+            placeholder="Any"
+            value={typeof v === "string" ? v : ""}
+            onChange={(val) => set(field, "is", val)}
+            options={[{ value: "", label: "Any", muted: true }, ...memberOptions]}
+          />
+        );
+      case "USER_PICKER_MULTI":
+        return (
+          <FilterMultiSelect
+            expand
+            searchable
+            placeholder="Any"
+            summaryNoun="people"
+            values={Array.isArray(v) ? (v as string[]) : []}
+            onChange={(vals) => set(field, "has_any", vals)}
+            options={memberOptions}
+          />
         );
       case "CHECKBOX":
         return (
           <select
             className={SELECT}
             value={current ? (current.op === "is_true" ? "true" : "false") : ""}
-            onChange={(e) => (e.target.value === "" ? set(field, "is_true", "") : set(field, e.target.value === "true" ? "is_true" : "is_false", true))}
+            onChange={(e) =>
+              e.target.value === ""
+                ? set(field, "is_true", "")
+                : set(field, e.target.value === "true" ? "is_true" : "is_false", true)
+            }
           >
             <option value="">Any</option>
             <option value="true">Checked</option>
             <option value="false">Unchecked</option>
           </select>
         );
-      case "USER_PICKER":
-        return (
-          <select className={SELECT} value={(v as string) ?? ""} onChange={(e) => set(field, "is", e.target.value)}>
-            <option value="">Any</option>
-            {members.map((m) => (
-              <option key={m.id} value={m.id}>{m.label}</option>
-            ))}
-          </select>
-        );
-      case "NUMBER":
-        return (
-          <input type="number" className={SELECT} defaultValue={(v as number) ?? ""} placeholder="equals" onBlur={(e) => set(field, "eq", e.target.value === "" ? "" : Number(e.target.value))} />
-        );
       case "DATE":
-        return <input type="date" className={SELECT} value={(v as string) ?? ""} onChange={(e) => set(field, "eq", e.target.value)} />;
-      default: // SHORT_TEXT, LONG_TEXT, URL
-        return <input className={SELECT} defaultValue={(v as string) ?? ""} placeholder="contains" onBlur={(e) => set(field, "contains", e.target.value)} />;
+        return (
+          <input
+            type="date"
+            className={SELECT}
+            value={(v as string) ?? ""}
+            onChange={(e) => set(field, "eq", e.target.value)}
+          />
+        );
+      default:
+        return null; // non-filterable types are excluded above
     }
   }
 }

@@ -149,8 +149,9 @@ export function IssueDetailsPanel({
         <Row label="Team">
           <span className="text-gray-500">None</span>
         </Row>
-        {/* Sprint row hidden on epics (epics span sprints by definition). */}
-        {issue.type !== "EPIC" && (
+        {/* Sprint row hidden on epics (epics span sprints by definition) and on
+            functional projects, which have no sprints (so none to pick). */}
+        {issue.type !== "EPIC" && sprints.length > 0 && (
           <Row label="Sprint">
             <SprintField
               sprints={sprints}

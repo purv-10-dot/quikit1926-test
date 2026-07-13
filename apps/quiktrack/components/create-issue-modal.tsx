@@ -492,8 +492,9 @@ export function CreateIssueModal({
             <DateInput value={startDate} onChange={setStartDate} />
           </Field>
 
-          {/* Sprint — Epics are not sprint-scoped, so hide for EPIC */}
-          {type !== "EPIC" && (
+          {/* Sprint — Epics are not sprint-scoped (hide for EPIC), and functional
+              projects have no sprints at all, so hide when none exist. */}
+          {type !== "EPIC" && sprints.length > 0 && (
             <Field label="Sprint" hint="QuikTrack sprint field">
               <BoardFilterSelect
                 value={sprintId}

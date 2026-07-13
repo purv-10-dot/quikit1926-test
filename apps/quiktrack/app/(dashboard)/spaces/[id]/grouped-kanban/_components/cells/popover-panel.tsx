@@ -63,8 +63,9 @@ export function PopoverPanel({
     function onDown(e: MouseEvent) {
       const target = e.target as Node;
       if (anchorRef.current?.contains(target)) return;
-      const panel = document.getElementById("qt-popover-panel-active");
-      if (panel?.contains(target)) return;
+      // Ignore clicks inside ANY portaled popover so nested popovers (e.g. a
+      // filter panel that itself contains dropdown menus) don't close each other.
+      if (target instanceof Element && target.closest("[data-portal-popover]")) return;
       onClose();
     }
     function onKey(e: KeyboardEvent) {
@@ -76,8 +77,8 @@ export function PopoverPanel({
       // events from descendants — ignore those; only close when the page or
       // anchor scrolls, since the fixed panel would otherwise detach from it.
       if (e?.type === "scroll") {
-        const panel = document.getElementById("qt-popover-panel-active");
-        if (panel && e.target instanceof Node && panel.contains(e.target)) return;
+        const t = e.target;
+        if (t instanceof Element && t.closest("[data-portal-popover]")) return;
       }
       onClose();
     }

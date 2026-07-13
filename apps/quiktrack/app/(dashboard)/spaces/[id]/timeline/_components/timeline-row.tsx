@@ -1,9 +1,36 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { ChevronDown, ChevronRight, Zap, CheckSquare, Bug, BookOpen, Link2 } from "lucide-react";
-import type { Col, TimelineIssue } from "./timeline-meta";
-import { WORK_COL_WIDTH, intervalToBar, totalGridWidth } from "./timeline-meta";
+import { createPortal } from "react-dom";
+import {
+  ChevronDown,
+  ChevronRight,
+  Zap,
+  CheckSquare,
+  Bug,
+  BookOpen,
+  Link2,
+  AlertTriangle,
+} from "lucide-react";
+import type { Col, Member, TimelineIssue } from "./timeline-meta";
+import {
+  WORK_COL_WIDTH,
+  intervalToBar,
+  totalGridWidth,
+  initials,
+  avatarColor,
+  fullName,
+} from "./timeline-meta";
+import {
+  STATUS_COL_WIDTH,
+  ASSIGNEE_COL_WIDTH,
+  START_COL_WIDTH,
+  END_COL_WIDTH,
+  categoryColor,
+  progressForCategory,
+  type TimelineStatus,
+  type TimelineViewSettings,
+} from "./timeline-view-settings";
 
 const PAGE_SIZE = 25;
 
@@ -15,38 +42,69 @@ const TYPE_ICON = (type: string) => {
   return { Icon: CheckSquare, color: "text-blue-500" };
 };
 
-/**
- * Recursive row used at every level of the timeline hierarchy:
- *   - Level 0 (epic):   children fetched with ?epicId=&excludeType=EPIC,SUBTASK
- *   - Level 1 (task):   children fetched with ?parentId=&type=SUBTASK
- *   - Level 2 (subtask) is a leaf — no further children.
- *
- * Owns its own pagination + IntersectionObserver sentinel: scrolling near the
- * bottom of an expanded group fetches the next page. Children are not loaded
- * until the row is expanded for the first time.
- */
-export function TimelineRow({
-  issue,
-  level,
-  projectId,
-  columns,
-  onOpen,
-  assigneeFilter = "",
-}: {
+const TYPE_LABEL: Record<string, string> = {
+  EPIC: "Epic",
+  TASK: "Task",
+  STORY: "Story",
+  BUG: "Bug",
+  SUBTASK: "Subtask",
+};
+
+function fmtDate(iso: string | null): string {
+  if (!iso) return "—";
+  const d = new Date(iso);
+  return Number.isNaN(d.getTime())
+    ? "—"
+    : d.toLocaleDateString(undefined, { day: "numeric", month: "short", year: "numeric" });
+}
+
+function isOverdue(dueDate: string | null, category: string | undefined): boolean {
+  if (!dueDate || category === "DONE") return false;
+  const d = new Date(dueDate);
+  if (Number.isNaN(d.getTime())) return false;
+  const now = new Date();
+  return d < new Date(now.getFullYear(), now.getMonth(), now.getDate());
+}
+
+interface RowProps {
   issue: TimelineIssue;
   level: number; // 0 = epic, 1 = task, 2 = subtask
   projectId: string;
   columns: Col[];
   onOpen?: (id: string) => void;
-  /** Comma-separated assignee ids; narrows the child tasks/subtasks shown. */
   assigneeFilter?: string;
-}) {
+  settings: TimelineViewSettings;
+  statusesById: Map<string, TimelineStatus>;
+  membersById: Map<string, Member>;
+  leftWidth: number;
+}
+
+/**
+ * Recursive row used at every level of the timeline hierarchy. Children fetch
+ * lazily on expand. Renders optional Status/Assignee columns, a warning marker,
+ * and a status- or custom-colored bar per the view settings.
+ */
+export function TimelineRow(props: RowProps) {
+  const {
+    issue,
+    level,
+    projectId,
+    columns,
+    onOpen,
+    assigneeFilter = "",
+    settings,
+    statusesById,
+    membersById,
+    leftWidth,
+  } = props;
+
   const [expanded, setExpanded] = useState(false);
   const [children, setChildren] = useState<TimelineIssue[]>([]);
   const [cursor, setCursor] = useState<string | null>(null);
   const [hasMore, setHasMore] = useState(false);
   const [loaded, setLoaded] = useState(false);
   const [loading, setLoading] = useState(false);
+  const [tip, setTip] = useState<{ x: number; y: number } | null>(null);
   const sentinelRef = useRef<HTMLDivElement>(null);
 
   const canExpand =
@@ -57,10 +115,7 @@ export function TimelineRow({
       if (loading) return;
       if (!initial && !hasMore) return;
       setLoading(true);
-      const params = new URLSearchParams({
-        projectId,
-        limit: String(PAGE_SIZE),
-      });
+      const params = new URLSearchParams({ projectId, limit: String(PAGE_SIZE) });
       if (issue.type === "EPIC") {
         params.set("epicId", issue.id);
         params.set("excludeType", "EPIC,SUBTASK");
@@ -90,7 +145,6 @@ export function TimelineRow({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [expanded, loaded]);
 
-  // Re-fetch already-loaded children when the assignee filter changes.
   useEffect(() => {
     if (!loaded) return;
     setChildren([]);
@@ -120,82 +174,215 @@ export function TimelineRow({
   const bar = intervalToBar(issue.startDate, issue.dueDate, columns);
   const stripWidth = totalGridWidth(columns);
 
+  const status = statusesById.get(issue.statusId);
+  const statusHex = status?.color || categoryColor(status?.category);
+  const barHex = settings.barColor === "custom" ? settings.customColor : statusHex;
+  const progress = progressForCategory(status?.category);
+  const assignee = issue.assigneeId ? membersById.get(issue.assigneeId) ?? null : null;
+
+  const overdue = isOverdue(issue.dueDate, status?.category);
+  const undated = !issue.startDate && !issue.dueDate;
+  const warn = settings.showWarnings && (overdue || undated);
+
+  const visibleChildren = settings.hideDone
+    ? children.filter((c) => statusesById.get(c.statusId)?.category !== "DONE")
+    : children;
+
   return (
     <>
       <div className="flex border-b border-gray-100">
-        {/* Sticky left side: chevron + indent + icon + title */}
+        {/* Frozen left: Work + optional Status/Assignee columns. */}
         <div
-          style={{ width: WORK_COL_WIDTH, paddingLeft: 12 + level * 16 }}
-          className="shrink-0 h-10 flex items-center pr-3 border-r border-gray-200 sticky left-0 bg-white z-[15]"
+          style={{ width: leftWidth }}
+          className="shrink-0 flex sticky left-0 bg-white z-[15] border-r border-gray-200"
         >
-          {canExpand ? (
+          <div
+            style={{ width: WORK_COL_WIDTH, paddingLeft: 12 + level * 16 }}
+            className="shrink-0 h-10 flex items-center pr-3"
+          >
+            {canExpand ? (
+              <button
+                type="button"
+                onClick={() => setExpanded((v) => !v)}
+                className="p-0.5 -ml-1 rounded hover:bg-gray-100 text-gray-500"
+                aria-label={expanded ? "Collapse" : "Expand"}
+              >
+                {expanded ? (
+                  <ChevronDown className="h-3.5 w-3.5" />
+                ) : (
+                  <ChevronRight className="h-3.5 w-3.5" />
+                )}
+              </button>
+            ) : (
+              <span className="w-4" />
+            )}
+            <T.Icon className={`h-3.5 w-3.5 mx-1.5 shrink-0 ${T.color}`} />
             <button
               type="button"
-              onClick={() => setExpanded((v) => !v)}
-              className="p-0.5 -ml-1 rounded hover:bg-gray-100 text-gray-500"
-              aria-label={expanded ? "Collapse" : "Expand"}
+              onClick={() => onOpen?.(issue.id)}
+              className="text-xs text-gray-800 truncate hover:underline text-left flex-1 min-w-0"
+              title={issue.title}
             >
-              {expanded ? (
-                <ChevronDown className="h-3.5 w-3.5" />
-              ) : (
-                <ChevronRight className="h-3.5 w-3.5" />
+              {issue.title}
+              {typeof issue.subtaskCount === "number" && issue.subtaskCount > 0 && (
+                <span className="ml-1 text-gray-500">({issue.subtaskCount})</span>
               )}
             </button>
-          ) : (
-            <span className="w-4" />
-          )}
-          <T.Icon className={`h-3.5 w-3.5 mx-1.5 shrink-0 ${T.color}`} />
-          <button
-            type="button"
-            onClick={() => onOpen?.(issue.id)}
-            className="text-xs text-gray-800 truncate hover:underline text-left flex-1 min-w-0"
-            title={issue.title}
-          >
-            {issue.title}
-            {typeof issue.subtaskCount === "number" && issue.subtaskCount > 0 && (
-              <span className="ml-1 text-gray-500">({issue.subtaskCount})</span>
+            {warn && (
+              <AlertTriangle
+                className="ml-1.5 h-3.5 w-3.5 shrink-0 text-amber-500"
+                aria-label={overdue ? "Overdue" : "No dates set"}
+              />
             )}
-          </button>
+          </div>
+
+          {settings.showStatus && (
+            <div
+              style={{ width: STATUS_COL_WIDTH }}
+              className="shrink-0 h-10 flex items-center px-3 border-l border-gray-100"
+            >
+              {status ? (
+                <span
+                  className="inline-flex items-center gap-1.5 rounded px-2 py-0.5 text-[11px] font-medium"
+                  style={{ backgroundColor: `${statusHex}1f`, color: statusHex }}
+                >
+                  <span className="h-1.5 w-1.5 rounded-full" style={{ backgroundColor: statusHex }} />
+                  <span className="truncate">{status.name}</span>
+                </span>
+              ) : (
+                <span className="text-[11px] text-gray-400">—</span>
+              )}
+            </div>
+          )}
+
+          {settings.showAssignee && (
+            <div
+              style={{ width: ASSIGNEE_COL_WIDTH }}
+              className="shrink-0 h-10 flex items-center gap-2 px-3 border-l border-gray-100"
+            >
+              {assignee ? (
+                <>
+                  <span
+                    className="h-5 w-5 shrink-0 rounded-full text-white text-[9px] font-semibold flex items-center justify-center"
+                    style={{ background: avatarColor(assignee.userId) }}
+                  >
+                    {initials(assignee)}
+                  </span>
+                  <span className="truncate text-[11px] text-gray-700">{fullName(assignee)}</span>
+                </>
+              ) : (
+                <span className="text-[11px] text-gray-400">Unassigned</span>
+              )}
+            </div>
+          )}
+
+          {settings.showStart && (
+            <div
+              style={{ width: START_COL_WIDTH }}
+              className="shrink-0 h-10 flex items-center px-3 border-l border-gray-100 text-[11px] tabular-nums text-gray-600"
+            >
+              {fmtDate(issue.startDate)}
+            </div>
+          )}
+          {settings.showEnd && (
+            <div
+              style={{ width: END_COL_WIDTH }}
+              className="shrink-0 h-10 flex items-center px-3 border-l border-gray-100 text-[11px] tabular-nums"
+            >
+              <span className={overdue ? "font-medium text-red-600" : "text-gray-600"}>
+                {fmtDate(issue.dueDate)}
+              </span>
+            </div>
+          )}
         </div>
 
         {/* Right side: timeline strip + bar */}
         <div className="relative shrink-0" style={{ width: stripWidth }}>
-          {/* Light vertical column separators inside the strip. */}
-          <div className="absolute inset-0 flex">
+          {/* Weekend-tinted day columns. */}
+          <div className="absolute inset-0 flex pointer-events-none">
             {columns.map((c) => (
               <div
                 key={c.key}
                 style={{ width: c.width }}
-                className="shrink-0 border-r border-gray-100"
+                className={`shrink-0 border-r border-gray-100 ${c.weekend ? "bg-gray-50/70" : ""}`}
               />
             ))}
           </div>
           {bar && (
             <button
               type="button"
+              data-timeline-bar
+              data-issue-id={issue.id}
+              data-parent-id={issue.parentId ?? issue.epicId ?? ""}
               onClick={() => onOpen?.(issue.id)}
+              onMouseEnter={(e) => setTip({ x: e.clientX, y: e.clientY })}
+              onMouseMove={(e) => setTip({ x: e.clientX, y: e.clientY })}
+              onMouseLeave={() => setTip(null)}
               style={{
-                left: bar.left + 4,
-                width: bar.width - 8,
+                left: bar.left + 2,
+                width: bar.width - 4,
                 top: 6,
+                zIndex: 2,
+                backgroundColor: barHex,
+                boxShadow: `0 1px 2px rgba(0,0,0,0.12), 0 0 0 2px ${barHex}33`,
               }}
-              className={`absolute h-7 px-2 rounded border text-[11px] font-medium truncate text-left ${
-                level === 0
-                  ? "bg-purple-50 border-purple-300 text-purple-800"
-                  : level === 1
-                    ? "bg-blue-50 border-blue-300 text-blue-800"
-                    : "bg-gray-50 border-gray-300 text-gray-800"
-              }`}
-              title={issue.title}
+              className="absolute h-7 overflow-hidden rounded-md"
+              aria-label={`${issue.key} ${issue.title}`}
             >
-              {issue.title}
+              {/* Progress fill (derived from status) — darkens the done portion. */}
+              <span
+                className="absolute inset-y-0 left-0"
+                style={{ width: `${progress}%`, backgroundColor: "rgba(0,0,0,0.24)" }}
+              />
+              {bar.width >= 34 && (
+                <span className="absolute inset-0 flex items-center justify-center text-[10px] font-bold tracking-wide text-white pointer-events-none">
+                  {progress}%
+                </span>
+              )}
             </button>
           )}
         </div>
       </div>
 
+      {/* Rich hover tooltip — full issue details, portaled so the scroll
+          container can't clip it. */}
+      {tip &&
+        createPortal(
+          <div
+            className="pointer-events-none fixed z-[100] w-64 rounded-md border border-gray-200 bg-white p-2.5 text-xs shadow-lg"
+            style={{
+              left: Math.min(tip.x + 14, (typeof window !== "undefined" ? window.innerWidth : 9999) - 272),
+              top: tip.y + 14,
+            }}
+          >
+            <div className="flex items-center gap-1.5 font-semibold text-gray-900">
+              <T.Icon className={`h-3.5 w-3.5 shrink-0 ${T.color}`} />
+              <span className="truncate">
+                {issue.key} · {issue.title}
+              </span>
+            </div>
+            <dl className="mt-2 space-y-1 text-gray-600">
+              <TipRow label="Type">{TYPE_LABEL[issue.type] ?? issue.type}</TipRow>
+              <TipRow label="Status">
+                <span className="inline-flex items-center gap-1.5">
+                  <span className="h-1.5 w-1.5 rounded-full" style={{ backgroundColor: statusHex }} />
+                  {status?.name ?? "—"}
+                </span>
+              </TipRow>
+              <TipRow label="Assignee">{assignee ? fullName(assignee) : "Unassigned"}</TipRow>
+              <TipRow label="Start">{fmtDate(issue.startDate)}</TipRow>
+              <TipRow label="Due">
+                <span className={overdue ? "font-medium text-red-600" : ""}>
+                  {fmtDate(issue.dueDate)}
+                </span>
+              </TipRow>
+            </dl>
+          </div>,
+          document.body,
+        )}
+
       {expanded &&
-        children.map((c) => (
+        visibleChildren.map((c) => (
           <TimelineRow
             key={c.id}
             issue={c}
@@ -204,6 +391,10 @@ export function TimelineRow({
             columns={columns}
             onOpen={onOpen}
             assigneeFilter={assigneeFilter}
+            settings={settings}
+            statusesById={statusesById}
+            membersById={membersById}
+            leftWidth={leftWidth}
           />
         ))}
 
@@ -211,7 +402,7 @@ export function TimelineRow({
         <div className="flex border-b border-gray-50">
           <div
             ref={sentinelRef}
-            style={{ width: WORK_COL_WIDTH, paddingLeft: 12 + (level + 1) * 16 }}
+            style={{ width: leftWidth, paddingLeft: 12 + (level + 1) * 16 }}
             className="shrink-0 h-8 border-r border-gray-200 sticky left-0 bg-white z-[15] flex items-center text-[10px] text-gray-400"
           >
             {loading ? "Loading…" : ""}
@@ -220,5 +411,14 @@ export function TimelineRow({
         </div>
       )}
     </>
+  );
+}
+
+function TipRow({ label, children }: { label: string; children: React.ReactNode }) {
+  return (
+    <div className="flex items-start gap-2">
+      <dt className="w-16 shrink-0 text-gray-400">{label}</dt>
+      <dd className="flex-1 min-w-0 truncate text-gray-700">{children}</dd>
+    </div>
   );
 }

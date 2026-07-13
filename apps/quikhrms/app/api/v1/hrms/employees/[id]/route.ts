@@ -206,6 +206,15 @@ export const PATCH = withAuth(async (req: NextRequest, { orgId, userId, permissi
     if (incomingRoleId !== undefined) changedFields.push("roleId");
 
     if (incomingRoleId !== undefined) {
+      // Keep the central UserAppAccess.role mirror (what the Admin Portal
+      // shows) in sync with the role just assigned in QuikHrms.
+      const assignedRole = incomingRoleId
+        ? await prisma.hrmsAppRole.findFirst({
+            where: { id: incomingRoleId, orgId },
+            select: { name: true },
+          })
+        : null;
+      await mirrorHrmsRolesToCentral(orgId, [params.id], assignedRole?.name);
       invalidatePermissionCache(orgId, params.id);
     }
 

@@ -6111,6 +6111,9 @@ model QtProject {
   projectRoles     QtProjectRole[]
   projectUserRoles QtProjectUserRole[]
   customFields     QtCustomField[]
+  ideas            QtIdea[]
+  ideaStatuses     QtIdeaStatus[]
+  ideaViews        QtIdeaView[]
 
   @@unique([orgId, projectKey])
   @@index([orgId, status])
@@ -6759,6 +6762,49 @@ model QtTimesheetWeeklySummary {
 
   @@unique([issueId, userId, year, weekNumber])
   @@index([orgId, year, weekNumber])
+  @@schema("app_quiktrack")
+}
+
+/// Personal to-do checklist (OneNote-style), NOT tied to any project. Private
+/// to the owner (userId) — only its creator ever sees it. Items are NOT
+/// timesheet targets. Reminders are in-app only and are materialized on the
+/// notifications poll when `dueDate` has passed.
+model QtChecklistItem {
+  id             String             @id @default(cuid())
+  orgId          String
+  userId         String
+  name           String
+  statusId       String?
+  dueDate        DateTime?
+  reminderSentAt DateTime?
+  orderIndex     Int                @default(0)
+  isCompleted    Boolean            @default(false)
+  isDeleted      Boolean            @default(false)
+  createdAt      DateTime           @default(now())
+  updatedAt      DateTime           @updatedAt
+  status         QtChecklistStatus? @relation(fields: [statusId], references: [id], onDelete: SetNull)
+
+  @@index([orgId, userId])
+  @@index([dueDate, reminderSentAt])
+  @@schema("app_quiktrack")
+}
+
+/// User-defined statuses for the personal checklist, scoped per user (global —
+/// reused across the user's whole checklist, not per project).
+model QtChecklistStatus {
+  id         String            @id @default(cuid())
+  orgId      String
+  userId     String
+  name       String
+  color      String            @default("#6b7280")
+  orderIndex Int               @default(0)
+  isDefault  Boolean           @default(false)
+  isDeleted  Boolean           @default(false)
+  createdAt  DateTime          @default(now())
+  updatedAt  DateTime          @updatedAt
+  items      QtChecklistItem[]
+
+  @@index([orgId, userId])
   @@schema("app_quiktrack")
 }
 
@@ -9574,6 +9620,7 @@ model QtCustomField {
   project      QtProject?            @relation(fields: [projectId], references: [id], onDelete: Cascade)
   options      QtCustomFieldOption[]
   values       QtIssueFieldValue[]
+  ideaValues   QtIdeaFieldValue[]
   audits       QtCustomFieldAudit[]
 
   @@unique([projectId, key])
@@ -9637,6 +9684,210 @@ model QtCustomFieldAudit {
 
   @@index([orgId, occurredAt])
   @@index([fieldId])
+  @@schema("app_quiktrack")
+}
+
+// ═══════════════════ QuikTrack — Product Discovery ═══════════════════════
+// Dedicated Idea models for the "discovery" project template (a Jira Product
+// Discovery clone). Purpose-built and intentionally SEPARATE from QtIssue.
+// Scoring/Theme/Roadmap/Score fields reuse the shared QtCustomField definitions
+// via QtIdeaFieldValue (a parallel of QtIssueFieldValue). orgId is a scalar
+// (no Org relation) — cascade flows Org → QtProject → these rows.
+//
+// TODO(integration): PENDING integration-owner sign-off. Migration lands
+// separately from app code (idempotent raw SQL), per apps/quiktrack/CLAUDE.md.
+
+/// Discovery idea funnel status. Per-project, ordered. Mirrors the real JPD
+/// template workflow (Parking Lot → Discovery → Ready for Delivery → Delivery
+/// → Impact → Archived). Separate from QtIssueStatus by design.
+model QtIdeaStatus {
+  id         String    @id @default(cuid())
+  projectId  String
+  name       String
+  color      String    @default("#94a3b8")
+  /// Coarse bucket for roll-ups: PARKING_LOT | DISCOVERY | READY | DELIVERY | IMPACT | ARCHIVED
+  category   String    @default("DISCOVERY")
+  orderIndex Int       @default(0)
+  isHidden   Boolean   @default(false)
+  isDeleted  Boolean   @default(false)
+  createdAt  DateTime  @default(now())
+  updatedAt  DateTime  @updatedAt
+  ideas      QtIdea[]
+  project    QtProject @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  @@unique([projectId, name])
+  @@index([projectId, orderIndex])
+  @@schema("app_quiktrack")
+}
+
+/// The primary work item of a discovery project. Roadmap (Now/Next/Later/Won't
+/// do), Theme, Impact, Effort, Reach, Confidence and the computed Score all live
+/// as QtCustomField values (QtIdeaFieldValue) so admins can add their own fields
+/// exactly like the seeded ones. Score is recomputed server-side on every write.
+model QtIdea {
+  id           String             @id @default(cuid())
+  orgId        String
+  projectId    String
+  key          String
+  title        String
+  description  String?
+  statusId     String
+  assigneeId   String?
+  reporterId   String?
+  archivedFlag Boolean            @default(false)
+  orderIndex   Int                @default(0)
+  isDeleted    Boolean            @default(false)
+  createdAt    DateTime           @default(now())
+  updatedAt    DateTime           @updatedAt
+  createdBy    String?
+  updatedBy    String?
+  project      QtProject          @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  status       QtIdeaStatus       @relation(fields: [statusId], references: [id])
+  fieldValues  QtIdeaFieldValue[]
+  comments     QtIdeaComment[]
+  insights     QtIdeaInsight[]
+  deliveries   QtIdeaDelivery[]
+
+  @@unique([projectId, key])
+  @@index([orgId])
+  @@index([projectId, statusId])
+  @@index([projectId, archivedFlag])
+  @@index([assigneeId])
+  @@schema("app_quiktrack")
+}
+
+/// Typed value of a QtCustomField on an idea. Parallel to QtIssueFieldValue.
+model QtIdeaFieldValue {
+  id           String        @id @default(cuid())
+  orgId        String
+  ideaId       String
+  fieldId      String
+  valueText    String?
+  valueNumber  Float?
+  valueDate    DateTime?
+  valueBoolean Boolean?
+  valueJson    Json?
+  createdAt    DateTime      @default(now())
+  updatedAt    DateTime      @updatedAt
+  createdBy    String?
+  updatedBy    String?
+  idea         QtIdea        @relation(fields: [ideaId], references: [id], onDelete: Cascade)
+  field        QtCustomField @relation(fields: [fieldId], references: [id], onDelete: Cascade)
+
+  @@unique([ideaId, fieldId])
+  @@index([fieldId, valueText])
+  @@index([fieldId, valueNumber])
+  @@index([orgId])
+  @@schema("app_quiktrack")
+}
+
+/// A saved lens over a project's ideas. v1 ships one Table view per project;
+/// board/timeline/matrix are later phases and share this model (`type`).
+model QtIdeaView {
+  id         String    @id @default(cuid())
+  orgId      String
+  projectId  String
+  name       String
+  /// table | board | timeline | matrix
+  type       String    @default("table")
+  /// Presentation config: { columns[], columnOrder[], hiddenColumns[], groupBy,
+  /// sort[], filters[], axisBindings } — shape validated in lib/validation.
+  config     Json?
+  /// shared | private
+  visibility String    @default("shared")
+  ownerId    String?
+  orderIndex Int       @default(0)
+  isDefault  Boolean   @default(false)
+  isDeleted  Boolean   @default(false)
+  createdAt  DateTime  @default(now())
+  updatedAt  DateTime  @updatedAt
+  createdBy  String?
+  updatedBy  String?
+  project    QtProject @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  @@index([projectId, orderIndex])
+  @@schema("app_quiktrack")
+}
+
+/// A comment on an idea (JPD "Comments" tab). Threaded via optional parentId.
+/// TODO(integration): PENDING integration-owner sign-off before this migration
+/// lands on the shared/Neon DB.
+model QtIdeaComment {
+  id        String          @id @default(cuid())
+  orgId     String
+  ideaId    String
+  parentId  String?
+  body      String
+  isDeleted Boolean         @default(false)
+  createdAt DateTime        @default(now())
+  updatedAt DateTime        @updatedAt
+  createdBy String?
+  idea      QtIdea                  @relation(fields: [ideaId], references: [id], onDelete: Cascade)
+  parent    QtIdeaComment?          @relation("QtIdeaCommentReplies", fields: [parentId], references: [id], onDelete: Cascade)
+  replies   QtIdeaComment[]         @relation("QtIdeaCommentReplies")
+  reactions QtIdeaCommentReaction[]
+
+  @@index([ideaId, createdAt])
+  @@index([orgId])
+  @@schema("app_quiktrack")
+}
+
+/// An emoji reaction on an idea comment. One row per (comment, user, emoji);
+/// toggled on/off. TODO(integration): PENDING integration-owner sign-off.
+model QtIdeaCommentReaction {
+  id        String        @id @default(cuid())
+  orgId     String
+  commentId String
+  emoji     String
+  userId    String
+  createdAt DateTime      @default(now())
+  comment   QtIdeaComment @relation(fields: [commentId], references: [id], onDelete: Cascade)
+
+  @@unique([commentId, userId, emoji])
+  @@index([commentId])
+  @@schema("app_quiktrack")
+}
+
+/// A research insight attached to an idea (JPD "Insights" tab): a snippet of
+/// evidence with an optional source URL (rendered as a link-preview card), an
+/// Impact rating (0–5), and freeform labels. TODO(integration): PENDING
+/// integration-owner sign-off before this migration lands on the shared/Neon DB.
+model QtIdeaInsight {
+  id        String   @id @default(cuid())
+  orgId     String
+  ideaId    String
+  body      String
+  url       String?
+  impact    Int      @default(0)
+  labels    Json? // string[]
+  isDeleted Boolean  @default(false)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  createdBy String?
+  idea      QtIdea   @relation(fields: [ideaId], references: [id], onDelete: Cascade)
+
+  @@index([ideaId, createdAt])
+  @@index([orgId])
+  @@schema("app_quiktrack")
+}
+
+/// Delivery link between a discovery idea and a QtIssue (work item). The issue
+/// may live in ANOTHER project (JPD "Delivery" tab tracks delivery work across
+/// spaces). No FK to QtIssue (cross-project + soft-delete tolerant); the issueId
+/// is resolved at read time. TODO(integration): PENDING integration-owner sign-off.
+model QtIdeaDelivery {
+  id        String   @id @default(cuid())
+  orgId     String
+  ideaId    String
+  issueId   String
+  createdAt DateTime @default(now())
+  createdBy String?
+  idea      QtIdea   @relation(fields: [ideaId], references: [id], onDelete: Cascade)
+
+  @@unique([ideaId, issueId])
+  @@index([ideaId])
+  @@index([issueId])
+  @@index([orgId])
   @@schema("app_quiktrack")
 }
 

@@ -3,6 +3,7 @@
 import { useState, useRef, useEffect, useCallback, useMemo } from "react";
 import { useWWWItemsPaginated, useDeleteWWW, useBulkRestoreWWW, type WWWFilters } from "@/lib/hooks/useWWW";
 import { useInfiniteUsers } from "@/lib/hooks/useInfiniteUsers";
+import { useUserOption } from "@/lib/hooks/useUserOption";
 import { TableSkeleton } from "@/components/ui/Skeleton";
 import { WWWTable } from "./components/WWWTable";
 import { WWWPanel } from "./components/WWWPanel";
@@ -55,6 +56,10 @@ export default function WWWPage() {
     isFetchingNextPage: ownersLoadingMore,
     fetchNextPage: fetchMoreOwners,
   } = useInfiniteUsers(filterTeam || undefined, ownerSearch);
+  // Resolve the applied "who" by id so the picker shows their name even when
+  // that person isn't in the loaded 25-user page AND the filtered list is
+  // empty (e.g. a filter inherited from My Dashboard with 0 matching rows).
+  const selectedWhoOption = useUserOption(filterWho);
   const [showAddModal, setShowAddModal] = useState(false);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
 
@@ -315,6 +320,7 @@ export default function WWWPage() {
                     value={filterWho}
                     onChange={(v) => { setFilterWho(v); ctx.setFilterOwner(v); }}
                     options={users.map(userToFilterOption)}
+                    selectedOption={selectedWhoOption}
                     onSearchChange={setOwnerSearch}
                     onLoadMore={fetchMoreOwners}
                     hasMore={ownersHasMore}

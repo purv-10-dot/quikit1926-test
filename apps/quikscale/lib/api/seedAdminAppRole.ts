@@ -316,6 +316,42 @@ export async function ensureUserOnRole(
   });
 }
 
+/**
+ * Enforce the single-role-per-user invariant for QuikScale.
+ *
+ * A user must hold exactly one QuikScale role, but the Admin Portal write
+ * path (shared `@quikit/auth` `assignAppRoles`) only INSERTs on a role change
+ * — it never deletes the previous row (see RBAC_ROLE_CHANGE_BUG.md). Left as
+ * is, a stale `admin` row keeps winning because the readers treat a user as
+ * admin if ANY row is admin and union every row's grants.
+ *
+ * Rather than change the shared write path (QuikTrack uses it too), QuikScale
+ * repairs itself: keep the most recently assigned role and delete the rest.
+ * Called from `/api/me/permissions` on every app mount, so the DB converges
+ * to one row and every downstream reader (userCan / isOrgAdmin /
+ * loadMyPermissions / the Users grid) becomes correct with no change on their
+ * side. Idempotent — a no-op once the user has a single role. Returns the
+ * number of stale rows removed.
+ */
+export async function collapseToLatestRole(
+  userId: string,
+  orgId: string,
+): Promise<number> {
+  const appId = await getQuikScaleAppId();
+  if (!appId) return 0;
+
+  const roles = await db.userAppRole.findMany({
+    where: { userId, orgId, role: { appId } },
+    select: { id: true },
+    orderBy: { assignedAt: "desc" }, // newest first
+  });
+  if (roles.length <= 1) return 0;
+
+  const staleIds = roles.slice(1).map((r) => r.id);
+  await db.userAppRole.deleteMany({ where: { id: { in: staleIds } } });
+  return staleIds.length;
+}
+
 /* ───────────────────────── orchestrator ───────────────────────── */
 
 /**

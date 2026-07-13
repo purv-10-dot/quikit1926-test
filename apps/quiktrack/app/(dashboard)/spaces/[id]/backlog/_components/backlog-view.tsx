@@ -12,6 +12,10 @@ import { useMembersChanged } from "@/lib/hooks/useMembersChanged";
 import { useBacklogViewSettings } from "@/lib/hooks/useBacklogViewSettings";
 import { useFilterPersistence } from "@/lib/hooks/usePersistentFilters";
 import { EpicPanel } from "./epic-panel";
+import { BulkEditPopover } from "./bulk-edit-popover";
+import { CustomFieldFilters, isFilterableField } from "@/components/custom-fields/custom-field-filters";
+import type { CustomFilter } from "@/lib/customFields/filterQuery";
+import type { CustomFieldDTO } from "@/lib/services/customFields";
 import {
   ViewSettingsPopover,
   DEFAULT_VIEW_SETTINGS,
@@ -98,7 +102,7 @@ interface Sprint {
   counts?: { todo: number; inProgress: number; done: number };
 }
 
-const SPRINT_PAGE = 5;
+const SPRINT_PAGE = 10;
 const ISSUE_PAGE = 20;
 
 const TYPE_META: Record<IssueType, { Icon: React.ElementType; color: string; label: string }> = {
@@ -1768,7 +1772,7 @@ function FilterRow({
   options: FilterSelectOption[];
 }) {
   return (
-    <div className="mb-2 block text-xs">
+    <div className="text-xs">
       <span className="mb-1 block font-medium text-gray-600">{label}</span>
       <FilterSelect
         value={value}
@@ -1776,6 +1780,7 @@ function FilterRow({
         options={options}
         placeholder="Any"
         expand
+        searchable={options.length > 8}
         width={248}
       />
     </div>
@@ -1950,6 +1955,7 @@ function SectionBody({
     type: string;
     priority: string;
     epicId: string;
+    customFilters: string;
   };
   fields: BacklogViewSettings["fields"];
   density: BacklogViewSettings["density"];
@@ -1988,6 +1994,7 @@ function SectionBody({
       if (filters.type) params.set("type", filters.type);
       if (filters.priority) params.set("priority", filters.priority);
       if (filters.epicId) params.set("epicId", filters.epicId);
+      if (filters.customFilters) params.set("customFilters", filters.customFilters);
       if (!initial && state.cursor) params.set("cursor", state.cursor);
       try {
         const res = await fetch(`/api/issues?${params.toString()}`).then((r) => r.json());
@@ -2017,7 +2024,7 @@ function SectionBody({
         setState((s) => ({ ...s, loading: false }));
       }
     },
-    [projectId, sprintId, state.cursor, state.hasMore, state.loading, setState, filters.search, filters.statusId, filters.assigneeId, filters.type, filters.priority, filters.epicId],
+    [projectId, sprintId, state.cursor, state.hasMore, state.loading, setState, filters.search, filters.statusId, filters.assigneeId, filters.type, filters.priority, filters.epicId, filters.customFilters],
   );
 
   // First-time load when expanded.
@@ -2027,16 +2034,22 @@ function SectionBody({
     }
   }, [state.expanded, state.loaded, state.loading, loadMore]);
 
-  // Reset and re-fetch the section's first page whenever any filter changes.
+  // Invalidate the section's cached page whenever any filter changes — for
+  // collapsed sections too. A collapsed section keeps its `loaded` rows in
+  // state; if we skipped it here, re-expanding it later would short-circuit the
+  // first-load effect (loaded === true) and show STALE, unfiltered rows behind a
+  // correctly-filtered header count. Clearing it (no network) forces a fresh,
+  // filtered fetch the moment it's expanded.
   // We deliberately don't depend on loadMore (would re-run on cursor change too).
   // eslint-disable-next-line react-hooks/exhaustive-deps
   useEffect(() => {
-    if (!state.expanded) return;
     // Invalidate any in-flight fetch, then clear so the section reloads under the
-    // new filter (without a stale response overwriting it).
+    // new filter (without a stale response overwriting it). Expanded sections
+    // refetch immediately via the first-load effect; collapsed ones refetch on
+    // their next expand.
     genRef.current += 1;
     setState((s) => ({ ...s, loaded: false, loading: false, issues: [], cursor: null, hasMore: true }));
-  }, [filters.search, filters.statusId, filters.assigneeId, filters.type, filters.priority, filters.epicId]);
+  }, [filters.search, filters.statusId, filters.assigneeId, filters.type, filters.priority, filters.epicId, filters.customFilters]);
 
   // IntersectionObserver — load more when the sentinel scrolls into view of the
   // accordion's own scroll container. `enabled` re-attaches the observer on the
@@ -2164,6 +2177,11 @@ export function BacklogView({ projectId }: { projectId: string }) {
       },
     },
   );
+  // Project custom fields — used to offer the filterable ones in the filter panel.
+  const { data: customFields = [] } = useApiData<CustomFieldDTO[]>(
+    ["quiktrack", "project-issue-fields", projectId],
+    `/api/projects/${projectId}/issue-fields`,
+  );
   const [epics, setEpics] = useState<EpicLite[]>([]);
   const [currentUserId, setCurrentUserId] = useState<string | null>(null);
   // Functional spaces have no sprints — the backlog is a flat list with a
@@ -2189,6 +2207,9 @@ export function BacklogView({ projectId }: { projectId: string }) {
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [moveOpen, setMoveOpen] = useState(false);
   const [bulkBusy, setBulkBusy] = useState(false);
+  // Which bulk operation is in flight, so the busy label lands on the button the
+  // user actually clicked (Move/Edit/Delete) rather than always on Delete.
+  const [bulkAction, setBulkAction] = useState<"move" | "edit" | "delete" | null>(null);
   // Backend-driven filters applied to every section. `searchInput` is the raw
   // text typed in the toolbar; `appliedSearch` is the debounced value sent to
   // the API so we don't fire a request per keystroke.
@@ -2200,6 +2221,8 @@ export function BacklogView({ projectId }: { projectId: string }) {
   const [filterAssigneeIds, setFilterAssigneeIds] = useState<string[]>([]);
   const [filterType, setFilterType] = useState("");
   const [filterPriority, setFilterPriority] = useState("");
+  // Custom-field filters (serialized into the `customFilters` query param).
+  const [customFilters, setCustomFilters] = useState<CustomFilter[]>([]);
   // Epic filter — set by selecting an epic in the left EpicPanel. Empty = none.
   const [filterEpicId, setFilterEpicId] = useState("");
   const [filterOpen, setFilterOpen] = useState(false);
@@ -2223,6 +2246,13 @@ export function BacklogView({ projectId }: { projectId: string }) {
   // so they survive logout/login and sync across devices. A localStorage cache
   // inside the hook seeds the first paint to avoid a flash of defaults.
   const { settings, updateSettings } = useBacklogViewSettings(projectId);
+  // "Completed sprints" view setting swaps the sprint list between two modes:
+  //  - off (default): active + planned only (completed excluded)
+  //  - on: ONLY completed sprints
+  // Query fragment shared by every sprint-list fetch.
+  const sprintExcludeQs = settings.completedSprints
+    ? "&statuses=COMPLETED"
+    : "&excludeStatus=COMPLETED";
   const [viewSettingsOpen, setViewSettingsOpen] = useState(false);
   const viewSettingsRef = useRef<HTMLDivElement>(null);
 
@@ -2265,8 +2295,9 @@ export function BacklogView({ projectId }: { projectId: string }) {
       type: filterType,
       priority: filterPriority,
       epicId: filterEpicId,
+      customFilters: customFilters.length ? JSON.stringify(customFilters) : "",
     }),
-    [appliedSearch, filterStatusId, filterAssigneeIds, filterType, filterPriority, filterEpicId],
+    [appliedSearch, filterStatusId, filterAssigneeIds, filterType, filterPriority, filterEpicId, customFilters],
   );
 
   // Auto-persist backlog filters per user+project (no Save button).
@@ -2286,6 +2317,14 @@ export function BacklogView({ projectId }: { projectId: string }) {
       if (typeof s.type === "string") setFilterType(s.type);
       if (typeof s.priority === "string") setFilterPriority(s.priority);
       if (typeof s.epicId === "string") setFilterEpicId(s.epicId);
+      if (typeof s.customFilters === "string") {
+        try {
+          const parsed = s.customFilters ? JSON.parse(s.customFilters) : [];
+          if (Array.isArray(parsed)) setCustomFilters(parsed as CustomFilter[]);
+        } catch {
+          /* ignore malformed persisted value */
+        }
+      }
     },
   });
 
@@ -2293,7 +2332,7 @@ export function BacklogView({ projectId }: { projectId: string }) {
   // UNfiltered sprint, so it must be hidden while filtering — otherwise it
   // contradicts the filtered "(N work items)" header count.
   const filtersActive = Boolean(
-    appliedSearch || filterStatusId || filterAssigneeIds.length || filterType || filterPriority || filterEpicId,
+    appliedSearch || filterStatusId || filterAssigneeIds.length || filterType || filterPriority || filterEpicId || customFilters.length,
   );
 
   // Header-checkbox state for a section: returns the all/some flags + a toggle
@@ -2317,6 +2356,39 @@ export function BacklogView({ projectId }: { projectId: string }) {
     return { all, some, toggle };
   }
 
+  // Section header "select all" — selects EVERY item matching the current filter
+  // in the section, not just the rows scrolled into view. Fetches the full id
+  // list (idsOnly, unpaginated) so a bulk Move/Edit/Delete acts on the whole
+  // section (fixes "select-all only grabbed the loaded page, leaving the rest").
+  async function selectAllInSection(sprintId: string | null, next: boolean) {
+    const params = new URLSearchParams({
+      projectId,
+      sprintId: sprintId ?? "null",
+      excludeType: "EPIC,SUBTASK",
+      idsOnly: "1",
+    });
+    if (sectionFilters.search) params.set("search", sectionFilters.search);
+    if (sectionFilters.statusId) params.set("statusId", sectionFilters.statusId);
+    if (sectionFilters.assigneeId) params.set("assigneeId", sectionFilters.assigneeId);
+    if (sectionFilters.type) params.set("type", sectionFilters.type);
+    if (sectionFilters.priority) params.set("priority", sectionFilters.priority);
+    if (sectionFilters.epicId) params.set("epicId", sectionFilters.epicId);
+    if (sectionFilters.customFilters) params.set("customFilters", sectionFilters.customFilters);
+    try {
+      const res = await fetch(`/api/issues?${params.toString()}`).then((r) => r.json());
+      if (!res?.success) return;
+      const ids: string[] = (res.data ?? []).map((x: { id: string }) => x.id);
+      setSelectedIds((prev) => {
+        const s = new Set(prev);
+        if (next) for (const id of ids) s.add(id);
+        else for (const id of ids) s.delete(id);
+        return s;
+      });
+    } catch {
+      /* best-effort selection — leave the current selection untouched on error */
+    }
+  }
+
   useEffect(() => {
     const t = setTimeout(() => {
       setAppliedSearch((prev) => (prev === search.trim() ? prev : search.trim()));
@@ -2338,12 +2410,14 @@ export function BacklogView({ projectId }: { projectId: string }) {
     [sprints],
   );
 
-  // When any filter is active, fetch a server-side count per section (sprints
-  // + backlog) so collapsed section headers reflect the filtered total. Uses
-  // limit=1 to keep the payload tiny — only the `total` field matters here.
+  // When any filter is active, fetch server-side counts for every section
+  // (sprints + backlog) in ONE batched request so collapsed headers reflect the
+  // filtered totals. `/api/issues/section-counts` groups by sprint on the server,
+  // replacing the old N+1 (one request per sprint) with a single call — applying
+  // a filter now costs one request regardless of sprint count.
   useEffect(() => {
     const hasActive =
-      Boolean(appliedSearch || filterStatusId || filterAssigneeIds.length || filterType || filterPriority || filterEpicId);
+      Boolean(appliedSearch || filterStatusId || filterAssigneeIds.length || filterType || filterPriority || filterEpicId || customFilters.length);
     if (!hasActive) {
       setFilteredCounts({});
       setFilteredBadges({});
@@ -2351,47 +2425,47 @@ export function BacklogView({ projectId }: { projectId: string }) {
     }
     let cancelled = false;
     const sprintIds = activeSectionKey ? activeSectionKey.split(",") : [];
-    const sections: { key: string; sprintId: string | null }[] = [
-      ...sprintIds.map((id) => ({ key: `sprint:${id}`, sprintId: id })),
-      { key: "backlog", sprintId: null },
-    ];
-    Promise.all(
-      sections.map(({ key, sprintId }) => {
-        const params = new URLSearchParams({
-          projectId,
-          sprintId: sprintId ?? "null",
-          excludeType: "EPIC,SUBTASK",
-          limit: "1",
-          statusCounts: "1", // also returns the filtered To Do/In Progress/Done split
-        });
-        if (appliedSearch) params.set("search", appliedSearch);
-        if (filterStatusId) params.set("statusId", filterStatusId);
-        if (filterAssigneeIds.length) params.set("assigneeId", filterAssigneeIds.join(","));
-        if (filterType) params.set("type", filterType);
-        if (filterPriority) params.set("priority", filterPriority);
-        if (filterEpicId) params.set("epicId", filterEpicId);
-        return fetch(`/api/issues?${params.toString()}`)
-          .then((r) => r.json())
-          .then((res) => ({
-            key,
-            total: typeof res?.total === "number" ? res.total : 0,
-            counts: res?.statusCounts as { todo: number; inProgress: number; done: number } | undefined,
-          }))
-          .catch(() => ({ key, total: 0, counts: undefined }));
-      }),
-    ).then((rows) => {
-      if (cancelled) return;
-      const next: Record<string, number> = {};
-      const badges: Record<string, { todo: number; inProgress: number; done: number }> = {};
-      for (const r of rows) {
-        next[r.key] = r.total;
-        if (r.counts) badges[r.key] = r.counts;
-      }
-      setFilteredCounts(next);
-      setFilteredBadges(badges);
-    });
+    const params = new URLSearchParams({ projectId });
+    if (appliedSearch) params.set("search", appliedSearch);
+    if (filterStatusId) params.set("statusId", filterStatusId);
+    if (filterAssigneeIds.length) params.set("assigneeId", filterAssigneeIds.join(","));
+    if (filterType) params.set("type", filterType);
+    if (filterPriority) params.set("priority", filterPriority);
+    if (filterEpicId) params.set("epicId", filterEpicId);
+    if (customFilters.length) params.set("customFilters", JSON.stringify(customFilters));
+    fetch(`/api/issues/section-counts?${params.toString()}`)
+      .then((r) => r.json())
+      .then((res) => {
+        if (cancelled) return;
+        const data = (res?.success ? res.data : {}) as Record<
+          string,
+          { total: number; todo: number; inProgress: number; done: number }
+        >;
+        // Materialise an explicit entry for every displayed section (defaulting
+        // absent ones to 0) so a section that filters down to nothing still
+        // shows "0" rather than a stale count.
+        const next: Record<string, number> = {};
+        const badges: Record<string, { todo: number; inProgress: number; done: number }> = {};
+        for (const key of [...sprintIds.map((id) => `sprint:${id}`), "backlog"]) {
+          const c = data[key];
+          next[key] = c?.total ?? 0;
+          badges[key] = {
+            todo: c?.todo ?? 0,
+            inProgress: c?.inProgress ?? 0,
+            done: c?.done ?? 0,
+          };
+        }
+        setFilteredCounts(next);
+        setFilteredBadges(badges);
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setFilteredCounts({});
+          setFilteredBadges({});
+        }
+      });
     return () => { cancelled = true; };
-  }, [projectId, activeSectionKey, appliedSearch, filterStatusId, filterAssigneeIds, filterType, filterPriority, filterEpicId]);
+  }, [projectId, activeSectionKey, appliedSearch, filterStatusId, filterAssigneeIds, filterType, filterPriority, filterEpicId, customFilters]);
 
   useEffect(() => {
     if (!moreMenuOpen) return;
@@ -2407,24 +2481,8 @@ export function BacklogView({ projectId }: { projectId: string }) {
     };
   }, [moreMenuOpen]);
 
-  useEffect(() => {
-    if (!filterOpen) return;
-    function onDown(e: MouseEvent) {
-      const t = e.target as HTMLElement;
-      // FilterSelect (via PopoverPanel) portals its option menu to document.body.
-      // That click is outside `filterBtnRef` but must not close this popover, or
-      // the option unmounts before its onChange runs and the filter never applies.
-      if (t.closest?.("[data-portal-popover]")) return;
-      if (filterBtnRef.current && !filterBtnRef.current.contains(t)) setFilterOpen(false);
-    }
-    function onKey(e: KeyboardEvent) { if (e.key === "Escape") setFilterOpen(false); }
-    document.addEventListener("mousedown", onDown);
-    document.addEventListener("keydown", onKey);
-    return () => {
-      document.removeEventListener("mousedown", onDown);
-      document.removeEventListener("keydown", onKey);
-    };
-  }, [filterOpen]);
+  // Outside-click / Escape close for the filter panel is owned by PopoverPanel
+  // (the panel is portaled to body so it can't be clipped by content overflow).
 
   useEffect(() => {
     if (!moveOpen) return;
@@ -2577,7 +2635,7 @@ export function BacklogView({ projectId }: { projectId: string }) {
     (async () => {
       const [sessionRes, sprintsRes, epicsRes, projectRes] = await Promise.all([
         fetch(`/api/session`).then((r) => r.json()).catch(() => null),
-        fetch(`/api/sprints?projectId=${projectId}&limit=${SPRINT_PAGE}`).then((r) => r.json()),
+        fetch(`/api/sprints?projectId=${projectId}&limit=${SPRINT_PAGE}${sprintExcludeQs}`).then((r) => r.json()),
         fetch(`/api/issues?projectId=${projectId}&type=EPIC&limit=200`).then((r) => r.json()),
         fetch(`/api/projects/${projectId}`).then((r) => r.json()).catch(() => null),
       ]);
@@ -2618,6 +2676,8 @@ export function BacklogView({ projectId }: { projectId: string }) {
         projectId,
         limit: String(SPRINT_PAGE),
       });
+      if (settings.completedSprints) params.set("statuses", "COMPLETED");
+      else params.set("excludeStatus", "COMPLETED");
       if (sprintCursor) params.set("cursor", sprintCursor);
       const res = await fetch(`/api/sprints?${params.toString()}`).then((r) => r.json());
       if (res?.success) {
@@ -2632,11 +2692,49 @@ export function BacklogView({ projectId }: { projectId: string }) {
     } finally {
       setSprintsLoading(false);
     }
-  }, [projectId, sprintCursor, sprintsHasMore, sprintsLoading]);
+  }, [projectId, sprintCursor, sprintsHasMore, sprintsLoading, settings.completedSprints]);
 
   useOnScreen(sprintSentinelRef, () => {
     if (!bootLoading) loadMoreSprints();
   });
+
+  // Self-refill: on a short viewport the sentinel can stay visible after a page
+  // loads (IntersectionObserver only fires on transitions, so it wouldn't
+  // re-trigger). After each sprint batch, if the sentinel is still on screen and
+  // there are more, pull the next page — so the list fills up to the fold and
+  // then streams in as you scroll (endless, Jira-style).
+  useEffect(() => {
+    if (bootLoading || sprintsLoading || !sprintsHasMore) return;
+    const el = sprintSentinelRef.current;
+    if (!el) return;
+    const r = el.getBoundingClientRect();
+    if (r.top < window.innerHeight && r.bottom > 0) void loadMoreSprints();
+  }, [sprints, sprintsHasMore, sprintsLoading, bootLoading, loadMoreSprints]);
+
+  // Reload the sprint list from page 1 when the "Completed sprints" toggle flips
+  // — the fetch filter changes, so we re-run it (skips the initial mount, which
+  // the boot fetch already covers).
+  const completedToggleMounted = useRef(false);
+  useEffect(() => {
+    if (!completedToggleMounted.current) {
+      completedToggleMounted.current = true;
+      return;
+    }
+    setSprints([]);
+    setSprintCursor(null);
+    setSprintsHasMore(true);
+    void (async () => {
+      const res = await fetch(
+        `/api/sprints?projectId=${projectId}&limit=${SPRINT_PAGE}${sprintExcludeQs}`,
+      ).then((r) => r.json());
+      if (res?.success) {
+        setSprints(res.data ?? []);
+        setSprintCursor(res.nextCursor ?? null);
+        setSprintsHasMore(!!res.nextCursor);
+      }
+    })();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [settings.completedSprints]);
 
   const statusesById = useMemo(
     () => new Map(statuses.map((s) => [s.id, s] as const)),
@@ -2677,6 +2775,7 @@ export function BacklogView({ projectId }: { projectId: string }) {
     });
     if (!ok) return;
     setBulkBusy(true);
+    setBulkAction("delete");
     try {
       const res = await fetch("/api/issues/bulk-delete", {
         method: "POST",
@@ -2706,6 +2805,7 @@ export function BacklogView({ projectId }: { projectId: string }) {
       await refreshAllSections();
     } finally {
       setBulkBusy(false);
+      setBulkAction(null);
     }
   }
 
@@ -2714,6 +2814,7 @@ export function BacklogView({ projectId }: { projectId: string }) {
   async function handleBulkMoveToSprint(targetSprintId: string | null) {
     if (selectedIds.size === 0 || bulkBusy) return;
     setBulkBusy(true);
+    setBulkAction("move");
     setMoveOpen(false);
     try {
       const ids = Array.from(selectedIds);
@@ -2734,6 +2835,43 @@ export function BacklogView({ projectId }: { projectId: string }) {
       await refreshAllSections();
     } finally {
       setBulkBusy(false);
+      setBulkAction(null);
+    }
+  }
+
+  // Apply a field patch (status/assignee/priority/epic/dates/eta) to every
+  // selected issue. Mirrors handleBulkMoveToSprint: parallel PATCH reusing the
+  // per-issue route (permissions, history, notifications, rollup). The selection
+  // is KEPT so edits can be chained; only failures are surfaced.
+  async function handleBulkEdit(patch: Record<string, unknown>) {
+    if (selectedIds.size === 0 || bulkBusy || Object.keys(patch).length === 0) return;
+    setBulkBusy(true);
+    setBulkAction("edit");
+    try {
+      const ids = Array.from(selectedIds);
+      const results = await Promise.all(
+        ids.map((id) =>
+          fetch(`/api/issues/${id}`, {
+            method: "PATCH",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(patch),
+          })
+            .then((r) => r.json() as Promise<{ success: boolean }>)
+            .catch(() => ({ success: false as const })),
+        ),
+      );
+      const failed = results.filter((r) => !r.success).length;
+      const ok = results.length - failed;
+      showToast(
+        failed > 0
+          ? `${ok} updated · ${failed} failed`
+          : `${ok} item${ok === 1 ? "" : "s"} updated.`,
+        failed > 0 ? "error" : "success",
+      );
+      await refreshAllSections();
+    } finally {
+      setBulkBusy(false);
+      setBulkAction(null);
     }
   }
 
@@ -2761,6 +2899,7 @@ export function BacklogView({ projectId }: { projectId: string }) {
     if (sectionFilters.type) params.set("type", sectionFilters.type);
     if (sectionFilters.priority) params.set("priority", sectionFilters.priority);
     if (sectionFilters.epicId) params.set("epicId", sectionFilters.epicId);
+    if (sectionFilters.customFilters) params.set("customFilters", sectionFilters.customFilters);
     const [res] = await Promise.all([
       fetch(`/api/issues?${params.toString()}`).then((r) => r.json()),
       // Counts are refreshed by the caller when batch-refreshing many sections,
@@ -2793,6 +2932,8 @@ export function BacklogView({ projectId }: { projectId: string }) {
       projectId,
       limit: String(Math.max(SPRINT_PAGE, sprints.length)),
     });
+    if (settings.completedSprints) params.set("statuses", "COMPLETED");
+    else params.set("excludeStatus", "COMPLETED");
     const res = await fetch(`/api/sprints?${params.toString()}`).then((r) => r.json());
     if (res?.success) {
       const map = new Map<string, Sprint["counts"]>(
@@ -2816,7 +2957,7 @@ export function BacklogView({ projectId }: { projectId: string }) {
     setSprintCursor(null);
     setSprintsHasMore(true);
     const res = await fetch(
-      `/api/sprints?projectId=${projectId}&limit=${SPRINT_PAGE}`,
+      `/api/sprints?projectId=${projectId}&limit=${SPRINT_PAGE}${sprintExcludeQs}`,
     ).then((r) => r.json());
     if (res?.success) {
       setSprints(res.data ?? []);
@@ -2864,7 +3005,12 @@ export function BacklogView({ projectId }: { projectId: string }) {
     );
   }
 
-  const activeSprints = sprints.filter((s) => s.status !== "COMPLETED");
+  // Completed sprints are excluded server-side unless the "Completed sprints"
+  // view setting is on — then they're fetched and shown. Keep the client filter
+  // aligned so it never hides what the fetch intentionally included.
+  const activeSprints = settings.completedSprints
+    ? sprints
+    : sprints.filter((s) => s.status !== "COMPLETED");
   // "Empty sprints" toggle — when off, hide sprints whose work-item count is 0.
   const displayedSprints = settings.emptySprints
     ? activeSprints
@@ -2957,7 +3103,8 @@ export function BacklogView({ projectId }: { projectId: string }) {
               (filterStatusId ? 1 : 0) +
               (filterAssigneeIds.length ? 1 : 0) +
               (filterType ? 1 : 0) +
-              (filterPriority ? 1 : 0);
+              (filterPriority ? 1 : 0) +
+              customFilters.length;
             return (
               <div ref={filterBtnRef} className="relative">
                 <button
@@ -2977,89 +3124,118 @@ export function BacklogView({ projectId }: { projectId: string }) {
                     </span>
                   )}
                 </button>
-                {filterOpen && (
-                  <div className="absolute right-0 top-full z-30 mt-1 w-72 rounded border border-gray-200 bg-white p-3 shadow-lg">
-                    <FilterRow
-                      label="Status"
-                      value={filterStatusId}
-                      onChange={setFilterStatusId}
-                      options={[
-                        { value: "", label: "Any", muted: true },
-                        ...statuses.map((s) => ({ value: s.id, label: s.name })),
-                      ]}
-                    />
-                    <div className="mb-2 block text-xs">
-                      <span className="mb-1 block font-medium text-gray-600">Assignee</span>
-                      <FilterMultiSelect
-                        values={filterAssigneeIds}
-                        onChange={setFilterAssigneeIds}
-                        placeholder="Any"
-                        summaryNoun="people"
-                        searchable
-                        expand
-                        width={248}
-                        options={[
-                          { value: "null", label: "Unassigned", muted: true },
-                          ...members
-                            .filter(
-                              (m): m is Member & { user: NonNullable<Member["user"]> } =>
-                                Boolean(m.user),
-                            )
-                            .map((m) => ({
-                              value: m.user.id,
-                              label:
-                                [m.user.firstName, m.user.lastName]
-                                  .filter(Boolean)
-                                  .join(" ")
-                                  .trim() || m.user.email,
-                            })),
-                        ]}
-                      />
-                    </div>
-                    <FilterRow
-                      label="Type"
-                      value={filterType}
-                      onChange={setFilterType}
-                      options={[
-                        { value: "", label: "Any", muted: true },
-                        { value: "TASK", label: "Task" },
-                        { value: "BUG", label: "Bug" },
-                        { value: "STORY", label: "Story" },
-                      ]}
-                    />
-                    <FilterRow
-                      label="Priority"
-                      value={filterPriority}
-                      onChange={setFilterPriority}
-                      options={[
-                        { value: "", label: "Any", muted: true },
-                        { value: "HIGHEST", label: "Highest" },
-                        { value: "HIGH", label: "High" },
-                        { value: "MEDIUM", label: "Medium" },
-                        { value: "LOW", label: "Low" },
-                        { value: "LOWEST", label: "Lowest" },
-                      ]}
-                    />
-                    {activeCount > 0 && (
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setFilterStatusId("");
-                          setFilterAssigneeIds([]);
-                          setFilterType("");
-                          setFilterPriority("");
-                        }}
-                        className="mt-2 flex w-full items-center justify-center gap-1 rounded border border-gray-200 px-2 py-1 text-xs text-gray-600 hover:bg-gray-50"
+                {filterOpen &&
+                  (() => {
+                    const memberOpts = members
+                      .filter(
+                        (m): m is Member & { user: NonNullable<Member["user"]> } =>
+                          Boolean(m.user),
+                      )
+                      .map((m) => ({
+                        id: m.user.id,
+                        label:
+                          [m.user.firstName, m.user.lastName]
+                            .filter(Boolean)
+                            .join(" ")
+                            .trim() || m.user.email,
+                      }));
+                    const customFilterFields = customFields.filter(isFilterableField);
+                    return (
+                      <PopoverPanel
+                        anchorRef={filterBtnRef}
+                        open={filterOpen}
+                        onClose={() => setFilterOpen(false)}
+                        align="right"
+                        width={520}
+                        estimatedHeight={440}
                       >
-                        <X className="h-3 w-3" /> Clear all
-                      </button>
-                    )}
-                  </div>
-                )}
+                        <div className="flex items-center justify-between border-b border-gray-100 px-3 py-2">
+                          <span className="text-xs font-semibold text-gray-800">Filters</span>
+                          {activeCount > 0 && (
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setFilterStatusId("");
+                                setFilterAssigneeIds([]);
+                                setFilterType("");
+                                setFilterPriority("");
+                                setCustomFilters([]);
+                              }}
+                              className="inline-flex items-center gap-1 text-[11px] font-medium text-blue-600 hover:underline"
+                            >
+                              <X className="h-3 w-3" /> Clear all
+                            </button>
+                          )}
+                        </div>
+                        {/* Two-column grid so a long list of fields stays short
+                            vertically; scrolls only once it exceeds the cap. */}
+                        <div className="grid max-h-[60vh] grid-cols-1 gap-x-4 gap-y-3 overflow-y-auto p-3 sm:grid-cols-2">
+                          <FilterRow
+                            label="Status"
+                            value={filterStatusId}
+                            onChange={setFilterStatusId}
+                            options={[
+                              { value: "", label: "Any", muted: true },
+                              ...statuses.map((s) => ({ value: s.id, label: s.name })),
+                            ]}
+                          />
+                          <div className="text-xs">
+                            <span className="mb-1 block font-medium text-gray-600">Assignee</span>
+                            <FilterMultiSelect
+                              values={filterAssigneeIds}
+                              onChange={setFilterAssigneeIds}
+                              placeholder="Any"
+                              summaryNoun="people"
+                              searchable
+                              expand
+                              width={240}
+                              options={[
+                                { value: "null", label: "Unassigned", muted: true },
+                                ...memberOpts.map((m) => ({ value: m.id, label: m.label })),
+                              ]}
+                            />
+                          </div>
+                          <FilterRow
+                            label="Type"
+                            value={filterType}
+                            onChange={setFilterType}
+                            options={[
+                              { value: "", label: "Any", muted: true },
+                              { value: "TASK", label: "Task" },
+                              { value: "BUG", label: "Bug" },
+                              { value: "STORY", label: "Story" },
+                            ]}
+                          />
+                          <FilterRow
+                            label="Priority"
+                            value={filterPriority}
+                            onChange={setFilterPriority}
+                            options={[
+                              { value: "", label: "Any", muted: true },
+                              { value: "HIGHEST", label: "Highest" },
+                              { value: "HIGH", label: "High" },
+                              { value: "MEDIUM", label: "Medium" },
+                              { value: "LOW", label: "Low" },
+                              { value: "LOWEST", label: "Lowest" },
+                            ]}
+                          />
+                          {/* `contents` lets each custom field become its own grid
+                              cell alongside the built-in filters. */}
+                          <CustomFieldFilters
+                            className="contents"
+                            fields={customFilterFields}
+                            value={customFilters}
+                            onChange={setCustomFilters}
+                            members={memberOpts}
+                          />
+                        </div>
+                      </PopoverPanel>
+                    );
+                  })()}
               </div>
             );
           })()}
-          {(filterStatusId || filterAssigneeIds.length || filterType || filterPriority || appliedSearch) && (
+          {(Boolean(filterStatusId) || filterAssigneeIds.length > 0 || Boolean(filterType) || Boolean(filterPriority) || Boolean(appliedSearch) || customFilters.length > 0) && (
             <button
               type="button"
               onClick={() => {
@@ -3067,6 +3243,7 @@ export function BacklogView({ projectId }: { projectId: string }) {
                 setFilterAssigneeIds([]);
                 setFilterType("");
                 setFilterPriority("");
+                setCustomFilters([]);
                 setSearch("");
               }}
               className="text-xs font-medium text-blue-600 hover:underline"
@@ -3208,6 +3385,15 @@ export function BacklogView({ projectId }: { projectId: string }) {
           </button>
           <span className="font-medium text-gray-900">{selectedIds.size} selected</span>
           <div className="ml-auto flex items-center gap-2">
+            {(perms.loading || perms.has("Issue", "update")) && (
+              <BulkEditPopover
+                statuses={statuses}
+                members={members}
+                epics={epics}
+                disabled={bulkBusy}
+                onApply={handleBulkEdit}
+              />
+            )}
             <div ref={moveBtnRef} className="relative">
               <button
                 type="button"
@@ -3216,7 +3402,7 @@ export function BacklogView({ projectId }: { projectId: string }) {
                 className="inline-flex items-center gap-1.5 rounded border border-gray-200 bg-white px-3 py-1 text-xs text-gray-700 hover:bg-gray-50 disabled:opacity-60"
               >
                 <ArrowRightLeft className="h-3.5 w-3.5" />
-                Move to
+                {bulkAction === "move" ? "Moving…" : "Move to"}
                 <ChevronDown className="h-3 w-3" />
               </button>
               {moveOpen && (
@@ -3271,7 +3457,7 @@ export function BacklogView({ projectId }: { projectId: string }) {
                 className="inline-flex items-center gap-1.5 rounded border border-red-200 bg-white px-3 py-1 text-xs text-red-600 hover:bg-red-50 disabled:opacity-60"
               >
                 <Trash2 className="h-3.5 w-3.5" />
-                {bulkBusy ? "Working…" : "Delete"}
+                {bulkAction === "delete" ? "Working…" : "Delete"}
               </button>
             )}
           </div>
@@ -3310,7 +3496,7 @@ export function BacklogView({ projectId }: { projectId: string }) {
               counts={filtersActive ? filteredBadges[key] : sprint.counts}
               allChecked={sel.all}
               someChecked={sel.some}
-              onToggleAll={sel.toggle}
+              onToggleAll={(next) => void selectAllInSection(sprint.id, next)}
               afterTitle={
                 sprint.startDate || sprint.endDate ? (
                   <button
@@ -3343,6 +3529,11 @@ export function BacklogView({ projectId }: { projectId: string }) {
                     >
                       Complete sprint
                     </button>
+                  ) : sprint.status === "COMPLETED" ? (
+                    // Completed sprints are done — no start/complete action, just a badge.
+                    <span className="inline-flex h-7 items-center gap-1 rounded bg-gray-100 px-3 text-xs font-medium text-gray-500">
+                      Completed
+                    </span>
                   ) : (
                     <button
                       type="button"
@@ -3500,7 +3691,7 @@ export function BacklogView({ projectId }: { projectId: string }) {
           counts={filtersActive ? filteredBadges.backlog : undefined}
           allChecked={backlogSel.all}
           someChecked={backlogSel.some}
-          onToggleAll={backlogSel.toggle}
+          onToggleAll={(next) => void selectAllInSection(null, next)}
           trailing={
             // Functional spaces have no sprints — no "Create sprint" affordance.
             !isFunctional && canCreateSprint ? (
@@ -3560,7 +3751,7 @@ export function BacklogView({ projectId }: { projectId: string }) {
           onClose={() => setEditingSprint(null)}
           onUpdated={async () => {
             const res = await fetch(
-              `/api/sprints?projectId=${projectId}&limit=${SPRINT_PAGE}`,
+              `/api/sprints?projectId=${projectId}&limit=${SPRINT_PAGE}${sprintExcludeQs}`,
             ).then((r) => r.json());
             if (res?.success) {
               setSprints(res.data ?? []);
@@ -3597,7 +3788,7 @@ export function BacklogView({ projectId }: { projectId: string }) {
           onClose={() => setStartingSprint(null)}
           onStarted={async () => {
             const res = await fetch(
-              `/api/sprints?projectId=${projectId}&limit=${SPRINT_PAGE}`,
+              `/api/sprints?projectId=${projectId}&limit=${SPRINT_PAGE}${sprintExcludeQs}`,
             ).then((r) => r.json());
             if (res?.success) {
               setSprints(res.data ?? []);
@@ -3628,7 +3819,7 @@ export function BacklogView({ projectId }: { projectId: string }) {
           onCompleted={async () => {
             // Refetch sprints + reset all section caches.
             const res = await fetch(
-              `/api/sprints?projectId=${projectId}&limit=${SPRINT_PAGE}`,
+              `/api/sprints?projectId=${projectId}&limit=${SPRINT_PAGE}${sprintExcludeQs}`,
             ).then((r) => r.json());
             if (res?.success) {
               setSprints(res.data ?? []);

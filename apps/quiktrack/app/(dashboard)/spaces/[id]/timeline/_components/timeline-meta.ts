@@ -1,34 +1,21 @@
 export const MONTH_LABELS = [
-  "January",
-  "February",
-  "March",
-  "April",
-  "May",
-  "June",
-  "July",
-  "August",
-  "September",
-  "October",
-  "November",
-  "December",
+  "January", "February", "March", "April", "May", "June",
+  "July", "August", "September", "October", "November", "December",
 ];
+const MON3 = MONTH_LABELS.map((m) => m.slice(0, 3));
 
-export const WORK_COL_WIDTH = 280;
+export const WORK_COL_WIDTH = 260;
 
-export type ZoomLevel = "today" | "weeks" | "months" | "quarters";
+/** QuikInfra-style Gantt: a per-DAY axis at three zoom levels (day-column
+ *  width shrinks as you zoom out). */
+export type ZoomLevel = "week" | "month" | "quarter";
 
-/** Per-zoom geometry — column width in px and how many columns to render. */
-export const ZOOM_PRESETS: Record<
-  ZoomLevel,
-  { width: number; count: number; before: number }
-> = {
-  // `before` = how many columns before the anchor (today/this-month/etc.)
-  // we should render so the user can scroll back too.
-  today: { width: 60, count: 60, before: 7 },
-  weeks: { width: 140, count: 40, before: 4 },
-  months: { width: 260, count: 18, before: 2 },
-  quarters: { width: 360, count: 12, before: 1 },
-};
+export const DAY_WIDTH: Record<ZoomLevel, number> = { week: 16, month: 6, quarter: 3 };
+/** Padding days added on each side of the data's date range, per zoom. */
+const PAD_DAYS: Record<ZoomLevel, number> = { week: 7, month: 14, quarter: 30 };
+/** Minimum columns so a short/empty schedule still fills the axis. */
+const MIN_DAYS = 30;
+const DAY_MS = 24 * 60 * 60 * 1000;
 
 export interface TimelineIssue {
   id: string;
@@ -55,89 +42,62 @@ export interface Member {
   } | null;
 }
 
+/** One day = one column. `label` is "" when hidden at the current zoom. */
 export interface Col {
   key: string;
   label: string;
   start: Date;
-  end: Date; // exclusive
+  end: Date; // exclusive (next day)
   width: number;
+  weekend: boolean;
+  isToday: boolean;
 }
 
-/** Generate `count` columns at the given zoom level, anchored so that today
- *  sits a few columns in (controlled by ZOOM_PRESETS[zoom].before). */
-export function buildColumns(zoom: ZoomLevel, count: number): Col[] {
-  const today = new Date();
+function dateKey(d: Date): string {
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+}
+
+/**
+ * Build the per-day columns spanning the data's date range (domainStart →
+ * domainEnd) plus padding — NOT anchored on today. This makes the bars sit where
+ * the work actually is, like a construction-schedule Gantt.
+ */
+export function buildColumns(zoom: ZoomLevel, domainStart: Date, domainEnd: Date): Col[] {
+  const width = DAY_WIDTH[zoom];
+  const pad = PAD_DAYS[zoom];
+  const start0 = new Date(
+    domainStart.getFullYear(),
+    domainStart.getMonth(),
+    domainStart.getDate() - pad,
+  );
+  const end0 = new Date(domainEnd.getFullYear(), domainEnd.getMonth(), domainEnd.getDate() + pad);
+  const spanDays = Math.round((end0.getTime() - start0.getTime()) / DAY_MS) + 1;
+  const count = Math.max(MIN_DAYS, spanDays);
+  const todayKey = dateKey(new Date());
   const cols: Col[] = [];
-  const { before } = ZOOM_PRESETS[zoom];
-
-  if (zoom === "today") {
-    const start0 = new Date(today.getFullYear(), today.getMonth(), today.getDate() - before);
-    for (let i = 0; i < count; i++) {
-      const start = new Date(start0.getFullYear(), start0.getMonth(), start0.getDate() + i);
-      const end = new Date(start.getFullYear(), start.getMonth(), start.getDate() + 1);
-      cols.push({
-        key: start.toISOString().slice(0, 10),
-        label: `${start.getDate()} ${MONTH_LABELS[start.getMonth()]?.slice(0, 3)}`,
-        start,
-        end,
-        width: ZOOM_PRESETS.today.width,
-      });
-    }
-    return cols;
-  }
-
-  if (zoom === "weeks") {
-    // Snap to Monday for the anchor week.
-    const dow = today.getDay() || 7; // 1..7 with Mon=1
-    const monday = new Date(today.getFullYear(), today.getMonth(), today.getDate() - (dow - 1));
-    const start0 = new Date(monday.getFullYear(), monday.getMonth(), monday.getDate() - before * 7);
-    for (let i = 0; i < count; i++) {
-      const start = new Date(start0.getFullYear(), start0.getMonth(), start0.getDate() + i * 7);
-      const end = new Date(start.getFullYear(), start.getMonth(), start.getDate() + 7);
-      const yy = String(start.getFullYear()).slice(-2);
-      cols.push({
-        key: start.toISOString().slice(0, 10),
-        label: `${MONTH_LABELS[start.getMonth()]?.slice(0, 3)} ${start.getDate()} '${yy}`,
-        start,
-        end,
-        width: ZOOM_PRESETS.weeks.width,
-      });
-    }
-    return cols;
-  }
-
-  if (zoom === "quarters") {
-    const qStartMonth = Math.floor(today.getMonth() / 3) * 3;
-    const start0 = new Date(today.getFullYear(), qStartMonth - before * 3, 1);
-    for (let i = 0; i < count; i++) {
-      const start = new Date(start0.getFullYear(), start0.getMonth() + i * 3, 1);
-      const end = new Date(start.getFullYear(), start.getMonth() + 3, 1);
-      const q = Math.floor(start.getMonth() / 3) + 1;
-      const yy = String(start.getFullYear()).slice(-2);
-      cols.push({
-        key: `${start.getFullYear()}-Q${q}`,
-        label: `Q${q} '${yy}`,
-        start,
-        end,
-        width: ZOOM_PRESETS.quarters.width,
-      });
-    }
-    return cols;
-  }
-
-  // months
-  const start0 = new Date(today.getFullYear(), today.getMonth() - before, 1);
   for (let i = 0; i < count; i++) {
-    const start = new Date(start0.getFullYear(), start0.getMonth() + i, 1);
-    const end = new Date(start.getFullYear(), start.getMonth() + 1, 1);
+    const start = new Date(start0.getFullYear(), start0.getMonth(), start0.getDate() + i);
+    const end = new Date(start.getFullYear(), start.getMonth(), start.getDate() + 1);
+    const dow = start.getDay();
+    const weekend = dow === 0 || dow === 6;
+    const first = i === 0;
+    let label = "";
     const yy = String(start.getFullYear()).slice(-2);
-    cols.push({
-      key: `${start.getFullYear()}-${start.getMonth()}`,
-      label: `${MONTH_LABELS[start.getMonth()]} '${yy}`,
-      start,
-      end,
-      width: ZOOM_PRESETS.months.width,
-    });
+    if (zoom === "week") {
+      // Label Mondays (+ the first column) to reduce clutter.
+      if (dow === 1 || first) label = `${start.getDate()} ${MON3[start.getMonth()]}`;
+    } else if (zoom === "month") {
+      // Month: label the 1st of each month (+ the first column).
+      if (start.getDate() === 1 || first) {
+        label = `${MON3[start.getMonth()]} '${yy}`;
+      }
+    } else {
+      // Quarter: label the 1st of each quarter (Jan/Apr/Jul/Oct) + the first column.
+      if ((start.getDate() === 1 && start.getMonth() % 3 === 0) || first) {
+        label = `Q${Math.floor(start.getMonth() / 3) + 1} '${yy}`;
+      }
+    }
+    cols.push({ key: dateKey(start), label, start, end, width, weekend, isToday: dateKey(start) === todayKey });
   }
   return cols;
 }
@@ -146,7 +106,7 @@ export function totalGridWidth(columns: Col[]): number {
   return columns.reduce((sum, c) => sum + c.width, 0);
 }
 
-/** Returns the X (px) of a date within the column strip, or null if out of range. */
+/** X (px) of a date within the column strip, or null if before the range. */
 export function dateToX(date: Date, columns: Col[]): number | null {
   if (!columns.length || Number.isNaN(date.getTime())) return null;
   let x = 0;
@@ -158,13 +118,12 @@ export function dateToX(date: Date, columns: Col[]): number | null {
     }
     x += c.width;
   }
-  // Beyond the last column — clamp to the right edge.
   const last = columns[columns.length - 1]!;
-  if (date >= last.end) return x;
+  if (date >= last.end) return x; // clamp to the right edge
   return null;
 }
 
-/** Returns the bar's [left, width] in px for a [start, end] interval, clamped to the visible columns. */
+/** Bar [left, width] in px for a [start, end] interval, clamped to visible columns. */
 export function intervalToBar(
   start: string | null,
   end: string | null,
@@ -175,8 +134,11 @@ export function intervalToBar(
   const e = end ? new Date(end) : start ? new Date(start) : null;
   if (!s || !e) return null;
   if (Number.isNaN(s.getTime()) || Number.isNaN(e.getTime())) return null;
+  // A due date is inclusive of that day — extend to the end of the day so a
+  // single-day task spans a full column.
+  const eEnd = new Date(e.getFullYear(), e.getMonth(), e.getDate() + 1);
   const xs = dateToX(s, columns);
-  const xe = dateToX(e, columns);
+  const xe = dateToX(eEnd, columns);
   if (xs == null && xe == null) return null;
   const total = totalGridWidth(columns);
   const left = Math.max(0, Math.min(total, xs ?? xe ?? 0));
