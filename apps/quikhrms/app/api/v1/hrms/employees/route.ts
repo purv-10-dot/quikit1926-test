@@ -42,6 +42,10 @@ export const GET = withAuth(async (req: NextRequest, ctx) => {
     // set). Used by the Users & Invitations screen so it lists real users, not
     // every employee record.
     const provisioned = searchParams.get("provisioned") === "true";
+    // Opt-in: only employees who can still be invited — no login account yet
+    // (no authUserId, no passwordHash) AND no Pending invitation. Powers the
+    // "Not yet invited" list on the Users & Invitations screen.
+    const invitable = searchParams.get("invitable") === "true";
     // Opt-in: further restrict to the caller's role-priority hierarchy.
     const accessible = searchParams.get("accessible") === "true";
 
@@ -58,6 +62,14 @@ export const GET = withAuth(async (req: NextRequest, ctx) => {
       const hierarchy = await getHierarchyAccessibleEmployeeIds(ctx);
       scopeIds = intersectEmployeeIds(scopeIds ?? undefined, hierarchy) ?? null;
     }
+    // For the "invitable" list we exclude anyone with a Pending invitation.
+    const pendingInviteEmails = invitable
+      ? (await prisma.invitation.findMany({
+          where: { orgId, status: "Pending", deletedAt: null },
+          select: { email: true },
+        })).map((i) => i.email.toLowerCase())
+      : [];
+
     const { data, total } = await (async () => {
       const where: Prisma.EmployeeWhereInput = {
         orgId,
@@ -66,6 +78,13 @@ export const GET = withAuth(async (req: NextRequest, ctx) => {
         // AND (not OR) so this doesn't collide with the `search` OR below.
         ...(provisioned && {
           AND: [{ OR: [{ authUserId: { not: null } }, { passwordHash: { not: null } }] }],
+        }),
+        // Invitable = no login account yet AND has a work email AND not already
+        // sitting in a Pending invitation.
+        ...(invitable && {
+          authUserId: null,
+          passwordHash: null,
+          workEmail: { notIn: pendingInviteEmails },
         }),
         ...(search && {
           OR: [
@@ -367,69 +386,9 @@ export const POST = withAuth(async (req: NextRequest, { orgId, userId }) => {
     // Search index (§S-3): add the new employee to the locator index (§13-safe).
     emitEmployeeIndex(orgId, employee.id, "create");
 
-    void (async () => {
-      try {
-        if (!employee.workEmail) return;
-
-        // If HR chose to invite: provision the person in central QuikIT, which
-        // creates their login account AND sends the invite/set-password email.
-        // HRMS does not send this email itself. Creates a Pending Invitation
-        // (linked to the employee) for the Users & Invitations list.
-        if (data.sendInvite) {
-          await provisionCentralInvite({
-            orgId,
-            invitedBy: userId,
-            email: employee.workEmail,
-            firstName: employee.firstName,
-            lastName: employee.lastName,
-            employeeId: employee.id,
-            roleIds: assignedRoleId ? [assignedRoleId] : [],
-          });
-          return;
-        }
-
-        const [company, manager] = await Promise.all([
-          prisma.companySettings.findUnique({ where: { orgId }, select: { companyName: true } }),
-          employee.reportingManagerId
-            ? prisma.employee.findUnique({
-                where: { id: employee.reportingManagerId },
-                select: { firstName: true, lastName: true },
-              })
-            : Promise.resolve(null),
-        ]);
-
-        const welcomeData = {
-          employeeName: `${employee.firstName} ${employee.lastName}`.trim(),
-          employeeCode: employee.employeeCode,
-          jobTitle: employee.jobTitle,
-          department: employee.department?.name ?? null,
-          dateOfJoining: new Date(employee.dateOfJoining).toLocaleDateString("en-IN", {
-            day: "2-digit", month: "long", year: "numeric",
-          }),
-          managerName: manager ? `${manager.firstName} ${manager.lastName}`.trim() : null,
-          companyName: company?.companyName ?? "QuikIT HRMS",
-          portalUrl: process.env.APP_URL,
-        };
-        // Single employee → send the welcome email directly via SMTP (no BullMQ).
-        await resolveAndSend(orgId, {
-          key: "employee.welcome",
-          to: employee.workEmail,
-          vars: {
-            employeeName: welcomeData.employeeName,
-            employeeCode: welcomeData.employeeCode,
-            jobTitle: welcomeData.jobTitle ?? "",
-            department: welcomeData.department ?? "",
-            dateOfJoining: welcomeData.dateOfJoining,
-            managerName: welcomeData.managerName ?? "",
-            portalUrl: welcomeData.portalUrl ?? "",
-            companyName: welcomeData.companyName,
-          },
-          fallback: () => buildWelcomeEmail(welcomeData),
-        });
-      } catch (err) {
-        console.error("[mail] welcome email failed:", err);
-      }
-    })();
+    // No invite / welcome email is sent on create. Invitations are triggered
+    // manually from the Users & Invitations screen (the new employee appears
+    // there under "Not yet invited").
 
     return successResponse(employee, undefined, 201);
   } catch (error) {
