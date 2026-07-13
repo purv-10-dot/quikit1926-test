@@ -60,6 +60,20 @@ export const PUT = withOrgAuth<{ id: string }>(async ({ orgId }, request, { para
     }
     const startDateStr = parsed.data.startDate;
 
+    // Custom Quarter Settings: the meeting day is editable from the quarter
+    // edit panel while the FY is unlocked (this handler already 409s above once
+    // data exists). Persist the new org-level value and use it for the week
+    // re-derivation below, so a Thu→Wed switch immediately recomputes 13/14.
+    let effectiveMeetingDay = meetingDayValue;
+    if (customEnabled && parsed.data.weeklyMeetingDay != null) {
+      effectiveMeetingDay = parsed.data.weeklyMeetingDay;
+      await db.featureFlag.upsert({
+        where: { orgId_key: { orgId, key: "weekly_meeting_day" } },
+        create: { orgId, key: "weekly_meeting_day", name: "weekly meeting day", enabled: true, value: effectiveMeetingDay },
+        update: { value: effectiveMeetingDay },
+      });
+    }
+
     // Get all 4 quarters for this FY
     const allQuarters = await db.quarterSetting.findMany({
       where: { orgId, fiscalYear: existing.fiscalYear },
@@ -84,7 +98,7 @@ export const PUT = withOrgAuth<{ id: string }>(async ({ orgId }, request, { para
           return NextResponse.json({ success: false, error: "Invalid start date" }, { status: 400 });
         q1Start = d;
       }
-      const mdIdx = meetingDayIndex(meetingDayValue);
+      const mdIdx = meetingDayIndex(effectiveMeetingDay);
       if (mdIdx !== null) {
         // Meeting-day mode: quarter dates are always calendar-month based and
         // each quarter's week count is DERIVED from the meeting-day chain

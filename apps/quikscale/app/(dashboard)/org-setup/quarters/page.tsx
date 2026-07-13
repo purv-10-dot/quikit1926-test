@@ -19,7 +19,7 @@ import {
   RightPanel, RightPanelFooter, RightPanelCancelButton, RightPanelSubmitButton, Pagination,
 } from "@quikit/ui";
 import { useResourcePermissions } from "@/lib/hooks/useResourcePermissions";
-import { useCustomQuarterSettings, useWeeklyMeetingDay } from "@/lib/hooks/useFeatureFlags";
+import { useCustomQuarterSettings, useWeeklyMeetingDay, invalidateFeatureFlagsCache } from "@/lib/hooks/useFeatureFlags";
 import { notify } from "@/lib/utils/notify";
 
 /* ─── Types ─────────────────────────────────────────────────────────────────── */
@@ -125,6 +125,9 @@ function EditPanel({
   const meetingDayMode = customEnabled && meetingDayIndex(meetingDay) !== null;
   const [startDate, setStartDate] = useState("");
   const [weeks,     setWeeks]     = useState("13");
+  // Meeting day is editable here while the FY is unlocked (the panel only opens
+  // for unlocked years). Saving re-derives every quarter's week count server-side.
+  const [meetingDaySel, setMeetingDaySel] = useState("Wednesday");
   const [saving,    setSaving]    = useState(false);
   const [error,     setError]     = useState("");
 
@@ -132,9 +135,10 @@ function EditPanel({
     if (open && row) {
       setStartDate(toInputDate(row.startDate));
       setWeeks(String(row.weekCount ?? 13));
+      if (meetingDay) setMeetingDaySel(meetingDay);
       setError("");
     }
-  }, [open, row]);
+  }, [open, row, meetingDay]);
 
   const isQ1Row = row?.quarter === "Q1";
 
@@ -152,7 +156,7 @@ function EditPanel({
     // (other quarters have nothing to edit; saving just re-derives the FY).
     const body = customEnabled
       ? (meetingDayMode
-          ? (isQ1Row ? { startDate } : {})
+          ? { ...(isQ1Row ? { startDate } : {}), weeklyMeetingDay: meetingDaySel }
           : { ...(isQ1Row ? { startDate } : {}), weekCount: weeksNum })
       : { startDate };
 
@@ -232,10 +236,26 @@ function EditPanel({
           {meetingDayMode && (
             <div>
               <label className="text-xs font-medium text-gray-600 block mb-1.5">Meeting Day</label>
-              <div className="w-full border border-gray-100 rounded-lg px-3 py-2 text-sm text-gray-400 bg-gray-50">
-                {meetingDay}
-                <span className="text-[10px] ml-2 text-gray-300">(read-only)</span>
-              </div>
+              {canUpdate ? (
+                <>
+                  <select
+                    value={meetingDaySel}
+                    onChange={e => { setMeetingDaySel(e.target.value); setError(""); }}
+                    className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm text-gray-700 focus:outline-none focus:ring-2 focus:ring-accent-400"
+                  >
+                    {WEEKDAYS.map(d => <option key={d} value={d}>{d}</option>)}
+                  </select>
+                  <p className="text-[10px] text-gray-400 mt-1">
+                    Editable until you add data for this fiscal year. Changing it re-derives each
+                    quarter&apos;s week count. Locked once the year has KPI/Priority/OPSP data.
+                  </p>
+                </>
+              ) : (
+                <div className="w-full border border-gray-100 rounded-lg px-3 py-2 text-sm text-gray-400 bg-gray-50">
+                  {meetingDay}
+                  <span className="text-[10px] ml-2 text-gray-300">(read-only)</span>
+                </div>
+              )}
             </div>
           )}
 
@@ -277,10 +297,10 @@ function EditPanel({
               <label className="text-xs font-medium text-gray-600 block mb-1.5">Number of weeks</label>
               <div className="w-full border border-gray-100 rounded-lg px-3 py-2 text-sm text-gray-400 bg-gray-50">
                 {row.weekCount ?? 13} weeks
-                <span className="text-[10px] ml-2 text-gray-300">(derived from {meetingDay} meeting day)</span>
+                <span className="text-[10px] ml-2 text-gray-300">(derived from {meetingDaySel} meeting day)</span>
               </div>
               <p className="text-[10px] text-gray-400 mt-1">
-                Each week runs {meetingDay} → the day before the next {meetingDay}. Week counts
+                Each week runs {meetingDaySel} → the day before the next {meetingDaySel}. Week counts
                 (13 or 14, incl. partial weeks) update automatically{isQ1Row ? " when you change the start date" : ""}.
               </p>
             </div>
@@ -751,6 +771,10 @@ export default function QuarterSettingsPage() {
     // Week counts / boundaries may have changed — clear the quarter caches so
     // week-aware views (KPI grid, Priority labels) pick them up without reload.
     invalidateAllQuarterCaches();
+    // The meeting day is editable from the panel — refresh the flags cache so
+    // the header "Meeting Day" badge and week-aware hooks reflect the new value
+    // without a reload.
+    invalidateFeatureFlagsCache();
   }
 
   function handleGenerated(newRows: QuarterRow[]) {
@@ -760,6 +784,10 @@ export default function QuarterSettingsPage() {
       setAllYears(prev => [...new Set([...prev, fy])].sort((a, b) => b - a));
       fetchRows(fy);
       invalidateAllQuarterCaches();
+      // A fresh generate may have set a new weekly meeting day — refresh the
+      // flags cache so the header badge shows the just-saved value, not the
+      // stale one from before this generate.
+      invalidateFeatureFlagsCache();
     }
   }
 
@@ -951,7 +979,7 @@ export default function QuarterSettingsPage() {
               Quarter: {currentQW.quarter} • Week {currentQW.week}
             </span>
           )}
-          {meetingDayActive && (
+          {meetingDayActive && filtered.length > 0 && (
             <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-accent-50 text-accent-600 text-xs font-medium border border-accent-200">
               <CalendarDays className="h-3 w-3" />
               Meeting Day: {meetingDay}
