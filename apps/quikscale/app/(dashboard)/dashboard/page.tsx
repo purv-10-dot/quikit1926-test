@@ -31,7 +31,7 @@ import {
   getFiscalYear, getFiscalQuarter, fiscalYearLabel,
   weekDateLabel, ALL_WEEKS, weeksArray, rollingVisibleWeeks,
 } from "@/lib/utils/fiscal";
-import { useCurrentWeek, useWeekDateRange, useWeekLabels, useQuarterWeekCount } from "@/lib/hooks/useCurrentWeek";
+import { useCurrentWeek, useQtdReferenceWeek, useWeekDateRange, useWeekLabels, useQuarterWeekCount } from "@/lib/hooks/useCurrentWeek";
 import { progressColor, weekCellColors, fmt, fmtCompact, formatScaledKpiValue, getProgressBadgeColors, getLatestWeeklyNote, type NumberFormat } from "@/lib/utils/kpiHelpers";
 import { useNumberFormat } from "@/lib/hooks/useFeatureFlags";
 import { getLatestPriorityNote } from "@/lib/utils/priorityHelpers";
@@ -1464,6 +1464,10 @@ export default function DashboardPage() {
 
   // DB-driven current week + date range + per-week compact labels.
   const currentWeek = useCurrentWeek(year, quarter);
+  // QTD reference week — past/current/future aware. Fed to the KPI Overview
+  // cards' QTD/progress math so a past quarter counts all its weeks; the
+  // "current week" pill keeps using `currentWeek`. See `qtdReferenceWeek`.
+  const qtdWeek = useQtdReferenceWeek(year, quarter);
   const currentWeekRange = useWeekDateRange(year, quarter, currentWeek);
   const weekLabels = useWeekLabels(year, quarter);
   // Weeks in the active quarter (Custom Quarter Settings). Defaults to 13.
@@ -1681,7 +1685,7 @@ export default function DashboardPage() {
             doesn't flicker out when the summary query wins the refresh race —
             see kpiOverviewVisible. */}
         {kpiOverviewVisible(isLoading, sessionStatus, kpis.length) && (
-          <KPIOverviewContainer count={kpis.length} loading={kpisLoading} kpis={kpis} currentWeek={currentWeek} weekCount={weekCount}>
+          <KPIOverviewContainer count={kpis.length} loading={kpisLoading} kpis={kpis} currentWeek={qtdWeek} weekCount={weekCount}>
             {/* Cap the grid at ~4 card rows and scroll vertically. overflow-x
                 is clipped so a long card set never produces a horizontal
                 scrollbar; pr-1 keeps the vertical scrollbar off the cards. */}
@@ -1699,7 +1703,7 @@ export default function DashboardPage() {
                   ))
                 : (
                   <UnreadCountsProvider entityType="KPI" ids={kpis.map(k => k.id)}>
-                    {kpis.map(k => <KPICard key={k.id} kpi={k} currentWeek={currentWeek} weekCount={weekCount} numberFormat={numberFormat} />)}
+                    {kpis.map(k => <KPICard key={k.id} kpi={k} currentWeek={qtdWeek} weekCount={weekCount} numberFormat={numberFormat} />)}
                   </UnreadCountsProvider>
                 )
               }
@@ -1730,6 +1734,7 @@ export default function DashboardPage() {
                 year={year}
                 quarter={quarter}
                 onSort={handleKpiSort}
+                onClearSort={() => { setKpiSortBy(""); setKpiSortOrder("asc"); }}
                 sortBy={kpiSortBy}
                 sortOrder={kpiSortOrder}
                 onRefresh={() => { void kpiTableQuery.refetch(); }}

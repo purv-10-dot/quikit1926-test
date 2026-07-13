@@ -106,6 +106,7 @@ export const GET = reviewAuth.view(async ({ orgId, userId }, req) => {
       select: {
         rowIndex: true,
         period: true,
+        category: true,
         targetValue: true,
         achievedValue: true,
         lastYearSamePeriod: true,
@@ -151,9 +152,23 @@ export const GET = reviewAuth.view(async ({ orgId, userId }, req) => {
         lastYearSamePeriodSource: "auto" | "manual" | "none";
       }> = {};
 
+      const sourceCategory = (row.category as string) || "";
       const meta = catMetaMap.get(row.category as string);
       for (const pKey of periodKeys) {
         const entry = entryMap.get(`${idx}:${pKey}`);
+        // Category-aware guard: review entries are keyed by rowIndex only, so a
+        // saved entry survives when the user changes that Action (QTR) row to a
+        // DIFFERENT category. Achieved/Comment/Last-Year belong to the old KPI
+        // and must NOT carry over — surface them only when the stored category
+        // still matches the current source category. Target is always resolved
+        // live from the plan below, so it reflects the new category regardless.
+        // A blank stored category (legacy rows) is treated as a match so we
+        // never wipe pre-existing data that predates category stamping.
+        const isStaleEntry =
+          !!entry &&
+          !!entry.category &&
+          entry.category.trim() !== "" &&
+          entry.category !== sourceCategory;
         // Target: use per-period value from OPSP, fall back to projected.
         // Both are stored as scaled strings (e.g. "10 K") — resolve with category meta.
         const planTarget = resolveStoredValue(row[pKey] as string, meta);
@@ -167,10 +182,10 @@ export const GET = reviewAuth.view(async ({ orgId, userId }, req) => {
             projected,
             entry?.targetValue != null ? Number(entry.targetValue) : null,
           ),
-          achieved: entry?.achievedValue != null ? Number(entry.achievedValue) : null,
+          achieved: !isStaleEntry && entry?.achievedValue != null ? Number(entry.achievedValue) : null,
           gap: null,
           achievedPct: null,
-          comment: entry?.comment ?? null,
+          comment: !isStaleEntry ? entry?.comment ?? null : null,
           // Populated by loadLastYearAchieved (auto) and the manual-override
           // pass below. `null` here means no source has filled it yet.
           lastYearAchieved: null,
@@ -214,7 +229,14 @@ export const GET = reviewAuth.view(async ({ orgId, userId }, req) => {
         const p = row.periods[pKey];
         if (p.lastYearSamePeriodSource === "auto") continue;
         const entry = entryMap.get(`${row.rowIndex}:${pKey}`);
-        if (entry?.lastYearSamePeriod != null) {
+        // Skip a stale entry whose stored category no longer matches this row's
+        // current category (see the category-aware guard in the merge above).
+        const isStaleEntry =
+          !!entry &&
+          !!entry.category &&
+          entry.category.trim() !== "" &&
+          entry.category !== row.category;
+        if (!isStaleEntry && entry?.lastYearSamePeriod != null) {
           p.lastYearAchieved = Number(entry.lastYearSamePeriod);
           p.lastYearSamePeriodSource = "manual";
         }
@@ -382,6 +404,11 @@ export const POST = reviewAuth.update(async ({ orgId, userId }, req) => {
             },
           },
           update: {
+            // Refresh the stored category to the current one. Entries are keyed
+            // by rowIndex only, so without this a row that changed category
+            // would keep its old stored category and the GET category-aware
+            // guard would then hide the values the user is saving right now.
+            category,
             // `?? undefined` would silently drop an explicit `null` (i.e. a
             // user clearing the field). Prisma needs `null` passed through
             // to actually unset the column.

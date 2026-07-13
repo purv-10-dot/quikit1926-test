@@ -28,28 +28,44 @@ const LOGIN_URL = buildLoginUrl({
 });
 
 /**
- * Turn the marketing navbar's single primary CTA into "Get Started →" pointing
- * at the central login (which then offers "Sign up" → self-serve registration).
- * The baked-in blobs ship a "Book a demo → /contact" primary button in both the
- * desktop `.nav-actions` and the mobile `.mobile-nav-cta`; we swap both for one
- * "Get Started →" button. The nav HTML is identical across every _data/*.json
- * page, so doing this once here covers all pages rather than mutating a dozen
- * content blobs. Idempotent — skips if already transformed. The hero
- * "Get In Touch / Book a demo" buttons (btn-outline) are left unchanged.
+ * Self-serve registration lives on the central auth app at `/register`
+ * (the 3-step workspace → OTP → password wizard). Built from the same
+ * `NEXT_PUBLIC_AUTH_URL` base as `buildLoginUrl`, with the same dev fallback
+ * (:3001). Literal env access so webpack's DefinePlugin can inline it in the
+ * client bundle — see `buildLoginUrl`/env.ts for why dynamic lookups break.
+ * The wizard auto-signs-in and lands the user on the launcher `/apps` on
+ * completion, so no `callbackUrl` is needed here.
+ */
+const SIGNUP_URL = `${(process.env.NEXT_PUBLIC_AUTH_URL ?? "http://localhost:3001").replace(/\/$/, "")}/register`;
+
+/**
+ * Turn the marketing navbar's single primary CTA into a "Sign In →" + "Sign Up"
+ * pair: "Sign In" points at the central login, "Sign Up" at the self-serve
+ * registration wizard. The baked-in blobs ship a "Book a demo → /contact"
+ * primary button in both the desktop `.nav-actions` and the mobile
+ * `.mobile-nav-cta`; we swap each for the two-button pair. The nav HTML is
+ * identical across every _data/*.json page, so doing this once here covers all
+ * pages rather than mutating a dozen content blobs. Idempotent — skips if
+ * already transformed. The hero "Get In Touch / Book a demo" buttons
+ * (btn-outline) are left unchanged.
  */
 function withLoginCta(html: string): string {
   if (html.includes("data-quikit-login")) return html;
-  const getStarted = `<a href="${LOGIN_URL}" data-quikit-login class="btn btn-primary">Get Started →</a>`;
-  const getStartedMobile = `<a href="${LOGIN_URL}" data-quikit-login class="btn btn-primary mobile-nav-cta">Get Started →</a>`;
+  const authCta =
+    `<a href="${LOGIN_URL}" data-quikit-login class="btn btn-primary">Sign In</a>` +
+    `<a href="${SIGNUP_URL}" data-quikit-signup class="btn btn-outline">Sign Up</a>`;
+  const authCtaMobile =
+    `<a href="${LOGIN_URL}" data-quikit-login class="btn btn-primary mobile-nav-cta">Sign In →</a>` +
+    `<a href="${SIGNUP_URL}" data-quikit-signup class="btn btn-outline mobile-nav-cta">Sign Up</a>`;
   let out = html;
   // Mobile primary CTA first (more specific selector), then desktop.
   out = out.replace(
     /<a [^>]*class="btn btn-primary mobile-nav-cta">Book a demo[^<]*<\/a>/,
-    getStartedMobile,
+    authCtaMobile,
   );
   out = out.replace(
     /<a [^>]*class="btn btn-primary">Book a demo[^<]*<\/a>/,
-    getStarted,
+    authCta,
   );
   return out;
 }

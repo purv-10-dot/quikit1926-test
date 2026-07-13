@@ -50,6 +50,9 @@ import { notify } from "@/lib/utils/notify";
 import { runExport } from "@/lib/export/xlsx";
 import { DailyHuddleChangeHistoryPanel } from "./DailyHuddleChangeHistoryPanel";
 import { ExportDataModal, type ExportRange } from "@/components/client-meetings/ExportDataModal";
+import { GlobalExportModal, type GlobalExportSelection } from "@/components/export/GlobalExportModal";
+import { downloadExport } from "@/lib/exports/downloadExport";
+import { FileBarChart } from "lucide-react";
 
 // All statuses that can appear in the data — mirrors the `ClientMeetingStatus`
 // Prisma enum. NOT_HELD stays in the union so legacy records still type-check
@@ -479,6 +482,28 @@ export default function DailyHuddlePage() {
   const visibleColKeys = moduleColumns.filter(c => !hiddenCols.includes(c.key)).map(c => c.key);
   const isHidden = (key: string) => hiddenCols.includes(key);
 
+  // Global Export (row-per-record, date-range) — the primary Export Data action.
+  // The aggregate metrics report (ExportDataModal → /export/daily-detail) stays
+  // reachable as a secondary "Metrics Report…" menu item.
+  const [globalExportOpen, setGlobalExportOpen] = useState(false);
+  const [exportError, setExportError] = useState<string | null>(null);
+  const handleGlobalExport = async (sel: GlobalExportSelection) => {
+    setExportError(null);
+    try {
+      await downloadExport("/api/client-meetings/daily-huddles/export", {
+        columns: sel.columnKeys.join(","),
+        from: sel.range.mode === "date" ? sel.range.from : undefined,
+        to: sel.range.mode === "date" ? sel.range.to : undefined,
+        clientId: filterClientId || undefined,
+        status: filterStatus || undefined,
+        includeDeleted: viewTrash || undefined,
+      });
+    } catch (err) {
+      setExportError(err instanceof Error ? err.message : "Export failed");
+      throw err;
+    }
+  };
+
   async function handleExport(sel: ExportSelection) {
     const columns = moduleColumns
       .filter(c => sel.columnKeys.includes(c.key))
@@ -599,11 +624,18 @@ export default function DailyHuddlePage() {
             rowCounts={{ page: rows.length, filtered: total, all: total }}
             onExport={handleExport}
             defaultExportColumnKeys={visibleColKeys}
-            // Override: open the From / To / Client modal instead of the
-            // built-in column-selection one. handleExport is still passed so
-            // the modal-driven submit (below) can re-use the column → cell
-            // value mapping via runExport.
-            onExportClick={() => setExportOpen(true)}
+            // Primary Export Data → the unified Global Export (row-per-record,
+            // date range, .xlsx/PDF). The aggregate per-client monthly metrics
+            // report stays available as a secondary "Metrics Report…" item.
+            onExportClick={() => setGlobalExportOpen(true)}
+            extraItems={[
+              {
+                key: "metrics-report",
+                label: "Metrics Report…",
+                icon: FileBarChart,
+                onSelect: () => setExportOpen(true),
+              },
+            ]}
           />
 
           {canCreate && <AddButton onClick={openCreate} disabled={clients.length === 0}>Add New</AddButton>}
@@ -1010,8 +1042,24 @@ export default function DailyHuddlePage() {
         <DailyHuddleChangeHistoryPanel huddle={logHuddle} onClose={() => setLogHuddle(null)} />
       )}
 
-      {/* From / To / Client export modal — replaces the legacy
-          column-selection modal as the Export Data action. */}
+      {/* Global Export — row-per-record over a meetingDate range (.xlsx / PDF) */}
+      <GlobalExportModal
+        open={globalExportOpen}
+        onClose={() => setGlobalExportOpen(false)}
+        title="Export Daily Huddle"
+        columns={moduleColumns}
+        defaultCheckedKeys={visibleColKeys}
+        rangeMode="date"
+        onExport={handleGlobalExport}
+      />
+      {exportError && (
+        <div className="fixed bottom-4 right-4 z-[60] bg-red-600 text-white text-xs px-3 py-2 rounded-lg shadow-lg">
+          {exportError}
+        </div>
+      )}
+
+      {/* Metrics Report — aggregate per-client monthly ExcelJS report (preserved,
+          reached via the "Metrics Report…" More-menu item). */}
       <ExportDataModal
         open={exportOpen}
         onClose={() => setExportOpen(false)}

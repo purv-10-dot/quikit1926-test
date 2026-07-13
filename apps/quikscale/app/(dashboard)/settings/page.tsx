@@ -113,6 +113,18 @@ export default function SettingsPage() {
     return true;
   });
 
+  // Deep-link support: `/settings?tab=configurations` (used by the
+  // "Quarters not set up yet" guard and other in-app links) opens that tab
+  // directly. Read client-side to avoid a Suspense boundary requirement.
+  // Re-runs when `isAdmin` resolves so a configurations deep-link still lands
+  // once the session confirms admin (the tab is admin-gated).
+  useEffect(() => {
+    const t = new URLSearchParams(window.location.search).get("tab");
+    if (!t || !TABS.some((tab) => tab.key === t)) return;
+    if (t === "configurations" && !isAdmin) return;
+    setActiveTab(t as TabKey);
+  }, [isAdmin]);
+
   return (
     <div className="flex h-full">
       {/* Left tab sidebar */}

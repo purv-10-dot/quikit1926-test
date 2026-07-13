@@ -21,6 +21,7 @@ import { Document, Page, View, Text, StyleSheet, Font } from "@react-pdf/rendere
 import type { FormData } from "../hooks/useOPSPForm";
 import type { CritCard } from "../types";
 import { hyphenateWord } from "../lib/hyphenate";
+import { computeCatProjRows } from "../lib/previewRows";
 
 /* ─── Constants ────────────────────────────────────────────────────────────── */
 
@@ -379,17 +380,25 @@ function CatProjTable({
   rows,
   showHeader = true,
   maxRows = 6,
+  minRows = 0,
   compact = false,
 }: {
   rows: { category: string; projected: string }[];
   showHeader?: boolean;
   maxRows?: number;
+  /**
+   * Minimum rows to render — the table pads with blank rows up to this count
+   * (never past `maxRows`). Default 0 keeps the old "filled rows only" behaviour
+   * for Targets/Goals; ACTIONS (QTR) passes 6 so it always shows at least 6.
+   */
+  minRows?: number;
   /** Reduces row padding + minHeight so up to 10 rows fit in the standard cell. */
   compact?: boolean;
 }) {
-  // Per user request: render only rows with data — drop empty placeholder rows.
-  // If form has 3 filled rows out of 5, table shows 3. Avoids "—" filler clutter.
-  const visible = rows.filter((r) => r.category && r.category.trim()).slice(0, maxRows);
+  // Filled rows (capped at maxRows), padded up to minRows with blank rows.
+  // See computeCatProjRows: with minRows=0 this is the previous
+  // filter(hasCategory).slice(0, maxRows) — no change for Targets/Goals.
+  const visible = computeCatProjRows(rows, { minRows, maxRows });
   if (visible.length === 0) return null;
   const cellOverride = compact
     ? { paddingVertical: 2, paddingHorizontal: 5, minHeight: 14 }
@@ -406,23 +415,29 @@ function CatProjTable({
           </View>
         </View>
       )}
-      {visible.map((r, i) => (
-        <View
-          key={i}
-          style={{ ...s.catProjRow, ...(i === visible.length - 1 ? s.catProjRowLast : {}) }}
-        >
-          <View style={{ ...s.catProjCellCat, ...(cellOverride ?? {}) }}>
-            <Text style={{ ...s.cellBodyText, ...(!r.category ? s.cellEmpty : {}) }}>
-              {r.category || "—"}
-            </Text>
+      {visible.map((r, i) => {
+        // Blank padding rows (no category) render empty cells — an unfilled
+        // ruled row, like the accountability placeholder — instead of "—".
+        // Filled rows are unchanged: category shown, projected shown or "—".
+        const isPad = !(r.category && r.category.trim());
+        return (
+          <View
+            key={i}
+            style={{ ...s.catProjRow, ...(i === visible.length - 1 ? s.catProjRowLast : {}) }}
+          >
+            <View style={{ ...s.catProjCellCat, ...(cellOverride ?? {}) }}>
+              <Text style={{ ...s.cellBodyText, ...(!r.category ? s.cellEmpty : {}) }}>
+                {isPad ? "" : r.category}
+              </Text>
+            </View>
+            <View style={{ ...s.catProjCellProj, ...(cellOverride ?? {}) }}>
+              <Text style={{ ...s.cellBodyText, ...(!r.projected ? s.cellEmpty : {}) }}>
+                {isPad ? "" : r.projected || "—"}
+              </Text>
+            </View>
           </View>
-          <View style={{ ...s.catProjCellProj, ...(cellOverride ?? {}) }}>
-            <Text style={{ ...s.cellBodyText, ...(!r.projected ? s.cellEmpty : {}) }}>
-              {r.projected || "—"}
-            </Text>
-          </View>
-        </View>
-      ))}
+        );
+      })}
     </View>
   );
 }
@@ -638,6 +653,15 @@ export function OPSPDocument({
     (r) => r.category && r.category.trim(),
   ).length;
   const goalsOverflow = filledGoalsCount > 6;
+
+  /* ── Actions (QTR) row count: always render at least 6 rows (padding with
+   * blank rows when fewer are filled) and up to 10. When more than 6 are
+   * filled, render in compact mode so 7-10 rows still fit the standard cell —
+   * mirrors the Goals overflow handling above. */
+  const filledActionsCount = (form.actionsQtr ?? []).filter(
+    (r) => r.category && r.category.trim(),
+  ).length;
+  const actionsOverflow = filledActionsCount > 6;
 
   return (
     <Document>
@@ -958,7 +982,12 @@ export function OPSPDocument({
               the next row; short data still fills the 50mm minimum. */}
           <View style={{ flexDirection: "row", minHeight: "50mm" }}>
             <View style={{ flex: 1.01, borderRightWidth: 1, borderBottomWidth: 1, borderLeftWidth: 1, borderTopColor: COLORS.borderDark, borderRightColor: COLORS.borderDark, borderBottomColor: COLORS.borderDark, borderLeftColor: COLORS.borderDark, padding: 2, overflow: "hidden" }}>
-              <CatProjTable rows={form.actionsQtr ?? []} />
+              <CatProjTable
+                rows={form.actionsQtr ?? []}
+                maxRows={10}
+                minRows={6}
+                compact={actionsOverflow}
+              />
             </View>
             <View style={{ flex: 1, borderRightWidth: 1, borderBottomWidth: 1, borderTopColor: COLORS.borderDark, borderRightColor: COLORS.borderDark, borderBottomColor: COLORS.borderDark, borderLeftColor: COLORS.borderDark, padding: 4, overflow: "hidden" }}>
               <RichText html={form.theme} />

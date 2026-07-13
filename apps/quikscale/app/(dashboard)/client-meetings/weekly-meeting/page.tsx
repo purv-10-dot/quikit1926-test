@@ -66,6 +66,9 @@ const COL_WIDTHS_DEFAULT: Record<string, number> = {
 };
 import { WeeklyMeetingChangeHistoryPanel } from "./WeeklyMeetingChangeHistoryPanel";
 import { ExportDataModal, type ExportRange } from "@/components/client-meetings/ExportDataModal";
+import { GlobalExportModal, type GlobalExportSelection } from "@/components/export/GlobalExportModal";
+import { downloadExport } from "@/lib/exports/downloadExport";
+import { FileBarChart } from "lucide-react";
 import type { ExportSelection } from "@quikit/ui";
 import { ModuleMoreActions } from "@/components/table/ModuleMoreActions";
 
@@ -393,6 +396,27 @@ export default function WeeklyMeetingPage() {
   const { sortBy, sortOrder, setSort } = useTableSort("weeklyMeeting");
   const { getColWidth, startResize, colWidths } = useColumnResize("weeklyMeeting", COL_WIDTHS_DEFAULT);
   const isHidden = (key: string) => hiddenCols.includes(key);
+
+  // Global Export (row-per-record, date-range) — primary Export Data action.
+  // Aggregate metrics report stays reachable via "Metrics Report…".
+  const wmVisibleColKeys = MODULE_COLUMNS.filter((c) => !hiddenCols.includes(c.key)).map((c) => c.key);
+  const [globalExportOpen, setGlobalExportOpen] = useState(false);
+  const [exportError, setExportError] = useState<string | null>(null);
+  const handleGlobalExport = async (sel: GlobalExportSelection) => {
+    setExportError(null);
+    try {
+      await downloadExport("/api/client-meetings/weekly-meetings/export", {
+        columns: sel.columnKeys.join(","),
+        from: sel.range.mode === "date" ? sel.range.from : undefined,
+        to: sel.range.mode === "date" ? sel.range.to : undefined,
+        clientId: filterClientId || undefined,
+        includeDeleted: viewTrash || undefined,
+      });
+    } catch (err) {
+      setExportError(err instanceof Error ? err.message : "Export failed");
+      throw err;
+    }
+  };
 
   // Cascade-freeze: freezing column C makes every column FROM the always-frozen
   // left rail UP TO (and including) C sticky as a group. Mirrors KPI's
@@ -1144,8 +1168,16 @@ export default function WeeklyMeetingPage() {
             onToggleTrash={setViewTrash}
             rowCounts={{ page: rows.length, filtered: total, all: total }}
             onExport={async () => {}}
-            defaultExportColumnKeys={[]}
-            onExportClick={() => setExportOpen(true)}
+            defaultExportColumnKeys={wmVisibleColKeys}
+            onExportClick={() => setGlobalExportOpen(true)}
+            extraItems={[
+              {
+                key: "metrics-report",
+                label: "Metrics Report…",
+                icon: FileBarChart,
+                onSelect: () => setExportOpen(true),
+              },
+            ]}
           />
 
           {canCreate && <AddButton onClick={openCreate}>Add</AddButton>}
@@ -1792,6 +1824,23 @@ export default function WeeklyMeetingPage() {
           />
         )}
 
+        {/* Global Export — row-per-record over a meetingDate range (.xlsx / PDF) */}
+        <GlobalExportModal
+          open={globalExportOpen}
+          onClose={() => setGlobalExportOpen(false)}
+          title="Export Weekly Meeting"
+          columns={MODULE_COLUMNS}
+          defaultCheckedKeys={wmVisibleColKeys}
+          rangeMode="date"
+          onExport={handleGlobalExport}
+        />
+        {exportError && (
+          <div className="fixed bottom-4 right-4 z-[60] bg-red-600 text-white text-xs px-3 py-2 rounded-lg shadow-lg">
+            {exportError}
+          </div>
+        )}
+
+        {/* Metrics Report — aggregate per-client monthly ExcelJS report (preserved) */}
         <ExportDataModal
           open={exportOpen}
           onClose={() => setExportOpen(false)}
