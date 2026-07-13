@@ -5,6 +5,8 @@ import { setSession } from "../setup";
 
 import { GET } from "@/app/api/assets/route";
 import { GET as GET_MINE } from "@/app/api/assets/mine/route";
+import { PUT, DELETE } from "@/app/api/assets/[id]/route";
+import { POST as BULK_DELETE } from "@/app/api/assets/bulk-delete/route";
 
 /** Grant every (resource, action) — simulates an admin/manager. */
 function grantAll() {
@@ -21,6 +23,25 @@ function grantMemberOnly() {
     return Promise.resolve(action === "view" ? { id: "perm" } : null) as never;
   });
   mockDb.astUserPermissionExtra.findFirst.mockResolvedValue(null as never);
+}
+
+/**
+ * Grant view/create/update/delete but NOT viewAll — a custom "asset editor"
+ * role (broader than Member, narrower than admin). Row scope must still apply.
+ */
+function grantEditorNoViewAll() {
+  mockDb.app.findUnique.mockResolvedValue({ id: "app" } as never);
+  mockDb.astRolePermission.findFirst.mockImplementation((args) => {
+    const action = (args as { where?: { action?: string } })?.where?.action;
+    return Promise.resolve(action === "viewAll" ? null : { id: "perm" }) as never;
+  });
+  mockDb.astUserPermissionExtra.findFirst.mockResolvedValue(null as never);
+}
+
+/** The caller maps to employee `emp1`, actively assigned the given asset ids. */
+function assignedTo(...assetIds: string[]) {
+  mockDb.astEmployee.findFirst.mockResolvedValue({ id: "emp1" } as never);
+  mockDb.astAssignment.findMany.mockResolvedValue(assetIds.map((assetId) => ({ assetId })) as never);
 }
 
 describe("GET /api/assets — role-aware scoping", () => {
@@ -139,5 +160,150 @@ describe("GET /api/assets/mine", () => {
     expect(res.status).toBe(200);
     expect(json.data).toEqual([]);
     expect(mockDb.astAssignment.findMany).not.toHaveBeenCalled();
+  });
+});
+
+describe("PUT /api/assets/[id] — write scope", () => {
+  beforeEach(() => resetMockDb());
+
+  it("404s + does not update when a non-viewAll role targets an unassigned asset", async () => {
+    setSession({ id: "u1", orgId: "org1", role: "member", email: "u1@x.com" });
+    grantEditorNoViewAll();
+    assignedTo("asset-assigned"); // caller is NOT assigned "asset-other"
+
+    const res = await PUT(
+      makeReq("/api/assets/asset-other", { method: "PUT", body: { itemName: "Hacked" } }),
+      { params: { id: "asset-other" } },
+    );
+
+    expect(res.status).toBe(404);
+    expect(mockDb.astAsset.update).not.toHaveBeenCalled();
+    expect(mockDb.astAsset.findFirst).not.toHaveBeenCalled(); // short-circuits before the row fetch
+  });
+
+  it("updates an asset the non-viewAll role IS assigned", async () => {
+    setSession({ id: "u1", orgId: "org1", role: "member", email: "u1@x.com" });
+    grantEditorNoViewAll();
+    assignedTo("asset-1");
+    mockDb.astAsset.findFirst.mockResolvedValue({ id: "asset-1" } as never);
+    mockDb.astAsset.update.mockResolvedValue({
+      id: "asset-1",
+      itemName: "Renamed",
+      itemCode: "C1",
+      baseCategory: null,
+      category: null,
+    } as never);
+
+    const res = await PUT(
+      makeReq("/api/assets/asset-1", { method: "PUT", body: { itemName: "Renamed" } }),
+      { params: { id: "asset-1" } },
+    );
+    const json = await res.json();
+
+    expect(res.status).toBe(200);
+    expect(json.data.id).toBe("asset-1");
+    expect(mockDb.astAsset.update).toHaveBeenCalledOnce();
+  });
+
+  it("lets a viewAll holder update any asset (no regression)", async () => {
+    setSession({ id: "admin", orgId: "org1", role: "admin" });
+    grantAll();
+    mockDb.astAsset.findFirst.mockResolvedValue({ id: "any-asset" } as never);
+    mockDb.astAsset.update.mockResolvedValue({
+      id: "any-asset",
+      itemName: "X",
+      itemCode: "C",
+      baseCategory: null,
+      category: null,
+    } as never);
+
+    const res = await PUT(
+      makeReq("/api/assets/any-asset", { method: "PUT", body: { itemName: "X" } }),
+      { params: { id: "any-asset" } },
+    );
+
+    expect(res.status).toBe(200);
+    // viewAll → no assignment lookup needed
+    expect(mockDb.astAssignment.findMany).not.toHaveBeenCalled();
+    expect(mockDb.astAsset.update).toHaveBeenCalledOnce();
+  });
+});
+
+describe("DELETE /api/assets/[id] — write scope", () => {
+  beforeEach(() => resetMockDb());
+
+  it("404s + does not delete when a non-viewAll role targets an unassigned asset", async () => {
+    setSession({ id: "u1", orgId: "org1", role: "member", email: "u1@x.com" });
+    grantEditorNoViewAll();
+    assignedTo("asset-assigned");
+
+    const res = await DELETE(
+      makeReq("/api/assets/asset-other", { method: "DELETE" }),
+      { params: { id: "asset-other" } },
+    );
+
+    expect(res.status).toBe(404);
+    expect(mockDb.astAsset.delete).not.toHaveBeenCalled();
+  });
+
+  it("deletes an asset the non-viewAll role IS assigned", async () => {
+    setSession({ id: "u1", orgId: "org1", role: "member", email: "u1@x.com" });
+    grantEditorNoViewAll();
+    assignedTo("asset-1");
+    mockDb.astAsset.findFirst.mockResolvedValue({
+      id: "asset-1",
+      itemName: "Laptop",
+      itemCode: "LP1",
+    } as never);
+    mockDb.astAsset.delete.mockResolvedValue({} as never);
+
+    const res = await DELETE(
+      makeReq("/api/assets/asset-1", { method: "DELETE" }),
+      { params: { id: "asset-1" } },
+    );
+
+    expect(res.status).toBe(200);
+    expect(mockDb.astAsset.delete).toHaveBeenCalledOnce();
+  });
+});
+
+describe("POST /api/assets/bulk-delete — write scope", () => {
+  beforeEach(() => resetMockDb());
+
+  it("deletes only the assigned subset for a non-viewAll role", async () => {
+    setSession({ id: "u1", orgId: "org1", role: "member", email: "u1@x.com" });
+    grantEditorNoViewAll();
+    assignedTo("a1", "a3"); // caller is not assigned "a2"
+    mockDb.astAsset.deleteMany.mockResolvedValue({ count: 2 } as never);
+
+    const res = await BULK_DELETE(
+      makeReq("/api/assets/bulk-delete", { method: "POST", body: { ids: ["a1", "a2", "a3"] } }),
+      { params: {} },
+    );
+
+    expect(res.status).toBe(200);
+    const call = mockDb.astAsset.deleteMany.mock.calls[0]?.[0] as {
+      where: { orgId: string; id: { in: string[] } };
+    };
+    expect(call.where.orgId).toBe("org1");
+    expect(call.where.id.in).toEqual(["a1", "a3"]); // "a2" (unassigned) dropped
+  });
+
+  it("deletes all requested ids for a viewAll holder (no regression)", async () => {
+    setSession({ id: "admin", orgId: "org1", role: "admin" });
+    grantAll();
+    mockDb.astAsset.deleteMany.mockResolvedValue({ count: 3 } as never);
+
+    const res = await BULK_DELETE(
+      makeReq("/api/assets/bulk-delete", { method: "POST", body: { ids: ["a1", "a2", "a3"] } }),
+      { params: {} },
+    );
+
+    expect(res.status).toBe(200);
+    expect(mockDb.astAssignment.findMany).not.toHaveBeenCalled();
+    const call = mockDb.astAsset.deleteMany.mock.calls[0]?.[0] as {
+      where: { id: { in: string[] } };
+    };
+    expect(call.where.id.in).toEqual(["a1", "a2", "a3"]);
   });
 });

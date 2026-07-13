@@ -1,4 +1,5 @@
 import { db } from "@/lib/db";
+import { userCan } from "@/lib/api/permissions";
 
 /**
  * ⚠️ STOPGAP — email-matched asset ownership. NOT the real fix.
@@ -48,4 +49,27 @@ export async function assignedAssetIdsForEmail(
     select: { assetId: true },
   });
   return [...new Set(rows.map((r) => r.assetId))];
+}
+
+/**
+ * Narrow `ids` to the assets the caller may WRITE (update/delete), applying the
+ * same rule as the `GET /api/assets` read path so write scope == read scope:
+ *   • holders of `Asset:viewAll` (admin / asset managers) may write any asset —
+ *     the full list is returned unchanged;
+ *   • everyone else is restricted to the assets currently assigned to them
+ *     (email→employee STOPGAP above). Unassigned ids are dropped, not rejected.
+ *
+ * Without this, a role granted `Asset:update`/`delete` but NOT `Asset:viewAll`
+ * sees only its assigned assets in the list yet could mutate any asset in the
+ * org by id — the write-path IDOR this closes.
+ */
+export async function writableAssetIds(
+  orgId: string,
+  userId: string,
+  userEmail: string | null | undefined,
+  ids: string[],
+): Promise<string[]> {
+  if (await userCan(userId, orgId, "Asset", "viewAll")) return ids;
+  const assigned = new Set(await assignedAssetIdsForEmail(orgId, userEmail));
+  return ids.filter((id) => assigned.has(id));
 }
