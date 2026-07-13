@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { useParams } from "next/navigation";
 import { DocDetailLayout, type LineCol } from "@/components/procurement/DocDetailLayout";
+import { formatDateTimeIST } from "@/lib/format/datetime";
 
 interface Line { id: string; item: { code: string; name: string }; uom: { code: string }; systemQty: string; physicalQty: string; adjustmentQty: string; unitRate: string; amount: string; remarks: string | null }
 interface Doc {
@@ -43,7 +44,7 @@ export default function ReconDetailPage() {
         { label: "Project", value: doc.project?.name ?? "—" },
         { label: "Location", value: doc.location?.name ?? "—" },
         { label: "Date", value: new Date(doc.reconciliationDate).toISOString().slice(0, 10) },
-        { label: "Posted At", value: doc.postedAt ? new Date(doc.postedAt).toLocaleString() : "—" },
+        { label: "Posted At", value: formatDateTimeIST(doc.postedAt) },
       ]}
       lineColumns={columns}
       lines={doc.lines}
