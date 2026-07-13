@@ -208,7 +208,7 @@ function InviteResultDialog({
             <h2 className="text-base font-semibold text-gray-900">{title}</h2>
             <div className="text-sm text-gray-600 mt-1 leading-relaxed">{subtitle}</div>
             {!sent && result.mailError && (
-              <div className="mt-2 text-[11px] font-mono text-red-700 bg-red-50 border border-red-200 rounded px-2 py-1 break-all">
+              <div className="mt-2 text-[11px] text-red-700 bg-red-50 border border-red-200 rounded px-2 py-1 break-all">
                 {result.mailError}
               </div>
             )}
@@ -228,7 +228,7 @@ function InviteResultDialog({
               Invite link
             </div>
             <div className="flex items-stretch gap-2">
-              <div className="flex-1 min-w-0 text-xs font-mono bg-gray-50 border border-gray-200 rounded-lg px-3 py-2 truncate text-gray-700">
+              <div className="flex-1 min-w-0 text-xs bg-gray-50 border border-gray-200 rounded-lg px-3 py-2 truncate text-gray-700">
                 {result.url}
               </div>
               <button
@@ -662,19 +662,14 @@ export default function UsersPage() {
             row.firstName || row.lastName
               ? [row.firstName, row.lastName].filter(Boolean).join(" ")
               : row.fullName;
-          return (
-            <div>
-              <div className="font-medium text-gray-900">{displayName}</div>
-              <div className="text-[10px] text-gray-500">{row.email}</div>
-            </div>
-          );
+          return <div className="font-medium text-gray-900">{displayName}</div>;
         },
       },
       { key: "email", label: "Email" },
       {
         key: "userType",
         label: "Role",
-        width: "150px",
+        width: "210px",
         render: (row) => {
           // Prefer the lowercase `roleKey` from the API (matches CnAppRole.name).
           // Fall back to the legacy uppercase `userType` for older payloads.
@@ -682,12 +677,29 @@ export default function UsersPage() {
           const upperKey = roleName.toUpperCase().replace(/-/g, "_");
           const color =
             USER_TYPE_COLORS[upperKey] ?? "bg-gray-50 text-gray-700 border-gray-200";
+          // Only the admin role can hold the optional "Grant Settings access"
+          // extra. When present, show a second badge so it's visible at a
+          // glance which admins can reach Settings (invite users / manage
+          // roles) vs plain app-only admins.
+          const showSettingsBadge =
+            roleName.toLowerCase() === "admin" && !!row.hasSettingsAccess;
           return (
-            <span
-              className={`text-[10px] font-semibold px-2 py-0.5 rounded-md border ${color}`}
-            >
-              {formatRoleLabel(roleName)}
-            </span>
+            <div className="flex flex-col items-start gap-1">
+              <span
+                className={`inline-flex items-center text-[10px] font-semibold px-2 py-0.5 rounded-md border ${color}`}
+              >
+                {formatRoleLabel(roleName)}
+              </span>
+              {showSettingsBadge && (
+                <span
+                  className="inline-flex items-center gap-1 whitespace-nowrap text-[10px] font-medium px-2 py-0.5 rounded-md border border-emerald-200 bg-emerald-50 text-emerald-700"
+                  title="Can invite users, manage roles, and reach the Settings module"
+                >
+                  <ShieldCheck className="h-3 w-3 shrink-0" />
+                  Settings module access
+                </span>
+              )}
+            </div>
           );
         },
       },
@@ -867,7 +879,7 @@ export default function UsersPage() {
             <>
               Deactivate user{" "}
               <span className="font-semibold text-gray-900">“{display}”</span>
-              {item.email ? <> (<span className="font-mono">{item.email}</span>)</> : null}?
+              {item.email ? <> (<span className="">{item.email}</span>)</> : null}?
               <br />
               The account will be marked inactive and hidden from login. You can
               re-activate it via Edit.
@@ -1125,7 +1137,7 @@ export default function UsersPage() {
               <div className="mt-3 text-xs text-blue-900 bg-blue-50 border border-blue-200 rounded-lg px-3 py-2 leading-relaxed">
                 <span className="font-semibold">Temporary password will be emailed.</span>{" "}
                 A unique temporary password will be generated and sent to{" "}
-                <span className="font-mono">{form.email || "their email"}</span>.
+                <span className="">{form.email || "their email"}</span>.
                 They&apos;ll be prompted to set a new password on first sign-in.
               </div>
             ) : (
@@ -1238,7 +1250,7 @@ export default function UsersPage() {
                       />
                       <span className="text-sm text-gray-700 flex-1">{p.name}</span>
                       {p.code && (
-                        <span className="text-[10px] font-mono text-gray-400">{p.code}</span>
+                        <span className="text-[10px] text-gray-400">{p.code}</span>
                       )}
                     </label>
                   );
