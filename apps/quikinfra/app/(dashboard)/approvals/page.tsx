@@ -17,7 +17,6 @@ import { ShimmerBlock } from "@/components/Shimmer";
 import { usePermissions } from "@/hooks/use-permissions";
 
 
-
 interface InboxItem {
   id: string;
   entityType: string;

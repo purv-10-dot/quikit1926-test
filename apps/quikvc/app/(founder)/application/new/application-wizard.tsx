@@ -13,7 +13,6 @@ import { cn } from "@/lib/utils";
 
 type Vertical = { slug: string; name: string };
 
-
 type FormState = Partial<ApplicationPayload>;
 
 const STEPS = [

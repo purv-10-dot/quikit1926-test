@@ -1,16 +1,7 @@
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
-import { getToken } from "next-auth/jwt";
 import { createMiddleware } from "@quikit/auth/middleware";
-import { publicBaseUrl } from "@quikit/auth/public-url";
 import { clearSessionCookies } from "@quikit/auth/session-cookies";
-
-/**
- * Roles allowed to reach /settings/* (user management, workflows, roles).
- * Edge runtime can't import the full RBAC module, so the set is duplicated
- * here.
- */
-const SETTINGS_ADMIN_ROLES = new Set(["super_admin", "admin", "org_admin"]);
 
 const AUTH_URL = process.env.NEXT_PUBLIC_AUTH_URL;
 const QUIKIT_URL = process.env.NEXT_PUBLIC_QUIKIT_URL;
@@ -70,21 +61,14 @@ export async function middleware(request: NextRequest) {
     return res;
   }
 
-  // ── Settings role gate (runs before delegating to the shared mw) ─
-  const token = await getToken({ req: request, secret: process.env.NEXTAUTH_SECRET });
-  const { pathname } = request.nextUrl;
-  if (token && pathname.startsWith("/settings")) {
-    const roleKey =
-      (token as { roleKey?: string }).roleKey ??
-      (token as { membershipRole?: string }).membershipRole;
-    if (!roleKey || !SETTINGS_ADMIN_ROLES.has(roleKey)) {
-      // Build on this host's public origin, never the pod bind address that
-      // `request.url` resolves to behind the ingress. See @quikit/auth/public-url.
-      const res = NextResponse.redirect(new URL("/dashboard", publicBaseUrl(request)));
-      res.headers.set("x-request-id", requestId);
-      return res;
-    }
-  }
+  // ── Settings access is NOT gated at the edge ─────────────────────
+  // The edge runtime can't read the full RBAC (per-app role + per-user
+  // "Grant Settings access" extras), so it could only see the coarse central
+  // JWT role — which wrongly blocked QuikInfra admins whose central
+  // membershipRole is "member" (an app admin is often a plain platform member
+  // at the QuikIT level). The authoritative gate is the server-side guard in
+  // app/(dashboard)/settings/layout.tsx, which reads live permissions
+  // (including the settings grant) and redirects when access is missing.
 
   // Delegate auth-gate + central-login redirect to the shared middleware.
   const res = await sharedMiddleware(request);
