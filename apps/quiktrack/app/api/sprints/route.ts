@@ -33,9 +33,22 @@ export const GET = withOrgAuth(async ({ orgId, userId }, req) => {
   const cursor = url.searchParams.get("cursor");
   const limitParam = Number(url.searchParams.get("limit") || 0);
   const limit = limitParam > 0 ? Math.min(50, limitParam) : 0; // 0 = no pagination
+  // Opt-in status exclusion (comma-separated). The backlog passes
+  // `excludeStatus=COMPLETED` so completed sprints don't consume page slots and
+  // its scroll pagination stays honest (fetched === displayed). Other callers
+  // omit it and still get every sprint. With COMPLETED excluded, `status asc`
+  // yields ACTIVE → PLANNED (A < P), which is the order the backlog wants.
+  const excludeStatus = (url.searchParams.get("excludeStatus") ?? "")
+    .split(",")
+    .map((s) => s.trim())
+    .filter(Boolean);
 
   const sprints = await db.qtSprint.findMany({
-    where: { projectId, isDeleted: false },
+    where: {
+      projectId,
+      isDeleted: false,
+      ...(excludeStatus.length ? { status: { notIn: excludeStatus } } : {}),
+    },
     orderBy: [{ status: "asc" }, { startDate: "asc" }, { createdAt: "asc" }, { id: "asc" }],
     take: limit > 0 ? limit + 1 : undefined,
     ...(cursor ? { cursor: { id: cursor }, skip: 1 } : {}),
