@@ -19,6 +19,7 @@ const REASON_MESSAGES: Record<string, string> = {
   invalid_user_info: "Invalid user information.",
 };
 
+
 /** Local credentials login when `NEXT_PUBLIC_AUTH_URL` is unset (fallback dev). */
 export function LoginPageClient() {
   const searchParams = useSearchParams();

@@ -8,7 +8,6 @@ export const dynamic = "force-dynamic";
 
 const APP_SLUG = "quiksupport";
 
-
 /**
  * Server layout for the dashboard route group. Mirrors quikscale/quiktrack:
  *
