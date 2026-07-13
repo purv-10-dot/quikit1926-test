@@ -7,6 +7,7 @@ import { Eye, Send } from "lucide-react";
 import {
   PageHeader, PageContainer, StatusChip, TabBar,
 } from "@/components/PageShell";
+import type { LineProcurement } from "@/lib/purchase/procurement-types";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { DataTable, type ColDef } from "@/components/DataTable";
 import { usePurchaseRequisitions, useSubmitPR } from "@/hooks/use-purchase";
@@ -27,9 +28,30 @@ const STATUS_TABS: TabSpec[] = [
   { key: "closed", label: "Closed" },
 ];
 
+// Human-friendly labels for a PO's lifecycle status — surfaced in the
+// PO column tooltip so hovering a PO chip tells you where that order is
+// (Draft → Pending approval → Sent → Received → Closed). The tooltip
+// reflects the live status, so it updates whenever the PO transitions.
+const PO_STATUS_LABELS: Record<string, string> = {
+  draft: "Draft",
+  pending_approval: "Pending approval",
+  approved: "Approved",
+  sent: "Sent to vendor",
+  partially_received: "Partially received",
+  fully_received: "Fully received",
+  closed: "Closed",
+  cancelled: "Cancelled",
+  rejected: "Rejected",
+};
+function poStatusLabel(s: string | null | undefined): string {
+  if (!s) return "Unknown status";
+  return PO_STATUS_LABELS[s] ?? s.replace(/_/g, " ");
+}
+
 interface PrRow {
   id: string; prNumber?: string; status?: string; createdBy?: string;
   estimatedTotal?: number | string; lineCount?: number;
+  procurement?: LineProcurement | null;
   [key: string]: unknown;
 }
 
@@ -97,7 +119,61 @@ export default function PurchaseRequisitionsPage() {
       render: (row) => <StatusChip status={row.status ?? ""} />,
     },
     {
-      key: "_actions", label: "Actions", width: "100px",
+      // PO tracking — "have we ordered this requirement?" Traced via the
+      // PR → indent → PO chain and rolled up per PR.
+      key: "_po", label: "PO", sortable: false, width: "130px",
+      render: (row) => {
+        const p = row.procurement;
+        if (!p || p.poRefs.length === 0) {
+          return <span className="text-[11px] text-slate-400">Not ordered</span>;
+        }
+        return (
+          <div className="flex flex-wrap gap-1">
+            {p.poRefs.map((po) => (
+              <button
+                key={po.id}
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  router.push(`/purchase/orders/${po.id}`);
+                }}
+                title={`${po.poNumber} — Status: ${poStatusLabel(po.status)} · click to open`}
+                className="inline-flex items-center px-2 py-0.5 rounded-md bg-orange-50 text-orange-700 text-[11px] font-medium hover:bg-orange-100 transition-colors"
+              >
+                {po.poNumber}
+              </button>
+            ))}
+          </div>
+        );
+      },
+    },
+    {
+      // GRN tracking — "has it arrived?" Received / Partial / Awaiting.
+      key: "_grn", label: "GRN", sortable: false, width: "110px",
+      render: (row) => {
+        const p = row.procurement;
+        if (!p || p.grnStatus === "none") {
+          return (
+            <span className="text-[11px] text-slate-400">
+              {p && p.poStatus === "ordered" ? "Awaiting" : "—"}
+            </span>
+          );
+        }
+        const cls =
+          p.grnStatus === "received"
+            ? "bg-emerald-50 text-emerald-700 border-emerald-200"
+            : "bg-amber-50 text-amber-700 border-amber-200";
+        return (
+          <span
+            className={`inline-flex items-center text-[9px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded-full border ${cls}`}
+          >
+            {p.grnStatus === "received" ? "Received" : "Partial"}
+          </span>
+        );
+      },
+    },
+    {
+      key: "_actions", label: "Actions", width: "100px", align: "right", sortable: false,
       render: (row) => (
         <div className="flex items-center justify-end gap-1">
           <button onClick={() => router.push(`/purchase/requisitions/${row.id}`)}

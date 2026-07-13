@@ -198,6 +198,7 @@ function fmtDateTime(v: unknown): string {
       year: "numeric",
       hour: "2-digit",
       minute: "2-digit",
+      timeZone: "Asia/Kolkata",
     });
   } catch {
     return String(v);
@@ -333,7 +334,7 @@ export default function GatePassDetailPage() {
       step: h.stepOrder,
       action: h.action,
       actionBy: h.actionByName ?? "User",
-      actionAt: h.actionAt ? new Date(h.actionAt).toLocaleString() : "",
+      actionAt: h.actionAt ? fmtDateTime(h.actionAt) : "",
       comments: h.comments ?? undefined,
     })) ?? [];
 

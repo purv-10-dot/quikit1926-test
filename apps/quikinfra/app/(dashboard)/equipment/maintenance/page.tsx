@@ -32,6 +32,7 @@ import { JobCardDrawer } from "./new/JobCardDrawer";
 type TabKey = "due" | "job-cards";
 
 interface JobCardRow {
+  [key: string]: unknown;
   id: string;
   jobNumber: string;
   equipmentCode: string;
@@ -67,7 +68,7 @@ export default function MaintenancePage() {
   const { data: summary } = useJobCardSummary({});
   const { data: dueResult, isLoading: dueLoading } = useMaintenanceDue();
 
-  const rows: JobCardRow[] = (cardsResult?.data ?? []) as JobCardRow[];
+  const rows: JobCardRow[] = (cardsResult?.data ?? []) as unknown as JobCardRow[];
   const dueRows = dueResult?.data ?? [];
 
   const handleClose = async (id: string) => {

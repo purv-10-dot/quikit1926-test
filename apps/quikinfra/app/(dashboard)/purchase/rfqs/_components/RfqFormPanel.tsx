@@ -18,7 +18,16 @@ import { Plus, Trash2 } from "lucide-react";
 
 interface Opt { id: string; name: string; code?: string }
 
-interface LineRow { itemId: string; quantity: number | null; uomId: string; specification: string | null }
+interface LineRow {
+  itemId: string;
+  quantity: number | null;
+  uomId: string;
+  specification: string | null;
+  // Carries the source indent line id so the PR → Indent → RFQ → PO
+  // chain stays linked (the rollup that powers the PR's PO column walks
+  // this). Null for lines added manually / on a blank RFQ.
+  sourceIndentLineId: string | null;
+}
 
 interface Props {
   open: boolean;
@@ -26,7 +35,7 @@ interface Props {
   onSaved: () => void;
 }
 
-const blankLine = (): LineRow => ({ itemId: "", quantity: null, uomId: "", specification: null });
+const blankLine = (): LineRow => ({ itemId: "", quantity: null, uomId: "", specification: null, sourceIndentLineId: null });
 
 export function RfqFormPanel({ open, onClose, onSaved }: Props) {
   const [header, setHeader] = useState({
@@ -67,6 +76,37 @@ export function RfqFormPanel({ open, onClose, onSaved }: Props) {
   function updateLine(idx: number, patch: Partial<LineRow>) {
     setLines((ls) => ls.map((l, i) => (i === idx ? { ...l, ...patch } : l)));
   }
+
+  // Picking a source Indent prefills the line grid from that indent's
+  // open lines, stamping each with its `sourceIndentLineId`. That id is
+  // what keeps the PR → Indent → RFQ → PO chain linked all the way to
+  // the PR's "PO" column. Choosing "— blank RFQ —" resets to one empty
+  // line (a standalone RFQ with no indent link).
+  async function selectIndent(indentId: string) {
+    setHeader((h) => ({ ...h, indentId }));
+    if (!indentId) {
+      setLines([blankLine()]);
+      return;
+    }
+    try {
+      const res = await fetch(`/api/purchase/indents/${indentId}`);
+      const ind = await res.json();
+      const indentLines: Array<Record<string, unknown>> = Array.isArray(ind?.lines) ? ind.lines : [];
+      const seeded: LineRow[] = indentLines.map((l) => ({
+        itemId: String(l.itemId ?? ""),
+        quantity:
+          Number(l.qtyOpen ?? l.qtyRequested ?? l.indentedQty ?? l.requiredQty ?? 0) || null,
+        uomId: String(l.uomId ?? ""),
+        specification: (l.qualitySpec as string) || (l.specification as string) || null,
+        sourceIndentLineId: String(l.id ?? l.lineId ?? "") || null,
+      }));
+      setLines(seeded.length > 0 ? seeded : [blankLine()]);
+      const projectId = ind?.projectId ? String(ind.projectId) : "";
+      if (projectId) setHeader((h) => ({ ...h, projectId }));
+    } catch {
+      setErr("Failed to load indent lines");
+    }
+  }
   function toggleVendor(id: string) {
     setVendorIds((prev) => {
       const n = new Set(prev);
@@ -92,6 +132,7 @@ export function RfqFormPanel({ open, onClose, onSaved }: Props) {
           quantity: l.quantity ?? 0,
           uomId: l.uomId,
           specification: l.specification,
+          sourceIndentLineId: l.sourceIndentLineId,
         })),
         vendorIds: [...vendorIds],
       };
@@ -147,7 +188,7 @@ export function RfqFormPanel({ open, onClose, onSaved }: Props) {
               <Select size="compact" value={header.projectId} onChange={(e) => setHeader({ ...header, projectId: e.target.value })} options={projects.map(p => ({ value: p.id, label: p.name }))} />
             </Field>
             <Field label="Source Indent">
-              <Select size="compact" value={header.indentId} onChange={(e) => setHeader({ ...header, indentId: e.target.value })} options={[{ value: "", label: "— blank RFQ —" }, ...indents.map(i => ({ value: i.id, label: i.name }))]} />
+              <Select size="compact" value={header.indentId} onChange={(e) => selectIndent(e.target.value)} options={[{ value: "", label: "— blank RFQ —" }, ...indents.map(i => ({ value: i.id, label: i.name }))]} />
             </Field>
           </FormRow>
           <Field label="Closing Date">

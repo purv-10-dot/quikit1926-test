@@ -10,6 +10,7 @@
  */
 
 import { toErrorMessage } from "@/lib/api/errors";
+import { formatDateTimeIST } from "@/lib/format/datetime";
 import { useMemo, useState, type ReactNode } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { Send, FileText } from "lucide-react";
@@ -19,6 +20,7 @@ import {
 } from "@/components/PageShell";
 import { ApprovalActionBar } from "@/components/ApprovalActionBar";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
+import { ProcurementCells } from "@/components/ProcurementCells";
 import dynamic from "next/dynamic";
 const SourceDocPeekModal = dynamic(
   () => import("@/components/SourceDocPeekModal").then((m) => m.SourceDocPeekModal),
@@ -204,7 +206,7 @@ export default function IndentDetailPage() {
                   label="Source PR"
                   value={
                     indent.sourceMrNumber ? (
-                      <span className="font-mono text-xs text-indigo-600">
+                      <span className="text-xs text-orange-600">
                         {indent.sourceMrNumber}
                       </span>
                     ) : (
@@ -248,6 +250,8 @@ export default function IndentDetailPage() {
                         <th className="px-4 py-2 text-right text-[10px] font-semibold text-gray-500 uppercase w-28">Rate (₹)</th>
                         <th className="px-4 py-2 text-right text-[10px] font-semibold text-gray-500 uppercase w-32">Amount (₹)</th>
                         <th className="px-4 py-2 text-left text-[10px] font-semibold text-gray-500 uppercase">Preferred Vendor</th>
+                        <th className="px-4 py-2 text-left text-[10px] font-semibold text-gray-500 uppercase w-32">PO</th>
+                        <th className="px-4 py-2 text-left text-[10px] font-semibold text-gray-500 uppercase w-28">GRN</th>
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-gray-50">
@@ -283,6 +287,7 @@ export default function IndentDetailPage() {
                             <td className="px-4 py-3 text-xs text-gray-500">
                               {line.preferredVendorName ?? "—"}
                             </td>
+                            <ProcurementCells procurement={line.procurement} />
                           </tr>
                         );
                       })}
@@ -295,7 +300,7 @@ export default function IndentDetailPage() {
                         <td className="px-4 py-3 text-sm font-bold text-gray-900 text-right tabular-nums">
                           ₹ {estimatedTotal.toLocaleString("en-IN", { minimumFractionDigits: 2 })}
                         </td>
-                        <td></td>
+                        <td colSpan={3}></td>
                       </tr>
                     </tfoot>
                   </table>
@@ -313,13 +318,13 @@ export default function IndentDetailPage() {
                 onClick={() =>
                   router.push(`/purchase/requisitions/${indent.sourceMrId}`)
                 }
-                className="w-full text-left bg-white rounded-xl border border-gray-200 shadow-sm p-4 hover:border-indigo-300 hover:bg-indigo-50/30 transition-colors"
+                className="w-full text-left bg-white rounded-xl border border-gray-200 shadow-sm p-4 hover:border-orange-300 hover:bg-orange-50/30 transition-colors"
               >
                 <h3 className="text-[11px] font-bold text-gray-500 uppercase tracking-wider mb-2">
                   Purchase Requisition Details
                 </h3>
                 <div className="flex items-start gap-3">
-                  <div className="w-9 h-9 rounded-lg bg-indigo-50 text-indigo-600 flex items-center justify-center shrink-0">
+                  <div className="w-9 h-9 rounded-lg bg-orange-50 text-orange-600 flex items-center justify-center shrink-0">
                     <FileText className="w-4 h-4" />
                   </div>
                   <div className="min-w-0 flex-1">
@@ -331,7 +336,7 @@ export default function IndentDetailPage() {
                         Indent raised: {indent.indentDate}
                       </div>
                     )}
-                    <div className="text-[11px] text-indigo-600 underline mt-1">
+                    <div className="text-[11px] text-orange-600 underline mt-1">
                       View full details →
                     </div>
                   </div>
@@ -361,7 +366,7 @@ export default function IndentDetailPage() {
                       action: "request",
                       title: "Requested",
                       actionBy: approval.requestedByName || "Requester",
-                      actionAt: new Date(approval.requestedAt ?? "").toLocaleString(),
+                      actionAt: formatDateTimeIST(approval.requestedAt),
                     },
                   ];
 
@@ -378,7 +383,7 @@ export default function IndentDetailPage() {
                         step: s.stepOrder,
                         action: acted.action, // approve | reject | return
                         actionBy: acted.actionByName || approverLabel,
-                        actionAt: new Date(acted.actionAt ?? "").toLocaleString(),
+                        actionAt: formatDateTimeIST(acted.actionAt),
                         comments: acted.comments || undefined,
                       });
                       return;
@@ -408,7 +413,7 @@ export default function IndentDetailPage() {
               <div className="space-y-2">
                 <InfoField
                   label="Created"
-                  value={indent.createdAt ? new Date(indent.createdAt).toLocaleString() : "—"}
+                  value={formatDateTimeIST(indent.createdAt)}
                 />
                 <InfoField
                   label="Created By"

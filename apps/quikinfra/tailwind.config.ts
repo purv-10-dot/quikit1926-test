@@ -3,7 +3,9 @@ import type { Config } from 'tailwindcss';
 const config: Config = {
   content: [
     './app/**/*.{js,ts,jsx,tsx,mdx}',
-    './src/**/*.{js,ts,jsx,tsx}',
+    './components/**/*.{js,ts,jsx,tsx}',
+    './hooks/**/*.{js,ts,jsx,tsx}',
+    './lib/**/*.{js,ts,jsx,tsx}',
     '../../packages/app-shell/src/**/*.{js,ts,jsx,tsx}',
     '../../packages/data-grid/src/**/*.{js,ts,jsx,tsx}',
   ],

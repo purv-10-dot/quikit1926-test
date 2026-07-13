@@ -87,6 +87,7 @@ function fmtDateTime(v: unknown): string {
       year: "numeric",
       hour: "2-digit",
       minute: "2-digit",
+      timeZone: "Asia/Kolkata",
     });
   } catch {
     return String(v);
@@ -182,7 +183,7 @@ export default function ReconciliationDetailPage() {
       step: h.stepOrder,
       action: h.action,
       actionBy: h.actionByName ?? "User",
-      actionAt: h.actionAt ? new Date(h.actionAt).toLocaleString() : "",
+      actionAt: h.actionAt ? fmtDateTime(h.actionAt) : "",
       comments: h.comments,
     })) ?? [];
 
@@ -385,9 +386,7 @@ export default function ReconciliationDetailPage() {
                       action: "request",
                       title: "Requested",
                       actionBy: approval.requestedByName || "Requester",
-                      actionAt: new Date(
-                        approval.requestedAt ?? "",
-                      ).toLocaleString(),
+                      actionAt: fmtDateTime(approval.requestedAt),
                     },
                   ];
 
@@ -404,7 +403,7 @@ export default function ReconciliationDetailPage() {
                         step: s.stepOrder,
                         action: acted.action,
                         actionBy: acted.actionByName || approverLabel,
-                        actionAt: new Date(acted.actionAt ?? "").toLocaleString(),
+                        actionAt: fmtDateTime(acted.actionAt),
                         comments: acted.comments || undefined,
                       });
                       return;

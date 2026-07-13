@@ -112,6 +112,7 @@ export default function StockReconciliationPage() {
       searchable: false,
       hideable: false,
       freezable: false,
+      align: "right",
       render: (row) => (
         <div className="flex items-center justify-end gap-1.5">
           <button

@@ -204,6 +204,26 @@ export async function POST(req: NextRequest) {
       );
     }
 
+    // Server-side mirror of the drawer's per-vendor item rule: when the
+    // request uses the multi-vendor `vendors` array (what the UI always
+    // sends), every vendor must carry at least one assigned item — an
+    // empty selection is no longer accepted as "all items". The legacy
+    // single-vendor `body.vendorId` path is left lenient (no `vendors`
+    // array) so older API callers keep working.
+    if (
+      Array.isArray(body.vendors) &&
+      vendorRows.some((v) => !v.assignedItemIds || v.assignedItemIds.length === 0)
+    ) {
+      return NextResponse.json(
+        {
+          error:
+            "Please select the item material for the vendor — each vendor must have at least one item assigned.",
+          code: "VENDOR_ITEMS_REQUIRED",
+        },
+        { status: 400 },
+      );
+    }
+
     // Source RFQ → chain to its Indent so P0 validation keeps working.
     let sourceRfq: SourceRfqLookup | null = null;
     if (body.sourceRfqId) {
@@ -556,7 +576,12 @@ export async function POST(req: NextRequest) {
         totalAmount: String(finance.poTotalIncGst),
         status: "draft",
         lines: lines.map((l: BuiltPoLine) => ({
-          indentLineId: l.sourceIndentLineId ?? null,
+          // `buildPOLines` emits the source indent-line id on `indentLineId`
+          // (from the posted line's `indentLineId`/`lineId`); the legacy
+          // `sourceIndentLineId` alias is never populated. Persisting the
+          // wrong field left every PO line with a null indent link, which
+          // broke the PR → indent → PO rollup (PRs stuck on "Not ordered").
+          indentLineId: l.indentLineId || l.sourceIndentLineId || null,
           itemId: l.itemId ?? "",
           itemCode: l.itemCode,
           itemName: l.itemName,
