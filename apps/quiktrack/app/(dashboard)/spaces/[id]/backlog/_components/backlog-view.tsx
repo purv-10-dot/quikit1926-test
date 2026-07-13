@@ -2207,6 +2207,9 @@ export function BacklogView({ projectId }: { projectId: string }) {
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [moveOpen, setMoveOpen] = useState(false);
   const [bulkBusy, setBulkBusy] = useState(false);
+  // Which bulk operation is in flight, so the busy label lands on the button the
+  // user actually clicked (Move/Edit/Delete) rather than always on Delete.
+  const [bulkAction, setBulkAction] = useState<"move" | "edit" | "delete" | null>(null);
   // Backend-driven filters applied to every section. `searchInput` is the raw
   // text typed in the toolbar; `appliedSearch` is the debounced value sent to
   // the API so we don't fire a request per keystroke.
@@ -2351,6 +2354,39 @@ export function BacklogView({ projectId }: { projectId: string }) {
       });
     };
     return { all, some, toggle };
+  }
+
+  // Section header "select all" — selects EVERY item matching the current filter
+  // in the section, not just the rows scrolled into view. Fetches the full id
+  // list (idsOnly, unpaginated) so a bulk Move/Edit/Delete acts on the whole
+  // section (fixes "select-all only grabbed the loaded page, leaving the rest").
+  async function selectAllInSection(sprintId: string | null, next: boolean) {
+    const params = new URLSearchParams({
+      projectId,
+      sprintId: sprintId ?? "null",
+      excludeType: "EPIC,SUBTASK",
+      idsOnly: "1",
+    });
+    if (sectionFilters.search) params.set("search", sectionFilters.search);
+    if (sectionFilters.statusId) params.set("statusId", sectionFilters.statusId);
+    if (sectionFilters.assigneeId) params.set("assigneeId", sectionFilters.assigneeId);
+    if (sectionFilters.type) params.set("type", sectionFilters.type);
+    if (sectionFilters.priority) params.set("priority", sectionFilters.priority);
+    if (sectionFilters.epicId) params.set("epicId", sectionFilters.epicId);
+    if (sectionFilters.customFilters) params.set("customFilters", sectionFilters.customFilters);
+    try {
+      const res = await fetch(`/api/issues?${params.toString()}`).then((r) => r.json());
+      if (!res?.success) return;
+      const ids: string[] = (res.data ?? []).map((x: { id: string }) => x.id);
+      setSelectedIds((prev) => {
+        const s = new Set(prev);
+        if (next) for (const id of ids) s.add(id);
+        else for (const id of ids) s.delete(id);
+        return s;
+      });
+    } catch {
+      /* best-effort selection — leave the current selection untouched on error */
+    }
   }
 
   useEffect(() => {
@@ -2739,6 +2775,7 @@ export function BacklogView({ projectId }: { projectId: string }) {
     });
     if (!ok) return;
     setBulkBusy(true);
+    setBulkAction("delete");
     try {
       const res = await fetch("/api/issues/bulk-delete", {
         method: "POST",
@@ -2768,6 +2805,7 @@ export function BacklogView({ projectId }: { projectId: string }) {
       await refreshAllSections();
     } finally {
       setBulkBusy(false);
+      setBulkAction(null);
     }
   }
 
@@ -2776,6 +2814,7 @@ export function BacklogView({ projectId }: { projectId: string }) {
   async function handleBulkMoveToSprint(targetSprintId: string | null) {
     if (selectedIds.size === 0 || bulkBusy) return;
     setBulkBusy(true);
+    setBulkAction("move");
     setMoveOpen(false);
     try {
       const ids = Array.from(selectedIds);
@@ -2796,6 +2835,7 @@ export function BacklogView({ projectId }: { projectId: string }) {
       await refreshAllSections();
     } finally {
       setBulkBusy(false);
+      setBulkAction(null);
     }
   }
 
@@ -2806,6 +2846,7 @@ export function BacklogView({ projectId }: { projectId: string }) {
   async function handleBulkEdit(patch: Record<string, unknown>) {
     if (selectedIds.size === 0 || bulkBusy || Object.keys(patch).length === 0) return;
     setBulkBusy(true);
+    setBulkAction("edit");
     try {
       const ids = Array.from(selectedIds);
       const results = await Promise.all(
@@ -2830,6 +2871,7 @@ export function BacklogView({ projectId }: { projectId: string }) {
       await refreshAllSections();
     } finally {
       setBulkBusy(false);
+      setBulkAction(null);
     }
   }
 
@@ -3360,7 +3402,7 @@ export function BacklogView({ projectId }: { projectId: string }) {
                 className="inline-flex items-center gap-1.5 rounded border border-gray-200 bg-white px-3 py-1 text-xs text-gray-700 hover:bg-gray-50 disabled:opacity-60"
               >
                 <ArrowRightLeft className="h-3.5 w-3.5" />
-                Move to
+                {bulkAction === "move" ? "Moving…" : "Move to"}
                 <ChevronDown className="h-3 w-3" />
               </button>
               {moveOpen && (
@@ -3415,7 +3457,7 @@ export function BacklogView({ projectId }: { projectId: string }) {
                 className="inline-flex items-center gap-1.5 rounded border border-red-200 bg-white px-3 py-1 text-xs text-red-600 hover:bg-red-50 disabled:opacity-60"
               >
                 <Trash2 className="h-3.5 w-3.5" />
-                {bulkBusy ? "Working…" : "Delete"}
+                {bulkAction === "delete" ? "Working…" : "Delete"}
               </button>
             )}
           </div>
@@ -3454,7 +3496,7 @@ export function BacklogView({ projectId }: { projectId: string }) {
               counts={filtersActive ? filteredBadges[key] : sprint.counts}
               allChecked={sel.all}
               someChecked={sel.some}
-              onToggleAll={sel.toggle}
+              onToggleAll={(next) => void selectAllInSection(sprint.id, next)}
               afterTitle={
                 sprint.startDate || sprint.endDate ? (
                   <button
@@ -3649,7 +3691,7 @@ export function BacklogView({ projectId }: { projectId: string }) {
           counts={filtersActive ? filteredBadges.backlog : undefined}
           allChecked={backlogSel.all}
           someChecked={backlogSel.some}
-          onToggleAll={backlogSel.toggle}
+          onToggleAll={(next) => void selectAllInSection(null, next)}
           trailing={
             // Functional spaces have no sprints — no "Create sprint" affordance.
             !isFunctional && canCreateSprint ? (
