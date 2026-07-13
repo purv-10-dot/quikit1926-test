@@ -189,13 +189,12 @@ export function getCurrentFiscalWeekFromStart(
   total: number = DEFAULT_WEEKS_PER_QUARTER,
   meetingDay?: string | null,
   endDate?: string | Date | null,
-  quarter?: string | null,
 ): number {
   const idx = meetingDayIndex(meetingDay);
   // Custom Quarter Settings + a known quarter end: find which meeting-day week
   // (including partial weeks) contains today, via the canonical generator.
   if (idx !== null && endDate != null) {
-    const weeks = generateMeetingDayWeeks(startDate, endDate, idx, quarter === "Q1");
+    const weeks = generateMeetingDayWeeks(startDate, endDate, idx);
     if (weeks.length === 0) return 1;
     const now = toLocalDay(new Date()).getTime();
     if (now < weeks[0].start.getTime()) return 1;
@@ -243,14 +242,13 @@ export function qtdReferenceWeek(
   weekCount: number = DEFAULT_WEEKS_PER_QUARTER,
   now: Date = new Date(),
   meetingDay?: string | null,
-  quarter?: string | null,
 ): number {
   const today = toLocalDay(now).getTime();
   const start = toLocalDay(startDate).getTime();
   const end = toLocalDay(endDate).getTime();
   if (today > end) return weekCount + 1;   // past → all weeks complete
   if (today < start) return 1;             // future → nothing started (QTD 0)
-  return getCurrentFiscalWeekFromStart(startDate, weekCount, meetingDay, endDate, quarter);
+  return getCurrentFiscalWeekFromStart(startDate, weekCount, meetingDay, endDate);
 }
 
 /**
@@ -258,28 +256,23 @@ export function qtdReferenceWeek(
  * the weekly meeting day. THE single source of truth for both the stored
  * per-quarter `weekCount` and every displayed week range.
  *
- * Model: a single continuous chain of meeting-day weeks runs across the whole
- * fiscal year, anchored on the FY's first meeting day. Each quarter takes the
- * slice of that chain inside its [start, end], clipping any week that straddles
- * a quarter boundary. Per quarter this means:
- *   - regular weeks run meetingDay → meetingDay+6 (e.g. Thu → Wed);
+ * Model: weeks run meetingDay → meetingDay+6 (e.g. Thu → Wed). Every quarter
+ * behaves identically:
  *   - if the quarter start is NOT a meeting day, the days from the start up to
- *     the first meeting day form a PARTIAL Week 1 (the tail of the previous
- *     quarter's straddling week) — EXCEPT the FY's first quarter (`dropLeading`),
- *     whose pre-chain days are left unassigned;
+ *     the first meeting day form a PARTIAL Week 1 (e.g. quarter starts Wed
+ *     01 Apr, meeting day Monday, first Monday 06 Apr → Week 1 = 01–05 Apr);
  *   - the final week is clipped to the quarter end (partial trailing week).
- * A quarter therefore has 13 or 14 weeks depending on its boundaries.
+ * A quarter therefore has 13 or 14 weeks depending on its boundaries. No
+ * calendar date inside the quarter is ever left unassigned — Q1 is treated the
+ * same as Q2–Q4 (its leading days become a partial Week 1, not dropped).
  *
- * `dropLeading` must be true ONLY for the fiscal year's first quarter (Q1) —
- * nothing precedes it, so its leading days are dropped rather than made a
- * partial Week 1. All dates are treated at local midnight; inputs are not
- * mutated. Returns [] when the range is empty/inverted.
+ * All dates are treated at local midnight; inputs are not mutated. Returns []
+ * when the range is empty/inverted.
  */
 export function generateMeetingDayWeeks(
   quarterStart: string | Date,
   quarterEnd: string | Date,
   meetingDayIdx: number,
-  dropLeading: boolean,
 ): Array<{ start: Date; end: Date }> {
   const qStart = toLocalDay(quarterStart);
   const qEnd = toLocalDay(quarterEnd);
@@ -292,12 +285,10 @@ export function generateMeetingDayWeeks(
 
   let cursor: Date;
   if (firstMeeting.getTime() > qStart.getTime()) {
-    if (!dropLeading) {
-      // Leading partial week: [qStart .. day before the first meeting day].
-      const pEnd = addDaysLocal(firstMeeting, -1);
-      weeks.push({ start: qStart, end: pEnd.getTime() > qEnd.getTime() ? qEnd : pEnd });
-    }
-    cursor = firstMeeting; // Q1 (dropLeading) skips the pre-chain days entirely.
+    // Leading partial week: [qStart .. day before the first meeting day].
+    const pEnd = addDaysLocal(firstMeeting, -1);
+    weeks.push({ start: qStart, end: pEnd.getTime() > qEnd.getTime() ? qEnd : pEnd });
+    cursor = firstMeeting;
   } else {
     cursor = qStart; // quarter starts exactly on the meeting day
   }
@@ -330,7 +321,7 @@ function weekBounds(
   const qs = getQuarterStart(year, quarter, actualStartDate);
   const idx = meetingDayIndex(meetingDay);
   if (idx !== null && quarterEnd != null) {
-    const wk = generateMeetingDayWeeks(qs, quarterEnd, idx, quarter === "Q1")[weekNumber - 1];
+    const wk = generateMeetingDayWeeks(qs, quarterEnd, idx)[weekNumber - 1];
     if (wk) return wk;
     // weekNumber past the last week → fall through to the uniform math below.
   }

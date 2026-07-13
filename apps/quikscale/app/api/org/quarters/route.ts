@@ -24,7 +24,7 @@ function applyMeetingDayWeekCounts(
   for (const q of rows) {
     const s = q.startDate.toISOString().slice(0, 10);
     const e = q.endDate.toISOString().slice(0, 10);
-    q.weekCount = generateMeetingDayWeeks(s, e, mdIdx, q.quarter === "Q1").length;
+    q.weekCount = generateMeetingDayWeeks(s, e, mdIdx).length;
   }
 }
 

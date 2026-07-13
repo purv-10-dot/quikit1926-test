@@ -78,7 +78,7 @@ export function useCurrentWeek(year: number | null | undefined, quarter: string 
       await ensureLoaded();
       const match = cache?.find((q) => q.fiscalYear === year && q.quarter === quarter);
       if (match) {
-        setWeek(getCurrentFiscalWeekFromStart(match.startDate, rowWeekCount(match), meetingDay, match.endDate, match.quarter));
+        setWeek(getCurrentFiscalWeekFromStart(match.startDate, rowWeekCount(match), meetingDay, match.endDate));
       } else {
         // Fallback: assume it's week 1 if we don't have data
         setWeek(1);
@@ -146,7 +146,7 @@ export function useQtdReferenceWeek(
         return;
       }
       setRef(
-        qtdReferenceWeek(match.startDate, match.endDate, rowWeekCount(match), new Date(), meetingDay, match.quarter),
+        qtdReferenceWeek(match.startDate, match.endDate, rowWeekCount(match), new Date(), meetingDay),
       );
     })();
   }, [year, quarter, meetingDay]);
@@ -235,7 +235,7 @@ export function useWeekLabels(
       // (13 or 14). Null meeting day → legacy uniform calendar weeks.
       const idx = meetingDayIndex(meetingDay);
       if (idx !== null) {
-        const weeks = generateMeetingDayWeeks(match.startDate, match.endDate, idx, match.quarter === "Q1");
+        const weeks = generateMeetingDayWeeks(match.startDate, match.endDate, idx);
         setLabels(weeks.map((w) => formatCompactWeekLabel(w.start, w.end)));
         return;
       }
@@ -290,7 +290,7 @@ export function useWeekDateRange(
       // Null meeting day → legacy uniform calendar weeks.
       const idx = meetingDayIndex(meetingDay);
       if (idx !== null) {
-        const weeks = generateMeetingDayWeeks(match.startDate, match.endDate, idx, match.quarter === "Q1");
+        const weeks = generateMeetingDayWeeks(match.startDate, match.endDate, idx);
         const wk = weeks[weekNumber - 1];
         setRange(wk ? `${fmt(wk.start)} – ${fmt(wk.end)}` : null);
         return;

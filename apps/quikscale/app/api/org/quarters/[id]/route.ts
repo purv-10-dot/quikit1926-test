@@ -110,7 +110,7 @@ export const PUT = withOrgAuth<{ id: string }>(async ({ orgId }, request, { para
         for (const q of quarterDates) {
           const s = q.startDate.toISOString().slice(0, 10);
           const e = q.endDate.toISOString().slice(0, 10);
-          q.weekCount = generateMeetingDayWeeks(s, e, mdIdx, q.quarter === "Q1").length;
+          q.weekCount = generateMeetingDayWeeks(s, e, mdIdx).length;
         }
       } else {
         const weekCounts = quarterOrder.map(n => byName[n].weekCount ?? 13);
