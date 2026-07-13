@@ -5,7 +5,6 @@ import { ApiResponse } from "@/lib/services/kpiService";
 import { withOrgAuthForResource } from "@/lib/api/withOrgAuth";
 const auth = withOrgAuthForResource("kpi", "KPI");
 import { getPastWeekFlags, getCurrentFiscalWeekFromDB } from "@/lib/utils/featureFlags";
-import { isWeekBeforeEditableWindow, earliestEditableWeek } from "@/lib/utils/weekLock";
 import { MAX_WEEKS_PER_QUARTER } from "@/lib/utils/fiscal";
 import { audit, requestContext, classifyUpdateAction, diffFields, KPI_AUDIT_FIELDS } from "@/lib/audit";
 import { notifyKPIReplacement } from "@/lib/services/kpiNotifications";
@@ -245,23 +244,26 @@ export const PUT = auth.update<{ id: string }>(async ({ orgId, userId }, req, { 
   }
 
   // ── Past-week edit enforcement (weekly target breakdown) ──
-  // When edit_past_week_data is disabled, reject changes to past-week targets
+  // The Target Breakdown (weekly *targets*) is gated by "Add Past Week Data"
+  // (canAddPastWeek) — NOT "Edit Past Week Data", which governs the weekly
+  // *values* enforced in the /weekly/batch route. This is a hard binary lock:
+  // a week is "past" when it is strictly before the current quarter week (no
+  // "current week − 1" grace — that grace applies only to weekly values).
   if (validated.weeklyTargets && existingKPI.quarter && existingKPI.year) {
-    const { canEditPastWeek } = await getPastWeekFlags(orgId);
-    if (!canEditPastWeek) {
+    const { canAddPastWeek } = await getPastWeekFlags(orgId);
+    if (!canAddPastWeek) {
       const currentWeek = await getCurrentFiscalWeekFromDB(orgId, existingKPI.year, existingKPI.quarter);
       const oldTargets = (existingKPI.weeklyTargets as Record<string, number> | null) || {};
       const newTargets = validated.weeklyTargets as Record<string, number>;
-      const earliest = earliestEditableWeek(currentWeek, canEditPastWeek);
       for (const [weekStr, newVal] of Object.entries(newTargets)) {
         const week = parseInt(weekStr, 10);
-        if (isWeekBeforeEditableWindow(week, currentWeek, canEditPastWeek)) {
+        if (week < currentWeek) {
           const oldVal = oldTargets[weekStr] ?? 0;
           if ((newVal ?? 0) !== (oldVal ?? 0)) {
             return NextResponse.json(
               {
                 success: false,
-                error: `Editing past week targets is disabled. Week ${week} is before the earliest editable week (${earliest}). Enable it in Settings > Configurations.`,
+                error: `Editing past week targets is disabled. Week ${week} is before the current week (${currentWeek}). Enable “Add Past Week Data” in Settings > Configurations.`,
               },
               { status: 403 }
             );

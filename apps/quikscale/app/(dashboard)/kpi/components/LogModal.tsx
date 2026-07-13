@@ -25,6 +25,8 @@ import {
   applyWeeklyEdit,
   sumBreakdown,
   checkBreakdownBalance,
+  isTargetValueLocked,
+  TARGET_LOCK_TIP,
 } from "./kpiModalHelpers";
 import { WeekRow } from "./WeekRow";
 import { StatsTab } from "./StatsTab";
@@ -81,16 +83,23 @@ function EditTab({
   kpiOwners?: Array<{ id: string; firstName: string; lastName: string }>;
   readOnly?: boolean;
 }) {
-  // Past-week lock for target breakdown editing.
+  // Past-week lock for the Target Breakdown (weekly *targets*).
+  // Bound to the "Add Past Week Data" toggle (canAddPastWeek) — NOT
+  // "Edit Past Week Data" (which governs the Updates tab's weekly *values*).
   // Uses DB-driven useCurrentWeek so the week number honours the tenant's
   // configured QuarterSetting.startDate (may be offset from the hardcoded
   // Apr 1/Jul 1/Oct 1/Jan 1 map).
-  const { canEditPastWeek, loaded: flagsLoaded } = usePastWeekFlags();
-  // A week is locked-by-past when state has resolved and it falls before the
-  // editable window (current week minus the grace). When edit-past is off the
-  // window is [currentWeek - 1, currentWeek]; when on, all past weeks are open.
+  const { canAddPastWeek, loaded: flagsLoaded } = usePastWeekFlags();
+  // Editing the Target Value redistributes the weekly breakdown across ALL
+  // weeks (incl. past). When "Add Past Week Data" is off those cells are locked,
+  // so the Target Value is locked too. EditTab is always an edit context.
+  const targetLocked = isTargetValueLocked({ isEditMode: true, flagsLoaded, canAddPastWeek });
+  // A week is locked-by-past when state has resolved and the week is strictly
+  // before the current quarter week AND the org disallows adding past-week
+  // data. This is a hard binary (no "current week − 1" grace) — that grace
+  // window lives exclusively on the Updates tab.
   const weekLockedByPast = (w: number): boolean =>
-    flagsLoaded && currentWeek !== null && isWeekBeforeEditableWindow(w, currentWeek, canEditPastWeek);
+    flagsLoaded && currentWeek !== null && w < currentWeek && !canAddPastWeek;
   const currentWeek = useCurrentWeek(parseInt(form.year) || null, form.quarter);
   const editTabWeekLabels = useWeekLabels(parseInt(form.year) || null, form.quarter);
   const weekCount = useQuarterWeekCount(parseInt(form.year) || null, form.quarter);
@@ -361,18 +370,21 @@ function EditTab({
       {/* Target Value */}
       <div>
         <label className="block text-xs font-medium text-gray-600 mb-1">Target Value</label>
-        <div className="flex rounded-lg border border-gray-200 overflow-hidden focus-within:ring-1 focus-within:ring-accent-400 focus-within:border-accent-400">
+        <div className={`flex rounded-lg border border-gray-200 overflow-hidden focus-within:ring-1 focus-within:ring-accent-400 focus-within:border-accent-400 ${targetLocked ? "bg-gray-50" : ""}`}>
           {isCurrency && (
             <span className="flex items-center px-2.5 bg-gray-50 border-r border-gray-200 text-xs text-gray-500 select-none whitespace-nowrap flex-shrink-0">
               {currencyObj.symbol}
             </span>
           )}
           <input type="number" min="0" value={form.target} onChange={e => setTarget(e.target.value)}
+            readOnly={readOnly || targetLocked}
+            title={targetLocked ? TARGET_LOCK_TIP : undefined}
             placeholder="0"
-            className="flex-1 px-3 py-2 text-xs focus:outline-none bg-white min-w-0" />
+            className={`flex-1 px-3 py-2 text-xs focus:outline-none min-w-0 ${targetLocked ? "bg-gray-50 text-gray-500 cursor-not-allowed" : "bg-white"}`} />
           {isCurrency && (
             <select value={form.targetScale} onChange={e => setTargetScale(e.target.value)}
-              className="border-l border-gray-200 pl-2 pr-1 py-2 text-xs bg-white focus:outline-none text-gray-600 flex-shrink-0 cursor-pointer">
+              disabled={readOnly || targetLocked}
+              className={`border-l border-gray-200 pl-2 pr-1 py-2 text-xs focus:outline-none text-gray-600 flex-shrink-0 ${targetLocked ? "bg-gray-50 cursor-not-allowed" : "bg-white cursor-pointer"}`}>
               {scales.map(s => (
                 <option key={s.label} value={s.label}>{s.label || "—"}</option>
               ))}
@@ -380,9 +392,12 @@ function EditTab({
           )}
           {/* Number KPIs: unit-of-measurement dropdown (from Unit Master). */}
           {form.measurementUnit === "Number" && (
-            <UnitSelect value={form.unit} onChange={v => setForm(f => ({ ...f, unit: v }))} disabled={readOnly} />
+            <UnitSelect value={form.unit} onChange={v => setForm(f => ({ ...f, unit: v }))} disabled={readOnly || targetLocked} />
           )}
         </div>
+        {targetLocked && (
+          <p className="text-[10px] text-amber-600 mt-1">{TARGET_LOCK_TIP}</p>
+        )}
         {isCurrency && form.targetScale && scaledTarget > 0 && (
           <p className="text-[10px] text-gray-400 mt-1">
             = {formatActual(scaledTarget, currencyObj.symbol, form.currency)}
@@ -610,7 +625,7 @@ function EditTab({
                               onBlur={() => setEditingCell(null)}
                               readOnly={isLocked}
                               title={weekLockedByPast(w)
-                                ? "Past week editing is disabled. Enable in Settings > Configurations."
+                                ? "Past week targets are locked. Enable “Add Past Week Data” in Settings > Configurations."
                                 : "Editing the total redistributes across owners by contribution %"}
                               className={`w-full px-1 py-1 text-center text-xs font-semibold border rounded focus:outline-none ${cellMinW} ${
                                 isLocked
@@ -668,7 +683,7 @@ function EditTab({
                           onChange={e => { setEditingCell({ key: `ind-${w}`, raw: e.target.value }); setWeekBreakdown(w, toRaw(e.target.value)); }}
                           onBlur={() => setEditingCell(null)}
                           readOnly={isLocked}
-                          title={weekLockedByPast(w) ? "Past week editing is disabled. Enable in Settings > Configurations." : rawTip(form.weeklyBreakdown[w] ?? "")}
+                          title={weekLockedByPast(w) ? "Past week targets are locked. Enable “Add Past Week Data” in Settings > Configurations." : rawTip(form.weeklyBreakdown[w] ?? "")}
                           className={`w-full px-1 py-1 text-center text-xs border rounded focus:outline-none ${cellMinW} ${
                             isLocked
                               ? "border-gray-100 bg-gray-50 text-gray-400 cursor-not-allowed"
@@ -708,7 +723,7 @@ function EditTab({
                                 onBlur={() => setEditingCell(null)}
                                 readOnly={isLocked}
                                 title={weekLockedByPast(w)
-                                  ? "Past week editing is disabled. Enable in Settings > Configurations."
+                                  ? "Past week targets are locked. Enable “Add Past Week Data” in Settings > Configurations."
                                   : isStandalone ? "Standalone mode locks per-owner cells" : rawTip(ownerRow[w] ?? "")}
                                 className={`w-full px-1 py-1 text-center text-xs border rounded focus:outline-none ${cellMinW} ${
                                   isLocked

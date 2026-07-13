@@ -3,6 +3,7 @@
 import { useState, useRef, useEffect, useCallback, useMemo } from "react";
 import { usePrioritiesPaginated, useDeletePriority, useBulkRestorePriority, type PriorityFilters } from "@/lib/hooks/usePriority";
 import { useInfiniteUsers } from "@/lib/hooks/useInfiniteUsers";
+import { useUserOption } from "@/lib/hooks/useUserOption";
 import { TableSkeleton } from "@/components/ui/Skeleton";
 import {
   getFiscalYear, getFiscalQuarter, fiscalYearLabel, weeksArray,
@@ -78,6 +79,10 @@ export default function PriorityPage() {
     isFetchingNextPage: ownersLoadingMore,
     fetchNextPage: fetchMoreOwners,
   } = useInfiniteUsers(filterTeam || undefined, ownerSearch);
+  // Resolve the applied owner by id so the picker shows their name even when
+  // the owner isn't in the loaded 25-user page AND the filtered list is empty
+  // (e.g. an owner filter inherited from My Dashboard with 0 matching rows).
+  const selectedOwnerOption = useUserOption(filterOwner);
   // Hidden cols come from the DB-backed user pref. Sort now lives in the
   // shared Redux tables slice (lib/store) — same pattern as KPI + WWW. The
   // priorityPrefs hook is kept for hiddenCols only.
@@ -352,6 +357,7 @@ export default function PriorityPage() {
                     value={filterOwner}
                     onChange={(v) => { setFilterOwner(v); ctx.setFilterOwner(v); }}
                     options={users.map(userToFilterOption)}
+                    selectedOption={selectedOwnerOption}
                     onSearchChange={setOwnerSearch}
                     onLoadMore={fetchMoreOwners}
                     hasMore={ownersHasMore}

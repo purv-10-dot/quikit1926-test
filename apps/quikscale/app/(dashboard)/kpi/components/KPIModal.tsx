@@ -26,6 +26,8 @@ import {
   applyWeeklyEdit,
   sumBreakdown,
   checkBreakdownBalance,
+  isTargetValueLocked,
+  TARGET_LOCK_TIP,
   type DivisionType,
 } from "./kpiModalHelpers";
 import { WeeklyScroller } from "./WeeklyScroller";
@@ -381,14 +383,22 @@ export function KPIModal({ mode, kpi, scope, teamId, defaultYear, defaultQuarter
   }, []);
 
   // Past-week feature flags
-  const { canAddPastWeek, canEditPastWeek, loaded: flagsLoaded } = usePastWeekFlags();
+  const { canAddPastWeek, loaded: flagsLoaded } = usePastWeekFlags();
   const currentWeek = useCurrentWeek(parseInt(form.year) || null, form.quarter);
   const weekLabels = useWeekLabels(parseInt(form.year) || null, form.quarter);
   // Weeks in the selected quarter (Custom Quarter Settings). Defaults to 13.
   const weekCount = useQuarterWeekCount(parseInt(form.year) || null, form.quarter);
-  // For create mode, use canAddPastWeek; for edit mode, use canEditPastWeek.
+  // The Target Breakdown (weekly *targets*) is gated by "Add Past Week Data"
+  // (canAddPastWeek) in BOTH create and edit modes. "Edit Past Week Data"
+  // governs only the weekly *values* on the LogModal Updates tab, not targets.
   // Only evaluate after flags have loaded — before that, default is false anyway.
-  const pastWeekAllowed = flagsLoaded && (mode === "create" ? canAddPastWeek : canEditPastWeek);
+  const pastWeekAllowed = flagsLoaded && canAddPastWeek;
+  // Editing the Target Value redistributes the weekly Target Breakdown across
+  // ALL weeks (including past ones). When "Add Past Week Data" is off, those
+  // past-week cells are locked — so the target itself is locked in edit mode to
+  // avoid silently rewriting locked cells. Create mode is always editable.
+  // Shared with LogModal's EditTab via `isTargetValueLocked`.
+  const targetLocked = isTargetValueLocked({ isEditMode: mode === "edit", flagsLoaded, canAddPastWeek });
 
   /** Resolve display-target → actual stored number (handles Currency scale multiplier). */
   function actualNum(f: typeof form): number {
@@ -996,18 +1006,21 @@ export function KPIModal({ mode, kpi, scope, teamId, defaultYear, defaultQuarter
             <label className="block text-xs font-medium text-gray-600 mb-1">
               Target Value <span className="text-red-500">*</span>
             </label>
-            <div className={`flex rounded-lg border overflow-hidden focus-within:ring-1 focus-within:ring-accent-400 focus-within:border-accent-400 ${errors.target ? "border-red-300" : "border-gray-200"}`}>
+            <div className={`flex rounded-lg border overflow-hidden focus-within:ring-1 focus-within:ring-accent-400 focus-within:border-accent-400 ${errors.target ? "border-red-300" : "border-gray-200"} ${targetLocked ? "bg-gray-50" : ""}`}>
               {isCurrency && (
                 <span className="flex items-center px-2.5 bg-gray-50 border-r border-gray-200 text-xs text-gray-500 select-none whitespace-nowrap flex-shrink-0">
                   {currencyObj.symbol}
                 </span>
               )}
               <input type="number" min="0" value={form.target} onChange={e => setTarget(e.target.value)}
+                readOnly={readOnly || targetLocked}
+                title={targetLocked ? TARGET_LOCK_TIP : undefined}
                 placeholder="0"
-                className="flex-1 px-3 py-2 text-xs focus:outline-none bg-white min-w-0" />
+                className={`flex-1 px-3 py-2 text-xs focus:outline-none min-w-0 ${targetLocked ? "bg-gray-50 text-gray-500 cursor-not-allowed" : "bg-white"}`} />
               {isCurrency && (
                 <select value={form.targetScale} onChange={e => setTargetScale(e.target.value)}
-                  className="border-l border-gray-200 pl-2 pr-1 py-2 text-xs bg-white focus:outline-none text-gray-600 flex-shrink-0 cursor-pointer">
+                  disabled={readOnly || targetLocked}
+                  className={`border-l border-gray-200 pl-2 pr-1 py-2 text-xs focus:outline-none text-gray-600 flex-shrink-0 ${targetLocked ? "bg-gray-50 cursor-not-allowed" : "bg-white cursor-pointer"}`}>
                   {scales.map(s => (
                     <option key={s.label} value={s.label}>{s.label || "—"}</option>
                   ))}
@@ -1015,9 +1028,12 @@ export function KPIModal({ mode, kpi, scope, teamId, defaultYear, defaultQuarter
               )}
               {/* Number KPIs: unit-of-measurement dropdown (from Unit Master). */}
               {form.measurementUnit === "Number" && (
-                <UnitSelect value={form.unit} onChange={v => set("unit", v)} disabled={readOnly} />
+                <UnitSelect value={form.unit} onChange={v => set("unit", v)} disabled={readOnly || targetLocked} />
               )}
             </div>
+            {targetLocked && (
+              <p className="text-[10px] text-amber-600 mt-0.5">{TARGET_LOCK_TIP}</p>
+            )}
             {errors.target && <p className="text-[10px] text-red-500 mt-0.5">{errors.target}</p>}
             {isCurrency && form.targetScale && scaledTarget > 0 && (
               <p className="text-[10px] text-gray-400 mt-1">

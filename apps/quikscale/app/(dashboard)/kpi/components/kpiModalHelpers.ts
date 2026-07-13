@@ -24,6 +24,30 @@ export type MeasurementUnit = string; // "Number" | "Percentage" | "Currency"
 export type WeeklyBreakdown = Record<number, string>;
 
 /**
+ * Whether the Target Value field must be locked (read-only) while editing a KPI.
+ *
+ * Changing the Target redistributes the weekly Target Breakdown across ALL
+ * weeks — including past ones. When "Add Past Week Data" (`canAddPastWeek`) is
+ * OFF, those past-week cells are locked, so allowing a Target edit would
+ * silently rewrite locked cells. We therefore lock the Target itself.
+ *
+ *  - Create mode (`isEditMode === false`) is always editable (no past weeks yet).
+ *  - We only lock once flags have loaded, so the field doesn't flash locked →
+ *    unlocked (or vice-versa) on first paint while `usePastWeekFlags` resolves.
+ */
+export function isTargetValueLocked(opts: {
+  isEditMode: boolean;
+  flagsLoaded: boolean;
+  canAddPastWeek: boolean;
+}): boolean {
+  return opts.isEditMode && opts.flagsLoaded && !opts.canAddPastWeek;
+}
+
+/** Shared tooltip/helper copy for the locked Target Value field. */
+export const TARGET_LOCK_TIP =
+  "Target Value is locked because Add Past Week Data is disabled. Enable it in Settings → Configurations to edit.";
+
+/**
  * Format a single weekly breakdown value for display.
  * - Number unit: rounded to nearest integer
  * - All other units: 2 decimal places

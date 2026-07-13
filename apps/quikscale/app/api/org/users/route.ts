@@ -170,9 +170,15 @@ export const GET = auth.view(async ({ orgId }, req) => {
       const userRoles = await userAppRoleDelegate.findMany({
         where: { orgId, userId: { in: userIds } },
         select: { userId: true, role: { select: { id: true, name: true, appId: true } } },
+        // Newest-first + first-wins below, so if a user still has more than one
+        // role row (before /api/me/permissions self-heals — see
+        // RBAC_ROLE_CHANGE_BUG.md), the grid shows the most recently assigned
+        // role instead of a nondeterministic one.
+        orderBy: { assignedAt: "desc" },
       });
       for (const ur of userRoles) {
         if (ur.role.appId !== appId) continue; // ignore other apps' roles
+        if (appRoleByUserId.has(ur.userId)) continue; // first (newest) wins
         appRoleByUserId.set(ur.userId, { id: ur.role.id, name: ur.role.name });
       }
     } catch {
