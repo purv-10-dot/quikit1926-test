@@ -132,14 +132,19 @@ export default function RequisitionsPage() {
   const [editId, setEditId] = useState<string | null>(null);
   const [viewReq, setViewReq] = useState<ReqItem | null>(null);
   const [statusFilter, setStatusFilter] = useState("");
+  const [priorityFilter, setPriorityFilter] = useState("");
   const [cancelTarget, setCancelTarget] = useState<ReqItem | null>(null);
   const emptyForm = emptyReqForm;
   const [form, setForm] = useState<ReqFormShape>(emptyForm);
 
-  const params = new URLSearchParams({ limit: "100", ...(statusFilter && { status: statusFilter }) });
+  const params = new URLSearchParams({
+    limit: "100",
+    ...(statusFilter && { status: statusFilter }),
+    ...(priorityFilter && { priority: priorityFilter }),
+  });
 
   const { data, isLoading } = useQuery({
-    queryKey: ["requisitions", statusFilter],
+    queryKey: ["requisitions", statusFilter, priorityFilter],
     queryFn: () => api.get<ReqItem[]>(`/api/v1/hrms/recruit/requisitions?${params}`),
   });
 
@@ -222,6 +227,36 @@ export default function RequisitionsPage() {
               <Plus size={13} /> New requisition
             </button>
           )}
+        </div>
+
+        <div className="flex flex-wrap items-center gap-2 mt-3 pt-3 border-t border-gray-100">
+          <div className="inline-flex items-center gap-1.5 text-xs font-medium text-gray-500 px-1 mr-1">
+            <Filter size={15} /> Priority
+          </div>
+          {[
+            { value: "", label: "All" },
+            { value: "Urgent", label: "Urgent" },
+            { value: "High", label: "High" },
+            { value: "Medium", label: "Medium" },
+            { value: "Low", label: "Low" },
+          ].map((p) => {
+            const active = priorityFilter === p.value;
+            return (
+              <button
+                key={p.value || "all"}
+                onClick={() => setPriorityFilter(p.value)}
+                className={clsx(
+                  "inline-flex items-center gap-1 px-4 py-1.5 rounded-full text-[13px] font-semibold border transition",
+                  active
+                    ? "bg-green-100 border-green-200 text-green-700"
+                    : "bg-white border-gray-200 text-gray-600 hover:border-green-500/40 hover:text-green-700",
+                )}
+              >
+                {p.label}
+                {active && p.value && <X size={12} className="ml-0.5" />}
+              </button>
+            );
+          })}
         </div>
       </div>
 

@@ -325,7 +325,7 @@ function EmployeeProfilePageInner() {
           href={backHref}
           className="mt-4 inline-flex items-center gap-1.5 btn btn-primary"
         >
-          <ArrowLeft size={14} /> {backNav.label}
+          <ArrowLeft size={14} /> Back
         </Link>
       </div>
     );

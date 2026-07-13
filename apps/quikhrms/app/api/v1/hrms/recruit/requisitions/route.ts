@@ -14,12 +14,14 @@ export const GET = withServiceAuth(async (req: NextRequest, { orgId }) => {
     const { searchParams } = new URL(req.url);
     const { page, limit } = parsePagination(searchParams);
     const status = searchParams.get("status");
+    const priority = searchParams.get("priority");
     const search = searchParams.get("search");
 
     const { data, total } = await (async () => {
       const where: Prisma.JobRequisitionWhereInput = {
         orgId, deletedAt: null,
         ...(status && { status: status as Prisma.JobRequisitionWhereInput["status"] }),
+        ...(priority && { priority: priority as Prisma.JobRequisitionWhereInput["priority"] }),
         ...(search && { OR: [
           { title: { contains: search, mode: "insensitive" } },
           { requisitionNumber: { contains: search, mode: "insensitive" } },

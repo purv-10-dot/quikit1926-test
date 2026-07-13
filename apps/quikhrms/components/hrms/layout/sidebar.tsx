@@ -14,6 +14,8 @@ import {
   Wallet,
   Banknote,
   UserPlus,
+  UserCog,
+  ClipboardList,
   Heart,
   FileText,
   Sparkles,
@@ -231,7 +233,7 @@ const navigation: NavItem[] = [
   {
     label: "Users",
     href: "/settings/users",
-    icon: <UserPlus size={18} />,
+    icon: <UserCog size={18} />,
     section: "settings",
     perms: ["hrms.user.invite"],
     navKey: "admin.users",
@@ -323,7 +325,7 @@ export function Sidebar() {
         {
           label: "My Onboarding",
           href: `/onboarding/${employee.id}`,
-          icon: <FileText size={18} />,
+          icon: <ClipboardList size={18} />,
           section: "core",
         },
       ];

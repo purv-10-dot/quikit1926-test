@@ -4,7 +4,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useApiClient } from "@/lib/hooks/use-api";
 import Link from "next/link";
-import { User, Users as UsersIcon, Crown, Star, Filter as FilterIcon, Search, Building2, Shield, LayoutGrid, GitBranch, X, ZoomIn, ZoomOut, Maximize2, Minimize2, FileText, List, MapPin, Mail, Download, Plus, Grid3X3, Upload, ChevronUp, ChevronDown, UserPlus, ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight, Trash2 } from "lucide-react";
+import { User, Users as UsersIcon, Crown, Star, Filter as FilterIcon, Search, Building2, Shield, LayoutGrid, GitBranch, X, ZoomIn, ZoomOut, Maximize2, Minimize2, FileText, List, MapPin, Mail, Download, Plus, Grid3X3, Upload, ChevronUp, ChevronDown, UserPlus, ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight, Trash2, Unlink } from "lucide-react";
 import { clsx } from "clsx";
 import { withBasePath } from "@/lib/utils/base-path";
 import { exportCsv as writeCsv } from "@/lib/utils/csv";
@@ -85,7 +85,7 @@ const DEPT_COLORS: Record<string, string> = {
 type NodeRole = "leader" | "self" | "report" | "hod";
 type ViewMode = "chain" | "full" | "hods";
 
-function OrgCard({ node, role, dimmed, totalCount, directCount, collapsed, onToggle, editMode, dragging, dropTarget, onDragStart, onDragOver, onDragLeave, onDrop, onDragEnd }: {
+function OrgCard({ node, role, dimmed, totalCount, directCount, collapsed, onToggle, editMode, dragging, dropTarget, onDragStart, onDragOver, onDragLeave, onDrop, onDragEnd, onDetach }: {
   node: OrgEmployee; role: NodeRole; dimmed?: boolean; roleLabel?: string | null;
   totalCount?: number; directCount?: number; collapsed?: boolean;
   onToggle?: (e: React.MouseEvent) => void;
@@ -95,6 +95,7 @@ function OrgCard({ node, role, dimmed, totalCount, directCount, collapsed, onTog
   onDragLeave?: (e: React.DragEvent) => void;
   onDrop?: (e: React.DragEvent) => void;
   onDragEnd?: (e: React.DragEvent) => void;
+  onDetach?: () => void;
 }) {
   const ring =
     role === "self" ? "ring-2 ring-[#22c55e] border-[#bbf7d0]" :
@@ -191,6 +192,16 @@ function OrgCard({ node, role, dimmed, totalCount, directCount, collapsed, onTog
         onDragEnd={onDragEnd}
         className={cardCls}
       >
+        {onDetach && (
+          <button
+            type="button"
+            onClick={(e) => { e.preventDefault(); e.stopPropagation(); onDetach(); }}
+            title="Remove from manager (make top-level)"
+            className="absolute top-1.5 right-1.5 z-10 w-6 h-6 inline-flex items-center justify-center rounded-md bg-white/90 border border-gray-200 text-gray-500 hover:text-red-600 hover:border-red-300 hover:bg-red-50 shadow-sm"
+          >
+            <Unlink size={13} />
+          </button>
+        )}
         {cardChildren}
       </div>
     );
@@ -210,6 +221,7 @@ function Connector({ thick }: { thick?: boolean }) {
 export default function OrgChartPage() {
   const api = useApiClient();
   const qc = useQueryClient();
+  const dialog = useDialog();
   const { hasPermission, isLoading: permsLoading } = useDashboardConfig();
   // People directory access — same gate as the rest of the app. Users without
   // it may still view the Org Chart, but must not reach the Directory tab.
@@ -423,6 +435,19 @@ export default function OrgChartPage() {
     if (src.reportingManagerId === targetId) return; // No change
     reassignMut.mutate({ employeeId: sourceId, managerId: targetId });
   };
+
+  // Explicit "remove from manager" — the drop-on-empty-space gesture exists but
+  // is undiscoverable, so each card gets an unlink button in edit mode.
+  const handleDetach = async (emp: OrgEmployee) => {
+    const ok = await dialog.confirm({
+      title: "Remove from manager?",
+      description: `${emp.firstName} ${emp.lastName} will no longer report to anyone and becomes a top-level node. You can reassign them later by dragging onto a manager.`,
+      confirmLabel: "Remove",
+      variant: "danger",
+    });
+    if (!ok) return;
+    handleDrop(emp.id, null);
+  };
   const childrenByMgr = useMemo(() => {
     const m = new Map<string, OrgEmployee[]>();
     for (const e of all) {
@@ -529,6 +554,7 @@ export default function OrgChartPage() {
             setDraggingId(null);
             setDropTargetId(null);
           }}
+          onDetach={editMode && node.reportingManagerId ? () => handleDetach(node) : undefined}
         />
         {children.length > 0 && !isCollapsed && (
           <>
@@ -884,7 +910,7 @@ export default function OrgChartPage() {
             <>
               {editMode && (
                 <div className="mb-3 px-3 py-2 bg-emerald-50 border border-emerald-200 rounded text-xs text-emerald-800 flex items-center justify-between">
-                  <span>Drag any employee onto a manager to reassign reporting line. Cycles blocked automatically.</span>
+                  <span>Drag any employee onto a manager to reassign, or use the unlink icon on a card to remove its reporting manager. Cycles blocked automatically.</span>
                   <button onClick={() => { setEditMode(false); setDragError(null); }} className="font-semibold hover:underline">Done</button>
                 </div>
               )}

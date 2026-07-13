@@ -185,12 +185,12 @@ export default function HRCalendarPage() {
       <div className="flex items-center justify-between gap-3 flex-wrap">
         <div className="flex items-center gap-2">
           <button onClick={goToday} className="px-3 py-1.5 text-sm font-medium rounded-lg border border-gray-200 bg-white hover:bg-gray-50">Today</button>
-          <div className="inline-flex rounded-lg border border-gray-200 bg-white overflow-hidden">
-            <button onClick={goPrev} className="p-2 text-gray-600 hover:bg-gray-50"><ChevronLeft size={15} /></button>
-            <button onClick={goNext} className="p-2 text-gray-600 hover:bg-gray-50 border-l border-gray-200"><ChevronRight size={15} /></button>
+          <div className="inline-flex items-center gap-1">
+            <button onClick={goPrev} title="Previous month" className="p-2 rounded-lg border border-gray-200 bg-white text-gray-600 hover:bg-gray-50"><ChevronLeft size={15} /></button>
+            <div className="min-w-[140px] text-center text-[15px] font-semibold text-gray-900">{monthLabel}</div>
+            <button onClick={goNext} title="Next month" className="p-2 rounded-lg border border-gray-200 bg-white text-gray-600 hover:bg-gray-50"><ChevronRight size={15} /></button>
           </div>
         </div>
-        <div className="text-[15px] font-semibold text-gray-900">{monthLabel}</div>
         <div className="flex items-center gap-2">
           <div className="inline-flex rounded-lg border border-gray-200 bg-white overflow-hidden text-sm font-medium">
             {(["month", "week", "list"] as View[]).map((v) => (
