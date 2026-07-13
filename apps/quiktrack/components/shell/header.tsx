@@ -6,9 +6,11 @@ import { useEffect, useRef, useState } from "react";
 import { useParams, usePathname } from "next/navigation";
 import { useSession, signOut } from "next-auth/react";
 import { useTheme } from "next-themes";
-import { HelpCircle, Settings, Plus, PanelLeft } from "lucide-react";
+import { HelpCircle, Settings, Plus, PanelLeft, ListChecks } from "lucide-react";
 import { UserMenu, globalSignOut } from "@quikit/ui";
 import { CreateIssueModal } from "@/components/create-issue-modal";
+import { ChecklistDrawer } from "@/components/checklist/checklist-drawer";
+import { NotificationsPopover } from "@/components/shell/notifications-popover";
 import { HelpPanel } from "@/components/help-panel";
 import {
   GlobalSearchPopover,
@@ -36,6 +38,7 @@ export function Header({ onToggleSidebar, sidebarOpen = true }: HeaderProps) {
     pathname.startsWith("/settings/migration") ||
     pathname.startsWith("/settings/general");
   const [createOpen, setCreateOpen] = useState(false);
+  const [checklistOpen, setChecklistOpen] = useState(false);
   const [helpOpen, setHelpOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const settingsBtnRef = useRef<HTMLButtonElement>(null);
@@ -134,6 +137,16 @@ export function Header({ onToggleSidebar, sidebarOpen = true }: HeaderProps) {
           </div>
 
           <div className="flex items-center gap-1">
+            <NotificationsPopover />
+            <button
+              type="button"
+              onClick={() => setChecklistOpen(true)}
+              className="p-2 rounded hover:bg-gray-100 text-gray-600"
+              aria-label="My checklist"
+              title="My checklist"
+            >
+              <ListChecks className="h-4 w-4" />
+            </button>
             <button
               type="button"
               onClick={() => setHelpOpen(true)}
@@ -174,6 +187,7 @@ export function Header({ onToggleSidebar, sidebarOpen = true }: HeaderProps) {
         initialProjectId={currentProjectId}
       />
       <HelpPanel open={helpOpen} onClose={() => setHelpOpen(false)} />
+      <ChecklistDrawer open={checklistOpen} onClose={() => setChecklistOpen(false)} />
     </div>
   );
 }

@@ -2,25 +2,26 @@
 
 import Link from "next/link";
 import dynamic from "next/dynamic";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
   Search,
-  Filter,
   ChevronDown,
   Settings as SettingsIcon,
   MoreHorizontal,
   User as UserIcon,
-  X,
 } from "lucide-react";
 import type { BoardStatus, EpicLite } from "./board-meta";
 import { BoardColumn } from "./board-column";
 import { AddColumnTile } from "./add-column-tile";
-import { BoardFilterSelect, type BoardFilterOption } from "./board-filter-select";
-import { BoardFilterMultiSelect } from "./board-filter-multi-select";
+import { FilterMultiSelect } from "../../grouped-kanban/_components/toolbar/filter-multi-select";
+import { FilterPanel, FilterRow } from "@/components/filters/filter-panel";
 import { useQueryClient } from "@tanstack/react-query";
 import { useApiData } from "@/lib/hooks/useApiData";
 import { useMembersChanged } from "@/lib/hooks/useMembersChanged";
 import { useFilterPersistence } from "@/lib/hooks/usePersistentFilters";
+import { CustomFieldFilters } from "@/components/custom-fields/custom-field-filters";
+import type { CustomFilter } from "@/lib/customFields/filterQuery";
+import type { CustomFieldDTO } from "@/lib/services/customFields";
 
 // The edit-issue modal pulls in the full rich-text editor (~17 tiptap packages).
 // It only renders when a card is opened, so load it on demand to keep it out of
@@ -46,9 +47,10 @@ export interface BoardFilters {
   assigneeId: string;
   type: string;
   priority: string;
+  customFilters: string;
 }
 
-const EMPTY_FILTERS: BoardFilters = { search: "", assigneeId: "", type: "", priority: "" };
+const EMPTY_FILTERS: BoardFilters = { search: "", assigneeId: "", type: "", priority: "", customFilters: "" };
 
 // Stable hash → consistent member-avatar color (cribbed from backlog-view).
 function memberColor(seed: string): string {
@@ -89,9 +91,20 @@ export function BoardView({ projectId }: { projectId: string }) {
   const [filterAssigneeId, setFilterAssigneeId] = useState("");
   const [filterType, setFilterType] = useState("");
   const [filterPriority, setFilterPriority] = useState("");
+  const [customFilters, setCustomFilters] = useState<CustomFilter[]>([]);
+  const { data: customFields = [] } = useApiData<CustomFieldDTO[]>(
+    ["quiktrack", "project-issue-fields", projectId],
+    `/api/projects/${projectId}/issue-fields`,
+  );
   const filters = useMemo<BoardFilters>(
-    () => ({ search: appliedSearch, assigneeId: filterAssigneeId, type: filterType, priority: filterPriority }),
-    [appliedSearch, filterAssigneeId, filterType, filterPriority],
+    () => ({
+      search: appliedSearch,
+      assigneeId: filterAssigneeId,
+      type: filterType,
+      priority: filterPriority,
+      customFilters: customFilters.length ? JSON.stringify(customFilters) : "",
+    }),
+    [appliedSearch, filterAssigneeId, filterType, filterPriority, customFilters],
   );
 
   // Auto-persist this board's filters per user+project (no Save button).
@@ -107,6 +120,14 @@ export function BoardView({ projectId }: { projectId: string }) {
       if (typeof s.assigneeId === "string") setFilterAssigneeId(s.assigneeId);
       if (typeof s.type === "string") setFilterType(s.type);
       if (typeof s.priority === "string") setFilterPriority(s.priority);
+      if (typeof s.customFilters === "string") {
+        try {
+          const parsed = s.customFilters ? JSON.parse(s.customFilters) : [];
+          if (Array.isArray(parsed)) setCustomFilters(parsed as CustomFilter[]);
+        } catch {
+          /* ignore malformed persisted value */
+        }
+      }
     },
   });
 
@@ -273,11 +294,15 @@ export function BoardView({ projectId }: { projectId: string }) {
         setFilterType={setFilterType}
         filterPriority={filterPriority}
         setFilterPriority={setFilterPriority}
+        customFields={customFields}
+        customFilters={customFilters}
+        setCustomFilters={setCustomFilters}
         onClearAll={() => {
           setSearchInput("");
           setFilterAssigneeId("");
           setFilterType("");
           setFilterPriority("");
+          setCustomFilters([]);
         }}
       />
 
@@ -383,6 +408,9 @@ function Toolbar({
   setFilterType,
   filterPriority,
   setFilterPriority,
+  customFields,
+  customFilters,
+  setCustomFilters,
   onClearAll,
 }: {
   searchInput: string;
@@ -394,30 +422,11 @@ function Toolbar({
   setFilterType: (v: string) => void;
   filterPriority: string;
   setFilterPriority: (v: string) => void;
+  customFields: CustomFieldDTO[];
+  customFilters: CustomFilter[];
+  setCustomFilters: (v: CustomFilter[]) => void;
   onClearAll: () => void;
 }) {
-  const [filterOpen, setFilterOpen] = useState(false);
-  const filterRef = useRef<HTMLDivElement>(null);
-
-  useEffect(() => {
-    if (!filterOpen) return;
-    function onDown(e: MouseEvent) {
-      const t = e.target as HTMLElement;
-      // Inner selects portal their option menu to document.body. A click there
-      // is visually inside the filter popover but lives outside `filterRef` —
-      // don't let it close (and unmount) the popover before the option's click
-      // handler runs, or the filter value never applies.
-      if (t.closest?.("[data-portal-popover]")) return;
-      if (filterRef.current && !filterRef.current.contains(t)) setFilterOpen(false);
-    }
-    function onKey(e: KeyboardEvent) { if (e.key === "Escape") setFilterOpen(false); }
-    document.addEventListener("mousedown", onDown);
-    document.addEventListener("keydown", onKey);
-    return () => {
-      document.removeEventListener("mousedown", onDown);
-      document.removeEventListener("keydown", onKey);
-    };
-  }, [filterOpen]);
 
   const visibleMembers = members
     .filter((m): m is BoardMember & { user: NonNullable<BoardMember["user"]> } => Boolean(m.user))
@@ -437,8 +446,15 @@ function Toolbar({
   const activeCount =
     (filterAssigneeId ? 1 : 0) +
     (filterType ? 1 : 0) +
-    (filterPriority ? 1 : 0);
+    (filterPriority ? 1 : 0) +
+    customFilters.length;
   const hasAnyActive = activeCount > 0 || searchInput.trim().length > 0;
+  const memberOpts = members
+    .filter((m): m is BoardMember & { user: NonNullable<BoardMember["user"]> } => Boolean(m.user))
+    .map((m) => ({
+      id: m.user.id,
+      label: [m.user.firstName, m.user.lastName].filter(Boolean).join(" ").trim() || m.user.email,
+    }));
 
   return (
     <div className="flex items-center justify-between mb-4">
@@ -501,86 +517,63 @@ function Toolbar({
           )}
         </div>
 
-        <div ref={filterRef} className="relative">
-          <button
-            type="button"
-            onClick={() => setFilterOpen((v) => !v)}
-            className={`inline-flex items-center gap-1.5 h-8 px-3 text-sm border rounded ${
-              activeCount > 0
-                ? "bg-blue-50 border-blue-300 text-blue-700"
-                : "border-gray-300 text-gray-700 hover:bg-gray-50"
-            }`}
-          >
-            <Filter className="h-3.5 w-3.5" />
-            Filter
-            {activeCount > 0 && (
-              <span className="ml-1 rounded-full bg-blue-600 px-1.5 text-[10px] font-medium text-white">
-                {activeCount}
-              </span>
-            )}
-          </button>
-          {filterOpen && (
-            <div className="absolute left-0 top-full z-30 mt-1 w-72 rounded border border-gray-200 bg-white p-3 shadow-lg">
-              <BoardFilterMultiSelect
-                label="Assignee"
-                value={filterAssigneeId}
-                onChange={setFilterAssigneeId}
-                summaryNoun="people"
-                searchable
-                options={(() => {
-                  const opts: BoardFilterOption[] = [
-                    { value: "null", label: "Unassigned" },
-                  ];
-                  members
-                    .filter((m): m is BoardMember & { user: NonNullable<BoardMember["user"]> } => Boolean(m.user))
-                    .forEach((m) => {
-                      const name =
-                        [m.user.firstName, m.user.lastName].filter(Boolean).join(" ").trim() || m.user.email;
-                      opts.push({ value: m.user.id, label: name });
-                    });
-                  return opts;
-                })()}
-              />
-              <BoardFilterSelect
-                label="Type"
-                value={filterType}
-                onChange={setFilterType}
-                options={[
-                  { value: "", label: "Any" },
-                  { value: "TASK", label: "Task" },
-                  { value: "BUG", label: "Bug" },
-                  { value: "STORY", label: "Story" },
-                ]}
-              />
-              <BoardFilterSelect
-                label="Priority"
-                value={filterPriority}
-                onChange={setFilterPriority}
-                options={[
-                  { value: "", label: "Any" },
-                  { value: "HIGHEST", label: "Highest" },
-                  { value: "HIGH", label: "High" },
-                  { value: "MEDIUM", label: "Medium" },
-                  { value: "LOW", label: "Low" },
-                  { value: "LOWEST", label: "Lowest" },
-                ]}
-              />
-              {activeCount > 0 && (
-                <button
-                  type="button"
-                  onClick={() => {
-                    setFilterAssigneeId("");
-                    setFilterType("");
-                    setFilterPriority("");
-                  }}
-                  className="mt-2 flex w-full items-center justify-center gap-1 rounded border border-gray-200 px-2 py-1 text-xs text-gray-600 hover:bg-gray-50"
-                >
-                  <X className="h-3 w-3" /> Clear all
-                </button>
-              )}
-            </div>
-          )}
-        </div>
+        <FilterPanel
+          activeCount={activeCount}
+          onClearAll={() => {
+            setFilterAssigneeId("");
+            setFilterType("");
+            setFilterPriority("");
+            setCustomFilters([]);
+          }}
+        >
+          <div className="text-xs">
+            <span className="mb-1 block font-medium text-gray-600">Assignee</span>
+            <FilterMultiSelect
+              values={selectedAssignees}
+              onChange={(vals) => setFilterAssigneeId(vals.join(","))}
+              placeholder="Any"
+              summaryNoun="people"
+              searchable
+              expand
+              width={240}
+              options={[
+                { value: "null", label: "Unassigned", muted: true },
+                ...memberOpts.map((m) => ({ value: m.id, label: m.label })),
+              ]}
+            />
+          </div>
+          <FilterRow
+            label="Type"
+            value={filterType}
+            onChange={setFilterType}
+            options={[
+              { value: "", label: "Any", muted: true },
+              { value: "TASK", label: "Task" },
+              { value: "BUG", label: "Bug" },
+              { value: "STORY", label: "Story" },
+            ]}
+          />
+          <FilterRow
+            label="Priority"
+            value={filterPriority}
+            onChange={setFilterPriority}
+            options={[
+              { value: "", label: "Any", muted: true },
+              { value: "HIGHEST", label: "Highest" },
+              { value: "HIGH", label: "High" },
+              { value: "MEDIUM", label: "Medium" },
+              { value: "LOW", label: "Low" },
+              { value: "LOWEST", label: "Lowest" },
+            ]}
+          />
+          <CustomFieldFilters
+            className="contents"
+            fields={customFields}
+            value={customFilters}
+            onChange={setCustomFilters}
+            members={memberOpts}
+          />
+        </FilterPanel>
 
         {hasAnyActive && (
           <button

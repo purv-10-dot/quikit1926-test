@@ -24,6 +24,10 @@ import { seedAllDefaultCrmRoles } from "@/lib/api/seed-crm-app-roles";
 
 import { isCrmRbacClientReady, rbacDb } from "@/lib/api/crm-rbac-client";
 
+import { db } from "@/lib/db";
+
+import { mirrorAppRoleToCentral } from "@quikit/auth/assign-app-roles";
+
 
 
 export { isCrmRbacClientReady } from "@/lib/api/crm-rbac-client";
@@ -195,6 +199,16 @@ export async function syncUserCrmAppRole(
   });
 
   await ensureUserOnCrmRole(userId, orgId, role.id, assignedBy);
+
+
+
+  // Keep the central UserAppAccess.role mirror (what the Admin Portal shows)
+
+  // in sync with the QuikCRM app role just assigned. rbacDb() is a narrowed
+
+  // client without userAppAccess, so use the full db here.
+
+  await mirrorAppRoleToCentral(db, { orgId, userId, appId, roleName });
 
 }
 

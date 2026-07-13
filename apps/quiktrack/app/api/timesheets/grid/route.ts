@@ -95,6 +95,7 @@ export const GET = withOrgAuth(async ({ orgId, userId }, req) => {
       issueId: true,
       entryDate: true,
       hours: true,
+      description: true,
     },
   });
 
@@ -297,6 +298,77 @@ export const GET = withOrgAuth(async ({ orgId, userId }, req) => {
       .sort((a, b) => a.label.localeCompare(b.label));
   }
 
+  // Detailed export (`detail=1`): a flat, per-entry list including the worklog
+  // description — the matrix grid can't carry notes. Built from the same
+  // permission-scoped `entries`, so it never widens what the caller may read.
+  let detailEntries:
+    | Array<{
+        id: string;
+        date: string;
+        userId: string;
+        issueId: string;
+        projectId: string;
+        userName: string;
+        projectName: string | null;
+        issueKey: string | null;
+        issueTitle: string;
+        hours: number;
+        description: string | null;
+      }>
+    | undefined;
+  if (url.searchParams.get("detail") === "1") {
+    const uIds = Array.from(new Set(entries.map((e) => e.userId)));
+    const iIds = Array.from(new Set(entries.map((e) => e.issueId)));
+    const pIds = Array.from(new Set(entries.map((e) => e.projectId)));
+    const [detUsers, detIssues, detProjects] = await Promise.all([
+      uIds.length
+        ? db.user.findMany({
+            where: { id: { in: uIds } },
+            select: { id: true, firstName: true, lastName: true, email: true },
+          })
+        : Promise.resolve([]),
+      iIds.length
+        ? db.qtIssue.findMany({
+            where: { id: { in: iIds }, orgId },
+            select: { id: true, key: true, title: true },
+          })
+        : Promise.resolve([]),
+      pIds.length
+        ? db.qtProject.findMany({
+            where: { id: { in: pIds }, orgId },
+            select: { id: true, name: true },
+          })
+        : Promise.resolve([]),
+    ]);
+    const nameByUser = new Map(
+      detUsers.map(
+        (u) =>
+          [u.id, `${u.firstName ?? ""} ${u.lastName ?? ""}`.trim() || u.email] as const,
+      ),
+    );
+    const issueById = new Map(detIssues.map((i) => [i.id, i] as const));
+    const nameByProject = new Map(detProjects.map((p) => [p.id, p.name] as const));
+    detailEntries = entries
+      .slice()
+      .sort((a, b) => new Date(a.entryDate).getTime() - new Date(b.entryDate).getTime())
+      .map((e) => ({
+        id: e.id,
+        date: dateKey(new Date(e.entryDate)),
+        userId: e.userId,
+        issueId: e.issueId,
+        projectId: e.projectId,
+        userName: nameByUser.get(e.userId) ?? e.userId,
+        projectName: nameByProject.get(e.projectId) ?? null,
+        issueKey: issueById.get(e.issueId)?.key ?? null,
+        issueTitle: issueById.get(e.issueId)?.title || "Untitled",
+        hours: e.hours || 0,
+        description: e.description ?? null,
+      }));
+  }
+
   // `canSeeAll` lets the client hide the per-user filter for self-only callers.
-  return NextResponse.json({ success: true, data: { rows, cells, canSeeAll } });
+  return NextResponse.json({
+    success: true,
+    data: { rows, cells, canSeeAll, ...(detailEntries ? { entries: detailEntries } : {}) },
+  });
 });

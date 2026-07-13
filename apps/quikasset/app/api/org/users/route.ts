@@ -1,0 +1,451 @@
+import { NextResponse } from "next/server";
+import { z } from "zod";
+import bcrypt from "bcryptjs";
+import crypto from "node:crypto";
+import { db } from "@/lib/db";
+import { withOrgAuth } from "@/lib/api/withOrgAuth";
+import { getQuikAssetAppId } from "@/lib/api/permissions";
+import { seedAllDefaultRoles, ensureUserOnRole } from "@/lib/api/seedAppRoles";
+import {
+  INVITE_METHOD,
+  renderInvitationEmail,
+  type SsoProvider,
+} from "@quikit/shared";
+import { classifySsoProviderAsync } from "@quikit/shared/sso-domain-server";
+import { generateTempPassword } from "@quikit/shared/temp-password";
+import { sendEmail } from "@/lib/email/sendEmail";
+
+type InviteMethod = (typeof INVITE_METHOD)[keyof typeof INVITE_METHOD];
+
+// Query params for the list endpoint. All optional; absent → no filter.
+//   q       — free-text match on first/last name + email (case-insensitive)
+//   status  — OrgMember.status
+//   roleId  — an AstAppRole.id, or the sentinel "none" for users with no app role
+const listQuerySchema = z.object({
+  q: z.string().trim().max(128).optional(),
+  status: z.enum(["active", "inactive"]).optional(),
+  roleId: z.string().trim().min(1).optional(),
+});
+
+const createUserSchema = z.object({
+  firstName: z.string().trim().min(1).max(64),
+  lastName: z.string().trim().min(1).max(64),
+  email: z.string().trim().toLowerCase().email(),
+  password: z.string().min(8).max(128).optional(),
+  /** Legacy OrgMember tier. RBAC lives in the AppRole below. */
+  role: z.enum(["owner", "admin", "member"]).optional(),
+  /** AstAppRole.id to assign instead of the org default. */
+  appRoleId: z.string().min(1).optional(),
+  /** When set, skip user/membership creation — only grant app access + role. */
+  linkExistingUserId: z.string().min(1).optional(),
+  /**
+   * "native" → admin-supplied (or default) password; credentials sign-in.
+   * "sso"    → no password; provider auth (Google / Microsoft) only.
+   * Defaults to "native" for back-compat with the old payload shape.
+   */
+  invitationMethod: z.enum(["native", "sso"]).optional(),
+});
+
+function buildUserResponse(
+  m: {
+    id: string;
+    role: string;
+    status: string;
+    createdAt: Date;
+    user: {
+      id: string;
+      firstName: string;
+      lastName: string;
+      email: string;
+      avatar: string | null;
+      lastSignInAt: Date | null;
+    };
+  },
+  appRole: { id: string; name: string } | null,
+) {
+  return {
+    membershipId: m.id,
+    userId: m.user.id,
+    firstName: m.user.firstName,
+    lastName: m.user.lastName,
+    email: m.user.email,
+    avatar: m.user.avatar,
+    lastSignInAt: m.user.lastSignInAt?.toISOString() ?? null,
+    role: m.role,
+    status: m.status,
+    joinedAt: m.createdAt.toISOString(),
+    appRoleId: appRole?.id ?? null,
+    appRoleName: appRole?.name ?? null,
+  };
+}
+
+// GET /api/org/users — list every OrgMember who has UserAppAccess to QuikAsset
+// in this org. Supports optional server-side filtering (q / status / roleId).
+export const GET = withOrgAuth(async ({ orgId }, req) => {
+  const appId = await getQuikAssetAppId();
+
+  // Tenants that haven't registered QuikAsset yet → no users to show.
+  if (!appId) {
+    return NextResponse.json({ success: true, data: [] });
+  }
+
+  const parsedQuery = listQuerySchema.safeParse(
+    Object.fromEntries(req.nextUrl.searchParams),
+  );
+  if (!parsedQuery.success) {
+    return NextResponse.json(
+      { success: false, error: parsedQuery.error.errors[0]?.message ?? "Invalid query" },
+      { status: 400 },
+    );
+  }
+  const { q, status, roleId } = parsedQuery.data;
+
+  const accessRows = await db.userAppAccess.findMany({
+    where: { orgId, appId },
+    select: { userId: true },
+    distinct: ["userId"],
+  });
+  let candidateUserIds = accessRows.map((r) => r.userId);
+
+  // Role filter — narrow the candidate set by app-role membership before the
+  // main query. "none" = users who have QuikAsset access but no app role.
+  if (roleId && candidateUserIds.length > 0) {
+    const roleRows = await db.astUserAppRole.findMany({
+      where: {
+        orgId,
+        userId: { in: candidateUserIds },
+        role: { appId },
+        ...(roleId === "none" ? {} : { roleId }),
+      },
+      select: { userId: true },
+    });
+    const withMatchingRole = new Set(roleRows.map((r) => r.userId));
+    candidateUserIds =
+      roleId === "none"
+        ? candidateUserIds.filter((id) => !withMatchingRole.has(id))
+        : candidateUserIds.filter((id) => withMatchingRole.has(id));
+  }
+
+  if (candidateUserIds.length === 0) {
+    return NextResponse.json({ success: true, data: [] });
+  }
+
+  // Free-text search on the related User row (name + email).
+  const userTextFilter = q
+    ? {
+        OR: [
+          { firstName: { contains: q, mode: "insensitive" as const } },
+          { lastName: { contains: q, mode: "insensitive" as const } },
+          { email: { contains: q, mode: "insensitive" as const } },
+        ],
+      }
+    : undefined;
+
+  const memberships = await db.orgMember.findMany({
+    where: {
+      orgId,
+      userId: { in: candidateUserIds },
+      ...(status ? { status } : {}),
+      ...(userTextFilter ? { user: userTextFilter } : {}),
+    },
+    include: {
+      user: {
+        select: {
+          id: true,
+          firstName: true,
+          lastName: true,
+          email: true,
+          avatar: true,
+          lastSignInAt: true,
+        },
+      },
+    },
+    orderBy: { createdAt: "asc" },
+  });
+
+  const appRoleByUserId = new Map<string, { id: string; name: string } | null>();
+
+  if (memberships.length > 0) {
+    const userIds = memberships.map((m) => m.user.id);
+    const userRoles = await db.astUserAppRole.findMany({
+      where: { orgId, userId: { in: userIds }, role: { appId } },
+      select: { userId: true, role: { select: { id: true, name: true } } },
+    });
+    for (const ur of userRoles) {
+      appRoleByUserId.set(ur.userId, { id: ur.role.id, name: ur.role.name });
+    }
+  }
+
+  const users = memberships.map((m) =>
+    buildUserResponse(m, appRoleByUserId.get(m.user.id) ?? null),
+  );
+  return NextResponse.json({ success: true, data: users });
+});
+
+// POST /api/org/users — three branches:
+//   A. linkExistingUserId set — grant app access + role only
+//   B. email matches existing platform User — add OrgMember + the rest
+//   C. brand-new email — create User + OrgMember + the rest
+export const POST = withOrgAuth(async ({ orgId, userId: actorId }, req) => {
+  const parsed = createUserSchema.safeParse(await req.json());
+  if (!parsed.success) {
+    return NextResponse.json(
+      { success: false, error: parsed.error.errors[0]?.message ?? "Invalid input" },
+      { status: 400 },
+    );
+  }
+  const {
+    firstName,
+    lastName,
+    email,
+    password,
+    role = "member",
+    appRoleId,
+    linkExistingUserId,
+    invitationMethod = "native",
+  } = parsed.data;
+
+  const normalisedEmail = email.trim().toLowerCase();
+
+  // SSO branch — confirm the email actually hosts on Google Workspace or
+  // Microsoft 365 via MX lookup. We don't want to mint a passwordless user who
+  // can never sign in.
+  let ssoProvider: SsoProvider | null = null;
+  if (!linkExistingUserId && invitationMethod === INVITE_METHOD.SSO) {
+    ssoProvider = (await classifySsoProviderAsync(normalisedEmail)) as SsoProvider | null;
+    if (!ssoProvider) {
+      return NextResponse.json(
+        {
+          success: false,
+          error:
+            "SSO invitations require a Google or Microsoft email address. Pick Native instead, or use a different address.",
+        },
+        { status: 422 },
+      );
+    }
+  }
+
+  // Compute defaults once, up front. Native + no admin password → generate a
+  // fresh friendly temp password so the hash matches the value the onboarding
+  // email renders and the admin can be shown once.
+  const isNativeNewUser =
+    !linkExistingUserId && invitationMethod === INVITE_METHOD.NATIVE;
+  const usedDefaultPassword = isNativeNewUser && !password;
+  const generatedTempPassword = usedDefaultPassword ? generateTempPassword() : null;
+  const effectivePassword = generatedTempPassword ?? password;
+
+  // ─── Resolve newUserId across the three paths ───
+  let newUserId: string;
+  /** True when path C ran (brand-new User row created). Helps the UI decide
+   *  whether to refresh the list or just toast "Granted access". */
+  let newUserCreated = false;
+
+  if (linkExistingUserId) {
+    // Path A — verify the target is already a member of this org.
+    const existing = await db.orgMember.findUnique({
+      where: { orgId_userId: { orgId, userId: linkExistingUserId } },
+      select: { userId: true },
+    });
+    if (!existing) {
+      return NextResponse.json(
+        { success: false, error: "User is not a member of this organisation" },
+        { status: 404 },
+      );
+    }
+    newUserId = linkExistingUserId;
+  } else {
+    const existingUser = await db.user.findUnique({ where: { email: normalisedEmail } });
+    const isSso = invitationMethod === INVITE_METHOD.SSO;
+    if (existingUser) {
+      // Path B — user exists, but check if already in this org.
+      const existingMembership = await db.orgMember.findUnique({
+        where: { orgId_userId: { orgId, userId: existingUser.id } },
+      });
+      if (existingMembership) {
+        return NextResponse.json(
+          {
+            success: false,
+            error:
+              "This user is already a member of the organisation. Pick them from the email dropdown to grant QuikAsset access.",
+          },
+          { status: 409 },
+        );
+      }
+      await db.orgMember.create({
+        data: {
+          orgId,
+          userId: existingUser.id,
+          role,
+          status: "active",
+          createdBy: actorId,
+          inviteMethod: invitationMethod,
+          inviteProvider: ssoProvider,
+          invitationToken: crypto.randomUUID(),
+          invitedAt: new Date(),
+        },
+      });
+      newUserId = existingUser.id;
+    } else {
+      // Path C — create the User row.
+      //
+      // SSO → password stays NULL so the credentials provider can't auth.
+      // Native → admin-supplied password, OR a freshly-generated friendly temp
+      //          password if the admin left it blank. The temp gets emailed to
+      //          the invitee verbatim; they're forced to change it on first
+      //          login via the accept-invite flow.
+      const hashedPassword = isSso
+        ? null
+        : await bcrypt.hash(effectivePassword!.trim(), 12);
+      const user = await db.user.create({
+        data: {
+          firstName,
+          lastName,
+          email: normalisedEmail,
+          password: hashedPassword,
+          // Native invitees must reset on first login; SSO never has a password.
+          mustChangePassword: !isSso,
+        },
+      });
+      await db.orgMember.create({
+        data: {
+          orgId,
+          userId: user.id,
+          role,
+          status: "active",
+          createdBy: actorId,
+          inviteMethod: invitationMethod,
+          inviteProvider: ssoProvider,
+          invitationToken: crypto.randomUUID(),
+          invitedAt: new Date(),
+        },
+      });
+      newUserId = user.id;
+      newUserCreated = true;
+    }
+  }
+
+  // ─── UserAppAccess + UserAppRole ───
+  const appId = await getQuikAssetAppId();
+  let appRole: { id: string; name: string } | null = null;
+  if (appId) {
+    const existingAccess = await db.userAppAccess.findFirst({
+      where: { orgId, appId, userId: newUserId },
+      select: { id: true },
+    });
+    if (!existingAccess) {
+      await db.userAppAccess.create({
+        data: { userId: newUserId, orgId, appId, role: "member", grantedBy: actorId },
+      });
+    }
+
+    const { adminRoleId, memberRoleId } = await seedAllDefaultRoles(orgId);
+
+    // Resolve target AppRole: explicit > admin-fallback > default Member.
+    let targetRoleId: string;
+    let targetRoleName: string;
+    if (appRoleId) {
+      const r = await db.astAppRole.findFirst({
+        where: { id: appRoleId, orgId, appId },
+        select: { id: true, name: true },
+      });
+      if (!r) {
+        return NextResponse.json(
+          { success: false, error: "Selected role not found" },
+          { status: 400 },
+        );
+      }
+      targetRoleId = r.id;
+      targetRoleName = r.name;
+    } else {
+      // Safety: if the org has zero admin members, the first invitee becomes
+      // admin to prevent an admin-less org.
+      const adminMemberCount = await db.astUserAppRole.count({
+        where: { orgId, roleId: adminRoleId },
+      });
+      targetRoleId = adminMemberCount === 0 ? adminRoleId : memberRoleId;
+      targetRoleName = adminMemberCount === 0 ? "admin" : "Member";
+    }
+
+    await ensureUserOnRole(newUserId, orgId, targetRoleId, actorId);
+    appRole = { id: targetRoleId, name: targetRoleName };
+  }
+
+  const membership = await db.orgMember.findUnique({
+    where: { orgId_userId: { orgId, userId: newUserId } },
+    include: {
+      user: {
+        select: {
+          id: true,
+          firstName: true,
+          lastName: true,
+          email: true,
+          avatar: true,
+          lastSignInAt: true,
+        },
+      },
+    },
+  });
+
+  // ─── Onboarding email ───
+  // Native: "Here's your temporary password" + link to /login
+  // SSO:    "Sign in with Google/Microsoft" — never includes a password.
+  // Only sent for brand-new / newly-added members (not the link-existing path).
+  if (!linkExistingUserId && membership?.invitationToken) {
+    try {
+      const [org, inviter] = await Promise.all([
+        db.org.findUnique({
+          where: { id: orgId },
+          select: { name: true, brandColor: true },
+        }),
+        db.user.findUnique({
+          where: { id: actorId },
+          select: { firstName: true, lastName: true },
+        }),
+      ]);
+
+      // Invitation links land users on the QuikIT launcher, whose marketing
+      // landing auto-opens a LoginModal for /invitations/accept + ?token=…
+      const appBaseUrl =
+        process.env.NEXT_PUBLIC_QUIKIT_URL ??
+        process.env.QUIKIT_URL ??
+        "http://localhost:3001";
+
+      const { subject, html } = renderInvitationEmail({
+        to: normalisedEmail,
+        firstName: firstName.trim(),
+        orgName: org?.name ?? "your organisation",
+        orgLogoUrl: null,
+        orgBrandColor: org?.brandColor ?? null,
+        inviterName: inviter
+          ? `${inviter.firstName} ${inviter.lastName}`.trim() || "QuikAsset Admin"
+          : "QuikAsset Admin",
+        role: appRole?.name ?? "Member",
+        appNames: ["QuikAsset"],
+        token: membership.invitationToken,
+        appBaseUrl,
+        inviteMethod: invitationMethod as InviteMethod,
+        ssoProvider,
+        tempPassword: generatedTempPassword ?? "",
+      });
+
+      await sendEmail({ to: normalisedEmail, subject, html });
+    } catch (err) {
+      // Email failures must not roll back user creation.
+      console.error("[org/users] onboarding email failed:", err);
+    }
+  }
+
+  return NextResponse.json(
+    {
+      success: true,
+      data: {
+        ...buildUserResponse(membership!, appRole),
+        // Plaintext temp password — shown ONCE in the admin UI when the server
+        // generated one (Native + no admin-supplied pw).
+        tempPassword: generatedTempPassword ?? undefined,
+      },
+      meta: { usedDefaultPassword, newUserCreated },
+    },
+    { status: 201 },
+  );
+});

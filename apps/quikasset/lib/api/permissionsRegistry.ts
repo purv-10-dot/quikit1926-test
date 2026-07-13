@@ -47,6 +47,18 @@ const VIEW_ONLY: ReadonlySet<Resource> = new Set<Resource>([
   "Notification",
 ]);
 
+/**
+ * True when (resource, action) is a real pair in this registry — respects the
+ * VIEW_ONLY restriction (those resources only ever grant `view`). Used by the
+ * role/extras save endpoints to drop stale/unknown pairs instead of failing the
+ * whole save when the registry has since been trimmed.
+ */
+export function isValidPermissionPair(resource: string, action: string): boolean {
+  if (!isResource(resource) || !isAction(action)) return false;
+  if (VIEW_ONLY.has(resource)) return action === "view";
+  return true;
+}
+
 /** Every valid (resource, action) pair in the registry. */
 export function allPermissionPairs(): Array<{ resource: Resource; action: Action }> {
   const out: Array<{ resource: Resource; action: Action }> = [];
@@ -72,4 +84,5 @@ export const NAV_RESOURCE: Record<string, Resource> = {
   "/reports": "Report",
   "/users": "Employee",
   "/settings": "Settings",
+  "/settings/user-management": "Settings",
 };

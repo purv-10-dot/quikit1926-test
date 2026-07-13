@@ -10,12 +10,17 @@ import type {
 import { GROUP_BY_OPTIONS, type GroupByMode } from "../_lib/field-grouping";
 import { FilterSelect, type FilterSelectOption } from "./toolbar/filter-select";
 import { FilterMultiSelect } from "./toolbar/filter-multi-select";
+import { FilterPanel, FilterRow } from "@/components/filters/filter-panel";
+import { CustomFieldFilters } from "@/components/custom-fields/custom-field-filters";
+import type { CustomFieldDTO } from "@/lib/services/customFields";
+import type { CustomFilter } from "@/lib/customFields/filterQuery";
 
 interface ToolbarProps {
   filters: GroupedBoardFilters;
   onFilterChange: (next: GroupedBoardFilters) => void;
   sprints: SprintLite[];
   members: BoardMemberLite[];
+  customFields: CustomFieldDTO[];
   groupBy: GroupByMode;
   onGroupByChange: (mode: GroupByMode) => void;
   onCreateGroup: () => void;
@@ -24,6 +29,16 @@ interface ToolbarProps {
   canCreateTask: boolean;
   /** Gate the "New group" button — false for read-only roles (Viewer). */
   canManageGroups: boolean;
+}
+
+function parseCustomFilterList(raw: string): CustomFilter[] {
+  if (!raw) return [];
+  try {
+    const arr = JSON.parse(raw);
+    return Array.isArray(arr) ? (arr as CustomFilter[]) : [];
+  } catch {
+    return [];
+  }
 }
 
 const GROUP_BY_SELECT_OPTIONS: FilterSelectOption[] = GROUP_BY_OPTIONS.map(
@@ -68,6 +83,7 @@ export function GroupedKanbanToolbar({
   onFilterChange,
   sprints,
   members,
+  customFields,
   groupBy,
   onGroupByChange,
   onCreateGroup,
@@ -78,6 +94,26 @@ export function GroupedKanbanToolbar({
   function patch(p: Partial<GroupedBoardFilters>) {
     onFilterChange({ ...filters, ...p });
   }
+
+  const customFilterList = parseCustomFilterList(filters.customFilters);
+  const memberFilterOptions = members
+    .filter((m) => m.user)
+    .map((m) => {
+      const u = m.user!;
+      return {
+        id: u.id,
+        label: [u.firstName, u.lastName].filter(Boolean).join(" ").trim() || u.email,
+      };
+    });
+  const selectedAssignees = filters.assigneeId
+    ? filters.assigneeId.split(",").filter(Boolean)
+    : [];
+  const activeCount =
+    (filters.sprintId !== "all" ? 1 : 0) +
+    (filters.assigneeId ? 1 : 0) +
+    (filters.priority ? 1 : 0) +
+    (filters.type ? 1 : 0) +
+    customFilterList.length;
 
   const assigneeOptions = useMemo<FilterSelectOption[]>(() => {
     const base: FilterSelectOption[] = [
@@ -137,39 +173,65 @@ export function GroupedKanbanToolbar({
         />
       </div>
 
-      <FilterSelect
-        value={filters.sprintId}
-        onChange={(v) => patch({ sprintId: v })}
-        options={sprintOptions}
-        placeholder="Sprint"
-        width={240}
-      />
-
-      <FilterMultiSelect
-        values={filters.assigneeId ? filters.assigneeId.split(",").filter(Boolean) : []}
-        onChange={(vals) => patch({ assigneeId: vals.join(",") })}
-        options={assigneeOptions}
-        placeholder="Any assignee"
-        summaryNoun="people"
-        searchable
-        width={220}
-      />
-
-      <FilterSelect
-        value={filters.priority}
-        onChange={(v) => patch({ priority: v })}
-        options={PRIORITY_OPTIONS}
-        placeholder="Any priority"
-        width={180}
-      />
-
-      <FilterSelect
-        value={filters.type}
-        onChange={(v) => patch({ type: v })}
-        options={TYPE_OPTIONS}
-        placeholder="Any type"
-        width={160}
-      />
+      <FilterPanel
+        activeCount={activeCount}
+        onClearAll={() =>
+          onFilterChange({
+            ...filters,
+            sprintId: "all",
+            assigneeId: "",
+            priority: "",
+            type: "",
+            customFilters: "",
+          })
+        }
+      >
+        <div className="text-xs">
+          <span className="mb-1 block font-medium text-gray-600">Sprint</span>
+          <FilterSelect
+            value={filters.sprintId}
+            onChange={(v) => patch({ sprintId: v })}
+            options={sprintOptions}
+            placeholder="All sprints"
+            expand
+            width={240}
+          />
+        </div>
+        <div className="text-xs">
+          <span className="mb-1 block font-medium text-gray-600">Assignee</span>
+          <FilterMultiSelect
+            values={selectedAssignees}
+            onChange={(vals) => patch({ assigneeId: vals.join(",") })}
+            options={assigneeOptions}
+            placeholder="Any"
+            summaryNoun="people"
+            searchable
+            expand
+            width={240}
+          />
+        </div>
+        <FilterRow
+          label="Priority"
+          value={filters.priority}
+          onChange={(v) => patch({ priority: v })}
+          options={PRIORITY_OPTIONS}
+        />
+        <FilterRow
+          label="Type"
+          value={filters.type}
+          onChange={(v) => patch({ type: v })}
+          options={TYPE_OPTIONS}
+        />
+        <CustomFieldFilters
+          className="contents"
+          fields={customFields}
+          value={customFilterList}
+          onChange={(next) =>
+            patch({ customFilters: next.length ? JSON.stringify(next) : "" })
+          }
+          members={memberFilterOptions}
+        />
+      </FilterPanel>
 
       <div className="grow" />
 

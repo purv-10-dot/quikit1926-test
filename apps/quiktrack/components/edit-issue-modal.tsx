@@ -44,6 +44,7 @@ import { IssueAttachments } from "@/components/issue-attachments";
 import { AlertCircle } from "lucide-react";
 import { useMyProjectPermissions } from "@/lib/hooks/useMyProjectPermissions";
 import { formatHoursAsClock } from "@/lib/utils/timesheetPeriod";
+import { showToast } from "@/lib/ui/toast";
 
 type IssueType = "TASK" | "BUG" | "STORY" | "EPIC" | "SUBTASK";
 type Priority = "HIGHEST" | "HIGH" | "MEDIUM" | "LOW" | "LOWEST";
@@ -101,6 +102,8 @@ interface IssueFull {
   timeLogs?: { id: string; hours: number }[];
   customFields?: CustomFieldDTO[];
   customFieldValues?: Record<string, FieldValue>;
+  /** Caller's effective field-level permissions (readonly/hidden/required). */
+  fieldLevels?: Record<string, string>;
 }
 
 /**
@@ -296,6 +299,14 @@ export function EditIssueModal({
   const [epicId, setEpicId] = useState("");
   const [startDate, setStartDate] = useState("");
   const [dueDate, setDueDate] = useState("");
+  // Caller's effective field-level permissions. `locked(key)` → the field is
+  // readonly/hidden for this user, so render it read-only (the server would
+  // reject an edit anyway).
+  const [fieldLevels, setFieldLevels] = useState<Record<string, string>>({});
+  const locked = (key: string) => {
+    const l = fieldLevels[key];
+    return l === "readonly" || l === "hidden";
+  };
   const [storyPoints, setStoryPoints] = useState("");
   const [eta, setEta] = useState("");
   const [etaError, setEtaError] = useState<string | null>(null);
@@ -543,6 +554,7 @@ export function EditIssueModal({
           setEpicId(d.epicId ?? "");
           setStartDate(toDateInput(d.startDate));
           setDueDate(toDateInput(d.dueDate));
+          setFieldLevels(d.fieldLevels ?? {});
           setStoryPoints(d.storyPoints == null ? "" : String(d.storyPoints));
           setEta(formatEtaHours(d.eta));
           setCustomFields(d.customFields ?? []);
@@ -586,9 +598,13 @@ export function EditIssueModal({
           }),
         );
         onSaved?.();
+      } else {
+        // The change didn't persist (e.g. a field that's read-only for the
+        // caller's role). Surface it instead of silently losing the edit.
+        showToast(res?.error || "That change couldn't be saved.", "error");
       }
     } catch {
-      // ignore
+      showToast("Couldn't save your change. Please try again.", "error");
     }
   }
 
@@ -1290,19 +1306,29 @@ export function EditIssueModal({
                     </DetailRow>
 
                     <DetailRow label="Priority">
-                      <RowPriorityPicker
-                        value={priority}
-                        onChange={(p) => {
-                          setPriority(p);
-                          void patch({ priority: p });
-                        }}
-                      />
+                      {locked("priority") ? (
+                        <LockedChip>
+                          {priority.charAt(0) + priority.slice(1).toLowerCase()}
+                        </LockedChip>
+                      ) : (
+                        <RowPriorityPicker
+                          value={priority}
+                          onChange={(p) => {
+                            setPriority(p);
+                            void patch({ priority: p });
+                          }}
+                        />
+                      )}
                     </DetailRow>
 
                     {/* Parent (epic link) — N/A for Epics themselves. */}
                     {issue?.type !== "EPIC" && (
                       <DetailRow label="Parent">
-                        {linkedEpic ? (
+                        {locked("parent") ? (
+                          <LockedChip>
+                            {linkedEpic ? `${linkedEpic.key} ${linkedEpic.title}` : "—"}
+                          </LockedChip>
+                        ) : linkedEpic ? (
                           <button
                             type="button"
                             onClick={() => {
@@ -1332,6 +1358,11 @@ export function EditIssueModal({
 
                     <DetailRow label="Due date">
                       {(() => {
+                        // Read-only for this role — show the value, don't let an
+                        // edit silently fail server-side.
+                        if (locked("dueDate")) {
+                          return <LockedChip>{dueDate ? fmtDateLabel(dueDate) : "—"}</LockedChip>;
+                        }
                         // Subtasks dictate this field. Once any subtask exists
                         // the parent's value is derived (max of children) and
                         // not editable.
@@ -1364,22 +1395,32 @@ export function EditIssueModal({
                       })()}
                     </DetailRow>
 
-                    {/* Sprint — Epics span sprints, so they don't get assigned to one. */}
-                    {issue?.type !== "EPIC" && (
+                    {/* Sprint — Epics span sprints (no single assignment), and
+                        functional projects have no sprints, so hide when none exist. */}
+                    {issue?.type !== "EPIC" && sprints.length > 0 && (
                       <DetailRow label="Sprint">
-                        <SprintRowPicker
-                          sprints={sprints}
-                          value={sprintId}
-                          onChange={(id) => {
-                            setSprintId(id);
-                            void patch({ sprintId: id || null });
-                          }}
-                        />
+                        {locked("sprint") ? (
+                          <LockedChip>
+                            {sprints.find((s) => s.id === sprintId)?.name ?? "—"}
+                          </LockedChip>
+                        ) : (
+                          <SprintRowPicker
+                            sprints={sprints}
+                            value={sprintId}
+                            onChange={(id) => {
+                              setSprintId(id);
+                              void patch({ sprintId: id || null });
+                            }}
+                          />
+                        )}
                       </DetailRow>
                     )}
 
                     <DetailRow label="Start date">
                       {(() => {
+                        if (locked("startDate")) {
+                          return <LockedChip>{startDate ? fmtDateLabel(startDate) : "—"}</LockedChip>;
+                        }
                         if (subtasks.length > 0) {
                           const rolled = rollUpStartDate(subtasks);
                           if (rolled) {
@@ -2475,6 +2516,19 @@ function DrawerSkeleton() {
  * Start date, Original estimate). The chip carries an explicit `(rolled up)`
  * label and a tooltip so the user knows why the field can't be edited.
  */
+/** Read-only display for a field the caller's role can't edit. */
+function LockedChip({ children }: { children: React.ReactNode }) {
+  return (
+    <span
+      title="Read-only for your role"
+      className="inline-flex items-center gap-1 h-6 px-2 rounded border border-gray-200 bg-gray-50 text-[11px] font-medium text-gray-500 cursor-not-allowed dark:border-gray-700 dark:bg-gray-800 dark:text-gray-400"
+    >
+      <Lock className="h-3 w-3" />
+      {children}
+    </span>
+  );
+}
+
 function RolledUpChip({
   children,
   overdue,
