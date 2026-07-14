@@ -98,6 +98,31 @@ describe("/api/org/users/[id] route family", () => {
     expect(json.data.appRoleId).toBe("role1");
   });
 
+  it("role PATCH rejects unsetting a role (roleId: null) — a user can never be left role-less", async () => {
+    asAdmin();
+
+    const res = await patchRole(
+      makeReq("/api/org/users/target/role", { method: "PATCH", body: { roleId: null } }),
+      P,
+    );
+
+    expect(res.status).toBe(400);
+    // Rejected at validation, before any role row is deleted/reassigned.
+    expect(mockDb.astUserAppRole.deleteMany).not.toHaveBeenCalled();
+  });
+
+  it("role PATCH rejects an empty roleId", async () => {
+    asAdmin();
+
+    const res = await patchRole(
+      makeReq("/api/org/users/target/role", { method: "PATCH", body: { roleId: "" } }),
+      P,
+    );
+
+    expect(res.status).toBe(400);
+    expect(mockDb.astUserAppRole.deleteMany).not.toHaveBeenCalled();
+  });
+
   it("role PATCH 409s when the target lacks QuikAsset access", async () => {
     asAdmin();
     mockDb.app.findUnique.mockResolvedValue({ id: "app" } as never);

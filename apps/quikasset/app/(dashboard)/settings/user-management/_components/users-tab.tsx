@@ -109,7 +109,7 @@ export function UsersTab({ showToast }: Props) {
       const res = await fetch(`/api/org/users/${user.userId}/role`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ roleId: roleId || null }),
+        body: JSON.stringify({ roleId }),
       });
       const json = await res.json();
       if (!res.ok || !json.success) {
@@ -172,7 +172,6 @@ export function UsersTab({ showToast }: Props) {
             className="rounded-lg border border-gray-200 bg-gray-50 px-2.5 py-2 text-xs text-gray-600 focus:bg-white focus:outline-none focus:ring-2 focus:ring-accent-400"
           >
             <option value="">All roles</option>
-            <option value="none">No role</option>
             {roles.map((r) => (
               <option key={r.id} value={r.id}>
                 {r.name}
@@ -251,7 +250,15 @@ export function UsersTab({ showToast }: Props) {
                       onChange={(e) => changeRole(u, e.target.value)}
                       className="rounded-lg border border-gray-200 bg-white px-2 py-1 text-xs capitalize focus:outline-none focus:ring-2 focus:ring-accent-400"
                     >
-                      <option value="">No role</option>
+                      {/* No selectable "No role": every user must stay at least
+                          Member. A disabled placeholder only appears for a
+                          legacy role-less user so the select can't misrepresent
+                          them as the first real role. */}
+                      {!u.appRoleId && (
+                        <option value="" disabled>
+                          Select role…
+                        </option>
+                      )}
                       {roles.map((r) => (
                         <option key={r.id} value={r.id}>
                           {r.name}
