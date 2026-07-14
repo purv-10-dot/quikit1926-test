@@ -18,6 +18,8 @@ import "lenis/dist/lenis.css";
  * --font-mono) on the wrapper; the inline fontFamily makes the whole landing
  * subtree pick up Inter even though <body> keeps the dashboard's Jakarta.
  */
+
+
 const inter = Inter({
   subsets: ["latin"],
   weight: ["300", "400", "500", "600", "700"],

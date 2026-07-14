@@ -412,15 +412,25 @@ export const POST = auth.manage(async (authCtx, req: NextRequest) => {
         where: { userId: centralUserId, orgId: ctx.orgId, appId },
         select: { id: true },
       });
+      // Mirror the chosen QuikInfra role onto the central per-app access
+      // record so the Admin Portal's "App Access" column shows the real role
+      // (e.g. "admin"), not a hardcoded "member". The authoritative role
+      // still lives in CnUserAppRole below; this column is the denormalised
+      // copy the Admin Portal reads.
       if (!existingAccess) {
         await dbCentral.userAppAccess.create({
           data: {
             userId: centralUserId!,
             orgId: ctx.orgId,
             appId,
-            role: "member",
+            role: selectedRole.name,
             grantedBy: ctx.userId,
           },
+        });
+      } else {
+        await dbCentral.userAppAccess.updateMany({
+          where: { userId: centralUserId!, orgId: ctx.orgId, appId },
+          data: { role: selectedRole.name },
         });
       }
     }

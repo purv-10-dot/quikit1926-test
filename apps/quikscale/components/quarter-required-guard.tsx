@@ -75,14 +75,15 @@ export function QuarterRequiredGuard({ children }: { children: React.ReactNode }
             <Settings2 className="h-4 w-4 mt-0.5 flex-shrink-0 text-[var(--accent-600)]" />
             <div className="space-y-1">
               <p className="text-sm font-semibold text-[var(--color-text-primary)]">
-                Prefer custom quarter lengths?
+                Prefer meeting-day aligned quarters?
               </p>
               <p className="text-xs text-[var(--color-text-secondary)] leading-relaxed">
-                By default, every quarter is <span className="font-medium">13 weeks</span>. To
-                customize, open <span className="font-medium">Settings → Configurations</span> and
-                enable <span className="font-medium">Custom Quarter Settings</span>. You can then set
-                a different number of weeks per quarter (e.g. Q1 = 14, Q2 = 15) and quarters are
-                laid out month-wise. Leave it off to keep the standard 13-week quarters.
+                By default, every quarter is a fixed <span className="font-medium">13 weeks</span>. To
+                align weeks to your rhythm, open <span className="font-medium">Settings → Configurations</span> and
+                enable <span className="font-medium">Custom Quarter Settings</span>. Weeks then start on
+                your chosen <span className="font-medium">Weekly Meeting Day</span>, quarters use
+                calendar-month boundaries, and each runs 13–14 weeks (with partial weeks at the edges).
+                Leave it off to keep the standard 13-week quarters.
               </p>
             </div>
           </div>

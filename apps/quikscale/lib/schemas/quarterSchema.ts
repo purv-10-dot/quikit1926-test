@@ -25,6 +25,9 @@ export const updateQuarterSchema = z.object({
   startDate: z.string().min(1).optional(),
   endDate: z.string().min(1).optional(),
   weekCount: weekCount.optional(),
+  // Custom Quarter Settings — editable while the FY has no data. Changing the
+  // meeting day re-derives every quarter's week count (13/14) server-side.
+  weeklyMeetingDay: z.string().max(20).optional().nullable(),
 });
 
 export type GenerateQuartersInput = z.infer<typeof generateQuartersSchema>;

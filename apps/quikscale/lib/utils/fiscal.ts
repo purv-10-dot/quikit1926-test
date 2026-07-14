@@ -188,11 +188,24 @@ export function getCurrentFiscalWeekFromStart(
   startDate: string | Date,
   total: number = DEFAULT_WEEKS_PER_QUARTER,
   meetingDay?: string | null,
+  endDate?: string | Date | null,
 ): number {
-  const start = typeof startDate === "string" ? new Date(startDate) : startDate;
-  // Custom Quarter Settings: measure elapsed weeks from the meeting-day anchor
-  // (Week 1 begins there), not the raw quarter start. Null → legacy behavior.
   const idx = meetingDayIndex(meetingDay);
+  // Custom Quarter Settings + a known quarter end: find which meeting-day week
+  // (including partial weeks) contains today, via the canonical generator.
+  if (idx !== null && endDate != null) {
+    const weeks = generateMeetingDayWeeks(startDate, endDate, idx);
+    if (weeks.length === 0) return 1;
+    const now = toLocalDay(new Date()).getTime();
+    if (now < weeks[0].start.getTime()) return 1;
+    for (let i = 0; i < weeks.length; i++) {
+      if (now <= weeks[i].end.getTime()) return i + 1;
+    }
+    return weeks.length;
+  }
+  // Legacy uniform-week fallback (meeting day off, or no quarter end supplied):
+  // measure elapsed weeks from the start (or the meeting-day anchor).
+  const start = typeof startDate === "string" ? new Date(startDate) : startDate;
   const anchor = idx !== null ? alignToMeetingDay(start, idx) : start;
   const now = new Date();
   if (now < anchor) return 1;
@@ -235,17 +248,67 @@ export function qtdReferenceWeek(
   const end = toLocalDay(endDate).getTime();
   if (today > end) return weekCount + 1;   // past → all weeks complete
   if (today < start) return 1;             // future → nothing started (QTD 0)
-  return getCurrentFiscalWeekFromStart(startDate, weekCount, meetingDay);
+  return getCurrentFiscalWeekFromStart(startDate, weekCount, meetingDay, endDate);
+}
+
+/**
+ * Custom Quarter Settings — the canonical week list for a quarter, aligned to
+ * the weekly meeting day. THE single source of truth for both the stored
+ * per-quarter `weekCount` and every displayed week range.
+ *
+ * Model: weeks run meetingDay → meetingDay+6 (e.g. Thu → Wed). Every quarter
+ * behaves identically:
+ *   - if the quarter start is NOT a meeting day, the days from the start up to
+ *     the first meeting day form a PARTIAL Week 1 (e.g. quarter starts Wed
+ *     01 Apr, meeting day Monday, first Monday 06 Apr → Week 1 = 01–05 Apr);
+ *   - the final week is clipped to the quarter end (partial trailing week).
+ * A quarter therefore has 13 or 14 weeks depending on its boundaries. No
+ * calendar date inside the quarter is ever left unassigned — Q1 is treated the
+ * same as Q2–Q4 (its leading days become a partial Week 1, not dropped).
+ *
+ * All dates are treated at local midnight; inputs are not mutated. Returns []
+ * when the range is empty/inverted.
+ */
+export function generateMeetingDayWeeks(
+  quarterStart: string | Date,
+  quarterEnd: string | Date,
+  meetingDayIdx: number,
+): Array<{ start: Date; end: Date }> {
+  const qStart = toLocalDay(quarterStart);
+  const qEnd = toLocalDay(quarterEnd);
+  const weeks: Array<{ start: Date; end: Date }> = [];
+  if (qEnd.getTime() < qStart.getTime()) return weeks;
+
+  const addDaysLocal = (d: Date, n: number) =>
+    new Date(d.getFullYear(), d.getMonth(), d.getDate() + n);
+  const firstMeeting = alignToMeetingDay(qStart, meetingDayIdx);
+
+  let cursor: Date;
+  if (firstMeeting.getTime() > qStart.getTime()) {
+    // Leading partial week: [qStart .. day before the first meeting day].
+    const pEnd = addDaysLocal(firstMeeting, -1);
+    weeks.push({ start: qStart, end: pEnd.getTime() > qEnd.getTime() ? qEnd : pEnd });
+    cursor = firstMeeting;
+  } else {
+    cursor = qStart; // quarter starts exactly on the meeting day
+  }
+
+  while (cursor.getTime() <= qEnd.getTime()) {
+    const wEnd = addDaysLocal(cursor, 6);
+    weeks.push({ start: cursor, end: wEnd.getTime() > qEnd.getTime() ? qEnd : wEnd });
+    cursor = addDaysLocal(cursor, 7);
+  }
+  return weeks;
 }
 
 /**
  * Internal — compute the [start, end] Dates for one week of a quarter.
  *
- * When a `meetingDay` resolves to a weekday index, Week 1 is anchored on the
- * first meeting day on/after the quarter start and the final week is clamped to
- * `quarterEnd` (a partial trailing week is allowed). When `meetingDay` is
- * null/unset — i.e. Custom Quarter Settings off — this is the legacy
- * `qStart + (week-1)*7 … +6` math with no clamp, so nothing changes.
+ * When a `meetingDay` resolves to a weekday index AND a `quarterEnd` is known,
+ * weeks come from `generateMeetingDayWeeks` (meeting-day aligned, partial weeks,
+ * 13-or-14 count). When `meetingDay` is null/unset — Custom Quarter Settings off
+ * — or no `quarterEnd` is supplied, this falls back to the legacy
+ * `qStart + (week-1)*7 … +6` math, so nothing changes for non-custom tenants.
  */
 function weekBounds(
   year: number,
@@ -257,13 +320,13 @@ function weekBounds(
 ): { start: Date; end: Date } {
   const qs = getQuarterStart(year, quarter, actualStartDate);
   const idx = meetingDayIndex(meetingDay);
-  const base = idx !== null ? alignToMeetingDay(qs, idx) : qs;
-  const start = new Date(base.getFullYear(), base.getMonth(), base.getDate() + (weekNumber - 1) * 7);
-  let end = new Date(base.getFullYear(), base.getMonth(), base.getDate() + weekNumber * 7 - 1);
   if (idx !== null && quarterEnd != null) {
-    const qe = toLocalDay(quarterEnd);
-    if (end.getTime() > qe.getTime()) end = qe;
+    const wk = generateMeetingDayWeeks(qs, quarterEnd, idx)[weekNumber - 1];
+    if (wk) return wk;
+    // weekNumber past the last week → fall through to the uniform math below.
   }
+  const start = new Date(qs.getFullYear(), qs.getMonth(), qs.getDate() + (weekNumber - 1) * 7);
+  const end = new Date(qs.getFullYear(), qs.getMonth(), qs.getDate() + weekNumber * 7 - 1);
   return { start, end };
 }
 

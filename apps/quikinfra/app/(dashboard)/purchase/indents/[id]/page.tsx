@@ -251,7 +251,7 @@ export default function IndentDetailPage() {
                         <th className="px-4 py-2 text-right text-[10px] font-semibold text-gray-500 uppercase w-32">Amount (₹)</th>
                         <th className="px-4 py-2 text-left text-[10px] font-semibold text-gray-500 uppercase">Preferred Vendor</th>
                         <th className="px-4 py-2 text-left text-[10px] font-semibold text-gray-500 uppercase w-32">PO</th>
-                        <th className="px-4 py-2 text-left text-[10px] font-semibold text-gray-500 uppercase w-28">GRN</th>
+                        <th className="px-4 py-2 text-left text-[10px] font-semibold text-gray-500 uppercase w-32">GRN</th>
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-gray-50">

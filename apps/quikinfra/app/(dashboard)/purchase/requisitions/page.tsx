@@ -121,15 +121,21 @@ export default function PurchaseRequisitionsPage() {
     {
       // PO tracking — "have we ordered this requirement?" Traced via the
       // PR → indent → PO chain and rolled up per PR.
-      key: "_po", label: "PO", sortable: false, width: "130px",
+      key: "_po", label: "PO", sortable: false, width: "150px",
       render: (row) => {
         const p = row.procurement;
         if (!p || p.poRefs.length === 0) {
           return <span className="text-[11px] text-slate-400">Not ordered</span>;
         }
+        // Cap the visible chips so a PR fulfilled by many POs doesn't grow
+        // the row unbounded — show the first 3, then a "+N more" badge that
+        // opens the PR detail (which lists every PO per line).
+        const MAX_CHIPS = 3;
+        const shown = p.poRefs.slice(0, MAX_CHIPS);
+        const extra = p.poRefs.length - shown.length;
         return (
           <div className="flex flex-wrap gap-1">
-            {p.poRefs.map((po) => (
+            {shown.map((po) => (
               <button
                 key={po.id}
                 type="button"
@@ -138,11 +144,24 @@ export default function PurchaseRequisitionsPage() {
                   router.push(`/purchase/orders/${po.id}`);
                 }}
                 title={`${po.poNumber} — Status: ${poStatusLabel(po.status)} · click to open`}
-                className="inline-flex items-center px-2 py-0.5 rounded-md bg-orange-50 text-orange-700 text-[11px] font-medium hover:bg-orange-100 transition-colors"
+                className="inline-flex items-center px-2 py-0.5 rounded-md bg-orange-50 text-orange-700 text-[11px] font-medium whitespace-nowrap hover:bg-orange-100 transition-colors"
               >
                 {po.poNumber}
               </button>
             ))}
+            {extra > 0 && (
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  router.push(`/purchase/requisitions/${row.id}`);
+                }}
+                title={`${extra} more PO${extra > 1 ? "s" : ""} — open the PR to see all`}
+                className="inline-flex items-center px-2 py-0.5 rounded-md bg-slate-100 text-slate-600 text-[11px] font-medium whitespace-nowrap hover:bg-slate-200 transition-colors"
+              >
+                +{extra} more
+              </button>
+            )}
           </div>
         );
       },

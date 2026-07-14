@@ -5,7 +5,7 @@ import {
   getCurrentFiscalWeekFromStart,
   qtdReferenceWeek,
   resolveQuarterForDate,
-  alignToMeetingDay,
+  generateMeetingDayWeeks,
   meetingDayIndex,
   DEFAULT_WEEKS_PER_QUARTER,
   MAX_WEEKS_PER_QUARTER,
@@ -15,19 +15,13 @@ import { useCustomQuarterSettings, useWeeklyMeetingDay } from "@/lib/hooks/useFe
 /**
  * Effective weekly meeting day for week alignment — the configured day when
  * Custom Quarter Settings is ON, else `null`. A `null` result disables all
- * meeting-day anchoring below, so with the toggle off these hooks behave
+ * meeting-day generation below, so with the toggle off these hooks behave
  * exactly as they did before (legacy calendar weeks).
  */
 function useEffectiveMeetingDay(): string | null {
   const customOn = useCustomQuarterSettings();
   const meetingDay = useWeeklyMeetingDay();
   return customOn ? meetingDay : null;
-}
-
-/** Local-midnight Date from an ISO/date string (drops any time component). */
-function localMidnight(value: string): Date {
-  const d = new Date(value);
-  return new Date(d.getFullYear(), d.getMonth(), d.getDate());
 }
 
 interface QuarterRow {
@@ -84,7 +78,7 @@ export function useCurrentWeek(year: number | null | undefined, quarter: string 
       await ensureLoaded();
       const match = cache?.find((q) => q.fiscalYear === year && q.quarter === quarter);
       if (match) {
-        setWeek(getCurrentFiscalWeekFromStart(match.startDate, rowWeekCount(match), meetingDay));
+        setWeek(getCurrentFiscalWeekFromStart(match.startDate, rowWeekCount(match), meetingDay, match.endDate));
       } else {
         // Fallback: assume it's week 1 if we don't have data
         setWeek(1);
@@ -237,21 +231,22 @@ export function useWeekLabels(
         setLabels([]);
         return;
       }
-      // Custom Quarter Settings: anchor Week 1 on the meeting day and clamp the
-      // final week to the quarter end. Null meeting day → legacy calendar weeks.
+      // Custom Quarter Settings: meeting-day aligned weeks incl. partial weeks
+      // (13 or 14). Null meeting day → legacy uniform calendar weeks.
       const idx = meetingDayIndex(meetingDay);
-      const start = idx !== null
-        ? alignToMeetingDay(localMidnight(match.startDate), idx)
-        : new Date(match.startDate);
-      const qEnd = idx !== null ? localMidnight(match.endDate) : null;
+      if (idx !== null) {
+        const weeks = generateMeetingDayWeeks(match.startDate, match.endDate, idx);
+        setLabels(weeks.map((w) => formatCompactWeekLabel(w.start, w.end)));
+        return;
+      }
+      const start = new Date(match.startDate);
       const out: string[] = [];
       const weekCount = rowWeekCount(match);
       for (let w = 1; w <= weekCount; w++) {
         const ws = new Date(start);
         ws.setDate(ws.getDate() + (w - 1) * 7);
-        let we = new Date(ws);
+        const we = new Date(ws);
         we.setDate(we.getDate() + 6);
-        if (qEnd && we.getTime() > qEnd.getTime()) we = qEnd;
         out.push(formatCompactWeekLabel(ws, we));
       }
       setLabels(out);
@@ -290,21 +285,21 @@ export function useWeekDateRange(
         setRange(null);
         return;
       }
-      // Custom Quarter Settings: anchor on the meeting day + clamp the final
-      // week to the quarter end. Null meeting day → legacy calendar weeks.
+      const fmt = (d: Date) => d.toLocaleDateString("en-GB", { day: "numeric", month: "short" });
+      // Custom Quarter Settings: meeting-day aligned weeks incl. partial weeks.
+      // Null meeting day → legacy uniform calendar weeks.
       const idx = meetingDayIndex(meetingDay);
-      const start = idx !== null
-        ? alignToMeetingDay(localMidnight(match.startDate), idx)
-        : new Date(match.startDate);
+      if (idx !== null) {
+        const weeks = generateMeetingDayWeeks(match.startDate, match.endDate, idx);
+        const wk = weeks[weekNumber - 1];
+        setRange(wk ? `${fmt(wk.start)} – ${fmt(wk.end)}` : null);
+        return;
+      }
+      const start = new Date(match.startDate);
       const weekStart = new Date(start);
       weekStart.setDate(weekStart.getDate() + (weekNumber - 1) * 7);
-      let weekEnd = new Date(weekStart);
+      const weekEnd = new Date(weekStart);
       weekEnd.setDate(weekEnd.getDate() + 6);
-      if (idx !== null) {
-        const qEnd = localMidnight(match.endDate);
-        if (weekEnd.getTime() > qEnd.getTime()) weekEnd = qEnd;
-      }
-      const fmt = (d: Date) => d.toLocaleDateString("en-GB", { day: "numeric", month: "short" });
       setRange(`${fmt(weekStart)} – ${fmt(weekEnd)}`);
     })();
   }, [year, quarter, weekNumber, meetingDay]);

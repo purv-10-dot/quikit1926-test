@@ -38,9 +38,9 @@ export function ProcurementCells({
                   router.push(`/purchase/orders/${po.id}`);
                 }}
                 title={`Open ${po.poNumber}`}
-                className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-indigo-50 text-indigo-700 text-[11px] font-medium hover:bg-indigo-100 transition-colors"
+                className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-orange-50 text-orange-700 text-[11px] font-medium whitespace-nowrap hover:bg-orange-100 transition-colors"
               >
-                <span className="font-mono">{po.poNumber}</span>
+                <span>{po.poNumber}</span>
               </button>
             ))}
           </div>
@@ -82,7 +82,7 @@ export function ProcurementCells({
                       router.push(`/store/grn/${grn.id}`);
                     }}
                     title={`Open ${grn.grnNumber}`}
-                    className="inline-flex items-center px-1.5 py-0.5 rounded bg-slate-100 text-slate-600 text-[10px] font-mono hover:bg-slate-200 transition-colors"
+                    className="inline-flex items-center px-1.5 py-0.5 rounded bg-slate-100 text-slate-600 text-[10px] whitespace-nowrap hover:bg-slate-200 transition-colors"
                   >
                     {grn.grnNumber}
                   </button>
