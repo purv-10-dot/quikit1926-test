@@ -49,7 +49,7 @@ export default function VendorPerformance() {
           </tr></thead>
           <tbody>{rows.map(r => (
             <tr key={r.vendorId} className="border-t border-gray-100">
-              <td className="px-3 py-2"><div className="font-medium">{r.name}</div><div className="text-[10px] font-mono text-gray-500">{r.code}</div></td>
+              <td className="px-3 py-2"><div className="font-medium">{r.name}</div><div className="text-[10px] text-gray-500">{r.code}</div></td>
               <td className="px-3 py-2 text-right text-xs">{r.rating ?? "—"}</td>
               <td className="px-3 py-2 text-right">{r.poCount}</td>
               <td className="px-3 py-2 text-right">{r.grnCount}</td>

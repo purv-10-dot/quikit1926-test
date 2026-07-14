@@ -177,7 +177,7 @@ export default function ProjectsPage() {
           <>
             Delete project{" "}
             <span className="font-semibold text-gray-900">“{item.name}”</span>
-            {item.code ? <> (<span className="font-mono">{item.code}</span>)</> : null}?
+            {item.code ? <> (<span className="">{item.code}</span>)</> : null}?
             <br />
             It will be hidden from the list. You can restore it later from the
             “Show deleted” view.

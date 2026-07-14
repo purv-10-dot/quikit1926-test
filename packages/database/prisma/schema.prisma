@@ -145,13 +145,11 @@ model Org {
   cnCustomers              CnCustomer[]
   cnDepartments            CnDepartment[]
   cnDieselLogs             CnDieselLog[]
-  cnFinancialYears         CnFinancialYear[]
   cnGstCodes               CnGSTCode[]
   cnGatePasses             CnGatePass[]
   cnGoodReturns            CnGoodReturn[]
   cnGRNs                   CnGoodsReceiptNote[]
   cnHindrances             CnHindrance[]
-  cnInternalReturns        CnInternalReturn[]
   cnItems                  CnItem[]
   cnItemGroups             CnItemGroup[]
   cnLocations              CnLocation[]
@@ -2338,7 +2336,6 @@ model CnCompany {
   createdBy   String
   updatedBy   String
 
-  finYears CnFinancialYear[]
 
   // --- grafted: cross-schema relations (Org/User) ---
   org Org @relation(fields: [orgId], references: [id], onDelete: Cascade)
@@ -2498,7 +2495,6 @@ model CnUOM {
   materialIssueLines  CnMaterialIssueLine[]
   stockTransferLines  CnStockTransferLine[]
   reconciliationLines CnStockReconciliationLine[]
-  internalReturnLines CnInternalReturnLine[]
 
   // --- grafted: cross-schema relations (Org/User) ---
   org Org @relation(fields: [orgId], references: [id], onDelete: Cascade)
@@ -2567,7 +2563,6 @@ model CnItem {
   materialIssueLines  CnMaterialIssueLine[]
   stockTransferLines  CnStockTransferLine[]
   reconciliationLines CnStockReconciliationLine[]
-  internalReturnLines CnInternalReturnLine[]
 
   // --- grafted: cross-schema relations (Org/User) ---
   org Org @relation(fields: [orgId], references: [id], onDelete: Cascade)
@@ -2677,7 +2672,6 @@ model CnLocation {
   transfersFrom   CnStockTransfer[]       @relation("StockTransferFrom")
   transfersTo     CnStockTransfer[]       @relation("StockTransferTo")
   reconciliations CnStockReconciliation[]
-  internalReturns CnInternalReturn[]
   dieselLogs      CnDieselLog[]
 
   // --- grafted: cross-schema relations (Org/User) ---
@@ -2763,29 +2757,6 @@ model CnTermsCondition {
   @@schema("app_quikinfra")
 }
 
-model CnFinancialYear {
-  id        String   @id @default(cuid())
-  orgId     String
-  companyId String
-  label     String
-  startDate DateTime
-  endDate   DateTime
-  isCurrent Boolean  @default(false)
-  status    String   @default("active")
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-  createdBy String
-  updatedBy String
-
-  company CnCompany @relation(fields: [companyId], references: [id])
-
-  // --- grafted: cross-schema relations (Org/User) ---
-  org Org @relation(fields: [orgId], references: [id], onDelete: Cascade)
-
-  @@index([orgId])
-  @@map("Financial_years")
-  @@schema("app_quikinfra")
-}
 
 model CnProject {
   id               String    @id @default(cuid())
@@ -2844,7 +2815,6 @@ model CnProject {
   fixedAssetTransactionsTo   CnFixedAssetTransaction[] @relation("FaTxnDestination")
   gatePasses                 CnGatePass[]
   goodReturns                CnGoodReturn[]
-  internalReturns            CnInternalReturn[]
   boqRev2Items               CnBOQItemV2[]
   boqImportBatches           CnBOQImportBatch[]
   boqLockState               CnBOQLockState?
@@ -3576,7 +3546,6 @@ model CnMaterialIssue {
   project         CnProject             @relation(fields: [projectId], references: [id])
   location        CnLocation?           @relation(fields: [locationId], references: [id])
   lines           CnMaterialIssueLine[]
-  internalReturns CnInternalReturn[]
 
   // --- grafted: cross-schema relations (Org/User) ---
   org Org @relation(fields: [orgId], references: [id], onDelete: Cascade)
@@ -3820,52 +3789,7 @@ model CnGoodReturnLine {
   @@schema("app_quikinfra")
 }
 
-model CnInternalReturn {
-  id           String   @id @default(cuid())
-  orgId        String
-  returnNumber String
-  projectId    String
-  locationId   String
-  returnedById String
-  issueId      String?
-  returnDate   DateTime
-  status       String   @default("draft")
-  createdAt    DateTime @default(now())
-  updatedAt    DateTime @updatedAt
-  createdBy    String
-  updatedBy    String
 
-  project  CnProject              @relation(fields: [projectId], references: [id])
-  issue    CnMaterialIssue?       @relation(fields: [issueId], references: [id])
-  location CnLocation             @relation(fields: [locationId], references: [id])
-  lines    CnInternalReturnLine[]
-
-  // --- grafted: cross-schema relations (Org/User) ---
-  org Org @relation(fields: [orgId], references: [id], onDelete: Cascade)
-
-  @@unique([orgId, returnNumber])
-  @@index([orgId])
-  @@map("Internal_returns")
-  @@schema("app_quikinfra")
-}
-
-model CnInternalReturnLine {
-  id          String  @id @default(cuid())
-  returnId    String
-  itemId      String
-  returnedQty Decimal @db.Decimal(18, 4)
-  uomId       String
-  condition   String?
-  remarks     String?
-
-  internalReturn CnInternalReturn @relation(fields: [returnId], references: [id], onDelete: Cascade)
-  item           CnItem           @relation(fields: [itemId], references: [id])
-  uom            CnUOM            @relation(fields: [uomId], references: [id])
-
-  @@index([returnId])
-  @@map("Internal_return_lines")
-  @@schema("app_quikinfra")
-}
 
 model CnStockTransfer {
   id                     String    @id @default(cuid())

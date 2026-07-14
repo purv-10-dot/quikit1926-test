@@ -352,7 +352,7 @@ export default function GRNDetailPage() {
                     <FileText className="w-4 h-4" />
                   </div>
                   <div className="min-w-0 flex-1">
-                    <p className="text-sm font-semibold text-gray-900 font-mono truncate">
+                    <p className="text-sm font-semibold text-gray-900 truncate">
                       {poNumber}
                     </p>
                     {grn.grnDate && (

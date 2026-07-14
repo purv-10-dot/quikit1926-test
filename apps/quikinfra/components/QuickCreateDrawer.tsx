@@ -1444,7 +1444,7 @@ export function QuickCreateDrawer<TLine = DynamicLine, TSec = DynamicLine>({
 
 export function exportCSV(data: any[], filename: string) {
   if (!data.length) { toast.warning("No data to export"); return; }
-  const keys = Object.keys(data[0]).filter(k => !["tenantId", "orgId", "createdBy", "updatedBy"].includes(k));
+  const keys = Object.keys(data[0]).filter(k => !["orgId", "createdBy", "updatedBy"].includes(k));
   const header = keys.join(",");
   const rows = data.map(row => keys.map(k => {
     const val = String(row[k] ?? "").replace(/"/g, '""');

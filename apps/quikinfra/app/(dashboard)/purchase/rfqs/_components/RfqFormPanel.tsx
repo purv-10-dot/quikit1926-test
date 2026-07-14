@@ -5,9 +5,9 @@
  *   - lines (item + qty + uom + spec)
  *   - vendors (multi-select of CnVendor)
  *
- * MultiLineDocForm only handles one `lines` array + scalar headers, so RFQ
- * gets its own slim form. The vendor multi-select is a checkbox grid for
- * speed and clarity.
+ * A generic single-section doc form only handles one `lines` array + scalar
+ * headers, so RFQ gets its own slim form. The vendor multi-select is a
+ * checkbox grid for speed and clarity.
  */
 import { useEffect, useState } from "react";
 import {

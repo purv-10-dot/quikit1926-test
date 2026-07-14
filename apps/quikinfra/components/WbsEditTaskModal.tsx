@@ -135,7 +135,7 @@ export function WbsEditTaskModal({
                 <h2 className="text-base font-semibold text-slate-900 truncate">
                   Edit Task
                 </h2>
-                <p className="text-xs text-slate-500 mt-0.5 truncate font-mono">
+                <p className="text-xs text-slate-500 mt-0.5 truncate">
                   {task.wbsCode}
                 </p>
               </div>

@@ -349,7 +349,7 @@ export default function UserPermissionMatrixPage() {
               <span className="text-sm font-semibold text-gray-900 truncate">
                 {user.fullName}
               </span>
-              <span className="font-mono text-[11px] text-gray-400">
+              <span className="text-[11px] text-gray-400">
                 @{user.username}
               </span>
               {descriptor && (
@@ -673,7 +673,7 @@ function ModuleGroup({
                 )}
               </div>
             </td>
-            <td className="px-4 py-2.5 text-[11px] font-mono text-gray-400">
+            <td className="px-4 py-2.5 text-[11px] text-gray-400">
               {item.url ?? "—"}
             </td>
             {MATRIX_ACTIONS.map((a) => {

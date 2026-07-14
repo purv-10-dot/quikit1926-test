@@ -1491,7 +1491,7 @@ export default function PurchaseOrdersPage() {
               className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-orange-50 text-orange-700 text-[11px] font-medium hover:bg-orange-100 transition-colors"
               title="View RFQ details"
             >
-              <span className="font-mono">{row.sourceRfqNumber}</span>
+              <span className="">{row.sourceRfqNumber}</span>
             </button>
           );
         }
@@ -1507,7 +1507,7 @@ export default function PurchaseOrdersPage() {
               title="View Indent details"
             >
               <span className="text-slate-400">via</span>
-              <span className="font-mono">{row.sourceIndentNumber}</span>
+              <span className="">{row.sourceIndentNumber}</span>
             </button>
           );
         }

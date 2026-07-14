@@ -256,7 +256,7 @@ export default function ComparativeStatementDetailPage() {
       <div className="bg-white rounded-xl border border-gray-200 shadow-sm px-6 py-4 mb-4 flex items-center justify-between">
         <div>
           <div className="text-[11px] text-gray-500">Quotation Registration No</div>
-          <div className="text-sm font-semibold text-gray-900 font-mono mt-0.5">
+          <div className="text-sm font-semibold text-gray-900 mt-0.5">
             {rfq.rfqNumber ?? "—"}
           </div>
         </div>

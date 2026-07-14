@@ -481,7 +481,7 @@ export function ImportDataDrawer({
                         .filter((r) => !r.ok)
                         .map((r) => (
                           <tr key={r.rowNumber}>
-                            <td className="px-3 py-2 font-mono text-gray-600">{r.rowNumber}</td>
+                            <td className="px-3 py-2 text-gray-600">{r.rowNumber}</td>
                             <td className="px-3 py-2 text-red-600">{r.error}</td>
                           </tr>
                         ))}

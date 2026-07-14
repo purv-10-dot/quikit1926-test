@@ -1192,7 +1192,7 @@ export function BOQImportDrawer({ open, onClose, projectId }: Props) {
                           onChange={(e) =>
                             updateParent(parent.id, { boqNoOverride: e.target.value })
                           }
-                          className="w-12 text-[11px] font-mono font-bold text-orange-700 bg-orange-100 border border-orange-200 rounded px-1.5 py-0.5 text-center focus:outline-none focus:ring-1 focus:ring-orange-400 placeholder-orange-300"
+                          className="w-12 text-[11px] font-bold text-orange-700 bg-orange-100 border border-orange-200 rounded px-1.5 py-0.5 text-center focus:outline-none focus:ring-1 focus:ring-orange-400 placeholder-orange-300"
                           title="BOQ No (leave blank to auto-number)"
                         />
                         <input
@@ -1235,7 +1235,7 @@ export function BOQImportDrawer({ open, onClose, projectId }: Props) {
                                     boqNoOverride: e.target.value,
                                   })
                                 }
-                                className="w-10 text-[10px] font-mono text-gray-700 bg-white border border-gray-200 rounded px-1 py-0.5 text-center focus:outline-none focus:ring-1 focus:ring-orange-300 placeholder-gray-400"
+                                className="w-10 text-[10px] text-gray-700 bg-white border border-gray-200 rounded px-1 py-0.5 text-center focus:outline-none focus:ring-1 focus:ring-orange-300 placeholder-gray-400"
                                 title="BOQ No suffix (e.g. 6 → 2.6). Leave blank to auto-number."
                               />
                               <input
@@ -1353,7 +1353,7 @@ export function BOQImportDrawer({ open, onClose, projectId }: Props) {
                                           boqNoOverride: e.target.value,
                                         })
                                       }
-                                      className="w-10 text-[10px] font-mono text-gray-600 bg-white border border-gray-200 rounded px-1 py-0.5 text-center shrink-0 focus:outline-none focus:ring-1 focus:ring-orange-300 placeholder-gray-400"
+                                      className="w-10 text-[10px] text-gray-600 bg-white border border-gray-200 rounded px-1 py-0.5 text-center shrink-0 focus:outline-none focus:ring-1 focus:ring-orange-300 placeholder-gray-400"
                                       title="BOQ No suffix. Leave blank to auto-number."
                                     />
                                     <input
@@ -1500,7 +1500,7 @@ export function BOQImportDrawer({ open, onClose, projectId }: Props) {
                               : "bg-white text-gray-700";
                             return (
                               <tr key={i} className={rowClass}>
-                                <td className="px-2 py-1.5 font-mono align-top border-b border-gray-100 text-gray-500">
+                                <td className="px-2 py-1.5 align-top border-b border-gray-100 text-gray-500">
                                   {r.boqNo}
                                 </td>
                                 <td className="px-2 py-1.5 align-top border-b border-gray-100">
@@ -1901,7 +1901,7 @@ export function BOQImportDrawer({ open, onClose, projectId }: Props) {
                       <tbody className="divide-y divide-gray-100">
                         {preview.sampleRows.map((r, i) => (
                           <tr key={i}>
-                            <td className="px-2 py-1.5 font-mono text-gray-700">{r.boqNo}</td>
+                            <td className="px-2 py-1.5 text-gray-700">{r.boqNo}</td>
                             <td className="px-2 py-1.5 text-gray-900 truncate max-w-[260px]">
                               {r.displayName}
                             </td>
@@ -1940,7 +1940,7 @@ export function BOQImportDrawer({ open, onClose, projectId }: Props) {
                     <tbody className="divide-y divide-gray-100">
                       {preview.detection.perSheet.map((s) => (
                         <tr key={s.sheetName}>
-                          <td className="px-2 py-1.5 font-mono text-gray-700">{s.sheetName}</td>
+                          <td className="px-2 py-1.5 text-gray-700">{s.sheetName}</td>
                           <td className="px-2 py-1.5 text-gray-700">
                             {MODE_LABEL[(s.detectedMode as ImportMode) ?? "AUTO"] ?? s.detectedMode}
                           </td>
@@ -2083,7 +2083,7 @@ function IssueList({
       <ul className="divide-y divide-current/10 max-h-48 overflow-y-auto">
         {issues.slice(0, 50).map((i, idx) => (
           <li key={idx} className="px-4 py-2 text-xs">
-            <span className="font-mono text-[10px] opacity-60">[{i.code}]</span>{" "}
+            <span className="text-[10px] opacity-60">[{i.code}]</span>{" "}
             {i.sheet && <span className="font-semibold">{i.sheet}</span>}
             {i.rowNumber && <span className="opacity-60"> · row {i.rowNumber}</span>}
             {i.boqNo && <span className="opacity-60"> · {i.boqNo}</span>}

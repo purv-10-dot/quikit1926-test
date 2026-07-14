@@ -735,7 +735,7 @@ export default function PODetailPage() {
                       </p>
                     )}
                     {po.vendorGSTIN && (
-                      <p className="text-[11px] text-gray-500 mt-1 font-mono">
+                      <p className="text-[11px] text-gray-500 mt-1">
                         GSTIN: {po.vendorGSTIN}
                       </p>
                     )}
@@ -815,7 +815,7 @@ export default function PODetailPage() {
                             : `/purchase/indents/${po.sourceIndentId}`,
                         )
                       }
-                      className="text-sm font-semibold text-gray-900 font-mono truncate hover:text-orange-700 text-left"
+                      className="text-sm font-semibold text-gray-900 truncate hover:text-orange-700 text-left"
                     >
                       {po.sourceRfqNumber ?? po.sourceIndentNumber ?? "—"}
                     </button>

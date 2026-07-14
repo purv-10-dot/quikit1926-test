@@ -110,8 +110,8 @@ const emptyForm = {
   // When userType === "ADMIN" (company_admin), this checkbox controls
   // whether the user also gets access to the Settings module. Default
   // unchecked = sub-admins can't invite / manage roles, blocking the
-  // "admin sprawl" loophole. Wired to /api/settings/users (invite) and
-  // /api/org/users/[id]/role (role swap) as `enableSettings`.
+  // "admin sprawl" loophole. Wired to /api/settings/users (invite) as
+  // `enableSettings`.
   enableSettings: false,
   // How the invitee signs in. Default = native (temporary password
   // emailed). SSO is for orgs that have Google / Microsoft workspace SSO

@@ -216,7 +216,7 @@ export default function EstimationPage() {
       sortable: true,
       searchable: true,
       render: (row) => (
-        <span className="font-mono text-xs font-semibold text-gray-700">
+        <span className="text-xs font-semibold text-gray-700">
           {row.boqNo ?? "—"}
         </span>
       ),

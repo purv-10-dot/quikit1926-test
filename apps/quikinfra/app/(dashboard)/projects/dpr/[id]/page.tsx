@@ -430,7 +430,7 @@ export default function DPRDetailPage() {
                   </span>
                 </Stat>
                 <Stat label="DPR Number">
-                  <span className="font-mono text-xs font-semibold text-gray-900 px-1.5 py-0.5 rounded bg-sky-50 border border-sky-100">
+                  <span className="text-xs font-semibold text-gray-900 px-1.5 py-0.5 rounded bg-sky-50 border border-sky-100">
                     {dpr.dprNumber ?? "—"}
                   </span>
                 </Stat>
@@ -521,7 +521,7 @@ export default function DPRDetailPage() {
                             <tr className="bg-orange-50/60 border-t border-orange-100">
                               <td colSpan={6} className="px-4 py-2">
                                 <div className="flex items-center gap-2 min-w-0">
-                                  <span className="inline-flex items-center px-1.5 py-0.5 rounded font-mono text-[10px] font-bold text-orange-700 bg-orange-100/70">
+                                  <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-bold text-orange-700 bg-orange-100/70">
                                     {group.topNo}
                                   </span>
                                   {group.topName && (
@@ -549,7 +549,7 @@ export default function DPRDetailPage() {
                                 >
                                   <div className="flex items-center gap-2 min-w-0">
                                     <span className="text-orange-300 shrink-0">└</span>
-                                    <span className="inline-flex items-center px-1.5 py-0.5 rounded font-mono text-[10px] font-bold text-orange-700 bg-orange-100/60">
+                                    <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-bold text-orange-700 bg-orange-100/60">
                                       {node.no}
                                     </span>
                                     {node.name && (
@@ -565,11 +565,11 @@ export default function DPRDetailPage() {
                                 key={`it-${group.key}-${node.idx}`}
                                 className="hover:bg-orange-50/20 transition-colors"
                               >
-                                <td className="px-4 py-3 text-xs font-mono text-gray-400 tabular-nums">
+                                <td className="px-4 py-3 text-xs text-gray-400 tabular-nums">
                                   {String(node.idx + 1).padStart(2, "0")}
                                 </td>
                                 <td
-                                  className="px-4 py-3 font-mono text-xs text-orange-700 font-bold"
+                                  className="px-4 py-3 text-xs text-orange-700 font-bold"
                                   style={
                                     node.depth > 1
                                       ? { paddingLeft: `${node.depth * 16 + 16}px` }
@@ -662,7 +662,7 @@ export default function DPRDetailPage() {
                             over ? "bg-red-50/60 hover:bg-red-50" : "hover:bg-orange-50/20"
                           }`}
                         >
-                          <td className="px-4 py-3 text-xs font-mono text-gray-400 tabular-nums">
+                          <td className="px-4 py-3 text-xs text-gray-400 tabular-nums">
                             {String(idx + 1).padStart(2, "0")}
                           </td>
                           <td className="px-4 py-3 text-gray-900">
@@ -744,7 +744,7 @@ export default function DPRDetailPage() {
                         ].reduce<number>((sum, v) => sum + (Number(v) || 0), 0);
                         return (
                         <tr key={idx} className="hover:bg-orange-50/20 transition-colors">
-                          <td className="px-4 py-3 text-xs font-mono text-gray-400 tabular-nums">
+                          <td className="px-4 py-3 text-xs text-gray-400 tabular-nums">
                             {String(idx + 1).padStart(2, "0")}
                           </td>
                           <td className="px-4 py-3 text-gray-900">
@@ -819,7 +819,7 @@ export default function DPRDetailPage() {
                     <tbody className="divide-y divide-gray-100">
                       {staff.map((s: StaffRow, idx: number) => (
                         <tr key={idx} className="hover:bg-orange-50/20 transition-colors">
-                          <td className="px-4 py-3 text-xs font-mono text-gray-400 tabular-nums">
+                          <td className="px-4 py-3 text-xs text-gray-400 tabular-nums">
                             {String(idx + 1).padStart(2, "0")}
                           </td>
                           <td className="px-4 py-3 text-gray-900">{s.name ?? "—"}</td>
@@ -876,7 +876,7 @@ export default function DPRDetailPage() {
                     <tbody className="divide-y divide-gray-100">
                       {machinery.map((mc: MachineryRow, idx: number) => (
                         <tr key={idx} className="hover:bg-orange-50/20 transition-colors">
-                          <td className="px-4 py-3 text-xs font-mono text-gray-400 tabular-nums">
+                          <td className="px-4 py-3 text-xs text-gray-400 tabular-nums">
                             {String(idx + 1).padStart(2, "0")}
                           </td>
                           <td className="px-4 py-3 text-gray-900">

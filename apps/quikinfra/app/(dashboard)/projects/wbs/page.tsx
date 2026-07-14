@@ -500,7 +500,7 @@ function GridView({
                     ) : (
                       <span className="w-[18px]" aria-hidden />
                     )}
-                    <span className="text-[12px] font-mono font-semibold text-slate-600">
+                    <span className="text-[12px] font-semibold text-slate-600">
                       {t.wbsCode}
                     </span>
                   </div>
@@ -525,7 +525,7 @@ function GridView({
                       {t.predecessors.map((pid) => (
                         <span
                           key={pid}
-                          className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-mono font-semibold bg-slate-100 text-slate-700 border border-slate-200"
+                          className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-semibold bg-slate-100 text-slate-700 border border-slate-200"
                         >
                           {wbsById.get(pid) ?? "?"}
                         </span>
@@ -774,7 +774,7 @@ function GanttView({
                     ) : (
                       <span className="w-[18px] shrink-0" aria-hidden />
                     )}
-                    <span className="text-[11px] font-mono font-semibold text-orange-600 shrink-0">
+                    <span className="text-[11px] font-semibold text-orange-600 shrink-0">
                       {t.wbsCode}
                     </span>
                     <span className="text-sm text-slate-500 shrink-0">-</span>
@@ -858,7 +858,7 @@ function GanttView({
                       }}
                       title="Edit task"
                     >
-                      <span className="font-mono font-semibold text-orange-600">{t.wbsCode}</span>
+                      <span className="font-semibold text-orange-600">{t.wbsCode}</span>
                       <span className="text-slate-400 mx-1">-</span>
                       <span className="font-medium text-slate-700">{t.name}</span>
                     </button>

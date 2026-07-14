@@ -118,7 +118,7 @@ export default function DepartmentsPage() {
           <>
             Delete department{" "}
             <span className="font-semibold text-gray-900">“{item.name}”</span>
-            {item.code ? <> (<span className="font-mono">{item.code}</span>)</> : null}?
+            {item.code ? <> (<span className="">{item.code}</span>)</> : null}?
             <br />
             It will be removed from the list. To keep a department but pause it,
             set its status to Inactive instead — those stay under the Inactive tab.

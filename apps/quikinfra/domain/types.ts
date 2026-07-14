@@ -118,15 +118,6 @@ export interface Company extends TenantScoped, AuditFields {
   status: EntityStatus;
 }
 
-export interface FinancialYear extends TenantScoped, AuditFields {
-  id: string;
-  label: string;
-  startDate: string;
-  endDate: string;
-  isCurrent: boolean;
-  status: EntityStatus;
-}
-
 export interface Project extends TenantScoped, AuditFields {
   id: string;
   code: string;
@@ -590,28 +581,6 @@ export interface GoodReturnLine {
   unitRate: string; // Decimal
   amount: string; // Decimal
   reason?: string;
-}
-
-export interface InternalReturn extends TenantScoped, AuditFields {
-  id: string;
-  returnNumber: string;
-  projectId: string;
-  locationId: string;
-  returnedById: string;
-  issueId?: string;
-  returnDate: string;
-  status: "draft" | "accepted" | "rejected";
-  lines: InternalReturnLine[];
-}
-
-export interface InternalReturnLine {
-  id: string;
-  returnId: string;
-  itemId: string;
-  returnedQty: string; // Decimal
-  uomId: string;
-  condition?: string;
-  remarks?: string;
 }
 
 export interface StockTransfer extends TenantScoped, AuditFields {

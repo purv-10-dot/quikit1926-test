@@ -412,7 +412,7 @@ export default function PRDetailPage() {
                             <td className="px-4 py-3 text-sm font-semibold text-slate-900">
                               {line.itemName ?? line.itemId ?? "—"}
                               {line.itemCode && (
-                                <span className="ml-2 text-[10px] text-slate-400 font-mono">
+                                <span className="ml-2 text-[10px] text-slate-400">
                                   {line.itemCode}
                                 </span>
                               )}

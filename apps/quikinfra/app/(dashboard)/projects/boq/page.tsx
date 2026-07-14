@@ -294,7 +294,7 @@ export default function BOQPage() {
       result.push(
         <tr key={node.id ?? node.boqNo} className={`border-b border-gray-200/60 hover:bg-orange-50/40 ${grpBg} ${neg ? "bg-red-50/40" : ""}`}>
           {/* BOQ No */}
-          <td className="px-2 py-1.5 text-[11px] font-mono text-gray-500 whitespace-nowrap border-r border-gray-100">{node.boqNo}</td>
+          <td className="px-2 py-1.5 text-[11px] text-gray-500 whitespace-nowrap border-r border-gray-100">{node.boqNo}</td>
 
           {/* Description with folder/file icons + indent */}
           <td className="py-1.5 border-r border-gray-100 max-w-[350px]" style={{ paddingLeft: `${6 + depth * 20}px` }}>
@@ -316,19 +316,19 @@ export default function BOQPage() {
           {/* Unit */}
           <td className="px-1 py-1.5 text-[10px] text-center text-gray-500 border-r border-gray-100 uppercase">{node.uomCode || ""}</td>
           {/* Start Date */}
-          <td className="px-1 py-1.5 text-[10px] text-center text-gray-600 border-r border-gray-100 font-mono whitespace-nowrap">{node.startDate ? String(node.startDate).slice(0, 10) : ""}</td>
+          <td className="px-1 py-1.5 text-[10px] text-center text-gray-600 border-r border-gray-100 whitespace-nowrap">{node.startDate ? String(node.startDate).slice(0, 10) : ""}</td>
           {/* End Date */}
-          <td className="px-1 py-1.5 text-[10px] text-center text-gray-600 border-r border-gray-100 font-mono whitespace-nowrap">{node.endDate ? String(node.endDate).slice(0, 10) : ""}</td>
+          <td className="px-1 py-1.5 text-[10px] text-center text-gray-600 border-r border-gray-100 whitespace-nowrap">{node.endDate ? String(node.endDate).slice(0, 10) : ""}</td>
           {/* Rate */}
-          <td className="px-1 py-1.5 text-[10px] text-right text-gray-600 border-r border-gray-100 font-mono">{v.rate > 0 ? INR(v.rate) : ""}</td>
+          <td className="px-1 py-1.5 text-[10px] text-right text-gray-600 border-r border-gray-100">{v.rate > 0 ? INR(v.rate) : ""}</td>
 
           {/* ── Quantities ── */}
-          <td className="px-1 py-1.5 text-[10px] text-right border-r border-gray-100 font-mono">{isGrp ? <span className={valColor}>{NUM(v.tender)}</span> : (v.tender !== 0 ? NUM(v.tender) : "")}</td>
-          <td className="px-1 py-1.5 text-[10px] text-right border-r border-gray-100 font-mono">{isGrp ? <span className={valColor}>{NUM(v.scope)}</span> : (v.scope > 0 ? NUM(v.scope) : "")}</td>
-          <td className="px-1 py-1.5 text-[10px] text-right border-r border-gray-100 font-mono">{isGrp ? <span className={valColor}>{NUM(v.subCo)}</span> : (v.subCo > 0 ? NUM(v.subCo) : "")}</td>
-          <td className="px-1 py-1.5 text-[10px] text-right border-r border-gray-100 font-mono">{isGrp ? <span className={valColor}>{NUM(v.self)}</span> : (v.self > 0 ? NUM(v.self) : "")}</td>
-          <td className={`px-1 py-1.5 text-[10px] text-right border-r border-gray-100 font-mono font-bold ${v.totalDone > 0 ? "text-green-700" : ""}`}>{isGrp ? <span className="text-green-700">{NUM(v.totalDone)}</span> : (v.totalDone > 0 ? NUM(v.totalDone) : "")}</td>
-          <td className="px-1 py-1.5 text-[10px] text-right border-r border-gray-100 font-mono">{v.tender > 0 ? NUM(v.balance) : ""}</td>
+          <td className="px-1 py-1.5 text-[10px] text-right border-r border-gray-100">{isGrp ? <span className={valColor}>{NUM(v.tender)}</span> : (v.tender !== 0 ? NUM(v.tender) : "")}</td>
+          <td className="px-1 py-1.5 text-[10px] text-right border-r border-gray-100">{isGrp ? <span className={valColor}>{NUM(v.scope)}</span> : (v.scope > 0 ? NUM(v.scope) : "")}</td>
+          <td className="px-1 py-1.5 text-[10px] text-right border-r border-gray-100">{isGrp ? <span className={valColor}>{NUM(v.subCo)}</span> : (v.subCo > 0 ? NUM(v.subCo) : "")}</td>
+          <td className="px-1 py-1.5 text-[10px] text-right border-r border-gray-100">{isGrp ? <span className={valColor}>{NUM(v.self)}</span> : (v.self > 0 ? NUM(v.self) : "")}</td>
+          <td className={`px-1 py-1.5 text-[10px] text-right border-r border-gray-100 font-bold ${v.totalDone > 0 ? "text-green-700" : ""}`}>{isGrp ? <span className="text-green-700">{NUM(v.totalDone)}</span> : (v.totalDone > 0 ? NUM(v.totalDone) : "")}</td>
+          <td className="px-1 py-1.5 text-[10px] text-right border-r border-gray-100">{v.tender > 0 ? NUM(v.balance) : ""}</td>
 
           {/* Progress */}
           <td className="px-1 py-1.5 text-center border-r border-gray-100">
@@ -701,7 +701,7 @@ function BOQItemEditModal({
         <div className="flex items-center justify-between px-6 py-4 border-b border-gray-200 rounded-t-2xl">
           <div>
             <h2 className="text-base font-semibold text-gray-900">Edit BOQ Item</h2>
-            <p className="text-xs text-gray-500 font-mono mt-0.5">{item.boqNo}</p>
+            <p className="text-xs text-gray-500 mt-0.5">{item.boqNo}</p>
           </div>
           <button
             onClick={onClose}

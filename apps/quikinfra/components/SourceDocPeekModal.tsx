@@ -152,7 +152,7 @@ export function SourceDocPeekModal({ open, initial, onClose }: Props) {
               <h2 className="text-base font-semibold text-gray-900 truncate">
                 {meta.title}
               </h2>
-              <p className="text-xs text-gray-500 font-mono mt-0.5 truncate">
+              <p className="text-xs text-gray-500 mt-0.5 truncate">
                 {doc ? pickNumber(doc, meta.numberFields) : "Loading…"}
               </p>
             </div>

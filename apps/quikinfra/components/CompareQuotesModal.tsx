@@ -187,7 +187,7 @@ export function CompareQuotesModal({
                 {rfqNumber && (
                   <>
                     <span className="font-medium">RFQ Ref:</span>{" "}
-                    <span className="font-mono">{rfqNumber}</span>
+                    <span className="">{rfqNumber}</span>
                   </>
                 )}
                 {rfqNumber && projectName && (

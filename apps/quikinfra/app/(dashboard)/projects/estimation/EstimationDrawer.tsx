@@ -636,7 +636,7 @@ export function EstimationDrawer({
                   Selected
                 </label>
                 <div className="text-xs text-gray-700 bg-indigo-50 border border-indigo-200 rounded-lg px-3 py-2 truncate">
-                  <span className="font-mono font-semibold">{selectedLeaf.boq_no}</span>
+                  <span className="font-semibold">{selectedLeaf.boq_no}</span>
                   {" · "}
                   {selectedLeaf.display_name}
                 </div>

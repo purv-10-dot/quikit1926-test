@@ -140,7 +140,7 @@ export default function CostCentersPage() {
         <FormSection title="Cost Center Details">
           <FormRow>
             <Field label="Code" required error={errors.code}>
-              <TextInput value={form.code} onChange={v => set("code", v.toUpperCase())} placeholder="CC-001" className="font-mono" invalid={!!errors.code} />
+              <TextInput value={form.code} onChange={v => set("code", v.toUpperCase())} placeholder="CC-001" className="" invalid={!!errors.code} />
             </Field>
             <Field label="Name" required error={errors.name}>
               <TextInput value={form.name} onChange={v => set("name", v)} placeholder="Cost center name" invalid={!!errors.name} />

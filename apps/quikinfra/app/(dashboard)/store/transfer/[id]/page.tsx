@@ -500,7 +500,7 @@ export default function StockTransferDetailPage() {
                   <Truck className="w-5 h-5" />
                 </span>
                 <div>
-                  <div className="text-sm font-mono font-semibold text-gray-900">
+                  <div className="text-sm font-semibold text-gray-900">
                     {st.transferNumber ?? "—"}
                   </div>
                   <div className="mt-0.5 text-[11px] text-gray-500">
@@ -611,7 +611,7 @@ export default function StockTransferDetailPage() {
                 <span className="inline-flex items-center gap-1 text-[10px] font-semibold uppercase tracking-wider text-amber-700 bg-amber-50 border border-amber-200 px-2 py-0.5 rounded">
                   <AlertTriangle className="w-3 h-3" /> E-Way Bill
                 </span>
-                <span className="font-mono">{st.ewayBillNo}</span>
+                <span className="">{st.ewayBillNo}</span>
                 {st.interstateTransfer && (
                   <span className="ml-auto text-[10px] text-gray-500">
                     Interstate transfer
@@ -675,7 +675,7 @@ export default function StockTransferDetailPage() {
                           key={l.id ?? l.itemId ?? idx}
                           className="hover:bg-indigo-50/20 transition-colors"
                         >
-                          <td className="px-4 py-3 text-xs font-mono text-gray-400 tabular-nums">
+                          <td className="px-4 py-3 text-xs text-gray-400 tabular-nums">
                             {String(idx + 1).padStart(2, "0")}
                           </td>
                           <td className="px-4 py-3">
@@ -683,7 +683,7 @@ export default function StockTransferDetailPage() {
                               {itemName}
                             </div>
                             {itemCode && (
-                              <div className="text-[10px] text-gray-400 font-mono mt-0.5">
+                              <div className="text-[10px] text-gray-400 mt-0.5">
                                 {itemCode}
                               </div>
                             )}
@@ -775,7 +775,7 @@ export default function StockTransferDetailPage() {
                             key={l.id ?? l.assetId ?? idx}
                             className="hover:bg-indigo-50/20 transition-colors"
                           >
-                            <td className="px-4 py-3 text-xs font-mono text-gray-400 tabular-nums">
+                            <td className="px-4 py-3 text-xs text-gray-400 tabular-nums">
                               {String(idx + 1).padStart(2, "0")}
                             </td>
                             <td className="px-4 py-3">
@@ -783,7 +783,7 @@ export default function StockTransferDetailPage() {
                                 {assetName}
                               </div>
                               {assetCode && (
-                                <div className="text-[10px] text-gray-400 font-mono mt-0.5">
+                                <div className="text-[10px] text-gray-400 mt-0.5">
                                   {assetCode}
                                 </div>
                               )}
@@ -991,7 +991,7 @@ function Stat({
         {label}
       </div>
       <div
-        className={`mt-1 text-sm text-gray-900 truncate ${mono ? "font-mono text-xs" : ""} ${
+        className={`mt-1 text-sm text-gray-900 truncate ${mono ? "text-xs" : ""} ${
           strong ? "font-semibold" : ""
         }`}
       >

@@ -265,7 +265,7 @@ export default function IndentDetailPage() {
                             <td className="px-4 py-3 text-sm font-medium text-gray-900">
                               {line.itemName ?? line.itemId ?? "—"}
                               {line.itemCode && (
-                                <span className="ml-2 text-[10px] text-gray-400 font-mono">
+                                <span className="ml-2 text-[10px] text-gray-400">
                                   {line.itemCode}
                                 </span>
                               )}
@@ -328,7 +328,7 @@ export default function IndentDetailPage() {
                     <FileText className="w-4 h-4" />
                   </div>
                   <div className="min-w-0 flex-1">
-                    <div className="text-sm font-semibold text-gray-900 font-mono truncate">
+                    <div className="text-sm font-semibold text-gray-900 truncate">
                       {indent.sourceMrNumber ?? indent.sourceMrId}
                     </div>
                     {indent.indentDate && (

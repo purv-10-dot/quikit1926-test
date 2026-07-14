@@ -9,7 +9,7 @@ import { useQuery } from "@tanstack/react-query";
 import {
   FolderKanban, Package, Boxes, Truck, HardHat, Building2,
   MapPin, Calculator, Receipt, CreditCard,
-  Users, ListTodo, BarChart3, Hammer, Globe, CalendarCheck, FileText,
+  Users, ListTodo, BarChart3, Hammer, Globe, FileText,
   ArrowUpRight,
 } from "lucide-react";
 import { PageHeader, PageContainer } from "@/components/PageShell";
@@ -30,7 +30,6 @@ const MASTERS = [
   { key: "costCenters",    label: "Cost Centers",      href: "/masters/cost-centers",     icon: BarChart3 },
   { key: "machinery",      label: "Machinery",         href: "/masters/machinery",        icon: Hammer },
   { key: "companies",      label: "Companies",         href: "/masters/companies",        icon: Globe },
-  { key: "financialYears", label: "Financial Years",   href: "/masters/financial-years",  icon: CalendarCheck },
   { key: "terms",          label: "Terms & Conditions",href: "/masters/terms",            icon: FileText },
 ];
 

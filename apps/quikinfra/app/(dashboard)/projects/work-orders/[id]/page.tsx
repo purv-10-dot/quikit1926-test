@@ -342,7 +342,7 @@ export default function WorkOrderDetailPage() {
                   </OverviewStat>
 
                   <OverviewStat label="WO Number">
-                    <span className="font-mono text-xs font-semibold text-gray-900 px-1.5 py-0.5 rounded bg-sky-50 border border-sky-100">
+                    <span className="text-xs font-semibold text-gray-900 px-1.5 py-0.5 rounded bg-sky-50 border border-sky-100">
                       {wo.woNumber ?? "—"}
                     </span>
                   </OverviewStat>
@@ -489,7 +489,7 @@ export default function WorkOrderDetailPage() {
                     <tbody className="divide-y divide-gray-100">
                       {labourLines.map((line, idx) => (
                         <tr key={idx} className="hover:bg-indigo-50/20 transition-colors">
-                          <td className="px-4 py-3 text-xs font-mono text-gray-400 tabular-nums">
+                          <td className="px-4 py-3 text-xs text-gray-400 tabular-nums">
                             {String(idx + 1).padStart(2, "0")}
                           </td>
                           <td className="px-4 py-3 text-gray-700 whitespace-nowrap">
@@ -551,10 +551,10 @@ export default function WorkOrderDetailPage() {
                     <tbody className="divide-y divide-gray-100">
                       {boqItems.map((it: BoqScopeItem, idx: number) => (
                         <tr key={idx} className="hover:bg-indigo-50/20 transition-colors">
-                          <td className="px-4 py-3 text-xs font-mono text-gray-400 tabular-nums">
+                          <td className="px-4 py-3 text-xs text-gray-400 tabular-nums">
                             {String(idx + 1).padStart(2, "0")}
                           </td>
-                          <td className="px-4 py-3 font-mono text-xs text-gray-700">
+                          <td className="px-4 py-3 text-xs text-gray-700">
                             {it.boqNo ?? it.itemCode ?? "—"}
                           </td>
                           <td className="px-4 py-3 text-gray-900">

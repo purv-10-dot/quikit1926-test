@@ -579,7 +579,7 @@ export default function EstimationDetailPage() {
                 </OverviewStat>
 
                 <OverviewStat label="BOQ No">
-                  <span className="font-mono text-xs font-semibold text-gray-900 px-1.5 py-0.5 rounded bg-sky-50 border border-sky-100">
+                  <span className="text-xs font-semibold text-gray-900 px-1.5 py-0.5 rounded bg-sky-50 border border-sky-100">
                     {estimation.boqNo ?? "—"}
                   </span>
                 </OverviewStat>
@@ -738,7 +738,7 @@ export default function EstimationDetailPage() {
                       <tbody className="divide-y divide-gray-100">
                         {materials.map((m: EstimationMaterial, idx: number) => (
                           <tr key={m.itemId ?? idx} className="hover:bg-indigo-50/20 transition-colors">
-                            <td className="px-4 py-3 text-xs font-mono text-gray-400 tabular-nums">
+                            <td className="px-4 py-3 text-xs text-gray-400 tabular-nums">
                               {String(idx + 1).padStart(2, "0")}
                             </td>
                             <td className="px-4 py-3">

@@ -546,7 +546,7 @@ export function WorkOrderForm({ editData, embedded = false, onSaved }: Props) {
                             type="text"
                             value={line.boqNo}
                             onChange={(e) => updateScopeLine(idx, "boqNo", e.target.value)}
-                            className="w-full text-xs px-2 py-1.5 border border-gray-300 rounded font-mono focus:outline-none focus:ring-1 focus:ring-orange-300 focus:border-orange-400"
+                            className="w-full text-xs px-2 py-1.5 border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-orange-300 focus:border-orange-400"
                           />
                         </td>
                         <td className="px-3 py-2">

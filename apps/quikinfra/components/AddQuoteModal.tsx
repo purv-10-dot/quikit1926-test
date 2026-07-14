@@ -263,7 +263,7 @@ export function AddQuoteModal({
                 {isEditingSelected ? "Edit Vendor Quote" : "Record Vendor Quote"}
               </h2>
               {rfqNumber && (
-                <p className="text-xs text-gray-500 mt-0.5 font-mono">
+                <p className="text-xs text-gray-500 mt-0.5">
                   {rfqNumber}
                 </p>
               )}

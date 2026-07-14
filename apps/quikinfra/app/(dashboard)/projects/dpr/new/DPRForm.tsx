@@ -1182,7 +1182,7 @@ export function DPRForm({ editData, embedded = false, onSaved }: DPRFormProps = 
                               >
                                 <div className="flex items-center gap-2 min-w-0">
                                   <Layers className="w-3.5 h-3.5 text-orange-500 shrink-0" />
-                                  <span className="inline-flex items-center px-1.5 py-0.5 rounded font-mono text-[10px] font-bold text-orange-800 bg-orange-100/80 shrink-0">
+                                  <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-bold text-orange-800 bg-orange-100/80 shrink-0">
                                     {group.topNo}
                                   </span>
                                   {group.topName && (
@@ -1218,7 +1218,7 @@ export function DPRForm({ editData, embedded = false, onSaved }: DPRFormProps = 
                               >
                                 <div className="flex items-center gap-2 min-w-0">
                                   <span className="text-orange-300 shrink-0">└</span>
-                                  <span className="inline-flex items-center px-1.5 py-0.5 rounded font-mono text-[10px] font-bold text-orange-700 bg-orange-100/60 shrink-0">
+                                  <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-bold text-orange-700 bg-orange-100/60 shrink-0">
                                     {entry.no}
                                   </span>
                                   {entry.name && (
@@ -1244,7 +1244,7 @@ export function DPRForm({ editData, embedded = false, onSaved }: DPRFormProps = 
                         return (
                           <tr key={`${w.boqItemId}-${idx}`}>
                             <td
-                              className={`px-3 py-2 font-mono text-xs text-orange-700 font-bold ${
+                              className={`px-3 py-2 text-xs text-orange-700 font-bold ${
                                 depth > 0 ? "border-l-2 border-orange-200" : ""
                               }`}
                               style={

@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 import { EmptyState } from "@quikit/ui";
 import { FileClock } from "lucide-react";
 
-interface Log { id: string; createdAt: string; userId: string; actionType: string; entityType: string; entityId: string; entityRef: string | null; oldValues: Record<string, unknown> | null; newValues: Record<string, unknown> | null; }
+interface Log { id: string; timestamp: string; userId: string; action: string; entityType: string; entityId: string; changes: Record<string, unknown> | null; }
 
 const ACTION_COLOR: Record<string, string> = {
   create: "bg-blue-100 text-blue-700", update: "bg-amber-100 text-amber-700",
@@ -36,14 +36,14 @@ export default function AuditLogPage() {
             </tr></thead>
             <tbody>{logs.map(l => (
               <tr key={l.id} className="border-t border-gray-100">
-                <td className="px-3 py-2 text-xs text-gray-500 whitespace-nowrap">{new Date(l.createdAt).toISOString().slice(0, 19).replace("T", " ")}</td>
-                <td className="px-3 py-2 font-mono text-xs">{l.userId}</td>
-                <td className="px-3 py-2"><span className={`text-[10px] font-semibold uppercase px-1.5 py-0.5 rounded ${ACTION_COLOR[l.actionType] ?? "bg-gray-100 text-gray-700"}`}>{l.actionType}</span></td>
+                <td className="px-3 py-2 text-xs text-gray-500 whitespace-nowrap">{l.timestamp ? new Date(l.timestamp).toISOString().slice(0, 19).replace("T", " ") : "—"}</td>
+                <td className="px-3 py-2 text-xs">{l.userId}</td>
+                <td className="px-3 py-2"><span className={`text-[10px] font-semibold uppercase px-1.5 py-0.5 rounded ${ACTION_COLOR[l.action] ?? "bg-gray-100 text-gray-700"}`}>{l.action}</span></td>
                 <td className="px-3 py-2 text-xs">{l.entityType}</td>
-                <td className="px-3 py-2 font-mono text-xs text-gray-600">{l.entityRef ?? l.entityId.slice(0, 12)}</td>
-                <td className="px-3 py-2 text-xs text-gray-500 font-mono">
-                  {l.oldValues || l.newValues ? (
-                    <span>{JSON.stringify(l.oldValues)} → {JSON.stringify(l.newValues)}</span>
+                <td className="px-3 py-2 text-xs text-gray-600">{l.entityId.slice(0, 12)}</td>
+                <td className="px-3 py-2 text-xs text-gray-500">
+                  {l.changes ? (
+                    <span>{JSON.stringify(l.changes)}</span>
                   ) : "—"}
                 </td>
               </tr>

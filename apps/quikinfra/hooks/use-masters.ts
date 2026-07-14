@@ -24,7 +24,6 @@ import type { WorkCategoryRecord } from "@/lib/masters/work-categories-repositor
 import type { CostCenterRecord } from "@/lib/masters/cost-centers-repository";
 import type { MachineryRecord } from "@/lib/masters/machinery-repository";
 import type { CompanyRecord } from "@/lib/masters/companies-repository";
-import type { FinancialYearRecord } from "@/lib/masters/financial-years-repository";
 import type { TermsConditionRecord } from "@/lib/masters/terms-repository";
 import type { AssetRecord } from "@/lib/masters/assets-repository";
 
@@ -419,28 +418,6 @@ export function useCreateCompany() {
   });
 }
 
-// ─── Financial Years ───────────────────────────────────────────────
-
-export function useFinancialYears(params?: { search?: string }) {
-  const qs = new URLSearchParams();
-  if (params?.search) qs.set("search", params.search);
-  const query = qs.toString();
-
-  return useQuery({
-    queryKey: ["financial-years", query],
-    queryFn: () => fetchApi<{ data: FinancialYearRecord[]; total: number }>(`/api/masters/financial-years${query ? `?${query}` : ""}`),
-  });
-}
-
-export function useCreateFinancialYear() {
-  const qc = useQueryClient();
-  return useMutation({
-    mutationFn: (data: unknown) => mutateApi("/api/masters/financial-years", "POST", data),
-    onSuccess: async () => { await refreshListQueries(qc, "financial-years"); },
-    meta: entityMeta("create", "Financial year"),
-  });
-}
-
 // ─── Terms & Conditions ────────────────────────────────────────────
 
 export function useTermsConditions(params?: { search?: string; applicableTo?: string; status?: string }) {
@@ -562,9 +539,6 @@ export const useDeleteMachinery = makeDeleteHook("/api/masters/machinery", "mach
 export const useUpdateCompany = makeUpdateHook("/api/masters/companies", "companies", "Company");
 export const useDeleteCompany = makeDeleteHook("/api/masters/companies", "companies", "Company");
 
-// Financial Years
-export const useUpdateFinancialYear = makeUpdateHook("/api/masters/financial-years", "financial-years", "Financial year");
-export const useDeleteFinancialYear = makeDeleteHook("/api/masters/financial-years", "financial-years", "Financial year");
 
 // Terms & Conditions
 export const useUpdateTermsCondition = makeUpdateHook("/api/masters/terms", "terms-conditions", "Terms & conditions");
