@@ -341,7 +341,15 @@ describe("POST /api/org/users", () => {
     const res = await POST(
       makeReq("/api/org/users", {
         method: "POST",
-        body: { firstName: "New", lastName: "Person", email: "new@x.com", invitationMethod: "native" },
+        body: {
+          firstName: "New",
+          lastName: "Person",
+          email: "new@x.com",
+          invitationMethod: "native",
+          employeeId: "EMP-006",
+          contact: "555",
+          department: "Eng",
+        },
       }),
     );
     const json = await res.json();
@@ -390,7 +398,14 @@ describe("POST /api/org/users", () => {
     const res = await POST(
       makeReq("/api/org/users", {
         method: "POST",
-        body: { firstName: "New", lastName: "Person", email: "new@x.com" },
+        body: {
+          firstName: "New",
+          lastName: "Person",
+          email: "new@x.com",
+          employeeId: "EMP-006",
+          contact: "555",
+          department: "Eng",
+        },
       }),
     );
     const json = await res.json();
@@ -410,7 +425,14 @@ describe("POST /api/org/users", () => {
     const res = await POST(
       makeReq("/api/org/users", {
         method: "POST",
-        body: { firstName: "First", lastName: "Admin", email: "first@x.com" },
+        body: {
+          firstName: "First",
+          lastName: "Admin",
+          email: "first@x.com",
+          employeeId: "EMP-007",
+          contact: "555",
+          department: "Eng",
+        },
       }),
     );
     const json = await res.json();
@@ -420,16 +442,31 @@ describe("POST /api/org/users", () => {
     expect(ensureUserOnRole).toHaveBeenCalledWith("newuser", "org1", "admin-role", "admin");
   });
 
-  // ─── unified Add: login + linked AstEmployee (Phase 5) ───
-  it("creates a linked employee for a brand-new user (auto-generated Employee ID)", async () => {
+  // ─── unified Add: login + linked AstEmployee, required fields (Phase 5/6) ───
+  it("creates a linked employee for a brand-new user with the supplied Employee ID", async () => {
     asAdmin();
     stubNewNativeUserCreate();
     mockDb.astUserAppRole.count.mockResolvedValue(1 as never);
+    mockDb.astEmployee.create.mockResolvedValue({
+      employeeId: "EMP-006",
+      contact: "555",
+      department: "Eng",
+      designation: null,
+      joiningDate: null,
+      status: "Active",
+    } as never);
 
     const res = await POST(
       makeReq("/api/org/users", {
         method: "POST",
-        body: { firstName: "New", lastName: "Person", email: "new@x.com" },
+        body: {
+          firstName: "New",
+          lastName: "Person",
+          email: "new@x.com",
+          employeeId: "EMP-006",
+          contact: "555",
+          department: "Eng",
+        },
       }),
     );
     const json = await res.json();
@@ -437,21 +474,41 @@ describe("POST /api/org/users", () => {
     expect(res.status).toBe(201);
     expect(mockDb.astEmployee.create).toHaveBeenCalledOnce();
     const createArg = mockDb.astEmployee.create.mock.calls[0]?.[0] as {
-      data: { userId: string; name: string; email: string; employeeId: string };
+      data: { userId: string; name: string; employeeId: string };
     };
     expect(createArg.data.userId).toBe("newuser"); // linked via the identity bridge
     expect(createArg.data.name).toBe("New Person");
-    expect(createArg.data.employeeId).toBe("EMP-0001"); // auto-gen from an empty directory
-    expect(json.data.employeeId).toBe("EMP-0001");
+    expect(createArg.data.employeeId).toBe("EMP-006"); // admin-supplied id (no auto-gen)
+    expect(json.data.employeeId).toBe("EMP-006");
+  });
+
+  it("rejects a brand-new user missing required Employee ID / Contact / Department", async () => {
+    asAdmin();
+    mockDb.user.findUnique.mockResolvedValue(null as never);
+    mockDb.app.findUnique.mockResolvedValue({ id: "app" } as never);
+    mockDb.astEmployee.findFirst.mockResolvedValue(null as never); // no existing employee → fields required
+
+    const res = await POST(
+      makeReq("/api/org/users", {
+        method: "POST",
+        body: { firstName: "No", lastName: "Fields", email: "missing@x.com" },
+      }),
+    );
+
+    expect(res.status).toBe(400);
+    // Validated before any login is created.
+    expect(mockDb.user.create).not.toHaveBeenCalled();
   });
 
   it("links an existing employee by email instead of duplicating it", async () => {
     asAdmin();
     stubNewNativeUserCreate();
     mockDb.astUserAppRole.count.mockResolvedValue(1 as never);
-    // No employee linked to the user yet; one exists with the same email, unlinked.
+    // (1) existing-employee gate finds it (by email) → required fields skipped;
+    // (2) ensureLinkedEmployee by userId → none; (3) by email → found, unlinked.
     mockDb.astEmployee.findFirst
-      .mockResolvedValueOnce(null as never) // lookup by userId → none
+      .mockResolvedValueOnce({ id: "emp-x" } as never)
+      .mockResolvedValueOnce(null as never)
       .mockResolvedValueOnce({
         id: "emp-x",
         userId: null,
@@ -459,7 +516,7 @@ describe("POST /api/org/users", () => {
         department: null,
         designation: null,
         joiningDate: null,
-      } as never); // lookup by email → found, unlinked
+      } as never);
     mockDb.astEmployee.update.mockResolvedValue({
       employeeId: "EMP-OLD",
       contact: null,
@@ -487,12 +544,25 @@ describe("POST /api/org/users", () => {
 
   it("rejects a supplied Employee ID already in use, before creating the login", async () => {
     asAdmin();
-    mockDb.astEmployee.findFirst.mockResolvedValue({ id: "emp-existing" } as never);
+    mockDb.user.findUnique.mockResolvedValue(null as never);
+    mockDb.app.findUnique.mockResolvedValue({ id: "app" } as never);
+    // (1) existing-employee gate → none (creating new; required fields supplied);
+    // (2) employeeId clash check → found → 409.
+    mockDb.astEmployee.findFirst
+      .mockResolvedValueOnce(null as never)
+      .mockResolvedValueOnce({ id: "emp-existing" } as never);
 
     const res = await POST(
       makeReq("/api/org/users", {
         method: "POST",
-        body: { firstName: "New", lastName: "Person", email: "new@x.com", employeeId: "EMP-001" },
+        body: {
+          firstName: "New",
+          lastName: "Person",
+          email: "new@x.com",
+          employeeId: "EMP-001",
+          contact: "555",
+          department: "Eng",
+        },
       }),
     );
 

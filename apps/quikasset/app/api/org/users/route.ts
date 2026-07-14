@@ -331,18 +331,38 @@ export async function POST(req: NextRequest) {
 
     const normalisedEmail = email.trim().toLowerCase();
 
-    // If the admin supplied an employeeId, reject a duplicate up front so we
-    // never create the login and then fail on the employee row.
-    if (employeeId?.trim()) {
-      const clash = await db.astEmployee.findFirst({
-        where: { orgId, employeeId: employeeId.trim() },
+    // Required employee fields for adding a NEW person. Skipped when granting
+    // access to an existing member (link) — that's a different action and the
+    // member already has (or the server will link) an employee. Also skipped
+    // when an employee already exists for this email (we'll link it). Validated
+    // up front, before creating the login, so a failure can't orphan a login.
+    if (!linkExistingUserId) {
+      const existingEmployee = await db.astEmployee.findFirst({
+        where: { orgId, email: { equals: normalisedEmail, mode: "insensitive" } },
         select: { id: true },
       });
-      if (clash) {
-        return NextResponse.json(
-          { success: false, error: "That Employee ID is already in use in this organisation." },
-          { status: 409 },
-        );
+      if (!existingEmployee) {
+        const missing: string[] = [];
+        if (!employeeId?.trim()) missing.push("Employee ID");
+        if (!contact?.trim()) missing.push("Contact");
+        if (!department?.trim()) missing.push("Department");
+        if (missing.length > 0) {
+          return NextResponse.json(
+            { success: false, error: `Required field(s) missing: ${missing.join(", ")}.` },
+            { status: 400 },
+          );
+        }
+        // Reject a duplicate Employee ID before creating anything.
+        const clash = await db.astEmployee.findFirst({
+          where: { orgId, employeeId: employeeId!.trim() },
+          select: { id: true },
+        });
+        if (clash) {
+          return NextResponse.json(
+            { success: false, error: "That Employee ID is already in use in this organisation." },
+            { status: 409 },
+          );
+        }
       }
     }
 

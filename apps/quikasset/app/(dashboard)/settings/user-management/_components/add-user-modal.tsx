@@ -128,7 +128,12 @@ export function AddUserModal({ roles, onClose, onCreated, showToast }: Props) {
     setTimeout(() => setCopied(false), 1500);
   }
 
-  const valid = firstName.trim() && lastName.trim() && /.+@.+\..+/.test(email);
+  // Employee ID + Contact + Department are required when creating a new person.
+  // When granting access to an existing member (link), they're not — that member
+  // already has (or the server will link) an employee record.
+  const employeeValid = employeeId.trim() !== "" && contact.trim() !== "" && department.trim() !== "";
+  const valid =
+    !!firstName.trim() && !!lastName.trim() && /.+@.+\..+/.test(email) && (!!linkUserId || employeeValid);
 
   // ── Temp-password reveal (shown once) ──
   if (tempPassword) {
@@ -328,24 +333,31 @@ export function AddUserModal({ roles, onClose, onCreated, showToast }: Props) {
         </div>
 
         {/* Employee details — the unified Add creates a linked employee record.
-            All optional; Employee ID auto-generates when blank. */}
+            Employee ID / Contact / Department are required for a new person;
+            optional when granting access to an existing member. */}
         <div className="border-t border-gray-100 pt-4">
           <p className="mb-2 text-[11px] font-semibold uppercase tracking-wide text-gray-400">
-            Employee details{" "}
-            <span className="font-normal normal-case text-gray-400">(optional)</span>
+            Employee details
+            {linkUserId && (
+              <span className="font-normal normal-case text-gray-400"> (optional)</span>
+            )}
           </p>
           <div className="grid grid-cols-2 gap-3">
             <div className="col-span-2">
-              <label className="mb-1 block text-[11px] font-medium text-gray-500">Employee ID</label>
+              <label className="mb-1 block text-[11px] font-medium text-gray-500">
+                Employee ID {!linkUserId && <span className="text-red-500">*</span>}
+              </label>
               <input
                 value={employeeId}
                 onChange={(e) => setEmployeeId(e.target.value)}
-                placeholder="Auto-generated if left blank"
+                placeholder="e.g. EMP-006"
                 className="w-full rounded-lg border border-gray-200 bg-gray-50 px-3 py-2 text-xs focus:bg-white focus:outline-none focus:ring-2 focus:ring-accent-400"
               />
             </div>
             <div>
-              <label className="mb-1 block text-[11px] font-medium text-gray-500">Contact</label>
+              <label className="mb-1 block text-[11px] font-medium text-gray-500">
+                Contact {!linkUserId && <span className="text-red-500">*</span>}
+              </label>
               <input
                 value={contact}
                 onChange={(e) => setContact(e.target.value)}
@@ -353,7 +365,9 @@ export function AddUserModal({ roles, onClose, onCreated, showToast }: Props) {
               />
             </div>
             <div>
-              <label className="mb-1 block text-[11px] font-medium text-gray-500">Department</label>
+              <label className="mb-1 block text-[11px] font-medium text-gray-500">
+                Department {!linkUserId && <span className="text-red-500">*</span>}
+              </label>
               <input
                 value={department}
                 onChange={(e) => setDepartment(e.target.value)}
