@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useRef, useEffect } from "react";
+import { useState, useEffect } from "react";
 import {
   BarChart3,
   Target,
@@ -11,7 +11,6 @@ import {
   Pencil,
   Maximize2,
   GripVertical,
-  Link2,
   Check,
   X,
   Loader2,
@@ -113,41 +112,30 @@ function SummaryCell({ idea, onOpen, onEditTitle }: { idea: IdeaRow; onOpen: (i:
   );
 }
 
-function InsightsCell({ idea }: { idea: IdeaRow }) {
+function InsightsCell({ idea, onOpenInsights }: { idea: IdeaRow; onOpenInsights: () => void }) {
   const count = DEMO_BY_TITLE[idea.title]?.insights ?? 0;
+  // Clicking opens the idea drawer on the Insights tab (JPD).
   if (count > 0) {
     return (
-      <span className="inline-flex items-center gap-1 font-medium text-gray-700">
-        <TrendingUp className="h-4 w-4 text-gray-700" />{count}
-      </span>
+      <button type="button" onClick={(e) => { e.stopPropagation(); onOpenInsights(); }} className="inline-flex items-center gap-1 font-medium text-gray-700 hover:text-blue-600">
+        <TrendingUp className="h-4 w-4" />{count}
+      </button>
     );
   }
   // Empty: faint glyph by default; "Add" appears when hovering THIS cell (JPD).
   return (
-    <span className="inline-flex items-center gap-1 text-gray-300 group-hover/cell:text-gray-500">
+    <button type="button" onClick={(e) => { e.stopPropagation(); onOpenInsights(); }} className="inline-flex items-center gap-1 text-gray-300 group-hover/cell:text-gray-500">
       <TrendingUp className="h-4 w-4" />
       <span className="hidden text-sm group-hover/cell:inline">Add</span>
-    </span>
+    </button>
   );
 }
 
-function DeliveryCell({ idea }: { idea: IdeaRow }) {
+function DeliveryCell({ idea, onOpenDelivery }: { idea: IdeaRow; onOpenDelivery: () => void }) {
   const d = DEMO_BY_TITLE[idea.title]?.delivery;
-  // Popover anchor coords (viewport-fixed so the table's overflow can't clip it).
-  const [pos, setPos] = useState<{ x: number; y: number } | null>(null);
-  const closeTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-
-  const cancelClose = () => { if (closeTimer.current) clearTimeout(closeTimer.current); };
-  const scheduleClose = () => { cancelClose(); closeTimer.current = setTimeout(() => setPos(null), 120); };
-  function onEnter(e: React.MouseEvent) {
-    cancelClose();
-    const r = (e.currentTarget as HTMLElement).getBoundingClientRect();
-    setPos({ x: r.left, y: r.bottom + 4 });
-  }
-
+  // Clicking opens the idea drawer on the Delivery tab (JPD).
   return (
-    <div className="relative" onMouseEnter={onEnter} onMouseLeave={scheduleClose}>
-      {/* Progress bar is always visible (JPD); hover reveals the link popover. */}
+    <button type="button" onClick={(e) => { e.stopPropagation(); onOpenDelivery(); }} className="block w-full text-left">
       {d ? (
         <div className="flex h-1.5 w-full max-w-40 overflow-hidden rounded-full bg-gray-100">
           <div className="h-full bg-green-400" style={{ width: `${d[0] * 100}%` }} />
@@ -156,37 +144,7 @@ function DeliveryCell({ idea }: { idea: IdeaRow }) {
       ) : (
         <div className="h-1.5 w-full max-w-40 rounded-full bg-gray-100" />
       )}
-
-      {pos && (
-        <div
-          onMouseEnter={cancelClose}
-          onMouseLeave={scheduleClose}
-          style={{ position: "fixed", left: pos.x, top: pos.y }}
-          className="z-50 w-72 rounded-lg border border-gray-200 bg-white p-4 shadow-xl"
-        >
-          <div className="text-sm font-semibold text-gray-900">Link or create a Jira work item</div>
-          <p className="mt-1 text-xs leading-relaxed text-gray-500">
-            Track delivery work items associated with this idea.
-          </p>
-          <button
-            type="button"
-            className="mt-3 inline-flex w-full items-center justify-center gap-1.5 rounded bg-blue-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-blue-700"
-          >
-            <Link2 className="h-3.5 w-3.5" /> Link a Jira work item
-          </button>
-          <div className="my-1.5 text-center text-xs text-gray-400">or</div>
-          <button
-            type="button"
-            className="inline-flex w-full items-center justify-center gap-1.5 rounded border border-gray-200 px-3 py-1.5 text-sm text-gray-700 hover:bg-gray-50"
-          >
-            <Plus className="h-3.5 w-3.5" /> Create a work item
-          </button>
-          <a href="#" className="mt-3 block text-xs text-blue-600 hover:underline">
-            Learn about delivery ↗
-          </a>
-        </div>
-      )}
-    </div>
+    </button>
   );
 }
 
@@ -208,7 +166,7 @@ export function IdeasTable({
   ideas: IdeaRow[];
   activeId: string | null;
   onSetActive: (id: string) => void;
-  onOpen: (idea: IdeaRow) => void;
+  onOpen: (idea: IdeaRow, tab?: "Overview" | "Comments" | "Insights" | "Delivery") => void;
   onEdit: (ideaId: string, fieldId: string, value: IdeaFieldValue) => void;
   onEditTitle: (id: string, title: string) => void;
   onReorder: (fromId: string, toId: string) => void;
@@ -385,9 +343,9 @@ export function IdeasTable({
                   {col.key === "summary" ? (
                     <SummaryCell idea={idea} onOpen={onOpen} onEditTitle={onEditTitle} />
                   ) : col.key === "insights" ? (
-                    <InsightsCell idea={idea} />
+                    <InsightsCell idea={idea} onOpenInsights={() => onOpen(idea, "Insights")} />
                   ) : col.key === "delivery" ? (
-                    <DeliveryCell idea={idea} />
+                    <DeliveryCell idea={idea} onOpenDelivery={() => onOpen(idea, "Delivery")} />
                   ) : col.field ? (
                     <EditableCell field={col.field} value={idea.values[col.field.id] ?? null} onSave={(fieldId, value) => onEdit(idea.id, fieldId, value)} />
                   ) : null}

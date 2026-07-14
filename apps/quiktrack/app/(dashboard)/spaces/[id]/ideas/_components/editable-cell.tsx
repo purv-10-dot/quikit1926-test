@@ -55,6 +55,7 @@ function OptionsMenu({
   field,
   current,
   showCheck,
+  anchor,
   onPick,
   onClose,
   render,
@@ -62,6 +63,7 @@ function OptionsMenu({
   field: FieldDef;
   current: string | null;
   showCheck: boolean;
+  anchor: { x: number; y: number } | null;
   onPick: (value: string | null) => void;
   onClose: () => void;
   render: (value: string) => React.ReactNode;
@@ -81,7 +83,11 @@ function OptionsMenu({
   );
 
   return (
-    <div ref={ref} className="absolute z-30 mt-1 w-64 rounded-md border border-gray-200 bg-white shadow-lg">
+    <div
+      ref={ref}
+      style={anchor ? { position: "fixed", left: anchor.x, top: anchor.y, width: 256 } : undefined}
+      className="z-50 rounded-md border border-gray-200 bg-white shadow-lg"
+    >
       <div className="border-b border-gray-100 p-2">
         <div className="relative">
           <Search className="pointer-events-none absolute left-2 top-1.5 h-3.5 w-3.5 text-gray-400" />
@@ -115,7 +121,92 @@ function OptionsMenu({
         })}
         {opts.length === 0 && <div className="px-3 py-2 text-sm text-gray-400">No matches</div>}
       </div>
-      <button type="button" onClick={onClose} className="block w-full border-t border-gray-100 px-3 py-2 text-left text-sm text-gray-600 hover:bg-gray-50">
+      <button
+        type="button"
+        onClick={() => { onClose(); window.dispatchEvent(new CustomEvent("qt:edit-field", { detail: { fieldId: field.id } })); }}
+        className="block w-full border-t border-gray-100 px-3 py-2 text-left text-sm text-gray-600 hover:bg-gray-50"
+      >
+        Edit field
+      </button>
+    </div>
+  );
+}
+
+/** Multi-select variant: checkboxes that toggle WITHOUT closing the menu, so you
+ *  can pick several. Searchable + "Edit field" footer (JPD). */
+function MultiOptionsMenu({
+  field,
+  selected,
+  anchor,
+  onToggle,
+  onClose,
+}: {
+  field: FieldDef;
+  selected: string[];
+  anchor: { x: number; y: number } | null;
+  onToggle: (value: string) => void;
+  onClose: () => void;
+}) {
+  const ref = useRef<HTMLDivElement>(null);
+  const [q, setQ] = useState("");
+  useEffect(() => {
+    function onDoc(e: MouseEvent) {
+      if (ref.current && !ref.current.contains(e.target as Node)) onClose();
+    }
+    document.addEventListener("mousedown", onDoc);
+    return () => document.removeEventListener("mousedown", onDoc);
+  }, [onClose]);
+
+  const opts = field.options.filter(
+    (o) => o.isActive && o.label.toLowerCase().includes(q.toLowerCase()),
+  );
+
+  return (
+    <div
+      ref={ref}
+      style={anchor ? { position: "fixed", left: anchor.x, top: anchor.y, width: 256 } : undefined}
+      className="z-50 rounded-md border border-gray-200 bg-white shadow-lg"
+    >
+      <div className="border-b border-gray-100 p-2">
+        <div className="relative">
+          <Search className="pointer-events-none absolute left-2 top-1.5 h-3.5 w-3.5 text-gray-400" />
+          <input
+            autoFocus
+            value={q}
+            onChange={(e) => setQ(e.target.value)}
+            placeholder="Search"
+            className="w-full rounded border border-gray-200 py-1 pl-7 pr-2 text-sm outline-none focus:border-blue-400"
+          />
+        </div>
+      </div>
+      <div className="max-h-56 overflow-y-auto py-1">
+        {opts.map((o) => {
+          const isOn = selected.includes(o.value);
+          return (
+            <button
+              key={o.id}
+              type="button"
+              onClick={() => onToggle(o.value)}
+              className="flex w-full items-center gap-2 px-3 py-1.5 text-left text-sm hover:bg-gray-50"
+            >
+              <span className={`flex h-4 w-4 shrink-0 items-center justify-center rounded border ${isOn ? "border-blue-600 bg-blue-600 text-white" : "border-gray-300"}`}>
+                {isOn && <Check className="h-3 w-3" />}
+              </span>
+              {field.key === K.theme ? (
+                <ThemeDisplay field={field} value={o.value} />
+              ) : (
+                <span className="inline-flex items-center gap-1 rounded bg-blue-50 px-1.5 py-0.5 text-[13px] font-medium text-blue-700">{o.label}</span>
+              )}
+            </button>
+          );
+        })}
+        {opts.length === 0 && <div className="px-3 py-2 text-sm text-gray-400">No matches</div>}
+      </div>
+      <button
+        type="button"
+        onClick={() => { onClose(); window.dispatchEvent(new CustomEvent("qt:edit-field", { detail: { fieldId: field.id } })); }}
+        className="block w-full border-t border-gray-100 px-3 py-2 text-left text-sm text-gray-600 hover:bg-gray-50"
+      >
         Edit field
       </button>
     </div>
@@ -156,6 +247,7 @@ export function EditableCell({
   onSave: (fieldId: string, value: IdeaFieldValue) => void;
 }) {
   const [open, setOpen] = useState(false);
+  const [anchor, setAnchor] = useState<{ x: number; y: number } | null>(null);
   const [editing, setEditing] = useState(false);
   const blank = value === null || value === undefined || value === "";
 
@@ -171,13 +263,72 @@ export function EditableCell({
     );
   }
 
+  if (field.type === "DROPDOWN_MULTI") {
+    const selected = Array.isArray(value) ? (value as string[]) : [];
+    function toggle(v: string) {
+      const next = selected.includes(v) ? selected.filter((x) => x !== v) : [...selected, v];
+      onSave(field.id, next.length ? next : null);
+    }
+    return (
+      <div className="relative">
+        <button
+          type="button"
+          onClick={(e) => {
+            if (open) { setOpen(false); return; }
+            const r = (e.currentTarget as HTMLElement).getBoundingClientRect();
+            setAnchor({ x: r.left, y: r.bottom + 4 });
+            setOpen(true);
+          }}
+          className="group/dd flex min-h-[24px] w-full items-center justify-between gap-1 text-left"
+        >
+          <span className="flex min-w-0 flex-wrap items-center gap-1">
+            {selected.length === 0 ? (
+              <span className="text-gray-300">—</span>
+            ) : selected.length <= 2 ? (
+              selected.map((v) =>
+                field.key === K.theme ? (
+                  <ThemeDisplay key={v} field={field} value={v} />
+                ) : (
+                  <span key={v} className="inline-flex items-center gap-1 whitespace-nowrap rounded bg-blue-50 px-1.5 py-0.5 text-[13px] font-medium text-blue-700">
+                    {optionLabel(field, v)}
+                  </span>
+                ),
+              )
+            ) : (
+              <span className="rounded bg-gray-100 px-1.5 py-0.5 text-[13px] font-medium text-gray-700">{selected.length} items</span>
+            )}
+          </span>
+          <ChevronDown className="h-3.5 w-3.5 shrink-0 text-gray-300 opacity-0 group-hover/dd:opacity-100" />
+        </button>
+        {open && (
+          <MultiOptionsMenu
+            field={field}
+            selected={selected}
+            anchor={anchor}
+            onToggle={toggle}
+            onClose={() => setOpen(false)}
+          />
+        )}
+      </div>
+    );
+  }
+
   if (field.type === "DROPDOWN_SINGLE") {
     const isTheme = field.key === K.theme;
     const display = (v: string) => (isTheme ? <ThemeDisplay field={field} value={v} /> : <RoadmapDisplay field={field} value={v} />);
     const current = typeof value === "string" && value ? value : null;
     return (
       <div className="relative">
-        <button type="button" onClick={() => setOpen((v) => !v)} className="group/dd flex min-h-[24px] w-full items-center justify-between gap-1 text-left">
+        <button
+          type="button"
+          onClick={(e) => {
+            if (open) { setOpen(false); return; }
+            const r = (e.currentTarget as HTMLElement).getBoundingClientRect();
+            setAnchor({ x: r.left, y: r.bottom + 4 });
+            setOpen(true);
+          }}
+          className="group/dd flex min-h-[24px] w-full items-center justify-between gap-1 text-left"
+        >
           {current ? display(current) : <span className="text-gray-300">—</span>}
           <ChevronDown className="h-3.5 w-3.5 shrink-0 text-gray-300 opacity-0 group-hover/dd:opacity-100" />
         </button>
@@ -186,6 +337,7 @@ export function EditableCell({
             field={field}
             current={current}
             showCheck={isTheme}
+            anchor={anchor}
             render={display}
             onClose={() => setOpen(false)}
             onPick={(v) => { onSave(field.id, v); setOpen(false); }}

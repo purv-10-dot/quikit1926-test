@@ -39,6 +39,7 @@ export const updateCustomFieldSchema = z.object({
   // Type and key are immutable (FRD §5.4) — intentionally absent.
   name: z.string().trim().min(1).max(100).optional(),
   description: z.string().max(300).nullable().optional(),
+  icon: z.string().max(16).nullable().optional(),
   isRequired: z.boolean().optional(),
   defaultValue: z.unknown().optional(),
   placeholder: z.string().max(200).nullable().optional(),

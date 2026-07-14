@@ -9605,6 +9605,7 @@ model QtCustomField {
   key          String // immutable, generated from name (e.g. "customer_tier")
   type         String // SHORT_TEXT | LONG_TEXT | NUMBER | DATE | DROPDOWN_SINGLE | DROPDOWN_MULTI | CHECKBOX | URL | USER_PICKER | LABELS
   description  String?
+  icon         String? // optional emoji icon (JPD field editor). TODO(integration): sign-off before Neon.
   status       String                @default("active") // "active" | "archived"
   isRequired   Boolean               @default(false)
   defaultValue Json? // type-dependent default (string | number | bool | string[])

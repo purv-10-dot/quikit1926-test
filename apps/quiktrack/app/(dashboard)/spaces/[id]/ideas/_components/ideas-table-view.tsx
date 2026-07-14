@@ -7,7 +7,6 @@ import {
   Filter,
   ArrowUpDown,
   SlidersHorizontal,
-  Upload,
   Search,
   UserPlus,
   MessageSquare,
@@ -19,6 +18,7 @@ import {
 import { useApiData } from "@/lib/hooks/useApiData";
 import { IdeasTable, type Column } from "./ideas-table";
 import { IdeaDetailPanel } from "./idea-detail-panel";
+import { FieldEditorPanel } from "./field-editor-panel";
 import { SPECIAL_COLUMNS, type IdeasBundle, type IdeaRow, type IdeaFieldValue } from "./ideas-types";
 
 const VIEW_DESCRIPTION =
@@ -35,10 +35,22 @@ export function IdeasTableView({ projectId }: { projectId: string }) {
 
   const [rows, setRows] = useState<IdeaRow[]>([]);
   const [panelId, setPanelId] = useState<string | null>(null);
+  const [panelTab, setPanelTab] = useState<"Overview" | "Comments" | "Insights" | "Delivery">("Overview");
   const [activeId, setActiveId] = useState<string | null>(null);
   const [search, setSearch] = useState("");
   const [creating, setCreating] = useState(false);
+  const [editFieldId, setEditFieldId] = useState<string | null>(null);
   const openAddRef = useRef<(() => void) | null>(null);
+
+  // "Edit field" (from a dropdown's footer) opens the field editor overlay.
+  useEffect(() => {
+    function onEditField(e: Event) {
+      const id = (e as CustomEvent<{ fieldId?: string }>).detail?.fieldId;
+      if (id) setEditFieldId(id);
+    }
+    window.addEventListener("qt:edit-field", onEditField as EventListener);
+    return () => window.removeEventListener("qt:edit-field", onEditField as EventListener);
+  }, []);
 
   useEffect(() => { if (data) setRows(data.ideas); }, [data]);
   // Default the active (green-accent) row to the first idea, like JPD.
@@ -190,7 +202,7 @@ export function IdeasTableView({ projectId }: { projectId: string }) {
                 ideas={visible}
                 activeId={activeId}
                 onSetActive={setActiveId}
-                onOpen={(i) => { setActiveId(i.id); setPanelId(i.id); }}
+                onOpen={(i, tab) => { setActiveId(i.id); setPanelId(i.id); setPanelTab(tab ?? "Overview"); }}
                 onEdit={onEdit}
                 onEditTitle={onEditTitle}
                 onReorder={onReorder}
@@ -206,10 +218,6 @@ export function IdeasTableView({ projectId }: { projectId: string }) {
                     >
                       <Plus className="h-3.5 w-3.5" /> Create
                     </button>
-                    <span className="text-gray-300">|</span>
-                    <button type="button" className="inline-flex items-center gap-1 text-gray-500 hover:text-gray-700">
-                      <Upload className="h-3.5 w-3.5" /> CSV Import
-                    </button>
                   </div>
                 )}
               />
@@ -220,11 +228,22 @@ export function IdeasTableView({ projectId }: { projectId: string }) {
 
       {panelIdea && data && (
         <IdeaDetailPanel
+          key={panelId ?? undefined}
           projectId={projectId}
           idea={panelIdea}
           fields={data.fields}
           statuses={data.statuses}
+          initialTab={panelTab}
           onClose={() => setPanelId(null)}
+        />
+      )}
+
+      {editFieldId && (
+        <FieldEditorPanel
+          projectId={projectId}
+          fieldId={editFieldId}
+          onClose={() => setEditFieldId(null)}
+          onSaved={() => void qc.invalidateQueries({ queryKey })}
         />
       )}
     </div>

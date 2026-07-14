@@ -20,6 +20,7 @@ export interface CustomFieldDTO {
   key: string;
   type: FieldType;
   description: string | null;
+  icon?: string | null;
   status: "active" | "archived";
   isRequired: boolean;
   defaultValue: unknown;
@@ -40,6 +41,7 @@ interface FieldRow {
   key: string;
   type: string;
   description: string | null;
+  icon?: string | null;
   status: string;
   isRequired: boolean;
   defaultValue: unknown;
@@ -61,6 +63,7 @@ export function serializeField(row: FieldRow): CustomFieldDTO {
     key: row.key,
     type: row.type as FieldType,
     description: row.description,
+    icon: row.icon ?? null,
     status: row.status as "active" | "archived",
     isRequired: row.isRequired,
     defaultValue: row.defaultValue ?? null,
@@ -245,6 +248,7 @@ export async function updateField(opts: {
       data: {
         name: input.name ?? undefined,
         description: input.description === undefined ? undefined : input.description,
+        icon: input.icon === undefined ? undefined : input.icon,
         isRequired: input.isRequired ?? undefined,
         defaultValue: input.defaultValue === undefined ? undefined : ((input.defaultValue ?? null) as never),
         placeholder: input.placeholder === undefined ? undefined : input.placeholder,
