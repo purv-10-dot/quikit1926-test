@@ -289,6 +289,36 @@ describe("GET /api/org/users", () => {
     const res = await GET(makeReq("/api/org/users?status=bogus"));
     expect(res.status).toBe(400);
   });
+
+  it("excludes soft-removed users from the list", async () => {
+    asAdmin();
+    mockDb.app.findUnique.mockResolvedValue({ id: "app" } as never);
+    mockDb.userAppAccess.findMany.mockResolvedValue([{ userId: "u1" }, { userId: "u2" }] as never);
+    // u2 is soft-removed → filtered out of the candidate set.
+    mockDb.astUserRemoval.findMany.mockResolvedValue([{ userId: "u2" }] as never);
+    mockDb.orgMember.findMany.mockResolvedValue([membershipRow()] as never);
+    mockDb.astUserAppRole.findMany.mockResolvedValue([
+      { userId: "u1", role: { id: "r1", name: "Member" } },
+    ] as never);
+
+    await GET(makeReq("/api/org/users"));
+
+    const memberCall = mockDb.orgMember.findMany.mock.calls[0]?.[0] as {
+      where: { userId: { in: string[] } };
+    };
+    expect(memberCall.where.userId.in).toEqual(["u1"]); // u2 removed
+  });
+
+  it("403s a soft-removed admin (access-gating)", async () => {
+    asAdmin();
+    // The caller themselves is soft-removed → requireAdmin denies.
+    mockDb.astUserRemoval.findUnique.mockResolvedValue({ id: "rm1" } as never);
+
+    const res = await GET(makeReq("/api/org/users"));
+    expect(res.status).toBe(403);
+    // Gate fires before the directory is queried.
+    expect(mockDb.userAppAccess.findMany).not.toHaveBeenCalled();
+  });
 });
 
 describe("POST /api/org/users", () => {

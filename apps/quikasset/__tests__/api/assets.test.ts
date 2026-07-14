@@ -53,6 +53,17 @@ describe("GET /api/assets — role-aware scoping", () => {
     expect(res.status).toBe(401);
   });
 
+  it("403s a soft-removed user (access denied at the auth layer)", async () => {
+    setSession({ id: "u1", orgId: "org1", role: "member", email: "u1@x.com" });
+    grantMemberOnly();
+    mockDb.astUserRemoval.findUnique.mockResolvedValue({ id: "rm1" } as never); // removed
+
+    const res = await GET(makeReq("/api/assets"), { params: {} });
+    expect(res.status).toBe(403);
+    // Blocked before any asset query.
+    expect(mockDb.astAsset.findMany).not.toHaveBeenCalled();
+  });
+
   it("returns the FULL register for a viewAll holder (no id filter)", async () => {
     setSession({ id: "admin", orgId: "org1", role: "admin" });
     grantAll();

@@ -244,7 +244,7 @@ describe("/api/org/users/[id] route family", () => {
     expect(res.status).toBe(404);
   });
 
-  it("DELETE revokes access + role and deletes a history-free employee; keeps the login", async () => {
+  it("DELETE soft-removes the user (records a marker) and hard-deletes nothing", async () => {
     asAdmin();
     mockDb.orgMember.findUnique.mockResolvedValue({
       user: { firstName: "Al", lastName: "Ice", email: "a@x.com" },
@@ -252,49 +252,26 @@ describe("/api/org/users/[id] route family", () => {
     mockDb.app.findUnique.mockResolvedValue({ id: "app" } as never);
     mockDb.astUserAppRole.findMany.mockResolvedValue([
       { role: { id: "r1", isSystem: false, name: "Member" } },
-    ] as never); // not admin
-    mockDb.astUserAppRole.deleteMany.mockResolvedValue({ count: 1 } as never);
-    mockDb.userAppAccess.deleteMany.mockResolvedValue({ count: 1 } as never);
-    mockDb.astEmployee.findFirst.mockResolvedValue({
-      id: "emp1",
-      _count: { assignments: 0, replacements: 0 },
-    } as never);
-    mockDb.astEmployee.delete.mockResolvedValue({} as never);
+    ] as never); // not admin → lockout guard passes
+    mockDb.astUserRemoval.upsert.mockResolvedValue({} as never);
 
     const res = await deleteUser(makeReq("/api/org/users/target", { method: "DELETE" }), P);
     const json = await res.json();
 
     expect(res.status).toBe(200);
-    expect(json.data.employeeRemoved).toBe(true);
-    expect(mockDb.astUserAppRole.deleteMany).toHaveBeenCalled();
-    expect(mockDb.userAppAccess.deleteMany).toHaveBeenCalled();
-    expect(mockDb.astEmployee.delete).toHaveBeenCalled();
-    // The shared platform login is preserved.
+    expect(json.data.removed).toBe(true);
+    // Records the removal marker…
+    expect(mockDb.astUserRemoval.upsert).toHaveBeenCalledOnce();
+    const arg = mockDb.astUserRemoval.upsert.mock.calls[0]?.[0] as {
+      where: { orgId_userId: { orgId: string; userId: string } };
+    };
+    expect(arg.where.orgId_userId).toEqual({ orgId: "org1", userId: "target" });
+    // …and hard-deletes NOTHING.
+    expect(mockDb.astUserAppRole.deleteMany).not.toHaveBeenCalled();
+    expect(mockDb.userAppAccess.deleteMany).not.toHaveBeenCalled();
+    expect(mockDb.astEmployee.delete).not.toHaveBeenCalled();
     expect(mockDb.user.delete).not.toHaveBeenCalled();
     expect(mockDb.orgMember.delete).not.toHaveBeenCalled();
-  });
-
-  it("DELETE keeps a linked employee that has asset history", async () => {
-    asAdmin();
-    mockDb.orgMember.findUnique.mockResolvedValue({
-      user: { firstName: "Al", lastName: "Ice", email: "a@x.com" },
-    } as never);
-    mockDb.app.findUnique.mockResolvedValue({ id: "app" } as never);
-    mockDb.astUserAppRole.findMany.mockResolvedValue([] as never); // not admin
-    mockDb.astUserAppRole.deleteMany.mockResolvedValue({ count: 0 } as never);
-    mockDb.userAppAccess.deleteMany.mockResolvedValue({ count: 1 } as never);
-    mockDb.astEmployee.findFirst.mockResolvedValue({
-      id: "emp1",
-      _count: { assignments: 2, replacements: 0 },
-    } as never);
-
-    const res = await deleteUser(makeReq("/api/org/users/target", { method: "DELETE" }), P);
-    const json = await res.json();
-
-    expect(res.status).toBe(200);
-    expect(json.data.employeeKept).toBe(true);
-    expect(json.data.employeeRemoved).toBe(false);
-    expect(mockDb.astEmployee.delete).not.toHaveBeenCalled();
   });
 
   it("DELETE 409s when it would remove the last admin", async () => {
@@ -311,8 +288,7 @@ describe("/api/org/users/[id] route family", () => {
     const res = await deleteUser(makeReq("/api/org/users/target", { method: "DELETE" }), P);
 
     expect(res.status).toBe(409);
-    // Guard fires before any revocation.
-    expect(mockDb.astUserAppRole.deleteMany).not.toHaveBeenCalled();
-    expect(mockDb.userAppAccess.deleteMany).not.toHaveBeenCalled();
+    // Guard fires before any removal is recorded.
+    expect(mockDb.astUserRemoval.upsert).not.toHaveBeenCalled();
   });
 });

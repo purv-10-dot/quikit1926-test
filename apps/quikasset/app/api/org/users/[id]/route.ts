@@ -162,10 +162,11 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
   }
 }
 
-// DELETE /api/org/users/[id] — remove a person from QuikAsset: revoke their app
-// access + role and delete their (history-free) employee record. The shared
-// platform User + OrgMember are preserved (they may use other apps). An employee
-// with asset-assignment history is kept (FK-protected) and reported.
+// DELETE /api/org/users/[id] — SOFT-remove a person from QuikAsset: record a
+// removal marker (AstUserRemoval). They're hidden from the Users list and denied
+// access at the auth layer, but no row is deleted — every User/OrgMember/
+// UserAppAccess/AstUserAppRole/AstEmployee record is retained for audit/history.
+// Admin-lockout guarded; tenant-scoped.
 export async function DELETE(_req: NextRequest, { params }: { params: { id: string } }) {
   try {
     const auth = await requireAdmin();
@@ -202,26 +203,15 @@ export async function DELETE(_req: NextRequest, { params }: { params: { id: stri
       }
     }
 
-    // Revoke QuikAsset access + role. Platform User + OrgMember are left intact.
-    await db.astUserAppRole.deleteMany({ where: { userId: params.id, orgId, role: { appId } } });
-    await db.userAppAccess.deleteMany({ where: { orgId, appId, userId: params.id } });
-
-    // Linked employee: delete it unless it has asset history (ON DELETE RESTRICT
-    // on assignments/replacements) — then keep it and report.
-    let employeeRemoved = false;
-    let employeeKept = false;
-    const emp = await db.astEmployee.findFirst({
-      where: { orgId, userId: params.id },
-      select: { id: true, _count: { select: { assignments: true, replacements: true } } },
+    // Soft-remove: record a removal marker. Idempotent. NOTHING is hard-deleted
+    // — User, OrgMember, UserAppAccess, AstUserAppRole and AstEmployee (incl. any
+    // asset history) all stay for audit/history. Access is denied via the auth
+    // layer and the user is hidden from the merged Users list.
+    await db.astUserRemoval.upsert({
+      where: { orgId_userId: { orgId, userId: params.id } },
+      create: { orgId, userId: params.id, removedBy: actorId },
+      update: { removedAt: new Date(), removedBy: actorId },
     });
-    if (emp) {
-      if (emp._count.assignments > 0 || emp._count.replacements > 0) {
-        employeeKept = true;
-      } else {
-        await db.astEmployee.delete({ where: { id: emp.id } });
-        employeeRemoved = true;
-      }
-    }
 
     const name =
       `${membership.user.firstName} ${membership.user.lastName}`.trim() || membership.user.email;
@@ -231,14 +221,10 @@ export async function DELETE(_req: NextRequest, { params }: { params: { id: stri
       action: "Removed from QuikAsset",
       entityId: params.id,
       entityName: name,
-      details: employeeKept ? "Employee record kept (has asset history)" : undefined,
       actorId,
     });
 
-    return NextResponse.json({
-      success: true,
-      data: { removed: true, employeeRemoved, employeeKept },
-    });
+    return NextResponse.json({ success: true, data: { removed: true } });
   } catch (error: unknown) {
     const message = error instanceof Error ? error.message : "Failed to remove user";
     return NextResponse.json({ success: false, error: message }, { status: 500 });

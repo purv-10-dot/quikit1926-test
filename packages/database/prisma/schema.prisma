@@ -17953,6 +17953,22 @@ model AstEmployee {
   @@schema("app_quikasset")
 }
 
+/// Soft-delete marker for "removed from QuikAsset". A row here hides the user
+/// from the merged Users list AND denies QuikAsset access (auth layer), without
+/// destroying any User/OrgMember/UserAppAccess/AstUserAppRole/AstEmployee data.
+model AstUserRemoval {
+  id        String   @id @default(cuid())
+  orgId     String
+  userId    String
+  removedAt DateTime @default(now())
+  removedBy String?
+
+  @@unique([orgId, userId])
+  @@index([orgId])
+  @@map("user_removals")
+  @@schema("app_quikasset")
+}
+
 model AstBaseCategory {
   id         String        @id @default(cuid())
   orgId      String

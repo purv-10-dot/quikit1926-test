@@ -7,6 +7,7 @@ import { requireAdmin } from "@/lib/api/requireAdmin";
 import { getQuikAssetAppId } from "@/lib/api/permissions";
 import { seedAllDefaultRoles, ensureUserOnRole } from "@/lib/api/seedAppRoles";
 import { ensureLinkedEmployee } from "@/lib/api/employeeLink";
+import { removedUserIds } from "@/lib/api/removal";
 import {
   INVITE_METHOD,
   renderInvitationEmail,
@@ -141,6 +142,10 @@ export async function GET(req: NextRequest) {
       distinct: ["userId"],
     });
     let candidateUserIds = accessRows.map((r) => r.userId);
+
+    // Hide soft-removed users (removed from QuikAsset) from the merged list.
+    const removed = await removedUserIds(orgId, candidateUserIds);
+    if (removed.size > 0) candidateUserIds = candidateUserIds.filter((id) => !removed.has(id));
 
     // Role filter — narrow the candidate set by app-role membership before the
     // main query. "none" = users who have QuikAsset access but no app role.
