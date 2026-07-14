@@ -18,6 +18,16 @@ function startOfDay(d: Date): Date {
   return new Date(d.getFullYear(), d.getMonth(), d.getDate());
 }
 
+/**
+ * Last instant of the given calendar day (23:59:59.999 local). The period `to`
+ * bound must land here, not at 00:00 of the last day — the grid/export query
+ * filters `entryDate <= to`, so a `to` at the START of the last day silently
+ * dropped everything logged during it (e.g. Sunday's entries never appeared).
+ */
+function endOfDay(d: Date): Date {
+  return new Date(d.getFullYear(), d.getMonth(), d.getDate(), 23, 59, 59, 999);
+}
+
 function addDays(d: Date, n: number): Date {
   const x = new Date(d);
   x.setDate(x.getDate() + n);
@@ -52,6 +62,10 @@ export function getPeriodRange(period: Period, anchor: Date): PeriodRange {
     from = new Date(a.getFullYear(), q * 3, 1);
     to = new Date(a.getFullYear(), q * 3 + 3, 0);
   }
+  // Extend the end bound to the last instant of the final day so the whole day
+  // is included in `entryDate <= to` reads. `from` stays at 00:00. The `days`
+  // loop and label below are unaffected (they only read the date, not the time).
+  to = endOfDay(to);
   const days: Date[] = [];
   for (let d = new Date(from); d <= to; d = addDays(d, 1)) days.push(new Date(d));
   let label: string;
