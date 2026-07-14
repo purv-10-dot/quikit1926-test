@@ -18,13 +18,16 @@ import { sendEmail } from "@/lib/email/sendEmail";
 type InviteMethod = (typeof INVITE_METHOD)[keyof typeof INVITE_METHOD];
 
 // Query params for the list endpoint. All optional; absent → no filter.
-//   q       — free-text match on first/last name + email (case-insensitive)
-//   status  — OrgMember.status
-//   roleId  — an AstAppRole.id, or the sentinel "none" for users with no app role
+//   q          — free-text match on the login User (name/email) OR the linked
+//                employee (employeeId/department/designation), case-insensitive
+//   status     — OrgMember.status
+//   roleId     — an AstAppRole.id, or the sentinel "none" for users with no app role
+//   department — linked AstEmployee.department (exact)
 const listQuerySchema = z.object({
   q: z.string().trim().max(128).optional(),
   status: z.enum(["active", "inactive"]).optional(),
   roleId: z.string().trim().min(1).optional(),
+  department: z.string().trim().min(1).optional(),
 });
 
 const createUserSchema = z.object({
@@ -62,6 +65,14 @@ function buildUserResponse(
     };
   },
   appRole: { id: string; name: string } | null,
+  employee?: {
+    employeeId: string;
+    contact: string | null;
+    department: string | null;
+    designation: string | null;
+    joiningDate: string | null;
+    status: string;
+  } | null,
 ) {
   return {
     membershipId: m.id,
@@ -76,11 +87,21 @@ function buildUserResponse(
     joinedAt: m.createdAt.toISOString(),
     appRoleId: appRole?.id ?? null,
     appRoleName: appRole?.name ?? null,
+    // Linked employee (identity bridge AstEmployee.userId → User); null when the
+    // user has no employee record yet.
+    employeeId: employee?.employeeId ?? null,
+    contact: employee?.contact ?? null,
+    department: employee?.department ?? null,
+    designation: employee?.designation ?? null,
+    joiningDate: employee?.joiningDate ?? null,
+    employeeStatus: employee?.status ?? null,
   };
 }
 
-// GET /api/org/users — list every OrgMember who has UserAppAccess to QuikAsset
-// in this org. Supports optional server-side filtering (q / status / roleId).
+// GET /api/org/users — the merged people list: every OrgMember with QuikAsset
+// access in this org, each row combining login info + app role + the linked
+// AstEmployee record (identity bridge). Server-side filters: q / status /
+// roleId / department. Self-heals any role-less user to Member on read.
 export async function GET(req: NextRequest) {
   try {
     const auth = await requireAdmin();
@@ -103,7 +124,7 @@ export async function GET(req: NextRequest) {
         { status: 400 },
       );
     }
-    const { q, status, roleId } = parsedQuery.data;
+    const { q, status, roleId, department } = parsedQuery.data;
 
     const accessRows = await db.userAppAccess.findMany({
       where: { orgId, appId },
@@ -131,27 +152,62 @@ export async function GET(req: NextRequest) {
           : candidateUserIds.filter((id) => withMatchingRole.has(id));
     }
 
+    // Department filter — narrow to users whose linked employee is in that dept.
+    if (department && candidateUserIds.length > 0) {
+      const deptRows = await db.astEmployee.findMany({
+        where: { orgId, userId: { in: candidateUserIds }, department },
+        select: { userId: true },
+      });
+      const inDept = new Set(deptRows.map((r) => r.userId).filter((id): id is string => !!id));
+      candidateUserIds = candidateUserIds.filter((id) => inDept.has(id));
+    }
+
+    // Free-text search — matches the login User (name/email) OR the linked
+    // employee (employeeId/department/designation). The merged view spans both,
+    // so we pre-narrow the candidate set to the union rather than filtering the
+    // membership query on one side only.
+    if (q && candidateUserIds.length > 0) {
+      const [userMatches, empMatches] = await Promise.all([
+        db.user.findMany({
+          where: {
+            id: { in: candidateUserIds },
+            OR: [
+              { firstName: { contains: q, mode: "insensitive" } },
+              { lastName: { contains: q, mode: "insensitive" } },
+              { email: { contains: q, mode: "insensitive" } },
+            ],
+          },
+          select: { id: true },
+        }),
+        db.astEmployee.findMany({
+          where: {
+            orgId,
+            userId: { in: candidateUserIds },
+            OR: [
+              { employeeId: { contains: q, mode: "insensitive" } },
+              { department: { contains: q, mode: "insensitive" } },
+              { designation: { contains: q, mode: "insensitive" } },
+            ],
+          },
+          select: { userId: true },
+        }),
+      ]);
+      const matched = new Set<string>([
+        ...userMatches.map((u) => u.id),
+        ...empMatches.map((e) => e.userId).filter((id): id is string => !!id),
+      ]);
+      candidateUserIds = candidateUserIds.filter((id) => matched.has(id));
+    }
+
     if (candidateUserIds.length === 0) {
       return NextResponse.json({ success: true, data: [] });
     }
-
-    // Free-text search on the related User row (name + email).
-    const userTextFilter = q
-      ? {
-          OR: [
-            { firstName: { contains: q, mode: "insensitive" as const } },
-            { lastName: { contains: q, mode: "insensitive" as const } },
-            { email: { contains: q, mode: "insensitive" as const } },
-          ],
-        }
-      : undefined;
 
     const memberships = await db.orgMember.findMany({
       where: {
         orgId,
         userId: { in: candidateUserIds },
         ...(status ? { status } : {}),
-        ...(userTextFilter ? { user: userTextFilter } : {}),
       },
       include: {
         user: {
@@ -168,21 +224,61 @@ export async function GET(req: NextRequest) {
       orderBy: { createdAt: "asc" },
     });
 
-    const appRoleByUserId = new Map<string, { id: string; name: string } | null>();
+    if (memberships.length === 0) {
+      return NextResponse.json({ success: true, data: [] });
+    }
+    const userIds = memberships.map((m) => m.user.id);
 
-    if (memberships.length > 0) {
-      const userIds = memberships.map((m) => m.user.id);
-      const userRoles = await db.astUserAppRole.findMany({
-        where: { orgId, userId: { in: userIds }, role: { appId } },
-        select: { userId: true, role: { select: { id: true, name: true } } },
-      });
-      for (const ur of userRoles) {
-        appRoleByUserId.set(ur.userId, { id: ur.role.id, name: ur.role.name });
+    // Linked employee records (identity bridge). `?? []` guards the case where
+    // the query resolves to nothing.
+    const employees =
+      (await db.astEmployee.findMany({
+        where: { orgId, userId: { in: userIds } },
+        select: {
+          userId: true,
+          employeeId: true,
+          contact: true,
+          department: true,
+          designation: true,
+          joiningDate: true,
+          status: true,
+        },
+      })) ?? [];
+    const employeeByUserId = new Map(
+      employees
+        .filter((e): e is typeof e & { userId: string } => !!e.userId)
+        .map((e) => [e.userId, e]),
+    );
+
+    // App roles for the listed users.
+    const appRoleByUserId = new Map<string, { id: string; name: string }>();
+    const userRoles = await db.astUserAppRole.findMany({
+      where: { orgId, userId: { in: userIds }, role: { appId } },
+      select: { userId: true, role: { select: { id: true, name: true } } },
+    });
+    for (const ur of userRoles) {
+      appRoleByUserId.set(ur.userId, { id: ur.role.id, name: ur.role.name });
+    }
+
+    // Read-time self-heal: any listed user with QuikAsset access but no app role
+    // is assigned the default Member role (idempotent). Guarantees no user is
+    // ever left "No role" — including those granted access via platform paths
+    // QuikAsset doesn't control. Never overwrites an existing (custom) role.
+    const roleless = userIds.filter((id) => !appRoleByUserId.has(id));
+    if (roleless.length > 0) {
+      const { memberRoleId } = await seedAllDefaultRoles(orgId);
+      for (const uid of roleless) {
+        await ensureUserOnRole(uid, orgId, memberRoleId);
+        appRoleByUserId.set(uid, { id: memberRoleId, name: "Member" });
       }
     }
 
     const users = memberships.map((m) =>
-      buildUserResponse(m, appRoleByUserId.get(m.user.id) ?? null),
+      buildUserResponse(
+        m,
+        appRoleByUserId.get(m.user.id) ?? null,
+        employeeByUserId.get(m.user.id) ?? null,
+      ),
     );
     return NextResponse.json({ success: true, data: users });
   } catch (error: unknown) {

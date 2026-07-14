@@ -153,23 +153,133 @@ describe("GET /api/org/users", () => {
     expect(memberCall.where.status).toBe("inactive");
   });
 
-  it("filters by search query (q) on name + email, case-insensitive", async () => {
+  it("search (q) matches the login user OR the linked employee (union)", async () => {
     asAdmin();
     mockDb.app.findUnique.mockResolvedValue({ id: "app" } as never);
-    mockDb.userAppAccess.findMany.mockResolvedValue([{ userId: "u1" }] as never);
+    mockDb.userAppAccess.findMany.mockResolvedValue([{ userId: "u1" }, { userId: "u2" }] as never);
+    // u1 matches on user name/email; u2 matches on employee fields only.
+    mockDb.user.findMany.mockResolvedValue([{ id: "u1" }] as never);
+    mockDb.astEmployee.findMany.mockResolvedValue([{ userId: "u2" }] as never);
     mockDb.orgMember.findMany.mockResolvedValue([membershipRow()] as never);
-    mockDb.astUserAppRole.findMany.mockResolvedValue([] as never);
+    mockDb.astUserAppRole.findMany.mockResolvedValue([
+      { userId: "u1", role: { id: "r1", name: "Member" } },
+    ] as never);
 
     await GET(makeReq("/api/org/users?q=ali"));
 
-    const memberCall = mockDb.orgMember.findMany.mock.calls[0]?.[0] as {
-      where: { user?: { OR: unknown[] } };
-    };
-    expect(memberCall.where.user?.OR).toEqual([
+    // The user-side search targets name + email, case-insensitive.
+    const userCall = mockDb.user.findMany.mock.calls[0]?.[0] as { where: { OR: unknown[] } };
+    expect(userCall.where.OR).toEqual([
       { firstName: { contains: "ali", mode: "insensitive" } },
       { lastName: { contains: "ali", mode: "insensitive" } },
       { email: { contains: "ali", mode: "insensitive" } },
     ]);
+    // Candidates are narrowed to the union of user- and employee-side matches.
+    const memberCall = mockDb.orgMember.findMany.mock.calls[0]?.[0] as {
+      where: { userId: { in: string[] } };
+    };
+    expect(memberCall.where.userId.in.sort()).toEqual(["u1", "u2"]);
+  });
+
+  it("filters by department via the linked employee", async () => {
+    asAdmin();
+    mockDb.app.findUnique.mockResolvedValue({ id: "app" } as never);
+    mockDb.userAppAccess.findMany.mockResolvedValue([{ userId: "u1" }, { userId: "u2" }] as never);
+    // Only u1 is in Engineering (dept-narrow call + later the join call reuse this).
+    mockDb.astEmployee.findMany.mockResolvedValue([{ userId: "u1" }] as never);
+    mockDb.orgMember.findMany.mockResolvedValue([membershipRow()] as never);
+    mockDb.astUserAppRole.findMany.mockResolvedValue([
+      { userId: "u1", role: { id: "r1", name: "Member" } },
+    ] as never);
+
+    await GET(makeReq("/api/org/users?department=Engineering"));
+
+    const deptCall = mockDb.astEmployee.findMany.mock.calls[0]?.[0] as {
+      where: { department?: string };
+    };
+    expect(deptCall.where.department).toBe("Engineering");
+    const memberCall = mockDb.orgMember.findMany.mock.calls[0]?.[0] as {
+      where: { userId: { in: string[] } };
+    };
+    expect(memberCall.where.userId.in).toEqual(["u1"]);
+  });
+
+  it("joins the linked employee record onto each row", async () => {
+    asAdmin();
+    mockDb.app.findUnique.mockResolvedValue({ id: "app" } as never);
+    mockDb.userAppAccess.findMany.mockResolvedValue([{ userId: "u1" }] as never);
+    mockDb.orgMember.findMany.mockResolvedValue([membershipRow()] as never);
+    mockDb.astUserAppRole.findMany.mockResolvedValue([
+      { userId: "u1", role: { id: "r1", name: "Member" } },
+    ] as never);
+    mockDb.astEmployee.findMany.mockResolvedValue([
+      {
+        userId: "u1",
+        employeeId: "EMP-1",
+        contact: "999",
+        department: "Eng",
+        designation: "Dev",
+        joiningDate: "2026-01-01",
+        status: "Active",
+      },
+    ] as never);
+
+    const res = await GET(makeReq("/api/org/users"));
+    const json = await res.json();
+    expect(res.status).toBe(200);
+    expect(json.data[0].employeeId).toBe("EMP-1");
+    expect(json.data[0].department).toBe("Eng");
+    expect(json.data[0].employeeStatus).toBe("Active");
+  });
+
+  it("returns null employee fields when the user has no linked employee", async () => {
+    asAdmin();
+    mockDb.app.findUnique.mockResolvedValue({ id: "app" } as never);
+    mockDb.userAppAccess.findMany.mockResolvedValue([{ userId: "u1" }] as never);
+    mockDb.orgMember.findMany.mockResolvedValue([membershipRow()] as never);
+    mockDb.astUserAppRole.findMany.mockResolvedValue([
+      { userId: "u1", role: { id: "r1", name: "Member" } },
+    ] as never);
+    mockDb.astEmployee.findMany.mockResolvedValue([] as never);
+
+    const res = await GET(makeReq("/api/org/users"));
+    const json = await res.json();
+    expect(json.data[0].employeeId).toBeNull();
+    expect(json.data[0].department).toBeNull();
+  });
+
+  it("self-heals a role-less user to Member (persisted + reflected in the row)", async () => {
+    asAdmin();
+    vi.mocked(ensureUserOnRole).mockClear();
+    mockDb.app.findUnique.mockResolvedValue({ id: "app" } as never);
+    mockDb.userAppAccess.findMany.mockResolvedValue([{ userId: "u1" }] as never);
+    mockDb.orgMember.findMany.mockResolvedValue([membershipRow()] as never);
+    mockDb.astUserAppRole.findMany.mockResolvedValue([] as never); // u1 has NO app role
+    mockDb.astEmployee.findMany.mockResolvedValue([] as never);
+
+    const res = await GET(makeReq("/api/org/users"));
+    const json = await res.json();
+    expect(res.status).toBe(200);
+    // memberRoleId "member-role" comes from the mocked seedAllDefaultRoles.
+    expect(ensureUserOnRole).toHaveBeenCalledWith("u1", "org1", "member-role");
+    expect(json.data[0].appRoleName).toBe("Member");
+  });
+
+  it("never overwrites an existing custom role (e.g. 'IT team')", async () => {
+    asAdmin();
+    vi.mocked(ensureUserOnRole).mockClear();
+    mockDb.app.findUnique.mockResolvedValue({ id: "app" } as never);
+    mockDb.userAppAccess.findMany.mockResolvedValue([{ userId: "u1" }] as never);
+    mockDb.orgMember.findMany.mockResolvedValue([membershipRow()] as never);
+    mockDb.astUserAppRole.findMany.mockResolvedValue([
+      { userId: "u1", role: { id: "it-team", name: "IT team" } },
+    ] as never);
+    mockDb.astEmployee.findMany.mockResolvedValue([] as never);
+
+    const res = await GET(makeReq("/api/org/users"));
+    const json = await res.json();
+    expect(json.data[0].appRoleName).toBe("IT team");
+    expect(ensureUserOnRole).not.toHaveBeenCalled();
   });
 
   it("400s on an invalid status value", async () => {
