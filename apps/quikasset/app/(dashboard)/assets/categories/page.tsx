@@ -6,7 +6,6 @@ import { cn } from "@/lib/utils"
 import type { BaseCategory, Category } from "@/types/asset"
 
 
-
 export default function CategoryMasterPage() {
   const [baseCats, setBaseCats] = useState<BaseCategory[]>([])
   const [categories, setCategories] = useState<Category[]>([])
