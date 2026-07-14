@@ -7,6 +7,7 @@ import { NAV_RESOURCE } from "@/lib/api/permissionsRegistry";
 import {
   LayoutDashboard,
   Package,
+  Boxes,
   ArrowLeftRight,
   Wrench,
   ClipboardList,
@@ -19,7 +20,14 @@ import {
   X,
 } from "lucide-react";
 
-type NavItem = { label: string; href: string; icon: React.ElementType; sub?: boolean };
+type NavItem = {
+  label: string;
+  href: string;
+  icon: React.ElementType;
+  sub?: boolean;
+  /** Overrides the default `<NAV_RESOURCE[href]>:view` visibility check. */
+  perm?: { resource: string; action: string };
+};
 type NavSection = { label: string | null; items: NavItem[] };
 
 const NAV_SECTIONS: NavSection[] = [
@@ -27,7 +35,10 @@ const NAV_SECTIONS: NavSection[] = [
     label: null,
     items: [
       { label: "Dashboard", href: "/dashboard", icon: LayoutDashboard },
-      { label: "Asset Inventory", href: "/assets", icon: Package },
+      // Member landing — their own assigned assets (any Asset:view holder).
+      { label: "My Assets", href: "/employee-view", icon: Boxes, perm: { resource: "Asset", action: "view" } },
+      // Full org register — asset managers/admins only.
+      { label: "Asset Inventory", href: "/assets", icon: Package, perm: { resource: "Asset", action: "viewAll" } },
       { label: "Category Master", href: "/assets/categories", icon: Tags, sub: true },
       { label: "Assignments", href: "/assignments", icon: ArrowLeftRight },
       { label: "Repair & Recovery", href: "/repair", icon: Wrench },
@@ -67,8 +78,9 @@ export function Sidebar({ permissions, isAdmin, displayName, roleName, mobileOpe
   const pathname = usePathname();
   const permSet = new Set(permissions);
 
-  const canSee = (href: string) => {
-    const resource = NAV_RESOURCE[href];
+  const canSee = (item: NavItem) => {
+    if (item.perm) return isAdmin || permSet.has(`${item.perm.resource}:${item.perm.action}`);
+    const resource = NAV_RESOURCE[item.href];
     if (!resource) return true;
     if (resource === "Settings") return isAdmin;
     return isAdmin || permSet.has(`${resource}:view`);
@@ -115,7 +127,7 @@ export function Sidebar({ permissions, isAdmin, displayName, roleName, mobileOpe
 
         <nav className="flex-1 space-y-4 overflow-y-auto px-2 py-3">
           {NAV_SECTIONS.map((section, si) => {
-            const items = section.items.filter((i) => canSee(i.href));
+            const items = section.items.filter((i) => canSee(i));
             if (items.length === 0) return null;
             return (
               <div key={si}>

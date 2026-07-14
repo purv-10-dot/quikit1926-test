@@ -11,31 +11,33 @@ import { PrismaClient } from "@prisma/client";
 
 const db = new PrismaClient();
 
+// Keep in sync with lib/api/permissionsRegistry.ts + lib/api/seedAppRoles.ts.
 const RESOURCES = [
   "Dashboard", "Asset", "Category", "Assignment", "Repair", "Replacement",
   "Budget", "Report", "AuditLog", "Notification", "Employee", "Settings",
 ] as const;
 const VIEW_ONLY = new Set(["Dashboard", "Report", "AuditLog", "Notification"]);
+const VIEW_ALL_RESOURCES = new Set(["Asset"]);
 const ACTIONS = ["view", "create", "update", "delete"] as const;
 
 function allPairs() {
   const out: Array<{ resource: string; action: string }> = [];
   for (const resource of RESOURCES) {
-    if (VIEW_ONLY.has(resource)) out.push({ resource, action: "view" });
-    else for (const action of ACTIONS) out.push({ resource, action });
+    if (VIEW_ONLY.has(resource)) {
+      out.push({ resource, action: "view" });
+    } else {
+      for (const action of ACTIONS) out.push({ resource, action });
+      if (VIEW_ALL_RESOURCES.has(resource)) out.push({ resource, action: "viewAll" });
+    }
   }
   return out;
 }
 
+// BRD Phase 0: Members may only view their assigned assets (row-scoped in the
+// route layer) + their own notifications. See seedAppRoles.ts for the rationale.
 const MEMBER_GRANTS = [
-  { resource: "Dashboard", action: "view" },
-  { resource: "Report", action: "view" },
-  { resource: "AuditLog", action: "view" },
+  { resource: "Asset", action: "view" },
   { resource: "Notification", action: "view" },
-  { resource: "Budget", action: "view" },
-  ...["Asset", "Category", "Assignment", "Repair", "Replacement", "Employee"].flatMap((resource) =>
-    ACTIONS.map((action) => ({ resource, action })),
-  ),
 ];
 
 async function main() {

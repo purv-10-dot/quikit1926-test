@@ -5,6 +5,9 @@ import { ACTIONS, RESOURCES, isValidPermissionPair } from "@/lib/api/permissions
 
 export const permKey = (resource: string, action: string) => `${resource}:${action}`;
 
+/** Friendlier column headers for actions whose camelCase reads poorly. */
+const ACTION_LABELS: Record<string, string> = { viewAll: "View all" };
+
 interface Props {
   /** Editable grants (toggleable). */
   value: Set<string>;
@@ -30,7 +33,7 @@ export function PermissionMatrix({ value, onToggle, locked, readOnly }: Props) {
             <th className="px-3 py-2 text-left font-semibold">Resource</th>
             {ACTIONS.map((a) => (
               <th key={a} className="px-3 py-2 text-center font-semibold capitalize">
-                {a}
+                {ACTION_LABELS[a] ?? a}
               </th>
             ))}
           </tr>
