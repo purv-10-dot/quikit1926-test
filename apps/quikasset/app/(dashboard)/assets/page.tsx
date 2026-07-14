@@ -6,6 +6,7 @@ import AddEditAssetModal from "@/components/assets/AddEditAssetModal"
 import { Upload, Plus, Search, Pencil, Trash2, CheckCircle2, X, AlertTriangle, Download, Loader2, Laptop, Smartphone, Monitor, Printer, Server, HardDrive, Camera, Car, Wrench, Cpu, Wifi, Headphones, Package, Box, Tablet, BookOpen, Armchair, SlidersHorizontal, ChevronUp, Wallet, ChevronRight } from "lucide-react"
 import FiscalBudgetModal, { type FiscalBudget, type FiscalBudgetFormData } from "@/components/assets/FiscalBudgetModal"
 import Pagination from "@/components/ui/Pagination"
+import { RequirePerm } from "@/components/require-perm"
 import { cn } from "@/lib/utils"
 import type { Asset } from "@/types/asset"
 import * as XLSX from "xlsx"
@@ -54,6 +55,17 @@ const STATUS_LABELS: Record<Asset["assetStatus"], string> = {
 }
 
 export default function AssetInventoryPage() {
+  // Full org register — only asset managers/admins (Asset:viewAll). Members are
+  // routed to /employee-view ("My Assets"); the /api/assets endpoint also scopes
+  // defensively, so this guard is UX, not the security boundary.
+  return (
+    <RequirePerm resource="Asset" action="viewAll">
+      <AssetInventory />
+    </RequirePerm>
+  )
+}
+
+function AssetInventory() {
   const [assets, setAssets] = useState<Asset[]>([])
   const [loading, setLoading] = useState(true)
   const [search, setSearch] = useState("")
