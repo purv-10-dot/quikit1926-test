@@ -47,7 +47,6 @@ public/uploads/
 
 # Local-only: not tracked in this app (removed from index intentionally)
 *.md
-tailwind.config.ts
 vercel.json
 __tests__/**/*.test.ts
 __tests__/**/*.test.tsx
