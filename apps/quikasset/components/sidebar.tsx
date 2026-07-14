@@ -13,7 +13,6 @@ import {
   ClipboardList,
   Mail,
   BarChart2,
-  Users,
   UserCog,
   Settings,
   Tags,
@@ -51,10 +50,6 @@ const NAV_SECTIONS: NavSection[] = [
       { label: "Notification", href: "/notifications", icon: Mail },
       { label: "Reports", href: "/reports", icon: BarChart2 },
     ],
-  },
-  {
-    label: "Views",
-    items: [{ label: "User Directory", href: "/users", icon: Users }],
   },
   {
     label: "Admin",
