@@ -14,6 +14,7 @@ export default async function DashboardPage() {
     redirect("/login");
   }
 
+  
   const tenantId = session.user.orgId;
   const externalUserId = session.user.id;
 
