@@ -9900,6 +9900,7 @@ model QtIdeaDelivery {
 enum Gender {
   Male
   Female
+  Transgender
   NonBinary
   PreferNotToSay
 
@@ -11903,6 +11904,12 @@ model JobRequisition {
   positions         Int     @default(1)
   filledPositions   Int     @default(0)
 
+  // Job Requisition Form fields (moreYeahs template parity).
+  jobLocation   String? // free-text city / office location
+  jobDuration   String? // e.g. contract length ("6 months"), "Permanent"
+  workTimings   String? // working hours / shift ("9 AM–6 PM", "Night shift")
+  interviewMode String? // "Video" | "InPerson" | "Either" | "NotRequired"
+
   type           RequisitionType @default(NewPosition)
   employmentType EmploymentType  @default(FullTime)
   workLocation   WorkLocation    @default(Office)
@@ -11944,6 +11951,17 @@ model JobRequisition {
 
   closedDate    DateTime? @db.Date
   closureReason String?
+
+  // Extended requisition metadata (job posting + hiring plan). These columns
+  // already exist in the DB; kept in sync here so the generated client accepts them.
+  jobOpeningName    String?
+  interviewPanel    Json? // Array<employeeId> — interview panel members
+  postToJobPortal   Boolean   @default(false)
+  budget            Decimal?  @db.Decimal(15, 2)
+  etaToFillDays     Int?
+  targetJoiningDate DateTime? @db.Date
+  jobGrade          String?
+  costCenter        String?
 
   createdBy String?
   updatedBy String?
@@ -12581,6 +12599,7 @@ enum ApprovalModule {
   ProofOfInvestment
   SalaryRevision
   OneTimeEarning
+  Requisition
 
   @@schema("app_quikhrms")
 }
@@ -12655,6 +12674,15 @@ model CompanySettings {
   signatoryName        String?
   signatoryDesignation String?
   offerLetterFooter    String?
+  // Editable offer-letter body template with {{dynamic}} fields (see
+  // lib/recruit/offer-letter-fields.ts). Null → renderer uses the built-in default.
+  offerLetterBody      String?
+
+  // First-run org setup gate (admin onboarding). Latched true once Departments,
+  // Locations, a complete Approval chain, and Payroll setup are all done — after
+  // which HRMS is unlocked permanently (deleting records later never re-locks).
+  hrmsSetupCompleted   Boolean   @default(false)
+  hrmsSetupCompletedAt DateTime?
 
   createdBy String?
   updatedBy String?
@@ -13080,6 +13108,14 @@ model EmployeeProvision {
   @@schema("app_quikhrms")
 }
 
+enum ResignationApprovalStatus {
+  Pending
+  Approved
+  Rejected
+
+  @@schema("app_quikhrms")
+}
+
 model OffboardingInstance {
   id         String  @id @default(cuid())
   orgId      String
@@ -13095,6 +13131,14 @@ model OffboardingInstance {
   exitInterviewAt    DateTime?
   notes              String?
 
+  // Self-service resignation approval flow. Null on instances that HR/admin
+  // created directly (i.e. that never went through employee self-service).
+  resignationApprovalStatus  ResignationApprovalStatus?
+  resignationApproverId      String?
+  resignationDecisionById    String?
+  resignationDecisionAt      DateTime?
+  resignationRejectionReason String?
+
   createdBy String?
   updatedBy String?
   createdAt DateTime  @default(now())
@@ -13108,6 +13152,8 @@ model OffboardingInstance {
   @@index([orgId, deletedAt])
   @@index([orgId, status])
   @@index([orgId, employeeId])
+  @@index([orgId, resignationApprovalStatus])
+  @@index([orgId, resignationApproverId])
   @@schema("app_quikhrms")
 }
 
@@ -15424,7 +15470,9 @@ model RequisitionApproval {
   requisitionId String
   approverId    String
   level         Int                     @default(1)
-  role          RequisitionApproverRole
+  // Nullable: rows created from a configurable Approval Chain have no fixed
+  // DeptHead/HR role (legacy hardcoded rows still set it).
+  role          RequisitionApproverRole?
 
   status    RequisitionApprovalStatus @default(Pending)
   comment   String?

@@ -20,9 +20,9 @@ export function WfhTabs() {
   const canManageQuota = isSuperAdmin || hasRole("admin");
 
   const tabs: Tab[] = [
-    { href: "/wfh/my-requests", label: "My WFH", icon: <Home size={14} />, show: true },
-    { href: "/wfh/team", label: "Team Approvals", icon: <Users2 size={14} />, show: true },
-    { href: "/settings/wfh-quota", label: "Quota Groups", icon: <Layers size={14} />, show: canManageQuota },
+    { href: "/wfh/my-requests", label: "My WFH", icon: <Home size={13} />, show: true },
+    { href: "/wfh/team", label: "Team Approvals", icon: <Users2 size={13} />, show: true },
+    { href: "/settings/wfh-quota", label: "Quota Groups", icon: <Layers size={13} />, show: canManageQuota },
   ];
 
   return (
@@ -34,9 +34,9 @@ export function WfhTabs() {
             key={t.href}
             href={t.href}
             className={clsx(
-              "inline-flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-semibold transition-all",
+              "inline-flex items-center gap-2 px-4 py-2 rounded-lg text-[13px] font-semibold transition-all",
               active
-                ? "bg-[#16243A] text-white shadow-sm"
+                ? "bg-green-600 text-white shadow-sm"
                 : "text-gray-600 hover:bg-gray-50 hover:text-gray-900",
             )}
           >

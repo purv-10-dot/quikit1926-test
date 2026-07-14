@@ -11,6 +11,7 @@ const brandingSchema = z.object({
   signatoryName: z.string().max(120).nullish(),
   signatoryDesignation: z.string().max(120).nullish(),
   offerLetterFooter: z.string().max(500).nullish(),
+  offerLetterBody: z.string().max(20000).nullish(),
 });
 
 const SELECT = {
@@ -20,6 +21,7 @@ const SELECT = {
   signatoryName: true,
   signatoryDesignation: true,
   offerLetterFooter: true,
+  offerLetterBody: true,
   companyName: true,
 };
 

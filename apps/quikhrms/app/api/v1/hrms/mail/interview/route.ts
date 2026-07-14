@@ -3,9 +3,10 @@ import { z } from "zod";
 import { prisma } from "@/lib/prisma";
 import { withAuth } from "@/lib/with-auth";
 import { successResponse, validationError, notFound, internalError } from "@/lib/api-response";
-import { sendMail } from "@/lib/services/mailer";
+import { resolveAndSend } from "@/lib/email/resolve";
 import { buildInterviewInviteEmail } from "@/lib/email-templates/interview-invite";
 import { buildInterviewerNotificationEmail } from "@/lib/email-templates/interview-notification";
+import { generateFeedbackToken } from "@/lib/services/feedback-token";
 
 const bodySchema = z.object({
   interviewId: z.string().min(1),
@@ -46,7 +47,7 @@ export const POST = withAuth(async (req: NextRequest, { orgId }) => {
     const candidateName = `${candidate.firstName} ${candidate.lastName}`.trim();
     const jobTitle = interview.application?.requisition?.title ?? "the role";
 
-    const candidateMail = buildInterviewInviteEmail({
+    const candidateInviteData = {
       candidateName, jobTitle,
       interviewDate: dateStr, interviewTime: timeStr,
       duration: String(interview.duration),
@@ -55,14 +56,39 @@ export const POST = withAuth(async (req: NextRequest, { orgId }) => {
       meetingLink: interview.meetingLink,
       location: interview.location,
       companyName,
+    };
+
+    const candidateResult = await resolveAndSend(orgId, {
+      key: "interview.candidate-invite",
+      to: candidate.email,
+      vars: {
+        ...candidateInviteData,
+        meetingLink: candidateInviteData.meetingLink ?? "",
+        location: candidateInviteData.location ?? "",
+      },
+      fallback: () => buildInterviewInviteEmail(candidateInviteData),
     });
 
-    const candidateResult = await sendMail({ to: candidate.email, subject: candidateMail.subject, html: candidateMail.html });
+    // Reuse the interview's live feedback token, else mint + persist one, so the
+    // tokenised no-login feedback link stays consistent across resends/reminders.
+    const base = process.env.NEXT_PUBLIC_APP_URL || process.env.APP_URL || "";
+    let fbToken = interview.feedbackToken;
+    let fbExpiresAt = interview.feedbackTokenExpiresAt;
+    if (!fbToken || !fbExpiresAt || fbExpiresAt.getTime() < Date.now()) {
+      const gen = generateFeedbackToken(interview.id, orgId);
+      fbToken = gen.token;
+      fbExpiresAt = gen.expiresAt;
+      await prisma.interview.update({
+        where: { id: interview.id },
+        data: { feedbackToken: fbToken, feedbackTokenExpiresAt: fbExpiresAt },
+      });
+    }
+    const interviewerFeedbackUrl = base ? `${base}/interview-feedback/${fbToken}` : null;
 
     let interviewerSent = false;
     let interviewerError: string | null = null;
     if (interview.interviewer.workEmail) {
-      const interviewerMail = buildInterviewerNotificationEmail({
+      const interviewerNotifyData = {
         interviewerName,
         candidateName,
         candidateEmail: candidate.email,
@@ -77,8 +103,21 @@ export const POST = withAuth(async (req: NextRequest, { orgId }) => {
         companyName,
         roundName: `Round ${interview.round}`,
         resumeUrl: candidate.resumeUrl,
+        feedbackUrl: interviewerFeedbackUrl,
+      };
+      const r = await resolveAndSend(orgId, {
+        key: "interview.interviewer-notify",
+        to: interview.interviewer.workEmail,
+        vars: {
+          ...interviewerNotifyData,
+          candidatePhone: interviewerNotifyData.candidatePhone ?? "",
+          meetingLink: interviewerNotifyData.meetingLink ?? "",
+          location: interviewerNotifyData.location ?? "",
+          resumeUrl: interviewerNotifyData.resumeUrl ?? "",
+          feedbackUrl: interviewerNotifyData.feedbackUrl ?? "",
+        },
+        fallback: () => buildInterviewerNotificationEmail(interviewerNotifyData),
       });
-      const r = await sendMail({ to: interview.interviewer.workEmail, subject: interviewerMail.subject, html: interviewerMail.html });
       interviewerSent = r.sent;
       if (!r.sent) interviewerError = r.error ?? "Mail send failed";
     } else {

@@ -81,12 +81,12 @@ const ratingColor = (r: string) =>
 
 const typeColors: Record<string, string> = {
   Promotion: "bg-green-100 text-green-700",
-  Transfer: "bg-[#dbeafe] text-[#2563eb]",
+  Transfer: "bg-[#dcfce7] text-[#16a34a]",
   RoleChange: "bg-purple-100 text-purple-700",
   SalaryChange: "bg-emerald-100 text-emerald-700",
   ConfirmationChange: "bg-cyan-100 text-cyan-700",
   EmpStatusChange: "bg-yellow-100 text-yellow-700",
-  DepartmentChange: "bg-[#dbeafe] text-[#2563eb]",
+  DepartmentChange: "bg-[#dcfce7] text-[#16a34a]",
   ManagerChange: "bg-orange-100 text-orange-700",
 };
 
@@ -133,14 +133,14 @@ export default function EmploymentHistoryPage() {
 
   return (
     <div>
-      <div className="flex items-center justify-between mb-6">
+      <div className="flex items-center justify-between mb-4">
         <div className="flex items-center gap-3">
-          <History className="text-[#3b82f6]" />
-          <h1 className="font-serif-display text-3xl md:text-4xl font-bold text-gray-900">Employment History</h1>
+          <History className="text-[#22c55e]" />
+          <h1 className="text-base font-semibold text-gray-900">Employment History</h1>
         </div>
         {employeeId && (
           <button onClick={() => setShowAdd(true)} className="flex items-center gap-2 btn btn-primary">
-            <Plus size={16} /> Add Change
+            <Plus size={13} /> Add Change
           </button>
         )}
       </div>
@@ -150,17 +150,17 @@ export default function EmploymentHistoryPage() {
           <EmployeeSelect label="Employee" value={employeeId} onChange={setEmployeeId} />
         </div>
         <div>
-          <label className="block text-sm font-medium text-gray-700 mb-1">Effective From</label>
-          <input type="date" value={fromDate} max={toDate || undefined} onChange={(e) => setFromDate(e.target.value)} className="w-full border border-[var(--border)] rounded-lg px-3 py-2 text-sm" />
+          <label className="block text-xs font-medium text-gray-700 mb-1">Effective From</label>
+          <input type="date" value={fromDate} max={toDate || undefined} onChange={(e) => setFromDate(e.target.value)} className="w-full border border-[var(--border)] rounded-lg px-3 py-1.5 text-xs" />
         </div>
         <div>
-          <label className="block text-sm font-medium text-gray-700 mb-1">Effective To</label>
-          <input type="date" value={toDate} min={fromDate || undefined} onChange={(e) => setToDate(e.target.value)} className="w-full border border-[var(--border)] rounded-lg px-3 py-2 text-sm" />
+          <label className="block text-xs font-medium text-gray-700 mb-1">Effective To</label>
+          <input type="date" value={toDate} min={fromDate || undefined} onChange={(e) => setToDate(e.target.value)} className="w-full border border-[var(--border)] rounded-lg px-3 py-1.5 text-xs" />
         </div>
         {(fromDate || toDate) && (
           <div className="md:col-span-4 flex items-center justify-between text-xs text-gray-500">
             <span>Showing {entries.length} of {allEntries.length}</span>
-            <button type="button" onClick={() => { setFromDate(""); setToDate(""); }} className="text-[#3b82f6] hover:underline">Clear date filter</button>
+            <button type="button" onClick={() => { setFromDate(""); setToDate(""); }} className="text-[#22c55e] hover:underline">Clear date filter</button>
           </div>
         )}
       </div>
@@ -178,7 +178,7 @@ export default function EmploymentHistoryPage() {
                     <div className="flex-1">
                       {/* Show who, in the all-employees feed (no employee selected). */}
                       {!employeeId && e.employee && (
-                        <div className="flex items-center gap-1.5 mb-1.5 text-sm font-semibold text-gray-900">
+                        <div className="flex items-center gap-1.5 mb-1.5 text-[13px] font-semibold text-gray-900">
                           <UserIcon size={13} className="text-gray-400" />
                           {e.employee.firstName} {e.employee.lastName}
                           {e.employee.employeeCode && (
@@ -187,10 +187,10 @@ export default function EmploymentHistoryPage() {
                         </div>
                       )}
                       <div className="flex items-center gap-2">
-                        <span className={clsx("px-2 py-0.5 rounded-full text-xs font-medium", typeColors[e.changeType] ?? "bg-gray-100 text-gray-700")}>{e.changeType}</span>
+                        <span className={clsx("px-2 py-0.5 rounded-full text-[11px] font-medium", typeColors[e.changeType] ?? "bg-gray-100 text-gray-700")}>{e.changeType}</span>
                         <span className="text-xs text-gray-500">Effective {fmtDate(e.effectiveDate)}</span>
                       </div>
-                      {e.reason && <div className="text-sm text-gray-700 mt-2">{e.reason}</div>}
+                      {e.reason && <div className="text-xs text-gray-700 mt-2">{e.reason}</div>}
 
                       <div className="mt-2 space-y-1">
                         {keys.map((k) => {
@@ -214,7 +214,7 @@ export default function EmploymentHistoryPage() {
                                   <ArrowRight size={12} className="text-gray-400 shrink-0" />
                                 </>
                               )}
-                              <span className="bg-[#dbeafe] px-2 py-0.5 rounded text-[#2563eb] font-medium">{to}</span>
+                              <span className="bg-[#dcfce7] px-2 py-0.5 rounded text-[#16a34a] font-medium">{to}</span>
                             </div>
                           );
                         })}
@@ -223,7 +223,7 @@ export default function EmploymentHistoryPage() {
                       {e.notes && <div className="text-xs text-gray-600 mt-2">{e.notes}</div>}
                     </div>
                     {e.letterUrl && (
-                      <a href={e.letterUrl} target="_blank" rel="noreferrer" className="text-xs text-[#3b82f6] hover:underline shrink-0 ml-3">View letter</a>
+                      <a href={e.letterUrl} target="_blank" rel="noreferrer" className="text-xs text-[#22c55e] hover:underline shrink-0 ml-3">View letter</a>
                     )}
                   </div>
                 </div>
@@ -282,7 +282,6 @@ function AddChangeModal({ employeeId, recent, onClose, onSaved }: {
   const addMut = useMutation({
     mutationFn: (body: Record<string, unknown>) => api.post(`/api/v1/hrms/employees/${employeeId}/history`, body),
     onSuccess: () => { toast.success("Employment change recorded"); onSaved(); },
-    onError: (e: Error) => toast.error("Could not save", e.message),
   });
 
   const submit = (e: React.FormEvent) => {
@@ -307,20 +306,20 @@ function AddChangeModal({ employeeId, recent, onClose, onSaved }: {
   };
 
   const empName = emp ? `${emp.firstName} ${emp.lastName}`.trim() : "Employee";
-  const inputCls = "w-full border border-[var(--border)] rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-[#16243A]";
+  const inputCls = "w-full border border-[var(--border)] rounded-lg px-3 py-1.5 text-xs focus:outline-none focus:ring-1 focus:ring-[#166534]";
 
   return (
     <Modal open onClose={onClose} title="Add Employment Change" subtitle="Update employee details and track their career growth" size="2xl" bodyClassName="p-0 overflow-y-auto">
       <form onSubmit={submit}>
         <div className="grid grid-cols-1 lg:grid-cols-[1fr_320px]">
           {/* ── LEFT: form ── */}
-          <div className="p-5 space-y-5 border-r border-gray-100">
+          <div className="p-4 space-y-4 border-r border-gray-100">
             {/* Step indicator (Change Details is the active step) */}
             <div className="flex items-center gap-2 text-xs">
               {["Change Details", "Review", "Confirm"].map((s, i) => (
                 <div key={s} className="flex items-center gap-2">
                   <span className={clsx("inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full font-semibold",
-                    i === 0 ? "bg-[#16243A] text-white" : "bg-gray-100 text-gray-500")}>
+                    i === 0 ? "bg-green-600 text-white" : "bg-gray-100 text-gray-500")}>
                     <span className={clsx("w-4 h-4 rounded-full grid place-items-center text-[10px]",
                       i === 0 ? "bg-white/20" : "bg-gray-200 text-gray-600")}>{i + 1}</span>
                     {s}
@@ -332,7 +331,7 @@ function AddChangeModal({ employeeId, recent, onClose, onSaved }: {
 
             {/* 1. Change Type */}
             <div>
-              <p className="text-sm font-bold text-gray-900 mb-1">1. Change Type</p>
+              <p className="text-[13px] font-semibold text-gray-900 mb-1">1. Change Type</p>
               <p className="text-xs text-gray-500 mb-3">Select the type of employment change.</p>
               <div className="grid grid-cols-2 sm:grid-cols-5 gap-2">
                 {CHANGE_CARDS.map((c) => {
@@ -345,7 +344,7 @@ function AddChangeModal({ employeeId, recent, onClose, onSaved }: {
                       onClick={() => setType(c.key)}
                       className={clsx(
                         "flex flex-col items-center gap-1.5 rounded-lg border px-2 py-3 text-center transition",
-                        active ? "border-[#2563eb] bg-[#eff6ff] text-[#2563eb] ring-1 ring-[#bfdbfe]" : "border-gray-200 text-gray-600 hover:border-[#bfdbfe] hover:bg-gray-50",
+                        active ? "border-[#16a34a] bg-[#f0fdf4] text-[#16a34a] ring-1 ring-[#bbf7d0]" : "border-gray-200 text-gray-600 hover:border-[#bbf7d0] hover:bg-gray-50",
                       )}
                     >
                       <Icon size={18} />
@@ -358,10 +357,10 @@ function AddChangeModal({ employeeId, recent, onClose, onSaved }: {
 
             {/* 2. Change Details */}
             <div>
-              <p className="text-sm font-bold text-gray-900 mb-3">2. Change Details</p>
+              <p className="text-[13px] font-semibold text-gray-900 mb-3">2. Change Details</p>
 
               <div className="mb-4">
-                <label className="block text-sm font-medium text-gray-700 mb-1">Effective Date</label>
+                <label className="block text-xs font-medium text-gray-700 mb-1">Effective Date</label>
                 <div className="relative">
                   <Calendar size={14} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-gray-400" />
                   <input type="date" required value={effectiveDate} onChange={(e) => setEffectiveDate(e.target.value)} className={clsx(inputCls, "pl-8")} />
@@ -374,7 +373,7 @@ function AddChangeModal({ employeeId, recent, onClose, onSaved }: {
                 {fields.map((f) => (
                   <div key={f.key} className="rounded-lg bg-gray-50 border border-gray-200 px-3 py-2">
                     <div className="text-[10px] uppercase tracking-wide text-gray-400">{f.label}</div>
-                    <div className="text-sm text-gray-700 truncate">{f.current(emp) || "—"}</div>
+                    <div className="text-xs text-gray-700 truncate">{f.current(emp) || "—"}</div>
                   </div>
                 ))}
               </div>
@@ -391,12 +390,12 @@ function AddChangeModal({ employeeId, recent, onClose, onSaved }: {
               </div>
 
               <div className="mb-4">
-                <label className="block text-sm font-medium text-gray-700 mb-1">Reason</label>
+                <label className="block text-xs font-medium text-gray-700 mb-1">Reason</label>
                 <input value={reason} onChange={(e) => setReason(e.target.value)} placeholder="Promotion based on performance and contribution during annual review." className={inputCls} />
               </div>
 
               <div className="mb-4">
-                <label className="block text-sm font-medium text-gray-700 mb-1">Attachment</label>
+                <label className="block text-xs font-medium text-gray-700 mb-1">Attachment</label>
                 <FileUploadInput
                   value={letterUrl}
                   onChange={(url) => setLetterUrl(url)}
@@ -407,24 +406,24 @@ function AddChangeModal({ employeeId, recent, onClose, onSaved }: {
               </div>
 
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Notes</label>
+                <label className="block text-xs font-medium text-gray-700 mb-1">Notes</label>
                 <textarea value={notes} onChange={(e) => setNotes(e.target.value)} rows={2} placeholder="Internal notes (optional)" className={inputCls} />
               </div>
             </div>
           </div>
 
           {/* ── RIGHT: summary + history ── */}
-          <div className="p-5 space-y-4 bg-gray-50/60">
+          <div className="p-4 space-y-4 bg-gray-50/60">
             {/* Employee card */}
             <div className="rounded-xl border border-gray-200 bg-white p-3 flex items-center gap-3">
-              <div className="w-10 h-10 rounded-full bg-[#dbeafe] grid place-items-center text-[#2563eb] overflow-hidden shrink-0">
+              <div className="w-10 h-10 rounded-full bg-[#dcfce7] grid place-items-center text-[#16a34a] overflow-hidden shrink-0">
                 {emp?.profilePhoto ? (
                   // eslint-disable-next-line @next/next/no-img-element
                   <img src={emp.profilePhoto} alt="" className="w-full h-full object-cover" />
                 ) : <UserIcon size={18} />}
               </div>
               <div className="min-w-0">
-                <div className="text-sm font-bold text-gray-900 truncate">{empName}</div>
+                <div className="text-[13px] font-semibold text-gray-900 truncate">{empName}</div>
                 <div className="text-[11px] text-gray-500 truncate">
                   {emp?.employeeCode ?? "—"}{emp?.employmentType ? ` · ${emp.employmentType}` : ""}
                 </div>
@@ -433,7 +432,7 @@ function AddChangeModal({ employeeId, recent, onClose, onSaved }: {
 
             {/* Changes summary */}
             <div className="rounded-xl border border-gray-200 bg-white p-3">
-              <p className="text-xs font-bold text-gray-900 mb-2">Changes Summary</p>
+              <p className="text-[13px] font-semibold text-gray-900 mb-2">Changes Summary</p>
               <div className="space-y-1.5 text-xs">
                 <div className="flex justify-between gap-2">
                   <span className="text-gray-500">Effective Date</span>
@@ -447,7 +446,7 @@ function AddChangeModal({ employeeId, recent, onClose, onSaved }: {
                     <span className="flex items-center gap-1 min-w-0">
                       {c.from && <span className="text-gray-400 line-through truncate max-w-[80px]">{c.from}</span>}
                       <ArrowRight size={11} className="text-gray-300 shrink-0" />
-                      <span className="text-[#2563eb] font-semibold truncate max-w-[100px]">{c.to}</span>
+                      <span className="text-[#16a34a] font-semibold truncate max-w-[100px]">{c.to}</span>
                     </span>
                   </div>
                 ))}
@@ -462,16 +461,16 @@ function AddChangeModal({ employeeId, recent, onClose, onSaved }: {
 
             {/* Employment history timeline */}
             <div className="rounded-xl border border-gray-200 bg-white p-3">
-              <p className="text-xs font-bold text-gray-900 mb-2">Employment History</p>
+              <p className="text-[13px] font-semibold text-gray-900 mb-2">Employment History</p>
               {recent.length === 0 ? (
                 <p className="text-xs text-gray-400">No prior records.</p>
               ) : (
                 <ol className="relative border-l border-gray-200 ml-1.5 space-y-3">
                   {recent.slice(0, 4).map((h) => (
                     <li key={h.id} className="ml-3">
-                      <span className="absolute -left-[5px] w-2.5 h-2.5 rounded-full bg-[#2563eb] ring-2 ring-white" />
+                      <span className="absolute -left-[5px] w-2.5 h-2.5 rounded-full bg-[#16a34a] ring-2 ring-white" />
                       <div className="text-[11px] text-gray-400 flex items-center gap-1"><Clock size={10} /> {fmtDate(h.effectiveDate)}</div>
-                      <div className="text-xs font-semibold text-gray-800">{h.changeType}</div>
+                      <div className="text-[13px] font-semibold text-gray-800">{h.changeType}</div>
                     </li>
                   ))}
                 </ol>
@@ -490,9 +489,9 @@ function AddChangeModal({ employeeId, recent, onClose, onSaved }: {
 
         {/* Footer */}
         <div className="flex justify-end gap-2 px-5 py-3 border-t border-gray-100 bg-white sticky bottom-0">
-          <button type="button" onClick={onClose} className="px-4 py-2 border border-[var(--border)] rounded-lg text-sm text-gray-700 hover:bg-gray-50">Cancel</button>
-          <button type="submit" disabled={addMut.isPending} className="inline-flex items-center gap-1.5 px-4 py-2 bg-[#16243A] text-white rounded-lg text-sm font-medium hover:bg-[#2563eb] disabled:opacity-50">
-            {addMut.isPending ? "Saving…" : "Save Change"} <ArrowRight size={15} />
+          <button type="button" onClick={onClose} className="px-3 py-1.5 border border-[var(--border)] rounded-lg text-xs font-medium text-gray-700 hover:bg-gray-50">Cancel</button>
+          <button type="submit" disabled={addMut.isPending} className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-green-600 text-white rounded-lg text-xs font-medium hover:bg-green-700 disabled:opacity-50">
+            {addMut.isPending ? "Saving…" : "Save Change"} <ArrowRight size={13} />
           </button>
         </div>
       </form>

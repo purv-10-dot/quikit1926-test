@@ -4,6 +4,7 @@ import { successResponse, notFound, internalError } from "@/lib/api-response";
 import { restoreEmployee } from "@/lib/services/employee-cascade";
 import { scheduleOrgChartRebuild } from "@/lib/org-chart-rebuild";
 import { fireWorkflow } from "@/lib/workflows/executor";
+import { emitEmployeeIndex } from "@/lib/search/search-index";
 
 /**
  * POST /api/v1/hrms/employees/:id/restore
@@ -20,6 +21,9 @@ export const POST = withAuth(async (_req: NextRequest, { orgId, userId }, params
       event: "employee.restored",
       payload: { employeeId: params.id },
     });
+
+    // Search index (§S-3): re-index the restored employee.
+    emitEmployeeIndex(orgId, params.id, "update");
 
     return successResponse({ restored: true, cascade: result.tables });
   } catch (error) {

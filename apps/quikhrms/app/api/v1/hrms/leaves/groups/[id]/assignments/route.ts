@@ -27,6 +27,33 @@ export const POST = withAuth(async (req: NextRequest, { orgId, userId }, params)
         where: { orgId, id: { in: empIds }, deletedAt: null },
       });
       if (valid !== new Set(empIds).size) return validationError("Invalid employee(s) selected");
+
+      // Exclusivity: an employee may belong to at most ONE leave group. Reject
+      // if any selected employee is already assigned to a different active
+      // group, and name them so the admin knows where to unassign first.
+      const conflicts = await prisma.leaveGroupAssignment.findMany({
+        where: {
+          orgId,
+          assigneeType: "Employee",
+          employeeId: { in: empIds },
+          leaveGroupId: { not: params.id },
+          leaveGroup: { deletedAt: null },
+        },
+        select: { employeeId: true, leaveGroup: { select: { name: true } } },
+      });
+      if (conflicts.length) {
+        const emps = await prisma.employee.findMany({
+          where: { orgId, id: { in: conflicts.map((c) => c.employeeId!).filter(Boolean) } },
+          select: { id: true, firstName: true, lastName: true, employeeCode: true },
+        });
+        const nameById = new Map(emps.map((e) => [e.id, `${e.firstName} ${e.lastName} (${e.employeeCode})`]));
+        const detail = conflicts
+          .map((c) => `${nameById.get(c.employeeId!) ?? c.employeeId} — already in "${c.leaveGroup?.name ?? "another group"}"`)
+          .join("; ");
+        return validationError(
+          `An employee can only be in one leave group. Unassign them from their current group first: ${detail}`,
+        );
+      }
     }
     if (roleIds.length) {
       const valid = await prisma.hrmsAppRole.count({
@@ -64,7 +91,7 @@ export const POST = withAuth(async (req: NextRequest, { orgId, userId }, params)
     console.error("POST /leaves/groups/[id]/assignments error:", error);
     return internalError();
   }
-});
+}, { requiredPermissions: ["hrms.leave.manage"] });
 
 export const DELETE = withAuth(async (req: NextRequest, { orgId, userId }, params) => {
   try {
@@ -94,4 +121,4 @@ export const DELETE = withAuth(async (req: NextRequest, { orgId, userId }, param
     console.error("DELETE /leaves/groups/[id]/assignments error:", error);
     return internalError();
   }
-});
+}, { requiredPermissions: ["hrms.leave.manage"] });

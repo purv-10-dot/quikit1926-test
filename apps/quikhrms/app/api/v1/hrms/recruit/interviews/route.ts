@@ -5,9 +5,15 @@ import { successResponse, validationError, conflict, internalError } from "@/lib
 import { createInterviewSchema } from "@/lib/validations/recruit";
 import { parsePagination, paginationMeta } from "@/lib/utils/pagination";
 import { stageNames } from "@/lib/services/pipeline-stages";
-import { queueEmail } from "@/lib/services/mailer";
+import { resolveAndSend } from "@/lib/email/resolve";
 import { buildInterviewInviteEmail } from "@/lib/email-templates/interview-invite";
 import { buildInterviewerNotificationEmail } from "@/lib/email-templates/interview-notification";
+import { generateMeetingLink } from "@/lib/meetings";
+import { generateFeedbackToken } from "@/lib/services/feedback-token";
+
+// Interview types that warrant an auto-generated video meeting link.
+// Easy to extend (e.g. add "GroupDiscussion") if those go virtual.
+const VIRTUAL_INTERVIEW_TYPES = new Set(["Video", "Panel"]);
 
 export const GET = withAuth(async (req: NextRequest, { orgId }) => {
   try {
@@ -75,12 +81,50 @@ export const POST = withAuth(async (req: NextRequest, { orgId, userId }) => {
     });
     if (existing) return conflict("Interview already scheduled for this round + time");
 
+    // Auto-generate a video meeting link for virtual interviews when the
+    // recruiter didn't paste one. Provider-agnostic (Teams today, Google Meet
+    // later); failures fall back to null so scheduling never breaks.
+    let meetingLink = data.meetingLink ?? null;
+    if (!meetingLink && VIRTUAL_INTERVIEW_TYPES.has(data.type)) {
+      const appInfo = await prisma.jobApplication.findFirst({
+        where: { id: data.applicationId, orgId, deletedAt: null },
+        select: {
+          candidate: { select: { firstName: true, lastName: true, email: true } },
+          requisition: { select: { title: true } },
+        },
+      });
+      const interviewer = await prisma.employee.findFirst({
+        where: { id: data.interviewerId, orgId, deletedAt: null },
+        select: { firstName: true, lastName: true, workEmail: true },
+      });
+      const subjectParts = ["Interview"];
+      if (appInfo?.requisition?.title) subjectParts.push(appInfo.requisition.title);
+      if (appInfo?.candidate) subjectParts.push(`${appInfo.candidate.firstName} ${appInfo.candidate.lastName}`.trim());
+      // Invite both candidate and interviewer so the event lands on their
+      // calendars (interviewer gets a Teams calendar invite; candidate too).
+      const attendees = [
+        appInfo?.candidate?.email
+          ? { email: appInfo.candidate.email, name: `${appInfo.candidate.firstName} ${appInfo.candidate.lastName}`.trim() }
+          : null,
+        interviewer?.workEmail
+          ? { email: interviewer.workEmail, name: `${interviewer.firstName} ${interviewer.lastName}`.trim() }
+          : null,
+      ].filter((a): a is { email: string; name: string } => a !== null);
+      const meeting = await generateMeetingLink({
+        subject: `${subjectParts.join(" – ")} (Round ${data.round})`,
+        start: scheduledAt,
+        end: new Date(scheduledAt.getTime() + data.duration * 60_000),
+        attendees,
+      });
+      if (meeting) meetingLink = meeting.joinUrl;
+    }
+
     const interview = await prisma.interview.create({
       data: {
         orgId, applicationId: data.applicationId,
         round: data.round, type: data.type, interviewerId: data.interviewerId,
         scheduledAt, duration: data.duration,
-        location: data.location, meetingLink: data.meetingLink,
+        location: data.location, meetingLink,
         createdBy: userId, updatedBy: userId,
       },
       include: {
@@ -110,7 +154,7 @@ export const POST = withAuth(async (req: NextRequest, { orgId, userId }) => {
       const jobTitle = interview.application?.requisition?.title ?? "the role";
 
       if (candidate?.email) {
-        const m = buildInterviewInviteEmail({
+        const inviteData = {
           candidateName, jobTitle,
           interviewDate: dateStr, interviewTime: timeStr,
           duration: String(interview.duration),
@@ -119,16 +163,24 @@ export const POST = withAuth(async (req: NextRequest, { orgId, userId }) => {
           meetingLink: interview.meetingLink,
           location: interview.location,
           companyName,
+        };
+        await resolveAndSend(orgId, {
+          key: "interview.candidate-invite",
+          to: candidate.email,
+          vars: { ...inviteData, meetingLink: inviteData.meetingLink ?? "", location: inviteData.location ?? "" },
+          fallback: () => buildInterviewInviteEmail(inviteData),
         });
-        // sent = queued; the email worker handles delivery + retries.
-        await queueEmail(orgId, { to: candidate.email, subject: m.subject, html: m.html, kind: "interview.candidate-invite" });
         mailStatus.candidate = { sent: true, to: candidate.email };
       } else {
         mailStatus.candidate = { sent: false, to: null, error: "Candidate email missing" };
       }
 
       if (interview.interviewer.workEmail && candidate) {
-        const m = buildInterviewerNotificationEmail({
+        // Tokenised, no-login feedback link. Persisted on the interview so the
+        // post-interview reminder/cron reuse the same token (see send-feedback-reminder).
+        const base = process.env.NEXT_PUBLIC_APP_URL || process.env.APP_URL || "";
+        const { token: fbToken, expiresAt: fbExpiresAt } = generateFeedbackToken(interview.id, orgId);
+        const notifyData = {
           interviewerName,
           candidateName,
           candidateEmail: candidate.email,
@@ -143,8 +195,25 @@ export const POST = withAuth(async (req: NextRequest, { orgId, userId }) => {
           companyName,
           roundName: `Round ${interview.round}`,
           resumeUrl: candidate.resumeUrl,
+          feedbackUrl: base ? `${base}/interview-feedback/${fbToken}` : null,
+        };
+        await resolveAndSend(orgId, {
+          key: "interview.interviewer-notify",
+          to: interview.interviewer.workEmail,
+          vars: {
+            ...notifyData,
+            candidatePhone: notifyData.candidatePhone ?? "",
+            meetingLink: notifyData.meetingLink ?? "",
+            location: notifyData.location ?? "",
+            resumeUrl: notifyData.resumeUrl ?? "",
+            feedbackUrl: notifyData.feedbackUrl ?? "",
+          },
+          fallback: () => buildInterviewerNotificationEmail(notifyData),
         });
-        await queueEmail(orgId, { to: interview.interviewer.workEmail, subject: m.subject, html: m.html, kind: "interview.interviewer-notify" });
+        await prisma.interview.update({
+          where: { id: interview.id },
+          data: { feedbackToken: fbToken, feedbackTokenExpiresAt: fbExpiresAt },
+        });
         mailStatus.interviewer = { sent: true, to: interview.interviewer.workEmail };
       } else {
         mailStatus.interviewer = { sent: false, to: null, error: "Interviewer workEmail missing" };

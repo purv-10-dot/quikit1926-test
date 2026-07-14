@@ -81,10 +81,17 @@ export function Select({
       const menuMax = 280;
       const up = below < menuMax && above > below;
       setPlaceUp(up);
+      // The menu must be wide enough to show full option labels (e.g.
+      // "Father-in-law") even when the trigger sits in a narrow column.
+      // Widen to a sensible minimum, but clamp to the viewport and nudge left
+      // so it never overflows the right edge.
+      const GUTTER = 8;
+      const width = Math.min(Math.max(rect.width, 200), window.innerWidth - GUTTER * 2);
+      const left = Math.min(rect.left, window.innerWidth - width - GUTTER);
       setMenuRect({
         top: up ? rect.top - 6 : rect.bottom + 6,
-        left: rect.left,
-        width: rect.width,
+        left: Math.max(GUTTER, left),
+        width,
       });
     };
     reposition();
@@ -116,7 +123,7 @@ export function Select({
     else if (e.key === "Escape") { e.preventDefault(); setOpen(false); }
   };
 
-  const triggerPad = size === "sm" ? "px-2.5 py-1.5 text-xs" : "px-3 py-2 text-sm";
+  const triggerPad = size === "sm" ? "h-8 px-2.5 text-secondary" : "h-10 px-3 text-body";
 
   return (
     <div className={className} ref={rootRef}>
@@ -137,8 +144,8 @@ export function Select({
           className={clsx(
             "w-full flex items-center gap-2 border rounded-lg text-left transition",
             triggerPad,
-            "focus:outline-none focus:ring-2 focus:ring-[#3b82f6]/30 focus:border-[#3b82f6]",
-            open ? "border-[#3b82f6] ring-2 ring-[#3b82f6]/20" : "border-gray-300 hover:border-gray-400",
+            "focus:outline-none focus:ring-2 focus:ring-[#22c55e]/30 focus:border-[#22c55e]",
+            open ? "border-[#22c55e] ring-2 ring-[#22c55e]/20" : "border-gray-300 hover:border-gray-400",
             disabled && "bg-gray-50 cursor-not-allowed opacity-60",
           )}
           onKeyDown={onKeyDown}
@@ -176,7 +183,7 @@ export function Select({
                     onChange={(e) => setQuery(e.target.value)}
                     onKeyDown={onKeyDown}
                     placeholder="Search..."
-                    className="w-full pl-8 pr-2 py-1.5 text-sm bg-white border border-gray-200 rounded-md focus:outline-none focus:ring-1 focus:ring-[#3b82f6] focus:border-[#3b82f6]"
+                    className="w-full pl-8 pr-2 py-1.5 text-sm bg-white border border-gray-200 rounded-md focus:outline-none focus:ring-1 focus:ring-[#22c55e] focus:border-[#22c55e]"
                   />
                 </div>
               </div>
@@ -196,24 +203,24 @@ export function Select({
                       onClick={() => pick(o)}
                       disabled={o.disabled}
                       className={clsx(
-                        "w-full flex items-center gap-2 px-3 py-2 text-left text-sm transition",
+                        "w-full flex items-center gap-2 px-3 py-1.5 text-left text-[13px] transition",
                         o.disabled && "opacity-40 cursor-not-allowed",
-                        !o.disabled && isHighlight && !isSelected && "bg-[#dbeafe]/60",
-                        !o.disabled && isSelected && "bg-[#3b82f6] text-white",
+                        !o.disabled && isSelected && "bg-emerald-50",
+                        !o.disabled && isHighlight && !isSelected && "bg-gray-50",
                         !o.disabled && !isHighlight && !isSelected && "hover:bg-gray-50",
                       )}
                     >
                       <div className="flex-1 min-w-0">
-                        <div className={clsx("truncate", isSelected ? "text-white font-medium" : "text-gray-900")}>
+                        <div className={clsx("truncate", isSelected ? "text-emerald-700 font-medium" : "text-gray-900")}>
                           {o.label}
                         </div>
                         {o.description && (
-                          <div className={clsx("text-[11px] truncate", isSelected ? "text-white/80" : "text-gray-500")}>
+                          <div className={clsx("text-[11px] truncate", isSelected ? "text-emerald-600/80" : "text-gray-500")}>
                             {o.description}
                           </div>
                         )}
                       </div>
-                      {isSelected && <Check size={14} className="shrink-0" />}
+                      {isSelected && <Check size={14} className="shrink-0 text-emerald-600" />}
                     </button>
                   </li>
                 );

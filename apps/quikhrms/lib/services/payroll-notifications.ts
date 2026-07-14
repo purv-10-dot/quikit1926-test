@@ -5,20 +5,6 @@ import type { PayrollEventPayload } from "@/lib/events/payroll";
 import { PAYROLL_EVENTS } from "@/lib/events/payroll";
 import { whereEmployeeHasAnyRole } from "@/lib/rbac/queries";
 
-function renderTemplate(text: string, vars: Record<string, string | number | undefined>): string {
-  return text.replace(/\{\{(\w+)\}\}/g, (_, k) => String(vars[k] ?? ""));
-}
-
-async function loadTemplate(orgId: string, key: string, channel: "Email" | "InApp"): Promise<{ subject: string; body: string; enabled: boolean } | null> {
-  try {
-    const t = await prisma.emailTemplate.findFirst({
-      where: { orgId, key, channel, deletedAt: null },
-      select: { subject: true, body: true, enabled: true },
-    });
-    return t ?? null;
-  } catch { return null; }
-}
-
 interface NotifyParams {
   orgId: string;
   employeeIds: string[];

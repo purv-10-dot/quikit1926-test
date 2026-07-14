@@ -158,8 +158,8 @@ export function EmployeeSelect({
           disabled={disabled}
           className={clsx(
             "w-full flex items-center gap-2.5 border rounded-lg px-3 py-2 text-sm text-left transition",
-            "focus:outline-none focus:ring-2 focus:ring-[#3b82f6]/30 focus:border-[#3b82f6]",
-            open ? "border-[#3b82f6] ring-2 ring-[#3b82f6]/20" : "border-gray-300 hover:border-gray-400",
+            "focus:outline-none focus:ring-2 focus:ring-[#22c55e]/30 focus:border-[#22c55e]",
+            open ? "border-[#22c55e] ring-2 ring-[#22c55e]/20" : "border-gray-300 hover:border-gray-400",
             disabled && "bg-gray-50 cursor-not-allowed opacity-60",
           )}
         >
@@ -169,7 +169,7 @@ export function EmployeeSelect({
                 // eslint-disable-next-line @next/next/no-img-element
                 <img src={withBasePath(selected.profilePhoto)} alt="" className="w-7 h-7 rounded-full object-cover shrink-0" />
               ) : (
-                <div className="w-7 h-7 rounded-full bg-gradient-to-br from-[#3b82f6] to-[#2563eb] flex items-center justify-center text-white text-[11px] font-semibold shrink-0">
+                <div className="w-7 h-7 rounded-full bg-gradient-to-br from-[#22c55e] to-[#16a34a] flex items-center justify-center text-white text-[11px] font-semibold shrink-0">
                   {initials(selected)}
                 </div>
               )}
@@ -220,7 +220,7 @@ export function EmployeeSelect({
                   onChange={(e) => setSearch(e.target.value)}
                   onKeyDown={onKeyDown}
                   placeholder="Search by name, code, email..."
-                  className="w-full pl-8 pr-2 py-1.5 text-sm bg-white border border-gray-200 rounded-md focus:outline-none focus:ring-1 focus:ring-[#3b82f6] focus:border-[#3b82f6]"
+                  className="w-full pl-8 pr-2 py-1.5 text-sm bg-white border border-gray-200 rounded-md focus:outline-none focus:ring-1 focus:ring-[#22c55e] focus:border-[#22c55e]"
                 />
               </div>
             </div>
@@ -229,7 +229,7 @@ export function EmployeeSelect({
               {isLoading ? (
                 <li className="px-3 py-4 text-center text-xs text-gray-400">Loading...</li>
               ) : options.length === 0 ? (
-                <li className="px-3 py-6 text-center text-xs text-gray-400">
+                <li className="px-3 py-4 text-center text-xs text-gray-400">
                   <UserIcon size={20} className="mx-auto mb-1 text-gray-300" />
                   No employees found
                 </li>
@@ -245,8 +245,8 @@ export function EmployeeSelect({
                       onClick={() => pick(e)}
                       className={clsx(
                         "w-full flex items-center gap-2.5 px-3 py-2 text-left transition",
-                        isHighlight && !isSelected && "bg-[#dbeafe]/60",
-                        isSelected && "bg-[#3b82f6] text-white",
+                        isHighlight && !isSelected && "bg-[#dcfce7]/60",
+                        isSelected && "bg-[#22c55e] text-white",
                         !isHighlight && !isSelected && "hover:bg-gray-50",
                       )}
                     >
@@ -256,7 +256,7 @@ export function EmployeeSelect({
                       ) : (
                         <div className={clsx(
                           "w-8 h-8 rounded-full flex items-center justify-center text-xs font-semibold shrink-0",
-                          isSelected ? "bg-white/20 text-white" : "bg-gradient-to-br from-[#3b82f6] to-[#2563eb] text-white",
+                          isSelected ? "bg-white/20 text-white" : "bg-gradient-to-br from-[#22c55e] to-[#16a34a] text-white",
                         )}>
                           {initials(e)}
                         </div>

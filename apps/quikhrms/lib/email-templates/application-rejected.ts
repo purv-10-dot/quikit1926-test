@@ -1,4 +1,4 @@
-import { baseLayout } from "./_base";
+import { emailShell, hero, para, esc } from "./_base";
 
 export interface RejectionEmailData {
   candidateName: string;
@@ -7,24 +7,21 @@ export interface RejectionEmailData {
 }
 
 export function buildRejectionEmail(data: RejectionEmailData): { subject: string; html: string } {
-  const html = baseLayout({
-    title: "Application update",
-    subtitle: `${data.companyName}`,
-    greeting: `Hi <strong>${data.candidateName}</strong>,`,
-    body: `
-      <p style="margin:0 0 16px;font-size:14px;line-height:1.6;">
-        Thank you for taking the time to apply for <strong>${data.jobTitle}</strong> and for going through our process.
-      </p>
-      <p style="margin:0 0 16px;font-size:14px;line-height:1.6;">
-        After careful consideration, we've decided not to move forward with your application at this stage.
-        This decision isn't a reflection of your skills — simply that we found profiles more closely matching the current role's needs.
-      </p>
-      <p style="margin:0 0 16px;font-size:14px;line-height:1.6;">
-        We'll keep your profile on file for future openings that may be a better fit. Wishing you the very best.
-      </p>
-    `,
+  const body = `${hero({
+    title: "Update on Your Application",
+    subtitle: `Thank you for your interest in ${esc(data.companyName)}.`,
+    accent: "blue",
+  })}${para(`Dear <strong>${esc(data.candidateName)}</strong>,`)}${para(
+    `Thank you for taking the time to apply for the <strong>${esc(data.jobTitle)}</strong> role and for sharing your background with us.`,
+  )}${para(
+    `After careful consideration, we have decided not to move forward with your application at this time. This was a difficult decision — we were genuinely impressed by your experience, and we encourage you to apply for future openings that match your skills.`,
+  )}${para(`We wish you all the very best in your career, and we hope our paths cross again.`)}`;
+
+  const html = emailShell({
+    accent: "blue",
     companyName: data.companyName,
-    accent: "#3b82f6",
+    preheader: `Update on your application — ${data.jobTitle}`,
+    body,
   });
 
   return { subject: `Update on your application — ${data.jobTitle}`, html };

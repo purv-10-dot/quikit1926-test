@@ -14,6 +14,8 @@
     "db:generate": "prisma generate --schema=../../packages/database/prisma/schema.prisma",
     "db:push": "prisma db push --schema=../../packages/database/prisma/schema.prisma",
     "seed": "tsx --env-file=.env.local scripts/seed.ts",
+    "seed:leaves": "tsx --env-file=.env.local scripts/seed-leaves-demo.ts",
+    "seed:recruit": "tsx --env-file=.env.local scripts/seed-recruit-demo.ts",
     "migrate:tds-challans": "tsx --env-file=.env.local scripts/migrate-tds-challans.ts",
     "oauth:register": "tsx --env-file=.env.local scripts/register-oauth-client.ts"
   },

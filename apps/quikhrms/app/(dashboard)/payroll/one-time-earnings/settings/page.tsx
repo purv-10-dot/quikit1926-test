@@ -1,11 +1,10 @@
 "use client";
 
-import Link from "next/link";
 import { useEffect, useState } from "react";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { useApiClient } from "@/lib/hooks/use-api";
 import { useToast } from "@/components/hrms/toast";
-import { ChevronLeft, Settings, Save, RotateCcw } from "lucide-react";
+import { Settings, Save, RotateCcw } from "lucide-react";
 import { clsx } from "clsx";
 import { SkeletonLine } from "@/components/hrms/skeleton";
 
@@ -90,26 +89,18 @@ export default function OneTimeDefaultsPage() {
       setDirty(false);
       refetch();
     },
-    onError: (e: Error) => toast.error("Save failed", e.message),
   });
 
   return (
     <div className="space-y-4">
-      <Link
-        href="/payroll/one-time-earnings"
-        className="inline-flex items-center gap-1 text-xs text-gray-500 hover:text-[#3b82f6]"
-      >
-        <ChevronLeft size={14} /> Back to One-Time Pay &amp; Deductions
-      </Link>
-
       <div className="flex items-center justify-between gap-4 flex-wrap">
         <div className="flex items-center gap-3">
-          <Settings className="text-[#3b82f6]" />
+          <Settings className="text-[#22c55e]" />
           <div>
-            <h1 className="font-serif-display text-3xl md:text-4xl font-bold text-gray-900">
+            <h1 className="text-page-title text-gray-900">
               Tax &amp; statutory defaults
             </h1>
-            <p className="text-sm text-gray-500">
+            <p className="text-xs text-gray-500">
               Set tax / EPF / ESI / PT treatment <b>once per Kind</b>. Every new one-time entry will follow these rules automatically.
             </p>
           </div>
@@ -119,18 +110,18 @@ export default function OneTimeDefaultsPage() {
             <button
               type="button"
               onClick={() => { if (data?.data) { setRows(data.data); setDirty(false); } }}
-              className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-white hover:bg-gray-50 text-gray-700 border border-gray-300 rounded-md text-sm font-semibold"
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-white hover:bg-gray-50 text-gray-700 border border-gray-300 rounded-md text-xs font-medium"
             >
-              <RotateCcw size={14} /> Discard
+              <RotateCcw size={13} /> Discard
             </button>
           )}
           <button
             type="button"
             disabled={!dirty || saveMut.isPending}
             onClick={() => saveMut.mutate()}
-            className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-[#16243A] hover:bg-[#1E3354] disabled:opacity-50 text-white rounded-md text-sm font-semibold shadow-sm"
+            className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-green-600 hover:bg-green-700 disabled:opacity-50 text-white rounded-md text-xs font-medium shadow-sm"
           >
-            <Save size={14} /> {saveMut.isPending ? "Saving..." : "Save changes"}
+            <Save size={13} /> {saveMut.isPending ? "Saving..." : "Save changes"}
           </button>
         </div>
       </div>
@@ -139,9 +130,9 @@ export default function OneTimeDefaultsPage() {
         {isLoading ? (
           <div className="p-4"><SkeletonLine w="100%" h={20} /></div>
         ) : (
-          <table className="w-full text-sm">
+          <table className="w-full text-xs">
             <thead>
-              <tr className="text-[10px] font-bold text-gray-500 uppercase tracking-wider border-b border-gray-200 bg-gray-50/40">
+              <tr className="text-table-head font-bold text-gray-500 uppercase tracking-wider border-b border-gray-200 bg-gray-50/40">
                 <th className="text-left py-2.5 px-3">Kind</th>
                 {FLAG_COLS.map((c) => (
                   <th key={c.key} className="text-center py-2.5 px-3 w-24">{c.label}</th>
@@ -153,7 +144,7 @@ export default function OneTimeDefaultsPage() {
               {rows.map((r) => (
                 <tr key={r.kind} className="border-b border-gray-50 hover:bg-gray-50/40">
                   <td className="py-2.5 px-3">
-                    <p className="font-semibold text-gray-900">{KIND_LABEL[r.kind]}</p>
+                    <p className="text-[13px] font-semibold text-gray-900">{KIND_LABEL[r.kind]}</p>
                     <p className="text-[11px] text-gray-500 mt-0.5">{KIND_HINT[r.kind]}</p>
                   </td>
                   {FLAG_COLS.map((c) => {
@@ -179,7 +170,7 @@ export default function OneTimeDefaultsPage() {
                   <td className="py-2.5 px-3">
                     <span className={clsx(
                       "inline-block px-1.5 py-0.5 rounded text-[10px] font-semibold",
-                      r.isCustom ? "bg-blue-50 text-blue-700 ring-1 ring-blue-200" : "bg-gray-50 text-gray-500 ring-1 ring-gray-200",
+                      r.isCustom ? "bg-green-50 text-green-700 ring-1 ring-green-200" : "bg-gray-50 text-gray-500 ring-1 ring-gray-200",
                     )}>
                       {r.isCustom ? "Custom" : "Default"}
                     </span>

@@ -1,5 +1,5 @@
 import { prisma } from "@/lib/prisma";
-import { queueEmail } from "@/lib/services/mailer";
+import { resolveAndSend } from "@/lib/email/resolve";
 import { buildRequisitionApprovalEmail } from "@/lib/email-templates/requisition-approval";
 import { whereEmployeeHasAnyRole, sortByMaxRolePriorityDesc, appRolesNameSelect } from "@/lib/rbac/queries";
 
@@ -91,8 +91,10 @@ export async function mailRequisitionApprovalRequest(params: MailRequestParams):
   const base = process.env.NEXT_PUBLIC_APP_URL || process.env.APP_URL || "";
   const openCount = await openHeadcountForDept(params.orgId, req.departmentId);
 
-  const tpl = buildRequisitionApprovalEmail({
-    variant: params.approverRole === "HR" ? "approved_to_next" : "request_to_approver",
+  const data = {
+    variant: (params.approverRole === "HR" ? "approved_to_next" : "request_to_approver") as
+      | "approved_to_next"
+      | "request_to_approver",
     recipientName: params.recipientName,
     approverRole: params.approverRole,
     raiserName: params.raiserName,
@@ -106,8 +108,25 @@ export async function mailRequisitionApprovalRequest(params: MailRequestParams):
     companyName: company?.companyName ?? "Our Company",
     openDeptHeadcount: openCount,
     comment: params.previousComment ?? null,
+  };
+  await resolveAndSend(params.orgId, {
+    key: "requisition.approval",
+    to: params.recipientEmail,
+    vars: {
+      recipientName: data.recipientName,
+      raiserName: data.raiserName,
+      title: data.title,
+      department: data.department ?? "",
+      positions: data.positions,
+      employmentType: data.employmentType,
+      workLocation: data.workLocation,
+      justification: data.justification ?? "",
+      reviewUrl: data.reviewUrl,
+      openDeptHeadcount: data.openDeptHeadcount ?? "",
+      companyName: data.companyName,
+    },
+    fallback: () => buildRequisitionApprovalEmail(data),
   });
-  await queueEmail(params.orgId, { to: params.recipientEmail, subject: tpl.subject, html: tpl.html, kind: "requisition.approval" });
 }
 
 export async function mailRequisitionDecision(params: {
@@ -127,8 +146,8 @@ export async function mailRequisitionDecision(params: {
   const company = await prisma.companySettings.findUnique({
     where: { orgId: params.orgId }, select: { companyName: true },
   });
-  const tpl = buildRequisitionApprovalEmail({
-    variant: "decision_to_raiser",
+  const data = {
+    variant: "decision_to_raiser" as const,
     recipientName: params.raiserName,
     raiserName: params.raiserName,
     title: req.title,
@@ -140,6 +159,23 @@ export async function mailRequisitionDecision(params: {
     companyName: company?.companyName ?? "Our Company",
     status: params.status,
     comment: params.comment ?? null,
+  };
+  await resolveAndSend(params.orgId, {
+    key: "requisition.decision",
+    to: params.raiserEmail,
+    vars: {
+      recipientName: data.recipientName,
+      raiserName: data.raiserName,
+      title: data.title,
+      department: data.department ?? "",
+      positions: data.positions,
+      employmentType: data.employmentType,
+      workLocation: data.workLocation,
+      status: data.status,
+      comment: data.comment ?? "",
+      reviewUrl: "",
+      companyName: data.companyName,
+    },
+    fallback: () => buildRequisitionApprovalEmail(data),
   });
-  await queueEmail(params.orgId, { to: params.raiserEmail, subject: tpl.subject, html: tpl.html, kind: "requisition.decision" });
 }

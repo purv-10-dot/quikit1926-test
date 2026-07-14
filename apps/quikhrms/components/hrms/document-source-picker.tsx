@@ -75,7 +75,7 @@ export function DocumentSourcePicker({
               }}
               className={clsx(
                 "inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold transition",
-                active ? "bg-white text-[#16243A] shadow-sm" : "text-gray-600 hover:text-[#16243A]",
+                active ? "bg-white text-[#166534] shadow-sm" : "text-gray-600 hover:text-[#166534]",
               )}
             >
               {t.icon} {t.label}
@@ -106,7 +106,7 @@ export function DocumentSourcePicker({
             placeholder="https://example.com/document.pdf"
             value={value.fileType === "link" || (value.fileUrl && value.fileType !== "google-drive" && tab === "link") ? value.fileUrl : ""}
             onChange={(e) => setLink(e.target.value.trim(), "link")}
-            className="w-full px-3 py-2 text-sm border border-[var(--border)] rounded-lg bg-white focus:outline-none focus:ring-1 focus:ring-[#16243A]"
+            className="w-full px-3 py-2 text-sm border border-[var(--border)] rounded-lg bg-white focus:outline-none focus:ring-1 focus:ring-[#166534]"
           />
           <p className="text-[11px] text-gray-500 mt-1">Paste any public document URL (PDF, DOCX, image, etc.)</p>
         </div>
@@ -119,7 +119,7 @@ export function DocumentSourcePicker({
             placeholder="https://drive.google.com/file/d/..."
             value={value.fileType === "google-drive" ? value.fileUrl : ""}
             onChange={(e) => setLink(e.target.value.trim(), "drive")}
-            className="w-full px-3 py-2 text-sm border border-[var(--border)] rounded-lg bg-white focus:outline-none focus:ring-1 focus:ring-[#16243A]"
+            className="w-full px-3 py-2 text-sm border border-[var(--border)] rounded-lg bg-white focus:outline-none focus:ring-1 focus:ring-[#166534]"
           />
           <p className="text-[11px] text-gray-500 mt-1">
             Paste shareable Google Drive / Docs link. Set sharing to <strong>Anyone with link</strong> for HR access.

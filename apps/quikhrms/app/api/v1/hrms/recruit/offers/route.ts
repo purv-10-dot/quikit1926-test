@@ -4,7 +4,7 @@ import { withAuth } from "@/lib/with-auth";
 import { successResponse, validationError, conflict, internalError } from "@/lib/api-response";
 import { createOfferSchema } from "@/lib/validations/recruit";
 import { parsePagination, paginationMeta } from "@/lib/utils/pagination";
-import { offerSelect, offerFromApplication } from "@/lib/recruit/offer-shape";
+import { offerSelect, offerFromApplication, buildOfferMeta } from "@/lib/recruit/offer-shape";
 
 export const GET = withAuth(async (req: NextRequest, { orgId }) => {
   try {
@@ -75,6 +75,7 @@ export const POST = withAuth(async (req: NextRequest, { orgId, userId }) => {
         offeredCTC: data.offeredCTC, offerJoiningDate: new Date(data.joiningDate),
         offerJoiningBonus: data.joiningBonus, offerRelocationBonus: data.relocationBonus, offerEquityGrant: data.equityGrant,
         offerExpiresAt: data.expiresAt ? new Date(data.expiresAt) : undefined,
+        offeredComponents: buildOfferMeta(data),
         offerCreatedAt: new Date(), offerCreatedBy: userId,
         status: "AppOffered",
         updatedBy: userId,

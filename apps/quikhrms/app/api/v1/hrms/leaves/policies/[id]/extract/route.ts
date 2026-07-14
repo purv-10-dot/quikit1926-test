@@ -4,7 +4,7 @@ import { withAuth } from "@/lib/with-auth";
 import { successResponse, validationError, notFound, internalError } from "@/lib/api-response";
 import { extractLeavePolicy } from "@/lib/services/leave-policy-extractor";
 import { invalidateLeavePolicyCache } from "@/lib/services/leave-policy-engine";
-import { uploadToS3, getS3Object, extractKeyFromUrl } from "@/lib/storage";
+import { putObject, getObject, extractKeyFromUrl } from "@/lib/storage";
 
 const MAX_BYTES = 15 * 1024 * 1024;
 
@@ -56,8 +56,8 @@ export const POST = withAuth(async (req: NextRequest, { orgId, userId }, params)
       fileName = file.name;
 
       const key = `tenants/${orgId}/leave-policies/${policy.id}/${Date.now()}_${fileName}`;
-      const uploaded = await uploadToS3({ key, body: buf, contentType: mime });
-      fileUrl = uploaded.url;
+      await putObject(key, buf, mime);
+      fileUrl = `/api/v1/hrms/uploads/proxy?key=${encodeURIComponent(key)}`;
     } else {
       const body = await req.json().catch(() => ({}));
       const url = body.fileUrl ?? policy.sourceFileUrl;
@@ -71,7 +71,7 @@ export const POST = withAuth(async (req: NextRequest, { orgId, userId }, params)
         : extractKeyFromUrl(url);
 
       if (key) {
-        const obj = await getS3Object(key);
+        const obj = await getObject(key);
         if (obj.body.byteLength > MAX_BYTES) return validationError(`File too large (max ${MAX_BYTES / 1024 / 1024} MB)`);
         buf = obj.body;
         mime = type;

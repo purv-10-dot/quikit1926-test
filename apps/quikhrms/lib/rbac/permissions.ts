@@ -69,12 +69,6 @@ export const PERMISSIONS: PermissionDef[] = [
   { code: "hrms.performance.appraise", category: "Performance", name: "Run Appraisals", description: "Configure cycles, conduct reviews" },
   { code: "hrms.performance.pip", category: "Performance", name: "Manage PIPs", description: "Initiate and close PIPs" },
 
-  // ── Asset ──
-  { code: "hrms.asset.read", category: "Asset", name: "View Assets", description: "View asset inventory and assignments" },
-  { code: "hrms.asset.read_self", category: "Asset", name: "View Own Assets", description: "View own assigned assets" },
-  { code: "hrms.asset.read_team", category: "Asset", name: "View Team Assets", description: "View assets of direct reports" },
-  { code: "hrms.asset.write", category: "Asset", name: "Manage Assets", description: "Create/assign/return assets" },
-
   // ── Document ──
   { code: "hrms.document.read", category: "Document", name: "View All Documents", description: "View org/employee documents" },
   { code: "hrms.document.read_self", category: "Document", name: "View Own Documents", description: "View own documents" },
@@ -105,15 +99,6 @@ export const PERMISSIONS: PermissionDef[] = [
   { code: "hrms.reports.read", category: "Reports", name: "View Reports", description: "Run report templates" },
   { code: "hrms.reports.manage", category: "Reports", name: "Manage Report Templates", description: "Create/edit report templates" },
 
-  // ── Ticket / Help Desk ──
-  { code: "hrms.ticket.read", category: "Ticket", name: "View All Tickets", description: "View all help desk tickets" },
-  { code: "hrms.ticket.read_self", category: "Ticket", name: "View Own Tickets", description: "View own raised tickets" },
-  { code: "hrms.ticket.read_assigned", category: "Ticket", name: "View Assigned Tickets", description: "View tickets assigned to me" },
-  { code: "hrms.ticket.raise", category: "Ticket", name: "Raise Ticket", description: "Create new help desk ticket" },
-  { code: "hrms.ticket.write", category: "Ticket", name: "Manage Tickets", description: "Update status, priority, assignment, comments" },
-  { code: "hrms.ticket.manage", category: "Ticket", name: "Manage Categories", description: "Configure ticket categories and SLA" },
-  { code: "hrms.ticket.delete", category: "Ticket", name: "Delete Tickets", description: "Soft-delete tickets" },
-
   // ── Settings / RBAC ──
   { code: "hrms.settings.read", category: "Settings", name: "View Settings", description: "View tenant settings" },
   { code: "hrms.settings.write", category: "Settings", name: "Manage Settings", description: "Update tenant settings" },
@@ -127,7 +112,6 @@ export const PERMISSIONS: PermissionDef[] = [
   { code: "hrms.dashboard.employee", category: "Dashboard", name: "Employee Dashboard", description: "Self widgets: profile, leaves, expenses" },
   { code: "hrms.dashboard.recruiter", category: "Dashboard", name: "Recruiter Dashboard", description: "Open reqs, candidates, interviews" },
   { code: "hrms.dashboard.finance", category: "Dashboard", name: "Finance Dashboard", description: "Expense approvals, audit" },
-  { code: "hrms.dashboard.it", category: "Dashboard", name: "IT Dashboard", description: "Asset inventory, assignments, returns" },
   { code: "hrms.dashboard.audit", category: "Dashboard", name: "Audit Dashboard", description: "Audit log feed, entity timeline" },
 ];
 
@@ -152,10 +136,8 @@ const COMMON_SELF = [
   "hrms.roster.read_self",
   "hrms.expense.read_self", "hrms.expense.submit",
   "hrms.document.read_self", "hrms.document.write_self", "hrms.document.acknowledge",
-  "hrms.asset.read_self",
   "hrms.performance.read_self",
   "hrms.engage.read", "hrms.engage.post",
-  "hrms.ticket.read_self", "hrms.ticket.raise",
 ];
 
 export const DEFAULT_ROLES: RoleSeed[] = [

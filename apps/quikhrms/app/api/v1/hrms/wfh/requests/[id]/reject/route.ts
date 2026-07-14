@@ -4,7 +4,7 @@ import { withAuth } from "@/lib/with-auth";
 import { successResponse, notFound, conflict, validationError, internalError, forbidden } from "@/lib/api-response";
 import { resolveEmployeeId } from "@/lib/resolve-employee";
 import { decideWfhSchema } from "@/lib/validations/wfh";
-import { queueEmail } from "@/lib/services/mailer";
+import { resolveAndSend } from "@/lib/email/resolve";
 import { buildWfhNoticeEmail } from "@/lib/email-templates/wfh-notice";
 
 export const POST = withAuth(async (req: NextRequest, { orgId, userId }, params) => {
@@ -48,8 +48,8 @@ export const POST = withAuth(async (req: NextRequest, { orgId, userId }, params)
       try {
         if (!wfh.employee.workEmail) return;
         const company = await prisma.companySettings.findUnique({ where: { orgId }, select: { companyName: true } });
-        const tpl = buildWfhNoticeEmail({
-          variant: "decision_to_employee",
+        const wfhData = {
+          variant: "decision_to_employee" as const,
           recipientName: `${wfh.employee.firstName} ${wfh.employee.lastName}`.trim(),
           employeeName: `${wfh.employee.firstName} ${wfh.employee.lastName}`.trim(),
           employeeCode: wfh.employee.employeeCode,
@@ -61,11 +61,16 @@ export const POST = withAuth(async (req: NextRequest, { orgId, userId }, params)
           isHalfDay: wfh.isHalfDay,
           session: wfh.session,
           reason: wfh.reason,
-          status: "Rejected",
+          status: "Rejected" as const,
           comment: parsed.data.comment ?? null,
           companyName: company?.companyName ?? "Our Company",
+        };
+        await resolveAndSend(orgId, {
+          key: "wfh.rejected",
+          to: wfh.employee.workEmail,
+          vars: { ...wfhData },
+          fallback: () => buildWfhNoticeEmail(wfhData),
         });
-        await queueEmail(orgId, { to: wfh.employee.workEmail, subject: tpl.subject, html: tpl.html, kind: "wfh.rejected" });
       } catch (e) { console.error("wfh reject mail failed", e); }
     })();
 

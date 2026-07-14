@@ -4,7 +4,7 @@ import { withAuth } from "@/lib/with-auth";
 import { successResponse, notFound, validationError, internalError, conflict } from "@/lib/api-response";
 import { updateApplicationSchema } from "@/lib/validations/recruit";
 import { fireWorkflow } from "@/lib/workflows/executor";
-import { queueEmail } from "@/lib/services/mailer";
+import { resolveAndSend } from "@/lib/email/resolve";
 import { buildRejectionEmail } from "@/lib/email-templates/application-rejected";
 import { buildInterviewInviteEmail } from "@/lib/email-templates/interview-invite";
 import { buildOfferEmail } from "@/lib/email-templates/offer";
@@ -71,7 +71,7 @@ async function fireStageMail(
     });
     if (!interview) return { template, skipped: "No scheduled interview. Schedule one from Interviews page." };
     const dt = new Date(interview.scheduledAt);
-    const { subject, html } = buildInterviewInviteEmail({
+    const inviteData = {
       candidateName,
       jobTitle,
       interviewDate: dt.toLocaleDateString("en-IN", { weekday: "long", day: "2-digit", month: "long", year: "numeric" }),
@@ -82,8 +82,13 @@ async function fireStageMail(
       meetingLink: interview.meetingLink,
       location: interview.location,
       companyName,
+    };
+    await resolveAndSend(orgId, {
+      key: "recruit.interview-invite",
+      to: app.candidate.email,
+      vars: { ...inviteData, meetingLink: inviteData.meetingLink ?? "", location: inviteData.location ?? "" },
+      fallback: () => buildInterviewInviteEmail(inviteData),
     });
-    await queueEmail(orgId, { to: app.candidate.email, subject, html, kind: "recruit.interview-invite" });
     return { template, to: app.candidate.email };
   }
 
@@ -137,7 +142,7 @@ async function fireStageMail(
         signatoryDesignation: company?.signatoryDesignation ?? null,
         footer: company?.offerLetterFooter ?? null,
       });
-      const { subject, html } = buildOfferEmail({
+      const offerData = {
         candidateName,
         jobTitle,
         designation: offer.designation ?? "",
@@ -146,12 +151,22 @@ async function fireStageMail(
         joiningBonus: offer.joiningBonus ? Number(offer.joiningBonus) : null,
         expiresAt: offer.expiresAt ? fmtDate(offer.expiresAt) : null,
         companyName,
-      });
+      };
       const pdfName = `Offer-${app.candidate.firstName}-${app.candidate.lastName}.pdf`.replace(/\s+/g, "");
-      await queueEmail(orgId, {
-        to: app.candidate.email, subject, html,
+      await resolveAndSend(orgId, {
+        key: "recruit.offer-branded",
+        to: app.candidate.email,
+        vars: {
+          candidateName, jobTitle,
+          designation: offerData.designation,
+          offeredCTC: `₹${Number(offer.offeredCTC).toLocaleString("en-IN")}`,
+          joiningDate: offerData.joiningDate,
+          joiningBonus: offer.joiningBonus ? `₹${Number(offer.joiningBonus).toLocaleString("en-IN")}` : "",
+          expiresAt: offerData.expiresAt ?? "",
+          companyName,
+        },
+        fallback: () => buildOfferEmail(offerData),
         attachments: [{ filename: pdfName, content: pdfBuffer, contentType: "application/pdf" }],
-        kind: "recruit.offer-branded",
       });
       await prisma.jobApplication.update({
         where: { id: applicationId },
@@ -161,7 +176,7 @@ async function fireStageMail(
     }
 
     // offer-default: content-only letter, no PDF
-    const { subject, html } = buildOfferDefaultEmail({
+    const offerDefaultData = {
       candidateName,
       jobTitle,
       designation: offer.designation ?? "",
@@ -176,8 +191,27 @@ async function fireStageMail(
       signatoryName: company?.signatoryName ?? null,
       signatoryDesignation: company?.signatoryDesignation ?? null,
       letterDate: fmtDate(new Date()),
+    };
+    await resolveAndSend(orgId, {
+      key: "recruit.offer-default",
+      to: app.candidate.email,
+      vars: {
+        candidateName, jobTitle,
+        designation: offerDefaultData.designation,
+        offeredCTC: `₹${Number(offer.offeredCTC).toLocaleString("en-IN")}`,
+        joiningDate: offerDefaultData.joiningDate,
+        joiningBonus: offer.joiningBonus ? `₹${Number(offer.joiningBonus).toLocaleString("en-IN")}` : "",
+        expiresAt: offerDefaultData.expiresAt ?? "",
+        department: offerDefaultData.department ?? "",
+        reportingTo: offerDefaultData.reportingTo ?? "",
+        companyAddress: offerDefaultData.companyAddress ?? "",
+        signatoryName: offerDefaultData.signatoryName ?? "",
+        signatoryDesignation: offerDefaultData.signatoryDesignation ?? "",
+        letterDate: offerDefaultData.letterDate,
+        companyName,
+      },
+      fallback: () => buildOfferDefaultEmail(offerDefaultData),
     });
-    await queueEmail(orgId, { to: app.candidate.email, subject, html, kind: "recruit.offer-default" });
     await prisma.jobApplication.update({
       where: { id: applicationId },
       data: { offerStatus: "OfferSent", offerSentAt: new Date(), updatedBy: userId },
@@ -205,7 +239,7 @@ async function fireStageMail(
         : Promise.resolve(null),
     ]);
 
-    const { subject, html } = buildJoiningLetterEmail({
+    const joiningData = {
       candidateName,
       jobTitle,
       designation: offer.designation ?? "",
@@ -219,8 +253,27 @@ async function fireStageMail(
       signatoryName: company?.signatoryName ?? null,
       signatoryDesignation: company?.signatoryDesignation ?? null,
       letterDate: fmtDate(new Date()),
+    };
+    await resolveAndSend(orgId, {
+      key: "recruit.joining-letter",
+      to: app.candidate.email,
+      vars: {
+        candidateName, jobTitle,
+        designation: joiningData.designation,
+        offeredCTC: offer.offeredCTC ? `₹${Number(offer.offeredCTC).toLocaleString("en-IN")}` : "",
+        joiningDate: joiningData.joiningDate,
+        department: joiningData.department ?? "",
+        reportingTo: joiningData.reportingTo ?? "",
+        workLocation: "",
+        companyAddress: joiningData.companyAddress ?? "",
+        signatoryName: joiningData.signatoryName ?? "",
+        signatoryDesignation: joiningData.signatoryDesignation ?? "",
+        letterDate: joiningData.letterDate,
+        employeeCode: "",
+        companyName,
+      },
+      fallback: () => buildJoiningLetterEmail(joiningData),
     });
-    await queueEmail(orgId, { to: app.candidate.email, subject, html, kind: "recruit.joining-letter" });
     return { template, to: app.candidate.email };
   }
 
@@ -484,12 +537,17 @@ export const PATCH = withAuth(async (req: NextRequest, { orgId, userId }, params
             }),
           ]);
           if (!candidate?.email) return;
-          const { subject, html } = buildRejectionEmail({
+          const rejectionData = {
             candidateName: `${candidate.firstName} ${candidate.lastName}`.trim(),
             jobTitle: requisition?.title ?? "the role",
             companyName: company?.companyName ?? "QuikIT HRMS",
+          };
+          await resolveAndSend(orgId, {
+            key: "recruit.rejection",
+            to: candidate.email,
+            vars: { ...rejectionData },
+            fallback: () => buildRejectionEmail(rejectionData),
           });
-          await queueEmail(orgId, { to: candidate.email, subject, html, kind: "recruit.rejection" });
         } catch (err) {
           console.error("[mail] rejection email failed:", err);
         }

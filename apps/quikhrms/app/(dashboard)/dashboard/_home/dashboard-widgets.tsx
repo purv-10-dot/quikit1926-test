@@ -96,29 +96,29 @@ export function HolidaysWidget() {
   }, [monthHolidays, cursor]);
 
   return (
-    <div className="surface-card p-5">
+    <div className="surface-card p-4">
       <div className="flex items-center justify-between mb-5">
         <div className="flex items-center gap-2.5">
-          <div className="w-8 h-8 rounded-lg bg-blue-50 flex items-center justify-center">
-            <CalendarDays size={16} className="text-blue-600" />
+          <div className="w-8 h-8 rounded-lg bg-green-50 flex items-center justify-center">
+            <CalendarDays size={16} className="text-green-600" />
           </div>
-          <h3 className="text-base font-bold text-gray-900">Upcoming Holiday / Events</h3>
+          <h3 className="text-[13px] font-semibold text-gray-900">Upcoming Holiday / Events</h3>
         </div>
         <Link
           href="/holidays"
-          className="inline-flex items-center gap-1 px-3 py-1.5 rounded-lg ring-1 ring-gray-200 hover:bg-gray-50 text-xs font-semibold text-gray-700 transition"
+          className="inline-flex items-center gap-1 px-3 py-1.5 rounded-lg ring-1 ring-gray-200 hover:bg-gray-50 text-xs font-medium text-gray-700 transition"
         >
-          View All <ChevronRightIcon size={12} />
+          View All <ChevronRightIcon size={13} />
         </Link>
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
         <MiniCalendar cursor={cursor} setCursor={setCursor} monthLabel={monthLabel} holidaySet={holidaySet} />
 
         <div className="flex flex-col">
           {/* Section header — sits above the cards, separate from the widget title */}
           <div className="flex items-center justify-between mb-3">
-            <h4 className="text-sm font-bold text-gray-900">Upcoming</h4>
+            <h4 className="text-[13px] font-semibold text-gray-900">Upcoming</h4>
             <EventCountChip value={eventCount} onChange={setEventCount} max={Math.min(upcoming.length, 6)} />
           </div>
 
@@ -174,19 +174,19 @@ function HolidaysEmpty() {
   return (
     <div className="flex flex-col items-center justify-center py-10 text-center h-full">
       <div className="relative w-20 h-20 mb-4">
-        <div className="absolute inset-0 rounded-2xl bg-blue-50 ring-1 ring-blue-100">
-          <div className="absolute top-2 left-2 right-2 h-2 rounded-t-md bg-blue-200/60" />
+        <div className="absolute inset-0 rounded-2xl bg-green-50 ring-1 ring-green-100">
+          <div className="absolute top-2 left-2 right-2 h-2 rounded-t-md bg-green-200/60" />
           <div className="absolute top-5 left-3 right-3 bottom-3 grid grid-cols-3 gap-1 p-1">
             {[...Array(9)].map((_, i) => (
               <div key={i} className="rounded-sm bg-white/70" />
             ))}
           </div>
         </div>
-        <div className="absolute -right-1 -bottom-1 w-8 h-8 rounded-full bg-white shadow ring-1 ring-blue-100 flex items-center justify-center">
-          <PartyPopper size={14} className="text-blue-500" />
+        <div className="absolute -right-1 -bottom-1 w-8 h-8 rounded-full bg-white shadow ring-1 ring-green-100 flex items-center justify-center">
+          <PartyPopper size={14} className="text-green-500" />
         </div>
       </div>
-      <p className="text-base font-bold text-gray-900">No upcoming holidays</p>
+      <p className="text-[13px] font-semibold text-gray-900">No upcoming holidays</p>
       <p className="text-xs text-gray-500 mt-1">You&apos;re all clear! Enjoy your day.</p>
     </div>
   );
@@ -207,6 +207,12 @@ function MiniCalendar({
   const [mounted, setMounted] = useState(false);
   useEffect(() => setMounted(true), []);
   const today = mounted ? new Date() : null;
+
+  // Month/year picker popover (the "July 2026 ▾" label opens it).
+  const [pickerOpen, setPickerOpen] = useState(false);
+  const [pickerYear, setPickerYear] = useState(cursor.getFullYear());
+  const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+  const openPicker = () => { setPickerYear(cursor.getFullYear()); setPickerOpen(true); };
   const isCurrentMonth = !!today && today.getMonth() === cursor.getMonth() && today.getFullYear() === cursor.getFullYear();
   const firstDay = new Date(cursor.getFullYear(), cursor.getMonth(), 1).getDay();
   const daysInMonth = new Date(cursor.getFullYear(), cursor.getMonth() + 1, 0).getDate();
@@ -218,23 +224,69 @@ function MiniCalendar({
   return (
     <div className="rounded-2xl ring-1 ring-gray-100 bg-white p-4">
       <div className="flex items-center justify-between mb-4">
-        <button className="inline-flex items-center gap-1.5 text-base font-bold text-gray-900 hover:text-blue-600 transition">
-          {monthLabel} <ChevronDown size={16} className="text-gray-500" />
-        </button>
+        <div className="relative">
+          <button
+            type="button"
+            onClick={openPicker}
+            className="inline-flex items-center gap-1.5 text-[13px] font-semibold text-gray-900 hover:text-green-600 transition"
+          >
+            {monthLabel} <ChevronDown size={16} className={clsx("text-gray-500 transition-transform", pickerOpen && "rotate-180")} />
+          </button>
+          {pickerOpen && (
+            <>
+              <div className="fixed inset-0 z-30" onClick={() => setPickerOpen(false)} />
+              <div className="absolute z-40 top-full left-0 mt-2 w-60 rounded-xl bg-white ring-1 ring-gray-200 shadow-xl p-3">
+                <div className="flex items-center justify-between mb-2">
+                  <button
+                    type="button" aria-label="Previous year" onClick={() => setPickerYear((y) => y - 1)}
+                    className="w-7 h-7 rounded-lg ring-1 ring-gray-200 hover:bg-gray-50 flex items-center justify-center text-gray-600"
+                  >
+                    <ChevronLeft size={12} />
+                  </button>
+                  <span className="text-[13px] font-semibold text-gray-900">{pickerYear}</span>
+                  <button
+                    type="button" aria-label="Next year" onClick={() => setPickerYear((y) => y + 1)}
+                    className="w-7 h-7 rounded-lg ring-1 ring-gray-200 hover:bg-gray-50 flex items-center justify-center text-gray-600"
+                  >
+                    <ChevronRight size={12} />
+                  </button>
+                </div>
+                <div className="grid grid-cols-3 gap-1.5">
+                  {MONTHS.map((m, i) => {
+                    const active = i === cursor.getMonth() && pickerYear === cursor.getFullYear();
+                    return (
+                      <button
+                        key={m}
+                        type="button"
+                        onClick={() => { setCursor(new Date(pickerYear, i, 1)); setPickerOpen(false); }}
+                        className={clsx(
+                          "px-2 py-1.5 rounded-lg text-xs font-medium transition",
+                          active ? "bg-green-600 text-white" : "text-gray-700 hover:bg-gray-100",
+                        )}
+                      >
+                        {m}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            </>
+          )}
+        </div>
         <div className="flex items-center gap-1.5">
           <button
             onClick={() => setCursor(new Date(cursor.getFullYear(), cursor.getMonth() - 1, 1))}
             className="w-8 h-8 rounded-lg ring-1 ring-gray-200 hover:bg-gray-50 flex items-center justify-center text-gray-600 transition"
             aria-label="Previous month"
           >
-            <ChevronLeft size={16} />
+            <ChevronLeft size={12} />
           </button>
           <button
             onClick={() => setCursor(new Date(cursor.getFullYear(), cursor.getMonth() + 1, 1))}
             className="w-8 h-8 rounded-lg ring-1 ring-gray-200 hover:bg-gray-50 flex items-center justify-center text-gray-600 transition"
             aria-label="Next month"
           >
-            <ChevronRight size={16} />
+            <ChevronRight size={12} />
           </button>
         </div>
       </div>
@@ -245,7 +297,7 @@ function MiniCalendar({
             key={i}
             className={clsx(
               i === 0 && "text-rose-500",
-              i === 6 && "text-blue-500",
+              i === 6 && "text-green-500",
               i !== 0 && i !== 6 && "text-gray-500",
             )}
           >
@@ -268,10 +320,10 @@ function MiniCalendar({
                 <span
                   className={clsx(
                     "inline-flex items-center justify-center w-9 h-9 rounded-full text-sm transition cursor-default",
-                    isToday && "bg-blue-600 text-white font-bold shadow-sm",
+                    isToday && "bg-green-600 text-white font-bold shadow-sm",
                     !isToday && isHoliday && "text-rose-600 font-bold bg-rose-50",
                     !isToday && !isHoliday && isSunday && "text-rose-500 font-medium",
-                    !isToday && !isHoliday && isSaturday && "text-blue-500 font-medium",
+                    !isToday && !isHoliday && isSaturday && "text-green-500 font-medium",
                     !isToday && !isHoliday && !isSunday && !isSaturday && "text-gray-700 hover:bg-gray-50",
                   )}
                 >
@@ -346,9 +398,9 @@ function paletteForType(rawType: string, isFloater: boolean): { palette: Holiday
     return {
       label: "Company",
       palette: {
-        cardBg: "bg-indigo-50/60", dateBg: "bg-white", dateRing: "ring-indigo-200",
-        dateText: "text-indigo-900", dot: "bg-indigo-500", accentText: "text-indigo-700",
-        iconBg: "bg-indigo-100", iconColor: "text-indigo-700", hover: "hover:bg-indigo-50",
+        cardBg: "bg-green-50/60", dateBg: "bg-white", dateRing: "ring-green-200",
+        dateText: "text-green-900", dot: "bg-green-500", accentText: "text-green-700",
+        iconBg: "bg-green-100", iconColor: "text-green-700", hover: "hover:bg-green-50",
       },
     };
   if (t === "mandatory")
@@ -420,18 +472,18 @@ function HolidayCard({ h, idx }: { h: UpcomingHoliday; idx: number }) {
           palette.dateBg, palette.dateRing, palette.dateText,
         )}
       >
-        <div className={clsx("text-[9px] font-semibold uppercase tracking-[0.12em] leading-none", palette.accentText)}>
+        <div className={clsx("text-[10px] font-semibold uppercase tracking-[0.12em] leading-none", palette.accentText)}>
           {weekday}
         </div>
         <div className="my-1 text-[22px] font-bold leading-none tabular-nums">{day}</div>
-        <div className={clsx("text-[9px] font-semibold uppercase tracking-[0.12em] leading-none", palette.accentText)}>
+        <div className={clsx("text-[10px] font-semibold uppercase tracking-[0.12em] leading-none", palette.accentText)}>
           {monthAbbr}
         </div>
       </div>
 
       {/* Body — holiday name + dotted type meta */}
       <div className="min-w-0 flex-1">
-        <p className="truncate text-sm font-bold text-gray-900" title={h.name}>
+        <p className="truncate text-[13px] font-semibold text-gray-900" title={h.name}>
           {h.name}
         </p>
         <div className="mt-1 flex items-center gap-1.5">
@@ -467,15 +519,15 @@ export function BirthdaysWidget() {
   const next = all.find((b) => b.daysUntil > 0) ?? null;
 
   return (
-    <div className="surface-card p-5">
+    <div className="surface-card p-4">
       <div className="flex items-center justify-between mb-4">
         <div className="flex items-center gap-2">
           <div className="w-8 h-8 rounded-lg bg-pink-50 flex items-center justify-center">
             <Cake size={15} className="text-pink-500" />
           </div>
-          <h3 className="text-sm font-bold text-gray-900">Upcoming Birthdays</h3>
+          <h3 className="text-[13px] font-semibold text-gray-900">Upcoming Birthdays</h3>
         </div>
-        <Link href="/celebrations?tab=birthdays" className="text-xs font-semibold text-blue-600 hover:underline">
+        <Link href="/celebrations?tab=birthdays" className="text-xs font-medium text-green-600 hover:underline">
           View All
         </Link>
       </div>
@@ -503,15 +555,15 @@ export function AnniversariesWidget() {
   const next = items[0] ?? null;
 
   return (
-    <div className="surface-card p-5">
+    <div className="surface-card p-4">
       <div className="flex items-center justify-between mb-4">
         <div className="flex items-center gap-2">
           <div className="w-8 h-8 rounded-lg bg-violet-50 flex items-center justify-center">
             <Gift size={15} className="text-violet-500" />
           </div>
-          <h3 className="text-sm font-bold text-gray-900">Upcoming Work Anniversaries</h3>
+          <h3 className="text-[13px] font-semibold text-gray-900">Upcoming Work Anniversaries</h3>
         </div>
-        <Link href="/celebrations?tab=anniversaries" className="text-xs font-semibold text-blue-600 hover:underline">
+        <Link href="/celebrations?tab=anniversaries" className="text-xs font-medium text-green-600 hover:underline">
           View All
         </Link>
       </div>
@@ -541,7 +593,7 @@ function PersonRow({
     <div className="flex items-center gap-3">
       <Avatar p={head} />
       <div className="min-w-0">
-        <p className="text-sm font-bold text-gray-900 truncate">
+        <p className="text-[13px] font-semibold text-gray-900 truncate">
           {head.firstName} {head.lastName}
           {more > 0 && <span className="text-gray-500 font-medium"> +{more}</span>}
         </p>
@@ -555,7 +607,7 @@ function EmptyMini({ icon, text }: { icon: React.ReactNode; text: string }) {
   return (
     <div className="flex items-center gap-2.5 text-gray-500">
       <div className="w-9 h-9 rounded-full bg-gray-50 flex items-center justify-center">{icon}</div>
-      <p className="text-sm">{text}</p>
+      <p className="text-xs">{text}</p>
     </div>
   );
 }
@@ -595,7 +647,7 @@ export function HomeStatRow() {
       <StatCard
         iconBg="bg-sky-50" iconColor="text-sky-500" Icon={Plane}
         label="Leave" value={onLeave} caption={onLeave === 0 ? "People on leave" : onLeave === 1 ? "Person on leave" : "People on leave"}
-        href="/leaves"
+        href="/leaves/team-leaves"
       />
       <StatCard
         iconBg="bg-emerald-50" iconColor="text-emerald-500" Icon={Home}
@@ -610,7 +662,7 @@ export function HomeStatRow() {
       <StatCard
         iconBg="bg-pink-50" iconColor="text-pink-500" Icon={Cake}
         label="Birthdays" value={birthdayValue} caption={birthdayCaption}
-        href="/org-chart"
+        href="/celebrations?tab=birthdays"
       />
     </div>
   );
@@ -635,8 +687,8 @@ function StatCard({
           <Icon size={20} className={iconColor} />
         </div>
         <div className="min-w-0 flex-1">
-          <p className="text-sm font-bold text-gray-900 truncate">{label}</p>
-          <p className="font-serif-display text-2xl font-bold text-gray-900 leading-tight mt-0.5">{value}</p>
+          <p className="text-[13px] font-semibold text-gray-900 truncate">{label}</p>
+          <p className="font-serif-display text-xl font-bold text-gray-900 leading-tight mt-0.5">{value}</p>
           <p className="text-[11px] text-gray-500 truncate">{caption}</p>
         </div>
       </div>
@@ -648,7 +700,7 @@ function StatCard({
 
 const JOB_TITLE_COLORS = [
   "text-emerald-700",
-  "text-indigo-700",
+  "text-green-700",
   "text-rose-700",
   "text-amber-700",
   "text-sky-700",
@@ -682,22 +734,22 @@ export function JobOpeningsWidget() {
   const hasPrev = page > 0;
 
   return (
-    <div className="surface-card p-5">
+    <div className="surface-card p-4">
       <div className="flex items-center justify-between mb-4">
         <div className="flex items-center gap-2.5">
           <div className="w-8 h-8 rounded-lg bg-amber-50 flex items-center justify-center">
             <Briefcase size={15} className="text-amber-600" />
           </div>
-          <h3 className="text-base font-bold text-gray-900">Job Openings</h3>
+          <h3 className="text-[13px] font-semibold text-gray-900">Job Openings</h3>
           {totalOpen > 0 && (
-            <span className="px-2.5 py-0.5 rounded-full bg-amber-50 text-amber-700 text-[11px] font-bold ring-1 ring-amber-200">
+            <span className="px-2.5 py-0.5 rounded-full bg-amber-50 text-amber-700 text-[11px] font-medium ring-1 ring-amber-200">
               {totalOpen} open
             </span>
           )}
         </div>
         <Link
           href="/recruit/requisitions"
-          className="inline-flex items-center gap-1 text-xs font-semibold text-blue-600 hover:text-blue-700"
+          className="inline-flex items-center gap-1 text-xs font-medium text-green-600 hover:text-green-700"
         >
           View All <ChevronRightIcon size={12} />
         </Link>
@@ -714,7 +766,7 @@ export function JobOpeningsWidget() {
           <div className="w-12 h-12 rounded-full bg-gray-100 flex items-center justify-center mb-2">
             <Briefcase size={18} className="text-gray-400" />
           </div>
-          <p className="text-sm font-semibold text-gray-700">No open requisitions</p>
+          <p className="text-[13px] font-semibold text-gray-700">No open requisitions</p>
         </div>
       ) : (
         <div className="flex items-center gap-3">
@@ -724,7 +776,7 @@ export function JobOpeningsWidget() {
               className="w-9 h-9 rounded-full ring-1 ring-gray-200 hover:bg-gray-50 flex items-center justify-center text-gray-600 shrink-0"
               aria-label="Previous"
             >
-              <ChevronLeft size={16} />
+              <ChevronLeft size={12} />
             </button>
           )}
           <div className="grid grid-cols-1 md:grid-cols-3 gap-3 flex-1">
@@ -738,7 +790,7 @@ export function JobOpeningsWidget() {
               className="w-9 h-9 rounded-full ring-1 ring-gray-200 hover:bg-gray-50 flex items-center justify-center text-gray-600 shrink-0"
               aria-label="Next"
             >
-              <ChevronRight size={16} />
+              <ChevronRight size={12} />
             </button>
           )}
         </div>
@@ -755,16 +807,16 @@ function JobCard({ job, colorIdx }: { job: JobOpening; colorIdx: number }) {
 
   return (
     <Link
-      href={`/recruit/requisitions/${job.id}`}
+      href="/recruit/requisitions"
       className="rounded-xl ring-1 ring-gray-200 p-3.5 hover:shadow-sm hover:border-gray-300 transition flex items-start justify-between gap-3 bg-white"
     >
       <div className="min-w-0">
-        <p className={clsx("text-sm font-bold truncate", titleColor)}>{job.title}</p>
+        <p className={clsx("text-[13px] font-semibold truncate", titleColor)}>{job.title}</p>
         <p className="text-[11px] text-gray-500 mt-1 inline-flex items-center gap-1 truncate">
           <MapPin size={11} className="shrink-0" /> {locText}
         </p>
       </div>
-      <span className={clsx("px-2.5 py-1 rounded-md text-[10px] font-semibold ring-1 shrink-0", empType.cls)}>
+      <span className={clsx("px-2.5 py-1 rounded-md text-[10px] font-medium ring-1 shrink-0", empType.cls)}>
         {empType.label}
       </span>
     </Link>

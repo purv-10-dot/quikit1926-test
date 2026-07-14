@@ -6,7 +6,7 @@ import { useApiClient } from "@/lib/hooks/use-api";
 import { useDialog } from "@/components/hrms/dialog";
 import { useToast } from "@/components/hrms/toast";
 import { Modal } from "@/components/hrms/modal";
-import { Plus, Shield, ShieldCheck, Trash2, Pencil } from "lucide-react";
+import { Plus, Shield, ShieldCheck, Trash2, Pencil, Search, X, CheckSquare, Square } from "lucide-react";
 import {
   PERMISSION_TREE,
   NAV_TREE,
@@ -161,18 +161,25 @@ export default function RolesPage() {
     setDraftNav(next);
   };
 
+  const setNavMany = (keys: string[], on: boolean) => {
+    const next = new Set(draftNav);
+    if (on) for (const k of keys) next.add(k);
+    else for (const k of keys) next.delete(k);
+    setDraftNav(next);
+  };
+
   return (
     <div className="flex h-[calc(100vh-6rem)] bg-white">
       {/* ── Left: Roles list ────────────────────────────── */}
       <aside className="w-[260px] border-r border-gray-200 flex flex-col">
         <div className="flex items-center justify-between px-4 py-3 border-b border-gray-200">
-          <h2 className="text-sm font-semibold text-gray-900">Roles</h2>
+          <h2 className="text-[13px] font-semibold text-gray-900">Roles</h2>
           <button
             onClick={() => setShowCreate(true)}
-            className="w-7 h-7 rounded-full bg-[#3b82f6] text-white flex items-center justify-center hover:bg-[#2563eb]"
+            className="w-7 h-7 rounded-full bg-[#22c55e] text-white flex items-center justify-center hover:bg-green-700"
             title="New role"
           >
-            <Plus size={16} />
+            <Plus size={12} />
           </button>
         </div>
         <ul className="flex-1 overflow-y-auto py-1">
@@ -180,7 +187,7 @@ export default function RolesPage() {
             <li key={r.id}>
               <button
                 onClick={() => setSelectedRoleId(r.id)}
-                className={`w-full text-left px-4 py-2 flex items-center gap-2 text-sm hover:bg-gray-50 ${
+                className={`w-full text-left px-4 py-2 flex items-center gap-2 text-[13px] font-semibold hover:bg-gray-50 ${
                   r.id === active?.id ? "bg-[#fff8e1] border-l-2 border-amber-500" : ""
                 }`}
               >
@@ -191,13 +198,13 @@ export default function RolesPage() {
                 )}
                 <span className="flex-1 truncate">{r.name}</span>
                 {r.isDefault && (
-                  <span className="text-[10px] px-1.5 py-0.5 bg-blue-50 text-blue-600 rounded uppercase">Default</span>
+                  <span className="text-[11px] font-semibold px-1.5 py-0.5 bg-green-50 text-green-600 rounded uppercase">Default</span>
                 )}
               </button>
             </li>
           ))}
           {roles.length === 0 && (
-            <li className="px-4 py-8 text-sm text-gray-400 text-center">No roles yet</li>
+            <li className="px-4 py-8 text-xs text-gray-400 text-center">No roles yet</li>
           )}
         </ul>
       </aside>
@@ -209,8 +216,8 @@ export default function RolesPage() {
         ) : (
           <>
             {/* Header */}
-            <div className="px-6 py-4 border-b border-gray-200 flex items-center gap-3">
-              <h1 className="text-lg font-semibold text-gray-900">
+            <div className="px-5 py-4 border-b border-gray-200 flex items-center gap-3">
+              <h1 className="text-base font-semibold text-gray-900">
                 Permissions — {active.name}
               </h1>
               {active.isSystem ? (
@@ -223,9 +230,9 @@ export default function RolesPage() {
                   <>
                     <button
                       onClick={() => setEditingRole(active)}
-                      className="group relative px-4 py-2 text-sm font-semibold text-amber-700 bg-amber-50 border border-amber-200 rounded-lg shadow-sm hover:bg-amber-100 hover:border-amber-300 hover:shadow-md hover:-translate-y-0.5 active:translate-y-0 active:shadow-sm transition-all duration-200 flex items-center gap-2 focus:outline-none focus:ring-2 focus:ring-amber-400 focus:ring-offset-2"
+                      className="group relative px-3 py-1.5 text-xs font-medium text-amber-700 bg-amber-50 border border-amber-200 rounded-lg shadow-sm hover:bg-amber-100 hover:border-amber-300 hover:shadow-md hover:-translate-y-0.5 active:translate-y-0 active:shadow-sm transition-all duration-200 flex items-center gap-2 focus:outline-none focus:ring-2 focus:ring-amber-400 focus:ring-offset-2"
                     >
-                      <Pencil size={14} className="group-hover:rotate-12 transition-transform duration-200" />
+                      <Pencil size={13} className="group-hover:rotate-12 transition-transform duration-200" />
                       Edit
                     </button>
                     <button
@@ -245,9 +252,9 @@ export default function RolesPage() {
                           toast.error(e instanceof Error ? e.message : "Delete failed");
                         }
                       }}
-                      className="group relative px-4 py-2 text-sm font-semibold text-white bg-gradient-to-b from-red-500 to-red-600 border border-red-600 rounded-lg shadow-sm hover:from-red-600 hover:to-red-700 hover:shadow-md hover:-translate-y-0.5 active:translate-y-0 active:shadow-sm transition-all duration-200 flex items-center gap-2 focus:outline-none focus:ring-2 focus:ring-red-400 focus:ring-offset-2"
+                      className="group relative px-3 py-1.5 text-xs font-medium text-white bg-gradient-to-b from-red-500 to-red-600 border border-red-600 rounded-lg shadow-sm hover:from-red-600 hover:to-red-700 hover:shadow-md hover:-translate-y-0.5 active:translate-y-0 active:shadow-sm transition-all duration-200 flex items-center gap-2 focus:outline-none focus:ring-2 focus:ring-red-400 focus:ring-offset-2"
                     >
-                      <Trash2 size={14} className="group-hover:scale-110 transition-transform duration-200" />
+                      <Trash2 size={13} className="group-hover:scale-110 transition-transform duration-200" />
                       Delete
                     </button>
                   </>
@@ -255,7 +262,7 @@ export default function RolesPage() {
                 <button
                   onClick={saveAll}
                   disabled={!isDirty || savePermsMut.isPending || saveNavMut.isPending}
-                  className="group relative px-6 py-2 text-sm font-semibold text-white bg-gradient-to-b from-[#3b82f6] to-[#1d4ed8] border border-blue-700 rounded-lg shadow-md hover:from-[#2563eb] hover:to-[#1e40af] hover:shadow-lg hover:-translate-y-0.5 active:translate-y-0 active:shadow-sm transition-all duration-200 disabled:bg-gradient-to-b disabled:from-gray-200 disabled:to-gray-300 disabled:text-gray-500 disabled:border-gray-300 disabled:shadow-none disabled:hover:translate-y-0 disabled:cursor-not-allowed focus:outline-none focus:ring-2 focus:ring-blue-400 focus:ring-offset-2 flex items-center gap-2 min-w-[90px] justify-center"
+                  className="group relative px-3 py-1.5 text-xs font-medium text-white bg-gradient-to-b from-[#22c55e] to-[#15803d] border border-green-700 rounded-lg shadow-md hover:from-[#16a34a] hover:to-[#166534] hover:shadow-lg hover:-translate-y-0.5 active:translate-y-0 active:shadow-sm transition-all duration-200 disabled:bg-gradient-to-b disabled:from-gray-200 disabled:to-gray-300 disabled:text-gray-500 disabled:border-gray-300 disabled:shadow-none disabled:hover:translate-y-0 disabled:cursor-not-allowed focus:outline-none focus:ring-2 focus:ring-green-400 focus:ring-offset-2 flex items-center gap-2 min-w-[90px] justify-center"
                 >
                   {savePermsMut.isPending || saveNavMut.isPending ? (
                     <>
@@ -275,7 +282,7 @@ export default function RolesPage() {
             </div>
 
             {/* Sub-tabs */}
-            <div className="px-6 border-b border-gray-200">
+            <div className="px-5 border-b border-gray-200">
               <div className="flex gap-1">
                 <TabBtn label="Entities" active={tab === "entities"} onClick={() => setTab("entities")} />
                 <TabBtn label="Navigation" active={tab === "navigation"} onClick={() => setTab("navigation")} />
@@ -283,7 +290,7 @@ export default function RolesPage() {
             </div>
 
             {/* Info banner */}
-            <div className="mx-6 mt-4 px-4 py-2 bg-[#16243A] text-white text-xs rounded-md flex items-start gap-2">
+            <div className="mx-6 mt-4 px-4 py-2 bg-green-600 text-white text-xs rounded-md flex items-start gap-2">
               <span className="text-amber-300">ℹ</span>
               <span>
                 Tick an action to grant it. <b>Module-level</b> ticks select all leaves under that module.
@@ -292,7 +299,7 @@ export default function RolesPage() {
             </div>
 
             {/* Tab body */}
-            <div className="p-6">
+            <div className="p-4">
               {tab === "entities" ? (
                 <EntityMatrix
                   draft={draftPerms}
@@ -312,7 +319,7 @@ export default function RolesPage() {
                   }}
                 />
               ) : (
-                <NavMatrix draft={draftNav} onToggle={toggleNav} />
+                <NavMatrix draft={draftNav} onToggle={toggleNav} onSetMany={setNavMany} />
               )}
             </div>
           </>
@@ -344,8 +351,8 @@ function TabBtn({ label, active, onClick }: { label: string; active: boolean; on
   return (
     <button
       onClick={onClick}
-      className={`px-4 py-2 text-sm font-medium border-b-2 -mb-px ${
-        active ? "border-[#3b82f6] text-[#3b82f6]" : "border-transparent text-gray-500 hover:text-gray-700"
+      className={`px-4 py-2 text-[13px] font-semibold border-b-2 -mb-px ${
+        active ? "border-[#22c55e] text-[#22c55e]" : "border-transparent text-gray-500 hover:text-gray-700"
       }`}
     >
       {label}
@@ -364,12 +371,12 @@ interface EntityMatrixProps {
 function EntityMatrix({ draft, onToggle, onModuleToggle, onRowToggle }: EntityMatrixProps) {
   return (
     <div className="border border-gray-200 rounded-md overflow-hidden">
-      <table className="w-full text-sm">
+      <table className="w-full text-xs">
         <thead>
           <tr className="bg-gray-50 border-b border-gray-200">
-            <th className="text-left px-4 py-2 font-semibold text-gray-700 w-1/2">ENTITY</th>
+            <th className="text-left px-4 py-2.5 font-semibold text-gray-700 w-1/2 text-[11px] uppercase tracking-[0.04em]">ENTITY</th>
             {ACTIONS.map((a) => (
-              <th key={a} className="text-center px-4 py-2 font-semibold text-gray-700 uppercase text-xs">
+              <th key={a} className="text-center px-4 py-2.5 font-semibold text-gray-700 uppercase text-[11px] tracking-[0.04em]">
                 {a}
               </th>
             ))}
@@ -387,13 +394,13 @@ function EntityMatrix({ draft, onToggle, onModuleToggle, onRowToggle }: EntityMa
               <Fragment key={mod.key}>
                 {/* Module header */}
                 <tr className="bg-gray-50/50 border-t border-gray-200">
-                  <td className="px-4 py-2">
+                  <td className="px-4 py-2.5">
                     <button
                       onClick={() => onModuleToggle(allCodes, modAllOn)}
                       className="font-semibold text-gray-800 hover:underline flex items-center gap-2"
                     >
                       {mod.label}
-                      <span className="text-[10px] font-normal px-1.5 py-0.5 bg-blue-50 text-blue-600 rounded">
+                      <span className="text-[11px] font-semibold px-1.5 py-0.5 bg-green-50 text-green-600 rounded">
                         {grantedCount}/{allCodes.length}
                       </span>
                     </button>
@@ -405,7 +412,7 @@ function EntityMatrix({ draft, onToggle, onModuleToggle, onRowToggle }: EntityMa
                     const granted = codes.filter((c) => draft.has(c)).length;
                     const allOn = granted === codes.length && codes.length > 0;
                     return (
-                      <td key={a} className="text-center px-4 py-2">
+                      <td key={a} className="text-center px-4 py-2.5">
                         {codes.length === 0 ? (
                           <span className="text-gray-300">—</span>
                         ) : (
@@ -413,7 +420,7 @@ function EntityMatrix({ draft, onToggle, onModuleToggle, onRowToggle }: EntityMa
                             type="checkbox"
                             checked={allOn}
                             onChange={() => onRowToggle(codes, allOn)}
-                            className="w-4 h-4 accent-[#3b82f6] cursor-pointer"
+                            className="w-4 h-4 accent-[#22c55e] cursor-pointer"
                           />
                         )}
                       </td>
@@ -427,7 +434,7 @@ function EntityMatrix({ draft, onToggle, onModuleToggle, onRowToggle }: EntityMa
                   const rowAllOn = rowGranted === rowCodes.length && rowCodes.length > 0;
                   return (
                     <tr key={leaf.resource} className="border-t border-gray-100 hover:bg-gray-50/40">
-                      <td className="px-4 py-2 pl-10 text-gray-600">
+                      <td className="px-4 py-2.5 pl-10 text-gray-600">
                         <button
                           onClick={() => onRowToggle(rowCodes, rowAllOn)}
                           className="text-left hover:underline"
@@ -439,19 +446,19 @@ function EntityMatrix({ draft, onToggle, onModuleToggle, onRowToggle }: EntityMa
                         const code = leaf.actions[a].code;
                         if (!code) {
                           return (
-                            <td key={a} className="text-center px-4 py-2 text-gray-300">
+                            <td key={a} className="text-center px-4 py-2.5 text-gray-300">
                               —
                             </td>
                           );
                         }
                         const on = draft.has(code);
                         return (
-                          <td key={a} className="text-center px-4 py-2">
+                          <td key={a} className="text-center px-4 py-2.5">
                             <input
                               type="checkbox"
                               checked={on}
                               onChange={() => onToggle(code)}
-                              className="w-4 h-4 accent-[#3b82f6] cursor-pointer"
+                              className="w-4 h-4 accent-[#22c55e] cursor-pointer"
                             />
                           </td>
                         );
@@ -468,29 +475,116 @@ function EntityMatrix({ draft, onToggle, onModuleToggle, onRowToggle }: EntityMa
   );
 }
 
-function NavMatrix({ draft, onToggle }: { draft: Set<string>; onToggle: (k: string) => void }) {
+function NavMatrix({
+  draft,
+  onToggle,
+  onSetMany,
+}: {
+  draft: Set<string>;
+  onToggle: (k: string) => void;
+  onSetMany: (keys: string[], on: boolean) => void;
+}) {
+  const [query, setQuery] = useState("");
+  const q = query.trim().toLowerCase();
+
+  const allKeys = useMemo(() => NAV_TREE.flatMap((g) => g.items.map((i) => i.key)), []);
+  const selectedTotal = allKeys.filter((k) => draft.has(k)).length;
+
+  // Filter groups/items by search.
+  const groups = useMemo(
+    () =>
+      NAV_TREE.map((g) => ({
+        ...g,
+        items: q ? g.items.filter((i) => i.label.toLowerCase().includes(q)) : g.items,
+      })).filter((g) => g.items.length > 0),
+    [q],
+  );
+
   return (
     <div className="space-y-4">
-      {NAV_TREE.map((group) => (
-        <div key={group.key} className="border border-gray-200 rounded-md">
-          <div className="px-4 py-2 bg-gray-50 border-b border-gray-200 text-xs font-semibold text-gray-700 uppercase">
-            {group.label}
-          </div>
-          <div className="p-4 grid grid-cols-2 md:grid-cols-3 gap-3">
-            {group.items.map((item) => (
-              <label key={item.key} className="flex items-center gap-2 text-sm cursor-pointer hover:bg-gray-50 px-2 py-1 rounded">
+      {/* Toolbar */}
+      <div className="flex flex-wrap items-center gap-3">
+        <div className="relative flex-1 min-w-[200px]">
+          <Search size={14} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none" />
+          <input
+            type="text"
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            placeholder="Search navigation tabs…"
+            className="w-full pl-8 pr-8 py-1.5 text-xs text-gray-800 bg-white border border-gray-200 rounded-lg placeholder:text-gray-400 focus:outline-none focus:ring-1 focus:ring-[#22c55e] focus:border-[#22c55e]"
+          />
+          {q && (
+            <button
+              type="button"
+              onClick={() => setQuery("")}
+              aria-label="Clear search"
+              className="absolute right-2 top-1/2 -translate-y-1/2 p-0.5 text-gray-400 hover:text-gray-600 rounded"
+            >
+              <X size={13} />
+            </button>
+          )}
+        </div>
+        <span className="text-[11px] font-medium text-gray-500">
+          {selectedTotal}/{allKeys.length} tabs enabled
+        </span>
+        <div className="flex items-center gap-1.5">
+          <button
+            type="button"
+            onClick={() => onSetMany(allKeys, true)}
+            className="inline-flex items-center gap-1 px-2.5 py-1.5 text-[11px] font-medium text-green-700 bg-green-50 border border-green-200 rounded-lg hover:bg-green-100 transition"
+          >
+            <CheckSquare size={12} /> Select all
+          </button>
+          <button
+            type="button"
+            onClick={() => onSetMany(allKeys, false)}
+            className="inline-flex items-center gap-1 px-2.5 py-1.5 text-[11px] font-medium text-gray-600 bg-gray-50 border border-gray-200 rounded-lg hover:bg-gray-100 transition"
+          >
+            <Square size={12} /> Clear all
+          </button>
+        </div>
+      </div>
+
+      {groups.length === 0 ? (
+        <div className="text-center py-8 text-xs text-gray-400">No navigation tabs match “{query.trim()}”.</div>
+      ) : (
+        groups.map((group) => {
+          const groupKeys = group.items.map((i) => i.key);
+          const selected = groupKeys.filter((k) => draft.has(k)).length;
+          const allOn = selected === groupKeys.length && groupKeys.length > 0;
+          return (
+            <div key={group.key} className="border border-gray-200 rounded-md">
+              <div className="px-4 py-2 bg-gray-50 border-b border-gray-200 flex items-center gap-2">
                 <input
                   type="checkbox"
-                  checked={draft.has(item.key)}
-                  onChange={() => onToggle(item.key)}
-                  className="w-4 h-4 accent-[#3b82f6]"
+                  checked={allOn}
+                  ref={(el) => { if (el) el.indeterminate = selected > 0 && !allOn; }}
+                  onChange={() => onSetMany(groupKeys, !allOn)}
+                  className="w-4 h-4 accent-[#22c55e] cursor-pointer"
+                  aria-label={`Toggle all ${group.label}`}
                 />
-                <span>{item.label}</span>
-              </label>
-            ))}
-          </div>
-        </div>
-      ))}
+                <span className="text-xs font-semibold text-gray-700 uppercase">{group.label}</span>
+                <span className="text-[11px] font-semibold px-1.5 py-0.5 bg-green-50 text-green-600 rounded">
+                  {selected}/{groupKeys.length}
+                </span>
+              </div>
+              <div className="p-4 grid grid-cols-2 md:grid-cols-3 gap-3">
+                {group.items.map((item) => (
+                  <label key={item.key} className="flex items-center gap-2 text-xs cursor-pointer hover:bg-gray-50 px-2 py-1 rounded">
+                    <input
+                      type="checkbox"
+                      checked={draft.has(item.key)}
+                      onChange={() => onToggle(item.key)}
+                      className="w-4 h-4 accent-[#22c55e]"
+                    />
+                    <span>{item.label}</span>
+                  </label>
+                ))}
+              </div>
+            </div>
+          );
+        })
+      )}
     </div>
   );
 }
@@ -520,7 +614,7 @@ function CreateRoleModal({
             placeholder="custom_role"
             value={form.name}
             onChange={(e) => setForm({ ...form, name: e.target.value })}
-            className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-[#3b82f6]"
+            className="w-full border border-gray-200 rounded-lg px-3 py-2 text-xs focus:outline-none focus:ring-1 focus:ring-[#22c55e]"
           />
           <p className="text-xs text-gray-400 mt-1">Lowercase, alphanumeric + underscore. Used as identity (can't change later).</p>
         </div>
@@ -529,7 +623,7 @@ function CreateRoleModal({
           <input
             value={form.description}
             onChange={(e) => setForm({ ...form, description: e.target.value })}
-            className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-[#3b82f6]"
+            className="w-full border border-gray-200 rounded-lg px-3 py-2 text-xs focus:outline-none focus:ring-1 focus:ring-[#22c55e]"
           />
         </div>
         <label className="flex items-start gap-2 cursor-pointer p-3 bg-amber-50 border border-amber-200 rounded-lg hover:bg-amber-100 transition">
@@ -540,13 +634,13 @@ function CreateRoleModal({
             className="mt-0.5 w-4 h-4 accent-amber-500"
           />
           <div>
-            <div className="text-sm font-medium text-gray-800">Set as default role for new employees</div>
+            <div className="text-xs font-medium text-gray-800">Set as default role for new employees</div>
             <div className="text-xs text-gray-600 mt-0.5">Auto-assigned when admin creates an employee without picking a role. Replaces current default.</div>
           </div>
         </label>
         <div className="flex justify-end gap-2 pt-2">
-          <button type="button" onClick={onClose} className="px-4 py-2 border border-gray-200 rounded-lg text-sm">Cancel</button>
-          <button type="submit" disabled={pending} className="px-4 py-2 bg-[#16243A] text-white rounded-lg text-sm font-medium hover:bg-[#2563eb] disabled:opacity-50">
+          <button type="button" onClick={onClose} className="px-3 py-1.5 border border-gray-200 rounded-lg text-xs font-medium">Cancel</button>
+          <button type="submit" disabled={pending} className="px-3 py-1.5 bg-green-600 text-white rounded-lg text-xs font-medium hover:bg-green-700 disabled:opacity-50">
             {pending ? "Creating..." : "Create"}
           </button>
         </div>
@@ -582,7 +676,7 @@ function EditRoleModal({
           <input
             value={form.name}
             onChange={(e) => setForm({ ...form, name: e.target.value })}
-            className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm"
+            className="w-full border border-gray-200 rounded-lg px-3 py-2 text-xs"
           />
         </div>
         <div>
@@ -590,21 +684,21 @@ function EditRoleModal({
           <input
             value={form.description}
             onChange={(e) => setForm({ ...form, description: e.target.value })}
-            className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm"
+            className="w-full border border-gray-200 rounded-lg px-3 py-2 text-xs"
           />
         </div>
-        <label className="flex items-center gap-2 text-sm">
+        <label className="flex items-center gap-2 text-xs">
           <input
             type="checkbox"
             checked={form.isDefault}
             onChange={(e) => setForm({ ...form, isDefault: e.target.checked })}
-            className="w-4 h-4 accent-[#3b82f6]"
+            className="w-4 h-4 accent-[#22c55e]"
           />
           <span>Default role for new employees</span>
         </label>
         <div className="flex justify-end gap-2 pt-2">
-          <button type="button" onClick={onClose} className="px-4 py-2 border border-gray-200 rounded-lg text-sm">Cancel</button>
-          <button type="submit" disabled={pending} className="px-4 py-2 bg-[#16243A] text-white rounded-lg text-sm font-medium hover:bg-[#2563eb] disabled:opacity-50">
+          <button type="button" onClick={onClose} className="px-3 py-1.5 border border-gray-200 rounded-lg text-xs font-medium">Cancel</button>
+          <button type="submit" disabled={pending} className="px-3 py-1.5 bg-green-600 text-white rounded-lg text-xs font-medium hover:bg-green-700 disabled:opacity-50">
             {pending ? "Saving..." : "Save"}
           </button>
         </div>

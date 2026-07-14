@@ -4,9 +4,11 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useApiClient } from "@/lib/hooks/use-api";
 import Link from "next/link";
-import { User, Users as UsersIcon, Crown, Star, Filter as FilterIcon, Search, Building2, Shield, LayoutGrid, GitBranch, X, ZoomIn, ZoomOut, Maximize2, Minimize2, FileText, List, MapPin, Mail, Download, Plus, Grid3X3, Upload, ChevronUp, ChevronDown, UserPlus, ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight, Trash2 } from "lucide-react";
+import { User, Users as UsersIcon, Crown, Star, Filter as FilterIcon, Search, Building2, Shield, LayoutGrid, GitBranch, X, ZoomIn, ZoomOut, Maximize2, Minimize2, FileText, List, MapPin, Mail, Download, Plus, Grid3X3, Upload, ChevronUp, ChevronDown, UserPlus, ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight, Trash2, Unlink } from "lucide-react";
 import { clsx } from "clsx";
 import { withBasePath } from "@/lib/utils/base-path";
+import { exportCsv as writeCsv } from "@/lib/utils/csv";
+import { EMPLOYEE_EXPORT_COLUMNS, type EmployeeExportRow } from "@/lib/data/employee-export";
 import { Select } from "@/components/hrms/ui/select";
 import { SkeletonCards } from "@/components/hrms/skeleton";
 import { useDialog } from "@/components/hrms/dialog";
@@ -19,6 +21,8 @@ interface OrgEmployee {
   firstName: string;
   lastName: string;
   jobTitle: string | null;
+  workEmail: string | null;
+  personalEmail: string | null;
   profilePhoto: string | null;
   status: string;
   reportingManagerId: string | null;
@@ -68,12 +72,12 @@ function fuzzyMatch(query: string, haystack: string): boolean {
 }
 
 const DEPT_COLORS: Record<string, string> = {
-  engineering: "from-[#93c5fd] to-[#2563eb]",
-  "human resources": "from-sky-400 to-blue-500",
-  hr: "from-sky-400 to-blue-500",
+  engineering: "from-[#86efac] to-[#16a34a]",
+  "human resources": "from-sky-400 to-green-500",
+  hr: "from-sky-400 to-green-500",
   finance: "from-emerald-400 to-green-500",
   sales: "from-amber-400 to-orange-500",
-  marketing: "from-purple-400 to-indigo-500",
+  marketing: "from-purple-400 to-green-500",
   operations: "from-cyan-400 to-sky-500",
   default: "from-gray-300 to-gray-400",
 };
@@ -81,7 +85,7 @@ const DEPT_COLORS: Record<string, string> = {
 type NodeRole = "leader" | "self" | "report" | "hod";
 type ViewMode = "chain" | "full" | "hods";
 
-function OrgCard({ node, role, dimmed, totalCount, directCount, collapsed, onToggle, editMode, dragging, dropTarget, onDragStart, onDragOver, onDragLeave, onDrop, onDragEnd }: {
+function OrgCard({ node, role, dimmed, totalCount, directCount, collapsed, onToggle, editMode, dragging, dropTarget, onDragStart, onDragOver, onDragLeave, onDrop, onDragEnd, onDetach }: {
   node: OrgEmployee; role: NodeRole; dimmed?: boolean; roleLabel?: string | null;
   totalCount?: number; directCount?: number; collapsed?: boolean;
   onToggle?: (e: React.MouseEvent) => void;
@@ -91,15 +95,16 @@ function OrgCard({ node, role, dimmed, totalCount, directCount, collapsed, onTog
   onDragLeave?: (e: React.DragEvent) => void;
   onDrop?: (e: React.DragEvent) => void;
   onDragEnd?: (e: React.DragEvent) => void;
+  onDetach?: () => void;
 }) {
   const ring =
-    role === "self" ? "ring-2 ring-[#3b82f6] border-[#bfdbfe]" :
+    role === "self" ? "ring-2 ring-[#22c55e] border-[#bbf7d0]" :
     role === "leader" ? "border-amber-200" :
     role === "hod" ? "border-emerald-200" : "border-gray-200";
 
   const deptColorName = node.department?.name?.toLowerCase() ?? "default";
   const footerBg: Record<string, string> = {
-    engineering: "bg-blue-100 text-blue-900",
+    engineering: "bg-green-100 text-green-900",
     "human resources": "bg-sky-100 text-sky-900",
     hr: "bg-sky-100 text-sky-900",
     finance: "bg-emerald-100 text-emerald-900",
@@ -134,10 +139,10 @@ function OrgCard({ node, role, dimmed, totalCount, directCount, collapsed, onTog
             )}
           </div>
           {role === "leader" && <Crown size={14} className="absolute -top-1 -right-1 text-amber-500 bg-white rounded-full p-0.5" />}
-          {role === "self" && <Star size={14} className="absolute -top-1 -right-1 text-[#3b82f6] fill-[#3b82f6] bg-white rounded-full p-0.5" />}
+          {role === "self" && <Star size={14} className="absolute -top-1 -right-1 text-[#22c55e] fill-[#22c55e] bg-white rounded-full p-0.5" />}
           {role === "hod" && <Building2 size={14} className="absolute -top-1 -right-1 text-emerald-600 bg-white rounded-full p-0.5" />}
         </div>
-        <p className="mt-2 text-sm font-bold text-slate-900 truncate group-hover:text-[#3b82f6]">
+        <p className="mt-2 text-[13px] font-semibold text-slate-900 truncate group-hover:text-[#22c55e]">
           {node.firstName} {node.lastName}
         </p>
         <p className="text-xs text-slate-600 truncate">
@@ -145,7 +150,7 @@ function OrgCard({ node, role, dimmed, totalCount, directCount, collapsed, onTog
         </p>
       </div>
       {node.department?.name && (
-        <div className={clsx("py-1.5 text-center text-[11px] font-bold uppercase tracking-wide", footerCls)}>
+        <div className={clsx("py-1.5 text-center text-[11px] font-medium uppercase tracking-wide", footerCls)}>
           {node.department.name}
         </div>
       )}
@@ -166,9 +171,9 @@ function OrgCard({ node, role, dimmed, totalCount, directCount, collapsed, onTog
               type="button"
               onClick={onToggle}
               title={collapsed ? "Expand" : "Collapse"}
-              className="w-6 h-6 inline-flex items-center justify-center rounded-md text-slate-500 hover:bg-slate-100 hover:text-[#2563eb] transition"
+              className="w-6 h-6 inline-flex items-center justify-center rounded-md text-slate-500 hover:bg-slate-100 hover:text-[#16a34a] transition"
             >
-              {collapsed ? <ChevronDown size={14} /> : <ChevronUp size={14} />}
+              {collapsed ? <ChevronDown size={12} /> : <ChevronUp size={12} />}
             </button>
           )}
         </div>
@@ -187,6 +192,16 @@ function OrgCard({ node, role, dimmed, totalCount, directCount, collapsed, onTog
         onDragEnd={onDragEnd}
         className={cardCls}
       >
+        {onDetach && (
+          <button
+            type="button"
+            onClick={(e) => { e.preventDefault(); e.stopPropagation(); onDetach(); }}
+            title="Remove from manager (make top-level)"
+            className="absolute top-1.5 right-1.5 z-10 w-6 h-6 inline-flex items-center justify-center rounded-md bg-white/90 border border-gray-200 text-gray-500 hover:text-red-600 hover:border-red-300 hover:bg-red-50 shadow-sm"
+          >
+            <Unlink size={13} />
+          </button>
+        )}
         {cardChildren}
       </div>
     );
@@ -206,6 +221,14 @@ function Connector({ thick }: { thick?: boolean }) {
 export default function OrgChartPage() {
   const api = useApiClient();
   const qc = useQueryClient();
+  const dialog = useDialog();
+  const { hasPermission, isLoading: permsLoading } = useDashboardConfig();
+  // People directory access — same gate as the rest of the app. Users without
+  // it may still view the Org Chart, but must not reach the Directory tab.
+  const canViewDirectory =
+    hasPermission("hrms.employee.read") ||
+    hasPermission("hrms.employee.read_team") ||
+    hasPermission("hrms.org.read");
   const [editMode, setEditMode] = useState(false);
   const [draggingId, setDraggingId] = useState<string | null>(null);
   const [dropTargetId, setDropTargetId] = useState<string | null>(null);
@@ -215,10 +238,20 @@ export default function OrgChartPage() {
     mutationFn: ({ employeeId, managerId }: { employeeId: string; managerId: string | null }) =>
       api.patch(`/api/v1/hrms/employees/${employeeId}`, { reportingManagerId: managerId }),
     onSuccess: () => qc.invalidateQueries({ queryKey: ["org-chart"] }),
+    meta: { suppressGlobalError: true },
     onError: (e: Error) => setDragError(e.message),
   });
 
-  const [topTab, setTopTab] = useState<"directory" | "orgchart">("directory");
+  const [topTab, setTopTab] = useState<"directory" | "orgchart">(() =>
+    (typeof window !== "undefined" && new URLSearchParams(window.location.search).get("tab") === "orgchart")
+      ? "orgchart"
+      : "directory",
+  );
+  // Once permissions load, lock users without directory access to the Org Chart.
+  useEffect(() => {
+    if (!permsLoading && !canViewDirectory) setTopTab("orgchart");
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [permsLoading, canViewDirectory]);
   const [directoryView, setDirectoryView] = useState<"list" | "grid">("list");
   const [statusFilter, setStatusFilter] = useState<string>("");
   const [exporting, setExporting] = useState(false);
@@ -319,7 +352,7 @@ export default function OrgChartPage() {
     if (statusFilter && e.status !== statusFilter) return false;
     if (search) {
       const q = search.toLowerCase().trim();
-      const hay = `${e.firstName} ${e.lastName} ${e.employeeCode} ${e.jobTitle ?? ""} ${e.department?.name ?? ""}`.toLowerCase();
+      const hay = `${e.firstName} ${e.lastName} ${e.employeeCode} ${e.jobTitle ?? ""} ${e.workEmail ?? ""} ${e.personalEmail ?? ""} ${e.department?.name ?? ""}`.toLowerCase();
       if (!fuzzyMatch(q, hay)) return false;
     }
     return true;
@@ -327,35 +360,31 @@ export default function OrgChartPage() {
   const hasActiveFilter = Boolean(departmentId || roleId || search || statusFilter);
   const clearFilters = () => { setDepartmentId(""); setRoleId(""); setSearch(""); setStatusFilter(""); };
 
-  const exportDirectory = () => {
+  const exportDirectory = async () => {
     if (exporting) return;
     setExporting(true);
     try {
-      const rows = (hasActiveFilter ? activeEmployees.filter(matchesFilters) : activeEmployees);
-      const headers = ["Employee Code", "First Name", "Last Name", "Designation", "Department", "Status", "Reporting Manager"];
-      const byIdLocal = new Map(all.map((e) => [e.id, e]));
-      const data = rows.map((e) => {
-        const mgr = e.reportingManagerId ? byIdLocal.get(e.reportingManagerId) : null;
-        return [
-          e.employeeCode, e.firstName, e.lastName,
-          e.designation?.title ?? e.jobTitle ?? "",
-          e.department?.name ?? "",
-          e.status,
-          mgr ? `${mgr.firstName} ${mgr.lastName}` : "",
-        ];
-      });
-      const escape = (v: string) => `"${String(v).replace(/"/g, '""')}"`;
-      const csv = "﻿" + [headers, ...data].map((r) => r.map(escape).join(",")).join("\r\n");
-      const blob = new Blob([csv], { type: "application/vnd.ms-excel;charset=utf-8" });
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement("a");
-      const stamp = new Date().toISOString().slice(0, 10);
-      a.href = url;
-      a.download = `people-directory-${stamp}.xls`;
-      document.body.appendChild(a);
-      a.click();
-      a.remove();
-      URL.revokeObjectURL(url);
+      // The on-screen chart data carries only a few fields — for the download we
+      // pull the complete, export-grade record (`fields=full`) straight from the
+      // API and emit the shared employee column set (same columns as the People
+      // directory export). Mirror the active filters so the CSV matches the view.
+      const base = new URLSearchParams({ limit: "100", fields: "full", status: "Active" });
+      if (departmentId) base.set("department", departmentId);
+      if (search.trim()) base.set("search", search.trim());
+
+      const rows: EmployeeExportRow[] = [];
+      let p = 1;
+      for (;;) {
+        base.set("page", String(p));
+        const res = await api.get<EmployeeExportRow[]>(`/api/v1/hrms/employees?${base.toString()}`);
+        rows.push(...res.data);
+        const pages = res.meta?.totalPages ?? 1;
+        if (p >= pages || res.data.length === 0) break;
+        p += 1;
+      }
+      // Role has no server-side filter param — apply it client-side to match the view.
+      const filtered = roleId ? rows.filter((e) => e.roleId === roleId) : rows;
+      writeCsv("people-directory", EMPLOYEE_EXPORT_COLUMNS, filtered);
     } finally {
       setExporting(false);
     }
@@ -405,6 +434,19 @@ export default function OrgChartPage() {
     if (!src) return;
     if (src.reportingManagerId === targetId) return; // No change
     reassignMut.mutate({ employeeId: sourceId, managerId: targetId });
+  };
+
+  // Explicit "remove from manager" — the drop-on-empty-space gesture exists but
+  // is undiscoverable, so each card gets an unlink button in edit mode.
+  const handleDetach = async (emp: OrgEmployee) => {
+    const ok = await dialog.confirm({
+      title: "Remove from manager?",
+      description: `${emp.firstName} ${emp.lastName} will no longer report to anyone and becomes a top-level node. You can reassign them later by dragging onto a manager.`,
+      confirmLabel: "Remove",
+      variant: "danger",
+    });
+    if (!ok) return;
+    handleDrop(emp.id, null);
   };
   const childrenByMgr = useMemo(() => {
     const m = new Map<string, OrgEmployee[]>();
@@ -512,6 +554,7 @@ export default function OrgChartPage() {
             setDraggingId(null);
             setDropTargetId(null);
           }}
+          onDetach={editMode && node.reportingManagerId ? () => handleDetach(node) : undefined}
         />
         {children.length > 0 && !isCollapsed && (
           <>
@@ -553,8 +596,8 @@ export default function OrgChartPage() {
     <div>
       <div className="flex items-start justify-between mb-3 gap-3 flex-wrap">
         <div className="flex items-center gap-3">
-          <h1 className="font-serif-display text-3xl md:text-4xl font-bold text-gray-900">People</h1>
-          <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-[#dbeafe] text-[#2563eb] ring-1 ring-[#bfdbfe] text-xs font-bold">
+          <h1 className="text-base font-semibold text-gray-900">People</h1>
+          <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-[#dcfce7] text-[#16a34a] ring-1 ring-[#bbf7d0] text-[11px] font-semibold">
             <UsersIcon size={12} /> {all.length}
           </span>
         </div>
@@ -562,28 +605,28 @@ export default function OrgChartPage() {
           <div className="flex items-center gap-2">
             <Link
               href="/employees/bulk-import"
-              className="inline-flex items-center gap-1.5 px-3 py-2 rounded-md border border-gray-200 bg-white text-gray-700 text-sm font-semibold hover:bg-gray-50 transition"
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md border border-gray-200 bg-white text-gray-700 text-xs font-medium hover:bg-gray-50 transition"
             >
-              <Upload size={14} /> Bulk Import
+              <Upload size={13} /> Bulk Import
             </Link>
             <button
               onClick={exportDirectory}
               disabled={exporting || all.length === 0}
-              className="inline-flex items-center gap-1.5 px-3 py-2 rounded-md border border-gray-200 bg-white text-gray-700 text-sm font-semibold hover:bg-gray-50 transition disabled:opacity-50"
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md border border-gray-200 bg-white text-gray-700 text-xs font-medium hover:bg-gray-50 transition disabled:opacity-50"
             >
-              <Download size={14} /> {exporting ? "Exporting..." : "Export"}
+              <Download size={13} /> {exporting ? "Exporting..." : "Export"}
             </button>
             <Link
               href="/employees/new"
-              className="inline-flex items-center gap-1.5 bg-[#16243A] hover:bg-[#1E3354] text-white px-4 py-2 rounded-md text-sm font-semibold shadow-sm transition"
+              className="inline-flex items-center gap-1.5 bg-green-600 hover:bg-green-700 text-white px-3 py-1.5 rounded-md text-xs font-medium shadow-sm transition"
             >
-              <Plus size={14} /> Add Employee
+              <Plus size={13} /> Add Employee
             </Link>
           </div>
         ) : (
           <div className="flex items-center gap-3 text-xs">
             <span className="flex items-center gap-1 text-amber-600"><Crown size={12} /> Leader</span>
-            <span className="flex items-center gap-1 text-[#3b82f6]"><Star size={12} className="fill-[#3b82f6]" /> You</span>
+            <span className="flex items-center gap-1 text-[#22c55e]"><Star size={12} className="fill-[#22c55e]" /> You</span>
             <span className="flex items-center gap-1 text-emerald-600"><Building2 size={12} /> HOD</span>
             <span className="flex items-center gap-1 text-gray-500"><UsersIcon size={12} /> Report</span>
           </div>
@@ -592,28 +635,30 @@ export default function OrgChartPage() {
 
       {/* Top tabs — Directory vs Org Chart */}
       <div className="bg-white rounded-lg border border-gray-200 p-1 inline-flex items-center gap-1 mb-3 shadow-sm">
+        {canViewDirectory && (
         <button
           onClick={() => setTopTab("directory")}
           className={clsx(
-            "inline-flex items-center gap-1.5 px-4 py-1.5 rounded-md text-sm font-semibold transition",
+            "inline-flex items-center gap-1.5 px-4 py-1.5 rounded-md text-[13px] font-semibold transition",
             topTab === "directory"
-              ? "bg-[#16243A] text-white shadow-sm"
-              : "text-gray-600 hover:text-[#3b82f6] hover:bg-blue-50",
+              ? "bg-green-600 text-white shadow-sm"
+              : "text-gray-600 hover:text-[#22c55e] hover:bg-green-50",
           )}
         >
           <List size={14} /> Directory
-          <span className={clsx("ml-1 px-1.5 py-0.5 rounded-full text-[10px] font-bold",
+          <span className={clsx("ml-1 px-1.5 py-0.5 rounded-full text-[11px] font-semibold",
             topTab === "directory" ? "bg-white/20" : "bg-gray-100 text-gray-500")}>
             {activeEmployees.length}
           </span>
         </button>
+        )}
         <button
           onClick={() => setTopTab("orgchart")}
           className={clsx(
-            "inline-flex items-center gap-1.5 px-4 py-1.5 rounded-md text-sm font-semibold transition",
+            "inline-flex items-center gap-1.5 px-4 py-1.5 rounded-md text-[13px] font-semibold transition",
             topTab === "orgchart"
-              ? "bg-[#16243A] text-white shadow-sm"
-              : "text-gray-600 hover:text-[#3b82f6] hover:bg-blue-50",
+              ? "bg-green-600 text-white shadow-sm"
+              : "text-gray-600 hover:text-[#22c55e] hover:bg-green-50",
           )}
         >
           <GitBranch size={14} /> Org Chart
@@ -625,7 +670,7 @@ export default function OrgChartPage() {
         {/* View mode tabs — only for Org Chart */}
         {topTab === "orgchart" && (
         <div className="flex items-center gap-1 flex-wrap">
-          <div className="inline-flex items-center gap-1.5 text-[10px] font-semibold text-gray-500 uppercase tracking-wide px-2">
+          <div className="inline-flex items-center gap-1.5 text-xs font-medium text-gray-500 uppercase tracking-wide px-2">
             <FilterIcon size={11} /> View
           </div>
           {[
@@ -639,29 +684,16 @@ export default function OrgChartPage() {
                 key={m.value}
                 onClick={() => setViewMode(m.value)}
                 className={clsx(
-                  "inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-semibold border transition",
+                  "inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-medium border transition",
                   active
-                    ? "bg-[#16243A] border-[#16243A] text-white shadow-sm"
-                    : "bg-white border-[var(--border)] text-gray-600 hover:border-[#16243A]/40 hover:text-[#16243A]",
+                    ? "bg-green-600 border-green-600 text-white shadow-sm"
+                    : "bg-white border-[var(--border)] text-gray-600 hover:border-[#166534]/40 hover:text-[#166534]",
                 )}
               >
                 {m.icon} {m.label}
               </button>
             );
           })}
-          {viewMode === "full" && (
-            <button
-              onClick={() => { setEditMode((v) => !v); setDragError(null); }}
-              className={clsx(
-                "inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold border transition ml-2",
-                editMode
-                  ? "bg-emerald-600 border-emerald-600 text-white shadow-sm hover:bg-emerald-700"
-                  : "bg-white border-emerald-300 text-emerald-700 hover:bg-emerald-50",
-              )}
-            >
-              {editMode ? "✓ Editing — Drag to Reassign" : "✎ Edit Org Chart"}
-            </button>
-          )}
         </div>
         )}
 
@@ -673,8 +705,8 @@ export default function OrgChartPage() {
               type="text"
               value={search}
               onChange={(e) => setSearch(e.target.value)}
-              placeholder="Search name, code, title…"
-              className="w-full pl-8 pr-2 py-1.5 text-xs border border-[var(--border)] rounded-md focus:outline-none focus:ring-1 focus:ring-[#16243A]"
+              placeholder="Search name, email, code, title…"
+              className="w-full pl-8 pr-2 py-1.5 text-xs border border-[var(--border)] rounded-md focus:outline-none focus:ring-1 focus:ring-[#166534]"
             />
           </div>
 
@@ -718,23 +750,23 @@ export default function OrgChartPage() {
               <button
                 onClick={() => setDirectoryView("list")}
                 title="List view"
-                className={clsx("p-1.5 transition", directoryView === "list" ? "bg-[#dbeafe] text-[#3b82f6]" : "text-gray-400 hover:bg-gray-50")}
+                className={clsx("p-1.5 transition", directoryView === "list" ? "bg-[#dcfce7] text-[#22c55e]" : "text-gray-400 hover:bg-gray-50")}
               >
-                <List size={14} />
+                <List size={12} />
               </button>
               <button
                 onClick={() => setDirectoryView("grid")}
                 title="Grid view"
-                className={clsx("p-1.5 transition", directoryView === "grid" ? "bg-[#dbeafe] text-[#3b82f6]" : "text-gray-400 hover:bg-gray-50")}
+                className={clsx("p-1.5 transition", directoryView === "grid" ? "bg-[#dcfce7] text-[#22c55e]" : "text-gray-400 hover:bg-gray-50")}
               >
-                <Grid3X3 size={14} />
+                <Grid3X3 size={12} />
               </button>
             </div>
           )}
         </div>
       </div>
 
-      {topTab === "directory" ? (
+      {topTab === "directory" && canViewDirectory ? (
         <DirectoryView
           employees={activeEmployees}
           hasActiveFilter={hasActiveFilter}
@@ -749,14 +781,14 @@ export default function OrgChartPage() {
             onClick={zoomOut}
             disabled={zoom <= 0.5}
             title="Zoom out"
-            className="w-8 h-8 inline-flex items-center justify-center rounded-md text-gray-600 hover:bg-gray-100 hover:text-[#3b82f6] disabled:opacity-40 disabled:cursor-not-allowed transition"
+            className="w-8 h-8 inline-flex items-center justify-center rounded-md text-gray-600 hover:bg-gray-100 hover:text-[#22c55e] disabled:opacity-40 disabled:cursor-not-allowed transition"
           >
-            <ZoomOut size={14} />
+            <ZoomOut size={12} />
           </button>
           <button
             onClick={zoomReset}
             title="Reset zoom"
-            className="px-2 h-8 inline-flex items-center justify-center rounded-md text-xs font-semibold text-gray-700 hover:bg-gray-100 hover:text-[#3b82f6] min-w-[48px] transition"
+            className="px-2 h-8 inline-flex items-center justify-center rounded-md text-xs font-semibold text-gray-700 hover:bg-gray-100 hover:text-[#22c55e] min-w-[48px] transition"
           >
             {Math.round(zoom * 100)}%
           </button>
@@ -764,17 +796,17 @@ export default function OrgChartPage() {
             onClick={zoomIn}
             disabled={zoom >= 2}
             title="Zoom in"
-            className="w-8 h-8 inline-flex items-center justify-center rounded-md text-gray-600 hover:bg-gray-100 hover:text-[#3b82f6] disabled:opacity-40 disabled:cursor-not-allowed transition"
+            className="w-8 h-8 inline-flex items-center justify-center rounded-md text-gray-600 hover:bg-gray-100 hover:text-[#22c55e] disabled:opacity-40 disabled:cursor-not-allowed transition"
           >
-            <ZoomIn size={14} />
+            <ZoomIn size={12} />
           </button>
           <div className="w-px h-5 bg-gray-200 mx-0.5" />
           <button
             onClick={toggleFullscreen}
             title={isFullscreen ? "Exit fullscreen" : "Fullscreen"}
-            className="w-8 h-8 inline-flex items-center justify-center rounded-md text-gray-600 hover:bg-gray-100 hover:text-[#3b82f6] transition"
+            className="w-8 h-8 inline-flex items-center justify-center rounded-md text-gray-600 hover:bg-gray-100 hover:text-[#22c55e] transition"
           >
-            {isFullscreen ? <Minimize2 size={14} /> : <Maximize2 size={14} />}
+            {isFullscreen ? <Minimize2 size={12} /> : <Maximize2 size={12} />}
           </button>
           <div className="w-px h-5 bg-gray-200 mx-0.5" />
           <button
@@ -788,13 +820,13 @@ export default function OrgChartPage() {
 
         <div className="absolute top-4 left-4 z-10 inline-flex items-center gap-2 bg-white border border-gray-200 rounded-full px-3 py-1 shadow-sm print:hidden">
           <UsersIcon size={13} className="text-slate-500" />
-          <span className="text-xs font-bold text-slate-700">Total: <span className="text-[#3b82f6]">{all.length}</span></span>
+          <span className="text-xs font-semibold text-slate-700">Total: <span className="text-[#22c55e]">{all.length}</span></span>
         </div>
 
         <div
           onMouseDown={editMode ? undefined : onPanStart}
           className={clsx(
-            "overflow-auto p-6 org-chart-scroll select-none",
+            "overflow-auto p-4 org-chart-scroll select-none",
             editMode ? "cursor-default" : isPanning ? "cursor-grabbing" : "cursor-grab",
             isFullscreen ? "max-h-screen h-screen bg-white" : "min-h-[78vh] max-h-[85vh]",
           )}
@@ -878,7 +910,7 @@ export default function OrgChartPage() {
             <>
               {editMode && (
                 <div className="mb-3 px-3 py-2 bg-emerald-50 border border-emerald-200 rounded text-xs text-emerald-800 flex items-center justify-between">
-                  <span>Drag any employee onto a manager to reassign reporting line. Cycles blocked automatically.</span>
+                  <span>Drag any employee onto a manager to reassign, or use the unlink icon on a card to remove its reporting manager. Cycles blocked automatically.</span>
                   <button onClick={() => { setEditMode(false); setDragError(null); }} className="font-semibold hover:underline">Done</button>
                 </div>
               )}
@@ -888,7 +920,7 @@ export default function OrgChartPage() {
                 </div>
               )}
               {reassignMut.isPending && (
-                <div className="mb-3 px-3 py-2 bg-blue-50 border border-blue-200 rounded text-xs text-blue-800">
+                <div className="mb-3 px-3 py-2 bg-green-50 border border-green-200 rounded text-xs text-green-800">
                   Saving reassignment...
                 </div>
               )}
@@ -902,7 +934,7 @@ export default function OrgChartPage() {
                     handleDrop(sourceId, null);
                   }
                 }}
-                className={clsx("flex items-start justify-center gap-8 flex-wrap p-2 rounded", editMode && "min-h-[400px] bg-emerald-50/30 ring-1 ring-dashed ring-emerald-200")}
+                className={clsx("flex items-start justify-center gap-5 flex-wrap p-2 rounded", editMode && "min-h-[400px] bg-emerald-50/30 ring-1 ring-dashed ring-emerald-200")}
               >
                 {roots.map((r) => renderTree(r, 0))}
               </div>
@@ -925,7 +957,7 @@ export default function OrgChartPage() {
                         <Building2 size={14} />
                       </div>
                       <div className="flex-1 min-w-0">
-                        <p className="text-sm font-bold text-gray-900 truncate">{dept.name}</p>
+                        <p className="text-[13px] font-semibold text-gray-900 truncate">{dept.name}</p>
                         <p className="text-[10px] text-gray-500">{deptMembers} member{deptMembers !== 1 ? "s" : ""} · {hods.length} HOD{hods.length !== 1 ? "s" : ""}</p>
                       </div>
                     </div>
@@ -1039,7 +1071,6 @@ function DirectoryView({ employees, hasActiveFilter, matchesFilters, roleById, v
     },
     onError: (e, _ids, ctx) => {
       if (ctx?.snapshot) qc.setQueryData(["org-chart-snapshot"], ctx.snapshot);
-      toast.error("Delete failed", e instanceof Error ? e.message : "Unknown error");
     },
     onSettled: () => {
       setDeletingId(null);
@@ -1087,7 +1118,7 @@ function DirectoryView({ employees, hasActiveFilter, matchesFilters, roleById, v
   const byId = new Map(employees.map((e) => [e.id, e]));
   const STATUS_PILL: Record<string, string> = {
     Active:      "bg-emerald-50 text-emerald-700 ring-emerald-200",
-    PreBoarding: "bg-blue-50 text-blue-700 ring-blue-200",
+    PreBoarding: "bg-green-50 text-green-700 ring-green-200",
     OnLeave:     "bg-amber-50 text-amber-700 ring-amber-200",
     OnNotice:    "bg-orange-50 text-orange-700 ring-orange-200",
     Suspended:   "bg-red-50 text-red-700 ring-red-200",
@@ -1119,20 +1150,16 @@ function DirectoryView({ employees, hasActiveFilter, matchesFilters, roleById, v
         <span className="text-slate-300">|</span>
         <label className="flex items-center gap-1">
           Rows:
-          <select
-            value={pageSize}
-            onChange={(e) => {
-              setPageSize(parseInt(e.target.value, 10));
+          <Select
+            value={String(pageSize)}
+            onChange={(v) => {
+              setPageSize(parseInt(v, 10));
               setPage(1);
             }}
-            className="border border-[var(--border)] rounded px-1.5 py-0.5 text-xs bg-white"
-          >
-            {[10, 25, 50, 100].map((n) => (
-              <option key={n} value={n}>
-                {n}
-              </option>
-            ))}
-          </select>
+            size="sm"
+            className="min-w-[72px]"
+            options={[10, 25, 50, 100].map((n) => ({ value: String(n), label: String(n) }))}
+          />
         </label>
       </div>
 
@@ -1143,7 +1170,7 @@ function DirectoryView({ employees, hasActiveFilter, matchesFilters, roleById, v
           className="w-7 h-7 inline-flex items-center justify-center rounded border border-gray-200 text-gray-600 hover:bg-gray-50 disabled:opacity-40 disabled:cursor-not-allowed"
           title="First page"
         >
-          <ChevronsLeft size={13} />
+          <ChevronsLeft size={12} />
         </button>
         <button
           onClick={() => setPage((p) => Math.max(1, p - 1))}
@@ -1151,7 +1178,7 @@ function DirectoryView({ employees, hasActiveFilter, matchesFilters, roleById, v
           className="w-7 h-7 inline-flex items-center justify-center rounded border border-gray-200 text-gray-600 hover:bg-gray-50 disabled:opacity-40 disabled:cursor-not-allowed"
           title="Previous"
         >
-          <ChevronLeft size={13} />
+          <ChevronLeft size={12} />
         </button>
         <span className="px-2 text-xs text-slate-700">
           Page <span className="font-semibold">{page}</span> of {totalPages}
@@ -1162,7 +1189,7 @@ function DirectoryView({ employees, hasActiveFilter, matchesFilters, roleById, v
           className="w-7 h-7 inline-flex items-center justify-center rounded border border-gray-200 text-gray-600 hover:bg-gray-50 disabled:opacity-40 disabled:cursor-not-allowed"
           title="Next"
         >
-          <ChevronRight size={13} />
+          <ChevronRight size={12} />
         </button>
         <button
           onClick={() => setPage(totalPages)}
@@ -1170,7 +1197,7 @@ function DirectoryView({ employees, hasActiveFilter, matchesFilters, roleById, v
           className="w-7 h-7 inline-flex items-center justify-center rounded border border-gray-200 text-gray-600 hover:bg-gray-50 disabled:opacity-40 disabled:cursor-not-allowed"
           title="Last page"
         >
-          <ChevronsRight size={13} />
+          <ChevronsRight size={12} />
         </button>
       </div>
     </div>
@@ -1180,7 +1207,7 @@ function DirectoryView({ employees, hasActiveFilter, matchesFilters, roleById, v
     return (
       <div className="bg-white rounded-lg border border-gray-200 p-12 text-center text-gray-500">
         <UsersIcon size={36} className="mx-auto mb-2 text-gray-300" />
-        <p className="text-sm font-medium">No employees match the current filters.</p>
+        <p className="text-xs font-medium">No employees match the current filters.</p>
       </div>
     );
   }
@@ -1189,8 +1216,8 @@ function DirectoryView({ employees, hasActiveFilter, matchesFilters, roleById, v
     return (
       <div className="bg-white rounded-lg border border-gray-200 shadow-sm">
         <div className="flex items-center justify-between p-4 pb-3">
-          <p className="text-sm font-bold text-gray-800">
-            Total: <span className="text-[#3b82f6]">{shown.length}</span>
+          <p className="text-[13px] font-semibold text-gray-800">
+            Total: <span className="text-[#22c55e]">{shown.length}</span>
             {hasActiveFilter && <span className="text-xs text-gray-400 ml-2 font-normal">({employees.length} before filters)</span>}
           </p>
           {selected.size > 0 && canDelete && (
@@ -1205,7 +1232,7 @@ function DirectoryView({ employees, hasActiveFilter, matchesFilters, roleById, v
                 type="button"
                 onClick={confirmBulkDelete}
                 disabled={hardDeleteMut.isPending}
-                className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-red-600 hover:bg-red-700 disabled:opacity-60 text-white rounded-md text-xs font-semibold"
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-red-600 hover:bg-red-700 disabled:opacity-60 text-white rounded-md text-xs font-medium"
               >
                 <Trash2 size={12} /> {hardDeleteMut.isPending ? "Deleting..." : `Delete ${selected.size}`}
               </button>
@@ -1219,7 +1246,7 @@ function DirectoryView({ employees, hasActiveFilter, matchesFilters, roleById, v
               : DEPT_COLORS.default;
             const roleLabel = e.roleId ? roleById.get(e.roleId)?.name ?? null : null;
             return (
-              <div key={e.id} className={clsx("group relative rounded-lg border bg-white shadow-sm hover:shadow-md transition overflow-hidden", selected.has(e.id) ? "border-[#3b82f6] ring-1 ring-[#3b82f6]/30" : "border-gray-200 hover:border-[#bfdbfe]")}>
+              <div key={e.id} className={clsx("group relative rounded-lg border bg-white shadow-sm hover:shadow-md transition overflow-hidden", selected.has(e.id) ? "border-[#22c55e] ring-1 ring-[#22c55e]/30" : "border-gray-200 hover:border-[#bbf7d0]")}>
                 <div className={clsx("h-1 bg-gradient-to-r", deptColor)} />
                 {canDelete && (
                   <>
@@ -1228,7 +1255,7 @@ function DirectoryView({ employees, hasActiveFilter, matchesFilters, roleById, v
                       checked={selected.has(e.id)}
                       onChange={() => toggleSelect(e.id)}
                       onClick={(ev) => ev.stopPropagation()}
-                      className={clsx("absolute top-2 left-2 z-10 rounded text-[#3b82f6] transition", selected.has(e.id) ? "opacity-100" : "opacity-0 group-hover:opacity-100")}
+                      className={clsx("absolute top-2 left-2 z-10 rounded text-[#22c55e] transition", selected.has(e.id) ? "opacity-100" : "opacity-0 group-hover:opacity-100")}
                       title="Select"
                     />
                     <button
@@ -1238,7 +1265,7 @@ function DirectoryView({ employees, hasActiveFilter, matchesFilters, roleById, v
                       className="absolute top-2 right-2 z-10 inline-flex items-center justify-center w-7 h-7 rounded-md bg-white/80 backdrop-blur text-gray-400 hover:text-red-600 hover:bg-red-50 opacity-0 group-hover:opacity-100 transition disabled:opacity-40 border border-gray-100"
                       title="Delete employee"
                     >
-                      <Trash2 size={13} />
+                      <Trash2 size={12} />
                     </button>
                   </>
                 )}
@@ -1253,10 +1280,10 @@ function DirectoryView({ employees, hasActiveFilter, matchesFilters, roleById, v
                       )}
                     </div>
                     <div className="flex-1 min-w-0">
-                      <p className="text-sm font-bold text-gray-900 truncate group-hover:text-[#3b82f6]">{e.firstName} {e.lastName}</p>
+                      <p className="text-[13px] font-semibold text-gray-900 truncate group-hover:text-[#22c55e]">{e.firstName} {e.lastName}</p>
                       <p className="text-[11px] text-gray-500 truncate">{e.employeeCode}</p>
                     </div>
-                    <span className={clsx("text-[9px] font-bold uppercase px-1.5 py-0.5 rounded-full ring-1 shrink-0", STATUS_PILL[e.status] ?? STATUS_PILL.Active)}>{e.status}</span>
+                    <span className={clsx("text-[11px] font-medium uppercase px-1.5 py-0.5 rounded-full ring-1 shrink-0", STATUS_PILL[e.status] ?? STATUS_PILL.Active)}>{e.status}</span>
                   </div>
                   <div className="mt-2 space-y-0.5 text-[11px] text-gray-600">
                     <p className="truncate">{e.designation?.title ?? e.jobTitle ?? "—"}</p>
@@ -1285,9 +1312,9 @@ function DirectoryView({ employees, hasActiveFilter, matchesFilters, roleById, v
 
   return (
     <div className="bg-white rounded-lg border border-gray-200 shadow-sm overflow-hidden">
-      <div className="flex items-center justify-between px-5 py-3 border-b border-gray-100">
+      <div className="flex items-center justify-between px-4 py-3 border-b border-gray-100">
         <p className="text-sm font-bold text-gray-800">
-          Total: <span className="text-[#3b82f6]">{shown.length}</span>
+          Total: <span className="text-[#22c55e]">{shown.length}</span>
           {hasActiveFilter && <span className="text-xs text-gray-400 ml-2 font-normal">({employees.length} before filters)</span>}
         </p>
         {selected.size > 0 && canDelete && (
@@ -1312,26 +1339,25 @@ function DirectoryView({ employees, hasActiveFilter, matchesFilters, roleById, v
       <div className="overflow-x-auto">
         <table className="w-full">
           <thead>
-            <tr className="bg-slate-50/60 border-b border-slate-200">
+            <tr className="bg-slate-50/60 dark:bg-slate-800/40 border-b border-slate-200 dark:border-slate-700">
               {canDelete && (
-                <th className="px-4 py-3 w-10">
+                <th className="px-4 py-2.5 w-10">
                   <input
                     type="checkbox"
                     checked={allOnPageSelected}
                     ref={(el) => { if (el) el.indeterminate = !allOnPageSelected && someOnPageSelected; }}
                     onChange={togglePageAll}
-                    className="rounded text-[#3b82f6]"
+                    className="rounded text-[#22c55e]"
                   />
                 </th>
               )}
-              <th className="text-left px-4 py-3 text-[11px] font-bold text-slate-500 uppercase tracking-wider">Display Name</th>
-              <th className="text-left px-4 py-3 text-[11px] font-bold text-slate-500 uppercase tracking-wider">Department</th>
-              <th className="text-left px-4 py-3 text-[11px] font-bold text-slate-500 uppercase tracking-wider">Job Title</th>
-              <th className="text-left px-4 py-3 text-[11px] font-bold text-slate-500 uppercase tracking-wider">Reports to</th>
-              <th className="text-left px-4 py-3 text-[11px] font-bold text-slate-500 uppercase tracking-wider">Employee Code</th>
-              <th className="text-left px-4 py-3 text-[11px] font-bold text-slate-500 uppercase tracking-wider">Status</th>
-              <th className="text-left px-4 py-3 text-[11px] font-bold text-slate-500 uppercase tracking-wider">Role</th>
-              {canDelete && <th className="text-right px-4 py-3 text-[11px] font-bold text-slate-500 uppercase tracking-wider w-20">Action</th>}
+              <th className="text-left px-4 py-3 text-[11px] font-semibold text-slate-500 uppercase tracking-[0.04em]">Display Name</th>
+              <th className="text-left px-4 py-3 text-[11px] font-semibold text-slate-500 uppercase tracking-[0.04em]">Department</th>
+              <th className="text-left px-4 py-3 text-[11px] font-semibold text-slate-500 uppercase tracking-[0.04em]">Job Title</th>
+              <th className="text-left px-4 py-3 text-[11px] font-semibold text-slate-500 uppercase tracking-[0.04em]">Reports to</th>
+              <th className="text-left px-4 py-3 text-[11px] font-semibold text-slate-500 uppercase tracking-[0.04em]">Employee Code</th>
+              <th className="text-left px-4 py-3 text-[11px] font-semibold text-slate-500 uppercase tracking-[0.04em]">Role</th>
+              {canDelete && <th className="text-right px-4 py-3 text-[11px] font-semibold text-slate-500 uppercase tracking-[0.04em] w-20">Action</th>}
             </tr>
           </thead>
           <tbody>
@@ -1339,18 +1365,18 @@ function DirectoryView({ employees, hasActiveFilter, matchesFilters, roleById, v
               const roleLabel = e.roleId ? roleById.get(e.roleId)?.name ?? null : null;
               const manager = e.reportingManagerId ? byId.get(e.reportingManagerId) : null;
               return (
-                <tr key={e.id} className={clsx("row-stagger border-b border-slate-100 transition", selected.has(e.id) ? "bg-blue-50/40" : "hover:bg-slate-50/60")} style={{ ["--i" as never]: Math.min(i, 10) }}>
+                <tr key={e.id} className={clsx("row-stagger border-b border-slate-100 dark:border-slate-800 transition", selected.has(e.id) ? "bg-green-50/40 dark:bg-emerald-900/25" : "hover:bg-slate-50/60 dark:hover:bg-slate-800/40")} style={{ ["--i" as never]: Math.min(i, 10) }}>
                   {canDelete && (
-                    <td className="px-4 py-3">
+                    <td className="px-4 py-2.5">
                       <input
                         type="checkbox"
                         checked={selected.has(e.id)}
                         onChange={() => toggleSelect(e.id)}
-                        className="rounded text-[#3b82f6]"
+                        className="rounded text-[#22c55e]"
                       />
                     </td>
                   )}
-                  <td className="px-4 py-3">
+                  <td className="px-4 py-2.5">
                     <Link href={`/employees/${e.id}`} className="flex items-center gap-2.5 group">
                       <div className="w-9 h-9 rounded-full bg-slate-100 border border-slate-200 overflow-hidden shrink-0">
                         {e.profilePhoto ? (
@@ -1363,16 +1389,16 @@ function DirectoryView({ employees, hasActiveFilter, matchesFilters, roleById, v
                         )}
                       </div>
                       <div className="min-w-0">
-                        <p className="text-sm font-semibold text-slate-900 truncate group-hover:text-[#3b82f6]">{e.firstName} {e.lastName}</p>
+                        <p className="text-[13px] font-semibold text-slate-900 truncate group-hover:text-[#22c55e]">{e.firstName} {e.lastName}</p>
                         <p className="text-[11px] text-slate-500 truncate">{e.designation?.title ?? e.jobTitle ?? "—"}</p>
                       </div>
                     </Link>
                   </td>
-                  <td className="px-4 py-3 text-sm text-slate-700">{e.department?.name ?? "—"}</td>
-                  <td className="px-4 py-3 text-sm text-slate-700 truncate">{e.designation?.title ?? e.jobTitle ?? "—"}</td>
-                  <td className="px-4 py-3">
+                  <td className="px-4 py-2.5 text-xs text-slate-700">{e.department?.name ?? "—"}</td>
+                  <td className="px-4 py-2.5 text-xs text-slate-700 truncate">{e.designation?.title ?? e.jobTitle ?? "—"}</td>
+                  <td className="px-4 py-2.5">
                     {manager ? (
-                      <Link href={`/employees/${manager.id}`} className="flex items-center gap-2 hover:text-[#3b82f6]">
+                      <Link href={`/employees/${manager.id}`} className="flex items-center gap-2 hover:text-[#22c55e]">
                         <div className="w-6 h-6 rounded-full bg-slate-100 border border-slate-200 overflow-hidden shrink-0">
                           {manager.profilePhoto ? (
                             // eslint-disable-next-line @next/next/no-img-element
@@ -1381,17 +1407,14 @@ function DirectoryView({ employees, hasActiveFilter, matchesFilters, roleById, v
                             <div className="w-full h-full flex items-center justify-center text-slate-400"><User size={10} /></div>
                           )}
                         </div>
-                        <span className="text-sm text-slate-700 truncate">{manager.firstName} {manager.lastName}</span>
+                        <span className="text-xs text-slate-700 truncate">{manager.firstName} {manager.lastName}</span>
                       </Link>
-                    ) : <span className="text-sm text-slate-400">—</span>}
+                    ) : <span className="text-xs text-slate-400">—</span>}
                   </td>
-                  <td className="px-4 py-3 text-xs font-mono text-slate-500">{e.employeeCode}</td>
-                  <td className="px-4 py-3">
-                    <span className={clsx("text-[10px] font-bold uppercase px-2 py-0.5 rounded-full ring-1", STATUS_PILL[e.status] ?? STATUS_PILL.Active)}>{e.status}</span>
-                  </td>
-                  <td className="px-4 py-3 text-sm text-slate-600">{roleLabel ?? "—"}</td>
+                  <td className="px-4 py-2.5 text-xs font-mono text-slate-500">{e.employeeCode}</td>
+                  <td className="px-4 py-2.5 text-xs text-slate-600">{roleLabel ?? "—"}</td>
                   {canDelete && (
-                    <td className="px-4 py-3 text-right">
+                    <td className="px-4 py-2.5 text-right">
                       <button
                         type="button"
                         disabled={deletingId === e.id}
@@ -1399,7 +1422,7 @@ function DirectoryView({ employees, hasActiveFilter, matchesFilters, roleById, v
                         className="inline-flex items-center justify-center w-8 h-8 rounded-md text-slate-400 hover:text-red-600 hover:bg-red-50 disabled:opacity-40"
                         title="Delete employee"
                       >
-                        <Trash2 size={14} />
+                        <Trash2 size={12} />
                       </button>
                     </td>
                   )}

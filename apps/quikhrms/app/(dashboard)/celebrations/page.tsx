@@ -91,17 +91,17 @@ function CelebrationsInner() {
 
   return (
     <div>
-      <div className="flex items-center justify-between mb-6 flex-wrap gap-3">
+      <div className="flex items-center justify-between mb-4 flex-wrap gap-3">
         <div className="flex items-center gap-3">
-          <Cake className="text-[#3b82f6]" />
-          <h1 className="font-serif-display text-3xl md:text-4xl font-bold text-gray-900">Celebrations</h1>
+          <Cake className="text-[#22c55e]" />
+          <h1 className="text-page-title text-gray-900">Celebrations</h1>
         </div>
         <div className="inline-flex items-center rounded-lg border border-[var(--border)] overflow-hidden">
           {([["all", "All"], ["birthdays", "Birthdays"], ["anniversaries", "Anniversaries"]] as const).map(([k, label], i) => (
             <button
               key={k}
               onClick={() => setFilter(k)}
-              className={clsx("px-3 py-2 text-sm", i > 0 && "border-l border-[var(--border)]", filter === k ? "bg-[#dbeafe] text-[#2563eb] font-semibold" : "text-gray-600 hover:bg-gray-50")}
+              className={clsx("px-3 py-2 text-sm", i > 0 && "border-l border-[var(--border)]", filter === k ? "bg-[#dcfce7] text-[#16a34a] font-semibold" : "text-gray-600 hover:bg-gray-50")}
             >
               {label}
             </button>
@@ -138,9 +138,9 @@ function CelebrationsInner() {
                 const evs = byDay.get(day) ?? [];
                 const td = isToday(day);
                 return (
-                  <div key={idx} className={clsx("min-h-[96px] border-b border-r border-gray-100 p-1.5 flex flex-col gap-1 transition-colors", td ? "bg-blue-50/50" : "hover:bg-gray-50/60")}>
+                  <div key={idx} className={clsx("min-h-[96px] border-b border-r border-gray-100 p-1.5 flex flex-col gap-1 transition-colors", td ? "bg-green-50/50" : "hover:bg-gray-50/60")}>
                     <div className="flex justify-end">
-                      <span className={clsx("inline-grid place-items-center text-[11px] w-6 h-6 rounded-full", td ? "bg-[#2563eb] text-white font-bold shadow-sm" : "text-gray-500")}>{day}</span>
+                      <span className={clsx("inline-grid place-items-center text-[11px] w-6 h-6 rounded-full", td ? "bg-[#16a34a] text-white font-bold shadow-sm" : "text-gray-500")}>{day}</span>
                     </div>
                     <div className="flex flex-col gap-1">
                       {evs.slice(0, 2).map((e, i) => (

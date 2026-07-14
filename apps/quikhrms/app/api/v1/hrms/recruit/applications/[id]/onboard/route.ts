@@ -39,8 +39,11 @@ export const POST = withAuth(async (req: NextRequest, { orgId, userId, permissio
     if (existingEmp) return conflict("Employee already exists for this candidate email");
 
     // ── Document-approval gate ───────────────────────────────────────
-    // Block onboarding until every REQUIRED candidate document has an
-    // Approved upload. Super-admins can pass { force: true } to bypass.
+    // Block onboarding ONLY on documents the candidate has UPLOADED that HR
+    // hasn't approved yet (Pending review or Rejected). Documents that were
+    // requested but never uploaded do NOT block — otherwise an (often
+    // auto-created) bundle the candidate never filled would deadlock onboarding.
+    // Super-admins can still pass { force: true } to bypass entirely.
     if (!force) {
       const docRequests = await prisma.candidateDocumentRequest.findMany({
         where: {
@@ -51,56 +54,39 @@ export const POST = withAuth(async (req: NextRequest, { orgId, userId, permissio
         },
         select: {
           bundle: true,
-          selectedDocTypeIds: true,
           uploads: {
             where: { deletedAt: null },
-            select: { documentTypeId: true, status: true },
+            orderBy: { uploadedAt: "desc" },
+            select: { documentTypeId: true, status: true, customLabel: true, fileName: true, documentType: { select: { name: true } } },
           },
         },
       });
 
-      const missing: { bundle: string; name: string; reason: "not_uploaded" | "not_approved" }[] = [];
+      const missing: { bundle: string; name: string; reason: "not_approved" }[] = [];
       for (const r of docRequests) {
-        const selected = Array.isArray(r.selectedDocTypeIds)
-          ? (r.selectedDocTypeIds as unknown as string[])
-          : null;
-
-        // Latest upload per documentTypeId — Approved wins; otherwise the
-        // most-recent (Pending/Rejected) reflects current state.
-        const latestByType = new Map<string, "Pending" | "Approved" | "Rejected">();
+        // Latest upload per document (Approved wins; uploads are newest-first).
+        const latest = new Map<string, { status: "Pending" | "Approved" | "Rejected"; name: string }>();
         for (const u of r.uploads) {
-          if (!u.documentTypeId) continue;
-          if (latestByType.get(u.documentTypeId) === "Approved") continue;
-          latestByType.set(u.documentTypeId, u.status);
+          const name = u.documentType?.name ?? u.customLabel ?? u.fileName ?? "Document";
+          const key = u.documentTypeId ?? name;
+          if (!latest.has(key)) latest.set(key, { status: u.status, name });
         }
-
-        const requiredTypes = await prisma.candidateDocumentType.findMany({
-          where: {
-            orgId, bundle: r.bundle, isActive: true, deletedAt: null,
-            isRequired: true,
-            ...(selected && selected.length ? { id: { in: selected } } : {}),
-          },
-          select: { id: true, name: true },
-        });
-
-        for (const t of requiredTypes) {
-          const status = latestByType.get(t.id);
-          if (!status) missing.push({ bundle: r.bundle, name: t.name, reason: "not_uploaded" });
-          else if (status !== "Approved") missing.push({ bundle: r.bundle, name: t.name, reason: "not_approved" });
+        for (const { status, name } of latest.values()) {
+          if (status !== "Approved") missing.push({ bundle: r.bundle, name, reason: "not_approved" });
         }
       }
 
       if (missing.length > 0) {
         return errorResponse(
           ErrorCode.VALIDATION_ERROR,
-          "Cannot onboard — required documents are not yet approved.",
+          "Cannot onboard — some uploaded documents are still awaiting your approval.",
           400,
           {
             missing,
             canForce,
             hint: canForce
-              ? "Super admins can override by sending { force: true } in the request body."
-              : "Ask HR to approve the pending documents, or have a super admin override.",
+              ? "Approve the pending uploads, or send { force: true } to override."
+              : "Approve the pending uploads, or have a super admin override.",
           },
         );
       }

@@ -5,6 +5,7 @@ import { withAuth } from "@/lib/with-auth";
 import { successResponse, notFound, conflict, validationError, forbidden, internalError } from "@/lib/api-response";
 import { resolveEmployeeId } from "@/lib/resolve-employee";
 import { mailRequisitionDecision } from "@/lib/services/requisition-approval-service";
+import { getActiveChainLevels, getCallerRoleIds, callerCanActionLevel } from "@/lib/services/approval-chain";
 
 const schema = z.object({
   comment: z.string().max(2000).optional(),
@@ -31,7 +32,13 @@ export const POST = withAuth(async (req: NextRequest, { orgId, userId }, params)
 
     const nextPending = requisition.approvals.find((a) => a.status === "Pending");
     if (!nextPending) return conflict("No pending approval level");
-    if (nextPending.approverId !== employeeId) return forbidden("Not your approval level");
+
+    const chainLevels = await getActiveChainLevels(orgId, "Requisition");
+    const levelCfg = chainLevels?.find((l) => l.level === nextPending.level);
+    const roleIds = await getCallerRoleIds(orgId, employeeId);
+    if (!callerCanActionLevel(levelCfg, { employeeId, roleIds }, nextPending.approverId)) {
+      return forbidden("Not your approval level");
+    }
 
     await prisma.requisitionApproval.update({
       where: { id: nextPending.id },

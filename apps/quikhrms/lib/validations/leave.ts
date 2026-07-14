@@ -55,7 +55,11 @@ export const createLeaveRequestSchema = z.object({
   reason: z.string().min(1, "Reason required"),
   attachments: z.array(z.string()).optional(),
   isPlanned: z.boolean().default(true),
-});
+}).refine(
+  // YYYY-MM-DD strings compare correctly lexicographically.
+  (d) => d.endDate >= d.startDate,
+  { message: "End date must be on or after the start date", path: ["endDate"] },
+);
 
 export const updateLeaveRequestSchema = z.object({
   reason: z.string().optional(),

@@ -29,7 +29,7 @@ interface WidgetData {
   benchmark?: number;
 }
 
-const PIE_COLORS = ["#3b82f6", "#14b8a6", "#f59e0b", "#ec4899", "#8b5cf6", "#06b6d4", "#84cc16", "#f97316", "#a855f7", "#ef4444"];
+const PIE_COLORS = ["#22c55e", "#14b8a6", "#f59e0b", "#ec4899", "#8b5cf6", "#06b6d4", "#84cc16", "#f97316", "#a855f7", "#ef4444"];
 
 const INR = new Intl.NumberFormat("en-IN", { maximumFractionDigits: 0 });
 function formatMetric(v: number, fmt: "number" | "percent" | "currency"): string {
@@ -62,7 +62,7 @@ export function Widget({
         <div className="flex items-start justify-between gap-2">
           <p className="text-[10px] font-bold text-gray-500 uppercase tracking-wider leading-tight">{config.title}</p>
           {KpiIcon && (
-            <div className="w-7 h-7 rounded-md bg-blue-50 text-[#3b82f6] flex items-center justify-center shrink-0">
+            <div className="w-7 h-7 rounded-md bg-green-50 text-[#22c55e] flex items-center justify-center shrink-0">
               <KpiIcon size={14} />
             </div>
           )}
@@ -71,7 +71,7 @@ export function Widget({
           <div className="mt-3 h-7 w-16 bg-gray-100 rounded animate-pulse" />
         ) : (
           <>
-            <p className="mt-2 font-serif-display text-2xl md:text-3xl font-bold text-gray-900 tabular-nums leading-none">
+            <p className="mt-2 font-serif-display text-xl md:text-2xl font-bold text-gray-900 tabular-nums leading-none">
               {w.metric ? formatMetric(w.metric.value, w.metric.format) : "—"}
             </p>
             {delta != null ? (
@@ -88,15 +88,15 @@ export function Widget({
   }
 
   return (
-    <div className="surface-card p-5 h-full flex flex-col">
+    <div className="surface-card p-4 h-full flex flex-col">
       <div className="flex items-center justify-between mb-3">
         <div className="flex items-center gap-2">
           <GripVertical size={14} className="text-gray-300 cursor-grab" />
-          <h3 className="text-sm font-bold text-gray-900">{config.title}</h3>
+          <h3 className="text-[13px] font-semibold text-gray-900">{config.title}</h3>
           <Info size={12} className="text-gray-300" />
         </div>
         <button className="p-1 text-gray-400 hover:text-gray-700 rounded-full hover:bg-gray-100">
-          <MoreVertical size={14} />
+          <MoreVertical size={12} />
         </button>
       </div>
 
@@ -126,15 +126,15 @@ function renderWidget(config: WidgetConfig, w: WidgetData) {
             <AreaChart data={series}>
               <defs>
                 <linearGradient id={`grad-${config.id}`} x1="0" y1="0" x2="0" y2="1">
-                  <stop offset="0%" stopColor="#3b82f6" stopOpacity={0.4} />
-                  <stop offset="100%" stopColor="#3b82f6" stopOpacity={0} />
+                  <stop offset="0%" stopColor="#22c55e" stopOpacity={0.4} />
+                  <stop offset="100%" stopColor="#22c55e" stopOpacity={0} />
                 </linearGradient>
               </defs>
               <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" />
               <XAxis dataKey="label" tick={{ fontSize: 10 }} />
               <YAxis tick={{ fontSize: 10 }} />
               <Tooltip />
-              <Area dataKey="value" stroke="#3b82f6" fill={`url(#grad-${config.id})`} strokeWidth={2} />
+              <Area dataKey="value" stroke="#22c55e" fill={`url(#grad-${config.id})`} strokeWidth={2} />
             </AreaChart>
           </ResponsiveContainer>
         </div>
@@ -227,8 +227,8 @@ function renderWidget(config: WidgetConfig, w: WidgetData) {
             {/* Donut center total */}
             {!isMoney && (
               <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none">
-                <span className="font-serif-display text-2xl font-bold text-gray-900 tabular-nums leading-none">{total}</span>
-                <span className="text-[9px] text-gray-400 uppercase tracking-wide">total</span>
+                <span className="font-serif-display text-xl font-bold text-gray-900 tabular-nums leading-none">{total}</span>
+                <span className="text-[10px] text-gray-400 uppercase tracking-wide">total</span>
               </div>
             )}
           </div>
@@ -259,11 +259,11 @@ function renderWidget(config: WidgetConfig, w: WidgetData) {
     case "offer-acceptance-rate":
     case "candidates-interviewed":
     case "recruitment-sources": {
-      if (!w.metric) return <div className="text-sm text-gray-400">No data</div>;
+      if (!w.metric) return <div className="text-xs text-gray-400">No data</div>;
       return (
         <div className="h-64 flex items-center justify-center">
           <div className="text-center">
-            <p className="font-serif-display text-6xl font-bold text-gray-900">{formatMetric(w.metric.value, w.metric.format)}</p>
+            <p className="font-serif-display text-5xl font-bold text-gray-900">{formatMetric(w.metric.value, w.metric.format)}</p>
             {w.metric.delta != null && (
               <p className={clsx("text-xs mt-2 font-semibold", w.metric.delta >= 0 ? "text-emerald-600" : "text-red-600")}>
                 {w.metric.delta >= 0 ? "+" : ""}{w.metric.delta} vs prior period
@@ -281,7 +281,7 @@ function renderWidget(config: WidgetConfig, w: WidgetData) {
 function Metric({ value, delta, format }: { value: number; delta?: number; format: "number" | "percent" | "currency" }) {
   return (
     <div className="absolute top-3 right-5 text-right">
-      <p className="font-serif-display text-3xl md:text-4xl font-bold text-gray-900">{formatMetric(value, format)}</p>
+      <p className="font-serif-display text-lg md:text-xl font-bold text-gray-900">{formatMetric(value, format)}</p>
       {delta != null && (
         <p className={clsx("text-[10px] font-semibold", delta >= 0 ? "text-emerald-600" : "text-red-600")}>
           {delta >= 0 ? "+" : ""}{delta}

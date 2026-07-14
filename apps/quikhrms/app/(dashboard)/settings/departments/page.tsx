@@ -60,7 +60,7 @@ export default function DepartmentsPage() {
     { key: "name", label: "Name" },
     { key: "code", label: "Code" },
     { key: "status", label: "Status", render: (d) => (
-      <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${d.status === "Active" ? "bg-green-100 text-green-700" : "bg-gray-100 text-gray-600"}`}>
+      <span className={`px-2 py-0.5 rounded-full text-[11px] font-medium ${d.status === "Active" ? "bg-green-100 text-green-700" : "bg-gray-100 text-gray-600"}`}>
         {d.status}
       </span>
     )},
@@ -115,7 +115,7 @@ export default function DepartmentsPage() {
               value={form.name}
               onChange={(e) => setForm({ ...form, name: e.target.value })}
               required
-              className="w-full border border-[var(--border)] rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-[#16243A]"
+              className="w-full border border-[var(--border)] rounded-lg px-3 py-2 text-xs focus:outline-none focus:ring-1 focus:ring-[#166534]"
             />
           </div>
           <div>
@@ -125,7 +125,7 @@ export default function DepartmentsPage() {
               value={form.code}
               onChange={(e) => setForm({ ...form, code: e.target.value })}
               required
-              className="w-full border border-[var(--border)] rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-[#16243A]"
+              className="w-full border border-[var(--border)] rounded-lg px-3 py-2 text-xs focus:outline-none focus:ring-1 focus:ring-[#166534]"
             />
           </div>
           <div>
@@ -134,7 +134,7 @@ export default function DepartmentsPage() {
               value={form.description}
               onChange={(e) => setForm({ ...form, description: e.target.value })}
               rows={3}
-              className="w-full border border-[var(--border)] rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-[#16243A]"
+              className="w-full border border-[var(--border)] rounded-lg px-3 py-2 text-xs focus:outline-none focus:ring-1 focus:ring-[#166534]"
             />
           </div>
           <div>
@@ -152,13 +152,13 @@ export default function DepartmentsPage() {
             <button
               type="button"
               onClick={() => setModal({ open: false, item: null })}
-              className="px-4 py-2 border border-[var(--border)] rounded-lg text-sm text-gray-700 hover:bg-gray-50"
+              className="px-3 py-1.5 border border-[var(--border)] rounded-lg text-xs font-medium text-gray-700 hover:bg-gray-50"
             >
               Cancel
             </button>
             <button
               type="submit"
-              className="px-4 py-2 bg-[#16243A] text-white rounded-lg text-sm font-medium hover:bg-[#2563eb]"
+              className="px-3 py-1.5 bg-green-600 text-white rounded-lg text-xs font-medium hover:bg-green-700"
             >
               {modal.item ? "Update" : "Create"}
             </button>

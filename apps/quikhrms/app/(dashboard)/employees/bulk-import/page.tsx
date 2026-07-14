@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect, useMemo } from "react";
+import Link from "next/link";
 import { useMutation } from "@tanstack/react-query";
 import { useApiClient } from "@/lib/hooks/use-api";
 import { MAX_BULK_UPLOAD_ROWS } from "@/lib/validations/gap-fill";
@@ -14,6 +15,7 @@ import {
   Download,
   ArrowRight,
 } from "lucide-react";
+import { Select } from "@/components/hrms/select";
 
 interface ImportResult {
   importId: string;
@@ -294,10 +296,21 @@ function autoMap(headers: string[]): Record<string, CanonicalKey> {
   for (const h of headers) {
     const norm = normalizeHeader(h);
     let mapped: CanonicalKey = "skip";
+    // Pass 1: exact match. Prevents a loose substring alias (e.g. "country" on
+    // Nationality) from hijacking a more specific header ("currentcountry").
     for (const hint of AUTO_MAP_HINTS) {
-      if (hint.patterns.some((p) => norm === p || norm.includes(p))) {
+      if (hint.patterns.some((p) => norm === p)) {
         mapped = hint.key;
         break;
+      }
+    }
+    // Pass 2: substring match, only if no exact match was found.
+    if (mapped === "skip") {
+      for (const hint of AUTO_MAP_HINTS) {
+        if (hint.patterns.some((p) => norm.includes(p))) {
+          mapped = hint.key;
+          break;
+        }
       }
     }
     result[h] = mapped;
@@ -312,33 +325,21 @@ function splitName(full: string): { firstName: string; lastName: string } {
   return { firstName: parts[0], lastName: parts.slice(1).join(" ") };
 }
 
+// Mirrors the Add Employee form (apps/quikhrms/app/(dashboard)/employees/new),
+// ordered by its wizard steps. Every column auto-maps to a CANONICAL_FIELD and is
+// accepted by bulkEmployeeRowSchema, so a downloaded template covers the same
+// fields a manually-added employee would.
+// Downloaded import template exposes only the MANDATORY columns — the practical
+// minimum to create a usable employee. Any other field (address, KYC, bank,
+// etc.) can still be added as an extra column in the uploaded file; the column
+// mapper recognises them via autoMap. Keeping the template lean stops users from
+// feeling they must fill 50+ columns.
+// Only the strictly-required columns (bulkEmployeeRowSchema requires just
+// firstName + lastName). Any other field can still be added as an extra column
+// in the uploaded file — the mapper recognises it via autoMap.
 const TEMPLATE_HEADERS = [
-  "EMP ID",
-  "Employee Name",
-  "Work Email",
-  "Personal Email",
-  "Work Phone",
-  "Personal Phone",
-  "Designation",
-  "Department",
-  "Team",
-  "Grade",
-  "Employment Type",
-  "Worker Type",
-  "Work Location",
-  "Office/Branch",
-  "Source of Hire",
-  "Notice Period (Days)",
-  "Date of Joining",
-  "Date of Birth",
-  "Confirmation Date",
-  "Probation End Date",
-  "Gender",
-  "Marital Status",
-  "Blood Group",
-  "Nationality",
-  "PAN Number",
-  "Aadhaar Number",
+  "First Name",
+  "Last Name",
 ];
 
 export default function BulkImportEmployeesPage() {
@@ -804,32 +805,72 @@ export default function BulkImportEmployeesPage() {
 
   const downloadTemplate = (format: "csv" | "xlsx") => {
     const sampleValues: Record<string, string> = {
+      // Personal
       "EMP ID": "1001",
-      "Employee Name": "Rahul Verma",
+      "First Name": "Rahul",
+      "Middle Name": "Kumar",
+      "Last Name": "Verma",
+      "Gender": "Male",
+      "Date of Birth": "1995-08-12",
+      "Marital Status": "Single",
+      "Blood Group": "O+",
+      "Nationality": "Indian",
+      // Contact
       "Work Email": "rahul@quikit.ai",
       "Personal Email": "rahul.v@gmail.com",
       "Work Phone": "9876543210",
       "Personal Phone": "9988776655",
+      // Emergency contact
+      "Emergency Contact Name": "Suresh Verma",
+      "Emergency Contact Relation": "Father",
+      "Emergency Contact Phone": "9811122233",
+      "Emergency Contact Email": "suresh.verma@gmail.com",
+      // Current address
+      "Current Address Line 1": "12 MG Road",
+      "Current Address Line 2": "Near City Park",
+      "Current City": "Mumbai",
+      "Current State": "Maharashtra",
+      "Current ZIP": "400001",
+      "Current Country": "India",
+      // Permanent address
+      "Permanent Address Line 1": "45 Civil Lines",
+      "Permanent Address Line 2": "",
+      "Permanent City": "Jaipur",
+      "Permanent State": "Rajasthan",
+      "Permanent ZIP": "302006",
+      "Permanent Country": "India",
+      // Employment
       "Designation": "Software Engineer",
       "Department": "Engineering",
       "Team": "Backend",
       "Grade": "L3",
+      "Job Title": "Software Engineer",
+      "Reporting Manager (EMP ID)": "1000",
       "Employment Type": "Full Time",
       "Worker Type": "Permanent",
       "Work Location": "Office",
       "Office/Branch": "Mumbai",
       "Source of Hire": "Referral",
-      "Notice Period (Days)": "30 Days",
+      "Notice Period (Days)": "30",
+      "Previous Experience (Months)": "24",
       "Date of Joining": "2026-04-15",
-      "Date of Birth": "1995-08-12",
       "Confirmation Date": "2026-10-15",
       "Probation End Date": "2026-10-15",
-      "Gender": "Male",
-      "Marital Status": "Single",
-      "Blood Group": "O+",
-      "Nationality": "Indian",
+      // Education & skills
+      "Highest Qualification": "B.Tech Computer Science",
+      "Skills": "Node.js, React, PostgreSQL",
+      // Identity (KYC)
       "PAN Number": "ABCDE1234F",
       "Aadhaar Number": "123456789012",
+      "UAN Number": "100200300400",
+      "PF Account": "MH/BAN/0012345/000/0000456",
+      "ESI Number": "3100123456",
+      "Tax ID (TIN)": "",
+      // Bank
+      "Bank Name": "HDFC Bank",
+      "Bank Account Number": "50100123456789",
+      "Bank IFSC": "HDFC0001234",
+      "Bank Account Holder Name": "Rahul Kumar Verma",
     };
     if (format === "csv") {
       const csv = [
@@ -888,31 +929,31 @@ export default function BulkImportEmployeesPage() {
 
   return (
     <div className="max-w-6xl">
-      <div className="flex items-center gap-3 mb-6">
-        <Upload className="text-[#3b82f6]" />
-        <h1 className="font-serif-display text-3xl md:text-4xl font-bold text-gray-900">
+      <div className="flex items-center gap-3 mb-4">
+        <Upload className="text-[#22c55e]" />
+        <h1 className="text-base font-semibold text-gray-900">
           Bulk Employee Import
         </h1>
       </div>
 
       {/* Step 1: Upload */}
-      <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-5 mb-4">
+      <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-4 mb-4">
         <div className="flex items-center justify-between mb-3">
-          <h2 className="font-semibold text-gray-900">1. Upload File</h2>
+          <h2 className="text-[13px] font-semibold text-gray-900">1. Upload File</h2>
           <div className="flex gap-2">
             <button
               type="button"
               onClick={() => downloadTemplate("csv")}
-              className="flex items-center gap-1 text-xs text-[#2563eb] hover:underline"
+              className="flex items-center gap-1 text-xs font-medium text-[#16a34a] hover:underline"
             >
-              <Download size={12} /> CSV template
+              <Download size={13} /> CSV template
             </button>
             <button
               type="button"
               onClick={() => downloadTemplate("xlsx")}
-              className="flex items-center gap-1 text-xs text-[#2563eb] hover:underline"
+              className="flex items-center gap-1 text-xs font-medium text-[#16a34a] hover:underline"
             >
-              <Download size={12} /> Excel template
+              <Download size={13} /> Excel template
             </button>
           </div>
         </div>
@@ -923,7 +964,7 @@ export default function BulkImportEmployeesPage() {
           type="file"
           accept=".csv,.xlsx,.xls"
           onChange={handleFile}
-          className="block w-full text-sm text-gray-700 file:mr-4 file:py-2 file:px-4 file:rounded-lg file:border-0 file:text-sm file:font-medium file:bg-[#dbeafe] file:text-[#2563eb] hover:file:bg-[#dbeafe]"
+          className="block w-full text-xs text-gray-700 file:mr-4 file:py-1.5 file:px-3 file:rounded-lg file:border-0 file:text-xs file:font-medium file:bg-[#dcfce7] file:text-[#16a34a] hover:file:bg-[#dcfce7]"
         />
 
         {parseError && (
@@ -953,8 +994,8 @@ export default function BulkImportEmployeesPage() {
 
       {/* Step 2: Map Columns */}
       {headers.length > 0 && (
-        <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-5 mb-4">
-          <h2 className="font-semibold text-gray-900 mb-1">
+        <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-4 mb-4">
+          <h2 className="text-[13px] font-semibold text-gray-900 mb-1">
             2. Map Your Columns to HRMS Fields
           </h2>
           <p className="text-xs text-gray-500 mb-3">
@@ -964,7 +1005,7 @@ export default function BulkImportEmployeesPage() {
 
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
-              <thead className="bg-gray-50 text-xs text-gray-600 uppercase">
+              <thead className="bg-gray-50 text-table-head text-gray-600 uppercase">
                 <tr>
                   <th className="text-left px-3 py-2 font-medium">Your Column</th>
                   <th className="text-left px-3 py-2 font-medium">Sample Value</th>
@@ -981,20 +1022,19 @@ export default function BulkImportEmployeesPage() {
                         {sample || <span className="text-gray-400">empty</span>}
                       </td>
                       <td className="px-3 py-2">
-                        <select
+                        <Select
                           value={mapping[h] ?? "skip"}
-                          onChange={(e) =>
-                            setMapping({ ...mapping, [h]: e.target.value as CanonicalKey })
+                          onChange={(v) =>
+                            setMapping({ ...mapping, [h]: v as CanonicalKey })
                           }
-                          className="w-full border border-[var(--border)] rounded-lg px-2 py-1.5 text-sm"
-                        >
-                          {CANONICAL_FIELDS.map((f) => (
-                            <option key={f.key} value={f.key}>
-                              {f.label}
-                              {f.required ? " *" : ""}
-                            </option>
-                          ))}
-                        </select>
+                          size="sm"
+                          className="w-full"
+                          searchable
+                          options={CANONICAL_FIELDS.map((f) => ({
+                            value: f.key,
+                            label: f.required ? `${f.label} *` : f.label,
+                          }))}
+                        />
                       </td>
                     </tr>
                   );
@@ -1021,10 +1061,10 @@ export default function BulkImportEmployeesPage() {
           <div className="flex items-start gap-2 mb-2">
             <AlertTriangle size={18} className="text-orange-600 flex-shrink-0 mt-0.5" />
             <div>
-              <h3 className="font-semibold text-orange-900">
+              <h3 className="text-[13px] font-semibold text-orange-900">
                 {rowsMissingEmail.length} row{rowsMissingEmail.length > 1 ? "s" : ""} missing email — will be skipped
               </h3>
-              <p className="text-sm text-orange-800 mt-1">
+              <p className="text-xs text-orange-800 mt-1">
                 Each employee needs at least a Work Email or Personal Email. Rows below will not be imported until you provide an email.
               </p>
             </div>
@@ -1042,8 +1082,8 @@ export default function BulkImportEmployeesPage() {
 
       {/* Step 3: Preview */}
       {enrichedRows.length > 0 && mappingValid && (
-        <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-5 mb-4">
-          <h2 className="font-semibold text-gray-900 mb-3 flex items-center gap-2">
+        <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-4 mb-4">
+          <h2 className="text-[13px] font-semibold text-gray-900 mb-3 flex items-center gap-2">
             <FileText size={16} /> 3. Preview ({enrichedRows.length} rows)
           </h2>
           {Object.keys(subSheets).length > 0 && (
@@ -1051,7 +1091,7 @@ export default function BulkImportEmployeesPage() {
               {(Object.entries(subSheets) as Array<[string, Map<string, Record<string, string>[]>]>).map(([type, m]) => {
                 const total = Array.from(m.values()).reduce((n, a) => n + a.length, 0);
                 return (
-                  <span key={type} className="text-[11px] font-medium bg-blue-50 text-blue-700 ring-1 ring-blue-200 px-2 py-0.5 rounded">
+                  <span key={type} className="text-[11px] font-medium bg-green-50 text-green-700 ring-1 ring-green-200 px-2 py-0.5 rounded">
                     {type}: {total} row{total === 1 ? "" : "s"} across {m.size} employee{m.size === 1 ? "" : "s"}
                   </span>
                 );
@@ -1070,11 +1110,11 @@ export default function BulkImportEmployeesPage() {
             return (
               <div className="overflow-auto max-h-[480px] mb-3 border border-gray-100 rounded">
                 <table className="text-xs min-w-max">
-                  <thead className="bg-gray-50 text-gray-600 sticky top-0 z-10">
+                  <thead className="bg-gray-50 text-table-head text-gray-600 sticky top-0 z-10">
                     <tr>
                       <th className="text-left px-2 py-1 sticky left-0 bg-gray-50 z-20">#</th>
                       {allKeys.map((k) => (
-                        <th key={k} className={"text-left px-2 py-1 whitespace-nowrap" + (arrayKeysPresent.includes(k) ? " bg-blue-50 text-blue-700" : "")}>{k}</th>
+                        <th key={k} className={"text-left px-2 py-1 whitespace-nowrap" + (arrayKeysPresent.includes(k) ? " bg-green-50 text-green-700" : "")}>{k}</th>
                       ))}
                     </tr>
                   </thead>
@@ -1086,7 +1126,7 @@ export default function BulkImportEmployeesPage() {
                           const v = (r as Record<string, unknown>)[k];
                           if (Array.isArray(v)) {
                             return (
-                              <td key={k} className="px-2 py-1 whitespace-nowrap text-blue-700">
+                              <td key={k} className="px-2 py-1 whitespace-nowrap text-green-700">
                                 <details>
                                   <summary className="cursor-pointer font-semibold">{v.length} item{v.length === 1 ? "" : "s"}</summary>
                                   <ul className="mt-1 ml-3 list-disc space-y-0.5 text-gray-700 font-normal">
@@ -1119,7 +1159,7 @@ export default function BulkImportEmployeesPage() {
 
           <div className="flex items-center justify-between pt-3 border-t border-gray-100">
             <div className="flex flex-col gap-1.5">
-              <label className="flex items-center gap-2 text-sm">
+              <label className="flex items-center gap-2 text-xs">
                 <input
                   type="checkbox"
                   checked={dryRun}
@@ -1127,7 +1167,7 @@ export default function BulkImportEmployeesPage() {
                 />
                 Dry run (validate only, don&apos;t insert)
               </label>
-              <label className="flex items-center gap-2 text-sm">
+              <label className="flex items-center gap-2 text-xs">
                 <input
                   type="checkbox"
                   checked={markActive}
@@ -1151,7 +1191,7 @@ export default function BulkImportEmployeesPage() {
                   : dryRun
                     ? "Validate"
                     : "Import"}
-              {!importMut.isPending && !pendingImportId && <ArrowRight size={14} />}
+              {!importMut.isPending && !pendingImportId && <ArrowRight size={13} />}
             </button>
           </div>
         </div>
@@ -1159,16 +1199,16 @@ export default function BulkImportEmployeesPage() {
 
       {/* In-progress poll banner */}
       {pendingImportId && pollProgress && (
-        <div className="bg-blue-50 border border-blue-300 rounded-lg p-4 mb-4">
+        <div className="bg-green-50 border border-green-300 rounded-lg p-4 mb-4">
           <div className="flex items-center justify-between mb-2">
-            <h3 className="font-semibold text-blue-900">
+            <h3 className="text-[13px] font-semibold text-green-900">
               Import {pollProgress.status === "ImportPending" ? "queued" : "processing"}…
             </h3>
-            <span className="text-xs font-mono text-blue-700">{pendingImportId}</span>
+            <span className="text-xs font-mono text-green-700">{pendingImportId}</span>
           </div>
-          <div className="w-full bg-blue-100 rounded h-2 overflow-hidden">
+          <div className="w-full bg-green-100 rounded h-2 overflow-hidden">
             <div
-              className="bg-blue-500 h-2 transition-all"
+              className="bg-green-500 h-2 transition-all"
               style={{
                 width:
                   pollProgress.totalRows > 0
@@ -1177,20 +1217,20 @@ export default function BulkImportEmployeesPage() {
               }}
             />
           </div>
-          <div className="text-xs text-blue-800 mt-2 flex gap-4">
+          <div className="text-xs text-green-800 mt-2 flex gap-4">
             <span>Total: {pollProgress.totalRows}</span>
             <span>Processed: {pollProgress.processedRows}</span>
             <span className="text-green-700">OK: {pollProgress.successRows}</span>
             <span className="text-red-700">Failed: {pollProgress.failedRows}</span>
           </div>
-          <p className="text-[11px] text-blue-700 mt-1">Safe to leave page — refresh to resume polling.</p>
+          <p className="text-[11px] text-green-700 mt-1">Safe to leave page — refresh to resume polling.</p>
         </div>
       )}
 
       {/* Step 4: Result */}
       {result && (
-        <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-5">
-          <h2 className="font-semibold text-gray-900 mb-3">4. Result</h2>
+        <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-4">
+          <h2 className="text-[13px] font-semibold text-gray-900 mb-3">4. Result</h2>
           <div className="grid grid-cols-3 gap-3 mb-4">
             <div className="bg-green-50 border border-green-200 rounded-lg p-3 flex items-center gap-2">
               <CheckCircle className="text-green-600" size={20} />
@@ -1215,7 +1255,7 @@ export default function BulkImportEmployeesPage() {
             <div>
               <div className="flex items-center gap-2 mb-2">
                 <AlertTriangle className="text-yellow-600" size={14} />
-                <h3 className="font-medium text-gray-900 text-sm">Errors</h3>
+                <h3 className="text-[13px] font-semibold text-gray-900">Errors</h3>
               </div>
               <div className="space-y-1 max-h-64 overflow-y-auto">
                 {result.errors.map((e, i) => (
@@ -1227,6 +1267,14 @@ export default function BulkImportEmployeesPage() {
                   </div>
                 ))}
               </div>
+            </div>
+          )}
+          {result.success > 0 && (
+            <div className="mt-4 flex items-center justify-between gap-3 rounded-lg bg-green-50 border border-green-200 px-3 py-2.5">
+              <p className="text-xs text-green-800">Imported employees aren&apos;t invited yet — send their portal invites from the Users screen.</p>
+              <Link href="/settings/users" className="shrink-0 inline-flex items-center gap-1.5 rounded-lg bg-green-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-green-700 transition">
+                Go to Users
+              </Link>
             </div>
           )}
         </div>

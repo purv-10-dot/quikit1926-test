@@ -1,16 +1,19 @@
 "use client";
 
-import { Suspense, useEffect, useRef, useState } from "react";
+import { Suspense, useEffect, useRef, useState, Children, isValidElement } from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { useApiClient } from "@/lib/hooks/use-api";
 import { useDepartments, useDesignations, useLocations, useRoles, useSalaryTemplates } from "@/lib/hooks/use-ref-data";
 import { useToast } from "@/components/hrms/toast";
+import { useDialog } from "@/components/hrms/dialog";
+import { PHONE_REGEX, PHONE_LOOSE_REGEX, PAN_REGEX, AADHAAR_REGEX, IFSC_REGEX, PINCODE_REGEX, BANK_ACCOUNT_REGEX } from "@/lib/validations/identifiers";
 import {
   X, UserPlus, User, Phone, Briefcase, ShieldCheck, ClipboardCheck,
   Mail, Calendar, MapPin, Building2, IdCard, Save, Check, Banknote,
   ShieldAlert, Plus, Trash2, GraduationCap, History, Users, Award,
+  ChevronLeft, ChevronRight,
 } from "lucide-react";
 import { FormInput } from "@/components/hrms/form";
 import { clsx } from "clsx";
@@ -18,11 +21,13 @@ import { Select } from "@/components/hrms/ui/select";
 import { NumberInput } from "@/components/hrms/ui/number-input";
 import { SkeletonLine } from "@/components/hrms/skeleton";
 import { BankDetailsFields } from "@/components/hrms/bank-details-fields";
+import { SalaryBreakdown } from "@/components/hrms/salary-breakdown";
+import { INDIA_STATE_OPTS as STATE_OPTS } from "@/lib/data/india-states";
 
 type EmploymentType = "FullTime" | "PartTime" | "Contract" | "Intern" | "Freelancer" | "Consultant";
 type WorkLocation = "Office" | "Remote" | "Hybrid";
 type EmployeeStatus = "Active" | "PreBoarding" | "OnLeave" | "OnNotice" | "Suspended";
-type Gender = "Male" | "Female" | "NonBinary" | "PreferNotToSay";
+type Gender = "Male" | "Female" | "Transgender" | "NonBinary" | "PreferNotToSay";
 
 interface Department { id: string; name: string; }
 interface Designation { id: string; title: string; }
@@ -56,8 +61,8 @@ const RELATIONS = ["Spouse", "Parent", "Sibling", "Child", "Friend", "Relative",
 interface Address { line1: string; line2: string; city: string; country: string; state: string; postalCode: string; }
 const emptyAddress: Address = { line1: "", line2: "", city: "", country: "", state: "", postalCode: "" };
 
-interface Education { institution: string; degree: string; fieldOfStudy: string; startYear: string; endYear: string; }
-const emptyEducation: Education = { institution: "", degree: "", fieldOfStudy: "", startYear: "", endYear: "" };
+interface Education { institution: string; degree: string; fieldOfStudy: string; startYear: string; endYear: string; grade: string; }
+const emptyEducation: Education = { institution: "", degree: "", fieldOfStudy: "", startYear: "", endYear: "", grade: "" };
 
 // Topgrading career-history entry — structured depth per role (accomplishments,
 // compensation, reason for leaving, and the boss-appraisal / TORC fields).
@@ -73,16 +78,11 @@ interface Experience {
   accomplishments: string;
   challenges: string;
   reasonForLeaving: string;
-  supervisorName: string;
-  supervisorTitle: string;
-  bossStrengths: string;
-  bossWeaknesses: string;
 }
 const emptyExperience: Experience = {
   company: "", designation: "", startDate: "", endDate: "", currentlyWorkHere: false,
   startCompensation: "", endCompensation: "", responsibilities: "", accomplishments: "",
-  challenges: "", reasonForLeaving: "", supervisorName: "", supervisorTitle: "",
-  bossStrengths: "", bossWeaknesses: "",
+  challenges: "", reasonForLeaving: "",
 };
 
 interface FamilyMember { name: string; relation: string; dob: string; occupation: string; }
@@ -96,11 +96,6 @@ const COUNTRY_OPTS = [
   { value: "IN", label: "India" },
   { value: "US", label: "United States" },
   { value: "UK", label: "United Kingdom" },
-];
-const STATE_OPTS = [
-  { value: "Maharashtra", label: "Maharashtra" },
-  { value: "Karnataka", label: "Karnataka" },
-  { value: "Delhi", label: "Delhi" },
 ];
 
 function hasAddress(a: Address): boolean {
@@ -125,7 +120,7 @@ type StepId = typeof STEPS[number]["id"];
 
 export default function NewEmployeePage() {
   return (
-    <Suspense fallback={<div className="p-6 space-y-2"><SkeletonLine w="40%" h={16} /><SkeletonLine w="70%" h={12} /><SkeletonLine w="60%" h={12} /></div>}>
+    <Suspense fallback={<div className="p-4 space-y-2"><SkeletonLine w="40%" h={16} /><SkeletonLine w="70%" h={12} /><SkeletonLine w="60%" h={12} /></div>}>
       <NewEmployeePageInner />
     </Suspense>
   );
@@ -211,60 +206,68 @@ function NewEmployeePageInner() {
   const updateCertification = (i: number, key: keyof Certification, v: string) =>
     setForm((f) => ({ ...f, certifications: f.certifications.map((c, idx) => idx === i ? { ...c, [key]: v } : c) }));
 
+  // True wizard: only the active step is rendered — reset scroll to top on change.
   useEffect(() => {
-    const root = scrollRef.current;
-    if (!root) return;
-    const obs = new IntersectionObserver(
-      (entries) => {
-        const visible = entries.filter((e) => e.isIntersecting).sort((a, b) => b.intersectionRatio - a.intersectionRatio);
-        if (visible[0]) {
-          const id = (visible[0].target as HTMLElement).dataset.stepId as StepId | undefined;
-          if (id) setActiveStep(id);
-        }
-      },
-      { root, rootMargin: "-15% 0px -65% 0px", threshold: [0, 0.25, 0.5, 0.75, 1] },
-    );
-    Object.values(sectionRefs.current).forEach((el) => el && obs.observe(el));
-    return () => obs.disconnect();
-  }, []);
+    scrollRef.current?.scrollTo({ top: 0, behavior: "smooth" });
+  }, [activeStep]);
 
-  const scrollToStep = (id: StepId) => {
-    const el = sectionRefs.current[id];
-    if (el && scrollRef.current) {
-      scrollRef.current.scrollTo({ top: el.offsetTop - 8, behavior: "smooth" });
-      setActiveStep(id);
-    }
-  };
+  const scrollToStep = (id: StepId) => setActiveStep(id);
+
+  const stepIdx = STEPS.findIndex((s) => s.id === activeStep);
+  const isFirstStep = stepIdx <= 0;
+  const isLastStep = stepIdx >= STEPS.length - 1;
+  const goNext = () => { if (!isLastStep) setActiveStep(STEPS[stepIdx + 1].id); };
+  const goBack = () => { if (!isFirstStep) setActiveStep(STEPS[stepIdx - 1].id); };
 
   const { data: depts } = useDepartments();
   const { data: desigs } = useDesignations();
   const { data: locs } = useLocations();
   const { data: managers } = useQuery({ queryKey: ["employees-mgrs"], queryFn: () => api.get<Employee[]>("/api/v1/hrms/employees?limit=100") });
   const { data: roles } = useRoles();
-  const { data: salaryTemplates } = useSalaryTemplates();
+  const { data: salaryTemplates, isLoading: salaryTemplatesLoading } = useSalaryTemplates();
+  const noSalaryTemplates = !salaryTemplatesLoading && (salaryTemplates?.data?.length ?? 0) === 0;
 
   const toast = useToast();
-  const [inviteOpen, setInviteOpen] = useState(false);
-  const [pendingBody, setPendingBody] = useState<Record<string, unknown> | null>(null);
+  const dialog = useDialog();
 
   const createMut = useMutation({
     mutationFn: (body: Record<string, unknown>) => api.post("/api/v1/hrms/employees", body),
-    onSuccess: (_res, variables) => {
-      const invited = (variables as Record<string, unknown>)?.sendInvite === true;
-      toast.success("Employee added", `${form.firstName} ${form.lastName}${invited ? " · portal invite sent" : ""}`);
-      router.push(returnTo && returnTo.startsWith("/") ? returnTo : "/employees");
+    onSuccess: () => {
+      toast.success("Employee added", `${form.firstName} ${form.lastName} · send the invite from Users`);
+      router.push("/settings/users");
     },
     // Errors handled by global MutationCache.onError in providers.tsx (single toast).
   });
 
-  const confirmCreate = (sendInvite: boolean) => {
-    if (!pendingBody) return;
-    setInviteOpen(false);
-    createMut.mutate({ ...pendingBody, sendInvite });
-  };
-
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    // Steps are rendered one at a time, so native `required` can't validate hidden
+    // fields — validate everything here and jump to the offending step.
+    if (!form.firstName.trim() || !form.lastName.trim()) {
+      toast.error("Name required", "First and last name are mandatory in Personal step.");
+      scrollToStep("personal");
+      return;
+    }
+    if (!form.dateOfBirth) {
+      toast.error("Date of birth required", "Select date of birth in Personal step.");
+      scrollToStep("personal");
+      return;
+    }
+    if (!form.workEmail.trim()) {
+      toast.error("Work email required", "Enter work email in Contact step.");
+      scrollToStep("contact");
+      return;
+    }
+    if (!form.jobTitle.trim() || !form.designationId || !form.departmentId || !form.officeLocationId) {
+      toast.error("Employment details required", "Job title, designation, department and office location are mandatory.");
+      scrollToStep("employment");
+      return;
+    }
+    if (!form.dateOfJoining) {
+      toast.error("Date of joining required", "Select date of joining in Employment step.");
+      scrollToStep("employment");
+      return;
+    }
     if (!form.reportingManagerId) {
       toast.error("Reporting Manager required", "Pick a manager in Employment step.");
       scrollToStep("employment");
@@ -311,6 +314,51 @@ function NewEmployeePageInner() {
       scrollToStep("bank");
       return;
     }
+
+    // ── Format & logical checks (mirror the server-side schema) ──
+    const emailRe = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (!emailRe.test(form.workEmail.trim())) {
+      toast.error("Invalid work email", "Enter a valid work email in Contact step."); scrollToStep("contact"); return;
+    }
+    if (form.personalEmail.trim() && !emailRe.test(form.personalEmail.trim())) {
+      toast.error("Invalid personal email", "Check the personal email in Contact step."); scrollToStep("contact"); return;
+    }
+    if (form.personalPhone.trim() && !PHONE_REGEX.test(form.personalPhone.trim())) {
+      toast.error("Invalid mobile number", "Personal phone must be a valid 10-digit mobile."); scrollToStep("contact"); return;
+    }
+    if (form.workPhone.trim() && !PHONE_LOOSE_REGEX.test(form.workPhone.trim())) {
+      toast.error("Invalid work phone", "Enter a valid work phone number."); scrollToStep("contact"); return;
+    }
+    if (!PINCODE_REGEX.test(form.currentAddress.postalCode.trim())) {
+      toast.error("Invalid PIN code", "Postal code must be a 6-digit PIN."); scrollToStep("address"); return;
+    }
+    if (form.dateOfBirth) {
+      const today = new Date().toISOString().slice(0, 10);
+      const cutoff = new Date(); cutoff.setFullYear(cutoff.getFullYear() - 14);
+      const minAgeDate = cutoff.toISOString().slice(0, 10);
+      if (form.dateOfBirth > today) {
+        toast.error("Check date of birth", "Date of birth cannot be in the future."); scrollToStep("personal"); return;
+      }
+      if (form.dateOfBirth > minAgeDate) {
+        toast.error("Check date of birth", "Employee must be at least 14 years old."); scrollToStep("personal"); return;
+      }
+    }
+    if (form.dateOfBirth && form.dateOfJoining && form.dateOfBirth >= form.dateOfJoining) {
+      toast.error("Check dates", "Date of birth must be before the date of joining."); scrollToStep("personal"); return;
+    }
+    if (!PAN_REGEX.test(form.panNumber.trim().toUpperCase())) {
+      toast.error("Invalid PAN", "PAN format: 5 letters + 4 digits + 1 letter (e.g. ABCDE1234F)."); scrollToStep("identity"); return;
+    }
+    if (!AADHAAR_REGEX.test(form.aadhaarNumber.trim())) {
+      toast.error("Invalid Aadhaar", "Aadhaar must be 12 digits starting 2-9."); scrollToStep("identity"); return;
+    }
+    if (!BANK_ACCOUNT_REGEX.test(form.bankAccountNumber.trim())) {
+      toast.error("Invalid account number", "Account number must be 9–18 digits."); scrollToStep("bank"); return;
+    }
+    if (!IFSC_REGEX.test(form.bankIfsc.trim().toUpperCase())) {
+      toast.error("Invalid IFSC", "IFSC format: 4 letters + 0 + 6 chars (e.g. HDFC0001234)."); scrollToStep("bank"); return;
+    }
+
     const body: Record<string, unknown> = {
       firstName: form.firstName,
       lastName: form.lastName,
@@ -327,7 +375,7 @@ function NewEmployeePageInner() {
       esiApplicable: form.esiApplicable,
       ptApplicable: form.ptApplicable,
       epfContributionRate: form.epfContributionRate || undefined,
-      panNumber: form.panNumber || undefined,
+      panNumber: form.panNumber.trim().toUpperCase() || undefined,
       aadhaarNumber: form.aadhaarNumber || undefined,
       jobTitle: form.jobTitle || undefined,
       departmentId: form.departmentId || undefined,
@@ -347,7 +395,7 @@ function NewEmployeePageInner() {
         ? [{
             bankName: form.bankName.trim(),
             accountNumber: form.bankAccountNumber.trim(),
-            ifscCode: form.bankIfsc.trim() || undefined,
+            ifscCode: form.bankIfsc.trim().toUpperCase() || undefined,
             branchName: form.bankBranch.trim() || undefined,
             accountType: form.bankAccountType || undefined,
             isPrimary: true,
@@ -374,6 +422,7 @@ function NewEmployeePageInner() {
           fieldOfStudy: e.fieldOfStudy.trim() || undefined,
           startYear: e.startYear.trim() ? parseInt(e.startYear, 10) : undefined,
           endYear: e.endYear.trim() ? parseInt(e.endYear, 10) : undefined,
+          grade: e.grade.trim() || undefined,
         })),
       pastExperiences: form.pastExperiences
         .filter((e) => e.company.trim() || e.designation.trim())
@@ -389,10 +438,6 @@ function NewEmployeePageInner() {
           accomplishments: e.accomplishments || undefined,
           challenges: e.challenges || undefined,
           reasonForLeaving: e.reasonForLeaving || undefined,
-          supervisorName: e.supervisorName || undefined,
-          supervisorTitle: e.supervisorTitle || undefined,
-          bossStrengths: e.bossStrengths || undefined,
-          bossWeaknesses: e.bossWeaknesses || undefined,
         })),
       certifications: form.certifications
         .filter((c) => c.name && c.issuingAuthority)
@@ -409,9 +454,17 @@ function NewEmployeePageInner() {
         familyMembers: form.familyMembers.filter((m) => m.name && m.relation),
       },
     };
-    // All validations passed — ask whether to send a portal invite before creating.
-    setPendingBody(body);
-    setInviteOpen(true);
+    // Confirmation popup so the user knows what's about to happen. No invite is
+    // sent here — the portal invite is triggered later from the Users screen.
+    const ok = await dialog.confirm({
+      title: "Add this employee?",
+      description: `Create ${form.firstName} ${form.lastName}? You can send their portal invite afterwards from the Users screen.`,
+      confirmLabel: "Add employee",
+      cancelLabel: "Keep editing",
+      variant: "info",
+    });
+    if (!ok) return;
+    createMut.mutate(body);
   };
 
   const deptName = depts?.data?.find((d) => d.id === form.departmentId)?.name;
@@ -421,20 +474,27 @@ function NewEmployeePageInner() {
 
   return (
     <div className="bg-gray-50 -m-6 flex flex-col h-[calc(100vh-0px)] min-h-screen">
-      <header className="bg-white border-b border-gray-100 px-6 py-3 flex items-center justify-between sticky top-0 z-20">
+      <header className="bg-white border-b border-gray-100 px-5 py-3 flex items-center justify-between sticky top-0 z-20">
         <div className="flex items-center gap-2">
-          <div className="w-9 h-9 rounded-xl bg-[#16243A]/5 text-[#16243A] flex items-center justify-center">
+          <Link
+            href={returnTo && returnTo.startsWith("/") ? returnTo : "/employees"}
+            className="inline-flex items-center gap-1 px-2 py-1.5 text-xs font-medium text-gray-600 hover:text-gray-900 hover:bg-gray-100 rounded-lg"
+          >
+            <ChevronLeft size={14} /> Back to Employees
+          </Link>
+          <span className="w-px h-5 bg-gray-200 mx-1" />
+          <div className="w-9 h-9 rounded-xl bg-[#166534]/5 text-[#166534] flex items-center justify-center">
             <UserPlus size={18} />
           </div>
-          <h1 className="text-lg font-bold text-gray-900">Add Employee</h1>
+          <h1 className="text-base font-semibold text-gray-900">Add Employee</h1>
         </div>
         <Link href="/org-chart" className="p-1.5 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-lg">
-          <X size={18} />
+          <X size={12} />
         </Link>
       </header>
 
-      <div className="bg-white border-b border-gray-100 px-6 py-4 sticky top-[57px] z-10">
-        <div className="max-w-5xl mx-auto">
+      <div className="bg-white border-b border-gray-100 px-5 py-4 sticky top-[57px] z-10">
+        <div className="max-w-none">
           <div className="flex items-center justify-between">
             {STEPS.map((s, idx) => {
               const active = activeStep === s.id;
@@ -448,8 +508,8 @@ function NewEmployeePageInner() {
                     aria-label={`${s.num}. ${s.title}`}
                     className={clsx(
                       "w-9 h-9 rounded-full flex items-center justify-center text-xs font-bold shrink-0 transition",
-                      active ? "bg-[#16243A] text-white ring-4 ring-[#16243A]/10"
-                        : passed ? "bg-[#16243A]/15 text-[#16243A] hover:bg-[#16243A]/25"
+                      active ? "bg-green-600 text-white ring-4 ring-[#166534]/10"
+                        : passed ? "bg-[#166534]/15 text-[#166534] hover:bg-[#166534]/25"
                         : "border-2 border-gray-300 text-gray-500 bg-white hover:border-gray-400",
                     )}
                   >
@@ -458,7 +518,7 @@ function NewEmployeePageInner() {
                   {idx < STEPS.length - 1 && (
                     <div className={clsx(
                       "flex-1 h-0.5 mx-1.5 rounded transition",
-                      passed ? "bg-[#16243A]/40" : "bg-gray-200",
+                      passed ? "bg-[#166534]/40" : "bg-gray-200",
                     )} />
                   )}
                 </div>
@@ -472,7 +532,7 @@ function NewEmployeePageInner() {
                 <span className="text-[11px] font-semibold uppercase tracking-wide text-gray-500">
                   Step {cur.num} of {STEPS.length}
                 </span>
-                <span className="text-sm font-semibold text-[#16243A]">{cur.title}</span>
+                <span className="text-[13px] font-semibold text-[#166534]">{cur.title}</span>
                 <span className="text-xs text-gray-500">— {cur.subtitle}</span>
               </div>
             );
@@ -480,9 +540,10 @@ function NewEmployeePageInner() {
         </div>
       </div>
 
-      <form onSubmit={handleSubmit} className="flex-1 flex flex-col min-h-0">
-        <div ref={scrollRef} className="flex-1 overflow-y-auto px-6 py-6">
-          <div className="max-w-5xl mx-auto space-y-5 pb-8">
+      <form onSubmit={handleSubmit} noValidate className="flex-1 flex flex-col min-h-0">
+        <div ref={scrollRef} className="flex-1 overflow-y-auto px-5 py-4">
+          <div className="max-w-none pb-5">
+            <StepPanels active={activeStep}>
             <Section
               id="personal"
               icon={<User size={18} />}
@@ -490,7 +551,7 @@ function NewEmployeePageInner() {
               subtitle="Basic information about the employee."
               sectionRef={(el) => { sectionRefs.current.personal = el; }}
             >
-              <div className="grid grid-cols-2 gap-x-5 gap-y-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-x-5 gap-y-4">
                 <Field label="First Name" required>
                   <IconInput icon={<User size={14} />}>
                     <input required placeholder="Enter first name" value={form.firstName} onChange={(e) => setForm({ ...form, firstName: e.target.value })} className={inputCls} />
@@ -514,6 +575,7 @@ function NewEmployeePageInner() {
                     options={[
                       { value: "Male", label: "Male" },
                       { value: "Female", label: "Female" },
+                      { value: "Transgender", label: "Transgender" },
                       { value: "NonBinary", label: "Non-Binary" },
                       { value: "PreferNotToSay", label: "Prefer not to say" },
                     ]}
@@ -523,6 +585,7 @@ function NewEmployeePageInner() {
                   <input
                     type="date"
                     required
+                    max={(() => { const d = new Date(); d.setFullYear(d.getFullYear() - 14); return d.toISOString().slice(0, 10); })()}
                     value={form.dateOfBirth}
                     onChange={(e) => {
                       const dob = e.target.value;
@@ -540,23 +603,23 @@ function NewEmployeePageInner() {
                     className={inputCls}
                   />
                 </Field>
-                <div className="col-span-2 flex items-center gap-6 pt-1">
-                  <label className="flex items-center gap-2 text-sm text-gray-700 cursor-pointer">
+                <div className="col-span-full flex items-center gap-4 pt-1">
+                  <label className="flex items-center gap-2 text-xs text-gray-700 cursor-pointer">
                     <input
                       type="checkbox"
                       checked={form.isHandicapped}
                       onChange={(e) => setForm({ ...form, isHandicapped: e.target.checked })}
-                      className="text-[#3b82f6] rounded"
+                      className="text-[#22c55e] rounded"
                     />
                     Handicapped
                   </label>
-                  <label className="flex items-center gap-2 text-sm text-gray-700 cursor-not-allowed" title="Auto-checked when age greater than 60">
+                  <label className="flex items-center gap-2 text-xs text-gray-700 cursor-not-allowed" title="Auto-checked when age greater than 60">
                     <input
                       type="checkbox"
                       checked={form.isSeniorCitizen}
                       readOnly
                       disabled
-                      className="text-[#3b82f6] rounded"
+                      className="text-[#22c55e] rounded"
                     />
                     Senior Citizen <span className="text-xs text-gray-400">(auto from DOB &gt; 60)</span>
                   </label>
@@ -564,8 +627,8 @@ function NewEmployeePageInner() {
 
                 {/* Statutory Applicability — per-employee opt-out of EPF / ESI / PT.
                     Defaults to all-true; unchecking suppresses that deduction in payroll. */}
-                <div className="col-span-2 pt-3 border-t border-gray-100">
-                  <p className="text-xs font-bold text-gray-700 uppercase tracking-wide mb-1">
+                <div className="col-span-full pt-3 border-t border-gray-100">
+                  <p className="text-xs font-semibold text-gray-700 uppercase tracking-wide mb-1">
                     Statutory applicability
                   </p>
                   <p className="text-[11px] text-gray-500 mb-3">
@@ -603,7 +666,7 @@ function NewEmployeePageInner() {
               subtitle="Contact information for communication."
               sectionRef={(el) => { sectionRefs.current.contact = el; }}
             >
-              <div className="grid grid-cols-2 gap-x-5 gap-y-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-x-5 gap-y-4">
                 <Field label="Work Email" required>
                   <IconInput icon={<Mail size={14} />}>
                     <input type="email" required placeholder="work.email@example.com" value={form.workEmail} onChange={(e) => setForm({ ...form, workEmail: e.target.value })} className={inputCls} />
@@ -640,13 +703,13 @@ function NewEmployeePageInner() {
                     {form.emergencyContacts.length > 1 && (
                       <button type="button" onClick={() => removeEmergencyContact(i)}
                         className="absolute top-2 right-2 text-gray-400 hover:text-red-500">
-                        <Trash2 size={14} />
+                        <Trash2 size={12} />
                       </button>
                     )}
                     <div className="text-xs font-semibold text-gray-500 uppercase mb-3">
                       {i === 0 ? "Primary contact" : `Contact ${i + 1}`}
                     </div>
-                    <div className="grid grid-cols-2 gap-x-5 gap-y-4">
+                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-x-5 gap-y-4">
                       <Field label="Name" required>
                         <input placeholder="Full name" value={c.name} onChange={(e) => updateEmergencyContact(i, "name", e.target.value)} className={inputCls} />
                       </Field>
@@ -668,7 +731,7 @@ function NewEmployeePageInner() {
                           <input type="email" placeholder="optional" value={c.email} onChange={(e) => updateEmergencyContact(i, "email", e.target.value)} className={inputCls} />
                         </IconInput>
                       </Field>
-                      <div className="col-span-2">
+                      <div className="col-span-full">
                         <Field label="Address">
                           <textarea rows={2} placeholder="Full address" value={c.address} onChange={(e) => updateEmergencyContact(i, "address", e.target.value)} className={inputCls} />
                         </Field>
@@ -677,7 +740,7 @@ function NewEmployeePageInner() {
                   </div>
                 ))}
                 <button type="button" onClick={addEmergencyContact}
-                  className="flex items-center gap-1.5 text-sm text-[#3b82f6] hover:underline">
+                  className="flex items-center gap-1.5 text-xs text-[#22c55e] hover:underline">
                   <Plus size={14} /> Add another contact
                 </button>
               </div>
@@ -692,12 +755,12 @@ function NewEmployeePageInner() {
             >
               <div className="space-y-4">
                 <div>
-                  <p className="text-sm font-semibold text-gray-800 mb-2">Present address</p>
+                  <p className="text-[13px] font-semibold text-gray-800 mb-2">Present address</p>
                   <AddressBlock value={form.currentAddress} onChange={(key, v) => updateAddress("currentAddress", key, v)} />
                 </div>
                 <div className="border-t border-gray-100 pt-4">
                   <div className="flex items-center justify-between mb-2">
-                    <p className="text-sm font-semibold text-gray-800">Permanent address</p>
+                    <p className="text-[13px] font-semibold text-gray-800">Permanent address</p>
                     <label className="flex items-center gap-2 text-xs text-gray-600">
                       <input type="checkbox" checked={form.sameAsPresent}
                         onChange={(e) => setForm({ ...form, sameAsPresent: e.target.checked })} />
@@ -718,7 +781,7 @@ function NewEmployeePageInner() {
               subtitle="Job and employment related information."
               sectionRef={(el) => { sectionRefs.current.employment = el; }}
             >
-              <div className="grid grid-cols-2 gap-x-5 gap-y-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-x-5 gap-y-4">
                 <Field label="Job Title" required>
                   <IconInput icon={<Briefcase size={14} />}>
                     <input placeholder="Enter job title" value={form.jobTitle} onChange={(e) => setForm({ ...form, jobTitle: e.target.value })} className={inputCls} />
@@ -770,13 +833,23 @@ function NewEmployeePageInner() {
                   />
                 </Field>
                 <Field label="Salary Template" required>
-                  <Select
-                    value={form.salaryTemplateId}
-                    onChange={(v) => setForm({ ...form, salaryTemplateId: v })}
-                    placeholder="Select template"
-                    searchable
-                    options={(salaryTemplates?.data ?? []).map((s) => ({ value: s.id, label: `${s.name} (${s.code})` }))}
-                  />
+                  {noSalaryTemplates ? (
+                    <div className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2.5 text-xs text-amber-800">
+                      No salary templates exist yet. An employee can&apos;t be created without one.{" "}
+                      <Link href="/payroll/setup/salary-templates/new" className="font-semibold underline hover:text-amber-900">
+                        Create a salary template
+                      </Link>{" "}
+                      in Payroll setup first, then reopen this form.
+                    </div>
+                  ) : (
+                    <Select
+                      value={form.salaryTemplateId}
+                      onChange={(v) => setForm({ ...form, salaryTemplateId: v })}
+                      placeholder="Select template"
+                      searchable
+                      options={(salaryTemplates?.data ?? []).map((s) => ({ value: s.id, label: `${s.name} (${s.code})` }))}
+                    />
+                  )}
                 </Field>
                 <Field label="CTC (LPA)" required>
                   <NumberInput
@@ -787,6 +860,18 @@ function NewEmployeePageInner() {
                     className={inputCls}
                   />
                 </Field>
+                {form.salaryTemplateId && (() => {
+                  const selectedTemplate = (salaryTemplates?.data ?? []).find((s) => s.id === form.salaryTemplateId);
+                  if (!selectedTemplate) return null;
+                  return (
+                    <div className="col-span-full">
+                      <SalaryBreakdown
+                        components={selectedTemplate.components ?? []}
+                        annualCTC={(form.ctcLpa ?? 0) * 100000}
+                      />
+                    </div>
+                  );
+                })()}
                 <Field label="Date of Joining" required>
                   <input type="date" required value={form.dateOfJoining} onChange={(e) => setForm({ ...form, dateOfJoining: e.target.value })} className={inputCls} />
                 </Field>
@@ -830,20 +915,21 @@ function NewEmployeePageInner() {
               subtitle="At least one entry with school + degree required."
               sectionRef={(el) => { sectionRefs.current.education = el; }}
               action={
-                <button type="button" onClick={addEducation} className="inline-flex items-center gap-1 text-xs font-semibold text-[#16243A] hover:underline">
+                <button type="button" onClick={addEducation} className="inline-flex items-center gap-1 text-xs font-semibold text-[#166534] hover:underline">
                   <Plus size={12} /> Add Row
                 </button>
               }
             >
               <div className="overflow-x-auto -mx-1">
-                <table className="w-full text-sm">
-                  <thead className="bg-gray-50/60 text-[10px] uppercase tracking-wide text-gray-500">
+                <table className="w-full text-xs">
+                  <thead className="bg-gray-50/60 text-table-head uppercase tracking-wide text-gray-500">
                     <tr>
-                      <th className="text-left px-2 py-2 font-bold">Institution</th>
-                      <th className="text-left px-2 py-2 font-bold">Degree</th>
-                      <th className="text-left px-2 py-2 font-bold">Field of Study</th>
-                      <th className="text-left px-2 py-2 font-bold">Start Year</th>
-                      <th className="text-left px-2 py-2 font-bold">End Year</th>
+                      <th className="text-left px-2 py-2 text-[11px] font-semibold">Institution</th>
+                      <th className="text-left px-2 py-2 text-[11px] font-semibold">Degree</th>
+                      <th className="text-left px-2 py-2 text-[11px] font-semibold">Field of Study</th>
+                      <th className="text-left px-2 py-2 text-[11px] font-semibold">Start Year</th>
+                      <th className="text-left px-2 py-2 text-[11px] font-semibold">End Year</th>
+                      <th className="text-left px-2 py-2 text-[11px] font-semibold">Percentage / CGPA</th>
                       <th className="w-8"></th>
                     </tr>
                   </thead>
@@ -855,10 +941,11 @@ function NewEmployeePageInner() {
                         <td className="px-1 py-2"><FormInput value={e.fieldOfStudy} onChange={(ev) => updateEducation(i, "fieldOfStudy", ev.target.value)} /></td>
                         <td className="px-1 py-2"><FormInput type="number" inputMode="numeric" placeholder="2018" value={e.startYear} onChange={(ev) => updateEducation(i, "startYear", ev.target.value)} /></td>
                         <td className="px-1 py-2"><FormInput type="number" inputMode="numeric" placeholder="2022" value={e.endYear} onChange={(ev) => updateEducation(i, "endYear", ev.target.value)} /></td>
+                        <td className="px-1 py-2"><FormInput placeholder="e.g. 8.5 CGPA or 82%" value={e.grade} onChange={(ev) => updateEducation(i, "grade", ev.target.value)} /></td>
                         <td className="px-1 py-2 text-center">
                           {form.educations.length > 1 && (
                             <button type="button" onClick={() => removeEducation(i)} className="p-1 text-gray-400 hover:text-red-600 rounded hover:bg-red-50">
-                              <Trash2 size={14} />
+                              <Trash2 size={12} />
                             </button>
                           )}
                         </td>
@@ -876,7 +963,7 @@ function NewEmployeePageInner() {
               subtitle="For each role capture accomplishments, compensation, reason for leaving and the boss appraisal."
               sectionRef={(el) => { sectionRefs.current.experience = el; }}
               action={
-                <button type="button" onClick={addExperience} className="inline-flex items-center gap-1 text-xs font-semibold text-[#16243A] hover:underline">
+                <button type="button" onClick={addExperience} className="inline-flex items-center gap-1 text-xs font-semibold text-[#166534] hover:underline">
                   <Plus size={12} /> Add Row
                 </button>
               }
@@ -892,7 +979,7 @@ function NewEmployeePageInner() {
                     onRemove={() => removeExperience(i)}
                   />
                 ))}
-                <button type="button" onClick={addExperience} className="flex items-center gap-1.5 text-sm text-[#3b82f6] hover:underline">
+                <button type="button" onClick={addExperience} className="flex items-center gap-1.5 text-xs text-[#22c55e] hover:underline">
                   <Plus size={14} /> Add another role
                 </button>
               </div>
@@ -905,19 +992,19 @@ function NewEmployeePageInner() {
               subtitle="Spouse, children, parents and dependents."
               sectionRef={(el) => { sectionRefs.current.family = el; }}
               action={
-                <button type="button" onClick={addFamilyMember} className="inline-flex items-center gap-1 text-xs font-semibold text-[#16243A] hover:underline">
+                <button type="button" onClick={addFamilyMember} className="inline-flex items-center gap-1 text-xs font-semibold text-[#166534] hover:underline">
                   <Plus size={12} /> Add Row
                 </button>
               }
             >
               <div className="overflow-x-auto -mx-1">
-                <table className="w-full text-sm">
-                  <thead className="bg-gray-50/60 text-[10px] uppercase tracking-wide text-gray-500">
+                <table className="w-full text-xs">
+                  <thead className="bg-gray-50/60 text-table-head uppercase tracking-wide text-gray-500">
                     <tr>
-                      <th className="text-left px-2 py-2 font-bold">Name</th>
-                      <th className="text-left px-2 py-2 font-bold">Relation</th>
-                      <th className="text-left px-2 py-2 font-bold">Date of Birth</th>
-                      <th className="text-left px-2 py-2 font-bold">Occupation</th>
+                      <th className="text-left px-2 py-2 text-[11px] font-semibold">Name</th>
+                      <th className="text-left px-2 py-2 text-[11px] font-semibold">Relation</th>
+                      <th className="text-left px-2 py-2 text-[11px] font-semibold">Date of Birth</th>
+                      <th className="text-left px-2 py-2 text-[11px] font-semibold">Occupation</th>
                       <th className="w-8"></th>
                     </tr>
                   </thead>
@@ -926,21 +1013,21 @@ function NewEmployeePageInner() {
                       <tr key={i}>
                         <td className="px-1 py-2"><FormInput value={m.name} onChange={(ev) => updateFamilyMember(i, "name", ev.target.value)} /></td>
                         <td className="px-1 py-2">
-                          <select
+                          <Select
                             value={m.relation}
-                            onChange={(ev) => updateFamilyMember(i, "relation", ev.target.value)}
-                            className="w-full border border-[var(--border)] rounded px-2 py-1.5 text-sm bg-white"
-                          >
-                            <option value="">Select</option>
-                            {FAMILY_RELATIONS.map((r) => <option key={r} value={r}>{r}</option>)}
-                          </select>
+                            onChange={(v) => updateFamilyMember(i, "relation", v)}
+                            placeholder="Select"
+                            size="sm"
+                            className="w-full"
+                            options={FAMILY_RELATIONS.map((r) => ({ value: r, label: r }))}
+                          />
                         </td>
                         <td className="px-1 py-2"><FormInput type="date" value={m.dob} onChange={(ev) => updateFamilyMember(i, "dob", ev.target.value)} /></td>
                         <td className="px-1 py-2"><FormInput value={m.occupation} onChange={(ev) => updateFamilyMember(i, "occupation", ev.target.value)} /></td>
                         <td className="px-1 py-2 text-center">
                           {form.familyMembers.length > 1 && (
                             <button type="button" onClick={() => removeFamilyMember(i)} className="p-1 text-gray-400 hover:text-red-600 rounded hover:bg-red-50">
-                              <Trash2 size={14} />
+                              <Trash2 size={12} />
                             </button>
                           )}
                         </td>
@@ -958,21 +1045,21 @@ function NewEmployeePageInner() {
               subtitle="Professional courses, certificates and credentials."
               sectionRef={(el) => { sectionRefs.current.certifications = el; }}
               action={
-                <button type="button" onClick={addCertification} className="inline-flex items-center gap-1 text-xs font-semibold text-[#16243A] hover:underline">
+                <button type="button" onClick={addCertification} className="inline-flex items-center gap-1 text-xs font-semibold text-[#166534] hover:underline">
                   <Plus size={12} /> Add Row
                 </button>
               }
             >
               <div className="overflow-x-auto -mx-1">
-                <table className="w-full text-sm">
-                  <thead className="bg-gray-50/60 text-[10px] uppercase tracking-wide text-gray-500">
+                <table className="w-full text-xs">
+                  <thead className="bg-gray-50/60 text-table-head uppercase tracking-wide text-gray-500">
                     <tr>
-                      <th className="text-left px-2 py-2 font-bold">Name</th>
-                      <th className="text-left px-2 py-2 font-bold">Course Name</th>
-                      <th className="text-left px-2 py-2 font-bold">Issuing Authority</th>
-                      <th className="text-left px-2 py-2 font-bold">Year</th>
-                      <th className="text-left px-2 py-2 font-bold">Expiry</th>
-                      <th className="text-left px-2 py-2 font-bold">Credential URL</th>
+                      <th className="text-left px-2 py-2 text-[11px] font-semibold">Name</th>
+                      <th className="text-left px-2 py-2 text-[11px] font-semibold">Course Name</th>
+                      <th className="text-left px-2 py-2 text-[11px] font-semibold">Issuing Authority</th>
+                      <th className="text-left px-2 py-2 text-[11px] font-semibold">Year</th>
+                      <th className="text-left px-2 py-2 text-[11px] font-semibold">Expiry</th>
+                      <th className="text-left px-2 py-2 text-[11px] font-semibold">Credential URL</th>
                       <th className="w-8"></th>
                     </tr>
                   </thead>
@@ -988,7 +1075,7 @@ function NewEmployeePageInner() {
                         <td className="px-1 py-2 text-center">
                           {form.certifications.length > 1 && (
                             <button type="button" onClick={() => removeCertification(i)} className="p-1 text-gray-400 hover:text-red-600 rounded hover:bg-red-50">
-                              <Trash2 size={14} />
+                              <Trash2 size={12} />
                             </button>
                           )}
                         </td>
@@ -1006,15 +1093,15 @@ function NewEmployeePageInner() {
               subtitle="PAN and Aadhaar mandatory."
               sectionRef={(el) => { sectionRefs.current.identity = el; }}
             >
-              <div className="grid grid-cols-2 gap-x-5 gap-y-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-x-5 gap-y-4">
                 <Field label="PAN Number" required>
                   <IconInput icon={<IdCard size={14} />}>
-                    <input required placeholder="Enter PAN number" value={form.panNumber} onChange={(e) => setForm({ ...form, panNumber: e.target.value.toUpperCase() })} className={`${inputCls} font-mono`} maxLength={10} />
+                    <input required placeholder="Enter PAN number" value={form.panNumber} onChange={(e) => setForm({ ...form, panNumber: e.target.value.toUpperCase() })} className={`${inputCls} font-mono text-sm`} maxLength={10} />
                   </IconInput>
                 </Field>
                 <Field label="Aadhaar Number" required>
                   <IconInput icon={<IdCard size={14} />}>
-                    <input required inputMode="numeric" placeholder="Enter Aadhaar number" value={form.aadhaarNumber} onChange={(e) => setForm({ ...form, aadhaarNumber: sanitizeDigits(e.target.value) })} className={`${inputCls} font-mono tracking-widest`} maxLength={12} />
+                    <input required inputMode="numeric" placeholder="Enter Aadhaar number" value={form.aadhaarNumber} onChange={(e) => setForm({ ...form, aadhaarNumber: sanitizeDigits(e.target.value) })} className={`${inputCls} font-mono tracking-widest text-sm`} maxLength={12} />
                   </IconInput>
                 </Field>
                 <Field label="EPF Contribution Rate">
@@ -1061,7 +1148,7 @@ function NewEmployeePageInner() {
               subtitle="Review information before creating the employee."
               sectionRef={(el) => { sectionRefs.current.review = el; }}
             >
-              <div className="grid grid-cols-2 gap-x-5 gap-y-3 text-sm">
+              <div className="grid grid-cols-2 gap-x-5 gap-y-3 text-xs">
                 <ReviewRow icon={<User size={13} />} label="Full Name" value={[form.firstName, form.middleName, form.lastName].filter(Boolean).join(" ") || "—"} />
                 <ReviewRow icon={<Mail size={13} />} label="Work Email" value={form.workEmail || "—"} />
                 <ReviewRow icon={<Calendar size={13} />} label="Date of Birth" value={form.dateOfBirth || "—"} />
@@ -1080,50 +1167,42 @@ function NewEmployeePageInner() {
                 <ReviewRow icon={<IdCard size={13} />} label="IFSC" value={form.bankIfsc || "—"} />
               </div>
             </Section>
-          </div>
-        </div>
+            </StepPanels>
 
-        <div className="sticky bottom-0 bg-white border-t border-gray-100 px-6 py-3 flex items-center gap-2 z-10">
-          <button type="submit" disabled={createMut.isPending} className="btn btn-primary">
-            <Save size={14} /> {createMut.isPending ? "Saving..." : "Create Employee"}
-          </button>
-          <Link href="/org-chart" className="btn btn-secondary">Cancel</Link>
+            <div className="mt-4 pt-4 border-t border-gray-100 flex items-center gap-2">
+              <button
+                type="button"
+                onClick={goBack}
+                disabled={isFirstStep}
+                className="btn btn-secondary disabled:opacity-40 disabled:cursor-not-allowed"
+              >
+                <ChevronLeft size={13} /> Back
+              </button>
+              <div className="flex-1" />
+              <Link href="/org-chart" className="btn btn-secondary">Cancel</Link>
+              {isLastStep ? (
+                <button
+                  type="submit"
+                  disabled={createMut.isPending || noSalaryTemplates}
+                  title={noSalaryTemplates ? "Create a salary template in Payroll setup before adding an employee" : undefined}
+                  className="btn btn-primary"
+                >
+                  <Save size={13} /> {createMut.isPending ? "Saving..." : "Create Employee"}
+                </button>
+              ) : (
+                <button type="button" onClick={goNext} className="btn btn-primary">
+                  Next <ChevronRight size={13} />
+                </button>
+              )}
+            </div>
+          </div>
         </div>
       </form>
-
-      {inviteOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
-          <div className="bg-white rounded-xl shadow-xl w-full max-w-md p-5">
-            <div className="flex items-start gap-3">
-              <div className="w-9 h-9 rounded-xl bg-[#16243A]/5 text-[#16243A] flex items-center justify-center shrink-0">
-                <Mail size={18} />
-              </div>
-              <div>
-                <h2 className="font-bold text-gray-900">Send portal invite?</h2>
-                <p className="text-sm text-gray-500 mt-1">
-                  Email <span className="font-medium text-gray-700">{form.workEmail || "this employee"}</span> a link to set their password and access the portal. Choose <span className="font-medium">Create without invite</span> to add them now and invite later.
-                </p>
-              </div>
-            </div>
-            <div className="flex flex-col gap-2 mt-5">
-              <button type="button" disabled={createMut.isPending} onClick={() => confirmCreate(true)} className="btn btn-primary justify-center">
-                <Mail size={14} /> {createMut.isPending ? "Creating..." : "Create & send invite"}
-              </button>
-              <button type="button" disabled={createMut.isPending} onClick={() => confirmCreate(false)} className="btn btn-secondary justify-center">
-                Create without invite
-              </button>
-              <button type="button" disabled={createMut.isPending} onClick={() => setInviteOpen(false)} className="text-sm text-gray-500 hover:text-gray-700 mt-1">
-                Cancel
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
     </div>
   );
 }
 
-const inputCls = "w-full border border-[var(--border)] rounded-lg px-3 py-2 text-sm bg-white focus:outline-none focus:ring-1 focus:ring-[#16243A] focus:border-[#16243A]";
+const inputCls = "w-full border border-[var(--border)] rounded-lg px-3 py-1.5 text-xs bg-white focus:outline-none focus:ring-1 focus:ring-[#166534] focus:border-[#166534]";
 
 function sanitizeDigits(v: string): string {
   return v.replace(/\D/g, "");
@@ -1142,6 +1221,20 @@ function IconInput({ icon, children }: { icon: React.ReactNode; children: React.
   );
 }
 
+// Wizard container — renders only the panel whose child <Section id> matches the
+// active step; the rest stay unmounted so we show one step at a time.
+function StepPanels({ active, children }: { active: StepId; children: React.ReactNode }) {
+  return (
+    <>
+      {Children.map(children, (child) => {
+        if (!isValidElement(child)) return null;
+        const id = (child.props as { id?: StepId }).id;
+        return id === active ? child : null;
+      })}
+    </>
+  );
+}
+
 function Section({
   id, icon, title, subtitle, children, sectionRef, action,
 }: {
@@ -1154,13 +1247,13 @@ function Section({
   action?: React.ReactNode;
 }) {
   return (
-    <section ref={sectionRef} data-step-id={id} className="surface-card p-5">
+    <section ref={sectionRef} data-step-id={id} className="surface-card p-4">
       <div className="flex items-start gap-2.5 mb-4 pb-4 border-b border-gray-100">
-        <div className="w-9 h-9 rounded-xl bg-[#16243A]/5 text-[#16243A] flex items-center justify-center shrink-0">
+        <div className="w-9 h-9 rounded-xl bg-[#166534]/5 text-[#166534] flex items-center justify-center shrink-0">
           {icon}
         </div>
         <div className="flex-1">
-          <h2 className="font-bold text-gray-900 leading-tight">{title}</h2>
+          <h2 className="text-[13px] font-semibold text-gray-900 leading-tight">{title}</h2>
           <p className="text-xs text-gray-500 mt-0.5">{subtitle}</p>
         </div>
         {action && <div className="shrink-0">{action}</div>}
@@ -1191,7 +1284,7 @@ function AddressBlock({
         <Select value={value.country} onChange={(v) => onChange("country", v)} placeholder="Country" options={COUNTRY_OPTS} />
       </div>
       <div className="col-span-2">
-        <Select value={value.state} onChange={(v) => onChange("state", v)} placeholder="State" options={STATE_OPTS} />
+        <Select value={value.state} onChange={(v) => onChange("state", v)} placeholder="State" searchable options={STATE_OPTS} />
       </div>
       <div className="col-span-2">
         <FormInput placeholder="Postal Code" value={value.postalCode} onChange={(e) => onChange("postalCode", e.target.value)} />
@@ -1203,7 +1296,7 @@ function AddressBlock({
 function Field({ label, required, children }: { label: string; required?: boolean; children: React.ReactNode }) {
   return (
     <div>
-      <label className="block text-sm font-semibold text-gray-800 mb-1.5">
+      <label className="block text-xs font-medium text-gray-800 mb-1.5">
         {label} {required && <span className="text-red-500">*</span>}
       </label>
       {children}
@@ -1220,26 +1313,32 @@ function ExperienceCard({ index, exp, canRemove, onChange, onRemove }: {
   onRemove: () => void;
 }) {
   const ta = `${inputCls} min-h-[60px] resize-y`;
+  // Past employment can't start/end in the future — cap month pickers at the
+  // current month (local).
+  const currentMonth = (() => {
+    const d = new Date();
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+  })();
   return (
     <div className="border border-gray-200 rounded-lg p-4 bg-gray-50/40 relative">
       {canRemove && (
         <button type="button" onClick={onRemove} className="absolute top-2 right-2 text-gray-400 hover:text-red-500" aria-label="Remove role">
-          <Trash2 size={14} />
+          <Trash2 size={12} />
         </button>
       )}
       <div className="text-xs font-semibold text-gray-500 uppercase mb-3">
         {index === 0 ? "Most recent role" : `Role ${index + 1}`}
       </div>
 
-      <div className="grid grid-cols-2 gap-x-5 gap-y-4">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-x-5 gap-y-4">
         <Field label="Company"><input value={exp.company} onChange={(e) => onChange("company", e.target.value)} placeholder="Company name" className={inputCls} /></Field>
         <Field label="Title / Position"><input value={exp.designation} onChange={(e) => onChange("designation", e.target.value)} placeholder="e.g. Senior Engineer" className={inputCls} /></Field>
 
-        <Field label="From"><input type="month" value={exp.startDate} onChange={(e) => onChange("startDate", e.target.value)} className={inputCls} /></Field>
+        <Field label="From"><input type="month" max={currentMonth} value={exp.startDate} onChange={(e) => { if (!e.target.value || e.target.value <= currentMonth) onChange("startDate", e.target.value); }} className={inputCls} /></Field>
         <Field label="To">
-          <input type="month" value={exp.endDate} disabled={exp.currentlyWorkHere} onChange={(e) => onChange("endDate", e.target.value)} className={clsx(inputCls, exp.currentlyWorkHere && "opacity-50")} />
+          <input type="month" min={exp.startDate || undefined} max={currentMonth} value={exp.endDate} disabled={exp.currentlyWorkHere} onChange={(e) => { if (!e.target.value || e.target.value <= currentMonth) onChange("endDate", e.target.value); }} className={clsx(inputCls, exp.currentlyWorkHere && "opacity-50")} />
           <label className="mt-1.5 flex items-center gap-2 text-xs text-gray-600">
-            <input type="checkbox" checked={exp.currentlyWorkHere} onChange={(e) => onChange("currentlyWorkHere", e.target.checked)} className="rounded text-[#3b82f6]" />
+            <input type="checkbox" checked={exp.currentlyWorkHere} onChange={(e) => onChange("currentlyWorkHere", e.target.checked)} className="rounded text-[#22c55e]" />
             I currently work here
           </label>
         </Field>
@@ -1255,20 +1354,6 @@ function ExperienceCard({ index, exp, canRemove, onChange, onRemove }: {
         <Field label="Reason for Leaving"><textarea value={exp.reasonForLeaving} onChange={(e) => onChange("reasonForLeaving", e.target.value)} rows={2} placeholder="Why you moved on" className={ta} /></Field>
       </div>
 
-      <div className="grid grid-cols-2 gap-x-5 gap-y-4 mt-4">
-        <Field label="Supervisor Name"><input value={exp.supervisorName} onChange={(e) => onChange("supervisorName", e.target.value)} placeholder="Manager's name" className={inputCls} /></Field>
-        <Field label="Supervisor Title"><input value={exp.supervisorTitle} onChange={(e) => onChange("supervisorTitle", e.target.value)} placeholder="Manager's title" className={inputCls} /></Field>
-      </div>
-
-      <div className="mt-4 rounded-lg ring-1 ring-[#16243A]/10 bg-[#16243A]/[0.03] p-3">
-        <p className="text-xs font-bold text-gray-700 uppercase tracking-wide mb-2">
-          What would your supervisor say? <span className="font-medium text-gray-400 normal-case">(reference check)</span>
-        </p>
-        <div className="grid grid-cols-2 gap-x-5 gap-y-4">
-          <Field label="Strengths they'd cite"><textarea value={exp.bossStrengths} onChange={(e) => onChange("bossStrengths", e.target.value)} rows={2} className={ta} /></Field>
-          <Field label="Weaker points they'd cite"><textarea value={exp.bossWeaknesses} onChange={(e) => onChange("bossWeaknesses", e.target.value)} rows={2} className={ta} /></Field>
-        </div>
-      </div>
     </div>
   );
 }
@@ -1278,7 +1363,7 @@ function ReviewRow({ icon, label, value }: { icon: React.ReactNode; label: strin
     <div className="flex items-center gap-2 py-1.5 border-b border-gray-50 last:border-0">
       <span className="text-gray-400">{icon}</span>
       <span className="text-xs text-gray-500 w-40 shrink-0">{label}</span>
-      <span className="text-sm font-medium text-gray-900 truncate">{value}</span>
+      <span className="text-xs font-medium text-gray-900 truncate">{value}</span>
     </div>
   );
 }
@@ -1291,15 +1376,15 @@ function StatutoryToggle({ label, checked, onChange, hint }: {
 }) {
   return (
     <div className={`rounded-lg ring-1 p-3 transition ${checked ? "ring-emerald-200 bg-emerald-50/40" : "ring-amber-200 bg-amber-50/40"}`}>
-      <label className="flex items-center gap-2 text-sm font-semibold text-gray-800 cursor-pointer">
+      <label className="flex items-center gap-2 text-xs font-medium text-gray-800 cursor-pointer">
         <input
           type="checkbox"
           checked={checked}
           onChange={(e) => onChange(e.target.checked)}
-          className="rounded text-[#3b82f6]"
+          className="rounded text-[#22c55e]"
         />
         {label}
-        <span className={`ml-auto text-[10px] font-bold uppercase tracking-wide px-1.5 py-0.5 rounded-full ${checked ? "bg-emerald-100 text-emerald-700" : "bg-amber-100 text-amber-700"}`}>
+        <span className={`ml-auto text-[11px] font-medium uppercase tracking-wide px-1.5 py-0.5 rounded-full ${checked ? "bg-emerald-100 text-emerald-700" : "bg-amber-100 text-amber-700"}`}>
           {checked ? "Default" : "Excluded"}
         </span>
       </label>

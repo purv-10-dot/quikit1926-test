@@ -4,9 +4,14 @@ import { withAuth } from "@/lib/with-auth";
 import { successResponse, notFound, validationError, forbidden, internalError } from "@/lib/api-response";
 import { leaveApprovalActionSchema } from "@/lib/validations/leave";
 import { fireWorkflow } from "@/lib/workflows/executor";
-import { queueEmail } from "@/lib/services/mailer";
+import { resolveAndSend } from "@/lib/email/resolve";
 import { buildLeaveDecisionEmail } from "@/lib/email-templates/leave-decision";
 import { publishNotification } from "@/lib/services/realtime";
+import {
+  getActiveChainLevels,
+  getCallerRoleIds,
+  callerCanActionLevel,
+} from "@/lib/services/approval-chain";
 
 /** POST /api/v1/hrms/leaves/requests/:id/approve */
 export const POST = withAuth(async (req: NextRequest, { orgId, userId }, params) => {
@@ -21,11 +26,29 @@ export const POST = withAuth(async (req: NextRequest, { orgId, userId }, params)
       return validationError("Leave request is not pending approval");
     }
 
-    // Find pending approval for this approver
-    const approval = request.approvals.find(
-      (a) => a.approverId === userId && a.status === "Pending"
+    // Approvals advance level-by-level (1 → 2 → … → Approved). The current
+    // level is the lowest-numbered approval still Pending; only it is actionable.
+    const pendingApprovals = request.approvals
+      .filter((a) => a.status === "Pending")
+      .sort((a, b) => a.level - b.level);
+    const current = pendingApprovals[0];
+    if (!current) {
+      return validationError("Leave request has no pending approval level");
+    }
+
+    // Role-aware authorization: whoever holds the current level's role (or is
+    // the specific assigned user) may action it — not just the one employee the
+    // chain happened to route to at apply time. Keeps approvals chain-driven
+    // while letting any holder of the level's role act.
+    const chainLevels = await getActiveChainLevels(orgId, "Leave");
+    const levelCfg = chainLevels?.find((l) => l.level === current.level);
+    const roleIds = await getCallerRoleIds(orgId, userId);
+    const authorized = callerCanActionLevel(
+      levelCfg,
+      { employeeId: userId, roleIds },
+      current.approverId,
     );
-    if (!approval) {
+    if (!authorized) {
       return forbidden("You are not authorized to approve this request");
     }
 
@@ -35,17 +58,18 @@ export const POST = withAuth(async (req: NextRequest, { orgId, userId }, params)
 
     const { status, comment } = parsed.data;
 
-    // All writes + final re-fetch in a single transaction — minimizes round-trips
-    const pendingOthers = request.approvals.filter(
-      (a) => a.id !== approval.id && a.status === "Pending",
-    );
-    const allApproved = status === "Approved" && pendingOthers.length === 0;
+    // Approving the LAST pending level finalizes the request; higher levels
+    // remaining means it stays Pending and moves to the next approver.
+    const higherLevelsPending = pendingApprovals.filter((a) => a.id !== current.id);
+    const allApproved = status === "Approved" && higherLevelsPending.length === 0;
     const year = new Date(request.startDate).getFullYear();
 
     const updated = await prisma.$transaction(async (tx) => {
+      // Record the actioner on the current level's row so the audit trail shows
+      // who actually approved (may differ from the apply-time representative).
       await tx.leaveApproval.update({
-        where: { id: approval.id },
-        data: { status, comment, actionAt: new Date() },
+        where: { id: current.id },
+        data: { status, comment, actionAt: new Date(), approverId: userId },
       });
 
       if (allApproved) {
@@ -134,7 +158,7 @@ export const POST = withAuth(async (req: NextRequest, { orgId, userId }, params)
           if (!employee?.workEmail) return;
           const fmtDate = (d: Date | string) =>
             new Date(d).toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" });
-          const { subject, html } = buildLeaveDecisionEmail({
+          const data = {
             employeeName: `${employee.firstName} ${employee.lastName}`.trim(),
             leaveTypeName: updated.leaveType?.name ?? "Leave",
             startDate: fmtDate(updated.startDate),
@@ -144,12 +168,51 @@ export const POST = withAuth(async (req: NextRequest, { orgId, userId }, params)
             comment: comment ?? null,
             decision: updated.status as "Approved" | "Rejected",
             companyName: company?.companyName ?? "QuikIT HRMS",
+          };
+          await resolveAndSend(orgId, {
+            key: "leave.decision",
+            to: employee.workEmail,
+            vars: { ...data, comment: data.comment ?? "" },
+            fallback: () => buildLeaveDecisionEmail(data),
           });
-          await queueEmail(orgId, { to: employee.workEmail, subject, html, kind: "leave.decision" });
         } catch (err) {
           console.error("[mail] leave decision email failed:", err);
         }
       })();
+    } else if (updated && updated.status === "Pending" && status === "Approved") {
+      // Advanced to the next level — alert everyone who can action it so it
+      // doesn't just sit silently in their inbox waiting to be noticed.
+      const nextLevel = higherLevelsPending[0]?.level;
+      const nextCfg = chainLevels?.find((l) => l.level === nextLevel);
+      if (nextCfg) {
+        void (async () => {
+          try {
+            let nextApproverIds: string[] = [];
+            if (nextCfg.kind === "USER" && nextCfg.userId) {
+              nextApproverIds = [nextCfg.userId];
+            } else if (nextCfg.kind === "ROLE" && nextCfg.roleId) {
+              const holders = await prisma.employee.findMany({
+                where: {
+                  orgId, deletedAt: null, status: "Active",
+                  appRoles: { some: { roleId: nextCfg.roleId } },
+                },
+                select: { id: true },
+              });
+              nextApproverIds = holders.map((h) => h.id);
+            }
+            if (nextApproverIds.length > 0) {
+              publishNotification(orgId, nextApproverIds, {
+                title: "Leave awaiting your approval",
+                message: `A ${updated.leaveType?.name ?? "leave"} request has advanced to your approval level.`,
+                type: "Info",
+                link: `/leaves/team-leaves`,
+              }).catch(() => {});
+            }
+          } catch (err) {
+            console.error("[notify] next-level leave approver notify failed:", err);
+          }
+        })();
+      }
     }
 
     return successResponse(updated);

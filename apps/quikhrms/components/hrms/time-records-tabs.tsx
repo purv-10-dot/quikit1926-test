@@ -23,8 +23,8 @@ export function TimeRecordsTabs() {
             className={clsx(
               "inline-flex items-center gap-1.5 px-4 py-1.5 rounded-md text-sm font-semibold transition",
               active
-                ? "bg-[#16243A] text-white shadow-sm"
-                : "text-gray-600 hover:text-[#16243A] hover:bg-gray-50",
+                ? "bg-green-600 text-white shadow-sm"
+                : "text-gray-600 hover:text-[#166534] hover:bg-gray-50",
             )}
           >
             {t.icon} {t.label}

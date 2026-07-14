@@ -1,19 +1,21 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useApiClient } from "@/lib/hooks/use-api";
+import { useDashboardConfig } from "@/lib/hooks/use-dashboard-config";
+import { useToast } from "@/components/hrms/toast";
 import { Modal } from "@/components/hrms/modal";
 import { Select } from "@/components/hrms/ui/select";
 import { NumberInput } from "@/components/hrms/ui/number-input";
 import { clsx } from "clsx";
-import { Plus, Briefcase, Filter, X, AlertTriangle, Check, XCircle, Pause, Play, Pencil, Sparkles, Trash2, Target, ChevronDown } from "lucide-react";
+import { Plus, Briefcase, Filter, X, AlertTriangle, Check, XCircle, Pause, Play, Pencil, Sparkles, Trash2, Target, ChevronDown,
+  ArrowLeft, ArrowRight, ChevronLeft, ChevronRight, Users, Search as SearchIcon, IndianRupee, GraduationCap, Gift, Globe, Lock, UserCog, Eye } from "lucide-react";
 import { SkeletonTable } from "@/components/hrms/skeleton";
+import { RequisitionWizard, toReqPayload, emptyReqForm } from "../_components/requisition-wizard";
+import type { ReqFormShape, DeptOption, PipelineOption, EmpOption, SkillWeightItem } from "../_components/requisition-wizard";
 
-interface DeptOption { id: string; name: string; code?: string | null; }
-interface PipelineOption { id: string; name: string; isDefault: boolean; stages: { name: string }[]; }
 
-interface SkillWeightItem { skill: string; weight: number }
 interface ReqItem {
   id: string;
   requisitionNumber: string;
@@ -24,26 +26,61 @@ interface ReqItem {
   employmentType: string;
   status: string;
   priority: string;
+  workLocation?: string;
   pipelineId: string | null;
+  reportingToId?: string | null;
   jobDescription?: string | null;
   skillWeights?: SkillWeightItem[] | null;
   department: { id: string; name: string } | null;
   hiringManager: { id: string; firstName: string; lastName: string } | null;
+  recruiter: { id: string; firstName: string; lastName: string } | null;
+  rolePurpose?: string | null;
+  raisedAt?: string | null;
+  closedDate?: string | null;
+  createdAt?: string | null;
+  // 5-step wizard extras
+  jobOpeningName?: string | null;
+  interviewPanel?: string[] | null;
+  budget?: string | number | null;
+  targetJoiningDate?: string | null;
+  etaToFillDays?: number | null;
+  jobGrade?: string | null;
+  costCenter?: string | null;
+  jobLocation?: string | null;
+  jobDuration?: string | null;
+  workTimings?: string | null;
+  interviewMode?: string | null;
+  experienceMin?: number | null;
+  experienceMax?: number | null;
+  salaryMin?: string | number | null;
+  salaryMax?: string | number | null;
+  education?: string | null;
+  referralBonusAmount?: string | number | null;
+  careerPageVisible?: boolean;
+  internalPostingOnly?: boolean;
+  postToJobPortal?: boolean;
+  requirements?: string[] | null;
+  niceToHave?: string[] | null;
+  benefits?: string[] | null;
+  responsibilities?: string[] | null;
   _count: { applications: number };
 }
 
+
+
+
 const statusColors: Record<string, string> = {
   ReqDraft: "bg-gray-100 text-gray-600",
-  PendingApproval: "bg-yellow-100 text-yellow-700",
-  ReqApproved: "bg-[#dbeafe] text-[#2563eb]",
-  ReqOpen: "bg-green-100 text-green-700",
-  ReqOnHold: "bg-orange-100 text-orange-700",
+  PendingApproval: "bg-amber-50 text-amber-600",
+  ReqApproved: "bg-green-50 text-green-600",
+  ReqOpen: "bg-green-50 text-green-600",
+  ReqOnHold: "bg-orange-50 text-orange-600",
   ReqClosed: "bg-gray-100 text-gray-500",
-  ReqCancelled: "bg-red-100 text-red-700",
+  ReqCancelled: "bg-red-50 text-red-600",
 };
 
 const priorityColors: Record<string, string> = {
-  Low: "text-gray-400", Medium: "text-[#3b82f6]", High: "text-orange-500", Urgent: "text-red-600",
+  Low: "bg-gray-100 text-gray-600", Medium: "bg-amber-50 text-amber-600", High: "bg-orange-50 text-orange-600", Urgent: "bg-red-50 text-red-600",
 };
 
 function prettyStatus(s: string): string {
@@ -53,30 +90,32 @@ function prettyStatus(s: string): string {
     .trim();
 }
 
-type ActionVariant = "green" | "blue" | "orange" | "red" | "slate";
+type ActionVariant = "green" | "blue" | "amber" | "red" | "slate";
 
 const actionVariants: Record<ActionVariant, string> = {
-  green:  "bg-green-50 text-green-700 ring-green-200 hover:bg-green-100 hover:ring-green-300",
-  blue:   "bg-[#dbeafe] text-[#2563eb] ring-[#bfdbfe] hover:bg-[#dbeafe] hover:ring-[#bfdbfe]",
-  orange: "bg-orange-50 text-orange-700 ring-orange-200 hover:bg-orange-100 hover:ring-orange-300",
-  red:    "bg-red-50 text-red-700 ring-red-200 hover:bg-red-100 hover:ring-red-300",
-  slate:  "bg-slate-50 text-slate-700 ring-slate-200 hover:bg-slate-100 hover:ring-slate-300",
+  green: "bg-green-50 text-green-600 border-green-100 hover:bg-green-100",
+  blue:  "bg-green-50 text-green-600 border-green-100 hover:bg-green-100",
+  amber: "bg-amber-50 text-amber-500 border-amber-100 hover:bg-amber-100",
+  red:   "bg-red-50 text-red-500 border-red-100 hover:bg-red-100",
+  slate: "bg-gray-50 text-gray-500 border-gray-200 hover:bg-gray-100",
 };
 
+// Icon-only square action button (matches the compact recruit table actions).
 function ActionBtn({
-  icon, children, variant, onClick,
-}: { icon: React.ReactNode; children: React.ReactNode; variant: ActionVariant; onClick: () => void }) {
+  icon, title, variant, onClick,
+}: { icon: React.ReactNode; title: string; variant: ActionVariant; onClick: () => void }) {
   return (
     <button
       type="button"
       onClick={onClick}
+      title={title}
+      aria-label={title}
       className={clsx(
-        "inline-flex items-center gap-1 px-2.5 py-1 rounded-md text-[11px] font-semibold ring-1 transition shadow-sm",
+        "inline-flex items-center justify-center w-9 h-9 rounded-xl border transition",
         actionVariants[variant],
       )}
     >
       {icon}
-      {children}
     </button>
   );
 }
@@ -84,32 +123,28 @@ function ActionBtn({
 export default function RequisitionsPage() {
   const api = useApiClient();
   const qc = useQueryClient();
+  const toast = useToast();
+  const { hasPermission } = useDashboardConfig();
+  // Creating / editing / deleting requisitions requires recruit write (also
+  // enforced by the API). Viewers reach this page via the dashboard "View All".
+  const canManage = hasPermission("hrms.recruit.write");
   const [showCreate, setShowCreate] = useState(false);
   const [editId, setEditId] = useState<string | null>(null);
+  const [viewReq, setViewReq] = useState<ReqItem | null>(null);
   const [statusFilter, setStatusFilter] = useState("");
+  const [priorityFilter, setPriorityFilter] = useState("");
   const [cancelTarget, setCancelTarget] = useState<ReqItem | null>(null);
-  const emptyForm = {
-    title: "",
-    departmentId: "",
-    pipelineId: "",
-    positions: 1,
-    priority: "Medium" as string,
-    employmentType: "FullTime" as string,
-    workLocation: "Office" as string,
-    jobDescription: "",
-    skillWeights: [] as SkillWeightItem[],
-    // Role Scorecard fields
-    rolePurpose: "",
-    responsibilities: [] as string[],
-  };
-  const [form, setForm] = useState(emptyForm);
-  const [skillDraft, setSkillDraft] = useState("");
-  const [weightDraft, setWeightDraft] = useState(7);
+  const emptyForm = emptyReqForm;
+  const [form, setForm] = useState<ReqFormShape>(emptyForm);
 
-  const params = new URLSearchParams({ limit: "100", ...(statusFilter && { status: statusFilter }) });
+  const params = new URLSearchParams({
+    limit: "100",
+    ...(statusFilter && { status: statusFilter }),
+    ...(priorityFilter && { priority: priorityFilter }),
+  });
 
   const { data, isLoading } = useQuery({
-    queryKey: ["requisitions", statusFilter],
+    queryKey: ["requisitions", statusFilter, priorityFilter],
     queryFn: () => api.get<ReqItem[]>(`/api/v1/hrms/recruit/requisitions?${params}`),
   });
 
@@ -125,15 +160,21 @@ export default function RequisitionsPage() {
   });
   const pipelines = pipelinesData?.data ?? [];
 
+  const { data: empData } = useQuery({
+    queryKey: ["employees-picker"],
+    queryFn: () => api.get<EmpOption[]>("/api/v1/hrms/employees?limit=500&status=Active"),
+  });
+  const employees = empData?.data ?? [];
+
   const createMut = useMutation({
-    mutationFn: (body: typeof form) => api.post("/api/v1/hrms/recruit/requisitions", body),
-    onSuccess: () => { qc.invalidateQueries({ queryKey: ["requisitions"] }); setShowCreate(false); },
+    mutationFn: (body: ReqFormShape) => api.post("/api/v1/hrms/recruit/requisitions", toReqPayload(body)),
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ["requisitions"] }); setShowCreate(false); toast.success("Requisition created"); },
   });
 
   const editMut = useMutation({
-    mutationFn: ({ id, body }: { id: string; body: typeof form }) =>
-      api.patch(`/api/v1/hrms/recruit/requisitions/${id}`, body),
-    onSuccess: () => { qc.invalidateQueries({ queryKey: ["requisitions"] }); setEditId(null); setShowCreate(false); },
+    mutationFn: ({ id, body }: { id: string; body: ReqFormShape }) =>
+      api.patch(`/api/v1/hrms/recruit/requisitions/${id}`, toReqPayload(body)),
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ["requisitions"] }); setEditId(null); setShowCreate(false); toast.success("Requisition updated"); },
   });
 
   const updateMut = useMutation({
@@ -145,296 +186,288 @@ export default function RequisitionsPage() {
   const reqs = data?.data ?? [];
 
   return (
-    <div className="w-full px-6 py-6">
-      <div className="flex items-center justify-between mb-6 flex-wrap gap-3">
-        <h1 className="font-serif-display text-3xl md:text-4xl font-bold text-gray-900">Job requisitions</h1>
-        <button onClick={() => { setForm(emptyForm); setEditId(null); setShowCreate(true); }}
-          className="btn btn-primary">
-          <Plus size={14} /> New requisition
-        </button>
-      </div>
+    <div className="w-full px-5 py-4">
+      <h1 className="text-page-title text-gray-900 mb-5">Job requisitions</h1>
 
-      <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-3 mb-4">
-        <div className="flex flex-wrap items-center gap-2">
-          <div className="inline-flex items-center gap-1.5 text-xs font-semibold text-gray-500 uppercase tracking-wide px-2 mr-1">
-            <Filter size={13} /> Status
+      <div className="bg-white rounded-2xl shadow-sm border border-gray-200 p-4 mb-4">
+        <div className="flex items-center justify-between gap-3 flex-wrap">
+          <div className="flex flex-wrap items-center gap-2">
+            <div className="inline-flex items-center gap-1.5 text-xs font-medium text-gray-500 px-1 mr-1">
+              <Filter size={15} /> Status
+            </div>
+            {[
+              { value: "", label: "All" },
+              { value: "ReqDraft", label: "Draft" },
+              { value: "ReqOpen", label: "Open" },
+              { value: "ReqOnHold", label: "On Hold" },
+              { value: "ReqClosed", label: "Closed" },
+              { value: "ReqCancelled", label: "Cancelled" },
+            ].map((s) => {
+              const active = statusFilter === s.value;
+              return (
+                <button
+                  key={s.value || "all"}
+                  onClick={() => setStatusFilter(s.value)}
+                  className={clsx(
+                    "inline-flex items-center gap-1 px-4 py-1.5 rounded-full text-[13px] font-semibold border transition",
+                    active
+                      ? "bg-green-100 border-green-200 text-green-700"
+                      : "bg-white border-gray-200 text-gray-600 hover:border-green-500/40 hover:text-green-700",
+                  )}
+                >
+                  {s.label}
+                  {active && s.value && <X size={12} className="ml-0.5" />}
+                </button>
+              );
+            })}
+          </div>
+          {canManage && (
+            <button onClick={() => { setForm(emptyForm); setEditId(null); setShowCreate(true); }}
+              className="inline-flex items-center gap-1.5 h-10 px-3 rounded-[14px] bg-green-600 hover:bg-green-700 text-white text-xs font-medium shrink-0 transition">
+              <Plus size={13} /> New requisition
+            </button>
+          )}
+        </div>
+
+        <div className="flex flex-wrap items-center gap-2 mt-3 pt-3 border-t border-gray-100">
+          <div className="inline-flex items-center gap-1.5 text-xs font-medium text-gray-500 px-1 mr-1">
+            <Filter size={15} /> Priority
           </div>
           {[
             { value: "", label: "All" },
-            { value: "ReqDraft", label: "Draft" },
-            { value: "ReqOpen", label: "Open" },
-            { value: "ReqOnHold", label: "On Hold" },
-            { value: "ReqClosed", label: "Closed" },
-            { value: "ReqCancelled", label: "Cancelled" },
-          ].map((s) => {
-            const active = statusFilter === s.value;
+            { value: "Urgent", label: "Urgent" },
+            { value: "High", label: "High" },
+            { value: "Medium", label: "Medium" },
+            { value: "Low", label: "Low" },
+          ].map((p) => {
+            const active = priorityFilter === p.value;
             return (
               <button
-                key={s.value || "all"}
-                onClick={() => setStatusFilter(s.value)}
+                key={p.value || "all"}
+                onClick={() => setPriorityFilter(p.value)}
                 className={clsx(
-                  "inline-flex items-center gap-1 px-3 py-1.5 rounded-full text-xs font-semibold border transition",
+                  "inline-flex items-center gap-1 px-4 py-1.5 rounded-full text-[13px] font-semibold border transition",
                   active
-                    ? "bg-[#16243A] border-[#16243A] text-white shadow-sm"
-                    : "bg-white border-[var(--border)] text-gray-600 hover:border-[#16243A]/40 hover:text-[#16243A]",
+                    ? "bg-green-100 border-green-200 text-green-700"
+                    : "bg-white border-gray-200 text-gray-600 hover:border-green-500/40 hover:text-green-700",
                 )}
               >
-                {s.label}
-                {active && s.value && <X size={11} className="ml-0.5" />}
+                {p.label}
+                {active && p.value && <X size={12} className="ml-0.5" />}
               </button>
             );
           })}
         </div>
       </div>
 
-      <div className="bg-white rounded-lg shadow-sm border border-gray-200 overflow-hidden">
+      <div className="bg-white rounded-2xl shadow-sm border border-gray-200 overflow-hidden">
         {isLoading ? <div className="p-4"><SkeletonTable rows={6} cols={5} /></div> : reqs.length === 0 ? (
           <div className="p-8 text-center text-gray-500"><Briefcase size={32} className="mx-auto mb-2 text-gray-300" />No requisitions</div>
         ) : (
           <table className="w-full">
             <thead>
-              <tr className="bg-gray-50 border-b border-gray-200">
-                <th className="text-left px-4 py-3 text-xs font-medium text-gray-500 uppercase">Requisition</th>
-                <th className="text-left px-4 py-3 text-xs font-medium text-gray-500 uppercase">Department</th>
-                <th className="text-center px-4 py-3 text-xs font-medium text-gray-500 uppercase">Positions</th>
-                <th className="text-center px-4 py-3 text-xs font-medium text-gray-500 uppercase">Applications</th>
-                <th className="text-left px-4 py-3 text-xs font-medium text-gray-500 uppercase">Priority</th>
-                <th className="text-left px-4 py-3 text-xs font-medium text-gray-500 uppercase">Status</th>
-                <th className="text-right px-4 py-3 text-xs font-medium text-gray-500 uppercase">Actions</th>
+              <tr className="border-b border-gray-100">
+                <th className="text-left px-4 py-2.5 text-[11px] font-semibold text-gray-500 uppercase tracking-[0.04em]">Requisition</th>
+                <th className="text-left px-4 py-2.5 text-[11px] font-semibold text-gray-500 uppercase tracking-[0.04em]">Department</th>
+                <th className="text-left px-4 py-2.5 text-[11px] font-semibold text-gray-500 uppercase tracking-[0.04em]">Recruiter (HR)</th>
+                <th className="text-center px-4 py-2.5 text-[11px] font-semibold text-gray-500 uppercase tracking-[0.04em]">Positions</th>
+                <th className="text-center px-4 py-2.5 text-[11px] font-semibold text-gray-500 uppercase tracking-[0.04em]">Applications</th>
+                <th className="text-left px-4 py-2.5 text-[11px] font-semibold text-gray-500 uppercase tracking-[0.04em]">Priority</th>
+                <th className="text-left px-4 py-2.5 text-[11px] font-semibold text-gray-500 uppercase tracking-[0.04em]">Status</th>
+                <th className="text-right px-4 py-2.5 text-[11px] font-semibold text-gray-500 uppercase tracking-[0.04em]">Actions</th>
               </tr>
             </thead>
             <tbody>
-              {reqs.map((r, i) => (
+              {reqs.map((r, i) => {
+                const opened = r.raisedAt ?? r.createdAt;
+                const ageDays = opened ? Math.max(0, Math.floor((Date.now() - new Date(opened).getTime()) / 86400000)) : null;
+                const toClose = r.closedDate ? Math.ceil((new Date(r.closedDate).getTime() - Date.now()) / 86400000) : null;
+                const recruiterName = r.recruiter ? `${r.recruiter.firstName} ${r.recruiter.lastName}`
+                  : r.hiringManager ? `${r.hiringManager.firstName} ${r.hiringManager.lastName}` : "—";
+                const isOpenish = r.status === "ReqOpen" || r.status === "ReqOnHold";
+                return (
                 <tr key={r.id} className="row-stagger border-b border-gray-100 hover:bg-gray-50" style={{ ["--i" as never]: Math.min(i, 10) }}>
-                  <td className="px-4 py-3">
-                    <p className="text-sm font-medium text-gray-900">{r.title}</p>
-                    <p className="text-xs text-gray-500">{r.requisitionNumber} &middot; {r.employmentType}</p>
+                  <td className="px-4 py-2.5">
+                    <p className="text-[13px] font-medium text-gray-900">{r.title}</p>
+                    {r.rolePurpose && <p className="text-[11px] italic text-gray-400 truncate max-w-[240px]">{r.rolePurpose}</p>}
+                    <p className="text-[11px] text-gray-500">{r.requisitionNumber} &middot; {r.employmentType}</p>
+                    {(isOpenish || toClose != null) && (
+                      <div className="flex items-center gap-1.5 mt-1">
+                        {isOpenish && ageDays != null && (
+                          <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-semibold bg-green-50 text-green-700 ring-1 ring-green-200">
+                            {prettyStatus(r.status)} {ageDays}d
+                          </span>
+                        )}
+                        {toClose != null && (
+                          <span className={clsx(
+                            "inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-semibold ring-1",
+                            toClose >= 0
+                              ? "bg-green-50 text-green-700 ring-green-200"
+                              : "bg-red-50 text-red-700 ring-red-200",
+                          )}>
+                            {toClose >= 0 ? `${toClose}d to close` : `${Math.abs(toClose)}d overdue`}
+                          </span>
+                        )}
+                      </div>
+                    )}
                   </td>
-                  <td className="px-4 py-3 text-sm text-gray-700">{r.department?.name ?? "—"}</td>
-                  <td className="px-4 py-3 text-sm text-gray-700 text-center">{r.filledPositions}/{r.positions}</td>
-                  <td className="px-4 py-3 text-sm text-gray-700 text-center">{r._count.applications}</td>
-                  <td className="px-4 py-3">
-                    <span className={clsx("text-sm font-medium", priorityColors[r.priority])}>{r.priority}</span>
+                  <td className="px-4 py-2.5 text-xs text-gray-700">{r.department?.name ?? "—"}</td>
+                  <td className="px-4 py-2.5 text-xs text-gray-700">{recruiterName}</td>
+                  <td className="px-4 py-2.5 text-xs text-gray-700 text-center">{r.filledPositions}/{r.positions}</td>
+                  <td className="px-4 py-2.5 text-xs text-gray-700 text-center">{r._count.applications}</td>
+                  <td className="px-4 py-2.5">
+                    <span className={clsx("inline-flex items-center h-6 px-2.5 rounded-full text-[11px] font-medium", priorityColors[r.priority])}>{r.priority}</span>
                   </td>
-                  <td className="px-4 py-3">
-                    <span className={clsx("px-2 py-0.5 rounded-full text-xs font-medium", statusColors[r.status])}>{prettyStatus(r.status)}</span>
+                  <td className="px-4 py-2.5">
+                    <span className={clsx("inline-flex items-center h-6 px-2.5 rounded-full text-[11px] font-medium", statusColors[r.status])}>{prettyStatus(r.status)}</span>
                   </td>
-                  <td className="px-4 py-3 text-right">
+                  <td className="px-4 py-2.5 text-right">
                     <div className="inline-flex items-center gap-1.5 justify-end">
+                      <ActionBtn title="View" variant="slate" icon={<Eye size={12} />} onClick={() => setViewReq(r)} />
+                      {canManage && (<>
                       {r.status !== "ReqCancelled" && r.status !== "ReqClosed" && (
-                        <ActionBtn onClick={() => {
-                          setForm({
-                            title: r.title,
-                            departmentId: r.department?.id ?? "",
-                            pipelineId: r.pipelineId ?? "",
-                            positions: r.positions,
-                            priority: r.priority,
-                            employmentType: r.employmentType,
-                            workLocation: "Office",
-                            jobDescription: r.jobDescription ?? "",
-                            skillWeights: Array.isArray(r.skillWeights) ? r.skillWeights : [],
-                            rolePurpose: (r as unknown as { rolePurpose?: string }).rolePurpose ?? "",
-                            responsibilities: Array.isArray((r as unknown as { responsibilities?: unknown }).responsibilities) ? (r as unknown as { responsibilities: string[] }).responsibilities : [],
-                          });
+                        <ActionBtn title="Edit" variant="green" icon={<Pencil size={12} />} onClick={() => {
+                          setForm(reqToForm(r));
                           setEditId(r.id);
                           setShowCreate(true);
-                        }} icon={<Pencil size={12} />} variant="blue">Edit</ActionBtn>
+                        }} />
                       )}
                       {r.status === "ReqDraft" && (
-                        <ActionBtn onClick={() => updateMut.mutate({ id: r.id, status: "ReqOpen" })}
-                          icon={<Check size={12} />} variant="green">Open</ActionBtn>
+                        <ActionBtn title="Open" variant="green" icon={<Check size={12} />}
+                          onClick={() => updateMut.mutate({ id: r.id, status: "ReqOpen" })} />
                       )}
                       {r.status === "ReqOpen" && (
-                        <ActionBtn onClick={() => updateMut.mutate({ id: r.id, status: "ReqClosed" })}
-                          icon={<XCircle size={12} />} variant="slate">Close</ActionBtn>
+                        <ActionBtn title="Close" variant="slate" icon={<XCircle size={12} />}
+                          onClick={() => updateMut.mutate({ id: r.id, status: "ReqClosed" })} />
                       )}
                       {(r.status === "ReqOpen" || r.status === "ReqApproved" || r.status === "ReqDraft") && (
-                        <ActionBtn onClick={() => updateMut.mutate({ id: r.id, status: "ReqOnHold" })}
-                          icon={<Pause size={12} />} variant="orange">On Hold</ActionBtn>
+                        <ActionBtn title="On Hold" variant="amber" icon={<Pause size={12} />}
+                          onClick={() => updateMut.mutate({ id: r.id, status: "ReqOnHold" })} />
                       )}
                       {r.status === "ReqOnHold" && (
-                        <ActionBtn onClick={() => updateMut.mutate({ id: r.id, status: "ReqOpen" })}
-                          icon={<Play size={12} />} variant="blue">Resume</ActionBtn>
+                        <ActionBtn title="Resume" variant="blue" icon={<Play size={12} />}
+                          onClick={() => updateMut.mutate({ id: r.id, status: "ReqOpen" })} />
                       )}
                       {r.status !== "ReqCancelled" && r.status !== "ReqClosed" && (
-                        <ActionBtn onClick={() => setCancelTarget(r)}
-                          icon={<X size={12} />} variant="red">Cancel</ActionBtn>
+                        <ActionBtn title="Cancel" variant="red" icon={<Trash2 size={12} />}
+                          onClick={() => setCancelTarget(r)} />
                       )}
+                      </>)}
                     </div>
                   </td>
                 </tr>
-              ))}
+                );
+              })}
             </tbody>
           </table>
         )}
       </div>
 
-      <Modal open={showCreate} onClose={() => { setShowCreate(false); setEditId(null); }} title={editId ? "Edit Requisition" : "New Job Requisition"}>
-        <form onSubmit={(e) => { e.preventDefault(); editId ? editMut.mutate({ id: editId, body: form }) : createMut.mutate(form); }} className="space-y-4">
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Job Title <span className="text-red-500">*</span></label>
-            <input type="text" value={form.title} onChange={(e) => setForm({ ...form, title: e.target.value })} required
-              className="w-full border border-[var(--border)] rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-[#16243A]" />
+      {!isLoading && reqs.length > 0 && (
+        <div className="flex items-center justify-end gap-4 mt-4">
+          <span className="text-xs text-gray-500">Showing 1 to {reqs.length} of {reqs.length} result{reqs.length === 1 ? "" : "s"}</span>
+          <div className="flex items-center gap-1.5">
+            <button type="button" disabled aria-label="Previous page"
+              className="w-9 h-9 rounded-lg border border-gray-200 flex items-center justify-center text-gray-400 disabled:opacity-50">
+              <ChevronLeft size={12} />
+            </button>
+            <button type="button" aria-current="page"
+              className="w-9 h-9 rounded-lg bg-green-600 text-white flex items-center justify-center text-xs font-semibold">
+              1
+            </button>
+            <button type="button" disabled aria-label="Next page"
+              className="w-9 h-9 rounded-lg border border-gray-200 flex items-center justify-center text-gray-400 disabled:opacity-50">
+              <ChevronRight size={12} />
+            </button>
           </div>
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">
-              Department <span className="text-red-500">*</span>
-            </label>
-            <Select
-              value={form.departmentId}
-              onChange={(v) => setForm({ ...form, departmentId: v })}
-              placeholder={departments.length === 0 ? "No departments — create under Organization" : "Select department"}
-              searchable
-              options={departments.map((d) => ({
-                value: d.id,
-                label: d.name,
-                description: d.code ?? undefined,
-              }))}
-            />
-          </div>
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Hiring Pipeline <span className="text-red-500">*</span></label>
-            <Select
-              value={form.pipelineId}
-              onChange={(v) => setForm({ ...form, pipelineId: v })}
-              placeholder={pipelines.length === 0 ? "No pipelines — create under Settings → Pipelines" : "Select hiring pipeline"}
-              searchable
-              options={pipelines.map((p) => ({
-                value: p.id,
-                label: p.name + (p.isDefault ? " (default)" : ""),
-                description: p.stages.map((s) => s.name.replace(/([A-Z])/g, " $1").trim()).join(" → "),
-              }))}
-            />
-            <p className="mt-1 text-[11px] text-gray-400">Candidates applying to this role will flow through the selected pipeline.</p>
-          </div>
-          <div className="grid grid-cols-3 gap-4">
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Positions</label>
-              <NumberInput allowDecimal={false} min={1} value={form.positions} onChange={(v) => setForm({ ...form, positions: v ?? 1 })}
-                className="w-full border border-[var(--border)] rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-[#16243A]" />
-            </div>
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Priority</label>
-              <Select
-                value={form.priority}
-                onChange={(v) => setForm({ ...form, priority: v })}
-                options={["Low", "Medium", "High", "Urgent"].map((p) => ({ value: p, label: p }))}
-              />
-            </div>
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Type</label>
-              <Select
-                value={form.employmentType}
-                onChange={(v) => setForm({ ...form, employmentType: v })}
-                options={["FullTime", "PartTime", "Contract", "Intern"].map((t) => ({ value: t, label: t }))}
-              />
-            </div>
-          </div>
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Job Description</label>
-            <textarea value={form.jobDescription} onChange={(e) => setForm({ ...form, jobDescription: e.target.value })} rows={4}
-              className="w-full border border-[var(--border)] rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-[#16243A]" />
-          </div>
+        </div>
+      )}
 
-          <RoleScorecardSection form={form} setForm={setForm} />
+      <Modal open={showCreate} onClose={() => { setShowCreate(false); setEditId(null); }}
+        title={editId ? "Edit Job Requisition" : "New Job Requisition"} size="3xl">
+        <RequisitionWizard
+          form={form}
+          setForm={setForm}
+          isEdit={!!editId}
+          departments={departments}
+          pipelines={pipelines}
+          employees={employees}
+          submitting={createMut.isPending || editMut.isPending}
+          onCancel={() => { setShowCreate(false); setEditId(null); }}
+          onSubmit={() => { editId ? editMut.mutate({ id: editId, body: form }) : createMut.mutate(form); }}
+        />
+      </Modal>
 
-          <div className="rounded-lg border border-[#bfdbfe] bg-gradient-to-br from-[#eff6ff] to-white p-3">
-            <div className="flex items-start justify-between gap-2 mb-2">
-              <div>
-                <div className="inline-flex items-center gap-1.5 text-sm font-semibold text-[#1e40af]">
-                  <Sparkles size={14} /> ATS Skill Weights
-                </div>
-                <p className="text-[11px] text-gray-600 mt-0.5">
-                  Weight = importance (1 low, 10 critical). OpenAI uses these to score candidate resumes. Example: React → 9, AWS → 5
-                </p>
-              </div>
-              <span className="text-[11px] text-gray-500 whitespace-nowrap">{form.skillWeights.length} skill{form.skillWeights.length === 1 ? "" : "s"}</span>
-            </div>
-
-            {form.skillWeights.length > 0 && (
-              <div className="space-y-1.5 mb-2">
-                {form.skillWeights.map((sw, idx) => (
-                  <div key={`${sw.skill}-${idx}`} className="flex items-center gap-2 bg-white border border-gray-200 rounded-md px-2 py-1.5">
-                    <span className="flex-1 text-xs font-semibold text-gray-800 truncate">{sw.skill}</span>
-                    <div className="flex items-center gap-1 w-48">
-                      <input
-                        type="range"
-                        min={1}
-                        max={10}
-                        value={sw.weight}
-                        onChange={(e) => {
-                          const w = Number(e.target.value);
-                          setForm((p) => ({ ...p, skillWeights: p.skillWeights.map((x, i) => i === idx ? { ...x, weight: w } : x) }));
-                        }}
-                        className="flex-1 accent-[#2563eb]"
-                      />
-                      <span className="text-xs font-bold text-[#2563eb] w-6 text-right">{sw.weight}</span>
-                    </div>
-                    <button
-                      type="button"
-                      onClick={() => setForm((p) => ({ ...p, skillWeights: p.skillWeights.filter((_, i) => i !== idx) }))}
-                      className="p-1 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded"
-                      title="Remove"
-                    >
-                      <Trash2 size={12} />
-                    </button>
+      {viewReq && (() => {
+        const rcv = viewReq.recruiter ? `${viewReq.recruiter.firstName} ${viewReq.recruiter.lastName}`.trim() : "—";
+        const hm = viewReq.hiringManager ? `${viewReq.hiringManager.firstName} ${viewReq.hiringManager.lastName}`.trim() : "—";
+        const STATUS_LABEL: Record<string, string> = {
+          ReqDraft: "Draft", PendingApproval: "Pending Approval", ReqApproved: "Approved",
+          ReqOpen: "Open", ReqOnHold: "On Hold", ReqClosed: "Closed", ReqCancelled: "Cancelled",
+        };
+        const INTERVIEW_MODE_LABEL: Record<string, string> = {
+          Video: "Yes — Video", InPerson: "Yes — In-person", Either: "Either", NotRequired: "Not required",
+        };
+        const rng = (a: string | number | null | undefined, b: string | number | null | undefined, suffix: string) =>
+          a != null || b != null ? `${a ?? "?"} – ${b ?? "?"} ${suffix}` : "—";
+        const fmtDate = (d?: string | null) =>
+          d ? new Date(d).toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" }) : "—";
+        const fields: Array<[string, string]> = [
+          ["Department", viewReq.department?.name ?? "—"],
+          ["Recruiter (HR)", rcv],
+          ["Hiring Manager", hm],
+          ["Employment Type", viewReq.employmentType ?? "—"],
+          ["Work Location", viewReq.workLocation ?? "—"],
+          ["Job Location", viewReq.jobLocation ?? "—"],
+          ["Job Duration", viewReq.jobDuration ?? "—"],
+          ["Work Timings / Shift", viewReq.workTimings ?? "—"],
+          ["In-person / Video", INTERVIEW_MODE_LABEL[viewReq.interviewMode ?? ""] ?? "—"],
+          ["Positions", `${viewReq.filledPositions}/${viewReq.positions}`],
+          ["Applications", String(viewReq._count.applications)],
+          ["Priority", viewReq.priority ?? "—"],
+          ["Status", STATUS_LABEL[viewReq.status] ?? viewReq.status],
+          ["Experience", rng(viewReq.experienceMin, viewReq.experienceMax, "yrs")],
+          ["Salary", rng(viewReq.salaryMin, viewReq.salaryMax, "LPA")],
+          ["Target Joining", fmtDate(viewReq.targetJoiningDate)],
+        ];
+        const lists: Array<[string, string[] | null | undefined]> = [
+          ["Requirements", viewReq.requirements],
+          ["Nice to Have", viewReq.niceToHave],
+          ["Responsibilities", viewReq.responsibilities],
+          ["Benefits", viewReq.benefits],
+        ];
+        return (
+          <Modal open onClose={() => setViewReq(null)} size="2xl"
+            title={viewReq.title} subtitle={`${viewReq.requisitionNumber} · ${viewReq.type}`}>
+            <div className="p-4 space-y-4 max-h-[75vh] overflow-y-auto text-xs">
+              <div className="grid grid-cols-2 md:grid-cols-3 gap-x-4 gap-y-3">
+                {fields.map(([label, value]) => (
+                  <div key={label}>
+                    <p className="text-[11px] font-semibold uppercase tracking-wide text-gray-400">{label}</p>
+                    <p className="text-gray-800 mt-0.5">{value}</p>
                   </div>
                 ))}
               </div>
-            )}
-
-            <div className="flex gap-2">
-              <input
-                type="text"
-                value={skillDraft}
-                onChange={(e) => setSkillDraft(e.target.value)}
-                onKeyDown={(e) => {
-                  if (e.key === "Enter") {
-                    e.preventDefault();
-                    const s = skillDraft.trim();
-                    if (s && !form.skillWeights.some((x) => x.skill.toLowerCase() === s.toLowerCase())) {
-                      setForm((p) => ({ ...p, skillWeights: [...p.skillWeights, { skill: s, weight: weightDraft }] }));
-                      setSkillDraft("");
-                    }
-                  }
-                }}
-                placeholder="e.g., React, AWS, System Design"
-                className="flex-1 border border-[var(--border)] rounded-md px-2 py-1.5 text-xs focus:outline-none focus:ring-1 focus:ring-[#16243A]"
-              />
-              <div className="flex items-center gap-1">
-                <label className="text-[10px] font-semibold text-gray-500">W</label>
-                <select
-                  value={weightDraft}
-                  onChange={(e) => setWeightDraft(Number(e.target.value))}
-                  className="border border-[var(--border)] rounded-md px-1.5 py-1.5 text-xs focus:outline-none focus:ring-1 focus:ring-[#16243A]"
-                >
-                  {[1,2,3,4,5,6,7,8,9,10].map((n) => <option key={n} value={n}>{n}</option>)}
-                </select>
-              </div>
-              <button
-                type="button"
-                onClick={() => {
-                  const s = skillDraft.trim();
-                  if (!s) return;
-                  if (form.skillWeights.some((x) => x.skill.toLowerCase() === s.toLowerCase())) return;
-                  setForm((p) => ({ ...p, skillWeights: [...p.skillWeights, { skill: s, weight: weightDraft }] }));
-                  setSkillDraft("");
-                }}
-                className="inline-flex items-center gap-1 px-2.5 py-1.5 bg-[#16243A] hover:bg-[#1E3354] text-white rounded-md text-xs font-semibold"
-              >
-                <Plus size={12} /> Add
-              </button>
+              {viewReq.jobDescription && (
+                <div>
+                  <p className="text-[11px] font-semibold uppercase tracking-wide text-gray-400 mb-1">Job Description</p>
+                  <p className="text-gray-700 whitespace-pre-line leading-relaxed">{viewReq.jobDescription}</p>
+                </div>
+              )}
+              {lists.map(([label, items]) =>
+                items && items.length > 0 ? (
+                  <div key={label}>
+                    <p className="text-[11px] font-semibold uppercase tracking-wide text-gray-400 mb-1">{label}</p>
+                    <ul className="list-disc pl-5 space-y-0.5 text-gray-700">
+                      {items.map((it, i) => <li key={i}>{it}</li>)}
+                    </ul>
+                  </div>
+                ) : null,
+              )}
             </div>
-          </div>
-          <div className="flex justify-end gap-2 pt-2">
-            <button type="button" onClick={() => { setShowCreate(false); setEditId(null); }} className="px-4 py-2 border border-[var(--border)] rounded-lg text-sm">Cancel</button>
-            <button type="submit" disabled={createMut.isPending || editMut.isPending || !form.pipelineId || !form.title.trim() || !form.departmentId}
-              className="px-4 py-2 bg-[#16243A] text-white rounded-lg text-sm font-medium hover:bg-[#2563eb] disabled:opacity-50">
-              {editId ? (editMut.isPending ? "Saving..." : "Save Changes") : (createMut.isPending ? "Creating..." : "Create")}
-            </button>
-          </div>
-        </form>
-      </Modal>
+          </Modal>
+        );
+      })()}
 
       {cancelTarget && (
         <div className="fixed inset-0 z-50 flex items-center justify-center">
@@ -442,15 +475,15 @@ export default function RequisitionsPage() {
             className="fixed inset-0 bg-slate-900/50 backdrop-blur-sm"
             onClick={() => !updateMut.isPending && setCancelTarget(null)}
           />
-          <div className="relative bg-white rounded-xl shadow-2xl ring-1 ring-slate-200 w-full max-w-md mx-4 overflow-hidden animate-in fade-in zoom-in-95 duration-150">
-            <div className="p-6">
+          <div className="relative bg-white rounded-2xl shadow-2xl ring-1 ring-slate-200 w-full max-w-md mx-4 overflow-hidden animate-in fade-in zoom-in-95 duration-150">
+            <div className="p-4">
               <div className="flex items-start gap-4">
                 <div className="shrink-0 flex items-center justify-center w-12 h-12 rounded-full bg-red-50 ring-4 ring-red-50/60">
                   <AlertTriangle className="w-6 h-6 text-red-600" />
                 </div>
                 <div className="flex-1">
-                  <h3 className="text-lg font-semibold text-slate-900">Cancel Requisition</h3>
-                  <p className="mt-1.5 text-sm text-slate-500 leading-relaxed">
+                  <h3 className="text-[13px] font-semibold text-slate-900">Cancel Requisition</h3>
+                  <p className="mt-1.5 text-xs text-slate-500 leading-relaxed">
                     Are you sure you want to cancel{" "}
                     <span className="font-semibold text-slate-700">&quot;{cancelTarget.title}&quot;</span>{" "}
                     <span className="text-slate-400">({cancelTarget.requisitionNumber})</span>?
@@ -461,12 +494,12 @@ export default function RequisitionsPage() {
                 </div>
               </div>
             </div>
-            <div className="flex justify-end gap-2 px-6 py-4 bg-slate-50 border-t border-slate-100">
+            <div className="flex justify-end gap-2 px-5 py-4 bg-slate-50 border-t border-slate-100">
               <button
                 type="button"
                 onClick={() => setCancelTarget(null)}
                 disabled={updateMut.isPending}
-                className="px-4 py-2 bg-white border border-slate-300 rounded-lg text-sm font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-50 transition"
+                className="px-3 py-1.5 bg-white border border-slate-300 rounded-lg text-xs font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-50 transition"
               >
                 Keep Open
               </button>
@@ -474,7 +507,7 @@ export default function RequisitionsPage() {
                 type="button"
                 onClick={() => updateMut.mutate({ id: cancelTarget.id, status: "ReqCancelled" })}
                 disabled={updateMut.isPending}
-                className="inline-flex items-center gap-1.5 px-4 py-2 bg-gradient-to-r from-red-600 to-blue-600 hover:from-red-700 hover:to-blue-700 text-white rounded-lg text-sm font-semibold shadow-sm disabled:opacity-50 transition"
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-gradient-to-r from-red-600 to-green-600 hover:from-red-700 hover:to-green-700 text-white rounded-lg text-xs font-medium shadow-sm disabled:opacity-50 transition"
               >
                 {updateMut.isPending ? "Cancelling..." : "Yes, Cancel"}
               </button>
@@ -492,132 +525,51 @@ export default function RequisitionsPage() {
    - Key Responsibilities
 */
 
-interface ScorecardForm {
-  rolePurpose: string;
-  responsibilities: string[];
+function reqNum(v: string | number | null | undefined): number | null {
+  return v === null || v === undefined || v === "" ? null : Number(v);
 }
 
-function RoleScorecardSection<T extends ScorecardForm>({
-  form, setForm,
-}: {
-  form: T;
-  setForm: React.Dispatch<React.SetStateAction<T>>;
-}) {
-  const [open, setOpen] = useState(false);
-
-  const filled =
-    (form.rolePurpose.trim() ? 1 : 0)
-    + form.responsibilities.length;
-
-  return (
-    <div className="rounded-lg border border-gray-200 bg-white">
-      <button
-        type="button"
-        onClick={() => setOpen((o) => !o)}
-        className="w-full flex items-center justify-between px-3 py-2.5 text-left hover:bg-gray-50 transition rounded-lg"
-      >
-        <div className="flex items-center gap-2">
-          <Target size={14} className="text-[#16243A]" />
-          <span className="text-sm font-semibold text-gray-800">Role Scorecard</span>
-          <span className="text-[11px] text-gray-500 font-normal">(optional)</span>
-          {filled > 0 && (
-            <span className="ml-1 inline-flex items-center px-1.5 py-0.5 rounded-full bg-emerald-50 text-emerald-700 ring-1 ring-emerald-100 text-[10px] font-bold tabular-nums">
-              {filled} field{filled === 1 ? "" : "s"}
-            </span>
-          )}
-        </div>
-        <ChevronDown
-          size={14}
-          className={`text-gray-500 transition-transform ${open ? "rotate-180" : ""}`}
-        />
-      </button>
-
-      {open && (
-        <div className="px-4 pb-4 pt-1 space-y-4 border-t border-gray-100">
-          <p className="text-[11px] text-gray-500">
-            Captures the success criteria of the role — shared with candidates and used during onboarding & reviews.
-          </p>
-
-          <div>
-            <label className="block text-xs font-bold text-gray-700 uppercase tracking-wide mb-1">
-              Role purpose
-            </label>
-            <textarea
-              rows={2}
-              value={form.rolePurpose}
-              onChange={(e) => setForm((p) => ({ ...p, rolePurpose: e.target.value }))}
-              placeholder="e.g. Own enterprise growth by building a predictable sales pipeline and driving strategic account expansion."
-              className="w-full px-3 py-2 text-sm border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-[#16243A]/20 focus:border-[#16243A] resize-none"
-            />
-            <p className="mt-1 text-[10px] text-gray-400">{form.rolePurpose.length} / 500 characters · 1–2 sentences</p>
-          </div>
-
-          <BulletListField
-            label="Key responsibilities"
-            placeholder="e.g. Run discovery workshops and consulting discussions"
-            items={form.responsibilities}
-            onChange={(next) => setForm((p) => ({ ...p, responsibilities: next }))}
-          />
-        </div>
-      )}
-    </div>
-  );
-}
-
-function BulletListField({
-  label, placeholder, items, onChange,
-}: {
-  label: string;
-  placeholder: string;
-  items: string[];
-  onChange: (next: string[]) => void;
-}) {
-  const [draft, setDraft] = useState("");
-  const add = () => {
-    const v = draft.trim();
-    if (!v) return;
-    onChange([...items, v]);
-    setDraft("");
+function reqToForm(r: ReqItem): ReqFormShape {
+  return {
+    title: r.title ?? "",
+    jobOpeningName: r.jobOpeningName ?? "",
+    departmentId: r.department?.id ?? "",
+    pipelineId: r.pipelineId ?? "",
+    positions: r.positions ?? 1,
+    type: r.type ?? "NewPosition",
+    priority: r.priority ?? "Medium",
+    employmentType: r.employmentType ?? "FullTime",
+    workLocation: r.workLocation ?? "Office",
+    interviewPanelIds: Array.isArray(r.interviewPanel) ? r.interviewPanel : [],
+    reportingToId: r.reportingToId ?? "",
+    hiringManagerId: r.hiringManager?.id ?? "",
+    recruiterId: r.recruiter?.id ?? "",
+    experienceMin: reqNum(r.experienceMin),
+    experienceMax: reqNum(r.experienceMax),
+    salaryMin: reqNum(r.salaryMin),
+    salaryMax: reqNum(r.salaryMax),
+    budget: reqNum(r.budget),
+    targetJoiningDate: r.targetJoiningDate ? r.targetJoiningDate.slice(0, 10) : "",
+    closedDate: r.closedDate ? r.closedDate.slice(0, 10) : "",
+    etaToFillDays: reqNum(r.etaToFillDays),
+    jobGrade: r.jobGrade ?? "",
+    costCenter: r.costCenter ?? "",
+    jobLocation: r.jobLocation ?? "",
+    jobDuration: r.jobDuration ?? "",
+    workTimings: r.workTimings ?? "",
+    interviewMode: r.interviewMode ?? "",
+    jobDescription: r.jobDescription ?? "",
+    requirements: Array.isArray(r.requirements) ? r.requirements : [],
+    niceToHave: Array.isArray(r.niceToHave) ? r.niceToHave : [],
+    benefits: Array.isArray(r.benefits) ? r.benefits : [],
+    education: r.education ?? "",
+    referralBonusAmount: reqNum(r.referralBonusAmount),
+    careerPageVisible: r.careerPageVisible ?? true,
+    internalPostingOnly: r.internalPostingOnly ?? false,
+    postToJobPortal: r.postToJobPortal ?? false,
+    rolePurpose: r.rolePurpose ?? "",
+    responsibilities: Array.isArray(r.responsibilities) ? r.responsibilities : [],
+    skillWeights: Array.isArray(r.skillWeights) ? r.skillWeights : [],
+    justification: "",
   };
-  return (
-    <div>
-      <label className="block text-gray-700 mb-1 text-xs font-bold uppercase tracking-wide">{label}</label>
-      {items.length > 0 && (
-        <ul className="space-y-1 mb-1.5">
-          {items.map((it, i) => (
-            <li key={i} className="flex items-center gap-2 bg-gray-50 ring-1 ring-gray-100 rounded px-2 py-1 text-sm text-gray-800">
-              <span className="text-gray-300">•</span>
-              <span className="flex-1">{it}</span>
-              <button
-                type="button"
-                onClick={() => onChange(items.filter((_, idx) => idx !== i))}
-                className="text-gray-400 hover:text-red-600"
-                aria-label="Remove"
-              >
-                <X size={11} />
-              </button>
-            </li>
-          ))}
-        </ul>
-      )}
-      <div className="flex gap-1.5">
-        <input
-          value={draft}
-          onChange={(e) => setDraft(e.target.value)}
-          onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); add(); } }}
-          placeholder={placeholder}
-          className="flex-1 px-2.5 py-1.5 text-sm border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-[#16243A]/20 focus:border-[#16243A]"
-        />
-        <button
-          type="button"
-          onClick={add}
-          disabled={!draft.trim()}
-          className="px-2.5 py-1.5 bg-[#16243A] hover:bg-[#1E3354] disabled:opacity-50 text-white rounded-md text-xs font-semibold"
-        >
-          <Plus size={11} />
-        </button>
-      </div>
-    </div>
-  );
 }
-

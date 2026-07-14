@@ -5,6 +5,7 @@ import { withAuth } from "@/lib/with-auth";
 import { successResponse, notFound, conflict, validationError, forbidden, internalError } from "@/lib/api-response";
 import { resolveEmployeeId } from "@/lib/resolve-employee";
 import { mailRequisitionApprovalRequest, mailRequisitionDecision } from "@/lib/services/requisition-approval-service";
+import { getActiveChainLevels, getCallerRoleIds, callerCanActionLevel } from "@/lib/services/approval-chain";
 
 const schema = z.object({
   comment: z.string().max(2000).optional(),
@@ -31,7 +32,15 @@ export const POST = withAuth(async (req: NextRequest, { orgId, userId }, params)
 
     const nextPending = requisition.approvals.find((a) => a.status === "Pending");
     if (!nextPending) return conflict("No pending approval level");
-    if (nextPending.approverId !== employeeId) return forbidden("Not your approval level");
+
+    // Role-aware auth: the assigned approver, the specific level user, or any
+    // holder of the level's role may action it (matches the Leave flow).
+    const chainLevels = await getActiveChainLevels(orgId, "Requisition");
+    const levelCfg = chainLevels?.find((l) => l.level === nextPending.level);
+    const roleIds = await getCallerRoleIds(orgId, employeeId);
+    if (!callerCanActionLevel(levelCfg, { employeeId, roleIds }, nextPending.approverId)) {
+      return forbidden("Not your approval level");
+    }
 
     await prisma.requisitionApproval.update({
       where: { id: nextPending.id },
@@ -66,7 +75,7 @@ export const POST = withAuth(async (req: NextRequest, { orgId, userId }, params)
           orgId, requisitionId: requisition.id,
           recipientName: `${nextApprover.firstName} ${nextApprover.lastName}`.trim(),
           recipientEmail: nextApprover.workEmail,
-          approverRole: next.role as "DeptHead" | "HR",
+          approverRole: "HR", // variant selector only — picks the "advanced to next approver" email
           raiserName: requisition.raiser ? `${requisition.raiser.firstName} ${requisition.raiser.lastName}`.trim() : "Raiser",
           previousComment: parsed.data.comment ?? null,
         }).catch((e) => console.error("[req] next-approver mail failed:", e));

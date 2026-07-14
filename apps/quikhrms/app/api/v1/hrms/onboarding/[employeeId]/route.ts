@@ -49,7 +49,12 @@ export const GET = withAuth(async (_req: NextRequest, { orgId, userId }, params)
     const completed = instance.tasks.filter((t) => t.status === "TaskCompleted" || t.status === "TaskSkipped").length;
     const progress = total > 0 ? Math.round((completed / total) * 100) : 0;
 
-    return successResponse({ ...instance, progress, totalTasks: total, completedTasks: completed });
+    const employee = await prisma.employee.findFirst({
+      where: { id: instance.employeeId, orgId, deletedAt: null },
+      select: { id: true, firstName: true, lastName: true, employeeCode: true },
+    });
+
+    return successResponse({ ...instance, employee, progress, totalTasks: total, completedTasks: completed });
   } catch (error) {
     console.error("GET /onboarding/[employeeId] error:", error);
     return internalError();

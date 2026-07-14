@@ -73,7 +73,7 @@ export default function LocationsPage() {
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">Name</label>
             <input type="text" value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} required
-              className="w-full border border-[var(--border)] rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-[#16243A]" />
+              className="w-full border border-[var(--border)] rounded-lg px-3 py-2 text-xs focus:outline-none focus:ring-1 focus:ring-[#166534]" />
           </div>
           <div className="grid grid-cols-2 gap-4">
             <div>
@@ -90,19 +90,19 @@ export default function LocationsPage() {
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">State</label>
               <input type="text" value={form.state} onChange={(e) => setForm({ ...form, state: e.target.value })}
-                className="w-full border border-[var(--border)] rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-[#16243A]" />
+                className="w-full border border-[var(--border)] rounded-lg px-3 py-2 text-xs focus:outline-none focus:ring-1 focus:ring-[#166534]" />
             </div>
           </div>
           <div className="grid grid-cols-2 gap-4">
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">Country</label>
               <input type="text" value={form.country} onChange={(e) => setForm({ ...form, country: e.target.value })}
-                className="w-full border border-[var(--border)] rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-[#16243A]" />
+                className="w-full border border-[var(--border)] rounded-lg px-3 py-2 text-xs focus:outline-none focus:ring-1 focus:ring-[#166534]" />
             </div>
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">Timezone</label>
               <input type="text" value={form.timezone} onChange={(e) => setForm({ ...form, timezone: e.target.value })}
-                className="w-full border border-[var(--border)] rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-[#16243A]" />
+                className="w-full border border-[var(--border)] rounded-lg px-3 py-2 text-xs focus:outline-none focus:ring-1 focus:ring-[#166534]" />
             </div>
           </div>
           <div className="flex items-center gap-2">
@@ -112,9 +112,9 @@ export default function LocationsPage() {
           </div>
           <div className="flex justify-end gap-2 pt-2">
             <button type="button" onClick={() => setModal({ open: false, item: null })}
-              className="px-4 py-2 border border-[var(--border)] rounded-lg text-sm text-gray-700 hover:bg-gray-50">Cancel</button>
+              className="px-3 py-1.5 border border-[var(--border)] rounded-lg text-xs font-medium text-gray-700 hover:bg-gray-50">Cancel</button>
             <button type="submit"
-              className="px-4 py-2 bg-[#16243A] text-white rounded-lg text-sm font-medium hover:bg-[#2563eb]">
+              className="px-3 py-1.5 bg-green-600 text-white rounded-lg text-xs font-medium hover:bg-green-700">
               {modal.item ? "Update" : "Create"}</button>
           </div>
         </form>
@@ -163,7 +163,7 @@ function CityAutocomplete({
           onChange={(e) => { setQuery(e.target.value); onChange(e.target.value); setOpen(true); }}
           onFocus={() => setOpen(true)}
           placeholder="Search city..."
-          className="w-full border border-[var(--border)] rounded-lg pl-3 pr-8 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-[#16243A]"
+          className="w-full border border-[var(--border)] rounded-lg pl-3 pr-8 py-2 text-xs focus:outline-none focus:ring-1 focus:ring-[#166534]"
         />
         <ChevronDown size={14} className="absolute right-2 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none" />
       </div>
@@ -174,11 +174,11 @@ function CityAutocomplete({
               type="button"
               key={`${r.city}-${r.state}-${r.country}`}
               onClick={() => { onSelect(r); setQuery(r.city); setOpen(false); }}
-              className="w-full flex items-start gap-2 px-3 py-2 text-left hover:bg-[#dbeafe]"
+              className="w-full flex items-start gap-2 px-3 py-2 text-left hover:bg-[#dcfce7]"
             >
-              <MapPin size={14} className="text-[#3b82f6] mt-0.5 shrink-0" />
+              <MapPin size={14} className="text-[#22c55e] mt-0.5 shrink-0" />
               <div className="flex-1 min-w-0">
-                <div className="text-sm font-medium text-gray-900">{r.city}</div>
+                <div className="text-xs font-medium text-gray-900">{r.city}</div>
                 <div className="text-[11px] text-gray-500 truncate">{r.state} · {r.country} · {r.timezone}</div>
               </div>
             </button>

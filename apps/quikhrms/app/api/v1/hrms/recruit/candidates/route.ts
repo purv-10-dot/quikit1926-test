@@ -5,7 +5,7 @@ import { successResponse, validationError, conflict, internalError } from "@/lib
 import { createCandidateSchema } from "@/lib/validations/recruit";
 import { parsePagination, paginationMeta } from "@/lib/utils/pagination";
 import { fireWorkflow } from "@/lib/workflows/executor";
-import type { Prisma } from "@quikit/database";
+import type { Prisma, CandidateStatus } from "@quikit/database";
 
 export const GET = withAuth(async (req: NextRequest, { orgId }) => {
   try {
@@ -13,6 +13,9 @@ export const GET = withAuth(async (req: NextRequest, { orgId }) => {
     const { page, limit } = parsePagination(searchParams);
     const search = searchParams.get("search");
     const status = searchParams.get("status");
+    const excludeStatus = searchParams.get("excludeStatus")?.split(",").filter(Boolean) ?? [];
+    // Hide candidates whose application has reached one of these pipeline stages (e.g. "Hired").
+    const excludeStage = searchParams.get("excludeStage")?.split(",").filter(Boolean) ?? [];
     const source = searchParams.get("source");
     const includeArchived = searchParams.get("includeArchived") === "1";
     const onlyArchived = searchParams.get("archived") === "1";
@@ -25,6 +28,8 @@ export const GET = withAuth(async (req: NextRequest, { orgId }) => {
         : includeArchived ? {} : { isArchived: false }),
       ...(onlyBlacklisted && { isBlacklisted: true }),
       ...(status && { status: status as Prisma.CandidateWhereInput["status"] }),
+      ...(excludeStatus.length && { status: { notIn: excludeStatus as CandidateStatus[] } }),
+      ...(excludeStage.length && { applications: { none: { deletedAt: null, currentStage: { in: excludeStage } } } }),
       ...(source && { source: source as Prisma.CandidateWhereInput["source"] }),
       ...(search && { OR: [
         { firstName: { contains: search, mode: "insensitive" } },

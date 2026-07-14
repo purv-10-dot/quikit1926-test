@@ -5,6 +5,7 @@ import { useMemo, useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useApiClient } from "@/lib/hooks/use-api";
 import { Modal } from "@/components/hrms/modal";
+import { todayInput } from "@/lib/utils/date-input";
 import { Plus, Pin, Megaphone, Sparkles, Calendar, Globe2, Building2, Users, CalendarClock, Send } from "lucide-react";
 import { FilterBar, FilterDivider, FilterPills, FilterSearch } from "@/components/hrms/ui/filter-bar";
 import { SkeletonCards } from "@/components/hrms/skeleton";
@@ -21,7 +22,7 @@ interface AnnouncementItem {
 }
 
 const visibilityStyles: Record<string, { bg: string; text: string; ring: string }> = {
-  Organization: { bg: "bg-blue-50", text: "text-blue-700", ring: "ring-blue-200" },
+  Organization: { bg: "bg-green-50", text: "text-green-700", ring: "ring-green-200" },
   Department: { bg: "bg-violet-50", text: "text-violet-700", ring: "ring-violet-200" },
   Team: { bg: "bg-emerald-50", text: "text-emerald-700", ring: "ring-emerald-200" },
 };
@@ -88,51 +89,51 @@ export default function AnnouncementsPage() {
   return (
     <div>
       {/* Hero header */}
-      <div className="relative overflow-hidden rounded-3xl bg-gradient-to-br from-[#0F1F3D] via-[#1E3A8A] to-[#2563EB] mb-6">
+      <div className="relative overflow-hidden rounded-3xl bg-gradient-to-br from-[#0F1F3D] via-[#14532d] to-[#16a34a] mb-4">
         <svg className="absolute inset-0 w-full h-full opacity-40" viewBox="0 0 1200 200" preserveAspectRatio="none">
           <defs>
             <radialGradient id="ann-glow" cx="0.85" cy="0.5" r="0.5">
-              <stop offset="0%" stopColor="#60a5fa" stopOpacity="0.4" />
-              <stop offset="100%" stopColor="#1e3a8a" stopOpacity="0" />
+              <stop offset="0%" stopColor="#4ade80" stopOpacity="0.4" />
+              <stop offset="100%" stopColor="#14532d" stopOpacity="0" />
             </radialGradient>
           </defs>
           <ellipse cx="1000" cy="100" rx="280" ry="180" fill="url(#ann-glow)" />
-          <g stroke="#bfdbfe" strokeWidth="1" fill="none" opacity="0.4">
+          <g stroke="#bbf7d0" strokeWidth="1" fill="none" opacity="0.4">
             <path d="M 500 80 Q 700 40 900 80 T 1300 80" />
             <path d="M 480 110 Q 700 70 920 110 T 1300 110" />
             <path d="M 460 140 Q 700 100 940 140 T 1300 140" />
           </g>
         </svg>
-        <div className="relative px-8 py-7 flex items-center justify-between gap-6">
+        <div className="relative px-6 py-7 flex items-center justify-between gap-4">
           <div>
             <div className="inline-flex items-center gap-2 px-2.5 py-1 rounded-full bg-white/15 backdrop-blur-sm ring-1 ring-white/20 text-[11px] font-bold tracking-widest text-white/90 uppercase">
               <Megaphone size={12} /> Announcements
             </div>
-            <h1 className="font-serif-display text-white text-3xl md:text-4xl font-bold mt-3">
+            <h1 className="font-serif-display text-white text-base font-semibold mt-3">
               Keep everyone in the loop
             </h1>
-            <p className="text-white/75 text-sm mt-1">Broadcast news, pin priorities, target the right audience.</p>
+            <p className="text-white/75 text-xs mt-1">Broadcast news, pin priorities, target the right audience.</p>
           </div>
           <button
             onClick={openCreate}
-            className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl bg-white text-[#0F1F3D] text-sm font-semibold shadow-lg hover:shadow-xl transition-shadow shrink-0"
+            className="inline-flex items-center gap-2 px-3 py-1.5 rounded-xl bg-white text-[#0F1F3D] text-xs font-medium shadow-lg hover:shadow-xl transition-shadow shrink-0"
           >
-            <Plus size={16} /> <span className="hidden sm:inline">New announcement</span><span className="sm:hidden">New</span>
+            <Plus size={13} /> <span className="hidden sm:inline">New announcement</span><span className="sm:hidden">New</span>
           </button>
         </div>
       </div>
 
       {/* Stat strip */}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
-        <StatCard iconBg="bg-blue-50" iconColor="text-blue-600" Icon={Megaphone} label="Total" value={stats.total} caption="All announcements" />
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-4">
+        <StatCard iconBg="bg-green-50" iconColor="text-green-600" Icon={Megaphone} label="Total" value={stats.total} caption="All announcements" />
         <StatCard iconBg="bg-amber-50" iconColor="text-amber-600" Icon={Pin} label="Pinned" value={stats.pinned} caption="Stay on top" />
         <StatCard iconBg="bg-emerald-50" iconColor="text-emerald-600" Icon={Sparkles} label="Active" value={stats.active} caption="Currently live" />
         <StatCard iconBg="bg-violet-50" iconColor="text-violet-600" Icon={Globe2} label="Org-wide" value={stats.orgWide} caption="Visible to all" />
       </div>
 
       {/* Two-column layout */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        <div className="lg:col-span-2 space-y-5">
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+        <div className="lg:col-span-2 space-y-4">
           {/* Filter bar */}
           <FilterBar>
             <FilterPills
@@ -151,11 +152,11 @@ export default function AnnouncementsPage() {
           {/* Feed */}
           {isLoading ? <SkeletonCards count={4} /> : filtered.length === 0 ? (
             <div className="surface-card p-12 text-center">
-              <div className="w-14 h-14 rounded-2xl bg-blue-50 flex items-center justify-center mx-auto mb-3">
-                <Megaphone size={24} className="text-blue-600" />
+              <div className="w-14 h-14 rounded-2xl bg-green-50 flex items-center justify-center mx-auto mb-3">
+                <Megaphone size={24} className="text-green-600" />
               </div>
-              <p className="font-serif-display text-lg font-bold text-gray-900">No announcements yet</p>
-              <p className="text-sm text-gray-500 mt-1">{search || filter !== "All" ? "Try a different filter." : "Publish the first one to get started."}</p>
+              <p className="font-serif-display text-[13px] font-semibold text-gray-900">No announcements yet</p>
+              <p className="text-xs text-gray-500 mt-1">{search || filter !== "All" ? "Try a different filter." : "Publish the first one to get started."}</p>
             </div>
           ) : (
             <div className="space-y-4">
@@ -164,7 +165,7 @@ export default function AnnouncementsPage() {
                 return (
                   <article
                     key={a.id}
-                    className={`row-stagger card-hover-lift surface-card p-5 ${a.isPinned ? "ring-1 ring-amber-200 bg-gradient-to-br from-amber-50/40 to-white" : ""}`}
+                    className={`row-stagger card-hover-lift surface-card p-4 ${a.isPinned ? "ring-1 ring-amber-200 bg-gradient-to-br from-amber-50/40 to-white" : ""}`}
                     style={{ ["--i" as never]: Math.min(idx, 10) }}
                   >
                     {a.isPinned && (
@@ -173,7 +174,7 @@ export default function AnnouncementsPage() {
                       </div>
                     )}
                     <div className="flex items-start gap-3">
-                      <div className="w-10 h-10 rounded-full bg-gradient-to-br from-[#1E3A8A] to-[#2563EB] flex items-center justify-center text-white font-bold text-sm shrink-0">
+                      <div className="w-10 h-10 rounded-full bg-gradient-to-br from-[#14532d] to-[#16a34a] flex items-center justify-center text-white font-bold text-sm shrink-0">
                         {a.author.profilePhoto ? (
                           // eslint-disable-next-line @next/next/no-img-element
                           <img src={a.author.profilePhoto} alt="" className="w-full h-full rounded-full object-cover" />
@@ -183,7 +184,7 @@ export default function AnnouncementsPage() {
                       </div>
                       <div className="min-w-0 flex-1">
                         <div className="flex items-center gap-2 flex-wrap">
-                          <span className="text-sm font-bold text-gray-900">{a.author.firstName} {a.author.lastName}</span>
+                          <span className="text-[13px] font-semibold text-gray-900">{a.author.firstName} {a.author.lastName}</span>
                           <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider ring-1 ${vs.bg} ${vs.text} ${vs.ring}`}>
                             <Globe2 size={9} /> {a.visibility}
                           </span>
@@ -194,8 +195,8 @@ export default function AnnouncementsPage() {
                             </span>
                           )}
                         </div>
-                        <h2 className="font-serif-display text-xl font-bold text-gray-900 mt-1.5 leading-snug">{a.title}</h2>
-                        <p className="text-sm text-gray-700 mt-2 whitespace-pre-wrap leading-relaxed">{a.content}</p>
+                        <h2 className="font-serif-display text-[13px] font-semibold text-gray-900 mt-1.5 leading-snug">{a.title}</h2>
+                        <p className="text-xs text-gray-700 mt-2 whitespace-pre-wrap leading-relaxed">{a.content}</p>
                       </div>
                     </div>
                   </article>
@@ -205,10 +206,10 @@ export default function AnnouncementsPage() {
           )}
         </div>
 
-        <aside className="space-y-5">
-          <div className="surface-card p-5">
-            <h3 className="text-sm font-bold text-gray-900 mb-3 flex items-center gap-2">
-              <Sparkles size={14} className="text-blue-600" /> At a glance
+        <aside className="space-y-4">
+          <div className="surface-card p-4">
+            <h3 className="text-[13px] font-semibold text-gray-900 mb-3 flex items-center gap-2">
+              <Sparkles size={14} className="text-green-600" /> At a glance
             </h3>
             <ul className="space-y-3">
               <StatRow label="Total announcements" value={stats.total} />
@@ -218,8 +219,8 @@ export default function AnnouncementsPage() {
             </ul>
           </div>
 
-          <div className="surface-card p-5">
-            <h3 className="text-sm font-bold text-gray-900 mb-2">Posting tips</h3>
+          <div className="surface-card p-4">
+            <h3 className="text-[13px] font-semibold text-gray-900 mb-2">Posting tips</h3>
             <ul className="text-xs text-gray-600 space-y-1.5 list-disc list-inside">
               <li>Pin urgent updates so they stay on top.</li>
               <li>Target departments or teams for relevance.</li>
@@ -241,10 +242,10 @@ export default function AnnouncementsPage() {
       >
         <form onSubmit={(e) => { e.preventDefault(); createMut.mutate(form); }}>
           {/* Live preview header */}
-          <div className="px-6 pt-5 pb-4 bg-gradient-to-br from-blue-50/60 via-white to-violet-50/40 border-b border-gray-100">
+          <div className="px-5 pt-5 pb-4 bg-gradient-to-br from-green-50/60 via-white to-violet-50/40 border-b border-gray-100">
             <p className="text-[10px] font-bold uppercase tracking-widest text-gray-500 mb-2">Preview</p>
             <div className="flex items-start gap-3">
-              <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-[#1E3A8A] to-[#2563EB] flex items-center justify-center text-white shrink-0 shadow-md">
+              <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-[#14532d] to-[#16a34a] flex items-center justify-center text-white shrink-0 shadow-md">
                 <Megaphone size={18} />
               </div>
               <div className="min-w-0 flex-1">
@@ -258,7 +259,7 @@ export default function AnnouncementsPage() {
                     <Globe2 size={9} /> {form.visibility}
                   </span>
                 </div>
-                <p className="font-serif-display text-lg font-bold text-gray-900 mt-1.5 leading-snug truncate">
+                <p className="font-serif-display text-[13px] font-semibold text-gray-900 mt-1.5 leading-snug truncate">
                   {form.title || "Your announcement title appears here"}
                 </p>
                 <p className="text-xs text-gray-500 mt-0.5 line-clamp-1">
@@ -269,7 +270,7 @@ export default function AnnouncementsPage() {
           </div>
 
           {/* Form body */}
-          <div className="p-6 space-y-5">
+          <div className="p-4 space-y-4">
             {/* Title */}
             <div>
               <div className="flex items-center justify-between mb-1.5">
@@ -284,7 +285,7 @@ export default function AnnouncementsPage() {
                 onChange={(e) => setForm({ ...form, title: e.target.value.slice(0, 120) })}
                 required
                 placeholder="e.g. Q2 All-hands on Friday"
-                className="w-full border border-[var(--border)] rounded-lg px-3.5 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/30 focus:border-blue-500 transition-colors"
+                className="w-full border border-[var(--border)] rounded-lg px-3.5 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-green-500/30 focus:border-green-500 transition-colors"
               />
             </div>
 
@@ -300,7 +301,7 @@ export default function AnnouncementsPage() {
                 required
                 rows={5}
                 placeholder="What do you want everyone to know? Add details, links, next steps..."
-                className="w-full border border-[var(--border)] rounded-lg px-3.5 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/30 focus:border-blue-500 transition-colors resize-none"
+                className="w-full border border-[var(--border)] rounded-lg px-3.5 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-green-500/30 focus:border-green-500 transition-colors resize-none"
               />
             </div>
 
@@ -321,14 +322,14 @@ export default function AnnouncementsPage() {
                       onClick={() => setForm({ ...form, visibility: v })}
                       className={`relative flex flex-col items-start gap-1 p-3 rounded-xl border-2 text-left transition-all ${
                         active
-                          ? "border-blue-500 bg-blue-50/70 shadow-sm"
+                          ? "border-green-500 bg-green-50/70 shadow-sm"
                           : "border-gray-200 hover:border-gray-300 hover:bg-gray-50"
                       }`}
                     >
-                      <div className={`w-8 h-8 rounded-lg flex items-center justify-center ${active ? "bg-blue-500 text-white" : "bg-gray-100 text-gray-500"}`}>
+                      <div className={`w-8 h-8 rounded-lg flex items-center justify-center ${active ? "bg-green-500 text-white" : "bg-gray-100 text-gray-500"}`}>
                         <Icon size={14} />
                       </div>
-                      <span className={`text-sm font-semibold ${active ? "text-blue-900" : "text-gray-800"}`}>{v}</span>
+                      <span className={`text-[13px] font-semibold ${active ? "text-green-900" : "text-gray-800"}`}>{v}</span>
                       <span className="text-[11px] text-gray-500">{hint}</span>
                     </button>
                   );
@@ -351,7 +352,7 @@ export default function AnnouncementsPage() {
                     <Pin size={14} />
                   </div>
                   <div className="text-left min-w-0">
-                    <p className="text-sm font-semibold text-gray-800">Pin to top</p>
+                    <p className="text-[13px] font-semibold text-gray-800">Pin to top</p>
                     <p className="text-[11px] text-gray-500 truncate">Keep highly visible</p>
                   </div>
                 </div>
@@ -361,7 +362,7 @@ export default function AnnouncementsPage() {
               </button>
 
               {/* Expiry */}
-              <div className="flex items-center gap-3 p-3.5 rounded-xl border-2 border-gray-200 focus-within:border-blue-500 transition-colors">
+              <div className="flex items-center gap-3 p-3.5 rounded-xl border-2 border-gray-200 focus-within:border-green-500 transition-colors">
                 <div className="w-9 h-9 rounded-lg bg-gray-100 text-gray-500 flex items-center justify-center shrink-0">
                   <CalendarClock size={14} />
                 </div>
@@ -370,6 +371,7 @@ export default function AnnouncementsPage() {
                   <input
                     type="date"
                     value={form.expiresAt}
+                    min={todayInput()}
                     onChange={(e) => setForm({ ...form, expiresAt: e.target.value })}
                     className="w-full text-[11px] text-gray-500 bg-transparent border-0 p-0 focus:outline-none focus:ring-0"
                   />
@@ -379,7 +381,7 @@ export default function AnnouncementsPage() {
           </div>
 
           {/* Footer */}
-          <div className="flex items-center justify-between gap-3 px-6 py-4 bg-gray-50/70 border-t border-gray-100">
+          <div className="flex items-center justify-between gap-3 px-5 py-4 bg-gray-50/70 border-t border-gray-100">
             <p className="text-[11px] text-gray-500 hidden sm:block">
               {form.isPinned ? "Pinned " : ""}
               {form.visibility === "Organization" ? "to everyone in your org" : `to ${form.visibility.toLowerCase()}`}
@@ -389,16 +391,16 @@ export default function AnnouncementsPage() {
               <button
                 type="button"
                 onClick={() => setShowCreate(false)}
-                className="px-4 py-2 border border-[var(--border)] rounded-lg text-sm font-medium text-gray-700 hover:bg-white"
+                className="px-3 py-1.5 border border-[var(--border)] rounded-lg text-xs font-medium text-gray-700 hover:bg-white"
               >
                 Cancel
               </button>
               <button
                 type="submit"
                 disabled={createMut.isPending || !form.title.trim() || !form.content.trim()}
-                className="inline-flex items-center gap-2 px-5 py-2 bg-gradient-to-r from-[#1E3A8A] to-[#2563EB] text-white rounded-lg text-sm font-semibold shadow-md hover:shadow-lg disabled:opacity-50 disabled:cursor-not-allowed transition-all"
+                className="inline-flex items-center gap-2 px-3 py-1.5 bg-gradient-to-r from-[#14532d] to-[#16a34a] text-white rounded-lg text-xs font-medium shadow-md hover:shadow-lg disabled:opacity-50 disabled:cursor-not-allowed transition-all"
               >
-                <Send size={14} />
+                <Send size={13} />
                 {createMut.isPending ? "Publishing..." : "Publish"}
               </button>
             </div>
@@ -425,8 +427,8 @@ function StatCard({
         <Icon size={20} className={iconColor} />
       </div>
       <div className="min-w-0 flex-1">
-        <p className="text-sm font-bold text-gray-900 truncate">{label}</p>
-        <p className="font-serif-display text-2xl font-bold text-gray-900 leading-tight mt-0.5">{value}</p>
+        <p className="text-[13px] font-semibold text-gray-900 truncate">{label}</p>
+        <p className="font-serif-display text-xl font-bold text-gray-900 leading-tight mt-0.5">{value}</p>
         <p className="text-[11px] text-gray-500 truncate">{caption}</p>
       </div>
     </div>
@@ -435,7 +437,7 @@ function StatCard({
 
 function StatRow({ label, value }: { label: string; value: number }) {
   return (
-    <li className="flex items-center justify-between gap-2 text-sm">
+    <li className="flex items-center justify-between gap-2 text-xs">
       <span className="text-gray-600">{label}</span>
       <span className="font-bold text-gray-900">{value}</span>
     </li>

@@ -77,7 +77,6 @@ export default function KraTemplatesPage() {
       qc.invalidateQueries({ queryKey: ["performance", "kra-templates"] });
       toast.success("Scorecard deleted");
     },
-    onError: (e: Error) => toast.error("Delete failed", e.message),
   });
 
   const scorecards = (data?.data ?? []).filter((s) =>
@@ -85,22 +84,22 @@ export default function KraTemplatesPage() {
   );
 
   return (
-    <div className="w-full space-y-5">
+    <div className="w-full space-y-4">
       <div className="flex items-center justify-between gap-3">
         <div className="flex items-center gap-3">
-          <Target size={28} className="text-[#3b82f6]" />
+          <Target size={28} className="text-[#22c55e]" />
           <div>
-            <h1 className="font-serif-display text-3xl md:text-4xl font-bold text-gray-900">KRA / KPI Templates</h1>
-            <p className="text-sm text-gray-500">
+            <h1 className="text-page-title text-gray-900">KRA / KPI Templates</h1>
+            <p className="text-xs text-gray-500">
               Designation-wise scorecards. Weights validated. Assign to employees to start tracking.
             </p>
           </div>
         </div>
         <Link
           href="/performance/kra-templates/new"
-          className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-[#16243A] hover:bg-[#1E3354] text-white rounded-md text-sm font-semibold shadow-sm"
+          className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-green-600 hover:bg-green-700 text-white rounded-md text-xs font-medium shadow-sm"
         >
-          <Plus size={14} /> New scorecard
+          <Plus size={13} /> New scorecard
         </Link>
       </div>
 
@@ -112,7 +111,7 @@ export default function KraTemplatesPage() {
             value={search}
             onChange={(e) => setSearch(e.target.value)}
             placeholder="Search scorecards…"
-            className="w-full pl-8 pr-3 py-2 text-sm border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-[#16243A]/20 focus:border-[#16243A]"
+            className="w-full pl-8 pr-3 py-2 text-xs border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-[#166534]/20 focus:border-[#166534]"
           />
         </div>
         <div className="w-56">
@@ -126,7 +125,7 @@ export default function KraTemplatesPage() {
             ]}
           />
         </div>
-        <label className="flex items-center gap-2 text-sm text-gray-700">
+        <label className="flex items-center gap-2 text-xs font-medium text-gray-700">
           <input
             type="checkbox"
             checked={showInactive}
@@ -143,15 +142,15 @@ export default function KraTemplatesPage() {
       ) : scorecards.length === 0 ? (
         <div className="rounded-2xl ring-1 ring-dashed ring-gray-300 bg-white p-12 text-center">
           <Target size={32} className="text-gray-300 mx-auto mb-3" />
-          <p className="text-base font-bold text-gray-900">No scorecards yet</p>
+          <p className="text-[13px] font-semibold text-gray-900">No scorecards yet</p>
           <p className="text-xs text-gray-500 mt-1 mb-4">
             Create your first KRA/KPI scorecard for a designation.
           </p>
           <Link
             href="/performance/kra-templates/new"
-            className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-[#16243A] hover:bg-[#1E3354] text-white rounded-md text-sm font-semibold"
+            className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-green-600 hover:bg-green-700 text-white rounded-md text-xs font-medium"
           >
-            <Plus size={14} /> New scorecard
+            <Plus size={13} /> New scorecard
           </Link>
         </div>
       ) : (
@@ -174,7 +173,7 @@ export default function KraTemplatesPage() {
                         href={`/performance/kra-templates/${sc.id}`}
                         className="block"
                       >
-                        <h3 className="font-serif-display text-lg font-bold text-gray-900 leading-tight hover:text-[#3b82f6] transition truncate">
+                        <h3 className="font-serif-display text-[13px] font-semibold text-gray-900 leading-tight hover:text-[#22c55e] transition truncate">
                           {sc.name}
                         </h3>
                       </Link>
@@ -183,7 +182,7 @@ export default function KraTemplatesPage() {
                       )}
                     </div>
                     {!sc.isActive && (
-                      <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full bg-gray-100 text-gray-600 text-[10px] font-bold">
+                      <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full bg-gray-100 text-gray-600 text-[11px] font-medium">
                         <Power size={9} /> Inactive
                       </span>
                     )}
@@ -191,17 +190,17 @@ export default function KraTemplatesPage() {
 
                   <div className="mt-3 flex flex-wrap items-center gap-1.5">
                     {sc.designationId && desigMap.get(sc.designationId) && (
-                      <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-blue-50 text-blue-700 ring-1 ring-blue-100 text-[10px] font-semibold">
+                      <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-green-50 text-green-700 ring-1 ring-green-100 text-[11px] font-semibold">
                         <Briefcase size={10} /> {desigMap.get(sc.designationId)}
                       </span>
                     )}
                     {sc.departmentId && deptMap.get(sc.departmentId) && (
-                      <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-purple-50 text-purple-700 ring-1 ring-purple-100 text-[10px] font-semibold">
+                      <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-purple-50 text-purple-700 ring-1 ring-purple-100 text-[11px] font-semibold">
                         {deptMap.get(sc.departmentId)}
                       </span>
                     )}
                     {(sc.tags ?? []).slice(0, 3).map((t) => (
-                      <span key={t} className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-gray-100 text-gray-700 text-[10px] font-semibold">
+                      <span key={t} className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-gray-100 text-gray-700 text-[11px] font-semibold">
                         <Tag size={9} /> {t}
                       </span>
                     ))}
@@ -226,15 +225,15 @@ export default function KraTemplatesPage() {
                       onClick={() => setAssignTarget(sc)}
                       disabled={!sc.isActive}
                       title={sc.isActive ? "Assign to employees" : "Activate the scorecard first to assign"}
-                      className="inline-flex items-center gap-1 px-2.5 py-1 rounded-md text-xs font-semibold text-emerald-700 hover:bg-emerald-50 disabled:opacity-40 disabled:cursor-not-allowed"
+                      className="inline-flex items-center gap-1 px-2.5 py-1 rounded-md text-xs font-normal text-emerald-700 hover:bg-emerald-50 disabled:opacity-40 disabled:cursor-not-allowed"
                     >
-                      <UserPlus size={11} /> Assign
+                      <UserPlus size={12} /> Assign
                     </button>
                     <Link
                       href={`/performance/kra-templates/${sc.id}`}
-                      className="inline-flex items-center gap-1 px-2.5 py-1 rounded-md text-xs font-semibold text-[#16243A] hover:bg-[#16243A]/10"
+                      className="inline-flex items-center gap-1 px-2.5 py-1 rounded-md text-xs font-normal text-[#166534] hover:bg-[#166534]/10"
                     >
-                      <Edit2 size={11} /> Edit
+                      <Edit2 size={12} /> Edit
                     </Link>
                     <button
                       type="button"
@@ -258,9 +257,9 @@ export default function KraTemplatesPage() {
                         });
                         if (ok) deleteMut.mutate(sc.id);
                       }}
-                      className="inline-flex items-center gap-1 px-2.5 py-1 rounded-md text-xs font-semibold text-red-600 hover:bg-red-50 disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:bg-transparent"
+                      className="inline-flex items-center gap-1 px-2.5 py-1 rounded-md text-xs font-normal text-red-600 hover:bg-red-50 disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:bg-transparent"
                     >
-                      <Trash2 size={11} /> Delete
+                      <Trash2 size={12} /> Delete
                     </button>
                   </div>
                 </div>

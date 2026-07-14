@@ -1,6 +1,7 @@
-"use client";
+﻿"use client";
 
 import { Dispatch, SetStateAction, useEffect, useRef, useState } from "react";
+import Link from "next/link";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useApiClient } from "@/lib/hooks/use-api";
 import { Modal } from "@/components/hrms/modal";
@@ -8,7 +9,8 @@ import { useToast } from "@/components/hrms/toast";
 import { clsx } from "clsx";
 import { Plus, Search, User, Briefcase, MapPin, Link2, FileText, IndianRupee,
   Globe, Users as UsersIcon, Landmark, GraduationCap, Rocket, Inbox, Check, ChevronDown, Sparkles,
-  Ban, Archive, ArchiveRestore, Clock, ShieldX, MoreVertical, RotateCcw, X, Flame, AlertCircle, Building2 } from "lucide-react";
+  Ban, Archive, ArchiveRestore, Clock, ShieldX, MoreVertical, RotateCcw, X, Flame, AlertCircle, Building2,
+  ArrowLeft, ArrowRight } from "lucide-react";
 import { FilterBar, FilterDivider, FilterSearch } from "@/components/hrms/ui/filter-bar";
 import { NumberInput } from "@/components/hrms/ui/number-input";
 import { Select } from "@/components/hrms/select";
@@ -72,7 +74,7 @@ interface CandFormShape {
 type CandFormErrors = Partial<Record<keyof CandFormShape, string>>;
 
 const statusColors: Record<string, string> = {
-  New: "bg-[#dbeafe] text-[#2563eb]",
+  New: "bg-[#dcfce7] text-[#16a34a]",
   InPipeline: "bg-yellow-100 text-yellow-700",
   Hired: "bg-green-100 text-green-700",
   CandRejected: "bg-red-100 text-red-700",
@@ -155,6 +157,7 @@ export default function CandidatesPage() {
       if (search) qs.set("search", search);
       if (viewScope === "blacklisted") { qs.set("blacklisted", "1"); qs.set("includeArchived", "1"); }
       else if (viewScope === "archived") qs.set("archived", "1");
+      else { qs.set("excludeStatus", "Hired"); qs.set("excludeStage", "Hired"); } // active view hides hired candidates
       return api.get<CandidateItem[]>(`/api/v1/hrms/recruit/candidates?${qs.toString()}`);
     },
   });
@@ -241,13 +244,13 @@ export default function CandidatesPage() {
   const candidates = data?.data ?? [];
 
   return (
-    <div className="w-full px-6 py-6">
-      <div className="flex items-center justify-between mb-6 flex-wrap gap-3">
-        <h1 className="font-serif-display text-3xl md:text-4xl font-bold text-gray-900">Candidates</h1>
+    <div className="w-full px-5 py-4">
+      <div className="flex items-center justify-between mb-4 flex-wrap gap-3">
+        <h1 className="text-page-title text-gray-900">Candidates</h1>
         <div className="flex items-center gap-2">
           <button onClick={() => { setForm(emptyForm); setErrors({}); setShowCreate(true); }}
-            className="flex items-center gap-2 btn btn-primary">
-            <Plus size={16} /> Add Candidate
+            className="flex items-center gap-2 btn bg-green-600 hover:bg-green-700 text-white">
+            <Plus size={13} /> Add Candidate
           </button>
         </div>
       </div>
@@ -262,8 +265,8 @@ export default function CandidatesPage() {
             ] as const).map((v) => (
               <button key={v.k}
                 onClick={() => setViewScope(v.k)}
-                className={clsx("inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded transition",
-                  viewScope === v.k ? "bg-white text-[#16243A] shadow-sm" : "text-gray-500 hover:text-gray-800")}>
+                className={clsx("inline-flex items-center gap-1.5 px-3 py-1.5 text-[13px] font-semibold rounded transition",
+                  viewScope === v.k ? "bg-white text-green-700 shadow-sm" : "text-gray-500 hover:text-gray-800")}>
                 {v.icon} {v.label}
               </button>
             ))}
@@ -273,20 +276,19 @@ export default function CandidatesPage() {
         </FilterBar>
       </div>
 
-      <div className="bg-white rounded-lg shadow-sm border border-gray-200 overflow-hidden">
+      <div className="bg-white rounded-2xl shadow-sm border border-gray-200 overflow-hidden">
         {isLoading ? <div className="p-2"><SkeletonTable rows={8} cols={7} /></div> : candidates.length === 0 ? (
           <div className="p-8 text-center text-gray-500"><User size={32} className="mx-auto mb-2 text-gray-300" />No candidates</div>
         ) : (
           <table className="w-full">
             <thead>
               <tr className="bg-gray-50 border-b border-gray-200">
-                <th className="text-left px-4 py-3 text-xs font-medium text-gray-500 uppercase">Candidate</th>
-                <th className="text-left px-4 py-3 text-xs font-medium text-gray-500 uppercase">Current</th>
-                <th className="text-left px-4 py-3 text-xs font-medium text-gray-500 uppercase">Experience</th>
-                <th className="text-left px-4 py-3 text-xs font-medium text-gray-500 uppercase">Source</th>
-                <th className="text-center px-4 py-3 text-xs font-medium text-gray-500 uppercase">Apps</th>
-                <th className="text-left px-4 py-3 text-xs font-medium text-gray-500 uppercase">Status</th>
-                <th className="text-right px-4 py-3 text-xs font-medium text-gray-500 uppercase">Actions</th>
+                <th className="text-left px-4 py-2.5 text-[11px] font-semibold text-gray-500 uppercase tracking-[0.04em]">Candidate</th>
+                <th className="text-left px-4 py-2.5 text-[11px] font-semibold text-gray-500 uppercase tracking-[0.04em]">Current</th>
+                <th className="text-left px-4 py-2.5 text-[11px] font-semibold text-gray-500 uppercase tracking-[0.04em]">Experience</th>
+                <th className="text-left px-4 py-2.5 text-[11px] font-semibold text-gray-500 uppercase tracking-[0.04em]">Source</th>
+                <th className="text-left px-4 py-2.5 text-[11px] font-semibold text-gray-500 uppercase tracking-[0.04em]">Status</th>
+                <th className="text-right px-4 py-2.5 text-[11px] font-semibold text-gray-500 uppercase tracking-[0.04em]">Actions</th>
               </tr>
             </thead>
             <tbody>
@@ -297,11 +299,13 @@ export default function CandidatesPage() {
                 <tr key={c.id} className={clsx("row-stagger border-b border-gray-100 hover:bg-gray-50",
                   c.isBlacklisted && !blExpired && "bg-red-50/40",
                   c.isArchived && "opacity-70")} style={{ ["--i" as never]: Math.min(i, 10) }}>
-                  <td className="px-4 py-3">
+                  <td className="px-4 py-2.5">
                     <div className="flex items-center gap-2">
                       <div>
-                        <p className="text-sm font-medium text-gray-900">{c.firstName} {c.lastName}</p>
-                        <p className="text-xs text-gray-500">{c.email}</p>
+                        <Link href={`/recruit/candidates/${c.id}`} className="text-[13px] font-medium text-gray-900 hover:text-green-700 hover:underline">
+                          {c.firstName} {c.lastName}
+                        </Link>
+                        <p className="text-[11px] text-gray-500">{c.email}</p>
                       </div>
                       {c.isBlacklisted && !blExpired && (
                         <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-bold bg-red-100 text-red-700 ring-1 ring-red-200" title={c.blacklistReason ?? ""}>
@@ -329,47 +333,46 @@ export default function CandidatesPage() {
                       </p>
                     )}
                   </td>
-                  <td className="px-4 py-3 text-sm text-gray-700">
+                  <td className="px-4 py-2.5 text-xs text-gray-700">
                     {c.currentDesignation && <p>{c.currentDesignation}</p>}
-                    {c.currentCompany && <p className="text-xs text-gray-500">{c.currentCompany}</p>}
+                    {c.currentCompany && <p className="text-[11px] text-gray-500">{c.currentCompany}</p>}
                   </td>
-                  <td className="px-4 py-3 text-sm text-gray-700">
+                  <td className="px-4 py-2.5 text-xs text-gray-700">
                     {c.totalExperience ? `${Math.floor(c.totalExperience / 12)}y ${c.totalExperience % 12}m` : "—"}
                   </td>
-                  <td className="px-4 py-3 text-sm text-gray-700">{c.source.replace("Cand", "")}</td>
-                  <td className="px-4 py-3 text-sm text-gray-700 text-center">{c._count.applications}</td>
-                  <td className="px-4 py-3">
+                  <td className="px-4 py-2.5 text-xs text-gray-700">{c.source.replace("Cand", "")}</td>
+                  <td className="px-4 py-2.5">
                     <StatusCell status={c.status} stage={c.applications[0]?.currentStage ?? null} />
                   </td>
-                  <td className="px-4 py-3">
+                  <td className="px-4 py-2.5">
                     <div className="flex items-center justify-end gap-1">
                       <button onClick={() => setTimelineTarget(c)}
-                        className="inline-flex items-center gap-1 px-2 py-1 bg-indigo-50 text-indigo-700 ring-1 ring-indigo-200 hover:bg-indigo-100 rounded text-[11px] font-semibold"
+                        className="inline-flex items-center gap-1 px-2 py-1 bg-green-50 text-green-700 ring-1 ring-green-200 hover:bg-green-100 rounded text-xs font-semibold"
                         title="View timeline">
                         <Clock size={11} /> Timeline
                       </button>
                       {c.isBlacklisted ? (
                         <button onClick={() => unblacklistMut.mutate(c.id)}
-                          className="inline-flex items-center gap-1 px-2 py-1 bg-emerald-50 text-emerald-700 ring-1 ring-emerald-200 hover:bg-emerald-100 rounded text-[11px] font-semibold"
+                          className="inline-flex items-center gap-1 px-2 py-1 bg-emerald-50 text-emerald-700 ring-1 ring-emerald-200 hover:bg-emerald-100 rounded text-xs font-semibold"
                           title="Lift blacklist">
                           <RotateCcw size={11} /> Unblock
                         </button>
                       ) : (
                         <button onClick={() => { setBlacklistForm({ reason: "", duration: "permanent", customDays: 90 }); setBlacklistTarget(c); }}
-                          className="inline-flex items-center gap-1 px-2 py-1 bg-red-50 text-red-700 ring-1 ring-red-200 hover:bg-red-100 rounded text-[11px] font-semibold"
+                          className="inline-flex items-center gap-1 px-2 py-1 bg-red-50 text-red-700 ring-1 ring-red-200 hover:bg-red-100 rounded text-xs font-semibold"
                           title="Blacklist candidate">
                           <ShieldX size={11} /> Blacklist
                         </button>
                       )}
                       {c.isArchived ? (
                         <button onClick={() => unarchiveMut.mutate(c.id)}
-                          className="inline-flex items-center gap-1 px-2 py-1 bg-slate-50 text-slate-700 ring-1 ring-slate-200 hover:bg-slate-100 rounded text-[11px] font-semibold"
+                          className="inline-flex items-center gap-1 px-2 py-1 bg-slate-50 text-slate-700 ring-1 ring-slate-200 hover:bg-slate-100 rounded text-xs font-semibold"
                           title="Restore from archive">
                           <ArchiveRestore size={11} /> Restore
                         </button>
                       ) : (
                         <button onClick={() => { setArchiveReason(""); setArchiveTarget(c); }}
-                          className="inline-flex items-center gap-1 px-2 py-1 bg-slate-50 text-slate-700 ring-1 ring-slate-200 hover:bg-slate-100 rounded text-[11px] font-semibold"
+                          className="inline-flex items-center gap-1 px-2 py-1 bg-slate-50 text-slate-700 ring-1 ring-slate-200 hover:bg-slate-100 rounded text-xs font-semibold"
                           title="Archive candidate">
                           <Archive size={11} /> Archive
                         </button>
@@ -384,7 +387,7 @@ export default function CandidatesPage() {
         )}
       </div>
 
-      <Modal open={showCreate} onClose={() => setShowCreate(false)} title="Add Candidate" size="3xl" subtitle="Add candidate details and apply to requisitions." headerIcon={<User size={18} />} bodyClassName="flex">
+      <Modal open={showCreate} onClose={() => setShowCreate(false)} title="Add Candidate" size="3xl" subtitle="Add candidate details and apply to requisitions." headerIcon={<User size={18} />}>
         <CandidateWizard
           form={form}
           setForm={setForm}
@@ -408,7 +411,7 @@ export default function CandidatesPage() {
               : Number(blacklistForm.duration);
             blacklistMut.mutate({ id: blacklistTarget.id, body: { reason, durationDays: days } });
           }} className="space-y-4">
-            <div className="bg-red-50 border border-red-200 rounded-lg p-3 text-sm">
+            <div className="bg-red-50 border border-red-200 rounded-lg p-3 text-xs">
               <div className="flex items-center gap-2 mb-1">
                 <ShieldX size={14} className="text-red-600" />
                 <span className="font-semibold text-red-900">{blacklistTarget.firstName} {blacklistTarget.lastName}</span>
@@ -456,9 +459,9 @@ export default function CandidatesPage() {
             </div>
             <div className="flex justify-end gap-2 pt-2 border-t border-gray-100">
               <button type="button" onClick={() => setBlacklistTarget(null)}
-                className="px-4 py-2 border border-[var(--border)] rounded-lg text-sm text-gray-700 hover:bg-gray-50">Cancel</button>
+                className="px-3 py-1.5 border border-[var(--border)] rounded-lg text-xs font-medium text-gray-700 hover:bg-gray-50">Cancel</button>
               <button type="submit" disabled={blacklistMut.isPending}
-                className="inline-flex items-center gap-1.5 px-5 py-2 bg-red-600 hover:bg-red-700 text-white rounded-lg text-sm font-semibold disabled:opacity-50">
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-red-600 hover:bg-red-700 text-white rounded-lg text-xs font-medium disabled:opacity-50">
                 <Ban size={13} /> {blacklistMut.isPending ? "Blacklisting..." : "Blacklist"}
               </button>
             </div>
@@ -472,7 +475,7 @@ export default function CandidatesPage() {
             e.preventDefault();
             archiveMut.mutate({ id: archiveTarget.id, reason: archiveReason.trim() });
           }} className="space-y-4">
-            <div className="bg-slate-50 border border-slate-200 rounded-lg p-3 text-sm">
+            <div className="bg-slate-50 border border-slate-200 rounded-lg p-3 text-xs">
               <div className="flex items-center gap-2 mb-1">
                 <Archive size={14} className="text-slate-600" />
                 <span className="font-semibold text-slate-900">{archiveTarget.firstName} {archiveTarget.lastName}</span>
@@ -486,13 +489,13 @@ export default function CandidatesPage() {
               <textarea rows={3} value={archiveReason}
                 onChange={(e) => setArchiveReason(e.target.value)}
                 placeholder="e.g. Position closed, candidate ghosted, not a fit right now..."
-                className="w-full border border-[var(--border)] rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-[#16243A]" />
+                className="w-full border border-[var(--border)] rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-green-500" />
             </div>
             <div className="flex justify-end gap-2 pt-2 border-t border-gray-100">
               <button type="button" onClick={() => setArchiveTarget(null)}
-                className="px-4 py-2 border border-[var(--border)] rounded-lg text-sm text-gray-700 hover:bg-gray-50">Cancel</button>
+                className="px-3 py-1.5 border border-[var(--border)] rounded-lg text-xs font-medium text-gray-700 hover:bg-gray-50">Cancel</button>
               <button type="submit" disabled={archiveMut.isPending}
-                className="inline-flex items-center gap-1.5 px-5 py-2 bg-slate-700 hover:bg-slate-800 text-white rounded-lg text-sm font-semibold disabled:opacity-50">
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-slate-700 hover:bg-slate-800 text-white rounded-lg text-xs font-medium disabled:opacity-50">
                 <Archive size={13} /> {archiveMut.isPending ? "Archiving..." : "Archive"}
               </button>
             </div>
@@ -525,10 +528,10 @@ interface TimelineResponse {
 }
 
 const KIND_META: Record<string, { cls: string; dot: string; icon: React.ReactNode }> = {
-  CandidateCreated:      { cls: "bg-[#dbeafe] text-[#2563eb]", dot: "bg-[#3b82f6]", icon: <User size={11} /> },
+  CandidateCreated:      { cls: "bg-[#dcfce7] text-[#16a34a]", dot: "bg-[#22c55e]", icon: <User size={11} /> },
   CandidateUpdated:      { cls: "bg-slate-100 text-slate-700", dot: "bg-slate-500", icon: <User size={11} /> },
-  ApplicationCreated:    { cls: "bg-[#dbeafe] text-[#2563eb]", dot: "bg-[#3b82f6]", icon: <FileText size={11} /> },
-  StageChanged:          { cls: "bg-indigo-50 text-indigo-700", dot: "bg-indigo-500", icon: <ChevronDown size={11} /> },
+  ApplicationCreated:    { cls: "bg-[#dcfce7] text-[#16a34a]", dot: "bg-[#22c55e]", icon: <FileText size={11} /> },
+  StageChanged:          { cls: "bg-green-50 text-green-700", dot: "bg-green-500", icon: <ChevronDown size={11} /> },
   InterviewScheduled:    { cls: "bg-amber-50 text-amber-700", dot: "bg-amber-500", icon: <Briefcase size={11} /> },
   InterviewCompleted:    { cls: "bg-sky-50 text-sky-700", dot: "bg-sky-500", icon: <Check size={11} /> },
   FeedbackSubmitted:     { cls: "bg-emerald-50 text-emerald-700", dot: "bg-emerald-500", icon: <Check size={11} /> },
@@ -596,7 +599,7 @@ function CandidateTimelineModal({ candidate, onClose }: { candidate: CandidateIt
         ) : !res || res.entries.length === 0 ? (
           <div className="text-center py-10 border border-dashed border-slate-200 rounded-lg">
             <Clock size={28} className="mx-auto text-slate-300 mb-2" />
-            <p className="text-sm font-semibold text-slate-700">No activity yet</p>
+            <p className="text-[13px] font-semibold text-slate-700">No activity yet</p>
           </div>
         ) : (
           <div className="relative max-h-[55vh] overflow-y-auto pr-2">
@@ -611,7 +614,7 @@ function CandidateTimelineModal({ candidate, onClose }: { candidate: CandidateIt
                     </span>
                     <div className="bg-white rounded-lg border border-slate-200 p-3 shadow-sm">
                       <div className="flex items-center justify-between gap-2 flex-wrap">
-                        <p className="text-sm font-semibold text-slate-900">{e.title}</p>
+                        <p className="text-xs font-semibold text-slate-900">{e.title}</p>
                         <span className="text-[11px] text-slate-400">
                           {new Date(e.at).toLocaleString("en-IN", { dateStyle: "medium", timeStyle: "short" })}
                         </span>
@@ -635,7 +638,7 @@ function CandidateTimelineModal({ candidate, onClose }: { candidate: CandidateIt
 
         <div className="flex justify-end pt-2 border-t border-slate-100">
           <button onClick={onClose}
-            className="px-4 py-2 border border-[var(--border)] rounded-lg text-sm text-gray-700 hover:bg-gray-50">Close</button>
+            className="px-3 py-1.5 border border-[var(--border)] rounded-lg text-xs font-medium text-gray-700 hover:bg-gray-50">Close</button>
         </div>
       </div>
     </Modal>
@@ -644,9 +647,9 @@ function CandidateTimelineModal({ candidate, onClose }: { candidate: CandidateIt
 
 const STAGE_STYLE: Record<string, { dot: string; text: string; bg: string; ring: string }> = {
   Applied:     { dot: "bg-slate-400",   text: "text-slate-700",   bg: "bg-slate-50",   ring: "ring-slate-200" },
-  Screening:   { dot: "bg-[#dbeafe]0",    text: "text-[#2563eb]",    bg: "bg-[#dbeafe]",    ring: "ring-[#bfdbfe]" },
+  Screening:   { dot: "bg-[#dcfce7]0",    text: "text-[#16a34a]",    bg: "bg-[#dcfce7]",    ring: "ring-[#bbf7d0]" },
   Shortlisted: { dot: "bg-cyan-500",    text: "text-cyan-700",    bg: "bg-cyan-50",    ring: "ring-cyan-200" },
-  Interview:   { dot: "bg-[#dbeafe]0",  text: "text-[#2563eb]",  bg: "bg-[#dbeafe]",  ring: "ring-[#3b82f6]" },
+  Interview:   { dot: "bg-[#dcfce7]0",  text: "text-[#16a34a]",  bg: "bg-[#dcfce7]",  ring: "ring-[#22c55e]" },
   Assessment:  { dot: "bg-violet-500",  text: "text-violet-700",  bg: "bg-violet-50",  ring: "ring-violet-200" },
   Offer:       { dot: "bg-amber-500",   text: "text-amber-800",   bg: "bg-amber-50",   ring: "ring-amber-200" },
   Hired:       { dot: "bg-emerald-500", text: "text-emerald-700", bg: "bg-emerald-50", ring: "ring-emerald-200" },
@@ -666,12 +669,12 @@ function StatusCell({ status, stage }: { status: string; stage: string | null })
   return (
     <div className="flex flex-col gap-1.5">
       {stage ? (
-        <span className={clsx("inline-flex items-center gap-1.5 self-start px-2.5 py-1 rounded-md text-xs font-semibold ring-1", s.bg, s.text, s.ring)}>
+        <span className={clsx("inline-flex items-center gap-1.5 self-start px-2.5 py-1 rounded-md text-[11px] font-medium ring-1", s.bg, s.text, s.ring)}>
           <span className={clsx("w-1.5 h-1.5 rounded-full", s.dot)} />
           {stage}
         </span>
       ) : (
-        <span className="inline-flex items-center gap-1.5 self-start px-2.5 py-1 rounded-md text-xs font-semibold ring-1 bg-slate-50 text-slate-500 ring-slate-200">
+        <span className="inline-flex items-center gap-1.5 self-start px-2.5 py-1 rounded-md text-[11px] font-medium ring-1 bg-slate-50 text-slate-500 ring-slate-200">
           <span className="w-1.5 h-1.5 rounded-full bg-slate-300" />
           Not applied
         </span>
@@ -683,7 +686,7 @@ function StatusCell({ status, stage }: { status: string; stage: string | null })
   );
 }
 
-const inputClass = "w-full border border-[var(--border)] rounded-lg px-3 py-2 text-sm bg-white focus:outline-none focus:ring-1 focus:ring-[#16243A] focus:border-[#16243A]";
+const inputClass = "w-full border border-[var(--border)] rounded-lg px-3 py-2 text-xs bg-white focus:outline-none focus:ring-1 focus:ring-green-500 focus:border-green-500";
 const errInput = "border-red-400 focus:ring-red-400 focus:border-red-400";
 
 function inp(hasError: boolean) {
@@ -695,7 +698,7 @@ function Field({
 }: { label: string; required?: boolean; icon?: React.ReactNode; children: React.ReactNode; error?: string }) {
   return (
     <div>
-      <label className="flex items-center gap-1 text-sm font-semibold text-gray-800 mb-1.5">
+      <label className="flex items-center gap-1 text-xs font-medium text-gray-800 mb-1.5">
         {icon && <span className="text-gray-400">{icon}</span>}
         {label}
         {required && <span className="text-red-500 ml-0.5">*</span>}
@@ -715,14 +718,15 @@ interface SourceOption {
 }
 
 const SOURCE_OPTIONS: SourceOption[] = [
-  { value: "CandDirect",     label: "Direct",       desc: "Walked in / approached",    icon: <User size={14} />,          color: "text-slate-600 bg-slate-100" },
+  { value: "CandDirect",     label: "Walked In",    desc: "Walked in / in person",     icon: <User size={14} />,          color: "text-slate-600 bg-slate-100" },
+  { value: "CandNaukri",     label: "Naukri",       desc: "Naukri.com",                icon: <Globe size={14} />,         color: "text-green-700 bg-green-100" },
+  { value: "CandIndeed",     label: "Indeed",       desc: "Indeed.com",                icon: <Globe size={14} />,         color: "text-green-700 bg-green-100" },
   { value: "CandLinkedIn",   label: "LinkedIn",     desc: "LinkedIn profile/outreach", icon: <Link2 size={14} />,         color: "text-sky-700 bg-sky-100" },
-  { value: "CandJobPortal",  label: "Job Portal",   desc: "Naukri, Indeed, etc.",      icon: <Globe size={14} />,         color: "text-emerald-700 bg-emerald-100" },
+  { value: "CandJobPortal",  label: "Job Portal",   desc: "Other job portal",          icon: <Globe size={14} />,         color: "text-emerald-700 bg-emerald-100" },
   { value: "CandReferral",   label: "Referral",     desc: "Employee referral",         icon: <UsersIcon size={14} />,     color: "text-amber-700 bg-amber-100" },
   { value: "CandAgency",     label: "Agency",       desc: "Recruitment agency",        icon: <Landmark size={14} />,      color: "text-violet-700 bg-violet-100" },
-  { value: "CandCareerPage", label: "Career Page",  desc: "Company careers site",      icon: <Rocket size={14} />,        color: "text-[#2563eb] bg-[#dbeafe]" },
-  { value: "CandCampus",     label: "Campus",       desc: "College placement drive",   icon: <GraduationCap size={14} />, color: "text-blue-700 bg-blue-100" },
-  { value: "CandInbound",    label: "Inbound",      desc: "Cold email / application",  icon: <Inbox size={14} />,         color: "text-cyan-700 bg-cyan-100" },
+  { value: "CandCareerPage", label: "Career Page",  desc: "Company careers site",      icon: <Rocket size={14} />,        color: "text-[#16a34a] bg-[#dcfce7]" },
+  { value: "CandCampus",     label: "Campus",       desc: "College placement drive",   icon: <GraduationCap size={14} />, color: "text-green-700 bg-green-100" },
 ];
 
 function SourceSelect({ value, onChange }: { value: string; onChange: (v: string) => void }) {
@@ -743,7 +747,7 @@ function SourceSelect({ value, onChange }: { value: string; onChange: (v: string
       <button
         type="button"
         onClick={() => setOpen((o) => !o)}
-        className="w-full flex items-center justify-between gap-2 border border-[var(--border)] rounded-lg px-3 py-2 text-sm bg-white hover:border-[#16243A]/30 focus:outline-none focus:ring-1 focus:ring-[#16243A] transition"
+        className="w-full flex items-center justify-between gap-2 border border-[var(--border)] rounded-lg px-3 py-2 text-xs bg-white hover:border-green-500/30 focus:outline-none focus:ring-1 focus:ring-green-500 transition"
       >
         <span className="flex items-center gap-2 min-w-0">
           <span className={clsx("inline-flex items-center justify-center w-6 h-6 rounded-md shrink-0", selected.color)}>
@@ -755,7 +759,7 @@ function SourceSelect({ value, onChange }: { value: string; onChange: (v: string
       </button>
 
       {open && (
-        <div className="absolute z-50 top-full left-0 right-0 mt-1 bg-white border border-gray-200 rounded-xl shadow-xl py-1.5 max-h-72 overflow-auto animate-in fade-in zoom-in-95 duration-150">
+        <div className="absolute z-50 bottom-full left-0 right-0 mb-1 bg-white border border-gray-200 rounded-xl shadow-xl py-1.5 max-h-72 overflow-auto animate-in fade-in zoom-in-95 duration-150">
           {SOURCE_OPTIONS.map((opt) => {
             const active = opt.value === value;
             return (
@@ -765,19 +769,19 @@ function SourceSelect({ value, onChange }: { value: string; onChange: (v: string
                 onClick={() => { onChange(opt.value); setOpen(false); }}
                 className={clsx(
                   "w-full flex items-center gap-3 px-3 py-2 text-left transition",
-                  active ? "bg-[#dbeafe]" : "hover:bg-gray-50",
+                  active ? "bg-[#dcfce7]" : "hover:bg-gray-50",
                 )}
               >
                 <span className={clsx("inline-flex items-center justify-center w-8 h-8 rounded-lg shrink-0", opt.color)}>
                   {opt.icon}
                 </span>
                 <span className="flex-1 min-w-0">
-                  <span className={clsx("block text-sm font-medium truncate", active ? "text-[#2563eb]" : "text-gray-800")}>
+                  <span className={clsx("block text-xs font-medium truncate", active ? "text-[#16a34a]" : "text-gray-800")}>
                     {opt.label}
                   </span>
                   <span className="block text-[11px] text-gray-400 truncate">{opt.desc}</span>
                 </span>
-                {active && <Check size={14} className="text-[#3b82f6] shrink-0" />}
+                {active && <Check size={14} className="text-[#22c55e] shrink-0" />}
               </button>
             );
           })}
@@ -787,23 +791,23 @@ function SourceSelect({ value, onChange }: { value: string; onChange: (v: string
   );
 }
 
-// ─── Rich Requisition Picker ─────────────────────────────
+// â”€â”€â”€ Rich Requisition Picker â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 const priorityStyle: Record<string, { bg: string; text: string; icon: React.ReactNode }> = {
   Urgent: { bg: "bg-red-50 text-red-700 ring-red-200", text: "Urgent", icon: <Flame size={10} /> },
   High: { bg: "bg-orange-50 text-orange-700 ring-orange-200", text: "High", icon: <AlertCircle size={10} /> },
-  Medium: { bg: "bg-[#dbeafe] text-[#2563eb] ring-[#bfdbfe]", text: "Medium", icon: null },
+  Medium: { bg: "bg-[#dcfce7] text-[#16a34a] ring-[#bbf7d0]", text: "Medium", icon: null },
   Low: { bg: "bg-slate-50 text-slate-600 ring-slate-200", text: "Low", icon: null },
 };
 
 const deptTint: Record<string, string> = {
-  engineering: "from-[#93c5fd] to-[#2563eb]",
+  engineering: "from-[#86efac] to-[#16a34a]",
   design: "from-pink-400 to-purple-500",
   sales: "from-amber-400 to-orange-500",
-  marketing: "from-purple-400 to-indigo-500",
+  marketing: "from-purple-400 to-green-500",
   finance: "from-emerald-400 to-green-500",
-  "human resources": "from-sky-400 to-blue-500",
-  hr: "from-sky-400 to-blue-500",
+  "human resources": "from-sky-400 to-green-500",
+  hr: "from-sky-400 to-green-500",
   operations: "from-cyan-400 to-sky-500",
   default: "from-gray-300 to-gray-400",
 };
@@ -858,8 +862,8 @@ function RequisitionPicker({
         onClick={() => setOpen((o) => !o)}
         className={clsx(
           "w-full flex items-center gap-3 rounded-lg border px-3 py-2.5 text-left transition",
-          "focus:outline-none focus:ring-1 focus:ring-[#16243A]/30 focus:border-[#16243A]",
-          open && "border-[#3b82f6] ring-2 ring-[#3b82f6]/20",
+          "focus:outline-none focus:ring-1 focus:ring-green-500/30 focus:border-green-500",
+          open && "border-[#22c55e] ring-2 ring-[#22c55e]/20",
           error ? "border-red-300" : "border-gray-300 hover:border-gray-400",
         )}
       >
@@ -868,7 +872,7 @@ function RequisitionPicker({
             <div className={clsx("w-1 self-stretch rounded-full bg-gradient-to-b", tintFor(selected.department?.name))} />
             <div className="flex-1 min-w-0">
               <div className="flex items-center gap-2">
-                <p className="text-sm font-semibold text-gray-900 truncate">{selected.title}</p>
+                <p className="text-[13px] font-semibold text-gray-900 truncate">{selected.title}</p>
                 {priorityStyle[selected.priority] && (
                   <span className={clsx("inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded-full text-[10px] font-bold ring-1", priorityStyle[selected.priority].bg)}>
                     {priorityStyle[selected.priority].icon}
@@ -906,10 +910,10 @@ function RequisitionPicker({
           </>
         ) : (
           <>
-            <div className="w-8 h-8 rounded bg-gradient-to-br from-[#dbeafe] to-[#bfdbfe] flex items-center justify-center">
-              <Briefcase size={14} className="text-[#2563eb]" />
+            <div className="w-8 h-8 rounded bg-gradient-to-br from-[#dcfce7] to-[#bbf7d0] flex items-center justify-center">
+              <Briefcase size={14} className="text-[#16a34a]" />
             </div>
-            <span className="flex-1 text-sm text-gray-400">Select a requisition to apply to…</span>
+            <span className="flex-1 text-xs text-gray-400">Select a requisition to apply to…</span>
           </>
         )}
         <ChevronDown size={16} className={clsx("text-gray-400 shrink-0 transition-transform", open && "rotate-180")} />
@@ -925,7 +929,7 @@ function RequisitionPicker({
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
                 placeholder="Search title, req #, department…"
-                className="w-full pl-8 pr-2 py-1.5 text-sm bg-white border border-gray-200 rounded-md focus:outline-none focus:ring-1 focus:ring-[#16243A] focus:border-[#16243A]"
+                className="w-full pl-8 pr-2 py-1.5 text-xs bg-white border border-gray-200 rounded-md focus:outline-none focus:ring-1 focus:ring-green-500 focus:border-green-500"
               />
             </div>
             <div className="flex items-center gap-1 flex-wrap">
@@ -941,8 +945,8 @@ function RequisitionPicker({
                     className={clsx(
                       "inline-flex items-center gap-0.5 px-2 py-0.5 rounded-full text-[11px] font-medium border transition",
                       active
-                        ? "bg-[#3b82f6] border-[#3b82f6] text-white"
-                        : "bg-white border-gray-200 text-gray-600 hover:border-[#bfdbfe]",
+                        ? "bg-[#22c55e] border-[#22c55e] text-white"
+                        : "bg-white border-gray-200 text-gray-600 hover:border-[#bbf7d0]",
                     )}
                   >
                     {p && priorityStyle[p]?.icon}
@@ -978,14 +982,14 @@ function RequisitionPicker({
                         onClick={() => { onChange(r.id); setOpen(false); }}
                         className={clsx(
                           "w-full flex items-stretch gap-2.5 px-3 py-2.5 text-left transition border-b border-gray-50 last:border-b-0",
-                          isSelected ? "bg-[#eff6ff]" : "hover:bg-gray-50",
+                          isSelected ? "bg-[#f0fdf4]" : "hover:bg-gray-50",
                         )}
                       >
                         <div className={clsx("w-1 rounded-full bg-gradient-to-b", tint)} />
                         <div className="flex-1 min-w-0">
                           <div className="flex items-start justify-between gap-2">
                             <div className="flex items-center gap-1.5 min-w-0">
-                              <p className={clsx("text-sm font-semibold truncate", isSelected ? "text-[#1e40af]" : "text-gray-900")}>{r.title}</p>
+                              <p className={clsx("text-[13px] font-semibold truncate", isSelected ? "text-[#166534]" : "text-gray-900")}>{r.title}</p>
                               {priorityStyle[r.priority] && (
                                 <span className={clsx("inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded-full text-[10px] font-bold ring-1 whitespace-nowrap", priorityStyle[r.priority].bg)}>
                                   {priorityStyle[r.priority].icon}
@@ -993,7 +997,7 @@ function RequisitionPicker({
                                 </span>
                               )}
                             </div>
-                            {isSelected && <Check size={14} className="text-[#2563eb] shrink-0" />}
+                            {isSelected && <Check size={14} className="text-[#16a34a] shrink-0" />}
                           </div>
                           <div className="flex items-center gap-2 mt-0.5 text-[11px] text-gray-500 flex-wrap">
                             <span className="font-mono text-gray-400">{r.requisitionNumber}</span>
@@ -1009,7 +1013,7 @@ function RequisitionPicker({
                             {r._count?.applications !== undefined && (
                               <>
                                 <span>·</span>
-                                <span className="text-[#2563eb]">{r._count.applications} applied</span>
+                                <span className="text-[#16a34a]">{r._count.applications} applied</span>
                               </>
                             )}
                           </div>
@@ -1032,7 +1036,7 @@ function RequisitionPicker({
   );
 }
 
-// ─── Add Candidate Wizard ───────────────────────────────
+// â”€â”€â”€ Add Candidate Wizard â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 interface WizardProps {
   form: CandFormShape;
@@ -1053,191 +1057,157 @@ const WIZARD_STEPS = [
 ] as const;
 
 function CandidateWizard({ form, setForm, errors, isIndiaLocation, openReqs, submitting, onCancel, onSubmit }: WizardProps) {
-  const [activeStep, setActiveStep] = useState<typeof WIZARD_STEPS[number]["id"]>("personal");
-  const scrollRef = useRef<HTMLDivElement>(null);
-  const sectionRefs = useRef<Record<string, HTMLElement | null>>({});
+  const [step, setStep] = useState(0);
 
+  // After the parent runs validate() on Save, jump to the earliest step with an error.
   useEffect(() => {
-    const root = scrollRef.current;
-    if (!root) return;
-    const obs = new IntersectionObserver(
-      (entries) => {
-        const visible = entries.filter((e) => e.isIntersecting).sort((a, b) => b.intersectionRatio - a.intersectionRatio);
-        if (visible[0]) {
-          const id = (visible[0].target as HTMLElement).dataset.stepId;
-          if (id) setActiveStep(id as typeof activeStep);
-        }
-      },
-      { root, rootMargin: "-20% 0px -60% 0px", threshold: [0, 0.25, 0.5, 0.75, 1] },
-    );
-    Object.values(sectionRefs.current).forEach((el) => el && obs.observe(el));
-    return () => obs.disconnect();
-  }, []);
+    const map: Record<string, number> = {
+      firstName: 0, lastName: 0, email: 0, phone: 0,
+      totalExperience: 1, noticePeriod: 1, currentCTC: 1, expectedCTC: 1,
+      linkedinUrl: 2, resumeUrl: 2, requisitionId: 3,
+    };
+    const idxs = Object.keys(errors).map((k) => map[k]).filter((n) => n !== undefined) as number[];
+    if (idxs.length) setStep(Math.min(...idxs));
+  }, [errors]);
 
-  const scrollToStep = (id: string) => {
-    const el = sectionRefs.current[id];
-    if (el && scrollRef.current) {
-      scrollRef.current.scrollTo({ top: el.offsetTop - 8, behavior: "smooth" });
-      setActiveStep(id as typeof activeStep);
-    }
-  };
+  const canPersonal = !!(form.firstName.trim() && form.lastName.trim() && form.email.trim() && form.phone.trim());
+  const canAdvance = step === 0 ? canPersonal : true;
+  const canSave = canPersonal && !!form.requisitionId;
+  const next = () => setStep((s) => Math.min(s + 1, WIZARD_STEPS.length - 1));
+  const back = () => setStep((s) => Math.max(s - 1, 0));
 
   return (
-    <div className="flex flex-1 min-h-0 w-full">
-      <aside className="w-64 shrink-0 border-r border-gray-100 bg-[#faf4ef]/40 flex flex-col">
-        <nav className="flex-1 p-4 space-y-1.5">
-          {WIZARD_STEPS.map((s) => {
-            const active = activeStep === s.id;
-            return (
-              <button
-                key={s.id}
-                type="button"
-                onClick={() => scrollToStep(s.id)}
-                className={clsx(
-                  "w-full flex items-start gap-3 px-3 py-2.5 rounded-lg text-left transition",
-                  active ? "bg-white shadow-sm" : "hover:bg-white/60",
-                )}
-              >
-                <div className={clsx(
-                  "w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold shrink-0 transition",
-                  active ? "bg-[#16243A] text-white" : "border-2 border-gray-300 text-gray-500 bg-white",
-                )}>
-                  {s.num}
-                </div>
-                <div className="min-w-0">
-                  <p className={clsx("text-sm font-semibold leading-tight", active ? "text-[#16243A]" : "text-gray-700")}>
-                    {s.title}
-                  </p>
-                  <p className="text-[11px] text-gray-500 mt-0.5">{s.subtitle}</p>
-                </div>
+    <div className="w-full">
+      {/* Stepper */}
+      <div className="flex items-center gap-1 mb-4 overflow-x-auto pb-1">
+        {WIZARD_STEPS.map((s, i) => {
+          const done = i < step; const active = i === step;
+          return (
+            <div key={s.id} className="flex items-center gap-1 shrink-0">
+              <button type="button" onClick={() => setStep(i)} className="flex items-center gap-2">
+                <span className={clsx("w-6 h-6 rounded-full flex items-center justify-center text-[11px] font-bold transition shrink-0",
+                  done ? "bg-green-600 text-white" : active ? "bg-green-600 text-white ring-4 ring-green-100" : "bg-gray-200 text-gray-500")}>
+                  {done ? <Check size={13} /> : s.num}
+                </span>
+                <span className={clsx("text-sm font-medium whitespace-nowrap", active ? "text-gray-900" : done ? "text-gray-600" : "text-gray-400")}>{s.title}</span>
               </button>
-            );
-          })}
-        </nav>
-        <div className="m-4 p-3 rounded-xl bg-[#16243A]/5 border border-[#16243A]/10">
-          <div className="flex items-center gap-1.5 mb-1">
-            <Sparkles size={13} className="text-[#16243A]" />
-            <span className="text-xs font-bold text-[#16243A]">Tip</span>
-          </div>
-          <p className="text-[11px] text-gray-600 leading-snug">
-            Adding complete details helps you manage candidates better.
-          </p>
-        </div>
-      </aside>
+              {i < WIZARD_STEPS.length - 1 && <span className={clsx("w-8 h-px mx-1", done ? "bg-green-500" : "bg-gray-200")} />}
+            </div>
+          );
+        })}
+      </div>
 
-      <div className="flex-1 flex flex-col min-w-0">
-        <form
-          onSubmit={(e) => { e.preventDefault(); onSubmit(); }}
-          className="flex-1 flex flex-col min-h-0"
-          noValidate
-        >
-          <div ref={scrollRef} className="flex-1 overflow-y-auto px-6 py-5 space-y-7">
-            <section data-step-id="personal" ref={(el) => { sectionRefs.current.personal = el; }}>
-              <SectionHeader icon={<User size={18} />} title="Personal Details" subtitle="Basic contact information of the candidate." />
-              <div className="grid grid-cols-2 gap-3 mt-3">
-                <Field label="First Name" required error={errors.firstName}>
-                  <input type="text" placeholder="Enter first name" value={form.firstName} onChange={(e) => setForm({ ...form, firstName: e.target.value })} className={inp(!!errors.firstName)} />
-                </Field>
-                <Field label="Last Name" required error={errors.lastName}>
-                  <input type="text" placeholder="Enter last name" value={form.lastName} onChange={(e) => setForm({ ...form, lastName: e.target.value })} className={inp(!!errors.lastName)} />
-                </Field>
-                <Field label="Email" required error={errors.email}>
-                  <input type="email" placeholder="Enter email address" value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} className={inp(!!errors.email)} />
-                </Field>
-                <Field label="Phone (10-digit)" required error={errors.phone}>
-                  <input
-                    type="tel"
-                    inputMode="numeric"
-                    pattern="[0-9]{10}"
-                    maxLength={10}
-                    placeholder="9876543210"
-                    value={form.phone}
-                    // Strip non-digits AND hard-cap at 10 so paste/type can't exceed.
-                    onChange={(e) => setForm({ ...form, phone: e.target.value.replace(/\D/g, "").slice(0, 10) })}
-                    className={inp(!!errors.phone)}
-                  />
-                </Field>
-                <Field label="Location" icon={<MapPin size={12} />}>
-                  <input type="text" placeholder="Bengaluru" value={form.location} onChange={(e) => setForm({ ...form, location: e.target.value })} className={inputClass} />
-                </Field>
-                <Field label="Source">
-                  <SourceSelect value={form.source} onChange={(v) => setForm({ ...form, source: v })} />
-                </Field>
-              </div>
-            </section>
+      <div className="min-h-[280px]">
+        {step === 0 && (
+          <section>
+            <SectionHeader icon={<User size={18} />} title="Personal Details" subtitle="Basic contact information of the candidate." />
+            <div className="grid grid-cols-2 gap-3 mt-3">
+              <Field label="First Name" required error={errors.firstName}>
+                <input type="text" placeholder="Enter first name" value={form.firstName} onChange={(e) => setForm({ ...form, firstName: e.target.value })} className={inp(!!errors.firstName)} />
+              </Field>
+              <Field label="Last Name" required error={errors.lastName}>
+                <input type="text" placeholder="Enter last name" value={form.lastName} onChange={(e) => setForm({ ...form, lastName: e.target.value })} className={inp(!!errors.lastName)} />
+              </Field>
+              <Field label="Email" required error={errors.email}>
+                <input type="email" placeholder="Enter email address" value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} className={inp(!!errors.email)} />
+              </Field>
+              <Field label="Phone (10-digit)" required error={errors.phone}>
+                <input type="tel" inputMode="numeric" pattern="[0-9]{10}" maxLength={10} placeholder="9876543210" value={form.phone}
+                  onChange={(e) => setForm({ ...form, phone: e.target.value.replace(/\D/g, "").slice(0, 10) })} className={inp(!!errors.phone)} />
+              </Field>
+              <Field label="Location" icon={<MapPin size={12} />}>
+                <input type="text" placeholder="Bengaluru" value={form.location} onChange={(e) => setForm({ ...form, location: e.target.value })} className={inputClass} />
+              </Field>
+              <Field label="Source">
+                <SourceSelect value={form.source} onChange={(v) => setForm({ ...form, source: v })} />
+              </Field>
+            </div>
+          </section>
+        )}
 
-            <section data-step-id="professional" ref={(el) => { sectionRefs.current.professional = el; }}>
-              <SectionHeader icon={<Briefcase size={18} />} title="Professional Details" subtitle="Professional information and experience." />
-              <div className="grid grid-cols-2 gap-3 mt-3">
-                <Field label="Current Company">
-                  <input type="text" placeholder="Enter current company" value={form.currentCompany} onChange={(e) => setForm({ ...form, currentCompany: e.target.value })} className={inputClass} />
-                </Field>
-                <Field label="Current Designation">
-                  <input type="text" placeholder="Enter current designation" value={form.currentDesignation} onChange={(e) => setForm({ ...form, currentDesignation: e.target.value })} className={inputClass} />
-                </Field>
-                <Field label="Experience (months)">
-                  <NumberInput min={0} allowDecimal={false} value={form.totalExperience} onChange={(v) => setForm({ ...form, totalExperience: v })} className={inputClass} />
-                </Field>
-                <Field label="Notice Period (days)">
-                  <NumberInput min={0} allowDecimal={false} value={form.noticePeriod} onChange={(v) => setForm({ ...form, noticePeriod: v })} className={inputClass} />
-                </Field>
-                <Field label="Current CTC (LPA)" icon={<IndianRupee size={12} />}>
-                  <NumberInput min={0} value={form.currentCTC} onChange={(v) => setForm({ ...form, currentCTC: v })} className={inputClass} />
-                </Field>
-                <Field label="Expected CTC (LPA)" icon={<IndianRupee size={12} />}>
-                  <NumberInput min={0} value={form.expectedCTC} onChange={(v) => setForm({ ...form, expectedCTC: v })} className={inputClass} />
-                </Field>
-              </div>
-              <div className="mt-3">
-                <Field label="Skills (comma separated)">
-                  <input type="text" placeholder="React, Node.js, AWS, Leadership, etc." value={form.skills} onChange={(e) => setForm({ ...form, skills: e.target.value })} className={inputClass} />
-                </Field>
-              </div>
-            </section>
+        {step === 1 && (
+          <section>
+            <SectionHeader icon={<Briefcase size={18} />} title="Professional Details" subtitle="Professional information and experience." />
+            <div className="grid grid-cols-2 gap-3 mt-3">
+              <Field label="Current Company">
+                <input type="text" placeholder="Enter current company" value={form.currentCompany} onChange={(e) => setForm({ ...form, currentCompany: e.target.value })} className={inputClass} />
+              </Field>
+              <Field label="Current Designation">
+                <input type="text" placeholder="Enter current designation" value={form.currentDesignation} onChange={(e) => setForm({ ...form, currentDesignation: e.target.value })} className={inputClass} />
+              </Field>
+              <Field label="Experience (months)">
+                <NumberInput min={0} allowDecimal={false} value={form.totalExperience} onChange={(v) => setForm({ ...form, totalExperience: v })} className={inputClass} />
+              </Field>
+              <Field label="Notice Period (days)">
+                <NumberInput min={0} allowDecimal={false} value={form.noticePeriod} onChange={(v) => setForm({ ...form, noticePeriod: v })} className={inputClass} />
+              </Field>
+              <Field label="Current CTC (LPA)" icon={<IndianRupee size={12} />}>
+                <NumberInput min={0} value={form.currentCTC} onChange={(v) => setForm({ ...form, currentCTC: v })} className={inputClass} />
+              </Field>
+              <Field label="Expected CTC (LPA)" icon={<IndianRupee size={12} />}>
+                <NumberInput min={0} value={form.expectedCTC} onChange={(v) => setForm({ ...form, expectedCTC: v })} className={inputClass} />
+              </Field>
+            </div>
+            <div className="mt-3">
+              <Field label="Skills (comma separated)">
+                <input type="text" placeholder="React, Node.js, AWS, Leadership, etc." value={form.skills} onChange={(e) => setForm({ ...form, skills: e.target.value })} className={inputClass} />
+              </Field>
+            </div>
+          </section>
+        )}
 
-            <section data-step-id="links" ref={(el) => { sectionRefs.current.links = el; }}>
-              <SectionHeader icon={<Link2 size={18} />} title="Links & Resume" subtitle="Professional links and resume upload." />
-              <div className="grid grid-cols-2 gap-3 mt-3">
-                <Field label="LinkedIn URL" icon={<Link2 size={12} />} error={errors.linkedinUrl}>
-                  <input type="url" placeholder="https://linkedin.com/in/username" value={form.linkedinUrl} onChange={(e) => setForm({ ...form, linkedinUrl: e.target.value })} className={inp(!!errors.linkedinUrl)} />
-                </Field>
-                <Field label="Resume" required error={errors.resumeUrl}>
-                  <FileUploadInput
-                    value={form.resumeUrl}
-                    onChange={(url) => setForm({ ...form, resumeUrl: url })}
-                    accept="application/pdf,.docx,.doc,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document"
-                    label=""
-                    placeholder="Upload resume (PDF / DOCX, max 5MB)"
-                  />
-                </Field>
-              </div>
-            </section>
+        {step === 2 && (
+          <section>
+            <SectionHeader icon={<Link2 size={18} />} title="Links & Resume" subtitle="Professional links and resume upload." />
+            <div className="grid grid-cols-2 gap-3 mt-3">
+              <Field label="LinkedIn URL" icon={<Link2 size={12} />} error={errors.linkedinUrl}>
+                <input type="url" placeholder="https://linkedin.com/in/username" value={form.linkedinUrl} onChange={(e) => setForm({ ...form, linkedinUrl: e.target.value })} className={inp(!!errors.linkedinUrl)} />
+              </Field>
+              <Field label="Resume" required error={errors.resumeUrl}>
+                <FileUploadInput value={form.resumeUrl} onChange={(url) => setForm({ ...form, resumeUrl: url })}
+                  accept="application/pdf,.docx,.doc,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+                  label="" placeholder="Upload resume (PDF / DOCX, max 5MB)" />
+              </Field>
+            </div>
+          </section>
+        )}
 
-            <section data-step-id="requisition" ref={(el) => { sectionRefs.current.requisition = el; }}>
-              <SectionHeader icon={<Building2 size={18} />} title="Apply to Requisition" subtitle="Choose a job requisition to apply this candidate." />
-              <div className="mt-3">
-                <RequisitionPicker
-                  value={form.requisitionId}
-                  onChange={(v) => setForm({ ...form, requisitionId: v })}
-                  requisitions={openReqs}
-                  error={!!errors.requisitionId}
-                />
-                {errors.requisitionId
-                  ? <p className="mt-1.5 text-[11px] text-red-600">{errors.requisitionId}</p>
-                  : form.requisitionId
-                    ? <p className="mt-1.5 text-[11px] text-[#16243A]">Candidate will enter pipeline at first stage.</p>
-                    : <p className="mt-1.5 text-[11px] text-gray-400">No open requisitions? Create one under Recruit → Requisitions.</p>}
-              </div>
-            </section>
-          </div>
+        {step === 3 && (
+          <section>
+            <SectionHeader icon={<Building2 size={18} />} title="Apply to Requisition" subtitle="Choose a job requisition to apply this candidate." />
+            <div className="mt-3">
+              <RequisitionPicker value={form.requisitionId} onChange={(v) => setForm({ ...form, requisitionId: v })} requisitions={openReqs} error={!!errors.requisitionId} />
+              {errors.requisitionId
+                ? <p className="mt-1.5 text-[11px] text-red-600">{errors.requisitionId}</p>
+                : form.requisitionId
+                  ? <p className="mt-1.5 text-[11px] text-green-700">Candidate will enter pipeline at first stage.</p>
+                  : <p className="mt-1.5 text-[11px] text-gray-400">No open requisitions? Create one under Recruit &rarr; Requisitions.</p>}
+            </div>
+          </section>
+        )}
+      </div>
 
-          <div className="border-t border-gray-100 px-6 py-3 flex items-center justify-end gap-2 bg-white">
-            <button type="button" onClick={onCancel} className="btn btn-secondary">Cancel</button>
-            <button type="submit" disabled={submitting} className="btn btn-primary">
-              <Check size={14} /> {submitting ? "Saving..." : "Save Candidate"}
+      {/* Footer */}
+      <div className="flex items-center justify-between gap-2 pt-4 mt-4 border-t border-gray-100">
+        <button type="button" onClick={onCancel} className="inline-flex items-center h-10 px-3 rounded-[14px] border border-gray-300 text-xs font-medium text-gray-700 hover:bg-gray-50">Cancel</button>
+        <div className="flex items-center gap-2">
+          {step > 0 && (
+            <button type="button" onClick={back} className="inline-flex items-center gap-1.5 h-10 px-3 rounded-[14px] border border-gray-300 text-xs font-medium text-gray-700 hover:bg-gray-50">
+              <ArrowLeft size={13} /> Back
             </button>
-          </div>
-        </form>
+          )}
+          {step < WIZARD_STEPS.length - 1 ? (
+            <button type="button" onClick={next} disabled={!canAdvance}
+              className="inline-flex items-center gap-1.5 h-10 px-3 rounded-[14px] bg-green-600 hover:bg-green-700 text-white text-xs font-medium disabled:opacity-50">
+              Next <ArrowRight size={13} />
+            </button>
+          ) : (
+            <button type="button" onClick={onSubmit} disabled={submitting || !canSave}
+              className="inline-flex items-center gap-1.5 h-10 px-3 rounded-[14px] bg-green-600 hover:bg-green-700 text-white text-xs font-medium disabled:opacity-50">
+              <Check size={13} /> {submitting ? "Saving..." : "Save Candidate"}
+            </button>
+          )}
+        </div>
       </div>
     </div>
   );
@@ -1246,9 +1216,9 @@ function CandidateWizard({ form, setForm, errors, isIndiaLocation, openReqs, sub
 function SectionHeader({ icon, title, subtitle }: { icon: React.ReactNode; title: string; subtitle: string }) {
   return (
     <div>
-      <div className="flex items-center gap-2 text-[#16243A]">
+      <div className="flex items-center gap-2 text-green-700">
         <span className="inline-flex items-center justify-center">{icon}</span>
-        <h3 className="text-base font-bold">{title}</h3>
+        <h3 className="text-[13px] font-semibold">{title}</h3>
       </div>
       <p className="text-xs text-gray-500 mt-1 ml-6">{subtitle}</p>
     </div>

@@ -55,6 +55,7 @@ export const GET = withAuth(async (req: NextRequest, ctx) => {
         where, orderBy: { createdAt: "desc" }, skip: (page - 1) * limit, take: limit,
         include: {
           policy: { select: { id: true, name: true } },
+          employee: { select: { id: true, firstName: true, lastName: true, employeeCode: true } },
           _count: { select: { approvals: true } },
         },
       }),

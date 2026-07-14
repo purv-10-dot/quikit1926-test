@@ -41,10 +41,9 @@ export function NewTaskModal({ open, onClose }: { open: boolean; onClose: () => 
       onClose();
       setForm({ title: "", description: "", dueDate: "", priority: "Normal" });
     },
-    onError: (e: Error) => toast.error("Create failed", e.message),
   });
 
-  const inputCls = "w-full px-3 py-2 border border-[var(--border)] rounded-md text-sm focus:outline-none focus:ring-1 focus:ring-[#16243A]";
+  const inputCls = "w-full px-3 py-2 border border-[var(--border)] rounded-md text-sm focus:outline-none focus:ring-1 focus:ring-[#166534]";
 
   return (
     <Modal open={open} onClose={onClose} title="New Todo">

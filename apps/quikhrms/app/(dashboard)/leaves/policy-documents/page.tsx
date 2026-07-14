@@ -8,6 +8,7 @@ import { useToast } from "@/components/hrms/toast";
 import { useDialog } from "@/components/hrms/dialog";
 import { EmptyState } from "@/components/hrms/empty-state";
 import { Skeleton, SkeletonSwap } from "@/components/hrms/skeleton";
+import { useDashboardConfig } from "@/lib/hooks/use-dashboard-config";
 import {
   FileText, Plus, Upload, ShieldCheck, AlertTriangle, Pencil, Trash2,
   RefreshCw, CheckCircle2, Clock, Archive, Loader2, Sparkles,
@@ -72,6 +73,10 @@ export default function LeavePolicyDocumentsPage() {
   const qc = useQueryClient();
   const toast = useToast();
   const dialog = useDialog();
+  const { hasPermission } = useDashboardConfig();
+  // Creating/managing policies requires hrms.leave_policy.write (enforced by the
+  // backend). Hide the create entry points from users who lack it.
+  const canManagePolicies = hasPermission("hrms.leave_policy.write");
 
   const [showCreate, setShowCreate] = useState(false);
   const [reviewId, setReviewId] = useState<string | null>(null);
@@ -89,22 +94,23 @@ export default function LeavePolicyDocumentsPage() {
       toast.success("Policy archived");
       qc.invalidateQueries({ queryKey: ["leave-policies"] });
     },
-    onError: (e: Error) => toast.error(e.message),
   });
 
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-xl font-semibold text-[#16243A]">Leave Policy Documents</h1>
-          <p className="text-sm text-gray-500">Upload company leave policy. AI extracts rules. HR reviews and activates.</p>
+          <h1 className="text-base font-semibold text-gray-900">Leave Policy Documents</h1>
+          <p className="text-xs text-gray-500">Upload company leave policy. AI extracts rules. HR reviews and activates.</p>
         </div>
-        <button
-          onClick={() => setShowCreate(true)}
-          className="inline-flex items-center gap-2 rounded-lg bg-[#16243A] text-white px-4 py-2 text-sm font-medium hover:bg-[#0e1a2e]"
-        >
-          <Plus size={16} /> New Policy
-        </button>
+        {canManagePolicies && (
+          <button
+            onClick={() => setShowCreate(true)}
+            className="inline-flex items-center gap-2 rounded-lg bg-green-600 text-white px-3 py-1.5 text-xs font-medium hover:bg-[#0e1a2e]"
+          >
+            <Plus size={13} /> New Policy
+          </button>
+        )}
       </div>
 
       <SkeletonSwap loading={isLoading} skeleton={<PolicyListSkeleton rows={5} />}>
@@ -114,12 +120,14 @@ export default function LeavePolicyDocumentsPage() {
           title="No policy documents yet"
           description="Upload your company leave policy PDF/DOCX and let AI extract the rules. HR can then review and activate."
           action={
-            <button
-              onClick={() => setShowCreate(true)}
-              className="inline-flex items-center gap-2 rounded-lg bg-[#16243A] text-white px-4 py-2 text-sm font-medium hover:bg-[#0e1a2e]"
-            >
-              <Plus size={16} /> Create Policy
-            </button>
+            canManagePolicies ? (
+              <button
+                onClick={() => setShowCreate(true)}
+                className="inline-flex items-center gap-2 rounded-lg bg-green-600 text-white px-3 py-1.5 text-xs font-medium hover:bg-[#0e1a2e]"
+              >
+                <Plus size={13} /> Create Policy
+              </button>
+            ) : undefined
           }
         />
       ) : (
@@ -132,12 +140,12 @@ export default function LeavePolicyDocumentsPage() {
                 className="row-stagger p-4 flex items-center gap-4 hover:bg-gray-50 transition-colors"
                 style={{ ["--i" as never]: Math.min(i, 10) }}
               >
-                <div className="w-10 h-10 rounded-lg bg-[#16243A]/10 text-[#16243A] flex items-center justify-center">
+                <div className="w-10 h-10 rounded-lg bg-[#166534]/10 text-[#166534] flex items-center justify-center">
                   <FileText size={20} />
                 </div>
                 <div className="flex-1 min-w-0">
                   <div className="flex items-center gap-2">
-                    <span className="font-medium text-gray-900 truncate">{p.name}</span>
+                    <span className="text-[13px] font-semibold text-gray-900 truncate">{p.name}</span>
                     <span className="text-xs text-gray-500">v{p.version}</span>
                     <span className={clsx("inline-flex items-center gap-1 rounded-md px-2 py-0.5 text-[11px] font-medium", style.cls)}>
                       {style.icon}{style.label}
@@ -152,7 +160,7 @@ export default function LeavePolicyDocumentsPage() {
                 <div className="flex items-center gap-2">
                   <button
                     onClick={() => setReviewId(p.id)}
-                    className="inline-flex items-center gap-1.5 rounded-md border border-gray-200 px-3 py-1.5 text-xs font-medium text-gray-700 hover:bg-gray-50"
+                    className="inline-flex items-center gap-1.5 rounded-md border border-gray-200 px-2.5 py-1 text-xs font-normal text-gray-700 hover:bg-gray-50"
                   >
                     <Pencil size={12} /> Review
                   </button>
@@ -168,7 +176,7 @@ export default function LeavePolicyDocumentsPage() {
                     }}
                     className="inline-flex items-center justify-center rounded-md border border-gray-200 p-1.5 text-gray-500 hover:bg-red-50 hover:text-red-600"
                   >
-                    <Trash2 size={14} />
+                    <Trash2 size={12} />
                   </button>
                 </div>
               </div>
@@ -217,40 +225,39 @@ function CreatePolicyModal({ onClose, onCreated }: { onClose: () => void; onCrea
       toast.success("Policy created. Upload the document to start extraction.");
       onCreated(res.data.id);
     },
-    onError: (e: Error) => toast.error(e.message),
   });
 
   return (
     <Modal open onClose={onClose} title="New Leave Policy" headerIcon={<FileText size={18} />} size="md">
       <div className="space-y-4">
         <div>
-          <label className="block text-sm font-medium text-gray-700 mb-1">Name *</label>
+          <label className="block text-xs font-medium text-gray-700 mb-1">Name *</label>
           <input
             value={name}
             onChange={(e) => setName(e.target.value)}
             placeholder="e.g. India Leave Policy FY26"
-            className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#16243A]/20"
+            className="w-full rounded-lg border border-gray-300 px-3 py-1.5 text-xs focus:outline-none focus:ring-2 focus:ring-[#166534]/20"
           />
         </div>
         <div>
-          <label className="block text-sm font-medium text-gray-700 mb-1">Description</label>
+          <label className="block text-xs font-medium text-gray-700 mb-1">Description</label>
           <textarea
             value={description}
             onChange={(e) => setDescription(e.target.value)}
             rows={3}
-            className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#16243A]/20"
+            className="w-full rounded-lg border border-gray-300 px-3 py-1.5 text-xs focus:outline-none focus:ring-2 focus:ring-[#166534]/20"
           />
         </div>
         <div className="flex justify-end gap-2 pt-2 border-t border-gray-100">
-          <button onClick={onClose} className="rounded-lg border border-gray-200 px-4 py-2 text-sm">
+          <button onClick={onClose} className="rounded-lg border border-gray-200 px-3 py-1.5 text-xs font-medium">
             Cancel
           </button>
           <button
             onClick={() => create.mutate()}
             disabled={!name.trim() || create.isPending}
-            className="inline-flex items-center gap-2 rounded-lg bg-[#16243A] text-white px-4 py-2 text-sm font-medium disabled:opacity-50"
+            className="inline-flex items-center gap-2 rounded-lg bg-green-600 text-white px-3 py-1.5 text-xs font-medium disabled:opacity-50"
           >
-            {create.isPending && <Loader2 className="animate-spin" size={14} />} Create
+            {create.isPending && <Loader2 className="animate-spin" size={13} />} Create
           </button>
         </div>
       </div>
@@ -299,7 +306,6 @@ function ReviewPolicyModal({ policyId, onClose, onSaved }: { policyId: string; o
       refetch();
       onSaved();
     },
-    onError: (e: Error) => toast.error(`Extraction failed: ${e.message}`),
   });
 
   const approve = useMutation({
@@ -316,7 +322,6 @@ function ReviewPolicyModal({ policyId, onClose, onSaved }: { policyId: string; o
       onSaved(); // refresh the parent list
       onClose(); // dismiss the review modal — approve is the terminal action
     },
-    onError: (e: Error) => toast.error(e.message),
   });
 
   const saveDraft = useMutation({
@@ -333,7 +338,6 @@ function ReviewPolicyModal({ policyId, onClose, onSaved }: { policyId: string; o
       refetch();
       onSaved();
     },
-    onError: (e: Error) => toast.error(e.message),
   });
 
   return (
@@ -359,7 +363,7 @@ function ReviewPolicyModal({ policyId, onClose, onSaved }: { policyId: string; o
         <div className="space-y-4">
           {/* Status + meta */}
           <div className="flex items-center gap-3 text-xs">
-            <span className={clsx("inline-flex items-center gap-1 rounded-md px-2 py-1 font-medium", STATUS_STYLE[policy.status].cls)}>
+            <span className={clsx("inline-flex items-center gap-1 rounded-md px-2 py-1 text-[11px] font-medium", STATUS_STYLE[policy.status].cls)}>
               {STATUS_STYLE[policy.status].icon}{STATUS_STYLE[policy.status].label}
             </span>
             <span className="text-gray-500">v{policy.version}</span>
@@ -380,7 +384,7 @@ function ReviewPolicyModal({ policyId, onClose, onSaved }: { policyId: string; o
                 <FileText size={12} /> Source document
               </div>
               {policy.sourceFileUrl ? (
-                <a href={policy.sourceFileUrl} target="_blank" rel="noopener" className="text-xs text-blue-600 hover:underline break-all">
+                <a href={policy.sourceFileUrl} target="_blank" rel="noopener" className="text-xs text-green-600 hover:underline break-all">
                   {policy.sourceFileName ?? "Open document"}
                 </a>
               ) : (
@@ -405,7 +409,7 @@ function ReviewPolicyModal({ policyId, onClose, onSaved }: { policyId: string; o
                 onChange={(e) => setRulesText(e.target.value)}
                 rows={18}
                 spellCheck={false}
-                className="w-full font-mono text-[11px] rounded-lg border border-gray-300 px-3 py-2 focus:outline-none focus:ring-2 focus:ring-[#16243A]/20"
+                className="w-full font-mono text-[11px] rounded-lg border border-gray-300 px-3 py-2 focus:outline-none focus:ring-2 focus:ring-[#166534]/20"
               />
             </div>
           </div>
@@ -417,29 +421,29 @@ function ReviewPolicyModal({ policyId, onClose, onSaved }: { policyId: string; o
                 type="date"
                 value={effectiveFrom}
                 onChange={(e) => setEffectiveFrom(e.target.value)}
-                className="rounded-lg border border-gray-300 px-3 py-2 text-sm"
+                className="rounded-lg border border-gray-300 px-3 py-1.5 text-xs"
               />
             </div>
             <div className="flex items-center gap-2">
               <button
                 onClick={() => refetch()}
-                className="inline-flex items-center gap-1.5 rounded-lg border border-gray-200 px-3 py-2 text-sm text-gray-700 hover:bg-gray-50"
+                className="inline-flex items-center gap-1.5 rounded-lg border border-gray-200 px-3 py-1.5 text-xs font-medium text-gray-700 hover:bg-gray-50"
               >
                 <RefreshCw size={14} /> Refresh
               </button>
               <button
                 onClick={() => saveDraft.mutate()}
                 disabled={saveDraft.isPending}
-                className="inline-flex items-center gap-1.5 rounded-lg border border-gray-200 px-3 py-2 text-sm text-gray-700 hover:bg-gray-50 disabled:opacity-50"
+                className="inline-flex items-center gap-1.5 rounded-lg border border-gray-200 px-3 py-1.5 text-xs font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50"
               >
                 {saveDraft.isPending && <Loader2 className="animate-spin" size={14} />} Save Draft
               </button>
               <button
                 onClick={() => approve.mutate()}
                 disabled={approve.isPending}
-                className="inline-flex items-center gap-1.5 rounded-lg bg-emerald-600 text-white px-4 py-2 text-sm font-medium hover:bg-emerald-700 disabled:opacity-50"
+                className="inline-flex items-center gap-1.5 rounded-lg bg-emerald-600 text-white px-3 py-1.5 text-xs font-medium hover:bg-emerald-700 disabled:opacity-50"
               >
-                {approve.isPending ? <Loader2 className="animate-spin" size={14} /> : <CheckCircle2 size={14} />}
+                {approve.isPending ? <Loader2 className="animate-spin" size={13} /> : <CheckCircle2 size={13} />}
                 Approve & Activate
               </button>
             </div>
@@ -455,7 +459,7 @@ function UploadBox({ onPick, uploading, currentFile }: { onPick: (f: File) => vo
   return (
     <label className={clsx(
       "flex items-center justify-between gap-3 rounded-lg border-2 border-dashed px-4 py-3 cursor-pointer transition",
-      uploading ? "border-gray-200 bg-gray-50" : "border-gray-300 hover:border-[#16243A] hover:bg-gray-50",
+      uploading ? "border-gray-200 bg-gray-50" : "border-gray-300 hover:border-[#166534] hover:bg-gray-50",
     )}>
       <div className="flex items-center gap-3">
         {uploading ? (
@@ -464,7 +468,7 @@ function UploadBox({ onPick, uploading, currentFile }: { onPick: (f: File) => vo
           <Upload className="text-gray-500" size={20} />
         )}
         <div>
-          <div className="text-sm font-medium text-gray-800">
+          <div className="text-[13px] font-semibold text-gray-800">
             {uploading ? "Extracting rules with AI…" : currentFile ? "Re-upload to re-extract" : "Upload leave policy document"}
           </div>
           <div className="text-xs text-gray-500">PDF, DOCX, or image. Max 15 MB.</div>

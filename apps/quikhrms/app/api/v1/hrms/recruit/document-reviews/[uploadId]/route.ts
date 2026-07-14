@@ -3,7 +3,7 @@ import { z } from "zod";
 import { prisma } from "@/lib/prisma";
 import { withAuth } from "@/lib/with-auth";
 import { successResponse, validationError, notFound, internalError } from "@/lib/api-response";
-import { queueEmail } from "@/lib/services/mailer";
+import { resolveAndSend } from "@/lib/email/resolve";
 
 const schema = z.object({
   action: z.enum(["approve", "reject"]),
@@ -64,32 +64,43 @@ export const POST = withAuth(async (req: NextRequest, { orgId, userId }, params)
       }
     }
 
-    // Notify candidate
-    void (async () => {
-      try {
-        const cand = upload.request.application.candidate;
-        if (!cand?.email) return;
-        const company = await prisma.companySettings.findUnique({
-          where: { orgId }, select: { companyName: true },
-        });
-        const docName = upload.documentType?.name ?? upload.customLabel ?? "Document";
-        const companyName = company?.companyName ?? "Our Company";
-        const approved = parsed.data.action === "approve";
-        const subject = approved
-          ? `Document approved: ${docName}`
-          : `Action needed: ${docName} rejected`;
-        const color = approved ? "#059669" : "#dc2626";
-        const html = `
-          <div style="font-family:Arial,sans-serif;max-width:560px;padding:20px;">
-            <h2 style="color:${color};margin:0 0 10px;">${approved ? "Document Approved" : "Document Rejected"}</h2>
-            <p>Hi ${cand.firstName} ${cand.lastName},</p>
-            <p>Your document <strong>${docName}</strong> for the <strong>${upload.request.application.requisition.title}</strong> application has been <strong>${approved ? "approved" : "rejected"}</strong>.</p>
-            ${!approved && parsed.data.reason ? `<p><strong>Reason:</strong> ${parsed.data.reason}</p><p>Please re-upload a corrected version using the same link we sent earlier.</p>` : ""}
-            <p style="margin-top:24px;color:#6b7280;font-size:12px;">${companyName} HRMS</p>
-          </div>`;
-        await queueEmail(orgId, { to: cand.email, subject, html, kind: "candidate-doc.review" });
-      } catch (e) { console.error("review mail failed", e); }
-    })();
+    // Notify candidate — ONLY on rejection (they need to act & re-upload).
+    // Approvals are silent: no "document approved" mail is sent.
+    if (parsed.data.action === "reject") {
+      void (async () => {
+        try {
+          const cand = upload.request.application.candidate;
+          if (!cand?.email) return;
+          const company = await prisma.companySettings.findUnique({
+            where: { orgId }, select: { companyName: true },
+          });
+          const docName = upload.documentType?.name ?? upload.customLabel ?? "Document";
+          const companyName = company?.companyName ?? "Our Company";
+          const subject = `Action needed: ${docName} rejected`;
+          const html = `
+            <div style="font-family:Arial,sans-serif;max-width:560px;padding:20px;">
+              <h2 style="color:#dc2626;margin:0 0 10px;">Document Rejected</h2>
+              <p>Hi ${cand.firstName} ${cand.lastName},</p>
+              <p>Your document <strong>${docName}</strong> for the <strong>${upload.request.application.requisition.title}</strong> application has been <strong>rejected</strong>.</p>
+              ${parsed.data.reason ? `<p><strong>Reason:</strong> ${parsed.data.reason}</p>` : ""}
+              <p>Please re-upload a corrected version using the same link we sent earlier.</p>
+              <p style="margin-top:24px;color:#6b7280;font-size:12px;">${companyName} HRMS</p>
+            </div>`;
+          await resolveAndSend(orgId, {
+            key: "candidate-doc.review",
+            to: cand.email,
+            vars: {
+              candidateName: `${cand.firstName} ${cand.lastName}`.trim(),
+              docName,
+              requisitionTitle: upload.request.application.requisition.title,
+              reason: parsed.data.reason ?? "",
+              companyName,
+            },
+            fallback: () => ({ subject, html }),
+          });
+        } catch (e) { console.error("reject mail failed", e); }
+      })();
+    }
 
     return successResponse(updated);
   } catch (e) {
