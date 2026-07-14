@@ -361,6 +361,7 @@ model User {
   qsUserTeams             QsUserTeam[]
   memberships             OrgMember[]
   appAccess               UserAppAccess[]
+  astEmployees            AstEmployee[]
 
   @@index([email])
   @@schema("auth")
@@ -17938,12 +17939,16 @@ model AstEmployee {
   status      AstStatus       @default(Active)
   createdAt   DateTime        @default(now())
   updatedAt   DateTime        @updatedAt
+  userId      String?
+  user        User?           @relation(fields: [userId], references: [id])
   assignments AstAssignment[]
   replacements AstReplacement[]
 
   @@unique([orgId, employeeId])
   @@unique([orgId, email])
+  @@unique([orgId, userId])
   @@index([orgId])
+  @@index([userId])
   @@map("employees")
   @@schema("app_quikasset")
 }

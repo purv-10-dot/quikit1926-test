@@ -9,6 +9,7 @@ vi.mock("@/lib/api/seedAppRoles", () => ({
 }));
 
 import { GET, POST } from "@/app/api/org/users/route";
+import { ensureUserOnRole } from "@/lib/api/seedAppRoles";
 
 function membershipRow(over: Record<string, unknown> = {}) {
   return {
@@ -231,6 +232,61 @@ describe("POST /api/org/users", () => {
     expect(json.data.appRoleName).toBe("Member");
     expect(json.meta.newUserCreated).toBe(true);
     expect(mockDb.user.create).toHaveBeenCalledOnce();
+  });
+
+  // ─── write-time role default (Phase 3 regression guard) ───
+  // Locks: a new user with no appRoleId is assigned the org's Member role, and
+  // NOT admin. The only exception (admin-less org → first user is admin) is
+  // covered by the next test so nobody "simplifies" the default into
+  // always-Member and re-opens the admin-lockout hole.
+  function stubNewNativeUserCreate() {
+    mockDb.user.findUnique.mockResolvedValue(null as never);
+    mockDb.user.create.mockResolvedValue({ id: "newuser" } as never);
+    mockDb.orgMember.create.mockResolvedValue({} as never);
+    mockDb.app.findUnique.mockResolvedValue({ id: "app" } as never);
+    mockDb.userAppAccess.findFirst.mockResolvedValue(null as never);
+    mockDb.userAppAccess.create.mockResolvedValue({} as never);
+    mockDb.orgMember.findUnique.mockResolvedValue(membershipRow() as never);
+    mockDb.org.findUnique.mockResolvedValue({ name: "Acme", brandColor: null } as never);
+  }
+
+  it("defaults a new user (no appRoleId) to the Member role, never admin", async () => {
+    asAdmin();
+    vi.mocked(ensureUserOnRole).mockClear();
+    stubNewNativeUserCreate();
+    mockDb.astUserAppRole.count.mockResolvedValue(1 as never); // org already has an admin
+
+    const res = await POST(
+      makeReq("/api/org/users", {
+        method: "POST",
+        body: { firstName: "New", lastName: "Person", email: "new@x.com" },
+      }),
+    );
+    const json = await res.json();
+
+    expect(res.status).toBe(201);
+    expect(json.data.appRoleName).toBe("Member");
+    // memberRoleId comes from the mocked seedAllDefaultRoles → "member-role".
+    expect(ensureUserOnRole).toHaveBeenCalledWith("newuser", "org1", "member-role", "admin");
+  });
+
+  it("makes the first user in an admin-less org an admin (safety exception)", async () => {
+    asAdmin();
+    vi.mocked(ensureUserOnRole).mockClear();
+    stubNewNativeUserCreate();
+    mockDb.astUserAppRole.count.mockResolvedValue(0 as never); // NO admin yet
+
+    const res = await POST(
+      makeReq("/api/org/users", {
+        method: "POST",
+        body: { firstName: "First", lastName: "Admin", email: "first@x.com" },
+      }),
+    );
+    const json = await res.json();
+
+    expect(res.status).toBe(201);
+    expect(json.data.appRoleName).toBe("admin");
+    expect(ensureUserOnRole).toHaveBeenCalledWith("newuser", "org1", "admin-role", "admin");
   });
 
   it("rejects linking a user who is not a member of the caller's org (isolation)", async () => {
