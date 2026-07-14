@@ -8,7 +8,7 @@ vi.mock("@/lib/api/seedAppRoles", () => ({
   ensureUserOnRole: vi.fn(async () => {}),
 }));
 
-import { GET as getUser, PATCH as patchUser } from "@/app/api/org/users/[id]/route";
+import { GET as getUser, PATCH as patchUser, DELETE as deleteUser } from "@/app/api/org/users/[id]/route";
 import { PATCH as patchRole } from "@/app/api/org/users/[id]/role/route";
 import { PATCH as patchStatus } from "@/app/api/org/users/[id]/status/route";
 import { GET as getPerms, PUT as putPerms } from "@/app/api/org/users/[id]/permissions/route";
@@ -181,5 +181,138 @@ describe("/api/org/users/[id] route family", () => {
     const json = await res.json();
     expect(res.status).toBe(200);
     expect(json.data.count).toBe(1); // Bogus:nope filtered out
+  });
+
+  // ─── PATCH linked-employee fields (Phase 6a) ───
+  it("PATCH updates the linked employee's directory fields", async () => {
+    asAdmin();
+    mockDb.orgMember.findUnique.mockResolvedValue({ id: "m1" } as never);
+    mockDb.astEmployee.findFirst.mockResolvedValue({ id: "emp1" } as never);
+    mockDb.astEmployee.update.mockResolvedValue({} as never);
+    mockDb.user.findUnique.mockResolvedValue({
+      id: "target", firstName: "A", lastName: "B", email: "a@x.com", lastSignInAt: null,
+    } as never);
+
+    const res = await patchUser(
+      makeReq("/api/org/users/target", { method: "PATCH", body: { department: "Ops", contact: "123" } }),
+      P,
+    );
+    expect(res.status).toBe(200);
+    const arg = mockDb.astEmployee.update.mock.calls[0]?.[0] as {
+      where: { id: string };
+      data: { department: string; contact: string };
+    };
+    expect(arg.where.id).toBe("emp1");
+    expect(arg.data.department).toBe("Ops");
+    expect(arg.data.contact).toBe("123");
+  });
+
+  it("PATCH creates + links an employee for a legacy login that has none", async () => {
+    asAdmin();
+    mockDb.orgMember.findUnique.mockResolvedValue({ id: "m1" } as never);
+    mockDb.astEmployee.findFirst.mockResolvedValue(null as never); // no employee anywhere
+    mockDb.astEmployee.findMany.mockResolvedValue([] as never); // employeeId generation
+    mockDb.astEmployee.create.mockResolvedValue({} as never);
+    mockDb.user.findUnique
+      .mockResolvedValueOnce({ email: "a@x.com", firstName: "A", lastName: "B" } as never) // create-fallback lookup
+      .mockResolvedValueOnce({ id: "target", firstName: "A", lastName: "B", email: "a@x.com", lastSignInAt: null } as never); // response
+
+    const res = await patchUser(
+      makeReq("/api/org/users/target", { method: "PATCH", body: { department: "Ops" } }),
+      P,
+    );
+    expect(res.status).toBe(200);
+    expect(mockDb.astEmployee.create).toHaveBeenCalledOnce();
+    const arg = mockDb.astEmployee.create.mock.calls[0]?.[0] as {
+      data: { userId: string; department: string | null };
+    };
+    expect(arg.data.userId).toBe("target"); // linked to the login
+    expect(arg.data.department).toBe("Ops");
+  });
+
+  // ─── DELETE = remove from QuikAsset (Phase 6a) ───
+  it("DELETE 401s when unauthenticated", async () => {
+    setSession(null);
+    const res = await deleteUser(makeReq("/api/org/users/target", { method: "DELETE" }), P);
+    expect(res.status).toBe(401);
+  });
+
+  it("DELETE 404s (isolation) when the target is not a member of the caller's org", async () => {
+    asAdmin("org-A");
+    mockDb.orgMember.findUnique.mockResolvedValue(null as never);
+    const res = await deleteUser(makeReq("/api/org/users/target", { method: "DELETE" }), P);
+    expect(res.status).toBe(404);
+  });
+
+  it("DELETE revokes access + role and deletes a history-free employee; keeps the login", async () => {
+    asAdmin();
+    mockDb.orgMember.findUnique.mockResolvedValue({
+      user: { firstName: "Al", lastName: "Ice", email: "a@x.com" },
+    } as never);
+    mockDb.app.findUnique.mockResolvedValue({ id: "app" } as never);
+    mockDb.astUserAppRole.findMany.mockResolvedValue([
+      { role: { id: "r1", isSystem: false, name: "Member" } },
+    ] as never); // not admin
+    mockDb.astUserAppRole.deleteMany.mockResolvedValue({ count: 1 } as never);
+    mockDb.userAppAccess.deleteMany.mockResolvedValue({ count: 1 } as never);
+    mockDb.astEmployee.findFirst.mockResolvedValue({
+      id: "emp1",
+      _count: { assignments: 0, replacements: 0 },
+    } as never);
+    mockDb.astEmployee.delete.mockResolvedValue({} as never);
+
+    const res = await deleteUser(makeReq("/api/org/users/target", { method: "DELETE" }), P);
+    const json = await res.json();
+
+    expect(res.status).toBe(200);
+    expect(json.data.employeeRemoved).toBe(true);
+    expect(mockDb.astUserAppRole.deleteMany).toHaveBeenCalled();
+    expect(mockDb.userAppAccess.deleteMany).toHaveBeenCalled();
+    expect(mockDb.astEmployee.delete).toHaveBeenCalled();
+    // The shared platform login is preserved.
+    expect(mockDb.user.delete).not.toHaveBeenCalled();
+    expect(mockDb.orgMember.delete).not.toHaveBeenCalled();
+  });
+
+  it("DELETE keeps a linked employee that has asset history", async () => {
+    asAdmin();
+    mockDb.orgMember.findUnique.mockResolvedValue({
+      user: { firstName: "Al", lastName: "Ice", email: "a@x.com" },
+    } as never);
+    mockDb.app.findUnique.mockResolvedValue({ id: "app" } as never);
+    mockDb.astUserAppRole.findMany.mockResolvedValue([] as never); // not admin
+    mockDb.astUserAppRole.deleteMany.mockResolvedValue({ count: 0 } as never);
+    mockDb.userAppAccess.deleteMany.mockResolvedValue({ count: 1 } as never);
+    mockDb.astEmployee.findFirst.mockResolvedValue({
+      id: "emp1",
+      _count: { assignments: 2, replacements: 0 },
+    } as never);
+
+    const res = await deleteUser(makeReq("/api/org/users/target", { method: "DELETE" }), P);
+    const json = await res.json();
+
+    expect(res.status).toBe(200);
+    expect(json.data.employeeKept).toBe(true);
+    expect(json.data.employeeRemoved).toBe(false);
+    expect(mockDb.astEmployee.delete).not.toHaveBeenCalled();
+  });
+
+  it("DELETE 409s when it would remove the last admin", async () => {
+    asAdmin();
+    mockDb.orgMember.findUnique.mockResolvedValue({
+      user: { firstName: "Ad", lastName: "Min", email: "admin@x.com" },
+    } as never);
+    mockDb.app.findUnique.mockResolvedValue({ id: "app" } as never);
+    mockDb.astUserAppRole.findMany.mockResolvedValue([
+      { role: { id: "admin-role", isSystem: true, name: "admin" } },
+    ] as never);
+    mockDb.astUserAppRole.count.mockResolvedValue(1 as never); // the only admin
+
+    const res = await deleteUser(makeReq("/api/org/users/target", { method: "DELETE" }), P);
+
+    expect(res.status).toBe(409);
+    // Guard fires before any revocation.
+    expect(mockDb.astUserAppRole.deleteMany).not.toHaveBeenCalled();
+    expect(mockDb.userAppAccess.deleteMany).not.toHaveBeenCalled();
   });
 });
