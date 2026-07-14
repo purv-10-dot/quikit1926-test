@@ -1,0 +1,733 @@
+"use client";
+
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
+import type {
+  ChannelList,
+  ChannelListItem,
+  MentionRefInput,
+  Mention,
+  MessageDto,
+} from "@/lib/shared";
+import { EmptyState, MessageSquare, useToast, WifiOff } from "@/components/ui";
+import {
+  createChannel,
+  fetchChannels,
+  fetchMessages,
+  markChannelDeliveredApi,
+  markChannelReadApi,
+  sendMessage,
+} from "@/lib/api";
+import { useNotifications } from "@/components/notifications/NotificationProvider";
+import { useProfile } from "@/components/profile/ProfileProvider";
+import {
+  createRealtimeClient,
+  fetchRealtimeToken,
+  type RealtimeClient,
+} from "@/lib/realtime-client";
+import {
+  applyDeliveredEvent,
+  applyReadEvent,
+  bumpChannelList,
+  makeTempId,
+  markChannelRead,
+  mergeMessageEvent,
+  patchMessageEvent,
+  seedFromApiPage,
+  shouldApplyDelivered,
+  shouldApplyRead,
+} from "@/lib/realtime-cache";
+import {
+  applyPresence,
+  applySnapshot,
+  emptyPresence,
+  type PresenceEvent,
+  type PresenceSnapshot,
+  type PresenceState,
+} from "@/lib/presence-store";
+import { applyTyping, emptyTyping, pruneTyping, type TypingState } from "@/lib/typing-store";
+import { streamAssist } from "@/lib/assist-client";
+import type { MediaMeta } from "@/lib/server/storage/types";
+import { CallHandler } from "../calling/CallHandler";
+import { RejoinBanner } from "../calling/RejoinBanner";
+import { fetchActiveCall, type ActiveCallInfo } from "@/lib/call-state";
+import { ChannelList as ChannelListView } from "./ChannelList";
+import { ConversationView } from "./ConversationView";
+import { DiscoverModal } from "./DiscoverModal";
+import { NewChatModal } from "./NewChatModal";
+import { NewGroupModal } from "./NewGroupModal";
+
+// Mirror of `ASSISTANT_BOT_USER_ID` in @quikit/shared. Defined locally (not
+// value-imported) so this client module never pulls the shared barrel's
+// server-only deps (ioredis/sentry) into the browser bundle. Kept in sync with
+// the other client mirrors in ticks.ts / SchedulingModal.tsx.
+const ASSISTANT_BOT_USER_ID = "quikchat-assistant-bot";
+
+export interface ChatWorkspaceProps {
+  currentUserId: string;
+  currentUserName: string;
+  workspaceName: string;
+  realtimeUrl: string;
+  /** Deep-link target (e.g. after accepting an invite at /?channel=...). */
+  initialChannelId?: string;
+}
+
+function insertChannel(list: ChannelList, channel: ChannelListItem): ChannelList {
+  const exists = [...list.priority, ...list.recent].some((c) => c.channelId === channel.channelId);
+  if (exists) return list;
+  return { ...list, recent: [channel, ...list.recent] };
+}
+
+function lastMessageOf(dto: MessageDto) {
+  return {
+    id: dto.id,
+    type: dto.type,
+    content: dto.content,
+    senderId: dto.senderId,
+    createdAt: dto.createdAt,
+  };
+}
+
+export function ChatWorkspace({
+  currentUserId,
+  currentUserName,
+  workspaceName,
+  realtimeUrl,
+  initialChannelId,
+}: ChatWorkspaceProps) {
+  const qc = useQueryClient();
+  const toast = useToast();
+  const notifications = useNotifications();
+  const [activeId, setActiveId] = useState<string | null>(null);
+  const [connected, setConnected] = useState(true);
+  const [newChatOpen, setNewChatOpen] = useState(false);
+  const [newGroupOpen, setNewGroupOpen] = useState(false);
+  const [discoverOpen, setDiscoverOpen] = useState(false);
+  const [presence, setPresence] = useState<PresenceState>(emptyPresence);
+  const [typing, setTyping] = useState<TypingState>(emptyTyping);
+  const [assist, setAssist] = useState<{ channelId: string; text: string } | null>(null);
+  const [assistError, setAssistError] = useState<{
+    channelId: string;
+    prompt: string;
+    message: string;
+  } | null>(null);
+  const [rejoinCall, setRejoinCall] = useState<ActiveCallInfo | null>(null);
+  const assistAbort = useRef<AbortController | null>(null);
+  const activeIdRef = useRef<string | null>(null);
+  activeIdRef.current = activeId;
+  const clientRef = useRef<RealtimeClient | null>(null);
+
+  // Check for active calls on mount (rejoin after refresh)
+  useEffect(() => {
+    void fetchActiveCall().then((call) => {
+      if (call) setRejoinCall(call);
+    });
+  }, []);
+
+  const channelsQuery = useQuery({ queryKey: ["channels"], queryFn: fetchChannels });
+  const messagesQuery = useQuery({
+    queryKey: ["messages", activeId],
+    // The API returns newest-first; the canonical cache is always ascending
+    // (oldest→newest) so optimistic appends + date dividers read top→bottom.
+    queryFn: async () => seedFromApiPage(await fetchMessages(activeId!)),
+    enabled: !!activeId,
+  });
+
+  const activeChannel: ChannelListItem | undefined = useMemo(() => {
+    const data = channelsQuery.data;
+    if (!data || !activeId) return undefined;
+    return [...data.priority, ...data.recent].find((c) => c.channelId === activeId);
+  }, [channelsQuery.data, activeId]);
+
+  // Debounced per-channel delivery advance: when our client receives a message
+  // for ANY channel (delivery ≠ viewing), tell the server we got it so senders
+  // see ✓✓. Coalesced so a burst of inbound messages is one PATCH per channel.
+  const deliveredTimers = useRef(new Map<string, ReturnType<typeof setTimeout>>());
+  const advanceDelivered = useCallback((channelId: string) => {
+    const timers = deliveredTimers.current;
+    if (timers.has(channelId)) return; // already scheduled
+    timers.set(
+      channelId,
+      setTimeout(() => {
+        timers.delete(channelId);
+        void markChannelDeliveredApi(channelId).catch(() => undefined);
+      }, 400),
+    );
+  }, []);
+
+  // --- realtime cache merge ---
+  const onMessage = useCallback(
+    (dto: MessageDto) => {
+      qc.setQueryData<MessageDto[]>(["messages", dto.channelId], (old) =>
+        mergeMessageEvent(old ?? [], dto, currentUserId),
+      );
+      qc.setQueryData<ChannelList>(["channels"], (old) =>
+        old
+          ? bumpChannelList(old, dto.channelId, lastMessageOf(dto), {
+              active: dto.channelId === activeIdRef.current,
+              fromSelf: dto.senderId === currentUserId,
+            })
+          : old,
+      );
+      // Our client received someone else's message → mark it delivered.
+      if (dto.senderId && dto.senderId !== currentUserId) advanceDelivered(dto.channelId);
+    },
+    [qc, currentUserId, advanceDelivered],
+  );
+
+  const onPatch = useCallback(
+    (dto: MessageDto) => {
+      qc.setQueryData<MessageDto[]>(["messages", dto.channelId], (old) =>
+        patchMessageEvent(old ?? [], dto),
+      );
+    },
+    [qc],
+  );
+
+  // Live read receipts: merge other members' `read` into memberReadAt. Ignore
+  // our own (self is excluded from "read by others").
+  const onRead = useCallback(
+    (p: { channelId: string; userId: string; readAt: string }) => {
+      if (!shouldApplyRead(p.userId, currentUserId)) return;
+      qc.setQueryData<ChannelList>(["channels"], (old) =>
+        old ? applyReadEvent(old, p.channelId, p.userId, p.readAt) : old,
+      );
+    },
+    [qc, currentUserId],
+  );
+
+  // Live delivery receipts: merge other members' `delivered` into memberDeliveredAt.
+  const onDelivered = useCallback(
+    (p: { channelId: string; userId: string; deliveredAt: string }) => {
+      if (!shouldApplyDelivered(p.userId, currentUserId)) return;
+      qc.setQueryData<ChannelList>(["channels"], (old) =>
+        old ? applyDeliveredEvent(old, p.channelId, p.userId, p.deliveredAt) : old,
+      );
+    },
+    [qc, currentUserId],
+  );
+
+  // Latest event handlers + notifications, read through a ref by the socket's
+  // stable wrappers. This keeps the socket effect's deps at `[realtimeUrl]` so
+  // the socket is created ONCE per session: previously `notifications` (a
+  // context value that re-memoizes on every notification-state change — every
+  // new notification, unread-count tick, or read-mark) was in the deps, so the
+  // effect re-ran and tore down + recreated the socket constantly, dropping the
+  // very `read`/`delivered` events the ticks depend on.
+  const handlersRef = useRef({ onMessage, onPatch, onRead, onDelivered, notifications });
+  handlersRef.current = { onMessage, onPatch, onRead, onDelivered, notifications };
+
+  useEffect(() => {
+    const client = createRealtimeClient({
+      url: realtimeUrl || window.location.origin,
+      getToken: fetchRealtimeToken,
+    });
+    clientRef.current = client;
+    client.on("message", (d) => handlersRef.current.onMessage(d as MessageDto));
+    client.on("system", (d) => handlersRef.current.onMessage(d as MessageDto));
+    client.on("message_update", (d) => handlersRef.current.onPatch(d as MessageDto));
+    client.on("reaction", (d) => handlersRef.current.onPatch(d as MessageDto));
+    client.on("read", (d) =>
+      handlersRef.current.onRead(d as { channelId: string; userId: string; readAt: string }),
+    );
+    client.on("delivered", (d) =>
+      handlersRef.current.onDelivered(
+        d as { channelId: string; userId: string; deliveredAt: string },
+      ),
+    );
+    client.on("presence", (d) => setPresence((s) => applyPresence(s, d as PresenceEvent)));
+    client.on("presence_snapshot", (d) =>
+      setPresence((s) => applySnapshot(s, d as PresenceSnapshot)),
+    );
+    client.on("typing", (d) =>
+      setTyping((s) => applyTyping(s, d as { channelId: string; userId: string }, Date.now())),
+    );
+    client.socket.on("connect", () => setConnected(true));
+    client.socket.on("disconnect", () => setConnected(false));
+    client.socket.on("connect_error", () => setConnected(false));
+    // Hand the same client to the notifications layer so the bell + toasts +
+    // OS notifications ride the existing per-user `notification` event.
+    handlersRef.current.notifications.attachClient(client);
+    return () => {
+      clientRef.current = null;
+      client.disconnect();
+    };
+  }, [realtimeUrl]);
+
+  // Expire stale typing indicators (no explicit "stop" is ever sent).
+  useEffect(() => {
+    const t = setInterval(() => setTyping((s) => pruneTyping(s, Date.now())), 1_000);
+    return () => clearInterval(t);
+  }, []);
+
+  const emitTyping = useCallback((channelId: string) => {
+    clientRef.current?.typing(channelId);
+  }, []);
+
+  const pickChannel = useCallback(
+    (id: string) => {
+      setActiveId(id);
+      qc.setQueryData<ChannelList>(["channels"], (old) => (old ? markChannelRead(old, id) : old));
+      void markChannelReadApi(id);
+      // Opening a channel silences its bell too (server already fires
+      // read-by-channel; this keeps the notification badge in sync locally).
+      void notifications.markChannelRead(id);
+    },
+    [qc, notifications],
+  );
+
+  /**
+   * Land on a channel that may not be in the list yet (create / join / accept):
+   * refetch the list, ensure the realtime room is joined (auto-join also fires
+   * via `channel_created`, but join() is belt-and-suspenders for the actor),
+   * select it, and clear its unread.
+   */
+  const selectChannel = useCallback(
+    (id: string) => {
+      setActiveId(id);
+      void clientRef.current?.join(id);
+      void qc.invalidateQueries({ queryKey: ["channels"] });
+      qc.setQueryData<ChannelList>(["channels"], (old) => (old ? markChannelRead(old, id) : old));
+      void markChannelReadApi(id);
+      void notifications.markChannelRead(id);
+    },
+    [qc, notifications],
+  );
+
+  // Let the notification bell / toasts / OS clicks jump to a channel.
+  useEffect(() => {
+    notifications.registerChannelOpener((channelId) => selectChannel(channelId));
+  }, [notifications, selectChannel]);
+
+  const onChannelReady = useCallback(
+    (channel: ChannelListItem) => {
+      qc.setQueryData<ChannelList>(["channels"], (old) =>
+        old ? insertChannel(old, channel) : old,
+      );
+      selectChannel(channel.channelId);
+    },
+    [qc, selectChannel],
+  );
+
+  // "Message" from a profile card (S14b): start/open a DM with that user, then
+  // land on it (reuses the S06 DM-create + selectChannel via onChannelReady).
+  const { registerStartDm, registerStartCall } = useProfile();
+  useEffect(() => {
+    registerStartDm((userId: string) => {
+      void createChannel({ type: "dm", visibility: "private", memberIds: [userId] })
+        .then(onChannelReady)
+        .catch(() => toast.error({ title: "Couldn't start that conversation" }));
+    });
+  }, [registerStartDm, onChannelReady, toast]);
+
+  // "Call" from a profile card: initiate a call with that user.
+  const [callTargetUserId, setCallTargetUserId] = useState<string | null>(null);
+  useEffect(() => {
+    registerStartCall((userId) => {
+      setCallTargetUserId(userId);
+    });
+  }, [registerStartCall]);
+
+  // Deep-link (e.g. /?channel=… after accepting an invite). Run once.
+  const didDeepLink = useRef(false);
+  useEffect(() => {
+    if (initialChannelId && !didDeepLink.current) {
+      didDeepLink.current = true;
+      selectChannel(initialChannelId);
+    }
+  }, [initialChannelId, selectChannel]);
+
+  const handleSend = useCallback(
+    (content: string, mentionRefs: MentionRefInput[], parentMessageId?: string) => {
+      if (!activeChannel) return;
+      const channelId = activeChannel.channelId;
+      const nameById = new Map(activeChannel.members.map((m) => [m.id, m.displayName]));
+      const mentions: Mention[] = mentionRefs.map((r) => ({
+        userId: r.userId,
+        displayName: r.userId === "everyone" ? "everyone" : (nameById.get(r.userId) ?? "unknown"),
+        offsetStart: r.offsetStart,
+        offsetEnd: r.offsetEnd,
+      }));
+      const parent = parentMessageId
+        ? (qc.getQueryData<MessageDto[]>(["messages", channelId]) ?? []).find(
+            (m) => m.id === parentMessageId,
+          )
+        : undefined;
+      // Idempotency key: stamped on the optimistic row and sent to the server so
+      // a retry returns the same row and the echo reconciles exactly by id.
+      const clientMessageId = crypto.randomUUID();
+      const optimistic: MessageDto = {
+        id: makeTempId(),
+        channelId,
+        senderId: currentUserId,
+        actorType: "human",
+        type: "Text",
+        content,
+        data: null,
+        parentMessageId: parentMessageId ?? null,
+        parentPreview: parent
+          ? { id: parent.id, senderId: parent.senderId, type: parent.type, content: parent.content }
+          : null,
+        isPinned: false,
+        reactions: [],
+        mentions,
+        clientMessageId,
+        createdAt: new Date().toISOString(),
+        editedAt: null,
+      };
+      qc.setQueryData<MessageDto[]>(["messages", channelId], (old) => [...(old ?? []), optimistic]);
+
+      sendMessage(channelId, { content, mentions: mentionRefs, parentMessageId, clientMessageId })
+        .then((server) => {
+          // Reconcile the temp row even if the realtime echo never arrives.
+          qc.setQueryData<MessageDto[]>(["messages", channelId], (old) =>
+            mergeMessageEvent(old ?? [], server, currentUserId),
+          );
+          qc.setQueryData<ChannelList>(["channels"], (old) =>
+            old
+              ? bumpChannelList(old, channelId, lastMessageOf(server), {
+                  active: true,
+                  fromSelf: true,
+                })
+              : old,
+          );
+        })
+        .catch(() => {
+          // Drop the optimistic row on failure.
+          qc.setQueryData<MessageDto[]>(["messages", channelId], (old) =>
+            (old ?? []).filter((m) => m.id !== optimistic.id),
+          );
+          toast.error({
+            title: "Couldn't send",
+            body: "Your message wasn't delivered — try again.",
+          });
+        });
+    },
+    [activeChannel, currentUserId, qc, toast],
+  );
+
+  // Media send: bytes are already uploaded (Composer did sign → PUT). Post a
+  // `Media` message referencing objectPath; the optimistic row shows a local
+  // preview URL until the echo reconciles it (by clientMessageId) with a fresh
+  // server-minted signed URL.
+  const handleSendMedia = useCallback(
+    (media: MediaMeta, caption: string, localUrl: string) => {
+      if (!activeChannel) return;
+      const channelId = activeChannel.channelId;
+      const clientMessageId = crypto.randomUUID();
+      const optimistic: MessageDto = {
+        id: makeTempId(),
+        channelId,
+        senderId: currentUserId,
+        actorType: "human",
+        type: "Media",
+        content: caption,
+        data: { ...media, mediaUrl: localUrl },
+        parentMessageId: null,
+        parentPreview: null,
+        isPinned: false,
+        reactions: [],
+        mentions: [],
+        clientMessageId,
+        createdAt: new Date().toISOString(),
+        editedAt: null,
+      };
+      qc.setQueryData<MessageDto[]>(["messages", channelId], (old) => [...(old ?? []), optimistic]);
+
+      sendMessage(channelId, {
+        content: caption,
+        type: "Media",
+        data: { ...media },
+        clientMessageId,
+      })
+        .then((server) => {
+          qc.setQueryData<MessageDto[]>(["messages", channelId], (old) =>
+            mergeMessageEvent(old ?? [], server, currentUserId),
+          );
+          qc.setQueryData<ChannelList>(["channels"], (old) =>
+            old
+              ? bumpChannelList(old, channelId, lastMessageOf(server), {
+                  active: true,
+                  fromSelf: true,
+                })
+              : old,
+          );
+        })
+        .catch(() => {
+          qc.setQueryData<MessageDto[]>(["messages", channelId], (old) =>
+            (old ?? []).filter((m) => m.id !== optimistic.id),
+          );
+          toast.error({ title: "Couldn't send attachment", body: "Please try again." });
+        });
+    },
+    [activeChannel, currentUserId, qc, toast],
+  );
+
+  // AI assistant: open the SSE relay, accumulate deltas into a transient
+  // streaming bubble. On `done` the posted ai_agent message arrives via realtime
+  // and merges into the list (de-dupe by clientMessageId); we just clear the
+  // bubble. On error we toast and clear. Stop simply aborts the client stream.
+  const handleAssist = useCallback(
+    (prompt: string) => {
+      if (!activeChannel) return;
+      const channelId = activeChannel.channelId;
+      assistAbort.current?.abort();
+      const controller = new AbortController();
+      assistAbort.current = controller;
+      setAssist({ channelId, text: "" });
+      setAssistError((e) => (e && e.channelId === channelId ? null : e));
+      const clearIfCurrent = () => setAssist((s) => (s && s.channelId === channelId ? null : s));
+      void streamAssist(
+        channelId,
+        { prompt },
+        {
+          onDelta: (t) =>
+            setAssist((s) => (s && s.channelId === channelId ? { ...s, text: s.text + t } : s)),
+          onDone: clearIfCurrent,
+          onError: (message) => {
+            clearIfCurrent();
+            setAssistError({ channelId, prompt, message });
+          },
+        },
+        controller.signal,
+      );
+    },
+    [activeChannel],
+  );
+
+  const stopAssist = useCallback(() => {
+    assistAbort.current?.abort();
+    setAssist(null);
+  }, []);
+
+  const retryAssist = useCallback(() => {
+    if (!assistError) return;
+    const p = assistError.prompt;
+    setAssistError(null);
+    handleAssist(p);
+  }, [assistError, handleAssist]);
+  const dismissAssistError = useCallback(() => setAssistError(null), []);
+
+  // Call handler: triggers 1:1 call for DMs, group call with SFU for groups
+  const handleGroupCall = useCallback(async () => {
+    if (!activeChannel) return;
+    if (activeChannel.type === "dm") {
+      const otherMember = activeChannel.members.find(
+        (m) => m.id !== currentUserId && m.id !== ASSISTANT_BOT_USER_ID,
+      );
+      if (otherMember) {
+        setCallTargetUserId(otherMember.id);
+      }
+    } else {
+      // Group channel: create call + SFU room, generate tokens for all members
+      try {
+        const res = await fetch("/api/calls/group", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            channelId: activeChannel.channelId,
+            type: "audio",
+          }),
+        });
+        if (!res.ok) {
+          const err = (await res.json().catch(() => ({ error: "Failed" }))) as {
+            error?: string;
+          };
+          throw new Error(err.error ?? "Failed to start group call");
+        }
+        const data = (await res.json()) as {
+          call: { id: string };
+          sfu: { roomId: string; tokens: Record<string, string>; livekitUrl?: string } | null;
+        };
+        // Open the call UI for the current user
+        const myToken = data.sfu?.tokens[currentUserId] ?? "";
+        const params = new URLSearchParams({
+          callId: data.call.id,
+          name: activeChannel.name ?? "Group call",
+          userId: currentUserId,
+          type: "audio",
+          sfuRoomId: data.sfu?.roomId ?? "",
+          sfuToken: myToken,
+          livekitUrl: data.sfu?.livekitUrl ?? "",
+        });
+        const url = `/call/${data.call.id}?${params.toString()}`;
+        window.open(
+          url,
+          "quikchat-group-call",
+          "width=1000,height=700,popup=yes,menubar=no,toolbar=no,location=no,status=no",
+        );
+        toast.success({ title: `Starting group call in #${activeChannel.name ?? "channel"}` });
+      } catch (e) {
+        toast.error({
+          title: "Couldn't start group call",
+          body: e instanceof Error ? e.message : "Please try again.",
+        });
+      }
+    }
+  }, [activeChannel, currentUserId, toast]);
+
+  const handleStartMeetingCall = useCallback(
+    async (meetingId: string, channelId: string) => {
+      try {
+        const res = await fetch("/api/calls/group", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ channelId, type: "video", meetingId }),
+        });
+        if (!res.ok) {
+          const err = (await res.json().catch(() => ({ error: "Failed" }))) as {
+            error?: string;
+          };
+          throw new Error(err.error ?? "Failed to start group call");
+        }
+        const data = (await res.json()) as {
+          call: { id: string };
+          sfu: { roomId: string; tokens: Record<string, string>; livekitUrl?: string } | null;
+        };
+        const myToken = data.sfu?.tokens[currentUserId] ?? "";
+        const params = new URLSearchParams({
+          callId: data.call.id,
+          name: "Group call",
+          userId: currentUserId,
+          type: "video",
+          sfuRoomId: data.sfu?.roomId ?? "",
+          sfuToken: myToken,
+          livekitUrl: data.sfu?.livekitUrl ?? "",
+        });
+        const url = `/call/${data.call.id}?${params.toString()}`;
+        window.open(
+          url,
+          "quikchat-group-call",
+          "width=1000,height=700,popup=yes,menubar=no,toolbar=no,location=no,status=no",
+        );
+        toast.success({ title: "Starting group call..." });
+      } catch (e) {
+        toast.error({
+          title: "Couldn't start group call",
+          body: e instanceof Error ? e.message : "Please try again.",
+        });
+      }
+    },
+    [currentUserId, toast],
+  );
+
+  useEffect(() => {
+    const timers = deliveredTimers.current;
+    return () => {
+      assistAbort.current?.abort();
+      for (const t of timers.values()) clearTimeout(t);
+      timers.clear();
+    };
+  }, []);
+
+  return (
+    <div className="qc-card">
+      <div className="qc-panes" data-view={activeId ? "convo" : "list"}>
+        <ChannelListView
+          data={channelsQuery.data}
+          loading={channelsQuery.isLoading}
+          workspaceName={workspaceName}
+          activeChannelId={activeId}
+          currentUserId={currentUserId}
+          onlineUserIds={presence.online}
+          chromeless
+          onPick={pickChannel}
+          onNewChat={() => setNewChatOpen(true)}
+          onNewGroup={() => setNewGroupOpen(true)}
+          onDiscover={() => setDiscoverOpen(true)}
+        />
+        {activeChannel ? (
+          <ConversationView
+            channel={activeChannel}
+            currentUserId={currentUserId}
+            messages={messagesQuery.data}
+            loadingMessages={messagesQuery.isLoading}
+            channels={channelsQuery.data}
+            online={presence.online}
+            typing={typing}
+            onSend={handleSend}
+            onTyping={emitTyping}
+            onSendMedia={handleSendMedia}
+            onAssist={handleAssist}
+            onCall={handleGroupCall}
+            onStartMeetingCall={handleStartMeetingCall}
+            assistStreaming={
+              assist && assist.channelId === activeChannel.channelId ? assist.text : null
+            }
+            onStopAssist={stopAssist}
+            assistError={
+              assistError && assistError.channelId === activeChannel.channelId
+                ? assistError.message
+                : null
+            }
+            onRetryAssist={retryAssist}
+            onDismissAssistError={dismissAssistError}
+          />
+        ) : (
+          <section className="qc-pane-convo">
+            <EmptyState
+              title="Pick a conversation"
+              hint="Choose a channel or DM from the left to start chatting."
+              icon={<MessageSquare size={28} />}
+            />
+          </section>
+        )}
+        {!connected ? (
+          <div className="qc-reconnect qc-reconnect-float" role="status">
+            <WifiOff size={13} /> Reconnecting…
+          </div>
+        ) : null}
+
+        <NewChatModal
+          open={newChatOpen}
+          onClose={() => setNewChatOpen(false)}
+          onCreated={(ch) => {
+            onChannelReady(ch);
+            toast.success({ title: `Chat with ${ch.name ?? "your contact"} started` });
+          }}
+        />
+        <NewGroupModal
+          open={newGroupOpen}
+          onClose={() => setNewGroupOpen(false)}
+          onCreated={(ch) => {
+            onChannelReady(ch);
+            toast.success({ title: `Created ${ch.name ? `#${ch.name}` : "the group"}` });
+          }}
+        />
+        <DiscoverModal
+          open={discoverOpen}
+          onClose={() => setDiscoverOpen(false)}
+          onJoined={(ch) => {
+            onChannelReady(ch);
+            toast.success({ title: `Joined ${ch.name ? `#${ch.name}` : "the channel"}` });
+          }}
+        />
+
+        {rejoinCall ? (
+          <RejoinBanner
+            activeCall={rejoinCall}
+            onRejoin={(_callId) => {
+              setCallTargetUserId(null);
+              setRejoinCall(null);
+              toast.success({ title: "Reconnecting to call..." });
+            }}
+            onDismiss={() => setRejoinCall(null)}
+          />
+        ) : null}
+
+        <CallHandler
+          currentUserId={currentUserId}
+          currentUserName={currentUserName}
+          socket={clientRef.current?.socket ?? null}
+          callTargetUserId={callTargetUserId}
+          callType="audio"
+          onCallStarted={() => setCallTargetUserId(null)}
+          getUserName={(userId) => {
+            const member = activeChannel?.members.find((m) => m.id === userId);
+            return member?.displayName ?? "User";
+          }}
+        />
+      </div>
+    </div>
+  );
+}
