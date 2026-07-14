@@ -144,13 +144,6 @@ export default function HRCalendarPage() {
     return [...leaves].sort((a, b) => a.startDate.localeCompare(b.startDate));
   }, [leaves]);
 
-  const stats = useMemo(() => {
-    const hol = holidays.filter((h) => { const d = new Date(h.date); return d.getUTCFullYear() === year && d.getUTCMonth() === month; }).length;
-    const ppl = new Set(leaves.map((l) => l.employee.id)).size;
-    const half = leaves.filter(leaveIsHalfDay).length;
-    return { hol, ppl, half };
-  }, [holidays, leaves, year, month]);
-
   const monthLabel = cursor.toLocaleDateString("en-US", { month: "long", year: "numeric" });
   const isToday = (d: Date) => d.toDateString() === now.toDateString();
   const goPrev = () => setCursor(new Date(year, month - 1, 1));
@@ -169,7 +162,7 @@ export default function HRCalendarPage() {
   };
 
   return (
-    <div className="space-y-4 pb-6">
+    <div className="space-y-3">
       {/* Header */}
       <div className="flex items-center gap-3">
         <div className="w-10 h-10 rounded-xl bg-[#dcfce7] text-[#16a34a] flex items-center justify-center">
@@ -318,13 +311,6 @@ export default function HRCalendarPage() {
           </Panel>
         </div>
       </div>
-
-      {/* Stat bar */}
-      <div className="rounded-2xl border border-gray-200 bg-gradient-to-r from-green-50/50 to-white shadow-sm px-4 py-4 grid grid-cols-1 sm:grid-cols-3 gap-4">
-        <StatTile icon={<CalendarDays size={16} className="text-green-600" />} bg="bg-green-100" value={stats.hol} label="Holidays this month" />
-        <StatTile icon={<Users size={16} className="text-blue-600" />} bg="bg-blue-100" value={stats.ppl} label="People on leave" />
-        <StatTile icon={<Clock size={16} className="text-amber-600" />} bg="bg-amber-100" value={stats.half} label="Half day this month" />
-      </div>
     </div>
   );
 }
@@ -343,7 +329,7 @@ function DayCell({ date, inMonth, today, holidays, dayLeaves, tall }: {
   return (
     <div className={clsx(
       "border-b border-r border-gray-100 p-1.5 flex flex-col gap-1 overflow-hidden",
-      tall ? "min-h-[160px]" : "min-h-[104px]",
+      tall ? "min-h-[160px]" : "min-h-[88px]",
       !inMonth && "bg-gray-50/40",
       isWeekend && inMonth && "bg-slate-50/50",
       today && "bg-green-50/60",
@@ -413,18 +399,6 @@ function DateChip({ date, tone }: { date: Date; tone: "green" | "purple" }) {
     <div className={clsx("w-11 shrink-0 text-center rounded-lg py-1", tone === "purple" ? "bg-purple-50" : "bg-green-50")}>
       <div className={clsx("text-sm font-bold tabular-nums leading-none", tone === "purple" ? "text-purple-700" : "text-green-700")}>{date.toLocaleDateString("en-IN", { day: "2-digit", timeZone: "UTC" })}</div>
       <div className={clsx("text-[10px] uppercase tracking-wide mt-0.5", tone === "purple" ? "text-purple-500" : "text-green-500")}>{date.toLocaleDateString("en-IN", { month: "short", timeZone: "UTC" })}</div>
-    </div>
-  );
-}
-
-function StatTile({ icon, bg, value, label }: { icon: React.ReactNode; bg: string; value: number; label: string }) {
-  return (
-    <div className="flex items-center gap-3">
-      <div className={clsx("w-9 h-9 rounded-full flex items-center justify-center", bg)}>{icon}</div>
-      <div>
-        <p className="text-lg font-bold text-gray-900 leading-none tabular-nums">{value}</p>
-        <p className="text-xs text-gray-500 mt-0.5">{label}</p>
-      </div>
     </div>
   );
 }
