@@ -327,6 +327,16 @@ describe("POST /api/org/users", () => {
     mockDb.astUserAppRole.count.mockResolvedValue(1 as never); // org already has an admin
     mockDb.orgMember.findUnique.mockResolvedValue(membershipRow() as never);
     mockDb.org.findUnique.mockResolvedValue({ name: "Acme", brandColor: null } as never);
+    mockDb.astEmployee.findFirst.mockResolvedValue(null as never);
+    mockDb.astEmployee.findMany.mockResolvedValue([] as never);
+    mockDb.astEmployee.create.mockResolvedValue({
+      employeeId: "EMP-0001",
+      contact: null,
+      department: null,
+      designation: null,
+      joiningDate: null,
+      status: "Active",
+    } as never);
 
     const res = await POST(
       makeReq("/api/org/users", {
@@ -358,6 +368,17 @@ describe("POST /api/org/users", () => {
     mockDb.userAppAccess.create.mockResolvedValue({} as never);
     mockDb.orgMember.findUnique.mockResolvedValue(membershipRow() as never);
     mockDb.org.findUnique.mockResolvedValue({ name: "Acme", brandColor: null } as never);
+    // Phase 5: the unified Add also creates a linked employee.
+    mockDb.astEmployee.findFirst.mockResolvedValue(null as never);
+    mockDb.astEmployee.findMany.mockResolvedValue([] as never);
+    mockDb.astEmployee.create.mockResolvedValue({
+      employeeId: "EMP-0001",
+      contact: null,
+      department: null,
+      designation: null,
+      joiningDate: null,
+      status: "Active",
+    } as never);
   }
 
   it("defaults a new user (no appRoleId) to the Member role, never admin", async () => {
@@ -397,6 +418,86 @@ describe("POST /api/org/users", () => {
     expect(res.status).toBe(201);
     expect(json.data.appRoleName).toBe("admin");
     expect(ensureUserOnRole).toHaveBeenCalledWith("newuser", "org1", "admin-role", "admin");
+  });
+
+  // ─── unified Add: login + linked AstEmployee (Phase 5) ───
+  it("creates a linked employee for a brand-new user (auto-generated Employee ID)", async () => {
+    asAdmin();
+    stubNewNativeUserCreate();
+    mockDb.astUserAppRole.count.mockResolvedValue(1 as never);
+
+    const res = await POST(
+      makeReq("/api/org/users", {
+        method: "POST",
+        body: { firstName: "New", lastName: "Person", email: "new@x.com" },
+      }),
+    );
+    const json = await res.json();
+
+    expect(res.status).toBe(201);
+    expect(mockDb.astEmployee.create).toHaveBeenCalledOnce();
+    const createArg = mockDb.astEmployee.create.mock.calls[0]?.[0] as {
+      data: { userId: string; name: string; email: string; employeeId: string };
+    };
+    expect(createArg.data.userId).toBe("newuser"); // linked via the identity bridge
+    expect(createArg.data.name).toBe("New Person");
+    expect(createArg.data.employeeId).toBe("EMP-0001"); // auto-gen from an empty directory
+    expect(json.data.employeeId).toBe("EMP-0001");
+  });
+
+  it("links an existing employee by email instead of duplicating it", async () => {
+    asAdmin();
+    stubNewNativeUserCreate();
+    mockDb.astUserAppRole.count.mockResolvedValue(1 as never);
+    // No employee linked to the user yet; one exists with the same email, unlinked.
+    mockDb.astEmployee.findFirst
+      .mockResolvedValueOnce(null as never) // lookup by userId → none
+      .mockResolvedValueOnce({
+        id: "emp-x",
+        userId: null,
+        contact: null,
+        department: null,
+        designation: null,
+        joiningDate: null,
+      } as never); // lookup by email → found, unlinked
+    mockDb.astEmployee.update.mockResolvedValue({
+      employeeId: "EMP-OLD",
+      contact: null,
+      department: null,
+      designation: null,
+      joiningDate: null,
+      status: "Active",
+    } as never);
+
+    const res = await POST(
+      makeReq("/api/org/users", {
+        method: "POST",
+        body: { firstName: "New", lastName: "Person", email: "existing@x.com" },
+      }),
+    );
+    const json = await res.json();
+
+    expect(res.status).toBe(201);
+    expect(mockDb.astEmployee.update).toHaveBeenCalledOnce(); // linked in place
+    expect(mockDb.astEmployee.create).not.toHaveBeenCalled(); // never duplicated
+    const updateArg = mockDb.astEmployee.update.mock.calls[0]?.[0] as { data: { userId: string } };
+    expect(updateArg.data.userId).toBe("newuser");
+    expect(json.data.employeeId).toBe("EMP-OLD");
+  });
+
+  it("rejects a supplied Employee ID already in use, before creating the login", async () => {
+    asAdmin();
+    mockDb.astEmployee.findFirst.mockResolvedValue({ id: "emp-existing" } as never);
+
+    const res = await POST(
+      makeReq("/api/org/users", {
+        method: "POST",
+        body: { firstName: "New", lastName: "Person", email: "new@x.com", employeeId: "EMP-001" },
+      }),
+    );
+
+    expect(res.status).toBe(409);
+    expect(mockDb.user.create).not.toHaveBeenCalled();
   });
 
   it("rejects linking a user who is not a member of the caller's org (isolation)", async () => {

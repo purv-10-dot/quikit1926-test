@@ -25,6 +25,14 @@ export function AddUserModal({ roles, onClose, onCreated, showToast }: Props) {
   const [appRoleId, setAppRoleId] = useState<string>("");
   const [linkUserId, setLinkUserId] = useState<string | null>(null);
 
+  // Employee-directory fields — the unified Add creates/links an AstEmployee
+  // alongside the login. All optional; employeeId auto-generates when blank.
+  const [employeeId, setEmployeeId] = useState("");
+  const [contact, setContact] = useState("");
+  const [department, setDepartment] = useState("");
+  const [designation, setDesignation] = useState("");
+  const [joiningDate, setJoiningDate] = useState("");
+
   const [results, setResults] = useState<SearchUser[]>([]);
   const [showDropdown, setShowDropdown] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -81,6 +89,12 @@ export function AddUserModal({ roles, onClose, onCreated, showToast }: Props) {
         : { firstName, lastName, email, invitationMethod: method };
       if (appRoleId) body.appRoleId = appRoleId;
       if (!linkUserId && method === "native" && password.trim()) body.password = password.trim();
+      // Employee-directory fields (all optional).
+      if (employeeId.trim()) body.employeeId = employeeId.trim();
+      if (contact.trim()) body.contact = contact.trim();
+      if (department.trim()) body.department = department.trim();
+      if (designation.trim()) body.designation = designation.trim();
+      if (joiningDate) body.joiningDate = joiningDate;
 
       const res = await fetch("/api/org/users", {
         method: "POST",
@@ -311,6 +325,59 @@ export function AddUserModal({ roles, onClose, onCreated, showToast }: Props) {
               <RolePill name={roles.find((r) => r.id === appRoleId)?.name ?? null} />
             </div>
           )}
+        </div>
+
+        {/* Employee details — the unified Add creates a linked employee record.
+            All optional; Employee ID auto-generates when blank. */}
+        <div className="border-t border-gray-100 pt-4">
+          <p className="mb-2 text-[11px] font-semibold uppercase tracking-wide text-gray-400">
+            Employee details{" "}
+            <span className="font-normal normal-case text-gray-400">(optional)</span>
+          </p>
+          <div className="grid grid-cols-2 gap-3">
+            <div className="col-span-2">
+              <label className="mb-1 block text-[11px] font-medium text-gray-500">Employee ID</label>
+              <input
+                value={employeeId}
+                onChange={(e) => setEmployeeId(e.target.value)}
+                placeholder="Auto-generated if left blank"
+                className="w-full rounded-lg border border-gray-200 bg-gray-50 px-3 py-2 text-xs focus:bg-white focus:outline-none focus:ring-2 focus:ring-accent-400"
+              />
+            </div>
+            <div>
+              <label className="mb-1 block text-[11px] font-medium text-gray-500">Contact</label>
+              <input
+                value={contact}
+                onChange={(e) => setContact(e.target.value)}
+                className="w-full rounded-lg border border-gray-200 bg-gray-50 px-3 py-2 text-xs focus:bg-white focus:outline-none focus:ring-2 focus:ring-accent-400"
+              />
+            </div>
+            <div>
+              <label className="mb-1 block text-[11px] font-medium text-gray-500">Department</label>
+              <input
+                value={department}
+                onChange={(e) => setDepartment(e.target.value)}
+                className="w-full rounded-lg border border-gray-200 bg-gray-50 px-3 py-2 text-xs focus:bg-white focus:outline-none focus:ring-2 focus:ring-accent-400"
+              />
+            </div>
+            <div>
+              <label className="mb-1 block text-[11px] font-medium text-gray-500">Designation</label>
+              <input
+                value={designation}
+                onChange={(e) => setDesignation(e.target.value)}
+                className="w-full rounded-lg border border-gray-200 bg-gray-50 px-3 py-2 text-xs focus:bg-white focus:outline-none focus:ring-2 focus:ring-accent-400"
+              />
+            </div>
+            <div>
+              <label className="mb-1 block text-[11px] font-medium text-gray-500">Joining date</label>
+              <input
+                type="date"
+                value={joiningDate}
+                onChange={(e) => setJoiningDate(e.target.value)}
+                className="w-full rounded-lg border border-gray-200 bg-gray-50 px-3 py-2 text-xs focus:bg-white focus:outline-none focus:ring-2 focus:ring-accent-400"
+              />
+            </div>
+          </div>
         </div>
       </div>
     </ModalShell>

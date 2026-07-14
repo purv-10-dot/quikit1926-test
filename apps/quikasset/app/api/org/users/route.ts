@@ -47,6 +47,14 @@ const createUserSchema = z.object({
    * Defaults to "native" for back-compat with the old payload shape.
    */
   invitationMethod: z.enum(["native", "sso"]).optional(),
+  // ── Employee-directory fields ──
+  // The unified Add flow creates/links an AstEmployee alongside the login user.
+  // All optional; employeeId auto-generates (EMP-####) when blank.
+  employeeId: z.string().trim().max(64).optional(),
+  contact: z.string().trim().max(64).optional(),
+  department: z.string().trim().max(128).optional(),
+  designation: z.string().trim().max(128).optional(),
+  joiningDate: z.string().trim().max(32).optional(),
 });
 
 function buildUserResponse(
@@ -96,6 +104,105 @@ function buildUserResponse(
     joiningDate: employee?.joiningDate ?? null,
     employeeStatus: employee?.status ?? null,
   };
+}
+
+type EmployeeFields = {
+  employeeId: string;
+  contact: string | null;
+  department: string | null;
+  designation: string | null;
+  joiningDate: string | null;
+  status: string;
+};
+
+function toEmployeeFields(e: EmployeeFields): EmployeeFields {
+  return {
+    employeeId: e.employeeId,
+    contact: e.contact,
+    department: e.department,
+    designation: e.designation,
+    joiningDate: e.joiningDate,
+    status: e.status,
+  };
+}
+
+/** Next per-org employee id (EMP-####), one past the highest numeric suffix in
+ *  use. Skips any id already taken so it never collides. */
+async function generateEmployeeId(orgId: string): Promise<string> {
+  const rows = await db.astEmployee.findMany({ where: { orgId }, select: { employeeId: true } });
+  const existing = new Set(rows.map((r) => r.employeeId));
+  let max = 0;
+  for (const id of existing) {
+    const m = id.match(/(\d+)\s*$/);
+    if (m) max = Math.max(max, parseInt(m[1], 10));
+  }
+  let n = max + 1;
+  let candidate = `EMP-${String(n).padStart(4, "0")}`;
+  while (existing.has(candidate)) {
+    n += 1;
+    candidate = `EMP-${String(n).padStart(4, "0")}`;
+  }
+  return candidate;
+}
+
+/**
+ * Guarantee the user has a linked AstEmployee (identity bridge). Order:
+ *   1. Already linked to this user → keep it.
+ *   2. An employee with this email exists but is unlinked → link it (fill blanks).
+ *   3. Otherwise → create one (auto-gen employeeId when not supplied).
+ * Returns the employee's directory fields, or null if the email is already
+ * linked to a *different* user (we never steal another user's employee).
+ */
+async function ensureLinkedEmployee(args: {
+  orgId: string;
+  userId: string;
+  email: string;
+  name: string;
+  employeeId?: string;
+  contact?: string;
+  department?: string;
+  designation?: string;
+  joiningDate?: string;
+}): Promise<EmployeeFields | null> {
+  const { orgId, userId, email, name } = args;
+
+  const linked = await db.astEmployee.findFirst({ where: { orgId, userId } });
+  if (linked) return toEmployeeFields(linked);
+
+  const byEmail = await db.astEmployee.findFirst({
+    where: { orgId, email: { equals: email, mode: "insensitive" } },
+  });
+  if (byEmail) {
+    if (byEmail.userId && byEmail.userId !== userId) return null;
+    const updated = await db.astEmployee.update({
+      where: { id: byEmail.id },
+      data: {
+        userId,
+        contact: byEmail.contact ?? args.contact ?? null,
+        department: byEmail.department ?? args.department ?? null,
+        designation: byEmail.designation ?? args.designation ?? null,
+        joiningDate: byEmail.joiningDate ?? args.joiningDate ?? null,
+      },
+    });
+    return toEmployeeFields(updated);
+  }
+
+  const employeeId = args.employeeId?.trim() || (await generateEmployeeId(orgId));
+  const created = await db.astEmployee.create({
+    data: {
+      orgId,
+      userId,
+      employeeId,
+      name,
+      email,
+      contact: args.contact ?? null,
+      department: args.department ?? null,
+      designation: args.designation ?? null,
+      joiningDate: args.joiningDate ?? null,
+      // status omitted → AstEmployee.status @default(Active)
+    },
+  });
+  return toEmployeeFields(created);
 }
 
 // GET /api/org/users — the merged people list: every OrgMember with QuikAsset
@@ -313,9 +420,29 @@ export async function POST(req: NextRequest) {
       appRoleId,
       linkExistingUserId,
       invitationMethod = "native",
+      employeeId,
+      contact,
+      department,
+      designation,
+      joiningDate,
     } = parsed.data;
 
     const normalisedEmail = email.trim().toLowerCase();
+
+    // If the admin supplied an employeeId, reject a duplicate up front so we
+    // never create the login and then fail on the employee row.
+    if (employeeId?.trim()) {
+      const clash = await db.astEmployee.findFirst({
+        where: { orgId, employeeId: employeeId.trim() },
+        select: { id: true },
+      });
+      if (clash) {
+        return NextResponse.json(
+          { success: false, error: "That Employee ID is already in use in this organisation." },
+          { status: 409 },
+        );
+      }
+    }
 
     // SSO branch — confirm the email actually hosts on Google Workspace or
     // Microsoft 365 via MX lookup. We don't want to mint a passwordless user who
@@ -480,6 +607,22 @@ export async function POST(req: NextRequest) {
       appRole = { id: targetRoleId, name: targetRoleName };
     }
 
+    // ─── Linked AstEmployee (identity bridge) ───
+    // The unified Add creates the employee record alongside the login, linked
+    // via userId. Links a pre-existing employee that matches by email instead
+    // of duplicating it.
+    const employee = await ensureLinkedEmployee({
+      orgId,
+      userId: newUserId,
+      email: normalisedEmail,
+      name: `${firstName} ${lastName}`.trim(),
+      employeeId,
+      contact,
+      department,
+      designation,
+      joiningDate,
+    });
+
     const membership = await db.orgMember.findUnique({
       where: { orgId_userId: { orgId, userId: newUserId } },
       include: {
@@ -549,7 +692,7 @@ export async function POST(req: NextRequest) {
       {
         success: true,
         data: {
-          ...buildUserResponse(membership!, appRole),
+          ...buildUserResponse(membership!, appRole, employee),
           // Plaintext temp password — shown ONCE in the admin UI when the server
           // generated one (Native + no admin-supplied pw).
           tempPassword: generatedTempPassword ?? undefined,
