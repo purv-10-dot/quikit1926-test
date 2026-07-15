@@ -33,25 +33,40 @@ function arg(name: string): string | undefined {
 }
 const hasFlag = (name: string) => process.argv.includes(`--${name}`);
 
-/** Target org: explicit --org, else the first org with QuikAsset category data. */
-async function resolveOrgId(): Promise<string> {
+/** Target org — REQUIRED. The script never guesses; pass --org=<orgId> explicitly. */
+function requireOrgId(): string {
   const fromArg = arg("org");
-  if (fromArg) return fromArg;
-  const bc = await db.astBaseCategory.findFirst({ select: { orgId: true } });
-  if (!bc) throw new Error("No org found — pass --org=<orgId>.");
-  return bc.orgId;
+  if (!fromArg) {
+    throw new Error(
+      "--org=<orgId> is required — this script does not guess an org.\n" +
+        "  e.g. npx tsx scripts/seed-asset-requests.ts --org=cmpgz253x00019660d7d4qkzq",
+    );
+  }
+  return fromArg;
 }
 
-/** Requester: explicit --requester, else the first active member of the org. */
+/**
+ * Requester: explicit --requester, else an active member who is bridge-linked to
+ * an AstEmployee (so the queue resolves a real name), else any active member.
+ */
 async function resolveRequesterUserId(orgId: string): Promise<string> {
   const fromArg = arg("requester");
   if (fromArg) return fromArg;
-  const member = await db.orgMember.findFirst({
+
+  const activeMembers = await db.orgMember.findMany({
     where: { orgId, status: "active" },
     select: { userId: true },
   });
-  if (!member) throw new Error(`No active member in org ${orgId} — pass --requester=<userId>.`);
-  return member.userId;
+  if (activeMembers.length === 0) {
+    throw new Error(`No active member in org ${orgId} — pass --requester=<userId>.`);
+  }
+  // Prefer a member linked to an employee record (identity bridge) so the queue
+  // shows a real name rather than a bare user id.
+  const linked = await db.astEmployee.findFirst({
+    where: { orgId, userId: { in: activeMembers.map((m) => m.userId) } },
+    select: { userId: true },
+  });
+  return linked?.userId ?? activeMembers[0].userId;
 }
 
 /** Create the base category (+ one sub-category) if missing; return both ids. */
@@ -101,7 +116,7 @@ async function ensureAsset(
 }
 
 async function main() {
-  const orgId = await resolveOrgId();
+  const orgId = requireOrgId();
 
   if (hasFlag("reset")) {
     const req = await db.astAssetRequest.deleteMany({
