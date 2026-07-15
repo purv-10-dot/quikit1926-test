@@ -105,6 +105,7 @@ export const NAV_RESOURCE: Record<string, Resource> = {
   "/assets": "Asset",
   "/assets/categories": "Category",
   "/assignments": "Assignment",
+  "/asset-requests": "AssetRequest",
   "/repair": "Repair",
   "/audit-log": "AuditLog",
   "/notifications": "Notification",

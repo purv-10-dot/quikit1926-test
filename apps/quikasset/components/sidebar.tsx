@@ -10,6 +10,7 @@ import {
   Boxes,
   ArrowLeftRight,
   Wrench,
+  ClipboardCheck,
   ClipboardList,
   Mail,
   BarChart2,
@@ -40,6 +41,8 @@ const NAV_SECTIONS: NavSection[] = [
       { label: "Asset Inventory", href: "/assets", icon: Package, perm: { resource: "Asset", action: "viewAll" } },
       { label: "Category Master", href: "/assets/categories", icon: Tags, sub: true },
       { label: "Assignments", href: "/assignments", icon: ArrowLeftRight },
+      // Approver queue — only holders of AssetRequest:viewAll (approvers/admin).
+      { label: "Asset Requests", href: "/asset-requests", icon: ClipboardCheck, perm: { resource: "AssetRequest", action: "viewAll" } },
       { label: "Repair & Recovery", href: "/repair", icon: Wrench },
     ],
   },
