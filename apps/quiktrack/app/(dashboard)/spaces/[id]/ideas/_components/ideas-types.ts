@@ -60,6 +60,7 @@ export interface IdeaView {
     sort?: { key: string; dir: "asc" | "desc" }[];
     filters?: { key: string; op: string; values: (string | number | boolean)[] }[];
     groupBy?: { key: string; hideEmpty?: boolean } | null;
+    display?: { rowNumbers?: boolean; rowColor?: { key: string; style: "background" | "highlight" } | null } | null;
   } | null;
   visibility: string;
   isDefault: boolean;
@@ -127,6 +128,14 @@ export function chipStyle(value: string): string {
   let h = 0;
   for (let i = 0; i < value.length; i++) h = (h * 31 + value.charCodeAt(i)) >>> 0;
   return CHIP_PALETTE[h % CHIP_PALETTE.length];
+}
+
+/** Deterministic hex color per value (for row coloring / inline styles). */
+const HEX_PALETTE = ["#3b82f6", "#8b5cf6", "#14b8a6", "#f59e0b", "#ec4899", "#6366f1", "#10b981", "#ef4444"];
+export function hexColorFor(value: string): string {
+  let h = 0;
+  for (let i = 0; i < value.length; i++) h = (h * 31 + value.charCodeAt(i)) >>> 0;
+  return HEX_PALETTE[h % HEX_PALETTE.length];
 }
 
 /** Human label for a dropdown value via its field's options. */

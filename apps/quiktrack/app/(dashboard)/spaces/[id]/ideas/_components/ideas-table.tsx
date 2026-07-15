@@ -352,6 +352,8 @@ export function IdeasTable({
   onReorderColumns,
   sortByKey,
   groups,
+  rowNumbers,
+  rowColor,
   footer,
 }: {
   columns: Column[];
@@ -376,6 +378,10 @@ export function IdeasTable({
   sortByKey?: Record<string, "asc" | "desc">;
   /** When set, render collapsible group swimlanes instead of a flat list. */
   groups?: { id: string; label: React.ReactNode; ideas: IdeaRow[] }[];
+  /** Show a leading row-number column (Display settings). */
+  rowNumbers?: boolean;
+  /** Row-coloring: returns a hex color for an idea (or null). Style decides how. */
+  rowColor?: { of: (idea: IdeaRow) => string | null; style: "background" | "highlight" };
   footer?: (openAdd: () => void) => React.ReactNode;
 }) {
   const [widths, setWidths] = useState<Record<string, number>>({});
@@ -583,7 +589,21 @@ export function IdeasTable({
             </tr>
           )}
           {(() => {
-          const renderRow = (idea: IdeaRow) => (
+          const renderRow = (idea: IdeaRow, rowIndex: number) => {
+          const color = rowColor?.of(idea) ?? null;
+          const isBg = !!color && rowColor?.style === "background";
+          const isBar = !!color && rowColor?.style === "highlight";
+          // Background: a subtle uniform tint. Non-sticky cells can be transparent
+          // (the tint sits on the row). STICKY cells (checkbox + Summary) must stay
+          // OPAQUE or scrolling content shows through — so we paint them white with
+          // the tint layered on top via a gradient overlay (composites to a solid
+          // light color). Highlight = a thin left bar on the frozen checkbox cell.
+          const TINT = "18"; // ~9% alpha — soft, like JPD
+          const tint = isBg && color ? `${color}${TINT}` : undefined;
+          const stickyTintBg = isBg && color
+            ? `linear-gradient(${color}${TINT}, ${color}${TINT}), #ffffff`
+            : undefined;
+          return (
             <tr
               key={idea.id}
               onClick={() => onSetActive(idea.id)}
@@ -603,8 +623,12 @@ export function IdeasTable({
                   : "hover:[box-shadow:inset_3px_0_0_0_#86efac]"
               }`}
             >
-              <td className="sticky left-0 z-10 bg-white border-b border-gray-200 px-2 py-2 align-middle group-hover:bg-blue-50">
+              <td
+                style={{ background: stickyTintBg, boxShadow: isBar && color ? `inset 3px 0 0 0 ${color}` : undefined }}
+                className={`sticky left-0 z-10 bg-white border-b border-gray-200 px-2 py-2 align-middle group-hover:bg-blue-50`}
+              >
                 <div className="flex items-center gap-0.5">
+                  {rowNumbers && <span className="w-4 shrink-0 text-right text-[11px] tabular-nums text-gray-400">{rowIndex + 1}</span>}
                   <span
                     draggable
                     onDragStart={(e) => { setDragId(idea.id); e.dataTransfer.effectAllowed = "move"; }}
@@ -623,6 +647,7 @@ export function IdeasTable({
                 return (
                   <td
                     key={col.key}
+                    style={isSummary ? { background: stickyTintBg } : { backgroundColor: tint }}
                     className={`${cell} group/cell ${
                       isSummary ? `sticky left-[52px] z-10 bg-white ${FZ_SHADOW} group-hover:bg-blue-50` : "group-hover:bg-blue-50/40"
                     }`}
@@ -650,12 +675,14 @@ export function IdeasTable({
                   </td>
                 );
               })}
-              <td className="border-b border-gray-200 group-hover:bg-blue-50/40" />
+              <td style={{ backgroundColor: tint }} className="border-b border-gray-200 group-hover:bg-blue-50/40" />
             </tr>
           );
+          };
 
           // Grouped mode: a collapsible header row per group, then its rows.
           if (groups) {
+            let n = 0;
             return groups.map((g) => {
               const isCollapsed = collapsed.has(g.id);
               return (
@@ -673,13 +700,13 @@ export function IdeasTable({
                       </span>
                     </td>
                   </tr>
-                  {!isCollapsed && g.ideas.map(renderRow)}
+                  {!isCollapsed && g.ideas.map((idea) => renderRow(idea, n++))}
                 </React.Fragment>
               );
             });
           }
           // Flat mode.
-          return ideas.map(renderRow);
+          return ideas.map((idea, i) => renderRow(idea, i));
           })()}
         </tbody>
       </table>

@@ -23,9 +23,14 @@ const patchViewSchema = z.object({
   })).max(20).optional(),
   // null clears grouping; object sets the group field.
   groupBy: z.object({ key: z.string().min(1), hideEmpty: z.boolean().optional() }).nullable().optional(),
-}).refine((d) => d.columns !== undefined || d.sort !== undefined || d.filters !== undefined || d.groupBy !== undefined, {
-  message: "Nothing to update",
-});
+  display: z.object({
+    rowNumbers: z.boolean().optional(),
+    rowColor: z.object({ key: z.string().min(1), style: z.enum(["background", "highlight"]) }).nullable().optional(),
+  }).optional(),
+}).refine(
+  (d) => d.columns !== undefined || d.sort !== undefined || d.filters !== undefined || d.groupBy !== undefined || d.display !== undefined,
+  { message: "Nothing to update" },
+);
 
 export const PATCH = withProjectAccess<{ id: string; viewId: string }>(
   async ({ orgId, userId, projectId }, req, { params }) => {
@@ -48,6 +53,9 @@ export const PATCH = withProjectAccess<{ id: string; viewId: string }>(
       ...(parsed.data.sort !== undefined ? { sort: parsed.data.sort } : {}),
       ...(parsed.data.filters !== undefined ? { filters: parsed.data.filters } : {}),
       ...(parsed.data.groupBy !== undefined ? { groupBy: parsed.data.groupBy } : {}),
+      ...(parsed.data.display !== undefined
+        ? { display: { ...((view.config as { display?: Record<string, unknown> } | null)?.display ?? {}), ...parsed.data.display } }
+        : {}),
     };
     const updated = await db.qtIdeaView.update({
       where: { id: params.viewId },

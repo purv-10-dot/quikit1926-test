@@ -25,6 +25,7 @@ import { FieldsPanel, type FieldEntry } from "./fields-panel";
 import { SortPanel, type SortRule } from "./sort-panel";
 import { FilterPanel, type FilterRule } from "./filter-panel";
 import { GroupByPanel, type GroupByConfig } from "./group-by-panel";
+import { DisplayPanel, type DisplaySettings } from "./display-panel";
 import { iconForColumn } from "./field-icons";
 import { memberName, type MemberLite } from "./assignee-cell";
 import { SPECIAL_COLUMNS, type IdeasBundle, type IdeaRow, type IdeaFieldValue } from "./ideas-types";
@@ -68,6 +69,8 @@ export function IdeasTableView({ projectId }: { projectId: string }) {
   const [filterRules, setFilterRules] = useState<FilterRule[]>([]);
   const [groupByPanelOpen, setGroupByPanelOpen] = useState(false);
   const [groupBy, setGroupBy] = useState<GroupByConfig | null>(null);
+  const [displayPanelOpen, setDisplayPanelOpen] = useState(false);
+  const [display, setDisplay] = useState<DisplaySettings>({});
   const [panelId, setPanelId] = useState<string | null>(null);
   const [panelTab, setPanelTab] = useState<"Overview" | "Comments" | "Insights" | "Delivery">("Overview");
   const [activeId, setActiveId] = useState<string | null>(null);
@@ -126,6 +129,9 @@ export function IdeasTableView({ projectId }: { projectId: string }) {
 
   const savedGroupBy = useMemo<GroupByConfig | null>(() => view?.config?.groupBy ?? null, [view]);
   useEffect(() => { setGroupBy(savedGroupBy); }, [savedGroupBy]);
+
+  const savedDisplay = useMemo<DisplaySettings>(() => view?.config?.display ?? {}, [view]);
+  useEffect(() => { setDisplay(savedDisplay); }, [savedDisplay]);
 
   const columns = useMemo<Column[]>(() => {
     if (!data) return [];
@@ -204,6 +210,18 @@ export function IdeasTableView({ projectId }: { projectId: string }) {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ filters: next }),
+    });
+    if (res.ok) await qc.invalidateQueries({ queryKey });
+  }
+
+  /** Display-settings change: update locally, then persist to view (admins). */
+  async function onDisplayChange(next: DisplaySettings) {
+    setDisplay(next);
+    if (!view || !canSaveForEveryone) return;
+    const res = await fetch(`/api/projects/${projectId}/ideas/views/${view.id}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ display: next }),
     });
     if (res.ok) await qc.invalidateQueries({ queryKey });
   }
@@ -462,6 +480,25 @@ export function IdeasTableView({ projectId }: { projectId: string }) {
     return [...inViewEntries, ...availableEntries].find((e) => e.key === groupBy.key) ?? null;
   }, [groupBy, inViewEntries, availableEntries]);
 
+  // Row coloring: one uniform accent color applied to rows that HAVE a value for
+  // the chosen field (JPD colors all such rows the same shade).
+  const rowColor = useMemo(() => {
+    if (!display.rowColor || !data) return undefined;
+    const field = data.fields.find((f) => f.key === display.rowColor!.key);
+    const ACCENT = "#f43f5e"; // single soft rose accent (JPD-style)
+    const of = (idea: IdeaRow): string | null => {
+      let v: unknown;
+      if (display.rowColor!.key === "assignee") v = idea.assigneeId;
+      else if (display.rowColor!.key === "creator") v = idea.createdBy ?? idea.reporterId;
+      else if (display.rowColor!.key === "status") v = idea.statusId;
+      else v = field ? idea.values[field.id] : null;
+      const first = Array.isArray(v) ? v[0] : v;
+      if (first === null || first === undefined || first === "") return null;
+      return ACCENT;
+    };
+    return { of, style: display.rowColor.style };
+  }, [display.rowColor, data]);
+
   const panelIdea = rows.find((r) => r.id === panelId) ?? null;
 
   return (
@@ -520,7 +557,16 @@ export function IdeasTableView({ projectId }: { projectId: string }) {
             <ToolbarButton icon={Filter} label={filterRules.length ? `Filter (${filterRules.length})` : "Filter"} active={filterPanelOpen || filterRules.length > 0} onClick={() => setFilterPanelOpen(true)} />
             <ToolbarButton icon={ArrowUpDown} label={sortRules.length ? `Sort (${sortRules.length})` : "Sort"} active={sortPanelOpen || sortRules.length > 0} onClick={() => setSortPanelOpen(true)} />
             <ToolbarButton icon={SlidersHorizontal} label={`Fields ${columns.length}`} active={fieldsPanelOpen} onClick={() => setFieldsPanelOpen(true)} />
-            <button type="button" aria-label="View settings" className="rounded border border-gray-200 p-1.5 text-gray-500 hover:bg-gray-50">
+            <button
+              type="button"
+              aria-label="Display settings"
+              onClick={() => setDisplayPanelOpen(true)}
+              className={`rounded border p-1.5 ${
+                displayPanelOpen || display.rowNumbers || display.rowColor
+                  ? "border-blue-300 bg-blue-50 text-blue-600"
+                  : "border-gray-200 text-gray-500 hover:bg-gray-50"
+              }`}
+            >
               <SlidersHorizontal className="h-3.5 w-3.5" />
             </button>
             {/* Save-for-everyone / Reset — appear when the column set is dirty. */}
@@ -581,6 +627,8 @@ export function IdeasTableView({ projectId }: { projectId: string }) {
                 onReorderColumns={canSaveForEveryone ? reorderColumn : undefined}
                 sortByKey={Object.fromEntries(sortRules.map((r) => [r.key, r.dir]))}
                 groups={groups}
+                rowNumbers={display.rowNumbers}
+                rowColor={rowColor}
                 headerExtra={<AddColumnMenu projectId={projectId} options={availableEntries} onAdd={addColumn} onCreated={onFieldCreated} />}
                 footer={(openAdd) => (
                   <div className="flex items-center gap-3 border-t border-gray-200 px-3 py-2 text-sm">
@@ -662,6 +710,17 @@ export function IdeasTableView({ projectId }: { projectId: string }) {
           onChange={(g) => void onGroupByChange(g)}
           onEditField={(key) => { const f = data?.fields.find((x) => x.key === key); if (f) setEditFieldId(f.id); }}
           onClose={() => setGroupByPanelOpen(false)}
+        />
+      )}
+
+      {displayPanelOpen && (
+        <DisplayPanel
+          settings={display}
+          fields={[...inViewEntries, ...availableEntries]}
+          canEdit={canSaveForEveryone}
+          onChange={(d) => void onDisplayChange(d)}
+          onEditField={(key) => { const f = data?.fields.find((x) => x.key === key); if (f) setEditFieldId(f.id); }}
+          onClose={() => setDisplayPanelOpen(false)}
         />
       )}
     </div>
