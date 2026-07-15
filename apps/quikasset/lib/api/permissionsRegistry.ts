@@ -12,6 +12,7 @@
 export const RESOURCES = [
   "Dashboard",
   "Asset",
+  "AssetRequest",
   "Category",
   "Assignment",
   "Repair",
@@ -24,7 +25,7 @@ export const RESOURCES = [
   "Settings",
 ] as const;
 
-export const ACTIONS = ["view", "create", "update", "delete", "viewAll"] as const;
+export const ACTIONS = ["view", "create", "update", "delete", "viewAll", "approve"] as const;
 
 export type Resource = (typeof RESOURCES)[number];
 export type Action = (typeof ACTIONS)[number];
@@ -49,12 +50,21 @@ const VIEW_ONLY: ReadonlySet<Resource> = new Set<Resource>([
 
 /**
  * Resources that support the `viewAll` capability — the right to see EVERY
- * record org-wide, not just those scoped to the caller. Only `Asset` has this
- * today: it separates "asset manager / admin (sees the full register)" from a
- * plain member (sees only their assigned assets, enforced in the route layer).
+ * record org-wide, not just those scoped to the caller. `Asset` separates
+ * "asset manager / admin (sees the full register)" from a plain member (sees
+ * only their assigned assets, enforced in the route layer); `AssetRequest`
+ * gives an approver the whole request queue rather than only their own.
  * Held by admin/manager roles, never the default Member role.
  */
-const VIEW_ALL_RESOURCES: ReadonlySet<Resource> = new Set<Resource>(["Asset"]);
+const VIEW_ALL_RESOURCES: ReadonlySet<Resource> = new Set<Resource>(["Asset", "AssetRequest"]);
+
+/**
+ * Resources that support the `approve` capability — the right to approve/reject
+ * that resource's records. Only `AssetRequest` has this: it makes "approver" a
+ * grantable capability (assignable to any custom role or per-user extra), NOT a
+ * hard-wired Admin check. Admin holds it via the full-grant backfill.
+ */
+const APPROVE_RESOURCES: ReadonlySet<Resource> = new Set<Resource>(["AssetRequest"]);
 
 /**
  * True when (resource, action) is a real pair in this registry — respects the
@@ -64,8 +74,9 @@ const VIEW_ALL_RESOURCES: ReadonlySet<Resource> = new Set<Resource>(["Asset"]);
  */
 export function isValidPermissionPair(resource: string, action: string): boolean {
   if (!isResource(resource) || !isAction(action)) return false;
-  // `viewAll` is a special capability — valid only on the resources that opt in.
+  // `viewAll` / `approve` are special capabilities — valid only on opt-in resources.
   if (action === "viewAll") return VIEW_ALL_RESOURCES.has(resource);
+  if (action === "approve") return APPROVE_RESOURCES.has(resource);
   if (VIEW_ONLY.has(resource)) return action === "view";
   return true;
 }
@@ -78,8 +89,9 @@ export function allPermissionPairs(): Array<{ resource: Resource; action: Action
       out.push({ resource, action: "view" });
     } else {
       for (const action of ACTIONS) {
-        // `viewAll` only applies to opted-in resources — don't emit it everywhere.
+        // `viewAll` / `approve` only apply to opted-in resources — don't emit everywhere.
         if (action === "viewAll" && !VIEW_ALL_RESOURCES.has(resource)) continue;
+        if (action === "approve" && !APPROVE_RESOURCES.has(resource)) continue;
         out.push({ resource, action });
       }
     }

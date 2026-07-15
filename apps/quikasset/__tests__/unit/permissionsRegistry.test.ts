@@ -35,3 +35,31 @@ describe("permissionsRegistry — Asset:viewAll capability", () => {
     expect(pairs).not.toContain("Employee:viewAll");
   });
 });
+
+describe("permissionsRegistry — AssetRequest:approve capability", () => {
+  it("registers approve as an action", () => {
+    expect(ACTIONS).toContain("approve");
+  });
+
+  it("accepts approve only on AssetRequest", () => {
+    expect(isValidPermissionPair("AssetRequest", "approve")).toBe(true);
+    expect(isValidPermissionPair("Asset", "approve")).toBe(false);
+    expect(isValidPermissionPair("Assignment", "approve")).toBe(false);
+    // view-only resources never expose approve either
+    expect(isValidPermissionPair("Report", "approve")).toBe(false);
+  });
+
+  it("gives AssetRequest the full capability set incl. viewAll + approve", () => {
+    for (const action of ["view", "create", "update", "delete", "viewAll", "approve"]) {
+      expect(isValidPermissionPair("AssetRequest", action)).toBe(true);
+    }
+  });
+
+  it("emits AssetRequest:approve + viewAll in the full grant set, not for other resources", () => {
+    const pairs = allPermissionPairs().map((p) => `${p.resource}:${p.action}`);
+    expect(pairs).toContain("AssetRequest:approve");
+    expect(pairs).toContain("AssetRequest:viewAll");
+    expect(pairs).not.toContain("Asset:approve");
+    expect(pairs).not.toContain("Assignment:approve");
+  });
+});

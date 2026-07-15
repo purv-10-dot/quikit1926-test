@@ -1,7 +1,7 @@
 "use client"
 
 import { useState, useEffect } from "react"
-import { X, ChevronDown } from "lucide-react"
+import { X, ChevronDown, Upload, Clock } from "lucide-react"
 import { cn } from "@/lib/utils"
 import type { Asset, BaseCategory, Category } from "@/types/asset"
 
@@ -207,6 +207,28 @@ export default function AddEditAssetModal({ asset, onClose, onSave }: Props) {
               <input value={form.invoiceNumber} onChange={(e) => set("invoiceNumber", e.target.value)}
                 placeholder="Invoice Number" className={inputCls(errors.invoiceNumber)} />
             </Field>
+
+            {/* Invoice / Receipt upload — UI-only placeholder.
+                The storage backend (cloud upload) lands in a later pass; this control is
+                intentionally disabled so nothing is captured, transmitted, or persisted yet. */}
+            <div className="col-span-4">
+              <div className="flex items-center gap-2 mb-1">
+                <label className="text-xs font-semibold text-gray-600">Invoice / Receipt</label>
+                <span className="inline-flex items-center gap-1 rounded-full border border-amber-200 bg-amber-50 px-2 py-0.5 text-[10px] font-semibold text-amber-600">
+                  <Clock className="w-3 h-3" /> Coming soon
+                </span>
+              </div>
+              <div
+                aria-disabled="true"
+                title="Invoice / receipt upload will be enabled in a later update"
+                className="flex flex-col items-center justify-center rounded-xl border-2 border-dashed border-gray-200 bg-gray-50 p-6 opacity-60 cursor-not-allowed select-none"
+              >
+                <input type="file" disabled className="hidden" />
+                <Upload className="w-8 h-8 text-gray-300 mb-2" />
+                <p className="text-xs font-semibold text-gray-500">Invoice / receipt upload coming soon</p>
+                <p className="text-[10px] text-gray-400 mt-1">File attachments will be enabled in a later update</p>
+              </div>
+            </div>
 
             {/* Row 3 */}
             <Field label="Price" error={errors.price}>
