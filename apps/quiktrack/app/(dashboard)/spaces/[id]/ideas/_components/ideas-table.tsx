@@ -7,6 +7,14 @@ import {
   Tag,
   TrendingUp,
   Workflow,
+  MessageSquare,
+  MessageSquarePlus,
+  CheckSquare,
+  AtSign,
+  Clock,
+  CalendarDays,
+  Lightbulb,
+  Link2 as LinkIcon,
   Plus,
   Pencil,
   Maximize2,
@@ -17,6 +25,7 @@ import {
   type LucideIcon,
 } from "lucide-react";
 import { EditableCell } from "./editable-cell";
+import { AssigneeCell, MemberChip, type MemberLite } from "./assignee-cell";
 import { K, type FieldDef, type IdeaRow, type IdeaFieldValue } from "./ideas-types";
 
 export interface Column {
@@ -25,9 +34,27 @@ export interface Column {
   field?: FieldDef; // undefined for built-in/special columns (summary/insights/delivery)
 }
 
+/** Freeze boundary on the frozen (sticky) Summary column. Uses a box-shadow (not
+ *  a border) for BOTH the divider line and the soft depth shadow: box-shadow is
+ *  painted by the sticky cell itself, so — unlike a collapsed table border — it
+ *  stays pinned at the freeze boundary and never scrolls away with the content
+ *  (JPD / Timesheet pattern). First inset = the crisp 1px divider line; second =
+ *  the soft shadow that signals content scrolls beneath. */
+const FZ_SHADOW = "shadow-[inset_-1px_0_0_0_#d1d5db,2px_0_4px_-2px_rgba(0,0,0,0.15)]";
+
+/** Read-only built-in columns rendered by key (Assignee/Creator/Status/Created/Updated). */
+const SYSTEM_COL_KEYS = new Set(["assignee", "creator", "status", "created", "updated"]);
+
 function columnIcon(col: Column): LucideIcon {
   if (col.key === "insights") return TrendingUp;
+  if (col.key === "comments") return MessageSquare;
   if (col.key === "delivery") return Workflow;
+  if (col.key === "assignee" || col.key === "creator") return AtSign;
+  if (col.key === "created" || col.key === "updated") return Clock;
+  if (col.field?.type === "CHECKBOX") return CheckSquare;
+  if (col.field?.type === "URL") return LinkIcon;
+  if (col.field?.type === "DATE") return CalendarDays;
+  if (col.field?.type === "NUMBER") return BarChart3;
   switch (col.key) {
     case K.theme: return Tag;
     case K.impact:
@@ -37,25 +64,20 @@ function columnIcon(col: Column): LucideIcon {
   }
 }
 
-function defaultWidth(key: string): number {
-  if (key === "summary") return 240;
-  if (key === "theme") return 220;
-  if (key === "delivery") return 200;
-  return 140;
+function defaultWidth(col: Column | string): number {
+  const key = typeof col === "string" ? col : col.key;
+  if (key === "summary") return 280;
+  if (key === "theme") return 240;
+  if (key === "customer_segments") return 260;
+  if (key === "idea_short_description") return 280;
+  if (key === "documents") return 220;
+  if (key === "delivery") return 220;
+  if (key === "assignee" || key === "creator") return 180;
+  // Free-text fields need more room than a rating/pill column.
+  if (typeof col !== "string" && (col.field?.type === "SHORT_TEXT" || col.field?.type === "LONG_TEXT")) return 260;
+  return 170;
 }
 
-/**
- * Display-only demo values for the five seeded sample ideas, so the "All ideas"
- * view matches the JPD reference. Insights counts / Delivery progress become
- * real features later; until then only the known sample titles populate.
- */
-const DEMO_BY_TITLE: Record<string, { insights: number; delivery?: [number, number] }> = {
-  "New rewards program": { insights: 2, delivery: [0.32, 0.24] },
-  "Express checkout": { insights: 1, delivery: [0.3, 0.22] },
-  "Improve waiting list experience": { insights: 0, delivery: [0.3, 0.24] },
-  "Refactor user profile data": { insights: 0, delivery: [0.3, 0.26] },
-  "Explore VR travel features": { insights: 0, delivery: [0.28, 0.2] },
-};
 
 function SummaryCell({ idea, onOpen, onEditTitle }: { idea: IdeaRow; onOpen: (i: IdeaRow) => void; onEditTitle: (id: string, t: string) => void }) {
   const [editing, setEditing] = useState(false);
@@ -89,7 +111,12 @@ function SummaryCell({ idea, onOpen, onEditTitle }: { idea: IdeaRow; onOpen: (i:
     );
   }
   return (
-    <div className="flex w-full items-center gap-1">
+    <div className="flex w-full items-center gap-1.5">
+      {/* Idea type icon — a lightbulb marks a discovery idea (JPD), inline in the
+          first column. */}
+      <Lightbulb className="h-4 w-4 shrink-0 fill-yellow-300 text-yellow-500" />
+      {/* Idea key inline before the title (JPD: "DT-6 Explore VR travel…"). */}
+      <span className="shrink-0 text-xs font-medium tabular-nums text-gray-400">{idea.key}</span>
       <button
         type="button"
         onClick={() => onOpen(idea)}
@@ -113,7 +140,7 @@ function SummaryCell({ idea, onOpen, onEditTitle }: { idea: IdeaRow; onOpen: (i:
 }
 
 function InsightsCell({ idea, onOpenInsights }: { idea: IdeaRow; onOpenInsights: () => void }) {
-  const count = DEMO_BY_TITLE[idea.title]?.insights ?? 0;
+  const count = idea.insightCount ?? 0;
   // Clicking opens the idea drawer on the Insights tab (JPD).
   if (count > 0) {
     return (
@@ -131,21 +158,175 @@ function InsightsCell({ idea, onOpenInsights }: { idea: IdeaRow; onOpenInsights:
   );
 }
 
-function DeliveryCell({ idea, onOpenDelivery }: { idea: IdeaRow; onOpenDelivery: () => void }) {
-  const d = DEMO_BY_TITLE[idea.title]?.delivery;
-  // Clicking opens the idea drawer on the Delivery tab (JPD).
+function CommentsCell({ idea, onOpenComments }: { idea: IdeaRow; onOpenComments: () => void }) {
+  const count = idea.commentCount ?? 0;
+  // Clicking opens the idea drawer on the Comments tab (JPD).
+  if (count > 0) {
+    return (
+      <button type="button" onClick={(e) => { e.stopPropagation(); onOpenComments(); }} className="inline-flex items-center gap-1 font-medium text-blue-600 hover:text-blue-700">
+        <MessageSquare className="h-4 w-4" />{count}
+      </button>
+    );
+  }
+  // Empty: faint "add comment" glyph in a rounded box (JPD).
   return (
-    <button type="button" onClick={(e) => { e.stopPropagation(); onOpenDelivery(); }} className="block w-full text-left">
-      {d ? (
-        <div className="flex h-1.5 w-full max-w-40 overflow-hidden rounded-full bg-gray-100">
-          <div className="h-full bg-green-400" style={{ width: `${d[0] * 100}%` }} />
-          <div className="h-full bg-blue-400" style={{ width: `${d[1] * 100}%` }} />
-        </div>
-      ) : (
-        <div className="h-1.5 w-full max-w-40 rounded-full bg-gray-100" />
-      )}
+    <button
+      type="button"
+      aria-label="Add comment"
+      onClick={(e) => { e.stopPropagation(); onOpenComments(); }}
+      className="inline-flex items-center justify-center rounded border border-gray-200 p-1 text-gray-300 hover:border-gray-300 hover:text-gray-500"
+    >
+      <MessageSquarePlus className="h-4 w-4" />
     </button>
   );
+}
+
+function DeliveryCell({ idea, onOpenDelivery }: { idea: IdeaRow; onOpenDelivery: () => void }) {
+  const linked = idea.deliveryCount ?? 0;
+  // Clicking opens the idea drawer on the Delivery tab (JPD). The bar reflects
+  // whether the idea has linked delivery work items (real data).
+  return (
+    <button type="button" onClick={(e) => { e.stopPropagation(); onOpenDelivery(); }} className="block w-full text-left">
+      <div className="h-1.5 w-full max-w-40 overflow-hidden rounded-full bg-gray-100">
+        {linked > 0 && <div className="h-full bg-blue-400" style={{ width: "40%" }} />}
+      </div>
+    </button>
+  );
+}
+
+/** JPD "Delivery status": a computed rollup of the idea's linked work items by
+ *  status category (To Do / In Progress / Done). NOT a manual field — the counts
+ *  come from the real linked QtIssues. Hover shows the JPD breakdown popover;
+ *  click (or the popover actions) opens the Delivery drawer. */
+function DeliveryStatusCell({ idea, onOpenDelivery }: { idea: IdeaRow; onOpenDelivery: () => void }) {
+  const c = idea.deliveryCounts ?? { total: 0, todo: 0, inProgress: 0, done: 0 };
+  const [pos, setPos] = useState<{ x: number; y: number } | null>(null);
+  const progress = c.total ? Math.round((c.done / c.total) * 100) : 0;
+
+  if (c.total === 0) {
+    return (
+      <button type="button" onClick={(e) => { e.stopPropagation(); onOpenDelivery(); }} className="text-gray-300 hover:text-gray-500">
+        —
+      </button>
+    );
+  }
+  // Grey = To Do, blue = In Progress, green = Done.
+  const pills: { n: number; cls: string }[] = [
+    { n: c.todo, cls: "bg-gray-200 text-gray-700" },
+    { n: c.inProgress, cls: "bg-blue-500 text-white" },
+    { n: c.done, cls: "bg-green-600 text-white" },
+  ];
+
+  const POPOVER_W = 320;
+  function showPopover(e: React.MouseEvent) {
+    const r = (e.currentTarget as HTMLElement).getBoundingClientRect();
+    // Open to the LEFT: align the popover's right edge to the pills' right edge,
+    // clamped to the viewport so it never runs off-screen.
+    const left = Math.max(8, Math.min(r.right - POPOVER_W, window.innerWidth - POPOVER_W - 8));
+    setPos({ x: left, y: r.bottom + 6 });
+  }
+
+  return (
+    <div className="relative inline-block" onMouseEnter={showPopover} onMouseLeave={() => setPos(null)}>
+      <button
+        type="button"
+        onClick={(e) => { e.stopPropagation(); onOpenDelivery(); }}
+        className="inline-flex items-center gap-1 rounded px-0.5 py-0.5 hover:bg-gray-100"
+      >
+        {pills.map((p, i) => (
+          <span key={i} className={`grid h-5 min-w-[20px] place-items-center rounded-full px-1 text-[11px] font-semibold tabular-nums ${p.cls}`}>
+            {p.n}
+          </span>
+        ))}
+      </button>
+
+      {/* Hover breakdown popover (JPD) — fixed so the table overflow can't clip it. */}
+      {pos && (
+        <div
+          style={{ position: "fixed", left: pos.x, top: pos.y, width: POPOVER_W }}
+          className="z-50 rounded-lg border border-gray-200 bg-white p-4 shadow-xl"
+          onClick={(e) => e.stopPropagation()}
+        >
+          <p className="mb-2 text-[15px] font-semibold text-gray-900">Delivery</p>
+          <p className="mb-2 flex items-center gap-2 text-sm text-gray-600">
+            <span className="rounded bg-gray-100 px-1.5 py-0.5 text-[12px] font-semibold text-gray-700">{c.total}</span>
+            work {c.total === 1 ? "item" : "items"}
+          </p>
+          <div className="mb-3 flex items-center gap-2">
+            <div className="h-1.5 flex-1 overflow-hidden rounded-full bg-gray-200">
+              <div className="h-full bg-blue-500" style={{ width: `${progress}%` }} />
+            </div>
+            <span className="text-xs text-gray-500">{progress}% Done</span>
+          </div>
+          <div className="space-y-1.5">
+            {c.todo > 0 && (
+              <div className="flex items-center gap-2">
+                <span className="rounded bg-gray-100 px-1.5 py-0.5 text-[12px] font-semibold text-gray-700">{c.todo}</span>
+                <span className="rounded bg-gray-100 px-1.5 py-0.5 text-[11px] font-medium text-gray-600">TO DO</span>
+              </div>
+            )}
+            {c.inProgress > 0 && (
+              <div className="flex items-center gap-2">
+                <span className="rounded bg-gray-100 px-1.5 py-0.5 text-[12px] font-semibold text-gray-700">{c.inProgress}</span>
+                <span className="rounded bg-blue-100 px-1.5 py-0.5 text-[11px] font-medium text-blue-700">IN PROGRESS</span>
+              </div>
+            )}
+            {c.done > 0 && (
+              <div className="flex items-center gap-2">
+                <span className="rounded bg-gray-100 px-1.5 py-0.5 text-[12px] font-semibold text-gray-700">{c.done}</span>
+                <span className="rounded bg-green-100 px-1.5 py-0.5 text-[11px] font-medium text-green-700">DONE</span>
+              </div>
+            )}
+          </div>
+          <div className="mt-3 flex items-center gap-3">
+            <button
+              type="button"
+              onClick={(e) => { e.stopPropagation(); setPos(null); onOpenDelivery(); }}
+              className="inline-flex items-center gap-1.5 rounded bg-blue-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-blue-700"
+            >
+              <Workflow className="h-3.5 w-3.5" /> Link Jira work item
+            </button>
+            <button
+              type="button"
+              onClick={(e) => { e.stopPropagation(); setPos(null); onOpenDelivery(); }}
+              className="inline-flex items-center gap-1 text-sm text-gray-600 hover:text-gray-900"
+            >
+              <Plus className="h-3.5 w-3.5" /> Create new
+            </button>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+/** Read-only Creator column — the member who created the idea (JPD). */
+function CreatorCell({ userId, members }: { userId: string | null; members?: MemberLite[] }) {
+  const user = members?.find((m) => m.id === userId) ?? null;
+  return <MemberChip user={user} />;
+}
+
+/** Read-only built-in columns (Assignee / Status / Created / Updated). */
+function SystemCell({ colKey, idea, statuses }: { colKey: string; idea: IdeaRow; statuses?: { id: string; name: string }[] }) {
+  if (colKey === "assignee") {
+    return (
+      <span className="inline-flex items-center gap-1.5 text-gray-400">
+        <span className="grid h-5 w-5 place-items-center rounded-full bg-gray-100 text-[10px]">?</span>
+        Unassigned
+      </span>
+    );
+  }
+  if (colKey === "status") {
+    const name = statuses?.find((s) => s.id === idea.statusId)?.name;
+    return name ? (
+      <span className="inline-flex items-center rounded bg-gray-100 px-2 py-0.5 text-xs font-medium text-gray-700">{name.toUpperCase()}</span>
+    ) : <span className="text-gray-300">—</span>;
+  }
+  if (colKey === "created" || colKey === "updated") {
+    const iso = colKey === "created" ? idea.createdAt : idea.updatedAt;
+    return <span className="text-gray-600">{new Date(iso).toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" })}</span>;
+  }
+  return null;
 }
 
 export function IdeasTable({
@@ -160,6 +341,11 @@ export function IdeasTable({
   onCreate,
   creating,
   openAddRef,
+  statuses,
+  members,
+  onAssign,
+  headerExtra,
+  onRemoveColumn,
   footer,
 }: {
   columns: Column[];
@@ -173,10 +359,30 @@ export function IdeasTable({
   onCreate: (title: string) => void;
   creating: boolean;
   openAddRef?: React.MutableRefObject<(() => void) | null>;
+  statuses?: { id: string; name: string }[];
+  members?: MemberLite[];
+  onAssign?: (ideaId: string, userId: string | null) => void;
+  headerExtra?: React.ReactNode;
+  onRemoveColumn?: (key: string) => void;
   footer?: (openAdd: () => void) => React.ReactNode;
 }) {
   const [widths, setWidths] = useState<Record<string, number>>({});
-  const widthOf = (key: string) => widths[key] ?? defaultWidth(key);
+  const colByKey = new Map(columns.map((c) => [c.key, c]));
+  // Prefer the Column (so type-based defaults apply) but accept a bare key.
+  const widthOf = (key: string) => widths[key] ?? defaultWidth(colByKey.get(key) ?? key);
+
+  // Known labels per LABELS field (fieldId → all label strings used anywhere) so
+  // the label picker can suggest existing ones for reuse.
+  const knownLabelsByField = new Map<string, string[]>();
+  for (const col of columns) {
+    if (col.field?.type !== "LABELS") continue;
+    const set = new Set<string>();
+    for (const idea of ideas) {
+      const v = idea.values[col.field.id];
+      if (Array.isArray(v)) for (const l of v) if (typeof l === "string") set.add(l);
+    }
+    knownLabelsByField.set(col.field.id, [...set]);
+  }
 
   // Row drag-and-drop reorder (via the grip handle). `dragId` is the row being
   // dragged; `overId` is the row currently hovered, for the drop indicator.
@@ -216,48 +422,89 @@ export function IdeasTable({
 
   const cell = "border-b border-r border-gray-200 px-3 py-2 align-middle";
 
+  // The columns keep FIXED pixel widths (they never shrink to fit). The table's
+  // own width is exactly that total, so whenever it exceeds the container the box
+  // overflows and the horizontal scrollbar appears (JPD / Timesheet pattern). The
+  // trailing add-column cell gets a fixed 160px so the last real column isn't
+  // flush to the edge.
+  const columnsWidth = columns.reduce((sum, c) => sum + widthOf(c.key), 0);
+  const TRAILING = 160;
+  const tableWidth = 52 + columnsWidth + TRAILING;
+
   return (
-    // JPD grid box: top + left + bottom borders (right stays open); the footer
-    // lives inside so the bottom border sits below it.
-    <div className="border-b border-l border-t border-gray-200">
-      <div className="overflow-x-auto">
-      <table className="w-full table-fixed border-collapse text-sm">
+    // JPD grid box: full border on all four sides. The box is the horizontal-
+    // scroll container so the table AND footer scroll together under a single
+    // bottom scrollbar, and the right border stays pinned to the container edge
+    // while the inner content scrolls beneath it. Height is natural (just the
+    // rows) — it does NOT stretch to fill the view.
+    <div className="qt-timesheet-scroll overflow-x-scroll border border-gray-200">
+      {/* Shell: at least the container width (so the grid fills the view when the
+          columns fit), and at least the total column width (so it overflows →
+          scrolls when they don't). The trailing <col> absorbs any slack. The
+          always-visible scrollbar (qt-timesheet-scroll + overflow-x-scroll, same
+          as the Timesheet) means users can drag to pan even on trackpads. */}
+      <div style={{ minWidth: tableWidth }}>
+      <table className="w-full table-fixed border-collapse text-sm" style={{ minWidth: tableWidth }}>
         <colgroup>
           <col style={{ width: 52 }} />
           {columns.map((c) => (
             <col key={c.key} style={{ width: widthOf(c.key) }} />
           ))}
-          {/* Trailing spacer column — no fixed width, so it absorbs the
-              remaining width and the rows/gridlines span the full table (JPD). */}
+          {/* Trailing add-column column — flexible (no width) so it absorbs any
+              slack when the view is wider than the columns, and shrinks to its
+              min when they overflow. This keeps every real column at a FIXED
+              width (they never squeeze), which is what makes the grid overflow
+              and scroll horizontally (JPD). */}
           <col />
         </colgroup>
         <thead>
           <tr className="bg-gray-50">
-            <th className="border-b border-gray-200 px-3 py-2">
+            <th className="sticky left-0 z-20 bg-gray-50 border-b border-gray-200 px-3 py-2">
               <input type="checkbox" className="h-3.5 w-3.5 rounded border-gray-300 text-blue-600" aria-label="Select all" />
             </th>
             {columns.map((col, idx) => {
               const Icon = columnIcon(col);
+              const isSummary = col.key === "summary";
               return (
-                <th key={col.key} className="relative border-b border-r border-gray-200 px-3 py-2 text-left font-medium text-gray-500">
+                <th
+                  key={col.key}
+                  className={`group/col relative border-b border-r border-gray-200 px-3 py-2 text-left font-medium text-gray-500 ${
+                    isSummary ? `sticky left-[52px] z-20 bg-gray-50 ${FZ_SHADOW}` : ""
+                  }`}
+                >
                   <span className="flex items-center gap-1.5 whitespace-nowrap">
-                    {col.key === "summary" ? (
+                    {isSummary ? (
                       <span className="font-serif text-[13px] italic text-gray-400">Aa</span>
+                    ) : col.field?.key === "score" ? (
+                      <span className="font-serif text-[13px] italic text-gray-500">fx</span>
                     ) : (
                       <Icon className="h-3.5 w-3.5 text-gray-400" />
                     )}
                     {col.label}
-                    {idx === 0 && (
-                      // JPD: the + on the Summary header opens the inline add-idea row.
+                    {idx === 0 ? (
+                      // JPD: the + sits right after the "Summary" label (hugging
+                      // the column divider) and opens the inline add-idea row.
                       <button
                         type="button"
                         aria-label="Add ideas"
                         onClick={() => setAdding(true)}
-                        className="ml-auto rounded border border-gray-200 bg-white p-0.5 text-gray-400 hover:bg-gray-100 hover:text-gray-600"
+                        className="rounded border border-gray-200 bg-white p-0.5 text-gray-400 hover:bg-gray-100 hover:text-gray-600"
                       >
                         <Plus className="h-3.5 w-3.5" />
                       </button>
-                    )}
+                    ) : onRemoveColumn ? (
+                      // Hover a non-summary header → remove-from-view button, right
+                      // after the label (JPD). Not pushed to the edge so it can't
+                      // collide with the resize handle / column boundary.
+                      <button
+                        type="button"
+                        aria-label={`Hide ${col.label}`}
+                        onClick={() => onRemoveColumn(col.key)}
+                        className="rounded p-0.5 text-gray-300 opacity-0 hover:bg-gray-200 hover:text-gray-600 group-hover/col:opacity-100"
+                      >
+                        <X className="h-3.5 w-3.5" />
+                      </button>
+                    ) : null}
                   </span>
                   {/* Drag to resize (expand/collapse) this column. */}
                   <span
@@ -267,8 +514,8 @@ export function IdeasTable({
                 </th>
               );
             })}
-            <th className="border-b border-gray-200 px-3 py-2">
-              <Plus className="h-4 w-4 text-gray-400" />
+            <th className="border-b border-gray-200 px-3 py-2 text-left">
+              <span className="inline-flex">{headerExtra ?? <Plus className="h-4 w-4 text-gray-400" />}</span>
             </th>
           </tr>
         </thead>
@@ -323,7 +570,7 @@ export function IdeasTable({
                   : "hover:[box-shadow:inset_3px_0_0_0_#86efac]"
               }`}
             >
-              <td className={`border-b border-gray-200 px-2 py-2 align-middle group-hover:bg-blue-50/40`}>
+              <td className="sticky left-0 z-10 bg-white border-b border-gray-200 px-2 py-2 align-middle group-hover:bg-blue-50">
                 <div className="flex items-center gap-0.5">
                   <span
                     draggable
@@ -338,26 +585,45 @@ export function IdeasTable({
                   <input type="checkbox" className="h-3.5 w-3.5 rounded border-gray-300 text-blue-600" aria-label={`Select ${idea.title}`} />
                 </div>
               </td>
-              {columns.map((col) => (
-                <td key={col.key} className={`${cell} group/cell group-hover:bg-blue-50/40`}>
-                  {col.key === "summary" ? (
-                    <SummaryCell idea={idea} onOpen={onOpen} onEditTitle={onEditTitle} />
-                  ) : col.key === "insights" ? (
-                    <InsightsCell idea={idea} onOpenInsights={() => onOpen(idea, "Insights")} />
-                  ) : col.key === "delivery" ? (
-                    <DeliveryCell idea={idea} onOpenDelivery={() => onOpen(idea, "Delivery")} />
-                  ) : col.field ? (
-                    <EditableCell field={col.field} value={idea.values[col.field.id] ?? null} onSave={(fieldId, value) => onEdit(idea.id, fieldId, value)} />
-                  ) : null}
-                </td>
-              ))}
+              {columns.map((col) => {
+                const isSummary = col.key === "summary";
+                return (
+                  <td
+                    key={col.key}
+                    className={`${cell} group/cell ${
+                      isSummary ? `sticky left-[52px] z-10 bg-white ${FZ_SHADOW} group-hover:bg-blue-50` : "group-hover:bg-blue-50/40"
+                    }`}
+                  >
+                    {isSummary ? (
+                      <SummaryCell idea={idea} onOpen={onOpen} onEditTitle={onEditTitle} />
+                    ) : col.key === "insights" ? (
+                      <InsightsCell idea={idea} onOpenInsights={() => onOpen(idea, "Insights")} />
+                    ) : col.key === "comments" ? (
+                      <CommentsCell idea={idea} onOpenComments={() => onOpen(idea, "Comments")} />
+                    ) : col.key === "delivery" ? (
+                      <DeliveryCell idea={idea} onOpenDelivery={() => onOpen(idea, "Delivery")} />
+                    ) : col.field?.key === "delivery_status" ? (
+                      // Computed rollup of linked work items (JPD) — not the manual dropdown.
+                      <DeliveryStatusCell idea={idea} onOpenDelivery={() => onOpen(idea, "Delivery")} />
+                    ) : col.key === "assignee" && members && onAssign ? (
+                      <AssigneeCell assigneeId={idea.assigneeId} members={members} onAssign={(uid) => onAssign(idea.id, uid)} />
+                    ) : col.key === "creator" ? (
+                      <CreatorCell userId={idea.createdBy ?? idea.reporterId} members={members} />
+                    ) : SYSTEM_COL_KEYS.has(col.key) ? (
+                      <SystemCell colKey={col.key} idea={idea} statuses={statuses} />
+                    ) : col.field ? (
+                      <EditableCell field={col.field} value={idea.values[col.field.id] ?? null} knownLabels={knownLabelsByField.get(col.field.id)} onSave={(fieldId, value) => onEdit(idea.id, fieldId, value)} />
+                    ) : null}
+                  </td>
+                );
+              })}
               <td className="border-b border-gray-200 group-hover:bg-blue-50/40" />
             </tr>
           ))}
         </tbody>
       </table>
-      </div>
       {footer?.(() => setAdding(true))}
+      </div>
     </div>
   );
 }

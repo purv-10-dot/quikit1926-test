@@ -22,7 +22,7 @@ export const GET = withProjectAccess<{ id: string }>(
         orderBy: [{ orderIndex: "asc" }, { createdAt: "asc" }],
         select: {
           id: true, key: true, title: true, description: true, statusId: true,
-          assigneeId: true, reporterId: true, archivedFlag: true, orderIndex: true,
+          assigneeId: true, reporterId: true, createdBy: true, archivedFlag: true, orderIndex: true,
           createdAt: true, updatedAt: true,
         },
       }),
@@ -39,8 +39,56 @@ export const GET = withProjectAccess<{ id: string }>(
       }),
     ]);
 
-    const valuesByIdea = await getValuesForIdeas(orgId, ideas.map((i) => i.id));
-    const data = ideas.map((i) => ({ ...i, values: valuesByIdea[i.id] ?? {} }));
+    const ideaIds = ideas.map((i) => i.id);
+    const valuesByIdea = await getValuesForIdeas(orgId, ideaIds);
+
+    // Real per-idea counts for the Insights / Delivery / Comments grid columns.
+    const [insightGroups, deliveryLinks, commentGroups] = ideaIds.length
+      ? await Promise.all([
+          db.qtIdeaInsight.groupBy({ by: ["ideaId"], where: { ideaId: { in: ideaIds }, isDeleted: false }, _count: { _all: true } }),
+          // Links (idea → issueId). issueId has no FK (linked issues may live in
+          // other projects), so we resolve statuses in a second query below.
+          db.qtIdeaDelivery.findMany({ where: { ideaId: { in: ideaIds } }, select: { ideaId: true, issueId: true } }),
+          db.qtIdeaComment.groupBy({ by: ["ideaId"], where: { ideaId: { in: ideaIds }, isDeleted: false }, _count: { _all: true } }),
+        ])
+      : [[], [], []];
+    const insightCountByIdea = new Map(insightGroups.map((g) => [g.ideaId, g._count._all]));
+    const commentCountByIdea = new Map(commentGroups.map((g) => [g.ideaId, g._count._all]));
+
+    // Resolve the status category of every linked issue in one query, then roll up
+    // per idea → the To Do / In Progress / Done pill counts (JPD "Delivery status").
+    const linkedIssueIds = [...new Set(deliveryLinks.map((l) => l.issueId))];
+    const issueCatById = new Map<string, string | null>();
+    if (linkedIssueIds.length) {
+      const issues = await db.qtIssue.findMany({
+        where: { id: { in: linkedIssueIds }, isDeleted: false },
+        select: { id: true, status: { select: { category: true } } },
+      });
+      for (const it of issues) issueCatById.set(it.id, it.status?.category ?? null);
+    }
+    type DelCounts = { total: number; todo: number; inProgress: number; done: number };
+    const deliveryCountsByIdea = new Map<string, DelCounts>();
+    for (const link of deliveryLinks) {
+      const c = deliveryCountsByIdea.get(link.ideaId) ?? { total: 0, todo: 0, inProgress: 0, done: 0 };
+      const cat = issueCatById.get(link.issueId);
+      c.total += 1;
+      if (cat === "DONE") c.done += 1;
+      else if (cat === "IN_PROGRESS") c.inProgress += 1;
+      else c.todo += 1;
+      deliveryCountsByIdea.set(link.ideaId, c);
+    }
+
+    const data = ideas.map((i) => {
+      const dc = deliveryCountsByIdea.get(i.id) ?? { total: 0, todo: 0, inProgress: 0, done: 0 };
+      return {
+        ...i,
+        values: valuesByIdea[i.id] ?? {},
+        insightCount: insightCountByIdea.get(i.id) ?? 0,
+        deliveryCount: dc.total,
+        deliveryCounts: dc,
+        commentCount: commentCountByIdea.get(i.id) ?? 0,
+      };
+    });
 
     return NextResponse.json({ success: true, data: { ideas: data, fields, statuses, views } });
   },

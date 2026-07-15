@@ -124,6 +124,8 @@ export const DISCOVERY_FIELDS: SeedField[] = [
   },
   { name: "Spec ready", type: "CHECKBOX", helpText: "Spec is ready." },
   { name: "Designs ready", type: "CHECKBOX", helpText: "Designs are ready." },
+  { name: "Documents", type: "URL", helpText: "Link to a supporting document." },
+  { name: "Labels", type: "LABELS", helpText: "Free-form labels for grouping." },
   { name: "Idea short description", type: "SHORT_TEXT", helpText: "A one-line summary." },
   {
     name: "Delivery status",

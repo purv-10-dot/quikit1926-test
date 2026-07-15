@@ -11,6 +11,8 @@ const optionInputSchema = z.object({
   id: z.string().min(1).optional(), // present = existing option being renamed/toggled
   label: z.string().min(1).max(100),
   isActive: z.boolean().optional(),
+  // Discovery weighted multi-select: 0–5 strategic weight (None..Highest).
+  weight: z.number().int().min(0).max(5).nullable().optional(),
 });
 
 export const createCustomFieldSchema = z
@@ -135,8 +137,13 @@ export function validateFieldValue(field: FieldForValidation, raw: FieldValue): 
       const ids = Array.from(new Set(raw.map((v) => String(v)).filter(Boolean)));
       return { ok: true, value: ids };
     }
+    case "SHORT_TEXT": {
+      const s = String(raw);
+      // Short text is capped at 255 chars (JPD) — enforced server-side too.
+      if (s.length > 255) return { ok: false, error: `${field.name} is limited to 255 characters.` };
+      return { ok: true, value: s };
+    }
     case "USER_PICKER":
-    case "SHORT_TEXT":
     case "LONG_TEXT":
     default: {
       const s = String(raw);

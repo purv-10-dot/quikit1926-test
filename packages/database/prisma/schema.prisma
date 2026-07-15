@@ -9637,6 +9637,7 @@ model QtCustomFieldOption {
   value     String // stored value (slug); kept stable across label renames
   position  Int           @default(0)
   isActive  Boolean       @default(true)
+  weight    Int? // TODO(integration): discovery weighted multi-select — 0–5 strategic weight per option (None..Highest). Additive, nullable; needs owner sign-off before Neon.
   createdAt DateTime      @default(now())
   field     QtCustomField @relation(fields: [fieldId], references: [id], onDelete: Cascade)
 

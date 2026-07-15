@@ -9,6 +9,8 @@ export interface FieldOption {
   value: string;
   position: number;
   isActive: boolean;
+  /** Discovery weighted multi-select: strategic weight (0–5). */
+  weight?: number | null;
 }
 
 export interface FieldDef {
@@ -27,11 +29,18 @@ export interface IdeaRow {
   statusId: string;
   assigneeId: string | null;
   reporterId: string | null;
+  createdBy: string | null;
   archivedFlag: boolean;
   orderIndex: number;
   createdAt: string;
   updatedAt: string;
   values: Record<string, IdeaFieldValue>;
+  /** Real counts for the Insights / Delivery / Comments grid columns (from the API). */
+  insightCount?: number;
+  deliveryCount?: number;
+  /** Linked work items rolled up by status category (JPD "Delivery status"). */
+  deliveryCounts?: { total: number; todo: number; inProgress: number; done: number };
+  commentCount?: number;
 }
 
 export interface IdeaStatus {
@@ -67,6 +76,8 @@ export const K = DISCOVERY_FIELD_KEYS;
 export const RATING_DOTS: Record<string, { max: number; fill: string }> = {
   [K.impact]: { max: 5, fill: "bg-blue-400" },
   [K.effort]: { max: 5, fill: "bg-red-400" },
+  [K.reach]: { max: 5, fill: "bg-yellow-400" },
+  [K.value]: { max: 5, fill: "bg-purple-400" },
 };
 
 /** Fixed roadmap pill palette (data state — not themeable). Keys are option
@@ -91,6 +102,7 @@ export const THEME_META: Record<string, { emoji: string; text: string; bg: strin
 export const SPECIAL_COLUMNS: Record<string, string> = {
   summary: "Summary",
   insights: "Insights",
+  comments: "Comments",
   delivery: "Delivery progress",
 };
 
@@ -115,4 +127,14 @@ export function chipStyle(value: string): string {
 /** Human label for a dropdown value via its field's options. */
 export function optionLabel(field: FieldDef, value: string): string {
   return field.options.find((o) => o.value === value)?.label ?? value;
+}
+
+/** Strategic weight (0–5) for a dropdown value, or 0 if unset. */
+export function optionWeight(field: FieldDef, value: string): number {
+  return field.options.find((o) => o.value === value)?.weight ?? 0;
+}
+
+/** True if a multi-select field has any weighted option (renders weight in cells). */
+export function fieldHasWeights(field: FieldDef): boolean {
+  return field.options.some((o) => (o.weight ?? 0) > 0);
 }

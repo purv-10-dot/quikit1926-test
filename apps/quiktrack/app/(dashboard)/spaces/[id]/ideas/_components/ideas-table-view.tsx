@@ -16,13 +16,36 @@ import {
   Maximize2,
 } from "lucide-react";
 import { useApiData } from "@/lib/hooks/useApiData";
+import { useMyProjectPermissions } from "@/lib/hooks/useMyProjectPermissions";
 import { IdeasTable, type Column } from "./ideas-table";
 import { IdeaDetailPanel } from "./idea-detail-panel";
 import { FieldEditorPanel } from "./field-editor-panel";
+import { AddColumnMenu } from "./add-column-menu";
+import { FieldsPanel, type FieldEntry } from "./fields-panel";
+import type { MemberLite } from "./assignee-cell";
 import { SPECIAL_COLUMNS, type IdeasBundle, type IdeaRow, type IdeaFieldValue } from "./ideas-types";
+
+interface MembersResponse {
+  success: boolean;
+  data: { members: { userId: string; user: MemberLite | null }[] };
+}
 
 const VIEW_DESCRIPTION =
   "Centralize your ideas. You are in the “All ideas” view, which stores all ideas in this project.";
+
+/** Built-in (non-custom-field) columns offered by the + add-column menu. Their
+ *  values come from the idea row / bundle and render read-only in the grid. */
+const SYSTEM_COLUMNS: Record<string, string> = {
+  assignee: "Assignee",
+  creator: "Creator",
+  status: "Status",
+  created: "Created",
+  updated: "Updated",
+};
+
+/** Column keys hidden from the "+ add column" menu for this discovery view
+ *  (fields that don't belong in JPD's picker). Not deleted — just not offered. */
+const HIDDEN_COLUMN_KEYS = new Set(["global_field", "watcher", "goals", "status"]);
 
 export function IdeasTableView({ projectId }: { projectId: string }) {
   const qc = useQueryClient();
@@ -34,13 +57,25 @@ export function IdeasTableView({ projectId }: { projectId: string }) {
   );
 
   const [rows, setRows] = useState<IdeaRow[]>([]);
+  const [fieldsPanelOpen, setFieldsPanelOpen] = useState(false);
   const [panelId, setPanelId] = useState<string | null>(null);
   const [panelTab, setPanelTab] = useState<"Overview" | "Comments" | "Insights" | "Delivery">("Overview");
   const [activeId, setActiveId] = useState<string | null>(null);
   const [search, setSearch] = useState("");
   const [creating, setCreating] = useState(false);
   const [editFieldId, setEditFieldId] = useState<string | null>(null);
+  const [members, setMembers] = useState<MemberLite[]>([]);
   const openAddRef = useRef<(() => void) | null>(null);
+
+  // Project members for the Assignee picker.
+  useEffect(() => {
+    let alive = true;
+    fetch(`/api/projects/${projectId}/members`)
+      .then((r) => r.json() as Promise<MembersResponse>)
+      .then((m) => { if (alive && m.success) setMembers(m.data.members.map((x) => x.user).filter((u): u is MemberLite => !!u)); })
+      .catch(() => undefined);
+    return () => { alive = false; };
+  }, [projectId]);
 
   // "Edit field" (from a dropdown's footer) opens the field editor overlay.
   useEffect(() => {
@@ -56,36 +91,152 @@ export function IdeasTableView({ projectId }: { projectId: string }) {
   // Default the active (green-accent) row to the first idea, like JPD.
   useEffect(() => { if (!activeId && rows.length) setActiveId(rows[0].id); }, [rows, activeId]);
 
+  const perms = useMyProjectPermissions(projectId);
+  const canSaveForEveryone = perms.loading ? false : perms.has("Project", "update");
+  const view = data ? (data.views.find((v) => v.isDefault) ?? data.views[0]) : null;
+
+  // The saved column set (from the view config) and the current (editable) one.
+  // "summary" is always first + sticky; system columns (assignee, created, …) are
+  // rendered as read-only cells alongside custom fields / specials.
+  const savedKeys = useMemo(
+    () => view?.config?.columns ?? (data ? ["summary", ...data.fields.map((f) => f.key)] : ["summary"]),
+    [view, data],
+  );
+  const [columnKeys, setColumnKeys] = useState<string[]>([]);
+  useEffect(() => { setColumnKeys(savedKeys); }, [savedKeys]);
+  const dirty = JSON.stringify(columnKeys) !== JSON.stringify(savedKeys);
+
   const columns = useMemo<Column[]>(() => {
     if (!data) return [];
-    const view = data.views.find((v) => v.isDefault) ?? data.views[0];
     const byKey = new Map(data.fields.map((f) => [f.key, f]));
-    const keys = view?.config?.columns ?? ["summary", ...data.fields.map((f) => f.key)];
-    return keys
+    return columnKeys
       .map((key): Column | null => {
         if (SPECIAL_COLUMNS[key]) return { key, label: SPECIAL_COLUMNS[key] };
+        if (SYSTEM_COLUMNS[key]) return { key, label: SYSTEM_COLUMNS[key] };
         const field = byKey.get(key);
-        return field ? { key, label: field.name, field } : null;
+        // JPD labels the computed Score field "RICE score".
+        const label = field?.key === "score" ? "RICE score" : field?.name ?? "";
+        return field ? { key, label, field } : null;
       })
       .filter((c): c is Column => c !== null);
-  }, [data]);
+  }, [data, columnKeys]);
+
+  // Fields/columns not currently shown — offered by the + add-column menu.
+  const available = useMemo(() => {
+    if (!data) return [] as { key: string; label: string }[];
+    const shown = new Set(columnKeys);
+    const hidden = (k: string) => shown.has(k) || HIDDEN_COLUMN_KEYS.has(k);
+    const specials = Object.entries(SPECIAL_COLUMNS).filter(([k]) => !hidden(k)).map(([key, label]) => ({ key, label }));
+    const system = Object.entries(SYSTEM_COLUMNS).filter(([k]) => !hidden(k)).map(([key, label]) => ({ key, label }));
+    const fields = data.fields
+      .filter((f) => !hidden(f.key))
+      // JPD labels the computed Score field "RICE score" (also searchable as such).
+      .map((f) => ({ key: f.key, label: f.key === "score" ? "RICE score" : f.name }));
+    return [...specials, ...fields, ...system].sort((a, b) => a.label.localeCompare(b.label));
+  }, [data, columnKeys]);
+
+  // Entries for the Fields side panel — include the field ref so it can show the
+  // right icon. `inView` mirrors the visible columns (in order); `availableEntries`
+  // mirrors the + menu but carries the field object.
+  const inViewEntries = useMemo<FieldEntry[]>(
+    () => columns.map((c) => ({ key: c.key, label: c.label, field: c.field })),
+    [columns],
+  );
+  const fieldByKey = useMemo(() => new Map((data?.fields ?? []).map((f) => [f.key, f])), [data]);
+  const availableEntries = useMemo<FieldEntry[]>(
+    () => available.map((a) => ({ key: a.key, label: a.label, field: fieldByKey.get(a.key) })),
+    [available, fieldByKey],
+  );
+
+  function addColumn(key: string) { setColumnKeys((c) => (c.includes(key) ? c : [...c, key])); }
+  function removeColumn(key: string) { setColumnKeys((c) => c.filter((k) => k !== key)); }
+
+  /** Persist a specific column list to the shared view immediately (admins only).
+   *  Used by the Fields panel toggles/reorder. Non-admins only change locally. */
+  async function persistColumns(next: string[]) {
+    if (!view || !canSaveForEveryone) return;
+    const res = await fetch(`/api/projects/${projectId}/ideas/views/${view.id}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ columns: next }),
+    });
+    if (res.ok) await qc.invalidateQueries({ queryKey });
+  }
+
+  /** Fields-panel toggle: show/hide a column, then persist right away. */
+  function toggleColumn(key: string, show: boolean) {
+    const next = show
+      ? (columnKeys.includes(key) ? columnKeys : [...columnKeys, key])
+      : columnKeys.filter((k) => k !== key);
+    setColumnKeys(next);
+    void persistColumns(next);
+  }
+
+  /** Fields-panel drag-reorder: move fromKey before toKey, then persist. Summary
+   *  stays pinned first (it's the sticky/frozen column). */
+  function reorderColumn(fromKey: string, toKey: string) {
+    if (fromKey === "summary" || toKey === "summary") return;
+    const from = columnKeys.indexOf(fromKey);
+    const to = columnKeys.indexOf(toKey);
+    if (from === -1 || to === -1 || from === to) return;
+    const next = [...columnKeys];
+    const [moved] = next.splice(from, 1);
+    next.splice(to, 0, moved);
+    setColumnKeys(next);
+    void persistColumns(next);
+  }
+
+  /** A field was just created inline — refetch the bundle so it's known, then
+   *  show it as a column. */
+  async function onFieldCreated(key: string) {
+    await qc.refetchQueries({ queryKey });
+    addColumn(key);
+  }
+
+  async function saveColumns() {
+    if (!view) return;
+    const res = await fetch(`/api/projects/${projectId}/ideas/views/${view.id}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ columns: columnKeys }),
+    });
+    if (res.ok) await qc.invalidateQueries({ queryKey });
+  }
+  function resetColumns() { setColumnKeys(savedKeys); }
 
   async function patchIdeaRaw(ideaId: string, body: Record<string, unknown>) {
-    await fetch(`/api/projects/${projectId}/ideas/${ideaId}`, {
+    const res = await fetch(`/api/projects/${projectId}/ideas/${ideaId}`, {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(body),
     });
+    // Surface failures instead of silently reverting on the next refetch, which
+    // makes a value look "saved" then vanish (e.g. a rejected field write).
+    if (!res.ok) {
+      const j = (await res.json().catch(() => null)) as { error?: string } | null;
+      throw new Error(j?.error ?? `Failed to save (HTTP ${res.status})`);
+    }
   }
 
   async function patchIdea(ideaId: string, body: Record<string, unknown>) {
-    await patchIdeaRaw(ideaId, body);
+    try {
+      await patchIdeaRaw(ideaId, body);
+    } catch (err: unknown) {
+      // eslint-disable-next-line no-console
+      console.error("Idea save failed:", err);
+      if (typeof window !== "undefined") window.alert(err instanceof Error ? err.message : "Failed to save.");
+    }
     await qc.invalidateQueries({ queryKey });
   }
 
   function onEdit(ideaId: string, fieldId: string, value: IdeaFieldValue) {
     setRows((rs) => rs.map((r) => (r.id === ideaId ? { ...r, values: { ...r.values, [fieldId]: value } } : r)));
     void patchIdea(ideaId, { values: { [fieldId]: value } });
+  }
+
+  function onAssign(ideaId: string, userId: string | null) {
+    setRows((rs) => rs.map((r) => (r.id === ideaId ? { ...r, assigneeId: userId } : r)));
+    void patchIdea(ideaId, { assigneeId: userId });
   }
 
   function onEditTitle(ideaId: string, title: string) {
@@ -174,10 +325,29 @@ export function IdeasTableView({ projectId }: { projectId: string }) {
             <ToolbarButton icon={Plus} label="Group by" />
             <ToolbarButton icon={Filter} label="Filter" />
             <ToolbarButton icon={ArrowUpDown} label="Sort" />
-            <ToolbarButton icon={SlidersHorizontal} label={`Fields ${columns.length}`} />
+            <ToolbarButton icon={SlidersHorizontal} label={`Fields ${columns.length}`} onClick={() => setFieldsPanelOpen(true)} />
             <button type="button" aria-label="View settings" className="rounded border border-gray-200 p-1.5 text-gray-500 hover:bg-gray-50">
               <SlidersHorizontal className="h-3.5 w-3.5" />
             </button>
+            {/* Save-for-everyone / Reset — appear when the column set is dirty. */}
+            {dirty && (
+              <>
+                {canSaveForEveryone ? (
+                  <button
+                    type="button"
+                    onClick={() => void saveColumns()}
+                    className="rounded bg-amber-100 px-2.5 py-1 text-sm font-medium text-amber-800 hover:bg-amber-200"
+                  >
+                    Save for everyone
+                  </button>
+                ) : (
+                  <span className="text-xs text-gray-400">Only admins can save this view</span>
+                )}
+                <button type="button" onClick={resetColumns} className="text-sm text-gray-500 hover:text-gray-700">
+                  Reset
+                </button>
+              </>
+            )}
           </div>
           <div className="relative">
             <Search className="pointer-events-none absolute left-2 top-1.5 h-3.5 w-3.5 text-gray-400" />
@@ -191,7 +361,8 @@ export function IdeasTableView({ projectId }: { projectId: string }) {
         </div>
 
         {/* Table — left-inset to line up with the toolbar; right-flush to the
-            edge (no right padding) so the grid runs to the edge like JPD. */}
+            edge (no right padding) so the grid runs to the edge like JPD. This
+            wrapper scrolls vertically; the grid box inside scrolls horizontally. */}
         <div className="min-h-0 flex-1 overflow-y-auto pb-4 pl-6">
           {isLoading ? (
             <div className="py-6 text-sm text-gray-500">Loading ideas…</div>
@@ -209,12 +380,19 @@ export function IdeasTableView({ projectId }: { projectId: string }) {
                 onCreate={createIdeaWithTitle}
                 creating={creating}
                 openAddRef={openAddRef}
+                statuses={data?.statuses}
+                members={members}
+                onAssign={onAssign}
+                onRemoveColumn={removeColumn}
+                headerExtra={<AddColumnMenu projectId={projectId} options={availableEntries} onAdd={addColumn} onCreated={onFieldCreated} />}
                 footer={(openAdd) => (
                   <div className="flex items-center gap-3 border-t border-gray-200 px-3 py-2 text-sm">
+                    {/* Pinned to the left so "+ Create" stays visible while the
+                        grid is scrolled horizontally (JPD). */}
                     <button
                       type="button"
                       onClick={openAdd}
-                      className="inline-flex items-center gap-1 text-gray-500 hover:text-gray-700"
+                      className="sticky left-3 inline-flex items-center gap-1 text-gray-500 hover:text-gray-700"
                     >
                       <Plus className="h-3.5 w-3.5" /> Create
                     </button>
@@ -243,16 +421,27 @@ export function IdeasTableView({ projectId }: { projectId: string }) {
           projectId={projectId}
           fieldId={editFieldId}
           onClose={() => setEditFieldId(null)}
-          onSaved={() => void qc.invalidateQueries({ queryKey })}
+          onSaved={() => void qc.refetchQueries({ queryKey })}
+        />
+      )}
+
+      {fieldsPanelOpen && (
+        <FieldsPanel
+          inView={inViewEntries}
+          available={availableEntries}
+          canEdit={canSaveForEveryone}
+          onToggle={toggleColumn}
+          onReorder={reorderColumn}
+          onClose={() => setFieldsPanelOpen(false)}
         />
       )}
     </div>
   );
 }
 
-function ToolbarButton({ icon: Icon, label }: { icon: typeof Filter; label: string }) {
+function ToolbarButton({ icon: Icon, label, onClick }: { icon: typeof Filter; label: string; onClick?: () => void }) {
   return (
-    <button type="button" className="inline-flex items-center gap-1 rounded border border-gray-200 px-2.5 py-1 text-sm text-gray-700 hover:bg-gray-50">
+    <button type="button" onClick={onClick} className="inline-flex items-center gap-1 rounded border border-gray-200 px-2.5 py-1 text-sm text-gray-700 hover:bg-gray-50">
       <Icon className="h-3.5 w-3.5 text-gray-500" /> {label}
     </button>
   );
