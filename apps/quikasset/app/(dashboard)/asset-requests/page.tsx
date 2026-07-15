@@ -27,7 +27,7 @@ const STATUS_STYLES: Record<AssetRequestStatus, string> = {
 
 const STATUS_LABELS: Record<AssetRequestStatus, string> = {
   Draft: "Draft", Submitted: "Submitted", PendingApproval: "Pending Approval", Approved: "Approved",
-  Rejected: "Rejected", PartiallyFulfilled: "Partially Fulfilled", Fulfilled: "Fulfilled", Cancelled: "Cancelled",
+  Rejected: "Rejected", PartiallyFulfilled: "Partially Assigned", Fulfilled: "Assigned", Cancelled: "Cancelled",
 }
 
 /** Statuses an approver can decide on. */
@@ -152,7 +152,7 @@ function PendingApprovalsQueue() {
                 <tr key={r.id} className="border-t border-gray-100 hover:bg-gray-50/60 transition-colors align-top">
                   <td className="px-4 py-3">
                     <p className="font-semibold text-gray-800">{r.requesterName ?? r.requesterUserId}</p>
-                    <p className="text-[10px] text-gray-400">{r.requesterEmail}</p>
+                    {r.requesterEmployeeId && <p className="text-[10px] text-gray-400">{r.requesterEmployeeId}</p>}
                   </td>
                   <td className="px-4 py-3">
                     <div className="flex items-center gap-1.5">

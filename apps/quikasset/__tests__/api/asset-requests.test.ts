@@ -81,18 +81,18 @@ describe("GET /api/asset-requests — queue scoping", () => {
     expect(call.where.requesterUserId).toBe("u1");
   });
 
-  it("resolves requester name/email via the identity bridge", async () => {
+  it("resolves requester name + employee id via the identity bridge", async () => {
     setSession(ADMIN);
     grantAll();
     mockDb.astAssetRequest.findMany.mockResolvedValue([{ id: "r1", requesterUserId: "u9" }] as never);
     mockDb.astEmployee.findMany.mockResolvedValue([
-      { userId: "u9", name: "Nadia", email: "nadia@x.com" },
+      { userId: "u9", name: "Nadia", employeeId: "EMP-0009" },
     ] as never);
 
     const res = await GET(makeReq("/api/asset-requests"), { params: {} });
     const json = await res.json();
     expect(json.data[0].requesterName).toBe("Nadia");
-    expect(json.data[0].requesterEmail).toBe("nadia@x.com");
+    expect(json.data[0].requesterEmployeeId).toBe("EMP-0009");
   });
 
   it("400s on an invalid status filter", async () => {

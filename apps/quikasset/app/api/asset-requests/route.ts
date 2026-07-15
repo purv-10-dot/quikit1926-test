@@ -51,7 +51,7 @@ export const GET = auth.view(async ({ orgId, userId }, req) => {
   const employees = userIds.length
     ? await db.astEmployee.findMany({
         where: { orgId, userId: { in: userIds } },
-        select: { userId: true, name: true, email: true },
+        select: { userId: true, name: true, employeeId: true },
       })
     : [];
   const byUser = new Map(employees.map((e) => [e.userId, e]));
@@ -59,7 +59,7 @@ export const GET = auth.view(async ({ orgId, userId }, req) => {
   const data = requests.map((r) => ({
     ...r,
     requesterName: byUser.get(r.requesterUserId)?.name ?? null,
-    requesterEmail: byUser.get(r.requesterUserId)?.email ?? null,
+    requesterEmployeeId: byUser.get(r.requesterUserId)?.employeeId ?? null,
   }));
 
   return NextResponse.json({ success: true, data });

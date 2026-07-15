@@ -26,9 +26,9 @@ export type AssetRequestStatus =
 export type AssetRequest = {
   id: string;
   requesterUserId: string;
-  /** Resolved for display (via the AstEmployee.userId identity bridge). */
+  /** Resolved for display via the AstEmployee.userId identity bridge. */
   requesterName?: string | null;
-  requesterEmail?: string | null;
+  requesterEmployeeId?: string | null;
   itemKind: AssetRequestKind;
   /** Requested item type — a Category Master name (free text for now). */
   itemType: string;
