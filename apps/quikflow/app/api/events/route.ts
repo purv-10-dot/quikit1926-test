@@ -9,7 +9,7 @@ export const dynamic = "force-dynamic";
 /**
  * POST /api/events — the QuikFlow ingress. Source apps (QuikScale, …) POST
  * normalized events here with a service token; matched Live workflows are
- * executed asynchronously by the GroupMQ worker. This route only validates
+ * executed asynchronously by the BullMQ worker. This route only validates
  * and enqueues (fast, non-blocking for the caller).
  */
 const eventSchema = z.object({

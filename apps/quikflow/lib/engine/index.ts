@@ -6,7 +6,7 @@ export type { EngineEvent, RunResult } from "./types";
 
 /**
  * Dispatch an event: find matching Live workflows and run each. This is the
- * single entry point the GroupMQ worker (and the "Run now" path) call. It is
+ * single entry point the BullMQ worker (and the "Run now" path) call. It is
  * transport-agnostic — it neither knows nor cares how the event was delivered.
  *
  * Idempotency is per (orgId, runDedupeKey); a run's dedupe key combines the

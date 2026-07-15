@@ -2,7 +2,7 @@
  * QuikFlow execution engine — shared types (framework-free).
  *
  * The engine is transport-agnostic: it turns an EngineEvent into a persisted
- * WfRun + WfStepLog rows. HOW the event arrives (GroupMQ worker, a "Run now"
+ * WfRun + WfStepLog rows. HOW the event arrives (BullMQ worker, a "Run now"
  * call, or a future queue) is a boundary that lives outside this module.
  */
 

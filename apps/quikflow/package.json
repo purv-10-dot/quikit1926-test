@@ -20,7 +20,7 @@
     "@quikit/shared": "*",
     "@quikit/ui": "*",
     "@tanstack/react-query": "^5.28.0",
-    "groupmq": "^1.1.0",
+    "bullmq": "^5.34.0",
     "ioredis": "^5.4.1",
     "jose": "^5.2.0",
     "lucide-react": "^0.294.0",

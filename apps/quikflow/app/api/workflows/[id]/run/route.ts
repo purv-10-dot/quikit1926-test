@@ -13,7 +13,7 @@ type Params = { id: string };
  * immediately through the engine (inline, bypassing the matcher + queue) so a
  * user can test ANY workflow on demand — including Drafts — and see the run in
  * Run History right away. The real QuikScale-triggered path goes through
- * /api/events → GroupMQ → worker instead.
+ * /api/events → BullMQ → worker instead.
  */
 export const POST = withOrgAuth<Params>(async ({ orgId, userId }, _req, { params }) => {
   const wf = await db.wfWorkflow.findFirst({
@@ -29,14 +29,32 @@ export const POST = withOrgAuth<Params>(async ({ orgId, userId }, _req, { params
   }
 
   const trigger = (wf.trigger ?? {}) as Record<string, unknown>;
+
+  // Sample KPI context so real actions (create_priority / notify_owner) can
+  // actually execute on a manual test run instead of skipping for lack of data.
+  // The owner is the user clicking "Run now" — a test priority/notification is
+  // created for them, so the run produces a visible result.
+  const now = new Date();
+  const quarter = `Q${Math.floor(now.getMonth() / 3) + 1}`;
+  const sampleKpiContext = {
+    name: "Sample KPI (Run now)",
+    value: 50,
+    target: 100,
+    ownerId: userId,
+    quarter,
+    year: now.getFullYear(),
+    kpiId: null,
+    teamId: null,
+  };
+
   const event: EngineEvent = {
     app: typeof trigger.app === "string" ? trigger.app : "quikflow",
     event: typeof trigger.event === "string" ? trigger.event : "manual.run",
     orgId,
     // Unique per click so repeated manual runs each create a new WfRun.
     dedupeKey: `runnow:${params.id}:${Date.now()}`,
-    data: { manual: true, triggeredBy: userId },
-    occurredAt: new Date().toISOString(),
+    data: { manual: true, triggeredBy: userId, ...sampleKpiContext },
+    occurredAt: now.toISOString(),
   };
 
   const result = await runSingleWorkflow(wf, event);
