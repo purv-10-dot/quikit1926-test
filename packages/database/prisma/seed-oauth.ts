@@ -69,6 +69,7 @@ const QUIKCRM_BASE = resolveAppUrl("QUIKCRM_URL", "http://localhost:3008"); // p
 const QUIKFINANCE_BASE = resolveAppUrl("QUIKFINANCE_URL", "http://localhost:3013"); // prod-safety-allow: dev fallback, prod throws via resolveAppUrl
 const QUIKASSET_BASE = resolveAppUrl("QUIKASSET_URL", "http://localhost:3012"); // prod-safety-allow: dev fallback, prod throws via resolveAppUrl
 const QUIKSUPPORT_BASE = resolveAppUrl("QUIKSUPPORT_URL", "http://localhost:3010"); // prod-safety-allow: dev fallback, prod throws via resolveAppUrl
+const QUIKFLOW_BASE = resolveAppUrl("QUIKFLOW_URL", "http://localhost:3011"); // prod-safety-allow: dev fallback, prod throws via resolveAppUrl
 // Central launcher (quikit) origin. It hosts every app's icon under
 // /app-icons and is where App.iconUrl is designed to resolve (see the comment
 // on BRAND_ICONS in packages/ui/components/app-switcher.tsx). Used as the
@@ -88,6 +89,22 @@ const APPS = [
       clientSecretPlain: resolveClientSecret("QUIKSCALE_OAUTH_CLIENT_SECRET", "quikscale-dev-secret-change-in-prod"),
       redirectUris: [
         `${QUIKSCALE_BASE}/api/auth/callback/quikit`,
+      ],
+      scopes: ["openid", "profile", "email", "tenant"],
+    },
+  },
+  {
+    slug: "quikflow",
+    name: "QuikFlow",
+    description: "No-code workflow automation across every QuikIT app — Trigger → Condition → Action.",
+    baseUrl: QUIKFLOW_BASE,
+    iconUrl: `${QUIKIT_BASE}/app-icons/quikflow.svg`,
+    status: "active",
+    oauth: {
+      clientId: "quikflow",
+      clientSecretPlain: resolveClientSecret("QUIKFLOW_OAUTH_CLIENT_SECRET", "quikflow-dev-secret-change-in-prod"),
+      redirectUris: [
+        `${QUIKFLOW_BASE}/api/auth/callback/quikit`,
       ],
       scopes: ["openid", "profile", "email", "tenant"],
     },

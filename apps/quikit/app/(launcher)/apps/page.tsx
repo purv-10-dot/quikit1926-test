@@ -63,6 +63,7 @@ const LAUNCHER_ICONS: Record<string, string> = {
   quiktrack: "/app-icons/quiktrack.svg",
   quiksocial: "/app-icons/quiksocial.svg",
   quiksupport: "/app-icons/quiksupport.svg",
+  quikflow: "/app-icons/quikflow.svg",
 };
 
 interface AppInfo {

@@ -3,7 +3,7 @@ import type { NextRequest } from "next/server";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import { db } from "@/lib/db";
-import { ADMIN_TIER_ROLES, HIDDEN_APP_SLUGS } from "@quikit/shared";
+import { ADMIN_TIER_ROLES, HIDDEN_APP_SLUGS, SUPER_ADMIN_GRANT_ONLY_SLUGS } from "@quikit/shared";
 
 /**
  * GET /api/apps/launcher
@@ -177,6 +177,7 @@ export async function GET(req: NextRequest) {
     quikhrms: process.env.QUIKHRMS_URL,
     quikasset: process.env.QUIKASSET_URL,
     quiksupport: process.env.QUIKSUPPORT_URL,
+    quikflow: process.env.QUIKFLOW_URL,
   };
 
   // Dev-only safety net. If the env var isn't set AND the DB's baseUrl is
@@ -199,6 +200,7 @@ export async function GET(req: NextRequest) {
     quikhrms: "http://localhost:3009",
     quikasset: "http://localhost:3012",
     quiksupport: "http://localhost:3010",
+    quikflow: "http://localhost:3011",
   };
 
   /**
@@ -229,8 +231,15 @@ export async function GET(req: NextRequest) {
   // list is only meaningful (and only rendered) for them. The Admin Portal
   // (requiresOrgAdmin) is excluded: it isn't a user-activatable product — it
   // auto-activates alongside the first app the admin turns on.
+  const grantOnly = new Set<string>(SUPER_ADMIN_GRANT_ONLY_SLUGS);
   const available = allApps
-    .filter((app) => !orgAllowedAppIds.has(app.id) && !app.requiresOrgAdmin)
+    .filter(
+      (app) =>
+        !orgAllowedAppIds.has(app.id) &&
+        !app.requiresOrgAdmin &&
+        // super-admin-grant-only apps never appear in the self-serve trial list
+        !grantOnly.has(app.slug),
+    )
     .map((app) => ({
       ...app,
       baseUrl: resolveBaseUrl(app.slug, app.baseUrl),

@@ -8,6 +8,7 @@ import { isWeekBeforeEditableWindow, earliestEditableWeek } from "@/lib/utils/we
 import { audit, requestContext } from "@/lib/audit";
 import { weeklyTargetForWeek } from "@/lib/utils/kpiHelpers";
 import { withTxRetry } from "@/lib/api/withTxRetry";
+import { emitKpiBelowTarget } from "@/lib/services/workflowEvents";
 
 
 function calcHealthStatus(progress: number, status: string): string {
@@ -132,6 +133,8 @@ export const POST = withOrgAuth<{ id: string }>(async ({ orgId, userId }, req, {
       quarter: true, year: true, teamId: true,
       kpiLevel: true, owner: true, ownerIds: true, parentKPIId: true,
       weeklyTargets: true,
+      // QuikFlow event emission (name + RAG direction for kpi.below_target).
+      name: true, reverseColor: true,
     },
   });
   if (!kpi) return NextResponse.json({ success: false, error: "KPI not found" }, { status: 404 });
@@ -299,6 +302,27 @@ export const POST = withOrgAuth<{ id: string }>(async ({ orgId, userId }, req, {
       ),
     },
     ...requestContext(req),
+  });
+
+  // ── QuikFlow: emit kpi.below_target (fire-and-forget, flag-gated) ──
+  // Never blocks/breaks the save; only fires when the value is RED.
+  emitKpiBelowTarget({
+    orgId,
+    kpiId: params.id,
+    name: kpi.name,
+    value: newWeekValue,
+    weeklyTarget: weeklyTargetForWeek(
+      { weeklyTargets: kpi.weeklyTargets as Record<string, number> | null, qtdGoal: kpi.qtdGoal, target: kpi.target },
+      validated.weekNumber,
+    ),
+    reverseColor: kpi.reverseColor,
+    ownerId: kpi.owner ?? null,
+    ownerIds: (kpi.ownerIds ?? []) as string[],
+    teamId: kpi.teamId,
+    quarter: kpi.quarter,
+    year: kpi.year,
+    weekNumber: validated.weekNumber,
+    previousValue,
   });
 
   return NextResponse.json({ success: true, data: weeklyValue });

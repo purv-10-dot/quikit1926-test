@@ -62,6 +62,7 @@ export const GET = withAdminAuth(async ({ orgId }) => {
     quikcrm: process.env.QUIKCRM_URL,
     quiksupport: process.env.QUIKSUPPORT_URL,
     quikhrms: process.env.QUIKHRMS_URL,
+    quikflow: process.env.QUIKFLOW_URL,
   };
   const isDev = process.env.NODE_ENV !== "production";
   const devLocalhostFallbacks: Record<string, string> = {
@@ -77,6 +78,7 @@ export const GET = withAdminAuth(async ({ orgId }) => {
     quikcrm: "http://localhost:3008",
     quiksupport: "http://localhost:3010",
     quikhrms: "http://localhost:3009",
+    quikflow: "http://localhost:3011",
   };
   function resolveBaseUrl(slug: string, dbBaseUrl: string | null | undefined): string {
     const fromEnv = envBaseUrls[slug];
