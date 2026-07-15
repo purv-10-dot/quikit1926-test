@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import React, { useState, useEffect } from "react";
 import {
   BarChart3,
   Target,
@@ -14,6 +14,9 @@ import {
   Clock,
   CalendarDays,
   Lightbulb,
+  ArrowUp,
+  ArrowDown,
+  ChevronDown,
   Link2 as LinkIcon,
   Plus,
   Pencil,
@@ -346,6 +349,9 @@ export function IdeasTable({
   onAssign,
   headerExtra,
   onRemoveColumn,
+  onReorderColumns,
+  sortByKey,
+  groups,
   footer,
 }: {
   columns: Column[];
@@ -364,6 +370,12 @@ export function IdeasTable({
   onAssign?: (ideaId: string, userId: string | null) => void;
   headerExtra?: React.ReactNode;
   onRemoveColumn?: (key: string) => void;
+  /** Reorder columns by dragging a column header (fromKey dropped before toKey). */
+  onReorderColumns?: (fromKey: string, toKey: string) => void;
+  /** Active sort direction per column key, to highlight sorted headers. */
+  sortByKey?: Record<string, "asc" | "desc">;
+  /** When set, render collapsible group swimlanes instead of a flat list. */
+  groups?: { id: string; label: React.ReactNode; ideas: IdeaRow[] }[];
   footer?: (openAdd: () => void) => React.ReactNode;
 }) {
   const [widths, setWidths] = useState<Record<string, number>>({});
@@ -388,6 +400,14 @@ export function IdeasTable({
   // dragged; `overId` is the row currently hovered, for the drop indicator.
   const [dragId, setDragId] = useState<string | null>(null);
   const [overId, setOverId] = useState<string | null>(null);
+
+  // Column drag-reorder (drag a column header). Summary stays pinned.
+  const [colDragKey, setColDragKey] = useState<string | null>(null);
+  const [colOverKey, setColOverKey] = useState<string | null>(null);
+
+  // Collapsed group ids (grouped mode).
+  const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
+  const toggleGroup = (id: string) => setCollapsed((s) => { const n = new Set(s); n.has(id) ? n.delete(id) : n.add(id); return n; });
 
   // Inline "add ideas" row (opened by the + in the Summary header, JPD-style).
   const [adding, setAdding] = useState(false);
@@ -465,22 +485,34 @@ export function IdeasTable({
             {columns.map((col, idx) => {
               const Icon = columnIcon(col);
               const isSummary = col.key === "summary";
+              const canDragCol = !isSummary && !!onReorderColumns;
               return (
                 <th
                   key={col.key}
+                  draggable={canDragCol}
+                  onDragStart={canDragCol ? (e) => { setColDragKey(col.key); e.dataTransfer.effectAllowed = "move"; } : undefined}
+                  onDragEnd={canDragCol ? () => { setColDragKey(null); setColOverKey(null); } : undefined}
+                  onDragOver={canDragCol ? (e) => { if (colDragKey && colDragKey !== col.key) { e.preventDefault(); setColOverKey(col.key); } } : undefined}
+                  onDragLeave={canDragCol ? () => { if (colOverKey === col.key) setColOverKey(null); } : undefined}
+                  onDrop={canDragCol ? (e) => { e.preventDefault(); if (colDragKey && colDragKey !== col.key) onReorderColumns!(colDragKey, col.key); setColDragKey(null); setColOverKey(null); } : undefined}
                   className={`group/col relative border-b border-r border-gray-200 px-3 py-2 text-left font-medium text-gray-500 ${
-                    isSummary ? `sticky left-[52px] z-20 bg-gray-50 ${FZ_SHADOW}` : ""
-                  }`}
+                    isSummary ? `sticky left-[52px] z-20 bg-gray-50 ${FZ_SHADOW}` : "cursor-grab active:cursor-grabbing"
+                  } ${colDragKey === col.key ? "opacity-40" : ""} ${colOverKey === col.key ? "border-l-2 border-l-blue-500" : ""}`}
                 >
-                  <span className="flex items-center gap-1.5 whitespace-nowrap">
+                  <span className={`flex items-center gap-1.5 whitespace-nowrap ${sortByKey?.[col.key] ? "text-blue-600" : ""}`}>
                     {isSummary ? (
-                      <span className="font-serif text-[13px] italic text-gray-400">Aa</span>
+                      <span className={`font-serif text-[13px] italic ${sortByKey?.[col.key] ? "text-blue-500" : "text-gray-400"}`}>Aa</span>
                     ) : col.field?.key === "score" ? (
-                      <span className="font-serif text-[13px] italic text-gray-500">fx</span>
+                      <span className={`font-serif text-[13px] italic ${sortByKey?.[col.key] ? "text-blue-500" : "text-gray-500"}`}>fx</span>
                     ) : (
-                      <Icon className="h-3.5 w-3.5 text-gray-400" />
+                      <Icon className={`h-3.5 w-3.5 ${sortByKey?.[col.key] ? "text-blue-500" : "text-gray-400"}`} />
                     )}
                     {col.label}
+                    {sortByKey?.[col.key] && (
+                      sortByKey[col.key] === "asc"
+                        ? <ArrowUp className="h-3.5 w-3.5 text-blue-600" />
+                        : <ArrowDown className="h-3.5 w-3.5 text-blue-600" />
+                    )}
                     {idx === 0 ? (
                       // JPD: the + sits right after the "Summary" label (hugging
                       // the column divider) and opens the inline add-idea row.
@@ -550,7 +582,8 @@ export function IdeasTable({
               </td>
             </tr>
           )}
-          {ideas.map((idea) => (
+          {(() => {
+          const renderRow = (idea: IdeaRow) => (
             <tr
               key={idea.id}
               onClick={() => onSetActive(idea.id)}
@@ -619,7 +652,35 @@ export function IdeasTable({
               })}
               <td className="border-b border-gray-200 group-hover:bg-blue-50/40" />
             </tr>
-          ))}
+          );
+
+          // Grouped mode: a collapsible header row per group, then its rows.
+          if (groups) {
+            return groups.map((g) => {
+              const isCollapsed = collapsed.has(g.id);
+              return (
+                <React.Fragment key={g.id}>
+                  <tr className="bg-gray-50/70">
+                    <td className="sticky left-0 z-10 bg-gray-50/70 border-b border-t border-gray-200 px-2 py-1.5">
+                      <button type="button" onClick={() => toggleGroup(g.id)} aria-label="Toggle group" className="rounded p-0.5 text-gray-500 hover:bg-gray-200">
+                        <ChevronDown className={`h-4 w-4 transition-transform ${isCollapsed ? "-rotate-90" : ""}`} />
+                      </button>
+                    </td>
+                    <td colSpan={totalCols - 1} className="border-b border-t border-gray-200 px-3 py-1.5">
+                      <span className="inline-flex items-center gap-2">
+                        {g.label}
+                        <span className="rounded bg-gray-200 px-1.5 py-0.5 text-[11px] font-semibold text-gray-600">{g.ideas.length}</span>
+                      </span>
+                    </td>
+                  </tr>
+                  {!isCollapsed && g.ideas.map(renderRow)}
+                </React.Fragment>
+              );
+            });
+          }
+          // Flat mode.
+          return ideas.map(renderRow);
+          })()}
         </tbody>
       </table>
       {footer?.(() => setAdding(true))}

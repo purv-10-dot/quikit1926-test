@@ -22,7 +22,11 @@ import { IdeaDetailPanel } from "./idea-detail-panel";
 import { FieldEditorPanel } from "./field-editor-panel";
 import { AddColumnMenu } from "./add-column-menu";
 import { FieldsPanel, type FieldEntry } from "./fields-panel";
-import type { MemberLite } from "./assignee-cell";
+import { SortPanel, type SortRule } from "./sort-panel";
+import { FilterPanel, type FilterRule } from "./filter-panel";
+import { GroupByPanel, type GroupByConfig } from "./group-by-panel";
+import { iconForColumn } from "./field-icons";
+import { memberName, type MemberLite } from "./assignee-cell";
 import { SPECIAL_COLUMNS, type IdeasBundle, type IdeaRow, type IdeaFieldValue } from "./ideas-types";
 
 interface MembersResponse {
@@ -58,6 +62,12 @@ export function IdeasTableView({ projectId }: { projectId: string }) {
 
   const [rows, setRows] = useState<IdeaRow[]>([]);
   const [fieldsPanelOpen, setFieldsPanelOpen] = useState(false);
+  const [sortPanelOpen, setSortPanelOpen] = useState(false);
+  const [sortRules, setSortRules] = useState<SortRule[]>([]);
+  const [filterPanelOpen, setFilterPanelOpen] = useState(false);
+  const [filterRules, setFilterRules] = useState<FilterRule[]>([]);
+  const [groupByPanelOpen, setGroupByPanelOpen] = useState(false);
+  const [groupBy, setGroupBy] = useState<GroupByConfig | null>(null);
   const [panelId, setPanelId] = useState<string | null>(null);
   const [panelTab, setPanelTab] = useState<"Overview" | "Comments" | "Insights" | "Delivery">("Overview");
   const [activeId, setActiveId] = useState<string | null>(null);
@@ -105,6 +115,17 @@ export function IdeasTableView({ projectId }: { projectId: string }) {
   const [columnKeys, setColumnKeys] = useState<string[]>([]);
   useEffect(() => { setColumnKeys(savedKeys); }, [savedKeys]);
   const dirty = JSON.stringify(columnKeys) !== JSON.stringify(savedKeys);
+
+  // Sort rules come from the saved view config; kept in local state so admins can
+  // edit + persist. Non-admins still see the shared sort applied.
+  const savedSort = useMemo<SortRule[]>(() => view?.config?.sort ?? [], [view]);
+  useEffect(() => { setSortRules(savedSort); }, [savedSort]);
+
+  const savedFilters = useMemo<FilterRule[]>(() => (view?.config?.filters as FilterRule[]) ?? [], [view]);
+  useEffect(() => { setFilterRules(savedFilters); }, [savedFilters]);
+
+  const savedGroupBy = useMemo<GroupByConfig | null>(() => view?.config?.groupBy ?? null, [view]);
+  useEffect(() => { setGroupBy(savedGroupBy); }, [savedGroupBy]);
 
   const columns = useMemo<Column[]>(() => {
     if (!data) return [];
@@ -159,6 +180,42 @@ export function IdeasTableView({ projectId }: { projectId: string }) {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ columns: next }),
+    });
+    if (res.ok) await qc.invalidateQueries({ queryKey });
+  }
+
+  /** Sort panel change: update rules locally, then persist to the view (admins). */
+  async function onSortChange(next: SortRule[]) {
+    setSortRules(next);
+    if (!view || !canSaveForEveryone) return;
+    const res = await fetch(`/api/projects/${projectId}/ideas/views/${view.id}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ sort: next }),
+    });
+    if (res.ok) await qc.invalidateQueries({ queryKey });
+  }
+
+  /** Filter panel change: update rules locally, then persist to view (admins). */
+  async function onFilterChange(next: FilterRule[]) {
+    setFilterRules(next);
+    if (!view || !canSaveForEveryone) return;
+    const res = await fetch(`/api/projects/${projectId}/ideas/views/${view.id}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ filters: next }),
+    });
+    if (res.ok) await qc.invalidateQueries({ queryKey });
+  }
+
+  /** Group-by change: update locally, then persist to view (admins). */
+  async function onGroupByChange(next: GroupByConfig | null) {
+    setGroupBy(next);
+    if (!view || !canSaveForEveryone) return;
+    const res = await fetch(`/api/projects/${projectId}/ideas/views/${view.id}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ groupBy: next }),
     });
     if (res.ok) await qc.invalidateQueries({ queryKey });
   }
@@ -282,9 +339,129 @@ export function IdeasTableView({ projectId }: { projectId: string }) {
     }
   }
 
-  const visible = search
-    ? rows.filter((r) => r.title.toLowerCase().includes(search.toLowerCase()))
-    : rows;
+  // Apply the view's filter rules (client-side, AND across rules).
+  const ruleFiltered = useMemo(() => {
+    if (filterRules.length === 0 || !data) return rows;
+    const fieldByKeyLocal = new Map(data.fields.map((f) => [f.key, f]));
+    const passes = (idea: IdeaRow, rule: FilterRule): boolean => {
+      // Resolve the idea's raw value for this rule's key.
+      let raw: unknown;
+      if (rule.key === "assignee") raw = idea.assigneeId ?? "__unassigned__";
+      else if (rule.key === "creator") raw = idea.createdBy ?? idea.reporterId ?? "__unassigned__";
+      else {
+        const f = fieldByKeyLocal.get(rule.key);
+        raw = f ? idea.values[f.id] : null;
+      }
+      switch (rule.op) {
+        case "is_true": return raw === true;
+        case "is_false": return raw !== true;
+        case "eq": return Number(raw) === Number(rule.values[0]);
+        case "gte": return Number(raw) >= Number(rule.values[0]);
+        case "lte": return Number(raw) <= Number(rule.values[0]);
+        case "contains": {
+          const needle = String(rule.values[0] ?? "").toLowerCase();
+          return needle === "" || String(raw ?? "").toLowerCase().includes(needle);
+        }
+        case "in":
+        default: {
+          if (rule.values.length === 0) return true; // no selection = no constraint
+          if (Array.isArray(raw)) return raw.some((v) => rule.values.includes(v as string));
+          return rule.values.includes(raw as string);
+        }
+      }
+    };
+    return rows.filter((idea) => filterRules.every((rule) => passes(idea, rule)));
+  }, [rows, filterRules, data]);
+
+  const filtered = search
+    ? ruleFiltered.filter((r) => r.title.toLowerCase().includes(search.toLowerCase()))
+    : ruleFiltered;
+
+  // Apply the multi-level sort (client-side). Each rule resolves a comparable
+  // value from the idea (special keys → row props; otherwise the field value).
+  const visible = useMemo(() => {
+    if (sortRules.length === 0 || !data) return filtered;
+    const fieldByKeyLocal = new Map(data.fields.map((f) => [f.key, f]));
+    const valueFor = (idea: IdeaRow, key: string): string | number => {
+      if (key === "summary") return idea.title.toLowerCase();
+      if (key === "key") return idea.key;
+      if (key === "created") return new Date(idea.createdAt).getTime();
+      if (key === "updated") return new Date(idea.updatedAt).getTime();
+      if (key === "insights") return idea.insightCount ?? 0;
+      if (key === "comments") return idea.commentCount ?? 0;
+      if (key === "delivery") return idea.deliveryCount ?? 0;
+      const f = fieldByKeyLocal.get(key);
+      const v = f ? idea.values[f.id] : null;
+      if (v === null || v === undefined) return "";
+      if (typeof v === "number") return v;
+      if (Array.isArray(v)) return v.join(", ").toLowerCase();
+      return String(v).toLowerCase();
+    };
+    const cmp = (a: IdeaRow, b: IdeaRow): number => {
+      for (const rule of sortRules) {
+        const av = valueFor(a, rule.key);
+        const bv = valueFor(b, rule.key);
+        let d = 0;
+        if (typeof av === "number" && typeof bv === "number") d = av - bv;
+        else d = String(av).localeCompare(String(bv));
+        if (d !== 0) return rule.dir === "asc" ? d : -d;
+      }
+      return 0;
+    };
+    return [...filtered].sort(cmp);
+  }, [filtered, sortRules, data]);
+
+  // Group the visible rows into swimlanes by the group-by field. Multi-select
+  // fields put an idea into each of its values' groups. Ungrouped ideas fall into
+  // an "(empty)" group (unless "Hide empty groups" is on).
+  const groups = useMemo(() => {
+    if (!groupBy || !data) return undefined;
+    const field = data.fields.find((f) => f.key === groupBy.key);
+    const groupVals = (idea: IdeaRow): string[] => {
+      let raw: unknown;
+      if (groupBy.key === "assignee") raw = idea.assigneeId ?? null;
+      else if (groupBy.key === "creator") raw = idea.createdBy ?? idea.reporterId ?? null;
+      else if (groupBy.key === "status") raw = idea.statusId ?? null;
+      else raw = field ? idea.values[field.id] : null;
+      if (raw === null || raw === undefined || raw === "") return ["__empty__"];
+      if (Array.isArray(raw)) return raw.length ? raw.map(String) : ["__empty__"];
+      return [String(raw)];
+    };
+    // Build the ordered set of group keys (field options order, then any extras).
+    const keyOrder: string[] = [];
+    if (field?.options?.length) for (const o of field.options) keyOrder.push(o.value);
+    const bucket = new Map<string, IdeaRow[]>();
+    for (const idea of visible) for (const gv of groupVals(idea)) {
+      if (!bucket.has(gv)) bucket.set(gv, []);
+      bucket.get(gv)!.push(idea);
+      if (!keyOrder.includes(gv)) keyOrder.push(gv);
+    }
+    // Ensure empty group is last.
+    const ordered = keyOrder.filter((k) => k !== "__empty__").concat(bucket.has("__empty__") ? ["__empty__"] : []);
+    const labelFor = (gk: string): React.ReactNode => {
+      if (gk === "__empty__") return <span className="text-sm text-gray-400">(empty)</span>;
+      if (groupBy.key === "assignee" || groupBy.key === "creator") {
+        const m = members.find((x) => x.id === gk);
+        return <span className="text-sm font-medium text-gray-700">{m ? memberName(m) : gk}</span>;
+      }
+      if (groupBy.key === "status") {
+        const s = data.statuses.find((x) => x.id === gk);
+        return <span className="text-sm font-medium text-gray-700">{s?.name ?? gk}</span>;
+      }
+      const opt = field?.options.find((o) => o.value === gk);
+      return <span className="text-sm font-medium text-gray-700">{opt?.label ?? gk}</span>;
+    };
+    return ordered
+      .map((gk) => ({ id: gk, label: labelFor(gk), ideas: bucket.get(gk) ?? [] }))
+      .filter((g) => (groupBy.hideEmpty ? g.ideas.length > 0 : true));
+  }, [groupBy, visible, data, members]);
+
+  // The applied group-by field, for the toolbar chip ("Group by · <field>").
+  const groupByEntry = useMemo(() => {
+    if (!groupBy) return null;
+    return [...inViewEntries, ...availableEntries].find((e) => e.key === groupBy.key) ?? null;
+  }, [groupBy, inViewEntries, availableEntries]);
+
   const panelIdea = rows.find((r) => r.id === panelId) ?? null;
 
   return (
@@ -322,10 +499,27 @@ export function IdeasTableView({ projectId }: { projectId: string }) {
             >
               Create
             </button>
-            <ToolbarButton icon={Plus} label="Group by" />
-            <ToolbarButton icon={Filter} label="Filter" />
-            <ToolbarButton icon={ArrowUpDown} label="Sort" />
-            <ToolbarButton icon={SlidersHorizontal} label={`Fields ${columns.length}`} onClick={() => setFieldsPanelOpen(true)} />
+            <button
+              type="button"
+              onClick={() => setGroupByPanelOpen(true)}
+              className={`inline-flex items-center gap-1.5 rounded border px-2.5 py-1 text-sm ${
+                groupByPanelOpen || groupBy ? "border-blue-300 bg-blue-50 text-blue-700" : "border-gray-200 text-gray-700 hover:bg-gray-50"
+              }`}
+            >
+              <Plus className={`h-3.5 w-3.5 ${groupByPanelOpen || groupBy ? "text-blue-600" : "text-gray-500"}`} />
+              Group by
+              {groupByEntry && (() => {
+                const I = iconForColumn(groupByEntry.key, groupByEntry.field);
+                return (
+                  <span className="inline-flex items-center gap-1 rounded bg-amber-100 px-1.5 py-0.5 text-xs font-medium text-amber-800">
+                    <I className="h-3 w-3" /> {groupByEntry.label}
+                  </span>
+                );
+              })()}
+            </button>
+            <ToolbarButton icon={Filter} label={filterRules.length ? `Filter (${filterRules.length})` : "Filter"} active={filterPanelOpen || filterRules.length > 0} onClick={() => setFilterPanelOpen(true)} />
+            <ToolbarButton icon={ArrowUpDown} label={sortRules.length ? `Sort (${sortRules.length})` : "Sort"} active={sortPanelOpen || sortRules.length > 0} onClick={() => setSortPanelOpen(true)} />
+            <ToolbarButton icon={SlidersHorizontal} label={`Fields ${columns.length}`} active={fieldsPanelOpen} onClick={() => setFieldsPanelOpen(true)} />
             <button type="button" aria-label="View settings" className="rounded border border-gray-200 p-1.5 text-gray-500 hover:bg-gray-50">
               <SlidersHorizontal className="h-3.5 w-3.5" />
             </button>
@@ -384,6 +578,9 @@ export function IdeasTableView({ projectId }: { projectId: string }) {
                 members={members}
                 onAssign={onAssign}
                 onRemoveColumn={removeColumn}
+                onReorderColumns={canSaveForEveryone ? reorderColumn : undefined}
+                sortByKey={Object.fromEntries(sortRules.map((r) => [r.key, r.dir]))}
+                groups={groups}
                 headerExtra={<AddColumnMenu projectId={projectId} options={availableEntries} onAdd={addColumn} onCreated={onFieldCreated} />}
                 footer={(openAdd) => (
                   <div className="flex items-center gap-3 border-t border-gray-200 px-3 py-2 text-sm">
@@ -435,14 +632,54 @@ export function IdeasTableView({ projectId }: { projectId: string }) {
           onClose={() => setFieldsPanelOpen(false)}
         />
       )}
+
+      {sortPanelOpen && (
+        <SortPanel
+          rules={sortRules}
+          fields={inViewEntries}
+          canEdit={canSaveForEveryone}
+          onChange={(r) => void onSortChange(r)}
+          onClose={() => setSortPanelOpen(false)}
+        />
+      )}
+
+      {filterPanelOpen && (
+        <FilterPanel
+          rules={filterRules}
+          fields={[...inViewEntries, ...availableEntries]}
+          members={members}
+          canEdit={canSaveForEveryone}
+          onChange={(r) => void onFilterChange(r)}
+          onClose={() => setFilterPanelOpen(false)}
+        />
+      )}
+
+      {groupByPanelOpen && (
+        <GroupByPanel
+          value={groupBy}
+          fields={[...inViewEntries, ...availableEntries]}
+          canEdit={canSaveForEveryone}
+          onChange={(g) => void onGroupByChange(g)}
+          onEditField={(key) => { const f = data?.fields.find((x) => x.key === key); if (f) setEditFieldId(f.id); }}
+          onClose={() => setGroupByPanelOpen(false)}
+        />
+      )}
     </div>
   );
 }
 
-function ToolbarButton({ icon: Icon, label, onClick }: { icon: typeof Filter; label: string; onClick?: () => void }) {
+function ToolbarButton({ icon: Icon, label, onClick, active }: { icon: typeof Filter; label: string; onClick?: () => void; active?: boolean }) {
   return (
-    <button type="button" onClick={onClick} className="inline-flex items-center gap-1 rounded border border-gray-200 px-2.5 py-1 text-sm text-gray-700 hover:bg-gray-50">
-      <Icon className="h-3.5 w-3.5 text-gray-500" /> {label}
+    <button
+      type="button"
+      onClick={onClick}
+      className={`inline-flex items-center gap-1 rounded border px-2.5 py-1 text-sm ${
+        active
+          ? "border-blue-300 bg-blue-50 text-blue-700"
+          : "border-gray-200 text-gray-700 hover:bg-gray-50"
+      }`}
+    >
+      <Icon className={`h-3.5 w-3.5 ${active ? "text-blue-600" : "text-gray-500"}`} /> {label}
     </button>
   );
 }

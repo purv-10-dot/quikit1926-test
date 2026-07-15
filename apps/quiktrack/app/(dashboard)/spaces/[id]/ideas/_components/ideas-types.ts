@@ -55,7 +55,12 @@ export interface IdeaView {
   id: string;
   name: string;
   type: string;
-  config: { columns?: string[] } | null;
+  config: {
+    columns?: string[];
+    sort?: { key: string; dir: "asc" | "desc" }[];
+    filters?: { key: string; op: string; values: (string | number | boolean)[] }[];
+    groupBy?: { key: string; hideEmpty?: boolean } | null;
+  } | null;
   visibility: string;
   isDefault: boolean;
 }

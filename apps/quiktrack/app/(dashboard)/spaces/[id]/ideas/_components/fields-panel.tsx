@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { X, Search, GripVertical, Settings2 } from "lucide-react";
+import { X, Search, GripVertical } from "lucide-react";
 import { iconForColumn, isFormulaColumn } from "./field-icons";
 import type { Column } from "./ideas-table";
 
@@ -91,12 +91,9 @@ export function FieldsPanel({
     <aside className="fixed inset-y-0 right-0 z-[55] flex w-[440px] max-w-[92vw] flex-col border-l border-gray-200 bg-white shadow-2xl">
       <div className="flex items-center justify-between border-b border-gray-100 px-4 py-3">
         <h3 className="text-lg font-semibold text-gray-900">Fields</h3>
-        <div className="flex items-center gap-1 text-gray-400">
-          <Settings2 className="h-4 w-4" />
-          <button type="button" aria-label="Close" onClick={onClose} className="rounded p-1 hover:bg-gray-100 hover:text-gray-600">
-            <X className="h-4 w-4" />
-          </button>
-        </div>
+        <button type="button" aria-label="Close" onClick={onClose} className="rounded p-1 text-gray-400 hover:bg-gray-100 hover:text-gray-600">
+          <X className="h-4 w-4" />
+        </button>
       </div>
 
       <div className="border-b border-gray-100 p-3">
