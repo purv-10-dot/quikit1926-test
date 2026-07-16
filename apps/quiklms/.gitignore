@@ -44,3 +44,5 @@ next-env.d.ts
 # (left tracked intentionally; comment out the next two lines to ignore them)
 # /QuikSkillsbackend
 # /QuikSkillsfrontend
+.vercel
+.env*
