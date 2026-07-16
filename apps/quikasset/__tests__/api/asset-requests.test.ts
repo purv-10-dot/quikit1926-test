@@ -421,6 +421,46 @@ describe("POST /api/asset-requests/[id]/fulfil", () => {
     expect(mockDb.astAssignment.create).not.toHaveBeenCalled();
   });
 
+  it("409s when the chosen asset's category does not match the request (Laptop ≠ Chair)", async () => {
+    setSession(ADMIN);
+    grantApprover();
+    mockDb.astAssetRequest.findFirst.mockResolvedValue({
+      id: "r1", status: "Approved", itemKind: "Physical", quantity: 1, quantityFulfilled: 0,
+      requesterUserId: "u1", itemType: "Laptop", categoryId: "cat-laptop",
+    } as never);
+    mockDb.astEmployee.findFirst.mockResolvedValue({ id: "emp1" } as never);
+    mockDb.astAsset.findFirst.mockResolvedValue({
+      id: "a1", assetStatus: "Available", itemName: "Office Chair", categoryId: "cat-chair",
+    } as never);
+
+    const res = await FULFIL(makeReq("/api/asset-requests/r1/fulfil", { method: "POST", body: { assetId: "a1" } }), { params: { id: "r1" } });
+    expect(res.status).toBe(409);
+    expect(mockDb.astAssignment.create).not.toHaveBeenCalled();
+  });
+
+  it("fulfils when the chosen asset's category matches the request", async () => {
+    setSession(ADMIN);
+    grantApprover();
+    runTxInline();
+    mockDb.astAssetRequest.findFirst.mockResolvedValue({
+      id: "r1", status: "Approved", itemKind: "Physical", quantity: 1, quantityFulfilled: 0,
+      requesterUserId: "u1", itemType: "Laptop", categoryId: "cat-laptop",
+    } as never);
+    mockDb.astEmployee.findFirst.mockResolvedValue({ id: "emp1" } as never);
+    mockDb.astAsset.findFirst.mockResolvedValue({
+      id: "a1", assetStatus: "Available", itemName: "MacBook", categoryId: "cat-laptop",
+    } as never);
+    mockDb.astAssignment.create.mockResolvedValue({ id: "as1" } as never);
+    mockDb.astAsset.update.mockResolvedValue({ id: "a1" } as never);
+    mockDb.astAssetRequest.update.mockResolvedValue({ id: "r1", status: "Fulfilled", quantityFulfilled: 1 } as never);
+
+    const res = await FULFIL(makeReq("/api/asset-requests/r1/fulfil", { method: "POST", body: { assetId: "a1" } }), { params: { id: "r1" } });
+    expect(res.status).toBe(200);
+    expect(mockDb.astAssignment.create).toHaveBeenCalled();
+    const asg = mockDb.astAssignment.create.mock.calls[0]?.[0] as { data: { assetId: string } };
+    expect(asg.data.assetId).toBe("a1");
+  });
+
   it("422s when the requester has no linked employee and none is supplied", async () => {
     setSession(ADMIN);
     grantApprover();

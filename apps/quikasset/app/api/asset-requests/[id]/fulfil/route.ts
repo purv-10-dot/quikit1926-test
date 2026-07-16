@@ -101,12 +101,21 @@ export const POST = withOrgAuth<{ id: string }>(
 
     const asset = await db.astAsset.findFirst({
       where: { id: assetId, orgId },
-      select: { id: true, assetStatus: true, itemName: true },
+      select: { id: true, assetStatus: true, itemName: true, categoryId: true },
     });
     if (!asset) return NextResponse.json({ success: false, error: "Asset not found" }, { status: 404 });
     if (asset.assetStatus !== "Available") {
       return NextResponse.json(
         { success: false, error: `Asset is not Available (status ${asset.assetStatus}) — not-in-stock handling is manual for now` },
+        { status: 409 },
+      );
+    }
+    // The handed-over unit must match the requested item type — a Laptop request
+    // cannot be fulfilled with a Chair. Enforced server-side (the picker scopes
+    // to the same category client-side). Legacy rows without a categoryId skip this.
+    if (request.categoryId && asset.categoryId !== request.categoryId) {
+      return NextResponse.json(
+        { success: false, error: "Chosen asset does not match the requested item type / category" },
         { status: 409 },
       );
     }

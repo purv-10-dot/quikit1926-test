@@ -3,6 +3,7 @@
 import { useState, useEffect } from "react"
 import { X, PackageCheck, Cloud } from "lucide-react"
 import SearchableSelect from "@/components/assignments/SearchableSelect"
+import { buildFulfilAssetOptions } from "@/lib/assetRequests"
 import type { AssetRequest } from "@/types/assetRequest"
 import type { Asset } from "@/types/asset"
 
@@ -33,7 +34,7 @@ export default function FulfilDialog({ request, onClose, onConfirm }: Props) {
     if (isSubscription) return
     fetch("/api/assets")
       .then((r) => r.json())
-      .then((j) => setAssets((j?.data ?? []).filter((a: Asset) => a.assetStatus === "Available")))
+      .then((j) => setAssets(j?.data ?? []))
       .catch(() => setAssets([]))
   }, [isSubscription])
 
@@ -47,7 +48,10 @@ export default function FulfilDialog({ request, onClose, onConfirm }: Props) {
     setSaving(false)
   }
 
-  const assetOptions = assets.map((a) => ({ value: a.id, label: a.itemName, sublabel: a.itemCode }))
+  // Only Available stock matching this request's category, with serial numbers
+  // so identical-model units are distinguishable. Filtering lives in a helper so
+  // it can be unit-tested; the API enforces the same category match server-side.
+  const assetOptions = buildFulfilAssetOptions(assets, request)
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40 backdrop-blur-sm">
@@ -102,10 +106,13 @@ export default function FulfilDialog({ request, onClose, onConfirm }: Props) {
                 value={assetId}
                 onChange={(v) => { setAssetId(v); setError("") }}
                 placeholder="Select an available asset"
-                searchPlaceholder="Search asset…"
+                searchPlaceholder="Search by name or serial…"
                 error={error}
+                columnHeaders={{ label: "Name", sublabel: "Serial No." }}
               />
-              <p className="text-[10px] text-gray-400">Hands over one unit and assigns it to the requester.</p>
+              <p className="text-[10px] text-gray-400">
+                Only available stock matching “{request.itemType}” — hands over one unit to the requester.
+              </p>
               {error && <p className="text-[10px] text-red-500">{error}</p>}
             </div>
           )}
