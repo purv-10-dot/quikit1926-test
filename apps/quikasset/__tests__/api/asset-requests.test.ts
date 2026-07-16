@@ -171,6 +171,19 @@ describe("POST /api/asset-requests — raise a request", () => {
     });
   });
 
+  it("allows an omitted justification and stores it as empty string", async () => {
+    setSession(MEMBER);
+    grantRequester();
+    mockDb.astCategory.findFirst.mockResolvedValue({ name: "Laptop", baseCategoryId: "b1" } as never);
+    mockDb.astAssetRequest.create.mockResolvedValue({ id: "r1", itemType: "Laptop", status: "Submitted" } as never);
+
+    const { justification: _omit, ...noJustification } = validBody;
+    const res = await CREATE(makeReq("/api/asset-requests", { method: "POST", body: noJustification }), { params: {} });
+    expect(res.status).toBe(201);
+    const call = mockDb.astAssetRequest.create.mock.calls[0]?.[0] as { data: { justification: string } };
+    expect(call.data.justification).toBe("");
+  });
+
   it("400s an invalid body (quantity < 1) without touching the db", async () => {
     setSession(MEMBER);
     grantRequester();

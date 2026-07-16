@@ -4,6 +4,7 @@ import { useEffect, useState } from "react"
 import { X, Package, Cloud, ClipboardList } from "lucide-react"
 import { cn } from "@/lib/utils"
 import SearchableSelect from "@/components/assignments/SearchableSelect"
+import { ASSET_REQUEST_KIND_LABELS } from "@/types/assetRequest"
 import type {
   AssetRequestKind,
   AssetRequestType,
@@ -68,7 +69,7 @@ export default function NewRequestDialog({ onClose, onSubmit }: Props) {
   const [priority, setPriority] = useState<AssetRequestPriority>("Medium")
   const [requiredBy, setRequiredBy] = useState("")
   const [justification, setJustification] = useState("")
-  const [errors, setErrors] = useState<{ categoryId?: string; justification?: string; quantity?: string }>({})
+  const [errors, setErrors] = useState<{ categoryId?: string; quantity?: string }>({})
   const [loadError, setLoadError] = useState("")
   const [saving, setSaving] = useState(false)
 
@@ -94,7 +95,6 @@ export default function NewRequestDialog({ onClose, onSubmit }: Props) {
   function validate() {
     const e: typeof errors = {}
     if (!categoryId) e.categoryId = "Pick an item type"
-    if (!justification.trim()) e.justification = "A justification is required"
     if (!Number.isInteger(quantity) || quantity < 1) e.quantity = "Must be at least 1"
     setErrors(e)
     return Object.keys(e).length === 0
@@ -151,7 +151,7 @@ export default function NewRequestDialog({ onClose, onSubmit }: Props) {
                       : "border-gray-200 text-gray-600 hover:bg-gray-50",
                   )}
                 >
-                  <Icon className="w-3.5 h-3.5" /> {k}
+                  <Icon className="w-3.5 h-3.5" /> {ASSET_REQUEST_KIND_LABELS[k]}
                 </button>
               )
             })}
@@ -210,13 +210,13 @@ export default function NewRequestDialog({ onClose, onSubmit }: Props) {
             </Field>
           </div>
 
-          <Field label="Justification" required error={errors.justification}>
+          <Field label="Justification">
             <textarea
               value={justification}
-              onChange={(e) => { setJustification(e.target.value); setErrors((x) => ({ ...x, justification: "" })) }}
+              onChange={(e) => setJustification(e.target.value)}
               rows={3}
-              placeholder="Why is this needed?"
-              className={cn(inputCls(errors.justification), "resize-none")}
+              placeholder="Optional — why is this needed?"
+              className={cn(inputCls(), "resize-none")}
             />
           </Field>
         </div>

@@ -58,7 +58,7 @@ export default function FulfilDialog({ request, onClose, onConfirm }: Props) {
               {isSubscription ? <Cloud className="w-4 h-4 text-accent-600" /> : <PackageCheck className="w-4 h-4 text-accent-600" />}
             </div>
             <h2 className="text-sm font-semibold text-gray-900">
-              Fulfil {isSubscription ? "subscription" : "from stock"}
+              Fulfil {isSubscription ? "digital asset" : "from stock"}
             </h2>
           </div>
           <button onClick={onClose} className="p-1.5 text-gray-400 hover:text-gray-700 hover:bg-gray-100 rounded-lg transition-colors">

@@ -12,6 +12,7 @@ import { cn } from "@/lib/utils"
 import { RequirePerm } from "@/components/require-perm"
 import ApproveRejectDialog from "@/components/asset-requests/ApproveRejectDialog"
 import FulfilDialog, { type FulfilPayload } from "@/components/asset-requests/FulfilDialog"
+import { ASSET_REQUEST_KIND_LABELS } from "@/types/assetRequest"
 import type { AssetRequest, AssetRequestDecision, AssetRequestStatus } from "@/types/assetRequest"
 
 const STATUS_STYLES: Record<AssetRequestStatus, string> = {
@@ -161,7 +162,7 @@ function PendingApprovalsQueue() {
                         : <Package className="h-3.5 w-3.5 text-gray-400" />}
                       <span className="font-medium text-gray-800">{r.itemType}</span>
                     </div>
-                    <p className="text-[10px] text-gray-400 mt-0.5">{r.itemKind}</p>
+                    <p className="text-[10px] text-gray-400 mt-0.5">{ASSET_REQUEST_KIND_LABELS[r.itemKind]}</p>
                   </td>
                   <td className="px-4 py-3 text-gray-700">{r.quantityFulfilled}/{r.quantity}</td>
                   <td className="px-4 py-3 text-gray-600">{r.requestType}</td>

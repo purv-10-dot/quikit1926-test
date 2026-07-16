@@ -37,7 +37,7 @@ const NAV_SECTIONS: NavSection[] = [
     items: [
       { label: "Dashboard", href: "/dashboard", icon: LayoutDashboard },
       // Member landing — their own assigned assets (any Asset:view holder).
-      { label: "My Assets", href: "/employee-view", icon: Boxes, perm: { resource: "Asset", action: "view" } },
+      { label: "Assets", href: "/employee-view", icon: Boxes, perm: { resource: "Asset", action: "view" } },
       // Employee self-service — raise/track own requests (any AssetRequest:view holder).
       { label: "My Requests", href: "/my-requests", icon: FilePlus2, perm: { resource: "AssetRequest", action: "view" } },
       // Full org register — asset managers/admins only.

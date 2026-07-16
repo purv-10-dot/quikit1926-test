@@ -32,7 +32,7 @@ const createSchema = z.object({
   itemKind: z.enum(["Physical", "Subscription"]).default("Physical"),
   requestType: z.enum(["New", "Replacement", "Upgrade", "Additional"]),
   quantity: z.number().int().min(1, "Quantity must be at least 1"),
-  justification: z.string().trim().min(1, "A justification is required"),
+  justification: z.string().trim().optional(),
   priority: z.enum(["Low", "Medium", "High", "Urgent"]).default("Medium"),
   requiredBy: z.string().trim().min(1).nullable().optional(),
 });
@@ -123,7 +123,7 @@ export const POST = auth.create(async ({ orgId, userId, userEmail }, req) => {
       categoryId,
       requestType,
       quantity,
-      justification,
+      justification: justification || "", // column is non-null; store "" when omitted
       priority,
       requiredBy: requiredBy || null,
       status: "Submitted",

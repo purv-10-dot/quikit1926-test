@@ -9,6 +9,16 @@
 
 export type AssetRequestKind = "Physical" | "Subscription";
 
+/**
+ * Display labels for the item kind. The DB enum values stay "Physical" /
+ * "Subscription" — this is presentation only. Use everywhere the kind is shown
+ * to a user (request form, approval queue, fulfil dialog).
+ */
+export const ASSET_REQUEST_KIND_LABELS: Record<AssetRequestKind, string> = {
+  Physical: "Physical Assets",
+  Subscription: "Digital Assets",
+};
+
 export type AssetRequestType = "New" | "Replacement" | "Upgrade" | "Additional";
 
 export type AssetRequestPriority = "Low" | "Medium" | "High" | "Urgent";
