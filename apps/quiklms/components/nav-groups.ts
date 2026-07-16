@@ -12,7 +12,10 @@ import {
   DollarSign, CreditCard, CalendarClock, Star, ListChecks, PhoneCall,
   TrendingUp, MessageSquare, Video, UserCheck, Send, Palette, HardDrive,
   FileText, BarChart3, LayoutGrid, ClipboardCheck, Inbox, CalendarDays,
-  BookUser, Award, Calendar, Home, CirclePlay, Wallet, Shield,
+  // NOTE: lucide-react@0.294 exports this icon as `PlayCircle`; `CirclePlay` is
+  // the name from later versions and is `undefined` here (breaks the prod build
+  // with "Element type is invalid"). Aliased so usages below stay unchanged.
+  BookUser, Award, Calendar, Home, PlayCircle as CirclePlay, Wallet, Shield,
 } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import type { FeatureSet } from '@/lib/features';
