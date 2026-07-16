@@ -1,9 +1,10 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import { Loader2, Save } from "lucide-react";
+import { Loader2, Save, Lock, Info } from "lucide-react";
 import { ModalShell, PrimaryButton, GhostButton } from "./shared";
 import { PermissionMatrix, permKey } from "./permission-matrix";
+import { allValidPairsGranted } from "./permissions-helpers";
 import type { OrgUser, Role, UserPermissionsData } from "./types";
 
 interface Props {
@@ -168,12 +169,22 @@ export function UserPermissionsModal({ user, roles, onClose, onChanged, showToas
         <div className="space-y-3">
           <div className="flex flex-wrap items-center gap-4 text-[11px] text-gray-500">
             <span className="flex items-center gap-1.5">
-              <span className="inline-block h-2.5 w-2.5 rounded-sm bg-accent-600" /> Granted by role (locked)
+              <Lock className="h-3 w-3 text-accent-600" /> Granted by role (locked)
             </span>
             <span className="flex items-center gap-1.5">
-              <span className="inline-block h-2.5 w-2.5 rounded-sm border border-gray-300" /> Extra grant (toggle)
+              <span className="inline-block h-3 w-3 rounded border border-gray-300" /> Extra grant (toggle)
             </span>
           </div>
+          {allValidPairsGranted(roleGrants) && (
+            <div className="flex items-start gap-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-[11px] text-amber-800">
+              <Info className="mt-0.5 h-3.5 w-3.5 flex-shrink-0" />
+              <span>
+                All permissions are inherited from the{" "}
+                <strong>{roles.find((r) => r.id === appRoleId)?.name ?? "current"}</strong> role — change
+                their role to adjust these. There are no extra grants to add.
+              </span>
+            </div>
+          )}
           <PermissionMatrix value={extras} locked={roleGrants} onToggle={toggle} />
         </div>
       )}
