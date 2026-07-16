@@ -44,8 +44,16 @@ export const POST = auth.create(async ({ orgId, userId: actorId, userEmail }, re
   const { assetId, userId, condition, expectedReturn, notes } = parsed.data;
 
   // tenant ownership guards on referenced rows
-  const assetOwned = await db.astAsset.findFirst({ where: { id: assetId, orgId }, select: { id: true } });
+  const assetOwned = await db.astAsset.findFirst({ where: { id: assetId, orgId }, select: { id: true, assetStatus: true } });
   if (!assetOwned) return NextResponse.json({ success: false, error: "Not found" }, { status: 404 });
+  // Only an Available asset can be assigned — mirrors the Asset Request fulfil
+  // guard; blocks double-assignment / assigning an InRepair or Retired asset.
+  if (assetOwned.assetStatus !== "Available") {
+    return NextResponse.json(
+      { success: false, error: `Asset is not Available (status ${assetOwned.assetStatus}) — it may already be assigned, in repair, or retired.` },
+      { status: 409 },
+    );
+  }
   const employeeOwned = await db.astEmployee.findFirst({ where: { id: userId, orgId }, select: { id: true } });
   if (!employeeOwned) return NextResponse.json({ success: false, error: "Not found" }, { status: 404 });
 

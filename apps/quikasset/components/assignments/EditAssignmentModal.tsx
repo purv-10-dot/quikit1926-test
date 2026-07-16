@@ -5,7 +5,8 @@ import { X, ChevronDown } from "lucide-react"
 import { cn } from "@/lib/utils"
 import type { Assignment } from "@/types/assignment"
 
-const CONDITIONS = ["Excellent", "Good", "Fair", "Poor", "Damaged"]
+// Match the asset condition vocabulary (New, not Excellent) — see AssignAssetModal.
+const CONDITIONS = ["New", "Good", "Fair", "Poor", "Damaged"]
 
 interface Props {
   assignment: Assignment

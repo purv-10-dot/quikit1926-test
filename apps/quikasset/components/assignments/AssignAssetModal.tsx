@@ -7,7 +7,9 @@ import SearchableSelect from "./SearchableSelect"
 import type { Asset } from "@/types/asset"
 import type { User } from "@/types/user"
 
-const CONDITIONS = ["Excellent", "Good", "Fair", "Poor", "Damaged"]
+// Must match the asset condition vocabulary (types/asset + AddEditAssetModal) so
+// the value auto-filled from the asset is always a valid option here.
+const CONDITIONS = ["New", "Good", "Fair", "Poor", "Damaged"]
 
 type FormData = {
   assetId: string
@@ -59,7 +61,9 @@ export default function AssignAssetModal({ onClose, onSave }: Props) {
       const data: Asset[] = j.data ?? []
       setAssets(data.filter((a) => a.assetStatus === "Available"))
     })
-    fetch("/api/users").then((r) => r.json()).then((j) => setUsers(j.data ?? []))
+    // Only active employees are assignable (the shared /api/users list includes
+    // inactive ones for the Users admin screen).
+    fetch("/api/users").then((r) => r.json()).then((j) => setUsers((j.data ?? []).filter((u: User) => u.status === "Active")))
   }, [])
 
   // Auto-fill condition and expectedReturn when asset changes
