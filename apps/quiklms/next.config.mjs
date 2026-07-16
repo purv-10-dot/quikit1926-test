@@ -7,17 +7,13 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 // --- Prisma query-engine resolution for the webpack-bundled server runtime ---
 // Next.js bundles the Prisma client runtime into `.next/server/...`, so its
 // baked `__dirname` no longer sits next to the query-engine `.node` binary and
-// Prisma throws "could not locate the Query Engine for runtime windows". None of
-// Prisma's fallback search paths point back to where the engine actually lives
-// (`lib/generated/prisma/` for the LMS client, `node_modules/.prisma/client/`
-// for the org identity client). Both clients are the SAME Prisma version and so
-// ship a byte-identical engine binary — so pointing the global
-// `PRISMA_QUERY_ENGINE_LIBRARY` env at the LMS copy resolves the engine for every
-// Prisma client in the process at once. Guarded: only set when the var is unset
-// AND the file exists, so it is a no-op wherever the engine already resolves
-// (e.g. the client hasn't been generated, or a platform that locates it natively).
+// Prisma throws "could not locate the Query Engine for runtime windows". Point
+// the global `PRISMA_QUERY_ENGINE_LIBRARY` env at the SHARED `@quikit/database`
+// client's engine (workspace `node_modules/.prisma/client`) so the bundled server
+// resolves it. Guarded: only set when the var is unset AND the file exists, so it
+// is a no-op wherever the engine already resolves natively.
 if (!process.env.PRISMA_QUERY_ENGINE_LIBRARY) {
-  const engineDir = path.resolve(__dirname, 'lib/generated/prisma');
+  const engineDir = path.resolve(__dirname, '../../node_modules/.prisma/client');
   try {
     const engine = fs
       .readdirSync(engineDir)
@@ -41,18 +37,11 @@ const nextConfig = {
   // below (which points every `@prisma/client` import at the LMS client) leaves the
   // idle @quikit/database client harmless. The real client swap is Phase 3.
   transpilePackages: ["@quikit/auth", "@quikit/shared", "@quikit/database"],
-  // Resolve `@prisma/client` to this app's ISOLATED generated client (LMS schema:
-  // Course/MasterCourse, User.tenantId). Without this, the workspace-hoisted root
-  // client (org schema, User.orgId, no Course) wins and every query throws.
-  // Mirrors the tsconfig `@prisma/client` path alias for the runtime bundle.
-  webpack(config) {
-    config.resolve.alias['@prisma/client'] = path.resolve(__dirname, 'lib/generated/prisma');
-    // NOTE: the ORG identity client (lib/org-db.ts) is imported via the
-    // `.prisma/client` specifier, which the alias above does NOT match — so it
-    // correctly resolves to the @quikit/database (org) generated client in both
-    // webpack and Node. No extra alias needed.
-    return config;
-  },
+  // The LMS now uses the SHARED `@quikit/database` client directly (post-fold),
+  // exactly like quikscale/quikcrm/quiktrack — no `@prisma/client` alias to an
+  // isolated LMS client. `@prisma/client` resolves to the workspace client whose
+  // schema holds the `Lms`-prefixed models (app_quiklms) alongside central
+  // identity (auth/quikit).
   // Large media (>150MB) NEVER routes through Next.js API handlers — it goes
   // through S3 presigned PUT/GET or the TUS server in /worker. JSON API bodies
   // stay small; this cap is a safety guard for the few multipart routes.

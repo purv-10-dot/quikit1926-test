@@ -3,7 +3,7 @@ import { route, json } from '@/lib/http';
 import { parseBody } from '@/lib/validation';
 import { requireAuth, requireRoles } from '@/lib/auth/context';
 import { createInstantMeeting } from '@/lib/services/meetings-service';
-import type { MeetingProvider } from '@prisma/client';
+import type { LmsMeetingProvider as MeetingProvider } from '@prisma/client';
 
 const schema = z.object({ provider: z.string().optional(), title: z.string().optional() });
 

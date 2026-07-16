@@ -14,7 +14,7 @@
  */
 import { randomUUID } from 'crypto';
 import { createHmac } from 'crypto';
-import type { Prisma, MeetingProvider, MeetingStatus, MeetingAttendanceRole, DeviceType } from '@prisma/client';
+import type { Prisma, LmsMeetingProvider as MeetingProvider, LmsMeetingStatus as MeetingStatus, LmsMeetingAttendanceRole as MeetingAttendanceRole, LmsDeviceType as DeviceType } from '@prisma/client';
 import { prisma } from '@/lib/prisma';
 import { NotFound, BadRequest } from '@/lib/http';
 
@@ -33,17 +33,17 @@ export interface CreateMeetingDto {
 
 const USER_NAME_SELECT = { id: true, firstName: true, lastName: true } as const;
 
-async function userMap(ids: (string | null | undefined)[], select: Prisma.UserSelect = USER_NAME_SELECT) {
+async function userMap(ids: (string | null | undefined)[], select: Prisma.LmsUserSelect = USER_NAME_SELECT) {
   const unique = Array.from(new Set(ids.filter(Boolean) as string[]));
   if (!unique.length) return new Map<string, Record<string, unknown>>();
-  const users = await prisma.user.findMany({ where: { id: { in: unique } }, select });
+  const users = await prisma.lmsUser.findMany({ where: { id: { in: unique } }, select });
   return new Map(users.map((u) => [u.id, { _id: u.id, ...(u as Record<string, unknown>) }]));
 }
 
-async function classMap(ids: (string | null | undefined)[], select: Prisma.ScheduledClassSelect) {
+async function classMap(ids: (string | null | undefined)[], select: Prisma.LmsScheduledClassSelect) {
   const unique = Array.from(new Set(ids.filter(Boolean) as string[]));
   if (!unique.length) return new Map<string, Record<string, unknown>>();
-  const classes = await prisma.scheduledClass.findMany({ where: { id: { in: unique } }, select });
+  const classes = await prisma.lmsScheduledClass.findMany({ where: { id: { in: unique } }, select });
   return new Map(classes.map((c) => [c.id, { _id: c.id, ...(c as Record<string, unknown>) }]));
 }
 
@@ -67,7 +67,7 @@ export async function createMeeting(orgId: string, dto: CreateMeetingDto, create
 
   let teacherName = '';
   try {
-    const teacher = await prisma.user.findUnique({ where: { id: createdBy }, select: { firstName: true, lastName: true } });
+    const teacher = await prisma.lmsUser.findUnique({ where: { id: createdBy }, select: { firstName: true, lastName: true } });
     if (teacher) teacherName = `${teacher.firstName || ''} ${teacher.lastName || ''}`.trim();
   } catch {
     /* ignore */
@@ -79,7 +79,7 @@ export async function createMeeting(orgId: string, dto: CreateMeetingDto, create
   // Tenant video config for auto-record
   let autoRecord = false;
   try {
-    const tenant = await prisma.tenant.findUnique({ where: { id: orgId } });
+    const tenant = await prisma.lmsTenant.findUnique({ where: { id: orgId } });
     const vc = (tenant as Record<string, any> | null)?.videoConfig;
     if (vc?.meetingSettings?.autoRecord || vc?.settings?.autoRecord) autoRecord = true;
   } catch {
@@ -102,7 +102,7 @@ export async function createMeeting(orgId: string, dto: CreateMeetingDto, create
     throw BadRequest(`Unknown provider "${provider}". Supported: jitsi, zoom, google_meet, manual.`);
   }
 
-  const meeting = await prisma.meeting.create({
+  const meeting = await prisma.lmsMeeting.create({
     data: {
       orgId,
       scheduledClassId: dto.scheduledClassId,
@@ -123,7 +123,7 @@ export async function createMeeting(orgId: string, dto: CreateMeetingDto, create
   });
 
   if (dto.scheduledClassId) {
-    await prisma.scheduledClass.update({ where: { id: dto.scheduledClassId }, data: { meetingId: meeting.id } }).catch(() => {});
+    await prisma.lmsScheduledClass.update({ where: { id: dto.scheduledClassId }, data: { meetingId: meeting.id } }).catch(() => {});
   }
 
   return { _id: meeting.id, ...meeting };
@@ -140,7 +140,7 @@ export async function createInstantMeeting(orgId: string, createdBy: string, pro
     createdBy,
   );
 
-  const updated = await prisma.meeting.update({
+  const updated = await prisma.lmsMeeting.update({
     where: { id: created.id },
     data: { status: 'started', actualStartTime: now },
   });
@@ -149,11 +149,11 @@ export async function createInstantMeeting(orgId: string, createdBy: string, pro
 
 // ═══════════════ LIST MEETINGS ═══════════════
 export async function findAll(orgId: string, filters?: { scheduledClassId?: string; status?: string }) {
-  const where: Prisma.MeetingWhereInput = { orgId };
+  const where: Prisma.LmsMeetingWhereInput = { orgId };
   if (filters?.scheduledClassId) where.scheduledClassId = filters.scheduledClassId;
   if (filters?.status) where.status = filters.status as MeetingStatus;
 
-  const rows = await prisma.meeting.findMany({ where, orderBy: { scheduledStartTime: 'desc' } });
+  const rows = await prisma.lmsMeeting.findMany({ where, orderBy: { scheduledStartTime: 'desc' } });
   const cmap = await classMap(rows.map((r) => r.scheduledClassId), { id: true, title: true, startTime: true, batchId: true });
   const hmap = await userMap([...rows.map((r) => r.hostId), ...rows.map((r) => r.createdBy)]);
 
@@ -168,7 +168,7 @@ export async function findAll(orgId: string, filters?: { scheduledClassId?: stri
 
 // ═══════════════ GET MEETING BY ID ═══════════════
 export async function findOne(orgId: string, meetingId: string) {
-  const meeting = await prisma.meeting.findFirst({ where: { id: meetingId, orgId } });
+  const meeting = await prisma.lmsMeeting.findFirst({ where: { id: meetingId, orgId } });
   if (!meeting) throw NotFound('Meeting not found');
 
   const cmap = await classMap([meeting.scheduledClassId], { id: true, title: true, startTime: true, endTime: true, batchId: true, teacherId: true });
@@ -186,49 +186,49 @@ export async function findOne(orgId: string, meetingId: string) {
 
 // ═══════════════ START MEETING ═══════════════
 export async function startMeeting(orgId: string, meetingId: string) {
-  const result = await prisma.meeting.updateMany({
+  const result = await prisma.lmsMeeting.updateMany({
     where: { id: meetingId, orgId, status: 'scheduled' },
     data: { status: 'started', actualStartTime: new Date() },
   });
   if (result.count === 0) throw BadRequest('Meeting not found or cannot be started');
-  const m = await prisma.meeting.findFirst({ where: { id: meetingId, orgId } });
+  const m = await prisma.lmsMeeting.findFirst({ where: { id: meetingId, orgId } });
   return { _id: m!.id, ...m };
 }
 
 // ═══════════════ END MEETING ═══════════════
 export async function endMeeting(orgId: string, meetingId: string) {
-  const result = await prisma.meeting.updateMany({
+  const result = await prisma.lmsMeeting.updateMany({
     where: { id: meetingId, orgId, status: 'started' },
     data: { status: 'ended', actualEndTime: new Date() },
   });
   if (result.count === 0) throw BadRequest('Meeting not found or not started');
   await calculateAttendanceDurations(meetingId);
-  const m = await prisma.meeting.findFirst({ where: { id: meetingId, orgId } });
+  const m = await prisma.lmsMeeting.findFirst({ where: { id: meetingId, orgId } });
   return { _id: m!.id, ...m };
 }
 
 // ═══════════════ CANCEL MEETING ═══════════════
 export async function cancelMeeting(orgId: string, meetingId: string) {
-  const result = await prisma.meeting.updateMany({
+  const result = await prisma.lmsMeeting.updateMany({
     where: { id: meetingId, orgId, status: { in: ['scheduled', 'started'] } },
     data: { status: 'cancelled' },
   });
   if (result.count === 0) throw BadRequest('Meeting not found or cannot be cancelled');
-  const m = await prisma.meeting.findFirst({ where: { id: meetingId, orgId } });
+  const m = await prisma.lmsMeeting.findFirst({ where: { id: meetingId, orgId } });
   return { _id: m!.id, ...m };
 }
 
 // ═══════════════ TOGGLE RECORDING ═══════════════
 export async function toggleRecording(orgId: string, meetingId: string, enabled: boolean) {
-  const existing = await prisma.meeting.findFirst({ where: { id: meetingId, orgId } });
+  const existing = await prisma.lmsMeeting.findFirst({ where: { id: meetingId, orgId } });
   if (!existing) throw NotFound('Meeting not found');
-  const m = await prisma.meeting.update({ where: { id: meetingId }, data: { recordingEnabled: enabled } });
+  const m = await prisma.lmsMeeting.update({ where: { id: meetingId }, data: { recordingEnabled: enabled } });
   return { _id: m.id, ...m };
 }
 
 // ═══════════════ GET RECORDINGS ═══════════════
 export async function getRecordings(orgId: string, meetingId: string) {
-  const meeting = await prisma.meeting.findFirst({ where: { id: meetingId, orgId } });
+  const meeting = await prisma.lmsMeeting.findFirst({ where: { id: meetingId, orgId } });
   if (!meeting) throw NotFound('Meeting not found');
   return {
     meetingId: meeting.id,
@@ -241,10 +241,10 @@ export async function getRecordings(orgId: string, meetingId: string) {
 
 // ═══════════════ GET ALL RECORDINGS FOR TENANT ═══════════════
 export async function getAllRecordings(orgId: string, filters?: { status?: string; limit?: number }) {
-  const where: Prisma.MeetingWhereInput = { orgId, NOT: { recordingUrls: { isEmpty: true } } };
-  if (filters?.status) where.recordingStatus = filters.status as Prisma.MeetingWhereInput['recordingStatus'];
+  const where: Prisma.LmsMeetingWhereInput = { orgId, NOT: { recordingUrls: { isEmpty: true } } };
+  if (filters?.status) where.recordingStatus = filters.status as Prisma.LmsMeetingWhereInput['recordingStatus'];
 
-  const rows = await prisma.meeting.findMany({
+  const rows = await prisma.lmsMeeting.findMany({
     where,
     orderBy: { actualEndTime: 'desc' },
     take: filters?.limit || 50,
@@ -266,16 +266,16 @@ export async function getAllRecordings(orgId: string, filters?: { status?: strin
 
 // ═══════════════ JOIN MEETING (LOG ATTENDANCE) ═══════════════
 export async function joinMeeting(orgId: string, meetingId: string, userId: string, role: string, deviceType?: string) {
-  const meeting = await prisma.meeting.findFirst({ where: { id: meetingId, orgId } });
+  const meeting = await prisma.lmsMeeting.findFirst({ where: { id: meetingId, orgId } });
   if (!meeting) throw NotFound('Meeting not found');
 
-  const existing = await prisma.meetingAttendance.findFirst({
+  const existing = await prisma.lmsMeetingAttendance.findFirst({
     where: { meetingId, userId, leftAt: null },
   });
   if (existing) return { alreadyJoined: true, attendance: { _id: existing.id, ...existing } };
 
   const now = new Date();
-  const attendance = await prisma.meetingAttendance.create({
+  const attendance = await prisma.lmsMeetingAttendance.create({
     data: {
       meetingId,
       userId,
@@ -286,7 +286,7 @@ export async function joinMeeting(orgId: string, meetingId: string, userId: stri
     },
   });
 
-  await prisma.meeting.update({ where: { id: meetingId }, data: { participantCount: { increment: 1 } } });
+  await prisma.lmsMeeting.update({ where: { id: meetingId }, data: { participantCount: { increment: 1 } } });
 
   return {
     attendance: { _id: attendance.id, ...attendance },
@@ -298,25 +298,25 @@ export async function joinMeeting(orgId: string, meetingId: string, userId: stri
 // ═══════════════ LEAVE MEETING ═══════════════
 export async function leaveMeeting(meetingId: string, userId: string) {
   const now = new Date();
-  const attendance = await prisma.meetingAttendance.findFirst({ where: { meetingId, userId, leftAt: null } });
+  const attendance = await prisma.lmsMeetingAttendance.findFirst({ where: { meetingId, userId, leftAt: null } });
   if (!attendance) return null;
 
   const history = Array.isArray(attendance.joinLeaveHistory) ? (attendance.joinLeaveHistory as unknown[]) : [];
   const duration = Math.round((now.getTime() - new Date(attendance.joinedAt).getTime()) / 60000);
-  const updated = await prisma.meetingAttendance.update({
+  const updated = await prisma.lmsMeetingAttendance.update({
     where: { id: attendance.id },
     data: { leftAt: now, durationMinutes: duration, joinLeaveHistory: [...history, { action: 'leave', timestamp: now.toISOString() }] as Prisma.InputJsonValue },
   });
-  await prisma.meeting.update({ where: { id: meetingId }, data: { participantCount: { decrement: 1 } } });
+  await prisma.lmsMeeting.update({ where: { id: meetingId }, data: { participantCount: { decrement: 1 } } });
   return { _id: updated.id, ...updated };
 }
 
 // ═══════════════ GET MEETING ATTENDANCE ═══════════════
 export async function getMeetingAttendance(orgId: string, meetingId: string) {
-  const meeting = await prisma.meeting.findFirst({ where: { id: meetingId, orgId } });
+  const meeting = await prisma.lmsMeeting.findFirst({ where: { id: meetingId, orgId } });
   if (!meeting) throw NotFound('Meeting not found');
 
-  const rows = await prisma.meetingAttendance.findMany({ where: { meetingId }, orderBy: { joinedAt: 'asc' } });
+  const rows = await prisma.lmsMeetingAttendance.findMany({ where: { meetingId }, orderBy: { joinedAt: 'asc' } });
   const umap = await userMap(rows.map((r) => r.userId), { id: true, firstName: true, lastName: true, email: true, role: true });
   return rows.map((r) => ({ _id: r.id, ...r, userId: umap.get(r.userId) ?? r.userId }));
 }
@@ -324,11 +324,11 @@ export async function getMeetingAttendance(orgId: string, meetingId: string) {
 // ═══════════════ ATTENDANCE DURATION HELPER ═══════════════
 async function calculateAttendanceDurations(meetingId: string) {
   const now = new Date();
-  const open = await prisma.meetingAttendance.findMany({ where: { meetingId, leftAt: null } });
+  const open = await prisma.lmsMeetingAttendance.findMany({ where: { meetingId, leftAt: null } });
   for (const att of open) {
     const history = Array.isArray(att.joinLeaveHistory) ? (att.joinLeaveHistory as unknown[]) : [];
     const duration = Math.round((now.getTime() - new Date(att.joinedAt).getTime()) / 60000);
-    await prisma.meetingAttendance.update({
+    await prisma.lmsMeetingAttendance.update({
       where: { id: att.id },
       data: { leftAt: now, durationMinutes: duration, joinLeaveHistory: [...history, { action: 'leave', timestamp: now.toISOString() }] as Prisma.InputJsonValue },
     });
@@ -346,9 +346,9 @@ export function verifyZoomUrlValidation(plainToken: string) {
 export async function handleZoomWebhook(event: string, payload: Record<string, any>) {
   if (event === 'meeting.ended') {
     const meetingId = String(payload?.object?.id);
-    const meeting = await prisma.meeting.findFirst({ where: { externalMeetingId: meetingId } });
+    const meeting = await prisma.lmsMeeting.findFirst({ where: { externalMeetingId: meetingId } });
     if (meeting && meeting.status === 'started') {
-      await prisma.meeting.update({ where: { id: meeting.id }, data: { status: 'ended', actualEndTime: new Date() } });
+      await prisma.lmsMeeting.update({ where: { id: meeting.id }, data: { status: 'ended', actualEndTime: new Date() } });
       await calculateAttendanceDurations(meeting.id);
     }
   }
@@ -381,9 +381,9 @@ export async function handleZoomWebhook(event: string, payload: Record<string, a
         : recordingFiles.filter((f) => f.status === 'completed').map((f) => f.play_url || f.download_url).filter(Boolean);
 
     if (finalUrls.length > 0) {
-      const meeting = await prisma.meeting.findFirst({ where: { externalMeetingId: meetingId } });
+      const meeting = await prisma.lmsMeeting.findFirst({ where: { externalMeetingId: meetingId } });
       if (meeting) {
-        await prisma.meeting.update({ where: { id: meeting.id }, data: { recordingUrls: finalUrls, recordingStatus: 'available' } });
+        await prisma.lmsMeeting.update({ where: { id: meeting.id }, data: { recordingUrls: finalUrls, recordingStatus: 'available' } });
       }
     }
   }
@@ -393,15 +393,15 @@ export async function handleZoomWebhook(event: string, payload: Record<string, a
 
 async function handleWebhookParticipantJoin(externalMeetingId: string, email: string) {
   try {
-    const meeting = await prisma.meeting.findFirst({ where: { externalMeetingId } });
+    const meeting = await prisma.lmsMeeting.findFirst({ where: { externalMeetingId } });
     if (!meeting) return;
-    const user = await prisma.user.findFirst({ where: { email } });
+    const user = await prisma.lmsUser.findFirst({ where: { email } });
     if (!user) return;
 
-    const existing = await prisma.meetingAttendance.findFirst({ where: { meetingId: meeting.id, userId: user.id, leftAt: null } });
+    const existing = await prisma.lmsMeetingAttendance.findFirst({ where: { meetingId: meeting.id, userId: user.id, leftAt: null } });
     if (!existing) {
       const now = new Date();
-      await prisma.meetingAttendance.create({
+      await prisma.lmsMeetingAttendance.create({
         data: {
           meetingId: meeting.id,
           userId: user.id,
@@ -410,7 +410,7 @@ async function handleWebhookParticipantJoin(externalMeetingId: string, email: st
           joinLeaveHistory: [{ action: 'join', timestamp: now.toISOString() }],
         },
       });
-      await prisma.meeting.update({ where: { id: meeting.id }, data: { participantCount: { increment: 1 } } });
+      await prisma.lmsMeeting.update({ where: { id: meeting.id }, data: { participantCount: { increment: 1 } } });
     }
   } catch {
     /* ignore webhook errors, matching legacy resilience */
@@ -419,9 +419,9 @@ async function handleWebhookParticipantJoin(externalMeetingId: string, email: st
 
 async function handleWebhookParticipantLeave(externalMeetingId: string, email: string) {
   try {
-    const meeting = await prisma.meeting.findFirst({ where: { externalMeetingId } });
+    const meeting = await prisma.lmsMeeting.findFirst({ where: { externalMeetingId } });
     if (!meeting) return;
-    const user = await prisma.user.findFirst({ where: { email } });
+    const user = await prisma.lmsUser.findFirst({ where: { email } });
     if (!user) return;
     await leaveMeeting(meeting.id, user.id);
   } catch {
@@ -431,7 +431,7 @@ async function handleWebhookParticipantLeave(externalMeetingId: string, email: s
 
 // ═══════════════ LIVE CLASS STATUS (for parents) ═══════════════
 export async function getLiveClassStatus(orgId: string, studentId: string) {
-  const batches = await prisma.batch.findMany({
+  const batches = await prisma.lmsBatch.findMany({
     where: { orgId, status: 'active', students: { some: { studentId } } },
     select: { id: true },
   });
@@ -443,13 +443,13 @@ export async function getLiveClassStatus(orgId: string, studentId: string) {
   const tomorrow = new Date(today);
   tomorrow.setDate(tomorrow.getDate() + 1);
 
-  const todayClasses = await prisma.scheduledClass.findMany({
+  const todayClasses = await prisma.lmsScheduledClass.findMany({
     where: { batchId: { in: batchIds }, startTime: { gte: today, lt: tomorrow }, status: { not: 'cancelled' } },
     select: { id: true, startTime: true, endTime: true, status: true, batchId: true, teacherId: true },
   });
 
   const bmap = new Map(
-    (await prisma.batch.findMany({ where: { id: { in: todayClasses.map((c) => c.batchId) } }, select: { id: true, name: true, subject: true, grade: true } })).map(
+    (await prisma.lmsBatch.findMany({ where: { id: { in: todayClasses.map((c) => c.batchId) } }, select: { id: true, name: true, subject: true, grade: true } })).map(
       (b) => [b.id, { _id: b.id, ...b }],
     ),
   );
@@ -457,7 +457,7 @@ export async function getLiveClassStatus(orgId: string, studentId: string) {
 
   const results: Record<string, unknown>[] = [];
   for (const cls of todayClasses) {
-    const meeting = await prisma.meeting.findFirst({
+    const meeting = await prisma.lmsMeeting.findFirst({
       where: { scheduledClassId: cls.id },
       select: { status: true, joinUrl: true, actualStartTime: true, participantCount: true },
     });

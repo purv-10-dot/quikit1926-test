@@ -24,7 +24,7 @@ export const PATCH = route(async (req, { params }) => {
   await findTenant(params!.id);
   const dto = await parseBody(req, z.object({}).passthrough());
 
-  const tenant = await prisma.tenant.update({
+  const tenant = await prisma.lmsTenant.update({
     where: { id: params!.id },
     data: { videoConfig: dto as object },
   });

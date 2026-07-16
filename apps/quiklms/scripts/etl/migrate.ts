@@ -104,7 +104,7 @@ async function main() {
     logoUrl: m.logoUrl ?? null, faviconUrl: m.faviconUrl ?? null, primaryColor: m.primaryColor ?? '#3B82F6', secondaryColor: m.secondaryColor ?? '#1E40AF',
     auth0OrganizationId: m.auth0OrganizationId ?? null, auth0UserId: m.auth0UserId ?? null, loginUrl: m.loginUrl ?? null,
     createdAt: dReq(m.createdAt), updatedAt: dReq(m.updatedAt),
-  }), (data) => prisma.tenant.create({ data }));
+  }), (data) => prisma.lmsTenant.create({ data }));
 
   // ───────────────── USERS (+ availableSlots child, user_parents join) ─────────────────
   if (run('users')) {
@@ -137,7 +137,7 @@ async function main() {
     for (const m of docs) {
       for (const pid of arr<ObjectId>(m.parentIds)) {
         const parentId = refId(pid), childId = refId(m._id);
-        if (parentId && childId) await prisma.userParent.upsert({ where: { parentId_childId: { parentId, childId } }, create: { parentId, childId }, update: {} }).catch(() => {});
+        if (parentId && childId) await prisma.lmsUserParent.upsert({ where: { parentId_childId: { parentId, childId } }, create: { parentId, childId }, update: {} }).catch(() => {});
       }
     }
     saveIdMap();
@@ -174,7 +174,7 @@ async function main() {
     for (const m of docs) {
       for (const p of arr<ObjectId>(m.prerequisites)) {
         const courseId = refId(m._id), prerequisiteId = refId(p);
-        if (courseId && prerequisiteId) await prisma.coursePrerequisite.upsert({ where: { courseId_prerequisiteId: { courseId, prerequisiteId } }, create: { courseId, prerequisiteId }, update: {} }).catch(() => {});
+        if (courseId && prerequisiteId) await prisma.lmsCoursePrerequisite.upsert({ where: { courseId_prerequisiteId: { courseId, prerequisiteId } }, create: { courseId, prerequisiteId }, update: {} }).catch(() => {});
       }
     }
     saveIdMap();
@@ -212,7 +212,7 @@ async function main() {
     approvedBy: m.approvedBy ? refId(m.approvedBy) : null, approvalDate: d(m.approvalDate), rejectionReason: m.rejectionReason ?? null,
     createdAt: dReq(m.createdAt), updatedAt: dReq(m.updatedAt),
     selectedTenants: { create: arr<ObjectId>(m.selectedTenants).map((t) => ({ tenantId: refId(t)! })) },
-  }), (data) => prisma.masterCourse.create({ data }));
+  }), (data) => prisma.lmsMasterCourse.create({ data }));
 
   // ───────────────── ASSESSMENTS ─────────────────
   if (run('assessments')) await migrateSimple(db, 'assessments', (m) => ({
@@ -220,7 +220,7 @@ async function main() {
     passingScore: m.passingScore ?? 75, retryLimit: m.retryLimit ?? 3, timeLimit: m.timeLimit ?? null, randomizeQuestions: m.randomizeQuestions ?? false,
     questionsToShow: m.questionsToShow ?? null, additionalQuestions: m.additionalQuestions ?? [], additionalQuestionsToInclude: m.additionalQuestionsToInclude ?? null,
     isMaster: m.isMaster ?? false, createdAt: dReq(m.createdAt), updatedAt: dReq(m.updatedAt),
-  }), (data) => prisma.assessment.create({ data }));
+  }), (data) => prisma.lmsAssessment.create({ data }));
 
   // ───────────────── PROGRESSES ─────────────────
   if (run('progress')) await migrateSimple(db, 'progresses', (m) => ({
@@ -228,7 +228,7 @@ async function main() {
     status: m.status ?? 'Not Started', completionPercentage: m.completionPercentage ?? 0, scorePercentage: m.scorePercentage ?? null, quizScore: m.quizScore ?? null,
     isPassed: m.isPassed ?? false, completedAt: d(m.completedAt), startedAt: dReq(m.startedAt), lessonProgress: m.lessonProgress ?? null,
     createdAt: dReq(m.createdAt), updatedAt: dReq(m.updatedAt),
-  }), (data) => prisma.progress.create({ data }), { statusMap: PROGRESS_STATUS });
+  }), (data) => prisma.lmsProgress.create({ data }), { statusMap: PROGRESS_STATUS });
 
   // ═══════════════════════════════════════════════════════════════════════════
   // PHASE 2 — operational data (school ops, credits, meetings, messaging, etc.)
@@ -238,26 +238,26 @@ async function main() {
   if (run('counters')) await migrateSimple(db, 'counters', (m) => ({
     id: uid(m._id), tenantId: refId(m.tenantId)!, type: m.type, seq: m.seq ?? 0,
     createdAt: dReq(m.createdAt), updatedAt: dReq(m.updatedAt),
-  }), (data) => prisma.counter.create({ data }));
+  }), (data) => prisma.lmsCounter.create({ data }));
 
   // ───────────────── SECTIONS ─────────────────
   if (run('sections')) await migrateSimple(db, 'sections', (m) => ({
     id: uid(m._id), tenantId: refId(m.tenantId)!, grade: m.grade, name: m.name,
     createdAt: dReq(m.createdAt), updatedAt: dReq(m.updatedAt),
-  }), (data) => prisma.section.create({ data }));
+  }), (data) => prisma.lmsSection.create({ data }));
 
   // ───────────────── SUBJECTS ─────────────────
   if (run('subjects')) await migrateSimple(db, 'subjects', (m) => ({
     id: uid(m._id), tenantId: refId(m.tenantId)!, name: m.name, isDefault: m.isDefault ?? false,
     createdAt: dReq(m.createdAt), updatedAt: dReq(m.updatedAt),
-  }), (data) => prisma.subject.create({ data }));
+  }), (data) => prisma.lmsSubject.create({ data }));
 
   // ───────────────── EMAIL TEMPLATES ─────────────────
   if (run('emailtemplates')) await migrateSimple(db, 'emailtemplates', (m) => ({
     id: uid(m._id), type: EMAIL_TEMPLATE_TYPE_MAP[m.type as string] ?? m.type,
     subject: m.subject, htmlContent: m.htmlContent,
     createdAt: dReq(m.createdAt), updatedAt: dReq(m.updatedAt),
-  }), (data) => prisma.emailTemplate.create({ data }));
+  }), (data) => prisma.lmsEmailTemplate.create({ data }));
 
   // ───────────────── COURSE ASSIGNMENTS ─────────────────
   if (run('courseassignments')) await migrateSimple(db, 'courseassignments', (m) => ({
@@ -266,7 +266,7 @@ async function main() {
     dueDate: d(m.dueDate), isMandatory: m.isMandatory ?? true,
     assignedBy: refId(m.assignedBy)!, assignedAt: dReq(m.assignedAt ?? m.createdAt),
     createdAt: dReq(m.createdAt), updatedAt: dReq(m.updatedAt),
-  }), (data) => prisma.courseAssignment.create({ data }));
+  }), (data) => prisma.lmsCourseAssignment.create({ data }));
 
   // ───────────────── TENANT LOGS ─────────────────
   if (run('tenantlogs')) await migrateSimple(db, 'tenantlogs', (m) => ({
@@ -275,7 +275,7 @@ async function main() {
     description: m.description, performedBy: refId(m.performedBy)!,
     metadata: m.metadata ?? null, ipAddress: m.ipAddress ?? null,
     createdAt: dReq(m.createdAt), updatedAt: dReq(m.updatedAt),
-  }), (data) => prisma.tenantLog.create({ data }));
+  }), (data) => prisma.lmsTenantLog.create({ data }));
 
   // ───────────────── PRIVACY AUDIT LOGS ─────────────────
   if (run('privacyauditlogs')) await migrateSimple(db, 'privacyauditlogs', (m) => ({
@@ -284,7 +284,7 @@ async function main() {
     fieldsStripped: arr<string>(m.fieldsStripped), recordsAffected: m.recordsAffected ?? 0,
     ipAddress: m.ipAddress ?? null, userAgent: m.userAgent ?? null,
     createdAt: dReq(m.createdAt), updatedAt: dReq(m.updatedAt),
-  }), (data) => prisma.privacyAuditLog.create({ data }));
+  }), (data) => prisma.lmsPrivacyAuditLog.create({ data }));
 
   // ───────────────── CERTIFICATES (+selectedTenants) ─────────────────
   if (run('certificates')) {
@@ -323,7 +323,7 @@ async function main() {
     expiresAt: d(m.expiresAt), score: m.score ?? null, passingScore: m.passingScore ?? null,
     passed: m.passed ?? null,
     createdAt: dReq(m.createdAt), updatedAt: dReq(m.updatedAt),
-  }), (data) => prisma.certificateIssued.create({ data }));
+  }), (data) => prisma.lmsCertificateIssued.create({ data }));
 
   // ───────────────── QUIZ ATTEMPTS ─────────────────
   if (run('quizattempts')) await migrateSimple(db, 'quizattempts', (m) => ({
@@ -334,7 +334,7 @@ async function main() {
     passed: m.passed ?? false, submittedAt: dReq(m.submittedAt ?? m.createdAt),
     proctoringSessionId: m.proctoringSessionId ? refId(m.proctoringSessionId) : null,
     createdAt: dReq(m.createdAt), updatedAt: dReq(m.updatedAt),
-  }), (data) => prisma.quizAttempt.create({ data }));
+  }), (data) => prisma.lmsQuizAttempt.create({ data }));
 
   // ───────────────── NON-TEACHING TASKS ─────────────────
   if (run('nonteachingtasks')) await migrateSimple(db, 'nonteachingtasks', (m) => ({
@@ -346,7 +346,7 @@ async function main() {
     rejectionReason: m.rejectionReason ?? null, completionNotes: m.completionNotes ?? null,
     hoursSpent: m.hoursSpent ?? null, attachmentUrls: arr<string>(m.attachmentUrls),
     createdAt: dReq(m.createdAt), updatedAt: dReq(m.updatedAt),
-  }), (data) => prisma.nonTeachingTask.create({ data }));
+  }), (data) => prisma.lmsNonTeachingTask.create({ data }));
 
   // ───────────────── TUTORING REQUESTS ─────────────────
   if (run('tutoringrequests')) await migrateSimple(db, 'tutoringrequests', (m) => ({
@@ -361,7 +361,7 @@ async function main() {
     creditCostSnapshot: m.creditCostSnapshot ?? null, teacherRateSnapshot: m.teacherRateSnapshot ?? null,
     creditHoldId: m.creditHoldId ? refId(m.creditHoldId) : null,
     createdAt: dReq(m.createdAt), updatedAt: dReq(m.updatedAt),
-  }), (data) => prisma.tutoringRequest.create({ data }));
+  }), (data) => prisma.lmsTutoringRequest.create({ data }));
 
   // ───────────────── CREDIT PACKAGES ─────────────────
   if (run('creditpackages')) await migrateSimple(db, 'creditpackages', (m) => ({
@@ -372,7 +372,7 @@ async function main() {
     status: m.status ?? 'active', price: m.price ?? null, notes: m.notes ?? null,
     allocatedBy: m.allocatedBy ? refId(m.allocatedBy) : null,
     createdAt: dReq(m.createdAt), updatedAt: dReq(m.updatedAt),
-  }), (data) => prisma.creditPackage.create({ data }));
+  }), (data) => prisma.lmsCreditPackage.create({ data }));
 
   // ───────────────── CREDIT TRANSACTIONS ─────────────────
   if (run('credittransactions')) await migrateSimple(db, 'credittransactions', (m) => ({
@@ -383,7 +383,7 @@ async function main() {
     relatedAttendanceId: m.relatedAttendanceId ? refId(m.relatedAttendanceId) : null,
     notes: m.notes ?? null, processedBy: m.processedBy ? refId(m.processedBy) : null,
     createdAt: dReq(m.createdAt), updatedAt: dReq(m.updatedAt),
-  }), (data) => prisma.creditTransaction.create({ data }));
+  }), (data) => prisma.lmsCreditTransaction.create({ data }));
 
   // ───────────────── BATCHES (+schedule +students +substituteTeachers) ─────────────────
   if (run('batches')) {
@@ -431,7 +431,7 @@ async function main() {
     attendanceMarkedAt: d(m.attendanceMarkedAt), classNotes: m.classNotes ?? null,
     isRecurring: m.isRecurring ?? false, recurringPattern: m.recurringPattern ?? null,
     createdAt: dReq(m.createdAt), updatedAt: dReq(m.updatedAt),
-  }), (data) => prisma.scheduledClass.create({ data }));
+  }), (data) => prisma.lmsScheduledClass.create({ data }));
 
   // ───────────────── ATTENDANCES ─────────────────
   if (run('attendances')) await migrateSimple(db, 'attendances', (m) => ({
@@ -444,7 +444,7 @@ async function main() {
     editedBy: m.editedBy ? refId(m.editedBy) : null,
     editReason: m.editReason ?? null, editedAt: d(m.editedAt),
     createdAt: dReq(m.createdAt), updatedAt: dReq(m.updatedAt),
-  }), (data) => prisma.attendance.create({ data }));
+  }), (data) => prisma.lmsAttendance.create({ data }));
 
   // ───────────────── HOMEWORKS ─────────────────
   if (run('homeworks')) await migrateSimple(db, 'homeworks', (m) => ({
@@ -459,7 +459,7 @@ async function main() {
     status: m.status ?? 'published', type: m.type ?? 'assignment',
     publishedAt: d(m.publishedAt),
     createdAt: dReq(m.createdAt), updatedAt: dReq(m.updatedAt),
-  }), (data) => prisma.homework.create({ data }));
+  }), (data) => prisma.lmsHomework.create({ data }));
 
   // ───────────────── HOMEWORK SUBMISSIONS (+rubricScores) ─────────────────
   if (run('homeworksubmissions')) {
@@ -501,7 +501,7 @@ async function main() {
     title: m.title ?? null, isInstant: m.isInstant ?? false,
     participantCount: m.participantCount ?? 0,
     createdAt: dReq(m.createdAt), updatedAt: dReq(m.updatedAt),
-  }), (data) => prisma.meeting.create({ data }));
+  }), (data) => prisma.lmsMeeting.create({ data }));
 
   // ───────────────── MEETING ATTENDANCES ─────────────────
   if (run('meetingattendances')) await migrateSimple(db, 'meetingattendances', (m) => ({
@@ -510,7 +510,7 @@ async function main() {
     durationMinutes: m.durationMinutes ?? null, deviceType: m.deviceType ?? 'unknown',
     deviceInfo: m.deviceInfo ?? null, joinLeaveHistory: m.joinLeaveHistory ?? [],
     createdAt: dReq(m.createdAt), updatedAt: dReq(m.updatedAt),
-  }), (data) => prisma.meetingAttendance.create({ data }));
+  }), (data) => prisma.lmsMeetingAttendance.create({ data }));
 
   // ───────────────── TEACHER LEVELS (+levelHistory) ─────────────────
   if (run('teacherlevels')) {
@@ -564,7 +564,7 @@ async function main() {
       for (const cid of arr<ObjectId>(m.completedClassIds)) {
         const payoutId = refId(m._id), scheduledClassId = refId(cid);
         if (payoutId && scheduledClassId) {
-          await prisma.payoutCompletedClass.upsert({
+          await prisma.lmsPayoutCompletedClass.upsert({
             where: { payoutId_scheduledClassId: { payoutId, scheduledClassId } },
             create: { payoutId, scheduledClassId },
             update: {},
@@ -633,7 +633,7 @@ async function main() {
     selectedAdditionalIndices: arr<number>(m.selectedAdditionalIndices),
     questionManifest: m.questionManifest ?? null,
     createdAt: dReq(m.createdAt), updatedAt: dReq(m.updatedAt),
-  }), (data) => prisma.quizProctoringSession.create({ data }));
+  }), (data) => prisma.lmsQuizProctoringSession.create({ data }));
 
   // ───────────────── QUIZ PROCTORING LOGS ─────────────────
   if (run('quizproctoringlogs')) await migrateSimple(db, 'quizproctoringlogs', (m) => ({
@@ -641,7 +641,7 @@ async function main() {
     learnerId: refId(m.learnerId)!, eventType: m.eventType,
     timestamp: dReq(m.timestamp), metadata: m.metadata ?? null, severity: m.severity ?? 'low',
     createdAt: dReq(m.createdAt), updatedAt: dReq(m.updatedAt),
-  }), (data) => prisma.quizProctoringLog.create({ data }));
+  }), (data) => prisma.lmsQuizProctoringLog.create({ data }));
 
   // ───────────────── QUIZ INCIDENT REPORTS ─────────────────
   if (run('quizincidentreports')) await migrateSimple(db, 'quizincidentreports', (m) => ({
@@ -651,7 +651,7 @@ async function main() {
     flagSummary: m.flagSummary ?? {}, disposition: m.disposition ?? 'pending',
     action: m.action ?? 'none', remarks: m.remarks ?? null,
     createdAt: dReq(m.createdAt), updatedAt: dReq(m.updatedAt),
-  }), (data) => prisma.quizIncidentReport.create({ data }));
+  }), (data) => prisma.lmsQuizIncidentReport.create({ data }));
 
   // ───────────────── CONVERSATIONS (+participants) ─────────────────
   if (run('conversations')) {
@@ -720,57 +720,57 @@ async function main() {
   // ── actual postgres row counts ────────────────────────────────────────────
   console.log('\n[etl] ─── postgres row counts ───');
   const pgCounts = await Promise.all([
-    prisma.tenant.count().then((n) => ['tenants', n]),
-    prisma.user.count().then((n) => ['users', n]),
-    prisma.userAvailabilitySlot.count().then((n) => ['user_availability_slots', n]),
-    prisma.userParent.count().then((n) => ['user_parents', n]),
-    prisma.group.count().then((n) => ['groups', n]),
-    prisma.groupMember.count().then((n) => ['group_members', n]),
-    prisma.course.count().then((n) => ['courses', n]),
-    prisma.module.count().then((n) => ['modules', n]),
-    prisma.lesson.count().then((n) => ['lessons', n]),
-    prisma.masterCourse.count().then((n) => ['master_courses', n]),
-    prisma.masterCourseSelectedTenant.count().then((n) => ['master_course_selected_tenants', n]),
-    prisma.assessment.count().then((n) => ['assessments', n]),
-    prisma.progress.count().then((n) => ['progress', n]),
-    prisma.counter.count().then((n) => ['counters', n]),
-    prisma.section.count().then((n) => ['sections', n]),
-    prisma.subject.count().then((n) => ['subjects', n]),
-    prisma.emailTemplate.count().then((n) => ['email_templates', n]),
-    prisma.courseAssignment.count().then((n) => ['course_assignments', n]),
-    prisma.tenantLog.count().then((n) => ['tenant_logs', n]),
-    prisma.privacyAuditLog.count().then((n) => ['privacy_audit_logs', n]),
-    prisma.certificate.count().then((n) => ['certificates', n]),
-    prisma.certificateIssued.count().then((n) => ['certificates_issued', n]),
-    prisma.quizAttempt.count().then((n) => ['quiz_attempts', n]),
-    prisma.nonTeachingTask.count().then((n) => ['non_teaching_tasks', n]),
-    prisma.tutoringRequest.count().then((n) => ['tutoring_requests', n]),
-    prisma.creditPackage.count().then((n) => ['credit_packages', n]),
-    prisma.creditTransaction.count().then((n) => ['credit_transactions', n]),
-    prisma.batch.count().then((n) => ['batches', n]),
-    prisma.batchSchedule.count().then((n) => ['batch_schedule', n]),
-    prisma.batchStudent.count().then((n) => ['batch_students', n]),
-    prisma.scheduledClass.count().then((n) => ['scheduled_classes', n]),
-    prisma.attendance.count().then((n) => ['attendance', n]),
-    prisma.homework.count().then((n) => ['homework', n]),
-    prisma.homeworkSubmission.count().then((n) => ['homework_submissions', n]),
-    prisma.meeting.count().then((n) => ['meetings', n]),
-    prisma.meetingAttendance.count().then((n) => ['meeting_attendance', n]),
-    prisma.teacherLevel.count().then((n) => ['teacher_levels', n]),
-    prisma.teacherLevelHistory.count().then((n) => ['teacher_level_history', n]),
-    prisma.teacherPayout.count().then((n) => ['teacher_payouts', n]),
-    prisma.payoutAdjustment.count().then((n) => ['payout_adjustments', n]),
-    prisma.payoutCompletedClass.count().then((n) => ['payout_completed_classes', n]),
-    prisma.callEscalation.count().then((n) => ['call_escalations', n]),
-    prisma.callEscalationAttempt.count().then((n) => ['call_escalation_attempts', n]),
-    prisma.studentReminderCall.count().then((n) => ['student_reminder_calls', n]),
-    prisma.studentReminderCallAttempt.count().then((n) => ['student_reminder_call_attempts', n]),
-    prisma.quizProctoringSession.count().then((n) => ['quiz_proctoring_sessions', n]),
-    prisma.quizProctoringLog.count().then((n) => ['quiz_proctoring_logs', n]),
-    prisma.quizIncidentReport.count().then((n) => ['quiz_incident_reports', n]),
-    prisma.conversation.count().then((n) => ['conversations', n]),
-    prisma.conversationParticipant.count().then((n) => ['conversation_participants', n]),
-    prisma.message.count().then((n) => ['messages', n]),
+    prisma.lmsTenant.count().then((n) => ['tenants', n]),
+    prisma.lmsUser.count().then((n) => ['users', n]),
+    prisma.lmsUserAvailabilitySlot.count().then((n) => ['user_availability_slots', n]),
+    prisma.lmsUserParent.count().then((n) => ['user_parents', n]),
+    prisma.lmsGroup.count().then((n) => ['groups', n]),
+    prisma.lmsGroupMember.count().then((n) => ['group_members', n]),
+    prisma.lmsCourse.count().then((n) => ['courses', n]),
+    prisma.lmsModule.count().then((n) => ['modules', n]),
+    prisma.lmsLesson.count().then((n) => ['lessons', n]),
+    prisma.lmsMasterCourse.count().then((n) => ['master_courses', n]),
+    prisma.lmsMasterCourseSelectedTenant.count().then((n) => ['master_course_selected_tenants', n]),
+    prisma.lmsAssessment.count().then((n) => ['assessments', n]),
+    prisma.lmsProgress.count().then((n) => ['progress', n]),
+    prisma.lmsCounter.count().then((n) => ['counters', n]),
+    prisma.lmsSection.count().then((n) => ['sections', n]),
+    prisma.lmsSubject.count().then((n) => ['subjects', n]),
+    prisma.lmsEmailTemplate.count().then((n) => ['email_templates', n]),
+    prisma.lmsCourseAssignment.count().then((n) => ['course_assignments', n]),
+    prisma.lmsTenantLog.count().then((n) => ['tenant_logs', n]),
+    prisma.lmsPrivacyAuditLog.count().then((n) => ['privacy_audit_logs', n]),
+    prisma.lmsCertificate.count().then((n) => ['certificates', n]),
+    prisma.lmsCertificateIssued.count().then((n) => ['certificates_issued', n]),
+    prisma.lmsQuizAttempt.count().then((n) => ['quiz_attempts', n]),
+    prisma.lmsNonTeachingTask.count().then((n) => ['non_teaching_tasks', n]),
+    prisma.lmsTutoringRequest.count().then((n) => ['tutoring_requests', n]),
+    prisma.lmsCreditPackage.count().then((n) => ['credit_packages', n]),
+    prisma.lmsCreditTransaction.count().then((n) => ['credit_transactions', n]),
+    prisma.lmsBatch.count().then((n) => ['batches', n]),
+    prisma.lmsBatchSchedule.count().then((n) => ['batch_schedule', n]),
+    prisma.lmsBatchStudent.count().then((n) => ['batch_students', n]),
+    prisma.lmsScheduledClass.count().then((n) => ['scheduled_classes', n]),
+    prisma.lmsAttendance.count().then((n) => ['attendance', n]),
+    prisma.lmsHomework.count().then((n) => ['homework', n]),
+    prisma.lmsHomeworkSubmission.count().then((n) => ['homework_submissions', n]),
+    prisma.lmsMeeting.count().then((n) => ['meetings', n]),
+    prisma.lmsMeetingAttendance.count().then((n) => ['meeting_attendance', n]),
+    prisma.lmsTeacherLevel.count().then((n) => ['teacher_levels', n]),
+    prisma.lmsTeacherLevelHistory.count().then((n) => ['teacher_level_history', n]),
+    prisma.lmsTeacherPayout.count().then((n) => ['teacher_payouts', n]),
+    prisma.lmsPayoutAdjustment.count().then((n) => ['payout_adjustments', n]),
+    prisma.lmsPayoutCompletedClass.count().then((n) => ['payout_completed_classes', n]),
+    prisma.lmsCallEscalation.count().then((n) => ['call_escalations', n]),
+    prisma.lmsCallEscalationAttempt.count().then((n) => ['call_escalation_attempts', n]),
+    prisma.lmsStudentReminderCall.count().then((n) => ['student_reminder_calls', n]),
+    prisma.lmsStudentReminderCallAttempt.count().then((n) => ['student_reminder_call_attempts', n]),
+    prisma.lmsQuizProctoringSession.count().then((n) => ['quiz_proctoring_sessions', n]),
+    prisma.lmsQuizProctoringLog.count().then((n) => ['quiz_proctoring_logs', n]),
+    prisma.lmsQuizIncidentReport.count().then((n) => ['quiz_incident_reports', n]),
+    prisma.lmsConversation.count().then((n) => ['conversations', n]),
+    prisma.lmsConversationParticipant.count().then((n) => ['conversation_participants', n]),
+    prisma.lmsMessage.count().then((n) => ['messages', n]),
   ]);
   for (const [table, n] of pgCounts) {
     if ((n as number) > 0) console.log(`  ${(table as string).padEnd(36)} ${n}`);

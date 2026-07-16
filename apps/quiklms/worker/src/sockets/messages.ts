@@ -70,12 +70,12 @@ export function registerMessagesNamespace(io: Server): void {
       }
       try {
         // Membership check
-        const participant = await prisma.conversationParticipant.findFirst({
+        const participant = await prisma.lmsConversationParticipant.findFirst({
           where: { conversationId: data.conversationId, userId: uid },
         });
         if (!participant) return;
 
-        const message = await prisma.message.create({
+        const message = await prisma.lmsMessage.create({
           data: {
             conversationId: data.conversationId,
             senderId: uid,
@@ -84,7 +84,7 @@ export function registerMessagesNamespace(io: Server): void {
             replyTo: data.replyTo ?? null,
           },
         });
-        await prisma.conversation.update({
+        await prisma.lmsConversation.update({
           where: { id: data.conversationId },
           data: { lastMessageText: data.text, lastMessageAt: new Date(), lastMessageBy: uid, messageCount: { increment: 1 } },
         });
@@ -100,23 +100,23 @@ export function registerMessagesNamespace(io: Server): void {
     });
 
     socket.on('editMessage', async (data: { conversationId: string; messageId: string; text: string }) => {
-      const msg = await prisma.message.findUnique({ where: { id: data.messageId } });
+      const msg = await prisma.lmsMessage.findUnique({ where: { id: data.messageId } });
       if (!msg || msg.senderId !== uid) return;
-      const updated = await prisma.message.update({ where: { id: data.messageId }, data: { text: data.text, isEdited: true, editedAt: new Date() } });
+      const updated = await prisma.lmsMessage.update({ where: { id: data.messageId }, data: { text: data.text, isEdited: true, editedAt: new Date() } });
       ns.to(`conv:${updated.conversationId}`).emit('messageEdited', updated);
     });
 
     socket.on('deleteMessage', async (data: { conversationId: string; messageId: string }) => {
-      const msg = await prisma.message.findUnique({ where: { id: data.messageId } });
+      const msg = await prisma.lmsMessage.findUnique({ where: { id: data.messageId } });
       if (!msg || msg.senderId !== uid) return;
-      await prisma.message.update({ where: { id: data.messageId }, data: { isDeleted: true, deletedBy: uid, deletedAt: new Date() } });
+      await prisma.lmsMessage.update({ where: { id: data.messageId }, data: { isDeleted: true, deletedBy: uid, deletedAt: new Date() } });
       ns.to(`conv:${data.conversationId}`).emit('messageDeleted', { messageId: data.messageId });
     });
 
     socket.on('reactToMessage', async (data: { conversationId: string; messageId: string; emoji: string }) => {
-      const existing = await prisma.messageReaction.findFirst({ where: { messageId: data.messageId, userId: uid, emoji: data.emoji } });
-      if (existing) await prisma.messageReaction.delete({ where: { id: existing.id } });
-      else await prisma.messageReaction.create({ data: { messageId: data.messageId, userId: uid, emoji: data.emoji } });
+      const existing = await prisma.lmsMessageReaction.findFirst({ where: { messageId: data.messageId, userId: uid, emoji: data.emoji } });
+      if (existing) await prisma.lmsMessageReaction.delete({ where: { id: existing.id } });
+      else await prisma.lmsMessageReaction.create({ data: { messageId: data.messageId, userId: uid, emoji: data.emoji } });
       ns.to(`conv:${data.conversationId}`).emit('messageReaction', { messageId: data.messageId, userId: uid, emoji: data.emoji, removed: !!existing });
     });
 
@@ -125,7 +125,7 @@ export function registerMessagesNamespace(io: Server): void {
     });
 
     socket.on('markRead', async (data: { conversationId: string }) => {
-      await prisma.conversationParticipant.updateMany({
+      await prisma.lmsConversationParticipant.updateMany({
         where: { conversationId: data.conversationId, userId: uid },
         data: { lastReadAt: new Date() },
       });

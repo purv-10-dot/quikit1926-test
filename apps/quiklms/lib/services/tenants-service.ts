@@ -52,7 +52,7 @@ async function uniqueSubdomain(orgName: string): Promise<string> {
   const base = orgName.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 40) || 'tenant';
   let candidate = base;
   let n = 1;
-  while (await prisma.tenant.findUnique({ where: { subdomain: candidate } })) {
+  while (await prisma.lmsTenant.findUnique({ where: { subdomain: candidate } })) {
     candidate = `${base}-${n++}`;
   }
   return candidate;
@@ -69,14 +69,14 @@ export async function onboardTenant(dto: OnboardInput) {
   const subdomain = await uniqueSubdomain(dto.orgName);
   const tenantKey = `tk_${randomUUID().replace(/-/g, '')}`;
 
-  const existingAdmin = await prisma.user.findFirst({ where: { email: dto.email.toLowerCase().trim() } });
+  const existingAdmin = await prisma.lmsUser.findFirst({ where: { email: dto.email.toLowerCase().trim() } });
   if (existingAdmin) throw Conflict('A user with the admin email already exists');
 
   // 1) Provision the platform Org (+ enable QuikLMS). Its id IS the LMS Tenant id
   //    (orgId-native), and it's what lets the tenant admin SSO-log-in.
   const orgId = dto.orgId ?? (await provisionOrgForTenant({ name: dto.orgName, billingEmail: dto.officialEmail }));
 
-  const tenant = await prisma.tenant.create({
+  const tenant = await prisma.lmsTenant.create({
     data: {
       id: orgId,
       orgId,
@@ -121,28 +121,28 @@ export async function onboardTenant(dto: OnboardInput) {
   return { ...tenant, adminTempPassword: admin.tempPassword };
 }
 
-export async function createTenant(data: Prisma.TenantCreateInput) {
-  return prisma.tenant.create({ data });
+export async function createTenant(data: Prisma.LmsTenantCreateInput) {
+  return prisma.lmsTenant.create({ data });
 }
 
 export async function findAllTenants() {
-  return prisma.tenant.findMany({ orderBy: { createdAt: 'desc' } });
+  return prisma.lmsTenant.findMany({ orderBy: { createdAt: 'desc' } });
 }
 
 export async function findTenant(id: string) {
-  const tenant = await prisma.tenant.findUnique({ where: { id } });
+  const tenant = await prisma.lmsTenant.findUnique({ where: { id } });
   if (!tenant) throw NotFound('Tenant not found');
   return tenant;
 }
 
-export async function updateTenant(id: string, data: Prisma.TenantUpdateInput) {
+export async function updateTenant(id: string, data: Prisma.LmsTenantUpdateInput) {
   await findTenant(id);
-  return prisma.tenant.update({ where: { id }, data });
+  return prisma.lmsTenant.update({ where: { id }, data });
 }
 
 export async function removeTenant(id: string) {
   await findTenant(id);
-  await prisma.tenant.delete({ where: { id } });
+  await prisma.lmsTenant.delete({ where: { id } });
 }
 
 export async function getStorageUsage(orgId: string): Promise<{ currentUsage: number; storageLimit: number }> {
@@ -150,9 +150,9 @@ export async function getStorageUsage(orgId: string): Promise<{ currentUsage: nu
   const storageLimit = (tenant.storageLimit || 2) * 1024 * 1024 * 1024; // GB → bytes
 
   // Master courses linked to this tenant
-  const links = await prisma.masterCourseSelectedTenant.findMany({ where: { orgId }, select: { masterCourseId: true } });
+  const links = await prisma.lmsMasterCourseSelectedTenant.findMany({ where: { orgId }, select: { masterCourseId: true } });
   const ids = links.map((l) => l.masterCourseId);
-  const courses = await prisma.masterCourse.findMany({
+  const courses = await prisma.lmsMasterCourse.findMany({
     where: { OR: [{ id: { in: ids } }, { submittedByTenantId: orgId }] },
     select: { modules: true },
   });

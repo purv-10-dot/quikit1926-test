@@ -10,7 +10,7 @@
  */
 import { randomUUID } from 'crypto';
 import { Prisma } from '@prisma/client';
-import type { MasterCourse, MasterCourseStatus, CourseLevel } from '@prisma/client';
+import type { LmsMasterCourse as MasterCourse, LmsMasterCourseStatus as MasterCourseStatus, LmsCourseLevel as CourseLevel } from '@prisma/client';
 import { prisma } from '@/lib/prisma';
 import { BadRequest, NotFound } from '@/lib/http';
 
@@ -19,7 +19,7 @@ type AnyRec = Record<string, unknown>;
 // ── tenant feature: approval workflow ────────────────────────────────────────
 export async function isApprovalWorkflowEnabled(orgId: string): Promise<boolean> {
   try {
-    const tenant = await prisma.tenant.findUnique({ where: { id: orgId }, select: { featureConfig: true } });
+    const tenant = await prisma.lmsTenant.findUnique({ where: { id: orgId }, select: { featureConfig: true } });
     const config = (tenant?.featureConfig as AnyRec) || {};
     return config.approvalWorkflowEnabled !== false;
   } catch {
@@ -29,9 +29,9 @@ export async function isApprovalWorkflowEnabled(orgId: string): Promise<boolean>
 
 // ── selectedTenants helpers (join table) ─────────────────────────────────────
 async function setSelectedTenants(masterCourseId: string, tenantIds: string[]): Promise<void> {
-  await prisma.masterCourseSelectedTenant.deleteMany({ where: { masterCourseId } });
+  await prisma.lmsMasterCourseSelectedTenant.deleteMany({ where: { masterCourseId } });
   if (tenantIds.length) {
-    await prisma.masterCourseSelectedTenant.createMany({
+    await prisma.lmsMasterCourseSelectedTenant.createMany({
       data: tenantIds.map((orgId) => ({ masterCourseId, orgId })),
       skipDuplicates: true,
     });
@@ -39,7 +39,7 @@ async function setSelectedTenants(masterCourseId: string, tenantIds: string[]): 
 }
 
 async function getSelectedTenantIds(masterCourseId: string): Promise<string[]> {
-  const rows = await prisma.masterCourseSelectedTenant.findMany({
+  const rows = await prisma.lmsMasterCourseSelectedTenant.findMany({
     where: { masterCourseId }, select: { orgId: true },
   });
   return rows.map((r) => r.orgId);
@@ -116,7 +116,7 @@ export async function create(authorId: string, dto: AnyRec): Promise<MasterCours
   const modules = generateModuleIds((dto.modules as AnyRec[]) || []);
   const selectedTenantIds = (dto.selectedTenants as string[]) || [];
 
-  const course = await prisma.masterCourse.create({
+  const course = await prisma.lmsMasterCourse.create({
     data: {
       title: String(dto.title ?? ''),
       description: dto.description ? String(dto.description) : undefined,
@@ -140,7 +140,7 @@ export async function create(authorId: string, dto: AnyRec): Promise<MasterCours
 }
 
 export async function findAll() {
-  const courses = await prisma.masterCourse.findMany({
+  const courses = await prisma.lmsMasterCourse.findMany({
     where: { isMaster: true, parentCourseId: null },
     orderBy: { updatedAt: 'desc' },
   });
@@ -148,19 +148,19 @@ export async function findAll() {
 }
 
 export async function findOne(id: string) {
-  const course = await prisma.masterCourse.findFirst({ where: { id, isMaster: true } });
+  const course = await prisma.lmsMasterCourse.findFirst({ where: { id, isMaster: true } });
   if (!course) throw NotFound('Master course not found');
   return withSelectedTenants(course);
 }
 
 export async function update(id: string, dto: AnyRec) {
-  const course = await prisma.masterCourse.findFirst({ where: { id, isMaster: true } });
+  const course = await prisma.lmsMasterCourse.findFirst({ where: { id, isMaster: true } });
   if (!course) throw NotFound('Master course not found');
 
   const incomingModules = (dto.modules as AnyRec[]) ?? (course.modules as unknown as AnyRec[]);
   const modules = generateModuleIds(incomingModules);
 
-  const data: Prisma.MasterCourseUpdateInput = {};
+  const data: Prisma.LmsMasterCourseUpdateInput = {};
   if (dto.title !== undefined) data.title = String(dto.title);
   if (dto.description !== undefined) data.description = String(dto.description);
   if (dto.category !== undefined) data.category = String(dto.category);
@@ -180,7 +180,7 @@ export async function update(id: string, dto: AnyRec) {
   data.draftData = Prisma.JsonNull;
   data.lastAutoSaveAt = null;
 
-  const updated = await prisma.masterCourse.update({ where: { id }, data });
+  const updated = await prisma.lmsMasterCourse.update({ where: { id }, data });
   if (dto.selectedTenants !== undefined) await setSelectedTenants(id, (dto.selectedTenants as string[]) || []);
   return withSelectedTenants(updated);
 }
@@ -191,7 +191,7 @@ export async function createOrUpdateRevisionFromPublished(
   editorUserId: string,
   dto: AnyRec,
 ) {
-  const parent = await prisma.masterCourse.findFirst({ where: { id: parentCourseId, isMaster: true } });
+  const parent = await prisma.lmsMasterCourse.findFirst({ where: { id: parentCourseId, isMaster: true } });
   if (!parent) throw NotFound('Master course not found');
 
   const rawModules = (dto.modules as AnyRec[]) ?? (parent.modules as unknown as AnyRec[]);
@@ -208,7 +208,7 @@ export async function createOrUpdateRevisionFromPublished(
     estimatedDuration: (dto.estimatedDuration as number) ?? parent.estimatedDuration,
   };
 
-  const existingRevision = await prisma.masterCourse.findFirst({
+  const existingRevision = await prisma.lmsMasterCourse.findFirst({
     where: {
       parentCourseId: parent.id,
       submittedByTenantId: orgId,
@@ -224,7 +224,7 @@ export async function createOrUpdateRevisionFromPublished(
       : 'PendingApproval';
 
   if (existingRevision) {
-    const updated = await prisma.masterCourse.update({
+    const updated = await prisma.lmsMasterCourse.update({
       where: { id: existingRevision.id },
       data: {
         title: payload.title,
@@ -251,7 +251,7 @@ export async function createOrUpdateRevisionFromPublished(
     return withSelectedTenants(updated);
   }
 
-  const revision = await prisma.masterCourse.create({
+  const revision = await prisma.lmsMasterCourse.create({
     data: {
       title: payload.title,
       description: payload.description,
@@ -278,52 +278,52 @@ export async function createOrUpdateRevisionFromPublished(
 }
 
 export async function autoSaveDraft(courseId: string, draftData: AnyRec) {
-  const course = await prisma.masterCourse.findFirst({ where: { id: courseId, isMaster: true } });
+  const course = await prisma.lmsMasterCourse.findFirst({ where: { id: courseId, isMaster: true } });
   if (!course) throw NotFound('Master course not found');
-  return prisma.masterCourse.update({
+  return prisma.lmsMasterCourse.update({
     where: { id: courseId },
     data: { draftData: draftData as Prisma.InputJsonValue, lastAutoSaveAt: new Date() },
   });
 }
 
 export async function getDraft(courseId: string) {
-  const course = await prisma.masterCourse.findFirst({ where: { id: courseId, isMaster: true } });
+  const course = await prisma.lmsMasterCourse.findFirst({ where: { id: courseId, isMaster: true } });
   if (!course) throw NotFound('Master course not found');
   return course.draftData ?? null;
 }
 
 export async function discardDraft(courseId: string) {
-  const course = await prisma.masterCourse.findFirst({ where: { id: courseId, isMaster: true } });
+  const course = await prisma.lmsMasterCourse.findFirst({ where: { id: courseId, isMaster: true } });
   if (!course) throw NotFound('Master course not found');
-  return prisma.masterCourse.update({
+  return prisma.lmsMasterCourse.update({
     where: { id: courseId },
     data: { draftData: Prisma.JsonNull, lastAutoSaveAt: null },
   });
 }
 
 export async function publish(id: string, tenantIds: string[]) {
-  const course = await prisma.masterCourse.findFirst({ where: { id, isMaster: true } });
+  const course = await prisma.lmsMasterCourse.findFirst({ where: { id, isMaster: true } });
   if (!course) throw NotFound('Master course not found');
   const modules = (course.modules as unknown as AnyRec[]) || [];
   if (modules.length === 0) throw BadRequest('Cannot publish course without modules');
-  const updated = await prisma.masterCourse.update({ where: { id }, data: { status: 'Published' } });
+  const updated = await prisma.lmsMasterCourse.update({ where: { id }, data: { status: 'Published' } });
   await setSelectedTenants(id, tenantIds || []);
   return withSelectedTenants(updated);
 }
 
 export async function archive(id: string) {
   await findOne(id);
-  const updated = await prisma.masterCourse.update({ where: { id }, data: { status: 'Archived' } });
+  const updated = await prisma.lmsMasterCourse.update({ where: { id }, data: { status: 'Archived' } });
   return withSelectedTenants(updated);
 }
 
 export async function remove(id: string) {
   await findOne(id);
-  await prisma.masterCourse.delete({ where: { id } });
+  await prisma.lmsMasterCourse.delete({ where: { id } });
 }
 
 export async function duplicate(id: string, authorId: string) {
-  const original = await prisma.masterCourse.findFirst({ where: { id, isMaster: true } });
+  const original = await prisma.lmsMasterCourse.findFirst({ where: { id, isMaster: true } });
   if (!original) throw NotFound('Master course not found');
   const modules = ((original.modules as unknown as AnyRec[]) || []).map((module) => ({
     ...module,
@@ -342,7 +342,7 @@ export async function duplicate(id: string, authorId: string) {
       : undefined,
   }));
 
-  const copy = await prisma.masterCourse.create({
+  const copy = await prisma.lmsMasterCourse.create({
     data: {
       title: `${original.title} (Copy)`,
       description: original.description,
@@ -364,7 +364,7 @@ export async function duplicate(id: string, authorId: string) {
 }
 
 export async function reorderModules(courseId: string, moduleIds: string[]) {
-  const course = await prisma.masterCourse.findFirst({ where: { id: courseId, isMaster: true } });
+  const course = await prisma.lmsMasterCourse.findFirst({ where: { id: courseId, isMaster: true } });
   if (!course) throw NotFound('Master course not found');
   const modules = (course.modules as unknown as AnyRec[]) || [];
   const moduleMap = new Map(modules.map((m) => [m.id as string, m]));
@@ -373,14 +373,14 @@ export async function reorderModules(courseId: string, moduleIds: string[]) {
     if (!m) throw BadRequest(`Module with ID ${id} not found`);
     return { ...m, orderIndex: index };
   });
-  const updated = await prisma.masterCourse.update({
+  const updated = await prisma.lmsMasterCourse.update({
     where: { id: courseId }, data: { modules: reordered as unknown as Prisma.InputJsonValue },
   });
   return withSelectedTenants(updated);
 }
 
 export async function reorderSubModules(courseId: string, moduleId: string, subModuleIds: string[]) {
-  const course = await prisma.masterCourse.findFirst({ where: { id: courseId, isMaster: true } });
+  const course = await prisma.lmsMasterCourse.findFirst({ where: { id: courseId, isMaster: true } });
   if (!course) throw NotFound('Master course not found');
   const modules = (course.modules as unknown as AnyRec[]) || [];
   const moduleIndex = modules.findIndex((m) => m.id === moduleId);
@@ -394,7 +394,7 @@ export async function reorderSubModules(courseId: string, moduleId: string, subM
     return { ...sm, orderIndex: index };
   });
   modules[moduleIndex] = { ...module, subModules: reorderedSubs };
-  const updated = await prisma.masterCourse.update({
+  const updated = await prisma.lmsMasterCourse.update({
     where: { id: courseId }, data: { modules: modules as unknown as Prisma.InputJsonValue },
   });
   return withSelectedTenants(updated);
@@ -402,7 +402,7 @@ export async function reorderSubModules(courseId: string, moduleId: string, subM
 
 // ── approval workflow queries ────────────────────────────────────────────────
 export async function findPendingApprovals() {
-  const courses = await prisma.masterCourse.findMany({
+  const courses = await prisma.lmsMasterCourse.findMany({
     where: { status: { in: ['PendingApproval', 'Resubmitted'] } },
     orderBy: { createdAt: 'desc' },
   });
@@ -410,7 +410,7 @@ export async function findPendingApprovals() {
 }
 
 export async function findAllApprovalItems() {
-  const courses = await prisma.masterCourse.findMany({
+  const courses = await prisma.lmsMasterCourse.findMany({
     where: {
       submittedByTenantId: { not: null },
       status: { in: ['PendingApproval', 'PendingTenantApproval', 'RejectedByTenantAdmin', 'Resubmitted', 'Published', 'Rejected'] },
@@ -421,7 +421,7 @@ export async function findAllApprovalItems() {
 }
 
 export async function findBySubmittedTenant(orgId: string) {
-  const courses = await prisma.masterCourse.findMany({
+  const courses = await prisma.lmsMasterCourse.findMany({
     where: {
       submittedByTenantId: orgId,
       status: { in: ['PendingApproval', 'PendingTenantApproval', 'RejectedByTenantAdmin', 'Resubmitted', 'Rejected', 'Published'] },
@@ -432,7 +432,7 @@ export async function findBySubmittedTenant(orgId: string) {
 }
 
 export async function findBySubmittedUser(userId: string) {
-  const courses = await prisma.masterCourse.findMany({
+  const courses = await prisma.lmsMasterCourse.findMany({
     where: { submittedBy: userId },
     orderBy: { updatedAt: 'desc' },
   });
@@ -440,7 +440,7 @@ export async function findBySubmittedUser(userId: string) {
 }
 
 export async function findSubAdminSubmissions(orgId: string) {
-  const courses = await prisma.masterCourse.findMany({
+  const courses = await prisma.lmsMasterCourse.findMany({
     where: {
       submittedByTenantId: orgId,
       status: { in: ['PendingTenantApproval', 'RejectedByTenantAdmin', 'PendingApproval', 'Published', 'Rejected'] },
@@ -451,11 +451,11 @@ export async function findSubAdminSubmissions(orgId: string) {
 }
 
 export async function tenantApprove(id: string, tenantAdminUserId: string, orgId: string) {
-  const course = await prisma.masterCourse.findFirst({ where: { id, isMaster: true } });
+  const course = await prisma.lmsMasterCourse.findFirst({ where: { id, isMaster: true } });
   if (!course) throw NotFound('Master course not found');
   if (course.status !== 'PendingTenantApproval') throw BadRequest('Only courses pending Tenant Admin approval can be approved');
   if (course.submittedByTenantId !== orgId) throw BadRequest('You can only approve courses from your own organization');
-  const updated = await prisma.masterCourse.update({
+  const updated = await prisma.lmsMasterCourse.update({
     where: { id },
     data: { tenantApprovedBy: tenantAdminUserId, tenantApprovalDate: new Date(), tenantRejectionReason: null, status: 'PendingApproval' },
   });
@@ -463,27 +463,27 @@ export async function tenantApprove(id: string, tenantAdminUserId: string, orgId
 }
 
 export async function tenantReject(id: string, _tenantAdminUserId: string, orgId: string, reason: string) {
-  const course = await prisma.masterCourse.findFirst({ where: { id, isMaster: true } });
+  const course = await prisma.lmsMasterCourse.findFirst({ where: { id, isMaster: true } });
   if (!course) throw NotFound('Master course not found');
   if (course.status !== 'PendingTenantApproval') throw BadRequest('Only courses pending Tenant Admin approval can be rejected');
   if (course.submittedByTenantId !== orgId) throw BadRequest('You can only reject courses from your own organization');
-  const updated = await prisma.masterCourse.update({
+  const updated = await prisma.lmsMasterCourse.update({
     where: { id }, data: { tenantRejectionReason: reason, status: 'RejectedByTenantAdmin' },
   });
   return withSelectedTenants(updated);
 }
 
 export async function approve(id: string, approvedById: string) {
-  const course = await prisma.masterCourse.findFirst({ where: { id, isMaster: true } });
+  const course = await prisma.lmsMasterCourse.findFirst({ where: { id, isMaster: true } });
   if (!course) throw NotFound('Master course not found');
   if (course.status !== 'PendingApproval' && course.status !== 'Resubmitted') {
     throw BadRequest('Only pending or resubmitted courses can be approved');
   }
 
   if (course.parentCourseId) {
-    const parent = await prisma.masterCourse.findFirst({ where: { id: course.parentCourseId, isMaster: true } });
+    const parent = await prisma.lmsMasterCourse.findFirst({ where: { id: course.parentCourseId, isMaster: true } });
     if (!parent) throw NotFound('Master course not found');
-    const parentUpdated = await prisma.masterCourse.update({
+    const parentUpdated = await prisma.lmsMasterCourse.update({
       where: { id: parent.id },
       data: {
         title: course.title,
@@ -505,14 +505,14 @@ export async function approve(id: string, approvedById: string) {
       },
     });
     await setSelectedTenants(parent.id, await getSelectedTenantIds(course.id));
-    await prisma.masterCourse.update({
+    await prisma.lmsMasterCourse.update({
       where: { id: course.id },
       data: { status: 'Archived', approvedBy: approvedById, approvalDate: new Date(), rejectionReason: null },
     });
     return withSelectedTenants(parentUpdated);
   }
 
-  const updated = await prisma.masterCourse.update({
+  const updated = await prisma.lmsMasterCourse.update({
     where: { id },
     data: { status: 'Published', approvedBy: approvedById, approvalDate: new Date(), rejectionReason: null },
   });
@@ -520,12 +520,12 @@ export async function approve(id: string, approvedById: string) {
 }
 
 export async function reject(id: string, rejectedById: string, reason: string) {
-  const course = await prisma.masterCourse.findFirst({ where: { id, isMaster: true } });
+  const course = await prisma.lmsMasterCourse.findFirst({ where: { id, isMaster: true } });
   if (!course) throw NotFound('Master course not found');
   if (course.status !== 'PendingApproval' && course.status !== 'Resubmitted') {
     throw BadRequest('Only pending or resubmitted courses can be rejected');
   }
-  const updated = await prisma.masterCourse.update({
+  const updated = await prisma.lmsMasterCourse.update({
     where: { id },
     data: { status: 'Rejected', approvedBy: rejectedById, approvalDate: new Date(), rejectionReason: reason },
   });

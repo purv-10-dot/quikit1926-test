@@ -10,31 +10,31 @@ import { Internal } from '@/lib/http';
 // ═══════════════ DASHBOARD ANALYTICS ═══════════════
 export async function getAnalytics(orgId: string) {
   const [totalDemo, totalTrial, totalRegular] = await Promise.all([
-    prisma.batch.count({ where: { orgId, classType: 'demo' } }),
-    prisma.batch.count({ where: { orgId, classType: 'trial' } }),
-    prisma.batch.count({ where: { orgId, OR: [{ classType: 'regular' }, { classType: null }] } }),
+    prisma.lmsBatch.count({ where: { orgId, classType: 'demo' } }),
+    prisma.lmsBatch.count({ where: { orgId, classType: 'trial' } }),
+    prisma.lmsBatch.count({ where: { orgId, OR: [{ classType: 'regular' }, { classType: null }] } }),
   ]);
 
-  const convertedBatches = await prisma.batch.count({
+  const convertedBatches = await prisma.lmsBatch.count({
     where: { orgId, classType: { in: ['demo', 'trial'] }, convertedToRegular: true },
   });
   const totalDemoTrial = totalDemo + totalTrial;
   const conversionRate = totalDemoTrial > 0 ? Math.round((convertedBatches / totalDemoTrial) * 100) : 0;
 
-  const demoTrialBatches = await prisma.batch.findMany({
+  const demoTrialBatches = await prisma.lmsBatch.findMany({
     where: { orgId, classType: { in: ['demo', 'trial'] } },
     select: { id: true, trialClassCount: true, classType: true, convertedToRegular: true },
   });
   const demoTrialBatchIds = demoTrialBatches.map((b) => b.id);
 
   const [completedDemoClasses, totalDemoClasses] = await Promise.all([
-    prisma.scheduledClass.count({ where: { orgId, batchId: { in: demoTrialBatchIds }, status: 'completed' } }),
-    prisma.scheduledClass.count({ where: { orgId, batchId: { in: demoTrialBatchIds } } }),
+    prisma.lmsScheduledClass.count({ where: { orgId, batchId: { in: demoTrialBatchIds }, status: 'completed' } }),
+    prisma.lmsScheduledClass.count({ where: { orgId, batchId: { in: demoTrialBatchIds } } }),
   ]);
 
   const [demoAttendancePresent, demoAttendanceTotal] = await Promise.all([
-    prisma.attendance.count({ where: { orgId, batchId: { in: demoTrialBatchIds }, status: { in: ['present', 'late'] } } }),
-    prisma.attendance.count({ where: { orgId, batchId: { in: demoTrialBatchIds } } }),
+    prisma.lmsAttendance.count({ where: { orgId, batchId: { in: demoTrialBatchIds }, status: { in: ['present', 'late'] } } }),
+    prisma.lmsAttendance.count({ where: { orgId, batchId: { in: demoTrialBatchIds } } }),
   ]);
   const demoAttendanceRate = demoAttendanceTotal > 0 ? Math.round((demoAttendancePresent / demoAttendanceTotal) * 100) : 0;
 
@@ -44,7 +44,7 @@ export async function getAnalytics(orgId: string) {
   if (convertedTrialBatches.length > 0) {
     let totalTrialClasses = 0;
     for (const batch of convertedTrialBatches) {
-      const classCount = await prisma.scheduledClass.count({ where: { batchId: batch.id, status: 'completed' } });
+      const classCount = await prisma.lmsScheduledClass.count({ where: { batchId: batch.id, status: 'completed' } });
       totalTrialClasses += classCount;
     }
     avgTrialClassesBeforeConversion = Math.round(totalTrialClasses / convertedTrialBatches.length);
@@ -53,7 +53,7 @@ export async function getAnalytics(orgId: string) {
   // Monthly trend — last 6 months ($group by year/month)
   const sixMonthsAgo = new Date();
   sixMonthsAgo.setMonth(sixMonthsAgo.getMonth() - 6);
-  const trendBatches = await prisma.batch.findMany({
+  const trendBatches = await prisma.lmsBatch.findMany({
     where: { orgId, classType: { in: ['demo', 'trial'] }, createdAt: { gte: sixMonthsAgo } },
     select: { createdAt: true, convertedToRegular: true },
   });
@@ -92,7 +92,7 @@ export async function getAnalytics(orgId: string) {
 
 // ═══════════════ TEACHER CONVERSION PERFORMANCE ═══════════════
 export async function getTeacherConversionPerformance(orgId: string) {
-  const batches = await prisma.batch.findMany({
+  const batches = await prisma.lmsBatch.findMany({
     where: { orgId, classType: { in: ['demo', 'trial'] } },
     select: { teacherId: true, convertedToRegular: true },
   });
@@ -108,7 +108,7 @@ export async function getTeacherConversionPerformance(orgId: string) {
     if (b.convertedToRegular) agg.converted += 1;
   }
 
-  const teachers = await prisma.user.findMany({
+  const teachers = await prisma.lmsUser.findMany({
     where: { id: { in: Array.from(byTeacher.keys()) } },
     select: { id: true, firstName: true, lastName: true, email: true },
   });
@@ -133,7 +133,7 @@ export async function getTeacherConversionPerformance(orgId: string) {
 
 // ═══════════════ STUDENT JOURNEY ═══════════════
 export async function getStudentJourney(orgId: string, studentId: string) {
-  const batches = await prisma.batch.findMany({
+  const batches = await prisma.lmsBatch.findMany({
     where: { orgId, students: { some: { studentId } } },
     orderBy: { createdAt: 'asc' },
     select: {
@@ -142,7 +142,7 @@ export async function getStudentJourney(orgId: string, studentId: string) {
     },
   });
 
-  const teachers = await prisma.user.findMany({
+  const teachers = await prisma.lmsUser.findMany({
     where: { id: { in: batches.map((b) => b.teacherId) } },
     select: { id: true, firstName: true, lastName: true },
   });
@@ -175,11 +175,11 @@ export async function getStudentJourney(orgId: string, studentId: string) {
 
 // ═══════════════ CONVERT BATCH TO REGULAR ═══════════════
 export async function convertToRegular(orgId: string, batchId: string) {
-  const result = await prisma.batch.updateMany({
+  const result = await prisma.lmsBatch.updateMany({
     where: { id: batchId, orgId, classType: { in: ['demo', 'trial'] } },
     data: { convertedToRegular: true, convertedAt: new Date(), classType: 'regular' },
   });
   if (result.count === 0) throw Internal('Batch not found or not a demo/trial batch');
-  const batch = await prisma.batch.findUnique({ where: { id: batchId } });
+  const batch = await prisma.lmsBatch.findUnique({ where: { id: batchId } });
   return { _id: batch!.id, ...batch };
 }

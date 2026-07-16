@@ -22,7 +22,7 @@ export const POST = route(async (req) => {
   let approvalEnabled = true;
   if (isTenantOrSubAdmin(user.role, user.secondaryRole) && orgId) {
     try {
-      const tenant = await prisma.tenant.findUnique({ where: { id: orgId }, select: { featureConfig: true } });
+      const tenant = await prisma.lmsTenant.findUnique({ where: { id: orgId }, select: { featureConfig: true } });
       approvalEnabled = (tenant?.featureConfig as Record<string, unknown>)?.approvalWorkflowEnabled !== false;
     } catch { /* default */ }
   }

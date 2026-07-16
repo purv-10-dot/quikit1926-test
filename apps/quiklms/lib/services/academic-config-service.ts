@@ -12,7 +12,7 @@ const DEFAULT_SUBJECTS = [
 const DEFAULT_SECTIONS = ['A', 'B', 'C', 'D'];
 
 export async function getSubjects(orgId: string): Promise<string[]> {
-  const subjects = await prisma.subject.findMany({
+  const subjects = await prisma.lmsSubject.findMany({
     where: { orgId },
     orderBy: [{ isDefault: 'desc' }, { name: 'asc' }],
   });
@@ -26,7 +26,7 @@ export async function getSubjects(orgId: string): Promise<string[]> {
 export async function addSubject(orgId: string, name: string): Promise<string> {
   const trimmed = name.trim();
   if (!trimmed) throw new Error('Subject name is required');
-  await prisma.subject.upsert({
+  await prisma.lmsSubject.upsert({
     where: { orgId_name: { orgId, name: trimmed } },
     create: { orgId, name: trimmed, isDefault: false },
     update: {},
@@ -37,7 +37,7 @@ export async function addSubject(orgId: string, name: string): Promise<string> {
 export async function getSections(orgId: string, grade?: string): Promise<{ grade: string; name: string }[]> {
   const where: { orgId: string; grade?: string } = { orgId };
   if (grade) where.grade = grade;
-  const sections = await prisma.section.findMany({ where, orderBy: [{ grade: 'asc' }, { name: 'asc' }] });
+  const sections = await prisma.lmsSection.findMany({ where, orderBy: [{ grade: 'asc' }, { name: 'asc' }] });
   if (sections.length === 0 && !grade) {
     await seedDefaultSections(orgId);
     return DEFAULT_SECTIONS.map((s) => ({ grade: 'all', name: s }));
@@ -46,7 +46,7 @@ export async function getSections(orgId: string, grade?: string): Promise<{ grad
 }
 
 export async function getSectionNames(orgId: string): Promise<string[]> {
-  const rows = await prisma.section.findMany({
+  const rows = await prisma.lmsSection.findMany({
     where: { orgId },
     select: { name: true },
     distinct: ['name'],
@@ -61,7 +61,7 @@ export async function getSectionNames(orgId: string): Promise<string[]> {
 export async function addSection(orgId: string, grade: string, name: string): Promise<void> {
   const trimmed = name.trim().toUpperCase();
   if (!trimmed) throw new Error('Section name is required');
-  await prisma.section.upsert({
+  await prisma.lmsSection.upsert({
     where: { orgId_grade_name: { orgId, grade, name: trimmed } },
     create: { orgId, grade, name: trimmed },
     update: {},
@@ -69,14 +69,14 @@ export async function addSection(orgId: string, grade: string, name: string): Pr
 }
 
 async function seedDefaultSubjects(orgId: string): Promise<void> {
-  await prisma.subject.createMany({
+  await prisma.lmsSubject.createMany({
     data: DEFAULT_SUBJECTS.map((name) => ({ orgId, name, isDefault: true })),
     skipDuplicates: true,
   });
 }
 
 async function seedDefaultSections(orgId: string): Promise<void> {
-  await prisma.section.createMany({
+  await prisma.lmsSection.createMany({
     data: DEFAULT_SECTIONS.map((name) => ({ orgId, grade: 'all', name })),
     skipDuplicates: true,
   });

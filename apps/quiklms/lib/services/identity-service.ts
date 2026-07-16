@@ -254,7 +254,7 @@ export async function provisionLmsUser(
   });
 
   // LMS row with the shared central id (idempotent — skip if already linked).
-  const existingLms = await prisma.user.findUnique({
+  const existingLms = await prisma.lmsUser.findUnique({
     where: { id: identity.userId },
     select: { id: true },
   });

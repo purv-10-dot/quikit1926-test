@@ -18,7 +18,7 @@ interface ExamSocket extends Socket {
 const timers = new Map<string, NodeJS.Timeout>();
 
 async function status(tenantId: string, sessionId: string) {
-  const session = await prisma.examSession.findFirst({ where: { id: sessionId, tenantId } });
+  const session = await prisma.lmsExamSession.findFirst({ where: { id: sessionId, tenantId } });
   if (!session) return null;
   const deadline = session.serverDeadline ? new Date(session.serverDeadline).getTime() : 0;
   const remainingSeconds = deadline ? Math.max(0, Math.floor((deadline - Date.now()) / 1000)) : 0;

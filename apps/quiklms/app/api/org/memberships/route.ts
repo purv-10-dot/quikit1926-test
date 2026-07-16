@@ -6,11 +6,11 @@ const APP_SLUG = 'quiklms';
 
 /**
  * GET /api/org/memberships — the current user's active orgs where QuikLMS is
- * accessible (org-switcher data). Mirrors @quikit/auth's createOrgMembershipsHandler,
- * but reads the PLATFORM database via `orgDb` (ORG_DATABASE_URL): OrgMember / App /
- * UserAppAccess live there, NOT in this app's LMS db. The shared factory binds
- * `@quikit/database` to DATABASE_URL, which for QuikLMS is the LMS db — hence the
- * local port.
+ * accessible (org-switcher data). Post-fold, `orgDb` is the SHARED
+ * `@quikit/database` client (see lib/org-db.ts), so this reads the platform
+ * OrgMember / App / UserAppAccess tables directly. A thin local handler (rather
+ * than the shared `createOrgMembershipsHandler`) is kept so the LMS-specific
+ * app-scoping assertions in __tests__/api/org-routes.test.ts stay meaningful.
  */
 export const GET = route(async (req) => {
   const actor = await requireAuth(req);

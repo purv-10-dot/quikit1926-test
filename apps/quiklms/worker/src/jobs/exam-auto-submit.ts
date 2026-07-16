@@ -35,15 +35,15 @@ function gradeQuestion(q: { type: string; options: { text: string; isCorrect: bo
 }
 
 export async function autoSubmitSession(sessionId: string): Promise<void> {
-  const session = await prisma.examSession.findUnique({ where: { id: sessionId } });
+  const session = await prisma.lmsExamSession.findUnique({ where: { id: sessionId } });
   if (!session || session.status === 'submitted' || session.status === 'auto_submitted' || session.status === 'timed_out') return;
 
-  const exam = await prisma.exam.findUnique({ where: { id: session.examId } });
+  const exam = await prisma.lmsExam.findUnique({ where: { id: session.examId } });
   const assigned = (session.assignedQuestions as unknown as { questionId: string; order: number }[]) || [];
   const answers = (session.answers as Record<string, Answer>) || {};
 
   const questionIds = assigned.map((q) => q.questionId);
-  const bank = await prisma.question.findMany({ where: { id: { in: questionIds } } });
+  const bank = await prisma.lmsQuestion.findMany({ where: { id: { in: questionIds } } });
   const byId = new Map(bank.map((q) => [q.id, q]));
 
   let score = 0;
@@ -64,7 +64,7 @@ export async function autoSubmitSession(sessionId: string): Promise<void> {
   const percentage = totalPoints > 0 ? Math.round((score / totalPoints) * 100) : 0;
   const passingScore = ((exam?.settings as { passingScore?: number })?.passingScore) ?? 40;
 
-  await prisma.examSession.update({
+  await prisma.lmsExamSession.update({
     where: { id: sessionId },
     data: {
       status: 'auto_submitted',
@@ -79,7 +79,7 @@ export async function autoSubmitSession(sessionId: string): Promise<void> {
 
 /** Sweep all in-progress sessions past their deadline (cron + queue safety net). */
 export async function sweepExpiredSessions(): Promise<number> {
-  const expired = await prisma.examSession.findMany({
+  const expired = await prisma.lmsExamSession.findMany({
     where: { status: 'in_progress', serverDeadline: { lt: new Date() } },
     select: { id: true },
   });

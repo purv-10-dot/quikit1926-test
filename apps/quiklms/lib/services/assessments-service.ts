@@ -22,7 +22,7 @@ export async function create(orgId: string, dto: AnyRec) {
   const questions = ((dto.questions as AnyRec[]) || []).map(normalisePoints);
   const additionalQuestions = ((dto.additionalQuestions as AnyRec[]) || []).map(normalisePoints);
 
-  return prisma.assessment.create({
+  return prisma.lmsAssessment.create({
     data: {
       orgId,
       moduleId: String(dto.moduleId),
@@ -43,11 +43,11 @@ export async function create(orgId: string, dto: AnyRec) {
 
 /** Find an assessment by id (standalone Assessment row, else master-course quiz). */
 export async function findOne(id: string, orgId: string): Promise<AnyRec> {
-  const standalone = await prisma.assessment.findFirst({ where: { id, orgId } });
+  const standalone = await prisma.lmsAssessment.findFirst({ where: { id, orgId } });
   if (standalone) return standalone as unknown as AnyRec;
 
   // Search master-course embedded quizzes by quiz id.
-  const masterCourses = await prisma.masterCourse.findMany();
+  const masterCourses = await prisma.lmsMasterCourse.findMany();
   for (const course of masterCourses) {
     const modules = (course.modules as unknown as AnyRec[]) || [];
     for (const module of modules) {
@@ -88,10 +88,10 @@ function transformMasterQuiz(id: string, orgId: string, quiz: AnyRec, fallbackTi
 }
 
 export async function update(id: string, orgId: string, updateData: AnyRec) {
-  const existing = await prisma.assessment.findFirst({ where: { id, orgId } });
+  const existing = await prisma.lmsAssessment.findFirst({ where: { id, orgId } });
   if (!existing) throw NotFound('Assessment not found');
   const { id: _id, orgId: _t, createdAt: _ca, updatedAt: _ua, ...rest } = updateData;
-  return prisma.assessment.update({ where: { id }, data: rest as Prisma.AssessmentUpdateInput });
+  return prisma.lmsAssessment.update({ where: { id }, data: rest as Prisma.LmsAssessmentUpdateInput });
 }
 
 /** Prior submitted attempts for retry-limit enforcement. */
@@ -101,7 +101,7 @@ async function countLearnerAttempts(orgId: string, learnerId: string, courseId: 
 
   // For UUID/master assessments we don't persist QuizAttempt rows; use
   // lessonProgress as a "1 prior attempt" signal.
-  const progress = await prisma.progress.findFirst({ where: { orgId, learnerId, courseId } });
+  const progress = await prisma.lmsProgress.findFirst({ where: { orgId, learnerId, courseId } });
   const lp = (progress?.lessonProgress as AnyRec | null) || undefined;
   if (!lp) return 0;
   const isDone = (v: AnyRec) => v && (v.isCompleted === true || (Number(v.completionPercentage) || 0) >= 95);
@@ -116,7 +116,7 @@ async function countLearnerAttempts(orgId: string, learnerId: string, courseId: 
 export async function getQuizAttempts(orgId: string, learnerId: string, assessmentId: string) {
   if (!orgId || !learnerId || !assessmentId) return [];
   if (UUID_RE.test(assessmentId)) return []; // master-course quizzes aren't stored by assessmentId
-  return prisma.quizAttempt.findMany({
+  return prisma.lmsQuizAttempt.findMany({
     where: { orgId, learnerId, assessmentId },
     orderBy: { submittedAt: 'desc' },
   });
@@ -194,7 +194,7 @@ export async function submitQuiz(orgId: string, learnerId: string, dto: SubmitQu
   const passed = percentage >= passingScore;
 
   // Update or create progress.
-  const existingProgress = await prisma.progress.findFirst({ where: { orgId, learnerId, courseId: dto.courseId } });
+  const existingProgress = await prisma.lmsProgress.findFirst({ where: { orgId, learnerId, courseId: dto.courseId } });
   const lessonProgress: AnyRec = (existingProgress?.lessonProgress as AnyRec | null) || {};
   lessonProgress[dto.assessmentId] = {
     lessonId: dto.assessmentId,
@@ -209,11 +209,11 @@ export async function submitQuiz(orgId: string, learnerId: string, dto: SubmitQu
     existingProgress?.status === 'NotStarted' || !existingProgress ? 'InProgress' : existingProgress.status;
 
   const progress = existingProgress
-    ? await prisma.progress.update({
+    ? await prisma.lmsProgress.update({
         where: { id: existingProgress.id },
         data: { quizScore: percentage, isPassed: passed, lessonProgress: lessonProgress as Prisma.InputJsonValue, status: nextStatus },
       })
-    : await prisma.progress.create({
+    : await prisma.lmsProgress.create({
         data: {
           orgId,
           learnerId,
@@ -256,7 +256,7 @@ export async function submitQuiz(orgId: string, learnerId: string, dto: SubmitQu
       };
     });
 
-    await prisma.quizAttempt.create({
+    await prisma.lmsQuizAttempt.create({
       data: {
         orgId,
         learnerId,

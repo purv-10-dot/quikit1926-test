@@ -7,9 +7,9 @@ import { prisma } from '../db.js';
 import { sendEmail, sendSms } from '../notify.js';
 
 async function recipients(batchId: string, teacherId: string) {
-  const teacher = await prisma.user.findUnique({ where: { id: teacherId }, select: { email: true, phone: true, firstName: true } });
-  const links = await prisma.batchStudent.findMany({ where: { batchId }, select: { studentId: true } });
-  const students = await prisma.user.findMany({
+  const teacher = await prisma.lmsUser.findUnique({ where: { id: teacherId }, select: { email: true, phone: true, firstName: true } });
+  const links = await prisma.lmsBatchStudent.findMany({ where: { batchId }, select: { studentId: true } });
+  const students = await prisma.lmsUser.findMany({
     where: { id: { in: links.map((l) => l.studentId) } },
     select: { email: true, phone: true, guardianContact: true, firstName: true },
   });
@@ -20,7 +20,7 @@ async function notifyWindow(minLow: number, minHigh: number, mode: 'email' | 'sm
   const now = Date.now();
   const from = new Date(now + minLow * 60_000);
   const to = new Date(now + minHigh * 60_000);
-  const classes = await prisma.scheduledClass.findMany({
+  const classes = await prisma.lmsScheduledClass.findMany({
     where: { status: 'scheduled', startTime: { gte: from, lt: to } },
     select: { id: true, title: true, batchId: true, teacherId: true, startTime: true },
   });

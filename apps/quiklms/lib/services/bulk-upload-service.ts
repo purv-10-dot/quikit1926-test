@@ -76,7 +76,7 @@ export async function uploadTeachers(orgId: string, csvContent: string): Promise
         failed.push({ row: rowNum, email: row.email, reason: 'Missing required fields (email, firstName, lastName)' });
         continue;
       }
-      const exists = await prisma.user.findFirst({ where: { email: row.email.toLowerCase() } });
+      const exists = await prisma.lmsUser.findFirst({ where: { email: row.email.toLowerCase() } });
       if (exists) { failed.push({ row: rowNum, email: row.email, reason: 'Email already exists' }); continue; }
 
       const { userId, lms } = await provisionLmsUser({
@@ -113,7 +113,7 @@ export async function uploadStudents(orgId: string, csvContent: string): Promise
       const email = skipEmail && !row.email ? `student_${Date.now()}_${i}@noemail.placeholder` : row.email;
       if (!email) { failed.push({ row: rowNum, reason: 'Email required unless skipEmail=true' }); continue; }
 
-      const exists = await prisma.user.findFirst({ where: { email: email.toLowerCase() } });
+      const exists = await prisma.lmsUser.findFirst({ where: { email: email.toLowerCase() } });
       if (exists) { failed.push({ row: rowNum, email, reason: 'Email already exists' }); continue; }
 
       // Resolve parent: existing parent → link as child; else store deferred parentEmail.
@@ -121,7 +121,7 @@ export async function uploadStudents(orgId: string, csvContent: string): Promise
       let parentEmail: string | undefined;
       if (row.parentEmail) {
         const pe = row.parentEmail.trim().toLowerCase();
-        const parent = await prisma.user.findFirst({ where: { email: pe, role: 'PARENT', orgId } });
+        const parent = await prisma.lmsUser.findFirst({ where: { email: pe, role: 'PARENT', orgId } });
         if (parent) parentId = parent.id;
         else parentEmail = pe;
       }
@@ -131,9 +131,9 @@ export async function uploadStudents(orgId: string, csvContent: string): Promise
         lmsRole: 'LEARNER', orgId, phone: row.phone || undefined,
         grade: row.grade || undefined, section: row.section || undefined, skipEmail,
       });
-      if (parentEmail) await prisma.user.update({ where: { id: userId }, data: { parentEmail } });
+      if (parentEmail) await prisma.lmsUser.update({ where: { id: userId }, data: { parentEmail } });
       if (parentId) {
-        await prisma.userParent.upsert({
+        await prisma.lmsUserParent.upsert({
           where: { parentId_childId: { parentId, childId: userId } },
           create: { parentId, childId: userId }, update: {},
         });
@@ -159,12 +159,12 @@ export async function uploadParents(orgId: string, csvContent: string): Promise<
         failed.push({ row: rowNum, email: row.email, reason: 'Missing required fields' });
         continue;
       }
-      const exists = await prisma.user.findFirst({ where: { email: row.email.toLowerCase() } });
+      const exists = await prisma.lmsUser.findFirst({ where: { email: row.email.toLowerCase() } });
       if (exists) { failed.push({ row: rowNum, email: row.email, reason: 'Email already exists' }); continue; }
 
       const childrenIds: string[] = [];
       if (row.studentEmail) {
-        const student = await prisma.user.findFirst({ where: { email: row.studentEmail.toLowerCase(), role: 'LEARNER' } });
+        const student = await prisma.lmsUser.findFirst({ where: { email: row.studentEmail.toLowerCase(), role: 'LEARNER' } });
         if (student) childrenIds.push(student.id);
       }
 

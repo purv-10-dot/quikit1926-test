@@ -7,7 +7,7 @@
  * the audit module is out of scope for this batch. The ZIP/Excel export
  * endpoints return the underlying JSON data (S3/file generation deferred).
  */
-import type { ProgressStatus } from '@prisma/client';
+import type { LmsProgressStatus as ProgressStatus } from '@prisma/client';
 import { prisma } from '@/lib/prisma';
 import { Forbidden, NotFound } from '@/lib/http';
 import { notifyUsers, type NudgeRecipient } from '@/lib/services/notify-service';
@@ -16,11 +16,11 @@ async function buildCourseNameMap(rawCourseIds: string[]) {
   const map = new Map<string, { title: string; description?: string | null }>();
   if (rawCourseIds.length === 0) return map;
   const unique = [...new Set(rawCourseIds)];
-  const legacy = await prisma.course.findMany({ where: { id: { in: unique } }, select: { id: true, title: true, description: true } });
+  const legacy = await prisma.lmsCourse.findMany({ where: { id: { in: unique } }, select: { id: true, title: true, description: true } });
   legacy.forEach((c) => map.set(c.id, { title: c.title, description: c.description }));
   const missing = unique.filter((id) => !map.has(id));
   if (missing.length) {
-    const masters = await prisma.masterCourse.findMany({ where: { id: { in: missing } }, select: { id: true, title: true, description: true } });
+    const masters = await prisma.lmsMasterCourse.findMany({ where: { id: { in: missing } }, select: { id: true, title: true, description: true } });
     masters.forEach((mc) => map.set(mc.id, { title: mc.title, description: mc.description }));
   }
   return map;
@@ -30,7 +30,7 @@ const getTitle = (id: string, map: Map<string, { title: string }>) => map.get(id
 const getDesc = (id: string, map: Map<string, { description?: string | null }>) => map.get(id)?.description || '';
 
 async function getTeamMembers(managerId: string, orgId: string) {
-  return prisma.user.findMany({ where: { managerId, orgId, isActive: true } });
+  return prisma.lmsUser.findMany({ where: { managerId, orgId, isActive: true } });
 }
 
 export async function getTeamStats(managerId: string, orgId: string) {
@@ -41,10 +41,10 @@ export async function getTeamStats(managerId: string, orgId: string) {
   const memberIds = members.map((m) => m.id);
 
   const assignments = memberIds.length
-    ? await prisma.courseAssignment.findMany({ where: { orgId, targetType: 'USER', targetId: { in: memberIds } } })
+    ? await prisma.lmsCourseAssignment.findMany({ where: { orgId, targetType: 'USER', targetId: { in: memberIds } } })
     : [];
   const progresses = memberIds.length
-    ? await prisma.progress.findMany({ where: { orgId, learnerId: { in: memberIds } } })
+    ? await prisma.lmsProgress.findMany({ where: { orgId, learnerId: { in: memberIds } } })
     : [];
 
   const progressByUser = new Map<string, typeof progresses>();
@@ -91,10 +91,10 @@ export async function getTeamStats(managerId: string, orgId: string) {
 
   // Skill gap heatmap from failed quiz attempts
   const failedAttempts = memberIds.length
-    ? await prisma.quizAttempt.findMany({ where: { orgId, learnerId: { in: memberIds }, passed: false } })
+    ? await prisma.lmsQuizAttempt.findMany({ where: { orgId, learnerId: { in: memberIds }, passed: false } })
     : [];
   const allAttempts = memberIds.length
-    ? await prisma.quizAttempt.findMany({ where: { orgId, learnerId: { in: memberIds } } })
+    ? await prisma.lmsQuizAttempt.findMany({ where: { orgId, learnerId: { in: memberIds } } })
     : [];
   const quizCourseNames = await buildCourseNameMap([...failedAttempts, ...allAttempts].map((a) => a.courseId).filter(Boolean));
 
@@ -145,7 +145,7 @@ export async function getTeamList(managerId: string, orgId: string) {
   const members = await getTeamMembers(managerId, orgId);
   const memberIds = members.map((m) => m.id);
   const assignments = memberIds.length
-    ? await prisma.courseAssignment.findMany({ where: { orgId, targetType: 'USER', targetId: { in: memberIds } } })
+    ? await prisma.lmsCourseAssignment.findMany({ where: { orgId, targetType: 'USER', targetId: { in: memberIds } } })
     : [];
   return members.map((m) => ({
     userId: m.id, userName: `${m.firstName} ${m.lastName}`, email: m.email,
@@ -158,11 +158,11 @@ export async function getLearnerCoursesOverview(managerId: string, orgId: string
   const members = await getTeamMembers(managerId, orgId);
   if (members.length === 0) return [];
   const teamIds = members.map((m) => m.id);
-  const assignments = await prisma.courseAssignment.findMany({
+  const assignments = await prisma.lmsCourseAssignment.findMany({
     where: { orgId, targetType: 'USER', targetId: { in: teamIds } }, select: { targetId: true, courseId: true },
   });
   if (assignments.length === 0) return [];
-  const progresses = await prisma.progress.findMany({
+  const progresses = await prisma.lmsProgress.findMany({
     where: { orgId, learnerId: { in: teamIds }, courseId: { in: assignments.map((a) => a.courseId) } },
     select: { learnerId: true, courseId: true, completionPercentage: true, status: true },
   });
@@ -198,11 +198,11 @@ export async function getLearnersByCourse(managerId: string, orgId: string, cour
 
   const teamMap = new Map(members.map((m) => [m.id, m]));
   const teamIds = members.map((m) => m.id);
-  const assignments = await prisma.courseAssignment.findMany({
+  const assignments = await prisma.lmsCourseAssignment.findMany({
     where: { orgId, targetType: 'USER', targetId: { in: teamIds }, courseId },
     select: { targetId: true, dueDate: true, isMandatory: true },
   });
-  const progresses = await prisma.progress.findMany({
+  const progresses = await prisma.lmsProgress.findMany({
     where: { orgId, learnerId: { in: teamIds }, courseId },
     select: { learnerId: true, completionPercentage: true, status: true, updatedAt: true },
   });
@@ -238,15 +238,15 @@ export async function getLearnersByCourse(managerId: string, orgId: string, cour
 }
 
 async function assertTeamMember(managerId: string, orgId: string, userId: string) {
-  const user = await prisma.user.findFirst({ where: { id: userId, managerId, orgId, isActive: true } });
+  const user = await prisma.lmsUser.findFirst({ where: { id: userId, managerId, orgId, isActive: true } });
   if (!user) throw NotFound('User not found or does not belong to your team');
   return user;
 }
 
 export async function getUserDetails(managerId: string, orgId: string, userId: string) {
   const user = await assertTeamMember(managerId, orgId, userId);
-  const assignments = await prisma.courseAssignment.findMany({ where: { orgId, targetType: 'USER', targetId: userId } });
-  const progress = await prisma.progress.findMany({ where: { learnerId: userId, orgId } });
+  const assignments = await prisma.lmsCourseAssignment.findMany({ where: { orgId, targetType: 'USER', targetId: userId } });
+  const progress = await prisma.lmsProgress.findMany({ where: { learnerId: userId, orgId } });
   const courseMap = await buildCourseNameMap([...assignments, ...progress].map((x) => x.courseId).filter(Boolean));
 
   const courses = assignments
@@ -264,15 +264,15 @@ export async function getUserDetails(managerId: string, orgId: string, userId: s
 }
 
 export async function bulkAssignCourse(managerId: string, orgId: string, dto: { courseId: string; userIds: string[]; dueDate?: string; isMandatory: boolean | string }, assignedBy: string) {
-  const users = await prisma.user.findMany({ where: { id: { in: dto.userIds }, managerId, orgId, isActive: true } });
+  const users = await prisma.lmsUser.findMany({ where: { id: { in: dto.userIds }, managerId, orgId, isActive: true } });
   if (users.length !== dto.userIds.length) throw Forbidden('Some users do not belong to your team');
 
-  let course = await prisma.course.findFirst({
+  let course = await prisma.lmsCourse.findFirst({
     where: { id: dto.courseId, OR: [{ orgId }, { isMaster: true, selectedTenants: { some: { orgId } } }] },
     select: { id: true, title: true },
   });
   if (!course) {
-    const mc = await prisma.masterCourse.findFirst({
+    const mc = await prisma.lmsMasterCourse.findFirst({
       where: { id: dto.courseId, status: 'Published', selectedTenants: { some: { orgId } }, parentCourseId: null },
       select: { id: true, title: true },
     });
@@ -285,9 +285,9 @@ export async function bulkAssignCourse(managerId: string, orgId: string, dto: { 
       const data = {
         dueDate: dto.dueDate ? new Date(dto.dueDate) : null, isMandatory: Boolean(dto.isMandatory), assignedBy, assignedAt: new Date(),
       };
-      const existing = await prisma.courseAssignment.findFirst({ where: { orgId, courseId: dto.courseId, targetType: 'USER', targetId: userId } });
-      if (existing) return prisma.courseAssignment.update({ where: { id: existing.id }, data });
-      return prisma.courseAssignment.create({ data: { orgId, courseId: dto.courseId, targetType: 'USER', targetId: userId, ...data } });
+      const existing = await prisma.lmsCourseAssignment.findFirst({ where: { orgId, courseId: dto.courseId, targetType: 'USER', targetId: userId } });
+      if (existing) return prisma.lmsCourseAssignment.update({ where: { id: existing.id }, data });
+      return prisma.lmsCourseAssignment.create({ data: { orgId, courseId: dto.courseId, targetType: 'USER', targetId: userId, ...data } });
     }),
   );
 
@@ -313,20 +313,20 @@ export async function nudgeUser(managerId: string, orgId: string, userId: string
 
 export async function resetQuizAttempts(managerId: string, orgId: string, userId: string, courseId: string) {
   await assertTeamMember(managerId, orgId, userId);
-  const progress = await prisma.progress.findFirst({ where: { learnerId: userId, courseId, orgId } });
+  const progress = await prisma.lmsProgress.findFirst({ where: { learnerId: userId, courseId, orgId } });
   if (!progress) throw NotFound('Progress record not found');
-  await prisma.progress.update({ where: { id: progress.id }, data: { quizScore: null, isPassed: false } });
-  await prisma.quizAttempt.deleteMany({ where: { learnerId: userId, courseId, orgId } });
+  await prisma.lmsProgress.update({ where: { id: progress.id }, data: { quizScore: null, isPassed: false } });
+  await prisma.lmsQuizAttempt.deleteMany({ where: { learnerId: userId, courseId, orgId } });
   return { success: true, message: 'Quiz attempts reset successfully' };
 }
 
 export async function getAvailableCourses(orgId: string) {
   if (!orgId) return [];
-  const legacy = await prisma.course.findMany({
+  const legacy = await prisma.lmsCourse.findMany({
     where: { OR: [{ orgId }, { isMaster: true, selectedTenants: { some: { orgId } } }], status: 'Published' },
     select: { id: true, title: true, description: true, isMaster: true },
   });
-  const masters = await prisma.masterCourse.findMany({
+  const masters = await prisma.lmsMasterCourse.findMany({
     where: { status: 'Published', selectedTenants: { some: { orgId } }, parentCourseId: null },
     select: { id: true, title: true, description: true },
   });
@@ -338,9 +338,9 @@ export async function getAvailableCourses(orgId: string) {
 
 export async function getQuizResults(userId: string, courseId: string, managerId: string, orgId: string) {
   const user = await assertTeamMember(managerId, orgId, userId);
-  const progress = await prisma.progress.findFirst({ where: { learnerId: userId, courseId, orgId } });
+  const progress = await prisma.lmsProgress.findFirst({ where: { learnerId: userId, courseId, orgId } });
   if (!progress) throw NotFound('Progress record not found');
-  const latestAttempt = await prisma.quizAttempt.findFirst({ where: { learnerId: userId, courseId, orgId }, orderBy: { submittedAt: 'desc' } });
+  const latestAttempt = await prisma.lmsQuizAttempt.findFirst({ where: { learnerId: userId, courseId, orgId }, orderBy: { submittedAt: 'desc' } });
 
   let questions: unknown[] = [];
   const answers = (latestAttempt?.answers as Record<string, unknown>[]) || [];
@@ -371,9 +371,9 @@ export async function learnerReset(managerId: string, orgId: string, dto: { user
   await assertTeamMember(managerId, orgId, dto.userId);
   if (dto.resetType === 'quiz') return resetQuizAttempts(managerId, orgId, dto.userId, dto.courseId);
   if (dto.resetType === 'progress') {
-    const progress = await prisma.progress.findFirst({ where: { learnerId: dto.userId, courseId: dto.courseId, orgId } });
+    const progress = await prisma.lmsProgress.findFirst({ where: { learnerId: dto.userId, courseId: dto.courseId, orgId } });
     if (progress) {
-      await prisma.progress.update({
+      await prisma.lmsProgress.update({
         where: { id: progress.id },
         data: { completionPercentage: 0, status: 'NotStarted', lessonProgress: {}, quizScore: null, isPassed: false, completedAt: null },
       });
@@ -390,7 +390,7 @@ export async function nudgeBulk(managerId: string, orgId: string, dto: { userIds
     targetUserIds = stats.idleLearners.map((l) => l.userId);
   }
   if (targetUserIds.length === 0) return { success: false, message: 'No users to nudge' };
-  const users = await prisma.user.findMany({ where: { id: { in: targetUserIds }, managerId, orgId, isActive: true } });
+  const users = await prisma.lmsUser.findMany({ where: { id: { in: targetUserIds }, managerId, orgId, isActive: true } });
   if (users.length !== targetUserIds.length) throw Forbidden('Some users do not belong to your team');
 
   const text = dto.message?.trim() || 'Reminder from your manager: please complete your assigned training.';
@@ -408,7 +408,7 @@ export async function nudgeBulk(managerId: string, orgId: string, dto: { userIds
 }
 
 export async function markAttendance(managerId: string, orgId: string, dto: { userIds: string[] }) {
-  const users = await prisma.user.findMany({ where: { id: { in: dto.userIds }, managerId, orgId, isActive: true } });
+  const users = await prisma.lmsUser.findMany({ where: { id: { in: dto.userIds }, managerId, orgId, isActive: true } });
   if (users.length !== dto.userIds.length) throw Forbidden('Some users do not belong to your team');
   return { success: true, markedCount: users.length, message: `Attendance marked for ${users.length} team member(s)` };
 }
@@ -429,16 +429,16 @@ export async function exportTeamReport(managerId: string, orgId: string) {
 }
 
 export async function getLearnerDetail(managerId: string, orgId: string, userId: string) {
-  const user = await prisma.user.findFirst({ where: { id: userId, managerId, orgId, isActive: true } });
+  const user = await prisma.lmsUser.findFirst({ where: { id: userId, managerId, orgId, isActive: true } });
   if (!user) throw Forbidden('You do not have authority over this user');
 
-  const progresses = await prisma.progress.findMany({ where: { learnerId: userId, orgId }, orderBy: { updatedAt: 'desc' } });
-  const quizAttempts = await prisma.quizAttempt.findMany({ where: { learnerId: userId, orgId }, orderBy: { createdAt: 'desc' } });
-  const assignments = await prisma.courseAssignment.findMany({ where: { targetId: userId, orgId, targetType: 'USER' } });
+  const progresses = await prisma.lmsProgress.findMany({ where: { learnerId: userId, orgId }, orderBy: { updatedAt: 'desc' } });
+  const quizAttempts = await prisma.lmsQuizAttempt.findMany({ where: { learnerId: userId, orgId }, orderBy: { createdAt: 'desc' } });
+  const assignments = await prisma.lmsCourseAssignment.findMany({ where: { targetId: userId, orgId, targetType: 'USER' } });
   const courseMap = await buildCourseNameMap([...progresses, ...quizAttempts, ...assignments].map((x) => x.courseId).filter(Boolean));
 
   const assessmentIds = [...new Set(quizAttempts.map((a) => a.assessmentId).filter(Boolean))];
-  const assessments = await prisma.assessment.findMany({ where: { id: { in: assessmentIds } }, select: { id: true, title: true } });
+  const assessments = await prisma.lmsAssessment.findMany({ where: { id: { in: assessmentIds } }, select: { id: true, title: true } });
   const assessmentMap = new Map(assessments.map((a) => [a.id, a.title]));
 
   const timeline: Record<string, unknown>[] = [];
@@ -466,11 +466,11 @@ export async function getLearnerDetail(managerId: string, orgId: string, userId:
 
   // Resource breakdown from modules
   const resourceBreakdown: Record<string, unknown>[] = [];
-  const courseModulesMap = new Map<string, Awaited<ReturnType<typeof prisma.module.findMany>>>();
+  const courseModulesMap = new Map<string, Awaited<ReturnType<typeof prisma.lmsModule.findMany>>>();
   for (const p of progresses) {
     if (!p.courseId) continue;
     if (!courseModulesMap.has(p.courseId)) {
-      courseModulesMap.set(p.courseId, await prisma.module.findMany({ where: { courseId: p.courseId, orgId }, include: { lessons: true }, orderBy: { orderIndex: 'asc' } }));
+      courseModulesMap.set(p.courseId, await prisma.lmsModule.findMany({ where: { courseId: p.courseId, orgId }, include: { lessons: true }, orderBy: { orderIndex: 'asc' } }));
     }
     const modules = courseModulesMap.get(p.courseId) || [];
     const cTitle = getTitle(p.courseId, courseMap);
@@ -507,23 +507,23 @@ export async function getLearnerDetail(managerId: string, orgId: string, userId:
 }
 
 export async function manualOverride(managerId: string, orgId: string, body: { userId: string; action: string; courseId?: string; newDueDate?: string }) {
-  const user = await prisma.user.findFirst({ where: { id: body.userId, managerId, orgId, isActive: true } });
+  const user = await prisma.lmsUser.findFirst({ where: { id: body.userId, managerId, orgId, isActive: true } });
   if (!user) throw Forbidden('You do not have authority over this user');
 
   if (body.action === 'extend_deadline') {
-    const assignment = await prisma.courseAssignment.findFirst({ where: { targetId: body.userId, courseId: body.courseId, orgId } });
+    const assignment = await prisma.lmsCourseAssignment.findFirst({ where: { targetId: body.userId, courseId: body.courseId, orgId } });
     if (!assignment) throw NotFound('Course assignment not found');
-    await prisma.courseAssignment.update({ where: { id: assignment.id }, data: { dueDate: new Date(body.newDueDate as string) } });
+    await prisma.lmsCourseAssignment.update({ where: { id: assignment.id }, data: { dueDate: new Date(body.newDueDate as string) } });
     return { success: true, message: 'Deadline extended successfully' };
   }
   if (body.action === 'manual_completion') {
-    const existing = await prisma.progress.findFirst({ where: { learnerId: body.userId, courseId: body.courseId, orgId } });
+    const existing = await prisma.lmsProgress.findFirst({ where: { learnerId: body.userId, courseId: body.courseId, orgId } });
     if (!existing) {
-      await prisma.progress.create({
+      await prisma.lmsProgress.create({
         data: { orgId, learnerId: body.userId, courseId: body.courseId as string, status: 'Completed', completionPercentage: 100, startedAt: new Date(), completedAt: new Date() },
       });
     } else {
-      await prisma.progress.update({ where: { id: existing.id }, data: { status: 'Completed', completionPercentage: 100, completedAt: new Date() } });
+      await prisma.lmsProgress.update({ where: { id: existing.id }, data: { status: 'Completed', completionPercentage: 100, completedAt: new Date() } });
     }
     return { success: true, message: 'Module/Course marked as complete successfully' };
   }
@@ -535,7 +535,7 @@ export async function getTeamCertificates(managerId: string, orgId: string) {
   const members = await getTeamMembers(managerId, orgId);
   if (members.length === 0) throw NotFound('No team members found');
   const memberIds = members.map((m) => m.id);
-  const certificates = await prisma.certificateIssued.findMany({
+  const certificates = await prisma.lmsCertificateIssued.findMany({
     where: { orgId, learnerId: { in: memberIds }, pdfUrl: { not: '' } },
   });
   if (certificates.length === 0) throw NotFound('No certificates found for team members');
@@ -553,9 +553,9 @@ export async function getTeamReportData(managerId: string, orgId: string) {
   const members = await getTeamMembers(managerId, orgId);
   if (members.length === 0) throw NotFound('No team members found');
   const memberIds = members.map((m) => m.id);
-  const assignments = await prisma.courseAssignment.findMany({ where: { orgId, targetType: 'USER', targetId: { in: memberIds } } });
-  const progresses = await prisma.progress.findMany({ where: { orgId, learnerId: { in: memberIds } } });
-  const certificates = await prisma.certificateIssued.findMany({ where: { orgId, learnerId: { in: memberIds } } });
+  const assignments = await prisma.lmsCourseAssignment.findMany({ where: { orgId, targetType: 'USER', targetId: { in: memberIds } } });
+  const progresses = await prisma.lmsProgress.findMany({ where: { orgId, learnerId: { in: memberIds } } });
+  const certificates = await prisma.lmsCertificateIssued.findMany({ where: { orgId, learnerId: { in: memberIds } } });
 
   return members.map((m) => {
     const userAssignments = assignments.filter((a) => a.targetId === m.id);

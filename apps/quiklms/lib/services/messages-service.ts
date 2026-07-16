@@ -80,7 +80,7 @@ export interface UpdateGroupInput {
 
 const USER_PUBLIC_SELECT = {
   id: true, firstName: true, lastName: true, email: true, role: true, profilePicture: true,
-} satisfies Prisma.UserSelect;
+} satisfies Prisma.LmsUserSelect;
 
 function moderateContent(text: string): { allowed: boolean; reason?: string } {
   if (text.length > MAX_MESSAGE_LENGTH) {
@@ -104,11 +104,11 @@ function withMongoId<T extends { id: string }>(obj: T): T & { _id: string } {
 async function userMap(ids: string[]): Promise<Map<string, Record<string, unknown>>> {
   const unique = [...new Set(ids.filter(Boolean))];
   if (!unique.length) return new Map();
-  const users = await prisma.user.findMany({ where: { id: { in: unique } }, select: USER_PUBLIC_SELECT });
+  const users = await prisma.lmsUser.findMany({ where: { id: { in: unique } }, select: USER_PUBLIC_SELECT });
   return new Map(users.map((u) => [u.id, withMongoId(u)]));
 }
 
-type ConvWithChildren = Prisma.ConversationGetPayload<{
+type ConvWithChildren = Prisma.LmsConversationGetPayload<{
   include: { participants: true };
 }>;
 
@@ -141,7 +141,7 @@ export async function getMessageableContacts(
   let batchStudentIds: string[] | null = null;
   let batchTeacherId: string | null = null;
   if (opts.batchId) {
-    const batch = await prisma.batch.findFirst({
+    const batch = await prisma.lmsBatch.findFirst({
       where: { id: opts.batchId, orgId },
       select: { teacherId: true, students: { select: { studentId: true } } },
     });
@@ -151,7 +151,7 @@ export async function getMessageableContacts(
     }
   }
 
-  const where: Prisma.UserWhereInput = {
+  const where: Prisma.LmsUserWhereInput = {
     orgId,
     isActive: true,
     id: { not: userId },
@@ -194,7 +194,7 @@ export async function getMessageableContacts(
     where.AND = wordConditions;
   }
 
-  const users = await prisma.user.findMany({
+  const users = await prisma.lmsUser.findMany({
     where,
     select: { id: true, firstName: true, lastName: true, email: true, role: true, profilePicture: true, grade: true },
     take: 30,
@@ -216,7 +216,7 @@ export async function getMessageableContacts(
 
 // ═══════════════ LIST CONVERSATIONS ═══════════════
 export async function getConversations(orgId: string, userId: string) {
-  const convs = await prisma.conversation.findMany({
+  const convs = await prisma.lmsConversation.findMany({
     where: { orgId, participants: { some: { userId } } },
     include: { participants: true },
     orderBy: [{ lastMessageAt: 'desc' }, { createdAt: 'desc' }],
@@ -230,7 +230,7 @@ export async function getConversations(orgId: string, userId: string) {
 }
 
 export async function getArchivedConversations(orgId: string, userId: string) {
-  const convs = await prisma.conversation.findMany({
+  const convs = await prisma.lmsConversation.findMany({
     where: { orgId, participants: { some: { userId } } },
     include: { participants: true },
     orderBy: [{ lastMessageAt: 'desc' }, { createdAt: 'desc' }],
@@ -252,7 +252,7 @@ export async function createConversation(
 ) {
   const uniqueIds = [...new Set([userId, ...dto.participantIds])];
 
-  const participantDocs = await prisma.user.findMany({
+  const participantDocs = await prisma.lmsUser.findMany({
     where: { id: { in: uniqueIds }, orgId },
     select: { id: true, role: true },
   });
@@ -284,7 +284,7 @@ export async function createConversation(
   // For direct chats, check if a conversation already exists
   if (!dto.type || dto.type === 'direct') {
     if (dto.participantIds.length === 1) {
-      const candidates = await prisma.conversation.findMany({
+      const candidates = await prisma.lmsConversation.findMany({
         where: {
           orgId,
           type: 'direct',
@@ -297,11 +297,11 @@ export async function createConversation(
       });
       const existing = candidates.find((c) => c.participants.length === 2);
       if (existing) {
-        await prisma.conversationParticipant.updateMany({
+        await prisma.lmsConversationParticipant.updateMany({
           where: { conversationId: existing.id, userId },
           data: { isDeleted: false, isArchived: false },
         });
-        const refreshed = await prisma.conversation.findUnique({
+        const refreshed = await prisma.lmsConversation.findUnique({
           where: { id: existing.id },
           include: { participants: true },
         });
@@ -310,7 +310,7 @@ export async function createConversation(
     }
   }
 
-  const conversation = await prisma.conversation.create({
+  const conversation = await prisma.lmsConversation.create({
     data: {
       orgId,
       type: dto.type || (uniqueIds.length > 2 ? 'group' : 'direct'),
@@ -332,7 +332,7 @@ export async function createConversation(
     await sendMessage(orgId, conversation.id, userId, { text: dto.initialMessage });
   }
 
-  const refreshed = await prisma.conversation.findUnique({
+  const refreshed = await prisma.lmsConversation.findUnique({
     where: { id: conversation.id },
     include: { participants: true },
   });
@@ -341,7 +341,7 @@ export async function createConversation(
 
 // ═══════════════ GET CONVERSATION DETAILS ═══════════════
 async function loadConversationOrThrow(orgId: string, conversationId: string, userId: string) {
-  const conversation = await prisma.conversation.findFirst({
+  const conversation = await prisma.lmsConversation.findFirst({
     where: { id: conversationId, orgId, participants: { some: { userId } } },
     include: { participants: true },
   });
@@ -366,14 +366,14 @@ export async function getMessages(
 
   const skip = (page - 1) * limit;
   const [rows, total] = await Promise.all([
-    prisma.message.findMany({
+    prisma.lmsMessage.findMany({
       where: { conversationId },
       include: { reactions: true },
       orderBy: { createdAt: 'desc' },
       skip,
       take: limit,
     }),
-    prisma.message.count({ where: { conversationId } }),
+    prisma.lmsMessage.count({ where: { conversationId } }),
   ]);
 
   const ordered = rows.reverse();
@@ -381,14 +381,14 @@ export async function getMessages(
   return { messages, total, page, limit };
 }
 
-type MessageWithReactions = Prisma.MessageGetPayload<{ include: { reactions: true } }>;
+type MessageWithReactions = Prisma.LmsMessageGetPayload<{ include: { reactions: true } }>;
 
 /** Shape a message mirroring legacy populated senderId + replyTo. */
 async function shapeMessage(m: MessageWithReactions) {
   const senderIds = [m.senderId];
   let replyToDoc: { id: string; text: string; senderId: string; createdAt: Date } | null = null;
   if (m.replyTo) {
-    replyToDoc = await prisma.message.findUnique({
+    replyToDoc = await prisma.lmsMessage.findUnique({
       where: { id: m.replyTo },
       select: { id: true, text: true, senderId: true, createdAt: true },
     });
@@ -420,7 +420,7 @@ export async function sendMessage(
   const moderation = moderateContent(dto.text);
   if (!moderation.allowed) throw BadRequest(moderation.reason);
 
-  const message = await prisma.message.create({
+  const message = await prisma.lmsMessage.create({
     data: {
       conversationId,
       senderId,
@@ -432,7 +432,7 @@ export async function sendMessage(
     include: { reactions: true },
   });
 
-  await prisma.conversation.update({
+  await prisma.lmsConversation.update({
     where: { id: conversationId },
     data: {
       lastMessageText: dto.text.substring(0, 100),
@@ -443,7 +443,7 @@ export async function sendMessage(
   });
 
   // Un-delete conversation for participants who had soft-deleted it
-  await prisma.conversationParticipant.updateMany({
+  await prisma.lmsConversationParticipant.updateMany({
     where: { conversationId, isDeleted: true },
     data: { isDeleted: false },
   });
@@ -453,7 +453,7 @@ export async function sendMessage(
 
 // ═══════════════ EDIT MESSAGE ═══════════════
 export async function editMessage(orgId: string, messageId: string, userId: string, text: string) {
-  const message = await prisma.message.findUnique({ where: { id: messageId } });
+  const message = await prisma.lmsMessage.findUnique({ where: { id: messageId } });
   if (!message) throw NotFound('Message not found');
   if (message.senderId !== userId) throw Forbidden('You can only edit your own messages');
   if (message.isDeleted) throw BadRequest('Cannot edit a deleted message');
@@ -461,7 +461,7 @@ export async function editMessage(orgId: string, messageId: string, userId: stri
   const moderation = moderateContent(text);
   if (!moderation.allowed) throw BadRequest(moderation.reason);
 
-  const updated = await prisma.message.update({
+  const updated = await prisma.lmsMessage.update({
     where: { id: messageId },
     data: { text, isEdited: true, editedAt: new Date() },
     include: { reactions: true },
@@ -471,11 +471,11 @@ export async function editMessage(orgId: string, messageId: string, userId: stri
 
 // ═══════════════ DELETE MESSAGE ═══════════════
 export async function deleteMessage(orgId: string, messageId: string, userId: string) {
-  const message = await prisma.message.findUnique({ where: { id: messageId } });
+  const message = await prisma.lmsMessage.findUnique({ where: { id: messageId } });
   if (!message) throw NotFound('Message not found');
   if (message.senderId !== userId) throw Forbidden('You can only delete your own messages');
 
-  await prisma.message.update({
+  await prisma.lmsMessage.update({
     where: { id: messageId },
     data: {
       isDeleted: true,
@@ -489,19 +489,19 @@ export async function deleteMessage(orgId: string, messageId: string, userId: st
 
 // ═══════════════ REACT TO MESSAGE ═══════════════
 export async function reactToMessage(orgId: string, messageId: string, userId: string, emoji: string) {
-  const message = await prisma.message.findUnique({ where: { id: messageId } });
+  const message = await prisma.lmsMessage.findUnique({ where: { id: messageId } });
   if (!message) throw NotFound('Message not found');
 
   await loadConversationOrThrow(orgId, message.conversationId, userId);
 
-  const existing = await prisma.messageReaction.findFirst({ where: { messageId, userId, emoji } });
+  const existing = await prisma.lmsMessageReaction.findFirst({ where: { messageId, userId, emoji } });
   if (existing) {
-    await prisma.messageReaction.delete({ where: { id: existing.id } });
+    await prisma.lmsMessageReaction.delete({ where: { id: existing.id } });
   } else {
-    await prisma.messageReaction.create({ data: { messageId, userId, emoji } });
+    await prisma.lmsMessageReaction.create({ data: { messageId, userId, emoji } });
   }
 
-  const reactions = await prisma.messageReaction.findMany({ where: { messageId } });
+  const reactions = await prisma.lmsMessageReaction.findMany({ where: { messageId } });
   return { messageId, reactions };
 }
 
@@ -512,7 +512,7 @@ export async function forwardMessage(
   userId: string,
   targetConversationId: string,
 ) {
-  const original = await prisma.message.findUnique({ where: { id: messageId } });
+  const original = await prisma.lmsMessage.findUnique({ where: { id: messageId } });
   if (!original) throw NotFound('Original message not found');
 
   await loadConversationOrThrow(orgId, original.conversationId, userId);
@@ -530,14 +530,14 @@ async function setParticipantFlag(
   orgId: string,
   conversationId: string,
   userId: string,
-  data: Prisma.ConversationParticipantUpdateManyMutationInput,
+  data: Prisma.LmsConversationParticipantUpdateManyMutationInput,
 ) {
-  const conv = await prisma.conversation.findFirst({
+  const conv = await prisma.lmsConversation.findFirst({
     where: { id: conversationId, orgId, participants: { some: { userId } } },
     select: { id: true },
   });
   if (!conv) throw NotFound('Conversation not found');
-  await prisma.conversationParticipant.updateMany({ where: { conversationId, userId }, data });
+  await prisma.lmsConversationParticipant.updateMany({ where: { conversationId, userId }, data });
 }
 
 export async function archiveConversation(orgId: string, conversationId: string, userId: string) {
@@ -570,13 +570,13 @@ export async function updateGroup(orgId: string, conversationId: string, userId:
     throw Forbidden('Only group admins can update group settings');
   }
 
-  const data: Prisma.ConversationUpdateInput = {};
+  const data: Prisma.LmsConversationUpdateInput = {};
   if (dto.title !== undefined) data.title = dto.title;
   if (dto.description !== undefined) data.description = dto.description;
   if (dto.groupIcon !== undefined) data.groupIcon = dto.groupIcon;
 
-  await prisma.conversation.update({ where: { id: conversationId }, data });
-  const refreshed = await prisma.conversation.findUnique({
+  await prisma.lmsConversation.update({ where: { id: conversationId }, data });
+  const refreshed = await prisma.lmsConversation.findUnique({
     where: { id: conversationId },
     include: { participants: true },
   });
@@ -596,12 +596,12 @@ export async function addParticipants(orgId: string, conversationId: string, use
   const newIds = participantIds.filter((id) => !existingIds.includes(id));
   if (newIds.length === 0) throw BadRequest('All users are already participants');
 
-  await prisma.conversationParticipant.createMany({
+  await prisma.lmsConversationParticipant.createMany({
     data: newIds.map((id) => ({ conversationId, userId: id, role: 'member' as const })),
     skipDuplicates: true,
   });
 
-  await prisma.message.create({
+  await prisma.lmsMessage.create({
     data: {
       conversationId,
       senderId: userId,
@@ -609,7 +609,7 @@ export async function addParticipants(orgId: string, conversationId: string, use
     },
   });
 
-  const refreshed = await prisma.conversation.findUnique({
+  const refreshed = await prisma.lmsConversation.findUnique({
     where: { id: conversationId },
     include: { participants: true },
   });
@@ -627,9 +627,9 @@ export async function removeParticipant(orgId: string, conversationId: string, u
     }
   }
 
-  await prisma.conversationParticipant.deleteMany({ where: { conversationId, userId: targetUserId } });
+  await prisma.lmsConversationParticipant.deleteMany({ where: { conversationId, userId: targetUserId } });
 
-  await prisma.message.create({
+  await prisma.lmsMessage.create({
     data: {
       conversationId,
       senderId: userId,
@@ -646,7 +646,7 @@ export async function makeAdmin(orgId: string, conversationId: string, userId: s
     throw Forbidden('Only admins can promote members');
   }
 
-  await prisma.conversationParticipant.updateMany({
+  await prisma.lmsConversationParticipant.updateMany({
     where: { conversationId, userId: targetUserId },
     data: { role: 'admin' },
   });
@@ -655,12 +655,12 @@ export async function makeAdmin(orgId: string, conversationId: string, userId: s
 
 // ═══════════════ MARK AS READ ═══════════════
 export async function markAsRead(orgId: string, conversationId: string, userId: string) {
-  const conv = await prisma.conversation.findFirst({
+  const conv = await prisma.lmsConversation.findFirst({
     where: { id: conversationId, orgId, participants: { some: { userId } } },
     select: { id: true },
   });
   if (conv) {
-    await prisma.conversationParticipant.updateMany({
+    await prisma.lmsConversationParticipant.updateMany({
       where: { conversationId, userId },
       data: { lastReadAt: new Date() },
     });
@@ -671,9 +671,9 @@ export async function markAsRead(orgId: string, conversationId: string, userId: 
 // ═══════════════ BLOCK / UNBLOCK ═══════════════
 export async function blockUser(orgId: string, conversationId: string, userId: string, blockedUserId: string) {
   await loadConversationOrThrow(orgId, conversationId, userId);
-  const conv = await prisma.conversation.findFirst({ where: { id: conversationId, orgId }, select: { blockedUserIds: true } });
+  const conv = await prisma.lmsConversation.findFirst({ where: { id: conversationId, orgId }, select: { blockedUserIds: true } });
   if (conv && !conv.blockedUserIds.includes(blockedUserId)) {
-    await prisma.conversation.updateMany({
+    await prisma.lmsConversation.updateMany({
       where: { id: conversationId, orgId },
       data: { blockedUserIds: { push: blockedUserId } },
     });
@@ -683,9 +683,9 @@ export async function blockUser(orgId: string, conversationId: string, userId: s
 
 export async function unblockUser(orgId: string, conversationId: string, userId: string, blockedUserId: string) {
   await loadConversationOrThrow(orgId, conversationId, userId);
-  const conv = await prisma.conversation.findFirst({ where: { id: conversationId, orgId }, select: { blockedUserIds: true } });
+  const conv = await prisma.lmsConversation.findFirst({ where: { id: conversationId, orgId }, select: { blockedUserIds: true } });
   if (conv) {
-    await prisma.conversation.updateMany({
+    await prisma.lmsConversation.updateMany({
       where: { id: conversationId, orgId },
       data: { blockedUserIds: { set: conv.blockedUserIds.filter((id) => id !== blockedUserId) } },
     });
@@ -695,9 +695,9 @@ export async function unblockUser(orgId: string, conversationId: string, userId:
 
 // ═══════════════ REPORT / FLAG ═══════════════
 export async function reportMessage(orgId: string, messageId: string, userId: string, reason: string) {
-  const message = await prisma.message.findUnique({ where: { id: messageId } });
+  const message = await prisma.lmsMessage.findUnique({ where: { id: messageId } });
   if (!message) throw NotFound('Message not found.');
   await loadConversationOrThrow(orgId, message.conversationId, userId);
-  await prisma.message.update({ where: { id: messageId }, data: { isFlagged: true, flagReason: reason } });
+  await prisma.lmsMessage.update({ where: { id: messageId }, data: { isFlagged: true, flagReason: reason } });
   return { success: true, message: 'Message has been reported.' };
 }

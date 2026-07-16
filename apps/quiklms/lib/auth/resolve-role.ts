@@ -10,23 +10,39 @@
  * API guards (`requireRoles`, which read `getAuthContext`) will honour. Keeping
  * the two in lock-step is what prevents "lands on the wrong dashboard" drift.
  */
-import type { UserRole } from '@prisma/client';
+import type { LmsUserRole as UserRole } from '@prisma/client';
 import { prisma } from '@/lib/prisma';
 import { mapPlatformRoleToLmsRole } from '@/lib/auth/role-resolution';
 
 export interface SessionRoleInput {
   id: string;
+  /** Platform Org id — used to resolve the Tenant row on the coarse fallback. */
+  orgId?: string | null;
   membershipRole?: string;
   isSuperAdmin?: boolean;
 }
 
 export async function resolveLmsRole(user: SessionRoleInput): Promise<UserRole> {
   try {
-    const row = await prisma.user.findUnique({
+    const row = await prisma.lmsUser.findUnique({
       where: { id: user.id },
       select: { role: true },
     });
     if (row) return row.role;
+
+    // No LMS row yet — disambiguate the operator (org has no `Tenant` row →
+    // SUPER_ADMIN) from a tenant admin (org has one → TENANT_ADMIN) so a
+    // freshly-onboarded school admin lands on their tenant dashboard, not the
+    // super-admin portal. Mirrors getAuthContext's fallback exactly.
+    let hasTenantRow = false;
+    if (user.orgId) {
+      const tenant = await prisma.lmsTenant.findUnique({
+        where: { id: user.orgId },
+        select: { id: true },
+      });
+      hasTenantRow = !!tenant;
+    }
+    return mapPlatformRoleToLmsRole(user.membershipRole, user.isSuperAdmin, hasTenantRow);
   } catch {
     /* LMS DB unavailable — fall through to the coarse membership mapping. */
   }

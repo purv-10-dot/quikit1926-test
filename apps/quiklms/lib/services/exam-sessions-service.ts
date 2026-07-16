@@ -37,7 +37,7 @@ const examSettings = (s: Prisma.JsonValue | undefined): ExamSettings => (s as Ex
 export async function startSession(user: AuthUser, studentId: string, examId: string) {
   const orgId = user.orgId as string;
 
-  const exam = await prisma.exam.findFirst({
+  const exam = await prisma.lmsExam.findFirst({
     where: tenantWhere(user, { id: examId }),
     include: { questions: true },
   });
@@ -49,15 +49,15 @@ export async function startSession(user: AuthUser, studentId: string, examId: st
   }
 
   if (exam.batchId) {
-    const learner = await prisma.user.findFirst({
+    const learner = await prisma.lmsUser.findFirst({
       where: tenantWhere(user, { id: studentId }),
       select: { grade: true },
     });
 
-    const orConds: Prisma.BatchWhereInput[] = [{ students: { some: { studentId } } }];
+    const orConds: Prisma.LmsBatchWhereInput[] = [{ students: { some: { studentId } } }];
     if (learner?.grade) orConds.push({ grade: learner.grade, status: 'active' });
 
-    const eligibleBatch = await prisma.batch.findFirst({
+    const eligibleBatch = await prisma.lmsBatch.findFirst({
       where: tenantWhere(user, { id: exam.batchId, OR: orConds }),
       select: { id: true },
     });
@@ -68,7 +68,7 @@ export async function startSession(user: AuthUser, studentId: string, examId: st
   if (exam.scheduledStartTime && now < exam.scheduledStartTime) throw BadRequest('Exam has not started yet');
   if (exam.scheduledEndTime && now > exam.scheduledEndTime) throw BadRequest('Exam window has ended');
 
-  const existing = await prisma.examSession.findUnique({
+  const existing = await prisma.lmsExamSession.findUnique({
     where: { orgId_examId_studentId: { orgId, examId, studentId } },
   });
   if (existing) {
@@ -92,7 +92,7 @@ export async function startSession(user: AuthUser, studentId: string, examId: st
   const graceMinutes = settings.graceWindowMinutes || 5;
   const serverDeadline = new Date(now.getTime() + (exam.duration + graceMinutes) * 60 * 1000);
 
-  const session = await prisma.examSession.create({
+  const session = await prisma.lmsExamSession.create({
     data: {
       orgId,
       examId,
@@ -106,19 +106,19 @@ export async function startSession(user: AuthUser, studentId: string, examId: st
   });
 
   if (exam.status === 'published') {
-    await prisma.exam.update({ where: { id: exam.id }, data: { status: 'active' } });
+    await prisma.lmsExam.update({ where: { id: exam.id }, data: { status: 'active' } });
   }
 
   return getSessionWithQuestions(session, exam);
 }
 
-type SessionRecord = Prisma.ExamSessionGetPayload<object>;
-type ExamRecord = Prisma.ExamGetPayload<object>;
+type SessionRecord = Prisma.LmsExamSessionGetPayload<object>;
+type ExamRecord = Prisma.LmsExamGetPayload<object>;
 
 async function getSessionWithQuestions(session: SessionRecord, examDoc?: ExamRecord) {
   const assigned = (session.assignedQuestions as unknown as AssignedQuestion[]) || [];
   const questionIds = assigned.map((q) => q.questionId);
-  const questions = await prisma.question.findMany({
+  const questions = await prisma.lmsQuestion.findMany({
     where: { id: { in: questionIds }, orgId: session.orgId },
     select: { id: true, text: true, type: true, options: true, imageUrl: true, audioUrl: true, points: true },
   });
@@ -137,7 +137,7 @@ async function getSessionWithQuestions(session: SessionRecord, examDoc?: ExamRec
     };
   });
 
-  const exam = examDoc || (await prisma.exam.findUnique({ where: { id: session.examId } }));
+  const exam = examDoc || (await prisma.lmsExam.findUnique({ where: { id: session.examId } }));
 
   const now = new Date();
   const remainingMs = session.serverDeadline
@@ -164,7 +164,7 @@ async function getSessionWithQuestions(session: SessionRecord, examDoc?: ExamRec
 
 export async function saveAnswers(user: AuthUser, studentId: string, sessionId: string, answers: AnswersMap) {
   const orgId = user.orgId as string;
-  const session = await prisma.examSession.findFirst({ where: { id: sessionId, orgId, studentId } });
+  const session = await prisma.lmsExamSession.findFirst({ where: { id: sessionId, orgId, studentId } });
   if (!session) throw NotFound('Session not found');
   if (session.status !== 'in_progress') throw BadRequest('Session is not in progress');
 
@@ -176,7 +176,7 @@ export async function saveAnswers(user: AuthUser, studentId: string, sessionId: 
     current[qId] = { ...answer, submittedAt: now.toISOString() };
   }
 
-  await prisma.examSession.update({
+  await prisma.lmsExamSession.update({
     where: { id: sessionId },
     data: { answers: current as unknown as Prisma.InputJsonValue, lastSavedAt: now },
   });
@@ -186,7 +186,7 @@ export async function saveAnswers(user: AuthUser, studentId: string, sessionId: 
 
 export async function submitSession(user: AuthUser, studentId: string, sessionId: string) {
   const orgId = user.orgId as string;
-  const session = await prisma.examSession.findFirst({ where: { id: sessionId, orgId, studentId } });
+  const session = await prisma.lmsExamSession.findFirst({ where: { id: sessionId, orgId, studentId } });
   if (!session) throw NotFound('Session not found');
   if (session.status !== 'in_progress') throw BadRequest('Session is not in progress');
   return gradeAndFinalize(session, 'submitted');
@@ -195,13 +195,13 @@ export async function submitSession(user: AuthUser, studentId: string, sessionId
 type FinalStatus = 'submitted' | 'auto_submitted';
 
 async function gradeAndFinalize(session: SessionRecord, status: FinalStatus) {
-  const exam = await prisma.exam.findUnique({ where: { id: session.examId }, include: { questions: true } });
+  const exam = await prisma.lmsExam.findUnique({ where: { id: session.examId }, include: { questions: true } });
   if (!exam) throw NotFound('Exam not found');
 
   const assigned = (session.assignedQuestions as unknown as AssignedQuestion[]) || [];
   const answers = (session.answers as unknown as AnswersMap) || {};
   const questionIds = assigned.map((q) => q.questionId);
-  const questions = await prisma.question.findMany({ where: { id: { in: questionIds }, orgId: session.orgId } });
+  const questions = await prisma.lmsQuestion.findMany({ where: { id: { in: questionIds }, orgId: session.orgId } });
   const questionMap = new Map(questions.map((q) => [q.id, q]));
   const settings = examSettings(exam.settings);
 
@@ -237,7 +237,7 @@ async function gradeAndFinalize(session: SessionRecord, status: FinalStatus) {
   const passingScore = settings.passingScore || 40;
   const passed = !hasManualGrading ? percentage >= passingScore : null;
 
-  await prisma.examSession.update({
+  await prisma.lmsExamSession.update({
     where: { id: session.id },
     data: { score, totalPoints, percentage, passed, status, endedAt: new Date() },
   });
@@ -245,7 +245,7 @@ async function gradeAndFinalize(session: SessionRecord, status: FinalStatus) {
   return { sessionId: session.id, score, totalPoints, percentage, passed, status, hasManualGrading };
 }
 
-type QuestionRecord = Prisma.QuestionGetPayload<object>;
+type QuestionRecord = Prisma.LmsQuestionGetPayload<object>;
 
 function checkAnswer(question: QuestionRecord, answer: AnswerEntry): boolean {
   const options = (question.options as { text: string; isCorrect: boolean }[]) || [];
@@ -295,7 +295,7 @@ function checkAnswer(question: QuestionRecord, answer: AnswerEntry): boolean {
 
 export async function getSessionStatus(user: AuthUser, studentId: string, sessionId: string) {
   const orgId = user.orgId as string;
-  const session = await prisma.examSession.findFirst({
+  const session = await prisma.lmsExamSession.findFirst({
     where: { id: sessionId, orgId, studentId },
     select: { status: true, startedAt: true, serverDeadline: true, answers: true, lastSavedAt: true, proctoringFlags: true },
   });
@@ -315,7 +315,7 @@ export async function getSessionStatus(user: AuthUser, studentId: string, sessio
 
 export async function getResult(user: AuthUser, studentId: string, sessionId: string) {
   const orgId = user.orgId as string;
-  const session = await prisma.examSession.findFirst({
+  const session = await prisma.lmsExamSession.findFirst({
     where: { id: sessionId, orgId, studentId },
     include: { exam: { select: { id: true, title: true, subject: true, totalMarks: true, settings: true, status: true } } },
   });
@@ -332,7 +332,7 @@ export async function getResult(user: AuthUser, studentId: string, sessionId: st
 
 export async function getSubmissions(user: AuthUser, examId: string) {
   const orgId = user.orgId as string;
-  return prisma.examSession.findMany({
+  return prisma.lmsExamSession.findMany({
     where: { orgId, examId },
     orderBy: { score: 'desc' },
   });
@@ -345,14 +345,14 @@ export async function evaluateSession(
   data: { score: number; teacherRemarks?: string },
 ) {
   const orgId = user.orgId as string;
-  const session = await prisma.examSession.findFirst({ where: { id: sessionId, orgId } });
+  const session = await prisma.lmsExamSession.findFirst({ where: { id: sessionId, orgId } });
   if (!session) throw NotFound('Session not found');
 
   const percentage = session.totalPoints ? Math.round((data.score / session.totalPoints) * 100) : 0;
-  const exam = await prisma.exam.findUnique({ where: { id: session.examId }, select: { settings: true } });
+  const exam = await prisma.lmsExam.findUnique({ where: { id: session.examId }, select: { settings: true } });
   const passingScore = examSettings(exam?.settings).passingScore || 40;
 
-  return prisma.examSession.update({
+  return prisma.lmsExamSession.update({
     where: { id: sessionId },
     data: {
       score: data.score,
@@ -367,9 +367,9 @@ export async function evaluateSession(
 
 export async function voidSession(user: AuthUser, sessionId: string) {
   const orgId = user.orgId as string;
-  const existing = await prisma.examSession.findFirst({ where: { id: sessionId, orgId } });
+  const existing = await prisma.lmsExamSession.findFirst({ where: { id: sessionId, orgId } });
   if (!existing) throw NotFound('Session not found');
-  return prisma.examSession.update({
+  return prisma.lmsExamSession.update({
     where: { id: sessionId },
     data: { status: 'voided', endedAt: new Date() },
   });
@@ -377,10 +377,10 @@ export async function voidSession(user: AuthUser, sessionId: string) {
 
 export async function getMySession(user: AuthUser, studentId: string, examId: string) {
   const orgId = user.orgId as string;
-  const session = await prisma.examSession.findFirst({ where: { examId, studentId, orgId } });
+  const session = await prisma.lmsExamSession.findFirst({ where: { examId, studentId, orgId } });
   if (!session) return null;
 
-  const exam = await prisma.exam.findUnique({
+  const exam = await prisma.lmsExam.findUnique({
     where: { id: session.examId },
     select: { title: true, subject: true, totalMarks: true, settings: true, status: true },
   });
@@ -407,7 +407,7 @@ export async function getMySession(user: AuthUser, studentId: string, examId: st
 
 export async function getStudentResults(user: AuthUser, studentId: string) {
   const orgId = user.orgId as string;
-  const sessions = await prisma.examSession.findMany({
+  const sessions = await prisma.lmsExamSession.findMany({
     where: { studentId, orgId, status: { in: ['submitted', 'auto_submitted'] } },
     include: { exam: { select: { id: true, title: true, subject: true, totalMarks: true, settings: true, status: true } } },
     orderBy: { endedAt: 'desc' },
@@ -439,7 +439,7 @@ export async function getStudentResults(user: AuthUser, studentId: string) {
 
 export async function getExamAnalytics(user: AuthUser, examId: string) {
   const orgId = user.orgId as string;
-  const sessions = await prisma.examSession.findMany({
+  const sessions = await prisma.lmsExamSession.findMany({
     where: { orgId, examId, status: { in: ['submitted', 'auto_submitted'] } },
   });
 
@@ -457,7 +457,7 @@ export async function getExamAnalytics(user: AuthUser, examId: string) {
     else distribution['81-100']++;
   }
 
-  const exam = await prisma.exam.findUnique({
+  const exam = await prisma.lmsExam.findUnique({
     where: { id: examId },
     include: { questions: { include: { question: { select: { id: true, text: true, type: true, options: true, correctAnswer: true } } } } },
   });

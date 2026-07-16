@@ -4,7 +4,7 @@
  * and free-text `search` on the question `text`. Mongo `distinct` is emulated
  * with Prisma + JS de-dup.
  */
-import type { Prisma, BankQuestionType, Difficulty } from '@prisma/client';
+import type { Prisma, LmsBankQuestionType as BankQuestionType, LmsDifficulty as Difficulty } from '@prisma/client';
 import { prisma } from '@/lib/prisma';
 import { NotFound } from '@/lib/http';
 
@@ -20,8 +20,8 @@ export interface QuestionFilters {
   limit?: number;
 }
 
-function buildWhere(orgId: string, filters: QuestionFilters): Prisma.QuestionWhereInput {
-  const where: Prisma.QuestionWhereInput = {
+function buildWhere(orgId: string, filters: QuestionFilters): Prisma.LmsQuestionWhereInput {
+  const where: Prisma.LmsQuestionWhereInput = {
     orgId,
     isActive: filters.isActive !== false,
   };
@@ -36,8 +36,8 @@ function buildWhere(orgId: string, filters: QuestionFilters): Prisma.QuestionWhe
 
 export async function createQuestion(orgId: string, userId: string, data: Record<string, unknown>) {
   const { id: _id, orgId: _t, createdBy: _c, createdAt: _ca, updatedAt: _ua, ...rest } = data as Record<string, unknown>;
-  return prisma.question.create({
-    data: { ...(rest as Prisma.QuestionCreateInput), orgId, createdBy: userId },
+  return prisma.lmsQuestion.create({
+    data: { ...(rest as Prisma.LmsQuestionCreateInput), orgId, createdBy: userId },
   });
 }
 
@@ -48,15 +48,15 @@ export async function findAllQuestions(orgId: string, filters: QuestionFilters) 
   const skip = (page - 1) * limit;
 
   const [questions, total] = await Promise.all([
-    prisma.question.findMany({ where, orderBy: { createdAt: 'desc' }, skip, take: limit }),
-    prisma.question.count({ where }),
+    prisma.lmsQuestion.findMany({ where, orderBy: { createdAt: 'desc' }, skip, take: limit }),
+    prisma.lmsQuestion.count({ where }),
   ]);
 
   return { questions, total, page, limit, totalPages: Math.ceil(total / limit) };
 }
 
 export async function findQuestion(orgId: string, id: string) {
-  const question = await prisma.question.findFirst({ where: { id, orgId } });
+  const question = await prisma.lmsQuestion.findFirst({ where: { id, orgId } });
   if (!question) throw NotFound('Question not found');
   return question;
 }
@@ -64,12 +64,12 @@ export async function findQuestion(orgId: string, id: string) {
 export async function updateQuestion(orgId: string, id: string, data: Record<string, unknown>) {
   await findQuestion(orgId, id);
   const { id: _id, orgId: _t, createdBy: _c, createdAt: _ca, updatedAt: _ua, ...rest } = data as Record<string, unknown>;
-  return prisma.question.update({ where: { id }, data: rest as Prisma.QuestionUpdateInput });
+  return prisma.lmsQuestion.update({ where: { id }, data: rest as Prisma.LmsQuestionUpdateInput });
 }
 
 export async function softDeleteQuestion(orgId: string, id: string) {
   await findQuestion(orgId, id);
-  return prisma.question.update({ where: { id }, data: { isActive: false } });
+  return prisma.lmsQuestion.update({ where: { id }, data: { isActive: false } });
 }
 
 export async function bulkCreateQuestions(orgId: string, userId: string, questions: Record<string, unknown>[]) {
@@ -80,7 +80,7 @@ export async function bulkCreateQuestions(orgId: string, userId: string, questio
 }
 
 export async function getQuestionSubjects(orgId: string): Promise<string[]> {
-  const rows = await prisma.question.findMany({
+  const rows = await prisma.lmsQuestion.findMany({
     where: { orgId, isActive: true },
     select: { subject: true },
     distinct: ['subject'],
@@ -89,14 +89,14 @@ export async function getQuestionSubjects(orgId: string): Promise<string[]> {
 }
 
 export async function getQuestionTopics(orgId: string, subject?: string): Promise<string[]> {
-  const where: Prisma.QuestionWhereInput = { orgId, isActive: true };
+  const where: Prisma.LmsQuestionWhereInput = { orgId, isActive: true };
   if (subject) where.subject = subject;
-  const rows = await prisma.question.findMany({ where, select: { topic: true }, distinct: ['topic'] });
+  const rows = await prisma.lmsQuestion.findMany({ where, select: { topic: true }, distinct: ['topic'] });
   return rows.map((r) => r.topic).filter((t): t is string => !!t);
 }
 
 export async function getQuestionTags(orgId: string): Promise<string[]> {
-  const rows = await prisma.question.findMany({
+  const rows = await prisma.lmsQuestion.findMany({
     where: { orgId, isActive: true },
     select: { tags: true },
   });
@@ -109,9 +109,9 @@ export async function countQuestionsByFilters(
   orgId: string,
   filters: { subject?: string; difficulty?: string; tags?: string[] },
 ): Promise<number> {
-  const where: Prisma.QuestionWhereInput = { orgId, isActive: true };
+  const where: Prisma.LmsQuestionWhereInput = { orgId, isActive: true };
   if (filters.subject) where.subject = filters.subject;
   if (filters.difficulty) where.difficulty = filters.difficulty as Difficulty;
   if (filters.tags?.length) where.tags = { hasSome: filters.tags };
-  return prisma.question.count({ where });
+  return prisma.lmsQuestion.count({ where });
 }

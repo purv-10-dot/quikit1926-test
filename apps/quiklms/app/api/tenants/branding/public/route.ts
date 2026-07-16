@@ -25,8 +25,8 @@ export const GET = route(async (req) => {
     hostSubdomain(req.headers.get('host'));
 
   let tenant = null;
-  if (tenantKey) tenant = await prisma.tenant.findUnique({ where: { tenantKey } });
-  else if (subdomain) tenant = await prisma.tenant.findUnique({ where: { subdomain } });
+  if (tenantKey) tenant = await prisma.lmsTenant.findUnique({ where: { tenantKey } });
+  else if (subdomain) tenant = await prisma.lmsTenant.findUnique({ where: { subdomain } });
 
   if (!tenant) return json({ success: true, data: null });
   return json({

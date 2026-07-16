@@ -44,24 +44,24 @@ export async function updateAvailableSlots(
   slots: { dayOfWeek: number; startTime: string; endTime: string }[],
   maxSlotsPerWeek?: number,
 ) {
-  const teacher = await prisma.user.findFirst({ where: { id: teacherId, orgId, role: 'TEACHER' } });
+  const teacher = await prisma.lmsUser.findFirst({ where: { id: teacherId, orgId, role: 'TEACHER' } });
   if (!teacher) throw NotFound('Teacher not found');
 
-  await prisma.userAvailabilitySlot.deleteMany({ where: { userId: teacherId } });
+  await prisma.lmsUserAvailabilitySlot.deleteMany({ where: { userId: teacherId } });
   if (slots?.length) {
-    await prisma.userAvailabilitySlot.createMany({
+    await prisma.lmsUserAvailabilitySlot.createMany({
       data: slots.map((s) => ({ userId: teacherId, dayOfWeek: s.dayOfWeek, startTime: s.startTime, endTime: s.endTime })),
     });
   }
   if (maxSlotsPerWeek !== undefined) {
-    await prisma.user.update({ where: { id: teacherId }, data: { maxSlotsPerWeek } });
+    await prisma.lmsUser.update({ where: { id: teacherId }, data: { maxSlotsPerWeek } });
   }
 
-  return prisma.user.findUnique({ where: { id: teacherId }, include: { availableSlots: true } });
+  return prisma.lmsUser.findUnique({ where: { id: teacherId }, include: { availableSlots: true } });
 }
 
 export async function getTeacherAvailability(orgId: string, teacherId: string) {
-  const teacher = await prisma.user.findFirst({
+  const teacher = await prisma.lmsUser.findFirst({
     where: { id: teacherId, orgId, role: 'TEACHER' },
     select: {
       id: true, firstName: true, lastName: true, email: true, maxSlotsPerWeek: true,
@@ -71,7 +71,7 @@ export async function getTeacherAvailability(orgId: string, teacherId: string) {
   });
   if (!teacher) throw NotFound('Teacher not found');
 
-  const batches = await prisma.batch.findMany({
+  const batches = await prisma.lmsBatch.findMany({
     where: { orgId, teacherId, status: { in: ['active', 'draft'] } },
     select: { name: true, schedule: { select: { dayOfWeek: true, startTime: true, endTime: true } } },
   });
@@ -137,7 +137,7 @@ export async function getTeacherAvailability(orgId: string, teacherId: string) {
 }
 
 export async function getAllTeacherAvailability(orgId: string) {
-  const teachers = await prisma.user.findMany({
+  const teachers = await prisma.lmsUser.findMany({
     where: { orgId, role: 'TEACHER', isActive: true },
     select: { id: true, firstName: true, lastName: true, email: true },
   });

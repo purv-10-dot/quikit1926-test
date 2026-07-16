@@ -14,7 +14,7 @@ export const GET = route(async (req) => {
   // Non-super-admins must be scoped to a tenant.
   if (user.role !== 'SUPER_ADMIN' && !user.orgId) throw BadRequest('Tenant ID is required');
 
-  const assignments = await prisma.courseAssignment.findMany({
+  const assignments = await prisma.lmsCourseAssignment.findMany({
     where: tenantWhere(user),
     orderBy: { assignedAt: 'desc' },
   });
@@ -24,8 +24,8 @@ export const GET = route(async (req) => {
   // Resolve course titles (MasterCourse first, then legacy Course).
   const courseIds = [...new Set(assignments.map((a) => a.courseId).filter(Boolean))];
   const [masterCourses, legacyCourses] = await Promise.all([
-    prisma.masterCourse.findMany({ where: { id: { in: courseIds } }, select: { id: true, title: true } }),
-    prisma.course.findMany({ where: { id: { in: courseIds } }, select: { id: true, title: true } }),
+    prisma.lmsMasterCourse.findMany({ where: { id: { in: courseIds } }, select: { id: true, title: true } }),
+    prisma.lmsCourse.findMany({ where: { id: { in: courseIds } }, select: { id: true, title: true } }),
   ]);
   const courseTitle = new Map<string, string>();
   for (const c of legacyCourses) courseTitle.set(c.id, c.title);
@@ -36,10 +36,10 @@ export const GET = route(async (req) => {
   const groupIds = [...new Set(assignments.filter((a) => a.targetType === 'GROUP').map((a) => a.targetId))];
   const [users, groups] = await Promise.all([
     userIds.length
-      ? prisma.user.findMany({ where: { id: { in: userIds } }, select: { id: true, firstName: true, lastName: true } })
+      ? prisma.lmsUser.findMany({ where: { id: { in: userIds } }, select: { id: true, firstName: true, lastName: true } })
       : Promise.resolve([]),
     groupIds.length
-      ? prisma.group.findMany({ where: { id: { in: groupIds } }, select: { id: true, name: true } })
+      ? prisma.lmsGroup.findMany({ where: { id: { in: groupIds } }, select: { id: true, name: true } })
       : Promise.resolve([]),
   ]);
   const targetName = new Map<string, string>();

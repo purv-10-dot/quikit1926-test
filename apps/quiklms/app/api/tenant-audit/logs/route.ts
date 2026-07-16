@@ -1,4 +1,4 @@
-import type { TenantActionType } from '@prisma/client';
+import type { LmsTenantActionType as TenantActionType } from '@prisma/client';
 import { route, json } from '@/lib/http';
 import { requireAuth, requireRoles } from '@/lib/auth/context';
 import { getTenantLogs, seedIfEmpty } from '@/lib/services/tenant-audit-service';

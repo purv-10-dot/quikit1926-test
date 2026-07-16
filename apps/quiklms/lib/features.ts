@@ -3,7 +3,7 @@
  * Resolves the FeatureSet from a tenant's tenantType + featureConfig, and builds
  * the full tenant features response used by GET /api/tenants/current/features.
  */
-import type { Tenant } from '@prisma/client';
+import type { LmsTenant as Tenant } from '@prisma/client';
 
 export interface FeatureSet {
   showCourses: boolean;

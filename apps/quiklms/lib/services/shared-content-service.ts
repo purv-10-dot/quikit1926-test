@@ -15,33 +15,33 @@ import { BadRequest, NotFound } from '@/lib/http';
 export async function pushToAllTenants(
   masterCourseId: string,
 ): Promise<{ success: boolean; sharedCount: number; tenantIds: string[] }> {
-  const masterCourse = await prisma.course.findUnique({
+  const masterCourse = await prisma.lmsCourse.findUnique({
     where: { id: masterCourseId },
     include: { modules: { include: { lessons: true } } },
   });
   if (!masterCourse) throw NotFound('Master course not found');
   if (!masterCourse.isMaster) throw BadRequest('Course is not marked as master course');
 
-  const activeTenants = await prisma.tenant.findMany({ where: { status: 'Active' } });
+  const activeTenants = await prisma.lmsTenant.findMany({ where: { status: 'Active' } });
 
   const sharedTenantIds: string[] = [];
   let sharedCount = 0;
 
   for (const tenant of activeTenants) {
     try {
-      const existing = await prisma.sharedContent.findUnique({
+      const existing = await prisma.lmsSharedContent.findUnique({
         where: { masterCourseId_orgId: { masterCourseId, orgId: tenant.id } },
       });
 
       if (existing) {
-        await prisma.sharedContent.update({ where: { id: existing.id }, data: { isActive: true } });
+        await prisma.lmsSharedContent.update({ where: { id: existing.id }, data: { isActive: true } });
         sharedTenantIds.push(tenant.id);
         sharedCount++;
         continue;
       }
 
       // Create the tenant's copy of the course + clone modules/lessons.
-      const tenantCourse = await prisma.course.create({
+      const tenantCourse = await prisma.lmsCourse.create({
         data: {
           title: masterCourse.title,
           description: masterCourse.description,
@@ -76,7 +76,7 @@ export async function pushToAllTenants(
         },
       });
 
-      await prisma.sharedContent.create({
+      await prisma.lmsSharedContent.create({
         data: {
           masterCourseId,
           orgId: tenant.id,
@@ -95,7 +95,7 @@ export async function pushToAllTenants(
 }
 
 export async function getSharedContentForTenant(orgId: string) {
-  const shared = await prisma.sharedContent.findMany({
+  const shared = await prisma.lmsSharedContent.findMany({
     where: { orgId, isActive: true },
   });
 
@@ -104,8 +104,8 @@ export async function getSharedContentForTenant(orgId: string) {
   const masterIds = shared.map((s) => s.masterCourseId);
   const tenantCourseIds = shared.map((s) => s.tenantCourseId);
   const [masters, tenantCourses] = await Promise.all([
-    prisma.course.findMany({ where: { id: { in: masterIds } } }),
-    prisma.course.findMany({ where: { id: { in: tenantCourseIds } } }),
+    prisma.lmsCourse.findMany({ where: { id: { in: masterIds } } }),
+    prisma.lmsCourse.findMany({ where: { id: { in: tenantCourseIds } } }),
   ]);
   const masterMap = new Map(masters.map((c) => [c.id, c]));
   const tcMap = new Map(tenantCourses.map((c) => [c.id, c]));

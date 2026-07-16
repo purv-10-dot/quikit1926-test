@@ -3,7 +3,7 @@ import { route, json } from '@/lib/http';
 import { parseBody } from '@/lib/validation';
 import { requireAuth, requireRoles } from '@/lib/auth/context';
 import { create, findAll, type CreateBatchInput } from '@/lib/services/batches-service';
-import type { BatchStatus } from '@prisma/client';
+import type { LmsBatchStatus as BatchStatus } from '@prisma/client';
 
 const scheduleItem = z.object({
   dayOfWeek: z.number().min(0).max(6),

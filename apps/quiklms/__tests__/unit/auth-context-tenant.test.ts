@@ -10,8 +10,8 @@ vi.mock('next-auth', () => ({ getServerSession: h.getServerSession }));
 vi.mock('@/lib/auth', () => ({ authOptions: {} }));
 vi.mock('@/lib/prisma', () => ({
   prisma: {
-    user: { findUnique: h.userFindUnique },
-    tenant: { findUnique: h.tenantFindUnique },
+    lmsUser: { findUnique: h.userFindUnique },
+    lmsTenant: { findUnique: h.tenantFindUnique },
   },
 }));
 

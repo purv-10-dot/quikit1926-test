@@ -26,7 +26,7 @@ export const POST = route(async (req) => {
     const lessonProgress = (progress.lessonProgress as Record<string, Record<string, unknown>>) || {};
     if (lessonProgress[body.subModuleId as string]) {
       lessonProgress[body.subModuleId as string].lastPageSeen = body.lastPageSeen;
-      await prisma.progress.update({ where: { id: progress.id }, data: { lessonProgress: lessonProgress as object } });
+      await prisma.lmsProgress.update({ where: { id: progress.id }, data: { lessonProgress: lessonProgress as object } });
     }
   }
   return json({ success: true, data: progress, message: 'Resource marked as completed' });

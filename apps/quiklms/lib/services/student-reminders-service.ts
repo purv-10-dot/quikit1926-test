@@ -4,13 +4,13 @@
  * detection and Twilio reminder-call dispatch live in the worker (Phase 4).
  * Mongo populate() of student / scheduledClass reproduced with manual lookups.
  */
-import type { Prisma, ReminderCallStatus } from '@prisma/client';
+import type { Prisma, LmsReminderCallStatus as ReminderCallStatus } from '@prisma/client';
 import { prisma } from '@/lib/prisma';
 
 async function studentMap(ids: string[]) {
   const unique = Array.from(new Set(ids.filter(Boolean)));
   if (!unique.length) return new Map<string, Record<string, unknown>>();
-  const users = await prisma.user.findMany({
+  const users = await prisma.lmsUser.findMany({
     where: { id: { in: unique } },
     select: { id: true, firstName: true, lastName: true, email: true, phone: true },
   });
@@ -20,7 +20,7 @@ async function studentMap(ids: string[]) {
 async function classMap(ids: string[]) {
   const unique = Array.from(new Set(ids.filter(Boolean)));
   if (!unique.length) return new Map<string, Record<string, unknown>>();
-  const classes = await prisma.scheduledClass.findMany({
+  const classes = await prisma.lmsScheduledClass.findMany({
     where: { id: { in: unique } },
     select: { id: true, title: true, startTime: true },
   });
@@ -28,7 +28,7 @@ async function classMap(ids: string[]) {
 }
 
 function shapeRows(
-  rows: (Prisma.StudentReminderCallGetPayload<{ include: { callAttempts: true } }>)[],
+  rows: (Prisma.LmsStudentReminderCallGetPayload<{ include: { callAttempts: true } }>)[],
   smap: Map<string, Record<string, unknown>>,
   cmap: Map<string, Record<string, unknown>>,
 ) {
@@ -42,7 +42,7 @@ function shapeRows(
 }
 
 export async function getRemindersForAdmin(orgId: string, query: { status?: string; from?: string; to?: string }) {
-  const where: Prisma.StudentReminderCallWhereInput = { orgId };
+  const where: Prisma.LmsStudentReminderCallWhereInput = { orgId };
   if (query.status) where.status = query.status as ReminderCallStatus;
   if (query.from || query.to) {
     where.createdAt = {};
@@ -50,7 +50,7 @@ export async function getRemindersForAdmin(orgId: string, query: { status?: stri
     if (query.to) where.createdAt.lte = new Date(query.to);
   }
 
-  const rows = await prisma.studentReminderCall.findMany({
+  const rows = await prisma.lmsStudentReminderCall.findMany({
     where,
     include: { callAttempts: true },
     orderBy: { createdAt: 'desc' },
@@ -62,13 +62,13 @@ export async function getRemindersForAdmin(orgId: string, query: { status?: stri
 }
 
 export async function getRemindersForTeacher(orgId: string, teacherId: string) {
-  const teacherClasses = await prisma.scheduledClass.findMany({
+  const teacherClasses = await prisma.lmsScheduledClass.findMany({
     where: { orgId, teacherId },
     select: { id: true },
   });
   const classIds = teacherClasses.map((c) => c.id);
 
-  const rows = await prisma.studentReminderCall.findMany({
+  const rows = await prisma.lmsStudentReminderCall.findMany({
     where: { orgId, scheduledClassId: { in: classIds } },
     include: { callAttempts: true },
     orderBy: { createdAt: 'desc' },

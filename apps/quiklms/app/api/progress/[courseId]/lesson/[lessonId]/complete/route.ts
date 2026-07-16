@@ -10,7 +10,7 @@ export const POST = route(async (req, { params }) => {
 
   try {
     // Fetch existing progress to merge lessonProgress JSON
-    const existing = await prisma.progress.findUnique({
+    const existing = await prisma.lmsProgress.findUnique({
       where: {
         orgId_learnerId_courseId: {
           orgId,
@@ -32,7 +32,7 @@ export const POST = route(async (req, { params }) => {
     // Count total lessons in course to compute completion percentage
     let totalLessons = 0;
     try {
-      const modules = await prisma.module.findMany({
+      const modules = await prisma.lmsModule.findMany({
         where: { courseId },
         include: { lessons: true },
       });
@@ -47,7 +47,7 @@ export const POST = route(async (req, { params }) => {
     const completionPercentage =
       totalLessons > 0 ? Math.round((completedCount / totalLessons) * 100) : 0;
 
-    await prisma.progress.upsert({
+    await prisma.lmsProgress.upsert({
       where: {
         orgId_learnerId_courseId: {
           orgId,

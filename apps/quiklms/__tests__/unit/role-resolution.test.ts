@@ -30,6 +30,18 @@ describe('mapPlatformRoleToLmsRole', () => {
     expect(mapPlatformRoleToLmsRole('member', false)).toBe('LEARNER');
   });
 
+  // Regression: "school admin lands on the super-admin portal". When the caller
+  // CAN resolve the org's Tenant row, an org_admin of a real tenant org must map
+  // to TENANT_ADMIN, while the operator org (no Tenant row) stays SUPER_ADMIN.
+  it('maps org_admin of a real tenant org (Tenant row present) to TENANT_ADMIN', () => {
+    expect(mapPlatformRoleToLmsRole('org_admin', false, true)).toBe('TENANT_ADMIN');
+    expect(mapPlatformRoleToLmsRole('org_admin', false, false)).toBe('SUPER_ADMIN');
+  });
+
+  it('still honours the super-admin flag even for a tenant org', () => {
+    expect(mapPlatformRoleToLmsRole('org_admin', true, true)).toBe('SUPER_ADMIN');
+  });
+
   it('defaults unknown/empty roles to least privilege (LEARNER)', () => {
     expect(mapPlatformRoleToLmsRole(undefined, false)).toBe('LEARNER');
     expect(mapPlatformRoleToLmsRole('', false)).toBe('LEARNER');

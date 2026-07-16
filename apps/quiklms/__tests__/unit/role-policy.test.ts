@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import type { UserRole } from '@prisma/client';
+import type { LmsUserRole as UserRole } from '@prisma/client';
 import {
   ALL_ROLES,
   isUserRole,

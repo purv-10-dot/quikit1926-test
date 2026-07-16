@@ -10,16 +10,16 @@
  * non-teaching-work) are reproduced inline against Prisma to keep this module
  * self-contained (lib/services/* must not be modified).
  */
-import type { Prisma, PayoutStatus, RateType } from '@prisma/client';
+import type { Prisma, LmsPayoutStatus as PayoutStatus, LmsRateType as RateType } from '@prisma/client';
 import { prisma } from '@/lib/prisma';
 import { NotFound, BadRequest } from '@/lib/http';
 
 const USER_NAME_SELECT = { id: true, firstName: true, lastName: true, email: true } as const;
 
-async function userMap(ids: (string | null | undefined)[], select: Prisma.UserSelect = USER_NAME_SELECT) {
+async function userMap(ids: (string | null | undefined)[], select: Prisma.LmsUserSelect = USER_NAME_SELECT) {
   const unique = Array.from(new Set(ids.filter(Boolean) as string[]));
   if (!unique.length) return new Map<string, Record<string, unknown>>();
-  const users = await prisma.user.findMany({ where: { id: { in: unique } }, select });
+  const users = await prisma.lmsUser.findMany({ where: { id: { in: unique } }, select });
   return new Map(users.map((u) => [u.id, u as Record<string, unknown>]));
 }
 
@@ -31,7 +31,7 @@ function shapeUser(u: Record<string, unknown> | undefined | null) {
 /** Load completed-class details for a payout's completedClasses, optionally with batch. */
 async function loadCompletedClasses(scheduledClassIds: string[], withBatch: boolean) {
   if (!scheduledClassIds.length) return [];
-  const classes = await prisma.scheduledClass.findMany({
+  const classes = await prisma.lmsScheduledClass.findMany({
     where: { id: { in: scheduledClassIds } },
     select: { id: true, title: true, startTime: true, endTime: true, batchId: true },
   });
@@ -51,7 +51,7 @@ async function loadCompletedClasses(scheduledClassIds: string[], withBatch: bool
 async function loadBatchLite(batchIds: string[]) {
   const unique = Array.from(new Set(batchIds.filter(Boolean)));
   if (!unique.length) return new Map<string, Record<string, unknown>>();
-  const batches = await prisma.batch.findMany({
+  const batches = await prisma.lmsBatch.findMany({
     where: { id: { in: unique } },
     select: { id: true, name: true, grade: true, subject: true },
   });
@@ -76,7 +76,7 @@ function shapePayout(
 
 // ═══════════════ COMPLETED-CLASSES LOOKUP (scheduling helper) ═══════════════
 async function findCompletedClassesForPayout(orgId: string, teacherId: string, periodStart: Date, periodEnd: Date) {
-  const classes = await prisma.scheduledClass.findMany({
+  const classes = await prisma.lmsScheduledClass.findMany({
     where: {
       orgId,
       teacherId,
@@ -87,7 +87,7 @@ async function findCompletedClassesForPayout(orgId: string, teacherId: string, p
     orderBy: { startTime: 'asc' },
   });
   const batchIds = Array.from(new Set(classes.map((c) => c.batchId)));
-  const batches = await prisma.batch.findMany({
+  const batches = await prisma.lmsBatch.findMany({
     where: { id: { in: batchIds } },
     select: { id: true, name: true, grade: true, subject: true, classType: true, ratePerClass: true },
   });
@@ -98,8 +98,8 @@ async function findCompletedClassesForPayout(orgId: string, teacherId: string, p
 // ═══════════════ TEACHER LEVEL RATE (teacher-level helper) ═══════════════
 async function getTeacherRateByLevel(orgId: string, teacherId: string, baseRate: number): Promise<number> {
   try {
-    const level = await prisma.teacherLevel.findFirst({ where: { orgId, teacherId } });
-    const tenant = await prisma.tenant.findUnique({ where: { id: orgId } });
+    const level = await prisma.lmsTeacherLevel.findFirst({ where: { orgId, teacherId } });
+    const tenant = await prisma.lmsTenant.findUnique({ where: { id: orgId } });
     const levelConfig = (tenant as Record<string, any> | null)?.enhancementConfig?.teacherLevel;
     if (!level || !levelConfig) return baseRate;
     switch (level.currentLevel) {
@@ -121,7 +121,7 @@ async function getTeacherRateByLevel(orgId: string, teacherId: string, baseRate:
 async function getTeacherMonthlyNonTeachingPay(orgId: string, teacherId: string, month: number, year: number): Promise<number> {
   const startDate = new Date(year, month - 1, 1);
   const endDate = new Date(year, month, 0, 23, 59, 59, 999);
-  const tasks = await prisma.nonTeachingTask.findMany({
+  const tasks = await prisma.lmsNonTeachingTask.findMany({
     where: { orgId, teacherId, status: 'approved', approvedAt: { gte: startDate, lte: endDate } },
     select: { paymentAmount: true },
   });
@@ -133,9 +133,9 @@ export async function generatePayouts(orgId: string, dto: { month: number; year:
   const periodStart = new Date(dto.year, dto.month - 1, 1);
   const periodEnd = new Date(dto.year, dto.month, 0, 23, 59, 59);
 
-  const teachers = await prisma.user.findMany({ where: { orgId, role: 'TEACHER', isActive: true } });
+  const teachers = await prisma.lmsUser.findMany({ where: { orgId, role: 'TEACHER', isActive: true } });
 
-  const tenant = await prisma.tenant.findUnique({ where: { id: orgId } });
+  const tenant = await prisma.lmsTenant.findUnique({ where: { id: orgId } });
   const tenantCfg = tenant as Record<string, any> | null;
   const defaultRate = tenantCfg?.payoutConfig?.defaultRatePerClass || 500;
   const demoTrialConfig = tenantCfg?.enhancementConfig?.demoTrial;
@@ -193,14 +193,14 @@ export async function generatePayouts(orgId: string, dto: { month: number; year:
       /* ignore */
     }
 
-    const existing = await prisma.teacherPayout.findFirst({
+    const existing = await prisma.lmsTeacherPayout.findFirst({
       where: { orgId, teacherId: teacher.id, periodStart, periodEnd },
     });
 
     if (existing) {
       if (existing.status === 'draft') {
         const netAmount = grossAmount + nonTeachingWorkAmount + (existing.totalBonus || 0) - (existing.totalDeductions || 0);
-        const updated = await prisma.teacherPayout.update({
+        const updated = await prisma.lmsTeacherPayout.update({
           where: { id: existing.id },
           data: {
             totalClassesCompleted: completedClasses.length,
@@ -220,7 +220,7 @@ export async function generatePayouts(orgId: string, dto: { month: number; year:
       continue;
     }
 
-    const payout = await prisma.teacherPayout.create({
+    const payout = await prisma.lmsTeacherPayout.create({
       data: {
         orgId,
         teacherId: teacher.id,
@@ -252,7 +252,7 @@ export async function findAll(
   orgId: string,
   filters?: { month?: number; year?: number; status?: string; teacherId?: string; source?: string },
 ) {
-  const where: Prisma.TeacherPayoutWhereInput = { orgId };
+  const where: Prisma.LmsTeacherPayoutWhereInput = { orgId };
   if (filters?.status) where.status = filters.status as PayoutStatus;
   if (filters?.teacherId) where.teacherId = filters.teacherId;
   if (filters?.source) where.source = filters.source as 'batch' | 'tutoring';
@@ -272,7 +272,7 @@ export async function findAll(
     where.periodEnd = { lte: periodEnd };
   }
 
-  const rows = await prisma.teacherPayout.findMany({
+  const rows = await prisma.lmsTeacherPayout.findMany({
     where,
     include: { adjustments: true, completedClasses: { select: { scheduledClassId: true } } },
     orderBy: { periodStart: 'desc' },
@@ -299,7 +299,7 @@ export async function findAll(
   );
 
   // Totals for the entire period (ignoring source filter)
-  const totalsWhere: Prisma.TeacherPayoutWhereInput = { orgId };
+  const totalsWhere: Prisma.LmsTeacherPayoutWhereInput = { orgId };
   if (periodStart && periodEnd) {
     totalsWhere.periodStart = { gte: periodStart };
     totalsWhere.periodEnd = { lte: periodEnd };
@@ -307,7 +307,7 @@ export async function findAll(
   if (filters?.status) totalsWhere.status = filters.status as PayoutStatus;
   if (filters?.teacherId) totalsWhere.teacherId = filters.teacherId;
 
-  const totalsRows = await prisma.teacherPayout.findMany({
+  const totalsRows = await prisma.lmsTeacherPayout.findMany({
     where: totalsWhere,
     select: { netAmount: true, source: true },
   });
@@ -325,13 +325,13 @@ export async function findAll(
 
 // ═══════════════ GET TEACHER'S PAYOUTS ═══════════════
 export async function getTeacherPayouts(orgId: string, teacherId: string, year?: number) {
-  const where: Prisma.TeacherPayoutWhereInput = { orgId, teacherId };
+  const where: Prisma.LmsTeacherPayoutWhereInput = { orgId, teacherId };
   if (year) {
     where.periodStart = { gte: new Date(year, 0, 1) };
     where.periodEnd = { lte: new Date(year, 11, 31, 23, 59, 59) };
   }
 
-  const rows = await prisma.teacherPayout.findMany({
+  const rows = await prisma.lmsTeacherPayout.findMany({
     where,
     include: { adjustments: true, completedClasses: { select: { scheduledClassId: true } } },
     orderBy: { periodStart: 'desc' },
@@ -351,7 +351,7 @@ export async function getTeacherPayouts(orgId: string, teacherId: string, year?:
 
 // ═══════════════ GET PAYOUT BY ID ═══════════════
 export async function findOne(orgId: string, payoutId: string) {
-  const r = await prisma.teacherPayout.findFirst({
+  const r = await prisma.lmsTeacherPayout.findFirst({
     where: { id: payoutId, orgId },
     include: { adjustments: true, completedClasses: { select: { scheduledClassId: true } } },
   });
@@ -381,14 +381,14 @@ export async function addAdjustment(
   dto: { type: 'bonus' | 'deduction' | 'reimbursement'; amount: number; reason: string },
   appliedBy: string,
 ) {
-  const payout = await prisma.teacherPayout.findFirst({
+  const payout = await prisma.lmsTeacherPayout.findFirst({
     where: { id: payoutId, orgId },
     include: { adjustments: true },
   });
   if (!payout) throw NotFound('Payout not found');
   if (payout.status === 'paid') throw BadRequest('Cannot add adjustments to a paid payout');
 
-  await prisma.payoutAdjustment.create({
+  await prisma.lmsPayoutAdjustment.create({
     data: {
       payoutId,
       type: dto.type,
@@ -399,7 +399,7 @@ export async function addAdjustment(
     },
   });
 
-  const adjustments = await prisma.payoutAdjustment.findMany({ where: { payoutId } });
+  const adjustments = await prisma.lmsPayoutAdjustment.findMany({ where: { payoutId } });
   let totalBonus = 0;
   let totalDeductions = 0;
   for (const adj of adjustments) {
@@ -408,7 +408,7 @@ export async function addAdjustment(
   }
 
   const netAmount = payout.grossAmount + (payout.nonTeachingWorkAmount || 0) + totalBonus - totalDeductions;
-  await prisma.teacherPayout.update({
+  await prisma.lmsTeacherPayout.update({
     where: { id: payoutId },
     data: { totalBonus, totalDeductions, netAmount },
   });
@@ -417,13 +417,13 @@ export async function addAdjustment(
 }
 
 // ═══════════════ STATUS TRANSITIONS ═══════════════
-async function updateStatus(orgId: string, payoutId: string, newStatus: PayoutStatus, allowedFrom: PayoutStatus[], extra: Prisma.TeacherPayoutUpdateInput = {}) {
-  const result = await prisma.teacherPayout.updateMany({
+async function updateStatus(orgId: string, payoutId: string, newStatus: PayoutStatus, allowedFrom: PayoutStatus[], extra: Prisma.LmsTeacherPayoutUpdateInput = {}) {
+  const result = await prisma.lmsTeacherPayout.updateMany({
     where: { id: payoutId, orgId, status: { in: allowedFrom } },
     data: { status: newStatus, ...extra },
   });
   if (result.count === 0) throw BadRequest(`Payout not found or cannot transition to ${newStatus}`);
-  return prisma.teacherPayout.findFirst({ where: { id: payoutId, orgId } });
+  return prisma.lmsTeacherPayout.findFirst({ where: { id: payoutId, orgId } });
 }
 
 export async function submit(orgId: string, payoutId: string) {
@@ -431,12 +431,12 @@ export async function submit(orgId: string, payoutId: string) {
 }
 
 export async function approve(orgId: string, payoutId: string, approvedBy: string) {
-  const result = await prisma.teacherPayout.updateMany({
+  const result = await prisma.lmsTeacherPayout.updateMany({
     where: { id: payoutId, orgId, status: { in: ['pending', 'draft'] } },
     data: { status: 'approved', approvedBy, approvedAt: new Date() },
   });
   if (result.count === 0) throw BadRequest('Payout not found or cannot be approved');
-  return prisma.teacherPayout.findFirst({ where: { id: payoutId, orgId } });
+  return prisma.lmsTeacherPayout.findFirst({ where: { id: payoutId, orgId } });
 }
 
 export async function reject(orgId: string, payoutId: string) {
@@ -444,10 +444,10 @@ export async function reject(orgId: string, payoutId: string) {
 }
 
 export async function markPaid(orgId: string, payoutId: string, dto: { paymentMethod: string; paymentReference: string }) {
-  const result = await prisma.teacherPayout.updateMany({
+  const result = await prisma.lmsTeacherPayout.updateMany({
     where: { id: payoutId, orgId, status: 'approved' },
     data: { status: 'paid', paidAt: new Date(), paymentMethod: dto.paymentMethod, paymentReference: dto.paymentReference },
   });
   if (result.count === 0) throw BadRequest('Payout not found or not approved');
-  return prisma.teacherPayout.findFirst({ where: { id: payoutId, orgId } });
+  return prisma.lmsTeacherPayout.findFirst({ where: { id: payoutId, orgId } });
 }

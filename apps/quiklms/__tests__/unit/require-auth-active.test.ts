@@ -9,7 +9,7 @@ const h = vi.hoisted(() => ({
 vi.mock('next-auth', () => ({ getServerSession: h.getServerSession }));
 vi.mock('@/lib/auth', () => ({ authOptions: {} }));
 vi.mock('@/lib/prisma', () => ({
-  prisma: { user: { findUnique: h.userFindUnique } },
+  prisma: { lmsUser: { findUnique: h.userFindUnique } },
 }));
 
 import { requireAuth } from '@/lib/auth/context';

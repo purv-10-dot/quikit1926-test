@@ -42,12 +42,12 @@ export interface RegisterUserInput {
 export async function registerUser(input: RegisterUserInput): Promise<{ data: { id: string; employeeId?: string; [key: string]: unknown } }> {
   const { id, email, firstName, lastName, role, orgId, phone } = input;
 
-  const existing = await prisma.user.findFirst({ where: { email: email.toLowerCase() } });
+  const existing = await prisma.lmsUser.findFirst({ where: { email: email.toLowerCase() } });
   if (existing) throw new Error(`User with email ${email} already exists`);
 
   const pwd = input.password ?? randomBytes(16).toString('hex');
 
-  const user = await prisma.user.create({
+  const user = await prisma.lmsUser.create({
     data: {
       // Share the central User id when provided so SSO `session.user.id` maps
       // to this LMS row (see identity-service). Otherwise auto-generate.

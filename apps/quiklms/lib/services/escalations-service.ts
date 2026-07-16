@@ -4,28 +4,28 @@
  * absence-call dispatch and Twilio calling live in the worker (Phase 4). These
  * functions own the read side, reproducing Mongo populate() with manual lookups.
  */
-import type { Prisma, EscalationStatus } from '@prisma/client';
+import type { Prisma, LmsEscalationStatus as EscalationStatus } from '@prisma/client';
 import { prisma } from '@/lib/prisma';
 
 async function classMap(ids: string[]) {
   const unique = Array.from(new Set(ids.filter(Boolean)));
   if (!unique.length) return new Map<string, Record<string, unknown>>();
-  const classes = await prisma.scheduledClass.findMany({
+  const classes = await prisma.lmsScheduledClass.findMany({
     where: { id: { in: unique } },
     select: { id: true, title: true, startTime: true, endTime: true, status: true },
   });
   return new Map(classes.map((c) => [c.id, { _id: c.id, ...c }]));
 }
 
-async function userMap(ids: string[], select: Prisma.UserSelect) {
+async function userMap(ids: string[], select: Prisma.LmsUserSelect) {
   const unique = Array.from(new Set(ids.filter(Boolean)));
   if (!unique.length) return new Map<string, Record<string, unknown>>();
-  const users = await prisma.user.findMany({ where: { id: { in: unique } }, select });
+  const users = await prisma.lmsUser.findMany({ where: { id: { in: unique } }, select });
   return new Map(users.map((u) => [u.id, { _id: u.id, ...(u as Record<string, unknown>) }]));
 }
 
 export async function getTeacherEscalations(orgId: string, teacherId: string) {
-  const rows = await prisma.callEscalation.findMany({
+  const rows = await prisma.lmsCallEscalation.findMany({
     where: { orgId, teacherId },
     include: { callAttempts: true },
     orderBy: { createdAt: 'desc' },
@@ -41,7 +41,7 @@ export async function getTeacherEscalations(orgId: string, teacherId: string) {
 }
 
 export async function getAdminEscalations(orgId: string, filters?: { status?: string; from?: Date; to?: Date }) {
-  const where: Prisma.CallEscalationWhereInput = { orgId };
+  const where: Prisma.LmsCallEscalationWhereInput = { orgId };
   if (filters?.status) where.status = filters.status as EscalationStatus;
   if (filters?.from || filters?.to) {
     where.createdAt = {};
@@ -49,7 +49,7 @@ export async function getAdminEscalations(orgId: string, filters?: { status?: st
     if (filters?.to) where.createdAt.lte = filters.to;
   }
 
-  const rows = await prisma.callEscalation.findMany({
+  const rows = await prisma.lmsCallEscalation.findMany({
     where,
     include: { callAttempts: true },
     orderBy: { createdAt: 'desc' },

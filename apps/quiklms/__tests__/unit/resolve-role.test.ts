@@ -1,11 +1,19 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 
-const h = vi.hoisted(() => ({ userFindUnique: vi.fn() }));
-vi.mock('@/lib/prisma', () => ({ prisma: { user: { findUnique: h.userFindUnique } } }));
+const h = vi.hoisted(() => ({ userFindUnique: vi.fn(), tenantFindUnique: vi.fn() }));
+vi.mock('@/lib/prisma', () => ({
+  prisma: {
+    lmsUser: { findUnique: h.userFindUnique },
+    lmsTenant: { findUnique: h.tenantFindUnique },
+  },
+}));
 
 import { resolveLmsRole } from '@/lib/auth/resolve-role';
 
-beforeEach(() => h.userFindUnique.mockReset());
+beforeEach(() => {
+  h.userFindUnique.mockReset();
+  h.tenantFindUnique.mockReset();
+});
 
 /**
  * The landing redirect must agree with the API guards: prefer the LMS row's
@@ -24,6 +32,24 @@ describe('resolveLmsRole', () => {
   it('falls back to SUPER_ADMIN for the operator (org_admin, no LMS row)', async () => {
     h.userFindUnique.mockResolvedValue(null);
     const role = await resolveLmsRole({ id: 'op', membershipRole: 'org_admin', isSuperAdmin: false });
+    expect(role).toBe('SUPER_ADMIN');
+  });
+
+  // Regression: a freshly-onboarded school admin (org_admin, LMS row not yet
+  // resolvable) whose org HAS a Tenant row must land on TENANT_ADMIN — not the
+  // super-admin portal.
+  it('falls back to TENANT_ADMIN when no LMS row but the org has a Tenant row', async () => {
+    h.userFindUnique.mockResolvedValue(null);
+    h.tenantFindUnique.mockResolvedValue({ id: 'org1' });
+    const role = await resolveLmsRole({ id: 'u1', orgId: 'org1', membershipRole: 'org_admin', isSuperAdmin: false });
+    expect(role).toBe('TENANT_ADMIN');
+    expect(h.tenantFindUnique).toHaveBeenCalledWith({ where: { id: 'org1' }, select: { id: true } });
+  });
+
+  it('stays SUPER_ADMIN when no LMS row and no Tenant row for the org', async () => {
+    h.userFindUnique.mockResolvedValue(null);
+    h.tenantFindUnique.mockResolvedValue(null);
+    const role = await resolveLmsRole({ id: 'op', orgId: 'operator-org', membershipRole: 'org_admin', isSuperAdmin: false });
     expect(role).toBe('SUPER_ADMIN');
   });
 

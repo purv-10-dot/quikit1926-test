@@ -18,7 +18,7 @@ export const GET = route(async (req) => {
   // Hydrate from the DB when the user is a real seed row; fall back to the
   // dev-auth context for super-admins / rows that aren't persisted.
   const db = actor.id
-    ? await prisma.user.findUnique({
+    ? await prisma.lmsUser.findUnique({
         where: { id: actor.id },
         select: { id: true, email: true, firstName: true, lastName: true, role: true, secondaryRole: true, orgId: true, managerId: true, isActive: true },
       })
@@ -28,7 +28,7 @@ export const GET = route(async (req) => {
   // load its children without a separate broken sessionStorage read.
   let childIds: string[] = [];
   if (actor.role === 'PARENT') {
-    const links = await prisma.userParent.findMany({ where: { parentId: actor.id }, select: { childId: true } });
+    const links = await prisma.lmsUserParent.findMany({ where: { parentId: actor.id }, select: { childId: true } });
     childIds = links.map((l) => l.childId);
   }
 

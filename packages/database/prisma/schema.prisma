@@ -15699,9 +15699,9 @@ model Invitation {
 //     providerMetadata, notificationPreferences, textPlacements, eventData, …
 //   • Enum member name = stored value when it is a valid identifier; otherwise
 //     an identifier + @map("<exact stored value>").
-//   • Join/child tables intentionally OMIT a denormalized tenantId — they are
+//   • Join/child tables intentionally OMIT a denormalized orgId — they are
 //     tenant-scoped through their parent (documented deviation from the blanket
-//     "all tables get tenantId" rule, to avoid denormalization drift).
+//     "all tables get orgId" rule, to avoid denormalization drift).
 // ============================================================================
 
 // ════════════════════════════════════════════════════════════════════════════
@@ -15716,12 +15716,14 @@ enum LmsUserRole {
   TEACHER
   PARENT
   LEARNER
+  @@map("UserRole")
   @@schema("app_quiklms")
 }
 
 enum LmsTenantType {
   corporate
   school
+  @@map("TenantType")
   @@schema("app_quiklms")
 }
 
@@ -15729,6 +15731,7 @@ enum LmsTenantStatus {
   Active
   Paused
   Trial
+  @@map("TenantStatus")
   @@schema("app_quiklms")
 }
 
@@ -15738,6 +15741,7 @@ enum LmsRateType {
   per_hour
   monthly
   hybrid
+  @@map("RateType")
   @@schema("app_quiklms")
 }
 
@@ -15747,6 +15751,7 @@ enum LmsUserQualification {
   PRT
   NTT
   Other
+  @@map("UserQualification")
   @@schema("app_quiklms")
 }
 
@@ -15754,6 +15759,7 @@ enum LmsCourseStatus {
   Draft
   Published
   Archived
+  @@map("CourseStatus")
   @@schema("app_quiklms")
 }
 
@@ -15768,6 +15774,7 @@ enum LmsLessonType {
   Audio
   Document
   Slides
+  @@map("LessonType")
   @@schema("app_quiklms")
 }
 
@@ -15776,6 +15783,7 @@ enum LmsCourseLevel {
   Intermediate
   Advanced
   Expert
+  @@map("CourseLevel")
   @@schema("app_quiklms")
 }
 
@@ -15788,6 +15796,7 @@ enum LmsMasterCourseStatus {
   PendingApproval
   Rejected
   Resubmitted
+  @@map("MasterCourseStatus")
   @@schema("app_quiklms")
 }
 
@@ -15798,6 +15807,7 @@ enum LmsMasterQuestionType {
   true_false
   drag_drop
   fill_blank
+  @@map("MasterQuestionType")
   @@schema("app_quiklms")
 }
 
@@ -15817,6 +15827,7 @@ enum LmsResourceType {
   scorm_2004
   external_link
   iframe_embed
+  @@map("ResourceType")
   @@schema("app_quiklms")
 }
 
@@ -15824,6 +15835,7 @@ enum LmsResourceType {
 enum LmsAssessmentQuestionType {
   MCQ
   TrueFalse @map("True/False")
+  @@map("AssessmentQuestionType")
   @@schema("app_quiklms")
 }
 
@@ -15833,12 +15845,14 @@ enum LmsProgressStatus {
   Overdue
   Completed
   Failed
+  @@map("ProgressStatus")
   @@schema("app_quiklms")
 }
 
 enum LmsAssignmentTargetType {
   USER
   GROUP
+  @@map("AssignmentTargetType")
   @@schema("app_quiklms")
 }
 
@@ -15846,6 +15860,7 @@ enum LmsCertificateApprovalStatus {
   pending_approval
   approved
   rejected
+  @@map("CertificateApprovalStatus")
   @@schema("app_quiklms")
 }
 
@@ -15853,6 +15868,7 @@ enum LmsConsentType {
   video_recording
   data_processing
   photo_usage
+  @@map("ConsentType")
   @@schema("app_quiklms")
 }
 
@@ -15861,6 +15877,7 @@ enum LmsEmailTemplateType {
   course_completion @map("course-completion")
   certificate
   upgrade_invoice   @map("upgrade-invoice")
+  @@map("EmailTemplateType")
   @@schema("app_quiklms")
 }
 
@@ -15868,18 +15885,21 @@ enum LmsBatchStatus {
   draft
   active
   archived
+  @@map("BatchStatus")
   @@schema("app_quiklms")
 }
 
 enum LmsBatchType {
   regular
   one_on_one
+  @@map("BatchType")
   @@schema("app_quiklms")
 }
 
 enum LmsBatchSource {
   manual
   auto_tutoring
+  @@map("BatchSource")
   @@schema("app_quiklms")
 }
 
@@ -15887,6 +15907,7 @@ enum LmsBatchClassType {
   regular
   demo
   trial
+  @@map("BatchClassType")
   @@schema("app_quiklms")
 }
 
@@ -15896,6 +15917,7 @@ enum LmsBatchMeetingProvider {
   google_meet
   jitsi
   manual
+  @@map("BatchMeetingProvider")
   @@schema("app_quiklms")
 }
 
@@ -15905,6 +15927,7 @@ enum LmsClassStatus {
   completed
   cancelled
   rescheduled
+  @@map("ClassStatus")
   @@schema("app_quiklms")
 }
 
@@ -15912,6 +15935,7 @@ enum LmsRescheduleApprovalStatus {
   pending
   approved
   rejected
+  @@map("RescheduleApprovalStatus")
   @@schema("app_quiklms")
 }
 
@@ -15919,6 +15943,7 @@ enum LmsCreditPackageStatus {
   active
   exhausted
   expired
+  @@map("CreditPackageStatus")
   @@schema("app_quiklms")
 }
 
@@ -15931,6 +15956,7 @@ enum LmsTransactionType {
   tutoring_hold
   tutoring_hold_release
   tutoring_deduction
+  @@map("TransactionType")
   @@schema("app_quiklms")
 }
 
@@ -15939,6 +15965,7 @@ enum LmsAttendanceStatus {
   absent
   late
   excused
+  @@map("AttendanceStatus")
   @@schema("app_quiklms")
 }
 
@@ -15946,6 +15973,7 @@ enum LmsHomeworkStatus {
   draft
   published
   closed
+  @@map("HomeworkStatus")
   @@schema("app_quiklms")
 }
 
@@ -15954,6 +15982,7 @@ enum LmsHomeworkType {
   quiz
   project
   reading
+  @@map("HomeworkType")
   @@schema("app_quiklms")
 }
 
@@ -15961,6 +15990,7 @@ enum LmsSubmissionStatus {
   submitted
   graded
   returned
+  @@map("SubmissionStatus")
   @@schema("app_quiklms")
 }
 
@@ -15971,6 +16001,7 @@ enum LmsPayoutStatus {
   paid
   disputed
   rejected
+  @@map("PayoutStatus")
   @@schema("app_quiklms")
 }
 
@@ -15978,12 +16009,14 @@ enum LmsPayoutAdjustmentType {
   bonus
   deduction
   reimbursement
+  @@map("PayoutAdjustmentType")
   @@schema("app_quiklms")
 }
 
 enum LmsPayoutSource {
   batch
   tutoring
+  @@map("PayoutSource")
   @@schema("app_quiklms")
 }
 
@@ -15992,6 +16025,7 @@ enum LmsMeetingStatus {
   started
   ended
   cancelled
+  @@map("MeetingStatus")
   @@schema("app_quiklms")
 }
 
@@ -16001,6 +16035,7 @@ enum LmsMeetingProvider {
   teams
   jitsi
   manual
+  @@map("MeetingProvider")
   @@schema("app_quiklms")
 }
 
@@ -16009,12 +16044,14 @@ enum LmsRecordingStatus {
   processing
   available
   expired
+  @@map("RecordingStatus")
   @@schema("app_quiklms")
 }
 
 enum LmsMeetingAttendanceRole {
   teacher
   student
+  @@map("MeetingAttendanceRole")
   @@schema("app_quiklms")
 }
 
@@ -16023,6 +16060,7 @@ enum LmsDeviceType {
   mobile
   tablet
   unknown
+  @@map("DeviceType")
   @@schema("app_quiklms")
 }
 
@@ -16032,6 +16070,7 @@ enum LmsTaskCategory {
   training
   meeting
   other
+  @@map("TaskCategory")
   @@schema("app_quiklms")
 }
 
@@ -16041,6 +16080,7 @@ enum LmsTaskStatus {
   completed_pending
   approved
   rejected
+  @@map("TaskStatus")
   @@schema("app_quiklms")
 }
 
@@ -16048,6 +16088,7 @@ enum LmsTeacherStatus {
   beginner
   intermediate
   lead
+  @@map("TeacherStatus")
   @@schema("app_quiklms")
 }
 
@@ -16056,6 +16097,7 @@ enum LmsEscalationStatus {
   escalating
   resolved
   failed
+  @@map("EscalationStatus")
   @@schema("app_quiklms")
 }
 
@@ -16067,6 +16109,7 @@ enum LmsCallStatus {
   no_answer
   busy
   failed
+  @@map("CallStatus")
   @@schema("app_quiklms")
 }
 
@@ -16075,6 +16118,7 @@ enum LmsTutoringRequestStatus {
   accepted
   rejected
   completed
+  @@map("TutoringRequestStatus")
   @@schema("app_quiklms")
 }
 
@@ -16083,6 +16127,7 @@ enum LmsReminderCallStatus {
   calling
   resolved
   failed
+  @@map("ReminderCallStatus")
   @@schema("app_quiklms")
 }
 
@@ -16092,18 +16137,21 @@ enum LmsExamStatus {
   active
   completed
   results_published
+  @@map("ExamStatus")
   @@schema("app_quiklms")
 }
 
 enum LmsProctoringLevel {
   none
   soft
+  @@map("ProctoringLevel")
   @@schema("app_quiklms")
 }
 
 enum LmsQuestionSelectionMode {
   manual
   auto_random
+  @@map("QuestionSelectionMode")
   @@schema("app_quiklms")
 }
 
@@ -16114,6 +16162,7 @@ enum LmsExamSessionStatus {
   auto_submitted
   timed_out
   voided
+  @@map("ExamSessionStatus")
   @@schema("app_quiklms")
 }
 
@@ -16122,6 +16171,7 @@ enum LmsIncidentDisposition {
   pending
   dismissed
   confirmed_violation
+  @@map("IncidentDisposition")
   @@schema("app_quiklms")
 }
 
@@ -16130,6 +16180,7 @@ enum LmsIncidentAction {
   warning
   penalty_applied
   session_voided
+  @@map("IncidentAction")
   @@schema("app_quiklms")
 }
 
@@ -16143,6 +16194,7 @@ enum LmsProctoringEventType {
   print_attempt
   blur
   beforeunload
+  @@map("ProctoringEventType")
   @@schema("app_quiklms")
 }
 
@@ -16151,6 +16203,7 @@ enum LmsProctoringSeverity {
   low
   medium
   high
+  @@map("ProctoringSeverity")
   @@schema("app_quiklms")
 }
 
@@ -16159,6 +16212,7 @@ enum LmsQuizSessionStatus {
   submitted
   auto_submitted
   voided
+  @@map("QuizSessionStatus")
   @@schema("app_quiklms")
 }
 
@@ -16179,6 +16233,7 @@ enum LmsQuizProctoringEventType {
   face_eyes_closed
   face_too_far
   face_camera_error
+  @@map("QuizProctoringEventType")
   @@schema("app_quiklms")
 }
 
@@ -16192,6 +16247,7 @@ enum LmsBankQuestionType {
   fill_blank
   one_word
   match_column
+  @@map("BankQuestionType")
   @@schema("app_quiklms")
 }
 
@@ -16199,18 +16255,21 @@ enum LmsDifficulty {
   easy
   medium
   hard
+  @@map("Difficulty")
   @@schema("app_quiklms")
 }
 
 enum LmsConversationType {
   direct
   group
+  @@map("ConversationType")
   @@schema("app_quiklms")
 }
 
 enum LmsConversationParticipantRole {
   admin
   member
+  @@map("ConversationParticipantRole")
   @@schema("app_quiklms")
 }
 
@@ -16219,6 +16278,7 @@ enum LmsMessageType {
   file
   image
   system
+  @@map("MessageType")
   @@schema("app_quiklms")
 }
 
@@ -16230,6 +16290,7 @@ enum LmsActivityType {
   tenant_created
   tenant_updated
   user_action
+  @@map("ActivityType")
   @@schema("app_quiklms")
 }
 
@@ -16248,6 +16309,7 @@ enum LmsTenantActionType {
   AttendanceMarkedByManager    @map("Attendance Marked by Manager")
   CertificateApprovedByManager @map("Certificate Approved by Manager")
   TeamReportExportedByManager  @map("Team Report Exported by Manager")
+  @@map("TenantActionType")
   @@schema("app_quiklms")
 }
 
@@ -16264,6 +16326,7 @@ model LmsTenant {
   dbConnectionString String?
   status             LmsTenantStatus @default(Active)
   tenantKey          String       @unique
+  orgId              String?      @unique // platform Org id (orgId-native fold); Tenant.id === orgId
 
   // Organization profile
   orgName       String
@@ -16332,7 +16395,7 @@ model LmsUser {
   lastName      String
   role          LmsUserRole  @default(LEARNER)
   secondaryRole LmsUserRole?
-  tenantId      String? // scalar — global super-admins have no tenant
+  orgId      String? // scalar — global super-admins have no tenant
   managerId     String? // corporate team manager (scalar self-ref)
   isActive      Boolean   @default(true)
 
@@ -16396,15 +16459,15 @@ model LmsUser {
   children LmsUserParent[] @relation("UserChildren") // rows where this user is the parent
   parents  LmsUserParent[] @relation("UserParents") // rows where this user is the child
 
-  @@unique([tenantId, studentId]) // sparse per-tenant unique (NULL-distinct)
-  @@unique([tenantId, employeeId])
-  @@unique([tenantId, parentCode])
-  @@index([tenantId, role])
-  @@index([tenantId, grade])
-  @@index([tenantId, email])
-  @@index([tenantId, totalPoints(sort: Desc)])
-  @@index([tenantId, currentStreak(sort: Desc)])
-  @@index([tenantId, parentEmail])
+  @@unique([orgId, studentId]) // sparse per-tenant unique (NULL-distinct)
+  @@unique([orgId, employeeId])
+  @@unique([orgId, parentCode])
+  @@index([orgId, role])
+  @@index([orgId, grade])
+  @@index([orgId, email])
+  @@index([orgId, totalPoints(sort: Desc)])
+  @@index([orgId, currentStreak(sort: Desc)])
+  @@index([orgId, parentEmail])
   @@index([managerId])
   @@map("users")
   @@schema("app_quiklms")
@@ -16462,21 +16525,21 @@ model LmsOtp {
 
 model LmsCounter {
   id       String @id @default(uuid())
-  tenantId String
+  orgId String
   type     String // 'teacher' | 'student' | 'parent'
   seq      Int    @default(0)
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  @@unique([tenantId, type])
+  @@unique([orgId, type])
   @@map("counters")
   @@schema("app_quiklms")
 }
 
 model LmsGroup {
   id          String        @id @default(uuid())
-  tenantId    String
+  orgId    String
   name        String
   description String?
   createdBy   String? // actor scalar
@@ -16485,8 +16548,8 @@ model LmsGroup {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  @@unique([tenantId, name])
-  @@index([tenantId])
+  @@unique([orgId, name])
+  @@index([orgId])
   @@map("groups")
   @@schema("app_quiklms")
 }
@@ -16509,7 +16572,7 @@ model LmsGroupMember {
 
 model LmsConsentRecord {
   id             String      @id @default(uuid())
-  tenantId       String
+  orgId       String
   studentId      String // actor scalar
   parentId       String // actor scalar
   consentType    LmsConsentType
@@ -16523,8 +16586,8 @@ model LmsConsentRecord {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  @@index([tenantId, studentId, consentType])
-  @@index([tenantId, parentId])
+  @@index([orgId, studentId, consentType])
+  @@index([orgId, parentId])
   @@map("consent_records")
   @@schema("app_quiklms")
 }
@@ -16535,7 +16598,7 @@ model LmsConsentRecord {
 
 model LmsCourse {
   id           String       @id @default(uuid())
-  tenantId     String? // optional for master courses
+  orgId     String? // optional for master courses
   title        String
   category     String?
   description  String?
@@ -16554,10 +16617,10 @@ model LmsCourse {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  @@index([tenantId, status])
+  @@index([orgId, status])
   @@index([isMaster])
   @@index([isFeatured, status])
-  @@index([category, tenantId])
+  @@index([category, orgId])
   @@map("courses")
   @@schema("app_quiklms")
 }
@@ -16567,13 +16630,13 @@ model LmsCourseSelectedTenant {
   id       String @id @default(uuid())
   courseId String
   course   LmsCourse @relation(fields: [courseId], references: [id], onDelete: Cascade)
-  tenantId String
+  orgId String
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  @@unique([courseId, tenantId])
-  @@index([tenantId])
+  @@unique([courseId, orgId])
+  @@index([orgId])
   @@map("course_selected_tenants")
   @@schema("app_quiklms")
 }
@@ -16597,7 +16660,7 @@ model LmsCoursePrerequisite {
 
 model LmsModule {
   id           String  @id @default(uuid())
-  tenantId     String? // optional for master courses
+  orgId     String? // optional for master courses
   courseId     String
   course       LmsCourse  @relation(fields: [courseId], references: [id], onDelete: Cascade)
   title        String
@@ -16610,7 +16673,7 @@ model LmsModule {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  @@index([tenantId, courseId])
+  @@index([orgId, courseId])
   @@index([courseId, orderIndex])
   @@map("modules")
   @@schema("app_quiklms")
@@ -16694,20 +16757,20 @@ model LmsMasterCourseSelectedTenant {
   id             String       @id @default(uuid())
   masterCourseId String
   masterCourse   LmsMasterCourse @relation(fields: [masterCourseId], references: [id], onDelete: Cascade)
-  tenantId       String
+  orgId       String
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  @@unique([masterCourseId, tenantId])
-  @@index([tenantId])
+  @@unique([masterCourseId, orgId])
+  @@index([orgId])
   @@map("master_course_selected_tenants")
   @@schema("app_quiklms")
 }
 
 model LmsAssessment {
   id        String @id @default(uuid())
-  tenantId  String
+  orgId  String
   moduleId  String // scalar (cross-aggregate; avoids cycle with Module.assessmentId)
   title     String
   questions Json   @default("[]") // embedded Question[] (text, type, options, correctAnswerIndex, …)
@@ -16725,7 +16788,7 @@ model LmsAssessment {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  @@index([tenantId, moduleId])
+  @@index([orgId, moduleId])
   @@index([isMaster])
   @@map("assessments")
   @@schema("app_quiklms")
@@ -16733,7 +16796,7 @@ model LmsAssessment {
 
 model LmsQuizAttempt {
   id                  String   @id @default(uuid())
-  tenantId            String
+  orgId            String
   learnerId           String // actor scalar
   courseId            String // scalar (Course|MasterCourse ambiguous)
   assessmentId        String // scalar
@@ -16748,8 +16811,8 @@ model LmsQuizAttempt {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  @@index([tenantId, learnerId, courseId])
-  @@index([tenantId, learnerId, assessmentId])
+  @@index([orgId, learnerId, courseId])
+  @@index([orgId, learnerId, assessmentId])
   @@index([learnerId, courseId, submittedAt(sort: Desc)])
   @@map("quiz_attempts")
   @@schema("app_quiklms")
@@ -16761,7 +16824,7 @@ model LmsQuizAttempt {
 
 model LmsProgress {
   id                   String         @id @default(uuid())
-  tenantId             String
+  orgId             String
   learnerId            String // actor scalar
   courseId             String // scalar (ambiguous target)
   currentModuleId      String? // scalar
@@ -16777,7 +16840,7 @@ model LmsProgress {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  @@unique([tenantId, learnerId, courseId])
+  @@unique([orgId, learnerId, courseId])
   @@index([learnerId, status])
   @@map("progress")
   @@schema("app_quiklms")
@@ -16785,7 +16848,7 @@ model LmsProgress {
 
 model LmsCourseAssignment {
   id          String               @id @default(uuid())
-  tenantId    String
+  orgId    String
   courseId    String // scalar
   targetType  LmsAssignmentTargetType
   targetId    String // User or Group id (scalar)
@@ -16797,16 +16860,16 @@ model LmsCourseAssignment {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  @@index([tenantId, courseId])
-  @@index([tenantId, targetId, targetType])
-  @@index([tenantId, isMandatory])
+  @@index([orgId, courseId])
+  @@index([orgId, targetId, targetType])
+  @@index([orgId, isMandatory])
   @@map("course_assignments")
   @@schema("app_quiklms")
 }
 
 model LmsCertificate {
   id                 String  @id @default(uuid())
-  tenantId           String? // optional for global templates
+  orgId           String? // optional for global templates
   name               String
   backgroundImageUrl String
   logoImageUrl       String?
@@ -16831,7 +16894,7 @@ model LmsCertificate {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  @@index([tenantId, isActive])
+  @@index([orgId, isActive])
   @@index([approvalStatus])
   @@map("certificates")
   @@schema("app_quiklms")
@@ -16842,20 +16905,20 @@ model LmsCertificateSelectedTenant {
   id            String      @id @default(uuid())
   certificateId String
   certificate   LmsCertificate @relation(fields: [certificateId], references: [id], onDelete: Cascade)
-  tenantId      String
+  orgId      String
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  @@unique([certificateId, tenantId])
-  @@index([tenantId])
+  @@unique([certificateId, orgId])
+  @@index([orgId])
   @@map("certificate_selected_tenants")
   @@schema("app_quiklms")
 }
 
 model LmsCertificateIssued {
   id                      String    @id @default(uuid())
-  tenantId                String
+  orgId                String
   learnerId               String // actor scalar
   courseId                String // scalar (refs MasterCourse in legacy)
   certificateTemplateId   String? // scalar
@@ -16877,8 +16940,8 @@ model LmsCertificateIssued {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  @@unique([tenantId, learnerId, courseId], name: "unique_cert_per_learner_course_tenant")
-  @@index([tenantId, learnerId, courseId])
+  @@unique([orgId, learnerId, courseId], name: "unique_cert_per_learner_course_tenant")
+  @@index([orgId, learnerId, courseId])
   @@index([expiresAt])
   @@map("certificates_issued")
   @@schema("app_quiklms")
@@ -16886,7 +16949,7 @@ model LmsCertificateIssued {
 
 model LmsDiscussion {
   id          String    @id @default(uuid())
-  tenantId    String
+  orgId    String
   courseId    String // scalar
   lessonId    String? // scalar
   userId      String // actor scalar
@@ -16908,14 +16971,14 @@ model LmsDiscussion {
   @@index([courseId, lessonId, createdAt])
   @@index([parentId, createdAt])
   @@index([userId, createdAt])
-  @@index([tenantId, courseId, isDeleted])
+  @@index([orgId, courseId, isDeleted])
   @@map("discussions")
   @@schema("app_quiklms")
 }
 
 model LmsGradeRecord {
   id                String    @id @default(uuid())
-  tenantId          String
+  orgId          String
   studentId         String // actor scalar
   batchId           String
   batch             LmsBatch     @relation(fields: [batchId], references: [id], onDelete: Cascade)
@@ -16935,15 +16998,15 @@ model LmsGradeRecord {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  @@unique([tenantId, studentId, batchId, term])
-  @@index([tenantId, batchId, overallPercentage(sort: Desc)])
+  @@unique([orgId, studentId, batchId, term])
+  @@index([orgId, batchId, overallPercentage(sort: Desc)])
   @@map("grade_records")
   @@schema("app_quiklms")
 }
 
 model LmsBookmark {
   id       String  @id @default(uuid())
-  tenantId String
+  orgId String
   userId   String // actor scalar
   courseId String // scalar
   moduleId String?
@@ -16953,7 +17016,7 @@ model LmsBookmark {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  @@unique([tenantId, userId, courseId])
+  @@unique([orgId, userId, courseId])
   @@index([userId, createdAt(sort: Desc)])
   @@map("bookmarks")
   @@schema("app_quiklms")
@@ -16961,37 +17024,37 @@ model LmsBookmark {
 
 model LmsSection {
   id       String @id @default(uuid())
-  tenantId String
+  orgId String
   grade    String
   name     String
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  @@unique([tenantId, grade, name])
-  @@index([tenantId])
+  @@unique([orgId, grade, name])
+  @@index([orgId])
   @@map("sections")
   @@schema("app_quiklms")
 }
 
 model LmsSubject {
   id        String  @id @default(uuid())
-  tenantId  String
+  orgId  String
   name      String
   isDefault Boolean @default(false)
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  @@unique([tenantId, name])
-  @@index([tenantId])
+  @@unique([orgId, name])
+  @@index([orgId])
   @@map("subjects")
   @@schema("app_quiklms")
 }
 
 model LmsAcademicCalendar {
   id           String            @id @default(uuid())
-  tenantId     String
+  orgId     String
   academicYear String
   createdBy    String? // actor scalar
   terms        LmsAcademicTerm[]
@@ -17000,8 +17063,8 @@ model LmsAcademicCalendar {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  @@unique([tenantId, academicYear])
-  @@index([tenantId])
+  @@unique([orgId, academicYear])
+  @@index([orgId])
   @@map("academic_calendars")
   @@schema("app_quiklms")
 }
@@ -17057,7 +17120,7 @@ model LmsEmailTemplate {
 model LmsSharedContent {
   id             String   @id @default(uuid())
   masterCourseId String // scalar (legacy ref is inconsistent Course/MasterCourse)
-  tenantId       String
+  orgId       String
   tenantCourseId String // scalar
   sharedAt       DateTime @default(now())
   isActive       Boolean  @default(true)
@@ -17065,8 +17128,8 @@ model LmsSharedContent {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  @@unique([masterCourseId, tenantId])
-  @@index([tenantId, isActive])
+  @@unique([masterCourseId, orgId])
+  @@index([orgId, isActive])
   @@map("shared_content")
   @@schema("app_quiklms")
 }
@@ -17078,7 +17141,7 @@ model LmsSharedContent {
 
 model LmsBatch {
   id          String  @id @default(uuid())
-  tenantId    String
+  orgId    String
   name        String
   grade       String?
   section     String?
@@ -17123,10 +17186,10 @@ model LmsBatch {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  @@unique([tenantId, name, academicYear])
-  @@index([tenantId, academicYear, status])
-  @@index([tenantId, teacherId, status])
-  @@index([tenantId, grade, section, subject])
+  @@unique([orgId, name, academicYear])
+  @@index([orgId, academicYear, status])
+  @@index([orgId, teacherId, status])
+  @@index([orgId, grade, section, subject])
   @@map("batches")
   @@schema("app_quiklms")
 }
@@ -17183,7 +17246,7 @@ model LmsBatchSubstituteTeacher {
 
 model LmsScheduledClass {
   id                       String                    @id @default(uuid())
-  tenantId                 String
+  orgId                 String
   batchId                  String
   batch                    LmsBatch                     @relation(fields: [batchId], references: [id], onDelete: Cascade)
   teacherId                String // actor scalar
@@ -17211,9 +17274,9 @@ model LmsScheduledClass {
   updatedAt DateTime @updatedAt
 
   @@unique([batchId, startTime]) // guards race-condition double-inserts
-  @@index([tenantId, teacherId, startTime])
-  @@index([tenantId, batchId, startTime])
-  @@index([tenantId, status, startTime])
+  @@index([orgId, teacherId, startTime])
+  @@index([orgId, batchId, startTime])
+  @@index([orgId, status, startTime])
   @@index([startTime])
   @@map("scheduled_classes")
   @@schema("app_quiklms")
@@ -17221,7 +17284,7 @@ model LmsScheduledClass {
 
 model LmsCreditPackage {
   id               String              @id @default(uuid())
-  tenantId         String
+  orgId         String
   studentId        String // actor scalar
   packageName      String
   purchasedCredits Float
@@ -17240,14 +17303,14 @@ model LmsCreditPackage {
   updatedAt DateTime @updatedAt
 
   @@index([studentId, status, expiresAt])
-  @@index([tenantId, studentId])
+  @@index([orgId, studentId])
   @@map("credit_packages")
   @@schema("app_quiklms")
 }
 
 model LmsCreditTransaction {
   id                  String          @id @default(uuid())
-  tenantId            String
+  orgId            String
   packageId           String
   package             LmsCreditPackage   @relation(fields: [packageId], references: [id], onDelete: Cascade)
   studentId           String // actor scalar
@@ -17262,7 +17325,7 @@ model LmsCreditTransaction {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  @@index([tenantId, studentId, createdAt(sort: Desc)])
+  @@index([orgId, studentId, createdAt(sort: Desc)])
   @@index([packageId])
   @@map("credit_transactions")
   @@schema("app_quiklms")
@@ -17270,7 +17333,7 @@ model LmsCreditTransaction {
 
 model LmsAttendance {
   id                  String           @id @default(uuid())
-  tenantId            String
+  orgId            String
   scheduledClassId    String
   scheduledClass      LmsScheduledClass   @relation(fields: [scheduledClassId], references: [id], onDelete: Cascade)
   batchId             String
@@ -17290,16 +17353,16 @@ model LmsAttendance {
   updatedAt DateTime @updatedAt
 
   @@unique([scheduledClassId, studentId])
-  @@index([tenantId, scheduledClassId])
-  @@index([tenantId, studentId, classDate(sort: Desc)])
-  @@index([tenantId, batchId, classDate(sort: Desc)])
+  @@index([orgId, scheduledClassId])
+  @@index([orgId, studentId, classDate(sort: Desc)])
+  @@index([orgId, batchId, classDate(sort: Desc)])
   @@map("attendance")
   @@schema("app_quiklms")
 }
 
 model LmsHomework {
   id                     String         @id @default(uuid())
-  tenantId               String
+  orgId               String
   batchId                String
   batch                  LmsBatch          @relation(fields: [batchId], references: [id], onDelete: Cascade)
   teacherId              String // actor scalar
@@ -17323,15 +17386,15 @@ model LmsHomework {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  @@index([tenantId, batchId, status])
-  @@index([tenantId, teacherId])
+  @@index([orgId, batchId, status])
+  @@index([orgId, teacherId])
   @@map("homework")
   @@schema("app_quiklms")
 }
 
 model LmsHomeworkSubmission {
   id                 String           @id @default(uuid())
-  tenantId           String
+  orgId           String
   homeworkId         String
   homework           LmsHomework         @relation(fields: [homeworkId], references: [id], onDelete: Cascade)
   studentId          String // actor scalar
@@ -17355,7 +17418,7 @@ model LmsHomeworkSubmission {
   updatedAt DateTime @updatedAt
 
   @@unique([homeworkId, studentId])
-  @@index([tenantId, studentId, submittedAt(sort: Desc)])
+  @@index([orgId, studentId, submittedAt(sort: Desc)])
   @@map("homework_submissions")
   @@schema("app_quiklms")
 }
@@ -17380,7 +17443,7 @@ model LmsHomeworkRubricScore {
 
 model LmsTeacherPayout {
   id                    String        @id @default(uuid())
-  tenantId              String
+  orgId              String
   teacherId             String // actor scalar
   periodStart           DateTime
   periodEnd             DateTime
@@ -17407,8 +17470,8 @@ model LmsTeacherPayout {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  @@unique([tenantId, teacherId, periodStart, periodEnd])
-  @@index([tenantId, status])
+  @@unique([orgId, teacherId, periodStart, periodEnd])
+  @@index([orgId, status])
   @@map("teacher_payouts")
   @@schema("app_quiklms")
 }
@@ -17451,7 +17514,7 @@ model LmsPayoutCompletedClass {
 
 model LmsMeeting {
   id                 String          @id @default(uuid())
-  tenantId           String
+  orgId           String
   scheduledClassId   String? // scalar
   hostId             String? // actor scalar
   provider           LmsMeetingProvider
@@ -17478,8 +17541,8 @@ model LmsMeeting {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  @@index([tenantId, scheduledClassId])
-  @@index([tenantId, status])
+  @@index([orgId, scheduledClassId])
+  @@index([orgId, status])
   @@index([status, scheduledStartTime])
   @@map("meetings")
   @@schema("app_quiklms")
@@ -17508,7 +17571,7 @@ model LmsMeetingAttendance {
 
 model LmsNonTeachingTask {
   id              String       @id @default(uuid())
-  tenantId        String
+  orgId        String
   teacherId       String // actor scalar
   assignedBy      String // actor scalar
   title           String
@@ -17528,15 +17591,15 @@ model LmsNonTeachingTask {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  @@index([tenantId, teacherId, status])
-  @@index([tenantId, status, createdAt(sort: Desc)])
+  @@index([orgId, teacherId, status])
+  @@index([orgId, status, createdAt(sort: Desc)])
   @@map("non_teaching_tasks")
   @@schema("app_quiklms")
 }
 
 model LmsTeacherLevel {
   id                     String        @id @default(uuid())
-  tenantId               String
+  orgId               String
   teacherId              String        @unique // actor scalar, one record per teacher
   currentLevel           LmsTeacherStatus @default(beginner)
   totalClassesTaught     Int           @default(0)
@@ -17552,7 +17615,7 @@ model LmsTeacherLevel {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  @@unique([tenantId, teacherId])
+  @@unique([orgId, teacherId])
   @@map("teacher_levels")
   @@schema("app_quiklms")
 }
@@ -17578,7 +17641,7 @@ model LmsTeacherLevelHistory {
 
 model LmsCallEscalation {
   id               String           @id @default(uuid())
-  tenantId         String
+  orgId         String
   scheduledClassId String // scalar
   teacherId        String // actor scalar
   status           LmsEscalationStatus @default(pending)
@@ -17593,8 +17656,8 @@ model LmsCallEscalation {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  @@index([tenantId, scheduledClassId])
-  @@index([tenantId, teacherId, createdAt(sort: Desc)])
+  @@index([orgId, scheduledClassId])
+  @@index([orgId, teacherId, createdAt(sort: Desc)])
   @@map("call_escalations")
   @@schema("app_quiklms")
 }
@@ -17621,7 +17684,7 @@ model LmsCallEscalationAttempt {
 
 model LmsTutoringRequest {
   id                  String                @id @default(uuid())
-  tenantId            String
+  orgId            String
   studentId           String // actor scalar
   teacherId           String? // actor scalar
   subject             String
@@ -17640,15 +17703,15 @@ model LmsTutoringRequest {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  @@index([tenantId, studentId, status])
-  @@index([tenantId, teacherId, status])
+  @@index([orgId, studentId, status])
+  @@index([orgId, teacherId, status])
   @@map("tutoring_requests")
   @@schema("app_quiklms")
 }
 
 model LmsStudentReminderCall {
   id               String             @id @default(uuid())
-  tenantId         String
+  orgId         String
   scheduledClassId String // scalar
   studentId        String // actor scalar
   batchId          String // scalar
@@ -17661,8 +17724,8 @@ model LmsStudentReminderCall {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  @@index([tenantId, scheduledClassId, studentId])
-  @@index([tenantId, studentId, createdAt(sort: Desc)])
+  @@index([orgId, scheduledClassId, studentId])
+  @@index([orgId, studentId, createdAt(sort: Desc)])
   @@map("student_reminder_calls")
   @@schema("app_quiklms")
 }
@@ -17689,7 +17752,7 @@ model LmsStudentReminderCallAttempt {
 
 model LmsTeacherLatenessReminderLog {
   id                           String   @id @default(uuid())
-  tenantId                     String
+  orgId                     String
   batchId                      String // scalar
   teacherId                    String // actor scalar
   lastNotifiedScheduledClassId String // scalar
@@ -17698,7 +17761,7 @@ model LmsTeacherLatenessReminderLog {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  @@unique([tenantId, batchId, teacherId])
+  @@unique([orgId, batchId, teacherId])
   @@index([batchId])
   @@index([teacherId])
   @@map("teacher_lateness_reminder_logs")
@@ -17711,7 +17774,7 @@ model LmsTeacherLatenessReminderLog {
 
 model LmsQuestion {
   id            String           @id @default(uuid())
-  tenantId      String
+  orgId      String
   createdBy     String // actor scalar
   subject       String
   topic         String?
@@ -17734,16 +17797,16 @@ model LmsQuestion {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  @@index([tenantId, subject, difficulty])
-  @@index([tenantId, type])
-  @@index([tenantId, tags])
+  @@index([orgId, subject, difficulty])
+  @@index([orgId, type])
+  @@index([orgId, tags])
   @@map("questions")
   @@schema("app_quiklms")
 }
 
 model LmsExam {
   id                    String                @id @default(uuid())
-  tenantId              String
+  orgId              String
   createdBy             String // actor scalar
   title                 String
   description           String                @default("")
@@ -17768,8 +17831,8 @@ model LmsExam {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  @@index([tenantId, batchId, status])
-  @@index([tenantId, status, scheduledStartTime])
+  @@index([orgId, batchId, status])
+  @@index([orgId, status, scheduledStartTime])
   @@map("exams")
   @@schema("app_quiklms")
 }
@@ -17795,7 +17858,7 @@ model LmsExamQuestion {
 
 model LmsExamSession {
   id                String            @id @default(uuid())
-  tenantId          String
+  orgId          String
   examId            String
   exam              LmsExam              @relation(fields: [examId], references: [id], onDelete: Cascade)
   studentId         String // actor scalar
@@ -17824,7 +17887,7 @@ model LmsExamSession {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  @@unique([tenantId, examId, studentId])
+  @@unique([orgId, examId, studentId])
   @@index([status, serverDeadline])
   @@map("exam_sessions")
   @@schema("app_quiklms")
@@ -17832,7 +17895,7 @@ model LmsExamSession {
 
 model LmsProctoringLog {
   id        String              @id @default(uuid())
-  tenantId  String
+  orgId  String
   sessionId String
   session   LmsExamSession         @relation(fields: [sessionId], references: [id], onDelete: Cascade)
   studentId String // actor scalar
@@ -17852,7 +17915,7 @@ model LmsProctoringLog {
 
 model LmsIncidentReport {
   id          String              @id @default(uuid())
-  tenantId    String
+  orgId    String
   sessionId   String
   session     LmsExamSession         @relation(fields: [sessionId], references: [id], onDelete: Cascade)
   examId      String // scalar
@@ -17874,7 +17937,7 @@ model LmsIncidentReport {
 
 model LmsQuizProctoringSession {
   id                        String            @id @default(uuid())
-  tenantId                  String
+  orgId                  String
   assessmentId              String // scalar (ObjectId OR master-course UUID)
   courseId                  String // scalar
   learnerId                 String // actor scalar
@@ -17896,7 +17959,7 @@ model LmsQuizProctoringSession {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  @@unique([tenantId, assessmentId, learnerId])
+  @@unique([orgId, assessmentId, learnerId])
   @@index([status, serverDeadline])
   @@map("quiz_proctoring_sessions")
   @@schema("app_quiklms")
@@ -17904,7 +17967,7 @@ model LmsQuizProctoringSession {
 
 model LmsQuizProctoringLog {
   id        String                  @id @default(uuid())
-  tenantId  String
+  orgId  String
   sessionId String
   session   LmsQuizProctoringSession   @relation(fields: [sessionId], references: [id], onDelete: Cascade)
   learnerId String // actor scalar
@@ -17924,7 +17987,7 @@ model LmsQuizProctoringLog {
 
 model LmsQuizIncidentReport {
   id           String                @id @default(uuid())
-  tenantId     String
+  orgId     String
   sessionId    String
   session      LmsQuizProctoringSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
   assessmentId String // scalar
@@ -17950,7 +18013,7 @@ model LmsQuizIncidentReport {
 
 model LmsConversation {
   id              String           @id @default(uuid())
-  tenantId        String
+  orgId        String
   type            LmsConversationType @default(direct)
   title           String?
   groupIcon       String?
@@ -17968,7 +18031,7 @@ model LmsConversation {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  @@index([tenantId, lastMessageAt(sort: Desc)])
+  @@index([orgId, lastMessageAt(sort: Desc)])
   @@map("conversations")
   @@schema("app_quiklms")
 }
@@ -18047,7 +18110,7 @@ model LmsMessageReaction {
 
 model LmsAnalyticsEvent {
   id         String  @id @default(uuid())
-  tenantId   String
+  orgId   String
   userId     String? // actor scalar
   eventType  String
   eventData  Json? // per §8
@@ -18058,7 +18121,7 @@ model LmsAnalyticsEvent {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  @@index([tenantId, eventType, createdAt(sort: Desc)])
+  @@index([orgId, eventType, createdAt(sort: Desc)])
   @@index([userId, createdAt(sort: Desc)])
   @@map("analytics_events")
   @@schema("app_quiklms")
@@ -18066,7 +18129,7 @@ model LmsAnalyticsEvent {
 
 model LmsAnalyticsCache {
   id           String   @id @default(uuid())
-  tenantId     String
+  orgId     String
   metricKey    String
   data         Json
   calculatedAt DateTime
@@ -18076,7 +18139,7 @@ model LmsAnalyticsCache {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  @@index([tenantId, metricKey])
+  @@index([orgId, metricKey])
   @@index([expiresAt])
   @@map("analytics_cache")
   @@schema("app_quiklms")
@@ -18084,7 +18147,7 @@ model LmsAnalyticsCache {
 
 model LmsActivityLog {
   id        String       @id @default(uuid())
-  tenantId  String? // optional (super-admin global actions)
+  orgId  String? // optional (super-admin global actions)
   userId    String? // actor scalar
   type      LmsActivityType
   message   String
@@ -18094,7 +18157,7 @@ model LmsActivityLog {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  @@index([tenantId, timestamp(sort: Desc)])
+  @@index([orgId, timestamp(sort: Desc)])
   @@index([type, timestamp(sort: Desc)])
   @@index([timestamp(sort: Desc)])
   @@map("activity_logs")
@@ -18103,7 +18166,7 @@ model LmsActivityLog {
 
 model LmsTenantLog {
   id          String           @id @default(uuid())
-  tenantId    String
+  orgId    String
   actionType  LmsTenantActionType
   description String
   performedBy String // actor scalar
@@ -18113,15 +18176,15 @@ model LmsTenantLog {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  @@index([tenantId, createdAt(sort: Desc)])
-  @@index([tenantId, actionType, createdAt(sort: Desc)])
+  @@index([orgId, createdAt(sort: Desc)])
+  @@index([orgId, actionType, createdAt(sort: Desc)])
   @@map("tenant_logs")
   @@schema("app_quiklms")
 }
 
 model LmsPrivacyAuditLog {
   id              String   @id @default(uuid())
-  tenantId        String
+  orgId        String
   userId          String // actor scalar
   userRole        String
   endpoint        String
@@ -18134,7 +18197,7 @@ model LmsPrivacyAuditLog {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  @@index([tenantId, createdAt(sort: Desc)])
+  @@index([orgId, createdAt(sort: Desc)])
   @@index([userId, createdAt(sort: Desc)])
   @@map("privacy_audit_logs")
   @@schema("app_quiklms")

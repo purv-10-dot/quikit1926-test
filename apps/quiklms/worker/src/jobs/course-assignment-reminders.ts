@@ -13,18 +13,18 @@ function daysAgoWindow(days: number) {
 }
 
 async function remindForAge(days: number) {
-  const assignments = await prisma.courseAssignment.findMany({
+  const assignments = await prisma.lmsCourseAssignment.findMany({
     where: { targetType: 'USER', assignedAt: daysAgoWindow(days) },
     select: { id: true, courseId: true, targetId: true, tenantId: true },
   });
   for (const a of assignments) {
-    const progress = await prisma.progress.findFirst({
+    const progress = await prisma.lmsProgress.findFirst({
       where: { tenantId: a.tenantId, learnerId: a.targetId, courseId: a.courseId },
       select: { status: true },
     });
     if (progress?.status === 'Completed') continue; // skip completed
-    const learner = await prisma.user.findUnique({ where: { id: a.targetId }, select: { email: true, firstName: true } });
-    const course = await prisma.course.findUnique({ where: { id: a.courseId }, select: { title: true } });
+    const learner = await prisma.lmsUser.findUnique({ where: { id: a.targetId }, select: { email: true, firstName: true } });
+    const course = await prisma.lmsCourse.findUnique({ where: { id: a.courseId }, select: { title: true } });
     if (learner?.email) {
       await sendEmail(
         learner.email,

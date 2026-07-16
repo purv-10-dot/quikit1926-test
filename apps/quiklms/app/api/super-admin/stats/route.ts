@@ -14,35 +14,35 @@ export const GET = route(async (req) => {
     courseTotal, coursePublished, courseDraft,
     progressTotal, progressCompleted, progressInProgress,
   ] = await Promise.all([
-    prisma.tenant.count(),
-    prisma.tenant.count({ where: { tenantType: 'corporate' } }),
-    prisma.tenant.count({ where: { tenantType: 'school' } }),
-    prisma.tenant.count({ where: { status: 'Active' } }),
-    prisma.tenant.count({ where: { status: 'Trial' } }),
-    prisma.tenant.count({ where: { status: 'Paused' } }),
-    prisma.tenant.findMany({
+    prisma.lmsTenant.count(),
+    prisma.lmsTenant.count({ where: { tenantType: 'corporate' } }),
+    prisma.lmsTenant.count({ where: { tenantType: 'school' } }),
+    prisma.lmsTenant.count({ where: { status: 'Active' } }),
+    prisma.lmsTenant.count({ where: { status: 'Trial' } }),
+    prisma.lmsTenant.count({ where: { status: 'Paused' } }),
+    prisma.lmsTenant.findMany({
       orderBy: { createdAt: 'desc' },
       take: 10,
       select: { id: true, name: true, subdomain: true, tenantType: true, status: true, officialEmail: true, createdAt: true },
     }),
-    prisma.user.count({ where: { role: { not: 'SUPER_ADMIN' } } }),
-    prisma.user.groupBy({
+    prisma.lmsUser.count({ where: { role: { not: 'SUPER_ADMIN' } } }),
+    prisma.lmsUser.groupBy({
       by: ['role'],
       where: { role: { not: 'SUPER_ADMIN' } },
       _count: { _all: true },
     }),
-    prisma.user.findMany({
+    prisma.lmsUser.findMany({
       where: { role: { not: 'SUPER_ADMIN' } },
       orderBy: { createdAt: 'desc' },
       take: 5,
       select: { id: true, firstName: true, lastName: true, email: true, role: true, createdAt: true },
     }),
-    prisma.masterCourse.count(),
-    prisma.masterCourse.count({ where: { status: 'Published' } }),
-    prisma.masterCourse.count({ where: { status: 'Draft' } }),
-    prisma.progress.count(),
-    prisma.progress.count({ where: { status: 'Completed' } }),
-    prisma.progress.count({ where: { status: 'InProgress' } }),
+    prisma.lmsMasterCourse.count(),
+    prisma.lmsMasterCourse.count({ where: { status: 'Published' } }),
+    prisma.lmsMasterCourse.count({ where: { status: 'Draft' } }),
+    prisma.lmsProgress.count(),
+    prisma.lmsProgress.count({ where: { status: 'Completed' } }),
+    prisma.lmsProgress.count({ where: { status: 'InProgress' } }),
   ]);
 
   const completionRate =

@@ -10,7 +10,7 @@
  * modules Json tree (master-course-embedded quizzes use UUID string ids).
  */
 import { Prisma } from '@prisma/client';
-import type { QuizProctoringEventType, ProctoringSeverity } from '@prisma/client';
+import type { LmsQuizProctoringEventType as QuizProctoringEventType, LmsProctoringSeverity as ProctoringSeverity } from '@prisma/client';
 import { prisma } from '@/lib/prisma';
 import { BadRequest, NotFound } from '@/lib/http';
 import type { AuthUser } from '@/lib/auth/context';
@@ -89,7 +89,7 @@ interface EmbeddedModule {
 
 async function resolveQuizConfig(assessmentId: string): Promise<QuizConfig | null> {
   // Path A: standalone Assessment row.
-  const a = await prisma.assessment.findUnique({
+  const a = await prisma.lmsAssessment.findUnique({
     where: { id: assessmentId },
     select: {
       randomizeQuestions: true,
@@ -110,7 +110,7 @@ async function resolveQuizConfig(assessmentId: string): Promise<QuizConfig | nul
   }
 
   // Path B: master-course-embedded quiz — walk the modules Json tree.
-  const courses = await prisma.masterCourse.findMany({ select: { modules: true } });
+  const courses = await prisma.lmsMasterCourse.findMany({ select: { modules: true } });
   for (const mc of courses) {
     const modules = (mc.modules as unknown as EmbeddedModule[]) || [];
     if (!Array.isArray(modules)) continue;
@@ -202,7 +202,7 @@ export async function startSession(
 ) {
   const orgId = user.orgId as string;
 
-  const voided = await prisma.quizProctoringSession.findFirst({
+  const voided = await prisma.lmsQuizProctoringSession.findFirst({
     where: { orgId, learnerId, assessmentId, status: 'voided' },
   });
   if (voided) {
@@ -211,7 +211,7 @@ export async function startSession(
     );
   }
 
-  const existing = await prisma.quizProctoringSession.findFirst({
+  const existing = await prisma.lmsQuizProctoringSession.findFirst({
     where: { orgId, learnerId, assessmentId },
   });
 
@@ -235,7 +235,7 @@ export async function startSession(
         questionManifest = fresh.manifest ?? null;
       }
 
-      const updated = await prisma.quizProctoringSession.update({
+      const updated = await prisma.lmsQuizProctoringSession.update({
         where: { id: existing.id },
         data: {
           selectedQuestionIndices,
@@ -268,7 +268,7 @@ export async function startSession(
 
       const retakePick = await pickQuestionSubset(assessmentId);
 
-      const updated = await prisma.quizProctoringSession.update({
+      const updated = await prisma.lmsQuizProctoringSession.update({
         where: { id: existing.id },
         data: {
           status: 'in_progress',
@@ -306,7 +306,7 @@ export async function startSession(
 
   const pick = await pickQuestionSubset(assessmentId);
 
-  const session = await prisma.quizProctoringSession.create({
+  const session = await prisma.lmsQuizProctoringSession.create({
     data: {
       orgId,
       learnerId,
@@ -343,12 +343,12 @@ export async function logEvent(
 ) {
   const orgId = user.orgId as string;
 
-  const session = await prisma.quizProctoringSession.findFirst({
+  const session = await prisma.lmsQuizProctoringSession.findFirst({
     where: { id: sessionId, orgId, learnerId, status: 'in_progress' },
   });
   if (!session) return { severity: 'low' };
 
-  const count = await prisma.quizProctoringLog.count({
+  const count = await prisma.lmsQuizProctoringLog.count({
     where: { sessionId, eventType: eventType as QuizProctoringEventType },
   });
 
@@ -358,7 +358,7 @@ export async function logEvent(
   else if (count >= 3) severity = 'medium';
   else severity = 'low';
 
-  const log = await prisma.quizProctoringLog.create({
+  const log = await prisma.lmsQuizProctoringLog.create({
     data: {
       orgId,
       sessionId,
@@ -376,7 +376,7 @@ export async function logEvent(
     flags[flagField] = ((flags[flagField] as number) || 0) + 1;
     flags.totalFlags = ((flags.totalFlags as number) || 0) + 1;
     flags.severityLevel = severity;
-    await prisma.quizProctoringSession.update({
+    await prisma.lmsQuizProctoringSession.update({
       where: { id: sessionId },
       data: { proctoringFlags: flags as unknown as Prisma.InputJsonValue },
     });
@@ -387,11 +387,11 @@ export async function logEvent(
 
 export async function completeSession(user: AuthUser, learnerId: string, sessionId: string) {
   const orgId = user.orgId as string;
-  const existing = await prisma.quizProctoringSession.findFirst({
+  const existing = await prisma.lmsQuizProctoringSession.findFirst({
     where: { id: sessionId, orgId, learnerId, status: 'in_progress' },
   });
   if (!existing) return null;
-  return prisma.quizProctoringSession.update({
+  return prisma.lmsQuizProctoringSession.update({
     where: { id: existing.id },
     data: { status: 'submitted', endedAt: new Date() },
   });
@@ -399,7 +399,7 @@ export async function completeSession(user: AuthUser, learnerId: string, session
 
 export async function getSessionLog(user: AuthUser, sessionId: string) {
   const orgId = user.orgId as string;
-  return prisma.quizProctoringLog.findMany({
+  return prisma.lmsQuizProctoringLog.findMany({
     where: { orgId, sessionId },
     orderBy: { timestamp: 'asc' },
   });
@@ -407,7 +407,7 @@ export async function getSessionLog(user: AuthUser, sessionId: string) {
 
 export async function getAssessmentIncidents(user: AuthUser, assessmentId: string) {
   const orgId = user.orgId as string;
-  const sessions = await prisma.quizProctoringSession.findMany({
+  const sessions = await prisma.lmsQuizProctoringSession.findMany({
     where: { orgId, assessmentId, proctoringFlags: { path: ['totalFlags'], gt: 0 } },
   });
   return buildIncidentList(sessions, orgId, assessmentId);
@@ -415,7 +415,7 @@ export async function getAssessmentIncidents(user: AuthUser, assessmentId: strin
 
 export async function getAllIncidents(user: AuthUser) {
   const orgId = user.orgId as string;
-  const sessions = await prisma.quizProctoringSession.findMany({
+  const sessions = await prisma.lmsQuizProctoringSession.findMany({
     where: { orgId, proctoringFlags: { path: ['totalFlags'], gt: 0 } },
     orderBy: { startedAt: 'desc' },
     take: 100,
@@ -423,14 +423,14 @@ export async function getAllIncidents(user: AuthUser) {
   return buildIncidentList(sessions, orgId);
 }
 
-type QuizSessionRecord = Prisma.QuizProctoringSessionGetPayload<object>;
+type QuizSessionRecord = Prisma.LmsQuizProctoringSessionGetPayload<object>;
 
 async function buildIncidentList(sessions: QuizSessionRecord[], orgId: string, defaultAssessmentId?: string) {
   const incidents: unknown[] = [];
   for (const session of sessions) {
-    let incident = await prisma.quizIncidentReport.findFirst({ where: { sessionId: session.id, orgId } });
+    let incident = await prisma.lmsQuizIncidentReport.findFirst({ where: { sessionId: session.id, orgId } });
     if (!incident) {
-      const logs = await prisma.quizProctoringLog.findMany({ where: { sessionId: session.id } });
+      const logs = await prisma.lmsQuizProctoringLog.findMany({ where: { sessionId: session.id } });
       const summary: Record<string, number> = {};
       let total = 0;
       for (const log of logs) {
@@ -438,7 +438,7 @@ async function buildIncidentList(sessions: QuizSessionRecord[], orgId: string, d
         total++;
       }
       summary.total = total;
-      incident = await prisma.quizIncidentReport.create({
+      incident = await prisma.lmsQuizIncidentReport.create({
         data: {
           orgId,
           sessionId: session.id,
@@ -448,7 +448,7 @@ async function buildIncidentList(sessions: QuizSessionRecord[], orgId: string, d
       });
     }
 
-    const learner = await prisma.user.findUnique({
+    const learner = await prisma.lmsUser.findUnique({
       where: { id: session.learnerId },
       select: { id: true, firstName: true, lastName: true, email: true, employeeId: true },
     });
@@ -475,21 +475,21 @@ export async function reviewIncident(
 ) {
   const orgId = user.orgId as string;
 
-  const existing = await prisma.quizIncidentReport.findFirst({ where: { sessionId, orgId } });
+  const existing = await prisma.lmsQuizIncidentReport.findFirst({ where: { sessionId, orgId } });
   if (!existing) throw NotFound('Incident report not found');
 
-  const incident = await prisma.quizIncidentReport.update({
+  const incident = await prisma.lmsQuizIncidentReport.update({
     where: { id: existing.id },
     data: {
       reviewedBy: reviewerId,
       reviewedAt: new Date(),
-      disposition: data.disposition as Prisma.QuizIncidentReportUpdateInput['disposition'],
-      action: data.action as Prisma.QuizIncidentReportUpdateInput['action'],
+      disposition: data.disposition as Prisma.LmsQuizIncidentReportUpdateInput['disposition'],
+      action: data.action as Prisma.LmsQuizIncidentReportUpdateInput['action'],
       remarks: data.remarks,
     },
   });
 
-  const session = await prisma.quizProctoringSession.findUnique({ where: { id: sessionId } });
+  const session = await prisma.lmsQuizProctoringSession.findUnique({ where: { id: sessionId } });
   if (!session) throw NotFound('Session not found');
 
   const learnerId = session.learnerId;
@@ -498,7 +498,7 @@ export async function reviewIncident(
 
   if (data.disposition === 'confirmed_violation') {
     if (data.action === 'penalty_applied') {
-      await prisma.quizAttempt.updateMany({
+      await prisma.lmsQuizAttempt.updateMany({
         where: { orgId, learnerId, assessmentId },
         data: { score: 0, percentage: 0, passed: false },
       });
@@ -506,11 +506,11 @@ export async function reviewIncident(
     }
 
     if (data.action === 'session_voided') {
-      await prisma.quizProctoringSession.update({
+      await prisma.lmsQuizProctoringSession.update({
         where: { id: sessionId },
         data: { status: 'voided', endedAt: new Date() },
       });
-      await prisma.quizAttempt.deleteMany({ where: { orgId, learnerId, assessmentId } });
+      await prisma.lmsQuizAttempt.deleteMany({ where: { orgId, learnerId, assessmentId } });
       await resetQuizLessonProgress(orgId, learnerId, courseId, assessmentId);
     }
   }
@@ -525,7 +525,7 @@ async function resetQuizLessonProgress(
   assessmentId: string,
 ) {
   try {
-    const progress = await prisma.progress.findFirst({ where: { orgId, learnerId, courseId } });
+    const progress = await prisma.lmsProgress.findFirst({ where: { orgId, learnerId, courseId } });
     if (!progress) return;
 
     const lp = (progress.lessonProgress as unknown as Record<string, { completionPercentage?: number }>) || {};
@@ -538,7 +538,7 @@ async function resetQuizLessonProgress(
       completionPercentage = Math.round(avg);
     }
 
-    await prisma.progress.update({
+    await prisma.lmsProgress.update({
       where: { id: progress.id },
       data: {
         lessonProgress: lp as unknown as Prisma.InputJsonValue,
@@ -556,14 +556,14 @@ async function resetQuizLessonProgress(
 
 export async function allowRetake(user: AuthUser, sessionId: string) {
   const orgId = user.orgId as string;
-  const session = await prisma.quizProctoringSession.findFirst({ where: { id: sessionId, orgId } });
+  const session = await prisma.lmsQuizProctoringSession.findFirst({ where: { id: sessionId, orgId } });
   if (!session) throw NotFound('Session not found');
   if (session.status !== 'voided') throw BadRequest('Only voided sessions can be allowed for retake');
-  await prisma.quizProctoringSession.delete({ where: { id: sessionId } });
+  await prisma.lmsQuizProctoringSession.delete({ where: { id: sessionId } });
   return { message: 'Learner can now retake the quiz' };
 }
 
 export async function getSessionForLearner(user: AuthUser, learnerId: string, assessmentId: string) {
   const orgId = user.orgId as string;
-  return prisma.quizProctoringSession.findFirst({ where: { orgId, learnerId, assessmentId } });
+  return prisma.lmsQuizProctoringSession.findFirst({ where: { orgId, learnerId, assessmentId } });
 }

@@ -25,6 +25,6 @@ export const PATCH = route(async (req, { params }) => {
   if (dto.primaryColor !== undefined) data.primaryColor = dto.primaryColor;
   if (dto.secondaryColor !== undefined) data.secondaryColor = dto.secondaryColor;
 
-  const tenant = await prisma.tenant.update({ where: { id: params!.id }, data });
+  const tenant = await prisma.lmsTenant.update({ where: { id: params!.id }, data });
   return json({ success: true, data: tenant, message: 'Branding updated successfully' });
 });

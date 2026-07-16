@@ -5,7 +5,7 @@
  *
  *   npx tsx prisma/seed.ts   (or: npm run db:seed)
  */
-import { PrismaClient, type UserRole } from '@prisma/client';
+import { PrismaClient, type LmsUserRole as UserRole } from '@prisma/client';
 import bcrypt from 'bcryptjs';
 
 const prisma = new PrismaClient();
@@ -50,7 +50,7 @@ async function upsertUser(
   id: string, email: string, role: UserRole, orgId: string | null,
   first: string, last: string, hash: string, extra: Record<string, unknown> = {},
 ) {
-  await prisma.user.upsert({
+  await prisma.lmsUser.upsert({
     where: { id },
     create: { id, email, password: hash, firstName: first, lastName: last, role, orgId, isActive: true, mustChangePassword: false, ...extra },
     update: { email, password: hash, role, orgId, firstName: first, lastName: last, ...extra },
@@ -74,7 +74,7 @@ async function main() {
   const hash = await bcrypt.hash(PASSWORD, 10);
 
   // ── Tenants ──────────────────────────────────────────────────────────────
-  await prisma.tenant.upsert({
+  await prisma.lmsTenant.upsert({
     where: { id: CORP_ID },
     update: { featureConfig: CORP_FEAT },
     create: {
@@ -88,7 +88,7 @@ async function main() {
       featureConfig: CORP_FEAT,
     },
   });
-  await prisma.tenant.upsert({
+  await prisma.lmsTenant.upsert({
     where: { id: SCHOOL_ID },
     update: { featureConfig: SCH_FEAT },
     create: {
@@ -129,19 +129,19 @@ async function main() {
   await upsertUser(U.SCH_S3,     'meera@bright.test',         'LEARNER',      SCHOOL_ID, 'Meera', 'Gupta',     hash, { grade: '5', section: 'B', studentId: 'STU-003' });
 
   // ── Parent ↔ Child links ──────────────────────────────────────────────────
-  await prisma.userParent.upsert({ where: { parentId_childId: { parentId: U.SCH_P1, childId: U.SCH_S1 } }, create: { parentId: U.SCH_P1, childId: U.SCH_S1 }, update: {} });
-  await prisma.userParent.upsert({ where: { parentId_childId: { parentId: U.SCH_P2, childId: U.SCH_S2 } }, create: { parentId: U.SCH_P2, childId: U.SCH_S2 }, update: {} });
+  await prisma.lmsUserParent.upsert({ where: { parentId_childId: { parentId: U.SCH_P1, childId: U.SCH_S1 } }, create: { parentId: U.SCH_P1, childId: U.SCH_S1 }, update: {} });
+  await prisma.lmsUserParent.upsert({ where: { parentId_childId: { parentId: U.SCH_P2, childId: U.SCH_S2 } }, create: { parentId: U.SCH_P2, childId: U.SCH_S2 }, update: {} });
 
   // ── Groups (corporate) ────────────────────────────────────────────────────
   const GRP_ENG   = 'gg-eng-00001';
   const GRP_SALES = 'gg-sales-0002';
-  await prisma.group.upsert({ where: { id: GRP_ENG   }, create: { id: GRP_ENG,   orgId: CORP_ID, name: 'Engineering Team', description: 'All engineering employees', createdBy: U.CORP_ADMIN }, update: {} });
-  await prisma.group.upsert({ where: { id: GRP_SALES }, create: { id: GRP_SALES, orgId: CORP_ID, name: 'Sales Team',        description: 'Sales & business development', createdBy: U.CORP_ADMIN }, update: {} });
+  await prisma.lmsGroup.upsert({ where: { id: GRP_ENG   }, create: { id: GRP_ENG,   orgId: CORP_ID, name: 'Engineering Team', description: 'All engineering employees', createdBy: U.CORP_ADMIN }, update: {} });
+  await prisma.lmsGroup.upsert({ where: { id: GRP_SALES }, create: { id: GRP_SALES, orgId: CORP_ID, name: 'Sales Team',        description: 'Sales & business development', createdBy: U.CORP_ADMIN }, update: {} });
   for (const [gid, uid] of [
     [GRP_ENG, U.CORP_L1], [GRP_ENG, U.CORP_L3],
     [GRP_SALES, U.CORP_L2], [GRP_SALES, U.CORP_MGR],
   ] as [string, string][]) {
-    await prisma.groupMember.upsert({ where: { groupId_userId: { groupId: gid, userId: uid } }, create: { groupId: gid, userId: uid }, update: {} });
+    await prisma.lmsGroupMember.upsert({ where: { groupId_userId: { groupId: gid, userId: uid } }, create: { groupId: gid, userId: uid }, update: {} });
   }
 
   // ── Courses ───────────────────────────────────────────────────────────────
@@ -152,11 +152,11 @@ async function main() {
     MATH:    'c-math-sch-0001',
     SCIENCE: 'c-science-sch-2',
   };
-  await prisma.course.upsert({ where: { id: CRS.SAFETY  }, create: { id: CRS.SAFETY,  orgId: CORP_ID,   title: 'Workplace Safety & Compliance', category: 'Safety',     description: 'Essential safety procedures for all employees.',               authorId: U.CORP_ADMIN, status: 'Published' }, update: { status: 'Published' } });
-  await prisma.course.upsert({ where: { id: CRS.LEADER  }, create: { id: CRS.LEADER,  orgId: CORP_ID,   title: 'Leadership Essentials',         category: 'Leadership', description: 'Core leadership skills for managers and aspiring leaders.',    authorId: U.CORP_ADMIN, status: 'Published' }, update: { status: 'Published' } });
-  await prisma.course.upsert({ where: { id: CRS.GDPR    }, create: { id: CRS.GDPR,    orgId: CORP_ID,   title: 'GDPR & Data Privacy',           category: 'Compliance', description: 'GDPR requirements and data protection best practices.',       authorId: U.CORP_ADMIN, status: 'Published' }, update: { status: 'Published' } });
-  await prisma.course.upsert({ where: { id: CRS.MATH    }, create: { id: CRS.MATH,    orgId: SCHOOL_ID, title: 'Mathematics Grade 5',           category: 'Math',       description: 'Grade 5 mathematics: fractions, geometry, and algebra.',     authorId: U.SCH_ADMIN,  status: 'Published' }, update: { status: 'Published' } });
-  await prisma.course.upsert({ where: { id: CRS.SCIENCE }, create: { id: CRS.SCIENCE, orgId: SCHOOL_ID, title: 'Science Grade 5',               category: 'Science',    description: 'Grade 5 science: plants, animals, matter, and basic physics.', authorId: U.SCH_ADMIN, status: 'Published' }, update: { status: 'Published' } });
+  await prisma.lmsCourse.upsert({ where: { id: CRS.SAFETY  }, create: { id: CRS.SAFETY,  orgId: CORP_ID,   title: 'Workplace Safety & Compliance', category: 'Safety',     description: 'Essential safety procedures for all employees.',               authorId: U.CORP_ADMIN, status: 'Published' }, update: { status: 'Published' } });
+  await prisma.lmsCourse.upsert({ where: { id: CRS.LEADER  }, create: { id: CRS.LEADER,  orgId: CORP_ID,   title: 'Leadership Essentials',         category: 'Leadership', description: 'Core leadership skills for managers and aspiring leaders.',    authorId: U.CORP_ADMIN, status: 'Published' }, update: { status: 'Published' } });
+  await prisma.lmsCourse.upsert({ where: { id: CRS.GDPR    }, create: { id: CRS.GDPR,    orgId: CORP_ID,   title: 'GDPR & Data Privacy',           category: 'Compliance', description: 'GDPR requirements and data protection best practices.',       authorId: U.CORP_ADMIN, status: 'Published' }, update: { status: 'Published' } });
+  await prisma.lmsCourse.upsert({ where: { id: CRS.MATH    }, create: { id: CRS.MATH,    orgId: SCHOOL_ID, title: 'Mathematics Grade 5',           category: 'Math',       description: 'Grade 5 mathematics: fractions, geometry, and algebra.',     authorId: U.SCH_ADMIN,  status: 'Published' }, update: { status: 'Published' } });
+  await prisma.lmsCourse.upsert({ where: { id: CRS.SCIENCE }, create: { id: CRS.SCIENCE, orgId: SCHOOL_ID, title: 'Science Grade 5',               category: 'Science',    description: 'Grade 5 science: plants, animals, matter, and basic physics.', authorId: U.SCH_ADMIN, status: 'Published' }, update: { status: 'Published' } });
 
   // ── Modules ───────────────────────────────────────────────────────────────
   const mods = [
@@ -172,7 +172,7 @@ async function main() {
     { id: 'mod-c2', courseId: CRS.SCIENCE, title: 'Matter & Materials',       orderIndex: 2, orgId: SCHOOL_ID },
   ];
   for (const m of mods) {
-    await prisma.module.upsert({ where: { id: m.id }, create: m, update: {} });
+    await prisma.lmsModule.upsert({ where: { id: m.id }, create: m, update: {} });
   }
 
   // ── Lessons ───────────────────────────────────────────────────────────────
@@ -193,7 +193,7 @@ async function main() {
     { id: 'les-c2-1', moduleId: 'mod-c2', title: 'States of Matter',           type: 'Video', orderIndex: 1, duration: 16 },
   ];
   for (const l of lessons) {
-    await prisma.lesson.upsert({ where: { id: l.id }, create: l as any, update: {} });
+    await prisma.lmsLesson.upsert({ where: { id: l.id }, create: l as any, update: {} });
   }
 
   // ── Course Assignments ────────────────────────────────────────────────────
@@ -207,7 +207,7 @@ async function main() {
     { id: 'ca-007', orgId: CORP_ID, courseId: CRS.LEADER, targetType: 'GROUP', targetId: GRP_ENG,    isMandatory: false, assignedBy: U.CORP_ADMIN },
   ];
   for (const a of assignments) {
-    await prisma.courseAssignment.upsert({ where: { id: a.id }, create: a as any, update: {} });
+    await prisma.lmsCourseAssignment.upsert({ where: { id: a.id }, create: a as any, update: {} });
   }
 
   // ── Progress ──────────────────────────────────────────────────────────────
@@ -226,13 +226,13 @@ async function main() {
     { id: 'pg-012', orgId: SCHOOL_ID, learnerId: U.SCH_S2,  courseId: CRS.SCIENCE,status: 'NotStarted', completionPercentage: 0,   startedAt: new Date('2026-06-01') },
   ];
   for (const p of progressRecs) {
-    await prisma.progress.upsert({ where: { id: p.id }, create: p as any, update: {} });
+    await prisma.lmsProgress.upsert({ where: { id: p.id }, create: p as any, update: {} });
   }
 
   // ── Certificate template ──────────────────────────────────────────────────
   const CERT_TPL_CORP   = 'cert-tpl-acme-01';
   const CERT_TPL_SCHOOL = 'cert-tpl-bright-1';
-  await prisma.certificate.upsert({
+  await prisma.lmsCertificate.upsert({
     where: { id: CERT_TPL_CORP },
     create: {
       id: CERT_TPL_CORP, orgId: CORP_ID, name: 'Acme Course Completion Certificate',
@@ -241,7 +241,7 @@ async function main() {
     },
     update: {},
   });
-  await prisma.certificate.upsert({
+  await prisma.lmsCertificate.upsert({
     where: { id: CERT_TPL_SCHOOL },
     create: {
       id: CERT_TPL_SCHOOL, orgId: SCHOOL_ID, name: 'Bright School Academic Achievement',
@@ -252,22 +252,22 @@ async function main() {
   });
 
   // ── Issued Certificates ───────────────────────────────────────────────────
-  await prisma.certificateIssued.upsert({
+  await prisma.lmsCertificateIssued.upsert({
     where: { id: 'ci-001' },
     create: { id: 'ci-001', orgId: CORP_ID,   learnerId: U.CORP_L1,  courseId: CRS.SAFETY,  certificateTemplateId: CERT_TPL_CORP,   courseName: 'Workplace Safety & Compliance', learnerName: 'Leo Learner',   certificateId: 'QS-CERT-20260601-001', verificationUrl: 'https://quikskill.test/verify/QS-CERT-20260601-001', issuedAt: new Date('2026-06-01'), score: 92, passingScore: 70, passed: true, pdfUrl: '', qrCodeUrl: '' },
     update: {},
   });
-  await prisma.certificateIssued.upsert({
+  await prisma.lmsCertificateIssued.upsert({
     where: { id: 'ci-002' },
     create: { id: 'ci-002', orgId: CORP_ID,   learnerId: U.CORP_L3,  courseId: CRS.SAFETY,  certificateTemplateId: CERT_TPL_CORP,   courseName: 'Workplace Safety & Compliance', learnerName: 'Jake Engineer', certificateId: 'QS-CERT-20260610-002', verificationUrl: 'https://quikskill.test/verify/QS-CERT-20260610-002', issuedAt: new Date('2026-06-10'), score: 88, passingScore: 70, passed: true, pdfUrl: '', qrCodeUrl: '' },
     update: {},
   });
-  await prisma.certificateIssued.upsert({
+  await prisma.lmsCertificateIssued.upsert({
     where: { id: 'ci-003' },
     create: { id: 'ci-003', orgId: CORP_ID,   learnerId: U.CORP_MGR, courseId: CRS.LEADER,  certificateTemplateId: CERT_TPL_CORP,   courseName: 'Leadership Essentials',         learnerName: 'Maya Manager',  certificateId: 'QS-CERT-20260618-003', verificationUrl: 'https://quikskill.test/verify/QS-CERT-20260618-003', issuedAt: new Date('2026-06-18'), score: 95, passingScore: 70, passed: true, pdfUrl: '', qrCodeUrl: '' },
     update: {},
   });
-  await prisma.certificateIssued.upsert({
+  await prisma.lmsCertificateIssued.upsert({
     where: { id: 'ci-004' },
     create: { id: 'ci-004', orgId: SCHOOL_ID, learnerId: U.SCH_S1,   courseId: CRS.MATH,    certificateTemplateId: CERT_TPL_SCHOOL, courseName: 'Mathematics Grade 5',           learnerName: 'Sara Student',  certificateId: 'QS-CERT-20260520-004', verificationUrl: 'https://quikskill.test/verify/QS-CERT-20260520-004', issuedAt: new Date('2026-05-20'), score: 95, passingScore: 60, passed: true, pdfUrl: '', qrCodeUrl: '' },
     update: {},
@@ -276,7 +276,7 @@ async function main() {
   // ── Batches (school) ──────────────────────────────────────────────────────
   const BATCH_MATH = 'batch-math-5a-01';
   const BATCH_SCI  = 'batch-sci-5a-001';
-  await prisma.batch.upsert({
+  await prisma.lmsBatch.upsert({
     where: { id: BATCH_MATH },
     create: {
       id: BATCH_MATH, orgId: SCHOOL_ID, name: 'Math 5A', grade: '5', section: 'A', subject: 'Math',
@@ -287,7 +287,7 @@ async function main() {
     },
     update: {},
   });
-  await prisma.batch.upsert({
+  await prisma.lmsBatch.upsert({
     where: { id: BATCH_SCI },
     create: {
       id: BATCH_SCI, orgId: SCHOOL_ID, name: 'Science 5A', grade: '5', section: 'A', subject: 'Science',
@@ -304,7 +304,7 @@ async function main() {
     [BATCH_MATH, U.SCH_S1], [BATCH_MATH, U.SCH_S2], [BATCH_MATH, U.SCH_S3],
     [BATCH_SCI,  U.SCH_S1], [BATCH_SCI,  U.SCH_S2],
   ] as [string, string][]) {
-    await prisma.batchStudent.upsert({ where: { batchId_studentId: { batchId, studentId } }, create: { batchId, studentId }, update: {} });
+    await prisma.lmsBatchStudent.upsert({ where: { batchId_studentId: { batchId, studentId } }, create: { batchId, studentId }, update: {} });
   }
 
   // ── Batch Schedule ────────────────────────────────────────────────────────
@@ -314,7 +314,7 @@ async function main() {
     { id: 'bs-s1', batchId: BATCH_SCI,  dayOfWeek: 2, startTime: '10:00', endTime: '11:00' },
     { id: 'bs-s2', batchId: BATCH_SCI,  dayOfWeek: 4, startTime: '10:00', endTime: '11:00' },
   ]) {
-    await prisma.batchSchedule.upsert({ where: { id: s.id }, create: s, update: {} });
+    await prisma.lmsBatchSchedule.upsert({ where: { id: s.id }, create: s, update: {} });
   }
 
   // ── Scheduled Classes ─────────────────────────────────────────────────────
@@ -328,7 +328,7 @@ async function main() {
     { id: 'sc-s3', orgId: SCHOOL_ID, batchId: BATCH_SCI,  teacherId: U.SCH_T2, title: 'Science Class 3 – Matter',    startTime: new Date('2026-06-26T10:00:00Z'), endTime: new Date('2026-06-26T11:00:00Z'), status: 'scheduled' },
   ];
   for (const c of classes) {
-    await prisma.scheduledClass.upsert({ where: { id: c.id }, create: c as any, update: {} });
+    await prisma.lmsScheduledClass.upsert({ where: { id: c.id }, create: c as any, update: {} });
   }
 
   // ── Attendance ────────────────────────────────────────────────────────────
@@ -353,14 +353,14 @@ async function main() {
     { id: 'att-013', orgId: SCHOOL_ID, scheduledClassId: 'sc-s2', batchId: BATCH_SCI,  studentId: U.SCH_S2, markedBy: U.SCH_T2, status: 'present', classDate: new Date('2026-06-10') },
   ];
   for (const a of attRecs) {
-    await prisma.attendance.upsert({ where: { id: a.id }, create: a as any, update: {} });
+    await prisma.lmsAttendance.upsert({ where: { id: a.id }, create: a as any, update: {} });
   }
 
   // ── Homework ──────────────────────────────────────────────────────────────
   const HW1 = 'hw-math-frac-01';
   const HW2 = 'hw-sci-plant-01';
   const HW3 = 'hw-math-geo-001';
-  await prisma.homework.upsert({
+  await prisma.lmsHomework.upsert({
     where: { id: HW1 },
     create: {
       id: HW1, orgId: SCHOOL_ID, batchId: BATCH_MATH, teacherId: U.SCH_T1,
@@ -370,7 +370,7 @@ async function main() {
     },
     update: {},
   });
-  await prisma.homework.upsert({
+  await prisma.lmsHomework.upsert({
     where: { id: HW2 },
     create: {
       id: HW2, orgId: SCHOOL_ID, batchId: BATCH_SCI, teacherId: U.SCH_T2,
@@ -380,7 +380,7 @@ async function main() {
     },
     update: {},
   });
-  await prisma.homework.upsert({
+  await prisma.lmsHomework.upsert({
     where: { id: HW3 },
     create: {
       id: HW3, orgId: SCHOOL_ID, batchId: BATCH_MATH, teacherId: U.SCH_T1,
@@ -399,11 +399,11 @@ async function main() {
     { id: 'hws-004', orgId: SCHOOL_ID, homeworkId: HW2, studentId: U.SCH_S1, submittedAt: new Date('2026-06-21'), isLate: false, status: 'graded',    score: 14, feedback: 'Great diagram, label the roots clearly.', gradedBy: U.SCH_T2, gradedAt: new Date('2026-06-22'), finalScore: 14 },
     { id: 'hws-005', orgId: SCHOOL_ID, homeworkId: HW2, studentId: U.SCH_S2, submittedAt: new Date('2026-06-22'), isLate: false, status: 'submitted' },
   ]) {
-    await prisma.homeworkSubmission.upsert({ where: { id: sub.id }, create: sub as any, update: {} });
+    await prisma.lmsHomeworkSubmission.upsert({ where: { id: sub.id }, create: sub as any, update: {} });
   }
 
   // ── Teacher Payouts ───────────────────────────────────────────────────────
-  await prisma.teacherPayout.upsert({
+  await prisma.lmsTeacherPayout.upsert({
     where: { id: 'tp-tara-june-1' },
     create: {
       id: 'tp-tara-june-1', orgId: SCHOOL_ID, teacherId: U.SCH_T1,
@@ -414,7 +414,7 @@ async function main() {
     },
     update: {},
   });
-  await prisma.teacherPayout.upsert({
+  await prisma.lmsTeacherPayout.upsert({
     where: { id: 'tp-raj-june-01' },
     create: {
       id: 'tp-raj-june-01', orgId: SCHOOL_ID, teacherId: U.SCH_T2,
@@ -425,14 +425,14 @@ async function main() {
     },
     update: {},
   });
-  await prisma.payoutAdjustment.upsert({
+  await prisma.lmsPayoutAdjustment.upsert({
     where: { id: 'pa-001' },
     create: { id: 'pa-001', payoutId: 'tp-tara-june-1', type: 'bonus', amount: 200, reason: 'Excellent parent feedback score this month', appliedBy: U.SCH_ADMIN },
     update: {},
   });
 
   // ── Credit Packages ───────────────────────────────────────────────────────
-  await prisma.creditPackage.upsert({
+  await prisma.lmsCreditPackage.upsert({
     where: { id: 'cp-sara-june1' },
     create: {
       id: 'cp-sara-june1', orgId: SCHOOL_ID, studentId: U.SCH_S1,
@@ -442,7 +442,7 @@ async function main() {
     },
     update: {},
   });
-  await prisma.creditPackage.upsert({
+  await prisma.lmsCreditPackage.upsert({
     where: { id: 'cp-arjun-jun1' },
     create: {
       id: 'cp-arjun-jun1', orgId: SCHOOL_ID, studentId: U.SCH_S2,
@@ -459,11 +459,11 @@ async function main() {
     { id: 'ct-004', orgId: SCHOOL_ID, packageId: 'cp-arjun-jun1', studentId: U.SCH_S2, transactionType: 'deduct', amount: -1, balanceAfter: 19, relatedClassId: 'sc-m1', notes: 'Class deduction: Math Class 1' },
     { id: 'ct-005', orgId: SCHOOL_ID, packageId: 'cp-arjun-jun1', studentId: U.SCH_S2, transactionType: 'deduct', amount: -1, balanceAfter: 18, relatedClassId: 'sc-m2', notes: 'Class deduction: Math Class 2' },
   ]) {
-    await prisma.creditTransaction.upsert({ where: { id: txn.id }, create: txn as any, update: {} });
+    await prisma.lmsCreditTransaction.upsert({ where: { id: txn.id }, create: txn as any, update: {} });
   }
 
   // ── Meetings ──────────────────────────────────────────────────────────────
-  await prisma.meeting.upsert({
+  await prisma.lmsMeeting.upsert({
     where: { id: 'meet-sc-m1' },
     create: {
       id: 'meet-sc-m1', orgId: SCHOOL_ID, scheduledClassId: 'sc-m1', hostId: U.SCH_T1,
@@ -474,7 +474,7 @@ async function main() {
     },
     update: {},
   });
-  await prisma.meeting.upsert({
+  await prisma.lmsMeeting.upsert({
     where: { id: 'meet-sc-m2' },
     create: {
       id: 'meet-sc-m2', orgId: SCHOOL_ID, scheduledClassId: 'sc-m2', hostId: U.SCH_T1,
@@ -485,7 +485,7 @@ async function main() {
     },
     update: {},
   });
-  await prisma.meeting.upsert({
+  await prisma.lmsMeeting.upsert({
     where: { id: 'meet-sc-s1' },
     create: {
       id: 'meet-sc-s1', orgId: SCHOOL_ID, scheduledClassId: 'sc-s1', hostId: U.SCH_T2,
@@ -501,7 +501,7 @@ async function main() {
     { id: 'ma-002', meetingId: 'meet-sc-m1', userId: U.SCH_S1, role: 'student', joinedAt: new Date('2026-06-02T09:02:00Z'), leftAt: new Date('2026-06-02T10:02:00Z'), durationMinutes: 60 },
     { id: 'ma-003', meetingId: 'meet-sc-m1', userId: U.SCH_S2, role: 'student', joinedAt: new Date('2026-06-02T09:03:00Z'), leftAt: new Date('2026-06-02T10:00:00Z'), durationMinutes: 57 },
   ]) {
-    await prisma.meetingAttendance.upsert({ where: { id: ma.id }, create: ma as any, update: {} });
+    await prisma.lmsMeetingAttendance.upsert({ where: { id: ma.id }, create: ma as any, update: {} });
   }
 
   // ── Question Bank ─────────────────────────────────────────────────────────
@@ -514,13 +514,13 @@ async function main() {
     { id: 'q-006', orgId: CORP_ID,   createdBy: U.CORP_ADMIN, subject: 'Compliance', topic: 'GDPR',    difficulty: 'medium', type: 'mcq',        text: 'Maximum GDPR fine for serious violation?', options: [{ text: '€20M or 4% turnover', isCorrect: true },{ text: '€10M or 2% turnover', isCorrect: false },{ text: '€5M or 1% turnover', isCorrect: false },{ text: '€50M or 10% turnover', isCorrect: false }], points: 3 },
     { id: 'q-007', orgId: CORP_ID,   createdBy: U.CORP_ADMIN, subject: 'Safety',     topic: 'PPE',     difficulty: 'easy',   type: 'true_false', text: 'Hard hats must be worn in all site areas.',options: [{ text: 'True', isCorrect: true },{ text: 'False', isCorrect: false }], points: 1 },
   ]) {
-    await prisma.question.upsert({ where: { id: q.id }, create: { ...q, options: q.options, isActive: true } as any, update: {} });
+    await prisma.lmsQuestion.upsert({ where: { id: q.id }, create: { ...q, options: q.options, isActive: true } as any, update: {} });
   }
 
   // ── Exams ─────────────────────────────────────────────────────────────────
   const EXAM1 = 'exam-math-mid1';
   const EXAM2 = 'exam-safety-01';
-  await prisma.exam.upsert({
+  await prisma.lmsExam.upsert({
     where: { id: EXAM1 },
     create: {
       id: EXAM1, orgId: SCHOOL_ID, createdBy: U.SCH_T1, batchId: BATCH_MATH,
@@ -531,7 +531,7 @@ async function main() {
     },
     update: {},
   });
-  await prisma.exam.upsert({
+  await prisma.lmsExam.upsert({
     where: { id: EXAM2 },
     create: {
       id: EXAM2, orgId: CORP_ID, createdBy: U.CORP_ADMIN,
@@ -546,10 +546,10 @@ async function main() {
     [EXAM1, 'q-001', 1, 1], [EXAM1, 'q-002', 1, 2], [EXAM1, 'q-003', 1, 3], [EXAM1, 'q-004', 1, 4],
     [EXAM2, 'q-005', 2, 1], [EXAM2, 'q-007', 1, 2],
   ] as [string, string, number, number][]) {
-    await prisma.examQuestion.upsert({ where: { examId_questionId: { examId, questionId } }, create: { examId, questionId, points: pts, order: ord }, update: {} });
+    await prisma.lmsExamQuestion.upsert({ where: { examId_questionId: { examId, questionId } }, create: { examId, questionId, points: pts, order: ord }, update: {} });
   }
   // Sara's completed exam session
-  await prisma.examSession.upsert({
+  await prisma.lmsExamSession.upsert({
     where: { id: 'es-001' },
     create: {
       id: 'es-001', orgId: SCHOOL_ID, examId: EXAM1, studentId: U.SCH_S1,
@@ -570,7 +570,7 @@ async function main() {
   const CONV1 = 'conv-direct-001'; // Tara ↔ Priya (admin)
   const CONV2 = 'conv-grp-math-1'; // Math 5A group
 
-  await prisma.conversation.upsert({
+  await prisma.lmsConversation.upsert({
     where: { id: CONV1 },
     create: {
       id: CONV1, orgId: SCHOOL_ID, type: 'direct',
@@ -579,7 +579,7 @@ async function main() {
     },
     update: {},
   });
-  await prisma.conversation.upsert({
+  await prisma.lmsConversation.upsert({
     where: { id: CONV2 },
     create: {
       id: CONV2, orgId: SCHOOL_ID, type: 'group', title: 'Math 5A',
@@ -592,7 +592,7 @@ async function main() {
     [CONV1, U.SCH_T1, 'member'], [CONV1, U.SCH_ADMIN, 'member'],
     [CONV2, U.SCH_T1, 'admin'], [CONV2, U.SCH_S1, 'member'], [CONV2, U.SCH_S2, 'member'], [CONV2, U.SCH_S3, 'member'],
   ] as [string, string, string][]) {
-    await prisma.conversationParticipant.upsert({ where: { conversationId_userId: { conversationId: cvid, userId: uid } }, create: { conversationId: cvid, userId: uid, role: role as any }, update: {} });
+    await prisma.lmsConversationParticipant.upsert({ where: { conversationId_userId: { conversationId: cvid, userId: uid } }, create: { conversationId: cvid, userId: uid, role: role as any }, update: {} });
   }
   for (const msg of [
     { id: 'msg-001', conversationId: CONV1, senderId: U.SCH_T1,    text: 'Hello, I wanted to discuss Sara\'s progress in Math.', createdAt: new Date('2026-06-20T11:00:00Z') },
@@ -601,11 +601,11 @@ async function main() {
     { id: 'msg-004', conversationId: CONV2, senderId: U.SCH_S1,    text: 'Thank you, teacher!',                                  createdAt: new Date('2026-06-19T09:05:00Z') },
     { id: 'msg-005', conversationId: CONV2, senderId: U.SCH_T1,    text: 'Next class is on 25th June at 9 AM.',                  createdAt: new Date('2026-06-21T09:00:00Z') },
   ]) {
-    await prisma.message.upsert({ where: { id: msg.id }, create: msg, update: {} });
+    await prisma.lmsMessage.upsert({ where: { id: msg.id }, create: msg, update: {} });
   }
 
   // ── Teacher Levels ────────────────────────────────────────────────────────
-  await prisma.teacherLevel.upsert({
+  await prisma.lmsTeacherLevel.upsert({
     where: { teacherId: U.SCH_T1 },
     create: {
       orgId: SCHOOL_ID, teacherId: U.SCH_T1, currentLevel: 'lead', totalClassesTaught: 45,
@@ -613,7 +613,7 @@ async function main() {
     },
     update: {},
   });
-  await prisma.teacherLevel.upsert({
+  await prisma.lmsTeacherLevel.upsert({
     where: { teacherId: U.SCH_T2 },
     create: {
       orgId: SCHOOL_ID, teacherId: U.SCH_T2, currentLevel: 'intermediate', totalClassesTaught: 22,
@@ -623,7 +623,7 @@ async function main() {
   });
 
   // ── Non-Teaching Tasks ────────────────────────────────────────────────────
-  await prisma.nonTeachingTask.upsert({
+  await prisma.lmsNonTeachingTask.upsert({
     where: { id: 'ntt-001' },
     create: {
       id: 'ntt-001', orgId: SCHOOL_ID, teacherId: U.SCH_T1, assignedBy: U.SCH_ADMIN,
@@ -633,7 +633,7 @@ async function main() {
     },
     update: {},
   });
-  await prisma.nonTeachingTask.upsert({
+  await prisma.lmsNonTeachingTask.upsert({
     where: { id: 'ntt-002' },
     create: {
       id: 'ntt-002', orgId: SCHOOL_ID, teacherId: U.SCH_T2, assignedBy: U.SCH_ADMIN,
@@ -652,11 +652,11 @@ async function main() {
     { id: 'av-t2-1', userId: U.SCH_T2, dayOfWeek: 2, startTime: '09:00', endTime: '13:00' },
     { id: 'av-t2-2', userId: U.SCH_T2, dayOfWeek: 4, startTime: '09:00', endTime: '13:00' },
   ]) {
-    await prisma.userAvailabilitySlot.upsert({ where: { id: slot.id }, create: slot, update: {} });
+    await prisma.lmsUserAvailabilitySlot.upsert({ where: { id: slot.id }, create: slot, update: {} });
   }
 
   // ── Tutoring Request ──────────────────────────────────────────────────────
-  await prisma.tutoringRequest.upsert({
+  await prisma.lmsTutoringRequest.upsert({
     where: { id: 'tr-001' },
     create: {
       id: 'tr-001', orgId: SCHOOL_ID, studentId: U.SCH_S2, teacherId: U.SCH_T1,
@@ -676,7 +676,7 @@ async function main() {
     { id: 'al-005', type: 'upload',          message: 'New lesson video uploaded for Mathematics Grade 5',      orgId: SCHOOL_ID, userId: U.SCH_T1,     timestamp: new Date('2026-06-10T11:00:00Z') },
     { id: 'al-006', type: 'user_action',     message: 'User Jake Engineer completed Workplace Safety course',   orgId: CORP_ID,   userId: U.CORP_L3,   timestamp: new Date('2026-06-10T14:00:00Z') },
   ]) {
-    await prisma.activityLog.upsert({ where: { id: log.id }, create: log as any, update: {} });
+    await prisma.lmsActivityLog.upsert({ where: { id: log.id }, create: log as any, update: {} });
   }
 
   // ── Tenant Logs ───────────────────────────────────────────────────────────
@@ -690,7 +690,7 @@ async function main() {
     { id: 'tl-007', orgId: CORP_ID,   actionType: 'CourseAssignedToGroup',    description: 'Safety course assigned to Engineering Team group',     performedBy: U.CORP_ADMIN, createdAt: new Date('2026-06-01T09:30:00Z') },
     { id: 'tl-008', orgId: CORP_ID,   actionType: 'UserActivated',            description: 'User Emma Employee account activated',                performedBy: U.CORP_ADMIN, createdAt: new Date('2026-06-08T10:00:00Z') },
   ]) {
-    await prisma.tenantLog.upsert({ where: { id: tl.id }, create: tl as any, update: {} });
+    await prisma.lmsTenantLog.upsert({ where: { id: tl.id }, create: tl as any, update: {} });
   }
 
   console.log('✅ Seed complete. Password for all demo users:', PASSWORD);

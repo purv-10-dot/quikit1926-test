@@ -15,7 +15,7 @@ import { prisma } from '@/lib/prisma';
 // GET /api/auth/profile
 export const GET = route(async (req) => {
   const actor = await requireAuth(req);
-  const row = await prisma.user.findUnique({
+  const row = await prisma.lmsUser.findUnique({
     where: { id: actor.id },
     select: {
       id: true, email: true, firstName: true, lastName: true, role: true,
@@ -48,14 +48,14 @@ export const PATCH = route(async (req) => {
   for (const k of PROFILE_FIELDS) if (body[k] !== undefined) data[k] = body[k];
   if (Object.keys(data).length === 0) throw BadRequest('No updatable profile fields provided');
 
-  const existing = await prisma.user.findUnique({ where: { id: actor.id }, select: { id: true } });
+  const existing = await prisma.lmsUser.findUnique({ where: { id: actor.id }, select: { id: true } });
   if (!existing) {
     // No LMS row for this central user yet (Phase-3 gap) — echo back so the UI
     // updates its local copy without persisting server-side.
     return json({ success: true, data: { id: actor.id, ...data } });
   }
 
-  const updated = await prisma.user.update({
+  const updated = await prisma.lmsUser.update({
     where: { id: actor.id },
     data,
     select: {

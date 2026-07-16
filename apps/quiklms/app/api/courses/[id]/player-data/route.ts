@@ -8,7 +8,7 @@ export const GET = route(async (req, { params }) => {
   const courseId = params!.id;
 
   try {
-    const course = await prisma.course.findUnique({
+    const course = await prisma.lmsCourse.findUnique({
       where: { id: courseId },
       include: {
         modules: {
@@ -32,7 +32,7 @@ export const GET = route(async (req, { params }) => {
     // Fetch learner progress for this course if available
     let lessonProgress: Record<string, unknown> = {};
     try {
-      const progress = await prisma.progress.findUnique({
+      const progress = await prisma.lmsProgress.findUnique({
         where: {
           orgId_learnerId_courseId: {
             orgId: actor.orgId ?? '',

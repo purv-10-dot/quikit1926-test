@@ -17,11 +17,11 @@ export async function getComplianceAnalytics(orgId: string): Promise<{
 }> {
   if (!orgId) return { completionRates: { completed: 0, inProgress: 0, notStarted: 0 }, topPerformers: [], difficultModules: [] };
 
-  const users = await prisma.user.findMany({ where: { orgId, role: { in: ['LEARNER', 'TEACHER'] } } });
+  const users = await prisma.lmsUser.findMany({ where: { orgId, role: { in: ['LEARNER', 'TEACHER'] } } });
   const userIds = users.map((u) => u.id);
 
-  const assignments = await prisma.courseAssignment.findMany({ where: { orgId, targetType: 'USER' } });
-  const allProgress = await prisma.progress.findMany({
+  const assignments = await prisma.lmsCourseAssignment.findMany({ where: { orgId, targetType: 'USER' } });
+  const allProgress = await prisma.lmsProgress.findMany({
     where: { OR: [{ learnerId: { in: userIds } }, { orgId }] },
   });
 
@@ -58,7 +58,7 @@ export async function getComplianceAnalytics(orgId: string): Promise<{
 
   // Difficult modules — resolve titles from assignments / MasterCourse
   const assignedCourseIds = [...new Set(assignments.map((a) => a.courseId))];
-  const masters = await prisma.masterCourse.findMany({ where: { id: { in: assignedCourseIds } }, select: { id: true, title: true } });
+  const masters = await prisma.lmsMasterCourse.findMany({ where: { id: { in: assignedCourseIds } }, select: { id: true, title: true } });
   const masterTitle = new Map(masters.map((m) => [m.id, m.title]));
 
   const courseCompletions = new Map<string, { totalPct: number; count: number; title: string }>();
@@ -93,16 +93,16 @@ export async function getNudgeUsers(orgId: string): Promise<{ users: NudgeUser[]
   if (!orgId) return { users: [], totalCount: 0 };
   const now = new Date();
 
-  const users = await prisma.user.findMany({ where: { orgId, role: { in: ['LEARNER', 'TEACHER'] } } });
-  const assignments = await prisma.courseAssignment.findMany({ where: { orgId, targetType: 'USER', isMandatory: true } });
+  const users = await prisma.lmsUser.findMany({ where: { orgId, role: { in: ['LEARNER', 'TEACHER'] } } });
+  const assignments = await prisma.lmsCourseAssignment.findMany({ where: { orgId, targetType: 'USER', isMandatory: true } });
   const courseIds = [...new Set(assignments.map((a) => a.courseId))];
-  const masters = await prisma.masterCourse.findMany({ where: { id: { in: courseIds } }, select: { id: true, title: true } });
+  const masters = await prisma.lmsMasterCourse.findMany({ where: { id: { in: courseIds } }, select: { id: true, title: true } });
   const titleMap = new Map(masters.map((m) => [m.id, m.title]));
 
   const nudgeUsers: NudgeUser[] = [];
   for (const user of users) {
     const userAssignments = assignments.filter((a) => a.targetId === user.id);
-    const userProgress = await prisma.progress.findMany({ where: { learnerId: user.id } });
+    const userProgress = await prisma.lmsProgress.findMany({ where: { learnerId: user.id } });
 
     const reasons: NudgeReason[] = [];
     const overdueCourses: NonNullable<NudgeUser['overdueCourses']> = [];
@@ -142,7 +142,7 @@ export async function sendNudgeEmails(
   senderId: string,
 ): Promise<{ success: boolean; sentCount: number }> {
   if (userIds.length === 0) return { success: false, sentCount: 0 };
-  const users = await prisma.user.findMany({
+  const users = await prisma.lmsUser.findMany({
     where: { id: { in: userIds }, orgId },
     select: { id: true, email: true, firstName: true, lastName: true },
   });

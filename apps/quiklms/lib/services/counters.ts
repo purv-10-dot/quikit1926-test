@@ -7,7 +7,7 @@ import { prisma } from '@/lib/prisma';
 const PREFIX: Record<string, string> = { teacher: 'SCH-T', student: 'SCH-S', parent: 'SCH-P' };
 
 export async function getNextId(orgId: string, type: 'teacher' | 'student' | 'parent'): Promise<string> {
-  const counter = await prisma.counter.upsert({
+  const counter = await prisma.lmsCounter.upsert({
     where: { orgId_type: { orgId, type } },
     create: { orgId, type, seq: 1 },
     update: { seq: { increment: 1 } },

@@ -4,13 +4,13 @@
  * Tenant scoping is applied by callers (they pass orgId explicitly). The
  * route handlers also run requireAuth + tenantWhere/assertTenantMatch.
  *
- * NOTE: courseId may reference EITHER prisma.course OR prisma.masterCourse
+ * NOTE: courseId may reference EITHER prisma.lmsCourse OR prisma.lmsMasterCourse
  * (scalar string, ambiguous target). Lesson-id extraction reads masterCourse
  * embedded `modules` Json first, then falls back to the legacy Module/Lesson
  * tables. Certificate generation delegates to certificates-service (PDF/QR
  * generation deferred — see notes there).
  */
-import type { ProgressStatus } from '@prisma/client';
+import type { LmsProgressStatus as ProgressStatus } from '@prisma/client';
 import { prisma } from '@/lib/prisma';
 import { generateCertificateForCompletion, getLearnerCertificates } from './certificates-service';
 
@@ -127,7 +127,7 @@ async function calculateOverallCourseProgress(courseId: string, lessonProgress: 
     };
 
     // Strategy 1: MasterCourse embedded modules
-    const masterCourse = await prisma.masterCourse.findUnique({ where: { id: courseId }, select: { modules: true } });
+    const masterCourse = await prisma.lmsMasterCourse.findUnique({ where: { id: courseId }, select: { modules: true } });
     if (masterCourse && (masterCourse.modules as unknown[])?.length) {
       const allLessonIds = extractLessonIdsFromMasterCourse(masterCourse as { modules: unknown });
       if (allLessonIds.length === 0) return { percentage: 0, completedLessons: 0, totalLessons: 0, allAccessed: true };
@@ -143,7 +143,7 @@ async function calculateOverallCourseProgress(courseId: string, lessonProgress: 
     }
 
     // Strategy 2: Legacy Module/Lesson tables
-    const modules = await prisma.module.findMany({ where: { courseId }, include: { lessons: true } });
+    const modules = await prisma.lmsModule.findMany({ where: { courseId }, include: { lessons: true } });
     if (modules.length > 0) {
       let totalLessons = 0;
       let completedLessons = 0;
@@ -191,7 +191,7 @@ function parseSCORMLocation(location: string | number | undefined): number {
 }
 
 async function getUserCourseDueDate(orgId: string, learnerId: string, courseId: string): Promise<Date | undefined> {
-  const assignment = await prisma.courseAssignment.findFirst({
+  const assignment = await prisma.lmsCourseAssignment.findFirst({
     where: { orgId, targetType: 'USER', targetId: learnerId, courseId },
     select: { dueDate: true },
   });
@@ -240,7 +240,7 @@ function normalizeStatus(status: string | ProgressStatus | undefined): ProgressS
 }
 
 async function loadOrInit(orgId: string, learnerId: string, courseId: string) {
-  const existing = await prisma.progress.findUnique({
+  const existing = await prisma.lmsProgress.findUnique({
     where: { orgId_learnerId_courseId: { orgId, learnerId, courseId } },
   });
   return existing;
@@ -302,7 +302,7 @@ export async function updateProgress(data: {
   if (!startedAt && (completionPercentage > 0 || newStatus === 'InProgress')) startedAt = new Date();
   if (newStatus === 'Completed' && !completedAt) completedAt = new Date();
 
-  const saved = await prisma.progress.upsert({
+  const saved = await prisma.lmsProgress.upsert({
     where: { orgId_learnerId_courseId: { orgId, learnerId, courseId } },
     create: {
       orgId, learnerId, courseId, currentModuleId, status: newStatus,
@@ -405,7 +405,7 @@ export async function syncProgress(data: {
   if (!startedAt && (completionPercentageOut > 0 || newStatus === 'InProgress')) startedAt = new Date();
   if (newStatus === 'Completed' && !completedAt) completedAt = new Date();
 
-  const saved = await prisma.progress.upsert({
+  const saved = await prisma.lmsProgress.upsert({
     where: { orgId_learnerId_courseId: { orgId, learnerId, courseId } },
     create: {
       orgId, learnerId, courseId, status: newStatus,
@@ -430,25 +430,25 @@ async function resolveCourseTitleMap(courseIds: string[]) {
   const map = new Map<string, { _id: string; title: string; description?: string | null }>();
   if (courseIds.length === 0) return map;
   const unique = [...new Set(courseIds)];
-  const courses = await prisma.course.findMany({ where: { id: { in: unique } }, select: { id: true, title: true, description: true } });
+  const courses = await prisma.lmsCourse.findMany({ where: { id: { in: unique } }, select: { id: true, title: true, description: true } });
   courses.forEach((c) => map.set(c.id, { _id: c.id, title: c.title, description: c.description }));
   const missing = unique.filter((id) => !map.has(id));
   if (missing.length) {
-    const masters = await prisma.masterCourse.findMany({ where: { id: { in: missing } }, select: { id: true, title: true, description: true } });
+    const masters = await prisma.lmsMasterCourse.findMany({ where: { id: { in: missing } }, select: { id: true, title: true, description: true } });
     masters.forEach((mc) => map.set(mc.id, { _id: mc.id, title: mc.title, description: mc.description }));
   }
   return map;
 }
 
 export async function getAllByUser(orgId: string, learnerId: string) {
-  const records = await prisma.progress.findMany({ where: { orgId, learnerId }, orderBy: { updatedAt: 'desc' } });
+  const records = await prisma.lmsProgress.findMany({ where: { orgId, learnerId }, orderBy: { updatedAt: 'desc' } });
   const ids = records.map((p) => p.courseId).filter(Boolean);
   const courseMap = await resolveCourseTitleMap(ids);
   return records.map((p) => ({ ...p, courseId: courseMap.get(p.courseId) || p.courseId }));
 }
 
 export async function getProgress(orgId: string, learnerId: string, courseId: string) {
-  const progress = await prisma.progress.findUnique({
+  const progress = await prisma.lmsProgress.findUnique({
     where: { orgId_learnerId_courseId: { orgId, learnerId, courseId } },
   });
   if (!progress) return null;
@@ -474,7 +474,7 @@ export async function getProgress(orgId: string, learnerId: string, courseId: st
     if (oldPct !== completionPercentage || oldStatus !== newStatus) {
       let completedAt = progress.completedAt;
       if (newStatus !== 'Completed' && completedAt) completedAt = null;
-      return prisma.progress.update({
+      return prisma.lmsProgress.update({
         where: { id: progress.id },
         data: { completionPercentage, scorePercentage, status: newStatus, completedAt },
       });
@@ -486,7 +486,7 @@ export async function getProgress(orgId: string, learnerId: string, courseId: st
 
 export async function generateMissingCertificates(orgId: string, learnerId: string) {
   const result = { generated: 0, alreadyExist: 0, failed: 0 };
-  const completedProgress = await prisma.progress.findMany({
+  const completedProgress = await prisma.lmsProgress.findMany({
     where: { orgId, learnerId, OR: [{ status: 'Completed' }, { completionPercentage: { gte: 100 } }] },
   });
   if (completedProgress.length === 0) return result;
@@ -503,7 +503,7 @@ export async function generateMissingCertificates(orgId: string, learnerId: stri
     const courseId = progress.courseId;
     if (existingCourseIds.has(courseId)) { result.alreadyExist++; continue; }
     if (progress.status !== 'Completed' && progress.completionPercentage >= 100) {
-      await prisma.progress.update({
+      await prisma.lmsProgress.update({
         where: { id: progress.id },
         data: { status: 'Completed', completedAt: progress.completedAt ?? new Date() },
       });

@@ -19,8 +19,6 @@
       "@/*": ["./*"],
       "@/lib/*": ["./lib/*"],
       "@/components/*": ["./components/*"],
-      "@prisma/client": ["./lib/generated/prisma"],
-      ".prisma/client": ["./node_modules/.prisma/client"],
       "@quikit/auth": ["../../packages/auth"],
       "@quikit/auth/*": ["../../packages/auth/*"],
       "@quikit/shared": ["../../packages/shared"],

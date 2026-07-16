@@ -13,7 +13,7 @@
  *
  * Mongo populate() of teacher/student reproduced with manual lookups.
  */
-import type { Prisma, TutoringRequestStatus } from '@prisma/client';
+import type { Prisma, LmsTutoringRequestStatus as TutoringRequestStatus } from '@prisma/client';
 import { prisma } from '@/lib/prisma';
 import { NotFound, BadRequest, Internal } from '@/lib/http';
 import { generateClasses } from '@/lib/services/scheduling-service';
@@ -25,10 +25,10 @@ const STUDENT_SELECT = { id: true, firstName: true, lastName: true, email: true,
 const TEACHER_SELECT = { id: true, firstName: true, lastName: true, email: true } as const;
 
 async function shapeOne(id: string) {
-  const r = await prisma.tutoringRequest.findUnique({ where: { id } });
+  const r = await prisma.lmsTutoringRequest.findUnique({ where: { id } });
   if (!r) return null;
-  const student = r.studentId ? await prisma.user.findUnique({ where: { id: r.studentId }, select: STUDENT_SELECT }) : null;
-  const teacher = r.teacherId ? await prisma.user.findUnique({ where: { id: r.teacherId }, select: TEACHER_SELECT }) : null;
+  const student = r.studentId ? await prisma.lmsUser.findUnique({ where: { id: r.studentId }, select: STUDENT_SELECT }) : null;
+  const teacher = r.teacherId ? await prisma.lmsUser.findUnique({ where: { id: r.teacherId }, select: TEACHER_SELECT }) : null;
   return {
     _id: r.id,
     ...r,
@@ -40,8 +40,8 @@ async function shapeOne(id: string) {
 async function shapeMany(rows: { id: string; studentId: string; teacherId: string | null }[]) {
   const studentIds = rows.map((r) => r.studentId);
   const teacherIds = rows.map((r) => r.teacherId).filter(Boolean) as string[];
-  const students = await prisma.user.findMany({ where: { id: { in: studentIds } }, select: STUDENT_SELECT });
-  const teachers = await prisma.user.findMany({ where: { id: { in: teacherIds } }, select: TEACHER_SELECT });
+  const students = await prisma.lmsUser.findMany({ where: { id: { in: studentIds } }, select: STUDENT_SELECT });
+  const teachers = await prisma.lmsUser.findMany({ where: { id: { in: teacherIds } }, select: TEACHER_SELECT });
   const smap = new Map(students.map((s) => [s.id, { _id: s.id, ...s }]));
   const tmap = new Map(teachers.map((t) => [t.id, { _id: t.id, ...t }]));
   return rows.map((r) => ({
@@ -54,7 +54,7 @@ async function shapeMany(rows: { id: string; studentId: string; teacherId: strin
 
 // ═══════════════ CREDIT HELPERS (ported from CreditsService) ═══════════════
 async function getStudentBalance(orgId: string, studentId: string) {
-  const packages = await prisma.creditPackage.findMany({
+  const packages = await prisma.lmsCreditPackage.findMany({
     where: { orgId, studentId, status: 'active' },
     orderBy: { expiresAt: 'asc' },
   });
@@ -63,7 +63,7 @@ async function getStudentBalance(orgId: string, studentId: string) {
 }
 
 async function holdCredit(orgId: string, studentId: string, amount: number, notes: string): Promise<string> {
-  const packages = await prisma.creditPackage.findMany({
+  const packages = await prisma.lmsCreditPackage.findMany({
     where: { orgId, studentId, status: 'active', remainingCredits: { gt: 0 } },
     orderBy: [{ expiresAt: 'asc' }, { purchaseDate: 'asc' }],
   });
@@ -71,7 +71,7 @@ async function holdCredit(orgId: string, studentId: string, amount: number, note
 
   const pkg = packages[0];
   const newRemaining = pkg.remainingCredits - amount;
-  await prisma.creditPackage.update({
+  await prisma.lmsCreditPackage.update({
     where: { id: pkg.id },
     data: {
       usedCredits: pkg.usedCredits + amount,
@@ -80,7 +80,7 @@ async function holdCredit(orgId: string, studentId: string, amount: number, note
     },
   });
 
-  const transaction = await prisma.creditTransaction.create({
+  const transaction = await prisma.lmsCreditTransaction.create({
     data: {
       orgId,
       packageId: pkg.id,
@@ -95,14 +95,14 @@ async function holdCredit(orgId: string, studentId: string, amount: number, note
 }
 
 async function revertDeduction(transactionId: string, customNotes?: string) {
-  const transaction = await prisma.creditTransaction.findUnique({ where: { id: transactionId } });
+  const transaction = await prisma.lmsCreditTransaction.findUnique({ where: { id: transactionId } });
   if (!transaction) throw NotFound('Transaction not found');
-  const pkg = await prisma.creditPackage.findUnique({ where: { id: transaction.packageId } });
+  const pkg = await prisma.lmsCreditPackage.findUnique({ where: { id: transaction.packageId } });
   if (!pkg) throw NotFound('Package not found for this transaction');
 
   const amountToRefund = Math.abs(transaction.amount);
   const newRemaining = pkg.remainingCredits + amountToRefund;
-  await prisma.creditPackage.update({
+  await prisma.lmsCreditPackage.update({
     where: { id: pkg.id },
     data: {
       usedCredits: Math.max(0, pkg.usedCredits - amountToRefund),
@@ -110,7 +110,7 @@ async function revertDeduction(transactionId: string, customNotes?: string) {
       status: newRemaining > 0 && pkg.status === 'exhausted' ? 'active' : pkg.status,
     },
   });
-  await prisma.creditTransaction.create({
+  await prisma.lmsCreditTransaction.create({
     data: {
       orgId: transaction.orgId,
       packageId: pkg.id,
@@ -125,7 +125,7 @@ async function revertDeduction(transactionId: string, customNotes?: string) {
 
 // ═══════════════ READ ENDPOINTS ═══════════════
 export async function getAvailableTeachers(orgId: string) {
-  const teachers = await prisma.user.findMany({
+  const teachers = await prisma.lmsUser.findMany({
     where: { orgId, role: 'TEACHER', isActive: true, tutoringEnabled: true, tutoringCreditCost: { gt: 0 } },
     select: {
       id: true, firstName: true, lastName: true, email: true, subjects: true, tutoringCreditCost: true,
@@ -144,7 +144,7 @@ export async function create(
   if (!studentId) throw BadRequest('Student ID is required');
 
   const teacher = dto.teacherId
-    ? await prisma.user.findFirst({ where: { id: dto.teacherId, orgId, role: 'TEACHER' } })
+    ? await prisma.lmsUser.findFirst({ where: { id: dto.teacherId, orgId, role: 'TEACHER' } })
     : null;
   if (!teacher) throw NotFound('Teacher not found');
   if (!teacher.tutoringEnabled) throw BadRequest('Teacher is not available for tutoring');
@@ -168,7 +168,7 @@ export async function create(
   }
 
   try {
-    const doc = await prisma.tutoringRequest.create({
+    const doc = await prisma.lmsTutoringRequest.create({
       data: {
         orgId,
         studentId,
@@ -191,13 +191,13 @@ export async function create(
 
 export async function getForStudent(orgId: string, studentId: string) {
   if (!studentId) return [];
-  const rows = await prisma.tutoringRequest.findMany({ where: { orgId, studentId }, orderBy: { createdAt: 'desc' } });
+  const rows = await prisma.lmsTutoringRequest.findMany({ where: { orgId, studentId }, orderBy: { createdAt: 'desc' } });
   return shapeMany(rows);
 }
 
 export async function getForTeacher(orgId: string, teacherId: string) {
   if (!teacherId) return [];
-  const rows = await prisma.tutoringRequest.findMany({
+  const rows = await prisma.lmsTutoringRequest.findMany({
     where: {
       orgId,
       OR: [{ teacherId }, { teacherId: null, status: 'pending' }],
@@ -208,11 +208,11 @@ export async function getForTeacher(orgId: string, teacherId: string) {
 }
 
 export async function getForAdmin(orgId: string, query: { status?: string; studentId?: string; teacherId?: string }) {
-  const where: Prisma.TutoringRequestWhereInput = { orgId };
+  const where: Prisma.LmsTutoringRequestWhereInput = { orgId };
   if (query.status) where.status = query.status as TutoringRequestStatus;
   if (query.studentId) where.studentId = query.studentId;
   if (query.teacherId) where.teacherId = query.teacherId;
-  const rows = await prisma.tutoringRequest.findMany({ where, orderBy: { createdAt: 'desc' } });
+  const rows = await prisma.lmsTutoringRequest.findMany({ where, orderBy: { createdAt: 'desc' } });
   return shapeMany(rows);
 }
 
@@ -223,7 +223,7 @@ export async function accept(
   requestId: string,
   dto: { confirmedSlot: Slot; teacherNotes?: string },
 ) {
-  const request = await prisma.tutoringRequest.findFirst({ where: { id: requestId, orgId, status: 'pending' } });
+  const request = await prisma.lmsTutoringRequest.findFirst({ where: { id: requestId, orgId, status: 'pending' } });
   if (!request) throw NotFound('Tutoring request not found or not in pending state');
 
   const confirmedDate = new Date(dto.confirmedSlot.date);
@@ -233,7 +233,7 @@ export async function accept(
   // 2. Create the one-on-one batch (BatchesService.create equivalent)
   let batch;
   try {
-    batch = await prisma.batch.create({
+    batch = await prisma.lmsBatch.create({
       data: {
         orgId,
         name: `1:1 Tutoring - ${request.subject} - ${dateStr}`,
@@ -260,7 +260,7 @@ export async function accept(
   try {
     // 3. Generate the class session for this batch
     let scheduledClass: { id: string; startTime: Date; endTime: Date } | null = null;
-    const existing = await prisma.scheduledClass.findFirst({ where: { batchId: batch.id }, orderBy: { startTime: 'asc' } });
+    const existing = await prisma.lmsScheduledClass.findFirst({ where: { batchId: batch.id }, orderBy: { startTime: 'asc' } });
     if (existing) {
       scheduledClass = existing;
     } else {
@@ -272,7 +272,7 @@ export async function accept(
     // 4. Create the meeting (provider from tenant videoConfig, default jitsi)
     let provider: 'zoom' | 'google_meet' | 'jitsi' | 'manual' = 'jitsi';
     try {
-      const tenant = await prisma.tenant.findUnique({ where: { id: orgId } });
+      const tenant = await prisma.lmsTenant.findUnique({ where: { id: orgId } });
       const p = (tenant as Record<string, any> | null)?.videoConfig?.provider;
       if (p) provider = p;
     } catch {
@@ -293,7 +293,7 @@ export async function accept(
     void meeting; // join/host links are surfaced via the meeting record + worker emails
 
     // 5. Finalize the request
-    await prisma.tutoringRequest.update({
+    await prisma.lmsTutoringRequest.update({
       where: { id: request.id },
       data: {
         batchId: batch.id,
@@ -307,7 +307,7 @@ export async function accept(
     // 6. Notifications — worker owns email dispatch (Phase 4).
   } catch {
     // Partial rollback: keep batchId if set, leave request pending — matches legacy.
-    await prisma.tutoringRequest.update({ where: { id: request.id }, data: { batchId: batch.id } }).catch(() => {});
+    await prisma.lmsTutoringRequest.update({ where: { id: request.id }, data: { batchId: batch.id } }).catch(() => {});
     throw Internal('Session setup incomplete. Admin has been notified.');
   }
 
@@ -321,14 +321,14 @@ export async function reject(
   requestId: string,
   dto: { rejectionReason?: string },
 ) {
-  const request = await prisma.tutoringRequest.findFirst({ where: { id: requestId, orgId, status: 'pending' } });
+  const request = await prisma.lmsTutoringRequest.findFirst({ where: { id: requestId, orgId, status: 'pending' } });
   if (!request) throw NotFound('Tutoring request not found or not in pending state');
 
   if (request.creditHoldId) {
     await revertDeduction(request.creditHoldId, 'Tutoring request rejected - credits released').catch(() => {});
   }
 
-  await prisma.tutoringRequest.update({
+  await prisma.lmsTutoringRequest.update({
     where: { id: request.id },
     data: { teacherId, rejectionReason: dto.rejectionReason, status: 'rejected' },
   });
@@ -339,12 +339,12 @@ export async function reject(
 
 // ═══════════════ MARK COMPLETED ═══════════════
 export async function markCompleted(orgId: string, requestId: string) {
-  const request = await prisma.tutoringRequest.findFirst({ where: { id: requestId, orgId, status: 'accepted' } });
+  const request = await prisma.lmsTutoringRequest.findFirst({ where: { id: requestId, orgId, status: 'accepted' } });
   if (!request) throw NotFound('Accepted tutoring request not found');
 
   // 1. Finalize credit deduction (convert the hold into a deduction)
   if (request.creditHoldId) {
-    await prisma.creditTransaction
+    await prisma.lmsCreditTransaction
       .update({
         where: { id: request.creditHoldId },
         data: { transactionType: 'tutoring_deduction', notes: `Tutoring session completed - ${request.subject}` },
@@ -360,10 +360,10 @@ export async function markCompleted(orgId: string, requestId: string) {
       const periodStart = new Date(new Date(confirmedDate).setHours(0, 0, 0, 0));
       const periodEnd = new Date(new Date(confirmedDate).setHours(23, 59, 59, 999));
 
-      const student = await prisma.user.findUnique({ where: { id: request.studentId }, select: { firstName: true, lastName: true } });
+      const student = await prisma.lmsUser.findUnique({ where: { id: request.studentId }, select: { firstName: true, lastName: true } });
       const studentName = student ? `${student.firstName} ${student.lastName}` : `Student ID: ${request.studentId}`;
 
-      await prisma.teacherPayout.create({
+      await prisma.lmsTeacherPayout.create({
         data: {
           orgId,
           teacherId: request.teacherId!,
@@ -387,7 +387,7 @@ export async function markCompleted(orgId: string, requestId: string) {
   }
 
   // 3. Mark completed
-  await prisma.tutoringRequest.update({ where: { id: request.id }, data: { status: 'completed' } });
+  await prisma.lmsTutoringRequest.update({ where: { id: request.id }, data: { status: 'completed' } });
 
   // 4. Completion emails — worker owns dispatch (Phase 4).
   return shapeOne(request.id);

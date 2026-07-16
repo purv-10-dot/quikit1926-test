@@ -15,7 +15,7 @@
  */
 import type { NextRequest } from 'next/server';
 import { getServerSession } from 'next-auth';
-import type { UserRole } from '@prisma/client';
+import type { LmsUserRole as UserRole } from '@prisma/client';
 import { authOptions } from '@/lib/auth';
 import { mapPlatformRoleToLmsRole } from '@/lib/auth/role-resolution';
 import { prisma } from '@/lib/prisma';
@@ -54,6 +54,10 @@ export async function getAuthContext(_req?: NextRequest): Promise<AuthUser | nul
   let secondaryRole: UserRole | null = null;
   let isActive = true;
   let tenantType: 'corporate' | 'school' | null = null;
+  // True when this org has a QuikLMS `Tenant` row — i.e. it's a real
+  // school/corporate tenant, not the operator org. Used to keep the coarse
+  // role fallback from labeling a tenant admin as the operator (SUPER_ADMIN).
+  let hasTenantRow = false;
 
   // The LMS `User` row and the `Tenant` row are resolved independently — a
   // failure on one must NOT drop the other. The async thunks defer the prisma
@@ -63,12 +67,12 @@ export async function getAuthContext(_req?: NextRequest): Promise<AuthUser | nul
   // is a PK hit; the operator (SUPER_ADMIN) org has no Tenant row → stays null.
   const [rowRes, tenantRes] = await Promise.allSettled([
     (async () =>
-      prisma.user.findUnique({
+      prisma.lmsUser.findUnique({
         where: { id: u.id },
         select: { role: true, secondaryRole: true, isActive: true },
       }))(),
     (async () =>
-      prisma.tenant.findUnique({
+      prisma.lmsTenant.findUnique({
         where: { id: u.orgId },
         select: { tenantType: true },
       }))(),
@@ -81,12 +85,13 @@ export async function getAuthContext(_req?: NextRequest): Promise<AuthUser | nul
   }
   if (tenantRes.status === 'fulfilled' && tenantRes.value) {
     tenantType = tenantRes.value.tenantType;
+    hasTenantRow = true;
   }
 
   return {
     id: u.id,
     email: u.email ?? '',
-    role: lmsRole ?? mapPlatformRoleToLmsRole(u.membershipRole, u.isSuperAdmin),
+    role: lmsRole ?? mapPlatformRoleToLmsRole(u.membershipRole, u.isSuperAdmin, hasTenantRow),
     secondaryRole,
     orgId: u.orgId,
     // Resolved from the tenant row (school/corporate) so server-side role

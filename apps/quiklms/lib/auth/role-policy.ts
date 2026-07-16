@@ -14,7 +14,7 @@
  *   - SUPER_ADMIN is never assignable through this path — platform operators are
  *     seeded by apps/quikit (`POST /api/super/orgs`), not the LMS roster.
  */
-import type { UserRole } from '@prisma/client';
+import type { LmsUserRole as UserRole } from '@prisma/client';
 
 /** Privilege rank — a higher number outranks a lower one. */
 const ROLE_RANK: Record<UserRole, number> = {

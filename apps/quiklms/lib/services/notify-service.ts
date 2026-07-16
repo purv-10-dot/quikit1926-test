@@ -15,7 +15,7 @@
  * Every step is best-effort per-recipient but the function only counts a
  * recipient as delivered once an in-app Message row has actually been created.
  */
-import type { TenantActionType } from '@prisma/client';
+import type { LmsTenantActionType as TenantActionType } from '@prisma/client';
 import { prisma } from '@/lib/prisma';
 import { sendEmail } from '@/lib/email';
 
@@ -31,7 +31,7 @@ async function getOrCreateDirectConversation(
   senderId: string,
   recipientId: string,
 ): Promise<string> {
-  const candidates = await prisma.conversation.findMany({
+  const candidates = await prisma.lmsConversation.findMany({
     where: {
       orgId,
       type: 'direct',
@@ -45,14 +45,14 @@ async function getOrCreateDirectConversation(
   const existing = candidates.find((c) => c.participants.length === 2);
   if (existing) {
     // Un-archive / un-delete for both sides so the message surfaces.
-    await prisma.conversationParticipant.updateMany({
+    await prisma.lmsConversationParticipant.updateMany({
       where: { conversationId: existing.id },
       data: { isDeleted: false, isArchived: false },
     });
     return existing.id;
   }
 
-  const conversation = await prisma.conversation.create({
+  const conversation = await prisma.lmsConversation.create({
     data: {
       orgId,
       type: 'direct',
@@ -77,10 +77,10 @@ async function deliverInApp(
   text: string,
 ): Promise<boolean> {
   const conversationId = await getOrCreateDirectConversation(orgId, senderId, recipientId);
-  await prisma.message.create({
+  await prisma.lmsMessage.create({
     data: { conversationId, senderId, text: text.slice(0, 2000) },
   });
-  await prisma.conversation.update({
+  await prisma.lmsConversation.update({
     where: { id: conversationId },
     data: {
       lastMessageText: text.slice(0, 100),
@@ -151,7 +151,7 @@ export async function notifyUsers(opts: NotifyOptions): Promise<NotifyResult> {
 
   if (auditAction && deliveredCount > 0) {
     try {
-      await prisma.tenantLog.create({
+      await prisma.lmsTenantLog.create({
         data: {
           orgId,
           actionType: auditAction,
