@@ -30,6 +30,7 @@ import { iconForColumn } from "./field-icons";
 import { memberName, type MemberLite } from "./assignee-cell";
 import { AddPeopleModal } from "@/components/add-people-modal";
 import { ViewAboutPanel } from "./view-about-panel";
+import { CreateIdeaModal } from "./create-idea-modal";
 import { SPECIAL_COLUMNS, type IdeasBundle, type IdeaRow, type IdeaFieldValue } from "./ideas-types";
 
 interface MembersResponse {
@@ -83,6 +84,7 @@ export function IdeasTableView({ projectId }: { projectId: string }) {
   const [addPeopleOpen, setAddPeopleOpen] = useState(false);
   const [aboutPanelOpen, setAboutPanelOpen] = useState(false);
   const [moreOpen, setMoreOpen] = useState(false);
+  const [createModalOpen, setCreateModalOpen] = useState(false);
   const [projectName, setProjectName] = useState("this project");
   const [panelId, setPanelId] = useState<string | null>(null);
   const [panelTab, setPanelTab] = useState<"Overview" | "Comments" | "Insights" | "Delivery">("Overview");
@@ -110,6 +112,14 @@ export function IdeasTableView({ projectId }: { projectId: string }) {
     const name = el?.getAttribute("data-project-name")?.trim();
     if (name) setProjectName(name);
   }, []);
+
+  // The global "+ Create" (header) makes an idea on discovery ideas views;
+  // refetch when it fires so the new idea appears.
+  useEffect(() => {
+    function onCreated() { void qc.invalidateQueries({ queryKey }); }
+    window.addEventListener("qt:idea-created", onCreated);
+    return () => window.removeEventListener("qt:idea-created", onCreated);
+  }, [qc, queryKey]);
 
   // "Edit field" (from a dropdown's footer) opens the field editor overlay.
   useEffect(() => {
@@ -637,7 +647,7 @@ export function IdeasTableView({ projectId }: { projectId: string }) {
           <div className="flex items-center gap-2">
             <button
               type="button"
-              onClick={() => openAddRef.current?.()}
+              onClick={() => setCreateModalOpen(true)}
               className="inline-flex items-center gap-1 rounded bg-accent-600 px-2.5 py-1 text-sm font-medium text-white hover:bg-accent-700"
             >
               Create
@@ -825,6 +835,15 @@ export function IdeasTableView({ projectId }: { projectId: string }) {
 
       {addPeopleOpen && (
         <AddPeopleModal projectId={projectId} projectName={projectName} onClose={() => setAddPeopleOpen(false)} />
+      )}
+
+      {createModalOpen && (
+        <CreateIdeaModal
+          projectId={projectId}
+          projectName={projectName}
+          onCreated={() => void qc.invalidateQueries({ queryKey })}
+          onClose={() => setCreateModalOpen(false)}
+        />
       )}
 
       {aboutPanelOpen && (
