@@ -36,10 +36,23 @@ const NAV_SECTIONS: NavSection[] = [
     label: null,
     items: [
       { label: "Dashboard", href: "/dashboard", icon: LayoutDashboard },
+    ],
+  },
+  {
+    // Personal, member-visible items — what any user does with their own stuff.
+    label: "My Work",
+    items: [
       // Member landing — their own assigned assets (any Asset:view holder).
       { label: "Assets", href: "/employee-view", icon: Boxes, perm: { resource: "Asset", action: "view" } },
       // Employee self-service — raise/track own requests (any AssetRequest:view holder).
       { label: "My Requests", href: "/my-requests", icon: FilePlus2, perm: { resource: "AssetRequest", action: "view" } },
+      { label: "Notification", href: "/notifications", icon: Mail },
+    ],
+  },
+  {
+    // Operational surface for asset managers / approvers / admins.
+    label: "Asset Management",
+    items: [
       // Full org register — asset managers/admins only.
       { label: "Asset Inventory", href: "/assets", icon: Package, perm: { resource: "Asset", action: "viewAll" } },
       { label: "Category Master", href: "/assets/categories", icon: Tags, sub: true },
@@ -52,9 +65,8 @@ const NAV_SECTIONS: NavSection[] = [
   {
     label: "Reports & Logs",
     items: [
-      { label: "Audit Log", href: "/audit-log", icon: ClipboardList },
-      { label: "Notification", href: "/notifications", icon: Mail },
       { label: "Reports", href: "/reports", icon: BarChart2 },
+      { label: "Audit Log", href: "/audit-log", icon: ClipboardList },
     ],
   },
   {
