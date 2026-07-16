@@ -2,7 +2,6 @@
 
 import { useState, useEffect } from "react"
 import { X, PackageCheck, Cloud } from "lucide-react"
-import { cn } from "@/lib/utils"
 import SearchableSelect from "@/components/assignments/SearchableSelect"
 import type { AssetRequest } from "@/types/assetRequest"
 import type { Asset } from "@/types/asset"
