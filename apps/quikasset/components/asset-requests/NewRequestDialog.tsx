@@ -69,13 +69,20 @@ export default function NewRequestDialog({ onClose, onSubmit }: Props) {
   const [requiredBy, setRequiredBy] = useState("")
   const [justification, setJustification] = useState("")
   const [errors, setErrors] = useState<{ categoryId?: string; justification?: string; quantity?: string }>({})
+  const [loadError, setLoadError] = useState("")
   const [saving, setSaving] = useState(false)
 
   useEffect(() => {
-    fetch("/api/categories")
-      .then((r) => r.json())
-      .then((j) => setCategories(j?.data ?? []))
-      .catch(() => setCategories([]))
+    // Purpose-built endpoint gated on AssetRequest:create (Members hold it) —
+    // not /api/categories, which needs Category:view. Surface load failures
+    // instead of silently rendering an empty dropdown.
+    fetch("/api/asset-requests/categories")
+      .then(async (r) => {
+        const j = await r.json().catch(() => ({}))
+        if (!r.ok) throw new Error(j?.error || "Failed to load categories")
+        setCategories(j?.data ?? [])
+      })
+      .catch(() => setLoadError("Couldn't load item types. Please close and try again."))
   }, [])
 
   const categoryOptions = categories.map((c) => ({
@@ -150,14 +157,14 @@ export default function NewRequestDialog({ onClose, onSubmit }: Props) {
             })}
           </div>
 
-          <Field label="Item type" required error={errors.categoryId}>
+          <Field label="Item type" required error={errors.categoryId || loadError}>
             <SearchableSelect
               options={categoryOptions}
               value={categoryId}
               onChange={(v) => { setCategoryId(v); setErrors((e) => ({ ...e, categoryId: "" })) }}
               placeholder="Select a category"
               searchPlaceholder="Search categories…"
-              error={errors.categoryId}
+              error={errors.categoryId || loadError}
               columnHeaders={{ label: "Category", sublabel: "Base category" }}
             />
           </Field>

@@ -4,6 +4,7 @@ import { makeReq } from "../helpers/req";
 import { setSession } from "../setup";
 
 import { GET, POST as CREATE } from "@/app/api/asset-requests/route";
+import { GET as CATEGORIES } from "@/app/api/asset-requests/categories/route";
 import { POST as DECIDE } from "@/app/api/asset-requests/[id]/decision/route";
 import { POST as FULFIL } from "@/app/api/asset-requests/[id]/fulfil/route";
 
@@ -192,6 +193,39 @@ describe("POST /api/asset-requests — raise a request", () => {
     expect(mockDb.astAssetRequest.create).not.toHaveBeenCalled();
     const call = mockDb.astCategory.findFirst.mock.calls[0]?.[0] as { where: { id: string; orgId: string } };
     expect(call.where).toMatchObject({ id: "c1", orgId: "org1" });
+  });
+});
+
+describe("GET /api/asset-requests/categories — request-form category list", () => {
+  beforeEach(() => resetMockDb());
+
+  it("401s when unauthenticated", async () => {
+    setSession(null);
+    const res = await CATEGORIES(makeReq("/api/asset-requests/categories"), { params: {} });
+    expect(res.status).toBe(401);
+  });
+
+  it("403s a caller without AssetRequest:create", async () => {
+    setSession(MEMBER);
+    grant((a) => a === "view"); // view but not create
+    const res = await CATEGORIES(makeReq("/api/asset-requests/categories"), { params: {} });
+    expect(res.status).toBe(403);
+    expect(mockDb.astCategory.findMany).not.toHaveBeenCalled();
+  });
+
+  it("returns the org's categories for an AssetRequest:create holder, scoped to org", async () => {
+    setSession(MEMBER);
+    grantRequester();
+    mockDb.astCategory.findMany.mockResolvedValue([
+      { id: "c1", name: "Laptop", baseCategory: { name: "Electronics" } },
+    ] as never);
+
+    const res = await CATEGORIES(makeReq("/api/asset-requests/categories"), { params: {} });
+    const json = await res.json();
+    expect(res.status).toBe(200);
+    expect(json.data).toHaveLength(1);
+    const call = mockDb.astCategory.findMany.mock.calls[0]?.[0] as { where: { orgId: string } };
+    expect(call.where.orgId).toBe("org1");
   });
 });
 
