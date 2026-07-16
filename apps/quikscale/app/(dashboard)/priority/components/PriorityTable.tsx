@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useRef, useEffect, type UIEvent } from "react";
+import { useState, useRef, useEffect, useMemo, useCallback, type UIEvent } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import type { PriorityRow } from "@/lib/types/priority";
 import { weeksArray, weekDateLabel, getWeekDateRange } from "@/lib/utils/fiscal";
@@ -19,13 +19,27 @@ import { UserAuditCell, DateAuditCell } from "@/components/table/AuditCells";
 import { HorizontalScroller } from "@/components/ui/HorizontalScroller";
 import { isNearBottom } from "@/lib/utils/scroll";
 import { useColumnResize, ResizeHandle } from "@/lib/hooks/useColumnResize";
+import { useColumnOrder } from "@/lib/hooks/useColumnOrder";
+import { moveByKey, columnsUnfrozenBy } from "@/lib/utils/columnOrder";
+import { useColumnDnD, DragHandle } from "@/lib/hooks/useColumnDnD";
 import { getLatestPriorityNote } from "@/lib/utils/priorityHelpers";
 import { BaseTooltip } from "@/components/ui/base-tooltip";
 import { useClickOutside } from "@/lib/hooks/useClickOutside";
-import { Pagination } from "@quikit/ui";
+import { Pagination, useConfirm } from "@quikit/ui";
 import { notify } from "@/lib/utils/notify";
 
 import { STATUS_PICKER_OPTIONS, statusDotColor } from "@/lib/constants/status";
+
+// Column layout constants (module-level so hook dep arrays stay stable).
+// Rail columns are always frozen/visible and never reorderable; the rest are
+// user-draggable and persisted per user via useColumnOrder("priority").
+const PRIORITY_RAIL_COLS = ["_cb", "_log", "_id"] as const;
+const PRIORITY_DEFAULT_NON_RAIL = [
+  "team", "priorityName", "owner",
+  "startWeek", "endWeek", "lastNote", "importedFromOpsp",
+  // Audit columns — last, before week columns.
+  "createdBy", "updatedBy", "createdAt", "updatedAt",
+];
 
 // ── Priority name tooltip ─────────────────────────────────────────────────────
 
@@ -379,13 +393,17 @@ export function PriorityTable({ priorities: prioritiesAll, onRefresh, year, quar
     return weekNumber >= sw && weekNumber <= ew;
   }
 
-  // Column layout — checkbox/log/id are ALWAYS frozen/visible; others are user-controlled
-  const COL_ORDER_FULL = [
-    "_cb", "_log", "_id", "team", "priorityName", "owner",
-    "startWeek", "endWeek", "lastNote", "importedFromOpsp",
-    // Audit columns — last, before week columns.
-    "createdBy", "updatedBy", "createdAt", "updatedAt",
-  ];
+  // Column layout — checkbox/log/id are ALWAYS frozen/visible and never
+  // reorderable (see module-level PRIORITY_RAIL_COLS / PRIORITY_DEFAULT_NON_RAIL).
+  // Everything after them is user-draggable + persisted per user.
+  const {
+    orderedCols: orderedNonRail,
+    applyOrder: applyColumnOrder,
+  } = useColumnOrder("priority", PRIORITY_DEFAULT_NON_RAIL, { alwaysFrozen: PRIORITY_RAIL_COLS });
+  const COL_ORDER_FULL = useMemo(
+    () => [...PRIORITY_RAIL_COLS, ...orderedNonRail],
+    [orderedNonRail],
+  );
   const COL_WIDTHS: Record<string, number> = {
     _cb: 40, _log: 40, _id: 40, team: 120, priorityName: 260, owner: 140,
     startWeek: 170, endWeek: 170, lastNote: 200, importedFromOpsp: 150,
@@ -459,6 +477,51 @@ export function PriorityTable({ priorities: prioritiesAll, onRefresh, year, quar
     hideCol(colKey);
   }
 
+  // ── Drag-to-reorder columns ─────────────────────────────────────────────
+  const headerRowRef = useRef<HTMLTableRowElement>(null);
+  const confirm = useConfirm();
+  // Only enabled on the full module page — previews opt out via layout flags
+  // (readOnly / fillWidth / maxRows / maxBodyHeight). `hideColumns` is NOT a
+  // preview signal (module pages use it too), so it must not gate reordering.
+  const reorderDisabled = !!readOnly || !!fillWidth || maxRows != null || maxBodyHeight != null;
+  const canReorderCol = useCallback(
+    (col: string) => !reorderDisabled && orderedNonRail.includes(col),
+    [reorderDisabled, orderedNonRail],
+  );
+  const handleColDrop = useCallback(
+    async (fromKey: string, toKey: string, side: "before" | "after") => {
+      const nextNonRail = moveByKey(orderedNonRail, fromKey, toKey, side);
+      const nextFull = [...PRIORITY_RAIL_COLS, ...nextNonRail];
+      const curFull = [...PRIORITY_RAIL_COLS, ...orderedNonRail];
+      const unfrozen = columnsUnfrozenBy(curFull, nextFull, frozenCol, PRIORITY_RAIL_COLS);
+      if (unfrozen.length > 0) {
+        const ok = await confirm({
+          tone: "warning",
+          title: "Unfreeze column?",
+          description:
+            "Moving this column will remove it from the frozen (pinned) section. Are you sure you want to continue?",
+          confirmLabel: "Yes, move it",
+          cancelLabel: "No",
+        });
+        if (!ok) return;
+      }
+      applyColumnOrder(nextNonRail);
+    },
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [orderedNonRail, frozenCol, applyColumnOrder, confirm],
+  );
+  const dnd = useColumnDnD({
+    getHeaderRow: () => headerRowRef.current,
+    onDrop: handleColDrop,
+    canReorder: canReorderCol,
+  });
+  function dropIndicatorClass(col: string) {
+    if (dnd.overKey !== col || !dnd.dropSide) return "";
+    return dnd.dropSide === "before"
+      ? "shadow-[inset_2px_0_0_0_var(--tw-shadow-color)] shadow-blue-500"
+      : "shadow-[inset_-2px_0_0_0_var(--tw-shadow-color)] shadow-blue-500";
+  }
+
   return (
     <div className="flex flex-col h-full">
       {/* Table */}
@@ -485,7 +548,7 @@ export function PriorityTable({ priorities: prioritiesAll, onRefresh, year, quar
               vertical scroll. The frozen <th> cells additionally use their
               own `sticky left:` so they stay pinned during horizontal scroll. */}
           <thead className="sticky top-0 z-30">
-            <tr className="bg-accent-50 border-b border-gray-200">
+            <tr ref={headerRowRef} className="bg-accent-50 border-b border-gray-200">
               {/* Header cells — checkbox/log/id always sticky, others sticky if isColFrozen */}
               {COL_ORDER.map((colKey) => {
                 const frozen = isColFrozen(colKey);
@@ -501,8 +564,10 @@ export function PriorityTable({ priorities: prioritiesAll, onRefresh, year, quar
                 const sortKey = SORT_KEYS_MAP[colKey];
                 const isSorted = sortKey && sortCol === sortKey;
 
+                const isDragging = dnd.draggingKey === colKey;
                 return (
                   <th key={colKey}
+                    data-col-key={colKey}
                     // Always `sticky top-0` so the header pins on vertical scroll.
                     // Frozen cells additionally get a `left:` offset so they pin
                     // on horizontal scroll (matches KPITable's pattern).
@@ -512,7 +577,7 @@ export function PriorityTable({ priorities: prioritiesAll, onRefresh, year, quar
                     // headers visually disappear.
                     // `relative` was previously here and was overriding `sticky`
                     // in the CSS cascade — removed.
-                    className={`group sticky top-0 ${frozen ? "z-[35]" : "z-30"} bg-accent-50 border-b border-gray-200 border-r border-r-gray-200 text-left px-2 py-2 text-[10px] font-semibold text-gray-500 uppercase tracking-wider whitespace-nowrap select-none`}
+                    className={`group sticky top-0 ${frozen ? "z-[35]" : "z-30"} bg-accent-50 border-b border-gray-200 border-r border-r-gray-200 text-left px-2 py-2 text-[10px] font-semibold text-gray-500 uppercase tracking-wider whitespace-nowrap select-none ${dropIndicatorClass(colKey)} ${isDragging ? "opacity-40" : ""}`}
                     style={{
                       left: frozen ? getLeftOffset(colKey) : undefined,
                       width,
@@ -537,6 +602,7 @@ export function PriorityTable({ priorities: prioritiesAll, onRefresh, year, quar
                     ) : (
                       <div className="flex items-center justify-between gap-1">
                         <span className="inline-flex items-center gap-1">
+                          {!reorderDisabled && <DragHandle onStart={(e) => dnd.startDrag(colKey, e)} />}
                           {frozenCol === colKey && (
                             <svg className="h-3 w-3 text-blue-400 flex-shrink-0" fill="currentColor" viewBox="0 0 20 20">
                               <path fillRule="evenodd" d="M5 9V7a5 5 0 0110 0v2a2 2 0 012 2v5a2 2 0 01-2 2H5a2 2 0 01-2-2v-5a2 2 0 012-2zm8-2v2H7V7a3 3 0 016 0z" clipRule="evenodd" />
@@ -544,8 +610,13 @@ export function PriorityTable({ priorities: prioritiesAll, onRefresh, year, quar
                           )}
                           {/* `title` surfaces the full label as a native tooltip
                               when the column is narrow enough to ellipsize
-                              (common on Dashboard previews). */}
-                          <span title={label} className={isSorted ? "text-accent-700" : ""}>{label}</span>
+                              (common on Dashboard previews). The label is also a
+                              drag handle for reorderable columns. */}
+                          <span
+                            title={label}
+                            onPointerDown={canReorderCol(colKey) ? (e) => dnd.startDrag(colKey, e) : undefined}
+                            className={`${isSorted ? "text-accent-700" : ""} ${canReorderCol(colKey) ? "cursor-grab active:cursor-grabbing touch-none" : ""}`}
+                          >{label}</span>
                           <SortIndicator active={!!isSorted} direction={sortDir} />
                         </span>
                         {showMenu && (
@@ -597,160 +668,147 @@ export function PriorityTable({ priorities: prioritiesAll, onRefresh, year, quar
               const ownerName = priority.owner_user
                 ? `${priority.owner_user.firstName} ${priority.owner_user.lastName}`
                 : "—";
-              return (
-                <tr key={priority.id}
-                  className={`border-b border-gray-100 hover:bg-blue-50 transition-colors ${rowIdx % 2 === 0 ? "bg-white" : "bg-gray-50"}`}>
-                  {/* Checkbox — always frozen. z-[25] keeps it above non-frozen
-                      body cells (z-20) during horizontal scroll so the
-                      sticky cell stays visually on top instead of being
-                      covered by scrolling neighbours. */}
-                  {COL_ORDER.includes("_cb") && (
-                    <td className="sticky z-[25] border-r border-gray-100 px-2 py-1.5 bg-inherit"
-                      style={{ left: getLeftOffset("_cb"), width: 40, minWidth: 40 }}>
-                      <label
-                        onClickCapture={(e) => {
-                          if (!canDelete) {
-                            e.preventDefault();
-                            e.stopPropagation();
-                            notify.error("You don't have permission to delete");
-                          }
-                        }}
-                      >
-                        <input type="checkbox"
-                          checked={selectedIds.has(priority.id)}
-                          onChange={() => toggleSelect(priority.id)} disabled={!canDelete}
-                          className={`rounded border-gray-300 text-blue-600 ${canDelete ? "cursor-pointer" : "opacity-40 cursor-not-allowed"}`} />
-                      </label>
-                    </td>
-                  )}
 
-                  {/* Log icon — always frozen. z-[25] same reason as the cb cell. */}
-                  {COL_ORDER.includes("_log") && (
-                    <td className="sticky z-[25] border-r border-gray-100 px-1 py-1.5 text-center bg-inherit"
-                      style={{ left: getLeftOffset("_log"), width: 40, minWidth: 40 }}>
-                      <button onClick={() => setLogPriority(priority)}
-                        className="p-1 rounded hover:bg-gray-100 text-gray-400 hover:text-blue-500 transition-colors"
-                        title="Open log">
-                        <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
-                        </svg>
-                      </button>
-                    </td>
-                  )}
-
-                  {/* ID — always frozen. z-[25] same reason as the cb cell. */}
-                  {COL_ORDER.includes("_id") && (
-                    <td className="z-[25] border-r border-gray-100 px-1 py-1.5 text-center bg-inherit sticky"
-                      style={{
-                        left: getLeftOffset("_id"),
-                        width: 40,
-                        minWidth: 40,
-                        boxShadow: lastFrozenKey === "_id" ? "2px 0 4px -1px rgba(0,0,0,0.08)" : undefined,
-                      }}>
-                      <button onClick={() => setEditPriority(priority)}
-                        className="text-gray-900 hover:underline font-medium text-xs transition-colors">
-                        {rowIdx + 1}
-                      </button>
-                    </td>
-                  )}
-
-                  {/* Team — user-freezable, hidable */}
-                  {COL_ORDER.includes("team") && (
-                    <td className={`z-20 border-r border-gray-100 px-2 py-1.5 bg-inherit ${isColFrozen("team") ? "sticky" : ""}`}
-                      style={{
-                        left: isColFrozen("team") ? getLeftOffset("team") : undefined,
-                        width: getColWidth("team"),
-                        minWidth: getColWidth("team"),
-                        boxShadow: lastFrozenKey === "team" ? "2px 0 4px -1px rgba(0,0,0,0.08)" : undefined,
-                      }}>
-                      <span className="text-xs text-gray-600 truncate block">
-                        {priority.team?.name ?? <span className="text-gray-300">—</span>}
-                      </span>
-                    </td>
-                  )}
-
-                  {/* Priority Name — user-freezable, hidable */}
-                  {COL_ORDER.includes("priorityName") && (
-                    <td className={`z-20 border-r border-gray-100 px-2 py-1.5 bg-inherit overflow-hidden align-top ${isColFrozen("priorityName") ? "sticky" : ""}`}
-                      style={{
-                        left: isColFrozen("priorityName") ? getLeftOffset("priorityName") : undefined,
-                        width: getColWidth("priorityName"),
-                        minWidth: getColWidth("priorityName"),
-                        boxShadow: lastFrozenKey === "priorityName" ? "2px 0 4px -1px rgba(0,0,0,0.08)" : undefined,
-                      }}>
-                      <NameTooltip name={priority.name} description={priority.description}>
-                        <span className="text-xs text-gray-800 font-medium line-clamp-2 leading-snug cursor-default break-words">
-                          {priority.name}
+              // Render one body cell by column key, in the user's drag order.
+              // Cell styling is byte-identical to the previous hardcoded blocks.
+              const renderBodyCell = (colKey: string) => {
+                switch (colKey) {
+                  case "_cb":
+                    return (
+                      <td key={colKey} className="sticky z-[25] border-r border-gray-100 px-2 py-1.5 bg-inherit"
+                        style={{ left: getLeftOffset("_cb"), width: 40, minWidth: 40 }}>
+                        <label
+                          onClickCapture={(e) => {
+                            if (!canDelete) {
+                              e.preventDefault();
+                              e.stopPropagation();
+                              notify.error("You don't have permission to delete");
+                            }
+                          }}
+                        >
+                          <input type="checkbox"
+                            checked={selectedIds.has(priority.id)}
+                            onChange={() => toggleSelect(priority.id)} disabled={!canDelete}
+                            className={`rounded border-gray-300 text-blue-600 ${canDelete ? "cursor-pointer" : "opacity-40 cursor-not-allowed"}`} />
+                        </label>
+                      </td>
+                    );
+                  case "_log":
+                    return (
+                      <td key={colKey} className="sticky z-[25] border-r border-gray-100 px-1 py-1.5 text-center bg-inherit"
+                        style={{ left: getLeftOffset("_log"), width: 40, minWidth: 40 }}>
+                        <button onClick={() => setLogPriority(priority)}
+                          className="p-1 rounded hover:bg-gray-100 text-gray-400 hover:text-blue-500 transition-colors"
+                          title="Open log">
+                          <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+                          </svg>
+                        </button>
+                      </td>
+                    );
+                  case "_id":
+                    return (
+                      <td key={colKey} className="z-[25] border-r border-gray-100 px-1 py-1.5 text-center bg-inherit sticky"
+                        style={{
+                          left: getLeftOffset("_id"),
+                          width: 40,
+                          minWidth: 40,
+                          boxShadow: lastFrozenKey === "_id" ? "2px 0 4px -1px rgba(0,0,0,0.08)" : undefined,
+                        }}>
+                        <button onClick={() => setEditPriority(priority)}
+                          className="text-gray-900 hover:underline font-medium text-xs transition-colors">
+                          {rowIdx + 1}
+                        </button>
+                      </td>
+                    );
+                  case "team":
+                    return (
+                      <td key={colKey} className={`z-20 border-r border-gray-100 px-2 py-1.5 bg-inherit ${isColFrozen("team") ? "sticky" : ""}`}
+                        style={{
+                          left: isColFrozen("team") ? getLeftOffset("team") : undefined,
+                          width: getColWidth("team"),
+                          minWidth: getColWidth("team"),
+                          boxShadow: lastFrozenKey === "team" ? "2px 0 4px -1px rgba(0,0,0,0.08)" : undefined,
+                        }}>
+                        <span className="text-xs text-gray-600 truncate block">
+                          {priority.team?.name ?? <span className="text-gray-300">—</span>}
                         </span>
-                      </NameTooltip>
-                    </td>
-                  )}
-
-                  {/* Owner — user-freezable, hidable */}
-                  {COL_ORDER.includes("owner") && (
-                    <td className={`z-20 border-r border-gray-200 px-2 py-1.5 bg-inherit ${isColFrozen("owner") ? "sticky" : ""}`}
-                      style={{
-                        left: isColFrozen("owner") ? getLeftOffset("owner") : undefined,
-                        width: getColWidth("owner"),
-                        minWidth: getColWidth("owner"),
-                        boxShadow: lastFrozenKey === "owner" ? "2px 0 4px -1px rgba(0,0,0,0.08)" : undefined,
-                      }}>
-                      <span className="text-xs text-gray-600 truncate block">{ownerName}</span>
-                    </td>
-                  )}
-
-                  {/* Start Week — user-freezable, hidable */}
-                  {COL_ORDER.includes("startWeek") && (
-                    <td className={`z-20 border-r border-gray-100 px-2 py-1.5 bg-inherit ${isColFrozen("startWeek") ? "sticky" : ""}`}
-                      style={{
-                        left: isColFrozen("startWeek") ? getLeftOffset("startWeek") : undefined,
-                        width: getColWidth("startWeek"),
-                        minWidth: getColWidth("startWeek"),
-                        boxShadow: lastFrozenKey === "startWeek" ? "2px 0 4px -1px rgba(0,0,0,0.08)" : undefined,
-                      }}>
-                      {priority.startWeek != null ? (
-                        <span className="text-xs text-gray-700 whitespace-nowrap">
-                          Week {priority.startWeek}{" "}
-                          <span className="text-gray-400">({getWeekDateRange(year, quarter, priority.startWeek, qStart, effectiveMeetingDay, qEnd)})</span>
-                        </span>
-                      ) : (
-                        <span className="text-xs text-gray-300">—</span>
-                      )}
-                    </td>
-                  )}
-
-                  {/* End Week — user-freezable, hidable */}
-                  {COL_ORDER.includes("endWeek") && (
-                    <td className={`z-20 border-r border-gray-100 px-2 py-1.5 bg-inherit ${isColFrozen("endWeek") ? "sticky" : ""}`}
-                      style={{
-                        left: isColFrozen("endWeek") ? getLeftOffset("endWeek") : undefined,
-                        width: getColWidth("endWeek"),
-                        minWidth: getColWidth("endWeek"),
-                        boxShadow: lastFrozenKey === "endWeek" ? "2px 0 4px -1px rgba(0,0,0,0.08)" : undefined,
-                      }}>
-                      {priority.endWeek != null ? (
-                        <span className="text-xs text-gray-700 whitespace-nowrap">
-                          Week {priority.endWeek}{" "}
-                          <span className="text-gray-400">({getWeekDateRange(year, quarter, priority.endWeek, qStart, effectiveMeetingDay, qEnd)})</span>
-                        </span>
-                      ) : (
-                        <span className="text-xs text-gray-300">—</span>
-                      )}
-                    </td>
-                  )}
-
-                  {/* Last Note — user-freezable, hidable. Shows the most
-                      RECENTLY EDITED weekly note (max updatedAt), not the
-                      highest-numbered week. Optimistic edits always win
-                      because they're the freshest. See `getLatestPriorityNote`. */}
-                  {COL_ORDER.includes("lastNote") && (() => {
+                      </td>
+                    );
+                  case "priorityName":
+                    return (
+                      <td key={colKey} className={`z-20 border-r border-gray-100 px-2 py-1.5 bg-inherit overflow-hidden align-top ${isColFrozen("priorityName") ? "sticky" : ""}`}
+                        style={{
+                          left: isColFrozen("priorityName") ? getLeftOffset("priorityName") : undefined,
+                          width: getColWidth("priorityName"),
+                          minWidth: getColWidth("priorityName"),
+                          boxShadow: lastFrozenKey === "priorityName" ? "2px 0 4px -1px rgba(0,0,0,0.08)" : undefined,
+                        }}>
+                        <NameTooltip name={priority.name} description={priority.description}>
+                          <span className="text-xs text-gray-800 font-medium line-clamp-2 leading-snug cursor-default break-words">
+                            {priority.name}
+                          </span>
+                        </NameTooltip>
+                      </td>
+                    );
+                  case "owner":
+                    return (
+                      <td key={colKey} className={`z-20 border-r border-gray-200 px-2 py-1.5 bg-inherit ${isColFrozen("owner") ? "sticky" : ""}`}
+                        style={{
+                          left: isColFrozen("owner") ? getLeftOffset("owner") : undefined,
+                          width: getColWidth("owner"),
+                          minWidth: getColWidth("owner"),
+                          boxShadow: lastFrozenKey === "owner" ? "2px 0 4px -1px rgba(0,0,0,0.08)" : undefined,
+                        }}>
+                        <span className="text-xs text-gray-600 truncate block">{ownerName}</span>
+                      </td>
+                    );
+                  case "startWeek":
+                    return (
+                      <td key={colKey} className={`z-20 border-r border-gray-100 px-2 py-1.5 bg-inherit ${isColFrozen("startWeek") ? "sticky" : ""}`}
+                        style={{
+                          left: isColFrozen("startWeek") ? getLeftOffset("startWeek") : undefined,
+                          width: getColWidth("startWeek"),
+                          minWidth: getColWidth("startWeek"),
+                          boxShadow: lastFrozenKey === "startWeek" ? "2px 0 4px -1px rgba(0,0,0,0.08)" : undefined,
+                        }}>
+                        {priority.startWeek != null ? (
+                          <span className="text-xs text-gray-700 whitespace-nowrap">
+                            Week {priority.startWeek}{" "}
+                            <span className="text-gray-400">({getWeekDateRange(year, quarter, priority.startWeek, qStart, effectiveMeetingDay, qEnd)})</span>
+                          </span>
+                        ) : (
+                          <span className="text-xs text-gray-300">—</span>
+                        )}
+                      </td>
+                    );
+                  case "endWeek":
+                    return (
+                      <td key={colKey} className={`z-20 border-r border-gray-100 px-2 py-1.5 bg-inherit ${isColFrozen("endWeek") ? "sticky" : ""}`}
+                        style={{
+                          left: isColFrozen("endWeek") ? getLeftOffset("endWeek") : undefined,
+                          width: getColWidth("endWeek"),
+                          minWidth: getColWidth("endWeek"),
+                          boxShadow: lastFrozenKey === "endWeek" ? "2px 0 4px -1px rgba(0,0,0,0.08)" : undefined,
+                        }}>
+                        {priority.endWeek != null ? (
+                          <span className="text-xs text-gray-700 whitespace-nowrap">
+                            Week {priority.endWeek}{" "}
+                            <span className="text-gray-400">({getWeekDateRange(year, quarter, priority.endWeek, qStart, effectiveMeetingDay, qEnd)})</span>
+                          </span>
+                        ) : (
+                          <span className="text-xs text-gray-300">—</span>
+                        )}
+                      </td>
+                    );
+                  case "lastNote": {
                     const latest = getLatestPriorityNote(
                       priority.weeklyStatuses,
                       optimisticNotes[priority.id],
                       priority.notes,
                     );
                     return (
-                      <td className={`z-20 border-r border-gray-100 px-2 py-1.5 bg-inherit ${isColFrozen("lastNote") ? "sticky" : ""}`}
+                      <td key={colKey} className={`z-20 border-r border-gray-100 px-2 py-1.5 bg-inherit ${isColFrozen("lastNote") ? "sticky" : ""}`}
                         style={{
                           left: isColFrozen("lastNote") ? getLeftOffset("lastNote") : undefined,
                           width: getColWidth("lastNote"),
@@ -758,12 +816,6 @@ export function PriorityTable({ priorities: prioritiesAll, onRefresh, year, quar
                           boxShadow: lastFrozenKey === "lastNote" ? "2px 0 4px -1px rgba(0,0,0,0.08)" : undefined,
                         }}>
                         {latest ? (
-                          // Mirror KPI Name's wrap-with-3-line-scroll pattern
-                          // (KPITable.tsx). `max-h-[3.25rem]` fits 3 lines of
-                          // text-xs/leading-snug; longer notes scroll inside
-                          // the cell rather than stretching the column.
-                          // `break-all` handles pasted unbreakable strings
-                          // (URLs, IDs, gibberish) without horizontal overflow.
                           <div
                             className="max-h-[3.25rem] overflow-y-auto leading-snug break-all text-xs text-gray-600 cursor-default pr-1"
                             style={{ scrollbarWidth: "thin" }}
@@ -779,72 +831,82 @@ export function PriorityTable({ priorities: prioritiesAll, onRefresh, year, quar
                         )}
                       </td>
                     );
-                  })()}
+                  }
+                  case "importedFromOpsp":
+                    return (
+                      <td key={colKey} className={`z-20 border-r border-gray-100 px-3 py-1.5 bg-inherit ${isColFrozen("importedFromOpsp") ? "sticky" : ""}`}
+                        style={{
+                          left: isColFrozen("importedFromOpsp") ? getLeftOffset("importedFromOpsp") : undefined,
+                          width: getColWidth("importedFromOpsp"),
+                          minWidth: getColWidth("importedFromOpsp"),
+                          boxShadow: lastFrozenKey === "importedFromOpsp" ? "2px 0 4px -1px rgba(0,0,0,0.08)" : undefined,
+                        }}>
+                        {priority.importedFromOpsp ? (
+                          <span className="text-xs text-gray-700 font-medium">Yes</span>
+                        ) : (
+                          <span className="text-xs text-gray-300">No</span>
+                        )}
+                      </td>
+                    );
+                  case "createdBy":
+                    return (
+                      <td key={colKey} className={`z-20 border-r border-gray-100 px-3 py-1.5 bg-inherit ${isColFrozen("createdBy") ? "sticky" : ""}`}
+                        style={{
+                          left: isColFrozen("createdBy") ? getLeftOffset("createdBy") : undefined,
+                          width: getColWidth("createdBy"),
+                          minWidth: getColWidth("createdBy"),
+                          boxShadow: lastFrozenKey === "createdBy" ? "2px 0 4px -1px rgba(0,0,0,0.08)" : undefined,
+                        }}>
+                        <UserAuditCell name={priority.createdByName} initials={priority.createdByInitials} />
+                      </td>
+                    );
+                  case "updatedBy":
+                    return (
+                      <td key={colKey} className={`z-20 border-r border-gray-100 px-3 py-1.5 bg-inherit ${isColFrozen("updatedBy") ? "sticky" : ""}`}
+                        style={{
+                          left: isColFrozen("updatedBy") ? getLeftOffset("updatedBy") : undefined,
+                          width: getColWidth("updatedBy"),
+                          minWidth: getColWidth("updatedBy"),
+                          boxShadow: lastFrozenKey === "updatedBy" ? "2px 0 4px -1px rgba(0,0,0,0.08)" : undefined,
+                        }}>
+                        <UserAuditCell name={priority.updatedByName} initials={priority.updatedByInitials} />
+                      </td>
+                    );
+                  case "createdAt":
+                    return (
+                      <td key={colKey} className={`z-20 border-r border-gray-100 px-3 py-1.5 bg-inherit ${isColFrozen("createdAt") ? "sticky" : ""}`}
+                        style={{
+                          left: isColFrozen("createdAt") ? getLeftOffset("createdAt") : undefined,
+                          width: getColWidth("createdAt"),
+                          minWidth: getColWidth("createdAt"),
+                          boxShadow: lastFrozenKey === "createdAt" ? "2px 0 4px -1px rgba(0,0,0,0.08)" : undefined,
+                        }}>
+                        <DateAuditCell iso={priority.createdAt} />
+                      </td>
+                    );
+                  case "updatedAt":
+                    return (
+                      <td key={colKey} className={`z-20 border-r border-gray-100 px-3 py-1.5 bg-inherit ${isColFrozen("updatedAt") ? "sticky" : ""}`}
+                        style={{
+                          left: isColFrozen("updatedAt") ? getLeftOffset("updatedAt") : undefined,
+                          width: getColWidth("updatedAt"),
+                          minWidth: getColWidth("updatedAt"),
+                          boxShadow: lastFrozenKey === "updatedAt" ? "2px 0 4px -1px rgba(0,0,0,0.08)" : undefined,
+                        }}>
+                        <DateAuditCell iso={priority.updatedAt} />
+                      </td>
+                    );
+                  default:
+                    return null;
+                }
+              };
 
-                  {/* Imported from OPSP — Yes when created via the OPSP
-                      "Export → Create Priorities" flow. Neutral styling (locked table). */}
-                  {COL_ORDER.includes("importedFromOpsp") && (
-                    <td className={`z-20 border-r border-gray-100 px-3 py-1.5 bg-inherit ${isColFrozen("importedFromOpsp") ? "sticky" : ""}`}
-                      style={{
-                        left: isColFrozen("importedFromOpsp") ? getLeftOffset("importedFromOpsp") : undefined,
-                        width: getColWidth("importedFromOpsp"),
-                        minWidth: getColWidth("importedFromOpsp"),
-                        boxShadow: lastFrozenKey === "importedFromOpsp" ? "2px 0 4px -1px rgba(0,0,0,0.08)" : undefined,
-                      }}>
-                      {priority.importedFromOpsp ? (
-                        <span className="text-xs text-gray-700 font-medium">Yes</span>
-                      ) : (
-                        <span className="text-xs text-gray-300">No</span>
-                      )}
-                    </td>
-                  )}
-
-                  {/* Audit columns — Created By / Updated By / Created Date / Updated Date.
-                      Populated by GET /api/priority via decorateAudit. */}
-                  {COL_ORDER.includes("createdBy") && (
-                    <td className={`z-20 border-r border-gray-100 px-3 py-1.5 bg-inherit ${isColFrozen("createdBy") ? "sticky" : ""}`}
-                      style={{
-                        left: isColFrozen("createdBy") ? getLeftOffset("createdBy") : undefined,
-                        width: getColWidth("createdBy"),
-                        minWidth: getColWidth("createdBy"),
-                        boxShadow: lastFrozenKey === "createdBy" ? "2px 0 4px -1px rgba(0,0,0,0.08)" : undefined,
-                      }}>
-                      <UserAuditCell name={priority.createdByName} initials={priority.createdByInitials} />
-                    </td>
-                  )}
-                  {COL_ORDER.includes("updatedBy") && (
-                    <td className={`z-20 border-r border-gray-100 px-3 py-1.5 bg-inherit ${isColFrozen("updatedBy") ? "sticky" : ""}`}
-                      style={{
-                        left: isColFrozen("updatedBy") ? getLeftOffset("updatedBy") : undefined,
-                        width: getColWidth("updatedBy"),
-                        minWidth: getColWidth("updatedBy"),
-                        boxShadow: lastFrozenKey === "updatedBy" ? "2px 0 4px -1px rgba(0,0,0,0.08)" : undefined,
-                      }}>
-                      <UserAuditCell name={priority.updatedByName} initials={priority.updatedByInitials} />
-                    </td>
-                  )}
-                  {COL_ORDER.includes("createdAt") && (
-                    <td className={`z-20 border-r border-gray-100 px-3 py-1.5 bg-inherit ${isColFrozen("createdAt") ? "sticky" : ""}`}
-                      style={{
-                        left: isColFrozen("createdAt") ? getLeftOffset("createdAt") : undefined,
-                        width: getColWidth("createdAt"),
-                        minWidth: getColWidth("createdAt"),
-                        boxShadow: lastFrozenKey === "createdAt" ? "2px 0 4px -1px rgba(0,0,0,0.08)" : undefined,
-                      }}>
-                      <DateAuditCell iso={priority.createdAt} />
-                    </td>
-                  )}
-                  {COL_ORDER.includes("updatedAt") && (
-                    <td className={`z-20 border-r border-gray-100 px-3 py-1.5 bg-inherit ${isColFrozen("updatedAt") ? "sticky" : ""}`}
-                      style={{
-                        left: isColFrozen("updatedAt") ? getLeftOffset("updatedAt") : undefined,
-                        width: getColWidth("updatedAt"),
-                        minWidth: getColWidth("updatedAt"),
-                        boxShadow: lastFrozenKey === "updatedAt" ? "2px 0 4px -1px rgba(0,0,0,0.08)" : undefined,
-                      }}>
-                      <DateAuditCell iso={priority.updatedAt} />
-                    </td>
-                  )}
+              return (
+                <tr key={priority.id}
+                  className={`border-b border-gray-100 hover:bg-blue-50 transition-colors ${rowIdx % 2 === 0 ? "bg-white" : "bg-gray-50"}`}>
+                  {/* Static columns — rendered in the user's drag order.
+                      Cell styling is unchanged (see `renderBodyCell`). */}
+                  {COL_ORDER.map(renderBodyCell)}
 
                   {/* Week cells */}
                   {visibleWeeksList.map(w => {

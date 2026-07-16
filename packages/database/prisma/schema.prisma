@@ -1067,6 +1067,10 @@ model UserTablePreference {
   hiddenCols String?
   sort       String?
   colWidths  String?
+  // JSON-stringified string[] of column keys in the user's chosen drag-and-drop
+  // order. Null = default order. Unknown/removed keys are pruned and any new
+  // columns are appended in their default position at read time (forward-compat).
+  colOrder   String?
   createdAt  DateTime @default(now())
   updatedAt  DateTime @updatedAt
   user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)

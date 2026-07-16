@@ -33,9 +33,57 @@ import { FormErrorBanner } from "@/components/forms/FormErrorBanner";
 import { useTablePrefs } from "@/lib/hooks/useTablePreferences";
 import { useTableSort, useDebouncedTableSearch } from "@/lib/store";
 import { useColumnResize } from "@/lib/hooks/useColumnResize";
+import { useColumnOrder } from "@/lib/hooks/useColumnOrder";
+import { moveByKey, columnsUnfrozenBy } from "@/lib/utils/columnOrder";
+import { useColumnDnD } from "@/lib/hooks/useColumnDnD";
+import { useConfirm } from "@quikit/ui";
 import { useStickyOffsets } from "@/lib/hooks/useStickyOffsets";
 import { HorizontalScroller } from "@/components/ui/HorizontalScroller";
 import { HeaderCell } from "@/components/table/HeaderCell";
+
+// Weekly Meeting column layout. Rail cols never reorder; the rest are
+// user-draggable + persisted per user via useColumnOrder("weeklyMeeting").
+const WM_RAIL_COLS = ["_checkbox", "_log", "_id"] as const;
+const WM_DEFAULT_NON_RAIL = [
+  "meetingDate", "client", "callStatus",
+  "absentMembers", "weeklyDashboardNA",
+  "actualStartTime", "actualEndTime",
+  "goodNewsSharing", "goodNewsSharingTime",
+  "kpDashboard", "kpDashboardTime",
+  "gaps", "gapsTime",
+  "www", "wwwTime",
+  "feedback", "feedbackTime",
+  "collectiveIntelligence", "collectiveIntelligenceTime",
+  "opspReview", "opspTime",
+  "createdBy", "updatedBy", "createdAt", "updatedAt",
+];
+const WM_HEADER_META: Record<string, { label: string; sortable?: boolean; sortKey?: string }> = {
+  meetingDate: { label: "Meeting Date", sortable: true },
+  client: { label: "Client Name", sortable: true, sortKey: "client" },
+  callStatus: { label: "Status", sortable: true },
+  absentMembers: { label: "Absent Members" },
+  weeklyDashboardNA: { label: "Weekly Dashboard NA" },
+  actualStartTime: { label: "Actual Start Time", sortable: true },
+  actualEndTime: { label: "Actual End Time", sortable: true },
+  goodNewsSharing: { label: "Good News Sharing" },
+  goodNewsSharingTime: { label: "Good News Sharing Time" },
+  kpDashboard: { label: "K&P dashboard" },
+  kpDashboardTime: { label: "K&P dashboard Time" },
+  gaps: { label: "GAPS" },
+  gapsTime: { label: "GAPS Time" },
+  www: { label: "WWW" },
+  wwwTime: { label: "WWW Time" },
+  feedback: { label: "Customer/Employee Feedback" },
+  feedbackTime: { label: "Customer/Employee Feedback Time" },
+  collectiveIntelligence: { label: "Collective Intelligence" },
+  collectiveIntelligenceTime: { label: "Collective Intelligence Time" },
+  opspReview: { label: "OPSP Review" },
+  opspTime: { label: "OPSP Time" },
+  createdBy: { label: "Created By" },
+  updatedBy: { label: "Updated By" },
+  createdAt: { label: "Created Date", sortable: true },
+  updatedAt: { label: "Updated Date", sortable: true },
+};
 
 const COL_WIDTHS_DEFAULT: Record<string, number> = {
   meetingDate: 110,
@@ -428,22 +476,13 @@ export default function WeeklyMeetingPage() {
   // Every user column appears in render order so cascade-freeze covers the
   // full table, mirroring KPI. Adding a new column means appending it here
   // (and rendering its <Header />) — that's the only registration step.
+  const {
+    orderedCols: orderedNonRail,
+    applyOrder: applyColumnOrder,
+  } = useColumnOrder("weeklyMeeting", WM_DEFAULT_NON_RAIL, { alwaysFrozen: WM_RAIL_COLS });
   const COL_ORDER = useMemo(
-    () => [
-      "_checkbox", "_log", "_id",
-      "meetingDate", "client", "callStatus",
-      "absentMembers", "weeklyDashboardNA",
-      "actualStartTime", "actualEndTime",
-      "goodNewsSharing", "goodNewsSharingTime",
-      "kpDashboard", "kpDashboardTime",
-      "gaps", "gapsTime",
-      "www", "wwwTime",
-      "feedback", "feedbackTime",
-      "collectiveIntelligence", "collectiveIntelligenceTime",
-      "opspReview", "opspTime",
-      "createdBy", "updatedBy", "createdAt", "updatedAt",
-    ],
-    [],
+    () => [...WM_RAIL_COLS, ...orderedNonRail],
+    [orderedNonRail],
   );
   const hiddenSet = useMemo(() => new Set(hiddenCols), [hiddenCols]);
   const headerRowRef = useRef<HTMLTableRowElement>(null);
@@ -481,6 +520,44 @@ export default function WeeklyMeetingPage() {
     [frozenUpTo, setFrozenCol],
   );
 
+  // ── Drag-to-reorder columns ─────────────────────────────────────────────
+  const confirmDialog = useConfirm();
+  const handleColDrop = useCallback(
+    async (fromKey: string, toKey: string, side: "before" | "after") => {
+      const nextNonRail = moveByKey(orderedNonRail, fromKey, toKey, side);
+      const nextFull = [...WM_RAIL_COLS, ...nextNonRail];
+      const curFull = [...WM_RAIL_COLS, ...orderedNonRail];
+      const unfrozen = columnsUnfrozenBy(curFull, nextFull, frozenUpTo, WM_RAIL_COLS);
+      if (unfrozen.length > 0) {
+        const ok = await confirmDialog({
+          tone: "warning",
+          title: "Unfreeze column?",
+          description:
+            "Moving this column will remove it from the frozen (pinned) section. Are you sure you want to continue?",
+          confirmLabel: "Yes, move it",
+          cancelLabel: "No",
+        });
+        if (!ok) return;
+      }
+      applyColumnOrder(nextNonRail);
+    },
+    [orderedNonRail, frozenUpTo, applyColumnOrder, confirmDialog],
+  );
+  const dnd = useColumnDnD({
+    getHeaderRow: () => headerRowRef.current,
+    onDrop: handleColDrop,
+    canReorder: (col) => orderedNonRail.includes(col),
+  });
+  const dropIndicatorClass = useCallback(
+    (col: string) => {
+      if (dnd.overKey !== col || !dnd.dropSide) return "";
+      return dnd.dropSide === "before"
+        ? "shadow-[inset_2px_0_0_0_var(--tw-shadow-color)] shadow-blue-500"
+        : "shadow-[inset_-2px_0_0_0_var(--tw-shadow-color)] shadow-blue-500";
+    },
+    [dnd.overKey, dnd.dropSide],
+  );
+
   // Local alias that binds the table-scoped state (hide/freeze/sort/width) to
   // the extracted <HeaderCell> component. Each `<Header k="…" label="…" />`
   // call below renders one column header with sort arrow + ColMenu + resize
@@ -504,8 +581,107 @@ export default function WeeklyMeetingPage() {
       getStickyLeft={getStickyLeft}
       frozenUpTo={frozenUpTo}
       onFreeze={handleFreeze}
+      onDragStart={(e) => dnd.startDrag(props.k, e)}
+      dropIndicatorClass={dropIndicatorClass(props.k)}
+      isDragging={dnd.draggingKey === props.k}
     />
   );
+
+  // Render one draggable weekly-meeting column body cell by key. Styling
+  // unchanged from the previous hardcoded blocks.
+  const renderWMCell = (r: MeetingRow, k: string) => {
+    switch (k) {
+      case "meetingDate":
+        return <td key={k} style={tdWidthStyle("meetingDate")} className={`px-3 py-2 whitespace-nowrap overflow-hidden ${tdHideClass("meetingDate")} ${tdStickyClass("meetingDate")}`}>{fmtDate(r.meetingDate)}</td>;
+      case "client":
+        return <td key={k} style={tdWidthStyle("client")} className={`px-3 py-2 whitespace-nowrap overflow-hidden text-ellipsis ${tdHideClass("client")} ${tdStickyClass("client")}`}>{r.clientName}</td>;
+      case "callStatus":
+        return (
+          <td key={k} style={tdWidthStyle("callStatus")} className={`px-3 py-2 whitespace-nowrap overflow-hidden ${tdHideClass("callStatus")} ${tdStickyClass("callStatus")}`}>
+            <span
+              className={`inline-block px-2 py-0.5 rounded text-[10px] font-medium ${statusBadge(r.callStatus)}`}
+              title={r.callStatus === "OTHER" ? r.callStatusOther ?? undefined : undefined}
+            >
+              {statusLabel(r.callStatus, r.callStatusOther)}
+            </span>
+          </td>
+        );
+      case "absentMembers":
+        return (
+          <td key={k} style={tdWidthStyle("absentMembers")} className={`px-3 py-2 ${tdHideClass("absentMembers")} ${tdStickyClass("absentMembers")}`}>
+            {r.absentClientMemberNames.length ? (
+              <div
+                className="max-h-[3.25rem] overflow-y-auto leading-snug break-all text-gray-600 cursor-default pr-1"
+                style={{ scrollbarWidth: "thin" }}
+                title={r.absentClientMemberNames.join(", ")}
+              >
+                {r.absentClientMemberNames.join(", ")}
+              </div>
+            ) : (
+              <span className="text-gray-300">—</span>
+            )}
+          </td>
+        );
+      case "weeklyDashboardNA":
+        return (
+          <td key={k} style={tdWidthStyle("weeklyDashboardNA")} className={`px-3 py-2 ${tdHideClass("weeklyDashboardNA")} ${tdStickyClass("weeklyDashboardNA")}`}>
+            {r.dashboardNAClientMemberNames.length ? (
+              <div
+                className="max-h-[3.25rem] overflow-y-auto leading-snug break-all text-gray-600 cursor-default pr-1"
+                style={{ scrollbarWidth: "thin" }}
+                title={r.dashboardNAClientMemberNames.join(", ")}
+              >
+                {r.dashboardNAClientMemberNames.join(", ")}
+              </div>
+            ) : (
+              <span className="text-gray-300">—</span>
+            )}
+          </td>
+        );
+      case "actualStartTime":
+        return <td key={k} style={tdWidthStyle("actualStartTime")} className={`px-3 py-2 text-gray-600 whitespace-nowrap overflow-hidden ${tdHideClass("actualStartTime")} ${tdStickyClass("actualStartTime")}`}>{r.actualStartTime || "—"}</td>;
+      case "actualEndTime":
+        return <td key={k} style={tdWidthStyle("actualEndTime")} className={`px-3 py-2 text-gray-600 whitespace-nowrap overflow-hidden ${tdHideClass("actualEndTime")} ${tdStickyClass("actualEndTime")}`}>{r.actualEndTime || "—"}</td>;
+      case "goodNewsSharing":
+        return <td key={k} style={tdWidthStyle("goodNewsSharing")} className={`px-3 py-2 text-gray-600 text-center overflow-hidden ${tdHideClass("goodNewsSharing")} ${tdStickyClass("goodNewsSharing")}`}>{r.goodNewsSharing}</td>;
+      case "goodNewsSharingTime":
+        return <td key={k} style={tdWidthStyle("goodNewsSharingTime")} className={`px-3 py-2 text-gray-600 whitespace-nowrap overflow-hidden ${tdHideClass("goodNewsSharingTime")} ${tdStickyClass("goodNewsSharingTime")}`}>{r.segmentTime1 || "—"}</td>;
+      case "kpDashboard":
+        return <td key={k} style={tdWidthStyle("kpDashboard")} className={`px-3 py-2 text-gray-600 text-center overflow-hidden ${tdHideClass("kpDashboard")} ${tdStickyClass("kpDashboard")}`}>{r.kpDashboard}</td>;
+      case "kpDashboardTime":
+        return <td key={k} style={tdWidthStyle("kpDashboardTime")} className={`px-3 py-2 text-gray-600 whitespace-nowrap overflow-hidden ${tdHideClass("kpDashboardTime")} ${tdStickyClass("kpDashboardTime")}`}>{r.segmentTime2 || "—"}</td>;
+      case "gaps":
+        return <td key={k} style={tdWidthStyle("gaps")} className={`px-3 py-2 text-gray-600 text-center overflow-hidden ${tdHideClass("gaps")} ${tdStickyClass("gaps")}`}>{r.gaps}</td>;
+      case "gapsTime":
+        return <td key={k} style={tdWidthStyle("gapsTime")} className={`px-3 py-2 text-gray-600 whitespace-nowrap overflow-hidden ${tdHideClass("gapsTime")} ${tdStickyClass("gapsTime")}`}>{r.segmentTime3 || "—"}</td>;
+      case "www":
+        return <td key={k} style={tdWidthStyle("www")} className={`px-3 py-2 text-gray-600 text-center overflow-hidden ${tdHideClass("www")} ${tdStickyClass("www")}`}>{r.www}</td>;
+      case "wwwTime":
+        return <td key={k} style={tdWidthStyle("wwwTime")} className={`px-3 py-2 text-gray-600 whitespace-nowrap overflow-hidden ${tdHideClass("wwwTime")} ${tdStickyClass("wwwTime")}`}>{r.segmentTime4 || "—"}</td>;
+      case "feedback":
+        return <td key={k} style={tdWidthStyle("feedback")} className={`px-3 py-2 text-gray-600 text-center overflow-hidden ${tdHideClass("feedback")} ${tdStickyClass("feedback")}`}>{r.feedback}</td>;
+      case "feedbackTime":
+        return <td key={k} style={tdWidthStyle("feedbackTime")} className={`px-3 py-2 text-gray-600 whitespace-nowrap overflow-hidden ${tdHideClass("feedbackTime")} ${tdStickyClass("feedbackTime")}`}>{r.segmentTime5 || "—"}</td>;
+      case "collectiveIntelligence":
+        return <td key={k} style={tdWidthStyle("collectiveIntelligence")} className={`px-3 py-2 text-gray-600 text-center overflow-hidden ${tdHideClass("collectiveIntelligence")} ${tdStickyClass("collectiveIntelligence")}`}>{r.collectiveIntelligence}</td>;
+      case "collectiveIntelligenceTime":
+        return <td key={k} style={tdWidthStyle("collectiveIntelligenceTime")} className={`px-3 py-2 text-gray-600 whitespace-nowrap overflow-hidden ${tdHideClass("collectiveIntelligenceTime")} ${tdStickyClass("collectiveIntelligenceTime")}`}>{r.segmentTime6 || "—"}</td>;
+      case "opspReview":
+        return <td key={k} style={tdWidthStyle("opspReview")} className={`px-3 py-2 text-gray-600 text-center overflow-hidden ${tdHideClass("opspReview")} ${tdStickyClass("opspReview")}`}>{r.opspReview}</td>;
+      case "opspTime":
+        return <td key={k} style={tdWidthStyle("opspTime")} className={`px-3 py-2 text-gray-600 whitespace-nowrap overflow-hidden ${tdHideClass("opspTime")} ${tdStickyClass("opspTime")}`}>{r.segmentTime7 || "—"}</td>;
+      case "createdBy":
+        return <td key={k} style={tdWidthStyle("createdBy")} className={`px-3 py-2 overflow-hidden ${tdHideClass("createdBy")} ${tdStickyClass("createdBy")}`}><UserAuditCell name={r.createdByName} initials={r.createdByInitials} /></td>;
+      case "updatedBy":
+        return <td key={k} style={tdWidthStyle("updatedBy")} className={`px-3 py-2 overflow-hidden ${tdHideClass("updatedBy")} ${tdStickyClass("updatedBy")}`}><UserAuditCell name={r.updatedByName} initials={r.updatedByInitials} /></td>;
+      case "createdAt":
+        return <td key={k} style={tdWidthStyle("createdAt")} className={`px-3 py-2 whitespace-nowrap overflow-hidden ${tdHideClass("createdAt")} ${tdStickyClass("createdAt")}`}><DateAuditCell iso={r.createdAt} /></td>;
+      case "updatedAt":
+        return <td key={k} style={tdWidthStyle("updatedAt")} className={`px-3 py-2 whitespace-nowrap overflow-hidden ${tdHideClass("updatedAt")} ${tdStickyClass("updatedAt")}`}><DateAuditCell iso={r.updatedAt} /></td>;
+      default:
+        return null;
+    }
+  };
 
   // Helper for the matching <td> cells — combines the hide-via-Tailwind
   // `hidden` class with the explicit column width so table-layout: fixed
@@ -1239,32 +1415,11 @@ export default function WeeklyMeetingPage() {
                       style={{ left: 64, width: 40, minWidth: 40, maxWidth: 40 }}>
                     #
                   </th>
-                  <Header k="meetingDate" label="Meeting Date" sortable />
-                  <Header k="client" label="Client Name" sortable sortKey="client" />
-                  <Header k="callStatus" label="Status" sortable />
-                  <Header k="absentMembers" label="Absent Members" />
-                  <Header k="weeklyDashboardNA" label="Weekly Dashboard NA" />
-                  <Header k="actualStartTime" label="Actual Start Time" sortable />
-                  <Header k="actualEndTime" label="Actual End Time" sortable />
-                  <Header k="goodNewsSharing" label="Good News Sharing" />
-                  <Header k="goodNewsSharingTime" label="Good News Sharing Time" />
-                  <Header k="kpDashboard" label="K&P dashboard" />
-                  <Header k="kpDashboardTime" label="K&P dashboard Time" />
-                  <Header k="gaps" label="GAPS" />
-                  <Header k="gapsTime" label="GAPS Time" />
-                  <Header k="www" label="WWW" />
-                  <Header k="wwwTime" label="WWW Time" />
-                  <Header k="feedback" label="Customer/Employee Feedback" />
-                  <Header k="feedbackTime" label="Customer/Employee Feedback Time" />
-                  <Header k="collectiveIntelligence" label="Collective Intelligence" />
-                  <Header k="collectiveIntelligenceTime" label="Collective Intelligence Time" />
-                  <Header k="opspReview" label="OPSP Review" />
-                  <Header k="opspTime" label="OPSP Time" />
-                  {/* Audit columns — populated by GET /api/client-meetings/weekly-meetings. */}
-                  <Header k="createdBy" label="Created By" />
-                  <Header k="updatedBy" label="Updated By" />
-                  <Header k="createdAt" label="Created Date" sortable />
-                  <Header k="updatedAt" label="Updated Date" sortable />
+                  {orderedNonRail.map((k) => {
+                    const meta = WM_HEADER_META[k];
+                    if (!meta) return null;
+                    return <Header key={k} k={k} label={meta.label} sortable={meta.sortable} sortKey={meta.sortKey} />;
+                  })}
                   <th className="px-3 py-2 text-right" />
                 </tr>
               </thead>
@@ -1314,115 +1469,9 @@ export default function WeeklyMeetingPage() {
                         {(page - 1) * pageSize + idx + 1}
                       </button>
                     </td>
-                    {/* Body cells — each pairs tdHideClass + tdWidthStyle so the column
-                        collapses when hidden and locks to the resized width when shown.
-                        The sticky-left rule mirrors the matching <th> when frozen. */}
-                    <td style={tdWidthStyle("meetingDate")} className={`px-3 py-2 whitespace-nowrap overflow-hidden ${tdHideClass("meetingDate")} ${tdStickyClass("meetingDate")}`}>
-                      {fmtDate(r.meetingDate)}
-                    </td>
-                    <td style={tdWidthStyle("client")} className={`px-3 py-2 whitespace-nowrap overflow-hidden text-ellipsis ${tdHideClass("client")} ${tdStickyClass("client")}`}>
-                      {r.clientName}
-                    </td>
-                    <td style={tdWidthStyle("callStatus")} className={`px-3 py-2 whitespace-nowrap overflow-hidden ${tdHideClass("callStatus")} ${tdStickyClass("callStatus")}`}>
-                      <span
-                        className={`inline-block px-2 py-0.5 rounded text-[10px] font-medium ${statusBadge(r.callStatus)}`}
-                        title={r.callStatus === "OTHER" ? r.callStatusOther ?? undefined : undefined}
-                      >
-                        {statusLabel(r.callStatus, r.callStatusOther)}
-                      </span>
-                    </td>
-                    <td style={tdWidthStyle("absentMembers")} className={`px-3 py-2 ${tdHideClass("absentMembers")} ${tdStickyClass("absentMembers")}`}>
-                      {r.absentClientMemberNames.length ? (
-                        // Cap at ~3 lines (`max-h-[3.25rem]` ≈ 3 × `text-xs leading-snug`).
-                        // Longer lists scroll inside the cell so the row height stays
-                        // consistent across the table; the `title` tooltip surfaces the
-                        // full text for users who don't want to scroll.
-                        <div
-                          className="max-h-[3.25rem] overflow-y-auto leading-snug break-all text-gray-600 cursor-default pr-1"
-                          style={{ scrollbarWidth: "thin" }}
-                          title={r.absentClientMemberNames.join(", ")}
-                        >
-                          {r.absentClientMemberNames.join(", ")}
-                        </div>
-                      ) : (
-                        <span className="text-gray-300">—</span>
-                      )}
-                    </td>
-                    <td style={tdWidthStyle("weeklyDashboardNA")} className={`px-3 py-2 ${tdHideClass("weeklyDashboardNA")} ${tdStickyClass("weeklyDashboardNA")}`}>
-                      {r.dashboardNAClientMemberNames.length ? (
-                        <div
-                          className="max-h-[3.25rem] overflow-y-auto leading-snug break-all text-gray-600 cursor-default pr-1"
-                          style={{ scrollbarWidth: "thin" }}
-                          title={r.dashboardNAClientMemberNames.join(", ")}
-                        >
-                          {r.dashboardNAClientMemberNames.join(", ")}
-                        </div>
-                      ) : (
-                        <span className="text-gray-300">—</span>
-                      )}
-                    </td>
-                    <td style={tdWidthStyle("actualStartTime")} className={`px-3 py-2 text-gray-600 whitespace-nowrap overflow-hidden ${tdHideClass("actualStartTime")} ${tdStickyClass("actualStartTime")}`}>
-                      {r.actualStartTime || "—"}
-                    </td>
-                    <td style={tdWidthStyle("actualEndTime")} className={`px-3 py-2 text-gray-600 whitespace-nowrap overflow-hidden ${tdHideClass("actualEndTime")} ${tdStickyClass("actualEndTime")}`}>
-                      {r.actualEndTime || "—"}
-                    </td>
-                    <td style={tdWidthStyle("goodNewsSharing")} className={`px-3 py-2 text-gray-600 text-center overflow-hidden ${tdHideClass("goodNewsSharing")} ${tdStickyClass("goodNewsSharing")}`}>
-                      {r.goodNewsSharing}
-                    </td>
-                    <td style={tdWidthStyle("goodNewsSharingTime")} className={`px-3 py-2 text-gray-600 whitespace-nowrap overflow-hidden ${tdHideClass("goodNewsSharingTime")} ${tdStickyClass("goodNewsSharingTime")}`}>
-                      {r.segmentTime1 || "—"}
-                    </td>
-                    <td style={tdWidthStyle("kpDashboard")} className={`px-3 py-2 text-gray-600 text-center overflow-hidden ${tdHideClass("kpDashboard")} ${tdStickyClass("kpDashboard")}`}>
-                      {r.kpDashboard}
-                    </td>
-                    <td style={tdWidthStyle("kpDashboardTime")} className={`px-3 py-2 text-gray-600 whitespace-nowrap overflow-hidden ${tdHideClass("kpDashboardTime")} ${tdStickyClass("kpDashboardTime")}`}>
-                      {r.segmentTime2 || "—"}
-                    </td>
-                    <td style={tdWidthStyle("gaps")} className={`px-3 py-2 text-gray-600 text-center overflow-hidden ${tdHideClass("gaps")} ${tdStickyClass("gaps")}`}>
-                      {r.gaps}
-                    </td>
-                    <td style={tdWidthStyle("gapsTime")} className={`px-3 py-2 text-gray-600 whitespace-nowrap overflow-hidden ${tdHideClass("gapsTime")} ${tdStickyClass("gapsTime")}`}>
-                      {r.segmentTime3 || "—"}
-                    </td>
-                    <td style={tdWidthStyle("www")} className={`px-3 py-2 text-gray-600 text-center overflow-hidden ${tdHideClass("www")} ${tdStickyClass("www")}`}>
-                      {r.www}
-                    </td>
-                    <td style={tdWidthStyle("wwwTime")} className={`px-3 py-2 text-gray-600 whitespace-nowrap overflow-hidden ${tdHideClass("wwwTime")} ${tdStickyClass("wwwTime")}`}>
-                      {r.segmentTime4 || "—"}
-                    </td>
-                    <td style={tdWidthStyle("feedback")} className={`px-3 py-2 text-gray-600 text-center overflow-hidden ${tdHideClass("feedback")} ${tdStickyClass("feedback")}`}>
-                      {r.feedback}
-                    </td>
-                    <td style={tdWidthStyle("feedbackTime")} className={`px-3 py-2 text-gray-600 whitespace-nowrap overflow-hidden ${tdHideClass("feedbackTime")} ${tdStickyClass("feedbackTime")}`}>
-                      {r.segmentTime5 || "—"}
-                    </td>
-                    <td style={tdWidthStyle("collectiveIntelligence")} className={`px-3 py-2 text-gray-600 text-center overflow-hidden ${tdHideClass("collectiveIntelligence")} ${tdStickyClass("collectiveIntelligence")}`}>
-                      {r.collectiveIntelligence}
-                    </td>
-                    <td style={tdWidthStyle("collectiveIntelligenceTime")} className={`px-3 py-2 text-gray-600 whitespace-nowrap overflow-hidden ${tdHideClass("collectiveIntelligenceTime")} ${tdStickyClass("collectiveIntelligenceTime")}`}>
-                      {r.segmentTime6 || "—"}
-                    </td>
-                    <td style={tdWidthStyle("opspReview")} className={`px-3 py-2 text-gray-600 text-center overflow-hidden ${tdHideClass("opspReview")} ${tdStickyClass("opspReview")}`}>
-                      {r.opspReview}
-                    </td>
-                    <td style={tdWidthStyle("opspTime")} className={`px-3 py-2 text-gray-600 whitespace-nowrap overflow-hidden ${tdHideClass("opspTime")} ${tdStickyClass("opspTime")}`}>
-                      {r.segmentTime7 || "—"}
-                    </td>
-                    {/* Audit cells — Created By / Updated By / Created Date / Updated Date.
-                        Populated by GET /api/client-meetings/weekly-meetings. */}
-                    <td style={tdWidthStyle("createdBy")} className={`px-3 py-2 overflow-hidden ${tdHideClass("createdBy")} ${tdStickyClass("createdBy")}`}>
-                      <UserAuditCell name={r.createdByName} initials={r.createdByInitials} />
-                    </td>
-                    <td style={tdWidthStyle("updatedBy")} className={`px-3 py-2 overflow-hidden ${tdHideClass("updatedBy")} ${tdStickyClass("updatedBy")}`}>
-                      <UserAuditCell name={r.updatedByName} initials={r.updatedByInitials} />
-                    </td>
-                    <td style={tdWidthStyle("createdAt")} className={`px-3 py-2 whitespace-nowrap overflow-hidden ${tdHideClass("createdAt")} ${tdStickyClass("createdAt")}`}>
-                      <DateAuditCell iso={r.createdAt} />
-                    </td>
-                    <td style={tdWidthStyle("updatedAt")} className={`px-3 py-2 whitespace-nowrap overflow-hidden ${tdHideClass("updatedAt")} ${tdStickyClass("updatedAt")}`}>
-                      <DateAuditCell iso={r.updatedAt} />
-                    </td>
+                    {/* Body cells rendered in the user's drag order (renderWMCell).
+                        Styling unchanged from the previous hardcoded blocks. */}
+                    {orderedNonRail.map((k) => renderWMCell(r, k))}
                     <td className="px-3 py-2 text-right whitespace-nowrap">
                       {viewTrash ? (
                         <button

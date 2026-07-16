@@ -24,4 +24,7 @@ export const updateTablePreferencesSchema = z.object({
   hiddenCols: z.array(z.string()).nullable().optional(),
   sort: z.string().nullable().optional(), // format: "colKey:asc" | "colKey:desc"
   colWidths: z.record(z.string(), z.number()).nullable().optional(),
+  // Drag-and-drop column order — array of column keys. Null clears back to
+  // the table's default order.
+  colOrder: z.array(z.string()).nullable().optional(),
 });

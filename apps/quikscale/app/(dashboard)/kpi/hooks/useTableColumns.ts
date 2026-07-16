@@ -1,6 +1,8 @@
 import { useState, useCallback, useMemo } from "react";
 import { useTablePrefs } from "@/lib/hooks/useTablePreferences";
 import { useColumnResize } from "@/lib/hooks/useColumnResize";
+import { useColumnOrder } from "@/lib/hooks/useColumnOrder";
+import { moveByKey, columnsUnfrozenBy } from "@/lib/utils/columnOrder";
 
 const COL_WIDTHS_DEFAULT: Record<string, number> = {
   progress: 160, owner: 140, kpiName: 260,
@@ -47,7 +49,7 @@ export const SORT_KEYS: Record<string, string> = {
   description: "description",
 };
 
-export function useTableColumns(allCols: string[], kpiIds: string[]) {
+export function useTableColumns(weekCols: string[], kpiIds: string[]) {
   const {
     frozenCol: frozenUpTo,
     setFrozenCol,
@@ -57,6 +59,21 @@ export function useTableColumns(allCols: string[], kpiIds: string[]) {
     showAllCols,
   } = useTablePrefs("kpi");
 
+  // Per-user drag-and-drop order of the STATIC columns. Week columns are never
+  // reorderable (time-series) and always render after the static block.
+  const {
+    orderedCols: orderedStaticCols,
+    applyOrder: applyStaticOrder,
+    resetOrder: resetColumnOrder,
+    isCustomized: isOrderCustomized,
+  } = useColumnOrder("kpi", ALL_STATIC_COLS);
+
+  // Full render order (used for freeze index math + sticky offsets).
+  const allCols = useMemo(
+    () => [...orderedStaticCols, ...weekCols],
+    [orderedStaticCols, weekCols],
+  );
+
   // Expose as a Set for existing callers
   const hiddenCols = useMemo(() => new Set(hiddenColsArr), [hiddenColsArr]);
 
@@ -65,11 +82,9 @@ export function useTableColumns(allCols: string[], kpiIds: string[]) {
   // (week1..week13) default to WEEK_WIDTH_DEFAULT.
   const defaults = useMemo(() => {
     const d = { ...COL_WIDTHS_DEFAULT };
-    for (const c of allCols) {
-      if (c.startsWith("week")) d[c] = WEEK_WIDTH_DEFAULT;
-    }
+    for (const c of weekCols) d[c] = WEEK_WIDTH_DEFAULT;
     return d;
-  }, [allCols]);
+  }, [weekCols]);
 
   // Drag-to-resize is now provided by the shared hook (same as Priority/WWW).
   // It wires startResize → mousemove → saveColWidths via useTablePrefs under
@@ -86,6 +101,23 @@ export function useTableColumns(allCols: string[], kpiIds: string[]) {
   const handleFreezeCol = useCallback((col: string) => {
     setFrozenCol(frozenUpTo === col ? null : col);
   }, [frozenUpTo, setFrozenCol]);
+
+  /**
+   * Given a drag of static column `fromKey` onto `toKey` (dropping on `side`),
+   * compute the resulting static order and which columns the move would
+   * unfreeze. Unfreeze detection runs against the FULL order (static + weeks)
+   * so a frozen week boundary is respected. Pure — caller commits with
+   * `applyStaticOrder` after any needed confirmation.
+   */
+  const computeStaticReorder = useCallback(
+    (fromKey: string, toKey: string, side: "before" | "after") => {
+      const nextStatic = moveByKey(orderedStaticCols, fromKey, toKey, side);
+      const nextAll = [...nextStatic, ...weekCols];
+      const unfrozen = columnsUnfrozenBy(allCols, nextAll, frozenUpTo);
+      return { nextStatic, unfrozen };
+    },
+    [orderedStaticCols, weekCols, allCols, frozenUpTo],
+  );
   const handleHideCol = useCallback((col: string) => hideCol(col), [hideCol]);
   const handleShowCol = useCallback((col: string) => showCol(col), [showCol]);
   const handleShowAllCols = useCallback(() => showAllCols(), [showAllCols]);
@@ -103,5 +135,8 @@ export function useTableColumns(allCols: string[], kpiIds: string[]) {
     getColWidth, isFrozen, startResize,
     handleFreezeCol, handleHideCol, handleShowCol, handleShowAllCols,
     toggleSelect, toggleAll, clearSelection,
+    // Column ordering
+    orderedStaticCols, allCols,
+    computeStaticReorder, applyStaticOrder, resetColumnOrder, isOrderCustomized,
   };
 }

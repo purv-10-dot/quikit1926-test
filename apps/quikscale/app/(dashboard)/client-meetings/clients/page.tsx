@@ -27,9 +27,35 @@ import { useResourcePermissions } from "@/lib/hooks/useResourcePermissions";
 import { useTablePrefs } from "@/lib/hooks/useTablePreferences";
 import { useTableSort, useDebouncedTableSearch } from "@/lib/store";
 import { useColumnResize } from "@/lib/hooks/useColumnResize";
+import { useColumnOrder } from "@/lib/hooks/useColumnOrder";
+import { moveByKey, columnsUnfrozenBy } from "@/lib/utils/columnOrder";
+import { useColumnDnD } from "@/lib/hooks/useColumnDnD";
 import { useStickyOffsets } from "@/lib/hooks/useStickyOffsets";
 import { HeaderCell } from "@/components/table/HeaderCell";
 import { HorizontalScroller } from "@/components/ui/HorizontalScroller";
+import { useConfirm } from "@quikit/ui";
+
+// Client Master column layout. Rail cols are never reorderable; the rest are
+// user-draggable + persisted per user via useColumnOrder("clientMaster").
+const CLIENT_RAIL_COLS = ["_checkbox", "_log", "_id"] as const;
+const CLIENT_DEFAULT_NON_RAIL = [
+  "name", "teamMembers", "dailyWindow", "weeklyWindow",
+  "isActive", "description",
+  "createdBy", "updatedBy", "createdAt", "updatedAt",
+];
+// Header metadata for the draggable columns (label + sort config).
+const CLIENT_HEADER_META: Record<string, { label: string; sortable?: boolean; sortKey?: string }> = {
+  name: { label: "Client Name", sortable: true },
+  teamMembers: { label: "Team Members" },
+  dailyWindow: { label: "D/H Window", sortable: true, sortKey: "dailyStartTime" },
+  weeklyWindow: { label: "Weekly Window", sortable: true, sortKey: "weeklyStartTime" },
+  isActive: { label: "Status", sortable: true },
+  description: { label: "Description" },
+  createdBy: { label: "Created By" },
+  updatedBy: { label: "Updated By" },
+  createdAt: { label: "Created Date", sortable: true },
+  updatedAt: { label: "Updated Date", sortable: true },
+};
 
 const COL_WIDTHS_DEFAULT: Record<string, number> = {
   name: 220,
@@ -138,14 +164,14 @@ export default function ClientsPage() {
   // (`_checkbox`/`_log`/`_id`, total 152px) up to and including C as a
   // sticky group. Offsets are measured from the live DOM by
   // `useStickyOffsets` so they always match the actual layout.
+  // Per-user drag-and-drop order of the non-rail columns.
+  const {
+    orderedCols: orderedNonRail,
+    applyOrder: applyColumnOrder,
+  } = useColumnOrder("clientMaster", CLIENT_DEFAULT_NON_RAIL, { alwaysFrozen: CLIENT_RAIL_COLS });
   const COL_ORDER = useMemo(
-    () => [
-      "_checkbox", "_log", "_id",
-      "name", "teamMembers", "dailyWindow", "weeklyWindow",
-      "isActive", "description",
-      "createdBy", "updatedBy", "createdAt", "updatedAt",
-    ],
-    [],
+    () => [...CLIENT_RAIL_COLS, ...orderedNonRail],
+    [orderedNonRail],
   );
   const hiddenSet = useMemo(() => new Set(hiddenCols), [hiddenCols]);
   const headerRowRef = useRef<HTMLTableRowElement>(null);
@@ -178,6 +204,44 @@ export default function ClientsPage() {
   const handleFreeze = useCallback(
     (col: string) => setFrozenCol(frozenUpTo === col ? null : col),
     [frozenUpTo, setFrozenCol],
+  );
+
+  // ── Drag-to-reorder columns ─────────────────────────────────────────────
+  const confirmDialog = useConfirm();
+  const handleColDrop = useCallback(
+    async (fromKey: string, toKey: string, side: "before" | "after") => {
+      const nextNonRail = moveByKey(orderedNonRail, fromKey, toKey, side);
+      const nextFull = [...CLIENT_RAIL_COLS, ...nextNonRail];
+      const curFull = [...CLIENT_RAIL_COLS, ...orderedNonRail];
+      const unfrozen = columnsUnfrozenBy(curFull, nextFull, frozenUpTo, CLIENT_RAIL_COLS);
+      if (unfrozen.length > 0) {
+        const ok = await confirmDialog({
+          tone: "warning",
+          title: "Unfreeze column?",
+          description:
+            "Moving this column will remove it from the frozen (pinned) section. Are you sure you want to continue?",
+          confirmLabel: "Yes, move it",
+          cancelLabel: "No",
+        });
+        if (!ok) return;
+      }
+      applyColumnOrder(nextNonRail);
+    },
+    [orderedNonRail, frozenUpTo, applyColumnOrder, confirmDialog],
+  );
+  const dnd = useColumnDnD({
+    getHeaderRow: () => headerRowRef.current,
+    onDrop: handleColDrop,
+    canReorder: (col) => orderedNonRail.includes(col),
+  });
+  const dropIndicatorClass = useCallback(
+    (col: string) => {
+      if (dnd.overKey !== col || !dnd.dropSide) return "";
+      return dnd.dropSide === "before"
+        ? "shadow-[inset_2px_0_0_0_var(--tw-shadow-color)] shadow-blue-500"
+        : "shadow-[inset_-2px_0_0_0_var(--tw-shadow-color)] shadow-blue-500";
+    },
+    [dnd.overKey, dnd.dropSide],
   );
   function tdFreezeClass(k: string): string {
     return isFrozen(k) ? "sticky z-[10] bg-white" : "";
@@ -212,8 +276,100 @@ export default function ClientsPage() {
       frozenUpTo={frozenUpTo}
       onFreeze={handleFreeze}
       thClassName="group relative text-left px-3 py-3 font-semibold text-gray-600 border-b border-gray-200"
+      onDragStart={(e) => dnd.startDrag(props.k, e)}
+      dropIndicatorClass={dropIndicatorClass(props.k)}
+      isDragging={dnd.draggingKey === props.k}
     />
   );
+
+  // Render one draggable client column body cell by key. Styling is unchanged
+  // from the previous hardcoded blocks.
+  const renderClientCell = (r: ClientRow, k: string) => {
+    if (isHidden(k)) return null;
+    switch (k) {
+      case "name":
+        return (
+          <td key={k} style={freezeStyle("name")} className={`px-3 py-3 font-medium text-gray-800 overflow-hidden text-ellipsis whitespace-nowrap ${tdFreezeClass("name")}`}>
+            {r.name}
+          </td>
+        );
+      case "teamMembers":
+        return (
+          <td key={k} style={freezeStyle("teamMembers")} className={`px-3 py-3 text-gray-600 overflow-hidden ${tdFreezeClass("teamMembers")}`}>
+            {r.teamMembers.length === 0 ? <span className="text-gray-300">—</span> : (
+              <span title={r.teamMembers.map(m => m.name).join(", ")} className="whitespace-nowrap text-ellipsis overflow-hidden block">
+                {r.teamMembers.slice(0, 3).map(m => m.name).join(", ")}
+                {r.teamMembers.length > 3 && ` +${r.teamMembers.length - 3}`}
+              </span>
+            )}
+          </td>
+        );
+      case "dailyWindow":
+        return (
+          <td key={k} style={freezeStyle("dailyWindow")} className={`px-3 py-3 text-gray-600 whitespace-nowrap overflow-hidden ${tdFreezeClass("dailyWindow")}`}>
+            {fmtWindow(r.dailyStartTime, r.dailyEndTime)}
+          </td>
+        );
+      case "weeklyWindow":
+        return (
+          <td key={k} style={freezeStyle("weeklyWindow")} className={`px-3 py-3 text-gray-600 whitespace-nowrap overflow-hidden ${tdFreezeClass("weeklyWindow")}`}>
+            {fmtWindow(r.weeklyStartTime, r.weeklyEndTime)}
+          </td>
+        );
+      case "isActive":
+        return (
+          <td key={k} style={freezeStyle("isActive")} className={`px-3 py-3 overflow-hidden ${tdFreezeClass("isActive")}`}>
+            <span className={`inline-flex items-center px-2 py-0.5 rounded text-[10px] font-medium ${r.isActive ? "bg-green-100 text-green-700" : "bg-gray-100 text-gray-500"}`}>
+              {r.isActive ? "Active" : "Inactive"}
+            </span>
+          </td>
+        );
+      case "description":
+        return (
+          <td key={k} style={freezeStyle("description")} className={`px-3 py-3 text-gray-600 truncate ${tdFreezeClass("description")}`} title={r.description ?? ""}>
+            {r.description ?? <span className="text-gray-300">—</span>}
+          </td>
+        );
+      case "createdBy":
+        return (
+          <td key={k} style={freezeStyle("createdBy")} className={`px-3 py-3 overflow-hidden ${tdFreezeClass("createdBy")}`}>
+            <div className="flex items-center gap-2">
+              <span className="inline-flex items-center justify-center w-6 h-6 rounded-full bg-gray-900 text-white text-[10px] font-semibold flex-shrink-0">
+                {r.createdByInitials}
+              </span>
+              <span className="text-xs text-gray-700 whitespace-nowrap text-ellipsis overflow-hidden">{r.createdByName}</span>
+            </div>
+          </td>
+        );
+      case "updatedBy":
+        return (
+          <td key={k} style={freezeStyle("updatedBy")} className={`px-3 py-3 overflow-hidden ${tdFreezeClass("updatedBy")}`}>
+            {r.updatedByName ? (
+              <div className="flex items-center gap-2">
+                <span className="inline-flex items-center justify-center w-6 h-6 rounded-full bg-gray-900 text-white text-[10px] font-semibold flex-shrink-0">
+                  {r.updatedByInitials}
+                </span>
+                <span className="text-xs text-gray-700 whitespace-nowrap text-ellipsis overflow-hidden">{r.updatedByName}</span>
+              </div>
+            ) : <span className="text-gray-300">—</span>}
+          </td>
+        );
+      case "createdAt":
+        return (
+          <td key={k} style={freezeStyle("createdAt")} className={`px-3 py-3 text-gray-600 whitespace-nowrap overflow-hidden ${tdFreezeClass("createdAt")}`}>
+            <span className="inline-flex items-center gap-1.5"><Clock className="h-3 w-3 text-gray-400" /> {fmtDateShort(r.createdAt)}</span>
+          </td>
+        );
+      case "updatedAt":
+        return (
+          <td key={k} style={freezeStyle("updatedAt")} className={`px-3 py-3 text-gray-600 whitespace-nowrap overflow-hidden ${tdFreezeClass("updatedAt")}`}>
+            <span className="inline-flex items-center gap-1.5"><Clock className="h-3 w-3 text-gray-400" /> {fmtDateShort(r.updatedAt)}</span>
+          </td>
+        );
+      default:
+        return null;
+    }
+  };
 
   const [editing, setEditing] = useState<{ id: string | null; form: typeof emptyForm } | null>(null);
   const [saving, setSaving] = useState(false);
@@ -603,16 +759,11 @@ export default function ClientsPage() {
                   <th data-col-key="_id"
                       className="sticky z-[35] text-left px-3 py-3 font-semibold text-gray-600 bg-accent-50 border-b border-r border-gray-200"
                       style={{ left: 96, width: 56, minWidth: 56, maxWidth: 56 }}>ID</th>
-                  <Header k="name" label="Client Name" sortable />
-                  <Header k="teamMembers" label="Team Members" />
-                  <Header k="dailyWindow" label="D/H Window" sortable sortKey="dailyStartTime" />
-                  <Header k="weeklyWindow" label="Weekly Window" sortable sortKey="weeklyStartTime" />
-                  <Header k="isActive" label="Status" sortable />
-                  <Header k="description" label="Description" />
-                  <Header k="createdBy" label="Created By" />
-                  <Header k="updatedBy" label="Updated By" />
-                  <Header k="createdAt" label="Created Date" sortable />
-                  <Header k="updatedAt" label="Updated Date" sortable />
+                  {orderedNonRail.map((k) => {
+                    const meta = CLIENT_HEADER_META[k];
+                    if (!meta) return null;
+                    return <Header key={k} k={k} label={meta.label} sortable={meta.sortable} sortKey={meta.sortKey} />;
+                  })}
                   <th className="w-10 px-3 py-3 border-b border-gray-200" />
                 </tr>
               </thead>
@@ -644,78 +795,9 @@ export default function ClientsPage() {
                         style={{ left: 96, width: 56, minWidth: 56, maxWidth: 56 }}>
                       <button onClick={() => openEdit(r)} className="text-blue-600 hover:underline font-medium">{r.displayId}</button>
                     </td>
-                    {/* Data cells — explicit width matches each <th>. `overflow-hidden`
-                        keeps long content from blowing past the column width set by
-                        table-layout: fixed; users can drag the column wider if needed. */}
-                    {!isHidden("name") && (
-                      <td style={freezeStyle("name")} className={`px-3 py-3 font-medium text-gray-800 overflow-hidden text-ellipsis whitespace-nowrap ${tdFreezeClass("name")}`}>
-                        {r.name}
-                      </td>
-                    )}
-                    {!isHidden("teamMembers") && (
-                      <td style={freezeStyle("teamMembers")} className={`px-3 py-3 text-gray-600 overflow-hidden ${tdFreezeClass("teamMembers")}`}>
-                        {r.teamMembers.length === 0 ? <span className="text-gray-300">—</span> : (
-                          <span title={r.teamMembers.map(m => m.name).join(", ")} className="whitespace-nowrap text-ellipsis overflow-hidden block">
-                            {r.teamMembers.slice(0, 3).map(m => m.name).join(", ")}
-                            {r.teamMembers.length > 3 && ` +${r.teamMembers.length - 3}`}
-                          </span>
-                        )}
-                      </td>
-                    )}
-                    {!isHidden("dailyWindow") && (
-                      <td style={freezeStyle("dailyWindow")} className={`px-3 py-3 text-gray-600 whitespace-nowrap overflow-hidden ${tdFreezeClass("dailyWindow")}`}>
-                        {fmtWindow(r.dailyStartTime, r.dailyEndTime)}
-                      </td>
-                    )}
-                    {!isHidden("weeklyWindow") && (
-                      <td style={freezeStyle("weeklyWindow")} className={`px-3 py-3 text-gray-600 whitespace-nowrap overflow-hidden ${tdFreezeClass("weeklyWindow")}`}>
-                        {fmtWindow(r.weeklyStartTime, r.weeklyEndTime)}
-                      </td>
-                    )}
-                    {!isHidden("isActive") && (
-                      <td style={freezeStyle("isActive")} className={`px-3 py-3 overflow-hidden ${tdFreezeClass("isActive")}`}>
-                        <span className={`inline-flex items-center px-2 py-0.5 rounded text-[10px] font-medium ${r.isActive ? "bg-green-100 text-green-700" : "bg-gray-100 text-gray-500"}`}>
-                          {r.isActive ? "Active" : "Inactive"}
-                        </span>
-                      </td>
-                    )}
-                    {!isHidden("description") && (
-                      <td style={freezeStyle("description")} className={`px-3 py-3 text-gray-600 truncate ${tdFreezeClass("description")}`} title={r.description ?? ""}>
-                        {r.description ?? <span className="text-gray-300">—</span>}
-                      </td>
-                    )}
-                    {!isHidden("createdBy") && (
-                      <td style={freezeStyle("createdBy")} className={`px-3 py-3 overflow-hidden ${tdFreezeClass("createdBy")}`}>
-                        <div className="flex items-center gap-2">
-                          <span className="inline-flex items-center justify-center w-6 h-6 rounded-full bg-gray-900 text-white text-[10px] font-semibold flex-shrink-0">
-                            {r.createdByInitials}
-                          </span>
-                          <span className="text-xs text-gray-700 whitespace-nowrap text-ellipsis overflow-hidden">{r.createdByName}</span>
-                        </div>
-                      </td>
-                    )}
-                    {!isHidden("updatedBy") && (
-                      <td style={freezeStyle("updatedBy")} className={`px-3 py-3 overflow-hidden ${tdFreezeClass("updatedBy")}`}>
-                        {r.updatedByName ? (
-                          <div className="flex items-center gap-2">
-                            <span className="inline-flex items-center justify-center w-6 h-6 rounded-full bg-gray-900 text-white text-[10px] font-semibold flex-shrink-0">
-                              {r.updatedByInitials}
-                            </span>
-                            <span className="text-xs text-gray-700 whitespace-nowrap text-ellipsis overflow-hidden">{r.updatedByName}</span>
-                          </div>
-                        ) : <span className="text-gray-300">—</span>}
-                      </td>
-                    )}
-                    {!isHidden("createdAt") && (
-                      <td style={freezeStyle("createdAt")} className={`px-3 py-3 text-gray-600 whitespace-nowrap overflow-hidden ${tdFreezeClass("createdAt")}`}>
-                        <span className="inline-flex items-center gap-1.5"><Clock className="h-3 w-3 text-gray-400" /> {fmtDateShort(r.createdAt)}</span>
-                      </td>
-                    )}
-                    {!isHidden("updatedAt") && (
-                      <td style={freezeStyle("updatedAt")} className={`px-3 py-3 text-gray-600 whitespace-nowrap overflow-hidden ${tdFreezeClass("updatedAt")}`}>
-                        <span className="inline-flex items-center gap-1.5"><Clock className="h-3 w-3 text-gray-400" /> {fmtDateShort(r.updatedAt)}</span>
-                      </td>
-                    )}
+                    {/* Data cells rendered in the user's drag order (see
+                        renderClientCell). Styling unchanged; widths match each <th>. */}
+                    {orderedNonRail.map((k) => renderClientCell(r, k))}
                     <td className="px-3 py-3">
                       {viewTrash && canDelete ? (
                         <button onClick={() => handleRestore(r.id)} className="p-1 rounded hover:bg-green-50 text-gray-300 hover:text-green-600" title="Restore">
