@@ -2,7 +2,7 @@ import { describe, it, expect, beforeEach } from "vitest";
 // Registers vi.mock for "@/lib/db" + "@quikit/database" (hoisted).
 import { mockDb, resetMockDb } from "../../__tests__/helpers/mockDb";
 import { allPermissionPairs } from "./permissionsRegistry";
-import { seedAllDefaultRoles, ensureSeeded, collapseToLatestRole } from "./seed";
+import { seedAllDefaultRoles, ensureSeeded, ensureUserRole, collapseToLatestRole } from "./seed";
 
 const ORG = "org-1";
 
@@ -194,5 +194,54 @@ describe("ensureSeeded", () => {
 
     await ensureSeeded(org); // cache hit — no further DB work
     expect(mockDb.qcAppRole.findFirst.mock.calls.length).toBe(afterFirst);
+  });
+});
+
+describe("ensureUserRole (per-user seed-before-check)", () => {
+  // ORG was cached in seededOrgs by earlier seedAllDefaultRoles(ORG) calls, so
+  // the internal ensureSeeded short-circuits (no org re-seed here).
+  beforeEach(() => {
+    mockDb.app.findUnique.mockResolvedValue({ id: "app-qc" } as never);
+    // Resolve a role id by the requested name (admin vs Member).
+    mockDb.qcAppRole.findFirst.mockImplementation(
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      (args: any) => Promise.resolve({ id: `role-${args.where.name}` }) as never,
+    );
+    mockDb.qcUserAppRole.create.mockResolvedValue({ id: "uar-new" } as never);
+  });
+
+  it("no-ops when the user already holds a role", async () => {
+    mockDb.qcUserAppRole.findFirst.mockResolvedValue({ id: "uar-existing" } as never);
+    await ensureUserRole("u1", ORG);
+    expect(mockDb.qcUserAppRole.create).not.toHaveBeenCalled();
+  });
+
+  it("binds Member to a plain member with no role", async () => {
+    mockDb.qcUserAppRole.findFirst.mockResolvedValue(null as never);
+    mockDb.orgMember.findFirst.mockResolvedValue({ role: "member" } as never);
+    mockDb.user.findUnique.mockResolvedValue({ isSuperAdmin: false } as never);
+    await ensureUserRole("u1", ORG);
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const arg = (mockDb.qcUserAppRole.create.mock.calls[0][0] as any).data;
+    expect(arg.roleId).toBe("role-Member");
+    expect(arg.userId).toBe("u1");
+  });
+
+  it("binds admin to an org_admin with no role", async () => {
+    mockDb.qcUserAppRole.findFirst.mockResolvedValue(null as never);
+    mockDb.orgMember.findFirst.mockResolvedValue({ role: "org_admin" } as never);
+    mockDb.user.findUnique.mockResolvedValue({ isSuperAdmin: false } as never);
+    await ensureUserRole("u2", ORG);
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    expect((mockDb.qcUserAppRole.create.mock.calls[0][0] as any).data.roleId).toBe("role-admin");
+  });
+
+  it("binds admin to a platform super-admin (isSuperAdmin) with no role", async () => {
+    mockDb.qcUserAppRole.findFirst.mockResolvedValue(null as never);
+    mockDb.orgMember.findFirst.mockResolvedValue({ role: "member" } as never);
+    mockDb.user.findUnique.mockResolvedValue({ isSuperAdmin: true } as never);
+    await ensureUserRole("u3", ORG);
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    expect((mockDb.qcUserAppRole.create.mock.calls[0][0] as any).data.roleId).toBe("role-admin");
   });
 });

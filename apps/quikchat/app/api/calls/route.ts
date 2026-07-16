@@ -1,5 +1,6 @@
 import { withOrgAuth } from "@/lib/auth-shims";
 import * as calling from "@/lib/server/calling/calling.service";
+import { userCan, forbidden } from "@/lib/authz/permissions";
 
 export const dynamic = "force-dynamic";
 
@@ -20,6 +21,11 @@ export const POST = withOrgAuth(async (req, ctx) => {
   }
   if (!Array.isArray(targetUserIds) || targetUserIds.length === 0) {
     return Response.json({ error: "targetUserIds is required" }, { status: 400 });
+  }
+
+  // RBAC v2 gate (Phase 2): starting a call. Member holds Call:create; Guest does not.
+  if (!(await userCan(ctx.userId, ctx.orgId, "Call", "create"))) {
+    return forbidden("You do not have permission to start calls");
   }
 
   const call = await calling.createCall(ctx, { channelId, meetingId, type, targetUserIds });

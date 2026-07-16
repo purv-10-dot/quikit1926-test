@@ -10,9 +10,21 @@ export interface NewGroupModalProps {
   open: boolean;
   onClose: () => void;
   onCreated: (channel: ChannelListItem) => void;
+  /**
+   * DECISION 2 — whether to offer the "public" visibility option. Driven by the
+   * caller's `Channel.Public:create` grant (computed once in ChatWorkspace).
+   * Defaults to `true` so non-gated callers/tests are unaffected. UX only; the
+   * server also enforces the grant on create.
+   */
+  canCreatePublic?: boolean;
 }
 
-export function NewGroupModal({ open, onClose, onCreated }: NewGroupModalProps) {
+export function NewGroupModal({
+  open,
+  onClose,
+  onCreated,
+  canCreatePublic = true,
+}: NewGroupModalProps) {
   const [name, setName] = useState("");
   const [description, setDescription] = useState("");
   const [visibility, setVisibility] = useState<ChannelVisibility>("private");
@@ -94,7 +106,7 @@ export function NewGroupModal({ open, onClose, onCreated }: NewGroupModalProps) 
         onChange={(e) => setVisibility(e.target.value as ChannelVisibility)}
       >
         <option value="private">Private — invite only</option>
-        <option value="public">Public — discoverable</option>
+        {canCreatePublic && <option value="public">Public — discoverable</option>}
       </select>
       <div style={{ height: 10 }} />
       <label className="qc-label">Members</label>

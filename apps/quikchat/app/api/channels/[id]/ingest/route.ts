@@ -5,6 +5,7 @@ import { ASSISTANT_BOT_AGENT_ID, isAssistantEnabled } from "@/lib/server/assista
 import { getRuntimeClient, IngestError } from "@/lib/server/runtime";
 import type { IngestErrorCode } from "@/lib/server/runtime";
 import type { IngestVisibility } from "@/lib/shared";
+import { userCan } from "@/lib/authz/permissions";
 
 export const dynamic = "force-dynamic";
 
@@ -55,6 +56,13 @@ export const POST = withOrgAuth(
     // storageKey channel-authz (Stage-2 guard): no ingesting an arbitrary object.
     if (!storageKey.startsWith(`quikchat/${ctx.orgId}/${channelId}/`)) {
       throw new HttpError(403, "document does not belong to this channel");
+    }
+    // RBAC v2 gate (Phase 2): PRIVATE/APP → Assistant.IngestPrivate (Member has
+    // it); ORG → Assistant.IngestOrg (DECISION 3, Admin-only via its grant).
+    const ingestResource =
+      visibility === "ORG" ? "Assistant.IngestOrg" : "Assistant.IngestPrivate";
+    if (!(await userCan(ctx.userId, ctx.orgId, ingestResource, "create"))) {
+      throw new HttpError(403, "You do not have permission to add documents to this knowledge base");
     }
 
     try {

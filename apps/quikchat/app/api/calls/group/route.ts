@@ -2,6 +2,7 @@ import { withOrgAuth } from "@/lib/auth-shims";
 import { db as prisma } from "@quikit/database";
 import * as calling from "@/lib/server/calling/calling.service";
 import { selectSFUMode } from "@/lib/server/calling/sfu-provider";
+import { userCan, forbidden } from "@/lib/authz/permissions";
 
 export const dynamic = "force-dynamic";
 
@@ -33,6 +34,11 @@ export const POST = withOrgAuth(async (req, ctx) => {
   });
   if (!membership) {
     return Response.json({ error: "You are not a member of this channel" }, { status: 403 });
+  }
+
+  // RBAC v2 gate (Phase 2): starting a group call. Member holds Call.Group:create.
+  if (!(await userCan(ctx.userId, ctx.orgId, "Call.Group", "create"))) {
+    return forbidden("You do not have permission to start group calls");
   }
 
   // Fetch all channel members

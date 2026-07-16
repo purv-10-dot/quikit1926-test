@@ -15,6 +15,7 @@ import {
 import { getRuntimeClient } from "@/lib/server/runtime";
 import type { RuntimeEvent } from "@/lib/server/runtime";
 import { getStorage } from "@/lib/server/storage";
+import { userCan } from "@/lib/authz/permissions";
 
 export const dynamic = "force-dynamic";
 
@@ -53,6 +54,11 @@ export const POST = withOrgAuth(
     await assertMembership(ctx.orgId, channelId, ctx.userId);
     if (!(await isAssistantEnabled(ctx.orgId, channelId))) {
       throw new HttpError(403, "The assistant is not enabled for this channel");
+    }
+    // RBAC v2 gate (Phase 2): assistant use. Applies to AI-chat turns and /ai
+    // in normal channels — both hit this route. Guests (Channel:view only) fail.
+    if (!(await userCan(ctx.userId, ctx.orgId, "Assistant", "create"))) {
+      throw new HttpError(403, "You do not have permission to use the assistant");
     }
 
     // Resolve the attached document → a fresh presigned GET URL, minted

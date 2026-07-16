@@ -11,7 +11,7 @@ import {
 import { HttpError, isHttpError } from "./errors";
 import { getRawSession } from "./session";
 import { assertMembership } from "./authz";
-import { ensureSeeded } from "./authz/seed";
+import { ensureUserRole } from "./authz/seed";
 
 // Re-export so `import { assertMembership } from "@/lib/orgAuth"` keeps working
 // for ported routes that used QuikChat's original @quikit/auth surface.
@@ -112,10 +112,12 @@ export function withOrgAuth(handler: OrgRouteHandler, opts?: { rateLimit?: RateL
       const ctx = await authContext(req as NextRequest);
       const orgCtx: OrgContext = { userId: ctx.userId, orgId: ctx.orgId };
       const base = { orgId: ctx.orgId, actorType: "human", userId: ctx.userId };
-      // RBAC v2 substrate (Phase 1): self-heal seed for deep-links that skip
-      // the dashboard page. Cached (in-process, no DB on a hit) and swallows
-      // its own errors — never blocks or fails a request. No enforcement yet.
-      await ensureSeeded(ctx.orgId);
+      // RBAC v2 seed-before-check (Phase 2): guarantee the caller holds a role
+      // BEFORE any userCan/requireAdmin gate in the handler runs, so fail-closed
+      // enforcement can't lock out a not-yet-seeded user. Steady state is one
+      // indexed existence check; swallows its own errors — never blocks/fails a
+      // request. Covers deep-links that skip the dashboard page.
+      await ensureUserRole(ctx.userId, ctx.orgId);
       if (opts?.rateLimit) {
         const { bucket, limit, windowMs } = opts.rateLimit;
         const r = await rateLimit(`${bucket}:${ctx.orgId}:${ctx.userId}`, limit, windowMs);

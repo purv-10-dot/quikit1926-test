@@ -293,11 +293,9 @@ export async function seedAllDefaultRoles(orgId: string): Promise<SeededRoleIds 
 }
 
 /**
- * Cheap self-heal entry point. Returns immediately (in-process Map lookup, no
+ * Cheap org-level self-heal. Returns immediately (in-process Map lookup, no
  * DB) when the org was seeded within the TTL, otherwise runs the full seed.
- * Failures are swallowed — Phase 1 is substrate-only, so a seeding hiccup must
- * never break a request. Call from any authenticated server entry (page load,
- * withOrgAuth) so a deep-link that skips the dashboard page still seeds.
+ * Failures are swallowed — a seeding hiccup must never break a request.
  */
 export async function ensureSeeded(orgId: string): Promise<void> {
   const seededAt = seededOrgs.get(orgId);
@@ -306,5 +304,62 @@ export async function ensureSeeded(orgId: string): Promise<void> {
     await seedAllDefaultRoles(orgId);
   } catch {
     // best-effort; next request retries.
+  }
+}
+
+/**
+ * Per-user seed-before-check (Phase 2). Guarantees the caller holds a role
+ * BEFORE any userCan/requireAdmin gate runs, so fail-closed enforcement can
+ * never lock out a not-yet-seeded user (the rollout-lockout the RBAC_PLAN
+ * invariant warns about). The org-level `ensureSeeded` cache does NOT cover a
+ * freshly-invited user inside the TTL window — this does, keyed on the user.
+ *
+ * Steady state is a single indexed existence check (`[userId, orgId]`); the
+ * bind path only runs once per user (first request after they gain access).
+ * The binding rule MIRRORS the Phase-1 backfill: org_admin / super_admin (or a
+ * platform super-admin) → admin, everyone else → the default Member role.
+ * Idempotent and best-effort — a concurrent bind or transient error is
+ * swallowed (the unique constraint + next-request retry keep it correct).
+ *
+ * Call from `withOrgAuth` (covers every gated API route, incl. deep-links) and
+ * from `(dashboard)/page.tsx`.
+ */
+export async function ensureUserRole(userId: string, orgId: string): Promise<void> {
+  try {
+    const appId = await getQuikChatAppId();
+    if (!appId) return;
+
+    // Fast path: user already holds a role. Indexed existence check.
+    const existing = await db.qcUserAppRole.findFirst({
+      where: { userId, orgId, role: { appId } },
+      select: { id: true },
+    });
+    if (existing) return;
+
+    // Bind path (rare): make sure the org's roles exist, then classify + assign.
+    await ensureSeeded(orgId);
+
+    const [member, user] = await Promise.all([
+      db.orgMember.findFirst({ where: { orgId, userId }, select: { role: true } }),
+      db.user.findUnique({ where: { id: userId }, select: { isSuperAdmin: true } }),
+    ]);
+    const isAdmin =
+      member?.role === "org_admin" ||
+      member?.role === "super_admin" ||
+      user?.isSuperAdmin === true;
+    const roleName = isAdmin ? "admin" : "Member";
+
+    const role = await db.qcAppRole.findFirst({
+      where: { orgId, appId, name: roleName },
+      select: { id: true },
+    });
+    if (!role) return; // seeding not settled yet; next request retries.
+
+    await db.qcUserAppRole.create({
+      data: { userId, orgId, roleId: role.id },
+    });
+  } catch {
+    // Best-effort: a concurrent bind hits the unique constraint; anything else
+    // retries next request. Never block a request on the seed-before-check.
   }
 }

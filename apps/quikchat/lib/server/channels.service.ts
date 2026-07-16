@@ -18,6 +18,7 @@ import {
 import { displayNameOf, loadPublicUsers, toMessageDto, type MessageRow } from "./helpers";
 import { ensureAssistantBot } from "./assistant.service";
 import * as notifications from "./notifications.service";
+import { userCan } from "@/lib/authz/permissions";
 
 type ChannelRow = {
   id: string;
@@ -68,10 +69,23 @@ async function requireMember(ctx: OrgContext, channelId: string): Promise<Member
   return member;
 }
 
-async function requireAdmin(ctx: OrgContext, channelId: string): Promise<MemberRow> {
+/**
+ * Moderation guard (RBAC v2, DECISION 4). Passes if the caller is a
+ * channel-admin (the existing intra-channel role) OR holds the app-level
+ * `Channel.Moderate` grant for `action` — making app Moderators/Admins a
+ * superset of per-channel admins. `Channel.Moderate` is the org-admin-tunable
+ * cell (default-granted to Moderator + Admin). Still requires channel
+ * membership first (tenant isolation). Returns the caller's member row.
+ */
+export async function requireChannelAdminOrModerator(
+  ctx: OrgContext,
+  channelId: string,
+  action: "update" | "delete",
+): Promise<MemberRow> {
   const member = await requireMember(ctx, channelId);
-  if (member.role !== "admin") throw new HttpError(403, "Only admins can perform this action");
-  return member;
+  if (member.role === "admin") return member;
+  if (await userCan(ctx.userId, ctx.orgId, "Channel.Moderate", action)) return member;
+  throw new HttpError(403, "Only admins or moderators can perform this action");
 }
 
 async function getChannelOr404(ctx: OrgContext, channelId: string): Promise<ChannelRow> {
@@ -127,6 +141,25 @@ export async function create(ctx: OrgContext, input: CreateChannelInput): Promis
 
   if (type === "group" && visibility === "public" && !input.name?.trim()) {
     throw new HttpError(400, "Public channels must have a name");
+  }
+
+  // RBAC v2 gate (Phase 2) — the single creation choke point. Member holds
+  // Channel:create + Channel.DM:create by default; Channel.Public:create is the
+  // org-admin-tunable cell (DECISION 2, default off for Member).
+  if (type === "group") {
+    if (!(await userCan(ctx.userId, ctx.orgId, "Channel", "create"))) {
+      throw new HttpError(403, "You do not have permission to create channels");
+    }
+    if (
+      visibility === "public" &&
+      !(await userCan(ctx.userId, ctx.orgId, "Channel.Public", "create"))
+    ) {
+      throw new HttpError(403, "You do not have permission to create public channels");
+    }
+  } else if (type === "dm") {
+    if (!(await userCan(ctx.userId, ctx.orgId, "Channel.DM", "create"))) {
+      throw new HttpError(403, "You do not have permission to start direct messages");
+    }
   }
 
   const channelId = await prisma.$transaction(async (tx) => {
@@ -187,6 +220,12 @@ async function findExistingDm(
  * the find-or-create spirit of `findExistingDm`.
  */
 export async function findOrCreateAiChat(ctx: OrgContext): Promise<ChannelListItem> {
+  // RBAC v2 gate (Phase 2) — opening the AI chat IS assistant use, so it gates
+  // on Assistant:create, consistent with the assist route. Bars Guests (who
+  // hold only Channel:view) from the assistant entirely.
+  if (!(await userCan(ctx.userId, ctx.orgId, "Assistant", "create"))) {
+    throw new HttpError(403, "You do not have permission to use the assistant");
+  }
   const existing = await findExistingAiChat(ctx);
   if (existing) return findById(ctx, existing.id);
 
@@ -705,7 +744,7 @@ export async function addMember(
   const channel = await getChannelOr404(ctx, channelId);
   if (channel.type !== "group")
     throw new HttpError(400, "Only group channels can have members added");
-  await requireAdmin(ctx, channelId);
+  await requireChannelAdminOrModerator(ctx, channelId, "update");
   const existing = await prisma.qcChannelMember.findUnique({
     where: { orgId_channelId_userId: { orgId: ctx.orgId, channelId, userId: newUserId } },
   });
@@ -733,7 +772,7 @@ export async function removeMember(
   if (ctx.userId === targetUserId) throw new HttpError(400, "Use leave to remove yourself");
   const channel = await getChannelOr404(ctx, channelId);
   if (channel.type !== "group") throw new HttpError(400, "Only group members can be removed");
-  await requireAdmin(ctx, channelId);
+  await requireChannelAdminOrModerator(ctx, channelId, "delete");
   const target = await prisma.qcChannelMember.findUnique({
     where: { orgId_channelId_userId: { orgId: ctx.orgId, channelId, userId: targetUserId } },
   });
@@ -756,7 +795,7 @@ export async function updateMemberRole(
 ): Promise<{ role: "admin" | "member" }> {
   const channel = await getChannelOr404(ctx, channelId);
   if (channel.type !== "group") throw new HttpError(400, "Only group member roles can be changed");
-  await requireAdmin(ctx, channelId);
+  await requireChannelAdminOrModerator(ctx, channelId, "update");
   const target = await prisma.qcChannelMember.findUnique({
     where: { orgId_channelId_userId: { orgId: ctx.orgId, channelId, userId: targetUserId } },
   });

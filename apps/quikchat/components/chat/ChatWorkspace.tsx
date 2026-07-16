@@ -48,6 +48,7 @@ import {
 } from "@/lib/presence-store";
 import { applyTyping, emptyTyping, pruneTyping, type TypingState } from "@/lib/typing-store";
 import { streamAssist } from "@/lib/assist-client";
+import { useMyPermissions } from "@/lib/authz/useMyPermissions";
 import type { MediaMeta } from "@/lib/server/storage/types";
 import { CallHandler } from "../calling/CallHandler";
 import { RejoinBanner } from "../calling/RejoinBanner";
@@ -99,6 +100,9 @@ export function ChatWorkspace({
   const qc = useQueryClient();
   const toast = useToast();
   const notifications = useNotifications();
+  // RBAC v2 client gate (Phase 2, cosmetic — server enforces). Currently drives
+  // the public-channel option (DECISION 2). Server 403s any ungranted action.
+  const perms = useMyPermissions();
   const [activeId, setActiveId] = useState<string | null>(null);
   const [connected, setConnected] = useState(true);
   const [newChatOpen, setNewChatOpen] = useState(false);
@@ -731,6 +735,7 @@ export function ChatWorkspace({
         <NewGroupModal
           open={newGroupOpen}
           onClose={() => setNewGroupOpen(false)}
+          canCreatePublic={perms.has("Channel.Public", "create")}
           onCreated={(ch) => {
             onChannelReady(ch);
             toast.success({ title: `Created ${ch.name ? `#${ch.name}` : "the group"}` });
