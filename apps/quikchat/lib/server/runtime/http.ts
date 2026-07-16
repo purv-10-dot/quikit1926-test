@@ -9,7 +9,9 @@
  * (`{type:"delta",text}` | `{type:"done",text,agentRunId}` | `{type:"error",...}`).
  */
 import { mintRuntimeToken } from "./token";
-import type { AssistInput, RuntimeClient, RuntimeEvent } from "./types";
+import type { IngestResult } from "@/lib/shared";
+import { IngestError } from "./types";
+import type { AssistInput, IngestInput, RuntimeClient, RuntimeEvent } from "./types";
 
 const REQUEST_TIMEOUT_MS = 60_000; // Render free-tier cold starts can add 30–50s.
 
@@ -105,6 +107,62 @@ export class HttpRuntimeClient implements RuntimeClient {
       clearTimeout(timer);
       reader.releaseLock();
     }
+  }
+
+  /**
+   * Ingest a document into the KB (Stage 3). Sync request/response — POSTs the
+   * top-level fields to `/ai/ingest` with the same minted agent JWT as assist
+   * (orgId/userId in the token). Maps a non-2xx to a coded `IngestError` the
+   * relay turns into a real toast.
+   */
+  async ingest(input: IngestInput): Promise<IngestResult> {
+    const token = await mintRuntimeToken({
+      orgId: input.orgId,
+      botAgentId: input.botAgentId,
+      userId: input.userId,
+    });
+
+    const body = JSON.stringify({
+      storageKey: input.storageKey,
+      sourceFileId: input.sourceFileId,
+      appId: input.appId,
+      visibility: input.visibility,
+      filename: input.filename,
+    });
+
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
+
+    let res: Response;
+    try {
+      res = await fetch(`${this.baseUrl}/ai/ingest`, {
+        method: "POST",
+        headers: {
+          authorization: `Bearer ${token}`,
+          "content-type": "application/json",
+          accept: "application/json",
+        },
+        body,
+        signal: controller.signal,
+      });
+    } catch {
+      clearTimeout(timer);
+      throw new IngestError("ingest_failed");
+    }
+    clearTimeout(timer);
+
+    if (!res.ok) {
+      const code =
+        res.status === 404
+          ? "object_not_found"
+          : res.status === 422
+            ? "extract_failed"
+            : res.status === 401
+              ? "bad_jwt"
+              : "ingest_failed";
+      throw new IngestError(code, res.status);
+    }
+    return (await res.json()) as IngestResult;
   }
 }
 

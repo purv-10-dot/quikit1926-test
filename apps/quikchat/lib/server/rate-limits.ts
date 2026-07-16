@@ -18,6 +18,9 @@ export const RATE = {
   uploadSign: { bucket: "upload_sign", limit: 30, windowMs: 60_000 },
   // AI assistant (S12): conservative — "be polite" to the runtime.
   assist: { bucket: "assist", limit: 10, windowMs: 60_000 },
+  // KB ingest (Stage 3): explicit "Add to KB" button — deliberate + rare + heavy
+  // (indexing on the runtime), so tight.
+  ingest: { bucket: "ingest", limit: 10, windowMs: 60_000 },
   // Delivery receipts (S14a): client advances on every inbound message (debounced),
   // so this fires often — keep it generous.
   delivered: { bucket: "delivered", limit: 120, windowMs: 10_000 },

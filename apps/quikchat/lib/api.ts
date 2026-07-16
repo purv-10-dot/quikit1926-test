@@ -7,6 +7,8 @@ import type {
   DiscoverChannelItem,
   InviteDto,
   InvitePreview,
+  IngestResult,
+  IngestVisibility,
   CalendarConnectionDto,
   CalendarDto,
   CalendarEventDto,
@@ -157,6 +159,31 @@ export function createChannel(body: CreateChannelInput): Promise<ChannelListItem
 /** Open (find-or-create) the caller's AI-chat singleton. Idempotent. */
 export function openAiChat(): Promise<ChannelListItem> {
   return send<ChannelListItem>("/api/channels/ai", "POST");
+}
+
+/**
+ * Stage 3 "Add to KB": ingest an attached document into the knowledge base. The
+ * client sends the durable `storageKey` it owns (the relay authorizes it to the
+ * channel + sets sourceFileId). Throws an Error carrying the server `code` on
+ * failure so the caller can toast a real message.
+ */
+export async function ingestDocument(
+  channelId: string,
+  body: { storageKey: string; filename: string; visibility: Extract<IngestVisibility, "PRIVATE" | "ORG"> },
+): Promise<IngestResult> {
+  const res = await fetch(`/api/channels/${channelId}/ingest`, {
+    method: "POST",
+    credentials: "include",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify(body),
+  });
+  if (!res.ok) {
+    const j = (await res.json().catch(() => ({}))) as { error?: string; code?: string };
+    const err = new Error(j.error ?? `ingest → ${res.status}`) as Error & { code?: string };
+    err.code = j.code;
+    throw err;
+  }
+  return (await res.json()) as IngestResult;
 }
 
 export function discoverChannels(q?: string): Promise<DiscoverChannelItem[]> {

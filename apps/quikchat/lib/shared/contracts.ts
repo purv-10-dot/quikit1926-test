@@ -154,6 +154,20 @@ export interface CreateChannelInput {
   memberIds?: string[];
 }
 
+/**
+ * Knowledge-base document visibility (Stage 3 ingest). `APP` is reserved for
+ * Stage 4 (filing into a target app) — the relay's accepted enum permits it to
+ * match the runtime, but Stage 3 never sends it (the UI offers only PRIVATE/ORG).
+ */
+export type IngestVisibility = "PRIVATE" | "APP" | "ORG";
+
+/** Result of a successful `/ai/ingest` (Stage 3, sync). */
+export interface IngestResult {
+  sourceFileId: string;
+  chunksStored: number;
+  contentHash: string;
+}
+
 export interface SendMessageInput {
   content: string;
   type?: "Text" | "Media" | "SystemActivity" | "Meeting" | "Call";

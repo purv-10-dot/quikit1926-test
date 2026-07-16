@@ -9,6 +9,7 @@ import {
   deleteMessageApi,
   editMessageApi,
   fetchChannelDetail,
+  ingestDocument,
   fetchMembers,
   fetchPinned,
   forwardMessageApi,
@@ -199,6 +200,28 @@ export function ConversationView({
       setLightboxIndex(idx >= 0 ? idx : 0);
     },
     onStartCall: onStartMeetingCall,
+    // Stage 3 "Add to KB" — only in an AI chat. The Media row carries the durable
+    // storageKey (data.objectPath) + filename; the relay authorizes it + mints
+    // sourceFileId. Toast the (already user-facing) reason on failure; rethrow so
+    // the card resets to idle for a retry.
+    onAddToKb: isAiChat
+      ? async (message, visibility) => {
+          const data = (message.data ?? {}) as { objectPath?: string; originalName?: string };
+          try {
+            return await ingestDocument(channelId, {
+              storageKey: data.objectPath ?? "",
+              filename: data.originalName ?? "document",
+              visibility,
+            });
+          } catch (e) {
+            toast.error({
+              title: "Couldn't add to knowledge base",
+              body: e instanceof Error ? e.message : undefined,
+            });
+            throw e;
+          }
+        }
+      : undefined,
   };
 
   const typingUsers: TypingUser[] = (typing ? whoIsTyping(typing, channelId, Date.now()) : [])

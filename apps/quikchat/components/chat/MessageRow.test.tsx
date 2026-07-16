@@ -1,5 +1,5 @@
 import type { MessageDto, PublicUser } from "@/lib/shared";
-import { fireEvent, render, screen } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 import { MessageRow, type MessageRowActions } from "./MessageRow";
 
@@ -118,6 +118,47 @@ describe("media attachments (Bug 3)", () => {
     expect(dl).toHaveAttribute("download");
     // The filename itself is not a navigating link (only the explicit control is).
     expect(screen.getByText("bundle.zip").closest("a")).toBeNull();
+  });
+});
+
+describe("Add to KB (Stage 3)", () => {
+  const mediaMsg = mk({
+    id: "m",
+    type: "Media",
+    content: "",
+    data: {
+      mediaUrl: "/doc.pdf",
+      mediaType: "application/pdf",
+      originalName: "spec.pdf",
+      objectPath: "quikchat/o/c/uuid-spec.pdf",
+    },
+  });
+
+  it("does not render the affordance without onAddToKb (normal channel / plain turn)", () => {
+    renderRow(mediaMsg, makeActions());
+    expect(screen.queryByTestId("add-to-kb")).toBeNull();
+  });
+
+  it("does not render on a non-Media message even when onAddToKb is provided", () => {
+    renderRow(mk({ id: "a", content: "hi" }), makeActions({ onAddToKb: vi.fn() }));
+    expect(screen.queryByTestId("add-to-kb")).toBeNull();
+  });
+
+  it("ingests with the chosen visibility and confirms the indexed section count", async () => {
+    const onAddToKb = vi.fn(async () => ({
+      sourceFileId: "quikchat/o/c/uuid-spec.pdf",
+      chunksStored: 42,
+      contentHash: "h",
+    }));
+    renderRow(mediaMsg, makeActions({ onAddToKb }));
+    fireEvent.change(screen.getByLabelText("Knowledge base visibility"), {
+      target: { value: "ORG" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Add" }));
+    expect(onAddToKb).toHaveBeenCalledWith(mediaMsg, "ORG");
+    await waitFor(() =>
+      expect(screen.getByTestId("add-to-kb")).toHaveTextContent(/42 sections indexed/),
+    );
   });
 });
 

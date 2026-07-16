@@ -8,6 +8,8 @@
  * build must match these shapes — see docs/RUNTIME.md.
  */
 
+import type { IngestResult, IngestVisibility } from "@/lib/shared";
+
 export interface AssistHistoryItem {
   role: "user" | "assistant";
   text: string;
@@ -47,9 +49,40 @@ export type RuntimeEvent =
   // Reserved for the later actions phase — defined in the vocab, NOT handled in v1.
   | { type: "approval_needed" };
 
+/** Ingest one document into the KB (Stage 3). orgId/userId ride the agent JWT. */
+export interface IngestInput {
+  orgId: string;
+  userId: string;
+  /** Stable bot agent id (QuikChat-owned identity) — becomes the JWT `sub`. */
+  botAgentId: string;
+  /** Durable object key (= MediaMeta.objectPath); the runtime reads the bucket. */
+  storageKey: string;
+  /** Idempotency/replace key. Confirmed identity: === storageKey. */
+  sourceFileId: string;
+  /** Owning app — "quikchat". (entityId reserved for Stage 4; not sent.) */
+  appId: string;
+  visibility: IngestVisibility;
+  filename?: string;
+}
+
+export type IngestErrorCode = "object_not_found" | "extract_failed" | "bad_jwt" | "ingest_failed";
+
+/** Thrown by the runtime client on a failed ingest; carries a mappable code. */
+export class IngestError extends Error {
+  constructor(
+    public readonly code: IngestErrorCode,
+    public readonly runtimeStatus?: number,
+  ) {
+    super(code);
+    this.name = "IngestError";
+  }
+}
+
 export interface RuntimeClient {
   /** SSE-shaped stream of runtime events for one assistant turn. */
   assist(input: AssistInput): AsyncIterable<RuntimeEvent>;
+  /** Ingest a document into the KB (Stage 3). Sync — resolves once indexed. */
+  ingest(input: IngestInput): Promise<IngestResult>;
 }
 
 export type RuntimeMode = "stub" | "http";

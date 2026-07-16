@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import type {
+  IngestResult,
   MeetingDto,
   MentionRefInput,
   MessageDto,
@@ -73,6 +74,15 @@ export interface MessageRowActions {
   /** Open an image/video attachment in the lightbox. */
   onOpenMedia?: (media: { url: string; mediaType: string; originalName?: string }) => void;
   onStartCall?: (meetingId: string, channelId: string) => void;
+  /**
+   * Stage 3 "Add to KB" — present ONLY in an AI chat (ConversationView supplies
+   * it when channel.type === "ai"). Resolves with the ingest result so the row
+   * can confirm how many sections were indexed; rejects on failure (caller toasts).
+   */
+  onAddToKb?: (
+    message: MessageDto,
+    visibility: "PRIVATE" | "ORG",
+  ) => Promise<IngestResult>;
 }
 
 function formatBytes(n?: number): string {
@@ -147,6 +157,65 @@ function MediaContent({ media, onOpen }: { media: MediaData; onOpen?: () => void
       >
         <Download size={16} aria-hidden />
       </a>
+    </div>
+  );
+}
+
+/**
+ * Stage 3 "Add to knowledge base?" affordance, rendered under a Media message in
+ * an AI chat (only when `onAddToKb` is supplied). Offers a visibility choice
+ * (Private default / Share with org) and, on success, confirms the indexed
+ * section count. Failures are toasted by the caller; the card resets to idle.
+ */
+function AddToKbCard({
+  message,
+  onAddToKb,
+}: {
+  message: MessageDto;
+  onAddToKb: (message: MessageDto, visibility: "PRIVATE" | "ORG") => Promise<IngestResult>;
+}) {
+  const [state, setState] = useState<"idle" | "adding" | "added">("idle");
+  const [visibility, setVisibility] = useState<"PRIVATE" | "ORG">("PRIVATE");
+  const [chunks, setChunks] = useState(0);
+
+  if (state === "added") {
+    return (
+      <div className="qc-kb-card" data-state="added" data-testid="add-to-kb">
+        <Check size={14} aria-hidden /> Added to your knowledge base — {chunks} section
+        {chunks === 1 ? "" : "s"} indexed
+      </div>
+    );
+  }
+  return (
+    <div className="qc-kb-card" data-testid="add-to-kb">
+      <span className="qc-kb-card__q">Add to knowledge base?</span>
+      <select
+        className="qc-kb-card__vis"
+        aria-label="Knowledge base visibility"
+        value={visibility}
+        disabled={state === "adding"}
+        onChange={(e) => setVisibility(e.target.value as "PRIVATE" | "ORG")}
+      >
+        <option value="PRIVATE">Private</option>
+        <option value="ORG">Share with org</option>
+      </select>
+      <button
+        type="button"
+        className="qc-btn"
+        disabled={state === "adding"}
+        onClick={async () => {
+          setState("adding");
+          try {
+            const result = await onAddToKb(message, visibility);
+            setChunks(result.chunksStored);
+            setState("added");
+          } catch {
+            setState("idle"); // caller toasts the reason; allow a retry
+          }
+        }}
+      >
+        {state === "adding" ? "Adding…" : "Add"}
+      </button>
     </div>
   );
 }
@@ -584,6 +653,9 @@ export function MessageRow({
               ) : null}
               {message.content ? <MentionText message={message} /> : null}
               {message.editedAt ? <span className="qc-edited">(edited)</span> : null}
+              {message.type === "Media" && actions?.onAddToKb ? (
+                <AddToKbCard message={message} onAddToKb={actions.onAddToKb} />
+              ) : null}
             </>
           )}
         </div>

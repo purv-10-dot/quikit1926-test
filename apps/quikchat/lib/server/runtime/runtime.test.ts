@@ -2,7 +2,23 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { selectRuntimeMode } from "./index";
 import { StubRuntimeClient } from "./stub";
 import { parseSseBlock } from "./http";
-import type { AssistInput, RuntimeEvent } from "./types";
+import { IngestError } from "./types";
+import type { AssistInput, IngestInput, RuntimeEvent } from "./types";
+
+const ingestInput: IngestInput = {
+  orgId: "o1",
+  userId: "u1",
+  botAgentId: "quikchat-assistant",
+  storageKey: "quikchat/o1/c1/uuid-x.pdf",
+  sourceFileId: "quikchat/o1/c1/uuid-x.pdf",
+  appId: "quikchat",
+  visibility: "PRIVATE",
+  filename: "x.pdf",
+};
+
+function jsonResponse(data: unknown, ok = true, status = 200): Response {
+  return { ok, status, json: async () => data } as unknown as Response;
+}
 
 const input: AssistInput = {
   orgId: "o1",
@@ -54,6 +70,13 @@ describe("StubRuntimeClient", () => {
     const events = await collect(new StubRuntimeClient({ errorMode: true }).assist(input));
     expect(events).toHaveLength(1);
     expect(events[0]!.type).toBe("error");
+  });
+
+  it("ingest returns a deterministic result echoing the sourceFileId", async () => {
+    const r = await new StubRuntimeClient().ingest(ingestInput);
+    expect(r.sourceFileId).toBe(ingestInput.sourceFileId);
+    expect(r.chunksStored).toBeGreaterThan(0);
+    expect(typeof r.contentHash).toBe("string");
   });
 });
 
@@ -170,5 +193,49 @@ describe("HttpRuntimeClient", () => {
     const { HttpRuntimeClient } = await import("./http");
     const events = await collect(new HttpRuntimeClient("https://r").assist(input));
     expect(events[0]).toMatchObject({ type: "error", code: "network" });
+  });
+
+  it("ingest POSTs top-level fields with the agent JWT and returns the result", async () => {
+    const fetchMock = vi.fn(async (_url: string, _opts: RequestInit) =>
+      jsonResponse({ sourceFileId: ingestInput.storageKey, chunksStored: 42, contentHash: "abc" }),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+    const { HttpRuntimeClient } = await import("./http");
+    const result = await new HttpRuntimeClient("https://r").ingest(ingestInput);
+    expect(result).toEqual({
+      sourceFileId: ingestInput.storageKey,
+      chunksStored: 42,
+      contentHash: "abc",
+    });
+    const [url, opts] = fetchMock.mock.calls[0]!;
+    expect(url).toBe("https://r/ai/ingest");
+    expect((opts.headers as Record<string, string>).authorization).toMatch(/^Bearer /);
+    const body = JSON.parse(opts.body as string);
+    expect(body).toMatchObject({
+      storageKey: ingestInput.storageKey,
+      sourceFileId: ingestInput.storageKey,
+      appId: "quikchat",
+      visibility: "PRIVATE",
+      filename: "x.pdf",
+    });
+    // orgId/userId ride the JWT, never the body.
+    expect(body.orgId).toBeUndefined();
+    expect(body.userId).toBeUndefined();
+  });
+
+  it("ingest maps 404 → IngestError(object_not_found) and 422 → extract_failed", async () => {
+    vi.stubGlobal("fetch", vi.fn(async () => jsonResponse({}, false, 404)));
+    const { HttpRuntimeClient } = await import("./http");
+    await expect(new HttpRuntimeClient("https://r").ingest(ingestInput)).rejects.toBeInstanceOf(
+      IngestError,
+    );
+    await expect(new HttpRuntimeClient("https://r").ingest(ingestInput)).rejects.toMatchObject({
+      code: "object_not_found",
+    });
+
+    vi.stubGlobal("fetch", vi.fn(async () => jsonResponse({}, false, 422)));
+    await expect(new HttpRuntimeClient("https://r").ingest(ingestInput)).rejects.toMatchObject({
+      code: "extract_failed",
+    });
   });
 });

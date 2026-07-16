@@ -5,7 +5,8 @@
  * Configurable error/slow modes for tests via env.
  */
 import { randomUUID } from "node:crypto";
-import type { AssistInput, RuntimeClient, RuntimeEvent } from "./types";
+import type { IngestResult } from "@/lib/shared";
+import type { AssistInput, IngestInput, RuntimeClient, RuntimeEvent } from "./types";
 
 export interface StubOptions {
   /** Emit an `error` event instead of a normal stream. */
@@ -38,6 +39,11 @@ export class StubRuntimeClient implements RuntimeClient {
 
     const finalText = chunks.join("");
     yield { type: "done", text: finalText, agentRunId: `stub-${randomUUID()}` };
+  }
+
+  /** Deterministic, hermetic ingest stub (no bucket/network). */
+  async ingest(input: IngestInput): Promise<IngestResult> {
+    return { sourceFileId: input.sourceFileId, chunksStored: 3, contentHash: "stub-content-hash" };
   }
 }
 

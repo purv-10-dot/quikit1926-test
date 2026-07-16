@@ -20,6 +20,7 @@ export default defineConfig({
       "app/api/calls/group/route.test.ts",
       "app/api/calls/route.test.ts",
       "app/api/channels/[id]/assist/route.test.ts",
+      "app/api/channels/[id]/ingest/route.test.ts",
       "app/api/channels/ai/route.test.ts",
       "app/api/channels/route.test.ts",
       "app/api/notifications/routes.test.ts",
