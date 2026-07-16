@@ -6,6 +6,7 @@ import { ChevronLeft } from "lucide-react";
 import { apiGet } from "@/lib/client/fetcher";
 import { StatusPill } from "@/components/ui/status-pill";
 import { LoadingState, ErrorState } from "@/components/ui/page-states";
+import { RunConsole, type ConsoleStatus, type ConsoleEntry } from "@/components/builder/run-console";
 
 interface StepLog {
   id: string;
@@ -33,6 +34,14 @@ interface RunDetail {
 function when(iso: string): string {
   const d = new Date(iso);
   return `${d.toLocaleDateString()} ${d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" })}`;
+}
+
+/** Map a persisted step status to the console's 4-state model. */
+function consoleStatus(status: string): ConsoleStatus {
+  if (status === "success") return "ok";
+  if (status === "failed") return "error";
+  if (status === "running") return "running";
+  return "idle";
 }
 
 export default function RunDetailPage({ params }: { params: { id: string } }) {
@@ -74,33 +83,20 @@ export default function RunDetailPage({ params }: { params: { id: string } }) {
             </p>
           ) : null}
 
-          <h2 className="mt-6 mb-3 text-sm font-semibold uppercase tracking-wide text-gray-500">
-            Step timeline
-          </h2>
-          <ol className="space-y-3">
-            {data.steps.map((s, i) => (
-              <li key={s.id} className="relative rounded-lg border border-[var(--color-border)] p-4">
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-2">
-                    <span className="flex h-6 w-6 items-center justify-center rounded-full bg-accent-100 text-xs font-semibold text-accent-700">
-                      {i + 1}
-                    </span>
-                    <span className="text-xs font-semibold uppercase tracking-wide text-gray-500">
-                      {s.kind}
-                    </span>
-                    <span className="font-medium">{s.label ?? s.kind}</span>
-                  </div>
-                  <StatusPill status={s.status} />
-                </div>
-                {s.error ? <p className="mt-2 text-sm text-red-600">{s.error}</p> : null}
-                {s.output && Object.keys(s.output).length > 0 ? (
-                  <pre className="mt-2 overflow-x-auto rounded bg-[var(--color-bg-secondary)] p-2 text-xs text-gray-600">
-                    {JSON.stringify(s.output, null, 2)}
-                  </pre>
-                ) : null}
-              </li>
-            ))}
-          </ol>
+          <div className="mt-6">
+            <RunConsole
+              title="Step timeline"
+              emptyHint="No steps were recorded for this run."
+              entries={data.steps.map<ConsoleEntry>((s) => ({
+                id: s.id,
+                kind: s.kind,
+                label: s.label ?? s.kind,
+                status: consoleStatus(s.status),
+                output: s.output && Object.keys(s.output).length > 0 ? s.output : undefined,
+                error: s.error ?? undefined,
+              }))}
+            />
+          </div>
         </div>
       ) : null}
     </div>

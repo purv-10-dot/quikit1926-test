@@ -107,12 +107,12 @@ const notifyOwner: ActionExecutor = async (ctx) => {
 };
 
 const REGISTRY: Record<string, ActionExecutor> = {
+  // Legacy ids (existing saved workflows) + spec ids (builder catalog) both map
+  // to the real executors so either authoring path actually fires.
   notify_owner: notifyOwner,
+  "notify.inapp.send": notifyOwner,
   create_priority: createPriority,
-  "notify.email.send": simulate,
-  "notify.slack.send": simulate,
-  "notify.teams.send": simulate,
-  "kpi.update": simulate,
+  "priority.create": createPriority,
 };
 
 /** Resolve an executor for an action id, falling back to the simulator. */

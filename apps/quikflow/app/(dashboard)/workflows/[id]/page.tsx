@@ -8,6 +8,8 @@ import { ChevronLeft, Play } from "lucide-react";
 import { apiGet, apiSend } from "@/lib/client/fetcher";
 import { StatusPill } from "@/components/ui/status-pill";
 import { LoadingState, ErrorState } from "@/components/ui/page-states";
+import { NodeCard } from "@/components/builder/node-card";
+import { Connector } from "@/components/builder/connector";
 
 interface WorkflowDetail {
   id: string;
@@ -84,19 +86,14 @@ export default function WorkflowDetailPage({ params }: { params: { id: string } 
             <p className="mt-3 rounded-lg bg-accent-50 px-3 py-2 text-sm text-accent-700">{runMsg}</p>
           ) : null}
 
-          <ol className="mt-6 space-y-2">
+          <div className="mx-auto mt-6 max-w-md">
             {(Array.isArray(data.graphNodes) ? data.graphNodes : []).map((n, i) => (
-              <li
-                key={n.id ?? i}
-                className="rounded-lg border border-[var(--color-border)] px-4 py-3 text-sm"
-              >
-                <span className="text-xs font-semibold uppercase tracking-wide text-gray-500">
-                  {n.kind}
-                </span>
-                <p className="font-medium">{n.label ?? n.kind}</p>
-              </li>
+              <div key={n.id ?? i}>
+                {i > 0 ? <Connector direction="vertical" /> : null}
+                <NodeCard kind={n.kind} title={n.label ?? n.kind} />
+              </div>
             ))}
-          </ol>
+          </div>
         </div>
       ) : null}
     </div>
