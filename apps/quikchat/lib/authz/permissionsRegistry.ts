@@ -131,7 +131,7 @@ export function isAction(s: string): s is Action {
 /**
  * True when `(resource, action)` is a VALID pair per the registry — i.e. the
  * leaf exists AND lists this action in its `actions` array. The Phase-3
- * matrix PUT endpoint will use this to reject garbage like
+ * matrix PUT endpoint uses this to reject garbage like
  * `(resource: "Channel.Public", action: "delete")`.
  */
 export function isValidPermissionPair(resource: string, action: string): boolean {
@@ -142,4 +142,51 @@ export function isValidPermissionPair(resource: string, action: string): boolean
     }
   }
   return false;
+}
+
+/* ─────────────── Feature-flag module → permission leaves (Phase 3) ─────────────── */
+
+/**
+ * Leaf `resource` → feature-flag moduleKey (see the central MODULE_REGISTRY
+ * `quikchat` block). Mapping is at the LEAF level, not module level, so a
+ * `knowledge_base`-off org keeps a working assistant minus ingest.
+ *
+ * Unmapped leaves are ALWAYS shown:
+ *   - `Channel*` → `messaging` is the always-on core (never disabled).
+ *   - `App.Modules` → vestigial (no consumer this phase).
+ */
+export const RESOURCE_MODULE_KEY: Readonly<Record<string, string>> = {
+  Call: "calls",
+  "Call.Group": "calls",
+  Assistant: "assistant",
+  "Assistant.Configure": "assistant",
+  "Assistant.IngestPrivate": "knowledge_base",
+  "Assistant.IngestOrg": "knowledge_base",
+};
+
+/**
+ * Filter the permission tree to only leaves whose module is enabled for the
+ * tenant. QuikChat's tree is flat (module → leaves, no submodules), so this is
+ * simpler than QuikScale's recursive version: keep every leaf that is either
+ * unmapped (always-on) or whose mapped module is enabled; drop a module that
+ * ends up with zero visible leaves.
+ *
+ * `isModuleEnabled` is passed in (from `@quikit/shared/moduleRegistry`) so the
+ * cascade rule lives in one place. Pure / side-effect-free — safe in render.
+ */
+export function filterTreeByEnabledModules(
+  tree: readonly PermissionModule[],
+  disabled: Set<string>,
+  isModuleEnabled: (moduleKey: string, disabled: Set<string>) => boolean,
+): PermissionModule[] {
+  return tree
+    .map((mod) => ({
+      ...mod,
+      leaves: mod.leaves.filter((leaf) => {
+        const key = RESOURCE_MODULE_KEY[leaf.resource];
+        if (!key) return true; // unmapped → always shown (Channel*, App.Modules)
+        return isModuleEnabled(key, disabled);
+      }),
+    }))
+    .filter((mod) => mod.leaves.length > 0);
 }

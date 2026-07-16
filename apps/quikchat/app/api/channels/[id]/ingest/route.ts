@@ -85,5 +85,5 @@ export const POST = withOrgAuth(
       throw e;
     }
   },
-  { rateLimit: RATE.ingest },
+  { rateLimit: RATE.ingest, moduleKey: "knowledge_base" },
 );

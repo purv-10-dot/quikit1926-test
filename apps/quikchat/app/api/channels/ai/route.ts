@@ -14,5 +14,5 @@ export const POST = withOrgAuth(
   async (_req, ctx) => {
     return Response.json(await channels.findOrCreateAiChat(ctx));
   },
-  { rateLimit: RATE.channelCreate },
+  { rateLimit: RATE.channelCreate, moduleKey: "assistant" },
 );

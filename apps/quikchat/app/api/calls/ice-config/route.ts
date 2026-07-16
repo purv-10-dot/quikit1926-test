@@ -8,4 +8,4 @@ export const GET = withOrgAuth(async () => {
   const provider = mode === "real" ? new RealIceConfigProvider() : new StubIceConfigProvider();
   const config = await provider.getIceConfig();
   return Response.json(config);
-});
+}, { moduleKey: "calls" });

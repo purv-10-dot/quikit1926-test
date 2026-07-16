@@ -12,5 +12,5 @@ export const PATCH = withOrgAuth(
     const body = (await readJson(req)) as unknown as UpdateCalendarInput;
     return Response.json(await calendarEvents.updateCalendar(ctx, params.id!, body));
   },
-  { rateLimit: RATE.calendarWrite },
+  { rateLimit: RATE.calendarWrite, moduleKey: "calendar" },
 );

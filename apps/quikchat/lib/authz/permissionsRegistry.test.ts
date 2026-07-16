@@ -1,9 +1,12 @@
 import { describe, it, expect } from "vitest";
+import { isModuleEnabled } from "@quikit/shared/moduleRegistry";
 import {
   ACTIONS,
   PERMISSION_TREE,
   RESOURCES,
+  RESOURCE_MODULE_KEY,
   allPermissionPairs,
+  filterTreeByEnabledModules,
   isAction,
   isResource,
   isValidPermissionPair,
@@ -81,5 +84,60 @@ describe("permissionsRegistry", () => {
       "Assistant",
       "App",
     ]);
+  });
+});
+
+describe("filterTreeByEnabledModules", () => {
+  const keysOf = (tree: ReturnType<typeof filterTreeByEnabledModules>) =>
+    tree.flatMap((m) => m.leaves.map((l) => l.resource));
+
+  it("shows everything when nothing is disabled", () => {
+    const tree = filterTreeByEnabledModules(PERMISSION_TREE, new Set(), isModuleEnabled);
+    expect(keysOf(tree)).toEqual(RESOURCES);
+  });
+
+  it("drops calls leaves (and the empty Call module) when 'calls' is disabled", () => {
+    const tree = filterTreeByEnabledModules(PERMISSION_TREE, new Set(["calls"]), isModuleEnabled);
+    const keys = keysOf(tree);
+    expect(keys).not.toContain("Call");
+    expect(keys).not.toContain("Call.Group");
+    expect(tree.find((m) => m.key === "Call")).toBeUndefined(); // module removed (0 leaves)
+  });
+
+  it("knowledge_base off hides only ingest leaves — assistant still works", () => {
+    const tree = filterTreeByEnabledModules(
+      PERMISSION_TREE,
+      new Set(["knowledge_base"]),
+      isModuleEnabled,
+    );
+    const assistant = tree.find((m) => m.key === "Assistant");
+    expect(assistant).toBeTruthy();
+    const keys = assistant!.leaves.map((l) => l.resource);
+    expect(keys).toContain("Assistant");
+    expect(keys).toContain("Assistant.Configure");
+    expect(keys).not.toContain("Assistant.IngestPrivate");
+    expect(keys).not.toContain("Assistant.IngestOrg");
+  });
+
+  it("Channel* + App.Modules are always shown (unmapped) even if messaging is disabled", () => {
+    const tree = filterTreeByEnabledModules(
+      PERMISSION_TREE,
+      new Set(["messaging"]),
+      isModuleEnabled,
+    );
+    const keys = keysOf(tree);
+    expect(keys).toContain("Channel");
+    expect(keys).toContain("Channel.Public");
+    expect(keys).toContain("Channel.Moderate");
+    expect(keys).toContain("App.Modules");
+  });
+
+  it("RESOURCE_MODULE_KEY maps only calls/assistant/kb leaves; Channel*/App.Modules unmapped", () => {
+    expect(RESOURCE_MODULE_KEY["Call"]).toBe("calls");
+    expect(RESOURCE_MODULE_KEY["Assistant.IngestOrg"]).toBe("knowledge_base");
+    expect(RESOURCE_MODULE_KEY["Assistant"]).toBe("assistant");
+    expect(RESOURCE_MODULE_KEY["Channel"]).toBeUndefined();
+    expect(RESOURCE_MODULE_KEY["Channel.Public"]).toBeUndefined();
+    expect(RESOURCE_MODULE_KEY["App.Modules"]).toBeUndefined();
   });
 });

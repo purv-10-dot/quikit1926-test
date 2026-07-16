@@ -17,5 +17,5 @@ export const GET = withOrgAuth(
     const to = url.searchParams.get("to") ?? "";
     return Response.json(await calendar.getFreeBusy(ctx, userIds, from, to));
   },
-  { rateLimit: RATE.freeBusy },
+  { rateLimit: RATE.freeBusy, moduleKey: "calendar" },
 );

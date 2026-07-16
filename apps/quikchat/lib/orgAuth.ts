@@ -12,6 +12,7 @@ import { HttpError, isHttpError } from "./errors";
 import { getRawSession } from "./session";
 import { assertMembership } from "./authz";
 import { ensureUserRole } from "./authz/seed";
+import { gateModuleApi } from "@quikit/auth/feature-gate";
 
 // Re-export so `import { assertMembership } from "@/lib/orgAuth"` keeps working
 // for ported routes that used QuikChat's original @quikit/auth surface.
@@ -89,7 +90,10 @@ interface RouteContext {
  * wrapper layers on request-id, timing, structured logging, and rate limiting.
  * `params` are the dynamic route segments from the App Router context.
  */
-export function withOrgAuth(handler: OrgRouteHandler, opts?: { rateLimit?: RateLimitConfig }) {
+export function withOrgAuth(
+  handler: OrgRouteHandler,
+  opts?: { rateLimit?: RateLimitConfig; moduleKey?: string },
+) {
   return async (req: Request, context?: RouteContext): Promise<Response> => {
     const reqId = requestId(req);
     const start = Date.now();
@@ -118,6 +122,13 @@ export function withOrgAuth(handler: OrgRouteHandler, opts?: { rateLimit?: RateL
       // indexed existence check; swallows its own errors — never blocks/fails a
       // request. Covers deep-links that skip the dashboard page.
       await ensureUserRole(ctx.userId, ctx.orgId);
+      // FF-1 module gate (RBAC Phase 3): if this route belongs to a toggleable
+      // module, 404 when the tenant has it disabled (or 403 if the whole app is
+      // blocked). `messaging` routes never set moduleKey (always-on core).
+      if (opts?.moduleKey) {
+        const blocked = await gateModuleApi("quikchat", opts.moduleKey, ctx.orgId);
+        if (blocked) return done(blocked, base);
+      }
       if (opts?.rateLimit) {
         const { bucket, limit, windowMs } = opts.rateLimit;
         const r = await rateLimit(`${bucket}:${ctx.orgId}:${ctx.userId}`, limit, windowMs);

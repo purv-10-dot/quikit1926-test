@@ -12,7 +12,7 @@ export const PATCH = withOrgAuth(
     const body = (await readJson(req)) as unknown as UpdateCalendarEventInput;
     return Response.json(await calendarEvents.updateEvent(ctx, params.id!, body));
   },
-  { rateLimit: RATE.calendarWrite },
+  { rateLimit: RATE.calendarWrite, moduleKey: "calendar" },
 );
 
 // DELETE /api/calendar/events/[id] — hard-delete a personal event the caller owns.
@@ -20,5 +20,5 @@ export const DELETE = withOrgAuth(
   async (_req, ctx, params) => {
     return Response.json(await calendarEvents.deleteEvent(ctx, params.id!));
   },
-  { rateLimit: RATE.calendarWrite },
+  { rateLimit: RATE.calendarWrite, moduleKey: "calendar" },
 );

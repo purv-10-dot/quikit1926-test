@@ -14,7 +14,7 @@ export const GET = withOrgAuth(
     const to = url.searchParams.get("to") ?? "";
     return Response.json(await calendarEvents.listEvents(ctx, from, to));
   },
-  { rateLimit: RATE.calendarRead },
+  { rateLimit: RATE.calendarRead, moduleKey: "calendar" },
 );
 
 // POST /api/calendar/events — create a personal event.
@@ -23,5 +23,5 @@ export const POST = withOrgAuth(
     const body = (await readJson(req)) as unknown as CreateCalendarEventInput;
     return Response.json(await calendarEvents.createEvent(ctx, body));
   },
-  { rateLimit: RATE.calendarWrite },
+  { rateLimit: RATE.calendarWrite, moduleKey: "calendar" },
 );

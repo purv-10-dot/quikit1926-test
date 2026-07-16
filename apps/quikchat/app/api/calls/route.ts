@@ -30,4 +30,4 @@ export const POST = withOrgAuth(async (req, ctx) => {
 
   const call = await calling.createCall(ctx, { channelId, meetingId, type, targetUserIds });
   return Response.json(call, { status: 201 });
-});
+}, { moduleKey: "calls" });

@@ -9,5 +9,5 @@ export const GET = withOrgAuth(
   async (_req, ctx) => {
     return Response.json(await calendarEvents.listCalendars(ctx));
   },
-  { rateLimit: RATE.calendarRead },
+  { rateLimit: RATE.calendarRead, moduleKey: "calendar" },
 );

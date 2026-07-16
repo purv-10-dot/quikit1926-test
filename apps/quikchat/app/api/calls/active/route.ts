@@ -50,4 +50,4 @@ export const GET = withOrgAuth(async (_req, ctx) => {
       startedAt: call.startedAt.toISOString(),
     },
   });
-});
+}, { moduleKey: "calls" });

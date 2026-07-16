@@ -108,4 +108,4 @@ export const POST = withOrgAuth(async (req, ctx) => {
         }
       : null,
   });
-});
+}, { moduleKey: "calls" });

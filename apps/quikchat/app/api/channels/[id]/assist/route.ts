@@ -155,5 +155,5 @@ export const POST = withOrgAuth(
       },
     });
   },
-  { rateLimit: RATE.assist },
+  { rateLimit: RATE.assist, moduleKey: "assistant" },
 );

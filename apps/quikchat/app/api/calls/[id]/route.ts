@@ -46,4 +46,4 @@ export const PATCH = withOrgAuth(async (req, ctx, params) => {
   }
 
   return Response.json(call);
-});
+}, { moduleKey: "calls" });

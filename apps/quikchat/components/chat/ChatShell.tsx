@@ -24,6 +24,8 @@ import {
 } from "@/components/notifications/NotificationProvider";
 import { ProfileProvider, useProfile } from "@/components/profile/ProfileProvider";
 import { DesktopBridge } from "@/components/desktop/DesktopBridge";
+import { useDisabledModules } from "@/lib/authz/useDisabledModules";
+import { isModuleEnabled } from "@quikit/shared/moduleRegistry";
 import { CalendarModule } from "./CalendarModule";
 import { CallsModule } from "./CallsModule";
 import { ChatWorkspace } from "./ChatWorkspace";
@@ -68,6 +70,18 @@ function ShellInner({
     "chat",
   );
 
+  // RBAC v2 module gate (Phase 3, COSMETIC — the server `gateModuleApi` gate is
+  // the enforcement). Hide the Calls / Calendar rail entries when their module
+  // is disabled for the tenant, and fall back to "chat" if the active view's
+  // module is turned off out from under it. Messaging is always-on.
+  const disabledModules = useDisabledModules();
+  const callsEnabled = isModuleEnabled("calls", disabledModules);
+  const calendarEnabled = isModuleEnabled("calendar", disabledModules);
+  const effectiveView =
+    (view === "calls" && !callsEnabled) || (view === "calendar" && !calendarEnabled)
+      ? "chat"
+      : view;
+
   // Apply the saved accent color theme on load (defaults to Mist Blue).
   useEffect(() => {
     let saved = "mist";
@@ -97,16 +111,20 @@ function ShellInner({
               <MessageSquare size={18} />
             </IconButton>
           </span>
-          <span className="qc-rail__navbtn" data-active={view === "calendar"}>
-            <IconButton label="Calendar" onClick={() => setView("calendar")}>
-              <Calendar size={18} />
-            </IconButton>
-          </span>
-          <span className="qc-rail__navbtn" data-active={view === "calls"}>
-            <IconButton label="Calls" onClick={() => setView("calls")}>
-              <Phone size={18} />
-            </IconButton>
-          </span>
+          {calendarEnabled && (
+            <span className="qc-rail__navbtn" data-active={view === "calendar"}>
+              <IconButton label="Calendar" onClick={() => setView("calendar")}>
+                <Calendar size={18} />
+              </IconButton>
+            </span>
+          )}
+          {callsEnabled && (
+            <span className="qc-rail__navbtn" data-active={view === "calls"}>
+              <IconButton label="Calls" onClick={() => setView("calls")}>
+                <Phone size={18} />
+              </IconButton>
+            </span>
+          )}
           <span className="qc-rail__navbtn qc-bell" data-active={view === "notifications"}>
             <IconButton label="Notifications" onClick={() => setView("notifications")}>
               <Bell size={18} />
@@ -165,16 +183,16 @@ function ShellInner({
           </a>
         </div>
       </aside>
-      {view === "calendar" ? (
+      {effectiveView === "calendar" ? (
         <CalendarModule currentUserId={currentUserId} />
-      ) : view === "calls" ? (
+      ) : effectiveView === "calls" ? (
         <CallsModule />
-      ) : view === "notifications" ? (
+      ) : effectiveView === "notifications" ? (
         <NotificationsModule
           currentUserId={currentUserId}
           onOpenSettings={() => setNotifSettingsOpen(true)}
         />
-      ) : view === "settings" ? (
+      ) : effectiveView === "settings" ? (
         <SettingsModule
           currentUserId={currentUserId}
           displayName={displayName}
