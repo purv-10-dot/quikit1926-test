@@ -35,11 +35,15 @@ function allPairs() {
   return out;
 }
 
-// BRD Phase 0: Members may only view their assigned assets (row-scoped in the
-// route layer) + their own notifications. See seedAppRoles.ts for the rationale.
+// BRD Phase 0: Members may view their assigned assets (row-scoped in the route
+// layer) + their own notifications, and raise / see their own asset requests
+// (view, NOT viewAll). Keep in sync with MEMBER_DEFAULT_GRANTS in
+// lib/api/seedAppRoles.ts. See seedAppRoles.ts for the rationale.
 const MEMBER_GRANTS = [
   { resource: "Asset", action: "view" },
   { resource: "Notification", action: "view" },
+  { resource: "AssetRequest", action: "view" },
+  { resource: "AssetRequest", action: "create" },
 ];
 
 async function main() {

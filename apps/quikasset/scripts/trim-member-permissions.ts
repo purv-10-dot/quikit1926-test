@@ -29,7 +29,12 @@ const db = new PrismaClient();
 const APPLY = process.argv.includes("--apply");
 
 // Must mirror MEMBER_DEFAULT_GRANTS in lib/api/seedAppRoles.ts.
-const ALLOWED = new Set<string>(["Asset:view", "Notification:view"]);
+const ALLOWED = new Set<string>([
+  "Asset:view",
+  "Notification:view",
+  "AssetRequest:view",
+  "AssetRequest:create",
+]);
 
 async function main() {
   const app = await db.app.findUnique({ where: { slug: "quikasset" }, select: { id: true } });

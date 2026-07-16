@@ -3,7 +3,7 @@ import { mockDb, resetMockDb } from "../helpers/mockDb";
 import { makeReq } from "../helpers/req";
 import { setSession } from "../setup";
 
-import { GET } from "@/app/api/asset-requests/route";
+import { GET, POST as CREATE } from "@/app/api/asset-requests/route";
 import { POST as DECIDE } from "@/app/api/asset-requests/[id]/decision/route";
 import { POST as FULFIL } from "@/app/api/asset-requests/[id]/fulfil/route";
 
@@ -81,6 +81,19 @@ describe("GET /api/asset-requests — queue scoping", () => {
     expect(call.where.requesterUserId).toBe("u1");
   });
 
+  it("?mine=1 force-scopes even a viewAll holder to their own requests", async () => {
+    setSession(ADMIN);
+    grantAll();
+    mockDb.astAssetRequest.findMany.mockResolvedValue([] as never);
+
+    const res = await GET(makeReq("/api/asset-requests?mine=1"), { params: {} });
+    expect(res.status).toBe(200);
+    const call = mockDb.astAssetRequest.findMany.mock.calls[0]?.[0] as {
+      where: { orgId: string; requesterUserId?: string };
+    };
+    expect(call.where.requesterUserId).toBe("admin"); // scoped despite viewAll
+  });
+
   it("resolves requester name + employee id via the identity bridge", async () => {
     setSession(ADMIN);
     grantAll();
@@ -101,6 +114,84 @@ describe("GET /api/asset-requests — queue scoping", () => {
     const res = await GET(makeReq("/api/asset-requests?status=Bogus"), { params: {} });
     expect(res.status).toBe(400);
     expect(mockDb.astAssetRequest.findMany).not.toHaveBeenCalled();
+  });
+});
+
+describe("POST /api/asset-requests — raise a request", () => {
+  beforeEach(() => resetMockDb());
+
+  const validBody = {
+    categoryId: "c1",
+    itemKind: "Physical",
+    requestType: "New",
+    quantity: 2,
+    justification: "Two new hires need laptops.",
+    priority: "High",
+    requiredBy: "2026-08-01",
+  };
+
+  it("401s when unauthenticated", async () => {
+    setSession(null);
+    const res = await CREATE(makeReq("/api/asset-requests", { method: "POST", body: validBody }), { params: {} });
+    expect(res.status).toBe(401);
+  });
+
+  it("403s a caller without AssetRequest:create", async () => {
+    setSession(MEMBER);
+    grant((a) => a === "view"); // view but not create
+    const res = await CREATE(makeReq("/api/asset-requests", { method: "POST", body: validBody }), { params: {} });
+    expect(res.status).toBe(403);
+    expect(mockDb.astAssetRequest.create).not.toHaveBeenCalled();
+  });
+
+  it("creates a Submitted request owned by the caller, resolving the category name", async () => {
+    setSession(MEMBER);
+    grantRequester();
+    mockDb.astCategory.findFirst.mockResolvedValue({ name: "Laptop", baseCategoryId: "b1" } as never);
+    mockDb.astAssetRequest.create.mockResolvedValue({ id: "r1", itemType: "Laptop", status: "Submitted" } as never);
+
+    const res = await CREATE(makeReq("/api/asset-requests", { method: "POST", body: validBody }), { params: {} });
+    expect(res.status).toBe(201);
+    const call = mockDb.astAssetRequest.create.mock.calls[0]?.[0] as {
+      data: {
+        orgId: string; requesterUserId: string; status: string; itemType: string;
+        baseCategoryId: string; categoryId: string; quantity: number; requiredBy: string | null;
+      };
+    };
+    expect(call.data).toMatchObject({
+      orgId: "org1",
+      requesterUserId: "u1",
+      status: "Submitted",
+      itemType: "Laptop",
+      baseCategoryId: "b1",
+      categoryId: "c1",
+      quantity: 2,
+      requiredBy: "2026-08-01",
+    });
+  });
+
+  it("400s an invalid body (quantity < 1) without touching the db", async () => {
+    setSession(MEMBER);
+    grantRequester();
+    const res = await CREATE(
+      makeReq("/api/asset-requests", { method: "POST", body: { ...validBody, quantity: 0 } }),
+      { params: {} },
+    );
+    expect(res.status).toBe(400);
+    expect(mockDb.astCategory.findFirst).not.toHaveBeenCalled();
+    expect(mockDb.astAssetRequest.create).not.toHaveBeenCalled();
+  });
+
+  it("404s + scopes the category lookup to the caller's org (tenant isolation)", async () => {
+    setSession(MEMBER);
+    grantRequester();
+    mockDb.astCategory.findFirst.mockResolvedValue(null as never); // category not in this org
+
+    const res = await CREATE(makeReq("/api/asset-requests", { method: "POST", body: validBody }), { params: {} });
+    expect(res.status).toBe(404);
+    expect(mockDb.astAssetRequest.create).not.toHaveBeenCalled();
+    const call = mockDb.astCategory.findFirst.mock.calls[0]?.[0] as { where: { id: string; orgId: string } };
+    expect(call.where).toMatchObject({ id: "c1", orgId: "org1" });
   });
 });
 

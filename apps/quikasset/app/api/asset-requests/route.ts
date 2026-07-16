@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { db } from "@/lib/db";
+import { audit } from "@/lib/audit";
 import { withOrgAuthForResource } from "@/lib/api/withOrgAuth";
 import { userCan } from "@/lib/api/permissions";
 
@@ -20,12 +21,30 @@ const statusFilter = z
   .optional();
 
 /**
+ * Body for raising a request (employee "My Requests" form). The chosen
+ * `categoryId` is a Category Master row; the route resolves its name into
+ * `itemType` and copies the parent `baseCategoryId`, mirroring the seed shape.
+ * A raised request always enters the approver queue directly (`Submitted`) —
+ * there is no employee-facing Draft step.
+ */
+const createSchema = z.object({
+  categoryId: z.string().min(1, "Pick an item type"),
+  itemKind: z.enum(["Physical", "Subscription"]).default("Physical"),
+  requestType: z.enum(["New", "Replacement", "Upgrade", "Additional"]),
+  quantity: z.number().int().min(1, "Quantity must be at least 1"),
+  justification: z.string().trim().min(1, "A justification is required"),
+  priority: z.enum(["Low", "Medium", "High", "Urgent"]).default("Medium"),
+  requiredBy: z.string().trim().min(1).nullable().optional(),
+});
+
+/**
  * Asset-request queue. Role-aware, mirroring the `/api/assets` pattern:
  *   - holders of `AssetRequest:viewAll` (approvers/admin) see every request;
  *   - everyone else sees only their own (`requesterUserId == me`).
  * The admin "Pending Approvals" screen is gated on `viewAll`, so it lands here
- * with the full queue; the member "My Requests" view (later) reuses the same
- * endpoint and gets the scoped list for free.
+ * with the full queue; the member "My Requests" view reuses the same endpoint
+ * and gets the scoped list for free. `?mine=1` force-scopes to the caller even
+ * for a `viewAll` holder, so an admin's "My Requests" shows only their own.
  */
 export const GET = auth.view(async ({ orgId, userId }, req) => {
   const { searchParams } = new URL(req.url);
@@ -34,7 +53,8 @@ export const GET = auth.view(async ({ orgId, userId }, req) => {
     return NextResponse.json({ success: false, error: "Invalid status filter" }, { status: 400 });
   }
 
-  const canViewAll = await userCan(userId, orgId, "AssetRequest", "viewAll");
+  const mineOnly = searchParams.get("mine") === "1";
+  const canViewAll = !mineOnly && (await userCan(userId, orgId, "AssetRequest", "viewAll"));
 
   const requests = await db.astAssetRequest.findMany({
     where: {
@@ -63,4 +83,63 @@ export const GET = auth.view(async ({ orgId, userId }, req) => {
   }));
 
   return NextResponse.json({ success: true, data });
+});
+
+/**
+ * Raise a new asset request (employee side). Gated on `AssetRequest:create`.
+ * The requester is always the caller (`requesterUserId = session user id`,
+ * matching the GET scoping column), and the request is created as `Submitted`
+ * so it lands in the approver queue immediately.
+ */
+export const POST = auth.create(async ({ orgId, userId, userEmail }, req) => {
+  const parsed = createSchema.safeParse(await req.json());
+  if (!parsed.success) {
+    return NextResponse.json(
+      { success: false, error: parsed.error.issues.map((i) => i.message).join(", ") },
+      { status: 400 },
+    );
+  }
+  const { categoryId, itemKind, requestType, quantity, justification, priority, requiredBy } =
+    parsed.data;
+
+  // The item type must be an existing Category Master row in this org. Resolve
+  // its name into `itemType` and carry the parent base category (same shape the
+  // seed writes), and guard tenant ownership in the same lookup.
+  const category = await db.astCategory.findFirst({
+    where: { id: categoryId, orgId },
+    select: { name: true, baseCategoryId: true },
+  });
+  if (!category) {
+    return NextResponse.json({ success: false, error: "Category not found" }, { status: 404 });
+  }
+
+  const created = await db.astAssetRequest.create({
+    data: {
+      orgId,
+      requesterUserId: userId,
+      itemKind,
+      itemType: category.name,
+      baseCategoryId: category.baseCategoryId,
+      categoryId,
+      requestType,
+      quantity,
+      justification,
+      priority,
+      requiredBy: requiredBy || null,
+      status: "Submitted",
+    },
+  });
+
+  await audit({
+    orgId,
+    module: "AssetRequests",
+    action: "Request Submitted",
+    entityId: created.id,
+    entityName: created.itemType,
+    details: `${requestType} · qty ${quantity} · ${priority}`,
+    actorId: userId,
+    actorEmail: userEmail,
+  });
+
+  return NextResponse.json({ success: true, data: created }, { status: 201 });
 });
