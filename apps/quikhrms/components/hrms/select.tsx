@@ -73,7 +73,13 @@ export function Select({
     const update = () => {
       if (!buttonRef.current) return;
       const r = buttonRef.current.getBoundingClientRect();
-      setMenuPos({ top: r.bottom + 4, left: r.left, width: r.width });
+      // Menu must be wide enough to show full option labels even when the
+      // trigger is narrow (e.g. "+ Requisition"). Widen to a minimum, clamp
+      // to the viewport, and nudge left so it never overflows the right edge.
+      const GUTTER = 8;
+      const width = Math.min(Math.max(r.width, 240), window.innerWidth - GUTTER * 2);
+      const left = Math.min(r.left, window.innerWidth - width - GUTTER);
+      setMenuPos({ top: r.bottom + 4, left: Math.max(GUTTER, left), width });
     };
     update();
     window.addEventListener("scroll", update, true);

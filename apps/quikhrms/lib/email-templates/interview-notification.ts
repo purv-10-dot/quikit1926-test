@@ -59,7 +59,6 @@ export function buildInterviewerNotificationEmail(data: InterviewerNotificationD
     detailBlock(detailRows.filter(notNull), { heading: "Interview Details", accent: "blue" }),
     detailBlock(contactRows.filter(notNull), { heading: "Candidate Contact", accent: "blue" }),
     data.meetingLink ? btnPrimary("Join Interview", data.meetingLink, "blue") : "",
-    data.resumeUrl ? btnSecondary("View Resume", data.resumeUrl, "blue") : "",
     data.feedbackUrl ? btnSecondary("Submit Feedback", data.feedbackUrl, "blue") : "",
   ].join("");
 

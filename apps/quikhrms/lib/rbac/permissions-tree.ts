@@ -253,7 +253,6 @@ export const NAV_TREE: NavGroup[] = [
       { key: "time.regularizations", label: "Regularization Approvals" },
       { key: "time.roster", label: "Duty Roster" },
       { key: "time.shifts", label: "Shifts" },
-      { key: "time.records", label: "Time Records" },
     ],
   },
   {
@@ -263,7 +262,7 @@ export const NAV_TREE: NavGroup[] = [
       { key: "leave.my", label: "My Leaves" },
       { key: "leave.team", label: "Team Leaves" },
       { key: "leave.calendar", label: "Leave & Holiday Calendar" },
-      { key: "leave.policies", label: "Policies" },
+      { key: "leave.policies", label: "Leave Types" },
       { key: "leave.policy-documents", label: "Policy Documents" },
     ],
   },

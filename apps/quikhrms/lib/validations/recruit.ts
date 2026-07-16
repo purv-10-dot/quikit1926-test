@@ -157,6 +157,8 @@ export const updateApplicationSchema = z.object({
   currentStage: z.string().optional(),
   status: z.enum(["AppActive", "AppHired", "AppRejected", "AppOnHold", "AppWithdrawn", "AppOffered", "AppDeclined"]).optional(),
   rejectionReason: z.string().optional(),
+  // Optional note recorded in stageHistory when moving/skipping stages.
+  moveReason: z.string().optional(),
 });
 
 // ─── Interview ──────────────────────────────────────────
@@ -182,6 +184,8 @@ export const updateInterviewSchema = z.object({
   location: z.string().optional(),
   meetingLink: z.string().optional(),
   candidateFeedback: z.string().optional(),
+  // Reason recorded (to the audit trail) when cancelling or marking no-show.
+  reason: z.string().max(1000).optional(),
 });
 
 // ─── Scorecard ──────────────────────────────────────────

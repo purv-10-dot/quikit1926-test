@@ -24,6 +24,9 @@ export const GET = withServiceAuth(async (req: NextRequest, { orgId }) => {
 
     const where = {
       orgId, deletedAt: null,
+      // Blacklisted / archived candidates drop off the active pipeline (reversible
+      // — un-archiving or lifting the blacklist brings their applications back).
+      candidate: { isBlacklisted: false, isArchived: false },
       ...(requisitionId && { requisitionId }),
       ...(statuses.length === 1
         ? { status: statuses[0] }
@@ -47,6 +50,7 @@ export const GET = withServiceAuth(async (req: NextRequest, { orgId }) => {
 
     const latestMap = new Map<string, { round: number; recommendation: string; submittedAt: Date }>();
     const scorecardCount = new Map<string, number>();
+    const ratingSum = new Map<string, number>();
     const latestInterviewMap = new Map<string, {
       id: string; round: number; type: string; status: string;
       scheduledAt: Date; duration: number;
@@ -71,7 +75,7 @@ export const GET = withServiceAuth(async (req: NextRequest, { orgId }) => {
         prisma.interview.findMany({
           where: { orgId, deletedAt: null, applicationId: { in: appIds }, overallRating: { not: null } },
           orderBy: { scorecardSubmittedAt: "desc" },
-          select: { applicationId: true, recommendation: true, scorecardSubmittedAt: true, round: true },
+          select: { applicationId: true, recommendation: true, scorecardSubmittedAt: true, round: true, overallRating: true },
         }),
         prisma.interview.findMany({
           where: { orgId, deletedAt: null, applicationId: { in: appIds } },
@@ -103,6 +107,7 @@ export const GET = withServiceAuth(async (req: NextRequest, { orgId }) => {
 
       for (const sc of scorecards) {
         scorecardCount.set(sc.applicationId, (scorecardCount.get(sc.applicationId) ?? 0) + 1);
+        if (sc.overallRating != null) ratingSum.set(sc.applicationId, (ratingSum.get(sc.applicationId) ?? 0) + sc.overallRating);
         if (!latestMap.has(sc.applicationId) && sc.scorecardSubmittedAt) {
           latestMap.set(sc.applicationId, { round: sc.round, recommendation: sc.recommendation ?? "", submittedAt: sc.scorecardSubmittedAt });
         }
@@ -142,6 +147,9 @@ export const GET = withServiceAuth(async (req: NextRequest, { orgId }) => {
     const enriched = apps.map((a) => ({
       ...a,
       _count: { ...a._count, scorecards: scorecardCount.get(a.id) ?? 0 },
+      avgRating: (scorecardCount.get(a.id) ?? 0) > 0
+        ? Math.round((ratingSum.get(a.id) ?? 0) / (scorecardCount.get(a.id) ?? 1) * 10) / 10
+        : null,
       latestScorecard: latestMap.get(a.id) ?? null,
       latestInterview: latestInterviewMap.get(a.id) ?? null,
       latestOffer: a.offerStatus != null

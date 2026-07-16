@@ -15395,6 +15395,7 @@ model CandidateDocumentRequest {
   token              String    @unique
   tokenExpiresAt     DateTime
   requestSentAt      DateTime  @default(now())
+  submissionDeadline DateTime? // Submit-by date shown to the candidate
   // Candidate hit "Submit for Review" — locks further uploads until HR clears it.
   // `completedAt` (above) reflects HR-side completion, this one reflects candidate-side.
   submittedAt        DateTime?

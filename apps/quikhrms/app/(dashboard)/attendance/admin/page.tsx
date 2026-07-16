@@ -19,6 +19,9 @@ import {
   Download,
   Search,
   Palmtree,
+  ArrowUpRight,
+  ArrowDownRight,
+  Home,
 } from "lucide-react";
 import { clsx } from "clsx";
 
@@ -69,6 +72,8 @@ interface AttendanceRecord {
   lateByMinutes: number;
   earlyByMinutes: number;
   regularizationStatus: "None" | "Pending" | "Approved" | "Rejected";
+  shiftName?: string | null;
+  shiftCode?: string | null;
   employee: EmployeeMini;
 }
 
@@ -216,7 +221,9 @@ export default function AdminAttendancePage() {
       if (r.isLateCheckIn) k.late++;
       if (r.effectiveHours) k.totalHours += Number(r.effectiveHours);
     }
-    return k;
+    const denom = records.length || 1;
+    const pct = (n: number) => `${((n / denom) * 100).toFixed(1)}%`;
+    return { ...k, total: records.length, presentPct: pct(k.present), latePct: pct(k.late), absentPct: pct(k.absent), leavePct: pct(k.leave), wfhPct: pct(k.wfh) };
   }, [records]);
 
   const clearFilters = () => {
@@ -343,12 +350,12 @@ export default function AdminAttendancePage() {
 
       {/* KPI strip */}
       <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3 mb-5">
-        <KpiCard icon={<CheckCircle2 size={14} />} label="Present" value={kpi.present} tone="emerald" />
-        <KpiCard icon={<AlertCircle size={14} />} label="Absent" value={kpi.absent} tone="red" />
-        <KpiCard icon={<Clock size={14} />} label="Late" value={kpi.late} tone="amber" />
-        <KpiCard icon={<CalendarDays size={14} />} label="On Leave" value={kpi.leave} tone="blue" />
-        <KpiCard icon={<Users size={14} />} label="WFH" value={kpi.wfh} tone="cyan" />
-        <KpiCard icon={<Clock size={14} />} label="Total Hrs" value={kpi.totalHours.toFixed(1)} tone="indigo" />
+        <KpiCard icon={<CheckCircle2 size={14} />} label="Present" value={kpi.present} tone="emerald" sub={kpi.presentPct} />
+        <KpiCard icon={<Clock size={14} />} label="Late" value={kpi.late} tone="amber" sub={kpi.latePct} />
+        <KpiCard icon={<AlertCircle size={14} />} label="Absent" value={kpi.absent} tone="red" sub={kpi.absentPct} />
+        <KpiCard icon={<CalendarDays size={14} />} label="On Leave" value={kpi.leave} tone="blue" sub={kpi.leavePct} />
+        <KpiCard icon={<Home size={14} />} label="WFH" value={kpi.wfh} tone="cyan" sub={kpi.wfhPct} />
+        <KpiCard icon={<Users size={14} />} label="Total Records" value={kpi.total} tone="indigo" />
       </div>
 
       {/* Filters */}
@@ -507,65 +514,71 @@ export default function AdminAttendancePage() {
                 <th className="text-left px-4 py-2.5 text-[11px] font-semibold uppercase tracking-[0.04em]">Date</th>
                 <th className="text-left px-4 py-2.5 text-[11px] font-semibold uppercase tracking-[0.04em]">Employee</th>
                 <th className="text-left px-4 py-2.5 text-[11px] font-semibold uppercase tracking-[0.04em]">Department</th>
+                <th className="text-left px-4 py-2.5 text-[11px] font-semibold uppercase tracking-[0.04em]">Shift</th>
                 <th className="text-left px-4 py-2.5 text-[11px] font-semibold uppercase tracking-[0.04em]">Status</th>
                 <th className="text-left px-4 py-2.5 text-[11px] font-semibold uppercase tracking-[0.04em]">Check In</th>
                 <th className="text-left px-4 py-2.5 text-[11px] font-semibold uppercase tracking-[0.04em]">Check Out</th>
-                <th className="text-left px-4 py-2.5 text-[11px] font-semibold uppercase tracking-[0.04em]">Eff. Hrs</th>
-                <th className="text-left px-4 py-2.5 text-[11px] font-semibold uppercase tracking-[0.04em]">Flags</th>
+                <th className="text-left px-4 py-2.5 text-[11px] font-semibold uppercase tracking-[0.04em]">Worked</th>
+                <th className="text-left px-4 py-2.5 text-[11px] font-semibold uppercase tracking-[0.04em]">Late</th>
+                <th className="text-left px-4 py-2.5 text-[11px] font-semibold uppercase tracking-[0.04em]">OT</th>
               </tr>
             </thead>
             <tbody>
-              {records.map((r, i) => (
-                <tr key={r.id} className="row-stagger border-t border-gray-100 hover:bg-gray-50" style={{ ["--i" as never]: Math.min(i, 10) }}>
+              {records.map((r, i) => {
+                const workedMin = r.effectiveHours != null ? Math.round(Number(r.effectiveHours) * 60) : null;
+                const worked = workedMin != null ? `${Math.floor(workedMin / 60)}h ${String(workedMin % 60).padStart(2, "0")}m` : "—";
+                const otMin = workedMin != null ? Math.max(0, workedMin - 480) : 0;
+                const isLate = r.status === "Present" && r.lateByMinutes > 0;
+                const init = `${r.employee.firstName?.[0] ?? ""}${r.employee.lastName?.[0] ?? ""}`.toUpperCase();
+                return (
+                <tr key={r.id} className={clsx("row-stagger border-t border-gray-100",
+                  r.effectiveHours != null && Number(r.effectiveHours) < 8 ? "bg-red-50 hover:bg-red-100" : "hover:bg-gray-50")}
+                  style={{ ["--i" as never]: Math.min(i, 10) }}>
                   <td className="px-4 py-2.5 text-xs text-gray-700 whitespace-nowrap">{fmtDate(r.date)}</td>
                   <td className="px-4 py-2.5">
-                    <div className="text-[13px] font-medium text-gray-900">
-                      {r.employee.firstName} {r.employee.lastName}
+                    <div className="flex items-center gap-2.5">
+                      <div className="w-8 h-8 rounded-full bg-indigo-50 text-indigo-600 flex items-center justify-center text-[11px] font-bold shrink-0">{init}</div>
+                      <div className="min-w-0">
+                        <div className="text-[13px] font-medium text-gray-900 truncate">{r.employee.firstName} {r.employee.lastName}</div>
+                        {r.employee.employeeCode && <div className="text-[11px] text-gray-500 font-mono">{r.employee.employeeCode}</div>}
+                      </div>
                     </div>
-                    {r.employee.employeeCode && (
-                      <div className="text-[11px] text-gray-500 font-mono">{r.employee.employeeCode}</div>
-                    )}
                   </td>
-                  <td className="px-4 py-2.5 text-gray-600 text-xs">{r.employee.department?.name ?? "—"}</td>
+                  <td className="px-4 py-2.5 text-xs">
+                    {r.employee.department?.name
+                      ? <span className="text-gray-700">{r.employee.department.name}</span>
+                      : <><span className="text-gray-400">—</span><div className="text-[11px] text-gray-400">Not Assigned</div></>}
+                  </td>
                   <td className="px-4 py-2.5">
-                    <span className={clsx("inline-flex px-2 py-0.5 rounded text-[11px] font-medium border", STATUS_COLORS[r.status])}>
-                      {r.status}
+                    {r.shiftName || r.shiftCode
+                      ? <span className="inline-flex px-2 py-0.5 rounded-md text-[11px] font-medium bg-blue-50 text-blue-700 ring-1 ring-blue-100" title={r.shiftName ?? undefined}>{r.shiftCode || r.shiftName}</span>
+                      : <span className="text-gray-300 text-xs">—</span>}
+                  </td>
+                  <td className="px-4 py-2.5">
+                    <span className={clsx("inline-flex items-center gap-1.5 text-[13px] font-medium",
+                      r.status === "Absent" ? "text-red-600" : isLate ? "text-amber-600" : r.status === "Present" ? "text-emerald-600" : "text-gray-600")}>
+                      <span className={clsx("w-1.5 h-1.5 rounded-full",
+                        r.status === "Absent" ? "bg-red-500" : isLate ? "bg-amber-500" : r.status === "Present" ? "bg-emerald-500" : "bg-gray-400")} />
+                      {isLate ? `Late (${r.lateByMinutes}m)` : r.status}
                     </span>
                   </td>
-                  <td className="px-4 py-2.5 font-mono text-xs text-gray-700">{fmtTime(r.checkIn)}</td>
-                  <td className="px-4 py-2.5 font-mono text-xs text-gray-700">{fmtTime(r.checkOut)}</td>
-                  <td className="px-4 py-2.5 text-xs text-gray-700">
-                    {r.effectiveHours ? `${Number(r.effectiveHours).toFixed(2)}h` : "—"}
+                  <td className="px-4 py-2.5 font-mono text-xs text-gray-700">
+                    {r.checkIn ? <span className="inline-flex items-center gap-1"><ArrowUpRight size={12} className="text-emerald-500" /> {fmtTime(r.checkIn)}</span> : "—"}
+                    {isLate && <div className="text-[10px] text-amber-600 font-sans">+{r.lateByMinutes}m</div>}
                   </td>
-                  <td className="px-4 py-2.5">
-                    <div className="flex flex-wrap gap-1">
-                      {r.isLateCheckIn && (
-                        <span className="text-[10px] px-1.5 py-0.5 bg-amber-50 text-amber-700 border border-amber-200 rounded">
-                          Late {r.lateByMinutes}m
-                        </span>
-                      )}
-                      {r.isEarlyCheckOut && (
-                        <span className="text-[10px] px-1.5 py-0.5 bg-orange-50 text-orange-700 border border-orange-200 rounded">
-                          Early {r.earlyByMinutes}m
-                        </span>
-                      )}
-                      {r.regularizationStatus !== "None" && (
-                        <span className="text-[10px] px-1.5 py-0.5 bg-green-50 text-green-700 border border-green-200 rounded">
-                          Reg: {r.regularizationStatus}
-                        </span>
-                      )}
-                      {r.punches && r.punches.length > 1 && (
-                        <span
-                          className="text-[10px] px-1.5 py-0.5 bg-gray-50 text-gray-600 border border-gray-200 rounded"
-                          title={r.punches.map((p) => `${fmtTime(p.in ?? null)}→${fmtTime(p.out ?? null)}`).join(" | ")}
-                        >
-                          {r.punches.length}× punch
-                        </span>
-                      )}
-                    </div>
+                  <td className="px-4 py-2.5 font-mono text-xs text-gray-700">
+                    {r.checkOut ? <span className="inline-flex items-center gap-1"><ArrowDownRight size={12} className="text-rose-500" /> {fmtTime(r.checkOut)}</span> : "—"}
+                  </td>
+                  <td className="px-4 py-2.5 text-xs text-gray-700 whitespace-nowrap">{worked}</td>
+                  <td className="px-4 py-2.5 text-xs whitespace-nowrap">
+                    {isLate ? <span className="text-amber-600 font-medium">{r.lateByMinutes}m</span> : <span className="text-gray-300">—</span>}
+                  </td>
+                  <td className="px-4 py-2.5 text-xs whitespace-nowrap">
+                    {otMin > 0 ? <span className="inline-flex px-1.5 py-0.5 rounded-md bg-violet-50 text-violet-700 ring-1 ring-violet-100 text-[11px] font-medium">{otMin}m</span> : <span className="text-gray-300">—</span>}
                   </td>
                 </tr>
-              ))}
+                );
+              })}
             </tbody>
           </table>
         )}
@@ -592,14 +605,15 @@ export default function AdminAttendancePage() {
           </div>
         )}
       </div>
+
     </div>
   );
 }
 
 function KpiCard({
-  icon, label, value, tone,
+  icon, label, value, tone, sub,
 }: {
-  icon: React.ReactNode; label: string; value: number | string; tone: string;
+  icon: React.ReactNode; label: string; value: number | string; tone: string; sub?: string;
 }) {
   const bg: Record<string, string> = {
     emerald: "bg-emerald-50 text-emerald-700",
@@ -615,6 +629,7 @@ function KpiCard({
         {icon} {label}
       </div>
       <div className="text-xl font-bold text-gray-900 mt-1.5">{value}</div>
+      {sub && <div className="text-[11px] font-semibold text-gray-400 mt-0.5">{sub}</div>}
     </div>
   );
 }

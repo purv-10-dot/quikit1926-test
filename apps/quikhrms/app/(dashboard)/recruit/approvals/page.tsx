@@ -122,6 +122,20 @@ export default function RequisitionApprovalsPage() {
   const [editForm, setEditForm] = useState<ReqFormShape>(emptyReqForm);
   const [loadingEdit, setLoadingEdit] = useState(false);
 
+  // Read-only "full details" view for approvers: shows the pending item's known
+  // fields immediately, then enriches with the full requisition (requirements,
+  // nice-to-have, benefits, target joining, etc.) once fetched.
+  const [viewReq, setViewReq] = useState<PendingItem["requisition"] | null>(null);
+  const [viewExtra, setViewExtra] = useState<FullReq | null>(null);
+  const openDetails = async (req: PendingItem["requisition"]) => {
+    setViewExtra(null);
+    setViewReq(req);
+    try {
+      const res = await api.get<FullReq>(`/api/v1/hrms/recruit/requisitions/${req.id}`);
+      if (res.data) setViewExtra(res.data);
+    } catch { /* base fields still shown */ }
+  };
+
   const openEdit = async (reqId: string) => {
     setLoadingEdit(true);
     try {
@@ -229,28 +243,7 @@ export default function RequisitionApprovalsPage() {
                         <span className={clsx("px-2 py-0.5 rounded-full text-[11px] font-medium ring-1", PRIORITY_CLS[r.priority])}>{r.priority}</span>
                         <span className="text-[10px] text-slate-400 font-mono">{r.requisitionNumber}</span>
                       </div>
-                      <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] text-slate-500">
-                        <span className="inline-flex items-center gap-1"><Building2 size={11} /> {r.department?.name ?? "—"}</span>
-                        <span className="inline-flex items-center gap-1"><Users size={11} /> {r.positions} position{r.positions === 1 ? "" : "s"}</span>
-                        <span>{r.employmentType}</span>
-                        <span>{r.workLocation}</span>
-                        <span>·</span>
-                        <span>Raised by <strong className="text-slate-700">{raiserName}</strong>{r.raiser?.jobTitle ? ` (${r.raiser.jobTitle})` : ""}</span>
-                      </div>
 
-                      <div className="mt-2 flex flex-wrap gap-2 text-[11px]">
-                        <span className="px-2 py-0.5 rounded ring-1 bg-green-50 text-green-700 ring-green-200">L{it.level} · {it.role === "DeptHead" ? "Dept Head" : "HR"}</span>
-                        {(r.experienceMin != null || r.experienceMax != null) && (
-                          <span className="px-2 py-0.5 rounded ring-1 bg-slate-50 text-slate-600 ring-slate-200">
-                            {r.experienceMin ?? 0}–{r.experienceMax ?? "?"} yrs exp
-                          </span>
-                        )}
-                        {(r.salaryMin || r.salaryMax) && (
-                          <span className="px-2 py-0.5 rounded ring-1 bg-slate-50 text-slate-600 ring-slate-200">
-                            {r.salaryMin ?? "?"} – {r.salaryMax ?? "?"} LPA
-                          </span>
-                        )}
-                      </div>
 
                       {it.role === "HR" && (
                         <div className={clsx("mt-3 rounded-md px-2.5 py-1.5 text-[11px] border flex items-center gap-1.5",
@@ -272,14 +265,10 @@ export default function RequisitionApprovalsPage() {
                         </div>
                       )}
 
-                      {r.jobDescription && (
-                        <details className="mt-2 text-xs">
-                          <summary className="cursor-pointer text-[#22c55e] font-semibold inline-flex items-center gap-1">
-                            <FileText size={11} /> View job description
-                          </summary>
-                          <p className="mt-2 text-slate-700 whitespace-pre-wrap bg-slate-50 rounded-md p-3 border border-slate-200 leading-relaxed">{r.jobDescription}</p>
-                        </details>
-                      )}
+                      <button type="button" onClick={() => openDetails(r)}
+                        className="mt-2 inline-flex items-center gap-1 text-[#22c55e] text-xs font-semibold hover:underline">
+                        <FileText size={11} /> View full details
+                      </button>
                     </div>
 
                     <div className="shrink-0 flex gap-2">
@@ -408,6 +397,107 @@ export default function RequisitionApprovalsPage() {
           onCancel={() => setEditId(null)}
           onSubmit={() => { if (editId) editMut.mutate({ id: editId, body: editForm }); }}
         />
+      </Modal>
+
+      {/* Full requisition details (read-only) for approvers */}
+      <Modal
+        open={!!viewReq}
+        onClose={() => { setViewReq(null); setViewExtra(null); }}
+        size="2xl"
+        title={viewReq?.title ?? "Requisition"}
+        subtitle={viewReq ? `${viewReq.requisitionNumber} · ${viewReq.type}` : ""}
+      >
+        {viewReq && (() => {
+          const rng = (a: string | number | null, b: string | number | null, suffix: string) =>
+            a != null || b != null ? `${a ?? "?"} – ${b ?? "?"} ${suffix}` : "—";
+          const fmtDate = (d?: string | null) => d ? new Date(d).toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" }) : "—";
+          const raiser = viewReq.raiser ? `${viewReq.raiser.firstName} ${viewReq.raiser.lastName}`.trim() : "—";
+          const emps = empData?.data ?? [];
+          const empName = (id?: string | null) => {
+            if (!id) return "—";
+            const e = emps.find((x) => x.id === id);
+            return e ? (e.displayName?.trim() || `${e.firstName} ${e.lastName}`.trim()) : "—";
+          };
+          const fields: [string, string][] = [
+            ["Department", viewReq.department?.name ?? "—"],
+            ["Raised By", raiser],
+            ["Employment Type", viewReq.employmentType ?? "—"],
+            ["Work Location", viewReq.workLocation ?? "—"],
+            ["Positions", String(viewReq.positions)],
+            ["Priority", viewReq.priority ?? "—"],
+            ["Experience", rng(viewReq.experienceMin ?? null, viewReq.experienceMax ?? null, "yrs")],
+            ["Salary", rng(viewReq.salaryMin, viewReq.salaryMax, "LPA")],
+            ...(viewExtra ? ([
+              ["Budget", viewExtra.budget != null ? String(viewExtra.budget) : "—"],
+              ["Target Joining", fmtDate(viewExtra.targetJoiningDate)],
+              ["Hiring Manager", empName(viewExtra.hiringManager?.id ?? viewExtra.hiringManagerId)],
+              ["Recruiter", empName(viewExtra.recruiter?.id ?? viewExtra.recruiterId)],
+              ["Reports To", empName(viewExtra.reportingToId)],
+              ["Job Grade", viewExtra.jobGrade ?? "—"],
+              ["Cost Center", viewExtra.costCenter ?? "—"],
+              ["Education", viewExtra.education ?? "—"],
+              ["ETA to Fill", viewExtra.etaToFillDays != null ? `${viewExtra.etaToFillDays} days` : "—"],
+              ["Referral Bonus", viewExtra.referralBonusAmount != null ? String(viewExtra.referralBonusAmount) : "—"],
+            ] as [string, string][]) : []),
+          ];
+          const lists: [string, string[] | null | undefined][] = viewExtra ? [
+            ["Requirements", viewExtra.requirements],
+            ["Nice to Have", viewExtra.niceToHave],
+            ["Responsibilities", viewExtra.responsibilities],
+            ["Benefits", viewExtra.benefits],
+          ] : [];
+          return (
+            <div className="space-y-5 text-sm">
+              <div className="grid grid-cols-2 md:grid-cols-3 gap-x-6 gap-y-4">
+                {fields.map(([label, val]) => (
+                  <div key={label}>
+                    <p className="text-[10px] font-semibold uppercase tracking-wide text-gray-400 mb-0.5">{label}</p>
+                    <p className="text-gray-800">{val}</p>
+                  </div>
+                ))}
+              </div>
+              {viewReq.justification && (
+                <div>
+                  <p className="text-[10px] font-semibold uppercase tracking-wide text-gray-400 mb-1">Business Justification</p>
+                  <p className="text-gray-700 whitespace-pre-line leading-relaxed">{viewReq.justification}</p>
+                </div>
+              )}
+              {viewExtra?.rolePurpose && (
+                <div>
+                  <p className="text-[10px] font-semibold uppercase tracking-wide text-gray-400 mb-1">Role Purpose</p>
+                  <p className="text-gray-700 whitespace-pre-line leading-relaxed">{viewExtra.rolePurpose}</p>
+                </div>
+              )}
+              {viewReq.jobDescription && (
+                <div>
+                  <p className="text-[10px] font-semibold uppercase tracking-wide text-gray-400 mb-1">Job Description</p>
+                  <p className="text-gray-700 whitespace-pre-line leading-relaxed">{viewReq.jobDescription}</p>
+                </div>
+              )}
+              {viewExtra?.skillWeights && viewExtra.skillWeights.length > 0 && (
+                <div>
+                  <p className="text-[10px] font-semibold uppercase tracking-wide text-gray-400 mb-1">Skills</p>
+                  <div className="flex flex-wrap gap-1.5">
+                    {viewExtra.skillWeights.map((s, idx) => (
+                      <span key={idx} className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-slate-100 text-slate-700 text-[11px]">
+                        {s.skill}<span className="text-slate-400">· {s.weight}</span>
+                      </span>
+                    ))}
+                  </div>
+                </div>
+              )}
+              {lists.map(([label, items]) => (items && items.length > 0) ? (
+                <div key={label}>
+                  <p className="text-[10px] font-semibold uppercase tracking-wide text-gray-400 mb-1">{label}</p>
+                  <ul className="list-disc pl-5 space-y-0.5 text-gray-700">
+                    {items.map((x, idx) => <li key={idx}>{x}</li>)}
+                  </ul>
+                </div>
+              ) : null)}
+              {!viewExtra && <p className="text-xs text-gray-400">Loading full details…</p>}
+            </div>
+          );
+        })()}
       </Modal>
     </div>
   );

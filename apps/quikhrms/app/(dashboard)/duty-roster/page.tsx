@@ -5,13 +5,14 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useApiClient } from "@/lib/hooks/use-api";
 import { useAccessibleDepartments } from "@/lib/hooks/use-ref-data";
 import { useDashboardConfig } from "@/lib/hooks/use-dashboard-config";
-import { EmployeeSelect } from "@/components/hrms/employees/employee-select";
 import { Modal } from "@/components/hrms/modal";
 import { Select } from "@/components/hrms/ui/select";
 import { FormActions, FormField, FormInput } from "@/components/hrms/form";
 import { EmptyState } from "@/components/hrms/empty-state";
 import { useToast } from "@/components/hrms/toast";
-import { ChevronLeft, ChevronRight, CalendarDays, Plus, Users, CalendarOff, X, CheckCircle2, Lock } from "lucide-react";
+import { useDialog } from "@/components/hrms/dialog";
+import { ChevronLeft, ChevronRight, CalendarDays, Plus, CalendarOff, CheckCircle2, Lock, Search, Check, Info, Users, Clock } from "lucide-react";
+import Link from "next/link";
 import { clsx } from "clsx";
 import { todayInput } from "@/lib/utils/date-input";
 
@@ -83,12 +84,11 @@ export default function DutyRosterPage() {
   const { data: deptsData } = useAccessibleDepartments();
   const departments = deptsData?.data ?? [];
 
-  const [mode, setMode] = useState<Mode>("Week");
+  const [mode, setMode] = useState<Mode>("Month");
   const [cursor, setCursor] = useState(todayLocalISO());
   const [departmentId, setDepartmentId] = useState("");
   const [editCell, setEditCell] = useState<{ emp: RosterRow; date: string; cell?: RosterCell } | null>(null);
   const [showCreate, setShowCreate] = useState(false);
-  const [showBulk, setShowBulk] = useState(false);
   const [showWeekOff, setShowWeekOff] = useState(false);
 
   const { from, to } = useMemo(() => rangeOf(mode, cursor), [mode, cursor]);
@@ -119,7 +119,7 @@ export default function DutyRosterPage() {
   const entriesMut = useMutation({
     mutationFn: (entries: Record<string, unknown>[]) =>
       api.post(`/api/v1/hrms/roster/${activeRoster!.id}/entries`, { entries }),
-    onSuccess: () => { refresh(); setEditCell(null); setShowBulk(false); },
+    onSuccess: () => { refresh(); setEditCell(null); },
   });
 
   const publishMut = useMutation({
@@ -133,8 +133,8 @@ export default function DutyRosterPage() {
     : `${fmt(from)} — ${fmt(to)}`;
 
   return (
-    <div className="w-full px-5 py-4">
-      <div className="flex items-center justify-between mb-5 flex-wrap gap-3">
+    <div className="w-full h-full flex flex-col px-5 py-4 overflow-hidden">
+      <div className="flex items-center justify-between mb-5 flex-wrap gap-3 shrink-0">
         <div>
           <h1 className="text-base font-semibold text-gray-900">Duty Roster</h1>
           <p className="text-xs text-gray-500 mt-1">Who works which shift on which day — with week-offs, leaves and holidays.</p>
@@ -153,8 +153,8 @@ export default function DutyRosterPage() {
           </div>
           {canManage && (
             <>
+              <Link href="/shifts" className="inline-flex items-center gap-1.5 px-2.5 py-1 border border-gray-200 rounded-lg text-xs font-medium text-gray-700 hover:bg-gray-50"><Clock size={13} /> Shifts</Link>
               <button onClick={() => setShowWeekOff(true)} className="inline-flex items-center gap-1.5 px-2.5 py-1 border border-gray-200 rounded-lg text-xs font-medium text-gray-700 hover:bg-gray-50"><CalendarOff size={13} /> Week-offs</button>
-              <button onClick={() => setShowBulk(true)} disabled={!editable} className="inline-flex items-center gap-1.5 px-2.5 py-1 border border-gray-200 rounded-lg text-xs font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-40"><Users size={13} /> Bulk assign</button>
               {draftRoster && (
                 <button
                   onClick={() => { if (confirm("Publish this roster? Employees will be notified and it will drive attendance.")) publishMut.mutate({ id: draftRoster.id, action: "publish" }); }}
@@ -178,7 +178,7 @@ export default function DutyRosterPage() {
       </div>
 
       {/* Period nav + status + legend */}
-      <div className="flex items-center justify-between flex-wrap gap-3 mb-3">
+      <div className="flex items-center justify-between flex-wrap gap-3 mb-3 shrink-0">
         <div className="flex items-center gap-2">
           <button onClick={() => setCursor(shiftCursor(cursor, mode, -1))} className="p-2 border border-gray-200 rounded-lg hover:bg-gray-50"><ChevronLeft size={12} /></button>
           <span className="inline-flex items-center gap-1.5 text-[13px] font-semibold text-gray-900 min-w-[180px] justify-center"><CalendarDays size={14} className="text-gray-500" /> {label}</span>
@@ -208,17 +208,17 @@ export default function DutyRosterPage() {
       </div>
 
       {canManage && !draftRoster && !publishedRoster && (
-        <div className="mb-3 text-xs text-gray-500 bg-gray-50 border border-gray-200 rounded-lg px-3 py-2">
+        <div className="mb-3 shrink-0 text-xs text-gray-500 bg-gray-50 border border-gray-200 rounded-lg px-3 py-2">
           No roster covers this period. Create a <button onClick={() => setShowCreate(true)} className="text-[#22c55e] font-semibold hover:underline">new draft</button> to start assigning shifts.
         </div>
       )}
       {canManage && publishedRoster && !draftRoster && (
-        <div className="mb-3 text-xs text-emerald-700 bg-emerald-50 border border-emerald-200 rounded-lg px-3 py-2">
+        <div className="mb-3 shrink-0 text-xs text-emerald-700 bg-emerald-50 border border-emerald-200 rounded-lg px-3 py-2">
           This roster is published and locked. Use <span className="font-semibold">Reopen</span> to make changes.
         </div>
       )}
 
-      <div className="bg-white rounded-lg shadow-sm border border-gray-200 overflow-x-auto">
+      <div className="bg-white rounded-lg shadow-sm border border-gray-200 overflow-auto scrollbar-x-only flex-1 min-h-0">
         {isLoading ? (
           <div className="py-12 text-center text-xs text-gray-500">Loading roster…</div>
         ) : employees.length === 0 ? (
@@ -227,9 +227,9 @@ export default function DutyRosterPage() {
           <table className="text-sm border-collapse">
             <thead>
               <tr className="bg-gray-50 text-gray-600 text-table-head">
-                <th className="sticky left-0 z-10 bg-gray-50 text-left px-3 py-2 font-medium border-b border-r border-gray-200 min-w-[180px]">Employee</th>
+                <th className="sticky left-0 top-0 z-30 bg-gray-50 text-left px-3 py-2 font-medium border-b border-r border-gray-200 min-w-[180px]">Employee</th>
                 {days.map((d) => (
-                  <th key={d.date} className={clsx("px-2 py-2 font-medium border-b border-gray-200 text-center min-w-[64px]", d.isHoliday && "bg-purple-50")}>
+                  <th key={d.date} className={clsx("sticky top-0 z-20 bg-gray-50 px-2 py-2 font-medium border-b border-gray-200 text-center min-w-[64px]", d.isHoliday && "bg-purple-50")}>
                     <div>{WEEKDAY[d.dow]}</div>
                     <div className="text-gray-900 font-semibold tabular-nums" title={d.holidayName ?? undefined}>{new Date(d.date + "T00:00:00").getDate()}</div>
                   </th>
@@ -303,16 +303,6 @@ export default function DutyRosterPage() {
         />
       )}
 
-      {showBulk && activeRoster && (
-        <BulkAssignModal
-          shifts={shifts}
-          days={days}
-          onClose={() => setShowBulk(false)}
-          onSubmit={(entries) => entriesMut.mutate(entries)}
-          pending={entriesMut.isPending}
-        />
-      )}
-
       {showWeekOff && <WeekOffModal onClose={() => setShowWeekOff(false)} onSaved={() => { setShowWeekOff(false); refresh(); }} />}
     </div>
   );
@@ -377,107 +367,223 @@ function CreateRosterModal({ defaultName, from, to, departmentId, departments, o
   );
 }
 
-function BulkAssignModal({ shifts, days, onClose, onSubmit, pending }: {
-  shifts: ShiftLegend[]; days: DayMeta[];
-  onClose: () => void; onSubmit: (entries: Record<string, unknown>[]) => void; pending: boolean;
-}) {
-  const [picked, setPicked] = useState<{ id: string; name: string }[]>([]);
-  const [shiftId, setShiftId] = useState("");
-  const [skipWeekoff, setSkipWeekoff] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-
-  const submit = () => {
-    setError(null);
-    if (picked.length === 0) { setError("Select at least one employee"); return; }
-    if (!shiftId) { setError("Select a shift"); return; }
-    const entries: Record<string, unknown>[] = [];
-    for (const p of picked) {
-      for (const d of days) {
-        if (skipWeekoff && (d.dow === 0 || d.dow === 6)) continue;
-        entries.push({ employeeId: p.id, date: d.date, shiftId, type: "Duty" });
-      }
-    }
-    if (entries.length === 0) { setError("Nothing to assign for this period"); return; }
-    onSubmit(entries);
-  };
-
-  return (
-    <Modal open onClose={onClose} title="Bulk assign shift" size="md">
-      <div className="p-4 space-y-4">
-        <FormField label="Employees">
-          <EmployeeSelect value="" onChange={() => {}} accessibleOnly clearable={false} placeholder="Add employees"
-            excludeIds={picked.map((p) => p.id)}
-            onPick={(emp) => setPicked((prev) => prev.some((x) => x.id === emp.id) ? prev : [...prev, { id: emp.id, name: `${emp.firstName} ${emp.lastName}`.trim() }])} />
-          {picked.length > 0 && (
-            <div className="flex flex-wrap gap-1.5 mt-2">
-              {picked.map((p) => (
-                <span key={p.id} className="inline-flex items-center gap-1 px-2 py-1 rounded-md bg-green-50 text-green-700 text-xs font-medium">
-                  {p.name}<button type="button" onClick={() => setPicked((arr) => arr.filter((x) => x.id !== p.id))} className="hover:text-green-900"><X size={12} /></button>
-                </span>
-              ))}
-            </div>
-          )}
-        </FormField>
-        <FormField label="Shift" required>
-          <Select value={shiftId} onChange={setShiftId} placeholder="Select shift" searchable
-            options={shifts.map((s) => ({ value: s.id, label: `${s.name} (${s.startTime}–${s.endTime})` }))} />
-        </FormField>
-        <label className="flex items-center gap-2 text-xs text-gray-700">
-          <input type="checkbox" checked={skipWeekoff} onChange={(e) => setSkipWeekoff(e.target.checked)} />
-          Skip Saturdays &amp; Sundays
-        </label>
-        <p className="text-[11px] text-gray-500">Applies the shift to every {skipWeekoff ? "weekday" : "day"} in the visible period for the selected employees.</p>
-        {error && <div className="text-xs text-red-600 bg-red-50 border border-red-100 rounded px-3 py-2">{error}</div>}
-        <FormActions>
-          <button type="button" onClick={onClose} className="btn btn-ghost">Cancel</button>
-          <button type="button" onClick={submit} disabled={pending} className="btn btn-primary">{pending ? "Assigning…" : "Assign"}</button>
-        </FormActions>
-      </div>
-    </Modal>
-  );
+interface WeekOffEmp {
+  id: string;
+  firstName: string;
+  lastName: string;
+  employeeCode: string | null;
+  jobTitle: string | null;
 }
 
 function WeekOffModal({ onClose, onSaved }: { onClose: () => void; onSaved: () => void }) {
   const api = useApiClient();
-  const [picked, setPicked] = useState<{ id: string; name: string }[]>([]);
+  const dialog = useDialog();
+  const [selected, setSelected] = useState<Set<string>>(new Set());
   const [days, setDays] = useState<string[]>(["Saturday", "Sunday"]);
+  const [search, setSearch] = useState("");
   const [error, setError] = useState<string | null>(null);
+
+  const { data: empResp, isLoading } = useQuery({
+    queryKey: ["roster", "weekoff-employees"],
+    queryFn: () => api.get<WeekOffEmp[]>("/api/v1/hrms/employees?limit=500&status=Active"),
+    staleTime: 60_000,
+  });
+  const allEmps = useMemo(() => empResp?.data ?? [], [empResp]);
+  const q = search.trim().toLowerCase();
+  const filtered = q
+    ? allEmps.filter((e) => `${e.firstName} ${e.lastName} ${e.employeeCode ?? ""} ${e.jobTitle ?? ""}`.toLowerCase().includes(q))
+    : allEmps;
+  const selectedEmps = allEmps.filter((e) => selected.has(e.id));
+
   const mut = useMutation({
-    mutationFn: () => api.put("/api/v1/hrms/roster/weekly-offs", { employeeIds: picked.map((p) => p.id), days }),
+    mutationFn: () => api.put("/api/v1/hrms/roster/weekly-offs", { employeeIds: [...selected], days }),
     onSuccess: onSaved,
   });
-  const toggle = (d: string) => setDays((arr) => arr.includes(d) ? arr.filter((x) => x !== d) : [...arr, d]);
+
+  const toggleDay = (d: string) => setDays((arr) => (arr.includes(d) ? arr.filter((x) => x !== d) : [...arr, d]));
+  const toggleEmp = (id: string) =>
+    setSelected((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  const save = async () => {
+    setError(null);
+    if (selected.size === 0) { setError("Select at least one employee"); return; }
+    const n = selected.size;
+    const who = `${n} employee${n === 1 ? "" : "s"}`;
+
+    // 0 days = clear the existing pattern.
+    if (days.length === 0) {
+      const ok = await dialog.confirm({
+        title: "Remove week-off pattern?",
+        description: `This will clear all recurring week-offs for ${who}. Their off-days will no longer be applied automatically.`,
+        variant: "danger",
+        confirmLabel: "Clear pattern",
+      });
+      if (!ok) return;
+    } else if (days.length === 7) {
+      // All 7 off = never scheduled to work.
+      const ok = await dialog.confirm({
+        title: "All 7 days off?",
+        description: `Every day is marked as a week-off, so ${who} will never be scheduled to work. Apply anyway?`,
+        variant: "warning",
+        confirmLabel: "Apply anyway",
+      });
+      if (!ok) return;
+    } else if (days.length >= 4) {
+      // Unusual number of off-days — soft confirm.
+      const ok = await dialog.confirm({
+        title: `${days.length} week-off days?`,
+        description: `That's an unusual number of weekly off-days for ${who} (${days.join(", ")}). Apply anyway?`,
+        variant: "warning",
+        confirmLabel: "Apply anyway",
+      });
+      if (!ok) return;
+    }
+    mut.mutate();
+  };
+
   return (
-    <Modal open onClose={onClose} title="Set week-off pattern" size="md">
-      <div className="p-4 space-y-4">
-        <FormField label="Employees">
-          <EmployeeSelect value="" onChange={() => {}} accessibleOnly clearable={false} placeholder="Add employees"
-            excludeIds={picked.map((p) => p.id)}
-            onPick={(emp) => setPicked((prev) => prev.some((x) => x.id === emp.id) ? prev : [...prev, { id: emp.id, name: `${emp.firstName} ${emp.lastName}`.trim() }])} />
-          {picked.length > 0 && (
-            <div className="flex flex-wrap gap-1.5 mt-2">
-              {picked.map((p) => (
-                <span key={p.id} className="inline-flex items-center gap-1 px-2 py-1 rounded-md bg-green-50 text-green-700 text-xs font-medium">
-                  {p.name}<button type="button" onClick={() => setPicked((arr) => arr.filter((x) => x.id !== p.id))} className="hover:text-green-900"><X size={12} /></button>
-                </span>
-              ))}
-            </div>
-          )}
-        </FormField>
-        <FormField label="Week-off days">
-          <div className="flex flex-wrap gap-1.5">
-            {WEEKDAY_FULL.map((d) => (
-              <button key={d} type="button" onClick={() => toggle(d)} className={clsx("px-2.5 py-1.5 rounded-md text-xs font-semibold border", days.includes(d) ? "bg-[#22c55e] text-white border-[#22c55e]" : "bg-white text-gray-600 border-gray-200 hover:bg-gray-50")}>
-                {d.slice(0, 3)}
-              </button>
-            ))}
+    <Modal
+      open
+      onClose={onClose}
+      title="Set week-off pattern"
+      subtitle="Assign recurring weekly off-days to the selected employees."
+      headerIcon={<CalendarOff size={18} className="text-[#22c55e]" />}
+      maxWidthClass="max-w-4xl"
+      bodyClassName="p-0"
+    >
+      <div className="grid grid-cols-1 md:grid-cols-2 md:divide-x divide-gray-100">
+        {/* LEFT — employee picker */}
+        <div className="p-5">
+          <h3 className="text-[13px] font-semibold text-gray-900 mb-3">Select employees</h3>
+          <div className="relative">
+            <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none" />
+            <input
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              placeholder="Search by name, code, email…"
+              className="w-full pl-9 pr-3 py-2 text-[13px] bg-white border border-gray-200 rounded-lg placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-[#bbf7d0] focus:border-[#22c55e]"
+            />
           </div>
-        </FormField>
-        {error && <div className="text-xs text-red-600 bg-red-50 border border-red-100 rounded px-3 py-2">{error}</div>}
-        <FormActions>
-          <button type="button" onClick={onClose} className="btn btn-ghost">Cancel</button>
-          <button type="button" onClick={() => { setError(null); if (picked.length === 0) { setError("Select at least one employee"); return; } mut.mutate(); }} disabled={mut.isPending} className="btn btn-primary">{mut.isPending ? "Saving…" : "Save pattern"}</button>
-        </FormActions>
+          <div className="mt-3 border border-gray-200 rounded-xl overflow-hidden">
+            <div className="max-h-[320px] overflow-y-auto divide-y divide-gray-100">
+              {isLoading ? (
+                <div className="p-8 text-center text-xs text-gray-400">Loading employees…</div>
+              ) : filtered.length === 0 ? (
+                <div className="p-8 text-center text-xs text-gray-400">No employees found.</div>
+              ) : (
+                filtered.map((e) => {
+                  const on = selected.has(e.id);
+                  const meta = [e.employeeCode, e.jobTitle].filter(Boolean).join(" · ");
+                  return (
+                    <button
+                      key={e.id}
+                      type="button"
+                      onClick={() => toggleEmp(e.id)}
+                      aria-pressed={on}
+                      className={clsx("w-full flex items-center gap-3 px-3 py-2.5 text-left transition", on ? "bg-emerald-50" : "hover:bg-gray-50")}
+                    >
+                      <span className={clsx("w-5 h-5 rounded-md border flex items-center justify-center shrink-0", on ? "bg-[#22c55e] border-[#22c55e] text-white" : "border-gray-300 bg-white")}>
+                        {on && <Check size={13} strokeWidth={3} />}
+                      </span>
+                      <span className="w-9 h-9 rounded-full bg-emerald-100 text-emerald-700 flex items-center justify-center text-[11px] font-bold shrink-0">
+                        {`${e.firstName?.[0] ?? ""}${e.lastName?.[0] ?? ""}`.toUpperCase() || "?"}
+                      </span>
+                      <span className="min-w-0">
+                        <span className="block text-[13px] font-medium text-gray-900 truncate">{`${e.firstName} ${e.lastName}`.trim()}</span>
+                        <span className="block text-[11px] text-gray-500 truncate">{meta || "—"}</span>
+                      </span>
+                    </button>
+                  );
+                })
+              )}
+            </div>
+            <div className="flex items-center justify-between px-3 py-2 bg-gray-50 border-t border-gray-100 text-xs">
+              <span className="font-semibold text-[#16a34a]">{selected.size} selected</span>
+              <button type="button" onClick={() => setSelected(new Set())} disabled={selected.size === 0} className="text-gray-500 hover:text-gray-800 disabled:opacity-40">
+                Clear
+              </button>
+            </div>
+          </div>
+        </div>
+
+        {/* RIGHT — days + preview */}
+        <div className="p-5 space-y-4">
+          <div>
+            <h3 className="text-[13px] font-semibold text-gray-900">Week-off days</h3>
+            <p className="text-xs text-gray-500 mt-0.5">Choose days that will be set as weekly off.</p>
+          </div>
+          <div className="grid grid-cols-4 gap-2">
+            {WEEKDAY_FULL.map((d) => {
+              const on = days.includes(d);
+              return (
+                <button
+                  key={d}
+                  type="button"
+                  aria-pressed={on}
+                  onClick={() => toggleDay(d)}
+                  className={clsx(
+                    "inline-flex items-center justify-center gap-1 py-2.5 rounded-lg border text-[13px] font-semibold transition",
+                    on ? "bg-emerald-50 text-[#16a34a] border-[#22c55e]" : "bg-white text-gray-600 border-gray-200 hover:border-[#86efac]",
+                  )}
+                >
+                  {d.slice(0, 3)}
+                  {on && <Check size={13} strokeWidth={3} />}
+                </button>
+              );
+            })}
+          </div>
+
+          {/* Info banner */}
+          <div className={clsx("flex items-start gap-2 rounded-lg ring-1 px-3 py-2.5 text-xs", days.length === 0 ? "bg-amber-50 ring-amber-100 text-amber-800" : "bg-emerald-50 ring-emerald-100 text-emerald-800")}>
+            <Info size={14} className={clsx("mt-0.5 shrink-0", days.length === 0 ? "text-amber-600" : "text-emerald-600")} />
+            <span>
+              {days.length === 0 ? (
+                <>No days selected — saving will <b>clear</b> the week-off pattern for the selected employees.</>
+              ) : (
+                <>Selected employees will have week-off on <b>{days.join(", ")}</b> every week.</>
+              )}
+            </span>
+          </div>
+
+          {/* Preview */}
+          <div className="rounded-xl border border-gray-200 p-3">
+            <p className="text-[13px] font-semibold text-gray-900">Preview</p>
+            <p className="text-[11px] text-gray-500 mt-0.5">The following employees will be assigned this pattern.</p>
+            <div className="flex items-start gap-2.5 mt-2.5">
+              <span className="w-9 h-9 rounded-full bg-emerald-50 text-emerald-600 flex items-center justify-center shrink-0">
+                <Users size={16} />
+              </span>
+              <div className="min-w-0">
+                <p className="text-[13px] font-medium text-gray-900">
+                  {selected.size} employee{selected.size === 1 ? "" : "s"} selected
+                </p>
+                <p className="text-[11px] text-gray-500 truncate">
+                  {selectedEmps.length === 0
+                    ? "None yet"
+                    : selectedEmps
+                        .slice(0, 3)
+                        .map((e) => `${`${e.firstName} ${e.lastName}`.trim()}${e.employeeCode ? ` (${e.employeeCode})` : ""}`)
+                        .join(", ")}
+                  {selectedEmps.length > 3 ? ` +${selectedEmps.length - 3} more` : ""}
+                </p>
+              </div>
+            </div>
+          </div>
+
+          {error && <div className="text-xs text-red-600 bg-red-50 border border-red-100 rounded px-3 py-2">{error}</div>}
+        </div>
+      </div>
+
+      {/* Footer */}
+      <div className="flex justify-end gap-2 border-t border-gray-100 px-5 py-3">
+        <button type="button" onClick={onClose} className="btn btn-ghost">Cancel</button>
+        <button type="button" onClick={save} disabled={mut.isPending} className="btn btn-primary">
+          {mut.isPending ? "Saving…" : days.length === 0 ? "Clear pattern" : "Save pattern"}
+        </button>
       </div>
     </Modal>
   );

@@ -4,9 +4,11 @@ import { withAuth } from "@/lib/with-auth";
 import { successResponse, notFound, validationError, internalError } from "@/lib/api-response";
 import { updateCandidateSchema } from "@/lib/validations/recruit";
 import { offerFromApplication } from "@/lib/recruit/offer-shape";
+import { liftExpiredBlacklists } from "@/lib/recruit/blacklist";
 
 export const GET = withAuth(async (_req: NextRequest, { orgId }, params) => {
   try {
+    await liftExpiredBlacklists(orgId);
     const c = await prisma.candidate.findFirst({
       where: { id: params.id, orgId, deletedAt: null },
       include: {

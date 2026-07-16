@@ -3,6 +3,9 @@ import { prisma } from "@/lib/prisma";
 import { withAuth } from "@/lib/with-auth";
 import { successResponse, notFound, validationError, internalError } from "@/lib/api-response";
 import { updateInterviewSchema, createScorecardSchema } from "@/lib/validations/recruit";
+import { generateMeetingLink } from "@/lib/meetings";
+import { sendInterviewInvites } from "@/lib/recruit/interview-notify";
+import { createAuditLog } from "@/lib/utils/audit";
 
 export const GET = withAuth(async (_req: NextRequest, { orgId }, params) => {
   try {
@@ -86,7 +89,9 @@ export const PATCH = withAuth(async (req: NextRequest, { orgId, userId }, params
     const i = await prisma.interview.update({
       where: { id: params.id },
       data: {
-        ...(data.status && { status: data.status }),
+        // Rescheduling (new date) always brings the interview back to Scheduled,
+        // even from a No-show / Cancelled state. An explicit status still wins.
+        ...(data.status ? { status: data.status } : data.scheduledAt ? { status: "IntScheduled" } : {}),
         ...(data.scheduledAt && { scheduledAt: new Date(data.scheduledAt) }),
         ...(data.location !== undefined && { location: data.location }),
         ...(data.meetingLink !== undefined && { meetingLink: data.meetingLink }),
@@ -94,6 +99,67 @@ export const PATCH = withAuth(async (req: NextRequest, { orgId, userId }, params
         updatedBy: userId,
       },
     });
+
+    // Record cancel / no-show (with reason) to the audit trail.
+    if (data.status === "IntCancelled" || data.status === "IntNoShow") {
+      await createAuditLog({
+        orgId, userId,
+        action: data.status === "IntCancelled" ? "Update" : "StatusChange",
+        entityType: "Interview",
+        entityId: existing.id,
+        request: req,
+        metadata: {
+          action: data.status === "IntCancelled" ? "InterviewCancelled" : "InterviewNoShow",
+          round: existing.round,
+          applicationId: existing.applicationId,
+          reason: data.reason ?? null,
+        },
+      });
+    }
+
+    // Reschedule (new date/time) → mirror the fresh-schedule flow: regenerate a
+    // virtual meeting link if none is set, keep it Scheduled, and re-notify the
+    // candidate + interviewer with the new time.
+    if (data.scheduledAt) {
+      let meetingLink = i.meetingLink;
+      if (!meetingLink && (i.type === "Video" || i.type === "Panel")) {
+        try {
+          const info = await prisma.jobApplication.findFirst({
+            where: { id: i.applicationId, orgId, deletedAt: null },
+            select: {
+              candidate: { select: { firstName: true, lastName: true } },
+              requisition: { select: { title: true } },
+            },
+          });
+          const interviewer = await prisma.employee.findFirst({
+            where: { id: i.interviewerId, orgId, deletedAt: null },
+            select: { firstName: true, lastName: true, workEmail: true },
+          });
+          const parts = ["Interview"];
+          if (info?.requisition?.title) parts.push(info.requisition.title);
+          if (info?.candidate) parts.push(`${info.candidate.firstName} ${info.candidate.lastName}`.trim());
+          const attendees = interviewer?.workEmail
+            ? [{ email: interviewer.workEmail, name: `${interviewer.firstName} ${interviewer.lastName}`.trim() }]
+            : [];
+          const meeting = await generateMeetingLink({
+            subject: `${parts.join(" – ")} (Round ${i.round})`,
+            start: new Date(i.scheduledAt),
+            end: new Date(new Date(i.scheduledAt).getTime() + i.duration * 60_000),
+            attendees,
+          });
+          if (meeting) {
+            meetingLink = meeting.joinUrl;
+            await prisma.interview.update({ where: { id: i.id }, data: { meetingLink } });
+          }
+        } catch (e) { console.error("reschedule meeting-link regen failed:", e); }
+      }
+      if (!data.status && i.status !== "IntScheduled") {
+        await prisma.interview.update({ where: { id: i.id }, data: { status: "IntScheduled" } });
+      }
+      const mailStatus = await sendInterviewInvites(orgId, i.id);
+      return successResponse({ ...i, meetingLink, mailStatus });
+    }
+
     return successResponse(i);
   } catch (error) { console.error("PATCH /recruit/interviews/:id error:", error); return internalError(); }
 });

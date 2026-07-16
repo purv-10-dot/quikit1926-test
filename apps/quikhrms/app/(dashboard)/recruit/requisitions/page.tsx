@@ -131,7 +131,7 @@ export default function RequisitionsPage() {
   const [showCreate, setShowCreate] = useState(false);
   const [editId, setEditId] = useState<string | null>(null);
   const [viewReq, setViewReq] = useState<ReqItem | null>(null);
-  const [statusFilter, setStatusFilter] = useState("");
+  const [statusFilter, setStatusFilter] = useState("ReqOpen"); // default to Open; chips switch to All/others
   const [priorityFilter, setPriorityFilter] = useState("");
   const [cancelTarget, setCancelTarget] = useState<ReqItem | null>(null);
   const emptyForm = emptyReqForm;
@@ -429,6 +429,7 @@ export default function RequisitionsPage() {
           ["Experience", rng(viewReq.experienceMin, viewReq.experienceMax, "yrs")],
           ["Salary", rng(viewReq.salaryMin, viewReq.salaryMax, "LPA")],
           ["Target Joining", fmtDate(viewReq.targetJoiningDate)],
+          ["Posted On", fmtDate(viewReq.raisedAt ?? viewReq.createdAt)],
         ];
         const lists: Array<[string, string[] | null | undefined]> = [
           ["Requirements", viewReq.requirements],

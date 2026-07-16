@@ -8,7 +8,7 @@ import { Select } from "@/components/hrms/select";
 import { NumberInput } from "@/components/hrms/number-input";
 import { Tooltip } from "@/components/hrms/tooltip";
 import { clsx } from "clsx";
-import { Plus, Video, Phone, Users, Calendar, Link2, MapPin, Star, Check, X, AlertCircle, ExternalLink, Pencil, CalendarPlus, Repeat, Bell, Search, Filter as FilterIcon, MoreHorizontal, ChevronLeft, ChevronRight, CheckCircle2, Clock, Hourglass, ArrowUpDown, Download, Copy } from "lucide-react";
+import { Video, Phone, Users, Calendar, Link2, MapPin, Star, Check, X, AlertCircle, ExternalLink, Pencil, CalendarPlus, Repeat, Bell, Search, Filter as FilterIcon, MoreHorizontal, ChevronLeft, ChevronRight, CheckCircle2, Clock, Hourglass, ArrowUpDown, Download, Copy } from "lucide-react";
 import { SkeletonTable } from "@/components/hrms/skeleton";
 import { useToast } from "@/components/hrms/toast";
 
@@ -118,6 +118,7 @@ export default function InterviewsPage() {
   const [rescheduleForm, setRescheduleForm] = useState({ scheduledAt: "", meetingLink: "", location: "" });
   const [feedback, setFeedback] = useState({ overallRating: 7, recommendation: "Hire" as string, strengths: "", concerns: "", overallComments: "" });
   const [confirmAction, setConfirmAction] = useState<{ interview: InterviewItem; kind: "cancel" | "noshow" } | null>(null);
+  const [actionReason, setActionReason] = useState("");
   // After scheduling, the API auto-queues invite emails to both candidate and
   // interviewer and (for Video/Panel) auto-generates a Teams meeting link. We
   // hold the created interview so we can surface that link back to the recruiter
@@ -208,11 +209,12 @@ export default function InterviewsPage() {
   });
 
   const updateMut = useMutation({
-    mutationFn: ({ id, status }: { id: string; status: string }) =>
-      api.patch(`/api/v1/hrms/recruit/interviews/${id}`, { status }),
+    mutationFn: ({ id, status, reason }: { id: string; status: string; reason?: string }) =>
+      api.patch(`/api/v1/hrms/recruit/interviews/${id}`, { status, ...(reason ? { reason } : {}) }),
     onSuccess: () => {
       invalidateRecruit();
       setConfirmAction(null);
+      setActionReason("");
     },
   });
 
@@ -361,8 +363,11 @@ export default function InterviewsPage() {
     const completed = filtered.filter((i) => i.status === "IntCompleted").length;
     const scheduled = filtered.filter((i) => i.status === "IntScheduled" && new Date(i.scheduledAt).getTime() >= Date.now()).length;
     const pending = filtered.filter((i) => i.status === "IntScheduled" && new Date(i.scheduledAt).getTime() < Date.now()).length;
+    // Everything else (Cancelled, No-show, Rescheduled, …) so the four buckets
+    // partition the total exactly and the percentages sum to 100%.
+    const cancelled = Math.max(0, total - completed - scheduled - pending);
     const pct = (n: number) => total > 0 ? `${((n / total) * 100).toFixed(1)}%` : "0.0%";
-    return { total, completed, scheduled, pending, completedPct: pct(completed), scheduledPct: pct(scheduled), pendingPct: pct(pending) };
+    return { total, completed, scheduled, pending, cancelled, completedPct: pct(completed), scheduledPct: pct(scheduled), pendingPct: pct(pending), cancelledPct: pct(cancelled) };
   }, [filtered]);
 
   // Group interviews by candidate (applicationId). The list is paginated by
@@ -378,8 +383,14 @@ export default function InterviewsPage() {
   };
 
   const grouped = useMemo(() => {
+    // A candidate appears if ANY of their rounds matches the active filters…
+    const matchedAppIds = new Set(filtered.map((i) => i.applicationId));
+    // …but each group holds ALL of that candidate's rounds, so the summary row
+    // always reflects their true latest round (a status filter narrows WHO shows,
+    // not what a candidate's current status looks like).
     const map = new Map<string, InterviewItem[]>();
-    for (const it of filtered) {
+    for (const it of interviews) {
+      if (!matchedAppIds.has(it.applicationId)) continue;
       if (!map.has(it.applicationId)) map.set(it.applicationId, []);
       map.get(it.applicationId)!.push(it);
     }
@@ -393,7 +404,7 @@ export default function InterviewsPage() {
       const db = Math.max(...b[1].map((x) => new Date(x.scheduledAt).getTime()));
       return sortDesc ? db - da : da - db;
     });
-  }, [filtered, sortDesc]);
+  }, [filtered, interviews, sortDesc]);
 
   const totalPages = Math.max(1, Math.ceil(grouped.length / pageSize));
   const safePage = Math.min(page, totalPages);
@@ -450,12 +461,9 @@ export default function InterviewsPage() {
           <h1 className="text-page-title text-gray-900 leading-tight">Interviews</h1>
           <p className="text-xs text-gray-500 mt-1">Track and manage all candidate interviews in one place.</p>
         </div>
-        <button onClick={() => { setForm(emptyForm); setShowCreate(true); }} className="btn btn-primary">
-          <Plus size={13} /> Schedule interview
-        </button>
       </div>
 
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-4">
+      <div className="grid grid-cols-2 md:grid-cols-5 gap-3 mb-4">
         <div className="bg-white rounded-xl border border-slate-200 p-4 shadow-sm flex items-center gap-3">
           <div className="w-11 h-11 rounded-lg bg-green-50 text-green-600 flex items-center justify-center"><Calendar size={20} /></div>
           <div>
@@ -488,9 +496,17 @@ export default function InterviewsPage() {
             <p className="text-[11px] text-amber-600 font-semibold">{stats.pendingPct}</p>
           </div>
         </div>
+        <div className="bg-white rounded-xl border border-slate-200 p-4 shadow-sm flex items-center gap-3">
+          <div className="w-11 h-11 rounded-lg bg-red-50 text-red-600 flex items-center justify-center"><X size={20} /></div>
+          <div>
+            <p className="text-[11px] text-slate-500 font-medium">Cancelled / No-show</p>
+            <p className="text-xl font-bold text-slate-900 leading-tight">{stats.cancelled}</p>
+            <p className="text-[11px] text-red-600 font-semibold">{stats.cancelledPct}</p>
+          </div>
+        </div>
       </div>
 
-      <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
+      <div className="bg-white rounded-xl border border-slate-200 shadow-sm">
         <div className="px-4 py-3 border-b border-slate-100 flex items-center justify-between gap-3 flex-wrap">
           <div className="relative flex-1 max-w-md">
             <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
@@ -824,7 +840,7 @@ export default function InterviewsPage() {
                     </div>
                     <div className="flex items-center gap-2 mt-0.5">
                       <span className="text-[11px] text-slate-400 inline-flex items-center gap-1"><Clock size={10} /> {i.duration}min</span>
-                      {i.meetingLink && (
+                      {i.meetingLink && i.status === "IntScheduled" && (dt.getTime() + i.duration * 60000) > Date.now() && (
                         <a href={i.meetingLink} target="_blank" rel="noopener noreferrer" className="text-[11px] text-[#22c55e] hover:underline inline-flex items-center gap-0.5">
                           <ExternalLink size={10} /> Join link
                         </a>
@@ -892,7 +908,7 @@ export default function InterviewsPage() {
                           </Tooltip>
                           <Tooltip content="Mark as no-show">
                             <button
-                              onClick={() => setConfirmAction({ interview: i, kind: "noshow" })}
+                              onClick={() => { setActionReason(""); setConfirmAction({ interview: i, kind: "noshow" }); }}
                               className="w-8 h-8 inline-flex items-center justify-center rounded-md bg-white text-slate-500 ring-1 ring-slate-200 hover:bg-amber-50 hover:text-amber-600 hover:ring-amber-200 transition"
                             >
                               <AlertCircle size={12} />
@@ -900,7 +916,7 @@ export default function InterviewsPage() {
                           </Tooltip>
                           <Tooltip content="Cancel interview">
                             <button
-                              onClick={() => setConfirmAction({ interview: i, kind: "cancel" })}
+                              onClick={() => { setActionReason(""); setConfirmAction({ interview: i, kind: "cancel" }); }}
                               className="w-8 h-8 inline-flex items-center justify-center rounded-md bg-white text-red-500 ring-1 ring-red-200 hover:bg-red-50 transition"
                             >
                               <X size={12} />
@@ -991,7 +1007,23 @@ export default function InterviewsPage() {
                           </button>
                         </Tooltip>
                       )}
-                      {i.status === "IntNoShow" && <span className="text-[11px] text-slate-400 italic px-2">No action</span>}
+                      {i.status === "IntNoShow" && (
+                        <Tooltip content="Reschedule interview">
+                          <button
+                            onClick={() => {
+                              setRescheduleForm({
+                                scheduledAt: new Date(i.scheduledAt).toISOString().slice(0, 16),
+                                meetingLink: i.meetingLink ?? "",
+                                location: i.location ?? "",
+                              });
+                              setRescheduleTarget(i);
+                            }}
+                            className="w-8 h-8 inline-flex items-center justify-center rounded-md bg-white text-[#22c55e] ring-1 ring-[#bbf7d0] hover:bg-green-50 transition"
+                          >
+                            <Repeat size={12} />
+                          </button>
+                        </Tooltip>
+                      )}
                     </div>
                   </td>
                 </tr>
@@ -1296,7 +1328,9 @@ export default function InterviewsPage() {
               id: rescheduleTarget.id,
               body: {
                 scheduledAt: new Date(rescheduleForm.scheduledAt).toISOString(),
-                meetingLink: rescheduleForm.meetingLink || undefined,
+                // Send the link as-is (incl. empty string) so clearing it is an
+                // explicit "clear" → server regenerates a fresh meeting link.
+                meetingLink: rescheduleForm.meetingLink,
                 location: rescheduleForm.location || undefined,
               },
             });
@@ -1342,7 +1376,7 @@ export default function InterviewsPage() {
               <button type="button" onClick={() => setRescheduleTarget(null)} disabled={rescheduleMut.isPending}
                 className="px-3 py-1.5 border border-[var(--border)] rounded-lg text-xs font-medium text-gray-700 hover:bg-gray-50">Cancel</button>
               <button type="submit" disabled={rescheduleMut.isPending || !rescheduleForm.scheduledAt}
-                className="px-3 py-1.5 bg-green-600 hover:bg-green-700 text-xs font-medium">
+                className="px-3 py-1.5 rounded-lg bg-[#22c55e] hover:bg-[#16a34a] text-white text-xs font-medium disabled:opacity-50 transition">
                 {rescheduleMut.isPending ? "Saving..." : "Save"}
               </button>
             </div>
@@ -1380,6 +1414,19 @@ export default function InterviewsPage() {
                     <div className="mt-3 text-xs bg-slate-50 border border-slate-100 rounded-md px-2.5 py-1.5 text-slate-600">
                       R{i.round} · {i.type} · {new Date(i.scheduledAt).toLocaleString("en-IN", { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" })}
                     </div>
+                    <div className="mt-3">
+                      <label className="block text-[11px] font-semibold text-slate-600 mb-1">
+                        Reason {isCancel ? "for cancellation" : "for no-show"} <span className="text-slate-400 font-normal">(optional)</span>
+                      </label>
+                      <textarea
+                        value={actionReason}
+                        onChange={(e) => setActionReason(e.target.value)}
+                        rows={3}
+                        maxLength={1000}
+                        placeholder={isCancel ? "e.g. Interviewer unavailable, candidate requested reschedule…" : "e.g. Candidate didn't join, no prior notice…"}
+                        className="w-full text-xs border border-slate-300 rounded-lg px-2.5 py-2 resize-y focus:outline-none focus:ring-1 focus:ring-green-500"
+                      />
+                    </div>
                   </div>
                 </div>
               </div>
@@ -1389,7 +1436,7 @@ export default function InterviewsPage() {
                   Not Now
                 </button>
                 <button type="button"
-                  onClick={() => updateMut.mutate({ id: i.id, status: isCancel ? "IntCancelled" : "IntNoShow" })}
+                  onClick={() => updateMut.mutate({ id: i.id, status: isCancel ? "IntCancelled" : "IntNoShow", reason: actionReason.trim() || undefined })}
                   disabled={updateMut.isPending}
                   className={clsx("inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium shadow-sm disabled:opacity-50 transition text-white",
                     isCancel

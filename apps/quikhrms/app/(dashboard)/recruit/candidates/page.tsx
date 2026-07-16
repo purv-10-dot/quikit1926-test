@@ -8,7 +8,7 @@ import { Modal } from "@/components/hrms/modal";
 import { useToast } from "@/components/hrms/toast";
 import { clsx } from "clsx";
 import { Plus, Search, User, Briefcase, MapPin, Link2, FileText, IndianRupee,
-  Globe, Users as UsersIcon, Landmark, GraduationCap, Rocket, Inbox, Check, ChevronDown, Sparkles,
+  Globe, Users as UsersIcon, Landmark, GraduationCap, Rocket, Inbox, Check, ChevronDown, ChevronRight, Sparkles,
   Ban, Archive, ArchiveRestore, Clock, ShieldX, MoreVertical, RotateCcw, X, Flame, AlertCircle, Building2,
   ArrowLeft, ArrowRight } from "lucide-react";
 import { FilterBar, FilterDivider, FilterSearch } from "@/components/hrms/ui/filter-bar";
@@ -88,6 +88,11 @@ export default function CandidatesPage() {
   const toast = useToast();
   const [search, setSearch] = useState("");
   const [viewScope, setViewScope] = useState<"active" | "blacklisted" | "archived">("active");
+  // Default the Active view to candidates currently in the pipeline; the user
+  // can switch to "All statuses" (or any other) from the filter.
+  const [statusFilter, setStatusFilter] = useState("InPipeline");
+  const [sourceFilter, setSourceFilter] = useState("");
+  const [expFilter, setExpFilter] = useState(""); // "min-max" (e.g. "2-5", "10-")
   const [page, setPage] = useState(1);
   const PAGE_SIZE = 20;
   const [showCreate, setShowCreate] = useState(false);
@@ -151,13 +156,24 @@ export default function CandidatesPage() {
   };
 
   const { data, isLoading } = useQuery({
-    queryKey: ["candidates", search, viewScope, page],
+    queryKey: ["candidates", search, viewScope, page, statusFilter, sourceFilter, expFilter],
     queryFn: () => {
       const qs = new URLSearchParams({ limit: String(PAGE_SIZE), offset: String((page - 1) * PAGE_SIZE) });
       if (search) qs.set("search", search);
       if (viewScope === "blacklisted") { qs.set("blacklisted", "1"); qs.set("includeArchived", "1"); }
       else if (viewScope === "archived") qs.set("archived", "1");
-      else { qs.set("excludeStatus", "Hired"); qs.set("excludeStage", "Hired"); } // active view hides hired candidates
+      // Active view defaults to candidates still in the pipeline — hides Hired
+      // and Rejected. An explicit status filter (e.g. "Rejected") overrides this.
+      else if (!statusFilter) { qs.set("excludeStatus", "Hired,CandRejected"); qs.set("excludeStage", "Hired"); }
+      // Candidate-level status (single value per candidate — unaffected by how
+      // many pipelines/applications they're in).
+      if (statusFilter && viewScope === "active") qs.set("status", statusFilter);
+      if (sourceFilter) qs.set("source", sourceFilter);
+      if (expFilter) {
+        const [mn, mx] = expFilter.split("-");
+        if (mn) qs.set("expMin", mn);
+        if (mx) qs.set("expMax", mx);
+      }
       return api.get<CandidateItem[]>(`/api/v1/hrms/recruit/candidates?${qs.toString()}`);
     },
   });
@@ -271,6 +287,66 @@ export default function CandidatesPage() {
               </button>
             ))}
           </div>
+          <FilterDivider />
+          <Select
+            value={statusFilter}
+            onChange={(v) => { setStatusFilter(v); setPage(1); }}
+            size="sm"
+            className="w-40"
+            placeholder="All statuses"
+            options={[
+              { value: "", label: "All statuses" },
+              { value: "New", label: "New" },
+              { value: "InPipeline", label: "In Pipeline" },
+              { value: "Hired", label: "Hired" },
+              { value: "CandOnHold", label: "On Hold" },
+              { value: "CandRejected", label: "Rejected" },
+              { value: "Withdrawn", label: "Withdrawn" },
+            ]}
+          />
+          <Select
+            value={sourceFilter}
+            onChange={(v) => { setSourceFilter(v); setPage(1); }}
+            size="sm"
+            className="w-40"
+            placeholder="All sources"
+            options={[
+              { value: "", label: "All sources" },
+              { value: "CandJobPortal", label: "Job Portal" },
+              { value: "CandLinkedIn", label: "LinkedIn" },
+              { value: "CandNaukri", label: "Naukri" },
+              { value: "CandIndeed", label: "Indeed" },
+              { value: "CandReferral", label: "Referral" },
+              { value: "CandAgency", label: "Agency" },
+              { value: "CandCareerPage", label: "Career Page" },
+              { value: "CandCampus", label: "Campus" },
+              { value: "CandDirect", label: "Direct" },
+              { value: "CandInbound", label: "Inbound" },
+            ]}
+          />
+          <Select
+            value={expFilter}
+            onChange={(v) => { setExpFilter(v); setPage(1); }}
+            size="sm"
+            className="w-40"
+            placeholder="Any experience"
+            options={[
+              { value: "", label: "Any experience" },
+              { value: "0-2", label: "0–2 yrs" },
+              { value: "2-5", label: "2–5 yrs" },
+              { value: "5-10", label: "5–10 yrs" },
+              { value: "10-", label: "10+ yrs" },
+            ]}
+          />
+          {(statusFilter || sourceFilter || expFilter) && (
+            <button
+              type="button"
+              onClick={() => { setStatusFilter(""); setSourceFilter(""); setExpFilter(""); setPage(1); }}
+              className="inline-flex items-center gap-1 text-xs font-medium text-gray-500 hover:text-gray-800 px-2 py-1 rounded-md hover:bg-gray-100"
+            >
+              <X size={12} /> Clear
+            </button>
+          )}
           <FilterDivider />
           <FilterSearch value={search} onChange={setSearch} placeholder="Search candidates..." />
         </FilterBar>
@@ -820,19 +896,9 @@ function tintFor(dept?: string | null): string {
 function RequisitionPicker({
   value, onChange, requisitions, error,
 }: { value: string; onChange: (id: string) => void; requisitions: Requisition[]; error?: boolean }) {
-  const [open, setOpen] = useState(false);
+  const [open, setOpen] = useState(true);
   const [search, setSearch] = useState("");
   const [priorityFilter, setPriorityFilter] = useState<string>("");
-  const rootRef = useRef<HTMLDivElement>(null);
-
-  useEffect(() => {
-    if (!open) { setSearch(""); return; }
-    const onClick = (e: MouseEvent) => {
-      if (rootRef.current && !rootRef.current.contains(e.target as Node)) setOpen(false);
-    };
-    document.addEventListener("mousedown", onClick);
-    return () => document.removeEventListener("mousedown", onClick);
-  }, [open]);
 
   const selected = requisitions.find((r) => r.id === value) ?? null;
 
@@ -846,17 +912,8 @@ function RequisitionPicker({
     return true;
   });
 
-  // Group by department
-  const groups = new Map<string, Requisition[]>();
-  for (const r of filtered) {
-    const key = r.department?.name ?? "Other";
-    const arr = groups.get(key) ?? [];
-    arr.push(r);
-    groups.set(key, arr);
-  }
-
   return (
-    <div ref={rootRef} className="relative">
+    <div className="space-y-3">
       <button
         type="button"
         onClick={() => setOpen((o) => !o)}
@@ -920,12 +977,11 @@ function RequisitionPicker({
       </button>
 
       {open && (
-        <div className="absolute bottom-full mb-1.5 z-50 w-full bg-white border border-gray-200 rounded-lg shadow-xl overflow-hidden">
-          <div className="p-2.5 border-b border-gray-100 bg-gray-50 space-y-2">
-            <div className="relative">
+        <div className="rounded-xl border border-gray-200 overflow-hidden">
+          <div className="flex items-center justify-between gap-3 p-3 border-b border-gray-100 bg-gray-50/60 flex-wrap">
+            <div className="relative flex-1 min-w-[220px] max-w-sm">
               <Search size={14} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-gray-400" />
               <input
-                autoFocus
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
                 placeholder="Search title, req #, department…"
@@ -957,76 +1013,75 @@ function RequisitionPicker({
             </div>
           </div>
 
-          <div className="max-h-80 overflow-y-auto">
+          <div className="max-h-[340px] overflow-y-auto">
             {filtered.length === 0 ? (
-              <div className="py-8 text-center">
+              <div className="py-10 text-center">
                 <Briefcase size={22} className="mx-auto text-gray-300 mb-1" />
                 <p className="text-xs text-gray-400">No matching open requisitions</p>
               </div>
             ) : (
-              Array.from(groups.entries()).map(([deptName, reqs]) => (
-                <div key={deptName}>
-                  <div className="px-3 py-1.5 bg-gray-50 border-b border-gray-100 flex items-center gap-1.5">
-                    <Building2 size={11} className="text-gray-400" />
-                    <p className="text-[10px] font-bold uppercase tracking-wide text-gray-500">{deptName}</p>
-                    <span className="text-[10px] text-gray-400">· {reqs.length}</span>
-                  </div>
-                  {reqs.map((r) => {
+              <table className="w-full text-sm">
+                <thead className="sticky top-0 z-10 bg-accent-50 text-left text-[11px] uppercase tracking-wide text-gray-500">
+                  <tr>
+                    <th className="px-4 py-2.5 font-semibold">Requisition</th>
+                    <th className="px-4 py-2.5 font-semibold">Department</th>
+                    <th className="px-4 py-2.5 font-semibold">Employment Type</th>
+                    <th className="px-4 py-2.5 font-semibold">Openings</th>
+                    <th className="px-2 py-2.5"></th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-gray-100">
+                  {filtered.map((r) => {
                     const isSelected = r.id === value;
                     const full = r.filledPositions >= r.positions;
                     const tint = tintFor(r.department?.name);
                     return (
-                      <button
+                      <tr
                         key={r.id}
-                        type="button"
                         onClick={() => { onChange(r.id); setOpen(false); }}
-                        className={clsx(
-                          "w-full flex items-stretch gap-2.5 px-3 py-2.5 text-left transition border-b border-gray-50 last:border-b-0",
-                          isSelected ? "bg-[#f0fdf4]" : "hover:bg-gray-50",
-                        )}
+                        className={clsx("cursor-pointer transition", isSelected ? "bg-[#f0fdf4]" : "hover:bg-gray-50")}
                       >
-                        <div className={clsx("w-1 rounded-full bg-gradient-to-b", tint)} />
-                        <div className="flex-1 min-w-0">
-                          <div className="flex items-start justify-between gap-2">
-                            <div className="flex items-center gap-1.5 min-w-0">
-                              <p className={clsx("text-[13px] font-semibold truncate", isSelected ? "text-[#166534]" : "text-gray-900")}>{r.title}</p>
-                              {priorityStyle[r.priority] && (
-                                <span className={clsx("inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded-full text-[10px] font-bold ring-1 whitespace-nowrap", priorityStyle[r.priority].bg)}>
-                                  {priorityStyle[r.priority].icon}
-                                  {priorityStyle[r.priority].text}
-                                </span>
-                              )}
-                            </div>
-                            {isSelected && <Check size={14} className="text-[#16a34a] shrink-0" />}
-                          </div>
-                          <div className="flex items-center gap-2 mt-0.5 text-[11px] text-gray-500 flex-wrap">
-                            <span className="font-mono text-gray-400">{r.requisitionNumber}</span>
-                            <span>·</span>
-                            <span className="inline-flex items-center gap-0.5">
-                              <UsersIcon size={10} />
-                              <span className={clsx(full && "text-red-600 font-semibold")}>{r.filledPositions}/{r.positions}</span>
-                            </span>
-                            <span>·</span>
-                            <span>{r.employmentType}</span>
-                            <span>·</span>
-                            <span>{r.workLocation}</span>
-                            {r._count?.applications !== undefined && (
-                              <>
+                        <td className="px-4 py-2.5">
+                          <div className="flex items-stretch gap-2.5">
+                            <div className={clsx("w-1 rounded-full bg-gradient-to-b shrink-0", tint)} />
+                            <div className="min-w-0">
+                              <div className="flex items-center gap-1.5">
+                                <span className={clsx("text-[13px] font-semibold truncate", isSelected ? "text-[#166534]" : "text-gray-900")}>{r.title}</span>
+                                {priorityStyle[r.priority] && (
+                                  <span className={clsx("inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded-full text-[10px] font-bold ring-1 whitespace-nowrap", priorityStyle[r.priority].bg)}>
+                                    {priorityStyle[r.priority].icon}
+                                    {priorityStyle[r.priority].text}
+                                  </span>
+                                )}
+                              </div>
+                              <div className="flex items-center gap-2 mt-0.5 text-[11px] text-gray-500">
+                                <span className="font-mono text-gray-400">{r.requisitionNumber}</span>
                                 <span>·</span>
-                                <span className="text-[#16a34a]">{r._count.applications} applied</span>
-                              </>
-                            )}
+                                <span>{r.workLocation}</span>
+                              </div>
+                            </div>
                           </div>
-                        </div>
-                      </button>
+                        </td>
+                        <td className="px-4 py-2.5 text-[13px] text-gray-600">{r.department?.name ?? "—"}</td>
+                        <td className="px-4 py-2.5">
+                          <span className="inline-flex items-center px-2 py-0.5 rounded-md bg-emerald-50 text-emerald-700 ring-1 ring-emerald-100 text-[11px] font-semibold">{r.employmentType}</span>
+                        </td>
+                        <td className="px-4 py-2.5 whitespace-nowrap">
+                          <span className={clsx("text-[13px] font-semibold", (r._count?.applications ?? 0) > 0 ? "text-amber-600" : "text-[#16a34a]")}>{r._count?.applications ?? 0} applied</span>
+                          <span className={clsx("block text-[11px]", full ? "text-red-600 font-semibold" : "text-gray-400")}>{r.filledPositions}/{r.positions} filled</span>
+                        </td>
+                        <td className="px-2 py-2.5 text-right">
+                          {isSelected ? <Check size={16} className="text-[#16a34a] inline" /> : <ChevronRight size={15} className="text-gray-300 inline" />}
+                        </td>
+                      </tr>
                     );
                   })}
-                </div>
-              ))
+                </tbody>
+              </table>
             )}
           </div>
 
-          <div className="px-3 py-1.5 border-t border-gray-100 bg-gray-50 flex items-center justify-between text-[10px] text-gray-500">
+          <div className="px-4 py-2 border-t border-gray-100 bg-gray-50 flex items-center justify-between text-[11px] text-gray-500">
             <span>{filtered.length} of {requisitions.length} open</span>
             <span className="text-gray-400">Only <strong className="text-gray-600">Open</strong> requisitions shown</span>
           </div>

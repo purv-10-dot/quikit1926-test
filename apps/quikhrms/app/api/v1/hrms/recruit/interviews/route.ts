@@ -10,6 +10,7 @@ import { buildInterviewInviteEmail } from "@/lib/email-templates/interview-invit
 import { buildInterviewerNotificationEmail } from "@/lib/email-templates/interview-notification";
 import { generateMeetingLink } from "@/lib/meetings";
 import { generateFeedbackToken } from "@/lib/services/feedback-token";
+import type { Prisma } from "@quikit/database";
 
 // Interview types that warrant an auto-generated video meeting link.
 // Easy to extend (e.g. add "GroupDiscussion") if those go virtual.
@@ -22,11 +23,31 @@ export const GET = withAuth(async (req: NextRequest, { orgId }) => {
     const applicationId = searchParams.get("applicationId");
     const interviewerId = searchParams.get("interviewerId");
 
-    const where = {
+    const where: Prisma.InterviewWhereInput = {
       orgId, deletedAt: null,
+      // Match the active pipeline exactly: only candidates still in play
+      // (active / offered / on-hold) and not hired, rejected, blacklisted or
+      // archived. Keeps the Interviews tab in sync with the pipeline board.
+      application: {
+        status: { in: ["AppActive", "AppOffered", "AppOnHold"] },
+        candidate: { isBlacklisted: false, isArchived: false },
+      },
       ...(applicationId && { applicationId }),
       ...(interviewerId && { interviewerId }),
     };
+
+    // Keep the schedule in sync with the pipeline: cancel any still-"Scheduled"
+    // interviews whose candidate is no longer active (rejected/withdrawn/declined).
+    const stale = await prisma.interview.findMany({
+      where: { orgId, deletedAt: null, status: "IntScheduled", application: { status: { in: ["AppRejected", "AppWithdrawn", "AppDeclined"] } } },
+      select: { id: true },
+    });
+    if (stale.length) {
+      await prisma.interview.updateMany({
+        where: { id: { in: stale.map((s) => s.id) } },
+        data: { status: "IntCancelled" },
+      });
+    }
 
     const [interviews, total] = await Promise.all([
       prisma.interview.findMany({
@@ -100,12 +121,12 @@ export const POST = withAuth(async (req: NextRequest, { orgId, userId }) => {
       const subjectParts = ["Interview"];
       if (appInfo?.requisition?.title) subjectParts.push(appInfo.requisition.title);
       if (appInfo?.candidate) subjectParts.push(`${appInfo.candidate.firstName} ${appInfo.candidate.lastName}`.trim());
-      // Invite both candidate and interviewer so the event lands on their
-      // calendars (interviewer gets a Teams calendar invite; candidate too).
+      // Only the (internal) interviewer is added as a Graph attendee so the event
+      // lands on their calendar. The candidate is intentionally NOT invited here —
+      // Microsoft would auto-send them its raw, unbranded calendar invite. The
+      // candidate instead gets our own clean interview-invite email (below), which
+      // already carries the join link.
       const attendees = [
-        appInfo?.candidate?.email
-          ? { email: appInfo.candidate.email, name: `${appInfo.candidate.firstName} ${appInfo.candidate.lastName}`.trim() }
-          : null,
         interviewer?.workEmail
           ? { email: interviewer.workEmail, name: `${interviewer.firstName} ${interviewer.lastName}`.trim() }
           : null,
@@ -137,6 +158,18 @@ export const POST = withAuth(async (req: NextRequest, { orgId, userId }) => {
         },
       },
     });
+
+    // Scheduling a fresh interview for this round supersedes any prior
+    // non-completed attempt (e.g. a No-show or an earlier Scheduled slot) so the
+    // new one becomes the round's current record everywhere (pipeline + list).
+    await prisma.interview.updateMany({
+      where: {
+        orgId, applicationId: data.applicationId, round: data.round,
+        id: { not: interview.id }, deletedAt: null,
+        status: { in: ["IntScheduled", "IntNoShow", "IntCancelled", "IntRescheduled"] },
+      },
+      data: { deletedAt: new Date(), updatedBy: userId },
+    }).catch(() => null);
 
     // Auto-send invite emails to BOTH candidate and interviewer (regardless of interview type).
     let mailStatus: { candidate: { sent: boolean; to: string | null; error?: string }; interviewer: { sent: boolean; to: string | null; error?: string } } = {

@@ -1,6 +1,6 @@
 ﻿"use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useApiClient } from "@/lib/hooks/use-api";
 import Link from "next/link";
@@ -10,7 +10,7 @@ import { Modal } from "@/components/hrms/modal";
 import { Select } from "@/components/hrms/select";
 import { NumberInput } from "@/components/hrms/ui/number-input";
 import { clsx } from "clsx";
-import { User, Users, ArrowRight, UserPlus, CheckCircle, Check, Star, MessageSquare, X, Search, Mail, Clock, ThumbsUp, ThumbsDown, LayoutGrid, List, Download, CalendarPlus, MapPin, Link2, FileCheck2, FileText, Briefcase, Calendar, FileCheck, Copy, ExternalLink, SkipForward, Phone, Video, Award, Send, BellRing, Info, AlertTriangle } from "lucide-react";
+import { User, Users, ArrowRight, UserPlus, CheckCircle, Check, Star, MessageSquare, X, Search, Mail, Clock, ThumbsUp, ThumbsDown, LayoutGrid, List, Download, CalendarPlus, MapPin, Link2, FileCheck2, FileText, Briefcase, Calendar, FileCheck, Copy, ExternalLink, SkipForward, Phone, Video, Award, Send, BellRing, Info, AlertTriangle, ChevronDown, Save } from "lucide-react";
 import { SkeletonTable } from "@/components/hrms/skeleton";
 import { SendOfferWizard } from "./_components/send-offer-wizard";
 
@@ -21,6 +21,7 @@ interface ApplicationItem {
   aiMatchScore: string | null;
   aiMatchAnalysis?: { verdict?: string; summary?: string } | null;
   appliedDate: string;
+  stageHistory?: Array<{ stage?: string; date?: string; movedBy?: string; reason?: string }> | null;
   candidate: {
     id: string; firstName: string; lastName: string; email: string; phone: string | null;
     location: string | null; source: string | null;
@@ -31,6 +32,7 @@ interface ApplicationItem {
   };
   requisition: { id: string; title: string; requisitionNumber: string; interviewPanel?: string[] | null };
   _count: { interviews: number; scorecards: number };
+  avgRating: number | null;
   latestScorecard: { round: number; recommendation: string; submittedAt: string } | null;
   latestInterview: {
     id: string; round: number; type: string; status: string;
@@ -122,6 +124,46 @@ function AtsBadge({ score, verdict, title }: { score: number | null; verdict?: s
   );
 }
 
+/**
+ * Scrollable column body that renders ALL cards and shows a non-interactive
+ * "more below" cue at the bottom while there's content below the fold. The cue
+ * hides once you scroll to the end.
+ */
+function StageScroll({ children, count }: { children: React.ReactNode; count: number }) {
+  const ref = useRef<HTMLDivElement>(null);
+  const [showCue, setShowCue] = useState(false);
+  useEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    const update = () => {
+      const overflowing = el.scrollHeight > el.clientHeight + 4;
+      const atBottom = el.scrollTop + el.clientHeight >= el.scrollHeight - 4;
+      setShowCue(overflowing && !atBottom);
+    };
+    update();
+    el.addEventListener("scroll", update, { passive: true });
+    window.addEventListener("resize", update);
+    return () => {
+      el.removeEventListener("scroll", update);
+      window.removeEventListener("resize", update);
+    };
+  }, [count]);
+  return (
+    <div className="relative flex-1 min-h-0">
+      <div ref={ref} className="h-full overflow-y-auto no-scrollbar space-y-2 px-3 pb-2">
+        {children}
+      </div>
+      {showCue && (
+        <div className="pointer-events-none absolute inset-x-0 bottom-0 flex items-end justify-center pt-8 pb-2 bg-gradient-to-t from-white via-white/85 to-transparent">
+          <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-white shadow-sm ring-1 ring-gray-200 text-[11px] font-medium text-gray-500">
+            More candidates below <ChevronDown size={12} />
+          </span>
+        </div>
+      )}
+    </div>
+  );
+}
+
 export default function PipelinePage() {
   const api = useApiClient();
   const qc = useQueryClient();
@@ -131,22 +173,22 @@ export default function PipelinePage() {
   const [nameQuery, setNameQuery] = useState("");
   const [stageFilters, setStageFilters] = useState<Set<string>>(new Set());
   const [requisitionFilters, setRequisitionFilters] = useState<Set<string>>(new Set());
-  const [minExpYears, setMinExpYears] = useState<number | null>(null);
-  const [onlyWithFeedback, setOnlyWithFeedback] = useState(false);
   const [dateFrom, setDateFrom] = useState("");
   const [dateTo, setDateTo] = useState("");
 
   const [feedbackApp, setFeedbackApp] = useState<ApplicationItem | null>(null);
   const [feedback, setFeedback] = useState({ overallRating: 7, recommendation: "" as string, strengths: "", concerns: "", overallComments: "" });
-  // #9 — skip the current interview step (advances the stage) with a recorded reason.
+  // "Move forward" reuses the `feedback` state above for rating/strengths/etc.
   const [skipApp, setSkipApp] = useState<ApplicationItem | null>(null);
   const [skipTarget, setSkipTarget] = useState<string>("");
-  const [skipReason, setSkipReason] = useState("");
 
   const [moveApp, setMoveApp] = useState<ApplicationItem | null>(null);
   const [moveTarget, setMoveTarget] = useState<string>("");
 
   const [historyApp, setHistoryApp] = useState<ApplicationItem | null>(null);
+  // Reject-with-reason: X opens this dialog instead of rejecting immediately.
+  const [rejectApp, setRejectApp] = useState<ApplicationItem | null>(null);
+  const [rejectReason, setRejectReason] = useState("");
   // Popup shown when HR tries to advance to Offer while requested docs are unapproved.
   const [docBlockApp, setDocBlockApp] = useState<ApplicationItem | null>(null);
 
@@ -212,6 +254,31 @@ export default function PipelinePage() {
     return idx >= 0 && idx < STAGES.length - 1 ? STAGES[idx + 1] : null;
   };
 
+  const BLANK_FEEDBACK = { overallRating: 7, recommendation: "", strengths: "", concerns: "", overallComments: "" };
+
+  // Fetch existing feedback for the CURRENT stage only, so reopening the form for
+  // a stage you already gave feedback on shows it. A brand-new stage stays blank
+  // (we never inherit a previous stage's feedback).
+  const prefillFeedback = async (app: ApplicationItem): Promise<typeof feedback> => {
+    try {
+      const res = await api.get<FeedbackHistoryResponse>(`/api/v1/hrms/recruit/applications/${app.id}/feedback-history`);
+      const hist = res.data?.history ?? [];
+      const stages = res.data?.stages ?? STAGES;
+      const curIdx = stages.indexOf(app.currentStage ?? "");
+      const entry = curIdx >= 0 ? hist.find((h) => h.round === curIdx + 1) : undefined;
+      if (entry) {
+        return {
+          overallRating: entry.overallRating ?? 7,
+          recommendation: entry.recommendation ?? "",
+          strengths: entry.strengths ?? "",
+          concerns: entry.concerns ?? "",
+          overallComments: entry.overallComments ?? "",
+        };
+      }
+    } catch { /* fall through to blank */ }
+    return { ...BLANK_FEEDBACK };
+  };
+
   const isPendingSchedule = (app: ApplicationItem) => {
     const cur = app.currentStage ?? STAGES[0];
     const idx = STAGES.indexOf(cur);
@@ -265,6 +332,7 @@ export default function PipelinePage() {
     } else {
       setFeedback({ overallRating: 7, recommendation: "", strengths: "", concerns: "", overallComments: "" });
       setFeedbackApp(app);
+      prefillFeedback(app).then(setFeedback);
     }
   };
 
@@ -304,29 +372,50 @@ export default function PipelinePage() {
   });
 
   const rejectMut = useMutation({
-    mutationFn: (id: string) => api.patch(`/api/v1/hrms/recruit/applications/${id}`, { status: "AppRejected" }),
-    onSuccess: () => invalidateAll(),
+    mutationFn: ({ id, reason }: { id: string; reason: string }) =>
+      api.patch(`/api/v1/hrms/recruit/applications/${id}`, { status: "AppRejected", rejectionReason: reason }),
+    onSuccess: () => { invalidateAll(); setRejectApp(null); setRejectReason(""); },
   });
 
-  // #9 — record a skip as stage-feedback with a "Hire" recommendation so the
-  // endpoint advances the candidate to the next stage; the reason is stored in
-  // the feedback comment (visible in stage history).
+  // "Move forward" uses the same rich feedback form as stage feedback, but with
+  // an explicit target-stage picker instead of a recommendation. It records the
+  // real feedback (rating/strengths/concerns/comments) for the current stage
+  // WITHOUT auto-moving (deferStageMove), then moves to the chosen stage — or,
+  // for an interview stage, opens the scheduler (booking does the move).
   const skipMut = useMutation({
-    mutationFn: async ({ id, steps, reason }: { id: string; steps: number; reason: string }) => {
-      // stage-feedback advances exactly one stage per call; repeat to reach the
-      // chosen forward stage. Each hop is recorded in the candidate's stage history.
-      for (let i = 0; i < steps; i++) {
-        await api.post(`/api/v1/hrms/recruit/applications/${id}/stage-feedback`, {
-          overallRating: 3,
-          recommendation: "Hire",
-          overallComments: `Skipped forward — ${reason}`,
+    mutationFn: async ({ id, target, body, openScheduler }: {
+      id: string; target: string; openScheduler: boolean;
+      body: { overallRating: number; strengths: string; concerns: string; overallComments: string };
+    }) => {
+      await api.post(`/api/v1/hrms/recruit/applications/${id}/stage-feedback`, {
+        overallRating: body.overallRating,
+        recommendation: "Hire",
+        deferStageMove: true,
+        strengths: body.strengths || undefined,
+        concerns: body.concerns || undefined,
+        overallComments: body.overallComments || undefined,
+      });
+      if (!openScheduler) {
+        await api.patch(`/api/v1/hrms/recruit/applications/${id}`, {
+          currentStage: target,
+          moveReason: body.overallComments || "Moved forward",
         });
       }
     },
-    onSuccess: () => {
+    onSuccess: (_res, vars) => {
       invalidateAll();
-      toast.success("Moved forward", "Candidate advanced to the selected stage.");
-      setSkipApp(null); setSkipReason(""); setSkipTarget("");
+      const app = skipApp;
+      setSkipApp(null); setSkipTarget("");
+      if (vars.openScheduler && app) {
+        const tomorrow = new Date(Date.now() + 24 * 60 * 60 * 1000);
+        tomorrow.setMinutes(0, 0, 0);
+        const iso = new Date(tomorrow.getTime() - tomorrow.getTimezoneOffset() * 60000).toISOString().slice(0, 16);
+        setSchedule({ interviewerId: "", scheduledAt: iso, duration: 60, type: "Video", location: "", meetingLink: "" });
+        setScheduleResult(null);
+        setScheduleApp({ app, stage: vars.target });
+      } else {
+        toast.success("Moved forward", "Candidate advanced to the selected stage.");
+      }
     },
   });
 
@@ -410,20 +499,13 @@ export default function PipelinePage() {
       });
     },
     onSuccess: () => {
-      const app = docRequestApp?.app;
+      // Requesting documents only sends the request — it must NOT move the
+      // candidate to another stage (that previously tripped the stage-feedback
+      // guard and produced a confusing "feedback required" error).
       invalidateAll();
       setDocRequestApp(null);
       setDocRequestSelected(new Set());
       setDocRequestDeadline("");
-      // Requesting documents auto-advances the candidate to the HR Interview
-      // stage (forward-only — never pulls an Offer/Hired candidate backward).
-      if (app) {
-        const hrIdx = STAGES.findIndex((s) => s.replace(/\s+/g, "").toLowerCase() === "hrinterview");
-        const curIdx = app.currentStage ? STAGES.indexOf(app.currentStage) : -1;
-        if (hrIdx >= 0 && curIdx >= 0 && curIdx < hrIdx) {
-          moveMut.mutate({ id: app.id, stage: STAGES[hrIdx] });
-        }
-      }
     },
   });
 
@@ -528,10 +610,9 @@ export default function PipelinePage() {
 
   const requisitionOpts = Array.from(
     new Map(allApps.map((a) => [a.requisition.id, a.requisition])).values(),
-  ).map((r) => ({ value: r.id, label: `${r.requisitionNumber} — ${r.title}` }));
+  ).map((r) => ({ value: r.id, label: `${r.title} · ${r.requisitionNumber}` }));
 
   const nq = nameQuery.trim().toLowerCase();
-  const minExpMonths = minExpYears != null ? minExpYears * 12 : null;
   const fromTs = dateFrom ? new Date(dateFrom + "T00:00:00").getTime() : null;
   const toTs = dateTo ? new Date(dateTo + "T23:59:59.999").getTime() : null;
 
@@ -542,8 +623,6 @@ export default function PipelinePage() {
     }
     if (stageFilters.size > 0 && !(a.currentStage && stageFilters.has(a.currentStage))) return false;
     if (requisitionFilters.size > 0 && !requisitionFilters.has(a.requisition.id)) return false;
-    if (minExpMonths !== null && (a.candidate.totalExperience ?? 0) < minExpMonths) return false;
-    if (onlyWithFeedback && a._count.scorecards === 0) return false;
     if (fromTs !== null || toTs !== null) {
       const ts = a.appliedDate ? new Date(a.appliedDate).getTime() : null;
       if (ts === null) return false;
@@ -560,10 +639,10 @@ export default function PipelinePage() {
     return acc;
   }, {});
 
-  const filtersActive = !!(nameQuery || stageFilters.size > 0 || requisitionFilters.size > 0 || minExpYears != null || onlyWithFeedback || dateFrom || dateTo);
+  const filtersActive = !!(nameQuery || stageFilters.size > 0 || requisitionFilters.size > 0 || dateFrom || dateTo);
   const clearFilters = () => {
     setNameQuery(""); setStageFilters(new Set()); setRequisitionFilters(new Set());
-    setMinExpYears(null); setOnlyWithFeedback(false); setDateFrom(""); setDateTo("");
+    setDateFrom(""); setDateTo("");
   };
 
   const exportCsv = () => {
@@ -696,7 +775,7 @@ export default function PipelinePage() {
 
       {/* Compact filter bar */}
       <div className="flex flex-wrap items-center gap-2 bg-white border border-gray-200 rounded-lg px-3 py-2 shadow-sm mb-4">
-        <div className="relative flex-1 min-w-[200px]">
+        <div className="relative flex-1 min-w-[220px]">
           <Search size={13} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-gray-400" />
           <input
             value={nameQuery}
@@ -710,6 +789,7 @@ export default function PipelinePage() {
             value=""
             onChange={(v) => { if (v) toggleRequisition(v); }}
             size="sm"
+            className="w-52 shrink-0"
             placeholder="+ Requisition"
             options={requisitionOpts.filter((r) => !requisitionFilters.has(r.value)).map((r) => ({ value: r.value, label: r.label }))}
           />
@@ -718,7 +798,6 @@ export default function PipelinePage() {
           type="date"
           value={dateFrom}
           onChange={(e) => setDateFrom(e.target.value)}
-          placeholder="From"
           title="Applied from"
           className="px-2 py-1.5 text-xs border border-gray-200 rounded-md focus:outline-none focus:ring-1 focus:ring-green-500"
         />
@@ -726,22 +805,9 @@ export default function PipelinePage() {
           type="date"
           value={dateTo}
           onChange={(e) => setDateTo(e.target.value)}
-          placeholder="To"
           title="Applied to"
           className="px-2 py-1.5 text-xs border border-gray-200 rounded-md focus:outline-none focus:ring-1 focus:ring-green-500"
         />
-        <NumberInput
-          min={0}
-          value={minExpYears}
-          onChange={(v) => setMinExpYears(v)}
-          placeholder="Min exp"
-          className="w-24 px-2 py-1.5 border border-gray-200 rounded-md text-xs focus:outline-none focus:ring-1 focus:ring-green-500"
-        />
-        <label className="inline-flex items-center gap-1.5 text-xs text-gray-700 px-2 cursor-pointer">
-          <input type="checkbox" checked={onlyWithFeedback} onChange={(e) => setOnlyWithFeedback(e.target.checked)}
-            className="rounded border-gray-300 text-[#22c55e] focus:ring-green-500" />
-          With feedback
-        </label>
         {filtersActive && (
           <button onClick={clearFilters} className="ml-auto px-2 py-1 text-[11px] text-[#22c55e] hover:underline font-medium">Clear all</button>
         )}
@@ -865,7 +931,7 @@ export default function PipelinePage() {
                         })()}
                         {!isHired && isInterviewStage(app.currentStage ?? "") && canMoveForward(app.currentStage) && (
                           <button
-                            onClick={() => { setSkipReason(""); setSkipTarget(getNextStage(app.currentStage) ?? ""); setSkipApp(app); }}
+                            onClick={() => { setFeedback({ ...BLANK_FEEDBACK }); setSkipTarget(getNextStage(app.currentStage) ?? ""); setSkipApp(app); prefillFeedback(app).then(setFeedback); }}
                             className="inline-flex items-center gap-1 px-2 py-1 bg-slate-50 text-slate-600 ring-1 ring-slate-200 hover:bg-slate-100 rounded text-[11px] font-semibold"
                             title="Move forward to a later stage">
                             <SkipForward size={10} /> Skip
@@ -896,7 +962,7 @@ export default function PipelinePage() {
                             <UserPlus size={10} /> Onboard
                           </button>
                         ) : (
-                          <button onClick={() => rejectMut.mutate(app.id)}
+                          <button onClick={() => { setRejectReason(""); setRejectApp(app); }}
                             className="inline-flex items-center gap-1 px-2 py-1 bg-red-50 text-red-700 ring-1 ring-red-200 hover:bg-red-100 rounded text-[11px] font-semibold" title="Reject">
                             <X size={10} /> Reject
                           </button>
@@ -914,22 +980,30 @@ export default function PipelinePage() {
           {visibleStages.map((stage) => {
             const si = STAGES.indexOf(stage);
             const mailOn = stageHasMail(stage);
+            const list = groupedByStage[stage] ?? [];
             return (
-            <div key={stage} className={clsx("flex-shrink-0 w-72 rounded-xl border border-gray-200 border-t-4 bg-white p-3 shadow-sm", stageBorder(stage))}>
-              <div className="flex items-center justify-between mb-3">
+            <div key={stage} className={clsx("flex-shrink-0 w-64 rounded-xl border border-gray-200 border-t-4 bg-white shadow-sm flex flex-col max-h-[calc(100vh-300px)]", stageBorder(stage))}>
+              <div className="flex items-center justify-between px-3 pt-3 pb-2 shrink-0">
                 <h3 className="font-semibold text-[13px] text-gray-900 flex items-center gap-1.5">
                   <span className={clsx("w-6 h-6 rounded-lg flex items-center justify-center shrink-0", stageMeta(stage).color)}>{stageMeta(stage).icon}</span>
                   {prettyStage(stage)}
                   {mailOn && <Mail size={11} className="text-emerald-600" aria-label="Auto-mail on" />}
                 </h3>
-                <span className="text-[11px] font-semibold bg-gray-100 px-1.5 py-0.5 rounded text-gray-600">{groupedByStage[stage]?.length ?? 0}</span>
+                <span className="text-[11px] font-semibold bg-gray-100 px-1.5 py-0.5 rounded text-gray-600">{list.length}</span>
               </div>
-              <div className="space-y-2">
-                {(groupedByStage[stage] ?? []).map((app) => (
-                  <div key={app.id} className="bg-white rounded-2xl border border-gray-200 p-3.5 shadow-sm space-y-3">
-                    <div className="flex items-start gap-2.5">
-                      <div className="w-9 h-9 rounded-full bg-emerald-100 flex items-center justify-center flex-shrink-0 text-[11px] font-bold text-emerald-700 uppercase">
-                        {`${app.candidate.firstName?.[0] ?? ""}${app.candidate.lastName?.[0] ?? ""}` || <User size={16} className="text-emerald-600" />}
+              {list.length === 0 ? (
+                <div className="flex-1 flex flex-col items-center justify-center text-center px-3 py-10 text-gray-400">
+                  <Users size={22} className="mb-2 opacity-50" />
+                  <p className="text-[12px] font-medium text-gray-500">No candidates</p>
+                  <p className="text-[11px]">in this stage</p>
+                </div>
+              ) : (
+              <StageScroll count={list.length}>
+                {list.map((app) => (
+                  <div key={app.id} className="bg-white rounded-xl border border-gray-200 p-2.5 shadow-sm space-y-2">
+                    <div className="flex items-start gap-2">
+                      <div className="w-8 h-8 rounded-full bg-emerald-100 flex items-center justify-center flex-shrink-0 text-[11px] font-bold text-emerald-700 uppercase">
+                        {`${app.candidate.firstName?.[0] ?? ""}${app.candidate.lastName?.[0] ?? ""}` || <User size={15} className="text-emerald-600" />}
                       </div>
                       <div className="flex-1 min-w-0">
                         <div className="flex items-center gap-1.5">
@@ -937,16 +1011,21 @@ export default function PipelinePage() {
                           <AtsBadge score={app.aiMatchScore ? Number(app.aiMatchScore) : null} verdict={app.aiMatchAnalysis?.verdict} title={app.aiMatchAnalysis?.summary ?? undefined} />
                         </div>
                         <p className="text-[11px] text-gray-500 truncate">{app.requisition.title}</p>
-                        {app.latestInterview?.interviewer && (
-                          <p className="text-[11px] text-gray-400 truncate uppercase tracking-wide">HR: {app.latestInterview.interviewer.firstName} {app.latestInterview.interviewer.lastName}</p>
-                        )}
                       </div>
                     </div>
 
                     <div className="flex flex-wrap items-center gap-2">
-                      {app._count.scorecards > 0 && (
-                        <span className="inline-flex items-center gap-1 text-[11px] font-semibold text-amber-600">
-                          <Star size={11} className="fill-current" /> {app._count.scorecards} feedback
+                      {app.status === "AppOnHold" && (
+                        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-semibold bg-amber-50 text-amber-700 ring-1 ring-amber-200">
+                          <Clock size={10} /> On Hold
+                        </span>
+                      )}
+                      {app.avgRating != null && (
+                        <span
+                          className="inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-semibold bg-amber-50 text-amber-700 ring-1 ring-amber-200"
+                          title={`Average of ${app._count.scorecards} feedback${app._count.scorecards === 1 ? "" : "s"}`}
+                        >
+                          {app.avgRating}/10
                         </span>
                       )}
                       {app.latestInterview && (
@@ -955,7 +1034,7 @@ export default function PipelinePage() {
                           {new Date(app.latestInterview.scheduledAt).toLocaleDateString("en-IN", { day: "2-digit", month: "short" })} · {app.latestInterview.status.replace("Int", "")}
                         </span>
                       )}
-                      {app.latestOffer && (
+                      {app.latestOffer && app.latestOffer.status !== "OfferDraft" && (
                         <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-semibold bg-emerald-50 text-emerald-700 ring-1 ring-emerald-200">
                           <FileCheck size={10} /> {app.latestOffer.status.replace("Offer", "")} · ₹{(Number(app.latestOffer.offeredCTC) / 100000).toFixed(1)}L
                         </span>
@@ -1029,17 +1108,17 @@ export default function PipelinePage() {
 
                     <div className="flex items-center gap-1.5">
                       <button onClick={() => setHistoryApp(app)} title="Feedback history"
-                        className="inline-flex items-center justify-center w-9 h-9 bg-white text-gray-500 ring-1 ring-gray-200 hover:bg-green-50 hover:text-green-600 hover:ring-green-200 rounded-lg transition">
+                        className="inline-flex items-center justify-center w-8 h-8 bg-white text-gray-500 ring-1 ring-gray-200 hover:bg-green-50 hover:text-green-600 hover:ring-green-200 rounded-lg transition">
                         <Clock size={12} />
                       </button>
                       {stage !== "Hired" && isInterviewStage(app.currentStage ?? "") && canMoveForward(app.currentStage) && (
-                        <button onClick={() => { setSkipReason(""); setSkipTarget(getNextStage(app.currentStage) ?? ""); setSkipApp(app); }} title="Skip / move forward"
-                          className="inline-flex items-center justify-center w-9 h-9 bg-white text-gray-500 ring-1 ring-gray-200 hover:bg-green-50 hover:text-[#16a34a] hover:ring-[#bbf7d0] rounded-lg transition">
+                        <button onClick={() => { setFeedback({ ...BLANK_FEEDBACK }); setSkipTarget(getNextStage(app.currentStage) ?? ""); setSkipApp(app); prefillFeedback(app).then(setFeedback); }} title="Skip / move forward"
+                          className="inline-flex items-center justify-center w-8 h-8 bg-white text-gray-500 ring-1 ring-gray-200 hover:bg-green-50 hover:text-[#16a34a] hover:ring-[#bbf7d0] rounded-lg transition">
                           <SkipForward size={12} />
                         </button>
                       )}
                       <button onClick={() => openDocRequest(app, /offer/i.test(stage) ? "PreOffer" : "PostOffer")} title="Request documents"
-                        className="inline-flex items-center justify-center w-9 h-9 bg-white text-gray-500 ring-1 ring-gray-200 hover:bg-violet-50 hover:text-violet-600 hover:ring-violet-200 rounded-lg transition">
+                        className="inline-flex items-center justify-center w-8 h-8 bg-white text-gray-500 ring-1 ring-gray-200 hover:bg-violet-50 hover:text-violet-600 hover:ring-violet-200 rounded-lg transition">
                         <FileText size={12} />
                       </button>
                       {/offer/i.test(stage) && app.docRequest?.status === "Pending" && (() => {
@@ -1049,22 +1128,16 @@ export default function PipelinePage() {
                         return (
                           <button onClick={() => toast.promise(remindMut.mutateAsync(app), { loading: "Sending reminder…", success: "Reminder sent", error: "Couldn't send reminder" })} disabled={remindMut.isPending || onCd}
                             title={onCd ? `Reminded recently — try again in ~${h}h` : `Send document reminder${app.docRequest.reminderCount ? ` (sent ${app.docRequest.reminderCount}×)` : ""}`}
-                            className="inline-flex items-center justify-center w-9 h-9 bg-white text-amber-600 ring-1 ring-amber-200 hover:bg-amber-50 hover:ring-amber-300 rounded-lg transition disabled:opacity-50 disabled:cursor-not-allowed">
+                            className="inline-flex items-center justify-center w-8 h-8 bg-white text-amber-600 ring-1 ring-amber-200 hover:bg-amber-50 hover:ring-amber-300 rounded-lg transition disabled:opacity-50 disabled:cursor-not-allowed">
                             <BellRing size={12} />
                           </button>
                         );
                       })()}
                       {/offer/i.test(stage) && app.docRequest?.status === "Completed" && (
                         <span title="Documents received"
-                          className="inline-flex items-center justify-center w-9 h-9 bg-emerald-50 text-emerald-600 ring-1 ring-emerald-200 rounded-lg">
+                          className="inline-flex items-center justify-center w-8 h-8 bg-emerald-50 text-emerald-600 ring-1 ring-emerald-200 rounded-lg">
                           <Check size={12} />
                         </span>
-                      )}
-                      {stage !== "Hired" && !/offer/i.test(stage) && (
-                        <button onClick={() => rejectMut.mutate(app.id)} title="Reject"
-                          className="inline-flex items-center justify-center w-9 h-9 bg-white text-red-500 ring-1 ring-red-200 hover:bg-red-50 hover:ring-red-300 rounded-lg transition ml-auto">
-                          <X size={12} />
-                        </button>
                       )}
                     </div>
 
@@ -1075,12 +1148,51 @@ export default function PipelinePage() {
                     )}
                   </div>
                 ))}
-              </div>
+              </StageScroll>
+              )}
             </div>
             );
           })}
         </div>
       )}
+
+      {/* Full stage list — overflow from a capped Kanban column */}
+      {/* Reject candidate — capture a reason before rejecting */}
+      <Modal open={!!rejectApp} onClose={() => !rejectMut.isPending && setRejectApp(null)} title="Reject candidate" size="md">
+        {rejectApp && (
+          <form
+            onSubmit={(e) => { e.preventDefault(); rejectMut.mutate({ id: rejectApp.id, reason: rejectReason.trim() }); }}
+            className="space-y-4"
+          >
+            <div className="flex items-start gap-3 rounded-xl bg-red-50 ring-1 ring-red-200 px-4 py-3">
+              <X size={18} className="text-red-500 mt-0.5 shrink-0" />
+              <p className="text-xs text-red-800">
+                You&apos;re about to reject <span className="font-semibold">{rejectApp.candidate.firstName} {rejectApp.candidate.lastName}</span>.
+                They&apos;ll be removed from the active pipeline.
+              </p>
+            </div>
+            <div>
+              <label className="block text-xs font-semibold text-gray-700 mb-1">Reason for rejection <span className="text-red-500">*</span></label>
+              <textarea
+                autoFocus
+                value={rejectReason}
+                onChange={(e) => setRejectReason(e.target.value)}
+                rows={4}
+                placeholder="e.g. Skills not a match for the role, salary expectations too high…"
+                className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg resize-y focus:outline-none focus:ring-1 focus:ring-red-400 focus:border-red-400"
+              />
+            </div>
+            <div className="flex items-center justify-end gap-2 pt-1">
+              <button type="button" onClick={() => setRejectApp(null)} disabled={rejectMut.isPending}
+                className="px-3 py-1.5 rounded-lg border border-gray-300 text-xs font-medium text-gray-700 hover:bg-gray-50">Cancel</button>
+              <button type="submit" disabled={rejectMut.isPending || !rejectReason.trim()}
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-red-600 hover:bg-red-700 text-white text-xs font-semibold disabled:opacity-50">
+                <X size={13} /> {rejectMut.isPending ? "Rejecting…" : "Reject candidate"}
+              </button>
+            </div>
+          </form>
+        )}
+      </Modal>
 
       {/* Skip to a later stage (Move forward) */}
       {/* Documents-not-approved gate — blocks moving to Offer */}
@@ -1117,11 +1229,13 @@ export default function PipelinePage() {
         )}
       </Modal>
 
-      <Modal open={!!skipApp} onClose={() => !skipMut.isPending && setSkipApp(null)} title="Skip to a later stage" size="md">
+      <Modal open={!!skipApp} onClose={() => !skipMut.isPending && setSkipApp(null)} title="Move Candidate Forward" size="lg" bodyClassName="p-4 overflow-hidden flex flex-col">
         {skipApp && (() => {
           const curStage = skipApp.currentStage ?? STAGES[0];
           const curIdx = STAGES.indexOf(curStage);
-          const forwardStages = curIdx >= 0 ? STAGES.slice(curIdx + 1) : [];
+          // A manual move can advance at most to the Offer stage — "Hired" is
+          // only reachable through the offer-accept flow, never a direct jump.
+          const forwardStages = (curIdx >= 0 ? STAGES.slice(curIdx + 1) : []).filter((s) => s !== "Hired");
           const targetIdx = STAGES.indexOf(skipTarget);
           const steps = targetIdx >= 0 && curIdx >= 0 ? targetIdx - curIdx : 0;
           return (
@@ -1129,40 +1243,106 @@ export default function PipelinePage() {
             onSubmit={(e) => {
               e.preventDefault();
               if (!skipTarget || steps < 1) { toast.error("Select a stage to move forward to"); return; }
-              if (!skipReason.trim()) { toast.error("Reason is required"); return; }
-              skipMut.mutate({ id: skipApp.id, steps, reason: skipReason.trim() });
+              skipMut.mutate({
+                id: skipApp.id,
+                target: skipTarget,
+                openScheduler: isInterviewStage(skipTarget),
+                body: { overallRating: feedback.overallRating, strengths: feedback.strengths, concerns: feedback.concerns, overallComments: feedback.overallComments },
+              });
             }}
-            className="space-y-4"
+            className="flex flex-col min-h-0 flex-1"
           >
-            <div className="bg-slate-50 border border-slate-200 rounded-lg p-3 text-xs">
-              <div className="font-semibold text-slate-900">{skipApp.candidate.firstName} {skipApp.candidate.lastName}</div>
-              <div className="text-xs text-slate-500 mt-0.5">
-                {skipApp.requisition.title} · Current: <span className="font-semibold text-slate-700">{curStage.replace(/([A-Z])/g, " $1").trim()}</span>
+            <div className="flex-1 min-h-0 overflow-y-auto no-scrollbar space-y-4">
+              <div className="flex items-center gap-3 bg-slate-50 border border-slate-200 rounded-xl px-4 py-3">
+                <div className="w-11 h-11 rounded-full bg-violet-100 text-violet-700 flex items-center justify-center text-sm font-bold uppercase shrink-0">
+                  {`${skipApp.candidate.firstName?.[0] ?? ""}${skipApp.candidate.lastName?.[0] ?? ""}`}
+                </div>
+                <div className="min-w-0">
+                  <div className="text-[15px] font-bold text-slate-900 truncate">{skipApp.candidate.firstName} {skipApp.candidate.lastName}</div>
+                  <div className="text-xs text-slate-500 mt-0.5 flex items-center gap-2 flex-wrap">
+                    <span>{skipApp.requisition.title}</span>
+                    <span>·</span>
+                    <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-[#dcfce7] text-[#16a34a] ring-1 ring-[#22c55e] font-semibold">
+                      <MessageSquare size={10} /> Stage: {curStage.replace(/([A-Z])/g, " $1").trim()}
+                    </span>
+                  </div>
+                </div>
+              </div>
+
+              <div>
+                <label className="flex items-center gap-1.5 text-sm font-semibold text-gray-800 mb-2">
+                  Overall Rating <span className="text-gray-400 font-normal">(out of 10)</span>
+                  <Info size={13} className="text-gray-300" />
+                </label>
+                <div className="flex items-center gap-1.5 flex-wrap">
+                  {Array.from({ length: 10 }, (_, i) => i + 1).map((n) => (
+                    <button key={n} type="button" onClick={() => setFeedback({ ...feedback, overallRating: n })}
+                      className={clsx("w-9 h-9 rounded-lg border-2 flex items-center justify-center text-sm font-semibold transition",
+                        n === feedback.overallRating ? "border-amber-400 bg-amber-400 text-white"
+                          : n < feedback.overallRating ? "border-amber-300 bg-amber-50 text-amber-600"
+                            : "border-slate-200 text-slate-400 hover:border-slate-300")}>
+                      {n}
+                    </button>
+                  ))}
+                  <span className="ml-2 text-sm font-bold text-slate-800">{feedback.overallRating}/10</span>
+                </div>
+              </div>
+
+              <div>
+                <label className="flex items-center gap-1.5 text-sm font-semibold text-gray-800 mb-1"><ArrowRight size={14} className="text-[#16a34a]" /> Move forward to <span className="text-red-500">*</span></label>
+                <Select
+                  value={skipTarget}
+                  onChange={setSkipTarget}
+                  placeholder="Select a stage..."
+                  options={forwardStages.map((s) => ({ value: s, label: s.replace(/([A-Z])/g, " $1").trim() }))}
+                />
+                <p className="text-[11px] text-gray-500 mt-1">Only forward stages — you can&apos;t move a candidate backward. An interview stage opens the scheduler.</p>
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                <div>
+                  <label className="flex items-center gap-2 text-sm font-semibold text-gray-800 mb-1.5">
+                    <span className="w-6 h-6 rounded-full bg-green-100 text-green-600 inline-flex items-center justify-center"><ThumbsUp size={12} /></span>
+                    Strengths
+                  </label>
+                  <div className="relative">
+                    <textarea rows={4} maxLength={500} placeholder="What did the candidate do well?" value={feedback.strengths} onChange={(e) => setFeedback({ ...feedback, strengths: e.target.value })}
+                      className="w-full border border-[var(--border)] rounded-lg px-3 py-2 pb-6 text-sm resize-y focus:outline-none focus:ring-1 focus:ring-green-500" />
+                    <span className="absolute bottom-2 right-3 text-[10px] text-gray-400 tabular-nums">{feedback.strengths.length}/500</span>
+                  </div>
+                </div>
+                <div>
+                  <label className="flex items-center gap-2 text-sm font-semibold text-gray-800 mb-1.5">
+                    <span className="w-6 h-6 rounded-full bg-red-100 text-red-600 inline-flex items-center justify-center"><AlertTriangle size={12} /></span>
+                    Concerns
+                  </label>
+                  <div className="relative">
+                    <textarea rows={4} maxLength={500} placeholder="What are the areas of concern?" value={feedback.concerns} onChange={(e) => setFeedback({ ...feedback, concerns: e.target.value })}
+                      className="w-full border border-[var(--border)] rounded-lg px-3 py-2 pb-6 text-sm resize-y focus:outline-none focus:ring-1 focus:ring-green-500" />
+                    <span className="absolute bottom-2 right-3 text-[10px] text-gray-400 tabular-nums">{feedback.concerns.length}/500</span>
+                  </div>
+                </div>
+              </div>
+
+              <div>
+                <label className="flex items-center gap-2 text-sm font-semibold text-gray-800 mb-1.5">
+                  <span className="w-6 h-6 rounded-full bg-violet-100 text-violet-600 inline-flex items-center justify-center"><MessageSquare size={12} /></span>
+                  Overall Comments
+                </label>
+                <div className="relative">
+                  <textarea rows={3} maxLength={1000} placeholder="Reason for moving forward / additional comments…" value={feedback.overallComments} onChange={(e) => setFeedback({ ...feedback, overallComments: e.target.value })}
+                    className="w-full border border-[var(--border)] rounded-lg px-3 py-2 pb-6 text-sm resize-y focus:outline-none focus:ring-1 focus:ring-green-500" />
+                  <span className="absolute bottom-2 right-3 text-[10px] text-gray-400 tabular-nums">{feedback.overallComments.length}/1000</span>
+                </div>
               </div>
             </div>
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Move forward to <span className="text-red-500">*</span></label>
-              <Select
-                value={skipTarget}
-                onChange={setSkipTarget}
-                placeholder="Select a stage..."
-                options={forwardStages.map((s) => ({ value: s, label: s.replace(/([A-Z])/g, " $1").trim() }))}
-              />
-              <p className="text-[11px] text-gray-500 mt-1">Only forward stages — you can&apos;t move a candidate backward.</p>
-            </div>
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Reason <span className="text-red-500">*</span></label>
-              <textarea rows={3} value={skipReason} onChange={(e) => setSkipReason(e.target.value)}
-                placeholder="Why is this interview step being skipped? (e.g. strong referral, prior assessment)"
-                className="w-full border border-[var(--border)] rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-green-500" />
-              <p className="text-[11px] text-gray-500 mt-1">Recorded on the candidate&apos;s stage history.</p>
-            </div>
-            <div className="flex justify-end gap-2 pt-2 border-t border-gray-100">
+
+            <div className="flex justify-end gap-2 pt-3 mt-1 border-t border-gray-100">
               <button type="button" onClick={() => setSkipApp(null)} disabled={skipMut.isPending}
                 className="px-3 py-1.5 border border-[var(--border)] rounded-lg text-xs font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50">Cancel</button>
-              <button type="submit" disabled={skipMut.isPending || !skipTarget || !skipReason.trim()}
+              <button type="submit" disabled={skipMut.isPending || !skipTarget}
                 className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-gradient-to-r from-emerald-500 to-green-600 hover:from-emerald-600 hover:to-green-700 text-white rounded-lg text-xs font-medium disabled:opacity-50">
-                <SkipForward size={13} /> {skipMut.isPending ? "Moving..." : "Skip forward"}
+                <SkipForward size={13} /> {skipMut.isPending ? "Moving..." : "Move Forward"}
               </button>
             </div>
           </form>
@@ -1180,36 +1360,55 @@ export default function PipelinePage() {
             feedbackMut.mutate({ id: feedbackApp.id, body: { ...feedback, deferStageMove } });
           }} className="flex flex-col min-h-0 flex-1">
             <div className="flex-1 min-h-0 overflow-y-auto no-scrollbar space-y-4">
-            <div className="bg-slate-50 border border-slate-200 rounded-lg px-4 py-3 text-xs">
-              <div className="font-semibold text-slate-900">{feedbackApp.candidate.firstName} {feedbackApp.candidate.lastName}</div>
-              <div className="text-xs text-slate-500 mt-0.5 flex items-center gap-2">
-                <span>{feedbackApp.requisition.title}</span>
-                <span>·</span>
-                <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-[#dcfce7] text-[#16a34a] ring-1 ring-[#22c55e] font-semibold">
-                  <MessageSquare size={10} />
-                  Stage: {(feedbackApp.currentStage ?? "Screening").replace(/([A-Z])/g, " $1").trim()}
-                </span>
+            <div className="flex items-center gap-3 bg-slate-50 border border-slate-200 rounded-xl px-4 py-3">
+              <div className="w-11 h-11 rounded-full bg-violet-100 text-violet-700 flex items-center justify-center text-sm font-bold uppercase shrink-0">
+                {`${feedbackApp.candidate.firstName?.[0] ?? ""}${feedbackApp.candidate.lastName?.[0] ?? ""}`}
+              </div>
+              <div className="min-w-0">
+                <div className="text-[15px] font-bold text-slate-900 truncate">{feedbackApp.candidate.firstName} {feedbackApp.candidate.lastName}</div>
+                <div className="text-xs text-slate-500 mt-0.5 flex items-center gap-2 flex-wrap">
+                  <span>{feedbackApp.requisition.title}</span>
+                  <span>·</span>
+                  <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-[#dcfce7] text-[#16a34a] ring-1 ring-[#22c55e] font-semibold">
+                    <MessageSquare size={10} />
+                    Stage: {(feedbackApp.currentStage ?? "Screening").replace(/([A-Z])/g, " $1").trim()}
+                  </span>
+                </div>
               </div>
             </div>
 
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">Overall Rating <span className="text-gray-400 font-normal">(out of 10)</span></label>
+              <label className="flex items-center gap-1.5 text-sm font-semibold text-gray-800 mb-2">
+                Overall Rating <span className="text-gray-400 font-normal">(out of 10)</span>
+                <Info size={13} className="text-gray-300" />
+              </label>
               <div className="flex items-center gap-1.5 flex-wrap">
                 {Array.from({ length: 10 }, (_, i) => i + 1).map((n) => (
                   <button key={n} type="button" onClick={() => setFeedback({ ...feedback, overallRating: n })}
                     className={clsx("w-9 h-9 rounded-lg border-2 flex items-center justify-center text-sm font-semibold transition",
-                      n <= feedback.overallRating
-                        ? "border-amber-400 bg-amber-50 text-amber-600"
-                        : "border-slate-200 text-slate-400 hover:border-slate-300")}>
+                      n === feedback.overallRating
+                        ? "border-amber-400 bg-amber-400 text-white"
+                        : n < feedback.overallRating
+                          ? "border-amber-300 bg-amber-50 text-amber-600"
+                          : "border-slate-200 text-slate-400 hover:border-slate-300")}>
                     {n}
                   </button>
                 ))}
-                <span className="ml-2 text-sm font-semibold text-slate-700">{feedback.overallRating}/10</span>
+                <span className="ml-2 text-sm font-bold text-slate-800">{feedback.overallRating}/10</span>
+                {(() => {
+                  const r = feedback.overallRating;
+                  const m = r >= 9 ? { l: "Excellent", c: "bg-emerald-100 text-emerald-700" }
+                    : r >= 7 ? { l: "Good", c: "bg-green-100 text-green-700" }
+                    : r >= 5 ? { l: "Average", c: "bg-amber-100 text-amber-700" }
+                    : r >= 3 ? { l: "Below Avg", c: "bg-orange-100 text-orange-700" }
+                    : { l: "Poor", c: "bg-red-100 text-red-700" };
+                  return <span className={clsx("px-2 py-0.5 rounded-full text-[11px] font-semibold", m.c)}>{m.l}</span>;
+                })()}
               </div>
             </div>
 
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Recommendation</label>
+              <label className="flex items-center gap-1.5 text-sm font-semibold text-gray-800 mb-1"><Award size={14} className="text-[#16a34a]" /> Recommendation</label>
               {(() => {
                 const nextStage = getNextStage(feedbackApp.currentStage);
                 const nextLabel = nextStage ? nextStage.replace(/([A-Z])/g, " $1").trim() : "next stage";
@@ -1239,23 +1438,41 @@ export default function PipelinePage() {
               })()}
             </div>
 
-            <div className="grid grid-cols-2 gap-3">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Strengths</label>
-                <textarea rows={3} value={feedback.strengths} onChange={(e) => setFeedback({ ...feedback, strengths: e.target.value })}
-                  className="w-full border border-[var(--border)] rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-green-500" />
+                <label className="flex items-center gap-2 text-sm font-semibold text-gray-800 mb-1.5">
+                  <span className="w-6 h-6 rounded-full bg-green-100 text-green-600 inline-flex items-center justify-center"><ThumbsUp size={12} /></span>
+                  Strengths
+                </label>
+                <div className="relative">
+                  <textarea rows={4} maxLength={500} placeholder="What did the candidate do well?" value={feedback.strengths} onChange={(e) => setFeedback({ ...feedback, strengths: e.target.value })}
+                    className="w-full border border-[var(--border)] rounded-lg px-3 py-2 pb-6 text-sm resize-y focus:outline-none focus:ring-1 focus:ring-green-500" />
+                  <span className="absolute bottom-2 right-3 text-[10px] text-gray-400 tabular-nums">{feedback.strengths.length}/500</span>
+                </div>
               </div>
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Concerns</label>
-                <textarea rows={3} value={feedback.concerns} onChange={(e) => setFeedback({ ...feedback, concerns: e.target.value })}
-                  className="w-full border border-[var(--border)] rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-green-500" />
+                <label className="flex items-center gap-2 text-sm font-semibold text-gray-800 mb-1.5">
+                  <span className="w-6 h-6 rounded-full bg-red-100 text-red-600 inline-flex items-center justify-center"><AlertTriangle size={12} /></span>
+                  Concerns
+                </label>
+                <div className="relative">
+                  <textarea rows={4} maxLength={500} placeholder="What are the areas of concern?" value={feedback.concerns} onChange={(e) => setFeedback({ ...feedback, concerns: e.target.value })}
+                    className="w-full border border-[var(--border)] rounded-lg px-3 py-2 pb-6 text-sm resize-y focus:outline-none focus:ring-1 focus:ring-green-500" />
+                  <span className="absolute bottom-2 right-3 text-[10px] text-gray-400 tabular-nums">{feedback.concerns.length}/500</span>
+                </div>
               </div>
             </div>
 
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Overall Comments</label>
-              <textarea rows={2} value={feedback.overallComments} onChange={(e) => setFeedback({ ...feedback, overallComments: e.target.value })}
-                className="w-full border border-[var(--border)] rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-green-500" />
+              <label className="flex items-center gap-2 text-sm font-semibold text-gray-800 mb-1.5">
+                <span className="w-6 h-6 rounded-full bg-violet-100 text-violet-600 inline-flex items-center justify-center"><MessageSquare size={12} /></span>
+                Overall Comments
+              </label>
+              <div className="relative">
+                <textarea rows={3} maxLength={1000} placeholder="Add any additional comments about the candidate…" value={feedback.overallComments} onChange={(e) => setFeedback({ ...feedback, overallComments: e.target.value })}
+                  className="w-full border border-[var(--border)] rounded-lg px-3 py-2 pb-6 text-sm resize-y focus:outline-none focus:ring-1 focus:ring-green-500" />
+                <span className="absolute bottom-2 right-3 text-[10px] text-gray-400 tabular-nums">{feedback.overallComments.length}/1000</span>
+              </div>
             </div>
             </div>
 
@@ -1263,8 +1480,8 @@ export default function PipelinePage() {
               <button type="button" onClick={() => setFeedbackApp(null)} disabled={feedbackMut.isPending}
                 className="px-3 py-1.5 border border-[var(--border)] rounded-lg text-xs font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50">Cancel</button>
               <button type="submit" disabled={feedbackMut.isPending || !feedback.recommendation}
-                className="px-3 py-1.5 bg-gradient-to-r from-emerald-500 to-green-600 hover:from-emerald-600 hover:to-green-700 text-white rounded-lg text-xs font-medium shadow-sm disabled:opacity-50 disabled:cursor-not-allowed">
-                {feedbackMut.isPending ? "Saving..." : "Save Feedback"}
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-gradient-to-r from-emerald-500 to-green-600 hover:from-emerald-600 hover:to-green-700 text-white rounded-lg text-xs font-medium shadow-sm disabled:opacity-50 disabled:cursor-not-allowed">
+                <Save size={13} /> {feedbackMut.isPending ? "Saving..." : "Save Feedback"}
               </button>
             </div>
           </form>

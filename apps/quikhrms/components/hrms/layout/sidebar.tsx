@@ -104,8 +104,6 @@ const navigation: NavItem[] = [
       { label: "Admin Attendance", href: "/attendance/admin", perms: ["hrms.attendance.read", "hrms.attendance.read_team"], navKey: "time.attendance-admin" },
       { label: "Regularization Approvals", href: "/attendance/regularizations", perms: ["hrms.attendance.approve", "hrms.attendance.read_team"], navKey: "time.regularizations" },
       { label: "Duty Roster", href: "/duty-roster", perms: ["hrms.roster.read", "hrms.roster.read_self", "hrms.roster.read_team"], navKey: "time.roster" },
-      { label: "Shifts", href: "/shifts", perms: ["hrms.attendance.manage"], navKey: "time.shifts" },
-      { label: "Time Records", href: "/time-logs", perms: ["hrms.attendance.read", "hrms.attendance.read_self"], navKey: "time.records" },
     ],
   },
   {
@@ -117,7 +115,7 @@ const navigation: NavItem[] = [
       { label: "My Leaves", href: "/leaves", perms: ["hrms.leave.read_self", "hrms.leave.apply"], navKey: "leave.my" },
       { label: "Team Leaves", href: "/leaves/team-leaves", perms: ["hrms.leave.read_team"], navKey: "leave.team" },
       { label: "HR Calendar", href: "/holidays", navKey: "leave.calendar" },
-      { label: "Policies", href: "/leaves/policies", perms: ["hrms.leave.manage"], navKey: "leave.policies" },
+      { label: "Leave Types", href: "/leaves/policies", perms: ["hrms.leave.manage"], navKey: "leave.policies" },
       { label: "Policy Documents", href: "/leaves/policy-documents", perms: ["hrms.leave_policy.read"], navKey: "leave.policy-documents" },
     ],
   },

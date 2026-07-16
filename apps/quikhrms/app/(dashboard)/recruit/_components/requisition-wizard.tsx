@@ -259,6 +259,16 @@ export function RequisitionWizard({ form, setForm, isEdit, departments, pipeline
   const [skillDraft, setSkillDraft] = useState("");
   const [weightDraft, setWeightDraft] = useState(7);
   const [generating, setGenerating] = useState(false);
+  // Work Timings / Shift options come from the org's Shift policies.
+  const [shifts, setShifts] = useState<{ id: string; name: string; startTime: string; endTime: string; isNightShift?: boolean }[]>([]);
+  useEffect(() => {
+    let active = true;
+    api.get<typeof shifts>("/api/v1/hrms/shifts?limit=100")
+      .then((res) => { if (active) setShifts(res.data ?? []); })
+      .catch(() => { /* non-blocking */ });
+    return () => { active = false; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   // ETA to Fill is auto-calculated from today → Timeline to Close. Keep it in
   // sync whenever the close date is present (covers editing older requisitions
@@ -275,6 +285,15 @@ export function RequisitionWizard({ form, setForm, isEdit, departments, pipeline
     label: (e.displayName?.trim() || `${e.firstName} ${e.lastName}`).trim(),
     description: [e.employeeCode, e.designation?.title || e.jobTitle].filter(Boolean).join(" · ") || undefined,
   }));
+
+  // Work Timings / Shift — from Shift policies (keep any existing value on edit).
+  const shiftOpts = shifts.map((sh) => ({
+    value: `${sh.name} (${sh.startTime}–${sh.endTime})`,
+    label: `${sh.name} · ${sh.startTime}–${sh.endTime}${sh.isNightShift ? " · Night" : ""}`,
+  }));
+  if (form.workTimings && !shiftOpts.some((o) => o.value === form.workTimings)) {
+    shiftOpts.unshift({ value: form.workTimings, label: form.workTimings });
+  }
 
   const justificationLen = form.justification.trim().length;
   const justificationOk = !showJustification || justificationLen >= JUSTIFICATION_MIN;
@@ -387,7 +406,10 @@ export function RequisitionWizard({ form, setForm, isEdit, departments, pipeline
             <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
               <div>
                 <label className={reqLabel}>Positions</label>
-                <NumberInput allowDecimal={false} min={1} value={form.positions} onChange={(v) => setForm({ ...form, positions: v ?? 1 })} className={reqInput} />
+                <NumberInput allowDecimal={false} min={1} value={form.positions}
+                  onChange={(v) => setForm({ ...form, positions: v ?? 1 })}
+                  onBlur={() => { if (!form.positions || form.positions < 1) setForm((p) => ({ ...p, positions: 1 })); }}
+                  className={reqInput} />
               </div>
               <div>
                 <label className={reqLabel}>Requisition Type</label>
@@ -401,25 +423,23 @@ export function RequisitionWizard({ form, setForm, isEdit, departments, pipeline
               </div>
               <div>
                 <label className={reqLabel}>Location</label>
-                <Select value={form.workLocation} onChange={(v) => setForm({ ...form, workLocation: v })}
+                <Select value={form.workLocation} onChange={(v) => setForm({ ...form, workLocation: v, ...(v === "Remote" ? { jobLocation: "" } : {}) })}
                   options={["Office", "Remote", "Hybrid"].map((t) => ({ value: t, label: t }))} />
               </div>
             </div>
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              {(form.workLocation === "Office" || form.workLocation === "Hybrid") && (
               <div>
                 <label className={reqLabel}>Job Location</label>
                 <input value={form.jobLocation} onChange={(e) => setForm({ ...form, jobLocation: e.target.value })}
                   placeholder="e.g. Indore, MP" className={reqInput} />
               </div>
-              <div>
-                <label className={reqLabel}>Job Duration</label>
-                <input value={form.jobDuration} onChange={(e) => setForm({ ...form, jobDuration: e.target.value })}
-                  placeholder="e.g. Permanent / 6 months" className={reqInput} />
-              </div>
+              )}
               <div>
                 <label className={reqLabel}>Work Timings / Shift</label>
-                <input value={form.workTimings} onChange={(e) => setForm({ ...form, workTimings: e.target.value })}
-                  placeholder="e.g. 9 AM–6 PM / Night shift" className={reqInput} />
+                <Select value={form.workTimings} onChange={(v) => setForm({ ...form, workTimings: v })} searchable
+                  placeholder={shifts.length === 0 ? "No shifts — add under Attendance → Shifts" : "Select shift"}
+                  options={shiftOpts} />
               </div>
             </div>
             <div>
@@ -473,17 +493,6 @@ export function RequisitionWizard({ form, setForm, isEdit, departments, pipeline
                   options={empOpts} placeholder="Select panel members..." />
                 <p className="mt-1 text-[11px] text-gray-400">Only these employees can be picked as interviewers for this role.</p>
               </div>
-            </div>
-            <div>
-              <label className={reqLabel}>In-person / Video interviews required?</label>
-              <Select value={form.interviewMode} onChange={(v) => setForm({ ...form, interviewMode: v })}
-                placeholder="— Select —"
-                options={[
-                  { value: "Video", label: "Yes — Video" },
-                  { value: "InPerson", label: "Yes — In-person" },
-                  { value: "Either", label: "Either" },
-                  { value: "NotRequired", label: "Not required" },
-                ]} />
             </div>
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
               <div>
@@ -604,8 +613,20 @@ export function RequisitionWizard({ form, setForm, isEdit, departments, pipeline
               </div>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-3">
                 <div>
-                  <label className={reqLabel}>Education</label>
-                  <input type="text" value={form.education} onChange={(e) => setForm({ ...form, education: e.target.value })} placeholder="e.g. B.Tech / B.E. in CS or equivalent" className={reqInput} />
+                  <label className={reqLabel}>Education qualification required</label>
+                  <Select
+                    value={form.education}
+                    onChange={(v) => setForm({ ...form, education: v })}
+                    placeholder="Select minimum qualification"
+                    options={[
+                      "Class 10 (Secondary)",
+                      "Class 12 (Intermediate)",
+                      "Diploma",
+                      "Graduation/Diploma",
+                      "Post Graduation",
+                      "Doctorate/PhD",
+                    ].map((q) => ({ value: q, label: q }))}
+                  />
                 </div>
                 <div>
                   <label className={reqLabel}>Referral Bonus (₹)</label>

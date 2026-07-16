@@ -362,14 +362,36 @@ export const PATCH = withAuth(async (req: NextRequest, { orgId, userId }, params
     if (data.currentStage) {
       updateData.currentStage = data.currentStage;
       const history = (existing.stageHistory as Array<unknown>) ?? [];
-      history.push({ stage: data.currentStage, date: new Date().toISOString(), movedBy: userId });
+      history.push({ stage: data.currentStage, date: new Date().toISOString(), movedBy: userId, ...(data.moveReason ? { reason: data.moveReason } : {}) });
       updateData.stageHistory = JSON.parse(JSON.stringify(history));
+      // Advancing an On-Hold candidate clears the hold (unless this same
+      // request explicitly sets another status like Rejected/Hired).
+      if (existing.status === "AppOnHold" && !data.status) {
+        updateData.status = "AppActive";
+      }
+      // Moving through stages means the candidate is actively in the pipeline
+      // (a terminal status set below in this same request will override this).
+      await prisma.candidate.update({
+        where: { id: existing.candidateId },
+        data: { status: "InPipeline" },
+      }).catch(() => null);
     }
     if (data.status) {
       updateData.status = data.status;
       if (data.status === "AppRejected") {
         updateData.rejectionReason = data.rejectionReason;
         updateData.rejectionStage = existing.currentStage;
+        // Reflect the rejection on the candidate so the Candidates list stops
+        // showing them as "In Pipeline" and they can be filtered as Rejected.
+        await prisma.candidate.update({
+          where: { id: existing.candidateId },
+          data: { status: "CandRejected" },
+        }).catch(() => null);
+        // Cancel any upcoming interviews — a rejected candidate has none pending.
+        await prisma.interview.updateMany({
+          where: { orgId, applicationId: existing.id, status: "IntScheduled", deletedAt: null },
+          data: { status: "IntCancelled" },
+        }).catch(() => null);
       }
       if (data.status === "AppHired") {
         await Promise.all([

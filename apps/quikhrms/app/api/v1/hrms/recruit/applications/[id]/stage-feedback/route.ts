@@ -99,6 +99,8 @@ export const POST = withAuth(async (req: NextRequest, { orgId, userId }, params)
           where: { id: app.id },
           data: {
             currentStage: nextStage,
+            // A positive recommendation clears any prior On-Hold state.
+            ...(app.status === "AppOnHold" ? { status: "AppActive" } : {}),
             stageHistory: JSON.parse(JSON.stringify([
               ...history,
               { stage: nextStage, date: new Date().toISOString(), movedBy: userId, reason: `Approved at ${currentStage}` },
@@ -108,6 +110,12 @@ export const POST = withAuth(async (req: NextRequest, { orgId, userId }, params)
         });
         stageAdvanced = true;
       }
+    } else if (recommendation === "MaybeHire") {
+      // On Hold — park the candidate in the current stage.
+      await prisma.jobApplication.update({
+        where: { id: app.id },
+        data: { status: "AppOnHold", updatedBy: userId },
+      });
     } else if (recommendation === "NoHire" || recommendation === "StrongNoHire") {
       await prisma.jobApplication.update({
         where: { id: app.id },
@@ -118,7 +126,23 @@ export const POST = withAuth(async (req: NextRequest, { orgId, userId }, params)
           updatedBy: userId,
         },
       });
+      // Cancel any upcoming interviews — a rejected candidate has none pending.
+      await prisma.interview.updateMany({
+        where: { orgId, applicationId: app.id, status: "IntScheduled", deletedAt: null },
+        data: { status: "IntCancelled" },
+      }).catch(() => null);
     }
+
+    // Keep the candidate's status in sync so the Candidates list reflects the
+    // pipeline decision (was previously stuck on "New").
+    const candStatus: "InPipeline" | "CandOnHold" | "CandRejected" =
+      recommendation === "NoHire" || recommendation === "StrongNoHire" ? "CandRejected"
+        : recommendation === "MaybeHire" ? "CandOnHold"
+          : "InPipeline";
+    await prisma.candidate.update({
+      where: { id: app.candidateId },
+      data: { status: candStatus },
+    }).catch(() => null);
 
     return successResponse({ scorecard: sc, interviewId: interview.id, stageAdvanced }, undefined, 201);
   } catch (error) {
