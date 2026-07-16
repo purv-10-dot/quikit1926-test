@@ -30,6 +30,8 @@ import { useColumnResize } from "@/lib/hooks/useColumnResize";
 import { useColumnOrder } from "@/lib/hooks/useColumnOrder";
 import { moveByKey, columnsUnfrozenBy } from "@/lib/utils/columnOrder";
 import { useColumnDnD } from "@/lib/hooks/useColumnDnD";
+import { useRowDnD } from "@/lib/hooks/useRowDnD";
+import { rowNeighbors } from "@/lib/utils/rowOrder";
 import { useStickyOffsets } from "@/lib/hooks/useStickyOffsets";
 import { HeaderCell } from "@/components/table/HeaderCell";
 import { HorizontalScroller } from "@/components/ui/HorizontalScroller";
@@ -435,6 +437,45 @@ export default function ClientsPage() {
   const pagedClients = rows;
   const totalClientPages = Math.max(1, Math.ceil(total / pageSize));
 
+  // ── Drag-to-reorder ROWS (org-shared manual order) ───────────────────────
+  // Enabled only in manual mode (no column sort) and outside the trash view.
+  const tbodyRef = useRef<HTMLTableSectionElement>(null);
+  const rowReorderEnabled = !sortBy && !viewTrash;
+  const orderedRowIds = useMemo(() => pagedClients.map((r) => r.id), [pagedClients]);
+  const handleRowDrop = useCallback(
+    async (fromId: string, toId: string, side: "before" | "after") => {
+      const n = rowNeighbors(orderedRowIds, fromId, toId, side);
+      if (!n) return;
+      try {
+        const res = await fetch("/api/client-meetings/clients/reorder", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ id: fromId, beforeId: n.beforeId, afterId: n.afterId }),
+        });
+        if (!res.ok) throw new Error("reorder failed");
+        refresh();
+      } catch {
+        notify.error("Failed to reorder row");
+        refresh();
+      }
+    },
+    [orderedRowIds, refresh],
+  );
+  const rowDnd = useRowDnD({
+    getRowsContainer: () => tbodyRef.current,
+    onDrop: handleRowDrop,
+    canDrag: () => rowReorderEnabled,
+  });
+  const rowDropClass = useCallback(
+    (id: string) => {
+      if (rowDnd.overId !== id || !rowDnd.dropSide) return "";
+      return rowDnd.dropSide === "before"
+        ? "shadow-[inset_0_2px_0_0_var(--tw-shadow-color)] shadow-blue-500"
+        : "shadow-[inset_0_-2px_0_0_var(--tw-shadow-color)] shadow-blue-500";
+    },
+    [rowDnd.overId, rowDnd.dropSide],
+  );
+
   const activeFilterCount = (filterClientId ? 1 : 0) + (filterStatus ? 1 : 0);
   const clientOptions = useMemo(() => allClients.map(c => ({ value: c.id, label: c.name })), [allClients]);
 
@@ -767,9 +808,11 @@ export default function ClientsPage() {
                   <th className="w-10 px-3 py-3 border-b border-gray-200" />
                 </tr>
               </thead>
-              <tbody>
+              <tbody ref={tbodyRef}>
                 {pagedClients.map(r => (
-                  <tr key={r.id} className={`border-b border-gray-100 hover:bg-blue-50/30 ${selected.has(r.id) ? "bg-blue-50/60" : ""}`}>
+                  <tr key={r.id} data-row-id={r.id} data-row-label={r.name}
+                    onPointerDown={rowReorderEnabled ? (e) => rowDnd.startDrag(r.id, e) : undefined}
+                    className={`group border-b border-gray-100 hover:bg-blue-50/30 ${rowReorderEnabled ? "cursor-grab active:cursor-grabbing" : ""} ${selected.has(r.id) ? "bg-blue-50/60" : ""} ${rowDropClass(r.id)} ${rowDnd.draggingId === r.id ? "opacity-40" : ""}`}>
                     <td className="sticky z-[15] bg-white px-3 py-3 text-center border-b border-r border-gray-100"
                         style={{ left: 0, width: 40, minWidth: 40, maxWidth: 40 }}>
                       <label
@@ -814,6 +857,7 @@ export default function ClientsPage() {
               </tbody>
             </table>
             </HorizontalScroller>
+            {rowDnd.dragGhost}
             {total > 0 && (
               <Pagination
                 page={page}

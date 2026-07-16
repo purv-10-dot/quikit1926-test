@@ -27,6 +27,8 @@ import { X } from "lucide-react";
 import { Pagination, useConfirm } from "@quikit/ui";
 import { notify } from "@/lib/utils/notify";
 import { useColumnDnD, DragHandle } from "@/lib/hooks/useColumnDnD";
+import { useRowDnD } from "@/lib/hooks/useRowDnD";
+import { rowNeighbors } from "@/lib/utils/rowOrder";
 export { HiddenColsMenu } from "./HiddenColsMenu";
 
 // ── Resize handle ────────────────────────────────────────────────────────────
@@ -130,6 +132,7 @@ export function KPITable({ kpis: kpisAll, total, page, pageSize, year, quarter, 
   const weekCount = useQuarterWeekCount(year, quarter);
   const weekCols = useMemo(() => weeksArray(weekCount).map(w => `week${w}`), [weekCount]);
   const headerRowRef = useRef<HTMLTableRowElement>(null);
+  const tbodyRef = useRef<HTMLTableSectionElement>(null);
   const [logKPI, setLogKPI] = useState<KPIRow | null>(null);
   const [logInitialTab, setLogInitialTab] = useState<"updates" | "edit" | "stats">("updates");
   const [auditKPI, setAuditKPI] = useState<KPIRow | null>(null);
@@ -197,6 +200,41 @@ export function KPITable({ kpis: kpisAll, total, page, pageSize, year, quarter, 
     onDrop: handleColDrop,
     canReorder: canReorderCol,
   });
+
+  // ── Drag-to-reorder ROWS (org-shared manual order) ───────────────────────
+  // Enabled only in manual mode (no active column sort) and never in previews.
+  const rowReorderEnabled = !reorderDisabled && !sortBy;
+  const orderedRowIds = useMemo(() => kpis.map(k => k.id), [kpis]);
+  const handleRowDrop = useCallback(
+    async (fromId: string, toId: string, side: "before" | "after") => {
+      const n = rowNeighbors(orderedRowIds, fromId, toId, side);
+      if (!n) return;
+      try {
+        const res = await fetch("/api/kpi/reorder", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ id: fromId, beforeId: n.beforeId, afterId: n.afterId }),
+        });
+        if (!res.ok) throw new Error("reorder failed");
+        onRefresh();
+      } catch {
+        notify.error("Failed to reorder row");
+        onRefresh();
+      }
+    },
+    [orderedRowIds, onRefresh],
+  );
+  const rowDnd = useRowDnD({
+    getRowsContainer: () => tbodyRef.current,
+    onDrop: handleRowDrop,
+    canDrag: () => rowReorderEnabled,
+  });
+  function rowDropClass(id: string) {
+    if (rowDnd.overId !== id || !rowDnd.dropSide) return "";
+    return rowDnd.dropSide === "before"
+      ? "shadow-[inset_0_2px_0_0_var(--tw-shadow-color)] shadow-blue-500"
+      : "shadow-[inset_0_-2px_0_0_var(--tw-shadow-color)] shadow-blue-500";
+  }
 
   // Notify parent when selection changes
   useEffect(() => { onSelectionChange?.(selectedIds); }, [selectedIds, onSelectionChange]);
@@ -279,7 +317,7 @@ export function KPITable({ kpis: kpisAll, total, page, pageSize, year, quarter, 
       });
     }
     return map;
-  }, [kpis, currentWeek]);
+  }, [kpis, qtdWeek, weekCount]);
 
   function thClass(col: string) {
     const sticky = isFrozen(col);
@@ -422,7 +460,7 @@ export function KPITable({ kpis: kpisAll, total, page, pageSize, year, quarter, 
             </tr>
           </thead>
 
-          <tbody>
+          <tbody ref={tbodyRef}>
             {kpis.length === 0 ? (
               <tr>
                 <td colSpan={3 + visibleStaticCols.length + visibleWeekCols.length}
@@ -667,7 +705,9 @@ export function KPITable({ kpis: kpisAll, total, page, pageSize, year, quarter, 
               };
 
               return (
-                <tr key={kpi.id} className="hover:bg-blue-50/30 transition-colors">
+                <tr key={kpi.id} data-row-id={kpi.id} data-row-label={kpi.name}
+                  onPointerDown={rowReorderEnabled ? (e) => rowDnd.startDrag(kpi.id, e) : undefined}
+                  className={`group hover:bg-blue-50/30 transition-colors ${rowReorderEnabled ? "cursor-grab active:cursor-grabbing" : ""} ${rowDropClass(kpi.id)} ${rowDnd.draggingId === kpi.id ? "opacity-40" : ""}`}>
                   {/* Fixed: Checkbox (hidable) */}
                   {!hideCheckbox && (
                     <td className="sticky z-[15] bg-white px-2 py-2 border-b border-r border-gray-100"
@@ -799,6 +839,9 @@ export function KPITable({ kpis: kpisAll, total, page, pageSize, year, quarter, 
           </tbody>
         </table>
       </HorizontalScroller>
+
+      {/* Floating "lifted" card that follows the cursor while dragging a row. */}
+      {rowDnd.dragGhost}
 
       {infiniteMode && isFetchingMore && (
         <div className="flex items-center justify-center gap-2 py-2.5 text-xs text-gray-400 border-t border-gray-100 bg-gray-50">

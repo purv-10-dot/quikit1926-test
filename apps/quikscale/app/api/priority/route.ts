@@ -118,7 +118,11 @@ export const GET = auth.view(async ({ orgId, userId }, req) => {
     createdAt: { createdAt: sortOrder },
     updatedAt: { updatedAt: sortOrder },
   };
-  const orderBy = [sortMap[sortBy] || { createdAt: sortOrder }, { id: "desc" }];
+  // Manual (drag-to-reorder) mode when no column sort is chosen: order by the
+  // shared `position` rank (nulls first so new rows stay on top until dragged).
+  const orderBy = sortByParam
+    ? [sortMap[sortBy] || { createdAt: sortOrder }, { id: "desc" }]
+    : [{ position: { sort: "asc", nulls: "first" } }, { createdAt: "desc" }, { id: "desc" }];
 
   const [priorities, total] = await Promise.all([
     db.priority.findMany({

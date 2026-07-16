@@ -21,7 +21,8 @@ export const GET = auth.view(async ({ orgId, userId }, req) => {
   const searchParams = req.nextUrl.searchParams;
   const search = searchParams.get("search") || undefined;
   const status = searchParams.get("status") || undefined;
-  const sortBy = searchParams.get("sortBy") || "createdAt";
+  const sortByParam = searchParams.get("sortBy");
+  const sortBy = sortByParam || "createdAt";
   // Default to newest-first so freshly created items land at the top of page 1
   // (matches KPI). Explicit ?sortOrder= from the client still wins.
   const sortOrder = (searchParams.get("sortOrder") || "desc") as "asc" | "desc";
@@ -77,8 +78,11 @@ export const GET = auth.view(async ({ orgId, userId }, req) => {
     createdAt: { createdAt: sortOrder },
   };
   // Stable `id` tie-breaker so equal-sort rows keep a deterministic order
-  // across pages.
-  const orderBy = [sortMap[sortBy] || { createdAt: sortOrder }, { id: "desc" }];
+  // across pages. Manual (drag-to-reorder) mode when no column sort is chosen:
+  // order by the shared `position` rank (nulls first so new rows stay on top).
+  const orderBy: Prisma.WWWItemOrderByWithRelationInput[] = sortByParam
+    ? [sortMap[sortBy] || { createdAt: sortOrder }, { id: "desc" }]
+    : [{ position: { sort: "asc", nulls: "first" } }, { createdAt: "desc" }, { id: "desc" }];
 
   const [items, total] = await Promise.all([
     db.wWWItem.findMany({

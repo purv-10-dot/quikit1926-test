@@ -22,6 +22,8 @@ import { useColumnResize, ResizeHandle } from "@/lib/hooks/useColumnResize";
 import { useColumnOrder } from "@/lib/hooks/useColumnOrder";
 import { moveByKey, columnsUnfrozenBy } from "@/lib/utils/columnOrder";
 import { useColumnDnD, DragHandle } from "@/lib/hooks/useColumnDnD";
+import { useRowDnD } from "@/lib/hooks/useRowDnD";
+import { rowNeighbors } from "@/lib/utils/rowOrder";
 import { getLatestPriorityNote } from "@/lib/utils/priorityHelpers";
 import { BaseTooltip } from "@/components/ui/base-tooltip";
 import { useClickOutside } from "@/lib/hooks/useClickOutside";
@@ -515,6 +517,42 @@ export function PriorityTable({ priorities: prioritiesAll, onRefresh, year, quar
     onDrop: handleColDrop,
     canReorder: canReorderCol,
   });
+
+  // ── Drag-to-reorder ROWS (org-shared manual order) ───────────────────────
+  const tbodyRef = useRef<HTMLTableSectionElement>(null);
+  const rowReorderEnabled = !reorderDisabled && !sortCol;
+  const orderedRowIds = useMemo(() => priorities.map(p => p.id), [priorities]);
+  const handleRowDrop = useCallback(
+    async (fromId: string, toId: string, side: "before" | "after") => {
+      const n = rowNeighbors(orderedRowIds, fromId, toId, side);
+      if (!n) return;
+      try {
+        const res = await fetch("/api/priority/reorder", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ id: fromId, beforeId: n.beforeId, afterId: n.afterId }),
+        });
+        if (!res.ok) throw new Error("reorder failed");
+        onRefresh();
+      } catch {
+        notify.error("Failed to reorder row");
+        onRefresh();
+      }
+    },
+    [orderedRowIds, onRefresh],
+  );
+  const rowDnd = useRowDnD({
+    getRowsContainer: () => tbodyRef.current,
+    onDrop: handleRowDrop,
+    canDrag: () => rowReorderEnabled,
+  });
+  function rowDropClass(id: string) {
+    if (rowDnd.overId !== id || !rowDnd.dropSide) return "";
+    return rowDnd.dropSide === "before"
+      ? "shadow-[inset_0_2px_0_0_var(--tw-shadow-color)] shadow-blue-500"
+      : "shadow-[inset_0_-2px_0_0_var(--tw-shadow-color)] shadow-blue-500";
+  }
+
   function dropIndicatorClass(col: string) {
     if (dnd.overKey !== col || !dnd.dropSide) return "";
     return dnd.dropSide === "before"
@@ -656,7 +694,7 @@ export function PriorityTable({ priorities: prioritiesAll, onRefresh, year, quar
               ))}
             </tr>
           </thead>
-          <tbody>
+          <tbody ref={tbodyRef}>
             {priorities.length === 0 && (
               <tr>
                 <td colSpan={COL_ORDER.length + visibleWeeksList.length} className="text-center py-12 text-xs text-gray-400">
@@ -902,8 +940,9 @@ export function PriorityTable({ priorities: prioritiesAll, onRefresh, year, quar
               };
 
               return (
-                <tr key={priority.id}
-                  className={`border-b border-gray-100 hover:bg-blue-50 transition-colors ${rowIdx % 2 === 0 ? "bg-white" : "bg-gray-50"}`}>
+                <tr key={priority.id} data-row-id={priority.id} data-row-label={priority.name}
+                  onPointerDown={rowReorderEnabled ? (e) => rowDnd.startDrag(priority.id, e) : undefined}
+                  className={`group border-b border-gray-100 hover:bg-blue-50 transition-colors ${rowReorderEnabled ? "cursor-grab active:cursor-grabbing" : ""} ${rowIdx % 2 === 0 ? "bg-white" : "bg-gray-50"} ${rowDropClass(priority.id)} ${rowDnd.draggingId === priority.id ? "opacity-40" : ""}`}>
                   {/* Static columns — rendered in the user's drag order.
                       Cell styling is unchanged (see `renderBodyCell`). */}
                   {COL_ORDER.map(renderBodyCell)}
@@ -966,6 +1005,9 @@ export function PriorityTable({ priorities: prioritiesAll, onRefresh, year, quar
           </tbody>
         </table>
       </HorizontalScroller>
+
+      {/* Floating "lifted" card that follows the cursor while dragging a row. */}
+      {rowDnd.dragGhost}
 
       {infiniteMode && isFetchingMore && (
         <div className="flex items-center justify-center gap-2 py-2.5 text-xs text-gray-400 border-t border-gray-100 bg-gray-50">

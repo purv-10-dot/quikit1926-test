@@ -664,7 +664,11 @@ model KPI {
   notes              KPINote[]
   weeklyValues       KPIWeeklyValue[]
 
+  // Manual drag-to-reorder rank within the org (shared). Null = unpositioned.
+  position           Float?
+
   @@index([orgId])
+  @@index([orgId, position])
   @@index([orgId, deletedAt])
   @@index([orgId, kpiLevel, deletedAt])
   @@index([owner])
@@ -830,7 +834,11 @@ model Priority {
   team             QsTeam?                @relation(fields: [teamId], references: [id])
   weeklyStatuses   PriorityWeeklyStatus[]
 
+  // Manual drag-to-reorder rank within the org (shared). Null = unpositioned.
+  position         Float?
+
   @@index([orgId])
+  @@index([orgId, position])
   @@index([orgId, deletedAt])
   @@index([orgId, year, quarter, deletedAt])
   @@index([owner])
@@ -880,7 +888,11 @@ model WWWItem {
   revisionLogs     WWWRevisionLog[]
   noteEntries      WWWNote[]
 
+  // Manual drag-to-reorder rank within the org (shared). Null = unpositioned.
+  position         Float?
+
   @@index([orgId])
+  @@index([orgId, position])
   @@index([who])
   @@index([when])
   @@index([status])
@@ -1105,8 +1117,12 @@ model Client {
   teamMembers     ClientTeamMember[]
   weeklyMeetings  ClientWeeklyMeeting[]
 
+  // Manual drag-to-reorder rank within the org (shared). Null = unpositioned.
+  position        Float?
+
   @@unique([orgId, name])
   @@index([orgId])
+  @@index([orgId, position])
   @@index([orgId, isActive])
   @@index([deletedAt])
   @@schema("app_quikscale")
@@ -1171,7 +1187,11 @@ model ClientMember {
   weeklyDashboardNA ClientWeeklyMeetingTeamDashboardNA[]
   weeklyScores      ClientWeeklyMemberScore[]
 
+  // Manual drag-to-reorder rank within the org (shared). Null = unpositioned.
+  position          Float?
+
   @@index([orgId])
+  @@index([orgId, position])
   @@index([orgId, deletedAt])
   @@index([email])
   @@schema("app_quikscale")
@@ -1207,7 +1227,11 @@ model ClientDailyHuddle {
   absentMembers       ClientDailyHuddleAbsence[]
   absentTeamMembers   ClientDailyHuddleTeamAbsence[]
 
+  // Manual drag-to-reorder rank within the org (shared). Null = unpositioned.
+  position            Float?
+
   @@index([orgId])
+  @@index([orgId, position])
   @@index([orgId, deletedAt])
   @@index([clientId])
   @@index([meetingDate])
@@ -1293,7 +1317,11 @@ model ClientWeeklyMeeting {
   dashboardNATeamMembers ClientWeeklyMeetingTeamDashboardNA[]
   memberScores           ClientWeeklyMemberScore[]
 
+  // Manual drag-to-reorder rank within the org (shared). Null = unpositioned.
+  position               Float?
+
   @@index([orgId])
+  @@index([orgId, position])
   @@index([orgId, deletedAt])
   @@index([clientId])
   @@index([meetingDate])

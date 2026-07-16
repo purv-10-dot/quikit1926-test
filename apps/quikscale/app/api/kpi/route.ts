@@ -120,6 +120,12 @@ export const GET = auth.view(async ({ orgId, userId }, req) => {
     }
   }
 
+  // Manual (drag-to-reorder) mode: when the client sends no column sort, order
+  // by the shared `position` rank (falling back to createdAt desc, which the
+  // migration backfilled position to match, so the default view is unchanged
+  // until someone drags a row). A real column sort keeps the relation-aware
+  // ordering below untouched.
+  const manualOrder = !searchParams.get("sortBy");
   // Relation-aware orderBy. `owner` is a userId string column, so sorting on
   // it ranks users by id (meaningless). The user-visible "Owner" column shows
   // owner_user.firstName + lastName, so we sort the relation instead.
@@ -132,12 +138,16 @@ export const GET = auth.view(async ({ orgId, userId }, req) => {
       : validated.sortBy === "team"
         ? { team: { name: dir } }
         : { [validated.sortBy]: dir };
-  const orderBy: Array<Record<string, unknown>> = [primary];
-  if (validated.sortBy === "owner") orderBy.push({ owner_user: { lastName: dir } });
+  // `nulls: "first"` so a freshly-created (unpositioned) row shows on top —
+  // newest-first, matching today's default — until it's dragged and stamped.
+  const orderBy: Array<Record<string, unknown>> = manualOrder
+    ? [{ position: { sort: "asc", nulls: "first" } }, { createdAt: "desc" }]
+    : [primary];
+  if (!manualOrder && validated.sortBy === "owner") orderBy.push({ owner_user: { lastName: dir } });
   // Team KPI groups rows by team in the UI — secondary sort by KPI name keeps
   // each team's rows ordered and the grouping deterministic across pages.
-  if (validated.sortBy === "team") orderBy.push({ name: "asc" });
-  if (validated.sortBy !== "createdAt") orderBy.push({ createdAt: "desc" });
+  if (!manualOrder && validated.sortBy === "team") orderBy.push({ name: "asc" });
+  if (!manualOrder && validated.sortBy !== "createdAt") orderBy.push({ createdAt: "desc" });
 
   const total = await db.kPI.count({ where });
 

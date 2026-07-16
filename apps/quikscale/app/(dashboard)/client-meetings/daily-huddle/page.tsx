@@ -31,6 +31,8 @@ import { useColumnResize } from "@/lib/hooks/useColumnResize";
 import { useColumnOrder } from "@/lib/hooks/useColumnOrder";
 import { moveByKey, columnsUnfrozenBy } from "@/lib/utils/columnOrder";
 import { useColumnDnD } from "@/lib/hooks/useColumnDnD";
+import { useRowDnD } from "@/lib/hooks/useRowDnD";
+import { rowNeighbors } from "@/lib/utils/rowOrder";
 import { useStickyOffsets } from "@/lib/hooks/useStickyOffsets";
 import { HeaderCell } from "@/components/table/HeaderCell";
 import { HorizontalScroller } from "@/components/ui/HorizontalScroller";
@@ -482,6 +484,44 @@ export default function DailyHuddlePage() {
 
   useEffect(() => { setPage(1); }, [search, filterClientId, filterStatus, viewTrash, pageSize]);
   const pagedHuddles = rows;
+
+  // ── Drag-to-reorder ROWS (org-shared manual order) ───────────────────────
+  const tbodyRef = useRef<HTMLTableSectionElement>(null);
+  const rowReorderEnabled = !sortBy && !viewTrash;
+  const orderedRowIds = useMemo(() => pagedHuddles.map((r) => r.id), [pagedHuddles]);
+  const handleRowDrop = useCallback(
+    async (fromId: string, toId: string, side: "before" | "after") => {
+      const n = rowNeighbors(orderedRowIds, fromId, toId, side);
+      if (!n) return;
+      try {
+        const res = await fetch("/api/client-meetings/daily-huddles/reorder", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ id: fromId, beforeId: n.beforeId, afterId: n.afterId }),
+        });
+        if (!res.ok) throw new Error("reorder failed");
+        refresh();
+      } catch {
+        notify.error("Failed to reorder row");
+        refresh();
+      }
+    },
+    [orderedRowIds, refresh],
+  );
+  const rowDnd = useRowDnD({
+    getRowsContainer: () => tbodyRef.current,
+    onDrop: handleRowDrop,
+    canDrag: () => rowReorderEnabled,
+  });
+  const rowDropClass = useCallback(
+    (id: string) => {
+      if (rowDnd.overId !== id || !rowDnd.dropSide) return "";
+      return rowDnd.dropSide === "before"
+        ? "shadow-[inset_0_2px_0_0_var(--tw-shadow-color)] shadow-blue-500"
+        : "shadow-[inset_0_-2px_0_0_var(--tw-shadow-color)] shadow-blue-500";
+    },
+    [rowDnd.overId, rowDnd.dropSide],
+  );
   const totalHuddlePages = Math.max(1, Math.ceil(total / pageSize));
 
   // Members eligible to be marked absent — scoped to the SELECTED client's
@@ -873,9 +913,11 @@ export default function DailyHuddlePage() {
                   <th className="w-10 px-3 py-3 border-b border-gray-200" />
                 </tr>
               </thead>
-              <tbody>
+              <tbody ref={tbodyRef}>
                 {pagedHuddles.map(r => (
-                  <tr key={r.id} className={`border-b border-gray-100 hover:bg-blue-50/30 ${selected.has(r.id) ? "bg-blue-50/60" : ""}`}>
+                  <tr key={r.id} data-row-id={r.id} data-row-label={r.clientName}
+                    onPointerDown={rowReorderEnabled ? (e) => rowDnd.startDrag(r.id, e) : undefined}
+                    className={`group border-b border-gray-100 hover:bg-blue-50/30 ${rowReorderEnabled ? "cursor-grab active:cursor-grabbing" : ""} ${selected.has(r.id) ? "bg-blue-50/60" : ""} ${rowDropClass(r.id)} ${rowDnd.draggingId === r.id ? "opacity-40" : ""}`}>
                     <td className="sticky z-[15] bg-white px-3 py-3 text-center border-b border-r border-gray-100"
                         style={{ left: 0, width: 40, minWidth: 40, maxWidth: 40 }}>
                       <label
@@ -919,6 +961,7 @@ export default function DailyHuddlePage() {
               </tbody>
             </table>
             </HorizontalScroller>
+            {rowDnd.dragGhost}
             {total > 0 && (
               <Pagination
                 page={page}

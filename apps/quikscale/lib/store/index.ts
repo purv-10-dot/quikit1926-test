@@ -38,8 +38,12 @@ export interface TableState {
 }
 
 const TABLE_DEFAULTS: Record<TableModule, TableState> = {
-  kpi: { sortBy: "createdAt", sortOrder: "desc", search: "" },
-  kpiTeams: { sortBy: "createdAt", sortOrder: "desc", search: "" },
+  // Empty sortBy = manual (drag-to-reorder) mode by default — server orders by
+  // the shared `position` rank, which the migration backfilled to match the old
+  // createdAt-desc order, so the initial view is unchanged but row-drag works.
+  // (Matches priority/www/client defaults.) A column sort still overrides it.
+  kpi: { sortBy: "", sortOrder: "desc", search: "" },
+  kpiTeams: { sortBy: "", sortOrder: "desc", search: "" },
   priority: { sortBy: "", sortOrder: "asc", search: "" },
   www: { sortBy: "", sortOrder: "asc", search: "" },
   clientMaster: { sortBy: "", sortOrder: "asc", search: "" },
@@ -171,7 +175,10 @@ export function useDebouncedTableSearch(
 // ───────────────────────────────────────────────────────────────────────────
 
 const STORAGE_KEY = "quikscale.tables";
-const STORAGE_VERSION = 1;
+// v2: kpi/kpiTeams default sortBy changed "createdAt" → "" (manual row-order
+// mode). Bumped so persisted v1 payloads (with the old default) are dropped and
+// users pick up manual mode.
+const STORAGE_VERSION = 2;
 
 type PersistedPayload = { v: number; state: TablesState };
 

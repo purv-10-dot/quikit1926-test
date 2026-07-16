@@ -36,6 +36,8 @@ import { useColumnResize } from "@/lib/hooks/useColumnResize";
 import { useColumnOrder } from "@/lib/hooks/useColumnOrder";
 import { moveByKey, columnsUnfrozenBy } from "@/lib/utils/columnOrder";
 import { useColumnDnD } from "@/lib/hooks/useColumnDnD";
+import { useRowDnD } from "@/lib/hooks/useRowDnD";
+import { rowNeighbors } from "@/lib/utils/rowOrder";
 import { useConfirm } from "@quikit/ui";
 import { useStickyOffsets } from "@/lib/hooks/useStickyOffsets";
 import { HorizontalScroller } from "@/components/ui/HorizontalScroller";
@@ -1275,6 +1277,44 @@ export default function WeeklyMeetingPage() {
   const pagedMeetings = visibleRows;
   const totalMeetingPages = Math.max(1, Math.ceil(total / pageSize));
 
+  // ── Drag-to-reorder ROWS (org-shared manual order) ───────────────────────
+  const rowTbodyRef = useRef<HTMLTableSectionElement>(null);
+  const rowReorderEnabled = !sortBy && !viewTrash;
+  const orderedRowIds = useMemo(() => pagedMeetings.map((r) => r.id), [pagedMeetings]);
+  const handleRowDrop = useCallback(
+    async (fromId: string, toId: string, side: "before" | "after") => {
+      const n = rowNeighbors(orderedRowIds, fromId, toId, side);
+      if (!n) return;
+      try {
+        const res = await fetch("/api/client-meetings/weekly-meetings/reorder", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ id: fromId, beforeId: n.beforeId, afterId: n.afterId }),
+        });
+        if (!res.ok) throw new Error("reorder failed");
+        refresh();
+      } catch {
+        notify.error("Failed to reorder row");
+        refresh();
+      }
+    },
+    [orderedRowIds, refresh],
+  );
+  const rowDnd = useRowDnD({
+    getRowsContainer: () => rowTbodyRef.current,
+    onDrop: handleRowDrop,
+    canDrag: () => rowReorderEnabled,
+  });
+  const rowDropClass = useCallback(
+    (id: string) => {
+      if (rowDnd.overId !== id || !rowDnd.dropSide) return "";
+      return rowDnd.dropSide === "before"
+        ? "shadow-[inset_0_2px_0_0_var(--tw-shadow-color)] shadow-blue-500"
+        : "shadow-[inset_0_-2px_0_0_var(--tw-shadow-color)] shadow-blue-500";
+    },
+    [rowDnd.overId, rowDnd.dropSide],
+  );
+
   return (
     <div className="flex flex-col h-full">
       {/* Page Header (KPI-style chrome) */}
@@ -1423,11 +1463,14 @@ export default function WeeklyMeetingPage() {
                   <th className="px-3 py-2 text-right" />
                 </tr>
               </thead>
-              <tbody>
+              <tbody ref={rowTbodyRef}>
                 {pagedMeetings.map((r, idx) => (
                   <tr
                     key={r.id}
-                    className="border-t border-gray-100 hover:bg-blue-50/30"
+                    data-row-id={r.id}
+                    data-row-label={r.clientName}
+                    onPointerDown={rowReorderEnabled ? (e) => rowDnd.startDrag(r.id, e) : undefined}
+                    className={`group border-t border-gray-100 hover:bg-blue-50/30 ${rowReorderEnabled ? "cursor-grab active:cursor-grabbing" : ""} ${rowDropClass(r.id)} ${rowDnd.draggingId === r.id ? "opacity-40" : ""}`}
                   >
                     <td className="sticky z-[15] bg-white px-2 py-2 border-r border-gray-100"
                         style={{ left: 0, width: 32, minWidth: 32, maxWidth: 32 }}>
@@ -1503,6 +1546,7 @@ export default function WeeklyMeetingPage() {
               </tbody>
             </table>
             </HorizontalScroller>
+            {rowDnd.dragGhost}
             {total > 0 && (
               <Pagination
                 page={page}

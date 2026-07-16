@@ -16,6 +16,8 @@ import { useColumnResize, ResizeHandle } from "@/lib/hooks/useColumnResize";
 import { useColumnOrder } from "@/lib/hooks/useColumnOrder";
 import { moveByKey, columnsUnfrozenBy } from "@/lib/utils/columnOrder";
 import { useColumnDnD, DragHandle } from "@/lib/hooks/useColumnDnD";
+import { useRowDnD } from "@/lib/hooks/useRowDnD";
+import { rowNeighbors } from "@/lib/utils/rowOrder";
 import { BaseTooltip } from "@/components/ui/base-tooltip";
 import { UserAuditCell, DateAuditCell } from "@/components/table/AuditCells";
 import { useClickOutside } from "@/lib/hooks/useClickOutside";
@@ -462,6 +464,42 @@ export function WWWTable({ items: itemsAll, onRefresh, onSelectionChange, hideCo
     onDrop: handleColDrop,
     canReorder: canReorderCol,
   });
+
+  // ── Drag-to-reorder ROWS (org-shared manual order) ───────────────────────
+  const tbodyRef = useRef<HTMLTableSectionElement>(null);
+  const rowReorderEnabled = !reorderDisabled && !sortCol;
+  const orderedRowIds = useMemo(() => items.map(i => i.id), [items]);
+  const handleRowDrop = useCallback(
+    async (fromId: string, toId: string, side: "before" | "after") => {
+      const n = rowNeighbors(orderedRowIds, fromId, toId, side);
+      if (!n) return;
+      try {
+        const res = await fetch("/api/www/reorder", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ id: fromId, beforeId: n.beforeId, afterId: n.afterId }),
+        });
+        if (!res.ok) throw new Error("reorder failed");
+        onRefresh();
+      } catch {
+        notify.error("Failed to reorder row");
+        onRefresh();
+      }
+    },
+    [orderedRowIds, onRefresh],
+  );
+  const rowDnd = useRowDnD({
+    getRowsContainer: () => tbodyRef.current,
+    onDrop: handleRowDrop,
+    canDrag: () => rowReorderEnabled,
+  });
+  function rowDropClass(id: string) {
+    if (rowDnd.overId !== id || !rowDnd.dropSide) return "";
+    return rowDnd.dropSide === "before"
+      ? "shadow-[inset_0_2px_0_0_var(--tw-shadow-color)] shadow-blue-500"
+      : "shadow-[inset_0_-2px_0_0_var(--tw-shadow-color)] shadow-blue-500";
+  }
+
   function dropIndicatorClass(col: string) {
     if (dnd.overKey !== col || !dnd.dropSide) return "";
     return dnd.dropSide === "before"
@@ -630,7 +668,7 @@ export function WWWTable({ items: itemsAll, onRefresh, onSelectionChange, hideCo
               })}
             </tr>
           </thead>
-          <tbody>
+          <tbody ref={tbodyRef}>
             {items.length === 0 && (
               <tr>
                 <td colSpan={9} className="text-center py-12 text-xs text-gray-400">
@@ -884,7 +922,10 @@ export function WWWTable({ items: itemsAll, onRefresh, onSelectionChange, hideCo
               return (
                 <tr
                   key={item.id}
-                  className={`border-b border-gray-100 hover:bg-blue-50 transition-colors ${rowBg}`}
+                  data-row-id={item.id}
+                  data-row-label={item.what}
+                  onPointerDown={rowReorderEnabled ? (e) => rowDnd.startDrag(item.id, e) : undefined}
+                  className={`group border-b border-gray-100 hover:bg-blue-50 transition-colors ${rowReorderEnabled ? "cursor-grab active:cursor-grabbing" : ""} ${rowBg} ${rowDropClass(item.id)} ${rowDnd.draggingId === item.id ? "opacity-40" : ""}`}
                 >
                   {/* Cells rendered in the user's drag order (see renderBodyCell).
                       Styling/colors unchanged from the previous hardcoded blocks. */}
@@ -895,6 +936,9 @@ export function WWWTable({ items: itemsAll, onRefresh, onSelectionChange, hideCo
           </tbody>
         </table>
       </HorizontalScroller>
+
+      {/* Floating "lifted" card that follows the cursor while dragging a row. */}
+      {rowDnd.dragGhost}
 
       {infiniteMode && isFetchingMore && (
         <div className="flex items-center justify-center gap-2 py-2.5 text-xs text-gray-400 border-t border-gray-100 bg-gray-50">
