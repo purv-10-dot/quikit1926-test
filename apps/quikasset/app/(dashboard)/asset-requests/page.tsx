@@ -100,14 +100,14 @@ function PendingApprovalsQueue() {
       })
       if (!res.ok) {
         const j = await res.json().catch(() => ({}))
-        showToast("Error", j.error ?? "Fulfilment failed", "error")
+        showToast("Error", j.error ?? "Couldn't assign asset", "error")
         return
       }
       setFulfilFor(null)
-      showToast("Request fulfilled", fulfilFor.itemType)
+      showToast("Asset assigned", fulfilFor.itemType)
       await load()
     } catch {
-      showToast("Error", "Fulfilment failed", "error")
+      showToast("Error", "Couldn't assign asset", "error")
     }
   }
 
@@ -195,7 +195,7 @@ function PendingApprovalsQueue() {
                           onClick={() => setFulfilFor(r)}
                           className="inline-flex items-center gap-1 rounded-lg bg-accent-50 px-2 py-1.5 text-[10px] font-semibold text-accent-700 hover:bg-accent-100 transition-colors"
                         >
-                          <PackageCheck className="h-3 w-3" /> Fulfil
+                          <PackageCheck className="h-3 w-3" /> Assign
                         </button>
                       ) : (
                         <span className="text-[10px] text-gray-300">—</span>
