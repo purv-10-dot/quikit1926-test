@@ -2,6 +2,7 @@ import { getSession } from "@/lib/auth-shims";
 import { db as prisma } from "@quikit/database";
 import { redirect } from "next/navigation";
 import { ChatShell } from "@/components/chat/ChatShell";
+import { ensureSeeded, collapseToLatestRole } from "@/lib/authz/seed";
 
 export const dynamic = "force-dynamic";
 
@@ -12,6 +13,11 @@ export default async function DashboardPage({
 }) {
   const session = await getSession();
   if (!session) redirect("/login");
+
+  // RBAC v2 substrate (Phase 1): primary seed hook. Idempotent + cached, so
+  // this is ~free after the first request per org. No enforcement yet.
+  await ensureSeeded(session.orgId);
+  await collapseToLatestRole(session.userId, session.orgId);
 
   const [user, org] = await Promise.all([
     prisma.user.findUnique({ where: { id: session.userId } }),

@@ -29,6 +29,7 @@ model App {
   AppRole          QtAppRole[]
   cnAppRoles       CnAppRole[]
   qsAppRoles       QsAppRole[]
+  qcAppRoles       QcAppRole[]
   healthChecks     AppHealthCheck[]
   moduleFlags      AppModuleFlag[]
   oauthClient      OAuthClient?
@@ -233,6 +234,9 @@ model Org {
   UserPermissionExtra      QtUserPermissionExtra[]
   qsAppRoles               QsAppRole[]
   qsUserAppRoles           QsUserAppRole[]
+  qcAppRoles               QcAppRole[]
+  qcUserAppRoles           QcUserAppRole[]
+  qcUserPermissionExtras   QcUserPermissionExtra[]
   vcApplications           VCApplication[]
   vcAuditLogs              VCAuditLog[]
   vcCapitalCalls           VCCapitalCall[]
@@ -349,6 +353,8 @@ model User {
   cnUserAppRoles          CnUserAppRole[]
   cnUserPermissionExtras  CnUserPermissionExtra[]
   qsUserAppRoles          QsUserAppRole[]
+  qcUserAppRoles          QcUserAppRole[]
+  qcPermissionExtras      QcUserPermissionExtra[]
   cnUserProfiles          CnUserProfile[]
   cnUserProjectAccess     CnUserProjectAccess[]
   qtProjectUserRoles      QtProjectUserRole[]
@@ -18845,6 +18851,84 @@ model QcInvite {
   createdAt   DateTime  @default(now())
 
   @@index([orgId, channelId])
+  @@schema("app_quikchat")
+}
+
+// ── RBAC v2 (app-level roles & permissions) ────────────────────────────────
+// Mirrors the canonical QuikScale four-table model (app_quikscale.AppRole …)
+// verbatim, prefixed `Qc*` and `@@map`'d to the physical names the shared
+// `@quikit/auth` assignAppRoles helper resolves by literal table name
+// (`app_quikchat."AppRole"` / `"UserAppRole"`). See docs/RBAC_PLAN.md.
+model QcAppRole {
+  id          String              @id @default(cuid())
+  orgId       String
+  appId       String
+  name        String
+  description String?
+  isSystem    Boolean             @default(false)
+  isDefault   Boolean             @default(false)
+  createdAt   DateTime            @default(now())
+  updatedAt   DateTime            @updatedAt
+  createdBy   String?
+  app         App                 @relation(fields: [appId], references: [id], onDelete: Cascade)
+  org         Org                 @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  permissions QcRolePermission[]
+  members     QcUserAppRole[]
+
+  @@unique([orgId, appId, name])
+  @@index([orgId, appId])
+  @@map("AppRole")
+  @@schema("app_quikchat")
+}
+
+model QcUserAppRole {
+  id         String    @id @default(cuid())
+  userId     String
+  orgId      String
+  roleId     String
+  assignedAt DateTime  @default(now())
+  assignedBy String?
+  org        Org       @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  role       QcAppRole @relation(fields: [roleId], references: [id], onDelete: Cascade)
+  user       User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, orgId, roleId])
+  @@index([roleId])
+  @@index([userId, orgId])
+  @@map("UserAppRole")
+  @@schema("app_quikchat")
+}
+
+model QcRolePermission {
+  id       String    @id @default(cuid())
+  roleId   String
+  resource String
+  action   String
+  role     QcAppRole @relation(fields: [roleId], references: [id], onDelete: Cascade)
+
+  @@unique([roleId, resource, action])
+  @@index([roleId])
+  @@map("RolePermission")
+  @@schema("app_quikchat")
+}
+
+/// Per-user additive permission grants — applied ON TOP of the user's role
+/// grants. Lets an admin extend one user's access without changing the role
+/// for everyone on it.
+model QcUserPermissionExtra {
+  id        String   @id @default(cuid())
+  orgId     String
+  userId    String
+  resource  String
+  action    String
+  grantedBy String?
+  createdAt DateTime @default(now())
+  org       Org      @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([orgId, userId, resource, action])
+  @@index([userId, orgId])
+  @@map("UserPermissionExtra")
   @@schema("app_quikchat")
 }
 
