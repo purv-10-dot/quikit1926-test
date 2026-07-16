@@ -1,11 +1,12 @@
 "use client";
 
 import { useState } from "react";
-import { useRouter } from "next/navigation";
+import { ArrowLeft, Eye, EyeOff, Sun, Moon } from "lucide-react";
 import { requireProdEnv } from "@quikit/shared";
+import { authThemeCss } from "@quikit/ui";
 
 /**
- * FRD FR-SA-009 / FR-SA-010 — Set Password screen.
+ * FRD FR-SA-009 / FR-SA-010 — Set / Create Password screen.
  *
  * Shown ONCE on first login for users created via native invite. They MUST
  * save a new password — the legacy "Skip for now" affordance was removed
@@ -14,12 +15,21 @@ import { requireProdEnv } from "@quikit/shared";
  *
  * Reached when `mustChangePassword` is true (the sign-in flow routes here
  * before the user is sent on to the launcher).
+ *
+ * Two-panel dark layout matching the login / register redesign. The current
+ * (temporary) password field is retained — the endpoint validates it — even
+ * though the marketing "create-password" mock only showed new + confirm.
  */
+
+const BRAND_NAME = "QuikIT";
+
 export default function SetPasswordPage() {
-  const router = useRouter();
+  const [theme, setTheme] = useState<"dark" | "light">("dark");
   const [currentPassword, setCurrentPassword] = useState("");
   const [newPassword, setNewPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
+  const [showCurrent, setShowCurrent] = useState(false);
+  const [showNew, setShowNew] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -82,75 +92,99 @@ export default function SetPasswordPage() {
     }
   }
 
-  void router; // reserved for future inline back-link
-
   return (
-    <div className="flex min-h-screen items-center justify-center bg-slate-50 p-4">
-      <div className="w-full max-w-md rounded-xl bg-white p-8 shadow-sm ring-1 ring-slate-200">
-        <h1 className="mb-2 text-2xl font-semibold text-slate-900">
-          Set your password
-        </h1>
-        <p className="mb-6 text-sm text-slate-600">
-          You&apos;re using a temporary password. Set a new one to continue.
-        </p>
+    <div className="qk-setpw" data-theme={theme}>
+      <style dangerouslySetInnerHTML={{ __html: authThemeCss(".qk-setpw") }} />
+      <div className="qk-guides" aria-hidden="true">
+        <span className="qk-guides__drop qk-guides__drop--left" />
+        <span className="qk-guides__drop qk-guides__drop--right" />
+      </div>
+      <div className="auth-layout">
+        {/* ── Left brand panel ── */}
+        <aside className="auth-side">
+          <div className="auth-side-head">
+            <a href="/login" className="auth-back" aria-label="Back to sign in">
+              <ArrowLeft size={18} />
+            </a>
+            <div className="auth-brand-content">
+              <span className="auth-eyebrow">Last step</span>
+              <h2 className="auth-brand-title">Create your password.</h2>
+              <p className="auth-brand-subtitle">Secure your new workspace.</p>
+              <p className="auth-brand-desc">
+                Choose a strong password — you&apos;ll use it together with your email to
+                sign in to {BRAND_NAME}.
+              </p>
+            </div>
+          </div>
+        </aside>
 
-        <form onSubmit={handleSubmit} className="space-y-4">
-          <div>
-            <label htmlFor="current-password" className="mb-1 block text-sm font-medium text-slate-700">
-              Current password
-            </label>
-            <input
-              id="current-password"
-              type="password"
-              autoComplete="current-password"
-              className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500"
-              placeholder="Enter your default password"
-              value={currentPassword}
-              onChange={(e) => setCurrentPassword(e.target.value)}
-              required
-            />
-          </div>
-          <div>
-            <label htmlFor="new-password" className="mb-1 block text-sm font-medium text-slate-700">
-              New password
-            </label>
-            <input
-              id="new-password"
-              type="password"
-              autoComplete="new-password"
-              className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500"
-              placeholder="Min 8 chars, 1 uppercase, 1 number, 1 special"
-              value={newPassword}
-              onChange={(e) => setNewPassword(e.target.value)}
-              required
-            />
-          </div>
-          <div>
-            <label htmlFor="confirm-password" className="mb-1 block text-sm font-medium text-slate-700">
-              Confirm new password
-            </label>
-            <input
-              id="confirm-password"
-              type="password"
-              autoComplete="new-password"
-              className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500"
-              placeholder="Re-enter password"
-              value={confirmPassword}
-              onChange={(e) => setConfirmPassword(e.target.value)}
-              required
-            />
+        {/* ── Right form panel ── */}
+        <main className="auth-main">
+          <div className="auth-main-top">
+            <a href="/" className="auth-logo" aria-label={BRAND_NAME}>{BRAND_NAME}</a>
+            <button type="button" className="auth-theme"
+              onClick={() => setTheme((t) => (t === "dark" ? "light" : "dark"))}
+              aria-label={theme === "dark" ? "Switch to light theme" : "Switch to dark theme"}>
+              {theme === "dark" ? <Sun size={18} /> : <Moon size={18} />}
+            </button>
           </div>
 
-          {error && <p className="text-sm text-red-600">{error}</p>}
+          <div className="auth-card">
+            <h1>Create a password</h1>
+            <p className="auth-sub">Choose a strong password to secure your account.</p>
 
-          <button
-            type="submit"
-            disabled={submitting}
-            className="w-full rounded-md bg-indigo-600 px-4 py-2 text-sm font-medium text-white shadow-sm transition hover:bg-indigo-700 disabled:cursor-not-allowed disabled:opacity-60"
-          >
-            {submitting ? "Saving…" : "Save & Continue"}
-          </button>
-        </form>
+            {error && <div className="auth-banner auth-banner--error">{error}</div>}
+
+            <form onSubmit={handleSubmit} noValidate>
+              <div className="auth-field">
+                <label htmlFor="current-password">Current (temporary) password</label>
+                <div className="auth-password">
+                  <input id="current-password" type={showCurrent ? "text" : "password"}
+                    autoComplete="current-password" placeholder="default password from your invite email"
+                    value={currentPassword} onChange={(e) => setCurrentPassword(e.target.value)} required />
+                  <button type="button" className="auth-eye"
+                    onClick={() => setShowCurrent((v) => !v)}
+                    aria-label={showCurrent ? "Hide password" : "Show password"}>
+                    {showCurrent ? <EyeOff size={18} /> : <Eye size={18} />}
+                  </button>
+                </div>
+              </div>
+              <div className="auth-field">
+                <label htmlFor="new-password">New password</label>
+                <div className="auth-password">
+                  <input id="new-password" type={showNew ? "text" : "password"}
+                    autoComplete="new-password" placeholder="min 8 chars, 1 uppercase, 1 number, 1 special"
+                    value={newPassword} onChange={(e) => setNewPassword(e.target.value)} required minLength={8} />
+                  <button type="button" className="auth-eye"
+                    onClick={() => setShowNew((v) => !v)}
+                    aria-label={showNew ? "Hide password" : "Show password"}>
+                    {showNew ? <EyeOff size={18} /> : <Eye size={18} />}
+                  </button>
+                </div>
+              </div>
+              <div className="auth-field">
+                <label htmlFor="confirm-password">Confirm password</label>
+                <div className="auth-password">
+                  <input id="confirm-password" type={showNew ? "text" : "password"}
+                    autoComplete="new-password" placeholder="re-enter password"
+                    value={confirmPassword} onChange={(e) => setConfirmPassword(e.target.value)} required minLength={8} />
+                </div>
+                {confirmPassword.length > 0 && newPassword !== confirmPassword && (
+                  <p className="auth-error">Passwords don&apos;t match.</p>
+                )}
+              </div>
+
+              <button type="submit" className="auth-submit" disabled={submitting}>
+                {submitting ? "Saving…" : "Create password & continue"}
+              </button>
+            </form>
+          </div>
+
+          <div className="auth-foot">
+            <span>© {new Date().getFullYear()} {BRAND_NAME}</span>
+            <span className="auth-foot-links"><a href="/login">Support</a></span>
+          </div>
+        </main>
       </div>
     </div>
   );

@@ -4,11 +4,12 @@ import React, {
   useState, useRef, useEffect, forwardRef,
   useImperativeHandle, useMemo, useCallback,
 } from "react";
-import { Eye, EyeOff, ArrowLeft, X, AlertCircle, PartyPopper, Loader } from "lucide-react";
+import { Eye, EyeOff, ArrowLeft, X, AlertCircle, PartyPopper, Loader, Sun, Moon, Check } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { signIn as nextAuthSignIn } from "next-auth/react";
 import type { GlobalOptions as ConfettiGlobalOptions, CreateTypes as ConfettiInstance, Options as ConfettiOptions } from "canvas-confetti";
 import confetti from "canvas-confetti";
+import { authThemeCss } from "../lib/auth-theme-css";
 
 /* ─── Confetti ─── */
 type Api = { fire: (options?: ConfettiOptions) => void };
@@ -60,6 +61,15 @@ const MicrosoftIcon = () => (
   </svg>
 );
 
+/* ─── Brand-panel copy (left side of the split layout) ─── */
+const BRAND_POINTS = [
+  "One Login. Every {brand} App.",
+  "AI-Powered Workflows That Save Time",
+  "Connected Data. Smarter Decisions.",
+  "One Intelligent Platform for Your Entire Business",
+  "Built to Scale as Your Business Grows",
+];
+
 /* ─── Main Component ─── */
 type AuthStep = "email" | "password" | "login" | "profile" | "forgot-email" | "forgot-sent" | "forgot-otp" | "new-password" | "invitation";
 
@@ -92,6 +102,10 @@ export const SignInComponent = ({
   signUpUrl,
 }: SignInComponentProps) => {
   const router = useRouter();
+
+  // Dark by default (the redesigned auth surface ships dark); the sun/moon
+  // control in the panel header flips it to a light variant via scoped tokens.
+  const [theme, setTheme] = useState<"dark" | "light">("dark");
 
   // Normalize legacy "email" / "password" / "login" → unified "login" step.
   const normalizeStep = (s: AuthStep | undefined): AuthStep => {
@@ -221,10 +235,13 @@ export const SignInComponent = ({
     setTimeout(navigateToTarget, 1400);
   };
 
-  const runSignIn = async (signInEmailArg?: string, signInPasswordArg?: string) => {
+  const runSignIn = async (signInEmail: string, signInPassword: string) => {
+    if (!signInEmail || !signInPassword) {
+      setModalErrorMessage("Please enter your email and password.");
+      setModalStatus("error");
+      return;
+    }
     setModalStatus("loading");
-    const signInEmail = signInEmailArg || "ceo@demo.com";
-    const signInPassword = signInPasswordArg || "password123";
     try {
       const result = await nextAuthSignIn("credentials", {
         email: signInEmail,
@@ -699,6 +716,10 @@ export const SignInComponent = ({
     return () => {
       cancelled = true;
     };
+    // Intentionally keyed on authStep only: this is a run-once prefill when the
+    // user enters the "profile" step. firstName/lastName are read purely as a
+    // guard — adding them to deps would re-fire the fetch on every keystroke
+    // once the fields start filling in.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [authStep]);
 
@@ -717,6 +738,10 @@ export const SignInComponent = ({
     if (authStep === "forgot-otp" && isOtpComplete && !otpVerifying && otpSecondsLeft > 0) {
       verifyOtpDigits();
     }
+    // Fire only when the entered code (otpValue) changes. verifyOtpDigits is
+    // recreated each render and closes over the current otpValue, so the call
+    // always sees the latest digits. otpSecondsLeft/otpVerifying are read as
+    // guards only — adding them to deps would re-fire on every countdown tick.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [otpValue, authStep]);
 
@@ -800,113 +825,19 @@ export const SignInComponent = ({
     authStep === "new-password" ? 3 : 0;
   const isForgotFlow = fpStepIndex > 0;
 
+  const brandPoints = BRAND_POINTS.map((p) => p.replace("{brand}", brandName));
+
   return (
-    <div className="quikit-auth-wrap">
-      <style dangerouslySetInnerHTML={{ __html: `
-        .quikit-auth-wrap, .quikit-auth-wrap *, .quikit-auth-wrap *::before, .quikit-auth-wrap *::after { box-sizing:border-box; }
-        .quikit-auth-wrap { font-family:'Inter',-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif; background:#fff; color:#111; -webkit-font-smoothing:antialiased; height:100vh; padding:24px; display:flex; overflow:hidden; }
-        .quikit-auth-wrap a { text-decoration:none; color:inherit; }
-        .quikit-auth-wrap img { display:block; max-width:100%; }
-        @keyframes qkFadeInUp { from { opacity:0; transform:translateY(24px); } to { opacity:1; transform:translateY(0); } }
-        .quikit-auth-wrap .fade-in-up { animation:qkFadeInUp 0.7s cubic-bezier(.22,1,.36,1) both; }
-        .quikit-auth-wrap .fade-in-up.d1 { animation-delay:0.15s; }
-        .quikit-auth-wrap .fade-in-up.d2 { animation-delay:0.30s; }
-        .quikit-auth-wrap .fade-in-up.d3 { animation-delay:0.45s; }
-        .quikit-auth-wrap .fade-in-up.d4 { animation-delay:0.60s; }
-        .quikit-auth-wrap .auth-layout { flex:1; display:grid; grid-template-columns:minmax(0,1fr) minmax(0,calc(40% - 12px)); gap:24px; height:100%; background:transparent; }
-        .quikit-auth-wrap .auth-side { position:relative; background:url('/auth/login-bg.webp') center/cover no-repeat; color:#fff; padding:48px; display:flex; flex-direction:column; overflow:hidden; border-radius:24px; }
-        .quikit-auth-wrap .auth-back { position:absolute; top:24px; left:24px; z-index:2; width:40px; height:40px; display:flex; align-items:center; justify-content:center; border-radius:50%; background:rgba(255,255,255,0.18); backdrop-filter:blur(6px); -webkit-backdrop-filter:blur(6px); color:#fff; border:1px solid rgba(255,255,255,0.22); transition:background .15s, transform .1s; cursor:pointer; }
-        .quikit-auth-wrap .auth-back:hover { background:rgba(255,255,255,0.28); }
-        .quikit-auth-wrap .auth-back:active { transform:scale(0.94); }
-        .quikit-auth-wrap .auth-back svg { width:18px; height:18px; }
-        .quikit-auth-wrap .auth-main { display:flex; flex-direction:column; padding:24px 48px; height:100%; background:#fff; overflow:auto; border-radius:24px; }
-        .quikit-auth-wrap .auth-main-top { display:flex; align-items:center; justify-content:space-between; margin-bottom:24px; flex-shrink:0; }
-        .quikit-auth-wrap .auth-logo img { height:32px; width:auto; }
-        .quikit-auth-wrap .auth-card { width:100%; max-width:420px; margin:auto; }
-        .quikit-auth-wrap .auth-card h1 { font-size:24px; font-weight:800; letter-spacing:-0.02em; text-align:center; margin-bottom:8px; color:#0D1117; }
-        .quikit-auth-wrap .auth-card .auth-sub { font-size:14px; color:#6B7280; text-align:center; margin-bottom:28px; line-height:1.6; }
-        .quikit-auth-wrap .auth-oauth { display:flex; align-items:center; justify-content:center; gap:10px; width:100%; padding:12px 16px; margin-bottom:12px; background:#fff; border:1px solid rgba(0,0,0,0.12); border-radius:10px; font-family:inherit; font-size:14px; font-weight:600; color:#0D1117; cursor:pointer; transition:background .15s, border-color .15s, transform .1s; }
-        .quikit-auth-wrap .auth-oauth:hover { background:#F7F7F4; border-color:rgba(0,0,0,0.2); }
-        .quikit-auth-wrap .auth-oauth:active { transform:scale(0.98); }
-        .quikit-auth-wrap .auth-oauth svg { width:18px; height:18px; flex-shrink:0; }
-        .quikit-auth-wrap .auth-divider { position:relative; text-align:center; margin:22px 0 18px; color:#9CA3AF; font-size:12px; }
-        .quikit-auth-wrap .auth-divider::before { content:""; position:absolute; left:0; right:0; top:50%; height:1px; background:rgba(0,0,0,0.08); }
-        .quikit-auth-wrap .auth-divider span { position:relative; background:#fff; padding:0 12px; }
-        .quikit-auth-wrap .auth-field { margin-bottom:14px; }
-        .quikit-auth-wrap .auth-field label { display:block; font-size:13px; font-weight:600; color:#0D1117; margin-bottom:6px; }
-        .quikit-auth-wrap .auth-field input { width:100%; padding:12px 14px; font-family:inherit; font-size:14px; color:#0D1117; background:#fff; border:1px solid rgba(0,0,0,0.12); border-radius:10px; transition:border-color .15s, box-shadow .15s; outline:none; }
-        .quikit-auth-wrap .auth-field input::placeholder { color:#9CA3AF; }
-        .quikit-auth-wrap .auth-field input:focus { border-color:#CDB18B; box-shadow:0 0 0 3px rgba(205,177,139,0.18); }
-        .quikit-auth-wrap .auth-password { position:relative; }
-        .quikit-auth-wrap .auth-password input { padding-right:42px; }
-        .quikit-auth-wrap .auth-eye { position:absolute; right:6px; top:50%; transform:translateY(-50%); width:34px; height:34px; background:transparent; border:none; cursor:pointer; color:#9CA3AF; display:flex; align-items:center; justify-content:center; border-radius:8px; transition:color .15s, background .15s; }
-        .quikit-auth-wrap .auth-eye:hover { color:#0D1117; background:rgba(0,0,0,0.04); }
-        .quikit-auth-wrap .auth-eye svg { width:18px; height:18px; }
-        .quikit-auth-wrap .auth-submit { width:100%; padding:14px 18px; margin-top:18px; background:#CDB18B; border:none; border-radius:10px; font-family:inherit; font-size:14px; font-weight:700; color:#0D1117; cursor:pointer; transition:background .15s, transform .1s; }
-        .quikit-auth-wrap .auth-submit:hover:not(:disabled) { background:#bd9f76; }
-        .quikit-auth-wrap .auth-submit:active:not(:disabled) { transform:scale(0.99); }
-        .quikit-auth-wrap .auth-submit:disabled { opacity:.6; cursor:not-allowed; }
-        .quikit-auth-wrap .auth-secondary { width:100%; padding:12px 18px; margin-top:10px; background:#fff; border:1px solid rgba(0,0,0,0.12); border-radius:10px; font-family:inherit; font-size:14px; font-weight:600; color:#0D1117; cursor:pointer; transition:background .15s; }
-        .quikit-auth-wrap .auth-secondary:hover:not(:disabled) { background:#F7F7F4; }
-        .quikit-auth-wrap .auth-secondary:disabled { opacity:.6; cursor:not-allowed; }
-        .quikit-auth-wrap .auth-forgot { display:block; text-align:center; margin-top:18px; font-size:13px; font-weight:600; color:#0D1117; text-decoration:underline; text-underline-offset:3px; background:none; border:none; cursor:pointer; width:100%; font-family:inherit; }
-        .quikit-auth-wrap .auth-forgot:hover { color:#CDB18B; }
-        .quikit-auth-wrap .auth-foot { display:flex; justify-content:space-between; align-items:center; margin-top:auto; padding-top:24px; font-size:12px; color:#9CA3AF; border-top:1px solid rgba(0,0,0,0.05); flex-shrink:0; }
-        .quikit-auth-wrap .auth-foot-links { display:flex; gap:24px; }
-        .quikit-auth-wrap .auth-foot-links a { color:#6B7280; transition:color .15s; }
-        .quikit-auth-wrap .auth-foot-links a:hover { color:#0D1117; }
-        .quikit-auth-wrap .auth-signup-link { font-size:13px; color:#6B7280; }
-        .quikit-auth-wrap .auth-signup-link a { color:#0D1117; font-weight:600; text-decoration:underline; text-underline-offset:3px; }
-        .quikit-auth-wrap .auth-signup-link a:hover { color:#CDB18B; }
-        .quikit-auth-wrap .auth-banner { display:flex; align-items:flex-start; gap:8px; padding:10px 12px; border-radius:10px; background:#FEF2F2; border:1px solid #FECACA; color:#991B1B; font-size:13px; margin-bottom:16px; }
-        .quikit-auth-wrap .auth-banner button { background:none; border:none; color:#991B1B; cursor:pointer; padding:0; display:flex; align-items:center; }
-        .quikit-auth-wrap .auth-error { color:#B91C1C; font-size:12.5px; margin-top:8px; }
-        .quikit-auth-wrap .fp-progress { display:flex; align-items:center; justify-content:center; gap:6px; margin-bottom:24px; }
-        .quikit-auth-wrap .fp-progress-step { width:24px; height:4px; border-radius:99px; background:rgba(0,0,0,0.08); transition:background .25s; }
-        .quikit-auth-wrap .fp-progress-step.active { background:#CDB18B; }
-        .quikit-auth-wrap .fp-progress-step.done { background:#0D1117; }
-        .quikit-auth-wrap .fp-otp { display:grid; grid-template-columns:repeat(6, 1fr); gap:10px; margin-bottom:8px; }
-        .quikit-auth-wrap .fp-otp-input { width:100%; aspect-ratio:1 / 1.15; text-align:center; font-family:inherit; font-size:22px; font-weight:700; color:#0D1117; background:#fff; border:1px solid rgba(0,0,0,0.12); border-radius:10px; transition:border-color .15s, box-shadow .15s; outline:none; }
-        .quikit-auth-wrap .fp-otp-input:focus { border-color:#CDB18B; box-shadow:0 0 0 3px rgba(205,177,139,0.18); }
-        .quikit-auth-wrap .fp-otp-input.filled { border-color:#0D1117; background:#F7F7F4; }
-        .quikit-auth-wrap .fp-resend { text-align:center; font-size:13px; color:#6B7280; margin-top:14px; }
-        .quikit-auth-wrap .fp-resend-btn { background:none; border:none; padding:0; font:inherit; color:#0D1117; font-weight:600; cursor:pointer; text-decoration:underline; text-underline-offset:3px; }
-        .quikit-auth-wrap .fp-resend-btn:disabled { color:#9CA3AF; cursor:not-allowed; text-decoration:none; }
-        .quikit-auth-wrap .fp-resend-btn:not(:disabled):hover { color:#CDB18B; }
-        .quikit-auth-wrap .fp-back-step { display:block; margin:14px auto 0; background:none; border:none; padding:0; font:inherit; font-size:13px; color:#6B7280; cursor:pointer; }
-        .quikit-auth-wrap .fp-back-step:hover { color:#0D1117; }
-        .quikit-auth-wrap .qk-modal-overlay { position:fixed; inset:0; z-index:9999; background:rgba(0,0,0,0.5); backdrop-filter:blur(4px); display:flex; align-items:center; justify-content:center; padding:16px; animation:qkFadeInUp 0.2s ease-out both; }
-        .quikit-auth-wrap .qk-modal { background:#fff; border-radius:20px; padding:36px 32px; max-width:380px; width:100%; display:flex; flex-direction:column; align-items:center; gap:16px; position:relative; box-shadow:0 24px 60px rgba(0,0,0,0.3); }
-        .quikit-auth-wrap .qk-modal-close { position:absolute; top:12px; right:12px; background:none; border:none; cursor:pointer; padding:6px; color:#9CA3AF; border-radius:8px; display:flex; align-items:center; justify-content:center; }
-        .quikit-auth-wrap .qk-modal-close:hover { background:rgba(0,0,0,0.05); color:#0D1117; }
-        .quikit-auth-wrap .qk-modal-icon { width:56px; height:56px; border-radius:16px; display:flex; align-items:center; justify-content:center; }
-        .quikit-auth-wrap .qk-modal-icon.loading { background:#F3F0E8; color:#CDB18B; }
-        .quikit-auth-wrap .qk-modal-icon.error { background:#FEF2F2; color:#DC2626; }
-        .quikit-auth-wrap .qk-modal-icon.success { background:#F3F0E8; color:#CDB18B; }
-        .quikit-auth-wrap .qk-modal-title { font-size:16px; font-weight:700; color:#0D1117; text-align:center; }
-        .quikit-auth-wrap .qk-modal-msg { font-size:13px; color:#6B7280; text-align:center; }
-        .quikit-auth-wrap .qk-spin { animation:qk-spin 1s linear infinite; }
-        @keyframes qk-spin { from { transform:rotate(0deg); } to { transform:rotate(360deg); } }
-        @media (max-width:900px) {
-          .quikit-auth-wrap { height:auto; min-height:100vh; padding:16px; overflow:visible; }
-          .quikit-auth-wrap .auth-layout { grid-template-columns:1fr; height:auto; min-height:calc(100vh - 32px); }
-          .quikit-auth-wrap .auth-side { padding:28px 24px 40px; min-height:200px; }
-          .quikit-auth-wrap .auth-main { padding:24px 20px 32px; height:auto; overflow:visible; }
-          .quikit-auth-wrap .auth-main-top { margin-bottom:32px; }
-          .quikit-auth-wrap .auth-foot { flex-direction:column; gap:12px; align-items:flex-start; margin-top:32px; }
-          .quikit-auth-wrap .fp-otp { gap:8px; }
-          .quikit-auth-wrap .fp-otp-input { font-size:18px; }
-        }
-        @media (max-width:480px) {
-          .quikit-auth-wrap { padding:12px; }
-          .quikit-auth-wrap .auth-layout { min-height:calc(100vh - 24px); gap:12px; }
-          .quikit-auth-wrap .auth-side, .quikit-auth-wrap .auth-main { border-radius:18px; }
-          .quikit-auth-wrap .auth-card h1 { font-size:22px; }
-          .quikit-auth-wrap .auth-main { padding:20px 16px 28px; }
-        }
-      ` }} />
+    <div className="quikit-auth-wrap" data-theme={theme}>
+      <style dangerouslySetInnerHTML={{ __html: authThemeCss(".quikit-auth-wrap") }} />
 
       <Confetti ref={confettiRef} manualstart className="fixed inset-0 pointer-events-none" style={{ zIndex: 9998 }} />
+
+      {/* Animated background guides (vertical hairlines + falling beams) */}
+      <div className="qk-guides" aria-hidden="true">
+        <span className="qk-guides__drop qk-guides__drop--left" />
+        <span className="qk-guides__drop qk-guides__drop--right" />
+      </div>
 
       {/* Status modal */}
       {modalStatus !== "closed" && (
@@ -951,18 +882,53 @@ export const SignInComponent = ({
       <div className="auth-layout">
         {/* ─── Left brand panel ─── */}
         <aside className="auth-side">
-          <button type="button" className="auth-back" aria-label="Back to home"
-            onClick={() => { if (hardNavigate) window.location.assign("/"); else router.push("/"); }}>
-            <ArrowLeft size={18} />
-          </button>
+          <div className="auth-side-head fade-in-up d1">
+            <button type="button" className="auth-back" aria-label="Back to home"
+              onClick={() => { if (hardNavigate) window.location.assign("/"); else router.push("/"); }}>
+              <ArrowLeft size={18} />
+            </button>
+            <div className="auth-brand-content">
+              <span className="auth-eyebrow">{isForgotFlow ? "Account recovery" : "Welcome back"}</span>
+              <h2 className="auth-brand-title">
+                {isForgotFlow ? "Back into your workspace in a few steps." : `Welcome Back to ${brandName}.`}
+              </h2>
+              <p className="auth-brand-subtitle">
+                {isForgotFlow ? "Reset your password securely." : "Everything Your Business Needs. One Login Away."}
+              </p>
+              <p className="auth-brand-desc">
+                {isForgotFlow
+                  ? "Enter your email, verify the code we send, and choose a new password to get straight back to your workspace."
+                  : "Sign in to access your AI-powered workspace where your teams, customers, projects, and business operations come together in one intelligent ecosystem."}
+              </p>
+            </div>
+          </div>
+
+          {!isForgotFlow && (
+            <div className="auth-side-bottom fade-in-up d2">
+              <h3 className="auth-brand-why">Why Businesses Run on {brandName}</h3>
+              <div className="auth-marquee">
+                <ul className="auth-marquee-track">
+                  {[...brandPoints, ...brandPoints].map((p, idx) => (
+                    <li key={idx} aria-hidden={idx >= brandPoints.length}>
+                      <Check size={16} strokeWidth={2.4} />
+                      <span>{p}</span>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            </div>
+          )}
         </aside>
 
         {/* ─── Right auth panel ─── */}
         <section className="auth-main">
           <header className="auth-main-top fade-in-up d1">
-            <a href="/" className="auth-logo" aria-label={brandName}>
-              <img src="/auth/quikit-logo-dark.png" alt={brandName} width={120} height={32} />
-            </a>
+            <a href="/" className="auth-logo" aria-label={brandName}>{brandName}</a>
+            <button type="button" className="auth-theme"
+              onClick={() => setTheme((t) => (t === "dark" ? "light" : "dark"))}
+              aria-label={theme === "dark" ? "Switch to light theme" : "Switch to dark theme"}>
+              {theme === "dark" ? <Sun size={18} /> : <Moon size={18} />}
+            </button>
           </header>
 
           <div className="auth-card fade-in-up d2">
@@ -986,8 +952,8 @@ export const SignInComponent = ({
             {/* ════════════ LOGIN STEP ════════════ */}
             {authStep === "login" && (
               <>
-                <h1>Welcome back to {brandName}!</h1>
-                <p className="auth-sub">Please enter your details to sign in to your account</p>
+                <h1>Welcome back to {brandName}</h1>
+                <p className="auth-sub">Enter your details to sign in to your account.</p>
 
                 <button type="button" className="auth-oauth" onClick={() => handleSocialSignIn("google")}>
                   <GoogleIcon /> Continue with Google
@@ -996,7 +962,7 @@ export const SignInComponent = ({
                   <MicrosoftIcon /> Continue with Microsoft
                 </button>
 
-                <div className="auth-divider"><span>Or sign in with</span></div>
+                <div className="auth-divider"><span>or sign in with</span></div>
 
                 <form onSubmit={handleNativeSignIn} noValidate>
                   <div className="auth-field">
@@ -1022,26 +988,21 @@ export const SignInComponent = ({
                     </div>
                   </div>
 
+                  <button type="button" className="auth-forgot"
+                    onClick={() => setAuthStep("forgot-email")}>
+                    Forgot password?
+                  </button>
+
                   <button type="submit" className="auth-submit"
                     disabled={modalStatus === "loading"}>
-                    Sign In →
+                    Sign in
                   </button>
                 </form>
 
-                <button type="button" className="auth-forgot"
-                  onClick={() => setAuthStep("forgot-email")}>
-                  Forgot password?
-                </button>
-
                 {signUpUrl && (
-                  <p style={{ textAlign: "center", marginTop: 18, fontSize: 13, color: "#6B7280" }}>
+                  <p className="auth-alt">
                     Don&apos;t have an account?{" "}
-                    <a
-                      href={signUpUrl}
-                      style={{ color: "#0D1117", fontWeight: 600, textDecoration: "underline", textUnderlineOffset: 3 }}
-                    >
-                      Sign up
-                    </a>
+                    <a href={signUpUrl}>Sign up</a>
                   </p>
                 )}
               </>
@@ -1079,8 +1040,8 @@ export const SignInComponent = ({
             {/* ════════════ FORGOT-EMAIL STEP ════════════ */}
             {authStep === "forgot-email" && (
               <>
-                <h1>Forgot your password?</h1>
-                <p className="auth-sub">Enter the email you used to sign up. We&apos;ll send a 6-digit code to reset your password.</p>
+                <h1>Reset your password</h1>
+                <p className="auth-sub">Enter the email on your account and we&apos;ll send you a verification code.</p>
 
                 <form onSubmit={async (e) => { e.preventDefault(); await startForgotPassword(); }} noValidate>
                   <div className="auth-field">
