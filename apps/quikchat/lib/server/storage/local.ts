@@ -14,18 +14,22 @@ import {
   type UploadTarget,
   type UploadTargetInput,
 } from "./types";
-import { signToken } from "./tokens";
+import { signToken, uploadTokenSecret } from "./tokens";
 
 const UPLOAD_TTL_MS = 5 * 60_000; // 5 min
 const DOWNLOAD_TTL_MS = 10 * 60_000; // 10 min
 
 function secret(): string {
-  return process.env.UPLOAD_TOKEN_SECRET || "dev-only-upload-secret-change-me";
+  return uploadTokenSecret();
 }
 
-/** The HMAC secret used to sign/verify local upload + download tokens. */
+/**
+ * The HMAC secret used to sign/verify upload + download tokens. Retained as a
+ * thin re-export (the accessor now lives in `tokens.ts`, shared with the GCS
+ * driver) so existing importers of `localUploadSecret` stay unchanged.
+ */
 export function localUploadSecret(): string {
-  return secret();
+  return uploadTokenSecret();
 }
 
 export function uploadDir(): string {

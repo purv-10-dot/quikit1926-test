@@ -46,6 +46,35 @@ describe("streamAssist", () => {
     expect(onError).not.toHaveBeenCalled();
   });
 
+  it("carries the optional document ref in the POST body", async () => {
+    const fetchMock = vi.fn(async (_url: string, _opts: RequestInit) =>
+      sseResponse([
+        'data: {"type":"done","text":"ok","agentRunId":"r1","clientMessageId":"assist-r1"}\n\n',
+      ]),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+    const { h } = handlers();
+    await streamAssist(
+      "c1",
+      {
+        prompt: "summarize this",
+        document: {
+          storageKey: "quikchat/o1/c1/uuid-invoice.pdf",
+          filename: "invoice.pdf",
+          contentType: "application/pdf",
+        },
+      },
+      h,
+    );
+    const body = JSON.parse(fetchMock.mock.calls[0]![1]!.body as string);
+    expect(body.prompt).toBe("summarize this");
+    expect(body.document).toEqual({
+      storageKey: "quikchat/o1/c1/uuid-invoice.pdf",
+      filename: "invoice.pdf",
+      contentType: "application/pdf",
+    });
+  });
+
   it("dispatches an error event", async () => {
     vi.stubGlobal(
       "fetch",

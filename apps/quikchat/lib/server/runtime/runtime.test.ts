@@ -118,6 +118,37 @@ describe("HttpRuntimeClient", () => {
     expect(body.channelId).toBe("c1");
   });
 
+  it("forwards a document as flat top-level url + filename", async () => {
+    const fetchMock = vi.fn(async (_url: string, _opts: RequestInit) =>
+      sseResponse(['data: {"type":"done","text":"ok","agentRunId":"r1"}\n\n']),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+    const { HttpRuntimeClient } = await import("./http");
+    await collect(
+      new HttpRuntimeClient("https://r").assist({
+        ...input,
+        document: { url: "https://storage.googleapis.com/quikit-bucket/x.pdf", filename: "x.pdf" },
+      }),
+    );
+    const body = JSON.parse(fetchMock.mock.calls[0]![1].body as string);
+    expect(body.url).toBe("https://storage.googleapis.com/quikit-bucket/x.pdf");
+    expect(body.filename).toBe("x.pdf");
+    // Flat, top-level — NOT nested under `document`.
+    expect(body.document).toBeUndefined();
+  });
+
+  it("omits url/filename on a plain turn (no document → back-compat body)", async () => {
+    const fetchMock = vi.fn(async (_url: string, _opts: RequestInit) =>
+      sseResponse(['data: {"type":"done","text":"ok","agentRunId":"r1"}\n\n']),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+    const { HttpRuntimeClient } = await import("./http");
+    await collect(new HttpRuntimeClient("https://r").assist(input));
+    const body = JSON.parse(fetchMock.mock.calls[0]![1].body as string);
+    expect(body.url).toBeUndefined();
+    expect(body.filename).toBeUndefined();
+  });
+
   it("maps a non-2xx response to an error event", async () => {
     vi.stubGlobal(
       "fetch",

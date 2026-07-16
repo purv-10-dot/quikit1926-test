@@ -23,6 +23,7 @@ import {
   useNotifications,
 } from "@/components/notifications/NotificationProvider";
 import { ProfileProvider, useProfile } from "@/components/profile/ProfileProvider";
+import { DesktopBridge } from "@/components/desktop/DesktopBridge";
 import { CalendarModule } from "./CalendarModule";
 import { CallsModule } from "./CallsModule";
 import { ChatWorkspace } from "./ChatWorkspace";
@@ -85,6 +86,7 @@ function ShellInner({
 
   return (
     <div className="qc-frame">
+      <DesktopBridge />
       <aside className="qc-rail" aria-label="Primary navigation">
         <div className="qc-rail__logo" title={workspaceName}>
           <img src="/quikchat-logo-02.png" alt={workspaceName} />

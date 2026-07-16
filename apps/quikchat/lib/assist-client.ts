@@ -24,7 +24,16 @@ type StreamEvent =
 
 export async function streamAssist(
   channelId: string,
-  body: { prompt: string; threadRootId?: string },
+  body: {
+    prompt: string;
+    threadRootId?: string;
+    /**
+     * Optional attached document (Stage 2). The client sends the `storageKey`
+     * it owns from its uploaded Media message; the relay authorizes it and mints
+     * the presigned URL server-side (a client URL is never trusted).
+     */
+    document?: { storageKey: string; filename: string; contentType?: string };
+  },
   handlers: AssistHandlers,
   signal?: AbortSignal,
 ): Promise<void> {

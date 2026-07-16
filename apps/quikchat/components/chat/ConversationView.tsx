@@ -104,6 +104,8 @@ export function ConversationView({
   const toast = useToast();
   const { registerScheduleWith } = useProfile();
   const channelId = channel.channelId;
+  // AI chat = a 1:1 with the assistant bot; calls and meetings don't apply.
+  const isAiChat = channel.type === "ai";
   const [infoOpen, setInfoOpen] = useState(false);
   const [replyTarget, setReplyTarget] = useState<MessageDto | null>(null);
   const [forwardTarget, setForwardTarget] = useState<MessageDto | null>(null);
@@ -214,8 +216,8 @@ export function ConversationView({
           online={online}
           currentUserId={currentUserId}
           onToggleInfo={() => setInfoOpen((v) => !v)}
-          onSchedule={() => setScheduleSeed(channel.members.map((m) => m.id))}
-          onCall={onCall}
+          onSchedule={isAiChat ? undefined : () => setScheduleSeed(channel.members.map((m) => m.id))}
+          onCall={isAiChat ? undefined : onCall}
         />
         <PinnedBanner count={pinnedQuery.data?.length ?? 0} onOpen={() => setInfoOpen(true)} />
         {loadingMessages && !messages ? (
@@ -323,7 +325,7 @@ export function ConversationView({
           currentUserId={currentUserId}
           onlineIds={online}
           roleError={roleError}
-          onCall={onCall}
+          onCall={isAiChat ? undefined : onCall}
           onBack={() => setInfoOpen(false)}
           onAddMembers={async (userIds) => {
             setRoleError(null);

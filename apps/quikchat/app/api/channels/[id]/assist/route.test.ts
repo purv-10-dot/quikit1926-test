@@ -13,13 +13,17 @@ type Evt =
   | { type: "delta"; text: string }
   | { type: "done"; text: string; agentRunId: string }
   | { type: "error"; message: string };
-const runtime: { events: Evt[]; lastInput?: { prompt: string; history: unknown[] } } = {
+type AssistDoc = { url: string; filename: string };
+const runtime: {
+  events: Evt[];
+  lastInput?: { prompt: string; history: unknown[]; document?: AssistDoc };
+} = {
   events: [],
 };
 vi.mock("@/lib/server/runtime", () => ({
   getRuntimeClient: () => ({
     // eslint-disable-next-line require-yield
-    assist: async function* (inp: { prompt: string; history: unknown[] }) {
+    assist: async function* (inp: { prompt: string; history: unknown[]; document?: AssistDoc }) {
       runtime.lastInput = inp;
       for (const e of runtime.events) yield e;
     },
@@ -126,6 +130,51 @@ describe("POST /api/channels/[id]/assist", () => {
     expect(posted.content).toBe("Hello there");
     expect(posted.agentRunId).toBe("run-A");
     expect(posted.senderId).toBe(ASSISTANT_BOT_USER_ID);
+  });
+
+  it("resolves an attached document to a server-minted URL and forwards url+filename", async () => {
+    runtime.events = [{ type: "done", text: "summary", agentRunId: "run-doc" }];
+    const storageKey = `quikchat/${orgAId}/${channelId}/uuid-report.pdf`;
+    const res = await POST(
+      post(channelId, {
+        prompt: "summarize this",
+        document: { storageKey, filename: "report.pdf", contentType: "application/pdf" },
+      }),
+      { params: { id: channelId } },
+    );
+    expect(res.status).toBe(200);
+    await readSse(res);
+    // The server minted the URL (a client never supplies one); filename forwarded.
+    expect(runtime.lastInput?.document?.filename).toBe("report.pdf");
+    expect(typeof runtime.lastInput?.document?.url).toBe("string");
+    // The local driver (test env) mints an app-token URL, never a client value.
+    expect(runtime.lastInput!.document!.url.startsWith("/api/uploads/local/")).toBe(true);
+  });
+
+  it("allows an attachment with an empty prompt (summarize on the doc alone)", async () => {
+    runtime.events = [{ type: "done", text: "summary", agentRunId: "run-doc2" }];
+    const storageKey = `quikchat/${orgAId}/${channelId}/uuid-empty.pdf`;
+    const res = await POST(
+      post(channelId, { prompt: "", document: { storageKey, filename: "empty.pdf" } }),
+      { params: { id: channelId } },
+    );
+    expect(res.status).toBe(200);
+    await readSse(res);
+    expect(runtime.lastInput?.prompt).toBe("");
+    expect(runtime.lastInput?.document?.filename).toBe("empty.pdf");
+  });
+
+  it("rejects a document whose storageKey is not in the caller's channel (403)", async () => {
+    runtime.events = [{ type: "done", text: "x", agentRunId: "run-doc3" }];
+    const foreignKey = `quikchat/${orgAId}/some-other-channel/uuid-x.pdf`;
+    const res = await POST(
+      post(channelId, {
+        prompt: "summarize",
+        document: { storageKey: foreignKey, filename: "x.pdf" },
+      }),
+      { params: { id: channelId } },
+    );
+    expect(res.status).toBe(403);
   });
 
   it("is idempotent on the agentRunId (no duplicate post)", async () => {

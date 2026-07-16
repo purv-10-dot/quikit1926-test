@@ -56,7 +56,7 @@ const nextConfig = {
     // 'self' + the QuikIT launcher origin + the realtime gateway origin.
     // Both origin helpers return "" when their env var is unset (scaffold),
     // and .filter(Boolean) drops empties so the directive stays valid.
-    const connectSrc = ["'self'", quikitConnectOrigin, realtimeConnectOrigin]
+    const connectSrc = ["'self'", quikitConnectOrigin, realtimeConnectOrigin, "https://storage.googleapis.com"]
       .filter(Boolean)
       .join(" ");
     return [

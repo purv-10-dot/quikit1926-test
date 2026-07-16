@@ -5,6 +5,15 @@
  */
 import { createHmac, timingSafeEqual } from "node:crypto";
 
+/**
+ * The HMAC secret used to sign/verify upload + download tokens — shared by every
+ * app-proxied storage driver (local + GCS) so both resolve the same secret from
+ * one place. Dev fallback is intentional; production sets `UPLOAD_TOKEN_SECRET`.
+ */
+export function uploadTokenSecret(): string {
+  return process.env.UPLOAD_TOKEN_SECRET || "dev-only-upload-secret-change-me";
+}
+
 export interface UploadTokenPayload {
   kind: "up";
   objectPath: string;

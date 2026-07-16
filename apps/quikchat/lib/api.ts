@@ -154,6 +154,11 @@ export function createChannel(body: CreateChannelInput): Promise<ChannelListItem
   return send<ChannelListItem>("/api/channels", "POST", body);
 }
 
+/** Open (find-or-create) the caller's AI-chat singleton. Idempotent. */
+export function openAiChat(): Promise<ChannelListItem> {
+  return send<ChannelListItem>("/api/channels/ai", "POST");
+}
+
 export function discoverChannels(q?: string): Promise<DiscoverChannelItem[]> {
   const qs = new URLSearchParams();
   if (q) qs.set("q", q);

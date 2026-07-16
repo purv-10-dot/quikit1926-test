@@ -11,6 +11,7 @@ import {
   Plus,
   Search,
   SearchInput,
+  Sparkles,
   Spinner,
   Users,
 } from "@/components/ui";
@@ -86,6 +87,8 @@ export interface ChannelListProps {
   onNewChat?: () => void;
   onNewGroup?: () => void;
   onDiscover?: () => void;
+  /** Open (find-or-create) the caller's AI-chat singleton. */
+  onOpenAiChat?: () => void;
 }
 
 function matchesType(item: ChannelListItem, filter: ListFilter): boolean {
@@ -114,6 +117,7 @@ export function ChannelList({
   onNewChat,
   onNewGroup,
   onDiscover,
+  onOpenAiChat,
 }: ChannelListProps) {
   const [query, setQuery] = useState("");
   const [searchOpen, setSearchOpen] = useState(false);
@@ -173,6 +177,9 @@ export function ChannelList({
               }
             >
               <Search size={16} />
+            </IconButton>
+            <IconButton label="AI Chat" onClick={onOpenAiChat} disabled={!onOpenAiChat}>
+              <Sparkles size={16} />
             </IconButton>
             <IconButton label="New group" onClick={onNewGroup} disabled={!onNewGroup}>
               <Users size={16} />

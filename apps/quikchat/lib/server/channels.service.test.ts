@@ -269,3 +269,71 @@ describe("invites", () => {
     await expect(channels.acceptInvite(carol, invite.code)).rejects.toMatchObject({ status: 404 });
   });
 });
+
+describe("AI chat (type='ai')", () => {
+  it("findOrCreateAiChat creates a private singleton: caller=admin + assistant bot", async () => {
+    const ai = track(await channels.findOrCreateAiChat(ctxAlice()));
+    expect(ai.type).toBe("ai");
+    expect(ai.visibility).toBe("private");
+    // Name is derived, never stored.
+    expect(ai.name).toBe("AI Chat");
+    const memberIds = ai.members.map((m) => m.id);
+    expect(memberIds).toContain(aliceId);
+    expect(memberIds).toContain(ASSISTANT_BOT_USER_ID);
+
+    const members = await channels.listMembers(ctxAlice(), ai.channelId);
+    expect(members.find((m) => m.id === aliceId)?.role).toBe("admin");
+  });
+
+  it("is a per-user singleton — a second call returns the same channel", async () => {
+    const a = track(await channels.findOrCreateAiChat(ctxDave()));
+    const b = track(await channels.findOrCreateAiChat(ctxDave()));
+    expect(a.channelId).toBe(b.channelId);
+  });
+
+  it("public create() still rejects type 'ai' (dm/group only)", async () => {
+    await expect(channels.create(ctxAlice(), { type: "ai" })).rejects.toMatchObject({
+      status: 400,
+    });
+  });
+
+  it("is never discoverable and not joinable", async () => {
+    const ai = track(await channels.findOrCreateAiChat(ctxAlice()));
+    const found = await channels.discover(ctxAlice());
+    expect(found.some((c) => c.channelId === ai.channelId)).toBe(false);
+    await expect(channels.join(ctxDave(), ai.channelId)).rejects.toMatchObject({ status: 403 });
+  });
+
+  it("rejects group-only member + invite operations", async () => {
+    const ai = track(await channels.findOrCreateAiChat(ctxAlice()));
+    await expect(channels.addMember(ctxAlice(), ai.channelId, daveId)).rejects.toMatchObject({
+      status: 400,
+    });
+    await expect(
+      channels.removeMember(ctxAlice(), ai.channelId, ASSISTANT_BOT_USER_ID),
+    ).rejects.toMatchObject({ status: 400 });
+    await expect(
+      channels.updateMemberRole(ctxAlice(), ai.channelId, aliceId, "member"),
+    ).rejects.toMatchObject({ status: 400 });
+    await expect(channels.createInvite(ctxAlice(), ai.channelId, {})).rejects.toMatchObject({
+      status: 400,
+    });
+  });
+
+  it("leave deletes the AI chat wholesale, and it can be recreated", async () => {
+    const ai = await channels.findOrCreateAiChat(ctxDave());
+    await prisma.qcMessage.create({
+      data: { orgId: orgAId, channelId: ai.channelId, senderId: daveId, content: "hi assistant" },
+    });
+
+    const res = await channels.leave(ctxDave(), ai.channelId);
+    expect(res.deleted).toBe(true);
+    expect(await prisma.qcChannel.count({ where: { id: ai.channelId } })).toBe(0);
+    expect(await prisma.qcMessage.count({ where: { channelId: ai.channelId } })).toBe(0);
+    expect(await prisma.qcChannelMember.count({ where: { channelId: ai.channelId } })).toBe(0);
+
+    // Recreatable singleton — a fresh channel with a new id.
+    const again = track(await channels.findOrCreateAiChat(ctxDave()));
+    expect(again.channelId).not.toBe(ai.channelId);
+  });
+});

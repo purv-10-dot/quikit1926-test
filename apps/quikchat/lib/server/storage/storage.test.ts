@@ -40,11 +40,23 @@ describe("selectDriverName", () => {
         GOOGLE_APPLICATION_CREDENTIALS: "/k.json",
       }),
     ).toBe("gcs");
+    // Split form (client_email + private_key) — matches the other apps' env.
+    expect(
+      selectDriverName({
+        GCS_BUCKET: "b",
+        GCS_CLIENT_EMAIL: "sa@proj.iam.gserviceaccount.com",
+        GCS_PRIVATE_KEY: "-----BEGIN PRIVATE KEY-----\\n...\\n-----END PRIVATE KEY-----\\n",
+      }),
+    ).toBe("gcs");
   });
 
   it("falls back to local without bucket or creds", () => {
     expect(selectDriverName({})).toBe("local");
     expect(selectDriverName({ GCS_BUCKET: "b" })).toBe("local"); // no creds
+    // Split form needs BOTH halves — email alone is not enough.
+    expect(
+      selectDriverName({ GCS_BUCKET: "b", GCS_CLIENT_EMAIL: "sa@proj.iam.gserviceaccount.com" }),
+    ).toBe("local");
   });
 });
 

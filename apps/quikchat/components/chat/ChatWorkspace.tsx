@@ -16,6 +16,7 @@ import {
   fetchMessages,
   markChannelDeliveredApi,
   markChannelReadApi,
+  openAiChat,
   sendMessage,
 } from "@/lib/api";
 import { useNotifications } from "@/components/notifications/NotificationProvider";
@@ -468,7 +469,10 @@ export function ChatWorkspace({
   // and merges into the list (de-dupe by clientMessageId); we just clear the
   // bubble. On error we toast and clear. Stop simply aborts the client stream.
   const handleAssist = useCallback(
-    (prompt: string) => {
+    (
+      prompt: string,
+      document?: { storageKey: string; filename: string; contentType?: string },
+    ) => {
       if (!activeChannel) return;
       const channelId = activeChannel.channelId;
       assistAbort.current?.abort();
@@ -479,7 +483,7 @@ export function ChatWorkspace({
       const clearIfCurrent = () => setAssist((s) => (s && s.channelId === channelId ? null : s));
       void streamAssist(
         channelId,
-        { prompt },
+        { prompt, document },
         {
           onDelta: (t) =>
             setAssist((s) => (s && s.channelId === channelId ? { ...s, text: s.text + t } : s)),
@@ -507,6 +511,43 @@ export function ChatWorkspace({
     handleAssist(p);
   }, [assistError, handleAssist]);
   const dismissAssistError = useCallback(() => setAssistError(null), []);
+
+  // Entry point: open (find-or-create) the caller's AI-chat singleton, then land
+  // on it. Idempotent server-side, so reopening reuses the same conversation.
+  const handleOpenAiChat = useCallback(() => {
+    void openAiChat()
+      .then(onChannelReady)
+      .catch(() => toast.error({ title: "Couldn't open AI Chat" }));
+  }, [onChannelReady, toast]);
+
+  // AI-chat per-turn routing: unlike a normal channel (where only `/ai` invokes
+  // the assistant), EVERY message in an `type:"ai"` channel invokes it. Persist
+  // + render the user's turn normally (so history + reload work), then stream the
+  // assist reply. The relay de-dupes the just-persisted turn against the prompt.
+  const handleAiChatSend = useCallback(
+    (content: string, mentionRefs: MentionRefInput[], parentMessageId?: string) => {
+      handleSend(content, mentionRefs, parentMessageId);
+      handleAssist(content);
+    },
+    [handleSend, handleAssist],
+  );
+
+  // AI-chat attachment turn (Stage 2): persist + render the Media message as
+  // usual (so history + reload work), THEN invoke the assistant with a document
+  // ref. The client passes the storageKey (objectPath) it owns; the relay
+  // authorizes it and mints the presigned URL the runtime fetches. Without this,
+  // an attachment in the AI chat would post but never reach the assistant.
+  const handleAiChatSendMedia = useCallback(
+    (media: MediaMeta, caption: string, localUrl: string) => {
+      handleSendMedia(media, caption, localUrl);
+      handleAssist(caption, {
+        storageKey: media.objectPath,
+        filename: media.originalName,
+        contentType: media.mediaType,
+      });
+    },
+    [handleSendMedia, handleAssist],
+  );
 
   // Call handler: triggers 1:1 call for DMs, group call with SFU for groups
   const handleGroupCall = useCallback(async () => {
@@ -635,6 +676,7 @@ export function ChatWorkspace({
           onNewChat={() => setNewChatOpen(true)}
           onNewGroup={() => setNewGroupOpen(true)}
           onDiscover={() => setDiscoverOpen(true)}
+          onOpenAiChat={handleOpenAiChat}
         />
         {activeChannel ? (
           <ConversationView
@@ -645,10 +687,10 @@ export function ChatWorkspace({
             channels={channelsQuery.data}
             online={presence.online}
             typing={typing}
-            onSend={handleSend}
+            onSend={activeChannel.type === "ai" ? handleAiChatSend : handleSend}
             onTyping={emitTyping}
-            onSendMedia={handleSendMedia}
-            onAssist={handleAssist}
+            onSendMedia={activeChannel.type === "ai" ? handleAiChatSendMedia : handleSendMedia}
+            onAssist={activeChannel.type === "ai" ? undefined : handleAssist}
             onCall={handleGroupCall}
             onStartMeetingCall={handleStartMeetingCall}
             assistStreaming={

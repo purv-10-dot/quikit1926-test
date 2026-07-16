@@ -16,7 +16,7 @@ export interface UiPrefsDto {
   theme: ThemePref;
 }
 
-export type ChannelType = "dm" | "group";
+export type ChannelType = "dm" | "group" | "ai";
 export type ChannelVisibility = "public" | "private";
 export type MessageType = "Text" | "Media" | "SystemActivity" | "Delete" | "Meeting" | "Call";
 export type ActorType = "human" | "ai_agent";

@@ -23,6 +23,16 @@ export interface AssistInput {
   prompt: string;
   /** Pushed context: the last ~20–30 messages, oldest→newest. */
   history: AssistHistoryItem[];
+  /**
+   * Optional attached document for the doc-analysis path (Stage 2). Absent = a
+   * plain chat turn. URL-based: the runtime fetches `url` (a presigned GET URL
+   * minted server-side); it does not read the bucket. Per-turn only — the
+   * runtime never persists it to history.
+   */
+  document?: {
+    url: string;
+    filename: string;
+  };
   locale: string;
   /** Stable bot agent id (QuikChat-owned identity). */
   botAgentId: string;

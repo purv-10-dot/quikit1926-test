@@ -23,13 +23,18 @@ export class HttpRuntimeClient implements RuntimeClient {
       userId: input.userId,
     });
 
-    // orgId/userId are in the token, NOT the body.
+    // orgId/userId are in the token, NOT the body. A doc turn adds `url`+
+    // `filename` FLAT at the top level (the runtime's confirmed contract);
+    // absent → body byte-identical to a plain turn (back-compat).
     const body = JSON.stringify({
       channelId: input.channelId,
       threadRootId: input.threadRootId,
       prompt: input.prompt,
       history: input.history,
       locale: input.locale,
+      ...(input.document
+        ? { url: input.document.url, filename: input.document.filename }
+        : {}),
     });
 
     const controller = new AbortController();

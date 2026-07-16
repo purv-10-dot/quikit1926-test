@@ -75,9 +75,16 @@ export async function setAssistantEnabled(
  * Map recent messages (newest-first, as `messages.list` returns) into pushed
  * `history[]` (oldest→newest). Text-only: skip deleted/system/empty rows. The
  * bot's own prior messages become `assistant` turns.
+ *
+ * `currentPrompt` (option b): the AI-chat conversation type persists the user's
+ * turn BEFORE invoking assist, so the newest history item would duplicate the
+ * live `prompt` and the runtime would see the current turn twice. When the
+ * caller passes the prompt, drop a trailing `user` turn whose text matches it so
+ * the current turn is sent exactly once. Normal `/ai` never persists the prompt,
+ * so the trailing item is genuine prior context and nothing is dropped.
  */
-export function buildHistory(messages: MessageDto[]): AssistHistoryItem[] {
-  return messages
+export function buildHistory(messages: MessageDto[], currentPrompt?: string): AssistHistoryItem[] {
+  const items = messages
     .filter(
       (m) => m.type !== "Delete" && m.type !== "SystemActivity" && m.content.trim().length > 0,
     )
@@ -88,6 +95,12 @@ export function buildHistory(messages: MessageDto[]): AssistHistoryItem[] {
       createdAt: m.createdAt,
     }))
     .reverse();
+
+  if (currentPrompt !== undefined) {
+    const last = items[items.length - 1];
+    if (last && last.role === "user" && last.text.trim() === currentPrompt.trim()) items.pop();
+  }
+  return items;
 }
 
 /** The OrgContext used to POST the bot's reply (attributed to the bot user). */

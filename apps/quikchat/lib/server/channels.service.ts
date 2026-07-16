@@ -16,6 +16,7 @@ import {
   type PublicUser,
 } from "@/lib/shared";
 import { displayNameOf, loadPublicUsers, toMessageDto, type MessageRow } from "./helpers";
+import { ensureAssistantBot } from "./assistant.service";
 import * as notifications from "./notifications.service";
 
 type ChannelRow = {
@@ -176,6 +177,56 @@ async function findExistingDm(
   });
   if (!bRow) return null;
   return prisma.qcChannel.findFirst({ where: { id: bRow.channelId, orgId: ctx.orgId } });
+}
+
+/**
+ * Find the caller's AI-chat singleton, or create it. Deliberately NOT routed
+ * through the public `create()` (which only accepts dm/group) so that path's
+ * validation stays intact. The channel holds the caller (admin) + the synthetic
+ * assistant bot; there is at most one `type:"ai"` channel per user, mirroring
+ * the find-or-create spirit of `findExistingDm`.
+ */
+export async function findOrCreateAiChat(ctx: OrgContext): Promise<ChannelListItem> {
+  const existing = await findExistingAiChat(ctx);
+  if (existing) return findById(ctx, existing.id);
+
+  const channelId = await prisma.$transaction(async (tx) => {
+    const channel = await tx.qcChannel.create({
+      data: {
+        orgId: ctx.orgId,
+        type: "ai",
+        visibility: "private",
+        name: null, // display name ("AI Chat") is derived in toListItem
+        createdById: ctx.userId,
+      },
+    });
+    await tx.qcChannelMember.create({
+      data: { orgId: ctx.orgId, channelId: channel.id, userId: ctx.userId, role: "admin" },
+    });
+    return channel.id;
+  });
+
+  // Bot joins as a real member so its replies attribute + serialize. Uses the
+  // global client (not the tx) so it runs post-commit — same ordering create()
+  // uses for its post-commit publishFanout.
+  await ensureAssistantBot(ctx.orgId, channelId);
+  await publishFanout({
+    orgId: ctx.orgId,
+    channelId,
+    event: "channel_created",
+    payload: { channelId, memberIds: [ctx.userId] },
+  });
+
+  return findById(ctx, channelId);
+}
+
+async function findExistingAiChat(ctx: OrgContext): Promise<ChannelRow | null> {
+  const row = await prisma.qcChannelMember.findFirst({
+    where: { orgId: ctx.orgId, userId: ctx.userId, channel: { type: "ai" } },
+    select: { channelId: true },
+  });
+  if (!row) return null;
+  return prisma.qcChannel.findFirst({ where: { id: row.channelId, orgId: ctx.orgId } });
 }
 
 export async function discover(
@@ -513,6 +564,11 @@ function toListItem(
       memberPublics.find((u) => u.id !== requestingUserId);
     name = other?.displayName ?? "Direct Message";
     avatarUrl = other?.avatarUrl ?? null;
+  } else if (channel.type === "ai") {
+    // Derived (never stored) so every AI chat presents identically. The dm
+    // "other member" logic must NOT run — the only other member is the bot.
+    name = "AI Chat";
+    avatarUrl = memberPublics.find((u) => u.id === ASSISTANT_BOT_USER_ID)?.avatarUrl ?? null;
   }
 
   const memberReadAt: Record<string, string | null> = {};
@@ -726,6 +782,18 @@ export async function leave(ctx: OrgContext, channelId: string): Promise<{ delet
   });
   if (!member) throw new HttpError(403, "Not a member of this channel");
   const channel = await prisma.qcChannel.findFirst({ where: { id: channelId, orgId: ctx.orgId } });
+
+  // An AI chat is a per-user singleton; its only other member is the synthetic
+  // bot, so "last human leaves" == delete the whole thing. The user can reopen
+  // it any time (findOrCreateAiChat), so wholesale deletion is the sane behavior
+  // (the generic "remaining === 0" branch below would never fire — the bot keeps
+  // the count at 1 — leaving an orphaned bot-only channel).
+  if (channel?.type === "ai") {
+    await prisma.qcMessage.deleteMany({ where: { orgId: ctx.orgId, channelId } });
+    await prisma.qcChannelMember.deleteMany({ where: { orgId: ctx.orgId, channelId } });
+    await prisma.qcChannel.deleteMany({ where: { id: channelId, orgId: ctx.orgId } });
+    return { deleted: true };
+  }
 
   await prisma.qcChannelMember.delete({ where: { id: member.id } });
   const remaining = await prisma.qcChannelMember.count({

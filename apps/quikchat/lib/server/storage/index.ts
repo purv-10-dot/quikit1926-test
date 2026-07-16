@@ -16,7 +16,11 @@ export function selectDriverName(
   if (env.STORAGE_DRIVER === "gcs") return "gcs";
   if (env.STORAGE_DRIVER === "local") return "local";
   // Auto: GCS if a bucket + some credential form is present.
-  const hasCreds = !!(env.GCS_CREDENTIALS_JSON || env.GOOGLE_APPLICATION_CREDENTIALS);
+  const hasCreds = !!(
+    env.GCS_CREDENTIALS_JSON ||
+    env.GOOGLE_APPLICATION_CREDENTIALS ||
+    (env.GCS_CLIENT_EMAIL && env.GCS_PRIVATE_KEY)
+  );
   if (env.GCS_BUCKET && hasCreds) return "gcs";
   return "local";
 }
