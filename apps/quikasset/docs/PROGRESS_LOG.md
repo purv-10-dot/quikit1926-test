@@ -3,7 +3,7 @@
 > Running continuity log for the `merge_asset02` branch, so work survives across
 > sessions. **Append to this file as work continues — do not recreate it.**
 >
-> _Last updated: 2026-07-15._
+> _Last updated: 2026-07-16._
 
 ---
 
@@ -152,3 +152,17 @@ retains all underlying data.
     sample requests. Tests: 23 route/permission cases; full quikasset suite green (136); typecheck clean.
   - **Out of scope (this pass):** employee New Request / My Requests, Convert-to-Purchase-Request
     (not even a stub), not-in-stock handling, status-change notifications.
+- **Category Master — seed-duplicate cleanup + delete-UX fix (2026-07-16)** — done.
+  - **Delete UX:** base + sub-category `DELETE` now return **409** with a clear message
+    (`Can't delete "X" — N assets still use…`) instead of a raw 500 when assets still reference
+    them; the Category Master UI checks the response and shows the real result (red error toast)
+    instead of always claiming success. Tests: `__tests__/api/categories.test.ts`.
+  - **Seed cleanup (MoreYeahs):** removed the `seed-asset-requests.ts` demo overlay — 3 demo Asset
+    Requests, 4 `SEED-AR-` assets, and the empty `Electronics/Laptop`, `Furniture/Chair`,
+    `Subscriptions/SaaS` categories + the `Electronics` / `Subscriptions` base categories. This killed
+    a duplicate laptop taxonomy where seed `Electronics/Laptop` shadowed the real `IT Equipment/Laptops`.
+    `IT Equipment`, the Furniture base, `Furniture/Desks`, and all 12 real assets were left untouched.
+    Script: `scripts/cleanup-moreyeahs-seed-categories.ts` (guarded — aborts on any real asset — dry-run default).
+  - ⚠️ **CAVEAT — do NOT re-run `scripts/seed-asset-requests.ts` against MoreYeahs as-is.** It hard-codes
+    `Electronics/Laptop`, `Furniture/Chair`, `Subscriptions/SaaS`, so re-running would recreate this exact
+    duplicate-category mess. Repoint it at the real taxonomy (`IT Equipment` / `Laptops`) first.
