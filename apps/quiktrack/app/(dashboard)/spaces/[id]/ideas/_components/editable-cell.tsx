@@ -360,8 +360,12 @@ function LabelsCell({
   useEffect(() => {
     if (!open) return;
     function onDoc(e: MouseEvent) { if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false); }
+    // Close on scroll of any container (the popover is fixed-positioned, so a
+    // stale anchor would otherwise detach it — e.g. the idea drawer scrolling).
+    function onScroll() { setOpen(false); }
     document.addEventListener("mousedown", onDoc);
-    return () => document.removeEventListener("mousedown", onDoc);
+    window.addEventListener("scroll", onScroll, true);
+    return () => { document.removeEventListener("mousedown", onDoc); window.removeEventListener("scroll", onScroll, true); };
   }, [open]);
 
   const suggestions = [...new Set([...value, ...known])];
@@ -487,8 +491,11 @@ function OptionsMenu({
     function onDoc(e: MouseEvent) {
       if (ref.current && !ref.current.contains(e.target as Node)) onClose();
     }
+    // Fixed-positioned popover: close on scroll so a stale anchor can't leave it
+    // floating (e.g. when the idea drawer scrolls under it).
     document.addEventListener("mousedown", onDoc);
-    return () => document.removeEventListener("mousedown", onDoc);
+    window.addEventListener("scroll", onClose, true);
+    return () => { document.removeEventListener("mousedown", onDoc); window.removeEventListener("scroll", onClose, true); };
   }, [onClose]);
 
   const opts = field.options.filter(
@@ -566,8 +573,11 @@ function MultiOptionsMenu({
     function onDoc(e: MouseEvent) {
       if (ref.current && !ref.current.contains(e.target as Node)) onClose();
     }
+    // Fixed-positioned popover: close on scroll so a stale anchor can't leave it
+    // floating (e.g. when the idea drawer scrolls under it).
     document.addEventListener("mousedown", onDoc);
-    return () => document.removeEventListener("mousedown", onDoc);
+    window.addEventListener("scroll", onClose, true);
+    return () => { document.removeEventListener("mousedown", onDoc); window.removeEventListener("scroll", onClose, true); };
   }, [onClose]);
 
   const opts = field.options.filter(

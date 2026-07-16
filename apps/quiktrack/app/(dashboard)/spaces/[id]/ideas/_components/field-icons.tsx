@@ -14,6 +14,8 @@ import {
   Link2,
   Type as TypeIcon,
   AlignLeft,
+  Lightbulb,
+  KeyRound,
   type LucideIcon,
 } from "lucide-react";
 import { K } from "./ideas-types";
@@ -34,6 +36,8 @@ export function iconForColumn(key: string, field?: FieldDef): LucideIcon {
   if (key === "assignee" || key === "creator") return AtSign;
   if (key === "created" || key === "updated") return Clock;
   if (key === "status") return Target;
+  if (key === "key") return KeyRound;
+  if (key === "type") return Lightbulb;
 
   // Discovery field keys with a bespoke look.
   switch (key) {

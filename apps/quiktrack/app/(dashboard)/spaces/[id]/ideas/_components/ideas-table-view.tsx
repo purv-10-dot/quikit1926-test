@@ -10,10 +10,10 @@ import {
   Search,
   UserPlus,
   MessageSquare,
-  Share2,
-  Lock,
   MoreHorizontal,
   Maximize2,
+  Minimize2,
+  FileDown,
 } from "lucide-react";
 import { useApiData } from "@/lib/hooks/useApiData";
 import { useMyProjectPermissions } from "@/lib/hooks/useMyProjectPermissions";
@@ -28,6 +28,8 @@ import { GroupByPanel, type GroupByConfig } from "./group-by-panel";
 import { DisplayPanel, type DisplaySettings } from "./display-panel";
 import { iconForColumn } from "./field-icons";
 import { memberName, type MemberLite } from "./assignee-cell";
+import { AddPeopleModal } from "@/components/add-people-modal";
+import { ViewAboutPanel } from "./view-about-panel";
 import { SPECIAL_COLUMNS, type IdeasBundle, type IdeaRow, type IdeaFieldValue } from "./ideas-types";
 
 interface MembersResponse {
@@ -41,12 +43,18 @@ const VIEW_DESCRIPTION =
 /** Built-in (non-custom-field) columns offered by the + add-column menu. Their
  *  values come from the idea row / bundle and render read-only in the grid. */
 const SYSTEM_COLUMNS: Record<string, string> = {
+  key: "Key",
+  type: "Type",
   assignee: "Assignee",
   creator: "Creator",
   status: "Status",
   created: "Created",
   updated: "Updated",
 };
+
+/** These toggle their INLINE presence in the Summary column (key prefix /
+ *  lightbulb) rather than rendering as their own column. */
+const INLINE_SUMMARY_KEYS = new Set(["key", "type"]);
 
 /** Column keys hidden from the "+ add column" menu for this discovery view
  *  (fields that don't belong in JPD's picker). Not deleted — just not offered. */
@@ -71,6 +79,11 @@ export function IdeasTableView({ projectId }: { projectId: string }) {
   const [groupBy, setGroupBy] = useState<GroupByConfig | null>(null);
   const [displayPanelOpen, setDisplayPanelOpen] = useState(false);
   const [display, setDisplay] = useState<DisplaySettings>({});
+  const [fullscreen, setFullscreen] = useState(false);
+  const [addPeopleOpen, setAddPeopleOpen] = useState(false);
+  const [aboutPanelOpen, setAboutPanelOpen] = useState(false);
+  const [moreOpen, setMoreOpen] = useState(false);
+  const [projectName, setProjectName] = useState("this project");
   const [panelId, setPanelId] = useState<string | null>(null);
   const [panelTab, setPanelTab] = useState<"Overview" | "Comments" | "Insights" | "Delivery">("Overview");
   const [activeId, setActiveId] = useState<string | null>(null);
@@ -90,6 +103,14 @@ export function IdeasTableView({ projectId }: { projectId: string }) {
     return () => { alive = false; };
   }, [projectId]);
 
+  // Project name for the Add-people modal heading — read from the page's
+  // breadcrumb (rendered by the space layout) to avoid a dedicated endpoint.
+  useEffect(() => {
+    const el = document.querySelector("[data-project-name]");
+    const name = el?.getAttribute("data-project-name")?.trim();
+    if (name) setProjectName(name);
+  }, []);
+
   // "Edit field" (from a dropdown's footer) opens the field editor overlay.
   useEffect(() => {
     function onEditField(e: Event) {
@@ -108,11 +129,26 @@ export function IdeasTableView({ projectId }: { projectId: string }) {
   const canSaveForEveryone = perms.loading ? false : perms.has("Project", "update");
   const view = data ? (data.views.find((v) => v.isDefault) ?? data.views[0]) : null;
 
+  // View description (rich-text HTML) from the view config, + a plain-text
+  // preview for the header line.
+  const viewDescriptionHtml = view?.config?.description ?? "";
+  const viewDescriptionText = viewDescriptionHtml.replace(/<[^>]*>/g, " ").replace(/&nbsp;/g, " ").replace(/\s+/g, " ").trim();
+  async function saveViewDescription(html: string) {
+    if (!view || !canSaveForEveryone) return;
+    const res = await fetch(`/api/projects/${projectId}/ideas/views/${view.id}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ description: html }),
+    });
+    if (res.ok) await qc.invalidateQueries({ queryKey });
+  }
+
   // The saved column set (from the view config) and the current (editable) one.
   // "summary" is always first + sticky; system columns (assignee, created, …) are
   // rendered as read-only cells alongside custom fields / specials.
   const savedKeys = useMemo(
-    () => view?.config?.columns ?? (data ? ["summary", ...data.fields.map((f) => f.key)] : ["summary"]),
+    // key/type are on by default (they show inline in Summary, not as columns).
+    () => view?.config?.columns ?? (data ? ["summary", "key", "type", ...data.fields.map((f) => f.key)] : ["summary", "key", "type"]),
     [view, data],
   );
   const [columnKeys, setColumnKeys] = useState<string[]>([]);
@@ -133,11 +169,29 @@ export function IdeasTableView({ projectId }: { projectId: string }) {
   const savedDisplay = useMemo<DisplaySettings>(() => view?.config?.display ?? {}, [view]);
   useEffect(() => { setDisplay(savedDisplay); }, [savedDisplay]);
 
+  // Pinned fields for the idea drawer (from the view config).
+  const [pinnedFields, setPinnedFields] = useState<string[]>([]);
+  const savedPinned = useMemo<string[] | undefined>(() => view?.config?.pinnedFields, [view]);
+  useEffect(() => { setPinnedFields(savedPinned ?? []); }, [savedPinned]);
+  async function onTogglePin(key: string) {
+    const next = pinnedFields.includes(key) ? pinnedFields.filter((k) => k !== key) : [...pinnedFields, key];
+    setPinnedFields(next);
+    if (!view || !canSaveForEveryone) return;
+    const res = await fetch(`/api/projects/${projectId}/ideas/views/${view.id}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ pinnedFields: next }),
+    });
+    if (res.ok) await qc.invalidateQueries({ queryKey });
+  }
+
   const columns = useMemo<Column[]>(() => {
     if (!data) return [];
     const byKey = new Map(data.fields.map((f) => [f.key, f]));
     return columnKeys
       .map((key): Column | null => {
+        // Key/Type never render as their own column — they toggle inline in Summary.
+        if (INLINE_SUMMARY_KEYS.has(key)) return null;
         if (SPECIAL_COLUMNS[key]) return { key, label: SPECIAL_COLUMNS[key] };
         if (SYSTEM_COLUMNS[key]) return { key, label: SYSTEM_COLUMNS[key] };
         const field = byKey.get(key);
@@ -166,8 +220,14 @@ export function IdeasTableView({ projectId }: { projectId: string }) {
   // right icon. `inView` mirrors the visible columns (in order); `availableEntries`
   // mirrors the + menu but carries the field object.
   const inViewEntries = useMemo<FieldEntry[]>(
-    () => columns.map((c) => ({ key: c.key, label: c.label, field: c.field })),
-    [columns],
+    () => columnKeys
+      .filter((k) => INLINE_SUMMARY_KEYS.has(k) || columns.some((c) => c.key === k))
+      .map((k) => {
+        const col = columns.find((c) => c.key === k);
+        if (col) return { key: col.key, label: col.label, field: col.field };
+        return { key: k, label: SYSTEM_COLUMNS[k] ?? k }; // inline key/type
+      }),
+    [columns, columnKeys],
   );
   const fieldByKey = useMemo(() => new Map((data?.fields ?? []).map((f) => [f.key, f])), [data]);
   const availableEntries = useMemo<FieldEntry[]>(
@@ -357,6 +417,36 @@ export function IdeasTableView({ projectId }: { projectId: string }) {
     }
   }
 
+  /** Export the current (filtered/sorted) rows + visible columns as a .csv. */
+  function exportCsv() {
+    setMoreOpen(false);
+    if (!data) return;
+    const cols = columns; // visible columns in order
+    const esc = (v: string) => `"${v.replace(/"/g, '""')}"`;
+    const cellText = (idea: IdeaRow, col: Column): string => {
+      if (col.key === "summary") return idea.title;
+      if (col.key === "key") return idea.key;
+      if (col.key === "insights") return String(idea.insightCount ?? 0);
+      if (col.key === "comments") return String(idea.commentCount ?? 0);
+      if (col.key === "delivery") return String(idea.deliveryCount ?? 0);
+      if (col.field) {
+        const v = idea.values[col.field.id];
+        if (v === null || v === undefined) return "";
+        return Array.isArray(v) ? v.join("; ") : String(v);
+      }
+      return "";
+    };
+    const header = cols.map((c) => esc(c.label)).join(",");
+    const body = visible.map((idea) => cols.map((c) => esc(cellText(idea, c))).join(",")).join("\n");
+    const blob = new Blob([`${header}\n${body}`], { type: "text/csv;charset=utf-8" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = "all-ideas.csv";
+    a.click();
+    URL.revokeObjectURL(url);
+  }
+
   // Apply the view's filter rules (client-side, AND across rules).
   const ruleFiltered = useMemo(() => {
     if (filterRules.length === 0 || !data) return rows;
@@ -502,7 +592,7 @@ export function IdeasTableView({ projectId }: { projectId: string }) {
   const panelIdea = rows.find((r) => r.id === panelId) ?? null;
 
   return (
-    <div className="flex h-full min-h-0 overflow-hidden">
+    <div className={`flex min-h-0 overflow-hidden ${fullscreen ? "fixed inset-0 z-50 h-screen bg-white" : "h-full"}`}>
       <div className="flex min-w-0 flex-1 flex-col">
         {/* Title row */}
         <div className="flex items-start justify-between gap-3 px-6 pt-4 pb-2">
@@ -512,17 +602,33 @@ export function IdeasTableView({ projectId }: { projectId: string }) {
             <span className="rounded bg-gray-100 px-2 py-0.5 text-xs font-medium text-gray-600">
               {rows.length} {rows.length === 1 ? "idea" : "ideas"}
             </span>
-            <span className="ml-1 hidden truncate text-xs text-gray-500 md:inline">{VIEW_DESCRIPTION}</span>
+            <button
+              type="button"
+              onClick={() => setAboutPanelOpen(true)}
+              title="View description"
+              className="ml-1 hidden max-w-md truncate text-left text-xs text-gray-500 hover:text-gray-700 hover:underline md:inline"
+            >
+              {viewDescriptionText || VIEW_DESCRIPTION}
+            </button>
           </div>
           <div className="flex flex-shrink-0 items-center gap-1 text-gray-500">
-            <ChromeIcon icon={UserPlus} label="Add people" />
-            <ChromeIcon icon={MessageSquare} label="Comments" />
-            <button type="button" className="inline-flex items-center gap-1 rounded border border-gray-200 px-2 py-1 text-sm text-gray-700 hover:bg-gray-50">
-              <Share2 className="h-3.5 w-3.5" /> Share
-            </button>
-            <ChromeIcon icon={Lock} label="Lock view" />
-            <ChromeIcon icon={MoreHorizontal} label="More" />
-            <ChromeIcon icon={Maximize2} label="Fullscreen" />
+            <ChromeIcon icon={UserPlus} label="Add people" onClick={() => setAddPeopleOpen(true)} />
+            <ChromeIcon icon={MessageSquare} label="Comments" onClick={() => setAboutPanelOpen(true)} />
+            {/* ⋯ menu: Export / Import CSV. */}
+            <div className="relative">
+              <ChromeIcon icon={MoreHorizontal} label="More" active={moreOpen} onClick={() => setMoreOpen((v) => !v)} />
+              {moreOpen && (
+                <>
+                  <div className="fixed inset-0 z-40" onClick={() => setMoreOpen(false)} />
+                  <div className="absolute right-0 top-full z-50 mt-1 w-56 overflow-hidden rounded-lg border border-gray-200 bg-white py-1 shadow-xl">
+                    <button type="button" onClick={exportCsv} className="flex w-full items-center gap-2 px-3 py-1.5 text-left text-sm text-gray-700 hover:bg-gray-50">
+                      <FileDown className="h-4 w-4 text-gray-500" /> Export as CSV
+                    </button>
+                  </div>
+                </>
+              )}
+            </div>
+            <ChromeIcon icon={fullscreen ? Minimize2 : Maximize2} label={fullscreen ? "Exit full screen" : "Full screen"} active={fullscreen} onClick={() => setFullscreen((v) => !v)} />
           </div>
         </div>
 
@@ -626,6 +732,8 @@ export function IdeasTableView({ projectId }: { projectId: string }) {
                 onRemoveColumn={removeColumn}
                 onReorderColumns={canSaveForEveryone ? reorderColumn : undefined}
                 sortByKey={Object.fromEntries(sortRules.map((r) => [r.key, r.dir]))}
+                showKey={columnKeys.includes("key")}
+                showType={columnKeys.includes("type")}
                 groups={groups}
                 rowNumbers={display.rowNumbers}
                 rowColor={rowColor}
@@ -657,6 +765,8 @@ export function IdeasTableView({ projectId }: { projectId: string }) {
           fields={data.fields}
           statuses={data.statuses}
           initialTab={panelTab}
+          pinnedKeys={pinnedFields}
+          onTogglePin={canSaveForEveryone ? onTogglePin : undefined}
           onClose={() => setPanelId(null)}
         />
       )}
@@ -713,6 +823,22 @@ export function IdeasTableView({ projectId }: { projectId: string }) {
         />
       )}
 
+      {addPeopleOpen && (
+        <AddPeopleModal projectId={projectId} projectName={projectName} onClose={() => setAddPeopleOpen(false)} />
+      )}
+
+      {aboutPanelOpen && (
+        <ViewAboutPanel
+          projectId={projectId}
+          viewId={view?.id ?? null}
+          viewTitle="All ideas"
+          description={viewDescriptionHtml || `<p>${VIEW_DESCRIPTION}</p>`}
+          canEdit={canSaveForEveryone}
+          onSaveDescription={saveViewDescription}
+          onClose={() => setAboutPanelOpen(false)}
+        />
+      )}
+
       {displayPanelOpen && (
         <DisplayPanel
           settings={display}
@@ -743,10 +869,10 @@ function ToolbarButton({ icon: Icon, label, onClick, active }: { icon: typeof Fi
   );
 }
 
-function ChromeIcon({ icon: Icon, label }: { icon: typeof Filter; label: string }) {
+function ChromeIcon({ icon: Icon, label, onClick, active }: { icon: typeof Filter; label: string; onClick?: () => void; active?: boolean }) {
   return (
-    <button type="button" aria-label={label} title={label} className="rounded p-1.5 hover:bg-gray-100">
-      <Icon className="h-4 w-4 text-gray-500" />
+    <button type="button" aria-label={label} title={label} onClick={onClick} className={`rounded p-1.5 hover:bg-gray-100 ${active ? "bg-blue-50 text-blue-600" : "text-gray-500"}`}>
+      <Icon className={`h-4 w-4 ${active ? "text-blue-600" : "text-gray-500"}`} />
     </button>
   );
 }

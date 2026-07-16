@@ -27,8 +27,10 @@ const patchViewSchema = z.object({
     rowNumbers: z.boolean().optional(),
     rowColor: z.object({ key: z.string().min(1), style: z.enum(["background", "highlight"]) }).nullable().optional(),
   }).optional(),
+  pinnedFields: z.array(z.string().min(1)).max(50).optional(),
+  description: z.string().max(20000).optional(),
 }).refine(
-  (d) => d.columns !== undefined || d.sort !== undefined || d.filters !== undefined || d.groupBy !== undefined || d.display !== undefined,
+  (d) => d.columns !== undefined || d.sort !== undefined || d.filters !== undefined || d.groupBy !== undefined || d.display !== undefined || d.pinnedFields !== undefined || d.description !== undefined,
   { message: "Nothing to update" },
 );
 
@@ -56,6 +58,8 @@ export const PATCH = withProjectAccess<{ id: string; viewId: string }>(
       ...(parsed.data.display !== undefined
         ? { display: { ...((view.config as { display?: Record<string, unknown> } | null)?.display ?? {}), ...parsed.data.display } }
         : {}),
+      ...(parsed.data.pinnedFields !== undefined ? { pinnedFields: parsed.data.pinnedFields } : {}),
+      ...(parsed.data.description !== undefined ? { description: parsed.data.description } : {}),
     };
     const updated = await db.qtIdeaView.update({
       where: { id: params.viewId },

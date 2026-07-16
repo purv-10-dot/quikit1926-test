@@ -61,6 +61,8 @@ export interface IdeaView {
     filters?: { key: string; op: string; values: (string | number | boolean)[] }[];
     groupBy?: { key: string; hideEmpty?: boolean } | null;
     display?: { rowNumbers?: boolean; rowColor?: { key: string; style: "background" | "highlight" } | null } | null;
+    pinnedFields?: string[];
+    description?: string; // rich-text HTML for the view's "About" drawer
   } | null;
   visibility: string;
   isDefault: boolean;

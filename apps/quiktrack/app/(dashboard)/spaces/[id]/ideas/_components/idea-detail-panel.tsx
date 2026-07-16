@@ -12,12 +12,14 @@ import {
   Paperclip,
   Link2,
   FileText,
-  Settings,
+  Pin,
   Trash2,
 } from "lucide-react";
 import { PINNED_FIELD_KEYS, IN_VIEW_FIELD_KEYS } from "@/lib/services/discoveryDefaults";
 import { K, type FieldDef, type IdeaRow, type IdeaStatus, type IdeaFieldValue } from "./ideas-types";
-import { Accordion, FieldRow, FieldEditor, FieldChip } from "./idea-panel-fields";
+import { Accordion, FieldRow } from "./idea-panel-fields";
+import { EditableCell } from "./editable-cell";
+import { iconForColumn, isFormulaColumn } from "./field-icons";
 import { IdeaComments } from "./idea-comments";
 import { IdeaInsights } from "./idea-insights";
 import { IdeaDelivery } from "./idea-delivery";
@@ -40,6 +42,8 @@ export function IdeaDetailPanel({
   fields,
   statuses,
   initialTab,
+  pinnedKeys,
+  onTogglePin,
   onClose,
 }: {
   projectId: string;
@@ -48,6 +52,10 @@ export function IdeaDetailPanel({
   fields: FieldDef[];
   statuses: IdeaStatus[];
   initialTab?: Tab;
+  /** Field keys currently pinned (from the view config). */
+  pinnedKeys?: string[];
+  /** Toggle a field's pinned state (persisted upstream, admin-gated). */
+  onTogglePin?: (key: string) => void;
   onClose: () => void;
 }) {
   const qc = useQueryClient();
@@ -154,13 +162,21 @@ export function IdeaDetailPanel({
     }
   }
 
-  // Partition fields into the three JPD sections by key.
+  // Partition fields into the JPD sections. Pinned = the view's pinned list (or
+  // the defaults). In-view = the rest of the default in-view set. Available = the
+  // remainder. Jira-only fields are dropped entirely.
+  const JIRA_ONLY = new Set(["atlassian_project", "atlassian_project_status", "team", "linked_items"]);
   const byKey = new Map(fields.map((f) => [f.key, f] as const));
-  const pinned = PINNED_FIELD_KEYS.map((k) => byKey.get(k)).filter((f): f is FieldDef => Boolean(f));
-  const inView = IN_VIEW_FIELD_KEYS.map((k) => byKey.get(k)).filter((f): f is FieldDef => Boolean(f));
-  const grouped = new Set([...PINNED_FIELD_KEYS, ...IN_VIEW_FIELD_KEYS]);
+  const pinKeys = pinnedKeys && pinnedKeys.length ? pinnedKeys : PINNED_FIELD_KEYS;
+  const pinnedSet = new Set(pinKeys);
+  const pinned = pinKeys.map((k) => byKey.get(k)).filter((f): f is FieldDef => !!f && !JIRA_ONLY.has(f.key));
+  const inView = IN_VIEW_FIELD_KEYS
+    .filter((k) => !pinnedSet.has(k))
+    .map((k) => byKey.get(k))
+    .filter((f): f is FieldDef => !!f && !JIRA_ONLY.has(f.key));
+  const grouped = new Set([...pinKeys, ...IN_VIEW_FIELD_KEYS]);
   const available = fields
-    .filter((f) => !grouped.has(f.key))
+    .filter((f) => !grouped.has(f.key) && !JIRA_ONLY.has(f.key))
     .sort((a, b) => a.name.localeCompare(b.name));
 
   // Description + action buttons (top of the Overview left column).
@@ -196,42 +212,55 @@ export function IdeaDetailPanel({
     </>
   );
 
-  // The field accordions (right column when expanded; stacked when drawer).
+  // One editable field row (JPD): [field icon] label [pin] .... value. Reuses the
+  // grid's EditableCell (borderless in read mode, all editors, auto-saves).
+  const fieldRow = (f: FieldDef) => {
+    const isPinned = pinnedSet.has(f.key);
+    const Icon = iconForColumn(f.key, f);
+    return (
+      <div key={f.id} className="group grid grid-cols-[150px_1fr] items-center gap-2 py-1.5">
+        <span className="flex items-center gap-1.5 text-xs text-gray-500">
+          {isFormulaColumn(f) ? (
+            <span className="w-3.5 text-center font-serif text-[12px] italic text-gray-400">fx</span>
+          ) : (
+            <Icon className="h-3.5 w-3.5 shrink-0 text-gray-400" />
+          )}
+          <span className="truncate">{f.name}</span>
+          {onTogglePin && (
+            <button
+              type="button"
+              aria-label={isPinned ? "Unpin field" : "Pin field"}
+              title={isPinned ? "Unpin" : "Pin to top"}
+              onClick={() => onTogglePin(f.key)}
+              className={`shrink-0 rounded p-0.5 ${isPinned ? "text-amber-500" : "text-gray-300 opacity-0 group-hover:opacity-100 hover:text-gray-500"}`}
+            >
+              <Pin className="h-3.5 w-3.5" />
+            </button>
+          )}
+        </span>
+        <div className="min-w-0 text-sm text-gray-800">
+          <EditableCell field={f} value={values[f.id] ?? null} onSave={save} />
+        </div>
+      </div>
+    );
+  };
+
   const fieldAccordions = (
     <>
-      <Accordion title="Pinned fields" right={<Settings className="h-3.5 w-3.5 text-gray-400" />}>
-        {pinned.map((f) => (
-          <FieldRow key={f.id} label={f.name}>
-            <EditableOrChip field={f} value={values[f.id] ?? null} saving={saving} onSave={save} readOnly={f.key === K.score} />
-          </FieldRow>
-        ))}
+      <Accordion title="Pinned fields">
+        {pinned.map(fieldRow)}
+        {pinned.length === 0 && <p className="py-1 text-sm text-gray-400">No pinned fields yet.</p>}
       </Accordion>
 
       <Accordion title="Fields in this view">
         <FieldRow label="Insights"><span className="font-medium text-gray-700">{insightCount ?? 0}</span></FieldRow>
-        {inView.map((f) => (
-          <FieldRow key={f.id} label={f.name}>
-            <FieldEditor field={f} value={values[f.id] ?? null} disabled={saving} onSave={save} />
-          </FieldRow>
-        ))}
-        <FieldRow label="Delivery progress">
-          <div className="flex h-1.5 w-32 overflow-hidden rounded-full bg-gray-100">
-            <div className="h-full bg-green-400" style={{ width: "32%" }} />
-            <div className="h-full bg-blue-400" style={{ width: "24%" }} />
-          </div>
-        </FieldRow>
+        {inView.map(fieldRow)}
       </Accordion>
 
       <Accordion title="Available fields">
-        <SystemRow label="Assignee" value="Unassigned" />
-        {available.map((f) => (
-          <FieldRow key={f.id} label={f.name}>
-            <EditableOrChip field={f} value={values[f.id] ?? null} saving={saving} onSave={save} readOnly={f.key === K.score} />
-          </FieldRow>
-        ))}
+        {available.map(fieldRow)}
         <SystemRow label="Created" value={new Date(idea.createdAt).toLocaleString()} />
         <SystemRow label="Updated" value={new Date(idea.updatedAt).toLocaleString()} />
-        <SystemRow label="Linked items" value="0" />
         <FieldRow label="Status">
           {status ? (
             <span className="inline-flex items-center rounded bg-gray-100 px-2 py-0.5 text-xs font-medium text-gray-700">
@@ -239,11 +268,6 @@ export function IdeaDetailPanel({
             </span>
           ) : "—"}
         </FieldRow>
-      </Accordion>
-
-      <Accordion title="Automation" scroll={false}>
-        <p className="text-sm font-medium text-gray-700">Recent rule runs</p>
-        <p className="text-sm text-gray-500">There are no recent rule runs for this issue.</p>
       </Accordion>
     </>
   );
@@ -373,59 +397,6 @@ export function IdeaDetailPanel({
         )}
       </div>
     </aside>
-  );
-}
-
-/** Renders a branded chip (Theme/Roadmap) in read state but stays editable via
- *  the underlying editor; Score is read-only. */
-function EditableOrChip({
-  field,
-  value,
-  saving,
-  readOnly,
-  onSave,
-}: {
-  field: FieldDef;
-  value: IdeaFieldValue;
-  saving: boolean;
-  readOnly?: boolean;
-  onSave: (fieldId: string, value: IdeaFieldValue) => void;
-}) {
-  if (readOnly) {
-    if (field.key === K.score && (value === null || value === undefined)) return <span className="text-gray-400">None</span>;
-    return (
-      <span className="inline-flex items-center rounded bg-green-50 px-2 py-0.5 text-sm font-medium text-green-700">
-        {String(value)}
-      </span>
-    );
-  }
-  const chip = <FieldChip field={field} value={value} />;
-  // Theme/Roadmap: show the chip; clicking reveals the select underneath.
-  if (chip && (field.key === K.theme || field.key === K.roadmap)) {
-    return <InlineChipEdit chip={chip} field={field} value={value} saving={saving} onSave={onSave} />;
-  }
-  return <FieldEditor field={field} value={value} disabled={saving} onSave={onSave} />;
-}
-
-function InlineChipEdit({
-  chip,
-  field,
-  value,
-  saving,
-  onSave,
-}: {
-  chip: React.ReactNode;
-  field: FieldDef;
-  value: IdeaFieldValue;
-  saving: boolean;
-  onSave: (fieldId: string, value: IdeaFieldValue) => void;
-}) {
-  const [editing, setEditing] = useState(false);
-  if (editing) return <FieldEditor field={field} value={value} disabled={saving} onSave={(id, v) => { onSave(id, v); setEditing(false); }} />;
-  return (
-    <button type="button" onClick={() => setEditing(true)} className="rounded hover:bg-gray-50">
-      {chip}
-    </button>
   );
 }
 

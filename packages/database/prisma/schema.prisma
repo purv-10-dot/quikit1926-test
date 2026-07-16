@@ -9893,6 +9893,23 @@ model QtIdeaDelivery {
   @@schema("app_quiktrack")
 }
 
+// TODO(integration): discovery view-level comments (JPD "All ideas" About/
+// Comments drawer). Additive; needs owner sign-off before Neon.
+model QtIdeaViewComment {
+  id        String   @id @default(cuid())
+  orgId     String
+  viewId    String
+  body      String
+  isDeleted Boolean  @default(false)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  createdBy String?
+
+  @@index([viewId, createdAt])
+  @@index([orgId])
+  @@schema("app_quiktrack")
+}
+
 // ============================================================================
 // QuikHRMS (app_quikhrms schema) — merged from apps/quikhrms. Models that
 // collided with existing names are prefixed Hrms* (Team->HrmsTeam, etc.).

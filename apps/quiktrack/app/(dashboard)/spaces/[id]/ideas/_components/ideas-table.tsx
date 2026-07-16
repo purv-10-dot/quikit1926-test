@@ -14,6 +14,7 @@ import {
   Clock,
   CalendarDays,
   Lightbulb,
+  KeyRound,
   ArrowUp,
   ArrowDown,
   ChevronDown,
@@ -45,8 +46,8 @@ export interface Column {
  *  the soft shadow that signals content scrolls beneath. */
 const FZ_SHADOW = "shadow-[inset_-1px_0_0_0_#d1d5db,2px_0_4px_-2px_rgba(0,0,0,0.15)]";
 
-/** Read-only built-in columns rendered by key (Assignee/Creator/Status/Created/Updated). */
-const SYSTEM_COL_KEYS = new Set(["assignee", "creator", "status", "created", "updated"]);
+/** Read-only built-in columns rendered by key. */
+const SYSTEM_COL_KEYS = new Set(["key", "type", "assignee", "creator", "status", "created", "updated"]);
 
 function columnIcon(col: Column): LucideIcon {
   if (col.key === "insights") return TrendingUp;
@@ -54,6 +55,8 @@ function columnIcon(col: Column): LucideIcon {
   if (col.key === "delivery") return Workflow;
   if (col.key === "assignee" || col.key === "creator") return AtSign;
   if (col.key === "created" || col.key === "updated") return Clock;
+  if (col.key === "key") return KeyRound;
+  if (col.key === "type") return Lightbulb;
   if (col.field?.type === "CHECKBOX") return CheckSquare;
   if (col.field?.type === "URL") return LinkIcon;
   if (col.field?.type === "DATE") return CalendarDays;
@@ -82,7 +85,7 @@ function defaultWidth(col: Column | string): number {
 }
 
 
-function SummaryCell({ idea, onOpen, onEditTitle }: { idea: IdeaRow; onOpen: (i: IdeaRow) => void; onEditTitle: (id: string, t: string) => void }) {
+function SummaryCell({ idea, onOpen, onEditTitle, showKey = true, showType = true }: { idea: IdeaRow; onOpen: (i: IdeaRow) => void; onEditTitle: (id: string, t: string) => void; showKey?: boolean; showType?: boolean }) {
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState(idea.title);
   function commit() {
@@ -115,11 +118,10 @@ function SummaryCell({ idea, onOpen, onEditTitle }: { idea: IdeaRow; onOpen: (i:
   }
   return (
     <div className="flex w-full items-center gap-1.5">
-      {/* Idea type icon — a lightbulb marks a discovery idea (JPD), inline in the
-          first column. */}
-      <Lightbulb className="h-4 w-4 shrink-0 fill-yellow-300 text-yellow-500" />
-      {/* Idea key inline before the title (JPD: "DT-6 Explore VR travel…"). */}
-      <span className="shrink-0 text-xs font-medium tabular-nums text-gray-400">{idea.key}</span>
+      {/* Idea type icon (lightbulb) + key inline before the title (JPD). Each is
+          toggled from the Fields panel; they don't render as separate columns. */}
+      {showType && <Lightbulb className="h-4 w-4 shrink-0 fill-yellow-300 text-yellow-500" />}
+      {showKey && <span className="shrink-0 text-xs font-medium tabular-nums text-gray-400">{idea.key}</span>}
       <button
         type="button"
         onClick={() => onOpen(idea)}
@@ -352,6 +354,8 @@ export function IdeasTable({
   onReorderColumns,
   sortByKey,
   groups,
+  showKey = true,
+  showType = true,
   rowNumbers,
   rowColor,
   footer,
@@ -378,6 +382,9 @@ export function IdeasTable({
   sortByKey?: Record<string, "asc" | "desc">;
   /** When set, render collapsible group swimlanes instead of a flat list. */
   groups?: { id: string; label: React.ReactNode; ideas: IdeaRow[] }[];
+  /** Toggle the inline key prefix / type lightbulb in the Summary column. */
+  showKey?: boolean;
+  showType?: boolean;
   /** Show a leading row-number column (Display settings). */
   rowNumbers?: boolean;
   /** Row-coloring: returns a hex color for an idea (or null). Style decides how. */
@@ -653,7 +660,7 @@ export function IdeasTable({
                     }`}
                   >
                     {isSummary ? (
-                      <SummaryCell idea={idea} onOpen={onOpen} onEditTitle={onEditTitle} />
+                      <SummaryCell idea={idea} onOpen={onOpen} onEditTitle={onEditTitle} showKey={showKey} showType={showType} />
                     ) : col.key === "insights" ? (
                       <InsightsCell idea={idea} onOpenInsights={() => onOpen(idea, "Insights")} />
                     ) : col.key === "comments" ? (
