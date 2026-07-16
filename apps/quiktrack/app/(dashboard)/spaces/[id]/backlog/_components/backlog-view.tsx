@@ -303,7 +303,7 @@ function InlineCreatorInner({
     );
   }
 
-  const meta = TYPE_META[type];
+  const meta = TYPE_META[type] ?? TYPE_META.TASK;
   const selectedMember = assigneeId ? members.find((m) => m.userId === assigneeId) : null;
 
   return (
@@ -1188,7 +1188,11 @@ function IssueRow({
   onToggleSelect: (next: boolean) => void;
   canDelete: boolean;
 }) {
-  const meta = TYPE_META[issue.type];
+  // Fall back to TASK for any unexpected/legacy type value — TYPE_META is typed
+  // as Record<IssueType,…> so TS assumes this is always defined, but a stray DB
+  // value (custom type, null, wrong case) would make `meta` undefined and
+  // `meta.Icon` below crashes the whole backlog into the error boundary.
+  const meta = TYPE_META[issue.type] ?? TYPE_META.TASK;
   const [titleEditing, setTitleEditing] = useState(false);
   const [titleDraft, setTitleDraft] = useState(issue.title);
   // Tooltip shown only when the title is actually clipped (scrollWidth >
