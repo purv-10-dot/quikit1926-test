@@ -38,6 +38,24 @@ export class StubRuntimeClient implements RuntimeClient {
     }
 
     const finalText = chunks.join("");
+    // KB scenario: when retrieval is enabled, emit a deterministic `sources`
+    // array on `done` so the relay/client citation paths are unit-testable
+    // without the live runtime. A scoped turn (sourceFileIds present) cites
+    // those ids; a whole-KB widen (`{ enabled: true }` alone) cites a synthetic
+    // id. A plain turn (no knowledgeBase) omits `sources` entirely — the exact
+    // back-compat shape the existing non-KB parser expects.
+    if (input.knowledgeBase?.enabled) {
+      const ids = input.knowledgeBase.sourceFileIds?.length
+        ? input.knowledgeBase.sourceFileIds
+        : ["stub-kb-source"];
+      const sources = ids.slice(0, 2).map((sourceFileId, chunkIndex) => ({
+        sourceFileId,
+        chunkIndex,
+        snippet: `Relevant excerpt from ${sourceFileId} (chunk ${chunkIndex}).`,
+      }));
+      yield { type: "done", text: finalText, agentRunId: `stub-${randomUUID()}`, sources };
+      return;
+    }
     yield { type: "done", text: finalText, agentRunId: `stub-${randomUUID()}` };
   }
 

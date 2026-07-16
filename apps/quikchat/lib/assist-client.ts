@@ -5,10 +5,20 @@
  * stream; the runtime has no server-side cancellation yet — J1).
  */
 
+import type { AssistSource } from "@/lib/shared";
+
+export type { AssistSource };
+
 export interface AssistDonePayload {
   text: string;
   agentRunId: string;
   clientMessageId: string;
+  /**
+   * Retrieval citations for a KB-backed turn (Stage 3). Present only when the
+   * KB was used; absent on a plain turn. Rendered as ephemeral source chips on
+   * the live turn — never persisted.
+   */
+  sources?: AssistSource[];
 }
 
 export interface AssistHandlers {
@@ -19,7 +29,13 @@ export interface AssistHandlers {
 
 type StreamEvent =
   | { type: "delta"; text: string }
-  | { type: "done"; text: string; agentRunId: string; clientMessageId: string }
+  | {
+      type: "done";
+      text: string;
+      agentRunId: string;
+      clientMessageId: string;
+      sources?: AssistSource[];
+    }
   | { type: "error"; message: string; code?: string };
 
 export async function streamAssist(
@@ -33,6 +49,13 @@ export async function streamAssist(
      * the presigned URL server-side (a client URL is never trusted).
      */
     document?: { storageKey: string; filename: string; contentType?: string };
+    /**
+     * Optional KB retrieval scope (Stage 3). Nested per the runtime contract.
+     * Omit entirely for a plain turn; `{ enabled: true, sourceFileIds }` scopes
+     * retrieval to the conversation's docs; `{ enabled: true }` widens to the
+     * whole KB ("search my docs").
+     */
+    knowledgeBase?: { enabled: boolean; sourceFileIds?: string[] };
   },
   handlers: AssistHandlers,
   signal?: AbortSignal,

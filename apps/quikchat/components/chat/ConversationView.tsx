@@ -2,7 +2,13 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import type { ChannelList, ChannelListItem, MentionRefInput, MessageDto } from "@/lib/shared";
+import type {
+  AssistSource,
+  ChannelList,
+  ChannelListItem,
+  MentionRefInput,
+  MessageDto,
+} from "@/lib/shared";
 import { Avatar, Pin, Spinner, useToast } from "@/components/ui";
 import {
   addMember,
@@ -70,6 +76,20 @@ export interface ConversationViewProps {
   onCall?: () => void;
   /** Start a call linked to a meeting card. */
   onStartMeetingCall?: (meetingId: string, channelId: string) => void;
+  /**
+   * Stage 3 retrieval (AI chat only). Ephemeral citations for the live turn,
+   * keyed by the bot message's clientMessageId — rendered as source chips.
+   */
+  liveSources?: Record<string, AssistSource[]>;
+  /** Called after a successful "Add to KB" so the workspace appends the new
+   * sourceFileId to this conversation's retrieval scope (Option-B auto-scope). */
+  onKbIngested?: (sourceFileId: string) => void;
+  /** Whole-KB widen toggle state ("search my docs") for AI chat. */
+  kbWiden?: boolean;
+  /** Toggle the whole-KB widen for the next turns. */
+  onToggleKbWiden?: () => void;
+  /** How many docs are in this conversation's auto-scope (drives the hint). */
+  kbDocCount?: number;
 }
 
 export function PinnedBanner({ count, onOpen }: { count: number; onOpen?: () => void }) {
@@ -100,6 +120,11 @@ export function ConversationView({
   onDismissAssistError,
   onCall,
   onStartMeetingCall,
+  liveSources,
+  onKbIngested,
+  kbWiden,
+  onToggleKbWiden,
+  kbDocCount,
 }: ConversationViewProps) {
   const qc = useQueryClient();
   const toast = useToast();
@@ -208,11 +233,18 @@ export function ConversationView({
       ? async (message, visibility) => {
           const data = (message.data ?? {}) as { objectPath?: string; originalName?: string };
           try {
-            return await ingestDocument(channelId, {
+            const result = await ingestDocument(channelId, {
               storageKey: data.objectPath ?? "",
               filename: data.originalName ?? "document",
               visibility,
+              // Pass the message id so the server persists the KB marker on this
+              // row by primary key (Option-B auto-scope).
+              messageId: message.id,
             });
+            // Append to this conversation's retrieval scope so follow-up Q&A
+            // "just works" without a reload (server marker covers reload).
+            onKbIngested?.(result.sourceFileId);
+            return result;
           } catch (e) {
             toast.error({
               title: "Couldn't add to knowledge base",
@@ -222,6 +254,7 @@ export function ConversationView({
           }
         }
       : undefined,
+    liveSourcesById: liveSources,
   };
 
   const typingUsers: TypingUser[] = (typing ? whoIsTyping(typing, channelId, Date.now()) : [])
@@ -317,6 +350,27 @@ export function ConversationView({
           </div>
         ) : null}
         <TypingIndicator users={typingUsers} />
+        {isAiChat ? (
+          <div className="qc-kb-scope" data-testid="kb-scope">
+            <button
+              type="button"
+              className="qc-btn qc-btn--ghost qc-kb-scope__toggle"
+              aria-pressed={!!kbWiden}
+              data-active={!!kbWiden}
+              onClick={onToggleKbWiden}
+              title="When on, questions search your whole knowledge base instead of just this conversation's documents."
+            >
+              {kbWiden ? "Searching all my docs" : "Search my docs"}
+            </button>
+            <span className="qc-kb-scope__hint">
+              {kbWiden
+                ? "Answers draw from your whole knowledge base."
+                : kbDocCount
+                  ? `Answers draw from ${kbDocCount} doc${kbDocCount === 1 ? "" : "s"} in this chat.`
+                  : "Attach a document and add it to the knowledge base to ask questions about it."}
+            </span>
+          </div>
+        ) : null}
         <Composer
           members={channel.members.map((m) => ({ id: m.id, displayName: m.displayName }))}
           onSend={(content, mentions) => {

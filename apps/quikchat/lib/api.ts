@@ -169,7 +169,14 @@ export function openAiChat(): Promise<ChannelListItem> {
  */
 export async function ingestDocument(
   channelId: string,
-  body: { storageKey: string; filename: string; visibility: Extract<IngestVisibility, "PRIVATE" | "ORG"> },
+  body: {
+    storageKey: string;
+    filename: string;
+    visibility: Extract<IngestVisibility, "PRIVATE" | "ORG">;
+    /** The Media message being ingested — lets the server persist the KB marker
+     * on that row by primary key (Option-B auto-scope). */
+    messageId?: string;
+  },
 ): Promise<IngestResult> {
   const res = await fetch(`/api/channels/${channelId}/ingest`, {
     method: "POST",
@@ -184,6 +191,16 @@ export async function ingestDocument(
     throw err;
   }
   return (await res.json()) as IngestResult;
+}
+
+/**
+ * The channel's persisted KB-ingested source-file ids (Stage 3 auto-scope).
+ * Fetched on AI-chat mount to seed the conversation's retrieval scope so it
+ * survives a page reload.
+ */
+export async function fetchKbDocs(channelId: string): Promise<string[]> {
+  const res = await getJson<{ sourceFileIds: string[] }>(`/api/channels/${channelId}/kb-docs`);
+  return res.sourceFileIds;
 }
 
 export function discoverChannels(q?: string): Promise<DiscoverChannelItem[]> {

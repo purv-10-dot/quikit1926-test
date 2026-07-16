@@ -14,6 +14,7 @@ import {
 } from "@/lib/server/assistant.service";
 import { getRuntimeClient } from "@/lib/server/runtime";
 import type { RuntimeEvent } from "@/lib/server/runtime";
+import { listChannelKbSourceFileIds } from "@/lib/server/kb.service";
 import { getStorage } from "@/lib/server/storage";
 import { userCan } from "@/lib/authz/permissions";
 
@@ -50,6 +51,29 @@ export const POST = withOrgAuth(
     // alone), so require a prompt OR a document — not a prompt unconditionally.
     if (!prompt && !hasDoc) throw new HttpError(400, "prompt or document is required");
 
+    // Optional KB retrieval scope (Stage 3). Nested shape per the runtime
+    // contract: { enabled: boolean; sourceFileIds?: string[] }. Absent →
+    // byte-compatible plain turn. `enabled:false` or a malformed shape → treated
+    // as no retrieval (never forwarded). sourceFileIds present → scoped to those
+    // docs; omitted → whole-KB widen. Visibility is enforced by the runtime.
+    const rawKb = body.knowledgeBase as
+      | { enabled?: unknown; sourceFileIds?: unknown }
+      | undefined;
+    let knowledgeBase: { enabled: boolean; sourceFileIds?: string[] } | undefined;
+    if (rawKb && rawKb.enabled === true) {
+      let sourceFileIds: string[] | undefined;
+      if (rawKb.sourceFileIds !== undefined) {
+        if (
+          !Array.isArray(rawKb.sourceFileIds) ||
+          !rawKb.sourceFileIds.every((v) => typeof v === "string")
+        ) {
+          throw new HttpError(400, "knowledgeBase.sourceFileIds must be an array of strings");
+        }
+        sourceFileIds = rawKb.sourceFileIds as string[];
+      }
+      knowledgeBase = { enabled: true, ...(sourceFileIds ? { sourceFileIds } : {}) };
+    }
+
     // Membership (tenant isolation) + per-org/channel enable.
     await assertMembership(ctx.orgId, channelId, ctx.userId);
     if (!(await isAssistantEnabled(ctx.orgId, channelId))) {
@@ -59,6 +83,17 @@ export const POST = withOrgAuth(
     // in normal channels — both hit this route. Guests (Channel:view only) fail.
     if (!(await userCan(ctx.userId, ctx.orgId, "Assistant", "create"))) {
       throw new HttpError(403, "You do not have permission to use the assistant");
+    }
+
+    // Defense-in-depth (B4): a scoped KB turn may only cite docs actually
+    // ingested into THIS channel. The runtime enforces visibility regardless
+    // (PRIVATE = uploader-only), so this just rejects a client that fabricates
+    // stray sourceFileIds. A whole-KB widen (no sourceFileIds) skips the check.
+    if (knowledgeBase?.sourceFileIds?.length) {
+      const allowed = new Set(await listChannelKbSourceFileIds(ctx.orgId, channelId));
+      if (!knowledgeBase.sourceFileIds.every((id) => allowed.has(id))) {
+        throw new HttpError(403, "knowledgeBase.sourceFileIds contains an unknown document");
+      }
     }
 
     // Resolve the attached document → a fresh presigned GET URL, minted
@@ -109,6 +144,8 @@ export const POST = withOrgAuth(
             prompt,
             history,
             document,
+            appId: "quikchat", // toolset scoping — sent on EVERY assist turn
+            knowledgeBase,
             locale: "en",
             botAgentId: ASSISTANT_BOT_AGENT_ID,
             traceId,
@@ -128,8 +165,17 @@ export const POST = withOrgAuth(
               } catch (e) {
                 logger.error({ traceId, channelId, err: String(e) }, "assist: post reply failed");
               }
+              // Relay citations on the `done` event (ephemeral — decision 3).
+              // The bot message write above stays text-only; `sources` is
+              // omitted entirely on a non-KB turn (existing parser unaffected).
               controller.enqueue(
-                sse({ type: "done", text: evt.text, agentRunId: evt.agentRunId, clientMessageId }),
+                sse({
+                  type: "done",
+                  text: evt.text,
+                  agentRunId: evt.agentRunId,
+                  clientMessageId,
+                  ...(evt.sources ? { sources: evt.sources } : {}),
+                }),
               );
               break;
             }

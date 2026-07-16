@@ -26,6 +26,7 @@ const input: AssistInput = {
   channelId: "c1",
   prompt: "summarize",
   history: [{ role: "user", text: "hi", createdAt: new Date().toISOString() }],
+  appId: "quikchat",
   locale: "en",
   botAgentId: "quikchat-assistant",
   traceId: "trace-1",
@@ -77,6 +78,40 @@ describe("StubRuntimeClient", () => {
     expect(r.sourceFileId).toBe(ingestInput.sourceFileId);
     expect(r.chunksStored).toBeGreaterThan(0);
     expect(typeof r.contentHash).toBe("string");
+  });
+
+  it("omits done.sources on a plain (non-KB) turn — back-compat", async () => {
+    const events = await collect(new StubRuntimeClient().assist(input));
+    const done = events.at(-1);
+    expect(done?.type).toBe("done");
+    if (done?.type === "done") expect(done.sources).toBeUndefined();
+  });
+
+  it("emits done.sources scoped to the given sourceFileIds on a KB turn", async () => {
+    const events = await collect(
+      new StubRuntimeClient().assist({
+        ...input,
+        knowledgeBase: { enabled: true, sourceFileIds: ["quikchat/o1/c1/doc-a.pdf"] },
+      }),
+    );
+    const done = events.at(-1);
+    expect(done?.type).toBe("done");
+    if (done?.type === "done") {
+      expect(done.sources?.length).toBeGreaterThan(0);
+      expect(done.sources![0]).toMatchObject({
+        sourceFileId: "quikchat/o1/c1/doc-a.pdf",
+        chunkIndex: 0,
+      });
+      expect(typeof done.sources![0]!.snippet).toBe("string");
+    }
+  });
+
+  it("emits a synthetic done.sources on a whole-KB widen (enabled, no ids)", async () => {
+    const events = await collect(
+      new StubRuntimeClient().assist({ ...input, knowledgeBase: { enabled: true } }),
+    );
+    const done = events.at(-1);
+    if (done?.type === "done") expect(done.sources?.length).toBeGreaterThan(0);
   });
 });
 
@@ -139,6 +174,50 @@ describe("HttpRuntimeClient", () => {
     const body = JSON.parse(opts.body as string);
     expect(body.orgId).toBeUndefined();
     expect(body.channelId).toBe("c1");
+    // appId rides EVERY turn (toolset scoping), even a plain one.
+    expect(body.appId).toBe("quikchat");
+  });
+
+  it("sends knowledgeBase NESTED when present; omits it on a plain turn", async () => {
+    const fetchMock = vi.fn(async (_url: string, _opts: RequestInit) =>
+      sseResponse(['data: {"type":"done","text":"ok","agentRunId":"r1"}\n\n']),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+    const { HttpRuntimeClient } = await import("./http");
+
+    await collect(
+      new HttpRuntimeClient("https://r").assist({
+        ...input,
+        knowledgeBase: { enabled: true, sourceFileIds: ["quikchat/o1/c1/doc-a.pdf"] },
+      }),
+    );
+    const kbBody = JSON.parse(fetchMock.mock.calls[0]![1].body as string);
+    expect(kbBody.knowledgeBase).toEqual({
+      enabled: true,
+      sourceFileIds: ["quikchat/o1/c1/doc-a.pdf"],
+    });
+    expect(kbBody.appId).toBe("quikchat");
+
+    await collect(new HttpRuntimeClient("https://r").assist(input));
+    const plainBody = JSON.parse(fetchMock.mock.calls[1]![1].body as string);
+    expect(plainBody.knowledgeBase).toBeUndefined();
+  });
+
+  it("passes done.sources through the SSE parser to the caller", async () => {
+    const fetchMock = vi.fn(async (_url: string, _opts: RequestInit) =>
+      sseResponse([
+        'data: {"type":"done","text":"cited","agentRunId":"r2","sources":[{"sourceFileId":"quikchat/o1/c1/doc-a.pdf","chunkIndex":1,"snippet":"…"}]}\n\n',
+      ]),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+    const { HttpRuntimeClient } = await import("./http");
+    const events = await collect(new HttpRuntimeClient("https://r").assist(input));
+    const done = events.at(-1);
+    if (done?.type === "done") {
+      expect(done.sources).toEqual([
+        { sourceFileId: "quikchat/o1/c1/doc-a.pdf", chunkIndex: 1, snippet: "…" },
+      ]);
+    }
   });
 
   it("forwards a document as flat top-level url + filename", async () => {

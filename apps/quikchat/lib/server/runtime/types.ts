@@ -8,7 +8,9 @@
  * build must match these shapes — see docs/RUNTIME.md.
  */
 
-import type { IngestResult, IngestVisibility } from "@/lib/shared";
+import type { AssistSource, IngestResult, IngestVisibility } from "@/lib/shared";
+
+export type { AssistSource };
 
 export interface AssistHistoryItem {
   role: "user" | "assistant";
@@ -35,6 +37,20 @@ export interface AssistInput {
     url: string;
     filename: string;
   };
+  /**
+   * Owning app for runtime toolset scoping — always "quikchat", sent on EVERY
+   * assist turn (not just KB turns), per the runtime contract. Fixes the misfire
+   * where a general question could reach another app's tools.
+   */
+  appId: string;
+  /**
+   * KB retrieval scope (Stage 3 retrieval). Absent or `enabled:false` ⇒ a plain
+   * turn (no retrieval, back-compat). `sourceFileIds` present ⇒ retrieval scoped
+   * to those docs; omitted (`{ enabled: true }`) ⇒ the user's whole KB. Doc
+   * visibility is enforced SERVER-SIDE by the runtime (PRIVATE = uploader-only).
+   * Independent of the Stage-2 `document` field.
+   */
+  knowledgeBase?: { enabled: boolean; sourceFileIds?: string[] };
   locale: string;
   /** Stable bot agent id (QuikChat-owned identity). */
   botAgentId: string;
@@ -44,7 +60,7 @@ export interface AssistInput {
 
 export type RuntimeEvent =
   | { type: "delta"; text: string }
-  | { type: "done"; text: string; agentRunId: string }
+  | { type: "done"; text: string; agentRunId: string; sources?: AssistSource[] }
   | { type: "error"; message: string; code?: string }
   // Reserved for the later actions phase — defined in the vocab, NOT handled in v1.
   | { type: "approval_needed" };

@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import type {
+  AssistSource,
   IngestResult,
   MeetingDto,
   MentionRefInput,
@@ -83,6 +84,13 @@ export interface MessageRowActions {
     message: MessageDto,
     visibility: "PRIVATE" | "ORG",
   ) => Promise<IngestResult>;
+  /**
+   * Stage 3 retrieval — ephemeral citations for the live turn, keyed by the bot
+   * message's `clientMessageId` (`assist-<agentRunId>`). Populated only for the
+   * turn just streamed this session; never persisted, so reloaded/historical
+   * bot messages render no chips (decision 3).
+   */
+  liveSourcesById?: Record<string, AssistSource[]>;
 }
 
 function formatBytes(n?: number): string {
@@ -223,6 +231,32 @@ function AddToKbCard({
 /** Message body: markdown + clickable links + mention pills (see lib/richtext). */
 export function MentionText({ message }: { message: MessageDto }) {
   return <RichText content={message.content} mentions={message.mentions} />;
+}
+
+/**
+ * Ephemeral retrieval-citation chips (Stage 3), rendered under a bot reply on
+ * the live turn only. Each chip surfaces the cited document (its filename tail)
+ * and the excerpt as a tooltip. Not persisted — absent on reload (decision 3).
+ */
+function SourceChips({ sources }: { sources: AssistSource[] }) {
+  if (!sources.length) return null;
+  // sourceFileId === storageKey (quikchat/<org>/<channel>/<uuid>-<name>); show
+  // the human tail, fall back to the whole id.
+  const label = (id: string) => id.split("/").pop() || id;
+  return (
+    <div className="qc-source-chips" data-testid="source-chips">
+      <span className="qc-source-chips__label">Sources</span>
+      {sources.map((s, i) => (
+        <span
+          key={`${s.sourceFileId}-${s.chunkIndex}-${i}`}
+          className="qc-source-chip"
+          title={s.snippet}
+        >
+          <FileText size={12} aria-hidden /> {label(s.sourceFileId)}
+        </span>
+      ))}
+    </div>
+  );
 }
 
 function ParentQuote({
@@ -653,6 +687,11 @@ export function MessageRow({
               ) : null}
               {message.content ? <MentionText message={message} /> : null}
               {message.editedAt ? <span className="qc-edited">(edited)</span> : null}
+              {message.actorType === "ai_agent" &&
+              message.clientMessageId &&
+              actions?.liveSourcesById?.[message.clientMessageId]?.length ? (
+                <SourceChips sources={actions.liveSourcesById[message.clientMessageId]} />
+              ) : null}
               {message.type === "Media" && actions?.onAddToKb ? (
                 <AddToKbCard message={message} onAddToKb={actions.onAddToKb} />
               ) : null}

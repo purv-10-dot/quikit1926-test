@@ -1,7 +1,9 @@
 import { assertMembership, HttpError, withOrgAuth } from "@/lib/auth-shims";
+import { logger } from "@/lib/shared";
 import { readJson } from "@/lib/server/helpers";
 import { RATE } from "@/lib/server/rate-limits";
 import { ASSISTANT_BOT_AGENT_ID, isAssistantEnabled } from "@/lib/server/assistant.service";
+import { markMessageIngested } from "@/lib/server/kb.service";
 import { getRuntimeClient, IngestError } from "@/lib/server/runtime";
 import type { IngestErrorCode } from "@/lib/server/runtime";
 import type { IngestVisibility } from "@/lib/shared";
@@ -40,6 +42,9 @@ export const POST = withOrgAuth(
     const body = await readJson(req);
     const storageKey = typeof body.storageKey === "string" ? body.storageKey : "";
     const filename = typeof body.filename === "string" ? body.filename : "";
+    // The client owns the Media message it's ingesting; passing its id lets us
+    // persist the Option-B marker by primary key (see markMessageIngested).
+    const messageId = typeof body.messageId === "string" ? body.messageId : "";
     const visibility = (
       typeof body.visibility === "string" ? body.visibility : "PRIVATE"
     ) as IngestVisibility;
@@ -76,6 +81,28 @@ export const POST = withOrgAuth(
         visibility,
         filename,
       });
+      // Option-B persisted marker: hang the KB flag on the Media message so a
+      // fresh page load rebuilds this conversation's retrieval scope. Non-fatal
+      // — a failed marker just means the scope reseeds on the next ingest/reload;
+      // the ingest itself succeeded, so we still return the result.
+      if (messageId) {
+        try {
+          await markMessageIngested({
+            orgId: ctx.orgId,
+            channelId,
+            messageId,
+            storageKey,
+            visibility,
+            userId: ctx.userId,
+            ingestedAt: new Date(),
+          });
+        } catch (e) {
+          logger.error(
+            { channelId, messageId, err: String(e) },
+            "ingest: KB marker persist failed",
+          );
+        }
+      }
       return Response.json(result);
     } catch (e) {
       if (e instanceof IngestError) {

@@ -25,10 +25,14 @@ export class HttpRuntimeClient implements RuntimeClient {
       userId: input.userId,
     });
 
-    // orgId/userId are in the token, NOT the body. A doc turn adds `url`+
-    // `filename` FLAT at the top level (the runtime's confirmed contract);
-    // absent → body byte-identical to a plain turn (back-compat).
+    // orgId/userId are in the token, NOT the body. `appId` rides EVERY turn
+    // (toolset scoping). A doc turn adds `url`+`filename` FLAT at the top level;
+    // a KB turn adds `knowledgeBase` NESTED — both per the runtime's confirmed
+    // contract. With neither, the body is byte-identical to a plain turn plus
+    // the always-present `appId` (back-compat: the runtime ignores unknown-less
+    // shapes; `appId` is now part of the contract on all turns).
     const body = JSON.stringify({
+      appId: input.appId,
       channelId: input.channelId,
       threadRootId: input.threadRootId,
       prompt: input.prompt,
@@ -37,6 +41,7 @@ export class HttpRuntimeClient implements RuntimeClient {
       ...(input.document
         ? { url: input.document.url, filename: input.document.filename }
         : {}),
+      ...(input.knowledgeBase ? { knowledgeBase: input.knowledgeBase } : {}),
     });
 
     const controller = new AbortController();

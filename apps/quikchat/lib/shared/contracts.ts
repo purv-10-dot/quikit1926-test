@@ -168,6 +168,18 @@ export interface IngestResult {
   contentHash: string;
 }
 
+/**
+ * One retrieval citation on a KB-backed assist turn (Stage 3 retrieval). Rides
+ * on the `done` event ONLY when the KB was used; omitted entirely otherwise.
+ * Rendered as an ephemeral source chip on the live turn — never persisted.
+ * Single source of truth: both the runtime seam and the client import this.
+ */
+export interface AssistSource {
+  sourceFileId: string;
+  chunkIndex: number;
+  snippet: string;
+}
+
 export interface SendMessageInput {
   content: string;
   type?: "Text" | "Media" | "SystemActivity" | "Meeting" | "Call";

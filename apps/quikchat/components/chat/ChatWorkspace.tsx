@@ -13,6 +13,7 @@ import { EmptyState, MessageSquare, useToast, WifiOff } from "@/components/ui";
 import {
   createChannel,
   fetchChannels,
+  fetchKbDocs,
   fetchMessages,
   markChannelDeliveredApi,
   markChannelReadApi,
@@ -48,6 +49,7 @@ import {
 } from "@/lib/presence-store";
 import { applyTyping, emptyTyping, pruneTyping, type TypingState } from "@/lib/typing-store";
 import { streamAssist } from "@/lib/assist-client";
+import type { AssistSource } from "@/lib/shared";
 import { useMyPermissions } from "@/lib/authz/useMyPermissions";
 import type { MediaMeta } from "@/lib/server/storage/types";
 import { CallHandler } from "../calling/CallHandler";
@@ -118,6 +120,13 @@ export function ChatWorkspace({
   } | null>(null);
   const [rejoinCall, setRejoinCall] = useState<ActiveCallInfo | null>(null);
   const assistAbort = useRef<AbortController | null>(null);
+  // Stage 3 retrieval (AI chat): the conversation's KB scope (sourceFileIds),
+  // seeded from the server marker on mount + appended on each "Add to KB"; a
+  // whole-KB widen toggle ("search my docs"); and ephemeral citation chips keyed
+  // by the bot message's clientMessageId (never persisted — decision 3).
+  const [kbSourceIds, setKbSourceIds] = useState<string[]>([]);
+  const [kbWiden, setKbWiden] = useState(false);
+  const [liveSources, setLiveSources] = useState<Record<string, AssistSource[]>>({});
   const activeIdRef = useRef<string | null>(null);
   activeIdRef.current = activeId;
   const clientRef = useRef<RealtimeClient | null>(null);
@@ -143,6 +152,45 @@ export function ChatWorkspace({
     if (!data || !activeId) return undefined;
     return [...data.priority, ...data.recent].find((c) => c.channelId === activeId);
   }, [channelsQuery.data, activeId]);
+
+  const isAiChat = activeChannel?.type === "ai";
+
+  // Seed this conversation's KB retrieval scope from the server marker on
+  // activation (Option-B: scope survives reload). Reset widen + scope when
+  // switching channels; non-AI channels carry no scope.
+  useEffect(() => {
+    setKbWiden(false);
+    if (!activeId || !isAiChat) {
+      setKbSourceIds([]);
+      return;
+    }
+    let cancelled = false;
+    void fetchKbDocs(activeId)
+      .then((ids) => {
+        if (!cancelled) setKbSourceIds(ids);
+      })
+      .catch(() => {
+        if (!cancelled) setKbSourceIds([]);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [activeId, isAiChat]);
+
+  const appendKbSource = useCallback((sourceFileId: string) => {
+    setKbSourceIds((prev) => (prev.includes(sourceFileId) ? prev : [...prev, sourceFileId]));
+  }, []);
+
+  // Build the per-turn knowledgeBase field (decision 2): widen → whole KB (no
+  // ids); ≥1 doc in scope → scoped; zero docs → omit entirely (plain turn).
+  const buildKnowledgeBase = useCallback(():
+    | { enabled: boolean; sourceFileIds?: string[] }
+    | undefined => {
+    if (!isAiChat) return undefined;
+    if (kbWiden) return { enabled: true };
+    if (kbSourceIds.length) return { enabled: true, sourceFileIds: kbSourceIds };
+    return undefined;
+  }, [isAiChat, kbWiden, kbSourceIds]);
 
   // Debounced per-channel delivery advance: when our client receives a message
   // for ANY channel (delivery ≠ viewing), tell the server we got it so senders
@@ -476,6 +524,7 @@ export function ChatWorkspace({
     (
       prompt: string,
       document?: { storageKey: string; filename: string; contentType?: string },
+      knowledgeBase?: { enabled: boolean; sourceFileIds?: string[] },
     ) => {
       if (!activeChannel) return;
       const channelId = activeChannel.channelId;
@@ -487,11 +536,18 @@ export function ChatWorkspace({
       const clearIfCurrent = () => setAssist((s) => (s && s.channelId === channelId ? null : s));
       void streamAssist(
         channelId,
-        { prompt, document },
+        { prompt, document, knowledgeBase },
         {
           onDelta: (t) =>
             setAssist((s) => (s && s.channelId === channelId ? { ...s, text: s.text + t } : s)),
-          onDone: clearIfCurrent,
+          onDone: (payload) => {
+            // Ephemeral citations for THIS turn only, keyed by the bot message's
+            // clientMessageId so the chip renders on the merged realtime message.
+            if (payload.sources?.length) {
+              setLiveSources((m) => ({ ...m, [payload.clientMessageId]: payload.sources! }));
+            }
+            clearIfCurrent();
+          },
           onError: (message) => {
             clearIfCurrent();
             setAssistError({ channelId, prompt, message });
@@ -512,8 +568,8 @@ export function ChatWorkspace({
     if (!assistError) return;
     const p = assistError.prompt;
     setAssistError(null);
-    handleAssist(p);
-  }, [assistError, handleAssist]);
+    handleAssist(p, undefined, buildKnowledgeBase());
+  }, [assistError, handleAssist, buildKnowledgeBase]);
   const dismissAssistError = useCallback(() => setAssistError(null), []);
 
   // Entry point: open (find-or-create) the caller's AI-chat singleton, then land
@@ -531,10 +587,13 @@ export function ChatWorkspace({
   const handleAiChatSend = useCallback(
     (content: string, mentionRefs: MentionRefInput[], parentMessageId?: string) => {
       handleSend(content, mentionRefs, parentMessageId);
-      handleAssist(content);
+      // Attach the conversation's retrieval scope (or widen / omit) per decision 2.
+      handleAssist(content, undefined, buildKnowledgeBase());
     },
-    [handleSend, handleAssist],
+    [handleSend, handleAssist, buildKnowledgeBase],
   );
+
+  const toggleKbWiden = useCallback(() => setKbWiden((v) => !v), []);
 
   // AI-chat attachment turn (Stage 2): persist + render the Media message as
   // usual (so history + reload work), THEN invoke the assistant with a document
@@ -708,6 +767,11 @@ export function ChatWorkspace({
             }
             onRetryAssist={retryAssist}
             onDismissAssistError={dismissAssistError}
+            liveSources={liveSources}
+            onKbIngested={appendKbSource}
+            kbWiden={kbWiden}
+            onToggleKbWiden={toggleKbWiden}
+            kbDocCount={kbSourceIds.length}
           />
         ) : (
           <section className="qc-pane-convo">

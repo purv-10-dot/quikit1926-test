@@ -75,6 +75,41 @@ describe("streamAssist", () => {
     });
   });
 
+  it("carries the optional nested knowledgeBase scope in the POST body", async () => {
+    const fetchMock = vi.fn(async (_url: string, _opts: RequestInit) =>
+      sseResponse([
+        'data: {"type":"done","text":"ok","agentRunId":"r1","clientMessageId":"assist-r1"}\n\n',
+      ]),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+    const { h } = handlers();
+    await streamAssist(
+      "c1",
+      { prompt: "what does it say?", knowledgeBase: { enabled: true, sourceFileIds: ["k1"] } },
+      h,
+    );
+    const body = JSON.parse(fetchMock.mock.calls[0]![1]!.body as string);
+    expect(body.knowledgeBase).toEqual({ enabled: true, sourceFileIds: ["k1"] });
+  });
+
+  it("threads done.sources through onDone (KB citations)", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () =>
+        sseResponse([
+          'data: {"type":"done","text":"cited","agentRunId":"r1","clientMessageId":"assist-r1","sources":[{"sourceFileId":"k1","chunkIndex":0,"snippet":"…"}]}\n\n',
+        ]),
+      ),
+    );
+    const { h, onDone } = handlers();
+    await streamAssist("c1", { prompt: "hi" }, h);
+    expect(onDone).toHaveBeenCalledWith(
+      expect.objectContaining({
+        sources: [{ sourceFileId: "k1", chunkIndex: 0, snippet: "…" }],
+      }),
+    );
+  });
+
   it("dispatches an error event", async () => {
     vi.stubGlobal(
       "fetch",
