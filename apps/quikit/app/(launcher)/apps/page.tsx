@@ -54,15 +54,20 @@ const SERIF = "'DM Serif Display', Georgia, serif";
 const SANS = "'Inter', system-ui, sans-serif";
 
 /* Brand icons for the launcher tiles — local assets override the DB
-   iconUrl so the launcher always renders the current brand logos. */
+   iconUrl so the launcher always renders the current brand logos.
+   This page has no theme switch (always light), so per the brand rule we
+   serve the DARK monogram (dark badge) for every tile. `admin` has no new
+   monogram supplied, so it keeps its existing icon. */
 const LAUNCHER_ICONS: Record<string, string> = {
   admin: "/app-icons/admin.svg",
-  quikcrm: "/app-icons/quikcrm.svg",
-  quikinfra: "/app-icons/quikinfra.svg",
-  quikscale: "/app-icons/quikscale.svg",
-  quiktrack: "/app-icons/quiktrack.svg",
-  quiksocial: "/app-icons/quiksocial.svg",
-  quiksupport: "/app-icons/quiksupport.svg",
+  quikcrm: "/app-icons/quikcrm-dark.svg",
+  quikfinance: "/app-icons/quikfinance-dark.svg",
+  quikhrms: "/app-icons/quikhrms-dark.svg",
+  quikinfra: "/app-icons/quikinfra-dark.svg",
+  quikscale: "/app-icons/quikscale-dark.svg",
+  quiktrack: "/app-icons/quiktrack-dark.svg",
+  quiksocial: "/app-icons/quiksocial-dark.svg",
+  quiksupport: "/app-icons/quiksupport-dark.svg",
 };
 
 interface AppInfo {
@@ -84,14 +89,14 @@ interface AppInfo {
 /** Coming-soon apps shown in the launcher's "Upcoming" section (not in the
  *  catalog yet — purely informational, non-launchable). Each has a gradient
  *  icon tile + glyph mirroring the marketing design. */
-const UPCOMING_APPS: { name: string; description: string; icon: LucideIcon; gradient: string }[] = [
+const UPCOMING_APPS: { name: string; description: string; icon: LucideIcon; gradient: string; logo?: string }[] = [
   { name: "QuikGoals", icon: Target, gradient: "linear-gradient(135deg,#FB923C,#F97316)", description: "Define targets, measure progress, and align every team around the numbers that matter." },
-  { name: "QuikChat", icon: MessageSquare, gradient: "linear-gradient(135deg,#2DD4BF,#14B8A6)", description: "Manage customer conversations across every channel with full context and smart routing." },
-  { name: "QuikHR", icon: Users, gradient: "linear-gradient(135deg,#FB7185,#F43F5E)", description: "Run hiring, onboarding, payroll, and performance reviews end to end in one HR system." },
-  { name: "QuikEmail", icon: Mail, gradient: "linear-gradient(135deg,#818CF8,#6366F1)", description: "Build, send, and automate email campaigns with templates, sequences, and open tracking built in." },
-  { name: "QuikSEO", icon: Search, gradient: "linear-gradient(135deg,#34D399,#10B981)", description: "Find keyword opportunities, monitor rankings, and get AI-driven content recommendations." },
+  { name: "QuikChat", icon: MessageSquare, gradient: "linear-gradient(135deg,#2DD4BF,#14B8A6)", logo: "/app-icons/quikchat-dark.svg", description: "Manage customer conversations across every channel with full context and smart routing." },
+  { name: "QuikHR", icon: Users, gradient: "linear-gradient(135deg,#FB7185,#F43F5E)", logo: "/app-icons/quikhrms-dark.svg", description: "Run hiring, onboarding, payroll, and performance reviews end to end in one HR system." },
+  { name: "QuikEmail", icon: Mail, gradient: "linear-gradient(135deg,#818CF8,#6366F1)", logo: "/app-icons/quikmail-dark.svg", description: "Build, send, and automate email campaigns with templates, sequences, and open tracking built in." },
+  { name: "QuikSEO", icon: Search, gradient: "linear-gradient(135deg,#34D399,#10B981)", logo: "/app-icons/quikseo-dark.svg", description: "Find keyword opportunities, monitor rankings, and get AI-driven content recommendations." },
   { name: "QuikMarketing", icon: Megaphone, gradient: "linear-gradient(135deg,#F87171,#EF4444)", description: "Run AI-powered campaigns across every marketing channel from a single workspace." },
-  { name: "QuikStudio", icon: LayoutGrid, gradient: "linear-gradient(135deg,#60A5FA,#3B82F6)", description: "Build custom apps and automations for your business. No code required." },
+  { name: "QuikStudio", icon: LayoutGrid, gradient: "linear-gradient(135deg,#60A5FA,#3B82F6)", logo: "/app-icons/quikstudio-dark.svg", description: "Build custom apps and automations for your business. No code required." },
 ];
 
 const GRID_CLS = "grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5";
@@ -906,12 +911,24 @@ export default function AppLauncherPage() {
                 const Icon = u.icon;
                 return (
                   <div key={u.name} className="p-5 flex flex-col" style={{ ...cardStyle, minHeight: 188 }}>
-                    <div
-                      className="flex items-center justify-center mb-3.5"
-                      style={{ width: 44, height: 44, borderRadius: 12, background: u.gradient }}
-                    >
-                      <Icon className="h-5 w-5" style={{ color: "#fff" }} />
-                    </div>
+                    {u.logo ? (
+                      // eslint-disable-next-line @next/next/no-img-element
+                      <img
+                        src={u.logo}
+                        alt={u.name}
+                        width={44}
+                        height={44}
+                        className="mb-3.5"
+                        style={{ width: 44, height: 44, borderRadius: 12, objectFit: "cover" }}
+                      />
+                    ) : (
+                      <div
+                        className="flex items-center justify-center mb-3.5"
+                        style={{ width: 44, height: 44, borderRadius: 12, background: u.gradient }}
+                      >
+                        <Icon className="h-5 w-5" style={{ color: "#fff" }} />
+                      </div>
+                    )}
                     <div className="flex items-center gap-2 mb-1.5 flex-wrap">
                       <h3 style={{ fontSize: 16, fontWeight: 700, color: INK }}>{u.name}</h3>
                       <span

@@ -1071,9 +1071,11 @@ export default function DashboardLayout({
                   letterSpacing: 0.4,
                 }}
               >
+                {/* Theme-aware brand mark: the DARK monogram in light mode,
+                    the LIGHT monogram in dark mode, so it always contrasts. */}
                 {/* eslint-disable-next-line @next/next/no-img-element */}
                 <img
-                  src="/brand/quiksocial.svg"
+                  src={themeDark ? "/brand/quiksocial.svg" : "/brand/quiksocial-dark.svg"}
                   alt="QuikSocial"
                   style={{ width: 16, height: 16, borderRadius: 4, objectFit: "contain" }}
                 />
