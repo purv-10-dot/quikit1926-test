@@ -38,8 +38,17 @@ interface ProctoredQuizWrapperProps {
   lessonId?: string;
   quizTitle?: string;
   timeLimitMinutes?: number;
+  // When true, bypass the "already attempted" gate inside the quiz component
+  // so corporate learners can retake the assessment.
   retakeMode?: boolean;
-  onComplete: (result: unknown) => void;
+  // `any`, not `unknown`: the payload is QuizTakingComponent's quiz result, and
+  // UniversalLMSPlayer reads `.passed` / `.percentage` / `.passingScore` /
+  // `.correctCount` off it directly. The legacy frontend typed it `any`
+  // (ProctoredQuizWrapper.tsx) and this app had narrowed it to `unknown` while
+  // its only consumer was still a stub — which made every one of those reads a
+  // type error the moment the real player landed.
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  onComplete: (result: any) => void;
   onCancel: () => void;
 }
 

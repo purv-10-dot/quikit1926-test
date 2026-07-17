@@ -334,6 +334,40 @@ export async function startSession(
   };
 }
 
+/**
+ * The question subset a proctoring session locked in at start.
+ * 1:1 port of `QuizProctoringService.getSessionManifest`
+ * (`quiz-proctoring.service.ts:66-82`).
+ *
+ * Precedence, exactly as the legacy:
+ *   1. `questionManifest` when present and non-empty;
+ *   2. else `selectedQuestionIndices` mapped to the main pool;
+ *   3. else undefined (no session context).
+ *
+ * The legacy also returned undefined for a malformed session id
+ * (`!Types.ObjectId.isValid`). The Postgres ids are uuids, so the equivalent is
+ * simply "no row found" — a bad id yields undefined via the same path.
+ *
+ * NOT tenant-scoped, matching the original — the caller supplies a sessionId it
+ * already holds, and the manifest is only ever used to NARROW what is returned.
+ */
+export async function getSessionManifest(sessionId: string): Promise<ManifestEntry[] | undefined> {
+  const s = await prisma.lmsQuizProctoringSession.findUnique({
+    where: { id: sessionId },
+    select: { questionManifest: true, selectedQuestionIndices: true },
+  });
+  if (!s) return undefined;
+
+  const manifest = s.questionManifest as unknown as ManifestEntry[] | null;
+  if (manifest && manifest.length > 0) return manifest;
+
+  if (s.selectedQuestionIndices && s.selectedQuestionIndices.length > 0) {
+    return s.selectedQuestionIndices.map((i) => ({ pool: 'main' as const, index: i }));
+  }
+
+  return undefined;
+}
+
 export async function logEvent(
   user: AuthUser,
   learnerId: string,

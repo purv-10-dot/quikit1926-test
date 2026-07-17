@@ -26,5 +26,18 @@ export const PATCH = route(async (req, { params }) => {
   if (dto.secondaryColor !== undefined) data.secondaryColor = dto.secondaryColor;
 
   const tenant = await prisma.lmsTenant.update({ where: { id: params!.id }, data });
-  return json({ success: true, data: tenant, message: 'Branding updated successfully' });
+  // The legacy handler returned ONLY the three branding fields
+  // (`tenants.controller.ts:395-403`), not the whole tenant row. Returning the
+  // full row here leaked every tenant column — including gstNumber,
+  // dbConnectionString and videoConfig credentials — to TENANT_ADMIN/SUB_ADMIN
+  // callers of a branding endpoint.
+  return json({
+    success: true,
+    data: {
+      logoUrl: tenant.logoUrl,
+      primaryColor: tenant.primaryColor,
+      secondaryColor: tenant.secondaryColor,
+    },
+    message: 'Branding updated successfully',
+  });
 });

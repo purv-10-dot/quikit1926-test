@@ -1,11 +1,10 @@
 /**
- * PostCSS config (CommonJS).
+ * PostCSS config (CommonJS) — matches every other app in the monorepo
+ * (apps/admin, apps/auth, apps/quikit, … all use `postcss.config.js`).
  *
- * NOTE: this MUST stay `postcss.config.js` with `module.exports` — the previous
- * `postcss.config.mjs` (ESM `export default`) was silently NOT picked up by the
- * Next.js build, so the Tailwind plugin never ran: the `@tailwind` at-rules were
- * dropped as unknown and only the raw `:root` tokens shipped, leaving the app
- * completely unstyled in production. apps/admin uses this same CJS form.
+ * Was previously `postcss.config.mjs`; quiklms was the only app using the ESM
+ * form. Both work locally, but keeping the CJS form here removes the odd-one-out
+ * and matches the apps that have always deployed cleanly.
  */
 module.exports = {
   plugins: {

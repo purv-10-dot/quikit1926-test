@@ -1,11 +1,22 @@
 import { NextResponse } from 'next/server';
 import { route, json } from '@/lib/http';
-import { requireAuth, requireRoles } from '@/lib/auth/context';
+import { requireAuth, requireRoles, userHasRole } from '@/lib/auth/context';
 import { findIssuedById, downloadGateBlocked, regeneratePdfForIssuedCertificate } from '@/lib/services/certificates-service';
 
 // GET /api/certificates/:id/download — SUPER_ADMIN | TENANT_ADMIN | SUB_ADMIN | MANAGER | LEARNER
-// NOTE: PDF generation is DEFERRED — the regenerate helper returns an empty
-// placeholder buffer (jsPDF/PDFKit + html-pdf-node generation to be added later).
+//
+// The PDF is always regenerated fresh against the tenant's current template, so
+// private-bucket images are embedded and an old template is never served.
+//
+// The tenant-isolation and own-certificate checks below are HARDENING, not a
+// port: the legacy handler (`certificates.controller.ts:630-690`) gated on role
+// alone and let ANY authenticated learner download ANY certificate by id.
+//
+// Ownership is required of everyone except the three admin roles (product owner,
+// 2026-07-17). MANAGER is deliberately NOT exempt: the manager certificates page
+// lists `/certificates/my-certificates` — the manager's own — so it keeps
+// working, and team-wide download has its own endpoint
+// (`/manager/certificates/download/:managerId`).
 export const GET = route(async (req, { params }) => {
   const user = await requireAuth(req);
   requireRoles(user, ['SUPER_ADMIN', 'TENANT_ADMIN', 'SUB_ADMIN', 'MANAGER', 'LEARNER']);
@@ -19,8 +30,11 @@ export const GET = route(async (req, { params }) => {
   if (user.orgId && issued.orgId !== user.orgId) {
     return json({ success: false, message: 'Certificate not found' }, 404);
   }
-  // Learners may only download their own certificate.
-  if (user.role === 'LEARNER' && issued.learnerId !== user.id) {
+  // Everyone below tenant-admin may only download their OWN certificate.
+  // `userHasRole` so a secondary admin role still grants the exemption.
+  const isAdminActor =
+    userHasRole(user, 'SUPER_ADMIN') || userHasRole(user, 'TENANT_ADMIN') || userHasRole(user, 'SUB_ADMIN');
+  if (!isAdminActor && issued.learnerId !== user.id) {
     return json({ success: false, message: 'Certificate not found' }, 404);
   }
   if (downloadGateBlocked(issued)) {

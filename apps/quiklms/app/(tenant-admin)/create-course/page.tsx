@@ -839,7 +839,11 @@ const CreateCoursePage = () => {
       title: basicInfo.title.trim(),
       description: basicInfo.description.trim() || undefined,
       category: basicInfo.category || undefined,
-      level: basicInfo.level ? basicInfo.level.toLowerCase() : undefined,
+      // Send the value exactly as the LEVELS options provide it ('Beginner' | …).
+      // The Prisma `CourseLevel` enum members are capitalized, so lower-casing
+      // here made every create fail with:
+      //   Invalid value for argument `level`. Expected LmsCourseLevel.
+      level: basicInfo.level || undefined,
       thumbnailUrl: basicInfo.thumbnailUrl.trim() || undefined,
       estimatedDuration: basicInfo.estimatedDuration
         ? Number(basicInfo.estimatedDuration)

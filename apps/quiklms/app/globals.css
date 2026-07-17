@@ -121,3 +121,77 @@
     scroll-behavior: auto !important;
   }
 }
+
+/* ─────────────────────────────────────────────────────────────────────────────
+ * Legacy QuikSkills utility classes.
+ *
+ * Ported from the old frontend's `src/index.css` (@layer components) because the
+ * components carried over from it — CourseCreator, CourseBuilder, QuizCreator,
+ * LockedCoursePlayer, WelcomeKitEditor, UpgradeEmailTemplateEditor,
+ * ResourceUploader, SubModuleResourceEngine — reference these classes directly.
+ * Their Tailwind classNames were kept byte-for-byte for behavioral parity, so
+ * without these definitions every button and input in those screens renders
+ * completely unstyled. They typecheck and build either way, which is exactly why
+ * this is easy to miss.
+ *
+ * `--brand-primary` is this app's own themed variable (declared above), so
+ * `.btn-primary` picks up QuikLMS branding rather than the old app's indigo.
+ * ────────────────────────────────────────────────────────────────────────────*/
+@layer components {
+  .btn-primary {
+    background-color: var(--brand-primary, #6366f1) !important;
+    @apply text-white px-4 py-2 rounded-lg font-medium transition-all duration-300 disabled:opacity-50 disabled:cursor-not-allowed hover:shadow-lg hover:scale-105 active:scale-95;
+  }
+  .btn-primary:hover:not(:disabled) {
+    background-color: var(--brand-primary-hover, #4f46e5) !important;
+    opacity: 0.9;
+  }
+
+  .brand-primary-text {
+    color: var(--brand-primary, #6366f1) !important;
+  }
+
+  .brand-primary-bg {
+    background-color: var(--brand-primary, #6366f1) !important;
+  }
+
+  .brand-primary-bg-light {
+    background-color: var(--brand-primary-light, #e0e7ff) !important;
+  }
+
+  .brand-primary-border {
+    border-color: var(--brand-primary, #6366f1) !important;
+  }
+
+  .btn-secondary {
+    @apply bg-gray-200 text-gray-800 px-4 py-2 rounded-lg font-medium hover:bg-gray-300 transition-all duration-300 hover:shadow-md hover:scale-105 active:scale-95;
+  }
+
+  .dark .btn-secondary {
+    @apply bg-gray-700 text-gray-200 hover:bg-gray-600;
+  }
+
+  .input-field {
+    @apply w-full px-4 py-2 border-2 border-gray-200 rounded-xl focus:outline-none focus:ring-4 focus:ring-primary-500/20 focus:border-primary-500 transition-all duration-300 bg-gray-50/50 hover:bg-white hover:border-gray-300;
+  }
+
+  .dark .input-field {
+    @apply border-gray-700 bg-gray-800/50 hover:bg-gray-800 hover:border-gray-600 text-gray-100;
+  }
+
+  .label-field {
+    @apply block text-sm font-semibold text-gray-700 mb-2;
+  }
+
+  .dark .label-field {
+    @apply text-gray-300;
+  }
+
+  .error-message {
+    @apply text-red-600 text-sm mt-1;
+  }
+
+  .dark .error-message {
+    @apply text-red-400;
+  }
+}

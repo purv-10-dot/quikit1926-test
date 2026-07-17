@@ -31,6 +31,15 @@ export const Unauthorized = (m = 'Unauthorized') => new ApiError(401, m, 'Unauth
 export const Forbidden = (m = 'Forbidden') => new ApiError(403, m, 'Forbidden');
 export const NotFound = (m = 'Not Found') => new ApiError(404, m, 'Not Found');
 export const Conflict = (m = 'Conflict') => new ApiError(409, m, 'Conflict');
+/**
+ * 413 — what multer's LIMIT_FILE_SIZE became in the legacy app. Nest's
+ * `transformException` mapped it to `PayloadTooLargeException('File too large')`
+ * (@nestjs/platform-express/multer/multer.utils), so the default message is the
+ * literal multer string, not a Nest label. Routes that ported a
+ * `FileInterceptor(..., { limits: { fileSize } })` must use this, NOT a 400 —
+ * only the endpoints doing a manual `file.size >` check returned 400.
+ */
+export const PayloadTooLarge = (m = 'File too large') => new ApiError(413, m, 'Payload Too Large');
 export const Internal = (m = 'Internal server error') => new ApiError(500, m, 'Internal Server Error');
 
 /** JSON success response. */
@@ -44,6 +53,7 @@ const STATUS_LABEL: Record<number, string> = {
   403: 'Forbidden',
   404: 'Not Found',
   409: 'Conflict',
+  413: 'Payload Too Large',
   422: 'Unprocessable Entity',
   500: 'Internal Server Error',
 };

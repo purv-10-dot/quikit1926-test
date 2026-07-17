@@ -1,28 +1,195 @@
 /**
  * Certificates service — ported from CertificatesService (Prisma).
  *
- * DEFERRED / SIMPLIFIED per re-platform rules:
- *   - S3 presigned enrichment is SKIPPED. The stored url is returned as-is.
- *     `*Presigned` / `*PreviewUrl` fields mirror the stored value (no signing).
- *   - PDF & QR generation (jsPDF/PDFKit/QRCode + html-pdf-node) are DEFERRED.
- *     `generateCertificate` / `generateDefaultCertificate` create the issuance
- *     record only, with a placeholder pdfUrl/qrCodeUrl. `regenerate*` returns
- *     an empty Buffer placeholder.
+ * PDF & QR generation are IMPLEMENTED and TEMPLATE-DRIVEN (2026-07-17).
+ * An earlier note here said they were deferred with placeholder urls; the result
+ * was that `POST /certificates/generate` issued every certificate with
+ * `pdfUrl: ''` and `qrCodeUrl: ''` — no downloadable file and no QR ever existed
+ * (GAP_REPORT §3.2 certificates).
+ *
+ * RENDERING MECHANISM — a deliberate, approved deviation. The NestJS original
+ * built an HTML document and rasterised it through `html-pdf-node` (headless
+ * Chromium). Chromium cannot run on this app's serverless target without a
+ * dedicated binary layer or an always-on host — the same unresolved infra
+ * question as the worker (§2.2). So `buildCertificatePdf` draws the same
+ * template imperatively with jsPDF instead: same template record, same
+ * placements, same images, no browser.
+ *
+ * The geometry below is derived from the original's CSS so output lands in the
+ * same place — see `buildCertificatePdf` for the unit conversions.
+ *
+ * Issued-certificate downloads ARE presigned (`getPresignedDownloadUrl`, 1h).
+ * S3 presigned enrichment for template preview fields is still skipped; the
+ * stored url is returned as-is — the template assets are base64 data URLs by
+ * design (see `uploadCertificateAsset`), so there is nothing to presign.
  *
  * Tables: certificate (templates), certificateIssued (issued), certificateSelectedTenant.
  * certificateId is the public verification id (CERT-...). courseId is scalar
  * (refs Course or MasterCourse). Never relation-include actor/course refs.
  */
-import type { LmsCertificateApprovalStatus as CertificateApprovalStatus, LmsCertificateIssued as CertificateIssued } from '@prisma/client';
+import type {
+  LmsCertificate as CertificateTemplate,
+  LmsCertificateApprovalStatus as CertificateApprovalStatus,
+  LmsCertificateIssued as CertificateIssued,
+} from '@prisma/client';
 import { jsPDF } from 'jspdf';
 import QRCode from 'qrcode';
+import { GetObjectCommand, PutObjectCommand } from '@aws-sdk/client-s3';
 import { prisma } from '@/lib/prisma';
 import { NotFound } from '@/lib/http';
+import { s3, S3_BUCKET, presignGet, presignFromUrlOrKey } from '@/lib/s3';
+import { optionalEnv } from '@/lib/env';
 
 const FRONTEND_URL = process.env.FRONTEND_URL || process.env.BASE_URL || 'https://quikskills.quikit.ai';
+const REGION = optionalEnv('AWS_REGION') || 'ap-south-1';
+
+// ── Certificate rendering geometry ───────────────────────────────────────────
+// Ported from the original's CSS (`generateCertificateHTML`) so a template
+// designed against the legacy preview canvas renders in the same position here.
+//
+//   Legacy page:  297mm × 210mm  =  1122.5 × 793.7 CSS px @ 96 px/in
+//   jsPDF page:   A4 landscape   =   841.9 × 595.3 pt
+//   ⇒ CSS px → pt is exactly 72/96 = 0.75
+//
+// Placements store x/y as PERCENTAGES of the page, and the CSS applied
+// `translate(-50%, -50%)` — so x/y is the CENTRE of the element, not its
+// top-left. Every draw below centres accordingly.
+const PX_TO_PT = 0.75;
+/** Legacy `FONT_SCALE` — preview px → CSS px. Kept at its historical value: it
+ *  sizes the text on every already-issued certificate. */
+const FONT_SCALE = 1.4025;
+/** preview px → PDF pt for text. */
+const fontPt = (previewPx: number) => previewPx * FONT_SCALE * PX_TO_PT;
+/** The legacy designer canvas the stored image sizes were authored against. */
+const PREV_W = 1000;
+const PREV_H = 707;
+const SIG_SCALE = 1.0;
+/** Floors so a tiny stored signature never renders invisibly (legacy behavior). */
+const MIN_SIG_W_PCT = 25;
+const MIN_SIG_H_PCT = 9;
+
+interface Placement {
+  x?: number;
+  y?: number;
+  fontSize?: number;
+  color?: string;
+  width?: number;
+  height?: number;
+}
+
+/** Legacy defaults from `generateCertificateHTML` — do not change casually. */
+const DEFAULTS = {
+  userName: { x: 50, y: 50, fontSize: 24, color: '#000000' },
+  courseName: { x: 50, y: 60, fontSize: 20, color: '#000000' },
+  date: { x: 50, y: 70, fontSize: 16, color: '#666666' },
+  designation: { x: 75, y: 91, fontSize: 12, color: '#555555' },
+  logo: { x: 50, y: 15, width: 120, height: 60 },
+  signature: { width: 420, height: 150 },
+} as const;
+
+/** #rrggbb → [r,g,b]; falls back to black on anything unparseable. */
+function hexToRgb(hex?: string): [number, number, number] {
+  const m = /^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i.exec(hex || '');
+  if (!m) return [0, 0, 0];
+  return [parseInt(m[1], 16), parseInt(m[2], 16), parseInt(m[3], 16)];
+}
+
+/**
+ * Fetch an image URL and return it as a data URL for embedding.
+ * Port of the original's `imageUrlToBase64` (`certificates.service.ts:89`).
+ *
+ * S3 URLs are fetched through the SDK rather than over HTTP, exactly as the
+ * original did — a stored url may be an expired presigned link, and the SDK path
+ * sidesteps that entirely. Returns '' on any failure: a missing background must
+ * degrade the certificate, never fail the issuance.
+ */
+async function imageUrlToDataUrl(url?: string | null): Promise<string> {
+  if (!url) return '';
+  if (url.startsWith('data:')) return url;
+
+  try {
+    const parsed = new URL(url);
+    const hostMatch = parsed.hostname.match(/^(.+?)\.s3[.-].*\.amazonaws\.com$/);
+    if (hostMatch) {
+      const res = await s3.send(
+        new GetObjectCommand({ Bucket: hostMatch[1], Key: decodeURIComponent(parsed.pathname.slice(1)) }),
+      );
+      const body = res.Body as { transformToByteArray?: () => Promise<Uint8Array> } | undefined;
+      const bytes = await body?.transformToByteArray?.();
+      if (!bytes) return '';
+      return `data:${res.ContentType || 'image/png'};base64,${Buffer.from(bytes).toString('base64')}`;
+    }
+
+    // Non-S3 http(s) — fetch directly.
+    const res = await fetch(url);
+    if (!res.ok) return '';
+    const buf = Buffer.from(await res.arrayBuffer());
+    const contentType = res.headers.get('content-type') || 'image/png';
+    return `data:${contentType};base64,${buf.toString('base64')}`;
+  } catch {
+    return '';
+  }
+}
+
+/** jsPDF needs the format name, and throws on an unknown one. */
+function imageFormat(dataUrl: string): 'PNG' | 'JPEG' {
+  return /^data:image\/jpe?g/i.test(dataUrl) ? 'JPEG' : 'PNG';
+}
 
 function newCertificateId(): string {
   return `CERT-${Date.now()}-${Math.random().toString(36).substring(2, 11)}`;
+}
+
+// ── Template asset uploads ───────────────────────────────────────────────────
+
+/** Shape of the three upload-* handlers' response body. */
+type AssetUploadResult =
+  | { success: true; data: { url: string; permanentUrl: string; dataUrl: string; s3Key: string } }
+  | { success: false; message: string; error: 'S3_ACCESS_DENIED' };
+
+/**
+ * Upload a certificate template asset to S3 and return the legacy response body
+ * — shared by `upload-background`, `upload-signature` and `upload-logo`
+ * (`certificates.controller.ts:454-608`), which are three copies of this.
+ *
+ * The base64 `dataUrl` is NOT a fallback: the legacy deliberately returns it as
+ * the primary `url` so the template embeds the image and reading it back never
+ * needs `s3:GetObject` ("this is stored in the template so we never need
+ * s3:GetObject permission to read the image back" — controller:492-493). S3 is
+ * the backup reference. Both are reproduced.
+ *
+ * AccessDenied on PutObject is swallowed into a `{success:false}` body — the one
+ * S3 error the legacy reports rather than throws. Every other error rethrows.
+ */
+export async function uploadCertificateAsset(
+  file: { buffer: Buffer; originalName: string; mimeType: string },
+  prefix: 'certificates/templates' | 'certificates/signatures' | 'certificates/logos',
+  accessDeniedMessage: string,
+): Promise<AssetUploadResult> {
+  const key = `${prefix}/${Date.now()}-${file.originalName.replace(/[^a-zA-Z0-9.-]/g, '_')}`;
+
+  try {
+    await s3.send(
+      new PutObjectCommand({
+        Bucket: S3_BUCKET,
+        Key: key,
+        Body: new Uint8Array(file.buffer),
+        ContentType: file.mimeType,
+      }),
+    );
+  } catch (error) {
+    const e = error as { name?: string; Code?: string };
+    if (e.name === 'AccessDenied' || e.Code === 'AccessDenied') {
+      return { success: false, message: accessDeniedMessage, error: 'S3_ACCESS_DENIED' };
+    }
+    throw error;
+  }
+
+  const dataUrl = `data:${file.mimeType};base64,${file.buffer.toString('base64')}`;
+  const permanentUrl = `https://${S3_BUCKET}.s3.${REGION}.amazonaws.com/${key}`;
+  const presignedUrl = await presignFromUrlOrKey(permanentUrl);
+
+  return { success: true, data: { url: dataUrl, permanentUrl: presignedUrl || permanentUrl, dataUrl, s3Key: key } };
 }
 
 // ── Templates ────────────────────────────────────────────────────────────────
@@ -59,10 +226,22 @@ export async function findAll(orgId?: string) {
         certs = certs.map((c) => ({ ...c, isActive: true }));
       }
     }
+    // Last resort: any of the tenant's templates regardless of status, activated
+    // and auto-approved so the tenant is never left with nothing to issue.
+    //
+    // DELIBERATE DEVIATION (product owner, 2026-07-17). The legacy rescued
+    // templates of ANY status here — including ones a Super Admin had explicitly
+    // REJECTED, silently flipping them back to `approved` and putting them live
+    // (`certificates.service.ts:198-208`, logging "activating and approving
+    // them"). That let a rejected design bypass the approval workflow entirely.
+    // Rejected templates are now excluded from the rescue: a tenant whose only
+    // templates were rejected gets none, and issuance falls back to the built-in
+    // default certificate rather than resurrecting a refused design.
     if (certs.length === 0) {
-      certs = await prisma.lmsCertificate.findMany({ where });
+      certs = await prisma.lmsCertificate.findMany({ where: { AND: [where, { approvalStatus: { not: 'rejected' } }] } });
       if (certs.length) {
         await prisma.lmsCertificate.updateMany({ where: { id: { in: certs.map((c) => c.id) } }, data: { isActive: true, approvalStatus: 'approved' } });
+        certs = certs.map((c) => ({ ...c, isActive: true, approvalStatus: 'approved' as const }));
       }
     }
     return certs;
@@ -70,15 +249,70 @@ export async function findAll(orgId?: string) {
   return prisma.lmsCertificate.findMany();
 }
 
-export async function findPendingApprovals() {
-  return prisma.lmsCertificate.findMany({ where: { approvalStatus: 'pending_approval' }, orderBy: { createdAt: 'desc' } });
+type PopulatedActor = { _id: string; firstName: string; lastName: string; email: string } | null;
+type PopulatedTenant = { _id: string; orgName: string; contactEmail: string } | null;
+type ApprovalItem = Omit<CertificateTemplate, 'submittedBy' | 'submittedByTenantId'> & {
+  submittedBy: PopulatedActor;
+  submittedByTenantId: PopulatedTenant;
+};
+
+/**
+ * Replace `submittedBy` / `submittedByTenantId` ids with the actor objects —
+ * the Postgres equivalent of the legacy's
+ *   .populate('submittedBy', 'firstName lastName email')
+ *   .populate('submittedByTenantId', 'orgName contactEmail')
+ * (`certificates.service.ts:220-247`).
+ *
+ * These are scalar columns with no Prisma relation, so the join is done here.
+ * Mongoose REPLACES the field in place and yields null when the referenced doc
+ * is gone, so both are reproduced — the Super Admin approval queue reads
+ * `submittedByTenantId?.orgName` and `submittedBy.firstName` directly
+ * (`app/(super-admin)/approvals/page.tsx:508,957`) and shows blanks against a
+ * bare id.
+ */
+async function hydrateApprovalActors(certs: CertificateTemplate[]): Promise<ApprovalItem[]> {
+  const userIds = [...new Set(certs.map((c) => c.submittedBy).filter((v): v is string => Boolean(v)))];
+  const orgIds = [...new Set(certs.map((c) => c.submittedByTenantId).filter((v): v is string => Boolean(v)))];
+
+  const [users, tenants] = await Promise.all([
+    userIds.length
+      ? prisma.lmsUser.findMany({
+          where: { id: { in: userIds } },
+          select: { id: true, firstName: true, lastName: true, email: true },
+        })
+      : [],
+    orgIds.length
+      ? prisma.lmsTenant.findMany({
+          where: { id: { in: orgIds } },
+          select: { id: true, orgName: true, contactEmail: true },
+        })
+      : [],
+  ]);
+
+  const userMap = new Map(users.map((u) => [u.id, { _id: u.id, firstName: u.firstName, lastName: u.lastName, email: u.email }]));
+  const tenantMap = new Map(tenants.map((t) => [t.id, { _id: t.id, orgName: t.orgName, contactEmail: t.contactEmail }]));
+
+  return certs.map((c) => ({
+    ...c,
+    submittedBy: (c.submittedBy && userMap.get(c.submittedBy)) || null,
+    submittedByTenantId: (c.submittedByTenantId && tenantMap.get(c.submittedByTenantId)) || null,
+  }));
 }
 
-export async function findAllApprovalItems() {
-  return prisma.lmsCertificate.findMany({
+export async function findPendingApprovals(): Promise<ApprovalItem[]> {
+  const certs = await prisma.lmsCertificate.findMany({
+    where: { approvalStatus: 'pending_approval' },
+    orderBy: { createdAt: 'desc' },
+  });
+  return hydrateApprovalActors(certs);
+}
+
+export async function findAllApprovalItems(): Promise<ApprovalItem[]> {
+  const certs = await prisma.lmsCertificate.findMany({
     where: { submittedByTenantId: { not: null }, approvalStatus: { in: ['pending_approval', 'approved', 'rejected'] } },
     orderBy: { updatedAt: 'desc' },
   });
+  return hydrateApprovalActors(certs);
 }
 
 export async function findBySubmittedTenant(orgId: string) {
@@ -180,7 +414,7 @@ export async function removeDuplicateIssuedCertificates() {
   return toRemove.length;
 }
 
-// ── Issuance (PDF/QR generation deferred; record-only) ───────────────────────
+// ── Issuance ─────────────────────────────────────────────────────────────────
 
 interface GenerateInput {
   certificateTemplateId?: string;
@@ -204,8 +438,16 @@ export async function generateCertificate(data: GenerateInput) {
 
   const certificateId = newCertificateId();
   const verificationUrl = `${FRONTEND_URL}/verify-certificate/${certificateId}`;
-  // PDF/QR generation deferred — store placeholder urls.
-  return prisma.lmsCertificateIssued.create({
+
+  // Create the record FIRST, then render + upload, then attach the urls.
+  //
+  // The legacy rendered before saving, but wrapped the whole PDF/S3 step in a
+  // try/catch precisely so that a storage failure still produced a certificate
+  // record ("saving record without PDF" — certificates.service.ts:543-546).
+  // Creating first reaches the same guarantee without depending on a catch, and
+  // gives the renderer a real row (with its certificateId + verificationUrl) to
+  // draw from. `renderAndUploadCertificateAssets` never throws.
+  const created = await prisma.lmsCertificateIssued.create({
     data: {
       orgId, learnerId, courseId,
       certificateTemplateId: data.certificateTemplateId ?? null,
@@ -214,6 +456,15 @@ export async function generateCertificate(data: GenerateInput) {
       isComplianceCertificate: Boolean(data.isComplianceCertificate), expiresAt: data.expiresAt ?? null,
       score: data.score ?? null, passingScore: data.passingScore ?? null, passed: data.passed ?? null,
     },
+  });
+
+  const template = await loadTemplateForIssued(created);
+  const { pdfUrl, qrCodeUrl } = await renderAndUploadCertificateAssets(created, template, data.designation);
+  if (!pdfUrl && !qrCodeUrl) return created; // storage failed — record stands, as in the legacy
+
+  return prisma.lmsCertificateIssued.update({
+    where: { id: created.id },
+    data: { pdfUrl, qrCodeUrl },
   });
 }
 
@@ -377,7 +628,7 @@ export async function getTenantIssuedCertificates(orgId: string) {
     });
 }
 
-// ── Verification + downloads (PDF generation deferred) ───────────────────────
+// ── Verification + downloads ─────────────────────────────────────────────────
 
 export async function findIssuedById(id: string) {
   return prisma.lmsCertificateIssued.findUnique({ where: { id } });
@@ -398,15 +649,195 @@ export function downloadGateBlocked(issued: { passed: boolean | null; score: num
 
 /**
  * Render an issued certificate to a real PDF (A4 landscape) using jsPDF.
- * Includes recipient name, course, issue date, certificate id, and a QR code
- * pointing at the public verification URL.
+ *
+ * TEMPLATE-DRIVEN. The tenant's `LmsCertificate` template supplies the
+ * background, logo, signature, text placements, designation and signatory —
+ * exactly the inputs the legacy HTML renderer used. Passing no template (or a
+ * template that cannot be loaded) falls back to the generic layout below, which
+ * is what every certificate used to get unconditionally: `buildCertificatePdf`
+ * ignored `certificateTemplateId` entirely, so background, logo, signature,
+ * textPlacements, designation and signatoryName were all silently dropped
+ * (GAP_REPORT §3.2 certificates).
+ *
+ * Geometry note: placements store x/y as PERCENTAGES of the page and the legacy
+ * CSS applied `translate(-50%, -50%)`, so x/y is the element's CENTRE. Text is
+ * drawn with `align: 'center'` + `baseline: 'middle'` to match; images are offset
+ * by half their size. See the constants block at the top of this file for the
+ * px→pt conversions.
  */
-export async function buildCertificatePdf(cert: CertificateIssued): Promise<Buffer> {
+export async function buildCertificatePdf(
+  cert: CertificateIssued,
+  template?: CertificateTemplate | null,
+  /**
+   * Generate-time designation override. The legacy resolved designation as
+   * `designation || template.designation || ''` at issue time and never
+   * persisted it on the issued record — so a regenerate falls back to the
+   * template, exactly as it did originally.
+   */
+  designationOverride?: string,
+): Promise<Buffer> {
   const doc = new jsPDF({ orientation: 'landscape', unit: 'pt', format: 'a4' });
   const pageW = doc.internal.pageSize.getWidth();
   const pageH = doc.internal.pageSize.getHeight();
+  const centerX = pageW / 2;
 
-  // Background + decorative double border.
+  const qrTarget = cert.verificationUrl || `${FRONTEND_URL}/verify-certificate/${cert.certificateId}`;
+  const issued = cert.issuedAt ? new Date(cert.issuedAt) : new Date();
+  const issuedStr = issued.toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' });
+
+  // ── Template path ──────────────────────────────────────────────────────────
+  if (template) {
+    const placements = (template.textPlacements as Record<string, Placement> | null) || {};
+    const p = {
+      userName: { ...DEFAULTS.userName, ...(placements.userName || {}) },
+      courseName: { ...DEFAULTS.courseName, ...(placements.courseName || {}) },
+      date: { ...DEFAULTS.date, ...(placements.date || {}) },
+      designation: { ...DEFAULTS.designation, ...(placements.designation || {}) },
+    };
+    const signatoryNamePlacement = (placements.signatoryName as Placement | undefined) || null;
+    const logo = { ...DEFAULTS.logo, ...((template.logoPlacement as Placement | null) || {}) };
+    const sig = { ...DEFAULTS.signature, ...((template.signaturePlacement as Placement | null) || {}) };
+    // Legacy: the signature is only *positioned* when BOTH x and y are stored;
+    // otherwise it falls into the centred bottom strip.
+    const sigHasPosition = sig.x !== undefined && sig.y !== undefined;
+
+    const [bgUrl, logoUrl, sigUrl] = await Promise.all([
+      imageUrlToDataUrl(template.backgroundImageUrl),
+      imageUrlToDataUrl(template.logoImageUrl),
+      imageUrlToDataUrl(template.signatureImageUrl),
+    ]);
+
+    // Background — CSS `background-size: cover`. Fill the page; jsPDF has no
+    // cover mode, and stretching to the page is the closest single-call
+    // equivalent for the A4-landscape artwork these templates are authored at.
+    if (bgUrl) {
+      try {
+        doc.addImage(bgUrl, imageFormat(bgUrl), 0, 0, pageW, pageH);
+      } catch {
+        /* a corrupt background must not fail issuance */
+      }
+    } else {
+      doc.setFillColor(255, 255, 255);
+      doc.rect(0, 0, pageW, pageH, 'F');
+    }
+
+    // Logo — stored size is raw CSS px in the legacy markup (NOT canvas-scaled).
+    if (logoUrl) {
+      try {
+        const w = (logo.width ?? 120) * PX_TO_PT;
+        const h = (logo.height ?? 60) * PX_TO_PT;
+        doc.addImage(
+          logoUrl,
+          imageFormat(logoUrl),
+          (pageW * (logo.x ?? 50)) / 100 - w / 2,
+          (pageH * (logo.y ?? 15)) / 100 - h / 2,
+          w,
+          h,
+        );
+      } catch {
+        /* ignore */
+      }
+    }
+
+    const drawText = (
+      text: string,
+      pl: Placement,
+      opts: { bold?: boolean; italic?: boolean } = {},
+    ) => {
+      if (!text) return;
+      const [r, g, b] = hexToRgb(pl.color);
+      doc.setTextColor(r, g, b);
+      doc.setFont('helvetica', opts.bold ? 'bold' : opts.italic ? 'italic' : 'normal');
+      doc.setFontSize(fontPt(pl.fontSize ?? 16));
+      doc.text(text, (pageW * (pl.x ?? 50)) / 100, (pageH * (pl.y ?? 50)) / 100, {
+        align: 'center',
+        baseline: 'middle',
+        maxWidth: pageW - 80,
+      });
+    };
+
+    drawText(cert.learnerName || 'Learner', p.userName, { bold: true });
+    drawText(cert.courseName || 'Course', p.courseName);
+    drawText(issuedStr, p.date);
+
+    // Signature sizing — legacy converts the stored preview px to a % of the
+    // designer canvas, then applies that % to the page, with a floor so a tiny
+    // stored placement never renders invisibly.
+    const sigWPct = Math.max(((sig.width ?? 420) * SIG_SCALE) / PREV_W * 100, MIN_SIG_W_PCT);
+    const sigHPct = Math.max(((sig.height ?? 150) * SIG_SCALE) / PREV_H * 100, MIN_SIG_H_PCT);
+    const sigW = (pageW * sigWPct) / 100;
+    const sigH = (pageH * sigHPct) / 100;
+
+    if (sigHasPosition) {
+      const sx = (pageW * (sig.x as number)) / 100;
+      const sy = (pageH * (sig.y as number)) / 100;
+      if (sigUrl) {
+        try {
+          doc.addImage(sigUrl, imageFormat(sigUrl), sx - sigW / 2, sy - sigH / 2, sigW, sigH);
+        } catch {
+          /* ignore */
+        }
+      }
+      const signatory = template.signatoryName || '';
+      if (signatory) {
+        if (signatoryNamePlacement) {
+          drawText(signatory, { ...signatoryNamePlacement }, { bold: true });
+        } else if (sigUrl) {
+          // Legacy fallback: just under the signature block, centred on its x.
+          doc.setFont('helvetica', 'bold');
+          doc.setFontSize(fontPt(14));
+          doc.setTextColor(0, 0, 0);
+          doc.text(signatory, sx, sy + sigH / 2 + 12 * PX_TO_PT, { align: 'center', baseline: 'middle' });
+        }
+      }
+      const designation = designationOverride || template.designation || '';
+      if (designation) drawText(designation, p.designation, { italic: true });
+    } else {
+      // Unpositioned signature — legacy `.signature-section`: centred strip at
+      // bottom:10% of the page.
+      const blockBottom = pageH * 0.9;
+      if (sigUrl) {
+        try {
+          doc.addImage(sigUrl, imageFormat(sigUrl), centerX - sigW / 2, blockBottom - sigH, sigW, sigH);
+        } catch {
+          /* ignore */
+        }
+      }
+      let y = blockBottom + 10 * PX_TO_PT;
+      const signatory = template.signatoryName || '';
+      if (signatory) {
+        const [r, g, b] = hexToRgb(signatoryNamePlacement?.color ?? '#000000');
+        doc.setTextColor(r, g, b);
+        doc.setFont('helvetica', 'bold');
+        doc.setFontSize(fontPt(signatoryNamePlacement?.fontSize ?? 14));
+        doc.text(signatory, centerX, y, { align: 'center', baseline: 'middle' });
+        y += fontPt(signatoryNamePlacement?.fontSize ?? 14) + 4 * PX_TO_PT;
+      }
+      const designation = designationOverride || template.designation || '';
+      if (designation) {
+        const [r, g, b] = hexToRgb(p.designation.color);
+        doc.setTextColor(r, g, b);
+        doc.setFont('helvetica', 'italic');
+        doc.setFontSize(fontPt(p.designation.fontSize));
+        doc.text(designation, centerX, y, { align: 'center', baseline: 'middle' });
+      }
+    }
+
+    // QR — legacy: 80×80 CSS px, 20px from the bottom-right corner.
+    try {
+      const qrDataUrl = await QRCode.toDataURL(qrTarget, { margin: 1, width: 160 });
+      const qrSize = 80 * PX_TO_PT;
+      const pad = 20 * PX_TO_PT;
+      doc.addImage(qrDataUrl, 'PNG', pageW - pad - qrSize, pageH - pad - qrSize, qrSize, qrSize);
+    } catch {
+      /* QR is decorative; skip on failure */
+    }
+
+    return Buffer.from(doc.output('arraybuffer'));
+  }
+
+  // ── Fallback path — no template ────────────────────────────────────────────
+  // The generic layout every certificate used to get regardless of its template.
   doc.setFillColor(248, 250, 252);
   doc.rect(0, 0, pageW, pageH, 'F');
   doc.setDrawColor(79, 70, 229); // indigo
@@ -414,8 +845,6 @@ export async function buildCertificatePdf(cert: CertificateIssued): Promise<Buff
   doc.rect(24, 24, pageW - 48, pageH - 48);
   doc.setLineWidth(1);
   doc.rect(36, 36, pageW - 72, pageH - 72);
-
-  const centerX = pageW / 2;
 
   doc.setFont('helvetica', 'bold');
   doc.setTextColor(79, 70, 229);
@@ -442,9 +871,6 @@ export async function buildCertificatePdf(cert: CertificateIssued): Promise<Buff
   doc.setFontSize(22);
   doc.text(cert.courseName || 'Course', centerX, 325, { align: 'center', maxWidth: pageW - 160 });
 
-  const issued = cert.issuedAt ? new Date(cert.issuedAt) : new Date();
-  const issuedStr = issued.toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' });
-
   if (typeof cert.score === 'number') {
     doc.setFont('helvetica', 'normal');
     doc.setTextColor(71, 85, 105);
@@ -452,7 +878,6 @@ export async function buildCertificatePdf(cert: CertificateIssued): Promise<Buff
     doc.text(`Score: ${Math.round(cert.score)}%`, centerX, 360, { align: 'center' });
   }
 
-  // Footer: date (left) + certificate id (center) + QR (right).
   const footerY = pageH - 80;
   doc.setFont('helvetica', 'normal');
   doc.setTextColor(71, 85, 105);
@@ -466,44 +891,205 @@ export async function buildCertificatePdf(cert: CertificateIssued): Promise<Buff
     doc.text(`Verify at: ${cert.verificationUrl}`, centerX, footerY + 16, { align: 'center', maxWidth: pageW - 320 });
   }
 
-  // QR code → verification URL.
   try {
-    const qrTarget = cert.verificationUrl || `${FRONTEND_URL}/verify-certificate/${cert.certificateId}`;
     const qrDataUrl = await QRCode.toDataURL(qrTarget, { margin: 1, width: 120 });
     doc.addImage(qrDataUrl, 'PNG', pageW - 160, footerY - 70, 90, 90);
   } catch {
     /* QR is decorative; skip on failure */
   }
 
-  const arrayBuffer = doc.output('arraybuffer');
-  return Buffer.from(arrayBuffer);
+  return Buffer.from(doc.output('arraybuffer'));
 }
 
-/** Regenerate PDF for an issued certificate (tenant-scoped when orgId given). */
+/** Load an issued certificate's template, or null when it has none / it is gone. */
+export async function loadTemplateForIssued(cert: CertificateIssued): Promise<CertificateTemplate | null> {
+  if (!cert.certificateTemplateId) return null;
+  try {
+    return await prisma.lmsCertificate.findUnique({ where: { id: cert.certificateTemplateId } });
+  } catch {
+    return null;
+  }
+}
+
+const hasBase64Background = (t: { backgroundImageUrl?: string | null }) =>
+  Boolean(t.backgroundImageUrl?.startsWith('data:'));
+
+/**
+ * Pick the template to REGENERATE an issued certificate against — port of the
+ * candidate resolution in `regeneratePdfForIssuedCertificate`
+ * (`certificates.service.ts:1376-1443`).
+ *
+ * This is deliberately NOT `loadTemplateForIssued`. Regeneration prefers the
+ * tenant's CURRENT active template over the one the certificate was originally
+ * issued against ("so old templates are never served" — controller:698), which
+ * is why the legacy also re-points `certificateTemplateId` at the winner.
+ *
+ * Order (legacy, exactly): active + base64 → active → base64 → first → none.
+ * `isActive` is primary; a base64 background is only a tie-breaker, because it
+ * survives without `s3:GetObject` permission.
+ */
+export async function selectTemplateForIssued(cert: CertificateIssued): Promise<CertificateTemplate | null> {
+  const candidates: CertificateTemplate[] = [];
+
+  if (cert.orgId) {
+    const assigned = await findAll(cert.orgId);
+    assigned.sort(
+      (a, b) => new Date(b.updatedAt || b.createdAt).getTime() - new Date(a.updatedAt || a.createdAt).getTime(),
+    );
+    candidates.push(...assigned);
+  }
+  if (cert.certificateTemplateId && !candidates.some((c) => c.id === cert.certificateTemplateId)) {
+    const stored = await prisma.lmsCertificate.findUnique({ where: { id: cert.certificateTemplateId } });
+    if (stored) candidates.push(stored);
+  }
+
+  const chosen =
+    candidates.find((t) => t.isActive && hasBase64Background(t)) ||
+    candidates.find((t) => t.isActive) ||
+    candidates.find((t) => hasBase64Background(t)) ||
+    candidates[0] ||
+    null;
+  if (!chosen) return null;
+
+  // Legacy: if the chosen template's background fails to load, fall through to
+  // another candidate that carries an embedded one rather than rendering a
+  // background-less certificate (`certificates.service.ts:1435-1443`).
+  if (!(await imageUrlToDataUrl(chosen.backgroundImageUrl))) {
+    const fallback = candidates.find((t) => t.id !== chosen.id && hasBase64Background(t));
+    if (fallback) return fallback;
+  }
+  return chosen;
+}
+
+/**
+ * Render + upload a certificate's PDF and QR to S3, returning their permanent
+ * urls. Port of the S3 half of `generateCertificate`
+ * (`certificates.service.ts:514-546`), including the key prefixes.
+ *
+ * NEVER throws: the legacy wrapped this in try/catch and saved the issuance
+ * record even when PDF generation or S3 upload failed, so a storage outage
+ * cannot cost a learner their certificate. Returns empty strings on failure,
+ * which the caller stores as undefined — exactly as the original did.
+ */
+async function renderAndUploadCertificateAssets(
+  cert: CertificateIssued,
+  template: CertificateTemplate | null,
+  designationOverride?: string,
+): Promise<{ pdfUrl: string; qrCodeUrl: string }> {
+  try {
+    const pdfBuffer = await buildCertificatePdf(cert, template, designationOverride);
+    const pdfKey = `certificates/templates/generated/${cert.certificateId}.pdf`;
+    await s3.send(
+      new PutObjectCommand({
+        Bucket: S3_BUCKET,
+        Key: pdfKey,
+        Body: new Uint8Array(pdfBuffer),
+        ContentType: 'application/pdf',
+      }),
+    );
+
+    const qrTarget = cert.verificationUrl || `${FRONTEND_URL}/verify-certificate/${cert.certificateId}`;
+    const qrDataUrl = await QRCode.toDataURL(qrTarget);
+    const qrKey = `certificates/templates/qr/${cert.certificateId}.png`;
+    await s3.send(
+      new PutObjectCommand({
+        Bucket: S3_BUCKET,
+        Key: qrKey,
+        Body: new Uint8Array(Buffer.from(qrDataUrl.split(',')[1], 'base64')),
+        ContentType: 'image/png',
+      }),
+    );
+
+    return {
+      pdfUrl: `https://${S3_BUCKET}.s3.${REGION}.amazonaws.com/${pdfKey}`,
+      qrCodeUrl: `https://${S3_BUCKET}.s3.${REGION}.amazonaws.com/${qrKey}`,
+    };
+  } catch {
+    // Legacy: "PDF generation/upload failed … saving record without PDF".
+    return { pdfUrl: '', qrCodeUrl: '' };
+  }
+}
+
+/**
+ * Re-render an issued certificate against the tenant's CURRENT template, upload
+ * it, and persist the new `pdfUrl` — port of `regeneratePdfForIssuedCertificate`
+ * (`certificates.service.ts:1347-1535`).
+ *
+ * The legacy re-points `certificateTemplateId` at the template it actually drew
+ * with, so the record reflects what was served. Reproduced here.
+ *
+ * The S3 upload + record update are best-effort exactly as in the legacy: the
+ * buffer is returned even when storage fails, so `GET /:id/download` still hands
+ * the learner a PDF during an S3 outage.
+ */
+async function renderIssuedCertificate(cert: CertificateIssued) {
+  const template = await selectTemplateForIssued(cert);
+  const buffer = await buildCertificatePdf(cert, template);
+  let certificate = cert;
+
+  try {
+    const pdfKey = `certificates/templates/generated/${cert.certificateId}.pdf`;
+    await s3.send(
+      new PutObjectCommand({
+        Bucket: S3_BUCKET,
+        Key: pdfKey,
+        Body: new Uint8Array(buffer),
+        ContentType: 'application/pdf',
+      }),
+    );
+    certificate = await prisma.lmsCertificateIssued.update({
+      where: { id: cert.id },
+      data: {
+        pdfUrl: `https://${S3_BUCKET}.s3.${REGION}.amazonaws.com/${pdfKey}`,
+        ...(template ? { certificateTemplateId: template.id } : {}),
+      },
+    });
+  } catch {
+    // Legacy: "PDF buffer is still returned even if S3 fails".
+  }
+
+  return { buffer, certificate };
+}
+
 export async function regeneratePdfForIssuedCertificate(id: string, orgId?: string | null) {
   const where: { id: string; orgId?: string } = { id };
   if (orgId) where.orgId = orgId;
   const cert = await prisma.lmsCertificateIssued.findFirst({ where });
   if (!cert) throw NotFound('Issued certificate not found');
-  const buffer = await buildCertificatePdf(cert);
-  return { buffer, certificate: cert };
+  return renderIssuedCertificate(cert);
 }
 
 export async function regeneratePdfByCertificateId(certificateId: string) {
   const cert = await prisma.lmsCertificateIssued.findUnique({ where: { certificateId } });
   if (!cert) throw NotFound('Certificate not found');
-  const buffer = await buildCertificatePdf(cert);
-  return { buffer, certificate: cert };
+  return renderIssuedCertificate(cert);
 }
 
-/** Stored download url (no S3 presigning). */
-export async function getDownloadUrl(id: string, orgId: string | null, learnerId: string) {
-  const where: { id: string; orgId?: string; learnerId?: string } = { id };
-  if (orgId) where.orgId = orgId;
-  if (learnerId) where.learnerId = learnerId;
-  const cert = await prisma.lmsCertificateIssued.findFirst({ where });
+/**
+ * Short-lived (1h) presigned S3 GET for an issued certificate's PDF — port of
+ * `getPresignedDownloadUrl` (`certificates.service.ts:1563-1645`).
+ *
+ * Ownership is enforced in the QUERY (id + orgId + learnerId), so a caller who
+ * does not own the certificate gets 'Certificate not found' rather than a url.
+ *
+ * DELIBERATE OMISSION: the legacy's `isValidObjectId` branch, which fell back to
+ * probing three hardcoded `certificates/demo/*` keys for non-ObjectId ids. That
+ * is Mongo id-format detection — under Postgres every id is a cuid, so the check
+ * would send EVERY certificate down the demo path. Dropped as Mongo-specific,
+ * not ported blindly (GAP_REPORT §3.2).
+ */
+export async function getPresignedDownloadUrl(id: string, orgId: string | null, learnerId: string): Promise<string> {
+  if (!orgId) throw NotFound('Tenant ID is required');
+
+  const cert = await prisma.lmsCertificateIssued.findFirst({ where: { id, orgId, learnerId } });
   if (!cert) throw NotFound('Certificate not found');
-  return cert.pdfUrl || cert.verificationUrl;
+  if (!cert.pdfUrl) throw NotFound('Certificate PDF not found');
+
+  // Legacy key extraction: everything after the first '.com/', else a
+  // conventional path built from the public certificate id.
+  const parts = cert.pdfUrl.split('.com/');
+  const key = parts.length > 1 ? parts[1] : `certificates/${cert.certificateId}.pdf`;
+  return presignGet(key, 3600);
 }
 
 export type { CertificateApprovalStatus };

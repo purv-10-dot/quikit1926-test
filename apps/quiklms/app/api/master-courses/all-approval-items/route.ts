@@ -6,6 +6,6 @@ import * as svc from '@/lib/services/master-course-service';
 export const GET = route(async (req) => {
   const actor = await requireAuth(req);
   requireRoles(actor, ['SUPER_ADMIN']);
-  const data = await svc.findAllApprovalItems();
+  const data = await svc.enrichCoursesWithPresignedUrls(await svc.findAllApprovalItems());
   return json({ success: true, data });
 });

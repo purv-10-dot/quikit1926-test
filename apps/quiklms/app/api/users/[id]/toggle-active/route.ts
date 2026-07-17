@@ -3,6 +3,7 @@ import { route, json } from '@/lib/http';
 import { parseBody } from '@/lib/validation';
 import { requireAuth, requireRoles } from '@/lib/auth/context';
 import { toggleActive } from '@/lib/services/users-service';
+import { applyTeacherPrivacy } from '@/lib/privacy';
 
 const schema = z.object({ isActive: z.boolean() });
 
@@ -13,5 +14,9 @@ export const PATCH = route(async (req, { params }) => {
   const { isActive } = await parseBody(req, schema);
   const orgId = actor.role === 'SUPER_ADMIN' ? undefined : actor.orgId ?? undefined;
   const data = await toggleActive(params!.id, orgId, isActive);
-  return json({ success: true, data, message: `User ${isActive ? 'activated' : 'deactivated'} successfully` });
+  return json({
+    success: true,
+    data: await applyTeacherPrivacy(actor, req, data),
+    message: `User ${isActive ? 'activated' : 'deactivated'} successfully`,
+  });
 });

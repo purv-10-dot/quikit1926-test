@@ -1,13 +1,8 @@
 import { z } from 'zod';
 import { route, json, NotFound, BadRequest } from '@/lib/http';
 import { parseBody } from '@/lib/validation';
-import { requireAuth, requireRoles, type AuthUser } from '@/lib/auth/context';
+import { requireAuth, requireRoles } from '@/lib/auth/context';
 import * as svc from '@/lib/services/master-course-service';
-
-const isSubAdminActor = (u: AuthUser) => u.role === 'SUB_ADMIN' || u.secondaryRole === 'SUB_ADMIN';
-const isPrimaryTenantAdmin = (u: AuthUser) => u.role === 'TENANT_ADMIN';
-const isTenantOrSubAdminActor = (u: AuthUser) =>
-  u.role === 'TENANT_ADMIN' || u.role === 'SUB_ADMIN' || u.secondaryRole === 'SUB_ADMIN';
 
 // GET /api/master-courses/:id — SUPER_ADMIN | TENANT_ADMIN | SUB_ADMIN
 export const GET = route(async (req, { params }) => {
@@ -16,12 +11,15 @@ export const GET = route(async (req, { params }) => {
   const course = await svc.findOne(params!.id);
   const orgId = actor.orgId ?? undefined;
 
-  if (isTenantOrSubAdminActor(actor) && orgId) {
+  if (svc.isTenantOrSubAdminActor(actor) && orgId) {
     const isOwnSubmission = course.submittedByTenantId === orgId;
     const isAssigned = (course.selectedTenants || []).includes(orgId);
     if (!isOwnSubmission && !isAssigned) throw NotFound('Course not found');
   }
-  return json({ success: true, data: course });
+  // Presigned enrichment runs AFTER the ownership check, as in the legacy
+  // controller (`master-course.controller.ts:280`) — never sign URLs for a course
+  // the caller is not allowed to see.
+  return json({ success: true, data: await svc.enrichCourseWithPresignedUrls(course) });
 });
 
 // PUT /api/master-courses/:id — SUPER_ADMIN | TENANT_ADMIN | SUB_ADMIN
@@ -32,14 +30,26 @@ export const PUT = route(async (req, { params }) => {
   const id = params!.id;
   const orgId = actor.orgId ?? undefined;
 
-  if (isSubAdminActor(actor)) {
+  if (svc.isSubAdminActor(actor)) {
     const existing = await svc.findOne(id);
     if (!svc.canTenantAdminEditCourse(existing, String(orgId))) throw BadRequest('You can only edit your own courses');
     if (!existing.submittedByTenantId) dto.submittedByTenantId = String(orgId);
     if (!existing.submittedBy) dto.submittedBy = String(actor.id);
 
     if (existing.status === 'Published' && !existing.parentCourseId) {
-      const revision = await svc.createOrUpdateRevisionFromPublished(id, String(orgId), actor.id, dto);
+      // FORCE PendingTenantApproval — the legacy PUT did this too
+      // (`master-course.controller.ts:386-390`), identically to :id/save. This
+      // route did not attempt the override at all, so a Sub Admin's edit to a
+      // published course inherited whatever the service computed: `Published`
+      // (live, unapproved) with the approval workflow off, or `PendingApproval`
+      // (skipping Tenant Admin review) with it on. GAP_REPORT §2.5.
+      const revision = await svc.createOrUpdateRevisionFromPublished(
+        id,
+        String(orgId),
+        actor.id,
+        dto,
+        'PendingTenantApproval',
+      );
       return json({ success: true, data: revision, message: 'Course update submitted for Tenant Admin approval' });
     }
     dto.status = 'PendingTenantApproval';
@@ -48,7 +58,7 @@ export const PUT = route(async (req, { params }) => {
     return json({ success: true, data: course, message: 'Course submitted for Tenant Admin approval' });
   }
 
-  if (isPrimaryTenantAdmin(actor)) {
+  if (svc.isPrimaryTenantAdmin(actor)) {
     const existing = await svc.findOne(id);
     if (!svc.canTenantAdminEditCourse(existing, String(orgId))) throw BadRequest('You can only edit your own courses');
     if (!existing.submittedByTenantId) dto.submittedByTenantId = String(orgId);
@@ -77,7 +87,7 @@ export const PUT = route(async (req, { params }) => {
 export const DELETE = route(async (req, { params }) => {
   const actor = await requireAuth(req);
   requireRoles(actor, ['SUPER_ADMIN', 'TENANT_ADMIN', 'SUB_ADMIN']);
-  if (isTenantOrSubAdminActor(actor)) {
+  if (svc.isTenantOrSubAdminActor(actor)) {
     const orgId = actor.orgId ?? undefined;
     const existing = await svc.findOne(params!.id);
     if (!svc.canTenantAdminEditCourse(existing, String(orgId))) throw BadRequest('You can only delete your own courses');

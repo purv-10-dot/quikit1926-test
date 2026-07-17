@@ -121,8 +121,211 @@ export async function onboardTenant(dto: OnboardInput) {
   return { ...tenant, adminTempPassword: admin.tempPassword };
 }
 
-export async function createTenant(data: Prisma.LmsTenantCreateInput) {
-  return prisma.lmsTenant.create({ data });
+/**
+ * 1:1 port of `TenantsService.generateSubdomain` (`tenants.service.ts:109-116`).
+ *
+ * Deliberately NOT the same as `uniqueSubdomain` above, which serves `onboard`
+ * and appends a -1/-2 suffix to dodge collisions. `create` does no such thing: it
+ * derives the slug and 409s on collision. Keeping both mirrors the original,
+ * which also had two different behaviors on these two paths.
+ */
+function generateSubdomain(companyName: string): string {
+  return companyName
+    .toLowerCase()
+    .replace(/[^a-z0-9]/g, '-')
+    .replace(/-+/g, '-')
+    .replace(/^-|-$/g, '')
+    .substring(0, 50);
+}
+
+/** 1:1 port of `TenantsService.generateTenantKey` — `tk_` + uuid with dashes stripped. */
+function generateTenantKey(): string {
+  return `tk_${randomUUID().replace(/-/g, '')}`;
+}
+
+/**
+ * Input for `createTenant`.
+ *
+ * The first four fields are `CreateTenantDto` (`create-tenant.dto.ts`). The rest
+ * are NOT in that DTO — they are the columns the tenant schema marks
+ * non-nullable, and they are required here for a reason worth recording:
+ *
+ * **The legacy `POST /tenants` could never succeed.** `CreateTenantDto` carried
+ * only {name, gstNumber, dbConnectionString?, tenantType?}, but the Mongoose
+ * schema declared `orgName`, `fullAddress`, `country`, `officialPhone`,
+ * `officialEmail`, all five contact fields and all three billing fields as
+ * `required: true` (`tenant.schema.ts:197-247`). So `new tenantModel({...dto}).save()`
+ * always threw a Mongoose ValidationError → 500 — while sending the missing
+ * fields tripped `forbidNonWhitelisted` → 400. The endpoint was unreachable from
+ * either direction; `POST /tenants/onboard` (which has a complete DTO) is what
+ * actually worked.
+ *
+ * Prisma reproduced that required set exactly, so a create is impossible without
+ * these. Rather than reproduce a permanently-500 endpoint, this keeps the working
+ * superset. See the QUESTION in the migration summary.
+ */
+export interface CreateTenantInput {
+  name: string;
+  gstNumber: string;
+  dbConnectionString?: string;
+  tenantType?: 'corporate' | 'school';
+  // Schema-required (tenant.schema.ts `required: true`) — not in CreateTenantDto.
+  orgName: string;
+  fullAddress: string;
+  country: string;
+  officialPhone: string;
+  officialEmail: string;
+  contactFirstName: string;
+  contactLastName: string;
+  contactPhone: string;
+  contactEmail: string;
+  contactRoleInOrganization: string;
+  billingFirstName: string;
+  billingLastName: string;
+  billingAddress: string;
+  // Schema-optional.
+  website?: string;
+  contactMiddleName?: string;
+  billingMiddleName?: string;
+}
+
+/**
+ * Create a tenant. Port of `TenantsService.create` (`tenants.service.ts`).
+ *
+ * `subdomain` and `tenantKey` are GENERATED here, never accepted from the
+ * request — the legacy service generated both. This route previously took them
+ * from the client, letting a caller choose another tenant's key namespace.
+ *
+ * Both conflict checks are explicit rather than left to Prisma's P2002, because
+ * the legacy messages are distinct ('Subdomain already exists' vs 'GST Number
+ * already registered') and P2002 collapses them into one generic 409.
+ */
+export async function createTenant(dto: CreateTenantInput) {
+  const subdomain = generateSubdomain(dto.name);
+
+  const existingTenant = await prisma.lmsTenant.findUnique({ where: { subdomain } });
+  if (existingTenant) throw Conflict('Subdomain already exists');
+
+  // Legacy guarded with `if (createTenantDto.gstNumber)` even though its own DTO
+  // made the field required — reproduced.
+  if (dto.gstNumber) {
+    const existingGst = await prisma.lmsTenant.findUnique({ where: { gstNumber: dto.gstNumber } });
+    if (existingGst) throw Conflict('GST Number already registered');
+  }
+
+  const { tenantType, ...rest } = dto;
+  return prisma.lmsTenant.create({
+    data: {
+      ...rest,
+      ...(tenantType ? { tenantType } : {}),
+      subdomain,
+      tenantKey: generateTenantKey(),
+    },
+  });
+}
+
+export interface CreateAdminCredentialsResult {
+  tenant: string;
+  success: boolean;
+  email?: string;
+  password?: string;
+  loginUrl?: string | null;
+  message?: string;
+  error?: string;
+}
+
+/**
+ * Provision the TENANT_ADMIN for one tenant. Port of
+ * `SeedService.createTenantAdminForTenant` (`seed.service.ts`).
+ *
+ * DELIBERATE DEVIATION — the password. The legacy seeder hashed a hardcoded
+ * `'TenantAdmin@123'` itself and returned that literal. Password creation is auth
+ * internals, which this migration pass must not reimplement, so this consumes the
+ * existing `provisionLmsUser` helper (exactly as `onboardTenant` above does) and
+ * returns the temp password it mints. The response SHAPE is unchanged; the
+ * password is now per-admin and random instead of one shared constant across
+ * every tenant. Flagged in the migration summary.
+ */
+export async function createTenantAdminForTenant(
+  tenantId: string,
+): Promise<CreateAdminCredentialsResult> {
+  const tenant = await findTenant(tenantId);
+  const contactEmail = tenant.contactEmail || tenant.officialEmail;
+
+  if (!contactEmail) {
+    // Legacy threw a bare Error here, which Nest surfaced as a 500. Reproduced as
+    // a thrown error rather than a 4xx to keep the status identical.
+    throw new Error('No contact email found for tenant');
+  }
+
+  // Idempotency check, matching the legacy seeder: an existing TENANT_ADMIN on
+  // this tenant with this email short-circuits with password 'Already exists'.
+  const existingAdmin = await prisma.lmsUser.findFirst({
+    where: { email: contactEmail.toLowerCase().trim(), orgId: tenant.orgId, role: 'TENANT_ADMIN' },
+    select: { id: true },
+  });
+  if (existingAdmin) {
+    return {
+      tenant: tenant.orgName ?? tenant.name,
+      success: true,
+      email: contactEmail,
+      password: 'Already exists',
+      loginUrl: tenant.loginUrl,
+      message: 'User already exists',
+    };
+  }
+
+  const admin = await provisionLmsUser({
+    email: contactEmail,
+    // `Tenant.id === orgId` is the orgId-native invariant recorded on the schema
+    // column itself, so `id` is the correct fallback for a tenant whose orgId
+    // link has not been back-filled yet.
+    orgId: tenant.orgId ?? tenant.id,
+    firstName: tenant.contactFirstName || 'Tenant',
+    lastName: tenant.contactLastName || 'Admin',
+    lmsRole: 'TENANT_ADMIN',
+  });
+
+  return {
+    tenant: tenant.orgName ?? tenant.name,
+    success: true,
+    email: contactEmail,
+    // `tempPassword` is null when the platform user already had one — the same
+    // situation the legacy seeder reported as 'Already exists'.
+    password: admin.tempPassword ?? 'Already exists',
+    loginUrl: tenant.loginUrl,
+  };
+}
+
+/**
+ * Provision admins for every tenant. Port of
+ * `SeedService.createTenantAdminsForAllTenants`.
+ *
+ * Per-tenant failures are collected into the results array rather than aborting
+ * the run — the legacy seeder wrapped each tenant in its own try/catch and pushed
+ * `{tenant, success:false, error}`. Reproduced, including the partial-success
+ * response.
+ */
+export async function createTenantAdminsForAllTenants(): Promise<{
+  success: boolean;
+  results: CreateAdminCredentialsResult[];
+}> {
+  const tenants = await prisma.lmsTenant.findMany({ select: { id: true, orgName: true, name: true } });
+  const results: CreateAdminCredentialsResult[] = [];
+
+  for (const t of tenants) {
+    try {
+      results.push(await createTenantAdminForTenant(t.id));
+    } catch (error: unknown) {
+      results.push({
+        tenant: t.orgName ?? t.name,
+        success: false,
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
+  }
+
+  return { success: true, results };
 }
 
 export async function findAllTenants() {
@@ -135,9 +338,42 @@ export async function findTenant(id: string) {
   return tenant;
 }
 
-export async function updateTenant(id: string, data: Prisma.LmsTenantUpdateInput) {
-  await findTenant(id);
-  return prisma.lmsTenant.update({ where: { id }, data });
+/**
+ * Update a tenant. Port of `TenantsService.update` (`tenants.service.ts`).
+ *
+ * `featureConfig` MERGES, it does not replace. The original built a flat `$set`
+ * with dot-notation keys (`featureConfig.enableScorm`), which Mongo applies
+ * per-key, preserving every flag the request omitted. Prisma writes the whole
+ * JSON column, so passing `featureConfig` straight through DESTROYS the omitted
+ * flags — a tenant PATCHing one flag would silently lose the rest.
+ *
+ * The merge is shallow / one level deep, exactly matching the legacy
+ * dot-notation, which only ever went one level.
+ *
+ * Undefined-stripping is also the legacy behavior: `$set` was built by skipping
+ * `val === undefined`, so an omitted field is untouched.
+ */
+export async function updateTenant(
+  id: string,
+  data: Record<string, unknown> & { featureConfig?: Record<string, unknown> },
+) {
+  const existing = await findTenant(id);
+  const { featureConfig, ...rest } = data;
+
+  const setFields: Record<string, unknown> = {};
+  for (const [key, val] of Object.entries(rest)) {
+    if (val !== undefined) setFields[key] = val;
+  }
+
+  if (featureConfig && typeof featureConfig === 'object') {
+    const current = (existing.featureConfig ?? {}) as Record<string, unknown>;
+    setFields.featureConfig = { ...current, ...featureConfig };
+  }
+
+  return prisma.lmsTenant.update({
+    where: { id },
+    data: setFields as Prisma.LmsTenantUpdateInput,
+  });
 }
 
 export async function removeTenant(id: string) {

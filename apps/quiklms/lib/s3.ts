@@ -43,3 +43,58 @@ export async function presignPut(key: string, contentType: string, expiresIn = 9
 export async function presignGet(key: string, expiresIn = 900): Promise<string> {
   return getSignedUrl(s3, new GetObjectCommand({ Bucket: S3_BUCKET, Key: key }), { expiresIn });
 }
+
+/**
+ * Read a whole S3 object into memory. Used by the routes that must return the
+ * BYTES rather than a URL — `GET /api/upload/welcome-kit` streamed the PDF in the
+ * legacy backend and its callers are `<a download>` links, so a presigned URL is
+ * not a substitute.
+ *
+ * Only for known-small, fixed-key objects. Large media must keep going direct to
+ * S3 via presigned URLs — never buffer it through a route.
+ */
+export async function getObjectBuffer(key: string): Promise<Buffer> {
+  const res = await s3.send(new GetObjectCommand({ Bucket: S3_BUCKET, Key: key }));
+  const body = res.Body as { transformToByteArray?: () => Promise<Uint8Array> } | undefined;
+  if (!body?.transformToByteArray) throw new Error(`S3 object ${key} has no readable body`);
+  return Buffer.from(await body.transformToByteArray());
+}
+
+/**
+ * Presign a GET from either a full S3 URL (permanent or already-presigned) or a
+ * bare key. Port of `S3PresignedService.generatePresignedUrl`
+ * (`src/utils/s3-presigned.service.ts:31-65`).
+ *
+ * Legacy semantics, reproduced exactly:
+ *  - falsy input            → null
+ *  - `data:` URL            → returned unchanged
+ *  - non-S3 http(s) URL     → returned unchanged
+ *  - S3 URL                 → re-presigned against the bucket parsed from the host
+ *  - bare key               → presigned against the configured bucket
+ *  - any throw              → the input is returned unchanged (never throws)
+ */
+export async function presignFromUrlOrKey(
+  urlOrKey: string | null | undefined,
+  expiresIn = 3600,
+): Promise<string | null> {
+  if (!urlOrKey) return null;
+  try {
+    if (urlOrKey.startsWith('data:')) return urlOrKey;
+
+    if (urlOrKey.startsWith('http')) {
+      const parsed = new URL(urlOrKey);
+      const hostMatch = parsed.hostname.match(/^(.+?)\.s3[.-].*\.amazonaws\.com$/);
+      if (hostMatch) {
+        const bucket = hostMatch[1];
+        const key = decodeURIComponent(parsed.pathname.slice(1));
+        return await getSignedUrl(s3, new GetObjectCommand({ Bucket: bucket, Key: key }), { expiresIn });
+      }
+      // Not an S3 URL (e.g. an external image) — pass through.
+      return urlOrKey;
+    }
+
+    return await getSignedUrl(s3, new GetObjectCommand({ Bucket: S3_BUCKET, Key: urlOrKey }), { expiresIn });
+  } catch {
+    return urlOrKey;
+  }
+}

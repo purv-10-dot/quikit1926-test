@@ -19,6 +19,14 @@ export const GET = route(async (req) => {
   const usage = await getStorageUsage(orgId);
   const availableSpace = usage.storageLimit - usage.currentUsage;
   if (availableSpace < TEN_MB) {
+    // A bare message is CORRECT here, despite appearances. The legacy handler
+    // threw `ForbiddenException({success, message, data:{canUpload,…}})`
+    // (`tenants.controller.ts:246-255`), but the global AllExceptionsFilter
+    // rebuilt every error body from scratch and copied only `message` / `error` /
+    // `errors` / `validationErrors` off it (`all-exceptions.filter.ts:39-54`).
+    // `data` and `success` were dropped before the response was ever sent, so no
+    // client ever saw canUpload/availableSpace/usedSpace/totalSpace on the 403.
+    // Adding them here would be a new feature, not parity.
     throw Forbidden('Storage limit exceeded. Please free up space or contact your administrator.');
   }
   return json({

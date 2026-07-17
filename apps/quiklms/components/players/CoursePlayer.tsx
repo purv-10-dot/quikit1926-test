@@ -1,32 +1,42 @@
 'use client';
 /**
- * Course player host. The legacy browser-only players (UniversalLMSPlayer,
- * LockedCoursePlayer, CompliancePlayer, VideoPlayer, SCORM iframe, react-pdf,
- * MediaPipe face-proctoring hooks) mount here and MUST be loaded with
- * `dynamic(..., { ssr:false })` since they touch window/canvas/camera. This is
- * the fullscreen host shell those components render into.
+ * Course player host — the fullscreen shell that `/learner/course/[courseId]`
+ * and `/learner/course/[courseId]/legacy` mount, always via
+ * `dynamic(..., { ssr:false })` since the players touch window/canvas/camera.
+ *
+ * Route → player mapping, matching the legacy frontend's App.tsx routes:
+ *   standard  `/learner/course/:courseId`         → UniversalLMSPlayer  (ported)
+ *   legacy    `/learner/course/:courseId/legacy`  → LockedCoursePlayer  (ported)
+ *   view      `/learner/course/:courseId/view`    → handled by its own page.tsx,
+ *                                                   which never routes through here.
+ *
+ * Both players render their own fullscreen chrome (back button, sidebar, progress
+ * header) and read `courseId` from the route via `useParams`, so this host hands
+ * off directly rather than wrapping them in a second shell.
  */
-import { useEffect, useState } from 'react';
-import { api } from '@/lib/api';
+import dynamic from 'next/dynamic';
+import { Loader2 } from 'lucide-react';
+
+const spinner = () => (
+  <div className="min-h-screen flex items-center justify-center bg-gray-900">
+    <Loader2 className="w-10 h-10 animate-spin text-blue-400" />
+  </div>
+);
+
+const UniversalLMSPlayer = dynamic(() => import('@/components/learner/UniversalLMSPlayer'), {
+  ssr: false,
+  loading: spinner,
+});
+
+const LockedCoursePlayer = dynamic(() => import('@/components/learner/LockedCoursePlayer'), {
+  ssr: false,
+  loading: spinner,
+});
 
 export default function CoursePlayer({ courseId, mode }: { courseId: string; mode: 'standard' | 'view' | 'legacy' }) {
-  const [title, setTitle] = useState('Loading…');
-  useEffect(() => {
-    api.get<{ data: { title?: string } }>(`/player/course/${courseId}`)
-      .then((r) => setTitle(r.data?.title || 'Course'))
-      .catch(() => setTitle('Course'));
-  }, [courseId]);
-
-  return (
-    <div className="min-h-screen flex flex-col">
-      <div className="h-12 flex items-center px-4 border-b border-white/10 text-sm">
-        <a href="/learner/course-status" className="opacity-70 hover:opacity-100">← Exit</a>
-        <span className="mx-auto font-medium">{title}</span>
-        <span className="opacity-50 text-xs">{mode}</span>
-      </div>
-      <div className="flex-1 flex items-center justify-center text-white/60">
-        Player surface (mode: {mode}) — UniversalLMSPlayer / SCORM / VideoPlayer mounts here via dynamic(ssr:false).
-      </div>
-    </div>
-  );
+  void courseId; // Both players read it from the route themselves, as the originals did.
+  if (mode === 'legacy') {
+    return <LockedCoursePlayer />;
+  }
+  return <UniversalLMSPlayer />;
 }

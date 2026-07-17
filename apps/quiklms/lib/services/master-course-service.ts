@@ -6,15 +6,79 @@
  * masterCourseSelectedTenant join table. Approval-workflow status transitions
  * mirror the legacy service.
  *
- * S3 presigned enrichment is skipped per task note (stored URLs returned as-is).
+ * S3 presigned enrichment is implemented — see `enrichCourseWithPresignedUrls`.
+ * (An earlier note in this file said it was "skipped per task note"; that left
+ * every stored S3 URL unsigned, which 403s against a private bucket.)
  */
 import { randomUUID } from 'crypto';
 import { Prisma } from '@prisma/client';
 import type { LmsMasterCourse as MasterCourse, LmsMasterCourseStatus as MasterCourseStatus, LmsCourseLevel as CourseLevel } from '@prisma/client';
 import { prisma } from '@/lib/prisma';
 import { BadRequest, NotFound } from '@/lib/http';
+import { presignFromUrlOrKey } from '@/lib/s3';
+import { userHasRole, type AuthUser } from '@/lib/auth/context';
 
 type AnyRec = Record<string, unknown>;
+
+/** Keys inside `subModule.resourceData` the legacy enricher presigned. */
+const RESOURCE_DATA_URL_KEYS = ['url', 'fileUrl', 'contentUrl', 'videoUrl'] as const;
+
+/**
+ * Presign the S3 URLs buried in a master course. 1:1 port of
+ * `MasterCourseController.enrichCourseWithPresignedUrls`
+ * (`master-course.controller.ts:53-82`).
+ *
+ * Behavior worth preserving exactly:
+ *  - `thumbnailUrl` → adds a SIBLING `thumbnailUrlPresigned` field, leaving the
+ *    original in place, and does so with NO `amazonaws.com` check.
+ *  - `subModules[].resources[].url` and `subModules[].resourceData[{url,fileUrl,
+ *    contentUrl,videoUrl}]` → rewritten IN PLACE, and only when the value
+ *    contains `amazonaws.com`. Non-S3 URLs pass through untouched.
+ *  - A presign failure falls back to the original value (`|| res.url`), so this
+ *    can never blank a URL.
+ *
+ * Without this, every stored course-content URL is returned unsigned and 403s
+ * from a private bucket (GAP_REPORT §3.1).
+ */
+export type Enriched<T> = T & { thumbnailUrlPresigned?: string | null };
+
+export async function enrichCourseWithPresignedUrls<T extends AnyRec>(course: T): Promise<Enriched<T>> {
+  if (!course) return course;
+  // Deep clone so we never mutate a caller's object / Prisma result in place.
+  const obj = JSON.parse(JSON.stringify(course)) as AnyRec;
+
+  if (obj.thumbnailUrl) {
+    obj.thumbnailUrlPresigned = await presignFromUrlOrKey(obj.thumbnailUrl as string);
+  }
+
+  const modules = (obj.modules as AnyRec[]) || [];
+  for (const mod of modules) {
+    for (const sub of ((mod?.subModules as AnyRec[]) || [])) {
+      for (const res of ((sub?.resources as AnyRec[]) || [])) {
+        const url = res?.url as string | undefined;
+        if (url && url.includes('amazonaws.com')) {
+          res.url = (await presignFromUrlOrKey(url)) || url;
+        }
+      }
+      const resourceData = sub?.resourceData as AnyRec | undefined;
+      if (resourceData) {
+        for (const key of RESOURCE_DATA_URL_KEYS) {
+          const val = resourceData[key] as string | undefined;
+          if (val && val.includes('amazonaws.com')) {
+            resourceData[key] = (await presignFromUrlOrKey(val)) || val;
+          }
+        }
+      }
+    }
+  }
+
+  return obj as Enriched<T>;
+}
+
+/** Enrich a list — the legacy controller mapped enrichment over every list endpoint. */
+export async function enrichCoursesWithPresignedUrls<T extends AnyRec>(courses: T[]): Promise<Enriched<T>[]> {
+  return Promise.all((courses || []).map((c) => enrichCourseWithPresignedUrls(c)));
+}
 
 // ── tenant feature: approval workflow ────────────────────────────────────────
 export async function isApprovalWorkflowEnabled(orgId: string): Promise<boolean> {
@@ -185,11 +249,34 @@ export async function update(id: string, dto: AnyRec) {
   return withSelectedTenants(updated);
 }
 
+/**
+ * Create (or update) a tenant's revision of a published master course.
+ *
+ * `statusOverride` exists to reproduce the legacy controller's forced status. Both
+ * `POST :id/save` and `PUT :id` did this after calling the service
+ * (`master-course.controller.ts:305-311` and `:386-390`):
+ *
+ *     const revision = await createOrUpdateRevisionFromPublished(...);
+ *     revision.status = MasterCourseStatus.PENDING_TENANT_APPROVAL;
+ *     await revision.save();
+ *
+ * i.e. a SUB_ADMIN's edit to a published course ALWAYS requires Tenant Admin
+ * sign-off, whatever `nextStatus` computes. Losing that override was a live
+ * privilege-escalation bug (GAP_REPORT §2.5): with the approval workflow off, a
+ * Sub Admin's edit computed to `Published` and went live with no approval from
+ * anyone; with it on, it computed to `PendingApproval` and skipped Tenant Admin
+ * review to land straight in the Super Admin queue.
+ *
+ * It is an explicit PARAMETER, not `dto.status`, on purpose: the callers parse
+ * their body with `.passthrough()`, so honoring `dto.status` would let a client
+ * pick its own approval state.
+ */
 export async function createOrUpdateRevisionFromPublished(
   parentCourseId: string,
   orgId: string,
   editorUserId: string,
   dto: AnyRec,
+  statusOverride?: MasterCourseStatus,
 ) {
   const parent = await prisma.lmsMasterCourse.findFirst({ where: { id: parentCourseId, isMaster: true } });
   if (!parent) throw NotFound('Master course not found');
@@ -217,11 +304,13 @@ export async function createOrUpdateRevisionFromPublished(
   });
 
   const approvalEnabled = await isApprovalWorkflowEnabled(orgId);
-  const nextStatus: MasterCourseStatus = !approvalEnabled
+  const computedStatus: MasterCourseStatus = !approvalEnabled
     ? 'Published'
     : existingRevision?.status === 'Rejected'
       ? 'Resubmitted'
       : 'PendingApproval';
+  // The caller's override wins — see the docblock. This is the §2.5 fix.
+  const nextStatus: MasterCourseStatus = statusOverride ?? computedStatus;
 
   if (existingRevision) {
     const updated = await prisma.lmsMasterCourse.update({
@@ -533,6 +622,59 @@ export async function reject(id: string, rejectedById: string, reason: string) {
 }
 
 // ── controller-side ownership check (canTenantAdminEditCourse) ────────────────
+/**
+ * Actor predicates — 1:1 ports of `src/auth/utils/role-access.util.ts`, built on
+ * the existing `userHasRole` auth helper (which checks role AND secondaryRole).
+ *
+ * They live here, beside `canTenantAdminEditCourse`, because they answer the same
+ * question: who is allowed to touch this course. Several master-course routes
+ * previously declared their own local copies, and those copies drifted:
+ *
+ *     // local copy — WRONG
+ *     u.role === 'TENANT_ADMIN' || u.role === 'SUB_ADMIN' || u.secondaryRole === 'SUB_ADMIN'
+ *
+ * That misses `secondaryRole === 'TENANT_ADMIN'`, so a delegated tenant admin was
+ * not recognised as a tenant actor and skipped the ownership check entirely,
+ * falling through to the SUPER_ADMIN path. The legacy helper used `userHasRole`
+ * for BOTH roles (`role-access.util.ts:24-32`).
+ */
+
+/** Primary or delegated Sub Admin (secondary SUB_ADMIN on a learner). */
+export const isSubAdminActor = (u: AuthUser) => userHasRole(u, 'SUB_ADMIN');
+
+/** Full tenant admin — primary role only, NOT delegated (`role-access.util.ts:19-21`). */
+export const isPrimaryTenantAdmin = (u: AuthUser) => u.role === 'TENANT_ADMIN';
+
+/** Tenant Admin or Sub Admin in any form — used for tenant-scoped admin APIs. */
+export const isTenantOrSubAdminActor = (u: AuthUser) =>
+  userHasRole(u, 'TENANT_ADMIN') || userHasRole(u, 'SUB_ADMIN');
+
+/**
+ * Throw unless `actor` may act on `courseId`. SUPER_ADMIN is unscoped and passes
+ * through, exactly as on the sibling `PUT`/`DELETE /master-courses/:id` routes.
+ *
+ * This closes the five cross-tenant holes GAP_REPORT §3.2 recorded on `auto-save`,
+ * `draft` GET/DELETE, `reorder-modules` and `reorder-submodules`: each passed
+ * `params.id` straight to the service, and `autoSaveDraft` filters only on
+ * `{id, isMaster:true}` — so any tenant admin could overwrite `draftData` on ANY
+ * master course, read another tenant's unpublished draft, destroy it, or
+ * restructure the course.
+ *
+ * NOTE: this is a deliberate BEHAVIOR CHANGE. The NestJS original had these holes
+ * verbatim, so this is not migration parity — it was approved as a follow-up
+ * security fix on 2026-07-17.
+ *
+ * `BadRequest` (400), not `Forbidden` (403), to match the message and status the
+ * sibling routes already return for this exact condition.
+ */
+export async function assertCanEditMasterCourse(actor: AuthUser, courseId: string): Promise<void> {
+  if (!isTenantOrSubAdminActor(actor)) return; // SUPER_ADMIN — unscoped.
+  const existing = await findOne(courseId);
+  if (!canTenantAdminEditCourse(existing, String(actor.orgId ?? undefined))) {
+    throw BadRequest('You can only edit your own courses');
+  }
+}
+
 export function canTenantAdminEditCourse(
   course: { submittedByTenantId?: string | null; selectedTenants?: string[] },
   orgId: string,

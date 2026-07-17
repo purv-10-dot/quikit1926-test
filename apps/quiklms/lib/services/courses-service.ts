@@ -5,12 +5,88 @@
  * Module.courseId; selectedTenants via CourseSelectedTenant) and the JSON-blob
  * `MasterCourse` (3-tier modules in a Json column). findAll/findOne merge both.
  *
- * S3 presigned enrichment is intentionally skipped per task note — stored URLs
- * are returned as-is.
+ * S3 presigned enrichment is implemented — see `enrichCoursesWithPresignedUrls`.
+ * (An earlier note here said it was "intentionally skipped per task note"; that
+ * returned every stored S3 URL unsigned, which 403s against a private bucket.)
  */
 import type { Prisma, LmsLessonType as LessonType } from '@prisma/client';
 import { prisma } from '@/lib/prisma';
 import { NotFound } from '@/lib/http';
+import { presignFromUrlOrKey } from '@/lib/s3';
+
+/** Keys inside `subModule.resourceData` the legacy enricher presigned. */
+const RESOURCE_DATA_URL_KEYS = ['url', 'fileUrl', 'contentUrl', 'videoUrl'] as const;
+
+/** Presign a value in place only when it looks like an S3 URL, never blanking it. */
+async function signIfS3(holder: AnyRec, key: string): Promise<void> {
+  const val = holder[key];
+  if (typeof val === 'string' && val.includes('amazonaws.com')) {
+    holder[key] = (await presignFromUrlOrKey(val)) || val;
+  }
+}
+
+/** Presign every `captions[].url` on a lesson or resource. */
+async function signCaptions(holder: AnyRec): Promise<void> {
+  const captions = holder.captions as AnyRec[] | undefined;
+  if (!captions?.length) return;
+  for (const caption of captions) await signIfS3(caption, 'url');
+}
+
+/**
+ * 1:1 port of `CoursesController.enrichCoursesWithPresignedUrls`
+ * (`courses.controller.ts:36-95`).
+ *
+ * A SUPERSET of the master-course enricher: it covers both course shapes —
+ * relational `modules[].lessons[]` (contentUrl / scormLaunchUrl / captions[]) AND
+ * the MasterCourse JSON shape (`subModules[].resources[]` + `resourceData`).
+ * `findAll`/`findOne` merge both collections, so both branches are reachable.
+ *
+ * Same quirks as the master enricher: `thumbnailUrl` gets a SIBLING
+ * `thumbnailUrlPresigned` with no host check, while every other URL is rewritten
+ * IN PLACE and only when it contains `amazonaws.com`. A failed presign falls back
+ * to the original value.
+ *
+ * `scormLaunchUrl` matters most here — it is the URL the SCORM player loads into
+ * its iframe. Unsigned, a private-bucket package simply never opens.
+ */
+export type Enriched<T> = T & { thumbnailUrlPresigned?: string | null };
+
+export async function enrichCourseWithPresignedUrls<T extends AnyRec>(course: T): Promise<Enriched<T>> {
+  if (!course) return course;
+  // Deep clone so a Prisma result / caller object is never mutated in place.
+  const obj = JSON.parse(JSON.stringify(course)) as AnyRec;
+
+  if (obj.thumbnailUrl) {
+    obj.thumbnailUrlPresigned = await presignFromUrlOrKey(obj.thumbnailUrl as string);
+  }
+
+  for (const mod of ((obj.modules as AnyRec[]) || [])) {
+    // Relational shape: modules → lessons
+    for (const lesson of ((mod?.lessons as AnyRec[]) || [])) {
+      await signIfS3(lesson, 'contentUrl');
+      await signIfS3(lesson, 'scormLaunchUrl');
+      await signCaptions(lesson);
+    }
+
+    // MasterCourse shape: modules → subModules → resources
+    for (const sub of ((mod?.subModules as AnyRec[]) || [])) {
+      for (const res of ((sub?.resources as AnyRec[]) || [])) {
+        await signIfS3(res, 'url');
+        await signCaptions(res);
+      }
+      const resourceData = sub?.resourceData as AnyRec | undefined;
+      if (resourceData) {
+        for (const key of RESOURCE_DATA_URL_KEYS) await signIfS3(resourceData, key);
+      }
+    }
+  }
+
+  return obj as Enriched<T>;
+}
+
+export async function enrichCoursesWithPresignedUrls<T extends AnyRec>(courses: T[]): Promise<Enriched<T>[]> {
+  return Promise.all((courses || []).map((c) => enrichCourseWithPresignedUrls(c)));
+}
 
 const MODULES_INCLUDE = {
   modules: { include: { lessons: { orderBy: { orderIndex: 'asc' } } }, orderBy: { orderIndex: 'asc' } },

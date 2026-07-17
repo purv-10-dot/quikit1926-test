@@ -1,11 +1,8 @@
 import { z } from 'zod';
 import { route, json, BadRequest } from '@/lib/http';
 import { parseBody } from '@/lib/validation';
-import { requireAuth, requireRoles, type AuthUser } from '@/lib/auth/context';
+import { requireAuth, requireRoles } from '@/lib/auth/context';
 import * as svc from '@/lib/services/master-course-service';
-
-const isSubAdminActor = (u: AuthUser) => u.role === 'SUB_ADMIN' || u.secondaryRole === 'SUB_ADMIN';
-const isPrimaryTenantAdmin = (u: AuthUser) => u.role === 'TENANT_ADMIN';
 
 // POST /api/master-courses/:id/save — SUPER_ADMIN | TENANT_ADMIN | SUB_ADMIN
 export const POST = route(async (req, { params }) => {
@@ -15,16 +12,26 @@ export const POST = route(async (req, { params }) => {
   const id = params!.id;
   const orgId = actor.orgId ?? undefined;
 
-  if (isSubAdminActor(actor)) {
+  if (svc.isSubAdminActor(actor)) {
     const existing = await svc.findOne(id);
     if (!svc.canTenantAdminEditCourse(existing, String(orgId))) throw BadRequest('You can only edit your own courses');
     if (!existing.submittedByTenantId) dto.submittedByTenantId = String(orgId);
     if (!existing.submittedBy) dto.submittedBy = String(actor.id);
 
     if (existing.status === 'Published' && !existing.parentCourseId) {
-      const revision = await svc.createOrUpdateRevisionFromPublished(id, String(orgId), actor.id, {
-        ...dto, status: 'PendingTenantApproval',
-      });
+      // The 5th arg FORCES PendingTenantApproval, reproducing the legacy
+      // controller's post-save override (`master-course.controller.ts:305-311`).
+      // Passing the status inside the dto — as this route used to — was a no-op:
+      // the service computes its own status and never reads dto.status. See
+      // GAP_REPORT §2.5: with the approval workflow disabled, a Sub Admin's edit
+      // to a published course went live with no approval from anyone.
+      const revision = await svc.createOrUpdateRevisionFromPublished(
+        id,
+        String(orgId),
+        actor.id,
+        dto,
+        'PendingTenantApproval',
+      );
       return json({ success: true, data: revision, message: 'Course update submitted for Tenant Admin approval' });
     }
     dto.status = 'PendingTenantApproval';
@@ -33,7 +40,7 @@ export const POST = route(async (req, { params }) => {
     return json({ success: true, data: course, message: 'Course submitted for Tenant Admin approval' });
   }
 
-  if (isPrimaryTenantAdmin(actor)) {
+  if (svc.isPrimaryTenantAdmin(actor)) {
     const existing = await svc.findOne(id);
     if (!svc.canTenantAdminEditCourse(existing, String(orgId))) throw BadRequest('You can only edit your own courses');
     if (!existing.submittedByTenantId) dto.submittedByTenantId = String(orgId);

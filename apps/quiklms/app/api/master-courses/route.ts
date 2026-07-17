@@ -1,11 +1,8 @@
 import { z } from 'zod';
-import { route, json } from '@/lib/http';
+import { route, json, BadRequest } from '@/lib/http';
 import { parseBody } from '@/lib/validation';
-import { requireAuth, requireRoles, type AuthUser } from '@/lib/auth/context';
+import { requireAuth, requireRoles } from '@/lib/auth/context';
 import * as svc from '@/lib/services/master-course-service';
-
-const isSubAdminActor = (u: AuthUser) => u.role === 'SUB_ADMIN' || u.secondaryRole === 'SUB_ADMIN';
-const isPrimaryTenantAdmin = (u: AuthUser) => u.role === 'TENANT_ADMIN';
 
 // POST /api/master-courses — SUPER_ADMIN | TENANT_ADMIN | SUB_ADMIN
 export const POST = route(async (req) => {
@@ -14,14 +11,24 @@ export const POST = route(async (req) => {
   const dto = (await parseBody(req, z.object({}).passthrough())) as Record<string, unknown>;
   const orgId = actor.orgId ?? undefined;
 
+  // Fail CLOSED. A tenant-scoped actor with no orgId used to slip past both
+  // branches below and land on the SUPER_ADMIN path, where `dto.status` is
+  // honored from the request body as-is and `selectedTenants` is never forced —
+  // so a TENANT_ADMIN/SUB_ADMIN could self-publish an unscoped master course.
+  // `getAuthContext` currently guarantees a non-null orgId, which makes this
+  // unreachable today; it is the guard that keeps it unreachable if that changes.
+  if (!orgId && (svc.isSubAdminActor(actor) || svc.isPrimaryTenantAdmin(actor))) {
+    throw BadRequest('Tenant ID is required');
+  }
+
   let message = 'Master course created successfully';
-  if (isSubAdminActor(actor)) {
+  if (svc.isSubAdminActor(actor)) {
     dto.selectedTenants = [orgId];
     dto.status = 'PendingTenantApproval';
     dto.submittedBy = actor.id;
     dto.submittedByTenantId = orgId;
     message = 'Course submitted for Tenant Admin approval';
-  } else if (isPrimaryTenantAdmin(actor) && orgId) {
+  } else if (svc.isPrimaryTenantAdmin(actor) && orgId) {
     const approvalEnabled = await svc.isApprovalWorkflowEnabled(orgId);
     dto.selectedTenants = [orgId];
     dto.status = approvalEnabled ? 'PendingApproval' : 'Published';
@@ -38,6 +45,6 @@ export const POST = route(async (req) => {
 export const GET = route(async (req) => {
   const actor = await requireAuth(req);
   requireRoles(actor, ['SUPER_ADMIN']);
-  const data = await svc.findAll();
+  const data = await svc.enrichCoursesWithPresignedUrls(await svc.findAll());
   return json({ success: true, data });
 });

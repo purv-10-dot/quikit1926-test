@@ -7,6 +7,6 @@ export const GET = route(async (req) => {
   const actor = await requireAuth(req);
   requireRoles(actor, ['TENANT_ADMIN']);
   if (!actor.orgId) throw BadRequest('Tenant ID required');
-  const data = await svc.findSubAdminSubmissions(actor.orgId);
+  const data = await svc.enrichCoursesWithPresignedUrls(await svc.findSubAdminSubmissions(actor.orgId));
   return json({ success: true, data });
 });

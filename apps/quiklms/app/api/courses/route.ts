@@ -2,7 +2,7 @@ import { z } from 'zod';
 import { route, json } from '@/lib/http';
 import { parseBody } from '@/lib/validation';
 import { requireAuth, requireRoles } from '@/lib/auth/context';
-import { createCourse, findAllForTenant } from '@/lib/services/courses-service';
+import { createCourse, findAllForTenant, enrichCoursesWithPresignedUrls } from '@/lib/services/courses-service';
 
 // POST /api/courses — SUPER_ADMIN | TENANT_ADMIN | SUB_ADMIN
 export const POST = route(async (req) => {
@@ -24,6 +24,9 @@ export const GET = route(async (req) => {
   if (!orgId) {
     return json({ success: false, message: 'Tenant ID is required', data: [] });
   }
-  const data = await findAllForTenant(orgId);
+  // Legacy enriched this endpoint (`courses.controller.ts:131`).
+  const data = await enrichCoursesWithPresignedUrls(
+    (await findAllForTenant(orgId)) as unknown as Record<string, unknown>[],
+  );
   return json({ success: true, data });
 });
