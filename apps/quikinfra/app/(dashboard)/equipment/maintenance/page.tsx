@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import {
   Plus,
@@ -64,11 +64,27 @@ export default function MaintenancePage() {
   const [actionMenu, setActionMenu] = useState<string | null>(null);
   const [createOpen, setCreateOpen] = useState(false);
 
-  const { data: cardsResult, isLoading: cardsLoading } = useJobCards({});
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(25);
+  const [search, setSearch] = useState("");
+  const [sortBy, setSortBy] = useState("serviceDate");
+  const [sortOrder, setSortOrder] = useState<"asc" | "desc">("desc");
+
+  useEffect(() => {
+    setPage(1);
+  }, [search, sortBy, sortOrder, pageSize]);
+
+  const jobCardParams = useMemo(
+    () => ({ search: search || undefined, page, pageSize, sortBy, sortOrder }),
+    [search, page, pageSize, sortBy, sortOrder],
+  );
+
+  const { data: cardsResult, isLoading: cardsLoading } = useJobCards(jobCardParams);
   const { data: summary } = useJobCardSummary({});
   const { data: dueResult, isLoading: dueLoading } = useMaintenanceDue();
 
   const rows: JobCardRow[] = (cardsResult?.data ?? []) as unknown as JobCardRow[];
+  const jobCardsTotal = cardsResult?.total ?? 0;
   const dueRows = dueResult?.data ?? [];
 
   const handleClose = async (id: string) => {
@@ -89,6 +105,7 @@ export default function MaintenancePage() {
       {
         key: "equipment",
         label: "Equipment",
+        sortable: false,
         render: (row) => (
           <div>
             <div className="font-medium text-gray-900">{row.equipmentCode}</div>
@@ -108,12 +125,14 @@ export default function MaintenancePage() {
       {
         key: "reportedProblem",
         label: "Problem",
+        sortable: false,
         render: (row) => row.reportedProblem ?? "—",
       },
       {
         key: "totalCost",
         label: "Total Cost",
         width: "110px",
+        sortable: false,
         render: (row) => (
           <span className="tabular-nums font-medium">
             {formatCurrency(row.totalCost)}
@@ -130,6 +149,7 @@ export default function MaintenancePage() {
         key: "actions",
         label: "Action",
         width: "100px",
+        sortable: false,
         render: (row) => (
           <div className="flex items-center gap-1">
             <button
@@ -295,6 +315,17 @@ export default function MaintenancePage() {
             data={rows}
             loading={cardsLoading}
             fitToContent
+            serverMode
+            serverTotal={jobCardsTotal}
+            serverPage={page}
+            serverPageSize={pageSize}
+            onPageChange={setPage}
+            onPageSizeChange={setPageSize}
+            onSearchChange={setSearch}
+            onSortChange={(key, dir) => {
+              setSortBy(key);
+              setSortOrder(dir);
+            }}
             historyEntityType="job_cards"
             getHistoryRowLabel={(row) =>
               `${row.jobNumber} · ${row.equipmentCode}`

@@ -18,7 +18,7 @@ import {
   countContractors,
   createContractor,
 } from "@/lib/masters/contractors-repository";
-import { parsePagination, paginateDb } from "@/lib/http/pagination";
+import { parsePagination, paginateDb, parseSort } from "@/lib/http/pagination";
 
 /**
  * GET  /api/masters/contractors — list tenant contractors (seeded on first call).
@@ -32,15 +32,27 @@ export async function GET(req: NextRequest) {
 
   const { searchParams } = new URL(req.url);
   const search = searchParams.get("search") ?? "";
+  const statusParam = (searchParams.get("status") ?? "").toLowerCase();
+  const status: "active" | "inactive" | "all" | undefined =
+    statusParam === "active" ? "active"
+    : statusParam === "inactive" ? "inactive"
+    : statusParam === "all" ? "all"
+    : undefined;
 
   const baseOpts = {
     orgId: ctx.orgId,
     createdBy: ctx.userId,
     search,
+    status,
   };
+  const { orderBy } = parseSort(
+    searchParams,
+    ["code", "name", "gstin", "contactPerson", "phone", "specialization", "status", "createdAt"],
+    { field: "createdAt", order: "desc" },
+  );
   const result = await paginateDb(
     parsePagination(req),
-    (paging) => listContractors({ ...baseOpts, ...paging }),
+    (paging) => listContractors({ ...baseOpts, ...paging, orderBy }),
     () => countContractors(baseOpts),
   );
   return NextResponse.json(result);

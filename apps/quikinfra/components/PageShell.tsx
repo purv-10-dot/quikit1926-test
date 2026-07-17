@@ -67,7 +67,7 @@ interface PageHeaderProps {
 
 export function PageHeader({ title, subtitle, breadcrumbs, actions, onBack }: PageHeaderProps) {
   return (
-    <div className="sticky top-0 z-10 bg-white/95 backdrop-blur supports-[backdrop-filter]:bg-white/80 border-b border-slate-200 px-6 py-4">
+    <div className="sticky top-0 z-10 bg-white shadow-[0_1px_2px_rgba(15,23,42,0.04)] border-b border-slate-200 px-6 py-4">
       {breadcrumbs && breadcrumbs.length > 0 && (
         <nav className="flex items-center gap-1.5 text-xs text-slate-500 mb-2">
           {breadcrumbs.map((crumb, i) => (

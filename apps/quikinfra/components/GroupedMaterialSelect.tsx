@@ -11,6 +11,7 @@ import {
 } from "react";
 import { createPortal } from "react-dom";
 import { Search, X, ChevronDown, Check, ChevronLeft, ChevronRight } from "lucide-react";
+import { useLazyGroupItems } from "@/hooks/use-lazy-group-items";
 
 type PopoverPosition = {
   top?: number;
@@ -101,6 +102,28 @@ interface Props {
   placeholder?: string;
   disabled?: boolean;
   className?: string;
+  /**
+   * Opt-in server-side item loading. When true, the "items in group" step
+   * fetches that group's items from `/api/masters/items` (search + scroll)
+   * instead of relying on the full `items` prop. Groups still come from the
+   * `groups` prop. Pass the currently-selected item in `items` (or none) so
+   * the trigger can render its label; other rows are fetched on demand.
+   */
+  lazy?: boolean;
+  /**
+   * Fires alongside onChange with the full selected item object (resolved
+   * from the fetched page / cache / items prop). Lets a form autofill
+   * uom/rate/stock from the picked item WITHOUT holding the entire item
+   * master in memory — the key to dropping the eager `useItems()` load.
+   */
+  onSelect?: (item: GroupedMaterialSelectItem | null) => void;
+  /**
+   * Fallback label for the currently-selected value when the full item
+   * object isn't in `items`/cache (lazy mode on an edit/prefill form).
+   * Pass the row's stored item name so the trigger still shows it without
+   * loading the whole item master.
+   */
+  selectedLabel?: string;
 }
 
 function bucketIdForItem(item: GroupedMaterialSelectItem): string {
@@ -188,6 +211,9 @@ export function GroupedMaterialSelect({
   placeholder = "Choose item group…",
   disabled = false,
   className = "",
+  lazy = false,
+  onSelect,
+  selectedLabel,
 }: Props) {
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState("");
@@ -200,14 +226,44 @@ export function GroupedMaterialSelect({
   const inputRef = useRef<HTMLInputElement>(null);
   const popoverPos = usePopoverPosition(open, triggerRef);
 
+  // ── Lazy mode: debounced search + server-fetched items for the active group ──
+  const [debouncedQuery, setDebouncedQuery] = useState("");
+  useEffect(() => {
+    if (!lazy) return;
+    const t = setTimeout(() => setDebouncedQuery(query), 250);
+    return () => clearTimeout(t);
+  }, [query, lazy]);
+  const lazyGroup = useLazyGroupItems({
+    groupId: activeGroupId,
+    search: debouncedQuery,
+    enabled: lazy && open && step === "items",
+  });
+  // Cache items seen (via `items` prop or fetched) so the trigger can render
+  // the selected item's label even when it isn't in the current fetched page.
+  const itemCacheRef = useRef<Map<string, GroupedMaterialSelectItem>>(new Map());
+  useEffect(() => {
+    for (const it of items) itemCacheRef.current.set(it.id, it);
+  }, [items]);
+  useEffect(() => {
+    for (const it of lazyGroup.items) {
+      itemCacheRef.current.set(it.id, it as GroupedMaterialSelectItem);
+    }
+  }, [lazyGroup.items]);
+
   const { buckets, groupRows } = useMemo(
     () => buildMaterialGroupBuckets(items, groups),
     [items, groups],
   );
 
   const selectedItem = useMemo(
-    () => (value ? items.find((i) => i.id === value) ?? null : null),
-    [items, value],
+    () =>
+      value
+        ? items.find((i) => i.id === value) ??
+          (lazy ? itemCacheRef.current.get(value) ?? null : null)
+        : null,
+    // lazyGroup.items in deps so the label resolves once the group is fetched.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [items, value, lazy, lazyGroup.items],
   );
 
   const filteredGroups = useMemo(() => {
@@ -222,13 +278,15 @@ export function GroupedMaterialSelect({
   }, [activeGroupId, buckets]);
 
   const filteredItems = useMemo(() => {
+    // Lazy mode: the server already filtered by group + search.
+    if (lazy) return lazyGroup.items as GroupedMaterialSelectItem[];
     if (!query.trim()) return itemsInActiveGroup;
     const q = query.toLowerCase();
     return itemsInActiveGroup.filter((it) => {
       const hay = `${it.name ?? ""} ${it.code ?? ""} ${it.groupName ?? ""} ${it.hsnCode ?? ""}`.toLowerCase();
       return hay.includes(q);
     });
-  }, [itemsInActiveGroup, query]);
+  }, [lazy, lazyGroup.items, itemsInActiveGroup, query]);
 
   const visibleRows = step === "groups" ? filteredGroups : filteredItems;
 
@@ -270,10 +328,18 @@ export function GroupedMaterialSelect({
   const pickItem = useCallback(
     (itemId: string) => {
       onChange(itemId);
+      if (onSelect) {
+        const picked =
+          (filteredItems as GroupedMaterialSelectItem[]).find((it) => it.id === itemId) ??
+          itemCacheRef.current.get(itemId) ??
+          items.find((it) => it.id === itemId) ??
+          null;
+        onSelect(picked);
+      }
       setOpen(false);
       setQuery("");
     },
-    [onChange],
+    [onChange, onSelect, filteredItems, items],
   );
 
   const clear = useCallback(
@@ -357,10 +423,16 @@ export function GroupedMaterialSelect({
               {[selectedItem.code, selectedItem.uomCode, selectedItem.groupName].filter(Boolean).join(" · ")}
             </div>
           </div>
+        ) : value && selectedLabel ? (
+          // Lazy/edit mode: the full item object isn't loaded, but the row
+          // carries its stored name — show it so the trigger isn't blank.
+          <div className="flex-1 min-w-0 text-left">
+            <div className="truncate text-gray-900">{selectedLabel}</div>
+          </div>
         ) : (
           <span className="flex-1 text-left text-gray-400">{placeholder}</span>
         )}
-        {selectedItem && !disabled && (
+        {(selectedItem || (value && selectedLabel)) && !disabled && (
           <span
             onClick={clear}
             role="button"
@@ -419,24 +491,38 @@ export function GroupedMaterialSelect({
 
           {step === "items" && activeGroupId && (
             <div className="px-2.5 py-1.5 text-[10px] font-semibold text-gray-500 uppercase tracking-wider border-b border-gray-50 bg-gray-50/80">
-              {buckets.get(activeGroupId)?.name ?? "Items"}
+              {(lazy ? groups.find((g) => g.id === activeGroupId)?.name : buckets.get(activeGroupId)?.name) ?? "Items"}
               <span className="font-normal text-gray-400 normal-case ml-1">
                 ({filteredItems.length}
-                {query.trim() ? ` of ${itemsInActiveGroup.length}` : ""})
+                {lazy ? ` of ${lazyGroup.total}` : query.trim() ? ` of ${itemsInActiveGroup.length}` : ""})
               </span>
             </div>
           )}
 
-          <div className="flex-1 overflow-y-auto">
+          <div
+            className="flex-1 overflow-y-auto"
+            onScroll={
+              lazy && step === "items"
+                ? (e) => {
+                    const el = e.currentTarget;
+                    if (el.scrollHeight - el.scrollTop - el.clientHeight < 120) lazyGroup.loadMore();
+                  }
+                : undefined
+            }
+          >
             {visibleRows.length === 0 ? (
               <div className="px-4 py-6 text-center text-xs text-gray-400">
                 {step === "groups"
                   ? items.length === 0
                     ? "Loading items…"
                     : "No matching groups"
-                  : !query.trim() && itemsInActiveGroup.length === 0
-                    ? "No materials in this group yet"
-                    : "No matching items"}
+                  : lazy
+                    ? lazyGroup.loading
+                      ? "Loading…"
+                      : "No matching items"
+                    : !query.trim() && itemsInActiveGroup.length === 0
+                      ? "No materials in this group yet"
+                      : "No matching items"}
               </div>
             ) : step === "groups" ? (
               filteredGroups.map((g, i) => {
@@ -501,6 +587,27 @@ type MultiProps = {
   groups: ItemGroupOption[];
   placeholder?: string;
   disabled?: boolean;
+  /**
+   * Opt-in server-side item loading — mirrors {@link GroupedMaterialSelect}'s
+   * `lazy`. The "items in group" step fetches from `/api/masters/items`
+   * (search + scroll) instead of the full `items` prop, so a form can select
+   * many materials WITHOUT bulk-loading the whole item master. Groups still
+   * come from the `groups` prop.
+   */
+  lazy?: boolean;
+  /**
+   * Fires with the full item object whenever a material is checked (resolved
+   * from the fetched page / cache). Lets the page cache the picked item's
+   * metadata (code / name / uom) so chips + downstream editors can label it
+   * without the master. Not fired on uncheck.
+   */
+  onToggleItem?: (item: GroupedMaterialSelectItem) => void;
+  /**
+   * Page-provided label resolver for already-selected chips (lazy/edit mode
+   * where the item isn't in `items`). Return null to fall back to the
+   * `items` lookup, then the raw id.
+   */
+  chipLabelById?: (id: string) => string | null;
 };
 
 /**
@@ -515,6 +622,9 @@ export function GroupedMaterialMultiSelect({
   groups,
   placeholder = "Select material(s)…",
   disabled = false,
+  lazy = false,
+  onToggleItem,
+  chipLabelById,
 }: MultiProps) {
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState("");
@@ -526,6 +636,28 @@ export function GroupedMaterialMultiSelect({
   const popoverRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
   const popoverPos = usePopoverPosition(open, triggerWrapRef);
+
+  // ── Lazy mode: debounced search + server-fetched items for the active group ──
+  const [debouncedQuery, setDebouncedQuery] = useState("");
+  useEffect(() => {
+    if (!lazy) return;
+    const t = setTimeout(() => setDebouncedQuery(query), 250);
+    return () => clearTimeout(t);
+  }, [query, lazy]);
+  const lazyGroup = useLazyGroupItems({
+    groupId: activeGroupId,
+    search: debouncedQuery,
+    enabled: lazy && open && step === "items",
+  });
+  const itemCacheRef = useRef<Map<string, GroupedMaterialSelectItem>>(new Map());
+  useEffect(() => {
+    for (const it of items) itemCacheRef.current.set(it.id, it);
+  }, [items]);
+  useEffect(() => {
+    for (const it of lazyGroup.items) {
+      itemCacheRef.current.set(it.id, it as GroupedMaterialSelectItem);
+    }
+  }, [lazyGroup.items]);
 
   const { buckets, groupRows } = useMemo(
     () => buildMaterialGroupBuckets(items, groups),
@@ -544,32 +676,47 @@ export function GroupedMaterialMultiSelect({
   }, [activeGroupId, buckets]);
 
   const filteredItems = useMemo(() => {
+    // Lazy mode: the server already filtered by group + search.
+    if (lazy) return lazyGroup.items as GroupedMaterialSelectItem[];
     if (!query.trim()) return itemsInActiveGroup;
     const q = query.toLowerCase();
     return itemsInActiveGroup.filter((it) => {
       const hay = `${it.name ?? ""} ${it.code ?? ""} ${it.groupName ?? ""} ${it.hsnCode ?? ""}`.toLowerCase();
       return hay.includes(q);
     });
-  }, [itemsInActiveGroup, query]);
+  }, [lazy, lazyGroup.items, itemsInActiveGroup, query]);
 
   const visibleCount = step === "groups" ? filteredGroups.length : filteredItems.length;
 
   const labelOf = useCallback(
     (id: string) => {
-      const it = items.find((i) => i.id === id);
+      const fromPage = chipLabelById?.(id);
+      if (fromPage) return fromPage;
+      const it = items.find((i) => i.id === id) ?? itemCacheRef.current.get(id);
       if (!it) return id;
       if (it.code) return `${it.code} — ${it.name ?? it.id}`;
       return it.name ?? it.id;
     },
-    [items],
+    [items, chipLabelById],
   );
 
   const toggleItem = useCallback(
     (id: string) => {
-      if (values.includes(id)) onChange(values.filter((x) => x !== id));
-      else onChange([...values, id]);
+      if (values.includes(id)) {
+        onChange(values.filter((x) => x !== id));
+      } else {
+        onChange([...values, id]);
+        if (onToggleItem) {
+          const picked =
+            (filteredItems as GroupedMaterialSelectItem[]).find((it) => it.id === id) ??
+            itemCacheRef.current.get(id) ??
+            items.find((it) => it.id === id) ??
+            null;
+          if (picked) onToggleItem(picked);
+        }
+      }
     },
-    [values, onChange],
+    [values, onChange, onToggleItem, filteredItems, items],
   );
 
   useEffect(() => {
@@ -637,7 +784,7 @@ export function GroupedMaterialMultiSelect({
     setQuery("");
   }, []);
 
-  const triggerDisabled = disabled || items.length === 0;
+  const triggerDisabled = disabled || (!lazy && items.length === 0);
 
   return (
     <div ref={rootRef} className="relative">
@@ -682,7 +829,7 @@ export function GroupedMaterialMultiSelect({
         />
       </div>
 
-      {open && !disabled && items.length > 0 && popoverPos && typeof document !== "undefined" && createPortal(
+      {open && !disabled && (lazy || items.length > 0) && popoverPos && typeof document !== "undefined" && createPortal(
         <div
           ref={popoverRef}
           role="listbox"
@@ -730,24 +877,42 @@ export function GroupedMaterialMultiSelect({
 
           {step === "items" && activeGroupId && (
             <div className="px-2.5 py-1.5 text-[10px] font-semibold text-gray-500 uppercase tracking-wider border-b border-gray-50 bg-gray-50/80">
-              {buckets.get(activeGroupId)?.name ?? "Items"}
+              {(lazy ? groups.find((g) => g.id === activeGroupId)?.name : buckets.get(activeGroupId)?.name) ?? "Items"}
               <span className="font-normal text-gray-400 normal-case ml-1">
                 ({filteredItems.length}
-                {query.trim() ? ` of ${itemsInActiveGroup.length}` : ""})
+                {lazy ? ` of ${lazyGroup.total}` : query.trim() ? ` of ${itemsInActiveGroup.length}` : ""})
               </span>
             </div>
           )}
 
-          <div className="flex-1 overflow-y-auto py-1 max-h-56">
+          <div
+            className="flex-1 overflow-y-auto py-1 max-h-56"
+            onScroll={
+              lazy && step === "items"
+                ? (e) => {
+                    const el = e.currentTarget;
+                    if (el.scrollHeight - el.scrollTop - el.clientHeight < 120) lazyGroup.loadMore();
+                  }
+                : undefined
+            }
+          >
             {visibleCount === 0 ? (
               <div className="px-4 py-6 text-center text-xs text-gray-400">
                 {step === "groups"
-                  ? items.length === 0
-                    ? "Loading items…"
-                    : "No matching groups"
-                  : !query.trim() && itemsInActiveGroup.length === 0
-                    ? "No materials in this group yet"
-                    : "No matching items"}
+                  ? lazy
+                    ? groups.length === 0
+                      ? "No item groups"
+                      : "No matching groups"
+                    : items.length === 0
+                      ? "Loading items…"
+                      : "No matching groups"
+                  : lazy
+                    ? lazyGroup.loading
+                      ? "Loading…"
+                      : "No matching items"
+                    : !query.trim() && itemsInActiveGroup.length === 0
+                      ? "No materials in this group yet"
+                      : "No matching items"}
               </div>
             ) : step === "groups" ? (
               filteredGroups.map((g, i) => {

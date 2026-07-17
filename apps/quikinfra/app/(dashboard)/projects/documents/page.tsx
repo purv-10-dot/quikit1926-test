@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   FileText,
@@ -183,12 +183,33 @@ export default function DocumentsPage() {
     [projects],
   );
 
-  const { data: result } = useQuery({
-    queryKey: ["projects-documents"],
-    queryFn: () => fetch(`/api/projects/documents`).then((r) => r.json()),
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(25);
+  const [search, setSearch] = useState("");
+  const [sortBy, setSortBy] = useState("createdAt");
+  const [sortOrder, setSortOrder] = useState<"asc" | "desc">("desc");
+
+  useEffect(() => {
+    setPage(1);
+  }, [search, sortBy, sortOrder, pageSize]);
+
+  const { data: result, isLoading } = useQuery({
+    queryKey: ["projects-documents", { page, pageSize, search, sortBy, sortOrder }],
+    queryFn: () => {
+      const qs = new URLSearchParams({
+        page: String(page),
+        pageSize: String(pageSize),
+        sortBy,
+        sortOrder,
+      });
+      if (search) qs.set("search", search);
+      return fetch(`/api/projects/documents?${qs.toString()}`).then((r) => r.json());
+    },
+    placeholderData: (prev) => prev,
   });
 
   const data: DocumentRow[] = result?.data ?? [];
+  const total: number = result?.total ?? 0;
 
   const uploadConfig = useMemo(
     () => ({
@@ -322,16 +343,16 @@ export default function DocumentsPage() {
         </span>
       ),
     },
-    { key: "projectName", label: "Project", sortable: true, searchable: true },
-    { key: "version", label: "Version" },
-    { key: "uploadedBy", label: "Uploaded By", sortable: true },
-    { key: "uploadDate", label: "Upload Date", type: "date", sortable: true },
+    { key: "projectName", label: "Project", sortable: false, searchable: true },
+    { key: "version", label: "Version", sortable: false },
+    { key: "uploadedBy", label: "Uploaded By", sortable: false },
+    { key: "uploadDate", label: "Upload Date", type: "date", sortable: false },
     {
       key: "status",
       label: "Status",
       type: "select",
       options: ["draft", "active", "approved"],
-      sortable: true,
+      sortable: false,
       render: (row) => <StatusChip status={row.status ?? ""} />,
     },
   ];
@@ -348,6 +369,18 @@ export default function DocumentsPage() {
           id="projects-documents"
           columns={columns}
           data={data}
+          loading={isLoading}
+          serverMode
+          serverTotal={total}
+          serverPage={page}
+          serverPageSize={pageSize}
+          onPageChange={setPage}
+          onPageSizeChange={setPageSize}
+          onSearchChange={setSearch}
+          onSortChange={(key, dir) => {
+            setSortBy(key);
+            setSortOrder(dir);
+          }}
           onAdd={canAdd ? () => setDrawerOpen(true) : undefined}
           addLabel="Upload Document"
         />

@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import {
   Plus,
@@ -84,12 +84,28 @@ export default function DeploymentPage() {
   const [actionMenu, setActionMenu] = useState<string | null>(null);
   const [createOpen, setCreateOpen] = useState(false);
 
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(25);
+  const [search, setSearch] = useState("");
+  const [sortBy, setSortBy] = useState("transferDate");
+  const [sortOrder, setSortOrder] = useState<"asc" | "desc">("desc");
+
+  useEffect(() => {
+    setPage(1);
+  }, [search, sortBy, sortOrder, pageSize]);
+
+  const transferParams = useMemo(
+    () => ({ search: search || undefined, page, pageSize, sortBy, sortOrder }),
+    [search, page, pageSize, sortBy, sortOrder],
+  );
+
   const { data: transfersResult, isLoading: transfersLoading } =
-    useEquipmentTransfers({});
+    useEquipmentTransfers(transferParams);
   const { data: summary } = useDeploymentSummary();
   const { data: docsResult, isLoading: docsLoading } = useEquipmentDocuments();
 
   const transferRows: TransferRow[] = (transfersResult?.data ?? []) as unknown as TransferRow[];
+  const transfersTotal = transfersResult?.total ?? 0;
   const docRows: DocRow[] = (docsResult?.data ?? []) as unknown as DocRow[];
 
   const handleReceive = async (id: string) => {
@@ -123,10 +139,11 @@ export default function DeploymentPage() {
 
   const transferColumns: ColDef<TransferRow>[] = useMemo(
     () => [
-      { key: "transferNumber", label: "Transfer #", width: "100px" },
+      { key: "transferNumber", label: "Transfer #", width: "100px", sortable: false },
       {
         key: "equipment",
         label: "Equipment",
+        sortable: false,
         render: (row) =>
           row.equipmentCode || row.equipmentName ? (
             <div>
@@ -144,6 +161,7 @@ export default function DeploymentPage() {
       {
         key: "route",
         label: "From → To",
+        sortable: false,
         render: (row) => (
           <span className="text-sm">
             {row.sourceProjectName ?? "—"} → {row.destinationProjectName}
@@ -158,7 +176,7 @@ export default function DeploymentPage() {
           <span className="capitalize">{row.transferType}</span>
         ),
       },
-      { key: "gatePassNo", label: "Gate Pass", width: "120px" },
+      { key: "gatePassNo", label: "Gate Pass", width: "120px", sortable: false },
       { key: "transferDate", label: "Date", width: "110px" },
       {
         key: "status",
@@ -170,6 +188,7 @@ export default function DeploymentPage() {
         key: "actions",
         label: "Action",
         width: "100px",
+        sortable: false,
         render: (row) => (
           <div className="flex items-center gap-1">
             <button
@@ -378,6 +397,17 @@ export default function DeploymentPage() {
             data={transferRows}
             loading={transfersLoading}
             fitToContent
+            serverMode
+            serverTotal={transfersTotal}
+            serverPage={page}
+            serverPageSize={pageSize}
+            onPageChange={setPage}
+            onPageSizeChange={setPageSize}
+            onSearchChange={setSearch}
+            onSortChange={(key, dir) => {
+              setSortBy(key);
+              setSortOrder(dir);
+            }}
             historyEntityType="equipment_transfers"
             getHistoryRowLabel={(row) =>
               `${row.transferNumber} · ${row.equipmentCode}`

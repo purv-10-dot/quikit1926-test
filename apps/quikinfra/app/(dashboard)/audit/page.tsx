@@ -3,6 +3,8 @@
 import { useEffect, useState } from "react";
 import { EmptyState } from "@quikit/ui";
 import { FileClock } from "lucide-react";
+import { formatDateTimeIST } from "@/lib/format/datetime";
+import { Pager } from "@/components/Pager";
 
 interface Log { id: string; timestamp: string; userId: string; action: string; entityType: string; entityId: string; changes: Record<string, unknown> | null; }
 
@@ -16,9 +18,21 @@ const ACTION_COLOR: Record<string, string> = {
 export default function AuditLogPage() {
   const [logs, setLogs] = useState<Log[]>([]);
   const [loading, setLoading] = useState(true);
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(25);
+  const [total, setTotal] = useState(0);
   useEffect(() => {
-    fetch("/api/audit?limit=200").then(r => r.json()).then(j => { if (j.success) setLogs(j.data); setLoading(false); });
-  }, []);
+    setLoading(true);
+    fetch(`/api/audit?page=${page}&pageSize=${pageSize}`)
+      .then(r => r.json())
+      .then(j => {
+        if (j.success) {
+          setLogs(j.data);
+          setTotal(j.total ?? j.data.length);
+        }
+        setLoading(false);
+      });
+  }, [page, pageSize]);
 
   return (
     <div className="p-6 max-w-6xl">
@@ -27,6 +41,7 @@ export default function AuditLogPage() {
       {loading ? <div className="text-sm text-gray-500">Loading…</div> : logs.length === 0 ? (
         <EmptyState icon={FileClock} title="No audit events" message="Perform an approve/finalize action elsewhere to populate this log." />
       ) : (
+        <>
         <div className="rounded-lg border border-gray-200 bg-white overflow-hidden">
           <table className="w-full text-sm">
             <thead className="bg-accent-50 text-xs text-gray-600"><tr>
@@ -36,7 +51,7 @@ export default function AuditLogPage() {
             </tr></thead>
             <tbody>{logs.map(l => (
               <tr key={l.id} className="border-t border-gray-100">
-                <td className="px-3 py-2 text-xs text-gray-500 whitespace-nowrap">{l.timestamp ? new Date(l.timestamp).toISOString().slice(0, 19).replace("T", " ") : "—"}</td>
+                <td className="px-3 py-2 text-xs text-gray-500 whitespace-nowrap">{formatDateTimeIST(l.timestamp)}</td>
                 <td className="px-3 py-2 text-xs">{l.userId}</td>
                 <td className="px-3 py-2"><span className={`text-[10px] font-semibold uppercase px-1.5 py-0.5 rounded ${ACTION_COLOR[l.action] ?? "bg-gray-100 text-gray-700"}`}>{l.action}</span></td>
                 <td className="px-3 py-2 text-xs">{l.entityType}</td>
@@ -50,6 +65,19 @@ export default function AuditLogPage() {
             ))}</tbody>
           </table>
         </div>
+        {total > 0 && (
+          <Pager
+            page={page}
+            pageSize={pageSize}
+            total={total}
+            onPageChange={setPage}
+            onPageSizeChange={(s) => {
+              setPageSize(s);
+              setPage(1);
+            }}
+          />
+        )}
+        </>
       )}
     </div>
   );

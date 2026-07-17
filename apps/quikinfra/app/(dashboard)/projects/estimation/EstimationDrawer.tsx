@@ -19,7 +19,7 @@ import { useUpdateEstimation } from "@/hooks/use-projects";
 import { useQueryClient } from "@tanstack/react-query";
 import { BOQCascadingPicker, type BoqRow } from "@/components/BOQCascadingPicker";
 import { useBOQ } from "@/hooks/use-projects";
-import { useItems, useItemGroups } from "@/hooks/use-masters";
+import { useItemGroups } from "@/hooks/use-masters";
 import { PrimaryButton, SecondaryButton } from "@/components/PageShell";
 import { SelectInput, RIGHT_DRAWER_BACKDROP, RIGHT_DRAWER_FRAME, RIGHT_DRAWER_PANEL } from "@/components/FormDrawer";
 import { GroupedMaterialSelect, type GroupedMaterialSelectItem } from "@/components/GroupedMaterialSelect";
@@ -155,7 +155,6 @@ export function EstimationDrawer({
   const { data: boqData, isLoading: boqLoading } = useBOQ(
     open && projectId ? projectId : null
   );
-  const { data: itemsData } = useItems();
   const { data: itemGroupsData } = useItemGroups();
 
   const boqItems: BoqRow[] = useMemo(() => {
@@ -180,7 +179,6 @@ export function EstimationDrawer({
     }));
   }, [boqData]);
 
-  const items = (itemsData?.data ?? []) as unknown as EstimationItemNode[];
   const itemGroups = itemGroupsData?.data ?? [];
 
   // Form state
@@ -263,20 +261,12 @@ export function EstimationDrawer({
         if (i !== idx) return row;
         const next = { ...row, [field]: value };
 
-        // Auto-fill name + UOM + rate when a material is picked
-        if (field === "itemId") {
-          if (value) {
-            const item = items.find((it) => it.id === value);
-            if (item) {
-              next.itemName = item.name ?? "";
-              next.uomCode = item.uomCode ?? "";
-              next.standardRate = item.standardRate?.toString() ?? "";
-            }
-          } else {
-            next.itemName = "";
-            next.uomCode = "";
-            next.standardRate = "";
-          }
+        // Clearing the material clears its derived fields; the auto-fill on
+        // pick is handled by the picker's onSelect (lazy — no full item load).
+        if (field === "itemId" && !value) {
+          next.itemName = "";
+          next.uomCode = "";
+          next.standardRate = "";
         }
         return next;
       })
@@ -698,9 +688,28 @@ export function EstimationDrawer({
                           Material <span className="text-red-500">*</span>
                         </label>
                         <GroupedMaterialSelect
+                          lazy
                           value={line.itemId}
+                          selectedLabel={line.itemName}
                           onChange={(v) => updateLine(idx, "itemId", v)}
-                          items={items}
+                          onSelect={(item) => {
+                            if (!item) return;
+                            const it = item as EstimationItemNode;
+                            setLines((prev) =>
+                              prev.map((row, i) =>
+                                i === idx
+                                  ? {
+                                      ...row,
+                                      itemName: it.name ?? "",
+                                      uomCode: it.uomCode ?? "",
+                                      standardRate:
+                                        it.standardRate?.toString() ?? "",
+                                    }
+                                  : row,
+                              ),
+                            );
+                          }}
+                          items={[]}
                           groups={itemGroups.map((g) => ({
                             id: g.id,
                             name: g.name,

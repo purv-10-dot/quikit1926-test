@@ -9,7 +9,7 @@ import { GroupedMaterialSelect } from "@/components/GroupedMaterialSelect";
 import { SelectInput, RIGHT_DRAWER_BACKDROP, RIGHT_DRAWER_FRAME, RIGHT_DRAWER_PANEL } from "@/components/FormDrawer";
 import { BOQCascadingPicker, type BoqRow } from "@/components/BOQCascadingPicker";
 import { useCreatePR, usePurchaseRequisitions } from "@/hooks/use-purchase";
-import { useProjects, useItems, useItemGroups, useUOMs, useLocations, useWorkCategories } from "@/hooks/use-masters";
+import { useProjects, useItemGroups, useUOMs, useLocations, useWorkCategories } from "@/hooks/use-masters";
 import { useEstimations, useBOQ } from "@/hooks/use-projects";
 import { usePermissions } from "@/hooks/use-permissions";
 
@@ -56,7 +56,6 @@ export function PRCreateDrawer({ open, onClose }: { open: boolean; onClose: () =
   const [error, setError] = useState("");
 
   const { data: projectsData } = useProjects();
-  const { data: itemsData } = useItems();
   const { data: itemGroupsData } = useItemGroups();
   const { data: uomData } = useUOMs();
   const { data: locData } = useLocations({ projectId: projectId || undefined });
@@ -133,7 +132,6 @@ export function PRCreateDrawer({ open, onClose }: { open: boolean; onClose: () =
     const allow = new Set(allowedProjectIds);
     return active.filter((p) => allow.has(p.id));
   }, [allProjects, allowedProjectIds]);
-  const items = useMemo(() => itemsData?.data ?? [], [itemsData]);
   const itemGroups = useMemo(() => {
     const raw = itemGroupsData?.data ?? [];
     return raw.filter((g) => (g?.status ?? "active").toLowerCase() !== "inactive");
@@ -265,26 +263,14 @@ export function PRCreateDrawer({ open, onClose }: { open: boolean; onClose: () =
       (row as unknown as Record<string, string>)[field] = value;
 
       // ── Dependent resets when the MATERIAL changes ───────────────
+      // Wipe the dependent fields; the lazy picker's onSelect backfills them
+      // from the picked item (no full item-master load needed here).
       if (field === "itemId") {
-        // Always wipe the dependent fields first — applies to BOTH
-        // "cleared to empty" and "switched to a different item".
         row.itemName = "";
         row.uomId = "";
         row.uomCode = "";
         row.estimatedRate = "";
         row.availableStock = "0";
-
-        // Then, if a new item was chosen, backfill from the master.
-        if (value) {
-          const item = items.find((i) => i.id === value);
-          if (item) {
-            row.itemName = item.name ?? "";
-            row.uomId = item.uomId ?? "";
-            row.uomCode = item.uomCode ?? "";
-            row.estimatedRate = item.standardRate ?? "";
-            row.availableStock = item.currentStock ?? "0";
-          }
-        }
       }
 
       // ── Dependent reset when UOM changes on its own ──────────────
@@ -803,9 +789,30 @@ export function PRCreateDrawer({ open, onClose }: { open: boolean; onClose: () =
                           <div className="col-span-3">
                             <label className="block text-[10px] font-medium text-gray-500 mb-1">Material *</label>
                             <GroupedMaterialSelect
+                              lazy
                               value={line.itemId}
+                              selectedLabel={line.itemName}
                               onChange={(v) => updateLine(i, "itemId", v)}
-                              items={items}
+                              onSelect={(item) => {
+                                if (!item) return;
+                                const it = item as {
+                                  name?: string;
+                                  uomId?: string;
+                                  uomCode?: string;
+                                  standardRate?: string | number | null;
+                                  currentStock?: string;
+                                };
+                                updateLine(i, "uomId", it.uomId ?? "");
+                                updateLine(i, "itemName", it.name ?? "");
+                                updateLine(i, "uomCode", it.uomCode ?? "");
+                                updateLine(
+                                  i,
+                                  "estimatedRate",
+                                  it.standardRate != null ? String(it.standardRate) : "",
+                                );
+                                updateLine(i, "availableStock", it.currentStock ?? "0");
+                              }}
+                              items={[]}
                               groups={itemGroups.map((g) => ({ id: g.id, name: g.name, status: g.status }))}
                               placeholder="Pick group → material…"
                             />

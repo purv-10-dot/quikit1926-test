@@ -290,24 +290,50 @@ export interface ListGRNsOptions {
   /** Pagination — passed straight through to Prisma findMany. */
   take?: number;
   skip?: number;
+  /** Server-side sort (from `parseSort`). Defaults to newest-first. */
+  orderBy?: Array<Record<string, "asc" | "desc">>;
 }
 
-export async function listGRNs(opts: ListGRNsOptions): Promise<EnrichedGRN[]> {
+function buildGRNsWhere(
+  opts: Pick<ListGRNsOptions, "orgId" | "projectIds" | "status" | "search">,
+): Record<string, unknown> {
   const where: Record<string, unknown> = { orgId: opts.orgId };
   if (opts.status && opts.status !== "all") where.status = opts.status;
   if (Array.isArray(opts.projectIds)) {
     where.projectId = { in: opts.projectIds };
   }
-  if (opts.search) {
-    const q = opts.search.toLowerCase();
+  const q = (opts.search ?? "").trim();
+  if (q) {
     where.OR = [
       { grnNumber: { contains: q, mode: "insensitive" } },
       { supplierInvoiceNo: { contains: q, mode: "insensitive" } },
     ];
   }
+  return where;
+}
 
+export async function countGRNs(
+  opts: Pick<ListGRNsOptions, "orgId" | "projectIds" | "status" | "search">,
+): Promise<number> {
+  return db.cnGoodsReceiptNote.count({ where: buildGRNsWhere(opts) });
+}
+
+export async function grnStatusCounts(
+  opts: Pick<ListGRNsOptions, "orgId" | "projectIds" | "search">,
+): Promise<Record<string, number>> {
+  const groups = await db.cnGoodsReceiptNote.groupBy({
+    by: ["status"],
+    where: buildGRNsWhere({ ...opts, status: undefined }),
+    _count: { _all: true },
+  });
+  const out: Record<string, number> = {};
+  for (const g of groups) out[String(g.status)] = g._count._all;
+  return out;
+}
+
+export async function listGRNs(opts: ListGRNsOptions): Promise<EnrichedGRN[]> {
   const rows = await db.cnGoodsReceiptNote.findMany({
-    where,
+    where: buildGRNsWhere(opts),
     include: {
       lines: true,
       po: { select: { id: true, poNumber: true } },
@@ -316,7 +342,7 @@ export async function listGRNs(opts: ListGRNsOptions): Promise<EnrichedGRN[]> {
         select: { id: true, name: true, companyName: true, gstin: true },
       },
     },
-    orderBy: { grnDate: "desc" },
+    orderBy: opts.orderBy ?? [{ grnDate: "desc" }, { createdAt: "desc" }],
     ...(typeof opts.take === "number" ? { take: opts.take } : {}),
     ...(typeof opts.skip === "number" ? { skip: opts.skip } : {}),
   });

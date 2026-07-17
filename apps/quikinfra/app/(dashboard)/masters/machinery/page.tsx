@@ -4,7 +4,7 @@ import { toErrorMessage } from "@/lib/api/errors";
 import { useState } from "react";
 import { Hammer } from "lucide-react";
 import { MasterListPage, type MasterColumnDef } from "@/components/MasterListPage";
-import { useMachinery, useCreateMachinery, useUpdateMachinery, useProjects, useDeleteMachinery } from "@/hooks/use-masters";
+import { useCreateMachinery, useUpdateMachinery, useProjects, useDeleteMachinery } from "@/hooks/use-masters";
 import { FormDrawer, FormSection, FormRow, Field, TextInput, NumberInput, SelectInput, InactiveStatusNotice } from "@/components/FormDrawer";
 import dynamic from "next/dynamic";
 import type { ImportFieldDef } from "@/components/ImportDataDrawer";
@@ -82,7 +82,6 @@ const rules: ValidationRules<typeof emptyForm> = {
 };
 
 export default function MachineryPage() {
-  const { data: result, isLoading } = useMachinery();
   const { data: projectsResult } = useProjects();
   const createMutation = useCreateMachinery();
   const updateMutation = useUpdateMachinery();
@@ -153,7 +152,13 @@ export default function MachineryPage() {
     <>
       <MasterListPage title="Machinery & Equipment" entityName="Machine" permissionUrl="/masters/machinery" columns={columns}
         showStatusTabs
-        data={(result?.data ?? []) as Row[]} total={result?.total ?? 0} isLoading={isLoading}
+        infinite={{
+          queryKey: "machinery-infinite",
+          endpoint: "/api/masters/machinery",
+          pageSize: 25,
+          defaultSortBy: "createdAt",
+          defaultSortOrder: "desc",
+        }}
         canImport
         onImport={() => setImportOpen(true)}
         onAdd={() => { setForm(emptyForm); setErrors({}); setEditingId(null); setDrawerOpen(true); }}

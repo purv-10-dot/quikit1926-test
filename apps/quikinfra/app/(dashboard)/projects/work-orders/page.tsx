@@ -18,7 +18,7 @@
  */
 
 import { toErrorMessage } from "@/lib/api/errors";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useQueryClient } from "@tanstack/react-query";
 import {
@@ -41,10 +41,12 @@ import {
   X as XIcon,
 } from "lucide-react";
 import { PageHeader, PageContainer } from "@/components/PageShell";
+import { Pager } from "@/components/Pager";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { WorkOrderDrawer } from "./new/WorkOrderDrawer";
 import {
   useWorkOrders,
+  useWorkOrderStats,
   useUpdateWorkOrder,
 } from "@/hooks/use-projects";
 import { usePermissions, useMenuActions } from "@/hooks/use-permissions";
@@ -96,7 +98,16 @@ export default function WorkOrdersPage() {
   // browser alert.
   const [workflowError, setWorkflowError] = useState<string | null>(null);
 
-  const { data: result, isLoading } = useWorkOrders({ search });
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(25);
+
+  useEffect(() => {
+    setPage(1);
+  }, [search, pageSize]);
+
+  const { data: result, isLoading } = useWorkOrders({ search, page, pageSize });
+  const total = result?.total ?? 0;
+  const { data: statsResult } = useWorkOrderStats({ search });
   const updateMutation = useUpdateWorkOrder();
 
   // RBAC — mirrors the Material Estimation gate.
@@ -168,22 +179,15 @@ export default function WorkOrdersPage() {
     }
   };
 
-  const allRows = useMemo(() => (result?.data ?? []) as unknown as WorkOrderRow[], [result]);
-  const rows = useMemo(
-    () => allRows.filter((r) => r.status !== "inactive"),
-    [allRows]
-  );
+  // Server already excludes inactive rows from the list.
+  const rows = useMemo(() => (result?.data ?? []) as unknown as WorkOrderRow[], [result]);
 
-  // KPIs
-  const totalWOs = rows.length;
-  const activeWOs = rows.filter(
-    (r) => r.status === "approved" || r.status === "in_progress"
-  ).length;
-  const totalValue = rows.reduce((s, r) => s + (Number(r.totalAmount) || 0), 0);
-  const avgProgress =
-    rows.length === 0
-      ? 0
-      : rows.reduce((s, r) => s + (Number(r.progressPct) || 0), 0) / rows.length;
+  // KPIs come from a server-side aggregate (scope-wide, search-aware) so they
+  // stay correct regardless of pagination.
+  const totalWOs = statsResult?.stats?.total ?? 0;
+  const activeWOs = statsResult?.stats?.active ?? 0;
+  const totalValue = statsResult?.stats?.totalValue ?? 0;
+  const avgProgress = statsResult?.stats?.avgProgress ?? 0;
 
   const confirmDelete = async () => {
     if (!deleteTarget) return;
@@ -343,6 +347,15 @@ export default function WorkOrdersPage() {
             </table>
           </div>
         </div>
+        {total > 0 && (
+          <Pager
+            page={page}
+            pageSize={pageSize}
+            total={total}
+            onPageChange={setPage}
+            onPageSizeChange={setPageSize}
+          />
+        )}
       </PageContainer>
 
       <ConfirmDialog

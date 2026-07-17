@@ -246,6 +246,31 @@ export interface ListMaterialIssuesOptions {
   /** Pagination — push LIMIT/OFFSET down into the raw SQL. */
   take?: number;
   skip?: number;
+  /** Server-side sort — whitelisted column key + direction. */
+  sortBy?: string | null;
+  sortOrder?: "asc" | "desc" | null;
+}
+
+// Whitelist of sortable columns → safe SQL fragments (never interpolate a
+// raw client string into ORDER BY).
+const MI_SORT_COLUMNS: Record<string, Prisma.Sql> = {
+  issueNumber: Prisma.sql`"issueNumber"`,
+  issueDate: Prisma.sql`"issueDate"`,
+  status: Prisma.sql`status`,
+  projectName: Prisma.sql`"projectName"`,
+  createdAt: Prisma.sql`"createdAt"`,
+};
+
+function materialIssuesOrderBy(
+  sortBy?: string | null,
+  sortOrder?: "asc" | "desc" | null,
+): Prisma.Sql {
+  const col = sortBy ? MI_SORT_COLUMNS[sortBy] : undefined;
+  if (!col) {
+    return Prisma.sql`ORDER BY "issueDate" DESC NULLS LAST, "createdAt" DESC`;
+  }
+  const dir = sortOrder === "asc" ? Prisma.sql`ASC` : Prisma.sql`DESC`;
+  return Prisma.sql`ORDER BY ${col} ${dir} NULLS LAST, "createdAt" DESC`;
 }
 
 // Build the WHERE fragment once so list and count stay in sync. Returns
@@ -320,7 +345,7 @@ export async function listMaterialIssues(
       "createdAt", "updatedAt", "createdBy", "updatedBy"
     FROM app_quikinfra."Material_issues"
     ${where}
-    ORDER BY "issueDate" DESC NULLS LAST, "createdAt" DESC
+    ${materialIssuesOrderBy(opts.sortBy, opts.sortOrder)}
     ${limitClause}${offsetClause}
   `;
   const rows = await db.$queryRaw<MaterialIssueRow[]>(query);
@@ -341,6 +366,26 @@ export async function countMaterialIssues(
   `;
   const rows: Array<{ c: bigint }> = await db.$queryRaw(query);
   return Number(rows[0]?.c ?? 0);
+}
+
+/** Per-status row counts for the list tab badges (same filters, ignoring
+ *  the status filter itself). */
+export async function materialIssueStatusCounts(
+  orgId: string,
+  opts: Omit<ListMaterialIssuesOptions, "take" | "skip" | "status" | "sortBy" | "sortOrder"> = {},
+): Promise<Record<string, number>> {
+  const allowed = opts.allowedProjectIds ?? null;
+  if (allowed !== null && allowed.length === 0) return {};
+  const where = buildMaterialIssuesWhere(orgId, { ...opts, status: null });
+  const query = Prisma.sql`
+    SELECT status, COUNT(*)::int AS count
+    FROM app_quikinfra."Material_issues"${where}
+    GROUP BY status
+  `;
+  const rows = await db.$queryRaw<Array<{ status: string | null; count: number }>>(query);
+  const out: Record<string, number> = {};
+  for (const r of rows) out[String(r.status ?? "")] = Number(r.count) || 0;
+  return out;
 }
 
 export async function findMaterialIssueById(

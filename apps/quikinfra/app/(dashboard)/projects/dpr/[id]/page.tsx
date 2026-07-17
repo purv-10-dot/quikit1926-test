@@ -36,7 +36,7 @@ import { formatDateTimeIST } from "@/lib/format/datetime";
 import { WorkflowConfirmDialog } from "@/components/WorkflowConfirmDialog";
 import { useDPR, useDeleteDPR, useBOQ } from "@/hooks/use-projects";
 import { groupWorkItemsByBoq } from "@/lib/projects/boq-work-groups";
-import { useItems, useUOMs, useContractors } from "@/hooks/use-masters";
+import { useContractors } from "@/hooks/use-masters";
 import { usePermissions } from "@/hooks/use-permissions";
 import { useWorkflowConfirm } from "@/hooks/use-workflow-confirm";
 import { DPRWeatherMetrics } from "@/components/DPRWeatherMetrics";
@@ -184,18 +184,9 @@ export default function DPRDetailPage() {
     [dpr],
   );
 
-  // Master-data lookups to render ids as readable names on the detail page.
-  const { data: itemsResult } = useItems();
-  const { data: uomsResult } = useUOMs();
+  // Item name + UOM are denormalized onto each material line by the DPR
+  // detail API, so no full item/uom master load is needed here.
   const { data: contractorsResult } = useContractors();
-  const itemNameById = useMemo(
-    () => new Map((itemsResult?.data ?? []).map((i) => [i.id, i.name])),
-    [itemsResult],
-  );
-  const uomCodeById = useMemo(
-    () => new Map((uomsResult?.data ?? []).map((u) => [u.id, u.code])),
-    [uomsResult],
-  );
   const contractorNameById = useMemo(
     () => new Map((contractorsResult?.data ?? []).map((c) => [c.id, c.name])),
     [contractorsResult],
@@ -266,14 +257,14 @@ export default function DPRDetailPage() {
         return [
           {
             itemId,
-            name: itemNameById.get(itemId) ?? itemId,
-            unit: uomCodeById.get(m.uomId ?? "") ?? "",
+            name: m.itemName || itemId,
+            unit: m.uomCode || "",
             consumed,
             available,
           },
         ];
       }),
-    [materials, stockByItem, itemNameById, uomCodeById],
+    [materials, stockByItem],
   );
 
   // ApprovalTimeline expects { step, action, actionBy, actionAt, comments }.
@@ -654,7 +645,7 @@ export default function DPRDetailPage() {
                           itemId && itemId in stockByItem ? stockByItem[itemId] : null;
                         const over =
                           available != null && Number(m.consumedQty ?? 0) > available;
-                        const unit = uomCodeById.get(m.uomId ?? "") ?? "";
+                        const unit = m.uomCode || "";
                         return (
                         <tr
                           key={idx}
@@ -666,10 +657,10 @@ export default function DPRDetailPage() {
                             {String(idx + 1).padStart(2, "0")}
                           </td>
                           <td className="px-4 py-3 text-gray-900">
-                            {itemNameById.get(m.itemId ?? "") ?? m.itemId ?? "—"}
+                            {m.itemName || m.itemId || "—"}
                           </td>
                           <td className="px-4 py-3 text-gray-600 uppercase">
-                            {uomCodeById.get(m.uomId ?? "") ?? "—"}
+                            {m.uomCode || "—"}
                           </td>
                           <td
                             className={`px-4 py-3 text-right tabular-nums ${

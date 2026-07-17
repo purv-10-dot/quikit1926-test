@@ -4,7 +4,7 @@ import { toErrorMessage } from "@/lib/api/errors";
 import { useState } from "react";
 import { BarChart3 } from "lucide-react";
 import { MasterListPage, type MasterColumnDef } from "@/components/MasterListPage";
-import { useCostCenters, useCreateCostCenter, useUpdateCostCenter, useProjects, useDeleteCostCenter } from "@/hooks/use-masters";
+import { useCreateCostCenter, useUpdateCostCenter, useProjects, useDeleteCostCenter } from "@/hooks/use-masters";
 import { FormDrawer, FormSection, FormRow, Field, TextInput, SelectInput, InactiveStatusNotice } from "@/components/FormDrawer";
 import dynamic from "next/dynamic";
 import type { ImportFieldDef } from "@/components/ImportDataDrawer";
@@ -50,7 +50,6 @@ const rules: ValidationRules<typeof emptyForm> = {
 };
 
 export default function CostCentersPage() {
-  const { data: result, isLoading } = useCostCenters();
   const { data: projectsResult } = useProjects();
   const createMutation = useCreateCostCenter();
   const updateMutation = useUpdateCostCenter();
@@ -116,7 +115,13 @@ export default function CostCentersPage() {
     <>
       <MasterListPage title="Cost Centers" entityName="Cost Center" permissionUrl="/masters/cost-centers" columns={columns}
         showStatusTabs
-        data={(result?.data ?? []) as Row[]} total={result?.total ?? 0} isLoading={isLoading}
+        infinite={{
+          queryKey: "cost-centers-infinite",
+          endpoint: "/api/masters/cost-centers",
+          pageSize: 25,
+          defaultSortBy: "createdAt",
+          defaultSortOrder: "desc",
+        }}
         canImport canExport
         onImport={() => setImportOpen(true)}
         onAdd={() => { setForm(emptyForm); setErrors({}); setEditingId(null); setDrawerOpen(true); }}

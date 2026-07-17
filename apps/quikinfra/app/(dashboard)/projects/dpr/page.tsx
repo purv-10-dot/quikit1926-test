@@ -17,7 +17,7 @@
  *   approved  → locked (edit/delete disabled)
  */
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import {
   ClipboardList,
@@ -41,13 +41,14 @@ import {
   LayoutList,
 } from "lucide-react";
 import { PageHeader, PageContainer } from "@/components/PageShell";
+import { Pager } from "@/components/Pager";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { WorkflowConfirmDialog } from "@/components/WorkflowConfirmDialog";
-import { useDPRs, useDeleteDPR } from "@/hooks/use-projects";
+import { useDPRs, useDPRStats, useDeleteDPR } from "@/hooks/use-projects";
 import { usePermissions, useMenuActions } from "@/hooks/use-permissions";
 import { useWorkflowConfirm } from "@/hooks/use-workflow-confirm";
 import { useQueryClient } from "@tanstack/react-query";
-import { DPRDrawer } from "./new/DPRDrawer";
+import { DPRDrawer } from "./components/DPRDrawer";
 
 const MENU_KEY = "pm.dpr";
 
@@ -94,7 +95,30 @@ export default function DPRPage() {
   // the surface mirrors Work Orders & Material Estimation 1:1.
   const [workflowRow, setWorkflowRow] = useState<DprRow | null>(null);
 
-  const { data: result, isLoading } = useDPRs({ search });
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(25);
+  const isCalendar = viewMode === "calendar";
+
+  // Reset to first page when the search term or view changes.
+  useEffect(() => {
+    setPage(1);
+  }, [search, viewMode, pageSize]);
+
+  // Calendar view fetches one month at a time (date-scoped, unpaged);
+  // table view fetches a page at a time.
+  const monthFrom = `${calMonth.getFullYear()}-${String(calMonth.getMonth() + 1).padStart(2, "0")}-01`;
+  const monthLastDay = new Date(calMonth.getFullYear(), calMonth.getMonth() + 1, 0).getDate();
+  const monthTo = `${calMonth.getFullYear()}-${String(calMonth.getMonth() + 1).padStart(2, "0")}-${String(monthLastDay).padStart(2, "0")}`;
+
+  const { data: result, isLoading } = useDPRs(
+    isCalendar
+      ? { search, fromDate: monthFrom, toDate: monthTo }
+      : { search, page, pageSize },
+  );
+  const total = (result as { total?: number } | undefined)?.total ?? 0;
+  // KPI tiles come from a server-side groupBy (scope-wide, search-aware),
+  // so they stay correct regardless of pagination or calendar month.
+  const { data: statsResult } = useDPRStats({ search });
   const deleteMutation = useDeleteDPR();
 
   // RBAC — mirrors the Work Order gate.
@@ -111,14 +135,10 @@ export default function DPRPage() {
 
   const rows: DprRow[] = useMemo(() => (result?.data ?? []) as unknown as DprRow[], [result]);
 
-  const { totalDPRs, approved, pending, halted } = useMemo(() => {
-    const approved = rows.filter((r) => r.status === "approved").length;
-    const pending = rows.filter(
-      (r) => r.status === "submitted" || r.status === "approved_l1"
-    ).length;
-    const halted = rows.filter((r) => r.workHalted).length;
-    return { totalDPRs: rows.length, approved, pending, halted };
-  }, [rows]);
+  const totalDPRs = statsResult?.stats?.total ?? 0;
+  const approved = statsResult?.stats?.approved ?? 0;
+  const pending = statsResult?.stats?.pending ?? 0;
+  const halted = statsResult?.stats?.halted ?? 0;
 
   // Workflow URLs are recomputed from the active row each time the
   // dialog opens. The hook re-reads the config on every call, so toggling
@@ -307,6 +327,15 @@ export default function DPRPage() {
           </div>
           )}
         </div>
+        {!isCalendar && total > 0 && (
+          <Pager
+            page={page}
+            pageSize={pageSize}
+            total={total}
+            onPageChange={setPage}
+            onPageSizeChange={setPageSize}
+          />
+        )}
       </PageContainer>
 
       <ConfirmDialog

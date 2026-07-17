@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import {
   Plus,
@@ -68,17 +68,50 @@ export default function HireRentPage() {
   const [tab, setTab] = useState<TabKey>("rates");
   const [createOpen, setCreateOpen] = useState(false);
 
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(25);
+  const [search, setSearch] = useState("");
+
+  // Tabs share one list-query; reset paging + search when switching tabs.
+  useEffect(() => {
+    setPage(1);
+    setSearch("");
+  }, [tab]);
+  useEffect(() => {
+    setPage(1);
+  }, [search, pageSize]);
+
+  const listParams = { search: search || undefined, page, pageSize };
+
   const { data: summary } = useHireRentSummary();
-  const { data: ratesResult, isLoading: ratesLoading } = useHireRates();
+  const { data: ratesResult, isLoading: ratesLoading } = useHireRates(listParams);
   const { data: verificationsResult, isLoading: verificationsLoading } =
-    useHireInVerifications();
-  const { data: billsResult, isLoading: billsLoading } = useRentOutBills();
+    useHireInVerifications(listParams);
+  const { data: billsResult, isLoading: billsLoading } = useRentOutBills(listParams);
 
   const patchBill = usePatchRentOutBill();
 
   const rates = ratesResult?.data ?? [];
   const verifications = verificationsResult?.data ?? [];
   const bills = billsResult?.data ?? [];
+  const activeTotal =
+    (tab === "rates"
+      ? ratesResult?.total
+      : tab === "hire-in"
+        ? verificationsResult?.total
+        : billsResult?.total) ?? 0;
+
+  const serverPagerProps = {
+    serverMode: true as const,
+    serverTotal: activeTotal,
+    serverPage: page,
+    serverPageSize: pageSize,
+    onPageChange: setPage,
+    onPageSizeChange: setPageSize,
+    onSearchChange: setSearch,
+  };
+  const noSort = (cols: ColDef<Record<string, unknown>>[]) =>
+    cols.map((c) => ({ ...c, sortable: false }));
 
   const rateColumns: ColDef<HireRateRecord>[] = [
     {
@@ -379,10 +412,11 @@ export default function HireRentPage() {
         {tab === "rates" && (
           <DataTable
             id="hire-rates"
-            columns={rateColumns as unknown as ColDef<Record<string, unknown>>[]}
+            columns={noSort(rateColumns as unknown as ColDef<Record<string, unknown>>[])}
             data={rates as unknown as Record<string, unknown>[]}
             loading={ratesLoading}
             fitToContent
+            {...serverPagerProps}
             emptyTitle="No hire rates yet"
             emptyHint="Add a hire-in or rent-out rate card for machinery billing."
           />
@@ -391,10 +425,11 @@ export default function HireRentPage() {
         {tab === "hire-in" && (
           <DataTable
             id="hire-in-verifications"
-            columns={verificationColumns as unknown as ColDef<Record<string, unknown>>[]}
+            columns={noSort(verificationColumns as unknown as ColDef<Record<string, unknown>>[])}
             data={verifications as unknown as Record<string, unknown>[]}
             loading={verificationsLoading}
             fitToContent
+            {...serverPagerProps}
             emptyTitle="No hire-in verifications"
             emptyHint="Create a verification sheet to compare logged vs vendor-claimed qty."
           />
@@ -403,10 +438,11 @@ export default function HireRentPage() {
         {tab === "rent-out" && (
           <DataTable
             id="rent-out-bills"
-            columns={billColumns as unknown as ColDef<Record<string, unknown>>[]}
+            columns={noSort(billColumns as unknown as ColDef<Record<string, unknown>>[])}
             data={bills as unknown as Record<string, unknown>[]}
             loading={billsLoading}
             fitToContent
+            {...serverPagerProps}
             emptyTitle="No rent-out bills"
             emptyHint="Generate a rent-out bill from approved equipment logs."
           />

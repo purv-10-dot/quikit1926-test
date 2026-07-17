@@ -35,7 +35,7 @@ import {
 import { ApprovalActionBar } from "@/components/ApprovalActionBar";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { useStockTransfer } from "@/hooks/use-store";
-import { useItems, useAssets } from "@/hooks/use-masters";
+import { useAssets } from "@/hooks/use-masters";
 import { usePermissions, type MeResponse } from "@/hooks/use-permissions";
 import { USER_TYPE_CATALOG } from "@/lib/rbac/user-types";
 import { canActOnStep } from "@/lib/approvals/workflow-rbac";
@@ -249,18 +249,8 @@ export default function StockTransferDetailPage() {
   const router = useRouter();
   const qc = useQueryClient();
   const { data: st, isLoading } = useStockTransfer(id);
-  const { data: itemsData } = useItems();
   const { data: assetsData } = useAssets();
   const { me } = usePermissions();
-
-  // Look-up table from the items master so line rows whose itemName
-  // wasn't denormalised at save-time (older records) still render the
-  // real material name / code / uom instead of "—".
-  const itemById = useMemo(() => {
-    const m = new Map<string, ItemMaster>();
-    for (const i of (itemsData?.data ?? []) as ItemMaster[]) m.set(i.id, i);
-    return m;
-  }, [itemsData]);
 
   const assetById = useMemo(() => {
     const m = new Map<string, AssetMaster>();
@@ -657,19 +647,12 @@ export default function StockTransferDetailPage() {
                     </thead>
                     <tbody className="divide-y divide-gray-100">
                       {lines.map((l: TransferLine, idx: number) => {
-                        // Fallback chain: prefer values stored on the
-                        // line, otherwise look up the item master. Keeps
-                        // older records (saved before itemName was
-                        // denormalised) rendering correctly.
-                        const masterItem = l.itemId
-                          ? itemById.get(l.itemId)
-                          : null;
-                        const itemName =
-                          l.itemName ?? masterItem?.name ?? "—";
-                        const itemCode =
-                          l.itemCode ?? masterItem?.code ?? "";
-                        const uomCode =
-                          l.uomCode ?? masterItem?.uomCode ?? "";
+                        // Line fields are denormalized at save-time; no item
+                        // master load needed (older pre-denormalization
+                        // records fall back to the id / blank).
+                        const itemName = l.itemName ?? "—";
+                        const itemCode = l.itemCode ?? "";
+                        const uomCode = l.uomCode ?? "";
                         return (
                         <tr
                           key={l.id ?? l.itemId ?? idx}

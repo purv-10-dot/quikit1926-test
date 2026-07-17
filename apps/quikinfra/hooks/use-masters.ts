@@ -36,7 +36,9 @@ const mutateApi = mutateJson;
 export function useProjects(params?: { search?: string; status?: string }) {
   const qs = new URLSearchParams();
   if (params?.search) qs.set("search", params.search);
-  if (params?.status) qs.set("status", params.status);
+  // status:"all" powers the master list's Inactive tab. Pickers omit status and
+  // get active-only (inactive/deleted excluded) from the API default.
+  if (params?.status === "all") qs.set("includeInactive", "true");
   const query = qs.toString();
 
   return useQuery({

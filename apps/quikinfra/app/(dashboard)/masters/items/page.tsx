@@ -11,7 +11,7 @@ const ImportDataDrawer = dynamic(
   () => import("@/components/ImportDataDrawer").then((m) => m.ImportDataDrawer),
   { ssr: false },
 );
-import { useItems, useCreateItem, useUpdateItem, useUOMs, useGSTCodes, useItemGroups, useDeleteItem } from "@/hooks/use-masters";
+import { useCreateItem, useUpdateItem, useUOMs, useGSTCodes, useItemGroups, useDeleteItem } from "@/hooks/use-masters";
 import {
   FormDrawer, FormSection, FormRow, Field,
   TextInput, NumberInput, SelectInput, TextAreaInput, CheckboxInput,
@@ -313,10 +313,10 @@ const IMPORT_FIELDS: ImportFieldDef[] = [
 ];
 
 export default function ItemsPage() {
-  // Request all statuses (incl. soft-deleted "inactive") so MasterListPage's
-  // "Show inactive" toggle and inactive-count have rows to work with. Other
-  // consumers of useItems() omit status and get active-only from the API.
-  const { data: result, isLoading } = useItems({ status: "all" });
+  // Server-side pagination: MasterListPage (infinite mode) fetches items one
+  // page at a time and hands the accumulated rows back via onRowsChange, so
+  // the stock lookup + category options run over exactly the loaded rows.
+  const [loadedRows, setLoadedRows] = useState<ItemRow[]>([]);
   const { data: uomResult } = useUOMs();
   const { data: gstResult } = useGSTCodes();
   const { data: itemGroupsResult } = useItemGroups();
@@ -331,13 +331,13 @@ export default function ItemsPage() {
   const [categoryOptionsState, setCategoryOptionsState] = useState<{ value: string; label: string }[]>([]);
   const [stockByItemId, setStockByItemId] = useState<Record<string, number>>({});
 
-  const items = result?.data ?? [];
+  const items = loadedRows;
   const columns: MasterColumnDef<ItemRow>[] = useMemo(() => ([
     { key: "code", label: "Code", width: "100px" },
     { key: "name", label: "Item / Material", render: (row) => <span className="font-medium text-gray-900">{row.name}</span> },
     { key: "itemType", label: "Type", width: "130px", render: (row) => row.itemType ? row.itemType : "—" },
-    { key: "category", label: "Category", render: (row) => row.category?.trim() ? row.category : (row.groupName || "—") },
-    { key: "uomCode", label: "UOM", width: "140px", render: (row) => {
+    { key: "category", label: "Category", sortable: false, render: (row) => row.category?.trim() ? row.category : (row.groupName || "—") },
+    { key: "uomCode", label: "UOM", width: "140px", sortable: false, render: (row) => {
       const codes = (row.uomCodes && row.uomCodes.length ? row.uomCodes : (row.uomCode ? [row.uomCode] : [])).filter(Boolean);
       if (codes.length === 0) return "—";
       return (
@@ -352,6 +352,7 @@ export default function ItemsPage() {
       key: "currentStock",
       label: "Current Stock",
       width: "160px",
+      sortable: false,
       render: (row) => (
         <StockPinCell
           itemId={row.id}
@@ -409,12 +410,11 @@ export default function ItemsPage() {
   }, [items]);
 
   useEffect(() => {
-    const rows = result?.data ?? [];
-    const fromItems = Array.isArray(rows)
-      ? rows
-          .map((r) => String(r?.category ?? "").trim())
-          .filter(Boolean)
-      : [];
+    // Categories come primarily from the Item Groups master; loaded item
+    // rows add any legacy free-text categories not represented as a group.
+    const fromItems = loadedRows
+      .map((r) => String(r?.category ?? "").trim())
+      .filter(Boolean);
     const groups = (itemGroupsResult?.data ?? [])
       .filter(
         (g: { status?: string }) =>
@@ -426,7 +426,7 @@ export default function ItemsPage() {
       .sort((a, b) => a.localeCompare(b, undefined, { sensitivity: "base" }))
       .map((c) => ({ value: c, label: c }));
     setCategoryOptionsState(merged);
-  }, [result?.data, itemGroupsResult?.data]);
+  }, [loadedRows, itemGroupsResult?.data]);
 
   const handleImportRow = async (row: Record<string, string>) => {
     if (!row.name?.trim()) return { ok: false as const, error: "Item name is required" };
@@ -594,9 +594,14 @@ export default function ItemsPage() {
         entityName="Item"
         permissionUrl="/masters/items"
         columns={columns}
-        data={(result?.data ?? []) as ItemRow[]}
-        total={result?.total ?? 0}
-        isLoading={isLoading}
+        infinite={{
+          queryKey: "items-infinite",
+          endpoint: "/api/masters/items",
+          pageSize: 25,
+          defaultSortBy: "createdAt",
+          defaultSortOrder: "desc",
+        }}
+        onRowsChange={setLoadedRows}
         showStatusTabs
         historyEntityType="item"
         onAdd={() => { setForm(emptyForm); setErrors({}); setEditingId(null); setDrawerOpen(true); }}

@@ -10,14 +10,15 @@ import {
 import type { LineProcurement } from "@/lib/purchase/procurement-types";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { DataTable, type ColDef } from "@/components/DataTable";
-import { usePurchaseRequisitions, useSubmitPR } from "@/hooks/use-purchase";
+import { useSubmitPR } from "@/hooks/use-purchase";
 import { usePermissions, useMenuActions } from "@/hooks/use-permissions";
 import dynamic from "next/dynamic";
 const PRCreateDrawer = dynamic(
   () => import("./PRCreateDrawer").then((m) => m.PRCreateDrawer),
   { ssr: false },
 );
-import { buildTabCounts, filterByTab, type TabSpec } from "@/lib/tab-counts";
+import { type TabSpec } from "@/lib/tab-counts";
+import { useServerTabList } from "@/hooks/use-server-tab-list";
 
 const STATUS_TABS: TabSpec[] = [
   { key: "all", label: "All" },
@@ -67,17 +68,32 @@ export default function PurchaseRequisitionsPage() {
   // Fetch the unfiltered list once and derive both the tab counts and
   // the visible slice client-side. Keeps the page to one query and
   // makes tab switches instant.
-  const { data: result, isLoading } = usePurchaseRequisitions({
-    status: "all",
-    search: "",
-  });
   const submitMutation = useSubmitPR();
   const { me } = usePermissions();
   const { canAdd } = useMenuActions("/purchase/requisitions");
 
-  const allRows = result?.data ?? [];
-  const tabs = useMemo(() => buildTabCounts(allRows, STATUS_TABS), [allRows]);
-  const data = useMemo(() => filterByTab(allRows, activeTab, STATUS_TABS), [allRows, activeTab]);
+  const [searchQuery, setSearchQuery] = useState("");
+  const [sort, setSort] = useState<{ by?: string; order?: "asc" | "desc" }>({
+    by: "createdAt",
+    order: "desc",
+  });
+  const {
+    items: data,
+    total,
+    page,
+    pageSize,
+    setPage,
+    setPageSize,
+    tabs,
+    isLoading,
+  } = useServerTabList<PrRow>("purchase-requisitions", "/api/purchase/requisitions", {
+    activeTab,
+    tabs: STATUS_TABS,
+    search: searchQuery,
+    sortBy: sort.by,
+    sortOrder: sort.order,
+    initialPageSize: 25,
+  });
 
   const doSubmitPR = async () => {
     if (!submitTarget) return;
@@ -230,6 +246,15 @@ export default function PurchaseRequisitionsPage() {
           historyEntityType="mr,purchase_requisitions"
           emptyTitle="No purchase requisitions yet"
           emptyHint="Raise a PR to request materials needed for site operations. Once submitted, it will flow through the approval workflow."
+          loading={isLoading}
+          serverMode
+          serverTotal={total}
+          serverPage={page}
+          serverPageSize={pageSize}
+          onPageChange={setPage}
+          onPageSizeChange={setPageSize}
+          onSearchChange={setSearchQuery}
+          onSortChange={(k, d) => setSort({ by: k, order: d })}
         />
       </PageContainer>
 

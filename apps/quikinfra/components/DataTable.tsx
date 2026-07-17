@@ -76,9 +76,33 @@ interface DataTableProps<T = Record<string, unknown>> {
   emptyHint?: string;
   /** When true, show a centered loading spinner instead of rows / empty state. */
   loading?: boolean;
+  /**
+   * Opt-in server-driven mode. When true the table stops paginating,
+   * sorting, and searching `data` in the browser — `data` is rendered
+   * as-is (the server already sliced/sorted/filtered it) and the
+   * rows-per-page pager is replaced by a scroll sentinel. Search box and
+   * sortable headers emit {@link onSearchChange} / {@link onSortChange}
+   * instead of mutating local state. Off by default, so every existing
+   * caller (and the 4 locked tables) behaves exactly as before.
+   */
+  serverMode?: boolean;
+  /** Server-reported total row count (drives the "X of N" pager). */
+  serverTotal?: number;
+  /** Controlled current page (1-indexed) in serverMode. */
+  serverPage?: number;
+  /** Controlled rows-per-page in serverMode. */
+  serverPageSize?: number;
+  /** Page-change callback (serverMode). */
+  onPageChange?: (page: number) => void;
+  /** Rows-per-page callback (serverMode). */
+  onPageSizeChange?: (size: number) => void;
+  /** Debounced search term callback (serverMode). */
+  onSearchChange?: (q: string) => void;
+  /** Sort column/direction callback (serverMode). */
+  onSortChange?: (key: string, dir: 'asc' | 'desc') => void;
 }
 
-const PAGE_SIZES = [10, 25, 50, 100];
+const PAGE_SIZES = [25, 50, 100];
 
 // ─── Audit columns (auto-appended to every grid) ──────────────────────────────
 
@@ -948,6 +972,8 @@ export function DataTable<T extends Record<string, unknown>>({
   fitToContent = false,
   historyEntityType, getHistoryEntityId, getHistoryRowLabel,
   emptyTitle, emptyHint, loading = false,
+  serverMode = false, serverTotal, serverPage, serverPageSize,
+  onPageChange, onPageSizeChange, onSearchChange, onSortChange,
 }: DataTableProps<T>) {
   // Merge audit cols
   const columns = useMemo(() => {
@@ -991,6 +1017,13 @@ export function DataTable<T extends Record<string, unknown>>({
     try { localStorage.setItem(`dt-${id}`, JSON.stringify({ hidden: Array.from(hiddenCols), frozen: Array.from(frozenCols), ps: pageSize })); } catch {}
   }, [id, hiddenCols, frozenCols, pageSize]);
 
+  // serverMode: debounce the global search box into the server callback.
+  useEffect(() => {
+    if (!serverMode || !onSearchChange) return;
+    const t = setTimeout(() => onSearchChange(globalQ.trim()), 300);
+    return () => clearTimeout(t);
+  }, [globalQ, serverMode, onSearchChange]);
+
   // Close panels on outside click (portal panels live outside anchor refs)
   useEffect(() => {
     const h = (e: MouseEvent) => {
@@ -1008,7 +1041,10 @@ export function DataTable<T extends Record<string, unknown>>({
   // Filtering
   const filtered = useMemo(() => {
     let rows = [...data];
-    if (globalQ.trim()) {
+    // In server-driven mode the global search and sort are applied by the
+    // API (see onSearchChange / onSortChange), so skip them here. Quick /
+    // advanced filters still run client-side over the loaded page.
+    if (!serverMode && globalQ.trim()) {
       const q = globalQ.toLowerCase();
       rows = rows.filter(row => columns.some(col => getVal(col, row).toLowerCase().includes(q)));
     }
@@ -1025,7 +1061,7 @@ export function DataTable<T extends Record<string, unknown>>({
         return results.some(Boolean);
       });
     }
-    if (sorts.length > 0) {
+    if (!serverMode && sorts.length > 0) {
       rows = [...rows].sort((a, b) => {
         for (const s of sorts) {
           const col = columns.find(c => c.key === s.key);
@@ -1039,7 +1075,7 @@ export function DataTable<T extends Record<string, unknown>>({
     }
     return rows;
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [data, globalQ, quickFilters, advancedConds, sorts]);
+  }, [data, globalQ, quickFilters, advancedConds, sorts, serverMode]);
 
   const totalPages = Math.max(1, Math.ceil(filtered.length / pageSize));
   const curPage = Math.min(page, totalPages);
@@ -1061,7 +1097,7 @@ export function DataTable<T extends Record<string, unknown>>({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [filtered, groupBy, columns]);
 
-  const pageRows = groupBy ? null : filtered.slice(start, start + pageSize);
+  const pageRows = groupBy ? null : (serverMode ? filtered : filtered.slice(start, start + pageSize));
 
   const visibleCols = columns.filter(c => !hiddenCols.has(c.key));
   const orderedCols = [...visibleCols.filter(c => frozenCols.has(c.key)), ...visibleCols.filter(c => !frozenCols.has(c.key))];
@@ -1319,8 +1355,16 @@ export function DataTable<T extends Record<string, unknown>>({
                       {col.sortable !== false ? (
                         <button onClick={() => {
                           const existing = sorts.find(s => s.key === col.key);
-                          if (existing) setSorts(sorts.map(s => s.key === col.key ? { ...s, dir: s.dir === 'asc' ? 'desc' : 'asc' } : s));
-                          else setSorts([{ key: col.key, dir: 'asc' }, ...sorts.slice(0, 2)]);
+                          const nextDir: 'asc' | 'desc' = existing ? (existing.dir === 'asc' ? 'desc' : 'asc') : 'asc';
+                          if (serverMode) {
+                            // Single-column server sort: replace, don't stack.
+                            setSorts([{ key: col.key, dir: nextDir }]);
+                            onSortChange?.(col.key, nextDir);
+                          } else if (existing) {
+                            setSorts(sorts.map(s => s.key === col.key ? { ...s, dir: nextDir } : s));
+                          } else {
+                            setSorts([{ key: col.key, dir: 'asc' }, ...sorts.slice(0, 2)]);
+                          }
                         }} className={`flex items-center gap-1.5 transition-colors group ${btnAlignCls} ${isSorted ? 'text-orange-700' : 'hover:text-orange-700'}`}>
                           {col.label}
                           <span className={`inline-flex items-center justify-center w-4 h-4 rounded transition-all ${isSorted ? 'opacity-100 text-orange-600 bg-orange-100' : 'opacity-30 group-hover:opacity-70 text-slate-400'}`}>
@@ -1413,33 +1457,49 @@ export function DataTable<T extends Record<string, unknown>>({
           </table>
         </div>
 
-        {/* ── Pagination (not shown when grouped) ── */}
-        {!groupBy && (
-          <div className="flex items-center justify-between gap-3 flex-wrap text-sm px-1">
-            <div className="flex items-center gap-2 text-slate-500 text-xs">
-              <span className="font-medium">Rows per page:</span>
-              <select value={pageSize} onChange={e => { setPageSize(Number(e.target.value)); setPage(1); }}
-                className="rounded-lg border border-slate-200 bg-white px-2.5 py-1 text-xs font-medium text-slate-700 cursor-pointer focus:outline-none focus:ring-2 focus:ring-orange-200 focus:border-orange-400 hover:border-slate-300 transition-colors">
-                {PAGE_SIZES.map(s => <option key={s} value={s}>{s}</option>)}
-              </select>
-              <span className="text-slate-400">·</span>
-              <span className="text-slate-500">
-                Showing <strong className="text-slate-700">{filtered.length === 0 ? 0 : start + 1}–{Math.min(start + pageSize, filtered.length)}</strong> of <strong className="text-slate-700">{filtered.length}</strong>
-              </span>
+        {/* ── Pagination — client-side or server-driven (offset) ── */}
+        {!groupBy && (() => {
+          const effPageSize = serverMode ? (serverPageSize ?? pageSize) : pageSize;
+          const effTotal = serverMode ? (serverTotal ?? 0) : filtered.length;
+          const effPage = serverMode ? (serverPage ?? 1) : curPage;
+          const effTotalPages = Math.max(1, Math.ceil(effTotal / effPageSize));
+          const effStart = (effPage - 1) * effPageSize;
+          const goPage = (p: number) => {
+            const next = Math.min(Math.max(1, p), effTotalPages);
+            if (serverMode) onPageChange?.(next);
+            else setPage(next);
+          };
+          const changeSize = (s: number) => {
+            if (serverMode) onPageSizeChange?.(s);
+            else { setPageSize(s); setPage(1); }
+          };
+          return (
+            <div className="flex items-center justify-between gap-3 flex-wrap text-sm px-1">
+              <div className="flex items-center gap-2 text-slate-500 text-xs">
+                <span className="font-medium">Rows per page:</span>
+                <select value={effPageSize} onChange={e => changeSize(Number(e.target.value))}
+                  className="rounded-lg border border-slate-200 bg-white px-2.5 py-1 text-xs font-medium text-slate-700 cursor-pointer focus:outline-none focus:ring-2 focus:ring-orange-200 focus:border-orange-400 hover:border-slate-300 transition-colors">
+                  {PAGE_SIZES.map(s => <option key={s} value={s}>{s}</option>)}
+                </select>
+                <span className="text-slate-400">·</span>
+                <span className="text-slate-500">
+                  Showing <strong className="text-slate-700">{effTotal === 0 ? 0 : effStart + 1}–{Math.min(effStart + effPageSize, effTotal)}</strong> of <strong className="text-slate-700">{effTotal}</strong>
+                </span>
+              </div>
+              <div className="flex items-center gap-1 bg-white rounded-xl ring-1 ring-slate-200 p-1 shadow-sm">
+                {([['«', 1], ['‹', effPage - 1]] as const).map(([l, target]) => (
+                  <button key={l} onClick={() => goPage(target)} disabled={effPage === 1} className="rounded-lg w-7 h-7 text-xs text-slate-500 disabled:opacity-40 disabled:cursor-not-allowed hover:bg-orange-50 hover:text-orange-700 transition-colors flex items-center justify-center">{l}</button>
+                ))}
+                <span className="px-3 h-7 inline-flex items-center text-xs font-bold rounded-lg bg-gradient-to-br from-orange-500 to-amber-500 text-white shadow-sm">
+                  {effPage} <span className="opacity-60 mx-1">/</span> {effTotalPages}
+                </span>
+                {([['›', effPage + 1], ['»', effTotalPages]] as const).map(([l, target]) => (
+                  <button key={l} onClick={() => goPage(target)} disabled={effPage === effTotalPages} className="rounded-lg w-7 h-7 text-xs text-slate-500 disabled:opacity-40 disabled:cursor-not-allowed hover:bg-orange-50 hover:text-orange-700 transition-colors flex items-center justify-center">{l}</button>
+                ))}
+              </div>
             </div>
-            <div className="flex items-center gap-1 bg-white rounded-xl ring-1 ring-slate-200 p-1 shadow-sm">
-              {([['«', () => setPage(1)], ['‹', () => setPage(p => Math.max(1, p - 1))]] as const).map(([l, a]) => (
-                <button key={l} onClick={a} disabled={curPage === 1} className="rounded-lg w-7 h-7 text-xs text-slate-500 disabled:opacity-40 disabled:cursor-not-allowed hover:bg-orange-50 hover:text-orange-700 transition-colors flex items-center justify-center">{l}</button>
-              ))}
-              <span className="px-3 h-7 inline-flex items-center text-xs font-bold rounded-lg bg-gradient-to-br from-orange-500 to-amber-500 text-white shadow-sm">
-                {curPage} <span className="opacity-60 mx-1">/</span> {totalPages}
-              </span>
-              {([['›', () => setPage(p => Math.min(totalPages, p + 1))], ['»', () => setPage(totalPages)]] as const).map(([l, a]) => (
-                <button key={l} onClick={a} disabled={curPage === totalPages} className="rounded-lg w-7 h-7 text-xs text-slate-500 disabled:opacity-40 disabled:cursor-not-allowed hover:bg-orange-50 hover:text-orange-700 transition-colors flex items-center justify-center">{l}</button>
-              ))}
-            </div>
-          </div>
-        )}
+          );
+        })()}
       </div>
     </>
   );

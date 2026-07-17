@@ -12,7 +12,11 @@ export interface WorkItemRow {
 
 export interface MaterialRow {
   itemId?: string | null;
+  // Denormalized by the DPR detail API so the UI renders name + UOM without
+  // loading the whole item master.
+  itemName?: string | null;
   uomId?: string | null;
+  uomCode?: string | null;
   consumedQty?: number | string | null;
   remarks?: string | null;
 }

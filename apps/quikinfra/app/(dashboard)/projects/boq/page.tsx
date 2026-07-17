@@ -14,7 +14,7 @@ import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { SelectInput } from "@/components/FormDrawer";
 import dynamic from "next/dynamic";
 const BOQImportDrawer = dynamic(
-  () => import("./BOQImportDrawer").then((m) => m.BOQImportDrawer),
+  () => import("./components/BOQImportDrawer").then((m) => m.BOQImportDrawer),
   { ssr: false },
 );
 import { useBOQInfinite } from "@/hooks/use-projects";
