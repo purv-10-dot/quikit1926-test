@@ -115,7 +115,7 @@ export function IdeaDelivery({
       {hasItems && mode === "idle" && (
         <div className="flex items-center gap-2">
           <button type="button" onClick={() => setMode("link")} className="inline-flex items-center gap-1.5 rounded bg-blue-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-blue-700">
-            <Link2 className="h-3.5 w-3.5" /> Link a Jira work item
+            <Link2 className="h-3.5 w-3.5" /> Link a work item
           </button>
           <button type="button" onClick={() => setMode("create")} className="inline-flex items-center gap-1.5 rounded border border-gray-200 px-3 py-1.5 text-sm text-gray-700 hover:bg-gray-50">
             <Plus className="h-3.5 w-3.5" /> Create work item
@@ -622,7 +622,7 @@ function CreateForm({ base, ideaTitle, busy, setBusy, onDone, onCancel, onSwitch
 
   return (
     <div className="space-y-3">
-      <p className="text-sm font-semibold text-gray-900">Create Jira work item</p>
+      <p className="text-sm font-semibold text-gray-900">Create work item</p>
       <SpaceSelect base={base} value={spaceId} onChange={setSpaceId} />
 
       <div className="grid grid-cols-2 gap-3">

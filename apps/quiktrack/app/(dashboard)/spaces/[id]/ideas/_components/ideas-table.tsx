@@ -290,7 +290,7 @@ function DeliveryStatusCell({ idea, onOpenDelivery }: { idea: IdeaRow; onOpenDel
               onClick={(e) => { e.stopPropagation(); setPos(null); onOpenDelivery(); }}
               className="inline-flex items-center gap-1.5 rounded bg-blue-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-blue-700"
             >
-              <Workflow className="h-3.5 w-3.5" /> Link Jira work item
+              <Workflow className="h-3.5 w-3.5" /> Link work item
             </button>
             <button
               type="button"
