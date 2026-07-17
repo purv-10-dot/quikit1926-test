@@ -15,6 +15,7 @@
     "seed:app": "tsx scripts/seed-app.ts"
   },
   "dependencies": {
+    "@google-cloud/storage": "^7.14.0",
     "@quikit/auth": "*",
     "@quikit/database": "*",
     "@quikit/shared": "*",

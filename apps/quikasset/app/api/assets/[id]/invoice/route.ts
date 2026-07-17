@@ -93,7 +93,7 @@ export const POST = auth.update<{ id: string }>(async ({ orgId, userId, userEmai
   }
 
   const key = buildInvoiceKey(orgId, id, ext);
-  await saveInvoice(key, Buffer.from(await file.arrayBuffer()));
+  await saveInvoice(key, Buffer.from(await file.arrayBuffer()), file.type);
   // Drop the previous file if this replaces one.
   if (asset.invoiceFileKey && asset.invoiceFileKey !== key) await deleteInvoice(asset.invoiceFileKey);
 
