@@ -35,8 +35,11 @@ import {
   PinOff,
   Popover,
   Reply,
+  Sparkles,
   SmilePlus,
+  Spinner,
   Trash2,
+  Users,
   Video,
   VideoOff,
 } from "@/components/ui";
@@ -170,10 +173,11 @@ function MediaContent({ media, onOpen }: { media: MediaData; onOpen?: () => void
 }
 
 /**
- * Stage 3 "Add to knowledge base?" affordance, rendered under a Media message in
- * an AI chat (only when `onAddToKb` is supplied). Offers a visibility choice
- * (Private default / Share with org) and, on success, confirms the indexed
- * section count. Failures are toasted by the caller; the card resets to idle.
+ * Stage 3 "Add to knowledge base" affordance, rendered under a Media message in
+ * an AI chat (only when `onAddToKb` is supplied). A quiet ghost button opens a
+ * Popover menu with the visibility choice (Only me / Share with org); on success
+ * it collapses to a compact chip confirming the scope + indexed section count.
+ * Failures are toasted by the caller; the control resets to idle for a retry.
  */
 function AddToKbCard({
   message,
@@ -183,47 +187,66 @@ function AddToKbCard({
   onAddToKb: (message: MessageDto, visibility: "PRIVATE" | "ORG") => Promise<IngestResult>;
 }) {
   const [state, setState] = useState<"idle" | "adding" | "added">("idle");
-  const [visibility, setVisibility] = useState<"PRIVATE" | "ORG">("PRIVATE");
+  const [menuOpen, setMenuOpen] = useState(false);
+  // Remember the chosen visibility so the added chip can name it (Private/Org).
+  const [chosen, setChosen] = useState<"PRIVATE" | "ORG">("PRIVATE");
   const [chunks, setChunks] = useState(0);
+
+  const add = async (visibility: "PRIVATE" | "ORG") => {
+    setMenuOpen(false);
+    setChosen(visibility);
+    setState("adding");
+    try {
+      const result = await onAddToKb(message, visibility);
+      setChunks(result.chunksStored);
+      setState("added");
+    } catch {
+      setState("idle"); // caller toasts the reason; allow a retry
+    }
+  };
 
   if (state === "added") {
     return (
-      <div className="qc-kb-card" data-state="added" data-testid="add-to-kb">
-        <Check size={14} aria-hidden /> Added to your knowledge base — {chunks} section
-        {chunks === 1 ? "" : "s"} indexed
+      <div className="qc-kb-add" data-state="added" data-testid="add-to-kb">
+        <span className="qc-chip qc-kb-added">
+          <Check size={13} aria-hidden />
+          In knowledge base · {chosen === "ORG" ? "Org" : "Private"} · {chunks} section
+          {chunks === 1 ? "" : "s"}
+        </span>
       </div>
     );
   }
+
+  if (state === "adding") {
+    return (
+      <div className="qc-kb-add" data-testid="add-to-kb">
+        <button type="button" className="qc-btn qc-btn--ghost qc-kb-add__btn" disabled>
+          <Spinner /> Adding…
+        </button>
+      </div>
+    );
+  }
+
   return (
-    <div className="qc-kb-card" data-testid="add-to-kb">
-      <span className="qc-kb-card__q">Add to knowledge base?</span>
-      <select
-        className="qc-kb-card__vis"
-        aria-label="Knowledge base visibility"
-        value={visibility}
-        disabled={state === "adding"}
-        onChange={(e) => setVisibility(e.target.value as "PRIVATE" | "ORG")}
+    <div className="qc-kb-add" data-testid="add-to-kb">
+      <Popover
+        open={menuOpen}
+        onOpenChange={setMenuOpen}
+        placement="top"
+        label="Add to knowledge base"
+        trigger={
+          <button type="button" className="qc-btn qc-btn--ghost qc-kb-add__btn">
+            <Sparkles size={14} aria-hidden /> Add to knowledge base
+          </button>
+        }
       >
-        <option value="PRIVATE">Private</option>
-        <option value="ORG">Share with org</option>
-      </select>
-      <button
-        type="button"
-        className="qc-btn"
-        disabled={state === "adding"}
-        onClick={async () => {
-          setState("adding");
-          try {
-            const result = await onAddToKb(message, visibility);
-            setChunks(result.chunksStored);
-            setState("added");
-          } catch {
-            setState("idle"); // caller toasts the reason; allow a retry
-          }
-        }}
-      >
-        {state === "adding" ? "Adding…" : "Add"}
-      </button>
+        <Menu label="Knowledge base visibility">
+          <MenuItem onSelect={() => void add("PRIVATE")}>Only me · private</MenuItem>
+          <MenuItem onSelect={() => void add("ORG")} icon={<Users size={15} aria-hidden />}>
+            Share with org
+          </MenuItem>
+        </Menu>
+      </Popover>
     </div>
   );
 }

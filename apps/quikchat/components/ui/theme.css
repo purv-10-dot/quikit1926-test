@@ -5879,3 +5879,82 @@ body {
     width: 100%;
   }
 }
+
+/* ============================================================================
+ * Doc-intel (Stage 3): Add-to-KB control, retrieval-scope row, source chips.
+ * Built from existing primitives — .qc-btn--ghost + Popover/Menu (add control),
+ * .qc-segmented (scope), .qc-chip (added state). These rules only add the thin
+ * wrappers + the source-chip pill; no new colors, tokens only.
+ * ========================================================================== */
+
+/* Add-to-knowledge-base affordance under a Media message (own bubble tint). */
+.qc-kb-add {
+  margin-top: 6px;
+}
+.qc-kb-add__btn {
+  padding: 4px 9px;
+  font-size: 12px;
+  color: var(--qc-accent);
+}
+.qc-kb-added {
+  padding: 2px 9px;
+  color: var(--qc-text-2);
+}
+.qc-kb-added svg {
+  color: var(--qc-accent);
+}
+
+/* Retrieval-scope row above the composer (AI chat only). */
+.qc-kb-scope {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 6px 14px;
+  flex: none;
+}
+.qc-kb-scope__hint {
+  min-width: 0;
+  font-size: 12px;
+  color: var(--qc-text-3);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Ephemeral retrieval citations under a bot reply. Mirrors .qc-chip/.qc-reaction. */
+.qc-source-chips {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px;
+  margin-top: 4px;
+}
+.qc-source-chips__label {
+  font-size: 11px;
+  font-weight: 500;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--qc-text-3);
+}
+.qc-source-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  max-width: 16rem;
+  padding: 2px 8px;
+  font-size: 12px;
+  border-radius: var(--qc-r-pill);
+  background: var(--qc-surface-2);
+  border: 0.5px solid var(--qc-border);
+  color: var(--qc-text-2);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.qc-source-chip svg {
+  flex: none;
+  color: var(--qc-text-3);
+}
+.qc-source-chip:hover {
+  background: var(--qc-surface);
+}

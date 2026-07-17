@@ -151,13 +151,13 @@ describe("Add to KB (Stage 3)", () => {
       contentHash: "h",
     }));
     renderRow(mediaMsg, makeActions({ onAddToKb }));
-    fireEvent.change(screen.getByLabelText("Knowledge base visibility"), {
-      target: { value: "ORG" },
-    });
-    fireEvent.click(screen.getByRole("button", { name: "Add" }));
+    // Open the popover, then pick "Share with org" (the menu is portaled to
+    // document.body, so reach it via the async document-level findByRole).
+    fireEvent.click(screen.getByRole("button", { name: /add to knowledge base/i }));
+    fireEvent.click(await screen.findByRole("menuitem", { name: /share with org/i }));
     expect(onAddToKb).toHaveBeenCalledWith(mediaMsg, "ORG");
     await waitFor(() =>
-      expect(screen.getByTestId("add-to-kb")).toHaveTextContent(/42 sections indexed/),
+      expect(screen.getByTestId("add-to-kb")).toHaveTextContent(/42 sections/),
     );
   });
 });

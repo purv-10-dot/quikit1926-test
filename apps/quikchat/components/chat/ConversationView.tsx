@@ -9,7 +9,7 @@ import type {
   MentionRefInput,
   MessageDto,
 } from "@/lib/shared";
-import { Avatar, Pin, Spinner, useToast } from "@/components/ui";
+import { Avatar, Pin, Segmented, Spinner, useToast } from "@/components/ui";
 import {
   addMember,
   deleteMessageApi,
@@ -352,22 +352,25 @@ export function ConversationView({
         <TypingIndicator users={typingUsers} />
         {isAiChat ? (
           <div className="qc-kb-scope" data-testid="kb-scope">
-            <button
-              type="button"
-              className="qc-btn qc-btn--ghost qc-kb-scope__toggle"
-              aria-pressed={!!kbWiden}
-              data-active={!!kbWiden}
-              onClick={onToggleKbWiden}
-              title="When on, questions search your whole knowledge base instead of just this conversation's documents."
-            >
-              {kbWiden ? "Searching all my docs" : "Search my docs"}
-            </button>
+            <Segmented
+              label="Knowledge base scope"
+              options={[
+                { label: "This chat", value: "chat" },
+                { label: "All my docs", value: "all" },
+              ]}
+              value={kbWiden ? "all" : "chat"}
+              onChange={(v) => {
+                // Parent exposes a flip, not a setter — only toggle on a real change.
+                const widen = v === "all";
+                if (widen !== !!kbWiden) onToggleKbWiden?.();
+              }}
+            />
             <span className="qc-kb-scope__hint">
               {kbWiden
-                ? "Answers draw from your whole knowledge base."
+                ? "Searching your whole knowledge base."
                 : kbDocCount
-                  ? `Answers draw from ${kbDocCount} doc${kbDocCount === 1 ? "" : "s"} in this chat.`
-                  : "Attach a document and add it to the knowledge base to ask questions about it."}
+                  ? `${kbDocCount} doc${kbDocCount === 1 ? "" : "s"} in this chat`
+                  : "Attach a document and add it to the knowledge base to ask about it."}
             </span>
           </div>
         ) : null}
