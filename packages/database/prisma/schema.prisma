@@ -1,13 +1,14 @@
 generator client {
   provider        = "prisma-client-js"
   previewFeatures = ["multiSchema"]
+  binaryTargets   = ["native", "linux-musl-openssl-3.0.x"]
 }
 
 datasource db {
   provider  = "postgresql"
   url       = env("DATABASE_URL")
   directUrl = env("DATABASE_URL_DIRECT")
-  schemas   = ["app_quikasset", "app_quikcrm", "app_quikfinance", "app_quikhrms", "app_quikinfra", "app_quikscale", "app_quiksocial", "app_quiksupport", "app_quiktrack", "app_quikvc", "auth", "public", "quikit"]
+  schemas   = ["app_quikasset", "app_quikchat", "app_quikcrm", "app_quikfinance", "app_quikhrms", "app_quikinfra", "app_quikscale", "app_quiksocial", "app_quiksupport", "app_quiktrack", "app_quikvc", "auth", "public", "quikit"]
 }
 
 model App {
@@ -28,6 +29,7 @@ model App {
   AppRole          QtAppRole[]
   cnAppRoles       CnAppRole[]
   qsAppRoles       QsAppRole[]
+  qcAppRoles       QcAppRole[]
   healthChecks     AppHealthCheck[]
   moduleFlags      AppModuleFlag[]
   oauthClient      OAuthClient?
@@ -232,6 +234,9 @@ model Org {
   UserPermissionExtra      QtUserPermissionExtra[]
   qsAppRoles               QsAppRole[]
   qsUserAppRoles           QsUserAppRole[]
+  qcAppRoles               QcAppRole[]
+  qcUserAppRoles           QcUserAppRole[]
+  qcUserPermissionExtras   QcUserPermissionExtra[]
   vcApplications           VCApplication[]
   vcAuditLogs              VCAuditLog[]
   vcCapitalCalls           VCCapitalCall[]
@@ -348,6 +353,8 @@ model User {
   cnUserAppRoles          CnUserAppRole[]
   cnUserPermissionExtras  CnUserPermissionExtra[]
   qsUserAppRoles          QsUserAppRole[]
+  qcUserAppRoles          QcUserAppRole[]
+  qcPermissionExtras      QcUserPermissionExtra[]
   cnUserProfiles          CnUserProfile[]
   cnUserProjectAccess     CnUserProjectAccess[]
   qtProjectUserRoles      QtProjectUserRole[]
@@ -18767,4 +18774,401 @@ model QspUserPermissionExtra {
   @@index([userId, orgId])
   @@map("UserPermissionExtra")
   @@schema("app_quiksupport")
+}
+
+// ============================================================================
+// QuikChat (app_quikchat) — ported Batch 2
+// ============================================================================
+
+model QcChannel {
+  id          String            @id @default(uuid())
+  orgId       String
+  type        String // 'dm' | 'group'
+  visibility  String // 'public' | 'private'
+  name        String?
+  description String?
+  avatarUrl   String?
+  createdById String?
+  createdAt   DateTime          @default(now())
+  updatedAt   DateTime          @updatedAt
+  members     QcChannelMember[]
+  messages    QcMessage[]
+
+  @@index([orgId, type, visibility])
+  @@schema("app_quikchat")
+}
+
+model QcChannelMember {
+  id         String    @id @default(uuid())
+  orgId      String
+  channelId  String
+  userId     String
+  role       String    @default("member") // 'admin' | 'member'
+  isPinned      Boolean   @default(false) // per-member favourite → drives priority/recent split
+  lastReadAt    DateTime?
+  lastDeliveredAt DateTime? // S14a: client received messages up to here (delivery ticks)
+  joinedAt      DateTime  @default(now())
+  channel    QcChannel @relation(fields: [channelId], references: [id])
+
+  @@unique([orgId, channelId, userId])
+  @@index([orgId, userId])
+  @@schema("app_quikchat")
+}
+
+model QcMessage {
+  id              String    @id @default(uuid())
+  orgId           String
+  channelId       String
+  senderId        String?
+  actorType       String    @default("human") // 'human' | 'ai_agent'
+  agentRunId      String?
+  type            String    @default("Text") // Text | Media | SystemActivity | Delete | Call
+  content         String
+  data            Json?
+  reactions       Json      @default("{}")
+  parentMessageId String?
+  isPinned        Boolean   @default(false)
+  clientMessageId String? // client-generated UUID for idempotent sends
+  editedAt        DateTime?
+  createdAt       DateTime  @default(now())
+  channel         QcChannel @relation(fields: [channelId], references: [id])
+
+  @@unique([channelId, clientMessageId])
+  @@index([orgId, channelId, createdAt])
+  @@schema("app_quikchat")
+}
+
+model QcInvite {
+  id          String    @id @default(uuid())
+  orgId       String
+  channelId   String
+  code        String    @unique
+  createdById String?
+  maxUses     Int? // null = unlimited
+  useCount    Int       @default(0)
+  expiresAt   DateTime?
+  revokedAt   DateTime? // soft revocation — kept for audit
+  createdAt   DateTime  @default(now())
+
+  @@index([orgId, channelId])
+  @@schema("app_quikchat")
+}
+
+// ── RBAC v2 (app-level roles & permissions) ────────────────────────────────
+// Mirrors the canonical QuikScale four-table model (app_quikscale.AppRole …)
+// verbatim, prefixed `Qc*` and `@@map`'d to the physical names the shared
+// `@quikit/auth` assignAppRoles helper resolves by literal table name
+// (`app_quikchat."AppRole"` / `"UserAppRole"`). See docs/RBAC_PLAN.md.
+model QcAppRole {
+  id          String              @id @default(cuid())
+  orgId       String
+  appId       String
+  name        String
+  description String?
+  isSystem    Boolean             @default(false)
+  isDefault   Boolean             @default(false)
+  createdAt   DateTime            @default(now())
+  updatedAt   DateTime            @updatedAt
+  createdBy   String?
+  app         App                 @relation(fields: [appId], references: [id], onDelete: Cascade)
+  org         Org                 @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  permissions QcRolePermission[]
+  members     QcUserAppRole[]
+
+  @@unique([orgId, appId, name])
+  @@index([orgId, appId])
+  @@map("AppRole")
+  @@schema("app_quikchat")
+}
+
+model QcUserAppRole {
+  id         String    @id @default(cuid())
+  userId     String
+  orgId      String
+  roleId     String
+  assignedAt DateTime  @default(now())
+  assignedBy String?
+  org        Org       @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  role       QcAppRole @relation(fields: [roleId], references: [id], onDelete: Cascade)
+  user       User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, orgId, roleId])
+  @@index([roleId])
+  @@index([userId, orgId])
+  @@map("UserAppRole")
+  @@schema("app_quikchat")
+}
+
+model QcRolePermission {
+  id       String    @id @default(cuid())
+  roleId   String
+  resource String
+  action   String
+  role     QcAppRole @relation(fields: [roleId], references: [id], onDelete: Cascade)
+
+  @@unique([roleId, resource, action])
+  @@index([roleId])
+  @@map("RolePermission")
+  @@schema("app_quikchat")
+}
+
+/// Per-user additive permission grants — applied ON TOP of the user's role
+/// grants. Lets an admin extend one user's access without changing the role
+/// for everyone on it.
+model QcUserPermissionExtra {
+  id        String   @id @default(cuid())
+  orgId     String
+  userId    String
+  resource  String
+  action    String
+  grantedBy String?
+  createdAt DateTime @default(now())
+  org       Org      @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([orgId, userId, resource, action])
+  @@index([userId, orgId])
+  @@map("UserPermissionExtra")
+  @@schema("app_quikchat")
+}
+
+// Activity-feed row, one per (recipient, event). Delivery + gating live in
+// app/src/server/notifications.service.ts (ported from the original backend).
+model QcNotification {
+  id        String   @id @default(uuid())
+  orgId     String
+  userId    String // recipient
+  type      String // mention | dm | keyword | reaction | thread_reply
+  actorId   String? // who caused it (message sender / reactor)
+  channelId String?
+  messageId String?
+  preview   String   @default("") // short text for the bell + OS popup
+  meta      Json? // channelName/actorName snapshot, matched keyword, reason, …
+  isRead    Boolean  @default(false)
+  createdAt DateTime @default(now())
+
+  @@index([orgId, userId, createdAt])
+  @@index([orgId, userId, isRead])
+  @@schema("app_quikchat")
+}
+
+// One row per user (per org): their global notification defaults.
+model QcUserNotificationSettings {
+  id                  String    @id @default(uuid())
+  orgId               String
+  userId              String
+  defaultChannelLevel String    @default("all") // all | mentions | none
+  dmsLevel            String    @default("all")
+  soundEnabled        Boolean   @default(true)
+  desktopEnabled      Boolean   @default(true) // master OS-popup switch
+  emailEnabled        Boolean   @default(false)
+  dndEnabled          Boolean   @default(false)
+  dndStart            String? // local "HH:MM"
+  dndEnd              String?
+  snoozedUntil        DateTime? // global snooze — silences everything OS-side
+  priorityDuringDnd   Boolean   @default(true)
+  createdAt           DateTime  @default(now())
+  updatedAt           DateTime  @updatedAt
+
+  @@unique([orgId, userId])
+  @@schema("app_quikchat")
+}
+
+// Per-channel override of the user's default level. Absence = inherit default.
+model QcNotificationPreference {
+  id         String    @id @default(uuid())
+  orgId      String
+  userId     String
+  channelId  String
+  level      String    @default("all") // all | mentions | none
+  mutedUntil DateTime? // temporary mute → level effectively 'none' until then
+  createdAt  DateTime  @default(now())
+  updatedAt  DateTime  @updatedAt
+
+  @@unique([userId, channelId])
+  @@schema("app_quikchat")
+}
+
+// Per-user highlight words (lowercased). A word-boundary match mints a keyword
+// notification even without an @-mention.
+model QcNotificationKeyword {
+  id        String   @id @default(uuid())
+  orgId     String
+  userId    String
+  keyword   String
+  createdAt DateTime @default(now())
+
+  @@unique([userId, keyword])
+  @@schema("app_quikchat")
+}
+
+// Per-user UI preferences (S14b). One row per (org, user). Theme default
+// "system" (follows prefers-color-scheme); explicit light/dark override it.
+model QcUserUiPrefs {
+  id        String   @id @default(uuid())
+  orgId     String
+  userId    String
+  theme     String   @default("system") // system | light | dark
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([orgId, userId])
+  @@schema("app_quikchat")
+}
+
+// Scheduled meeting (S15a). Chat-facing PROJECTION of an external calendar
+// event (the external calendar is the source of truth for time/attendance).
+// Merge-ready: app_quikchat schema, Qc prefix, orgId indexed.
+model QcMeeting {
+  id               String              @id @default(uuid())
+  orgId            String
+  channelId        String
+  organizerId      String
+  title            String
+  description      String?
+  start            DateTime // stored UTC; rendered local client-side
+  end              DateTime
+  joinUrl          String? // conferencing (Meet) link, if requested
+  externalEventId  String? // provider event id (stub-evt-… on the stub)
+  status           String              @default("scheduled") // scheduled | cancelled
+  createdMessageId String? // the Meeting card message that announced it
+  callId           String?  // links to active QcCall when call is in progress
+  createdAt        DateTime            @default(now())
+  attendees        QcMeetingAttendee[]
+
+  @@index([orgId])
+  @@index([channelId])
+  @@index([callId])
+  @@schema("app_quikchat")
+}
+
+model QcMeetingAttendee {
+  id        String    @id @default(uuid())
+  meetingId String
+  userId    String
+  email     String
+  rsvp      String    @default("needs_action") // needs_action | accepted | declined | tentative
+  meeting   QcMeeting @relation(fields: [meetingId], references: [id], onDelete: Cascade)
+
+  @@unique([meetingId, userId])
+  @@schema("app_quikchat")
+}
+
+// Per-user calendar OAuth connection (S15b). Stores a provider refresh token
+// ENCRYPTED AT REST (AES-256-GCM via CALENDAR_TOKEN_ENC_KEY) — never plaintext.
+// Used by the per-user-connect providers (Microsoft); Google's single-account
+// model needs no per-user row. Merge-ready: app_quikchat, Qc prefix, orgId idx.
+model QcCalendarConnection {
+  id           String   @id @default(uuid())
+  orgId        String
+  userId       String
+  provider     String // 'microsoft' (extensible)
+  refreshToken String // ENCRYPTED blob — see calendar/crypto.ts
+  email        String
+  scopes       String // space-delimited granted scopes
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  @@unique([userId, provider])
+  @@index([orgId])
+  @@schema("app_quikchat")
+}
+
+// Personal calendar (S17). A named calendar in the user's "My calendars" list
+// (color + visibility). Merge-ready: app_quikchat, Qc prefix, orgId indexed.
+model QcCalendar {
+  id        String            @id @default(uuid())
+  orgId     String
+  userId    String            // owner
+  name      String
+  color     String            // hex; default color for its events
+  isDefault Boolean           @default(false) // the primary "Calendar"
+  visible   Boolean           @default(true)  // "My calendars" checkbox
+  sortOrder Int               @default(0)
+  createdAt DateTime          @default(now())
+  updatedAt DateTime          @updatedAt
+  events    QcCalendarEvent[]
+
+  @@index([orgId, userId])
+  @@schema("app_quikchat")
+}
+
+// A personal calendar event (S17). start/end stored UTC, rendered local
+// client-side (matches QcMeeting). status mirrors QcMeeting (confirmed|cancelled).
+model QcCalendarEvent {
+  id          String     @id @default(uuid())
+  orgId       String
+  userId      String     // owner (denormalized from calendar for scoping/query)
+  calendarId  String
+  title       String
+  description String?
+  location    String?
+  start       DateTime
+  end         DateTime
+  allDay      Boolean    @default(false)
+  color       String?    // optional per-event override; else inherit calendar.color
+  joinUrl     String?
+  status      String     @default("confirmed")
+  createdAt   DateTime   @default(now())
+  updatedAt   DateTime   @updatedAt
+  calendar    QcCalendar @relation(fields: [calendarId], references: [id], onDelete: Cascade)
+
+  @@index([orgId, userId, start])
+  @@index([calendarId])
+  @@schema("app_quikchat")
+}
+
+// In-chat AI assistant enable flag (S12). One row per (org, channel); the
+// org-level default uses channelId = "" (empty). Resolution: per-channel row
+// wins, else the org row, else the built-in default.
+model QcAssistantConfig {
+  id        String   @id @default(uuid())
+  orgId     String
+  channelId String   @default("") // "" = org-level default
+  enabled   Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([orgId, channelId])
+  @@schema("app_quikchat")
+}
+
+// ============================================================================
+// Calling & Conferencing (CALL-1 through CALL-5)
+// ============================================================================
+
+model QcCall {
+  id           String    @id @default(uuid())
+  orgId        String
+  channelId    String?   // nullable for direct calls not in a channel
+  meetingId    String?   // links to QcMeeting if call was started from a meeting
+  initiatorId  String
+  type         String    // 'audio' | 'video'
+  status       String    // 'ringing' | 'active' | 'ended' | 'missed' | 'rejected' | 'timed_out'
+  startedAt    DateTime  @default(now())
+  answeredAt   DateTime? // set when the first participant accepts (active)
+  endedAt      DateTime?
+  duration     Int?      // seconds, computed on end from answeredAt or startedAt
+
+  participants QcCallParticipant[]
+
+  @@index([orgId])
+  @@index([channelId])
+  @@index([meetingId])
+  @@schema("app_quikchat")
+}
+
+model QcCallParticipant {
+  id               String    @id @default(uuid())
+  callId           String
+  userId           String
+  joinedAt         DateTime?
+  leftAt           DateTime?
+  state            String    // 'waiting' | 'connected' | 'disconnected'
+  lastHeartbeatAt  DateTime? // used by the sweep to reap stale active calls
+
+  call      QcCall    @relation(fields: [callId], references: [id], onDelete: Cascade)
+
+  @@unique([callId, userId])
+  @@schema("app_quikchat")
 }
