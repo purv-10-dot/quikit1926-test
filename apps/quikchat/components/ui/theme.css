@@ -2265,6 +2265,23 @@ body {
   flex-direction: column;
   gap: 18px;
 }
+/* Full-bleed embed slot for a section that brings its own chrome (RolesTab).
+   RolesTab's root is `h-screen` (built for the standalone /settings/roles
+   route); when embedded here, clamp ONLY that root (direct child) to the
+   content area so it fills the panel instead of the viewport. The `> *`
+   selector must stay direct-child so it never reaches the matrix's inner
+   scroll regions. */
+.qc-set-embed {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  overflow: hidden;
+}
+.qc-set-embed > * {
+  flex: 1;
+  min-height: 0;
+  height: 100% !important;
+}
 .qc-set-section {
   border: 0.5px solid var(--qc-border);
   border-radius: var(--qc-r-lg);
