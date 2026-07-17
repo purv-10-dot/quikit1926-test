@@ -68,7 +68,7 @@ export default function ApproveRejectDialog({ request, action, onClose, onConfir
             <div className="flex justify-between gap-2">
               <dt className="text-gray-400">Item</dt>
               <dd className="text-gray-800 font-medium text-right">
-                {request.itemType} <span className="text-gray-400">×{request.quantity}</span>
+                {request.itemType}
               </dd>
             </div>
             <div className="flex justify-between gap-2">
@@ -76,8 +76,8 @@ export default function ApproveRejectDialog({ request, action, onClose, onConfir
               <dd className="text-gray-700 text-right">{request.requesterName ?? request.requesterUserId}</dd>
             </div>
             <div className="flex justify-between gap-2">
-              <dt className="text-gray-400">Type / Priority</dt>
-              <dd className="text-gray-700 text-right">{request.requestType} · {request.priority}</dd>
+              <dt className="text-gray-400">Priority</dt>
+              <dd className="text-gray-700 text-right">{request.priority}</dd>
             </div>
             <div className="pt-1.5 border-t border-gray-200/70">
               <dt className="text-gray-400 mb-0.5">Justification</dt>

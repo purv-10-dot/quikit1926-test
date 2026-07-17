@@ -44,6 +44,8 @@ export type AssetRequest = {
   itemType: string;
   categoryId?: string | null;
   baseCategoryId?: string | null;
+  /** Resolved base-category name (for the Category column subtitle). */
+  baseCategoryName?: string | null;
   requestType: AssetRequestType;
   quantity: number;
   quantityFulfilled: number;

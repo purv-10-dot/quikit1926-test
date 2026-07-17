@@ -12,8 +12,10 @@ const schema = z.object({
 /**
  * Approve / reject a request. Gated on `AssetRequest:approve` (a grantable
  * capability — admin holds it via backfill, but any custom "approver" role can
- * too). Only `Submitted` / `PendingApproval` requests are actionable; rejection
- * requires a reason.
+ * too). Approve applies only to `Submitted` / `PendingApproval`; reject also
+ * applies to `Approved` — so an approver can back out when stock turns out to be
+ * unavailable (nothing is assigned until fulfil, so no cleanup is needed).
+ * Rejection requires a reason.
  */
 export const POST = withOrgAuth<{ id: string }>(
   async ({ orgId, userId, userEmail }, req, { params }) => {
@@ -33,7 +35,12 @@ export const POST = withOrgAuth<{ id: string }>(
     });
     if (!request) return NextResponse.json({ success: false, error: "Not found" }, { status: 404 });
 
-    if (request.status !== "Submitted" && request.status !== "PendingApproval") {
+    // Approve: only a pending request. Reject: a pending request OR an already
+    // Approved one (back out when there's no stock) — but not a request that's
+    // already been (partially) fulfilled, which holds live assignments.
+    const decidable = request.status === "Submitted" || request.status === "PendingApproval";
+    const allowed = action === "approve" ? decidable : decidable || request.status === "Approved";
+    if (!allowed) {
       return NextResponse.json(
         { success: false, error: `Cannot ${action} a request in status ${request.status}` },
         { status: 409 },

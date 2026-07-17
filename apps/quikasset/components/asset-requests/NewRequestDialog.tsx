@@ -1,35 +1,28 @@
 "use client"
 
-import { useEffect, useState } from "react"
-import { X, Package, Cloud, ClipboardList } from "lucide-react"
+import { useEffect, useMemo, useState } from "react"
+import { X, ClipboardList, ChevronDown } from "lucide-react"
 import { cn } from "@/lib/utils"
-import SearchableSelect from "@/components/assignments/SearchableSelect"
-import { ASSET_REQUEST_KIND_LABELS } from "@/types/assetRequest"
-import type {
-  AssetRequestKind,
-  AssetRequestType,
-  AssetRequestPriority,
-} from "@/types/assetRequest"
+import type { AssetRequestPriority } from "@/types/assetRequest"
 
-/** Payload POSTed to /api/asset-requests. */
+/**
+ * Payload POSTed to /api/asset-requests. Quantity, item-kind, and request-type
+ * are no longer employee decisions — the server fixes them (1 / Physical / New).
+ */
 export type NewRequestPayload = {
   categoryId: string
-  itemKind: AssetRequestKind
-  requestType: AssetRequestType
-  quantity: number
   justification: string
   priority: AssetRequestPriority
   requiredBy: string | null
 }
 
-type Category = { id: string; name: string; baseCategory?: { name: string } | null }
+type Category = { id: string; name: string; baseCategoryId: string | null; baseCategory?: { name: string } | null }
 
 interface Props {
   onClose: () => void
   onSubmit: (payload: NewRequestPayload) => Promise<void>
 }
 
-const REQUEST_TYPES: AssetRequestType[] = ["New", "Replacement", "Upgrade", "Additional"]
 const PRIORITIES: AssetRequestPriority[] = ["Low", "Medium", "High", "Urgent"]
 
 const inputCls = (err?: string) =>
@@ -62,14 +55,12 @@ function Field({
  */
 export default function NewRequestDialog({ onClose, onSubmit }: Props) {
   const [categories, setCategories] = useState<Category[]>([])
+  const [baseCategoryId, setBaseCategoryId] = useState("")
   const [categoryId, setCategoryId] = useState("")
-  const [itemKind, setItemKind] = useState<AssetRequestKind>("Physical")
-  const [requestType, setRequestType] = useState<AssetRequestType>("New")
-  const [quantity, setQuantity] = useState(1)
   const [priority, setPriority] = useState<AssetRequestPriority>("Medium")
   const [requiredBy, setRequiredBy] = useState("")
   const [justification, setJustification] = useState("")
-  const [errors, setErrors] = useState<{ categoryId?: string; quantity?: string }>({})
+  const [errors, setErrors] = useState<{ baseCategoryId?: string; categoryId?: string }>({})
   const [loadError, setLoadError] = useState("")
   const [saving, setSaving] = useState(false)
 
@@ -86,16 +77,30 @@ export default function NewRequestDialog({ onClose, onSubmit }: Props) {
       .catch(() => setLoadError("Couldn't load item types. Please close and try again."))
   }, [])
 
-  const categoryOptions = categories.map((c) => ({
-    value: c.id,
-    label: c.name,
-    sublabel: c.baseCategory?.name,
-  }))
+  // Base Category → Category cascade, grouped from the flat list (mirrors the
+  // Add/Edit Asset form). Base options are the distinct parents; the Category
+  // select narrows to the chosen base.
+  const baseCategories = useMemo(() => {
+    const seen = new Map<string, string>()
+    for (const c of categories) {
+      if (c.baseCategoryId && !seen.has(c.baseCategoryId)) {
+        seen.set(c.baseCategoryId, c.baseCategory?.name ?? "—")
+      }
+    }
+    return [...seen.entries()]
+      .map(([id, name]) => ({ id, name }))
+      .sort((a, b) => a.name.localeCompare(b.name))
+  }, [categories])
+
+  const visibleCategories = useMemo(
+    () => (baseCategoryId ? categories.filter((c) => c.baseCategoryId === baseCategoryId) : []),
+    [categories, baseCategoryId],
+  )
 
   function validate() {
     const e: typeof errors = {}
-    if (!categoryId) e.categoryId = "Pick an item type"
-    if (!Number.isInteger(quantity) || quantity < 1) e.quantity = "Must be at least 1"
+    if (!baseCategoryId) e.baseCategoryId = "Required"
+    if (!categoryId) e.categoryId = "Required"
     setErrors(e)
     return Object.keys(e).length === 0
   }
@@ -106,9 +111,6 @@ export default function NewRequestDialog({ onClose, onSubmit }: Props) {
     try {
       await onSubmit({
         categoryId,
-        itemKind,
-        requestType,
-        quantity,
         justification: justification.trim(),
         priority,
         requiredBy: requiredBy || null,
@@ -134,59 +136,42 @@ export default function NewRequestDialog({ onClose, onSubmit }: Props) {
         </div>
 
         <div className="flex-1 overflow-y-auto px-6 py-5 space-y-4">
-          {/* Kind toggle */}
-          <div className="grid grid-cols-2 gap-2">
-            {(["Physical", "Subscription"] as const).map((k) => {
-              const Icon = k === "Subscription" ? Cloud : Package
-              const active = itemKind === k
-              return (
-                <button
-                  key={k}
-                  type="button"
-                  onClick={() => setItemKind(k)}
+          {/* Base Category → Category cascade (mirrors the Add/Edit Asset form) */}
+          <div className="grid grid-cols-2 gap-4">
+            <Field label="Base Category" required error={errors.baseCategoryId || loadError}>
+              <div className="relative">
+                <select
+                  value={baseCategoryId}
+                  onChange={(e) => {
+                    setBaseCategoryId(e.target.value)
+                    setCategoryId("")
+                    setErrors((x) => ({ ...x, baseCategoryId: "", categoryId: "" }))
+                  }}
+                  className={cn(inputCls(errors.baseCategoryId || loadError), "appearance-none", !baseCategoryId && "text-gray-400")}
+                >
+                  <option value="">Select Base Category</option>
+                  {baseCategories.map((b) => <option key={b.id} value={b.id}>{b.name}</option>)}
+                </select>
+                <ChevronDown className="absolute right-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-gray-400 pointer-events-none" />
+              </div>
+            </Field>
+            <Field label="Category" required error={errors.categoryId}>
+              <div className="relative">
+                <select
+                  value={categoryId}
+                  onChange={(e) => { setCategoryId(e.target.value); setErrors((x) => ({ ...x, categoryId: "" })) }}
+                  disabled={!baseCategoryId}
                   className={cn(
-                    "flex items-center justify-center gap-2 px-3 py-2 text-xs font-medium border rounded-lg transition-colors",
-                    active
-                      ? "border-accent-300 bg-accent-50 text-accent-700"
-                      : "border-gray-200 text-gray-600 hover:bg-gray-50",
+                    inputCls(errors.categoryId), "appearance-none",
+                    !categoryId && "text-gray-400",
+                    !baseCategoryId && "opacity-50 cursor-not-allowed",
                   )}
                 >
-                  <Icon className="w-3.5 h-3.5" /> {ASSET_REQUEST_KIND_LABELS[k]}
-                </button>
-              )
-            })}
-          </div>
-
-          <Field label="Item type" required error={errors.categoryId || loadError}>
-            <SearchableSelect
-              options={categoryOptions}
-              value={categoryId}
-              onChange={(v) => { setCategoryId(v); setErrors((e) => ({ ...e, categoryId: "" })) }}
-              placeholder="Select a category"
-              searchPlaceholder="Search categories…"
-              error={errors.categoryId || loadError}
-              columnHeaders={{ label: "Category", sublabel: "Base category" }}
-            />
-          </Field>
-
-          <div className="grid grid-cols-2 gap-4">
-            <Field label="Request type" required>
-              <select
-                value={requestType}
-                onChange={(e) => setRequestType(e.target.value as AssetRequestType)}
-                className={inputCls()}
-              >
-                {REQUEST_TYPES.map((t) => <option key={t} value={t}>{t}</option>)}
-              </select>
-            </Field>
-            <Field label="Quantity" required error={errors.quantity}>
-              <input
-                type="number"
-                min={1}
-                value={quantity}
-                onChange={(e) => { setQuantity(e.target.valueAsNumber || 0); setErrors((x) => ({ ...x, quantity: "" })) }}
-                className={inputCls(errors.quantity)}
-              />
+                  <option value="">Select Category</option>
+                  {visibleCategories.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
+                </select>
+                <ChevronDown className="absolute right-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-gray-400 pointer-events-none" />
+              </div>
             </Field>
           </div>
 

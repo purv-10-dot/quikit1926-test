@@ -27,11 +27,13 @@ const statusFilter = z
  * A raised request always enters the approver queue directly (`Submitted`) —
  * there is no employee-facing Draft step.
  */
+// Quantity, item-kind, and request-type are no longer employee-facing decisions:
+// every asset is a unique item (quantity 1), the Category Master row conveys the
+// item type (kind Physical), and New/Replacement/Upgrade/Additional is an IT-team
+// call based on actual availability (request-type New). All three are fixed
+// server-side — the DB columns/enums stay for now; we just stop exposing them.
 const createSchema = z.object({
   categoryId: z.string().min(1, "Pick an item type"),
-  itemKind: z.enum(["Physical", "Subscription"]).default("Physical"),
-  requestType: z.enum(["New", "Replacement", "Upgrade", "Additional"]),
-  quantity: z.number().int().min(1, "Quantity must be at least 1"),
   justification: z.string().trim().optional(),
   priority: z.enum(["Low", "Medium", "High", "Urgent"]).default("Medium"),
   requiredBy: z.string().trim().min(1).nullable().optional(),
@@ -76,10 +78,19 @@ export const GET = auth.view(async ({ orgId, userId }, req) => {
     : [];
   const byUser = new Map(employees.map((e) => [e.userId, e]));
 
+  // Resolve base-category names for the "Category" column subtitle. baseCategoryId
+  // is a loose reference (no FK), so we join in app code like the requester name.
+  const baseCatIds = [...new Set(requests.map((r) => r.baseCategoryId).filter((id): id is string => !!id))];
+  const baseCats = baseCatIds.length
+    ? await db.astBaseCategory.findMany({ where: { orgId, id: { in: baseCatIds } }, select: { id: true, name: true } })
+    : [];
+  const baseCatById = new Map(baseCats.map((b) => [b.id, b.name]));
+
   const data = requests.map((r) => ({
     ...r,
     requesterName: byUser.get(r.requesterUserId)?.name ?? null,
     requesterEmployeeId: byUser.get(r.requesterUserId)?.employeeId ?? null,
+    baseCategoryName: r.baseCategoryId ? baseCatById.get(r.baseCategoryId) ?? null : null,
   }));
 
   return NextResponse.json({ success: true, data });
@@ -99,8 +110,7 @@ export const POST = auth.create(async ({ orgId, userId, userEmail }, req) => {
       { status: 400 },
     );
   }
-  const { categoryId, itemKind, requestType, quantity, justification, priority, requiredBy } =
-    parsed.data;
+  const { categoryId, justification, priority, requiredBy } = parsed.data;
 
   // The item type must be an existing Category Master row in this org. Resolve
   // its name into `itemType` and carry the parent base category (same shape the
@@ -117,12 +127,12 @@ export const POST = auth.create(async ({ orgId, userId, userEmail }, req) => {
     data: {
       orgId,
       requesterUserId: userId,
-      itemKind,
+      itemKind: "Physical", // fixed — kind is no longer a UI decision
       itemType: category.name,
       baseCategoryId: category.baseCategoryId,
       categoryId,
-      requestType,
-      quantity,
+      requestType: "New", // fixed — the IT team decides New/Replacement/etc. at fulfil time
+      quantity: 1, // fixed — every asset is a unique, single item
       justification: justification || "", // column is non-null; store "" when omitted
       priority,
       requiredBy: requiredBy || null,
@@ -136,7 +146,7 @@ export const POST = auth.create(async ({ orgId, userId, userEmail }, req) => {
     action: "Request Submitted",
     entityId: created.id,
     entityName: created.itemType,
-    details: `${requestType} · qty ${quantity} · ${priority}`,
+    details: `Priority: ${priority}`,
     actorId: userId,
     actorEmail: userEmail,
   });

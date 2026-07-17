@@ -6,29 +6,29 @@
  * `/api/asset-requests/[id]/decision` and fulfilment via `.../fulfil`.
  */
 
-import { useState, useEffect, useCallback } from "react"
-import { Loader2, Inbox, Check, X, Package, Cloud, PackageCheck } from "lucide-react"
+import { useState, useEffect, useCallback, useMemo } from "react"
+import { Loader2, Inbox, Check, X, PackageCheck } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { RequirePerm } from "@/components/require-perm"
 import ApproveRejectDialog from "@/components/asset-requests/ApproveRejectDialog"
 import FulfilDialog, { type FulfilPayload } from "@/components/asset-requests/FulfilDialog"
-import { ASSET_REQUEST_KIND_LABELS } from "@/types/assetRequest"
-import type { AssetRequest, AssetRequestDecision, AssetRequestStatus } from "@/types/assetRequest"
+import StatusStepper from "@/components/asset-requests/StatusStepper"
+import type { Asset } from "@/types/asset"
+import type { AssetRequest, AssetRequestDecision, AssetRequestPriority, AssetRequestStatus } from "@/types/assetRequest"
 
-const STATUS_STYLES: Record<AssetRequestStatus, string> = {
-  Draft:              "bg-gray-50 text-gray-500 border border-gray-200",
-  Submitted:          "bg-blue-50 text-blue-700 border border-blue-200",
-  PendingApproval:    "bg-yellow-50 text-yellow-700 border border-yellow-200",
-  Approved:           "bg-green-50 text-green-700 border border-green-200",
-  Rejected:           "bg-red-50 text-red-600 border border-red-200",
-  PartiallyFulfilled: "bg-indigo-50 text-indigo-700 border border-indigo-200",
-  Fulfilled:          "bg-emerald-50 text-emerald-700 border border-emerald-200",
-  Cancelled:          "bg-gray-100 text-gray-400 border border-gray-200",
+const PRIORITY_STYLES: Record<AssetRequestPriority, string> = {
+  Urgent: "bg-red-50 text-red-700 border border-red-200",
+  High:   "bg-orange-50 text-orange-700 border border-orange-200",
+  Medium: "bg-blue-50 text-blue-700 border border-blue-200",
+  Low:    "bg-gray-100 text-gray-500 border border-gray-200",
 }
 
-const STATUS_LABELS: Record<AssetRequestStatus, string> = {
-  Draft: "Draft", Submitted: "Submitted", PendingApproval: "Pending Approval", Approved: "Approved",
-  Rejected: "Rejected", PartiallyFulfilled: "Partially Assigned", Fulfilled: "Assigned", Cancelled: "Cancelled",
+function fmtDate(value?: string | null) {
+  if (!value) return "—"
+  const d = new Date(value)
+  return Number.isFinite(d.getTime())
+    ? d.toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" })
+    : value
 }
 
 /** Statuses an approver can decide on. */
@@ -40,6 +40,7 @@ type Toast = { title: string; message: string; type?: "success" | "error" }
 
 function PendingApprovalsQueue() {
   const [requests, setRequests] = useState<AssetRequest[]>([])
+  const [assets, setAssets] = useState<Asset[]>([])
   const [loading, setLoading] = useState(true)
   const [dialog, setDialog] = useState<{ request: AssetRequest; action: AssetRequestDecision } | null>(null)
   const [fulfilFor, setFulfilFor] = useState<AssetRequest | null>(null)
@@ -53,9 +54,15 @@ function PendingApprovalsQueue() {
   const load = useCallback(async () => {
     setLoading(true)
     try {
-      const res = await fetch("/api/asset-requests")
-      const json = await res.json()
-      setRequests(json?.data ?? [])
+      // Assets power the live "N available" stock indicator per category. It's a
+      // best-effort read — if it 403s (approver without Asset:view), the count
+      // simply doesn't render; the queue still works.
+      const [reqRes, assetJson] = await Promise.all([
+        fetch("/api/asset-requests").then((r) => r.json()),
+        fetch("/api/assets").then((r) => r.json()).catch(() => ({ data: [] })),
+      ])
+      setRequests(reqRes?.data ?? [])
+      setAssets(assetJson?.data ?? [])
     } catch {
       setRequests([])
       showToast("Error", "Failed to load requests", "error")
@@ -63,6 +70,17 @@ function PendingApprovalsQueue() {
       setLoading(false)
     }
   }, [])
+
+  // Available-stock count per category id, for the pre-Assign availability hint.
+  const availableByCategory = useMemo(() => {
+    const map = new Map<string, number>()
+    for (const a of assets) {
+      if (a.assetStatus === "Available" && a.categoryId) {
+        map.set(a.categoryId, (map.get(a.categoryId) ?? 0) + 1)
+      }
+    }
+    return map
+  }, [assets])
 
   useEffect(() => {
     void load()
@@ -131,9 +149,7 @@ function PendingApprovalsQueue() {
             <thead>
               <tr className="bg-accent-50 text-[11px] uppercase tracking-wide text-gray-500 border-b border-gray-100">
                 <th className="px-4 py-3 text-left font-semibold">Requester</th>
-                <th className="px-4 py-3 text-left font-semibold">Item</th>
-                <th className="px-4 py-3 text-left font-semibold">Qty</th>
-                <th className="px-4 py-3 text-left font-semibold">Type</th>
+                <th className="px-4 py-3 text-left font-semibold">Category</th>
                 <th className="px-4 py-3 text-left font-semibold">Priority</th>
                 <th className="px-4 py-3 text-left font-semibold">Required By</th>
                 <th className="px-4 py-3 text-left font-semibold">Status</th>
@@ -142,11 +158,11 @@ function PendingApprovalsQueue() {
             </thead>
             <tbody>
               {loading ? (
-                <tr><td colSpan={8} className="px-4 py-16 text-center text-gray-400">
+                <tr><td colSpan={6} className="px-4 py-16 text-center text-gray-400">
                   <div className="flex items-center justify-center gap-2"><Loader2 className="h-4 w-4 animate-spin" /> Loading…</div>
                 </td></tr>
               ) : requests.length === 0 ? (
-                <tr><td colSpan={8} className="px-4 py-14 text-center text-gray-400">
+                <tr><td colSpan={6} className="px-4 py-14 text-center text-gray-400">
                   <div className="flex flex-col items-center gap-2"><Inbox className="h-8 w-8 text-gray-200" /> No requests in the queue</div>
                 </td></tr>
               ) : requests.map((r) => (
@@ -156,22 +172,25 @@ function PendingApprovalsQueue() {
                     {r.requesterEmployeeId && <p className="text-[10px] text-gray-400">{r.requesterEmployeeId}</p>}
                   </td>
                   <td className="px-4 py-3">
-                    <div className="flex items-center gap-1.5">
-                      {r.itemKind === "Subscription"
-                        ? <Cloud className="h-3.5 w-3.5 text-indigo-400" />
-                        : <Package className="h-3.5 w-3.5 text-gray-400" />}
-                      <span className="font-medium text-gray-800">{r.itemType}</span>
-                    </div>
-                    <p className="text-[10px] text-gray-400 mt-0.5">{ASSET_REQUEST_KIND_LABELS[r.itemKind]}</p>
+                    <p className="font-medium text-gray-800">{r.itemType}</p>
+                    <p className="text-[10px] text-gray-400">{r.baseCategoryName ?? ""}</p>
+                    {(DECIDABLE.has(r.status) || FULFILLABLE.has(r.status)) && r.categoryId && (
+                      <p className={cn(
+                        "text-[10px] font-medium mt-0.5",
+                        (availableByCategory.get(r.categoryId) ?? 0) > 0 ? "text-green-600" : "text-red-500",
+                      )}>
+                        {availableByCategory.get(r.categoryId) ?? 0} available
+                      </p>
+                    )}
                   </td>
-                  <td className="px-4 py-3 text-gray-700">{r.quantityFulfilled}/{r.quantity}</td>
-                  <td className="px-4 py-3 text-gray-600">{r.requestType}</td>
-                  <td className="px-4 py-3 text-gray-600">{r.priority}</td>
-                  <td className="px-4 py-3 text-gray-600 whitespace-nowrap">{r.requiredBy ?? "—"}</td>
                   <td className="px-4 py-3">
-                    <span className={cn("rounded-full px-2 py-0.5 text-[10px] font-semibold whitespace-nowrap", STATUS_STYLES[r.status])}>
-                      {STATUS_LABELS[r.status]}
+                    <span className={cn("rounded-full px-2 py-0.5 text-[10px] font-semibold", PRIORITY_STYLES[r.priority])}>
+                      {r.priority}
                     </span>
+                  </td>
+                  <td className="px-4 py-3 text-gray-600 whitespace-nowrap">{fmtDate(r.requiredBy)}</td>
+                  <td className="px-4 py-3">
+                    <StatusStepper status={r.status} firstStepLabel="Requested" />
                   </td>
                   <td className="px-4 py-3">
                     <div className="flex items-center justify-end gap-1">
@@ -191,12 +210,23 @@ function PendingApprovalsQueue() {
                           </button>
                         </>
                       ) : FULFILLABLE.has(r.status) ? (
-                        <button
-                          onClick={() => setFulfilFor(r)}
-                          className="inline-flex items-center gap-1 rounded-lg bg-accent-50 px-2 py-1.5 text-[10px] font-semibold text-accent-700 hover:bg-accent-100 transition-colors"
-                        >
-                          <PackageCheck className="h-3 w-3" /> Assign
-                        </button>
+                        <>
+                          <button
+                            onClick={() => setFulfilFor(r)}
+                            className="inline-flex items-center gap-1 rounded-lg bg-accent-50 px-2 py-1.5 text-[10px] font-semibold text-accent-700 hover:bg-accent-100 transition-colors"
+                          >
+                            <PackageCheck className="h-3 w-3" /> Assign
+                          </button>
+                          {/* Approved-but-not-yet-fulfilled can be backed out (e.g. no stock). */}
+                          {r.status === "Approved" && (
+                            <button
+                              onClick={() => setDialog({ request: r, action: "reject" })}
+                              className="inline-flex items-center gap-1 rounded-lg bg-red-50 px-2 py-1.5 text-[10px] font-semibold text-red-600 hover:bg-red-100 transition-colors"
+                            >
+                              <X className="h-3 w-3" /> Reject
+                            </button>
+                          )}
+                        </>
                       ) : (
                         <span className="text-[10px] text-gray-300">—</span>
                       )}

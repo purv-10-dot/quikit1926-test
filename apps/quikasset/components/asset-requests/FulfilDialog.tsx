@@ -39,8 +39,6 @@ export default function FulfilDialog({ request, onClose, onConfirm }: Props) {
   const [error, setError] = useState("")
   const [saving, setSaving] = useState(false)
 
-  const remaining = request.quantity - request.quantityFulfilled
-
   useEffect(() => {
     if (isSubscription) return
     fetch("/api/assets")
@@ -96,16 +94,10 @@ export default function FulfilDialog({ request, onClose, onConfirm }: Props) {
         </div>
 
         <div className="px-6 py-5 space-y-4 overflow-y-auto">
-          {/* Summary — item + remaining count (unchanged) */}
-          <dl className="rounded-lg border border-gray-100 bg-gray-50 p-3 text-xs flex items-center justify-between gap-4">
-            <div className="flex items-center gap-2">
-              <dt className="text-gray-400">Item</dt>
-              <dd className="text-gray-800 font-medium">{request.itemType}</dd>
-            </div>
-            <div className="flex items-center gap-2">
-              <dt className="text-gray-400">Remaining</dt>
-              <dd className="text-gray-700">{remaining} of {request.quantity}</dd>
-            </div>
+          {/* Summary — requested item */}
+          <dl className="rounded-lg border border-gray-100 bg-gray-50 p-3 text-xs flex items-center gap-2">
+            <dt className="text-gray-400">Item</dt>
+            <dd className="text-gray-800 font-medium">{request.itemType}</dd>
           </dl>
 
           {isSubscription ? (

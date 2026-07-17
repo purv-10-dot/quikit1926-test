@@ -109,6 +109,20 @@ describe("GET /api/asset-requests — queue scoping", () => {
     expect(json.data[0].requesterEmployeeId).toBe("EMP-0009");
   });
 
+  it("resolves the base-category name for the Category column subtitle", async () => {
+    setSession(ADMIN);
+    grantAll();
+    mockDb.astAssetRequest.findMany.mockResolvedValue([{ id: "r1", requesterUserId: "u1", baseCategoryId: "bc1" }] as never);
+    mockDb.astEmployee.findMany.mockResolvedValue([] as never);
+    mockDb.astBaseCategory.findMany.mockResolvedValue([{ id: "bc1", name: "IT Equipment" }] as never);
+
+    const res = await GET(makeReq("/api/asset-requests"), { params: {} });
+    const json = await res.json();
+    expect(json.data[0].baseCategoryName).toBe("IT Equipment");
+    const call = mockDb.astBaseCategory.findMany.mock.calls[0]?.[0] as { where: { orgId: string } };
+    expect(call.where.orgId).toBe("org1");
+  });
+
   it("400s on an invalid status filter", async () => {
     setSession(ADMIN);
     grantAll();
@@ -123,10 +137,7 @@ describe("POST /api/asset-requests — raise a request", () => {
 
   const validBody = {
     categoryId: "c1",
-    itemKind: "Physical",
-    requestType: "New",
-    quantity: 2,
-    justification: "Two new hires need laptops.",
+    justification: "New hire needs a laptop.",
     priority: "High",
     requiredBy: "2026-08-01",
   };
@@ -166,7 +177,9 @@ describe("POST /api/asset-requests — raise a request", () => {
       itemType: "Laptop",
       baseCategoryId: "b1",
       categoryId: "c1",
-      quantity: 2,
+      quantity: 1, // fixed server-side
+      itemKind: "Physical", // fixed server-side
+      requestType: "New", // fixed server-side
       requiredBy: "2026-08-01",
     });
   });
@@ -184,16 +197,22 @@ describe("POST /api/asset-requests — raise a request", () => {
     expect(call.data.justification).toBe("");
   });
 
-  it("400s an invalid body (quantity < 1) without touching the db", async () => {
+  it("fixes quantity/kind/request-type server-side, ignoring any client-sent values", async () => {
     setSession(MEMBER);
     grantRequester();
+    mockDb.astCategory.findFirst.mockResolvedValue({ name: "Laptop", baseCategoryId: "b1" } as never);
+    mockDb.astAssetRequest.create.mockResolvedValue({ id: "r1", itemType: "Laptop", status: "Submitted" } as never);
+
+    // Client tries to sneak in quantity 5 / Subscription / Upgrade — all ignored.
     const res = await CREATE(
-      makeReq("/api/asset-requests", { method: "POST", body: { ...validBody, quantity: 0 } }),
+      makeReq("/api/asset-requests", { method: "POST", body: { ...validBody, quantity: 5, itemKind: "Subscription", requestType: "Upgrade" } }),
       { params: {} },
     );
-    expect(res.status).toBe(400);
-    expect(mockDb.astCategory.findFirst).not.toHaveBeenCalled();
-    expect(mockDb.astAssetRequest.create).not.toHaveBeenCalled();
+    expect(res.status).toBe(201);
+    const call = mockDb.astAssetRequest.create.mock.calls[0]?.[0] as { data: { quantity: number; itemKind: string; requestType: string } };
+    expect(call.data.quantity).toBe(1);
+    expect(call.data.itemKind).toBe("Physical");
+    expect(call.data.requestType).toBe("New");
   });
 
   it("404s + scopes the category lookup to the caller's org (tenant isolation)", async () => {
@@ -294,12 +313,33 @@ describe("POST /api/asset-requests/[id]/decision", () => {
     expect(mockDb.astAssetRequest.update).not.toHaveBeenCalled();
   });
 
-  it("409s deciding a request that is not actionable", async () => {
+  it("409s approving a request that is not actionable (already Approved)", async () => {
     setSession(ADMIN);
     grantApprover();
     mockDb.astAssetRequest.findFirst.mockResolvedValue({ id: "r1", status: "Approved", itemType: "Laptop" } as never);
     const res = await DECIDE(makeReq("/api/asset-requests/r1/decision", { method: "POST", body: { action: "approve" } }), { params: { id: "r1" } });
     expect(res.status).toBe(409);
+  });
+
+  it("allows rejecting an already-Approved request (back out when no stock)", async () => {
+    setSession(ADMIN);
+    grantApprover();
+    mockDb.astAssetRequest.findFirst.mockResolvedValue({ id: "r1", status: "Approved", itemType: "Laptop" } as never);
+    mockDb.astAssetRequest.update.mockResolvedValue({ id: "r1", status: "Rejected" } as never);
+    const res = await DECIDE(makeReq("/api/asset-requests/r1/decision", { method: "POST", body: { action: "reject", note: "No stock available" } }), { params: { id: "r1" } });
+    expect(res.status).toBe(200);
+    const call = mockDb.astAssetRequest.update.mock.calls[0]?.[0] as { data: { status: string; decisionNote: string } };
+    expect(call.data.status).toBe("Rejected");
+    expect(call.data.decisionNote).toBe("No stock available");
+  });
+
+  it("409s rejecting a partially-fulfilled request (holds live assignments)", async () => {
+    setSession(ADMIN);
+    grantApprover();
+    mockDb.astAssetRequest.findFirst.mockResolvedValue({ id: "r1", status: "PartiallyFulfilled", itemType: "Laptop" } as never);
+    const res = await DECIDE(makeReq("/api/asset-requests/r1/decision", { method: "POST", body: { action: "reject", note: "changed my mind" } }), { params: { id: "r1" } });
+    expect(res.status).toBe(409);
+    expect(mockDb.astAssetRequest.update).not.toHaveBeenCalled();
   });
 
   it("404s + scopes the lookup to the caller's org (tenant isolation)", async () => {
