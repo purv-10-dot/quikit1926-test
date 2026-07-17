@@ -8,6 +8,17 @@ Most recent first. Each entry: **date · what changed · why · migration · sig
 
 ---
 
+## 2026-07-17 — Vendor Management
+
+- **Added:**
+  - Model `AstVendor` (table `vendors`) — columns `id`, `orgId`, `name`, `contactPerson`, `phone`, `email`, `address`, `status`, `createdAt`, `updatedAt`; index `(orgId)`.
+  - Enum `AstVendorStatus` (`Active`, `Inactive`).
+  - `AstRepair.vendorId` (nullable) + index `(vendorId)` + FK → `vendors(id)`, `ON DELETE SET NULL`.
+- **Kept:** legacy `AstRepair.vendor` free-text column — retained as a fallback for existing repairs; not dropped this pass (planned post-UAT cleanup). No auto-migration of old text values.
+- **Why:** minimal Vendor master (save vendor details) and link a vendor to Repair records, replacing the free-text vendor field in Repair & Recovery. Excludes GST/PAN/bank/SLA/ratings/purchase-history (depend on Procurement, out of scope).
+- **Migration:** `prisma/migrations/20260717120000_add_ast_vendor/`
+- **Sign-off:** Approved by PM.
+
 ## 2026-07-15 — Asset Request feature
 
 - **Added:**

@@ -18,6 +18,7 @@ import {
   UserCog,
   Settings,
   Tags,
+  Building2,
   X,
 } from "lucide-react";
 
@@ -43,7 +44,7 @@ const NAV_SECTIONS: NavSection[] = [
     label: "My Work",
     items: [
       // Member landing — their own assigned assets (any Asset:view holder).
-      { label: "Assets", href: "/employee-view", icon: Boxes, perm: { resource: "Asset", action: "view" } },
+      { label: "My Assets", href: "/employee-view", icon: Boxes, perm: { resource: "Asset", action: "view" } },
       // Employee self-service — raise/track own requests (any AssetRequest:view holder).
       { label: "My Requests", href: "/my-requests", icon: FilePlus2, perm: { resource: "AssetRequest", action: "view" } },
       { label: "Notification", href: "/notifications", icon: Mail },
@@ -60,6 +61,7 @@ const NAV_SECTIONS: NavSection[] = [
       // Approver queue — only holders of AssetRequest:viewAll (approvers/admin).
       { label: "Asset Requests", href: "/asset-requests", icon: ClipboardCheck, perm: { resource: "AssetRequest", action: "viewAll" } },
       { label: "Repair & Recovery", href: "/repair", icon: Wrench },
+      { label: "Vendors", href: "/vendors", icon: Building2, perm: { resource: "Vendor", action: "view" } },
     ],
   },
   {

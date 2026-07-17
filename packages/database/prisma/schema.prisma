@@ -18082,7 +18082,11 @@ model AstRepair {
   asset            AstAsset         @relation(fields: [assetId], references: [id])
   issueTitle       String
   issueDescription String
+  // Legacy free-text vendor — kept as a fallback for old repairs; superseded by
+  // the vendorId FK below (new repairs pick a vendor). Do not drop yet.
   vendor           String?
+  vendorId         String?
+  vendorRef        AstVendor?       @relation(fields: [vendorId], references: [id])
   estimatedCost    Float?
   actualCost       Float?
   sentDate         String
@@ -18096,7 +18100,35 @@ model AstRepair {
 
   @@index([orgId])
   @@index([assetId])
+  @@index([vendorId])
   @@map("repairs")
+  @@schema("app_quikasset")
+}
+
+/// Vendor / supplier master (minimal — no GST/PAN/bank/SLA/ratings/purchase
+/// history yet; those depend on Procurement). Linked from AstRepair.vendorId.
+model AstVendor {
+  id            String          @id @default(cuid())
+  orgId         String
+  name          String
+  contactPerson String?
+  phone         String?
+  email         String?
+  address       String?
+  status        AstVendorStatus @default(Active)
+  createdAt     DateTime        @default(now())
+  updatedAt     DateTime        @updatedAt
+  repairs       AstRepair[]
+
+  @@index([orgId])
+  @@map("vendors")
+  @@schema("app_quikasset")
+}
+
+enum AstVendorStatus {
+  Active
+  Inactive
+
   @@schema("app_quikasset")
 }
 
