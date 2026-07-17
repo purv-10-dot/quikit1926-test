@@ -84,14 +84,14 @@ export function ReportsView() {
   const isInitialLoading = query.isLoading && !query.data;
   const isRefetching = query.isFetching && !!query.data;
 
-  // All projects the user can access — fetched independently of the current
-  // page of task rows. Deriving this from `tasks` only showed projects present
-  // on the loaded page, so the list grew as you paginated. /api/projects with
-  // pageSize=0 returns every accessible project (admins: all; members: theirs).
+  // Projects the caller may report on — scoped the same way as the report data
+  // (admins: all; Space Admins: only their projects). Uses the dedicated
+  // /api/reports/projects endpoint so the filter can't list member-only
+  // projects that the report itself excludes.
   const projectsQuery = useQuery({
     queryKey: ["reports.projects"],
     queryFn: async ({ signal }) => {
-      const res = await fetch("/api/projects?pageSize=0&sort=name&order=asc", { signal });
+      const res = await fetch("/api/reports/projects", { signal });
       const j = await res.json();
       if (!j?.success) throw new Error(j?.error ?? "Failed");
       return (j.data as { id: string; name: string }[]) ?? [];
