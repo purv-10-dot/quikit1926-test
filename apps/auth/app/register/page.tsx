@@ -485,10 +485,17 @@ export default function RegisterPage() {
             )}
           </div>
 
-          <div className="auth-foot">
-            <span>© {new Date().getFullYear()} {BRAND_NAME}</span>
-            <span className="auth-foot-links"><a href="/login">Support</a></span>
-          </div>
+          {step === "workspace" && (
+            <div className="auth-foot auth-foot--terms">
+              <span>
+                By creating an account, you agree to our{" "}
+                <a href="https://www.quikit.ai/legal/terms" target="_blank" rel="noopener noreferrer">
+                  Terms &amp; Service
+                </a>
+                .
+              </span>
+            </div>
+          )}
         </main>
       </div>
     </div>
@@ -603,6 +610,9 @@ const REG_CSS = `
 .qk-reg .auth-foot-links { display:flex; gap:20px; }
 .qk-reg .auth-foot a { color:var(--text-muted); }
 .qk-reg .auth-foot a:hover { color:var(--text-primary); }
+.qk-reg .auth-foot--terms { justify-content:center; text-align:center; }
+.qk-reg .auth-foot--terms a { color:var(--text-primary); text-decoration:underline; text-underline-offset:2px; }
+.qk-reg .auth-foot--terms a:hover { opacity:.8; }
 /* ── OTP inputs ── */
 .qk-reg .auth-otp { display:grid; grid-template-columns:repeat(6, 1fr); gap:10px; margin-bottom:8px; }
 .qk-reg .auth-otp-input { width:100%; aspect-ratio:1 / 1.1; text-align:center; font-family:inherit; font-size:22px; font-weight:500; color:var(--text-primary); background:var(--card-bg); border:1px solid var(--hairline); border-radius:12px; transition:border-color .15s, background .15s; outline:none; }

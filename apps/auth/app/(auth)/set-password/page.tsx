@@ -179,11 +179,6 @@ export default function SetPasswordPage() {
               </button>
             </form>
           </div>
-
-          <div className="auth-foot">
-            <span>© {new Date().getFullYear()} {BRAND_NAME}</span>
-            <span className="auth-foot-links"><a href="/login">Support</a></span>
-          </div>
         </main>
       </div>
     </div>

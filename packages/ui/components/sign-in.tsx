@@ -1337,14 +1337,6 @@ export const SignInComponent = ({
               </>
             )}
           </div>
-
-          <footer className="auth-foot">
-            <span>© {new Date().getFullYear()} {brandName}</span>
-            <span className="auth-foot-links">
-              <a href="/privacy">Privacy Policy</a>
-              <a href="/support">Support</a>
-            </span>
-          </footer>
         </section>
       </div>
     </div>
