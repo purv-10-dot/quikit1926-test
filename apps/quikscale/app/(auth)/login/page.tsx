@@ -12,6 +12,8 @@ import { useSearchParams } from "next/navigation";
  * user lands on dashboard. No login form shown.
  */
 
+
+
 export default function LoginPage() {
   const { status } = useSession();
   const searchParams = useSearchParams();

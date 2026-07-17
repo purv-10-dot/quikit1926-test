@@ -10,6 +10,7 @@ const APP_COLORS = [
   "bg-rose-50 text-rose-600",
 ];
 
+
 export default function AppsPage() {
   return (
     <div className="space-y-6">

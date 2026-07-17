@@ -4,6 +4,7 @@ import { jwtVerify } from "jose";
 import { encode } from "next-auth/jwt";
 import { publicBaseUrl } from "@quikit/auth/public-url";
 import { consumeHandoffJti } from "@/lib/handoff-replay";
+import manifest from "@/manifest";
 
 /**
  * GET /auth-handoff?token=<jwt>
@@ -78,15 +79,18 @@ export async function GET(request: NextRequest) {
     return NextResponse.redirect(new URL("/login?reason=invalid_handoff", origin));
   }
 
-  // TODO(SEC-03): app-binding check temporarily removed to unblock UAT, where
-  // the App catalog row's `slug` does not match manifest.appId ("quiktrack").
-  // RESTORE THIS before shipping — without it, a handoff token minted for ANY
-  // consumer app (shared INTERNAL_SECRET) can be converted into a quiktrack
-  // session (cross-app session forgery, P0). Proper fix is to correct the
-  // UAT App.slug in the DB, then re-enable:
-  //   if (payload.slug !== manifest.appId) {
-  //     return NextResponse.redirect(new URL("/login?reason=wrong_app_handoff", origin));
-  //   }
+  // SEC-03: app-binding check. The launcher mints the handoff token with a
+  // `slug` claim set to the DB App row's slug for the app the user launched.
+  // Because INTERNAL_SECRET is shared across every consumer app, a token
+  // minted for app X would otherwise verify here and be convertible into a
+  // quiktrack session (cross-app session forgery, P0). Reject any token whose
+  // slug isn't this app's manifest appId.
+  // NOTE: requires the DB App.slug for this app to equal manifest.appId
+  // ("quiktrack"). If a stale UAT catalog row uses a different slug, correct
+  // the DB row rather than weakening this check.
+  if (payload.slug !== manifest.appId) {
+    return NextResponse.redirect(new URL("/login?reason=wrong_app_handoff", origin));
+  }
 
   // SEC-02: enforce single use. A token with no jti is malformed; a jti that has
   // already been consumed is a replay. Either way, refuse to mint a session.
