@@ -30,6 +30,7 @@ import {
 } from "lucide-react";
 import { EditableCell } from "./editable-cell";
 import { AssigneeCell, MemberChip, type MemberLite } from "./assignee-cell";
+import { ColumnHeaderTooltip } from "./column-header-tooltip";
 import { K, type FieldDef, type IdeaRow, type IdeaFieldValue } from "./ideas-types";
 
 export interface Column {
@@ -513,14 +514,28 @@ export function IdeasTable({
                   } ${colDragKey === col.key ? "opacity-40" : ""} ${colOverKey === col.key ? "border-l-2 border-l-blue-500" : ""}`}
                 >
                   <span className={`flex items-center gap-1.5 whitespace-nowrap ${sortByKey?.[col.key] ? "text-blue-600" : ""}`}>
-                    {isSummary ? (
-                      <span className={`font-serif text-[13px] italic ${sortByKey?.[col.key] ? "text-blue-500" : "text-gray-400"}`}>Aa</span>
-                    ) : col.field?.key === "score" ? (
-                      <span className={`font-serif text-[13px] italic ${sortByKey?.[col.key] ? "text-blue-500" : "text-gray-500"}`}>fx</span>
-                    ) : (
-                      <Icon className={`h-3.5 w-3.5 ${sortByKey?.[col.key] ? "text-blue-500" : "text-gray-400"}`} />
-                    )}
-                    {col.label}
+                    <ColumnHeaderTooltip
+                      colKey={col.key}
+                      fieldKey={col.field?.key}
+                      label={col.label}
+                      Icon={Icon}
+                      iconNode={
+                        isSummary ? (
+                          <span className="font-serif text-[13px] italic text-gray-500">Aa</span>
+                        ) : col.field?.key === "score" ? (
+                          <span className="font-serif text-[13px] italic text-gray-600">fx</span>
+                        ) : undefined
+                      }
+                    >
+                      {isSummary ? (
+                        <span className={`font-serif text-[13px] italic ${sortByKey?.[col.key] ? "text-blue-500" : "text-gray-400"}`}>Aa</span>
+                      ) : col.field?.key === "score" ? (
+                        <span className={`font-serif text-[13px] italic ${sortByKey?.[col.key] ? "text-blue-500" : "text-gray-500"}`}>fx</span>
+                      ) : (
+                        <Icon className={`h-3.5 w-3.5 ${sortByKey?.[col.key] ? "text-blue-500" : "text-gray-400"}`} />
+                      )}
+                      <span className="truncate">{col.label}</span>
+                    </ColumnHeaderTooltip>
                     {sortByKey?.[col.key] && (
                       sortByKey[col.key] === "asc"
                         ? <ArrowUp className="h-3.5 w-3.5 text-blue-600" />
