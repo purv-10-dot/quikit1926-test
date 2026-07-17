@@ -1,4 +1,4 @@
-import { db as prisma } from "@quikit/database";
+import { db as prisma, Prisma } from "@quikit/database";
 import { afterAll, beforeAll, describe, expect, it, vi, type Mock } from "vitest";
 
 vi.mock("@/lib/session", () => ({
@@ -40,7 +40,7 @@ async function seedMessage(
       senderId: aliceId,
       type,
       content: "",
-      data,
+      data: data as Prisma.InputJsonValue,
       reactions: {},
     },
   });
