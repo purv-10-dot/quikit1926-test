@@ -9,9 +9,6 @@ import {
   Maximize2,
   Minimize2,
   Lightbulb,
-  Paperclip,
-  Link2,
-  FileText,
   Pin,
   Trash2,
 } from "lucide-react";
@@ -20,6 +17,10 @@ import { K, type FieldDef, type IdeaRow, type IdeaStatus, type IdeaFieldValue } 
 import { Accordion, FieldRow } from "./idea-panel-fields";
 import { EditableCell } from "./editable-cell";
 import { iconForColumn, isFormulaColumn } from "./field-icons";
+import { RichTextEditor } from "@/components/rich-text-editor-lazy";
+import { sanitizeRichText } from "@/lib/sanitize";
+import { uploadProjectImage } from "@/lib/upload-image";
+import { IdeaAttachmentsLinks } from "./idea-attachments-links";
 import { IdeaComments } from "./idea-comments";
 import { IdeaInsights } from "./idea-insights";
 import { IdeaDelivery } from "./idea-delivery";
@@ -179,31 +180,32 @@ export function IdeaDetailPanel({
     .filter((f) => !grouped.has(f.key) && !JIRA_ONLY.has(f.key))
     .sort((a, b) => a.name.localeCompare(b.name));
 
+  // Description has real (non-empty) content once HTML tags are stripped.
+  const descHasContent = description.replace(/<[^>]*>/g, "").replace(/&nbsp;/g, " ").trim().length > 0;
+
   // Description + action buttons (top of the Overview left column).
   const overviewContent = (
     <>
-      <div className="flex flex-wrap gap-2">
-        <StubBtn icon={Paperclip} label="Add attachment" />
-        <StubBtn icon={Link2} label="Link work item" />
-        <StubBtn icon={FileText} label="Templates" />
-      </div>
+      <IdeaAttachmentsLinks projectId={projectId} ideaId={idea.id} />
       {editingDesc ? (
-        <textarea
-          autoFocus
-          value={description}
-          onChange={(e) => setDescription(e.target.value)}
-          onBlur={saveDescription}
-          rows={8}
-          className="w-full rounded border border-blue-400 p-2 text-sm outline-none"
-          placeholder="Add a description…"
-        />
-      ) : description ? (
+        <div>
+          <RichTextEditor
+            value={description}
+            onChange={setDescription}
+            placeholder="Add a description…"
+            uploadImage={(file) => uploadProjectImage(projectId, file)}
+          />
+          <div className="mt-2 flex items-center gap-2">
+            <button type="button" onClick={() => void saveDescription()} className="rounded bg-blue-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-blue-700">Save</button>
+            <button type="button" onClick={() => { setDescription(idea.description ?? ""); setEditingDesc(false); }} className="text-sm text-gray-500 hover:text-gray-700">Cancel</button>
+          </div>
+        </div>
+      ) : descHasContent ? (
         <div
           onClick={() => setEditingDesc(true)}
-          className="cursor-text whitespace-pre-wrap rounded p-1 text-sm leading-relaxed text-gray-700 hover:bg-gray-50"
-        >
-          {description}
-        </div>
+          className="prose prose-sm max-w-none cursor-text rounded p-1 text-sm leading-relaxed text-gray-700 hover:bg-gray-50"
+          dangerouslySetInnerHTML={{ __html: sanitizeRichText(description) }}
+        />
       ) : (
         <button type="button" onClick={() => setEditingDesc(true)} className="text-sm text-gray-400 hover:text-gray-600">
           Add a description… <span className="text-blue-600">or start from a template</span>
@@ -442,10 +444,3 @@ function MoreMenu({ onDelete }: { onDelete: () => void }) {
   );
 }
 
-function StubBtn({ icon: Icon, label }: { icon: typeof Eye; label: string }) {
-  return (
-    <button type="button" className="inline-flex items-center gap-1.5 rounded border border-gray-200 px-2.5 py-1.5 text-sm text-gray-700 hover:bg-gray-50">
-      <Icon className="h-3.5 w-3.5 text-gray-500" /> {label}
-    </button>
-  );
-}

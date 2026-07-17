@@ -9749,6 +9749,8 @@ model QtIdea {
   comments     QtIdeaComment[]
   insights     QtIdeaInsight[]
   deliveries   QtIdeaDelivery[]
+  attachments  QtIdeaAttachment[]
+  links        QtIdeaLink[]
 
   @@unique([projectId, key])
   @@index([orgId])
@@ -9906,6 +9908,42 @@ model QtIdeaViewComment {
   createdBy String?
 
   @@index([viewId, createdAt])
+  @@index([orgId])
+  @@schema("app_quiktrack")
+}
+
+// TODO(integration): discovery idea attachments. Additive; owner sign-off before Neon.
+model QtIdeaAttachment {
+  id        String   @id @default(cuid())
+  orgId     String
+  ideaId    String
+  fileName  String
+  url       String
+  mimeType  String?
+  size      Int?
+  createdAt DateTime @default(now())
+  createdBy String?
+  idea      QtIdea   @relation(fields: [ideaId], references: [id], onDelete: Cascade)
+
+  @@index([ideaId, createdAt])
+  @@index([orgId])
+  @@schema("app_quiktrack")
+}
+
+// TODO(integration): discovery idea "Linked work items" (JPD) — linkType + a
+// cross-project QtIssue reference (no FK; resolved at read time). Additive.
+model QtIdeaLink {
+  id        String   @id @default(cuid())
+  orgId     String
+  ideaId    String
+  issueId   String
+  linkType  String   @default("relates to")
+  createdAt DateTime @default(now())
+  createdBy String?
+  idea      QtIdea   @relation(fields: [ideaId], references: [id], onDelete: Cascade)
+
+  @@unique([ideaId, issueId, linkType])
+  @@index([ideaId])
   @@index([orgId])
   @@schema("app_quiktrack")
 }
