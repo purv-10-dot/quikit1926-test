@@ -9921,8 +9921,6 @@ enum EmploymentType {
   PartTime
   Contract
   Intern
-  Freelancer
-  Consultant
 
   @@schema("app_quikhrms")
 }
@@ -11914,8 +11912,8 @@ model JobRequisition {
   employmentType EmploymentType  @default(FullTime)
   workLocation   WorkLocation    @default(Office)
 
-  experienceMin  Int?
-  experienceMax  Int?
+  experienceMin  Decimal? @db.Decimal(4, 1)
+  experienceMax  Decimal? @db.Decimal(4, 1)
   salaryMin      Decimal? @db.Decimal(15, 2)
   salaryMax      Decimal? @db.Decimal(15, 2)
   salaryCurrency String   @default("INR")
@@ -12666,6 +12664,10 @@ model CompanySettings {
   noticePeriodDays    Int     @default(60)
   workWeek            Json?
   workHoursPerDay     Decimal @default(8) @db.Decimal(4, 2)
+
+  // Recruit: months a rejected candidate must wait before re-applying.
+  // null / 0 = no cooling period.
+  candidateCoolingMonths Int?
 
   // Offer letter branding (S3 keys; served via proxy)
   letterheadKey        String?

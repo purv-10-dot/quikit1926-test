@@ -1,11 +1,12 @@
 "use client";
 
 import { useState } from "react";
+import { useRouter } from "next/navigation";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useApiClient } from "@/lib/hooks/use-api";
 import { useToast } from "@/components/hrms/toast";
 import { Modal } from "@/components/hrms/modal";
-import { Inbox, CheckCircle2, X as XIcon, Briefcase, Building2, Users, AlertTriangle, FileText, Pencil } from "lucide-react";
+import { Inbox, CheckCircle2, X as XIcon, Briefcase, AlertTriangle, FileText, Pencil } from "lucide-react";
 import { clsx } from "clsx";
 import { RequisitionWizard, toReqPayload, emptyReqForm } from "../_components/requisition-wizard";
 import type { ReqFormShape, DeptOption, PipelineOption, EmpOption } from "../_components/requisition-wizard";
@@ -89,26 +90,25 @@ export default function RequisitionApprovalsPage() {
   const api = useApiClient();
   const qc = useQueryClient();
   const toast = useToast();
+  const router = useRouter();
 
   const { data, isLoading } = useQuery({
     queryKey: ["requisition-approvals", "pending"],
     queryFn: () => api.get<ApprovalsQueueResponse>("/api/v1/hrms/recruit/requisitions/approvals-queue"),
   });
   const items = data?.data?.mine ?? [];
-  // Org-wide pending (admins only; [] otherwise). Rows already awaiting the
-  // current user are actionable above — surface the rest for visibility.
-  const orgPending = (data?.data?.all ?? []).filter((r) => !r.waitingOnMe);
-
   const [decision, setDecision] = useState<{ kind: "approve" | "reject"; item: PendingItem } | null>(null);
   const [comment, setComment] = useState("");
 
   const decideMut = useMutation({
-    mutationFn: ({ id, kind }: { id: string; kind: "approve" | "reject" }) =>
-      api.post(`/api/v1/hrms/recruit/requisitions/${id}/${kind}`, { comment: comment || undefined }),
+    mutationFn: ({ id, kind, comment: c }: { id: string; kind: "approve" | "reject"; comment?: string }) =>
+      api.post(`/api/v1/hrms/recruit/requisitions/${id}/${kind}`, { comment: c || undefined }),
     onSuccess: (_r, vars) => {
       toast.success(vars.kind === "approve" ? "Approved" : "Rejected");
       qc.invalidateQueries({ queryKey: ["requisition-approvals"] });
       setDecision(null); setComment("");
+      // Approve is a one-click action — send the user to the requisitions list.
+      if (vars.kind === "approve") router.push("/recruit/requisitions");
     },
   });
 
@@ -168,7 +168,6 @@ export default function RequisitionApprovalsPage() {
         requirements: arr(r.requirements), niceToHave: arr(r.niceToHave), benefits: arr(r.benefits),
         education: r.education ?? "", referralBonusAmount: numv(r.referralBonusAmount),
         careerPageVisible: r.careerPageVisible ?? true, internalPostingOnly: r.internalPostingOnly ?? false, postToJobPortal: r.postToJobPortal ?? false,
-        rolePurpose: r.rolePurpose ?? "",
         responsibilities: arr(r.responsibilities),
         skillWeights: Array.isArray(r.skillWeights) ? r.skillWeights : [],
         justification: r.justification ?? "",
@@ -280,8 +279,9 @@ export default function RequisitionApprovalsPage() {
                         </button>
                       )}
                       <button
-                        onClick={() => { setComment(""); setDecision({ kind: "approve", item: it }); }}
-                        className="inline-flex items-center gap-1 px-3 py-1.5 rounded-md text-xs font-medium bg-emerald-50 text-emerald-700 ring-1 ring-emerald-200 hover:bg-emerald-100">
+                        onClick={() => decideMut.mutate({ id: it.requisition.id, kind: "approve" })}
+                        disabled={decideMut.isPending}
+                        className="inline-flex items-center gap-1 px-3 py-1.5 rounded-md text-xs font-medium bg-emerald-50 text-emerald-700 ring-1 ring-emerald-200 hover:bg-emerald-100 disabled:opacity-50">
                         <CheckCircle2 size={13} /> Approve
                       </button>
                       <button
@@ -298,56 +298,6 @@ export default function RequisitionApprovalsPage() {
         )}
       </div>
 
-      {orgPending.length > 0 && (
-        <div className="mt-6">
-          <div className="flex items-center gap-2 mb-2">
-            <Building2 size={15} className="text-slate-500" />
-            <h2 className="text-[13px] font-bold text-slate-800">All pending requisitions</h2>
-            <span className="text-[11px] text-slate-400">org-wide · read-only</span>
-          </div>
-          <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
-            <ul className="divide-y divide-slate-100">
-              {orgPending.map((r) => {
-                const raiserName = r.raiser ? `${r.raiser.firstName} ${r.raiser.lastName}`.trim() : "—";
-                const approverName = r.currentApprover ? `${r.currentApprover.firstName} ${r.currentApprover.lastName}`.trim() : "—";
-                return (
-                  <li key={r.requisitionId} className="p-3.5 hover:bg-slate-50/60">
-                    <div className="flex items-start justify-between gap-4 flex-wrap">
-                      <div className="min-w-0">
-                        <div className="flex items-center gap-2 flex-wrap">
-                          <Briefcase size={13} className="text-slate-400 shrink-0" />
-                          <span className="text-[13px] font-semibold text-slate-900 truncate">{r.title}</span>
-                          {r.priority && (
-                            <span className={clsx("px-2 py-0.5 rounded-full text-[10px] font-bold ring-1", PRIORITY_CLS[r.priority])}>{r.priority}</span>
-                          )}
-                          <span className="text-[10px] text-slate-400 font-mono">{r.requisitionNumber}</span>
-                        </div>
-                        <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] text-slate-500">
-                          <span className="inline-flex items-center gap-1"><Building2 size={11} /> {r.department?.name ?? "—"}</span>
-                          <span className="inline-flex items-center gap-1"><Users size={11} /> {r.positions} position{r.positions === 1 ? "" : "s"}</span>
-                          <span>Raised by <strong className="text-slate-700">{raiserName}</strong></span>
-                        </div>
-                      </div>
-                      <div className="shrink-0 text-right">
-                        <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-amber-50 text-amber-700 ring-1 ring-amber-200 text-[11px] font-semibold">
-                          <Inbox size={11} /> Waiting on {approverName}
-                        </span>
-                        <div className="mt-1 text-[10px] text-slate-400">
-                          {r.currentLevel != null && r.currentRole
-                            ? `L${r.currentLevel} · ${r.currentRole === "DeptHead" ? "Dept Head" : "HR"}`
-                            : "—"}
-                          {r.totalLevels > 0 ? ` · ${r.approvedCount}/${r.totalLevels} approved` : ""}
-                        </div>
-                      </div>
-                    </div>
-                  </li>
-                );
-              })}
-            </ul>
-          </div>
-        </div>
-      )}
-
       <Modal
         open={!!decision}
         onClose={() => !decideMut.isPending && setDecision(null)}
@@ -355,7 +305,7 @@ export default function RequisitionApprovalsPage() {
         size="md"
       >
         {decision && (
-          <form onSubmit={(e) => { e.preventDefault(); decideMut.mutate({ id: decision.item.requisition.id, kind: decision.kind }); }} className="space-y-4">
+          <form onSubmit={(e) => { e.preventDefault(); decideMut.mutate({ id: decision.item.requisition.id, kind: decision.kind, comment }); }} className="space-y-4">
             <div className="bg-slate-50 border border-slate-200 rounded-lg p-3 text-xs">
               <div className="font-semibold">{decision.item.requisition.title}</div>
               <div className="text-xs text-slate-500 mt-0.5">{decision.item.requisition.department?.name ?? "—"} · {decision.item.requisition.positions} pos · {decision.item.role}</div>

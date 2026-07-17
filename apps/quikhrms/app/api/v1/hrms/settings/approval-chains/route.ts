@@ -48,15 +48,26 @@ export const POST = withAuth(async (req: NextRequest, { orgId, userId }) => {
 
     const { levels, autoApproveAfterDays, ...rest } = parsed.data;
 
-    const chain = await prisma.approvalChain.create({
-      data: {
-        orgId,
-        ...rest,
-        levels: JSON.parse(JSON.stringify(levels)),
-        autoApproveAfterDays: autoApproveAfterDays ?? null,
-        createdBy: userId,
-        updatedBy: userId,
-      },
+    // Only one active chain per module. Creating an active chain deactivates any
+    // other active chain for the same module.
+    const chain = await prisma.$transaction(async (tx) => {
+      const created = await tx.approvalChain.create({
+        data: {
+          orgId,
+          ...rest,
+          levels: JSON.parse(JSON.stringify(levels)),
+          autoApproveAfterDays: autoApproveAfterDays ?? null,
+          createdBy: userId,
+          updatedBy: userId,
+        },
+      });
+      if (created.isActive) {
+        await tx.approvalChain.updateMany({
+          where: { orgId, module: created.module, isActive: true, deletedAt: null, id: { not: created.id } },
+          data: { isActive: false, updatedBy: userId },
+        });
+      }
+      return created;
     });
 
     await createAuditLog({

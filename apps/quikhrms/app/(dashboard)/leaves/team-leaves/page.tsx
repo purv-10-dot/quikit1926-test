@@ -85,6 +85,9 @@ export default function TeamLeavesPage() {
   });
 
   const approveMut = useMutation({
+    // Surfaced via toast below — suppress the global modal so the same failure
+    // doesn't show a toast AND a blocking dialog.
+    meta: { suppressGlobalError: true },
     mutationFn: ({ id, status, comment }: { id: string; status: string; comment?: string }) =>
       api.post(`/api/v1/hrms/leaves/requests/${id}/approve`, { status, comment }),
     onSuccess: (_r, vars) => {

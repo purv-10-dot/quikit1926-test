@@ -37,8 +37,9 @@ export async function sendInterviewInvites(orgId: string, interviewId: string): 
     const company = await prisma.companySettings.findUnique({ where: { orgId }, select: { companyName: true } });
     const companyName = company?.companyName ?? "Our Company";
     const dt = new Date(interview.scheduledAt);
-    const dateStr = dt.toLocaleDateString("en-IN", { weekday: "long", day: "2-digit", month: "long", year: "numeric" });
-    const timeStr = dt.toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit", hour12: true });
+    // Format in IST — the server runs in UTC, so omitting timeZone shows the wrong time.
+    const dateStr = dt.toLocaleDateString("en-IN", { weekday: "long", day: "2-digit", month: "long", year: "numeric", timeZone: "Asia/Kolkata" });
+    const timeStr = dt.toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit", hour12: true, timeZone: "Asia/Kolkata" });
     const candidate = interview.application?.candidate;
     const interviewerName = `${interview.interviewer.firstName} ${interview.interviewer.lastName}`.trim();
     const candidateName = candidate ? `${candidate.firstName} ${candidate.lastName}`.trim() : "Candidate";

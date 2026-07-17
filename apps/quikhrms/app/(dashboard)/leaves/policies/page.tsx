@@ -80,7 +80,7 @@ interface LeaveTypeItem {
   applicableEmploymentType: string[] | null;
 }
 
-const EMPLOYMENT_TYPES = ["FullTime", "PartTime", "Contract", "Intern", "Freelancer", "Consultant"];
+const EMPLOYMENT_TYPES = ["FullTime", "PartTime", "Contract", "Intern"];
 
 interface LeaveGroupAssignment {
   id: string;

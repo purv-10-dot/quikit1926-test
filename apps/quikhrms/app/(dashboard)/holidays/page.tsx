@@ -29,8 +29,25 @@ interface Leave {
   leaveType: { name: string; color: string | null };
 }
 
+interface CelebPerson {
+  id: string;
+  name: string;
+  profilePhoto: string | null;
+  jobTitle: string | null;
+  dateOfBirth: string | null;
+  dateOfJoining: string | null;
+}
+type Celebration = { type: "birthday" | "anniversary"; person: CelebPerson; years?: number };
+
 const DAY_LABELS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 type View = "month" | "week" | "list";
+type EventType = "holiday" | "leave" | "birthday" | "anniversary";
+const EVENT_TYPE_OPTIONS: { key: EventType; label: string; dot: string }[] = [
+  { key: "holiday", label: "Holidays", dot: "bg-green-500" },
+  { key: "leave", label: "People on Leave", dot: "bg-blue-500" },
+  { key: "birthday", label: "Birthdays", dot: "bg-pink-500" },
+  { key: "anniversary", label: "Anniversaries", dot: "bg-violet-500" },
+];
 
 const isCompanyHoliday = (type: string) => type === "Company";
 const ymd = (d: Date) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
@@ -55,6 +72,24 @@ function Avatar({ e, size = 18 }: { e: Emp; size?: number }) {
   );
 }
 
+function CelebAvatar({ person, size = 30 }: { person: { name: string; profilePhoto: string | null }; size?: number }) {
+  const init = person.name.split(" ").filter(Boolean).map((w) => w[0]).slice(0, 2).join("").toUpperCase() || "?";
+  const cls = "rounded-full ring-2 ring-white object-cover shrink-0";
+  const style = { width: size, height: size };
+  return person.profilePhoto ? (
+    // eslint-disable-next-line @next/next/no-img-element
+    <img src={withBasePath(person.profilePhoto)} alt="" title={person.name} className={cls} style={style} />
+  ) : (
+    <span
+      title={person.name}
+      className={clsx(cls, "inline-flex items-center justify-center bg-gradient-to-br from-[#22c55e] to-[#16a34a] text-white font-semibold")}
+      style={{ ...style, fontSize: size * 0.42 }}
+    >
+      {init}
+    </span>
+  );
+}
+
 export default function HRCalendarPage() {
   const api = useApiClient();
   const { hasAnyPermission, hasPermission } = useDashboardConfig();
@@ -65,6 +100,8 @@ export default function HRCalendarPage() {
   const [cursor, setCursor] = useState(() => { const d = new Date(); return new Date(d.getFullYear(), d.getMonth(), 1); });
   const [view, setView] = useState<View>("month");
   const [employeeFilter, setEmployeeFilter] = useState("");
+  const [visibleTypes, setVisibleTypes] = useState<Record<EventType, boolean>>({ holiday: true, leave: true, birthday: true, anniversary: true });
+  const toggleType = (t: EventType) => setVisibleTypes((s) => ({ ...s, [t]: !s[t] }));
   const [filtersOpen, setFiltersOpen] = useState(false);
   const filtersRef = useRef<HTMLDivElement>(null);
   useEffect(() => {
@@ -94,8 +131,44 @@ export default function HRCalendarPage() {
     },
   });
 
+  const { data: celebData } = useQuery({
+    queryKey: ["hrcal-celebrations"],
+    queryFn: () => api.get<CelebPerson[]>("/api/v1/hrms/employees/celebrations"),
+  });
+
   const holidays = useMemo(() => holidaysData?.data ?? [], [holidaysData]);
   const leaves = useMemo(() => leavesData?.data ?? [], [leavesData]);
+  const celebrations = useMemo(() => celebData?.data ?? [], [celebData]);
+
+  // Birthdays & anniversaries that fall in the visible month, keyed by YYYY-MM-DD.
+  const celebrationsByDay = useMemo(() => {
+    const m = new Map<string, Celebration[]>();
+    const push = (day: number, c: Celebration) => {
+      const key = ymd(new Date(year, month, day));
+      (m.get(key) ?? m.set(key, []).get(key)!).push(c);
+    };
+    for (const p of celebrations) {
+      if (p.dateOfBirth) {
+        const d = new Date(p.dateOfBirth);
+        if (d.getMonth() === month) push(d.getDate(), { type: "birthday", person: p });
+      }
+      if (p.dateOfJoining) {
+        const d = new Date(p.dateOfJoining);
+        const years = year - d.getFullYear();
+        if (d.getMonth() === month && years > 0) push(d.getDate(), { type: "anniversary", person: p, years });
+      }
+    }
+    return m;
+  }, [celebrations, year, month]);
+
+  const monthCelebrations = useMemo(() => {
+    const out: { day: number; c: Celebration }[] = [];
+    for (const [key, cs] of celebrationsByDay) {
+      const day = Number(key.split("-")[2]);
+      for (const c of cs) out.push({ day, c });
+    }
+    return out.sort((a, b) => a.day - b.day);
+  }, [celebrationsByDay]);
 
   // Per-day lookups (keyed by YYYY-MM-DD).
   const holidaysByDay = useMemo(() => {
@@ -170,7 +243,7 @@ export default function HRCalendarPage() {
         </div>
         <div>
           <h1 className="text-page-title text-gray-900 leading-tight">HR Calendar</h1>
-          <p className="text-xs text-gray-500">View holidays, leaves and team availability.</p>
+          <p className="text-xs text-gray-500">Holidays, leaves, birthdays and anniversaries — all in one place.</p>
         </div>
       </div>
 
@@ -205,13 +278,23 @@ export default function HRCalendarPage() {
             </button>
             {filtersOpen && (
               <div className="absolute right-0 top-full mt-2 z-30 w-64 rounded-xl border border-gray-200 bg-white shadow-xl p-3 space-y-3">
-                {canFilterPeople ? (
-                  <div>
+                <div>
+                  <p className="text-[11px] font-semibold uppercase tracking-wide text-gray-400 mb-1.5">Show</p>
+                  <div className="space-y-1">
+                    {EVENT_TYPE_OPTIONS.map((o) => (
+                      <label key={o.key} className="flex items-center gap-2 px-1.5 py-1 rounded-lg hover:bg-gray-50 cursor-pointer text-sm text-gray-700">
+                        <input type="checkbox" checked={visibleTypes[o.key]} onChange={() => toggleType(o.key)} className="accent-green-600" />
+                        <span className={clsx("w-2 h-2 rounded-full", o.dot)} />
+                        {o.label}
+                      </label>
+                    ))}
+                  </div>
+                </div>
+                {canFilterPeople && (
+                  <div className="pt-2 border-t border-gray-100">
                     <p className="text-[11px] font-semibold uppercase tracking-wide text-gray-400 mb-1.5">Employee</p>
                     <EmployeeSelect value={employeeFilter} onChange={setEmployeeFilter} accessibleOnly clearable placeholder="All employees" className="w-full" />
                   </div>
-                ) : (
-                  <p className="text-xs text-gray-500">No filters available.</p>
                 )}
               </div>
             )}
@@ -234,11 +317,17 @@ export default function HRCalendarPage() {
             <Legend color="bg-gray-300" label="Weekend" />
             <Legend color="bg-blue-500" label="On Leave" />
             <Legend color="bg-amber-500" label="Half Day" />
-            <Legend color="bg-indigo-500" label="Multiple on Leave" />
+            <Legend color="bg-pink-500" label="Birthday" />
+            <Legend color="bg-violet-500" label="Anniversary" />
           </div>
 
           {view === "list" ? (
-            <ListView holidaysByDay={holidaysByDay} leaves={peopleOnLeave} year={year} month={month} durationBadge={durationBadge} dateRange={dateRange} />
+            <ListView
+              holidaysByDay={visibleTypes.holiday ? holidaysByDay : new Map()}
+              leaves={visibleTypes.leave ? peopleOnLeave : []}
+              celebrations={monthCelebrations.filter(({ c }) => visibleTypes[c.type])}
+              year={year} month={month} durationBadge={durationBadge} dateRange={dateRange}
+            />
           ) : (
             <>
               <div className="grid grid-cols-7 border-b border-gray-100 bg-gray-50/60">
@@ -253,8 +342,9 @@ export default function HRCalendarPage() {
                     date={d}
                     inMonth={d.getMonth() === month}
                     today={isToday(d)}
-                    holidays={holidaysByDay.get(ymd(d)) ?? []}
-                    dayLeaves={leavesOnDay(d)}
+                    holidays={visibleTypes.holiday ? (holidaysByDay.get(ymd(d)) ?? []) : []}
+                    dayLeaves={visibleTypes.leave ? leavesOnDay(d) : []}
+                    celebrations={(celebrationsByDay.get(ymd(d)) ?? []).filter((c) => visibleTypes[c.type])}
                     tall={view === "week"}
                   />
                 ))}
@@ -265,6 +355,7 @@ export default function HRCalendarPage() {
 
         {/* Right rail */}
         <div className="space-y-4">
+          {visibleTypes.holiday && (
           <Panel title="Holidays">
             {monthHolidayList.length === 0 ? (
               <p className="text-xs text-gray-400 py-2">No holidays this month.</p>
@@ -290,7 +381,40 @@ export default function HRCalendarPage() {
               </div>
             )}
           </Panel>
+          )}
 
+          {(visibleTypes.birthday || visibleTypes.anniversary) && (() => {
+            const shownCelebrations = monthCelebrations.filter(({ c }) => visibleTypes[c.type]);
+            return (
+            <Panel title="Celebrations">
+            {shownCelebrations.length === 0 ? (
+              <p className="text-xs text-gray-400 py-2">No birthdays or anniversaries this month.</p>
+            ) : (
+              <div className="space-y-2.5 max-h-72 overflow-y-auto">
+                {shownCelebrations.map(({ day, c }, i) => {
+                  const bday = c.type === "birthday";
+                  return (
+                    <div key={i} className="flex items-center gap-2.5">
+                      <CelebAvatar person={c.person} size={30} />
+                      <div className="min-w-0 flex-1">
+                        <p className="text-[13px] font-semibold text-gray-900 truncate">{c.person.name}</p>
+                        <p className="text-[11px] text-gray-500">
+                          {bday ? "Birthday" : `${c.years} Year${c.years === 1 ? "" : "s"}`} · {new Date(year, month, day).toLocaleDateString("en-IN", { day: "numeric", month: "short" })}
+                        </p>
+                      </div>
+                      <span className={clsx("text-[11px] font-semibold px-2 py-0.5 rounded-full", bday ? "bg-pink-50 text-pink-700" : "bg-violet-50 text-violet-700")}>
+                        {bday ? "Birthday" : "Anniversary"}
+                      </span>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+            </Panel>
+            );
+          })()}
+
+          {visibleTypes.leave && (
           <Panel title="People on Leave">
             {peopleOnLeave.length === 0 ? (
               <p className="text-xs text-gray-400 py-2">Nobody on leave this month.</p>
@@ -309,6 +433,7 @@ export default function HRCalendarPage() {
               </div>
             )}
           </Panel>
+          )}
         </div>
       </div>
     </div>
@@ -319,8 +444,8 @@ function Legend({ color, label }: { color: string; label: string }) {
   return <span className="inline-flex items-center gap-1.5"><span className={clsx("w-2 h-2 rounded-full", color)} />{label}</span>;
 }
 
-function DayCell({ date, inMonth, today, holidays, dayLeaves, tall }: {
-  date: Date; inMonth: boolean; today: boolean; holidays: Holiday[]; dayLeaves: Leave[]; tall?: boolean;
+function DayCell({ date, inMonth, today, holidays, dayLeaves, celebrations = [], tall }: {
+  date: Date; inMonth: boolean; today: boolean; holidays: Holiday[]; dayLeaves: Leave[]; celebrations?: Celebration[]; tall?: boolean;
 }) {
   const dow = date.getDay();
   const isWeekend = dow === 0 || dow === 6;
@@ -377,6 +502,22 @@ function DayCell({ date, inMonth, today, holidays, dayLeaves, tall }: {
             </div>
           </Tooltip>
         ))}
+        {celebrations.slice(0, 2).map((c, i) => {
+          const bday = c.type === "birthday";
+          return (
+            <Tooltip key={i} content={`${bday ? "🎂 Birthday" : `🎉 ${c.years} Year${c.years === 1 ? "" : "s"}`} · ${c.person.name}`}>
+              <div className={clsx("inline-flex items-center gap-1 rounded-md px-1.5 py-1 w-full", bday ? "bg-pink-50" : "bg-violet-50")}>
+                <span className="text-[11px] leading-none">{bday ? "🎂" : "🎉"}</span>
+                <span className={clsx("text-[10px] font-semibold truncate", bday ? "text-pink-700" : "text-violet-700")}>
+                  {c.person.name}{!bday && c.years ? ` · ${c.years}y` : ""}
+                </span>
+              </div>
+            </Tooltip>
+          );
+        })}
+        {celebrations.length > 2 && (
+          <span className="text-[10px] text-gray-400 px-1">+{celebrations.length - 2} more</span>
+        )}
       </div>
     </div>
   );
@@ -403,15 +544,15 @@ function DateChip({ date, tone }: { date: Date; tone: "green" | "purple" }) {
   );
 }
 
-function ListView({ holidaysByDay, leaves, year, month, durationBadge, dateRange }: {
-  holidaysByDay: Map<string, Holiday[]>; leaves: Leave[]; year: number; month: number;
+function ListView({ holidaysByDay, leaves, celebrations, year, month, durationBadge, dateRange }: {
+  holidaysByDay: Map<string, Holiday[]>; leaves: Leave[]; celebrations: { day: number; c: Celebration }[]; year: number; month: number;
   durationBadge: (l: Leave) => string; dateRange: (l: Leave) => string;
 }) {
   const monthHolidays = Array.from(holidaysByDay.entries())
     .filter(([k]) => { const d = new Date(k); return d.getFullYear() === year && d.getMonth() === month; })
     .flatMap(([, hs]) => hs)
     .sort((a, b) => a.date.localeCompare(b.date));
-  const empty = monthHolidays.length === 0 && leaves.length === 0;
+  const empty = monthHolidays.length === 0 && leaves.length === 0 && celebrations.length === 0;
   return (
     <div className="p-4 space-y-5">
       <div>
@@ -440,6 +581,24 @@ function ListView({ holidaysByDay, leaves, year, month, durationBadge, dateRange
                 <span className={clsx("ml-auto text-[11px] font-semibold px-2 py-0.5 rounded-full", leaveIsHalfDay(l) ? "bg-amber-100 text-amber-700" : "bg-blue-50 text-blue-700")}>{durationBadge(l)}</span>
               </div>
             ))}
+          </div>
+        )}
+      </div>
+      <div>
+        <p className="text-[11px] font-semibold uppercase tracking-wide text-gray-400 mb-2">Celebrations</p>
+        {celebrations.length === 0 ? <p className="text-xs text-gray-400">No birthdays or anniversaries this month.</p> : (
+          <div className="space-y-2">
+            {celebrations.map(({ day, c }, i) => {
+              const bday = c.type === "birthday";
+              return (
+                <div key={i} className="flex items-center gap-3 text-sm">
+                  <span className="w-24 text-gray-500 tabular-nums">{new Date(year, month, day).toLocaleDateString("en-IN", { day: "2-digit", month: "short" })}</span>
+                  <span className="font-medium text-gray-900">{c.person.name}</span>
+                  <span className="text-xs text-gray-500">· {bday ? "Birthday" : `${c.years} Year${c.years === 1 ? "" : "s"}`}</span>
+                  <span className={clsx("ml-auto text-[11px] font-semibold px-2 py-0.5 rounded-full", bday ? "bg-pink-50 text-pink-700" : "bg-violet-50 text-violet-700")}>{bday ? "Birthday" : "Anniversary"}</span>
+                </div>
+              );
+            })}
           </div>
         )}
       </div>

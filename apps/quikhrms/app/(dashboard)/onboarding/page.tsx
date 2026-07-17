@@ -2,16 +2,15 @@
 
 import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
-import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { useQuery, useMutation } from "@tanstack/react-query";
 import { useApiClient } from "@/lib/hooks/use-api";
-import { Modal } from "@/components/hrms/modal";
 import { Select } from "@/components/hrms/ui/select";
-import { Plus, Search, Filter, Maximize2, Minimize2, MoreHorizontal, Eye, EyeOff, ArrowUpDown, Edit2, Send, Mail, Download, RefreshCw, X } from "lucide-react";
+import { Plus, Search, Eye, EyeOff, ArrowUpDown, Edit2, Send, Mail, Upload } from "lucide-react";
 import { clsx } from "clsx";
 import { SkeletonLine } from "@/components/hrms/skeleton";
 import { useToast } from "@/components/hrms/toast";
-import { todayInput } from "@/lib/utils/date-input";
 import { exportCsv as exportCsvFile, fmtDate, formatGroup, formatAddress, type CsvColumn } from "@/lib/utils/csv";
+import { AddCandidateWizard } from "./_components/add-candidate-wizard";
 
 type SourceOfHire = "Referral" | "JobPortal" | "LinkedIn" | "Agency" | "Campus" | "Direct" | "Other";
 
@@ -61,11 +60,6 @@ interface Candidate {
   onboardingInstanceId: string | null;
 }
 
-interface Department { id: string; name: string; }
-interface Template { id: string; name: string; }
-
-const VIEW_OPTIONS = ["Reportees + My Data", "View All Data", "My Data"];
-const SOURCES: SourceOfHire[] = ["Referral", "JobPortal", "LinkedIn", "Agency", "Campus", "Direct", "Other"];
 const STATUSES = ["NotStarted", "InProgress", "OnboardCompleted", "OnboardCancelled"];
 
 const statusColors: Record<string, string> = {
@@ -77,12 +71,10 @@ const statusColors: Record<string, string> = {
 
 export default function OnboardingCandidatesPage() {
   const api = useApiClient();
-  const qc = useQueryClient();
   const toast = useToast();
 
   const [showAdd, setShowAdd] = useState(false);
   const [search, setSearch] = useState("");
-  const [view, setView] = useState(VIEW_OPTIONS[0]);
   const [revealPan, setRevealPan] = useState(false);
   const [revealAadhaar, setRevealAadhaar] = useState(false);
   const [selected, setSelected] = useState<Set<string>>(new Set());
@@ -113,12 +105,6 @@ export default function OnboardingCandidatesPage() {
     else await document.documentElement.requestFullscreen();
   };
 
-  const [form, setForm] = useState({
-    firstName: "", lastName: "", personalEmail: "", workEmail: "",
-    departmentId: "", sourceOfHire: "Direct" as SourceOfHire, dateOfJoining: "",
-    panNumber: "", aadhaarNumber: "", uanNumber: "", templateId: "",
-  });
-
   interface NewJoinee {
     id: string;
     firstName: string;
@@ -138,28 +124,6 @@ export default function OnboardingCandidatesPage() {
   const { data, isLoading } = useQuery({
     queryKey: ["onboarding", "candidates", search],
     queryFn: () => api.get<Candidate[]>(`/api/v1/hrms/onboarding/candidates?${qs.toString()}`),
-  });
-
-  const { data: depts } = useQuery({
-    queryKey: ["departments"],
-    queryFn: () => api.get<Department[]>("/api/v1/hrms/departments?limit=100"),
-  });
-
-  const { data: templates } = useQuery({
-    queryKey: ["onboarding", "templates"],
-    queryFn: () => api.get<Template[]>("/api/v1/hrms/onboarding/templates?isActive=true&limit=100"),
-  });
-
-  const addMut = useMutation({
-    mutationFn: (body: Record<string, unknown>) =>
-      api.post<{ employee: NewJoinee; draft?: boolean }>("/api/v1/hrms/onboarding/candidates", body),
-    onSuccess: (res) => {
-      qc.invalidateQueries({ queryKey: ["onboarding"] });
-      setShowAdd(false);
-      setForm({ firstName: "", lastName: "", personalEmail: "", workEmail: "", departmentId: "", sourceOfHire: "Direct", dateOfJoining: "", panNumber: "", aadhaarNumber: "", uanNumber: "", templateId: "" });
-      const emp = res?.data?.employee;
-      if (emp && !res?.data?.draft) setMailConfirm(emp);
-    },
   });
 
   const sendWelcomeMailMut = useMutation({
@@ -247,128 +211,16 @@ export default function OnboardingCandidatesPage() {
       </div>
 
       <div className="">
-        <div className="flex items-center justify-between mb-4 gap-3 flex-wrap">
+        <div className="flex items-center justify-end mb-4 gap-3 flex-wrap">
           <div className="flex items-center gap-2">
-            <Select
-              value="Candidate View"
-              onChange={() => {}}
-              options={[{ value: "Candidate View", label: "Candidate View" }]}
-              className="w-48"
-            />
-            <button className="text-xs text-[#22c55e] font-medium px-2 py-1 rounded hover:bg-green-50 transition">Edit</button>
-          </div>
-          <div className="flex items-center gap-2">
-            <button className="text-xs text-[#22c55e] font-medium px-2 py-1 rounded hover:bg-green-50 transition">View All Data</button>
-            <Select
-              value={view}
-              onChange={(v) => setView(v)}
-              options={VIEW_OPTIONS.map((v) => ({ value: v, label: v }))}
-              className="w-44"
-            />
-            <Link href="/onboarding/candidates/new"
-              className="inline-flex items-center gap-1.5 bg-green-600 hover:bg-green-700 text-white px-3 py-1.5 rounded-md text-xs font-medium shadow-sm transition">
-              <Plus size={13} /> Add Candidate
+            <Link href="/onboarding/candidates/bulk-import"
+              className="inline-flex items-center gap-1.5 border border-gray-200 bg-white text-gray-700 hover:bg-gray-50 px-3 py-1.5 rounded-md text-xs font-medium shadow-sm transition">
+              <Upload size={13} /> Bulk Upload
             </Link>
-            <div className="inline-flex items-center bg-white border border-[var(--border)] rounded-lg shadow-sm divide-x divide-gray-200">
-              <button
-                onClick={toggleFullscreen}
-                title={isFullscreen ? "Exit fullscreen" : "Fullscreen"}
-                className="p-2 text-gray-600 hover:bg-gray-50 hover:text-[#22c55e] transition rounded-l-lg"
-              >
-                {isFullscreen ? <Minimize2 size={12} /> : <Maximize2 size={12} />}
-              </button>
-              <div ref={filterRef} className="relative">
-                <button
-                  onClick={() => { setShowFilters((v) => !v); setShowMore(false); }}
-                  title="Filters"
-                  className={clsx("relative p-2 text-gray-600 hover:bg-gray-50 hover:text-[#22c55e] transition", showFilters && "bg-green-50 text-[#22c55e]")}
-                >
-                  <Filter size={12} />
-                  {activeFilterCount > 0 && (
-                    <span className="absolute -top-1 -right-1 bg-green-600 text-white text-[11px] font-semibold w-4 h-4 rounded-full flex items-center justify-center">{activeFilterCount}</span>
-                  )}
-                </button>
-                {showFilters && (
-                  <div className="absolute right-0 top-full mt-2 w-64 bg-white border border-gray-200 rounded-lg shadow-xl z-20 p-3">
-                    <div className="flex items-center justify-between mb-2 pb-2 border-b border-gray-100">
-                      <h4 className="text-[13px] font-semibold text-gray-900">Filters</h4>
-                      {activeFilterCount > 0 && (
-                        <button onClick={() => setFilters({ status: [], source: [] })} className="text-xs text-[#22c55e] font-medium hover:underline">Clear all</button>
-                      )}
-                    </div>
-                    <div className="mb-3">
-                      <p className="text-xs font-semibold text-gray-600 mb-1.5 uppercase tracking-wide">Status</p>
-                      <div className="space-y-1">
-                        {STATUSES.map((s) => (
-                          <label key={s} className="flex items-center gap-2 text-xs text-gray-700 hover:bg-gray-50 rounded px-1 py-0.5 cursor-pointer">
-                            <input
-                              type="checkbox"
-                              checked={filters.status.includes(s)}
-                              onChange={(e) => {
-                                const next = e.target.checked ? [...filters.status, s] : filters.status.filter((x) => x !== s);
-                                setFilters({ ...filters, status: next });
-                              }}
-                            />
-                            {s}
-                          </label>
-                        ))}
-                      </div>
-                    </div>
-                    <div>
-                      <p className="text-xs font-semibold text-gray-600 mb-1.5 uppercase tracking-wide">Source</p>
-                      <div className="space-y-1 max-h-32 overflow-y-auto">
-                        {SOURCES.map((s) => (
-                          <label key={s} className="flex items-center gap-2 text-xs text-gray-700 hover:bg-gray-50 rounded px-1 py-0.5 cursor-pointer">
-                            <input
-                              type="checkbox"
-                              checked={filters.source.includes(s)}
-                              onChange={(e) => {
-                                const next = e.target.checked ? [...filters.source, s] : filters.source.filter((x) => x !== s);
-                                setFilters({ ...filters, source: next });
-                              }}
-                            />
-                            {s}
-                          </label>
-                        ))}
-                      </div>
-                    </div>
-                  </div>
-                )}
-              </div>
-              <div ref={moreRef} className="relative">
-                <button
-                  onClick={() => { setShowMore((v) => !v); setShowFilters(false); }}
-                  title="More options"
-                  className={clsx("p-2 text-gray-600 hover:bg-gray-50 hover:text-[#22c55e] transition rounded-r-lg", showMore && "bg-green-50 text-[#22c55e]")}
-                >
-                  <MoreHorizontal size={12} />
-                </button>
-                {showMore && (
-                  <div className="absolute right-0 top-full mt-2 w-48 bg-white border border-gray-200 rounded-lg shadow-xl z-20 py-1">
-                    <button
-                      onClick={() => { qc.invalidateQueries({ queryKey: ["onboarding"] }); setShowMore(false); }}
-                      className="w-full text-left flex items-center gap-2 px-3 py-2 text-xs text-gray-700 hover:bg-gray-50"
-                    >
-                      <RefreshCw size={13} /> Refresh
-                    </button>
-                    <button
-                      onClick={exportCsv}
-                      className="w-full text-left flex items-center gap-2 px-3 py-2 text-xs text-gray-700 hover:bg-gray-50"
-                    >
-                      <Download size={13} /> Export CSV
-                    </button>
-                    {selected.size > 0 && (
-                      <button
-                        onClick={() => { setSelected(new Set()); setShowMore(false); }}
-                        className="w-full text-left flex items-center gap-2 px-3 py-2 text-xs text-gray-700 hover:bg-gray-50 border-t border-gray-100"
-                      >
-                        <X size={13} /> Clear Selection ({selected.size})
-                      </button>
-                    )}
-                  </div>
-                )}
-              </div>
-            </div>
+            <button onClick={() => setShowAdd(true)}
+              className="inline-flex items-center gap-1.5 bg-green-600 hover:bg-green-700 text-white px-3 py-1.5 rounded-md text-xs font-medium shadow-sm transition">
+              <Plus size={13} /> Onboard Candidate
+            </button>
           </div>
         </div>
 
@@ -421,7 +273,7 @@ export default function OnboardingCandidatesPage() {
                     </tr>
                   ))
                 ) : filteredCandidates.length === 0 ? (
-                  <tr><td colSpan={12} className="text-center py-12 text-gray-500">{activeFilterCount > 0 ? "No candidates match filters." : "No candidates. Click \"Add Candidate\" to get started."}</td></tr>
+                  <tr><td colSpan={12} className="text-center py-12 text-gray-500">{activeFilterCount > 0 ? "No candidates match filters." : "No candidates. Click \"Onboard Candidate\" to get started."}</td></tr>
                 ) : filteredCandidates.map((c, i) => (
                   <tr key={c.id} className="row-stagger hover:bg-gray-50" style={{ ["--i" as never]: Math.min(i, 10) }}>
                     <td className="px-4 py-2.5"></td>
@@ -479,73 +331,11 @@ export default function OnboardingCandidatesPage() {
         </div>
       </div>
 
-      <Modal open={showAdd} onClose={() => setShowAdd(false)} title="Add Candidate">
-        <form onSubmit={(e) => {
-          e.preventDefault();
-          addMut.mutate({
-            ...form,
-            departmentId: form.departmentId || undefined,
-            templateId: form.templateId || undefined,
-            personalEmail: form.personalEmail || undefined,
-          });
-        }} className="space-y-4 max-h-[80vh] overflow-y-auto pr-2">
-          <div className="grid grid-cols-2 gap-3">
-            <div><label className="block text-xs font-medium text-gray-700 mb-1">First Name *</label>
-              <input required value={form.firstName} onChange={(e) => setForm({ ...form, firstName: e.target.value })}
-                className="w-full border border-[var(--border)] rounded-lg px-3 py-1.5 text-xs" /></div>
-            <div><label className="block text-xs font-medium text-gray-700 mb-1">Last Name *</label>
-              <input required value={form.lastName} onChange={(e) => setForm({ ...form, lastName: e.target.value })}
-                className="w-full border border-[var(--border)] rounded-lg px-3 py-1.5 text-xs" /></div>
-            <div><label className="block text-xs font-medium text-gray-700 mb-1">Personal Email</label>
-              <input type="email" value={form.personalEmail} onChange={(e) => setForm({ ...form, personalEmail: e.target.value })}
-                className="w-full border border-[var(--border)] rounded-lg px-3 py-1.5 text-xs" /></div>
-            <div><label className="block text-xs font-medium text-gray-700 mb-1">Official Email *</label>
-              <input type="email" required value={form.workEmail} onChange={(e) => setForm({ ...form, workEmail: e.target.value })}
-                className="w-full border border-[var(--border)] rounded-lg px-3 py-1.5 text-xs" /></div>
-            <div><label className="block text-xs font-medium text-gray-700 mb-1">Department</label>
-              <Select
-                value={form.departmentId}
-                onChange={(v) => setForm({ ...form, departmentId: v })}
-                placeholder="Select..."
-                searchable
-                options={(depts?.data ?? []).map((d) => ({ value: d.id, label: d.name }))}
-              /></div>
-            <div><label className="block text-xs font-medium text-gray-700 mb-1">Source of Hire</label>
-              <Select
-                value={form.sourceOfHire}
-                onChange={(v) => setForm({ ...form, sourceOfHire: v as SourceOfHire })}
-                options={SOURCES.map((s) => ({ value: s, label: s }))}
-              /></div>
-            <div><label className="block text-xs font-medium text-gray-700 mb-1">Date of Joining *</label>
-              <input type="date" required value={form.dateOfJoining} min={todayInput()} onChange={(e) => setForm({ ...form, dateOfJoining: e.target.value })}
-                className="w-full border border-[var(--border)] rounded-lg px-3 py-1.5 text-xs" /></div>
-            <div><label className="block text-xs font-medium text-gray-700 mb-1">Onboarding Template</label>
-              <Select
-                value={form.templateId}
-                onChange={(v) => setForm({ ...form, templateId: v })}
-                placeholder="Use default tasks"
-                searchable
-                options={(templates?.data ?? []).map((t) => ({ value: t.id, label: t.name }))}
-              /></div>
-            <div><label className="block text-xs font-medium text-gray-700 mb-1">PAN Number</label>
-              <input value={form.panNumber} onChange={(e) => setForm({ ...form, panNumber: e.target.value.toUpperCase() })}
-                className="w-full border border-[var(--border)] rounded-lg px-3 py-1.5 text-sm font-mono" maxLength={10} /></div>
-            <div><label className="block text-xs font-medium text-gray-700 mb-1">Aadhaar Number</label>
-              <input value={form.aadhaarNumber} onChange={(e) => setForm({ ...form, aadhaarNumber: e.target.value })}
-                className="w-full border border-[var(--border)] rounded-lg px-3 py-1.5 text-sm font-mono" maxLength={12} /></div>
-            <div className="col-span-2"><label className="block text-xs font-medium text-gray-700 mb-1">UAN Number</label>
-              <input value={form.uanNumber} onChange={(e) => setForm({ ...form, uanNumber: e.target.value })}
-                className="w-full border border-[var(--border)] rounded-lg px-3 py-1.5 text-sm font-mono" maxLength={12} /></div>
-          </div>
-
-          <div className="flex justify-end gap-2 pt-2 border-t border-gray-100 sticky bottom-0 bg-white">
-            <button type="button" onClick={() => setShowAdd(false)} className="px-3 py-1.5 border border-[var(--border)] rounded-lg text-xs font-medium">Cancel</button>
-            <button type="submit" disabled={addMut.isPending} className="px-3 py-1.5 bg-green-600 text-white rounded-lg text-xs font-medium hover:bg-green-700 disabled:opacity-50">
-              {addMut.isPending ? "Adding..." : "Add Candidate"}
-            </button>
-          </div>
-        </form>
-      </Modal>
+      <AddCandidateWizard
+        open={showAdd}
+        onClose={() => setShowAdd(false)}
+        onCreated={(emp, draft) => { if (!draft) setMailConfirm(emp); }}
+      />
 
       {mailConfirm && (() => {
         const e = mailConfirm;

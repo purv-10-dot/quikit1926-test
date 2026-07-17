@@ -28,14 +28,14 @@ const requisitionBaseObject = z.object({
   pipelineId: z.string().min(1, "Pipeline required"),
   departmentId: z.string().min(1, "Department required"),
   reportingToId: z.string().optional(),
-  positions: z.number().int().min(1).default(1),
+  positions: z.number().int().min(1).max(500).default(1),
   type: z.enum(["NewPosition", "Replacement", "Expansion"]).default("NewPosition"),
-  employmentType: z.enum(["FullTime", "PartTime", "Contract", "Intern", "Freelancer", "Consultant"]).default("FullTime"),
+  employmentType: z.enum(["FullTime", "PartTime", "Contract", "Intern"]).default("FullTime"),
   workLocation: z.enum(["Office", "Remote", "Hybrid"]).default("Office"),
-  experienceMin: z.number().int().optional(),
-  experienceMax: z.number().int().optional(),
-  salaryMin: z.number().optional(),
-  salaryMax: z.number().optional(),
+  experienceMin: z.number().min(0, "Min experience required").max(50, "Max 50 years"),
+  experienceMax: z.number().min(0, "Max experience required").max(50, "Max 50 years"),
+  salaryMin: z.number().min(0, "Min salary required").max(1000, "Max 1000 LPA"),
+  salaryMax: z.number().min(0, "Max salary required").max(1000, "Max 1000 LPA"),
   salaryCurrency: z.string().default("INR"),
   jobDescription: z.string().optional(),
   responsibilities: z.array(z.string()).optional(),
@@ -63,14 +63,14 @@ const requisitionBaseObject = z.object({
   careerPageVisible: z.boolean().default(true),
   internalPostingOnly: z.boolean().default(false),
   postToJobPortal: z.boolean().default(false),
-  referralBonusAmount: z.number().optional(),
-  hiringManagerId: z.string().optional(),
-  recruiterId: z.string().optional(),
+  referralBonusAmount: z.number().min(0).max(1000000, "Referral bonus can’t exceed ₹10,00,000").optional(),
+  hiringManagerId: z.string().min(1, "Hiring manager required"),
+  recruiterId: z.string().min(1, "Recruiter required"),
 
   // 5-step requisition wizard — planning & posting extras
   jobOpeningName: z.string().optional(),
   interviewPanelIds: z.array(z.string()).optional(),
-  budget: z.number().optional(),
+  budget: z.number().min(0, "Budget required"),
   targetJoiningDate: z.string().optional(),
   closedDate: z.string().optional(), // "Timeline to Close"
   etaToFillDays: z.number().int().optional(),
@@ -90,9 +90,14 @@ function requisitionCrossFieldChecks(
     experienceMin?: number | null; experienceMax?: number | null;
     salaryMin?: number | null; salaryMax?: number | null; budget?: number | null;
     targetJoiningDate?: string; closedDate?: string;
+    workLocation?: string; jobLocation?: string | null;
   },
   ctx: z.RefinementCtx,
 ) {
+  // Office / Hybrid roles need a physical job location; Remote does not.
+  if ((d.workLocation === "Office" || d.workLocation === "Hybrid") && !d.jobLocation?.trim()) {
+    ctx.addIssue({ code: z.ZodIssueCode.custom, message: "Job location is required for Office / Hybrid roles", path: ["jobLocation"] });
+  }
   if (d.experienceMin != null && d.experienceMax != null && d.experienceMin > d.experienceMax) {
     ctx.addIssue({ code: z.ZodIssueCode.custom, message: "Min experience can’t be greater than max experience", path: ["experienceMax"] });
   }

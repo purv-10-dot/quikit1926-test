@@ -6,6 +6,7 @@ import { updateInterviewSchema, createScorecardSchema } from "@/lib/validations/
 import { generateMeetingLink } from "@/lib/meetings";
 import { sendInterviewInvites } from "@/lib/recruit/interview-notify";
 import { createAuditLog } from "@/lib/utils/audit";
+import { notifyInterviewRescheduled, notifyInterviewCancelled } from "@/lib/services/interview-notifications";
 
 export const GET = withAuth(async (_req: NextRequest, { orgId }, params) => {
   try {
@@ -117,6 +118,19 @@ export const PATCH = withAuth(async (req: NextRequest, { orgId, userId }, params
       });
     }
 
+    // In-app notification to the interviewer on cancel.
+    if (data.status === "IntCancelled") {
+      const info = await prisma.jobApplication.findFirst({
+        where: { id: existing.applicationId, orgId },
+        select: { candidate: { select: { firstName: true, lastName: true } }, requisition: { select: { title: true } } },
+      });
+      void notifyInterviewCancelled(orgId, {
+        interviewId: existing.id, interviewerId: existing.interviewerId,
+        candidateName: info?.candidate ? `${info.candidate.firstName} ${info.candidate.lastName}`.trim() : "the candidate",
+        jobTitle: info?.requisition?.title ?? "the role",
+      });
+    }
+
     // Reschedule (new date/time) → mirror the fresh-schedule flow: regenerate a
     // virtual meeting link if none is set, keep it Scheduled, and re-notify the
     // candidate + interviewer with the new time.
@@ -156,8 +170,22 @@ export const PATCH = withAuth(async (req: NextRequest, { orgId, userId }, params
       if (!data.status && i.status !== "IntScheduled") {
         await prisma.interview.update({ where: { id: i.id }, data: { status: "IntScheduled" } });
       }
-      const mailStatus = await sendInterviewInvites(orgId, i.id);
-      return successResponse({ ...i, meetingLink, mailStatus });
+      // Send invites in the BACKGROUND so slow SMTP can't trip the client's 20s
+      // timeout and leave the Schedule dialog stuck open — scheduling already saved.
+      void sendInterviewInvites(orgId, i.id).catch((e) => console.error("[interview] invite mail failed:", e));
+      // In-app notification to the interviewer on reschedule.
+      const rInfo = await prisma.jobApplication.findFirst({
+        where: { id: i.applicationId, orgId },
+        select: { candidate: { select: { firstName: true, lastName: true } }, requisition: { select: { title: true } } },
+      });
+      const rDt = new Date(i.scheduledAt);
+      const whenLabel = `${rDt.toLocaleDateString("en-IN", { weekday: "short", day: "2-digit", month: "short", year: "numeric", timeZone: "Asia/Kolkata" })}, ${rDt.toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit", hour12: true, timeZone: "Asia/Kolkata" })}`;
+      void notifyInterviewRescheduled(orgId, {
+        interviewId: i.id, interviewerId: i.interviewerId,
+        candidateName: rInfo?.candidate ? `${rInfo.candidate.firstName} ${rInfo.candidate.lastName}`.trim() : "the candidate",
+        jobTitle: rInfo?.requisition?.title ?? "the role", whenLabel,
+      });
+      return successResponse({ ...i, meetingLink, mailStatus: "queued" });
     }
 
     return successResponse(i);

@@ -6,6 +6,7 @@ import { successResponse, notFound, conflict, validationError, forbidden, intern
 import { resolveEmployeeId } from "@/lib/resolve-employee";
 import { mailRequisitionDecision } from "@/lib/services/requisition-approval-service";
 import { getActiveChainLevels, getCallerRoleIds, callerCanActionLevel } from "@/lib/services/approval-chain";
+import { notifyRequisitionRejected } from "@/lib/services/requisition-notifications";
 
 const schema = z.object({
   comment: z.string().max(2000).optional(),
@@ -60,6 +61,7 @@ export const POST = withAuth(async (req: NextRequest, { orgId, userId }, params)
       status: "Rejected",
       comment: parsed.data.comment ?? null,
     }).catch((e) => console.error("[req] raiser mail failed:", e));
+    void notifyRequisitionRejected(orgId, { requisitionId: requisition.id, title: requisition.title, raiserId: requisition.raisedById, comment: parsed.data.comment ?? null });
 
     return successResponse({ rejected: true, level: nextPending.level });
   } catch (e) {

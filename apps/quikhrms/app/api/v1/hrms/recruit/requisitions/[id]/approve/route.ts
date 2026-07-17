@@ -5,6 +5,7 @@ import { withAuth } from "@/lib/with-auth";
 import { successResponse, notFound, conflict, validationError, forbidden, internalError } from "@/lib/api-response";
 import { resolveEmployeeId } from "@/lib/resolve-employee";
 import { mailRequisitionApprovalRequest, mailRequisitionDecision } from "@/lib/services/requisition-approval-service";
+import { notifyRequisitionApproved, notifyRequisitionNextApprover } from "@/lib/services/requisition-notifications";
 import { getActiveChainLevels, getCallerRoleIds, callerCanActionLevel } from "@/lib/services/approval-chain";
 
 const schema = z.object({
@@ -63,6 +64,7 @@ export const POST = withAuth(async (req: NextRequest, { orgId, userId }, params)
         status: "Approved",
         comment: parsed.data.comment ?? null,
       }).catch((e) => console.error("[req] raiser mail failed:", e));
+      void notifyRequisitionApproved(orgId, { requisitionId: requisition.id, title: requisition.title, raiserId: requisition.raisedById });
     } else {
       // Advance to next approver, notify them
       const next = remainingPending[0];
@@ -80,6 +82,7 @@ export const POST = withAuth(async (req: NextRequest, { orgId, userId }, params)
           previousComment: parsed.data.comment ?? null,
         }).catch((e) => console.error("[req] next-approver mail failed:", e));
       }
+      void notifyRequisitionNextApprover(orgId, { requisitionId: requisition.id, title: requisition.title, approverId: next.approverId });
     }
 
     return successResponse({ approved: true, allDone, level: nextPending.level });

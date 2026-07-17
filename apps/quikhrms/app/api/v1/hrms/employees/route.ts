@@ -224,7 +224,7 @@ export const POST = withAuth(async (req: NextRequest, { orgId, userId }) => {
     const parsed = createEmployeeSchema.safeParse(body);
 
     if (!parsed.success) {
-      return validationError("Validation failed", parsed.error.flatten().fieldErrors);
+      return validationError("Validation failed", parsed.error.flatten());
     }
 
     const data = parsed.data;

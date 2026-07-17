@@ -193,6 +193,39 @@ export const POST = withAuth(async (req: NextRequest, { orgId, userId }) => {
       return conflict(`${candidateCheck.firstName} ${candidateCheck.lastName} is archived. Restore from archive before creating an application.`);
     }
 
+    // Re-apply cooling period (Company Settings). Applies to the SAME ROLE only
+    // (matched by requisition title) — a candidate rejected for a role can't be
+    // re-applied to that same role until the cooling window passes, but is free
+    // to be applied to a different role immediately.
+    const company = await prisma.companySettings.findUnique({
+      where: { orgId }, select: { candidateCoolingMonths: true },
+    });
+    const coolMonths = company?.candidateCoolingMonths ?? 0;
+    if (coolMonths > 0) {
+      const targetReq = await prisma.jobRequisition.findFirst({
+        where: { id: requisitionId, orgId, deletedAt: null }, select: { title: true },
+      });
+      if (targetReq?.title?.trim()) {
+        const lastRejected = await prisma.jobApplication.findFirst({
+          where: {
+            orgId, candidateId, deletedAt: null,
+            status: { in: ["AppRejected", "AppDeclined"] },
+            requisition: { is: { title: { equals: targetReq.title, mode: "insensitive" } } },
+          },
+          orderBy: { updatedAt: "desc" },
+          select: { updatedAt: true },
+        });
+        if (lastRejected) {
+          const eligibleAt = new Date(lastRejected.updatedAt);
+          eligibleAt.setMonth(eligibleAt.getMonth() + coolMonths);
+          if (Date.now() < eligibleAt.getTime()) {
+            const when = eligibleAt.toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" });
+            return conflict(`${candidateCheck.firstName} ${candidateCheck.lastName} was recently rejected for "${targetReq.title}". They can re-apply to this role after ${when} (cooling period: ${coolMonths} month${coolMonths > 1 ? "s" : ""}), or be applied to a different role now.`);
+          }
+        }
+      }
+    }
+
     const existing = await prisma.jobApplication.findFirst({
       where: { orgId, candidateId, requisitionId, deletedAt: null },
     });
@@ -203,6 +236,9 @@ export const POST = withAuth(async (req: NextRequest, { orgId, userId }) => {
       where: { id: requisitionId, orgId, deletedAt: null },
       select: { pipelineId: true },
     });
+    // Guard the FK: an invalid/cross-org requisition would otherwise throw a
+    // Prisma FK error on create → generic "Something went wrong".
+    if (!req_) return validationError("Requisition not found");
     const pipeline = await prisma.hiringPipeline.findFirst({
       where: {
         orgId, deletedAt: null,
@@ -308,6 +344,29 @@ export const POST = withAuth(async (req: NextRequest, { orgId, userId }) => {
       }
     })();
 
-    return successResponse(app, undefined, 201);
+    // Soft warning (non-blocking): candidate was recently rejected for a
+    // DIFFERENT role. Surfaced to the recruiter so they're aware, but the
+    // application still goes through.
+    let warning: string | undefined;
+    try {
+      const lookback = new Date();
+      lookback.setMonth(lookback.getMonth() - 6);
+      const priorReject = await prisma.jobApplication.findFirst({
+        where: {
+          orgId, candidateId, deletedAt: null, id: { not: app.id },
+          status: { in: ["AppRejected", "AppDeclined"] },
+          updatedAt: { gte: lookback },
+          requisition: { is: { title: { not: app.requisition?.title ?? "" } } },
+        },
+        orderBy: { updatedAt: "desc" },
+        select: { updatedAt: true, requisition: { select: { title: true } } },
+      });
+      if (priorReject) {
+        const when = priorReject.updatedAt.toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" });
+        warning = `Heads up: this candidate was rejected for "${priorReject.requisition?.title ?? "another role"}" on ${when}.`;
+      }
+    } catch { /* warning is best-effort */ }
+
+    return successResponse({ ...app, warning }, undefined, 201);
   } catch (error) { console.error("POST /recruit/applications error:", error); return internalError(); }
 });

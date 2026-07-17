@@ -394,6 +394,15 @@ export const PATCH = withAuth(async (req: NextRequest, { orgId, userId }, params
         }).catch(() => null);
       }
       if (data.status === "AppHired") {
+        // Don't over-fill a requisition — surface a clear message instead of
+        // silently incrementing past the sanctioned headcount.
+        const req = await prisma.jobRequisition.findFirst({
+          where: { id: existing.requisitionId, orgId, deletedAt: null },
+          select: { positions: true, filledPositions: true },
+        });
+        if (req && req.filledPositions >= req.positions) {
+          return conflict("All positions for this requisition are already filled.");
+        }
         await Promise.all([
           prisma.candidate.update({ where: { id: existing.candidateId }, data: { status: "Hired" } }),
           prisma.jobRequisition.update({
@@ -511,12 +520,14 @@ export const PATCH = withAuth(async (req: NextRequest, { orgId, userId }, params
 
     let mailFired: MailFiredResult = null;
     if (stageChanged && data.currentStage) {
-      try {
-        mailFired = await fireStageMail(orgId, userId, app.id, data.currentStage);
-      } catch (err) {
+      // Send the stage-change email in the BACKGROUND so a slow SMTP server can't
+      // make this request hit the client's 20s timeout ("Request timed out after
+      // 20000ms") — the move itself already succeeded.
+      const stageForMail = data.currentStage;
+      void fireStageMail(orgId, userId, app.id, stageForMail).catch((err) => {
         console.error("[mail] stage-change mail failed:", err);
-        mailFired = { template: "unknown", skipped: err instanceof Error ? err.message : "error" };
-      }
+      });
+      mailFired = { template: "queued" };
 
       // Auto-trigger candidate document bundles on stage transitions
       // Pre-offer: fired when stage name matches /offer/i (e.g. "Offer") BUT not final-offer-stage

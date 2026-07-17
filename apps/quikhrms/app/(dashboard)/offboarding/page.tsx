@@ -148,7 +148,12 @@ export default function OffboardingDashboardPage() {
             onChange={(id) => setForm({ ...form, employeeId: id })}
           />
           <div className="grid grid-cols-2 gap-3">
-            <div><label className="block text-xs font-medium text-gray-700 mb-1">Resignation Date</label>
+            <div><label className="block text-xs font-medium text-gray-700 mb-1">{
+              form.reason === "Termination" ? "Termination Date"
+                : form.reason === "Retirement" ? "Retirement Date"
+                : form.reason === "ContractEnd" ? "Contract End Date"
+                : "Resignation Date"
+            }</label>
               <input
                 type="date"
                 required

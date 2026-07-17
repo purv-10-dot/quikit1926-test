@@ -299,6 +299,11 @@ export default function MyLeavesPage() {
   };
 
   const applyMut = useMutation({
+    // Handled inline (amber banner + "Notify admin" for the missing-chain case),
+    // so suppress the global modal — it would stack on top and, for the
+    // APPROVAL_CHAIN_NOT_CONFIGURED 422, hide the actionable banner behind a
+    // generic "Please check the details" dump.
+    meta: { suppressGlobalError: true },
     mutationFn: (body: typeof form) => api.post("/api/v1/hrms/leaves/requests", body),
     onSuccess: () => { invalidateLeaves(); setShowApply(false); setApplyError(null); setChainMissing(false); },
     onError: (e) => {

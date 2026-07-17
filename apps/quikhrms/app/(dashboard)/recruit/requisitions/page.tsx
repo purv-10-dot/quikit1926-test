@@ -9,7 +9,7 @@ import { Modal } from "@/components/hrms/modal";
 import { Select } from "@/components/hrms/ui/select";
 import { NumberInput } from "@/components/hrms/ui/number-input";
 import { clsx } from "clsx";
-import { Plus, Briefcase, Filter, X, AlertTriangle, Check, XCircle, Pause, Play, Pencil, Sparkles, Trash2, Target, ChevronDown,
+import { Plus, Briefcase, Filter, X, AlertTriangle, Check, XCircle, Pause, Play, Pencil, Sparkles, Target, ChevronDown,
   ArrowLeft, ArrowRight, ChevronLeft, ChevronRight, Users, Search as SearchIcon, IndianRupee, GraduationCap, Gift, Globe, Lock, UserCog, Eye } from "lucide-react";
 import { SkeletonTable } from "@/components/hrms/skeleton";
 import { RequisitionWizard, toReqPayload, emptyReqForm } from "../_components/requisition-wizard";
@@ -274,6 +274,7 @@ export default function RequisitionsPage() {
                 <th className="text-center px-4 py-2.5 text-[11px] font-semibold text-gray-500 uppercase tracking-[0.04em]">Applications</th>
                 <th className="text-left px-4 py-2.5 text-[11px] font-semibold text-gray-500 uppercase tracking-[0.04em]">Priority</th>
                 <th className="text-left px-4 py-2.5 text-[11px] font-semibold text-gray-500 uppercase tracking-[0.04em]">Status</th>
+                <th className="text-left px-4 py-2.5 text-[11px] font-semibold text-gray-500 uppercase tracking-[0.04em]">Posted On</th>
                 <th className="text-right px-4 py-2.5 text-[11px] font-semibold text-gray-500 uppercase tracking-[0.04em]">Actions</th>
               </tr>
             </thead>
@@ -289,7 +290,6 @@ export default function RequisitionsPage() {
                 <tr key={r.id} className="row-stagger border-b border-gray-100 hover:bg-gray-50" style={{ ["--i" as never]: Math.min(i, 10) }}>
                   <td className="px-4 py-2.5">
                     <p className="text-[13px] font-medium text-gray-900">{r.title}</p>
-                    {r.rolePurpose && <p className="text-[11px] italic text-gray-400 truncate max-w-[240px]">{r.rolePurpose}</p>}
                     <p className="text-[11px] text-gray-500">{r.requisitionNumber} &middot; {r.employmentType}</p>
                     {(isOpenish || toClose != null) && (
                       <div className="flex items-center gap-1.5 mt-1">
@@ -321,6 +321,9 @@ export default function RequisitionsPage() {
                   <td className="px-4 py-2.5">
                     <span className={clsx("inline-flex items-center h-6 px-2.5 rounded-full text-[11px] font-medium", statusColors[r.status])}>{prettyStatus(r.status)}</span>
                   </td>
+                  <td className="px-4 py-2.5 text-xs text-gray-700">
+                    {(() => { const d = r.raisedAt ?? r.createdAt; return d ? new Date(d).toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" }) : "—"; })()}
+                  </td>
                   <td className="px-4 py-2.5 text-right">
                     <div className="inline-flex items-center gap-1.5 justify-end">
                       <ActionBtn title="View" variant="slate" icon={<Eye size={12} />} onClick={() => setViewReq(r)} />
@@ -349,7 +352,7 @@ export default function RequisitionsPage() {
                           onClick={() => updateMut.mutate({ id: r.id, status: "ReqOpen" })} />
                       )}
                       {r.status !== "ReqCancelled" && r.status !== "ReqClosed" && (
-                        <ActionBtn title="Cancel" variant="red" icon={<Trash2 size={12} />}
+                        <ActionBtn title="Cancel" variant="red" icon={<XCircle size={12} />}
                           onClick={() => setCancelTarget(r)} />
                       )}
                       </>)}
@@ -568,7 +571,6 @@ function reqToForm(r: ReqItem): ReqFormShape {
     careerPageVisible: r.careerPageVisible ?? true,
     internalPostingOnly: r.internalPostingOnly ?? false,
     postToJobPortal: r.postToJobPortal ?? false,
-    rolePurpose: r.rolePurpose ?? "",
     responsibilities: Array.isArray(r.responsibilities) ? r.responsibilities : [],
     skillWeights: Array.isArray(r.skillWeights) ? r.skillWeights : [],
     justification: "",

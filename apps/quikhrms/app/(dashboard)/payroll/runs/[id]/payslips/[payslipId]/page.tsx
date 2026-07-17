@@ -96,6 +96,8 @@ export default function PayslipDetailPage() {
   });
 
   const resendMut = useMutation({
+    // Surfaced via the toast.promise below — suppress the global modal.
+    meta: { suppressGlobalError: true },
     mutationFn: () =>
       api.post<{ queued: boolean; to: string }>(
         `/api/v1/hrms/payroll/runs/${runId}/payslips/${payslipId}/resend-email`,
@@ -139,7 +141,7 @@ export default function PayslipDetailPage() {
               onClick={() => toast.promise(resendMut.mutateAsync(), {
                 loading: "Emailing payslip…",
                 success: (res) => `Payslip emailed to ${res.data.to}`,
-                error: "Couldn't email the payslip",
+                error: (e) => (e instanceof Error && e.message ? e.message : "Couldn't email the payslip"),
               })}
               disabled={resendMut.isPending || !p.employee?.workEmail}
               title={p.employee?.workEmail ? `Send to ${p.employee.workEmail}` : "Employee has no work email"}

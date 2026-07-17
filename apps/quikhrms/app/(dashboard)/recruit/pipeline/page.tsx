@@ -632,7 +632,15 @@ export default function PipelinePage() {
     return true;
   });
 
-  const visibleStages = stageFilters.size > 0 ? STAGES.filter((s) => stageFilters.has(s)) : STAGES;
+  // Candidates on requisitions that use a DIFFERENT pipeline have stages not in
+  // the default pipeline's STAGES. Append those extra stages as trailing columns
+  // so every candidate stays visible (previously they were dropped from the board).
+  const extraStages = Array.from(
+    new Set(allApps.map((a) => a.currentStage).filter((s): s is string => !!s && !STAGES.includes(s))),
+  );
+  const displayStages = [...STAGES, ...extraStages];
+
+  const visibleStages = stageFilters.size > 0 ? displayStages.filter((s) => stageFilters.has(s)) : displayStages;
 
   const groupedByStage = visibleStages.reduce<Record<string, ApplicationItem[]>>((acc, stage) => {
     acc[stage] = apps.filter((a) => a.currentStage === stage);
@@ -1117,10 +1125,12 @@ export default function PipelinePage() {
                           <SkipForward size={12} />
                         </button>
                       )}
-                      <button onClick={() => openDocRequest(app, /offer/i.test(stage) ? "PreOffer" : "PostOffer")} title="Request documents"
-                        className="inline-flex items-center justify-center w-8 h-8 bg-white text-gray-500 ring-1 ring-gray-200 hover:bg-violet-50 hover:text-violet-600 hover:ring-violet-200 rounded-lg transition">
-                        <FileText size={12} />
-                      </button>
+                      {app.docRequest?.status !== "Completed" && (
+                        <button onClick={() => openDocRequest(app, /offer/i.test(stage) ? "PreOffer" : "PostOffer")} title="Request documents"
+                          className="inline-flex items-center justify-center w-8 h-8 bg-white text-gray-500 ring-1 ring-gray-200 hover:bg-violet-50 hover:text-violet-600 hover:ring-violet-200 rounded-lg transition">
+                          <FileText size={12} />
+                        </button>
+                      )}
                       {/offer/i.test(stage) && app.docRequest?.status === "Pending" && (() => {
                         const cd = reminderCooldownRemaining(app.docRequest.lastReminderAt);
                         const onCd = cd > 0;

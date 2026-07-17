@@ -17,6 +17,10 @@ import { Select } from "@/components/hrms/select";
 import { FileUploadInput } from "@/components/hrms/file-upload-input";
 import { SkeletonTable, SkeletonLine } from "@/components/hrms/skeleton";
 
+// CTC fields are captured in LPA (lakhs per annum) — cap to a realistic ceiling
+// so 5–6 digit nonsense values can't be entered.
+const MAX_CTC_LPA = 1000;
+
 interface Requisition {
   id: string;
   requisitionNumber: string;
@@ -100,6 +104,8 @@ export default function CandidatesPage() {
   const [blacklistForm, setBlacklistForm] = useState({ reason: "", duration: "permanent" as "permanent" | "30" | "90" | "180" | "365" | "custom", customDays: 90 });
   const [archiveTarget, setArchiveTarget] = useState<CandidateItem | null>(null);
   const [archiveReason, setArchiveReason] = useState("");
+  const [applyTarget, setApplyTarget] = useState<CandidateItem | null>(null);
+  const [applyReqId, setApplyReqId] = useState("");
   const [timelineTarget, setTimelineTarget] = useState<CandidateItem | null>(null);
   const emptyForm: CandFormShape = {
     firstName: "", lastName: "", email: "", phone: "",
@@ -143,8 +149,11 @@ export default function CandidatesPage() {
 
     if (form.totalExperience != null && form.totalExperience < 0) e.totalExperience = "Cannot be negative";
     if (form.noticePeriod != null && form.noticePeriod < 0) e.noticePeriod = "Cannot be negative";
+    // CTC is in LPA (lakhs/yr). Reject negatives and unrealistic 5–6 digit values.
     if (form.currentCTC != null && form.currentCTC < 0) e.currentCTC = "Cannot be negative";
+    else if (form.currentCTC != null && form.currentCTC > MAX_CTC_LPA) e.currentCTC = `Enter a realistic value in LPA (max ${MAX_CTC_LPA})`;
     if (form.expectedCTC != null && form.expectedCTC < 0) e.expectedCTC = "Cannot be negative";
+    else if (form.expectedCTC != null && form.expectedCTC > MAX_CTC_LPA) e.expectedCTC = `Enter a realistic value in LPA (max ${MAX_CTC_LPA})`;
 
     if (form.linkedinUrl && !/^https?:\/\//.test(form.linkedinUrl)) e.linkedinUrl = "Must start with http(s)://";
     if (form.resumeUrl && !/^(https?:\/\/|\/)/.test(form.resumeUrl)) e.resumeUrl = "Invalid resume link";
@@ -212,15 +221,38 @@ export default function CandidatesPage() {
     mutationFn: (id: string) => api.delete(`/api/v1/hrms/recruit/candidates/${id}/archive`),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["candidates"] });
-      toast.success("Candidate unarchived");
+      toast.success("Restored", "Candidate is back in the pipeline at their previous stage.");
     },
+  });
+
+  // Re-engage an archived candidate on a NEW role: un-archive, then apply.
+  // Backend enforces the same-role cooling block and returns a soft warning
+  // when they were recently rejected for a different role.
+  const applyFromArchiveMut = useMutation({
+    mutationFn: async ({ id, requisitionId }: { id: string; requisitionId: string }) => {
+      await api.delete(`/api/v1/hrms/recruit/candidates/${id}/archive`);
+      const res = await api.post<{ warning?: string }>("/api/v1/hrms/recruit/applications", { candidateId: id, requisitionId });
+      return res.data?.warning;
+    },
+    meta: { suppressGlobalError: true },
+    onSuccess: (warning) => {
+      qc.invalidateQueries({ queryKey: ["candidates"] });
+      toast.success("Applied to role", "Candidate restored and added to the requisition.");
+      if (warning) toast.warning("Recently rejected", warning);
+      setApplyTarget(null);
+      setApplyReqId("");
+    },
+    onError: (e: Error) => toast.error("Couldn't apply", e.message),
   });
 
   const { data: reqsData } = useQuery({
     queryKey: ["requisitions-open"],
-    queryFn: () => api.get<Requisition[]>("/api/v1/hrms/recruit/requisitions?limit=200&status=ReqOpen"),
+    // Fetch all then keep the assignable ones — a requisition is open for
+    // candidates once it's ReqApproved or ReqOpen (the route filters a single
+    // status, so we filter client-side to include both).
+    queryFn: () => api.get<Requisition[]>("/api/v1/hrms/recruit/requisitions?limit=200"),
   });
-  const openReqs = reqsData?.data ?? [];
+  const openReqs = (reqsData?.data ?? []).filter((r) => r.status === "ReqOpen" || r.status === "ReqApproved");
 
   const createMut = useMutation({
     mutationFn: async (body: typeof form) => {
@@ -242,17 +274,20 @@ export default function CandidatesPage() {
         skills: body.skills ? body.skills.split(",").map((s) => s.trim()).filter(Boolean) : undefined,
       };
       const created = await api.post<{ id: string }>("/api/v1/hrms/recruit/candidates", payload);
+      let warning: string | undefined;
       if (body.requisitionId && created.data?.id) {
-        await api.post("/api/v1/hrms/recruit/applications", {
+        const appRes = await api.post<{ warning?: string }>("/api/v1/hrms/recruit/applications", {
           candidateId: created.data.id,
           requisitionId: body.requisitionId,
         });
+        warning = appRes.data?.warning;
       }
-      return created;
+      return { warning };
     },
-    onSuccess: () => {
+    onSuccess: (res) => {
       qc.invalidateQueries({ queryKey: ["candidates"] });
       toast.success("Candidate added", form.requisitionId ? "Linked to requisition." : undefined);
+      if (res?.warning) toast.warning("Recently rejected", res.warning);
       setShowCreate(false);
     },
   });
@@ -441,11 +476,18 @@ export default function CandidatesPage() {
                         </button>
                       )}
                       {c.isArchived ? (
-                        <button onClick={() => unarchiveMut.mutate(c.id)}
-                          className="inline-flex items-center gap-1 px-2 py-1 bg-slate-50 text-slate-700 ring-1 ring-slate-200 hover:bg-slate-100 rounded text-xs font-semibold"
-                          title="Restore from archive">
-                          <ArchiveRestore size={11} /> Restore
-                        </button>
+                        <>
+                          <button onClick={() => unarchiveMut.mutate(c.id)}
+                            className="inline-flex items-center gap-1 px-2 py-1 bg-slate-50 text-slate-700 ring-1 ring-slate-200 hover:bg-slate-100 rounded text-xs font-semibold"
+                            title="Restore to the same stage in the pipeline">
+                            <ArchiveRestore size={11} /> Restore
+                          </button>
+                          <button onClick={() => { setApplyReqId(""); setApplyTarget(c); }}
+                            className="inline-flex items-center gap-1 px-2 py-1 bg-green-50 text-green-700 ring-1 ring-green-200 hover:bg-green-100 rounded text-xs font-semibold"
+                            title="Restore and apply to another role">
+                            <Briefcase size={11} /> Apply to role
+                          </button>
+                        </>
                       ) : (
                         <button onClick={() => { setArchiveReason(""); setArchiveTarget(c); }}
                           className="inline-flex items-center gap-1 px-2 py-1 bg-slate-50 text-slate-700 ring-1 ring-slate-200 hover:bg-slate-100 rounded text-xs font-semibold"
@@ -573,6 +615,29 @@ export default function CandidatesPage() {
               <button type="submit" disabled={archiveMut.isPending}
                 className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-slate-700 hover:bg-slate-800 text-white rounded-lg text-xs font-medium disabled:opacity-50">
                 <Archive size={13} /> {archiveMut.isPending ? "Archiving..." : "Archive"}
+              </button>
+            </div>
+          </form>
+        )}
+      </Modal>
+
+      <Modal open={!!applyTarget} onClose={() => setApplyTarget(null)} title="Apply to a role" size="md">
+        {applyTarget && (
+          <form onSubmit={(e) => { e.preventDefault(); if (applyReqId) applyFromArchiveMut.mutate({ id: applyTarget.id, requisitionId: applyReqId }); }} className="space-y-4">
+            <div className="bg-slate-50 border border-slate-200 rounded-lg p-3 text-xs">
+              <span className="font-semibold text-slate-900">{applyTarget.firstName} {applyTarget.lastName}</span>
+              <p className="text-slate-600 mt-1">This restores the candidate from archive and applies them to the selected role.</p>
+            </div>
+            <div>
+              <label className="block text-xs font-semibold text-gray-700 mb-1">Requisition <span className="text-red-500">*</span></label>
+              <RequisitionPicker value={applyReqId} onChange={setApplyReqId} requisitions={openReqs} />
+            </div>
+            <div className="flex justify-end gap-2 pt-2 border-t border-gray-100">
+              <button type="button" onClick={() => setApplyTarget(null)}
+                className="px-3 py-1.5 border border-[var(--border)] rounded-lg text-xs font-medium text-gray-700 hover:bg-gray-50">Cancel</button>
+              <button type="submit" disabled={!applyReqId || applyFromArchiveMut.isPending}
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-green-600 hover:bg-green-700 text-white rounded-lg text-xs font-medium disabled:opacity-50">
+                <Briefcase size={13} /> {applyFromArchiveMut.isPending ? "Applying..." : "Apply to role"}
               </button>
             </div>
           </form>
@@ -1013,7 +1078,7 @@ function RequisitionPicker({
             </div>
           </div>
 
-          <div className="max-h-[340px] overflow-y-auto">
+          <div className="max-h-[440px] overflow-y-auto">
             {filtered.length === 0 ? (
               <div className="py-10 text-center">
                 <Briefcase size={22} className="mx-auto text-gray-300 mb-1" />
@@ -1196,11 +1261,11 @@ function CandidateWizard({ form, setForm, errors, isIndiaLocation, openReqs, sub
               <Field label="Notice Period (days)">
                 <NumberInput min={0} allowDecimal={false} value={form.noticePeriod} onChange={(v) => setForm({ ...form, noticePeriod: v })} className={inputClass} />
               </Field>
-              <Field label="Current CTC (LPA)" icon={<IndianRupee size={12} />}>
-                <NumberInput min={0} value={form.currentCTC} onChange={(v) => setForm({ ...form, currentCTC: v })} className={inputClass} />
+              <Field label="Current CTC (LPA)" icon={<IndianRupee size={12} />} error={errors.currentCTC}>
+                <NumberInput min={0} max={MAX_CTC_LPA} value={form.currentCTC} onChange={(v) => setForm({ ...form, currentCTC: v })} className={inputClass} />
               </Field>
-              <Field label="Expected CTC (LPA)" icon={<IndianRupee size={12} />}>
-                <NumberInput min={0} value={form.expectedCTC} onChange={(v) => setForm({ ...form, expectedCTC: v })} className={inputClass} />
+              <Field label="Expected CTC (LPA)" icon={<IndianRupee size={12} />} error={errors.expectedCTC}>
+                <NumberInput min={0} max={MAX_CTC_LPA} value={form.expectedCTC} onChange={(v) => setForm({ ...form, expectedCTC: v })} className={inputClass} />
               </Field>
             </div>
             <div className="mt-3">

@@ -15,14 +15,14 @@ const schema = z.object({
   jobOpeningName: z.string().optional(),
   positions: z.number().int().min(1).max(999).default(1),
   type: z.enum(["NewPosition", "Replacement", "Expansion"]).default("NewPosition"),
-  employmentType: z.enum(["FullTime", "PartTime", "Contract", "Intern", "Freelancer", "Consultant"]).default("FullTime"),
+  employmentType: z.enum(["FullTime", "PartTime", "Contract", "Intern"]).default("FullTime"),
   workLocation: z.enum(["Office", "Remote", "Hybrid"]).default("Office"),
   reportingToId: z.string().optional(),
   hiringManagerId: z.string().optional(),
   recruiterId: z.string().optional(),
   interviewPanelIds: z.array(z.string()).optional(),
-  experienceMin: z.number().int().optional(),
-  experienceMax: z.number().int().optional(),
+  experienceMin: z.number().optional(),
+  experienceMax: z.number().optional(),
   salaryMin: z.number().optional(),
   salaryMax: z.number().optional(),
   salaryCurrency: z.string().default("INR"),
@@ -74,7 +74,9 @@ export const POST = withAuth(async (req: NextRequest, { orgId, userId }) => {
     // Approval is driven by the org's configurable Requisition approval chain
     // (Settings → Approval Chains). No chain → block (mirrors Leave); the UI
     // prompts the admin to configure one.
-    const chain = await resolveApprovalChainLevels(orgId, "Requisition", raiserId);
+    // allowSelf: a requisition raiser who holds the approver role can approve
+    // their own requisition (small teams where admin raises + approves).
+    const chain = await resolveApprovalChainLevels(orgId, "Requisition", raiserId, true);
     if (!chain.ok) {
       return errorResponse(ErrorCode.APPROVAL_CHAIN_NOT_CONFIGURED, chain.message, 422, {
         module: "Requisition", reason: chain.reason,

@@ -8,6 +8,7 @@ import { stageNames } from "@/lib/services/pipeline-stages";
 import { resolveAndSend } from "@/lib/email/resolve";
 import { buildInterviewInviteEmail } from "@/lib/email-templates/interview-invite";
 import { buildInterviewerNotificationEmail } from "@/lib/email-templates/interview-notification";
+import { notifyInterviewScheduled } from "@/lib/services/interview-notifications";
 import { generateMeetingLink } from "@/lib/meetings";
 import { generateFeedbackToken } from "@/lib/services/feedback-token";
 import type { Prisma } from "@quikit/database";
@@ -102,6 +103,15 @@ export const POST = withAuth(async (req: NextRequest, { orgId, userId }) => {
     });
     if (existing) return conflict("Interview already scheduled for this round + time");
 
+    // Validate the FKs up front (they're only looked up for virtual types below,
+    // so an invalid id on an in-person interview would 500 on create).
+    const [appExists, interviewerExists] = await Promise.all([
+      prisma.jobApplication.findFirst({ where: { id: data.applicationId, orgId, deletedAt: null }, select: { id: true } }),
+      prisma.employee.findFirst({ where: { id: data.interviewerId, orgId, deletedAt: null }, select: { id: true } }),
+    ]);
+    if (!appExists) return validationError("Application not found");
+    if (!interviewerExists) return validationError("Interviewer not found");
+
     // Auto-generate a video meeting link for virtual interviews when the
     // recruiter didn't paste one. Provider-agnostic (Teams today, Google Meet
     // later); failures fall back to null so scheduling never breaks.
@@ -179,8 +189,10 @@ export const POST = withAuth(async (req: NextRequest, { orgId, userId }) => {
       const company = await prisma.companySettings.findUnique({ where: { orgId }, select: { companyName: true } });
       const companyName = company?.companyName ?? "Our Company";
       const dt = new Date(interview.scheduledAt);
-      const dateStr = dt.toLocaleDateString("en-IN", { weekday: "long", day: "2-digit", month: "long", year: "numeric" });
-      const timeStr = dt.toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit", hour12: true });
+      // Format in IST — without an explicit timeZone the server (UTC) renders the
+      // wrong time in the candidate/interviewer emails.
+      const dateStr = dt.toLocaleDateString("en-IN", { weekday: "long", day: "2-digit", month: "long", year: "numeric", timeZone: "Asia/Kolkata" });
+      const timeStr = dt.toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit", hour12: true, timeZone: "Asia/Kolkata" });
       const candidate = interview.application?.candidate;
       const interviewerName = `${interview.interviewer.firstName} ${interview.interviewer.lastName}`.trim();
       const candidateName = candidate ? `${candidate.firstName} ${candidate.lastName}`.trim() : "Candidate";
@@ -197,12 +209,14 @@ export const POST = withAuth(async (req: NextRequest, { orgId, userId }) => {
           location: interview.location,
           companyName,
         };
-        await resolveAndSend(orgId, {
+        // Background send so slow SMTP can't trip the client's 20s timeout and
+        // leave the Schedule dialog stuck open — the interview is already saved.
+        void resolveAndSend(orgId, {
           key: "interview.candidate-invite",
           to: candidate.email,
           vars: { ...inviteData, meetingLink: inviteData.meetingLink ?? "", location: inviteData.location ?? "" },
           fallback: () => buildInterviewInviteEmail(inviteData),
-        });
+        }).catch((e) => console.error("[interview] candidate invite mail failed:", e));
         mailStatus.candidate = { sent: true, to: candidate.email };
       } else {
         mailStatus.candidate = { sent: false, to: null, error: "Candidate email missing" };
@@ -230,7 +244,7 @@ export const POST = withAuth(async (req: NextRequest, { orgId, userId }) => {
           resumeUrl: candidate.resumeUrl,
           feedbackUrl: base ? `${base}/interview-feedback/${fbToken}` : null,
         };
-        await resolveAndSend(orgId, {
+        void resolveAndSend(orgId, {
           key: "interview.interviewer-notify",
           to: interview.interviewer.workEmail,
           vars: {
@@ -242,10 +256,15 @@ export const POST = withAuth(async (req: NextRequest, { orgId, userId }) => {
             feedbackUrl: notifyData.feedbackUrl ?? "",
           },
           fallback: () => buildInterviewerNotificationEmail(notifyData),
-        });
+        }).catch((e) => console.error("[interview] interviewer notify mail failed:", e));
         await prisma.interview.update({
           where: { id: interview.id },
           data: { feedbackToken: fbToken, feedbackTokenExpiresAt: fbExpiresAt },
+        });
+        // In-app notification for the interviewer (alongside the email).
+        void notifyInterviewScheduled(orgId, {
+          interviewId: interview.id, interviewerId: interview.interviewer.id,
+          candidateName, jobTitle, whenLabel: `${dateStr}, ${timeStr}`,
         });
         mailStatus.interviewer = { sent: true, to: interview.interviewer.workEmail };
       } else {
