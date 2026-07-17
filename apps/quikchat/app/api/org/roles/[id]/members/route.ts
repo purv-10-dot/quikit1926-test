@@ -5,6 +5,7 @@ import { db } from "@/lib/db";
 import { requireAdmin } from "@/lib/authz/requireAdmin";
 import { getQuikChatAppId } from "@/lib/authz/permissions";
 import { assertReconcileLeavesAdminPopulated, AdminLockoutError } from "@/lib/authz/preventAdminLockout";
+import { fallbackRoleNames, mirrorRolesToCentral } from "@/lib/authz/mirror-role";
 
 export const dynamic = "force-dynamic";
 
@@ -71,7 +72,7 @@ export async function PUT(req: NextRequest, { params }: Params) {
 
     const role = await db.qcAppRole.findFirst({
       where: { id: params.id, orgId },
-      select: { id: true, appId: true },
+      select: { id: true, appId: true, name: true },
     });
     if (!role) return NextResponse.json({ success: false, error: "Role not found" }, { status: 404 });
 
@@ -93,6 +94,13 @@ export async function PUT(req: NextRequest, { params }: Params) {
     }
 
     const result = await db.$transaction(async (tx) => {
+      // Snapshot current membership BEFORE mutating so we can tell which users
+      // are actually being detached (for the central-role mirror below).
+      const currentMembers = await tx.qcUserAppRole.findMany({
+        where: { roleId: role.id, orgId },
+        select: { userId: true },
+      });
+
       // 1. Filter desired to users with a QuikChat UserAppAccess row.
       const access =
         desired.length > 0
@@ -113,6 +121,10 @@ export async function PUT(req: NextRequest, { params }: Params) {
           userId: eligible.length > 0 ? { notIn: eligible } : undefined,
         },
       });
+      const eligibleUserSet = new Set(eligible);
+      const detachedUserIds = currentMembers
+        .map((c) => c.userId)
+        .filter((u) => !eligibleUserSet.has(u));
 
       // 3. Attach rows for newly-desired users (inline create, single-role
       //    invariant honored elsewhere via collapseToLatestRole).
@@ -130,10 +142,44 @@ export async function PUT(req: NextRequest, { params }: Params) {
         attached++;
       }
 
-      return { detached: detached.count, attached, skippedUserIds };
+      return {
+        detached: detached.count,
+        attached,
+        skippedUserIds,
+        attachedUserIds: toCreate,
+        detachedUserIds,
+      };
     });
 
-    return NextResponse.json({ success: true, data: { roleId: role.id, ...result } });
+    // Mirror each changed user's EFFECTIVE role onto central UserAppAccess.role:
+    // attached users now hold THIS role; detached users fall back to their
+    // rebind role (admin/default). Best-effort — never fail the reconcile on it.
+    try {
+      const fallback = await fallbackRoleNames(orgId, result.detachedUserIds);
+      await mirrorRolesToCentral({
+        orgId,
+        appId,
+        entries: [
+          ...result.attachedUserIds.map((userId) => ({ userId, roleName: role.name })),
+          ...result.detachedUserIds.map((userId) => ({
+            userId,
+            roleName: fallback.get(userId) ?? "Member",
+          })),
+        ],
+      });
+    } catch {
+      // Non-fatal: central mirror stays stale until the next role change / entry.
+    }
+
+    return NextResponse.json({
+      success: true,
+      data: {
+        roleId: role.id,
+        detached: result.detached,
+        attached: result.attached,
+        skippedUserIds: result.skippedUserIds,
+      },
+    });
   } catch (error: unknown) {
     const message = error instanceof Error ? error.message : "Failed to update role members";
     return NextResponse.json({ success: false, error: message }, { status: 500 });
