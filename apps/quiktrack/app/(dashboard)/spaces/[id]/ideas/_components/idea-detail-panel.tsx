@@ -18,12 +18,14 @@ import { Accordion, FieldRow } from "./idea-panel-fields";
 import { EditableCell } from "./editable-cell";
 import { iconForColumn, isFormulaColumn } from "./field-icons";
 import { RichTextEditor } from "@/components/rich-text-editor-lazy";
-import { sanitizeRichText } from "@/lib/sanitize";
 import { uploadProjectImage } from "@/lib/upload-image";
 import { IdeaAttachmentsLinks } from "./idea-attachments-links";
 import { IdeaComments } from "./idea-comments";
 import { IdeaInsights } from "./idea-insights";
 import { IdeaDelivery } from "./idea-delivery";
+import { IdeaTemplatesPanel } from "./idea-templates-panel";
+import { TemplateBody, TemplateBodyStyles } from "./idea-template-body";
+import type { DescriptionTemplate } from "./idea-description-templates";
 
 /**
  * Idea detail side panel — matches the real-JPD layout: header (breadcrumb +
@@ -63,6 +65,7 @@ export function IdeaDetailPanel({
   const [values, setValues] = useState<Record<string, IdeaFieldValue>>(idea.values);
   const [description, setDescription] = useState(idea.description ?? "");
   const [editingDesc, setEditingDesc] = useState(false);
+  const [templatesOpen, setTemplatesOpen] = useState(false);
   const [editingTitle, setEditingTitle] = useState(false);
   const [titleDraft, setTitleDraft] = useState(idea.title);
   const [saving, setSaving] = useState(false);
@@ -148,6 +151,18 @@ export function IdeaDetailPanel({
     await patch({ description: description || null });
   }
 
+  // Insert a blueprint into the description. If there's already content we append
+  // (JPD keeps what you typed); otherwise we start fresh. Opens the editor so the
+  // user can immediately fill in the placeholders, and saves right away.
+  function applyTemplate(tpl: DescriptionTemplate) {
+    const prev = descHasContent ? description : "";
+    const next = prev ? `${prev}${tpl.body}` : tpl.body;
+    setDescription(next);
+    setEditingDesc(true);
+    setTemplatesOpen(false);
+    void patch({ description: next });
+  }
+
   async function saveTitle() {
     setEditingTitle(false);
     const t = titleDraft.trim();
@@ -201,15 +216,18 @@ export function IdeaDetailPanel({
           </div>
         </div>
       ) : descHasContent ? (
-        <div
-          onClick={() => setEditingDesc(true)}
-          className="prose prose-sm max-w-none cursor-text rounded p-1 text-sm leading-relaxed text-gray-700 hover:bg-gray-50"
-          dangerouslySetInnerHTML={{ __html: sanitizeRichText(description) }}
-        />
+        <div onClick={() => setEditingDesc(true)} className="cursor-text rounded p-1 hover:bg-gray-50">
+          <TemplateBody html={description} />
+        </div>
       ) : (
-        <button type="button" onClick={() => setEditingDesc(true)} className="text-sm text-gray-400 hover:text-gray-600">
-          Add a description… <span className="text-blue-600">or start from a template</span>
-        </button>
+        <div className="text-sm text-gray-400">
+          <button type="button" onClick={() => setEditingDesc(true)} className="hover:text-gray-600">
+            Add a description…
+          </button>{" "}
+          <button type="button" onClick={() => setTemplatesOpen(true)} className="text-blue-600 hover:text-blue-700 hover:underline">
+            or start from a template
+          </button>
+        </div>
       )}
     </>
   );
@@ -398,6 +416,13 @@ export function IdeaDetailPanel({
           </div>
         )}
       </div>
+
+      {/* Description-templates drawer — anchored to this panel's right edge so it
+          opens beside the idea (works in both drawer and full-screen mode). */}
+      {templatesOpen && (
+        <IdeaTemplatesPanel onSelect={applyTemplate} onClose={() => setTemplatesOpen(false)} />
+      )}
+      <TemplateBodyStyles />
     </aside>
   );
 }
