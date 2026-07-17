@@ -27,7 +27,7 @@ export interface CustomFieldDTO {
   placeholder: string | null;
   helpText: string | null;
   position: number;
-  options: { id: string; label: string; value: string; position: number; isActive: boolean; weight?: number | null }[];
+  options: { id: string; label: string; value: string; position: number; isActive: boolean; weight?: number | null; color?: string | null; icon?: string | null; highlight?: boolean }[];
   createdAt: string;
   updatedAt: string;
 }
@@ -50,7 +50,7 @@ interface FieldRow {
   position: number;
   createdAt: Date;
   updatedAt: Date;
-  options?: { id: string; label: string; value: string; position: number; isActive: boolean; weight?: number | null }[];
+  options?: { id: string; label: string; value: string; position: number; isActive: boolean; weight?: number | null; color?: string | null; icon?: string | null; highlight?: boolean }[];
 }
 
 export function serializeField(row: FieldRow): CustomFieldDTO {
@@ -73,7 +73,7 @@ export function serializeField(row: FieldRow): CustomFieldDTO {
     options: (row.options ?? [])
       .slice()
       .sort((a, b) => a.position - b.position)
-      .map((o) => ({ id: o.id, label: o.label, value: o.value, position: o.position, isActive: o.isActive, weight: o.weight ?? null })),
+      .map((o) => ({ id: o.id, label: o.label, value: o.value, position: o.position, isActive: o.isActive, weight: o.weight ?? null, color: o.color ?? null, icon: o.icon ?? null, highlight: o.highlight ?? false })),
     createdAt: row.createdAt.toISOString(),
     updatedAt: row.updatedAt.toISOString(),
   };
@@ -271,8 +271,12 @@ export async function updateField(opts: {
               label: opt.label,
               isActive: opt.isActive ?? true,
               position: pos,
-              // Only touch weight when the client sent it (undefined = leave as-is).
+              // Only touch a styling field when the client sent it (undefined =
+              // leave as-is). Discovery per-option weight/color/icon/highlight.
               ...(opt.weight !== undefined ? { weight: opt.weight } : {}),
+              ...(opt.color !== undefined ? { color: opt.color } : {}),
+              ...(opt.icon !== undefined ? { icon: opt.icon } : {}),
+              ...(opt.highlight !== undefined ? { highlight: opt.highlight } : {}),
             },
           });
           existingById.delete(opt.id);
@@ -285,6 +289,9 @@ export async function updateField(opts: {
               position: pos,
               isActive: opt.isActive ?? true,
               weight: opt.weight ?? null,
+              color: opt.color ?? null,
+              icon: opt.icon ?? null,
+              highlight: opt.highlight ?? false,
             },
           });
         }

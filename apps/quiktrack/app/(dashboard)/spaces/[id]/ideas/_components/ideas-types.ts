@@ -11,6 +11,11 @@ export interface FieldOption {
   isActive: boolean;
   /** Discovery weighted multi-select: strategic weight (0–5). */
   weight?: number | null;
+  /** Discovery per-option styling (Theme/Roadmap): hex color, emoji/icon, and
+   *  whether ideas with this value get a row-background tint. */
+  color?: string | null;
+  icon?: string | null;
+  highlight?: boolean;
 }
 
 export interface FieldDef {

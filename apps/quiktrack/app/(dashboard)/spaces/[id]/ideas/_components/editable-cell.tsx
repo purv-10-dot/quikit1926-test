@@ -637,18 +637,31 @@ function MultiOptionsMenu({
 }
 
 function ThemeDisplay({ field, value }: { field: FieldDef; value: string }) {
+  const opt = field.options.find((o) => o.value === value);
   const meta = THEME_META[value];
+  const emoji = opt?.icon || meta?.emoji || "•";
+  // A user-set color wins; else the built-in tint class.
+  const style = opt?.color ? { backgroundColor: opt.color, color: "#172b4d" } : undefined;
   return (
-    <span className={`inline-flex items-center gap-1 whitespace-nowrap rounded bg-blue-50 px-1.5 py-0.5 text-[13px] font-medium ${meta?.text ?? "text-gray-700"}`}>
-      <span className="text-xs leading-none">{meta?.emoji ?? "•"}</span>
+    <span
+      className={`inline-flex items-center gap-1 whitespace-nowrap rounded px-1.5 py-0.5 text-[13px] font-medium ${opt?.color ? "" : `bg-blue-50 ${meta?.text ?? "text-gray-700"}`}`}
+      style={style}
+    >
+      <span className="text-xs leading-none">{emoji}</span>
       {optionLabel(field, value)}
     </span>
   );
 }
 
 function RoadmapDisplay({ field, value }: { field: FieldDef; value: string }) {
+  const opt = field.options.find((o) => o.value === value);
+  const style = opt?.color ? { backgroundColor: opt.color, color: "#172b4d" } : undefined;
   return (
-    <span className={`inline-flex items-center rounded px-2 py-0.5 text-xs font-medium ${ROADMAP_STYLES[value] ?? "bg-gray-100 text-gray-600"}`}>
+    <span
+      className={`inline-flex items-center gap-1 rounded px-2 py-0.5 text-xs font-medium ${opt?.color ? "" : (ROADMAP_STYLES[value] ?? "bg-gray-100 text-gray-600")}`}
+      style={style}
+    >
+      {opt?.icon && <span className="text-xs leading-none">{opt.icon}</span>}
       {optionLabel(field, value)}
     </span>
   );

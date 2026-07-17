@@ -9638,6 +9638,9 @@ model QtCustomFieldOption {
   position  Int           @default(0)
   isActive  Boolean       @default(true)
   weight    Int? // TODO(integration): discovery weighted multi-select — 0–5 strategic weight per option (None..Highest). Additive, nullable; needs owner sign-off before Neon.
+  color     String? // TODO(integration): discovery per-option color (hex, e.g. Theme/Roadmap chips). Additive, nullable; needs owner sign-off before Neon.
+  icon      String? // TODO(integration): discovery per-option icon/emoji (Theme/Roadmap). Additive, nullable; needs owner sign-off before Neon.
+  highlight Boolean       @default(false) // TODO(integration): discovery "Highlight ideas with this color" — tint the row bg. Additive, default false; needs owner sign-off before Neon.
   createdAt DateTime      @default(now())
   field     QtCustomField @relation(fields: [fieldId], references: [id], onDelete: Cascade)
 

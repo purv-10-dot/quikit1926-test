@@ -1,69 +1,36 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { ArrowLeft, GripVertical, Plus, X, Trash2, Tag, Scale } from "lucide-react";
+import { ArrowLeft, GripVertical, Plus, X, Trash2, Tag } from "lucide-react";
 import { RichTextEditor } from "@/components/rich-text-editor-lazy";
 import { uploadProjectImage } from "@/lib/upload-image";
 import { THEME_META } from "./ideas-types";
+import { OptionStylePopover } from "./option-style-popover";
+import { WeightDots } from "./weight-dots";
+
+const TYPE_LABEL: Record<string, string> = {
+  DROPDOWN_SINGLE: "Single-select field", DROPDOWN_MULTI: "Multi-select field",
+  SHORT_TEXT: "Text field", LONG_TEXT: "Long text field", NUMBER: "Number field",
+  DATE: "Date field", CHECKBOX: "Checkbox field",
+};
 
 /** Strip HTML to test if a rich-text value is really empty. */
 function plainText(html: string): string {
   return html.replace(/<[^>]*>/g, "").replace(/&nbsp;/g, " ").trim();
 }
 
-const WEIGHT_LABELS = ["None", "Lowest", "Low", "Medium", "High", "Highest"] as const;
-
-/** Weighted multi-select: a scale icon + 1–5 dots per option (JPD). Click a dot
- *  to set the strategic weight; clicking the active dot again clears to None. */
-function WeightDots({ weight, onSet }: { weight: number; onSet: (w: number) => void }) {
-  const [hover, setHover] = useState(0);
-  const shown = hover || weight;
-  return (
-    <span className="flex items-center gap-1.5" onMouseLeave={() => setHover(0)}>
-      <Scale className="h-3.5 w-3.5 shrink-0 text-gray-400" />
-      <span className="flex items-center gap-1">
-        {[1, 2, 3, 4, 5].map((n) => (
-          <button
-            key={n}
-            type="button"
-            title={WEIGHT_LABELS[n]}
-            onMouseEnter={() => setHover(n)}
-            onClick={() => onSet(n === weight ? 0 : n)}
-            className="flex h-3.5 w-3.5 items-center justify-center"
-          >
-            <span className={`rounded-full transition-all ${n <= shown ? "h-2.5 w-2.5 bg-cyan-400" : "h-1 w-1 bg-gray-300"}`} />
-          </button>
-        ))}
-      </span>
-    </span>
-  );
-}
-
 /**
  * "Edit field" panel for a discovery custom field (JPD's field editor). Reuses
- * the existing space custom-field APIs:
- *   PATCH  /api/projects/[id]/custom-fields/[fieldId]  { name, description, options[] }
- *   DELETE /api/projects/[id]/custom-fields/[fieldId]
- * Options array order = new positions; existing options carry `id` (rename via
- * label), new ones omit it, omitted ones are removed. Rendered as a full-panel
- * overlay opened from the option menu's "Edit field".
+ * the space custom-field APIs (PATCH/DELETE custom-fields/[fieldId]). Options
+ * carry `id` when existing; omitted ones are deactivated. Theme/Roadmap options
+ * gain a color/icon/highlight popover (see OptionStylePopover).
  */
 
-interface Opt { id?: string; label: string; value?: string; isActive?: boolean; weight?: number | null }
+interface Opt { id?: string; label: string; value?: string; isActive?: boolean; weight?: number | null; color?: string | null; icon?: string | null; highlight?: boolean }
 interface FieldData {
   id: string; key: string; name: string; type: string; description: string | null; icon: string | null;
-  options: { id: string; label: string; value: string; isActive: boolean; position: number; weight?: number | null }[];
+  options: { id: string; label: string; value: string; isActive: boolean; position: number; weight?: number | null; color?: string | null; icon?: string | null; highlight?: boolean }[];
 }
-
-const TYPE_LABEL: Record<string, string> = {
-  DROPDOWN_SINGLE: "Single-select field",
-  DROPDOWN_MULTI: "Multi-select field",
-  SHORT_TEXT: "Text field",
-  LONG_TEXT: "Long text field",
-  NUMBER: "Number field",
-  DATE: "Date field",
-  CHECKBOX: "Checkbox field",
-};
 
 export function FieldEditorPanel({
   projectId,
@@ -93,7 +60,7 @@ export function FieldEditorPanel({
     setField(d);
     setName(d.name);
     setDescription(d.description ?? "");
-    setOptions(d.options.filter((o) => o.isActive).sort((a, b) => a.position - b.position).map((o) => ({ id: o.id, label: o.label, value: o.value, weight: o.weight ?? null })));
+    setOptions(d.options.filter((o) => o.isActive).sort((a, b) => a.position - b.position).map((o) => ({ id: o.id, label: o.label, value: o.value, weight: o.weight ?? null, color: o.color ?? null, icon: o.icon ?? null, highlight: o.highlight ?? false })));
   }
 
   useEffect(() => {
@@ -108,6 +75,11 @@ export function FieldEditorPanel({
   const hasOptions = field ? field.type.startsWith("DROPDOWN") : false;
   // Weighted options are a multi-select feature (JPD "Customer segments").
   const isMulti = field?.type === "DROPDOWN_MULTI";
+  // Per-option color + emoji styling (JPD): Theme and Roadmap only.
+  const canStyle = field?.key === "theme" || field?.key === "roadmap";
+  const canIcon = canStyle;
+  const [styleIdx, setStyleIdx] = useState<number | null>(null); // open popover row
+  const [styleAnchor, setStyleAnchor] = useState<DOMRect | null>(null);
 
   /** Persist name/description/options. `close` true closes the whole panel
    *  (bottom Save); false keeps it open (inline saves). Pass `optsOverride` to
@@ -125,7 +97,7 @@ export function FieldEditorPanel({
           // Field-definition description is capped at 300 chars (schema metadata),
           // so store the plain text of whatever was typed in the editor.
           description: plainText(description).slice(0, 300) || null,
-          ...(hasOptions ? { options: opts.filter((o) => o.label.trim()).map((o) => ({ ...(o.id ? { id: o.id } : {}), label: o.label.trim(), weight: o.weight ?? null })) } : {}),
+          ...(hasOptions ? { options: opts.filter((o) => o.label.trim()).map((o) => ({ ...(o.id ? { id: o.id } : {}), label: o.label.trim(), weight: o.weight ?? null, color: o.color ?? null, icon: o.icon ?? null, highlight: o.highlight ?? false })) } : {}),
         }),
       });
       if (res.ok) {
@@ -176,6 +148,13 @@ export function FieldEditorPanel({
   /** Set a weighted-multi-select option's strategic weight (0–5) and persist. */
   function setWeight(i: number, weight: number) {
     const next = options.map((o, xi) => (xi === i ? { ...o, weight } : o));
+    setOptions(next);
+    void save(false, next);
+  }
+
+  /** Patch one option's styling (color/icon/highlight/label) and persist. */
+  function setStyle(i: number, patch: Partial<Opt>) {
+    const next = options.map((o, xi) => (xi === i ? { ...o, ...patch } : o));
     setOptions(next);
     void save(false, next);
   }
@@ -267,18 +246,33 @@ export function FieldEditorPanel({
                   className="group flex items-center gap-2 rounded px-1 py-1 hover:bg-gray-50"
                 >
                   <GripVertical className="h-4 w-4 shrink-0 cursor-grab text-gray-300 group-hover:text-gray-400" />
-                  <span className={`flex items-center gap-1.5 rounded bg-blue-50 px-1.5 py-0.5 focus-within:bg-white focus-within:ring-1 focus-within:ring-blue-400 ${isMulti ? "max-w-[55%]" : "flex-1"}`}>
-                    {field?.key === "theme" && o.value && THEME_META[o.value]?.emoji && (
-                      <span className="shrink-0 text-sm leading-none">{THEME_META[o.value]!.emoji}</span>
-                    )}
-                    <input
-                      value={o.label}
-                      onChange={(e) => setOptions((os) => os.map((x, xi) => (xi === i ? { ...x, label: e.target.value } : x)))}
-                      onBlur={() => { if (o.label.trim() && o.label.trim() !== field?.options.find((f) => f.id === o.id)?.label) void save(false); }}
-                      onKeyDown={(e) => { if (e.key === "Enter") (e.currentTarget as HTMLInputElement).blur(); }}
-                      className="min-w-0 flex-1 bg-transparent text-[13px] font-medium text-blue-700 outline-none"
-                    />
-                  </span>
+                  {canStyle ? (
+                    // Styleable option (Theme/Roadmap): a colored chip that opens
+                    // the color/icon/highlight popover on click.
+                    <button
+                      type="button"
+                      onClick={(e) => { setStyleAnchor(e.currentTarget.getBoundingClientRect()); setStyleIdx(i); }}
+                      className={`flex items-center gap-1.5 rounded px-1.5 py-0.5 text-left ${isMulti ? "max-w-[55%]" : "flex-1"}`}
+                      style={{ backgroundColor: o.color ?? "#eef2ff" }}
+                    >
+                      {(o.icon || (field?.key === "theme" && o.value && THEME_META[o.value]?.emoji)) && (
+                        <span className="shrink-0 text-sm leading-none">{o.icon || THEME_META[o.value ?? ""]?.emoji}</span>
+                      )}
+                      <span className="min-w-0 flex-1 truncate text-[13px] font-medium" style={{ color: o.color ? "#172b4d" : "#3730a3" }}>
+                        {o.label}
+                      </span>
+                    </button>
+                  ) : (
+                    <span className={`flex items-center gap-1.5 rounded bg-blue-50 px-1.5 py-0.5 focus-within:bg-white focus-within:ring-1 focus-within:ring-blue-400 ${isMulti ? "max-w-[55%]" : "flex-1"}`}>
+                      <input
+                        value={o.label}
+                        onChange={(e) => setOptions((os) => os.map((x, xi) => (xi === i ? { ...x, label: e.target.value } : x)))}
+                        onBlur={() => { if (o.label.trim() && o.label.trim() !== field?.options.find((f) => f.id === o.id)?.label) void save(false); }}
+                        onKeyDown={(e) => { if (e.key === "Enter") (e.currentTarget as HTMLInputElement).blur(); }}
+                        className="min-w-0 flex-1 bg-transparent text-[13px] font-medium text-blue-700 outline-none"
+                      />
+                    </span>
+                  )}
                   {/* Weighted multi-select: strategic weight dots (JPD), right-aligned. */}
                   {isMulti && (
                     <span className="ml-auto">
@@ -302,6 +296,24 @@ export function FieldEditorPanel({
           <Trash2 className="h-4 w-4" /> Delete field
         </button>
       </div>
+
+      {/* Per-option color/icon/highlight popover (Theme/Roadmap). */}
+      {styleIdx !== null && styleAnchor && options[styleIdx] && (
+        <OptionStylePopover
+          anchor={styleAnchor}
+          label={options[styleIdx].label}
+          color={options[styleIdx].color ?? null}
+          icon={options[styleIdx].icon ?? null}
+          highlight={options[styleIdx].highlight ?? false}
+          allowIcon={canIcon}
+          onName={(v) => { if (v && v !== options[styleIdx!].label) setStyle(styleIdx!, { label: v }); }}
+          onColor={(hex) => setStyle(styleIdx!, { color: hex })}
+          onIcon={(emoji) => setStyle(styleIdx!, { icon: emoji })}
+          onHighlight={(on) => setStyle(styleIdx!, { highlight: on })}
+          onDelete={() => { const next = options.filter((_, xi) => xi !== styleIdx); setOptions(next); void save(false, next); setStyleIdx(null); }}
+          onClose={() => setStyleIdx(null)}
+        />
+      )}
     </aside>
   );
 }

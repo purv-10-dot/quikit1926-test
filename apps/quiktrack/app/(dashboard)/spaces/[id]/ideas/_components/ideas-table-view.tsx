@@ -580,23 +580,55 @@ export function IdeasTableView({ projectId }: { projectId: string }) {
     return [...inViewEntries, ...availableEntries].find((e) => e.key === groupBy.key) ?? null;
   }, [groupBy, inViewEntries, availableEntries]);
 
-  // Row coloring: one uniform accent color applied to rows that HAVE a value for
-  // the chosen field (JPD colors all such rows the same shade).
+  // Row coloring, two sources (per-option highlight wins):
+  //  1) "Highlight ideas with this color" — any option flagged highlight tints
+  //     rows holding that value, using the OPTION'S own color (JPD).
+  //  2) Display settings → row color by field — one uniform accent on rows that
+  //     have a value for the chosen field.
   const rowColor = useMemo(() => {
-    if (!display.rowColor || !data) return undefined;
-    const field = data.fields.find((f) => f.key === display.rowColor!.key);
+    if (!data) return undefined;
+
+    // Build the set of highlighted options: fieldId → value → color.
+    const hl = new Map<string, Map<string, string>>();
+    for (const f of data.fields) {
+      for (const o of f.options ?? []) {
+        if (o.highlight && o.color) {
+          if (!hl.has(f.id)) hl.set(f.id, new Map());
+          hl.get(f.id)!.set(o.value, o.color);
+        }
+      }
+    }
+    const highlightOf = (idea: IdeaRow): string | null => {
+      for (const [fieldId, byValue] of hl) {
+        const v = idea.values[fieldId];
+        const vals = Array.isArray(v) ? (v as string[]) : v != null ? [String(v)] : [];
+        for (const val of vals) {
+          const c = byValue.get(val);
+          if (c) return c;
+        }
+      }
+      return null;
+    };
+
+    const hasHighlights = hl.size > 0;
+    if (!display.rowColor && !hasHighlights) return undefined;
+
+    const field = display.rowColor ? data.fields.find((f) => f.key === display.rowColor!.key) : undefined;
     const ACCENT = "#f43f5e"; // single soft rose accent (JPD-style)
     const of = (idea: IdeaRow): string | null => {
+      const h = highlightOf(idea);
+      if (h) return h; // per-option highlight takes precedence
+      if (!display.rowColor) return null;
       let v: unknown;
-      if (display.rowColor!.key === "assignee") v = idea.assigneeId;
-      else if (display.rowColor!.key === "creator") v = idea.createdBy ?? idea.reporterId;
-      else if (display.rowColor!.key === "status") v = idea.statusId;
+      if (display.rowColor.key === "assignee") v = idea.assigneeId;
+      else if (display.rowColor.key === "creator") v = idea.createdBy ?? idea.reporterId;
+      else if (display.rowColor.key === "status") v = idea.statusId;
       else v = field ? idea.values[field.id] : null;
       const first = Array.isArray(v) ? v[0] : v;
       if (first === null || first === undefined || first === "") return null;
       return ACCENT;
     };
-    return { of, style: display.rowColor.style };
+    return { of, style: display.rowColor?.style ?? "background" };
   }, [display.rowColor, data]);
 
   const panelIdea = rows.find((r) => r.id === panelId) ?? null;

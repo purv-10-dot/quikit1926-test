@@ -13,6 +13,11 @@ const optionInputSchema = z.object({
   isActive: z.boolean().optional(),
   // Discovery weighted multi-select: 0–5 strategic weight (None..Highest).
   weight: z.number().int().min(0).max(5).nullable().optional(),
+  // Discovery per-option styling (Theme/Roadmap): hex color, emoji/icon, and a
+  // "highlight ideas with this color" flag (row tint). All additive/nullable.
+  color: z.string().regex(/^#[0-9a-fA-F]{6}$/, "Color must be a hex value").nullable().optional(),
+  icon: z.string().max(16).nullable().optional(),
+  highlight: z.boolean().optional(),
 });
 
 export const createCustomFieldSchema = z
