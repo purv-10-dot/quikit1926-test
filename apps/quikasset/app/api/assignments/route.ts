@@ -3,13 +3,14 @@ import { z } from "zod";
 import { db } from "@/lib/db";
 import { audit } from "@/lib/audit";
 import { withOrgAuthForResource } from "@/lib/api/withOrgAuth";
+import { resolveAssigneeEmployeeId } from "@/lib/api/resolveAssignee";
 
 const auth = withOrgAuthForResource("Assignment");
 
 const createSchema = z.object({
   assetId: z.string(),
   userId: z.string(),
-  condition: z.string(),
+  assignedDate: z.string().trim().min(1, "Assigned date is required"),
   expectedReturn: z.string().nullable().optional(),
   notes: z.string().nullable().optional(),
 });
@@ -41,10 +42,10 @@ export const POST = auth.create(async ({ orgId, userId: actorId, userEmail }, re
       { status: 400 },
     );
   }
-  const { assetId, userId, condition, expectedReturn, notes } = parsed.data;
+  const { assetId, userId, assignedDate, expectedReturn, notes } = parsed.data;
 
   // tenant ownership guards on referenced rows
-  const assetOwned = await db.astAsset.findFirst({ where: { id: assetId, orgId }, select: { id: true, assetStatus: true } });
+  const assetOwned = await db.astAsset.findFirst({ where: { id: assetId, orgId }, select: { id: true, assetStatus: true, condition: true } });
   if (!assetOwned) return NextResponse.json({ success: false, error: "Not found" }, { status: 404 });
   // Only an Available asset can be assigned — mirrors the Asset Request fulfil
   // guard; blocks double-assignment / assigning an InRepair or Retired asset.
@@ -54,16 +55,21 @@ export const POST = auth.create(async ({ orgId, userId: actorId, userEmail }, re
       { status: 409 },
     );
   }
-  const employeeOwned = await db.astEmployee.findFirst({ where: { id: userId, orgId }, select: { id: true } });
-  if (!employeeOwned) return NextResponse.json({ success: false, error: "Not found" }, { status: 404 });
+  // The picker sends a platform User.id; resolve it to the backing AstEmployee
+  // (auto-creating the identity bridge if this user has no employee record yet).
+  const resolved = await resolveAssigneeEmployeeId({ orgId, ref: userId });
+  if ("error" in resolved) return resolved.error;
+  const employeeId = resolved.employeeId;
 
   const assignment = await db.$transaction(async (tx) => {
     const created = await tx.astAssignment.create({
       data: {
         orgId,
         assetId,
-        userId,
-        condition,
+        userId: employeeId,
+        // Condition is no longer a form field — silently inherit the asset's own.
+        condition: assetOwned.condition || "Good",
+        assignedAt: new Date(assignedDate),
         expectedReturn: expectedReturn || null,
         notes: notes || null,
       },

@@ -20,7 +20,7 @@ const dataOf = (call: unknown) => (call as { data: Record<string, unknown> }).da
 
 describe("POST /api/assignments — assign guard (A2)", () => {
   beforeEach(() => resetMockDb());
-  const body = { assetId: "a1", userId: "e1", condition: "Good" };
+  const body = { assetId: "a1", userId: "e1", assignedDate: "2026-07-17" };
 
   it("401s when unauthenticated", async () => {
     setSession(null);
@@ -41,13 +41,89 @@ describe("POST /api/assignments — assign guard (A2)", () => {
     setSession(ADMIN);
     grantAll();
     runTxInline();
-    mockDb.astAsset.findFirst.mockResolvedValue({ id: "a1", assetStatus: "Available" } as never);
+    mockDb.astAsset.findFirst.mockResolvedValue({ id: "a1", assetStatus: "Available", condition: "New" } as never);
+    // No matching org member → resolver falls back to treating userId as an
+    // existing AstEmployee.id (repairs auto-fill / legacy path).
     mockDb.astEmployee.findFirst.mockResolvedValue({ id: "e1" } as never);
     mockDb.astAssignment.create.mockResolvedValue({ id: "as1", assetId: "a1", asset: { itemName: "L" }, user: { name: "N" } } as never);
     mockDb.astAsset.update.mockResolvedValue({} as never);
     const res = await POST(makeReq("/api/assignments", { method: "POST", body }), { params: {} });
     expect(res.status).toBe(201);
     expect(dataOf(mockDb.astAsset.update.mock.calls[0]?.[0]).assetStatus).toBe("Assigned");
+    const created = dataOf(mockDb.astAssignment.create.mock.calls[0]?.[0]);
+    expect(created.userId).toBe("e1");
+    // Condition is inherited from the asset (no form field); assignedAt persists the date.
+    expect(created.condition).toBe("New");
+    expect(created.assignedAt).toBeInstanceOf(Date);
+  });
+
+  it("400s when assignedDate is missing", async () => {
+    setSession(ADMIN);
+    grantAll();
+    const res = await POST(makeReq("/api/assignments", { method: "POST", body: { assetId: "a1", userId: "e1" } }), { params: {} });
+    expect(res.status).toBe(400);
+    expect(mockDb.astAssignment.create).not.toHaveBeenCalled();
+  });
+
+  it("resolves a platform userId to its existing linked employee", async () => {
+    setSession(ADMIN);
+    grantAll();
+    runTxInline();
+    mockDb.astAsset.findFirst.mockResolvedValue({ id: "a1", assetStatus: "Available", condition: "New" } as never);
+    mockDb.orgMember.findFirst.mockResolvedValue({ status: "active", user: { firstName: "Jane", lastName: "Doe", email: "jane@x.com" } } as never);
+    // Same row answers ensureLinkedEmployee's "already linked?" check and the
+    // resolver's id re-query.
+    mockDb.astEmployee.findFirst.mockResolvedValue({ id: "emp1", userId: "u1", employeeId: "EMP-0001" } as never);
+    mockDb.astAssignment.create.mockResolvedValue({ id: "as1", asset: { itemName: "L" }, user: { name: "N" } } as never);
+    mockDb.astAsset.update.mockResolvedValue({} as never);
+    const res = await POST(makeReq("/api/assignments", { method: "POST", body: { assetId: "a1", userId: "u1", assignedDate: "2026-07-17" } }), { params: {} });
+    expect(res.status).toBe(201);
+    expect(dataOf(mockDb.astAssignment.create.mock.calls[0]?.[0]).userId).toBe("emp1");
+    expect(mockDb.astEmployee.create).not.toHaveBeenCalled();
+  });
+
+  it("auto-creates an employee for a platform user who has none yet", async () => {
+    setSession(ADMIN);
+    grantAll();
+    runTxInline();
+    mockDb.astAsset.findFirst.mockResolvedValue({ id: "a1", assetStatus: "Available", condition: "New" } as never);
+    mockDb.orgMember.findFirst.mockResolvedValue({ status: "active", user: { firstName: "New", lastName: "Guy", email: "new@x.com" } } as never);
+    mockDb.astEmployee.findFirst
+      .mockResolvedValueOnce(null as never) // ensureLinkedEmployee: not already linked
+      .mockResolvedValueOnce(null as never) // ensureLinkedEmployee: no unlinked match by email
+      .mockResolvedValueOnce({ id: "empNew" } as never); // resolver id re-query
+    mockDb.astEmployee.findMany.mockResolvedValue([] as never); // generateEmployeeId
+    mockDb.astEmployee.create.mockResolvedValue({ id: "empNew", employeeId: "EMP-0001" } as never);
+    mockDb.astAssignment.create.mockResolvedValue({ id: "as1", asset: { itemName: "L" }, user: { name: "N" } } as never);
+    mockDb.astAsset.update.mockResolvedValue({} as never);
+    const res = await POST(makeReq("/api/assignments", { method: "POST", body: { assetId: "a1", userId: "u2", assignedDate: "2026-07-17" } }), { params: {} });
+    expect(res.status).toBe(201);
+    expect(mockDb.astEmployee.create).toHaveBeenCalled();
+    expect(dataOf(mockDb.astAssignment.create.mock.calls[0]?.[0]).userId).toBe("empNew");
+  });
+
+  it("404s when the assignee is neither an org member nor an employee", async () => {
+    setSession(ADMIN);
+    grantAll();
+    mockDb.astAsset.findFirst.mockResolvedValue({ id: "a1", assetStatus: "Available", condition: "New" } as never);
+    mockDb.orgMember.findFirst.mockResolvedValue(null as never);
+    mockDb.astEmployee.findFirst.mockResolvedValue(null as never);
+    const res = await POST(makeReq("/api/assignments", { method: "POST", body }), { params: {} });
+    expect(res.status).toBe(404);
+    expect(mockDb.astAssignment.create).not.toHaveBeenCalled();
+  });
+
+  it("409s when the user's email is already linked to a different employee", async () => {
+    setSession(ADMIN);
+    grantAll();
+    mockDb.astAsset.findFirst.mockResolvedValue({ id: "a1", assetStatus: "Available", condition: "New" } as never);
+    mockDb.orgMember.findFirst.mockResolvedValue({ status: "active", user: { firstName: "Dup", lastName: "User", email: "dup@x.com" } } as never);
+    mockDb.astEmployee.findFirst
+      .mockResolvedValueOnce(null as never) // not already linked to this user
+      .mockResolvedValueOnce({ id: "e9", userId: "someone-else" } as never); // email linked elsewhere
+    const res = await POST(makeReq("/api/assignments", { method: "POST", body: { assetId: "a1", userId: "u3", assignedDate: "2026-07-17" } }), { params: {} });
+    expect(res.status).toBe(409);
+    expect(mockDb.astAssignment.create).not.toHaveBeenCalled();
   });
 });
 
