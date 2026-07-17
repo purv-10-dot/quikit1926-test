@@ -73,5 +73,6 @@ export {
   BadgeCheck,
   Type,
   Palette,
+  Shield,
   type LucideIcon,
 } from "lucide-react";

@@ -12,12 +12,15 @@ import {
   Phone,
   Search,
   Settings,
+  Shield,
   Sun,
   Switch,
   Users,
 } from "@/components/ui";
 import { CalendarsSettings } from "@/components/settings/CalendarsSettings";
 import { ThemeToggle } from "@/components/settings/ThemeToggle";
+import { RolesTab } from "@/app/(dashboard)/settings/roles/components/RolesTab";
+import { useMyPermissions } from "@/lib/authz/useMyPermissions";
 import { STORAGE_KEY, THEMES } from "./ColorThemePicker";
 
 type SettingsCat =
@@ -27,7 +30,8 @@ type SettingsCat =
   | "account"
   | "devices"
   | "calls"
-  | "privacy";
+  | "privacy"
+  | "roles";
 
 const CATEGORIES: { key: SettingsCat; label: string; icon: ReactNode }[] = [
   { key: "general", label: "General", icon: <Settings size={17} /> },
@@ -38,6 +42,14 @@ const CATEGORIES: { key: SettingsCat; label: string; icon: ReactNode }[] = [
   { key: "devices", label: "Devices", icon: <Headphones size={17} /> },
   { key: "calls", label: "Calls", icon: <Phone size={17} /> },
 ];
+
+// Admin-only section. Appended to the nav only when the caller is a QuikChat
+// admin (client-side discoverability; the route + APIs stay requireAdmin-gated).
+const ROLES_CAT: { key: SettingsCat; label: string; icon: ReactNode } = {
+  key: "roles",
+  label: "Roles & Permissions",
+  icon: <Shield size={17} />,
+};
 
 export interface SettingsModuleProps {
   currentUserId: string;
@@ -77,6 +89,16 @@ export function SettingsModule({
   const [cat, setCat] = useState<SettingsCat>("general");
   const [query, setQuery] = useState("");
 
+  // Admins get the extra "Roles & Permissions" section. Same signal
+  // `requireAdmin` reads server-side (loadMyPermissions) — client-hide and
+  // server-gate agree. `isAdmin` is false until the fetch resolves, so the item
+  // never flashes for non-admins.
+  const { isAdmin } = useMyPermissions();
+  const visibleCategories = useMemo(
+    () => (isAdmin ? [...CATEGORIES, ROLES_CAT] : CATEGORIES),
+    [isAdmin],
+  );
+
   // Local (non-persistent) demo state for the General toggles + window options.
   const [autoStart, setAutoStart] = useState(false);
   const [openBg, setOpenBg] = useState(false);
@@ -103,10 +125,12 @@ export function SettingsModule({
 
   const cats = useMemo(() => {
     const q = query.trim().toLowerCase();
-    return q ? CATEGORIES.filter((c) => c.label.toLowerCase().includes(q)) : CATEGORIES;
-  }, [query]);
+    return q
+      ? visibleCategories.filter((c) => c.label.toLowerCase().includes(q))
+      : visibleCategories;
+  }, [query, visibleCategories]);
 
-  const activeLabel = CATEGORIES.find((c) => c.key === cat)?.label ?? "Settings";
+  const activeLabel = visibleCategories.find((c) => c.key === cat)?.label ?? "Settings";
 
   const colorThemeSection = (
     <section className="qc-set-section">
@@ -195,6 +219,14 @@ export function SettingsModule({
         <header className="qc-set-head">
           <h1 className="qc-set-htitle">{activeLabel}</h1>
         </header>
+        {cat === "roles" ? (
+          // Full-bleed: RolesTab brings its own two-pane chrome. `.qc-set-embed`
+          // clamps its `h-screen` root to the content area (see theme.css) so it
+          // doesn't overflow the panel — reused verbatim, no restyle.
+          <div className="qc-set-embed">
+            <RolesTab />
+          </div>
+        ) : (
         <div className="qc-set-scroll">
           {cat === "general" ? (
             <>
@@ -358,6 +390,7 @@ export function SettingsModule({
             </section>
           ) : null}
         </div>
+        )}
       </section>
     </div>
   );
