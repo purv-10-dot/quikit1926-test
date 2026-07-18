@@ -5958,3 +5958,90 @@ body {
 .qc-source-chip:hover {
   background: var(--qc-surface);
 }
+
+/* ============================================================================
+ * App Library switcher (rail popover) — cross-app navigation grid.
+ * ==========================================================================*/
+.qc-appswitcher {
+  width: 264px;
+  padding: 10px;
+}
+.qc-appswitcher__title {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--qc-text-3);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  padding: 4px 6px 8px;
+}
+.qc-appswitcher__loading,
+.qc-appswitcher__empty {
+  display: grid;
+  place-items: center;
+  padding: 18px 6px;
+  color: var(--qc-text-3);
+  font-size: 13px;
+}
+.qc-appswitcher__grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 4px;
+}
+.qc-appswitcher__app {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  padding: 10px 6px;
+  border: none;
+  background: transparent;
+  border-radius: var(--qc-r-md);
+  cursor: pointer;
+  color: var(--qc-text-1);
+}
+.qc-appswitcher__app:hover:not(:disabled) {
+  background: var(--qc-surface-2, rgba(0, 0, 0, 0.05));
+}
+.qc-appswitcher__app:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+.qc-appswitcher__icon {
+  width: 34px;
+  height: 34px;
+  border-radius: 10px;
+  object-fit: cover;
+  display: grid;
+  place-items: center;
+}
+.qc-appswitcher__icon--fallback {
+  background: var(--qc-accent);
+  color: #fff;
+  font-weight: 700;
+  font-size: 15px;
+}
+.qc-appswitcher__name {
+  font-size: 11px;
+  line-height: 1.2;
+  text-align: center;
+  color: var(--qc-text-2);
+}
+.qc-appswitcher__all {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  margin-top: 8px;
+  padding: 8px;
+  border-top: 1px solid var(--qc-border);
+  font-size: 13px;
+  color: var(--qc-accent);
+  text-decoration: none;
+}
+.qc-appswitcher__all:hover {
+  text-decoration: underline;
+}
+
+.qc-hidden {
+  display: none !important;
+}

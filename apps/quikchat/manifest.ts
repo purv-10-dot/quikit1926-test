@@ -37,10 +37,29 @@ const manifest: AppManifest = {
   description: "Real-time team messaging on QuikIT.",
   routePrefix: "/chat",
   icon: "MessageSquare",
-  permissions: [],
-  navigation: [
-    { label: "Dashboard", href: "/", icon: "LayoutDashboard" },
+  // Enforced (resource, action) pairs — kept in sync with the RBAC registry
+  // (lib/authz/permissionsRegistry.ts). Static list (no runtime import) so the
+  // launcher can read this file at build time.
+  permissions: [
+    "quikchat.channel.view",
+    "quikchat.channel.create",
+    "quikchat.channel.update",
+    "quikchat.channel.delete",
+    "quikchat.channel.public.create",
+    "quikchat.channel.dm.create",
+    "quikchat.channel.moderate.update",
+    "quikchat.channel.moderate.delete",
+    "quikchat.channel.inviteexternal.create",
+    "quikchat.call.create",
+    "quikchat.call.group.create",
+    "quikchat.assistant.view",
+    "quikchat.assistant.create",
+    "quikchat.assistant.ingestprivate.create",
+    "quikchat.assistant.ingestorg.create",
+    "quikchat.assistant.configure.update",
+    "quikchat.app.modules.update",
   ],
+  navigation: [{ label: "Dashboard", href: "/dashboard", icon: "LayoutDashboard" }],
 };
 
 export default manifest;

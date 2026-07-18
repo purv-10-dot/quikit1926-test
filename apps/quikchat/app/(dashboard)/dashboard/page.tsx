@@ -6,6 +6,10 @@ import { ensureUserRole, collapseToLatestRole } from "@/lib/authz/seed";
 
 export const dynamic = "force-dynamic";
 
+/**
+ * The QuikChat workspace, served at `/dashboard` (standard app-flow route).
+ * `/` is the public marketing landing; authenticated users are redirected here.
+ */
 export default async function DashboardPage({
   searchParams,
 }: {
@@ -26,7 +30,8 @@ export default async function DashboardPage({
   ]);
   const displayName = [user?.firstName, user?.lastName].filter(Boolean).join(" ") || "You";
   const workspaceName = org?.name ?? "Workspace";
-  const realtimeUrl = process.env.REALTIME_URL || "";
+  // Single source of truth for the socket URL (see .env NEXT_PUBLIC_REALTIME_WS_URL).
+  const realtimeUrl = process.env.NEXT_PUBLIC_REALTIME_WS_URL || "";
 
   return (
     <ChatShell

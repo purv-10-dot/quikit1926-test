@@ -1,6 +1,8 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { signOut } from "next-auth/react";
+import { globalSignOut } from "@quikit/ui";
 import {
   Avatar,
   Badge,
@@ -26,6 +28,7 @@ import { ProfileProvider, useProfile } from "@/components/profile/ProfileProvide
 import { DesktopBridge } from "@/components/desktop/DesktopBridge";
 import { useDisabledModules } from "@/lib/authz/useDisabledModules";
 import { isModuleEnabled } from "@quikit/shared/moduleRegistry";
+import { AppSwitcher } from "./AppSwitcher";
 import { CalendarModule } from "./CalendarModule";
 import { CallsModule } from "./CallsModule";
 import { ChatWorkspace } from "./ChatWorkspace";
@@ -98,12 +101,24 @@ function ShellInner({
     setMenuOpen(false);
   };
 
+  // Single-logout, identical to every other app: clear this app's session
+  // cookie + storage, run the auth-host + launcher SLO chain, and land the user
+  // back on the QuikChat landing page (not NextAuth's default confirm screen).
+  const handleLogout = async () => {
+    await globalSignOut({
+      authUrl: process.env.NEXT_PUBLIC_AUTH_URL,
+      quikitUrl: process.env.NEXT_PUBLIC_QUIKIT_URL,
+      localSignOut: () => signOut({ redirect: false }),
+      postLogoutRedirect: window.location.origin + "/",
+    });
+  };
+
   return (
     <div className="qc-frame">
       <DesktopBridge />
       <aside className="qc-rail" aria-label="Primary navigation">
         <div className="qc-rail__logo" title={workspaceName}>
-          <img src="/quikchat-logo-02.png" alt={workspaceName} />
+          <img src="/quikchat-monogram.svg" alt={workspaceName} />
         </div>
         <div className="qc-rail__group">
           <span className="qc-rail__navbtn" data-active={view === "chat"}>
@@ -143,6 +158,7 @@ function ShellInner({
         </div>
         <div className="qc-rail__spacer" />
         <div className="qc-rail__group">
+          <AppSwitcher />
           <Popover
             open={menuOpen}
             onOpenChange={setMenuOpen}
@@ -173,14 +189,15 @@ function ShellInner({
               </MenuItem>
             </Menu>
           </Popover>
-          <a
+          <button
+            type="button"
             className="qc-iconbtn"
-            href="/api/auth/signout?callbackUrl=/login"
+            onClick={() => void handleLogout()}
             aria-label="Log out"
             title="Log out"
           >
             <LogOut size={16} />
-          </a>
+          </button>
         </div>
       </aside>
       {effectiveView === "calendar" ? (

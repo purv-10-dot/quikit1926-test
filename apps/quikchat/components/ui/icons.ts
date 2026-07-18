@@ -9,6 +9,8 @@ export {
   Plus,
   Users,
   Info,
+  LayoutGrid,
+  ExternalLink,
   Send,
   Paperclip,
   Smile,

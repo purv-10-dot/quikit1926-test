@@ -28,7 +28,6 @@ import {
   Star,
   Check,
   Target,
-  MessageSquare,
   Users,
   Mail,
   Megaphone,
@@ -70,6 +69,7 @@ const SANS = "'Gilroy', 'Helvetica Neue', Arial, system-ui, -apple-system, sans-
    badge (no theme pair), which reads fine on dark, so it keeps that icon. */
 const LAUNCHER_ICONS: Record<string, string> = {
   admin: "/app-icons/admin.svg",
+  quikchat: "/app-icons/quikchat-light.svg",
   quikcrm: "/app-icons/quikcrm-light.svg",
   quikfinance: "/app-icons/quikfinance-light.svg",
   quikhrms: "/app-icons/quikhrms-light.svg",
@@ -101,7 +101,6 @@ interface AppInfo {
  *  icon tile + glyph mirroring the marketing design. */
 const UPCOMING_APPS: { name: string; description: string; icon: LucideIcon; gradient: string; logo?: string }[] = [
   { name: "QuikGoals", icon: Target, gradient: "linear-gradient(135deg,#FB923C,#F97316)", description: "Define targets, measure progress, and align every team around the numbers that matter." },
-  { name: "QuikChat", icon: MessageSquare, gradient: "linear-gradient(135deg,#2DD4BF,#14B8A6)", logo: "/app-icons/quikchat-light.svg", description: "Manage customer conversations across every channel with full context and smart routing." },
   { name: "QuikHR", icon: Users, gradient: "linear-gradient(135deg,#FB7185,#F43F5E)", logo: "/app-icons/quikhrms-light.svg", description: "Run hiring, onboarding, payroll, and performance reviews end to end in one HR system." },
   { name: "QuikEmail", icon: Mail, gradient: "linear-gradient(135deg,#818CF8,#6366F1)", logo: "/app-icons/quikmail-light.svg", description: "Build, send, and automate email campaigns with templates, sequences, and open tracking built in." },
   { name: "QuikSEO", icon: Search, gradient: "linear-gradient(135deg,#34D399,#10B981)", logo: "/app-icons/quikseo-light.svg", description: "Find keyword opportunities, monitor rankings, and get AI-driven content recommendations." },

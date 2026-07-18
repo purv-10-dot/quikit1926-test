@@ -18,8 +18,12 @@ import type { RingingRedis } from "./ringing";
  * authorizes channel joins with assertMembership, and fans out events. It
  * writes no domain rows.
  */
-const PORT = Number(process.env.PORT ?? process.env.REALTIME_PORT ?? 3012);
-const REDIS_URL = process.env.REDIS_URL ?? "redis://localhost:6380";
+// Default 9100 — a free port outside the 3000–3013 app range (the quikasset
+// app owns 3012, so the gateway must not also default there).
+const PORT = Number(process.env.PORT ?? process.env.REALTIME_PORT ?? 9100);
+// Default aligned to 6379 — the same Redis instance apps/quikchat publishes
+// fan-out to. A mismatched port silently breaks fan-out delivery.
+const REDIS_URL = process.env.REDIS_URL ?? "redis://localhost:6379";
 const TOKEN_SECRET = process.env.REALTIME_TOKEN_SECRET;
 const ALLOWED_ORIGINS = (process.env.REALTIME_ALLOWED_ORIGINS ?? "http://localhost:3011")
   .split(",")

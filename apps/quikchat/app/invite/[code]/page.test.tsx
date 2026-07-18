@@ -48,7 +48,7 @@ describe("InvitePage", () => {
     });
     render(<InvitePage params={{ code: "abc" }} />);
     fireEvent.click(await screen.findByRole("button", { name: /Accept/ }));
-    await waitFor(() => expect(push).toHaveBeenCalledWith("/?channel=c1"));
+    await waitFor(() => expect(push).toHaveBeenCalledWith("/dashboard?channel=c1"));
   });
 
   it("sends unauthenticated users through login with ?next", async () => {

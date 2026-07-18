@@ -554,7 +554,7 @@ function CallPageInner() {
 
         // Connect to signaling server with proper auth
         const { io } = await import("socket.io-client");
-        const realtimeUrl = process.env.NEXT_PUBLIC_REALTIME_URL || window.location.origin;
+        const realtimeUrl = process.env.NEXT_PUBLIC_REALTIME_WS_URL || window.location.origin;
         socket = io(realtimeUrl, {
           transports: ["polling", "websocket"],
           auth: async (cb: (auth: { token: string }) => void) => {
