@@ -46,6 +46,12 @@ ARG NEXTAUTH_URL="https://placeholder.com"
 ARG NEXT_PUBLIC_AUTH_URL="https://placeholder.com"
 ARG NEXT_PUBLIC_QUIKIT_URL="https://placeholder.com"
 ARG NEXT_PUBLIC_QUIKCHAT_URL="https://placeholder.com"
+# The realtime gateway's public WebSocket origin. NEXT_PUBLIC_* → baked into the
+# client bundle AND read by next.config.js to whitelist the origin in the CSP
+# connect-src at build time. MUST be passed for UAT/prod or the browser socket
+# fails to connect and the CSP blocks it. QuikChat-specific (only app with a
+# realtime gateway).
+ARG NEXT_PUBLIC_REALTIME_WS_URL="wss://placeholder.com"
 ARG NEXT_PUBLIC_SENTRY_DSN
 ARG QUIKIT_URL="https://dummy-quikit.local"
 ARG QUIKIT_CLIENT_ID="dummy-client-id"
@@ -57,6 +63,7 @@ ENV NEXTAUTH_URL=$NEXTAUTH_URL
 ENV NEXT_PUBLIC_AUTH_URL=$NEXT_PUBLIC_AUTH_URL
 ENV NEXT_PUBLIC_QUIKIT_URL=$NEXT_PUBLIC_QUIKIT_URL
 ENV NEXT_PUBLIC_QUIKCHAT_URL=$NEXT_PUBLIC_QUIKCHAT_URL
+ENV NEXT_PUBLIC_REALTIME_WS_URL=$NEXT_PUBLIC_REALTIME_WS_URL
 ENV NEXTAUTH_SECRET="build-time-dummy-not-used-at-runtime"
 ENV QUIKIT_URL=$QUIKIT_URL
 ENV QUIKIT_CLIENT_ID=$QUIKIT_CLIENT_ID
@@ -77,6 +84,7 @@ RUN echo "[next-env-bake]" \
       "AUTH=$NEXT_PUBLIC_AUTH_URL" \
       "QUIKIT=$NEXT_PUBLIC_QUIKIT_URL" \
       "QUIKCHAT=$NEXT_PUBLIC_QUIKCHAT_URL" \
+      "REALTIME=$NEXT_PUBLIC_REALTIME_WS_URL" \
       "NEXTAUTH=$NEXTAUTH_URL" \
       > /tmp/.next-env-bake.txt && cat /tmp/.next-env-bake.txt
 
@@ -96,6 +104,7 @@ RUN printf '%s\n' \
   "NEXT_PUBLIC_AUTH_URL=$NEXT_PUBLIC_AUTH_URL" \
   "NEXT_PUBLIC_QUIKIT_URL=$NEXT_PUBLIC_QUIKIT_URL" \
   "NEXT_PUBLIC_QUIKCHAT_URL=$NEXT_PUBLIC_QUIKCHAT_URL" \
+  "NEXT_PUBLIC_REALTIME_WS_URL=$NEXT_PUBLIC_REALTIME_WS_URL" \
   "NEXTAUTH_URL=$NEXTAUTH_URL" \
   > apps/quikchat/.env.production && cat apps/quikchat/.env.production
 
