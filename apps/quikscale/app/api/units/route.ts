@@ -11,16 +11,34 @@ import { writeAuditLog } from "@/lib/api/auditLog";
 // the category-mgmt pattern). Keep in sync with units/[id]/route.ts.
 const UNIT_AUDIT_ENTITY_ID = "unit-mgmt";
 
-// GET /api/units — list units for the tenant, server-side paginated + searchable.
+// Sortable columns — allow-list keyed by the FeatureGrid column key.
+const UNIT_SORT_MAP: Record<string, string> = {
+  name: "name",
+  description: "description",
+  createdAt: "createdAt",
+};
+
+// GET /api/units — list units for the tenant. Server pagination + search + sort
+// + the Trash view (includeDeleted).
 export const GET = auth.view(async ({ orgId }, request) => {
-  const search = request.nextUrl.searchParams.get("search") || undefined;
+  const sp = request.nextUrl.searchParams;
+  const search = sp.get("search") || undefined;
+  const includeDeleted = sp.get("includeDeleted") === "true";
+  const sortBy = sp.get("sortBy") || "";
+  const sortOrder = sp.get("sortOrder") === "desc" ? "desc" : "asc";
   const { page, limit, skip, take } = parsePagination(request);
 
   const where: Record<string, unknown> = { orgId };
+  where.deletedAt = includeDeleted ? { not: null } : null;
   if (search) where.name = { contains: search, mode: "insensitive" };
 
+  const sortCol = UNIT_SORT_MAP[sortBy];
+  const orderBy = sortCol
+    ? [{ [sortCol]: sortOrder }, { id: "asc" as const }]
+    : [{ position: "asc" as const }, { name: "asc" as const }];
+
   const [items, total] = await Promise.all([
-    db.unitMaster.findMany({ where, orderBy: { name: "asc" }, skip, take }),
+    db.unitMaster.findMany({ where, orderBy, skip, take }),
     db.unitMaster.count({ where }),
   ]);
 

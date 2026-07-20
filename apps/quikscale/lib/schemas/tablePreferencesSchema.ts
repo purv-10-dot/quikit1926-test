@@ -15,6 +15,9 @@ export const TABLE_PREFERENCE_KEYS = [
   "clientMembers",
   "dailyHuddle",
   "weeklyMeeting",
+  // Master-data grids migrated onto the shared <FeatureGrid> stack.
+  "categories",
+  "units",
 ] as const;
 export type TablePreferenceKey = (typeof TABLE_PREFERENCE_KEYS)[number];
 

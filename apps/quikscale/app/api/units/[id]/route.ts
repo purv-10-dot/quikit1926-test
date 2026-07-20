@@ -58,12 +58,14 @@ export const PUT = auth.update<RouteParams>(async ({ orgId, userId }, request, {
   }
 }, { fallbackErrorMessage: "Failed to update unit" });
 
-// DELETE /api/units/[id] — delete a unit.
+// DELETE /api/units/[id] — SOFT delete (moves the unit to Trash). Retains the
+// row with a `deletedAt` tombstone so it can be restored.
 export const DELETE = auth.delete<RouteParams>(async ({ orgId, userId }, _request, { params }) => {
   const existing = await db.unitMaster.findFirst({ where: { id: params.id, orgId } });
   if (!existing) return NextResponse.json({ success: false, error: "Not found" }, { status: 404 });
+  if (existing.deletedAt != null) return NextResponse.json({ success: true, message: "Already deleted" });
 
-  await db.unitMaster.delete({ where: { id: params.id } });
+  await db.unitMaster.update({ where: { id: params.id }, data: { deletedAt: new Date() } });
 
   await writeAuditLog({
     orgId,

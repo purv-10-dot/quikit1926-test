@@ -9,7 +9,10 @@ export type TableName =
   | "clientMaster"
   | "clientMembers"
   | "dailyHuddle"
-  | "weeklyMeeting";
+  | "weeklyMeeting"
+  // Master-data grids migrated onto the shared <FeatureGrid> stack.
+  | "categories"
+  | "units";
 
 export interface TablePref {
   frozenCol: string | null;
@@ -31,6 +34,8 @@ const EMPTY_ALL: AllPrefs = {
   clientMembers: EMPTY_PREF,
   dailyHuddle: EMPTY_PREF,
   weeklyMeeting: EMPTY_PREF,
+  categories: EMPTY_PREF,
+  units: EMPTY_PREF,
 };
 
 let cache: AllPrefs | null = null;
@@ -48,6 +53,8 @@ const TABLE_KEYS: TableName[] = [
   "clientMembers",
   "dailyHuddle",
   "weeklyMeeting",
+  "categories",
+  "units",
 ];
 
 async function fetchPreferences() {

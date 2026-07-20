@@ -961,11 +961,19 @@ model CategoryMaster {
   /// Fill mode — "Manual" requires the user to enter every cell;
   /// "Automatic" lets `calculateBreakdown` distribute Projected across periods.
   breakdownType String   @default("Automatic")
+  /// Soft-delete tombstone. Null = active; set = in Trash (restorable). Mirrors
+  /// the KPI/Priority/WWW soft-delete convention.
+  deletedAt     DateTime?
+  /// Fractional manual sort position for drag-to-reorder. Null rows fall back to
+  /// createdAt ordering. Mirrors the reorderable-grid `position` convention.
+  position      Float?
   org           Org      @relation(fields: [orgId], references: [id], onDelete: Cascade)
 
   @@unique([orgId, nameKey, dataType, currency], name: "category_tenant_name_type_currency_uniq")
   @@index([orgId])
   @@index([dataType])
+  @@index([orgId, deletedAt])
+  @@index([orgId, position])
   @@schema("app_quikscale")
 }
 
@@ -981,10 +989,16 @@ model UnitMaster {
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
   createdBy   String
+  /// Soft-delete tombstone. Null = active; set = in Trash (restorable).
+  deletedAt   DateTime?
+  /// Fractional manual sort position for drag-to-reorder (null → createdAt order).
+  position    Float?
   org         Org      @relation(fields: [orgId], references: [id], onDelete: Cascade)
 
   @@unique([orgId, nameKey], name: "unit_tenant_name_uniq")
   @@index([orgId])
+  @@index([orgId, deletedAt])
+  @@index([orgId, position])
   @@schema("app_quikscale")
 }
 
