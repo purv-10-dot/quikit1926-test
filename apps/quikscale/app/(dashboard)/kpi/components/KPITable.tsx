@@ -733,10 +733,10 @@ export function KPITable({ kpis: kpisAll, total, page, pageSize, year, quarter, 
                   )}
                   {/* Fixed: ID (hidable) */}
                   {!hideId && (
-                    <td className="sticky z-[15] bg-white px-1 py-2 border-b border-r border-gray-100 text-center"
+                    <td data-no-drag className="sticky z-[15] bg-white px-1 py-2 border-b border-r border-gray-100 text-center"
                       style={{ left: (hideCheckbox ? 0 : 40) + (hideLog ? 0 : 40), width: 40, minWidth: 40, maxWidth: 40 }}>
                       <button onClick={() => openEdit(kpi)} disabled={readOnly}
-                        className={`font-medium ${readOnly ? "text-gray-400 cursor-not-allowed" : "text-gray-900 hover:underline"}`}>
+                        className={`absolute inset-0 flex items-center justify-center font-medium ${readOnly ? "text-gray-400 cursor-not-allowed" : "text-gray-900 hover:underline"}`}>
                         {idx + 1 + (effPage - 1) * effPageSize}
                       </button>
                     </td>

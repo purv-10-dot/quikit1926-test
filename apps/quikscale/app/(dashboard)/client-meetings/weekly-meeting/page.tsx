@@ -1494,12 +1494,12 @@ export default function WeeklyMeetingPage() {
                         <History className="h-3.5 w-3.5" />
                       </button>
                     </td>
-                    <td className="sticky z-[15] bg-white px-1 py-2 text-center border-r border-gray-100"
+                    <td data-no-drag className="sticky z-[15] bg-white px-1 py-2 text-center border-r border-gray-100"
                         style={{ left: 64, width: 40, minWidth: 40, maxWidth: 40 }}>
                       <button
                         type="button"
                         onClick={() => openEdit(r)}
-                        className="text-gray-900 hover:underline"
+                        className="absolute inset-0 flex items-center justify-center text-gray-900 hover:underline"
                       >
                         {(page - 1) * pageSize + idx + 1}
                       </button>

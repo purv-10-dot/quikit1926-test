@@ -826,9 +826,9 @@ export default function ClientsPage() {
                         <History className="h-3.5 w-3.5" />
                       </button>
                     </td>
-                    <td className="sticky z-[15] bg-white px-3 py-3 border-b border-r border-gray-100"
+                    <td data-no-drag className="sticky z-[15] bg-white px-3 py-3 border-b border-r border-gray-100"
                         style={{ left: 96, width: 56, minWidth: 56, maxWidth: 56 }}>
-                      <button onClick={() => openEdit(r)} className="text-blue-600 hover:underline font-medium">{r.displayId}</button>
+                      <button onClick={() => openEdit(r)} className="absolute inset-0 flex items-center justify-center text-blue-600 hover:underline font-medium">{r.displayId}</button>
                     </td>
                     {/* Data cells rendered in the user's drag order (see
                         renderClientCell). Styling unchanged; widths match each <th>. */}

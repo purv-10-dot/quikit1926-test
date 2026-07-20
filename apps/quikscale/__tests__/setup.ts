@@ -127,6 +127,10 @@ vi.mock("@/lib/utils/featureFlags", () => ({
     canEditPastWeek: false,
   })),
   getCurrentFiscalWeekFromDB: vi.fn(async () => 1),
+  // Quarter-aware week gate — defaults to the current quarter, week 1. Tests
+  // that need a specific fiscal week/position override via
+  // vi.mocked(getWeekGateFromDB).mockResolvedValue({ currentWeek, quarterPosition }).
+  getWeekGateFromDB: vi.fn(async () => ({ currentWeek: 1, quarterPosition: "current" as const })),
   // Default-off; individual tests override via vi.mocked(...).mockResolvedValue.
   isFeatureFlagEnabled: vi.fn(async () => false),
   getCanAddPastQuarterHabit: vi.fn(async () => false),

@@ -1,10 +1,8 @@
 import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { weeklyStatusBatchSchema } from "@/lib/schemas/prioritySchema";
-import {
-  getPastWeekFlags,
-  getCurrentFiscalWeekFromDB,
-} from "@/lib/utils/featureFlags";
+import { getPastWeekFlags, getWeekGateFromDB } from "@/lib/utils/featureFlags";
+import { weekEditState, earliestEditableWeek } from "@/lib/utils/weekLock";
 import { withOrgAuthForModule } from "@/lib/api/withOrgAuth";
 import { audit, requestContext } from "@/lib/audit";
 const withOrgAuth = withOrgAuthForModule("priority");
@@ -50,23 +48,25 @@ export const POST = withOrgAuth<{ id: string }>(
     for (const inp of parsed.data.inputs) inputsByWeek.set(inp.weekNumber, inp);
     const inputs = [...inputsByWeek.values()];
 
-    // ── Past-week edit enforcement ── (same rule as the single-week route).
+    // ── Quarter-aware past/future edit enforcement ── (same rule as the
+    // single-week route). Future quarters/weeks are always rejected; a past
+    // quarter is rejected unless edit-past is on; in the current quarter, weeks
+    // before the editable window (current week minus grace) are rejected — the
+    // grace keeps the immediately-previous week editable.
     const { canEditPastWeek } = await getPastWeekFlags(orgId);
-    if (!canEditPastWeek && priority.quarter && priority.year) {
-      const currentWeek = await getCurrentFiscalWeekFromDB(
-        orgId,
-        priority.year,
-        priority.quarter,
+    if (priority.quarter && priority.year) {
+      const { currentWeek, quarterPosition } = await getWeekGateFromDB(orgId, priority.year, priority.quarter);
+      const offending = inputs.find(
+        (i) => weekEditState({ quarterPosition, week: i.weekNumber, currentWeek, canEditPastWeek, flagsLoaded: true }).locked,
       );
-      const offending = inputs.find((i) => i.weekNumber < currentWeek);
       if (offending) {
-        return NextResponse.json(
-          {
-            success: false,
-            error: `Editing past weeks is disabled. Week ${offending.weekNumber} is before the current week (${currentWeek}). Enable it in Settings > Configurations.`,
-          },
-          { status: 403 },
-        );
+        const isFuture = weekEditState({ quarterPosition, week: offending.weekNumber, currentWeek, canEditPastWeek, flagsLoaded: true }).isFuture;
+        const error = isFuture
+          ? `Week ${offending.weekNumber} is in the future and can't be updated yet.`
+          : quarterPosition === "past"
+            ? `Editing past quarters is disabled. Enable it in Settings > Configurations.`
+            : `Editing past weeks is disabled. Week ${offending.weekNumber} is before the earliest editable week (${earliestEditableWeek(currentWeek, canEditPastWeek)}). Enable it in Settings > Configurations.`;
+        return NextResponse.json({ success: false, error }, { status: 403 });
       }
     }
 

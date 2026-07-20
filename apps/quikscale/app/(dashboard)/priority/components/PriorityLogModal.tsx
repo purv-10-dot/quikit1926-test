@@ -8,7 +8,8 @@ import type { PriorityRow } from "@/lib/types/priority";
 import { fiscalYearLabel, ALL_QUARTERS, getFiscalYear, weekDateLabel, getWeekDateRange, weeksArray } from "@/lib/utils/fiscal";
 import { STATUS_META, STATUS_PILL_OPTIONS } from "@/lib/constants/status";
 import { UserPicker } from "@quikit/ui";
-import { useCurrentWeek, useWeekLabels } from "@/lib/hooks/useCurrentWeek";
+import { useCurrentWeek, useWeekLabels, useQuarterPosition } from "@/lib/hooks/useCurrentWeek";
+import { weekEditState } from "@/lib/utils/weekLock";
 import { usePastWeekFlags, useCustomQuarterSettings, useWeeklyMeetingDay } from "@/lib/hooks/useFeatureFlags";
 import { useFiscalYears } from "@/lib/hooks/useFiscalYears";
 import { useQuarterStartDates } from "@/lib/hooks/useQuarterStartDates";
@@ -46,8 +47,12 @@ export function PriorityLogModal({ priority, onClose, onSuccess, logsOnly = fals
   // Past/future-week locks — same pattern as KPI. Past respects the
   // `canEditPastWeek` feature flag (admin opt-in); future is always disabled
   // so users can't pre-fill statuses ahead of time.
-  const { canEditPastWeek } = usePastWeekFlags();
+  const { canEditPastWeek, loaded: flagsLoaded } = usePastWeekFlags();
   const priorityCurrentWeek = useCurrentWeek(priority.year, priority.quarter);
+  // Quarter/year position (past/current/future) so the gate locks a past
+  // quarter's last week and a future quarter's first week correctly — the
+  // clamped `priorityCurrentWeek` alone can't distinguish those.
+  const priorityQuarterPos = useQuarterPosition(priority.year, priority.quarter);
   const priorityWeekLabels = useWeekLabels(priority.year, priority.quarter);
 
   // Edit tab state
@@ -389,10 +394,17 @@ export function PriorityLogModal({ priority, onClose, onSuccess, logsOnly = fals
               </p>
               {Array.from({ length: endWeek - startWeek + 1 }, (_, i) => startWeek + i).map(weekNum => {
                 const data = weeklyData[weekNum] ?? { status: "", notes: "" };
-                // Past-week lock honors the admin feature flag; future-week lock is absolute.
-                const isPast = !canEditPastWeek && priorityCurrentWeek !== null && weekNum < priorityCurrentWeek;
-                const isFuture = priorityCurrentWeek !== null && weekNum > priorityCurrentWeek;
-                const weekLocked = readOnly || isPast || isFuture;
+                // Quarter-aware gate: future quarter/week always locked; past
+                // weeks respect the edit-past flag; when it's OFF the current
+                // week + one previous week stay editable (PAST_WEEK_EDIT_GRACE).
+                const { isPast, isFuture, locked } = weekEditState({
+                  quarterPosition: priorityQuarterPos ?? "current",
+                  week: weekNum,
+                  currentWeek: priorityCurrentWeek,
+                  canEditPastWeek,
+                  flagsLoaded: flagsLoaded && priorityQuarterPos !== null,
+                });
+                const weekLocked = readOnly || locked;
                 const weekTitle =
                   isFuture ? "Future week — not yet available"
                   : isPast ? "Past week locked — enable editing in Settings > Configurations"

@@ -4,8 +4,8 @@ import { db } from "@/lib/db";
 import { weeklyValueBatchSchema } from "@/lib/schemas/kpiSchema";
 import { withOrgAuthForModule } from "@/lib/api/withOrgAuth";
 const withOrgAuth = withOrgAuthForModule("kpi");
-import { getPastWeekFlags, getCurrentFiscalWeekFromDB } from "@/lib/utils/featureFlags";
-import { isWeekBeforeEditableWindow, earliestEditableWeek } from "@/lib/utils/weekLock";
+import { getPastWeekFlags, getWeekGateFromDB } from "@/lib/utils/featureFlags";
+import { weekEditState, earliestEditableWeek } from "@/lib/utils/weekLock";
 import { audit, requestContext } from "@/lib/audit";
 import { weeklyTargetForWeek } from "@/lib/utils/kpiHelpers";
 import { withTxRetry } from "@/lib/api/withTxRetry";
@@ -144,9 +144,9 @@ export const POST = withOrgAuth<{ id: string }>(async ({ orgId, userId }, req: N
   const validated = parsed.data;
 
   const { canEditPastWeek } = await getPastWeekFlags(orgId);
-  const currentWeek = kpi.quarter && kpi.year
-    ? await getCurrentFiscalWeekFromDB(orgId, kpi.year, kpi.quarter)
-    : 1;
+  const { currentWeek, quarterPosition } = kpi.quarter && kpi.year
+    ? await getWeekGateFromDB(orgId, kpi.year, kpi.quarter)
+    : { currentWeek: 1, quarterPosition: "current" as const };
 
   const ownerIds = (kpi.ownerIds ?? []) as string[];
   const results: BatchResult[] = [];
@@ -182,12 +182,19 @@ export const POST = withOrgAuth<{ id: string }>(async ({ orgId, userId }, req: N
       continue;
     }
 
-    // Past-week gate — org-level config, not a role check. When edit-past is
-    // off, weeks before the editable window (current week minus the grace) are
-    // rejected; the grace keeps the immediately-previous week editable.
-    if (isWeekBeforeEditableWindow(input.weekNumber, currentWeek, canEditPastWeek)) {
-      const earliest = earliestEditableWeek(currentWeek, canEditPastWeek);
-      results.push({ weekNumber: input.weekNumber, userId: targetUserId, ok: false, error: `Editing past weeks is disabled. Week ${input.weekNumber} is before the earliest editable week (${earliest}). Enable it in Settings > Configurations.` });
+    // Quarter-aware past/future gate — org-level config, not a role check.
+    // Future quarters/weeks are always rejected; a past quarter is rejected
+    // unless edit-past is on; in the current quarter, weeks before the editable
+    // window (current week minus the grace) are rejected — the grace keeps the
+    // immediately-previous week editable.
+    const gate = weekEditState({ quarterPosition, week: input.weekNumber, currentWeek, canEditPastWeek, flagsLoaded: true });
+    if (gate.locked) {
+      const reason = gate.isFuture
+        ? `Week ${input.weekNumber} is in the future and can't be updated yet.`
+        : quarterPosition === "past"
+          ? `Editing past quarters is disabled. Enable it in Settings > Configurations.`
+          : `Editing past weeks is disabled. Week ${input.weekNumber} is before the earliest editable week (${earliestEditableWeek(currentWeek, canEditPastWeek)}). Enable it in Settings > Configurations.`;
+      results.push({ weekNumber: input.weekNumber, userId: targetUserId, ok: false, error: reason });
       continue;
     }
 

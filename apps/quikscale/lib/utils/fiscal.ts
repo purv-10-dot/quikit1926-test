@@ -141,6 +141,30 @@ export function fiscalYearLabel(year: number): string {
   return `${year}–${year + 1}`;
 }
 
+/** Where a quarter sits relative to today. */
+export type QuarterPosition = "past" | "current" | "future";
+
+/**
+ * Classify a quarter as past / current / future by comparing today against the
+ * quarter's real start/end dates (same date logic as `qtdReferenceWeek`). This
+ * is what per-week edit gating needs but historically lacked: `useCurrentWeek`
+ * clamps a past quarter to `weekCount` and a future quarter to `1`, so a
+ * week-number-only gate can't tell that the whole quarter is out of range.
+ * Callers combine this with the in-quarter week number to gate edits correctly.
+ */
+export function resolveQuarterPosition(
+  startDate: string | Date,
+  endDate: string | Date,
+  now: Date = new Date(),
+): QuarterPosition {
+  const today = toLocalDay(now).getTime();
+  const start = toLocalDay(startDate).getTime();
+  const end = toLocalDay(endDate).getTime();
+  if (today < start) return "future";
+  if (today > end) return "past";
+  return "current";
+}
+
 /**
  * Returns the start date of a fiscal quarter.
  *

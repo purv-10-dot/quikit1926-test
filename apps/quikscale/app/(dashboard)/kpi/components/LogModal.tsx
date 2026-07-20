@@ -12,9 +12,9 @@ import { UserPicker } from "@quikit/ui";
 import { CURRENCIES, getScales, getMultiplier, formatActual, shortScaleLabel, scaleDownForDisplay, scaleUpFromInput } from "@/lib/utils/currency";
 import { WeeklyScroller } from "./WeeklyScroller";
 import { usePastWeekFlags } from "@/lib/hooks/useFeatureFlags";
-import { weeklyInputLockState, isWeekBeforeEditableWindow } from "@/lib/utils/weekLock";
+import { weekEditState } from "@/lib/utils/weekLock";
 import { UnitSelect } from "./UnitSelect";
-import { useCurrentWeek, useWeekLabels, useQuarterWeekCount } from "@/lib/hooks/useCurrentWeek";
+import { useCurrentWeek, useWeekLabels, useQuarterWeekCount, useQuarterPosition } from "@/lib/hooks/useCurrentWeek";
 import { useMyPermissions } from "@/lib/hooks/useMyPermissions";
 import { humanizeApiError } from "@/lib/utils/humanizeError";
 import {
@@ -798,6 +798,10 @@ function UpdatesTab({
   // current-week state resolve (see weeklyInputLockState).
   const { canEditPastWeek, loaded: flagsLoaded } = usePastWeekFlags();
   const currentWeek = useCurrentWeek(kpi.year, kpi.quarter);
+  // Quarter/year position so a past KPI's last week and a future KPI's first
+  // week are locked correctly (the clamped `currentWeek` can't tell them apart).
+  const updatesQuarterPos = useQuarterPosition(kpi.year, kpi.quarter);
+  const updatesGateLoaded = flagsLoaded && updatesQuarterPos !== null;
   const updatesTabWeekLabels = useWeekLabels(kpi.year, kpi.quarter);
   const weekCount = useQuarterWeekCount(kpi.year, kpi.quarter);
 
@@ -884,8 +888,9 @@ function UpdatesTab({
             </p>
             <div className="space-y-3">
               {weeksArray(weekCount).map(w => {
-                const { isPast, isFuture, locked } = weeklyInputLockState({
-                  week: w, currentWeek, canEditPastWeek, flagsLoaded,
+                const { isPast, isFuture, locked } = weekEditState({
+                  quarterPosition: updatesQuarterPos ?? "current",
+                  week: w, currentWeek, canEditPastWeek, flagsLoaded: updatesGateLoaded,
                 });
                 // Aggregate total for this week (display only)
                 const total = ownerList.reduce((s, o) => {
@@ -979,8 +984,9 @@ function UpdatesTab({
             </div>
             <div className="border border-gray-200 rounded-lg px-3 bg-white">
               {weeksArray(weekCount).map(w => {
-                const { locked } = weeklyInputLockState({
-                  week: w, currentWeek, canEditPastWeek, flagsLoaded,
+                const { locked } = weekEditState({
+                  quarterPosition: updatesQuarterPos ?? "current",
+                  week: w, currentWeek, canEditPastWeek, flagsLoaded: updatesGateLoaded,
                 });
                 // When a week has no target (target = 0 or unset), lock the input
                 // so nothing new can be entered — but keep any existing historical
@@ -1069,6 +1075,7 @@ export function LogModal({ kpi, onClose, onRefresh, initialTab = "updates", canU
   // Current week-of-quarter for the header pill. DB-driven: respects tenant's
   // QuarterSetting.startDate (may be offset from Apr 1 / Jul 1 / etc.).
   const headerCurrentWeek = useCurrentWeek(kpi.year, kpi.quarter);
+  const headerQuarterPos = useQuarterPosition(kpi.year, kpi.quarter);
   const weekCount = useQuarterWeekCount(kpi.year, kpi.quarter);
   // Past-week edit flag — when off (default), the batch endpoint will reject
   // any row with weekNumber < currentWeek. The save handler uses this to
@@ -1343,8 +1350,16 @@ export function LogModal({ kpi, onClose, onRefresh, initialTab = "updates", canU
       //      into a literal 0, wiping the column on every save.
       type WeeklyInput = { weekNumber: number; value: number | null; notes: string | null; userId?: string };
       const weeklyInputs: WeeklyInput[] = [];
+      // Quarter-aware so we don't ship past-/future-quarter weeks the server
+      // will reject (which surfaced as a confusing "N of 13 weeks failed").
       const isPastWeekLocked = (w: number) =>
-        headerCurrentWeek !== null && isWeekBeforeEditableWindow(w, headerCurrentWeek, canEditPastWeekAtSave);
+        weekEditState({
+          quarterPosition: headerQuarterPos ?? "current",
+          week: w,
+          currentWeek: headerCurrentWeek,
+          canEditPastWeek: canEditPastWeekAtSave,
+          flagsLoaded: headerQuarterPos !== null,
+        }).locked;
       const cellsDiffer = (
         cur: { value: string; notes: string } | undefined,
         prev: { value: string; notes: string } | undefined,

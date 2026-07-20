@@ -738,7 +738,11 @@ export function PriorityTable({ priorities: prioritiesAll, onRefresh, year, quar
                     );
                   case "_id":
                     return (
-                      <td key={colKey} className="z-[25] border-r border-gray-100 px-1 py-1.5 text-center bg-inherit sticky"
+                      // `relative` + `data-no-drag` make the whole ID cell a
+                      // drag-safe click target: the button fills the cell so a
+                      // click anywhere in it (not just on the tiny digit) opens
+                      // the editor, and this cell never starts a row drag.
+                      <td key={colKey} data-no-drag className="z-[25] border-r border-gray-100 px-1 py-1.5 text-center bg-inherit sticky"
                         style={{
                           left: getLeftOffset("_id"),
                           width: 40,
@@ -746,7 +750,7 @@ export function PriorityTable({ priorities: prioritiesAll, onRefresh, year, quar
                           boxShadow: lastFrozenKey === "_id" ? "2px 0 4px -1px rgba(0,0,0,0.08)" : undefined,
                         }}>
                         <button onClick={() => setEditPriority(priority)}
-                          className="text-gray-900 hover:underline font-medium text-xs transition-colors">
+                          className="absolute inset-0 flex items-center justify-center text-gray-900 hover:underline font-medium text-xs transition-colors">
                           {rowIdx + 1}
                         </button>
                       </td>

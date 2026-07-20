@@ -723,7 +723,8 @@ export function WWWTable({ items: itemsAll, onRefresh, onSelectionChange, hideCo
                     );
                   case "_id":
                     return (
-                      <td key={colKey} className="sticky z-20 border-r border-gray-100 px-1 py-1.5 text-center bg-inherit"
+                      // Whole cell is a drag-safe click target (see PriorityTable).
+                      <td key={colKey} data-no-drag className="sticky z-20 border-r border-gray-100 px-1 py-1.5 text-center bg-inherit"
                         style={{
                           left: getLeftOffset("_id"),
                           width: 50,
@@ -732,7 +733,7 @@ export function WWWTable({ items: itemsAll, onRefresh, onSelectionChange, hideCo
                         }}>
                         <button
                           onClick={() => { setPanelTab("edit"); setEditItem(item); }}
-                          className="text-gray-900 hover:underline font-medium text-xs transition-colors"
+                          className="absolute inset-0 flex items-center justify-center text-gray-900 hover:underline font-medium text-xs transition-colors"
                         >
                           {rowIdx + 1}
                         </button>

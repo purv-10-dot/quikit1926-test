@@ -18,7 +18,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 
-const DRAG_THRESHOLD = 4; // px before a press becomes a drag
+const DRAG_THRESHOLD = 8; // px before a press becomes a drag (tolerant of click-jitter)
 const EDGE = 56;          // px from a scroll edge that triggers auto-scroll
 const SCROLL_SPEED = 14;  // px per tick
 

@@ -74,3 +74,49 @@ export function weeklyInputLockState(opts: {
 
   return { isPast, isFuture, locked };
 }
+
+/** Where the panel's quarter sits relative to today (see fiscal.resolveQuarterPosition). */
+export type QuarterPosition = "past" | "current" | "future";
+
+/**
+ * Quarter/year-AWARE week-edit gate — the single source of truth for every
+ * weekly-status / weekly-value surface (Priority weekly tab, KPI Updates tab)
+ * and their server routes.
+ *
+ * The historical bug: gates used only the in-quarter week number, and
+ * `useCurrentWeek` clamps a past quarter to `weekCount` and a future quarter to
+ * `1`. So a past quarter's LAST week and a future quarter's FIRST week slipped
+ * through as "editable". Feeding `quarterPosition` fixes that:
+ *
+ *   - future quarter → every week locked (can't fill in a quarter that hasn't
+ *     started), regardless of flags.
+ *   - past quarter   → every week locked UNLESS `canEditPastWeek` is on (then
+ *     the whole finished quarter is editable).
+ *   - current quarter → the per-week window applies: future weeks locked, and
+ *     when edit-past is OFF only the current week + `PAST_WEEK_EDIT_GRACE`
+ *     earlier weeks are editable (grace 1 ⇒ current week and the one before it).
+ *
+ * `flagsLoaded` should be false until BOTH the flags and the quarter position
+ * are known, so nothing briefly renders editable while state resolves.
+ */
+export function weekEditState(opts: {
+  quarterPosition: QuarterPosition;
+  week: number;
+  currentWeek: number | null;
+  canEditPastWeek: boolean;
+  flagsLoaded: boolean;
+}): WeekLockState {
+  const { quarterPosition, week, currentWeek, canEditPastWeek, flagsLoaded } = opts;
+
+  if (!flagsLoaded) return { isPast: false, isFuture: false, locked: true };
+
+  if (quarterPosition === "future") {
+    return { isPast: false, isFuture: true, locked: true };
+  }
+  if (quarterPosition === "past") {
+    // Whole quarter is behind us — editable only when edit-past is allowed.
+    return { isPast: !canEditPastWeek, isFuture: false, locked: !canEditPastWeek };
+  }
+  // Current quarter → per-week window (future weeks locked, past beyond grace locked).
+  return weeklyInputLockState({ week, currentWeek, canEditPastWeek, flagsLoaded });
+}
