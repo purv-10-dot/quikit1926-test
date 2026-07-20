@@ -37,6 +37,18 @@ export const SPACE_ADMIN_ROLE_NAME = "Space Admin";
  */
 export const SPACE_CREATOR_ROLE_NAME = "Space Creator";
 
+/**
+ * Seeded project roles that must NEVER be deleted (they back default access,
+ * full-access, and read-only tiers). Project roles have no `isSystem` flag, so
+ * protection is by name (plus the default role). Custom project roles are
+ * still deletable.
+ */
+export const PROTECTED_PROJECT_ROLE_NAMES: readonly string[] = [
+  SPACE_ADMIN_ROLE_NAME,
+  "Contributor",
+  "Viewer",
+];
+
 /* ───────────────────────── Tree types ───────────────────────── */
 
 export interface PermissionLeaf {

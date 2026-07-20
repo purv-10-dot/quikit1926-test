@@ -2,8 +2,9 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { db } from "@/lib/db";
 import { withProjectAccess } from "@/lib/api/withProjectAccess";
+import { Prisma } from "@prisma/client";
 import { userCanInProject, hasAdminAccess } from "@/lib/api/permissions";
-import { getDefaultStatusId } from "@/lib/services/projectDefaults";
+import { getDefaultStatusId, nextIssueKey } from "@/lib/services/projectDefaults";
 
 /**
  * Create a NEW work item (QtIssue) in a chosen space and link it as delivery for
@@ -54,35 +55,42 @@ export const POST = withProjectAccess<{ id: string; ideaId: string }>(
       ? `<p><em>From idea ${idea.key}: ${idea.title}</em></p>${idea.description ?? ""}`
       : null;
 
-    try {
-      const issue = await db.$transaction(async (tx) => {
-        const statusId = await getDefaultStatusId(tx, spaceId);
-        if (!statusId) throw new Error("Target space has no statuses");
-        const seq = await tx.qtIssue.count({ where: { projectId: spaceId } });
-        const created = await tx.qtIssue.create({
-          data: {
-            orgId,
-            projectId: spaceId,
-            key: `${space.projectKey}-${seq + 1}`,
-            title: summary,
-            description,
-            type,
-            statusId,
-            reporterId: userId,
-            createdBy: userId,
-            updatedBy: userId,
-          },
-          select: { id: true },
+    // Retry on a key collision (P2002): the key is derived from the current max
+    // suffix, so a concurrent insert is the only realistic cause — recompute and
+    // try again a couple of times before giving up.
+    for (let attempt = 0; ; attempt++) {
+      try {
+        const issue = await db.$transaction(async (tx) => {
+          const statusId = await getDefaultStatusId(tx, spaceId);
+          if (!statusId) throw new Error("Target space has no statuses");
+          const key = await nextIssueKey(tx, spaceId, space.projectKey);
+          const created = await tx.qtIssue.create({
+            data: {
+              orgId,
+              projectId: spaceId,
+              key,
+              title: summary,
+              description,
+              type,
+              statusId,
+              reporterId: userId,
+              createdBy: userId,
+              updatedBy: userId,
+            },
+            select: { id: true },
+          });
+          await tx.qtIdeaDelivery.create({
+            data: { orgId, ideaId: idea.id, issueId: created.id, createdBy: userId },
+          });
+          return created;
         });
-        await tx.qtIdeaDelivery.create({
-          data: { orgId, ideaId: idea.id, issueId: created.id, createdBy: userId },
-        });
-        return created;
-      });
-      return NextResponse.json({ success: true, data: { issueId: issue.id } }, { status: 201 });
-    } catch (error: unknown) {
-      const message = error instanceof Error ? error.message : "Failed to create work item";
-      return NextResponse.json({ success: false, error: message }, { status: 400 });
+        return NextResponse.json({ success: true, data: { issueId: issue.id } }, { status: 201 });
+      } catch (error: unknown) {
+        const isKeyClash = error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2002";
+        if (isKeyClash && attempt < 3) continue; // recompute the key and retry
+        const message = error instanceof Error ? error.message : "Failed to create work item";
+        return NextResponse.json({ success: false, error: message }, { status: 400 });
+      }
     }
   },
   { paramKey: "id", requirePermission: { resource: "Idea", action: "update" } },

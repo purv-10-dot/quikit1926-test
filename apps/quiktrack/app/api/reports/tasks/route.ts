@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { withOrgAuth } from "@/lib/api/withOrgAuth";
-import { hasAdminAccess } from "@/lib/api/permissions";
+import { hasAdminAccess, spaceAdminProjectIds } from "@/lib/api/permissions";
 
 /**
  * Project Reports — aggregated task list across all projects the caller can
@@ -37,17 +37,15 @@ export const GET = withOrgAuth(async ({ orgId, userId }, req) => {
   }
 
   // Resolve which projects the caller can see. Global admins (tenant OR app
-  // admin) see all; everyone else gets their explicit memberships.
+  // admin) see ALL projects; non-admins see ONLY projects where they are a
+  // Space Admin. A non-admin with no Space Admin projects (or requesting a
+  // project outside that set) gets an empty report.
   const isAdmin = await hasAdminAccess(userId, orgId);
 
   let projectIds: string[] | null = null;
   if (!isAdmin) {
-    const memberships = await db.qtProjectMember.findMany({
-      where: { userId, isDeleted: false },
-      select: { projectId: true },
-    });
-    projectIds = memberships.map((m) => m.projectId);
-    if (projectId && !projectIds.includes(projectId)) {
+    projectIds = await spaceAdminProjectIds(userId, orgId);
+    if (projectIds.length === 0 || (projectId && !projectIds.includes(projectId))) {
       return NextResponse.json({
         success: true,
         data: {

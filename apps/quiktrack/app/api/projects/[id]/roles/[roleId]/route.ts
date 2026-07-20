@@ -3,6 +3,7 @@ import { z } from "zod";
 import { db } from "@/lib/db";
 import { withProjectAccess } from "@/lib/api/withProjectAccess";
 import { userCanInProject } from "@/lib/api/permissions";
+import { PROTECTED_PROJECT_ROLE_NAMES } from "@/lib/api/permissionsRegistry";
 
 const patchSchema = z.object({
   name: z.string().trim().min(1).max(64).optional(),
@@ -111,10 +112,20 @@ export const DELETE = withProjectAccess<{ id: string; roleId: string }>(async (
 
   const role = await db.qtProjectRole.findFirst({
     where: { id: params.roleId, projectId },
-    select: { id: true, _count: { select: { members: true } } },
+    select: { id: true, name: true, isDefault: true, _count: { select: { members: true } } },
   });
   if (!role) {
     return NextResponse.json({ success: false, error: "Role not found" }, { status: 404 });
+  }
+
+  // The seeded project roles (Space Admin / Contributor / Viewer) and the
+  // default role are structural and can NEVER be deleted, not even by a tenant
+  // admin. Custom roles remain deletable.
+  if (PROTECTED_PROJECT_ROLE_NAMES.includes(role.name) || role.isDefault) {
+    return NextResponse.json(
+      { success: false, error: `The "${role.name}" role can't be deleted.` },
+      { status: 400 },
+    );
   }
 
   const affectedUsers = role._count.members;

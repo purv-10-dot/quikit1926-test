@@ -368,6 +368,7 @@ model User {
   qsUserTeams             QsUserTeam[]
   memberships             OrgMember[]
   appAccess               UserAppAccess[]
+  astEmployees            AstEmployee[]
 
   @@index([email])
   @@schema("auth")
@@ -9612,6 +9613,7 @@ model QtCustomField {
   key          String // immutable, generated from name (e.g. "customer_tier")
   type         String // SHORT_TEXT | LONG_TEXT | NUMBER | DATE | DROPDOWN_SINGLE | DROPDOWN_MULTI | CHECKBOX | URL | USER_PICKER | LABELS
   description  String?
+  icon         String? // optional emoji icon (JPD field editor). TODO(integration): sign-off before Neon.
   status       String                @default("active") // "active" | "archived"
   isRequired   Boolean               @default(false)
   defaultValue Json? // type-dependent default (string | number | bool | string[])
@@ -9643,6 +9645,10 @@ model QtCustomFieldOption {
   value     String // stored value (slug); kept stable across label renames
   position  Int           @default(0)
   isActive  Boolean       @default(true)
+  weight    Int? // TODO(integration): discovery weighted multi-select — 0–5 strategic weight per option (None..Highest). Additive, nullable; needs owner sign-off before Neon.
+  color     String? // TODO(integration): discovery per-option color (hex, e.g. Theme/Roadmap chips). Additive, nullable; needs owner sign-off before Neon.
+  icon      String? // TODO(integration): discovery per-option icon/emoji (Theme/Roadmap). Additive, nullable; needs owner sign-off before Neon.
+  highlight Boolean       @default(false) // TODO(integration): discovery "Highlight ideas with this color" — tint the row bg. Additive, default false; needs owner sign-off before Neon.
   createdAt DateTime      @default(now())
   field     QtCustomField @relation(fields: [fieldId], references: [id], onDelete: Cascade)
 
@@ -9754,6 +9760,8 @@ model QtIdea {
   comments     QtIdeaComment[]
   insights     QtIdeaInsight[]
   deliveries   QtIdeaDelivery[]
+  attachments  QtIdeaAttachment[]
+  links        QtIdeaLink[]
 
   @@unique([projectId, key])
   @@index([orgId])
@@ -9894,6 +9902,59 @@ model QtIdeaDelivery {
   @@unique([ideaId, issueId])
   @@index([ideaId])
   @@index([issueId])
+  @@index([orgId])
+  @@schema("app_quiktrack")
+}
+
+// TODO(integration): discovery view-level comments (JPD "All ideas" About/
+// Comments drawer). Additive; needs owner sign-off before Neon.
+model QtIdeaViewComment {
+  id        String   @id @default(cuid())
+  orgId     String
+  viewId    String
+  body      String
+  isDeleted Boolean  @default(false)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  createdBy String?
+
+  @@index([viewId, createdAt])
+  @@index([orgId])
+  @@schema("app_quiktrack")
+}
+
+// TODO(integration): discovery idea attachments. Additive; owner sign-off before Neon.
+model QtIdeaAttachment {
+  id        String   @id @default(cuid())
+  orgId     String
+  ideaId    String
+  fileName  String
+  url       String
+  mimeType  String?
+  size      Int?
+  createdAt DateTime @default(now())
+  createdBy String?
+  idea      QtIdea   @relation(fields: [ideaId], references: [id], onDelete: Cascade)
+
+  @@index([ideaId, createdAt])
+  @@index([orgId])
+  @@schema("app_quiktrack")
+}
+
+// TODO(integration): discovery idea "Linked work items" (JPD) — linkType + a
+// cross-project QtIssue reference (no FK; resolved at read time). Additive.
+model QtIdeaLink {
+  id        String   @id @default(cuid())
+  orgId     String
+  ideaId    String
+  issueId   String
+  linkType  String   @default("relates to")
+  createdAt DateTime @default(now())
+  createdBy String?
+  idea      QtIdea   @relation(fields: [ideaId], references: [id], onDelete: Cascade)
+
+  @@unique([ideaId, issueId, linkType])
+  @@index([ideaId])
   @@index([orgId])
   @@schema("app_quiktrack")
 }
@@ -18020,6 +18081,63 @@ enum AstAssignmentStatus {
   @@schema("app_quikasset")
 }
 
+enum AstAssetRequestKind {
+  Physical
+  Subscription
+
+  @@schema("app_quikasset")
+}
+
+enum AstAssetRequestType {
+  New
+  Replacement
+  Upgrade
+  Additional
+
+  @@schema("app_quikasset")
+}
+
+enum AstAssetRequestPriority {
+  Low
+  Medium
+  High
+  Urgent
+
+  @@schema("app_quikasset")
+}
+
+enum AstAssetRequestStatus {
+  Draft
+  Submitted
+  PendingApproval
+  Approved
+  Rejected
+  PartiallyFulfilled
+  Fulfilled
+  Cancelled
+
+  @@schema("app_quikasset")
+}
+
+enum AstRepairRequestStatus {
+  Submitted
+  Approved
+  Rejected
+  Fulfilled
+  Cancelled
+
+  @@schema("app_quikasset")
+}
+
+enum AstRepairRequestUrgency {
+  Low
+  Medium
+  High
+  Urgent
+
+  @@schema("app_quikasset")
+}
+
 /// Employee directory (asset HOLDERS) — distinct from the platform login User.
 model AstEmployee {
   id          String          @id @default(cuid())
@@ -18034,13 +18152,33 @@ model AstEmployee {
   status      AstStatus       @default(Active)
   createdAt   DateTime        @default(now())
   updatedAt   DateTime        @updatedAt
+  userId      String?
+  user        User?           @relation(fields: [userId], references: [id])
   assignments AstAssignment[]
   replacements AstReplacement[]
 
   @@unique([orgId, employeeId])
   @@unique([orgId, email])
+  @@unique([orgId, userId])
   @@index([orgId])
+  @@index([userId])
   @@map("employees")
+  @@schema("app_quikasset")
+}
+
+/// Soft-delete marker for "removed from QuikAsset". A row here hides the user
+/// from the merged Users list AND denies QuikAsset access (auth layer), without
+/// destroying any User/OrgMember/UserAppAccess/AstUserAppRole/AstEmployee data.
+model AstUserRemoval {
+  id        String   @id @default(cuid())
+  orgId     String
+  userId    String
+  removedAt DateTime @default(now())
+  removedBy String?
+
+  @@unique([orgId, userId])
+  @@index([orgId])
+  @@map("user_removals")
   @@schema("app_quikasset")
 }
 
@@ -18091,11 +18229,16 @@ model AstAsset {
   condition            String
   warrantyEndDate      String?
   description          String
+  invoiceFileKey       String?
+  invoiceFileName      String?
+  invoiceFileType      String?
+  invoiceFileSize      Int?
   assetStatus          AstAssetStatus   @default(Available)
   createdAt            DateTime         @default(now())
   updatedAt            DateTime         @updatedAt
   assignments          AstAssignment[]
   repairs              AstRepair[]
+  repairRequests       AstRepairRequest[]
   replacementsReceived AstReplacement[] @relation("ReplacementAsset")
 
   @@unique([orgId, itemCode])
@@ -18115,7 +18258,11 @@ model AstRepair {
   asset            AstAsset         @relation(fields: [assetId], references: [id])
   issueTitle       String
   issueDescription String
+  // Legacy free-text vendor — kept as a fallback for old repairs; superseded by
+  // the vendorId FK below (new repairs pick a vendor). Do not drop yet.
   vendor           String?
+  vendorId         String?
+  vendorRef        AstVendor?       @relation(fields: [vendorId], references: [id])
   estimatedCost    Float?
   actualCost       Float?
   sentDate         String
@@ -18126,10 +18273,39 @@ model AstRepair {
   createdAt        DateTime         @default(now())
   updatedAt        DateTime         @updatedAt
   replacements     AstReplacement[]
+  repairRequests   AstRepairRequest[]
 
   @@index([orgId])
   @@index([assetId])
+  @@index([vendorId])
   @@map("repairs")
+  @@schema("app_quikasset")
+}
+
+/// Vendor / supplier master (minimal — no GST/PAN/bank/SLA/ratings/purchase
+/// history yet; those depend on Procurement). Linked from AstRepair.vendorId.
+model AstVendor {
+  id            String          @id @default(cuid())
+  orgId         String
+  name          String
+  contactPerson String?
+  phone         String?
+  email         String?
+  address       String?
+  status        AstVendorStatus @default(Active)
+  createdAt     DateTime        @default(now())
+  updatedAt     DateTime        @updatedAt
+  repairs       AstRepair[]
+
+  @@index([orgId])
+  @@map("vendors")
+  @@schema("app_quikasset")
+}
+
+enum AstVendorStatus {
+  Active
+  Inactive
+
   @@schema("app_quikasset")
 }
 
@@ -18171,11 +18347,83 @@ model AstAssignment {
   status         AstAssignmentStatus @default(Active)
   assignedAt     DateTime            @default(now())
   returnedAt     DateTime?
+  requestId      String?
+  request        AstAssetRequest?    @relation(fields: [requestId], references: [id])
 
   @@index([orgId])
   @@index([assetId])
   @@index([userId])
+  @@index([requestId])
   @@map("assignments")
+  @@schema("app_quikasset")
+}
+
+/// Employee-raised asset request (Module 1). Physical requests fulfil by
+/// creating an AstAssignment (see `fulfilments`); subscription requests fulfil
+/// status-only with a `fulfilmentNote`. baseCategoryId/categoryId are loose
+/// references to Category Master (no FK) — itemType is the free-text item name.
+model AstAssetRequest {
+  id                String                  @id @default(cuid())
+  orgId             String
+  requesterUserId   String
+  itemKind          AstAssetRequestKind     @default(Physical)
+  itemType          String
+  baseCategoryId    String?
+  categoryId        String?
+  requestType       AstAssetRequestType
+  quantity          Int                     @default(1)
+  quantityFulfilled Int                     @default(0)
+  justification     String
+  priority          AstAssetRequestPriority @default(Medium)
+  requiredBy        String?
+  status            AstAssetRequestStatus   @default(Draft)
+  reviewedByUserId  String?
+  reviewedAt        DateTime?
+  decisionNote      String?
+  fulfilmentNote    String?
+  createdAt         DateTime                @default(now())
+  updatedAt         DateTime                @updatedAt
+  fulfilments       AstAssignment[]
+
+  @@index([orgId])
+  @@index([orgId, status])
+  @@index([requesterUserId])
+  @@map("asset_requests")
+  @@schema("app_quikasset")
+}
+
+/// Employee-raised repair request. An employee reports a fault on ONE of their
+/// own assigned assets (`assetId`); an approver reviews it and, on approval,
+/// "sends to repair" — creating a real AstRepair (`repairId`/`repair`) and
+/// flipping the asset to InRepair, mirroring how AstAssetRequest fulfils into an
+/// AstAssignment. `requesterUserId` is a plain column (the platform User.id, the
+/// same scoping column AstAssetRequest uses), joined to AstEmployee for display
+/// name in app code. Vendor/cost/dates are NOT employee-facing — the approver
+/// supplies them at "send to repair" time on the created AstRepair.
+model AstRepairRequest {
+  id               String                  @id @default(cuid())
+  orgId            String
+  requesterUserId  String
+  assetId          String
+  asset            AstAsset                @relation(fields: [assetId], references: [id])
+  issueTitle       String
+  issueDescription String
+  urgency          AstRepairRequestUrgency @default(Medium)
+  status           AstRepairRequestStatus  @default(Submitted)
+  reviewedByUserId String?
+  reviewedAt       DateTime?
+  decisionNote     String?
+  repairId         String?
+  repair           AstRepair?              @relation(fields: [repairId], references: [id])
+  createdAt        DateTime                @default(now())
+  updatedAt        DateTime                @updatedAt
+
+  @@index([orgId])
+  @@index([orgId, status])
+  @@index([requesterUserId])
+  @@index([assetId])
+  @@index([repairId])
+  @@map("repair_requests")
   @@schema("app_quikasset")
 }
 

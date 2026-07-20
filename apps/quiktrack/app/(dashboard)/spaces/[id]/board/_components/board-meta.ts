@@ -32,6 +32,7 @@ export interface BoardIssue {
   assigneeId: string | null;
   parentId?: string | null;
   epicId?: string | null;
+  startDate?: string | null;
   dueDate?: string | null;
   subtaskCount?: number;
 }

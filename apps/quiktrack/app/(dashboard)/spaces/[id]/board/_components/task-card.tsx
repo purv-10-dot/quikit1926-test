@@ -92,6 +92,17 @@ export function TaskCard({
   const P = priorityMeta(task.priority);
   const epic = task.epicId ? epicsById?.[task.epicId] : null;
   const overdue = isOverdue(task.dueDate);
+  // Date label: start–due range when both exist, else whichever single date is
+  // set. Shown on every card that has a date (not only overdue ones); the chip
+  // turns red only when the due date has passed.
+  const dateLabel =
+    task.startDate && task.dueDate
+      ? `${formatShortDate(task.startDate)} – ${formatShortDate(task.dueDate)}`
+      : task.dueDate
+        ? formatShortDate(task.dueDate)
+        : task.startDate
+          ? formatShortDate(task.startDate)
+          : null;
   const hasSubtasks = (task.subtaskCount ?? 0) > 0 || (subtasks?.length ?? 0) > 0;
   const isDone = statusesById[task.statusId]?.category === "DONE";
 
@@ -126,22 +137,36 @@ export function TaskCard({
           </button>
         </div>
 
-        {/* Epic chip — suppressed when rendered inside an EpicGroup since
-            the group's purple header already names the epic. */}
-        {epic && !hideEpicChip && (
-          <div className="mb-2 inline-flex items-center max-w-full gap-1 px-1.5 h-5 rounded bg-red-100 text-red-700">
-            <Zap className="h-3 w-3 text-purple-500 shrink-0" />
-            <span className="text-[10px] font-semibold uppercase tracking-wide truncate">
-              {epic.title}
-            </span>
-          </div>
-        )}
+        {/* Chip row: epic + date. Wrapped in a gapped, wrapping flex container so
+            the two chips never butt against each other (and wrap to a new line
+            when the epic title is long). */}
+        {((epic && !hideEpicChip) || dateLabel) && (
+          <div className="mb-2 flex flex-wrap items-center gap-1.5">
+            {/* Epic chip — suppressed inside an EpicGroup (its purple header
+                already names the epic). */}
+            {epic && !hideEpicChip && (
+              <div className="inline-flex items-center max-w-full gap-1 px-1.5 h-5 rounded bg-red-100 text-red-700">
+                <Zap className="h-3 w-3 text-purple-500 shrink-0" />
+                <span className="text-[10px] font-semibold uppercase tracking-wide truncate">
+                  {epic.title}
+                </span>
+              </div>
+            )}
 
-        {/* Overdue chip */}
-        {overdue && (
-          <div className="mb-2 inline-flex items-center gap-1 h-5 px-1.5 rounded border border-red-200 bg-red-50 text-red-600 text-[10px] font-medium">
-            <AlertTriangle className="h-3 w-3" />
-            {formatShortDate(task.dueDate!)}
+            {/* Date chip — neutral gray normally; red with a warning icon once
+                the due date is overdue. */}
+            {dateLabel && (
+              <div
+                className={`inline-flex items-center gap-1 h-5 px-1.5 rounded border text-[10px] font-medium ${
+                  overdue
+                    ? "border-red-200 bg-red-50 text-red-600"
+                    : "border-gray-200 bg-gray-50 text-gray-600"
+                }`}
+              >
+                {overdue && <AlertTriangle className="h-3 w-3" />}
+                {dateLabel}
+              </div>
+            )}
           </div>
         )}
 
