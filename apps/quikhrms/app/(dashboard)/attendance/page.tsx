@@ -1,9 +1,10 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useApiClient } from "@/lib/hooks/use-api";
 import { Modal } from "@/components/hrms/modal";
+import { ExcelExportButton } from "@/components/hrms/excel-export-button";
 import {
   Calendar, ChevronLeft, ChevronRight, Play, Pause, List, LayoutGrid,
   Filter, MoreHorizontal, CalendarDays, Upload, Download, Printer, FileDown,
@@ -71,6 +72,24 @@ const STATUS_LABELS: Record<DayStatus, string> = {
   OnLeave: "On Leave", Holiday: "Holiday", Weekend: "Weekend",
   Absent: "Absent", HalfDay: "Half Day", CompOff: "Comp Off", NotMarked: "Not marked",
 };
+
+const REG_EXPORT_LABEL: Record<DayCell["regularizationStatus"], string> = {
+  None: "No Regularization",
+  Pending: "Pending",
+  Approved: "Approved",
+  Rejected: "Rejected",
+  Cancelled: "Cancelled",
+};
+
+const ATTENDANCE_EXPORT_COLUMNS = [
+  { header: "Date", key: "date", width: 16 },
+  { header: "Clock-In", key: "clockIn", width: 14 },
+  { header: "Clock-Out", key: "clockOut", width: 14 },
+  { header: "Working Time In Office", key: "workingTime", width: 22 },
+  { header: "Break Time", key: "breakTime", width: 14 },
+  { header: "Status", key: "status", width: 14 },
+  { header: "Regularization Status", key: "regularization", width: 20 },
+];
 
 export default function AttendancePage() {
   return (
@@ -156,6 +175,28 @@ function AttendanceSummary() {
 
   const shiftLabel = today?.shift ? `${today.shift.name} [ ${formatTime(today.shift.start)} - ${formatTime(today.shift.end)} ]` : "General [ 9:00 AM - 6:00 PM ]";
 
+  const exportRows = useMemo(
+    () =>
+      (summary?.days ?? []).map((day) => {
+        const d = new Date(day.date);
+        const breakSec = Math.max(0, day.grossHours - day.effectiveHours) * 3600;
+        return {
+          date: d.toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" }),
+          clockIn: day.checkIn
+            ? new Date(day.checkIn).toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit", second: "2-digit", hour12: true })
+            : "",
+          clockOut: day.checkOut
+            ? new Date(day.checkOut).toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit", second: "2-digit", hour12: true })
+            : "",
+          workingTime: fmtTimer(day.effectiveHours * 3600),
+          breakTime: fmtTimer(breakSec),
+          status: STATUS_LABELS[day.status],
+          regularization: REG_EXPORT_LABEL[day.regularizationStatus],
+        };
+      }),
+    [summary],
+  );
+
   return (
     <div>
       <div className="flex items-center justify-between mb-4">
@@ -188,6 +229,7 @@ function AttendanceSummary() {
             </Tooltip>
           </div>
           <button className="p-2 surface-card hover:bg-gray-50"><Filter size={12} className="text-gray-600" /></button>
+          <ExcelExportButton filename="attendance" sheetName="Attendance" columns={ATTENDANCE_EXPORT_COLUMNS} rows={exportRows} label="Excel" />
           <MoreMenu days={summary?.days ?? []} weekStart={cursor} weekEnd={weekEnd} />
         </div>
       </div>

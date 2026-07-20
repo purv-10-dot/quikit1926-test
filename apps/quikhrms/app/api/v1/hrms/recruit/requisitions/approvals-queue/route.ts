@@ -4,7 +4,7 @@ import { withAuth } from "@/lib/with-auth";
 import { successResponse, notFound, internalError } from "@/lib/api-response";
 import { resolveEmployeeId } from "@/lib/resolve-employee";
 import { openHeadcountForDept } from "@/lib/services/requisition-approval-service";
-import { getActiveChainLevels, getCallerRoleIds, callerCanActionLevel } from "@/lib/services/approval-chain";
+import { getActiveChainLevels, getCallerRoleIds, getDelegatedApprovers, resolveLevelActor } from "@/lib/services/approval-chain";
 
 /**
  * GET — returns the caller's approval inbox plus (for admins) an org-wide view.
@@ -26,6 +26,9 @@ export const GET = withAuth(async (_req: NextRequest, { orgId, userId, roles, pe
     // the level's role (role levels are actionable by any holder of that role).
     const chainLevels = await getActiveChainLevels(orgId, "Requisition");
     const roleIds = await getCallerRoleIds(orgId, employeeId);
+    // Delegators who handed this user Recruitment authority — their pending
+    // approvals should also surface in this inbox (tagged on-behalf).
+    const delegated = await getDelegatedApprovers(orgId, employeeId, "hrms.recruit.write");
 
     const pendingReqs = await prisma.jobRequisition.findMany({
       where: { orgId, deletedAt: null, status: "PendingApproval" },
@@ -42,11 +45,15 @@ export const GET = withAuth(async (_req: NextRequest, { orgId, userId, roles, pe
         const current = r.approvals.find((x) => x.status === "Pending");
         if (!current) return null;
         const levelCfg = chainLevels?.find((l) => l.level === current.level);
-        if (!callerCanActionLevel(levelCfg, { employeeId, roleIds }, current.approverId)) return null;
+        const actor = resolveLevelActor(levelCfg, { employeeId, roleIds }, delegated, current.approverId);
+        if (!actor.canAction) return null;
         return {
           approvalId: current.id,
           level: current.level,
           role: current.role,
+          // Set when this item is in the inbox only because of a delegation — the
+          // delegator's id, so the UI can badge it "on behalf of …".
+          onBehalfOf: actor.onBehalfOf,
           openDeptHeadcount: await openHeadcountForDept(orgId, r.departmentId),
           requisition: r,
         };

@@ -5,11 +5,12 @@ import { useEffect, useRef, useState } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { useApiClient } from "@/lib/hooks/use-api";
 import { Select } from "@/components/hrms/ui/select";
-import { Plus, Search, Eye, EyeOff, ArrowUpDown, Edit2, Send, Mail, Upload } from "lucide-react";
+import { Plus, Search, Eye, EyeOff, ArrowUpDown, Edit2, Send, Mail, Upload, Download } from "lucide-react";
 import { clsx } from "clsx";
 import { SkeletonLine } from "@/components/hrms/skeleton";
 import { useToast } from "@/components/hrms/toast";
 import { exportCsv as exportCsvFile, fmtDate, formatGroup, formatAddress, type CsvColumn } from "@/lib/utils/csv";
+import { ExcelExportButton } from "@/components/hrms/excel-export-button";
 import { AddCandidateWizard } from "./_components/add-candidate-wizard";
 
 type SourceOfHire = "Referral" | "JobPortal" | "LinkedIn" | "Agency" | "Campus" | "Direct" | "Other";
@@ -185,6 +186,22 @@ export default function OnboardingCandidatesPage() {
     setShowMore(false);
   };
 
+  // Excel export mirrors the exact CSV columns (same headers + same value
+  // formatting: dates via fmtDate, nested groups via formatGroup/formatAddress).
+  const excelColumns = CANDIDATE_COLUMNS.map((c, i) => ({
+    header: c.header,
+    key: `c${i}`,
+    width: Math.min(30, Math.max(12, c.header.length + 4)),
+  }));
+  const excelRows = filteredCandidates.map((c) => {
+    const row: Record<string, unknown> = {};
+    CANDIDATE_COLUMNS.forEach((col, i) => {
+      const v = col.value(c);
+      row[`c${i}`] = v == null ? "" : v;
+    });
+    return row;
+  });
+
   const toggle = (id: string) => {
     const next = new Set(selected);
     if (next.has(id)) next.delete(id);
@@ -213,6 +230,11 @@ export default function OnboardingCandidatesPage() {
       <div className="">
         <div className="flex items-center justify-end mb-4 gap-3 flex-wrap">
           <div className="flex items-center gap-2">
+            <button type="button" onClick={exportCsv} disabled={filteredCandidates.length === 0}
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-gray-300 text-gray-700 text-xs font-medium hover:bg-gray-50 transition disabled:opacity-50">
+              <Download size={14} /> CSV
+            </button>
+            <ExcelExportButton filename="onboarding" sheetName="Candidates" columns={excelColumns} rows={excelRows} label="Excel" />
             <Link href="/onboarding/candidates/bulk-import"
               className="inline-flex items-center gap-1.5 border border-gray-200 bg-white text-gray-700 hover:bg-gray-50 px-3 py-1.5 rounded-md text-xs font-medium shadow-sm transition">
               <Upload size={13} /> Bulk Upload

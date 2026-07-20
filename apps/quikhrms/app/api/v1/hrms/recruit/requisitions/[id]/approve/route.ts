@@ -6,7 +6,8 @@ import { successResponse, notFound, conflict, validationError, forbidden, intern
 import { resolveEmployeeId } from "@/lib/resolve-employee";
 import { mailRequisitionApprovalRequest, mailRequisitionDecision } from "@/lib/services/requisition-approval-service";
 import { notifyRequisitionApproved, notifyRequisitionNextApprover } from "@/lib/services/requisition-notifications";
-import { getActiveChainLevels, getCallerRoleIds, callerCanActionLevel } from "@/lib/services/approval-chain";
+import { getActiveChainLevels, getCallerRoleIds, getDelegatedApprovers, resolveLevelActor } from "@/lib/services/approval-chain";
+import { createAuditLog } from "@/lib/utils/audit";
 
 const schema = z.object({
   comment: z.string().max(2000).optional(),
@@ -35,17 +36,29 @@ export const POST = withAuth(async (req: NextRequest, { orgId, userId }, params)
     if (!nextPending) return conflict("No pending approval level");
 
     // Role-aware auth: the assigned approver, the specific level user, or any
-    // holder of the level's role may action it (matches the Leave flow).
+    // holder of the level's role may action it (matches the Leave flow). A user
+    // holding an active Recruitment delegation may also action it on the
+    // delegator's behalf.
     const chainLevels = await getActiveChainLevels(orgId, "Requisition");
     const levelCfg = chainLevels?.find((l) => l.level === nextPending.level);
     const roleIds = await getCallerRoleIds(orgId, employeeId);
-    if (!callerCanActionLevel(levelCfg, { employeeId, roleIds }, nextPending.approverId)) {
+    const delegated = await getDelegatedApprovers(orgId, employeeId, "hrms.recruit.write");
+    const actor = resolveLevelActor(levelCfg, { employeeId, roleIds }, delegated, nextPending.approverId);
+    if (!actor.canAction) {
       return forbidden("Not your approval level");
     }
 
     await prisma.requisitionApproval.update({
       where: { id: nextPending.id },
       data: { status: "Approved", comment: parsed.data.comment ?? null, decidedAt: new Date() },
+    });
+
+    void createAuditLog({
+      orgId, userId: employeeId, action: "Approve",
+      entityType: "Requisition", entityId: requisition.id, request: req,
+      metadata: { level: nextPending.level, title: requisition.title },
+      // Attribute the action to the delegator when it was taken under a delegation.
+      actor: actor.onBehalfOf ? { delegatedFrom: [{ delegatorId: actor.onBehalfOf, permissions: ["hrms.recruit.write"] }] } : undefined,
     });
 
     const remainingPending = requisition.approvals.filter((a) => a.id !== nextPending.id && a.status === "Pending");

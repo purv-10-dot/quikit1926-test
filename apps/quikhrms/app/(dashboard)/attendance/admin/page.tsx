@@ -8,6 +8,7 @@ import { useAccessibleDepartments } from "@/lib/hooks/use-ref-data";
 import { EmployeeSelect } from "@/components/hrms/employees/employee-select";
 import { Select } from "@/components/hrms/ui/select";
 import { EmptyState } from "@/components/hrms/empty-state";
+import { ExcelExportButton } from "@/components/hrms/excel-export-button";
 import {
   ChevronLeft,
   ChevronRight,
@@ -148,6 +149,20 @@ function csvEscape(v: unknown): string {
   return /[",\n\r]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
 }
 
+const ADMIN_EXPORT_COLUMNS = [
+  { header: "Date", key: "date", width: 16 },
+  { header: "Employee", key: "employee", width: 22 },
+  { header: "Employee Code", key: "code", width: 16 },
+  { header: "Department", key: "department", width: 18 },
+  { header: "Shift", key: "shift", width: 14 },
+  { header: "Status", key: "status", width: 16 },
+  { header: "Check In", key: "checkIn", width: 12 },
+  { header: "Check Out", key: "checkOut", width: 12 },
+  { header: "Worked", key: "worked", width: 12 },
+  { header: "Late", key: "late", width: 10 },
+  { header: "OT", key: "ot", width: 10 },
+];
+
 export default function AdminAttendancePage() {
   const api = useApiClient();
   const { data: deptsData } = useAccessibleDepartments();
@@ -226,6 +241,30 @@ export default function AdminAttendancePage() {
     return { ...k, total: records.length, presentPct: pct(k.present), latePct: pct(k.late), absentPct: pct(k.absent), leavePct: pct(k.leave), wfhPct: pct(k.wfh) };
   }, [records]);
 
+  const exportRows = useMemo(
+    () =>
+      records.map((r) => {
+        const workedMin = r.effectiveHours != null ? Math.round(Number(r.effectiveHours) * 60) : null;
+        const worked = workedMin != null ? `${Math.floor(workedMin / 60)}h ${String(workedMin % 60).padStart(2, "0")}m` : "";
+        const otMin = workedMin != null ? Math.max(0, workedMin - 480) : 0;
+        const isLate = r.status === "Present" && r.lateByMinutes > 0;
+        return {
+          date: fmtDate(r.date),
+          employee: `${r.employee.firstName} ${r.employee.lastName}`.trim(),
+          code: r.employee.employeeCode ?? "",
+          department: r.employee.department?.name ?? "",
+          shift: r.shiftCode || r.shiftName || "",
+          status: isLate ? `Late (${r.lateByMinutes}m)` : r.status,
+          checkIn: r.checkIn ? fmtTime(r.checkIn) : "",
+          checkOut: r.checkOut ? fmtTime(r.checkOut) : "",
+          worked,
+          late: isLate ? `${r.lateByMinutes}m` : "",
+          ot: otMin > 0 ? `${otMin}m` : "",
+        };
+      }),
+    [records],
+  );
+
   const clearFilters = () => {
     setEmployeeId(""); setDepartmentId(""); setStatus("");
     setPeriod("month"); setCursor(todayLocalISO());
@@ -280,13 +319,16 @@ export default function AdminAttendancePage() {
           <h1 className="text-base font-semibold text-gray-900">Admin Attendance</h1>
           <p className="text-xs text-gray-500 mt-1">View all employees check-in/out, hours, and status.</p>
         </div>
-        <button
-          onClick={exportCsv}
-          disabled={records.length === 0}
-          className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg shadow-sm disabled:opacity-40"
-        >
-          <Download size={13} /> Export CSV ({records.length})
-        </button>
+        <div className="flex items-center gap-2">
+          <button
+            onClick={exportCsv}
+            disabled={records.length === 0}
+            className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg shadow-sm disabled:opacity-40"
+          >
+            <Download size={13} /> Export CSV ({records.length})
+          </button>
+          <ExcelExportButton filename="attendance-admin" sheetName="Attendance" columns={ADMIN_EXPORT_COLUMNS} rows={exportRows} label={`Excel (${records.length})`} />
+        </div>
       </div>
 
       {/* Leave balances panel (visible when single employee filtered) */}

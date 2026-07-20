@@ -44,6 +44,7 @@ export function Select({
   const [highlight, setHighlight] = useState(0);
   const [placeUp, setPlaceUp] = useState(false);
   const [menuRect, setMenuRect] = useState<{ top: number; left: number; width: number } | null>(null);
+  const [menuMaxH, setMenuMaxH] = useState(300);
   const rootRef = useRef<HTMLDivElement>(null);
   const triggerRef = useRef<HTMLButtonElement>(null);
   const menuRef = useRef<HTMLDivElement>(null);
@@ -76,11 +77,33 @@ export function Select({
       const t = triggerRef.current;
       if (!t) return;
       const rect = t.getBoundingClientRect();
-      const below = window.innerHeight - rect.bottom;
-      const above = rect.top;
-      const menuMax = 280;
-      const up = below < menuMax && above > below;
+
+      // Respect the nearest scrolling/clipping ancestor (e.g. a modal body) so
+      // the menu flips up / shrinks instead of spilling over the modal footer.
+      // Fall back to the viewport when there is no such container.
+      let boundTop = 0;
+      let boundBottom = window.innerHeight;
+      let el: HTMLElement | null = t.parentElement;
+      while (el) {
+        const oy = getComputedStyle(el).overflowY;
+        if (oy === "auto" || oy === "scroll" || oy === "hidden") {
+          const r = el.getBoundingClientRect();
+          boundTop = Math.max(boundTop, r.top);
+          boundBottom = Math.min(boundBottom, r.bottom);
+          break;
+        }
+        el = el.parentElement;
+      }
+
+      const MARGIN = 10;
+      const PREFERRED = 300;
+      const spaceBelow = boundBottom - rect.bottom - MARGIN;
+      const spaceAbove = rect.top - boundTop - MARGIN;
+      // Open upward when there isn't room below for a comfortable menu and there
+      // is more room above.
+      const up = spaceBelow < Math.min(PREFERRED, spaceAbove) && spaceAbove > spaceBelow;
       setPlaceUp(up);
+      setMenuMaxH(Math.max(160, Math.min(PREFERRED, up ? spaceAbove : spaceBelow)));
       // The menu must be wide enough to show full option labels (e.g.
       // "Father-in-law") even when the trigger sits in a narrow column.
       // Widen to a sensible minimum, but clamp to the viewport and nudge left
@@ -169,9 +192,10 @@ export function Select({
               bottom: placeUp ? window.innerHeight - menuRect.top : undefined,
               left: menuRect.left,
               width: menuRect.width,
+              maxHeight: menuMaxH,
               zIndex: 1000,
             }}
-            className="bg-white border border-gray-200 rounded-lg shadow-xl overflow-hidden"
+            className="bg-white border border-gray-200 rounded-lg shadow-xl overflow-hidden flex flex-col"
           >
             {searchable && (
               <div className="p-2 border-b border-gray-100 bg-gray-50">
@@ -189,7 +213,7 @@ export function Select({
               </div>
             )}
 
-            <ul className="max-h-60 overflow-y-auto py-1">
+            <ul className="flex-1 min-h-0 overflow-y-auto py-1">
               {filtered.length === 0 ? (
                 <li className="px-3 py-3 text-center text-xs text-gray-400">No matches</li>
               ) : filtered.map((o, i) => {

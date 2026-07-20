@@ -7,6 +7,19 @@ import { useToast } from "@/components/hrms/toast";
 import { Modal } from "@/components/hrms/modal";
 import { FileCheck2, Clock, CheckCircle2, XCircle, Inbox, Paperclip, Filter as FilterIcon, ChevronRight, ChevronDown, User } from "lucide-react";
 import { clsx } from "clsx";
+import { ExcelExportButton } from "@/components/hrms/excel-export-button";
+
+const DOC_EXPORT_COLUMNS = [
+  { header: "Candidate", key: "candidate", width: 22 },
+  { header: "Email", key: "email", width: 26 },
+  { header: "Role", key: "role", width: 22 },
+  { header: "Stage", key: "stage", width: 16 },
+  { header: "Document", key: "document", width: 24 },
+  { header: "File", key: "fileName", width: 26 },
+  { header: "Bundle", key: "bundle", width: 14 },
+  { header: "Status", key: "status", width: 12 },
+  { header: "Uploaded", key: "uploaded", width: 14 },
+];
 
 type Bundle = "PreOffer" | "PostOffer";
 
@@ -56,6 +69,19 @@ export default function DocumentReviewQueue() {
   });
   const items = data?.data ?? [];
   const filtered = bundleFilter === "all" ? items : items.filter((i) => i.request.bundle === bundleFilter);
+
+  // Flat row-per-document export of the currently filtered documents.
+  const docExportRows = filtered.map((i) => ({
+    candidate: `${i.request.application.candidate.firstName} ${i.request.application.candidate.lastName}`.trim(),
+    email: i.request.application.candidate.email,
+    role: i.request.application.requisition.title,
+    stage: i.request.application.currentStage ?? "",
+    document: i.documentType?.name ?? i.customLabel ?? "Other",
+    fileName: i.fileName,
+    bundle: i.request.bundle === "PreOffer" ? "Before Offer" : "After Offer",
+    status: i.status,
+    uploaded: new Date(i.uploadedAt).toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" }),
+  }));
 
   // Group documents by candidate (applicationId).
   interface CandidateGroup {
@@ -122,9 +148,12 @@ export default function DocumentReviewQueue() {
             <p className="text-xs text-gray-500 mt-1">Approve or reject documents uploaded by candidates.</p>
           </div>
         </div>
-        <span className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-amber-50 text-amber-700 ring-1 ring-amber-200 text-[11px] font-semibold">
-          <Inbox size={12} /> {stats.total} pending
-        </span>
+        <div className="flex items-center gap-2">
+          <ExcelExportButton filename="candidate-documents" sheetName="Documents" columns={DOC_EXPORT_COLUMNS} rows={docExportRows} />
+          <span className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-amber-50 text-amber-700 ring-1 ring-amber-200 text-[11px] font-semibold">
+            <Inbox size={12} /> {stats.total} pending
+          </span>
+        </div>
       </div>
 
       <div className="grid grid-cols-3 gap-3 mb-4">

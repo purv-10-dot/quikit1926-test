@@ -11,6 +11,7 @@ import { EmployeeSelect } from "@/components/hrms/employees/employee-select";
 import { Select } from "@/components/hrms/ui/select";
 import { useDashboardConfig } from "@/lib/hooks/use-dashboard-config";
 import { clsx } from "clsx";
+import { DELEGATION_CATALOG, DELEGATION_PERM_LABELS } from "@/lib/rbac/delegatable";
 
 interface EmpRef { id: string; firstName: string; lastName: string; employeeCode: string | null }
 /** A stored module entry: legacy plain name, or the new {module, permissions} shape. */
@@ -29,68 +30,14 @@ function empName(e: EmpRef | null, fallbackId: string): string {
 }
 
 /**
- * Delegatable modules and the specific authorities inside each. A module is
- * offered only when the signed-in user holds ≥1 of its permissions; within a
- * module, only the permissions the user actually has are selectable. Codes are
- * real `hrms.*` RBAC codes (lib/rbac/permissions.ts). Timesheet is intentionally
- * absent — it has no `hrms.timesheet.*` permission to gate on.
+ * Delegatable modules and their authorities live in one shared catalog
+ * (lib/rbac/delegatable.ts) so the picker here and the server-side grant logic
+ * in with-auth can never drift. A module is offered only when the signed-in user
+ * holds ≥1 of its permissions; within a module, only the permissions the user
+ * actually has are selectable.
  */
-const DELEGATION_CATALOG: {
-  module: string;
-  label: string;
-  permissions: { code: string; label: string }[];
-}[] = [
-  { module: "Leave", label: "Leave", permissions: [
-    { code: "hrms.leave.apply", label: "Apply Leave" },
-    { code: "hrms.leave.approve", label: "Approve Leave" },
-    { code: "hrms.leave.manage", label: "Manage Policies" },
-  ] },
-  { module: "Expense", label: "Expense", permissions: [
-    { code: "hrms.expense.submit", label: "Submit Expense" },
-    { code: "hrms.expense.approve", label: "Approve Expense" },
-    { code: "hrms.expense.manage", label: "Manage Policies" },
-  ] },
-  { module: "Attendance", label: "Attendance", permissions: [
-    { code: "hrms.attendance.punch", label: "Check In/Out" },
-    { code: "hrms.attendance.approve", label: "Approve Regularizations" },
-    { code: "hrms.attendance.manage", label: "Manage Policies" },
-  ] },
-  { module: "Recruitment", label: "Recruitment", permissions: [
-    { code: "hrms.recruit.write", label: "Manage Recruitment" },
-    { code: "hrms.recruit.offer", label: "Manage Offers" },
-    { code: "hrms.recruit.interview", label: "Manage Interviews" },
-  ] },
-  { module: "Roster", label: "Duty Roster", permissions: [
-    { code: "hrms.roster.manage", label: "Manage Rosters" },
-  ] },
-  { module: "Performance", label: "Performance", permissions: [
-    { code: "hrms.performance.write", label: "Manage Goals" },
-    { code: "hrms.performance.appraise", label: "Run Appraisals" },
-    { code: "hrms.performance.pip", label: "Manage PIPs" },
-  ] },
-  { module: "Document", label: "Document", permissions: [
-    { code: "hrms.document.write", label: "Manage Documents" },
-    { code: "hrms.document.acknowledge", label: "Acknowledge Documents" },
-  ] },
-  { module: "Boarding", label: "On/Offboarding", permissions: [
-    { code: "hrms.onboarding.write", label: "Manage Onboarding" },
-    { code: "hrms.offboarding.write", label: "Manage Offboarding" },
-  ] },
-  { module: "Engagement", label: "Engagement", permissions: [
-    { code: "hrms.engage.announce", label: "Publish Announcements" },
-    { code: "hrms.engage.survey.manage", label: "Manage Surveys" },
-    { code: "hrms.engage.approve", label: "Approve Engagement" },
-  ] },
-  { module: "Reports", label: "Reports", permissions: [
-    { code: "hrms.reports.manage", label: "Manage Report Templates" },
-  ] },
-];
-
-const PERM_LABELS: Record<string, string> = Object.fromEntries(
-  DELEGATION_CATALOG.flatMap((m) => m.permissions.map((p) => [p.code, p.label] as const)),
-);
 function permLabel(code: string): string {
-  return PERM_LABELS[code] ?? code.split(".").pop() ?? code;
+  return DELEGATION_PERM_LABELS[code] ?? code.split(".").pop() ?? code;
 }
 function moduleName(m: DelegationModule): string {
   return typeof m === "string" ? m : m.module;

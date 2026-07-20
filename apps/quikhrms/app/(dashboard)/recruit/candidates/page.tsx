@@ -10,16 +10,18 @@ import { clsx } from "clsx";
 import { Plus, Search, User, Briefcase, MapPin, Link2, FileText, IndianRupee,
   Globe, Users as UsersIcon, Landmark, GraduationCap, Rocket, Inbox, Check, ChevronDown, ChevronRight, Sparkles,
   Ban, Archive, ArchiveRestore, Clock, ShieldX, MoreVertical, RotateCcw, X, Flame, AlertCircle, Building2,
-  ArrowLeft, ArrowRight } from "lucide-react";
+  ArrowLeft, ArrowRight, Upload } from "lucide-react";
+import { CandidateBulkImport } from "../_components/candidate-bulk-import";
 import { FilterBar, FilterDivider, FilterSearch } from "@/components/hrms/ui/filter-bar";
 import { NumberInput } from "@/components/hrms/ui/number-input";
 import { Select } from "@/components/hrms/select";
 import { FileUploadInput } from "@/components/hrms/file-upload-input";
 import { SkeletonTable, SkeletonLine } from "@/components/hrms/skeleton";
+import { ExcelExportButton } from "@/components/hrms/excel-export-button";
 
 // CTC fields are captured in LPA (lakhs per annum) — cap to a realistic ceiling
 // so 5–6 digit nonsense values can't be entered.
-const MAX_CTC_LPA = 1000;
+const MAX_CTC_LPA = 999; // 3-digit cap (LPA)
 
 interface Requisition {
   id: string;
@@ -106,6 +108,10 @@ export default function CandidatesPage() {
   const [archiveReason, setArchiveReason] = useState("");
   const [applyTarget, setApplyTarget] = useState<CandidateItem | null>(null);
   const [applyReqId, setApplyReqId] = useState("");
+  const [showBulk, setShowBulk] = useState(false);
+  const [resumeTarget, setResumeTarget] = useState<CandidateItem | null>(null);
+  const [resumeCtx, setResumeCtx] = useState<{ requisitionTitle: string; heldStage: string; stages: string[] } | null>(null);
+  const [resumeStage, setResumeStage] = useState("");
   const [timelineTarget, setTimelineTarget] = useState<CandidateItem | null>(null);
   const emptyForm: CandFormShape = {
     firstName: "", lastName: "", email: "", phone: "",
@@ -168,15 +174,21 @@ export default function CandidatesPage() {
     queryKey: ["candidates", search, viewScope, page, statusFilter, sourceFilter, expFilter],
     queryFn: () => {
       const qs = new URLSearchParams({ limit: String(PAGE_SIZE), offset: String((page - 1) * PAGE_SIZE) });
-      if (search) qs.set("search", search);
-      if (viewScope === "blacklisted") { qs.set("blacklisted", "1"); qs.set("includeArchived", "1"); }
-      else if (viewScope === "archived") qs.set("archived", "1");
-      // Active view defaults to candidates still in the pipeline — hides Hired
-      // and Rejected. An explicit status filter (e.g. "Rejected") overrides this.
-      else if (!statusFilter) { qs.set("excludeStatus", "Hired,CandRejected"); qs.set("excludeStage", "Hired"); }
-      // Candidate-level status (single value per candidate — unaffected by how
-      // many pipelines/applications they're in).
-      if (statusFilter && viewScope === "active") qs.set("status", statusFilter);
+      // When searching, span ALL tabs (Active + Blacklisted + Archived) — the
+      // search is not tab-dependent. Tab/status scoping only applies otherwise.
+      if (search.trim()) {
+        qs.set("search", search);
+        qs.set("searchAll", "1");
+      } else {
+        if (viewScope === "blacklisted") { qs.set("blacklisted", "1"); qs.set("includeArchived", "1"); }
+        else if (viewScope === "archived") qs.set("archived", "1");
+        // Active view defaults to candidates still in the pipeline — hides Hired
+        // and Rejected. An explicit status filter (e.g. "Rejected") overrides this.
+        else if (!statusFilter) { qs.set("excludeStatus", "Hired,CandRejected"); qs.set("excludeStage", "Hired"); }
+        // Candidate-level status (single value per candidate — unaffected by how
+        // many pipelines/applications they're in).
+        if (statusFilter && viewScope === "active") qs.set("status", statusFilter);
+      }
       if (sourceFilter) qs.set("source", sourceFilter);
       if (expFilter) {
         const [mn, mx] = expFilter.split("-");
@@ -245,6 +257,25 @@ export default function CandidatesPage() {
     onError: (e: Error) => toast.error("Couldn't apply", e.message),
   });
 
+  // Resume an ON-HOLD candidate at a chosen stage (shows the stage they were held at).
+  const openResume = async (c: CandidateItem) => {
+    setResumeTarget(c); setResumeCtx(null); setResumeStage("");
+    try {
+      const res = await api.get<{ requisitionTitle: string; heldStage: string; stages: string[] }>(`/api/v1/hrms/recruit/candidates/${c.id}/resume`);
+      if (res.data) { setResumeCtx(res.data); setResumeStage(res.data.heldStage); }
+    } catch { /* dialog still opens; stage input falls back to free entry */ }
+  };
+  const resumeMut = useMutation({
+    mutationFn: ({ id, stage }: { id: string; stage: string }) => api.post(`/api/v1/hrms/recruit/candidates/${id}/resume`, { stage }),
+    meta: { suppressGlobalError: true },
+    onSuccess: (_r, vars) => {
+      qc.invalidateQueries({ queryKey: ["candidates"] });
+      toast.success("Candidate resumed", `Back in the pipeline at "${vars.stage}".`);
+      setResumeTarget(null); setResumeCtx(null);
+    },
+    onError: (e: Error) => toast.error("Couldn't resume", e.message),
+  });
+
   const { data: reqsData } = useQuery({
     queryKey: ["requisitions-open"],
     // Fetch all then keep the assignable ones — a requisition is open for
@@ -294,11 +325,48 @@ export default function CandidatesPage() {
 
   const candidates = data?.data ?? [];
 
+  // Export mirrors the visible table (the current filtered/searched page of rows).
+  const exportColumns = [
+    { header: "Name", key: "name", width: 22 },
+    { header: "Email", key: "email", width: 26 },
+    { header: "Designation", key: "designation", width: 20 },
+    { header: "Company", key: "company", width: 20 },
+    { header: "Experience", key: "experience", width: 14 },
+    { header: "Source", key: "source", width: 16 },
+    { header: "Stage", key: "stage", width: 16 },
+    { header: "Status", key: "status", width: 14 },
+  ];
+  const statusLabels: Record<string, string> = {
+    New: "New",
+    InPipeline: "In Pipeline",
+    Hired: "Hired",
+    CandRejected: "Rejected",
+    CandOnHold: "On Hold",
+    Withdrawn: "Withdrawn",
+  };
+  const exportRows = candidates.map((c) => ({
+    name: `${c.firstName} ${c.lastName}`.trim(),
+    email: c.email ?? "",
+    designation: c.currentDesignation ?? "",
+    company: c.currentCompany ?? "",
+    experience: c.totalExperience
+      ? `${Math.floor(c.totalExperience / 12)}y ${c.totalExperience % 12}m`
+      : "",
+    source: c.source ? c.source.replace("Cand", "") : "",
+    stage: c.applications[0]?.currentStage ?? "",
+    status: statusLabels[c.status] ?? c.status.replace("Cand", ""),
+  }));
+
   return (
     <div className="w-full px-5 py-4">
       <div className="flex items-center justify-between mb-4 flex-wrap gap-3">
         <h1 className="text-page-title text-gray-900">Candidates</h1>
         <div className="flex items-center gap-2">
+          <ExcelExportButton filename="candidates" columns={exportColumns} rows={exportRows} />
+          <button onClick={() => setShowBulk(true)}
+            className="flex items-center gap-2 btn bg-white ring-1 ring-gray-200 text-gray-700 hover:bg-gray-50">
+            <Upload size={13} /> Bulk Add
+          </button>
           <button onClick={() => { setForm(emptyForm); setErrors({}); setShowCreate(true); }}
             className="flex items-center gap-2 btn bg-green-600 hover:bg-green-700 text-white">
             <Plus size={13} /> Add Candidate
@@ -477,11 +545,19 @@ export default function CandidatesPage() {
                       )}
                       {c.isArchived ? (
                         <>
-                          <button onClick={() => unarchiveMut.mutate(c.id)}
-                            className="inline-flex items-center gap-1 px-2 py-1 bg-slate-50 text-slate-700 ring-1 ring-slate-200 hover:bg-slate-100 rounded text-xs font-semibold"
-                            title="Restore to the same stage in the pipeline">
-                            <ArchiveRestore size={11} /> Restore
-                          </button>
+                          {c.status === "CandOnHold" ? (
+                            <button onClick={() => openResume(c)}
+                              className="inline-flex items-center gap-1 px-2 py-1 bg-amber-50 text-amber-700 ring-1 ring-amber-200 hover:bg-amber-100 rounded text-xs font-semibold"
+                              title="Resume from hold — pick a stage to move them to">
+                              <RotateCcw size={11} /> Resume
+                            </button>
+                          ) : (
+                            <button onClick={() => unarchiveMut.mutate(c.id)}
+                              className="inline-flex items-center gap-1 px-2 py-1 bg-slate-50 text-slate-700 ring-1 ring-slate-200 hover:bg-slate-100 rounded text-xs font-semibold"
+                              title="Restore to the same stage in the pipeline">
+                              <ArchiveRestore size={11} /> Restore
+                            </button>
+                          )}
                           <button onClick={() => { setApplyReqId(""); setApplyTarget(c); }}
                             className="inline-flex items-center gap-1 px-2 py-1 bg-green-50 text-green-700 ring-1 ring-green-200 hover:bg-green-100 rounded text-xs font-semibold"
                             title="Restore and apply to another role">
@@ -504,6 +580,42 @@ export default function CandidatesPage() {
           </table>
         )}
       </div>
+
+      <CandidateBulkImport
+        open={showBulk}
+        onClose={() => setShowBulk(false)}
+        requisitions={openReqs}
+        onDone={() => qc.invalidateQueries({ queryKey: ["candidates"] })}
+      />
+
+      <Modal open={!!resumeTarget} onClose={() => setResumeTarget(null)} title="Resume from hold" size="md">
+        {resumeTarget && (
+          <form onSubmit={(e) => { e.preventDefault(); if (resumeStage) resumeMut.mutate({ id: resumeTarget.id, stage: resumeStage }); }} className="space-y-4">
+            <div className="bg-amber-50 border border-amber-200 rounded-lg p-3 text-xs">
+              <p className="font-semibold text-amber-900">{resumeTarget.firstName} {resumeTarget.lastName}</p>
+              {resumeCtx ? (
+                <p className="text-amber-800 mt-1">On hold for <strong>{resumeCtx.requisitionTitle}</strong> · was at stage <strong>{resumeCtx.heldStage}</strong>.</p>
+              ) : (
+                <p className="text-amber-800 mt-1">Loading their held application…</p>
+              )}
+            </div>
+            <div>
+              <label className="block text-xs font-medium text-gray-700 mb-1">Move to stage <span className="text-red-500">*</span></label>
+              <Select value={resumeStage} onChange={setResumeStage}
+                placeholder="Select a stage"
+                options={(resumeCtx?.stages ?? []).map((s) => ({ value: s, label: s === resumeCtx?.heldStage ? `${s} (was here)` : s }))} />
+              <p className="mt-1 text-[11px] text-gray-400">Defaults to the stage they were held at. You can move them to any stage.</p>
+            </div>
+            <div className="flex justify-end gap-2 pt-2 border-t border-gray-100">
+              <button type="button" onClick={() => setResumeTarget(null)} className="px-3 py-1.5 border border-[var(--border)] rounded-lg text-xs font-medium text-gray-700 hover:bg-gray-50">Cancel</button>
+              <button type="submit" disabled={!resumeStage || resumeMut.isPending}
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-amber-600 hover:bg-amber-700 text-white rounded-lg text-xs font-medium disabled:opacity-50">
+                <RotateCcw size={13} /> {resumeMut.isPending ? "Resuming..." : "Resume to pipeline"}
+              </button>
+            </div>
+          </form>
+        )}
+      </Modal>
 
       <Modal open={showCreate} onClose={() => setShowCreate(false)} title="Add Candidate" size="3xl" subtitle="Add candidate details and apply to requisitions." headerIcon={<User size={18} />}>
         <CandidateWizard
@@ -549,7 +661,7 @@ export default function CandidatesPage() {
               <label className="block text-xs font-semibold text-gray-700 mb-1">Duration</label>
               <div className="grid grid-cols-3 gap-2">
                 {([
-                  { k: "30", label: "30 days" },
+                  { k: "30", label: "1 month" },
                   { k: "90", label: "3 months" },
                   { k: "180", label: "6 months" },
                   { k: "365", label: "1 year" },
@@ -1262,10 +1374,16 @@ function CandidateWizard({ form, setForm, errors, isIndiaLocation, openReqs, sub
                 <NumberInput min={0} allowDecimal={false} value={form.noticePeriod} onChange={(v) => setForm({ ...form, noticePeriod: v })} className={inputClass} />
               </Field>
               <Field label="Current CTC (LPA)" icon={<IndianRupee size={12} />} error={errors.currentCTC}>
-                <NumberInput min={0} max={MAX_CTC_LPA} value={form.currentCTC} onChange={(v) => setForm({ ...form, currentCTC: v })} className={inputClass} />
+                <NumberInput min={0} max={MAX_CTC_LPA} value={form.currentCTC}
+                  onChange={(v) => setForm({ ...form, currentCTC: v })}
+                  onBlur={() => { if (form.currentCTC != null && form.currentCTC > MAX_CTC_LPA) setForm((p) => ({ ...p, currentCTC: MAX_CTC_LPA })); }}
+                  className={inputClass} />
               </Field>
               <Field label="Expected CTC (LPA)" icon={<IndianRupee size={12} />} error={errors.expectedCTC}>
-                <NumberInput min={0} max={MAX_CTC_LPA} value={form.expectedCTC} onChange={(v) => setForm({ ...form, expectedCTC: v })} className={inputClass} />
+                <NumberInput min={0} max={MAX_CTC_LPA} value={form.expectedCTC}
+                  onChange={(v) => setForm({ ...form, expectedCTC: v })}
+                  onBlur={() => { if (form.expectedCTC != null && form.expectedCTC > MAX_CTC_LPA) setForm((p) => ({ ...p, expectedCTC: MAX_CTC_LPA })); }}
+                  className={inputClass} />
               </Field>
             </div>
             <div className="mt-3">

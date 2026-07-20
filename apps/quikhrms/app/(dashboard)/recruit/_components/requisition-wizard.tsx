@@ -22,6 +22,18 @@ export interface EmpOption {
   designation?: { title: string } | null;
 }
 
+// Common Indian cities for the Job Location autocomplete (free-text still allowed).
+const INDIAN_CITIES = [
+  "Mumbai, MH", "Delhi, DL", "Bengaluru, KA", "Hyderabad, TG", "Chennai, TN",
+  "Kolkata, WB", "Pune, MH", "Ahmedabad, GJ", "Jaipur, RJ", "Surat, GJ",
+  "Lucknow, UP", "Kanpur, UP", "Nagpur, MH", "Indore, MP", "Bhopal, MP",
+  "Patna, BR", "Vadodara, GJ", "Ghaziabad, UP", "Ludhiana, PB", "Coimbatore, TN",
+  "Kochi, KL", "Thiruvananthapuram, KL", "Chandigarh, CH", "Noida, UP", "Gurugram, HR",
+  "Visakhapatnam, AP", "Nashik, MH", "Rajkot, GJ", "Ranchi, JH", "Raipur, CG",
+  "Guwahati, AS", "Bhubaneswar, OD", "Dehradun, UK", "Mysuru, KA", "Mangaluru, KA",
+  "Vijayawada, AP", "Madurai, TN", "Jodhpur, RJ", "Amritsar, PB", "Faridabad, HR",
+];
+
 export interface ReqFormShape {
   title: string;
   jobOpeningName: string;
@@ -55,6 +67,8 @@ export interface ReqFormShape {
   niceToHave: string[];
   benefits: string[];
   education: string;
+  passingYear: number | null;
+  technicalQuestions: string[];
   referralBonusAmount: number | null;
   careerPageVisible: boolean;
   internalPostingOnly: boolean;
@@ -74,7 +88,7 @@ export const emptyReqForm: ReqFormShape = {
   targetJoiningDate: "", closedDate: "", etaToFillDays: null, jobGrade: "", costCenter: "",
   jobLocation: "", jobDuration: "", workTimings: "", interviewMode: "",
   jobDescription: "", requirements: [], niceToHave: [], benefits: [],
-  education: "", referralBonusAmount: null, careerPageVisible: true, internalPostingOnly: false, postToJobPortal: false,
+  education: "", passingYear: null, technicalQuestions: [], referralBonusAmount: null, careerPageVisible: true, internalPostingOnly: false, postToJobPortal: false,
   responsibilities: [], skillWeights: [], justification: "",
 };
 
@@ -115,6 +129,8 @@ export function toReqPayload(f: ReqFormShape) {
     niceToHave: arr(f.niceToHave),
     benefits: arr(f.benefits),
     education: s(f.education),
+    passingYear: n(f.passingYear),
+    technicalQuestions: arr(f.technicalQuestions),
     referralBonusAmount: n(f.referralBonusAmount),
     careerPageVisible: f.careerPageVisible,
     internalPostingOnly: f.internalPostingOnly,
@@ -288,14 +304,10 @@ export function RequisitionWizard({ form, setForm, isEdit, departments, pipeline
       ? "Experience can’t exceed 50 years."
       : form.experienceMin != null && form.experienceMax != null && form.experienceMin > form.experienceMax
         ? "Min experience can’t be greater than max." : "",
-    salary: (form.salaryMin ?? 0) > 1000 || (form.salaryMax ?? 0) > 1000
-      ? "Salary can’t exceed 1000 LPA."
-      : form.salaryMin != null && form.salaryMax != null && form.salaryMin > form.salaryMax
-        ? "Min salary can’t be greater than max." : "",
-    budget: form.budget != null && form.budget > 1000000000
-      ? "Budget looks too large."
-      : form.budget != null && form.salaryMax != null && form.budget < form.salaryMax
-        ? "Budget should be at least the max salary." : "",
+    salary: form.salaryMin != null && form.salaryMax != null && form.salaryMin > form.salaryMax
+      ? "Min salary can’t be greater than max." : "",
+    budget: form.budget != null && form.salaryMax != null && form.budget < form.salaryMax
+      ? "Budget should be at least the max salary." : "",
     targetJoiningDate: form.targetJoiningDate && form.targetJoiningDate < todayStr
       ? "Target joining date can’t be in the past."
       : form.targetJoiningDate && form.closedDate && form.targetJoiningDate < form.closedDate
@@ -303,9 +315,12 @@ export function RequisitionWizard({ form, setForm, isEdit, departments, pipeline
     closedDate: form.closedDate && form.closedDate < todayStr
       ? "Timeline to close can’t be in the past." : "",
   };
-  const compRequiredFilled = form.experienceMin != null && form.experienceMax != null && form.salaryMin != null && form.salaryMax != null && form.budget != null;
+  const compRequiredFilled = form.experienceMin != null && form.experienceMax != null && form.salaryMin != null && form.salaryMax != null;
   const step3Valid = compRequiredFilled && !compErrors.exp && !compErrors.salary && !compErrors.budget && !compErrors.targetJoiningDate && !compErrors.closedDate;
-  const canCreate = canStep1 && canStep2 && step3Valid;
+  // At least one technical question is required for NEW requisitions. Edits of
+  // older requisitions (created before this field existed) aren't forced.
+  const questionsOk = isEdit || form.technicalQuestions.length > 0;
+  const canCreate = canStep1 && canStep2 && step3Valid && questionsOk;
 
   const next = () => setStep((s) => Math.min(s + 1, REQ_STEPS.length - 1));
   const back = () => setStep((s) => Math.max(s - 1, 0));
@@ -356,7 +371,7 @@ export function RequisitionWizard({ form, setForm, isEdit, departments, pipeline
   return (
     <div className="w-full">
       {/* Stepper */}
-      <div className="flex items-center gap-1 mb-4 overflow-x-auto pb-1">
+      <div className="flex items-center gap-1 mb-3 overflow-x-auto pb-1">
         {REQ_STEPS.map((s, i) => {
           const done = i < step;
           const active = i === step;
@@ -380,10 +395,10 @@ export function RequisitionWizard({ form, setForm, isEdit, departments, pipeline
         })}
       </div>
 
-      <div className="min-h-[300px]">
+      <div className="min-h-[240px]">
         {/* Step 1 — Basics */}
         {step === 0 && (
-          <div className="space-y-4">
+          <div className="space-y-3">
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div>
                 <label className={reqLabel}>Role Title <span className="text-red-500">*</span></label>
@@ -407,7 +422,11 @@ export function RequisitionWizard({ form, setForm, isEdit, departments, pipeline
               <div>
                 <label className={reqLabel}>Job Location <span className="text-red-500">*</span></label>
                 <input value={form.jobLocation} onChange={(e) => setForm({ ...form, jobLocation: e.target.value })}
+                  list="job-location-cities" autoComplete="off"
                   placeholder="e.g. Indore, MP" className={reqInput} />
+                <datalist id="job-location-cities">
+                  {INDIAN_CITIES.map((c) => <option key={c} value={c} />)}
+                </datalist>
                 {!form.jobLocation.trim() && <p className="mt-1 text-[11px] text-red-500">Required for Office / Hybrid roles.</p>}
               </div>
               )}
@@ -431,7 +450,7 @@ export function RequisitionWizard({ form, setForm, isEdit, departments, pipeline
               <div>
                 <label className={reqLabel}>Employment</label>
                 <Select value={form.employmentType} onChange={(v) => setForm({ ...form, employmentType: v })}
-                  options={["FullTime", "PartTime", "Contract", "Intern"].map((t) => ({ value: t, label: t }))} />
+                  options={["FullTime", "PartTime", "Contract", "Intern", "Freelance"].map((t) => ({ value: t, label: t }))} />
               </div>
               <div>
                 <label className={reqLabel}>Location</label>
@@ -454,7 +473,7 @@ export function RequisitionWizard({ form, setForm, isEdit, departments, pipeline
             {showJustification && (
               <div>
                 <label className={reqLabel}>Business Justification <span className="text-red-500">*</span></label>
-                <textarea rows={3} value={form.justification}
+                <textarea rows={1} value={form.justification}
                   onChange={(e) => setForm({ ...form, justification: e.target.value })}
                   placeholder={`Why is this hire needed? (min ${JUSTIFICATION_MIN} characters) — reviewed by the approver.`}
                   className={clsx(reqInput, "resize-y", justificationLen > 0 && !justificationOk && errRing)} />
@@ -474,7 +493,7 @@ export function RequisitionWizard({ form, setForm, isEdit, departments, pipeline
 
         {/* Step 2 — Team & Pipeline */}
         {step === 1 && (
-          <div className="space-y-4">
+          <div className="space-y-3">
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div>
                 <label className={reqLabel}>Hiring Pipeline <span className="text-red-500">*</span></label>
@@ -513,7 +532,7 @@ export function RequisitionWizard({ form, setForm, isEdit, departments, pipeline
 
         {/* Step 3 — Compensation & Planning */}
         {step === 2 && (
-          <div className="space-y-4">
+          <div className="space-y-3">
             <div>
               <p className={clsx(reqSection, "mb-2")}>Experience & Compensation</p>
               <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
@@ -533,21 +552,19 @@ export function RequisitionWizard({ form, setForm, isEdit, departments, pipeline
                 </div>
                 <div>
                   <label className={reqLabel}>Salary Min (LPA) <span className="text-red-500">*</span></label>
-                  <NumberInput min={0} max={1000} value={form.salaryMin}
+                  <NumberInput value={form.salaryMin}
                     onChange={(v) => setForm({ ...form, salaryMin: v })}
-                    onBlur={() => { if (form.salaryMin != null && form.salaryMin > 1000) setForm((p) => ({ ...p, salaryMin: 1000 })); }}
                     className={clsx(reqInput, compErrors.salary && errRing)} />
                 </div>
                 <div>
                   <label className={reqLabel}>Salary Max (LPA) <span className="text-red-500">*</span></label>
-                  <NumberInput min={0} max={1000} value={form.salaryMax}
+                  <NumberInput value={form.salaryMax}
                     onChange={(v) => setForm({ ...form, salaryMax: v })}
-                    onBlur={() => { if (form.salaryMax != null && form.salaryMax > 1000) setForm((p) => ({ ...p, salaryMax: 1000 })); }}
                     className={clsx(reqInput, (compErrors.salary || compErrors.budget) && errRing)} />
                 </div>
                 <div>
-                  <label className={reqLabel}>Budget (₹) <span className="text-red-500">*</span></label>
-                  <NumberInput min={0} value={form.budget} onChange={(v) => setForm({ ...form, budget: v })} className={clsx(reqInput, compErrors.budget && errRing)} />
+                  <label className={reqLabel}>Budget (LPA)</label>
+                  <NumberInput value={form.budget} onChange={(v) => setForm({ ...form, budget: v })} className={clsx(reqInput, compErrors.budget && errRing)} />
                 </div>
               </div>
               {(compErrors.exp || compErrors.salary || compErrors.budget) && (
@@ -592,7 +609,7 @@ export function RequisitionWizard({ form, setForm, isEdit, departments, pipeline
 
         {/* Step 4 — Role Details */}
         {step === 3 && (
-          <div className="space-y-4">
+          <div className="space-y-3">
             <div className="flex items-center justify-between gap-3 rounded-lg border border-[#bbf7d0] bg-gradient-to-r from-[#f0fdf4] to-white px-3 py-2.5">
               <div>
                 <div className="inline-flex items-center gap-1.5 text-[13px] font-semibold text-[#15803d]"><Sparkles size={14} /> Auto-write with AI</div>
@@ -638,6 +655,12 @@ export function RequisitionWizard({ form, setForm, isEdit, departments, pipeline
                   />
                 </div>
                 <div>
+                  <label className={reqLabel}>Year of passing <span className="text-gray-400 font-normal">(optional)</span></label>
+                  <NumberInput allowDecimal={false} min={1950} max={2100} value={form.passingYear}
+                    onChange={(v) => setForm({ ...form, passingYear: v })}
+                    placeholder="e.g. 2020" className={reqInput} />
+                </div>
+                <div>
                   <label className={reqLabel}>Referral Bonus (₹) <span className="text-gray-400 font-normal">(optional)</span></label>
                   <NumberInput min={0} max={1000000} value={form.referralBonusAmount}
                     onChange={(v) => setForm({ ...form, referralBonusAmount: v })}
@@ -654,7 +677,7 @@ export function RequisitionWizard({ form, setForm, isEdit, departments, pipeline
 
         {/* Step 5 — Scorecard & Skills */}
         {step === 4 && (
-          <div className="space-y-4">
+          <div className="space-y-3">
             <div className="rounded-lg border border-green-200 bg-gradient-to-br from-green-50/60 to-white p-3">
               <div className="flex items-start justify-between gap-2 mb-2">
                 <div>
@@ -721,12 +744,27 @@ export function RequisitionWizard({ form, setForm, isEdit, departments, pipeline
                   className="inline-flex items-center gap-1 px-3 py-1.5 rounded-full bg-green-600 hover:bg-green-700 text-white text-xs font-medium"><Plus size={13} /> Add</button>
               </div>
             </div>
+
+            {/* Technical Questions — merged into Scorecard & Skills */}
+            <div className="pt-3 border-t border-gray-100">
+              <p className={clsx(reqSection, "mb-1")}>Technical Questions <span className="text-red-500">*</span></p>
+              <p className="text-[11px] text-gray-500 mb-2">
+                Add role-specific questions the interview panel should ask candidates for this job. At least one is required.
+              </p>
+              <BulletListField
+                label="Questions"
+                placeholder="e.g. Explain the difference between useMemo and useCallback"
+                items={form.technicalQuestions}
+                onChange={(v) => setForm({ ...form, technicalQuestions: v })}
+              />
+              {!questionsOk && <p className={errText}>Add at least one technical question.</p>}
+            </div>
           </div>
         )}
       </div>
 
       {/* Footer */}
-      <div className="flex items-center justify-between gap-2 pt-4 mt-4 border-t border-gray-100">
+      <div className="flex items-center justify-between gap-2 pt-3 mt-3 border-t border-gray-100">
         <button type="button" onClick={onCancel}
           className="inline-flex items-center px-3 py-1.5 rounded-full border border-gray-300 text-xs font-medium text-gray-700 hover:bg-gray-50">Cancel</button>
         <div className="flex items-center gap-2">

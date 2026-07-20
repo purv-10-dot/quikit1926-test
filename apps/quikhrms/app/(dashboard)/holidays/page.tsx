@@ -5,12 +5,10 @@ import { useQuery } from "@tanstack/react-query";
 import { useApiClient } from "@/lib/hooks/use-api";
 import { withBasePath } from "@/lib/utils/base-path";
 import {
-  CalendarDays, ChevronLeft, ChevronRight, Filter, Settings, Users, Clock,
+  CalendarDays, ChevronLeft, ChevronRight, Filter, Clock, Users,
 } from "lucide-react";
 import { clsx } from "clsx";
-import { EmployeeSelect } from "@/components/hrms/employees/employee-select";
 import { Tooltip } from "@/components/hrms/tooltip";
-import { useDashboardConfig } from "@/lib/hooks/use-dashboard-config";
 
 interface Holiday {
   id: string;
@@ -92,14 +90,13 @@ function CelebAvatar({ person, size = 30 }: { person: { name: string; profilePho
 
 export default function HRCalendarPage() {
   const api = useApiClient();
-  const { hasAnyPermission, hasPermission } = useDashboardConfig();
-  const canFilterPeople = hasAnyPermission(["hrms.leave.read", "hrms.leave.read_team"]);
-  const canManageHolidays = hasPermission("hrms.settings.write");
 
   const now = useMemo(() => new Date(), []);
   const [cursor, setCursor] = useState(() => { const d = new Date(); return new Date(d.getFullYear(), d.getMonth(), 1); });
   const [view, setView] = useState<View>("month");
-  const [employeeFilter, setEmployeeFilter] = useState("");
+  // "My team" filter — when on, only leaves of employees reporting to the
+  // signed-in user are shown (via managerId=me on the leaves API).
+  const [myTeamOnly, setMyTeamOnly] = useState(false);
   const [visibleTypes, setVisibleTypes] = useState<Record<EventType, boolean>>({ holiday: true, leave: true, birthday: true, anniversary: true });
   const toggleType = (t: EventType) => setVisibleTypes((s) => ({ ...s, [t]: !s[t] }));
   const [filtersOpen, setFiltersOpen] = useState(false);
@@ -121,12 +118,12 @@ export default function HRCalendarPage() {
     queryFn: () => api.get<Holiday[]>(`/api/v1/hrms/holidays?year=${year}&limit=200`),
   });
   const { data: leavesData } = useQuery({
-    queryKey: ["hrcal-leaves", year, month, employeeFilter],
+    queryKey: ["hrcal-leaves", year, month, myTeamOnly],
     queryFn: () => {
       const start = ymd(new Date(year, month, 1));
       const end = ymd(new Date(year, month + 1, 0));
       const params = new URLSearchParams({ dateFrom: start, dateTo: end, status: "Approved", limit: "300" });
-      if (employeeFilter) params.set("employeeId", employeeFilter);
+      if (myTeamOnly) params.set("managerId", "me");
       return api.get<Leave[]>(`/api/v1/hrms/leaves/requests?${params.toString()}`);
     },
   });
@@ -269,6 +266,24 @@ export default function HRCalendarPage() {
               </button>
             ))}
           </div>
+          <button
+            onClick={() => {
+              const next = !myTeamOnly;
+              setMyTeamOnly(next);
+              // Turning "My Team" on isolates leaves — the other event types are
+              // auto-unchecked; turning it off restores the full calendar.
+              setVisibleTypes(next
+                ? { holiday: false, leave: true, birthday: false, anniversary: false }
+                : { holiday: true, leave: true, birthday: true, anniversary: true });
+            }}
+            title="Show only leaves of employees who report to you"
+            className={clsx(
+              "inline-flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium rounded-lg border transition",
+              myTeamOnly ? "border-green-300 bg-green-50 text-green-700" : "border-gray-200 bg-white hover:bg-gray-50 text-gray-700",
+            )}
+          >
+            <Users size={13} /> My Team
+          </button>
           <div ref={filtersRef} className="relative">
             <button
               onClick={() => setFiltersOpen((o) => !o)}
@@ -290,20 +305,9 @@ export default function HRCalendarPage() {
                     ))}
                   </div>
                 </div>
-                {canFilterPeople && (
-                  <div className="pt-2 border-t border-gray-100">
-                    <p className="text-[11px] font-semibold uppercase tracking-wide text-gray-400 mb-1.5">Employee</p>
-                    <EmployeeSelect value={employeeFilter} onChange={setEmployeeFilter} accessibleOnly clearable placeholder="All employees" className="w-full" />
-                  </div>
-                )}
               </div>
             )}
           </div>
-          {canManageHolidays && (
-            <a href="/settings/holiday-calendar" title="Add or edit holidays" className="inline-flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium rounded-lg border border-gray-200 bg-white hover:bg-gray-50 text-gray-700">
-              <Settings size={13} /> Manage Holidays
-            </a>
-          )}
         </div>
       </div>
 

@@ -30,12 +30,12 @@ const requisitionBaseObject = z.object({
   reportingToId: z.string().optional(),
   positions: z.number().int().min(1).max(500).default(1),
   type: z.enum(["NewPosition", "Replacement", "Expansion"]).default("NewPosition"),
-  employmentType: z.enum(["FullTime", "PartTime", "Contract", "Intern"]).default("FullTime"),
+  employmentType: z.enum(["FullTime", "PartTime", "Contract", "Intern", "Freelance"]).default("FullTime"),
   workLocation: z.enum(["Office", "Remote", "Hybrid"]).default("Office"),
   experienceMin: z.number().min(0, "Min experience required").max(50, "Max 50 years"),
   experienceMax: z.number().min(0, "Max experience required").max(50, "Max 50 years"),
-  salaryMin: z.number().min(0, "Min salary required").max(1000, "Max 1000 LPA"),
-  salaryMax: z.number().min(0, "Max salary required").max(1000, "Max 1000 LPA"),
+  salaryMin: z.number(),
+  salaryMax: z.number(),
   salaryCurrency: z.string().default("INR"),
   jobDescription: z.string().optional(),
   responsibilities: z.array(z.string()).optional(),
@@ -47,6 +47,8 @@ const requisitionBaseObject = z.object({
     weight: z.number().int().min(1).max(10),
   })).optional(),
   education: z.string().optional(),
+  passingYear: z.number().int().min(1950).max(2100).nullable().optional(),
+  technicalQuestions: z.array(z.string().max(500)).min(1, "Add at least one technical question").max(50),
   benefits: z.array(z.string()).optional(),
 
   // Role scorecard — optional. Captures the JD-Scorecard pattern at hiring time.
@@ -70,7 +72,7 @@ const requisitionBaseObject = z.object({
   // 5-step requisition wizard — planning & posting extras
   jobOpeningName: z.string().optional(),
   interviewPanelIds: z.array(z.string()).optional(),
-  budget: z.number().min(0, "Budget required"),
+  budget: z.number().nullable().optional(),
   targetJoiningDate: z.string().optional(),
   closedDate: z.string().optional(), // "Timeline to Close"
   etaToFillDays: z.number().int().optional(),
@@ -173,6 +175,8 @@ export const createInterviewSchema = z.object({
   round: z.number().int().default(1),
   type: z.enum(["Phone", "Video", "InPerson", "Panel", "TakeHome", "GroupDiscussion"]).default("Video"),
   interviewerId: z.string().min(1),
+  // Extra panel interviewers beyond the primary. All get the invite + calendar.
+  additionalInterviewerIds: z.array(z.string().min(1)).optional().default([]),
   scheduledAt: z.string().min(1).refine((v) => new Date(v).getTime() > Date.now() - 60_000, {
     message: "Scheduled date/time cannot be in the past",
   }),

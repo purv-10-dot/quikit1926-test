@@ -57,7 +57,7 @@ export function buildInterviewInviteEmail(data: InterviewInviteData): { subject:
     alert("info", "Please join 5 minutes before the scheduled interview.", "Important") +
     // Button links straight to the meeting, so label it accordingly — "Confirm
     // Interview" was misleading (it joins the call, it doesn't record a confirmation).
-    (data.meetingLink ? btnPrimary("Join Meeting", esc(data.meetingLink), "blue") : "");
+    (data.meetingLink ? btnPrimary("Join Now", esc(data.meetingLink), "blue") : "");
 
   const html = emailShell({
     accent: "blue",

@@ -4,6 +4,9 @@ import { withAuth } from "@/lib/with-auth";
 import { successResponse, notFound, validationError, internalError } from "@/lib/api-response";
 import { resolveEmployeeId } from "@/lib/resolve-employee";
 import { stageNames } from "@/lib/services/pipeline-stages";
+import { resolveAndSend } from "@/lib/email/resolve";
+import { buildOnHoldEmail } from "@/lib/email-templates/application-on-hold";
+import { sendRejectionEmail } from "@/lib/recruit/rejection-mail";
 
 /**
  * POST /api/v1/hrms/recruit/applications/:id/stage-feedback
@@ -111,11 +114,43 @@ export const POST = withAuth(async (req: NextRequest, { orgId, userId }, params)
         stageAdvanced = true;
       }
     } else if (recommendation === "MaybeHire") {
-      // On Hold — park the candidate in the current stage.
+      // On Hold — park the candidate AND move them to the Archive so they drop
+      // off the active pipeline board (the applications query hides archived
+      // candidates). Restoring from Archive reactivates the held application.
       await prisma.jobApplication.update({
         where: { id: app.id },
         data: { status: "AppOnHold", updatedBy: userId },
       });
+      await prisma.candidate.update({
+        where: { id: app.candidateId },
+        data: {
+          isArchived: true,
+          archiveReason: body.concerns || body.overallComments || "On hold from pipeline",
+          archivedAt: new Date(),
+          archivedBy: userId,
+        },
+      }).catch(() => null);
+
+      // Auto-notify the candidate their application is on hold (customizable in
+      // Settings → Email Templates → "Application On Hold"). Best-effort.
+      void (async () => {
+        try {
+          const [cand, company, req_] = await Promise.all([
+            prisma.candidate.findFirst({ where: { id: app.candidateId, orgId }, select: { firstName: true, lastName: true, email: true } }),
+            prisma.companySettings.findUnique({ where: { orgId }, select: { companyName: true } }),
+            prisma.jobRequisition.findUnique({ where: { id: app.requisitionId }, select: { title: true } }),
+          ]);
+          if (!cand?.email) return;
+          const vars = {
+            candidateName: `${cand.firstName} ${cand.lastName}`.trim(),
+            jobTitle: req_?.title ?? "the role",
+            companyName: company?.companyName ?? "QuikIT HRMS",
+          };
+          await resolveAndSend(orgId, { key: "recruit.on-hold", to: cand.email, vars, fallback: () => buildOnHoldEmail(vars) });
+        } catch (err) {
+          console.error("[mail] on-hold email failed:", err);
+        }
+      })();
     } else if (recommendation === "NoHire" || recommendation === "StrongNoHire") {
       await prisma.jobApplication.update({
         where: { id: app.id },
@@ -131,6 +166,20 @@ export const POST = withAuth(async (req: NextRequest, { orgId, userId }, params)
         where: { orgId, applicationId: app.id, status: "IntScheduled", deletedAt: null },
         data: { status: "IntCancelled" },
       }).catch(() => null);
+
+      // Notify the candidate (with the re-apply cooling note). Background.
+      void (async () => {
+        const [cand, req_] = await Promise.all([
+          prisma.candidate.findUnique({ where: { id: app.candidateId }, select: { firstName: true, lastName: true, email: true } }),
+          prisma.jobRequisition.findUnique({ where: { id: app.requisitionId }, select: { title: true } }),
+        ]);
+        if (!cand?.email) return;
+        await sendRejectionEmail(orgId, {
+          to: cand.email,
+          candidateName: `${cand.firstName} ${cand.lastName}`.trim(),
+          jobTitle: req_?.title ?? "the role",
+        });
+      })();
     }
 
     // Keep the candidate's status in sync so the Candidates list reflects the

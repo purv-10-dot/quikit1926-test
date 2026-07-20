@@ -629,7 +629,6 @@ export default function OrgChartPage() {
           <div className="flex items-center gap-3 text-xs">
             <span className="flex items-center gap-1 text-amber-600"><Crown size={12} /> Leader</span>
             <span className="flex items-center gap-1 text-[#22c55e]"><Star size={12} className="fill-[#22c55e]" /> You</span>
-            <span className="flex items-center gap-1 text-emerald-600"><Building2 size={12} /> HOD</span>
             <span className="flex items-center gap-1 text-gray-500"><UsersIcon size={12} /> Report</span>
           </div>
         )}

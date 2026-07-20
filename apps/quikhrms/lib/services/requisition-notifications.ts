@@ -67,6 +67,30 @@ export async function notifyRequisitionRejected(orgId: string, p: { requisitionI
   });
 }
 
+/**
+ * Candidate responded to a "still interested?" invite after a hold-resume →
+ * tell the recruiter / hiring manager so they can act.
+ */
+export async function notifyCandidateReconfirm(orgId: string, p: {
+  requisitionId: string;
+  requisitionTitle: string;
+  candidateName: string;
+  interested: boolean;
+  recipients: (string | null | undefined)[];
+}) {
+  const recipients = p.recipients.filter((r): r is string => !!r);
+  if (recipients.length === 0) return;
+  await notify({
+    orgId, recipients, requisitionId: p.requisitionId,
+    type: p.interested ? "Success" : "Warning",
+    title: p.interested ? "Candidate confirmed interest" : "Candidate withdrew",
+    message: p.interested
+      ? `${p.candidateName} confirmed they're still interested in "${p.requisitionTitle}" and is back in the pipeline.`
+      : `${p.candidateName} is no longer interested in "${p.requisitionTitle}" and has been withdrawn.`,
+    link: p.interested ? "/recruit/pipeline" : "/recruit/requisitions",
+  });
+}
+
 /** Advanced to the next level → tell that approver it's waiting on them. */
 export async function notifyRequisitionNextApprover(orgId: string, p: { requisitionId: string; title: string; approverId?: string | null }) {
   if (!p.approverId) return;

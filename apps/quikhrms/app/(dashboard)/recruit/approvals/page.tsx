@@ -23,7 +23,7 @@ interface FullReq {
   targetJoiningDate?: string | null; closedDate?: string | null; etaToFillDays?: number | null;
   jobGrade?: string | null; costCenter?: string | null; jobDescription?: string | null;
   requirements?: string[] | null; niceToHave?: string[] | null; benefits?: string[] | null;
-  education?: string | null; referralBonusAmount?: string | number | null;
+  education?: string | null; passingYear?: number | null; technicalQuestions?: string[] | null; referralBonusAmount?: string | number | null;
   careerPageVisible?: boolean; internalPostingOnly?: boolean; postToJobPortal?: boolean;
   rolePurpose?: string | null; responsibilities?: string[] | null;
   skillWeights?: { skill: string; weight: number }[] | null; justification?: string | null;
@@ -166,7 +166,7 @@ export default function RequisitionApprovalsPage() {
         etaToFillDays: numv(r.etaToFillDays), jobGrade: r.jobGrade ?? "", costCenter: r.costCenter ?? "",
         jobDescription: r.jobDescription ?? "",
         requirements: arr(r.requirements), niceToHave: arr(r.niceToHave), benefits: arr(r.benefits),
-        education: r.education ?? "", referralBonusAmount: numv(r.referralBonusAmount),
+        education: r.education ?? "", passingYear: numv(r.passingYear), technicalQuestions: Array.isArray(r.technicalQuestions) ? r.technicalQuestions : [], referralBonusAmount: numv(r.referralBonusAmount),
         careerPageVisible: r.careerPageVisible ?? true, internalPostingOnly: r.internalPostingOnly ?? false, postToJobPortal: r.postToJobPortal ?? false,
         responsibilities: arr(r.responsibilities),
         skillWeights: Array.isArray(r.skillWeights) ? r.skillWeights : [],

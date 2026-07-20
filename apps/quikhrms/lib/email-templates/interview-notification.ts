@@ -16,6 +16,8 @@ export interface InterviewerNotificationData {
   roundName?: string | null;
   resumeUrl?: string | null;
   feedbackUrl?: string | null;
+  /** Job description — included only for technical rounds so the interviewer can prep. */
+  jobDescription?: string | null;
 }
 
 const TYPE_LABEL: Record<string, string> = {
@@ -58,6 +60,9 @@ export function buildInterviewerNotificationEmail(data: InterviewerNotificationD
     para(`Hi <strong>${esc(data.interviewerName)}</strong>, you've been assigned to interview a candidate for <strong>${esc(data.companyName)}</strong>. Details are below.`),
     detailBlock(detailRows.filter(notNull), { heading: "Interview Details", accent: "blue" }),
     detailBlock(contactRows.filter(notNull), { heading: "Candidate Contact", accent: "blue" }),
+    data.jobDescription
+      ? para(`<strong>Job Description</strong><br/>${esc(data.jobDescription).replace(/\r?\n/g, "<br/>")}`)
+      : "",
     data.meetingLink ? btnPrimary("Join Interview", data.meetingLink, "blue") : "",
     data.feedbackUrl ? btnSecondary("Submit Feedback", data.feedbackUrl, "blue") : "",
   ].join("");

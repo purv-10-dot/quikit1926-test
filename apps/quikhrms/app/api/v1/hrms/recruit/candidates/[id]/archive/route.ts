@@ -54,6 +54,20 @@ export const DELETE = withAuth(async (_req: NextRequest, { orgId, userId }, para
       },
     });
 
+    // If this candidate was archived while On Hold in the pipeline, restoring
+    // them reactivates the held application so they reappear on the board at
+    // their current stage.
+    const reactivated = await prisma.jobApplication.updateMany({
+      where: { orgId, candidateId: params.id, status: "AppOnHold" },
+      data: { status: "AppActive", updatedBy: userId },
+    });
+    if (reactivated.count > 0) {
+      await prisma.candidate.update({
+        where: { id: params.id },
+        data: { status: "InPipeline" },
+      }).catch(() => null);
+    }
+
     await createAuditLog({
       orgId, userId, action: "Update", entityType: "Candidate", entityId: params.id,
       changes: { action: "Unarchived" },

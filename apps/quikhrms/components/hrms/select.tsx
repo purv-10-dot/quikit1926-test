@@ -47,6 +47,8 @@ export function Select({
   const [query, setQuery] = useState("");
   const [highlight, setHighlight] = useState(0);
   const [menuPos, setMenuPos] = useState<{ top: number; left: number; width: number } | null>(null);
+  const [placeUp, setPlaceUp] = useState(false);
+  const [menuMaxH, setMenuMaxH] = useState(288);
   const rootRef = useRef<HTMLDivElement>(null);
   const buttonRef = useRef<HTMLButtonElement>(null);
   const menuRef = useRef<HTMLDivElement>(null);
@@ -73,13 +75,41 @@ export function Select({
     const update = () => {
       if (!buttonRef.current) return;
       const r = buttonRef.current.getBoundingClientRect();
+
+      // Respect the nearest scrolling/clipping ancestor (e.g. a modal body) and
+      // fall back to the viewport, so the menu flips up / shrinks instead of
+      // spilling off the bottom of the screen.
+      let boundTop = 0;
+      let boundBottom = window.innerHeight;
+      let el: HTMLElement | null = buttonRef.current.parentElement;
+      while (el) {
+        const oy = getComputedStyle(el).overflowY;
+        if (oy === "auto" || oy === "scroll" || oy === "hidden") {
+          const br = el.getBoundingClientRect();
+          boundTop = Math.max(boundTop, br.top);
+          boundBottom = Math.min(boundBottom, br.bottom);
+          break;
+        }
+        el = el.parentElement;
+      }
+
+      const MARGIN = 10;
+      const PREFERRED = 288;
+      const spaceBelow = boundBottom - r.bottom - MARGIN;
+      const spaceAbove = r.top - boundTop - MARGIN;
+      // Open upward when there isn't room below for a comfortable menu and there
+      // is more room above.
+      const up = spaceBelow < Math.min(PREFERRED, spaceAbove) && spaceAbove > spaceBelow;
+      setPlaceUp(up);
+      setMenuMaxH(Math.max(160, Math.min(PREFERRED, up ? spaceAbove : spaceBelow)));
+
       // Menu must be wide enough to show full option labels even when the
       // trigger is narrow (e.g. "+ Requisition"). Widen to a minimum, clamp
       // to the viewport, and nudge left so it never overflows the right edge.
       const GUTTER = 8;
       const width = Math.min(Math.max(r.width, 240), window.innerWidth - GUTTER * 2);
       const left = Math.min(r.left, window.innerWidth - width - GUTTER);
-      setMenuPos({ top: r.bottom + 4, left: Math.max(GUTTER, left), width });
+      setMenuPos({ top: up ? r.top - 4 : r.bottom + 4, left: Math.max(GUTTER, left), width });
     };
     update();
     window.addEventListener("scroll", update, true);
@@ -183,8 +213,15 @@ export function Select({
       {open && menuPos && typeof document !== "undefined" && createPortal(
         <div
           ref={menuRef}
-          style={{ position: "fixed", top: menuPos.top, left: menuPos.left, width: menuPos.width }}
-          className="z-[9999] bg-white border border-slate-200 rounded-xl shadow-2xl py-1.5 max-h-72 overflow-auto animate-in fade-in zoom-in-95 duration-150"
+          style={{
+            position: "fixed",
+            top: placeUp ? undefined : menuPos.top,
+            bottom: placeUp ? window.innerHeight - menuPos.top : undefined,
+            left: menuPos.left,
+            width: menuPos.width,
+            maxHeight: menuMaxH,
+          }}
+          className="z-[9999] bg-white border border-slate-200 rounded-xl shadow-2xl py-1.5 overflow-auto animate-in fade-in zoom-in-95 duration-150"
         >
           {searchable && (
             <div className="px-2 pb-2 sticky top-0 bg-white border-b border-slate-100">

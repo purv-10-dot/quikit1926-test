@@ -24,13 +24,15 @@ export const GET = withAuth(async (req: NextRequest, { orgId }) => {
     const includeArchived = searchParams.get("includeArchived") === "1";
     const onlyArchived = searchParams.get("archived") === "1";
     const onlyBlacklisted = searchParams.get("blacklisted") === "1";
+    // Global search — span Active + Blacklisted + Archived (not tab-dependent).
+    const searchAll = searchParams.get("searchAll") === "1";
 
     const where: Prisma.CandidateWhereInput = {
       orgId, deletedAt: null,
-      ...(onlyArchived
+      ...(searchAll ? {} : onlyArchived
         ? { isArchived: true }
         : includeArchived ? {} : { isArchived: false }),
-      ...(onlyBlacklisted
+      ...(searchAll ? {} : onlyBlacklisted
         ? { isBlacklisted: true }
         : onlyArchived ? {} : { isBlacklisted: false }),
       ...(status && { status: status as Prisma.CandidateWhereInput["status"] }),

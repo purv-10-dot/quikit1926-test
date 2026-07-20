@@ -5,7 +5,7 @@ import { successResponse, notFound, validationError, internalError, conflict } f
 import { updateApplicationSchema } from "@/lib/validations/recruit";
 import { fireWorkflow } from "@/lib/workflows/executor";
 import { resolveAndSend } from "@/lib/email/resolve";
-import { buildRejectionEmail } from "@/lib/email-templates/application-rejected";
+import { sendRejectionEmail } from "@/lib/recruit/rejection-mail";
 import { buildInterviewInviteEmail } from "@/lib/email-templates/interview-invite";
 import { buildOfferEmail } from "@/lib/email-templates/offer";
 import { triggerCandidateDocBundle } from "@/lib/services/candidate-doc-service";
@@ -557,33 +557,22 @@ export const PATCH = withAuth(async (req: NextRequest, { orgId, userId }, params
 
     if (data.status === "AppRejected" && existing.status !== "AppRejected") {
       void (async () => {
-        try {
-          const [candidate, company, requisition] = await Promise.all([
-            prisma.candidate.findUnique({
-              where: { id: existing.candidateId },
-              select: { firstName: true, lastName: true, email: true },
-            }),
-            prisma.companySettings.findUnique({ where: { orgId }, select: { companyName: true } }),
-            prisma.jobRequisition.findUnique({
-              where: { id: existing.requisitionId },
-              select: { title: true },
-            }),
-          ]);
-          if (!candidate?.email) return;
-          const rejectionData = {
-            candidateName: `${candidate.firstName} ${candidate.lastName}`.trim(),
-            jobTitle: requisition?.title ?? "the role",
-            companyName: company?.companyName ?? "QuikIT HRMS",
-          };
-          await resolveAndSend(orgId, {
-            key: "recruit.rejection",
-            to: candidate.email,
-            vars: { ...rejectionData },
-            fallback: () => buildRejectionEmail(rejectionData),
-          });
-        } catch (err) {
-          console.error("[mail] rejection email failed:", err);
-        }
+        const [candidate, requisition] = await Promise.all([
+          prisma.candidate.findUnique({
+            where: { id: existing.candidateId },
+            select: { firstName: true, lastName: true, email: true },
+          }),
+          prisma.jobRequisition.findUnique({
+            where: { id: existing.requisitionId },
+            select: { title: true },
+          }),
+        ]);
+        if (!candidate?.email) return;
+        await sendRejectionEmail(orgId, {
+          to: candidate.email,
+          candidateName: `${candidate.firstName} ${candidate.lastName}`.trim(),
+          jobTitle: requisition?.title ?? "the role",
+        });
       })();
     }
 

@@ -41,7 +41,7 @@ export const GET = withServiceAuth(async (req: NextRequest, { orgId }) => {
         where, orderBy: { appliedDate: "desc" }, skip: (page - 1) * limit, take: limit,
         include: {
           candidate: { select: { id: true, firstName: true, lastName: true, email: true, phone: true, location: true, source: true, currentCompany: true, currentDesignation: true, totalExperience: true, noticePeriod: true, currentCTC: true, expectedCTC: true, skills: true, linkedinUrl: true, portfolioUrl: true, resumeUrl: true } },
-          requisition: { select: { id: true, title: true, requisitionNumber: true, pipelineId: true, interviewPanel: true } },
+          requisition: { select: { id: true, title: true, requisitionNumber: true, pipelineId: true, interviewPanel: true, technicalQuestions: true } },
           _count: { select: { interviews: true } },
         },
       }),
@@ -193,35 +193,32 @@ export const POST = withAuth(async (req: NextRequest, { orgId, userId }) => {
       return conflict(`${candidateCheck.firstName} ${candidateCheck.lastName} is archived. Restore from archive before creating an application.`);
     }
 
-    // Re-apply cooling period (Company Settings). Applies to the SAME ROLE only
-    // (matched by requisition title) — a candidate rejected for a role can't be
-    // re-applied to that same role until the cooling window passes, but is free
-    // to be applied to a different role immediately.
+    // Re-apply cooling period (Company Settings). Applies to ANY role — once a
+    // candidate is rejected, they can't be applied to any requisition until the
+    // cooling window passes (measured from their most recent rejection).
     const company = await prisma.companySettings.findUnique({
       where: { orgId }, select: { candidateCoolingMonths: true },
     });
     const coolMonths = company?.candidateCoolingMonths ?? 0;
     if (coolMonths > 0) {
-      const targetReq = await prisma.jobRequisition.findFirst({
-        where: { id: requisitionId, orgId, deletedAt: null }, select: { title: true },
+      const lastRejected = await prisma.jobApplication.findFirst({
+        where: {
+          orgId, candidateId, deletedAt: null,
+          status: { in: ["AppRejected", "AppDeclined"] },
+          // Penalty-free rejections (requisition cancelled / not selected after a
+          // hold-resume) don't lock the candidate out of other roles.
+          rejectionExempt: false,
+        },
+        orderBy: { updatedAt: "desc" },
+        select: { updatedAt: true, requisition: { select: { title: true } } },
       });
-      if (targetReq?.title?.trim()) {
-        const lastRejected = await prisma.jobApplication.findFirst({
-          where: {
-            orgId, candidateId, deletedAt: null,
-            status: { in: ["AppRejected", "AppDeclined"] },
-            requisition: { is: { title: { equals: targetReq.title, mode: "insensitive" } } },
-          },
-          orderBy: { updatedAt: "desc" },
-          select: { updatedAt: true },
-        });
-        if (lastRejected) {
-          const eligibleAt = new Date(lastRejected.updatedAt);
-          eligibleAt.setMonth(eligibleAt.getMonth() + coolMonths);
-          if (Date.now() < eligibleAt.getTime()) {
-            const when = eligibleAt.toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" });
-            return conflict(`${candidateCheck.firstName} ${candidateCheck.lastName} was recently rejected for "${targetReq.title}". They can re-apply to this role after ${when} (cooling period: ${coolMonths} month${coolMonths > 1 ? "s" : ""}), or be applied to a different role now.`);
-          }
+      if (lastRejected) {
+        const eligibleAt = new Date(lastRejected.updatedAt);
+        eligibleAt.setMonth(eligibleAt.getMonth() + coolMonths);
+        if (Date.now() < eligibleAt.getTime()) {
+          const when = eligibleAt.toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" });
+          const forRole = lastRejected.requisition?.title ? ` for "${lastRejected.requisition.title}"` : "";
+          return conflict(`${candidateCheck.firstName} ${candidateCheck.lastName} was rejected${forRole} and is in a cooling period. They cannot apply to any role until ${when} (cooling period: ${coolMonths} month${coolMonths > 1 ? "s" : ""}).`);
         }
       }
     }
@@ -323,8 +320,8 @@ export const POST = withAuth(async (req: NextRequest, { orgId, userId }) => {
         const result = await scoreResumeAgainstJD({
           jobTitle: reqFull.title,
           jobDescription: reqFull.jobDescription ?? null,
-          experienceMin: reqFull.experienceMin ?? null,
-          experienceMax: reqFull.experienceMax ?? null,
+          experienceMin: reqFull.experienceMin != null ? Number(reqFull.experienceMin) : null,
+          experienceMax: reqFull.experienceMax != null ? Number(reqFull.experienceMax) : null,
           skillWeights: weights,
           resumeText,
           candidateSummary: typeof parsed?.summary === "string" ? parsed.summary : null,
@@ -355,6 +352,7 @@ export const POST = withAuth(async (req: NextRequest, { orgId, userId }) => {
         where: {
           orgId, candidateId, deletedAt: null, id: { not: app.id },
           status: { in: ["AppRejected", "AppDeclined"] },
+          rejectionExempt: false,
           updatedAt: { gte: lookback },
           requisition: { is: { title: { not: app.requisition?.title ?? "" } } },
         },

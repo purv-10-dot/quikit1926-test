@@ -7,6 +7,8 @@ import { generateMeetingLink } from "@/lib/meetings";
 import { sendInterviewInvites } from "@/lib/recruit/interview-notify";
 import { createAuditLog } from "@/lib/utils/audit";
 import { notifyInterviewRescheduled, notifyInterviewCancelled } from "@/lib/services/interview-notifications";
+import { resolveAndSend } from "@/lib/email/resolve";
+import { buildInterviewPassedEmail } from "@/lib/email-templates/interview-passed";
 
 export const GET = withAuth(async (_req: NextRequest, { orgId }, params) => {
   try {
@@ -78,6 +80,35 @@ export const PATCH = withAuth(async (req: NextRequest, { orgId, userId }, params
           where: { id: existing.applicationId },
           data: { status: "AppRejected", updatedBy: userId },
         });
+      } else if (rec === "Hire" || rec === "StrongHire") {
+        // Positive result → congratulate the candidate on clearing this round.
+        // Best-effort background send; never blocks the feedback submission.
+        void (async () => {
+          try {
+            const info = await prisma.jobApplication.findFirst({
+              where: { id: existing.applicationId, orgId, deletedAt: null },
+              select: {
+                candidate: { select: { firstName: true, lastName: true, email: true } },
+                requisition: { select: { title: true } },
+              },
+            });
+            const cand = info?.candidate;
+            if (!cand?.email) return;
+            const company = await prisma.companySettings.findUnique({ where: { orgId }, select: { companyName: true } });
+            const companyName = company?.companyName ?? "Our Company";
+            const candidateName = `${cand.firstName} ${cand.lastName}`.trim();
+            const jobTitle = info?.requisition?.title ?? "the role";
+            const roundName = `Round ${existing.round}`;
+            await resolveAndSend(orgId, {
+              key: "recruit.interview-passed",
+              to: cand.email,
+              vars: { candidateName, jobTitle, companyName, roundName },
+              fallback: () => buildInterviewPassedEmail({ candidateName, jobTitle, companyName, roundName }),
+            });
+          } catch (e) {
+            console.error("[interview] passed mail failed:", e);
+          }
+        })();
       }
 
       return successResponse(sc, undefined, 201);

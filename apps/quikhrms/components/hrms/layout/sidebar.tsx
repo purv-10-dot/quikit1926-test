@@ -116,7 +116,6 @@ const navigation: NavItem[] = [
       { label: "Team Leaves", href: "/leaves/team-leaves", perms: ["hrms.leave.read_team"], navKey: "leave.team" },
       { label: "HR Calendar", href: "/holidays", navKey: "leave.calendar" },
       { label: "Leave Types", href: "/leaves/policies", perms: ["hrms.leave.manage"], navKey: "leave.policies" },
-      { label: "Policy Documents", href: "/leaves/policy-documents", perms: ["hrms.leave_policy.read"], navKey: "leave.policy-documents" },
     ],
   },
   {

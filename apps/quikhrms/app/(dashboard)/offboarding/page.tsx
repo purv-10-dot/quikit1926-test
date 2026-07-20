@@ -7,6 +7,7 @@ import { useApiClient } from "@/lib/hooks/use-api";
 import { Modal } from "@/components/hrms/modal";
 import { EmployeeSelect } from "@/components/hrms/employees/employee-select";
 import { Select } from "@/components/hrms/ui/select";
+import { ExcelExportButton } from "@/components/hrms/excel-export-button";
 import { UserMinus, Plus, LogOut } from "lucide-react";
 import { clsx } from "clsx";
 
@@ -57,6 +58,27 @@ export default function OffboardingDashboardPage() {
   const countsMap: Record<string, number> = {};
   (d?.counts ?? []).forEach((c) => { countsMap[c.status] = c._count; });
 
+  // Flatten each offboarding instance (the currently rendered set) into one
+  // export row, matching the visible table columns.
+  const excelColumns = [
+    { header: "Employee", key: "employee", width: 24 },
+    { header: "Employee Code", key: "employeeCode", width: 16 },
+    { header: "Reason", key: "reason", width: 16 },
+    { header: "Last Working Day", key: "lastWorkingDay", width: 18 },
+    { header: "Tasks", key: "tasks", width: 10 },
+    { header: "Status", key: "status", width: 20 },
+  ];
+  const excelRows = (d?.instances ?? []).map((i) => ({
+    employee: i.employee ? (i.employee.displayName ?? `${i.employee.firstName} ${i.employee.lastName}`) : i.employeeId,
+    employeeCode: i.employee?.employeeCode ?? "",
+    reason: i.reason,
+    lastWorkingDay: i.lastWorkingDate
+      ? new Date(i.lastWorkingDate).toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" })
+      : "",
+    tasks: i._count.tasks,
+    status: i.status,
+  }));
+
   return (
     <div className="w-full px-5 py-4">
       <div className="flex items-center justify-between mb-4 flex-wrap gap-3">
@@ -64,9 +86,12 @@ export default function OffboardingDashboardPage() {
           <UserMinus size={28} className="text-[#22c55e] mt-1.5" />
           <h1 className="text-base font-semibold text-gray-900">Offboarding</h1>
         </div>
-        <button onClick={() => setShowInit(true)} className="btn btn-primary">
-          <Plus size={13} /> Initiate offboarding
-        </button>
+        <div className="flex items-center gap-2">
+          <ExcelExportButton filename="offboarding" sheetName="Offboardings" columns={excelColumns} rows={excelRows} label="Excel" />
+          <button onClick={() => setShowInit(true)} className="btn btn-primary">
+            <Plus size={13} /> Initiate offboarding
+          </button>
+        </div>
       </div>
 
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-4">

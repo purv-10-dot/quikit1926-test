@@ -112,6 +112,19 @@ export const POST = withAuth(async (req: NextRequest, { orgId, userId }) => {
     if (!appExists) return validationError("Application not found");
     if (!interviewerExists) return validationError("Interviewer not found");
 
+    // Additional panel interviewers: dedupe, drop the primary, validate they all
+    // belong to the org. They get the same invite email + calendar attendance.
+    const additionalIds = [...new Set((data.additionalInterviewerIds ?? []).filter((id) => id && id !== data.interviewerId))];
+    const additionalInterviewers = additionalIds.length
+      ? await prisma.employee.findMany({
+          where: { id: { in: additionalIds }, orgId, deletedAt: null },
+          select: { id: true, firstName: true, lastName: true, workEmail: true },
+        })
+      : [];
+    if (additionalInterviewers.length !== additionalIds.length) {
+      return validationError("One or more additional interviewers not found");
+    }
+
     // Auto-generate a video meeting link for virtual interviews when the
     // recruiter didn't paste one. Provider-agnostic (Teams today, Google Meet
     // later); failures fall back to null so scheduling never breaks.
@@ -140,6 +153,9 @@ export const POST = withAuth(async (req: NextRequest, { orgId, userId }) => {
         interviewer?.workEmail
           ? { email: interviewer.workEmail, name: `${interviewer.firstName} ${interviewer.lastName}`.trim() }
           : null,
+        ...additionalInterviewers.map((a) =>
+          a.workEmail ? { email: a.workEmail, name: `${a.firstName} ${a.lastName}`.trim() } : null,
+        ),
       ].filter((a): a is { email: string; name: string } => a !== null);
       const meeting = await generateMeetingLink({
         subject: `${subjectParts.join(" – ")} (Round ${data.round})`,
@@ -154,6 +170,7 @@ export const POST = withAuth(async (req: NextRequest, { orgId, userId }) => {
       data: {
         orgId, applicationId: data.applicationId,
         round: data.round, type: data.type, interviewerId: data.interviewerId,
+        additionalInterviewerIds: additionalIds,
         scheduledAt, duration: data.duration,
         location: data.location, meetingLink,
         createdBy: userId, updatedBy: userId,
@@ -163,7 +180,7 @@ export const POST = withAuth(async (req: NextRequest, { orgId, userId }) => {
         application: {
           include: {
             candidate: { select: { firstName: true, lastName: true, email: true, phone: true, resumeUrl: true } },
-            requisition: { select: { title: true } },
+            requisition: { select: { title: true, jobDescription: true, pipelineId: true } },
           },
         },
       },
@@ -180,6 +197,17 @@ export const POST = withAuth(async (req: NextRequest, { orgId, userId }) => {
       },
       data: { deletedAt: new Date(), updatedBy: userId },
     }).catch(() => null);
+
+    // Resolve this round's pipeline stage once — reused for the "technical round"
+    // JD decision below and the currentStage auto-advance further down.
+    const pipeline = interview.application?.requisition?.pipelineId
+      ? await prisma.hiringPipeline.findUnique({ where: { id: interview.application.requisition.pipelineId } })
+      : await prisma.hiringPipeline.findFirst({ where: { orgId, deletedAt: null, isDefault: true } });
+    const pipelineStageNames = stageNames(pipeline?.stages);
+    const roundStage = pipelineStageNames[data.round - 1] ?? "";
+    // JD is shared with interviewers only on technical rounds so they can prep.
+    const isTechnicalRound = /technical/i.test(roundStage);
+    const roundJobDescription = isTechnicalRound ? (interview.application?.requisition?.jobDescription ?? null) : null;
 
     // Auto-send invite emails to BOTH candidate and interviewer (regardless of interview type).
     let mailStatus: { candidate: { sent: boolean; to: string | null; error?: string }; interviewer: { sent: boolean; to: string | null; error?: string } } = {
@@ -243,6 +271,7 @@ export const POST = withAuth(async (req: NextRequest, { orgId, userId }) => {
           roundName: `Round ${interview.round}`,
           resumeUrl: candidate.resumeUrl,
           feedbackUrl: base ? `${base}/interview-feedback/${fbToken}` : null,
+          jobDescription: roundJobDescription,
         };
         void resolveAndSend(orgId, {
           key: "interview.interviewer-notify",
@@ -254,6 +283,7 @@ export const POST = withAuth(async (req: NextRequest, { orgId, userId }) => {
             location: notifyData.location ?? "",
             resumeUrl: notifyData.resumeUrl ?? "",
             feedbackUrl: notifyData.feedbackUrl ?? "",
+            jobDescription: notifyData.jobDescription ?? "",
           },
           fallback: () => buildInterviewerNotificationEmail(notifyData),
         }).catch((e) => console.error("[interview] interviewer notify mail failed:", e));
@@ -270,24 +300,61 @@ export const POST = withAuth(async (req: NextRequest, { orgId, userId }) => {
       } else {
         mailStatus.interviewer = { sent: false, to: null, error: "Interviewer workEmail missing" };
       }
+
+      // Additional panel interviewers get the same notification (details +
+      // in-app alert). The feedback link is intentionally omitted — the
+      // scorecard is owned by the primary interviewer.
+      if (candidate && additionalInterviewers.length) {
+        for (const extra of additionalInterviewers) {
+          const extraName = `${extra.firstName} ${extra.lastName}`.trim();
+          if (extra.workEmail) {
+            const notifyData = {
+              interviewerName: extraName,
+              candidateName,
+              candidateEmail: candidate.email,
+              candidatePhone: candidate.phone,
+              jobTitle,
+              interviewDate: dateStr,
+              interviewTime: timeStr,
+              duration: String(interview.duration),
+              type: interview.type,
+              meetingLink: interview.meetingLink,
+              location: interview.location,
+              companyName,
+              roundName: `Round ${interview.round}`,
+              resumeUrl: candidate.resumeUrl,
+              feedbackUrl: null as string | null,
+              jobDescription: roundJobDescription,
+            };
+            void resolveAndSend(orgId, {
+              key: "interview.interviewer-notify",
+              to: extra.workEmail,
+              vars: {
+                ...notifyData,
+                candidatePhone: notifyData.candidatePhone ?? "",
+                meetingLink: notifyData.meetingLink ?? "",
+                location: notifyData.location ?? "",
+                resumeUrl: notifyData.resumeUrl ?? "",
+                feedbackUrl: "",
+                jobDescription: notifyData.jobDescription ?? "",
+              },
+              fallback: () => buildInterviewerNotificationEmail(notifyData),
+            }).catch((e) => console.error("[interview] panel interviewer notify mail failed:", e));
+          }
+          void notifyInterviewScheduled(orgId, {
+            interviewId: interview.id, interviewerId: extra.id,
+            candidateName, jobTitle, whenLabel: `${dateStr}, ${timeStr}`,
+          });
+        }
+      }
     } catch (e) {
       console.error("Interview auto-mail failed:", e);
     }
 
     // Auto-advance application.currentStage to the interview's pipeline stage.
-    // Use the candidate's OWN pipeline so multi-pipeline orgs stay consistent
-    // with the Schedule modal (which already picks stages from that pipeline).
-    const appForPipeline = await prisma.jobApplication.findUnique({
-      where: { id: data.applicationId },
-      select: { requisition: { select: { pipelineId: true } } },
-    });
-    const pipeline = appForPipeline?.requisition.pipelineId
-      ? await prisma.hiringPipeline.findUnique({ where: { id: appForPipeline.requisition.pipelineId } })
-      : await prisma.hiringPipeline.findFirst({ where: { orgId, deletedAt: null, isDefault: true } });
-    const stages = stageNames(pipeline?.stages);
-    // Stage is derived from the round index (each interview round maps to a
-    // stage in the candidate's pipeline).
-    const newStage = stages[data.round - 1];
+    // Reuses the pipeline stage already resolved above (candidate's OWN pipeline),
+    // where each interview round maps to a stage.
+    const newStage = roundStage || undefined;
     if (newStage) {
       const app = await prisma.jobApplication.findFirst({
         where: { id: data.applicationId, orgId, deletedAt: null },

@@ -11,6 +11,7 @@ import { FormActions, FormField, FormInput } from "@/components/hrms/form";
 import { EmptyState } from "@/components/hrms/empty-state";
 import { useToast } from "@/components/hrms/toast";
 import { useDialog } from "@/components/hrms/dialog";
+import { ExcelExportButton } from "@/components/hrms/excel-export-button";
 import { ChevronLeft, ChevronRight, CalendarDays, Plus, CalendarOff, CheckCircle2, Lock, Search, Check, Info, Users, Clock } from "lucide-react";
 import Link from "next/link";
 import { clsx } from "clsx";
@@ -108,6 +109,49 @@ export default function DutyRosterPage() {
   const employees = grid?.employees ?? [];
   const shifts = grid?.shifts ?? [];
 
+  // Flatten the rendered roster grid into one row per assigned cell (skips empty
+  // days) — the most table-like underlying data behind the week/month grid.
+  const excelColumns = [
+    { header: "Employee", key: "employee", width: 24 },
+    { header: "Employee Code", key: "employeeCode", width: 16 },
+    { header: "Department", key: "department", width: 20 },
+    { header: "Date", key: "date", width: 16 },
+    { header: "Type", key: "type", width: 12 },
+    { header: "Shift", key: "shift", width: 20 },
+    { header: "Start", key: "start", width: 10 },
+    { header: "End", key: "end", width: 10 },
+  ];
+  const excelRows = useMemo(() => {
+    const out: Record<string, unknown>[] = [];
+    for (const emp of employees) {
+      for (const d of days) {
+        const cell = emp.cells[d.date];
+        if (!cell || cell.type === "Empty") continue;
+        const type = cell.type === "WeekOff" ? "Week-off" : cell.type;
+        const shift = cell.type === "Duty"
+          ? (cell.shiftName ?? cell.shiftCode ?? "Shift")
+          : cell.type === "Leave"
+            ? (cell.leaveTypeName ?? "Leave")
+            : cell.type === "Holiday"
+              ? (cell.holidayName ?? "Holiday")
+              : cell.type === "WeekOff"
+                ? "Week-off"
+                : "";
+        out.push({
+          employee: emp.name,
+          employeeCode: emp.employeeCode ?? "",
+          department: emp.department ?? "",
+          date: new Date(d.date + "T00:00:00").toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" }),
+          type,
+          shift,
+          start: cell.shiftStart ?? "",
+          end: cell.shiftEnd ?? "",
+        });
+      }
+    }
+    return out;
+  }, [employees, days]);
+
   // Rosters overlapping the visible period. Draft = editable target; Published = locked.
   const draftRoster = useMemo(() => (grid?.rosters ?? []).find((r) => r.status === "Draft") ?? null, [grid]);
   const publishedRoster = useMemo(() => (grid?.rosters ?? []).find((r) => r.status === "Published") ?? null, [grid]);
@@ -151,6 +195,7 @@ export default function DutyRosterPage() {
               <button key={m} onClick={() => setMode(m)} className={clsx("px-2.5 py-1 text-xs font-medium", mode === m ? "bg-[#22c55e] text-white" : "bg-white text-gray-600 hover:bg-gray-50")}>{m}</button>
             ))}
           </div>
+          <ExcelExportButton filename="duty-roster" sheetName="Roster" columns={excelColumns} rows={excelRows} label="Excel" />
           {canManage && (
             <>
               <Link href="/shifts" className="inline-flex items-center gap-1.5 px-2.5 py-1 border border-gray-200 rounded-lg text-xs font-medium text-gray-700 hover:bg-gray-50"><Clock size={13} /> Shifts</Link>
