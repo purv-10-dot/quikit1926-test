@@ -36,7 +36,7 @@ import {
   Check,
 } from "lucide-react";
 import { RichTextEditor } from "@/components/rich-text-editor-lazy";
-import { uploadProjectImage } from "@/lib/upload-image";
+import { uploadProjectImage, uploadProjectFile } from "@/lib/upload-image";
 import { DeleteTaskModal } from "@/components/delete-task-modal";
 import { LinkedWorkItems } from "@/components/linked-work-items";
 import { IssueActivity } from "@/components/issue-activity";
@@ -1089,6 +1089,7 @@ export function EditIssueModal({
                       onChange={setDescription}
                       mentions={memberMentions}
                       uploadImage={(file) => uploadProjectImage(projectId, file)}
+                      uploadFile={(file) => uploadProjectFile(projectId, file)}
                     />
                     <div className="mt-2 flex items-center gap-2">
                       <button

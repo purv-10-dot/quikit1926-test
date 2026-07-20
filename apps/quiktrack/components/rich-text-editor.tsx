@@ -57,8 +57,10 @@ import {
   Highlighter,
   Check,
   Smile,
+  Paperclip,
 } from "lucide-react";
 import { useEffect, useCallback, useState, useRef } from "react";
+import { FileAttachment } from "@/components/editor/file-attachment";
 
 export interface RichTextEditorProps {
   value: string;
@@ -78,6 +80,9 @@ export interface RichTextEditorProps {
    *  returned URL as the image src. When unset, the editor falls back to
    *  embedding the file as a data URL (legacy behavior). */
   uploadImage?: (file: File) => Promise<string>;
+  /** Optional async uploader for non-image files. When set, an "Attach file"
+   *  toolbar button uploads the chosen file and inserts a download chip. */
+  uploadFile?: (file: File) => Promise<{ url: string; fileName: string; mimeType: string; size: number }>;
   /** When provided, enables `@`-mention autocomplete over these people. The
    *  saved HTML carries `data-mention-id` chips so the server can notify them. */
   mentions?: MentionItem[];
@@ -94,6 +99,7 @@ export function RichTextEditor({
   chromeless = false,
   slotBetween,
   uploadImage,
+  uploadFile,
   mentions,
 }: RichTextEditorProps) {
   // Keep the latest people list in a ref so the (init-once) editor's mention
@@ -146,6 +152,7 @@ export function RichTextEditor({
           class: "max-w-full h-auto rounded-md cursor-pointer image-element",
         },
       }),
+      FileAttachment,
       createSlashMenuExtension({
         onPickImage: () => handleImageUploadRef.current(),
         onPickEmoji: () => openEmojiAtCursorRef.current(),
@@ -282,6 +289,38 @@ export function RichTextEditor({
     };
     input.click();
   }, [editor, insertImageFile]);
+
+  // Attach a non-image file: upload, then insert a download chip. Surfaces the
+  // server's error (unsupported type / too large) as a toast.
+  const [fileUploading, setFileUploading] = useState(false);
+  const insertFile = useCallback(
+    async (file: File) => {
+      if (!editor || !uploadFile) return;
+      setFileUploading(true);
+      try {
+        const { url, fileName, mimeType, size } = await uploadFile(file);
+        editor.chain().focus().setFileAttachment({ href: url, fileName, mimeType, size }).run();
+      } catch (err: unknown) {
+        showToast(err instanceof Error ? err.message : "File upload failed", "error");
+      } finally {
+        setFileUploading(false);
+      }
+    },
+    [editor, uploadFile],
+  );
+
+  const handleFileUpload = useCallback(() => {
+    if (!editor || !uploadFile) return;
+    const input = document.createElement("input");
+    input.type = "file";
+    input.accept =
+      ".pdf,.csv,.txt,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.zip,image/*,application/pdf,text/csv,text/plain,application/zip";
+    input.onchange = () => {
+      const file = input.files?.[0];
+      if (file) void insertFile(file);
+    };
+    input.click();
+  }, [editor, uploadFile, insertFile]);
 
   const openEmojiPicker = useCallback(
     (anchorEl?: HTMLElement | null) => {
@@ -423,6 +462,15 @@ export function RichTextEditor({
         >
           <ImageIcon className={cn("h-4 w-4", imageUploading && "opacity-50 animate-pulse")} />
         </TbBtn>
+        {uploadFile && (
+          <TbBtn
+            onClick={handleFileUpload}
+            title={fileUploading ? "Uploading…" : "Attach file"}
+            disabled={fileUploading}
+          >
+            <Paperclip className={cn("h-4 w-4", fileUploading && "opacity-50 animate-pulse")} />
+          </TbBtn>
+        )}
         <TbBtn
           onClick={() => editor.chain().focus().toggleCodeBlock().run()}
           active={editor.isActive("codeBlock")}

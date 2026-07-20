@@ -1,6 +1,9 @@
 ﻿import { NextResponse } from "next/server";
 import { withOrgAuth } from "@/lib/api/withOrgAuth";
 import { getPresignedGetUrl, keyBelongsToTenant } from "@/lib/storage";
+import { LOCAL_UPLOADS_ENABLED, getLocalObject } from "@/lib/local-storage";
+
+export const runtime = "nodejs";
 
 /**
  * GET /api/docs/asset?key=tenants/{orgId}/...
@@ -22,6 +25,23 @@ export const GET = withOrgAuth(async (ctx, req) => {
   }
   if (!keyBelongsToTenant(key, ctx.orgId)) {
     return NextResponse.json({ success: false, error: "You don't have access to this." }, { status: 403 });
+  }
+
+  // Dev-only: if the object was stored on local disk (GCS unreachable), serve it
+  // directly instead of signing a GCS URL. No-op when there's no local copy, so
+  // real GCS assets fall through to the redirect below.
+  if (LOCAL_UPLOADS_ENABLED) {
+    const local = await getLocalObject(key);
+    if (local) {
+      const headers: Record<string, string> = {
+        "Content-Type": local.contentType,
+        "Cache-Control": "private, max-age=300",
+      };
+      if (url.searchParams.get("download")) {
+        headers["Content-Disposition"] = "attachment";
+      }
+      return new NextResponse(new Uint8Array(local.buffer), { status: 200, headers });
+    }
   }
 
   try {

@@ -151,7 +151,11 @@ export function sanitizeDocHtml(html: string): string {
     ],
     allowedAttributes: {
       "*": ["style", "class", "align", "valign"],
-      a: ["href", "name", "target", "rel"],
+      // Mirror sanitizeRichText: keep the editor's file-attachment chip intact.
+      a: [
+        "href", "name", "target", "rel",
+        "download", "data-file-name", "data-file-mime", "data-file-size",
+      ],
       img: ["src", "alt", "width", "height", "style"],
       table: TABLE_ATTRS,
       tr: TABLE_ATTRS,
