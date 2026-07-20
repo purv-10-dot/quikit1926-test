@@ -59,8 +59,10 @@ export function SetupGate() {
 
   const onAllowedPath = isAllowedPath(pathname);
 
-  // On a setup page → non-blocking reminder so the admin can configure freely.
-  if (onAllowedPath) {
+  // Non-blocking reminder shown when the CORE (required) items are done but
+  // recommended items remain, OR while the admin is on a setup page. The app is
+  // usable in both cases — only incomplete core items hard-lock (below).
+  if (progress.coreCompleted || onAllowedPath) {
     return (
       <div className="fixed bottom-4 right-4 z-[90] flex items-center gap-3 rounded-xl border border-gray-200 bg-white px-4 py-3 shadow-lg dark:border-white/10 dark:bg-[#111a2e]">
         <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-accent-100 text-accent-700 dark:bg-accent-500/15 dark:text-accent-300">
@@ -71,14 +73,16 @@ export function SetupGate() {
             Setup {progress.completedCount}/{progress.totalCount}
           </p>
           <p className="text-xs text-gray-500 dark:text-gray-400">
-            Finish the remaining steps to unlock HRMS.
+            {progress.coreCompleted
+              ? "A few recommended steps are still pending."
+              : "Finish the required steps to unlock HRMS."}
           </p>
         </div>
       </div>
     );
   }
 
-  // On any other page → full blocking overlay.
+  // Core items incomplete + on a blocked page → full blocking overlay.
   return (
     <div
       className="fixed inset-0 z-[100] flex items-center justify-center overflow-y-auto bg-black/50 p-4 backdrop-blur-sm"

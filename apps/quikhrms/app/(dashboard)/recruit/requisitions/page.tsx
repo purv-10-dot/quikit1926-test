@@ -9,9 +9,10 @@ import { Modal } from "@/components/hrms/modal";
 import { Select } from "@/components/hrms/ui/select";
 import { NumberInput } from "@/components/hrms/ui/number-input";
 import { clsx } from "clsx";
-import { Plus, Briefcase, Filter, X, AlertTriangle, Check, XCircle, Pause, Play, Pencil, Sparkles, Trash2, Target, ChevronDown,
-  ArrowLeft, ArrowRight, ChevronLeft, ChevronRight, Users, Search as SearchIcon, IndianRupee, GraduationCap, Gift, Globe, Lock, UserCog, Eye } from "lucide-react";
+import { Plus, Briefcase, Filter, X, AlertTriangle, Check, XCircle, Pause, Play, Pencil, Sparkles, Target, ChevronDown,
+  ArrowLeft, ArrowRight, ChevronLeft, ChevronRight, Users, Search as SearchIcon, IndianRupee, GraduationCap, Gift, Globe, Lock, UserCog, Eye, Star } from "lucide-react";
 import { SkeletonTable } from "@/components/hrms/skeleton";
+import { ExcelExportButton } from "@/components/hrms/excel-export-button";
 import { RequisitionWizard, toReqPayload, emptyReqForm } from "../_components/requisition-wizard";
 import type { ReqFormShape, DeptOption, PipelineOption, EmpOption, SkillWeightItem } from "../_components/requisition-wizard";
 
@@ -55,6 +56,8 @@ interface ReqItem {
   salaryMin?: string | number | null;
   salaryMax?: string | number | null;
   education?: string | null;
+  passingYear?: number | null;
+  technicalQuestions?: string[] | null;
   referralBonusAmount?: string | number | null;
   careerPageVisible?: boolean;
   internalPostingOnly?: boolean;
@@ -64,6 +67,24 @@ interface ReqItem {
   benefits?: string[] | null;
   responsibilities?: string[] | null;
   _count: { applications: number };
+}
+
+type HeldAction = "restore" | "reject" | "keep";
+
+interface HeldCandidate {
+  id: string;
+  currentStage: string | null;
+  reconfirmSentAt: string | null;
+  candidate: { id: string; firstName: string; lastName: string; email: string; currentDesignation: string | null; totalExperience: number | string | null };
+  feedback: {
+    round: number;
+    overallRating: number | null;
+    recommendation: string | null;
+    strengths: string | null;
+    concerns: string | null;
+    overallComments: string | null;
+    scorecardSubmittedAt: string | null;
+  } | null;
 }
 
 
@@ -89,6 +110,50 @@ function prettyStatus(s: string): string {
     .replace(/([a-z])([A-Z])/g, "$1 $2")
     .trim();
 }
+
+const REQ_EXPORT_COLUMNS = [
+  { header: "Requisition", key: "title", width: 26 },
+  { header: "Req #", key: "requisitionNumber", width: 16 },
+  { header: "Job Opening Name", key: "jobOpeningName", width: 22 },
+  { header: "Status", key: "status", width: 14 },
+  { header: "Priority", key: "priority", width: 12 },
+  { header: "Requisition Type", key: "type", width: 16 },
+  { header: "Employment Type", key: "employmentType", width: 16 },
+  { header: "Work Location", key: "workLocation", width: 16 },
+  { header: "Job Location", key: "jobLocation", width: 18 },
+  { header: "Department", key: "department", width: 18 },
+  { header: "Hiring Manager", key: "hiringManager", width: 20 },
+  { header: "Recruiter (HR)", key: "recruiter", width: 20 },
+  { header: "Positions (Filled/Total)", key: "positions", width: 18 },
+  { header: "Applications", key: "applications", width: 12 },
+  { header: "Experience (Yrs)", key: "experience", width: 14 },
+  { header: "Salary Range", key: "salaryRange", width: 20 },
+  { header: "Budget", key: "budget", width: 16 },
+  { header: "Referral Bonus", key: "referralBonusAmount", width: 14 },
+  { header: "Job Grade", key: "jobGrade", width: 12 },
+  { header: "Cost Center", key: "costCenter", width: 14 },
+  { header: "ETA to Fill (Days)", key: "etaToFillDays", width: 14 },
+  { header: "Work Timings", key: "workTimings", width: 16 },
+  { header: "Job Duration", key: "jobDuration", width: 14 },
+  { header: "Interview Mode", key: "interviewMode", width: 14 },
+  { header: "Interview Panel", key: "interviewPanel", width: 16 },
+  { header: "Education", key: "education", width: 18 },
+  { header: "Passing Year", key: "passingYear", width: 12 },
+  { header: "Career Page Visible", key: "careerPageVisible", width: 16 },
+  { header: "Internal Posting Only", key: "internalPostingOnly", width: 16 },
+  { header: "Post to Job Portal", key: "postToJobPortal", width: 16 },
+  { header: "Role Purpose", key: "rolePurpose", width: 40 },
+  { header: "Job Description", key: "jobDescription", width: 50 },
+  { header: "Responsibilities", key: "responsibilities", width: 50 },
+  { header: "Requirements", key: "requirements", width: 50 },
+  { header: "Nice to Have", key: "niceToHave", width: 40 },
+  { header: "Skills & Weights", key: "skills", width: 30 },
+  { header: "Benefits", key: "benefits", width: 40 },
+  { header: "Technical Questions", key: "technicalQuestions", width: 50 },
+  { header: "Posted On", key: "postedOn", width: 14 },
+  { header: "Target Joining Date", key: "targetJoiningDate", width: 16 },
+  { header: "Closed Date", key: "closedDate", width: 14 },
+];
 
 type ActionVariant = "green" | "blue" | "amber" | "red" | "slate";
 
@@ -131,9 +196,12 @@ export default function RequisitionsPage() {
   const [showCreate, setShowCreate] = useState(false);
   const [editId, setEditId] = useState<string | null>(null);
   const [viewReq, setViewReq] = useState<ReqItem | null>(null);
-  const [statusFilter, setStatusFilter] = useState("");
+  const [statusFilter, setStatusFilter] = useState("ReqOpen"); // default to Open; chips switch to All/others
   const [priorityFilter, setPriorityFilter] = useState("");
   const [cancelTarget, setCancelTarget] = useState<ReqItem | null>(null);
+  const [reviewTarget, setReviewTarget] = useState<ReqItem | null>(null);
+  const [decisions, setDecisions] = useState<Record<string, HeldAction>>({});
+  const [openFeedback, setOpenFeedback] = useState<Set<string>>(new Set());
   const emptyForm = emptyReqForm;
   const [form, setForm] = useState<ReqFormShape>(emptyForm);
 
@@ -183,11 +251,109 @@ export default function RequisitionsPage() {
     onSuccess: () => { qc.invalidateQueries({ queryKey: ["requisitions"] }); setCancelTarget(null); },
   });
 
+  // ── Resume-a-held-requisition review flow ────────────────────────────────
+  const { data: heldData, isLoading: heldLoading } = useQuery({
+    queryKey: ["held-candidates", reviewTarget?.id],
+    queryFn: () => api.get<HeldCandidate[]>(`/api/v1/hrms/recruit/requisitions/${reviewTarget!.id}/held-candidates`),
+    enabled: !!reviewTarget,
+  });
+  const heldList = heldData?.data ?? [];
+
+  const closeReview = () => { setReviewTarget(null); setDecisions({}); setOpenFeedback(new Set()); };
+  const setDecision = (appId: string, action: HeldAction) =>
+    setDecisions((prev) => ({ ...prev, [appId]: action }));
+  const setAllDecisions = (action: HeldAction) =>
+    setDecisions(Object.fromEntries(heldList.map((h) => [h.id, action])));
+  const toggleFeedback = (appId: string) =>
+    setOpenFeedback((prev) => { const n = new Set(prev); n.has(appId) ? n.delete(appId) : n.add(appId); return n; });
+
+  const resumeMut = useMutation({
+    mutationFn: async (reqId: string) => {
+      if (heldList.length > 0) {
+        await api.post(`/api/v1/hrms/recruit/requisitions/${reqId}/restore-candidates`, {
+          decisions: heldList.map((h) => ({ applicationId: h.id, action: decisions[h.id] ?? "keep" })),
+        });
+      }
+      await api.patch(`/api/v1/hrms/recruit/requisitions/${reqId}`, { status: "ReqOpen" });
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["requisitions"] });
+      const invited = heldList.filter((h) => decisions[h.id] === "restore").length;
+      const rejected = heldList.filter((h) => decisions[h.id] === "reject").length;
+      toast.success("Requisition resumed", heldList.length ? `${invited} invited · ${rejected} rejected · ${heldList.length - invited - rejected} kept in archive` : undefined);
+      closeReview();
+    },
+    onError: () => toast.error("Could not resume requisition"),
+  });
+
   const reqs = data?.data ?? [];
+
+  // Export the currently filtered requisitions (matches the visible table) with
+  // the full requisition detail — one row per JR.
+  const fmtDate = (d?: string | null) =>
+    d ? new Date(d).toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" }) : "";
+  const fmtMoney = (n?: string | number | null) =>
+    n == null || n === "" ? "" : `₹${Number(n).toLocaleString("en-IN")}`;
+  const joinList = (a?: (string | null)[] | null) => (Array.isArray(a) ? a.filter(Boolean).join("; ") : "");
+  const yn = (b?: boolean) => (b ? "Yes" : "No");
+  const range = (min?: number | null, max?: number | null) =>
+    min == null && max == null ? "" : `${min ?? ""}${min != null && max != null ? " – " : ""}${max ?? ""}`;
+  const person = (p?: { firstName: string; lastName: string } | null) =>
+    p ? `${p.firstName} ${p.lastName}`.trim() : "";
+
+  const reqExportRows = reqs.map((r) => {
+    const posted = r.raisedAt ?? r.createdAt;
+    return {
+      title: r.title,
+      requisitionNumber: r.requisitionNumber ?? "",
+      jobOpeningName: r.jobOpeningName ?? "",
+      status: prettyStatus(r.status),
+      priority: r.priority ?? "",
+      type: r.type ?? "",
+      employmentType: r.employmentType ?? "",
+      workLocation: r.workLocation ?? "",
+      jobLocation: r.jobLocation ?? "",
+      department: r.department?.name ?? "",
+      hiringManager: person(r.hiringManager),
+      recruiter: person(r.recruiter),
+      positions: `${r.filledPositions}/${r.positions}`,
+      applications: r._count.applications,
+      experience: range(r.experienceMin, r.experienceMax),
+      salaryRange: r.salaryMin != null || r.salaryMax != null ? `${fmtMoney(r.salaryMin)}${r.salaryMin != null && r.salaryMax != null ? " – " : ""}${fmtMoney(r.salaryMax)}` : "",
+      budget: fmtMoney(r.budget),
+      referralBonusAmount: fmtMoney(r.referralBonusAmount),
+      jobGrade: r.jobGrade ?? "",
+      costCenter: r.costCenter ?? "",
+      etaToFillDays: r.etaToFillDays ?? "",
+      workTimings: r.workTimings ?? "",
+      jobDuration: r.jobDuration ?? "",
+      interviewMode: r.interviewMode ?? "",
+      interviewPanel: r.interviewPanel?.length ? `${r.interviewPanel.length} panelist(s)` : "",
+      education: r.education ?? "",
+      passingYear: r.passingYear ?? "",
+      careerPageVisible: yn(r.careerPageVisible),
+      internalPostingOnly: yn(r.internalPostingOnly),
+      postToJobPortal: yn(r.postToJobPortal),
+      rolePurpose: r.rolePurpose ?? "",
+      jobDescription: r.jobDescription ?? "",
+      responsibilities: joinList(r.responsibilities),
+      requirements: joinList(r.requirements),
+      niceToHave: joinList(r.niceToHave),
+      skills: Array.isArray(r.skillWeights) ? r.skillWeights.map((s) => `${s.skill} (${s.weight})`).join("; ") : "",
+      benefits: joinList(r.benefits),
+      technicalQuestions: joinList(r.technicalQuestions),
+      postedOn: fmtDate(posted),
+      targetJoiningDate: fmtDate(r.targetJoiningDate),
+      closedDate: fmtDate(r.closedDate),
+    };
+  });
 
   return (
     <div className="w-full px-5 py-4">
-      <h1 className="text-page-title text-gray-900 mb-5">Job requisitions</h1>
+      <div className="flex items-center justify-between gap-3 mb-5">
+        <h1 className="text-page-title text-gray-900">Job requisitions</h1>
+        <ExcelExportButton filename="requisitions" sheetName="Requisitions" columns={REQ_EXPORT_COLUMNS} rows={reqExportRows} />
+      </div>
 
       <div className="bg-white rounded-2xl shadow-sm border border-gray-200 p-4 mb-4">
         <div className="flex items-center justify-between gap-3 flex-wrap">
@@ -274,6 +440,7 @@ export default function RequisitionsPage() {
                 <th className="text-center px-4 py-2.5 text-[11px] font-semibold text-gray-500 uppercase tracking-[0.04em]">Applications</th>
                 <th className="text-left px-4 py-2.5 text-[11px] font-semibold text-gray-500 uppercase tracking-[0.04em]">Priority</th>
                 <th className="text-left px-4 py-2.5 text-[11px] font-semibold text-gray-500 uppercase tracking-[0.04em]">Status</th>
+                <th className="text-left px-4 py-2.5 text-[11px] font-semibold text-gray-500 uppercase tracking-[0.04em]">Posted On</th>
                 <th className="text-right px-4 py-2.5 text-[11px] font-semibold text-gray-500 uppercase tracking-[0.04em]">Actions</th>
               </tr>
             </thead>
@@ -289,7 +456,6 @@ export default function RequisitionsPage() {
                 <tr key={r.id} className="row-stagger border-b border-gray-100 hover:bg-gray-50" style={{ ["--i" as never]: Math.min(i, 10) }}>
                   <td className="px-4 py-2.5">
                     <p className="text-[13px] font-medium text-gray-900">{r.title}</p>
-                    {r.rolePurpose && <p className="text-[11px] italic text-gray-400 truncate max-w-[240px]">{r.rolePurpose}</p>}
                     <p className="text-[11px] text-gray-500">{r.requisitionNumber} &middot; {r.employmentType}</p>
                     {(isOpenish || toClose != null) && (
                       <div className="flex items-center gap-1.5 mt-1">
@@ -321,6 +487,9 @@ export default function RequisitionsPage() {
                   <td className="px-4 py-2.5">
                     <span className={clsx("inline-flex items-center h-6 px-2.5 rounded-full text-[11px] font-medium", statusColors[r.status])}>{prettyStatus(r.status)}</span>
                   </td>
+                  <td className="px-4 py-2.5 text-xs text-gray-700">
+                    {(() => { const d = r.raisedAt ?? r.createdAt; return d ? new Date(d).toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" }) : "—"; })()}
+                  </td>
                   <td className="px-4 py-2.5 text-right">
                     <div className="inline-flex items-center gap-1.5 justify-end">
                       <ActionBtn title="View" variant="slate" icon={<Eye size={12} />} onClick={() => setViewReq(r)} />
@@ -346,10 +515,10 @@ export default function RequisitionsPage() {
                       )}
                       {r.status === "ReqOnHold" && (
                         <ActionBtn title="Resume" variant="blue" icon={<Play size={12} />}
-                          onClick={() => updateMut.mutate({ id: r.id, status: "ReqOpen" })} />
+                          onClick={() => { setDecisions({}); setOpenFeedback(new Set()); setReviewTarget(r); }} />
                       )}
                       {r.status !== "ReqCancelled" && r.status !== "ReqClosed" && (
-                        <ActionBtn title="Cancel" variant="red" icon={<Trash2 size={12} />}
+                        <ActionBtn title="Cancel" variant="red" icon={<XCircle size={12} />}
                           onClick={() => setCancelTarget(r)} />
                       )}
                       </>)}
@@ -428,7 +597,14 @@ export default function RequisitionsPage() {
           ["Status", STATUS_LABEL[viewReq.status] ?? viewReq.status],
           ["Experience", rng(viewReq.experienceMin, viewReq.experienceMax, "yrs")],
           ["Salary", rng(viewReq.salaryMin, viewReq.salaryMax, "LPA")],
+          ["Education", viewReq.education ?? "—"],
+          ["Passing Year", viewReq.passingYear != null ? String(viewReq.passingYear) : "—"],
+          ["Job Grade", viewReq.jobGrade ?? "—"],
+          ["Cost Center", viewReq.costCenter ?? "—"],
+          ["Referral Bonus", viewReq.referralBonusAmount != null && `${viewReq.referralBonusAmount}` !== "" ? `₹${viewReq.referralBonusAmount}` : "—"],
           ["Target Joining", fmtDate(viewReq.targetJoiningDate)],
+          ["Closes On", fmtDate(viewReq.closedDate)],
+          ["Posted On", fmtDate(viewReq.raisedAt ?? viewReq.createdAt)],
         ];
         const lists: Array<[string, string[] | null | undefined]> = [
           ["Requirements", viewReq.requirements],
@@ -463,6 +639,26 @@ export default function RequisitionsPage() {
                     </ul>
                   </div>
                 ) : null,
+              )}
+              {viewReq.technicalQuestions && viewReq.technicalQuestions.length > 0 && (
+                <div>
+                  <p className="text-[11px] font-semibold uppercase tracking-wide text-gray-400 mb-1">Technical / Interview Questions</p>
+                  <ol className="list-decimal pl-5 space-y-0.5 text-gray-700">
+                    {viewReq.technicalQuestions.map((q, i) => <li key={i}>{q}</li>)}
+                  </ol>
+                </div>
+              )}
+              {viewReq.skillWeights && viewReq.skillWeights.length > 0 && (
+                <div>
+                  <p className="text-[11px] font-semibold uppercase tracking-wide text-gray-400 mb-1">Skills &amp; Weightage</p>
+                  <div className="flex flex-wrap gap-1.5">
+                    {viewReq.skillWeights.map((s, i) => (
+                      <span key={i} className="inline-flex items-center gap-1 rounded-full bg-green-50 text-green-700 ring-1 ring-green-200 px-2.5 py-1 text-[11px] font-medium">
+                        {s.skill} · {s.weight}%
+                      </span>
+                    ))}
+                  </div>
+                </div>
               )}
             </div>
           </Modal>
@@ -515,8 +711,146 @@ export default function RequisitionsPage() {
           </div>
         </div>
       )}
+
+      {/* Resume-a-held-requisition — review held candidates before reopening. */}
+      <Modal
+        open={!!reviewTarget}
+        onClose={() => !resumeMut.isPending && closeReview()}
+        title={reviewTarget ? `Resume "${reviewTarget.title}"` : "Resume Requisition"}
+        size="lg"
+      >
+        {heldLoading ? (
+          <div className="py-10 text-center text-sm text-slate-400">Loading candidates…</div>
+        ) : heldList.length === 0 ? (
+          <div className="py-8 text-center">
+            <div className="mx-auto flex items-center justify-center w-12 h-12 rounded-full bg-green-50 mb-3">
+              <Play className="w-6 h-6 text-green-600" />
+            </div>
+            <p className="text-sm font-medium text-slate-800">No candidates are on hold</p>
+            <p className="mt-1 text-xs text-slate-500">This requisition has no parked candidates to review. You can reopen it now.</p>
+            <div className="mt-5 flex justify-center gap-2">
+              <button onClick={closeReview} disabled={resumeMut.isPending}
+                className="px-3 py-1.5 bg-white border border-slate-300 rounded-lg text-xs font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-50">Cancel</button>
+              <button onClick={() => reviewTarget && resumeMut.mutate(reviewTarget.id)} disabled={resumeMut.isPending}
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-green-600 hover:bg-green-700 text-white rounded-lg text-xs font-medium shadow-sm disabled:opacity-50">
+                <Play size={13} /> {resumeMut.isPending ? "Reopening…" : "Reopen Requisition"}
+              </button>
+            </div>
+          </div>
+        ) : (
+          <div className="space-y-3">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <p className="text-xs text-slate-500">
+                <span className="font-semibold text-slate-700">{heldList.length}</span> candidate{heldList.length > 1 ? "s" : ""} on hold. <span className="text-slate-400">Restore sends a “still interested?” invite — they rejoin the pipeline only after they confirm. Default: Keep in Archive.</span>
+              </p>
+              <div className="inline-flex items-center gap-1 text-[11px]">
+                <span className="text-slate-400 mr-1">All:</span>
+                <button onClick={() => setAllDecisions("restore")} className="px-2 py-0.5 rounded-md text-green-700 bg-green-50 hover:bg-green-100 font-medium">Restore</button>
+                <button onClick={() => setAllDecisions("reject")} className="px-2 py-0.5 rounded-md text-red-700 bg-red-50 hover:bg-red-100 font-medium">Reject</button>
+                <button onClick={() => setAllDecisions("keep")} className="px-2 py-0.5 rounded-md text-slate-600 bg-slate-100 hover:bg-slate-200 font-medium">Keep</button>
+              </div>
+            </div>
+
+            <div className="max-h-[52vh] overflow-y-auto -mx-1 px-1 space-y-2">
+              {heldList.map((h) => {
+                const decision = decisions[h.id] ?? "keep";
+                const open = openFeedback.has(h.id);
+                const fb = h.feedback;
+                return (
+                  <div key={h.id} className="border border-slate-200 rounded-xl p-3">
+                    <div className="flex items-start gap-3">
+                      <div className="w-8 h-8 rounded-full bg-gradient-to-br from-[#dbeafe] to-[#93c5fd] text-[#1d4ed8] flex items-center justify-center text-[11px] font-bold shrink-0">
+                        {(h.candidate.firstName[0] ?? "") + (h.candidate.lastName[0] ?? "")}
+                      </div>
+                      <div className="min-w-0 flex-1">
+                        <div className="flex items-center gap-1.5">
+                          <p className="text-[13px] font-semibold text-slate-900 truncate">{h.candidate.firstName} {h.candidate.lastName}</p>
+                          {h.reconfirmSentAt && (
+                            <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[9px] font-semibold bg-blue-50 text-blue-600 ring-1 ring-blue-100 shrink-0">Invited · awaiting reply</span>
+                          )}
+                        </div>
+                        <p className="text-[11px] text-slate-500 truncate">
+                          {h.currentStage ?? "—"}{h.candidate.currentDesignation ? ` · ${h.candidate.currentDesignation}` : ""}
+                        </p>
+                      </div>
+                      <div className="shrink-0 inline-flex rounded-lg border border-slate-200 overflow-hidden">
+                        {([
+                          { key: "restore", label: "Restore", on: "bg-green-600 text-white", off: "text-slate-600 hover:bg-green-50" },
+                          { key: "reject", label: "Reject", on: "bg-red-600 text-white", off: "text-slate-600 hover:bg-red-50" },
+                          { key: "keep", label: "Keep", on: "bg-slate-600 text-white", off: "text-slate-600 hover:bg-slate-100" },
+                        ] as const).map((b, bi) => (
+                          <button key={b.key} onClick={() => setDecision(h.id, b.key)}
+                            className={clsx("px-2.5 py-1 text-[11px] font-medium transition", bi > 0 && "border-l border-slate-200", decision === b.key ? b.on : b.off)}>
+                            {b.label}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+
+                    <div className="mt-2 flex items-center gap-2 pl-11">
+                      {fb ? (
+                        <>
+                          <RecoBadge value={fb.recommendation} />
+                          {fb.overallRating != null && (
+                            <span className="inline-flex items-center gap-0.5 text-[11px] font-semibold text-amber-600">
+                              <Star size={11} className="fill-amber-400 text-amber-400" /> {fb.overallRating}/10
+                            </span>
+                          )}
+                          <button onClick={() => toggleFeedback(h.id)} className="ml-auto inline-flex items-center gap-1 text-[11px] text-blue-600 hover:underline">
+                            {open ? "Hide" : "View"} feedback <ChevronDown size={12} className={clsx("transition", open && "rotate-180")} />
+                          </button>
+                        </>
+                      ) : (
+                        <span className="text-[11px] text-slate-400">No feedback recorded</span>
+                      )}
+                    </div>
+
+                    {open && fb && (
+                      <div className="mt-2 ml-11 rounded-lg bg-slate-50 border border-slate-100 p-2.5 space-y-1.5 text-[11px] text-slate-600">
+                        {fb.strengths && <p><span className="font-semibold text-green-700">Strengths:</span> {fb.strengths}</p>}
+                        {fb.concerns && <p><span className="font-semibold text-red-700">Concerns:</span> {fb.concerns}</p>}
+                        {fb.overallComments && <p><span className="font-semibold text-slate-700">Comments:</span> {fb.overallComments}</p>}
+                        {!fb.strengths && !fb.concerns && !fb.overallComments && <p className="text-slate-400">Rating given, no written notes.</p>}
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+
+            <div className="flex flex-wrap items-center justify-between gap-2 pt-2 border-t border-slate-100">
+              <p className="text-[11px] text-slate-500">
+                {heldList.filter((h) => (decisions[h.id] ?? "keep") === "restore").length} restore ·{" "}
+                {heldList.filter((h) => (decisions[h.id] ?? "keep") === "reject").length} reject ·{" "}
+                {heldList.filter((h) => (decisions[h.id] ?? "keep") === "keep").length} keep
+              </p>
+              <div className="flex gap-2">
+                <button onClick={closeReview} disabled={resumeMut.isPending}
+                  className="px-3 py-1.5 bg-white border border-slate-300 rounded-lg text-xs font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-50">Cancel</button>
+                <button onClick={() => reviewTarget && resumeMut.mutate(reviewTarget.id)} disabled={resumeMut.isPending}
+                  className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-green-600 hover:bg-green-700 text-white rounded-lg text-xs font-medium shadow-sm disabled:opacity-50">
+                  <Play size={13} /> {resumeMut.isPending ? "Applying…" : "Reopen & Apply"}
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+      </Modal>
     </div>
   );
+}
+
+function RecoBadge({ value }: { value: string | null }) {
+  if (!value) return null;
+  const map: Record<string, { label: string; cls: string }> = {
+    StrongHire: { label: "Strong Hire", cls: "bg-green-100 text-green-700" },
+    Hire: { label: "Hire", cls: "bg-green-50 text-green-700" },
+    MaybeHire: { label: "On Hold", cls: "bg-amber-50 text-amber-700" },
+    NoHire: { label: "No Hire", cls: "bg-red-50 text-red-700" },
+    StrongNoHire: { label: "Strong No", cls: "bg-red-100 text-red-700" },
+  };
+  const m = map[value] ?? { label: value, cls: "bg-slate-100 text-slate-600" };
+  return <span className={clsx("inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-semibold", m.cls)}>{m.label}</span>;
 }
 
 /* ─── Role Scorecard section (collapsible) ────────────────────────────────
@@ -563,11 +897,12 @@ function reqToForm(r: ReqItem): ReqFormShape {
     niceToHave: Array.isArray(r.niceToHave) ? r.niceToHave : [],
     benefits: Array.isArray(r.benefits) ? r.benefits : [],
     education: r.education ?? "",
+    passingYear: reqNum(r.passingYear),
+    technicalQuestions: Array.isArray(r.technicalQuestions) ? r.technicalQuestions : [],
     referralBonusAmount: reqNum(r.referralBonusAmount),
     careerPageVisible: r.careerPageVisible ?? true,
     internalPostingOnly: r.internalPostingOnly ?? false,
     postToJobPortal: r.postToJobPortal ?? false,
-    rolePurpose: r.rolePurpose ?? "",
     responsibilities: Array.isArray(r.responsibilities) ? r.responsibilities : [],
     skillWeights: Array.isArray(r.skillWeights) ? r.skillWeights : [],
     justification: "",

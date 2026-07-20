@@ -4,6 +4,7 @@ import { prisma } from "@/lib/prisma";
 import { withAuth } from "@/lib/with-auth";
 import { successResponse, validationError, notFound, internalError } from "@/lib/api-response";
 import { resolveAndSend } from "@/lib/email/resolve";
+import { createAuditLog } from "@/lib/utils/audit";
 
 const schema = z.object({
   action: z.enum(["approve", "reject"]),
@@ -41,6 +42,23 @@ export const POST = withAuth(async (req: NextRequest, { orgId, userId }, params)
         rejectionReason: parsed.data.action === "reject" ? (parsed.data.reason ?? null) : null,
         reviewedBy: userId,
         reviewedAt: new Date(),
+      },
+    });
+
+    // Audit trail — record every approve/reject so it shows in history.
+    const docName = upload.documentType?.name ?? upload.customLabel ?? "Document";
+    await createAuditLog({
+      orgId, userId,
+      action: parsed.data.action === "approve" ? "Approve" : "Reject",
+      entityType: "CandidateDocumentUpload",
+      entityId: upload.id,
+      request: req,
+      metadata: {
+        document: docName,
+        bundle: upload.request.bundle,
+        candidate: `${upload.request.application.candidate.firstName} ${upload.request.application.candidate.lastName}`.trim(),
+        requisition: upload.request.application.requisition.title,
+        reason: parsed.data.action === "reject" ? (parsed.data.reason ?? null) : null,
       },
     });
 

@@ -10,6 +10,7 @@ import { Building2, Save, Upload, X, Globe, Mail, Phone, MapPin, Landmark, Image
 import { clsx } from "clsx";
 import { withBasePath } from "@/lib/utils/base-path";
 import { SkeletonLine } from "@/components/hrms/skeleton";
+import { useToast } from "@/components/hrms/toast";
 import { PAN_PATTERN, TAN_PATTERN, GSTIN_PATTERN, CIN_PATTERN, ID_TITLES } from "@/lib/validations/identifiers";
 
 interface CompanySettings {
@@ -40,6 +41,7 @@ interface CompanySettings {
   fiscalYearStart: number;
   workWeek: string[] | null;
   workHoursPerDay: number | string;
+  candidateCoolingMonths: number | null;
 }
 
 const DAYS = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"];
@@ -63,6 +65,7 @@ export default function CompanySettingsPage() {
 function CompanySettingsPageInner() {
   const api = useApiClient();
   const qc = useQueryClient();
+  const toast = useToast();
   const router = useRouter();
   const searchParams = useSearchParams();
   const returnTo = searchParams.get("returnTo");
@@ -95,6 +98,7 @@ function CompanySettingsPageInner() {
       setSaveErr(null);
       setFieldErrors({});
       setSaved(true);
+      toast.success("Company settings saved", "Your changes have been updated successfully.");
       window.scrollTo({ top: 0, behavior: "smooth" });
       // Honour an explicit ?returnTo, otherwise go back to the Settings hub
       // after briefly showing the "Saved" confirmation.
@@ -186,6 +190,19 @@ function CompanySettingsPageInner() {
       <form
         onSubmit={(e) => {
           e.preventDefault();
+          const required: Record<string, string[]> = {};
+          if (!form.companyName?.trim()) required.companyName = ["Company name is required"];
+          if (!form.email?.trim()) required.email = ["Company email is required"];
+          if (!form.addressLine1?.trim()) required.addressLine1 = ["Address is required"];
+          if (!form.city?.trim()) required.city = ["City is required"];
+          if (!form.state?.trim()) required.state = ["State is required"];
+          if (!form.pan?.trim()) required.pan = ["Company PAN is required"];
+          if (Object.keys(required).length > 0) {
+            setSaveErr("Please fill all required fields");
+            setFieldErrors(required);
+            window.scrollTo({ top: 0, behavior: "smooth" });
+            return;
+          }
           if (!form.cin?.trim() && !form.gstin?.trim()) {
             setSaveErr("At least one of CIN or GSTIN is required");
             setFieldErrors({ cin: ["Provide CIN or GSTIN"] });
@@ -197,16 +214,16 @@ function CompanySettingsPageInner() {
             legalName: form.legalName || null,
             logo: form.logo || null,
             website: form.website || null,
-            email: form.email || null,
+            email: form.email || "",
             phone: form.phone || null,
-            addressLine1: form.addressLine1 || null,
+            addressLine1: form.addressLine1 || "",
             addressLine2: form.addressLine2 || null,
-            city: form.city || null,
-            state: form.state || null,
+            city: form.city || "",
+            state: form.state || "",
             country: form.country || null,
             postalCode: form.postalCode || null,
             gstin: form.gstin || null,
-            pan: form.pan || null,
+            pan: form.pan || "",
             cin: form.cin || null,
             tan: form.tan || null,
             tdsCircleCodeArea: form.tdsCircleCodeArea || null,
@@ -219,6 +236,7 @@ function CompanySettingsPageInner() {
             fiscalYearStart: form.fiscalYearStart,
             workWeek: form.workWeek,
             workHoursPerDay: Number(form.workHoursPerDay),
+            candidateCoolingMonths: form.candidateCoolingMonths ?? null,
           });
         }}
         className="space-y-4"
@@ -281,8 +299,8 @@ function CompanySettingsPageInner() {
               <Field label="Website" icon={<Globe size={12} />}>
                 <input type="url" value={form.website ?? ""} onChange={(e) => setForm({ ...form, website: e.target.value })} placeholder="https://" className={inputCls} />
               </Field>
-              <Field label="Email" icon={<Mail size={12} />}>
-                <input type="email" value={form.email ?? ""} onChange={(e) => setForm({ ...form, email: e.target.value })} placeholder="hello@company.com" className={inputCls} />
+              <Field label="Email" icon={<Mail size={12} />} required>
+                <input type="email" required value={form.email ?? ""} onChange={(e) => setForm({ ...form, email: e.target.value })} placeholder="hello@company.com" className={inputCls} />
               </Field>
               <Field label="Phone" icon={<Phone size={12} />}>
                 <input type="tel" value={form.phone ?? ""} onChange={(e) => setForm({ ...form, phone: e.target.value })} className={inputCls} />
@@ -300,11 +318,11 @@ function CompanySettingsPageInner() {
             <Field label="Address Line 2" className="col-span-2">
               <input type="text" value={form.addressLine2 ?? ""} onChange={(e) => setForm({ ...form, addressLine2: e.target.value })} className={inputCls} />
             </Field>
-            <Field label="City">
-              <input type="text" value={form.city ?? ""} onChange={(e) => setForm({ ...form, city: e.target.value })} className={inputCls} />
+            <Field label="City" required>
+              <input type="text" required value={form.city ?? ""} onChange={(e) => setForm({ ...form, city: e.target.value })} className={inputCls} />
             </Field>
-            <Field label="State / Province">
-              <input type="text" value={form.state ?? ""} onChange={(e) => setForm({ ...form, state: e.target.value })} className={inputCls} />
+            <Field label="State / Province" required>
+              <input type="text" required value={form.state ?? ""} onChange={(e) => setForm({ ...form, state: e.target.value })} className={inputCls} />
             </Field>
             <Field label="Country">
               <Select
@@ -335,9 +353,10 @@ function CompanySettingsPageInner() {
                 className={clsx(inputCls, "font-mono tracking-wider")}
               />
             </Field>
-            <Field label="PAN">
+            <Field label="PAN" required>
               <input
                 type="text"
+                required
                 value={form.pan ?? ""}
                 onChange={(e) => setForm({ ...form, pan: e.target.value.toUpperCase() })}
                 maxLength={10}
@@ -359,6 +378,9 @@ function CompanySettingsPageInner() {
                 className={clsx(inputCls, "font-mono tracking-wider")}
               />
             </Field>
+          </div>
+
+          <div className="mt-3 grid grid-cols-1 md:grid-cols-2 gap-3 items-start">
             <Field label="TAN" required>
               <input
                 type="text"
@@ -372,13 +394,11 @@ function CompanySettingsPageInner() {
                 className={clsx(inputCls, "font-mono tracking-wider")}
               />
             </Field>
-          </div>
-
-          <div className="mt-3">
-            <label className="block text-xs font-medium text-gray-700 mb-1">
-              TDS circle / AO code <span className="text-red-500">*</span>
-            </label>
-            <div className="grid grid-cols-4 gap-2 max-w-md">
+            <div>
+              <label className="block text-xs font-medium text-gray-700 mb-1">
+                TDS circle / AO code <span className="text-red-500">*</span>
+              </label>
+              <div className="grid grid-cols-4 gap-2">
               <input
                 placeholder="AAA" maxLength={3} required
                 value={form.tdsCircleCodeArea ?? ""}
@@ -403,6 +423,7 @@ function CompanySettingsPageInner() {
                 onChange={(e) => setForm({ ...form, tdsCircleSubNumber: e.target.value })}
                 className={clsx(inputCls, "font-mono tracking-wider")}
               />
+              </div>
             </div>
           </div>
         </Section>
@@ -426,13 +447,6 @@ function CompanySettingsPageInner() {
                 options={CURRENCIES.map((c) => ({ value: c, label: c }))}
               />
             </Field>
-            <Field label="Date Format">
-              <Select
-                value={form.dateFormat ?? "dd/MM/yyyy"}
-                onChange={(v) => setForm({ ...form, dateFormat: v })}
-                options={["dd/MM/yyyy", "MM/dd/yyyy", "yyyy-MM-dd"].map((f) => ({ value: f, label: f }))}
-              />
-            </Field>
             <Field label="Fiscal Year Start">
               <Select
                 value={String(form.fiscalYearStart ?? 4)}
@@ -443,6 +457,18 @@ function CompanySettingsPageInner() {
             <Field label="Work Hours / Day">
               <NumberInput step="0.5" min={1} max={24} value={typeof form.workHoursPerDay === "string" ? Number(form.workHoursPerDay) || null : (form.workHoursPerDay ?? 8)}
                 onChange={(v) => setForm({ ...form, workHoursPerDay: v ?? 8 })} className={inputCls} />
+            </Field>
+            <Field label="Candidate Re-apply Cooling Period" required>
+              <Select
+                value={String(form.candidateCoolingMonths ?? 0)}
+                onChange={(v) => setForm({ ...form, candidateCoolingMonths: Number(v) || null })}
+                options={[
+                  { value: "0", label: "No cooling period" },
+                  { value: "3", label: "3 months" },
+                  { value: "6", label: "6 months" },
+                  { value: "12", label: "12 months" },
+                ]}
+              />
             </Field>
           </div>
 

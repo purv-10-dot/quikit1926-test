@@ -4,7 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { clsx } from "clsx";
 import {
-  Building2, Users, Shield, Sliders, Palette, Zap, ChevronRight,
+  Building2, Users, Shield, Sliders, Palette, ChevronRight,
   Briefcase, MapPin, Network, Award, GitBranch, CalendarDays,
   FileText, ClipboardList, LayoutGrid, Link2, RotateCcw, ShieldAlert,
   Search, Star, Bell, Home, Mail, Clock, Receipt, UserPlus,
@@ -80,14 +80,6 @@ const SECTIONS: Section[] = [
       { label: "Offer Letter Branding", href: "/settings/branding", icon: <Palette size={14} />, perms: ["hrms.settings.write"], keywords: "brand logo colour theme" },
       { label: "Report Templates", href: "/reports", icon: <BarChart3 size={14} />, perms: ["hrms.reports.manage"], keywords: "analytics export" },
       { label: "Email Templates", href: "/settings/email-templates", icon: <Mail size={14} />, perms: ["hrms.settings.write"], keywords: "mail notification message" },
-    ],
-  },
-  {
-    title: "Automations",
-    accent: "cyan",
-    icon: <Zap size={16} />,
-    items: [
-      { label: "Scheduled Jobs", href: "/time-logs", icon: <Clock size={14} />, perms: ["hrms.attendance.manage"], keywords: "cron background tasks" },
     ],
   },
   {

@@ -51,16 +51,16 @@ export default function RaiseRequisitionPage() {
   });
 
   return (
-    <div className="w-full px-5 py-4">
-      <div className="flex items-start gap-3 mb-5">
-        <Briefcase size={24} className="text-green-600 mt-1" />
+    <div className="w-full px-5 pt-2 pb-4">
+      <div className="flex items-center gap-2.5 mb-3">
+        <Briefcase size={20} className="text-green-600 shrink-0" />
         <div>
           <h1 className="text-page-title text-gray-900 leading-tight">Raise a requisition</h1>
-          <p className="text-xs text-gray-500 mt-1">Submit a hiring request. Approval follows your configured Requisition chain (Settings &rarr; Approval Chains).</p>
+          <p className="text-xs text-gray-500">Submit a hiring request. Approval follows your configured Requisition chain (Settings &rarr; Approval Chains).</p>
         </div>
       </div>
 
-      <div className="surface-card p-4 w-full">
+      <div className="surface-card p-3 w-full">
         <RequisitionWizard
           form={form}
           setForm={setForm}

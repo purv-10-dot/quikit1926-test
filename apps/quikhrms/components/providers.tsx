@@ -12,6 +12,46 @@ import { ToastProvider, useToast, extractErrorDetails } from "@/components/hrms/
 import { DialogProvider, useDialog } from "@/components/hrms/dialog";
 import { ApiError } from "@/lib/hooks/use-api";
 
+// "aadhaarNumber" → "Aadhaar Number", "date_of_birth" → "Date Of Birth".
+function humanizeField(key: string): string {
+  return key
+    .replace(/([a-z0-9])([A-Z])/g, "$1 $2")
+    .replace(/[._-]+/g, " ")
+    .replace(/\s+/g, " ")
+    .trim()
+    .replace(/\b\w/g, (c) => c.toUpperCase());
+}
+
+// Flatten validation `details` into readable, one-per-line text for the dialog.
+// Handles both shapes we emit:
+//   • a plain field map:      { aadhaarNumber: ["Invalid Aadhaar…"] }
+//   • a Zod flatten() object:  { formErrors: [...], fieldErrors: { field: [...] } }
+function flattenValidationDetails(details: unknown): string {
+  if (!details || typeof details !== "object" || Array.isArray(details)) return "";
+  const d = details as Record<string, unknown>;
+  const isFlatten = Array.isArray(d.formErrors) || (typeof d.fieldErrors === "object" && d.fieldErrors !== null);
+  const fieldMap = (isFlatten ? (d.fieldErrors as Record<string, unknown>) : d) ?? {};
+  const formErrs = isFlatten && Array.isArray(d.formErrors)
+    ? (d.formErrors as unknown[]).filter((m): m is string => typeof m === "string")
+    : [];
+
+  const asMessages = (val: unknown): string[] =>
+    Array.isArray(val) ? val.filter((m): m is string => typeof m === "string")
+    : typeof val === "string" ? [val] : [];
+
+  const lines: string[] = [];
+  for (const m of formErrs) lines.push(`• ${m}`);
+  for (const [field, val] of Object.entries(fieldMap)) {
+    const label = humanizeField(field);
+    for (const m of asMessages(val)) {
+      // Skip the redundant label when the message already names the field.
+      const named = m.toLowerCase().includes(field.toLowerCase()) || m.toLowerCase().includes(label.toLowerCase());
+      lines.push(named ? `• ${m}` : `• ${label}: ${m}`);
+    }
+  }
+  return lines.join("\n");
+}
+
 // Turn a raw error into a clear, user-facing message. Server internals like
 // "Internal server error" / stack-ish text are replaced with friendly wording;
 // meaningful messages (conflicts, validation, permission) are kept as-is.
@@ -29,8 +69,13 @@ function friendlyActionError(err: unknown): { title: string; description: string
       case 409:
         return { title: "Couldn't complete — conflict", description: raw || "This conflicts with existing data." };
       case 422:
-      case 400:
-        return { title: "Please check the details", description: raw || "Some information is missing or invalid." };
+      case 400: {
+        const fieldMsgs = flattenValidationDetails(err.details);
+        return {
+          title: "Please check the details",
+          description: fieldMsgs || raw || "Some information is missing or invalid.",
+        };
+      }
       case 429:
         return { title: "Too many requests", description: "Please wait a moment and try again." };
       default:
