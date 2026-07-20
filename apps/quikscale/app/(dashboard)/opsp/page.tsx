@@ -34,12 +34,13 @@ import { validateOPSP, backfillPeriods, categoryRowMissingProjected, type Valida
 import { useMyPermissions } from "@/lib/hooks/useMyPermissions";
 import { EditNoteCard } from "./components/EditNoteCard";
 import { OPSPHistoryDrawer } from "./components/OPSPHistoryDrawer";
+import { PostFinalizeChangesBanner } from "./components/PostFinalizeChangesBanner";
 import { describeSetChange, describeArrChange, getFieldValue, applyFieldPath, isRowDeletionField, type PendingEdit } from "./lib/editLog";
 import { isYearSelectable, isQuarterSelectable, firstSelectableQuarter } from "./lib/periodGating";
 import { useOpspAck } from "@/lib/hooks/useOpspAck";
 import { useCurrentQuarter } from "@/lib/hooks/useCurrentWeek";
 import { computeOpspEditability } from "@/lib/utils/opspEditability";
-import { editedFieldPaths, fieldMatchesEdited, editsSince, latestEdit, type EditLogLike } from "@/lib/utils/opspEditHighlight";
+import { editedFieldPaths, fieldMatchesEdited, editsSince, latestEdit, groupEditsByActor, type EditLogLike, type HistoryScope } from "@/lib/utils/opspEditHighlight";
 
 /* ═══════════════════════════════════════════════
    Main Page
@@ -588,6 +589,18 @@ export default function OPSPPage() {
   const editedPaths = useMemo(() => new Set(editedFieldPaths(newOthers)), [newOthers]);
   const showChangedHighlight = isFinalized && unacknowledged && editedPaths.size > 0;
 
+  // Per-user change stepper: one row per editor (others only), newest first.
+  // Uses the FULL others' log (not just since-ack) so the expanded stepper is
+  // the complete post-finalize breakdown, independent of the ack highlight.
+  const actorGroups = useMemo(() => groupEditsByActor(othersEditLog), [othersEditLog]);
+  const showChangesBanner = isFinalized && othersEditLog.length > 0;
+  // Scope the History drawer to a single user's cumulative view (null = all).
+  const [historyScope, setHistoryScope] = useState<HistoryScope | null>(null);
+  const openHistory = useCallback((scope?: HistoryScope) => {
+    setHistoryScope(scope ?? null);
+    setHistoryOpen(true);
+  }, []);
+
   // Toggle the persistent "changed after finalize" ring on tagged fields. Same
   // imperative pattern as `opsp-edit-active`; distinct class so the two never clash.
   useEffect(() => {
@@ -1042,30 +1055,13 @@ export default function OPSPPage() {
          acknowledge via the History drawer footer). The changed fields are
          ringed in amber below. Tells read-only viewers WHO changed it and how
          to inspect the changes. */}
-      {showChangedHighlight && (
-        <div className="mx-6 mt-3 flex items-center justify-between gap-3 px-4 py-3 bg-amber-50/70 border border-amber-200 rounded-xl">
-          <div className="flex items-center gap-3 min-w-0">
-            <div className="flex-shrink-0 w-8 h-8 rounded-full bg-amber-100 flex items-center justify-center">
-              <History className="h-4 w-4 text-amber-600" />
-            </div>
-            <div className="min-w-0">
-  <p className="text-sm font-semibold text-amber-800 truncate">
-    {latestChange?.actorName
-      ? `${latestChange.actorName} updated the OPSP after it was finalized.`
-      : "Updated the OPSP after it was finalized."}
-  </p>
-  <p className="text-xs text-amber-600">
-    The changed fields are highlighted below — open History to review them.
-  </p>
-</div>
-          </div>
-          <button
-            onClick={() => setHistoryOpen(true)}
-            className="flex-shrink-0 inline-flex items-center gap-1.5 rounded-lg border border-amber-300 bg-white px-3 py-1.5 text-xs font-semibold text-amber-700 hover:bg-amber-50"
-          >
-            <History className="h-3.5 w-3.5" /> Open History
-          </button>
-        </div>
+      {showChangesBanner && (
+        <PostFinalizeChangesBanner
+          groups={actorGroups}
+          latestActorName={latestChange?.actorName ?? actorGroups[0]?.actorName}
+          hasUnacknowledged={showChangedHighlight}
+          onOpenHistory={openHistory}
+        />
       )}
 
       <div className={cn("px-6 py-6 space-y-8", isLocked && "opsp-finalized")}>
@@ -1235,10 +1231,11 @@ export default function OPSPPage() {
       })()}
       <OPSPHistoryDrawer
         open={historyOpen}
-        onClose={() => setHistoryOpen(false)}
+        onClose={() => { setHistoryOpen(false); setHistoryScope(null); }}
         year={form.year}
         quarter={form.quarter}
         canEdit={loggedEdit}
+        actorScope={historyScope}
         currentValue={(f) => getFieldValue(form as unknown as Record<string, unknown>, f)}
         onApplyValue={applyDrawerValue}
         onEditNote={editDrawerNote}
