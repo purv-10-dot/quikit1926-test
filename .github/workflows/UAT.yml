@@ -244,11 +244,11 @@ jobs:
                 IMAGE="ghcr.io/akhileshgandhi/quikasset-runtime:${TAG}"
                 ;;
               quikchat)
-                FILE="quikchat-deployment.yaml"
+                FILE="chat-deployment.yaml"
                 IMAGE="ghcr.io/akhileshgandhi/quikchat-runtime:${TAG}"
                 ;;
               realtime)
-                FILE="realtime-deployment.yaml"
+                FILE="socket-deployment.yaml"
                 IMAGE="ghcr.io/akhileshgandhi/realtime-runtime:${TAG}"
                 ;;
               *)
