@@ -7,7 +7,14 @@ import SearchableSelect from "@/components/assignments/SearchableSelect"
 import type { Asset } from "@/types/asset"
 import type { Repair } from "@/types/repair"
 import type { Assignment } from "@/types/assignment"
-import type { User } from "@/types/user"
+
+// Manual assignees come from the merged User Management list (/api/org/users) —
+// real org members, not the legacy AstEmployee directory. `value` is the
+// platform User.id; the replacements API resolves it to an employee record
+// server-side. (The auto-fill card path instead reuses the original
+// assignment's AstEmployee.id, which the same resolver accepts as a fallback.)
+type OrgUser = { userId: string; firstName: string; lastName: string; email: string; status: string; department: string | null }
+const orgUserName = (u: OrgUser) => `${u.firstName ?? ""} ${u.lastName ?? ""}`.trim() || u.email
 
 type FormData = {
   assetId: string
@@ -47,7 +54,7 @@ export default function AssignReplacementModal({ repair, onClose, onSave }: Prop
   const [errors, setErrors] = useState<Partial<Record<keyof FormData, string>>>({})
   const [saving, setSaving] = useState(false)
   const [assets, setAssets] = useState<Asset[]>([])
-  const [users, setUsers] = useState<User[]>([])
+  const [users, setUsers] = useState<OrgUser[]>([])
   const [originalAssignee, setOriginalAssignee] = useState<Assignment | null>(null)
   const [assigneeLoaded, setAssigneeLoaded] = useState(false)
 
@@ -60,10 +67,11 @@ export default function AssignReplacementModal({ repair, onClose, onSave }: Prop
         setAssets(data.filter((a) => a.assetStatus === "Available" && a.id !== repair.assetId))
       })
 
-    // Load all users for manual selection
-    fetch("/api/users")
+    // Load active org members for manual selection (merged User Management list;
+    // membership status is lowercase "active" / "inactive").
+    fetch("/api/org/users")
       .then((r) => r.json())
-      .then((j) => setUsers(j.data ?? []))
+      .then((j) => setUsers((j.data ?? []).filter((u: OrgUser) => u.status === "active")))
 
     // Auto-fetch original assignee for this repair's asset
     fetch(`/api/assignments?assetId=${repair.assetId}`)
@@ -109,8 +117,8 @@ export default function AssignReplacementModal({ repair, onClose, onSave }: Prop
   }))
 
   const userOptions = users.map((u) => ({
-    value: u.id,
-    label: u.name,
+    value: u.userId,
+    label: orgUserName(u),
     sublabel: u.email,
   }))
 

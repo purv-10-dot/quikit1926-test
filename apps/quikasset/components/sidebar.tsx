@@ -10,13 +10,15 @@ import {
   Boxes,
   ArrowLeftRight,
   Wrench,
+  ClipboardCheck,
   ClipboardList,
+  FilePlus2,
   Mail,
   BarChart2,
-  Users,
   UserCog,
   Settings,
   Tags,
+  Building2,
   X,
 } from "lucide-react";
 
@@ -27,6 +29,9 @@ type NavItem = {
   sub?: boolean;
   /** Overrides the default `<NAV_RESOURCE[href]>:view` visibility check. */
   perm?: { resource: string; action: string };
+  /** Visible if the caller holds ANY of these pairs (OR). Used by pages that
+   *  merge multiple separately-gated resources into one screen. */
+  anyPerm?: { resource: string; action: string }[];
 };
 type NavSection = { label: string | null; items: NavItem[] };
 
@@ -35,26 +40,50 @@ const NAV_SECTIONS: NavSection[] = [
     label: null,
     items: [
       { label: "Dashboard", href: "/dashboard", icon: LayoutDashboard },
+    ],
+  },
+  {
+    // Personal, member-visible items — what any user does with their own stuff.
+    label: "My Work",
+    items: [
       // Member landing — their own assigned assets (any Asset:view holder).
       { label: "My Assets", href: "/employee-view", icon: Boxes, perm: { resource: "Asset", action: "view" } },
+      // Employee self-service — raise/track own requests (any AssetRequest:view holder).
+      { label: "My Requests", href: "/my-requests", icon: FilePlus2, perm: { resource: "AssetRequest", action: "view" } },
+      // Employee self-service — track own repair requests (any RepairRequest:view holder).
+      { label: "My Repair Requests", href: "/my-repair-requests", icon: Wrench, perm: { resource: "RepairRequest", action: "view" } },
+      { label: "Notification", href: "/notifications", icon: Mail },
+    ],
+  },
+  {
+    // Operational surface for asset managers / approvers / admins.
+    label: "Asset Management",
+    items: [
       // Full org register — asset managers/admins only.
       { label: "Asset Inventory", href: "/assets", icon: Package, perm: { resource: "Asset", action: "viewAll" } },
       { label: "Category Master", href: "/assets/categories", icon: Tags, sub: true },
       { label: "Assignments", href: "/assignments", icon: ArrowLeftRight },
+      // Unified approver queue for both asset requests and employee repair requests.
+      // Visible to holders of EITHER AssetRequest:viewAll or RepairRequest:viewAll.
+      {
+        label: "Employee Requests",
+        href: "/employee-requests",
+        icon: ClipboardCheck,
+        anyPerm: [
+          { resource: "AssetRequest", action: "viewAll" },
+          { resource: "RepairRequest", action: "viewAll" },
+        ],
+      },
       { label: "Repair & Recovery", href: "/repair", icon: Wrench },
+      { label: "Vendors", href: "/vendors", icon: Building2, perm: { resource: "Vendor", action: "view" } },
     ],
   },
   {
     label: "Reports & Logs",
     items: [
-      { label: "Audit Log", href: "/audit-log", icon: ClipboardList },
-      { label: "Notification", href: "/notifications", icon: Mail },
       { label: "Reports", href: "/reports", icon: BarChart2 },
+      { label: "Audit Log", href: "/audit-log", icon: ClipboardList },
     ],
-  },
-  {
-    label: "Views",
-    items: [{ label: "User Directory", href: "/users", icon: Users }],
   },
   {
     label: "Admin",
@@ -79,6 +108,7 @@ export function Sidebar({ permissions, isAdmin, displayName, roleName, mobileOpe
   const permSet = new Set(permissions);
 
   const canSee = (item: NavItem) => {
+    if (item.anyPerm) return isAdmin || item.anyPerm.some((p) => permSet.has(`${p.resource}:${p.action}`));
     if (item.perm) return isAdmin || permSet.has(`${item.perm.resource}:${item.perm.action}`);
     const resource = NAV_RESOURCE[item.href];
     if (!resource) return true;

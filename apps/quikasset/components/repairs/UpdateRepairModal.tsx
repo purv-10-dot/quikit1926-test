@@ -1,16 +1,18 @@
 "use client"
 
-import { useState } from "react"
+import { useState, useEffect } from "react"
 import { X } from "lucide-react"
 import { cn } from "@/lib/utils"
+import SearchableSelect from "@/components/assignments/SearchableSelect"
 import type { Repair } from "@/types/repair"
+import type { Vendor } from "@/types/vendor"
 
 interface Props {
   repair: Repair
   onClose: () => void
   onSave: (data: {
     issueTitle: string; issueDescription: string; sentDate: string
-    vendor: string; estimatedCost: string; actualCost: string
+    vendorId: string; estimatedCost: string; actualCost: string
     expectedReturn: string; returnedDate: string; notes: string
   }) => Promise<void>
 }
@@ -34,7 +36,7 @@ export default function UpdateRepairModal({ repair, onClose, onSave }: Props) {
     issueTitle:       repair.issueTitle ?? "",
     issueDescription: repair.issueDescription ?? "",
     sentDate:         repair.sentDate ?? "",
-    vendor:           repair.vendor ?? "",
+    vendorId:         repair.vendorId ?? "",
     estimatedCost:    repair.estimatedCost != null ? String(repair.estimatedCost) : "",
     actualCost:       repair.actualCost != null ? String(repair.actualCost) : "",
     expectedReturn:   repair.expectedReturn ?? "",
@@ -43,6 +45,12 @@ export default function UpdateRepairModal({ repair, onClose, onSave }: Props) {
   })
   const [errors, setErrors] = useState<Partial<Record<keyof typeof form, string>>>({})
   const [saving, setSaving] = useState(false)
+  const [vendors, setVendors] = useState<Vendor[]>([])
+
+  useEffect(() => {
+    fetch("/api/vendors?status=Active").then((r) => r.json()).then((j) => setVendors(j.data ?? []))
+  }, [])
+  const vendorOptions = vendors.map((v) => ({ value: v.id, label: v.name, sublabel: v.contactPerson ?? undefined }))
 
   function set(field: keyof typeof form, value: string) {
     setForm((f) => ({ ...f, [field]: value }))
@@ -120,8 +128,14 @@ export default function UpdateRepairModal({ repair, onClose, onSave }: Props) {
           {/* Vendor + Sent Date */}
           <div className="grid grid-cols-2 gap-4">
             <Field label="Vendor / Service Center">
-              <input value={form.vendor} onChange={(e) => set("vendor", e.target.value)}
-                placeholder="e.g. Dell Service Center" className={inputCls()} />
+              <SearchableSelect
+                options={vendorOptions} value={form.vendorId}
+                onChange={(v) => set("vendorId", v)}
+                placeholder="Select vendor" searchPlaceholder="Search vendors…"
+              />
+              {!form.vendorId && repair.vendor && (
+                <p className="text-[10px] text-gray-400">Previously (free text): {repair.vendor}</p>
+              )}
             </Field>
             <Field label="Sent Date" required error={errors.sentDate}>
               <input type="date" value={form.sentDate}

@@ -17,7 +17,6 @@ const TITLES: Record<string, string> = {
   "/audit-log": "Audit Log",
   "/notifications": "Notifications",
   "/reports": "Reports",
-  "/users": "User Directory",
   "/settings": "Settings",
 };
 
