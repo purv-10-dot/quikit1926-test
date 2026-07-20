@@ -9989,8 +9989,7 @@ enum EmploymentType {
   PartTime
   Contract
   Intern
-  Freelancer
-  Consultant
+  Freelance
 
   @@schema("app_quikhrms")
 }
@@ -11072,9 +11071,10 @@ model RosterEntry {
 model LeaveType {
   id    String  @id @default(cuid())
   orgId String
-  name  String
-  code  String
-  color String?
+  name        String
+  code        String
+  color       String?
+  description String?
 
   isPaid          Boolean @default(true)
   isCarryForward  Boolean @default(false)
@@ -11099,11 +11099,13 @@ model LeaveType {
   isOnceInLifetime Boolean @default(false)
 
   applicableGender         String? // All|Male|Female|Other
+  applicableMaritalStatus  String? // All|Single|Married
   applicableEmploymentType Json?
   applicableAfterDays      Int     @default(0)
 
   requiresDocumentation  Boolean @default(false)
   documentationAfterDays Int?
+  documentationType      String? // which document is required (e.g. "Medical Certificate", "Birth Proof")
 
   isNegativeBalanceAllowed Boolean @default(false)
   maxNegativeBalance       Int?
@@ -11120,6 +11122,26 @@ model LeaveType {
   compOffExpiryDays Int?
 
   isDefault Boolean @default(false)
+
+  // ── Leave rules wizard (per-leave-type config) ──────────────────────────
+  // Step 1 — Accrual & accumulation
+  isUnlimited           Boolean @default(false) // no yearly cap on entitlement
+  noAccrualJoinAfterDay Int? // no credit if the employee joins after this day-of-month
+
+  // Step 2 — Applying leave & approvals
+  selfApplyAllowed  Boolean @default(true) // employee can see + apply for this leave
+  requiresApproval  Boolean @default(true) // request needs approval (else auto-approved)
+  advanceNoticeDays Int? // must apply at least N days before the leave start (null = off)
+  applicableAfterRef String? @default("JoiningDate") // JoiningDate|ConfirmationDate — anchor for applicableAfterDays
+  backdateCutoffDay  Int? // block back-dated leave after this day-of-month
+  blockIfBalanceLeaveTypeId String? // not available while balance remains in this leave type
+  requiresComment    Boolean @default(false) // comment mandatory when applying
+
+  // Step 3 — Additional restrictions
+  maxDaysPerMonth    Int? // max leave DAYS of this type per calendar month
+  applyCutoffDay     Int? // cannot apply for this leave after this day-of-month
+  minGapDays         Int? // minimum gap (days) required between two instances
+  blockedDuringNotice Boolean @default(false) // notice-period employees cannot avail
 
   createdBy String?
   updatedBy String?
@@ -11982,8 +12004,8 @@ model JobRequisition {
   employmentType EmploymentType  @default(FullTime)
   workLocation   WorkLocation    @default(Office)
 
-  experienceMin  Int?
-  experienceMax  Int?
+  experienceMin  Decimal? @db.Decimal(4, 1)
+  experienceMax  Decimal? @db.Decimal(4, 1)
   salaryMin      Decimal? @db.Decimal(15, 2)
   salaryMax      Decimal? @db.Decimal(15, 2)
   salaryCurrency String   @default("INR")
@@ -11995,6 +12017,8 @@ model JobRequisition {
   skills           Json?
   skillWeights     Json? // Array<{ skill: string; weight: number }> — ATS scoring weights (1-10)
   education        String?
+  passingYear      Int? // minimum year of passing for the required qualification
+  technicalQuestions Json? // Array<string> — interview/technical questions for this job
   benefits         Json?
 
   // Role Scorecard (optional) — modeled after the Topgrading/JD-Scorecard pattern.
@@ -12161,6 +12185,14 @@ model JobApplication {
 
   rejectionReason String?
   rejectionStage  String?
+  // A "penalty-free" rejection (e.g. closed because the requisition was
+  // cancelled / not selected after a hold-resume review). Excluded from the
+  // re-apply cooling-period block so the candidate can still apply elsewhere.
+  rejectionExempt Boolean @default(false)
+  // Set when a "still interested?" invite is sent after a hold-resume. While
+  // this is set (and status is still AppOnHold), the candidate is awaiting
+  // confirmation — they only re-enter the pipeline after clicking "Yes".
+  reconfirmSentAt DateTime?
 
   // Offer — formerly the separate OfferDetail table (1:1, keyed by
   // applicationId). Folded in here. offerStatus = null means no offer exists
@@ -12218,6 +12250,10 @@ model Interview {
   round         Int           @default(1)
   type          InterviewType @default(Video)
   interviewerId String
+  // Additional panel interviewers beyond the primary `interviewerId`. They
+  // receive the same invite email + calendar attendance; the scorecard stays
+  // attributed to the primary interviewer.
+  additionalInterviewerIds String[] @default([])
 
   scheduledAt DateTime
   duration    Int      @default(60)
@@ -12734,6 +12770,10 @@ model CompanySettings {
   noticePeriodDays    Int     @default(60)
   workWeek            Json?
   workHoursPerDay     Decimal @default(8) @db.Decimal(4, 2)
+
+  // Recruit: months a rejected candidate must wait before re-applying.
+  // null / 0 = no cooling period.
+  candidateCoolingMonths Int?
 
   // Offer letter branding (S3 keys; served via proxy)
   letterheadKey        String?
@@ -15463,6 +15503,7 @@ model CandidateDocumentRequest {
   token              String    @unique
   tokenExpiresAt     DateTime
   requestSentAt      DateTime  @default(now())
+  submissionDeadline DateTime? // Submit-by date shown to the candidate
   // Candidate hit "Submit for Review" — locks further uploads until HR clears it.
   // `completedAt` (above) reflects HR-side completion, this one reflects candidate-side.
   submittedAt        DateTime?

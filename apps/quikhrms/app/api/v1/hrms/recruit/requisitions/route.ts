@@ -80,6 +80,8 @@ export const POST = withAuth(async (req: NextRequest, { orgId, userId }) => {
         skills: data.skills ? JSON.parse(JSON.stringify(data.skills)) : undefined,
         skillWeights: data.skillWeights ? JSON.parse(JSON.stringify(data.skillWeights)) : undefined,
         education: data.education,
+        passingYear: data.passingYear,
+        technicalQuestions: data.technicalQuestions ? JSON.parse(JSON.stringify(data.technicalQuestions)) : undefined,
         benefits: data.benefits ? JSON.parse(JSON.stringify(data.benefits)) : undefined,
         priority: data.priority,
         careerPageVisible: data.careerPageVisible,

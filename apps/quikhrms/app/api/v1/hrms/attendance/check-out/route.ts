@@ -11,7 +11,7 @@ type Punch = { in: string; out: string | null };
 /** POST /api/v1/hrms/attendance/check-out */
 export const POST = withAuth(async (req: NextRequest, { orgId, userId }) => {
   try {
-    const body = await req.json();
+    const body = await req.json().catch(() => ({}));
     const parsed = checkOutSchema.safeParse(body);
     if (!parsed.success) return validationError("Validation failed", parsed.error.flatten().fieldErrors);
 

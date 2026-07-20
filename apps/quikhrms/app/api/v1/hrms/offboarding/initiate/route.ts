@@ -15,6 +15,23 @@ export const POST = withAuth(async (req: NextRequest, { orgId, userId }) => {
       return validationError("Validation failed", parsed.error.flatten().fieldErrors);
     }
 
+    // Verify the employee exists in this org (employeeId has no FK relation, so a
+    // bad id would otherwise create an orphan instance silently).
+    const employee = await prisma.employee.findFirst({
+      where: { id: parsed.data.employeeId, orgId, deletedAt: null },
+      select: { id: true, dateOfJoining: true },
+    });
+    if (!employee) return validationError("Employee not found.");
+
+    const resignationDate = new Date(parsed.data.resignationDate);
+    const lastWorkingDate = new Date(parsed.data.lastWorkingDate);
+    if (lastWorkingDate < resignationDate) {
+      return validationError("Last working date cannot be before the resignation date.");
+    }
+    if (employee.dateOfJoining && lastWorkingDate < new Date(employee.dateOfJoining)) {
+      return validationError("Last working date cannot be before the joining date.");
+    }
+
     const existing = await prisma.offboardingInstance.findFirst({
       where: { orgId, employeeId: parsed.data.employeeId, deletedAt: null },
     });
@@ -26,8 +43,8 @@ export const POST = withAuth(async (req: NextRequest, { orgId, userId }) => {
       data: {
         orgId,
         employeeId: parsed.data.employeeId,
-        resignationDate: new Date(parsed.data.resignationDate),
-        lastWorkingDate: new Date(parsed.data.lastWorkingDate),
+        resignationDate,
+        lastWorkingDate,
         reason: parsed.data.reason,
         status: "OffboardInProgress",
         notes: parsed.data.notes,
@@ -50,7 +67,7 @@ export const POST = withAuth(async (req: NextRequest, { orgId, userId }) => {
 
     await prisma.employee.update({
       where: { id: parsed.data.employeeId },
-      data: { status: "OnNotice", lastWorkingDate: new Date(parsed.data.lastWorkingDate) },
+      data: { status: "OnNotice", lastWorkingDate },
     }).catch(() => null);
 
     await createAuditLog({ orgId, userId, action: "Create", entityType: "OffboardingInstance", entityId: instance.id });

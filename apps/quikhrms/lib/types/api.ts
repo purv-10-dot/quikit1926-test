@@ -55,6 +55,14 @@ export interface AuthContext {
    * Carry through to HrmsAuditLog alongside userId (the acting employee).
    */
   actingAgentId?: string;
+  /**
+   * Active delegations lending this user extra permissions — one entry per
+   * delegator, each listing exactly the codes granted. Present only when the
+   * user is currently acting under at least one delegation. Routes use it to
+   * stamp on-behalf-of attribution into the audit trail and to surface the
+   * delegator's own pending items.
+   */
+  delegatedFrom?: { delegatorId: string; permissions: string[] }[];
 }
 
 export interface PaginationParams {

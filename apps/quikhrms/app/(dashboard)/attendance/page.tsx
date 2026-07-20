@@ -1,24 +1,20 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useApiClient } from "@/lib/hooks/use-api";
 import { Modal } from "@/components/hrms/modal";
+import { ExcelExportButton } from "@/components/hrms/excel-export-button";
 import {
   Calendar, ChevronLeft, ChevronRight, Play, Pause, List, LayoutGrid,
-  Filter, MoreHorizontal, CalendarDays, Upload, Download, Printer, FileDown, CalendarPlus,
+  Filter, MoreHorizontal, CalendarDays, Upload, Download, Printer, FileDown,
   Clock4, LogIn, LogOut, Eye, X,
 } from "lucide-react";
 import { clsx } from "clsx";
 import { Tooltip } from "@/components/hrms/tooltip";
 import { Select } from "@/components/hrms/ui/select";
-import { FormActions, FormField, FormInput } from "@/components/hrms/form";
 import { REGULARIZATION_REASONS, OTHER_REASON } from "@/lib/constants/attendance-reasons";
-import { EmployeeSelect } from "@/components/hrms/employees/employee-select";
-import { useDashboardConfig } from "@/lib/hooks/use-dashboard-config";
-import { todayInput } from "@/lib/utils/date-input";
 
-type Tab = "summary" | "shift";
 type DayStatus = "Present" | "Absent" | "HalfDay" | "Weekend" | "Holiday" | "OnLeave" | "OnDuty" | "CompOff" | "WFH" | "NotMarked";
 
 interface DayCell {
@@ -51,8 +47,6 @@ interface TodayStatus {
   punches: { in: string; out: string | null }[];
 }
 
-interface Shift { id: string; name: string; code: string; startTime: string; endTime: string; }
-
 const STATUS_COLORS: Record<DayStatus, string> = {
   Present: "bg-green-500", WFH: "bg-cyan-500", OnDuty: "bg-emerald-500",
   OnLeave: "bg-sky-500", Holiday: "bg-purple-500",
@@ -79,29 +73,29 @@ const STATUS_LABELS: Record<DayStatus, string> = {
   Absent: "Absent", HalfDay: "Half Day", CompOff: "Comp Off", NotMarked: "Not marked",
 };
 
-export default function AttendancePage() {
-  const [tab, setTab] = useState<Tab>("summary");
+const REG_EXPORT_LABEL: Record<DayCell["regularizationStatus"], string> = {
+  None: "No Regularization",
+  Pending: "Pending",
+  Approved: "Approved",
+  Rejected: "Rejected",
+  Cancelled: "Cancelled",
+};
 
+const ATTENDANCE_EXPORT_COLUMNS = [
+  { header: "Date", key: "date", width: 16 },
+  { header: "Clock-In", key: "clockIn", width: 14 },
+  { header: "Clock-Out", key: "clockOut", width: 14 },
+  { header: "Working Time In Office", key: "workingTime", width: 22 },
+  { header: "Break Time", key: "breakTime", width: 14 },
+  { header: "Status", key: "status", width: 14 },
+  { header: "Regularization Status", key: "regularization", width: 20 },
+];
+
+export default function AttendancePage() {
   return (
     <div className="w-full px-5 py-4">
       <h1 className="text-base font-semibold text-gray-900 mb-5">Attendance</h1>
-      <div className="border-b border-[var(--border)] mb-4">
-        <div className="flex items-center gap-4">
-          {([
-            { id: "summary", label: "Attendance summary" },
-            { id: "shift", label: "Shift" },
-          ] as { id: Tab; label: string }[]).map((t) => (
-            <button key={t.id} onClick={() => setTab(t.id)}
-              data-active={tab === t.id}
-              className={clsx("tab-underline text-[13px] font-semibold py-3 -mb-px",
-                tab === t.id ? "text-[#166534]" : "text-gray-600 hover:text-gray-900")}>
-              {t.label}
-            </button>
-          ))}
-        </div>
-      </div>
-
-      {tab === "summary" ? <AttendanceSummary /> : <ShiftTab />}
+      <AttendanceSummary />
     </div>
   );
 }
@@ -181,6 +175,28 @@ function AttendanceSummary() {
 
   const shiftLabel = today?.shift ? `${today.shift.name} [ ${formatTime(today.shift.start)} - ${formatTime(today.shift.end)} ]` : "General [ 9:00 AM - 6:00 PM ]";
 
+  const exportRows = useMemo(
+    () =>
+      (summary?.days ?? []).map((day) => {
+        const d = new Date(day.date);
+        const breakSec = Math.max(0, day.grossHours - day.effectiveHours) * 3600;
+        return {
+          date: d.toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" }),
+          clockIn: day.checkIn
+            ? new Date(day.checkIn).toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit", second: "2-digit", hour12: true })
+            : "",
+          clockOut: day.checkOut
+            ? new Date(day.checkOut).toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit", second: "2-digit", hour12: true })
+            : "",
+          workingTime: fmtTimer(day.effectiveHours * 3600),
+          breakTime: fmtTimer(breakSec),
+          status: STATUS_LABELS[day.status],
+          regularization: REG_EXPORT_LABEL[day.regularizationStatus],
+        };
+      }),
+    [summary],
+  );
+
   return (
     <div>
       <div className="flex items-center justify-between mb-4">
@@ -213,6 +229,7 @@ function AttendanceSummary() {
             </Tooltip>
           </div>
           <button className="p-2 surface-card hover:bg-gray-50"><Filter size={12} className="text-gray-600" /></button>
+          <ExcelExportButton filename="attendance" sheetName="Attendance" columns={ATTENDANCE_EXPORT_COLUMNS} rows={exportRows} label="Excel" />
           <MoreMenu days={summary?.days ?? []} weekStart={cursor} weekEnd={weekEnd} />
         </div>
       </div>
@@ -705,184 +722,6 @@ function WeekCalendar({ days }: { days: DayCell[] }) {
   );
 }
 
-function ShiftTab() {
-  const api = useApiClient();
-  const qc = useQueryClient();
-  const { hasPermission } = useDashboardConfig();
-  const canManage = hasPermission("hrms.attendance.manage");
-  const [mode, setMode] = useState<"Weekly" | "Monthly">("Weekly");
-  const [showAssign, setShowAssign] = useState(false);
-  const [picked, setPicked] = useState<{ id: string; name: string }[]>([]);
-  const [cursor, setCursor] = useState(() => {
-    const d = new Date();
-    d.setDate(d.getDate() - d.getDay());
-    d.setHours(0, 0, 0, 0);
-    return d;
-  });
-  const [form, setForm] = useState({ shiftId: "", fromDate: "", toDate: "", reason: "" });
-
-  const weekEnd = new Date(cursor);
-  weekEnd.setDate(cursor.getDate() + 6);
-
-  const { data: weekData } = useQuery({
-    queryKey: ["attendance-week", cursor.toISOString()],
-    queryFn: () => api.get<WeekSummary>(`/api/v1/hrms/attendance/week?weekStart=${cursor.toISOString()}`),
-  });
-
-  const { data: shifts } = useQuery({
-    queryKey: ["shifts"],
-    queryFn: () => api.get<Shift[]>("/api/v1/hrms/shifts?limit=100"),
-  });
-
-  const assignMut = useMutation({
-    mutationFn: (body: Record<string, unknown>) => api.post("/api/v1/hrms/shifts/assignments", body),
-    onSuccess: () => { qc.invalidateQueries({ queryKey: ["attendance-week"] }); setShowAssign(false); setForm({ shiftId: "", fromDate: "", toDate: "", reason: "" }); setPicked([]); },
-  });
-
-  const hours = Array.from({ length: 11 }, (_, i) => 8 + i);
-  const days = weekData?.data.days ?? [];
-
-  const shiftStart = parseHour(weekData?.data.shift?.start ?? "09:00");
-  const shiftEnd = parseHour(weekData?.data.shift?.end ?? "18:00");
-
-  return (
-    <div>
-      <div className="flex items-center justify-between mb-4">
-        <div />
-        <div className="flex items-center gap-2 surface-card px-2 py-1">
-          <button onClick={() => shiftWeek(cursor, setCursor, -7)} className="p-1 hover:bg-gray-100 rounded-full"><ChevronLeft size={12} /></button>
-          <Calendar size={14} className="text-gray-500" />
-          <span className="text-xs font-medium">{fmtDate(cursor)} — {fmtDate(weekEnd)}</span>
-          <button onClick={() => shiftWeek(cursor, setCursor, 7)} className="p-1 hover:bg-gray-100 rounded-full"><ChevronRight size={12} /></button>
-        </div>
-        <div className="flex items-center gap-2">
-          <div className="flex items-center surface-card overflow-hidden">
-            {(["Weekly", "Monthly"] as const).map((m) => (
-              <button key={m} onClick={() => setMode(m)}
-                className={clsx("px-4 py-1.5 text-[13px]", mode === m ? "bg-white text-[#166534] font-semibold" : "bg-gray-50 text-gray-600")}>
-                {m}
-              </button>
-            ))}
-          </div>
-          <button onClick={() => setShowAssign(true)} className="btn btn-primary">
-            <CalendarPlus size={13} /> Assign shift
-          </button>
-          <MoreMenu days={days} weekStart={cursor} weekEnd={weekEnd} />
-        </div>
-      </div>
-
-      <div className="surface-card overflow-x-auto">
-        <div className="grid min-w-[900px]" style={{ gridTemplateColumns: `100px repeat(${hours.length}, 1fr)` }}>
-          <div className="bg-gray-50 border-b border-gray-200" />
-          {hours.map((h) => (
-            <div key={h} className="bg-gray-50 border-b border-l border-gray-200 px-2 py-2 text-xs font-medium text-gray-500">
-              {String(h).padStart(2, "0")} {h < 12 ? "AM" : "PM"}
-            </div>
-          ))}
-
-          {days.map((d, idx) => {
-            const isWeekend = d.status === "Weekend";
-            return (
-              <div key={idx} className="contents">
-                <div className={clsx("border-t border-gray-100 px-3 py-3", isWeekend && "bg-yellow-50/50")}>
-                  <div className="text-xs text-gray-500">{new Date(d.date).toLocaleDateString("en-IN", { weekday: "short" })}</div>
-                  <div className="text-lg font-semibold text-gray-900">{new Date(d.date).getDate()}</div>
-                </div>
-                {hours.map((h, hi) => {
-                  const isShiftStart = h === shiftStart;
-                  return (
-                    <div key={hi} className={clsx("border-l border-t border-gray-100 min-h-[80px] relative", isWeekend && "bg-yellow-50/30")}>
-                      {isShiftStart && d.shift && (
-                        <div className={clsx("absolute inset-y-1 left-1 border rounded px-2 py-1 overflow-hidden",
-                          isWeekend ? "bg-amber-50 border-amber-200" : "bg-gray-100 border-gray-200")}
-                          style={{ width: `calc(${shiftEnd - shiftStart} * 100% + ${shiftEnd - shiftStart - 1}px)` }}>
-                          <div className="text-xs font-semibold text-gray-700">{d.shift.name}</div>
-                          <div className="text-[10px] text-gray-500">{formatTime(d.shift.start)} - {formatTime(d.shift.end)}</div>
-                        </div>
-                      )}
-                    </div>
-                  );
-                })}
-              </div>
-            );
-          })}
-        </div>
-      </div>
-
-      <Modal open={showAssign} onClose={() => setShowAssign(false)} title="Assign shift">
-        <form onSubmit={(e) => {
-          e.preventDefault();
-          assignMut.mutate({
-            ...(canManage && picked.length > 0 && { employeeIds: picked.map((p) => p.id) }),
-            shiftId: form.shiftId,
-            effectiveFrom: form.fromDate,
-            effectiveTo: form.toDate || undefined,
-          });
-        }} className="space-y-4">
-          {canManage && (
-            <FormField label="Assign to">
-              <EmployeeSelect
-                value=""
-                onChange={() => { /* selection handled via onPick */ }}
-                onPick={(emp) =>
-                  setPicked((prev) =>
-                    prev.some((p) => p.id === emp.id)
-                      ? prev
-                      : [...prev, { id: emp.id, name: `${emp.firstName} ${emp.lastName}`.trim() }],
-                  )
-                }
-                placeholder="Add employee (leave empty to assign yourself)"
-                excludeIds={picked.map((p) => p.id)}
-                accessibleOnly
-                clearable={false}
-              />
-              {picked.length > 0 && (
-                <div className="flex flex-wrap gap-1.5 mt-2">
-                  {picked.map((p) => (
-                    <span key={p.id} className="inline-flex items-center gap-1 px-2 py-1 rounded-md bg-green-50 text-green-700 text-xs font-medium">
-                      {p.name}
-                      <button
-                        type="button"
-                        onClick={() => setPicked((arr) => arr.filter((x) => x.id !== p.id))}
-                        className="hover:text-green-900"
-                      >
-                        <X size={12} />
-                      </button>
-                    </span>
-                  ))}
-                </div>
-              )}
-            </FormField>
-          )}
-          <FormField label="Shift name" required>
-            <Select
-              required
-              value={form.shiftId}
-              onChange={(v) => setForm({ ...form, shiftId: v })}
-              placeholder="Select"
-              searchable
-              options={(shifts?.data ?? []).map((s) => ({ value: s.id, label: `${s.name} (${s.startTime} - ${s.endTime})` }))}
-            />
-          </FormField>
-          <FormField label="Dates" required>
-            <div className="grid grid-cols-2 gap-2">
-              <FormInput type="date" required min={todayInput()} value={form.fromDate} onChange={(e) => setForm({ ...form, fromDate: e.target.value })} />
-              <FormInput type="date" min={todayInput()} value={form.toDate} onChange={(e) => setForm({ ...form, toDate: e.target.value })} />
-            </div>
-          </FormField>
-          <FormField label="Reason">
-            <FormInput placeholder="Reason" value={form.reason} onChange={(e) => setForm({ ...form, reason: e.target.value })} />
-          </FormField>
-          <FormActions>
-            <button type="button" onClick={() => setShowAssign(false)} className="btn btn-ghost">Cancel</button>
-            <button type="submit" disabled={assignMut.isPending} className="btn btn-primary">Save</button>
-          </FormActions>
-        </form>
-      </Modal>
-    </div>
-  );
-}
-
 function MoreMenu({ days, weekStart, weekEnd }: { days: DayCell[]; weekStart: Date; weekEnd: Date }) {
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
@@ -1003,10 +842,6 @@ function formatTime(t: string): string {
   const hour12 = h === 0 ? 12 : h > 12 ? h - 12 : h;
   const ampm = h < 12 ? "AM" : "PM";
   return `${hour12}:${String(m ?? 0).padStart(2, "0")} ${ampm}`;
-}
-
-function parseHour(t: string): number {
-  return Number(t.split(":")[0] ?? 9);
 }
 
 function shiftWeek(cursor: Date, setCursor: (d: Date) => void, days: number) {

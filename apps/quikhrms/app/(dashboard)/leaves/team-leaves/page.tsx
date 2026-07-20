@@ -6,6 +6,7 @@ import { useApiClient } from "@/lib/hooks/use-api";
 import { clsx } from "clsx";
 import { Check, X, User, Loader2 } from "lucide-react";
 import { EmptyState } from "@/components/hrms/empty-state";
+import { ExcelExportButton } from "@/components/hrms/excel-export-button";
 import { SkeletonTable } from "@/components/hrms/skeleton";
 import { Modal } from "@/components/hrms/modal";
 import { useToast } from "@/components/hrms/toast";
@@ -85,6 +86,9 @@ export default function TeamLeavesPage() {
   });
 
   const approveMut = useMutation({
+    // Surfaced via toast below — suppress the global modal so the same failure
+    // doesn't show a toast AND a blocking dialog.
+    meta: { suppressGlobalError: true },
     mutationFn: ({ id, status, comment }: { id: string; status: string; comment?: string }) =>
       api.post(`/api/v1/hrms/leaves/requests/${id}/approve`, { status, comment }),
     onSuccess: (_r, vars) => {
@@ -107,13 +111,36 @@ export default function TeamLeavesPage() {
     { key: "history" as const, label: "History", count: processed.length },
   ];
 
+  // ── Excel export (exports the currently active tab's rows) ──
+  const exportColumns = [
+    { header: "Employee", key: "employee", width: 24 },
+    { header: "Leave Type", key: "leaveType", width: 22 },
+    { header: "From", key: "from", width: 16 },
+    { header: "To", key: "to", width: 16 },
+    { header: "Days", key: "days", width: 10 },
+    { header: "Status", key: "status", width: 14 },
+    { header: "Applied On", key: "appliedOn", width: 16 },
+  ];
+  const exportRows = (tab === "pending" ? pending : processed).map((r) => ({
+    employee: `${r.employee.firstName} ${r.employee.lastName}`,
+    leaveType: r.leaveType.name,
+    from: formatDate(r.startDate),
+    to: formatDate(r.endDate),
+    days: Number(r.duration),
+    status: r.status,
+    appliedOn: formatDate(r.appliedOn),
+  }));
+
   return (
     <div
       ref={rootRef}
       className="w-full px-6 py-4 flex flex-col overflow-hidden"
       style={{ height: fitHeight ? `${fitHeight}px` : "calc(100dvh - 8rem)" }}
     >
-      <h1 className="text-base font-semibold text-gray-900 mb-3 shrink-0">Team leaves</h1>
+      <div className="flex items-center justify-between gap-3 mb-3 shrink-0">
+        <h1 className="text-base font-semibold text-gray-900">Team leaves</h1>
+        <ExcelExportButton filename="team-leaves" sheetName="Team Leaves" columns={exportColumns} rows={exportRows} label="Export to Excel" />
+      </div>
 
       {/* Tabs */}
       <div className="flex items-center gap-1 border-b border-gray-200 mb-3 shrink-0">

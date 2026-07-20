@@ -10,6 +10,10 @@ import {
   Check,
   ArrowRight,
   Rocket,
+  ShieldCheck,
+  Palmtree,
+  CalendarDays,
+  ClipboardList,
 } from "lucide-react";
 import type {
   HrmsSetupItem,
@@ -21,6 +25,11 @@ const ITEM_ICON: Record<HrmsSetupItemKey, React.ReactNode> = {
   locations: <MapPin size={18} />,
   approvalChains: <Workflow size={18} />,
   payroll: <Wallet size={18} />,
+  roles: <ShieldCheck size={18} />,
+  leaveTypes: <Palmtree size={18} />,
+  holidays: <CalendarDays size={18} />,
+  onboardingTemplate: <ClipboardList size={18} />,
+  coreApprovalChains: <Workflow size={18} />,
 };
 
 interface SetupChecklistProps {
@@ -122,9 +131,27 @@ export function SetupChecklist({
                 {item.title}
               </p>
               {!item.completed && (
-                <p className="mt-0.5 truncate text-xs text-gray-500 dark:text-gray-400">
-                  {item.description}
-                </p>
+                <>
+                  <p className="mt-0.5 truncate text-xs text-gray-500 dark:text-gray-400">
+                    <span className={clsx("font-semibold", item.blocking ? "text-red-500" : "text-gray-400")}>
+                      {item.blocking ? "Required" : "Recommended"}
+                    </span>
+                    {" · "}{item.description}
+                  </p>
+                  {item.progress && item.progress.total > 0 && (
+                    <div className="mt-1.5 flex items-center gap-2">
+                      <div className="h-1.5 w-24 overflow-hidden rounded-full bg-gray-100 dark:bg-white/10">
+                        <div
+                          className="h-full rounded-full bg-accent-500 transition-[width] duration-300"
+                          style={{ width: `${Math.round((item.progress.done / item.progress.total) * 100)}%` }}
+                        />
+                      </div>
+                      <span className="text-[11px] font-medium text-gray-500 tabular-nums dark:text-gray-400">
+                        {item.progress.done}/{item.progress.total}
+                      </span>
+                    </div>
+                  )}
+                </>
               )}
             </div>
 

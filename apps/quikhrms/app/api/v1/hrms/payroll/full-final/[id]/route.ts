@@ -143,13 +143,21 @@ export const POST = withAuth(async (req: NextRequest, { orgId, userId }, { id })
     if (!existing) return notFound();
     if (existing.status === "Paid") return validationError("Cannot recompute paid settlement");
 
-    const components = await computeFullAndFinal({
-      orgId,
-      employeeId: existing.employeeId,
-      resignationDate: existing.resignationDate,
-      lastWorkingDate: existing.lastWorkingDate,
-      reason: existing.reason ?? undefined,
-    });
+    let components;
+    try {
+      components = await computeFullAndFinal({
+        orgId,
+        employeeId: existing.employeeId,
+        resignationDate: existing.resignationDate,
+        lastWorkingDate: existing.lastWorkingDate,
+        reason: existing.reason ?? undefined,
+      });
+    } catch (err) {
+      const code = err instanceof Error ? err.message : "";
+      if (code === "EMPLOYEE_NOT_FOUND") return notFound("Employee not found");
+      if (code === "EMPLOYEE_MISSING_DOJ") return validationError("Employee has no Date of Joining set. Update employee profile first.");
+      throw err;
+    }
     const updated = await prisma.fullAndFinalSettlement.update({
       where: { id },
       data: {

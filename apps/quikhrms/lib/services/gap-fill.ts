@@ -141,10 +141,11 @@ const EMPLOYMENT_TYPE_MAP: Record<string, string> = {
   "contractual": "Contract",
   "intern": "Intern",
   "internship": "Intern",
-  "freelancer": "Freelancer",
-  "freelance": "Freelancer",
-  "consultant": "Consultant",
-  "consulting": "Consultant",
+  // Freelancer / Consultant were removed from EmploymentType — fold into Contract.
+  "freelancer": "Contract",
+  "freelance": "Contract",
+  "consultant": "Contract",
+  "consulting": "Contract",
 };
 
 const WORKER_TYPE_MAP: Record<string, string> = {
@@ -402,6 +403,38 @@ export async function processBulkEmployees(
       const lastName = clean(r.lastName);
       if (!firstName || !lastName) {
         errors.push({ row: i + 1, error: "Missing firstName or lastName" });
+        continue;
+      }
+
+      // Reject rows missing any field that is mandatory in the Add Employee form.
+      const missingRequired: string[] = [];
+      if (!clean(r.workEmail)) missingRequired.push("Work Email");
+      if (!clean(r.personalPhone)) missingRequired.push("Personal Phone");
+      if (!clean(r.gender)) missingRequired.push("Gender");
+      if (!clean(r.dateOfBirth)) missingRequired.push("Date of Birth");
+      if (!clean(r.jobTitle)) missingRequired.push("Job Title");
+      if (!clean(r.designation)) missingRequired.push("Designation");
+      if (!clean(r.departmentName) && !clean(r.departmentCode)) missingRequired.push("Department");
+      if (!clean(r.officeLocation)) missingRequired.push("Office Location");
+      if (!clean(r.reportingManagerCode)) missingRequired.push("Reporting Manager (EMP ID)");
+      if (!clean(r.dateOfJoining)) missingRequired.push("Date of Joining");
+      if (!clean(r.panNumber)) missingRequired.push("PAN Number");
+      if (!clean(r.aadhaarNumber)) missingRequired.push("Aadhaar Number");
+      if (!clean(r.bankName)) missingRequired.push("Bank Name");
+      if (!clean(r.bankAccountNumber)) missingRequired.push("Bank Account Number");
+      if (!clean(r.bankIfsc)) missingRequired.push("Bank IFSC");
+      if (!clean(r.currentAddressLine1)) missingRequired.push("Current Address Line 1");
+      if (!clean(r.currentCity)) missingRequired.push("Current City");
+      if (!clean(r.currentState)) missingRequired.push("Current State");
+      if (!clean(r.currentZip)) missingRequired.push("Current ZIP");
+      if (!clean(r.currentCountry)) missingRequired.push("Current Country");
+      if (missingRequired.length > 0) {
+        errors.push({ row: i + 1, error: `Missing required field(s): ${missingRequired.join(", ")}` });
+        continue;
+      }
+      // Personal phone must be exactly 10 digits (matches the Add Employee form).
+      if ((clean(r.personalPhone) ?? "").replace(/\D/g, "").length !== 10) {
+        errors.push({ row: i + 1, error: "Personal phone must be exactly 10 digits" });
         continue;
       }
 

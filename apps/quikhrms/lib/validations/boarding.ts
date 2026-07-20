@@ -16,6 +16,39 @@ export const OffboardingTaskCategoryEnum = z.enum([
   "AssetReturn", "AccessRevoke", "KnowledgeTransfer", "Clearance",
 ]);
 
+// ─── Onboarding candidate bulk import ───────────────────
+// One spreadsheet row. All strings (coerced in the service); only name + official
+// email are mandatory. Role / reporting manager / salary can't be set in bulk and
+// are completed manually per candidate afterwards.
+export const bulkOnboardingRowSchema = z.object({
+  firstName: z.string().min(1),
+  lastName: z.string().min(1),
+  workEmail: z.string().min(1),
+  personalEmail: z.string().optional(),
+  personalPhone: z.string().optional(),
+  departmentName: z.string().optional(),
+  jobTitle: z.string().optional(),
+  sourceOfHire: z.string().optional(),
+  dateOfJoining: z.string().optional(),
+  panNumber: z.string().optional(),
+  aadhaarNumber: z.string().optional(),
+  uanNumber: z.string().optional(),
+  previousExperienceMonths: z.string().optional(),
+  highestQualification: z.string().optional(),
+  skillSet: z.string().optional(),
+});
+export type BulkOnboardingRow = z.infer<typeof bulkOnboardingRowSchema>;
+
+export const MAX_BULK_ONBOARDING_ROWS = 50;
+
+export const bulkImportOnboardingSchema = z.object({
+  fileName: z.string().min(1),
+  rows: z.array(bulkOnboardingRowSchema)
+    .min(1, "No rows found")
+    .max(MAX_BULK_ONBOARDING_ROWS, `Cannot import more than ${MAX_BULK_ONBOARDING_ROWS} candidates at once`),
+  dryRun: z.boolean().default(false),
+});
+
 // ─── Onboarding Templates ───────────────────────────────
 
 export const onboardingTaskTemplateSchema = z.object({

@@ -8,9 +8,10 @@ import { Select } from "@/components/hrms/select";
 import { NumberInput } from "@/components/hrms/number-input";
 import { Tooltip } from "@/components/hrms/tooltip";
 import { clsx } from "clsx";
-import { Plus, Video, Phone, Users, Calendar, Link2, MapPin, Star, Check, X, AlertCircle, ExternalLink, Pencil, CalendarPlus, Repeat, Bell, Search, Filter as FilterIcon, MoreHorizontal, ChevronLeft, ChevronRight, CheckCircle2, Clock, Hourglass, ArrowUpDown, Download, Copy } from "lucide-react";
+import { Video, Phone, Users, Calendar, Link2, MapPin, Star, Check, X, AlertCircle, ExternalLink, Pencil, CalendarPlus, Repeat, Bell, Search, Filter as FilterIcon, MoreHorizontal, ChevronLeft, ChevronRight, CheckCircle2, Clock, Hourglass, ArrowUpDown, Download, Copy, Eye } from "lucide-react";
 import { SkeletonTable } from "@/components/hrms/skeleton";
 import { useToast } from "@/components/hrms/toast";
+import { ExcelExportButton } from "@/components/hrms/excel-export-button";
 
 const AVATAR_PALETTE: Array<{ bg: string; text: string }> = [
   { bg: "bg-rose-100",    text: "text-rose-700" },
@@ -80,7 +81,14 @@ interface InterviewItem {
     candidate: { id: string; firstName: string; lastName: string; email: string };
     requisition: { title: string };
   };
-  scorecard: { overallRating: number; recommendation: string } | null;
+  scorecard: {
+    overallRating: number;
+    recommendation: string;
+    strengths?: string | null;
+    concerns?: string | null;
+    overallComments?: string | null;
+    submittedAt?: string | null;
+  } | null;
   feedbackRequestSentAt?: string | null;
   reminderCount?: number;
   lastReminderAt?: string | null;
@@ -106,18 +114,46 @@ const typeIcons: Record<string, React.ReactNode> = {
   Video: <Video size={14} />, Phone: <Phone size={14} />, Panel: <Users size={14} />,
 };
 
+// Columns for the styled .xlsx export — mirrors the visible table columns.
+const INTERVIEW_EXCEL_COLUMNS = [
+  { header: "Candidate", key: "candidate", width: 22 },
+  { header: "Email", key: "email", width: 28 },
+  { header: "Position", key: "position", width: 24 },
+  { header: "Interviewer", key: "interviewer", width: 22 },
+  { header: "Stage", key: "stage", width: 18 },
+  { header: "Round", key: "round", width: 10 },
+  { header: "Date", key: "date", width: 16 },
+  { header: "Rating", key: "rating", width: 12 },
+  { header: "Recommendation", key: "recommendation", width: 18 },
+  { header: "Status", key: "status", width: 14 },
+];
+
 export default function InterviewsPage() {
   const api = useApiClient();
   const qc = useQueryClient();
   const toast = useToast();
   const [showCreate, setShowCreate] = useState(false);
-  const emptyForm = { applicationId: "", interviewerId: "", round: 1, stage: "", type: "Video" as string, scheduledAt: "", duration: 60, meetingLink: "", location: "", notes: "" };
+  const emptyForm = { applicationId: "", interviewerId: "", additionalInterviewerIds: [] as string[], round: 1, stage: "", type: "Video" as string, scheduledAt: "", duration: 60, meetingLink: "", location: "", notes: "" };
   const [form, setForm] = useState(emptyForm);
   const [feedbackTarget, setFeedbackTarget] = useState<InterviewItem | null>(null);
+  // Combined feedback view — all of one candidate's rounds that have feedback,
+  // shown together in a single dialog (not per-round pop-ups).
+  const [feedbackGroup, setFeedbackGroup] = useState<{ candidate: string; position: string; rounds: InterviewItem[] } | null>(null);
+  const openFeedbackGroup = (its: InterviewItem[]) => {
+    const rounds = its.filter((x) => x.scorecard).sort((a, b) => a.round - b.round);
+    if (!rounds.length) return;
+    const c = rounds[0].application.candidate;
+    setFeedbackGroup({
+      candidate: `${c.firstName} ${c.lastName}`.trim(),
+      position: rounds[0].application.requisition.title,
+      rounds,
+    });
+  };
   const [rescheduleTarget, setRescheduleTarget] = useState<InterviewItem | null>(null);
   const [rescheduleForm, setRescheduleForm] = useState({ scheduledAt: "", meetingLink: "", location: "" });
   const [feedback, setFeedback] = useState({ overallRating: 7, recommendation: "Hire" as string, strengths: "", concerns: "", overallComments: "" });
   const [confirmAction, setConfirmAction] = useState<{ interview: InterviewItem; kind: "cancel" | "noshow" } | null>(null);
+  const [actionReason, setActionReason] = useState("");
   // After scheduling, the API auto-queues invite emails to both candidate and
   // interviewer and (for Video/Panel) auto-generates a Teams meeting link. We
   // hold the created interview so we can surface that link back to the recruiter
@@ -208,11 +244,12 @@ export default function InterviewsPage() {
   });
 
   const updateMut = useMutation({
-    mutationFn: ({ id, status }: { id: string; status: string }) =>
-      api.patch(`/api/v1/hrms/recruit/interviews/${id}`, { status }),
+    mutationFn: ({ id, status, reason }: { id: string; status: string; reason?: string }) =>
+      api.patch(`/api/v1/hrms/recruit/interviews/${id}`, { status, ...(reason ? { reason } : {}) }),
     onSuccess: () => {
       invalidateRecruit();
       setConfirmAction(null);
+      setActionReason("");
     },
   });
 
@@ -278,6 +315,12 @@ export default function InterviewsPage() {
     }
     return m;
   }, [interviews]);
+
+  // A still-Scheduled interview at a round that already has a Completed one is a
+  // stale duplicate ("Superseded"). Excluded from counts + the "N rounds" badge
+  // so the totals reflect real interviews, not leftovers from reschedules.
+  const isSuperseded = (i: InterviewItem) =>
+    i.status === "IntScheduled" && !i.scorecard && (completedRoundsByApp.get(i.applicationId)?.has(i.round) ?? false);
 
   const [searchQuery, setSearchQuery] = useState("");
   const [monthFilter, setMonthFilter] = useState<string>("all");
@@ -357,12 +400,17 @@ export default function InterviewsPage() {
   }, [interviews, searchQuery, monthFilter, sortDesc, filters, stageForInterview, feedbackPendingOnly]);
 
   const stats = useMemo(() => {
-    const total = filtered.length;
-    const completed = filtered.filter((i) => i.status === "IntCompleted").length;
-    const scheduled = filtered.filter((i) => i.status === "IntScheduled" && new Date(i.scheduledAt).getTime() >= Date.now()).length;
-    const pending = filtered.filter((i) => i.status === "IntScheduled" && new Date(i.scheduledAt).getTime() < Date.now()).length;
+    // Don't count superseded (stale) rounds so the totals reflect real interviews.
+    const counted = filtered.filter((i) => !isSuperseded(i));
+    const total = counted.length;
+    const completed = counted.filter((i) => i.status === "IntCompleted").length;
+    const scheduled = counted.filter((i) => i.status === "IntScheduled" && new Date(i.scheduledAt).getTime() >= Date.now()).length;
+    const pending = counted.filter((i) => i.status === "IntScheduled" && new Date(i.scheduledAt).getTime() < Date.now()).length;
+    // Everything else (Cancelled, No-show, Rescheduled, …) so the four buckets
+    // partition the total exactly and the percentages sum to 100%.
+    const cancelled = Math.max(0, total - completed - scheduled - pending);
     const pct = (n: number) => total > 0 ? `${((n / total) * 100).toFixed(1)}%` : "0.0%";
-    return { total, completed, scheduled, pending, completedPct: pct(completed), scheduledPct: pct(scheduled), pendingPct: pct(pending) };
+    return { total, completed, scheduled, pending, cancelled, completedPct: pct(completed), scheduledPct: pct(scheduled), pendingPct: pct(pending), cancelledPct: pct(cancelled) };
   }, [filtered]);
 
   // Group interviews by candidate (applicationId). The list is paginated by
@@ -378,8 +426,14 @@ export default function InterviewsPage() {
   };
 
   const grouped = useMemo(() => {
+    // A candidate appears if ANY of their rounds matches the active filters…
+    const matchedAppIds = new Set(filtered.map((i) => i.applicationId));
+    // …but each group holds ALL of that candidate's rounds, so the summary row
+    // always reflects their true latest round (a status filter narrows WHO shows,
+    // not what a candidate's current status looks like).
     const map = new Map<string, InterviewItem[]>();
-    for (const it of filtered) {
+    for (const it of interviews) {
+      if (!matchedAppIds.has(it.applicationId)) continue;
       if (!map.has(it.applicationId)) map.set(it.applicationId, []);
       map.get(it.applicationId)!.push(it);
     }
@@ -393,7 +447,7 @@ export default function InterviewsPage() {
       const db = Math.max(...b[1].map((x) => new Date(x.scheduledAt).getTime()));
       return sortDesc ? db - da : da - db;
     });
-  }, [filtered, sortDesc]);
+  }, [filtered, interviews, sortDesc]);
 
   const totalPages = Math.max(1, Math.ceil(grouped.length / pageSize));
   const safePage = Math.min(page, totalPages);
@@ -443,6 +497,32 @@ export default function InterviewsPage() {
     URL.revokeObjectURL(url);
   };
 
+  // Flat, human-readable rows for the styled .xlsx export — same filtered set
+  // and same visible columns the CSV export uses.
+  const excelRows = useMemo(
+    () =>
+      filtered.map((i) => {
+        const stageName = stageForInterview[i.round - 1] ?? `Round ${i.round}`;
+        const rec = i.scorecard?.recommendation ?? "";
+        const recLabel = RECOMMENDATION_LABEL[rec]?.label ?? rec;
+        const isPastDue = i.status === "IntScheduled" && new Date(i.scheduledAt).getTime() < Date.now();
+        const statusLabel = isPastDue ? "Pending" : i.status.replace("Int", "");
+        return {
+          candidate: `${i.application.candidate.firstName} ${i.application.candidate.lastName}`.trim(),
+          email: i.application.candidate.email,
+          position: i.application.requisition.title,
+          interviewer: `${i.interviewer.firstName} ${i.interviewer.lastName}`.trim(),
+          stage: stageName.replace(/([A-Z])/g, " $1").trim(),
+          round: i.round,
+          date: new Date(i.scheduledAt).toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" }),
+          rating: i.scorecard ? `${i.scorecard.overallRating}/10` : "",
+          recommendation: recLabel,
+          status: statusLabel,
+        };
+      }),
+    [filtered, stageForInterview],
+  );
+
   return (
     <div className="w-full px-5 py-4">
       <div className="flex items-start justify-between mb-5 gap-4 flex-wrap">
@@ -450,12 +530,9 @@ export default function InterviewsPage() {
           <h1 className="text-page-title text-gray-900 leading-tight">Interviews</h1>
           <p className="text-xs text-gray-500 mt-1">Track and manage all candidate interviews in one place.</p>
         </div>
-        <button onClick={() => { setForm(emptyForm); setShowCreate(true); }} className="btn btn-primary">
-          <Plus size={13} /> Schedule interview
-        </button>
       </div>
 
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-4">
+      <div className="grid grid-cols-2 md:grid-cols-5 gap-3 mb-4">
         <div className="bg-white rounded-xl border border-slate-200 p-4 shadow-sm flex items-center gap-3">
           <div className="w-11 h-11 rounded-lg bg-green-50 text-green-600 flex items-center justify-center"><Calendar size={20} /></div>
           <div>
@@ -488,9 +565,17 @@ export default function InterviewsPage() {
             <p className="text-[11px] text-amber-600 font-semibold">{stats.pendingPct}</p>
           </div>
         </div>
+        <div className="bg-white rounded-xl border border-slate-200 p-4 shadow-sm flex items-center gap-3">
+          <div className="w-11 h-11 rounded-lg bg-red-50 text-red-600 flex items-center justify-center"><X size={20} /></div>
+          <div>
+            <p className="text-[11px] text-slate-500 font-medium">Cancelled / No-show</p>
+            <p className="text-xl font-bold text-slate-900 leading-tight">{stats.cancelled}</p>
+            <p className="text-[11px] text-red-600 font-semibold">{stats.cancelledPct}</p>
+          </div>
+        </div>
       </div>
 
-      <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
+      <div className="bg-white rounded-xl border border-slate-200 shadow-sm">
         <div className="px-4 py-3 border-b border-slate-100 flex items-center justify-between gap-3 flex-wrap">
           <div className="relative flex-1 max-w-md">
             <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
@@ -714,6 +799,14 @@ export default function InterviewsPage() {
                 <Download size={13} /> Export
               </button>
             </Tooltip>
+            <ExcelExportButton
+              filename="interviews"
+              sheetName="Interviews"
+              columns={INTERVIEW_EXCEL_COLUMNS}
+              rows={excelRows}
+              label="Excel"
+              className="inline-flex items-center gap-1.5 h-9 px-3 rounded-lg border border-emerald-200 bg-emerald-50 text-emerald-700 text-xs font-medium hover:bg-emerald-100 transition disabled:opacity-40 disabled:cursor-not-allowed"
+            />
             <div className="inline-flex items-center gap-1.5">
               <Calendar size={14} className="text-slate-400" />
               <Select
@@ -754,8 +847,9 @@ export default function InterviewsPage() {
             <tbody>
               {paginatedGroups.flatMap(([appId, items], gIdx) => {
                 const isOpen = expanded.has(appId);
-                const rounds = items.length;
-                const canExpand = rounds > 1;
+                // Count real rounds only (exclude superseded/stale duplicates).
+                const rounds = items.filter((i) => !isSuperseded(i)).length;
+                const canExpand = items.length > 1;
                 // Latest round (already first per sort) → the summary row.
                 // Older rounds → rendered as nested rows when expanded.
                 const latest = items[0];
@@ -769,7 +863,13 @@ export default function InterviewsPage() {
                 const dt = new Date(i.scheduledAt);
                 const stageName = stageForInterview[i.round - 1] ?? `Round ${i.round}`;
                 const stageCls = STAGE_PILL[stageName] ?? defaultStagePill;
-                const statusLabel = i.status.replace("Int", "");
+                // A scheduled interview whose time has passed is shown as "Pending"
+                // (feedback due) — matches how the summary tiles bucket it.
+                const isPastDue = i.status === "IntScheduled" && dt.getTime() < Date.now();
+                const statusLabel = isPastDue ? "Pending" : i.status.replace("Int", "");
+                // How many of this candidate's rounds carry feedback (drives the
+                // single combined "view feedback" action on the summary row).
+                const groupFeedbackCount = items.filter((it) => it.scorecard).length;
                 return (
                 <tr
                   key={i.id}
@@ -824,7 +924,7 @@ export default function InterviewsPage() {
                     </div>
                     <div className="flex items-center gap-2 mt-0.5">
                       <span className="text-[11px] text-slate-400 inline-flex items-center gap-1"><Clock size={10} /> {i.duration}min</span>
-                      {i.meetingLink && (
+                      {i.meetingLink && i.status === "IntScheduled" && (dt.getTime() + i.duration * 60000) > Date.now() && (
                         <a href={i.meetingLink} target="_blank" rel="noopener noreferrer" className="text-[11px] text-[#22c55e] hover:underline inline-flex items-center gap-0.5">
                           <ExternalLink size={10} /> Join link
                         </a>
@@ -840,7 +940,8 @@ export default function InterviewsPage() {
                   </td>
                   <td className="px-4 py-2.5">
                     <span className={clsx("px-2.5 py-0.5 rounded-full text-[11px] font-medium ring-1",
-                      i.status === "IntCompleted" ? "bg-emerald-50 text-emerald-700 ring-emerald-200"
+                      isPastDue ? "bg-amber-50 text-amber-700 ring-amber-200"
+                      : i.status === "IntCompleted" ? "bg-emerald-50 text-emerald-700 ring-emerald-200"
                       : i.status === "IntScheduled" ? "bg-green-50 text-green-700 ring-green-200"
                       : i.status === "IntCancelled" ? "bg-red-50 text-red-700 ring-red-200"
                       : i.status === "IntNoShow" ? "bg-slate-100 text-slate-600 ring-slate-200"
@@ -851,15 +952,32 @@ export default function InterviewsPage() {
                     {i.scorecard ? (() => {
                       const r = RECOMMENDATION_LABEL[i.scorecard.recommendation] ?? { label: i.scorecard.recommendation, color: "text-slate-600" };
                       return (
-                        <div>
-                          <p className="font-semibold text-slate-900">{i.scorecard.overallRating}/10</p>
+                        <button
+                          type="button"
+                          onClick={() => openFeedbackGroup(items)}
+                          title="View all feedback for this candidate"
+                          className="group text-left rounded-md -mx-1 px-1 py-0.5 hover:bg-slate-50 transition"
+                        >
+                          <p className="font-semibold text-slate-900 group-hover:underline">{i.scorecard.overallRating}/10</p>
                           <p className={clsx("text-[11px] font-medium", r.color)}>{r.label}</p>
-                        </div>
+                        </button>
                       );
                     })() : <span className="text-[11px] text-slate-400">Pending</span>}
                   </td>
                   <td className="px-4 py-2.5">
                     <div className="inline-flex items-center gap-1.5 justify-end">
+                      {/* One combined feedback view for the whole candidate, on the
+                          summary row — lists every round's feedback together. */}
+                      {!isChild && groupFeedbackCount > 0 && (
+                        <Tooltip content={`View feedback · ${groupFeedbackCount} round${groupFeedbackCount > 1 ? "s" : ""}`}>
+                          <button
+                            onClick={() => openFeedbackGroup(items)}
+                            className="w-8 h-8 inline-flex items-center justify-center rounded-md bg-white text-slate-500 ring-1 ring-slate-200 hover:bg-green-50 hover:text-[#22c55e] hover:ring-[#bbf7d0] transition"
+                          >
+                            <Eye size={12} />
+                          </button>
+                        </Tooltip>
+                      )}
                       {i.status === "IntScheduled" && !i.scorecard && (completedRoundsByApp.get(i.applicationId)?.has(i.round) ? (
                         <span className="text-[11px] text-slate-400 italic px-2">Superseded</span>
                       ) : (
@@ -892,7 +1010,7 @@ export default function InterviewsPage() {
                           </Tooltip>
                           <Tooltip content="Mark as no-show">
                             <button
-                              onClick={() => setConfirmAction({ interview: i, kind: "noshow" })}
+                              onClick={() => { setActionReason(""); setConfirmAction({ interview: i, kind: "noshow" }); }}
                               className="w-8 h-8 inline-flex items-center justify-center rounded-md bg-white text-slate-500 ring-1 ring-slate-200 hover:bg-amber-50 hover:text-amber-600 hover:ring-amber-200 transition"
                             >
                               <AlertCircle size={12} />
@@ -900,7 +1018,7 @@ export default function InterviewsPage() {
                           </Tooltip>
                           <Tooltip content="Cancel interview">
                             <button
-                              onClick={() => setConfirmAction({ interview: i, kind: "cancel" })}
+                              onClick={() => { setActionReason(""); setConfirmAction({ interview: i, kind: "cancel" }); }}
                               className="w-8 h-8 inline-flex items-center justify-center rounded-md bg-white text-red-500 ring-1 ring-red-200 hover:bg-red-50 transition"
                             >
                               <X size={12} />
@@ -933,6 +1051,7 @@ export default function InterviewsPage() {
                                     setForm({
                                       applicationId: i.application.id,
                                       interviewerId: "",
+                                      additionalInterviewerIds: [],
                                       round: nextStageIdx + 1,
                                       stage: nextStage,
                                       type: "Video",
@@ -991,7 +1110,23 @@ export default function InterviewsPage() {
                           </button>
                         </Tooltip>
                       )}
-                      {i.status === "IntNoShow" && <span className="text-[11px] text-slate-400 italic px-2">No action</span>}
+                      {i.status === "IntNoShow" && (
+                        <Tooltip content="Reschedule interview">
+                          <button
+                            onClick={() => {
+                              setRescheduleForm({
+                                scheduledAt: new Date(i.scheduledAt).toISOString().slice(0, 16),
+                                meetingLink: i.meetingLink ?? "",
+                                location: i.location ?? "",
+                              });
+                              setRescheduleTarget(i);
+                            }}
+                            className="w-8 h-8 inline-flex items-center justify-center rounded-md bg-white text-[#22c55e] ring-1 ring-[#bbf7d0] hover:bg-green-50 transition"
+                          >
+                            <Repeat size={12} />
+                          </button>
+                        </Tooltip>
+                      )}
                     </div>
                   </td>
                 </tr>
@@ -1005,7 +1140,7 @@ export default function InterviewsPage() {
         {grouped.length > 0 && (
           <div className="px-4 py-3 border-t border-slate-100 flex items-center justify-between flex-wrap gap-3">
             <p className="text-xs text-slate-500">
-              Showing <span className="font-semibold text-slate-700">{start + 1}</span> to <span className="font-semibold text-slate-700">{Math.min(start + pageSize, grouped.length)}</span> of <span className="font-semibold text-slate-700">{grouped.length}</span> candidates ({filtered.length} interviews)
+              Showing <span className="font-semibold text-slate-700">{start + 1}</span> to <span className="font-semibold text-slate-700">{Math.min(start + pageSize, grouped.length)}</span> of <span className="font-semibold text-slate-700">{grouped.length}</span> candidates ({filtered.filter((i) => !isSuperseded(i)).length} interviews)
             </p>
             <div className="flex items-center gap-3">
               <div className="inline-flex items-center gap-1">
@@ -1089,6 +1224,51 @@ export default function InterviewsPage() {
             />
             <p className="mt-1 text-[11px] text-gray-400">
               {panelRestricted ? "Showing this role's interview panel." : "Any employee can be picked as interviewer."}
+            </p>
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">
+              Additional interviewers <span className="text-gray-400 font-normal">(optional)</span>
+            </label>
+            <Select
+              value=""
+              onChange={(v) => {
+                if (!v || v === form.interviewerId || form.additionalInterviewerIds.includes(v)) return;
+                setForm({ ...form, additionalInterviewerIds: [...form.additionalInterviewerIds, v] });
+              }}
+              placeholder="Add another interviewer..."
+              searchable
+              options={interviewerChoices
+                .filter((e) => e.id !== form.interviewerId && !form.additionalInterviewerIds.includes(e.id))
+                .map((e) => ({
+                  value: e.id,
+                  label: `${e.firstName} ${e.lastName}`,
+                  description: `${e.employeeCode}${e.jobTitle ? ` · ${e.jobTitle}` : ""}`,
+                }))}
+            />
+            {form.additionalInterviewerIds.length > 0 && (
+              <div className="mt-2 flex flex-wrap gap-1.5">
+                {form.additionalInterviewerIds.map((id) => {
+                  const emp = interviewerChoices.find((e) => e.id === id);
+                  const name = emp ? `${emp.firstName} ${emp.lastName}` : id;
+                  return (
+                    <span key={id} className="inline-flex items-center gap-1 rounded-full bg-accent-50 text-accent-700 text-xs font-medium pl-2.5 pr-1 py-1 ring-1 ring-accent-200">
+                      {name}
+                      <button
+                        type="button"
+                        onClick={() => setForm({ ...form, additionalInterviewerIds: form.additionalInterviewerIds.filter((x) => x !== id) })}
+                        className="inline-flex items-center justify-center w-4 h-4 rounded-full text-accent-500 hover:bg-accent-100"
+                      >
+                        <X size={11} />
+                      </button>
+                    </span>
+                  );
+                })}
+              </div>
+            )}
+            <p className="mt-1 text-[11px] text-gray-400">
+              They receive the same invite email and calendar entry. Feedback is submitted by the primary interviewer.
             </p>
           </div>
 
@@ -1288,6 +1468,69 @@ export default function InterviewsPage() {
         )}
       </Modal>
 
+      {/* Combined feedback view — every round's feedback for one candidate, in a
+          single dialog, ordered by round. Read-only. */}
+      <Modal open={!!feedbackGroup} onClose={() => setFeedbackGroup(null)} title="Interview Feedback" size="lg">
+        {feedbackGroup && (
+          <div className="space-y-4">
+            <div>
+              <div className="font-semibold text-slate-900">{feedbackGroup.candidate}</div>
+              <div className="text-xs text-slate-500">
+                {feedbackGroup.position} · {feedbackGroup.rounds.length} round{feedbackGroup.rounds.length > 1 ? "s" : ""} of feedback
+              </div>
+            </div>
+
+            <div className="space-y-3 max-h-[60vh] overflow-y-auto pr-1">
+              {feedbackGroup.rounds.map((it) => {
+                const sc = it.scorecard!;
+                const r = RECOMMENDATION_LABEL[sc.recommendation] ?? { label: sc.recommendation, color: "text-slate-600" };
+                const stageName = stageForInterview[it.round - 1] ?? `Round ${it.round}`;
+                return (
+                  <div key={it.id} className="rounded-lg border border-slate-200 p-3.5">
+                    <div className="flex items-start justify-between gap-3">
+                      <div>
+                        <div className="flex items-center gap-2">
+                          <span className="inline-flex items-center px-1.5 py-0.5 rounded-full text-[10px] font-semibold bg-slate-100 text-slate-600 ring-1 ring-slate-200">R{it.round}</span>
+                          <span className="text-sm font-semibold text-slate-900">{stageName}</span>
+                        </div>
+                        <div className="text-xs text-slate-500 mt-1">
+                          {it.interviewer.firstName} {it.interviewer.lastName} · {it.type}
+                          {sc.submittedAt ? ` · ${new Date(sc.submittedAt).toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" })}` : ""}
+                        </div>
+                      </div>
+                      <div className="text-right shrink-0">
+                        <p className="text-xl font-bold text-slate-900 leading-none">{sc.overallRating}<span className="text-xs font-medium text-slate-400">/10</span></p>
+                        <p className={clsx("text-[11px] font-semibold mt-0.5", r.color)}>{r.label}</p>
+                      </div>
+                    </div>
+
+                    <div className="grid gap-2.5 mt-3 pt-3 border-t border-slate-100">
+                      <div>
+                        <p className="text-[10px] font-semibold text-slate-500 uppercase tracking-wide mb-0.5">Strengths</p>
+                        <p className="text-sm text-slate-800 whitespace-pre-wrap">{sc.strengths?.trim() || <span className="text-slate-400">—</span>}</p>
+                      </div>
+                      <div>
+                        <p className="text-[10px] font-semibold text-slate-500 uppercase tracking-wide mb-0.5">Concerns</p>
+                        <p className="text-sm text-slate-800 whitespace-pre-wrap">{sc.concerns?.trim() || <span className="text-slate-400">—</span>}</p>
+                      </div>
+                      <div>
+                        <p className="text-[10px] font-semibold text-slate-500 uppercase tracking-wide mb-0.5">Overall Comments</p>
+                        <p className="text-sm text-slate-800 whitespace-pre-wrap">{sc.overallComments?.trim() || <span className="text-slate-400">—</span>}</p>
+                      </div>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+
+            <div className="flex justify-end pt-2 border-t border-gray-100">
+              <button type="button" onClick={() => setFeedbackGroup(null)}
+                className="px-3 py-1.5 border border-[var(--border)] rounded-lg text-xs font-medium text-gray-700 hover:bg-gray-50">Close</button>
+            </div>
+          </div>
+        )}
+      </Modal>
+
       <Modal open={!!rescheduleTarget} onClose={() => setRescheduleTarget(null)} title="Reschedule Interview">
         {rescheduleTarget && (
           <form onSubmit={(e) => {
@@ -1296,7 +1539,9 @@ export default function InterviewsPage() {
               id: rescheduleTarget.id,
               body: {
                 scheduledAt: new Date(rescheduleForm.scheduledAt).toISOString(),
-                meetingLink: rescheduleForm.meetingLink || undefined,
+                // Send the link as-is (incl. empty string) so clearing it is an
+                // explicit "clear" → server regenerates a fresh meeting link.
+                meetingLink: rescheduleForm.meetingLink,
                 location: rescheduleForm.location || undefined,
               },
             });
@@ -1342,7 +1587,7 @@ export default function InterviewsPage() {
               <button type="button" onClick={() => setRescheduleTarget(null)} disabled={rescheduleMut.isPending}
                 className="px-3 py-1.5 border border-[var(--border)] rounded-lg text-xs font-medium text-gray-700 hover:bg-gray-50">Cancel</button>
               <button type="submit" disabled={rescheduleMut.isPending || !rescheduleForm.scheduledAt}
-                className="px-3 py-1.5 bg-green-600 hover:bg-green-700 text-xs font-medium">
+                className="px-3 py-1.5 rounded-lg bg-[#22c55e] hover:bg-[#16a34a] text-white text-xs font-medium disabled:opacity-50 transition">
                 {rescheduleMut.isPending ? "Saving..." : "Save"}
               </button>
             </div>
@@ -1380,6 +1625,19 @@ export default function InterviewsPage() {
                     <div className="mt-3 text-xs bg-slate-50 border border-slate-100 rounded-md px-2.5 py-1.5 text-slate-600">
                       R{i.round} · {i.type} · {new Date(i.scheduledAt).toLocaleString("en-IN", { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" })}
                     </div>
+                    <div className="mt-3">
+                      <label className="block text-[11px] font-semibold text-slate-600 mb-1">
+                        Reason {isCancel ? "for cancellation" : "for no-show"} <span className="text-slate-400 font-normal">(optional)</span>
+                      </label>
+                      <textarea
+                        value={actionReason}
+                        onChange={(e) => setActionReason(e.target.value)}
+                        rows={3}
+                        maxLength={1000}
+                        placeholder={isCancel ? "e.g. Interviewer unavailable, candidate requested reschedule…" : "e.g. Candidate didn't join, no prior notice…"}
+                        className="w-full text-xs border border-slate-300 rounded-lg px-2.5 py-2 resize-y focus:outline-none focus:ring-1 focus:ring-green-500"
+                      />
+                    </div>
                   </div>
                 </div>
               </div>
@@ -1389,7 +1647,7 @@ export default function InterviewsPage() {
                   Not Now
                 </button>
                 <button type="button"
-                  onClick={() => updateMut.mutate({ id: i.id, status: isCancel ? "IntCancelled" : "IntNoShow" })}
+                  onClick={() => updateMut.mutate({ id: i.id, status: isCancel ? "IntCancelled" : "IntNoShow", reason: actionReason.trim() || undefined })}
                   disabled={updateMut.isPending}
                   className={clsx("inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium shadow-sm disabled:opacity-50 transition text-white",
                     isCancel

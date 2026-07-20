@@ -165,6 +165,10 @@ function ExpensesListInner() {
       warnings.push("This policy requires pre-approval before submission.");
     }
   }
+  // "Other" is a catch-all — force the user to describe what it actually is.
+  if (form.category === "Other" && !form.description.trim()) {
+    violations.push('Description is required when category is "Other" — please specify the expense.');
+  }
   const blockSubmit = violations.length > 0;
 
   return (
@@ -299,9 +303,16 @@ function ExpensesListInner() {
               />
             </div>
           </div>
-          <div><label className="block text-sm font-medium text-gray-700 mb-1">Description</label>
+          <div><label className="block text-sm font-medium text-gray-700 mb-1">
+              Description {form.category === "Other" && <span className="text-red-500">*</span>}
+            </label>
             <textarea value={form.description} onChange={(e) => setForm({ ...form, description: e.target.value })}
-              className="w-full border border-[var(--border)] rounded-lg px-3 py-2 text-sm" rows={2} /></div>
+              placeholder={form.category === "Other" ? "Please specify what this expense is for…" : undefined}
+              className="w-full border border-[var(--border)] rounded-lg px-3 py-2 text-sm" rows={2} />
+            {form.category === "Other" && (
+              <p className="mt-1 text-[11px] text-gray-500">Required for the &quot;Other&quot; category — briefly describe the expense.</p>
+            )}
+          </div>
 
           {violations.length > 0 && (
             <div className="rounded-lg bg-rose-50 ring-1 ring-rose-200 p-3">

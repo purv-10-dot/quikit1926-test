@@ -7,8 +7,16 @@ import { useApiClient } from "@/lib/hooks/use-api";
 import { ChevronLeft, Plus, Calendar } from "lucide-react";
 import { Select } from "@/components/hrms/ui/select";
 import { FilterBar, FilterDivider, FilterField, FilterPills, FilterSearch } from "@/components/hrms/ui/filter-bar";
+import { ExcelExportButton } from "@/components/hrms/excel-export-button";
 import { TaskRow, type TaskRowData } from "./_components/task-row";
 import { NewTaskModal } from "./_components/new-task-modal";
+
+const TASK_STATUS_LABELS: Record<TaskRowData["status"], string> = {
+  Open: "Open",
+  InProgress: "In Progress",
+  Completed: "Completed",
+  Cancelled: "Cancelled",
+};
 
 export default function TasksHubPage() {
   const [showNew, setShowNew] = useState(false);
@@ -74,6 +82,26 @@ function TasksList({ scope }: { scope: "mine" }) {
   });
   const tasks = (data?.data ?? []).filter((t) => !search || t.title.toLowerCase().includes(search.toLowerCase()));
 
+  // Export the currently filtered task list, matching the visible columns.
+  const excelColumns = [
+    { header: "Title", key: "title", width: 30 },
+    { header: "Description", key: "description", width: 30 },
+    { header: "Assignee", key: "assignee", width: 22 },
+    { header: "Priority", key: "priority", width: 12 },
+    { header: "Due Date", key: "dueDate", width: 16 },
+    { header: "Status", key: "status", width: 14 },
+  ];
+  const excelRows = tasks.map((t) => ({
+    title: t.title,
+    description: t.description ?? "",
+    assignee: t.assignee ? `${t.assignee.firstName} ${t.assignee.lastName}`.trim() : "",
+    priority: t.priority,
+    dueDate: t.dueDate
+      ? new Date(t.dueDate).toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" })
+      : "",
+    status: TASK_STATUS_LABELS[t.status],
+  }));
+
   return (
     <div className="space-y-3">
       <FilterBar>
@@ -106,6 +134,7 @@ function TasksList({ scope }: { scope: "mine" }) {
       <div className="surface-card overflow-hidden">
         <div className="px-4 py-3 border-b border-gray-100 flex items-center justify-between">
           <span className="text-xs text-gray-500">Total: <strong className="text-gray-900">{tasks.length}</strong></span>
+          <ExcelExportButton filename="tasks" sheetName="Todos" columns={excelColumns} rows={excelRows} label="Excel" />
         </div>
         {isLoading ? (
           <div className="py-12 text-center text-xs text-gray-500">Loading…</div>

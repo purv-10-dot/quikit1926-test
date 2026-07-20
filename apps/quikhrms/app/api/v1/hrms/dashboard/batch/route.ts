@@ -100,7 +100,7 @@ export const GET = withAuth(async (_req: NextRequest, { orgId, userId }) => {
       prisma.companyHoliday.findMany({
         where: { orgId, deletedAt: null, date: { gte: monthStart, lte: monthEnd } },
         orderBy: { date: "asc" },
-        select: { id: true, name: true, date: true },
+        select: { id: true, name: true, date: true, type: true },
       }),
 
       // 6. Approved leaves overlapping today — availability.
@@ -175,7 +175,7 @@ export const GET = withAuth(async (_req: NextRequest, { orgId, userId }) => {
       .filter((e): e is NonNullable<typeof e> => e !== null && e.inCurrentMonth)
       .sort((a, b) => a.daysUntil - b.daysUntil);
 
-    const birthdays = birthdayDerived.slice(0, 5).map(({ inCurrentMonth: _drop, ...b }) => b);
+    const birthdays = birthdayDerived.map(({ inCurrentMonth: _drop, ...b }) => b);
     const birthdayCounts = {
       today: birthdayDerived.filter((b) => b.daysUntil === 0).length,
       month: birthdayDerived.filter((b) => b.daysUntil > 0 && b.daysUntil <= 30).length,
@@ -206,7 +206,7 @@ export const GET = withAuth(async (_req: NextRequest, { orgId, userId }) => {
       id: h.id, name: h.name, date: h.date, type: String(h.type),
       isFloater: h.isOptional, calendar: null as { id: string; name: string } | null,
     }));
-    const monthHolidays = monthHolidayRows.map((h) => ({ id: h.id, name: h.name, date: h.date }));
+    const monthHolidays = monthHolidayRows.map((h) => ({ id: h.id, name: h.name, date: h.date, type: String(h.type) }));
     const todayKey = today.toDateString();
     const eventsToday = upcoming.filter((h) => new Date(h.date).toDateString() === todayKey).length;
 
@@ -229,7 +229,7 @@ export const GET = withAuth(async (_req: NextRequest, { orgId, userId }) => {
     const availability: AvailabilityRow[] = (["Sick", "Parental", "WFH", "Holiday"] as const)
       .map((cat) => {
         const list = buckets.get(cat) ?? [];
-        return { category: cat, label: availabilityLabels[cat], count: list.length, avatars: list.slice(0, 4) };
+        return { category: cat, label: availabilityLabels[cat], count: list.length, avatars: list };
       })
       .filter((r) => r.count > 0);
 

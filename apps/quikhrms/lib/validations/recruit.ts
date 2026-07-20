@@ -28,14 +28,14 @@ const requisitionBaseObject = z.object({
   pipelineId: z.string().min(1, "Pipeline required"),
   departmentId: z.string().min(1, "Department required"),
   reportingToId: z.string().optional(),
-  positions: z.number().int().min(1).default(1),
+  positions: z.number().int().min(1).max(500).default(1),
   type: z.enum(["NewPosition", "Replacement", "Expansion"]).default("NewPosition"),
-  employmentType: z.enum(["FullTime", "PartTime", "Contract", "Intern", "Freelancer", "Consultant"]).default("FullTime"),
+  employmentType: z.enum(["FullTime", "PartTime", "Contract", "Intern", "Freelance"]).default("FullTime"),
   workLocation: z.enum(["Office", "Remote", "Hybrid"]).default("Office"),
-  experienceMin: z.number().int().optional(),
-  experienceMax: z.number().int().optional(),
-  salaryMin: z.number().optional(),
-  salaryMax: z.number().optional(),
+  experienceMin: z.number().min(0, "Min experience required").max(50, "Max 50 years"),
+  experienceMax: z.number().min(0, "Max experience required").max(50, "Max 50 years"),
+  salaryMin: z.number(),
+  salaryMax: z.number(),
   salaryCurrency: z.string().default("INR"),
   jobDescription: z.string().optional(),
   responsibilities: z.array(z.string()).optional(),
@@ -47,6 +47,8 @@ const requisitionBaseObject = z.object({
     weight: z.number().int().min(1).max(10),
   })).optional(),
   education: z.string().optional(),
+  passingYear: z.number().int().min(1950).max(2100).nullable().optional(),
+  technicalQuestions: z.array(z.string().max(500)).min(1, "Add at least one technical question").max(50),
   benefits: z.array(z.string()).optional(),
 
   // Role scorecard — optional. Captures the JD-Scorecard pattern at hiring time.
@@ -63,14 +65,14 @@ const requisitionBaseObject = z.object({
   careerPageVisible: z.boolean().default(true),
   internalPostingOnly: z.boolean().default(false),
   postToJobPortal: z.boolean().default(false),
-  referralBonusAmount: z.number().optional(),
-  hiringManagerId: z.string().optional(),
-  recruiterId: z.string().optional(),
+  referralBonusAmount: z.number().min(0).max(1000000, "Referral bonus can’t exceed ₹10,00,000").optional(),
+  hiringManagerId: z.string().min(1, "Hiring manager required"),
+  recruiterId: z.string().min(1, "Recruiter required"),
 
   // 5-step requisition wizard — planning & posting extras
   jobOpeningName: z.string().optional(),
   interviewPanelIds: z.array(z.string()).optional(),
-  budget: z.number().optional(),
+  budget: z.number().nullable().optional(),
   targetJoiningDate: z.string().optional(),
   closedDate: z.string().optional(), // "Timeline to Close"
   etaToFillDays: z.number().int().optional(),
@@ -90,9 +92,14 @@ function requisitionCrossFieldChecks(
     experienceMin?: number | null; experienceMax?: number | null;
     salaryMin?: number | null; salaryMax?: number | null; budget?: number | null;
     targetJoiningDate?: string; closedDate?: string;
+    workLocation?: string; jobLocation?: string | null;
   },
   ctx: z.RefinementCtx,
 ) {
+  // Office / Hybrid roles need a physical job location; Remote does not.
+  if ((d.workLocation === "Office" || d.workLocation === "Hybrid") && !d.jobLocation?.trim()) {
+    ctx.addIssue({ code: z.ZodIssueCode.custom, message: "Job location is required for Office / Hybrid roles", path: ["jobLocation"] });
+  }
   if (d.experienceMin != null && d.experienceMax != null && d.experienceMin > d.experienceMax) {
     ctx.addIssue({ code: z.ZodIssueCode.custom, message: "Min experience can’t be greater than max experience", path: ["experienceMax"] });
   }
@@ -157,6 +164,8 @@ export const updateApplicationSchema = z.object({
   currentStage: z.string().optional(),
   status: z.enum(["AppActive", "AppHired", "AppRejected", "AppOnHold", "AppWithdrawn", "AppOffered", "AppDeclined"]).optional(),
   rejectionReason: z.string().optional(),
+  // Optional note recorded in stageHistory when moving/skipping stages.
+  moveReason: z.string().optional(),
 });
 
 // ─── Interview ──────────────────────────────────────────
@@ -166,6 +175,8 @@ export const createInterviewSchema = z.object({
   round: z.number().int().default(1),
   type: z.enum(["Phone", "Video", "InPerson", "Panel", "TakeHome", "GroupDiscussion"]).default("Video"),
   interviewerId: z.string().min(1),
+  // Extra panel interviewers beyond the primary. All get the invite + calendar.
+  additionalInterviewerIds: z.array(z.string().min(1)).optional().default([]),
   scheduledAt: z.string().min(1).refine((v) => new Date(v).getTime() > Date.now() - 60_000, {
     message: "Scheduled date/time cannot be in the past",
   }),
@@ -182,6 +193,8 @@ export const updateInterviewSchema = z.object({
   location: z.string().optional(),
   meetingLink: z.string().optional(),
   candidateFeedback: z.string().optional(),
+  // Reason recorded (to the audit trail) when cancelling or marking no-show.
+  reason: z.string().max(1000).optional(),
 });
 
 // ─── Scorecard ──────────────────────────────────────────
