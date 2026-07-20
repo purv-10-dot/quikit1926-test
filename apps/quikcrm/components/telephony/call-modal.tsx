@@ -169,6 +169,15 @@ export function CallModal({
       toast.error("Customer number must have at least 10 digits");
       return;
     }
+    // Party A is the agent leg the provider rings FIRST. An empty/short agent
+    // number produces a "success" campid with a dead agent leg (no ring), so
+    // block the dial here rather than let the request go out silently.
+    if (agent.replace(/\D/g, "").length < 10) {
+      toast.error(
+        "Agent number (Party A) must have at least 10 digits — set your phone number in Settings → Profile.",
+      );
+      return;
+    }
     setStage("in-call");
     setLatestStatus("dialing");
     try {
