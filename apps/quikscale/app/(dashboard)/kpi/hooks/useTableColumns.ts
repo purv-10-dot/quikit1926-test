@@ -7,7 +7,7 @@ import { moveByKey, columnsUnfrozenBy, columnsFrozenBy } from "@/lib/utils/colum
 const COL_WIDTHS_DEFAULT: Record<string, number> = {
   progress: 160, owner: 140, kpiName: 260,
   team: 140, teamHead: 140, kpiOwner: 180,
-  measurementUnit: 120, kpiType: 110, targetValue: 90,
+  measurementUnit: 120, kpiType: 110, divisionType: 120, targetValue: 90,
   quarterlyGoal: 110, qtdGoal: 100, qtdAchieved: 110, weeklyGoal: 100,
   description: 200, lastNotes: 200,
   importedFromOpsp: 150,
@@ -19,7 +19,7 @@ const WEEK_WIDTH_DEFAULT = 110;
 export const ALL_STATIC_COLS = [
   "progress", "owner", "kpiName",
   "team", "teamHead", "kpiOwner",
-  "measurementUnit", "kpiType", "targetValue",
+  "measurementUnit", "kpiType", "divisionType", "targetValue",
   "quarterlyGoal", "qtdGoal", "qtdAchieved", "weeklyGoal",
   "description", "lastNotes",
   "importedFromOpsp",
@@ -30,7 +30,7 @@ export const ALL_STATIC_COLS = [
 export const COL_LABELS: Record<string, string> = {
   progress: "Progress", owner: "Owner", kpiName: "KPI Name",
   team: "Team", teamHead: "Team Head", kpiOwner: "KPI Owner",
-  measurementUnit: "Measurement Unit", kpiType: "KPI Type", targetValue: "Target Value",
+  measurementUnit: "Measurement Unit", kpiType: "KPI Type", divisionType: "Division Type", targetValue: "Target Value",
   quarterlyGoal: "Quarterly Goal", qtdGoal: "QTD Goal", qtdAchieved: "QTD Achieved", weeklyGoal: "Weekly Goal",
   description: "Description", lastNotes: "Last Notes",
   importedFromOpsp: "Imported from OPSP",
@@ -41,7 +41,7 @@ export const COL_LABELS: Record<string, string> = {
 export const SORT_KEYS: Record<string, string> = {
   progress: "progressPercent", owner: "owner", kpiName: "name",
   // teamHead and kpiOwner are not server-sortable — no entry = no sort menu option
-  measurementUnit: "measurementUnit", targetValue: "target",
+  measurementUnit: "measurementUnit", divisionType: "divisionType", targetValue: "target",
   quarterlyGoal: "quarterlyGoal", qtdGoal: "qtdGoal", qtdAchieved: "qtdAchieved",
   // weeklyGoal intentionally NOT sortable — it's a per-row computed value
   // (kpi.weeklyTargets[currentWeek] or target/13 fallback). Pretending to sort

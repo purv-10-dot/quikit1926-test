@@ -190,6 +190,7 @@ export const kpiListParamsSchema = z.object({
       "owner",
       "team",
       "measurementUnit",
+      "divisionType",
       "target",
       "quarterlyGoal",
       "qtdGoal",

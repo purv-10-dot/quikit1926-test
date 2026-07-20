@@ -157,6 +157,7 @@ export const GET = auth.view(async ({ orgId, userId }, req) => {
       teamHeadName: k.team?.headId ? fullName(userMap.get(k.team.headId)) : "",
       measurementUnit: k.measurementUnit,
       kpiType: k.kpiType ?? null,
+      divisionType: k.divisionType ?? null,
       currency: k.currency ?? null,
       targetScale: k.targetScale ?? null,
       scaledDisplay: k.scaledDisplay ?? false,

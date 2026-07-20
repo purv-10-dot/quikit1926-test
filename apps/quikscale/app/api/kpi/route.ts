@@ -79,6 +79,7 @@ export const GET = auth.view(async ({ orgId, userId }, req) => {
       { name: { contains: q, mode: "insensitive" } },
       { description: { contains: q, mode: "insensitive" } },
       { measurementUnit: { contains: q, mode: "insensitive" } },
+      { divisionType: { contains: q, mode: "insensitive" } },
       { lastNotes: { contains: q, mode: "insensitive" } },
       { team: { is: { name: { contains: q, mode: "insensitive" } } } },
       // Weekly note text (the "Last Notes" column surfaces a weekly note) —

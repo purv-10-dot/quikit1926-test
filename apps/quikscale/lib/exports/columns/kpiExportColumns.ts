@@ -22,6 +22,7 @@ export interface KpiExportRow {
   teamHeadName: string;
   measurementUnit: string | null;
   kpiType: string | null;
+  divisionType: string | null;
   /** Currency-display metadata so numeric columns render exactly like the KPI
    *  module's `formatScaledKpiValue` (₹4 Cr / $9 M / 795.6K / "16 lb"). */
   currency: string | null;
@@ -94,6 +95,7 @@ const STATIC_COLUMNS: KpiExportColumn[] = [
   { key: "kpiOwner", label: "KPI Owner", value: (r) => r.ownerName },
   { key: "measurementUnit", label: "Measurement Unit", value: (r) => r.measurementUnit ?? "" },
   { key: "kpiType", label: "KPI Type", value: (r) => (r.kpiType && r.kpiType !== "NA" ? r.kpiType : "") },
+  { key: "divisionType", label: "Division Type", value: (r) => r.divisionType ?? "" },
   { key: "targetValue", label: "Target Value", value: (r) => fmtVal(r, r.target) },
   { key: "quarterlyGoal", label: "Quarterly Goal", value: (r) => fmtVal(r, r.quarterlyGoal) },
   { key: "qtdGoal", label: "QTD Goal", value: (r) => fmtVal(r, r.qtdGoal) },
