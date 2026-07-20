@@ -16,7 +16,8 @@ import { UnitSelect } from "./UnitSelect";
 import { UserPicker, UserMultiPicker, RightPanel, RightPanelFooter, DropdownPicker } from "@quikit/ui";
 import { FormErrorBanner } from "@/components/forms/FormErrorBanner";
 import { usePastWeekFlags } from "@/lib/hooks/useFeatureFlags";
-import { useCurrentWeek, useWeekLabels, useQuarterWeekCount } from "@/lib/hooks/useCurrentWeek";
+import { useCurrentWeek, useWeekLabels, useQuarterWeekCount, useQuarterPosition } from "@/lib/hooks/useCurrentWeek";
+import { isWeekInPast } from "@/lib/utils/weekLock";
 import { Lock, ChevronDown } from "lucide-react";
 import {
   buildBreakdown,
@@ -27,6 +28,7 @@ import {
   sumBreakdown,
   checkBreakdownBalance,
   isTargetValueLocked,
+  isStandaloneWeekDropdown,
   TARGET_LOCK_TIP,
   type DivisionType,
 } from "./kpiModalHelpers";
@@ -386,6 +388,10 @@ export function KPIModal({ mode, kpi, scope, teamId, defaultYear, defaultQuarter
   // Past-week feature flags
   const { canAddPastWeek, loaded: flagsLoaded } = usePastWeekFlags();
   const currentWeek = useCurrentWeek(parseInt(form.year) || null, form.quarter);
+  // Quarter/year position so a fully-past quarter treats ALL its weeks as past
+  // (the clamped `currentWeek` mis-reads a past quarter's last week as current).
+  const createQuarterPos = useQuarterPosition(parseInt(form.year) || null, form.quarter);
+  const isWeekPast = (w: number): boolean => isWeekInPast(createQuarterPos ?? "current", w, currentWeek);
   const weekLabels = useWeekLabels(parseInt(form.year) || null, form.quarter);
   // Weeks in the selected quarter (Custom Quarter Settings). Defaults to 13.
   const weekCount = useQuarterWeekCount(parseInt(form.year) || null, form.quarter);
@@ -1251,7 +1257,7 @@ export function KPIModal({ mode, kpi, scope, teamId, defaultYear, defaultQuarter
                         </th>
                       )}
                       {weeksArray(weekCount).map(w => {
-                        const isPast = currentWeek !== null && w < currentWeek && !pastWeekAllowed;
+                        const isPast = isWeekPast(w) && !pastWeekAllowed;
                         return (
                         <th key={w} className={`px-2 py-1.5 text-center font-medium border-r border-gray-200 last:border-r-0 whitespace-nowrap ${isPast ? "text-gray-300" : "text-gray-500"}`}>
                           <div className="flex items-center justify-center gap-1">
@@ -1274,7 +1280,7 @@ export function KPIModal({ mode, kpi, scope, teamId, defaultYear, defaultQuarter
                         </td>
                       )}
                       {weeksArray(weekCount).map(w => {
-                        const isPast = currentWeek !== null && w < currentWeek && !pastWeekAllowed;
+                        const isPast = isWeekPast(w) && !pastWeekAllowed;
                         const isStandalone = form.divisionType === "Standalone";
                         const isLocked = isStandalone || isPast;
 
@@ -1315,15 +1321,10 @@ export function KPIModal({ mode, kpi, scope, teamId, defaultYear, defaultQuarter
                           );
                         }
 
-                        // Individual scope — Standalone division.
-                        // Standalone semantics: each week independently carries the full target.
-                        //  - Past weeks WITH the past-week toggle on → editable <select> 0/target
-                        //    (lets the user retroactively mark a past week as skipped).
-                        //  - All other Standalone cells (current..13, plus past with toggle off)
-                        //    → locked <input> showing the cell's current value (target or 0).
-                        const isStandalonePastEditable =
-                          isStandalone && currentWeek != null && w < currentWeek && pastWeekAllowed;
-                        if (isStandalonePastEditable) {
+                        // Individual scope — Standalone division. When "Add Past Week Data"
+                        // is ON, EVERY week (past, current, future) is an editable <select>
+                        // 0/target; otherwise cells stay locked. See isStandaloneWeekDropdown.
+                        if (isStandaloneWeekDropdown(form.divisionType, pastWeekAllowed)) {
                           const isNumUnit = form.measurementUnit === "Number";
                           // Use properly-formatted strings that match what buildBreakdown stores
                           const zeroStr = isNumUnit ? "0" : "0.00";
@@ -1397,15 +1398,13 @@ export function KPIModal({ mode, kpi, scope, teamId, defaultYear, defaultQuarter
                             <span className="ml-1 text-gray-400">({pct.toFixed(0)}%)</span>
                           </td>
                           {weeksArray(weekCount).map(w => {
-                            const isPast = currentWeek !== null && w < currentWeek && !pastWeekAllowed;
+                            const isPast = isWeekPast(w) && !pastWeekAllowed;
                             const isStandalone = form.divisionType === "Standalone";
                             const isLocked = isStandalone || isPast;
-                            // Standalone per-owner: editable 0/sub-target toggle is shown
-                            // ONLY for past weeks when the past-week toggle is enabled.
-                            // Current..13 are locked at the owner sub-target.
-                            const isStandalonePastEditable =
-                              isStandalone && currentWeek != null && w < currentWeek && pastWeekAllowed;
-                            if (isStandalonePastEditable) {
+                            // Standalone per-owner: when "Add Past Week Data" is ON every week
+                            // (past, current, future) is an editable 0/sub-target <select>;
+                            // otherwise cells stay locked at the owner sub-target (unchanged).
+                            if (isStandaloneWeekDropdown(form.divisionType, pastWeekAllowed)) {
                               const isNumUnit = form.measurementUnit === "Number";
                               const ownerTarget = (pct / 100) * scaledTarget;
                               const zeroStr = isNumUnit ? "0" : "0.00";

@@ -79,6 +79,35 @@ export function weeklyInputLockState(opts: {
 export type QuarterPosition = "past" | "current" | "future";
 
 /**
+ * Is `week` strictly in the PAST relative to today, quarter/year-aware?
+ *
+ *   - past quarter   → every week is past (the whole quarter is over)
+ *   - future quarter → no week is past (the quarter hasn't started)
+ *   - current quarter → weeks before the in-progress `currentWeek`
+ *
+ * This is the quarter-aware replacement for a bare `week < currentWeek` check.
+ * `useCurrentWeek` clamps a past quarter to its last week and a future quarter
+ * to week 1, so the bare check mis-classifies a past quarter's final week as
+ * "current" (and a future quarter's first week as "current"). Used by the KPI
+ * Target-Breakdown gates (past-week target editing + the Standalone per-week
+ * override), which must treat an entire closed quarter uniformly.
+ *
+ * NOTE: unlike `weekEditState`, this deliberately does NOT lock future quarters
+ * or apply the current-week grace — the breakdown lets you plan future-quarter
+ * targets and uses a hard past-week binary (no grace). It only answers "is this
+ * week in the past?"; callers combine it with the relevant flag.
+ */
+export function isWeekInPast(
+  quarterPosition: QuarterPosition,
+  week: number,
+  currentWeek: number | null,
+): boolean {
+  if (quarterPosition === "past") return true;
+  if (quarterPosition === "future") return false;
+  return currentWeek !== null && week < currentWeek;
+}
+
+/**
  * Quarter/year-AWARE week-edit gate — the single source of truth for every
  * weekly-status / weekly-value surface (Priority weekly tab, KPI Updates tab)
  * and their server routes.

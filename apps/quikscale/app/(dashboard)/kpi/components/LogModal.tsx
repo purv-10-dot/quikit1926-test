@@ -12,7 +12,7 @@ import { UserPicker } from "@quikit/ui";
 import { CURRENCIES, getScales, getMultiplier, formatActual, shortScaleLabel, scaleDownForDisplay, scaleUpFromInput } from "@/lib/utils/currency";
 import { WeeklyScroller } from "./WeeklyScroller";
 import { usePastWeekFlags } from "@/lib/hooks/useFeatureFlags";
-import { weekEditState } from "@/lib/utils/weekLock";
+import { weekEditState, isWeekInPast } from "@/lib/utils/weekLock";
 import { UnitSelect } from "./UnitSelect";
 import { useCurrentWeek, useWeekLabels, useQuarterWeekCount, useQuarterPosition } from "@/lib/hooks/useCurrentWeek";
 import { useMyPermissions } from "@/lib/hooks/useMyPermissions";
@@ -26,6 +26,7 @@ import {
   sumBreakdown,
   checkBreakdownBalance,
   isTargetValueLocked,
+  isStandaloneWeekDropdown,
   TARGET_LOCK_TIP,
 } from "./kpiModalHelpers";
 import { WeekRow } from "./WeekRow";
@@ -94,12 +95,20 @@ function EditTab({
   // weeks (incl. past). When "Add Past Week Data" is off those cells are locked,
   // so the Target Value is locked too. EditTab is always an edit context.
   const targetLocked = isTargetValueLocked({ isEditMode: true, flagsLoaded, canAddPastWeek });
-  // A week is locked-by-past when state has resolved and the week is strictly
-  // before the current quarter week AND the org disallows adding past-week
-  // data. This is a hard binary (no "current week − 1" grace) — that grace
-  // window lives exclusively on the Updates tab.
+  // A week is locked-by-past when state has resolved, the week is in the past
+  // (quarter/year-aware — a fully-past quarter counts ALL its weeks as past, not
+  // just those below the clamped current week), AND the org disallows adding
+  // past-week data. Hard binary (no "current week − 1" grace — that grace lives
+  // only on the Updates tab); future quarters stay editable for target planning.
+  const editQuarterPos = useQuarterPosition(parseInt(form.year) || null, form.quarter);
+  const isEditWeekPast = (w: number): boolean =>
+    isWeekInPast(editQuarterPos ?? "current", w, currentWeek);
   const weekLockedByPast = (w: number): boolean =>
-    flagsLoaded && currentWeek !== null && w < currentWeek && !canAddPastWeek;
+    flagsLoaded && editQuarterPos !== null && isEditWeekPast(w) && !canAddPastWeek;
+  // "Add Past Week Data" ON → Standalone renders EVERY week (past, current,
+  // future) as an editable 0/target dropdown. Shared gate with the create form
+  // (KPIModal) via isStandaloneWeekDropdown. See that helper for the rationale.
+  const pastWeekAllowed = flagsLoaded && canAddPastWeek;
   const currentWeek = useCurrentWeek(parseInt(form.year) || null, form.quarter);
   const editTabWeekLabels = useWeekLabels(parseInt(form.year) || null, form.quarter);
   const weekCount = useQuarterWeekCount(parseInt(form.year) || null, form.quarter);
@@ -579,8 +588,7 @@ function EditTab({
                     </th>
                   )}
                   {weeksArray(weekCount).map(w => {
-                    const isPastWeek = currentWeek !== null && w < currentWeek;
-                    const isStandaloneEditable = form.divisionType === "Standalone" && isPastWeek && !weekLockedByPast(w);
+                    const isStandaloneEditable = isStandaloneWeekDropdown(form.divisionType, pastWeekAllowed);
                     const showLock = weekLockedByPast(w) && !isStandaloneEditable;
                     return (
                     <th key={w} className={`px-2 py-1.5 text-center font-medium border-r border-gray-200 last:border-r-0 whitespace-nowrap ${showLock ? "text-gray-300" : "text-gray-500"}`}>
@@ -599,10 +607,16 @@ function EditTab({
                     </td>
                   )}
                   {weeksArray(weekCount).map(w => {
-                    const isPastWeek = currentWeek !== null && w < currentWeek;
                     const isStandalone = form.divisionType === "Standalone";
-                    const isStandalonePastEditable = isStandalone && isPastWeek && !weekLockedByPast(w);
-                    const isLocked = isStandalone ? !isStandalonePastEditable : weekLockedByPast(w);
+                    // Individual row: Standalone + "Add Past Week Data" ON → EVERY week
+                    // (past, current, future) becomes an editable 0/target dropdown.
+                    const isStandaloneDropdown = isStandaloneWeekDropdown(form.divisionType, pastWeekAllowed);
+                    // Team-total input keeps its original past-only unlock so team-KPI edit
+                    // behavior is unchanged (per-owner rows below stay the source of truth).
+                    const standaloneCellEditable = isTeamKPI
+                      ? (isEditWeekPast(w) && !weekLockedByPast(w))
+                      : isStandaloneDropdown;
+                    const isLocked = isStandalone ? !standaloneCellEditable : weekLockedByPast(w);
 
                     // Team mode: total = live sum of per-owner cells, edit redistributes by contribution %.
                     if (isTeamKPI && form.ownerIds.length > 0) {
@@ -639,7 +653,7 @@ function EditTab({
                       );
                     }
 
-                    if (isStandalonePastEditable) {
+                    if (isStandaloneDropdown) {
                       const isNumUnit = form.measurementUnit === "Number";
                       const zeroStr = isNumUnit ? "0" : "0.00";
                       const targetStr = scaledTarget > 0

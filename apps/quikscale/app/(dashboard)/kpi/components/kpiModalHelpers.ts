@@ -48,6 +48,27 @@ export const TARGET_LOCK_TIP =
   "Target Value is locked because Add Past Week Data is disabled. Enable it in Settings → Configurations to edit.";
 
 /**
+ * Whether a Standalone weekly Target-Breakdown cell should render as an editable
+ * `<select>` (0 / target) instead of a locked `<input>`.
+ *
+ * Standalone semantics: each week independently carries the full target. When
+ * "Add Past Week Data" (`pastWeekAllowed`) is ON, EVERY week (past, current and
+ * future) becomes an editable dropdown so users can plan or retroactively skip
+ * any week — defaults come from {@link buildBreakdown} (past → 0,
+ * current/future → target). When the flag is OFF the cells stay locked, so
+ * behavior is unchanged. Cumulative always returns `false` (never a dropdown).
+ *
+ * Applies identically in both create and edit modes and to both the Individual
+ * row and Team per-owner rows — a single source of truth for the render gate.
+ */
+export function isStandaloneWeekDropdown(
+  divisionType: DivisionType,
+  pastWeekAllowed: boolean,
+): boolean {
+  return divisionType === "Standalone" && pastWeekAllowed;
+}
+
+/**
  * Format a single weekly breakdown value for display.
  * - Number unit: rounded to nearest integer
  * - All other units: 2 decimal places
