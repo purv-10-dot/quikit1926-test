@@ -10,7 +10,7 @@ import { humanizeApiError } from "@/lib/utils/humanizeError";
 import { notify } from "@/lib/utils/notify";
 import type { KPIRow as KPI } from "@/lib/types/kpi";
 import type { User } from "@/lib/types/kpi";
-import { fiscalYearLabel, MEASUREMENT_UNITS, ALL_QUARTERS, weeksArray, weekDateLabel } from "@/lib/utils/fiscal";
+import { fiscalYearLabel, MEASUREMENT_UNITS, KPI_TYPES, ALL_QUARTERS, weeksArray, weekDateLabel } from "@/lib/utils/fiscal";
 import { CURRENCIES, getScales, getMultiplier, formatActual, shortScaleLabel, scaleDownForDisplay, scaleUpFromInput } from "@/lib/utils/currency";
 import { UnitSelect } from "./UnitSelect";
 import { UserPicker, UserMultiPicker, RightPanel, RightPanelFooter, DropdownPicker } from "@quikit/ui";
@@ -121,6 +121,7 @@ export function KPIModal({ mode, kpi, scope, teamId, defaultYear, defaultQuarter
       divisionType,
       reverseColor: kpi?.reverseColor ?? false,
       frequency: (kpi?.frequency as "daily" | "weekly" | "monthly" | "yearly" | undefined) ?? "weekly",
+      kpiType: (kpi?.kpiType as "NA" | "Leading" | "Lagging" | undefined) ?? "NA",
       weeklyBreakdown,
     };
   });
@@ -636,6 +637,7 @@ export function KPIModal({ mode, kpi, scope, teamId, defaultYear, defaultQuarter
         scaledDisplay: isCurr && !!form.targetScale ? form.scaledDisplay : false,
         reverseColor: form.reverseColor,
         frequency: form.frequency,
+        kpiType: form.kpiType as "NA" | "Leading" | "Lagging",
         // In team scope: derive weeklyTargets (total per week) as the live sum of per-owner cells.
         // In individual scope: use the editable weeklyBreakdown as-is.
         weeklyTargets: isTeamScope && form.ownerIds.length > 0
@@ -999,6 +1001,21 @@ export function KPIModal({ mode, kpi, scope, teamId, defaultYear, defaultQuarter
                 />
               </div>
             )}
+          </div>
+
+          {/* KPI Type — Leading (predictive input) vs Lagging (outcome); NA = unset. */}
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <label className="block text-xs font-medium text-gray-600 mb-1">
+                KPI Type
+              </label>
+              <DropdownPicker
+                value={form.kpiType}
+                onChange={(v) => set("kpiType", v)}
+                options={KPI_TYPES.map(t => ({ value: t, label: t }))}
+              />
+              {errors.kpiType && <p className="text-[10px] text-red-500 mt-0.5">{errors.kpiType}</p>}
+            </div>
           </div>
 
           {/* Target Value */}

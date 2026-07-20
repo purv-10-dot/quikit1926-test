@@ -49,7 +49,7 @@ export const TREND_DIRECTION_CONFIG = {
 } as const;
 
 // ─── Trend categories from the book ───────────────────────────────────────────
-export const TREND_CATEGORIES = ["technology", "distribution", "product", "markets", "consumer", "social"] as const;
+export const TREND_CATEGORIES = ["technology", "distribution", "product", "markets", "consumer", "social", "regulatory"] as const;
 export type TrendCategory = (typeof TREND_CATEGORIES)[number];
 
 export const TREND_CATEGORY_CONFIG: Record<TrendCategory, { label: string; bg: string; text: string }> = {
@@ -59,6 +59,15 @@ export const TREND_CATEGORY_CONFIG: Record<TrendCategory, { label: string; bg: s
   markets:      { label: "Markets",           bg: "bg-blue-100",   text: "text-blue-700" },
   consumer:     { label: "Consumer",          bg: "bg-amber-100",  text: "text-amber-700" },
   social:       { label: "Social",            bg: "bg-rose-100",   text: "text-rose-700" },
+  regulatory:   { label: "Regulatory",        bg: "bg-slate-100",  text: "text-slate-700" },
+};
+
+// Per-quarter soft cap per type (strength/weakness ≤ 3, trend ≤ 6). Enforced as
+// a count guard in the POST route, not a DB constraint.
+export const SWT_TYPE_LIMITS: Record<SWTType, number> = {
+  strength: 3,
+  weakness: 3,
+  trend:    6,
 };
 
 // Contextual "impact / why" label per type — mirrors the Scaling Up book prompts.

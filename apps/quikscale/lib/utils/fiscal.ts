@@ -23,6 +23,14 @@ export const weeksArray = (count: number = DEFAULT_WEEKS_PER_QUARTER): number[] 
 export const MEASUREMENT_UNITS = ["Number", "Percentage", "Currency"] as const;
 
 /**
+ * KPI Type classification. "NA" (default) = unclassified, "Leading" = predictive
+ * input metric, "Lagging" = outcome metric. Single source of truth for the
+ * Add/Edit form dropdown and the grid; the Zod schema mirrors these literals.
+ */
+export const KPI_TYPES = ["NA", "Leading", "Lagging"] as const;
+export type KpiType = (typeof KPI_TYPES)[number];
+
+/**
  * Weekly meeting day-name → JS `Date.getDay()` index (Sunday=0 … Saturday=6).
  * Used by Custom Quarter Settings' meeting-day week alignment.
  */

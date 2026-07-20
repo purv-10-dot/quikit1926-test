@@ -6,7 +6,7 @@ import { parsePagination, paginatedResponse } from "@/lib/api/pagination";
 import { createPrioritySchema } from "@/lib/schemas/prioritySchema";
 import { writeAuditLog } from "@/lib/api/auditLog";
 import { audit, requestContext } from "@/lib/audit";
-import { rateLimit, LIMITS } from "@/lib/api/rateLimit";
+import { rateLimitAsync, LIMITS } from "@/lib/api/rateLimit";
 import { getCurrentFiscalWeekFromDB } from "@/lib/utils/featureFlags";
 import { notifyPriorityAssignment } from "@/lib/services/priorityNotifications";
 import { findPriorityDuplicate, priorityDuplicateMessage } from "@/lib/api/priorityDuplicate";
@@ -145,7 +145,7 @@ export const GET = auth.view(async ({ orgId, userId }, req) => {
 
 // POST /api/priority — create a priority
 export const POST = auth.create(async ({ orgId, userId }, req) => {
-  const rl = rateLimit({
+  const rl = await rateLimitAsync({
     routeKey: "priority:create",
     clientKey: `${orgId}:${userId}`,
     limit: LIMITS.mutation.limit,

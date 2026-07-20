@@ -9,7 +9,7 @@ import { validationError } from "@/lib/api/validationError";
 import { findWWWDuplicate, wwwDuplicateMessage } from "@/lib/api/wwwDuplicate";
 import { writeAuditLog } from "@/lib/api/auditLog";
 import { audit, requestContext } from "@/lib/audit";
-import { rateLimit, LIMITS } from "@/lib/api/rateLimit";
+import { rateLimitAsync, LIMITS } from "@/lib/api/rateLimit";
 import { notifyWWWAssignment } from "@/lib/services/wwwNotifications";
 import { isFeatureFlagEnabled } from "@/lib/utils/featureFlags";
 import { buildWwwScopeWhere } from "@/lib/api/wwwListQuery";
@@ -129,7 +129,7 @@ export const GET = auth.view(async ({ orgId, userId }, req) => {
 
 // POST /api/www — create a WWWItem
 export const POST = auth.create(async ({ orgId, userId }, req) => {
-  const rl = rateLimit({
+  const rl = await rateLimitAsync({
     routeKey: "www:create",
     clientKey: `${orgId}:${userId}`,
     limit: LIMITS.mutation.limit,

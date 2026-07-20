@@ -10,7 +10,7 @@ import {
   validateIndividualKPICreate,
   validateParentKPI,
 } from "@/lib/api/kpiCreateValidation";
-import { rateLimit, LIMITS } from "@/lib/api/rateLimit";
+import { rateLimitAsync, LIMITS } from "@/lib/api/rateLimit";
 import { notifyKPIAssignment } from "@/lib/services/kpiNotifications";
 import { buildKpiScopeWhere } from "@/lib/api/kpiListQuery";
 import { fetchAuditUserMap, decorateAudit } from "@/lib/api/auditUsers";
@@ -185,6 +185,7 @@ export const GET = auth.view(async ({ orgId, userId }, req) => {
       scaledDisplay: true,
       reverseColor: true,
       frequency: true,
+      kpiType: true,
       importedFromOpsp: true,
       createdAt: true,
       updatedAt: true,
@@ -300,7 +301,7 @@ export const GET = auth.view(async ({ orgId, userId }, req) => {
 // POST /api/kpi - Create KPI
 export const POST = auth.create(async ({ orgId, userId }, req) => {
   // Rate limit: 30 KPI writes / minute per user (prevents bulk-insert abuse)
-  const rl = rateLimit({
+  const rl = await rateLimitAsync({
     routeKey: "kpi:create",
     clientKey: `${orgId}:${userId}`,
     limit: LIMITS.kpiWrite.limit,
@@ -423,6 +424,7 @@ export const POST = auth.create(async ({ orgId, userId }, req) => {
       scaledDisplay: validated.scaledDisplay ?? false,
       reverseColor: validated.reverseColor ?? false,
       frequency: validated.frequency ?? "weekly",
+      kpiType: validated.kpiType ?? "NA",
       importedFromOpsp: validated.importedFromOpsp ?? false,
       createdBy: userId,
     },
@@ -444,6 +446,7 @@ export const POST = auth.create(async ({ orgId, userId }, req) => {
       status: true,
       healthStatus: true,
       reverseColor: true,
+      kpiType: true,
       createdAt: true,
       updatedAt: true,
       createdBy: true,
@@ -475,6 +478,7 @@ export const POST = auth.create(async ({ orgId, userId }, req) => {
       measurementUnit: kpi.measurementUnit,
       divisionType: validated.divisionType ?? "Cumulative",
       frequency: validated.frequency ?? "weekly",
+      kpiType: validated.kpiType ?? "NA",
       quarter: kpi.quarter,
       year: kpi.year,
       description: kpi.description,
@@ -538,6 +542,7 @@ export const POST = auth.create(async ({ orgId, userId }, req) => {
           scaledDisplay: validated.scaledDisplay ?? false,
           reverseColor: validated.reverseColor ?? false,
           frequency: validated.frequency ?? "weekly",
+          kpiType: validated.kpiType ?? "NA",
           createdBy: userId,
         },
         select: { id: true },
@@ -576,6 +581,7 @@ export const POST = auth.create(async ({ orgId, userId }, req) => {
           target: childTarget,
           contributionPct: pct,
           measurementUnit: validated.measurementUnit,
+          kpiType: validated.kpiType ?? "NA",
           quarter: validated.quarter,
           year: validated.year,
           weeklyTargets: childWeekly,

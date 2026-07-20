@@ -38,6 +38,8 @@ const kpiBaseFields = {
   scaledDisplay: z.boolean().optional(),
   reverseColor: z.boolean().optional(),
   frequency: z.enum(["daily", "weekly", "monthly", "yearly"]).default("weekly"),
+  // Leading (predictive input) vs Lagging (outcome) classification; "NA" = unset.
+  kpiType: z.enum(["NA", "Leading", "Lagging"]).default("NA"),
   // Set true only by the OPSP "Export → Create KPIs" flow. Display-only flag;
   // the Add/Edit KPI form never sends it (defaults false).
   importedFromOpsp: z.boolean().optional(),
@@ -113,6 +115,7 @@ export const updateKPISchema = z
     scaledDisplay: z.boolean().optional(),
     reverseColor: z.boolean().optional(),
     frequency: z.enum(["daily", "weekly", "monthly", "yearly"]).optional(),
+    kpiType: z.enum(["NA", "Leading", "Lagging"]).optional(),
     // OPSP "Export → Replace KPI" flow only. When true, wipe the existing KPI's
     // weekly actuals + notes + cached progress so the replaced KPI starts
     // fresh ("Reset"); when false/absent the previous data is carried forward.

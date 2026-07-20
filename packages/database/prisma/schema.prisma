@@ -644,6 +644,11 @@ model KPI {
   scaledDisplay      Boolean          @default(false)
   reverseColor       Boolean          @default(false)
   frequency          String           @default("weekly")
+  // Classification of the KPI's role in the metric chain: "Leading" (predictive,
+  // an input you can act on now) vs "Lagging" (outcome, measured after the fact).
+  // "NA" = unclassified (default). Plain string + app-level enum validation,
+  // matching every other KPI single-select (never a Prisma enum).
+  kpiType            String           @default("NA")
   // True when this KPI was created via the OPSP "Export → Create KPIs" flow.
   // Display-only (shown in the KPI grid); never edited from the Add/Edit form.
   importedFromOpsp   Boolean          @default(false)

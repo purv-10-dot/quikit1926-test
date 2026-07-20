@@ -575,6 +575,12 @@ export function KPITable({ kpis: kpisAll, total, page, pageSize, year, quarter, 
                     return (
                       <td key={col} className={tdClass("measurementUnit", "whitespace-nowrap")} style={stickyStyle("measurementUnit", getColWidth("measurementUnit"))}>{kpi.measurementUnit}</td>
                     );
+                  case "kpiType":
+                    return (
+                      <td key={col} className={tdClass("kpiType", "whitespace-nowrap")} style={stickyStyle("kpiType", getColWidth("kpiType"))}>
+                        {kpi.kpiType && kpi.kpiType !== "NA" ? kpi.kpiType : <span className="text-gray-300">—</span>}
+                      </td>
+                    );
                   case "targetValue":
                     return (
                       <td key={col} className={tdClass("targetValue")} style={stickyStyle("targetValue", getColWidth("targetValue"))}>{fmtN(kpi, kpi.target ?? null)}</td>

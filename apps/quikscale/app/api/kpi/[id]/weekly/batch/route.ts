@@ -36,28 +36,31 @@ async function upsertRow(opts: {
   // RED on `value != null`, so coercing null → 0 here paints unentered
   // weeks red. The KPIWeeklyValue.value column is Float? — nullable.
   const value = opts.value ?? null;
-  const existing = await db.kPIWeeklyValue.findFirst({
-    where: { kpiId: opts.kpiId, userId: opts.userId, weekNumber: opts.weekNumber },
-    select: { id: true },
-  });
-  if (existing) {
-    await db.kPIWeeklyValue.update({
-      where: { id: existing.id },
-      data: { value, notes: opts.notes ?? null, updatedBy: opts.changedBy },
-    });
-  } else {
-    await db.kPIWeeklyValue.create({
-      data: {
+  // Atomic upsert on the @@unique([kpiId, userId, weekNumber]) constraint.
+  // Replaces a findFirst-then-create that raced to a P2002 on concurrent /
+  // double-click saves (two requests both see "no row" and both INSERT).
+  // `orgId` isn't part of the unique key so Prisma won't accept it in `where`;
+  // tenant isolation is already enforced by the KPI-ownership check in the
+  // handler, and `orgId` is still written on insert via `create`.
+  await db.kPIWeeklyValue.upsert({
+    where: {
+      kpiId_userId_weekNumber: {
         kpiId: opts.kpiId,
-        orgId: opts.orgId,
         userId: opts.userId,
         weekNumber: opts.weekNumber,
-        value,
-        notes: opts.notes ?? null,
-        createdBy: opts.changedBy,
       },
-    });
-  }
+    },
+    update: { value, notes: opts.notes ?? null, updatedBy: opts.changedBy },
+    create: {
+      kpiId: opts.kpiId,
+      orgId: opts.orgId,
+      userId: opts.userId,
+      weekNumber: opts.weekNumber,
+      value,
+      notes: opts.notes ?? null,
+      createdBy: opts.changedBy,
+    },
+  });
 }
 
 /**
@@ -211,17 +214,39 @@ export const POST = withOrgAuth<{ id: string }>(async ({ orgId, userId }, req: N
       continue;
     }
 
-    // Team ↔ Individual sync (mirror the single-week route's logic)
-    if (kpi.kpiLevel === "team") {
-      const child = await db.kPI.findFirst({
-        where: { parentKPIId: params.id, owner: targetUserId, deletedAt: null },
-        select: { id: true, orgId: true },
-      });
-      if (child) {
+    // Team ↔ Individual sync (mirror the single-week route's logic).
+    // The primary write above already succeeded, so a failure syncing the
+    // linked partner KPI must NOT abort the batch or 500 the whole save — it's
+    // surfaced as a per-input error instead, preserving the partial-success
+    // contract. (Previously this ran unwrapped and a partner failure escaped
+    // to the route's outer catch as a 500.)
+    let partnerSyncError: string | null = null;
+    try {
+      if (kpi.kpiLevel === "team") {
+        const child = await db.kPI.findFirst({
+          where: { parentKPIId: params.id, owner: targetUserId, deletedAt: null },
+          select: { id: true, orgId: true },
+        });
+        if (child) {
+          await withTxRetry(() =>
+            upsertRow({
+              kpiId: child.id,
+              orgId: child.orgId,
+              userId: targetUserId,
+              weekNumber: input.weekNumber,
+              value: input.value,
+              notes: input.notes,
+              changedBy: userId,
+            }),
+          );
+          touchedKpiIds.add(child.id);
+        }
+      } else if (kpi.parentKPIId) {
+        const parentKpiId = kpi.parentKPIId; // capture: narrowing is lost inside the closure
         await withTxRetry(() =>
           upsertRow({
-            kpiId: child.id,
-            orgId: child.orgId,
+            kpiId: parentKpiId,
+            orgId,
             userId: targetUserId,
             weekNumber: input.weekNumber,
             value: input.value,
@@ -229,22 +254,10 @@ export const POST = withOrgAuth<{ id: string }>(async ({ orgId, userId }, req: N
             changedBy: userId,
           }),
         );
-        touchedKpiIds.add(child.id);
+        touchedKpiIds.add(kpi.parentKPIId);
       }
-    } else if (kpi.parentKPIId) {
-      const parentKpiId = kpi.parentKPIId; // capture: narrowing is lost inside the closure
-      await withTxRetry(() =>
-        upsertRow({
-          kpiId: parentKpiId,
-          orgId,
-          userId: targetUserId,
-          weekNumber: input.weekNumber,
-          value: input.value,
-          notes: input.notes,
-          changedBy: userId,
-        }),
-      );
-      touchedKpiIds.add(kpi.parentKPIId);
+    } catch (e: unknown) {
+      partnerSyncError = e instanceof Error ? e.message : "Linked KPI sync failed";
     }
 
     appliedChanges.push({
@@ -254,7 +267,17 @@ export const POST = withOrgAuth<{ id: string }>(async ({ orgId, userId }, req: N
       newValue: input.value ?? null,
       note: input.notes ?? null,
     });
+    // Primary write landed → this input is applied. Any linked-sync failure is
+    // reported as an additional (non-fatal) error row so it stays visible.
     results.push({ weekNumber: input.weekNumber, userId: targetUserId, ok: true });
+    if (partnerSyncError) {
+      results.push({
+        weekNumber: input.weekNumber,
+        userId: targetUserId,
+        ok: false,
+        error: `Linked KPI sync failed: ${partnerSyncError}`,
+      });
+    }
   }
 
   // Recompute aggregates for each touched KPI (primary + linked partners).

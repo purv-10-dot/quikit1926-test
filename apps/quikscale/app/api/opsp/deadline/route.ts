@@ -6,7 +6,7 @@ import { authOptions } from "@/lib/auth";
 import { getOrgId } from "@/lib/api/getOrgId";
 import { resolveOpspOwnerOrSelf } from "@/lib/api/opspOwner";
 import { toErrorMessage } from "@/lib/api/errors";
-import { getFiscalYear, getFiscalQuarter } from "@/lib/utils/fiscal";
+import { getFiscalYear, getFiscalQuarter, resolveQuarterForDate } from "@/lib/utils/fiscal";
 import { diffDays, addDays } from "@/lib/utils/quarterGen";
 import { writeAuditLog } from "@/lib/api/auditLog";
 import {
@@ -62,14 +62,32 @@ export async function GET(_req: NextRequest) {
     }
 
     const fiscalYear = getFiscalYear();
-    const fiscalQuarter = getFiscalQuarter();
+    const now = new Date();
 
     // OPSP is org-shared: the deadline/review banners track the org's canonical
     // plan, so every member sees the same finalize/review countdown.
     const ownerId = await resolveOpspOwnerOrSelf(orgId, session.user.id);
 
-    // Parallelize the three reads — period lookups for the org's OPSP.
-    const [opsp, flagRows, strictQuarterSetting] = await Promise.all([
+    // Custom-Quarter aware "current quarter". A tenant's configured
+    // QuarterSetting date ranges can push a quarter past its calendar-month
+    // boundary (e.g. a custom 14-week Q1 ending in July), where the calendar
+    // getFiscalQuarter() wrongly reports Q2. Resolve the quarter from those rows
+    // first and fall back to the calendar quarter only when none are configured.
+    // See resolveQuarterForDate.
+    const quarterRows = await db.quarterSetting.findMany({
+      where: { orgId, fiscalYear },
+      select: { quarter: true, startDate: true, endDate: true },
+    });
+    const resolvedQuarter = resolveQuarterForDate(quarterRows, now);
+    const fiscalQuarter = resolvedQuarter ?? getFiscalQuarter();
+    // Reuse the matched row (avoids a second strict findUnique) when custom
+    // quarters resolved the period; else fall back to the strict lookup below.
+    const matchedRow = resolvedQuarter
+      ? quarterRows.find((r) => r.quarter === resolvedQuarter) ?? null
+      : null;
+
+    // Parallelize the reads — period lookup for the org's OPSP + threshold flags.
+    const [opsp, flagRows] = await Promise.all([
       db.oPSPData.findFirst({
         where: { orgId, userId: ownerId, year: fiscalYear, quarter: fiscalQuarter },
         select: { id: true, status: true, createdAt: true, year: true, quarter: true },
@@ -81,11 +99,18 @@ export async function GET(_req: NextRequest) {
         },
         select: { key: true, enabled: true, value: true },
       }),
-      db.quarterSetting.findUnique({
-        where: { orgId_fiscalYear_quarter: { orgId, fiscalYear, quarter: fiscalQuarter } },
-        select: { startDate: true, endDate: true },
-      }),
     ]);
+
+    // Quarter-end anchor (Mode B + review). Reuse the custom-quarter row matched
+    // above; only hit the strict per-quarter lookup when no custom rows exist.
+    const strictQuarterSetting = matchedRow
+      ? { startDate: matchedRow.startDate, endDate: matchedRow.endDate }
+      : quarterRows.length === 0
+        ? await db.quarterSetting.findUnique({
+            where: { orgId_fiscalYear_quarter: { orgId, fiscalYear, quarter: fiscalQuarter } },
+            select: { startDate: true, endDate: true },
+          })
+        : null;
 
     if (!opsp) {
       return NextResponse.json({ success: true, finalize: null, review: null });
@@ -96,7 +121,6 @@ export async function GET(_req: NextRequest) {
     const reviewDays = parseExplicitThresholdDays(flags.get("opsp_review_threshold_days") ?? null);
 
     const period = resolvePeriodLabel(opsp.year, opsp.quarter);
-    const now = new Date();
 
     /* ──────────────────── Finalize banner ──────────────────── */
     let finalize:
