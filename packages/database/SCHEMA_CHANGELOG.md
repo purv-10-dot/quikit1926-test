@@ -8,6 +8,15 @@ Most recent first. Each entry: **date · what changed · why · migration · sig
 
 ---
 
+## 2026-07-20 — Employee Repair Request feature
+
+- **Added:**
+  - Model `AstRepairRequest` (table `repair_requests`) — columns `id`, `orgId`, `requesterUserId`, `assetId`, `issueTitle`, `issueDescription`, `urgency`, `status`, `reviewedByUserId`, `reviewedAt`, `decisionNote`, `repairId`, `createdAt`, `updatedAt`; indexes `(orgId)`, `(orgId, status)`, `(requesterUserId)`, `(assetId)`, `(repairId)`; FK `assetId` → `assets(id)`, FK `repairId` → `repairs(id)` `ON DELETE SET NULL`.
+  - Enums `AstRepairRequestStatus` (`Submitted`, `Approved`, `Rejected`, `Fulfilled`, `Cancelled`) and `AstRepairRequestUrgency` (`Low`, `Medium`, `High`, `Urgent`).
+- **Why:** backs the employee-facing repair intake (employee reports a fault on one of their own assigned assets → approver review → "send to repair", which creates a real `AstRepair` and links back via `repairId`). Sits in front of `AstRepair` the same way `AstAssetRequest` sits in front of `AstAssignment`; the existing admin-only `AstRepair` flow is unchanged.
+- **Migration:** `prisma/migrations/20260720120000_add_repair_request/`
+- **Sign-off:** Proceeded ahead of the usual cross-team check-in, due to the July 20 release timeline. On branch `merge_asset02`.
+
 ## 2026-07-17 — Vendor Management
 
 - **Added:**

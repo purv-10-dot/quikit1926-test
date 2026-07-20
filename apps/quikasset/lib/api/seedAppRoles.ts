@@ -20,7 +20,9 @@ import { mirrorAppRoleToCentral } from "@quikit/auth/assign-app-roles";
  * the route layer via `Asset:viewAll` — which Members deliberately do NOT hold)
  * and see their own notifications. They may also raise asset requests and see
  * their own (`AssetRequest:view`, NOT `viewAll` — which reveals the approver
- * queue). Everything else — the full register, other users' data, categories,
+ * queue). A Member may likewise raise a repair request on their own assigned
+ * asset and see their own (`RepairRequest:view` + `create`, NOT `viewAll`).
+ * Everything else — the full register, other users' data, categories,
  * assignments, repairs, reports, budgets, settings — is withheld.
  *
  * NOTE: seeding is additive-only (backfill never removes). Trimming this list
@@ -34,6 +36,8 @@ const MEMBER_DEFAULT_GRANTS: Array<{ resource: Resource; action: Action }> = [
   { resource: "Notification", action: "view" },
   { resource: "AssetRequest", action: "view" },
   { resource: "AssetRequest", action: "create" },
+  { resource: "RepairRequest", action: "view" },
+  { resource: "RepairRequest", action: "create" },
 ];
 
 /* ───────────────────────── admin role ───────────────────────── */

@@ -16,6 +16,7 @@ export const RESOURCES = [
   "Category",
   "Assignment",
   "Repair",
+  "RepairRequest",
   "Replacement",
   "Vendor",
   "Budget",
@@ -55,17 +56,27 @@ const VIEW_ONLY: ReadonlySet<Resource> = new Set<Resource>([
  * "asset manager / admin (sees the full register)" from a plain member (sees
  * only their assigned assets, enforced in the route layer); `AssetRequest`
  * gives an approver the whole request queue rather than only their own.
+ * `RepairRequest` works the same way — its viewAll holder gets the whole
+ * employee-repair queue, while a Member sees only their own.
  * Held by admin/manager roles, never the default Member role.
  */
-const VIEW_ALL_RESOURCES: ReadonlySet<Resource> = new Set<Resource>(["Asset", "AssetRequest"]);
+const VIEW_ALL_RESOURCES: ReadonlySet<Resource> = new Set<Resource>([
+  "Asset",
+  "AssetRequest",
+  "RepairRequest",
+]);
 
 /**
  * Resources that support the `approve` capability — the right to approve/reject
- * that resource's records. Only `AssetRequest` has this: it makes "approver" a
- * grantable capability (assignable to any custom role or per-user extra), NOT a
- * hard-wired Admin check. Admin holds it via the full-grant backfill.
+ * that resource's records. `AssetRequest` and `RepairRequest` have this: it
+ * makes "approver" a grantable capability (assignable to any custom role or
+ * per-user extra), NOT a hard-wired Admin check. Admin holds it via the
+ * full-grant backfill.
  */
-const APPROVE_RESOURCES: ReadonlySet<Resource> = new Set<Resource>(["AssetRequest"]);
+const APPROVE_RESOURCES: ReadonlySet<Resource> = new Set<Resource>([
+  "AssetRequest",
+  "RepairRequest",
+]);
 
 /**
  * True when (resource, action) is a real pair in this registry — respects the
@@ -106,7 +117,7 @@ export const NAV_RESOURCE: Record<string, Resource> = {
   "/assets": "Asset",
   "/assets/categories": "Category",
   "/assignments": "Assignment",
-  "/asset-requests": "AssetRequest",
+  "/my-repair-requests": "RepairRequest",
   "/repair": "Repair",
   "/vendors": "Vendor",
   "/audit-log": "AuditLog",

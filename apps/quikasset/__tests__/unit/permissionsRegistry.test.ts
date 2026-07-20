@@ -63,3 +63,26 @@ describe("permissionsRegistry — AssetRequest:approve capability", () => {
     expect(pairs).not.toContain("Assignment:approve");
   });
 });
+
+describe("permissionsRegistry — RepairRequest capability", () => {
+  it("gives RepairRequest the full capability set incl. viewAll + approve", () => {
+    for (const action of ["view", "create", "update", "delete", "viewAll", "approve"]) {
+      expect(isValidPermissionPair("RepairRequest", action)).toBe(true);
+    }
+  });
+
+  it("emits RepairRequest:approve + viewAll in the full grant set", () => {
+    const pairs = allPermissionPairs().map((p) => `${p.resource}:${p.action}`);
+    expect(pairs).toContain("RepairRequest:approve");
+    expect(pairs).toContain("RepairRequest:viewAll");
+    expect(pairs).toContain("RepairRequest:create");
+    expect(pairs).toContain("RepairRequest:view");
+  });
+
+  // The plain admin-only Repair resource stays CRUD-only — it is NOT an
+  // approvable/queue resource (that's what RepairRequest is for).
+  it("does not turn the Repair resource into an approvable one", () => {
+    expect(isValidPermissionPair("Repair", "approve")).toBe(false);
+    expect(isValidPermissionPair("Repair", "viewAll")).toBe(false);
+  });
+});

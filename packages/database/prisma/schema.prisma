@@ -17963,6 +17963,25 @@ enum AstAssetRequestStatus {
   @@schema("app_quikasset")
 }
 
+enum AstRepairRequestStatus {
+  Submitted
+  Approved
+  Rejected
+  Fulfilled
+  Cancelled
+
+  @@schema("app_quikasset")
+}
+
+enum AstRepairRequestUrgency {
+  Low
+  Medium
+  High
+  Urgent
+
+  @@schema("app_quikasset")
+}
+
 /// Employee directory (asset HOLDERS) — distinct from the platform login User.
 model AstEmployee {
   id          String          @id @default(cuid())
@@ -18063,6 +18082,7 @@ model AstAsset {
   updatedAt            DateTime         @updatedAt
   assignments          AstAssignment[]
   repairs              AstRepair[]
+  repairRequests       AstRepairRequest[]
   replacementsReceived AstReplacement[] @relation("ReplacementAsset")
 
   @@unique([orgId, itemCode])
@@ -18097,6 +18117,7 @@ model AstRepair {
   createdAt        DateTime         @default(now())
   updatedAt        DateTime         @updatedAt
   replacements     AstReplacement[]
+  repairRequests   AstRepairRequest[]
 
   @@index([orgId])
   @@index([assetId])
@@ -18212,6 +18233,41 @@ model AstAssetRequest {
   @@index([orgId, status])
   @@index([requesterUserId])
   @@map("asset_requests")
+  @@schema("app_quikasset")
+}
+
+/// Employee-raised repair request. An employee reports a fault on ONE of their
+/// own assigned assets (`assetId`); an approver reviews it and, on approval,
+/// "sends to repair" — creating a real AstRepair (`repairId`/`repair`) and
+/// flipping the asset to InRepair, mirroring how AstAssetRequest fulfils into an
+/// AstAssignment. `requesterUserId` is a plain column (the platform User.id, the
+/// same scoping column AstAssetRequest uses), joined to AstEmployee for display
+/// name in app code. Vendor/cost/dates are NOT employee-facing — the approver
+/// supplies them at "send to repair" time on the created AstRepair.
+model AstRepairRequest {
+  id               String                  @id @default(cuid())
+  orgId            String
+  requesterUserId  String
+  assetId          String
+  asset            AstAsset                @relation(fields: [assetId], references: [id])
+  issueTitle       String
+  issueDescription String
+  urgency          AstRepairRequestUrgency @default(Medium)
+  status           AstRepairRequestStatus  @default(Submitted)
+  reviewedByUserId String?
+  reviewedAt       DateTime?
+  decisionNote     String?
+  repairId         String?
+  repair           AstRepair?              @relation(fields: [repairId], references: [id])
+  createdAt        DateTime                @default(now())
+  updatedAt        DateTime                @updatedAt
+
+  @@index([orgId])
+  @@index([orgId, status])
+  @@index([requesterUserId])
+  @@index([assetId])
+  @@index([repairId])
+  @@map("repair_requests")
   @@schema("app_quikasset")
 }
 
