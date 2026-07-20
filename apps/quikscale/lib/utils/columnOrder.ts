@@ -21,13 +21,16 @@
  */
 export function computeEffectiveOrder(
   defaultOrder: readonly string[],
-  savedOrder: readonly string[],
+  savedOrder: readonly string[] | null | undefined,
 ): string[] {
   const defaultSet = new Set(defaultOrder);
   const seen = new Set<string>();
   const result: string[] = [];
 
-  for (const key of savedOrder) {
+  // Defensive: `savedOrder` can be undefined/null when preferences haven't
+  // loaded yet (e.g. before the /api/settings/table-preferences fetch resolves,
+  // or in tests that don't stub it) — treat that as "no saved order".
+  for (const key of Array.isArray(savedOrder) ? savedOrder : []) {
     if (defaultSet.has(key) && !seen.has(key)) {
       result.push(key);
       seen.add(key);
@@ -126,6 +129,34 @@ export function columnsUnfrozenBy(
   const result: string[] = [];
   for (const col of before) {
     if (!after.has(col) && !always.has(col)) result.push(col);
+  }
+  return result;
+}
+
+/**
+ * Columns that would transition from unfrozen → frozen if the order changes
+ * from `oldOrder` to `newOrder` (the freeze boundary key itself is unchanged —
+ * it just moves with the reorder). The mirror image of `columnsUnfrozenBy`:
+ * these are the columns dragged INTO the frozen (pinned) region. Rail
+ * (`alwaysFrozen`) columns are excluded — they're always frozen, so they can
+ * never *become* frozen.
+ *
+ * A non-empty result is the trigger for the "are you sure you want to freeze"
+ * confirmation before committing a drag.
+ */
+export function columnsFrozenBy(
+  oldOrder: readonly string[],
+  newOrder: readonly string[],
+  frozenColKey: string | null,
+  alwaysFrozen: readonly string[] = [],
+): string[] {
+  if (!frozenColKey) return [];
+  const before = frozenColumns(oldOrder, frozenColKey, alwaysFrozen);
+  const after = frozenColumns(newOrder, frozenColKey, alwaysFrozen);
+  const always = new Set(alwaysFrozen);
+  const result: string[] = [];
+  for (const col of after) {
+    if (!before.has(col) && !always.has(col)) result.push(col);
   }
   return result;
 }

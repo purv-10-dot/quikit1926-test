@@ -29,7 +29,8 @@ import { useTablePrefs } from "@/lib/hooks/useTablePreferences";
 import { useTableSort, useDebouncedTableSearch } from "@/lib/store";
 import { useColumnResize } from "@/lib/hooks/useColumnResize";
 import { useColumnOrder } from "@/lib/hooks/useColumnOrder";
-import { moveByKey, columnsUnfrozenBy } from "@/lib/utils/columnOrder";
+import { moveByKey, columnsUnfrozenBy, columnsFrozenBy } from "@/lib/utils/columnOrder";
+import { confirmFreezeChange } from "@/lib/utils/freezeConfirm";
 import { useColumnDnD } from "@/lib/hooks/useColumnDnD";
 import { useRowDnD } from "@/lib/hooks/useRowDnD";
 import { rowNeighbors } from "@/lib/utils/rowOrder";
@@ -253,17 +254,8 @@ export default function DailyHuddlePage() {
       const nextFull = [...HUDDLE_RAIL_COLS, ...nextNonRail];
       const curFull = [...HUDDLE_RAIL_COLS, ...orderedNonRail];
       const unfrozen = columnsUnfrozenBy(curFull, nextFull, frozenUpTo, HUDDLE_RAIL_COLS);
-      if (unfrozen.length > 0) {
-        const ok = await confirmDialog({
-          tone: "warning",
-          title: "Unfreeze column?",
-          description:
-            "Moving this column will remove it from the frozen (pinned) section. Are you sure you want to continue?",
-          confirmLabel: "Yes, move it",
-          cancelLabel: "No",
-        });
-        if (!ok) return;
-      }
+      const frozen = columnsFrozenBy(curFull, nextFull, frozenUpTo, HUDDLE_RAIL_COLS);
+      if (!(await confirmFreezeChange(confirmDialog, unfrozen, frozen))) return;
       applyColumnOrder(nextNonRail);
     },
     [orderedNonRail, frozenUpTo, applyColumnOrder, confirmDialog],

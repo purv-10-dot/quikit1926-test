@@ -27,6 +27,7 @@ import { X } from "lucide-react";
 import { Pagination, useConfirm } from "@quikit/ui";
 import { notify } from "@/lib/utils/notify";
 import { useColumnDnD, DragHandle } from "@/lib/hooks/useColumnDnD";
+import { confirmFreezeChange } from "@/lib/utils/freezeConfirm";
 import { useRowDnD } from "@/lib/hooks/useRowDnD";
 import { rowNeighbors } from "@/lib/utils/rowOrder";
 export { HiddenColsMenu } from "./HiddenColsMenu";
@@ -179,18 +180,8 @@ export function KPITable({ kpis: kpisAll, total, page, pageSize, year, quarter, 
   );
   const handleColDrop = useCallback(
     async (fromKey: string, toKey: string, side: "before" | "after") => {
-      const { nextStatic, unfrozen } = computeStaticReorder(fromKey, toKey, side);
-      if (unfrozen.length > 0) {
-        const ok = await confirm({
-          tone: "warning",
-          title: "Unfreeze column?",
-          description:
-            "Moving this column will remove it from the frozen (pinned) section. Are you sure you want to continue?",
-          confirmLabel: "Yes, move it",
-          cancelLabel: "No",
-        });
-        if (!ok) return;
-      }
+      const { nextStatic, unfrozen, frozen } = computeStaticReorder(fromKey, toKey, side);
+      if (!(await confirmFreezeChange(confirm, unfrozen, frozen))) return;
       applyStaticOrder(nextStatic);
     },
     [computeStaticReorder, applyStaticOrder, confirm],

@@ -2,7 +2,7 @@ import { useState, useCallback, useMemo } from "react";
 import { useTablePrefs } from "@/lib/hooks/useTablePreferences";
 import { useColumnResize } from "@/lib/hooks/useColumnResize";
 import { useColumnOrder } from "@/lib/hooks/useColumnOrder";
-import { moveByKey, columnsUnfrozenBy } from "@/lib/utils/columnOrder";
+import { moveByKey, columnsUnfrozenBy, columnsFrozenBy } from "@/lib/utils/columnOrder";
 
 const COL_WIDTHS_DEFAULT: Record<string, number> = {
   progress: 160, owner: 140, kpiName: 260,
@@ -105,16 +105,17 @@ export function useTableColumns(weekCols: string[], kpiIds: string[]) {
   /**
    * Given a drag of static column `fromKey` onto `toKey` (dropping on `side`),
    * compute the resulting static order and which columns the move would
-   * unfreeze. Unfreeze detection runs against the FULL order (static + weeks)
-   * so a frozen week boundary is respected. Pure — caller commits with
-   * `applyStaticOrder` after any needed confirmation.
+   * unfreeze or freeze. Boundary-crossing detection runs against the FULL order
+   * (static + weeks) so a frozen week boundary is respected. Pure — caller
+   * commits with `applyStaticOrder` after any needed confirmation.
    */
   const computeStaticReorder = useCallback(
     (fromKey: string, toKey: string, side: "before" | "after") => {
       const nextStatic = moveByKey(orderedStaticCols, fromKey, toKey, side);
       const nextAll = [...nextStatic, ...weekCols];
       const unfrozen = columnsUnfrozenBy(allCols, nextAll, frozenUpTo);
-      return { nextStatic, unfrozen };
+      const frozen = columnsFrozenBy(allCols, nextAll, frozenUpTo);
+      return { nextStatic, unfrozen, frozen };
     },
     [orderedStaticCols, weekCols, allCols, frozenUpTo],
   );

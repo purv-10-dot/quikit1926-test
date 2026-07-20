@@ -20,7 +20,8 @@ import { HorizontalScroller } from "@/components/ui/HorizontalScroller";
 import { isNearBottom } from "@/lib/utils/scroll";
 import { useColumnResize, ResizeHandle } from "@/lib/hooks/useColumnResize";
 import { useColumnOrder } from "@/lib/hooks/useColumnOrder";
-import { moveByKey, columnsUnfrozenBy } from "@/lib/utils/columnOrder";
+import { moveByKey, columnsUnfrozenBy, columnsFrozenBy } from "@/lib/utils/columnOrder";
+import { confirmFreezeChange } from "@/lib/utils/freezeConfirm";
 import { useColumnDnD, DragHandle } from "@/lib/hooks/useColumnDnD";
 import { useRowDnD } from "@/lib/hooks/useRowDnD";
 import { rowNeighbors } from "@/lib/utils/rowOrder";
@@ -496,17 +497,8 @@ export function PriorityTable({ priorities: prioritiesAll, onRefresh, year, quar
       const nextFull = [...PRIORITY_RAIL_COLS, ...nextNonRail];
       const curFull = [...PRIORITY_RAIL_COLS, ...orderedNonRail];
       const unfrozen = columnsUnfrozenBy(curFull, nextFull, frozenCol, PRIORITY_RAIL_COLS);
-      if (unfrozen.length > 0) {
-        const ok = await confirm({
-          tone: "warning",
-          title: "Unfreeze column?",
-          description:
-            "Moving this column will remove it from the frozen (pinned) section. Are you sure you want to continue?",
-          confirmLabel: "Yes, move it",
-          cancelLabel: "No",
-        });
-        if (!ok) return;
-      }
+      const frozen = columnsFrozenBy(curFull, nextFull, frozenCol, PRIORITY_RAIL_COLS);
+      if (!(await confirmFreezeChange(confirm, unfrozen, frozen))) return;
       applyColumnOrder(nextNonRail);
     },
     // eslint-disable-next-line react-hooks/exhaustive-deps

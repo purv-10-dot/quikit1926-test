@@ -75,8 +75,9 @@ export function useColumnOrder(
   /** Reset back to the table's default order. */
   const resetOrder = useCallback(() => setColumnOrder([]), [setColumnOrder]);
 
-  /** True when the user has a non-default order saved. */
-  const isCustomized = colOrder.length > 0;
+  /** True when the user has a non-default order saved. (Defensive against an
+   *  undefined `colOrder` before prefs load / in tests that stub the hook.) */
+  const isCustomized = Array.isArray(colOrder) && colOrder.length > 0;
 
   return {
     orderedCols,
