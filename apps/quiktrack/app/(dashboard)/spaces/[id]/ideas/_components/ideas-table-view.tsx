@@ -14,7 +14,9 @@ import {
   Maximize2,
   Minimize2,
   FileDown,
+  Settings,
 } from "lucide-react";
+import { useRouter } from "next/navigation";
 import { useApiData } from "@/lib/hooks/useApiData";
 import { useMyProjectPermissions } from "@/lib/hooks/useMyProjectPermissions";
 import { IdeasTable, type Column } from "./ideas-table";
@@ -63,6 +65,7 @@ const HIDDEN_COLUMN_KEYS = new Set(["global_field", "watcher", "goals", "status"
 
 export function IdeasTableView({ projectId }: { projectId: string }) {
   const qc = useQueryClient();
+  const router = useRouter();
   const queryKey = ["quiktrack", "ideas", projectId] as const;
   const { data, isLoading } = useApiData<IdeasBundle>(
     queryKey,
@@ -656,6 +659,7 @@ export function IdeasTableView({ projectId }: { projectId: string }) {
           <div className="flex flex-shrink-0 items-center gap-1 text-gray-500">
             <ChromeIcon icon={UserPlus} label="Add people" onClick={() => setAddPeopleOpen(true)} />
             <ChromeIcon icon={MessageSquare} label="Comments" onClick={() => setAboutPanelOpen(true)} />
+            <ChromeIcon icon={Settings} label="Project settings" onClick={() => router.push(`/spaces/${projectId}/settings`)} />
             {/* ⋯ menu: Export / Import CSV. */}
             <div className="relative">
               <ChromeIcon icon={MoreHorizontal} label="More" active={moreOpen} onClick={() => setMoreOpen((v) => !v)} />
